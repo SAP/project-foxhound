@@ -19,9 +19,9 @@ load 404470-1.html
 load 411603-1.html
 load 412588-1.html
 load 413274-1.xhtml
-load chrome://reftest/content/crashtests/layout/style/crashtests/416461-1.xul
+load chrome://reftest/content/crashtests/layout/style/crashtests/416461-1.xhtml
 load 418007-1.xhtml
-load chrome://reftest/content/crashtests/layout/style/crashtests/431705-1.xul
+load chrome://reftest/content/crashtests/layout/style/crashtests/431705-1.xhtml
 load 432561-1.html
 load 437170-1.html
 load 437532-1.html
@@ -173,6 +173,7 @@ HTTP load 1320423-1.html
 load 1321357-1.html
 load 1328535-1.html
 load 1331272.html
+load 1332550.html
 HTTP load 1333001-1.html
 load 1340248.html
 pref(dom.animations-api.core.enabled,true) pref(dom.animations-api.implicit-keyframes.enabled,true) load 1340344.html
@@ -181,7 +182,6 @@ load 1344210.html
 load 1353312.html
 load 1356601-1.html
 load 1364139-1.html
-skip-if(!xbl) load 1370793-1.xhtml
 load 1371450-1.html
 load 1374175-1.html
 load 1375812-1.html
@@ -296,9 +296,9 @@ load 1479681.html
 load 1488817.html
 load 1490012.html
 load 1502893.html
+load 1507674.html
 load 1509989.html
 load 1514086.html
-pref(layout.css.moz-binding.content.enabled,false) skip-if(!xbl) load 1517319.html
 load 1533783.html
 load 1533891.html
 pref(gfx.omta.background-color,true) load 1533968.html
@@ -311,3 +311,11 @@ load 1566684.html
 load 1579788.html
 load 1580307.html
 load 1581579.html
+skip-if(release_or_beta) pref(dom.paintWorklet.enabled,true) pref(dom.worklet.enabled,true) load 1593766.html # bug 1581896
+pref(layout.css.motion-path.enabled,true) load 1594949.html
+pref(layout.css.motion-path.enabled,true) pref(layout.css.individual-transform.enabled,true) load 1594960.html
+load 1586444.html
+load 1599286.html
+pref(layout.css.motion-path.enabled,true) load 1609786.html
+pref(layout.css.constructable-stylesheets.enabled,true) load 1616433.html
+pref(layout.css.constructable-stylesheets.enabled,true) load 1616407.html

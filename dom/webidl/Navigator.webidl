@@ -213,11 +213,12 @@ partial interface Navigator {
   GamepadServiceTest requestGamepadServiceTest();
 };
 
+// https://immersive-web.github.io/webvr/spec/1.1/#interface-navigator
 partial interface Navigator {
-  [Throws, Pref="dom.vr.enabled"]
+  [Throws, SecureContext, Pref="dom.vr.enabled"]
   Promise<sequence<VRDisplay>> getVRDisplays();
   // TODO: Use FrozenArray once available. (Bug 1236777)
-  [Frozen, Cached, Pure, Pref="dom.vr.enabled"]
+  [SecureContext, Frozen, Cached, Pure, Pref="dom.vr.enabled"]
   readonly attribute sequence<VRDisplay> activeVRDisplays;
   [ChromeOnly, Pref="dom.vr.enabled"]
   readonly attribute boolean isWebVRContentDetected;
@@ -326,7 +327,7 @@ partial interface Navigator {
 
 // https://wicg.github.io/web-share/#navigator-interface
 partial interface Navigator {
-  [SecureContext, Throws, Pref="dom.webshare.enabled"]
+  [SecureContext, Throws, Func="Navigator::HasShareSupport"]
   Promise<void> share(optional ShareData data = {});
 };
 // https://wicg.github.io/web-share/#sharedata-dictionary

@@ -178,6 +178,7 @@ var CaptivePortalWatcher = {
   },
 
   _captivePortalGone() {
+    this._captivePortalTab = null;
     this._cancelDelayedCaptivePortal();
     this._removeNotification();
   },
@@ -282,6 +283,7 @@ var CaptivePortalWatcher = {
             userContextId: gBrowser.contentPrincipal.userContextId,
           }
         ),
+        disableTRR: true,
       });
       this._captivePortalTab = Cu.getWeakReference(tab);
     }

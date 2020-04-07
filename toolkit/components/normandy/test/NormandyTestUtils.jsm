@@ -5,6 +5,7 @@
 
 ChromeUtils.import("resource://normandy/lib/AddonStudies.jsm", this);
 ChromeUtils.import("resource://normandy/lib/NormandyUtils.jsm", this);
+ChromeUtils.import("resource://normandy/lib/RecipeRunner.jsm", this);
 
 const FIXTURE_ADDON_ID = "normandydriver-a@example.com";
 const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -23,7 +24,7 @@ const NormandyTestUtils = {
   },
 
   factories: {
-    addonStudyFactory(attrs) {
+    addonStudyFactory(attrs = {}) {
       for (const key of ["name", "description"]) {
         if (attrs && attrs[key]) {
           throw new Error(
@@ -55,7 +56,7 @@ const NormandyTestUtils = {
       );
     },
 
-    branchedAddonStudyFactory(attrs) {
+    branchedAddonStudyFactory(attrs = {}) {
       return NormandyTestUtils.factories.addonStudyFactory(
         Object.assign(
           {
@@ -66,7 +67,7 @@ const NormandyTestUtils = {
       );
     },
 
-    preferenceStudyFactory(attrs) {
+    preferenceStudyFactory(attrs = {}) {
       const defaultPref = {
         "test.study": {},
       };
@@ -96,11 +97,13 @@ const NormandyTestUtils = {
       return Object.assign(
         {
           userFacingName,
+          userFacingDescription: `${userFacingName} description`,
           slug,
           branch: "control",
           expired: false,
           lastSeen: new Date().toJSON(),
           experimentType: "exp",
+          enrollmentId: NormandyUtils.generateUuid(),
         },
         attrs,
         {
@@ -157,5 +160,73 @@ const NormandyTestUtils = {
 
   isUuid(s) {
     return UUID_REGEX.test(s);
+  },
+
+  withMockRecipeCollection(recipes = []) {
+    return function wrapper(testFunc) {
+      return async function inner(...args) {
+        let recipeIds = new Set();
+        for (const recipe of recipes) {
+          if (!recipe.id || recipeIds.has(recipe.id)) {
+            throw new Error(
+              "To use withMockRecipeCollection, each recipe must have a unique ID"
+            );
+          }
+          recipeIds.add(recipe.id);
+        }
+
+        let rsCollection = await RecipeRunner._remoteSettingsClientForTesting.openCollection();
+        await rsCollection.clear();
+        const fakeSig = { signature: "abc" };
+
+        for (const recipe of recipes) {
+          await rsCollection.create(
+            { id: `recipe-${recipe.id}`, recipe, signature: fakeSig },
+            { synced: true }
+          );
+        }
+
+        // last modified needs to be some positive integer
+        let lastModified = await rsCollection.db.getLastModified();
+        await rsCollection.db.saveLastModified(lastModified + 1);
+
+        const collectionHelper = {
+          async addRecipes(newRecipes) {
+            for (const recipe of newRecipes) {
+              if (!recipe.id || recipeIds.has(recipe)) {
+                throw new Error(
+                  "To use withMockRecipeCollection, each recipe must have a unique ID"
+                );
+              }
+            }
+            rsCollection = await RecipeRunner._remoteSettingsClientForTesting.openCollection();
+            for (const recipe of newRecipes) {
+              recipeIds.add(recipe.id);
+              rsCollection.create(
+                {
+                  id: `recipe-${recipe.id}`,
+                  recipe,
+                  signature: fakeSig,
+                },
+                { synced: true }
+              );
+            }
+            lastModified = (await rsCollection.db.getLastModified()) || 0;
+            await rsCollection.db.saveLastModified(lastModified + 1);
+            await rsCollection.db.close();
+          },
+        };
+
+        try {
+          await testFunc(...args, collectionHelper);
+        } finally {
+          rsCollection = await RecipeRunner._remoteSettingsClientForTesting.openCollection();
+          rsCollection.clear();
+          lastModified = await rsCollection.db.getLastModified();
+          await rsCollection.db.saveLastModified(lastModified + 1);
+          rsCollection.db.close();
+        }
+      };
+    };
   },
 };

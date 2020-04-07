@@ -55,28 +55,31 @@
 // traversed.
 
 #include "mozilla/CycleCollectedJSRuntime.h"
+
 #include <algorithm>
+#include <utility>
+
+#include "GeckoProfiler.h"
+#include "js/Debug.h"
+#include "js/GCAPI.h"
+#include "js/Warnings.h"  // JS::SetWarningReporter
+#include "jsfriendapi.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/Move.h"
+#include "mozilla/DebuggerOnGCRunnable.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimelineConsumers.h"
 #include "mozilla/TimelineMarker.h"
 #include "mozilla/Unused.h"
-#include "mozilla/DebuggerOnGCRunnable.h"
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/ProfileTimelineMarkerBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/PromiseDebugging.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "js/Debug.h"
-#include "js/GCAPI.h"
-#include "js/Warnings.h"  // JS::SetWarningReporter
-#include "jsfriendapi.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollectionParticipant.h"
@@ -84,9 +87,8 @@
 #include "nsDOMJSUtils.h"
 #include "nsExceptionHandler.h"
 #include "nsJSUtils.h"
-#include "nsWrapperCache.h"
 #include "nsStringBuffer.h"
-#include "GeckoProfiler.h"
+#include "nsWrapperCache.h"
 
 #ifdef MOZ_GECKO_PROFILER
 #  include "ProfilerMarkerPayload.h"
@@ -96,7 +98,6 @@
 #  include "nsMacUtilsImpl.h"
 #endif
 
-#include "nsIException.h"
 #include "nsThread.h"
 #include "nsThreadUtils.h"
 #include "xpcpublic.h"
@@ -473,7 +474,8 @@ static void MozCrashWarningReporter(JSContext*, JSErrorReport*) {
 }
 
 CycleCollectedJSRuntime::CycleCollectedJSRuntime(JSContext* aCx)
-    : mGCThingCycleCollectorGlobal(sGCThingCycleCollectorGlobal),
+    : mContext(nullptr),
+      mGCThingCycleCollectorGlobal(sGCThingCycleCollectorGlobal),
       mJSZoneCycleCollectorGlobal(sJSZoneCycleCollectorGlobal),
       mJSRuntime(JS_GetRuntime(aCx)),
       mHasPendingIdleGCTask(false),
@@ -518,7 +520,6 @@ CycleCollectedJSRuntime::CycleCollectedJSRuntime(JSContext* aCx)
 
   JS_SetObjectsTenuredCallback(aCx, JSObjectsTenuredCb, this);
   JS::SetOutOfMemoryCallback(aCx, OutOfMemoryCallback, this);
-  JS_SetExternalStringSizeofCallback(aCx, SizeofExternalStringCallback);
   JS::SetWarningReporter(aCx, MozCrashWarningReporter);
 
   js::AutoEnterOOMUnsafeRegion::setAnnotateOOMAllocationSizeCallback(
@@ -575,12 +576,9 @@ CycleCollectedJSRuntime::~CycleCollectedJSRuntime() {
   MOZ_ASSERT(mShutdownCalled);
 }
 
-void CycleCollectedJSRuntime::AddContext(CycleCollectedJSContext* aContext) {
-  mContexts.insertBack(aContext);
-}
-
-void CycleCollectedJSRuntime::RemoveContext(CycleCollectedJSContext* aContext) {
-  aContext->removeFrom(mContexts);
+void CycleCollectedJSRuntime::SetContext(CycleCollectedJSContext* aContext) {
+  MOZ_ASSERT(!mContext || !aContext, "Don't replace the context!");
+  mContext = aContext;
 }
 
 size_t CycleCollectedJSRuntime::SizeOfExcludingThis(
@@ -596,10 +594,6 @@ size_t CycleCollectedJSRuntime::SizeOfExcludingThis(
 }
 
 void CycleCollectedJSRuntime::UnmarkSkippableJSHolders() {
-  // Prevent nsWrapperCaches accessed under CanSkip from adding recorded events
-  // which might not replay in the same order.
-  recordreplay::AutoDisallowThreadEvents disallow;
-
   for (auto iter = mJSHolders.Iter(); !iter.Done(); iter.Next()) {
     void* holder = iter.Get().mHolder;
     nsScriptObjectTracer* tracer = iter.Get().mTracer;
@@ -824,13 +818,14 @@ void CycleCollectedJSRuntime::TraceGrayJS(JSTracer* aTracer, void* aData) {
 
 /* static */
 void CycleCollectedJSRuntime::GCCallback(JSContext* aContext,
-                                         JSGCStatus aStatus, void* aData) {
+                                         JSGCStatus aStatus,
+                                         JS::GCReason aReason, void* aData) {
   CycleCollectedJSRuntime* self = static_cast<CycleCollectedJSRuntime*>(aData);
 
   MOZ_ASSERT(CycleCollectedJSContext::Get()->Context() == aContext);
   MOZ_ASSERT(CycleCollectedJSContext::Get()->Runtime() == self);
 
-  self->OnGC(aContext, aStatus);
+  self->OnGC(aContext, aStatus, aReason);
 }
 
 /* static */
@@ -951,25 +946,6 @@ void CycleCollectedJSRuntime::OutOfMemoryCallback(JSContext* aContext,
   MOZ_ASSERT(CycleCollectedJSContext::Get()->Runtime() == self);
 
   self->OnOutOfMemory();
-}
-
-/* static */
-size_t CycleCollectedJSRuntime::SizeofExternalStringCallback(
-    JSString* aStr, MallocSizeOf aMallocSizeOf) {
-  // We promised the JS engine we would not GC.  Enforce that:
-  JS::AutoCheckCannotGC autoCannotGC;
-
-  if (!XPCStringConvert::IsDOMString(aStr)) {
-    // Might be a literal or something we don't understand.  Just claim 0.
-    return 0;
-  }
-
-  const char16_t* chars = JS_GetTwoByteExternalStringChars(aStr);
-  const nsStringBuffer* buf = nsStringBuffer::FromData((void*)chars);
-  // We want sizeof including this, because the entire string buffer is owned by
-  // the external string.  But only report here if we're unshared; if we're
-  // shared then we don't know who really owns this data.
-  return buf->SizeOfIncludingThisIfUnshared(aMallocSizeOf);
 }
 
 struct JsGcTracer : public TraceCallbacks {
@@ -1178,14 +1154,14 @@ void CycleCollectedJSRuntime::GarbageCollect(JS::GCReason aReason) const {
 }
 
 void CycleCollectedJSRuntime::JSObjectsTenured() {
+  JSContext* cx = CycleCollectedJSContext::Get()->Context();
   for (auto iter = mNurseryObjects.Iter(); !iter.Done(); iter.Next()) {
     nsWrapperCache* cache = iter.Get();
     JSObject* wrapper = cache->GetWrapperMaybeDead();
-    MOZ_DIAGNOSTIC_ASSERT(wrapper || recordreplay::IsReplaying());
+    MOZ_DIAGNOSTIC_ASSERT(wrapper);
     if (!JS::ObjectIsTenured(wrapper)) {
       MOZ_ASSERT(!cache->PreservingWrapper());
-      const JSClass* jsClass = js::GetObjectClass(wrapper);
-      jsClass->doFinalize(nullptr, wrapper);
+      js::gc::FinalizeDeadNurseryObject(cx, wrapper);
     }
   }
 
@@ -1273,9 +1249,6 @@ void IncrementalFinalizeRunnable::ReleaseNow(bool aLimited) {
                "We should have at least ReleaseSliceNow to run");
     MOZ_ASSERT(mFinalizeFunctionToRun < mDeferredFinalizeFunctions.Length(),
                "No more finalizers to run?");
-    if (recordreplay::IsRecordingOrReplaying()) {
-      aLimited = false;
-    }
 
     TimeDuration sliceTime = TimeDuration::FromMilliseconds(SliceMillis);
     TimeStamp started = aLimited ? TimeStamp::Now() : TimeStamp();
@@ -1407,11 +1380,12 @@ void CycleCollectedJSRuntime::AnnotateAndSetOutOfMemory(OOMState* aStatePtr,
       annotation, nsDependentCString(OOMStateToString(aNewState)));
 }
 
-void CycleCollectedJSRuntime::OnGC(JSContext* aContext, JSGCStatus aStatus) {
+void CycleCollectedJSRuntime::OnGC(JSContext* aContext, JSGCStatus aStatus,
+                                   JS::GCReason aReason) {
   switch (aStatus) {
     case JSGC_BEGIN:
       nsCycleCollector_prepareForGarbageCollection();
-      mZonesWaitingForGC.Clear();
+      PrepareWaitingZonesForGC();
       break;
     case JSGC_END: {
       if (mOutOfMemoryState == OOMState::Reported) {
@@ -1422,16 +1396,26 @@ void CycleCollectedJSRuntime::OnGC(JSContext* aContext, JSGCStatus aStatus) {
                                   OOMState::Recovered);
       }
 
-      // Do any deferred finalization of native objects. Normally we do this
-      // incrementally for an incremental GC, and immediately for a
-      // non-incremental GC, on the basis that the type of GC reflects how
-      // urgently resources should be destroyed. However under some
-      // circumstances (such as in js::InternalCallOrConstruct) we can end up
-      // running a non-incremental GC when there is a pending exception, and the
-      // finalizers are not set up to handle that. In that case, just run them
-      // later, after we've returned to the event loop.
-      bool finalizeIncrementally =
-          JS::WasIncrementalGC(mJSRuntime) || JS_IsExceptionPending(aContext);
+      // Do any deferred finalization of native objects. We will run the
+      // finalizer later after we've returned to the event loop if any of
+      // three conditions hold:
+      // a) The GC is incremental. In this case, we probably care about pauses.
+      // b) There is a pending exception. The finalizers are not set up to run
+      // in that state.
+      // c) The GC was triggered for internal JS engine reasons. If this is the
+      // case, then we may be in the middle of running some code that the JIT
+      // has assumed can't have certain kinds of side effects. Finalizers can do
+      // all sorts of things, such as run JS, so we want to run them later.
+      // However, if we're shutting down, we need to destroy things immediately.
+      //
+      // Why do we ever bother finalizing things immediately if that's so
+      // questionable? In some situations, such as while testing or in low
+      // memory situations, we really want to free things right away.
+      bool finalizeIncrementally = JS::WasIncrementalGC(mJSRuntime) ||
+                                   JS_IsExceptionPending(aContext) ||
+                                   (JS::InternalGCReason(aReason) &&
+                                    aReason != JS::GCReason::DESTROY_RUNTIME);
+
       FinalizeDeferredThings(
           finalizeIncrementally ? CycleCollectedJSContext::FinalizeIncrementally
                                 : CycleCollectedJSContext::FinalizeNow);

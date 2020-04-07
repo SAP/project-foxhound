@@ -70,12 +70,12 @@ const Services = require("Services");
 // The cache used in the `nsIURL` function.
 const gNSURLStore = new Map();
 
-// "Lax", "Strict" and "Unset" are special values of the SameSite cookie
+// "Lax", "Strict" and "None" are special values of the SameSite cookie
 // attribute that should not be translated.
 const COOKIE_SAMESITE = {
   LAX: "Lax",
   STRICT: "Strict",
-  UNSET: "Unset",
+  NONE: "None",
 };
 
 /**
@@ -364,7 +364,7 @@ var NetworkHelper = {
         case COOKIE_SAMESITE.STRICT:
           return COOKIE_SAMESITE.STRICT;
         default:
-          return COOKIE_SAMESITE.UNSET;
+          return COOKIE_SAMESITE.NONE;
       }
     }
 
@@ -440,7 +440,6 @@ var NetworkHelper = {
     "application/atom+xml": "xml",
     "application/rss+xml": "xml",
     "application/vnd.mozilla.maybe.feed": "xml",
-    "application/vnd.mozilla.xul+xml": "xml",
     "application/javascript": "js",
     "application/x-javascript": "js",
     "application/x-httpd-php": "txt",

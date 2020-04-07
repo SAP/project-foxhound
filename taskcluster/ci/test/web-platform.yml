@@ -12,8 +12,15 @@ job-defaults:
             default: 5400
     variants:
         by-test-platform:
-            linux64/debug: ['fission', 'serviceworker']
+            linux.*64/debug: ['fission']
             default: ['fission']
+    fission-run-on-projects:
+        by-test-platform:
+            linux.*64-qr/debug: ['trunk']
+            linux.*64-qr/opt: ['mozilla-central']
+            windows10-64-qr/opt: ['mozilla-central']
+            default: []
+    fission-tier: 2
     mozharness:
         script: web_platform_tests.py
         config:
@@ -41,29 +48,28 @@ web-platform-tests:
     chunks:
         by-test-platform:
             android.*: 18
-            linux64-asan/opt: 18
-            linux64-ccov/debug: 24
+            linux.*64-asan/opt: 28
+            linux.*64-ccov/debug: 24
+            linux.*64-ccov/opt: 24
             linux.*/debug: 18
             macosx*/opt: 8
-            macosx.*/debug: 16
-            windows10.*/debug: 18
-            windows10-aarch64/opt: 12
+            macosx.*/debug: 20
+            windows.*/debug: 18
+            windows10-64-ccov/opt: 18
             default: 12
     max-run-time:
         by-test-platform:
-            .*-ccov/debug: 10800
-            linux64-qr/debug: 9000
+            .*-ccov/.*: 10800
+            linux.*64-qr/debug: 9000
             default: 7200
     e10s: true
     run-on-projects:
         by-test-platform:
-            windows10-aarch64/opt: ['try', 'mozilla-central']
+            linux1804-32-shippable/opt: ['try', 'release']  # skip integration, Bug 1599197
             .*-qr/.*: ['release', 'try']  # skip on integration branches due to high load
             default: built-projects
     tier:
         by-test-platform:
-            linux64-asan/opt: 2
-            windows10-aarch64.*: 2
             .*-qr/.*: 2  # can't be tier-1 if it's not running on integration branches
             default: default
     mozharness:
@@ -83,22 +89,18 @@ web-platform-tests-reftests:
             default: virtual
     chunks:
         by-test-platform:
-            .*-ccov/debug: 8
-            linux64(-qr|-asan)/.*: 6
-            linux64(-shippable|-devedition)?/opt: 3
+            .*-ccov/.*: 8
+            linux1804-64(-qr|-asan)/.*: 6
+            linux1804-64(-shippable|-devedition)?/opt: 3
             macosx10.*-64/debug: 6
             windows.*-(32|64)(-qr)?/debug: 5
             android.*: 6
             default: 4
     e10s: true
-    run-on-projects:
-        by-test-platform:
-            windows10-aarch64/opt: ['try', 'mozilla-central']
-            default: built-projects
+    run-on-projects: built-projects
     tier:
         by-test-platform:
-            linux64-asan/opt: 2
-            windows10-aarch64.*: 2
+            linux1804-64-asan/opt: 2
             default: default
     mozharness:
         extra-options:
@@ -112,20 +114,20 @@ web-platform-tests-wdspec:
     treeherder-symbol: W(Wd)
     chunks:
         by-test-platform:
-            .*-ccov/debug: 4
-            default: 2
+            .*-ccov/.*: 4
+            default: 3
     mozharness:
         extra-options:
             - --test-type=wdspec
+            - --setpref=toolkit.asyncshutdown.log=true
     run-on-projects:
         by-test-platform:
-            windows10-aarch64/opt: ['try', 'mozilla-central']
             .*-qr/.*: ['release', 'try']
             default: built-projects
     tier:
         by-test-platform:
             android.*: 3
-            linux64-asan/opt: 2
+            linux.*64-asan/opt: 2
             .*-qr/.*: 2  # can't be tier-1 if it's not running on integration branches
             default: default
 
@@ -136,18 +138,39 @@ web-platform-tests-wdspec-headless:
     schedules-component: web-platform-tests-wdspec
     treeherder-symbol: W(WdH)
     chunks: 2
-    tier: 2
     mozharness:
         extra-options:
             by-test-platform:
                 windows.*:
                     - --test-type=wdspec
+                    - --setpref=toolkit.asyncshutdown.log=true
                     - --headless
                     - --headless-width=1600
                     - --headless-height=1200
                 default:
                     - --test-type=wdspec
+                    - --setpref=toolkit.asyncshutdown.log=true
                     - --headless
+
+web-platform-tests-crashtests:
+    description: "Web platform crashtests run"
+    suite:
+        name: web-platform-tests-crashtests
+    schedules-component: web-platform-tests-crashtests
+    treeherder-symbol: W(Wc)
+    chunks: 1
+    mozharness:
+        extra-options:
+            - --test-type=crashtest
+    run-on-projects:
+        by-test-platform:
+            .*-qr/.*: ['release', 'try']
+            default: built-projects
+    tier:
+        by-test-platform:
+            linux1804-64-asan/opt: 2
+            .*-qr/.*: 2  # can't be tier-1 if it's not running on integration branches
+            default: default
 
 test-verify-wpt:
     description: "Extra verification of web-platform tests modified on this push"
@@ -163,10 +186,10 @@ test-verify-wpt:
             # do not run on ccov
             .*-ccov/.*: []
             .*-asan/.*: []
-            (?:windows10-64|windows7-32|linux64)(?:-qr)?/opt: ['mozilla-central', 'try']
+            (?:windows10-64|windows7-32|linux.*64)(?:-qr)?/opt: ['mozilla-central', 'try']
             macosx.*64(?:-qr)?/opt: ['mozilla-central', 'try']
             # do not run on beta or release: usually just confirms earlier results
-            default: ['trunk', 'try']
+            default: ['autoland', 'try']
     tier: 2
     mozharness:
         extra-options:

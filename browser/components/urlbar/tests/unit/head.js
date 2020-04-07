@@ -1,20 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-// Import common head.
-/* import-globals-from ../../../../../toolkit/components/places/tests/head_common.js */
-var commonFile = do_get_file(
-  "../../../../../toolkit/components/places/tests/head_common.js",
-  false
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
-if (commonFile) {
-  let uri = Services.io.newFileURI(commonFile);
-  Services.scriptloader.loadSubScript(uri.spec, this);
-}
 
-// Put any other stuff relative to this test folder below.
 var {
   UrlbarMuxer,
   UrlbarProvider,
@@ -22,18 +12,32 @@ var {
   UrlbarUtils,
 } = ChromeUtils.import("resource:///modules/UrlbarUtils.jsm");
 XPCOMUtils.defineLazyModuleGetters(this, {
+  AddonTestUtils: "resource://testing-common/AddonTestUtils.jsm",
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
   HttpServer: "resource://testing-common/httpd.js",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
+  Services: "resource://gre/modules/Services.jsm",
+  TestUtils: "resource://testing-common/TestUtils.jsm",
   UrlbarController: "resource:///modules/UrlbarController.jsm",
   UrlbarInput: "resource:///modules/UrlbarInput.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.jsm",
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
   UrlbarResult: "resource:///modules/UrlbarResult.jsm",
+  UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
 });
 const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
+
+AddonTestUtils.init(this, false);
+AddonTestUtils.createAppInfo(
+  "xpcshell@tests.mozilla.org",
+  "XPCShell",
+  "42",
+  "42"
+);
 
 /**
  * @param {string} searchString The search string to insert into the context.
@@ -42,13 +46,17 @@ const { sinon } = ChromeUtils.import("resource://testing-common/Sinon.jsm");
  *          required options.
  */
 function createContext(searchString = "foo", properties = {}) {
-  let context = new UrlbarQueryContext({
-    allowAutofill: UrlbarPrefs.get("autoFill"),
-    isPrivate: true,
-    maxResults: UrlbarPrefs.get("maxRichResults"),
-    searchString,
-  });
-  return Object.assign(context, properties);
+  return new UrlbarQueryContext(
+    Object.assign(
+      {
+        allowAutofill: UrlbarPrefs.get("autoFill"),
+        isPrivate: true,
+        maxResults: UrlbarPrefs.get("maxRichResults"),
+        searchString,
+      },
+      properties
+    )
+  );
 }
 
 /**
@@ -91,38 +99,21 @@ function promiseControllerNotification(
 /**
  * A basic test provider, returning all the provided matches.
  */
-class TestProvider extends UrlbarProvider {
-  constructor(
-    matches,
-    cancelCallback,
-    type = UrlbarUtils.PROVIDER_TYPE.PROFILE
-  ) {
-    super();
-    this._name = "TestProvider" + Math.floor(Math.random() * 100000);
-    this._cancelCallback = cancelCallback;
-    this._matches = matches;
-    this._type = type;
-  }
-  get name() {
-    return this._name;
-  }
-  get type() {
-    return this._type;
-  }
+class TestProvider extends UrlbarTestUtils.TestProvider {
   isActive(context) {
     Assert.ok(context, "context is passed-in");
     return true;
   }
-  isRestricting(context) {
+  getPriority(context) {
     Assert.ok(context, "context is passed-in");
-    return false;
+    return 0;
   }
   async startQuery(context, add) {
     Assert.ok(context, "context is passed-in");
     Assert.equal(typeof add, "function", "add is a callback");
     this._context = context;
-    for (const match of this._matches) {
-      add(this, match);
+    for (const result of this._results) {
+      add(this, result);
     }
   }
   cancelQuery(context) {
@@ -130,25 +121,24 @@ class TestProvider extends UrlbarProvider {
     if (this._context) {
       Assert.equal(this._context, context, "cancelQuery: context is the same");
     }
-    if (this._cancelCallback) {
-      this._cancelCallback();
+    if (this._onCancel) {
+      this._onCancel();
     }
   }
-  pickResult(result) {}
 }
 
 /**
  * Helper function to clear the existing providers and register a basic provider
  * that returns only the results given.
  *
- * @param {array} matches The matches for the provider to return.
- * @param {function} [cancelCallback] Optional, called when the query provider
- *                                    receives a cancel instruction.
+ * @param {array} results The results for the provider to return.
+ * @param {function} [onCancel] Optional, called when the query provider
+ *                              receives a cancel instruction.
  * @param {UrlbarUtils.PROVIDER_TYPE} type The provider type.
  * @returns {string} name of the registered provider
  */
-function registerBasicTestProvider(matches = [], cancelCallback, type) {
-  let provider = new TestProvider(matches, cancelCallback, type);
+function registerBasicTestProvider(results = [], onCancel, type) {
+  let provider = new TestProvider({ results, onCancel, type });
   UrlbarProvidersManager.registerProvider(provider);
   return provider.name;
 }
@@ -174,6 +164,13 @@ async function addTestEngine(basename, httpServer = undefined) {
   httpServer.registerDirectory("/", do_get_cwd());
   let dataUrl =
     "http://localhost:" + httpServer.identity.primaryPort + "/data/";
+
+  // Before initializing the search service, set the geo IP url pref to a dummy
+  // string.  When the search service is initialized, it contacts the URI named
+  // in this pref, causing unnecessary error logs.
+  let geoPref = "browser.search.geoip.url";
+  Services.prefs.setCharPref(geoPref, "");
+  registerCleanupFunction(() => Services.prefs.clearUserPref(geoPref));
 
   info("Adding engine: " + basename);
   return new Promise(resolve => {
@@ -203,7 +200,7 @@ async function addTestEngine(basename, httpServer = undefined) {
  *        search string.  If not given, a default function is used.
  * @returns {nsISearchEngine} The new engine.
  */
-function addTestSuggestionsEngine(suggestionsFn = null) {
+async function addTestSuggestionsEngine(suggestionsFn = null) {
   // This port number should match the number in engine-suggestions.xml.
   let server = makeTestServer(9000);
   server.registerPathHandler("/suggest", (req, resp) => {

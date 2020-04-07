@@ -29,17 +29,13 @@
 #include "nsDOMAttributeMap.h"
 #include "nsFrameLoader.h"
 #include "nsGlobalWindowOuter.h"
-#include "nsIComponentRegistrar.h"
 #include "nsIContent.h"
 #include "nsIDOMWindowUtils.h"
-#include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
 #include "nsIDocumentEncoder.h"
 #include "nsILoadContext.h"
 #include "nsIProtocolHandler.h"
 #include "nsISHEntry.h"
-#include "nsISupportsPrimitives.h"
-#include "nsIRemoteTab.h"
 #include "nsIURIMutator.h"
 #include "nsIWebBrowserPersist.h"
 #include "nsIWebNavigation.h"
@@ -249,7 +245,7 @@ class ResourceReader final : public nsIWebBrowserPersistDocumentReceiver {
   nsresult OnWalkURI(const nsACString& aURISpec,
                      nsContentPolicyType aContentPolicyType);
   nsresult OnWalkURI(nsIURI* aURI, nsContentPolicyType aContentPolicyType);
-  nsresult OnWalkAttribute(Element* aElement,
+  nsresult OnWalkAttribute(dom::Element* aElement,
                            nsContentPolicyType aContentPolicyType,
                            const char* aAttribute,
                            const char* aNamespaceURI = "");
@@ -354,7 +350,7 @@ nsresult ResourceReader::OnWalkURI(const nsACString& aURISpec,
   return OnWalkURI(uri, aContentPolicyType);
 }
 
-static void ExtractAttribute(Element* aElement, const char* aAttribute,
+static void ExtractAttribute(dom::Element* aElement, const char* aAttribute,
                              const char* aNamespaceURI, nsCString& aValue) {
   // Find the named URI attribute on the (element) node and store
   // a reference to the URI that maps onto a local file name
@@ -373,7 +369,7 @@ static void ExtractAttribute(Element* aElement, const char* aAttribute,
   }
 }
 
-nsresult ResourceReader::OnWalkAttribute(Element* aElement,
+nsresult ResourceReader::OnWalkAttribute(dom::Element* aElement,
                                          nsContentPolicyType aContentPolicyType,
                                          const char* aAttribute,
                                          const char* aNamespaceURI) {

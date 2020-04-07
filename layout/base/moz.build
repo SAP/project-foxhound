@@ -17,7 +17,7 @@ with Files('nsBidi*'):
     BUG_COMPONENT = ('Core', 'Layout: Text and Fonts')
 
 with Files('AccessibleCaret*'):
-    BUG_COMPONENT = ('Core', 'Selection')
+    BUG_COMPONENT = ('Core', 'DOM: Selection')
 
 XPIDL_SOURCES += [
     'nsILayoutHistoryState.idl',
@@ -75,8 +75,10 @@ EXPORTS.mozilla += [
     'GeckoMVMContext.h',
     'GeometryUtils.h',
     'MediaEmulationData.h',
+    'MotionPathUtils.h',
     'MVMContext.h',
     'OverflowChangedTracker.h',
+    'PositionedEventTargeting.h',
     'PresShell.h',
     'PresShellForwards.h',
     'PresShellInlines.h',
@@ -87,6 +89,10 @@ EXPORTS.mozilla += [
     'StaticPresData.h',
 ]
 
+EXPORTS.mozilla.layout += [
+    'LayoutTelemetryTools.h',
+]
+
 UNIFIED_SOURCES += [
     'AccessibleCaret.cpp',
     'AccessibleCaretEventHub.cpp',
@@ -94,7 +100,9 @@ UNIFIED_SOURCES += [
     'GeckoMVMContext.cpp',
     'GeometryUtils.cpp',
     'LayoutLogging.cpp',
+    'LayoutTelemetryTools.cpp',
     'MobileViewportManager.cpp',
+    'MotionPathUtils.cpp',
     'nsBidi.cpp',
     'nsBidiPresUtils.cpp',
     'nsCaret.cpp',
@@ -152,9 +160,6 @@ LOCAL_INCLUDES += [
     '/dom/xul',
     '/view',
 ]
-
-if CONFIG['MOZ_XBL']:
-    LOCAL_INCLUDES += ['/dom/xbl']
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     LOCAL_INCLUDES += [

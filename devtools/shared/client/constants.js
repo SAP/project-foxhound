@@ -17,41 +17,14 @@ const ThreadStateTypes = {
 
 /**
  * Set of protocol messages that are sent by the server without a prior request
- * by the client.
+ * by the client. This only applies to Actors for which we are not using a
+ * protocol.js Front and instead use DevToolsClient directly.
  */
 const UnsolicitedNotifications = {
   networkEventUpdate: "networkEventUpdate",
-  tabDetached: "tabDetached",
-  tabListChanged: "tabListChanged",
-  addonListChanged: "addonListChanged",
-  workerListChanged: "workerListChanged",
-  serviceWorkerRegistrationListChanged: "serviceWorkerRegistrationList",
-
-  // newSource is still emitted on the ThreadActor, in addition to the
-  // BrowsingContextActor we have to keep it here until ThreadFront is converted to
-  // ThreadFront and/or we stop emitting this duplicated events.
-  // See ThreadActor.onNewSourceEvent.
-  newSource: "newSource",
-};
-
-/**
- * Set of pause types that are sent by the server and not as an immediate
- * response to a client request.
- */
-const UnsolicitedPauses = {
-  resumeLimit: "resumeLimit",
-  debuggerStatement: "debuggerStatement",
-  breakpoint: "breakpoint",
-  DOMEvent: "DOMEvent",
-  watchpoint: "watchpoint",
-  eventBreakpoint: "eventBreakpoint",
-  exception: "exception",
-  replayForcedPause: "replayForcedPause",
-  mutationBreakpoint: "mutationBreakpoint",
 };
 
 module.exports = {
   ThreadStateTypes,
   UnsolicitedNotifications,
-  UnsolicitedPauses,
 };

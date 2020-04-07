@@ -20,6 +20,7 @@ cranelift_x86 = ["gkrust-shared/cranelift_x86"]
 cranelift_arm32 = ["gkrust-shared/cranelift_arm32"]
 cranelift_arm64 = ["gkrust-shared/cranelift_arm64"]
 cranelift_none = ["gkrust-shared/cranelift_none"]
+smoosh = ["gkrust-shared/smoosh"]
 gecko_profiler = ["gkrust-shared/gecko_profiler"]
 gecko_profiler_parse_elf = ["gkrust-shared/gecko_profiler_parse_elf"]
 bitsdownload = ["gkrust-shared/bitsdownload"]
@@ -27,7 +28,10 @@ new_xulstore = ["gkrust-shared/new_xulstore"]
 new_cert_storage = ["gkrust-shared/new_cert_storage"]
 fuzzing_interfaces = ["gkrust-shared/fuzzing_interfaces", "gecko-fuzz-targets"]
 webrtc = ["gkrust-shared/webrtc"]
-moz_xbl = ["gkrust-shared/moz_xbl"]
+wasm_library_sandboxing = ["gkrust-shared/wasm_library_sandboxing"]
+webgpu = ["gkrust-shared/webgpu"]
+remote_agent = ["gkrust-shared/remote"]
+fogotype = ["gkrust-shared/fogotype"]
 
 [dependencies]
 bench-collections-gtest = { path = "../../../../xpcom/rust/gtest/bench-collections" }
@@ -36,6 +40,8 @@ nsstring-gtest = { path = "../../../../xpcom/rust/gtest/nsstring" }
 xpcom-gtest = { path = "../../../../xpcom/rust/gtest/xpcom" }
 gkrust-shared = { path = "../../rust/shared" }
 gecko-fuzz-targets = { path = "../../../../tools/fuzzing/rust", optional = true }
+# Workaround for https://github.com/rust-lang/rust/issues/58393
+mozglue-static = { path = "../../../../mozglue/static/rust" }
 
 [lib]
 path = "lib.rs"

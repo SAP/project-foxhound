@@ -5,8 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BufferTexture.h"
+
+#include <utility>
+
 #include "libyuv.h"
-#include "mozilla/Move.h"
 #include "mozilla/fallible.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Logging.h"
@@ -17,6 +19,8 @@
 #ifdef MOZ_WIDGET_GTK
 #  include "gfxPlatformGtk.h"
 #endif
+
+using mozilla::ipc::IShmemAllocator;
 
 namespace mozilla {
 namespace layers {
@@ -29,7 +33,7 @@ class MemoryTextureData : public BufferTextureData {
                                    LayersBackend aLayersBackend,
                                    TextureFlags aFlags,
                                    TextureAllocationFlags aAllocFlags,
-                                   LayersIPCChannel* aAllocator);
+                                   IShmemAllocator* aAllocator);
 
   virtual TextureData* CreateSimilar(
       LayersIPCChannel* aAllocator, LayersBackend aLayersBackend,
@@ -67,7 +71,7 @@ class ShmemTextureData : public BufferTextureData {
                                   LayersBackend aLayersBackend,
                                   TextureFlags aFlags,
                                   TextureAllocationFlags aAllocFlags,
-                                  LayersIPCChannel* aAllocator);
+                                  IShmemAllocator* aAllocator);
 
   virtual TextureData* CreateSimilar(
       LayersIPCChannel* aAllocator, LayersBackend aLayersBackend,
@@ -110,14 +114,12 @@ bool ComputeHasIntermediateBuffer(gfx::SurfaceFormat aFormat,
          UsingX11Compositor() || aFormat == gfx::SurfaceFormat::UNKNOWN;
 }
 
-BufferTextureData* BufferTextureData::Create(gfx::IntSize aSize,
-                                             gfx::SurfaceFormat aFormat,
-                                             gfx::BackendType aMoz2DBackend,
-                                             LayersBackend aLayersBackend,
-                                             TextureFlags aFlags,
-                                             TextureAllocationFlags aAllocFlags,
-                                             LayersIPCChannel* aAllocator) {
-  if (!aAllocator || aAllocator->IsSameProcess()) {
+BufferTextureData* BufferTextureData::Create(
+    gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
+    gfx::BackendType aMoz2DBackend, LayersBackend aLayersBackend,
+    TextureFlags aFlags, TextureAllocationFlags aAllocFlags,
+    mozilla::ipc::IShmemAllocator* aAllocator, bool aIsSameProcess) {
+  if (!aAllocator || aIsSameProcess) {
     return MemoryTextureData::Create(aSize, aFormat, aMoz2DBackend,
                                      aLayersBackend, aFlags, aAllocFlags,
                                      aAllocator);
@@ -433,7 +435,7 @@ MemoryTextureData* MemoryTextureData::Create(gfx::IntSize aSize,
                                              LayersBackend aLayersBackend,
                                              TextureFlags aFlags,
                                              TextureAllocationFlags aAllocFlags,
-                                             LayersIPCChannel* aAllocator) {
+                                             IShmemAllocator* aAllocator) {
   // Should have used CreateForYCbCr.
   MOZ_ASSERT(aFormat != gfx::SurfaceFormat::YUV);
 
@@ -497,7 +499,7 @@ ShmemTextureData* ShmemTextureData::Create(gfx::IntSize aSize,
                                            LayersBackend aLayersBackend,
                                            TextureFlags aFlags,
                                            TextureAllocationFlags aAllocFlags,
-                                           LayersIPCChannel* aAllocator) {
+                                           IShmemAllocator* aAllocator) {
   MOZ_ASSERT(aAllocator);
   // Should have used CreateForYCbCr.
   MOZ_ASSERT(aFormat != gfx::SurfaceFormat::YUV);

@@ -109,7 +109,6 @@ add_task(async function test() {
       modificationTime,
     };
   }
-
   function insertHost(
     host,
     type,
@@ -158,6 +157,7 @@ add_task(async function test() {
   ];
 
   // Add some rows to the database
+  // eslint-disable-next-line no-unused-vars
   let created = [
     insertHost("foo.com", "A", 1, 0, 0, 0, 0, false),
     insertHost("foo.com", "C", 1, 0, 0, 0, 0, false),
@@ -263,7 +263,7 @@ add_task(async function test() {
   Services.obs.notifyObservers(null, "testonly-reload-permissions-from-disk");
 
   // Force initialization of the nsPermissionManager
-  for (let permission of Services.perms.enumerator) {
+  for (let permission of Services.perms.all) {
     let isExpected = false;
 
     expected.forEach((it, i) => {

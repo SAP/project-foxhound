@@ -292,11 +292,11 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       break;
     case ColorID::MozEventreerow:
     case ColorID::MozOddtreerow:
-    case ColorID::MozField:
+    case ColorID::Field:
     case ColorID::MozCombobox:
       idx = COLOR_WINDOW;
       break;
-    case ColorID::MozFieldtext:
+    case ColorID::Fieldtext:
     case ColorID::MozComboboxtext:
       idx = COLOR_WINDOWTEXT;
       break;
@@ -910,4 +910,6 @@ void nsLookAndFeel::EnsureInit() {
     DWORD color = ::GetSysColor(i);
     mSysColorTable[i - SYS_COLOR_MIN] = COLOREF_2_NSRGB(color);
   }
+
+  RecordTelemetry();
 }

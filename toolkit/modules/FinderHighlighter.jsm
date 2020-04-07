@@ -284,6 +284,7 @@ FinderHighlighter.prototype = {
         word,
         finder: this.finder,
         listener: this,
+        matchDiacritics: this.finder._fastFind.matchDiacritics,
         useCache: true,
         useSubFrames,
         window,
@@ -1998,7 +1999,6 @@ FinderHighlighter.prototype = {
       },
 
       // Unimplemented
-      notifyDocumentCreated() {},
       notifyDocumentStateChanged(aDirty) {},
     };
   },

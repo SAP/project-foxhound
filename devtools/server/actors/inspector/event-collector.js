@@ -16,7 +16,6 @@ const {
   isNativeAnonymous,
 } = require("devtools/shared/layout/utils");
 const Debugger = require("Debugger");
-const ReplayInspector = require("devtools/server/actors/replay/inspector");
 const {
   EXCLUDED_LISTENER,
 } = require("devtools/server/actors/inspector/constants");
@@ -409,7 +408,7 @@ class DOMEventCollector extends MainEventCollector {
  * Get or detect jQuery events.
  */
 class JQueryEventCollector extends MainEventCollector {
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   getListeners(node, { checkOnly } = {}) {
     const jQuery = this.getJQuery(node);
     const handlers = [];
@@ -501,14 +500,13 @@ class JQueryEventCollector extends MainEventCollector {
     }
     return handlers;
   }
-  /* eslint-enable complexity */
 }
 
 /**
  * Get or detect jQuery live events.
  */
 class JQueryLiveEventCollector extends MainEventCollector {
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   getListeners(node, { checkOnly } = {}) {
     const jQuery = this.getJQuery(node);
     const handlers = [];
@@ -601,7 +599,6 @@ class JQueryLiveEventCollector extends MainEventCollector {
     }
     return handlers;
   }
-  /* eslint-enable complexity */
 
   normalizeListener(handlerDO) {
     function isFunctionInProxy(funcDO) {
@@ -903,25 +900,20 @@ class EventCollector {
    *             native: false
    *           }
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   processHandlerForEvent(listenerArray, listener, dbg) {
     let globalDO;
 
     try {
       const { capturing, handler } = listener;
 
-      let listenerDO;
-      if (isReplaying) {
-        listenerDO = ReplayInspector.getDebuggerObject(handler);
-      } else {
-        const global = Cu.getGlobalForObject(handler);
+      const global = Cu.getGlobalForObject(handler);
 
-        // It is important that we recreate the globalDO for each handler because
-        // their global object can vary e.g. resource:// URLs on a video control. If
-        // we don't do this then all chrome listeners simply display "native code."
-        globalDO = dbg.addDebuggee(global);
-        listenerDO = globalDO.makeDebuggeeValue(handler);
-      }
+      // It is important that we recreate the globalDO for each handler because
+      // their global object can vary e.g. resource:// URLs on a video control. If
+      // we don't do this then all chrome listeners simply display "native code."
+      globalDO = dbg.addDebuggee(global);
+      let listenerDO = globalDO.makeDebuggeeValue(handler);
 
       const { normalizeListener } = listener;
 
@@ -1067,7 +1059,6 @@ class EventCollector {
       }
     }
   }
-  /* eslint-enable complexity */
 }
 
 exports.EventCollector = EventCollector;

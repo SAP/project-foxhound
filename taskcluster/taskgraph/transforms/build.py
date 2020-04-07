@@ -136,7 +136,13 @@ def use_profile_data(config, jobs):
         dependencies = 'generate-profile-{}'.format(name)
         job.setdefault('dependencies', {})['generate-profile'] = dependencies
         job.setdefault('fetches', {})['generate-profile'] = ['profdata.tar.xz']
-        job['worker']['env'].update({"MOZ_PGO_PROFILE_USE": "1"})
+        job['worker']['env'].update({"TASKCLUSTER_PGO_PROFILE_USE": "1"})
+
+        _, worker_os = worker_type_implementation(config.graph_config, job['worker-type'])
+        if worker_os == "linux":
+            # LTO linkage needs more open files than the default from run-task.
+            job['worker']['env'].update({"MOZ_LIMIT_NOFILE": "8192"})
+
         yield job
 
 
@@ -173,7 +179,7 @@ def enable_full_crashsymbols(config, jobs):
 def use_artifact(config, jobs):
     if config.params['try_mode'] == 'try_task_config':
         use_artifact = config.params['try_task_config'] \
-            .get('templates', {}).get('artifact', {}).get('enabled')
+            .get('use-artifact-builds', False)
     elif config.params['try_mode'] == 'try_option_syntax':
         use_artifact = config.params['try_options'].get('artifact')
     else:

@@ -27,6 +27,7 @@ namespace dom {
 
 class Blob;
 class DOMException;
+class OwningStringOrArrayBuffer;
 class StrongWorkerRef;
 class WeakWorkerRef;
 
@@ -93,8 +94,7 @@ class FileReader final : public DOMEventTargetHelper,
 
   DOMException* GetError() const { return mError; }
 
-  void GetResult(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
-                 ErrorResult& aRv);
+  void GetResult(JSContext* aCx, Nullable<OwningStringOrArrayBuffer>& aResult);
 
   IMPL_EVENT_HANDLER(loadstart)
   IMPL_EVENT_HANDLER(progress)
@@ -133,7 +133,7 @@ class FileReader final : public DOMEventTargetHelper,
   nsresult GetAsDataURL(Blob* aBlob, const char* aFileData, uint32_t aDataLen,
                         nsAString& aResult);
 
-  nsresult OnLoadEnd(nsresult aStatus);
+  void OnLoadEnd(nsresult aStatus);
 
   void StartProgressEventTimer();
   void ClearProgressEventTimer();

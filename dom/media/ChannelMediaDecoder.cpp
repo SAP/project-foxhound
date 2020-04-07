@@ -221,11 +221,24 @@ void ChannelMediaDecoder::Shutdown() {
   mResourceCallback->Disconnect();
   MediaDecoder::Shutdown();
 
-  // Force any outstanding seek and byterange requests to complete
-  // to prevent shutdown from deadlocking.
   if (mResource) {
-    mResource->Close();
+    // Force any outstanding seek and byterange requests to complete
+    // to prevent shutdown from deadlocking.
+    mResourceClosePromise = mResource->Close();
   }
+}
+
+void ChannelMediaDecoder::ShutdownInternal() {
+  if (!mResourceClosePromise) {
+    MediaShutdownManager::Instance().Unregister(this);
+    return;
+  }
+
+  mResourceClosePromise->Then(
+      AbstractMainThread(), __func__,
+      [self = RefPtr<ChannelMediaDecoder>(this)] {
+        MediaShutdownManager::Instance().Unregister(self);
+      });
 }
 
 nsresult ChannelMediaDecoder::Load(nsIChannel* aChannel,
@@ -518,6 +531,7 @@ void ChannelMediaDecoder::Suspend() {
   if (mResource) {
     mResource->Suspend(true);
   }
+  MediaDecoder::Suspend();
 }
 
 void ChannelMediaDecoder::Resume() {
@@ -525,6 +539,7 @@ void ChannelMediaDecoder::Resume() {
   if (mResource) {
     mResource->Resume();
   }
+  MediaDecoder::Resume();
 }
 
 void ChannelMediaDecoder::MetadataLoaded(

@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CSPMessageUtils.h"
-#include "nsISerializable.h"
 #include "nsSerializationHelper.h"
 
 namespace IPC {
@@ -53,7 +52,7 @@ bool ParamTraits<nsIContentSecurityPolicy*>::Read(
   nsCOMPtr<nsIContentSecurityPolicy> csp = do_QueryInterface(iSupports);
   NS_ENSURE_TRUE(csp, false);
 
-  *aResult = csp.forget();
+  *aResult = ToRefPtr(std::move(csp));
   return true;
 }
 

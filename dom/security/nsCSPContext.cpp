@@ -16,8 +16,6 @@
 #include "nsError.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIClassInfoImpl.h"
-#include "nsIDocShell.h"
-#include "nsIDocShellTreeItem.h"
 #include "mozilla/dom/Document.h"
 #include "nsIHttpChannel.h"
 #include "nsIInterfaceRequestor.h"
@@ -31,7 +29,6 @@
 #include "nsIUploadChannel.h"
 #include "nsIURIMutator.h"
 #include "nsIScriptError.h"
-#include "nsIWebNavigation.h"
 #include "nsMimeTypes.h"
 #include "nsNetUtil.h"
 #include "nsIContentPolicy.h"
@@ -600,7 +597,7 @@ nsCSPContext::GetAllowsInline(nsContentPolicyType aContentType,
 }
 
 NS_IMETHODIMP
-nsCSPContext::GetAllowsNavigateTo(nsIURI* aURI, nsILoadInfo* aLoadInfo,
+nsCSPContext::GetAllowsNavigateTo(nsIURI* aURI, bool aIsFormSubmission,
                                   bool aWasRedirected, bool aEnforceWhitelist,
                                   bool* outAllowsNavigateTo) {
   /*
@@ -620,7 +617,7 @@ nsCSPContext::GetAllowsNavigateTo(nsIURI* aURI, nsILoadInfo* aLoadInfo,
   // So in case this is a form submission and the directive 'form-action' is
   // present then there is nothing for us to do here, see: 6.3.3.1.2
   // https://www.w3.org/TR/CSP3/#navigate-to-pre-navigate
-  if (aLoadInfo->GetIsFormSubmission()) {
+  if (aIsFormSubmission) {
     for (unsigned long i = 0; i < mPolicies.Length(); i++) {
       if (mPolicies[i]->hasDirective(
               nsIContentSecurityPolicy::FORM_ACTION_DIRECTIVE)) {
@@ -1522,57 +1519,44 @@ nsresult nsCSPContext::AsyncReportViolation(
 }
 
 /**
- * Based on the given docshell, determines if this CSP context allows the
+ * Based on the given loadinfo, determines if this CSP context allows the
  * ancestry.
  *
  * In order to determine the URI of the parent document (one causing the load
- * of this protected document), this function obtains the docShellTreeItem,
- * then walks up the hierarchy until it finds a privileged (chrome) tree item.
- * Getting the a tree item's URI looks like this in pseudocode:
- *
- * nsIDocShellTreeItem->GetDocument()->GetDocumentURI();
- *
- * aDocShell is the docShell for the protected document.
+ * of this protected document), this function traverses all Browsing Contexts
+ * until it reaches the top level browsing context.
  */
 NS_IMETHODIMP
-nsCSPContext::PermitsAncestry(nsIDocShell* aDocShell,
+nsCSPContext::PermitsAncestry(nsILoadInfo* aLoadInfo,
                               bool* outPermitsAncestry) {
   nsresult rv;
 
-  // Can't check ancestry without a docShell.
-  if (aDocShell == nullptr) {
-    return NS_ERROR_FAILURE;
-  }
-
   *outPermitsAncestry = true;
+
+  RefPtr<mozilla::dom::BrowsingContext> ctx;
+  aLoadInfo->GetBrowsingContext(getter_AddRefs(ctx));
 
   // extract the ancestry as an array
   nsCOMArray<nsIURI> ancestorsArray;
-
-  nsCOMPtr<nsIInterfaceRequestor> ir(do_QueryInterface(aDocShell));
-  nsCOMPtr<nsIDocShellTreeItem> treeItem(do_GetInterface(ir));
-  nsCOMPtr<nsIDocShellTreeItem> parentTreeItem;
-  nsCOMPtr<nsIURI> currentURI;
   nsCOMPtr<nsIURI> uriClone;
 
-  // iterate through each docShell parent item
-  while (NS_SUCCEEDED(
-             treeItem->GetInProcessParent(getter_AddRefs(parentTreeItem))) &&
-         parentTreeItem != nullptr) {
-    // stop when reaching chrome
-    if (parentTreeItem->ItemType() == nsIDocShellTreeItem::typeChrome) {
-      break;
+  while (ctx) {
+    nsCOMPtr<nsIURI> currentURI;
+    // If fission is enabled, then permitsAncestry is called in the parent
+    // process, otherwise in the content process. After Bug 1574372 we should
+    // be able to remove that branching code for querying currentURI.
+    if (XRE_IsParentProcess()) {
+      WindowGlobalParent* window = ctx->Canonical()->GetCurrentWindowGlobal();
+      if (window) {
+        currentURI = window->GetDocumentURI();
+      }
+    } else if (nsPIDOMWindowOuter* windowOuter = ctx->GetDOMWindow()) {
+      currentURI = windowOuter->GetDocumentURI();
     }
 
-    Document* doc = parentTreeItem->GetDocument();
-    NS_ASSERTION(doc,
-                 "Could not get Document from nsIDocShellTreeItem in "
-                 "nsCSPContext::PermitsAncestry");
-    NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
-
-    currentURI = doc->GetDocumentURI();
-
     if (currentURI) {
+      nsAutoCString spec;
+      currentURI->GetSpec(spec);
       // delete the userpass from the URI.
       rv = NS_MutateURI(currentURI)
                .SetRef(EmptyCString())
@@ -1585,16 +1569,9 @@ nsCSPContext::PermitsAncestry(nsIDocShell* aDocShell,
         rv = NS_GetURIWithoutRef(currentURI, getter_AddRefs(uriClone));
         NS_ENSURE_SUCCESS(rv, rv);
       }
-
-      if (CSPCONTEXTLOGENABLED()) {
-        CSPCONTEXTLOG(("nsCSPContext::PermitsAncestry, found ancestor: %s",
-                       uriClone->GetSpecOrDefault().get()));
-      }
       ancestorsArray.AppendElement(uriClone);
     }
-
-    // next ancestor
-    treeItem = parentTreeItem;
+    ctx = ctx->GetParent();
   }
 
   nsAutoString violatedDirective;
@@ -1727,9 +1704,9 @@ nsCSPContext::GetCSPSandboxFlags(uint32_t* aOutSandboxFlags) {
 NS_IMPL_ISUPPORTS(CSPViolationReportListener, nsIStreamListener,
                   nsIRequestObserver, nsISupports);
 
-CSPViolationReportListener::CSPViolationReportListener() {}
+CSPViolationReportListener::CSPViolationReportListener() = default;
 
-CSPViolationReportListener::~CSPViolationReportListener() {}
+CSPViolationReportListener::~CSPViolationReportListener() = default;
 
 nsresult AppendSegmentToString(nsIInputStream* aInputStream, void* aClosure,
                                const char* aRawSegment, uint32_t aToOffset,
@@ -1766,9 +1743,9 @@ CSPViolationReportListener::OnStartRequest(nsIRequest* aRequest) {
 NS_IMPL_ISUPPORTS(CSPReportRedirectSink, nsIChannelEventSink,
                   nsIInterfaceRequestor);
 
-CSPReportRedirectSink::CSPReportRedirectSink() {}
+CSPReportRedirectSink::CSPReportRedirectSink() = default;
 
-CSPReportRedirectSink::~CSPReportRedirectSink() {}
+CSPReportRedirectSink::~CSPReportRedirectSink() = default;
 
 NS_IMETHODIMP
 CSPReportRedirectSink::AsyncOnChannelRedirect(

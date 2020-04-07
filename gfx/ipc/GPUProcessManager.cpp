@@ -84,13 +84,11 @@ GPUProcessManager::GPUProcessManager()
   MOZ_COUNT_CTOR(GPUProcessManager);
 
   mIdNamespace = AllocateNamespace();
-  mObserver = new Observer(this);
-  nsContentUtils::RegisterShutdownObserver(mObserver);
-  Preferences::AddStrongObserver(mObserver, "");
 
   mDeviceResetLastTime = TimeStamp::Now();
 
   LayerTreeOwnerTracker::Initialize();
+  CompositorBridgeParent::InitializeStatics();
 }
 
 GPUProcessManager::~GPUProcessManager() {
@@ -145,7 +143,7 @@ void GPUProcessManager::OnPreferenceChange(const char16_t* aData) {
   if (!!mGPUChild) {
     MOZ_ASSERT(mQueuedPrefs.IsEmpty());
     mGPUChild->SendPreferenceUpdate(pref);
-  } else {
+  } else if (IsGPUProcessLaunching()) {
     mQueuedPrefs.AppendElement(pref);
   }
 }
@@ -153,6 +151,14 @@ void GPUProcessManager::OnPreferenceChange(const char16_t* aData) {
 void GPUProcessManager::LaunchGPUProcess() {
   if (mProcess) {
     return;
+  }
+
+  // Start listening for pref changes so we can
+  // forward them to the process once it is running.
+  if (!mObserver) {
+    mObserver = new Observer(this);
+    nsContentUtils::RegisterShutdownObserver(mObserver);
+    Preferences::AddStrongObserver(mObserver, "");
   }
 
   // Start the Vsync I/O thread so can use it as soon as the process launches.
@@ -171,6 +177,11 @@ void GPUProcessManager::LaunchGPUProcess() {
   if (!mProcess->Launch(extraArgs)) {
     DisableGPUProcess("Failed to launch GPU process");
   }
+}
+
+bool GPUProcessManager::IsGPUProcessLaunching() {
+  MOZ_ASSERT(NS_IsMainThread());
+  return !!mProcess && !mGPUChild;
 }
 
 void GPUProcessManager::DisableGPUProcess(const char* aMessage) {
@@ -719,6 +730,7 @@ void GPUProcessManager::DestroyProcess() {
   mProcessToken = 0;
   mProcess = nullptr;
   mGPUChild = nullptr;
+  mQueuedPrefs.Clear();
   if (mVsyncBridge) {
     mVsyncBridge->Close();
     mVsyncBridge = nullptr;
@@ -795,8 +807,11 @@ RefPtr<CompositorSession> GPUProcessManager::CreateRemoteSession(
       new CompositorWidgetVsyncObserver(mVsyncBridge, aRootLayerTreeId);
 
   CompositorWidgetChild* widget =
-      new CompositorWidgetChild(dispatcher, observer);
+      new CompositorWidgetChild(dispatcher, observer, initData);
   if (!child->SendPCompositorWidgetConstructor(widget, initData)) {
+    return nullptr;
+  }
+  if (!widget->Initialize()) {
     return nullptr;
   }
   if (!child->SendInitialize(aRootLayerTreeId)) {
@@ -819,9 +834,8 @@ RefPtr<CompositorSession> GPUProcessManager::CreateRemoteSession(
     apz->SetInputBridge(pinput);
   }
 
-  RefPtr<RemoteCompositorSession> session = new RemoteCompositorSession(
-      aWidget, child, widget, apz, aRootLayerTreeId);
-  return session.forget();
+  return new RemoteCompositorSession(aWidget, child, widget, apz,
+                                     aRootLayerTreeId);
 #else
   gfxCriticalNote << "Platform does not support out-of-process compositing";
   return nullptr;
@@ -966,6 +980,13 @@ void GPUProcessManager::CreateContentRemoteDecoderManager(
   mGPUChild->SendNewContentRemoteDecoderManager(std::move(parentPipe));
 
   *aOutEndpoint = std::move(childPipe);
+}
+
+void GPUProcessManager::InitVideoBridge(
+    ipc::Endpoint<PVideoBridgeParent>&& aVideoBridge) {
+  if (EnsureGPUReady()) {
+    mGPUChild->SendInitVideoBridge(std::move(aVideoBridge));
+  }
 }
 
 void GPUProcessManager::MapLayerTreeId(LayersId aLayersId,

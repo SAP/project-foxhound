@@ -28,21 +28,23 @@ class nsDOMOfflineResourceList;
 class nsGlobalWindowInner;
 class nsGlobalWindowOuter;
 class nsIArray;
+class nsIBaseWindow;
 class nsIChannel;
 class nsIContent;
 class nsIContentSecurityPolicy;
 class nsICSSDeclaration;
 class nsIDocShell;
+class nsIDocShellTreeOwner;
 class nsDocShellLoadState;
 class nsIPrincipal;
 class nsIRunnable;
 class nsIScriptTimeoutHandler;
 class nsISerialEventTarget;
 class nsIURI;
+class nsIWebBrowserChrome;
 class nsPIDOMWindowInner;
 class nsPIDOMWindowOuter;
 class nsPIWindowRoot;
-class nsXBLPrototypeHandler;
 
 typedef uint32_t SuspendTypes;
 
@@ -50,6 +52,7 @@ namespace mozilla {
 namespace dom {
 class AudioContext;
 class BrowsingContext;
+class BrowsingContextGroup;
 class ClientInfo;
 class ClientState;
 class ContentFrameMessageManager;
@@ -70,7 +73,6 @@ class TimeoutManager;
 class WindowGlobalChild;
 class CustomElementRegistry;
 enum class CallerType : uint32_t;
-enum class MediaControlActions : uint32_t;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -170,6 +172,10 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   // Returns true if this window is the same as mTopInnerWindow
   inline bool IsTopInnerWindow() const;
 
+  // Returns true if this was the current window for its BrowsingContext when it
+  // was discarded.
+  virtual bool WasCurrentInnerWindow() const = 0;
+
   // Check whether a document is currently loading (really checks if the
   // load event has completed).  May not be reset to false on errors.
   inline bool IsLoading() const;
@@ -177,16 +183,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
 
   // Note: not related to IsLoading.  Set to false if there's an error, etc.
   virtual void SetActiveLoadingState(bool aIsActiveLoading) = 0;
-
-  nsPIDOMWindowInner* GetWindowForDeprioritizedLoadRunner();
-
-  /**
-   * The runnable will be called once there is idle time, or the top level
-   * page has been loaded or if a timeout has fired.
-   * Must be called only on the top level window, the one
-   * GetWindowForDeprioritizedLoadRunner returns.
-   */
-  virtual void AddDeprioritizedLoadRunner(nsIRunnable* aRunner) = 0;
 
   bool AddAudioContext(mozilla::dom::AudioContext* aAudioContext);
   void RemoveAudioContext(mozilla::dom::AudioContext* aAudioContext);
@@ -317,9 +313,8 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   // indexedDB counters.
   void TryToCacheTopInnerWindow();
 
-  // Increase/Decrease the number of active IndexedDB transactions/databases for
-  // the decision making of TabGroup scheduling and timeout-throttling.
-  void UpdateActiveIndexedDBTransactionCount(int32_t aDelta);
+  // Increase/Decrease the number of active IndexedDB databases for the
+  // decision making of TabGroup scheduling and timeout-throttling.
   void UpdateActiveIndexedDBDatabaseCount(int32_t aDelta);
 
   // Return true if there is any active IndexedDB databases which could block
@@ -346,6 +341,10 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   void NoteDOMContentLoaded();
 
   mozilla::dom::TabGroup* TabGroup();
+
+  // Like MaybeTabGroup, but it is more tolerant of being called at peculiar
+  // times, and it can return null.
+  mozilla::dom::TabGroup* MaybeTabGroup();
 
   virtual mozilla::dom::CustomElementRegistry* CustomElements() = 0;
 
@@ -404,6 +403,11 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   inline mozilla::dom::BrowsingContext* GetBrowsingContext() const;
 
   /**
+   * Get the browsing context group this window belongs to.
+   */
+  mozilla::dom::BrowsingContextGroup* GetBrowsingContextGroup() const;
+
+  /**
    * Call this to indicate that some node (this window, its document,
    * or content in that document) has a paint event listener.
    */
@@ -441,11 +445,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   bool HasSelectionChangeEventListeners() {
     return mMayHaveSelectionChangeEventListener;
   }
-
-  virtual JSObject* GetCachedXBLPrototypeHandler(
-      nsXBLPrototypeHandler* aKey) = 0;
-  virtual void CacheXBLPrototypeHandler(nsXBLPrototypeHandler* aKey,
-                                        JS::Handle<JSObject*> aHandler) = 0;
 
   /*
    * Get and set the currently focused element within the document. If
@@ -554,13 +553,11 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
       mozilla::dom::Element& aElt, const nsAString& aPseudoElt,
       mozilla::ErrorResult& aError) = 0;
 
-  virtual mozilla::dom::Element* GetFrameElement() = 0;
-
   virtual nsDOMOfflineResourceList* GetApplicationCache() = 0;
 
   virtual bool GetFullScreen() = 0;
 
-  virtual nsresult Focus() = 0;
+  virtual nsresult Focus(mozilla::dom::CallerType aCallerType) = 0;
   virtual nsresult Close() = 0;
 
   mozilla::dom::DocGroup* GetDocGroup() const;
@@ -579,6 +576,8 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   void SaveStorageAccessGranted(const nsACString& aPermissionKey);
 
   bool HasStorageAccessGranted(const nsACString& aPermissionKey);
+
+  nsIPrincipal* GetDocumentContentBlockingAllowListPrincipal() const;
 
  protected:
   void CreatePerformanceObjectIfNeeded();
@@ -604,6 +603,7 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   // Cache the URI when mDoc is cleared.
   nsCOMPtr<nsIURI> mDocumentURI;  // strong
   nsCOMPtr<nsIURI> mDocBaseURI;   // strong
+  nsCOMPtr<nsIPrincipal> mDocContentBlockingAllowListPrincipal;
 
   nsCOMPtr<mozilla::dom::EventTarget> mParentTarget;  // strong
 
@@ -698,7 +698,6 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   ~nsPIDOMWindowOuter();
 
   void RefreshMediaElementsSuspend(SuspendTypes aSuspend);
-  bool IsDisposableSuspend(SuspendTypes aSuspend) const;
   void MaybeNotifyMediaResumedFromBlock(SuspendTypes aSuspend);
 
  public:
@@ -759,8 +758,6 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
 
   void RefreshMediaElementsVolume();
 
-  void UpdateMediaAction(const mozilla::dom::MediaControlActions aAction);
-
   void SetServiceWorkersTestingEnabled(bool aEnabled);
   bool GetServiceWorkersTestingEnabled();
 
@@ -772,6 +769,10 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   bool HadOriginalOpener() const;
 
   mozilla::dom::TabGroup* TabGroup();
+
+  // Like MaybeTabGroup, but it is more tolerant of being called at peculiar
+  // times, and it can return null.
+  mozilla::dom::TabGroup* MaybeTabGroup();
 
   virtual nsPIDOMWindowOuter* GetPrivateRoot() = 0;
 
@@ -1005,13 +1006,6 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
                                      const nsAString& aPopupWindowName,
                                      const nsAString& aPopupWindowFeatures) = 0;
 
-  virtual void NotifyContentBlockingEvent(
-      unsigned aEvent, nsIChannel* aChannel, bool aBlocked, nsIURI* aURIHint,
-      nsIChannel* aTrackingChannel,
-      const mozilla::Maybe<
-          mozilla::AntiTrackingCommon::StorageAccessGrantedReason>& aReason =
-          mozilla::Nothing()) = 0;
-
   // WebIDL-ish APIs
   void MarkUncollectableForCCGeneration(uint32_t aGeneration) {
     mMarkedCCGeneration = aGeneration;
@@ -1051,7 +1045,7 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   virtual bool GetFullScreen() = 0;
   virtual nsresult SetFullScreen(bool aFullscreen) = 0;
 
-  virtual nsresult Focus() = 0;
+  virtual nsresult Focus(mozilla::dom::CallerType aCallerType) = 0;
   virtual nsresult Close() = 0;
 
   virtual nsresult MoveBy(int32_t aXDif, int32_t aYDif) = 0;
@@ -1078,6 +1072,10 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
       mozilla::dom::BrowsingContext* aOpener);
   already_AddRefed<mozilla::dom::BrowsingContext>
   TakeOpenerForInitialContentBrowser();
+
+  already_AddRefed<nsIDocShellTreeOwner> GetTreeOwner();
+  already_AddRefed<nsIBaseWindow> GetTreeOwnerWindow();
+  already_AddRefed<nsIWebBrowserChrome> GetWebBrowserChrome();
 
  protected:
   // Lazily instantiate an about:blank document if necessary, and if

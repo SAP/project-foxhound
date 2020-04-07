@@ -41,6 +41,7 @@
 #include "CacheControlParser.h"
 #include "LoadContextInfo.h"
 #include "TCPFastOpenLayer.h"
+#include "nsQueryObject.h"
 
 namespace mozilla {
 namespace net {
@@ -153,7 +154,7 @@ Http2Session::Http2Session(nsISocketTransport* aSocketTransport,
 
 void Http2Session::Shutdown() {
   for (auto iter = mStreamTransactionHash.Iter(); !iter.Done(); iter.Next()) {
-    nsAutoPtr<Http2Stream>& stream = iter.Data();
+    auto stream = iter.UserData();
 
     // On a clean server hangup the server sets the GoAwayID to be the ID of
     // the last transaction it processed. If the ID of stream in the
@@ -398,7 +399,8 @@ uint32_t Http2Session::RegisterStreamID(Http2Stream* stream, uint32_t aNewID) {
   // If TCP fast Open has been used and conection was idle for some time
   // we will be cautious and watch out for bug 1395494.
   if (!mCheckNetworkStallsWithTFO && mConnection) {
-    RefPtr<nsHttpConnection> conn = mConnection->HttpConnection();
+    RefPtr<HttpConnectionBase> connBase = mConnection->HttpConnection();
+    RefPtr<nsHttpConnection> conn = do_QueryObject(connBase);
     if (conn && (conn->GetFastOpenStatus() == TFO_DATA_SENT) &&
         gHttpHandler
             ->CheckIfConnectionIsStalledOnlyIfIdleForThisAmountOfSeconds() &&
@@ -1916,7 +1918,7 @@ nsresult Http2Session::RecvPushPromise(Http2Session* self) {
   RefPtr<Http2PushTransactionBuffer> transactionBuffer =
       new Http2PushTransactionBuffer();
   transactionBuffer->SetConnection(self);
-  nsAutoPtr<Http2PushedStream> pushedStream(new Http2PushedStream(
+  UniquePtr<Http2PushedStream> pushedStream(new Http2PushedStream(
       transactionBuffer, self, associatedStream, promisedID,
       self->mCurrentForegroundTabOuterContentWindowId));
 
@@ -1943,7 +1945,7 @@ nsresult Http2Session::RecvPushPromise(Http2Session* self) {
     return rv;
   }
 
-  WeakPtr<Http2Stream> pushedWeak = pushedStream.forget();
+  WeakPtr<Http2Stream> pushedWeak = pushedStream.release();
 
   // Ownership of the pushed stream is by the transaction hash, just as it
   // is for a client initiated stream. Errors that aren't fatal to the
@@ -2312,7 +2314,7 @@ nsresult Http2Session::RecvGoAway(Http2Session* self) {
     // Do that after the enumerator completes to avoid the risk of
     // a restart event re-entrantly modifying this hash. Be sure not to restart
     // a pushed (even numbered) stream
-    nsAutoPtr<Http2Stream>& stream = iter.Data();
+    auto stream = iter.UserData();
     if ((stream->StreamID() > self->mGoAwayID && (stream->StreamID() & 1)) ||
         !stream->HasRegisteredID()) {
       self->mGoAwayStreamsToRestart.Push(stream);
@@ -2449,7 +2451,7 @@ nsresult Http2Session::RecvWindowUpdate(Http2Session* self) {
            iter.Next()) {
         MOZ_ASSERT(self->mServerSessionWindow > 0);
 
-        nsAutoPtr<Http2Stream>& stream = iter.Data();
+        auto stream = iter.UserData();
         if (!stream->BlockedOnRwin() || stream->ServerReceiveWindow() <= 0) {
           continue;
         }
@@ -2805,7 +2807,7 @@ nsresult Http2Session::RecvOrigin(Http2Session* self) {
     key.AppendInt(port);
     if (!self->mOriginFrame.Get(key)) {
       self->mOriginFrame.Put(key, true);
-      RefPtr<nsHttpConnection> conn(self->HttpConnection());
+      RefPtr<HttpConnectionBase> conn(self->HttpConnection());
       MOZ_ASSERT(conn.get());
       gHttpHandler->ConnMgr()->RegisterOriginCoalescingKey(conn, host, port);
     } else {
@@ -2840,7 +2842,7 @@ void Http2Session::OnTransportStatus(nsITransport* aTransport, nsresult aStatus,
         // a HttpConnection.
         // If some error occur it can happen that we do not have a connection.
         if (mConnection) {
-          RefPtr<nsHttpConnection> conn = mConnection->HttpConnection();
+          RefPtr<HttpConnectionBase> conn = mConnection->HttpConnection();
           conn->SetEvent(aStatus);
         }
       } else {
@@ -3279,7 +3281,7 @@ nsresult Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter* writer,
       // Go through and re-start all of our transactions with h2 disabled.
       for (auto iter = mStreamTransactionHash.Iter(); !iter.Done();
            iter.Next()) {
-        nsAutoPtr<Http2Stream>& stream = iter.Data();
+        auto stream = iter.UserData();
         stream->Transaction()->DisableSpdy();
         CloseStream(stream, NS_ERROR_NET_RESET);
       }
@@ -4463,12 +4465,12 @@ nsresult Http2Session::TakeTransport(nsISocketTransport**,
   return NS_ERROR_UNEXPECTED;
 }
 
-already_AddRefed<nsHttpConnection> Http2Session::TakeHttpConnection() {
+already_AddRefed<HttpConnectionBase> Http2Session::TakeHttpConnection() {
   MOZ_ASSERT(false, "TakeHttpConnection of Http2Session");
   return nullptr;
 }
 
-already_AddRefed<nsHttpConnection> Http2Session::HttpConnection() {
+already_AddRefed<HttpConnectionBase> Http2Session::HttpConnection() {
   if (mConnection) {
     return mConnection->HttpConnection();
   }
@@ -4505,10 +4507,6 @@ nsresult Http2Session::Status() {
 uint32_t Http2Session::Caps() {
   MOZ_ASSERT(false, "Http2Session::Caps()");
   return 0;
-}
-
-void Http2Session::SetDNSWasRefreshed() {
-  MOZ_ASSERT(false, "Http2Session::SetDNSWasRefreshed()");
 }
 
 nsHttpRequestHead* Http2Session::RequestHead() {

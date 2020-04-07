@@ -32,7 +32,8 @@ exclude =
     testing/condprofile/condprof/desktop.py,
     testing/condprofile/condprof/runner.py,
     testing/condprofile/condprof/scenarii/heavy.py,
-    testing/condprofile/condprof/scenarii/cold.py,
+    testing/condprofile/condprof/scenarii/settled.py,
+    testing/condprofile/condprof/scenarii/synced.py
     testing/condprofile/condprof/helpers.py,
     testing/jsshell/benchmark.py,
     testing/marionette/mach_commands.py,
@@ -87,6 +88,9 @@ exclude =
     tools/crashreporter/*.configure,
     .ycm_extra_conf.py,
 
+    # This file uses py3.7 only syntax, so can't currently be checked by flake8 in-tree
+    tools/crashreporter/system-symbols/win/symsrv-fetch.py
+
 # See:
 #   - http://flake8.pycqa.org/en/latest/user/error-codes.html
 #   - http://pep8.readthedocs.io/en/latest/intro.html#configuration
@@ -107,6 +111,7 @@ per-file-ignores =
     testing/firefox-ui/**/__init__.py: F401
     testing/marionette/**/__init__.py: F401
     testing/mochitest/tests/python/conftest.py: F811
+    testing/mozbase/manifestparser/tests/test_filters.py: E731
     testing/mozharness/configs/*: E124, E127, E128, E131, E231, E261, E265, E266, E501, W391
 
     # These paths contain Python-2 only syntax which cause errors since flake8
@@ -120,9 +125,7 @@ per-file-ignores =
     mozglue/**: F821
     python/mozbuild/**: F821
     python/mozversioncontrol/**: F821
-    taskcluster/**: F821
     testing/mozharness/**: F821
-    testing/raptor/**: F821
     testing/talos/**: F821
     toolkit/components/telemetry/**: F821
     tools/tryselect/**: F821

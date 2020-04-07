@@ -26,8 +26,6 @@ class GLContext;
 
 namespace layers {
 class CompositorBridgeParent;
-class NativeLayerRoot;
-class NativeLayer;
 class SyncObjectHost;
 }  // namespace layers
 
@@ -60,13 +58,19 @@ class RendererOGL {
   void Update();
 
   /// This can be called on the render thread only.
-  bool UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
-                       const Maybe<wr::ImageFormat>& aReadbackFormat,
-                       const Maybe<Range<uint8_t>>& aReadbackBuffer,
-                       bool aHadSlowFrame, RendererStats* aOutStats);
+  RenderedFrameId UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
+                                  const Maybe<wr::ImageFormat>& aReadbackFormat,
+                                  const Maybe<Range<uint8_t>>& aReadbackBuffer,
+                                  bool aHadSlowFrame, RendererStats* aOutStats);
 
   /// This can be called on the render thread only.
   void WaitForGPU();
+
+  /// This can be called on the render thread only.
+  RenderedFrameId GetLastCompletedFrameId();
+
+  /// This can be called on the render thread only.
+  RenderedFrameId UpdateFrameId();
 
   /// This can be called on the render thread only.
   void SetProfilerEnabled(bool aEnabled);
@@ -105,15 +109,17 @@ class RendererOGL {
 
   gl::GLContext* gl() const;
 
+  bool EnsureAsyncScreenshot();
+
  protected:
   RefPtr<RenderThread> mThread;
   UniquePtr<RenderCompositor> mCompositor;
-  RefPtr<layers::NativeLayerRoot> mNativeLayerRoot;
-  RefPtr<layers::NativeLayer> mNativeLayerForEntireWindow;
   wr::Renderer* mRenderer;
   layers::CompositorBridgeParent* mBridge;
   wr::WindowId mWindowId;
   TimeStamp mFrameStartTime;
+
+  bool mDisableNativeCompositor;
 
   RendererScreenshotGrabber mScreenshotGrabber;
 };

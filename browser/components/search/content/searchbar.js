@@ -227,10 +227,9 @@
       let uri = this.currentEngine.iconURI;
       this.setIcon(this, uri ? uri.spec : "");
 
-      let name = this.currentEngine.name;
-      let text = this._stringBundle.getFormattedString("searchtip", [name]);
-      this._textbox.label = text;
-      this._textbox.tooltipText = text;
+      this._textbox.title = this._stringBundle.getFormattedString("searchtip", [
+        this.currentEngine.name,
+      ]);
     }
 
     updateGoButtonVisibility() {
@@ -303,7 +302,9 @@
       } else {
         let newTabPref = Services.prefs.getBoolPref("browser.search.openintab");
         if (
-          (aEvent instanceof KeyboardEvent && aEvent.altKey) ^ newTabPref &&
+          (aEvent instanceof KeyboardEvent &&
+            (aEvent.altKey || aEvent.getModifierState("AltGraph"))) ^
+            newTabPref &&
           !gBrowser.selectedTab.isEmpty
         ) {
           where = "tab";
@@ -432,16 +433,15 @@
 
     /**
      * Determines if we should select all the text in the searchbar based on the
-     * clickSelectsAll pref, searchbar state, and whether the selection is empty.
+     * searchbar state, and whether the selection is empty.
      */
     _maybeSelectAll() {
       if (
         !this._preventClickSelectsAll &&
-        UrlbarPrefs.get("clickSelectsAll") &&
         document.activeElement == this._textbox &&
         this._textbox.selectionStart == this._textbox.selectionEnd
       ) {
-        this._textbox.editor.selectAll();
+        this.select();
       }
     }
 
@@ -563,11 +563,6 @@
           // is text in the textbox.
           this.openSuggestionsPanel(true);
         }
-
-        if (event.detail == 2 && UrlbarPrefs.get("doubleClickSelectsAll")) {
-          this._textbox.editor.selectAll();
-          event.preventDefault();
-        }
       });
     }
 
@@ -676,15 +671,19 @@
 
         BrowserSearch.searchBar._textbox.closePopup();
 
-        let controller = document.commandDispatcher.getControllerForCommand(
-          "cmd_paste"
-        );
-        let pasteEnabled = controller.isCommandEnabled("cmd_paste");
-        if (pasteEnabled) {
-          this._pasteAndSearchMenuItem.removeAttribute("disabled");
-        } else {
-          this._pasteAndSearchMenuItem.setAttribute("disabled", "true");
+        // Update disabled state of menu items
+        for (let item of this._menupopup.querySelectorAll("menuitem[cmd]")) {
+          let command = item.getAttribute("cmd");
+          let controller = document.commandDispatcher.getControllerForCommand(
+            command
+          );
+          item.disabled = !controller.isCommandEnabled(command);
         }
+
+        let pasteEnabled = document.commandDispatcher
+          .getControllerForCommand("cmd_paste")
+          .isCommandEnabled("cmd_paste");
+        this._pasteAndSearchMenuItem.disabled = !pasteEnabled;
 
         this._menupopup.openPopupAtScreen(event.screenX, event.screenY, true);
 
@@ -773,13 +772,17 @@
 
           document.popupNode = null;
 
-          let { width } = this.getBoundingClientRect();
-          // Ensure the panel is wide enough to fit at least 3 engines.
-          if (this.oneOffButtons) {
-            width = Math.max(width, this.oneOffButtons.buttonWidth * 3);
-          }
-
-          popup.style.minWidth = width + "px";
+          // Ensure the panel has a meaningful initial size and doesn't grow
+          // unconditionally.
+          requestAnimationFrame(() => {
+            let { width } = window.windowUtils.getBoundsWithoutFlushing(this);
+            if (popup.oneOffButtons) {
+              // We have a min-width rule on search-panel-one-offs to show at
+              // least 3 buttons, so take that into account here.
+              width = Math.max(width, popup.oneOffButtons.buttonWidth * 3);
+            }
+            popup.style.width = width + "px";
+          });
 
           popup._invalidate();
 
@@ -833,24 +836,22 @@
 
     _buildContextMenu() {
       const raw = `
-        <menuitem label="&undoCmd.label;" accesskey="&undoCmd.accesskey;" cmd="cmd_undo"/>
+        <menuitem data-l10n-id="text-action-undo" cmd="cmd_undo"/>
         <menuseparator/>
-        <menuitem label="&cutCmd.label;" accesskey="&cutCmd.accesskey;" cmd="cmd_cut"/>
-        <menuitem label="&copyCmd.label;" accesskey="&copyCmd.accesskey;" cmd="cmd_copy"/>
-        <menuitem label="&pasteCmd.label;" accesskey="&pasteCmd.accesskey;" cmd="cmd_paste"/>
+        <menuitem data-l10n-id="text-action-cut" cmd="cmd_cut"/>
+        <menuitem data-l10n-id="text-action-copy" cmd="cmd_copy"/>
+        <menuitem data-l10n-id="text-action-paste" cmd="cmd_paste"/>
         <menuitem class="searchbar-paste-and-search"/>
-        <menuitem label="&deleteCmd.label;" accesskey="&deleteCmd.accesskey;" cmd="cmd_delete"/>
+        <menuitem data-l10n-id="text-action-delete" cmd="cmd_delete"/>
         <menuseparator/>
-        <menuitem label="&selectAllCmd.label;" accesskey="&selectAllCmd.accesskey;" cmd="cmd_selectAll"/>
+        <menuitem data-l10n-id="text-action-select-all" cmd="cmd_selectAll"/>
         <menuseparator/>
         <menuitem class="searchbar-clear-history"/>
       `;
 
       this._menupopup = this.querySelector(".textbox-contextmenu");
 
-      let frag = MozXULElement.parseXULToFragment(raw, [
-        "chrome://global/locale/textcontext.dtd",
-      ]);
+      let frag = MozXULElement.parseXULToFragment(raw);
 
       // Insert attributes that come from localized properties
       this._pasteAndSearchMenuItem = frag.querySelector(

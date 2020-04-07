@@ -25,11 +25,6 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "viewSource",
-  "devtools/client/shared/view-source"
-);
-loader.lazyRequireGetter(
-  this,
   "openDocLink",
   "devtools/client/shared/link",
   true
@@ -97,6 +92,10 @@ class WebConsole {
     return this.toolbox.target;
   }
 
+  get targetList() {
+    return this.toolbox.targetList;
+  }
+
   /**
    * Getter for the window that can provide various utilities that the web
    * console makes use of, like opening links, managing popups, etc.  In
@@ -116,14 +115,27 @@ class WebConsole {
     return this.chromeUtilsWindow.gViewSourceUtils;
   }
 
+  getFrontByID(id) {
+    return this.currentTarget.client.getFrontByID(id);
+  }
+
   /**
    * Initialize the Web Console instance.
+   *
+   * @param {Boolean} emitCreatedEvent: Defaults to true. If false is passed,
+   *        We won't be sending the 'web-console-created' event.
    *
    * @return object
    *         A promise for the initialization.
    */
-  init() {
-    return this.ui.init();
+  async init(emitCreatedEvent = true) {
+    await this.ui.init();
+
+    // This event needs to be fired later in the case of the BrowserConsole
+    if (emitCreatedEvent) {
+      const id = Utils.supportsString(this.hudId);
+      Services.obs.notifyObservers(id, "web-console-created");
+    }
   }
 
   /**
@@ -255,18 +267,7 @@ class WebConsole {
     }
 
     await toolbox.viewSourceInDebugger(sourceURL, sourceLine, sourceColumn);
-    this.ui.emit("source-in-debugger-opened");
-  }
-
-  /**
-   * Tries to open a JavaScript file related to the web page for the web console
-   * instance in the corresponding Scratchpad.
-   *
-   * @param string sourceURL
-   *        The URL of the file which corresponds to a Scratchpad id.
-   */
-  viewSourceInScratchpad(sourceURL, sourceLine) {
-    viewSource.viewSourceInScratchpad(sourceURL, sourceLine);
+    this.ui.emitForTests("source-in-debugger-opened");
   }
 
   /**
@@ -388,14 +389,7 @@ class WebConsole {
       );
 
       this.recordEvent("jump_to_source");
-      this.emit("source-in-debugger-opened");
-    }
-  }
-
-  async onViewSourceInScratchpad(frame) {
-    if (this.toolbox) {
-      await this.toolbox.viewSourceInScratchpad(frame.url, frame.line);
-      this.recordEvent("jump_to_source");
+      this.emitForTests("source-in-debugger-opened");
     }
   }
 
@@ -417,6 +411,19 @@ class WebConsole {
     }
     const netmonitor = await this.toolbox.selectTool("netmonitor");
     await netmonitor.panelWin.Netmonitor.inspectRequest(requestId);
+  }
+
+  getHighlighter() {
+    if (!this.toolbox) {
+      return null;
+    }
+
+    if (this._highlighter) {
+      return this._highlighter;
+    }
+
+    this._highlighter = this.toolbox.getHighlighter();
+    return this._highlighter;
   }
 
   async resendNetworkRequest(requestId) {
@@ -453,6 +460,17 @@ class WebConsole {
     });
 
     await Promise.all([onNodeFrontSet, onInspectorUpdated]);
+  }
+
+  /**
+   * Evaluate a JavaScript expression asynchronously.
+   *
+   * @param {String} string: The code you want to evaluate.
+   * @param {Object} options: Options for evaluation. See evaluateJSAsync method on
+   *                          devtools/shared/fronts/webconsole.js
+   */
+  evaluateJSAsync(expression, options = {}) {
+    return this.ui._commands.evaluateJSAsync(expression, options);
   }
 
   /**

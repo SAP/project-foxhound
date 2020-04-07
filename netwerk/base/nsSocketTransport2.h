@@ -26,7 +26,6 @@
 #include "mozilla/Telemetry.h"
 
 #include "prerror.h"
-#include "nsAutoPtr.h"
 #include "ssl.h"
 
 class nsICancelable;
@@ -347,7 +346,7 @@ class nsSocketTransport final : public nsASocketHandler,
   Atomic<bool, Relaxed> mNetAddrIsSet;
   Atomic<bool, Relaxed> mSelfAddrIsSet;
 
-  nsAutoPtr<NetAddr> mBindAddr;
+  UniquePtr<NetAddr> mBindAddr;
 
   // socket methods (these can only be called on the socket thread):
 
@@ -480,6 +479,17 @@ class nsSocketTransport final : public nsASocketHandler,
   // callback when mFD is nulled out to make sure the ssl layer cannot call
   // the callback after nsSocketTransport is destroyed.
   bool mSSLCallbackSet;
+
+  // If the connection is used for QUIC this is set to true. That will mean
+  // that UDP will be used. QUIC do not have a SocketProvider because it is a
+  // mix of transport and application(HTTP) level protocol. nsSocketTransport
+  // will creat a UDP socket and SecInfo(QuicSocketControl). The protocol
+  // handler will be created by nsHttpconnectionMgr.
+  bool mUsingQuic;
+
+  // Whether the port remapping has already been applied.  We definitely want to
+  // prevent duplicate calls in case of chaining remapping.
+  bool mPortRemappingApplied = false;
 };
 
 }  // namespace net

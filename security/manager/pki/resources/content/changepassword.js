@@ -14,15 +14,18 @@ function doPrompt(msg) {
 }
 
 function onLoad() {
-  document.documentElement.getButton("accept").disabled = true;
+  document.getElementById("set_password").getButton("accept").disabled = true;
   document.addEventListener("dialogaccept", setPassword);
 
   pw1 = document.getElementById("pw1");
   params = window.arguments[0].QueryInterface(Ci.nsIDialogParamBlock);
   token = params.objects.GetElementAt(0).QueryInterface(Ci.nsIPK11Token);
 
-  document.getElementById("tokenName").setAttribute("value", token.name);
-
+  document.l10n.setAttributes(
+    document.getElementById("tokenName"),
+    "change-password-token",
+    { tokenName: token.tokenName }
+  );
   process();
 }
 
@@ -197,10 +200,13 @@ function checkPasswords() {
       // was called with the intention to change the password.
       // The token currently uses an empty password.
       // We will not allow changing the password from empty to empty.
-      document.documentElement.getButton("accept").disabled = true;
+      document
+        .getElementById("set_password")
+        .getButton("accept").disabled = true;
       return;
     }
   }
 
-  document.documentElement.getButton("accept").disabled = pw1 != pw2;
+  document.getElementById("set_password").getButton("accept").disabled =
+    pw1 != pw2;
 }

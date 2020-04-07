@@ -523,6 +523,10 @@ this.DateTimeInputBaseImplWidget = class {
     return this.mInputElement.hasAttribute("required");
   }
 
+  containingTree() {
+    return this.mInputElement.containingShadowRoot || this.document;
+  }
+
   handleEvent(aEvent) {
     this.log("handleEvent: " + aEvent.type);
 
@@ -589,7 +593,7 @@ this.DateTimeInputBaseImplWidget = class {
 
   onFocus(aEvent) {
     this.log("onFocus originalTarget: " + aEvent.originalTarget);
-    if (this.document.activeElement != this.mInputElement) {
+    if (this.containingTree().activeElement != this.mInputElement) {
       return;
     }
 
@@ -925,7 +929,9 @@ this.DateInputImplWidget = class extends DateTimeInputBaseImplWidget {
         this.advanceToNextField();
       }
       targetField.setAttribute("typeBuffer", buffer);
-      this.setInputValueFromFields();
+      if (!this.isAnyFieldEmpty()) {
+        this.setInputValueFromFields();
+      }
     }
   }
 
@@ -1635,7 +1641,9 @@ this.TimeInputImplWidget = class extends DateTimeInputBaseImplWidget {
       } else if (key == "p" || key == "P") {
         this.setDayPeriodValue(this.mPMIndicator);
       }
-      this.setInputValueFromFields();
+      if (!this.isAnyFieldEmpty()) {
+        this.setInputValueFromFields();
+      }
       return;
     }
 
@@ -1653,7 +1661,9 @@ this.TimeInputImplWidget = class extends DateTimeInputBaseImplWidget {
         this.advanceToNextField();
       }
       targetField.setAttribute("typeBuffer", buffer);
-      this.setInputValueFromFields();
+      if (!this.isAnyFieldEmpty()) {
+        this.setInputValueFromFields();
+      }
     }
   }
 

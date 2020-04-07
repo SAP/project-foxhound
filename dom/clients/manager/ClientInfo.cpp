@@ -42,10 +42,14 @@ ClientInfo& ClientInfo::operator=(ClientInfo&& aRight) {
   return *this;
 }
 
-ClientInfo::~ClientInfo() {}
+ClientInfo::~ClientInfo() = default;
 
 bool ClientInfo::operator==(const ClientInfo& aRight) const {
   return *mData == *aRight.mData;
+}
+
+bool ClientInfo::operator!=(const ClientInfo& aRight) const {
+  return *mData != *aRight.mData;
 }
 
 const nsID& ClientInfo::Id() const { return mData->id(); }

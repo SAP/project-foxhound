@@ -7,58 +7,53 @@
 #ifndef nsDocShell_h__
 #define nsDocShell_h__
 
+#include <utility>
+
+#include "GeckoProfiler.h"
+#include "Units.h"
+#include "jsapi.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/HalScreenConfiguration.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Move.h"
+#include "mozilla/ObservedDocShell.h"
+#include "mozilla/ScrollbarPreferences.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/TimelineConsumers.h"
+#include "mozilla/TimelineMarker.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
-
 #include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/ProfileTimelineMarkerBinding.h"
-#include "mozilla/gfx/Matrix.h"
 #include "mozilla/dom/ChildSHistory.h"
-
+#include "mozilla/dom/ProfileTimelineMarkerBinding.h"
+#include "mozilla/dom/WindowProxyHolder.h"
+#include "mozilla/gfx/Matrix.h"
+#include "nsAutoPtr.h"
+#include "nsCOMPtr.h"
+#include "nsCRT.h"
+#include "nsCharsetSource.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
+#include "nsDocLoader.h"
 #include "nsIAuthPromptProvider.h"
 #include "nsIBaseWindow.h"
 #include "nsIDeprecationWarner.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsIDOMStorageManager.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadContext.h"
 #include "nsILoadURIDelegate.h"
 #include "nsINetworkInterceptController.h"
 #include "nsIRefreshURI.h"
-#include "nsIScrollable.h"
-#include "nsIRemoteTab.h"
 #include "nsIWebNavigation.h"
 #include "nsIWebPageDescriptor.h"
 #include "nsIWebProgressListener.h"
-
-#include "nsAutoPtr.h"
-#include "nsCharsetSource.h"
-#include "nsCOMPtr.h"
-#include "nsContentPolicyUtils.h"
-#include "nsContentUtils.h"
-#include "nsCRT.h"
-#include "nsDocLoader.h"
 #include "nsPoint.h"  // mCurrent/mDefaultScrollbarPreferences
 #include "nsRect.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
-
-#include "GeckoProfiler.h"
-#include "jsapi.h"
 #include "prtime.h"
-#include "Units.h"
-
-#include "mozilla/ObservedDocShell.h"
-#include "mozilla/TimelineConsumers.h"
-#include "mozilla/TimelineMarker.h"
 
 // Interfaces Needed
 
@@ -73,6 +68,7 @@ class EventTarget;
 }  // namespace dom
 namespace net {
 class LoadInfo;
+class DocumentChannelRedirect;
 }  // namespace net
 }  // namespace mozilla
 
@@ -116,13 +112,11 @@ class nsDocShell final : public nsDocLoader,
                          public nsIDocShell,
                          public nsIWebNavigation,
                          public nsIBaseWindow,
-                         public nsIScrollable,
                          public nsIRefreshURI,
                          public nsIWebProgressListener,
                          public nsIWebPageDescriptor,
                          public nsIAuthPromptProvider,
                          public nsILoadContext,
-                         public nsIDOMStorageManager,
                          public nsINetworkInterceptController,
                          public nsIDeprecationWarner,
                          public mozilla::SupportsWeakPtr<nsDocShell> {
@@ -180,7 +174,7 @@ class nsDocShell final : public nsDocLoader,
 
    private:
     virtual ~InterfaceRequestorProxy();
-    InterfaceRequestorProxy() {}
+    InterfaceRequestorProxy() = default;
     nsWeakPtr mWeakPtr;
   };
 
@@ -191,7 +185,6 @@ class nsDocShell final : public nsDocLoader,
   NS_DECL_NSIDOCSHELLTREEITEM
   NS_DECL_NSIWEBNAVIGATION
   NS_DECL_NSIBASEWINDOW
-  NS_DECL_NSISCROLLABLE
   NS_DECL_NSIINTERFACEREQUESTOR
   NS_DECL_NSIWEBPROGRESSLISTENER
   NS_DECL_NSIREFRESHURI
@@ -199,8 +192,6 @@ class nsDocShell final : public nsDocLoader,
   NS_DECL_NSIAUTHPROMPTPROVIDER
   NS_DECL_NSINETWORKINTERCEPTCONTROLLER
   NS_DECL_NSIDEPRECATIONWARNER
-
-  NS_FORWARD_SAFE_NSIDOMSTORAGEMANAGER(TopSessionStorageManager())
 
   // Create a new nsDocShell object, initializing it.
   static already_AddRefed<nsDocShell> Create(
@@ -211,6 +202,27 @@ class nsDocShell final : public nsDocLoader,
     // Need this here because otherwise nsIWebNavigation::Stop
     // overrides the docloader's Stop()
     return nsDocLoader::Stop();
+  }
+
+  mozilla::ScrollbarPreference ScrollbarPreference() const {
+    return mScrollbarPref;
+  }
+  void SetScrollbarPreference(mozilla::ScrollbarPreference);
+
+  /*
+   * The size, in CSS pixels, of the margins for the <body> of an HTML document
+   * in this docshell; used to implement the marginwidth attribute on HTML
+   * <frame>/<iframe> elements.  A value smaller than zero indicates that the
+   * attribute was not set.
+   */
+  const mozilla::CSSIntSize& GetFrameMargins() const { return mFrameMargins; }
+
+  bool UpdateFrameMargins(const mozilla::CSSIntSize& aMargins) {
+    if (mFrameMargins == aMargins) {
+      return false;
+    }
+    mFrameMargins = aMargins;
+    return true;
   }
 
   /**
@@ -448,9 +460,9 @@ class nsDocShell final : public nsDocLoader,
   // shift while triggering reload)
   bool IsForceReloading();
 
-  mozilla::dom::BrowsingContext* GetWindowProxy() {
+  mozilla::dom::WindowProxyHolder GetWindowProxy() {
     EnsureScriptEnvironment();
-    return mBrowsingContext;
+    return mozilla::dom::WindowProxyHolder(mBrowsingContext);
   }
 
   /**
@@ -465,30 +477,58 @@ class nsDocShell final : public nsDocLoader,
   // Clear the document's storage access flag if needed.
   void MaybeClearStorageAccessFlag();
 
-  void SkipBrowsingContextDetach() {
-    mSkipBrowsingContextDetachOnDestroy = true;
-  }
+  void SetWillChangeProcess() { mWillChangeProcess = true; }
 
   // Create a content viewer within this nsDocShell for the given
   // `WindowGlobalChild` actor.
   nsresult CreateContentViewerForActor(
       mozilla::dom::WindowGlobalChild* aWindowActor);
 
-  static bool CreateChannelForLoadState(
+  // Creates a real network channel (not a DocumentChannel) using the specified
+  // parameters.
+  // Used by nsDocShell when not using DocumentChannel, by DocumentLoadListener
+  // (parent-process DocumentChannel), and by DocumentChannelChild/ContentChild
+  // to transfer the resulting channel into the final process.
+  static nsresult CreateRealChannelForDocument(
+      nsIChannel** aChannel, nsIURI* aURI, nsILoadInfo* aLoadInfo,
+      nsIInterfaceRequestor* aCallbacks, nsDocShell* aDocShell,
+      nsLoadFlags aLoadFlags, const nsAString& aSrcdoc, nsIURI* aBaseURI);
+
+  // Creates a real (not DocumentChannel) channel, and configures it using the
+  // supplied nsDocShellLoadState.
+  // Configuration options here are ones that should be applied to only the
+  // real channel, especially ones that need to QI to channel subclasses.
+  static bool CreateAndConfigureRealChannelForLoadState(
       nsDocShellLoadState* aLoadState, mozilla::net::LoadInfo* aLoadInfo,
       nsIInterfaceRequestor* aCallbacks, nsDocShell* aDocShell,
-      const nsString* aInitiatorType, nsLoadFlags aLoadFlags,
-      uint32_t aLoadType, uint32_t aCacheKey, bool aIsActive,
-      bool aIsTopLevelDoc, nsresult& rv, nsIChannel** aChannel);
-
-  static nsresult ConfigureChannel(nsIChannel* aChannel,
-                                   nsDocShellLoadState* aLoadState,
-                                   const nsString* aInitiatorType,
-                                   uint32_t aLoadType, uint32_t aCacheKey);
+      const mozilla::OriginAttributes& aOriginAttributes,
+      nsLoadFlags aLoadFlags, uint32_t aLoadType, uint32_t aCacheKey,
+      bool aIsActive, bool aIsTopLevelDoc, bool aHasNonEmptySandboxingFlags,
+      nsresult& rv, nsIChannel** aChannel);
 
   // Notify consumers of a search being loaded through the observer service:
   static void MaybeNotifyKeywordSearchLoading(const nsString& aProvider,
                                               const nsString& aKeyword);
+
+  nsDocShell* GetInProcessChildAt(int32_t aIndex);
+
+  /**
+   * Helper function that finds the last URI and its transition flags for a
+   * channel.
+   *
+   * This method first checks the channel's property bag to see if previous
+   * info has been saved. If not, it gives back the referrer of the channel.
+   *
+   * @param aChannel
+   *        The channel we are transitioning to
+   * @param aURI
+   *        Output parameter with the previous URI, not addref'd
+   * @param aChannelRedirectFlags
+   *        If a redirect, output parameter with the previous redirect flags
+   *        from nsIChannelEventSink
+   */
+  static void ExtractLastVisit(nsIChannel* aChannel, nsIURI** aURI,
+                               uint32_t* aChannelRedirectFlags);
 
  private:  // member functions
   friend class nsDSURIContentListener;
@@ -517,13 +557,10 @@ class nsDocShell final : public nsDocLoader,
   nsDocShell(mozilla::dom::BrowsingContext* aBrowsingContext,
              uint64_t aContentWindowID);
 
-  // Security checks to prevent frameset spoofing. See comments at
-  // implementation sites.
-  static bool CanAccessItem(nsIDocShellTreeItem* aTargetItem,
-                            nsIDocShellTreeItem* aAccessingItem,
-                            bool aConsiderOpener = true);
-  static bool ValidateOrigin(nsIDocShellTreeItem* aOriginTreeItem,
-                             nsIDocShellTreeItem* aTargetTreeItem);
+  // Security check to prevent frameset spoofing. See comments at
+  // implementation site.
+  static bool ValidateOrigin(mozilla::dom::BrowsingContext* aOrigin,
+                             mozilla::dom::BrowsingContext* aTarget);
 
   static inline uint32_t PRTimeToSeconds(PRTime aTimeUsec) {
     return uint32_t(aTimeUsec / PR_USEC_PER_SEC);
@@ -642,8 +679,8 @@ class nsDocShell final : public nsDocLoader,
   // originalURI on the channel that does the load. If OriginalURI is null, URI
   // will be set as the originalURI. If LoadReplace is true, LOAD_REPLACE flag
   // will be set on the nsIChannel.
-  nsresult DoURILoad(nsDocShellLoadState* aLoadState, bool aLoadFromExternal,
-                     nsIDocShell** aDocShell, nsIRequest** aRequest);
+  nsresult DoURILoad(nsDocShellLoadState* aLoadState, nsIDocShell** aDocShell,
+                     nsIRequest** aRequest);
 
   static nsresult AddHeadersToChannel(nsIInputStream* aHeadersData,
                                       nsIChannel* aChannel);
@@ -730,34 +767,6 @@ class nsDocShell final : public nsDocLoader,
                                       bool aConsiderStoragePrincipal = false);
 
   /**
-   * Helper function that determines if channel is an HTTP POST.
-   *
-   * @param aChannel
-   *        The channel to test
-   *
-   * @return True iff channel is an HTTP post.
-   */
-  bool ChannelIsPost(nsIChannel* aChannel);
-
-  /**
-   * Helper function that finds the last URI and its transition flags for a
-   * channel.
-   *
-   * This method first checks the channel's property bag to see if previous
-   * info has been saved. If not, it gives back the referrer of the channel.
-   *
-   * @param aChannel
-   *        The channel we are transitioning to
-   * @param aURI
-   *        Output parameter with the previous URI, not addref'd
-   * @param aChannelRedirectFlags
-   *        If a redirect, output parameter with the previous redirect flags
-   *        from nsIChannelEventSink
-   */
-  void ExtractLastVisit(nsIChannel* aChannel, nsIURI** aURI,
-                        uint32_t* aChannelRedirectFlags);
-
-  /**
    * Helper function that caches a URI and a transition for saving later.
    *
    * @param aChannel
@@ -796,6 +805,24 @@ class nsDocShell final : public nsDocLoader,
   void AddURIVisit(nsIURI* aURI, nsIURI* aPreviousURI,
                    uint32_t aChannelRedirectFlags,
                    uint32_t aResponseStatus = 0);
+
+  /**
+   * Helper function that will add the redirect chain found in aRedirects using
+   * IHistory (see AddURI and SaveLastVisit above for details)
+   *
+   * @param aChannel
+   *        Channel that will have these properties saved
+   * @param aURI
+   *        The URI that was just visited
+   * @param aChannelRedirectFlags
+   *        For redirects, the redirect flags from nsIChannelEventSink
+   *        (0 otherwise)
+   * @param aRedirects
+   *        The redirect chain collected by the DocumentChannelParent
+   */
+  void SavePreviousRedirectsAndLastVisit(
+      nsIChannel* aChannel, nsIURI* aURI, uint32_t aChannelRedirectFlags,
+      const nsTArray<mozilla::net::DocumentChannelRedirect>& aRedirects);
 
   // Sets the current document's current state object to the given SHEntry's
   // state object. The current state object is eventually given to the page
@@ -945,14 +972,6 @@ class nsDocShell final : public nsDocLoader,
   MOZ_MUST_USE bool MaybeInitTiming();
   void MaybeResetInitTiming(bool aReset);
 
-  // Separate function to do the actual name (i.e. not _top, _self etc.)
-  // searching for FindItemWithName.
-  nsresult DoFindItemWithName(const nsAString& aName,
-                              nsIDocShellTreeItem* aRequestor,
-                              nsIDocShellTreeItem* aOriginalRequestor,
-                              bool aSkipTabGroup,
-                              nsIDocShellTreeItem** aResult);
-
   // Convenience method for getting our parent docshell. Can return null
   already_AddRefed<nsDocShell> GetInProcessParentDocshell();
 
@@ -988,7 +1007,6 @@ class nsDocShell final : public nsDocLoader,
                            bool aCheckIfUnloadFired = true);
   uint32_t GetInheritedFrameType();
   nsIScrollableFrame* GetRootScrollFrame();
-  nsIDOMStorageManager* TopSessionStorageManager();
   nsIChannel* GetCurrentDocChannel();
   nsresult EnsureScriptEnvironment();
   nsresult EnsureEditorData();
@@ -1075,7 +1093,6 @@ class nsDocShell final : public nsDocLoader,
 
   nsID mHistoryID;
   nsString mTitle;
-  nsString mCustomUserAgent;
   nsCString mOriginalUriString;
   nsWeakPtr mOpener;
   nsTObserverArray<nsWeakPtr> mPrivacyObservers;
@@ -1090,7 +1107,6 @@ class nsDocShell final : public nsDocLoader,
   nsCOMPtr<nsIPrincipal> mParentCharsetPrincipal;
   nsCOMPtr<nsIMutableArray> mRefreshURIList;
   nsCOMPtr<nsIMutableArray> mSavedRefreshURIList;
-  nsCOMPtr<nsIDOMStorageManager> mSessionStorageManager;
   uint64_t mContentWindowID;
   nsCOMPtr<nsIContentViewer> mContentViewer;
   nsCOMPtr<nsIWidget> mParentWidget;
@@ -1140,7 +1156,7 @@ class nsDocShell final : public nsDocLoader,
   nsRevocableEventPtr<RestorePresentationEvent> mRestorePresentationEvent;
 
   // Editor data, if this document is designMode or contentEditable.
-  nsAutoPtr<nsDocShellEditorData> mEditorData;
+  mozilla::UniquePtr<nsDocShellEditorData> mEditorData;
 
   // Secure browser UI object
   nsCOMPtr<nsISecureBrowserUI> mSecurityUI;
@@ -1182,15 +1198,14 @@ class nsDocShell final : public nsDocLoader,
 
   RefPtr<mozilla::dom::EventTarget> mChromeEventHandler;
 
-  nsIntPoint mDefaultScrollbarPref;  // persistent across doc loads
+  mozilla::ScrollbarPreference mScrollbarPref;  // persistent across doc loads
 
   eCharsetReloadState mCharsetReloadState;
 
   mozilla::hal::ScreenOrientation mOrientationLock;
 
   int32_t mParentCharsetSource;
-  int32_t mMarginWidth;
-  int32_t mMarginHeight;
+  mozilla::CSSIntSize mFrameMargins;
 
   // This can either be a content docshell or a chrome docshell.
   const int32_t mItemType;
@@ -1205,7 +1220,6 @@ class nsDocShell final : public nsDocLoader,
   // -1 if the docshell is added dynamically to the parent shell.
   int32_t mChildOffset;
 
-  uint32_t mSandboxFlags;
   BusyFlags mBusyFlags;
   AppType mAppType;
   uint32_t mLoadType;
@@ -1276,13 +1290,11 @@ class nsDocShell final : public nsDocLoader,
   bool mAllowContentRetargeting : 1;
   bool mAllowContentRetargetingOnChildren : 1;
   bool mUseErrorPages : 1;
-  bool mUseStrictSecurityChecks : 1;
   bool mObserveErrorPages : 1;
   bool mCSSErrorReportingEnabled : 1;
   bool mAllowAuth : 1;
   bool mAllowKeywordFixup : 1;
   bool mIsOffScreenBrowser : 1;
-  bool mIsActive : 1;
   bool mDisableMetaRefreshWhenInactive : 1;
   bool mIsAppTab : 1;
   bool mUseGlobalHistory : 1;
@@ -1339,10 +1351,9 @@ class nsDocShell final : public nsDocLoader,
 
   bool mIsFrame : 1;
 
-  // If mSkipBrowsingContextDetachOnDestroy is set to true, then when the
-  // docshell is destroyed, the browsing context will not be detached. This is
-  // for cases where we want to preserve the BC for future use.
-  bool mSkipBrowsingContextDetachOnDestroy : 1;
+  // If mWillChangeProcess is set to true, then when the docshell is destroyed,
+  // we prepare the browsing context to change process.
+  bool mWillChangeProcess : 1;
 
   // Set when activity in this docshell is being watched by the developer tools.
   bool mWatchedByDevtools : 1;

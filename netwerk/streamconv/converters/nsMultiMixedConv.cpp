@@ -13,7 +13,6 @@
 #include "nsIHttpChannelInternal.h"
 #include "nsURLHelper.h"
 #include "nsIStreamConverterService.h"
-#include "nsICacheInfoChannel.h"
 #include <algorithm>
 #include "nsContentSecurityManager.h"
 #include "nsHttp.h"
@@ -132,6 +131,12 @@ nsPartChannel::Cancel(nsresult aStatus) {
 }
 
 NS_IMETHODIMP
+nsPartChannel::GetCanceled(bool* aCanceled) {
+  *aCanceled = NS_FAILED(mStatus);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsPartChannel::Suspend(void) {
   // Suspending an individual part must not suspend the underlying
   // multipart channel...
@@ -196,6 +201,16 @@ NS_IMETHODIMP
 nsPartChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
   mLoadFlags = aLoadFlags;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsPartChannel::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return GetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
+nsPartChannel::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return SetTRRModeImpl(aTRRMode);
 }
 
 NS_IMETHODIMP
@@ -407,6 +422,12 @@ nsMultiMixedConv::AsyncConvertData(const char* aFromType, const char* aToType,
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsMultiMixedConv::GetConvertedType(const nsACString& aFromType,
+                                   nsACString& aToType) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 // nsIRequestObserver implementation
 NS_IMETHODIMP
 nsMultiMixedConv::OnStartRequest(nsIRequest* request) {
@@ -555,6 +576,12 @@ nsMultiMixedConv::OnStopRequest(nsIRequest* request, nsresult aStatus) {
     (void)mFinalListener->OnStopRequest(request, aStatus);
   }
 
+  nsCOMPtr<nsIMultiPartChannelListener> multiListener =
+      do_QueryInterface(mFinalListener);
+  if (multiListener) {
+    multiListener->OnAfterLastPart(aStatus);
+  }
+
   return NS_OK;
 }
 
@@ -647,7 +674,7 @@ nsresult nsMultiMixedConv::ConsumeToken(Token const& token) {
         return rv;
       }
       mParserState = BODY;
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
 
     case BODY: {
       if (!token.Equals(mLFToken) && !token.Equals(mCRLFToken)) {

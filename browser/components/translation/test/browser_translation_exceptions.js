@@ -46,7 +46,7 @@ function getLanguageExceptions() {
 
 function getDomainExceptions() {
   let results = [];
-  for (let perm of Services.perms.enumerator) {
+  for (let perm of Services.perms.all) {
     if (
       perm.type == "translate" &&
       perm.capability == Services.perms.DENY_ACTION
@@ -257,7 +257,7 @@ var gTests = [
 
       // Open the translation exceptions dialog.
       let win = openDialog(
-        "chrome://browser/content/preferences/translation.xul",
+        "chrome://browser/content/preferences/translation.xhtml",
         "Browser:TranslationExceptions",
         "",
         null
@@ -323,7 +323,7 @@ var gTests = [
 
       // Open the translation exceptions dialog.
       let win = openDialog(
-        "chrome://browser/content/preferences/translation.xul",
+        "chrome://browser/content/preferences/translation.xhtml",
         "Browser:TranslationExceptions",
         "",
         null

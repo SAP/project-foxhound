@@ -12,6 +12,12 @@
 #include <algorithm>
 #include <functional>
 
+#ifdef XP_MACOSX
+// ensure that Apple Security kit enum goes before "sslproto.h"
+#  include <CoreFoundation/CFAvailability.h>
+#  include <Security/CipherSuite.h>
+#endif
+
 #include "mozilla/UniquePtr.h"
 
 #include "sigslot.h"
@@ -95,7 +101,7 @@ class TransportLayerDummy : public TransportLayer {
 
 class Inspector {
  public:
-  virtual ~Inspector() {}
+  virtual ~Inspector() = default;
 
   virtual void Inspect(TransportLayer* layer, const unsigned char* data,
                        size_t len) = 0;
@@ -105,7 +111,7 @@ class Inspector {
 class TransportLayerLossy : public TransportLayer {
  public:
   TransportLayerLossy() : loss_mask_(0), packet_(0), inspector_(nullptr) {}
-  ~TransportLayerLossy() {}
+  ~TransportLayerLossy() = default;
 
   TransportResult SendPacket(MediaPacket& packet) override {
     MOZ_MTLOG(ML_NOTICE, LAYER_INFO << "SendPacket(" << packet.len() << ")");
@@ -222,7 +228,7 @@ class DtlsRecordParser {
     buffer_.Copy(data, len);
   }
 
-  bool NextRecord(uint8_t* ct, nsAutoPtr<MediaPacket>* buffer) {
+  bool NextRecord(uint8_t* ct, UniquePtr<MediaPacket>* buffer) {
     if (!remaining()) return false;
 
     CHECK_LENGTH(13U);
@@ -234,12 +240,12 @@ class DtlsRecordParser {
     consume(2);
 
     CHECK_LENGTH(length);
-    MediaPacket* db = new MediaPacket;
+    auto db = MakeUnique<MediaPacket>();
     db->Copy(ptr(), length);
     consume(length);
 
     *ct = *ctp;
-    *buffer = db;
+    *buffer = std::move(db);
 
     return true;
   }
@@ -262,7 +268,7 @@ class DtlsRecordInspector : public Inspector {
     DtlsRecordParser parser(data, len);
 
     uint8_t ct;
-    nsAutoPtr<MediaPacket> buf;
+    UniquePtr<MediaPacket> buf;
     while (parser.NextRecord(&ct, &buf)) {
       OnRecord(layer, ct, buf->data(), buf->len());
     }

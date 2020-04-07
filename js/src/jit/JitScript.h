@@ -9,16 +9,15 @@
 
 #include "mozilla/Atomics.h"
 
+#include "jstypes.h"
 #include "jit/BaselineIC.h"
 #include "js/UniquePtr.h"
 #include "vm/TypeInference.h"
 
-class JSScript;
+class JS_PUBLIC_API JSScript;
 
 namespace js {
 namespace jit {
-
-class ControlFlowGraph;
 
 // Describes a single wasm::ImportExit which jumps (via an import with
 // the given index) directly to a JitScript.
@@ -35,6 +34,7 @@ struct DependentWasmImport {
 struct IonBytecodeInfo {
   bool usesEnvironmentChain = false;
   bool modifiesArguments = false;
+  bool hasTryFinally = false;
 };
 
 // Magic BaselineScript value indicating Baseline compilation has been disabled.
@@ -98,6 +98,8 @@ static IonScript* const IonCompilingScriptPtr =
 //
 // * List of Ion compilations inlining this script, for invalidation.
 //
+// The StackTypeSet array and bytecode type map are empty when TI is disabled.
+//
 // Memory Layout
 // =============
 // JitScript has various trailing (variable-length) arrays. The memory layout is
@@ -142,11 +144,7 @@ class alignas(uintptr_t) JitScript final {
     // For functions with a call object, template objects to use for the call
     // object and decl env object (linked via the call object's enclosing
     // scope).
-    HeapPtr<EnvironmentObject*> templateEnv = nullptr;
-
-    // Cached control flow graph for IonBuilder. Owned by JitZone::cfgSpace and
-    // can be purged by Zone::discardJitCode.
-    ControlFlowGraph* controlFlowGraph = nullptr;
+    const HeapPtr<EnvironmentObject*> templateEnv = nullptr;
 
     // The total bytecode length of all scripts we inlined when we Ion-compiled
     // this script. 0 if Ion did not compile this script or if we didn't inline
@@ -183,9 +181,7 @@ class alignas(uintptr_t) JitScript final {
   // Number of times the script has been called or has had backedges taken.
   // Reset if the script's JIT code is forcibly discarded. See also the
   // ScriptWarmUpData class.
-  mozilla::Atomic<uint32_t, mozilla::Relaxed,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      warmUpCount_ = {};
+  mozilla::Atomic<uint32_t, mozilla::Relaxed> warmUpCount_ = {};
 
   // Offset of the StackTypeSet array.
   uint32_t typeSetOffset_ = 0;
@@ -225,6 +221,7 @@ class alignas(uintptr_t) JitScript final {
   }
 
   StackTypeSet* typeArrayDontCheckGeneration() {
+    MOZ_ASSERT(IsTypeInferenceEnabled());
     uint8_t* base = reinterpret_cast<uint8_t*>(this);
     return reinterpret_cast<StackTypeSet*>(base + typeSetOffset_);
   }
@@ -306,6 +303,7 @@ class alignas(uintptr_t) JitScript final {
     return (typeSetOffset_ - offsetOfICEntries()) / sizeof(ICEntry);
   }
   uint32_t numTypeSets() const {
+    MOZ_ASSERT(IsTypeInferenceEnabled());
     return (bytecodeTypeMapOffset_ - typeSetOffset_) / sizeof(StackTypeSet);
   }
 
@@ -329,6 +327,7 @@ class alignas(uintptr_t) JitScript final {
   }
 
   uint32_t* bytecodeTypeMap() {
+    MOZ_ASSERT(IsTypeInferenceEnabled());
     uint8_t* base = reinterpret_cast<uint8_t*>(this);
     return reinterpret_cast<uint32_t*>(base + bytecodeTypeMapOffset_);
   }
@@ -369,6 +368,10 @@ class alignas(uintptr_t) JitScript final {
   static void MonitorBytecodeTypeSlow(JSContext* cx, JSScript* script,
                                       jsbytecode* pc, StackTypeSet* types,
                                       TypeSet::Type type);
+
+  static void MonitorMagicValueBytecodeType(JSContext* cx, JSScript* script,
+                                            jsbytecode* pc,
+                                            const js::Value& rval);
 
  public:
   /* Monitor an assignment at a SETELEM on a non-integer identifier. */
@@ -473,24 +476,14 @@ class alignas(uintptr_t) JitScript final {
     return cachedIonData().templateEnv;
   }
 
-  const ControlFlowGraph* controlFlowGraph() const {
-    return cachedIonData().controlFlowGraph;
-  }
-  void setControlFlowGraph(ControlFlowGraph* controlFlowGraph) {
-    MOZ_ASSERT(controlFlowGraph);
-    cachedIonData().controlFlowGraph = controlFlowGraph;
-  }
-  void clearControlFlowGraph() {
-    if (hasCachedIonData()) {
-      cachedIonData().controlFlowGraph = nullptr;
-    }
-  }
-
   bool modifiesArguments() const {
     return cachedIonData().bytecodeInfo.modifiesArguments;
   }
   bool usesEnvironmentChain() const {
     return cachedIonData().bytecodeInfo.usesEnvironmentChain;
+  }
+  bool hasTryFinally() const {
+    return cachedIonData().bytecodeInfo.hasTryFinally;
   }
 
   uint8_t maxInliningDepth() const {

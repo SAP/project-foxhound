@@ -4,6 +4,15 @@
 
 "use strict";
 
+add_task(async function setup() {
+  if (gURLBar.dropmarker.hidden) {
+    gURLBar.dropmarker.hidden = false;
+    registerCleanupFunction(() => {
+      gURLBar.dropmarker.hidden = true;
+    });
+  }
+});
+
 add_task(async function basic() {
   await BrowserTestUtils.withNewTab("http://example.com/", async () => {
     let queryContext = await clickDropmarker();

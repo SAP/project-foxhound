@@ -28,9 +28,10 @@
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
 var ecmaGlobals = [
+  { name: "AggregateError", insecureContext: true, nightly: true },
   { name: "Array", insecureContext: true },
   { name: "ArrayBuffer", insecureContext: true },
-  { name: "Atomics", insecureContext: true, disabled: true },
+  { name: "Atomics", insecureContext: true, earlyBetaOrEarlier: true },
   { name: "BigInt", insecureContext: true },
   { name: "BigInt64Array", insecureContext: true },
   { name: "BigUint64Array", insecureContext: true },
@@ -66,7 +67,11 @@ var ecmaGlobals = [
   { name: "Reflect", insecureContext: true },
   { name: "RegExp", insecureContext: true },
   { name: "Set", insecureContext: true },
-  { name: "SharedArrayBuffer", insecureContext: true, disabled: true },
+  {
+    name: "SharedArrayBuffer",
+    insecureContext: true,
+    earlyBetaOrEarlier: true,
+  },
   { name: "String", insecureContext: true },
   { name: "Symbol", insecureContext: true },
   { name: "SyntaxError", insecureContext: true },
@@ -230,7 +235,7 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "StorageManager", fennec: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "SubtleCrypto", insecureContext: true },
+  { name: "SubtleCrypto" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "TextDecoder", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -283,6 +288,7 @@ var interfaceNamesInGlobalScope = [
 
 function createInterfaceMap({
   isNightly,
+  isEarlyBetaOrEarlier,
   isRelease,
   isDesktop,
   isAndroid,
@@ -311,6 +317,7 @@ function createInterfaceMap({
           // will get treated as "insecureContext: false", which means exposed
           // only in secure contexts.
           (isInsecureContext && !entry.insecureContext) ||
+          entry.earlyBetaOrEarlier === !isEarlyBetaOrEarlier ||
           entry.disabled
         ) {
           interfaceMap[entry.name] = false;

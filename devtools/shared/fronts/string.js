@@ -3,8 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { DebuggerServer } = require("devtools/server/debugger-server");
-const promise = require("promise");
+const { DevToolsServer } = require("devtools/server/devtools-server");
 const {
   longStringSpec,
   SimpleStringFront,
@@ -22,21 +21,30 @@ class LongStringFront extends FrontClassWithSpec(longStringSpec) {
     super.destroy();
   }
 
-  form(form) {
-    this.actorID = form.actor;
-    this.initial = form.initial;
-    this.length = form.length;
+  form(data) {
+    this.actorID = data.actor;
+    this.initial = data.initial;
+    this.length = data.length;
+
+    this._grip = data;
+  }
+
+  // We expose the grip so consumers (e.g. ObjectInspector) that handle webconsole
+  // evaluations (which can return primitive, object fronts or longString front),
+  // can directly call this without further check.
+  getGrip() {
+    return this._grip;
   }
 
   string() {
     if (!this.strPromise) {
       const promiseRest = thusFar => {
         if (thusFar.length === this.length) {
-          return promise.resolve(thusFar);
+          return Promise.resolve(thusFar);
         }
         return this.substring(
           thusFar.length,
-          thusFar.length + DebuggerServer.LONG_STRING_READ_LENGTH
+          thusFar.length + DevToolsServer.LONG_STRING_READ_LENGTH
         ).then(next => promiseRest(thusFar + next));
       };
 

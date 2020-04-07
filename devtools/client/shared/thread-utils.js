@@ -8,7 +8,6 @@ var Services = require("Services");
 exports.defaultThreadOptions = function() {
   return {
     autoBlackBox: false,
-    ignoreFrameEnvironment: true,
     pauseOnExceptions: Services.prefs.getBoolPref(
       "devtools.debugger.pause-on-exceptions"
     ),
@@ -17,6 +16,12 @@ exports.defaultThreadOptions = function() {
     ),
     shouldShowOverlay: Services.prefs.getBoolPref(
       "devtools.debugger.features.overlay"
+    ),
+    shouldIncludeSavedFrames: Services.prefs.getBoolPref(
+      "devtools.debugger.features.async-captured-stacks"
+    ),
+    shouldIncludeAsyncLiveFrames: Services.prefs.getBoolPref(
+      "devtools.debugger.features.async-live-stacks"
     ),
     skipBreakpoints: Services.prefs.getBoolPref(
       "devtools.debugger.skip-pausing"

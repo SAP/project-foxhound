@@ -336,8 +336,8 @@ void SVGUseElement::UpdateShadowTree() {
                                              ? nullptr
                                              : OwnerDoc()->NodeInfoManager();
 
-    nsCOMPtr<nsINode> newNode = nsNodeUtils::Clone(
-        targetElement, true, nodeInfoManager, nullptr, IgnoreErrors());
+    nsCOMPtr<nsINode> newNode =
+        targetElement->Clone(true, nodeInfoManager, IgnoreErrors());
     if (!newNode) {
       return;
     }
@@ -472,8 +472,8 @@ gfxMatrix SVGUseElement::PrependLocalTransformsTo(
   gfxMatrix userToParent;
 
   if (aWhich == eUserSpaceToParent || aWhich == eAllTransforms) {
-    userToParent =
-        GetUserToParentTransform(mAnimateMotionTransform, mTransforms);
+    userToParent = GetUserToParentTransform(mAnimateMotionTransform.get(),
+                                            mTransforms.get());
     if (aWhich == eUserSpaceToParent) {
       return userToParent * aMatrix;
     }

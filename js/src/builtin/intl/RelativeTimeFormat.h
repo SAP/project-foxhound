@@ -12,9 +12,12 @@
 #include <stdint.h>
 
 #include "builtin/SelfHostingDefines.h"
+#include "gc/Barrier.h"
 #include "js/Class.h"
 #include "vm/NativeObject.h"
+#include "vm/Runtime.h"
 
+struct UFormattedValue;
 struct URelativeDateTimeFormatter;
 
 namespace js {
@@ -31,6 +34,9 @@ class RelativeTimeFormatObject : public NativeObject {
   static_assert(INTERNALS_SLOT == INTL_INTERNALS_OBJECT_SLOT,
                 "INTERNALS_SLOT must match self-hosting define for internals "
                 "object slot");
+
+  // Estimated memory use for URelativeDateTimeFormatter.
+  static constexpr size_t EstimatedMemoryUse = 278;
 
   URelativeDateTimeFormatter* getRelativeDateTimeFormatter() const {
     const auto& slot = getFixedSlot(URELATIVE_TIME_FORMAT_SLOT);
@@ -66,6 +72,17 @@ class RelativeTimeFormatObject : public NativeObject {
 extern MOZ_MUST_USE bool intl_FormatRelativeTime(JSContext* cx, unsigned argc,
                                                  JS::Value* vp);
 
+namespace intl {
+
+using FieldType = js::ImmutablePropertyNamePtr JSAtomState::*;
+
+#ifndef U_HIDE_DRAFT_API
+MOZ_MUST_USE bool FormattedRelativeTimeToParts(
+    JSContext* cx, const UFormattedValue* formattedValue, double timeValue,
+    FieldType relativeTimeUnit, MutableHandleValue result);
+#endif
+
+}  // namespace intl
 }  // namespace js
 
 #endif /* builtin_intl_RelativeTimeFormat_h */

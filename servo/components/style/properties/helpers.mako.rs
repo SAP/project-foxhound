@@ -563,6 +563,7 @@
                 Copy,
                 Debug,
                 Eq,
+                FromPrimitive,
                 Hash,
                 MallocSizeOf,
                 Parse,
@@ -762,7 +763,7 @@
         % endif
         pub mod computed_value {
             #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
-            #[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, ToCss, ToResolvedValue)]
+            #[derive(Clone, Copy, Debug, Eq, FromPrimitive, MallocSizeOf, PartialEq, ToCss, ToResolvedValue)]
             % if not extra_specified:
             #[derive(Parse, SpecifiedValueInfo, ToComputedValue, ToShmem)]
             % endif
@@ -880,7 +881,8 @@
             {
                 // Define all of the expected variables that correspond to the shorthand
                 % for sub_property in shorthand.sub_properties:
-                    let mut ${sub_property.ident} = None;
+                    let mut ${sub_property.ident} =
+                        None::< &'a longhands::${sub_property.ident}::SpecifiedValue>;
                 % endfor
 
                 // Attempt to assign the incoming declarations to the expected variables

@@ -1,3 +1,95 @@
+1.3.3 (2020-01-09)
+==================
+This is a small maintenance release that upgrades the dependency on
+`thread_local` from `0.3` to `1.0`. The minimum supported Rust version remains
+at Rust 1.28.
+
+
+1.3.2 (2020-01-09)
+==================
+This is a small maintenance release with some house cleaning and bug fixes.
+
+New features:
+
+* [FEATURE #631](https://github.com/rust-lang/regex/issues/631):
+  Add a `Match::range` method an a `From<Match> for Range` impl.
+
+Bug fixes:
+
+* [BUG #521](https://github.com/rust-lang/regex/issues/521):
+  Corrects `/-/.splitn("a", 2)` to return `["a"]` instead of `["a", ""]`.
+* [BUG #594](https://github.com/rust-lang/regex/pull/594):
+  Improve error reporting when writing `\p\`.
+* [BUG #627](https://github.com/rust-lang/regex/issues/627):
+  Corrects `/-/.split("a-")` to return `["a", ""]` instead of `["a"]`.
+* [BUG #633](https://github.com/rust-lang/regex/pull/633):
+  Squash deprecation warnings for the `std::error::Error::description` method.
+
+
+1.3.1 (2019-09-04)
+==================
+This is a maintenance release with no changes in order to try to work-around
+a [docs.rs/Cargo issue](https://github.com/rust-lang/docs.rs/issues/400).
+
+
+1.3.0 (2019-09-03)
+==================
+This release adds a plethora of new crate features that permit users of regex
+to shrink its size considerably, in exchange for giving up either functionality
+(such as Unicode support) or runtime performance. When all such features are
+disabled, the dependency tree for `regex` shrinks to exactly 1 crate
+(`regex-syntax`). More information about the new crate features can be
+[found in the docs](https://docs.rs/regex/*/#crate-features).
+
+Note that while this is a new minor version release, the minimum supported
+Rust version for this crate remains at `1.28.0`.
+
+New features:
+
+* [FEATURE #474](https://github.com/rust-lang/regex/issues/474):
+  The `use_std` feature has been deprecated in favor of the `std` feature.
+  The `use_std` feature will be removed in regex 2. Until then, `use_std` will
+  remain as an alias for the `std` feature.
+* [FEATURE #583](https://github.com/rust-lang/regex/issues/583):
+  Add a substantial number of crate features shrinking `regex`.
+
+
+1.2.1 (2019-08-03)
+==================
+This release does a bit of house cleaning. Namely:
+
+* This repository is now using rustfmt.
+* License headers have been removed from all files, in following suit with the
+  Rust project.
+* Teddy has been removed from the `regex` crate, and is now part of the
+  `aho-corasick` crate.
+  [See `aho-corasick`'s new `packed` sub-module for details](https://docs.rs/aho-corasick/0.7.6/aho_corasick/packed/index.html).
+* The `utf8-ranges` crate has been deprecated, with its functionality moving
+  into the
+  [`utf8` sub-module of `regex-syntax`](https://docs.rs/regex-syntax/0.6.11/regex_syntax/utf8/index.html).
+* The `ucd-util` dependency has been dropped, in favor of implementing what
+  little we need inside of `regex-syntax` itself.
+
+In general, this is part of an ongoing (long term) effort to make optimizations
+in the regex engine easier to reason about. The current code is too convoluted
+and thus it is very easy to introduce new bugs. This simplification effort is
+the primary motivation behind re-working the `aho-corasick` crate to not only
+bundle algorithms like Teddy, but to also provide regex-like match semantics
+automatically.
+
+Moving forward, the plan is to join up with the `bstr` and `regex-automata`
+crates, with the former providing more sophisticated substring search
+algorithms (thereby deleting existing code in `regex`) and the latter providing
+ahead-of-time compiled DFAs for cases where they are inexpensive to compute.
+
+
+1.2.0 (2019-07-20)
+==================
+This release updates regex's minimum supported Rust version to 1.28, which was
+release almost 1 year ago. This release also updates regex's Unicode data
+tables to 12.1.0.
+
+
 1.1.9 (2019-07-06)
 ==================
 This release contains a bug fix that caused regex's tests to fail, due to a

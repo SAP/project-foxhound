@@ -9,6 +9,7 @@
 
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/AnimationUtils.h"
 #include "mozilla/FloatingPoint.h"
 
@@ -72,14 +73,14 @@ void AnimationEffect::SetSpecifiedTiming(TimingParams&& aTiming) {
 
   if (mAnimation) {
     Maybe<nsAutoAnimationMutationBatch> mb;
-    if (AsKeyframeEffect() && AsKeyframeEffect()->GetTarget()) {
-      mb.emplace(AsKeyframeEffect()->GetTarget()->mElement->OwnerDoc());
+    if (AsKeyframeEffect() && AsKeyframeEffect()->GetAnimationTarget()) {
+      mb.emplace(AsKeyframeEffect()->GetAnimationTarget().mElement->OwnerDoc());
     }
 
     mAnimation->NotifyEffectTimingUpdated();
 
     if (mAnimation->IsRelevant()) {
-      nsNodeUtils::AnimationChanged(mAnimation);
+      MutationObservers::NotifyAnimationChanged(mAnimation);
     }
 
     if (AsKeyframeEffect()) {

@@ -104,11 +104,6 @@ menuitem.bookmark-item {
   color: HighlightText !important;
 }
 
-/* Bookmarks toolbar */
-#PlacesToolbarDropIndicator {
-  list-style-image: url(chrome://browser/skin/places/toolbarDropMarker.png);
-}
-
 .bookmark-item[cutting] > .toolbarbutton-icon,
 .bookmark-item[cutting] > .menu-iconic-left > .menu-iconic-icon {
   opacity: 0.5;
@@ -286,6 +281,16 @@ notification[value="translation"] menulist > .menulist-dropmarker {
   font-size: 1.05em;
 }
 
+@supports -moz-bool-pref("browser.urlbar.update2.expandTextOnFocus") {
+  .urlbarView {
+    font-size: inherit;
+  }
+
+  #urlbar[breakout-extend] {
+    font-size: 1.14em;
+  }
+}
+
 /* Bookmarking panel */
 
 %include ../shared/places/editBookmarkPanel.inc.css
@@ -373,13 +378,6 @@ notification[value="translation"] menulist > .menulist-dropmarker {
   list-style-image: url("moz-icon://stock/gtk-close?size=menu");
 }
 
-/* Tab drag and drop */
-.tab-drop-indicator {
-  list-style-image: url(chrome://browser/skin/tabbrowser/tabDragIndicator.png);
-  margin-bottom: -9px;
-  z-index: 3;
-}
-
 /* All tabs menupopup */
 
 .alltabs-item[selected="true"] {
@@ -396,6 +394,14 @@ notification[value="translation"] menulist > .menulist-dropmarker {
   border-top-style: solid;
   color: -moz-dialogText;
   text-shadow: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  #statuspanel-label {
+    background-color: hsl(240, 1%, 20%);
+    border-color: hsl(240, 1%, 40%);
+    color: rgb(249, 249, 250);
+  }
 }
 
 #statuspanel:not([mirror]) > #statuspanel-inner > #statuspanel-label:-moz-locale-dir(ltr),
@@ -479,13 +485,13 @@ notification[value="translation"] menulist > .menulist-dropmarker {
     }
   }
 
-  :root[tabsintitlebar] > #navigator-toolbox > #titlebar {
+  :root[tabsintitlebar] #titlebar {
     -moz-appearance: -moz-window-titlebar-maximized;
   }
-  :root[tabsintitlebar][sizemode="normal"]:not([gtktiledwindow="true"]) > #navigator-toolbox > #titlebar {
+  :root[tabsintitlebar][sizemode="normal"]:not([gtktiledwindow="true"]) #titlebar {
     -moz-appearance: -moz-window-titlebar;
   }
-  :root[tabsintitlebar]:not([inDOMFullscreen]) > #navigator-toolbox > #titlebar:-moz-lwtheme {
+  :root[tabsintitlebar]:not([inDOMFullscreen]) #titlebar:-moz-lwtheme {
     visibility: hidden;
   }
   :root[tabsintitlebar]:not([inDOMFullscreen]) #toolbar-menubar:-moz-lwtheme,

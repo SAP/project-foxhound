@@ -45,8 +45,6 @@
 #include "replace_malloc_bridge.h"
 #endif
 
-#include "mozilla/RecordReplay.h"
-
 #ifndef __EXCEPTIONS
 // This file uses C++ try/catch (but shouldn't). Duplicate the macros from
 // <c++/4.2.1/exception_defines.h> allowing this file to work properly with
@@ -371,6 +369,7 @@ bool ExceptionHandler::WriteMinidumpWithException(
     int exception_subcode,
     breakpad_ucontext_t* task_context,
     mach_port_t thread_name,
+    mach_port_t task_name,
     bool exit_after_write,
     bool report_current_thread) {
   bool result = false;
@@ -405,7 +404,8 @@ bool ExceptionHandler::WriteMinidumpWithException(
           exception_type,
           exception_code,
           exception_subcode,
-          thread_name);
+          thread_name,
+          task_name);
       if (result && exit_after_write) {
         _exit(exception_type);
       }
@@ -565,7 +565,7 @@ void* ExceptionHandler::WaitForMessage(void* exception_handler_class) {
         // Write out the dump and save the result for later retrieval
         self->last_minidump_write_result_ =
           self->WriteMinidumpWithException(exception_type, exception_code,
-                                           0, NULL, thread,
+                                           0, NULL, thread, mach_task_self(),
                                            false, false);
 
 #if USE_PROTECTED_ALLOCATIONS
@@ -601,7 +601,7 @@ void* ExceptionHandler::WaitForMessage(void* exception_handler_class) {
           // Generate the minidump with the exception data.
           self->WriteMinidumpWithException(receive.exception, receive.code[0],
                                            subcode, NULL, receive.thread.name,
-                                           true, false);
+                                           mach_task_self(),  true, false);
 
 #if USE_PROTECTED_ALLOCATIONS
           // This may have become protected again within
@@ -653,6 +653,7 @@ void ExceptionHandler::SignalHandler(int sig, siginfo_t* info, void* uc) {
       0,
       static_cast<breakpad_ucontext_t*>(uc),
       mach_thread_self(),
+      mach_task_self(),
       true,
       true);
 #if USE_PROTECTED_ALLOCATIONS
@@ -665,13 +666,14 @@ void ExceptionHandler::SignalHandler(int sig, siginfo_t* info, void* uc) {
 bool ExceptionHandler::WriteForwardedExceptionMinidump(int exception_type,
 						       int exception_code,
 						       int exception_subcode,
-						       mach_port_t thread)
+						       mach_port_t thread,
+						       mach_port_t task)
 {
   if (!gProtectedData.handler) {
     return false;
   }
   return gProtectedData.handler->WriteMinidumpWithException(exception_type, exception_code,
-							    exception_subcode, NULL, thread,
+							    exception_subcode, NULL, thread, task,
 							    /* exit_after_write = */ false,
 							    /* report_current_thread = */ true);
 }
@@ -710,12 +712,6 @@ bool ExceptionHandler::InstallHandler() {
   }
   catch (std::bad_alloc) {
     return false;
-  }
-
-  // Don't modify exception ports when recording or replaying, to avoid
-  // interfering with the record/replay system's exception handler.
-  if (mozilla::recordreplay::IsRecordingOrReplaying()) {
-    return true;
   }
 
   // Save the current exception ports so that we can forward to them
@@ -807,9 +803,7 @@ bool ExceptionHandler::Setup(bool install_handler) {
     if (!InstallHandler())
       return false;
 
-  // Don't spawn the handler thread when replaying, as we have not set up
-  // exception ports for it to monitor.
-  if (result == KERN_SUCCESS && !mozilla::recordreplay::IsReplaying()) {
+  if (result == KERN_SUCCESS) {
     // Install the handler in its own thread, detached as we won't be joining.
     pthread_attr_t attr;
     pthread_attr_init(&attr);

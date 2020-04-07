@@ -11,9 +11,9 @@
 #  include "brotli/decode.h"  // brotli
 #endif
 #include "nsZipArchive.h"
+#include "MmapFaultHandler.h"
 
 #include "nsEscape.h"
-#include "nsIFile.h"
 #include "nsDebug.h"
 #include <algorithm>
 #if defined(XP_WIN)
@@ -118,7 +118,7 @@ nsresult nsJARInputStream::InitDirectory(nsJAR* aJar,
       case ')':
       case '\\':
         escDirName.Append('\\');
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       default:
         escDirName.Append(*curr);
     }
@@ -193,7 +193,7 @@ nsJARInputStream::Read(char* aBuffer, uint32_t aCount, uint32_t* aBytesRead) {
   *aBytesRead = 0;
 
   nsresult rv = NS_OK;
-  MOZ_WIN_MEM_TRY_BEGIN
+  MMAP_FAULT_HANDLER_BEGIN_HANDLE(mFd)
   switch (mMode) {
     case MODE_NOTINITED:
       return NS_OK;
@@ -235,7 +235,7 @@ nsJARInputStream::Read(char* aBuffer, uint32_t aCount, uint32_t* aBytesRead) {
       }
       break;
   }
-  MOZ_WIN_MEM_TRY_CATCH(rv = NS_ERROR_FAILURE)
+  MMAP_FAULT_HANDLER_CATCH(NS_ERROR_FAILURE)
   return rv;
 }
 

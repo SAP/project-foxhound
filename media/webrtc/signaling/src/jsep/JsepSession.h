@@ -165,7 +165,8 @@ class JsepSession {
 
   // ICE controlling or controlled
   virtual bool IsIceControlling() const = 0;
-  virtual bool IsOfferer() const = 0;
+  virtual Maybe<bool> IsPendingOfferer() const = 0;
+  virtual Maybe<bool> IsCurrentOfferer() const = 0;
   virtual bool IsIceRestarting() const = 0;
 
   virtual const std::string GetLastError() const { return "Error"; }
@@ -183,18 +184,19 @@ class JsepSession {
 
   virtual bool CheckNegotiationNeeded() const = 0;
 
-  void CountTracks(uint16_t (&receiving)[SdpMediaSection::kMediaTypes],
-                   uint16_t (&sending)[SdpMediaSection::kMediaTypes]) const {
+  void CountTracksAndDatachannels(
+      uint16_t (&receiving)[SdpMediaSection::kMediaTypes],
+      uint16_t (&sending)[SdpMediaSection::kMediaTypes]) const {
     memset(receiving, 0, sizeof(receiving));
     memset(sending, 0, sizeof(sending));
 
     for (const auto& transceiver : GetTransceivers()) {
-      if (!transceiver->mRecvTrack.GetActive() ||
+      if (transceiver->mRecvTrack.GetActive() ||
           transceiver->GetMediaType() == SdpMediaSection::kApplication) {
         receiving[transceiver->mRecvTrack.GetMediaType()]++;
       }
 
-      if (!transceiver->mSendTrack.GetActive() ||
+      if (transceiver->mSendTrack.GetActive() ||
           transceiver->GetMediaType() == SdpMediaSection::kApplication) {
         sending[transceiver->mSendTrack.GetMediaType()]++;
       }

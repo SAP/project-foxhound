@@ -25,13 +25,27 @@ async function enableServiceWorkerDebugging() {
   // SW debugging in multi-e10s.
   await pushPref("dom.ipc.processCount", 1);
 
+  // Enable service workers in the debugger
+  await pushPref("devtools.debugger.features.windowless-service-workers", true);
+
   // Wait for dom.ipc.processCount to be updated before releasing processes.
   Services.ppmm.releaseCachedProcesses();
 }
 
 async function enableApplicationPanel() {
+  // FIXME bug 1575427 this rejection is very common.
+  const { PromiseTestUtils } = ChromeUtils.import(
+    "resource://testing-common/PromiseTestUtils.jsm"
+  );
+  PromiseTestUtils.whitelistRejectionsGlobally(
+    /this._frontCreationListeners is null/
+  );
+
   // Enable all preferences related to service worker debugging.
   await enableServiceWorkerDebugging();
+
+  // Enable web manifest processing.
+  Services.prefs.setBoolPref("dom.manifest.enabled", true);
 
   // Enable application panel in DevTools.
   await pushPref("devtools.application.enabled", true);
@@ -39,11 +53,6 @@ async function enableApplicationPanel() {
 
 function getWorkerContainers(doc) {
   return doc.querySelectorAll(".js-sw-container");
-}
-
-function navigate(target, url, waitForTargetEvent = "navigate") {
-  executeSoon(() => target.navigateTo({ url }));
-  return once(target, waitForTargetEvent);
 }
 
 async function openNewTabAndApplicationPanel(url) {
@@ -76,8 +85,8 @@ async function waitForWorkerRegistration(swTab) {
   info("Wait until the registration appears on the window");
   const swBrowser = swTab.linkedBrowser;
   await asyncWaitUntil(async () =>
-    ContentTask.spawn(swBrowser, {}, function() {
-      return content.wrappedJSObject.getRegistration();
+    SpecialPowers.spawn(swBrowser, [], function() {
+      return !!content.wrappedJSObject.getRegistration();
     })
   );
 }

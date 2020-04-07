@@ -43,7 +43,6 @@
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsLocalFile.h"
-#include "nsIComponentManager.h"
 #include "prproces.h"
 #include "nsIDirectoryEnumerator.h"
 #include "nsSimpleEnumerator.h"
@@ -830,7 +829,10 @@ nsLocalFile::CopyToNative(nsIFile* aNewParent, const nsACString& aNewName) {
 
     // get the old permissions
     uint32_t myPerms;
-    GetPermissions(&myPerms);
+    rv = GetPermissions(&myPerms);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
 
     // Create the new file with the old file's permissions, even if write
     // permission is missing.  We can't create with write permission and
@@ -1527,7 +1529,10 @@ nsLocalFile::IsExecutable(bool* aResult) {
     // Search for any of the set of executable extensions.
     static const char* const executableExts[] = {
         "air",  // Adobe AIR installer
-        "jar"   // java application bundle
+#ifdef MOZ_WIDGET_COCOA
+        "fileloc",  // File location files can be used to point to other files.
+#endif
+        "jar"  // java application bundle
     };
     nsDependentSubstring ext = Substring(path, dotIdx + 1);
     for (auto executableExt : executableExts) {

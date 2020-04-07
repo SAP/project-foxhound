@@ -34,6 +34,7 @@ class AndroidMixin(object):
         self.logcat_proc = None
         self.logcat_file = None
         self.use_gles3 = False
+        self.xre_path = None
         super(AndroidMixin, self).__init__(**kwargs)
 
     @property
@@ -339,12 +340,29 @@ class AndroidMixin(object):
         import mozdevice
         try:
             self.device.install_app(apk, replace=replace)
-        except (mozdevice.ADBError, mozdevice.ADBTimeoutError) as e:
+        except (mozdevice.ADBError, mozdevice.ADBProcessError, mozdevice.ADBTimeoutError) as e:
             self.info('Failed to install %s on %s: %s %s' %
                       (apk, self.device_name,
                        type(e).__name__, e))
             self.fatal('INFRA-ERROR: %s Failed to install %s' %
                        (type(e).__name__, os.path.basename(apk)),
+                       EXIT_STATUS_DICT[TBPL_RETRY])
+
+    def uninstall_apk(self):
+        """
+           Uninstall the app associated with the configured apk, if it is
+           installed.
+        """
+        import mozdevice
+        try:
+            package_name = self.query_package_name()
+            self.device.uninstall_app(package_name)
+        except (mozdevice.ADBError, mozdevice.ADBProcessError, mozdevice.ADBTimeoutError) as e:
+            self.info('Failed to uninstall %s from %s: %s %s' %
+                      (package_name, self.device_name,
+                       type(e).__name__, e))
+            self.fatal('INFRA-ERROR: %s Failed to uninstall %s' %
+                       (type(e).__name__, package_name),
                        EXIT_STATUS_DICT[TBPL_RETRY])
 
     def is_boot_completed(self):
@@ -358,7 +376,16 @@ class AndroidMixin(object):
         return False
 
     def shell_output(self, cmd):
-        return self.device.shell_output(cmd, timeout=30)
+        import mozdevice
+        try:
+            return self.device.shell_output(cmd, timeout=30)
+        except (mozdevice.ADBTimeoutError) as e:
+            self.info('Failed to run shell command %s from %s: %s %s' %
+                      (cmd, self.device_name,
+                       type(e).__name__, e))
+            self.fatal('INFRA-ERROR: %s Failed to run shell command %s' %
+                       (type(e).__name__, cmd),
+                       EXIT_STATUS_DICT[TBPL_RETRY])
 
     def device_screenshot(self, prefix):
         """
@@ -374,7 +401,10 @@ class AndroidMixin(object):
             os.environ["MOZ_UPLOAD_DIR"] = dirs['abs_blob_upload_dir']
             reset_dir = True
         if self.is_emulator:
-            dump_screen(self.xre_path, self, prefix=prefix)
+            if self.xre_path:
+                dump_screen(self.xre_path, self, prefix=prefix)
+            else:
+                self.info('Not saving screenshot: no XRE configured')
         else:
             dump_device_screen(self.device, self, prefix=prefix)
         if reset_dir:
@@ -584,8 +614,6 @@ class AndroidMixin(object):
         self.logcat_start()
         self.delete_ANRs()
         self.delete_tombstones()
-        # Get a post-boot device process list for diagnostics
-        self.info(self.shell_output('ps'))
         self.info("verify_device complete")
 
     @PreScriptAction('run-tests')

@@ -15,9 +15,9 @@
 #include "nsContentCreatorFunctions.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/ValidityState.h"
-#include "mozilla/dom/Element.h"
 
 class nsDOMTokenList;
 class nsIFormControlFrame;
@@ -35,6 +35,7 @@ class EventStates;
 class TextEditor;
 class PresState;
 namespace dom {
+class ElementInternals;
 class HTMLFormElement;
 class HTMLMenuElement;
 }  // namespace dom
@@ -139,6 +140,18 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     return false;
   }
 
+  void SetNonce(const nsAString& aNonce) {
+    SetProperty(nsGkAtoms::nonce, new nsString(aNonce),
+                nsINode::DeleteProperty<nsString>);
+  }
+  void RemoveNonce() { RemoveProperty(nsGkAtoms::nonce); }
+  void GetNonce(nsAString& aNonce) const {
+    nsString* cspNonce = static_cast<nsString*>(GetProperty(nsGkAtoms::nonce));
+    if (cspNonce) {
+      aNonce = *cspNonce;
+    }
+  }
+
   /**
    * Returns the count of descendants (inclusive of this node) in
    * the uncomposed document that are explicitly set as editable.
@@ -226,8 +239,12 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     return IsNodeInternal(aFirst, aArgs...);
   }
 
+  // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-attachinternals
+  already_AddRefed<mozilla::dom::ElementInternals> AttachInternals(
+      ErrorResult& aRv);
+
  protected:
-  virtual ~nsGenericHTMLElement() {}
+  virtual ~nsGenericHTMLElement() = default;
 
  public:
   /**

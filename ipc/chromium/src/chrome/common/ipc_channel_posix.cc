@@ -194,6 +194,8 @@ bool SetCloseOnExec(int fd) {
   return true;
 }
 
+bool ErrorIsBrokenPipe(int err) { return err == EPIPE || err == ECONNRESET; }
+
 }  // namespace
 //------------------------------------------------------------------------------
 
@@ -355,8 +357,10 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
       if (errno == EAGAIN) {
         return true;
       } else {
-        CHROMIUM_LOG(ERROR)
-            << "pipe error (" << pipe_ << "): " << strerror(errno);
+        if (!ErrorIsBrokenPipe(errno)) {
+          CHROMIUM_LOG(ERROR)
+              << "pipe error (fd " << pipe_ << "): " << strerror(errno);
+        }
         return false;
       }
     } else if (bytes_read == 0) {
@@ -365,12 +369,6 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
       return false;
     }
     DCHECK(bytes_read);
-
-    if (client_pipe_ != -1) {
-      PipeMap::instance().Remove(pipe_name_);
-      IGNORE_EINTR(close(client_pipe_));
-      client_pipe_ = -1;
-    }
 
     // a pointer to an array of |num_wire_fds| file descriptors from the read
     const int* wire_fds = NULL;
@@ -725,7 +723,9 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
           break;
 #endif
         default:
-          CHROMIUM_LOG(ERROR) << "pipe error: " << strerror(errno);
+          if (!ErrorIsBrokenPipe(errno)) {
+            CHROMIUM_LOG(ERROR) << "pipe error: " << strerror(errno);
+          }
           return false;
       }
     }

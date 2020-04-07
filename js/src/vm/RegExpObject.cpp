@@ -9,9 +9,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/PodOperations.h"
 
-#ifdef DEBUG
-#  include "jsutil.h"
-#endif
+#include <algorithm>
 
 #include "builtin/RegExp.h"
 #include "builtin/SelfHostingDefines.h"  // REGEXP_*_FLAG
@@ -167,17 +165,17 @@ void RegExpObject::trace(JSTracer* trc) {
 }
 
 static const JSClassOps RegExpObjectClassOps = {
-    nullptr, /* addProperty */
-    nullptr, /* delProperty */
-    nullptr, /* enumerate */
-    nullptr, /* newEnumerate */
-    nullptr, /* resolve */
-    nullptr, /* mayResolve */
-    nullptr, /* finalize */
-    nullptr, /* call */
-    nullptr, /* hasInstance */
-    nullptr, /* construct */
-    RegExpObject::trace,
+    nullptr,              // addProperty
+    nullptr,              // delProperty
+    nullptr,              // enumerate
+    nullptr,              // newEnumerate
+    nullptr,              // resolve
+    nullptr,              // mayResolve
+    nullptr,              // finalize
+    nullptr,              // call
+    nullptr,              // hasInstance
+    nullptr,              // construct
+    RegExpObject::trace,  // trace
 };
 
 static const ClassSpec RegExpObjectClassSpec = {
@@ -251,6 +249,26 @@ RegExpObject* RegExpObject::create(JSContext* cx, HandleAtom source,
     return nullptr;
   }
 
+  return createSyntaxChecked(cx, source, flags, newKind);
+}
+
+RegExpObject* RegExpObject::createSyntaxChecked(JSContext* cx,
+                                                const char16_t* chars,
+                                                size_t length,
+                                                RegExpFlags flags,
+                                                NewObjectKind newKind) {
+  RootedAtom source(cx, AtomizeChars(cx, chars, length));
+  if (!source) {
+    return nullptr;
+  }
+
+  return createSyntaxChecked(cx, source, flags, newKind);
+}
+
+RegExpObject* RegExpObject::createSyntaxChecked(JSContext* cx,
+                                                HandleAtom source,
+                                                RegExpFlags flags,
+                                                NewObjectKind newKind) {
   Rooted<RegExpObject*> regexp(cx, RegExpAlloc(cx, newKind));
   if (!regexp) {
     return nullptr;
@@ -302,7 +320,7 @@ Shape* RegExpObject::assignInitialShape(JSContext* cx,
                                         Handle<RegExpObject*> self) {
   MOZ_ASSERT(self->empty());
 
-  JS_STATIC_ASSERT(LAST_INDEX_SLOT == 0);
+  static_assert(LAST_INDEX_SLOT == 0);
 
   /* The lastIndex property alone is writable but non-configurable. */
   return NativeObject::addDataProperty(cx, self, cx->names().lastIndex,
@@ -570,21 +588,21 @@ bool RegExpShared::dumpBytecode(JSContext* cx, MutableHandleRegExpShared re,
 #  define ADVANCE(NAME)                 \
     fprintf(stderr, "\n");              \
     pc += irregexp::BC_##NAME##_LENGTH; \
-    maxPc = js::Max(maxPc, pc);         \
+    maxPc = std::max(maxPc, pc);        \
     break;
 #  define STOP(NAME)                    \
     fprintf(stderr, "\n");              \
     pc += irregexp::BC_##NAME##_LENGTH; \
     break;
-#  define JUMP(NAME, OFFSET)                   \
-    fprintf(stderr, "\n");                     \
-    maxPc = js::Max(maxPc, byteCode + OFFSET); \
-    pc += irregexp::BC_##NAME##_LENGTH;        \
+#  define JUMP(NAME, OFFSET)                    \
+    fprintf(stderr, "\n");                      \
+    maxPc = std::max(maxPc, byteCode + OFFSET); \
+    pc += irregexp::BC_##NAME##_LENGTH;         \
     break;
-#  define BRANCH(NAME, OFFSET)                              \
-    fprintf(stderr, "\n");                                  \
-    pc += irregexp::BC_##NAME##_LENGTH;                     \
-    maxPc = js::Max(maxPc, js::Max(pc, byteCode + OFFSET)); \
+#  define BRANCH(NAME, OFFSET)                                \
+    fprintf(stderr, "\n");                                    \
+    pc += irregexp::BC_##NAME##_LENGTH;                       \
+    maxPc = std::max(maxPc, std::max(pc, byteCode + OFFSET)); \
     break;
 
   // Bytecode has no end marker, we need to calculate the bytecode length by
@@ -1277,15 +1295,6 @@ RegExpShared* RegExpZone::get(JSContext* cx, HandleAtom source,
   }
 
   return shared;
-}
-
-RegExpShared* RegExpZone::get(JSContext* cx, HandleAtom atom, JSString* opt) {
-  RegExpFlags flags = RegExpFlag::NoFlags;
-  if (opt && !ParseRegExpFlags(cx, opt, &flags)) {
-    return nullptr;
-  }
-
-  return get(cx, atom, flags);
 }
 
 size_t RegExpZone::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {

@@ -1,6 +1,7 @@
 
 from __future__ import absolute_import, unicode_literals, print_function
 
+import io
 import os
 import manifestparser
 
@@ -18,7 +19,7 @@ class Creator(object):
         return True
 
     def __iter__(self):
-        """Iterate over a list of (path, data) tuples coresponding to the files
+        """Iterate over a list of (path, data) tuples corresponding to the files
         to be created"""
         yield (self.test, self._get_template_contents())
 
@@ -310,7 +311,7 @@ def write_to_ini_file(manifest_file, filename):
                 contents.insert(i, filename)
                 break
 
-    with open(manifest_file, "w") as f:
+    with io.open(manifest_file, "w", newline='\n') as f:
         f.write("".join(contents))
 
 

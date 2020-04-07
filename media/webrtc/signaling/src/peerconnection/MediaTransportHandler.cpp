@@ -12,7 +12,6 @@
 #include "transportlayersrtp.h"
 
 // Config stuff
-#include "nsIPrefService.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
 
 // Parsing STUN/TURN URIs
@@ -111,9 +110,8 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
   void SendPacket(const std::string& aTransportId,
                   MediaPacket&& aPacket) override;
 
-  RefPtr<StatsPromise> GetIceStats(
-      const std::string& aTransportId, DOMHighResTimeStamp aNow,
-      std::unique_ptr<dom::RTCStatsReportInternal>&& aReport) override;
+  RefPtr<dom::RTCStatsPromise> GetIceStats(const std::string& aTransportId,
+                                           DOMHighResTimeStamp aNow) override;
 
  private:
   RefPtr<TransportFlow> CreateTransportFlow(const std::string& aTransportId,
@@ -152,7 +150,7 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
   RefPtr<TransportFlow> GetTransportFlow(const std::string& aTransportId,
                                          bool aIsRtcp) const;
   void GetIceStats(const NrIceMediaStream& aStream, DOMHighResTimeStamp aNow,
-                   dom::RTCStatsReportInternal* aReport) const;
+                   dom::RTCStatsCollection* aStats) const;
 
   virtual ~MediaTransportHandlerSTS() = default;
   nsCOMPtr<nsISerialEventTarget> mStsThread;
@@ -705,7 +703,11 @@ void MediaTransportHandlerSTS::AddIceCandidate(
         nsresult rv = stream->ParseTrickleCandidate(aCandidate, aUfrag,
                                                     aObfuscatedAddress);
         if (NS_SUCCEEDED(rv)) {
-          if (mObfuscateHostAddresses && tokens.size() > 4) {
+          // If the address is not obfuscated, we want to track it as
+          // explicitly signaled so that we know it is fine to reveal
+          // the address later on.
+          if (mObfuscateHostAddresses && tokens.size() > 4 &&
+              aObfuscatedAddress.empty()) {
             mSignaledAddresses.insert(tokens[4]);
           }
         } else {
@@ -836,7 +838,8 @@ void MediaTransportHandler::OnAlpnNegotiated(const std::string& aAlpn) {
     return;
   }
 
-  SignalAlpnNegotiated(aAlpn);
+  const bool privacyRequested = aAlpn == "c-webrtc";
+  SignalAlpnNegotiated(aAlpn, privacyRequested);
 }
 
 void MediaTransportHandler::OnGatheringStateChange(
@@ -866,12 +869,12 @@ void MediaTransportHandler::OnConnectionStateChange(
 }
 
 void MediaTransportHandler::OnPacketReceived(const std::string& aTransportId,
-                                             MediaPacket& aPacket) {
+                                             const MediaPacket& aPacket) {
   if (mCallbackThread && !mCallbackThread->IsOnCurrentThread()) {
     mCallbackThread->Dispatch(
         WrapRunnable(RefPtr<MediaTransportHandler>(this),
                      &MediaTransportHandler::OnPacketReceived, aTransportId,
-                     aPacket),
+                     const_cast<MediaPacket&>(aPacket)),
         NS_DISPATCH_NORMAL);
     return;
   }
@@ -880,12 +883,12 @@ void MediaTransportHandler::OnPacketReceived(const std::string& aTransportId,
 }
 
 void MediaTransportHandler::OnEncryptedSending(const std::string& aTransportId,
-                                               MediaPacket& aPacket) {
+                                               const MediaPacket& aPacket) {
   if (mCallbackThread && !mCallbackThread->IsOnCurrentThread()) {
     mCallbackThread->Dispatch(
         WrapRunnable(RefPtr<MediaTransportHandler>(this),
                      &MediaTransportHandler::OnEncryptedSending, aTransportId,
-                     aPacket),
+                     const_cast<MediaPacket&>(aPacket)),
         NS_DISPATCH_NORMAL);
     return;
   }
@@ -931,22 +934,21 @@ void MediaTransportHandler::OnRtcpStateChange(const std::string& aTransportId,
   SignalRtcpStateChange(aTransportId, aState);
 }
 
-RefPtr<MediaTransportHandler::StatsPromise>
-MediaTransportHandlerSTS::GetIceStats(
-    const std::string& aTransportId, DOMHighResTimeStamp aNow,
-    std::unique_ptr<dom::RTCStatsReportInternal>&& aReport) {
-  return InvokeAsync(
+RefPtr<dom::RTCStatsPromise> MediaTransportHandlerSTS::GetIceStats(
+    const std::string& aTransportId, DOMHighResTimeStamp aNow) {
+  return mInitPromise->Then(
       mStsThread, __func__,
-      [=, aReport = std::move(aReport),
-       self = RefPtr<MediaTransportHandlerSTS>(this)]() mutable {
+      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+        UniquePtr<dom::RTCStatsCollection> stats(new dom::RTCStatsCollection);
         if (mIceCtx) {
           for (const auto& stream : mIceCtx->GetStreams()) {
             if (aTransportId.empty() || aTransportId == stream->GetId()) {
-              GetIceStats(*stream, aNow, aReport.get());
+              GetIceStats(*stream, aNow, stats.get());
             }
           }
         }
-        return StatsPromise::CreateAndResolve(std::move(aReport), __func__);
+        return dom::RTCStatsPromise::CreateAndResolve(std::move(stats),
+                                                      __func__);
       });
 }
 
@@ -956,12 +958,12 @@ MediaTransportHandlerSTS::GetIceLog(const nsCString& aPattern) {
       mStsThread, __func__, [=, self = RefPtr<MediaTransportHandlerSTS>(this)] {
         dom::Sequence<nsString> converted;
         RLogConnector* logs = RLogConnector::GetInstance();
-        nsAutoPtr<std::deque<std::string>> result(new std::deque<std::string>);
+        std::deque<std::string> result;
         // Might not exist yet.
         if (logs) {
-          logs->Filter(aPattern.get(), 0, result);
+          logs->Filter(aPattern.get(), 0, &result);
         }
-        for (auto& line : *result) {
+        for (auto& line : result) {
           converted.AppendElement(NS_ConvertUTF8toUTF16(line.c_str()),
                                   fallible);
         }
@@ -1014,10 +1016,10 @@ void MediaTransportHandlerSTS::ExitPrivateMode() {
 static void ToRTCIceCandidateStats(
     const std::vector<NrIceCandidate>& candidates,
     dom::RTCStatsType candidateType, const nsString& transportId,
-    DOMHighResTimeStamp now, dom::RTCStatsReportInternal* report,
+    DOMHighResTimeStamp now, dom::RTCStatsCollection* stats,
     bool obfuscateHostAddresses,
     const std::set<std::string>& signaledAddresses) {
-  MOZ_ASSERT(report);
+  MOZ_ASSERT(stats);
   for (const auto& candidate : candidates) {
     dom::RTCIceCandidateStats cand;
     cand.mType.Construct(candidateType);
@@ -1052,16 +1054,16 @@ static void ToRTCIceCandidateStats(
     }
     cand.mProxied.Construct(NS_ConvertASCIItoUTF16(
         candidate.is_proxied ? "proxied" : "non-proxied"));
-    report->mIceCandidateStats.Value().AppendElement(cand, fallible);
+    stats->mIceCandidateStats.AppendElement(cand, fallible);
     if (candidate.trickled) {
-      report->mTrickledIceCandidateStats.Value().AppendElement(cand, fallible);
+      stats->mTrickledIceCandidateStats.AppendElement(cand, fallible);
     }
   }
 }
 
 void MediaTransportHandlerSTS::GetIceStats(
     const NrIceMediaStream& aStream, DOMHighResTimeStamp aNow,
-    dom::RTCStatsReportInternal* aReport) const {
+    dom::RTCStatsCollection* aStats) const {
   MOZ_ASSERT(mStsThread->IsOnCurrentThread());
 
   NS_ConvertASCIItoUTF16 transportId(aStream.GetId().c_str());
@@ -1100,17 +1102,17 @@ void MediaTransportHandlerSTS::GetIceStats(
     s.mLastPacketReceivedTimestamp.Construct(candPair.ms_since_last_recv);
     s.mState.Construct(dom::RTCStatsIceCandidatePairState(candPair.state));
     s.mComponentId.Construct(candPair.component_id);
-    aReport->mIceCandidatePairStats.Value().AppendElement(s, fallible);
+    aStats->mIceCandidatePairStats.AppendElement(s, fallible);
   }
 
   std::vector<NrIceCandidate> candidates;
   if (NS_SUCCEEDED(aStream.GetLocalCandidates(&candidates))) {
     ToRTCIceCandidateStats(candidates, dom::RTCStatsType::Local_candidate,
-                           transportId, aNow, aReport, mObfuscateHostAddresses,
+                           transportId, aNow, aStats, mObfuscateHostAddresses,
                            mSignaledAddresses);
     // add the local candidates unparsed string to a sequence
     for (const auto& candidate : candidates) {
-      aReport->mRawLocalCandidates.Value().AppendElement(
+      aStats->mRawLocalCandidates.AppendElement(
           NS_ConvertASCIItoUTF16(candidate.label.c_str()), fallible);
     }
   }
@@ -1118,11 +1120,11 @@ void MediaTransportHandlerSTS::GetIceStats(
 
   if (NS_SUCCEEDED(aStream.GetRemoteCandidates(&candidates))) {
     ToRTCIceCandidateStats(candidates, dom::RTCStatsType::Remote_candidate,
-                           transportId, aNow, aReport, mObfuscateHostAddresses,
+                           transportId, aNow, aStats, mObfuscateHostAddresses,
                            mSignaledAddresses);
     // add the remote candidates unparsed string to a sequence
     for (const auto& candidate : candidates) {
-      aReport->mRawRemoteCandidates.Value().AppendElement(
+      aStats->mRawRemoteCandidates.AppendElement(
           NS_ConvertASCIItoUTF16(candidate.label.c_str()), fallible);
     }
   }

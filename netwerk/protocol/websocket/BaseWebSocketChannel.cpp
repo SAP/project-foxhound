@@ -10,7 +10,6 @@
 #include "nsILoadGroup.h"
 #include "nsINode.h"
 #include "nsIInterfaceRequestor.h"
-#include "nsAutoPtr.h"
 #include "nsProxyRelease.h"
 #include "nsStandardURL.h"
 #include "LoadInfo.h"
@@ -201,16 +200,17 @@ BaseWebSocketChannel::SetPingTimeout(uint32_t aSeconds) {
 }
 
 NS_IMETHODIMP
-BaseWebSocketChannel::InitLoadInfoNative(nsINode* aLoadingNode,
-                                         nsIPrincipal* aLoadingPrincipal,
-                                         nsIPrincipal* aTriggeringPrincipal,
-                                         nsICookieSettings* aCookieSettings,
-                                         uint32_t aSecurityFlags,
-                                         uint32_t aContentPolicyType) {
-  mLoadInfo = new LoadInfo(aLoadingPrincipal, aTriggeringPrincipal,
-                           aLoadingNode, aSecurityFlags, aContentPolicyType);
-  if (aCookieSettings) {
-    mLoadInfo->SetCookieSettings(aCookieSettings);
+BaseWebSocketChannel::InitLoadInfoNative(
+    nsINode* aLoadingNode, nsIPrincipal* aLoadingPrincipal,
+    nsIPrincipal* aTriggeringPrincipal,
+    nsICookieJarSettings* aCookieJarSettings, uint32_t aSecurityFlags,
+    uint32_t aContentPolicyType, uint32_t aSandboxFlags) {
+  mLoadInfo = new LoadInfo(
+      aLoadingPrincipal, aTriggeringPrincipal, aLoadingNode, aSecurityFlags,
+      aContentPolicyType, Maybe<mozilla::dom::ClientInfo>(),
+      Maybe<mozilla::dom::ServiceWorkerDescriptor>(), aSandboxFlags);
+  if (aCookieJarSettings) {
+    mLoadInfo->SetCookieJarSettings(aCookieJarSettings);
   }
   return NS_OK;
 }
@@ -223,7 +223,7 @@ BaseWebSocketChannel::InitLoadInfo(nsINode* aLoadingNode,
                                    uint32_t aContentPolicyType) {
   return InitLoadInfoNative(aLoadingNode, aLoadingPrincipal,
                             aTriggeringPrincipal, nullptr, aSecurityFlags,
-                            aContentPolicyType);
+                            aContentPolicyType, 0);
 }
 
 NS_IMETHODIMP

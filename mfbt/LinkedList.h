@@ -64,10 +64,11 @@
 #ifndef mozilla_LinkedList_h
 #define mozilla_LinkedList_h
 
+#include <utility>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
 #include "mozilla/RefPtr.h"
 
 #ifdef __cplusplus
@@ -619,10 +620,7 @@ class AutoCleanLinkedList : public LinkedList<T> {
  public:
   ~AutoCleanLinkedList() { clear(); }
 
-  AutoCleanLinkedList& operator=(AutoCleanLinkedList&& aOther) {
-    LinkedList<T>::operator=(std::forward<LinkedList<T>>(aOther));
-    return *this;
-  }
+  AutoCleanLinkedList& operator=(AutoCleanLinkedList&& aOther) = default;
 
   void clear() {
     while (ClientType element = this->popFirst()) {

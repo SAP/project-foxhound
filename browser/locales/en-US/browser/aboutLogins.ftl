@@ -27,8 +27,8 @@ fxaccounts-avatar-button =
 
 menu =
   .title = Open menu
-# This menuitem is only visible on Windows
-menu-menuitem-import = Import Passwords…
+# This menuitem is only visible on Windows and macOS
+about-logins-menu-menuitem-import-from-another-browser = Import from Another Browser…
 menu-menuitem-preferences =
   { PLATFORM() ->
       [windows] Options
@@ -49,6 +49,7 @@ login-list-count =
   }
 login-list-sort-label-text = Sort by:
 login-list-name-option = Name (A-Z)
+login-list-name-reverse-option = Name (Z-A)
 login-list-breached-option = Breached Websites
 login-list-last-changed-option = Last Modified
 login-list-last-used-option = Last Used
@@ -70,12 +71,13 @@ login-intro-description = If you saved your logins to { -brand-product-name } on
 login-intro-instruction-fxa = Create or sign in to your { -fxaccount-brand-name } on the device where your logins are saved
 login-intro-instruction-fxa-settings = Make sure you’ve selected the Logins checkbox in { -sync-brand-short-name } Settings
 about-logins-intro-instruction-help = Visit <a data-l10n-name="help-link">{ -lockwise-brand-short-name } Support</a> for more help
+about-logins-intro-import = If your logins are saved in another browser, you can <a data-l10n-name="import-link">import them into { -lockwise-brand-short-name }</a>
 
 ## Login
 
 login-item-new-login-title = Create New Login
 login-item-edit-button = Edit
-login-item-delete-button = Delete
+about-logins-login-item-remove-button = Remove
 login-item-origin-label = Website address
 login-item-origin =
   .placeholder = https://www.example.com
@@ -85,10 +87,8 @@ about-logins-login-item-username =
 login-item-copy-username-button-text = Copy
 login-item-copied-username-button-text = Copied!
 login-item-password-label = Password
-login-item-password-reveal-checkbox-show =
-  .title = Show password
-login-item-password-reveal-checkbox-hide =
-  .title = Hide password
+login-item-password-reveal-checkbox =
+  .aria-label = Show password
 login-item-copy-password-button-text = Copy
 login-item-copied-password-button-text = Copied!
 login-item-save-changes-button = Save Changes
@@ -105,11 +105,7 @@ master-password-reload-button =
   .label = Log in
   .accesskey = L
 
-## Dialogs
-
-confirmation-dialog-cancel-button = Cancel
-confirmation-dialog-dismiss-button =
-  .title = Cancel
+## Password Sync notification
 
 enable-password-sync-notification-message =
   { PLATFORM() ->
@@ -123,10 +119,19 @@ enable-password-sync-preferences-button =
        *[other] Visit { -sync-brand-short-name } Preferences
     }
   .accesskey = V
+about-logins-enable-password-sync-dont-ask-again-button =
+  .label = Don’t ask me again
+  .accesskey = D
 
-confirm-delete-dialog-title = Delete this login?
+## Dialogs
+
+confirmation-dialog-cancel-button = Cancel
+confirmation-dialog-dismiss-button =
+  .title = Cancel
+
+about-logins-confirm-remove-dialog-title = Remove this login?
 confirm-delete-dialog-message = This action cannot be undone.
-confirm-delete-dialog-confirm-button = Delete
+about-logins-confirm-remove-dialog-confirm-button = Remove
 
 confirm-discard-changes-dialog-title = Discard unsaved changes?
 confirm-discard-changes-dialog-message = All unsaved changes will be lost.

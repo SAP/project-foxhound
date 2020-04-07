@@ -33,6 +33,7 @@ class nsIFrame;
 namespace mozilla {
 class TimeStamp;
 class SVGImageContext;
+struct MediaFeatureChange;
 }
 
 namespace mozilla {
@@ -130,6 +131,7 @@ interface imgIContainer : nsISupports
     */
   const unsigned short TYPE_RASTER = 0;
   const unsigned short TYPE_VECTOR = 1;
+  const unsigned short TYPE_REQUEST = 2;
 
   /**
    * The type of this image (one of the TYPE_* values above).
@@ -646,6 +648,14 @@ interface imgIContainer : nsISupports
   [noscript, notxpcom] void propagateUseCounters(in Document aDocument);
 
   %{C++
+  /*
+   * Called when media feature values that apply to all documents (such as
+   * those based on system metrics) have changed.  If this image is a type
+   * that can respond to media queries (i.e., an SVG image), this function
+   * is overridden to handle restyling and invalidating the image.
+   */
+  virtual void MediaFeatureValuesChangedAllDocuments(const mozilla::MediaFeatureChange& aChange) {}
+
   /*
    * Get the set of sizes the image can decode to natively.
    */

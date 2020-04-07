@@ -10,6 +10,8 @@
 #include "mozilla/Range.h"
 #include "mozilla/Unused.h"
 
+#include <algorithm>
+
 #include "vm/JSObject-inl.h"
 #include "vm/StringType-inl.h"
 
@@ -58,7 +60,7 @@ bool StringBuffer::inflateChars() {
    * value >= sInlineCapacity. Since Latin1CharBuffer::sInlineCapacity >
    * TwoByteCharBuffer::sInlineCapacitychars, we'd always malloc here.
    */
-  size_t capacity = Max(reserved_, latin1Chars().length());
+  size_t capacity = std::max(reserved_, latin1Chars().length());
   if (!twoByte.reserve(capacity)) {
     return false;
   }
@@ -73,7 +75,7 @@ bool StringBuffer::inflateChars() {
 }
 
 template <typename CharT>
-JSFlatString* StringBuffer::finishStringInternal(JSContext* cx) {
+JSLinearString* StringBuffer::finishStringInternal(JSContext* cx) {
   size_t len = length();
 
   // Taintfox: propagate taint
@@ -96,10 +98,6 @@ JSFlatString* StringBuffer::finishStringInternal(JSContext* cx) {
     return str;
   }
 
-  if (!append('\0')) {
-    return nullptr;
-  }
-
   UniquePtr<CharT[], JS::FreePolicy> buf(
       ExtractWellSized<CharT>(chars<CharT>()));
 
@@ -107,7 +105,7 @@ JSFlatString* StringBuffer::finishStringInternal(JSContext* cx) {
     return nullptr;
   }
 
-  JSFlatString* str = NewStringDontDeflate<CanGC>(cx, std::move(buf), len);
+  JSLinearString* str = NewStringDontDeflate<CanGC>(cx, std::move(buf), len);
   if (!str) {
     return nullptr;
   }
@@ -120,7 +118,7 @@ JSFlatString* StringBuffer::finishStringInternal(JSContext* cx) {
   return str;
 }
 
-JSFlatString* JSStringBuilder::finishString() {
+JSLinearString* JSStringBuilder::finishString() {
   size_t len = length();
   if (len == 0) {
     return cx_->names().empty;
@@ -130,10 +128,10 @@ JSFlatString* JSStringBuilder::finishString() {
     return nullptr;
   }
 
-  JS_STATIC_ASSERT(JSFatInlineString::MAX_LENGTH_TWO_BYTE <
-                   TwoByteCharBuffer::InlineLength);
-  JS_STATIC_ASSERT(JSFatInlineString::MAX_LENGTH_LATIN1 <
-                   Latin1CharBuffer::InlineLength);
+  static_assert(JSFatInlineString::MAX_LENGTH_TWO_BYTE <
+                TwoByteCharBuffer::InlineLength);
+  static_assert(JSFatInlineString::MAX_LENGTH_LATIN1 <
+                Latin1CharBuffer::InlineLength);
 
   return isLatin1() ? finishStringInternal<Latin1Char>(cx_)
                     : finishStringInternal<char16_t>(cx_);

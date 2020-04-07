@@ -16,12 +16,14 @@
 #  include "brotli/decode.h"  // brotli
 #endif
 #include "nsISupportsUtils.h"
+#include "MmapFaultHandler.h"
 #include "prio.h"
 #include "plstr.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MemUtils.h"
 #include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/StaticMutex.h"
 #include "stdlib.h"
 #include "nsDirectoryService.h"
 #include "nsWildCard.h"
@@ -81,7 +83,13 @@ static uint32_t HashName(const char* aName, uint16_t nameLen);
 class ZipArchiveLogger {
  public:
   void Init(const char* env) {
-    if (!fd) {
+    StaticMutexAutoLock lock(sLock);
+
+    // AddRef
+    MOZ_ASSERT(mRefCnt >= 0);
+    ++mRefCnt;
+
+    if (!mFd) {
       nsCOMPtr<nsIFile> logFile;
       nsresult rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(env), false,
                                     getter_AddRefs(logFile));
@@ -110,38 +118,39 @@ class ZipArchiveLogger {
                                      0644, &file);
       if (NS_FAILED(rv)) return;
 #endif
-      fd = file;
+      mFd = file;
     }
   }
 
-  void Write(const nsACString& zip, const char* entry) const {
-    if (fd) {
+  void Write(const nsACString& zip, const char* entry) {
+    StaticMutexAutoLock lock(sLock);
+
+    if (mFd) {
       nsCString buf(zip);
       buf.Append(' ');
       buf.Append(entry);
       buf.Append('\n');
-      PR_Write(fd, buf.get(), buf.Length());
+      PR_Write(mFd, buf.get(), buf.Length());
     }
   }
 
-  void AddRef() {
-    MOZ_ASSERT(refCnt >= 0);
-    ++refCnt;
-  }
-
   void Release() {
-    MOZ_ASSERT(refCnt > 0);
-    if ((0 == --refCnt) && fd) {
-      PR_Close(fd);
-      fd = nullptr;
+    StaticMutexAutoLock lock(sLock);
+
+    MOZ_ASSERT(mRefCnt > 0);
+    if ((0 == --mRefCnt) && mFd) {
+      PR_Close(mFd);
+      mFd = nullptr;
     }
   }
 
  private:
-  int refCnt;
-  PRFileDesc* fd;
+  static StaticMutex sLock;
+  int mRefCnt;
+  PRFileDesc* mFd;
 };
 
+StaticMutex ZipArchiveLogger::sLock;
 static ZipArchiveLogger zipLog;
 
 //***********************************************************
@@ -225,7 +234,7 @@ nsresult nsZipHandle::Init(nsZipArchive* zip, const char* entry,
   RefPtr<nsZipHandle> handle = new nsZipHandle();
   if (!handle) return NS_ERROR_OUT_OF_MEMORY;
 
-  handle->mBuf = new nsZipItemPtr<uint8_t>(zip, entry);
+  handle->mBuf = MakeUnique<nsZipItemPtr<uint8_t>>(zip, entry);
   if (!handle->mBuf) return NS_ERROR_OUT_OF_MEMORY;
 
   if (!handle->mBuf->Buffer()) return NS_ERROR_UNEXPECTED;
@@ -278,7 +287,7 @@ nsresult nsZipHandle::findDataStart() {
   // type |uint8_t|, which is guaranteed to be 8 bits.
   const uint32_t CRXIntSize = 4;
 
-  MOZ_WIN_MEM_TRY_BEGIN
+  MMAP_FAULT_HANDLER_BEGIN_HANDLE(this)
   if (mTotalLen > CRXIntSize * 4 && xtolong(mFileStart) == kCRXMagic) {
     const uint8_t* headerData = mFileStart;
     headerData += CRXIntSize * 2;  // Skip magic number and version number
@@ -294,7 +303,7 @@ nsresult nsZipHandle::findDataStart() {
   }
   mLen = mTotalLen;
   mFileData = mFileStart;
-  MOZ_WIN_MEM_TRY_CATCH(return NS_ERROR_FAILURE)
+  MMAP_FAULT_HANDLER_CATCH(NS_ERROR_FAILURE)
   return NS_OK;
 }
 
@@ -340,6 +349,8 @@ nsresult nsZipArchive::OpenArchive(nsZipHandle* aZipHandle, PRFileDesc* aFd) {
     if (aZipHandle->mFile && XRE_IsParentProcess()) {
       static char* env = PR_GetEnv("MOZ_JAR_LOG_FILE");
       if (env) {
+        mUseZipLog = true;
+
         zipLog.Init(env);
         // We only log accesses in jar/zip archives within the NS_GRE_DIR
         // and/or the APK on Android. For the former, we log the archive path
@@ -466,21 +477,21 @@ nsZipItem* nsZipArchive::GetItem(const char* aEntryName) {
         if (BuildSynthetics() != NS_OK) return 0;
       }
     }
-    MOZ_WIN_MEM_TRY_BEGIN
+    MMAP_FAULT_HANDLER_BEGIN_HANDLE(mFd)
     nsZipItem* item = mFiles[HashName(aEntryName, len)];
     while (item) {
       if ((len == item->nameLength) &&
           (!memcmp(aEntryName, item->Name(), len))) {
         // Successful GetItem() is a good indicator that the file is about to be
         // read
-        if (mURI.Length()) {
+        if (mUseZipLog && mURI.Length()) {
           zipLog.Write(mURI, aEntryName);
         }
         return item;  //-- found it
       }
       item = item->next;
     }
-    MOZ_WIN_MEM_TRY_CATCH(return nullptr)
+    MMAP_FAULT_HANDLER_CATCH(nullptr)
   }
   return nullptr;
 }
@@ -591,7 +602,7 @@ nsresult nsZipFind::FindNext(const char** aResult, uint16_t* aNameLen) {
 
   *aResult = 0;
   *aNameLen = 0;
-  MOZ_WIN_MEM_TRY_BEGIN
+  MMAP_FAULT_HANDLER_BEGIN_HANDLE(mArchive->GetFD())
   // we start from last match, look for next
   while (mSlot < ZIP_TABSIZE) {
     // move to next in current chain, or move to new slot
@@ -617,7 +628,7 @@ nsresult nsZipFind::FindNext(const char** aResult, uint16_t* aNameLen) {
       return NS_OK;
     }
   }
-  MOZ_WIN_MEM_TRY_CATCH(return NS_ERROR_FAILURE)
+  MMAP_FAULT_HANDLER_CATCH(NS_ERROR_FAILURE)
   return NS_ERROR_FILE_TARGET_DOES_NOT_EXIST;
 }
 
@@ -641,7 +652,7 @@ nsresult nsZipArchive::BuildFileList(PRFileDesc* aFd) {
   const uint8_t* buf;
   const uint8_t* startp = mFd->mFileData;
   const uint8_t* endp = startp + mFd->mLen;
-  MOZ_WIN_MEM_TRY_BEGIN
+  MMAP_FAULT_HANDLER_BEGIN_HANDLE(mFd)
   uint32_t centralOffset = 4;
   // Only perform readahead in the parent process. Children processes
   // don't need readahead when the file has already been readahead by
@@ -734,7 +745,7 @@ nsresult nsZipArchive::BuildFileList(PRFileDesc* aFd) {
     }
   }
 
-  MOZ_WIN_MEM_TRY_CATCH(return NS_ERROR_FAILURE)
+  MMAP_FAULT_HANDLER_CATCH(NS_ERROR_FAILURE)
   return NS_OK;
 }
 
@@ -745,7 +756,7 @@ nsresult nsZipArchive::BuildSynthetics() {
   if (mBuiltSynthetics) return NS_OK;
   mBuiltSynthetics = true;
 
-  MOZ_WIN_MEM_TRY_BEGIN
+  MMAP_FAULT_HANDLER_BEGIN_HANDLE(mFd)
   // Create synthetic entries for any missing directories.
   // Do this when all ziptable has scanned to prevent double entries.
   for (auto* item : mFiles) {
@@ -799,7 +810,7 @@ nsresult nsZipArchive::BuildSynthetics() {
       } /* end processing of dirs in item's name */
     }
   }
-  MOZ_WIN_MEM_TRY_CATCH(return NS_ERROR_FAILURE)
+  MMAP_FAULT_HANDLER_CATCH(NS_ERROR_FAILURE)
   return NS_OK;
 }
 
@@ -813,12 +824,14 @@ nsZipHandle* nsZipArchive::GetFD() {
 //---------------------------------------------
 uint32_t nsZipArchive::GetDataOffset(nsZipItem* aItem) {
   MOZ_ASSERT(aItem);
-  MOZ_WIN_MEM_TRY_BEGIN
+
+  uint32_t offset;
+  MMAP_FAULT_HANDLER_BEGIN_HANDLE(mFd)
   //-- read local header to get variable length values and calculate
   //-- the real data offset
   uint32_t len = mFd->mLen;
   const uint8_t* data = mFd->mFileData;
-  uint32_t offset = aItem->LocalOffset();
+  offset = aItem->LocalOffset();
   if (len < ZIPLOCAL_SIZE || offset > len - ZIPLOCAL_SIZE) return 0;
 
   // -- check signature before using the structure, in case the zip file is
@@ -832,8 +845,8 @@ uint32_t nsZipArchive::GetDataOffset(nsZipItem* aItem) {
   offset += ZIPLOCAL_SIZE + xtoint(Local->filename_len) +
             xtoint(Local->extrafield_len);
 
+  MMAP_FAULT_HANDLER_CATCH(0)
   return offset;
-  MOZ_WIN_MEM_TRY_CATCH(return 0)
 }
 
 //---------------------------------------------
@@ -841,25 +854,25 @@ uint32_t nsZipArchive::GetDataOffset(nsZipItem* aItem) {
 //---------------------------------------------
 const uint8_t* nsZipArchive::GetData(nsZipItem* aItem) {
   MOZ_ASSERT(aItem);
-  MOZ_WIN_MEM_TRY_BEGIN
   uint32_t offset = GetDataOffset(aItem);
 
+  MMAP_FAULT_HANDLER_BEGIN_HANDLE(mFd)
   // -- check if there is enough source data in the file
   if (!offset || mFd->mLen < aItem->Size() ||
       offset > mFd->mLen - aItem->Size() ||
       (aItem->Compression() == STORED && aItem->Size() != aItem->RealSize())) {
     return nullptr;
   }
+  MMAP_FAULT_HANDLER_CATCH(nullptr)
 
   return mFd->mFileData + offset;
-  MOZ_WIN_MEM_TRY_CATCH(return nullptr)
 }
 
 // nsZipArchive::GetComment
 bool nsZipArchive::GetComment(nsACString& aComment) {
-  MOZ_WIN_MEM_TRY_BEGIN
+  MMAP_FAULT_HANDLER_BEGIN_BUFFER(mCommentPtr, mCommentLen)
   aComment.Assign(mCommentPtr, mCommentLen);
-  MOZ_WIN_MEM_TRY_CATCH(return false)
+  MMAP_FAULT_HANDLER_CATCH(false)
   return true;
 }
 
@@ -876,9 +889,8 @@ nsZipArchive::nsZipArchive()
     : mRefCnt(0),
       mCommentPtr(nullptr),
       mCommentLen(0),
-      mBuiltSynthetics(false) {
-  zipLog.AddRef();
-
+      mBuiltSynthetics(false),
+      mUseZipLog(false) {
   // initialize the table to nullptr
   memset(mFiles, 0, sizeof(mFiles));
 }
@@ -889,7 +901,9 @@ NS_IMPL_RELEASE(nsZipArchive)
 nsZipArchive::~nsZipArchive() {
   CloseArchive();
 
-  zipLog.Release();
+  if (mUseZipLog) {
+    zipLog.Release();
+  }
 }
 
 //------------------------------------------
@@ -1024,13 +1038,19 @@ uint16_t nsZipItem::Mode() {
 
 const uint8_t* nsZipItem::GetExtraField(uint16_t aTag, uint16_t* aBlockSize) {
   if (isSynthetic) return nullptr;
-  MOZ_WIN_MEM_TRY_BEGIN
+
   const unsigned char* buf =
       ((const unsigned char*)central) + ZIPCENTRAL_SIZE + nameLength;
-  uint32_t buflen = (uint32_t)xtoint(central->extrafield_len);
+  uint32_t buflen;
+
+  MMAP_FAULT_HANDLER_BEGIN_BUFFER(central, ZIPCENTRAL_SIZE + nameLength)
+  buflen = (uint32_t)xtoint(central->extrafield_len);
+  MMAP_FAULT_HANDLER_CATCH(nullptr)
+
   uint32_t pos = 0;
   uint16_t tag, blocksize;
 
+  MMAP_FAULT_HANDLER_BEGIN_BUFFER(buf, buflen)
   while (buf && (pos + 4) <= buflen) {
     tag = xtoint(buf + pos);
     blocksize = xtoint(buf + pos + 2);
@@ -1042,8 +1062,8 @@ const uint8_t* nsZipItem::GetExtraField(uint16_t aTag, uint16_t* aBlockSize) {
 
     pos += blocksize + 4;
   }
+  MMAP_FAULT_HANDLER_CATCH(nullptr)
 
-  MOZ_WIN_MEM_TRY_CATCH(return nullptr)
   return nullptr;
 }
 
@@ -1111,7 +1131,7 @@ uint8_t* nsZipCursor::ReadOrCopy(uint32_t* aBytesRead, bool aCopy) {
   bool verifyCRC = true;
 
   if (!mZs.next_in) return nullptr;
-  MOZ_WIN_MEM_TRY_BEGIN
+  MMAP_FAULT_HANDLER_BEGIN_BUFFER(mZs.next_in, mZs.avail_in)
   switch (mItem->Compression()) {
     case STORED:
       if (!aCopy) {
@@ -1170,7 +1190,7 @@ uint8_t* nsZipCursor::ReadOrCopy(uint32_t* aBytesRead, bool aCopy) {
     mCRC = crc32(mCRC, (const unsigned char*)buf, *aBytesRead);
     if (verifyCRC && mCRC != mItem->CRC32()) return nullptr;
   }
-  MOZ_WIN_MEM_TRY_CATCH(return nullptr)
+  MMAP_FAULT_HANDLER_CATCH(nullptr)
   return buf;
 }
 

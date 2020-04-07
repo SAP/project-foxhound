@@ -8,7 +8,6 @@
 
 #include "ImageContainer.h"
 
-#include "nsAutoPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "nsIPrincipal.h"
@@ -63,7 +62,7 @@ class DOMMediaStream : public DOMEventTargetHelper,
 
   class TrackListener {
    public:
-    virtual ~TrackListener() {}
+    virtual ~TrackListener() = default;
 
     /**
      * Called when the DOMMediaStream has a live track added, either by
@@ -144,6 +143,9 @@ class DOMMediaStream : public DOMEventTargetHelper,
 
   // NON-WebIDL
 
+  // Returns true if this stream contains a live audio track.
+  bool Audible() const;
+
   /**
    * Returns true if this DOMMediaStream has aTrack in mTracks.
    */
@@ -169,6 +171,16 @@ class DOMMediaStream : public DOMEventTargetHelper,
   void AddTrackInternal(MediaStreamTrack* aTrack);
 
   /**
+   * Removes a MediaStreamTrack from mTracks and fires "removetrack" if it
+   * was removed.
+   *
+   * Note that "removetrack" is raised synchronously and only has an effect if
+   * this MediaStream is already exposed to script. For spec compliance this is
+   * to be called from an async task.
+   */
+  void RemoveTrackInternal(MediaStreamTrack* aTrack);
+
+  /**
    * Add an nsISupports object that this stream will keep alive as long as
    * the stream itself is alive.
    */
@@ -185,10 +197,6 @@ class DOMMediaStream : public DOMEventTargetHelper,
   // UnregisterTrackListener before being destroyed, so we don't hold on to
   // a dead pointer. Main thread only.
   void UnregisterTrackListener(TrackListener* aListener);
-
-  // Tells this MediaStream whether it can go inactive as soon as no tracks
-  // are live anymore.
-  void SetFinishedOnInactive(bool aFinishedOnInactive);
 
  protected:
   virtual ~DOMMediaStream();
@@ -240,10 +248,6 @@ class DOMMediaStream : public DOMEventTargetHelper,
 
   // True if this stream has live audio tracks.
   bool mAudible = false;
-
-  // For compatibility with mozCaptureStream, we in some cases do not go
-  // inactive until the MediaDecoder lets us. (Remove this in Bug 1302379)
-  bool mFinishedOnInactive = true;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(DOMMediaStream, NS_DOMMEDIASTREAM_IID)

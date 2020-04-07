@@ -312,7 +312,10 @@
 #include "mozilla/DebugOnly.h"
 
 #include "gc/GCEnum.h"
+#include "js/AllocPolicy.h"
+#include "js/GCAPI.h"
 #include "js/HashTable.h"
+#include "js/HeapAPI.h"
 #include "js/SliceBudget.h"
 #include "threading/ProtectedData.h"
 
@@ -650,6 +653,12 @@ class GCSchedulingState {
   MainThreadOrGCTaskData<bool> inHighFrequencyGCMode_;
 
  public:
+  /*
+   * Influences the GC thresholds for the atoms zone to discourage collection of
+   * this zone during page load.
+   */
+  MainThreadOrGCTaskData<bool> inPageLoad;
+
   GCSchedulingState() : inHighFrequencyGCMode_(false) {}
 
   bool inHighFrequencyGCMode() const { return inHighFrequencyGCMode_; }
@@ -671,9 +680,7 @@ struct TriggerResult {
   size_t thresholdBytes;
 };
 
-using AtomicByteCount =
-    mozilla::Atomic<size_t, mozilla::ReleaseAcquire,
-                    mozilla::recordreplay::Behavior::DontPreserve>;
+using AtomicByteCount = mozilla::Atomic<size_t, mozilla::ReleaseAcquire>;
 
 /*
  * Tracks the size of allocated data. This is used for both GC and malloc data.
@@ -770,7 +777,8 @@ class GCHeapThreshold : public HeapThreshold {
  public:
   void updateAfterGC(size_t lastBytes, JSGCInvocationKind gckind,
                      const GCSchedulingTunables& tunables,
-                     const GCSchedulingState& state, const AutoLockGC& lock);
+                     const GCSchedulingState& state, bool isAtomsZone,
+                     const AutoLockGC& lock);
 
  private:
   static float computeZoneHeapGrowthFactorForHeapSize(
@@ -803,13 +811,33 @@ class JitHeapThreshold : public HeapThreshold {
   explicit JitHeapThreshold(size_t bytes) { bytes_ = bytes; }
 };
 
+struct SharedMemoryUse {
+  explicit SharedMemoryUse(MemoryUse use) : count(0), nbytes(0) {
+#ifdef DEBUG
+    this->use = use;
+#endif
+  }
+
+  size_t count;
+  size_t nbytes;
+#ifdef DEBUG
+  MemoryUse use;
+#endif
+};
+
+// A map which tracks shared memory uses (shared in the sense that an allocation
+// can be referenced by more than one GC thing in a zone). This allows us to
+// only account for the memory once.
+using SharedMemoryMap =
+    HashMap<void*, SharedMemoryUse, DefaultHasher<void*>, SystemAllocPolicy>;
+
 #ifdef DEBUG
 
 // Counts memory associated with GC things in a zone.
 //
-// This records details of the cell the memory allocations is associated with to
-// check the correctness of the information provided. This is not present in opt
-// builds.
+// This records details of the cell (or non-cell pointer) the memory allocation
+// is associated with to check the correctness of the information provided. This
+// is not present in opt builds.
 class MemoryTracker {
  public:
   MemoryTracker();
@@ -818,55 +846,63 @@ class MemoryTracker {
 
   void adopt(MemoryTracker& other);
 
-  void trackMemory(Cell* cell, size_t nbytes, MemoryUse use);
-  void untrackMemory(Cell* cell, size_t nbytes, MemoryUse use);
-  void swapMemory(Cell* a, Cell* b, MemoryUse use);
-  void registerPolicy(ZoneAllocPolicy* policy);
-  void unregisterPolicy(ZoneAllocPolicy* policy);
-  void movePolicy(ZoneAllocPolicy* dst, ZoneAllocPolicy* src);
-  void incPolicyMemory(ZoneAllocPolicy* policy, size_t nbytes);
-  void decPolicyMemory(ZoneAllocPolicy* policy, size_t nbytes);
+  // Track memory by associated GC thing pointer.
+  void trackGCMemory(Cell* cell, size_t nbytes, MemoryUse use);
+  void untrackGCMemory(Cell* cell, size_t nbytes, MemoryUse use);
+  void swapGCMemory(Cell* a, Cell* b, MemoryUse use);
+
+  // Track memory by associated non-GC thing pointer.
+  void registerNonGCMemory(void* ptr, MemoryUse use);
+  void unregisterNonGCMemory(void* ptr, MemoryUse use);
+  void moveNonGCMemory(void* dst, void* src, MemoryUse use);
+  void incNonGCMemory(void* ptr, size_t nbytes, MemoryUse use);
+  void decNonGCMemory(void* ptr, size_t nbytes, MemoryUse use);
 
  private:
+  template <typename Ptr>
   struct Key {
-    Key(Cell* cell, MemoryUse use);
-    Cell* cell() const;
+    Key(Ptr* ptr, MemoryUse use);
+    Ptr* ptr() const;
     MemoryUse use() const;
 
    private:
 #  ifdef JS_64BIT
     // Pack this into a single word on 64 bit platforms.
-    uintptr_t cell_ : 56;
+    uintptr_t ptr_ : 56;
     uintptr_t use_ : 8;
 #  else
-    uintptr_t cell_ : 32;
+    uintptr_t ptr_ : 32;
     uintptr_t use_ : 8;
 #  endif
   };
 
+  template <typename Ptr>
   struct Hasher {
-    using Lookup = Key;
+    using KeyT = Key<Ptr>;
+    using Lookup = KeyT;
     static HashNumber hash(const Lookup& l);
-    static bool match(const Key& key, const Lookup& l);
-    static void rekey(Key& k, const Key& newKey);
+    static bool match(const KeyT& key, const Lookup& l);
+    static void rekey(KeyT& k, const KeyT& newKey);
   };
 
-  // Map containing the allocated size associated with (cell, use) pairs.
-  using Map = HashMap<Key, size_t, Hasher, SystemAllocPolicy>;
+  template <typename Ptr>
+  using Map = HashMap<Key<Ptr>, size_t, Hasher<Ptr>, SystemAllocPolicy>;
+  using GCMap = Map<Cell>;
+  using NonGCMap = Map<void>;
 
-  // Map containing the allocated size associated with each instance of a
-  // container that uses ZoneAllocPolicy.
-  using ZoneAllocPolicyMap =
-      HashMap<ZoneAllocPolicy*, size_t, DefaultHasher<ZoneAllocPolicy*>,
-              SystemAllocPolicy>;
+  static bool isGCMemoryUse(MemoryUse use);
+  static bool isNonGCMemoryUse(MemoryUse use);
+  static bool allowMultipleAssociations(MemoryUse use);
 
-  bool allowMultipleAssociations(MemoryUse use) const;
-
-  size_t getAndRemoveEntry(const Key& key, LockGuard<Mutex>& lock);
+  size_t getAndRemoveEntry(const Key<Cell>& key, LockGuard<Mutex>& lock);
 
   Mutex mutex;
-  Map map;
-  ZoneAllocPolicyMap policyMap;
+
+  // Map containing the allocated size associated with (cell, use) pairs.
+  GCMap gcMap;
+
+  // Map containing the allocated size associated (non-cell pointer, use) pairs.
+  NonGCMap nonGCMap;
 };
 
 #endif  // DEBUG

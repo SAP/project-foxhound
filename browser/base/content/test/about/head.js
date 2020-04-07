@@ -16,7 +16,7 @@ function getSecurityInfo(securityInfoAsString) {
 function getCertChain(securityInfoAsString) {
   let certChain = "";
   let securityInfo = getSecurityInfo(securityInfoAsString);
-  for (let cert of securityInfo.failedCertChain.getEnumerator()) {
+  for (let cert of securityInfo.failedCertChain) {
     certChain += getPEMString(cert);
   }
   return certChain;
@@ -34,30 +34,27 @@ function getPEMString(cert) {
   );
 }
 
-function injectErrorPageFrame(tab, src, sandboxed) {
-  return ContentTask.spawn(
+async function injectErrorPageFrame(tab, src, sandboxed) {
+  let loadedPromise = BrowserTestUtils.browserLoaded(
     tab.linkedBrowser,
-    { frameSrc: src, frameSandboxed: sandboxed },
-    async function({ frameSrc, frameSandboxed }) {
-      let loaded = ContentTaskUtils.waitForEvent(
-        content.wrappedJSObject,
-        "DOMFrameContentLoaded"
-      );
-      let iframe = content.document.createElement("iframe");
-      iframe.src = frameSrc;
-      if (frameSandboxed) {
-        iframe.setAttribute("sandbox", "allow-scripts");
-      }
-      content.document.body.appendChild(iframe);
-      await loaded;
-      // We will have race conditions when accessing the frame content after setting a src,
-      // so we can't wait for AboutNetErrorLoad. Let's wait for the certerror class to
-      // appear instead (which should happen at the same time as AboutNetErrorLoad).
-      await ContentTaskUtils.waitForCondition(() =>
-        iframe.contentDocument.body.classList.contains("certerror")
-      );
-    }
+    true,
+    null,
+    true
   );
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [src, sandboxed], async function(
+    frameSrc,
+    frameSandboxed
+  ) {
+    let iframe = content.document.createElement("iframe");
+    iframe.src = frameSrc;
+    if (frameSandboxed) {
+      iframe.setAttribute("sandbox", "allow-scripts");
+    }
+    content.document.body.appendChild(iframe);
+  });
+
+  await loadedPromise;
 }
 
 async function openErrorPage(src, useFrame, sandboxed) {
@@ -164,6 +161,9 @@ function promiseTabLoadEvent(tab, url) {
  * Wait for the search engine to change.
  */
 function promiseContentSearchChange(browser, newEngineName) {
+  // Callers of this depend on very specific, very racy timing, and fail
+  // if we introduce the trip through SpecialPowersParent that
+  // SpecialPowers.spawn requires.
   return ContentTask.spawn(browser, { newEngineName }, async function(args) {
     return new Promise(resolve => {
       content.addEventListener("ContentSearchService", function listener(

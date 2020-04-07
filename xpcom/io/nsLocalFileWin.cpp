@@ -10,7 +10,6 @@
 #include "mozilla/Utf8.h"
 
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsMemory.h"
 #include "GeckoProfiler.h"
 
@@ -20,7 +19,6 @@
 #include "nsNativeCharsetUtils.h"
 
 #include "nsSimpleEnumerator.h"
-#include "nsIComponentManager.h"
 #include "prio.h"
 #include "private/pprio.h"  // To get PR_ImportFile
 #include "nsHashKeys.h"
@@ -52,8 +50,8 @@
 #include "nsXPCOMCIDInternal.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
-
 #include "nsIWindowMediator.h"
+
 #include "mozIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWidget.h"
@@ -104,122 +102,64 @@ static HWND GetMostRecentNavigatorHWND() {
   return reinterpret_cast<HWND>(widget->GetNativeData(NS_NATIVE_WINDOW));
 }
 
-/**
- * A runnable to dispatch back to the main thread when
- * AsyncRevealOperation completes.
- */
-class AsyncLocalFileWinDone : public Runnable {
- public:
-  AsyncLocalFileWinDone()
-      : Runnable("AsyncLocalFileWinDone"),
-        mWorkerThread(do_GetCurrentThread()) {
-    // Objects of this type must only be created on worker threads
-    MOZ_ASSERT(!NS_IsMainThread());
+nsresult nsLocalFile::RevealFile(const nsString& aResolvedPath) {
+  MOZ_ASSERT(!NS_IsMainThread(), "Don't run on the main thread");
+
+  DWORD attributes = GetFileAttributesW(aResolvedPath.get());
+  if (INVALID_FILE_ATTRIBUTES == attributes) {
+    return NS_ERROR_FILE_INVALID_PATH;
   }
 
-  NS_IMETHOD Run() override {
-    // This event shuts down the worker thread and so must be main thread.
-    MOZ_ASSERT(NS_IsMainThread());
-
-    // If we don't destroy the thread when we're done with it, it will hang
-    // around forever... and that is bad!
-    mWorkerThread->Shutdown();
-    return NS_OK;
-  }
-
- private:
-  nsCOMPtr<nsIThread> mWorkerThread;
-};
-
-/**
- * A runnable to dispatch from the main thread when an async operation should
- * be performed.
- */
-class AsyncRevealOperation : public Runnable {
- public:
-  explicit AsyncRevealOperation(const nsAString& aResolvedPath)
-      : Runnable("AsyncRevealOperation"), mResolvedPath(aResolvedPath) {}
-
-  NS_IMETHOD Run() override {
-    MOZ_ASSERT(!NS_IsMainThread(),
-               "AsyncRevealOperation should not be run on the main thread!");
-
-    bool doCoUninitialize = SUCCEEDED(CoInitializeEx(
-        nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE));
-    Reveal();
-    if (doCoUninitialize) {
-      CoUninitialize();
+  HRESULT hr;
+  if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
+    // We have a directory so we should open the directory itself.
+    LPITEMIDLIST dir = ILCreateFromPathW(aResolvedPath.get());
+    if (!dir) {
+      return NS_ERROR_FAILURE;
     }
 
-    // Send the result back to the main thread so that this thread can be
-    // cleanly shut down
-    nsCOMPtr<nsIRunnable> resultrunnable = new AsyncLocalFileWinDone();
-    NS_DispatchToMainThread(resultrunnable);
-    return NS_OK;
-  }
+    LPCITEMIDLIST selection[] = {dir};
+    UINT count = ArrayLength(selection);
 
- private:
-  // Reveals the path in explorer.
-  nsresult Reveal() {
-    DWORD attributes = GetFileAttributesW(mResolvedPath.get());
-    if (INVALID_FILE_ATTRIBUTES == attributes) {
+    // Perform the open of the directory.
+    hr = SHOpenFolderAndSelectItems(dir, count, selection, 0);
+    CoTaskMemFree(dir);
+  } else {
+    int32_t len = aResolvedPath.Length();
+    // We don't currently handle UNC long paths of the form \\?\ anywhere so
+    // this should be fine.
+    if (len > MAX_PATH) {
       return NS_ERROR_FILE_INVALID_PATH;
     }
+    WCHAR parentDirectoryPath[MAX_PATH + 1] = {0};
+    wcsncpy(parentDirectoryPath, aResolvedPath.get(), MAX_PATH);
+    PathRemoveFileSpecW(parentDirectoryPath);
 
-    HRESULT hr;
-    if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
-      // We have a directory so we should open the directory itself.
-      LPITEMIDLIST dir = ILCreateFromPathW(mResolvedPath.get());
-      if (!dir) {
-        return NS_ERROR_FAILURE;
-      }
-
-      LPCITEMIDLIST selection[] = {dir};
-      UINT count = ArrayLength(selection);
-
-      // Perform the open of the directory.
-      hr = SHOpenFolderAndSelectItems(dir, count, selection, 0);
-      CoTaskMemFree(dir);
-    } else {
-      int32_t len = mResolvedPath.Length();
-      // We don't currently handle UNC long paths of the form \\?\ anywhere so
-      // this should be fine.
-      if (len > MAX_PATH) {
-        return NS_ERROR_FILE_INVALID_PATH;
-      }
-      WCHAR parentDirectoryPath[MAX_PATH + 1] = {0};
-      wcsncpy(parentDirectoryPath, mResolvedPath.get(), MAX_PATH);
-      PathRemoveFileSpecW(parentDirectoryPath);
-
-      // We have a file so we should open the parent directory.
-      LPITEMIDLIST dir = ILCreateFromPathW(parentDirectoryPath);
-      if (!dir) {
-        return NS_ERROR_FAILURE;
-      }
-
-      // Set the item in the directory to select to the file we want to reveal.
-      LPITEMIDLIST item = ILCreateFromPathW(mResolvedPath.get());
-      if (!item) {
-        CoTaskMemFree(dir);
-        return NS_ERROR_FAILURE;
-      }
-
-      LPCITEMIDLIST selection[] = {item};
-      UINT count = ArrayLength(selection);
-
-      // Perform the selection of the file.
-      hr = SHOpenFolderAndSelectItems(dir, count, selection, 0);
-
-      CoTaskMemFree(dir);
-      CoTaskMemFree(item);
+    // We have a file so we should open the parent directory.
+    LPITEMIDLIST dir = ILCreateFromPathW(parentDirectoryPath);
+    if (!dir) {
+      return NS_ERROR_FAILURE;
     }
 
-    return SUCCEEDED(hr) ? NS_OK : NS_ERROR_FAILURE;
+    // Set the item in the directory to select to the file we want to reveal.
+    LPITEMIDLIST item = ILCreateFromPathW(aResolvedPath.get());
+    if (!item) {
+      CoTaskMemFree(dir);
+      return NS_ERROR_FAILURE;
+    }
+
+    LPCITEMIDLIST selection[] = {item};
+    UINT count = ArrayLength(selection);
+
+    // Perform the selection of the file.
+    hr = SHOpenFolderAndSelectItems(dir, count, selection, 0);
+
+    CoTaskMemFree(dir);
+    CoTaskMemFree(item);
   }
 
-  // Stores the path to perform the operation on
-  nsString mResolvedPath;
-};
+  return SUCCEEDED(hr) ? NS_OK : NS_ERROR_FAILURE;
+}
 
 class nsDriveEnumerator : public nsSimpleEnumerator,
                           public nsIDirectoryEnumerator {
@@ -3014,20 +2954,20 @@ nsLocalFile::Reveal() {
     return rv;
   }
 
-  // To create a new thread, get the thread manager
-  nsCOMPtr<nsIThreadManager> tm = do_GetService(NS_THREADMANAGER_CONTRACTID);
-  nsCOMPtr<nsIThread> mythread;
-  rv = tm->NewThread(0, 0, getter_AddRefs(mythread));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  nsCOMPtr<nsIRunnable> task =
+      NS_NewRunnableFunction("nsLocalFile::Reveal", [path = mResolvedPath]() {
+        MOZ_ASSERT(!NS_IsMainThread(), "Don't run on the main thread");
 
-  nsCOMPtr<nsIRunnable> runnable = new AsyncRevealOperation(mResolvedPath);
+        bool doCoUninitialize = SUCCEEDED(CoInitializeEx(
+            nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE));
+        RevealFile(path);
+        if (doCoUninitialize) {
+          CoUninitialize();
+        }
+      });
 
-  // After the dispatch, the result runnable will shut down the worker
-  // thread, so we can let it go.
-  mythread->Dispatch(runnable, NS_DISPATCH_NORMAL);
-  return NS_OK;
+  return NS_DispatchBackgroundTask(task,
+                                   nsIEventTarget::DISPATCH_EVENT_MAY_BLOCK);
 }
 
 NS_IMETHODIMP
@@ -3048,16 +2988,16 @@ nsLocalFile::Launch() {
   // Pass VT_ERROR/DISP_E_PARAMNOTFOUND to omit an optional RPC parameter
   // to execute a file with the default verb.
   _variant_t verbDefault(DISP_E_PARAMNOTFOUND, VT_ERROR);
-  _variant_t workingDir;
   _variant_t showCmd(SW_SHOWNORMAL);
 
   // Use the directory of the file we're launching as the working
   // directory. That way if we have a self extracting EXE it won't
   // suggest to extract to the install directory.
+  wchar_t* workingDirectoryPtr = nullptr;
   WCHAR workingDirectory[MAX_PATH + 1] = {L'\0'};
   wcsncpy(workingDirectory, mResolvedPath.get(), MAX_PATH);
   if (PathRemoveFileSpecW(workingDirectory)) {
-    workingDir = workingDirectory;
+    workingDirectoryPtr = workingDirectory;
   } else {
     NS_WARNING("Could not set working directory for launched file.");
   }
@@ -3065,62 +3005,26 @@ nsLocalFile::Launch() {
   // Ask Explorer to ShellExecute on our behalf, as some applications such as
   // Skype for Business do not start correctly when inheriting our process's
   // migitation policies.
+  // It does not work in a special environment such as Citrix.  In such a case
+  // we fall back to launching an application as a child process.  We need to
+  // find a way to handle the combination of these interop issues.
   mozilla::LauncherVoidResult shellExecuteOk = mozilla::ShellExecuteByExplorer(
-      execPath, args, verbDefault, workingDir, showCmd);
-  if (shellExecuteOk.isOk()) {
-    return NS_OK;
-  }
-  DWORD r = shellExecuteOk.inspectErr().AsWin32Error().value();
-  // if the file has no association, we launch windows'
-  // "what do you want to do" dialog
-  if (r == SE_ERR_NOASSOC) {
-    SHELLEXECUTEINFOW seinfo;
-    memset(&seinfo, 0, sizeof(seinfo));
-    seinfo.cbSize = sizeof(SHELLEXECUTEINFOW);
+      execPath, args, verbDefault, workingDirectoryPtr, showCmd);
+  if (shellExecuteOk.isErr()) {
+    SHELLEXECUTEINFOW seinfo = {sizeof(SHELLEXECUTEINFOW)};
     seinfo.fMask = SEE_MASK_ASYNCOK;
     seinfo.hwnd = GetMostRecentNavigatorHWND();
     seinfo.lpVerb = nullptr;
-    seinfo.lpDirectory = workingDirectory;
+    seinfo.lpFile = mResolvedPath.get();
+    seinfo.lpParameters = nullptr;
+    seinfo.lpDirectory = workingDirectoryPtr;
     seinfo.nShow = SW_SHOWNORMAL;
 
-    nsAutoString shellArg;
-    shellArg.AssignLiteral(u"shell32.dll,OpenAs_RunDLL ");
-    shellArg.Append(mResolvedPath);
-    seinfo.lpFile = L"RUNDLL32.EXE";
-    seinfo.lpParameters = shellArg.get();
-    if (ShellExecuteExW(&seinfo)) {
-      return NS_OK;
-    }
-    r = GetLastError();
-  }
-  if (r < 32) {
-    switch (r) {
-      case 0:
-      case SE_ERR_OOM:
-        return NS_ERROR_OUT_OF_MEMORY;
-      case ERROR_FILE_NOT_FOUND:
-        return NS_ERROR_FILE_NOT_FOUND;
-      case ERROR_PATH_NOT_FOUND:
-        return NS_ERROR_FILE_UNRECOGNIZED_PATH;
-      case ERROR_BAD_FORMAT:
-        return NS_ERROR_FILE_CORRUPTED;
-      case SE_ERR_ACCESSDENIED:
-        return NS_ERROR_FILE_ACCESS_DENIED;
-      case SE_ERR_ASSOCINCOMPLETE:
-      case SE_ERR_NOASSOC:
-        return NS_ERROR_UNEXPECTED;
-      case SE_ERR_DDEBUSY:
-      case SE_ERR_DDEFAIL:
-      case SE_ERR_DDETIMEOUT:
-        return NS_ERROR_NOT_AVAILABLE;
-      case SE_ERR_DLLNOTFOUND:
-        return NS_ERROR_FAILURE;
-      case SE_ERR_SHARE:
-        return NS_ERROR_FILE_IS_LOCKED;
-      default:
-        return NS_ERROR_FILE_EXECUTION_FAILED;
+    if (!ShellExecuteExW(&seinfo)) {
+      return NS_ERROR_FILE_EXECUTION_FAILED;
     }
   }
+
   return NS_OK;
 }
 

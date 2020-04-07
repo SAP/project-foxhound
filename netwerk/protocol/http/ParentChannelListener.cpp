@@ -14,13 +14,19 @@
 #include "mozilla/net/HttpChannelParent.h"
 #include "mozilla/net/RedirectChannelRegistrar.h"
 #include "mozilla/Unused.h"
-#include "nsIAuthPrompt.h"
-#include "nsIAuthPrompt2.h"
 #include "nsIHttpHeaderVisitor.h"
-#include "nsIRemoteTab.h"
-#include "nsIPromptFactory.h"
+#include "nsIPrompt.h"
+#include "nsISecureBrowserUI.h"
 #include "nsIWindowWatcher.h"
 #include "nsQueryObject.h"
+#include "nsIAuthPrompt.h"
+#include "nsIAuthPrompt2.h"
+#include "nsIPromptFactory.h"
+#include "Element.h"
+#include "nsILoginManagerAuthPrompter.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/LoadURIOptionsBinding.h"
+#include "nsIWebNavigation.h"
 
 using mozilla::Unused;
 using mozilla::dom::ServiceWorkerInterceptController;
@@ -29,12 +35,16 @@ using mozilla::dom::ServiceWorkerParentInterceptEnabled;
 namespace mozilla {
 namespace net {
 
-ParentChannelListener::ParentChannelListener(nsIStreamListener* aListener)
+ParentChannelListener::ParentChannelListener(
+    nsIStreamListener* aListener,
+    dom::CanonicalBrowsingContext* aBrowsingContext, bool aUsePrivateBrowsing)
     : mNextListener(aListener),
       mSuspendedForDiversion(false),
       mShouldIntercept(false),
       mShouldSuspendIntercept(false),
-      mInterceptCanceled(false) {
+      mInterceptCanceled(false),
+      mBrowsingContext(aBrowsingContext),
+      mUsePrivateBrowsing(aUsePrivateBrowsing) {
   LOG(("ParentChannelListener::ParentChannelListener [this=%p, next=%p]", this,
        aListener));
 
@@ -57,7 +67,10 @@ NS_INTERFACE_MAP_BEGIN(ParentChannelListener)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY(nsIStreamListener)
   NS_INTERFACE_MAP_ENTRY(nsIRequestObserver)
+  NS_INTERFACE_MAP_ENTRY(nsIMultiPartChannelListener)
   NS_INTERFACE_MAP_ENTRY(nsINetworkInterceptController)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIAuthPromptProvider, mBrowsingContext)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIRemoteWindowContext, mBrowsingContext)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(ParentChannelListener)
 NS_INTERFACE_MAP_END
@@ -72,6 +85,14 @@ ParentChannelListener::OnStartRequest(nsIRequest* aRequest) {
                      "Cannot call OnStartRequest if suspended for diversion!");
 
   if (!mNextListener) return NS_ERROR_UNEXPECTED;
+
+  // If we're not a multi-part channel, then we can drop mListener and break the
+  // reference cycle. If we are, then this might be called again, so wait for
+  // OnAfterLastPart instead.
+  nsCOMPtr<nsIMultiPartChannel> multiPartChannel = do_QueryInterface(aRequest);
+  if (multiPartChannel) {
+    mIsMultiPart = true;
+  }
 
   LOG(("ParentChannelListener::OnStartRequest [this=%p]\n", this));
   return mNextListener->OnStartRequest(aRequest);
@@ -89,7 +110,9 @@ ParentChannelListener::OnStopRequest(nsIRequest* aRequest,
        this, static_cast<uint32_t>(aStatusCode)));
   nsresult rv = mNextListener->OnStopRequest(aRequest, aStatusCode);
 
-  mNextListener = nullptr;
+  if (!mIsMultiPart) {
+    mNextListener = nullptr;
+  }
   return rv;
 }
 
@@ -112,29 +135,67 @@ ParentChannelListener::OnDataAvailable(nsIRequest* aRequest,
 }
 
 //-----------------------------------------------------------------------------
+// ParentChannelListener::nsIMultiPartChannelListener
+//-----------------------------------------------------------------------------
+
+NS_IMETHODIMP
+ParentChannelListener::OnAfterLastPart(nsresult aStatus) {
+  nsCOMPtr<nsIMultiPartChannelListener> multiListener =
+      do_QueryInterface(mNextListener);
+  if (multiListener) {
+    multiListener->OnAfterLastPart(aStatus);
+  }
+
+  mNextListener = nullptr;
+  return NS_OK;
+}
+
+//-----------------------------------------------------------------------------
 // ParentChannelListener::nsIInterfaceRequestor
 //-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
 ParentChannelListener::GetInterface(const nsIID& aIID, void** result) {
-  if (aIID.Equals(NS_GET_IID(nsINetworkInterceptController))) {
+  if (aIID.Equals(NS_GET_IID(nsINetworkInterceptController)) ||
+      aIID.Equals(NS_GET_IID(nsIRemoteWindowContext))) {
     return QueryInterface(aIID, result);
+  }
+
+  if (mBrowsingContext && aIID.Equals(NS_GET_IID(nsIPrompt))) {
+    nsCOMPtr<dom::Element> frameElement =
+        mBrowsingContext->Top()->GetEmbedderElement();
+    if (frameElement) {
+      nsCOMPtr<nsPIDOMWindowOuter> win = frameElement->OwnerDoc()->GetWindow();
+      NS_ENSURE_TRUE(win, NS_ERROR_UNEXPECTED);
+
+      nsresult rv;
+      nsCOMPtr<nsIWindowWatcher> wwatch =
+          do_GetService(NS_WINDOWWATCHER_CONTRACTID, &rv);
+
+      if (NS_WARN_IF(!NS_SUCCEEDED(rv))) {
+        return rv;
+      }
+
+      nsCOMPtr<nsIPrompt> prompt;
+      rv = wwatch->GetNewPrompter(win, getter_AddRefs(prompt));
+      if (NS_WARN_IF(!NS_SUCCEEDED(rv))) {
+        return rv;
+      }
+
+      prompt.forget(result);
+      return NS_OK;
+    }
+  }
+
+  if (mBrowsingContext && (aIID.Equals(NS_GET_IID(nsIAuthPrompt)) ||
+                           aIID.Equals(NS_GET_IID(nsIAuthPrompt2)))) {
+    return GetAuthPrompt(nsIAuthPromptProvider::PROMPT_NORMAL, aIID, result);
   }
 
   nsCOMPtr<nsIInterfaceRequestor> ir;
   if (mNextListener && NS_SUCCEEDED(CallQueryInterface(mNextListener.get(),
                                                        getter_AddRefs(ir)))) {
     return ir->GetInterface(aIID, result);
-  }
-
-  if (aIID.Equals(NS_GET_IID(nsIAuthPrompt)) ||
-      aIID.Equals(NS_GET_IID(nsIAuthPrompt2))) {
-    nsresult rv;
-    nsCOMPtr<nsIPromptFactory> wwatch =
-        do_GetService(NS_WINDOWWATCHER_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    return wwatch->GetPrompt(nullptr, aIID, reinterpret_cast<void**>(result));
   }
 
   return NS_NOINTERFACE;
@@ -265,16 +326,13 @@ nsresult ParentChannelListener::SuspendForDiversion() {
   return NS_OK;
 }
 
-nsresult ParentChannelListener::ResumeForDiversion() {
+void ParentChannelListener::ResumeForDiversion() {
   MOZ_RELEASE_ASSERT(mSuspendedForDiversion, "Must already be suspended!");
-
   // Allow OnStart/OnData/OnStop callbacks to be forwarded to mNextListener.
   mSuspendedForDiversion = false;
-
-  return NS_OK;
 }
 
-nsresult ParentChannelListener::DivertTo(nsIStreamListener* aListener) {
+void ParentChannelListener::DivertTo(nsIStreamListener* aListener) {
   MOZ_ASSERT(aListener);
   MOZ_RELEASE_ASSERT(mSuspendedForDiversion, "Must already be suspended!");
 
@@ -284,13 +342,12 @@ nsresult ParentChannelListener::DivertTo(nsIStreamListener* aListener) {
   mInterceptCanceled = false;
 
   mNextListener = aListener;
-
-  return ResumeForDiversion();
+  ResumeForDiversion();
 }
 
 void ParentChannelListener::SetupInterception(
     const nsHttpResponseHead& aResponseHead) {
-  mSynthesizedResponseHead = new nsHttpResponseHead(aResponseHead);
+  mSynthesizedResponseHead = MakeUnique<nsHttpResponseHead>(aResponseHead);
   mShouldIntercept = true;
 }
 
@@ -319,6 +376,67 @@ void ParentChannelListener::ClearInterceptedChannel(
   // Note that channel interception has been canceled.  If we got this before
   // the interception even occured we will trigger the cancel later.
   mInterceptCanceled = true;
+}
+
+//-----------------------------------------------------------------------------
+// ParentChannelListener::nsIAuthPromptProvider
+//
+
+NS_IMETHODIMP
+ParentChannelListener::GetAuthPrompt(uint32_t aPromptReason, const nsIID& iid,
+                                     void** aResult) {
+  if (!mBrowsingContext) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  // we're either allowing auth, or it's a proxy request
+  nsresult rv;
+  nsCOMPtr<nsIPromptFactory> wwatch =
+      do_GetService(NS_WINDOWWATCHER_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsPIDOMWindowOuter> window;
+  RefPtr<dom::Element> frame = mBrowsingContext->Top()->GetEmbedderElement();
+  if (frame) window = frame->OwnerDoc()->GetWindow();
+
+  // Get an auth prompter for our window so that the parenting
+  // of the dialogs works as it should when using tabs.
+  nsCOMPtr<nsISupports> prompt;
+  rv = wwatch->GetPrompt(window, iid, getter_AddRefs(prompt));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsILoginManagerAuthPrompter> prompter = do_QueryInterface(prompt);
+  if (prompter) {
+    prompter->SetBrowser(frame);
+  }
+
+  *aResult = prompt.forget().take();
+  return NS_OK;
+}
+
+//-----------------------------------------------------------------------------
+// ParentChannelListener::nsIRemoteWindowContext
+//
+
+NS_IMETHODIMP
+ParentChannelListener::OpenURI(nsIURI* aURI) {
+  nsCString spec;
+  aURI->GetSpec(spec);
+
+  dom::LoadURIOptions loadURIOptions;
+  loadURIOptions.mTriggeringPrincipal = nsContentUtils::GetSystemPrincipal();
+  loadURIOptions.mLoadFlags =
+      nsIWebNavigation::LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP |
+      nsIWebNavigation::LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL;
+
+  ErrorResult rv;
+  mBrowsingContext->LoadURI(NS_ConvertUTF8toUTF16(spec), loadURIOptions, rv);
+  return rv.StealNSResult();
+}
+
+NS_IMETHODIMP
+ParentChannelListener::GetUsePrivateBrowsing(bool* aUsePrivateBrowsing) {
+  *aUsePrivateBrowsing = mUsePrivateBrowsing;
+  return NS_OK;
 }
 
 }  // namespace net

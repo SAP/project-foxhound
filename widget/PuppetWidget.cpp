@@ -252,9 +252,9 @@ nsresult PuppetWidget::ConfigureChildren(
   return NS_OK;
 }
 
-void PuppetWidget::SetFocus(Raise aRaise) {
+void PuppetWidget::SetFocus(Raise aRaise, CallerType aCallerType) {
   if (aRaise == Raise::Yes && mBrowserChild) {
-    mBrowserChild->SendRequestFocus(true);
+    mBrowserChild->SendRequestFocus(true, aCallerType);
   }
 }
 
@@ -528,13 +528,18 @@ bool PuppetWidget::AsyncPanZoomEnabled() const {
   return mBrowserChild && mBrowserChild->AsyncPanZoomEnabled();
 }
 
-void PuppetWidget::GetEditCommands(NativeKeyBindingsType aType,
+bool PuppetWidget::GetEditCommands(NativeKeyBindingsType aType,
                                    const WidgetKeyboardEvent& aEvent,
                                    nsTArray<CommandInt>& aCommands) {
   // Validate the arguments.
-  nsIWidget::GetEditCommands(aType, aEvent, aCommands);
-
+  if (NS_WARN_IF(!nsIWidget::GetEditCommands(aType, aEvent, aCommands))) {
+    return false;
+  }
+  if (NS_WARN_IF(!mBrowserChild)) {
+    return false;
+  }
   mBrowserChild->RequestEditCommands(aType, aEvent, aCommands);
+  return true;
 }
 
 LayerManager* PuppetWidget::GetLayerManager(
@@ -580,7 +585,7 @@ bool PuppetWidget::CreateRemoteLayerManager(
   // it if we successfully create its successor because a partially initialized
   // layer manager is worse than a fully initialized but shutdown layer manager.
   DestroyLayerManager();
-  mLayerManager = lm.forget();
+  mLayerManager = std::move(lm);
   return true;
 }
 
@@ -1135,6 +1140,14 @@ LayoutDeviceIntPoint PuppetWidget::GetChromeOffset() {
   return GetOwningBrowserChild()->GetChromeOffset();
 }
 
+LayoutDeviceIntPoint PuppetWidget::WidgetToScreenOffset() {
+  auto positionRalativeToWindow =
+      WidgetToTopLevelWidgetTransform().TransformPoint(LayoutDevicePoint());
+
+  return GetWindowPosition() +
+         LayoutDeviceIntPoint::Round(positionRalativeToWindow);
+}
+
 LayoutDeviceIntPoint PuppetWidget::GetWindowPosition() {
   if (!GetOwningBrowserChild()) {
     return LayoutDeviceIntPoint();
@@ -1244,6 +1257,15 @@ PuppetScreenManager::ScreenForRect(int32_t inLeft, int32_t inTop,
                                    int32_t inWidth, int32_t inHeight,
                                    nsIScreen** outScreen) {
   return GetPrimaryScreen(outScreen);
+}
+
+ScreenIntMargin PuppetWidget::GetSafeAreaInsets() const {
+  return mSafeAreaInsets;
+}
+
+void PuppetWidget::UpdateSafeAreaInsets(
+    const ScreenIntMargin& aSafeAreaInsets) {
+  mSafeAreaInsets = aSafeAreaInsets;
 }
 
 nsIWidgetListener* PuppetWidget::GetCurrentWidgetListener() {
@@ -1440,9 +1462,6 @@ nsresult PuppetWidget::SetPrefersReducedMotionOverrideForTest(bool aValue) {
     return NS_ERROR_FAILURE;
   }
 
-  nsXPLookAndFeel::GetInstance()->SetPrefersReducedMotionOverrideForTest(
-      aValue);
-
   mBrowserChild->SendSetPrefersReducedMotionOverrideForTest(aValue);
   return NS_OK;
 }
@@ -1452,7 +1471,6 @@ nsresult PuppetWidget::ResetPrefersReducedMotionOverrideForTest() {
     return NS_ERROR_FAILURE;
   }
 
-  nsXPLookAndFeel::GetInstance()->ResetPrefersReducedMotionOverrideForTest();
   mBrowserChild->SendResetPrefersReducedMotionOverrideForTest();
   return NS_OK;
 }

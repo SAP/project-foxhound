@@ -63,6 +63,9 @@ var SearchUtils = {
    */
   SETTINGS_IGNORELIST_KEY: "hijack-blocklists",
 
+  // A tag to denote when we are using the "default_locale" of an engine.
+  DEFAULT_TAG: "default",
+
   /**
    * Notifies watchers of SEARCH_ENGINE_TOPIC about changes to an engine or to
    * the state of the search service.
@@ -82,14 +85,13 @@ var SearchUtils = {
   },
 
   /**
-   * Outputs text to the JavaScript console as well as to stdout.
+   * Outputs text to the JavaScript console.
    *
    * @param {string} text
    *   The message to log.
    */
   log(text) {
     if (SearchUtils.loggingEnabled) {
-      dump("*** Search: " + text + "\n");
       Services.console.logStringMessage(text);
     }
   },
@@ -154,7 +156,25 @@ var SearchUtils = {
   isPartnerBuild() {
     return SearchUtils.distroID && !SearchUtils.distroID.startsWith("mozilla");
   },
+
+  /**
+   * Current cache version. This should be incremented if the format of the cache
+   * file is modified.
+   *
+   * @returns {number}
+   *   The current cache version.
+   */
+  get CACHE_VERSION() {
+    return this.gModernConfig ? 4 : 3;
+  },
 };
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  SearchUtils,
+  "gModernConfig",
+  SearchUtils.BROWSER_SEARCH_PREF + "modernConfig",
+  false
+);
 
 XPCOMUtils.defineLazyPreferenceGetter(
   SearchUtils,

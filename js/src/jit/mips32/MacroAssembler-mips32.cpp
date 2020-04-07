@@ -17,6 +17,8 @@
 #include "jit/mips32/Simulator-mips32.h"
 #include "jit/MoveEmitter.h"
 #include "jit/SharedICRegisters.h"
+#include "util/Memory.h"
+#include "vm/JitActivation.h"  // js::jit::JitActivation
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -821,8 +823,8 @@ void MacroAssemblerMIPS::ma_lid(FloatRegister dest, double value) {
     uint32_t hi;
   };
   DoubleStruct intStruct = mozilla::BitwiseCast<DoubleStruct>(value);
-#if MOZ_BIG_ENDIAN
-  mozilla::Swap(intStruct.hi, intStruct.lo);
+#if MOZ_BIG_ENDIAN()
+  std::swap(intStruct.hi, intStruct.lo);
 #endif
 
   // put hi part of 64 bit value into the odd register
@@ -1074,7 +1076,7 @@ void MacroAssemblerMIPSCompat::loadPrivate(const Address& address,
 void MacroAssemblerMIPSCompat::loadUnalignedDouble(
     const wasm::MemoryAccessDesc& access, const BaseIndex& src, Register temp,
     FloatRegister dest) {
-  MOZ_ASSERT(MOZ_LITTLE_ENDIAN, "Wasm-only; wasm is disabled on big-endian.");
+  MOZ_ASSERT(MOZ_LITTLE_ENDIAN(), "Wasm-only; wasm is disabled on big-endian.");
   computeScaledAddress(src, SecondScratchReg);
 
   BufferOffset load;
@@ -1105,7 +1107,7 @@ void MacroAssemblerMIPSCompat::loadUnalignedDouble(
 void MacroAssemblerMIPSCompat::loadUnalignedFloat32(
     const wasm::MemoryAccessDesc& access, const BaseIndex& src, Register temp,
     FloatRegister dest) {
-  MOZ_ASSERT(MOZ_LITTLE_ENDIAN, "Wasm-only; wasm is disabled on big-endian.");
+  MOZ_ASSERT(MOZ_LITTLE_ENDIAN(), "Wasm-only; wasm is disabled on big-endian.");
   computeScaledAddress(src, SecondScratchReg);
   BufferOffset load;
   if (Imm16::IsInSignedRange(src.offset) &&
@@ -1227,7 +1229,7 @@ void MacroAssemblerMIPSCompat::storePtr(Register src, AbsoluteAddress dest) {
 void MacroAssemblerMIPSCompat::storeUnalignedFloat32(
     const wasm::MemoryAccessDesc& access, FloatRegister src, Register temp,
     const BaseIndex& dest) {
-  MOZ_ASSERT(MOZ_LITTLE_ENDIAN, "Wasm-only; wasm is disabled on big-endian.");
+  MOZ_ASSERT(MOZ_LITTLE_ENDIAN(), "Wasm-only; wasm is disabled on big-endian.");
   computeScaledAddress(dest, SecondScratchReg);
   moveFromFloat32(src, temp);
 
@@ -1248,7 +1250,7 @@ void MacroAssemblerMIPSCompat::storeUnalignedFloat32(
 void MacroAssemblerMIPSCompat::storeUnalignedDouble(
     const wasm::MemoryAccessDesc& access, FloatRegister src, Register temp,
     const BaseIndex& dest) {
-  MOZ_ASSERT(MOZ_LITTLE_ENDIAN, "Wasm-only; wasm is disabled on big-endian.");
+  MOZ_ASSERT(MOZ_LITTLE_ENDIAN(), "Wasm-only; wasm is disabled on big-endian.");
   computeScaledAddress(dest, SecondScratchReg);
 
   BufferOffset store;
@@ -1787,7 +1789,7 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
   jump(a0);
 
   // If we found a finally block, this must be a baseline frame. Push
-  // two values expected by JSOP_RETSUB: BooleanValue(true) and the
+  // two values expected by JSOp::Retsub: BooleanValue(true) and the
   // exception.
   bind(&finally);
   ValueOperand exception = ValueOperand(a1, a2);
@@ -2137,8 +2139,8 @@ void MacroAssembler::moveValue(const ValueOperand& src,
       return;
     }
     // If only one is, copy that source first.
-    mozilla::Swap(s0, s1);
-    mozilla::Swap(d0, d1);
+    std::swap(s0, s1);
+    std::swap(d0, d1);
   }
 
   if (s0 != d0) {
@@ -2168,7 +2170,8 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
   Label done, checkAddress;
 
   branchTestObject(Assembler::Equal, address, &checkAddress);
-  branchTestString(Assembler::NotEqual, address,
+  branchTestString(Assembler::Equal, address, &checkAddress);
+  branchTestBigInt(Assembler::NotEqual, address,
                    cond == Assembler::Equal ? &done : label);
 
   bind(&checkAddress);
@@ -2185,7 +2188,8 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
 
   Label done, checkAddress;
   branchTestObject(Assembler::Equal, value, &checkAddress);
-  branchTestString(Assembler::NotEqual, value,
+  branchTestString(Assembler::Equal, value, &checkAddress);
+  branchTestBigInt(Assembler::NotEqual, value,
                    cond == Assembler::Equal ? &done : label);
 
   bind(&checkAddress);

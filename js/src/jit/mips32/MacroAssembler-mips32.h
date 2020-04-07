@@ -34,7 +34,7 @@ static_assert(1 << defaultShift == sizeof(JS::Value),
               "The defaultShift is wrong");
 
 static const uint32_t LOW_32_MASK = (1LL << 32) - 1;
-#if MOZ_LITTLE_ENDIAN
+#if MOZ_LITTLE_ENDIAN()
 static const int32_t LOW_32_OFFSET = 0;
 static const int32_t HIGH_32_OFFSET = 4;
 #else
@@ -484,8 +484,8 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
         return;
       }
       // If only one is, copy that source first.
-      mozilla::Swap(s0, s1);
-      mozilla::Swap(d0, d1);
+      std::swap(s0, s1);
+      std::swap(d0, d1);
     }
 
     if (s0 != d0) {
@@ -525,7 +525,7 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
 
   void pushValue(ValueOperand val);
   void popValue(ValueOperand val);
-#if MOZ_LITTLE_ENDIAN
+#if MOZ_LITTLE_ENDIAN()
   void pushValue(const Value& val) {
     push(Imm32(val.toNunboxTag()));
     if (val.isGCThing()) {
@@ -604,6 +604,10 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
     load32(LowWord(address), dest.low);
     load32(HighWord(address), dest.high);
   }
+  void load64(const BaseIndex& address, Register64 dest) {
+    load32(LowWord(address), dest.low);
+    load32(HighWord(address), dest.high);
+  }
 
   void loadPtr(const Address& address, Register dest);
   void loadPtr(const BaseIndex& src, Register dest);
@@ -646,8 +650,16 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
     store32(src.low, Address(address.base, address.offset + LOW_32_OFFSET));
     store32(src.high, Address(address.base, address.offset + HIGH_32_OFFSET));
   }
+  void store64(Register64 src, const BaseIndex& address) {
+    store32(src.low, Address(address.base, address.offset + LOW_32_OFFSET));
+    store32(src.high, Address(address.base, address.offset + HIGH_32_OFFSET));
+  }
 
   void store64(Imm64 imm, Address address) {
+    store32(imm.low(), Address(address.base, address.offset + LOW_32_OFFSET));
+    store32(imm.hi(), Address(address.base, address.offset + HIGH_32_OFFSET));
+  }
+  void store64(Imm64 imm, const BaseIndex& address) {
     store32(imm.low(), Address(address.base, address.offset + LOW_32_OFFSET));
     store32(imm.hi(), Address(address.base, address.offset + HIGH_32_OFFSET));
   }

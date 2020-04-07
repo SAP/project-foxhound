@@ -15,7 +15,6 @@
 #include "nsIObjectOutputStream.h"
 #include "nsIIDNService.h"
 #include "mozilla/Logging.h"
-#include "nsAutoPtr.h"
 #include "nsIURLParser.h"
 #include "nsNetCID.h"
 #include "mozilla/MemoryReporting.h"
@@ -452,7 +451,7 @@ inline nsresult ParseIPv4Number(const nsACString& input, int32_t base,
   switch (base) {
     case 16:
       ++current;
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case 8:
       ++current;
       break;

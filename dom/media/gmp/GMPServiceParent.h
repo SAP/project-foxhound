@@ -95,7 +95,7 @@ class GeckoMediaPluginServiceParent final
 
   struct DirectoryFilter {
     virtual bool operator()(nsIFile* aPath) = 0;
-    ~DirectoryFilter() {}
+    ~DirectoryFilter() = default;
   };
   void ClearNodeIdAndPlugin(DirectoryFilter& aFilter);
   void ClearNodeIdAndPlugin(nsIFile* aPluginStorageDir,
@@ -193,7 +193,7 @@ class GeckoMediaPluginServiceParent final
   // Synchronization for barrier that ensures we've loaded GMPs from
   // MOZ_GMP_PATH before allowing GetContentParentFrom() to proceed.
   Monitor mInitPromiseMonitor;
-  MozPromiseHolder<GenericPromise> mInitPromise;
+  MozMonitoredPromiseHolder<GenericPromise> mInitPromise;
   bool mLoadPluginsFromDiskComplete;
 
   // Hashes nodeId to the hashtable of storage for that nodeId.
@@ -220,7 +220,7 @@ class GMPServiceParent final : public PGMPServiceParent {
                                   const nsString& aTopLevelOrigin,
                                   const nsString& aGMPName,
                                   nsCString* aID) override;
-  void ActorDestroy(ActorDestroyReason aWhy) override;
+  void ActorDealloc() override;
 
   static bool Create(Endpoint<PGMPServiceParent>&& aGMPService);
 
@@ -241,8 +241,6 @@ class GMPServiceParent final : public PGMPServiceParent {
       nsCString* aOutErrorDescription) override;
 
  private:
-  void CloseTransport(Monitor* aSyncMonitor, bool* aCompleted);
-
   RefPtr<GeckoMediaPluginServiceParent> mService;
 };
 

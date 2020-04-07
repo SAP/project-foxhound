@@ -274,7 +274,7 @@ class gfxTextRun : public gfxShapedText {
    * Glyphs should be drawn in logical content order, which can be significant
    * if they overlap (perhaps due to negative spacing).
    */
-  void Draw(Range aRange, mozilla::gfx::Point aPt,
+  void Draw(const Range aRange, const mozilla::gfx::Point aPt,
             const DrawParams& aParams) const;
 
   /**
@@ -1049,6 +1049,17 @@ class gfxFontGroup final : public gfxTextRunFactory {
       int32_t aAppUnitsPerDevPixel, mozilla::gfx::ShapedTextFlags aFlags,
       LazyReferenceDrawTargetGetter& aRefDrawTargetGetter);
 
+  void CheckForUpdatedPlatformList() {
+    auto* pfl = gfxPlatformFontList::PlatformFontList();
+    if (mFontListGeneration != pfl->GetGeneration()) {
+      // Forget cached fonts that may no longer be valid.
+      mLastPrefFamily = FontFamily();
+      mLastPrefFont = nullptr;
+      mFonts.Clear();
+      BuildFontList();
+    }
+  }
+
  protected:
   friend class mozilla::PostTraversalTask;
 
@@ -1357,6 +1368,9 @@ class gfxFontGroup final : public gfxTextRunFactory {
                       // download to complete (or fallback
                       // timer to fire)
 
+  uint32_t mFontListGeneration = 0;  // platform font list generation for this
+                                     // fontgroup
+
   /**
    * Textrun creation short-cuts for special cases where we don't need to
    * call a font shaper to generate glyphs.
@@ -1369,8 +1383,9 @@ class gfxFontGroup final : public gfxTextRunFactory {
       const Parameters* aParams, mozilla::gfx::ShapedTextFlags aFlags,
       nsTextFrameUtils::Flags aFlags2);
 
+  template <typename T>
   already_AddRefed<gfxTextRun> MakeBlankTextRun(
-      uint32_t aLength, const Parameters* aParams,
+      const T* aString, uint32_t aLength, const Parameters* aParams,
       mozilla::gfx::ShapedTextFlags aFlags, nsTextFrameUtils::Flags aFlags2);
 
   // Initialize the list of fonts

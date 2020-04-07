@@ -13,7 +13,6 @@
 
 #include "mozilla/MemoryReporting.h"
 #include "nsIContent.h"  // for nsLinkState
-#include "nsIContentPolicy.h"
 
 namespace mozilla {
 
@@ -45,7 +44,7 @@ class Link : public nsISupports {
    */
   explicit Link();
 
-  virtual void SetLinkState(nsLinkState aState);
+  virtual void VisitedQueryFinished(bool aVisited);
 
   /**
    * @return NS_EVENT_STATE_VISITED if this link is visited,
@@ -131,7 +130,7 @@ class Link : public nsISupports {
   // To ensure correct mHasPendingLinkUpdate handling, we have this method
   // similar to the one in Element. Overriders must call
   // ClearHasPendingLinkUpdate().
-  // If you change this, change also the method in Element.
+  // If you change this, change also the method in nsINode.
   virtual void NodeInfoChanged(Document* aOldDoc) = 0;
 
   bool IsInDNSPrefetch() { return mInDNSPrefetch; }

@@ -19,7 +19,6 @@
 #include "nsNameSpaceManager.h"
 #include "nsString.h"
 #include "nsUnicharUtils.h"
-#include "nsIServiceManager.h"
 #include "nsIDocumentEncoder.h"
 #include "nsGkAtoms.h"
 #include "nsIURI.h"
@@ -81,7 +80,7 @@ nsXHTMLContentSerializer::Init(uint32_t aFlags, uint32_t aWrapColumn,
   mIsFirstChildOfOL = false;
   mInBody = 0;
   mDisableEntityEncoding = 0;
-  mBodyOnly = (mFlags & nsIDocumentEncoder::OutputBodyOnly) ? true : false;
+  mBodyOnly = (mFlags & nsIDocumentEncoder::OutputBodyOnly);
 
   return NS_OK;
 }

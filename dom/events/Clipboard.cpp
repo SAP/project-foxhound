@@ -13,7 +13,6 @@
 #include "mozilla/dom/DataTransferItemList.h"
 #include "mozilla/dom/DataTransferItem.h"
 #include "nsIClipboard.h"
-#include "nsISupportsPrimitives.h"
 #include "nsComponentManagerUtils.h"
 #include "nsITransferable.h"
 #include "nsArrayUtils.h"
@@ -26,7 +25,7 @@ namespace dom {
 Clipboard::Clipboard(nsPIDOMWindowInner* aWindow)
     : DOMEventTargetHelper(aWindow) {}
 
-Clipboard::~Clipboard() {}
+Clipboard::~Clipboard() = default;
 
 already_AddRefed<Promise> Clipboard::ReadHelper(
     JSContext* aCx, nsIPrincipal& aSubjectPrincipal,
@@ -40,7 +39,7 @@ already_AddRefed<Promise> Clipboard::ReadHelper(
   // We want to disable security check for automated tests that have the pref
   //  dom.events.testing.asyncClipboard set to true
   if (!IsTestingPrefEnabled() &&
-      !nsContentUtils::PrincipalHasPermission(&aSubjectPrincipal,
+      !nsContentUtils::PrincipalHasPermission(aSubjectPrincipal,
                                               nsGkAtoms::clipboardRead)) {
     MOZ_LOG(GetClipboardLog(), LogLevel::Debug,
             ("Clipboard, ReadHelper, "
@@ -107,10 +106,13 @@ already_AddRefed<Promise> Clipboard::Write(JSContext* aCx, DataTransfer& aData,
     return nullptr;
   }
 
+  nsPIDOMWindowInner* owner = GetOwner();
+  Document* doc = owner ? owner->GetDoc() : nullptr;
+
   // We want to disable security check for automated tests that have the pref
   //  dom.events.testing.asyncClipboard set to true
   if (!IsTestingPrefEnabled() &&
-      !nsContentUtils::IsCutCopyAllowed(&aSubjectPrincipal)) {
+      !nsContentUtils::IsCutCopyAllowed(doc, aSubjectPrincipal)) {
     MOZ_LOG(GetClipboardLog(), LogLevel::Debug,
             ("Clipboard, Write, Not allowed to write to clipboard\n"));
     p->MaybeRejectWithUndefined();
@@ -125,8 +127,6 @@ already_AddRefed<Promise> Clipboard::Write(JSContext* aCx, DataTransfer& aData,
     return p.forget();
   }
 
-  nsPIDOMWindowInner* owner = GetOwner();
-  Document* doc = owner ? owner->GetDoc() : nullptr;
   nsILoadContext* context = doc ? doc->GetLoadContext() : nullptr;
   if (!context) {
     p->MaybeRejectWithUndefined();

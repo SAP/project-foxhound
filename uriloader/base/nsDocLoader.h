@@ -120,14 +120,6 @@ class nsDocLoader : public nsIDocumentLoader,
    * changed. State flags are in nsIWebProgressListener.idl
    */
   void OnSecurityChange(nsISupports* aContext, uint32_t aState);
-  /**
-   * Fired when a content blocking event occurs during the time
-   * when a document is alive.  This interface should be called
-   * by Gecko to notify nsIWebProgressListeners that there is a
-   * new content blocking event.  Content blocking events are in
-   * nsIWebProgressListeners.idl.
-   */
-  void OnContentBlockingEvent(nsISupports* aContext, uint32_t aEvent);
 
   void SetDocumentOpenedButNotLoaded() { mDocumentOpenedButNotLoaded = true; }
 
@@ -162,6 +154,8 @@ class nsDocLoader : public nsIDocumentLoader,
       DocLoaderIsEmpty(true);
     }
   }
+
+  uint32_t ChildCount() const { return mChildList.Length(); }
 
  protected:
   virtual ~nsDocLoader();
@@ -265,7 +259,7 @@ class nsDocLoader : public nsIDocumentLoader,
         : mStatusCode(NS_ERROR_NOT_INITIALIZED), mRequest(aRequest) {
       MOZ_COUNT_CTOR(nsStatusInfo);
     }
-    ~nsStatusInfo() { MOZ_COUNT_DTOR(nsStatusInfo); }
+    MOZ_COUNTED_DTOR(nsStatusInfo)
   };
 
   struct nsRequestInfo : public PLDHashEntryHdr {
@@ -278,7 +272,7 @@ class nsDocLoader : public nsIDocumentLoader,
       MOZ_COUNT_CTOR(nsRequestInfo);
     }
 
-    ~nsRequestInfo() { MOZ_COUNT_DTOR(nsRequestInfo); }
+    MOZ_COUNTED_DTOR(nsRequestInfo)
 
     nsIRequest* Request() {
       return static_cast<nsIRequest*>(const_cast<void*>(mKey));

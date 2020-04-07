@@ -13,9 +13,10 @@ import time
 import traceback
 import urllib
 
-import mozhttpd
 import mozinfo
 import mozversion
+from wptserve import server
+from wptserve.handlers import handler
 
 from talos import utils
 from mozlog import get_proxy_logger
@@ -56,7 +57,7 @@ def set_tp_preferences(test, browser_config):
                 test[cycle_var] = 2
 
     CLI_bool_options = ['tpchrome', 'tphero', 'tpmozafterpaint', 'tploadnocache', 'tpscrolltest',
-                        'fnbpaint', 'pdfpaint']
+                        'fnbpaint', 'pdfpaint', 'a11y']
     CLI_options = ['tpcycles', 'tppagecycles', 'tptimeout', 'tpmanifest']
     for key in CLI_bool_options:
         _pref_name = "talos.%s" % key
@@ -79,11 +80,22 @@ def set_tp_preferences(test, browser_config):
 
 
 def setup_webserver(webserver):
-    """use mozhttpd to setup a webserver"""
+    """Set up a new web server with wptserve."""
     LOG.info("starting webserver on %r" % webserver)
 
+    @handler
+    def tracemonkey_pdf_handler(request, response):
+        """Handler for the talos pdfpaint test."""
+        headers = [("Content-Type", "application/pdf")]
+        with open("%s/tests/pdfpaint/tracemonkey.pdf" % here, "rb") as file:
+            content = file.read()
+        return headers, content
+
     host, port = webserver.split(':')
-    return mozhttpd.MozHttpd(host=host, port=int(port), docroot=here)
+    httpd = server.WebTestHttpd(host=host, port=int(port), doc_root=here)
+    httpd.router.register(
+        "GET", "tests/pdfpaint/tracemonkey.pdf", tracemonkey_pdf_handler)
+    return httpd
 
 
 def run_tests(config, browser_config):
@@ -142,6 +154,15 @@ def run_tests(config, browser_config):
         browser_config['preferences']['fission.autostart'] = True
         browser_config['preferences']['dom.serviceWorkers.parent_intercept'] = True
         browser_config['preferences']['browser.tabs.documentchannel'] = True
+
+    browser_config['preferences']['network.proxy.type'] = 2
+    browser_config['preferences']['network.proxy.autoconfig_url'] = """data:text/plain,
+function FindProxyForURL(url, host) {
+  if (url.startsWith('http')) {
+   return 'PROXY %s';
+  }
+  return 'DIRECT';
+}""" % browser_config['webserver']
 
     # If --code-coverage files are expected, set flag in browser config so ffsetup knows
     # that it needs to delete any ccov files resulting from browser initialization
@@ -227,6 +248,10 @@ def run_tests(config, browser_config):
 
     if config['gecko_profile']:
         talos_results.add_extra_option('geckoProfile')
+
+    # differentiate fission vs non-fission results in perfherder
+    if browser_config.get('enable_fission', False):
+        talos_results.add_extra_option('fission')
 
     testname = None
 

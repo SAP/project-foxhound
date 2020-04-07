@@ -7,10 +7,12 @@
 const EventEmitter = require("devtools/shared/event-emitter");
 
 const { bindActionCreators } = require("devtools/client/shared/vendor/redux");
-const { Connector } = require("./connector/index");
-const { configureStore } = require("./create-store");
-const { EVENTS } = require("./constants");
-const Actions = require("./actions/index");
+const { Connector } = require("devtools/client/netmonitor/src/connector/index");
+const {
+  configureStore,
+} = require("devtools/client/netmonitor/src/create-store");
+const { EVENTS } = require("devtools/client/netmonitor/src/constants");
+const Actions = require("devtools/client/netmonitor/src/actions/index");
 
 // Telemetry
 const Telemetry = require("devtools/client/shared/telemetry");
@@ -18,9 +20,7 @@ const Telemetry = require("devtools/client/shared/telemetry");
 const {
   getDisplayedRequestById,
   getSortedRequests,
-} = require("./selectors/index");
-
-loader.lazyRequireGetter(this, "flags", "devtools/shared/flags");
+} = require("devtools/client/netmonitor/src/selectors/index");
 
 /**
  * API object for NetMonitor panel (like a facade). This object can be
@@ -64,15 +64,11 @@ NetMonitorAPI.prototype = {
     // Initialize connection to the backend. Pass `this` as the owner,
     // so this object can receive all emitted events.
     const connection = {
-      tabConnection: {
-        tabTarget: toolbox.target,
-      },
       toolbox,
       owner: this,
     };
 
-    await this.connectBackend(
-      this.connector,
+    await this.connector.connectFirefox(
       connection,
       this.actions,
       this.store.getState
@@ -90,19 +86,6 @@ NetMonitorAPI.prototype = {
     if (this.harExportConnector) {
       this.harExportConnector.disconnect();
     }
-  },
-
-  /**
-   * Connect to the Firefox backend by default.
-   *
-   * As soon as connections to different back-ends is supported
-   * this function should be responsible for picking the right API.
-   */
-  async connectBackend(connector, connection, actions, getState) {
-    // The connection might happen during Toolbox initialization
-    // so make sure the target is ready.
-    await connection.tabConnection.tabTarget.attach();
-    return connector.connectFirefox(connection, actions, getState);
   },
 
   // HAR
@@ -196,24 +179,21 @@ NetMonitorAPI.prototype = {
    */
   async getHarExportConnector() {
     if (this.harExportConnector) {
-      // Ensure waiting for connectBackend completion to prevent "this.connector is null"
-      // exceptions if getHarExportConnector is called twice during its initialization.
+      // Wait for the connector to be ready to avoid exceptions if this method is called
+      // twice during its initialization.
       await this.harExportConnectorReady;
       return this.harExportConnector;
     }
 
     const connection = {
-      tabConnection: {
-        tabTarget: this.toolbox.target,
-      },
       toolbox: this.toolbox,
     };
 
     this.harExportConnector = new Connector();
-    this.harExportConnectorReady = this.connectBackend(
-      this.harExportConnector,
+    this.harExportConnectorReady = this.harExportConnector.connectFirefox(
       connection
     );
+
     await this.harExportConnectorReady;
     return this.harExportConnector;
   },
@@ -229,16 +209,6 @@ NetMonitorAPI.prototype = {
     // Send custom request with same url, headers and body as the request
     // with the given requestId.
     this.store.dispatch(Actions.sendCustomRequest(this.connector, requestId));
-  },
-
-  /**
-   * Fire events for the owner object. These events are only
-   * used in tests so, don't fire them in production release.
-   */
-  emitForTests(type, data) {
-    if (flags.testing) {
-      this.emit(type, data);
-    }
   },
 };
 

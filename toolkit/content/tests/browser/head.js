@@ -278,7 +278,7 @@ function once(target, name) {
 //    mode: String, "autoplay attribute" or "call play".
 //  }
 function loadAutoplayVideo(browser, args) {
-  return ContentTask.spawn(browser, args, async args => {
+  return SpecialPowers.spawn(browser, [args], async args => {
     info("- create a new autoplay video -");
     let video = content.document.createElement("video");
     video.id = "v1";
@@ -337,7 +337,7 @@ function loadAutoplayVideo(browser, args) {
 //    shouldPlay: boolean, whether video should play.
 //  }
 function checkVideoDidPlay(browser, args) {
-  return ContentTask.spawn(browser, args, async args => {
+  return SpecialPowers.spawn(browser, [args], async args => {
     let video = content.document.getElementById("v1");
     await video.didPlayPromise;
     is(
@@ -351,11 +351,4 @@ function checkVideoDidPlay(browser, args) {
     video.src = "";
     content.document.body.remove(video);
   });
-}
-
-// The JS content loaded by frame script can be used across different content
-// tasks.
-function loadFrameScript(browser, fn) {
-  const mm = browser.messageManager;
-  mm.loadFrameScript("data:,(" + fn.toString() + ")();", false);
 }

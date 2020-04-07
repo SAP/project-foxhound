@@ -266,7 +266,7 @@ void MediaFormatReader::DecoderFactory::RunStage(Data& aData) {
               mOwner->OwnerThread(), __func__,
               [this, &aData](RefPtr<Token> aToken) {
                 aData.mTokenRequest.Complete();
-                aData.mToken = aToken.forget();
+                aData.mToken = std::move(aToken);
                 aData.mStage = Stage::CreateDecoder;
                 RunStage(aData);
               },
@@ -335,16 +335,6 @@ MediaResult MediaFormatReader::DecoderFactory::DoCreateDecoder(Data& aData) {
     }
   }
 
-  // Media playback is not supported when recording or replaying. See bug
-  // 1304146.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return MediaResult(
-        NS_ERROR_DOM_MEDIA_FATAL_ERR,
-        nsPrintfCString("error creating %s decoder: "
-                        "media playback is disabled while recording/replaying",
-                        TrackTypeToStr(aData.mTrack)));
-  }
-
   // result may not be updated by PDMFactory::CreateDecoder, as such it must be
   // initialized to a fatal error by default.
   MediaResult result =
@@ -408,7 +398,7 @@ void MediaFormatReader::DecoderFactory::DoInitDecoder(Data& aData) {
             aData.mInitRequest.Complete();
             aData.mStage = Stage::None;
             MutexAutoLock lock(ownerData.mMutex);
-            ownerData.mDecoder = aData.mDecoder.forget();
+            ownerData.mDecoder = std::move(aData.mDecoder);
             ownerData.mDescription = ownerData.mDecoder->GetDescriptionName();
             DDLOGEX2("MediaFormatReader::DecoderFactory", this,
                      DDLogCategory::Log, "decoder_initialized", DDNoValue{});
@@ -453,10 +443,10 @@ class MediaFormatReader::DemuxerProxy {
     MOZ_COUNT_CTOR(DemuxerProxy);
   }
 
-  ~DemuxerProxy() { MOZ_COUNT_DTOR(DemuxerProxy); }
+  MOZ_COUNTED_DTOR(DemuxerProxy)
 
   RefPtr<ShutdownPromise> Shutdown() {
-    RefPtr<Data> data = mData.forget();
+    RefPtr<Data> data = std::move(mData);
     return InvokeAsync(mTaskQueue, __func__, [data]() {
       // We need to clear our reference to the demuxer now. So that in the event
       // the init promise wasn't resolved, such as what can happen with the
@@ -551,7 +541,7 @@ class MediaFormatReader::DemuxerProxy {
     UniquePtr<EncryptionInfo> mCrypto;
 
    private:
-    ~Data() {}
+    ~Data() = default;
   };
   RefPtr<Data> mData;
 };
@@ -676,7 +666,7 @@ class MediaFormatReader::DemuxerProxy::Wrapper : public MediaTrackDemuxer {
   friend class DemuxerProxy;
 
   ~Wrapper() {
-    RefPtr<MediaTrackDemuxer> trackDemuxer = mTrackDemuxer.forget();
+    RefPtr<MediaTrackDemuxer> trackDemuxer = std::move(mTrackDemuxer);
     nsresult rv = mTaskQueue->Dispatch(NS_NewRunnableFunction(
         "MediaFormatReader::DemuxerProxy::Wrapper::~Wrapper",
         [trackDemuxer]() { trackDemuxer->BreakCycles(); }));
@@ -1529,7 +1519,7 @@ void MediaFormatReader::NotifyNewOutput(
                     sample->mOffset, sample->mTime.ToMicroseconds(),
                     sample->mTimecode.ToMicroseconds(),
                     sample->mDuration.ToMicroseconds(),
-                    static_cast<AudioData*>(sample.get())->Frames(),
+                    sample->As<AudioData>()->Frames(),
                     sample->As<AudioData>()->mChannels,
                     sample->As<AudioData>()->mRate,
                     sample->As<AudioData>()->Data().Length());
@@ -2121,7 +2111,7 @@ void MediaFormatReader::Update(TrackType aTrack) {
 #ifdef XP_WIN
         // D3D11_YCBCR_IMAGE images are GPU based, we try to limit the amount
         // of GPU RAM used.
-        VideoData* videoData = static_cast<VideoData*>(output.get());
+        VideoData* videoData = output->As<VideoData>();
         mVideo.mIsHardwareAccelerated =
             mVideo.mIsHardwareAccelerated ||
             (videoData->mImage &&
@@ -2303,7 +2293,7 @@ void MediaFormatReader::ReturnOutput(MediaData* aData, TrackType aTrack) {
       aData->GetEndTime().ToMicroseconds());
 
   if (aTrack == TrackInfo::kAudioTrack) {
-    AudioData* audioData = static_cast<AudioData*>(aData);
+    AudioData* audioData = aData->As<AudioData>();
 
     if (audioData->mChannels != mInfo.mAudio.mChannels ||
         audioData->mRate != mInfo.mAudio.mRate) {
@@ -2318,7 +2308,7 @@ void MediaFormatReader::ReturnOutput(MediaData* aData, TrackType aTrack) {
     }
     mAudio.ResolvePromise(audioData, __func__);
   } else if (aTrack == TrackInfo::kVideoTrack) {
-    VideoData* videoData = static_cast<VideoData*>(aData);
+    VideoData* videoData = aData->As<VideoData>();
 
     if (videoData->mDisplay != mInfo.mVideo.mDisplay) {
       LOG("change of video display size (%dx%d->%dx%d)",

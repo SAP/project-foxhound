@@ -6,12 +6,16 @@
 
 #include "nsDocShellLoadState.h"
 #include "nsIDocShell.h"
-#include "nsIDocShellTreeItem.h"
-#include "nsIScriptSecurityManager.h"
+#include "SHEntryParent.h"
+#include "SHEntryChild.h"
+#include "nsISHEntry.h"
 #include "nsIWebNavigation.h"
-#include "nsIChildChannel.h"
+#include "nsIChannel.h"
 #include "ReferrerInfo.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/LoadURIOptionsBinding.h"
+#include "mozilla/StaticPrefs_fission.h"
 
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/NullPrincipal.h"
@@ -52,7 +56,6 @@ nsDocShellLoadState::nsDocShellLoadState(
   mOriginalFrameSrc = aLoadState.OriginalFrameSrc();
   mIsFormSubmission = aLoadState.IsFormSubmission();
   mLoadType = aLoadState.LoadType();
-  mSrcdocData.SetIsVoid(true);
   mTarget = aLoadState.Target();
   mLoadFlags = aLoadState.LoadFlags();
   mFirstParty = aLoadState.FirstParty();
@@ -66,26 +69,32 @@ nsDocShellLoadState::nsDocShellLoadState(
   mBaseURI = aLoadState.BaseURI();
   mTriggeringPrincipal = aLoadState.TriggeringPrincipal();
   mPrincipalToInherit = aLoadState.PrincipalToInherit();
+  mStoragePrincipalToInherit = aLoadState.StoragePrincipalToInherit();
   mCsp = aLoadState.Csp();
   mOriginalURIString = aLoadState.OriginalURIString();
   mCancelContentJSEpoch = aLoadState.CancelContentJSEpoch();
   mPostDataStream = aLoadState.PostDataStream();
   mHeadersStream = aLoadState.HeadersStream();
+  mSrcdocData = aLoadState.SrcdocData();
+  mResultPrincipalURI = aLoadState.ResultPrincipalURI();
+  if (!aLoadState.SHEntry() || !StaticPrefs::fission_sessionHistoryInParent()) {
+    return;
+  }
+  if (XRE_IsParentProcess()) {
+    mSHEntry = static_cast<LegacySHEntry*>(aLoadState.SHEntry());
+  } else {
+    mSHEntry = static_cast<SHEntryChild*>(aLoadState.SHEntry());
+  }
 }
 
 nsDocShellLoadState::~nsDocShellLoadState() {}
 
 nsresult nsDocShellLoadState::CreateFromPendingChannel(
-    nsIChildChannel* aPendingChannel, nsDocShellLoadState** aResult) {
-  nsCOMPtr<nsIChannel> channel = do_QueryInterface(aPendingChannel);
-  if (NS_WARN_IF(!channel)) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
+    nsIChannel* aPendingChannel, nsDocShellLoadState** aResult) {
   // Create the nsDocShellLoadState object with default state pulled from the
   // passed-in channel.
   nsCOMPtr<nsIURI> uri;
-  nsresult rv = channel->GetURI(getter_AddRefs(uri));
+  nsresult rv = aPendingChannel->GetURI(getter_AddRefs(uri));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -96,13 +105,13 @@ nsresult nsDocShellLoadState::CreateFromPendingChannel(
   // Pull relevant state from the channel, and store it on the
   // nsDocShellLoadState.
   nsCOMPtr<nsIURI> originalUri;
-  rv = channel->GetOriginalURI(getter_AddRefs(originalUri));
+  rv = aPendingChannel->GetOriginalURI(getter_AddRefs(originalUri));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
   loadState->SetOriginalURI(originalUri);
 
-  nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+  nsCOMPtr<nsILoadInfo> loadInfo = aPendingChannel->LoadInfo();
   loadState->SetTriggeringPrincipal(loadInfo->TriggeringPrincipal());
 
   // Return the newly created loadState.
@@ -323,6 +332,15 @@ void nsDocShellLoadState::SetPrincipalToInherit(
   mPrincipalToInherit = aPrincipalToInherit;
 }
 
+nsIPrincipal* nsDocShellLoadState::StoragePrincipalToInherit() const {
+  return mStoragePrincipalToInherit;
+}
+
+void nsDocShellLoadState::SetStoragePrincipalToInherit(
+    nsIPrincipal* aStoragePrincipalToInherit) {
+  mStoragePrincipalToInherit = aStoragePrincipalToInherit;
+}
+
 void nsDocShellLoadState::SetCsp(nsIContentSecurityPolicy* aCsp) {
   mCsp = aCsp;
 }
@@ -469,7 +487,8 @@ void nsDocShellLoadState::SetFileName(const nsAString& aFileName) {
 }
 
 nsresult nsDocShellLoadState::SetupInheritingPrincipal(
-    uint32_t aItemType, const mozilla::OriginAttributes& aOriginAttributes) {
+    BrowsingContext::Type aType,
+    const mozilla::OriginAttributes& aOriginAttributes) {
   // We need a principalToInherit.
   //
   // If principalIsExplicit is not set there are 4 possibilities:
@@ -498,8 +517,8 @@ nsresult nsDocShellLoadState::SetupInheritingPrincipal(
   // (4) we dont' pass a principal into the channel, and a principal will be
   //     created later from the channel's internal data.
   mPrincipalToInherit = mTriggeringPrincipal;
-  if (mPrincipalToInherit && aItemType != nsIDocShellTreeItem::typeChrome) {
-    if (nsContentUtils::IsSystemPrincipal(mPrincipalToInherit)) {
+  if (mPrincipalToInherit && aType != BrowsingContext::Type::Chrome) {
+    if (mPrincipalToInherit->IsSystemPrincipal()) {
       if (mPrincipalIsExplicit) {
         return NS_ERROR_DOM_SECURITY_ERR;
       }
@@ -568,8 +587,9 @@ void nsDocShellLoadState::CalculateLoadURIFlags() {
   mLoadFlags = 0;
 
   if (mInheritPrincipal) {
-    MOZ_ASSERT(!nsContentUtils::IsSystemPrincipal(mPrincipalToInherit),
-               "Should not inherit SystemPrincipal");
+    MOZ_ASSERT(
+        !mPrincipalToInherit || !mPrincipalToInherit->IsSystemPrincipal(),
+        "Should not inherit SystemPrincipal");
     mLoadFlags |= nsDocShell::INTERNAL_LOAD_FLAGS_INHERIT_PRINCIPAL;
   }
 
@@ -629,12 +649,27 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize() {
   loadState.BaseURI() = mBaseURI;
   loadState.TriggeringPrincipal() = mTriggeringPrincipal;
   loadState.PrincipalToInherit() = mPrincipalToInherit;
+  loadState.StoragePrincipalToInherit() = mStoragePrincipalToInherit;
   loadState.Csp() = mCsp;
   loadState.OriginalURIString() = mOriginalURIString;
   loadState.CancelContentJSEpoch() = mCancelContentJSEpoch;
   loadState.ReferrerInfo() = mReferrerInfo;
   loadState.PostDataStream() = mPostDataStream;
   loadState.HeadersStream() = mHeadersStream;
-
+  loadState.SrcdocData() = mSrcdocData;
+  loadState.ResultPrincipalURI() = mResultPrincipalURI;
+  if (!mSHEntry || !StaticPrefs::fission_sessionHistoryInParent()) {
+    // Without the pref, we don't have an actor for shentry and thus
+    // we can't serialize it. We could write custom (de)serializers,
+    // but a session history rewrite is on the way anyway.
+    return loadState;
+  }
+  if (XRE_IsParentProcess()) {
+    loadState.SHEntry() = static_cast<CrossProcessSHEntry*>(
+        static_cast<LegacySHEntry*>(mSHEntry.get()));
+  } else {
+    loadState.SHEntry() = static_cast<CrossProcessSHEntry*>(
+        static_cast<SHEntryChild*>(mSHEntry.get()));
+  }
   return loadState;
 }

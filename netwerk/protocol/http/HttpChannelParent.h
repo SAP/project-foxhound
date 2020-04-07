@@ -14,7 +14,6 @@
 #include "mozilla/net/NeckoCommon.h"
 #include "mozilla/net/NeckoParent.h"
 #include "mozilla/MozPromise.h"
-#include "nsIObserver.h"
 #include "nsIParentRedirectingChannel.h"
 #include "nsIProgressEventSink.h"
 #include "nsIChannelEventSink.h"
@@ -23,6 +22,7 @@
 #include "nsIAuthPromptProvider.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "nsIDeprecationWarner.h"
+#include "nsIMultiPartChannel.h"
 
 class nsICacheEntry;
 
@@ -60,7 +60,8 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
                                 public HttpChannelSecurityWarningReporter,
                                 public nsIAsyncVerifyRedirectReadyCallback,
                                 public nsIChannelEventSink,
-                                public nsIRedirectResultListener {
+                                public nsIRedirectResultListener,
+                                public nsIMultiPartChannelListener {
   virtual ~HttpChannelParent();
 
  public:
@@ -76,6 +77,7 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   NS_DECL_NSIASYNCVERIFYREDIRECTREADYCALLBACK
   NS_DECL_NSICHANNELEVENTSINK
   NS_DECL_NSIREDIRECTRESULTLISTENER
+  NS_DECL_NSIMULTIPARTCHANNELLISTENER
 
   NS_DECLARE_STATIC_IID_ACCESSOR(HTTP_CHANNEL_PARENT_IID)
 
@@ -128,13 +130,6 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   void OnBackgroundParentDestroyed();
 
   base::ProcessId OtherPid() const;
-
-  // Called by nsHttpChannel when a process switch is about to start.
-  // aChannel: nsIHttpChannel caller.
-  // aIdentifier: identifier from SessionStore to be passed to the childChannel
-  //              in order to identify it.
-  nsresult TriggerCrossProcessSwitch(nsIHttpChannel* aChannel,
-                                     uint64_t aIdentifier);
 
   // Inform the child actor that our referrer info was modified late during
   // BeginConnect.
@@ -255,11 +250,6 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   void MaybeFlushPendingDiversion();
   void ResponseSynthesized();
 
-  void CrossProcessRedirectDone(
-      const nsresult& aResult,
-      const mozilla::Maybe<LoadInfoArgs>& aLoadInfoArgs);
-  void FinishCrossProcessSwitch(nsHttpChannel* aChannel, nsresult aStatus);
-
   // final step for Redirect2Verify procedure, will be invoked while both
   // redirecting and redirected channel are ready or any error happened.
   // OnRedirectVerifyCallback will be invoked for finishing the async
@@ -296,7 +286,7 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   nsCOMPtr<nsIChannel> mRedirectChannel;
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
 
-  nsAutoPtr<class nsHttpChannel::OfflineCacheEntryAsForeignMarker>
+  UniquePtr<class nsHttpChannel::OfflineCacheEntryAsForeignMarker>
       mOfflineForeignMarker;
   nsCOMPtr<nsILoadContext> mLoadContext;
   RefPtr<nsHttpHandler> mHttpHandler;
@@ -361,9 +351,12 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   uint8_t mNeedFlowControl : 1;
   uint8_t mSuspendedForFlowControl : 1;
 
-  // The child channel was cancelled, as the consumer was relocated to another
-  // process.
-  uint8_t mDoingCrossProcessRedirect : 1;
+  // Set to true if we get OnStartRequest called with an nsIMultiPartChannel,
+  // and expect multiple OnStartRequest calls.
+  // When this happens we send OnTransportAndData and OnStopRequest over
+  // PHttpChannel instead of PHttpBackgroundChannel to make synchronizing all
+  // the parts easier.
+  uint8_t mIsMultiPart : 1;
 
   // Number of events to wait before actually invoking AsyncOpen on the main
   // channel. For each asynchronous step required before InvokeAsyncOpen, should

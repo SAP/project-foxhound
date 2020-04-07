@@ -26,14 +26,11 @@
 #include "nsAtom.h"
 #include "nsQueryObject.h"
 #include "nsIContentInlines.h"
-#include "nsIContentViewer.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
-#include "nsIDocumentEncoder.h"
 #include "nsMappedAttributes.h"
 #include "nsHTMLStyleSheet.h"
 #include "nsPIDOMWindow.h"
-#include "nsIURL.h"
 #include "nsEscape.h"
 #include "nsIFrameInlines.h"
 #include "nsIScrollableFrame.h"
@@ -42,7 +39,6 @@
 #include "nsIWidget.h"
 #include "nsRange.h"
 #include "nsPresContext.h"
-#include "nsIDocShell.h"
 #include "nsNameSpaceManager.h"
 #include "nsError.h"
 #include "nsIPrincipal.h"
@@ -74,7 +70,6 @@
 #include "nsLayoutUtils.h"
 #include "mozAutoDocUpdate.h"
 #include "nsHtml5Module.h"
-#include "nsITextControlElement.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "HTMLFieldSetElement.h"
 #include "nsTextNode.h"
@@ -102,6 +97,8 @@
 #include "nsComputedDOMStyle.h"
 #include "mozilla/dom/HTMLLabelElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/dom/CustomElementRegistry.h"
+#include "mozilla/dom/ElementInternals.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -112,7 +109,15 @@ nsresult nsGenericHTMLElement::CopyInnerTo(Element* aDst) {
 
   auto reparse = aDst->OwnerDoc() == OwnerDoc() ? ReparseAttributes::No
                                                 : ReparseAttributes::Yes;
-  return Element::CopyInnerTo(aDst, reparse);
+  nsresult rv = Element::CopyInnerTo(aDst, reparse);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // cloning a node must retain its internal nonce slot
+  nsString* nonce = static_cast<nsString*>(GetProperty(nsGkAtoms::nonce));
+  if (nonce) {
+    static_cast<nsGenericHTMLElement*>(aDst)->SetNonce(*nonce);
+  }
+  return NS_OK;
 }
 
 static const nsAttrValue::EnumTable kDirTable[] = {
@@ -389,6 +394,21 @@ nsresult nsGenericHTMLElement::BindToTree(BindContext& aContext,
     aContext.OwnerDoc().ChangeContentEditableCount(this, +1);
   }
 
+  // Hide any nonce from the DOM, but keep the internal value of the
+  // nonce by copying and resetting the internal nonce value.
+  if (HasFlag(NODE_HAS_NONCE_AND_HEADER_CSP) && IsInComposedDoc() &&
+      OwnerDoc()->GetBrowsingContext()) {
+    nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+        "nsGenericHTMLElement::ResetNonce::Runnable",
+        [self = RefPtr<nsGenericHTMLElement>(this)]() {
+          nsAutoString nonce;
+          self->GetNonce(nonce);
+          self->SetAttr(kNameSpaceID_None, nsGkAtoms::nonce, EmptyString(),
+                        true);
+          self->SetNonce(nonce);
+        }));
+  }
+
   // We need to consider a labels element is moved to another subtree
   // with different root, it needs to update labels list and its root
   // as well.
@@ -428,13 +448,12 @@ HTMLFormElement* nsGenericHTMLElement::FindAncestorForm(
   NS_ASSERTION(!HasAttr(kNameSpaceID_None, nsGkAtoms::form) ||
                    IsHTMLElement(nsGkAtoms::img),
                "FindAncestorForm should not be called if @form is set!");
-
-  // Make sure we don't end up finding a form that's anonymous from
-  // our point of view. See also nsGenericHTMLFormElement::UpdateFieldSet.
-  nsIContent* bindingParent = GetBindingParent();
+  if (IsInNativeAnonymousSubtree()) {
+    return nullptr;
+  }
 
   nsIContent* content = this;
-  while (content != bindingParent && content) {
+  while (content) {
     // If the current ancestor is a form, return it as our form
     if (content->IsHTMLElement(nsGkAtoms::form)) {
 #ifdef DEBUG
@@ -549,7 +568,7 @@ nsresult nsGenericHTMLElement::BeforeSetAttr(int32_t aNamespaceID,
     }
     if (!aValue && IsEventAttributeName(aName)) {
       if (EventListenerManager* manager = GetExistingListenerManager()) {
-        manager->RemoveEventHandler(aName);
+        manager->RemoveEventHandler(GetEventNameForAttr(aName));
       }
     }
   }
@@ -566,8 +585,7 @@ nsresult nsGenericHTMLElement::AfterSetAttr(
     if (IsEventAttributeName(aName) && aValue) {
       MOZ_ASSERT(aValue->Type() == nsAttrValue::eString,
                  "Expected string value for script body");
-      nsresult rv = SetEventHandler(aName, aValue->GetStringValue());
-      NS_ENSURE_SUCCESS(rv, rv);
+      SetEventHandler(GetEventNameForAttr(aName), aValue->GetStringValue());
     } else if (aNotify && aName == nsGkAtoms::spellcheck) {
       SyncEditorsOnSubtree(this);
     } else if (aName == nsGkAtoms::dir) {
@@ -644,6 +662,20 @@ nsresult nsGenericHTMLElement::AfterSetAttr(
         if (CanHaveName(NodeInfo()->NameAtom())) {
           AddToNameTable(aValue->GetAtomValue());
         }
+      }
+    }
+
+    // The nonce will be copied over to an internal slot and cleared from the
+    // Element within BindToTree to avoid CSS Selector nonce exfiltration if
+    // the CSP list contains a header-delivered CSP.
+    if (nsGkAtoms::nonce == aName) {
+      if (aValue) {
+        SetNonce(aValue->GetStringValue());
+        if (OwnerDoc()->GetHasCSPDeliveredThroughHeader()) {
+          SetFlags(NODE_HAS_NONCE_AND_HEADER_CSP);
+        }
+      } else {
+        RemoveNonce();
       }
     }
   }
@@ -879,11 +911,11 @@ nsPresContext* nsGenericHTMLElement::GetPresContext(PresContextFor aFor) {
 }
 
 static const nsAttrValue::EnumTable kDivAlignTable[] = {
-    {"left", NS_STYLE_TEXT_ALIGN_MOZ_LEFT},
-    {"right", NS_STYLE_TEXT_ALIGN_MOZ_RIGHT},
-    {"center", NS_STYLE_TEXT_ALIGN_MOZ_CENTER},
-    {"middle", NS_STYLE_TEXT_ALIGN_MOZ_CENTER},
-    {"justify", NS_STYLE_TEXT_ALIGN_JUSTIFY},
+    {"left", StyleTextAlign::MozLeft},
+    {"right", StyleTextAlign::MozRight},
+    {"center", StyleTextAlign::MozCenter},
+    {"middle", StyleTextAlign::MozCenter},
+    {"justify", StyleTextAlign::Justify},
     {nullptr, 0}};
 
 static const nsAttrValue::EnumTable kFrameborderTable[] = {
@@ -910,8 +942,8 @@ static const nsAttrValue::EnumTable kTableVAlignTable[] = {
 bool nsGenericHTMLElement::ParseAlignValue(const nsAString& aString,
                                            nsAttrValue& aResult) {
   static const nsAttrValue::EnumTable kAlignTable[] = {
-      {"left", NS_STYLE_TEXT_ALIGN_LEFT},
-      {"right", NS_STYLE_TEXT_ALIGN_RIGHT},
+      {"left", StyleTextAlign::Left},
+      {"right", StyleTextAlign::Right},
 
       {"top", StyleVerticalAlignKeyword::Top},
       {"middle", StyleVerticalAlignKeyword::MozMiddleWithBaseline},
@@ -928,18 +960,41 @@ bool nsGenericHTMLElement::ParseAlignValue(const nsAString& aString,
       {"absbottom", StyleVerticalAlignKeyword::Bottom},
       {nullptr, 0}};
 
+  static_assert(uint8_t(StyleTextAlign::Left) !=
+                    uint8_t(StyleVerticalAlignKeyword::Top) &&
+                uint8_t(StyleTextAlign::Left) !=
+                    uint8_t(StyleVerticalAlignKeyword::MozMiddleWithBaseline) &&
+                uint8_t(StyleTextAlign::Left) !=
+                    uint8_t(StyleVerticalAlignKeyword::Baseline) &&
+                uint8_t(StyleTextAlign::Left) !=
+                    uint8_t(StyleVerticalAlignKeyword::TextTop) &&
+                uint8_t(StyleTextAlign::Left) !=
+                    uint8_t(StyleVerticalAlignKeyword::Middle) &&
+                uint8_t(StyleTextAlign::Left) !=
+                    uint8_t(StyleVerticalAlignKeyword::Bottom));
+
+  static_assert(uint8_t(StyleTextAlign::Right) !=
+                    uint8_t(StyleVerticalAlignKeyword::Top) &&
+                uint8_t(StyleTextAlign::Right) !=
+                    uint8_t(StyleVerticalAlignKeyword::MozMiddleWithBaseline) &&
+                uint8_t(StyleTextAlign::Right) !=
+                    uint8_t(StyleVerticalAlignKeyword::Baseline) &&
+                uint8_t(StyleTextAlign::Right) !=
+                    uint8_t(StyleVerticalAlignKeyword::TextTop) &&
+                uint8_t(StyleTextAlign::Right) !=
+                    uint8_t(StyleVerticalAlignKeyword::Middle) &&
+                uint8_t(StyleTextAlign::Right) !=
+                    uint8_t(StyleVerticalAlignKeyword::Bottom));
+
   return aResult.ParseEnumValue(aString, kAlignTable, false);
 }
 
 //----------------------------------------
 
 static const nsAttrValue::EnumTable kTableHAlignTable[] = {
-    {"left", NS_STYLE_TEXT_ALIGN_LEFT},
-    {"right", NS_STYLE_TEXT_ALIGN_RIGHT},
-    {"center", NS_STYLE_TEXT_ALIGN_CENTER},
-    {"char", NS_STYLE_TEXT_ALIGN_CHAR},
-    {"justify", NS_STYLE_TEXT_ALIGN_JUSTIFY},
-    {nullptr, 0}};
+    {"left", StyleTextAlign::Left},       {"right", StyleTextAlign::Right},
+    {"center", StyleTextAlign::Center},   {"char", StyleTextAlign::Char},
+    {"justify", StyleTextAlign::Justify}, {nullptr, 0}};
 
 bool nsGenericHTMLElement::ParseTableHAlignValue(const nsAString& aString,
                                                  nsAttrValue& aResult) {
@@ -950,13 +1005,13 @@ bool nsGenericHTMLElement::ParseTableHAlignValue(const nsAString& aString,
 
 // This table is used for td, th, tr, col, thead, tbody and tfoot.
 static const nsAttrValue::EnumTable kTableCellHAlignTable[] = {
-    {"left", NS_STYLE_TEXT_ALIGN_MOZ_LEFT},
-    {"right", NS_STYLE_TEXT_ALIGN_MOZ_RIGHT},
-    {"center", NS_STYLE_TEXT_ALIGN_MOZ_CENTER},
-    {"char", NS_STYLE_TEXT_ALIGN_CHAR},
-    {"justify", NS_STYLE_TEXT_ALIGN_JUSTIFY},
-    {"middle", NS_STYLE_TEXT_ALIGN_MOZ_CENTER},
-    {"absmiddle", NS_STYLE_TEXT_ALIGN_CENTER},
+    {"left", StyleTextAlign::MozLeft},
+    {"right", StyleTextAlign::MozRight},
+    {"center", StyleTextAlign::MozCenter},
+    {"char", StyleTextAlign::Char},
+    {"justify", StyleTextAlign::Justify},
+    {"middle", StyleTextAlign::MozCenter},
+    {"absmiddle", StyleTextAlign::Center},
     {nullptr, 0}};
 
 bool nsGenericHTMLElement::ParseTableCellHAlignValue(const nsAString& aString,
@@ -1129,16 +1184,16 @@ void nsGenericHTMLElement::MapImageAlignAttributeInto(
   if (value && value->Type() == nsAttrValue::eEnum) {
     int32_t align = value->GetEnumValue();
     if (!aDecls.PropertyIsSet(eCSSProperty_float)) {
-      if (align == NS_STYLE_TEXT_ALIGN_LEFT) {
+      if (align == uint8_t(StyleTextAlign::Left)) {
         aDecls.SetKeywordValue(eCSSProperty_float, StyleFloat::Left);
-      } else if (align == NS_STYLE_TEXT_ALIGN_RIGHT) {
+      } else if (align == uint8_t(StyleTextAlign::Right)) {
         aDecls.SetKeywordValue(eCSSProperty_float, StyleFloat::Right);
       }
     }
     if (!aDecls.PropertyIsSet(eCSSProperty_vertical_align)) {
       switch (align) {
-        case NS_STYLE_TEXT_ALIGN_LEFT:
-        case NS_STYLE_TEXT_ALIGN_RIGHT:
+        case uint8_t(StyleTextAlign::Left):
+        case uint8_t(StyleTextAlign::Right):
           break;
         default:
           aDecls.SetKeywordValue(eCSSProperty_vertical_align, align);
@@ -1926,23 +1981,7 @@ nsGenericHTMLFormElement::FocusTristate nsGenericHTMLFormElement::FocusState() {
     return eUnfocusable;
   }
 
-  // If the window is not active, do not allow the focus to bring the
-  // window to the front.  We update the focus controller, but do
-  // nothing else.
-  if (nsPIDOMWindowOuter* win = doc->GetWindow()) {
-    nsCOMPtr<nsPIDOMWindowOuter> rootWindow = win->GetPrivateRoot();
-
-    nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
-    if (fm && rootWindow) {
-      nsCOMPtr<mozIDOMWindowProxy> activeWindow;
-      fm->GetActiveWindow(getter_AddRefs(activeWindow));
-      if (activeWindow == rootWindow) {
-        return eActiveWindow;
-      }
-    }
-  }
-
-  return eInactiveWindow;
+  return IsInActiveTab(doc) ? eActiveWindow : eInactiveWindow;
 }
 
 Element* nsGenericHTMLFormElement::AddFormIdObserver() {
@@ -2104,14 +2143,15 @@ void nsGenericHTMLFormElement::UpdateFormOwner(bool aBindToTree,
 }
 
 void nsGenericHTMLFormElement::UpdateFieldSet(bool aNotify) {
+  if (IsInNativeAnonymousSubtree()) {
+    MOZ_ASSERT(!mFieldSet);
+    return;
+  }
+
   nsIContent* parent = nullptr;
   nsIContent* prev = nullptr;
 
-  // Don't walk out of anonymous subtrees. Note the similar code in
-  // nsGenericHTMLElement::FindAncestorForm.
-  nsIContent* bindingParent = GetBindingParent();
-
-  for (parent = GetParent(); parent && parent != bindingParent;
+  for (parent = GetParent(); parent;
        prev = parent, parent = parent->GetParent()) {
     HTMLFieldSetElement* fieldset = HTMLFieldSetElement::FromNode(parent);
     if (fieldset && (!prev || fieldset->GetFirstLegend() != prev)) {
@@ -2419,7 +2459,7 @@ void nsGenericHTMLElement::RecompileScriptEventListeners() {
 
     nsAutoString value;
     GetAttr(kNameSpaceID_None, attr, value);
-    SetEventHandler(attr, value, true);
+    SetEventHandler(GetEventNameForAttr(attr), value, true);
   }
 }
 
@@ -2804,4 +2844,70 @@ void nsGenericHTMLElement::SetInnerText(const nsAString& aValue) {
   }
 
   mb.NodesAdded();
+}
+
+// https://html.spec.whatwg.org/commit-snapshots/b48bb2238269d90ea4f455a52cdf29505aff3df0/#dom-attachinternals
+already_AddRefed<ElementInternals> nsGenericHTMLElement::AttachInternals(
+    ErrorResult& aRv) {
+  CustomElementData* ceData = GetCustomElementData();
+
+  // 1. If element's is value is not null, then throw a "NotSupportedError"
+  //    DOMException.
+  nsAtom* isAtom = ceData ? ceData->GetIs(this) : nullptr;
+  nsAtom* nameAtom = NodeInfo()->NameAtom();
+  if (isAtom) {
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "Cannot attach ElementInternals to a customized built-in element "
+        "'%s'",
+        NS_ConvertUTF16toUTF8(isAtom->GetUTF16String()).get()));
+    return nullptr;
+  }
+
+  // 2. Let definition be the result of looking up a custom element definition
+  //    given element's node document, its namespace, its local name, and null
+  //    as is value.
+  CustomElementDefinition* definition = nullptr;
+  if (ceData) {
+    definition = ceData->GetCustomElementDefinition();
+
+    // If the definition is null, the element possible hasn't yet upgraded.
+    // Fallback to use LookupCustomElementDefinition to find its definition.
+    if (!definition) {
+      definition = nsContentUtils::LookupCustomElementDefinition(
+          NodeInfo()->GetDocument(), nameAtom, NodeInfo()->NamespaceID(),
+          ceData->GetCustomElementType());
+    }
+  }
+
+  // 3. If definition is null, then throw an "NotSupportedError" DOMException.
+  if (!definition) {
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "Cannot attach ElementInternals to a non-custom element '%s'",
+        NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
+    return nullptr;
+  }
+
+  // 4. If definition's disable internals is true, then throw a
+  //    "NotSupportedError" DOMException.
+  if (definition->mDisableInternals) {
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "AttachInternal() to '%s' is disabled by disabledFeatures",
+        NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
+    return nullptr;
+  }
+
+  // 5. If element's attached internals is true, then throw an
+  //    "NotSupportedError" DOMException.
+  if (ceData->HasAttachedInternals()) {
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "AttachInternals() has already been called from '%s'",
+        NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
+    return nullptr;
+  }
+
+  // 6. Set element's attached internals to true.
+  ceData->AttachedInternals();
+
+  // 7. Create a new ElementInternals instance targeting element, and return it.
+  return MakeAndAddRef<ElementInternals>(this);
 }

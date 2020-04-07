@@ -14,6 +14,8 @@ class ZoomChild extends JSWindowActorChild {
       fullZoom: NaN,
       textZoom: NaN,
     };
+
+    this._resolutionBeforeFullZoomChange = 0;
   }
 
   get fullZoom() {
@@ -25,12 +27,12 @@ class ZoomChild extends JSWindowActorChild {
   }
 
   set fullZoom(value) {
-    this._cache.fullZoom = value;
+    this._cache.fullZoom = Number(value.toFixed(2));
     this._markupViewer.fullZoom = value;
   }
 
   set textZoom(value) {
-    this._cache.textZoom = value;
+    this._cache.textZoom = Number(value.toFixed(2));
     this._markupViewer.textZoom = value;
   }
 
@@ -73,13 +75,29 @@ class ZoomChild extends JSWindowActorChild {
   }
 
   handleEvent(event) {
-    if (event.type == "ZoomChangeUsingMouseWheel") {
-      this.sendAsyncMessage("ZoomChangeUsingMouseWheel", {});
+    // Send do zoom events to our parent as messages, to be re-dispatched.
+    if (event.type == "DoZoomEnlargeBy10") {
+      this.sendAsyncMessage("DoZoomEnlargeBy10", {});
       return;
     }
 
-    // Only handle this event for top-level content.
+    if (event.type == "DoZoomReduceBy10") {
+      this.sendAsyncMessage("DoZoomReduceBy10", {});
+      return;
+    }
+
+    // Only handle remaining events for top-level content.
     if (this.browsingContext != this.browsingContext.top) {
+      return;
+    }
+
+    if (event.type == "PreFullZoomChange") {
+      // Check if we're in the middle of a full zoom change. If we are,
+      // don't capture the resolution again, because it hasn't yet been
+      // restored and may be in an indeterminate state.
+      if (this._resolutionBeforeFullZoomChange == 0) {
+        this._resolutionBeforeFullZoomChange = this.contentWindow.windowUtils.getResolution();
+      }
       return;
     }
 
@@ -87,7 +105,24 @@ class ZoomChild extends JSWindowActorChild {
       if (this.refreshFullZoom()) {
         this.sendAsyncMessage("FullZoomChange", { value: this.fullZoom });
       }
-    } else if (event.type == "TextZoomChange") {
+      return;
+    }
+
+    if (event.type == "mozupdatedremoteframedimensions") {
+      // Check to see if we've already restored resolution, in which case
+      // there's no need to do it again.
+      if (this._resolutionBeforeFullZoomChange != 0) {
+        this.contentWindow.windowUtils.setResolutionAndScaleTo(
+          this._resolutionBeforeFullZoomChange
+        );
+        this._resolutionBeforeFullZoomChange = 0;
+      }
+
+      this.sendAsyncMessage("FullZoomResolutionStable", {});
+      return;
+    }
+
+    if (event.type == "TextZoomChange") {
       if (this.refreshTextZoom()) {
         this.sendAsyncMessage("TextZoomChange", { value: this.textZoom });
       }

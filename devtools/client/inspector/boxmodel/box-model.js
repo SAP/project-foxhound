@@ -8,7 +8,7 @@ const {
   updateGeometryEditorEnabled,
   updateLayout,
   updateOffsetParent,
-} = require("./actions/box-model");
+} = require("devtools/client/inspector/boxmodel/actions/box-model");
 
 loader.lazyRequireGetter(
   this,
@@ -139,14 +139,14 @@ BoxModel.prototype = {
    * Starts listening to reflows in the current tab.
    */
   trackReflows() {
-    this.inspector.reflowTracker.trackReflows(this, this.updateBoxModel);
+    this.inspector.on("reflow-in-selected-target", this.updateBoxModel);
   },
 
   /**
    * Stops listening to reflows in the current tab.
    */
   untrackReflows() {
-    this.inspector.reflowTracker.untrackReflows(this, this.updateBoxModel);
+    this.inspector.off("reflow-in-selected-target", this.updateBoxModel);
   },
 
   /**
@@ -193,18 +193,11 @@ BoxModel.prototype = {
         isPositionEditable,
       });
 
-      const actorCanGetOffSetParent = await nodeFront.targetFront.actorHasMethod(
-        "domwalker",
-        "getOffsetParent"
+      // Update the redux store with the latest offset parent DOM node
+      const offsetParent = await inspectorFront.walker.getOffsetParent(
+        nodeFront
       );
-
-      if (actorCanGetOffSetParent) {
-        // Update the redux store with the latest offset parent DOM node
-        const offsetParent = await inspectorFront.walker.getOffsetParent(
-          nodeFront
-        );
-        this.store.dispatch(updateOffsetParent(offsetParent));
-      }
+      this.store.dispatch(updateOffsetParent(offsetParent));
 
       // Update the redux store with the latest layout properties and update the box
       // model view.

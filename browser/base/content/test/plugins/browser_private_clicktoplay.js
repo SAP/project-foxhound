@@ -41,6 +41,14 @@ add_task(async function test() {
       Ci.nsIPluginTag.STATE_ENABLED;
   });
 
+  // This test works under the assumption that private browsing windows
+  // share permissions with regular windows. Setting a pref to revert to this
+  // behavior. The test should be updated and the pref overwrite removed.
+  // See Bug 1588457
+  await SpecialPowers.pushPrefEnv({
+    set: [["permissions.isolateBy.privateBrowsing", false]],
+  });
+
   let newTab = BrowserTestUtils.addTab(gBrowser);
   gBrowser.selectedTab = newTab;
   gTestBrowser = gBrowser.selectedBrowser;
@@ -63,7 +71,7 @@ add_task(async function test1b() {
   );
   ok(popupNotification, "Test 1b, Should have a click-to-play notification");
 
-  await ContentTask.spawn(gPrivateBrowser, null, function() {
+  await SpecialPowers.spawn(gPrivateBrowser, [], function() {
     let plugin = content.document.getElementById("test");
     ok(!plugin.activated, "Test 1b, Plugin should not be activated");
   });
@@ -104,7 +112,7 @@ add_task(async function test2a() {
   );
   ok(popupNotification, "Test 2a, Should have a click-to-play notification");
 
-  await ContentTask.spawn(gTestBrowser, null, function() {
+  await SpecialPowers.spawn(gTestBrowser, [], function() {
     let plugin = content.document.getElementById("test");
     ok(!plugin.activated, "Test 2a, Plugin should not be activated");
   });
@@ -119,7 +127,7 @@ add_task(async function test2a() {
 
   PopupNotifications.panel.firstElementChild.button.click();
 
-  await ContentTask.spawn(gTestBrowser, null, async function() {
+  await SpecialPowers.spawn(gTestBrowser, [], async function() {
     let plugin = content.document.getElementById("test");
     let condition = () => plugin.activated;
     await ContentTaskUtils.waitForCondition(
@@ -144,7 +152,7 @@ add_task(async function test2c() {
   }, "Waiting for click-to-play-plugins notification in the private window");
   ok(popupNotification, "Test 2c, Should have a click-to-play notification");
 
-  await ContentTask.spawn(gPrivateBrowser, null, function() {
+  await SpecialPowers.spawn(gPrivateBrowser, [], function() {
     let plugin = content.document.getElementById("test");
     ok(plugin.activated, "Test 2c, Plugin should be activated");
   });
@@ -192,7 +200,7 @@ add_task(async function test3a() {
   );
   ok(popupNotification, "Test 3a, Should have a click-to-play notification");
 
-  await ContentTask.spawn(gTestBrowser, null, function() {
+  await SpecialPowers.spawn(gTestBrowser, [], function() {
     let plugin = content.document.getElementById("test");
     ok(!plugin.activated, "Test 3a, Plugin should not be activated");
   });
@@ -206,7 +214,7 @@ add_task(async function test3a() {
   await promiseShown;
   PopupNotifications.panel.firstElementChild.button.click();
 
-  await ContentTask.spawn(gTestBrowser, null, async function() {
+  await SpecialPowers.spawn(gTestBrowser, [], async function() {
     let plugin = content.document.getElementById("test");
     let condition = () => plugin.activated;
     await ContentTaskUtils.waitForCondition(

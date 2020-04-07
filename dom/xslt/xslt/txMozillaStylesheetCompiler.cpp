@@ -7,13 +7,11 @@
 #include "nsIAuthPrompt.h"
 #include "mozilla/dom/Document.h"
 #include "nsIExpatSink.h"
-#include "nsIChannelEventSink.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadGroup.h"
 #include "nsIParser.h"
 #include "nsCharsetSource.h"
 #include "nsIRequestObserver.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsContentPolicyUtils.h"
 #include "nsIStreamConverterService.h"
 #include "nsSyncLoadService.h"
@@ -31,7 +29,6 @@
 #include "txXMLUtils.h"
 #include "nsAttrName.h"
 #include "nsIScriptError.h"
-#include "nsIURL.h"
 #include "nsError.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Element.h"
@@ -564,7 +561,7 @@ nsresult txSyncCompileObserver::loadURI(const nsAString& aUri,
   rv = nsSyncLoadService::LoadDocument(
       uri, nsIContentPolicy::TYPE_XSLT, referrerPrincipal,
       nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS, nullptr,
-      source ? source->OwnerDoc()->CookieSettings() : nullptr, false,
+      source ? source->OwnerDoc()->CookieJarSettings() : nullptr, false,
       aReferrerPolicy, getter_AddRefs(document));
   NS_ENSURE_SUCCESS(rv, rv);
 

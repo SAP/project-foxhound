@@ -72,7 +72,9 @@ static const char* sEGLExtensionNames[] = {
     "EGL_ANGLE_device_creation_d3d11",
     "EGL_KHR_surfaceless_context",
     "EGL_KHR_create_context_no_error",
-    "EGL_MOZ_create_context_provoking_vertex_dont_care"};
+    "EGL_MOZ_create_context_provoking_vertex_dont_care",
+    "EGL_EXT_swap_buffers_with_damage",
+    "EGL_KHR_swap_buffers_with_damage"};
 
 PRLibrary* LoadApitraceLibrary() {
   const char* path = nullptr;
@@ -160,9 +162,7 @@ static EGLDisplay GetAndInitWARPDisplay(GLLibraryEGL& egl, void* displayType) {
 static EGLDisplay GetAndInitDisplayForWebRender(GLLibraryEGL& egl,
                                                 void* displayType) {
 #ifdef XP_WIN
-  const EGLint attrib_list[] = {LOCAL_EGL_EXPERIMENTAL_PRESENT_PATH_ANGLE,
-                                LOCAL_EGL_EXPERIMENTAL_PRESENT_PATH_FAST_ANGLE,
-                                LOCAL_EGL_NONE};
+  const EGLint attrib_list[] = {LOCAL_EGL_NONE};
   RefPtr<ID3D11Device> d3d11Device =
       gfx::DeviceManagerDx::Get()->GetCompositorDevice();
   if (!d3d11Device) {
@@ -444,7 +444,6 @@ bool GLLibraryEGL::DoEnsureInitialized(bool forceAccel,
 #  endif
 
   if (!mEGLLibrary) {
-    printf_stderr("Attempting load of libEGL.so\n");
     mEGLLibrary = PR_LoadLibrary("libEGL.so");
   }
 #  if defined(XP_UNIX)
@@ -705,6 +704,32 @@ bool GLLibraryEGL::DoEnsureInitialized(bool forceAccel,
     }
   }
 
+  if (IsExtensionSupported(EXT_swap_buffers_with_damage)) {
+    const SymLoadStruct symbols[] = {
+        {(PRFuncPtr*)&mSymbols.fSwapBuffersWithDamage,
+         {{"eglSwapBuffersWithDamageEXT"}}},
+        END_OF_SYMBOLS};
+    if (!fnLoadSymbols(symbols)) {
+      NS_ERROR(
+          "EGL supports EXT_swap_buffers_with_damage without exposing its "
+          "functions!");
+      MarkExtensionUnsupported(EXT_swap_buffers_with_damage);
+    }
+  }
+
+  if (IsExtensionSupported(KHR_swap_buffers_with_damage)) {
+    const SymLoadStruct symbols[] = {
+        {(PRFuncPtr*)&mSymbols.fSwapBuffersWithDamage,
+         {{"eglSwapBuffersWithDamageKHR"}}},
+        END_OF_SYMBOLS};
+    if (!fnLoadSymbols(symbols)) {
+      NS_ERROR(
+          "EGL supports KHR_swap_buffers_with_damage without exposing its "
+          "functions!");
+      MarkExtensionUnsupported(KHR_swap_buffers_with_damage);
+    }
+  }
+
   mInitialized = true;
   reporter.SetSuccessful();
   return true;
@@ -785,7 +810,7 @@ EGLDisplay GLLibraryEGL::CreateDisplay(bool forceAccel,
 #ifdef MOZ_WAYLAND
     // Some drivers doesn't support EGL_DEFAULT_DISPLAY
     GdkDisplay* gdkDisplay = gdk_display_get_default();
-    if (!GDK_IS_X11_DISPLAY(gdkDisplay)) {
+    if (gdkDisplay && !GDK_IS_X11_DISPLAY(gdkDisplay)) {
       nativeDisplay = WaylandDisplayGetWLDisplay(gdkDisplay);
       if (!nativeDisplay) {
         NS_WARNING("Failed to get wl_display.");

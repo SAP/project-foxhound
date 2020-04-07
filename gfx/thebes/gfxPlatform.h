@@ -15,7 +15,6 @@
 #include "nsUnicodeScriptCodes.h"
 
 #include "gfxTypes.h"
-#include "gfxFontFamilyList.h"
 #include "gfxBlur.h"
 #include "gfxSkipChars.h"
 #include "nsRect.h"
@@ -44,6 +43,7 @@ class gfxTextPerfMetrics;
 typedef struct FT_LibraryRec_* FT_Library;
 
 namespace mozilla {
+class FontFamilyList;
 namespace layers {
 class FrameStats;
 }
@@ -204,6 +204,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static bool IsHeadless();
 
   static bool UseWebRender();
+
+  static bool CanMigrateMacGPUs();
 
   /**
    * Create an offscreen surface of the given dimensions
@@ -546,9 +548,19 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static qcms_transform* GetCMSRGBATransform();
 
   /**
-   * Return sRGBA -> output device transform.
+   * Return sBGRA -> output device transform.
    */
   static qcms_transform* GetCMSBGRATransform();
+
+  /**
+   * Return OS RGBA -> output device transform.
+   */
+  static qcms_transform* GetCMSOSRGBATransform();
+
+  /**
+   * Return OS RGBA QCMS type.
+   */
+  static qcms_data_type GetCMSOSRGBAType();
 
   virtual void FontsPrefsChanged(const char* aPref);
 
@@ -620,8 +632,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   virtual mozilla::gfx::VsyncSource* GetHardwareVsync() {
     MOZ_ASSERT(mVsyncSource != nullptr);
-    MOZ_ASSERT(XRE_IsParentProcess() ||
-               mozilla::recordreplay::IsRecordingOrReplaying());
+    MOZ_ASSERT(XRE_IsParentProcess());
     return mVsyncSource;
   }
 
@@ -651,6 +662,12 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    * Update the frame rate (called e.g. after pref changes).
    */
   static void ReInitFrameRate();
+
+  /**
+   * Update allow sacrificing subpixel AA quality setting (called after pref
+   * changes).
+   */
+  void UpdateAllowSacrificingSubpixelAA();
 
   /**
    * Used to test which input types are handled via APZ.
@@ -743,8 +760,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
  protected:
   gfxPlatform();
   virtual ~gfxPlatform();
-
-  virtual bool HasBattery() { return false; }
 
   virtual void InitAcceleration();
   virtual void InitWebRenderConfig();
@@ -864,11 +879,11 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static void InitOpenGLConfig();
   static void CreateCMSOutputProfile();
 
-  static void GetCMSOutputProfileData(void*& mem, size_t& size);
+  static nsTArray<uint8_t> GetCMSOutputProfileData();
 
   friend void RecordingPrefChanged(const char* aPrefName, void* aClosure);
 
-  virtual void GetPlatformCMSOutputProfile(void*& mem, size_t& size);
+  virtual nsTArray<uint8_t> GetPlatformCMSOutputProfileData();
 
   /**
    * Calling this function will compute and set the ideal tile size for the
@@ -887,6 +902,9 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   void InitGPUProcessPrefs();
   virtual void InitPlatformGPUProcessPrefs() {}
   void InitOMTPConfig();
+
+  // Gather telemetry data about the Gfx Platform and send it
+  static void ReportTelemetry();
 
   static bool IsDXInterop2Blocked();
   static bool IsDXNV12Blocked();

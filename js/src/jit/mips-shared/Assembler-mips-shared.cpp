@@ -9,8 +9,6 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MathAlgorithms.h"
 
-#include "jsutil.h"
-
 #include "gc/Marking.h"
 #include "jit/ExecutableAllocator.h"
 #include "jit/JitRealm.h"
@@ -880,16 +878,14 @@ BufferOffset AssemblerMIPSShared::as_sdr(Register rd, Register rs,
   return writeInst(InstImm(op_sdr, rs, rd, Imm16(off)).encode());
 }
 
-BufferOffset
-AssemblerMIPSShared::as_seleqz(Register rd, Register rs, Register rt)
-{
+BufferOffset AssemblerMIPSShared::as_seleqz(Register rd, Register rs,
+                                            Register rt) {
   spew("seleqz    %3s,%3s,%3s", rd.name(), rs.name(), rt.name());
   return writeInst(InstReg(op_special, rs, rt, rd, 0x0, ff_seleqz).encode());
 }
 
-BufferOffset
-AssemblerMIPSShared::as_selnez(Register rd, Register rs, Register rt)
-{
+BufferOffset AssemblerMIPSShared::as_selnez(Register rd, Register rs,
+                                            Register rt) {
   spew("selnez    %3s,%3s,%3s", rd.name(), rs.name(), rt.name());
   return writeInst(InstReg(op_special, rs, rt, rd, 0x0, ff_selnez).encode());
 }
@@ -1532,8 +1528,8 @@ BufferOffset AssemblerMIPSShared::as_cf(FloatFormat fmt, FloatRegister fs,
     spew("c.f.d  FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24,
-                ff_c_f_fmt).encode());
+        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24, ff_c_f_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_d, ft, fs, fcc << FccShift, ff_c_f_fmt).encode());
@@ -1542,8 +1538,8 @@ BufferOffset AssemblerMIPSShared::as_cf(FloatFormat fmt, FloatRegister fs,
     spew("c.f.s  FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24,
-                ff_c_f_fmt).encode());
+        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24, ff_c_f_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_s, ft, fs, fcc << FccShift, ff_c_f_fmt).encode());
@@ -1557,8 +1553,8 @@ BufferOffset AssemblerMIPSShared::as_cun(FloatFormat fmt, FloatRegister fs,
     spew("c.un.d FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24,
-                ff_c_un_fmt).encode());
+        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24, ff_c_un_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_d, ft, fs, fcc << FccShift, ff_c_un_fmt).encode());
@@ -1567,8 +1563,8 @@ BufferOffset AssemblerMIPSShared::as_cun(FloatFormat fmt, FloatRegister fs,
     spew("c.un.s FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24,
-                ff_c_un_fmt).encode());
+        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24, ff_c_un_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_s, ft, fs, fcc << FccShift, ff_c_un_fmt).encode());
@@ -1582,8 +1578,8 @@ BufferOffset AssemblerMIPSShared::as_ceq(FloatFormat fmt, FloatRegister fs,
     spew("c.eq.d FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24,
-                ff_c_eq_fmt).encode());
+        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24, ff_c_eq_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_d, ft, fs, fcc << FccShift, ff_c_eq_fmt).encode());
@@ -1592,8 +1588,8 @@ BufferOffset AssemblerMIPSShared::as_ceq(FloatFormat fmt, FloatRegister fs,
     spew("c.eq.s FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24,
-                ff_c_eq_fmt).encode());
+        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24, ff_c_eq_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_s, ft, fs, fcc << FccShift, ff_c_eq_fmt).encode());
@@ -1608,8 +1604,8 @@ BufferOffset AssemblerMIPSShared::as_cueq(FloatFormat fmt, FloatRegister fs,
     spew("c.ueq.d FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24,
-                ff_c_ueq_fmt).encode());
+        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24, ff_c_ueq_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_d, ft, fs, fcc << FccShift, ff_c_ueq_fmt).encode());
@@ -1618,8 +1614,8 @@ BufferOffset AssemblerMIPSShared::as_cueq(FloatFormat fmt, FloatRegister fs,
     spew("c.ueq.s FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24,
-                ff_c_ueq_fmt).encode());
+        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24, ff_c_ueq_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_s, ft, fs, fcc << FccShift, ff_c_ueq_fmt).encode());
@@ -1634,8 +1630,8 @@ BufferOffset AssemblerMIPSShared::as_colt(FloatFormat fmt, FloatRegister fs,
     spew("c.olt.d FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24,
-                ff_c_olt_fmt).encode());
+        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24, ff_c_olt_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_d, ft, fs, fcc << FccShift, ff_c_olt_fmt).encode());
@@ -1644,8 +1640,8 @@ BufferOffset AssemblerMIPSShared::as_colt(FloatFormat fmt, FloatRegister fs,
     spew("c.olt.s FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24,
-                ff_c_olt_fmt).encode());
+        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24, ff_c_olt_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_s, ft, fs, fcc << FccShift, ff_c_olt_fmt).encode());
@@ -1660,8 +1656,8 @@ BufferOffset AssemblerMIPSShared::as_cult(FloatFormat fmt, FloatRegister fs,
     spew("c.ult.d FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24,
-                ff_c_ult_fmt).encode());
+        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24, ff_c_ult_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_d, ft, fs, fcc << FccShift, ff_c_ult_fmt).encode());
@@ -1670,8 +1666,8 @@ BufferOffset AssemblerMIPSShared::as_cult(FloatFormat fmt, FloatRegister fs,
     spew("c.ult.s FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24,
-                ff_c_ult_fmt).encode());
+        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24, ff_c_ult_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_s, ft, fs, fcc << FccShift, ff_c_ult_fmt).encode());
@@ -1686,8 +1682,8 @@ BufferOffset AssemblerMIPSShared::as_cole(FloatFormat fmt, FloatRegister fs,
     spew("c.ole.d FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24,
-                ff_c_ole_fmt).encode());
+        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24, ff_c_ole_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_d, ft, fs, fcc << FccShift, ff_c_ole_fmt).encode());
@@ -1696,8 +1692,8 @@ BufferOffset AssemblerMIPSShared::as_cole(FloatFormat fmt, FloatRegister fs,
     spew("c.ole.s FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24,
-                ff_c_ole_fmt).encode());
+        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24, ff_c_ole_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_s, ft, fs, fcc << FccShift, ff_c_ole_fmt).encode());
@@ -1712,8 +1708,8 @@ BufferOffset AssemblerMIPSShared::as_cule(FloatFormat fmt, FloatRegister fs,
     spew("c.ule.d FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24,
-                ff_c_ule_fmt).encode());
+        InstReg(op_cop1, rs_d_r6, ft, fs, FloatRegisters::f24, ff_c_ule_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_d, ft, fs, fcc << FccShift, ff_c_ule_fmt).encode());
@@ -1722,8 +1718,8 @@ BufferOffset AssemblerMIPSShared::as_cule(FloatFormat fmt, FloatRegister fs,
     spew("c.ule.s FCC%d,%3s,%3s", fcc, fs.name(), ft.name());
 #ifdef MIPSR6
     return writeInst(
-        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24,
-                ff_c_ule_fmt).encode());
+        InstReg(op_cop1, rs_s_r6, ft, fs, FloatRegisters::f24, ff_c_ule_fmt)
+            .encode());
 #else
     return writeInst(
         InstReg(op_cop1, rs_s, ft, fs, fcc << FccShift, ff_c_ule_fmt).encode());
@@ -1947,7 +1943,7 @@ Instruction* Instruction::next() { return this + 1; }
 InstImm AssemblerMIPSShared::invertBranch(InstImm branch,
                                           BOffImm16 skipOffset) {
   uint32_t rt = 0;
-  Opcode op = (Opcode)(branch.extractOpcode() << OpcodeShift);
+  OpcodeField op = (OpcodeField)(branch.extractOpcode() << OpcodeShift);
   switch (op) {
     case op_beq:
       branch.setBOffImm16(skipOffset);
@@ -2024,7 +2020,7 @@ void AssemblerMIPSShared::UpdateLuiOriValue(Instruction* inst0,
 
 #ifdef JS_JITSPEW
 void AssemblerMIPSShared::decodeBranchInstAndSpew(InstImm branch) {
-  Opcode op = (Opcode)(branch.extractOpcode() << OpcodeShift);
+  OpcodeField op = (OpcodeField)(branch.extractOpcode() << OpcodeShift);
   uint32_t rt_id;
   uint32_t rs_id;
   uint32_t immi = branch.extractImm16Value();

@@ -7,6 +7,7 @@
 #include "ImageBitmapRenderingContext.h"
 #include "ImageEncoder.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
+#include "mozilla/GfxMessageUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtr.h"
 #include "MozFramebuffer.h"
@@ -14,8 +15,7 @@
 #include "nsDOMJSUtils.h"
 #include "nsIScriptContext.h"
 #include "nsJSUtils.h"
-#include "WebGL1Context.h"
-#include "WebGL2Context.h"
+#include "ClientWebGLContext.h"
 
 namespace mozilla {
 namespace dom {
@@ -41,7 +41,7 @@ void CanvasRenderingContextHelper::ToBlob(
         blob = Blob::Create(mGlobal, blobImpl);
       }
 
-      RefPtr<BlobCallback> callback(mBlobCallback.forget());
+      RefPtr<BlobCallback> callback(std::move(mBlobCallback));
       ErrorResult rv;
 
       callback->Call(blob, rv);
@@ -126,7 +126,7 @@ CanvasRenderingContextHelper::CreateContextHelper(
     case CanvasContextType::WebGL1:
       Telemetry::Accumulate(Telemetry::CANVAS_WEBGL_USED, 1);
 
-      ret = WebGL1Context::Create();
+      ret = new ClientWebGLContext(/*webgl2:*/ false);
       if (!ret) return nullptr;
 
       break;
@@ -134,7 +134,7 @@ CanvasRenderingContextHelper::CreateContextHelper(
     case CanvasContextType::WebGL2:
       Telemetry::Accumulate(Telemetry::CANVAS_WEBGL_USED, 1);
 
-      ret = WebGL2Context::Create();
+      ret = new ClientWebGLContext(/*webgl2:*/ true);
       if (!ret) return nullptr;
 
       break;
@@ -173,7 +173,7 @@ already_AddRefed<nsISupports> CanvasRenderingContextHelper::GetContext(
       return nullptr;
     }
 
-    mCurrentContext = context.forget();
+    mCurrentContext = std::move(context);
     mCurrentContextType = contextType;
 
     nsresult rv = UpdateContext(aCx, aContextOptions, aRv);

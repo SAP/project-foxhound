@@ -16,8 +16,6 @@
 #include "nsStyleStruct.h"
 #include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
-#include "nsIURI.h"
-#include "nsISupportsPrimitives.h"
 #include "nsLayoutUtils.h"
 #include "nsPrintfCString.h"
 #include <cctype>
@@ -169,23 +167,6 @@ void nsStyleUtil::AppendEscapedCSSIdent(const nsAString& aIdent,
 }
 
 /* static */
-void nsStyleUtil::AppendBitmaskCSSValue(const nsCSSKTableEntry aTable[],
-                                        int32_t aMaskedValue,
-                                        int32_t aFirstMask, int32_t aLastMask,
-                                        nsAString& aResult) {
-  for (int32_t mask = aFirstMask; mask <= aLastMask; mask <<= 1) {
-    if (mask & aMaskedValue) {
-      AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(mask, aTable), aResult);
-      aMaskedValue &= ~mask;
-      if (aMaskedValue) {  // more left
-        aResult.Append(char16_t(' '));
-      }
-    }
-  }
-  MOZ_ASSERT(aMaskedValue == 0, "unexpected bit remaining in bitfield");
-}
-
-/* static */
 float nsStyleUtil::ColorComponentToFloat(uint8_t aAlpha) {
   // Alpha values are expressed as decimals, so we should convert
   // back, using as few decimal places as possible for
@@ -258,18 +239,15 @@ static bool ObjectPositionCoordMightCauseOverflow(
   // Any nonzero length in "object-position" can push us to overflow
   // (particularly if our concrete object size is exactly the same size as the
   // replaced element's content-box).
-  if (aCoord.LengthInCSSPixels() != 0.) {
-    return true;
+  if (!aCoord.ConvertsToPercentage()) {
+    return !aCoord.ConvertsToLength() || aCoord.ToLengthInCSSPixels() != 0.0f;
   }
 
   // Percentages are interpreted as a fraction of the extra space. So,
   // percentages in the 0-100% range are safe, but values outside of that
   // range could cause overflow.
-  if (aCoord.HasPercent() &&
-      (aCoord.Percentage() < 0.0f || aCoord.Percentage() > 1.0f)) {
-    return true;
-  }
-  return false;
+  float percentage = aCoord.ToPercentage();
+  return percentage < 0.0f || percentage > 1.0f;
 }
 
 /* static */
@@ -279,8 +257,7 @@ bool nsStyleUtil::ObjectPropsMightCauseOverflow(
 
   // "object-fit: cover" & "object-fit: none" can give us a render rect that's
   // larger than our container element's content-box.
-  if (objectFit == NS_STYLE_OBJECT_FIT_COVER ||
-      objectFit == NS_STYLE_OBJECT_FIT_NONE) {
+  if (objectFit == StyleObjectFit::Cover || objectFit == StyleObjectFit::None) {
     return true;
   }
   // (All other object-fit values produce a concrete object size that's no
@@ -332,7 +309,11 @@ bool nsStyleUtil::CSPAllowsInlineStyle(
   // query the nonce
   nsAutoString nonce;
   if (aElement && aElement->NodeInfo()->NameAtom() == nsGkAtoms::style) {
-    aElement->GetAttr(kNameSpaceID_None, nsGkAtoms::nonce, nonce);
+    nsString* cspNonce =
+        static_cast<nsString*>(aElement->GetProperty(nsGkAtoms::nonce));
+    if (cspNonce) {
+      nonce = *cspNonce;
+    }
   }
 
   bool allowInlineStyle = true;

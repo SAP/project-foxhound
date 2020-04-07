@@ -34,8 +34,12 @@ XPCOMUtils.defineLazyGetter(this, "logger", () =>
 var localProviderModules = {
   UrlbarProviderUnifiedComplete:
     "resource:///modules/UrlbarProviderUnifiedComplete.jsm",
+  UrlbarProviderInterventions:
+    "resource:///modules/UrlbarProviderInterventions.jsm",
   UrlbarProviderPrivateSearch:
     "resource:///modules/UrlbarProviderPrivateSearch.jsm",
+  UrlbarProviderSearchTips: "resource:///modules/UrlbarProviderSearchTips.jsm",
+  UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.jsm",
 };
 
 // List of available local muxers, each is implemented in its own jsm module.
@@ -168,11 +172,14 @@ class ProvidersManager {
     // Apply tokenization.
     UrlbarTokenizer.tokenize(queryContext);
 
-    // Array of acceptable RESULT_SOURCE values for this query. Providers can
-    // use queryContext.acceptableSources to decide whether they want to be
+    // If there's a single source, we are in restriction mode.
+    if (queryContext.sources && queryContext.sources.length == 1) {
+      queryContext.restrictSource = queryContext.sources[0];
+    }
+    // Providers can use queryContext.sources to decide whether they want to be
     // invoked or not.
-    queryContext.acceptableSources = getAcceptableMatchSources(queryContext);
-    logger.debug(`Acceptable sources ${queryContext.acceptableSources}`);
+    updateSourcesIfEmpty(queryContext);
+    logger.debug(`Context sources ${queryContext.sources}`);
 
     let query = new Query(queryContext, controller, muxer, providers);
     this.queries.set(queryContext, query);
@@ -221,6 +228,20 @@ class ProvidersManager {
       this.interruptLevel--;
     }
   }
+
+  /**
+   * Notifies all providers when the user starts and ends an engagement with the
+   * urlbar.
+   *
+   * @param {boolean} isPrivate True if the engagement is in a private context.
+   * @param {string} state The state of the engagement, one of: start,
+   *        engagement, abandonment, discard.
+   */
+  notifyEngagementChange(isPrivate, state) {
+    for (let provider of this.providers) {
+      provider.onEngagement(isPrivate, state);
+    }
+  }
 }
 
 var UrlbarProvidersManager = new ProvidersManager();
@@ -255,7 +276,7 @@ class Query {
 
     // This is used as a last safety filter in add(), thus we keep an unmodified
     // copy of it.
-    this.acceptableSources = queryContext.acceptableSources.slice();
+    this.acceptableSources = queryContext.sources.slice();
   }
 
   /**
@@ -268,14 +289,23 @@ class Query {
     this.started = true;
 
     // Check which providers should be queried.
-    let providers = this.providers.filter(p => p.isActive(this.context));
-
-    // Check if any of the remaining providers wants to restrict the search.
-    let restrictProviders = providers.filter(p =>
-      p.isRestricting(this.context)
-    );
-    if (restrictProviders.length) {
-      providers = restrictProviders;
+    let providers = [];
+    let maxPriority = -1;
+    for (let provider of this.providers) {
+      if (provider.isActive(this.context)) {
+        let priority = provider.getPriority(this.context);
+        if (priority >= maxPriority) {
+          // The provider's priority is at least as high as the max.
+          if (priority > maxPriority) {
+            // The provider's priority is higher than the max.  Remove all
+            // previously added providers, since their priority is necessarily
+            // lower, by setting length to zero.
+            providers.length = 0;
+            maxPriority = priority;
+          }
+          providers.push(provider);
+        }
+      }
     }
 
     // Start querying providers.
@@ -385,9 +415,7 @@ class Query {
       // Crop results to the requested number, taking their result spans into
       // account.
       logger.debug(
-        `Cropping ${this.context.results.length} matches to ${
-          this.context.maxResults
-        }`
+        `Cropping ${this.context.results.length} matches to ${this.context.maxResults}`
       );
       let resultCount = this.context.maxResults;
       for (let i = 0; i < this.context.results.length; i++) {
@@ -417,11 +445,13 @@ class Query {
 }
 
 /**
- * Gets an array of the provider sources accepted for a given UrlbarQueryContext.
+ * Updates in place the sources for a given UrlbarQueryContext.
  * @param {UrlbarQueryContext} context The query context to examine
- * @returns {array} Array of accepted sources
  */
-function getAcceptableMatchSources(context) {
+function updateSourcesIfEmpty(context) {
+  if (context.sources && context.sources.length) {
+    return;
+  }
   let acceptedSources = [];
   // There can be only one restrict token about sources.
   let restrictToken = context.tokens.find(t =>
@@ -492,5 +522,5 @@ function getAcceptableMatchSources(context) {
         break;
     }
   }
-  return acceptedSources;
+  context.sources = acceptedSources;
 }

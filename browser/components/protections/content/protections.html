@@ -30,17 +30,22 @@
         <div class="card-header">
           <img class="icon light" src="chrome://browser/content/logos/tracking-protection.svg"/>
           <img class="icon dark" src="chrome://browser/content/logos/tracking-protection-dark-theme.svg"/>
-          <div>
-            <h2 class="card-title" data-l10n-id="etp-card-title"></h2>
-            <p class="content" data-l10n-id="etp-card-content"></p>
-            <p id="protection-details" role="link" tabindex="0"></p>
+          <div class="wrapper">
+            <div>
+              <h2 class="card-title" data-l10n-id="etp-card-title"></h2>
+              <p id="etp-card-content" class="content" data-l10n-id="etp-card-content"></p>
+              <p id="protection-details" role="link" tabindex="0"></p>
+            </div>
+            <a target="_blank" id="manage-protections" data-l10n-id="protection-report-manage-protections"></a>
           </div>
         </div>
         <div class="card-body">
           <div class="body-wrapper">
             <p id="graph-week-summary"></p>
             <div id="graph-wrapper">
-              <div id="graph" role="table" aria-labelledby="graphLegendDescription"></div>
+              <div id="graph" role="table" aria-labelledby="graphLegendDescription">
+                <div id="private-window-message" data-l10n-id="graph-private-window"></div>
+              </div>
               <div id="legend">
                 <label id="graphLegendDescription" data-l10n-id="graph-legend-description"></label>
                 <input id="tab-social" data-type="social" type="radio" name="tabs" aria-labelledby="socialLabel socialTitle" aria-describedby="socialContent" checked>
@@ -109,6 +114,25 @@
             <div id="graph-total-summary"></div>
           </div>
         </div>
+        <div id="mobile-hanger" class="card-body hidden">
+          <div class="body-wrapper">
+            <span class="exit-icon" aria-label="close"></span>
+            <div id="etp-mobile-content">
+              <img class="mobile-app-icon light" src="chrome://browser/content/logos/etp-mobile-light.svg"/>
+              <img class="mobile-app-icon dark" src="chrome://browser/content/logos/etp-mobile-dark.svg"/>
+              <span>
+                <h2 class="card-title" data-l10n-id="mobile-app-title"></h2>
+                <p class="content">
+                  <span data-l10n-id="mobile-app-card-content"></span>
+                  <span target="_blank" id="mobile-app-links" data-l10n-id="mobile-app-links">
+                    <a target="_blank" id="android-mobile-inline-link" data-l10n-name="android-mobile-inline-link" href=""></a>
+                    <a target="_blank" id="ios-mobile-inline-link" data-l10n-name="ios-mobile-inline-link" href=""></a>
+                  </span>
+                </p>
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
      <!-- Markup for Monitor card. -->
       <section class="card card-no-hover monitor-card hidden">
@@ -133,7 +157,7 @@
               </a>
             </div>
           </div>
-          <div class="card-body hidden">
+          <div class="card-body">
             <div class="body-wrapper">
               <div id="monitor-body-content">
                 <div class="monitor-info-wrapper">
@@ -199,10 +223,19 @@
         <div class="card-body hidden">
           <div id="lockwise-body-content" class="body-wrapper">
             <div class="no-logins hidden">
-                <img class="lockwise-mobile-app-icon" src="chrome://browser/content/logos/lockwise-mobile-app.svg"/>
-                <span data-l10n-id="lockwise-no-logins-content">
-                  <a target="_blank" id="lockwise-inline-link" data-l10n-name="lockwise-inline-link" href=""></a>
-                </span>
+              <span class="exit-icon" aria-label="close"></span>
+              <img class="mobile-app-icon light" src="chrome://browser/content/logos/lockwise-light.svg"/>
+              <img class="mobile-app-icon dark" src="chrome://browser/content/logos/lockwise-dark.svg"/>
+              <span>
+                <h2 class="card-title" data-l10n-id="lockwise-mobile-app-title"></h2>
+                <p class="content">
+                  <span data-l10n-id="lockwise-no-logins-card-content"></span>
+                  <span target="_blank" id="lockwise-app-links" data-l10n-id="lockwise-app-links" href="">
+                    <a id="lockwise-android-inline-link" target="_blank" data-l10n-name="lockwise-android-inline-link"></a>
+                    <a id="lockwise-ios-inline-link" target="_blank" data-l10n-name="lockwise-ios-inline-link"></a>
+                  </span>
+                </p>
+              </span>
             </div>
             <div class="has-logins hidden">
               <span class="number-of-logins block">
@@ -224,7 +257,7 @@
                   <!-- Display message for status of synced devices here. -->
                 </span>
                 <a id="turn-on-sync" tabindex="0" class="hidden" href="" data-l10n-id="turn-on-sync"></a>
-                <a id="manage-devices" target="_blank" class="hidden" href="" data-l10n-id="manage-devices"></a>
+                <a id="manage-devices" target="_blank" class="hidden" href="" data-l10n-id="manage-connected-devices"></a>
               </span>
             </div>
           </div>

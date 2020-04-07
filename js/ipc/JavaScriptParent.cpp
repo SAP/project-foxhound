@@ -9,6 +9,7 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "nsJSUtils.h"
+#include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "jsfriendapi.h"
 #include "js/Proxy.h"
@@ -18,7 +19,6 @@
 #include "mozilla/Casting.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
-#include "nsAutoPtr.h"
 
 using namespace js;
 using namespace JS;

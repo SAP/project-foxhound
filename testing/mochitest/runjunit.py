@@ -19,6 +19,7 @@ import mozlog
 import moznetwork
 from mozdevice import ADBDevice, ADBError, ADBTimeoutError
 from mozprofile import Profile, DEFAULT_PORTS
+from mozprofile.cli import parse_preferences
 from mozprofile.permissions import ServerLocations
 from runtests import MochitestDesktop, update_mozinfo
 
@@ -33,6 +34,10 @@ try:
 except ImportError:
     build_obj = None
     conditions = None
+
+
+class JavaTestHarnessException(Exception):
+    pass
 
 
 class JUnitTestRunner(MochitestDesktop):
@@ -114,12 +119,13 @@ class JUnitTestRunner(MochitestDesktop):
         self.options.profilePath = self.profile.profile
 
         # Set preferences
-        self.merge_base_profiles(self.options)
+        self.merge_base_profiles(self.options, 'geckoview-junit')
+        prefs = parse_preferences(self.options.extra_prefs)
+        self.profile.set_preferences(prefs)
 
         if self.fillCertificateDB(self.options):
             self.log.error("Certificate integration failed")
 
-        self.device.mkdir(self.remote_profile, parents=True)
         self.device.push(self.profile.profile, self.remote_profile)
         self.log.debug("profile %s -> %s" %
                        (str(self.profile.profile), str(self.remote_profile)))
@@ -163,7 +169,6 @@ class JUnitTestRunner(MochitestDesktop):
         # environment
         env = {}
         env["MOZ_CRASHREPORTER"] = "1"
-        env["MOZ_CRASHREPORTER_NO_REPORT"] = "1"
         env["MOZ_CRASHREPORTER_SHUTDOWN"] = "1"
         env["XPCOM_DEBUG_BREAK"] = "stack"
         env["DISABLE_UNSAFE_CPOW_WARNINGS"] = "1"
@@ -190,6 +195,13 @@ class JUnitTestRunner(MochitestDesktop):
         self._locations = ServerLocations(locations_file)
         return self._locations
 
+    def need_more_runs(self):
+        if self.options.run_until_failure and (self.fail_count == 0):
+            return True
+        if self.runs <= self.options.repeat:
+            return True
+        return False
+
     def run_tests(self, test_filters=None):
         """
            Run the tests.
@@ -205,9 +217,7 @@ class JUnitTestRunner(MochitestDesktop):
         self.pass_count = 0
         self.fail_count = 0
         self.todo_count = 0
-        self.class_name = ""
-        self.test_name = ""
-        self.current_full_name = ""
+        self.runs = 0
 
         def callback(line):
             # Output callback: Parse the raw junit log messages, translating into
@@ -222,6 +232,13 @@ class JUnitTestRunner(MochitestDesktop):
             match = re.match(r'INSTRUMENTATION_STATUS:\s*test=(.*)', line)
             if match:
                 self.test_name = match.group(1)
+            match = re.match(r'INSTRUMENTATION_STATUS:\s*stack=(.*)', line)
+            if match:
+                self.exception_message = match.group(1)
+            if "org.mozilla.geckoview.test.rule.TestHarnessException" in self.exception_message:
+                # This is actually a problem in the test harness itself
+                raise JavaTestHarnessException(self.exception_message)
+
             # Expect per-test info like: "INSTRUMENTATION_STATUS_CODE: 0|1|..."
             match = re.match(r'INSTRUMENTATION_STATUS_CODE:\s*([+-]?\d+)', line)
             if match:
@@ -244,7 +261,10 @@ class JUnitTestRunner(MochitestDesktop):
                         expected = 'FAIL'
                         self.todo_count += 1
                     else:
-                        message = 'status %s' % status
+                        if self.exception_message:
+                            message = self.exception_message
+                        else:
+                            message = 'status %s' % status
                         status = 'FAIL'
                         expected = 'PASS'
                         self.fail_count += 1
@@ -268,11 +288,17 @@ class JUnitTestRunner(MochitestDesktop):
         try:
             self.device.grant_runtime_permissions(self.options.app)
             cmd = self.build_command_line(test_filters)
-            self.log.info("launching %s" % cmd)
-            p = self.device.shell(cmd, timeout=self.options.max_time, stdout_callback=callback)
-            if p.timedout:
-                self.log.error("TEST-UNEXPECTED-TIMEOUT | runjunit.py | "
-                               "Timed out after %d seconds" % self.options.max_time)
+            while self.need_more_runs():
+                self.class_name = ""
+                self.exception_message = ""
+                self.test_name = ""
+                self.current_full_name = ""
+                self.runs += 1
+                self.log.info("launching %s" % cmd)
+                p = self.device.shell(cmd, timeout=self.options.max_time, stdout_callback=callback)
+                if p.timedout:
+                    self.log.error("TEST-UNEXPECTED-TIMEOUT | runjunit.py | "
+                                   "Timed out after %d seconds" % self.options.max_time)
             self.log.info("Passed: %d" % self.pass_count)
             self.log.info("Failed: %d" % self.fail_count)
             self.log.info("Todo: %d" % self.todo_count)
@@ -295,22 +321,12 @@ class JUnitTestRunner(MochitestDesktop):
         return 1 if self.fail_count else 0
 
     def check_for_crashes(self):
-        logcat = self.device.get_logcat()
-        if logcat:
-            if mozcrash.check_for_java_exception(logcat, self.current_full_name):
-                return True
         symbols_path = self.options.symbolsPath
         try:
             dump_dir = tempfile.mkdtemp()
             remote_dir = posixpath.join(self.remote_profile, 'minidumps')
             if not self.device.is_dir(remote_dir):
-                # If crash reporting is enabled (MOZ_CRASHREPORTER=1), the
-                # minidumps directory is automatically created when the app
-                # (first) starts, so its lack of presence is a hint that
-                # something went wrong.
-                print("Automation Error: " +
-                      "No crash directory ({}) found on remote device".format(remote_dir))
-                return True
+                return False
             self.device.pull(remote_dir, dump_dir)
             crashed = mozcrash.log_crashes(self.log, dump_dir, symbols_path,
                                            test=self.current_full_name)
@@ -369,7 +385,7 @@ class JunitArgumentParser(argparse.ArgumentParser):
                           action="store",
                           type=str,
                           dest="runner",
-                          default="android.support.test.runner.AndroidJUnitRunner",
+                          default="androidx.test.runner.AndroidJUnitRunner",
                           help="Test runner name.")
         self.add_argument("--symbols-path",
                           action="store",
@@ -407,6 +423,26 @@ class JunitArgumentParser(argparse.ArgumentParser):
                           dest="coverage_output_dir",
                           default=None,
                           help="If collecting code coverage, save the report file in this dir.")
+        self.add_argument("--enable-webrender",
+                          action="store_true",
+                          dest="enable_webrender",
+                          default=False,
+                          help="Enable the WebRender compositor in Gecko.")
+        self.add_argument("--repeat",
+                          type=int,
+                          default=0,
+                          help="Repeat the tests the given number of times.")
+        self.add_argument("--run-until-failure",
+                          action="store_true",
+                          dest="run_until_failure",
+                          default=False,
+                          help="Run tests repeatedly but stop the first time a test fails.")
+        self.add_argument("--setpref",
+                          action="append",
+                          dest="extra_prefs",
+                          default=[],
+                          metavar="PREF=VALUE",
+                          help="Defines an extra user preference.")
         # Additional options for server.
         self.add_argument("--certificate-path",
                           action="store",
@@ -431,11 +467,6 @@ class JunitArgumentParser(argparse.ArgumentParser):
                           dest="sslPort",
                           default=DEFAULT_PORTS['https'],
                           help="ssl port of the remote web server.")
-        self.add_argument("--enable-webrender",
-                          action="store_true",
-                          dest="enable_webrender",
-                          default=False,
-                          help="Enable the WebRender compositor in Gecko.")
         # Remaining arguments are test filters.
         self.add_argument("test_filters",
                           nargs="*",
@@ -458,6 +489,9 @@ def run_test_harness(parser, options):
     except KeyboardInterrupt:
         log.info("runjunit.py | Received keyboard interrupt")
         result = -1
+    except JavaTestHarnessException as e:
+        log.error("TEST-UNEXPECTED-FAIL | runjunit.py | The previous test failed because "
+                  "of an error in the test harness | %s" % (str(e)))
     except Exception as e:
         traceback.print_exc()
         log.error(

@@ -24,8 +24,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
+  BroadcastConduit: "resource://gre/modules/ConduitsParent.jsm",
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   ExtensionData: "resource://gre/modules/Extension.jsm",
   ExtensionActivityLog: "resource://gre/modules/ExtensionActivityLog.jsm",
   GeckoViewConnection: "resource://gre/modules/GeckoViewWebExtension.jsm",
@@ -240,6 +240,9 @@ let apiManager = new (class extends SchemaAPIManager {
     if (event === "disable") {
       promises.push(...ids.map(id => this.emit("disable", id)));
     }
+    if (event === "enabling") {
+      promises.push(...ids.map(id => this.emit("enabling", id)));
+    }
 
     AsyncShutdown.profileBeforeChange.addBlocker(
       `Extension API ${event} handlers for ${ids.join(",")}`,
@@ -324,6 +327,66 @@ class ExtensionPortProxy {
     );
   }
 }
+
+// Handles NativeMessaging and GeckoView, similar to ProxyMessenger below.
+const NativeMessenger = {
+  /**
+   * @typedef {object} ParentPort
+   * @prop {function(StructuredCloneHolder)} onPortMessage
+   * @prop {function()} onPortDisconnect
+   */
+  /** @type Map<number, ParentPort> */
+  ports: new Map(),
+
+  init() {
+    this.conduit = new BroadcastConduit(NativeMessenger, {
+      id: "NativeMessenger",
+      recv: ["NativeMessage", "NativeConnect", "PortMessage"],
+      send: ["PortMessage", "PortDisconnect"],
+    });
+  },
+
+  openNative(nativeApp, sender) {
+    let context = ParentAPIManager.getContextById(sender.childId);
+    if (context.extension.hasPermission("geckoViewAddons")) {
+      return new GeckoViewConnection(sender, nativeApp);
+    } else if (sender.verified) {
+      return new NativeApp(context, nativeApp);
+    }
+    throw new Error(`Native messaging not allowed: ${JSON.stringify(sender)}`);
+  },
+
+  recvNativeMessage({ nativeApp, holder }, { sender }) {
+    return this.openNative(nativeApp, sender).sendMessage(holder);
+  },
+
+  recvNativeConnect({ nativeApp, portId }, { sender }) {
+    let port = this.openNative(nativeApp, sender).onConnect(portId, this);
+    this.conduit.reportOnClosed(portId);
+    this.ports.set(portId, port);
+  },
+
+  recvConduitClosed(sender) {
+    let app = this.ports.get(sender.id);
+    if (this.ports.delete(sender.id)) {
+      app.onPortDisconnect();
+    }
+  },
+
+  recvPortMessage({ holder }, { sender }) {
+    this.ports.get(sender.id).onPortMessage(holder);
+  },
+
+  sendPortMessage(portId, holder) {
+    this.conduit.sendPortMessage(portId, { holder });
+  },
+
+  sendPortDisconnect(portId, error) {
+    this.conduit.sendPortDisconnect(portId, { error });
+    this.ports.delete(portId);
+  },
+};
+NativeMessenger.init();
 
 // Subscribes to messages related to the extension messaging API and forwards it
 // to the relevant message manager. The "sender" field for the `onMessage` and
@@ -428,57 +491,6 @@ ProxyMessenger = {
     data,
     responseType,
   }) {
-    if (recipient.toNativeApp) {
-      let { childId, toNativeApp } = recipient;
-      let context = ParentAPIManager.getContextById(childId);
-
-      if (
-        context.parentMessageManager !== target.messageManager ||
-        (sender.envType === "addon_child" &&
-          context.envType !== "addon_parent") ||
-        (sender.envType === "content_child" &&
-          context.envType !== "content_parent") ||
-        context.extension.id !== sender.extensionId
-      ) {
-        throw new Error("Got message for an unexpected messageManager.");
-      }
-
-      if (
-        AppConstants.platform === "android" &&
-        context.extension.hasPermission("geckoViewAddons")
-      ) {
-        let connection = new GeckoViewConnection(
-          context,
-          sender,
-          target,
-          toNativeApp
-        );
-        if (messageName == "Extension:Message") {
-          return connection.sendMessage(data);
-        } else if (messageName == "Extension:Connect") {
-          return connection.onConnect(data.portId);
-        }
-        return;
-      }
-
-      if (messageName == "Extension:Message") {
-        return new NativeApp(context, toNativeApp).sendMessage(data);
-      }
-      if (messageName == "Extension:Connect") {
-        NativeApp.onConnectNative(
-          context,
-          target.messageManager,
-          data.portId,
-          sender,
-          toNativeApp
-        );
-        return true;
-      }
-      // "Extension:Port:Disconnect" and "Extension:Port:PostMessage" for
-      // native messages are handled by NativeApp or GeckoViewConnection.
-      return;
-    }
-
     const noHandlerError = {
       result: MessageChannel.RESULT_NO_HANDLER,
       message: "No matching message handler for the given recipient.",
@@ -808,14 +820,14 @@ class ExtensionPageContextParent extends ProxyContextParent {
   }
 
   // The window that contains this context. This may change due to moving tabs.
-  get xulWindow() {
+  get appWindow() {
     let win = this.xulBrowser.ownerGlobal;
     return win.docShell.rootTreeItem.domWindow;
   }
 
   get currentWindow() {
     if (this.viewType !== "background") {
-      return this.xulWindow;
+      return this.appWindow;
     }
   }
 
@@ -901,13 +913,15 @@ ParentAPIManager = {
   proxyContexts: new Map(),
 
   init() {
+    // TODO: Bug 1595186 - remove/replace all usage of MessageManager below.
     Services.obs.addObserver(this, "message-manager-close");
 
-    Services.mm.addMessageListener("API:CreateProxyContext", this);
-    Services.mm.addMessageListener("API:CloseProxyContext", this, true);
-    Services.mm.addMessageListener("API:Call", this);
-    Services.mm.addMessageListener("API:AddListener", this);
-    Services.mm.addMessageListener("API:RemoveListener", this);
+    this.conduit = new BroadcastConduit(this, {
+      id: "ParentAPIManager",
+      recv: ["CreateProxyContext", "APICall", "AddListener", "RemoveListener"],
+      send: ["CallResult"],
+      query: ["RunListener"],
+    });
   },
 
   attachMessageManager(extension, processMessageManager) {
@@ -945,36 +959,12 @@ ParentAPIManager = {
     }
   },
 
-  receiveMessage({ name, data, target }) {
-    try {
-      switch (name) {
-        case "API:CreateProxyContext":
-          this.createProxyContext(data, target);
-          break;
+  recvCreateProxyContext(data, { actor, sender }) {
+    this.conduit.reportOnClosed(sender.id);
 
-        case "API:CloseProxyContext":
-          this.closeProxyContext(data.childId);
-          break;
-
-        case "API:Call":
-          this.call(data, target);
-          break;
-
-        case "API:AddListener":
-          this.addListener(data, target);
-          break;
-
-        case "API:RemoveListener":
-          this.removeListener(data);
-          break;
-      }
-    } catch (e) {
-      Cu.reportError(e);
-    }
-  },
-
-  createProxyContext(data, target) {
     let { envType, extensionId, childId, principal } = data;
+    let target = actor.browsingContext.top.embedderElement;
+
     if (this.proxyContexts.has(childId)) {
       throw new Error(
         "A WebExtension context with the given ID already exists!"
@@ -988,15 +978,16 @@ ParentAPIManager = {
 
     let context;
     if (envType == "addon_parent" || envType == "devtools_parent") {
+      if (!sender.verified) {
+        throw new Error(`Bad sender context envType: ${sender.envType}`);
+      }
+
       let processMessageManager =
         target.messageManager.processMessageManager ||
         Services.ppmm.getChildAt(0);
 
       if (!extension.parentMessageManager) {
-        let expectedRemoteType = extension.remote
-          ? E10SUtils.EXTENSION_REMOTE_TYPE
-          : null;
-        if (target.remoteType === expectedRemoteType) {
+        if (target.remoteType === extension.remoteType) {
           this.attachMessageManager(extension, processMessageManager);
         }
       }
@@ -1034,6 +1025,10 @@ ParentAPIManager = {
       throw new Error(`Invalid WebExtension context envType: ${envType}`);
     }
     this.proxyContexts.set(childId, context);
+  },
+
+  recvConduitClosed(sender) {
+    this.closeProxyContext(sender.id);
   },
 
   closeProxyContext(childId) {
@@ -1079,8 +1074,9 @@ ParentAPIManager = {
     }
   },
 
-  async call(data, target) {
+  async recvAPICall(data, { actor }) {
     let context = this.getContextById(data.childId);
+    let target = actor.browsingContext.top.embedderElement;
     if (context.parentMessageManager !== target.messageManager) {
       throw new Error("Got message on unexpected message manager");
     }
@@ -1094,16 +1090,12 @@ ParentAPIManager = {
         return;
       }
 
-      context.parentMessageManager.sendAsyncMessage(
-        "API:CallResult",
-        Object.assign(
-          {
-            childId: data.childId,
-            callId: data.callId,
-          },
-          result
-        )
-      );
+      this.conduit.sendCallResult(data.childId, {
+        childId: data.childId,
+        callId: data.callId,
+        path: data.path,
+        ...result,
+      });
     };
 
     try {
@@ -1143,47 +1135,36 @@ ParentAPIManager = {
     }
   },
 
-  async addListener(data, target) {
+  async recvAddListener(data, { actor }) {
     let context = this.getContextById(data.childId);
+    let target = actor.browsingContext.top.embedderElement;
     if (context.parentMessageManager !== target.messageManager) {
       throw new Error("Got message on unexpected message manager");
     }
 
     let { childId } = data;
     let handlingUserInput = false;
-    let lowPriority = data.path.startsWith("webRequest.");
 
-    function listener(...listenerArgs) {
-      return context
-        .sendMessage(
-          context.parentMessageManager,
-          "API:RunListener",
-          {
-            childId,
-            handlingUserInput,
-            listenerId: data.listenerId,
-            path: data.path,
-            get args() {
-              return new StructuredCloneHolder(listenerArgs);
-            },
-          },
-          {
-            lowPriority,
-            recipient: { childId },
-          }
-        )
-        .then(result => {
-          let rv = result && result.deserialize(global);
-          ExtensionActivityLog.log(
-            context.extension.id,
-            context.viewType,
-            "api_event",
-            data.path,
-            { args: listenerArgs, result: rv }
-          );
-          return rv;
-        });
-    }
+    let listener = async (...listenerArgs) => {
+      let result = await this.conduit.queryRunListener(childId, {
+        childId,
+        handlingUserInput,
+        listenerId: data.listenerId,
+        path: data.path,
+        get args() {
+          return new StructuredCloneHolder(listenerArgs);
+        },
+      });
+      let rv = result && result.deserialize(global);
+      ExtensionActivityLog.log(
+        context.extension.id,
+        context.viewType,
+        "api_event",
+        data.path,
+        { args: listenerArgs, result: rv }
+      );
+      return rv;
+    };
 
     context.listenerProxies.set(data.listenerId, listener);
 
@@ -1215,7 +1196,7 @@ ParentAPIManager = {
     );
   },
 
-  async removeListener(data) {
+  async recvRemoveListener(data) {
     let context = this.getContextById(data.childId);
     let listener = context.listenerProxies.get(data.listenerId);
 
@@ -1291,15 +1272,11 @@ class HiddenXULWindow {
 
     // The windowless browser is a thin wrapper around a docShell that keeps
     // its related resources alive. It implements nsIWebNavigation and
-    // forwards its methods to the underlying docShell, but cannot act as a
-    // docShell itself.  Getting .docShell gives us the
-    // underlying docShell, and `QueryInterface(nsIWebNavigation)` gives us
-    // access to the webNav methods that are already available on the
-    // windowless browser, but contrary to appearances, they are not the same
-    // object.
-    let chromeShell = windowlessBrowser.docShell.QueryInterface(
-      Ci.nsIWebNavigation
-    );
+    // forwards its methods to the underlying docShell. That .docShell
+    // needs `QueryInterface(nsIWebNavigation)` to give us access to the
+    // webNav methods that are already available on the windowless browser.
+    let chromeShell = windowlessBrowser.docShell;
+    chromeShell.QueryInterface(Ci.nsIWebNavigation);
 
     if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
       let attrs = chromeShell.getOriginAttributes();
@@ -1307,16 +1284,10 @@ class HiddenXULWindow {
       chromeShell.setOriginAttributes(attrs);
     }
 
-    let system = Services.scriptSecurityManager.getSystemPrincipal();
-    chromeShell.createAboutBlankContentViewer(system, system);
     chromeShell.useGlobalHistory = false;
-    let loadURIOptions = {
-      triggeringPrincipal: system,
-    };
-    chromeShell.loadURI(
-      "chrome://extensions/content/dummy.xul",
-      loadURIOptions
-    );
+    chromeShell.loadURI("chrome://extensions/content/dummy.xhtml", {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
 
     await promiseObserved(
       "chrome-document-global-created",
@@ -1474,9 +1445,7 @@ class HiddenExtensionPage {
         {
           "webextension-view-type": this.viewType,
           remote: this.extension.remote ? "true" : null,
-          remoteType: this.extension.remote
-            ? E10SUtils.EXTENSION_REMOTE_TYPE
-            : null,
+          remoteType: this.extension.remoteType,
         },
         this.extension.groupFrameLoader
       );
@@ -1575,7 +1544,7 @@ const DebugUtils = {
         {
           "webextension-addon-debug-target": extensionId,
           remote: extension.remote ? "true" : null,
-          remoteType: extension.remote ? E10SUtils.EXTENSION_REMOTE_TYPE : null,
+          remoteType: extension.remoteType,
         },
         extension.groupFrameLoader
       );
@@ -2106,15 +2075,19 @@ var ExtensionParent = {
 
 // browserPaintedPromise and browserStartupPromise are promises that
 // resolve after the first browser window is painted and after browser
-// windows have been restored, respectively.
+// windows have been restored, respectively. Alternatively,
+// browserStartupPromise also resolves from the extensions-late-startup
+// notification sent by Firefox Reality on desktop platforms, because it
+// doesn't support SessionStore.
 // _resetStartupPromises should only be called from outside this file in tests.
 ExtensionParent._resetStartupPromises = () => {
   ExtensionParent.browserPaintedPromise = promiseObserved(
     "browser-delayed-startup-finished"
   ).then(() => {});
-  ExtensionParent.browserStartupPromise = promiseObserved(
-    "sessionstore-windows-restored"
-  ).then(() => {});
+  ExtensionParent.browserStartupPromise = Promise.race([
+    promiseObserved("sessionstore-windows-restored"),
+    promiseObserved("extensions-late-startup"),
+  ]).then(() => {});
 };
 ExtensionParent._resetStartupPromises();
 

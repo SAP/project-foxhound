@@ -79,9 +79,6 @@ with Files("OpenInTabsUtils.jsm"):
 with Files("PermissionUI.jsm"):
    BUG_COMPONENT = ("Firefox", "Site Permissions")
 
-with Files("PermissionUITelemetry.jsm"):
-   BUG_COMPONENT = ("Firefox", "Site Permissions")
-
 with Files("ProcessHangMonitor.jsm"):
     BUG_COMPONENT = ("Core", "DOM: Content Processes")
 
@@ -133,12 +130,11 @@ XPCSHELL_TESTS_MANIFESTS += ['test/unit/xpcshell.ini']
 
 EXTRA_JS_MODULES += [
     'AboutNewTab.jsm',
+    'AppUpdater.jsm',
     'AsyncTabSwitcher.jsm',
     'BrowserUsageTelemetry.jsm',
     'BrowserWindowTracker.jsm',
-    'ContentClick.jsm',
     'ContentCrashHandlers.jsm',
-    'ContentMetaHandler.jsm',
     'ContentObservers.js',
     'ContentSearch.jsm',
     'Discovery.jsm',
@@ -152,7 +148,6 @@ EXTRA_JS_MODULES += [
     'OpenInTabsUtils.jsm',
     'PageActions.jsm',
     'PermissionUI.jsm',
-    'PermissionUITelemetry.jsm',
     'PingCentre.jsm',
     'ProcessHangMonitor.jsm',
     'ReaderParent.jsm',

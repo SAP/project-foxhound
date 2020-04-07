@@ -1,7 +1,7 @@
 use crate::cdsl::ast::{Apply, Expr, Literal, VarPool};
 use crate::cdsl::encodings::{Encoding, EncodingBuilder};
 use crate::cdsl::instructions::{
-    BoundInstruction, InstSpec, InstructionPredicateNode, InstructionPredicateRegistry,
+    Bindable, BoundInstruction, InstSpec, InstructionPredicateNode, InstructionPredicateRegistry,
 };
 use crate::cdsl::recipes::{EncodingRecipeNumber, Recipes};
 use crate::cdsl::settings::SettingGroup;
@@ -13,10 +13,6 @@ use crate::shared::types::Reference::{R32, R64};
 use crate::shared::Definitions as SharedDefinitions;
 
 use super::recipes::RecipeGroup;
-
-fn enc(inst: impl Into<InstSpec>, recipe: EncodingRecipeNumber, bits: u16) -> EncodingBuilder {
-    EncodingBuilder::new(inst.into(), recipe, bits)
-}
 
 pub(crate) struct PerCpuModeEncodings<'defs> {
     pub inst_pred_reg: InstructionPredicateRegistry,
@@ -33,6 +29,14 @@ impl<'defs> PerCpuModeEncodings<'defs> {
             enc64: Vec::new(),
             recipes,
         }
+    }
+    fn enc(
+        &self,
+        inst: impl Into<InstSpec>,
+        recipe: EncodingRecipeNumber,
+        bits: u16,
+    ) -> EncodingBuilder {
+        EncodingBuilder::new(inst.into(), recipe, bits)
     }
     fn add32(&mut self, encoding: EncodingBuilder) {
         self.enc32
@@ -52,7 +56,7 @@ impl<'defs> PerCpuModeEncodings<'defs> {
 
 fn load_bits(funct3: u16) -> u16 {
     assert!(funct3 <= 0b111);
-    0b00000 | (funct3 << 5)
+    funct3 << 5
 }
 
 fn store_bits(funct3: u16) -> u16 {
@@ -87,13 +91,13 @@ fn opimm32_bits(funct3: u16, funct7: u16) -> u16 {
 
 fn op_bits(funct3: u16, funct7: u16) -> u16 {
     assert!(funct3 <= 0b111);
-    assert!(funct7 <= 0b1111111);
+    assert!(funct7 <= 0b111_1111);
     0b01100 | (funct3 << 5) | (funct7 << 8)
 }
 
 fn op32_bits(funct3: u16, funct7: u16) -> u16 {
     assert!(funct3 <= 0b111);
-    assert!(funct7 <= 0b1111111);
+    assert!(funct7 <= 0b111_1111);
     0b01110 | (funct3 << 5) | (funct7 << 8)
 }
 
@@ -173,50 +177,50 @@ pub(crate) fn define<'defs>(
 
     // Basic arithmetic binary instructions are encoded in an R-type instruction.
     for &(inst, inst_imm, f3, f7) in &[
-        (iadd, Some(iadd_imm), 0b000, 0b0000000),
-        (isub, None, 0b000, 0b0100000),
-        (bxor, Some(bxor_imm), 0b100, 0b0000000),
-        (bor, Some(bor_imm), 0b110, 0b0000000),
-        (band, Some(band_imm), 0b111, 0b0000000),
+        (iadd, Some(iadd_imm), 0b000, 0b000_0000),
+        (isub, None, 0b000, 0b010_0000),
+        (bxor, Some(bxor_imm), 0b100, 0b000_0000),
+        (bor, Some(bor_imm), 0b110, 0b000_0000),
+        (band, Some(band_imm), 0b111, 0b000_0000),
     ] {
-        e.add32(enc(inst.bind(I32), r_r, op_bits(f3, f7)));
-        e.add64(enc(inst.bind(I64), r_r, op_bits(f3, f7)));
+        e.add32(e.enc(inst.bind(I32), r_r, op_bits(f3, f7)));
+        e.add64(e.enc(inst.bind(I64), r_r, op_bits(f3, f7)));
 
         // Immediate versions for add/xor/or/and.
         if let Some(inst_imm) = inst_imm {
-            e.add32(enc(inst_imm.bind(I32), r_ii, opimm_bits(f3, 0)));
-            e.add64(enc(inst_imm.bind(I64), r_ii, opimm_bits(f3, 0)));
+            e.add32(e.enc(inst_imm.bind(I32), r_ii, opimm_bits(f3, 0)));
+            e.add64(e.enc(inst_imm.bind(I64), r_ii, opimm_bits(f3, 0)));
         }
     }
 
     // 32-bit ops in RV64.
-    e.add64(enc(iadd.bind(I32), r_r, op32_bits(0b000, 0b0000000)));
-    e.add64(enc(isub.bind(I32), r_r, op32_bits(0b000, 0b0100000)));
+    e.add64(e.enc(iadd.bind(I32), r_r, op32_bits(0b000, 0b000_0000)));
+    e.add64(e.enc(isub.bind(I32), r_r, op32_bits(0b000, 0b010_0000)));
     // There are no andiw/oriw/xoriw variations.
-    e.add64(enc(iadd_imm.bind(I32), r_ii, opimm32_bits(0b000, 0)));
+    e.add64(e.enc(iadd_imm.bind(I32), r_ii, opimm32_bits(0b000, 0)));
 
     // Use iadd_imm with %x0 to materialize constants.
-    e.add32(enc(iconst.bind(I32), r_iz, opimm_bits(0b0, 0)));
-    e.add64(enc(iconst.bind(I32), r_iz, opimm_bits(0b0, 0)));
-    e.add64(enc(iconst.bind(I64), r_iz, opimm_bits(0b0, 0)));
+    e.add32(e.enc(iconst.bind(I32), r_iz, opimm_bits(0b0, 0)));
+    e.add64(e.enc(iconst.bind(I32), r_iz, opimm_bits(0b0, 0)));
+    e.add64(e.enc(iconst.bind(I64), r_iz, opimm_bits(0b0, 0)));
 
     // Dynamic shifts have the same masking semantics as the clif base instructions.
     for &(inst, inst_imm, f3, f7) in &[
         (ishl, ishl_imm, 0b1, 0b0),
         (ushr, ushr_imm, 0b101, 0b0),
-        (sshr, sshr_imm, 0b101, 0b100000),
+        (sshr, sshr_imm, 0b101, 0b10_0000),
     ] {
-        e.add32(enc(inst.bind(I32).bind(I32), r_r, op_bits(f3, f7)));
-        e.add64(enc(inst.bind(I64).bind(I64), r_r, op_bits(f3, f7)));
-        e.add64(enc(inst.bind(I32).bind(I32), r_r, op32_bits(f3, f7)));
+        e.add32(e.enc(inst.bind(I32).bind(I32), r_r, op_bits(f3, f7)));
+        e.add64(e.enc(inst.bind(I64).bind(I64), r_r, op_bits(f3, f7)));
+        e.add64(e.enc(inst.bind(I32).bind(I32), r_r, op32_bits(f3, f7)));
         // Allow i32 shift amounts in 64-bit shifts.
-        e.add64(enc(inst.bind(I64).bind(I32), r_r, op_bits(f3, f7)));
-        e.add64(enc(inst.bind(I32).bind(I64), r_r, op32_bits(f3, f7)));
+        e.add64(e.enc(inst.bind(I64).bind(I32), r_r, op_bits(f3, f7)));
+        e.add64(e.enc(inst.bind(I32).bind(I64), r_r, op32_bits(f3, f7)));
 
         // Immediate shifts.
-        e.add32(enc(inst_imm.bind(I32), r_rshamt, opimm_bits(f3, f7)));
-        e.add64(enc(inst_imm.bind(I64), r_rshamt, opimm_bits(f3, f7)));
-        e.add64(enc(inst_imm.bind(I32), r_rshamt, opimm32_bits(f3, f7)));
+        e.add32(e.enc(inst_imm.bind(I32), r_rshamt, opimm_bits(f3, f7)));
+        e.add64(e.enc(inst_imm.bind(I64), r_rshamt, opimm_bits(f3, f7)));
+        e.add64(e.enc(inst_imm.bind(I32), r_rshamt, opimm32_bits(f3, f7)));
     }
 
     // Signed and unsigned integer 'less than'. There are no 'w' variants for comparing 32-bit
@@ -235,27 +239,27 @@ pub(crate) fn define<'defs>(
                 bound_inst.clone().into(),
                 vec![Expr::Literal(cc), Expr::Var(x), Expr::Var(y)],
             )
-            .inst_predicate(&shared_defs.format_registry, &var_pool)
+            .inst_predicate(&var_pool)
             .unwrap()
         };
 
         let icmp_i32 = icmp.bind(I32);
         let icmp_i64 = icmp.bind(I64);
         e.add32(
-            enc(icmp_i32.clone(), r_ricmp, op_bits(0b010, 0b0000000))
+            e.enc(icmp_i32.clone(), r_ricmp, op_bits(0b010, 0b000_0000))
                 .inst_predicate(icmp_instp(&icmp_i32, "slt")),
         );
         e.add64(
-            enc(icmp_i64.clone(), r_ricmp, op_bits(0b010, 0b0000000))
+            e.enc(icmp_i64.clone(), r_ricmp, op_bits(0b010, 0b000_0000))
                 .inst_predicate(icmp_instp(&icmp_i64, "slt")),
         );
 
         e.add32(
-            enc(icmp_i32.clone(), r_ricmp, op_bits(0b011, 0b0000000))
+            e.enc(icmp_i32.clone(), r_ricmp, op_bits(0b011, 0b000_0000))
                 .inst_predicate(icmp_instp(&icmp_i32, "ult")),
         );
         e.add64(
-            enc(icmp_i64.clone(), r_ricmp, op_bits(0b011, 0b0000000))
+            e.enc(icmp_i64.clone(), r_ricmp, op_bits(0b011, 0b000_0000))
                 .inst_predicate(icmp_instp(&icmp_i64, "ult")),
         );
 
@@ -263,42 +267,51 @@ pub(crate) fn define<'defs>(
         let icmp_i32 = icmp_imm.bind(I32);
         let icmp_i64 = icmp_imm.bind(I64);
         e.add32(
-            enc(icmp_i32.clone(), r_iicmp, opimm_bits(0b010, 0))
+            e.enc(icmp_i32.clone(), r_iicmp, opimm_bits(0b010, 0))
                 .inst_predicate(icmp_instp(&icmp_i32, "slt")),
         );
         e.add64(
-            enc(icmp_i64.clone(), r_iicmp, opimm_bits(0b010, 0))
+            e.enc(icmp_i64.clone(), r_iicmp, opimm_bits(0b010, 0))
                 .inst_predicate(icmp_instp(&icmp_i64, "slt")),
         );
 
         e.add32(
-            enc(icmp_i32.clone(), r_iicmp, opimm_bits(0b011, 0))
+            e.enc(icmp_i32.clone(), r_iicmp, opimm_bits(0b011, 0))
                 .inst_predicate(icmp_instp(&icmp_i32, "ult")),
         );
         e.add64(
-            enc(icmp_i64.clone(), r_iicmp, opimm_bits(0b011, 0))
+            e.enc(icmp_i64.clone(), r_iicmp, opimm_bits(0b011, 0))
                 .inst_predicate(icmp_instp(&icmp_i64, "ult")),
         );
     }
 
     // Integer constants with the low 12 bits clear are materialized by lui.
-    e.add32(enc(iconst.bind(I32), r_u, lui_bits()));
-    e.add64(enc(iconst.bind(I32), r_u, lui_bits()));
-    e.add64(enc(iconst.bind(I64), r_u, lui_bits()));
+    e.add32(e.enc(iconst.bind(I32), r_u, lui_bits()));
+    e.add64(e.enc(iconst.bind(I32), r_u, lui_bits()));
+    e.add64(e.enc(iconst.bind(I64), r_u, lui_bits()));
 
     // "M" Standard Extension for Integer Multiplication and Division.
     // Gated by the `use_m` flag.
-    e.add32(enc(imul.bind(I32), r_r, op_bits(0b000, 0b00000001)).isa_predicate(use_m));
-    e.add64(enc(imul.bind(I64), r_r, op_bits(0b000, 0b00000001)).isa_predicate(use_m));
-    e.add64(enc(imul.bind(I32), r_r, op32_bits(0b000, 0b00000001)).isa_predicate(use_m));
+    e.add32(
+        e.enc(imul.bind(I32), r_r, op_bits(0b000, 0b0000_0001))
+            .isa_predicate(use_m),
+    );
+    e.add64(
+        e.enc(imul.bind(I64), r_r, op_bits(0b000, 0b0000_0001))
+            .isa_predicate(use_m),
+    );
+    e.add64(
+        e.enc(imul.bind(I32), r_r, op32_bits(0b000, 0b0000_0001))
+            .isa_predicate(use_m),
+    );
 
     // Control flow.
 
     // Unconditional branches.
-    e.add32(enc(jump, r_uj, jal_bits()));
-    e.add64(enc(jump, r_uj, jal_bits()));
-    e.add32(enc(call, r_uj_call, jal_bits()));
-    e.add64(enc(call, r_uj_call, jal_bits()));
+    e.add32(e.enc(jump, r_uj, jal_bits()));
+    e.add64(e.enc(jump, r_uj, jal_bits()));
+    e.add32(e.enc(call, r_uj_call, jal_bits()));
+    e.add64(e.enc(call, r_uj_call, jal_bits()));
 
     // Conditional branches.
     {
@@ -323,7 +336,7 @@ pub(crate) fn define<'defs>(
                     Expr::Var(args),
                 ],
             )
-            .inst_predicate(&shared_defs.format_registry, &var_pool)
+            .inst_predicate(&var_pool)
             .unwrap()
         };
 
@@ -338,101 +351,81 @@ pub(crate) fn define<'defs>(
             ("uge", 0b111),
         ] {
             e.add32(
-                enc(br_icmp_i32.clone(), r_sb, branch_bits(f3))
+                e.enc(br_icmp_i32.clone(), r_sb, branch_bits(f3))
                     .inst_predicate(br_icmp_instp(&br_icmp_i32, cond)),
             );
             e.add64(
-                enc(br_icmp_i64.clone(), r_sb, branch_bits(f3))
+                e.enc(br_icmp_i64.clone(), r_sb, branch_bits(f3))
                     .inst_predicate(br_icmp_instp(&br_icmp_i64, cond)),
             );
         }
     }
 
     for &(inst, f3) in &[(brz, 0b000), (brnz, 0b001)] {
-        e.add32(enc(inst.bind(I32), r_sb_zero, branch_bits(f3)));
-        e.add64(enc(inst.bind(I64), r_sb_zero, branch_bits(f3)));
-        e.add32(enc(inst.bind(B1), r_sb_zero, branch_bits(f3)));
-        e.add64(enc(inst.bind(B1), r_sb_zero, branch_bits(f3)));
+        e.add32(e.enc(inst.bind(I32), r_sb_zero, branch_bits(f3)));
+        e.add64(e.enc(inst.bind(I64), r_sb_zero, branch_bits(f3)));
+        e.add32(e.enc(inst.bind(B1), r_sb_zero, branch_bits(f3)));
+        e.add64(e.enc(inst.bind(B1), r_sb_zero, branch_bits(f3)));
     }
 
     // Returns are a special case of jalr_bits using %x1 to hold the return address.
     // The return address is provided by a special-purpose `link` return value that
     // is added by legalize_signature().
-    e.add32(enc(return_, r_iret, jalr_bits()));
-    e.add64(enc(return_, r_iret, jalr_bits()));
-    e.add32(enc(call_indirect.bind(I32), r_icall, jalr_bits()));
-    e.add64(enc(call_indirect.bind(I64), r_icall, jalr_bits()));
+    e.add32(e.enc(return_, r_iret, jalr_bits()));
+    e.add64(e.enc(return_, r_iret, jalr_bits()));
+    e.add32(e.enc(call_indirect.bind(I32), r_icall, jalr_bits()));
+    e.add64(e.enc(call_indirect.bind(I64), r_icall, jalr_bits()));
 
     // Spill and fill.
-    e.add32(enc(spill.bind(I32), r_gp_sp, store_bits(0b010)));
-    e.add64(enc(spill.bind(I32), r_gp_sp, store_bits(0b010)));
-    e.add64(enc(spill.bind(I64), r_gp_sp, store_bits(0b011)));
-    e.add32(enc(fill.bind(I32), r_gp_fi, load_bits(0b010)));
-    e.add64(enc(fill.bind(I32), r_gp_fi, load_bits(0b010)));
-    e.add64(enc(fill.bind(I64), r_gp_fi, load_bits(0b011)));
+    e.add32(e.enc(spill.bind(I32), r_gp_sp, store_bits(0b010)));
+    e.add64(e.enc(spill.bind(I32), r_gp_sp, store_bits(0b010)));
+    e.add64(e.enc(spill.bind(I64), r_gp_sp, store_bits(0b011)));
+    e.add32(e.enc(fill.bind(I32), r_gp_fi, load_bits(0b010)));
+    e.add64(e.enc(fill.bind(I32), r_gp_fi, load_bits(0b010)));
+    e.add64(e.enc(fill.bind(I64), r_gp_fi, load_bits(0b011)));
 
     // No-op fills, created by late-stage redundant-fill removal.
     for &ty in &[I64, I32] {
-        e.add64(enc(fill_nop.bind(ty), r_fillnull, 0));
-        e.add32(enc(fill_nop.bind(ty), r_fillnull, 0));
+        e.add64(e.enc(fill_nop.bind(ty), r_fillnull, 0));
+        e.add32(e.enc(fill_nop.bind(ty), r_fillnull, 0));
     }
-    e.add64(enc(fill_nop.bind(B1), r_fillnull, 0));
-    e.add32(enc(fill_nop.bind(B1), r_fillnull, 0));
+    e.add64(e.enc(fill_nop.bind(B1), r_fillnull, 0));
+    e.add32(e.enc(fill_nop.bind(B1), r_fillnull, 0));
 
     // Register copies.
-    e.add32(enc(copy.bind(I32), r_icopy, opimm_bits(0b000, 0)));
-    e.add64(enc(copy.bind(I64), r_icopy, opimm_bits(0b000, 0)));
-    e.add64(enc(copy.bind(I32), r_icopy, opimm32_bits(0b000, 0)));
+    e.add32(e.enc(copy.bind(I32), r_icopy, opimm_bits(0b000, 0)));
+    e.add64(e.enc(copy.bind(I64), r_icopy, opimm_bits(0b000, 0)));
+    e.add64(e.enc(copy.bind(I32), r_icopy, opimm32_bits(0b000, 0)));
 
-    e.add32(enc(regmove.bind(I32), r_irmov, opimm_bits(0b000, 0)));
-    e.add64(enc(regmove.bind(I64), r_irmov, opimm_bits(0b000, 0)));
-    e.add64(enc(regmove.bind(I32), r_irmov, opimm32_bits(0b000, 0)));
+    e.add32(e.enc(regmove.bind(I32), r_irmov, opimm_bits(0b000, 0)));
+    e.add64(e.enc(regmove.bind(I64), r_irmov, opimm_bits(0b000, 0)));
+    e.add64(e.enc(regmove.bind(I32), r_irmov, opimm32_bits(0b000, 0)));
 
-    e.add32(enc(copy.bind(B1), r_icopy, opimm_bits(0b000, 0)));
-    e.add64(enc(copy.bind(B1), r_icopy, opimm_bits(0b000, 0)));
-    e.add32(enc(regmove.bind(B1), r_irmov, opimm_bits(0b000, 0)));
-    e.add64(enc(regmove.bind(B1), r_irmov, opimm_bits(0b000, 0)));
+    e.add32(e.enc(copy.bind(B1), r_icopy, opimm_bits(0b000, 0)));
+    e.add64(e.enc(copy.bind(B1), r_icopy, opimm_bits(0b000, 0)));
+    e.add32(e.enc(regmove.bind(B1), r_irmov, opimm_bits(0b000, 0)));
+    e.add64(e.enc(regmove.bind(B1), r_irmov, opimm_bits(0b000, 0)));
 
     // Stack-slot-to-the-same-stack-slot copy, which is guaranteed to turn
     // into a no-op.
     // The same encoding is generated for both the 64- and 32-bit architectures.
     for &ty in &[I64, I32, I16, I8] {
-        e.add32(enc(copy_nop.bind(ty), r_stacknull, 0));
-        e.add64(enc(copy_nop.bind(ty), r_stacknull, 0));
+        e.add32(e.enc(copy_nop.bind(ty), r_stacknull, 0));
+        e.add64(e.enc(copy_nop.bind(ty), r_stacknull, 0));
     }
     for &ty in &[F64, F32] {
-        e.add32(enc(copy_nop.bind(ty), r_stacknull, 0));
-        e.add64(enc(copy_nop.bind(ty), r_stacknull, 0));
+        e.add32(e.enc(copy_nop.bind(ty), r_stacknull, 0));
+        e.add64(e.enc(copy_nop.bind(ty), r_stacknull, 0));
     }
 
     // Copy-to-SSA
-    e.add32(enc(
-        copy_to_ssa.bind(I32),
-        r_copytossa,
-        opimm_bits(0b000, 0),
-    ));
-    e.add64(enc(
-        copy_to_ssa.bind(I64),
-        r_copytossa,
-        opimm_bits(0b000, 0),
-    ));
-    e.add64(enc(
-        copy_to_ssa.bind(I32),
-        r_copytossa,
-        opimm32_bits(0b000, 0),
-    ));
-    e.add32(enc(copy_to_ssa.bind(B1), r_copytossa, opimm_bits(0b000, 0)));
-    e.add64(enc(copy_to_ssa.bind(B1), r_copytossa, opimm_bits(0b000, 0)));
-    e.add32(enc(
-        copy_to_ssa.bind_ref(R32),
-        r_copytossa,
-        opimm_bits(0b000, 0),
-    ));
-    e.add64(enc(
-        copy_to_ssa.bind_ref(R64),
-        r_copytossa,
-        opimm_bits(0b000, 0),
-    ));
+    e.add32(e.enc(copy_to_ssa.bind(I32), r_copytossa, opimm_bits(0b000, 0)));
+    e.add64(e.enc(copy_to_ssa.bind(I64), r_copytossa, opimm_bits(0b000, 0)));
+    e.add64(e.enc(copy_to_ssa.bind(I32), r_copytossa, opimm32_bits(0b000, 0)));
+    e.add32(e.enc(copy_to_ssa.bind(B1), r_copytossa, opimm_bits(0b000, 0)));
+    e.add64(e.enc(copy_to_ssa.bind(B1), r_copytossa, opimm_bits(0b000, 0)));
+    e.add32(e.enc(copy_to_ssa.bind(R32), r_copytossa, opimm_bits(0b000, 0)));
+    e.add64(e.enc(copy_to_ssa.bind(R64), r_copytossa, opimm_bits(0b000, 0)));
 
     e
 }

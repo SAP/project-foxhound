@@ -6,8 +6,8 @@
 package org.mozilla.geckoview.test.util
 
 import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.Autofill
 import org.mozilla.geckoview.ContentBlocking
-import org.mozilla.geckoview.GeckoResponse
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.ContentDelegate.ContextElement
@@ -29,7 +29,7 @@ class Callbacks private constructor() {
                     PromptDelegate, ScrollDelegate, SelectionActionDelegate,
                     TextInputDelegate
 
-    interface AutofillDelegate : GeckoSession.AutofillDelegate {}
+    interface AutofillDelegate : Autofill.Delegate {}
     interface ContentDelegate : GeckoSession.ContentDelegate {}
     interface NavigationDelegate : GeckoSession.NavigationDelegate {}
     interface PermissionDelegate : GeckoSession.PermissionDelegate {}

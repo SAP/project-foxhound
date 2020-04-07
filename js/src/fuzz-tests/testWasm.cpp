@@ -5,8 +5,10 @@
 #include "mozilla/ScopeExit.h"
 
 #include "jsapi.h"
+#include "jspubtd.h"
 
 #include "fuzz-tests/tests.h"
+#include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
 #include "vm/TypedArrayObject.h"
 
@@ -27,7 +29,8 @@ extern JS::PersistentRootedObject gGlobal;
 extern JSContext* gCx;
 
 static int testWasmInit(int* argc, char*** argv) {
-  if (!wasm::HasSupport(gCx) || !InitWebAssemblyClass(gCx, gCx->global())) {
+  if (!wasm::HasSupport(gCx) ||
+      !GlobalObject::getOrCreateConstructor(gCx, JSProto_WebAssembly)) {
     MOZ_CRASH("Failed to initialize wasm support");
   }
 
@@ -413,7 +416,7 @@ static int testWasmFuzz(const uint8_t* buf, size_t size) {
           Rooted<WasmGlobalObject*> global(gCx,
                                            &propObj->as<WasmGlobalObject>());
           if (global->type() != ValType::I64) {
-            lastReturnVal = global->value(gCx);
+            global->value(gCx, &lastReturnVal);
           }
         }
       }

@@ -75,12 +75,7 @@ class CompositorWidgetChild;
 class WidgetRenderingContext {
  public:
 #if defined(XP_MACOSX)
-  WidgetRenderingContext() : mLayerManager(nullptr), mGL(nullptr) {}
-  layers::LayerManagerComposite* mLayerManager;
-  gl::GLContext* mGL;
-#elif defined(MOZ_WIDGET_ANDROID)
-  WidgetRenderingContext() : mCompositor(nullptr) {}
-  layers::Compositor* mCompositor;
+  gl::GLContext* mGL = nullptr;
 #endif
 };
 
@@ -126,14 +121,6 @@ class CompositorWidget {
   virtual RefPtr<layers::NativeLayerRoot> GetNativeLayerRoot() {
     return nullptr;
   }
-
-  /**
-   * Called after the LayerManager draws the layer tree
-   *
-   * Always called from the compositing thread.
-   */
-  virtual void DrawWindowOverlay(WidgetRenderingContext* aContext,
-                                 LayoutDeviceIntRect aRect) {}
 
   /**
    * Return a DrawTarget for the window which can be composited into.

@@ -26,7 +26,6 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/webrender/WebRenderTypes.h"
-#include "mozilla/gfx/MacIOSurface.h"
 
 #include "nsString.h"
 #include "nsIDragService.h"
@@ -57,7 +56,6 @@ class NativeLayerRootCA;
 class NativeLayerCA;
 }  // namespace layers
 namespace widget {
-class RectTextureImage;
 class WidgetRenderingContext;
 }  // namespace widget
 }  // namespace mozilla
@@ -77,27 +75,6 @@ class WidgetRenderingContext;
 @end
 
 @interface NSView (Undocumented)
-
-// Draws the title string of a window.
-// Present on NSThemeFrame since at least 10.6.
-// _drawTitleBar is somewhat complex, and has changed over the years
-// since OS X 10.6.  But in that time it's never done anything that
-// would break when called outside of -[NSView drawRect:] (which we
-// sometimes do), or whose output can't be redirected to a
-// CGContextRef object (which we also sometimes do).  This is likely
-// to remain true for the indefinite future.  However we should
-// check _drawTitleBar in each new major version of OS X.  For more
-// information see bug 877767.
-- (void)_drawTitleBar:(NSRect)aRect;
-
-// Returns an NSRect that is the bounding box for all an NSView's dirty
-// rectangles (ones that need to be redrawn).  The full list of dirty
-// rectangles can be obtained by calling -[NSView _dirtyRegion] and then
-// calling -[NSRegion getRects:count:] on what it returns.  Both these
-// methods have been present in the same form since at least OS X 10.5.
-// Unlike -[NSView getRectsBeingDrawn:count:], these methods can be called
-// outside a call to -[NSView drawRect:].
-- (NSRect)_dirtyRect;
 
 // Undocumented method of one or more of NSFrameView's subclasses.  Called
 // when one or more of the titlebar buttons needs to be repositioned, to
@@ -160,13 +137,6 @@ class WidgetRenderingContext;
   // to send its pair event first, in case we didn't yet for any reason.
   BOOL mExpectingWheelStop;
 
-  // Set to YES when our GL surface has been updated and we need to call
-  // updateGLContext on the compositor thread before we composite.
-  // Accesses from different threads are synchronized via mGLContext's
-  // CGLContextObj lock.
-  // Always NO if StaticPrefs::gfx_core_animation_enabled_AtStartup() is true.
-  BOOL mNeedsGLUpdate;
-
   // Whether we're inside updateRootCALayer at the moment.
   BOOL mIsUpdatingLayer;
 
@@ -176,10 +146,6 @@ class WidgetRenderingContext;
   // re-establish the connection to the service manager many times per second
   // when handling |draggingUpdated:| messages.
   nsIDragService* mDragService;
-
-  // The NSOpenGLContext that is attached to our mPixelHostingView.
-  // Always null if StaticPrefs::gfx_core_animation_enabled_AtStartup() is true.
-  NSOpenGLContext* mGLContext;
 
   // Gestures support
   //
@@ -212,28 +178,13 @@ class WidgetRenderingContext;
   // Whether this uses off-main-thread compositing.
   BOOL mUsingOMTCompositor;
 
-  // The mask image that's used when painting into the titlebar using basic
-  // CGContext painting (i.e. non-accelerated).
-  // Always null if StaticPrefs::gfx_core_animation_enabled_AtStartup() is true.
-  CGImageRef mTopLeftCornerMask;
-
   // Subviews of self, which act as container views for vibrancy views and
   // non-draggable views.
   NSView* mVibrancyViewsContainer;      // [STRONG]
   NSView* mNonDraggableViewsContainer;  // [STRONG]
 
-  // The view that does our drawing. Always non-null.
+  // The layer-backed view that hosts our drawing. Always non-null.
   // This is a subview of self so that it can be ordered on top of mVibrancyViewsContainer.
-  // Drawing in this view can be performed in different ways:
-  // If StaticPrefs::gfx_core_animation_enabled_AtStartup() is true, mPixelHostingView
-  // will be layer-backed and all Gecko rendering will be performed into sublayers of
-  // that view's layer.
-  // If StaticPrefs::gfx_core_animation_enabled_AtStartup() is false, there are two cases:
-  // If mUsingOMTCompositor is false, drawing is performed on the main thread
-  // inside the view's drawRect handler. If mUsingOMTCompositor is true,
-  // mGLContext will be non-null and will be associated with mPixelHostingView,
-  // and rendering will be performed on the compositor thread into mGLContext's
-  // primary framebuffer.
   PixelHostingView* mPixelHostingView;
 
   // Last pressure stage by trackpad's force click
@@ -258,12 +209,6 @@ class WidgetRenderingContext;
                             enter:(BOOL)aEnter
                          exitFrom:(mozilla::WidgetMouseEvent::ExitFrom)aExitFrom;
 
-- (void)updateGLContext;
-- (void)_surfaceNeedsUpdate:(NSNotification*)notification;
-
-- (bool)preRender:(NSOpenGLContext*)aGLContext;
-- (void)postRender:(NSOpenGLContext*)aGLContext;
-
 // Call this during operations that will likely trigger a main thread
 // CoreAnimation paint of the window, during which Gecko should do its own
 // painting and present the results atomically with that main thread transaction.
@@ -280,8 +225,6 @@ class WidgetRenderingContext;
 
 - (void)viewWillStartLiveResize;
 - (void)viewDidEndLiveResize;
-
-- (NSColor*)vibrancyFillColorForThemeGeometryType:(nsITheme::ThemeGeometryType)aThemeGeometryType;
 
 /*
  * Gestures support
@@ -364,7 +307,7 @@ class nsChildView final : public nsBaseWidget {
 
   virtual void Enable(bool aState) override;
   virtual bool IsEnabled() const override;
-  virtual void SetFocus(Raise) override;
+  virtual void SetFocus(Raise, mozilla::dom::CallerType aCallerType) override;
   virtual LayoutDeviceIntRect GetBounds() override;
   virtual LayoutDeviceIntRect GetClientBounds() override;
   virtual LayoutDeviceIntRect GetScreenBounds() override;
@@ -432,7 +375,7 @@ class nsChildView final : public nsBaseWidget {
   virtual InputContext GetInputContext() override;
   virtual TextEventDispatcherListener* GetNativeTextEventDispatcherListener() override;
   virtual MOZ_MUST_USE nsresult AttachNativeKeyEvent(mozilla::WidgetKeyboardEvent& aEvent) override;
-  virtual void GetEditCommands(NativeKeyBindingsType aType,
+  virtual bool GetEditCommands(NativeKeyBindingsType aType,
                                const mozilla::WidgetKeyboardEvent& aEvent,
                                nsTArray<mozilla::CommandInt>& aCommands) override;
   void GetEditCommandsRemapped(NativeKeyBindingsType aType,
@@ -442,6 +385,7 @@ class nsChildView final : public nsBaseWidget {
 
   virtual nsTransparencyMode GetTransparencyMode() override;
   virtual void SetTransparencyMode(nsTransparencyMode aMode) override;
+  virtual void SuppressAnimation(bool aSuppress) override;
 
   virtual nsresult SynthesizeNativeKeyEvent(int32_t aNativeKeyboardLayout, int32_t aNativeKeyCode,
                                             uint32_t aModifierFlags, const nsAString& aCharacters,
@@ -475,10 +419,6 @@ class nsChildView final : public nsBaseWidget {
   bool PaintWindow(LayoutDeviceIntRegion aRegion);
   bool PaintWindowInDrawTarget(mozilla::gfx::DrawTarget* aDT, const LayoutDeviceIntRegion& aRegion,
                                const mozilla::gfx::IntSize& aSurfaceSize);
-  bool PaintWindowInContext(CGContextRef aContext, const LayoutDeviceIntRegion& aRegion,
-                            mozilla::gfx::IntSize aSurfaceSize);
-  bool PaintWindowInIOSurface(CFTypeRefPtr<IOSurfaceRef> aSurface,
-                              const LayoutDeviceIntRegion& aInvalidRegion);
 
   void PaintWindowInContentLayer();
   void HandleMainThreadCATransaction();
@@ -488,19 +428,10 @@ class nsChildView final : public nsBaseWidget {
 #endif
 
   virtual void CreateCompositor() override;
-  virtual void PrepareWindowEffects() override;
-  virtual void CleanupWindowEffects() override;
-
-  virtual void AddWindowOverlayWebRenderCommands(
-      mozilla::layers::WebRenderBridgeChild* aWrBridge, mozilla::wr::DisplayListBuilder& aBuilder,
-      mozilla::wr::IpcResourceUpdateQueue& aResourceUpdates) override;
 
   virtual bool PreRender(mozilla::widget::WidgetRenderingContext* aContext) override;
-  bool PreRenderImpl(mozilla::widget::WidgetRenderingContext* aContext);
   virtual void PostRender(mozilla::widget::WidgetRenderingContext* aContext) override;
   virtual RefPtr<mozilla::layers::NativeLayerRoot> GetNativeLayerRoot() override;
-  virtual void DrawWindowOverlay(mozilla::widget::WidgetRenderingContext* aManager,
-                                 LayoutDeviceIntRect aRect) override;
 
   virtual void UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries) override;
 
@@ -522,15 +453,11 @@ class nsChildView final : public nsBaseWidget {
 
   NSView<mozView>* GetEditorView();
 
-  nsCocoaWindow* GetXULWindowWidget() const;
+  nsCocoaWindow* GetAppWindowWidget() const;
 
   virtual void ReparentNativeWidget(nsIWidget* aNewParent) override;
 
   mozilla::widget::TextInputHandler* GetTextInputHandler() { return mTextInputHandler; }
-
-  NSColor* VibrancyFillColorForThemeGeometryType(nsITheme::ThemeGeometryType aThemeGeometryType);
-  NSColor* VibrancyFontSmoothingBackgroundColorForThemeGeometryType(
-      nsITheme::ThemeGeometryType aThemeGeometryType);
 
   // unit conversion convenience functions
   int32_t CocoaPointsToDevPixels(CGFloat aPts) const {
@@ -551,12 +478,6 @@ class nsChildView final : public nsBaseWidget {
   NSRect DevPixelsToCocoaPoints(const LayoutDeviceIntRect& aRect) const {
     return nsCocoaUtils::DevPixelsToCocoaPoints(aRect, BackingScaleFactor());
   }
-
-  already_AddRefed<mozilla::gfx::DrawTarget> StartRemoteDrawingInRegion(
-      LayoutDeviceIntRegion& aInvalidRegion, mozilla::layers::BufferMode* aBufferMode) override;
-  void EndRemoteDrawing() override;
-  void CleanupRemoteDrawing() override;
-  bool InitCompositor(mozilla::layers::Compositor* aCompositor) override;
 
   virtual MOZ_MUST_USE nsresult StartPluginIME(const mozilla::WidgetKeyboardEvent& aKeyboardEvent,
                                                int32_t aPanelX, int32_t aPanelY,
@@ -581,7 +502,6 @@ class nsChildView final : public nsBaseWidget {
   // Called when the main thread enters a phase during which visual changes
   // are imminent and any layer updates on the compositor thread would interfere
   // with visual atomicity.
-  // Has no effect if StaticPrefs::gfx_core_animation_enabled_AtStartup() is false.
   // "Async" CATransactions are CATransactions which happen on a thread that's
   // not the main thread.
   void SuspendAsyncCATransactions();
@@ -611,19 +531,6 @@ class nsChildView final : public nsBaseWidget {
   void ConfigureAPZCTreeManager() override;
   void ConfigureAPZControllerThread() override;
 
-  void DoRemoteComposition(const LayoutDeviceIntRect& aRenderRect);
-
-  // Overlay drawing functions for OpenGL drawing
-  void DrawWindowOverlay(mozilla::layers::GLManager* aManager, LayoutDeviceIntRect aRect);
-  void MaybeDrawRoundedCorners(mozilla::layers::GLManager* aManager,
-                               const LayoutDeviceIntRect& aRect);
-  void MaybeDrawTitlebar(mozilla::layers::GLManager* aManager);
-
-  // Redraw the contents of mTitlebarCGContext on the main thread, as
-  // determined by mDirtyTitlebarRegion.
-  void UpdateTitlebarCGContext();
-
-  LayoutDeviceIntRect RectContainingTitlebarControls();
   void UpdateVibrancy(const nsTArray<ThemeGeometry>& aThemeGeometries);
   mozilla::VibrancyManager& EnsureVibrancyManager();
 
@@ -658,35 +565,6 @@ class nsChildView final : public nsBaseWidget {
   // progress on the compositor thread.
   mozilla::Mutex mViewTearDownLock;
 
-  mozilla::Mutex mEffectsLock;
-
-  // May be accessed from any thread, protected
-  // by mEffectsLock.
-  bool mHasRoundedBottomCorners;
-  int mDevPixelCornerRadius;
-  bool mIsCoveringTitlebar;
-  bool mIsFullscreen;
-  bool mIsOpaque;
-  LayoutDeviceIntRect mTitlebarRect;
-
-  // The area of mTitlebarCGContext that needs to be redrawn during the next
-  // transaction. Accessed from any thread, protected by mEffectsLock.
-  LayoutDeviceIntRegion mUpdatedTitlebarRegion;
-  CGContextRef mTitlebarCGContext;
-
-  // Compositor thread only
-  mozilla::UniquePtr<mozilla::widget::RectTextureImage> mCornerMaskImage;
-  mozilla::UniquePtr<mozilla::widget::RectTextureImage> mTitlebarImage;
-  mozilla::UniquePtr<mozilla::widget::RectTextureImage> mBasicCompositorImage;
-
-  // Main thread + webrender only
-  mozilla::Maybe<mozilla::wr::ImageKey> mTitlebarImageKey;
-  mozilla::gfx::IntSize mTitlebarImageSize;
-
-  // The area of mTitlebarCGContext that has changed and needs to be
-  // uploaded to to mTitlebarImage. Main thread only.
-  nsIntRegion mDirtyTitlebarRegion;
-
   mozilla::ViewRegion mNonDraggableRegion;
 
   // Cached value of [mView backingScaleFactor], to avoid sending two obj-c
@@ -701,43 +579,21 @@ class nsChildView final : public nsBaseWidget {
 
   bool mPluginFocused;
 
-  // Used in BasicCompositor OMTC mode. Presents the BasicCompositor result
-  // surface to the screen using an OpenGL context.
-  // Always null if StaticPrefs::gfx_core_animation_enabled_AtStartup() is true.
-  mozilla::UniquePtr<GLPresenter> mGLPresenter;
-
   RefPtr<mozilla::layers::NativeLayerRootCA> mNativeLayerRoot;
 
   // In BasicLayers mode, this is the CoreAnimation layer that contains the
   // rendering from Gecko. It is a sublayer of mNativeLayerRoot's underlying
   // wrapper layer.
   // Lazily created by EnsureContentLayerForMainThreadPainting().
-  // Always null if StaticPrefs::gfx_core_animation_enabled_AtStartup() is false.
   RefPtr<mozilla::layers::NativeLayerCA> mContentLayer;
+  RefPtr<mozilla::layers::SurfacePoolHandle> mPoolHandle;
+
+  // In BasicLayers mode, this is the invalid region of mContentLayer.
+  LayoutDeviceIntRegion mContentLayerInvalidRegion;
 
   mozilla::UniquePtr<mozilla::VibrancyManager> mVibrancyManager;
   RefPtr<mozilla::SwipeTracker> mSwipeTracker;
   mozilla::UniquePtr<mozilla::SwipeEventQueue> mSwipeEventQueue;
-
-  // Only used for drawRect-based painting in popups.
-  // Always null if StaticPrefs::gfx_core_animation_enabled_AtStartup() is true.
-  RefPtr<mozilla::gfx::DrawTarget> mBackingSurface;
-
-  // Coordinates the triggering of CoreAnimation transactions between the main
-  // thread and the compositor thread in order to avoid glitches during window
-  // resizing and window focus changes.
-  struct WidgetCompositingState {
-    // While mAsyncCATransactionsSuspended is true, no CoreAnimation transaction
-    // should be triggered on a non-main thread, because they might race with
-    // main-thread driven updates such as window shape changes, and cause glitches.
-    bool mAsyncCATransactionsSuspended = false;
-
-    // Set to true if mNativeLayerRoot->ApplyChanges() needs to be called at the
-    // next available opportunity. Set to false whenever ApplyChanges does get
-    // called.
-    bool mNativeLayerChangesPending = false;
-  };
-  mozilla::DataMutex<WidgetCompositingState> mCompositingState;
 
   RefPtr<mozilla::CancelableRunnable> mUnsuspendAsyncCATransactionsRunnable;
 
@@ -753,8 +609,6 @@ class nsChildView final : public nsBaseWidget {
   bool mCurrentPanGestureBelongsToSwipe;
 
   static uint32_t sLastInputEventCount;
-
-  void ReleaseTitlebarCGContext();
 
   // This is used by SynthesizeNativeTouchPoint to maintain state between
   // multiple synthesized points

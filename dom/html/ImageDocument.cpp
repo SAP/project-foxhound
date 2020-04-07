@@ -24,7 +24,6 @@
 #include "nsIFrame.h"
 #include "nsGkAtoms.h"
 #include "imgIRequest.h"
-#include "imgILoader.h"
 #include "imgIContainer.h"
 #include "imgINotificationObserver.h"
 #include "nsPresContext.h"
@@ -56,7 +55,10 @@ namespace dom {
 
 class ImageListener : public MediaDocumentStreamListener {
  public:
-  NS_DECL_NSIREQUESTOBSERVER
+  // NS_DECL_NSIREQUESTOBSERVER
+  // We only implement OnStartRequest; OnStopRequest is
+  // implemented by MediaDocumentStreamListener
+  NS_IMETHOD OnStartRequest(nsIRequest* aRequest) override;
 
   explicit ImageListener(ImageDocument* aDocument);
   virtual ~ImageListener();
@@ -65,7 +67,7 @@ class ImageListener : public MediaDocumentStreamListener {
 ImageListener::ImageListener(ImageDocument* aDocument)
     : MediaDocumentStreamListener(aDocument) {}
 
-ImageListener::~ImageListener() {}
+ImageListener::~ImageListener() = default;
 
 NS_IMETHODIMP
 ImageListener::OnStartRequest(nsIRequest* request) {
@@ -127,15 +129,6 @@ ImageListener::OnStartRequest(nsIRequest* request) {
   return MediaDocumentStreamListener::OnStartRequest(request);
 }
 
-NS_IMETHODIMP
-ImageListener::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
-  ImageDocument* imgDoc = static_cast<ImageDocument*>(mDocument.get());
-  nsContentUtils::DispatchChromeEvent(imgDoc, ToSupports(imgDoc),
-                                      NS_LITERAL_STRING("ImageContentLoaded"),
-                                      CanBubble::eYes, Cancelable::eYes);
-  return MediaDocumentStreamListener::OnStopRequest(aRequest, aStatus);
-}
-
 ImageDocument::ImageDocument()
     : MediaDocument(),
       mVisibleWidth(0.0),
@@ -160,7 +153,7 @@ ImageDocument::ImageDocument()
 {
 }
 
-ImageDocument::~ImageDocument() {}
+ImageDocument::~ImageDocument() = default;
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ImageDocument, MediaDocument, mImageContent)
 
@@ -577,13 +570,13 @@ nsresult ImageDocument::OnLoadComplete(imgIRequest* aRequest,
   UpdateTitleAndCharset();
 
   // mImageContent can be null if the document is already destroyed
-  if (NS_FAILED(aStatus) && mStringBundle && mImageContent) {
+  if (NS_FAILED(aStatus) && mImageContent) {
     nsAutoCString src;
     mDocumentURI->GetSpec(src);
     AutoTArray<nsString, 1> formatString;
     CopyUTF8toUTF16(src, *formatString.AppendElement());
     nsAutoString errorMsg;
-    mStringBundle->FormatStringFromName("InvalidImage", formatString, errorMsg);
+    FormatStringFromName("InvalidImage", formatString, errorMsg);
 
     mImageContent->SetAttr(kNameSpaceID_None, nsGkAtoms::alt, errorMsg, false);
   }
@@ -786,7 +779,7 @@ void ImageDocument::UpdateTitleAndCharset() {
     AutoTArray<nsString, 1> formatString;
     formatString.AppendElement()->AppendInt(NSToCoordFloor(GetRatio() * 100));
 
-    mStringBundle->FormatStringFromName("ScaledImage", formatString, status);
+    FormatStringFromName("ScaledImage", formatString, status);
   }
 
   static const char* const formatNames[4] = {

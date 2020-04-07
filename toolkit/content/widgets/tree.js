@@ -211,9 +211,8 @@
           tree.stopEditing(true);
           var menuitem = this.querySelector('[anonid="menuitem"]');
           if (event.originalTarget == menuitem) {
-            tree.columns.restoreNaturalOrder();
-            this.removeAttribute("ordinal");
-            tree._ensureColumnOrder();
+            this.style.MozBoxOrdinalGroup = "";
+            tree._ensureColumnOrder(tree.NATURAL_ORDER);
           } else {
             var colindex = event.originalTarget.getAttribute("colindex");
             var column = tree.columns[colindex];
@@ -376,15 +375,19 @@
       this.textContent = "";
       this.appendChild(this.content);
       this.initializeAttributeInheritance();
+      if (this.hasAttribute("ordinal")) {
+        this.style.MozBoxOrdinalGroup = this.getAttribute("ordinal");
+      }
     }
 
     set ordinal(val) {
+      this.style.MozBoxOrdinalGroup = val;
       this.setAttribute("ordinal", val);
       return val;
     }
 
     get ordinal() {
-      var val = this.getAttribute("ordinal");
+      var val = this.style.MozBoxOrdinalGroup;
       if (val == "") {
         return "1";
       }
@@ -589,6 +592,12 @@
   ) {
     constructor() {
       super();
+
+      // These enumerated constants are used as the first argument to
+      // _ensureColumnOrder to specify what column ordering should be used.
+      this.CURRENT_ORDER = 0;
+      this.NATURAL_ORDER = 1; // The original order, which is the DOM ordering
+
       this.attachShadow({ mode: "open" });
       let fragment = MozXULElement.parseXULToFragment(`
         <html:link rel="stylesheet" href="chrome://global/content/widgets.css" />
@@ -602,9 +611,7 @@
                        class="hidevscroll-scrollbar scrollbar-topmost"
                        ></scrollbar>
           </hbox>
-          <box class="tree-input-wrapper" left="0" top="0" hidden="true">
-            <html:input class="tree-input" type="text"/>
-          </box>
+          <html:input class="tree-input" type="text" hidden="true"/>
         </stack>
         <hbox class="hidehscroll-box">
           <scrollbar orient="horizontal" flex="1" increment="16" class="scrollbar-topmost" ></scrollbar>
@@ -1116,27 +1123,36 @@
       return this.getAttribute("_selectDelay") || 50;
     }
 
-    _ensureColumnOrder() {
+    // The first argument (order) can be either one of these constants:
+    //   this.CURRENT_ORDER
+    //   this.NATURAL_ORDER
+    _ensureColumnOrder(order = this.CURRENT_ORDER) {
       if (this.columns) {
         // update the ordinal position of each column to assure that it is
         // an odd number and 2 positions above its next sibling
         var cols = [];
 
-        for (
-          let col = this.columns.getFirstColumn();
-          col;
-          col = col.getNext()
-        ) {
-          cols.push(col.element);
+        if (order == this.CURRENT_ORDER) {
+          for (
+            let col = this.columns.getFirstColumn();
+            col;
+            col = col.getNext()
+          ) {
+            cols.push(col.element);
+          }
+        } else {
+          // order == this.NATURAL_ORDER
+          cols = this.getElementsByTagName("treecol");
         }
+
         for (let i = 0; i < cols.length; ++i) {
-          cols[i].setAttribute("ordinal", i * 2 + 1);
+          cols[i].ordinal = i * 2 + 1;
         }
         // update the ordinal positions of splitters to even numbers, so that
         // they are in between columns
         var splitters = this.getElementsByTagName("splitter");
         for (let i = 0; i < splitters.length; ++i) {
-          splitters[i].setAttribute("ordinal", (i + 1) * 2);
+          splitters[i].style.MozBoxOrdinalGroup = (i + 1) * 2;
         }
       }
     }
@@ -1304,11 +1320,6 @@
 
       var input = this.inputField;
 
-      // XUL positioning doesn't work with HTML elements and CSS absolute
-      // positioning doesn't work well with XUL elements, which is why we need
-      // this wrapper
-      var inputWrapper = this.shadowRoot.querySelector(".tree-input-wrapper");
-
       this.ensureCellIsVisible(row, column);
 
       // Get the coordinates of the text inside the cell.
@@ -1318,9 +1329,9 @@
       var cellRect = this.getCoordsForCellItem(row, column, "cell");
 
       // Calculate the top offset of the textbox.
-      var style = window.getComputedStyle(inputWrapper);
+      var style = window.getComputedStyle(input);
       var topadj = parseInt(style.borderTopWidth) + parseInt(style.paddingTop);
-      inputWrapper.top = textRect.y - topadj;
+      input.style.top = `${textRect.y - topadj}px`;
 
       // The leftside of the textbox is aligned to the left side of the text
       // in LTR mode, and left side of the cell in RTL mode.
@@ -1333,14 +1344,13 @@
         widthdiff = textRect.x - cellRect.x;
       }
 
-      inputWrapper.left = left;
-      inputWrapper.height =
-        textRect.height +
+      input.style.left = `${left}px`;
+      input.style.height = `${textRect.height +
         topadj +
         parseInt(style.borderBottomWidth) +
-        parseInt(style.paddingBottom);
-      inputWrapper.width = cellRect.width - widthdiff;
-      inputWrapper.hidden = false;
+        parseInt(style.paddingBottom)}px`;
+      input.style.width = `${cellRect.width - widthdiff}px`;
+      input.hidden = false;
 
       input.value = this.view.getCellText(row, column);
 
@@ -1371,8 +1381,7 @@
         var value = input.value;
         this.view.setCellText(editingRow, editingColumn, value);
       }
-      var inputWrapper = this.shadowRoot.querySelector(".tree-input-wrapper");
-      inputWrapper.hidden = true;
+      input.hidden = true;
       input.value = "";
       this.removeAttribute("editing");
     }

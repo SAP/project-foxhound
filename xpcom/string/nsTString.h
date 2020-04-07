@@ -71,6 +71,9 @@ class nsTString : public nsTSubstring<T> {
     this->Assign(aData, aLength);
   }
 
+  explicit nsTString(mozilla::Span<const char_type> aData)
+      : nsTString(aData.Elements(), aData.Length()) {}
+
 #if defined(MOZ_USE_CHAR16_WRAPPER)
   template <typename Q = T, typename EnableIfChar16 = mozilla::Char16OnlyT<Q>>
   explicit nsTString(char16ptr_t aStr, size_type aLength = size_type(-1))
@@ -277,35 +280,6 @@ class nsTString : public nsTSubstring<T> {
   int32_t RFindCharInSet(const self_type& aString, int32_t aOffset = -1) const {
     return RFindCharInSet(aString.get(), aOffset);
   }
-
-  /**
-   * Compares a given string to this string.
-   *
-   * @param   aString is the string to be compared
-   * @param   aIgnoreCase tells us how to treat case
-   * @param   aCount tells us how many chars to compare
-   * @return  -1,0,1
-   */
-  template <typename Q = T, typename EnableIfChar = mozilla::CharOnlyT<Q>>
-  int32_t Compare(const char_type* aString, bool aIgnoreCase = false,
-                  int32_t aCount = -1) const;
-
-  /**
-   * Equality check between given string and this string.
-   *
-   * @param   aString is the string to check
-   * @param   aIgnoreCase tells us how to treat case
-   * @param   aCount tells us how many chars to compare
-   * @return  boolean
-   */
-  template <typename Q = T, typename EnableIfChar = mozilla::CharOnlyT<Q>>
-  bool EqualsIgnoreCase(const char_type* aString, int32_t aCount = -1) const {
-    return Compare(aString, true, aCount) == 0;
-  }
-
-  template <typename Q = T, typename EnableIfChar16 = mozilla::Char16OnlyT<Q>>
-  bool EqualsIgnoreCase(const incompatible_char_type* aString,
-                        int32_t aCount = -1) const;
 
   /**
    * Perform string to double-precision float conversion.
@@ -619,7 +593,7 @@ class MOZ_NON_MEMMOVABLE nsTAutoStringN : public nsTString<T> {
  protected:
   friend class nsTSubstring<T>;
 
-  size_type mInlineCapacity;
+  const size_type mInlineCapacity;
 
  private:
   char_type mStorage[N];

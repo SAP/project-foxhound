@@ -12,7 +12,6 @@
 #include "nsUnknownDecoder.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsMimeTypes.h"
-#include "nsIHttpChannel.h"
 #include "nsIChannelEventSink.h"
 #include "nsIStreamConverterService.h"
 #include "nsChannelClassifier.h"
@@ -23,6 +22,7 @@
 #include "LoadInfo.h"
 #include "nsServiceManagerUtils.h"
 #include "nsRedirectHistoryEntry.h"
+#include "mozilla/BasePrincipal.h"
 
 using namespace mozilla;
 
@@ -64,7 +64,8 @@ nsBaseChannel::nsBaseChannel()
       mStatus(NS_OK),
       mContentDispositionHint(UINT32_MAX),
       mContentLength(-1),
-      mWasOpened(false) {
+      mWasOpened(false),
+      mCanceled(false) {
   mContentType.AssignLiteral(UNKNOWN_CONTENT_TYPE);
 }
 
@@ -137,11 +138,8 @@ nsresult nsBaseChannel::Redirect(nsIChannel* newChannel, uint32_t redirectFlags,
     }
   }
 
-  nsCOMPtr<nsIWritablePropertyBag> bag = ::do_QueryInterface(newChannel);
-  if (bag) {
-    for (auto iter = mPropertyHash.Iter(); !iter.Done(); iter.Next()) {
-      bag->SetProperty(iter.Key(), iter.UserData());
-    }
+  if (nsCOMPtr<nsIWritablePropertyBag> bag = ::do_QueryInterface(newChannel)) {
+    nsHashPropertyBag::CopyFrom(bag, static_cast<nsIPropertyBag2*>(this));
   }
 
   // Notify consumer, giving chance to cancel redirect.
@@ -353,7 +351,6 @@ NS_IMPL_RELEASE(nsBaseChannel)
 NS_INTERFACE_MAP_BEGIN(nsBaseChannel)
   NS_INTERFACE_MAP_ENTRY(nsIRequest)
   NS_INTERFACE_MAP_ENTRY(nsIChannel)
-  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIIdentChannel, mChannelId.isSome())
   NS_INTERFACE_MAP_ENTRY(nsIThreadRetargetableRequest)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY(nsITransportEventSink)
@@ -395,11 +392,16 @@ nsBaseChannel::GetStatus(nsresult* status) {
 NS_IMETHODIMP
 nsBaseChannel::Cancel(nsresult status) {
   // Ignore redundant cancelation
-  if (NS_FAILED(mStatus)) return NS_OK;
+  if (mCanceled) {
+    return NS_OK;
+  }
 
+  mCanceled = true;
   mStatus = status;
 
-  if (mRequest) mRequest->Cancel(status);
+  if (mRequest) {
+    mRequest->Cancel(status);
+  }
 
   return NS_OK;
 }
@@ -431,8 +433,19 @@ nsBaseChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
 }
 
 NS_IMETHODIMP
+nsBaseChannel::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return GetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
+nsBaseChannel::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return SetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
 nsBaseChannel::GetLoadGroup(nsILoadGroup** aLoadGroup) {
-  NS_IF_ADDREF(*aLoadGroup = mLoadGroup);
+  nsCOMPtr<nsILoadGroup> loadGroup(mLoadGroup);
+  loadGroup.forget(aLoadGroup);
   return NS_OK;
 }
 
@@ -467,13 +480,15 @@ nsBaseChannel::SetOriginalURI(nsIURI* aURI) {
 
 NS_IMETHODIMP
 nsBaseChannel::GetURI(nsIURI** aURI) {
-  NS_IF_ADDREF(*aURI = mURI);
+  nsCOMPtr<nsIURI> uri(mURI);
+  uri.forget(aURI);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsBaseChannel::GetOwner(nsISupports** aOwner) {
-  NS_IF_ADDREF(*aOwner = mOwner);
+  nsCOMPtr<nsISupports> owner(mOwner);
+  owner.forget(aOwner);
   return NS_OK;
 }
 
@@ -495,7 +510,8 @@ nsBaseChannel::SetLoadInfo(nsILoadInfo* aLoadInfo) {
 
 NS_IMETHODIMP
 nsBaseChannel::GetLoadInfo(nsILoadInfo** aLoadInfo) {
-  NS_IF_ADDREF(*aLoadInfo = mLoadInfo);
+  nsCOMPtr<nsILoadInfo> loadInfo(mLoadInfo);
+  loadInfo.forget(aLoadInfo);
   return NS_OK;
 }
 
@@ -506,7 +522,8 @@ nsBaseChannel::GetIsDocument(bool* aIsDocument) {
 
 NS_IMETHODIMP
 nsBaseChannel::GetNotificationCallbacks(nsIInterfaceRequestor** aCallbacks) {
-  NS_IF_ADDREF(*aCallbacks = mCallbacks);
+  nsCOMPtr<nsIInterfaceRequestor> callbacks(mCallbacks);
+  callbacks.forget(aCallbacks);
   return NS_OK;
 }
 
@@ -524,7 +541,8 @@ nsBaseChannel::SetNotificationCallbacks(nsIInterfaceRequestor* aCallbacks) {
 
 NS_IMETHODIMP
 nsBaseChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
-  NS_IF_ADDREF(*aSecurityInfo = mSecurityInfo);
+  nsCOMPtr<nsISupports> securityInfo(mSecurityInfo);
+  securityInfo.forget(aSecurityInfo);
   return NS_OK;
 }
 
@@ -585,7 +603,8 @@ nsBaseChannel::GetContentDispositionFilename(
 NS_IMETHODIMP
 nsBaseChannel::SetContentDispositionFilename(
     const nsAString& aContentDispositionFilename) {
-  mContentDispositionFilename = new nsString(aContentDispositionFilename);
+  mContentDispositionFilename =
+      MakeUnique<nsString>(aContentDispositionFilename);
   return NS_OK;
 }
 
@@ -652,7 +671,8 @@ nsBaseChannel::AsyncOpen(nsIStreamListener* aListener) {
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
-           nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
+           mLoadInfo->LoadingPrincipal() &&
+           mLoadInfo->LoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
 
   NS_ENSURE_TRUE(mURI, NS_ERROR_NOT_INITIALIZED);
@@ -705,27 +725,6 @@ nsBaseChannel::AsyncOpen(nsIStreamListener* aListener) {
 
   ClassifyURI();
 
-  return NS_OK;
-}
-
-//-----------------------------------------------------------------------------
-// nsBaseChannel::nsIIdentChannel
-
-NS_IMETHODIMP
-nsBaseChannel::GetChannelId(uint64_t* aChannelId) {
-  if (!mChannelId) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-  *aChannelId = *mChannelId;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsBaseChannel::SetChannelId(uint64_t aChannelId) {
-  if (!mChannelId) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-  *mChannelId = aChannelId;
   return NS_OK;
 }
 
@@ -958,6 +957,11 @@ nsBaseChannel::CheckListenerChain() {
   }
 
   return listener->CheckListenerChain();
+}
+
+NS_IMETHODIMP nsBaseChannel::GetCanceled(bool* aCanceled) {
+  *aCanceled = mCanceled;
+  return NS_OK;
 }
 
 void nsBaseChannel::SetupNeckoTarget() {

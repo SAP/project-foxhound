@@ -12,7 +12,6 @@
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/TimeStamp.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "mozilla/Variant.h"
 #include "mozilla/Vector.h"
@@ -210,9 +209,19 @@ class ScriptLoadRequest
                          : ScriptText<Utf8Unit>().clearAndFree();
   }
 
-  enum class ScriptMode : uint8_t { eBlocking, eDeferred, eAsync };
+  enum class ScriptMode : uint8_t {
+    eBlocking,
+    eDeferred,
+    eAsync,
+    eLinkPreload  // this is a load initiated by <link rel="preload"
+                  // as="script"> tag
+  };
 
-  void SetScriptMode(bool aDeferAttr, bool aAsyncAttr);
+  void SetScriptMode(bool aDeferAttr, bool aAsyncAttr, bool aLinkPreload);
+
+  bool IsLinkPreloadScript() const {
+    return mScriptMode == ScriptMode::eLinkPreload;
+  }
 
   bool IsBlockingScript() const { return mScriptMode == ScriptMode::eBlocking; }
 
@@ -332,11 +341,6 @@ class ScriptLoadRequest
   // For preload requests, we defer reporting errors to the console until the
   // request is used.
   nsresult mUnreportedPreloadError;
-
-  // Measure the duration of streamed bytes and the duration of parsing, to
-  // determine the maximal gain of streaming parsing using the same parsing
-  // speed.
-  TimeDuration mStreamingTime;
 };
 
 class ScriptLoadRequestList : private mozilla::LinkedList<ScriptLoadRequest> {

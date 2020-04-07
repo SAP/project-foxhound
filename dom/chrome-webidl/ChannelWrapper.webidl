@@ -95,9 +95,12 @@ interface ChannelWrapper : EventTarget {
 
   /**
    * Cancels the request with the given nsresult status code.
+   *
+   * The optional reason parameter should be one of the BLOCKING_REASON
+   * constants from nsILoadInfo.idl
    */
   [Throws]
-  void cancel(unsigned long result);
+  void cancel(unsigned long result, optional unsigned long reason = 0);
 
   /**
    * Redirects the wrapped HTTP channel to the given URI. For other channel
@@ -410,6 +413,27 @@ interface ChannelWrapper : EventTarget {
    */
   [Cached, Frozen, GetterThrows, Pure]
   readonly attribute MozUrlClassification? urlClassification;
+
+  /**
+   * Indicates if this response and its content window hierarchy is third
+   * party.
+   */
+  [Cached, Constant]
+  readonly attribute boolean thirdParty;
+
+  /**
+   * The current bytes sent of the request. This will be 0 if a request has not
+   * sent yet, or if the request is not an HTTP request.
+   */
+  [Cached, Pure]
+  readonly attribute unsigned long long requestSize;
+
+  /**
+   * The current bytes received of the response. This will be 0 if a response
+   * has not recieved yet, or if the request is not an HTTP response.
+   */
+  [Cached, Pure]
+  readonly attribute unsigned long long responseSize;
 };
 
 /**

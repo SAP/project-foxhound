@@ -49,33 +49,39 @@ async refcounted protocol PWindowGlobal
 child:
   async __delete__();
 
-  async MakeFrameLocal(BrowsingContext aFrameContext, uint64_t aSwitchId);
-  async MakeFrameRemote(BrowsingContext aFrameContext,
+  async MakeFrameLocal(MaybeDiscardedBrowsingContext aFrameContext,
+                       uint64_t aSwitchId);
+  async MakeFrameRemote(MaybeDiscardedBrowsingContext aFrameContext,
                         ManagedEndpoint<PBrowserBridgeChild> aEndpoint,
                         TabId aTabId) returns (bool success);
 
-  async DrawSnapshot(IntRect? aRect, float aScale, nscolor aBackgroundColor, uint32_t aFlags) returns (PaintFragment retval);
+  async DrawSnapshot(IntRect? aRect, float aScale, nscolor aBackgroundColor,
+                     uint32_t aFlags) returns (PaintFragment retval);
 
   /**
    * Returns the serialized security info associated with this window.
    */
   async GetSecurityInfo() returns(nsCString? serializedSecInfo);
 
-  async LoadURIInChild(nsDocShellLoadState aLoadState, bool aSetNavigating);
-
-  async DisplayLoadError(nsString aURI);
-
 both:
-  async RawMessage(JSWindowActorMessageMeta aMetadata, ClonedMessageData aData);
+  async RawMessage(JSWindowActorMessageMeta aMetadata, ClonedMessageData aData,
+                   ClonedMessageData aStack);
 
 parent:
   // Load the given URI load state into the current owner process of the given
   // BrowsingContext. aTargetBC must be in the same BrowsingContextGroup as this
   // window global.
-  async LoadURI(BrowsingContext aTargetBC, nsDocShellLoadState aLoadState, bool aSetNavigating);
+  async LoadURI(MaybeDiscardedBrowsingContext aTargetBC,
+                nsDocShellLoadState aLoadState, bool aSetNavigating);
+
+  async InternalLoad(MaybeDiscardedBrowsingContext aTargetBC,
+                     nsDocShellLoadState aLoadState);
 
   /// Update the URI of the document in this WindowGlobal.
   async UpdateDocumentURI(nsIURI aUri);
+
+  // Update the title of the document in this WindowGlobal.
+  async UpdateDocumentTitle(nsString aTitle);
 
   /// Send down initial document bit to the parent.
   async SetIsInitialDocument(bool aIsInitialDocument);
@@ -84,11 +90,11 @@ parent:
   /// listeners.
   async SetHasBeforeUnload(bool aHasBeforeUnload);
 
-  /// Notify the parent that this PWindowGlobal is now the current global.
-  async BecomeCurrentWindowGlobal();
-
   // Attempts to perform a "Web Share".
   async Share(IPCWebShareData aData) returns (nsresult rv);
+
+  // Get content blocking events from the parent process.
+  async GetContentBlockingEvents() returns (uint32_t events);
 
   async Destroy();
 };

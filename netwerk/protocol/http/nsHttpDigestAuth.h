@@ -7,13 +7,12 @@
 #ifndef nsDigestAuth_h__
 #define nsDigestAuth_h__
 
+#include "nsICryptoHash.h"
 #include "nsIHttpAuthenticator.h"
 #include "nsStringFwd.h"
 #include "nsCOMPtr.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/StaticPtr.h"
-
-class nsICryptoHash;
 
 namespace mozilla {
 namespace net {

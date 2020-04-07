@@ -29,6 +29,7 @@ const CSP_REPORT_MSG =
   "(\u201cscript-src\u201d). A CSP report is being sent.";
 
 add_task(async function() {
+  await pushPref("devtools.target-switching.enabled", true);
   const hud = await openNewTabAndConsole(TEST_URI);
 
   const onCspViolationMessage = waitForMessage(
@@ -43,7 +44,7 @@ add_task(async function() {
   );
 
   info("Load a page with CSP warnings.");
-  loadDocument(TEST_VIOLATION);
+  await navigateTo(TEST_VIOLATION);
 
   await onCspViolationMessage;
   await onCspReportMessage;
@@ -52,5 +53,5 @@ add_task(async function() {
     "Confirmed that CSP and CSP-Report-Only log different messages to console"
   );
 
-  hud.ui.clearOutput(true);
+  await clearOutput(hud);
 });

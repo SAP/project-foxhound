@@ -38,12 +38,12 @@ add_task(async function() {
       expected: {
         columns: ["(index)", "Values"],
         rows: [
-          ["0", "undefined"],
+          ["0", ""],
           ["1", "apples"],
-          ["2", "undefined"],
+          ["2", ""],
           ["3", "oranges"],
-          ["4", "undefined"],
-          ["5", "undefined"],
+          ["4", ""],
+          ["5", ""],
           ["6", "bananas"],
         ],
       },
@@ -54,7 +54,7 @@ add_task(async function() {
       input: [[1, , 2]],
       expected: {
         columns: ["(index)", "0", "1", "2"],
-        rows: [["0", "1", "undefined", "2"]],
+        rows: [["0", "1", "", "2"]],
       },
     },
     {
@@ -123,6 +123,96 @@ add_task(async function() {
       },
     },
     {
+      info: "Testing when data argument is a Int8Array",
+      input: new Int8Array([1, 2, 3, 4]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1"], ["1", "2"], ["2", "3"], ["3", "4"]],
+      },
+    },
+    {
+      info: "Testing when data argument is a Uint8Array",
+      input: new Uint8Array([1, 2, 3, 4]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1"], ["1", "2"], ["2", "3"], ["3", "4"]],
+      },
+    },
+    {
+      info: "Testing when data argument is a Int16Array",
+      input: new Int16Array([1, 2, 3, 4]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1"], ["1", "2"], ["2", "3"], ["3", "4"]],
+      },
+    },
+    {
+      info: "Testing when data argument is a Uint16Array",
+      input: new Uint16Array([1, 2, 3, 4]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1"], ["1", "2"], ["2", "3"], ["3", "4"]],
+      },
+    },
+    {
+      info: "Testing when data argument is a Int32Array",
+      input: new Int32Array([1, 2, 3, 4]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1"], ["1", "2"], ["2", "3"], ["3", "4"]],
+      },
+    },
+    {
+      info: "Testing when data argument is a Uint32Array",
+      input: new Uint32Array([1, 2, 3, 4]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1"], ["1", "2"], ["2", "3"], ["3", "4"]],
+      },
+    },
+    {
+      info: "Testing when data argument is a Float32Array",
+      input: new Float32Array([1, 2, 3, 4]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1"], ["1", "2"], ["2", "3"], ["3", "4"]],
+      },
+    },
+    {
+      info: "Testing when data argument is a Float64Array",
+      input: new Float64Array([1, 2, 3, 4]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1"], ["1", "2"], ["2", "3"], ["3", "4"]],
+      },
+    },
+    {
+      info: "Testing when data argument is a Uint8ClampedArray",
+      input: new Uint8ClampedArray([1, 2, 3, 4]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1"], ["1", "2"], ["2", "3"], ["3", "4"]],
+      },
+    },
+    {
+      info: "Testing when data argument is a BigInt64Array",
+      // eslint-disable-next-line no-undef
+      input: new BigInt64Array([1n, 2n, 3n, 4n]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1n"], ["1", "2n"], ["2", "3n"], ["3", "4n"]],
+      },
+    },
+    {
+      info: "Testing when data argument is a BigUint64Array",
+      // eslint-disable-next-line no-undef
+      input: new BigUint64Array([1n, 2n, 3n, 4n]),
+      expected: {
+        columns: ["(index)", "Values"],
+        rows: [["0", "1n"], ["1", "2n"], ["2", "3n"], ["3", "4n"]],
+      },
+    },
+    {
       info: "Testing restricting the columns displayed",
       input: [new Person("Sam", "Wright"), new Person("Elena", "Bartz")],
       headers: ["firstName"],
@@ -140,8 +230,8 @@ add_task(async function() {
       expected: {
         columns: ["(index)", "a", "b", "c", "d", "e"],
         rows: [
-          ["0", "null", "false", "undefined", "0", "undefined"],
-          ["1", "undefined", "null", "false", "undefined", "0"],
+          ["0", "null", "false", "undefined", "0", ""],
+          ["1", "", "null", "false", "undefined", "0"],
         ],
       },
     },
@@ -163,13 +253,81 @@ add_task(async function() {
         overflow: true,
       },
     },
+    {
+      info: "Testing table with expandable objects",
+      input: [{ a: { b: 34 } }],
+      expected: {
+        columns: ["(index)", "a"],
+        rows: [["0", "Object { b: 34 }"]],
+      },
+      additionalTest: async function(node) {
+        info("Check that object in a cell can be expanded");
+        const objectNode = node.querySelector(".tree .node");
+        objectNode.click();
+        await waitFor(() => node.querySelectorAll(".tree .node").length === 3);
+        const nodes = node.querySelectorAll(".tree .node");
+        ok(nodes[1].textContent.includes("b: 34"));
+        ok(nodes[2].textContent.includes("<prototype>"));
+      },
+    },
+    {
+      info: "Testing max columns",
+      input: [
+        Array.from({ length: 30 }).reduce((acc, _, i) => {
+          return {
+            ...acc,
+            ["item" + i]: i,
+          };
+        }, {}),
+      ],
+      expected: {
+        // We show 21 columns at most
+        columns: [
+          "(index)",
+          ...Array.from({ length: 20 }, (_, i) => `item${i}`),
+        ],
+        rows: [[0, ...Array.from({ length: 20 }, (_, i) => i)]],
+      },
+    },
+    {
+      info: "Testing performance entries",
+      input: "PERFORMANCE_ENTRIES",
+      headers: [
+        "name",
+        "entryType",
+        "initiatorType",
+        "connectStart",
+        "connectEnd",
+        "fetchStart",
+      ],
+      expected: {
+        columns: [
+          "(index)",
+          "initiatorType",
+          "fetchStart",
+          "connectStart",
+          "connectEnd",
+          "name",
+          "entryType",
+        ],
+        rows: [[0, "navigation", /\d+/, /\d+/, /\d+/, TEST_URI, "navigation"]],
+      },
+    },
   ];
 
-  await ContentTask.spawn(gBrowser.selectedBrowser, testCases, function(tests) {
-    tests.forEach(test => {
-      content.wrappedJSObject.doConsoleTable(test.input, test.headers);
-    });
-  });
+  await SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [testCases.map(({ input, headers }) => ({ input, headers }))],
+    function(tests) {
+      tests.forEach(test => {
+        let { input, headers } = test;
+        if (input === "PERFORMANCE_ENTRIES") {
+          input = content.wrappedJSObject.performance.getEntries();
+        }
+        content.wrappedJSObject.doConsoleTable(input, headers);
+      });
+    }
+  );
   const nodes = [];
   for (const testCase of testCases) {
     const node = await waitFor(() =>
@@ -185,9 +343,13 @@ add_task(async function() {
     testCases.length,
     "console has the expected number of consoleTable items"
   );
-  testCases.forEach((testCase, index) => testItem(testCase, nodes[index]));
+
+  for (const [index, testCase] of testCases.entries()) {
+    await testItem(testCase, nodes[index]);
+  }
 });
-function testItem(testCase, node) {
+
+async function testItem(testCase, node) {
   info(testCase.info);
 
   const columns = Array.from(node.querySelectorAll("[role=columnheader]"));
@@ -195,30 +357,61 @@ function testItem(testCase, node) {
   const cells = Array.from(node.querySelectorAll("[role=gridcell]"));
 
   is(
-    JSON.stringify(testCase.expected.columns),
     JSON.stringify(columns.map(column => column.textContent)),
-    "table has the expected columns"
+    JSON.stringify(testCase.expected.columns),
+    `${testCase.info} | table has the expected columns`
   );
 
   // We don't really have rows since we are using a CSS grid in order to have a sticky
   // header on the table. So we check the "rows" by dividing the number of cells by the
   // number of columns.
   is(
-    testCase.expected.rows.length,
     cells.length / columnsNumber,
-    "table has the expected number of rows"
+    testCase.expected.rows.length,
+    `${testCase.info} | table has the expected number of rows`
   );
 
   testCase.expected.rows.forEach((expectedRow, rowIndex) => {
     const startIndex = rowIndex * columnsNumber;
     // Slicing the cells array so we can get the current "row".
-    const rowCells = cells.slice(startIndex, startIndex + columnsNumber);
-    is(rowCells.map(x => x.textContent).join(" | "), expectedRow.join(" | "));
+    const rowCells = cells
+      .slice(startIndex, startIndex + columnsNumber)
+      .map(x => x.textContent);
+
+    const isRegex = x => x && x.constructor.name === "RegExp";
+    const hasRegExp = expectedRow.find(isRegex);
+    if (hasRegExp) {
+      is(
+        rowCells.length,
+        expectedRow.length,
+        `${testCase.info} | row ${rowIndex} has the expected number of cell`
+      );
+      rowCells.forEach((cell, i) => {
+        const expected = expectedRow[i];
+        const info = `${testCase.info} | row ${rowIndex} cell ${i} has the expected content`;
+
+        if (isRegex(expected)) {
+          ok(expected.test(cell), info);
+        } else {
+          is(cell, expected, info);
+        }
+      });
+    } else {
+      is(
+        rowCells.join(" | "),
+        expectedRow.join(" | "),
+        `${testCase.info} | row has the expected content`
+      );
+    }
   });
 
   if (testCase.expected.overflow) {
     ok(node.scrollHeight > node.clientHeight, "table overflows");
     ok(getComputedStyle(node).overflowY !== "hidden", "table can be scrolled");
+  }
+
+  if (typeof testCase.additionalTest === "function") {
+    await testCase.additionalTest(node);
   }
 }
 

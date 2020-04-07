@@ -3,6 +3,8 @@
 // This program is made available under an ISC-style license.  See the
 // accompanying file LICENSE for details
 
+#[cfg(target_os = "linux")]
+use audio_thread_priority::{promote_thread_to_real_time, RtPriorityThreadInfo};
 use audioipc;
 use audioipc::codec::LengthDelimitedCodec;
 use audioipc::frame::{framed, Framed};
@@ -30,8 +32,6 @@ use std::rc::Rc;
 use std::{panic, slice};
 use tokio::reactor;
 use tokio::runtime::current_thread;
-#[cfg(target_os = "linux")]
-use audio_thread_priority::{RtPriorityThreadInfo, promote_thread_to_real_time};
 
 use crate::errors::*;
 
@@ -152,8 +152,7 @@ struct CubebContextState {
     manager: CubebDeviceCollectionManager,
 }
 
-type ContextKey = RefCell<Option<CubebContextState>>;
-thread_local!(static CONTEXT_KEY:ContextKey = RefCell::new(None));
+thread_local!(static CONTEXT_KEY: RefCell<Option<CubebContextState>> = RefCell::new(None));
 
 fn with_local_context<T, F>(f: F) -> T
 where
@@ -244,7 +243,10 @@ impl ServerStreamCallbacks {
             }
             _ => {
                 debug!("Unexpected message {:?} during data_callback", r);
-                -1
+                // TODO: Return a CUBEB_ERROR result here once
+                // https://github.com/kinetiknz/cubeb/issues/553 is
+                // fixed.
+                0
             }
         }
     }
@@ -332,6 +334,18 @@ impl rpc::Server for CubebServer {
     }
 }
 
+// Debugging for BMO 1594216/1612044.
+macro_rules! try_stream {
+    ($self:expr, $stm_tok:expr) => {
+        if $self.streams.contains($stm_tok) {
+            &mut $self.streams[$stm_tok]
+        } else {
+            error!("{}:{}:{} - Stream({}): invalid token", file!(), line!(), column!(), $stm_tok);
+            return error(cubeb::Error::invalid_parameter());
+        }
+    };
+}
+
 impl CubebServer {
     pub fn new(handle: current_thread::Handle) -> Self {
         CubebServer {
@@ -405,54 +419,60 @@ impl CubebServer {
                 .unwrap_or_else(|_| error(cubeb::Error::error())),
 
             ServerMessage::StreamDestroy(stm_tok) => {
-                self.streams.remove(stm_tok);
+                if self.streams.contains(stm_tok) {
+                    debug!("Unregistering stream {:?}", stm_tok);
+                    self.streams.remove(stm_tok);
+                } else {
+                    // Debugging for BMO 1594216/1612044.
+                    error!("StreamDestroy({}): invalid token", stm_tok);
+                    return error(cubeb::Error::invalid_parameter());
+                }
                 ClientMessage::StreamDestroyed
             }
 
-            ServerMessage::StreamStart(stm_tok) => self.streams[stm_tok]
+            ServerMessage::StreamStart(stm_tok) => try_stream!(self, stm_tok)
                 .stream
                 .start()
                 .map(|_| ClientMessage::StreamStarted)
                 .unwrap_or_else(error),
 
-            ServerMessage::StreamStop(stm_tok) => self.streams[stm_tok]
+            ServerMessage::StreamStop(stm_tok) => try_stream!(self, stm_tok)
                 .stream
                 .stop()
                 .map(|_| ClientMessage::StreamStopped)
                 .unwrap_or_else(error),
 
-            ServerMessage::StreamResetDefaultDevice(stm_tok) => self.streams[stm_tok]
+            ServerMessage::StreamResetDefaultDevice(stm_tok) => try_stream!(self, stm_tok)
                 .stream
                 .reset_default_device()
                 .map(|_| ClientMessage::StreamDefaultDeviceReset)
                 .unwrap_or_else(error),
 
-            ServerMessage::StreamGetPosition(stm_tok) => self.streams[stm_tok]
+            ServerMessage::StreamGetPosition(stm_tok) => try_stream!(self, stm_tok)
                 .stream
                 .position()
                 .map(ClientMessage::StreamPosition)
                 .unwrap_or_else(error),
 
-            ServerMessage::StreamGetLatency(stm_tok) => self.streams[stm_tok]
+            ServerMessage::StreamGetLatency(stm_tok) => try_stream!(self, stm_tok)
                 .stream
                 .latency()
                 .map(ClientMessage::StreamLatency)
                 .unwrap_or_else(error),
 
-            ServerMessage::StreamSetVolume(stm_tok, volume) => self.streams[stm_tok]
+            ServerMessage::StreamSetVolume(stm_tok, volume) => try_stream!(self, stm_tok)
                 .stream
                 .set_volume(volume)
                 .map(|_| ClientMessage::StreamVolumeSet)
                 .unwrap_or_else(error),
 
-            ServerMessage::StreamGetCurrentDevice(stm_tok) => self.streams[stm_tok]
+            ServerMessage::StreamGetCurrentDevice(stm_tok) => try_stream!(self, stm_tok)
                 .stream
                 .current_device()
                 .map(|device| ClientMessage::StreamCurrentDevice(Device::from(device)))
                 .unwrap_or_else(error),
 
-            ServerMessage::StreamRegisterDeviceChangeCallback(stm_tok, enable) => self.streams
-                [stm_tok]
+            ServerMessage::StreamRegisterDeviceChangeCallback(stm_tok, enable) => try_stream!(self, stm_tok)
                 .stream
                 .register_device_changed_callback(if enable {
                     Some(device_change_cb_c)
@@ -463,8 +483,8 @@ impl CubebServer {
                 .unwrap_or_else(error),
 
             ServerMessage::ContextSetupDeviceCollectionCallback => {
-                if let Ok((stm1, stm2)) = MessageStream::anonymous_ipc_pair() {
-                    debug!("Created device collection RPC pair: {:?}-{:?}", stm1, stm2);
+                if let Ok((ipc_server, ipc_client)) = MessageStream::anonymous_ipc_pair() {
+                    debug!("Created device collection RPC pair: {:?}-{:?}", ipc_server, ipc_client);
 
                     // This code is currently running on the Client/Server RPC
                     // handling thread.  We need to move the registration of the
@@ -475,7 +495,7 @@ impl CubebServer {
                     self.handle
                         .spawn(futures::future::lazy(move || {
                             let handle = reactor::Handle::default();
-                            let stream = stm2.into_tokio_ipc(&handle).unwrap();
+                            let stream = ipc_server.into_tokio_ipc(&handle).unwrap();
                             let transport = framed(stream, Default::default());
                             let rpc = rpc::bind_client::<DeviceCollectionClient>(transport);
                             drop(tx.send(rpc));
@@ -494,7 +514,7 @@ impl CubebServer {
                         })));
                         let fds = RegisterDeviceCollectionChanged {
                             platform_handles: [
-                                PlatformHandle::from(stm1),
+                                PlatformHandle::from(ipc_client),
                                 PlatformHandle::from(dummy1),
                                 PlatformHandle::from(dummy2),
                             ],
@@ -512,15 +532,14 @@ impl CubebServer {
                 }
             }
 
-            ServerMessage::ContextRegisterDeviceCollectionChanged(device_type, enable) => {
-                self.process_register_device_collection_changed(
+            ServerMessage::ContextRegisterDeviceCollectionChanged(device_type, enable) => self
+                .process_register_device_collection_changed(
                     context,
                     manager,
                     cubeb::DeviceType::from_bits_truncate(device_type),
                     enable,
                 )
-                .unwrap_or_else(error)
-            },
+                .unwrap_or_else(error),
 
             #[cfg(target_os = "linux")]
             ServerMessage::PromoteThreadToRealTime(thread_info) => {
@@ -534,8 +553,7 @@ impl CubebServer {
                     }
                 }
                 ClientMessage::ThreadPromoted
-            },
-
+            }
         };
 
         trace!("process_msg: req={:?}, resp={:?}", msg, resp);
@@ -595,12 +613,13 @@ impl CubebServer {
         let input_frame_size = frame_size_in_bytes(params.input_stream_params.as_ref());
         let output_frame_size = frame_size_in_bytes(params.output_stream_params.as_ref());
 
-        let (stm1, stm2) = MessageStream::anonymous_ipc_pair()?;
-        debug!("Created callback pair: {:?}-{:?}", stm1, stm2);
-        let (input_shm, input_file) =
-            SharedMemWriter::new(&audioipc::get_shm_path("input"), audioipc::SHM_AREA_SIZE)?;
-        let (output_shm, output_file) =
-            SharedMemReader::new(&audioipc::get_shm_path("output"), audioipc::SHM_AREA_SIZE)?;
+        let (ipc_server, ipc_client) = MessageStream::anonymous_ipc_pair()?;
+        debug!("Created callback pair: {:?}-{:?}", ipc_server, ipc_client);
+        let mut shm_path = audioipc::get_shm_path();
+        shm_path.set_extension("input");
+        let (input_shm, input_file) = SharedMemWriter::new(&shm_path, audioipc::SHM_AREA_SIZE)?;
+        shm_path.set_extension("output");
+        let (output_shm, output_file) = SharedMemReader::new(&shm_path, audioipc::SHM_AREA_SIZE)?;
 
         // This code is currently running on the Client/Server RPC
         // handling thread.  We need to move the registration of the
@@ -611,7 +630,7 @@ impl CubebServer {
         self.handle
             .spawn(futures::future::lazy(move || {
                 let handle = reactor::Handle::default();
-                let stream = stm2.into_tokio_ipc(&handle).unwrap();
+                let stream = ipc_server.into_tokio_ipc(&handle).unwrap();
                 let transport = framed(stream, Default::default());
                 let rpc = rpc::bind_client::<CallbackClient>(transport);
                 drop(tx.send(rpc));
@@ -686,7 +705,7 @@ impl CubebServer {
                     Ok(ClientMessage::StreamCreated(StreamCreate {
                         token: key,
                         platform_handles: [
-                            PlatformHandle::from(stm1),
+                            PlatformHandle::from(ipc_client),
                             PlatformHandle::from(input_file),
                             PlatformHandle::from(output_file),
                         ],
@@ -722,6 +741,8 @@ unsafe extern "C" fn data_cb_c(
         };
         cbs.data_callback(input, output, nframes as isize) as c_long
     });
+    // TODO: Return a CUBEB_ERROR result here once
+    // https://github.com/kinetiknz/cubeb/issues/553 is fixed.
     ok.unwrap_or(0)
 }
 

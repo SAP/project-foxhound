@@ -16,15 +16,10 @@ WORKER_TYPES = {
     'releng-hardware/gecko-1-b-win2012-gamma': ('generic-worker', 'windows'),
     'invalid/invalid': ('invalid', None),
     'invalid/always-optimized': ('always-optimized', None),
-    'scriptworker-k8s/gecko-1-balrog': ('balrog', None),
-    'scriptworker-k8s/gecko-3-balrog': ('balrog', None),
-    'scriptworker-k8s/gecko-3-beetmover': ('beetmover', None),
     'scriptworker-prov-v1/pushapk-v1': ('push-apk', None),
     "scriptworker-prov-v1/signing-linux-v1": ('scriptworker-signing', None),
     "scriptworker-k8s/gecko-3-shipit": ('shipit', None),
     "scriptworker-k8s/gecko-1-shipit": ('shipit', None),
-    "scriptworker-k8s/gecko-3-tree": ('treescript', None),
-    "scriptworker-k8s/gecko-1-tree": ('treescript', None),
     'terraform-packet/gecko-t-linux': ('docker-worker', 'linux'),
     'releng-hardware/gecko-t-osx-1014': ('generic-worker', 'macosx'),
     'releng-hardware/gecko-t-osx-1014-power': ('generic-worker', 'macosx'),
@@ -32,7 +27,7 @@ WORKER_TYPES = {
 
 
 @memoize
-def _get(graph_config, alias, level):
+def _get(graph_config, alias, level, release_level):
     """Get the configuration for this worker_type alias: {provisioner,
     worker-type, implementation, os}"""
     level = str(level)
@@ -69,26 +64,23 @@ def _get(graph_config, alias, level):
     worker_config['worker-type'] = evaluate_keyed_by(
         worker_config['worker-type'],
         "worker-type alias {} field worker-type".format(alias),
-        {"level": level}).format(level=level, alias=alias)
+        {"level": level, 'release-level': release_level}).format(level=level, alias=alias)
 
     return worker_config
 
 
-@memoize
 def worker_type_implementation(graph_config, worker_type):
     """Get the worker implementation and OS for the given workerType, where the
     OS represents the host system, not the target OS, in the case of
     cross-compiles."""
-    worker_config = _get(graph_config, worker_type, '1')
+    worker_config = _get(graph_config, worker_type, '1', 'staging')
     return worker_config['implementation'], worker_config.get('os')
 
 
-@memoize
-def get_worker_type(graph_config, worker_type, level):
+def get_worker_type(graph_config, worker_type, level, release_level):
     """
     Get the worker type provisioner and worker-type, optionally evaluating
     aliases from the graph config.
     """
-    worker_config = _get(graph_config, worker_type, level)
-
+    worker_config = _get(graph_config, worker_type, level, release_level)
     return worker_config['provisioner'], worker_config['worker-type']

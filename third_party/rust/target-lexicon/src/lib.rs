@@ -15,12 +15,9 @@
         clippy::use_self
     )
 )]
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
-
-#[macro_use]
-extern crate failure_derive;
 
 mod host;
 mod parse_error;
@@ -31,7 +28,7 @@ mod triple;
 pub use self::host::HOST;
 pub use self::parse_error::ParseError;
 pub use self::targets::{
-    Aarch64Architecture, Architecture, ArmArchitecture, BinaryFormat, Environment, OperatingSystem,
-    Vendor,
+    Aarch64Architecture, Architecture, ArmArchitecture, BinaryFormat, CustomVendor, Environment,
+    OperatingSystem, Vendor,
 };
 pub use self::triple::{CallingConvention, Endianness, PointerWidth, Triple};

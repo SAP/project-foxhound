@@ -52,13 +52,7 @@ add_task(async function test_muxer() {
 
   let providerName = registerBasicTestProvider(matches);
   let context = createContext(undefined, { providers: [providerName] });
-  let controller = new UrlbarController({
-    browserWindow: {
-      location: {
-        href: AppConstants.BROWSER_CHROME_URL,
-      },
-    },
-  });
+  let controller = UrlbarTestUtils.newMockController();
   /**
    * A test muxer.
    */
@@ -115,15 +109,8 @@ add_task(async function test_preselectedHeuristic_singleProvider() {
   let providerName = registerBasicTestProvider(matches);
   let context = createContext(undefined, {
     providers: [providerName],
-    preselected: true,
   });
-  let controller = new UrlbarController({
-    browserWindow: {
-      location: {
-        href: AppConstants.BROWSER_CHROME_URL,
-      },
-    },
-  });
+  let controller = UrlbarTestUtils.newMockController();
 
   info("Check results, the order should be: b (heuristic), a, c");
   await UrlbarProvidersManager.startQuery(context, controller);
@@ -173,15 +160,8 @@ add_task(async function test_preselectedHeuristic_multiProviders() {
 
   let context = createContext(undefined, {
     providers: [provider1Name, provider2Name],
-    preselected: true,
   });
-  let controller = new UrlbarController({
-    browserWindow: {
-      location: {
-        href: AppConstants.BROWSER_CHROME_URL,
-      },
-    },
-  });
+  let controller = UrlbarTestUtils.newMockController();
 
   info("Check results, the order should be: e (heuristic), a, b, c, d, f");
   await UrlbarProvidersManager.startQuery(context, controller);
@@ -190,5 +170,61 @@ add_task(async function test_preselectedHeuristic_multiProviders() {
     ...matches1,
     matches2[0],
     matches2[2],
+  ]);
+});
+
+add_task(async function test_suggestions() {
+  let matches = [
+    new UrlbarResult(
+      UrlbarUtils.RESULT_TYPE.URL,
+      UrlbarUtils.RESULT_SOURCE.HISTORY,
+      { url: "http://mozilla.org/a" }
+    ),
+    new UrlbarResult(
+      UrlbarUtils.RESULT_TYPE.URL,
+      UrlbarUtils.RESULT_SOURCE.HISTORY,
+      { url: "http://mozilla.org/b" }
+    ),
+    new UrlbarResult(
+      UrlbarUtils.RESULT_TYPE.SEARCH,
+      UrlbarUtils.RESULT_SOURCE.SEARCH,
+      {
+        engine: "mozSearch",
+        query: "moz",
+        suggestion: "mozilla",
+      }
+    ),
+    new UrlbarResult(
+      UrlbarUtils.RESULT_TYPE.SEARCH,
+      UrlbarUtils.RESULT_SOURCE.SEARCH,
+      {
+        engine: "mozSearch",
+        query: "moz",
+        keywordOffer: UrlbarUtils.KEYWORD_OFFER.SHOW,
+        keyword: "@moz",
+      }
+    ),
+    new UrlbarResult(
+      UrlbarUtils.RESULT_TYPE.URL,
+      UrlbarUtils.RESULT_SOURCE.HISTORY,
+      { url: "http://mozilla.org/c" }
+    ),
+  ];
+
+  let providerName = registerBasicTestProvider(matches);
+
+  let context = createContext(undefined, {
+    providers: [providerName],
+  });
+  let controller = UrlbarTestUtils.newMockController();
+
+  info("Check results, the order should be: moz, a, b, @moz, c");
+  await UrlbarProvidersManager.startQuery(context, controller);
+  Assert.deepEqual(context.results, [
+    matches[2],
+    matches[0],
+    matches[1],
+    matches[3],
+    matches[4],
   ]);
 });

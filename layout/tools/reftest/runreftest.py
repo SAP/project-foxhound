@@ -7,6 +7,8 @@ Runs the reftest test harness.
 """
 from __future__ import print_function
 
+from __future__ import absolute_import, print_function
+
 import copy
 import json
 import multiprocessing
@@ -82,6 +84,18 @@ summaryLines = [('Successful', [('pass', 'pass'), ('loadOnly', 'load only')]),
                                     ('slow', 'slow')])]
 
 
+if sys.version_info[0] == 3:
+    def reraise_(tp_, value_, tb_=None):
+        if value_ is None:
+            value_ = tp_()
+        if value_.__traceback__ is not tb_:
+            raise value_.with_traceback(tb_)
+        raise value_
+
+else:
+    exec("def reraise_(tp_, value_, tb_=None):\n    raise tp_, value_, tb_\n")
+
+
 def update_mozinfo():
     """walk up directories to find mozinfo.json update the info"""
     # TODO: This should go in a more generic place, e.g. mozinfo
@@ -116,7 +130,7 @@ class ReftestThread(threading.Thread):
         process = subprocess.Popen(self.cmdargs, stdout=subprocess.PIPE)
         for chunk in self.chunkForMergedOutput(process.stdout):
             with printLock:
-                print(chunk,)
+                print(chunk, end=' ')
                 sys.stdout.flush()
         self.retcode = process.wait()
 
@@ -216,17 +230,20 @@ class ReftestResolver(object):
         manifests = {}
         for testPath in tests:
             for manifest, filter_str in self.findManifest(suite, testPath):
-                manifest = self.manifestURL(options, manifest)
                 if manifest not in manifests:
                     manifests[manifest] = set()
                 manifests[manifest].add(filter_str)
-
+        manifests_by_url = {}
         for key in manifests.iterkeys():
+            id = os.path.relpath(os.path.abspath(os.path.dirname(key)), options.topsrcdir)
+            id = id.replace(os.sep, posixpath.sep)
             if None in manifests[key]:
-                manifests[key] = None
+                manifests[key] = (None, id)
             else:
-                manifests[key] = "|".join(list(manifests[key]))
-        return manifests
+                manifests[key] = ("|".join(list(manifests[key])), id)
+            url = self.manifestURL(options, key)
+            manifests_by_url[url] = manifests[key]
+        return manifests_by_url
 
 
 class RefTest(object):
@@ -354,6 +371,8 @@ class RefTest(object):
             prefs['reftest.repeat'] = options.repeat
         if options.runUntilFailure:
             prefs['reftest.runUntilFailure'] = True
+            if not options.repeat:
+                prefs['reftest.repeat'] = 30
         if options.verify:
             prefs['reftest.verify'] = True
         if options.cleanupCrashes:
@@ -362,6 +381,8 @@ class RefTest(object):
         prefs['reftest.logLevel'] = options.log_tbpl_level or 'info'
         prefs['reftest.suite'] = options.suite
         prefs['gfx.font_rendering.ahem_antialias_none'] = True
+        # Disable dark scrollbars because it's semi-transparent.
+        prefs['widget.disable-dark-scrollbar'] = True
 
         # Set tests to run or manifests to parse.
         if tests:
@@ -430,7 +451,7 @@ class RefTest(object):
         browserEnv = self.environment(
             xrePath=options.xrePath, debugger=options.debugger)
         browserEnv["XPCOM_DEBUG_BREAK"] = "stack"
-        if hasattr(options, "topsrcdir"):
+        if options.topsrcdir:
             browserEnv["MOZ_DEVELOPER_REPO_DIR"] = options.topsrcdir
         if hasattr(options, "topobjdir"):
             browserEnv["MOZ_DEVELOPER_OBJ_DIR"] = options.topobjdir
@@ -464,6 +485,10 @@ class RefTest(object):
             browserEnv["MOZ_ACCELERATED"] = "1"
         else:
             browserEnv["MOZ_WEBRENDER"] = "0"
+
+        if options.headless:
+            browserEnv["MOZ_HEADLESS"] = "1"
+
         return browserEnv
 
     def cleanup(self, profileDir):
@@ -582,7 +607,7 @@ class RefTest(object):
 
         manifests = self.resolver.resolveManifests(options, tests)
         if options.filter:
-            manifests[""] = options.filter
+            manifests[""] = (options.filter, None)
 
         if not getattr(options, 'runTestsInParallel', False):
             return self.runSerialTests(manifests, options, cmdargs)
@@ -663,8 +688,9 @@ class RefTest(object):
         for (summaryObj, (text, categories)) in zip(summaryObjects, summaryLines):
             details = ', '.join(["%d %s" % (summaryObj[attribute], description) for (
                 attribute, description) in categories])
-            print('REFTEST INFO | ' + text + ': ' + str(summaryObj['total']) +
-                  ' (' + details + ')')
+            print(
+                'REFTEST INFO | ' + text + ': ' + str(summaryObj['total']) + ' (' + details + ')'
+                )
 
         return int(any(t.retcode != 0 for t in threads))
 
@@ -862,6 +888,10 @@ class RefTest(object):
         cmdargs = []
         self.runApp(options, cmdargs=cmdargs, prefs=prefs)
 
+        if not os.path.isfile(self.testDumpFile):
+            print("Error: parsing manifests failed!")
+            sys.exit(1)
+
         with open(self.testDumpFile, 'r') as fh:
             tests = json.load(fh)
 
@@ -927,7 +957,10 @@ class RefTest(object):
         ids_by_manifest = defaultdict(list)
         for t in tests:
             tests_by_manifest[t['manifest']].append(t)
-            ids_by_manifest[t['manifest']].append(t['identifier'])
+            test_id = t['identifier']
+            if not isinstance(test_id, string_types):
+                test_id = ' '.join(test_id)
+            ids_by_manifest[t['manifestID']].append(test_id)
 
         self.log.suite_start(ids_by_manifest, name=options.suite)
 

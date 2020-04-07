@@ -113,6 +113,7 @@ struct FloatRegister {
   bool isSingle() const { MOZ_CRASH(); }
   bool isDouble() const { MOZ_CRASH(); }
   bool isSimd128() const { MOZ_CRASH(); }
+  bool isInvalid() const { MOZ_CRASH(); }
   FloatRegister asSingle() const { MOZ_CRASH(); }
   FloatRegister asDouble() const { MOZ_CRASH(); }
   FloatRegister asSimd128() const { MOZ_CRASH(); }
@@ -161,8 +162,6 @@ struct FloatRegister {
 
 inline bool hasUnaliasedDouble() { MOZ_CRASH(); }
 inline bool hasMultiAlias() { MOZ_CRASH(); }
-
-inline void FlushICache(void* code, size_t size) { MOZ_CRASH(); }
 
 static const uint32_t ShadowStackSpace = 0;
 static const uint32_t JumpImmediateRange = INT32_MAX;

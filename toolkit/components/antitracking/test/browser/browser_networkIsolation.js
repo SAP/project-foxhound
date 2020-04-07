@@ -76,7 +76,7 @@ add_task(async function() {
     }
 
     resumedState.push(
-      subject.securityInfo.QueryInterface(Ci.nsISSLSocketControl).resumed
+      subject.securityInfo.QueryInterface(Ci.nsITransportSecurityInfo).resumed
     );
     hashKeys.push(
       subject.QueryInterface(Ci.nsIHttpChannelInternal).connectionInfoHashKey
@@ -112,16 +112,14 @@ add_task(async function() {
   checkAltSvcCache(0, []);
 
   info("Loading tracking scripts and tracking images");
-  await ContentTask.spawn(browser, { trackingURL }, async function(obj) {
-    {
-      let src = content.document.createElement("script");
-      let p = new content.Promise(resolve => {
-        src.onload = resolve;
-      });
-      content.document.body.appendChild(src);
-      src.src = obj.trackingURL;
-      await p;
-    }
+  await SpecialPowers.spawn(browser, [{ trackingURL }], async function(obj) {
+    let src = content.document.createElement("script");
+    let p = new content.Promise(resolve => {
+      src.onload = resolve;
+    });
+    content.document.body.appendChild(src);
+    src.src = obj.trackingURL;
+    await p;
   });
 
   checkAltSvcCache(1, [true]);

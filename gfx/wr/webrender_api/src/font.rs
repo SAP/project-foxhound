@@ -179,6 +179,7 @@ bitflags! {
         const FLIP_X            = 1 << 5;
         const FLIP_Y            = 1 << 6;
         const SUBPIXEL_POSITION = 1 << 7;
+        const VERTICAL          = 1 << 8;
 
         // Windows flags
         const FORCE_GDI         = 1 << 16;
@@ -288,7 +289,8 @@ impl Default for FontInstanceOptions {
 #[derive(Clone, Copy, Debug, Deserialize, Hash, Eq, MallocSizeOf, PartialEq, PartialOrd, Ord, Serialize)]
 pub struct FontInstancePlatformOptions {
     pub gamma: u16, // percent
-    pub contrast: u16, // percent
+    pub contrast: u8, // percent
+    pub cleartype_level: u8, // percent
 }
 
 #[cfg(target_os = "windows")]
@@ -297,6 +299,7 @@ impl Default for FontInstancePlatformOptions {
         FontInstancePlatformOptions {
             gamma: 180, // Default DWrite gamma
             contrast: 100,
+            cleartype_level: 100,
         }
     }
 }
@@ -400,6 +403,7 @@ impl Default for GlyphInstance {
 
 impl Eq for GlyphInstance {}
 
+#[cfg_attr(feature = "cargo-clippy", allow(clippy::derive_hash_xor_eq))]
 impl Hash for GlyphInstance {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Note: this is inconsistent with the Eq impl for -0.0 (don't care).

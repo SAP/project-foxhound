@@ -51,6 +51,7 @@ EXPORTS.mozilla = [
     'HashFunctions.h',
     'HashTable.h',
     'HelperMacros.h',
+    'InitializedOnce.h',
     'IntegerPrintfMacros.h',
     'IntegerRange.h',
     'IntegerTypeTraits.h',
@@ -66,10 +67,8 @@ EXPORTS.mozilla = [
     'MaybeOneOf.h',
     'MemoryChecking.h',
     'MemoryReporting.h',
-    'Move.h',
     'NonDereferenceable.h',
     'NotNull.h',
-    'NullPtr.h',
     'Opaque.h',
     'OperatorNewExtensions.h',
     'Pair.h',
@@ -80,7 +79,6 @@ EXPORTS.mozilla = [
     'Range.h',
     'RangedArray.h',
     'RangedPtr.h',
-    'RecordReplay.h',
     'ReentrancyGuard.h',
     'RefCounted.h',
     'RefCountType.h',
@@ -102,6 +100,7 @@ EXPORTS.mozilla = [
     'SPSCQueue.h',
     'StaticAnalysisFunctions.h',
     'TaggedAnonymousMemory.h',
+    'Tainting.h',
     'TemplateLib.h',
     'TextUtils.h',
     'ThreadLocal.h',
@@ -124,6 +123,8 @@ EXPORTS.mozilla = [
 
 EXPORTS["double-conversion"] = [
     'double-conversion/double-conversion/double-conversion.h',
+    'double-conversion/double-conversion/double-to-string.h',
+    'double-conversion/double-conversion/string-to-double.h',
     'double-conversion/double-conversion/utils.h',
 ]
 
@@ -146,10 +147,10 @@ UNIFIED_SOURCES += [
     'double-conversion/double-conversion/bignum-dtoa.cc',
     'double-conversion/double-conversion/bignum.cc',
     'double-conversion/double-conversion/cached-powers.cc',
-    'double-conversion/double-conversion/diy-fp.cc',
-    'double-conversion/double-conversion/double-conversion.cc',
+    'double-conversion/double-conversion/double-to-string.cc',
     'double-conversion/double-conversion/fast-dtoa.cc',
     'double-conversion/double-conversion/fixed-dtoa.cc',
+    'double-conversion/double-conversion/string-to-double.cc',
     'double-conversion/double-conversion/strtod.cc',
     'FloatingPoint.cpp',
     'HashFunctions.cpp',
@@ -164,11 +165,6 @@ UNIFIED_SOURCES += [
 ]
 
 if CONFIG['MOZ_BUILD_APP'] not in ('memory', 'tools/crashreporter', 'tools/update-packaging'):
-    # RecordReplay.cpp uses files from js/
-    UNIFIED_SOURCES += [
-        'RecordReplay.cpp',
-    ]
-
     # Building MFBT tests adds a large overhead when building
     # tools/crashreporter.
     TEST_DIRS += ['tests']

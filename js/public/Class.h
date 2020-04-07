@@ -40,38 +40,6 @@ extern JS_FRIEND_DATA const JSClass* const FunctionClassPtr;
 namespace JS {
 
 /**
- * The answer to a successful query as to whether an object is an Array per
- * ES6's internal |IsArray| operation (as exposed by |Array.isArray|).
- */
-enum class IsArrayAnswer { Array, NotArray, RevokedProxy };
-
-/**
- * ES6 7.2.2.
- *
- * Returns false on failure, otherwise returns true and sets |*isArray|
- * indicating whether the object passes ECMAScript's IsArray test.  This is the
- * same test performed by |Array.isArray|.
- *
- * This is NOT the same as asking whether |obj| is an Array or a wrapper around
- * one.  If |obj| is a proxy created by |Proxy.revocable()| and has been
- * revoked, or if |obj| is a proxy whose target (at any number of hops) is a
- * revoked proxy, this method throws a TypeError and returns false.
- */
-extern JS_PUBLIC_API bool IsArray(JSContext* cx, HandleObject obj,
-                                  bool* isArray);
-
-/**
- * Identical to IsArray above, but the nature of the object (if successfully
- * determined) is communicated via |*answer|.  In particular this method
- * returns true and sets |*answer = IsArrayAnswer::RevokedProxy| when called on
- * a revoked proxy.
- *
- * Most users will want the overload above, not this one.
- */
-extern JS_PUBLIC_API bool IsArray(JSContext* cx, HandleObject obj,
-                                  IsArrayAnswer* answer);
-
-/**
  * Per ES6, the [[DefineOwnProperty]] internal method has three different
  * possible outcomes:
  *
@@ -701,7 +669,7 @@ static const uintptr_t JSCLASS_RESERVED_SLOTS_SHIFT = 8;
 static const uint32_t JSCLASS_RESERVED_SLOTS_WIDTH = 8;
 
 static const uint32_t JSCLASS_RESERVED_SLOTS_MASK =
-    JS_BITMASK(JSCLASS_RESERVED_SLOTS_WIDTH);
+    js::BitMask(JSCLASS_RESERVED_SLOTS_WIDTH);
 
 static constexpr uint32_t JSCLASS_HAS_RESERVED_SLOTS(uint32_t n) {
   return (n & JSCLASS_RESERVED_SLOTS_MASK) << JSCLASS_RESERVED_SLOTS_SHIFT;
@@ -749,7 +717,7 @@ static const uint32_t JSCLASS_FOREGROUND_FINALIZE =
 // compiled JavaScript reporting function. See JS_ReportTaintSink.
 static const uint32_t JSCLASS_GLOBAL_APPLICATION_SLOTS = 5 + 1;
 static const uint32_t JSCLASS_GLOBAL_SLOT_COUNT =
-    JSCLASS_GLOBAL_APPLICATION_SLOTS + JSProto_LIMIT * 2 + 25;
+    JSCLASS_GLOBAL_APPLICATION_SLOTS + JSProto_LIMIT * 2 + 26;
 
 static constexpr uint32_t JSCLASS_GLOBAL_FLAGS_WITH_SLOTS(uint32_t n) {
   return JSCLASS_IS_GLOBAL |
@@ -762,7 +730,7 @@ static constexpr uint32_t JSCLASS_GLOBAL_FLAGS =
 // Fast access to the original value of each standard class's prototype.
 static const uint32_t JSCLASS_CACHED_PROTO_SHIFT = JSCLASS_HIGH_FLAGS_SHIFT + 9;
 static const uint32_t JSCLASS_CACHED_PROTO_MASK =
-    JS_BITMASK(js::JSCLASS_CACHED_PROTO_WIDTH);
+    js::BitMask(js::JSCLASS_CACHED_PROTO_WIDTH);
 
 static_assert(JSProto_LIMIT <= (JSCLASS_CACHED_PROTO_MASK + 1),
               "JSProtoKey must not exceed the maximum cacheable proto-mask");
@@ -977,6 +945,7 @@ enum class ESClass {
   Arguments,
   Error,
   BigInt,
+  Function,  // Note: Only JSFunction objects.
 
   /** None of the above. */
   Other

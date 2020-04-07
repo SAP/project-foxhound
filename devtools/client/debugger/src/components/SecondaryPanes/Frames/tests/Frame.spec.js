@@ -24,10 +24,11 @@ function frameProperties(frame, selectedFrame: any, overrides = {}) {
     copyStackTrace: jest.fn(),
     contextTypes: {},
     selectFrame: jest.fn(),
+    selectLocation: jest.fn(),
     toggleBlackBox: jest.fn(),
     displayFullUrl: false,
     frameworkGroupingOn: false,
-    selectable: true,
+    panel: "webconsole",
     toggleFrameworkGrouping: null,
     ...overrides,
   };
@@ -86,6 +87,19 @@ describe("Frame", () => {
     const props = frameProperties(frame, null, { displayFullUrl: true });
     const component = mount(<Frame {...props} />);
     expect(component.text()).toBe(`    renderFoo ${url}:10`);
+  });
+
+  it("renders asyncCause", () => {
+    const url = `https://example.com/async.js`;
+    const source = makeMockSource(url);
+    const frame = makeMockFrame("1", source, undefined, 10, "timeoutFn");
+    frame.asyncCause = "setTimeout handler";
+
+    const props = frameProperties(frame);
+    const component = mount(<Frame {...props} />, { context: { l10n: L10N } });
+    expect(component.find(".location-async-cause").text()).toBe(
+      `    (Async: setTimeout handler)`
+    );
   });
 
   it("getFrameTitle", () => {

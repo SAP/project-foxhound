@@ -636,6 +636,7 @@ var pktUI = (function() {
       }
       pktUIMessaging.sendResponseMessageToPanel(panelId, _initL10NMessageId, {
         strings,
+        dir: Services.locale.isAppLocaleRTL ? "rtl" : "ltr",
       });
     });
   }
@@ -729,7 +730,7 @@ var pktUI = (function() {
   }
 
   function getUILocale() {
-    return Services.locale.appLocaleAsLangTag;
+    return Services.locale.appLocaleAsBCP47;
   }
 
   /**

@@ -19,16 +19,14 @@ pref("privacy.trackingprotection.pbmode.enabled", false);
 
 pref("dom.ipc.keepProcessesAlive.web", 1);
 pref("dom.ipc.processCount", 1);
-pref("dom.ipc.processHangMonitor", true);
 pref("dom.ipc.processPrelaunch.enabled", false);
-
-// Enable hang reports
-pref("dom.ipc.reportProcessHangs", true);
 
 // Tell Telemetry that we're in GeckoView mode.
 pref("toolkit.telemetry.isGeckoViewMode", true);
 // Disable the Telemetry Event Ping
 pref("toolkit.telemetry.eventping.enabled", false);
+// Don't create the hidden window during startup.
+pref("toolkit.lazyHiddenWindow", true);
 
 pref("geckoview.console.enabled", false);
 
@@ -37,6 +35,9 @@ pref("geckoview.console.enabled", false);
 #else
   pref("geckoview.logging", "Debug");
 #endif
+
+// Enable WebShare support.
+pref("dom.webshare.enabled", true);
 
 // Enable capture attribute for file input.
 pref("dom.capture.enabled", true);
@@ -71,3 +72,6 @@ pref("ui.android.mouse_as_touch", 2);
 
 // Fenix is currently not whitelisted for Web Authentication
 pref("security.webauth.webauthn_enable_android_fido2", false);
+
+// Enable autoplay permission prompts
+pref("media.geckoview.autoplay.request", true);

@@ -44,7 +44,10 @@
 #  include "ScaledFontDWrite.h"
 #  include "NativeFontResourceDWrite.h"
 #  include <d3d10_1.h>
+#  include <stdlib.h>
 #  include "HelpersD2D.h"
+#  include "DXVA2Manager.h"
+#  include "mozilla/layers/TextureD3D11.h"
 #endif
 
 #include "DrawTargetCapture.h"
@@ -61,6 +64,8 @@
 #include "Logging.h"
 
 #include "mozilla/CheckedInt.h"
+
+#include "mozilla/layers/TextureClient.h"
 
 #ifdef MOZ_ENABLE_FREETYPE
 #  include "ft2build.h"
@@ -198,8 +203,7 @@ void mozilla_UnlockFTLibrary(FT_Library aFTLibrary) {
 }
 #endif
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 #ifdef MOZ_ENABLE_FREETYPE
 FT_Library Factory::mFTLibrary = nullptr;
@@ -403,6 +407,17 @@ already_AddRefed<DrawTarget> Factory::CreateDrawTarget(BackendType aBackend,
   return retVal.forget();
 }
 
+already_AddRefed<PathBuilder> Factory::CreateSimplePathBuilder() {
+  RefPtr<PathBuilder> pathBuilder;
+#ifdef USE_SKIA
+  pathBuilder = MakeAndAddRef<PathBuilderSkia>(FillRule::FILL_WINDING);
+#endif
+  if (!pathBuilder) {
+    NS_WARNING("Failed to create a path builder because we don't use Skia");
+  }
+  return pathBuilder.forget();
+}
+
 already_AddRefed<DrawTarget> Factory::CreateWrapAndRecordDrawTarget(
     DrawEventRecorder* aRecorder, DrawTarget* aDT) {
   return MakeAndAddRef<DrawTargetWrapAndRecord>(aRecorder, aDT);
@@ -467,7 +482,7 @@ already_AddRefed<DrawTarget> Factory::CreateDrawTargetForData(
       RefPtr<DrawTargetCairo> newTarget;
       newTarget = new DrawTargetCairo();
       if (newTarget->Init(aData, aSize, aStride, aFormat)) {
-        retVal = newTarget.forget();
+        retVal = std::move(newTarget);
       }
       break;
     }
@@ -906,7 +921,14 @@ RefPtr<IDWriteFontCollection> Factory::GetDWriteSystemFonts(bool aUpdate) {
   HRESULT hr =
       mDWriteFactory->GetSystemFontCollection(getter_AddRefs(systemFonts));
   if (FAILED(hr)) {
-    gfxWarning() << "Failed to create DWrite system font collection";
+    // only crash some of the time so those experiencing this problem
+    // don't stop using Firefox
+    if ((rand() & 0x3f) == 0) {
+      gfxCriticalError(int(gfx::LogOptions::AssertOnCall))
+          << "Failed to create DWrite system font collection";
+    } else {
+      gfxWarning() << "Failed to create DWrite system font collection";
+    }
     return nullptr;
   }
   mDWriteSystemFonts = systemFonts;
@@ -975,11 +997,12 @@ already_AddRefed<ScaledFont> Factory::CreateScaledFontForDWriteFont(
     IDWriteFontFace* aFontFace, const gfxFontStyle* aStyle,
     const RefPtr<UnscaledFont>& aUnscaledFont, float aSize,
     bool aUseEmbeddedBitmap, int aRenderingMode,
-    IDWriteRenderingParams* aParams, Float aGamma, Float aContrast) {
-  return MakeAndAddRef<ScaledFontDWrite>(aFontFace, aUnscaledFont, aSize,
-                                         aUseEmbeddedBitmap,
-                                         (DWRITE_RENDERING_MODE)aRenderingMode,
-                                         aParams, aGamma, aContrast, aStyle);
+    IDWriteRenderingParams* aParams, Float aGamma, Float aContrast,
+    Float aClearTypeLevel) {
+  return MakeAndAddRef<ScaledFontDWrite>(
+      aFontFace, aUnscaledFont, aSize, aUseEmbeddedBitmap,
+      (DWRITE_RENDERING_MODE)aRenderingMode, aParams, aGamma, aContrast,
+      aClearTypeLevel, aStyle);
 }
 
 already_AddRefed<ScaledFont> Factory::CreateScaledFontForGDIFont(
@@ -1149,6 +1172,191 @@ void Factory::SetGlobalEventRecorder(DrawEventRecorder* aRecorder) {
   mRecorder = aRecorder;
 }
 
+#ifdef WIN32
+
+/* static */
+already_AddRefed<DataSourceSurface>
+Factory::CreateBGRA8DataSourceSurfaceForD3D11Texture(
+    ID3D11Texture2D* aSrcTexture) {
+  D3D11_TEXTURE2D_DESC srcDesc = {0};
+  aSrcTexture->GetDesc(&srcDesc);
+
+  RefPtr<gfx::DataSourceSurface> destTexture =
+      gfx::Factory::CreateDataSourceSurface(
+          IntSize(srcDesc.Width, srcDesc.Height), gfx::SurfaceFormat::B8G8R8A8);
+  if (NS_WARN_IF(!destTexture)) {
+    return nullptr;
+  }
+  if (!ReadbackTexture(destTexture, aSrcTexture)) {
+    return nullptr;
+  }
+  return destTexture.forget();
+}
+
+/* static */
+template <typename DestTextureT>
+bool Factory::ConvertSourceAndRetryReadback(DestTextureT* aDestCpuTexture,
+                                            ID3D11Texture2D* aSrcTexture) {
+  RefPtr<ID3D11Device> device;
+  aSrcTexture->GetDevice(getter_AddRefs(device));
+  if (!device) {
+    gfxWarning() << "Failed to get D3D11 device from source texture";
+    return false;
+  }
+
+  nsAutoCString error;
+  std::unique_ptr<DXVA2Manager> manager(
+      DXVA2Manager::CreateD3D11DXVA(nullptr, error, device));
+  if (!manager) {
+    gfxWarning() << "Failed to create DXVA2 manager!";
+    return false;
+  }
+
+  RefPtr<ID3D11Texture2D> newSrcTexture;
+  HRESULT hr =
+      manager->CopyToBGRATexture(aSrcTexture, getter_AddRefs(newSrcTexture));
+  if (FAILED(hr)) {
+    gfxWarning() << "Failed to copy to BGRA texture.";
+    return false;
+  }
+
+  return ReadbackTexture(aDestCpuTexture, newSrcTexture);
+}
+
+/* static */
+bool Factory::ReadbackTexture(layers::TextureData* aDestCpuTexture,
+                              ID3D11Texture2D* aSrcTexture) {
+  layers::MappedTextureData mappedData;
+  if (!aDestCpuTexture->BorrowMappedData(mappedData)) {
+    gfxWarning() << "Could not access in-memory texture";
+    return false;
+  }
+
+  D3D11_TEXTURE2D_DESC srcDesc = {0};
+  aSrcTexture->GetDesc(&srcDesc);
+
+  // Special case: If the source and destination have different formats and the
+  // destination is B8G8R8A8 then convert the source to B8G8R8A8 and readback.
+  if ((srcDesc.Format != DXGIFormat(mappedData.format)) &&
+      (mappedData.format == SurfaceFormat::B8G8R8A8)) {
+    return ConvertSourceAndRetryReadback(aDestCpuTexture, aSrcTexture);
+  }
+
+  if ((IntSize(srcDesc.Width, srcDesc.Height) != mappedData.size) ||
+      (srcDesc.Format != DXGIFormat(mappedData.format))) {
+    gfxWarning() << "Attempted readback between incompatible textures";
+    return false;
+  }
+
+  return ReadbackTexture(mappedData.data, mappedData.stride, aSrcTexture);
+}
+
+/* static */
+bool Factory::ReadbackTexture(DataSourceSurface* aDestCpuTexture,
+                              ID3D11Texture2D* aSrcTexture) {
+  D3D11_TEXTURE2D_DESC srcDesc = {0};
+  aSrcTexture->GetDesc(&srcDesc);
+
+  // Special case: If the source and destination have different formats and the
+  // destination is B8G8R8A8 then convert the source to B8G8R8A8 and readback.
+  if ((srcDesc.Format != DXGIFormat(aDestCpuTexture->GetFormat())) &&
+      (aDestCpuTexture->GetFormat() == SurfaceFormat::B8G8R8A8)) {
+    return ConvertSourceAndRetryReadback(aDestCpuTexture, aSrcTexture);
+  }
+
+  if ((IntSize(srcDesc.Width, srcDesc.Height) != aDestCpuTexture->GetSize()) ||
+      (srcDesc.Format != DXGIFormat(aDestCpuTexture->GetFormat()))) {
+    gfxWarning() << "Attempted readback between incompatible textures";
+    return false;
+  }
+
+  gfx::DataSourceSurface::MappedSurface mappedSurface;
+  if (!aDestCpuTexture->Map(gfx::DataSourceSurface::WRITE, &mappedSurface)) {
+    return false;
+  }
+
+  bool ret =
+      ReadbackTexture(mappedSurface.mData, mappedSurface.mStride, aSrcTexture);
+  aDestCpuTexture->Unmap();
+  return ret;
+}
+
+/* static */
+bool Factory::ReadbackTexture(uint8_t* aDestData, int32_t aDestStride,
+                              ID3D11Texture2D* aSrcTexture) {
+  MOZ_ASSERT(aDestData && aDestStride && aSrcTexture);
+
+  RefPtr<ID3D11Device> device;
+  aSrcTexture->GetDevice(getter_AddRefs(device));
+  if (!device) {
+    gfxWarning() << "Failed to get D3D11 device from source texture";
+    return false;
+  }
+
+  RefPtr<ID3D11DeviceContext> context;
+  device->GetImmediateContext(getter_AddRefs(context));
+  if (!context) {
+    gfxWarning() << "Could not get an immediate D3D11 context";
+    return false;
+  }
+
+  RefPtr<IDXGIKeyedMutex> mutex;
+  HRESULT hr = aSrcTexture->QueryInterface(__uuidof(IDXGIKeyedMutex),
+                                           (void**)getter_AddRefs(mutex));
+  if (SUCCEEDED(hr) && mutex) {
+    hr = mutex->AcquireSync(0, 2000);
+    if (hr != S_OK) {
+      gfxWarning() << "Could not acquire DXGI surface lock in 2 seconds";
+      return false;
+    }
+  }
+
+  D3D11_TEXTURE2D_DESC srcDesc = {0};
+  aSrcTexture->GetDesc(&srcDesc);
+  srcDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  srcDesc.Usage = D3D11_USAGE_STAGING;
+  srcDesc.BindFlags = 0;
+  srcDesc.MiscFlags = 0;
+  srcDesc.MipLevels = 1;
+  RefPtr<ID3D11Texture2D> srcCpuTexture;
+  hr =
+      device->CreateTexture2D(&srcDesc, nullptr, getter_AddRefs(srcCpuTexture));
+  if (FAILED(hr)) {
+    gfxWarning() << "Could not create source texture for mapping";
+    if (mutex) {
+      mutex->ReleaseSync(0);
+    }
+    return false;
+  }
+
+  context->CopyResource(srcCpuTexture, aSrcTexture);
+
+  if (mutex) {
+    mutex->ReleaseSync(0);
+    mutex = nullptr;
+  }
+
+  D3D11_MAPPED_SUBRESOURCE srcMap;
+  hr = context->Map(srcCpuTexture, 0, D3D11_MAP_READ, 0, &srcMap);
+  if (FAILED(hr)) {
+    gfxWarning() << "Could not map source texture";
+    return false;
+  }
+
+  uint32_t width = srcDesc.Width;
+  uint32_t height = srcDesc.Height;
+  int bpp = BytesPerPixel(gfx::ToPixelFormat(srcDesc.Format));
+  for (int y = 0; y < height; y++) {
+    memcpy(aDestData + aDestStride * y,
+           (unsigned char*)(srcMap.pData) + srcMap.RowPitch * y, width * bpp);
+  }
+
+  context->Unmap(srcCpuTexture, 0);
+  return true;
+}
+
+#endif  // WIN32
+
 // static
 void CriticalLogger::OutputMessage(const std::string& aString, int aLevel,
                                    bool aNoNewline) {
@@ -1177,5 +1385,4 @@ void LogWStr(const wchar_t* aWStr, std::stringstream& aOut) {
 }
 #endif
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx

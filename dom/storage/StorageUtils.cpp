@@ -4,7 +4,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsIURL.h"
 #include "StorageUtils.h"
+
+#include "mozilla/OriginAttributes.h"
+#include "nsDebug.h"
+#include "nsIPrincipal.h"
+#include "nsIURI.h"
+#include "nsIURL.h"
+#include "nsNetUtil.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla {
 namespace dom {

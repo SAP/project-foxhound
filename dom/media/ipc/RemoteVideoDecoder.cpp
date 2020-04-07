@@ -37,9 +37,8 @@ class KnowsCompositorVideo : public layers::KnowsCompositor {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(KnowsCompositorVideo, override)
 
   layers::TextureForwarder* GetTextureForwarder() override {
-    return mTextureFactoryIdentifier.mParentProcessType == GeckoProcessType_GPU
-               ? VideoBridgeChild::GetSingletonToGPUProcess()
-               : VideoBridgeChild::GetSingletonToParentProcess();
+    auto* vbc = VideoBridgeChild::GetSingleton();
+    return (vbc && vbc->CanSend()) ? vbc : nullptr;
   }
   layers::LayersIPCActor* GetLayersIPCActor() override {
     return GetTextureForwarder();
@@ -47,10 +46,7 @@ class KnowsCompositorVideo : public layers::KnowsCompositor {
 
   static already_AddRefed<KnowsCompositorVideo> TryCreateForIdentifier(
       const layers::TextureFactoryIdentifier& aIdentifier) {
-    VideoBridgeChild* child =
-        (aIdentifier.mParentProcessType == GeckoProcessType_GPU)
-            ? VideoBridgeChild::GetSingletonToGPUProcess()
-            : VideoBridgeChild::GetSingletonToParentProcess();
+    VideoBridgeChild* child = VideoBridgeChild::GetSingleton();
     if (!child) {
       return nullptr;
     }
@@ -159,7 +155,10 @@ MediaResult RemoteVideoDecoderChild::ProcessOutput(
       // The Image here creates a TextureData object that takes ownership
       // of the SurfaceDescriptor, and is responsible for making sure that
       // it gets deallocated.
-      image = new GPUVideoImage(GetManager(), data.sd(), data.frameSize());
+      SurfaceDescriptorRemoteDecoder remoteSD =
+          static_cast<const SurfaceDescriptorGPUVideo&>(data.sd());
+      remoteSD.source() = Some(GetManager()->GetSource());
+      image = new GPUVideoImage(GetManager(), remoteSD, data.frameSize());
     }
 
     RefPtr<VideoData> video = VideoData::CreateFromImage(
@@ -314,12 +313,13 @@ MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
     DecodedOutputIPDL& aDecodedData) {
   MOZ_ASSERT(OnManagerThread());
 
+  nsTArray<RemoteVideoDataIPDL> array;
+
   // If the video decoder bridge has shut down, stop.
   if (mKnowsCompositor && !mKnowsCompositor->GetTextureForwarder()) {
+    aDecodedData = std::move(array);
     return NS_OK;
   }
-
-  nsTArray<RemoteVideoDataIPDL> array;
 
   for (const auto& data : aData) {
     MOZ_ASSERT(data->mType == MediaData::Type::VIDEO_DATA,
@@ -342,17 +342,25 @@ MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
                                                            mKnowsCompositor);
       }
 
-      if (texture && !texture->IsAddedToCompositableClient()) {
-        texture->InitIPDLActor(mKnowsCompositor);
-        texture->SetAddedToCompositableClient();
-      }
       if (texture) {
+        if (!texture->IsAddedToCompositableClient()) {
+          texture->InitIPDLActor(mKnowsCompositor);
+          texture->SetAddedToCompositableClient();
+        }
         sd = mParent->StoreImage(video->mImage, texture);
         size = texture->GetSize();
       }
-    } else {
-      PlanarYCbCrImage* image =
-          static_cast<PlanarYCbCrImage*>(video->mImage.get());
+    }
+
+    // If failed to create a GPU accelerated surface descriptor, fall back to
+    // copying frames via shmem.
+    if (!IsSurfaceDescriptorValid(sd)) {
+      PlanarYCbCrImage* image = video->mImage->AsPlanarYCbCrImage();
+      if (!image) {
+        return MediaResult(NS_ERROR_UNEXPECTED,
+                           "Expected Planar YCbCr image in "
+                           "RemoteVideoDecoderParent::ProcessDecodedData");
+      }
 
       SurfaceDescriptorBuffer sdBuffer;
       ShmemBuffer buffer = AllocateBuffer(image->GetDataSize());

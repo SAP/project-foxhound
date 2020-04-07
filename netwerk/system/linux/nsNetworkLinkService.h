@@ -11,7 +11,6 @@
 #include "../netlink/NetlinkService.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/TimeStamp.h"
 
 class nsNetworkLinkService : public nsINetworkLinkService,
                              public nsIObserver,
@@ -25,9 +24,11 @@ class nsNetworkLinkService : public nsINetworkLinkService,
   nsresult Init();
 
   void OnNetworkChanged() override;
+  void OnNetworkIDChanged() override;
   void OnLinkUp() override;
   void OnLinkDown() override;
   void OnLinkStatusKnown() override;
+  void OnDnsSuffixListUpdated() override;
 
  private:
   virtual ~nsNetworkLinkService() = default;
@@ -36,14 +37,11 @@ class nsNetworkLinkService : public nsINetworkLinkService,
   nsresult Shutdown();
 
   // Sends the network event.
-  void SendEvent(const char* aEventID);
+  void NotifyObservers(const char* aTopic, const char* aData);
 
   mozilla::Atomic<bool, mozilla::Relaxed> mStatusIsKnown;
 
   RefPtr<mozilla::net::NetlinkService> mNetlinkSvc;
-
-  // Time stamp of last NS_NETWORK_LINK_DATA_CHANGED event
-  mozilla::TimeStamp mNetworkChangeTime;
 };
 
 #endif /* NSNETWORKLINKSERVICE_LINUX_H_ */

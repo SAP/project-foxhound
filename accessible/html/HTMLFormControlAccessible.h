@@ -63,7 +63,7 @@ class HTMLButtonAccessible : public HyperTextAccessibleWrap {
  * Accessible for HTML input@type="text", input@type="password", textarea and
  * other HTML text controls.
  */
-class HTMLTextFieldAccessible final : public HyperTextAccessibleWrap {
+class HTMLTextFieldAccessible : public HyperTextAccessibleWrap {
  public:
   enum { eAction_Click = 0 };
 
@@ -73,7 +73,8 @@ class HTMLTextFieldAccessible final : public HyperTextAccessibleWrap {
                                        HyperTextAccessibleWrap)
 
   // HyperTextAccessible
-  virtual already_AddRefed<TextEditor> GetEditor() const override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual already_AddRefed<TextEditor> GetEditor()
+      const override;
 
   // Accessible
   virtual void Value(nsString& aValue) const override;
@@ -98,17 +99,16 @@ class HTMLTextFieldAccessible final : public HyperTextAccessibleWrap {
   virtual ENameValueFlag NativeName(nsString& aName) const override;
 
   /**
-   * Return a widget element this input is part of, for example, search-textbox
-   * or HTML:input@type="number".
+   * Return a widget element this input is part of, for example, search-textbox.
+   *
+   * FIXME: This should probably be renamed.
    */
   nsIContent* BindingOrWidgetParent() const {
-    nsIContent* el = mContent->GetBindingParent();
-    if (el) {
+    if (auto* el = mContent->GetClosestNativeAnonymousSubtreeRootParent()) {
       return el;
     }
     // XUL search-textbox custom element
-    ErrorResult rv;
-    return Elm()->Closest(NS_LITERAL_STRING("search-textbox"), rv);
+    return Elm()->Closest(NS_LITERAL_STRING("search-textbox"), IgnoreErrors());
   }
 };
 
@@ -128,10 +128,10 @@ class HTMLFileInputAccessible : public HyperTextAccessibleWrap {
 /**
  * Used for HTML input@type="number".
  */
-class HTMLSpinnerAccessible : public AccessibleWrap {
+class HTMLSpinnerAccessible final : public HTMLTextFieldAccessible {
  public:
   HTMLSpinnerAccessible(nsIContent* aContent, DocAccessible* aDoc)
-      : AccessibleWrap(aContent, aDoc) {
+      : HTMLTextFieldAccessible(aContent, aDoc) {
     mStateFlags |= eHasNumericValue;
   }
 

@@ -36,13 +36,13 @@ module.exports.addTests = function({testRunner, expect, puppeteer}) {
       await page.click('circle');
       expect(await page.evaluate(() => window.__CLICKED)).toBe(42);
     });
-    it_fails_ffox('should click the button if window.Node is removed', async({page, server}) => {
+    it('should click the button if window.Node is removed', async({page, server}) => {
       await page.goto(server.PREFIX + '/input/button.html');
       await page.evaluate(() => delete window.Node);
       await page.click('button');
       expect(await page.evaluate(() => result)).toBe('Clicked');
     });
-    // @see https://github.com/GoogleChrome/puppeteer/issues/4281
+    // @see https://github.com/puppeteer/puppeteer/issues/4281
     it('should click on a span with an inline element inside', async({page, server}) => {
       await page.setContent(`
         <style>
@@ -55,6 +55,13 @@ module.exports.addTests = function({testRunner, expect, puppeteer}) {
       await page.click('span');
       expect(await page.evaluate(() => window.CLICKED)).toBe(42);
     });
+    it('should not throw UnhandledPromiseRejection when page closes', async({page, server}) => {
+      const newPage = await page.browser().newPage();
+      await Promise.all([
+        newPage.close(),
+        newPage.mouse.click(1, 2),
+      ]).catch(e => {});
+    });
     it('should click the button after navigation ', async({page, server}) => {
       await page.goto(server.PREFIX + '/input/button.html');
       await page.click('button');
@@ -62,7 +69,7 @@ module.exports.addTests = function({testRunner, expect, puppeteer}) {
       await page.click('button');
       expect(await page.evaluate(() => result)).toBe('Clicked');
     });
-    it_fails_ffox('should click with disabled javascript', async({page, server}) => {
+    it('should click with disabled javascript', async({page, server}) => {
       await page.setJavaScriptEnabled(false);
       await page.goto(server.PREFIX + '/wrappedlink.html');
       await Promise.all([
@@ -71,7 +78,7 @@ module.exports.addTests = function({testRunner, expect, puppeteer}) {
       ]);
       expect(page.url()).toBe(server.PREFIX + '/wrappedlink.html#clicked');
     });
-    it_fails_ffox('should click when one of inline box children is outside of viewport', async({page, server}) => {
+    it('should click when one of inline box children is outside of viewport', async({page, server}) => {
       await page.setContent(`
         <style>
         i {
@@ -166,7 +173,7 @@ module.exports.addTests = function({testRunner, expect, puppeteer}) {
       await page.click('button.does-not-exist').catch(e => error = e);
       expect(error.message).toBe('No node found for selector: button.does-not-exist');
     });
-    // @see https://github.com/GoogleChrome/puppeteer/issues/161
+    // @see https://github.com/puppeteer/puppeteer/issues/161
     it('should not hang with touch-enabled viewports', async({page, server}) => {
       await page.setViewport(puppeteer.devices['iPhone 6'].viewport);
       await page.mouse.down();
@@ -215,7 +222,7 @@ module.exports.addTests = function({testRunner, expect, puppeteer}) {
       await page.click('#button-8', {button: 'right'});
       expect(await page.evaluate(() => document.querySelector('#button-8').textContent)).toBe('context menu');
     });
-    // @see https://github.com/GoogleChrome/puppeteer/issues/206
+    // @see https://github.com/puppeteer/puppeteer/issues/206
     it('should click links which cause navigation', async({page, server}) => {
       await page.setContent(`<a href="${server.EMPTY_PAGE}">empty.html</a>`);
       // This await should not hang.
@@ -230,7 +237,7 @@ module.exports.addTests = function({testRunner, expect, puppeteer}) {
       await button.click();
       expect(await frame.evaluate(() => window.result)).toBe('Clicked');
     });
-    // @see https://github.com/GoogleChrome/puppeteer/issues/4110
+    // @see https://github.com/puppeteer/puppeteer/issues/4110
     xit('should click the button with fixed position inside an iframe', async({page, server}) => {
       await page.goto(server.EMPTY_PAGE);
       await page.setViewport({width: 500, height: 500});

@@ -11,6 +11,8 @@ import sys
 import time
 import yaml
 
+from distutils.util import strtobool
+
 from logger.logger import RaptorLogger
 
 LOG = RaptorLogger(component='raptor-utils')
@@ -49,6 +51,15 @@ def transform_platform(str_to_transform, config_platform, config_processor=None)
     return str_to_transform
 
 
+def transform_subtest(str_to_transform, subtest_name):
+    """Transform subtest name i.e. 'mitm4-linux-firefox-{subtest}.manifest'
+    transforms to 'mitm4-linux-firefox-amazon.manifest'."""
+    if '{subtest}' not in str_to_transform:
+        return str_to_transform
+
+    return str_to_transform.replace('{subtest}', subtest_name)
+
+
 def view_gecko_profile(ffox_bin):
     # automatically load the latest talos gecko-profile archive in profiler.firefox.com
     LOG_GECKO = RaptorLogger(component='raptor-view-gecko-profile')
@@ -78,7 +89,7 @@ def view_gecko_profile(ffox_bin):
         LOG_GECKO.info("unable to find the view-gecko-profile tool, cannot launch it")
         return
 
-    command = ['python',
+    command = [sys.executable,
                view_gp,
                '-b', ffox_bin,
                '-p', profile_zip]
@@ -114,3 +125,7 @@ def write_yml_file(yml_file, yml_data):
             yaml.dump(yml_data, outfile, default_flow_style=False)
     except Exception as e:
         LOG.critical("failed to write yaml file, exeption: %s" % e)
+
+
+def bool_from_str(boolean_string):
+    return bool(strtobool(boolean_string))

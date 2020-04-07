@@ -3,7 +3,21 @@
 
 "use strict";
 
-let availableRegions = Services.intl.getAvailableLocaleDisplayNames("region");
+const availableRegions = [
+  ...Services.intl.getAvailableLocaleDisplayNames("region"),
+  null,
+];
+
+const DOMAIN_LOCALES = {
+  "ebay-ca": ["en-CA"],
+  "ebay-ch": ["rm"],
+  "ebay-de": ["de", "dsb", "hsb"],
+  "ebay-es": ["an", "ast", "ca", "ca-valencia", "es-ES", "eu", "gl"],
+  "ebay-ie": ["ga-IE", "ie"],
+  "ebay-it": ["it", "lij"],
+  "ebay-nl": ["fy-NL", "nl"],
+  "ebay-uk": ["cy", "en-GB", "gd"],
+};
 
 const test = new SearchConfigTest({
   identifier: "ebay",
@@ -47,10 +61,7 @@ const test = new SearchConfigTest({
         },
       },
       {
-        // For en-US ebay is currently included everywhere apart from these regions.
-        regions: availableRegions.filter(
-          region => !["by", "kz", "ru", "tr"].includes(region)
-        ),
+        regions: ["au", "be", "ca", "ch", "gb", "ie", "nl", "us"],
         locales: {
           matches: ["en-US"],
         },
@@ -68,7 +79,9 @@ const test = new SearchConfigTest({
       included: [
         {
           regions: ["be"],
-          locales: { matches: ["br", "fr", "fy-NL", "nl", "wo"] },
+          locales: {
+            matches: ["br", "unknown", "en-US", "fr", "fy-NL", "nl", "wo"],
+          },
         },
       ],
       searchUrlEnd: "1553-53471-19255-0/1",
@@ -89,11 +102,25 @@ const test = new SearchConfigTest({
       telemetryId: "ebay-ca",
       included: [
         {
-          locales: { matches: ["en-CA"] },
+          locales: { matches: DOMAIN_LOCALES["ebay-ca"] },
         },
         {
           regions: ["ca"],
-          locales: { matches: ["br", "fr", "wo"] },
+        },
+      ],
+      excluded: [
+        {
+          locales: {
+            matches: [
+              ...DOMAIN_LOCALES["ebay-ch"],
+              ...DOMAIN_LOCALES["ebay-de"],
+              ...DOMAIN_LOCALES["ebay-es"],
+              ...DOMAIN_LOCALES["ebay-ie"],
+              ...DOMAIN_LOCALES["ebay-it"],
+              ...DOMAIN_LOCALES["ebay-nl"],
+              ...DOMAIN_LOCALES["ebay-uk"],
+            ],
+          },
         },
       ],
       searchUrlEnd: "706-53473-19255-0/1",
@@ -103,11 +130,24 @@ const test = new SearchConfigTest({
       telemetryId: "ebay-ch",
       included: [
         {
-          locales: { matches: ["rm"] },
+          locales: { matches: DOMAIN_LOCALES["ebay-ch"] },
         },
         {
           regions: ["ch"],
-          locales: { matches: ["br", "de", "dsb", "fr", "hsb", "wo"] },
+        },
+      ],
+      excluded: [
+        {
+          locales: {
+            matches: [
+              ...DOMAIN_LOCALES["ebay-ca"],
+              ...DOMAIN_LOCALES["ebay-es"],
+              ...DOMAIN_LOCALES["ebay-ie"],
+              ...DOMAIN_LOCALES["ebay-it"],
+              ...DOMAIN_LOCALES["ebay-nl"],
+              ...DOMAIN_LOCALES["ebay-uk"],
+            ],
+          },
         },
       ],
       searchUrlEnd: "5222-53480-19255-0/1",
@@ -117,7 +157,7 @@ const test = new SearchConfigTest({
       telemetryId: "ebay",
       included: [
         {
-          locales: { matches: ["en-US"] },
+          locales: { matches: ["unknown", "en-US"] },
         },
       ],
       excluded: [{ regions: ["au", "be", "ca", "ch", "gb", "ie", "nl"] }],
@@ -129,7 +169,7 @@ const test = new SearchConfigTest({
       included: [
         {
           regions: ["au"],
-          locales: { matches: ["cy", "en-GB", "gd"] },
+          locales: { matches: ["cy", "unknown", "en-GB", "en-US", "gd"] },
         },
       ],
       searchUrlEnd: "705-53470-19255-0/1",
@@ -139,11 +179,11 @@ const test = new SearchConfigTest({
       telemetryId: "ebay-ie",
       included: [
         {
-          locales: { matches: ["ga-IE", "ie"] },
+          locales: { matches: DOMAIN_LOCALES["ebay-ie"] },
         },
         {
           regions: ["ie"],
-          locales: { matches: ["cy", "en-GB", "gd"] },
+          locales: { matches: ["cy", "unknown", "en-GB", "en-US", "gd"] },
         },
       ],
       searchUrlEnd: "5282-53468-19255-0/1",
@@ -153,7 +193,11 @@ const test = new SearchConfigTest({
       telemetryId: "ebay-uk",
       included: [
         {
-          locales: { matches: ["cy", "en-GB", "gd"] },
+          locales: { matches: DOMAIN_LOCALES["ebay-uk"] },
+        },
+        {
+          locales: { matches: ["unknown", "en-US"] },
+          regions: ["gb"],
         },
       ],
       excluded: [{ regions: ["au", "ie"] }],
@@ -164,7 +208,7 @@ const test = new SearchConfigTest({
       telemetryId: "ebay-de",
       included: [
         {
-          locales: { matches: ["de", "dsb", "hsb"] },
+          locales: { matches: DOMAIN_LOCALES["ebay-de"] },
         },
       ],
       excluded: [{ regions: ["at", "ch"] }],
@@ -176,7 +220,7 @@ const test = new SearchConfigTest({
       included: [
         {
           locales: {
-            matches: ["an", "ast", "ca", "ca-valencia", "es-ES", "eu", "gl"],
+            matches: DOMAIN_LOCALES["ebay-es"],
           },
         },
       ],
@@ -198,7 +242,7 @@ const test = new SearchConfigTest({
       telemetryId: "ebay-it",
       included: [
         {
-          locales: { matches: ["it", "lij"] },
+          locales: { matches: DOMAIN_LOCALES["ebay-it"] },
         },
       ],
       searchUrlEnd: "724-53478-19255-0/1",
@@ -208,7 +252,11 @@ const test = new SearchConfigTest({
       telemetryId: "ebay-nl",
       included: [
         {
-          locales: { matches: ["fy-NL", "nl"] },
+          locales: { matches: DOMAIN_LOCALES["ebay-nl"] },
+        },
+        {
+          locales: { matches: ["unknown", "en-US"] },
+          regions: ["nl"],
         },
       ],
       excluded: [{ regions: ["be"] }],
@@ -223,6 +271,15 @@ add_task(async function setup() {
 });
 
 add_task(async function test_searchConfig_ebay() {
-  await test.run(false);
   await test.run(true);
+  // Only applies to the default locale fallback for the legacy config.
+  // Note: when we remove the legacy config, we should remove the "unknown"
+  // references in the 'details' section of the test above.
+  test._config.available.included[0].locales.matches.push("unknown");
+  // In the legacy configuration, eBay was turned on for most regions with en-US
+  // locale by default, but turned off by abSearch.
+  test._config.available.included[1].regions = availableRegions.filter(
+    region => !["by", "kz", "ru", "tr"].includes(region)
+  );
+  await test.run(false);
 });

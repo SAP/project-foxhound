@@ -490,8 +490,6 @@ add_task(async function test_form_entries() {
 
 // Test for offline cache deletion
 add_task(async function test_offline_cache() {
-  Services.prefs.setBoolPref("browser.cache.offline.enable", true);
-  Services.prefs.setBoolPref("browser.cache.offline.storage.enable", true);
   // Prepare stuff, we will work with www.example.com
   var URL = "http://www.example.com";
   var URI = makeURI(URL);
@@ -570,8 +568,6 @@ add_task(async function test_offline_cache() {
     cacheListener
   );
   await wh.promiseClosed;
-  Services.prefs.clearUserPref("browser.cache.offline.enable");
-  Services.prefs.clearUserPref("browser.cache.offline.storage.enable");
 });
 
 // Test for offline apps permission deletion
@@ -631,19 +627,20 @@ WindowHelper.prototype = {
    * "Presses" the dialog's OK button.
    */
   acceptDialog() {
+    let dialog = this.win.document.querySelector("dialog");
     is(
-      this.win.document.documentElement.getButton("accept").disabled,
+      dialog.getButton("accept").disabled,
       false,
       "Dialog's OK button should not be disabled"
     );
-    this.win.document.documentElement.acceptDialog();
+    dialog.acceptDialog();
   },
 
   /**
    * "Presses" the dialog's Cancel button.
    */
   cancelDialog() {
-    this.win.document.documentElement.cancelDialog();
+    this.win.document.querySelector("dialog").cancelDialog();
   },
 
   /**
@@ -781,7 +778,7 @@ WindowHelper.prototype = {
 
     Services.ww.openWindow(
       browserWin,
-      "chrome://browser/content/sanitize.xul",
+      "chrome://browser/content/sanitize.xhtml",
       "SanitizeDialog",
       "chrome,titlebar,dialog,centerscreen,modal",
       null

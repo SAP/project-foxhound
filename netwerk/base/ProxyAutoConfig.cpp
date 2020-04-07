@@ -16,12 +16,14 @@
 #include "nsJSUtils.h"
 #include "jsfriendapi.h"
 #include "js/CompilationAndEvaluation.h"  // JS::Compile{,DontInflate}
+#include "js/ContextOptions.h"
 #include "js/PropertySpec.h"
 #include "js/SourceText.h"  // JS::Source{Ownership,Text}
 #include "js/Utility.h"
 #include "js/Warnings.h"  // JS::SetWarningReporter
 #include "prnetdb.h"
 #include "nsITimer.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/net/DNS.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "nsServiceManagerUtils.h"
@@ -280,15 +282,18 @@ static const char sAsciiPacUtils[] =
 // sRunning is defined for the helper functions only while the
 // Javascript engine is running and the PAC object cannot be deleted
 // or reset.
-static uint32_t sRunningIndex = 0xdeadbeef;
+static Atomic<uint32_t, Relaxed>& RunningIndex() {
+  static Atomic<uint32_t, Relaxed> sRunningIndex(0xdeadbeef);
+  return sRunningIndex;
+}
 static ProxyAutoConfig* GetRunning() {
-  MOZ_ASSERT(sRunningIndex != 0xdeadbeef);
-  return static_cast<ProxyAutoConfig*>(PR_GetThreadPrivate(sRunningIndex));
+  MOZ_ASSERT(RunningIndex() != 0xdeadbeef);
+  return static_cast<ProxyAutoConfig*>(PR_GetThreadPrivate(RunningIndex()));
 }
 
 static void SetRunning(ProxyAutoConfig* arg) {
-  MOZ_ASSERT(sRunningIndex != 0xdeadbeef);
-  PR_SetThreadPrivate(sRunningIndex, arg);
+  MOZ_ASSERT(RunningIndex() != 0xdeadbeef);
+  PR_SetThreadPrivate(RunningIndex(), arg);
 }
 
 // The PACResolver is used for dnsResolve()
@@ -579,6 +584,8 @@ class JSContextWrapper {
     JSContext* cx = JS_NewContext(JS::DefaultHeapMaxBytes + aExtraHeapSize);
     if (NS_WARN_IF(!cx)) return nullptr;
 
+    JS::ContextOptionsRef(cx).setDisableIon().setDisableEvalSecurityChecks();
+
     JSContextWrapper* entry = new JSContextWrapper(cx);
     if (NS_FAILED(entry->Init())) {
       delete entry;
@@ -658,7 +665,7 @@ const JSClass JSContextWrapper::sGlobalClass = {"PACResolutionThreadGlobal",
                                                 &JS::DefaultGlobalClassOps};
 
 void ProxyAutoConfig::SetThreadLocalIndex(uint32_t index) {
-  sRunningIndex = index;
+  RunningIndex() = index;
 }
 
 nsresult ProxyAutoConfig::Init(const nsCString& aPACURI,
@@ -728,6 +735,7 @@ nsresult ProxyAutoConfig::SetupJS() {
 
   auto CompilePACScript = [this](JSContext* cx) -> JSScript* {
     JS::CompileOptions options(cx);
+    options.setSkipFilenameValidation(true);
     options.setFileAndLine(this->mPACURI.get(), 1);
 
     // Per ProxyAutoConfig::Init, compile as UTF-8 if the full data is UTF-8,

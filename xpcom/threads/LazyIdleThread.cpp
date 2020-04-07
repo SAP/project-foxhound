@@ -10,7 +10,6 @@
 
 #include "GeckoProfiler.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIIdlePeriod.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Services.h"
@@ -393,6 +392,24 @@ LazyIdleThread::Dispatch(already_AddRefed<nsIRunnable> aEvent,
 NS_IMETHODIMP
 LazyIdleThread::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) {
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+LazyIdleThread::GetRunningEventDelay(TimeDuration* aDelay, TimeStamp* aStart) {
+  if (mThread) {
+    return mThread->GetRunningEventDelay(aDelay, aStart);
+  }
+  *aDelay = TimeDuration();
+  *aStart = TimeStamp();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LazyIdleThread::SetRunningEventDelay(TimeDuration aDelay, TimeStamp aStart) {
+  if (mThread) {
+    return mThread->SetRunningEventDelay(aDelay, aStart);
+  }
+  return NS_OK;
 }
 
 NS_IMETHODIMP

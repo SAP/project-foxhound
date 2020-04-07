@@ -11,12 +11,14 @@ LOCAL_INCLUDES += [
 include('../js-config.mozbuild')
 include('../js-cxxflags.mozbuild')
 
-if (CONFIG['JS_CODEGEN_X64'] or CONFIG['JS_CODEGEN_X86']) and CONFIG['JS_JITSPEW']:
+if CONFIG['JS_CODEGEN_X64'] or CONFIG['JS_CODEGEN_X86']:
     SOURCES += [
         'Zycore/Allocator.c',
         'Zycore/API/Memory.c',
+        'Zycore/ArgParse.c',
         'Zycore/Bitset.c',
         'Zycore/Format.c',
+        'Zycore/List.c',
         'Zycore/Vector.c',
         'Zycore/Zycore.c',
         'Zycore/ZycoreString.c',

@@ -103,6 +103,11 @@ class WebRenderBridgeParent final
     return mCompositorBridge;
   }
 
+  void UpdateQualitySettings();
+  void UpdateDebugFlags();
+  void UpdateMultithreading();
+  void UpdateBatchingParameters();
+
   mozilla::ipc::IPCResult RecvEnsureConnected(
       TextureFactoryIdentifier* aTextureFactoryIdentifier,
       MaybeIdNamespace* aMaybeIdNamespace) override;
@@ -250,7 +255,7 @@ class WebRenderBridgeParent final
   void ScheduleForcedGenerateFrame();
 
   void NotifyDidSceneBuild(const nsTArray<wr::RenderRoot>& aRenderRoots,
-                           RefPtr<wr::WebRenderPipelineInfo> aInfo);
+                           RefPtr<const wr::WebRenderPipelineInfo> aInfo);
 
   wr::Epoch UpdateWebRender(
       CompositorVsyncScheduler* aScheduler,
@@ -296,7 +301,25 @@ class WebRenderBridgeParent final
    *
    * If there is not currently a recorder, this is a no-op.
    */
-  void WriteCollectedFrames();
+  RefPtr<wr::WebRenderAPI::WriteCollectedFramesPromise> WriteCollectedFrames();
+
+#if defined(MOZ_WIDGET_ANDROID)
+  /**
+   * Request a screengrab for android
+   */
+  void RequestScreenPixels(UiCompositorControllerParent* aController);
+  void MaybeCaptureScreenPixels();
+#endif
+  /**
+   * Return the frames collected by the |WebRenderCompositionRecorder| encoded
+   * as data URIs.
+   *
+   * If there is not currently a recorder, this is a no-op and the promise will
+   * be rejected.
+   */
+  RefPtr<wr::WebRenderAPI::GetCollectedFramesPromise> GetCollectedFrames();
+
+  void DisableNativeCompositor();
 
  private:
   class ScheduleSharedSurfaceRelease;
@@ -404,7 +427,8 @@ class WebRenderBridgeParent final
   bool AdvanceAnimations();
   bool SampleAnimations(
       wr::RenderRootArray<nsTArray<wr::WrOpacityProperty>>& aOpacityArrays,
-      wr::RenderRootArray<nsTArray<wr::WrTransformProperty>>& aTransformArrays);
+      wr::RenderRootArray<nsTArray<wr::WrTransformProperty>>& aTransformArrays,
+      wr::RenderRootArray<nsTArray<wr::WrColorProperty>>& aColorArrays);
 
   CompositorBridgeParent* GetRootCompositorBridgeParent() const;
 
@@ -548,6 +572,9 @@ class WebRenderBridgeParent final
   wr::NonDefaultRenderRootArray<ScreenRect> mRenderRootRects;
 
   Maybe<wr::RenderRoot> mRenderRoot;
+#if defined(MOZ_WIDGET_ANDROID)
+  UiCompositorControllerParent* mScreenPixelsTarget;
+#endif
   bool mPaused;
   bool mDestroyed;
   bool mReceivedDisplayList;

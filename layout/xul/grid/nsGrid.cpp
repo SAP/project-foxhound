@@ -50,8 +50,8 @@ example 2:
 
    <rows>
       <row>
-         <text value="hello"/>
-         <text value="there"/>
+         <label value="hello"/>
+         <label value="there"/>
       </row>
    </rows>
 </grid>
@@ -62,14 +62,14 @@ example 3:
 
 <rows>
       <row>
-         <text value="hello"/>
-         <text value="there"/>
+         <label value="hello"/>
+         <label value="there"/>
       </row>
    </rows>
 
    <columns>
       <column>
-         <text value="Hey I'm in the column and I'm on top!"/>
+         <label value="Hey I'm in the column and I'm on top!"/>
       </column>
       <column/>
    </columns>
@@ -796,7 +796,7 @@ nscoord nsGrid::GetMinRowHeight(nsBoxLayoutState& aState, int32_t aIndex,
   if (box) {
     bool widthSet, heightSet;
     nsSize cssSize(-1, -1);
-    nsIFrame::AddXULMinSize(aState, box, cssSize, widthSet, heightSet);
+    nsIFrame::AddXULMinSize(box, cssSize, widthSet, heightSet);
 
     row->mMin = GET_HEIGHT(cssSize, aIsHorizontal);
 

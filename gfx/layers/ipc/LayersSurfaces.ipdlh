@@ -16,6 +16,7 @@ using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/Point.h";
 using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
 using gfxImageFormat from "gfxTypes.h";
+using mozilla::layers::MaybeVideoBridgeSource from "mozilla/layers/VideoBridgeUtils.h";
 
 namespace mozilla {
 namespace layers {
@@ -59,13 +60,17 @@ struct SurfaceDescriptorMacIOSurface {
 };
 
 struct SurfaceDescriptorDMABuf {
-  uint32_t width;
-  uint32_t height;
-  uint32_t format;
+  uint32_t bufferType;
+  uint64_t modifier;
   uint32_t flags;
-  FileDescriptor fd;
-  uint32_t stride;
-  uint32_t offset;
+  FileDescriptor[] fds;
+  uint32_t[] width;
+  uint32_t[] height;
+  uint32_t[] format;
+  uint32_t[] strides;
+  uint32_t[] offsets;
+  YUVColorSpace yUVColorSpace;
+  FileDescriptor[] fence;
 };
 
 struct SurfaceTextureDescriptor {
@@ -92,15 +97,28 @@ struct SurfaceDescriptorSharedGLTexture {
 };
 
 
-union GPUVideoSubDescriptor {
+union RemoteDecoderVideoSubDescriptor {
   SurfaceDescriptorD3D10;
   SurfaceDescriptorDXGIYCbCr;
+  SurfaceDescriptorDMABuf;
   null_t;
 };
 
-struct SurfaceDescriptorGPUVideo {
+struct SurfaceDescriptorRemoteDecoder {
   uint64_t handle;
-  GPUVideoSubDescriptor subdesc;
+  RemoteDecoderVideoSubDescriptor subdesc;
+  MaybeVideoBridgeSource source;
+};
+
+struct SurfaceDescriptorPlugin {
+  uint64_t id;
+  SurfaceDescriptorD3D10 pluginSurf;
+  SurfaceDescriptorD3D10 displaySurf;
+};
+
+union SurfaceDescriptorGPUVideo {
+  SurfaceDescriptorRemoteDecoder;
+  SurfaceDescriptorPlugin;
 };
 
 struct RGBDescriptor {

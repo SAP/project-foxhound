@@ -123,11 +123,7 @@ case "$target" in
         _WIN32_MSVC=1
 
         # Make sure compilers are valid
-        CFLAGS="$CFLAGS -nologo"
-        CXXFLAGS="$CXXFLAGS -TP -nologo"
-        if test -z "$CLANG_CL"; then
-            CPPFLAGS="$CPPFLAGS -utf-8"
-        fi
+        CXXFLAGS="$CXXFLAGS -TP"
         # _CRT_SECURE_NO_WARNINGS disables warnings about using MSVC-specific
         # secure CRT functions.
         CXXFLAGS="$CXXFLAGS -D_CRT_SECURE_NO_WARNINGS"
@@ -401,7 +397,7 @@ dnl ========================================================
 case "$host" in
 *mingw*)
     if test -n "$_WIN32_MSVC"; then
-        HOST_CFLAGS="$HOST_CFLAGS -nologo"
+        HOST_CFLAGS="$HOST_CFLAGS"
     else
         HOST_CFLAGS="$HOST_CFLAGS -mwindows"
     fi
@@ -439,15 +435,6 @@ case "$host" in
     HOST_OPTIMIZE_FLAGS="${HOST_OPTIMIZE_FLAGS=-O2}"
     ;;
 esac
-
-dnl ========================================================
-dnl Add optional and non-optional hardening flags from toolchain.configure
-dnl ========================================================
-
-CFLAGS="$CFLAGS $MOZ_HARDENING_CFLAGS_JS"
-CPPFLAGS="$CPPFLAGS $MOZ_HARDENING_CFLAGS_JS"
-CXXFLAGS="$CXXFLAGS $MOZ_HARDENING_CFLAGS_JS"
-LDFLAGS="$LDFLAGS $MOZ_HARDENING_LDFLAGS_JS"
 
 dnl ========================================================
 dnl System overrides of the defaults for target
@@ -541,6 +528,7 @@ case "$target" in
 
         # Silence problematic clang warnings
         CXXFLAGS="$CXXFLAGS -Wno-incompatible-ms-struct"
+        LDFLAGS="$LDFLAGS -Wl,--no-insert-timestamp"
 
         MOZ_OPTIMIZE_FLAGS="-O2"
 
@@ -640,6 +628,10 @@ case "$target" in
             # declare |delete| differently.  Therefore, suppress this
             # warning.
             CXXFLAGS="$CXXFLAGS -Wno-implicit-exception-spec-mismatch"
+            # Macros like STDMETHOD() and IFACEMETHOD() can declare
+            # __attribute__((nothrow)) on their respective method declarations,
+            # while the definitions are left without the matching attribute.
+            CXXFLAGS="$CXXFLAGS -Wno-microsoft-exception-spec"
             # At least one MSVC header and several headers in-tree have
             # unused typedefs, so turn this on.
             CXXFLAGS="$CXXFLAGS -Wno-unused-local-typedef"
@@ -1587,19 +1579,6 @@ if test -n "$MOZ_DEV_EDITION"; then
     AC_DEFINE(MOZ_DEV_EDITION)
 fi
 
-# Allow influencing configure with a defines.sh script.
-. "${srcdir}/build/defines.sh"
-
-# If we're not building a release build, define EARLY_BETA_OR_EARLIER if it is
-# set in defines.sh
-if test "$BUILDING_RELEASE"; then
-  # Override value in defines.sh, if any
-  EARLY_BETA_OR_EARLIER=
-elif test "$EARLY_BETA_OR_EARLIER"; then
-  AC_DEFINE(EARLY_BETA_OR_EARLIER)
-fi
-AC_SUBST(EARLY_BETA_OR_EARLIER)
-
 BINDGEN_SYSTEM_FLAGS="$_BINDGEN_CFLAGS $NSPR_CFLAGS"
 AC_SUBST(BINDGEN_SYSTEM_FLAGS)
 
@@ -1612,7 +1591,7 @@ MOZ_CHECK_ALLOCATOR
 AC_SUBST(ac_configure_args)
 
 if test -n "$JS_STANDALONE"; then
-MOZ_APP_NAME="mozjs"
+MOZ_APP_NAME="js"
 JS_LIBRARY_NAME="mozjs-$MOZILLA_SYMBOLVERSION"
 else
 JS_LIBRARY_NAME="mozjs"

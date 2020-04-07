@@ -367,7 +367,7 @@ class ObjectPolicy final : public TypePolicy {
 
 // Single-object input. If the input is a Value, it is unboxed. If it is
 // a primitive, we use ValueToNonNullObject.
-typedef ObjectPolicy<0> SingleObjectPolicy;
+using SingleObjectPolicy = ObjectPolicy<0>;
 
 template <unsigned Op>
 class BoxPolicy final : public TypePolicy {
@@ -483,22 +483,6 @@ class StoreTypedArrayHolePolicy final : public StoreUnboxedScalarPolicy {
                                  MInstruction* ins) const override;
 };
 
-class StoreUnboxedObjectOrNullPolicy final : public TypePolicy {
- public:
-  constexpr StoreUnboxedObjectOrNullPolicy() {}
-  EMPTY_DATA_;
-  MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
-                                 MInstruction* def) const override;
-};
-
-class StoreUnboxedStringPolicy final : public TypePolicy {
- public:
-  constexpr StoreUnboxedStringPolicy() {}
-  EMPTY_DATA_;
-  MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
-                                 MInstruction* def) const override;
-};
-
 // Accepts integers and doubles. Everything else is boxed.
 class ClampPolicy final : public TypePolicy {
  public:
@@ -514,6 +498,15 @@ class FilterTypeSetPolicy final : public TypePolicy {
   EMPTY_DATA_;
   MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
                                  MInstruction* ins) const override;
+};
+
+// Policy for MTypedArrayIndexToInt32. Operand is either Double or Int32.
+class TypedArrayIndexPolicy final : public TypePolicy {
+ public:
+  constexpr TypedArrayIndexPolicy() {}
+  SPECIALIZATION_DATA_;
+  MOZ_MUST_USE bool adjustInputs(TempAllocator& alloc,
+                                 MInstruction* def) const override;
 };
 
 #undef SPECIALIZATION_DATA_

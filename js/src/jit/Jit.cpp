@@ -70,7 +70,7 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
     envChain = nullptr;
     calleeToken = CalleeToToken(&args.callee().as<JSFunction>(), constructing);
 
-    unsigned numFormals = script->functionNonDelazifying()->nargs();
+    unsigned numFormals = script->function()->nargs();
     if (numFormals > numActualArgs) {
       code = cx->runtime()->jitRuntime()->getArgumentsRectifier().value;
     }
@@ -157,7 +157,7 @@ EnterJitStatus js::jit::MaybeEnterJit(JSContext* cx, RunState& state) {
     script->incWarmUpCounter();
 
     // Try to Ion-compile.
-    if (jit::IsIonEnabled()) {
+    if (jit::IsIonEnabled(cx)) {
       jit::MethodStatus status = jit::CanEnterIon(cx, state);
       if (status == jit::Method_Error) {
         return EnterJitStatus::Error;
@@ -169,7 +169,7 @@ EnterJitStatus js::jit::MaybeEnterJit(JSContext* cx, RunState& state) {
     }
 
     // Try to Baseline-compile.
-    if (jit::IsBaselineJitEnabled()) {
+    if (jit::IsBaselineJitEnabled(cx)) {
       jit::MethodStatus status =
           jit::CanEnterBaselineMethod<BaselineTier::Compiler>(cx, state);
       if (status == jit::Method_Error) {

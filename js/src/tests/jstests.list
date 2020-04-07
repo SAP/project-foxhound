@@ -60,6 +60,11 @@ skip-if(!this.hasOwnProperty('addIntlExtras')) include test262/intl402/ListForma
 skip-if(!this.hasOwnProperty("Atomics")) include test262/built-ins/Atomics/jstests.list
 skip-if(!this.hasOwnProperty("SharedArrayBuffer")) include test262/built-ins/SharedArrayBuffer/jstests.list
 
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1611782
+skip-if(release_or_beta) script test262/intl402/RelativeTimeFormat/constructor/constructor/options-throwing-getters.js
+skip-if(release_or_beta) script test262/intl402/RelativeTimeFormat/constructor/constructor/options-order.js
+skip-if(release_or_beta) script test262/intl402/RelativeTimeFormat/constructor/constructor/options-numberingSystem-invalid.js
+
 
 #####################################
 # Test262 tests disabled on browser #
@@ -132,6 +137,9 @@ skip-if(!xulRuntime.shell) script test262/language/eval-code/indirect/var-env-va
 skip-if(!xulRuntime.shell) script test262/language/global-code/decl-func.js
 skip-if(!xulRuntime.shell) script test262/language/global-code/decl-var.js
 
+# Atomics tests (Atomics/notify, Atomics/wait) are disabled because our $.agent implementation needs getSharedArrayBuffer, setSharedArrayBuffer and evalInWorker: https://bugzilla.mozilla.org/show_bug.cgi?id=1598612
+skip-if(!xulRuntime.shell) include test262/built-ins/Atomics/notify/jstests.list
+skip-if(!xulRuntime.shell) include test262/built-ins/Atomics/wait/jstests.list
 
 ##################################################
 # Test262 tests skipped due to SpiderMonkey bugs #
@@ -186,28 +194,6 @@ skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/tonumb
 skip script test262/built-ins/TypedArrayConstructors/internals/Set/detached-buffer-realm.js
 skip script test262/built-ins/TypedArrayConstructors/internals/Set/detached-buffer.js
 skip script test262/built-ins/TypedArrayConstructors/internals/Set/tonumber-value-detached-buffer.js
-
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1129202
-skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/key-is-not-canonical-index.js
-skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/key-is-not-integer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/key-is-not-canonical-index.js
-skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/key-is-not-integer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Get/BigInt/key-is-not-canonical-index.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Get/BigInt/key-is-not-integer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Get/key-is-not-canonical-index.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Get/key-is-not-integer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/key-is-not-canonical-index.js
-skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/key-is-not-canonical-index.js
-skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/BigInt/key-is-not-canonical-index.js
-skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/BigInt/key-is-not-integer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/key-is-not-canonical-index.js
-skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/key-is-not-integer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/key-is-not-canonical-index.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/key-is-not-integer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/tonumber-value-throws.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/key-is-not-canonical-index.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/key-is-not-integer.js
-skip script test262/built-ins/TypedArrayConstructors/internals/Set/tonumber-value-throws.js
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1317405
 skip script test262/language/computed-property-names/class/static/method-number.js
@@ -303,9 +289,6 @@ ignore-flag(--more-compartments) script test262/built-ins/Proxy/setPrototypeOf/t
 ignore-flag(--more-compartments) script test262/built-ins/Array/length/define-own-prop-length-overflow-realm.js
 skip script test262/built-ins/Function/internals/Construct/derived-return-val-realm.js
 skip script test262/built-ins/Function/internals/Construct/derived-this-uninitialized-realm.js
-
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1317416
-skip script test262/built-ins/GeneratorFunction/proto-from-ctor-realm.js
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1317395
 skip script test262/built-ins/ArrayBuffer/prototype/byteLength/detached-buffer.js
@@ -434,12 +417,11 @@ ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return
 ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return-not-object-throws-boolean-realm.js
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1560355
-skip script test262/intl402/DateTimeFormat/numbering-system-calendar-options.js
-skip script test262/intl402/NumberFormat/numbering-system-options.js
-
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1570245
-skip script test262/intl402/RelativeTimeFormat/prototype/format/en-us-numeric-auto.js
-skip script test262/intl402/RelativeTimeFormat/prototype/formatToParts/en-us-numeric-auto.js
+skip-if(release_or_beta) skip script test262/intl402/DateTimeFormat/numbering-system-calendar-options.js
+skip-if(release_or_beta) skip script test262/intl402/DateTimeFormat/constructor-calendar-numberingSystem-order.js
+skip-if(release_or_beta) skip script test262/intl402/NumberFormat/numbering-system-options.js
+skip-if(release_or_beta) skip script test262/intl402/NumberFormat/constructor-numberingSystem-order.js
+skip-if(release_or_beta) skip script test262/intl402/NumberFormat/constructor-options-throwing-getters.js
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1277801
 skip script test262/built-ins/Object/prototype/toString/symbol-tag-non-str-builtin.js
@@ -467,6 +449,26 @@ skip script test262/intl402/ListFormat/constructor/constructor/options-toobject-
 skip script test262/intl402/ListFormat/constructor/constructor/options-order.js
 skip script test262/intl402/ListFormat/constructor/constructor/options-type-valid.js
 
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1591099
+skip script test262/intl402/ListFormat/constructor/constructor/proto-from-ctor-realm.js
+skip script test262/intl402/Locale/proto-from-ctor-realm.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1277801
+skip script test262/built-ins/String/prototype/replaceAll/searchValue-replacer-RegExp-call.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1610512
+skip script test262/intl402/NumberFormat/prototype/formatToParts/signDisplay-en-US.js
+skip script test262/intl402/NumberFormat/prototype/formatToParts/signDisplay-zh-TW.js
+skip script test262/intl402/NumberFormat/prototype/formatToParts/signDisplay-ja-JP.js
+skip script test262/intl402/NumberFormat/prototype/formatToParts/signDisplay-ko-KR.js
+skip script test262/intl402/NumberFormat/prototype/formatToParts/signDisplay-de-DE.js
+skip script test262/intl402/NumberFormat/prototype/format/signDisplay-en-US.js
+skip script test262/intl402/NumberFormat/prototype/format/signDisplay-zh-TW.js
+skip script test262/intl402/NumberFormat/prototype/format/signDisplay-ja-JP.js
+skip script test262/intl402/NumberFormat/prototype/format/signDisplay-ko-KR.js
+skip script test262/intl402/NumberFormat/prototype/format/signDisplay-de-DE.js
+skip script test262/intl402/NumberFormat/prototype/format/signDisplay-rounding.js
+
 
 ###########################################################
 # Tests disabled due to issues in test262 importer script #
@@ -486,3 +488,31 @@ skip script test262/intl402/DateTimeFormat/constructor-options-fractionalSecondD
 # Draft proposal doesn't yet implement the changes proposed in
 # <https://github.com/tc39/proposal-unified-intl-numberformat/issues/63>.
 skip script test262/intl402/NumberFormat/constructor-unit.js
+
+# The `intrinsicDefaultProto` for AggregateError is AggregateError.prototype.
+skip script test262/built-ins/AggregateError/newtarget-proto-fallback.js
+
+# The test exposes a potential spec issue in InitializeDateTimeFormat:
+# Let's assume the locale is "en", adding likely subtags results in "en-Latn-US".
+# Consulting CLDR's supplementalData.xml shows for the "US" region:
+#   <hours preferred="h" allowed="h hb H hB" regions="[...] US [...]"/>
+# So preferred is "h" (= hour-cycle "h12") and additionally allowed is "H" (=hc "h23").
+# But InitializeDateTimeFormat defaults for hour12=false and hcDefault="h12" the
+# hour-cycle to "h24", which isn't allowed per the above CLDR data.
+skip script test262/intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle-default.js
+
+# https://github.com/tc39/test262/pull/2464 only added a new test, but didn't
+# update the existing tests.
+skip script test262/language/statements/class/subclass/class-definition-null-proto-super.js
+skip script test262/language/expressions/super/call-proto-not-ctor.js
+
+# Tests expects RangeError, but should instead expect TypeError.
+skip script test262/intl402/NumberFormat/constructor-order.js
+
+# Tests not updated to follow new language tag canonicalisation.
+skip script test262/intl402/Locale/constructor-non-iana-canon.js
+skip script test262/intl402/Intl/getCanonicalLocales/preferred-variant.js
+skip script test262/intl402/Intl/getCanonicalLocales/non-iana-canon.js
+
+# DST issues, bug 1620825.
+skip script test262/built-ins/Date/parse/without-utc-offset.js

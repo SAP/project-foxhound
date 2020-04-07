@@ -89,6 +89,9 @@ const BUFFERED_BOOKMARK_VALIDATOR_VERSION = 2;
 // bookmark merge.
 const BUFFERED_BOOKMARK_APPLY_TIMEOUT_MS = 5 * 60 * 60 * 1000; // 5 minutes
 
+// The default frecency value to use when not known.
+const FRECENCY_UNKNOWN = -1;
+
 function isSyncedRootNode(node) {
   return (
     node.root == "bookmarksMenuFolder" ||
@@ -1070,10 +1073,19 @@ BaseBookmarksStore.prototype = {
 
     // Add in the bookmark's frecency if we have something.
     if (record.bmkUri != null) {
-      let frecency = await PlacesSyncUtils.history.fetchURLFrecency(
-        record.bmkUri
-      );
-      if (frecency != -1) {
+      let frecency = FRECENCY_UNKNOWN;
+      try {
+        frecency = await PlacesSyncUtils.history.fetchURLFrecency(
+          record.bmkUri
+        );
+      } catch (ex) {
+        this._log.warn(
+          `Failed to fetch frecency for ${record.id}; assuming default`,
+          ex
+        );
+        this._log.trace("Record {id} has invalid URL ${bmkUri}", record);
+      }
+      if (frecency != FRECENCY_UNKNOWN) {
         index += frecency;
       }
     }
@@ -1400,7 +1412,10 @@ BookmarksTracker.prototype = {
     this._placesListener = new PlacesWeakCallbackWrapper(
       this.handlePlacesEvents.bind(this)
     );
-    PlacesUtils.observers.addListener(["bookmark-added"], this._placesListener);
+    PlacesUtils.observers.addListener(
+      ["bookmark-added", "bookmark-removed"],
+      this._placesListener
+    );
     Svc.Obs.add("bookmarks-restore-begin", this);
     Svc.Obs.add("bookmarks-restore-success", this);
     Svc.Obs.add("bookmarks-restore-failed", this);
@@ -1409,7 +1424,7 @@ BookmarksTracker.prototype = {
   onStop() {
     PlacesUtils.bookmarks.removeObserver(this);
     PlacesUtils.observers.removeListener(
-      ["bookmark-added"],
+      ["bookmark-added", "bookmark-removed"],
       this._placesListener
     );
     Svc.Obs.remove("bookmarks-restore-begin", this);
@@ -1483,22 +1498,25 @@ BookmarksTracker.prototype = {
 
   handlePlacesEvents(events) {
     for (let event of events) {
-      if (IGNORED_SOURCES.includes(event.source)) {
-        continue;
+      switch (event.type) {
+        case "bookmark-added":
+          if (IGNORED_SOURCES.includes(event.source)) {
+            continue;
+          }
+
+          this._log.trace("'bookmark-added': " + event.id);
+          this._upScore();
+          break;
+        case "bookmark-removed":
+          if (IGNORED_SOURCES.includes(event.source)) {
+            continue;
+          }
+
+          this._log.trace("'bookmark-removed': " + event.id);
+          this._upScore();
+          break;
       }
-
-      this._log.trace("'bookmark-added': " + event.id);
-      this._upScore();
     }
-  },
-
-  onItemRemoved(itemId, parentId, index, type, uri, guid, parentGuid, source) {
-    if (IGNORED_SOURCES.includes(source)) {
-      return;
-    }
-
-    this._log.trace("onItemRemoved: " + itemId);
-    this._upScore();
   },
 
   // This method is oddly structured, but the idea is to return as quickly as

@@ -7,7 +7,6 @@
 #include "mozilla/ArrayUtils.h"
 
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsDirectoryService.h"
 #include "nsLocalFile.h"
 #include "nsDebug.h"
@@ -66,11 +65,6 @@ nsresult nsDirectoryService::GetCurrentProcessDirectory(nsIFile** aFile)
   return mXCurProcD->Clone(aFile);
 }  // GetCurrentProcessDirectory()
 
-nsresult nsDirectoryService::SetCurrentProcessDirectory(nsIFile* aFile) {
-  mXCurProcD = aFile;
-  return NS_OK;
-}
-
 StaticRefPtr<nsDirectoryService> nsDirectoryService::gService;
 
 nsDirectoryService::nsDirectoryService() : mHashtable(128) {}
@@ -108,7 +102,7 @@ void nsDirectoryService::RealInit() {
   gService->mProviders.AppendElement(defaultProvider);
 }
 
-nsDirectoryService::~nsDirectoryService() {}
+nsDirectoryService::~nsDirectoryService() = default;
 
 NS_IMPL_ISUPPORTS(nsDirectoryService, nsIProperties, nsIDirectoryService,
                   nsIDirectoryServiceProvider, nsIDirectoryServiceProvider2)

@@ -26,8 +26,9 @@ from mozpack.chrome.manifest import ManifestEntry
 import mozpack.path as mozpath
 from .context import FinalTargetValue
 
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import itertools
+import six
 
 from ..util import (
     group_unified_files,
@@ -219,7 +220,7 @@ class BaseDefines(ContextDerived):
         self.defines = defines
 
     def get_defines(self):
-        for define, value in self.defines.iteritems():
+        for define, value in six.iteritems(self.defines):
             if value is True:
                 yield('-D%s' % define)
             elif value is False:
@@ -239,6 +240,10 @@ class Defines(BaseDefines):
 
 
 class HostDefines(BaseDefines):
+    pass
+
+
+class WasmDefines(BaseDefines):
     pass
 
 
@@ -402,8 +407,6 @@ class Linkable(ContextDerived):
         'lib_defines',
         'linked_libraries',
         'linked_system_libs',
-        'no_pgo_sources',
-        'no_pgo',
         'sources',
     )
 
@@ -412,10 +415,8 @@ class Linkable(ContextDerived):
         self.cxx_link = False
         self.linked_libraries = []
         self.linked_system_libs = []
-        self.lib_defines = Defines(context, {})
+        self.lib_defines = Defines(context, OrderedDict())
         self.sources = defaultdict(list)
-        self.no_pgo_sources = []
-        self.no_pgo = False
 
     def link_library(self, obj):
         assert isinstance(obj, BaseLibrary)
@@ -457,12 +458,12 @@ class Linkable(ContextDerived):
 
         return [mozpath.join(self.objdir, '%s%s.%s' % (obj_prefix,
                                                        mozpath.splitext(mozpath.basename(f))[0],
-                                                       self.config.substs.get('OBJ_SUFFIX', '')))
+                                                       self._obj_suffix()))
                 for f in sources]
 
-    @property
-    def no_pgo_objs(self):
-        return self._get_objs(self.no_pgo_sources)
+    def _obj_suffix(self):
+        """Can be overridden by a base class for custom behavior."""
+        return self.config.substs.get('OBJ_SUFFIX', '')
 
     @property
     def objs(self):
@@ -670,6 +671,32 @@ class StaticLibrary(Library):
         self.no_expand_lib = no_expand_lib
 
 
+class SandboxedWasmLibrary(Library):
+    """Context derived container object for a static sandboxed wasm library"""
+    # This is a real static library; make it known to the build system.
+    no_expand_lib = True
+    KIND = 'wasm'
+
+    def __init__(self, context, basename, real_name=None):
+        Library.__init__(self, context, basename, real_name)
+
+        # TODO: WASM sandboxed libraries are in a weird place: they are
+        # built in a different way, but they should share some code with
+        # SharedLibrary.  This is the minimal configuration needed to work
+        # on the below platforms.
+        assert context.config.substs['OS_TARGET'] in ('Linux', 'Darwin')
+
+        self.lib_name = '%s%s%s' % (
+            context.config.dll_prefix,
+            real_name or basename,
+            context.config.dll_suffix,
+        )
+
+    def _obj_suffix(self):
+        """Can be overridden by a base class for custom behavior."""
+        return self.config.substs.get('WASM_OBJ_SUFFIX', '')
+
+
 class BaseRustLibrary(object):
     slots = (
         'cargo_file',
@@ -679,10 +706,12 @@ class BaseRustLibrary(object):
         'features',
         'target_dir',
         'output_category',
+        'is_gkrust',
     )
 
     def init(self, context, basename, cargo_file, crate_type, dependencies,
-             features, target_dir):
+             features, target_dir, is_gkrust):
+        self.is_gkrust = is_gkrust
         self.cargo_file = cargo_file
         self.crate_type = crate_type
         # We need to adjust our naming here because cargo replaces '-' in
@@ -719,13 +748,14 @@ class RustLibrary(StaticLibrary, BaseRustLibrary):
     __slots__ = BaseRustLibrary.slots
 
     def __init__(self, context, basename, cargo_file, crate_type, dependencies,
-                 features, target_dir, link_into=None):
+                 features, target_dir, is_gkrust=False, link_into=None):
         StaticLibrary.__init__(self, context, basename, link_into=link_into,
                                # A rust library is a real static library ; make
                                # it known to the build system.
                                no_expand_lib=True)
         BaseRustLibrary.init(self, context, basename, cargo_file,
-                             crate_type, dependencies, features, target_dir)
+                             crate_type, dependencies, features, target_dir,
+                             is_gkrust)
 
 
 class SharedLibrary(Library):
@@ -854,10 +884,11 @@ class HostRustLibrary(HostLibrary, BaseRustLibrary):
     no_expand_lib = True
 
     def __init__(self, context, basename, cargo_file, crate_type, dependencies,
-                 features, target_dir):
+                 features, target_dir, is_gkrust):
         HostLibrary.__init__(self, context, basename)
         BaseRustLibrary.init(self, context, basename, cargo_file,
-                             crate_type, dependencies, features, target_dir)
+                             crate_type, dependencies, features, target_dir,
+                             is_gkrust)
 
 
 class TestManifest(ContextDerived):
@@ -1034,6 +1065,20 @@ class HostGeneratedSources(HostMixin, BaseSources):
         BaseSources.__init__(self, context, files, canonical_suffix)
 
 
+class WasmSources(BaseSources):
+    """Represents files to be compiled with the wasm compiler during the build."""
+
+    def __init__(self, context, files, canonical_suffix):
+        BaseSources.__init__(self, context, files, canonical_suffix)
+
+
+class WasmGeneratedSources(BaseSources):
+    """Represents generated files to be compiled with the wasm compiler during the build."""
+
+    def __init__(self, context, files, canonical_suffix):
+        BaseSources.__init__(self, context, files, canonical_suffix)
+
+
 class UnifiedSources(BaseSources):
     """Represents files to be compiled in a unified fashion during the build."""
 
@@ -1193,10 +1238,12 @@ class GeneratedFile(ContextDerived):
         'required_during_compile',
         'localized',
         'force',
+        'py2',
     )
 
     def __init__(self, context, script, method, outputs, inputs,
-                 flags=(), localized=False, force=False):
+                 flags=(), localized=False, force=False,
+                 py2=False):
         ContextDerived.__init__(self, context)
         self.script = script
         self.method = method
@@ -1205,6 +1252,7 @@ class GeneratedFile(ContextDerived):
         self.flags = flags
         self.localized = localized
         self.force = force
+        self.py2 = py2
 
         suffixes = [
             '.h',

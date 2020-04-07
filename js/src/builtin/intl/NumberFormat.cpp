@@ -24,13 +24,14 @@
 
 #include "builtin/Array.h"
 #include "builtin/intl/CommonFunctions.h"
+#include "builtin/intl/LanguageTag.h"
+#include "builtin/intl/RelativeTimeFormat.h"
 #include "builtin/intl/ScopedICUObject.h"
 #include "ds/Sort.h"
 #include "gc/FreeOp.h"
 #include "js/CharacterEncoding.h"
 #include "js/PropertySpec.h"
 #include "js/RootingAPI.h"
-#include "js/StableStringChars.h"
 #include "js/TypeDecls.h"
 #include "js/Vector.h"
 #include "unicode/udata.h"
@@ -63,15 +64,19 @@ using js::intl::DateTimeFormatOptions;
 using js::intl::FieldType;
 using js::intl::IcuLocale;
 
-using JS::AutoStableStringChars;
-
-const JSClassOps NumberFormatObject::classOps_ = {nullptr, /* addProperty */
-                                                  nullptr, /* delProperty */
-                                                  nullptr, /* enumerate */
-                                                  nullptr, /* newEnumerate */
-                                                  nullptr, /* resolve */
-                                                  nullptr, /* mayResolve */
-                                                  NumberFormatObject::finalize};
+const JSClassOps NumberFormatObject::classOps_ = {
+    nullptr,                       // addProperty
+    nullptr,                       // delProperty
+    nullptr,                       // enumerate
+    nullptr,                       // newEnumerate
+    nullptr,                       // resolve
+    nullptr,                       // mayResolve
+    NumberFormatObject::finalize,  // finalize
+    nullptr,                       // call
+    nullptr,                       // hasInstance
+    nullptr,                       // construct
+    nullptr,                       // trace
+};
 
 const JSClass NumberFormatObject::class_ = {
     js_Object_str,
@@ -170,9 +175,13 @@ void js::NumberFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
   UFormattedNumber* formatted = numberFormat->getFormattedNumber();
 
   if (nf) {
+    intl::RemoveICUCellMemory(fop, obj, NumberFormatObject::EstimatedMemoryUse);
+
     unumf_close(nf);
   }
   if (formatted) {
+    // UFormattedNumber memory tracked as part of UNumberFormatter.
+
     unumf_closeResult(formatted);
   }
 }
@@ -396,8 +405,8 @@ static const MeasureUnit& FindSimpleMeasureUnit(const char* subtype) {
 }
 
 static constexpr size_t MaxUnitLength() {
-  // Enable by default when bug 1560664 is fixed.
-#if __cplusplus >= 201703L
+  // Enable by default when libstdc++ 7 is the minimal version expected
+#if _GLIBCXX_RELEASE >= 7
   size_t length = 0;
   for (const auto& unit : simpleMeasureUnits) {
     length = std::max(length, std::char_traits<char>::length(unit.subtype));
@@ -555,15 +564,53 @@ static UNumberFormatter* NewUNumberFormatter(
   if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
     return nullptr;
   }
-  UniqueChars locale = intl::EncodeLocale(cx, value.toString());
+
+  // ICU expects numberingSystem as a Unicode locale extensions on locale.
+
+  intl::LanguageTag tag(cx);
+  {
+    JSLinearString* locale = value.toString()->ensureLinear(cx);
+    if (!locale) {
+      return nullptr;
+    }
+
+    if (!intl::LanguageTagParser::parse(cx, locale, tag)) {
+      return nullptr;
+    }
+  }
+
+  JS::RootedVector<intl::UnicodeExtensionKeyword> keywords(cx);
+
+  if (!GetProperty(cx, internals, internals, cx->names().numberingSystem,
+                   &value)) {
+    return nullptr;
+  }
+
+  {
+    JSLinearString* numberingSystem = value.toString()->ensureLinear(cx);
+    if (!numberingSystem) {
+      return nullptr;
+    }
+
+    if (!keywords.emplaceBack("nu", numberingSystem)) {
+      return nullptr;
+    }
+  }
+
+  // |ApplyUnicodeExtensionToTag| applies the new keywords to the front of
+  // the Unicode extension subtag. We're then relying on ICU to follow RFC
+  // 6067, which states that any trailing keywords using the same key
+  // should be ignored.
+  if (!intl::ApplyUnicodeExtensionToTag(cx, tag, keywords)) {
+    return nullptr;
+  }
+
+  UniqueChars locale = tag.toStringZ(cx);
   if (!locale) {
     return nullptr;
   }
 
   intl::NumberFormatterSkeleton skeleton(cx);
-
-  // We don't need to look at numberingSystem - it can only be set via
-  // the Unicode locale extension and is therefore already set on locale.
 
   if (!GetProperty(cx, internals, internals, cx->names().style, &value)) {
     return nullptr;
@@ -955,8 +1002,11 @@ static bool FormatNumeric(JSContext* cx, const UNumberFormatter* nf,
   return true;
 }
 
+enum class FormattingType { ForUnit, NotForUnit };
+
 static FieldType GetFieldTypeForNumberField(UNumberFormatFields fieldName,
-                                            HandleValue x) {
+                                            HandleValue x,
+                                            FormattingType formattingType) {
   // See intl/icu/source/i18n/unicode/unum.h for a detailed field list.  This
   // list is deliberately exhaustive: cases might have to be added/removed if
   // this code is compiled with a different ICU with more UNumberFormatFields
@@ -994,6 +1044,11 @@ static FieldType GetFieldTypeForNumberField(UNumberFormatFields fieldName,
     }
 
     case UNUM_PERCENT_FIELD:
+      // Percent fields are returned as "unit" elements when the number
+      // formatter's style is "unit".
+      if (formattingType == FormattingType::ForUnit) {
+        return &JSAtomState::unit;
+      }
       return &JSAtomState::percentSign;
 
     case UNUM_CURRENCY_FIELD:
@@ -1052,26 +1107,22 @@ class NumberFormatFields {
   using FieldsVector = Vector<Field, 16>;
 
   FieldsVector fields_;
-  HandleValue number_;
 
  public:
-  NumberFormatFields(JSContext* cx, HandleValue number)
-      : fields_(cx), number_(number) {}
+  explicit NumberFormatFields(JSContext* cx) : fields_(cx) {}
 
-  MOZ_MUST_USE bool append(int32_t field, int32_t begin, int32_t end);
+  MOZ_MUST_USE bool append(FieldType type, int32_t begin, int32_t end);
 
   MOZ_MUST_USE ArrayObject* toArray(JSContext* cx,
                                     JS::HandleString overallResult,
                                     FieldType unitType);
 };
 
-bool NumberFormatFields::append(int32_t field, int32_t begin, int32_t end) {
+bool NumberFormatFields::append(FieldType type, int32_t begin, int32_t end) {
   MOZ_ASSERT(begin >= 0);
   MOZ_ASSERT(end >= 0);
   MOZ_ASSERT(begin < end, "erm, aren't fields always non-empty?");
 
-  FieldType type =
-      GetFieldTypeForNumberField(UNumberFormatFields(field), number_);
   return fields_.emplaceBack(uint32_t(begin), uint32_t(end), type);
 }
 
@@ -1368,10 +1419,14 @@ ArrayObject* NumberFormatFields::toArray(JSContext* cx,
 }
 
 #ifndef U_HIDE_DRAFT_API
-bool js::intl::FormattedNumberToParts(JSContext* cx,
-                                      const UFormattedValue* formattedValue,
-                                      HandleValue number, FieldType unitType,
-                                      MutableHandleValue result) {
+static bool FormattedNumberToParts(JSContext* cx,
+                                   const UFormattedValue* formattedValue,
+                                   HandleValue number,
+                                   FieldType relativeTimeUnit,
+                                   FormattingType formattingType,
+                                   MutableHandleValue result) {
+  MOZ_ASSERT(number.isNumeric());
+
   RootedString overallResult(cx, FormattedNumberToString(cx, formattedValue));
   if (!overallResult) {
     return false;
@@ -1394,7 +1449,7 @@ bool js::intl::FormattedNumberToParts(JSContext* cx,
 
   // Vacuum up fields in the overall formatted string.
 
-  NumberFormatFields fields(cx, number);
+  NumberFormatFields fields(cx);
 
   while (true) {
     bool hasMore = ufmtval_nextPosition(formattedValue, fpos, &status);
@@ -1419,18 +1474,30 @@ bool js::intl::FormattedNumberToParts(JSContext* cx,
       return false;
     }
 
-    if (!fields.append(field, beginIndex, endIndex)) {
+    FieldType type = GetFieldTypeForNumberField(UNumberFormatFields(field),
+                                                number, formattingType);
+
+    if (!fields.append(type, beginIndex, endIndex)) {
       return false;
     }
   }
 
-  ArrayObject* array = fields.toArray(cx, overallResult, unitType);
+  ArrayObject* array = fields.toArray(cx, overallResult, relativeTimeUnit);
   if (!array) {
     return false;
   }
 
   result.setObject(*array);
   return true;
+}
+
+bool js::intl::FormattedRelativeTimeToParts(
+    JSContext* cx, const UFormattedValue* formattedValue, double timeValue,
+    FieldType relativeTimeUnit, MutableHandleValue result) {
+  Value tval = DoubleValue(timeValue);
+  return FormattedNumberToParts(
+      cx, formattedValue, HandleValue::fromMarkedLocation(&tval),
+      relativeTimeUnit, FormattingType::NotForUnit, result);
 }
 #else
 static ArrayObject* LegacyFormattedNumberToParts(
@@ -1481,6 +1548,7 @@ static ArrayObject* LegacyFormattedNumberToParts(
 
 static bool FormatNumericToParts(JSContext* cx, const UNumberFormatter* nf,
                                  UFormattedNumber* formatted, HandleValue x,
+                                 FormattingType formattingType,
                                  MutableHandleValue result) {
   PartitionNumberPatternResult formattedValue =
       PartitionNumberPattern(cx, nf, formatted, x);
@@ -1489,7 +1557,8 @@ static bool FormatNumericToParts(JSContext* cx, const UNumberFormatter* nf,
   }
 
 #ifndef U_HIDE_DRAFT_API
-  return intl::FormattedNumberToParts(cx, formattedValue, x, nullptr, result);
+  return FormattedNumberToParts(cx, formattedValue, x, nullptr, formattingType,
+                                result);
 #else
   return LegacyFormattedNumberToParts(cx, formattedValue, x, result);
 #endif
@@ -1497,10 +1566,11 @@ static bool FormatNumericToParts(JSContext* cx, const UNumberFormatter* nf,
 
 bool js::intl_FormatNumber(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 3);
+  MOZ_ASSERT(args.length() == 4);
   MOZ_ASSERT(args[0].isObject());
   MOZ_ASSERT(args[1].isNumeric());
   MOZ_ASSERT(args[2].isBoolean());
+  MOZ_ASSERT(args[3].isBoolean());
 
   Rooted<NumberFormatObject*> numberFormat(
       cx, &args[0].toObject().as<NumberFormatObject>());
@@ -1513,6 +1583,9 @@ bool js::intl_FormatNumber(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
     numberFormat->setNumberFormatter(nf);
+
+    intl::AddICUCellMemory(numberFormat,
+                           NumberFormatObject::EstimatedMemoryUse);
   }
 
   // Obtain a cached UFormattedNumber object.
@@ -1523,11 +1596,17 @@ bool js::intl_FormatNumber(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
     numberFormat->setFormattedNumber(formatted);
+
+    // UFormattedNumber memory tracked as part of UNumberFormatter.
   }
 
   // Use the UNumberFormatter to actually format the number.
   if (args[2].toBoolean()) {
-    return FormatNumericToParts(cx, nf, formatted, args[1], args.rval());
+    FormattingType formattingType = args[3].toBoolean()
+                                        ? FormattingType::ForUnit
+                                        : FormattingType::NotForUnit;
+    return FormatNumericToParts(cx, nf, formatted, args[1], formattingType,
+                                args.rval());
   }
 
   return FormatNumeric(cx, nf, formatted, args[1], args.rval());

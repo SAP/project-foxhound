@@ -91,7 +91,6 @@
 #include "mozilla/XorShift128PlusRNG.h"
 
 using namespace mozilla;
-using namespace mozilla::recordreplay;
 
 //---------------------------------------------------------------------------
 // Utilities
@@ -283,16 +282,20 @@ static const Time kMaxTime = ~(Time(0));
 
 // The average delay before doing any page allocations at the start of a
 // process. Note that roughly 1 million allocations occur in the main process
-// while starting the browser.
+// while starting the browser. The delay range is 1..kAvgFirstAllocDelay*2.
 static const Delay kAvgFirstAllocDelay = 512 * 1024;
 
 // The average delay until the next attempted page allocation, once we get past
-// the first delay.
-static const Delay kAvgAllocDelay = 2 * 1024;
+// the first delay. The delay range is 1..kAvgAllocDelay*2.
+static const Delay kAvgAllocDelay = 16 * 1024;
 
 // The average delay before reusing a freed page. Should be significantly larger
-// than kAvgAllocDelay, otherwise there's not much point in having it.
-static const Delay kAvgPageReuseDelay = 32 * 1024;
+// than kAvgAllocDelay, otherwise there's not much point in having it. The delay
+// range is (kAvgAllocDelay / 2)..(kAvgAllocDelay / 2 * 3). This is different to
+// the other delay ranges in not having a minimum of 1, because that's such a
+// short delay that there is a high likelihood of bad stacks in any crash
+// report.
+static const Delay kAvgPageReuseDelay = 256 * 1024;
 
 // Truncate aRnd to the range (1 .. AvgDelay*2). If aRnd is random, this
 // results in an average value of aAvgDelay + 0.5, which is close enough to
@@ -327,16 +330,16 @@ class GAtomic {
   // The current time. Relaxed semantics because it's primarily used for
   // determining if an allocation can be recycled yet and therefore it doesn't
   // need to be exact.
-  static Atomic<Time, Relaxed, Behavior::DontPreserve> sNow;
+  static Atomic<Time, Relaxed> sNow;
 
   // Delay until the next attempt at a page allocation. See the comment in
   // MaybePageAlloc() for an explanation of why it is a signed integer, and why
   // it uses ReleaseAcquire semantics.
-  static Atomic<Delay, ReleaseAcquire, Behavior::DontPreserve> sAllocDelay;
+  static Atomic<Delay, ReleaseAcquire> sAllocDelay;
 };
 
-Atomic<Time, Relaxed, Behavior::DontPreserve> GAtomic::sNow;
-Atomic<Delay, ReleaseAcquire, Behavior::DontPreserve> GAtomic::sAllocDelay;
+Atomic<Time, Relaxed> GAtomic::sNow;
+Atomic<Delay, ReleaseAcquire> GAtomic::sAllocDelay;
 
 // Shared, immutable global state. Initialized by replace_init() and never
 // changed after that. replace_init() runs early enough that no synchronization
@@ -344,10 +347,10 @@ Atomic<Delay, ReleaseAcquire, Behavior::DontPreserve> GAtomic::sAllocDelay;
 class GConst {
  private:
   // The bounds of the allocated pages.
-  const uintptr_t mPagesStart;
-  const uintptr_t mPagesLimit;
+  uint8_t* const mPagesStart;
+  uint8_t* const mPagesLimit;
 
-  uintptr_t AllocPages() {
+  uint8_t* AllocPages() {
     // Allocate the pages so that they are inaccessible. They are never freed,
     // because it would happen at process termination when it would be of little
     // use.
@@ -362,33 +365,32 @@ class GConst {
       MOZ_CRASH();
     }
 
-    return reinterpret_cast<uintptr_t>(pages);
+    return static_cast<uint8_t*>(pages);
   }
 
  public:
   GConst()
       : mPagesStart(AllocPages()), mPagesLimit(mPagesStart + kAllPagesSize) {
-    LOG("AllocPages at %p..%p\n", (void*)mPagesStart, (void*)mPagesLimit);
+    LOG("AllocPages at %p..%p\n", mPagesStart, mPagesLimit);
   }
 
   // Detect if a pointer is to a page allocation, and if so, which one. This
   // function must be fast because it is called for every call to free(),
   // realloc(), malloc_usable_size(), and jemalloc_ptr_info().
   Maybe<uintptr_t> PageIndex(const void* aPtr) {
-    auto ptr = reinterpret_cast<uintptr_t>(aPtr);
-    if (!(mPagesStart <= ptr && ptr < mPagesLimit)) {
+    if (!(mPagesStart <= aPtr && aPtr < mPagesLimit)) {
       return Nothing();
     }
 
-    size_t i = (ptr - mPagesStart) / kPageSize;
+    size_t i = (static_cast<const uint8_t*>(aPtr) - mPagesStart) / kPageSize;
     MOZ_ASSERT(i < kMaxPageAllocs);
     return Some(i);
   }
 
   // Get the address of a page referred to via an index.
-  void* PagePtr(size_t aIndex) {
+  uint8_t* PagePtr(size_t aIndex) {
     MOZ_ASSERT(aIndex < kMaxPageAllocs);
-    return reinterpret_cast<void*>(mPagesStart + kPageSize * aIndex);
+    return mPagesStart + kPageSize * aIndex;
   }
 };
 
@@ -532,25 +534,21 @@ class GMut {
     // also returns the arena ID (but only in debug builds).
     //
     // - NeverAllocated: must be 0.
-    // - InUse: can be any valid arena ID value.
-    // - Freed: can be any valid arena ID value.
+    // - InUse | Freed: can be any valid arena ID value.
     Maybe<arena_id_t> mArenaId;
 
     // The usable size, which could be bigger than the requested size.
     // - NeverAllocated: must be 0.
-    // - InUse: must be > 0.
-    // - Freed: must be > 0.
+    // - InUse | Freed: must be > 0.
     size_t mUsableSize;
 
     // The allocation stack.
     // - NeverAllocated: Nothing.
-    // - InUse: Some.
-    // - Freed: Some.
+    // - InUse | Freed: Some.
     Maybe<StackTrace> mAllocStack;
 
     // The free stack.
-    // - NeverAllocated: Nothing.
-    // - InUse: Some.
+    // - NeverAllocated | InUse: Nothing.
     // - Freed: Some.
     Maybe<StackTrace> mFreeStack;
 
@@ -566,7 +564,14 @@ class GMut {
   // The mutex that protects the other members.
   static Mutex sMutex;
 
-  GMut() : mRNG(RandomSeed<0>(), RandomSeed<1>()), mPages() { sMutex.Init(); }
+  GMut()
+      : mRNG(RandomSeed<0>(), RandomSeed<1>()),
+        mPages(),
+        mCurrPageAllocs(0),
+        mPageAllocHits(0),
+        mPageAllocMisses(0) {
+    sMutex.Init();
+  }
 
   uint64_t Random64(GMutLock) { return mRNG.next(); }
 
@@ -608,6 +613,9 @@ class GMut {
     page.mAllocStack = Some(aAllocStack);
     page.mFreeStack = Nothing();
     page.mReuseTime = kMaxTime;
+
+    mCurrPageAllocs++;
+    MOZ_RELEASE_ASSERT(mCurrPageAllocs <= kMaxPageAllocs);
   }
 
   void ResizePageInUse(GMutLock aLock, uintptr_t aIndex,
@@ -654,6 +662,9 @@ class GMut {
 
     page.mFreeStack = Some(aFreeStack);
     page.mReuseTime = GAtomic::Now() + aReuseDelay;
+
+    MOZ_RELEASE_ASSERT(mCurrPageAllocs > 0);
+    mCurrPageAllocs--;
   }
 
   void EnsureInUse(GMutLock, void* aPtr, uintptr_t aIndex) {
@@ -668,7 +679,7 @@ class GMut {
       // the crash causes non-local control flow so sMutex won't be unlocked
       // the normal way in the caller.
       sMutex.Unlock();
-      *static_cast<char*>(aPtr) = 0;
+      *static_cast<uint8_t*>(aPtr) = 0;
       MOZ_CRASH("unreachable");
     }
   }
@@ -692,7 +703,7 @@ class GMut {
       default:
         MOZ_CRASH();
     }
-    aOut.mBaseAddr = const_cast<const void*>(gConst->PagePtr(aIndex));
+    aOut.mBaseAddr = gConst->PagePtr(aIndex);
     aOut.mUsableSize = page.mUsableSize;
     aOut.mAllocStack = page.mAllocStack;
     aOut.mFreeStack = page.mFreeStack;
@@ -708,7 +719,7 @@ class GMut {
       case PageState::InUse: {
         // Only return TagLiveAlloc if the pointer is within the bounds of the
         // allocation's usable size.
-        char* pagePtr = static_cast<char*>(gConst->PagePtr(aIndex));
+        uint8_t* pagePtr = gConst->PagePtr(aIndex);
         if (aPtr < pagePtr + page.mUsableSize) {
           *aInfo = {TagLiveAlloc, pagePtr, page.mUsableSize,
                     page.mArenaId.valueOr(0)};
@@ -720,7 +731,7 @@ class GMut {
       case PageState::Freed: {
         // Only return TagFreedAlloc if the pointer is within the bounds of the
         // former allocation's usable size.
-        char* pagePtr = static_cast<char*>(gConst->PagePtr(aIndex));
+        uint8_t* pagePtr = gConst->PagePtr(aIndex);
         if (aPtr < pagePtr + page.mUsableSize) {
           *aInfo = {TagFreedAlloc, gConst->PagePtr(aIndex), page.mUsableSize,
                     page.mArenaId.valueOr(0)};
@@ -738,6 +749,21 @@ class GMut {
 
   static void prefork() { sMutex.Lock(); }
   static void postfork() { sMutex.Unlock(); }
+
+  void IncPageAllocHits(GMutLock) { mPageAllocHits++; }
+  void IncPageAllocMisses(GMutLock) { mPageAllocMisses++; }
+
+  size_t CurrPageAllocs(GMutLock) { return mCurrPageAllocs; }
+
+  size_t PageAllocHits(GMutLock) { return mPageAllocHits; }
+  size_t PageAllocAttempts(GMutLock) {
+    return mPageAllocHits + mPageAllocMisses;
+  }
+
+  // This is an integer because FdPrintf only supports integer printing.
+  size_t PageAllocHitRate(GMutLock) {
+    return mPageAllocHits * 100 / (mPageAllocHits + mPageAllocMisses);
+  }
 
  private:
   template <int N>
@@ -788,6 +814,15 @@ class GMut {
   non_crypto::XorShift128PlusRNG mRNG;
 
   PageInfo mPages[kMaxPageAllocs];
+
+  // How many page allocs are currently in use (the max is kMaxPageAllocs).
+  size_t mCurrPageAllocs;
+
+  // How many allocations that could have been page allocs actually were? As
+  // constrained kMaxPageAllocs. If the hit ratio isn't close to 100% it's
+  // likely that the global constants are poorly chosen.
+  size_t mPageAllocHits;
+  size_t mPageAllocMisses;
 };
 
 Mutex GMut::sMutex;
@@ -867,39 +902,49 @@ static void* MaybePageAlloc(const Maybe<arena_id_t>& aArenaId, size_t aReqSize,
 
   // We start at a random page alloc and wrap around, to ensure pages get even
   // amounts of use.
-  void* ptr = nullptr;
+  uint8_t* ptr = nullptr;
   for (uintptr_t n = 0, i = size_t(gMut->Random64(lock)) % kMaxPageAllocs;
        n < kMaxPageAllocs; n++, i = (i + 1) % kMaxPageAllocs) {
-    if (gMut->IsPageAllocatable(lock, i, now)) {
-      void* pagePtr = gConst->PagePtr(i);
-      bool ok =
-#ifdef XP_WIN
-          !!VirtualAlloc(pagePtr, kPageSize, MEM_COMMIT, PAGE_READWRITE);
-#else
-          mprotect(pagePtr, kPageSize, PROT_READ | PROT_WRITE) == 0;
-#endif
-      size_t usableSize = sMallocTable.malloc_good_size(aReqSize);
-      if (ok) {
-        gMut->SetPageInUse(lock, i, aArenaId, usableSize, allocStack);
-        ptr = pagePtr;
-        if (aZero) {
-          memset(ptr, 0, usableSize);
-        } else {
-#ifdef DEBUG
-          memset(ptr, kAllocJunk, usableSize);
-#endif
-        }
-      }
-      LOG("PageAlloc(%zu) -> %p[%zu] (%zu) (z%zu), sAllocDelay <- %zu\n",
-          aReqSize, ptr, i, usableSize, size_t(aZero), size_t(newAllocDelay));
-      break;
+    if (!gMut->IsPageAllocatable(lock, i, now)) {
+      continue;
     }
+
+    uint8_t* pagePtr = gConst->PagePtr(i);
+    bool ok =
+#ifdef XP_WIN
+        !!VirtualAlloc(pagePtr, kPageSize, MEM_COMMIT, PAGE_READWRITE);
+#else
+        mprotect(pagePtr, kPageSize, PROT_READ | PROT_WRITE) == 0;
+#endif
+    size_t usableSize = sMallocTable.malloc_good_size(aReqSize);
+    if (ok) {
+      gMut->SetPageInUse(lock, i, aArenaId, usableSize, allocStack);
+      ptr = pagePtr;
+      if (aZero) {
+        memset(ptr, 0, usableSize);
+      } else {
+#ifdef DEBUG
+        memset(ptr, kAllocJunk, usableSize);
+#endif
+      }
+    }
+    gMut->IncPageAllocHits(lock);
+    LOG("PageAlloc(%zu) -> %p[%zu] (%zu) (z%zu), sAllocDelay <- %zu, "
+        "fullness %zu/%zu, hits %zu/%zu (%zu%%)\n",
+        aReqSize, ptr, i, usableSize, size_t(aZero), size_t(newAllocDelay),
+        gMut->CurrPageAllocs(lock), kMaxPageAllocs, gMut->PageAllocHits(lock),
+        gMut->PageAllocAttempts(lock), gMut->PageAllocHitRate(lock));
+    break;
   }
 
   if (!ptr) {
     // No pages are available, or VirtualAlloc/mprotect failed.
-    LOG("No PageAlloc(%zu), sAllocDelay <- %zu\n", aReqSize,
-        size_t(newAllocDelay));
+    gMut->IncPageAllocMisses(lock);
+    LOG("No PageAlloc(%zu), sAllocDelay <- %zu, fullness %zu/%zu, hits %zu/%zu "
+        "(%zu%%)\n",
+        aReqSize, size_t(newAllocDelay), gMut->CurrPageAllocs(lock),
+        kMaxPageAllocs, gMut->PageAllocHits(lock),
+        gMut->PageAllocAttempts(lock), gMut->PageAllocHitRate(lock));
   }
 
   // Set the new alloc delay.
@@ -942,6 +987,11 @@ MOZ_ALWAYS_INLINE static void* PageMalloc(const Maybe<arena_id_t>& aArenaId,
 
 static void* replace_malloc(size_t aReqSize) {
   return PageMalloc(Nothing(), aReqSize);
+}
+
+static Delay ReuseDelay(GMutLock aLock) {
+  return (kAvgPageReuseDelay / 2) +
+         Rnd64ToDelay<kAvgPageReuseDelay / 2>(gMut->Random64(aLock));
 }
 
 // This handles both calloc and moz_arena_calloc.
@@ -1047,7 +1097,7 @@ MOZ_ALWAYS_INLINE static void* PageRealloc(const Maybe<arena_id_t>& aArenaId,
 
   MOZ_ASSERT(aNewSize > kPageSize);
 
-  Delay reuseDelay = Rnd64ToDelay<kAvgPageReuseDelay>(gMut->Random64(lock));
+  Delay reuseDelay = ReuseDelay(lock);
 
   // Copy the usable size rather than the requested size, because the user
   // might have used malloc_usable_size() and filled up the usable size. Note
@@ -1094,11 +1144,12 @@ MOZ_ALWAYS_INLINE static void PageFree(const Maybe<arena_id_t>& aArenaId,
   gMut->EnsureInUse(lock, aPtr, *i);
 
   // Note that FreePage() checks aArenaId (via SetPageFreed()).
-  Delay reuseDelay = Rnd64ToDelay<kAvgPageReuseDelay>(gMut->Random64(lock));
+  Delay reuseDelay = ReuseDelay(lock);
   FreePage(lock, *i, aArenaId, freeStack, reuseDelay);
 
-  LOG("PageFree(%p[%zu]), %zu delay, reuse at ~%zu\n", aPtr, *i,
-      size_t(reuseDelay), size_t(GAtomic::Now()) + reuseDelay);
+  LOG("PageFree(%p[%zu]), %zu delay, reuse at ~%zu, fullness %zu/%zu\n", aPtr,
+      *i, size_t(reuseDelay), size_t(GAtomic::Now()) + reuseDelay,
+      gMut->CurrPageAllocs(lock), kMaxPageAllocs);
 }
 
 static void replace_free(void* aPtr) { return PageFree(Nothing(), aPtr); }
@@ -1241,8 +1292,9 @@ class PHCBridge : public ReplaceMallocBridge {
       MutexAutoLock lock(GMut::sMutex);
       gMut->FillAddrInfo(lock, *i, aPtr, *aOut);
       LOG("IsPHCAllocation: %zu, %p, %zu, %zu, %zu\n", size_t(aOut->mKind),
-          aOut->mBaseAddr, aOut->mUsableSize, aOut->mAllocStack.mLength,
-          aOut->mFreeStack.mLength);
+          aOut->mBaseAddr, aOut->mUsableSize,
+          aOut->mAllocStack.isSome() ? aOut->mAllocStack->mLength : 0,
+          aOut->mFreeStack.isSome() ? aOut->mFreeStack->mLength : 0);
     }
     return true;
   }

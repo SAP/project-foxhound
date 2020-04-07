@@ -6,6 +6,7 @@
 #ifndef _mozilla_dom_Client_h
 #define _mozilla_dom_Client_h
 
+#include "X11UndefineNone.h"
 #include "mozilla/dom/ClientBinding.h"
 #include "mozilla/StorageAccess.h"
 #include "nsCOMPtr.h"
@@ -68,7 +69,7 @@ class Client final : public nsISupports, public nsWrapperCache {
 
   bool Focused() const;
 
-  already_AddRefed<Promise> Focus(ErrorResult& aRv);
+  already_AddRefed<Promise> Focus(CallerType aCallerType, ErrorResult& aRv);
 
   already_AddRefed<Promise> Navigate(const nsAString& aURL, ErrorResult& aRv);
 

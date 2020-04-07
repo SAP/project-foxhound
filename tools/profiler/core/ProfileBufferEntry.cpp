@@ -10,7 +10,6 @@
 #include "ProfileBuffer.h"
 #include "ProfilerMarkerPayload.h"
 
-#include "js/TrackedOptimizationInfo.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "mozilla/Logging.h"
@@ -116,44 +115,6 @@ struct TypeInfo {
   Maybe<unsigned> mLineNumber;
 };
 
-template <typename LambdaT>
-class ForEachTrackedOptimizationTypeInfoLambdaOp
-    : public JS::ForEachTrackedOptimizationTypeInfoOp {
- public:
-  // aLambda needs to be a function with the following signature:
-  // void lambda(JS::TrackedTypeSite site, const char* mirType,
-  //             const nsTArray<TypeInfo>& typeset)
-  // aLambda will be called once per entry.
-  explicit ForEachTrackedOptimizationTypeInfoLambdaOp(LambdaT&& aLambda)
-      : mLambda(aLambda) {}
-
-  // This is called 0 or more times per entry, *before* operator() is called
-  // for that entry.
-  void readType(const char* keyedBy, const char* name, const char* location,
-                const Maybe<unsigned>& lineno) override {
-    TypeInfo info = {keyedBy ? Some(nsCString(keyedBy)) : Nothing(),
-                     name ? Some(nsCString(name)) : Nothing(),
-                     location ? Some(nsCString(location)) : Nothing(), lineno};
-    mTypesetForUpcomingEntry.AppendElement(std::move(info));
-  }
-
-  void operator()(JS::TrackedTypeSite site, const char* mirType) override {
-    nsTArray<TypeInfo> typeset(std::move(mTypesetForUpcomingEntry));
-    mLambda(site, mirType, typeset);
-  }
-
- private:
-  nsTArray<TypeInfo> mTypesetForUpcomingEntry;
-  LambdaT mLambda;
-};
-
-template <typename LambdaT>
-ForEachTrackedOptimizationTypeInfoLambdaOp<LambdaT>
-MakeForEachTrackedOptimizationTypeInfoLambdaOp(LambdaT&& aLambda) {
-  return ForEachTrackedOptimizationTypeInfoLambdaOp<LambdaT>(
-      std::forward<LambdaT>(aLambda));
-}
-
 // As mentioned in ProfileBufferEntry.h, the JSON format contains many
 // arrays whose elements are laid out according to various schemas to help
 // de-duplication. This RAII class helps write these arrays by keeping track of
@@ -243,28 +204,6 @@ class MOZ_RAII AutoArraySchemaWriter {
   uint32_t mNextFreeIndex;
 };
 
-template <typename LambdaT>
-class ForEachTrackedOptimizationAttemptsLambdaOp
-    : public JS::ForEachTrackedOptimizationAttemptOp {
- public:
-  explicit ForEachTrackedOptimizationAttemptsLambdaOp(LambdaT&& aLambda)
-      : mLambda(std::move(aLambda)) {}
-  void operator()(JS::TrackedStrategy aStrategy,
-                  JS::TrackedOutcome aOutcome) override {
-    mLambda(aStrategy, aOutcome);
-  }
-
- private:
-  LambdaT mLambda;
-};
-
-template <typename LambdaT>
-ForEachTrackedOptimizationAttemptsLambdaOp<LambdaT>
-MakeForEachTrackedOptimizationAttemptsLambdaOp(LambdaT&& aLambda) {
-  return ForEachTrackedOptimizationAttemptsLambdaOp<LambdaT>(
-      std::move(aLambda));
-}
-
 UniqueJSONStrings::UniqueJSONStrings() { mStringTableWriter.StartBareList(); }
 
 UniqueJSONStrings::UniqueJSONStrings(const UniqueJSONStrings& aOther) {
@@ -343,7 +282,8 @@ JITFrameInfo::JITFrameInfo(const JITFrameInfo& aOther)
 bool UniqueStacks::FrameKey::NormalFrameData::operator==(
     const NormalFrameData& aOther) const {
   return mLocation == aOther.mLocation &&
-         mRelevantForJS == aOther.mRelevantForJS && mLine == aOther.mLine &&
+         mRelevantForJS == aOther.mRelevantForJS &&
+         mInnerWindowID == aOther.mInnerWindowID && mLine == aOther.mLine &&
          mColumn == aOther.mColumn && mCategoryPair == aOther.mCategoryPair;
 }
 
@@ -462,12 +402,13 @@ void UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame) {
   enum Schema : uint32_t {
     LOCATION = 0,
     RELEVANT_FOR_JS = 1,
-    IMPLEMENTATION = 2,
-    OPTIMIZATIONS = 3,
-    LINE = 4,
-    COLUMN = 5,
-    CATEGORY = 6,
-    SUBCATEGORY = 7
+    INNER_WINDOW_ID = 2,
+    IMPLEMENTATION = 3,
+    OPTIMIZATIONS = 4,
+    LINE = 5,
+    COLUMN = 6,
+    CATEGORY = 7,
+    SUBCATEGORY = 8
   };
 
   AutoArraySchemaWriter writer(mFrameTableWriter, *mUniqueStrings);
@@ -475,6 +416,11 @@ void UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame) {
   const NormalFrameData& data = aFrame.mData.as<NormalFrameData>();
   writer.StringElement(LOCATION, data.mLocation.get());
   writer.BoolElement(RELEVANT_FOR_JS, data.mRelevantForJS);
+
+  // It's okay to convert uint64_t to double here because DOM always creates IDs
+  // that are convertible to double.
+  writer.DoubleElement(INNER_WINDOW_ID, data.mInnerWindowID);
+
   if (data.mLine.isSome()) {
     writer.IntElement(LINE, *data.mLine);
   }
@@ -489,106 +435,19 @@ void UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame) {
   }
 }
 
-static void StreamJITFrameOptimizations(
-    SpliceableJSONWriter& aWriter, UniqueJSONStrings& aUniqueStrings,
-    JSContext* aContext, const JS::ProfiledFrameHandle& aJITFrame) {
-  aWriter.StartObjectElement();
-  {
-    aWriter.StartArrayProperty("types");
-    {
-      auto op = MakeForEachTrackedOptimizationTypeInfoLambdaOp(
-          [&](JS::TrackedTypeSite site, const char* mirType,
-              const nsTArray<TypeInfo>& typeset) {
-            aWriter.StartObjectElement();
-            {
-              aUniqueStrings.WriteProperty(aWriter, "site",
-                                           JS::TrackedTypeSiteString(site));
-              aUniqueStrings.WriteProperty(aWriter, "mirType", mirType);
-
-              if (!typeset.IsEmpty()) {
-                aWriter.StartArrayProperty("typeset");
-                for (const TypeInfo& typeInfo : typeset) {
-                  aWriter.StartObjectElement();
-                  {
-                    aUniqueStrings.WriteProperty(aWriter, "keyedBy",
-                                                 typeInfo.mKeyedBy->get());
-                    if (typeInfo.mName) {
-                      aUniqueStrings.WriteProperty(aWriter, "name",
-                                                   typeInfo.mName->get());
-                    }
-                    if (typeInfo.mLocation) {
-                      aUniqueStrings.WriteProperty(aWriter, "location",
-                                                   typeInfo.mLocation->get());
-                    }
-                    if (typeInfo.mLineNumber.isSome()) {
-                      aWriter.IntProperty("line", *typeInfo.mLineNumber);
-                    }
-                  }
-                  aWriter.EndObject();
-                }
-                aWriter.EndArray();
-              }
-            }
-            aWriter.EndObject();
-          });
-      aJITFrame.forEachOptimizationTypeInfo(op);
-    }
-    aWriter.EndArray();
-
-    JS::Rooted<JSScript*> script(aContext);
-    jsbytecode* pc;
-    aWriter.StartObjectProperty("attempts");
-    {
-      {
-        JSONSchemaWriter schema(aWriter);
-        schema.WriteField("strategy");
-        schema.WriteField("outcome");
-      }
-
-      aWriter.StartArrayProperty("data");
-      {
-        auto op = MakeForEachTrackedOptimizationAttemptsLambdaOp(
-            [&](JS::TrackedStrategy strategy, JS::TrackedOutcome outcome) {
-              enum Schema : uint32_t { STRATEGY = 0, OUTCOME = 1 };
-
-              AutoArraySchemaWriter writer(aWriter, aUniqueStrings);
-              writer.StringElement(STRATEGY,
-                                   JS::TrackedStrategyString(strategy));
-              writer.StringElement(OUTCOME, JS::TrackedOutcomeString(outcome));
-            });
-        aJITFrame.forEachOptimizationAttempt(op, script.address(), &pc);
-      }
-      aWriter.EndArray();
-    }
-    aWriter.EndObject();
-
-    if (JSAtom* name = js::GetPropertyNameFromPC(script, pc)) {
-      char buf[512];
-      JS_PutEscapedLinearString(buf, ArrayLength(buf),
-                                js::AtomToLinearString(name), 0);
-      aUniqueStrings.WriteProperty(aWriter, "propertyName", buf);
-    }
-
-    unsigned line, column;
-    line = JS_PCToLineNumber(script, pc, &column);
-    aWriter.IntProperty("line", line);
-    aWriter.IntProperty("column", column);
-  }
-  aWriter.EndObject();
-}
-
 static void StreamJITFrame(JSContext* aContext, SpliceableJSONWriter& aWriter,
                            UniqueJSONStrings& aUniqueStrings,
                            const JS::ProfiledFrameHandle& aJITFrame) {
   enum Schema : uint32_t {
     LOCATION = 0,
     RELEVANT_FOR_JS = 1,
-    IMPLEMENTATION = 2,
-    OPTIMIZATIONS = 3,
-    LINE = 4,
-    COLUMN = 5,
-    CATEGORY = 6,
-    SUBCATEGORY = 7
+    INNER_WINDOW_ID = 2,
+    IMPLEMENTATION = 3,
+    OPTIMIZATIONS = 4,
+    LINE = 5,
+    COLUMN = 6,
+    CATEGORY = 7,
+    SUBCATEGORY = 8
   };
 
   AutoArraySchemaWriter writer(aWriter, aUniqueStrings);
@@ -596,21 +455,17 @@ static void StreamJITFrame(JSContext* aContext, SpliceableJSONWriter& aWriter,
   writer.StringElement(LOCATION, aJITFrame.label());
   writer.BoolElement(RELEVANT_FOR_JS, false);
 
+  // It's okay to convert uint64_t to double here because DOM always creates IDs
+  // that are convertible to double.
+  // Realm ID is the name of innerWindowID inside JS code.
+  writer.DoubleElement(INNER_WINDOW_ID, aJITFrame.realmID());
+
   JS::ProfilingFrameIterator::FrameKind frameKind = aJITFrame.frameKind();
   MOZ_ASSERT(frameKind == JS::ProfilingFrameIterator::Frame_Ion ||
              frameKind == JS::ProfilingFrameIterator::Frame_Baseline);
   writer.StringElement(
       IMPLEMENTATION,
       frameKind == JS::ProfilingFrameIterator::Frame_Ion ? "ion" : "baseline");
-
-  if (aJITFrame.hasTrackedOptimizations()) {
-    writer.FreeFormElement(
-        OPTIMIZATIONS,
-        [&](SpliceableJSONWriter& aWriter, UniqueJSONStrings& aUniqueStrings) {
-          StreamJITFrameOptimizations(aWriter, aUniqueStrings, aContext,
-                                      aJITFrame);
-        });
-  }
 
   const JS::ProfilingCategoryPairInfo& info =
       JS::GetProfilingCategoryPairInfo(JS::ProfilingCategoryPair::JS);
@@ -694,7 +549,7 @@ static void WriteSample(SpliceableJSONWriter& aWriter,
   enum Schema : uint32_t {
     STACK = 0,
     TIME = 1,
-    RESPONSIVENESS = 2,
+    EVENT_DELAY = 2,
   };
 
   AutoArraySchemaWriter writer(aWriter, aUniqueStrings);
@@ -704,7 +559,7 @@ static void WriteSample(SpliceableJSONWriter& aWriter,
   writer.DoubleElement(TIME, aSample.mTime);
 
   if (aSample.mResponsiveness.isSome()) {
-    writer.DoubleElement(RESPONSIVENESS, *aSample.mResponsiveness);
+    writer.DoubleElement(EVENT_DELAY, *aSample.mResponsiveness);
   }
 }
 
@@ -712,8 +567,9 @@ class EntryGetter {
  public:
   explicit EntryGetter(BlocksRingBuffer::Reader& aReader,
                        uint64_t aInitialReadPos = 0)
-      : mBlockIt(aReader.At(
-            BlocksRingBuffer::BlockIndex::ConvertFromU64(aInitialReadPos))),
+      : mBlockIt(
+            aReader.At(ProfileBufferBlockIndex::CreateFromProfileBufferIndex(
+                aInitialReadPos))),
         mBlockItEnd(aReader.end()) {
     if (!ReadLegacyOrEnd()) {
       // Find and read the next non-legacy entry.
@@ -742,11 +598,13 @@ class EntryGetter {
 
   BlocksRingBuffer::BlockIterator Iterator() const { return mBlockIt; }
 
-  ProfileBuffer::BlockIndex CurBlockIndex() const {
+  ProfileBufferBlockIndex CurBlockIndex() const {
     return mBlockIt.CurrentBlockIndex();
   }
 
-  uint64_t CurPos() const { return CurBlockIndex().ConvertToU64(); }
+  uint64_t CurPos() const {
+    return CurBlockIndex().ConvertToProfileBufferIndex();
+  }
 
  private:
   // Try to read the entry at the current `mBlockIt` position.
@@ -783,14 +641,18 @@ class EntryGetter {
 // (
 //   ( /* Samples */
 //     ThreadId
-//     Time
-//     ( NativeLeafAddr
-//     | Label FrameFlags? DynamicStringFragment* LineNumber? CategoryPair?
-//     | JitReturnAddr
-//     )+
-//     Marker*
-//     Responsiveness?
+//     TimeBeforeCompactStack
+//     UnresponsivenessDurationMs?
+//     CompactStack
+//         /* internally including:
+//           ( NativeLeafAddr
+//           | Label FrameFlags? DynamicStringFragment*
+//             LineNumber? CategoryPair?
+//           | JitReturnAddr
+//           )+
+//         */
 //   )
+//   | MarkerData
 //   | ( /* Counters */
 //       CounterId
 //       Time
@@ -967,7 +829,8 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
 
       ProfileSample sample;
 
-      auto ReadStack = [&](EntryGetter& e, uint64_t entryPosition) {
+      auto ReadStack = [&](EntryGetter& e, uint64_t entryPosition,
+                           const Maybe<double>& unresponsiveDuration) {
         UniqueStacks::StackKey stack =
             aUniqueStacks.BeginStack(UniqueStacks::FrameKey("(root)"));
 
@@ -1059,6 +922,12 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
               frameLabel.Append(label);
             }
 
+            uint64_t innerWindowID = 0;
+            if (e.Has() && e.Get().IsInnerWindowID()) {
+              innerWindowID = uint64_t(e.Get().GetUint64());
+              e.Next();
+            }
+
             Maybe<unsigned> line;
             if (e.Has() && e.Get().IsLineNumber()) {
               line = Some(unsigned(e.Get().GetInt()));
@@ -1079,9 +948,9 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
             }
 
             stack = aUniqueStacks.AppendFrame(
-                stack,
-                UniqueStacks::FrameKey(std::move(frameLabel), relevantForJS,
-                                       line, column, categoryPair));
+                stack, UniqueStacks::FrameKey(std::move(frameLabel),
+                                              relevantForJS, innerWindowID,
+                                              line, column, categoryPair));
 
           } else if (e.Get().IsJitReturnAddr()) {
             numFrames++;
@@ -1116,9 +985,8 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
 
         sample.mStack = aUniqueStacks.GetOrAddStackIndex(stack);
 
-        if (e.Has() && e.Get().IsResponsiveness()) {
-          sample.mResponsiveness = Some(e.Get().GetDouble());
-          e.Next();
+        if (unresponsiveDuration.isSome()) {
+          sample.mResponsiveness = unresponsiveDuration;
         }
 
         WriteSample(aWriter, *aUniqueStacks.mUniqueStrings, sample);
@@ -1133,7 +1001,7 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
           continue;
         }
 
-        ReadStack(e, 0);
+        ReadStack(e, 0, Nothing{});
       } else if (e.Has() && e.Get().IsTimeBeforeCompactStack()) {
         sample.mTime = e.Get().GetDouble();
 
@@ -1142,6 +1010,8 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
           e.Next();
           continue;
         }
+
+        Maybe<double> unresponsiveDuration;
 
         BlocksRingBuffer::BlockIterator it = e.Iterator();
         for (;;) {
@@ -1152,6 +1022,13 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
           BlocksRingBuffer::EntryReader er = *it;
           ProfileBufferEntry::Kind kind =
               er.ReadObject<ProfileBufferEntry::Kind>();
+
+          // There may be an UnresponsiveDurationMs before the CompactStack.
+          if (kind == ProfileBufferEntry::Kind::UnresponsiveDurationMs) {
+            unresponsiveDuration = Some(er.ReadObject<double>());
+            continue;
+          }
+
           if (kind == ProfileBufferEntry::Kind::CompactStack) {
             BlocksRingBuffer tempBuffer(
                 BlocksRingBuffer::ThreadSafety::WithoutMutex,
@@ -1163,11 +1040,13 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
               EntryGetter stackEntryGetter(*aReader);
               if (stackEntryGetter.Has()) {
                 ReadStack(stackEntryGetter,
-                          er.CurrentBlockIndex().ConvertToU64());
+                          er.CurrentBlockIndex().ConvertToProfileBufferIndex(),
+                          unresponsiveDuration);
               }
             });
             break;
           }
+
           MOZ_ASSERT(kind >= ProfileBufferEntry::Kind::LEGACY_LIMIT,
                      "There should be no legacy entries between "
                      "TimeBeforeCompactStack and CompactStack");
@@ -1566,7 +1445,7 @@ void ProfileBuffer::StreamCountersToJSON(SpliceableJSONWriter& aWriter,
       aWriter.StringProperty("category", base_counter->mCategory);
       aWriter.StringProperty("description", base_counter->mDescription);
 
-      aWriter.StartObjectProperty("sample_groups");
+      aWriter.StartArrayProperty("sample_groups");
       for (auto counter_iter = counter.iter(); !counter_iter.done();
            counter_iter.next()) {
         CounterKeyedSamples& samples = counter_iter.get().value();
@@ -1576,47 +1455,54 @@ void ProfileBuffer::StreamCountersToJSON(SpliceableJSONWriter& aWriter,
         if (size == 0) {
           continue;
         }
-        aWriter.IntProperty("id", static_cast<int64_t>(key));
-        aWriter.StartObjectProperty("samples");
+
+        aWriter.StartObjectElement();
         {
-          // XXX Can we assume a missing count means 0?
-          JSONSchemaWriter schema(aWriter);
-          schema.WriteField("time");
-          schema.WriteField("number");
-          schema.WriteField("count");
-        }
-
-        aWriter.StartArrayProperty("data");
-        uint64_t previousNumber = 0;
-        int64_t previousCount = 0;
-        for (size_t i = 0; i < size; i++) {
-          // Encode as deltas, and only encode if different than the last sample
-          if (i == 0 || samples[i].mNumber != previousNumber ||
-              samples[i].mCount != previousCount) {
-            if (i != 0 && samples[i].mTime >= samples[i - 1].mTime) {
-              MOZ_LOG(sFuzzyfoxLog, mozilla::LogLevel::Error,
-                      ("Fuzzyfox Profiler Assertion: %f >= %f",
-                       samples[i].mTime, samples[i - 1].mTime));
-            }
-            MOZ_ASSERT(i == 0 || samples[i].mTime >= samples[i - 1].mTime);
-            MOZ_ASSERT(samples[i].mNumber >= previousNumber);
-            MOZ_ASSERT(samples[i].mNumber - previousNumber <=
-                       uint64_t(std::numeric_limits<int64_t>::max()));
-
-            AutoArraySchemaWriter writer(aWriter);
-            writer.DoubleElement(TIME, samples[i].mTime);
-            writer.IntElement(NUMBER, static_cast<int64_t>(samples[i].mNumber -
-                                                           previousNumber));
-            writer.IntElement(COUNT, samples[i].mCount - previousCount);
-            previousNumber = samples[i].mNumber;
-            previousCount = samples[i].mCount;
+          aWriter.IntProperty("id", static_cast<int64_t>(key));
+          aWriter.StartObjectProperty("samples");
+          {
+            // XXX Can we assume a missing count means 0?
+            JSONSchemaWriter schema(aWriter);
+            schema.WriteField("time");
+            schema.WriteField("number");
+            schema.WriteField("count");
           }
+
+          aWriter.StartArrayProperty("data");
+          uint64_t previousNumber = 0;
+          int64_t previousCount = 0;
+          for (size_t i = 0; i < size; i++) {
+            // Encode as deltas, and only encode if different than the last
+            // sample
+            if (i == 0 || samples[i].mNumber != previousNumber ||
+                samples[i].mCount != previousCount) {
+              if (i != 0 && samples[i].mTime >= samples[i - 1].mTime) {
+                MOZ_LOG(sFuzzyfoxLog, mozilla::LogLevel::Error,
+                        ("Fuzzyfox Profiler Assertion: %f >= %f",
+                         samples[i].mTime, samples[i - 1].mTime));
+              }
+              MOZ_ASSERT(i == 0 || samples[i].mTime >= samples[i - 1].mTime);
+              MOZ_ASSERT(samples[i].mNumber >= previousNumber);
+              MOZ_ASSERT(samples[i].mNumber - previousNumber <=
+                         uint64_t(std::numeric_limits<int64_t>::max()));
+
+              AutoArraySchemaWriter writer(aWriter);
+              writer.DoubleElement(TIME, samples[i].mTime);
+              writer.IntElement(
+                  NUMBER,
+                  static_cast<int64_t>(samples[i].mNumber - previousNumber));
+              writer.IntElement(COUNT, samples[i].mCount - previousCount);
+              previousNumber = samples[i].mNumber;
+              previousCount = samples[i].mCount;
+            }
+          }
+          aWriter.EndArray();   // data
+          aWriter.EndObject();  // samples
         }
-        aWriter.EndArray();   // data
-        aWriter.EndObject();  // samples
+        aWriter.EndObject();  // sample_groups item
       }
-      aWriter.EndObject();  // sample groups
-      aWriter.End();        // for each counter
+      aWriter.EndArray();  // sample groups
+      aWriter.End();       // for each counter
     }
     aWriter.EndArray();  // counters
   });
@@ -1775,7 +1661,6 @@ bool ProfileBuffer::DuplicateLastSample(int aThreadId,
         case ProfileBufferEntry::Kind::CounterKey:
         case ProfileBufferEntry::Kind::Number:
         case ProfileBufferEntry::Kind::Count:
-        case ProfileBufferEntry::Kind::Responsiveness:
           // Don't copy anything not part of a thread's stack sample
           break;
         case ProfileBufferEntry::Kind::CounterId:
@@ -1857,54 +1742,55 @@ bool ProfileBuffer::DuplicateLastSample(int aThreadId,
 }
 
 void ProfileBuffer::DiscardSamplesBeforeTime(double aTime) {
-  const BlockIndex firstBlockToKeep = mEntries.Read([&](BlocksRingBuffer::
-                                                            Reader* aReader) {
-    MOZ_ASSERT(
-        aReader,
-        "BlocksRingBuffer cannot be out-of-session when sampler is running");
+  const ProfileBufferBlockIndex firstBlockToKeep =
+      mEntries.Read([&](BlocksRingBuffer::Reader* aReader) {
+        MOZ_ASSERT(aReader,
+                   "BlocksRingBuffer cannot be out-of-session when sampler is "
+                   "running");
 
-    EntryGetter e(*aReader);
+        EntryGetter e(*aReader);
 
-    const BlockIndex bufferStartPos = e.CurBlockIndex();
-    for (;;) {
-      // This block skips entries until we find the start of the next
-      // sample. This is useful in three situations.
-      //
-      // - The circular buffer overwrites old entries, so when we start
-      //   parsing we might be in the middle of a sample, and we must skip
-      //   forward to the start of the next sample.
-      //
-      // - We skip samples that don't have an appropriate ThreadId or Time.
-      //
-      // - We skip range Pause, Resume, CollectionStart, Marker, and
-      //   CollectionEnd entries between samples.
-      while (e.Has()) {
-        if (e.Get().IsThreadId()) {
-          break;
+        const ProfileBufferBlockIndex bufferStartPos = e.CurBlockIndex();
+        for (;;) {
+          // This block skips entries until we find the start of the next
+          // sample. This is useful in three situations.
+          //
+          // - The circular buffer overwrites old entries, so when we start
+          //   parsing we might be in the middle of a sample, and we must skip
+          //   forward to the start of the next sample.
+          //
+          // - We skip samples that don't have an appropriate ThreadId or Time.
+          //
+          // - We skip range Pause, Resume, CollectionStart, Marker, and
+          //   CollectionEnd entries between samples.
+          while (e.Has()) {
+            if (e.Get().IsThreadId()) {
+              break;
+            }
+            e.Next();
+          }
+
+          if (!e.Has()) {
+            return bufferStartPos;
+          }
+
+          MOZ_RELEASE_ASSERT(e.Get().IsThreadId());
+          const ProfileBufferBlockIndex sampleStartPos = e.CurBlockIndex();
+          e.Next();
+
+          if (e.Has() &&
+              (e.Get().IsTime() || e.Get().IsTimeBeforeCompactStack())) {
+            double sampleTime = e.Get().GetDouble();
+
+            if (sampleTime >= aTime) {
+              // This is the first sample within the window of time that we want
+              // to keep. Throw away all samples before sampleStartPos and
+              // return.
+              return sampleStartPos;
+            }
+          }
         }
-        e.Next();
-      }
-
-      if (!e.Has()) {
-        return bufferStartPos;
-      }
-
-      MOZ_RELEASE_ASSERT(e.Get().IsThreadId());
-      const BlockIndex sampleStartPos = e.CurBlockIndex();
-      e.Next();
-
-      if (e.Has() && (e.Get().IsTime() || e.Get().IsTimeBeforeCompactStack())) {
-        double sampleTime = e.Get().GetDouble();
-
-        if (sampleTime >= aTime) {
-          // This is the first sample within the window of time that we want
-          // to keep. Throw away all samples before sampleStartPos and
-          // return.
-          return sampleStartPos;
-        }
-      }
-    }
-  });
+      });
   mEntries.ClearBefore(firstBlockToKeep);
 }
 

@@ -22,6 +22,7 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
 #include "js/CharacterEncoding.h"
 #include "js/MemoryFunctions.h"
 
@@ -192,7 +193,7 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
     case nsXPTType::T_CHAR_STR: {
       const char* p = *static_cast<const char* const*>(s);
       arrlen = p ? strlen(p) : 0;
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     }
     case nsXPTType::T_PSTRING_SIZE_IS: {
       const char* p = *static_cast<const char* const*>(s);
@@ -223,7 +224,7 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
     case nsXPTType::T_WCHAR_STR: {
       const char16_t* p = *static_cast<const char16_t* const*>(s);
       arrlen = p ? nsCharTraits<char16_t>::length(p) : 0;
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     }
     case nsXPTType::T_PWSTRING_SIZE_IS: {
       const char16_t* p = *static_cast<const char16_t* const*>(s);
@@ -439,7 +440,7 @@ static void CheckCharsInCharRange(const CharT* chars, size_t len) {
 
 template <typename T>
 bool ConvertToPrimitive(JSContext* cx, HandleValue v, T* retval) {
-  return ValueToPrimitive<T, eDefault>(cx, v, retval);
+  return ValueToPrimitive<T, eDefault>(cx, v, "Value", retval);
 }
 
 // static
@@ -559,30 +560,7 @@ bool XPCConvert::JSData2Native(JSContext* cx, void* d, HandleValue s,
         return true;
       }
 
-      if (XPCStringConvert::IsDOMString(str)) {
-        // The characters represent an existing nsStringBuffer that
-        // was shared by XPCStringConvert::ReadableToJSVal.
-        const char16_t* chars = JS_GetTwoByteExternalStringChars(str);
-        if (chars[length] == '\0') {
-          // Safe to share the buffer.
-          nsStringBuffer::FromData((void*)chars)->ToString(length, *ws);
-        } else {
-          // We have to copy to ensure null-termination.
-          ws->Assign(chars, length);
-        }
-      } else if (XPCStringConvert::IsLiteral(str)) {
-        // The characters represent a literal char16_t string constant
-        // compiled into libxul, such as the string "undefined" above.
-        const char16_t* chars = JS_GetTwoByteExternalStringChars(str);
-        ws->AssignLiteral(chars, length);
-      } else {
-        // We don't bother checking for a dynamic-atom external string,
-        // because we'd just need to copy out of it anyway.
-        if (!AssignJSString(cx, *ws, str)) {
-          return false;
-        }
-      }
-      return true;
+      return AssignJSString(cx, *ws, str);
     }
 
     case nsXPTType::T_CHAR_STR:
@@ -715,7 +693,12 @@ bool XPCConvert::JSData2Native(JSContext* cx, void* d, HandleValue s,
       }
 
       size_t utf8Length = JS::GetDeflatedUTF8StringLength(linear);
-      rs->SetLength(utf8Length);
+      if (!rs->SetLength(utf8Length, fallible)) {
+        if (pErr) {
+          *pErr = NS_ERROR_OUT_OF_MEMORY;
+        }
+        return false;
+      }
 
       mozilla::DebugOnly<size_t> written = JS::DeflateStringToUTF8Buffer(
           linear, mozilla::MakeSpan(rs->BeginWriting(), utf8Length));
@@ -747,7 +730,12 @@ bool XPCConvert::JSData2Native(JSContext* cx, void* d, HandleValue s,
         return true;
       }
 
-      rs->SetLength(uint32_t(length));
+      if (!rs->SetLength(uint32_t(length), fallible)) {
+        if (pErr) {
+          *pErr = NS_ERROR_OUT_OF_MEMORY;
+        }
+        return false;
+      }
       if (rs->Length() != uint32_t(length)) {
         return false;
       }
@@ -1403,7 +1391,7 @@ bool XPCConvert::NativeArray2JS(JSContext* cx, MutableHandleValue d,
                                 nsresult* pErr) {
   MOZ_ASSERT(buf || count == 0, "Must have buf or 0 elements");
 
-  RootedObject array(cx, JS_NewArrayObject(cx, count));
+  RootedObject array(cx, JS::NewArrayObject(cx, count));
   if (!array) {
     return false;
   }
@@ -1534,8 +1522,8 @@ bool XPCConvert::JSArray2Native(JSContext* cx, JS::HandleValue aJSVal,
   // If jsarray is not a TypedArrayObject, check for an Array object.
   uint32_t length = 0;
   bool isArray = false;
-  if (!JS_IsArrayObject(cx, jsarray, &isArray) || !isArray ||
-      !JS_GetArrayLength(cx, jsarray, &length)) {
+  if (!JS::IsArrayObject(cx, jsarray, &isArray) || !isArray ||
+      !JS::GetArrayLength(cx, jsarray, &length)) {
     if (pErr) {
       *pErr = NS_ERROR_XPC_CANT_CONVERT_OBJECT_TO_ARRAY;
     }

@@ -10,6 +10,7 @@
 #define mozilla_ServoStyleConstsInlines_h
 
 #include "mozilla/ServoStyleConsts.h"
+#include "mozilla/EndianUtils.h"
 #include "mozilla/URLExtraData.h"
 #include "nsGkAtoms.h"
 #include "MainThreadUtils.h"
@@ -21,6 +22,36 @@
 // that should move here.
 
 namespace mozilla {
+
+// We need to explicitly instantiate these so that the clang plugin can see that
+// they're trivially copiable...
+//
+// https://github.com/eqrion/cbindgen/issues/402 tracks doing something like
+// this automatically from cbindgen.
+template struct StyleOwned<RawServoAnimationValueMap>;
+template struct StyleOwned<RawServoAuthorStyles>;
+template struct StyleOwned<RawServoSourceSizeList>;
+template struct StyleOwned<StyleUseCounters>;
+template struct StyleOwnedOrNull<StyleUseCounters>;
+template struct StyleOwnedOrNull<RawServoSelectorList>;
+template struct StyleStrong<ComputedStyle>;
+template struct StyleStrong<ServoCssRules>;
+template struct StyleStrong<RawServoAnimationValue>;
+template struct StyleStrong<RawServoDeclarationBlock>;
+template struct StyleStrong<RawServoStyleSheetContents>;
+template struct StyleStrong<RawServoKeyframe>;
+template struct StyleStrong<RawServoMediaList>;
+template struct StyleStrong<RawServoStyleRule>;
+template struct StyleStrong<RawServoImportRule>;
+template struct StyleStrong<RawServoKeyframesRule>;
+template struct StyleStrong<RawServoMediaRule>;
+template struct StyleStrong<RawServoMozDocumentRule>;
+template struct StyleStrong<RawServoNamespaceRule>;
+template struct StyleStrong<RawServoPageRule>;
+template struct StyleStrong<RawServoSupportsRule>;
+template struct StyleStrong<RawServoFontFeatureValuesRule>;
+template struct StyleStrong<RawServoFontFaceRule>;
+template struct StyleStrong<RawServoCounterStyleRule>;
 
 template <typename T>
 inline void StyleOwnedSlice<T>::Clear() {
@@ -66,6 +97,23 @@ template <typename T>
 inline StyleOwnedSlice<T>::StyleOwnedSlice(StyleOwnedSlice&& aOther)
     : StyleOwnedSlice() {
   SwapElements(aOther);
+}
+
+template <typename T>
+inline StyleOwnedSlice<T>::StyleOwnedSlice(Vector<T>&& aVector)
+    : StyleOwnedSlice() {
+  if (!aVector.length()) {
+    return;
+  }
+
+  // We could handle this if Vector provided the relevant APIs, see bug 1610702.
+  MOZ_DIAGNOSTIC_ASSERT(aVector.length() == aVector.capacity(),
+                        "Shouldn't over-allocate");
+  len = aVector.length();
+  ptr = aVector.extractRawBuffer();
+  MOZ_ASSERT(ptr,
+             "How did extractRawBuffer return null if we're not using inline "
+             "capacity?");
 }
 
 template <typename T>
@@ -343,12 +391,14 @@ inline StyleLoadData& StyleCssUrl::LoadData() const {
 inline nsIURI* StyleCssUrl::GetURI() const {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
   auto& loadData = LoadData();
-  if (!loadData.tried_to_resolve) {
-    loadData.tried_to_resolve = true;
-    NS_NewURI(getter_AddRefs(loadData.resolved), SpecifiedSerialization(),
-              nullptr, ExtraData().BaseURI());
+  if (!(loadData.flags & StyleLoadDataFlags::TRIED_TO_RESOLVE_URI)) {
+    loadData.flags |= StyleLoadDataFlags::TRIED_TO_RESOLVE_URI;
+    RefPtr<nsIURI> resolved;
+    NS_NewURI(getter_AddRefs(resolved), SpecifiedSerialization(), nullptr,
+              ExtraData().BaseURI());
+    loadData.resolved_uri = resolved.forget().take();
   }
-  return loadData.resolved.get();
+  return loadData.resolved_uri;
 }
 
 inline nsDependentCSubstring StyleComputedUrl::SpecifiedSerialization() const {
@@ -380,6 +430,26 @@ inline bool StyleComputedUrl::HasRef() const {
   return false;
 }
 
+inline bool StyleComputedImageUrl::IsImageResolved() const {
+  return bool(LoadData().flags & StyleLoadDataFlags::TRIED_TO_RESOLVE_IMAGE);
+}
+
+inline imgRequestProxy* StyleComputedImageUrl::GetImage() const {
+  MOZ_ASSERT(IsImageResolved());
+  return LoadData().resolved_image;
+}
+
+template <>
+inline bool StyleGradient::Repeating() const {
+  if (IsLinear()) {
+    return AsLinear().repeating;
+  }
+  if (IsRadial()) {
+    return AsRadial().repeating;
+  }
+  return AsConic().repeating;
+}
+
 template <>
 bool StyleGradient::IsOpaque() const;
 
@@ -399,25 +469,6 @@ inline bool StyleGridLine::IsAuto() const {
   return LineName()->IsEmpty() && line_num == 0 && !is_span;
 }
 
-class WritingMode;
-
-// Logical axis, edge, side and corner constants for use in various places.
-enum LogicalAxis { eLogicalAxisBlock = 0x0, eLogicalAxisInline = 0x1 };
-enum LogicalEdge { eLogicalEdgeStart = 0x0, eLogicalEdgeEnd = 0x1 };
-enum LogicalSide : uint8_t {
-  eLogicalSideBStart = (eLogicalAxisBlock << 1) | eLogicalEdgeStart,   // 0x0
-  eLogicalSideBEnd = (eLogicalAxisBlock << 1) | eLogicalEdgeEnd,       // 0x1
-  eLogicalSideIStart = (eLogicalAxisInline << 1) | eLogicalEdgeStart,  // 0x2
-  eLogicalSideIEnd = (eLogicalAxisInline << 1) | eLogicalEdgeEnd       // 0x3
-};
-
-enum LogicalCorner {
-  eLogicalCornerBStartIStart = 0,
-  eLogicalCornerBStartIEnd = 1,
-  eLogicalCornerBEndIEnd = 2,
-  eLogicalCornerBEndIStart = 3
-};
-
 using LengthPercentage = StyleLengthPercentage;
 using LengthPercentageOrAuto = StyleLengthPercentageOrAuto;
 using NonNegativeLengthPercentage = StyleNonNegativeLengthPercentage;
@@ -432,6 +483,8 @@ using NonNegativeLengthOrAuto = StyleNonNegativeLengthOrAuto;
 using BorderRadius = StyleBorderRadius;
 
 bool StyleCSSPixelLength::IsZero() const { return _0 == 0.0f; }
+
+void StyleCSSPixelLength::ScaleBy(float aScale) { _0 *= aScale; }
 
 nscoord StyleCSSPixelLength::ToAppUnits() const {
   // We want to resolve the length part of the calc() expression rounding 0.5
@@ -456,54 +509,179 @@ nscoord StyleCSSPixelLength::ToAppUnits() const {
   return NSToIntRound(length);
 }
 
-constexpr LengthPercentage LengthPercentage::Zero() {
-  return {{0.}, {0.}, StyleAllowedNumericType::All, false};
+bool LengthPercentage::IsLength() const { return Tag() == TAG_LENGTH; }
+
+StyleLengthPercentageUnion::StyleLengthPercentageUnion() {
+  length = {TAG_LENGTH, {0.0f}};
+  MOZ_ASSERT(IsLength());
 }
 
+static_assert(sizeof(LengthPercentage) == sizeof(uint64_t), "");
+
+Length& LengthPercentage::AsLength() {
+  MOZ_ASSERT(IsLength());
+  return length.length;
+}
+
+const Length& LengthPercentage::AsLength() const {
+  return const_cast<LengthPercentage*>(this)->AsLength();
+}
+
+bool LengthPercentage::IsPercentage() const { return Tag() == TAG_PERCENTAGE; }
+
+StylePercentage& LengthPercentage::AsPercentage() {
+  MOZ_ASSERT(IsPercentage());
+  return percentage.percentage;
+}
+
+const StylePercentage& LengthPercentage::AsPercentage() const {
+  return const_cast<LengthPercentage*>(this)->AsPercentage();
+}
+
+bool LengthPercentage::IsCalc() const { return Tag() == TAG_CALC; }
+
+StyleCalcLengthPercentage& LengthPercentage::AsCalc() {
+  MOZ_ASSERT(IsCalc());
+  // NOTE: in 32-bits, the pointer is not swapped, and goes along with the tag.
+#ifdef SERVO_32_BITS
+  return *calc.ptr;
+#else
+  return *reinterpret_cast<StyleCalcLengthPercentage*>(
+      NativeEndian::swapFromLittleEndian(calc.ptr));
+#endif
+}
+
+const StyleCalcLengthPercentage& LengthPercentage::AsCalc() const {
+  return const_cast<LengthPercentage*>(this)->AsCalc();
+}
+
+StyleLengthPercentageUnion::StyleLengthPercentageUnion(const Self& aOther) {
+  if (aOther.IsLength()) {
+    length = {TAG_LENGTH, aOther.AsLength()};
+  } else if (aOther.IsPercentage()) {
+    percentage = {TAG_PERCENTAGE, aOther.AsPercentage()};
+  } else {
+    MOZ_ASSERT(aOther.IsCalc());
+    auto* ptr = new StyleCalcLengthPercentage(aOther.AsCalc());
+    // NOTE: in 32-bits, the pointer is not swapped, and goes along with the
+    // tag.
+    calc = {
+#ifdef SERVO_32_BITS
+        TAG_CALC,
+        ptr,
+#else
+        NativeEndian::swapToLittleEndian(reinterpret_cast<uintptr_t>(ptr)),
+#endif
+    };
+  }
+  MOZ_ASSERT(Tag() == aOther.Tag());
+}
+
+StyleLengthPercentageUnion::~StyleLengthPercentageUnion() {
+  if (IsCalc()) {
+    delete &AsCalc();
+  }
+}
+
+LengthPercentage& LengthPercentage::operator=(const LengthPercentage& aOther) {
+  if (this != &aOther) {
+    this->~LengthPercentage();
+    new (this) LengthPercentage(aOther);
+  }
+  return *this;
+}
+
+bool LengthPercentage::operator==(const LengthPercentage& aOther) const {
+  if (Tag() != aOther.Tag()) {
+    return false;
+  }
+  if (IsLength()) {
+    return AsLength() == aOther.AsLength();
+  }
+  if (IsPercentage()) {
+    return AsPercentage() == aOther.AsPercentage();
+  }
+  return AsCalc() == aOther.AsCalc();
+}
+
+bool LengthPercentage::operator!=(const LengthPercentage& aOther) const {
+  return !(*this == aOther);
+}
+
+LengthPercentage LengthPercentage::Zero() { return {}; }
+
 LengthPercentage LengthPercentage::FromPixels(CSSCoord aCoord) {
-  return {{aCoord}, {0.}, StyleAllowedNumericType::All, false};
+  LengthPercentage l;
+  MOZ_ASSERT(l.IsLength());
+  l.length.length = {aCoord};
+  return l;
 }
 
 LengthPercentage LengthPercentage::FromAppUnits(nscoord aCoord) {
-  return LengthPercentage::FromPixels(CSSPixel::FromAppUnits(aCoord));
+  return FromPixels(CSSPixel::FromAppUnits(aCoord));
 }
 
 LengthPercentage LengthPercentage::FromPercentage(float aPercentage) {
-  return {{0.}, {aPercentage}, StyleAllowedNumericType::All, true};
+  LengthPercentage l;
+  l.percentage = {TAG_PERCENTAGE, {aPercentage}};
+  return l;
 }
 
-CSSCoord LengthPercentage::LengthInCSSPixels() const { return length._0; }
+bool LengthPercentage::HasPercent() const { return IsPercentage() || IsCalc(); }
 
-float LengthPercentage::Percentage() const { return percentage._0; }
-
-bool LengthPercentage::HasPercent() const { return has_percentage; }
-
-bool LengthPercentage::ConvertsToLength() const { return !HasPercent(); }
+bool LengthPercentage::ConvertsToLength() const { return IsLength(); }
 
 nscoord LengthPercentage::ToLength() const {
   MOZ_ASSERT(ConvertsToLength());
-  return length.ToAppUnits();
+  return AsLength().ToAppUnits();
 }
 
-bool LengthPercentage::ConvertsToPercentage() const {
-  return has_percentage && length.IsZero();
+CSSCoord LengthPercentage::ToLengthInCSSPixels() const {
+  MOZ_ASSERT(ConvertsToLength());
+  return AsLength().ToCSSPixels();
 }
+
+bool LengthPercentage::ConvertsToPercentage() const { return IsPercentage(); }
 
 float LengthPercentage::ToPercentage() const {
   MOZ_ASSERT(ConvertsToPercentage());
-  return Percentage();
+  return AsPercentage()._0;
 }
 
 bool LengthPercentage::HasLengthAndPercentage() const {
-  return !ConvertsToLength() && !ConvertsToPercentage();
+  if (!IsCalc()) {
+    return false;
+  }
+  MOZ_ASSERT(!ConvertsToLength() && !ConvertsToPercentage(),
+             "Should've been simplified earlier");
+  return true;
 }
 
 bool LengthPercentage::IsDefinitelyZero() const {
-  return length.IsZero() && Percentage() == 0.0f;
+  if (IsLength()) {
+    return AsLength().IsZero();
+  }
+  if (IsPercentage()) {
+    return AsPercentage()._0 == 0.0f;
+  }
+  // calc() should've been simplified to a percentage.
+  return false;
 }
 
+template <>
+CSSCoord StyleCalcNode::ResolveToCSSPixels(CSSCoord aPercentageBasis) const;
+
+template <>
+void StyleCalcNode::ScaleLengthsBy(float);
+
 CSSCoord LengthPercentage::ResolveToCSSPixels(CSSCoord aPercentageBasis) const {
-  return LengthInCSSPixels() + Percentage() * aPercentageBasis;
+  if (IsLength()) {
+    return AsLength().ToCSSPixels();
+  }
+  if (IsPercentage()) {
+    return AsPercentage()._0 * aPercentageBasis;
+  }
+  return AsCalc().node.ResolveToCSSPixels(aPercentageBasis);
 }
 
 template <typename T>
@@ -511,24 +689,28 @@ CSSCoord LengthPercentage::ResolveToCSSPixelsWith(T aPercentageGetter) const {
   static_assert(std::is_same<decltype(aPercentageGetter()), CSSCoord>::value,
                 "Should return CSS pixels");
   if (ConvertsToLength()) {
-    return LengthInCSSPixels();
+    return ToLengthInCSSPixels();
   }
   return ResolveToCSSPixels(aPercentageGetter());
 }
 
 template <typename T, typename U>
-nscoord LengthPercentage::Resolve(T aPercentageGetter,
-                                  U aPercentageRounder) const {
+nscoord LengthPercentage::Resolve(T aPercentageGetter, U aRounder) const {
   static_assert(std::is_same<decltype(aPercentageGetter()), nscoord>::value,
                 "Should return app units");
-  static_assert(
-      std::is_same<decltype(aPercentageRounder(1.0f)), nscoord>::value,
-      "Should return app units");
+  static_assert(std::is_same<decltype(aRounder(1.0f)), nscoord>::value,
+                "Should return app units");
   if (ConvertsToLength()) {
     return ToLength();
   }
+  if (IsPercentage() && AsPercentage()._0 == 0.0f) {
+    return 0.0f;
+  }
   nscoord basis = aPercentageGetter();
-  return length.ToAppUnits() + aPercentageRounder(basis * Percentage());
+  if (IsPercentage()) {
+    return aRounder(basis * AsPercentage()._0);
+  }
+  return AsCalc().node.Resolve(basis, aRounder);
 }
 
 nscoord LengthPercentage::Resolve(nscoord aPercentageBasis) const {
@@ -537,15 +719,23 @@ nscoord LengthPercentage::Resolve(nscoord aPercentageBasis) const {
 
 template <typename T>
 nscoord LengthPercentage::Resolve(T aPercentageGetter) const {
-  static_assert(std::is_same<decltype(aPercentageGetter()), nscoord>::value,
-                "Should return app units");
   return Resolve(aPercentageGetter, NSToCoordFloorClamped);
 }
 
 template <typename T>
 nscoord LengthPercentage::Resolve(nscoord aPercentageBasis,
                                   T aPercentageRounder) const {
-  return Resolve([=] { return aPercentageBasis; }, aPercentageRounder);
+  return Resolve([aPercentageBasis] { return aPercentageBasis; },
+                 aPercentageRounder);
+}
+
+void LengthPercentage::ScaleLengthsBy(float aScale) {
+  if (IsLength()) {
+    AsLength().ScaleBy(aScale);
+  }
+  if (IsCalc()) {
+    AsCalc().node.ScaleLengthsBy(aScale);
+  }
 }
 
 #define IMPL_LENGTHPERCENTAGE_FORWARDS(ty_)                                 \
@@ -623,6 +813,11 @@ const T& StyleRect<T>::Get(mozilla::Side aSide) const {
   static_assert(sizeof(StyleRect<T>) == sizeof(T) * 4, "");
   static_assert(alignof(StyleRect<T>) == alignof(T), "");
   return reinterpret_cast<const T*>(this)[aSide];
+}
+
+template <typename T>
+T& StyleRect<T>::Get(mozilla::Side aSide) {
+  return const_cast<T&>(static_cast<const StyleRect&>(*this).Get(aSide));
 }
 
 template <typename T>
@@ -708,6 +903,69 @@ inline nsRect StyleGenericClipRect<LengthOrAuto>::ToLayoutRect(
   nscoord height = bottom.IsLength() ? bottom.ToLength() - y : aAutoSize;
   return nsRect(x, y, width, height);
 }
+
+using RestyleHint = StyleRestyleHint;
+
+inline RestyleHint RestyleHint::RestyleSubtree() {
+  return RESTYLE_SELF | RESTYLE_DESCENDANTS;
+}
+
+inline RestyleHint RestyleHint::RecascadeSubtree() {
+  return RECASCADE_SELF | RECASCADE_DESCENDANTS;
+}
+
+inline RestyleHint RestyleHint::ForAnimations() {
+  return RESTYLE_CSS_TRANSITIONS | RESTYLE_CSS_ANIMATIONS | RESTYLE_SMIL;
+}
+
+inline bool RestyleHint::DefinitelyRecascadesAllSubtree() const {
+  if (!(*this & (RECASCADE_DESCENDANTS | RESTYLE_DESCENDANTS))) {
+    return false;
+  }
+  return bool(*this & (RESTYLE_SELF | RECASCADE_SELF));
+}
+
+template <>
+inline bool StyleImage::IsImageRequestType() const {
+  return IsUrl() || IsRect();
+}
+
+template <>
+inline const StyleComputedImageUrl* StyleImage::GetImageRequestURLValue()
+    const {
+  if (IsUrl()) {
+    return &AsUrl();
+  }
+  if (IsRect()) {
+    return &AsRect()->url;
+  }
+  return nullptr;
+}
+
+template <>
+inline imgRequestProxy* StyleImage::GetImageRequest() const {
+  auto* url = GetImageRequestURLValue();
+  return url ? url->GetImage() : nullptr;
+}
+
+template <>
+inline bool StyleImage::IsResolved() const {
+  auto* url = GetImageRequestURLValue();
+  return !url || url->IsImageResolved();
+}
+
+template <>
+bool StyleImage::IsOpaque() const;
+template <>
+bool StyleImage::IsSizeAvailable() const;
+template <>
+bool StyleImage::IsComplete() const;
+template <>
+bool StyleImage::StartDecoding() const;
+template <>
+Maybe<StyleImage::ActualCropRect> StyleImage::ComputeActualCropRect() const;
+template <>
+void StyleImage::ResolveImage(dom::Document&, const StyleImage*);
 
 }  // namespace mozilla
 

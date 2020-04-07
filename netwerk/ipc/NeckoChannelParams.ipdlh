@@ -21,12 +21,14 @@ using RequestHeaderTuples from "mozilla/net/PHttpChannelParams.h";
 using struct nsHttpAtom from "nsHttp.h";
 using class mozilla::net::nsHttpResponseHead from "nsHttpResponseHead.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
+using refcounted class nsIPropertyBag2 from "mozilla/dom/PropertyBagUtils.h";
+using refcounted class nsDOMNavigationTiming from "nsDOMNavigationTiming.h";
 
 namespace mozilla {
 namespace net {
 
 //-----------------------------------------------------------------------------
-// CookieSettings IPDL structs
+// CookieJarSettings IPDL structs
 //-----------------------------------------------------------------------------
 
 struct CookiePermissionData
@@ -35,7 +37,7 @@ struct CookiePermissionData
   uint32_t cookiePermission;
 };
 
-struct CookieSettingsArgs
+struct CookieJarSettingsArgs
 {
   // Copy of the cookie behavior and permissions for the top-level document.
   uint32_t cookieBehavior;
@@ -75,6 +77,7 @@ struct LoadInfoArgs
   PrincipalInfo?              topLevelStorageAreaPrincipalInfo;
   URIParams?                  resultPrincipalURI;
   uint32_t                    securityFlags;
+  uint32_t                    sandboxFlags;
   uint32_t                    contentPolicyType;
   uint32_t                    tainting;
   bool                        blockAllMixedContent;
@@ -95,7 +98,6 @@ struct LoadInfoArgs
   uint64_t                    frameBrowsingContextID;
   bool                        initialSecurityCheckDone;
   bool                        isInThirdPartyContext;
-  bool                        isDocshellReload;
   bool                        isFormSubmission;
   bool                        sendCSPViolationEvents;
   OriginAttributes            originAttributes;
@@ -139,10 +141,11 @@ struct LoadInfoArgs
   bool                        serviceWorkerTaintingSynthesized;
   bool                        documentHasUserInteracted;
   bool                        documentHasLoaded;
+  bool allowListFutureDocumentsCreatedFromThisRedirectChain;
   nsString                    cspNonce;
   bool                        skipContentSniffing;
   bool                        isFromProcessingFrameAttributes;
-  CookieSettingsArgs cookieSettings;
+  CookieJarSettingsArgs       cookieJarSettings;
   uint32_t                    requestBlockingReason;
   CSPInfo?                    cspToInheritInfo;
 };
@@ -186,8 +189,9 @@ struct ParentLoadInfoForwarderArgs
 
   bool documentHasUserInteracted;
   bool documentHasLoaded;
+  bool allowListFutureDocumentsCreatedFromThisRedirectChain;
 
-  CookieSettingsArgs? cookieSettings;
+  CookieJarSettingsArgs? cookieJarSettings;
 
   uint32_t requestBlockingReason;
 
@@ -299,6 +303,57 @@ union HttpChannelCreationArgs
   HttpChannelConnectArgs;   // Used for redirected-to channels
 };
 
+struct ProxyInfoCloneArgs
+{
+  nsCString type;
+  nsCString host;
+  int32_t port;
+  nsCString username;
+  nsCString password;
+  uint32_t flags;
+  uint32_t timeout;
+  uint32_t resolveFlags;
+  nsCString proxyAuthorizationHeader;
+  nsCString connectionIsolationKey;
+};
+
+struct HttpConnectionInfoCloneArgs
+{
+  nsCString host;
+  int32_t port;
+  nsCString npnToken;
+  nsCString username;
+  OriginAttributes originAttributes;
+  bool endToEndSSL;
+  nsCString routedHost;
+  int32_t routedPort;
+  bool anonymous;
+  bool aPrivate; // use prefix to avoid code generation error
+  bool insecureScheme;
+  bool noSpdy;
+  bool beConservative;
+  uint32_t tlsFlags;
+  bool isolated;
+  bool isTrrServiceChannel;
+  uint8_t trrMode;
+  bool isIPv4Disabled;
+  bool isIPv6Disabled;
+  nsCString topWindowOrigin;
+  bool isHttp3;
+  ProxyInfoCloneArgs[] proxyInfo;
+};
+
+struct ConsoleReportCollected {
+  uint32_t errorFlags;
+  nsCString category;
+  uint32_t propertiesFile;
+  nsCString sourceFileURI;
+  uint32_t lineNumber;
+  uint32_t columnNumber;
+  nsCString messageName;
+  nsString[] stringParams;
+};
+
 //-----------------------------------------------------------------------------
 // FTP IPDL structs
 //-----------------------------------------------------------------------------
@@ -353,20 +408,113 @@ struct CookieStruct
 };
 
 struct DocumentChannelCreationArgs {
-  URIParams? topWindowURI;
   DocShellLoadStateInit loadState;
   LoadInfoArgs loadInfo;
-  PrincipalInfo? contentBlockingAllowListPrincipal;
-  nsString? initiatorType;
-  nsString customUserAgent;
+  TimeStamp asyncOpenTime;
   uint64_t channelId;
   uint32_t loadFlags;
   uint32_t loadType;
   uint32_t cacheKey;
+  uint32_t? documentOpenFlags;
   bool isActive;
   bool isTopLevelDoc;
+  bool hasNonEmptySandboxingFlags;
+  bool pluginsAllowed;
+  nsDOMNavigationTiming? timing;
+  IPCClientInfo? initialClientInfo;
+  uint64_t outerWindowId;
 };
 
+struct DocumentChannelRedirect {
+  nsIURI uri;
+  uint32_t redirectFlags;
+  uint32_t responseStatus;
+  bool isPost;
+};
 
-} // namespace ipc
+struct LastVisitInfo {
+  nsIURI uri;
+  uint32_t previousFlags;
+};
+
+struct RedirectToRealChannelArgs {
+  uint32_t registrarId;
+  nsIURI uri;
+  uint32_t newLoadFlags;
+  ReplacementChannelConfigInit? init;
+  LoadInfoArgs? loadInfo;
+  DocumentChannelRedirect[] redirects;
+  uint64_t channelId;
+  nsIURI originalURI;
+  uint32_t redirectMode;
+  uint32_t redirectFlags;
+  uint32_t? contentDisposition;
+  nsString? contentDispositionFilename;
+  uint64_t redirectIdentifier;
+  nsIPropertyBag2 properties;
+  LastVisitInfo lastVisitInfo;
+  uint32_t loadStateLoadFlags;
+  uint32_t loadStateLoadType;
+  nsDOMNavigationTiming? timing;
+  nsString srcdocData;
+  nsIURI baseUri;
+};
+
+struct TimingStructArgs {
+  TimeStamp domainLookupStart;
+  TimeStamp domainLookupEnd;
+  TimeStamp connectStart;
+  TimeStamp tcpConnectEnd;
+  TimeStamp secureConnectionStart;
+  TimeStamp connectEnd;
+  TimeStamp requestStart;
+  TimeStamp responseStart;
+  TimeStamp responseEnd;
+};
+
+struct ResourceTimingStructArgs {
+  TimeStamp domainLookupStart;
+  TimeStamp domainLookupEnd;
+  TimeStamp connectStart;
+  TimeStamp tcpConnectEnd;
+  TimeStamp secureConnectionStart;
+  TimeStamp connectEnd;
+  TimeStamp requestStart;
+  TimeStamp responseStart;
+  TimeStamp responseEnd;
+  TimeStamp fetchStart;
+  TimeStamp redirectStart;
+  TimeStamp redirectEnd;
+  uint64_t transferSize;
+  uint64_t encodedBodySize;
+  nsCString protocolVersion;
+
+  // Not actually part of resource timing, but not part of the transaction
+  // timings either. These need to be passed to HttpChannelChild along with
+  // the rest of the timings so the timing information in the child is complete.
+  TimeStamp cacheReadStart;
+  TimeStamp cacheReadEnd;
+};
+
+struct HttpActivity
+{
+  nsCString host;
+  int32_t port;
+  bool endToEndSSL;
+};
+
+union HttpActivityArgs
+{
+  uint64_t;
+  HttpActivity;
+};
+
+struct TransactionObserverResult
+{
+  bool versionOk;
+  bool authOk;
+  nsresult closeReason;
+};
+
+} // namespace net
 } // namespace mozilla

@@ -10,17 +10,17 @@
 #if defined(_M_ARM64)
 #  include "mozilla/interceptor/Arm64.h"
 #endif  // defined(_M_ARM64)
-#include "mozilla/interceptor/PatcherBase.h"
-#include "mozilla/interceptor/Trampoline.h"
-#include "mozilla/interceptor/VMSharingPolicies.h"
+#include <utility>
 
 #include "mozilla/Maybe.h"
-#include "mozilla/Move.h"
 #include "mozilla/NativeNt.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/Types.h"
 #include "mozilla/Unused.h"
+#include "mozilla/interceptor/PatcherBase.h"
+#include "mozilla/interceptor/Trampoline.h"
+#include "mozilla/interceptor/VMSharingPolicies.h"
 
 #define COPY_CODES(NBYTES)                          \
   do {                                              \
@@ -669,10 +669,17 @@ class WindowsDllDetourPatcher final : public WindowsDllPatcherBase<VMPolicy> {
       ReadOnlyTargetFunction<MMPolicyT>& aOriginalFn, intptr_t aDest,
       void** aOutTramp) {
 #if defined(_M_X64)
+    // Variation 1:
     // 48 b8 imm64  mov rax, imm64
     // ff e0        jmp rax
+    //
+    // Variation 2:
+    // 48 b8 imm64  mov rax, imm64
+    // 50           push rax
+    // c3           ret
     if ((aOriginalFn[0] == 0x48) && (aOriginalFn[1] == 0xB8) &&
-        (aOriginalFn[10] == 0xFF) && (aOriginalFn[11] == 0xE0)) {
+        ((aOriginalFn[10] == 0xFF && aOriginalFn[11] == 0xE0) ||
+         (aOriginalFn[10] == 0x50 && aOriginalFn[11] == 0xC3))) {
       uintptr_t originalTarget =
           (aOriginalFn + 2).template ChasePointer<uintptr_t>();
 
@@ -708,6 +715,9 @@ class WindowsDllDetourPatcher final : public WindowsDllPatcherBase<VMPolicy> {
     *aOutTramp = nullptr;
 
     Trampoline<MMPolicyT>& tramp = aTramp;
+    if (!tramp) {
+      return;
+    }
 
     // The beginning of the trampoline contains two pointer-width slots:
     // [0]: |this|, so that we know whether the trampoline belongs to us;
@@ -798,11 +808,14 @@ class WindowsDllDetourPatcher final : public WindowsDllPatcherBase<VMPolicy> {
         // INC r32
         origBytes += 1;
       } else if (*origBytes == 0x83) {
-        // ADD|ODR|ADC|SBB|AND|SUB|XOR|CMP r/m, imm8
-        unsigned char b = origBytes[1];
-        if ((b & 0xc0) == 0xc0) {
-          // ADD|ODR|ADC|SBB|AND|SUB|XOR|CMP r, imm8
+        uint8_t mod = static_cast<uint8_t>(origBytes[1]) >> 6;
+        uint8_t rm = static_cast<uint8_t>(origBytes[1]) & 7;
+        if (mod == 3) {
+          // ADD|OR|ADC|SBB|AND|SUB|XOR|CMP r, imm8
           origBytes += 3;
+        } else if (mod == 1 && rm != 4) {
+          // ADD|OR|ADC|SBB|AND|SUB|XOR|CMP [r+disp8], imm8
+          origBytes += 4;
         } else {
           // bail
           MOZ_ASSERT_UNREACHABLE("Unrecognized bit opcode sequence");
@@ -1284,7 +1297,7 @@ class WindowsDllDetourPatcher final : public WindowsDllPatcherBase<VMPolicy> {
           MOZ_ASSERT_UNREACHABLE("Unrecognized opcode sequence");
           return;
         }
-        COPY_CODES(len + 1);
+        COPY_CODES(len + 2);
       } else {
         MOZ_ASSERT_UNREACHABLE("Unrecognized opcode sequence");
         return;

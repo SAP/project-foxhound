@@ -8,7 +8,6 @@
 
 #include "mozilla/dom/Document.h"
 #include "nsIGlobalObject.h"
-#include "nsIStreamLoader.h"
 
 #include "nsCharSeparatedTokenizer.h"
 #include "nsDOMString.h"
@@ -35,8 +34,7 @@
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/URLSearchParams.h"
-#include "mozilla/net/CookieSettings.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/net/CookieJarSettings.h"
 
 #include "BodyExtractor.h"
 #include "EmptyBody.h"
@@ -302,7 +300,7 @@ class WorkerFetchResolver final : public FetchDriverObserver {
     MOZ_ASSERT(mPromiseProxy);
   }
 
-  ~WorkerFetchResolver() {}
+  ~WorkerFetchResolver() = default;
 
   virtual void FlushConsoleReport() override;
 };
@@ -400,7 +398,7 @@ class MainThreadFetchRunnable : public Runnable {
       // so pass false as the last argument to FetchDriver().
       fetch = new FetchDriver(mRequest, principal, loadGroup,
                               workerPrivate->MainThreadEventTarget(),
-                              workerPrivate->CookieSettings(),
+                              workerPrivate->CookieJarSettings(),
                               workerPrivate->GetPerformanceStorage(), false);
       nsAutoCString spec;
       if (proxy->GetWorkerPrivate()->GetBaseURI()) {
@@ -476,7 +474,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aGlobal);
     nsCOMPtr<Document> doc;
     nsCOMPtr<nsILoadGroup> loadGroup;
-    nsCOMPtr<nsICookieSettings> cookieSettings;
+    nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
     nsIPrincipal* principal;
     bool isTrackingFetch = false;
     if (window) {
@@ -487,7 +485,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       }
       principal = doc->NodePrincipal();
       loadGroup = doc->GetDocumentLoadGroup();
-      cookieSettings = doc->CookieSettings();
+      cookieJarSettings = doc->CookieJarSettings();
 
       isTrackingFetch = doc->IsScriptTracking(cx);
     } else {
@@ -497,7 +495,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
         return nullptr;
       }
 
-      cookieSettings = mozilla::net::CookieSettings::Create();
+      cookieJarSettings = mozilla::net::CookieJarSettings::Create();
     }
 
     if (!loadGroup) {
@@ -508,13 +506,11 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       }
     }
 
-    Telemetry::Accumulate(Telemetry::FETCH_IS_MAINTHREAD, 1);
-
     RefPtr<MainThreadFetchResolver> resolver = new MainThreadFetchResolver(
         p, observer, signalImpl, request->MozErrors());
     RefPtr<FetchDriver> fetch = new FetchDriver(
         r, principal, loadGroup, aGlobal->EventTargetFor(TaskCategory::Other),
-        cookieSettings, nullptr,  // PerformanceStorage
+        cookieJarSettings, nullptr,  // PerformanceStorage
         isTrackingFetch);
     fetch->SetDocument(doc);
     resolver->SetLoadGroup(loadGroup);
@@ -525,8 +521,6 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
   } else {
     WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(worker);
-
-    Telemetry::Accumulate(Telemetry::FETCH_IS_MAINTHREAD, 0);
 
     if (worker->IsServiceWorker()) {
       r->SetSkipServiceWorker();
@@ -588,10 +582,10 @@ void MainThreadFetchResolver::OnResponseAvailableInternal(
     nsCOMPtr<nsIGlobalObject> go = mPromise->GetParentObject();
     mResponse = new Response(go, aResponse, mSignalImpl);
     nsCOMPtr<nsPIDOMWindowInner> inner = do_QueryInterface(go);
-    nsPIDOMWindowInner* topLevel =
-        inner ? inner->GetWindowForDeprioritizedLoadRunner() : nullptr;
-    if (topLevel) {
-      topLevel->AddDeprioritizedLoadRunner(
+    BrowsingContext* bc = inner ? inner->GetBrowsingContext() : nullptr;
+    bc = bc ? bc->Top() : nullptr;
+    if (bc && bc->IsLoading()) {
+      bc->AddDeprioritizedLoadRunner(
           new ResolveFetchPromise(mPromise, mResponse));
     } else {
       mPromise->MaybeResolve(mResponse);

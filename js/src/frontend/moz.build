@@ -20,8 +20,17 @@ include('../js-cxxflags.mozbuild')
 GeneratedFile('ReservedWordsGenerated.h', script='GenerateReservedWords.py',
               inputs=['ReservedWords.h'])
 
+if CONFIG['JS_ENABLE_SMOOSH']:
+    GeneratedFile('smoosh_generated.h',
+                  script='/build/RunCbindgen.py',
+                  entry_point='generate_with_same_crate',
+                  inputs=[
+                      '/js/src/frontend/smoosh',
+                  ])
 
 UNIFIED_SOURCES += [
+    'AbstractScope.cpp',
+    'BCEScriptStencil.cpp',
     'BytecodeCompiler.cpp',
     'BytecodeControlStructures.cpp',
     'BytecodeEmitter.cpp',
@@ -45,17 +54,26 @@ UNIFIED_SOURCES += [
     'NameFunctions.cpp',
     'NameOpEmitter.cpp',
     'ObjectEmitter.cpp',
+    'ObjLiteral.cpp',
+    'OptionalEmitter.cpp',
     'ParseContext.cpp',
     'ParseNode.cpp',
     'ParseNodeVerify.cpp',
     'PropOpEmitter.cpp',
     'SharedContext.cpp',
+    'Stencil.cpp',
     'SwitchEmitter.cpp',
     'TDZCheckCache.cpp',
     'TokenStream.cpp',
     'TryEmitter.cpp',
     'WhileEmitter.cpp',
 ]
+
+if CONFIG['JS_ENABLE_SMOOSH']:
+    UNIFIED_SOURCES += [
+        'Frontend2.cpp',
+    ]
+
 
 # Parser.cpp cannot be built in unified mode because of explicit
 #   template instantiations.

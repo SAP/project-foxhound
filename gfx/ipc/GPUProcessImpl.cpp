@@ -10,6 +10,8 @@
 
 #if defined(OS_WIN) && defined(MOZ_SANDBOX)
 #  include "mozilla/sandboxTarget.h"
+#elif defined(__OpenBSD__) && defined(MOZ_SANDBOX)
+#  include "mozilla/SandboxSettings.h"
 #endif
 
 namespace mozilla {
@@ -20,11 +22,13 @@ using namespace ipc;
 GPUProcessImpl::GPUProcessImpl(ProcessId aParentPid)
     : ProcessChild(aParentPid) {}
 
-GPUProcessImpl::~GPUProcessImpl() {}
+GPUProcessImpl::~GPUProcessImpl() = default;
 
 bool GPUProcessImpl::Init(int aArgc, char* aArgv[]) {
 #if defined(MOZ_SANDBOX) && defined(OS_WIN)
   mozilla::SandboxTarget::Instance()->StartSandbox();
+#elif defined(__OpenBSD__) && defined(MOZ_SANDBOX)
+  StartOpenBSDSandbox(GeckoProcessType_GPU);
 #endif
   char* parentBuildID = nullptr;
   char* prefsHandle = nullptr;
@@ -70,7 +74,7 @@ bool GPUProcessImpl::Init(int aArgc, char* aArgv[]) {
   }
 
   return mGPU.Init(ParentPid(), parentBuildID, IOThreadChild::message_loop(),
-                   IOThreadChild::channel());
+                   IOThreadChild::TakeChannel());
 }
 
 void GPUProcessImpl::CleanUp() { NS_ShutdownXPCOM(nullptr); }

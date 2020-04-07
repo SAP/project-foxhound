@@ -10,7 +10,7 @@
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIChannel.h"
-#include "nsIServiceManager.h"
+#include "nsIClassifiedChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsILoadContext.h"
 #include "nsIPrincipal.h"
@@ -19,6 +19,7 @@
 #include "nsReadableUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPtr.h"
@@ -162,8 +163,8 @@ ThirdPartyUtil::GetContentBlockingAllowListPrincipalFromWindow(
     OriginAttributes attrs =
         docShell ? nsDocShell::Cast(docShell)->GetOriginAttributes()
                  : OriginAttributes();
-    principal =
-        doc->RecomputeContentBlockingAllowListPrincipal(aURIBeingLoaded, attrs);
+    ContentBlockingAllowList::RecomputePrincipal(aURIBeingLoaded, attrs,
+                                                 getter_AddRefs(principal));
   }
 
   if (!principal || !principal->GetIsContentPrincipal()) {
@@ -196,8 +197,9 @@ ThirdPartyUtil::IsThirdPartyURI(nsIURI* aFirstURI, nsIURI* aSecondURI,
   return IsThirdPartyInternal(firstHost, aSecondURI, aResult);
 }
 
-// Determine if any URI of the window hierarchy of aWindow is foreign with
-// respect to aSecondURI. See docs for mozIThirdPartyUtil.
+// If the optional aURI is provided, determine whether aWindow is foreign with
+// respect to aURI. If the optional aURI is not provided, determine whether the
+// given "window hierarchy" is third party. See docs for mozIThirdPartyUtil.
 NS_IMETHODIMP
 ThirdPartyUtil::IsThirdPartyWindow(mozIDOMWindowProxy* aWindow, nsIURI* aURI,
                                    bool* aResult) {
@@ -214,7 +216,9 @@ ThirdPartyUtil::IsThirdPartyWindow(mozIDOMWindowProxy* aWindow, nsIURI* aURI,
     NS_ENSURE_SUCCESS(rv, rv);
     // Determine whether aURI is foreign with respect to the current principal.
     rv = prin->IsThirdPartyURI(aURI, &result);
-    NS_ENSURE_SUCCESS(rv, rv);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
 
     if (result) {
       *aResult = true;
@@ -233,8 +237,15 @@ ThirdPartyUtil::IsThirdPartyWindow(mozIDOMWindowProxy* aWindow, nsIURI* aURI,
     // actual COM identity using SameCOMIdentity is expensive due to the virtual
     // calls involved.
     if (parent == current) {
-      // We're at the topmost content window. We already know the answer.
-      *aResult = false;
+      auto* const browsingContext = current->GetBrowsingContext();
+      MOZ_ASSERT(browsingContext);
+
+      // We're either at the topmost content window (i.e. no third party), or,
+      // with fission, we may be an out-of-process content subframe (i.e. third
+      // party), since GetInProcessScriptableParent above explicitly does not
+      // go beyond process boundaries. In either case, we already know the
+      // result.
+      *aResult = browsingContext->IsContentSubframe();
       return NS_OK;
     }
 
@@ -437,4 +448,63 @@ ThirdPartyUtil::GetBaseDomainFromSchemeHost(const nsACString& aScheme,
   }
 
   return NS_OK;
+}
+
+NS_IMETHODIMP_(ThirdPartyAnalysisResult)
+ThirdPartyUtil::AnalyzeChannel(nsIChannel* aChannel, bool aNotify, nsIURI* aURI,
+                               RequireThirdPartyCheck aRequireThirdPartyCheck,
+                               uint32_t* aRejectedReason) {
+  MOZ_ASSERT_IF(aNotify, aRejectedReason);
+
+  ThirdPartyAnalysisResult result;
+
+  nsCOMPtr<nsIURI> uri;
+  if (!aURI && aChannel) {
+    aChannel->GetURI(getter_AddRefs(uri));
+  }
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel ? aChannel->LoadInfo() : nullptr;
+
+  bool isForeign = true;
+  if (aChannel &&
+      (!aRequireThirdPartyCheck || aRequireThirdPartyCheck(loadInfo))) {
+    IsThirdPartyChannel(aChannel, aURI ? aURI : uri.get(), &isForeign);
+  }
+  if (isForeign) {
+    result += ThirdPartyAnalysis::IsForeign;
+  }
+
+  nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
+      do_QueryInterface(aChannel);
+  if (classifiedChannel) {
+    if (classifiedChannel->IsThirdPartyTrackingResource()) {
+      result += ThirdPartyAnalysis::IsThirdPartyTrackingResource;
+    }
+    if (classifiedChannel->IsThirdPartySocialTrackingResource()) {
+      result += ThirdPartyAnalysis::IsThirdPartySocialTrackingResource;
+    }
+
+    // Check first-party storage access even for non-tracking resources, since
+    // we will need the result when computing the access rights for the reject
+    // foreign cookie behavior mode.
+
+    // If the caller has requested third-party checks, we will only perform the
+    // storage access check once we know we're in the third-party context.
+    bool performStorageChecks =
+        aRequireThirdPartyCheck ? result.contains(ThirdPartyAnalysis::IsForeign)
+                                : true;
+    if (performStorageChecks &&
+        AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
+            aChannel, aURI ? aURI : uri.get(), aRejectedReason)) {
+      result += ThirdPartyAnalysis::IsFirstPartyStorageAccessGranted;
+    }
+
+    if (aNotify && !result.contains(
+                       ThirdPartyAnalysis::IsFirstPartyStorageAccessGranted)) {
+      AntiTrackingCommon::NotifyBlockingDecision(
+          aChannel, AntiTrackingCommon::BlockingDecision::eBlock,
+          *aRejectedReason);
+    }
+  }
+
+  return result;
 }

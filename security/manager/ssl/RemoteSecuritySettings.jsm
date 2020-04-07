@@ -37,6 +37,14 @@ const INTERMEDIATES_SIGNER_PREF =
   "security.remote_settings.intermediates.signer";
 const LOGLEVEL_PREF = "browser.policies.loglevel";
 
+const INTERMEDIATES_ERRORS_TELEMETRY = "INTERMEDIATE_PRELOADING_ERRORS";
+const INTERMEDIATES_PENDING_TELEMETRY =
+  "security.intermediate_preloading_num_pending";
+const INTERMEDIATES_PRELOADED_TELEMETRY =
+  "security.intermediate_preloading_num_preloaded";
+const INTERMEDIATES_UPDATE_MS_TELEMETRY =
+  "INTERMEDIATE_PRELOADING_UPDATE_TIME_MS";
+
 const ONECRL_BUCKET_PREF = "services.settings.security.onecrl.bucket";
 const ONECRL_COLLECTION_PREF = "services.settings.security.onecrl.collection";
 const ONECRL_SIGNER_PREF = "services.settings.security.onecrl.signer";
@@ -63,19 +71,6 @@ XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
 XPCOMUtils.defineLazyGetter(this, "gTextDecoder", () => new TextDecoder());
 
-XPCOMUtils.defineLazyGetter(this, "baseAttachmentsURL", async () => {
-  const server = Services.prefs.getCharPref("services.settings.server");
-  const serverInfo = await (await fetch(`${server}/`, {
-    credentials: "omit",
-  })).json();
-  const {
-    capabilities: {
-      attachments: { base_url },
-    },
-  } = serverInfo;
-  return base_url;
-});
-
 XPCOMUtils.defineLazyGetter(this, "log", () => {
   let { ConsoleAPI } = ChromeUtils.import("resource://gre/modules/Console.jsm");
   return new ConsoleAPI({
@@ -86,32 +81,6 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
     maxLogLevelPref: LOGLEVEL_PREF,
   });
 });
-
-function hexify(data) {
-  return Array.from(data, (c, i) =>
-    data
-      .charCodeAt(i)
-      .toString(16)
-      .padStart(2, "0")
-  ).join("");
-}
-
-// Hash a UTF-8 string into a hex string with SHA256
-function getHash(str) {
-  // return the two-digit hexadecimal code for a byte
-  let hasher = Cc["@mozilla.org/security/hash;1"].createInstance(
-    Ci.nsICryptoHash
-  );
-  hasher.init(Ci.nsICryptoHash.SHA256);
-  let stringStream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
-    Ci.nsIStringInputStream
-  );
-  stringStream.data = str;
-  hasher.updateFromStream(stringStream, -1);
-
-  // convert the binary hash data to a hex string.
-  return hexify(hasher.finish(false));
-}
 
 // Converts a JS string to an array of bytes consisting of the char code at each
 // index in the string.
@@ -376,6 +345,11 @@ var RemoteSecuritySettings = {
       CRLiteFiltersClient = new CRLiteFilters();
     }
 
+    this.OneCRLBlocklistClient = OneCRLBlocklistClient;
+    this.PinningBlocklistClient = PinningBlocklistClient;
+    this.IntermediatePreloadsClient = IntermediatePreloadsClient;
+    this.CRLiteFiltersClient = CRLiteFiltersClient;
+
     return {
       OneCRLBlocklistClient,
       PinningBlocklistClient,
@@ -407,9 +381,6 @@ class IntermediatePreloads {
   }
 
   async updatePreloadedIntermediates() {
-    // Bug 1429800: once the CertStateService has the correct interface, also
-    // store the whitelist status and crlite enrollment status
-
     if (!Services.prefs.getBoolPref(INTERMEDIATES_ENABLED_PREF, true)) {
       log.debug("Intermediate Preloading is disabled");
       Services.obs.notifyObservers(
@@ -453,18 +424,57 @@ class IntermediatePreloads {
         }
       );
     });
-    const col = await this.client.openCollection();
+    let col;
+    try {
+      col = await this.client.openCollection();
+    } catch (err) {
+      log.warn(`Unable to open intermediate preloading collection: ${err}`);
+      // Re-purpose the "emptyAttachment" category to indicate opening the collection failed.
+      Services.telemetry
+        .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+        .add("emptyAttachment");
+      return;
+    }
     // If we don't have prior data, make it so we re-load everything.
     if (!hasPriorCertData) {
-      const { data: current } = await col.list({ order: "" }); // no sort needed.
+      let current;
+      try {
+        current = (await col.list({ order: "" })).data; // no sort needed.
+      } catch (err) {
+        log.warn(`Unable to list intermediate preloading collection: ${err}`);
+        // Re-purpose the "failedToFetch" category to indicate listing the collection failed.
+        Services.telemetry
+          .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+          .add("failedToFetch");
+        return;
+      }
       const toReset = current.filter(record => record.cert_import_complete);
-      await col.db.execute(transaction => {
-        toReset.forEach(record => {
-          transaction.update({ ...record, cert_import_complete: false });
+      try {
+        await col.db.execute(transaction => {
+          toReset.forEach(record => {
+            transaction.update({ ...record, cert_import_complete: false });
+          });
         });
-      });
+      } catch (err) {
+        log.warn(`Unable to update intermediate preloading collection: ${err}`);
+        // Re-purpose the "unexpectedLength" category to indicate updating the collection failed.
+        Services.telemetry
+          .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+          .add("unexpectedLength");
+        return;
+      }
     }
-    const { data: current } = await col.list({ order: "" }); // no sort needed.
+    let current;
+    try {
+      current = (await col.list({ order: "" })).data; // no sort needed.
+    } catch (err) {
+      log.warn(`Unable to list intermediate preloading collection: ${err}`);
+      // Re-purpose the "failedToFetch" category to indicate listing the collection failed.
+      Services.telemetry
+        .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+        .add("failedToFetch");
+      return;
+    }
     const waiting = current.filter(record => !record.cert_import_complete);
 
     log.debug(`There are ${waiting.length} intermediates awaiting download.`);
@@ -477,6 +487,8 @@ class IntermediatePreloads {
       );
       return;
     }
+
+    TelemetryStopwatch.start(INTERMEDIATES_UPDATE_MS_TELEMETRY);
 
     let toDownload = waiting.slice(0, maxDownloadsPerRun);
     let recordsCertsAndSubjects = [];
@@ -501,13 +513,51 @@ class IntermediatePreloads {
     }).catch(err => err);
     if (result != Cr.NS_OK) {
       Cu.reportError(`certStorage.addCerts failed: ${result}`);
+      Services.telemetry
+        .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+        .add("failedToUpdateDB");
       return;
     }
-    await col.db.execute(transaction => {
-      recordsToUpdate.forEach(record => {
-        transaction.update({ ...record, cert_import_complete: true });
+    try {
+      await col.db.execute(transaction => {
+        recordsToUpdate.forEach(record => {
+          transaction.update({ ...record, cert_import_complete: true });
+        });
       });
-    });
+    } catch (err) {
+      log.warn(`Unable to update intermediate preloading collection: ${err}`);
+      // Re-purpose the "unexpectedLength" category to indicate updating the collection failed.
+      Services.telemetry
+        .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+        .add("unexpectedLength");
+      return;
+    }
+
+    let finalCurrent;
+    try {
+      finalCurrent = (await col.list({ order: "" })).data; // no sort needed.
+    } catch (err) {
+      log.warn(`Unable to list intermediate preloading collection: ${err}`);
+      // Re-purpose the "failedToFetch" category to indicate listing the collection failed.
+      Services.telemetry
+        .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+        .add("failedToFetch");
+      return;
+    }
+    const finalWaiting = finalCurrent.filter(
+      record => !record.cert_import_complete
+    );
+    const countPreloaded = finalCurrent.length - finalWaiting.length;
+
+    TelemetryStopwatch.finish(INTERMEDIATES_UPDATE_MS_TELEMETRY);
+    Services.telemetry.scalarSet(
+      INTERMEDIATES_PRELOADED_TELEMETRY,
+      countPreloaded
+    );
+    Services.telemetry.scalarSet(
+      INTERMEDIATES_PENDING_TELEMETRY,
+      finalWaiting.length
+    );
 
     Services.obs.notifyObservers(
       null,
@@ -523,6 +573,10 @@ class IntermediatePreloads {
       await this.updatePreloadedIntermediates();
     } catch (err) {
       log.warn(`Unable to update intermediate preloads: ${err}`);
+
+      Services.telemetry
+        .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+        .add("failedToObserve");
     }
   }
 
@@ -581,35 +635,6 @@ class IntermediatePreloads {
   }
 
   /**
-   * Downloads the attachment data of the given record. Does not retry,
-   * leaving that to the caller.
-   * @param  {AttachmentRecord} record The data to obtain
-   * @return {Promise}          resolves to a Uint8Array on success
-   */
-  async _downloadAttachmentBytes(record) {
-    const {
-      attachment: { location },
-    } = record;
-    const remoteFilePath = (await baseAttachmentsURL) + location;
-    const headers = new Headers();
-    headers.set("Accept-Encoding", "gzip");
-
-    return fetch(remoteFilePath, {
-      headers,
-      credentials: "omit",
-    })
-      .then(resp => {
-        log.debug(`Download fetch completed: ${resp.ok} ${resp.status}`);
-        if (!resp.ok) {
-          Cu.reportError(`Failed to fetch ${remoteFilePath}: ${resp.status}`);
-          return Promise.reject();
-        }
-        return resp.arrayBuffer();
-      })
-      .then(buffer => new Uint8Array(buffer));
-  }
-
-  /**
    * Attempts to download the attachment, assuming it's not been processed
    * already. Does not retry, and always resolves (e.g., does not reject upon
    * failure.) Errors are reported via Cu.reportError.
@@ -622,45 +647,29 @@ class IntermediatePreloads {
    *                            name of the same.
    */
   async maybeDownloadAttachment(record) {
-    const {
-      attachment: { hash, size },
-    } = record;
     let result = { record, cert: null, subject: null };
 
-    let attachmentData;
+    let dataAsString = null;
     try {
-      attachmentData = await this._downloadAttachmentBytes(record);
+      let buffer = await this.client.attachments.downloadAsBytes(record, {
+        retries: 0,
+      });
+      dataAsString = gTextDecoder.decode(new Uint8Array(buffer));
     } catch (err) {
-      Cu.reportError(`Failed to download attachment: ${err}`);
-      return result;
-    }
-
-    if (!attachmentData || attachmentData.length == 0) {
       // Bug 1519273 - Log telemetry for these rejections
-      log.debug(`Empty attachment. Hash=${hash}`);
+      if (err.name == "BadContentError") {
+        log.debug(`Bad attachment content.`);
+        Services.telemetry
+          .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+          .add("unexpectedHash");
+      } else {
+        Cu.reportError(`Failed to download attachment: ${err}`);
+        Services.telemetry
+          .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+          .add("failedToDownloadMisc");
+      }
       return result;
     }
-
-    // check the length
-    if (attachmentData.length !== size) {
-      log.debug(
-        `Unexpected attachment length. Hash=${hash} Lengths ${
-          attachmentData.length
-        } != ${size}`
-      );
-      return result;
-    }
-
-    // check the hash
-    let dataAsString = gTextDecoder.decode(attachmentData);
-    let calculatedHash = getHash(dataAsString);
-    if (calculatedHash !== hash) {
-      log.warn(
-        `Invalid hash. CalculatedHash=${calculatedHash}, Hash=${hash}, data=${dataAsString}`
-      );
-      return result;
-    }
-    log.debug(`downloaded cert with hash=${hash}, size=${size}`);
 
     let certBase64;
     let subjectBase64;
@@ -678,6 +687,13 @@ class IntermediatePreloads {
       );
     } catch (err) {
       Cu.reportError(`Failed to decode cert: ${err}`);
+
+      // Re-purpose the "failedToUpdateNSS" telemetry tag as "failed to
+      // decode preloaded intermediate certificate"
+      Services.telemetry
+        .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+        .add("failedToUpdateNSS");
+
       return result;
     }
     result.cert = certBase64;
@@ -699,16 +715,23 @@ class IntermediatePreloads {
     }).catch(err => err);
     if (result != Cr.NS_OK) {
       Cu.reportError(`Failed to remove some intermediate certificates`);
+      Services.telemetry
+        .getHistogramById(INTERMEDIATES_ERRORS_TELEMETRY)
+        .add("failedToRemove");
     }
   }
+}
+
+function filterToDate(filter) {
+  return new Date(filter.details.name.replace(/-(full|diff)$/, ""));
 }
 
 // Helper function to compare filters. One filter is "less than" another filter (i.e. it sorts
 // earlier) if its date is older than the other. Non-incremental filters sort earlier than
 // incremental filters of the same date.
 function compareFilters(filterA, filterB) {
-  let timeA = new Date(filterA.details.name.replace(/-(full|diff)$/, ""));
-  let timeB = new Date(filterB.details.name.replace(/-(full|diff)$/, ""));
+  let timeA = filterToDate(filterA);
+  let timeB = filterToDate(filterB);
   // If timeA is older (i.e. it is less than) timeB, it sorts earlier, so return a value less than
   // 0.
   if (timeA < timeB) {
@@ -787,9 +810,26 @@ class CRLiteFilters {
         let buffer = await (await fetch(localURI)).arrayBuffer();
         let bytes = new Uint8Array(buffer);
         log.debug(`Downloaded ${filter.details.name}: ${bytes.length} bytes`);
-        // In a future bug, this code will pass the downloaded filter on to nsICertStorage.
         filtersDownloaded.push(filter.details.name);
+        if (filter.details.name.endsWith("-full")) {
+          let timestamp = filterToDate(filter).getTime() / 1000;
+          log.debug(`setting CRLite filter timestamp to ${timestamp}`);
+          const certList = Cc["@mozilla.org/security/certstorage;1"].getService(
+            Ci.nsICertStorage
+          );
+          await new Promise(resolve => {
+            certList.setFullCRLiteFilter(bytes, timestamp, rv => {
+              log.debug(`setFullCRLiteFilter: ${rv}`);
+              resolve();
+            });
+          });
+        } else {
+          log.debug(
+            "downloaded filter diff, but we don't support consuming them yet."
+          );
+        }
       } catch (e) {
+        log.debug(e);
         Cu.reportError("failed to download CRLite filter", e);
       }
     }

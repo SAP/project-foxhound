@@ -85,17 +85,6 @@ class ProviderPrivateSearch extends UrlbarProvider {
   }
 
   /**
-   * Whether this provider wants to restrict results to just itself.
-   * Other providers won't be invoked, unless this provider doesn't
-   * support the current query.
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @returns {boolean} Whether this provider wants to restrict results.
-   */
-  isRestricting(queryContext) {
-    return false;
-  }
-
-  /**
    * Starts querying.
    * @param {object} queryContext The query context object
    * @param {function} addCallback Callback invoked by the provider to add a new
@@ -125,7 +114,9 @@ class ProviderPrivateSearch extends UrlbarProvider {
     let instance = {};
     this.queries.set(queryContext, instance);
 
-    let engine = await Services.search.getDefaultPrivate();
+    let engine = queryContext.engineName
+      ? Services.search.getEngineByName(queryContext.engineName)
+      : await Services.search.getDefaultPrivate();
     let isPrivateEngine =
       separatePrivateDefault && engine != (await Services.search.getDefault());
     logger.info(`isPrivateEngine: ${isPrivateEngine}`);

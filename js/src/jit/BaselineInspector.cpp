@@ -250,7 +250,8 @@ static void SkipBinaryGuards(CacheIRReader& reader) {
     // One skip
     if (reader.matchOp(CacheOp::GuardIsNumber) ||
         reader.matchOp(CacheOp::GuardToString) ||
-        reader.matchOp(CacheOp::GuardToObject)) {
+        reader.matchOp(CacheOp::GuardToObject) ||
+        reader.matchOp(CacheOp::GuardToBigInt)) {
       reader.skip();  // Skip over operandId
       continue;
     }
@@ -304,6 +305,22 @@ static MIRType ParseCacheIRStub(ICStub* stub) {
       reader.skip();  // Skip over lhs
       reader.skip();  // Skip over rhs
       return reader.readByte() == 0 ? MIRType::Int32 : MIRType::Double;
+    case CacheOp::BigIntAddResult:
+    case CacheOp::BigIntSubResult:
+    case CacheOp::BigIntMulResult:
+    case CacheOp::BigIntDivResult:
+    case CacheOp::BigIntModResult:
+    case CacheOp::BigIntPowResult:
+    case CacheOp::BigIntBitOrResult:
+    case CacheOp::BigIntBitXorResult:
+    case CacheOp::BigIntBitAndResult:
+    case CacheOp::BigIntLeftShiftResult:
+    case CacheOp::BigIntRightShiftResult:
+    case CacheOp::BigIntNotResult:
+    case CacheOp::BigIntNegationResult:
+    case CacheOp::BigIntIncResult:
+    case CacheOp::BigIntDecResult:
+      return MIRType::BigInt;
     case CacheOp::LoadValueResult:
       return MIRType::Value;
     default:
@@ -565,7 +582,7 @@ MIRType BaselineInspector::expectedBinaryArithSpecialization(jsbytecode* pc) {
   MIRType result;
   ICStub* stubs[2];
 
-  if (JSOp(*pc) == JSOP_POS) {
+  if (JSOp(*pc) == JSOp::Pos) {
     // +x expanding to x*1, but no corresponding IC.
     return MIRType::None;
   }
@@ -732,7 +749,9 @@ ObjectGroup* BaselineInspector::getTemplateObjectGroup(jsbytecode* pc) {
 }
 
 JSFunction* BaselineInspector::getSingleCallee(jsbytecode* pc) {
-  MOZ_ASSERT(*pc == JSOP_NEW);
+  MOZ_ASSERT(JSOp(*pc) == JSOp::New || JSOp(*pc) == JSOp::SuperCall ||
+             JSOp(*pc) == JSOp::SpreadNew ||
+             JSOp(*pc) == JSOp::SpreadSuperCall);
 
   const ICEntry& entry = icEntryFromPC(pc);
   ICStub* stub = entry.firstStub();
@@ -772,26 +791,6 @@ JSObject* BaselineInspector::getTemplateObjectForNative(jsbytecode* pc,
       };
       JSObject* result = MaybeTemplateObject(
           stub, MetaTwoByteKind::NativeTemplateObject, filter);
-      if (result) {
-        return result;
-      }
-    }
-  }
-
-  return nullptr;
-}
-
-JSObject* BaselineInspector::getTemplateObjectForClassHook(
-    jsbytecode* pc, const JSClass* clasp) {
-  const ICEntry& entry = icEntryFromPC(pc);
-  for (ICStub* stub = entry.firstStub(); stub; stub = stub->next()) {
-    if (ICStub::IsCacheIRKind(stub->kind())) {
-      auto filter = [stub, clasp](CacheIRReader& args,
-                                  const CacheIRStubInfo* info) {
-        return info->getStubField<JSClass*>(stub, args.stubOffset()) == clasp;
-      };
-      JSObject* result = MaybeTemplateObject(
-          stub, MetaTwoByteKind::ClassTemplateObject, filter);
       if (result) {
         return result;
       }
@@ -1126,7 +1125,7 @@ bool BaselineInspector::commonGetPropFunction(
     jsbytecode* pc, jsid id, bool innerized, JSObject** holder,
     Shape** holderShape, JSFunction** commonGetter, Shape** globalShape,
     bool* isOwnProperty, ReceiverVector& receivers) {
-  MOZ_ASSERT(IsGetPropPC(pc) || IsGetElemPC(pc) || JSOp(*pc) == JSOP_GETGNAME);
+  MOZ_ASSERT(IsGetPropPC(pc) || IsGetElemPC(pc) || JSOp(*pc) == JSOp::GetGName);
   MOZ_ASSERT(receivers.empty());
 
   // Only GetElem operations need to guard against a specific property id.
@@ -1205,9 +1204,9 @@ static JSFunction* GetMegamorphicGetterSetterFunction(
 bool BaselineInspector::megamorphicGetterSetterFunction(
     jsbytecode* pc, jsid id, bool isGetter, JSFunction** getterOrSetter) {
   MOZ_ASSERT(IsGetPropPC(pc) || IsGetElemPC(pc) || IsSetPropPC(pc) ||
-             JSOp(*pc) == JSOP_GETGNAME || JSOp(*pc) == JSOP_INITGLEXICAL ||
-             JSOp(*pc) == JSOP_INITPROP || JSOp(*pc) == JSOP_INITLOCKEDPROP ||
-             JSOp(*pc) == JSOP_INITHIDDENPROP);
+             JSOp(*pc) == JSOp::GetGName || JSOp(*pc) == JSOp::InitGLexical ||
+             JSOp(*pc) == JSOp::InitProp || JSOp(*pc) == JSOp::InitLockedProp ||
+             JSOp(*pc) == JSOp::InitHiddenProp);
 
   // Only GetElem operations need to guard against a specific property id.
   if (!IsGetElemPC(pc)) {
@@ -1365,9 +1364,9 @@ bool BaselineInspector::commonSetPropFunction(jsbytecode* pc, JSObject** holder,
                                               JSFunction** commonSetter,
                                               bool* isOwnProperty,
                                               ReceiverVector& receivers) {
-  MOZ_ASSERT(IsSetPropPC(pc) || JSOp(*pc) == JSOP_INITGLEXICAL ||
-             JSOp(*pc) == JSOP_INITPROP || JSOp(*pc) == JSOP_INITLOCKEDPROP ||
-             JSOp(*pc) == JSOP_INITHIDDENPROP);
+  MOZ_ASSERT(IsSetPropPC(pc) || JSOp(*pc) == JSOp::InitGLexical ||
+             JSOp(*pc) == JSOp::InitProp || JSOp(*pc) == JSOp::InitLockedProp ||
+             JSOp(*pc) == JSOp::InitHiddenProp);
   MOZ_ASSERT(receivers.empty());
 
   *commonSetter = nullptr;
@@ -1554,7 +1553,7 @@ MIRType BaselineInspector::expectedPropertyAccessInputType(jsbytecode* pc) {
 bool BaselineInspector::instanceOfData(jsbytecode* pc, Shape** shape,
                                        uint32_t* slot,
                                        JSObject** prototypeObject) {
-  MOZ_ASSERT(*pc == JSOP_INSTANCEOF);
+  MOZ_ASSERT(JSOp(*pc) == JSOp::Instanceof);
 
   const ICEntry& entry = icEntryFromPC(pc);
   ICStub* firstStub = entry.firstStub();

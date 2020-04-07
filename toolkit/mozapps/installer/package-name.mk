@@ -104,6 +104,9 @@ TALOS_PACKAGE = $(PKG_BASENAME).talos.tests.tar.gz
 AWSY_PACKAGE = $(PKG_BASENAME).awsy.tests.tar.gz
 GTEST_PACKAGE = $(PKG_BASENAME).gtest.tests.tar.gz
 
+# macOS codesigning package naming
+MACOS_CODESIGN_ARCHIVE_BASENAME = $(PKG_BASENAME).codesign-entitlements
+
 ifneq (,$(wildcard $(DIST)/bin/application.ini))
 BUILDID = $(shell $(PYTHON) $(MOZILLA_DIR)/config/printconfigsetting.py $(DIST)/bin/application.ini App BuildID)
 else
@@ -113,6 +116,7 @@ endif
 MOZ_SOURCESTAMP_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).txt
 MOZ_BUILDINFO_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).json
 MOZ_BUILDHUB_JSON = $(DIST)/$(PKG_PATH)/buildhub.json
+MOZ_NORMANDY_JSON = $(DIST)/$(PKG_PATH)/$(PKG_BASENAME).normandy.json
 MOZ_BUILDID_INFO_TXT_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME)_info.txt
 MOZ_MOZINFO_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).mozinfo.json
 MOZ_TEST_PACKAGES_FILE = $(DIST)/$(PKG_PATH)/$(PKG_BASENAME).test_packages.json

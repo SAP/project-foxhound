@@ -15,10 +15,16 @@ types.addDictType("available-breakpoint-group", {
   name: "string",
   events: "array:available-breakpoint-event",
 });
+
 types.addDictType("available-breakpoint-event", {
   id: "string",
   name: "string",
 });
+
+types.addDictType("thread.frames", {
+  frames: "array:frame",
+});
+
 types.addDictType("paused-reason", {
   type: "string",
 
@@ -47,7 +53,7 @@ const threadSpec = generateActorSpec({
   events: {
     paused: {
       actor: Option(0, "nullable:string"),
-      frame: Option(0, "nullable:json"),
+      frame: Option(0, "frame"),
       why: Option(0, "paused-reason"),
       poppedFrames: Option(0, "nullable:json"),
       error: Option(0, "nullable:json"),
@@ -59,16 +65,6 @@ const threadSpec = generateActorSpec({
     willInterrupt: {},
     newSource: {
       source: Option(0, "json"),
-    },
-    progress: {
-      recording: Option(0, "json"),
-      executionPoint: Option(0, "json"),
-      unscannedRegions: Option(0, "json"),
-      cachedPoints: Option(0, "json"),
-    },
-    replayFramePositions: {
-      positions: Option(0, "array:json"),
-      frame: Option(0, "string"),
     },
   },
 
@@ -92,7 +88,6 @@ const threadSpec = generateActorSpec({
     resume: {
       request: {
         resumeLimit: Arg(0, "nullable:json"),
-        rewind: Arg(1, "boolean"),
       },
       response: RetVal("nullable:json"),
     },
@@ -101,7 +96,7 @@ const threadSpec = generateActorSpec({
         start: Arg(0, "number"),
         count: Arg(1, "number"),
       },
-      response: RetVal("json"),
+      response: RetVal("thread.frames"),
     },
     interrupt: {
       request: {
@@ -174,26 +169,9 @@ const threadSpec = generateActorSpec({
       },
     },
 
-    paint: {
-      request: {
-        point: Arg(0, "json"),
-      },
-    },
-
-    paintCurrentPoint: {
-      request: {},
-    },
-
     toggleEventLogging: {
       request: {
         logEventBreakpoints: Arg(0, "string"),
-      },
-    },
-
-    // For testing.
-    debuggerRequests: {
-      response: {
-        value: RetVal("array:json"),
       },
     },
   },

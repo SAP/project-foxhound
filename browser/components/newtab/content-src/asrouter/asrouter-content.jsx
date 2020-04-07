@@ -85,6 +85,7 @@ export const ASRouterUtils = {
           url: endpoint.href,
           snippetId: params.get("snippetId"),
           theme: this.getPreviewTheme(),
+          dir: this.getPreviewDir(),
         };
       } catch (e) {}
     }
@@ -95,6 +96,11 @@ export const ASRouterUtils = {
     return new URLSearchParams(
       global.location.href.slice(global.location.href.indexOf("theme"))
     ).get("theme");
+  },
+  getPreviewDir() {
+    return new URLSearchParams(
+      global.location.href.slice(global.location.href.indexOf("dir"))
+    ).get("dir");
   },
 };
 
@@ -190,12 +196,12 @@ export class ASRouterUISurface extends React.PureComponent {
     this.sendUserActionTelemetry({ event: "IMPRESSION", ...extraProps });
   }
 
-  // If link has a `metric` data attribute send it as part of the `value`
+  // If link has a `metric` data attribute send it as part of the `event_context`
   // telemetry field which can have arbitrary values.
   // Used for router messages with links as part of the content.
   sendClick(event) {
     const metric = {
-      value: event.target.dataset.metric,
+      event_context: event.target.dataset.metric,
       // Used for the `source` of the event. Needed to differentiate
       // from other snippet or onboarding events that may occur.
       id: "NEWTAB_FOOTER_BAR_CONTENT",
@@ -227,6 +233,16 @@ export class ASRouterUISurface extends React.PureComponent {
   }
 
   clearMessage(id) {
+    // Request new set of dynamic triplet cards when click on a card CTA clear
+    // message and 'id' matches one of the cards in message bundle
+    if (
+      this.state.message &&
+      this.state.message.bundle &&
+      this.state.message.bundle.find(card => card.id === id)
+    ) {
+      this.requestMessage();
+    }
+
     if (id === this.state.message.id) {
       this.setState({ message: {} });
       // Remove any styles related to the RTAMO message
@@ -259,17 +275,7 @@ export class ASRouterUISurface extends React.PureComponent {
     }
   }
 
-  componentWillMount() {
-    const endpoint = ASRouterUtils.getPreviewEndpoint();
-    if (endpoint && endpoint.theme === "dark") {
-      global.window.dispatchEvent(
-        new CustomEvent("LightweightTheme:Set", {
-          detail: { data: NEWTAB_DARK_THEME },
-        })
-      );
-    }
-    ASRouterUtils.addListener(this.onMessageFromParent);
-
+  requestMessage(endpoint) {
     // If we are loading about:welcome we want to trigger the onboarding messages
     if (
       this.props.document &&
@@ -285,6 +291,23 @@ export class ASRouterUISurface extends React.PureComponent {
         data: { endpoint },
       });
     }
+  }
+
+  componentWillMount() {
+    const endpoint = ASRouterUtils.getPreviewEndpoint();
+    if (endpoint && endpoint.theme === "dark") {
+      global.window.dispatchEvent(
+        new CustomEvent("LightweightTheme:Set", {
+          detail: { data: NEWTAB_DARK_THEME },
+        })
+      );
+    }
+    if (endpoint && endpoint.dir === "rtl") {
+      //Set `dir = rtl` on the HTML
+      this.props.document.dir = "rtl";
+    }
+    ASRouterUtils.addListener(this.onMessageFromParent);
+    this.requestMessage(endpoint);
   }
 
   componentWillUnmount() {

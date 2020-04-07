@@ -28,7 +28,7 @@ const {
 // Checks for the SimulatorActor
 
 async function setup() {
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.window.testColorMatrix = function(actual, expected) {
       for (const idx in actual) {
         is(
@@ -40,7 +40,7 @@ async function setup() {
     };
   });
   SimpleTest.registerCleanupFunction(async function() {
-    await ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
       content.window.testColorMatrix = null;
     });
   });
@@ -50,9 +50,9 @@ async function testSimulate(simulator, matrix, type = null) {
   const matrixApplied = await simulator.simulate({ types: type ? [type] : [] });
   ok(matrixApplied, "Simulation color matrix is successfully applied.");
 
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
-    [type, matrix],
+    [[type, matrix]],
     ([simulationType, simulationMatrix]) => {
       const { window } = content;
       info(
@@ -68,11 +68,12 @@ async function testSimulate(simulator, matrix, type = null) {
 }
 
 add_task(async function() {
-  const { target, accessibility } = await initAccessibilityFrontForUrl(
-    MAIN_DOMAIN + "doc_accessibility.html"
+  const { target, accessibility } = await initAccessibilityFrontsForUrl(
+    MAIN_DOMAIN + "doc_accessibility.html",
+    { enableByDefault: false }
   );
 
-  const simulator = await accessibility.getSimulator();
+  const simulator = accessibility.simulatorFront;
 
   if (!simulator) {
     ok(!isWebRenderEnabled(window), "Web render is disabled.");

@@ -88,6 +88,10 @@ void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
   masm.cdq();
 }
 
+void MacroAssembler::move32ZeroExtendToPtr(Register src, Register dest) {
+  movl(src, dest);
+}
+
 // ===============================================================
 // Load instructions
 
@@ -888,6 +892,12 @@ void MacroAssembler::branchToComputedAddress(const BaseIndex& addr) {
 
 void MacroAssembler::cmp32MovePtr(Condition cond, Register lhs, Imm32 rhs,
                                   Register src, Register dest) {
+  cmp32(lhs, rhs);
+  cmovCCl(cond, Operand(src), dest);
+}
+
+void MacroAssembler::cmp32LoadPtr(Condition cond, const Address& lhs, Imm32 rhs,
+                                  const Address& src, Register dest) {
   cmp32(lhs, rhs);
   cmovCCl(cond, Operand(src), dest);
 }

@@ -37,11 +37,12 @@ amContentHandler.prototype = {
 
     let { loadInfo } = aRequest;
     const { triggeringPrincipal } = loadInfo;
-    let browsingContext =
-      loadInfo.frameBrowsingContext || loadInfo.browsingContext;
+    let browsingContext = loadInfo.targetBrowsingContext;
 
     let sourceHost;
+    let sourceURL;
     try {
+      sourceURL = triggeringPrincipal.URI.spec;
       sourceHost = triggeringPrincipal.URI.host;
     } catch (err) {
       // Ignore errors when retrieving the host for the principal (e.g. null principals raise
@@ -58,6 +59,7 @@ amContentHandler.prototype = {
       callbackID: -1,
       method: "link",
       sourceHost,
+      sourceURL,
       browsingContext,
     };
 

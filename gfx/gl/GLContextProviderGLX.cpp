@@ -46,8 +46,7 @@
 #  include "gfxPlatformGtk.h"
 #endif
 
-namespace mozilla {
-namespace gl {
+namespace mozilla::gl {
 
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
@@ -642,9 +641,7 @@ void GLContextGLX::GetWSIInfo(nsCString* const out) const {
 }
 
 bool GLContextGLX::OverrideDrawable(GLXDrawable drawable) {
-  if (Screen()) Screen()->AssureBlitted();
-  Bool result = mGLX->fMakeCurrent(mDisplay, drawable, mContext);
-  return result;
+  return mGLX->fMakeCurrent(mDisplay, drawable, mContext);
 }
 
 bool GLContextGLX::RestoreDrawable() {
@@ -757,15 +754,6 @@ already_AddRefed<GLContext> GLContextProviderGLX::CreateForCompositorWidget(
 
   return CreateForWidget(compWidget->XDisplay(), compWidget->XWindow(),
                          aWebRender, aForceAccelerated);
-}
-
-already_AddRefed<GLContext> GLContextProviderGLX::CreateForWindow(
-    nsIWidget* aWidget, bool aWebRender, bool aForceAccelerated) {
-  Display* display =
-      (Display*)aWidget->GetNativeData(NS_NATIVE_COMPOSITOR_DISPLAY);
-  Window window = GET_NATIVE_WINDOW(aWidget);
-
-  return CreateForWidget(display, window, aWebRender, aForceAccelerated);
 }
 
 static bool ChooseConfig(GLXLibrary* glx, Display* display, int screen,
@@ -1061,5 +1049,4 @@ GLContext* GLContextProviderGLX::GetGlobalContext() {
 /*static*/
 void GLContextProviderGLX::Shutdown() {}
 
-} /* namespace gl */
-} /* namespace mozilla */
+}  // namespace mozilla::gl

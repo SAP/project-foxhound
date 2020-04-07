@@ -6,12 +6,12 @@
 #ifndef nsHtml5StreamParser_h
 #define nsHtml5StreamParser_h
 
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
-#include "nsICharsetDetectionObserver.h"
 #include "nsHtml5MetaScanner.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/EncodingDetector.h"
 #include "mozilla/JapaneseDetector.h"
+#include "mozilla/UniquePtr.h"
 #include "nsHtml5TreeOpExecutor.h"
 #include "nsHtml5OwningUTF16Buffer.h"
 #include "nsIInputStream.h"
@@ -22,7 +22,6 @@
 #include "nsHtml5Speculation.h"
 #include "nsISerialEventTarget.h"
 #include "nsITimer.h"
-#include "nsICharsetDetector.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/Buffer.h"
 
@@ -104,7 +103,7 @@ enum eHtml5StreamState {
   STREAM_ENDED = 2
 };
 
-class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
+class nsHtml5StreamParser final : public nsISupports {
   template <typename T>
   using NotNull = mozilla::NotNull<T>;
   using Encoding = mozilla::Encoding;
@@ -121,8 +120,7 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsHtml5StreamParser,
-                                           nsICharsetDetectionObserver)
+  NS_DECL_CYCLE_COLLECTION_CLASS(nsHtml5StreamParser)
 
   nsHtml5StreamParser(nsHtml5TreeOpExecutor* aExecutor, nsHtml5Parser* aOwner,
                       eParserMode aMode);
@@ -136,12 +134,6 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
                            uint64_t aSourceOffset, uint32_t aLength);
 
   nsresult OnStopRequest(nsIRequest* aRequest, nsresult status);
-
-  // nsICharsetDetectionObserver
-  /**
-   * Chardet calls this to report the detection result
-   */
-  NS_IMETHOD Notify(const char* aCharset, nsDetectionConfident aConf) override;
 
   // EncodingDeclarationHandler
   // https://hg.mozilla.org/projects/htmlparser/file/tip/src/nu/validator/htmlparser/common/EncodingDeclarationHandler.java
@@ -350,13 +342,26 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    * to UTF-8 as the non-speculative encoding and start processing
    * the decoded data.
    */
-  void CommitLocalFileToUTF8();
+  void CommitLocalFileToEncoding();
 
   /**
    * When speculatively decoding from file: URL as UTF-8, redecode
    * using fallback and then continue normally with the fallback.
    */
   void ReDecodeLocalFile();
+
+  /**
+   * Potentially guess the encoding using mozilla::EncodingDetector.
+   */
+  void GuessEncoding(bool aEof, bool aInitial);
+
+  inline void DontGuessEncoding() {
+    mFeedChardet = false;
+    mGuessEncoding = false;
+    if (mDecodingLocalFileWithoutTokenizing) {
+      CommitLocalFileToEncoding();
+    }
+  }
 
   /**
    * Become confident or resolve and encoding name to its preferred form.
@@ -439,7 +444,7 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
   /**
    * <meta> prescan implementation
    */
-  nsAutoPtr<nsHtml5MetaScanner> mMetaScanner;
+  mozilla::UniquePtr<nsHtml5MetaScanner> mMetaScanner;
 
   // encoding-related stuff
   /**
@@ -453,9 +458,14 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
   NotNull<const Encoding*> mEncoding;
 
   /**
-   * Whether the Cyrillic or Japanese detector should still be fed.
+   * Whether the generic or Japanese detector should still be fed.
    */
   bool mFeedChardet;
+
+  /**
+   * Whether the generic detector should be still queried for its guess.
+   */
+  bool mGuessEncoding;
 
   /**
    * Whether reparse is forbidden
@@ -489,12 +499,12 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
   /**
    * The HTML5 tree builder
    */
-  nsAutoPtr<nsHtml5TreeBuilder> mTreeBuilder;
+  mozilla::UniquePtr<nsHtml5TreeBuilder> mTreeBuilder;
 
   /**
    * The HTML5 tokenizer
    */
-  nsAutoPtr<nsHtml5Tokenizer> mTokenizer;
+  mozilla::UniquePtr<nsHtml5Tokenizer> mTokenizer;
 
   /**
    * Makes sure the main thread can't mess the tokenizer state while it's
@@ -538,7 +548,7 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    * obtained.
    * The current speculation is the last element
    */
-  nsTArray<nsAutoPtr<nsHtml5Speculation>> mSpeculations;
+  nsTArray<mozilla::UniquePtr<nsHtml5Speculation>> mSpeculations;
   mozilla::Mutex mSpeculationMutex;
 
   /**
@@ -571,14 +581,21 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
   nsCOMPtr<nsIRunnable> mLoadFlusher;
 
   /**
-   * The Cyrillic detector if enabled.
-   */
-  nsCOMPtr<nsICharsetDetector> mChardet;
-
-  /**
    * The Japanese detector.
    */
   mozilla::UniquePtr<mozilla::JapaneseDetector> mJapaneseDetector;
+
+  /**
+   * The generict detector.
+   */
+  mozilla::UniquePtr<mozilla::EncodingDetector> mDetector;
+
+  /**
+   * The TLD we're loading from or empty if unknown.
+   */
+  nsCString mTLD;
+
+  bool mUseJapaneseDetector;
 
   /**
    * Whether the initial charset source was kCharsetFromParentFrame
@@ -589,9 +606,9 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
 
   /**
    * If true, we are decoding a local file that lacks an encoding
-   * declaration as UTF-8 and we are not tokenizing yet.
+   * declaration and we are not tokenizing yet.
    */
-  bool mDecodingLocalFileAsUTF8;
+  bool mDecodingLocalFileWithoutTokenizing;
 
   /**
    * Timer for flushing tree ops once in a while when not speculating.
@@ -619,11 +636,6 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    * Whether the parser is doing a normal parse, view source or plain text.
    */
   eParserMode mMode;
-
-  /**
-   * Whether the parser should not sniff the content type.
-   */
-  bool mSkipContentSniffing;
 
   /**
    * If the associated docshell is being watched by the devtools, this is

@@ -148,6 +148,11 @@ interface nsISearchEngine : nsISupports
   readonly attribute AString searchForm;
 
   /**
+   * The identifier to use for this engine when submitting to telemetry.
+   */
+  readonly attribute AString telemetryId;
+
+  /**
    * An optional unique identifier for this search engine within the context of
    * the distribution, as provided by the distributing entity.
    */
@@ -226,7 +231,7 @@ interface nsISearchService : nsISupports
    */
   void reInit([optional] in boolean skipRegionCheck);
   void reset();
-  Promise makeEnginesFromConfig(in jsval config);
+  Promise makeEngineFromConfig(in jsval config);
   Promise ensureBuiltinExtension(in AString id,
                                 [optional] in jsval locales);
 
@@ -384,6 +389,7 @@ interface nsISearchService : nsISupports
 
   /**
    * Returns an array of all installed search engines.
+   * The array is sorted either to the user requirements or the default order.
    *
    * @returns an array of nsISearchEngine objects.
    */
@@ -392,6 +398,7 @@ interface nsISearchService : nsISupports
   /**
    * Returns an array of all installed search engines whose hidden attribute is
    * false.
+   * The array is sorted either to the user requirements or the default order.
    *
    * @returns an array of nsISearchEngine objects.
    */
@@ -400,6 +407,7 @@ interface nsISearchService : nsISupports
   /**
    * Returns an array of all default search engines. This includes all loaded
    * engines that aren't in the user's profile directory.
+   * The array is sorted to the default order.
    *
    * @returns an array of nsISearchEngine objects.
    */

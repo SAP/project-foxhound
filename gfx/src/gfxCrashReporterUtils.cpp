@@ -17,7 +17,6 @@
 #include "nsError.h"              // for NS_OK, NS_FAILED, nsresult
 #include "nsExceptionHandler.h"   // for AppendAppNotesToCrashReport
 #include "nsID.h"
-#include "nsIEventTarget.h"      // for NS_DISPATCH_NORMAL
 #include "nsIObserver.h"         // for nsIObserver, etc
 #include "nsIObserverService.h"  // for nsIObserverService
 #include "nsIRunnable.h"         // for nsIRunnable
@@ -35,7 +34,7 @@ class ObserverToDestroyFeaturesAlreadyReported final : public nsIObserver {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
-  ObserverToDestroyFeaturesAlreadyReported() {}
+  ObserverToDestroyFeaturesAlreadyReported() = default;
 
  private:
   virtual ~ObserverToDestroyFeaturesAlreadyReported() = default;

@@ -13,7 +13,6 @@
 #include "nsExceptionHandler.h"
 #include "nsCocoaFeatures.h"
 #include "nsCocoaUtils.h"
-#include "nsICrashReporter.h"
 #include "mozilla/Preferences.h"
 #include <algorithm>
 
@@ -30,7 +29,7 @@ using namespace mozilla::widget;
 NS_IMPL_ISUPPORTS_INHERITED(GfxInfo, GfxInfoBase, nsIGfxInfoDebug)
 #endif
 
-GfxInfo::GfxInfo() : mOSXVersion{0} {}
+GfxInfo::GfxInfo() : mAdapterRAM(0), mOSXVersion{0} {}
 
 static OperatingSystem OSXVersionToOperatingSystem(uint32_t aOSXVersion) {
   if (nsCocoaFeatures::ExtractMajorVersion(aOSXVersion) == 10) {
@@ -114,6 +113,9 @@ GfxInfo::GetD2DEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
 NS_IMETHODIMP
 GfxInfo::GetDWriteEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
 
+/* readonly attribute bool HasBattery; */
+NS_IMETHODIMP GfxInfo::GetHasBattery(bool* aHasBattery) { return NS_ERROR_NOT_IMPLEMENTED; }
+
 /* readonly attribute DOMString DWriteVersion; */
 NS_IMETHODIMP
 GfxInfo::GetDWriteVersion(nsAString& aDwriteVersion) { return NS_ERROR_FAILURE; }
@@ -124,7 +126,11 @@ GfxInfo::GetCleartypeParameters(nsAString& aCleartypeParams) { return NS_ERROR_F
 
 /* readonly attribute DOMString windowProtocol; */
 NS_IMETHODIMP
-GfxInfo::GetWindowProtocol(nsAString& aWindowProtocol) { return NS_ERROR_FAILURE; }
+GfxInfo::GetWindowProtocol(nsAString& aWindowProtocol) { return NS_ERROR_NOT_IMPLEMENTED; }
+
+/* readonly attribute DOMString desktopEnvironment; */
+NS_IMETHODIMP
+GfxInfo::GetDesktopEnvironment(nsAString& aDesktopEnvironment) { return NS_ERROR_NOT_IMPLEMENTED; }
 
 /* readonly attribute DOMString adapterDescription; */
 NS_IMETHODIMP
@@ -139,14 +145,14 @@ GfxInfo::GetAdapterDescription2(nsAString& aAdapterDescription) { return NS_ERRO
 
 /* readonly attribute DOMString adapterRAM; */
 NS_IMETHODIMP
-GfxInfo::GetAdapterRAM(nsAString& aAdapterRAM) {
-  aAdapterRAM = mAdapterRAMString;
+GfxInfo::GetAdapterRAM(uint32_t* aAdapterRAM) {
+  *aAdapterRAM = mAdapterRAM;
   return NS_OK;
 }
 
 /* readonly attribute DOMString adapterRAM2; */
 NS_IMETHODIMP
-GfxInfo::GetAdapterRAM2(nsAString& aAdapterRAM) { return NS_ERROR_FAILURE; }
+GfxInfo::GetAdapterRAM2(uint32_t* aAdapterRAM) { return NS_ERROR_FAILURE; }
 
 /* readonly attribute DOMString adapterDriver; */
 NS_IMETHODIMP
@@ -225,17 +231,32 @@ GfxInfo::GetAdapterSubsysID2(nsAString& aAdapterSubsysID) { return NS_ERROR_FAIL
 /* readonly attribute Array<DOMString> displayInfo; */
 NS_IMETHODIMP
 GfxInfo::GetDisplayInfo(nsTArray<nsString>& aDisplayInfo) {
-for (NSScreen* screen in [NSScreen screens]) {
+  for (NSScreen* screen in [NSScreen screens]) {
     NSRect rect = [screen frame];
     nsString desc;
-    desc.AppendPrintf(
-      "%dx%d scale:%f",
-      (int32_t)rect.size.width, (int32_t)rect.size.height,
-      nsCocoaUtils::GetBackingScaleFactor(screen)
-    );
+    desc.AppendPrintf("%dx%d scale:%f", (int32_t)rect.size.width, (int32_t)rect.size.height,
+                      nsCocoaUtils::GetBackingScaleFactor(screen));
     aDisplayInfo.AppendElement(desc);
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+GfxInfo::GetDisplayWidth(nsTArray<uint32_t>& aDisplayWidth) {
+  for (NSScreen* screen in [NSScreen screens]) {
+    NSRect rect = [screen frame];
+    aDisplayWidth.AppendElement((uint32_t)rect.size.width);
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+GfxInfo::GetDisplayHeight(nsTArray<uint32_t>& aDisplayHeight) {
+  for (NSScreen* screen in [NSScreen screens]) {
+    NSRect rect = [screen frame];
+    aDisplayHeight.AppendElement((uint32_t)rect.size.height);
+  }
   return NS_OK;
 }
 
@@ -261,31 +282,22 @@ void GfxInfo::AddCrashReportAnnotations() {
 }
 
 // We don't support checking driver versions on Mac.
-#define IMPLEMENT_MAC_DRIVER_BLOCKLIST(os, vendor, driverVendor, device, features, blockOn, \
-                                       ruleId)                                              \
-  APPEND_TO_DRIVER_BLOCKLIST(os, vendor, driverVendor, device, features, blockOn,           \
-                             DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0), ruleId, "")
+#define IMPLEMENT_MAC_DRIVER_BLOCKLIST(os, device, features, blockOn, ruleId)          \
+  APPEND_TO_DRIVER_BLOCKLIST(os, device, features, blockOn, DRIVER_COMPARISON_IGNORED, \
+                             V(0, 0, 0, 0), ruleId, "")
 
 const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
   if (!sDriverInfo->Length()) {
     IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorATI),
-        (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
-        (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(RadeonX1000),
-        nsIGfxInfo::FEATURE_OPENGL_LAYERS, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-        "FEATURE_FAILURE_MAC_RADEONX1000_NO_TEXTURE2D");
+        OperatingSystem::OSX, DeviceFamily::RadeonX1000, nsIGfxInfo::FEATURE_OPENGL_LAYERS,
+        nsIGfxInfo::FEATURE_BLOCKED_DEVICE, "FEATURE_FAILURE_MAC_RADEONX1000_NO_TEXTURE2D");
     IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorNVIDIA),
-        (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
-        (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(Geforce7300GT),
-        nsIGfxInfo::FEATURE_WEBGL_OPENGL, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-        "FEATURE_FAILURE_MAC_7300_NO_WEBGL");
-    IMPLEMENT_MAC_DRIVER_BLOCKLIST(
-        OperatingSystem::OSX, (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
-        (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
-        (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(IntelHDGraphicsToIvyBridge),
-        nsIGfxInfo::FEATURE_GL_SWIZZLE, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-        "FEATURE_FAILURE_MAC_INTELHD4000_NO_SWIZZLE");
+        OperatingSystem::OSX, DeviceFamily::Geforce7300GT, nsIGfxInfo::FEATURE_WEBGL_OPENGL,
+        nsIGfxInfo::FEATURE_BLOCKED_DEVICE, "FEATURE_FAILURE_MAC_7300_NO_WEBGL");
+    IMPLEMENT_MAC_DRIVER_BLOCKLIST(OperatingSystem::OSX, DeviceFamily::IntelHDGraphicsToIvyBridge,
+                                   nsIGfxInfo::FEATURE_GL_SWIZZLE,
+                                   nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
+                                   "FEATURE_FAILURE_MAC_INTELHD4000_NO_SWIZZLE");
   }
   return *sDriverInfo;
 }

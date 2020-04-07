@@ -102,6 +102,7 @@ _OPT\.OBJ/
 # Ignore node_module directories and npm artifacts
 ^remote/test/puppeteer/package-lock.json
 ^remote/test/puppeteer/node_modules/
+^remote/test/puppeteer/.local-chromium/
 
 # git checkout of libstagefright
 ^media/libstagefright/android$
@@ -144,7 +145,7 @@ _OPT\.OBJ/
 
 # Ignore talos virtualenv and tp5n files.
 # The tp5n set is supposed to be decompressed at
-# testing/talos/talos/tests/tp5n in order to run tests like tps
+# testing/talos/talos/fis|tests/tp5n in order to run tests like tps
 # locally. Similarly, running talos requires a Python package virtual
 # environment. Both the virtual environment and tp5n files end up littering
 # the status command, so we ignore them.
@@ -152,12 +153,16 @@ _OPT\.OBJ/
 ^testing/talos/bin/
 ^testing/talos/include/
 ^testing/talos/lib/
+^testing/talos/talos/fis/tp5n.zip
+^testing/talos/talos/fis/tp5n.tar.gz
+^testing/talos/talos/fis/tp5n
 ^testing/talos/talos/tests/tp5n.zip
 ^testing/talos/talos/tests/tp5n.tar.gz
 ^testing/talos/talos/tests/tp5n
 ^testing/talos/talos/tests/devtools/damp.manifest.develop
 ^testing/talos/talos/startup_test/startup_about_home_paint/startup_about_home_paint.manifest.develop
 ^testing/talos/talos/webextensions/
+^testing/talos/talos/tests/about-newtab/about_newtab.manifest.develop
 ^talos-venv
 ^py3venv
 ^testing/talos/talos/mitmproxy/mitmdump
@@ -200,7 +205,9 @@ tps_result\.json
 # Ignore browsertime output directory
 ^browsertime-results
 
-# Ignore the build directories of WebRender standalone builds.
+# Ignore the build directories of WebGPU and WebRender standalone builds.
+gfx/wgpu/target
+gfx/wgpu/.*/build
 gfx/wr/target/
 
 # Ignore this files in certviewer

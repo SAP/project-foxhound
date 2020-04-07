@@ -589,15 +589,15 @@ nsresult ChannelMediaResource::SetupChannelHeaders(int64_t aOffset) {
   return NS_OK;
 }
 
-nsresult ChannelMediaResource::Close() {
+RefPtr<GenericPromise> ChannelMediaResource::Close() {
   NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
 
   if (!mClosed) {
     CloseChannel();
-    mCacheStream.Close();
     mClosed = true;
+    return mCacheStream.Close();
   }
-  return NS_OK;
+  return GenericPromise::CreateAndResolve(true, __func__);
 }
 
 already_AddRefed<nsIPrincipal> ChannelMediaResource::GetCurrentPrincipal() {
@@ -741,6 +741,10 @@ nsresult ChannelMediaResource::RecreateChannel() {
       element->ShouldCheckAllowOrigin()
           ? nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS
           : nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS;
+
+  if (element->GetCORSMode() == CORS_USE_CREDENTIALS) {
+    securityFlags |= nsILoadInfo::SEC_COOKIES_INCLUDE;
+  }
 
   MOZ_ASSERT(element->IsAnyOfHTMLElements(nsGkAtoms::audio, nsGkAtoms::video));
   nsContentPolicyType contentPolicyType =

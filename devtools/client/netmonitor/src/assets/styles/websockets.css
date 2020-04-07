@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 /* Scroll to bottom */
 
 #messages-panel .uncontrolled {
@@ -10,7 +14,7 @@
   margin: 0;
   padding: 0;
   border: none;
- }
+}
 
 /* Empty notice */
 
@@ -50,6 +54,10 @@
   color: inherit;
 }
 
+#messages-panel .ws-connection-closed-message {
+  text-align: center;
+}
+
 /* Use lining numbers so that seconds and milliseconds align */
 
 #messages-panel .ws-frames-list-time {
@@ -63,15 +71,19 @@
 }
 
 #messages-panel .ws-frame-rawData-payload {
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
+  display: block;
+  width: 100%;
+  overflow: auto;
+  white-space: pre;
   padding: 4px 8px;
   padding-inline-start: 20px;
+  border: none;
   font-family: var(--monospace-font-family);
   font-size: var(--theme-code-font-size);
   line-height: calc(15/11);
   direction: ltr;
   text-align: left;
+  resize: none;
 }
 
 /* Styles related to JSONPreview */
@@ -132,7 +144,7 @@
 #messages-panel .truncated-messages-warning-icon {
   width: 12px;
   height: 12px;
-  margin-right: 8px;
+  margin-inline-end: 8px;
   background-image: url(chrome://global/skin/icons/info.svg);
   background-repeat: no-repeat;
   -moz-context-properties: fill;
@@ -140,7 +152,7 @@
 }
 
 #messages-panel .truncation-checkbox {
-  margin-right: 5px;
+  margin-inline-end: 5px;
 }
 
 #messages-panel .truncated-message {

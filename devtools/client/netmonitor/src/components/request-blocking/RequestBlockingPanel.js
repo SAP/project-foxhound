@@ -19,9 +19,9 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const {
   connect,
 } = require("devtools/client/shared/redux/visibility-handler-connect");
-const Actions = require("../../actions/index");
-const { L10N } = require("../../utils/l10n");
-const { PANELS } = require("../../constants");
+const Actions = require("devtools/client/netmonitor/src/actions/index");
+const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const { PANELS } = require("devtools/client/netmonitor/src/constants");
 
 const ENABLE_BLOCKING_LABEL = L10N.getStr(
   "netmonitor.actionbar.enableBlocking"
@@ -65,6 +65,24 @@ class RequestBlockingPanel extends Component {
     } else if (this.props.isDisplaying && !prevProps.isDisplaying) {
       this.refs.addInput.focus();
     }
+  }
+
+  componentWillUnmount() {
+    if (this.scrollToBottomTimeout) {
+      clearTimeout(this.scrollToBottomTimeout);
+    }
+  }
+
+  scrollToBottom() {
+    if (this.scrollToBottomTimeout) {
+      clearTimeout(this.scrollToBottomTimeout);
+    }
+    this.scrollToBottomTimeout = setTimeout(() => {
+      const { contents } = this.refs;
+      if (contents.scrollHeight > contents.offsetHeight) {
+        contents.scrollTo({ top: contents.scrollHeight });
+      }
+    }, 40);
   }
 
   renderEnableBar() {
@@ -113,7 +131,7 @@ class RequestBlockingPanel extends Component {
         }),
         span(
           {
-            className: "request-blocking-label",
+            className: "request-blocking-label request-blocking-editable-label",
             title: url,
           },
           url
@@ -183,26 +201,36 @@ class RequestBlockingPanel extends Component {
         : this.renderItemContent(item)
     );
 
-    return ul(
+    return div(
       {
-        className: `request-blocking-list ${blockingEnabled ? "" : "disabled"}`,
+        className: "request-blocking-contents",
+        ref: "contents",
       },
-      ...listItems
+      ul(
+        {
+          className: `request-blocking-list ${
+            blockingEnabled ? "" : "disabled"
+          }`,
+        },
+        ...listItems
+      )
     );
   }
 
   renderAddForm() {
     const { addBlockedUrl } = this.props;
     return div(
-      { className: "request-blocking-add-form" },
+      { className: "request-blocking-footer" },
       form(
         {
+          className: "request-blocking-add-form",
           onSubmit: e => {
             const { addInput } = this.refs;
             e.preventDefault();
             addBlockedUrl(addInput.value);
             addInput.value = "";
             addInput.focus();
+            this.scrollToBottom();
           },
         },
         input({
@@ -230,11 +258,8 @@ class RequestBlockingPanel extends Component {
     return div(
       { className: "request-blocking-panel" },
       this.renderEnableBar(),
-      div(
-        { className: "request-blocking-contents" },
-        this.renderBlockedList(),
-        this.renderAddForm()
-      )
+      this.renderBlockedList(),
+      this.renderAddForm()
     );
   }
 }

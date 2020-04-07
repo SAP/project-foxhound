@@ -169,8 +169,9 @@ function checkCert(aChannel, aAllowNonBuiltInCerts, aCerts) {
   }
 
   let issuerCert = null;
-  // eslint-disable-next-line no-empty
-  for (issuerCert of secInfo.succeededCertChain.getEnumerator()) {
+  if (secInfo.succeededCertChain.length) {
+    issuerCert =
+      secInfo.succeededCertChain[secInfo.succeededCertChain.length - 1];
   }
 
   const certNotBuiltInErr = "Certificate issuer is not built-in.";
@@ -184,9 +185,9 @@ function checkCert(aChannel, aAllowNonBuiltInCerts, aCerts) {
 }
 
 /**
- * This class implements nsIBadCertListener.  Its job is to prevent "bad cert"
- * security dialogs from being shown to the user.  It is better to simply fail
- * if the certificate is bad. See bug 304286.
+ * This class implements nsIChannelEventSink. Its job is to perform extra checks
+ * on the certificates used for some connections when those connections
+ * redirect.
  *
  * @param  aAllowNonBuiltInCerts (optional)
  *         When true certificates that aren't builtin are allowed. When false

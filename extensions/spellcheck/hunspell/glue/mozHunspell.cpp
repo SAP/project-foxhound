@@ -61,14 +61,12 @@
 #include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsIObserverService.h"
-#include "nsISimpleEnumerator.h"
 #include "nsIDirectoryEnumerator.h"
 #include "nsIFile.h"
 #include "nsUnicharUtils.h"
 #include "nsCRT.h"
 #include "mozInlineSpellChecker.h"
 #include <stdlib.h>
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsNetUtil.h"
 #include "mozilla/dom/ContentParent.h"
@@ -89,7 +87,7 @@ NS_INTERFACE_MAP_BEGIN(mozHunspell)
   NS_INTERFACE_MAP_ENTRIES_CYCLE_COLLECTION(mozHunspell)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION(mozHunspell, mPersonalDictionary)
+NS_IMPL_CYCLE_COLLECTION_WEAK(mozHunspell, mPersonalDictionary)
 
 NS_IMPL_COMPONENT_FACTORY(mozHunspell) {
   auto hunspell = MakeRefPtr<mozHunspell>();

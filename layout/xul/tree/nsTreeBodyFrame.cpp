@@ -44,7 +44,6 @@
 #include "nsWidgetsCID.h"
 #include "nsIFrameInlines.h"
 #include "nsBoxFrame.h"
-#include "nsIURL.h"
 #include "nsBoxLayoutState.h"
 #include "nsTreeContentView.h"
 #include "nsTreeUtils.h"
@@ -52,7 +51,6 @@
 #include "nsITheme.h"
 #include "imgIRequest.h"
 #include "imgIContainer.h"
-#include "imgILoader.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
@@ -194,7 +192,7 @@ nsSize nsTreeBodyFrame::GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) {
 
   AddBorderAndPadding(min);
   bool widthSet, heightSet;
-  nsIFrame::AddXULMinSize(aBoxLayoutState, this, min, widthSet, heightSet);
+  nsIFrame::AddXULMinSize(this, min, widthSet, heightSet);
 
   return min;
 }
@@ -916,7 +914,7 @@ nsresult nsTreeBodyFrame::GetCoordsForCellItem(int32_t aRow, nsTreeColumn* aCol,
   *aWidth = 0;
   *aHeight = 0;
 
-  bool isRTL = StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+  bool isRTL = StyleVisibility()->mDirection == StyleDirection::Rtl;
   nscoord currX = mInnerBox.x - mHorzPosition;
 
   // The Rect for the requested item.
@@ -1265,12 +1263,14 @@ void nsTreeBodyFrame::AdjustForCellText(nsAutoString& aText, int32_t aRowIndex,
                                                   aRenderingContext);
 
   switch (aColumn->GetTextAlignment()) {
-    case NS_STYLE_TEXT_ALIGN_RIGHT: {
+    case mozilla::StyleTextAlign::Right:
       aTextRect.x += aTextRect.width - width;
-    } break;
-    case NS_STYLE_TEXT_ALIGN_CENTER: {
+      break;
+    case mozilla::StyleTextAlign::Center:
       aTextRect.x += (aTextRect.width - width) / 2;
-    } break;
+      break;
+    default:
+      break;
   }
 
   aTextRect.width = width;
@@ -1311,7 +1311,7 @@ nsCSSAnonBoxPseudoStaticAtom* nsTreeBodyFrame::GetItemWithinCellAt(
   nscoord remainingWidth = cellRect.width;
 
   // Handle right alignment hit testing.
-  bool isRTL = StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+  bool isRTL = StyleVisibility()->mDirection == StyleDirection::Rtl;
 
   nsPresContext* presContext = PresContext();
   RefPtr<gfxContext> rc =
@@ -1809,9 +1809,9 @@ nsITheme* nsTreeBodyFrame::GetTwistyRect(int32_t aRowIndex,
   nsITheme* theme = nullptr;
   const nsStyleDisplay* twistyDisplayData = aTwistyContext->StyleDisplay();
   if (twistyDisplayData->mAppearance != StyleAppearance::None) {
-    theme = aPresContext->GetTheme();
-    if (theme && theme->ThemeSupportsWidget(aPresContext, nullptr,
-                                            twistyDisplayData->mAppearance))
+    theme = aPresContext->Theme();
+    if (theme->ThemeSupportsWidget(aPresContext, nullptr,
+                                   twistyDisplayData->mAppearance))
       useTheme = true;
   }
 
@@ -1928,6 +1928,11 @@ nsresult nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol,
           imgNotificationObserver, nsIRequest::LOAD_NORMAL, EmptyString(),
           getter_AddRefs(imageRequest));
       NS_ENSURE_SUCCESS(rv, rv);
+
+      // NOTE(heycam): If it's an SVG image, and we need to want the image to
+      // able to respond to media query changes, it needs to be added to the
+      // document's ImageTracker (like nsImageBoxFrame does).  For now, assume
+      // we don't need this.
     }
     listener->UnsuppressInvalidation();
 
@@ -2241,7 +2246,7 @@ Maybe<nsIFrame::Cursor> nsTreeBodyFrame::GetCursor(const nsPoint& aPoint) {
     if (child) {
       // Our scratch array is already prefilled.
       RefPtr<ComputedStyle> childContext = GetPseudoComputedStyle(child);
-      StyleCursorKind kind = childContext->StyleUI()->mCursor;
+      StyleCursorKind kind = childContext->StyleUI()->mCursor.keyword;
       if (kind == StyleCursorKind::Auto) {
         kind = StyleCursorKind::Default;
       }
@@ -2472,9 +2477,7 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayTreeBody);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayTreeBody() { MOZ_COUNT_DTOR(nsDisplayTreeBody); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTreeBody)
 
   nsDisplayItemGeometry* AllocateGeometry(
       nsDisplayListBuilder* aBuilder) override {
@@ -2547,7 +2550,7 @@ void nsTreeBodyFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   nsIFrame* treeFrame = tree ? tree->GetPrimaryFrame() : nullptr;
   nsCOMPtr<nsITreeSelection> selection;
   mView->GetSelection(getter_AddRefs(selection));
-  nsITheme* theme = PresContext()->GetTheme();
+  nsITheme* theme = PresContext()->Theme();
   // On Mac, we support native theming of selected rows. On 10.10 and higher,
   // this means applying vibrancy which require us to register the theme
   // geometrics for the row. In order to make the vibrancy effect to work
@@ -2751,7 +2754,7 @@ ImgDrawResult nsTreeBodyFrame::PaintRow(int32_t aRowIndex,
   nsITheme* theme = nullptr;
   auto appearance = rowContext->StyleDisplay()->mAppearance;
   if (appearance != StyleAppearance::None) {
-    theme = aPresContext->GetTheme();
+    theme = aPresContext->Theme();
   }
 
   if (theme && theme->ThemeSupportsWidget(aPresContext, nullptr, appearance)) {
@@ -2879,9 +2882,9 @@ ImgDrawResult nsTreeBodyFrame::PaintSeparator(int32_t aRowIndex,
   nsITheme* theme = nullptr;
   const nsStyleDisplay* displayData = separatorContext->StyleDisplay();
   if (displayData->HasAppearance()) {
-    theme = aPresContext->GetTheme();
-    if (theme && theme->ThemeSupportsWidget(aPresContext, nullptr,
-                                            displayData->mAppearance))
+    theme = aPresContext->Theme();
+    if (theme->ThemeSupportsWidget(aPresContext, nullptr,
+                                   displayData->mAppearance))
       useTheme = true;
   }
 
@@ -2946,7 +2949,7 @@ ImgDrawResult nsTreeBodyFrame::PaintCell(
   ComputedStyle* cellContext =
       GetPseudoComputedStyle(nsCSSAnonBoxes::mozTreeCell());
 
-  bool isRTL = StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+  bool isRTL = StyleVisibility()->mDirection == StyleDirection::Rtl;
 
   // Obtain the margins for the cell and then deflate our rect by that
   // amount.  The cell is assumed to be contained within the deflated rect.
@@ -2967,8 +2970,8 @@ ImgDrawResult nsTreeBodyFrame::PaintCell(
 
   // Now we paint the contents of the cells.
   // Directionality of the tree determines the order in which we paint.
-  // NS_STYLE_DIRECTION_LTR means paint from left to right.
-  // NS_STYLE_DIRECTION_RTL means paint from right to left.
+  // StyleDirection::Ltr means paint from left to right.
+  // StyleDirection::Rtl means paint from right to left.
 
   if (aColumn->IsPrimary()) {
     // If we're the primary column, we need to indent and paint the twisty and
@@ -3114,7 +3117,7 @@ ImgDrawResult nsTreeBodyFrame::PaintTwisty(
     const nsRect& aDirtyRect, nscoord& aRemainingWidth, nscoord& aCurrX) {
   MOZ_ASSERT(aColumn && aColumn->GetFrame(), "invalid column passed");
 
-  bool isRTL = StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+  bool isRTL = StyleVisibility()->mDirection == StyleDirection::Rtl;
   nscoord rightEdge = aCurrX + aRemainingWidth;
   // Paint the twisty, but only if we are a non-empty container.
   bool shouldPaint = false;
@@ -3211,7 +3214,7 @@ ImgDrawResult nsTreeBodyFrame::PaintImage(
     nsDisplayListBuilder* aBuilder) {
   MOZ_ASSERT(aColumn && aColumn->GetFrame(), "invalid column passed");
 
-  bool isRTL = StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+  bool isRTL = StyleVisibility()->mDirection == StyleDirection::Rtl;
   nscoord rightEdge = aCurrX + aRemainingWidth;
   // Resolve style for the image.
   ComputedStyle* imageContext =
@@ -3381,7 +3384,7 @@ ImgDrawResult nsTreeBodyFrame::PaintText(
     const nsRect& aDirtyRect, nscoord& aCurrX) {
   MOZ_ASSERT(aColumn && aColumn->GetFrame(), "invalid column passed");
 
-  bool isRTL = StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+  bool isRTL = StyleVisibility()->mDirection == StyleDirection::Rtl;
 
   // Now obtain the text for our cell.
   nsAutoString text;
@@ -3458,22 +3461,22 @@ ImgDrawResult nsTreeBodyFrame::PaintText(
 
   nscoord offset;
   nscoord size;
-  if (decorations &
-      (StyleTextDecorationLine_OVERLINE | StyleTextDecorationLine_UNDERLINE)) {
+  if (decorations & (StyleTextDecorationLine::OVERLINE |
+                     StyleTextDecorationLine::UNDERLINE)) {
     fontMet->GetUnderline(offset, size);
-    if (decorations & StyleTextDecorationLine_OVERLINE) {
+    if (decorations & StyleTextDecorationLine::OVERLINE) {
       nsRect r(textRect.x, textRect.y, textRect.width, size);
       Rect devPxRect = NSRectToSnappedRect(r, appUnitsPerDevPixel, *drawTarget);
       drawTarget->FillRect(devPxRect, color);
     }
-    if (decorations & StyleTextDecorationLine_UNDERLINE) {
+    if (decorations & StyleTextDecorationLine::UNDERLINE) {
       nsRect r(textRect.x, textRect.y + baseline - offset, textRect.width,
                size);
       Rect devPxRect = NSRectToSnappedRect(r, appUnitsPerDevPixel, *drawTarget);
       drawTarget->FillRect(devPxRect, color);
     }
   }
-  if (decorations & StyleTextDecorationLine_LINE_THROUGH) {
+  if (decorations & StyleTextDecorationLine::LINE_THROUGH) {
     fontMet->GetStrikeout(offset, size);
     nsRect r(textRect.x, textRect.y + baseline - offset, textRect.width, size);
     Rect devPxRect = NSRectToSnappedRect(r, appUnitsPerDevPixel, *drawTarget);
@@ -3523,13 +3526,16 @@ ImgDrawResult nsTreeBodyFrame::PaintCheckbox(int32_t aRowIndex,
 
   nsRect imageSize = GetImageSize(aRowIndex, aColumn, true, checkboxContext);
 
-  if (imageSize.height > checkboxRect.height)
+  if (imageSize.height > checkboxRect.height) {
     imageSize.height = checkboxRect.height;
-  if (imageSize.width > checkboxRect.width)
+  }
+  if (imageSize.width > checkboxRect.width) {
     imageSize.width = checkboxRect.width;
+  }
 
-  if (StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL)
+  if (StyleVisibility()->mDirection == StyleDirection::Rtl) {
     checkboxRect.x = rightEdge - checkboxRect.width;
+  }
 
   // Paint our borders and background for our image rect.
   ImgDrawResult result =

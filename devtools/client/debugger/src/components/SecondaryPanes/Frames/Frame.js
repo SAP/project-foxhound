@@ -68,6 +68,7 @@ type FrameComponentProps = {
   copyStackTrace: Function,
   toggleFrameworkGrouping: Function,
   selectFrame: typeof actions.selectFrame,
+  selectLocation: typeof actions.selectLocation,
   frameworkGroupingOn: boolean,
   hideLocation: boolean,
   shouldMapDisplayName: boolean,
@@ -75,7 +76,7 @@ type FrameComponentProps = {
   displayFullUrl: boolean,
   getFrameTitle?: string => string,
   disableContextMenu: boolean,
-  selectable: boolean,
+  panel: "debugger" | "webconsole",
 };
 
 export default class FrameComponent extends Component<FrameComponentProps> {
@@ -84,6 +85,14 @@ export default class FrameComponent extends Component<FrameComponentProps> {
     shouldMapDisplayName: true,
     disableContextMenu: false,
   };
+
+  get isSelectable() {
+    return this.props.panel == "webconsole";
+  }
+
+  get isDebugger() {
+    return this.props.panel == "debugger";
+  }
 
   onContextMenu(event: SyntheticMouseEvent<HTMLElement>) {
     const {
@@ -111,6 +120,7 @@ export default class FrameComponent extends Component<FrameComponentProps> {
     if (e.button !== 0) {
       return;
     }
+
     this.props.selectFrame(this.props.cx, frame);
   }
 
@@ -122,6 +132,7 @@ export default class FrameComponent extends Component<FrameComponentProps> {
     if (event.key != "Enter") {
       return;
     }
+
     this.props.selectFrame(this.props.cx, frame);
   }
 
@@ -134,7 +145,6 @@ export default class FrameComponent extends Component<FrameComponentProps> {
       displayFullUrl,
       getFrameTitle,
       disableContextMenu,
-      selectable,
     } = this.props;
     const { l10n } = this.context;
 
@@ -163,7 +173,18 @@ export default class FrameComponent extends Component<FrameComponentProps> {
         tabIndex={0}
         title={title}
       >
-        {selectable && <FrameIndent />}
+        {frame.asyncCause && (
+          <span className="location-async-cause">
+            {this.isSelectable && <FrameIndent />}
+            {this.isDebugger ? (
+              <span className="async-label">{frame.asyncCause}</span>
+            ) : (
+              l10n.getFormatStr("stacktrace.asyncStack", frame.asyncCause)
+            )}
+            {this.isSelectable && <br className="clipboard-only" />}
+          </span>
+        )}
+        {this.isSelectable && <FrameIndent />}
         <FrameTitle
           frame={frame}
           options={{ shouldMapDisplayName }}
@@ -173,7 +194,7 @@ export default class FrameComponent extends Component<FrameComponentProps> {
         {!hideLocation && (
           <FrameLocation frame={frame} displayFullUrl={displayFullUrl} />
         )}
-        {selectable && <br className="clipboard-only" />}
+        {this.isSelectable && <br className="clipboard-only" />}
       </div>
     );
   }

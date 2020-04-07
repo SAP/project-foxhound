@@ -14,15 +14,14 @@
 #include "mozilla/PresShell.h"
 
 #include "nsDocLoader.h"
+#include "nsDocShell.h"
 #include "nsNetUtil.h"
 #include "nsIHttpChannel.h"
 #include "nsIWebNavigation.h"
 #include "nsIWebProgressListener2.h"
 
-#include "nsIServiceManager.h"
 #include "nsString.h"
 
-#include "nsIURL.h"
 #include "nsCOMPtr.h"
 #include "nscore.h"
 #include "nsIWeakReferenceUtils.h"
@@ -33,10 +32,7 @@
 #include "nsGlobalWindow.h"
 
 #include "nsIStringBundle.h"
-#include "nsIScriptSecurityManager.h"
 
-#include "nsITransport.h"
-#include "nsISocketTransport.h"
 #include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocGroup.h"
@@ -185,7 +181,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDocLoader)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(nsDocLoader)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION(nsDocLoader, mChildrenInOnload)
+NS_IMPL_CYCLE_COLLECTION_WEAK(nsDocLoader, mChildrenInOnload)
 
 /*
  * Implementation of nsIInterfaceRequestor methods...
@@ -1478,7 +1474,8 @@ NS_IMETHODIMP nsDocLoader::AsyncOnChannelRedirect(
           newURI, where, nsIWebNavigation::LOAD_FLAGS_IS_REDIRECT,
           /* triggering principal */ nullptr, &loadURIHandled);
       if (NS_SUCCEEDED(rv) && loadURIHandled) {
-        cb->OnRedirectVerifyCallback(NS_OK);
+        aOldChannel->Cancel(NS_ERROR_ABORT);
+        cb->OnRedirectVerifyCallback(NS_ERROR_ABORT);
         return NS_OK;
       }
     }
@@ -1527,25 +1524,6 @@ void nsDocLoader::OnSecurityChange(nsISupports* aContext, uint32_t aState) {
   // Pass the notification up to the parent...
   if (mParent) {
     mParent->OnSecurityChange(aContext, aState);
-  }
-}
-
-void nsDocLoader::OnContentBlockingEvent(nsISupports* aContext,
-                                         uint32_t aEvent) {
-  //
-  // Fire progress notifications out to any registered nsIWebProgressListeners.
-  //
-
-  nsCOMPtr<nsIRequest> request = do_QueryInterface(aContext);
-  nsIWebProgress* webProgress = static_cast<nsIWebProgress*>(this);
-
-  NOTIFY_LISTENERS(
-      nsIWebProgress::NOTIFY_CONTENT_BLOCKING,
-      listener->OnContentBlockingEvent(webProgress, request, aEvent););
-
-  // Pass the notification up to the parent...
-  if (mParent) {
-    mParent->OnContentBlockingEvent(aContext, aEvent);
   }
 }
 

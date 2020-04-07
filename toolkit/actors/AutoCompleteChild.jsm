@@ -160,7 +160,7 @@ class AutoCompleteChild extends JSWindowActorChild {
   notifyListeners(messageName, data) {
     for (let listener of autoCompleteListeners) {
       try {
-        listener(messageName, data, this.contentWindow);
+        listener.popupStateChanged(messageName, data, this.contentWindow);
       } catch (ex) {
         Cu.reportError(ex);
       }
@@ -182,9 +182,20 @@ class AutoCompleteChild extends JSWindowActorChild {
     // time it changes because not every action that can change the
     // selectedIndex is trivial to catch (e.g. moving the mouse over the
     // list).
-    return Services.cpmm.sendSyncMessage("FormAutoComplete:GetSelectedIndex", {
-      browsingContext: this.browsingContext,
-    });
+    let selectedIndexResult = Services.cpmm.sendSyncMessage(
+      "FormAutoComplete:GetSelectedIndex",
+      {
+        browsingContext: this.browsingContext,
+      }
+    );
+
+    if (
+      selectedIndexResult.length != 1 ||
+      !Number.isInteger(selectedIndexResult[0])
+    ) {
+      throw new Error("Invalid autocomplete selectedIndex");
+    }
+    return selectedIndexResult[0];
   }
 
   get popupOpen() {

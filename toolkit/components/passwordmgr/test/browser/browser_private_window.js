@@ -19,10 +19,10 @@ async function focusWindow(win) {
 
 function getDialogDoc() {
   // Trudge through all the open windows, until we find the one
-  // that has either commonDialog.xul or selectDialog.xul loaded.
+  // that has either commonDialog.xhtml or selectDialog.xhtml loaded.
   // var enumerator = Services.wm.getEnumerator("navigator:browser");
   for (let { docShell } of Services.wm.getEnumerator(null)) {
-    var containedDocShells = docShell.getDocShellEnumerator(
+    var containedDocShells = docShell.getAllDocShellsInSubtree(
       docShell.typeChrome,
       docShell.ENUMERATE_FORWARDS
     );
@@ -34,8 +34,9 @@ function getDialogDoc() {
       }
       var childDoc = childDocShell.contentViewer.DOMDocument;
       if (
-        childDoc.location.href != "chrome://global/content/commonDialog.xul" &&
-        childDoc.location.href != "chrome://global/content/selectDialog.xul"
+        childDoc.location.href !=
+          "chrome://global/content/commonDialog.xhtml" &&
+        childDoc.location.href != "chrome://global/content/selectDialog.xhtml"
       ) {
         continue;
       }
@@ -313,11 +314,7 @@ add_task(async function test_normal_popup_notification_3() {
       is(fieldValues.username, "notifyu1", "Checking submitted username");
       is(fieldValues.password, "notifyp1", "Checking submitted password");
 
-      let notif = getCaptureDoorhanger(
-        "password-save",
-        PopupNotifications,
-        browser
-      );
+      let notif = getCaptureDoorhanger("any", PopupNotifications, browser);
       ok(!notif, "got no notification popup");
       if (notif) {
         await cleanupDoorhanger(notif);
@@ -368,11 +365,8 @@ add_task(async function test_private_popup_notification_3b() {
       is(fieldValues.username, "notifyu1", "Checking submitted username");
       is(fieldValues.password, "notifyp1", "Checking submitted password");
 
-      let notif = getCaptureDoorhanger(
-        "password-save",
-        PopupNotifications,
-        browser
-      );
+      let notif = getCaptureDoorhanger("any", PopupNotifications, browser);
+
       ok(!notif, "got no notification popup");
       if (notif) {
         await cleanupDoorhanger(notif);
@@ -572,13 +566,7 @@ add_task(async function test_normal_autofilled_7() {
     },
     async function(browser) {
       // Add the observer before loading the form page
-      let formFilled = ContentTask.spawn(browser, null, async function() {
-        const { TestUtils } = ChromeUtils.import(
-          "resource://testing-common/TestUtils.jsm"
-        );
-        await TestUtils.topicObserved("passwordmgr-processed-form");
-        await Promise.resolve();
-      });
+      let formFilled = listenForTestNotification("FormProcessed");
       await SimpleTest.promiseFocus(browser.ownerGlobal);
       await BrowserTestUtils.loadURI(browser, form1Url);
       await formFilled;
@@ -600,6 +588,8 @@ add_task(async function test_private_not_autofilled_8() {
   // Sanity check the HTTP login exists.
   is(Services.logins.getAllLogins().length, 1, "Should have the HTTP login");
 
+  let formFilled = listenForTestNotification("FormProcessed");
+
   await focusWindow(privateWin);
   await BrowserTestUtils.withNewTab(
     {
@@ -607,6 +597,7 @@ add_task(async function test_private_not_autofilled_8() {
       url: form1Url,
     },
     async function(browser) {
+      await formFilled;
       let fieldValues = await submitFormAndGetResults(
         browser,
         "formsubmit.sjs",
@@ -667,6 +658,8 @@ add_task(async function test_normal_autofilled_10() {
   // Sanity check the HTTP login exists.
   is(Services.logins.getAllLogins().length, 1, "Should have the HTTP login");
 
+  let formFilled = listenForTestNotification("FormProcessed");
+
   await focusWindow(normalWin);
   await BrowserTestUtils.withNewTab(
     {
@@ -674,6 +667,7 @@ add_task(async function test_normal_autofilled_10() {
       url: form1Url,
     },
     async function(browser) {
+      await formFilled;
       let fieldValues = await submitFormAndGetResults(
         browser,
         "formsubmit.sjs",
@@ -703,16 +697,20 @@ add_task(async function test_normal_http_basic_auth() {
       ok(true, "Auth-required page loaded");
 
       // verify result in the response document
-      let fieldValues = await ContentTask.spawn(browser, [], async function() {
-        let username = content.document.getElementById("user").textContent;
-        let password = content.document.getElementById("pass").textContent;
-        let ok = content.document.getElementById("ok").textContent;
-        return {
-          username,
-          password,
-          ok,
-        };
-      });
+      let fieldValues = await SpecialPowers.spawn(
+        browser,
+        [[]],
+        async function() {
+          let username = content.document.getElementById("user").textContent;
+          let password = content.document.getElementById("pass").textContent;
+          let ok = content.document.getElementById("ok").textContent;
+          return {
+            username,
+            password,
+            ok,
+          };
+        }
+      );
       is(fieldValues.ok, "PASS", "Checking authorization passed");
       is(fieldValues.username, "test", "Checking authorized username");
       is(fieldValues.password, "testpass", "Checking authorized password");

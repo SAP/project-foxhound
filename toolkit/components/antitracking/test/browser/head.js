@@ -14,6 +14,7 @@ const TEST_DOMAIN_6 = "http://mochi.test:8888/";
 const TEST_3RD_PARTY_DOMAIN = "https://tracking.example.org/";
 const TEST_3RD_PARTY_DOMAIN_HTTP = "http://tracking.example.org/";
 const TEST_3RD_PARTY_DOMAIN_TP = "https://tracking.example.com/";
+const TEST_3RD_PARTY_DOMAIN_STP = "https://social-tracking.example.org/";
 const TEST_4TH_PARTY_DOMAIN = "http://not-tracking.example.com/";
 const TEST_ANOTHER_3RD_PARTY_DOMAIN = "https://another-tracking.example.net/";
 
@@ -28,12 +29,16 @@ const TEST_TOP_PAGE_6 = TEST_DOMAIN_6 + TEST_PATH + "page.html";
 const TEST_EMBEDDER_PAGE = TEST_DOMAIN + TEST_PATH + "embedder.html";
 const TEST_POPUP_PAGE = TEST_DOMAIN + TEST_PATH + "popup.html";
 const TEST_3RD_PARTY_PAGE = TEST_3RD_PARTY_DOMAIN + TEST_PATH + "3rdParty.html";
+const TEST_3RD_PARTY_PAGE_HTTP =
+  TEST_3RD_PARTY_DOMAIN_HTTP + TEST_PATH + "3rdParty.html";
 const TEST_3RD_PARTY_PAGE_WO =
   TEST_3RD_PARTY_DOMAIN + TEST_PATH + "3rdPartyWO.html";
 const TEST_3RD_PARTY_PAGE_UI =
   TEST_3RD_PARTY_DOMAIN + TEST_PATH + "3rdPartyUI.html";
 const TEST_3RD_PARTY_PAGE_WITH_SVG =
   TEST_3RD_PARTY_DOMAIN + TEST_PATH + "3rdPartySVG.html";
+const TEST_3RD_PARTY_PAGE_RELAY =
+  TEST_4TH_PARTY_DOMAIN + TEST_PATH + "3rdPartyRelay.html";
 const TEST_4TH_PARTY_PAGE = TEST_4TH_PARTY_DOMAIN + TEST_PATH + "3rdParty.html";
 const TEST_ANOTHER_3RD_PARTY_PAGE =
   TEST_ANOTHER_3RD_PARTY_DOMAIN + TEST_PATH + "3rdParty.html";

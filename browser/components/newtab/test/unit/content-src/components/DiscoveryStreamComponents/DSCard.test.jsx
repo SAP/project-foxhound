@@ -13,6 +13,7 @@ import { DSLinkMenu } from "content-src/components/DiscoveryStreamComponents/DSL
 import React from "react";
 import { SafeAnchor } from "content-src/components/DiscoveryStreamComponents/SafeAnchor/SafeAnchor";
 import { shallow, mount } from "enzyme";
+import { FluentOrText } from "content-src/components/FluentOrText/FluentOrText";
 
 describe("<DSCard>", () => {
   let wrapper;
@@ -117,6 +118,32 @@ describe("<DSCard>", () => {
           event: "CLICK",
           source: "FOO",
           action_position: 1,
+          value: { card_type: "organic" },
+        })
+      );
+      assert.calledWith(
+        dispatch,
+        ac.ImpressionStats({
+          click: 0,
+          source: "FOO",
+          tiles: [{ id: "fooidx", pos: 1 }],
+        })
+      );
+    });
+
+    it("should set the right card_type on spocs", () => {
+      wrapper.setProps({ id: "fooidx", pos: 1, type: "foo", flightId: 12345 });
+
+      wrapper.instance().onLinkClick();
+
+      assert.calledTwice(dispatch);
+      assert.calledWith(
+        dispatch,
+        ac.UserEvent({
+          event: "CLICK",
+          source: "FOO",
+          action_position: 1,
+          value: { card_type: "spoc" },
         })
       );
       assert.calledWith(
@@ -148,6 +175,7 @@ describe("<DSCard>", () => {
           event: "CLICK",
           source: "FOO",
           action_position: 1,
+          value: { card_type: "organic" },
         })
       );
       assert.calledWith(
@@ -216,7 +244,7 @@ describe("<DSCard>", () => {
       assert.notOk(wrapper.find(DSContextFooter).exists());
     });
 
-    it("should render sponsor text on top for spoc item and cta button variant", () => {
+    it("should render sponsor text as fluent element on top for spoc item and cta button variant", () => {
       wrapper.setProps({
         sponsor: "Test",
         context: "Sponsored by test",
@@ -225,7 +253,14 @@ describe("<DSCard>", () => {
 
       assert.ok(wrapper.find(CTAButtonMeta).exists());
       const meta = wrapper.find(CTAButtonMeta);
-      assert.equal(meta.find(".source").text(), "Test · Sponsored");
+      assert.equal(
+        meta
+          .find(".source")
+          .children()
+          .at(0)
+          .type(),
+        FluentOrText
+      );
     });
   });
   describe("DSCard with Intersection Observer", () => {

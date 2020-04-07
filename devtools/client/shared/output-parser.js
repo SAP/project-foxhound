@@ -58,9 +58,6 @@ const BASIC_SHAPE_FUNCTIONS = ["polygon", "circle", "ellipse", "inset"];
 const BACKDROP_FILTER_ENABLED = Services.prefs.getBoolPref(
   "layout.css.backdrop-filter.enabled"
 );
-const SHARED_SWATCH_CLASS = "ruleview-swatch";
-const COLOR_SWATCH_CLASS = "ruleview-colorswatch";
-
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
 /**
@@ -326,7 +323,6 @@ OutputParser.prototype = {
     return variableNode;
   },
 
-  /* eslint-disable complexity */
   /**
    * The workhorse for @see _parse. This parses some CSS text,
    * stopping at EOF; or optionally when an umatched close paren is
@@ -343,6 +339,7 @@ OutputParser.prototype = {
    * @return {DocumentFragment}
    *         A document fragment.
    */
+  // eslint-disable-next-line complexity
   _doParse: function(text, options, tokenStream, stopAtCloseParen) {
     let parenDepth = stopAtCloseParen ? 1 : 0;
     let outerMostFunctionTakesColor = false;
@@ -594,7 +591,6 @@ OutputParser.prototype = {
 
     return result;
   },
-  /* eslint-enable complexity */
 
   /**
    * Parse a string.
@@ -666,6 +662,8 @@ OutputParser.prototype = {
     if (options.bezierSwatchClass) {
       const swatch = this._createNode("span", {
         class: options.bezierSwatchClass,
+        tabindex: "0",
+        role: "button",
       });
       container.appendChild(swatch);
     }
@@ -740,6 +738,8 @@ OutputParser.prototype = {
 
     const toggle = this._createNode("span", {
       class: options.shapeSwatchClass,
+      tabindex: "0",
+      role: "button",
     });
 
     for (const { prefix, coordParser } of shapeTypes) {
@@ -775,7 +775,7 @@ OutputParser.prototype = {
    *        The node to which spans containing points are added.
    * @returns {Node} The container to which spans have been added.
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   _addPolygonPointNodes: function(coords, container) {
     const tokenStream = getCSSLexer(coords);
     let token = tokenStream.nextToken();
@@ -914,7 +914,6 @@ OutputParser.prototype = {
     }
     return container;
   },
-  /* eslint-enable complexity */
 
   /**
    * Parse the given circle coordinates and populate the given container appropriately
@@ -926,7 +925,7 @@ OutputParser.prototype = {
    *        The node to which the definition is added.
    * @returns {Node} The container to which the definition has been added.
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   _addCirclePointNodes: function(coords, container) {
     const tokenStream = getCSSLexer(coords);
     let token = tokenStream.nextToken();
@@ -1076,7 +1075,6 @@ OutputParser.prototype = {
     }
     return container;
   },
-  /* eslint-enable complexity */
 
   /**
    * Parse the given ellipse coordinates and populate the given container appropriately
@@ -1088,7 +1086,7 @@ OutputParser.prototype = {
    *        The node to which the definition is added.
    * @returns {Node} The container to which the definition has been added.
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   _addEllipsePointNodes: function(coords, container) {
     const tokenStream = getCSSLexer(coords);
     let token = tokenStream.nextToken();
@@ -1248,7 +1246,6 @@ OutputParser.prototype = {
     }
     return container;
   },
-  /* eslint-enable complexity */
 
   /**
    * Parse the given inset coordinates and populate the given container appropriately.
@@ -1259,7 +1256,7 @@ OutputParser.prototype = {
    *        The node to which the definition is added.
    * @returns {Node} The container to which the definition has been added.
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   _addInsetPointNodes: function(coords, container) {
     const insetPoints = ["top", "right", "bottom", "left"];
     const tokenStream = getCSSLexer(coords);
@@ -1394,7 +1391,6 @@ OutputParser.prototype = {
 
     return container;
   },
-  /* eslint-enable complexity */
 
   /**
    * Append a angle value to the output
@@ -1414,6 +1410,8 @@ OutputParser.prototype = {
     if (options.angleSwatchClass) {
       const swatch = this._createNode("span", {
         class: options.angleSwatchClass,
+        tabindex: "0",
+        role: "button",
       });
       this.angleSwatches.set(swatch, angleObj);
       swatch.addEventListener("mousedown", this._onAngleSwatchMouseDown);
@@ -1487,16 +1485,21 @@ OutputParser.prototype = {
       });
 
       if (options.colorSwatchClass) {
-        const swatch = this._createNode(
-          options.colorSwatchClass ===
-            `${SHARED_SWATCH_CLASS} ${COLOR_SWATCH_CLASS}`
-            ? "button"
-            : "span",
-          {
-            class: options.colorSwatchClass,
-            style: "background-color:" + color,
-          }
-        );
+        let attributes = {
+          class: options.colorSwatchClass,
+          style: "background-color:" + color,
+        };
+
+        // Color swatches next to values trigger the color editor everywhere aside from
+        // the Computed panel where values are read-only.
+        if (!options.colorSwatchClass.startsWith("computed-")) {
+          attributes = { ...attributes, tabindex: "0", role: "button" };
+        }
+
+        // The swatch is a <span> instead of a <button> intentionally. See Bug 1597125.
+        // It is made keyboard accessbile via `tabindex` and has keydown handlers
+        // attached for pressing SPACE and RETURN in SwatchBasedEditorTooltip.js
+        const swatch = this._createNode("span", attributes);
         this.colorSwatches.set(swatch, colorObj);
         swatch.addEventListener("mousedown", this._onColorSwatchMouseDown);
         EventEmitter.decorate(swatch);
@@ -1549,6 +1552,8 @@ OutputParser.prototype = {
     if (options.filterSwatchClass) {
       const swatch = this._createNode("span", {
         class: options.filterSwatchClass,
+        tabindex: "0",
+        role: "button",
       });
       container.appendChild(swatch);
     }

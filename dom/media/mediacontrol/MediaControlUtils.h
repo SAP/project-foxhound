@@ -4,104 +4,100 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_MediaControlUtils_h
-#define mozilla_dom_MediaControlUtils_h
+#ifndef DOM_MEDIA_MEDIACONTROL_MEDIACONTROLUTILS_H_
+#define DOM_MEDIA_MEDIACONTROL_MEDIACONTROLUTILS_H_
 
 #include "MediaController.h"
-#include "MediaControlService.h"
+#include "MediaControlKeysEvent.h"
+#include "mozilla/dom/ChromeUtilsBinding.h"
+#include "mozilla/Logging.h"
 
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/ContentChild.h"
-#include "nsGlobalWindowOuter.h"
-#include "nsXULAppAPI.h"
-
-mozilla::LazyLogModule gMediaControlLog("MediaControl");
-
-#undef LOG
-#define LOG(msg, ...)                        \
-  MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
-          ("MediaControlUtils, " msg, ##__VA_ARGS__))
+extern mozilla::LazyLogModule gMediaControlLog;
 
 namespace mozilla {
 namespace dom {
 
-static void NotifyMediaActiveChanged(const RefPtr<BrowsingContext>& aBc,
-                                     bool aActive) {
-  if (XRE_IsContentProcess()) {
-    ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaActiveChanged(aBc, aActive);
-  } else {
-    MediaControlService::GetService()
-        ->GetOrCreateControllerById(aBc->Id())
-        ->NotifyMediaActiveChanged(aActive);
-  }
-}
-
-static RefPtr<BrowsingContext> GetBrowingContextByWindowID(uint64_t aWindowID) {
-  RefPtr<nsGlobalWindowOuter> window =
-      nsGlobalWindowOuter::GetOuterWindowWithId(aWindowID);
-  if (!window) {
-    return nullptr;
-  }
-  return window->GetBrowsingContext();
-}
-
-const char* ToMediaControlActionsStr(
-    mozilla::dom::MediaControlActions aAction) {
-  switch (aAction) {
-    case MediaControlActions::ePlay:
-      return "Play";
-    case MediaControlActions::ePause:
+inline const char* ToMediaControlKeysEventStr(MediaControlKeysEvent aKeyEvent) {
+  switch (aKeyEvent) {
+    case MediaControlKeysEvent::ePause:
       return "Pause";
-    case MediaControlActions::eStop:
+    case MediaControlKeysEvent::ePlay:
+      return "Play";
+    case MediaControlKeysEvent::ePlayPause:
+      return "Play & pause";
+    case MediaControlKeysEvent::ePrevTrack:
+      return "Previous track";
+    case MediaControlKeysEvent::eNextTrack:
+      return "Next track";
+    case MediaControlKeysEvent::eSeekBackward:
+      return "Seek backward";
+    case MediaControlKeysEvent::eSeekForward:
+      return "Seek forward";
+    case MediaControlKeysEvent::eStop:
       return "Stop";
     default:
       MOZ_ASSERT_UNREACHABLE("Invalid action.");
+      return "Unknown";
   }
-  return "UNKNOWN";
 }
 
-void NotifyMediaStarted(uint64_t aWindowID) {
-  RefPtr<BrowsingContext> bc = GetBrowingContextByWindowID(aWindowID);
-  if (!bc || bc->IsDiscarded()) {
-    return;
+inline MediaControlKeysEvent
+ConvertMediaControlKeysTestEventToMediaControlKeysEvent(
+    MediaControlKeysTestEvent aEvent) {
+  switch (aEvent) {
+    case MediaControlKeysTestEvent::Play:
+      return MediaControlKeysEvent::ePlay;
+    case MediaControlKeysTestEvent::Pause:
+      return MediaControlKeysEvent::ePause;
+    case MediaControlKeysTestEvent::PlayPause:
+      return MediaControlKeysEvent::ePlayPause;
+    case MediaControlKeysTestEvent::Previoustrack:
+      return MediaControlKeysEvent::ePrevTrack;
+    case MediaControlKeysTestEvent::Nexttrack:
+      return MediaControlKeysEvent::eNextTrack;
+    case MediaControlKeysTestEvent::Seekbackward:
+      return MediaControlKeysEvent::eSeekBackward;
+    case MediaControlKeysTestEvent::Seekforward:
+      return MediaControlKeysEvent::eSeekForward;
+    default:
+      MOZ_ASSERT(aEvent == MediaControlKeysTestEvent::Stop);
+      return MediaControlKeysEvent::eStop;
   }
-  LOG("Notify media started in BC %" PRId64, bc->Id());
-  bc = bc->Top();
-  NotifyMediaActiveChanged(bc, true);
 }
 
-void NotifyMediaStopped(uint64_t aWindowID) {
-  RefPtr<BrowsingContext> bc = GetBrowingContextByWindowID(aWindowID);
-  if (!bc || bc->IsDiscarded()) {
-    return;
+inline const char* ToPlaybackStateEventStr(PlaybackState aState) {
+  switch (aState) {
+    case PlaybackState::ePlaying:
+      return "Playing";
+    case PlaybackState::ePaused:
+      return "Paused";
+    case PlaybackState::eStopped:
+      return "Stopped";
+    default:
+      MOZ_ASSERT_UNREACHABLE("Invalid playback state.");
+      return "Unknown";
   }
-  LOG("Notify media stopped in BC %" PRId64, bc->Id());
-  bc = bc->Top();
-  NotifyMediaActiveChanged(bc, false);
 }
 
-void NotifyMediaAudibleChanged(uint64_t aWindowID, bool aAudible) {
-  RefPtr<BrowsingContext> bc = GetBrowingContextByWindowID(aWindowID);
-  if (!bc || bc->IsDiscarded()) {
-    return;
-  }
-  LOG("Notify media became %s in BC %" PRId64,
-      aAudible ? "audible" : "inaudible", bc->Id());
-  bc = bc->Top();
-  if (XRE_IsContentProcess()) {
-    ContentChild* contentChild = ContentChild::GetSingleton();
-    Unused << contentChild->SendNotifyMediaAudibleChanged(bc, aAudible);
-  } else {
-    RefPtr<MediaController> controller =
-        MediaControlService::GetService()->GetControllerById(bc->Id());
-    if (controller) {
-      controller->NotifyMediaAudibleChanged(aAudible);
-    }
+inline const char* ToControlledMediaStateStr(ControlledMediaState aState) {
+  switch (aState) {
+    case ControlledMediaState::eStarted:
+      return "started";
+    case ControlledMediaState::ePlayed:
+      return "played";
+    case ControlledMediaState::ePaused:
+      return "paused";
+    case ControlledMediaState::eStopped:
+      return "stopped";
+    default:
+      MOZ_ASSERT_UNREACHABLE("Invalid media state.");
+      return "Unknown";
   }
 }
+
+BrowsingContext* GetAliveTopBrowsingContext(BrowsingContext* aBC);
 
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_MediaControlUtils_h
+#endif  // DOM_MEDIA_MEDIACONTROL_MEDIACONTROLUTILS_H_

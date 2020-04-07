@@ -7,7 +7,6 @@
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsILoadInfo.h"
-#include "nsIPrincipal.h"
 #include "nsIProxiedProtocolHandler.h"
 #include "nsIOService.h"
 #include "nsProtocolProxyService.h"
@@ -17,6 +16,7 @@
 #include "NullPrincipal.h"
 #include "nsCycleCollector.h"
 #include "RequestContextService.h"
+#include "nsSandboxFlags.h"
 
 #include "FuzzingInterface.h"
 #include "FuzzingStreamListener.h"
@@ -27,8 +27,8 @@ namespace net {
 
 // Target spec and optional proxy type to use, set by the respective
 // initialization function so we can cover all combinations.
-nsAutoCString spec;
-nsAutoCString proxyType;
+static nsAutoCString httpSpec;
+static nsAutoCString proxyType;
 
 static int FuzzingInitNetworkHttp(int* argc, char*** argv) {
   Preferences::SetBool("network.dns.native-is-localhost", true);
@@ -36,15 +36,15 @@ static int FuzzingInitNetworkHttp(int* argc, char*** argv) {
   Preferences::SetInt("network.http.speculative-parallel-limit", 0);
   Preferences::SetInt("network.http.spdy.default-concurrent", 1);
 
-  if (spec.IsEmpty()) {
-    spec = "http://127.0.0.1/";
+  if (httpSpec.IsEmpty()) {
+    httpSpec = "http://127.0.0.1/";
   }
 
   return 0;
 }
 
 static int FuzzingInitNetworkHttp2(int* argc, char*** argv) {
-  spec = "https://127.0.0.1/";
+  httpSpec = "https://127.0.0.1/";
   return FuzzingInitNetworkHttp(argc, argv);
 }
 
@@ -90,7 +90,7 @@ static int FuzzingRunNetworkHttp(const uint8_t* data, size_t size) {
     nsCOMPtr<nsIURI> url;
     nsresult rv;
 
-    if (NS_NewURI(getter_AddRefs(url), spec) != NS_OK) {
+    if (NS_NewURI(getter_AddRefs(url), httpSpec) != NS_OK) {
       MOZ_CRASH("Call to NS_NewURI failed.");
     }
 
@@ -100,8 +100,8 @@ static int FuzzingRunNetworkHttp(const uint8_t* data, size_t size) {
                 nsIRequest::LOAD_FRESH_CONNECTION |
                 nsIChannel::LOAD_INITIAL_DOCUMENT_URI;
     nsSecurityFlags secFlags;
-    secFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL |
-               nsILoadInfo::SEC_SANDBOXED;
+    secFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
+    uint32_t sandboxFlags = SANDBOXED_ORIGIN;
 
     nsCOMPtr<nsIChannel> channel;
     nsCOMPtr<nsILoadInfo> loadInfo;
@@ -151,7 +151,9 @@ static int FuzzingRunNetworkHttp(const uint8_t* data, size_t size) {
           nsContentUtils::GetSystemPrincipal(),  // loading principal
           nsContentUtils::GetSystemPrincipal(),  // triggering principal
           nullptr,                               // Context
-          secFlags, nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST);
+          secFlags, nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST,
+          Maybe<mozilla::dom::ClientInfo>(),
+          Maybe<mozilla::dom::ServiceWorkerDescriptor>(), sandboxFlags);
 
       rv = pph->NewProxiedChannel(url, proxyInfo,
                                   0,        // aProxyResolveFlags
@@ -165,13 +167,13 @@ static int FuzzingRunNetworkHttp(const uint8_t* data, size_t size) {
       rv = NS_NewChannel(getter_AddRefs(channel), url,
                          nsContentUtils::GetSystemPrincipal(), secFlags,
                          nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST,
-                         nullptr,    // aCookieSettings
+                         nullptr,    // aCookieJarSettings
                          nullptr,    // aPerformanceStorage
                          nullptr,    // loadGroup
                          nullptr,    // aCallbacks
                          loadFlags,  // aLoadFlags
-                         nullptr     // aIoService
-      );
+                         nullptr,    // aIoService
+                         sandboxFlags);
 
       if (NS_FAILED(rv)) {
         MOZ_CRASH("Call to NS_NewChannel failed.");
@@ -218,6 +220,15 @@ static int FuzzingRunNetworkHttp(const uint8_t* data, size_t size) {
 
     // Wait for StopRequest
     gStreamListener->waitUntilDone();
+
+    bool mainPingBack = false;
+
+    NS_DispatchBackgroundTask(NS_NewRunnableFunction("Dummy", [&]() {
+      NS_DispatchToMainThread(
+          NS_NewRunnableFunction("Dummy", [&]() { mainPingBack = true; }));
+    }));
+
+    SpinEventLoopUntil([&]() -> bool { return mainPingBack; });
 
     channelRef = do_GetWeakReference(gHttpChannel);
   }

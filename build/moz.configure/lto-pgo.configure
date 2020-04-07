@@ -11,6 +11,7 @@ llvm_profdata = check_prog('LLVM_PROFDATA', ['llvm-profdata'],
                            paths=toolchain_search_path)
 
 js_option('--enable-profile-generate',
+          env='MOZ_PROFILE_GENERATE',
           nargs='?',
           choices=('cross',),
           help='Build a PGO instrumented binary')
@@ -25,6 +26,7 @@ set_define('MOZ_PROFILE_GENERATE',
            depends_if('--enable-profile-generate')(lambda _: True))
 
 js_option('--enable-profile-use',
+          env='MOZ_PROFILE_USE',
           nargs='?',
           choices=('cross',),
           help='Use a generated profile during the build')
@@ -32,9 +34,6 @@ js_option('--enable-profile-use',
 js_option('--with-pgo-profile-path',
           help='Path to the directory with unmerged profile data to use during the build',
           nargs=1)
-
-js_option('--enable-cross-pgo',
-          help='Enable PGO on Rust code')
 
 imply_option('MOZ_PGO',
              depends_if('--enable-profile-use')(lambda _: True))
@@ -51,7 +50,7 @@ def pgo_profile_path(path, pgo_use, profdata, build_env):
         topobjdir = topobjdir[:-7]
 
     if not path:
-        return os.path.join(topobjdir, 'merged.profdata')
+        return os.path.join(topobjdir,  'instrumented', 'merged.profdata')
     if path and not pgo_use:
         die('Pass --enable-profile-use to use --with-pgo-profile-path.')
     if path and not profdata:
@@ -116,8 +115,8 @@ set_config('PGO_JARLOG_PATH', depends_if('--with-pgo-jarlog')(lambda p: p))
 
 
 @depends('MOZ_PGO', '--enable-profile-use', '--enable-profile-generate',
-         c_compiler, rustc_info)
-def moz_pgo_rust(pgo, profile_use, profile_generate, c_compiler, rustc):
+         c_compiler)
+def moz_pgo_rust(pgo, profile_use, profile_generate, c_compiler):
     if not pgo:
         return
 
@@ -136,10 +135,6 @@ def moz_pgo_rust(pgo, profile_use, profile_generate, c_compiler, rustc):
 
     if c_compiler.type == 'gcc':
         die('Cannot use cross-language PGO with GCC.')
-
-    # PGO is not stable prior to 1.37
-    if rustc.version < Version('1.37'):
-        die('Cannot use cross-language PGO with Rust version %s.' % rustc.version)
 
     return True
 
@@ -160,15 +155,19 @@ js_option(env='MOZ_LD64_KNOWN_GOOD',
 
 imply_option('MOZ_LD64_KNOWN_GOOD', depends_if('MOZ_AUTOMATION')(lambda _: True))
 
-@depends('--enable-lto', c_compiler, 'MOZ_LD64_KNOWN_GOOD', target)
+@depends('--enable-lto', c_compiler, 'MOZ_LD64_KNOWN_GOOD', target, '--enable-profile-generate')
 @imports('multiprocessing')
-def lto(value, c_compiler, ld64_known_good, target):
+def lto(value, c_compiler, ld64_known_good, target, instrumented_build):
     cflags = []
     ldflags = []
     enabled = None
     rust_lto = False
 
     if value:
+        if instrumented_build:
+            log.warning('Disabling LTO because --enable-profile-generate is specified')
+            return
+
         enabled = True
         # `cross` implies `thin`, but with Rust code participating in LTO
         # as well.  Make that a little more explicit.
@@ -233,6 +232,16 @@ def lto(value, c_compiler, ld64_known_good, target):
 
             ldflags.append("-flto=%s" % num_cores)
             ldflags.append("-flifetime-dse=1")
+
+        # Tell LTO not to inline functions above a certain size, to mitigate
+        # binary size growth while still getting good performance.
+        # (For hot functions, PGO will put a multiplier on this limit.)
+        if target.os == 'WINNT':
+            ldflags.append('-mllvm:-import-instr-limit=10');
+        elif target.os == 'OSX':
+            ldflags.append('-Wl,-mllvm,-import-instr-limit=10');
+        elif c_compiler.type == 'clang':
+            ldflags.append('-Wl,-plugin-opt=-import-instr-limit=10');
 
     return namespace(
         enabled=enabled,

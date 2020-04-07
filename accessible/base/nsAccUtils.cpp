@@ -97,7 +97,7 @@ int32_t nsAccUtils::GetLevelForXULContainerItem(nsIContent* aContent) {
       aContent->AsElement()->AsXULContainerItem();
   if (!item) return 0;
 
-  nsCOMPtr<Element> containerElement;
+  nsCOMPtr<dom::Element> containerElement;
   item->GetParentContainer(getter_AddRefs(containerElement));
   nsCOMPtr<nsIDOMXULContainerElement> container =
       containerElement ? containerElement->AsXULContainer() : nullptr;
@@ -179,7 +179,7 @@ bool nsAccUtils::HasDefinedARIAToken(nsIContent* aContent, nsAtom* aAtom) {
 
   if (!aContent->IsElement()) return false;
 
-  Element* element = aContent->AsElement();
+  dom::Element* element = aContent->AsElement();
   if (!element->HasAttr(kNameSpaceID_None, aAtom) ||
       element->AttrValueIs(kNameSpaceID_None, aAtom, nsGkAtoms::_empty,
                            eCaseMatters) ||
@@ -193,7 +193,7 @@ bool nsAccUtils::HasDefinedARIAToken(nsIContent* aContent, nsAtom* aAtom) {
 nsStaticAtom* nsAccUtils::GetARIAToken(dom::Element* aElement, nsAtom* aAttr) {
   if (!HasDefinedARIAToken(aElement, aAttr)) return nsGkAtoms::_empty;
 
-  static Element::AttrValuesArray tokens[] = {
+  static dom::Element::AttrValuesArray tokens[] = {
       nsGkAtoms::_false, nsGkAtoms::_true, nsGkAtoms::mixed, nullptr};
 
   int32_t idx =
@@ -210,7 +210,7 @@ nsStaticAtom* nsAccUtils::NormalizeARIAToken(dom::Element* aElement,
   }
 
   if (aAttr == nsGkAtoms::aria_current) {
-    static Element::AttrValuesArray tokens[] = {
+    static dom::Element::AttrValuesArray tokens[] = {
         nsGkAtoms::page, nsGkAtoms::step, nsGkAtoms::location_,
         nsGkAtoms::date, nsGkAtoms::time, nsGkAtoms::_true,
         nullptr};
@@ -247,7 +247,10 @@ Accessible* nsAccUtils::TableFor(Accessible* aRow) {
     Accessible* table = aRow->Parent();
     if (table) {
       roles::Role tableRole = table->Role();
-      if (tableRole == roles::GROUPING) {  // if there's a rowgroup.
+      const nsRoleMapEntry* roleMapEntry = table->ARIARoleMap();
+      if (tableRole == roles::GROUPING ||  // if there's a rowgroup.
+          (table->IsGenericHyperText() && !roleMapEntry &&
+           !table->IsTable())) {  // or there is a wrapping text container
         table = table->Parent();
         if (table) tableRole = table->Role();
       }
@@ -404,21 +407,11 @@ bool nsAccUtils::MustPrune(AccessibleOrProxy aAccessible) {
     return true;
   }
 
-#if defined(ANDROID)
-  if (role == roles::LINK) {
-    // Always prune links in Android
-    return true;
-  }
-#endif
-
   if (role != roles::MENUITEM && role != roles::COMBOBOX_OPTION &&
       role != roles::OPTION && role != roles::ENTRY &&
       role != roles::FLAT_EQUATION && role != roles::PASSWORD_TEXT &&
       role != roles::PUSHBUTTON && role != roles::TOGGLE_BUTTON &&
       role != roles::GRAPHIC && role != roles::PROGRESSBAR &&
-#if defined(ANDROID)
-      role != roles::HEADING &&
-#endif
       role != roles::SEPARATOR) {
     // If it doesn't match any of these roles, don't prune its children.
     return false;

@@ -80,12 +80,68 @@ export class TogglePrefCheckbox extends React.PureComponent {
   }
 }
 
+export class Personalization extends React.PureComponent {
+  constructor(props) {
+    super(props);
+    this.togglePersonalizationVersion = this.togglePersonalizationVersion.bind(
+      this
+    );
+  }
+
+  togglePersonalizationVersion() {
+    this.props.dispatch(
+      ac.OnlyToMain({
+        type: at.DISCOVERY_STREAM_PERSONALIZATION_VERSION_TOGGLE,
+      })
+    );
+  }
+
+  render() {
+    const {
+      lastUpdated,
+      version,
+      initialized,
+    } = this.props.state.Personalization;
+    return (
+      <React.Fragment>
+        <button className="button" onClick={this.togglePersonalizationVersion}>
+          {version === 1
+            ? "Enable V2 Personalization"
+            : "Enable V1 Personalization"}
+        </button>
+        <table>
+          <tbody>
+            <Row>
+              <td className="min">Personalization version</td>
+              <td>{version}</td>
+            </Row>
+            <Row>
+              <td className="min">Personalization Last Updated</td>
+              <td>{relativeTime(lastUpdated) || "(no data)"}</td>
+            </Row>
+            {version === 2 ? (
+              <Row>
+                <td className="min">Personalization V2 Initialized</td>
+                <td>{initialized ? "true" : "false"}</td>
+              </Row>
+            ) : null}
+          </tbody>
+        </table>
+      </React.Fragment>
+    );
+  }
+}
+
 export class DiscoveryStreamAdmin extends React.PureComponent {
   constructor(props) {
     super(props);
     this.restorePrefDefaults = this.restorePrefDefaults.bind(this);
     this.setConfigValue = this.setConfigValue.bind(this);
     this.expireCache = this.expireCache.bind(this);
+    this.refreshCache = this.refreshCache.bind(this);
+    this.idleDaily = this.idleDaily.bind(this);
+    this.systemTick = this.systemTick.bind(this);
+    this.syncRemoteSettings = this.syncRemoteSettings.bind(this);
     this.changeEndpointVariant = this.changeEndpointVariant.bind(this);
     this.onStoryToggle = this.onStoryToggle.bind(this);
     this.state = {
@@ -110,8 +166,8 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
     );
   }
 
-  expireCache() {
-    const { config } = this.props.state;
+  refreshCache() {
+    const { config } = this.props.state.DiscoveryStream;
     this.props.dispatch(
       ac.OnlyToMain({
         type: at.DISCOVERY_STREAM_CONFIG_CHANGE,
@@ -120,8 +176,32 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
     );
   }
 
+  dispatchSimpleAction(type) {
+    this.props.dispatch(
+      ac.OnlyToMain({
+        type,
+      })
+    );
+  }
+
+  systemTick() {
+    this.dispatchSimpleAction(at.DISCOVERY_STREAM_DEV_SYSTEM_TICK);
+  }
+
+  expireCache() {
+    this.dispatchSimpleAction(at.DISCOVERY_STREAM_DEV_EXPIRE_CACHE);
+  }
+
+  idleDaily() {
+    this.dispatchSimpleAction(at.DISCOVERY_STREAM_DEV_IDLE_DAILY);
+  }
+
+  syncRemoteSettings() {
+    this.dispatchSimpleAction(at.DISCOVERY_STREAM_DEV_SYNC_RS);
+  }
+
   changeEndpointVariant(event) {
-    const endpoint = this.props.state.config.layout_endpoint;
+    const endpoint = this.props.state.DiscoveryStream.config.layout_endpoint;
     if (endpoint) {
       this.setConfigValue(
         "layout_endpoint",
@@ -152,13 +232,13 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
   }
 
   isCurrentVariant(id) {
-    const endpoint = this.props.state.config.layout_endpoint;
+    const endpoint = this.props.state.DiscoveryStream.config.layout_endpoint;
     const isMatch = endpoint && !!endpoint.match(`layout_variant=${id}`);
     return isMatch;
   }
 
   renderFeedData(url) {
-    const { feeds } = this.props.state;
+    const { feeds } = this.props.state.DiscoveryStream;
     const feed = feeds.data[url].data;
     return (
       <React.Fragment>
@@ -173,7 +253,7 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
   }
 
   renderFeedsData() {
-    const { feeds } = this.props.state;
+    const { feeds } = this.props.state.DiscoveryStream;
     return (
       <React.Fragment>
         {Object.keys(feeds.data).map(url => this.renderFeedData(url))}
@@ -182,10 +262,10 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
   }
 
   renderSpocs() {
-    const { spocs } = this.props.state;
+    const { spocs } = this.props.state.DiscoveryStream;
     let spocsData = [];
-    if (spocs.data && spocs.data.spocs && spocs.data.spocs.length) {
-      spocsData = spocs.data.spocs;
+    if (spocs.data && spocs.data.spocs && spocs.data.spocs.items) {
+      spocsData = spocs.data.spocs.items || [];
     }
 
     return (
@@ -247,7 +327,7 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
   }
 
   renderFeed(feed) {
-    const { feeds } = this.props.state;
+    const { feeds } = this.props.state.DiscoveryStream;
     if (!feed.url) {
       return null;
     }
@@ -273,14 +353,28 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
     const prefToggles = "enabled hardcoded_layout show_spocs personalized collapsible".split(
       " "
     );
-    const { config, lastUpdated, layout } = this.props.state;
+    const { config, lastUpdated, layout } = this.props.state.DiscoveryStream;
     return (
       <div>
         <button className="button" onClick={this.restorePrefDefaults}>
           Restore Pref Defaults
         </button>{" "}
+        <button className="button" onClick={this.refreshCache}>
+          Refresh Cache
+        </button>
+        <br />
         <button className="button" onClick={this.expireCache}>
           Expire Cache
+        </button>{" "}
+        <button className="button" onClick={this.systemTick}>
+          Trigger System Tick
+        </button>{" "}
+        <button className="button" onClick={this.idleDaily}>
+          Trigger Idle Daily
+        </button>
+        <br />
+        <button className="button" onClick={this.syncRemoteSettings}>
+          Sync Remote Settings
         </button>
         <table>
           <tbody>
@@ -343,10 +437,17 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
             ))}
           </div>
         ))}
-        <h3>Feeds Data</h3>
-        {this.renderFeedsData()}
+        <h3>Personalization</h3>
+        <Personalization
+          dispatch={this.props.dispatch}
+          state={{
+            Personalization: this.props.state.Personalization,
+          }}
+        />
         <h3>Spocs</h3>
         {this.renderSpocs()}
+        <h3>Feeds Data</h3>
+        {this.renderFeedsData()}
       </div>
     );
   }
@@ -359,6 +460,9 @@ export class ASRouterAdminInner extends React.PureComponent {
     this.handleEnabledToggle = this.handleEnabledToggle.bind(this);
     this.handleUserPrefToggle = this.handleUserPrefToggle.bind(this);
     this.onChangeMessageFilter = this.onChangeMessageFilter.bind(this);
+    this.handleClearAllImpressionsByProvider = this.handleClearAllImpressionsByProvider.bind(
+      this
+    );
     this.findOtherBundledMessagesOfSameTemplate = this.findOtherBundledMessagesOfSameTemplate.bind(
       this
     );
@@ -373,17 +477,26 @@ export class ASRouterAdminInner extends React.PureComponent {
     this.onCopyTargetingParams = this.onCopyTargetingParams.bind(this);
     this.onPasteTargetingParams = this.onPasteTargetingParams.bind(this);
     this.onNewTargetingParams = this.onNewTargetingParams.bind(this);
+    this.handleUpdateWNMessages = this.handleUpdateWNMessages.bind(this);
+    this.handleForceWNP = this.handleForceWNP.bind(this);
+    this.pushWNMessage = this.pushWNMessage.bind(this);
     this.state = {
       messageFilter: "all",
+      WNMessages: [],
       evaluationStatus: {},
+      trailhead: {},
       stringTargetingParameters: null,
       newStringTargetingParameters: null,
       copiedToClipboard: false,
       pasteFromClipboard: false,
       attributionParameters: {
         source: "addons.mozilla.org",
+        medium: "referral",
         campaign: "non-fx-button",
         content: "iridium@particlecore.github.io",
+        experiment: "ua-onboarding",
+        variation: "chrome",
+        ua: "Google Chrome 123",
       },
     };
   }
@@ -446,12 +559,31 @@ export class ASRouterAdminInner extends React.PureComponent {
     return () => ASRouterUtils.overrideMessage(id);
   }
 
+  handleUpdateWNMessages() {
+    let messages = this.state.WNMessages;
+    ASRouterUtils.sendMessage({
+      type: "RENDER_WHATSNEW_MESSAGES",
+      data: messages,
+    });
+  }
+
+  handleForceWNP() {
+    ASRouterUtils.sendMessage({ type: "FORCE_WHATSNEW_PANEL" });
+  }
+
   expireCache() {
     ASRouterUtils.sendMessage({ type: "EXPIRE_QUERY_CACHE" });
   }
 
   resetPref() {
     ASRouterUtils.sendMessage({ type: "RESET_PROVIDER_PREF" });
+  }
+
+  toggleGroups(id, value) {
+    ASRouterUtils.sendMessage({
+      type: "SET_GROUP_STATE",
+      data: { id, value },
+    });
   }
 
   handleExpressionEval() {
@@ -490,6 +622,32 @@ export class ASRouterAdminInner extends React.PureComponent {
         stringTargetingParameters: updatedParameters,
         targetingParametersError,
       };
+    });
+  }
+
+  handleClearAllImpressionsByProvider() {
+    const providerId = this.state.messageFilter;
+    if (!providerId) {
+      return;
+    }
+    const userPrefInfo = this.state.userPrefs;
+
+    const isUserEnabled =
+      providerId in userPrefInfo ? userPrefInfo[providerId] : true;
+
+    ASRouterUtils.sendMessage({
+      type: "DISABLE_PROVIDER",
+      data: providerId,
+    });
+    if (!isUserEnabled) {
+      ASRouterUtils.sendMessage({
+        type: "SET_PROVIDER_USER_PREF",
+        data: { id: providerId, value: true },
+      });
+    }
+    ASRouterUtils.sendMessage({
+      type: "ENABLE_PROVIDER",
+      data: providerId,
     });
   }
 
@@ -589,18 +747,24 @@ export class ASRouterAdminInner extends React.PureComponent {
   }
 
   renderMessageItem(msg) {
-    const isCurrent = msg.id === this.state.lastMessageId;
-    const isBlocked =
+    const isBlockedByGroup = this.state.groups
+      .filter(group => msg.groups.includes(group.id))
+      .some(group => !group.enabled);
+    const msgProvider = this.state.providers.find(
+      provider => provider.id === msg.provider
+    );
+    const isProviderExcluded =
+      msgProvider.exclude && msgProvider.exclude.includes(msg.id);
+    const isMessageBlocked =
       this.state.messageBlockList.includes(msg.id) ||
       this.state.messageBlockList.includes(msg.campaign);
+    const isBlocked =
+      isMessageBlocked || isBlockedByGroup || isProviderExcluded;
     const impressions = this.state.messageImpressions[msg.id]
       ? this.state.messageImpressions[msg.id].length
       : 0;
 
     let itemClassName = "message-item";
-    if (isCurrent) {
-      itemClassName += " current";
-    }
     if (isBlocked) {
       itemClassName += " blocked";
     }
@@ -629,6 +793,71 @@ export class ASRouterAdminInner extends React.PureComponent {
           <br />({impressions} impressions)
         </td>
         <td className="message-summary">
+          {isBlocked && (
+            <tr>
+              Block reason:
+              {isBlockedByGroup && " Blocked by group"}
+              {isProviderExcluded && " Excluded by provider"}
+              {isMessageBlocked && " Message blocked"}
+            </tr>
+          )}
+          <tr>
+            <pre>{JSON.stringify(msg, null, 2)}</pre>
+          </tr>
+        </td>
+      </tr>
+    );
+  }
+
+  pushWNMessage(event, msg) {
+    let ele = event.target;
+    if (ele.checked) {
+      this.setState(prevState => ({
+        WNMessages: prevState.WNMessages.concat(msg),
+      }));
+    } else if (!ele.checked && this.state.WNMessages.length === 1) {
+      this.setState({ WNMessages: [] });
+    } else {
+      this.setState(prevState => ({
+        WNMessages: prevState.WNMessages.splice(
+          prevState.WNMessages.indexOf(msg),
+          1
+        ),
+      }));
+    }
+  }
+
+  renderWNMessageItem(msg) {
+    const isBlocked =
+      this.state.messageBlockList.includes(msg.id) ||
+      this.state.messageBlockList.includes(msg.campaign);
+    const impressions = this.state.messageImpressions[msg.id]
+      ? this.state.messageImpressions[msg.id].length
+      : 0;
+
+    let itemClassName = "message-item";
+    if (isBlocked) {
+      itemClassName += " blocked";
+    }
+
+    return (
+      <tr className={itemClassName} key={`${msg.id}-${msg.provider}`}>
+        <td className="message-id">
+          <span>
+            {msg.id} <br />
+            <br />({impressions} impressions)
+          </span>
+        </td>
+        <td>
+          <input
+            type="checkbox"
+            id={`${msg.id} checkbox`}
+            name={`${msg.id} checkbox`}
+            // eslint-disable-next-line react/jsx-no-bind
+            onClick={e => this.pushWNMessage(e, msg.id)}
+          />
+        </td>
+        <td className="message-summary">
           <pre>{JSON.stringify(msg, null, 2)}</pre>
         </td>
       </tr>
@@ -652,15 +881,31 @@ export class ASRouterAdminInner extends React.PureComponent {
     );
   }
 
+  renderWNMessages() {
+    if (!this.state.messages) {
+      return null;
+    }
+    const messagesToShow = this.state.messages.filter(
+      message => message.provider === "whats-new-panel"
+    );
+    return (
+      <table>
+        <tbody>
+          {messagesToShow.map(msg => this.renderWNMessageItem(msg))}
+        </tbody>
+      </table>
+    );
+  }
+
   renderMessageFilter() {
     if (!this.state.providers) {
       return null;
     }
+
     return (
       <p>
         {/* eslint-disable-next-line prettier/prettier */}
-      Show messages from{" "}
-      {/* eslint-disable-next-line jsx-a11y/no-onchange */}
+        Show messages from {/* eslint-disable-next-line jsx-a11y/no-onchange */}
         <select
           value={this.state.messageFilter}
           onChange={this.onChangeMessageFilter}
@@ -672,6 +917,15 @@ export class ASRouterAdminInner extends React.PureComponent {
             </option>
           ))}
         </select>
+        {this.state.messageFilter !== "all" &&
+        !this.state.messageFilter.includes("_local_testing") ? (
+          <button
+            className="button messages-reset"
+            onClick={this.handleClearAllImpressionsByProvider}
+          >
+            Reset All
+          </button>
+        ) : null}
       </p>
     );
   }
@@ -935,32 +1189,14 @@ export class ASRouterAdminInner extends React.PureComponent {
     });
   }
 
-  renderPocketStory(story) {
-    return (
-      <tr className="message-item" key={story.guid}>
-        <td className="message-id">
-          <span>
-            {story.guid} <br />
-          </span>
-        </td>
-        <td className="message-summary">
-          <pre>{JSON.stringify(story, null, 2)}</pre>
-        </td>
-      </tr>
-    );
-  }
+  _getGroupImpressionsCount(id, frequency) {
+    if (frequency) {
+      return this.state.groupImpressions[id]
+        ? this.state.groupImpressions[id].length
+        : 0;
+    }
 
-  renderPocketStories() {
-    const { rows } =
-      this.props.Sections.find(Section => Section.id === "topstories") || {};
-
-    return (
-      <table>
-        <tbody>
-          {rows && rows.map(story => this.renderPocketStory(story))}
-        </tbody>
-      </table>
-    );
+    return "n/a";
   }
 
   renderDiscoveryStream() {
@@ -1017,6 +1253,21 @@ export class ASRouterAdminInner extends React.PureComponent {
           </tr>
           <tr>
             <td>
+              <b> Medium </b>
+            </td>
+            <td>
+              {" "}
+              <input
+                type="text"
+                name="medium"
+                placeholder="referral"
+                value={this.state.attributionParameters.medium}
+                onChange={this.onChangeAttributionParameters}
+              />{" "}
+            </td>
+          </tr>
+          <tr>
+            <td>
               <b> Campaign </b>
             </td>
             <td>
@@ -1041,6 +1292,51 @@ export class ASRouterAdminInner extends React.PureComponent {
                 name="content"
                 placeholder="iridium@particlecore.github.io"
                 value={this.state.attributionParameters.content}
+                onChange={this.onChangeAttributionParameters}
+              />{" "}
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <b> Experiment </b>
+            </td>
+            <td>
+              {" "}
+              <input
+                type="text"
+                name="experiment"
+                placeholder="ua-onboarding"
+                value={this.state.attributionParameters.experiment}
+                onChange={this.onChangeAttributionParameters}
+              />{" "}
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <b> Variation </b>
+            </td>
+            <td>
+              {" "}
+              <input
+                type="text"
+                name="variation"
+                placeholder="chrome"
+                value={this.state.attributionParameters.variation}
+                onChange={this.onChangeAttributionParameters}
+              />{" "}
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <b> User Agent </b>
+            </td>
+            <td>
+              {" "}
+              <input
+                type="text"
+                name="ua"
+                placeholder="Google Chrome 123"
+                value={this.state.attributionParameters.ua}
                 onChange={this.onChangeAttributionParameters}
               />{" "}
             </td>
@@ -1100,12 +1396,8 @@ export class ASRouterAdminInner extends React.PureComponent {
   }
 
   renderTrailheadInfo() {
-    const {
-      trailheadInterrupt,
-      trailheadTriplet,
-      trailheadInitialized,
-    } = this.state;
-    return trailheadInitialized ? (
+    const { trailheadInterrupt, trailheadTriplet } = this.state.trailhead;
+    return (
       <table className="minimal-table">
         <tbody>
           <tr>
@@ -1118,17 +1410,51 @@ export class ASRouterAdminInner extends React.PureComponent {
           </tr>
         </tbody>
       </table>
-    ) : (
-      <p>
-        Trailhead is not initialized. To update these values, load
-        about:welcome.
-      </p>
+    );
+  }
+
+  renderWNPTests() {
+    return (
+      <div>
+        <p className="helpLink">
+          <span className="icon icon-small-spacer icon-info" />{" "}
+          <span>
+            To correctly render selected messages, please check "Disable Popup
+            Auto-Hide" in the browser toolbox, or set{" "}
+            <i>ui.popup.disable_autohide</i> to <b>true</b> in{" "}
+            <i>about:config</i>.
+          </span>
+        </p>
+        <div>
+          <button
+            className="ASRouterButton primary button"
+            onClick={this.handleForceWNP}
+          >
+            Open What's New Panel
+          </button>
+          <button
+            className="ASRouterButton secondary button"
+            onClick={this.handleUpdateWNMessages}
+          >
+            Render Selected Messages
+          </button>
+          <h2>Messages</h2>
+          {this.renderWNMessages()}
+        </div>
+      </div>
     );
   }
 
   getSection() {
     const [section] = this.props.location.routes;
     switch (section) {
+      case "wnpanel":
+        return (
+          <React.Fragment>
+            <h2>What's New Panel</h2>
+            {this.renderWNPTests()}
+          </React.Fragment>
+        );
       case "targeting":
         return (
           <React.Fragment>
@@ -1142,11 +1468,33 @@ export class ASRouterAdminInner extends React.PureComponent {
             {this.renderAttributionParamers()}
           </React.Fragment>
         );
-      case "pocket":
+      case "groups":
         return (
           <React.Fragment>
-            <h2>Pocket</h2>
-            {this.renderPocketStories()}
+            <h2>Message Groups</h2>
+            <table>
+              <thead>
+                <tr className="message-item">
+                  <td>Enabled</td>
+                  <td>Impressions count</td>
+                  <td>Custom frequency</td>
+                </tr>
+              </thead>
+              {this.state.groups &&
+                this.state.groups.map(({ id, enabled, frequency }, index) => (
+                  <Row key={id}>
+                    <td>
+                      <TogglePrefCheckbox
+                        checked={enabled}
+                        pref={id}
+                        onChange={this.toggleGroups}
+                      />
+                    </td>
+                    <td>{this._getGroupImpressionsCount(id, frequency)}</td>
+                    <td>{JSON.stringify(frequency, null, 2)}</td>
+                  </Row>
+                ))}
+            </table>
           </React.Fragment>
         );
       case "ds":
@@ -1154,7 +1502,10 @@ export class ASRouterAdminInner extends React.PureComponent {
           <React.Fragment>
             <h2>Discovery Stream</h2>
             <DiscoveryStreamAdmin
-              state={this.props.DiscoveryStream}
+              state={{
+                DiscoveryStream: this.props.DiscoveryStream,
+                Personalization: this.props.Personalization,
+              }}
               otherPrefs={this.props.Prefs.values}
               dispatch={this.props.dispatch}
             />
@@ -1205,10 +1556,13 @@ export class ASRouterAdminInner extends React.PureComponent {
               <a href="#devtools">General</a>
             </li>
             <li>
+              <a href="#devtools-wnpanel">What's New Panel</a>
+            </li>
+            <li>
               <a href="#devtools-targeting">Targeting</a>
             </li>
             <li>
-              <a href="#devtools-pocket">Pocket</a>
+              <a href="#devtools-groups">Message Groups</a>
             </li>
             <li>
               <a href="#devtools-ds">Discovery Stream</a>
@@ -1317,5 +1671,6 @@ const _ASRouterAdmin = props => (
 export const ASRouterAdmin = connect(state => ({
   Sections: state.Sections,
   DiscoveryStream: state.DiscoveryStream,
+  Personalization: state.Personalization,
   Prefs: state.Prefs,
 }))(_ASRouterAdmin);

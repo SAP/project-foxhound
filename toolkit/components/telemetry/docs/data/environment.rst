@@ -82,6 +82,7 @@ Structure:
           content: <string>, // identifier to indicate the particular link within a campaign
           variation: <string>, // name/id of the variation cohort used in the enrolled funnel experiment
           experiment: <string>, // name/id of the enrolled funnel experiment
+          ua: <string>, // identifier derived from the user agent downloading the installer, e.g., chrome, Google Chrome 123
         },
         sandbox: {
           effectiveContentProcessLevel: <integer>,
@@ -150,6 +151,8 @@ Structure:
             windowsUBR: <number>, // windows 10 only or null on failure
             installYear: <number>, // windows only or null on failure
             locale: <string>, // "en" or null on failure
+            hasPrefetch: <bool>, // windows only, or null on failure
+            hasSuperfetch: <bool>, // windows only, or nul on failure
         },
         hdd: {
           profile: { // hdd where the profile folder is located
@@ -171,6 +174,7 @@ Structure:
         gfx: {
             D2DEnabled: <bool>, // null on failure
             DWriteEnabled: <bool>, // null on failure
+            ContentBackend: <string> // One of "Cairo", "Skia", or "Direct2D 1.1"
             Headless: <bool>, // null on failure
             //DWriteVersion: <string>, // temporarily removed, pending bug 1154500
             adapters: [
@@ -209,6 +213,7 @@ Structure:
               //   "unavailable" - Safe Mode or OS restriction prevents use.
               //   "blocked"     - Blocked due to an internal condition such as safe mode.
               //   "blacklisted" - Blocked due to a blacklist restriction.
+              //   "denied"      - Blocked due to allowlist restrictions.
               //   "disabled"    - User explicitly disabled this default feature.
               //   "failed"      - This feature was attempted but failed to initialize.
               //   "available"   - User has this feature available.
@@ -374,17 +379,20 @@ This object contains user preferences.
 
 Each key in the object is the name of a preference. A key's value depends on the policy with which the preference was collected. There are three such policies, "value", "state", and "default value". For preferences collected under the "value" policy, the value will be the preference's value. For preferences collected under the "state" policy, the value will be an opaque marker signifying only that the preference has a user value. The "state" policy is therefore used when user privacy is a concern. For preferences collected under the "default value" policy, the value will be the preference's default value, if the preference exists. If the preference does not exist, there is no key or value.
 
-The following is a partial list of collected preferences.
+The following is a partial list of `collected preferences <https://searchfox.org/mozilla-central/search?q=const+DEFAULT_ENVIRONMENT_PREFS&path=>`_.
 
 - ``browser.search.suggest.enabled``: The "master switch" for search suggestions everywhere in Firefox (search bar, urlbar, etc.). Defaults to true.
 
-- ``browser.urlbar.suggest.searches``: True if search suggestions are enabled in the urlbar. Defaults to false.
+- ``browser.urlbar.openViewOnFocus``: False if the user has disabled the "open top sites when focusing the address bar" feature. Defaults to true.
 
-- ``browser.urlbar.userMadeSearchSuggestionsChoice``: True if the user has clicked Yes or No in the urlbar's opt-in notification. Defaults to false.
+- ``browser.urlbar.suggest.searches``: True if search suggestions are enabled in the urlbar. Defaults to false.
 
 - ``browser.zoom.full`` (deprecated): True if zoom is enabled for both text and images, that is if "Zoom Text Only" is not enabled. Defaults to true. This preference was collected in Firefox 50 to 52 (`Bug 979323 <https://bugzilla.mozilla.org/show_bug.cgi?id=979323>`_).
 
 - ``fission.autostart``: True if fission is enabled at startup. Default to false. For more information please visit `the project wiki page <https://wiki.mozilla.org/Project_Fission>`_.
+
+- ``security.tls.version.enable-deprecated``: True if deprecated versions of TLS (1.0 and 1.1) have been enabled by the user. Defaults to false.
+
 attribution
 ~~~~~~~~~~~
 
@@ -467,6 +475,8 @@ This object contains operating system information.
 - ``windowsUBR``: the Windows UBR number, only available for Windows >= 10. This value is incremented by Windows cumulative updates patches.
 - ``installYear``: the Windows only integer representing the year the OS was installed.
 - ``locale``: the string representing the OS locale.
+- ``hasPrefetch``: the Windows-only boolean representing whether or not the OS-based prefetch application start-up optimization is set to use the default settings.
+- ``hasSuperfetch``: the Windows-only boolean representing whether or not the OS-based superfetch application start-up optimization service is running and using the default settings.
 
 addons
 ------

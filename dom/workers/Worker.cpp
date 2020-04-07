@@ -9,6 +9,7 @@
 #include "MessageEventRunnable.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/TimelineConsumers.h"
+#include "mozilla/Unused.h"
 #include "mozilla/WorkerTimelineMarker.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowOuter.h"
@@ -28,15 +29,22 @@ already_AddRefed<Worker> Worker::Constructor(const GlobalObject& aGlobal,
                                              ErrorResult& aRv) {
   JSContext* cx = aGlobal.Context();
 
+  nsCOMPtr<nsIGlobalObject> globalObject =
+      do_QueryInterface(aGlobal.GetAsSupports());
+
+  if (globalObject->AsInnerWindow() &&
+      !globalObject->AsInnerWindow()->IsCurrentInnerWindow()) {
+    aRv.ThrowInvalidStateError(
+        "Cannot create worker for a going to be discarded document");
+    return nullptr;
+  }
+
   RefPtr<WorkerPrivate> workerPrivate = WorkerPrivate::Constructor(
       cx, aScriptURL, false /* aIsChromeWorker */, WorkerTypeDedicated,
       aOptions.mName, VoidCString(), nullptr /*aLoadInfo */, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
-
-  nsCOMPtr<nsIGlobalObject> globalObject =
-      do_QueryInterface(aGlobal.GetAsSupports());
 
   RefPtr<Worker> worker = new Worker(globalObject, workerPrivate.forget());
   return worker.forget();
@@ -102,15 +110,18 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
   }
 
   JS::CloneDataPolicy clonePolicy;
+  // DedicatedWorkers are always part of the same agent cluster.
+  clonePolicy.allowIntraClusterClonableSharedObjects();
+
   if (NS_IsMainThread()) {
-    nsGlobalWindowInner* win = nsContentUtils::CallerInnerWindow(aCx);
-    if (win && win->CanShareMemory(mWorkerPrivate->AgentClusterId())) {
-      clonePolicy.allowSharedMemory();
+    nsGlobalWindowInner* win = nsContentUtils::CallerInnerWindow();
+    if (win && win->IsSharedMemoryAllowed()) {
+      clonePolicy.allowSharedMemoryObjects();
     }
   } else {
     WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
-    if (worker && worker->CanShareMemory(mWorkerPrivate->AgentClusterId())) {
-      clonePolicy.allowSharedMemory();
+    if (worker && worker->IsSharedMemoryAllowed()) {
+      clonePolicy.allowSharedMemoryObjects();
     }
   }
 
@@ -130,9 +141,10 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
     return;
   }
 
-  if (!runnable->Dispatch()) {
-    aRv.Throw(NS_ERROR_FAILURE);
-  }
+  // The worker could have closed between the time we entered this function and
+  // checked ParentStatusProtected and now, which could cause the dispatch to
+  // fail.
+  Unused << NS_WARN_IF(!runnable->Dispatch());
 }
 
 void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
@@ -159,6 +171,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(Worker, DOMEventTargetHelper)
   tmp->Terminate();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(Worker, DOMEventTargetHelper)

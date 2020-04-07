@@ -1,7 +1,3 @@
-# The base image is a last known working snapshot of this image. We do this
-# to work around problems rebuilding desktop1604-test. See bug 1503756 for
-# the ugly details. Bug 1511527 tracks undoing this hack and building from
-# a fresh ubuntu image.
 FROM          debian:buster
 MAINTAINER    Edwin Takahashi <egao@mozilla.com>
 
@@ -48,9 +44,6 @@ ADD topsrcdir/taskcluster/scripts/run-task /builds/worker/bin/run-task
 
 # %include taskcluster/scripts/misc/fetch-content
 ADD topsrcdir/taskcluster/scripts/misc/fetch-content /builds/worker/bin/fetch-content
-
-# %include taskcluster/scripts/tester/test-linux.sh
-ADD topsrcdir/taskcluster/scripts/tester/test-linux.sh /builds/worker/bin/test-linux.sh
 
 ADD topsrcdir/python/mozbuild/mozbuild/action/tooltool.py /builds/worker/scripts/tooltool.py
 

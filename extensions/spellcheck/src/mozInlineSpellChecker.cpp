@@ -50,12 +50,8 @@
 #include "nsCRT.h"
 #include "nsGenericHTMLElement.h"
 #include "nsRange.h"
-#include "nsIPlaintextEditor.h"
 #include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "nsIRunnable.h"
-#include "nsISelectionController.h"
-#include "nsIServiceManager.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
 #include "nsUnicharUtils.h"
@@ -64,7 +60,6 @@
 #include "nsRange.h"
 #include "nsContentUtils.h"
 #include "nsIObserverService.h"
-#include "nsITextControlElement.h"
 #include "prtime.h"
 
 using namespace mozilla;
@@ -139,7 +134,7 @@ nsresult mozInlineSpellStatus::InitForEditorChange(
   mOp = eOpChange;
 
   // range to check
-  mRange = new nsRange(aPreviousNode);
+  mRange = nsRange::Create(aPreviousNode);
 
   // ...we need to put the start and end in the correct order
   ErrorResult errorResult;
@@ -424,18 +419,14 @@ Document* mozInlineSpellStatus::GetDocument() const {
 
 already_AddRefed<nsRange> mozInlineSpellStatus::PositionToCollapsedRange(
     nsINode* aNode, uint32_t aOffset) {
-  RefPtr<Document> document = GetDocument();
-  if (NS_WARN_IF(!document)) {
+  if (NS_WARN_IF(!aNode) || NS_WARN_IF(!GetDocument())) {
     return nullptr;
   }
-
-  RefPtr<nsRange> range = new nsRange(document);
-
-  nsresult rv = range->CollapseTo(aNode, aOffset);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return nullptr;
-  }
-
+  IgnoredErrorResult ignoredError;
+  RefPtr<nsRange> range =
+      nsRange::Create(aNode, aOffset, aNode, aOffset, ignoredError);
+  NS_WARNING_ASSERTION(!ignoredError.Failed(),
+                       "Creating collapsed range failed");
   return range.forget();
 }
 
@@ -501,8 +492,8 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(mozInlineSpellChecker)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(mozInlineSpellChecker)
 
-NS_IMPL_CYCLE_COLLECTION(mozInlineSpellChecker, mTextEditor, mSpellCheck,
-                         mCurrentSelectionAnchorNode)
+NS_IMPL_CYCLE_COLLECTION_WEAK(mozInlineSpellChecker, mTextEditor, mSpellCheck,
+                              mCurrentSelectionAnchorNode)
 
 mozInlineSpellChecker::SpellCheckingState
     mozInlineSpellChecker::gCanEnableSpellChecking =
@@ -576,7 +567,7 @@ nsresult mozInlineSpellChecker::Cleanup(bool aDestroyingFrames) {
   // observers.  They may receive two consecutive STARTED notifications for
   // example, which we guarantee will not happen.
 
-  RefPtr<TextEditor> textEditor = mTextEditor.forget();
+  RefPtr<TextEditor> textEditor = std::move(mTextEditor);
   if (mPendingSpellCheck) {
     // Cancel the pending editor spell checker initialization.
     mPendingSpellCheck = nullptr;
@@ -852,8 +843,8 @@ mozInlineSpellChecker::GetMisspelledWord(nsINode* aNode, int32_t aOffset,
 
 NS_IMETHODIMP
 mozInlineSpellChecker::ReplaceWord(nsINode* aNode, int32_t aOffset,
-                                   const nsAString& newword) {
-  if (NS_WARN_IF(!mTextEditor) || NS_WARN_IF(newword.IsEmpty())) {
+                                   const nsAString& aNewWord) {
+  if (NS_WARN_IF(!mTextEditor) || NS_WARN_IF(aNewWord.IsEmpty())) {
     return NS_ERROR_FAILURE;
   }
 
@@ -865,8 +856,16 @@ mozInlineSpellChecker::ReplaceWord(nsINode* aNode, int32_t aOffset,
     return NS_OK;
   }
 
+  // In usual cases, any words shouldn't include line breaks, but technically,
+  // they may include and we need to avoid `HTMLTextAreaElement.value` returns
+  // \r.  Therefore, we need to handle it here.
+  nsString newWord(aNewWord);
+  if (!mTextEditor->AsHTMLEditor()) {
+    nsContentUtils::PlatformToDOMLineBreaks(newWord);
+  }
+
   RefPtr<TextEditor> textEditor(mTextEditor);
-  DebugOnly<nsresult> rv = textEditor->ReplaceTextAsAction(newword, range);
+  DebugOnly<nsresult> rv = textEditor->ReplaceTextAsAction(newWord, range);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to insert the new word");
   return NS_OK;
 }
@@ -976,7 +975,7 @@ nsresult mozInlineSpellChecker::MakeSpellCheckRange(nsINode* aStartNode,
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<nsRange> range = new nsRange(doc);
+  RefPtr<nsRange> range = nsRange::Create(doc);
 
   // possibly use full range of the editor
   if (!aStartNode || !aEndNode) {
@@ -1088,8 +1087,7 @@ bool mozInlineSpellChecker::ShouldSpellCheckNode(TextEditor* aTextEditor,
       while (node && node->IsInNativeAnonymousSubtree()) {
         node = node->GetParent();
       }
-      nsCOMPtr<nsITextControlElement> textControl = do_QueryInterface(node);
-      if (textControl) {
+      if (node && node->IsTextControlElement()) {
         return true;
       }
     }
@@ -1520,7 +1518,7 @@ nsresult mozInlineSpellChecker::ResumeCheck(
     // no active dictionary
     int32_t count = spellCheckSelection->RangeCount();
     for (int32_t index = count - 1; index >= 0; index--) {
-      nsRange* checkRange = spellCheckSelection->GetRangeAt(index);
+      RefPtr<nsRange> checkRange = spellCheckSelection->GetRangeAt(index);
       if (checkRange) {
         RemoveRange(spellCheckSelection, checkRange);
       }
@@ -1607,8 +1605,9 @@ nsresult mozInlineSpellChecker::RemoveRange(Selection* aSpellCheckSelection,
   NS_ENSURE_ARG_POINTER(aRange);
 
   ErrorResult rv;
-  aSpellCheckSelection->RemoveRangeAndUnselectFramesAndNotifyListeners(*aRange,
-                                                                       rv);
+  RefPtr<nsRange> range{aRange};
+  RefPtr<Selection> selection{aSpellCheckSelection};
+  selection->RemoveRangeAndUnselectFramesAndNotifyListeners(*range, rv);
   if (!rv.Failed() && mNumWordsInSpellSelection) mNumWordsInSpellSelection--;
 
   return rv.StealNSResult();

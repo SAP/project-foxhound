@@ -17,6 +17,7 @@
 #
 #test_keys = (
 #    'default-ee.key',
+#    'delegated.key',
 #)
 #
 #for test_key in test_keys:

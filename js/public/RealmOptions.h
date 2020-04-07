@@ -19,14 +19,14 @@
 
 #include "js/Class.h"  // JSTraceOp
 
-struct JSContext;
-class JSObject;
+struct JS_PUBLIC_API JSContext;
+class JS_PUBLIC_API JSObject;
 
 namespace JS {
 
-class Compartment;
-class Realm;
-class Zone;
+class JS_PUBLIC_API Compartment;
+class JS_PUBLIC_API Realm;
+class JS_PUBLIC_API Zone;
 
 }  // namespace JS
 
@@ -128,6 +128,15 @@ class JS_PUBLIC_API RealmCreationOptions {
   bool getSharedMemoryAndAtomicsEnabled() const;
   RealmCreationOptions& setSharedMemoryAndAtomicsEnabled(bool flag);
 
+  // When these prefs (COOP and COEP) are not enabled, shared memory objects
+  // (e.g. SAB) are not allowed to be postMessage()'ed. And we want to provide
+  // a clear warning message to users/developer so that they would have an idea
+  // if the implementations of the COOP and COEP headers are finished or not. So
+  // that they would know if they can fix the SAB by deploying the COOP and
+  // COEP headers or not.
+  bool getCoopAndCoepEnabled() const;
+  RealmCreationOptions& setCoopAndCoepEnabled(bool flag);
+
   bool getStreamsEnabled() const { return streams_; }
   RealmCreationOptions& setStreamsEnabled(bool flag) {
     streams_ = flag;
@@ -152,6 +161,12 @@ class JS_PUBLIC_API RealmCreationOptions {
     return *this;
   }
 
+  bool getReadableStreamPipeToEnabled() const { return readableStreamPipeTo_; }
+  RealmCreationOptions& setReadableStreamPipeToEnabled(bool enabled) {
+    readableStreamPipeTo_ = enabled;
+    return *this;
+  }
+
   bool getFieldsEnabled() const { return fields_; }
   RealmCreationOptions& setFieldsEnabled(bool flag) {
     fields_ = flag;
@@ -161,6 +176,26 @@ class JS_PUBLIC_API RealmCreationOptions {
   bool getAwaitFixEnabled() const { return awaitFix_; }
   RealmCreationOptions& setAwaitFixEnabled(bool flag) {
     awaitFix_ = flag;
+    return *this;
+  }
+
+  bool getWeakRefsEnabled() const { return weakRefs_; }
+  RealmCreationOptions& setWeakRefsEnabled(bool flag) {
+    weakRefs_ = flag;
+    return *this;
+  }
+
+  bool getToSourceEnabled() const { return toSource_; }
+  RealmCreationOptions& setToSourceEnabled(bool flag) {
+    toSource_ = flag;
+    return *this;
+  }
+
+  bool getPropertyErrorMessageFixEnabled() const {
+    return propertyErrorMessageFix_;
+  }
+  RealmCreationOptions& setPropertyErrorMessageFixEnabled(bool flag) {
+    propertyErrorMessageFix_ = flag;
     return *this;
   }
 
@@ -174,6 +209,12 @@ class JS_PUBLIC_API RealmCreationOptions {
     return *this;
   }
 
+  uint64_t profilerRealmID() const { return profilerRealmID_; }
+  RealmCreationOptions& setProfilerRealmID(uint64_t id) {
+    profilerRealmID_ = id;
+    return *this;
+  }
+
  private:
   JSTraceOp traceGlobal_ = nullptr;
   CompartmentSpecifier compSpec_ = CompartmentSpecifier::NewCompartmentAndZone;
@@ -181,17 +222,23 @@ class JS_PUBLIC_API RealmCreationOptions {
     Compartment* comp_;
     Zone* zone_;
   };
+  uint64_t profilerRealmID_ = 0;
   bool invisibleToDebugger_ = false;
   bool mergeable_ = false;
   bool preserveJitCode_ = false;
   bool cloneSingletons_ = false;
   bool sharedMemoryAndAtomics_ = false;
+  bool coopAndCoep_ = false;
   bool streams_ = false;
   bool readableByteStreams_ = false;
   bool byobStreamReaders_ = false;
   bool writableStreams_ = false;
+  bool readableStreamPipeTo_ = false;
   bool fields_ = false;
   bool awaitFix_ = false;
+  bool weakRefs_ = false;
+  bool toSource_ = false;
+  bool propertyErrorMessageFix_ = false;
   bool secureContext_ = false;
 };
 
@@ -214,12 +261,6 @@ class JS_PUBLIC_API RealmBehaviors {
   bool disableLazyParsing() const { return disableLazyParsing_; }
   RealmBehaviors& setDisableLazyParsing(bool flag) {
     disableLazyParsing_ = flag;
-    return *this;
-  }
-
-  bool deferredParserAlloc() const { return deferredParserAlloc_; }
-  RealmBehaviors& setDeferredParserAlloc(bool flag) {
-    deferredParserAlloc_ = flag;
     return *this;
   }
 
@@ -281,7 +322,6 @@ class JS_PUBLIC_API RealmBehaviors {
   // singleton, instead of returning the value which is baked in the JSScript.
   bool singletonsAsTemplates_ = true;
   bool isNonLive_ = false;
-  bool deferredParserAlloc_ = false;
 };
 
 /**

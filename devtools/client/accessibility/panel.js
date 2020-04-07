@@ -10,8 +10,10 @@ const EventEmitter = require("devtools/shared/event-emitter");
 
 const Telemetry = require("devtools/client/shared/telemetry");
 
-const { Picker } = require("./picker");
-const { A11Y_SERVICE_DURATION } = require("./constants");
+const { Picker } = require("devtools/client/accessibility/picker");
+const {
+  A11Y_SERVICE_DURATION,
+} = require("devtools/client/accessibility/constants");
 
 // The panel's window global is an EventEmitter firing the following events:
 const EVENTS = {
@@ -86,25 +88,20 @@ AccessibilityPanel.prototype = {
     );
 
     this.shouldRefresh = true;
-    this.panelWin.gToolbox = this._toolbox;
 
     await this.startup.initAccessibility();
-    if (this.supports.enableDisable) {
-      this.picker = new Picker(this);
-    }
-
-    if (this.supports.simulation) {
-      this.simulator = await this.front.getSimulator();
-    }
-
+    await this.accessibilityProxy.ensureReady();
+    this.picker = new Picker(this);
     this.fluentBundles = await this.createFluentBundles();
 
     this.updateA11YServiceDurationTimer();
-    this.front.on("init", this.updateA11YServiceDurationTimer);
-    this.front.on("shutdown", this.updateA11YServiceDurationTimer);
-
-    this.front.on("init", this.forceUpdatePickerButton);
-    this.front.on("shutdown", this.forceUpdatePickerButton);
+    this.accessibilityProxy.startListeningForLifecycleEvents({
+      init: [this.updateA11YServiceDurationTimer, this.forceUpdatePickerButton],
+      shutdown: [
+        this.updateA11YServiceDurationTimer,
+        this.forceUpdatePickerButton,
+      ],
+    });
 
     this.isReady = true;
     this.emit("ready");
@@ -119,7 +116,7 @@ AccessibilityPanel.prototype = {
   async createFluentBundles() {
     const locales = Services.locale.appLocalesAsBCP47;
     const generator = L10nRegistry.generateBundles(locales, [
-      "devtools/accessibility.ftl",
+      "devtools/client/accessibility.ftl",
     ]);
 
     // Return value of generateBundles is a generator and should be converted to
@@ -172,16 +169,29 @@ AccessibilityPanel.prototype = {
     // Alright reset the flag we are about to refresh the panel.
     this.shouldRefresh = false;
     this.postContentMessage("initialize", {
-      front: this.front,
-      walker: this.walker,
       supports: this.supports,
       fluentBundles: this.fluentBundles,
-      simulator: this.simulator,
+      toolbox: this._toolbox,
+      getAccessibilityTreeRoot: this.accessibilityProxy
+        .getAccessibilityTreeRoot,
+      startListeningForAccessibilityEvents: this.accessibilityProxy
+        .startListeningForAccessibilityEvents,
+      stopListeningForAccessibilityEvents: this.accessibilityProxy
+        .stopListeningForAccessibilityEvents,
+      audit: this.accessibilityProxy.audit,
+      simulate: this.accessibilityProxy.simulate,
+      enableAccessibility: this.accessibilityProxy.enableAccessibility,
+      disableAccessibility: this.accessibilityProxy.disableAccessibility,
+      resetAccessiblity: this.accessibilityProxy.resetAccessiblity,
+      startListeningForLifecycleEvents: this.accessibilityProxy
+        .startListeningForLifecycleEvents,
+      stopListeningForLifecycleEvents: this.accessibilityProxy
+        .stopListeningForLifecycleEvents,
     });
   },
 
   updateA11YServiceDurationTimer() {
-    if (this.front.enabled) {
+    if (this.accessibilityProxy.enabled) {
       this._telemetry.start(A11Y_SERVICE_DURATION, this);
     } else {
       this._telemetry.finish(A11Y_SERVICE_DURATION, this, true);
@@ -189,7 +199,7 @@ AccessibilityPanel.prototype = {
   },
 
   selectAccessible(accessibleFront) {
-    this.postContentMessage("selectAccessible", this.walker, accessibleFront);
+    this.postContentMessage("selectAccessible", accessibleFront);
   },
 
   selectAccessibleForNode(nodeFront, reason) {
@@ -201,20 +211,11 @@ AccessibilityPanel.prototype = {
       );
     }
 
-    this.postContentMessage(
-      "selectNodeAccessible",
-      this.walker,
-      nodeFront,
-      this.supports
-    );
+    this.postContentMessage("selectNodeAccessible", nodeFront);
   },
 
   highlightAccessible(accessibleFront) {
-    this.postContentMessage(
-      "highlightAccessible",
-      this.walker,
-      accessibleFront
-    );
+    this.postContentMessage("highlightAccessible", accessibleFront);
   },
 
   postContentMessage(type, ...args) {
@@ -254,16 +255,8 @@ AccessibilityPanel.prototype = {
     this.picker && this.picker.stop();
   },
 
-  get front() {
-    return this.startup.accessibility;
-  },
-
-  get walker() {
-    return this.startup.walker;
-  },
-
-  get supports() {
-    return this.startup._supports;
+  get accessibilityProxy() {
+    return this.startup.accessibilityProxy;
   },
 
   /**
@@ -283,6 +276,8 @@ AccessibilityPanel.prototype = {
     }
     this._destroyed = true;
 
+    this.postContentMessage("destroy");
+
     this.target.off("navigate", this.onTabNavigated);
     this._toolbox.off("select", this.onPanelVisibilityChange);
 
@@ -295,22 +290,21 @@ AccessibilityPanel.prototype = {
       this.onAccessibilityInspectorUpdated
     );
 
-    // Older versions of debugger server do not support picker functionality.
+    // Older versions of devtools server do not support picker functionality.
     if (this.picker) {
       this.picker.release();
       this.picker = null;
     }
 
-    if (this.front) {
-      this.front.off("init", this.updateA11YServiceDurationTimer);
-      this.front.off("shutdown", this.updateA11YServiceDurationTimer);
-
-      this.front.off("init", this.forceUpdatePickerButton);
-      this.front.off("shutdown", this.forceUpdatePickerButton);
-    }
+    this.accessibilityProxy.stopListeningForLifecycleEvents({
+      init: [this.updateA11YServiceDurationTimer, this.forceUpdatePickerButton],
+      shutdown: [
+        this.updateA11YServiceDurationTimer,
+        this.forceUpdatePickerButton,
+      ],
+    });
 
     this._telemetry = null;
-    this.panelWin.gToolbox = null;
     this.panelWin.gTelemetry = null;
 
     this.emit("destroyed");

@@ -4,8 +4,14 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { RemoteSettings } = ChromeUtils.import(
   "resource://services-settings/remote-settings.js"
 );
+const { UptakeTelemetry } = ChromeUtils.import(
+  "resource://services-common/uptake-telemetry.js"
+);
 const { Downloader } = ChromeUtils.import(
   "resource://services-settings/Attachments.jsm"
+);
+const { TelemetryTestUtils } = ChromeUtils.import(
+  "resource://testing-common/TelemetryTestUtils.jsm"
 );
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
@@ -86,6 +92,14 @@ add_task(async function test_download_writes_file_in_profile() {
 });
 add_task(clear_state);
 
+add_task(async function test_download_as_bytes() {
+  const bytes = await downloader.downloadAsBytes(RECORD);
+
+  // See *.pem file in tests data.
+  Assert.ok(bytes.byteLength > 1500, `Wrong bytes size: ${bytes.byteLength}`);
+});
+add_task(clear_state);
+
 add_task(async function test_file_is_redownloaded_if_size_does_not_match() {
   const fileURL = await downloader.download(RECORD);
   const localFilePath = pathFromURL(fileURL);
@@ -128,9 +142,9 @@ add_task(async function test_download_is_retried_3_times_if_download_fails() {
 
   let called = 0;
   const _fetchAttachment = downloader._fetchAttachment;
-  downloader._fetchAttachment = (url, destination) => {
+  downloader._fetchAttachment = async url => {
     called++;
-    return _fetchAttachment(url, destination);
+    return _fetchAttachment(url);
   };
 
   let error;
@@ -153,7 +167,10 @@ add_task(async function test_download_is_retried_3_times_if_content_fails() {
     },
   };
   let called = 0;
-  downloader._fetchAttachment = () => called++;
+  downloader._fetchAttachment = async () => {
+    called++;
+    return new ArrayBuffer();
+  };
 
   let error;
   try {
@@ -179,6 +196,20 @@ add_task(async function test_delete_removes_local_file() {
 });
 add_task(clear_state);
 
+add_task(async function test_delete_all() {
+  const client = RemoteSettings("some-collection");
+  const kintoCol = await client.openCollection();
+  await kintoCol.create(RECORD);
+  const fileURL = await downloader.download(RECORD);
+  const localFilePath = pathFromURL(fileURL);
+  Assert.ok(await OS.File.exists(localFilePath));
+
+  await client.attachments.deleteAll();
+
+  Assert.ok(!(await OS.File.exists(localFilePath)));
+});
+add_task(clear_state);
+
 add_task(async function test_downloader_is_accessible_via_client() {
   const client = RemoteSettings("some-collection");
 
@@ -194,5 +225,70 @@ add_task(async function test_downloader_is_accessible_via_client() {
       RECORD.attachment.filename,
     ].join("/")
   );
+});
+add_task(clear_state);
+
+add_task(async function test_downloader_reports_download_errors() {
+  await withFakeChannel("nightly", async () => {
+    const client = RemoteSettings("some-collection");
+
+    const record = {
+      attachment: {
+        ...RECORD.attachment,
+        location: "404-error.pem",
+      },
+    };
+
+    try {
+      await client.attachments.download(record, { retry: 0 });
+    } catch (e) {}
+
+    TelemetryTestUtils.assertEvents([
+      [
+        "uptake.remotecontent.result",
+        "uptake",
+        "remotesettings",
+        UptakeTelemetry.STATUS.DOWNLOAD_ERROR,
+        {
+          source: client.identifier,
+        },
+      ],
+    ]);
+  });
+});
+add_task(clear_state);
+
+add_task(async function test_downloader_reports_offline_error() {
+  const backupOffline = Services.io.offline;
+  Services.io.offline = true;
+
+  await withFakeChannel("nightly", async () => {
+    try {
+      const client = RemoteSettings("some-collection");
+      const record = {
+        attachment: {
+          ...RECORD.attachment,
+          location: "will-try-and-fail.pem",
+        },
+      };
+      try {
+        await client.attachments.download(record, { retry: 0 });
+      } catch (e) {}
+
+      TelemetryTestUtils.assertEvents([
+        [
+          "uptake.remotecontent.result",
+          "uptake",
+          "remotesettings",
+          UptakeTelemetry.STATUS.NETWORK_OFFLINE_ERROR,
+          {
+            source: client.identifier,
+          },
+        ],
+      ]);
+    } finally {
+      Services.io.offline = backupOffline;
+    }
+  });
 });
 add_task(clear_state);

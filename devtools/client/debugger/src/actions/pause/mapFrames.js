@@ -147,6 +147,7 @@ async function expandFrames(
         id,
         displayName: originalFrame.displayName,
         location: originalFrame.location,
+        index: frame.index,
         source: null,
         thread: frame.thread,
         scope: frame.scope,
@@ -157,6 +158,8 @@ async function expandFrames(
         generatedLocation: frame.generatedLocation,
         originalDisplayName: originalFrame.displayName,
         originalVariables: originalFrame.variables,
+        asyncCause: frame.asyncCause,
+        state: frame.state,
       });
     });
   }
@@ -200,6 +203,7 @@ export function mapFrames(cx: ThreadContext) {
       cx.thread,
       mappedFrames
     );
+
     dispatch({
       type: "MAP_FRAMES",
       cx,

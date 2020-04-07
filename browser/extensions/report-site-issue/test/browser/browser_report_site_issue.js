@@ -16,27 +16,6 @@ async function clickToReportAndAwaitReportTabLoad() {
     document.getElementById(WC_PAGE_ACTION_PANEL_ID).click();
   });
 
-  // wait for the new tab to switch to its final location
-  await new Promise(resolve => {
-    const progressListener = {
-      onLocationChange(browser) {
-        // Only interested in location changes on our browser.
-        if (browser != tab.linkedBrowser) {
-          return;
-        }
-
-        // Check that new location is the URL we want.
-        if (browser.currentURI.spec === "about:blank") {
-          return;
-        }
-
-        gBrowser.removeTabsProgressListener(progressListener);
-        TestUtils.executeSoon(() => resolve());
-      },
-    };
-    gBrowser.addTabsProgressListener(progressListener);
-  });
-
   // wait for the new tab to acknowledge that it received a screenshot
   await BrowserTestUtils.waitForContentEvent(
     gBrowser.selectedBrowser,
@@ -69,7 +48,7 @@ add_task(async function test_opened_page() {
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_PAGE);
   let tab2 = await clickToReportAndAwaitReportTabLoad();
 
-  await ContentTask.spawn(tab2.linkedBrowser, { TEST_PAGE }, async function(
+  await SpecialPowers.spawn(tab2.linkedBrowser, [{ TEST_PAGE }], async function(
     args
   ) {
     async function isGreen(dataUrl) {
@@ -116,8 +95,8 @@ add_task(async function test_opened_page() {
       "docShell.hasMixedDisplayContentBlocked is available"
     );
     is(
-      typeof docShell.hasTrackingContentBlocked,
-      "boolean",
+      typeof docShell.getHasTrackingContentBlocked,
+      "function",
       "docShell.hasTrackingContentBlocked is available"
     );
 
@@ -181,7 +160,7 @@ add_task(async function test_opened_page() {
 
     const log5 = details.consoleLog[4];
     ok(
-      log5.log[0] === "TypeError: document.access is undefined",
+      log5.log[0].match(/TypeError: .*document\.access is undefined/),
       "Script errors are logged"
     );
     ok(log5.level === "error", "Reports correct log level");
@@ -260,7 +239,7 @@ add_task(async function test_framework_detection() {
   );
   let tab2 = await clickToReportAndAwaitReportTabLoad();
 
-  await ContentTask.spawn(tab2.linkedBrowser, {}, async function(args) {
+  await SpecialPowers.spawn(tab2.linkedBrowser, [], async function(args) {
     let doc = content.document;
     let detailsParam = doc.getElementById("details").innerText;
     const details = JSON.parse(detailsParam);
@@ -284,7 +263,7 @@ add_task(async function test_fastclick_detection() {
   );
   let tab2 = await clickToReportAndAwaitReportTabLoad();
 
-  await ContentTask.spawn(tab2.linkedBrowser, {}, async function(args) {
+  await SpecialPowers.spawn(tab2.linkedBrowser, [], async function(args) {
     let doc = content.document;
     let detailsParam = doc.getElementById("details").innerText;
     const details = JSON.parse(detailsParam);
@@ -306,7 +285,7 @@ add_task(async function test_framework_label() {
   );
   let tab2 = await clickToReportAndAwaitReportTabLoad();
 
-  await ContentTask.spawn(tab2.linkedBrowser, {}, async function(args) {
+  await SpecialPowers.spawn(tab2.linkedBrowser, [], async function(args) {
     let doc = content.document;
     let labelParam = doc.getElementById("label").innerText;
     const label = JSON.parse(labelParam);

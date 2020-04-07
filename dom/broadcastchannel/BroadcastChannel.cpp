@@ -9,9 +9,14 @@
 #include "mozilla/dom/BroadcastChannelBinding.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/File.h"
+#include "mozilla/dom/MessageEvent.h"
+#include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
+#include "mozilla/dom/RefMessageBodyService.h"
+#include "mozilla/dom/SharedMessageBody.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/ipc/BackgroundChild.h"
@@ -21,9 +26,7 @@
 #include "nsContentUtils.h"
 
 #include "nsIBFCacheEntry.h"
-#include "nsICookieService.h"
 #include "mozilla/dom/Document.h"
-#include "nsISupportsPrimitives.h"
 
 #ifdef XP_WIN
 #  undef PostMessage
@@ -36,16 +39,6 @@ using namespace ipc;
 namespace dom {
 
 using namespace ipc;
-
-class BroadcastChannelMessage final : public StructuredCloneDataNoTransfers {
- public:
-  NS_INLINE_DECL_REFCOUNTING(BroadcastChannelMessage)
-
-  BroadcastChannelMessage() : StructuredCloneDataNoTransfers() {}
-
- private:
-  ~BroadcastChannelMessage() {}
-};
 
 namespace {
 
@@ -136,7 +129,7 @@ class CloseRunnable final : public nsIRunnable, public nsICancelableRunnable {
   nsresult Cancel() override { return NS_OK; }
 
  private:
-  ~CloseRunnable() {}
+  ~CloseRunnable() = default;
 
   RefPtr<BroadcastChannel> mBC;
 };
@@ -202,8 +195,13 @@ class TeardownRunnableOnWorker final : public WorkerControlRunnable,
 }  // namespace
 
 BroadcastChannel::BroadcastChannel(nsIGlobalObject* aGlobal,
-                                   const nsAString& aChannel)
-    : DOMEventTargetHelper(aGlobal), mChannel(aChannel), mState(StateActive) {
+                                   const nsAString& aChannel,
+                                   const nsID& aPortUUID)
+    : DOMEventTargetHelper(aGlobal),
+      mRefMessageBodyService(RefMessageBodyService::GetOrCreate()),
+      mChannel(aChannel),
+      mState(StateActive),
+      mPortUUID(aPortUUID) {
   MOZ_ASSERT(aGlobal);
   KeepAliveIfHasListenersFor(NS_LITERAL_STRING("message"));
 }
@@ -227,14 +225,21 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
     return nullptr;
   }
 
-  RefPtr<BroadcastChannel> bc = new BroadcastChannel(global, aChannel);
+  nsID portUUID = {};
+  aRv = nsContentUtils::GenerateUUIDInPlace(portUUID);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  RefPtr<BroadcastChannel> bc =
+      new BroadcastChannel(global, aChannel, portUUID);
 
   nsAutoCString origin;
   PrincipalInfo storagePrincipalInfo;
 
   StorageAccess storageAccess;
 
-  nsCOMPtr<nsICookieSettings> cs;
+  nsCOMPtr<nsICookieJarSettings> cjs;
   if (NS_IsMainThread()) {
     nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(global);
     if (NS_WARN_IF(!window)) {
@@ -275,7 +280,7 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
 
     Document* doc = window->GetExtantDoc();
     if (doc) {
-      cs = doc->CookieSettings();
+      cjs = doc->CookieJarSettings();
     }
   } else {
     JSContext* cx = aGlobal.Context();
@@ -304,14 +309,14 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
     storageAccess = workerPrivate->StorageAccess();
     bc->mWorkerRef = workerRef;
 
-    cs = workerPrivate->CookieSettings();
+    cjs = workerPrivate->CookieJarSettings();
   }
 
   // We want to allow opaque origins.
   if (storagePrincipalInfo.type() != PrincipalInfo::TNullPrincipalInfo &&
       (storageAccess == StorageAccess::eDeny ||
        (ShouldPartitionStorage(storageAccess) &&
-        !StoragePartitioningEnabled(storageAccess, cs)))) {
+        !StoragePartitioningEnabled(storageAccess, cjs)))) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return nullptr;
   }
@@ -331,6 +336,7 @@ already_AddRefed<BroadcastChannel> BroadcastChannel::Constructor(
   MOZ_ASSERT(bc->mActor);
 
   bc->mActor->SetParent(bc);
+  CopyUTF8toUTF16(origin, bc->mOrigin);
 
   return bc.forget();
 }
@@ -343,17 +349,26 @@ void BroadcastChannel::PostMessage(JSContext* aCx,
     return;
   }
 
-  RefPtr<BroadcastChannelMessage> data = new BroadcastChannelMessage();
+  Maybe<nsID> agentClusterId;
+  nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal();
+  MOZ_ASSERT(global);
+  if (global) {
+    agentClusterId = global->GetAgentClusterId();
+  }
 
-  data->Write(aCx, aMessage, aRv);
+  RefPtr<SharedMessageBody> data = new SharedMessageBody(
+      StructuredCloneHolder::TransferringNotSupported, agentClusterId);
+
+  data->Write(aCx, aMessage, JS::UndefinedHandleValue, mPortUUID,
+              mRefMessageBodyService, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
 
   RemoveDocFromBFCache();
 
-  ClonedMessageData message;
-  data->BuildClonedMessageDataForBackgroundChild(mActor->Manager(), message);
+  MessageData message;
+  SharedMessageBody::FromSharedToMessageChild(mActor->Manager(), data, message);
   mActor->SendPostMessage(message);
 }
 
@@ -428,6 +443,81 @@ void BroadcastChannel::RemoveDocFromBFCache() {
 void BroadcastChannel::DisconnectFromOwner() {
   Shutdown();
   DOMEventTargetHelper::DisconnectFromOwner();
+}
+
+void BroadcastChannel::MessageReceived(const MessageData& aData) {
+  if (NS_FAILED(CheckCurrentGlobalCorrectness())) {
+    return;
+  }
+
+  nsCOMPtr<nsIGlobalObject> globalObject;
+
+  if (NS_IsMainThread()) {
+    globalObject = GetParentObject();
+  } else {
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(workerPrivate);
+    globalObject = workerPrivate->GlobalScope();
+  }
+
+  AutoJSAPI jsapi;
+  if (!globalObject || !jsapi.Init(globalObject)) {
+    NS_WARNING("Failed to initialize AutoJSAPI object.");
+    return;
+  }
+
+  JSContext* cx = jsapi.cx();
+
+  RefPtr<SharedMessageBody> data = SharedMessageBody::FromMessageToSharedChild(
+      aData, StructuredCloneHolder::TransferringNotSupported);
+  if (NS_WARN_IF(!data)) {
+    DispatchError(cx);
+    return;
+  }
+
+  IgnoredErrorResult rv;
+  JS::Rooted<JS::Value> value(cx);
+
+  data->Read(cx, &value, mRefMessageBodyService,
+             SharedMessageBody::ReadMethod::KeepRefMessageBody, rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    JS_ClearPendingException(cx);
+    DispatchError(cx);
+    return;
+  }
+
+  RemoveDocFromBFCache();
+
+  RootedDictionary<MessageEventInit> init(cx);
+  init.mBubbles = false;
+  init.mCancelable = false;
+  init.mOrigin = mOrigin;
+  init.mData = value;
+
+  RefPtr<MessageEvent> event =
+      MessageEvent::Constructor(this, NS_LITERAL_STRING("message"), init);
+
+  event->SetTrusted(true);
+
+  DispatchEvent(*event);
+}
+
+void BroadcastChannel::MessageDelivered(const nsID& aMessageID,
+                                        uint32_t aOtherBCs) {
+  mRefMessageBodyService->SetMaxCount(aMessageID, aOtherBCs);
+}
+
+void BroadcastChannel::DispatchError(JSContext* aCx) {
+  RootedDictionary<MessageEventInit> init(aCx);
+  init.mBubbles = false;
+  init.mCancelable = false;
+  init.mOrigin = mOrigin;
+
+  RefPtr<Event> event =
+      MessageEvent::Constructor(this, NS_LITERAL_STRING("messageerror"), init);
+  event->SetTrusted(true);
+
+  DispatchEvent(*event);
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(BroadcastChannel)

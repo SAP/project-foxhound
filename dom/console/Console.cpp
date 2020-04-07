@@ -9,6 +9,7 @@
 #include "mozilla/dom/ConsoleBinding.h"
 #include "ConsoleCommon.h"
 
+#include "js/Array.h"  // JS::GetArrayLength, JS::NewArrayObject
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Exceptions.h"
@@ -25,6 +26,7 @@
 #include "mozilla/dom/WorkletGlobalScope.h"
 #include "mozilla/dom/WorkletImpl.h"
 #include "mozilla/dom/WorkletThread.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_devtools.h"
 #include "nsCycleCollectionParticipant.h"
@@ -44,7 +46,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsILoadContext.h"
 #include "nsISensitiveInfoHiddenURI.h"
-#include "nsIServiceManager.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIWebNavigation.h"
 #include "nsIXPConnect.h"
@@ -283,6 +284,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
 
  protected:
   JSObject* CustomReadHandler(JSContext* aCx, JSStructuredCloneReader* aReader,
+                              const JS::CloneDataPolicy& aCloneDataPolicy,
                               uint32_t aTag, uint32_t aIndex) override {
     AssertIsOnMainThread();
 
@@ -307,10 +309,10 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
   }
 
   bool CustomWriteHandler(JSContext* aCx, JSStructuredCloneWriter* aWriter,
-                          JS::Handle<JSObject*> aObj) override {
+                          JS::Handle<JSObject*> aObj,
+                          bool* aSameProcessScopeRequired) override {
     RefPtr<Blob> blob;
-    if (NS_SUCCEEDED(UNWRAP_OBJECT(Blob, aObj, blob)) &&
-        blob->Impl()->MayBeClonedToOtherThreads()) {
+    if (NS_SUCCEEDED(UNWRAP_OBJECT(Blob, aObj, blob))) {
       if (NS_WARN_IF(!JS_WriteUint32Pair(aWriter, CONSOLE_TAG_BLOB,
                                          mClonedData.mBlobs.Length()))) {
         return false;
@@ -342,7 +344,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
     ConsoleCommon::ClearException ce(aCx);
 
     JS::Rooted<JSObject*> arguments(
-        aCx, JS_NewArrayObject(aCx, aCallData->mCopiedArguments.Length()));
+        aCx, JS::NewArrayObject(aCx, aCallData->mCopiedArguments.Length()));
     if (NS_WARN_IF(!arguments)) {
       return false;
     }
@@ -381,7 +383,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
     JS::Rooted<JSObject*> argumentsObj(aCx, &argumentsValue.toObject());
 
     uint32_t length;
-    if (!JS_GetArrayLength(aCx, argumentsObj, &length)) {
+    if (!JS::GetArrayLength(aCx, argumentsObj, &length)) {
       return;
     }
 
@@ -421,7 +423,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
     ConsoleCommon::ClearException ce(aCx);
 
     JS::Rooted<JSObject*> arguments(
-        aCx, JS_NewArrayObject(aCx, aArguments.Length()));
+        aCx, JS::NewArrayObject(aCx, aArguments.Length()));
     if (NS_WARN_IF(!arguments)) {
       return false;
     }
@@ -465,7 +467,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
     }
 
     uint32_t length;
-    if (!JS_GetArrayLength(aCx, argumentsObj, &length)) {
+    if (!JS::GetArrayLength(aCx, argumentsObj, &length)) {
       return;
     }
 
@@ -900,6 +902,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Console)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mConsoleEventNotifier)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDumpFunction)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
   tmp->Shutdown();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -1435,7 +1438,7 @@ void Console::MethodInternal(JSContext* aCx, MethodName aMethodName,
       callData->SetAddonId(principal);
 
 #ifdef DEBUG
-      if (!nsContentUtils::IsSystemPrincipal(principal)) {
+      if (!principal->IsSystemPrincipal()) {
         nsCOMPtr<nsIWebNavigation> webNav = do_GetInterface(mGlobal);
         if (webNav) {
           nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(webNav);
@@ -1571,9 +1574,11 @@ void Console::MethodInternal(JSContext* aCx, MethodName aMethodName,
   // We do this only in workers for now.
   NotifyHandler(aCx, aData, callData);
 
-  RefPtr<ConsoleCallDataWorkerRunnable> runnable =
-      new ConsoleCallDataWorkerRunnable(this, callData);
-  Unused << NS_WARN_IF(!runnable->Dispatch(aCx));
+  if (StaticPrefs::dom_worker_console_dispatch_events_to_main_thread()) {
+    RefPtr<ConsoleCallDataWorkerRunnable> runnable =
+        new ConsoleCallDataWorkerRunnable(this, callData);
+    Unused << NS_WARN_IF(!runnable->Dispatch(aCx));
+  }
 }
 
 // We store information to lazily compute the stack in the reserved slots of
@@ -1872,6 +1877,9 @@ bool FlushOutput(JSContext* aCx, Sequence<JS::Value>& aSequence,
 bool Console::ProcessArguments(JSContext* aCx, const Sequence<JS::Value>& aData,
                                Sequence<JS::Value>& aSequence,
                                Sequence<nsString>& aStyles) const {
+  // This method processes the arguments as format strings (%d, %i, %s...)
+  // only if the first element of them is a valid and not-empty string.
+
   if (aData.IsEmpty()) {
     return true;
   }
@@ -1889,6 +1897,10 @@ bool Console::ProcessArguments(JSContext* aCx, const Sequence<JS::Value>& aData,
   nsAutoJSString string;
   if (NS_WARN_IF(!string.init(aCx, jsString))) {
     return false;
+  }
+
+  if (string.IsEmpty()) {
+    return ArgumentsToValueList(aData, aSequence);
   }
 
   nsString::const_iterator start, end;

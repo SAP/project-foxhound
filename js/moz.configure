@@ -18,6 +18,21 @@ def building_js(build_project):
 option(env='JS_STANDALONE', default=building_js,
        help='Reserved for internal use')
 
+# SmooshMonkey (new frontend)
+# ==================================================
+
+# Define here in order to use the option from bindgen.configure.
+js_option('--enable-smoosh', default=False,
+          help='Enable SmooshMonkey (new JS engine frontend)')
+
+@depends('--enable-smoosh')
+def enable_smoosh(value):
+    if value:
+        return True
+
+set_config('JS_ENABLE_SMOOSH', enable_smoosh)
+set_define('JS_ENABLE_SMOOSH', enable_smoosh)
+
 include('../build/moz.configure/rust.configure',
         when='--enable-compile-environment')
 include('../build/moz.configure/bindgen.configure',
@@ -86,6 +101,12 @@ def static_js(value):
         return True
 
 set_define('MOZ_STATIC_JS', static_js)
+
+
+js_option(env='NO_RUST_PANIC_HOOK', when=js_standalone,
+          help='Disable rust panic hook')
+
+set_define('NO_RUST_PANIC_HOOK', True, when='NO_RUST_PANIC_HOOK')
 
 
 # JIT support
@@ -485,8 +506,8 @@ js_option('--enable-typed-objects',
           default=default_typed_objects,
           help='{Enable|Disable} typed objects')
 
-set_config('ENABLE_TYPED_OBJECTS', depends_if('--enable-typed-objects')(lambda x: True))
-set_define('ENABLE_TYPED_OBJECTS', depends_if('--enable-typed-objects')(lambda x: True))
+set_config('JS_HAS_TYPED_OBJECTS', depends_if('--enable-typed-objects')(lambda x: True))
+set_define('JS_HAS_TYPED_OBJECTS', depends_if('--enable-typed-objects')(lambda x: True))
 
 
 # Support for WebAssembly bulk memory operations.
@@ -582,3 +603,16 @@ js_option('--enable-wasm-multi-value',
 
 set_config('ENABLE_WASM_MULTI_VALUE', depends_if('--enable-wasm-multi-value')(lambda x: True))
 set_define('ENABLE_WASM_MULTI_VALUE', depends_if('--enable-wasm-multi-value')(lambda x: True))
+
+# Initial support for new regexp engine
+# ==================================================
+
+js_option('--enable-new-regexp', default=False, help='Enable new regexp engine')
+
+@depends('--enable-new-regexp')
+def enable_new_regexp(value):
+    if value:
+        return True
+
+set_config('ENABLE_NEW_REGEXP', enable_new_regexp)
+set_define('ENABLE_NEW_REGEXP', enable_new_regexp)

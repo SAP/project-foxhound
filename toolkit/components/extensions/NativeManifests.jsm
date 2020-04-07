@@ -119,17 +119,13 @@ var NativeManifests = {
 
         if (manifest.type !== type) {
           Cu.reportError(
-            `Native manifest ${path} has type property ${
-              manifest.type
-            } (expected ${type})`
+            `Native manifest ${path} has type property ${manifest.type} (expected ${type})`
           );
           return null;
         }
         if (manifest.name !== name) {
           Cu.reportError(
-            `Native manifest ${path} has name property ${
-              manifest.name
-            } (expected ${name})`
+            `Native manifest ${path} has name property ${manifest.name} (expected ${name})`
           );
           return null;
         }
@@ -141,12 +137,6 @@ var NativeManifests = {
             `This extension does not have permission to use native manifest ${path}`
           );
           return null;
-        }
-        if (context.envType !== "addon_parent") {
-          Cu.reportError(
-            `Attempting to connect to a native host that does not allow messages from content scripts ${path}.`
-          );
-          return;
         }
 
         return manifest;

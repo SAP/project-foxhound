@@ -40,7 +40,8 @@ nsStyleLinkElement::SheetInfo::SheetInfo(
     already_AddRefed<nsIPrincipal> aTriggeringPrincipal,
     already_AddRefed<nsIReferrerInfo> aReferrerInfo,
     mozilla::CORSMode aCORSMode, const nsAString& aTitle,
-    const nsAString& aMedia, HasAlternateRel aHasAlternateRel,
+    const nsAString& aMedia, const nsAString& aIntegrity,
+    const nsAString& aNonce, HasAlternateRel aHasAlternateRel,
     IsInline aIsInline, IsExplicitlyEnabled aIsExplicitlyEnabled)
     : mContent(aContent),
       mURI(aURI),
@@ -49,17 +50,16 @@ nsStyleLinkElement::SheetInfo::SheetInfo(
       mCORSMode(aCORSMode),
       mTitle(aTitle),
       mMedia(aMedia),
+      mIntegrity(aIntegrity),
+      mNonce(aNonce),
       mHasAlternateRel(aHasAlternateRel == HasAlternateRel::Yes),
       mIsInline(aIsInline == IsInline::Yes),
       mIsExplicitlyEnabled(aIsExplicitlyEnabled) {
   MOZ_ASSERT(!mIsInline || aContent);
   MOZ_ASSERT_IF(aContent, aContent->OwnerDoc() == &aDocument);
   MOZ_ASSERT(mReferrerInfo);
-
-  if (!mIsInline && aContent && aContent->IsElement()) {
-    aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::integrity,
-                                   mIntegrity);
-  }
+  MOZ_ASSERT(mIntegrity.IsEmpty() || !mIsInline,
+             "Integrity only applies to <link>");
 }
 
 nsStyleLinkElement::SheetInfo::~SheetInfo() = default;
@@ -97,13 +97,15 @@ void nsStyleLinkElement::GetTitleAndMediaForElement(const Element& aSelf,
   nsContentUtils::ASCIIToLower(aMedia);
 }
 
-bool nsStyleLinkElement::IsCSSMimeTypeAttribute(const Element& aSelf) {
+bool nsStyleLinkElement::IsCSSMimeTypeAttributeForStyleElement(
+    const Element& aSelf) {
+  // Per
+  // https://html.spec.whatwg.org/multipage/semantics.html#the-style-element:update-a-style-block
+  // step 4, for style elements we should only accept empty and "text/css" type
+  // attribute values.
   nsAutoString type;
-  nsAutoString mimeType;
-  nsAutoString notUsed;
   aSelf.GetAttr(kNameSpaceID_None, nsGkAtoms::type, type);
-  nsContentUtils::SplitMimeType(type, mimeType, notUsed);
-  return mimeType.IsEmpty() || mimeType.LowerCaseEqualsLiteral("text/css");
+  return type.IsEmpty() || type.LowerCaseEqualsLiteral("text/css");
 }
 
 void nsStyleLinkElement::Unlink() {
@@ -258,9 +260,9 @@ nsStyleLinkElement::DoUpdateStyleSheet(Document* aOldDocument,
     // disabled, since otherwise a sheet with a stale linking element pointer
     // will be hanging around -- not good!
     if (aOldShadowRoot) {
-      aOldShadowRoot->RemoveSheet(mStyleSheet);
+      aOldShadowRoot->RemoveSheet(*mStyleSheet);
     } else {
-      aOldDocument->RemoveStyleSheet(mStyleSheet);
+      aOldDocument->RemoveStyleSheet(*mStyleSheet);
     }
 
     SetStyleSheet(nullptr);
@@ -295,10 +297,10 @@ nsStyleLinkElement::DoUpdateStyleSheet(Document* aOldDocument,
       ShadowRoot* containingShadow = thisContent->GetContainingShadow();
       // Could be null only during unlink.
       if (MOZ_LIKELY(containingShadow)) {
-        containingShadow->RemoveSheet(mStyleSheet);
+        containingShadow->RemoveSheet(*mStyleSheet);
       }
     } else {
-      doc->RemoveStyleSheet(mStyleSheet);
+      doc->RemoveStyleSheet(*mStyleSheet);
     }
 
     nsStyleLinkElement::SetStyleSheet(nullptr);

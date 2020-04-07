@@ -5,18 +5,24 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "DOM: Quota Manager")
+    BUG_COMPONENT = ("Core", "Storage: Quota Manager")
 
 MOCHITEST_MANIFESTS += ['test/mochitest.ini']
 
 BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
 
 XPCSHELL_TESTS_MANIFESTS += [
+    'test/unit/telemetry/xpcshell.ini',
+    'test/unit/upgrades/xpcshell.ini',
     'test/unit/xpcshell.ini'
 ]
 
 TEST_HARNESS_FILES.xpcshell.dom.quota.test += [
     'test/head-shared.js',
+]
+
+TEST_HARNESS_FILES.xpcshell.dom.quota.test.unit += [
+    'test/unit/head-shared.js',
 ]
 
 TEST_DIRS += ['test/gtest']
@@ -39,6 +45,7 @@ EXPORTS.mozilla.dom.quota += [
     'CheckedUnsafePtr.h',
     'Client.h',
     'FileStreams.h',
+    'InitializationTypes.h',
     'MemoryOutputStream.h',
     'OriginScope.h',
     'PersistenceType.h',

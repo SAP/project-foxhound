@@ -24,11 +24,10 @@ interface WorkerGlobalScope : EventTarget {
 
   attribute OnErrorEventHandler onerror;
 
+  attribute EventHandler onlanguagechange;
   attribute EventHandler onoffline;
   attribute EventHandler ononline;
-  [Pref="dom.promise_rejection_events.enabled"]
   attribute EventHandler onrejectionhandled;
-  [Pref="dom.promise_rejection_events.enabled"]
   attribute EventHandler onunhandledrejection;
   // also has additional members in a partial interface
 };

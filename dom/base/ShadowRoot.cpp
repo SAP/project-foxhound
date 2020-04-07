@@ -12,9 +12,6 @@
 #include "nsContentUtils.h"
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsWindowSizes.h"
-#ifdef MOZ_XBL
-#  include "nsXBLPrototypeBinding.h"
-#endif
 #include "mozilla/dom/DirectionalityUtils.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLSlotElement.h"
@@ -52,7 +49,7 @@ NS_IMPL_RELEASE_INHERITED(ShadowRoot, DocumentFragment)
 ShadowRoot::ShadowRoot(Element* aElement, ShadowRootMode aMode,
                        already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : DocumentFragment(std::move(aNodeInfo)),
-      DocumentOrShadowRoot(*this),
+      DocumentOrShadowRoot(this),
       mMode(aMode),
       mIsUAWidget(false) {
   SetHost(aElement);
@@ -65,7 +62,6 @@ ShadowRoot::ShadowRoot(Element* aElement, ShadowRootMode aMode,
   SetFlags(NODE_IS_IN_SHADOW_TREE);
   Bind();
 
-  ExtendedDOMSlots()->mBindingParent = aElement;
   ExtendedDOMSlots()->mContainingShadow = this;
 }
 
@@ -117,7 +113,13 @@ nsresult ShadowRoot::Bind() {
   MOZ_ASSERT(!IsInComposedDoc(), "Forgot to unbind?");
   if (Host()->IsInComposedDoc()) {
     SetIsConnected(true);
-    OwnerDoc()->AddComposedDocShadowRoot(*this);
+    Document* doc = OwnerDoc();
+    doc->AddComposedDocShadowRoot(*this);
+    // If our stylesheets somehow mutated when we were disconnected, we need to
+    // ensure that our style data gets flushed as appropriate.
+    if (mServoStyles && Servo_AuthorStyles_IsDirty(mServoStyles.get())) {
+      doc->RecordShadowStyleChange(*this);
+    }
   }
 
   BindContext context(*this);
@@ -304,6 +306,11 @@ void ShadowRoot::RuleAdded(StyleSheet& aSheet, css::Rule& aRule) {
   if (mStyleRuleMap) {
     mStyleRuleMap->RuleAdded(aSheet, aRule);
   }
+
+  if (aRule.IsIncompleteImportRule()) {
+    return;
+  }
+
   Servo_AuthorStyles_ForceDirty(mServoStyles.get());
   ApplicableRulesChanged();
 }
@@ -331,12 +338,27 @@ void ShadowRoot::RuleChanged(StyleSheet& aSheet, css::Rule*) {
   ApplicableRulesChanged();
 }
 
+void ShadowRoot::ImportRuleLoaded(CSSImportRule&, StyleSheet& aSheet) {
+  if (mStyleRuleMap) {
+    mStyleRuleMap->SheetAdded(aSheet);
+  }
+
+  if (!aSheet.IsApplicable()) {
+    return;
+  }
+
+  // TODO(emilio): Could handle it like a regular sheet insertion, I guess, to
+  // avoid throwing away the whole style data.
+  Servo_AuthorStyles_ForceDirty(mServoStyles.get());
+  ApplicableRulesChanged();
+}
+
 // We don't need to do anything else than forwarding to the document if
 // necessary.
-void ShadowRoot::StyleSheetCloned(StyleSheet& aSheet) {
+void ShadowRoot::SheetCloned(StyleSheet& aSheet) {
   if (Document* doc = GetComposedDoc()) {
     if (PresShell* shell = doc->GetPresShell()) {
-      shell->StyleSet()->StyleSheetCloned(aSheet);
+      shell->StyleSet()->SheetCloned(aSheet);
     }
   }
 }
@@ -350,13 +372,30 @@ void ShadowRoot::ApplicableRulesChanged() {
 void ShadowRoot::InsertSheetAt(size_t aIndex, StyleSheet& aSheet) {
   DocumentOrShadowRoot::InsertSheetAt(aIndex, aSheet);
   if (aSheet.IsApplicable()) {
-    InsertSheetIntoAuthorData(aIndex, aSheet);
+    InsertSheetIntoAuthorData(aIndex, aSheet, mStyleSheets);
   }
 }
 
-void ShadowRoot::InsertSheetIntoAuthorData(size_t aIndex, StyleSheet& aSheet) {
-  MOZ_ASSERT(SheetAt(aIndex) == &aSheet);
+StyleSheet* FirstApplicableAdoptedStyleSheet(
+    const nsTArray<RefPtr<StyleSheet>>& aList) {
+  size_t i = 0;
+  for (StyleSheet* sheet : aList) {
+    // Deal with duplicate sheets by only considering the last one.
+    if (sheet->IsApplicable() && MOZ_LIKELY(aList.LastIndexOf(sheet) == i)) {
+      return sheet;
+    }
+    i++;
+  }
+  return nullptr;
+}
+
+void ShadowRoot::InsertSheetIntoAuthorData(
+    size_t aIndex, StyleSheet& aSheet,
+    const nsTArray<RefPtr<StyleSheet>>& aList) {
   MOZ_ASSERT(aSheet.IsApplicable());
+  MOZ_ASSERT(aList[aIndex] == &aSheet);
+  MOZ_ASSERT(aList.LastIndexOf(&aSheet) == aIndex);
+  MOZ_ASSERT(&aList == &mAdoptedStyleSheets || &aList == &mStyleSheets);
 
   if (!mServoStyles) {
     mServoStyles = Servo_AuthorStyles_Create().Consume();
@@ -366,27 +405,45 @@ void ShadowRoot::InsertSheetIntoAuthorData(size_t aIndex, StyleSheet& aSheet) {
     mStyleRuleMap->SheetAdded(aSheet);
   }
 
-  for (size_t i = aIndex + 1; i < SheetCount(); ++i) {
-    StyleSheet* beforeSheet = SheetAt(i);
+  auto changedOnExit =
+      mozilla::MakeScopeExit([&] { ApplicableRulesChanged(); });
+
+  for (size_t i = aIndex + 1; i < aList.Length(); ++i) {
+    StyleSheet* beforeSheet = aList.ElementAt(i);
     if (!beforeSheet->IsApplicable()) {
+      continue;
+    }
+
+    // If this is a duplicate adopted stylesheet that is not in the right
+    // position (the last one) then we skip over it. Otherwise we're done.
+    if (&aList == &mAdoptedStyleSheets &&
+        MOZ_UNLIKELY(aList.LastIndexOf(beforeSheet) != i)) {
       continue;
     }
 
     Servo_AuthorStyles_InsertStyleSheetBefore(mServoStyles.get(), &aSheet,
                                               beforeSheet);
-    ApplicableRulesChanged();
     return;
   }
 
-  Servo_AuthorStyles_AppendStyleSheet(mServoStyles.get(), &aSheet);
-  ApplicableRulesChanged();
+  if (mAdoptedStyleSheets.IsEmpty() || &aList == &mAdoptedStyleSheets) {
+    Servo_AuthorStyles_AppendStyleSheet(mServoStyles.get(), &aSheet);
+    return;
+  }
+
+  if (auto* before = FirstApplicableAdoptedStyleSheet(mAdoptedStyleSheets)) {
+    Servo_AuthorStyles_InsertStyleSheetBefore(mServoStyles.get(), &aSheet,
+                                              before);
+  } else {
+    Servo_AuthorStyles_AppendStyleSheet(mServoStyles.get(), &aSheet);
+  }
 }
 
 // FIXME(emilio): This needs to notify document observers and such,
 // presumably.
-void ShadowRoot::StyleSheetApplicableStateChanged(StyleSheet& aSheet,
-                                                  bool aApplicable) {
-  int32_t index = IndexOfSheet(aSheet);
+void ShadowRoot::StyleSheetApplicableStateChanged(StyleSheet& aSheet) {
+  auto& sheetList = aSheet.IsConstructed() ? mAdoptedStyleSheets : mStyleSheets;
+  int32_t index = sheetList.LastIndexOf(&aSheet);
   if (index < 0) {
     // NOTE(emilio): @import sheets are handled in the relevant RuleAdded
     // notification, which only notifies after the sheet is loaded.
@@ -397,8 +454,8 @@ void ShadowRoot::StyleSheetApplicableStateChanged(StyleSheet& aSheet,
                           "It'd better be an @import sheet");
     return;
   }
-  if (aApplicable) {
-    InsertSheetIntoAuthorData(size_t(index), aSheet);
+  if (aSheet.IsApplicable()) {
+    InsertSheetIntoAuthorData(size_t(index), aSheet, sheetList);
   } else {
     MOZ_ASSERT(mServoStyles);
     if (mStyleRuleMap) {
@@ -409,17 +466,21 @@ void ShadowRoot::StyleSheetApplicableStateChanged(StyleSheet& aSheet,
   }
 }
 
-void ShadowRoot::RemoveSheet(StyleSheet* aSheet) {
-  MOZ_ASSERT(aSheet);
-  RefPtr<StyleSheet> sheet = DocumentOrShadowRoot::RemoveSheet(*aSheet);
+void ShadowRoot::RemoveSheetFromStyles(StyleSheet& aSheet) {
+  MOZ_ASSERT(aSheet.IsApplicable());
+  MOZ_ASSERT(mServoStyles);
+  if (mStyleRuleMap) {
+    mStyleRuleMap->SheetRemoved(aSheet);
+  }
+  Servo_AuthorStyles_RemoveStyleSheet(mServoStyles.get(), &aSheet);
+  ApplicableRulesChanged();
+}
+
+void ShadowRoot::RemoveSheet(StyleSheet& aSheet) {
+  RefPtr<StyleSheet> sheet = DocumentOrShadowRoot::RemoveSheet(aSheet);
   MOZ_ASSERT(sheet);
   if (sheet->IsApplicable()) {
-    MOZ_ASSERT(mServoStyles);
-    if (mStyleRuleMap) {
-      mStyleRuleMap->SheetRemoved(*sheet);
-    }
-    Servo_AuthorStyles_RemoveStyleSheet(mServoStyles.get(), sheet);
-    ApplicableRulesChanged();
+    RemoveSheetFromStyles(*sheet);
   }
 }
 
@@ -469,7 +530,7 @@ void ShadowRoot::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   aVisitor.SetParentTarget(shadowHost, false);
 
   nsCOMPtr<nsIContent> content(do_QueryInterface(aVisitor.mEvent->mTarget));
-  if (content && content->GetBindingParent() == shadowHost) {
+  if (content && content->GetContainingShadow() == this) {
     aVisitor.mEventTargetAtParent = shadowHost;
   }
 }

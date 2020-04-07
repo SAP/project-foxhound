@@ -16,21 +16,23 @@ const ReactDOM = require("devtools/client/shared/vendor/react-dom");
 const { Provider } = require("devtools/client/shared/vendor/react-redux");
 
 // Accessibility Panel
-const MainFrame = createFactory(require("./components/MainFrame"));
-const OldVersionDescription = createFactory(
-  require("./components/Description").OldVersionDescription
+const MainFrame = createFactory(
+  require("devtools/client/accessibility/components/MainFrame")
 );
 
 // Store
 const createStore = require("devtools/client/shared/redux/create-store");
 
 // Reducers
-const { reducers } = require("./reducers/index");
+const { reducers } = require("devtools/client/accessibility/reducers/index");
 const store = createStore(reducers);
 
 // Actions
-const { reset } = require("./actions/ui");
-const { select, highlight } = require("./actions/accessibles");
+const { reset } = require("devtools/client/accessibility/actions/ui");
+const {
+  select,
+  highlight,
+} = require("devtools/client/accessibility/actions/accessibles");
 
 /**
  * This object represents view of the Accessibility panel and is responsible
@@ -49,57 +51,105 @@ AccessibilityView.prototype = {
    *
    * @param {Object}
    *        Object that contains the following properties:
-   *        - front                 {Object}
-   *                                front that can initialize accessibility
-   *                                walker and enable/disable accessibility
-   *                                services.
-   *        - walker                {Object}
-   *                                front for accessibility walker actor responsible for
-   *                                managing accessible objects actors/fronts.
-   *        - supports              {JSON}
-   *                                a collection of flags indicating which accessibility
-   *                                panel features are supported by the current serverside
-   *                                version.
-   *        - fluentBundles         {Array}
-   *                                array of FluentBundles elements for localization
-   *        - simulator             {Object}
-   *                                front for simulator actor responsible for setting
-   *                                color matrices in docShell
+   * - supports                              {JSON}
+   *                                         a collection of flags indicating
+   *                                         which accessibility panel features
+   *                                         are supported by the current
+   *                                         serverside version.
+   * - fluentBundles                         {Array}
+   *                                         array of FluentBundles elements for
+   *                                         localization
+   * - toolbox                               {Object}
+   *                                         devtools toolbox.
+   * - getAccessibilityTreeRoot              {Function}
+   *                                         Returns the topmost accessibiliity
+   *                                         walker that is used as the root of
+   *                                         the accessibility tree.
+   * - startListeningForAccessibilityEvents  {Function}
+   *                                         Add listeners for specific
+   *                                         accessibility events.
+   * - stopListeningForAccessibilityEvents   {Function}
+   *                                         Remove listeners for specific
+   *                                         accessibility events.
+   * - audit                                 {Function}
+   *                                         Audit function that will start
+   *                                         accessibility audit for given types
+   *                                         of accessibility issues.
+   * - simulate                              {null|Function}
+   *                                         Apply simulation of a given type
+   *                                         (by setting color matrices in
+   *                                         docShell).
+   * - enableAccessibility                   {Function}
+   *                                         Enable accessibility services.
+   * - disableAccessibility                  {Function}
+   *                                         Disable accessibility services.
+   * - resetAccessiblity                     {Function}
+   *                                         Reset the state of the
+   *                                         accessibility services.
+   * - startListeningForLifecycleEvents      {Function}
+   *                                         Add listeners for accessibility
+   *                                         service lifecycle events.
+   * - stopListeningForLifecycleEvents       {Function}
+   *                                         Remove listeners for accessibility
+   *                                         service lifecycle events.
    */
-  async initialize({ front, walker, supports, fluentBundles, simulator }) {
+  async initialize({
+    supports,
+    fluentBundles,
+    toolbox,
+    getAccessibilityTreeRoot,
+    startListeningForAccessibilityEvents,
+    stopListeningForAccessibilityEvents,
+    audit,
+    simulate,
+    enableAccessibility,
+    disableAccessibility,
+    resetAccessiblity,
+    startListeningForLifecycleEvents,
+    stopListeningForLifecycleEvents,
+  }) {
     // Make sure state is reset every time accessibility panel is initialized.
-    await this.store.dispatch(reset(front, supports));
+    await this.store.dispatch(reset(resetAccessiblity, supports));
     const container = document.getElementById("content");
-
-    if (!supports.enableDisable) {
-      ReactDOM.render(OldVersionDescription(), container);
-      return;
-    }
-
     const mainFrame = MainFrame({
-      accessibility: front,
-      accessibilityWalker: walker,
       fluentBundles,
-      simulator,
+      toolbox,
+      getAccessibilityTreeRoot,
+      startListeningForAccessibilityEvents,
+      stopListeningForAccessibilityEvents,
+      audit,
+      simulate,
+      enableAccessibility,
+      disableAccessibility,
+      resetAccessiblity,
+      startListeningForLifecycleEvents,
+      stopListeningForLifecycleEvents,
     });
     // Render top level component
     const provider = createElement(Provider, { store: this.store }, mainFrame);
     this.mainFrame = ReactDOM.render(provider, container);
   },
 
-  async selectAccessible(walker, accessible) {
-    await this.store.dispatch(select(walker, accessible));
+  destroy() {
+    const container = document.getElementById("content");
+    ReactDOM.unmountComponentAtNode(container);
+  },
+
+  async selectAccessible(accessible) {
+    await this.store.dispatch(select(accessible));
     window.emit(EVENTS.NEW_ACCESSIBLE_FRONT_INSPECTED);
   },
 
-  async highlightAccessible(walker, accessible) {
-    await this.store.dispatch(highlight(walker, accessible));
+  async highlightAccessible(accessible) {
+    await this.store.dispatch(highlight(accessible));
     window.emit(EVENTS.NEW_ACCESSIBLE_FRONT_HIGHLIGHTED);
   },
 
-  async selectNodeAccessible(walker, node, supports) {
-    let accessible = await walker.getAccessibleFor(node);
-    if (accessible && supports.hydration) {
+  async selectNodeAccessible(node) {
+    const accessibilityFront = await node.targetFront.getFront("accessibility");
+    const accessibleWalkerFront = await accessibilityFront.getWalker();
+    let accessible = await accessibleWalkerFront.getAccessibleFor(node);
+    if (accessible) {
       await accessible.hydrate();
     }
 
@@ -111,10 +161,10 @@ AccessibilityView.prototype = {
       const { nodes: children } = await node.walkerFront.children(node);
       for (const child of children) {
         if (child.nodeType === nodeConstants.TEXT_NODE) {
-          accessible = await walker.getAccessibleFor(child);
+          accessible = await accessibleWalkerFront.getAccessibleFor(child);
           // indexInParent property is only available with additional request
           // for data (hydration) about the accessible object.
-          if (accessible && supports.hydration) {
+          if (accessible) {
             await accessible.hydrate();
           }
 
@@ -125,8 +175,8 @@ AccessibilityView.prototype = {
       }
     }
 
-    await this.store.dispatch(select(walker, accessible));
-    window.emit(EVENTS.NEW_ACCESSIBLE_FRONT_HIGHLIGHTED);
+    await this.store.dispatch(select(accessible));
+    window.emit(EVENTS.NEW_ACCESSIBLE_FRONT_INSPECTED);
   },
 
   /**

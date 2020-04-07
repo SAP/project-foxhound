@@ -1,27 +1,12 @@
 //! Cranelift ValueType hierarchy
 
-// Temporary disabled: Unused at the moment.
-// use std::collections::HashMap;
-
 use std::fmt;
 
 use crate::shared::types as shared_types;
-
-// Numbering scheme for value types:
-//
-// 0: Void
-// 0x01-0x6f: Special types
-// 0x70-0x7d: Lane types
-// 0x7e-0x7f: Reference types
-// 0x80-0xff: Vector types
-//
-// Vector types are encoded with the lane type in the low 4 bits and log2(lanes)
-// in the high 4 bits, giving a range of 2-256 lanes.
-static LANE_BASE: u8 = 0x70;
-static REFERENCE_BASE: u8 = 0x7E;
+use cranelift_codegen_shared::constants;
 
 // Rust name prefix used for the `rust_name` method.
-static _RUST_NAME_PREFIX: &'static str = "ir::types::";
+static _RUST_NAME_PREFIX: &str = "ir::types::";
 
 // ValueType variants (i8, i32, ...) are provided in `shared::types.rs`.
 
@@ -30,8 +15,7 @@ static _RUST_NAME_PREFIX: &'static str = "ir::types::";
 /// All SSA values have a type that is described by an instance of `ValueType`
 /// or one of its subclasses.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum ValueType {
-    BV(BVType),
+pub(crate) enum ValueType {
     Lane(LaneType),
     Reference(ReferenceType),
     Special(SpecialType),
@@ -56,7 +40,6 @@ impl ValueType {
     /// Return a string containing the documentation comment for this type.
     pub fn doc(&self) -> String {
         match *self {
-            ValueType::BV(ref b) => b.doc(),
             ValueType::Lane(l) => l.doc(),
             ValueType::Reference(r) => r.doc(),
             ValueType::Special(s) => s.doc(),
@@ -67,7 +50,6 @@ impl ValueType {
     /// Return the number of bits in a lane.
     pub fn lane_bits(&self) -> u64 {
         match *self {
-            ValueType::BV(ref b) => b.lane_bits(),
             ValueType::Lane(l) => l.lane_bits(),
             ValueType::Reference(r) => r.lane_bits(),
             ValueType::Special(s) => s.lane_bits(),
@@ -91,7 +73,6 @@ impl ValueType {
     /// Find the unique number associated with this type.
     pub fn number(&self) -> Option<u8> {
         match *self {
-            ValueType::BV(_) => None,
             ValueType::Lane(l) => Some(l.number()),
             ValueType::Reference(r) => Some(r.number()),
             ValueType::Special(s) => Some(s.number()),
@@ -120,19 +101,11 @@ impl ValueType {
 impl fmt::Display for ValueType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ValueType::BV(ref b) => b.fmt(f),
             ValueType::Lane(l) => l.fmt(f),
             ValueType::Reference(r) => r.fmt(f),
             ValueType::Special(s) => s.fmt(f),
             ValueType::Vector(ref v) => v.fmt(f),
         }
-    }
-}
-
-/// Create a ValueType from a given bitvector type.
-impl From<BVType> for ValueType {
-    fn from(bv: BVType) -> Self {
-        ValueType::BV(bv)
     }
 }
 
@@ -166,68 +139,68 @@ impl From<VectorType> for ValueType {
 
 /// A concrete scalar type that can appear as a vector lane too.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LaneType {
-    BoolType(shared_types::Bool),
-    FloatType(shared_types::Float),
-    IntType(shared_types::Int),
+pub(crate) enum LaneType {
+    Bool(shared_types::Bool),
+    Float(shared_types::Float),
+    Int(shared_types::Int),
 }
 
 impl LaneType {
     /// Return a string containing the documentation comment for this lane type.
     pub fn doc(self) -> String {
         match self {
-            LaneType::BoolType(_) => format!("A boolean type with {} bits.", self.lane_bits()),
-            LaneType::FloatType(shared_types::Float::F32) => String::from(
+            LaneType::Bool(_) => format!("A boolean type with {} bits.", self.lane_bits()),
+            LaneType::Float(shared_types::Float::F32) => String::from(
                 "A 32-bit floating point type represented in the IEEE 754-2008
                 *binary32* interchange format. This corresponds to the :c:type:`float`
                 type in most C implementations.",
             ),
-            LaneType::FloatType(shared_types::Float::F64) => String::from(
+            LaneType::Float(shared_types::Float::F64) => String::from(
                 "A 64-bit floating point type represented in the IEEE 754-2008
                 *binary64* interchange format. This corresponds to the :c:type:`double`
                 type in most C implementations.",
             ),
-            LaneType::IntType(_) if self.lane_bits() < 32 => format!(
+            LaneType::Int(_) if self.lane_bits() < 32 => format!(
                 "An integer type with {} bits.
                 WARNING: arithmetic on {}bit integers is incomplete",
                 self.lane_bits(),
                 self.lane_bits()
             ),
-            LaneType::IntType(_) => format!("An integer type with {} bits.", self.lane_bits()),
+            LaneType::Int(_) => format!("An integer type with {} bits.", self.lane_bits()),
         }
     }
 
     /// Return the number of bits in a lane.
     pub fn lane_bits(self) -> u64 {
         match self {
-            LaneType::BoolType(ref b) => *b as u64,
-            LaneType::FloatType(ref f) => *f as u64,
-            LaneType::IntType(ref i) => *i as u64,
+            LaneType::Bool(ref b) => *b as u64,
+            LaneType::Float(ref f) => *f as u64,
+            LaneType::Int(ref i) => *i as u64,
         }
     }
 
     /// Find the unique number associated with this lane type.
     pub fn number(self) -> u8 {
-        LANE_BASE
+        constants::LANE_BASE
             + match self {
-                LaneType::BoolType(shared_types::Bool::B1) => 0,
-                LaneType::BoolType(shared_types::Bool::B8) => 1,
-                LaneType::BoolType(shared_types::Bool::B16) => 2,
-                LaneType::BoolType(shared_types::Bool::B32) => 3,
-                LaneType::BoolType(shared_types::Bool::B64) => 4,
-                LaneType::BoolType(shared_types::Bool::B128) => 5,
-                LaneType::IntType(shared_types::Int::I8) => 6,
-                LaneType::IntType(shared_types::Int::I16) => 7,
-                LaneType::IntType(shared_types::Int::I32) => 8,
-                LaneType::IntType(shared_types::Int::I64) => 9,
-                LaneType::IntType(shared_types::Int::I128) => 10,
-                LaneType::FloatType(shared_types::Float::F32) => 11,
-                LaneType::FloatType(shared_types::Float::F64) => 12,
+                LaneType::Bool(shared_types::Bool::B1) => 0,
+                LaneType::Bool(shared_types::Bool::B8) => 1,
+                LaneType::Bool(shared_types::Bool::B16) => 2,
+                LaneType::Bool(shared_types::Bool::B32) => 3,
+                LaneType::Bool(shared_types::Bool::B64) => 4,
+                LaneType::Bool(shared_types::Bool::B128) => 5,
+                LaneType::Int(shared_types::Int::I8) => 6,
+                LaneType::Int(shared_types::Int::I16) => 7,
+                LaneType::Int(shared_types::Int::I32) => 8,
+                LaneType::Int(shared_types::Int::I64) => 9,
+                LaneType::Int(shared_types::Int::I128) => 10,
+                LaneType::Float(shared_types::Float::F32) => 11,
+                LaneType::Float(shared_types::Float::F64) => 12,
             }
     }
 
     pub fn bool_from_bits(num_bits: u16) -> LaneType {
-        LaneType::BoolType(match num_bits {
+        LaneType::Bool(match num_bits {
             1 => shared_types::Bool::B1,
             8 => shared_types::Bool::B8,
             16 => shared_types::Bool::B16,
@@ -239,7 +212,7 @@ impl LaneType {
     }
 
     pub fn int_from_bits(num_bits: u16) -> LaneType {
-        LaneType::IntType(match num_bits {
+        LaneType::Int(match num_bits {
             8 => shared_types::Int::I8,
             16 => shared_types::Int::I16,
             32 => shared_types::Int::I32,
@@ -250,38 +223,31 @@ impl LaneType {
     }
 
     pub fn float_from_bits(num_bits: u16) -> LaneType {
-        LaneType::FloatType(match num_bits {
+        LaneType::Float(match num_bits {
             32 => shared_types::Float::F32,
             64 => shared_types::Float::F64,
             _ => unreachable!("unxpected num bits for float"),
         })
     }
 
-    pub fn by(&self, lanes: u16) -> ValueType {
+    pub fn by(self, lanes: u16) -> ValueType {
         if lanes == 1 {
-            (*self).into()
+            self.into()
         } else {
-            ValueType::Vector(VectorType::new(*self, lanes.into()))
+            ValueType::Vector(VectorType::new(self, lanes.into()))
         }
     }
 
-    pub fn is_float(&self) -> bool {
+    pub fn is_float(self) -> bool {
         match self {
-            LaneType::FloatType(_) => true,
+            LaneType::Float(_) => true,
             _ => false,
         }
     }
 
-    pub fn is_int(&self) -> bool {
+    pub fn is_int(self) -> bool {
         match self {
-            LaneType::IntType(_) => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_bool(&self) -> bool {
-        match self {
-            LaneType::BoolType(_) => true,
+            LaneType::Int(_) => true,
             _ => false,
         }
     }
@@ -290,9 +256,9 @@ impl LaneType {
 impl fmt::Display for LaneType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            LaneType::BoolType(_) => write!(f, "b{}", self.lane_bits()),
-            LaneType::FloatType(_) => write!(f, "f{}", self.lane_bits()),
-            LaneType::IntType(_) => write!(f, "i{}", self.lane_bits()),
+            LaneType::Bool(_) => write!(f, "b{}", self.lane_bits()),
+            LaneType::Float(_) => write!(f, "f{}", self.lane_bits()),
+            LaneType::Int(_) => write!(f, "i{}", self.lane_bits()),
         }
     }
 }
@@ -304,9 +270,9 @@ impl fmt::Debug for LaneType {
             f,
             "{}",
             match *self {
-                LaneType::BoolType(_) => format!("BoolType({})", inner_msg),
-                LaneType::FloatType(_) => format!("FloatType({})", inner_msg),
-                LaneType::IntType(_) => format!("IntType({})", inner_msg),
+                LaneType::Bool(_) => format!("BoolType({})", inner_msg),
+                LaneType::Float(_) => format!("FloatType({})", inner_msg),
+                LaneType::Int(_) => format!("IntType({})", inner_msg),
             }
         )
     }
@@ -315,26 +281,26 @@ impl fmt::Debug for LaneType {
 /// Create a LaneType from a given bool variant.
 impl From<shared_types::Bool> for LaneType {
     fn from(b: shared_types::Bool) -> Self {
-        LaneType::BoolType(b)
+        LaneType::Bool(b)
     }
 }
 
 /// Create a LaneType from a given float variant.
 impl From<shared_types::Float> for LaneType {
     fn from(f: shared_types::Float) -> Self {
-        LaneType::FloatType(f)
+        LaneType::Float(f)
     }
 }
 
 /// Create a LaneType from a given int variant.
 impl From<shared_types::Int> for LaneType {
     fn from(i: shared_types::Int) -> Self {
-        LaneType::IntType(i)
+        LaneType::Int(i)
     }
 }
 
 /// An iterator for different lane types.
-pub struct LaneTypeIterator {
+pub(crate) struct LaneTypeIterator {
     bool_iter: shared_types::BoolIterator,
     int_iter: shared_types::IntIterator,
     float_iter: shared_types::FloatIterator,
@@ -371,7 +337,7 @@ impl Iterator for LaneTypeIterator {
 /// A vector type has a lane type which is an instance of `LaneType`,
 /// and a positive number of lanes.
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct VectorType {
+pub(crate) struct VectorType {
     base: LaneType,
     lanes: u64,
 }
@@ -435,46 +401,11 @@ impl fmt::Debug for VectorType {
     }
 }
 
-/// A flat bitvector type. Used for semantics description only.
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct BVType {
-    bits: u64,
-}
-
-impl BVType {
-    /// Initialize a new bitvector type with `n` bits.
-    pub fn new(bits: u16) -> Self {
-        Self { bits: bits.into() }
-    }
-
-    /// Return a string containing the documentation comment for this bitvector type.
-    pub fn doc(&self) -> String {
-        format!("A bitvector type with {} bits.", self.bits)
-    }
-
-    /// Return the number of bits in a lane.
-    pub fn lane_bits(&self) -> u64 {
-        self.bits
-    }
-}
-
-impl fmt::Display for BVType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "bv{}", self.bits)
-    }
-}
-
-impl fmt::Debug for BVType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BVType(bits={})", self.lane_bits())
-    }
-}
-
 /// A concrete scalar type that is neither a vector nor a lane type.
 ///
 /// Special types cannot be used to form vectors.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SpecialType {
+pub(crate) enum SpecialType {
     Flag(shared_types::Flag),
 }
 
@@ -536,7 +467,7 @@ impl From<shared_types::Flag> for SpecialType {
     }
 }
 
-pub struct SpecialTypeIterator {
+pub(crate) struct SpecialTypeIterator {
     flag_iter: shared_types::FlagIterator,
 }
 
@@ -561,7 +492,7 @@ impl Iterator for SpecialTypeIterator {
 
 /// Reference type is scalar type, but not lane type.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ReferenceType(pub shared_types::Reference);
+pub(crate) struct ReferenceType(pub shared_types::Reference);
 
 impl ReferenceType {
     /// Return a string containing the documentation comment for this reference type.
@@ -579,7 +510,7 @@ impl ReferenceType {
 
     /// Find the unique number associated with this reference type.
     pub fn number(self) -> u8 {
-        REFERENCE_BASE
+        constants::REFERENCE_BASE
             + match self {
                 ReferenceType(shared_types::Reference::R32) => 0,
                 ReferenceType(shared_types::Reference::R64) => 1,
@@ -615,7 +546,7 @@ impl From<shared_types::Reference> for ReferenceType {
 }
 
 /// An iterator for different reference types.
-pub struct ReferenceTypeIterator {
+pub(crate) struct ReferenceTypeIterator {
     reference_iter: shared_types::ReferenceIterator,
 }
 

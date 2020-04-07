@@ -7,6 +7,8 @@
 const ReactDOM = require("devtools/client/shared/vendor/react-dom");
 const Types = require("devtools/client/shared/vendor/react-prop-types");
 const { openDocLink } = require("devtools/client/shared/link");
+var Services = require("Services");
+const isMacOS = Services.appinfo.OS === "Darwin";
 
 const {
   Component,
@@ -14,88 +16,80 @@ const {
 } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
+const utmParams = new URLSearchParams({
+  utm_source: "devtools",
+  utm_medium: "devtools_whatsnew",
+});
+
 const aside = {
   header: "Instantly Send Tabs to Mobile",
   content: `Test your site on mobile and other devices without having to copy, paste, or leave the browser.`,
   cta: "Learn More About Send Tabs",
-  href:
-    "https://support.mozilla.org/en-US/kb/send-tab-firefox-desktop-other-devices?utm_source=devtools_whatsnew",
+  href: `https://play.google.com/store/apps/details?id=org.mozilla.fennec_aurora&referrer=utm_source%3Dmozilla%26utm_medium%3DReferral%26utm_campaign%3Dmozilla-org${utmParams}`,
 };
 
 const release = {
-  title: "What’s New in DevTools (Firefox 70 & 71)",
+  title: "What’s New in DevTools (Firefox 75)",
   linkText: "Read more",
-  linkUrl:
-    "https://developer.mozilla.org/docs/Mozilla/Firefox/Releases/71?utm_source=devtools&utm_medium=devtools_whatsnew",
+  linkUrl: `https://developer.mozilla.org/docs/Mozilla/Firefox/Releases/75?${utmParams}`,
   features: [
     {
-      header: `New WebSocket Messages Inspector`,
-      description: `The Network panel has a new Messages tab for inspecting WebSocket frames sent and received through the selected connection.`,
-      href:
-        "https://hacks.mozilla.org/2019/10/firefoxs-new-websocket-inspector/ ",
+      header: `Instant evaluation for Console expressions`,
+      description: `Identify and fix errors more rapidly than before. As long as expressions typed into the Web Console are side-effect free, their results will be previewed while you type.`,
+      href: `https://developer.mozilla.org/en-US/docs/Tools/Web_Console/The_command_line_interpreter?${utmParams}`,
     },
     {
-      header: `Block URLs in the Network panel`,
-      description: `Test how a page loads without specific files, like CSS or JavaScript. Right-click network requests and select “Block URL” or use the new Request Blocking pane.`,
-      href: `https://developer.mozilla.org/docs/Tools/Network_Monitor/request_list?utm_source=devtools&utm_medium=devtools_whatsnew#Block_a_specific_URL`,
+      header: `Measurement area is now resizable`,
+      description: `Quickly drag the area on the fly to measure the height, width and diagonal in your page. Enable the feature in Setting, under "Available Toolbox Buttons".`,
+      href: `https://developer.mozilla.org/docs/Tools/Measure_a_portion_of_the_page?${utmParams}`,
     },
     {
-      header: `New multi-line editor mode in Console`,
-      description: `Iterate quickly on JavaScript snippets with the new multi-line editor input. It combines the ease of authoring code in an IDE with the workflow of repeatedly executing code in the context of the page.`,
-      href: `https://developer.mozilla.org/docs/Tools/Web_Console/The_command_line_interpreter?utm_source=devtools&utm_medium=devtools_whatsnew`,
-      hidden: true,
+      header: `Event breakpoints for WebSockets`,
+      description: `Newly added event breakpoint types in the Debugger let you pause or log when WebSocket event handlers get executed.`,
+      href: `https://developer.mozilla.org/en-US/docs/Tools/Debugger/Set_event_listener_breakpoints?${utmParams}`,
     },
     {
-      header: `Search across all Network Headers and Content`,
-      description: `The new Search pane lets you search across all network headers and response bodies in the Network panel.`,
-      href: `https://developer.mozilla.org/docs/Tools/Network_Monitor/request_list?utm_source=devtools&utm_medium=devtools_whatsnew#Search_Requests`,
+      header: `Use XPath to find DOM elements`,
+      description: `XPath queries, common in automation tools, can now be used in Inspector’s HTML search to test expressions and find matching elements.`,
+      href: `https://developer.mozilla.org/en-US/docs/Tools/Page_Inspector/How_to/Examine_and_edit_HTML?${utmParams}#XPath_search`,
     },
     {
-      header: `Log on Events`,
-      description: `Enabling logging for Event Listener Breakpoints in the Debugger lets you observe which event handlers are being executed without the overhead of pausing.`,
-      href: `https://developer.mozilla.org/docs/Tools/Debugger/Set_event_listener_breakpoints?utm_source=devtools&utm_medium=devtools_whatsnew`,
+      header: `Polished Network analysis`,
+      description: `Optimized table rendering renders many simultaneous requests much faster. Borders between columns and higher contrast state for filter buttons makes reading easier.`,
+      href: `https://wiki.developer.mozilla.org/en-US/docs/Tools/Network_Monitor/request_list?${utmParams}`,
     },
     {
-      header: `Quick search in Event Listeners Breakpoints`,
-      description: `Quickly find the right event category and type with the new filter field in the Debugger’s Event Listener Breakpoints pane. `,
-      href: `https://developer.mozilla.org/docs/Tools/Debugger/Set_event_listener_breakpoints?utm_source=devtools&utm_medium=devtools_whatsnew`,
-    },
-    {
-      header: `New in 70: Inactive CSS rules indicator in Rules pane`,
-      description: `The Inspector now grays out CSS declarations that don’t affect the selected element and shows a tooltip explaining why—and even how to fix it.`,
-      href: `https://hacks.mozilla.org/2019/10/firefox-70-a-bountiful-release-for-all/#developertools`,
-    },
-    {
-      header: `New in 70: Pause on DOM Mutation in Debugger`,
-      description: `DOM Mutation Breakpoints (aka DOM Change Breakpoints) let you pause scripts that add, remove, or change specific elements.`,
-      href: `https://developer.mozilla.org/docs/Tools/Debugger/Break_on_DOM_mutation?utm_source=devtools&utm_medium=devtools_whatsnew`,
-    },
-    {
-      header: `New in 70: Color contrast information in the color picker`,
-      description: `In the CSS Rules view, you can click foreground colors with the color picker to determine if their contrast with the background color meets accessibility guidelines.`,
-      href: `https://developer.mozilla.org/docs/Tools/Page_Inspector/How_to/Inspect_and_select_colors?utm_source=devtools&utm_medium=devtools_whatsnew`,
-    },
-    {
-      header: `New in 70: Auditing checks in the Accessibility inspector`,
-      description: `The Accessibility Inspector’s “Check for issues” tool can now audit for keyboard accessibility in addition to color contrast and text labels.`,
-      href: `https://developer.mozilla.org/docs/Tools/Accessibility_inspector?utm_source=devtools&utm_medium=devtools_whatsnew#Check_for_accessibility_issues`,
+      header: `Request blocking with “*” wildcards`,
+      description: `Use URL patterns with * wildcards in Network’s Request Blocking panel to test how resilient your site is when matches requests fail.`,
+      href: `https://wiki.developer.mozilla.org/en-US/docs/Tools/Network_Monitor/request_list?${utmParams}#Blocking_specific_URLs`,
     },
   ],
 };
 
 const dev = {
   title: "Experimental Features in Firefox Developer Edition",
-  linkUrl:
-    "https://www.mozilla.org/firefox/developer/?utm_medium=devtools_whatsnew&utm_source=devtools",
+  linkUrl: `https://www.mozilla.org/firefox/developer/?${utmParams}`,
   linkText: "Get DevEdition",
   features: [
     {
-      header: `Debug Variables with Watchpoints`,
-      description: `Debugger’s new Watchpoints feature lets you pause when properties get read or written. Right-click object properties in the Scopes pane when paused to use the new “Break on…” menu.`,
-      href: `https://developer.mozilla.org/docs/Tools/Debugger/How_to/Set_a_watchpoint_on_a_property?utm_source=devtools&utm_medium=devtools_whatsnew`,
+      header: `Full Asynchronous Stacks in Debugger`,
+      description: `Step through event, timeout and promise-based function calls over time with the full-featured async stacks in Debugger.`,
+      href: `https://developer.mozilla.org/en-US/docs/Tools/Debugger/UI_Tour?${utmParams}`,
+    },
+    {
+      header: `Inspect & Debug Service Workers`,
+      description: `Start, pause and debug your Service Workers and inspect your Web App Manifests within the long-awaited Application panel.`,
+      href: `https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers?${utmParams}`,
     },
   ],
 };
+
+function openLink(href, e) {
+  return openDocLink(href, {
+    relatedToCurrent: true,
+    inBackground: isMacOS ? e.metaKey : e.ctrlKey,
+  });
+}
 
 class Aside extends Component {
   render() {
@@ -113,7 +107,7 @@ class Aside extends Component {
               className: "devtools-button",
               onClick: e => {
                 e.preventDefault();
-                openDocLink(aside.href);
+                openLink(aside.href, e);
               },
             },
             aside.cta
@@ -142,7 +136,7 @@ class Feature extends Component {
           href,
           onClick: e => {
             e.preventDefault();
-            openDocLink(href);
+            openLink(href, e);
           },
         },
         dom.h3({}, header),
@@ -159,7 +153,7 @@ function Link(text, href) {
       href,
       onClick: e => {
         e.preventDefault();
-        openDocLink(href);
+        openLink(href, e);
       },
     },
     text

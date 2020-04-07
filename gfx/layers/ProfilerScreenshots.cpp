@@ -23,7 +23,7 @@ using namespace mozilla::layers;
 ProfilerScreenshots::ProfilerScreenshots()
     : mMutex("ProfilerScreenshots::mMutex"), mLiveSurfaceCount(0) {}
 
-ProfilerScreenshots::~ProfilerScreenshots() {}
+ProfilerScreenshots::~ProfilerScreenshots() = default;
 
 /* static */
 bool ProfilerScreenshots::IsEnabled() {
@@ -64,7 +64,7 @@ void ProfilerScreenshots::SubmitScreenshot(
 
   RefPtr<ProfilerScreenshots> self = this;
 
-  NS_DispatchToBackgroundThread(NS_NewRunnableFunction(
+  NS_DispatchBackgroundTask(NS_NewRunnableFunction(
       "ProfilerScreenshots::SubmitScreenshot",
       [self{std::move(self)}, backingSurface, sourceThread, windowIdentifier,
        originalSize, scaledSize, timeStamp]() {

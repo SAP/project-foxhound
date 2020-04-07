@@ -7,9 +7,6 @@
 #include "mozilla/BasePrincipal.h"
 
 #include "nsDocShell.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-#include "nsIStandardURL.h"
 
 #include "ExpandedPrincipal.h"
 #include "nsNetUtil.h"
@@ -24,6 +21,12 @@
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "mozilla/Components.h"
+#include "nsIURIFixup.h"
+#include "mozilla/dom/StorageUtils.h"
+
+#include "prnetdb.h"
 
 #include "json/json.h"
 #include "nsSerializationHelper.h"
@@ -47,6 +50,39 @@ BasePrincipal::GetOrigin(nsACString& aOrigin) {
   NS_ENSURE_SUCCESS(rv, rv);
   aOrigin.Append(suffix);
   return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetAsciiOrigin(nsACString& aOrigin) {
+  aOrigin.Truncate();
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  return nsContentUtils::GetASCIIOrigin(prinURI, aOrigin);
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetHostPort(nsACString& aRes) {
+  aRes.Truncate();
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  return prinURI->GetHostPort(aRes);
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetHost(nsACString& aRes) {
+  aRes.Truncate();
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  return prinURI->GetHost(aRes);
 }
 
 NS_IMETHODIMP
@@ -151,18 +187,20 @@ static nsTArray<typename T::KeyVal> GetJSONKeys(const Json::Value* aInput) {
   int size = T::eMax + 1;
   nsTArray<typename T::KeyVal> fields;
   for (int i = 0; i != size; i++) {
-    typename T::KeyVal field;
-    // field.valueWasSerialized returns if the field was found in the
+    typename T::KeyVal* field = fields.AppendElement();
+    // field->valueWasSerialized returns if the field was found in the
     // deserialized code. This simplifies the consumers from having to check
     // length.
-    field.valueWasSerialized = false;
-    field.key = static_cast<typename T::SerializableKeys>(i);
-    const std::string key = std::to_string(field.key);
-    if (aInput->isMember(key) && (*aInput)[key].isString()) {
-      field.value.Append(nsDependentCString((*aInput)[key].asCString()));
-      field.valueWasSerialized = true;
+    field->valueWasSerialized = false;
+    field->key = static_cast<typename T::SerializableKeys>(i);
+    const std::string key = std::to_string(field->key);
+    if (aInput->isMember(key)) {
+      const Json::Value& val = (*aInput)[key];
+      if (val.isString()) {
+        field->value.Append(nsDependentCString(val.asCString()));
+        field->valueWasSerialized = true;
+      }
     }
-    fields.AppendElement(field);
   }
   return fields;
 }
@@ -310,6 +348,17 @@ BasePrincipal::EqualsConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
 }
 
 NS_IMETHODIMP
+BasePrincipal::EqualsURI(nsIURI* aOtherURI, bool* aResult) {
+  *aResult = false;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  return prinURI->EqualsExceptRef(aOtherURI, aResult);
+}
+
+NS_IMETHODIMP
 BasePrincipal::Subsumes(nsIPrincipal* aOther, bool* aResult) {
   NS_ENSURE_ARG_POINTER(aOther);
 
@@ -338,9 +387,26 @@ BasePrincipal::SubsumesConsideringDomainIgnoringFPD(nsIPrincipal* aOther,
 }
 
 NS_IMETHODIMP
-BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport,
-                            bool aAllowIfInheritsPrincipal) {
+BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aAllowIfInheritsPrincipal) {
+  return CheckMayLoadHelper(aURI, aAllowIfInheritsPrincipal, false, 0);
+}
+
+NS_IMETHODIMP
+BasePrincipal::CheckMayLoadWithReporting(nsIURI* aURI,
+                                         bool aAllowIfInheritsPrincipal,
+                                         uint64_t aInnerWindowID) {
+  return CheckMayLoadHelper(aURI, aAllowIfInheritsPrincipal, true,
+                            aInnerWindowID);
+}
+
+nsresult BasePrincipal::CheckMayLoadHelper(nsIURI* aURI,
+                                           bool aAllowIfInheritsPrincipal,
+                                           bool aReport,
+                                           uint64_t aInnerWindowID) {
   NS_ENSURE_ARG_POINTER(aURI);
+  MOZ_ASSERT(
+      aReport || aInnerWindowID == 0,
+      "Why do we have an inner window id if we're not supposed to report?");
 
   // Check the internal method first, which allows us to quickly approve loads
   // for the System Principal.
@@ -374,7 +440,7 @@ BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport,
     if (NS_SUCCEEDED(rv) && prinURI) {
       nsScriptSecurityManager::ReportError(
           "CheckSameOriginError", prinURI, aURI,
-          mOriginAttributes.mPrivateBrowsingId > 0);
+          mOriginAttributes.mPrivateBrowsingId > 0, aInnerWindowID);
     }
   }
 
@@ -406,6 +472,67 @@ BasePrincipal::IsThirdPartyPrincipal(nsIPrincipal* aPrin, bool* aRes) {
 }
 
 NS_IMETHODIMP
+BasePrincipal::IsSameOrigin(nsIURI* aURI, bool aIsPrivateWin, bool* aRes) {
+  *aRes = false;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
+  if (!ssm) {
+    return NS_ERROR_UNEXPECTED;
+    ;
+  }
+  *aRes = NS_SUCCEEDED(
+      ssm->CheckSameOriginURI(prinURI, aURI, false, aIsPrivateWin));
+  return NS_OK;
+}
+NS_IMETHODIMP
+BasePrincipal::AllowsRelaxStrictFileOriginPolicy(nsIURI* aURI, bool* aRes) {
+  *aRes = false;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  *aRes = NS_RelaxStrictFileOriginPolicy(aURI, prinURI);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetPrefLightCacheKey(nsIURI* aURI, bool aWithCredentials,
+                                    nsACString& _retval) {
+  _retval.Truncate();
+  NS_NAMED_LITERAL_CSTRING(space, " ");
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = GetURI(getter_AddRefs(uri));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsAutoCString scheme, host, port;
+  if (uri) {
+    uri->GetScheme(scheme);
+    uri->GetHost(host);
+    port.AppendInt(NS_GetRealPort(uri));
+  }
+
+  if (aWithCredentials) {
+    _retval.AssignLiteral("cred");
+  } else {
+    _retval.AssignLiteral("nocred");
+  }
+
+  nsAutoCString spec;
+  rv = aURI->GetSpec(spec);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  _retval.Append(space + scheme + space + host + space + port + space + spec);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 BasePrincipal::GetIsNullPrincipal(bool* aResult) {
   *aResult = Kind() == eNullPrincipal;
   return NS_OK;
@@ -424,6 +551,62 @@ BasePrincipal::GetIsExpandedPrincipal(bool* aResult) {
 }
 
 NS_IMETHODIMP
+BasePrincipal::GetAsciiSpec(nsACString& aSpec) {
+  aSpec.Truncate();
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  return prinURI->GetAsciiSpec(aSpec);
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetAsciiHost(nsACString& aHost) {
+  aHost.Truncate();
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  return prinURI->GetAsciiHost(aHost);
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetExposablePrePath(nsACString& aPrepath) {
+  aPrepath.Truncate();
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIURIFixup> fixup(components::URIFixup::Service());
+  nsCOMPtr<nsIURIFixup> urifixup = services::GetURIFixup();
+  if (NS_WARN_IF(!urifixup)) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIURI> fixedURI;
+  rv = fixup->CreateExposableURI(prinURI, getter_AddRefs(fixedURI));
+
+  if (NS_FAILED(rv) || NS_WARN_IF(!fixedURI)) {
+    return NS_OK;
+  }
+  return fixedURI->GetDisplayPrePath(aPrepath);
+}
+NS_IMETHODIMP
+BasePrincipal::GetPrepath(nsACString& aPath) {
+  aPath.Truncate();
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  return prinURI->GetPrePath(aPath);
+}
+
+NS_IMETHODIMP
 BasePrincipal::GetIsSystemPrincipal(bool* aResult) {
   *aResult = IsSystemPrincipal();
   return NS_OK;
@@ -432,6 +615,48 @@ BasePrincipal::GetIsSystemPrincipal(bool* aResult) {
 NS_IMETHODIMP
 BasePrincipal::GetIsAddonOrExpandedAddonPrincipal(bool* aResult) {
   *aResult = AddonPolicy() || ContentScriptAddonPolicy();
+  return NS_OK;
+}
+
+NS_IMETHODIMP BasePrincipal::GetIsOnion(bool* aIsOnion) {
+  *aIsOnion = false;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+
+  nsAutoCString host;
+  rv = prinURI->GetHost(host);
+  if (NS_FAILED(rv)) {
+    return NS_OK;
+  }
+  *aIsOnion = StringEndsWith(host, NS_LITERAL_CSTRING(".onion"));
+  return NS_OK;
+}
+
+NS_IMETHODIMP BasePrincipal::GetIsIpAddress(bool* aIsIpAddress) {
+  *aIsIpAddress = false;
+
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+
+  nsAutoCString host;
+  rv = prinURI->GetHost(host);
+  if (NS_FAILED(rv)) {
+    return NS_OK;
+  }
+
+  PRNetAddr prAddr;
+  memset(&prAddr, 0, sizeof(prAddr));
+
+  if (PR_StringToNetAddr(host.get(), &prAddr) == PR_SUCCESS) {
+    *aIsIpAddress = true;
+  }
+
   return NS_OK;
 }
 
@@ -444,6 +669,33 @@ BasePrincipal::SchemeIs(const char* aScheme, bool* aResult) {
     return NS_OK;
   }
   *aResult = prinURI->SchemeIs(aScheme);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::IsURIInPrefList(const char* aPref, bool* aResult) {
+  *aResult = false;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  *aResult = nsContentUtils::IsURIInPrefList(prinURI, aPref);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetIsOriginPotentiallyTrustworthy(bool* aResult) {
+  MOZ_ASSERT(NS_IsMainThread());
+  *aResult = false;
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = GetURI(getter_AddRefs(uri));
+  if (NS_FAILED(rv) || !uri) {
+    return NS_OK;
+  }
+
+  *aResult = nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(uri);
   return NS_OK;
 }
 
@@ -688,10 +940,56 @@ void BasePrincipal::FinishInit(BasePrincipal* aOther,
   mHasExplicitDomain = aOther->mHasExplicitDomain;
 }
 
+NS_IMETHODIMP
+BasePrincipal::GetLocalStorageQuotaKey(nsACString& aKey) {
+  aKey.Truncate();
+  nsresult rv;
+  nsCOMPtr<nsIEffectiveTLDService> eTLDService(
+      do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID, &rv));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIURI> uri;
+  rv = GetURI(getter_AddRefs(uri));
+  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_TRUE(uri, NS_ERROR_UNEXPECTED);
+
+  nsAutoCString eTLDplusOne;
+  rv = eTLDService->GetBaseDomain(uri, 0, eTLDplusOne);
+  if (NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS == rv) {
+    // XXX bug 357323 - what to do for localhost/file exactly?
+    rv = uri->GetAsciiHost(eTLDplusOne);
+  }
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  OriginAttributesRef().CreateSuffix(aKey);
+
+  nsAutoCString subdomainsDBKey;
+  dom::StorageUtils::CreateReversedDomain(eTLDplusOne, subdomainsDBKey);
+
+  aKey.Append(':');
+  aKey.Append(subdomainsDBKey);
+
+  return NS_OK;
+}
+
 bool SiteIdentifier::Equals(const SiteIdentifier& aOther) const {
   MOZ_ASSERT(IsInitialized());
   MOZ_ASSERT(aOther.IsInitialized());
   return mPrincipal->FastEquals(aOther.mPrincipal);
+}
+
+NS_IMETHODIMP
+BasePrincipal::CreateReferrerInfo(mozilla::dom::ReferrerPolicy aReferrerPolicy,
+                                  nsIReferrerInfo** _retval) {
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  RefPtr<dom::ReferrerInfo> info =
+      new dom::ReferrerInfo(prinURI, aReferrerPolicy);
+  info.forget(_retval);
+  return NS_OK;
 }
 
 }  // namespace mozilla

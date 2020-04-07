@@ -5,12 +5,12 @@ var gClient;
 function test() {
   waitForExplicitFinish();
   const actorURL =
-    "chrome://mochitests/content/chrome/devtools/server/tests/mochitest/hello-actor.js";
+    "chrome://mochitests/content/chrome/devtools/server/tests/chrome/hello-actor.js";
 
-  DebuggerServer.init();
-  DebuggerServer.registerAllActors();
+  DevToolsServer.init();
+  DevToolsServer.registerAllActors();
 
-  gClient = new DebuggerClient(DebuggerServer.connectPipe());
+  gClient = new DevToolsClient(DevToolsServer.connectPipe());
   gClient
     .connect()
     .then(() => gClient.mainRoot.listTabs())
@@ -39,7 +39,7 @@ function cleanupActor(actorFront) {
   // Clean up
   actorFront.unregister().then(() => {
     gClient.close().then(() => {
-      DebuggerServer.destroy();
+      DevToolsServer.destroy();
       gClient = null;
       finish();
     });

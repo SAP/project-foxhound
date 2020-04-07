@@ -9,9 +9,11 @@ import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.mozglue.GeckoLoader;
 import org.mozilla.gecko.process.GeckoProcessManager;
+import org.mozilla.gecko.process.GeckoProcessType;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
 import org.mozilla.geckoview.BuildConfig;
+import org.mozilla.geckoview.GeckoResult;
 
 import android.app.ActivityManager;
 import android.content.Context;
@@ -27,6 +29,7 @@ import android.os.Process;
 import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.annotation.UiThread;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -34,6 +37,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -129,6 +133,7 @@ public class GeckoThread extends Thread {
     private static int uiThreadId;
 
     private static TelemetryUtils.Timer sInitTimer;
+    private static LinkedList<StateGeckoResult> sStateListeners = new LinkedList<>();
 
     // Main process parameters
     public static final int FLAG_DEBUGGING = 1 << 0; // Debugging mode.
@@ -159,6 +164,13 @@ public class GeckoThread extends Thread {
         public int ipcFd;
         public int crashFd;
         public int crashAnnotationFd;
+    }
+
+    private static class StateGeckoResult extends GeckoResult<Void> {
+        final State state;
+        public StateGeckoResult(final State state) {
+            this.state = state;
+        }
     }
 
     GeckoThread() {
@@ -448,13 +460,8 @@ public class GeckoThread extends Thread {
         initGeckoEnvironment();
 
         if ((mInitInfo.flags & FLAG_PRELOAD_CHILD) != 0) {
-            ThreadUtils.postToBackgroundThread(new Runnable() {
-                @Override
-                public void run() {
-                    // Preload the content ("tab") child process.
-                    GeckoProcessManager.getInstance().preload("tab");
-                }
-            });
+            // Preload the content ("tab") child process.
+            GeckoProcessManager.getInstance().preload(GeckoProcessType.CONTENT);
         }
 
         if ((mInitInfo.flags & FLAG_DEBUGGING) != 0) {
@@ -631,6 +638,8 @@ public class GeckoThread extends Thread {
                 sInitTimer.stop();
                 sInitTimer = null;
             }
+
+            notifyStateListeners();
         }
         return result;
     }
@@ -647,20 +656,34 @@ public class GeckoThread extends Thread {
                              "speculativeConnectNative", uri);
     }
 
-    @WrapForJNI(stubName = "WaitOnGecko")
-    @RobocopTarget
-    private static native boolean nativeWaitOnGecko(long timeoutMillis);
+    @UiThread
+    public static GeckoResult<Void> waitForState(final State state) {
+        final StateGeckoResult result = new StateGeckoResult(state);
+        if (isStateAtLeast(state)) {
+            result.complete(null);
+            return result;
+        }
 
-    public static void waitOnGeckoForever() {
-        nativeWaitOnGecko(0);
+        synchronized (sStateListeners) {
+            sStateListeners.add(result);
+        }
+        return result;
     }
 
-    public static boolean waitOnGecko() {
-        return waitOnGecko(DEFAULT_TIMEOUT);
-    }
+    private static void notifyStateListeners() {
+        synchronized (sStateListeners) {
+            final LinkedList<StateGeckoResult> newListeners = new LinkedList<>();
+            for (final StateGeckoResult result : sStateListeners) {
+                if (!isStateAtLeast(result.state)) {
+                    newListeners.add(result);
+                    continue;
+                }
 
-    public static boolean waitOnGecko(final long timeoutMillis) {
-        return nativeWaitOnGecko(timeoutMillis);
+                result.complete(null);
+            }
+
+            sStateListeners = newListeners;
+        }
     }
 
     @WrapForJNI(stubName = "OnPause", dispatchTo = "gecko")

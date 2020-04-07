@@ -15,7 +15,6 @@
 #include "mozilla/StaticPrefs_security.h"
 #include "nsContentUtils.h"
 #include "nsStyleConsts.h"
-#include "nsIContentSecurityPolicy.h"
 
 static mozilla::LazyLogModule gMetaElementLog("nsMetaElement");
 #define LOG(msg) MOZ_LOG(gMetaElementLog, mozilla::LogLevel::Debug, msg)
@@ -30,7 +29,7 @@ HTMLMetaElement::HTMLMetaElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {}
 
-HTMLMetaElement::~HTMLMetaElement() {}
+HTMLMetaElement::~HTMLMetaElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLMetaElement)
 

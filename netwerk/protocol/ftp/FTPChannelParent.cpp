@@ -16,7 +16,6 @@
 #include "nsFtpProtocolHandler.h"
 #include "nsIAuthPrompt.h"
 #include "nsIAuthPromptProvider.h"
-#include "nsIEncodedChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsISecureBrowserUI.h"
 #include "nsIForcePendingChannel.h"
@@ -24,7 +23,6 @@
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/Unused.h"
 #include "SerializedLoadContext.h"
-#include "nsIContentPolicy.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/dom/ContentParent.h"
@@ -498,25 +496,6 @@ FTPChannelParent::OnDataAvailable(nsIRequest* aRequest,
 NS_IMETHODIMP
 FTPChannelParent::SetParentListener(ParentChannelListener* aListener) {
   // Do not need ptr to ParentChannelListener.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FTPChannelParent::NotifyChannelClassifierProtectionDisabled(
-    uint32_t aAcceptedReason) {
-  // One day, this should probably be filled in.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FTPChannelParent::NotifyCookieAllowed() {
-  // One day, this should probably be filled in.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FTPChannelParent::NotifyCookieBlocked(uint32_t aRejectedReason) {
-  // One day, this should probably be filled in.
   return NS_OK;
 }
 

@@ -15,7 +15,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"
 #include "nsAutoPtr.h"
-#include "nsICacheInfoChannel.h"
 #include "mozilla/dom/Document.h"
 #include "nsIIncrementalStreamLoader.h"
 #include "nsURIHashKey.h"
@@ -322,6 +321,7 @@ class ScriptLoader final : public nsISupports {
                           const nsAString& aType, const nsAString& aCrossOrigin,
                           const nsAString& aIntegrity, bool aScriptFromHead,
                           bool aAsync, bool aDefer, bool aNoModule,
+                          bool aLinkPreload,
                           const ReferrerPolicy aReferrerPolicy);
 
   /**

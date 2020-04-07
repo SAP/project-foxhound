@@ -22,7 +22,6 @@
 #ifdef XP_MACOSX
 #  include "nsCocoaFeatures.h"
 #endif
-#include "nsIPropertyBag2.h"
 #include "nsIThreadManager.h"
 #include "nsServiceManagerUtils.h"
 #include "prsystem.h"
@@ -43,7 +42,7 @@ StaticAutoPtr<PaintThread> PaintThread::sSingleton;
 StaticRefPtr<nsIThread> PaintThread::sThread;
 PlatformThreadId PaintThread::sThreadId;
 
-PaintThread::PaintThread() {}
+PaintThread::PaintThread() = default;
 
 void PaintThread::Release() {}
 

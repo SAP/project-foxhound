@@ -9,9 +9,13 @@
 
 #include "vm/NativeObject.h"
 
+#include "mozilla/Maybe.h"
+
 #include "builtin/TypedObject.h"
 #include "gc/Allocator.h"
 #include "gc/GCTrace.h"
+#include "gc/MaybeRooted.h"
+#include "js/Result.h"
 #include "proxy/Proxy.h"
 #include "vm/JSContext.h"
 #include "vm/ProxyObject.h"
@@ -64,10 +68,15 @@ inline void NativeObject::clearShouldConvertDoubleElements() {
 
 inline void NativeObject::addDenseElementType(JSContext* cx, uint32_t index,
                                               const Value& val) {
+  if (!IsTypeInferenceEnabled()) {
+    return;
+  }
+
   // Avoid a slow AddTypePropertyId call if the type is the same as the type
   // of the previous element.
   TypeSet::Type thisType = TypeSet::GetValueType(val);
-  if (index == 0 || TypeSet::GetValueType(elements_[index - 1]) != thisType) {
+  if (index == 0 || elements_[index - 1].isMagic() ||
+      TypeSet::GetValueType(elements_[index - 1]) != thisType) {
     AddTypePropertyId(cx, this, JSID_VOID, thisType);
   }
 }
@@ -89,15 +98,19 @@ inline void NativeObject::initDenseElementWithType(JSContext* cx,
 }
 
 inline void NativeObject::setDenseElementHole(JSContext* cx, uint32_t index) {
-  MarkObjectGroupFlags(cx, this, OBJECT_FLAG_NON_PACKED);
+  if (IsTypeInferenceEnabled()) {
+    MarkObjectGroupFlags(cx, this, OBJECT_FLAG_NON_PACKED);
+  }
   setDenseElement(index, MagicValue(JS_ELEMENTS_HOLE));
 }
 
 inline void NativeObject::removeDenseElementForSparseIndex(JSContext* cx,
                                                            uint32_t index) {
   MOZ_ASSERT(containsPure(INT_TO_JSID(index)));
-  MarkObjectGroupFlags(cx, this,
-                       OBJECT_FLAG_NON_PACKED | OBJECT_FLAG_SPARSE_INDEXES);
+  if (IsTypeInferenceEnabled()) {
+    MarkObjectGroupFlags(cx, this,
+                         OBJECT_FLAG_NON_PACKED | OBJECT_FLAG_SPARSE_INDEXES);
+  }
   if (containsDenseElement(index)) {
     setDenseElement(index, MagicValue(JS_ELEMENTS_HOLE));
   }
@@ -109,11 +122,16 @@ inline bool NativeObject::writeToIndexWouldMarkNotPacked(uint32_t index) {
 
 inline void NativeObject::markDenseElementsNotPacked(JSContext* cx) {
   MOZ_ASSERT(isNative());
-  MarkObjectGroupFlags(cx, this, OBJECT_FLAG_NON_PACKED);
+  if (IsTypeInferenceEnabled()) {
+    MarkObjectGroupFlags(cx, this, OBJECT_FLAG_NON_PACKED);
+  }
 }
 
 inline void NativeObject::elementsRangeWriteBarrierPost(uint32_t start,
                                                         uint32_t count) {
+  if (!isTenured()) {
+    return;
+  }
   for (size_t i = 0; i < count; i++) {
     const Value& v = elements_[start + i];
     if (v.isGCThing()) {
@@ -756,9 +774,17 @@ static MOZ_ALWAYS_INLINE bool LookupOwnPropertyInline(
   // so that integer properties on the prototype are ignored even for out
   // of bounds accesses.
   if (obj->template is<TypedArrayObject>()) {
-    uint64_t index;
-    if (IsTypedArrayIndex(id, &index)) {
-      if (index < obj->template as<TypedArrayObject>().length()) {
+    JS::Result<mozilla::Maybe<uint64_t>> index = IsTypedArrayIndex(cx, id);
+    if (index.isErr()) {
+      if (!allowGC) {
+        cx->recoverFromOutOfMemory();
+      }
+      return false;
+    }
+
+    if (index.inspect()) {
+      if (index.inspect().value() <
+          obj->template as<TypedArrayObject>().length()) {
         propp.setDenseOrTypedArrayElement();
       } else {
         propp.setNotFound();
@@ -779,28 +805,24 @@ static MOZ_ALWAYS_INLINE bool LookupOwnPropertyInline(
   // id was not found in obj. Try obj's resolve hook, if any.
   if (obj->getClass()->getResolve()) {
     MOZ_ASSERT(!cx->isHelperThreadContext());
-    if (!allowGC) {
+    if constexpr (!allowGC) {
       return false;
-    }
+    } else {
+      bool recursed;
+      if (!CallResolveOp(cx, obj, id, propp, &recursed)) {
+        return false;
+      }
 
-    bool recursed;
-    if (!CallResolveOp(
-            cx, MaybeRooted<NativeObject*, allowGC>::toHandle(obj),
-            MaybeRooted<jsid, allowGC>::toHandle(id),
-            MaybeRooted<PropertyResult, allowGC>::toMutableHandle(propp),
-            &recursed)) {
-      return false;
-    }
+      if (recursed) {
+        propp.setNotFound();
+        *donep = true;
+        return true;
+      }
 
-    if (recursed) {
-      propp.setNotFound();
-      *donep = true;
-      return true;
-    }
-
-    if (propp) {
-      *donep = true;
-      return true;
+      if (propp) {
+        *donep = true;
+        return true;
+      }
     }
   }
 
@@ -813,25 +835,27 @@ static MOZ_ALWAYS_INLINE bool LookupOwnPropertyInline(
  * Simplified version of LookupOwnPropertyInline that doesn't call resolve
  * hooks.
  */
-static inline void NativeLookupOwnPropertyNoResolve(
+static inline MOZ_MUST_USE bool NativeLookupOwnPropertyNoResolve(
     JSContext* cx, HandleNativeObject obj, HandleId id,
     MutableHandle<PropertyResult> result) {
   // Check for a native dense element.
   if (JSID_IS_INT(id) && obj->containsDenseElement(JSID_TO_INT(id))) {
     result.setDenseOrTypedArrayElement();
-    return;
+    return true;
   }
 
   // Check for a typed array element.
   if (obj->is<TypedArrayObject>()) {
-    uint64_t index;
-    if (IsTypedArrayIndex(id, &index)) {
-      if (index < obj->as<TypedArrayObject>().length()) {
+    mozilla::Maybe<uint64_t> index;
+    JS_TRY_VAR_OR_RETURN_FALSE(cx, index, IsTypedArrayIndex(cx, id));
+
+    if (index) {
+      if (index.value() < obj->as<TypedArrayObject>().length()) {
         result.setDenseOrTypedArrayElement();
       } else {
         result.setNotFound();
       }
-      return;
+      return true;
     }
   }
 
@@ -841,6 +865,7 @@ static inline void NativeLookupOwnPropertyNoResolve(
   } else {
     result.setNotFound();
   }
+  return true;
 }
 
 template <AllowGC allowGC>
@@ -874,14 +899,11 @@ static MOZ_ALWAYS_INLINE bool LookupPropertyInline(
     }
     if (!proto->isNative()) {
       MOZ_ASSERT(!cx->isHelperThreadContext());
-      if (!allowGC) {
+      if constexpr (!allowGC) {
         return false;
+      } else {
+        return LookupProperty(cx, proto, id, objp, propp);
       }
-      return LookupProperty(
-          cx, MaybeRooted<JSObject*, allowGC>::toHandle(proto),
-          MaybeRooted<jsid, allowGC>::toHandle(id),
-          MaybeRooted<JSObject*, allowGC>::toMutableHandle(objp),
-          MaybeRooted<PropertyResult, allowGC>::toMutableHandle(propp));
     }
 
     current = &proto->template as<NativeObject>();
@@ -903,6 +925,9 @@ inline bool ThrowIfNotConstructing(JSContext* cx, const CallArgs& args,
 }
 
 inline bool IsPackedArray(JSObject* obj) {
+  if (!IsTypeInferenceEnabled()) {
+    return false;
+  }
   if (!obj->is<ArrayObject>() || obj->hasLazyGroup()) {
     return false;
   }

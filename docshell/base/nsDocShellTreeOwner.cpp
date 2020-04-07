@@ -12,13 +12,11 @@
 #include "nsContentUtils.h"
 #include "nsSize.h"
 #include "mozilla/ReflowInput.h"
-#include "nsIServiceManager.h"
 #include "nsComponentManagerUtils.h"
 #include "nsString.h"
 #include "nsAtom.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
-#include "nsISimpleEnumerator.h"
 #include "mozilla/LookAndFeel.h"
 
 // Interfaces needed to be included
@@ -30,9 +28,7 @@
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/SVGTitleElement.h"
 #include "nsIFormControl.h"
-#include "nsIImageLoadingContent.h"
 #include "nsIWebNavigation.h"
-#include "nsIStringBundle.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
 #include "nsIWindowWatcher.h"
@@ -43,7 +39,6 @@
 #include "nsRect.h"
 #include "nsIWebBrowserChromeFocus.h"
 #include "nsIContent.h"
-#include "imgIContainer.h"
 #include "nsViewManager.h"
 #include "nsView.h"
 #include "nsIConstraintValidation.h"
@@ -360,7 +355,7 @@ nsDocShellTreeOwner::SizeShellTo(nsIDocShellTreeItem* aShellItem, int32_t aCX,
     if (browserChild) {
       // The XUL window to resize is in the parent process, but there we
       // won't be able to get aShellItem to do the hack in
-      // nsXULWindow::SizeShellTo, so let's send the width and height of
+      // AppWindow::SizeShellTo, so let's send the width and height of
       // aShellItem too.
       nsCOMPtr<nsIBaseWindow> shellAsWin(do_QueryInterface(aShellItem));
       NS_ENSURE_TRUE(shellAsWin, NS_ERROR_FAILURE);
@@ -588,7 +583,7 @@ nsDocShellTreeOwner::SetParentNativeWindow(nativeWindow aParentNativeWindow) {
 
 NS_IMETHODIMP
 nsDocShellTreeOwner::GetNativeHandle(nsAString& aNativeHandle) {
-  // the nativeHandle should be accessed from nsIXULWindow
+  // the nativeHandle should be accessed from nsIAppWindow
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

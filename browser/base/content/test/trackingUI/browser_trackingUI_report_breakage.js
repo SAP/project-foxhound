@@ -64,6 +64,9 @@ add_task(async function testReportBreakageCancel() {
   Services.prefs.setBoolPref(TP_PREF, true);
 
   await BrowserTestUtils.withNewTab(TRACKING_PAGE, async function() {
+    await TestUtils.waitForCondition(() =>
+      gProtectionsHandler._protectionsPopup.hasAttribute("blocking")
+    );
     await openProtectionsPopup();
 
     let siteNotWorkingButton = document.getElementById(
@@ -108,12 +111,79 @@ add_task(async function testReportBreakageCancel() {
   Services.prefs.clearUserPref(TP_PREF);
 });
 
+add_task(async function testReportBreakageSiteException() {
+  Services.prefs.setBoolPref(TP_PREF, true);
+
+  let url = TRACKING_PAGE + "?a=b&1=abc&unicode=🦊";
+
+  await BrowserTestUtils.withNewTab(url, async browser => {
+    let loaded = BrowserTestUtils.browserLoaded(browser, false);
+    gProtectionsHandler.disableForCurrentPage();
+    await loaded;
+
+    await openProtectionsPopup();
+
+    let siteFixedButton = document.getElementById(
+      "protections-popup-tp-switch-breakage-fixed-link"
+    );
+    ok(
+      BrowserTestUtils.is_visible(siteFixedButton),
+      "site fixed button is visible"
+    );
+    let sendReportView = document.getElementById(
+      "protections-popup-sendReportView"
+    );
+    let viewShown = BrowserTestUtils.waitForEvent(sendReportView, "ViewShown");
+    siteFixedButton.click();
+    await viewShown;
+
+    ok(true, "Report breakage view was shown");
+
+    await testReportBreakageSubmit(
+      TRACKING_PAGE,
+      "trackingprotection",
+      false,
+      true
+    );
+
+    // Pass false for shouldReload - there's no need since the tab is going away.
+    gProtectionsHandler.enableForCurrentPage(false);
+  });
+
+  Services.prefs.clearUserPref(TP_PREF);
+});
+
+add_task(async function testNoTracking() {
+  await BrowserTestUtils.withNewTab(BENIGN_PAGE, async function() {
+    await openProtectionsPopup();
+
+    let siteNotWorkingButton = document.getElementById(
+      "protections-popup-tp-switch-breakage-link"
+    );
+    ok(
+      BrowserTestUtils.is_hidden(siteNotWorkingButton),
+      "site not working button is not visible"
+    );
+  });
+});
+
+add_task(async function testReportBreakageError() {
+  Services.prefs.setBoolPref(TP_PREF, true);
+  // Make sure that we correctly strip the query.
+  let url = TRACKING_PAGE + "?a=b&1=abc&unicode=🦊";
+  await BrowserTestUtils.withNewTab(url, async function() {
+    await openAndTestReportBreakage(TRACKING_PAGE, "trackingprotection", true);
+  });
+
+  Services.prefs.clearUserPref(TP_PREF);
+});
+
 add_task(async function testTP() {
   Services.prefs.setBoolPref(TP_PREF, true);
   // Make sure that we correctly strip the query.
   let url = TRACKING_PAGE + "?a=b&1=abc&unicode=🦊";
   await BrowserTestUtils.withNewTab(url, async function() {
-    await testReportBreakage(TRACKING_PAGE, "trackingprotection");
+    await openAndTestReportBreakage(TRACKING_PAGE, "trackingprotection");
   });
 
   Services.prefs.clearUserPref(TP_PREF);
@@ -127,7 +197,7 @@ add_task(async function testCR() {
   // Make sure that we correctly strip the query.
   let url = COOKIE_PAGE + "?a=b&1=abc&unicode=🦊";
   await BrowserTestUtils.withNewTab(url, async function() {
-    await testReportBreakage(COOKIE_PAGE, "cookierestrictions");
+    await openAndTestReportBreakage(COOKIE_PAGE, "cookierestrictions");
   });
 
   Services.prefs.clearUserPref(CB_PREF);
@@ -139,11 +209,13 @@ add_task(async function testFP() {
   // Make sure that we correctly strip the query.
   let url = TRACKING_PAGE + "?a=b&1=abc&unicode=🦊";
   await BrowserTestUtils.withNewTab(url, async function(browser) {
-    await ContentTask.spawn(browser, {}, function() {
+    let promise = waitForContentBlockingEvent();
+    await SpecialPowers.spawn(browser, [], function() {
       content.postMessage("fingerprinting", "*");
     });
+    await promise;
 
-    await testReportBreakage(TRACKING_PAGE, "fingerprinting");
+    await openAndTestReportBreakage(TRACKING_PAGE, "fingerprinting", true);
   });
 
   Services.prefs.clearUserPref(FP_PREF);
@@ -156,34 +228,27 @@ add_task(async function testCM() {
   // Make sure that we correctly strip the query.
   let url = TRACKING_PAGE + "?a=b&1=abc&unicode=🦊";
   await BrowserTestUtils.withNewTab(url, async function(browser) {
-    await ContentTask.spawn(browser, {}, function() {
+    let promise = waitForContentBlockingEvent();
+    await SpecialPowers.spawn(browser, [], function() {
       content.postMessage("cryptomining", "*");
     });
+    await promise;
 
-    await testReportBreakage(TRACKING_PAGE, "cryptomining");
+    await openAndTestReportBreakage(TRACKING_PAGE, "cryptomining", true);
   });
 
   Services.prefs.clearUserPref(CM_PREF);
   Services.prefs.clearUserPref(CB_PREF);
 });
 
-async function testReportBreakage(url, tags) {
-  // Setup a mock server for receiving breakage reports.
-  let server = new HttpServer();
-  server.start(-1);
-  let i = server.identity;
-  let path =
-    i.primaryScheme + "://" + i.primaryHost + ":" + i.primaryPort + "/";
-
-  Services.prefs.setStringPref(PREF_REPORT_BREAKAGE_URL, path);
-
+async function openAndTestReportBreakage(url, tags, error = false) {
   await openProtectionsPopup();
 
   let siteNotWorkingButton = document.getElementById(
     "protections-popup-tp-switch-breakage-link"
   );
-  await TestUtils.waitForCondition(
-    () => BrowserTestUtils.is_visible(siteNotWorkingButton),
+  ok(
+    BrowserTestUtils.is_visible(siteNotWorkingButton),
     "site not working button is visible"
   );
   let siteNotWorkingView = document.getElementById(
@@ -207,6 +272,20 @@ async function testReportBreakage(url, tags) {
   await viewShown;
 
   ok(true, "Report breakage view was shown");
+
+  await testReportBreakageSubmit(url, tags, error, false);
+}
+
+// This function assumes that the breakage report view is ready.
+async function testReportBreakageSubmit(url, tags, error, hasException) {
+  // Setup a mock server for receiving breakage reports.
+  let server = new HttpServer();
+  server.start(-1);
+  let i = server.identity;
+  let path =
+    i.primaryScheme + "://" + i.primaryHost + ":" + i.primaryPort + "/";
+
+  Services.prefs.setStringPref(PREF_REPORT_BREAKAGE_URL, path);
 
   let comments = document.getElementById(
     "protections-popup-sendReportView-collection-comments"
@@ -272,14 +351,21 @@ async function testReportBreakage(url, tags) {
             `userAgent: ${navigator.userAgent}\r\n\r\n` +
             "**Preferences**\r\n" +
             `${prefsBody}\r\n` +
+            `hasException: ${hasException}\r\n\r\n` +
             "**Comments**\r\n" +
             "This is a comment\r\n",
           'Content-Disposition: form-data; name="labels"\r\n\r\n' +
-            `${tags}\r\n`,
+            `${hasException ? "" : tags}\r\n`,
           "",
         ],
         "Should send the correct form data"
       );
+
+      if (error) {
+        response.setStatusLine(request.httpVersion, 500, "Request failed");
+      } else {
+        response.setStatusLine(request.httpVersion, 201, "Entry created");
+      }
 
       resolve();
     });
@@ -287,6 +373,23 @@ async function testReportBreakage(url, tags) {
     comments.value = "This is a comment";
     submitButton.click();
   });
+
+  let errorMessage = document.getElementById(
+    "protections-popup-sendReportView-report-error"
+  );
+  if (error) {
+    await BrowserTestUtils.waitForCondition(() =>
+      BrowserTestUtils.is_visible(errorMessage)
+    );
+    is(
+      comments.value,
+      "This is a comment",
+      "Comment not cleared in case of an error"
+    );
+    gProtectionsHandler._protectionsPopup.hidePopup();
+  } else {
+    ok(BrowserTestUtils.is_hidden(errorMessage), "Error message not shown");
+  }
 
   await popuphidden;
 

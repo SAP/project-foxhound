@@ -26,6 +26,7 @@ interface nsIProfilerStartParams : nsISupports
   readonly attribute double duration;
   readonly attribute double interval;
   readonly attribute uint32_t features;
+  readonly attribute uint64_t activeBrowsingContextID;
 
   [noscript, notxpcom, nostdcall] StringArrayRef getFilters();
 };
@@ -37,12 +38,23 @@ interface nsIProfiler : nsISupports
   void StartProfiler(in uint32_t aEntries, in double aInterval,
                      in Array<AUTF8String> aFeatures,
                      [optional] in Array<AUTF8String> aFilters,
+                     [optional] in uint64_t aActiveBrowsingContextID,
                      [optional] in double aDuration);
   void StopProfiler();
   boolean IsPaused();
   void PauseSampling();
   void ResumeSampling();
   void AddMarker(in string aMarker);
+
+  /*
+   * Resolves the returned promise after at least one full periodic sampling.
+   * Rejects the promise if sampler is not running (yet, or anymore, or paused).
+   * This is mainly useful in tests, to wait just long enough to guarantee that
+   * one sample was taken in the main process.
+   */
+  [implicit_jscontext]
+  Promise waitOnePeriodicSampling();
+
   /*
    * Returns the JSON string of the profile. If aSinceTime is passed, only
    * report samples taken at >= aSinceTime.

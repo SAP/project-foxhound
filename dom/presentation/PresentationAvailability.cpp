@@ -11,7 +11,6 @@
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIPresentationDeviceManager.h"
 #include "nsIPresentationService.h"
 #include "nsServiceManagerUtils.h"
 #include "PresentationLog.h"
@@ -30,6 +29,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(PresentationAvailability,
                                                 DOMEventTargetHelper)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPromises);
   tmp->Shutdown();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ADDREF_INHERITED(PresentationAvailability, DOMEventTargetHelper)

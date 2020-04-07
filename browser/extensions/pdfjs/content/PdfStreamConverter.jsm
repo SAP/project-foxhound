@@ -1008,6 +1008,10 @@ PdfStreamConverter.prototype = {
     this.listener = aListener;
   },
 
+  getConvertedType(aFromType) {
+    return "text/html";
+  },
+
   // nsIStreamListener::onDataAvailable
   onDataAvailable(aRequest, aInputStream, aOffset, aCount) {
     if (!this.dataListener) {
@@ -1178,7 +1182,12 @@ PdfStreamConverter.prototype = {
       uri,
       aRequest.loadInfo.originAttributes
     );
+    // Remember the principal we would have had before we mess with it.
+    let originalPrincipal = Services.scriptSecurityManager.getChannelResultPrincipal(
+      aRequest
+    );
     aRequest.owner = resourcePrincipal;
+    aRequest.setProperty("noPDFJSPrincipal", originalPrincipal);
 
     channel.asyncOpen(proxy);
   },

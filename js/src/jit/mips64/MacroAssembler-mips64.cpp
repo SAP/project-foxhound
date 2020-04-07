@@ -16,6 +16,8 @@
 #include "jit/mips64/Simulator-mips64.h"
 #include "jit/MoveEmitter.h"
 #include "jit/SharedICRegisters.h"
+#include "util/Memory.h"
+#include "vm/JitActivation.h"  // js::jit::JitActivation
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -343,11 +345,11 @@ void MacroAssemblerMIPS64::ma_dctz(Register rd, Register rs) {
   ma_dnegu(SecondScratchReg, rd);
   ma_daddu(SecondScratchReg, Imm32(0x3f));
 #ifdef MIPS64
-    as_selnez(SecondScratchReg, SecondScratchReg, ScratchRegister);
-    as_seleqz(rd, rd, ScratchRegister);
-    as_or(rd, rd, SecondScratchReg);
+  as_selnez(SecondScratchReg, SecondScratchReg, ScratchRegister);
+  as_seleqz(rd, rd, ScratchRegister);
+  as_or(rd, rd, SecondScratchReg);
 #else
-    as_movn(rd, SecondScratchReg, ScratchRegister);
+  as_movn(rd, SecondScratchReg, ScratchRegister);
 #endif
 }
 
@@ -1532,6 +1534,9 @@ void MacroAssemblerMIPS64Compat::tagValue(JSValueType type, Register payload,
   ma_li(ScratchRegister, ImmTag(JSVAL_TYPE_TO_TAG(type)));
   ma_dins(dest.valueReg(), ScratchRegister, Imm32(JSVAL_TAG_SHIFT),
           Imm32(64 - JSVAL_TAG_SHIFT));
+  if (type == JSVAL_TYPE_INT32 || type == JSVAL_TYPE_BOOLEAN) {
+    ma_dins(dest.valueReg(), zero, Imm32(32), Imm32(JSVAL_TAG_SHIFT - 32));
+  }
 }
 
 void MacroAssemblerMIPS64Compat::pushValue(ValueOperand val) {
@@ -1648,7 +1653,7 @@ void MacroAssemblerMIPS64Compat::handleFailureWithHandlerTail(
   jump(a0);
 
   // If we found a finally block, this must be a baseline frame. Push
-  // two values expected by JSOP_RETSUB: BooleanValue(true) and the
+  // two values expected by JSOp::Retsub: BooleanValue(true) and the
   // exception.
   bind(&finally);
   ValueOperand exception = ValueOperand(a1);
@@ -2005,14 +2010,19 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
                                               Label* label) {
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
 
-  Label done, checkAddress, checkObjectAddress;
+  Label done, checkAddress, checkObjectAddress, checkStringAddress;
   SecondScratchRegisterScope scratch2(*this);
 
   splitTag(value, scratch2);
   branchTestObject(Assembler::Equal, scratch2, &checkObjectAddress);
-  branchTestString(Assembler::NotEqual, scratch2,
+  branchTestString(Assembler::Equal, scratch2, &checkStringAddress);
+  branchTestBigInt(Assembler::NotEqual, scratch2,
                    cond == Assembler::Equal ? &done : label);
 
+  unboxBigInt(value, scratch2);
+  jump(&checkAddress);
+
+  bind(&checkStringAddress);
   unboxString(value, scratch2);
   jump(&checkAddress);
 

@@ -2,7 +2,6 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 // Test that permissions with specific expiry times behave as expected.
-
 var test_generator = do_run_test();
 
 function run_test() {
@@ -15,9 +14,6 @@ function continue_test() {
 }
 
 function* do_run_test() {
-  // Set up a profile.
-  let profile = do_get_profile();
-
   let pm = Services.perms;
   let permURI = NetUtil.newURI("http://example.com");
   let principal = Services.scriptSecurityManager.createContentPrincipal(
@@ -84,38 +80,6 @@ function* do_run_test() {
     0
   );
 
-  // add a permission for renewal
-  pm.addFromPrincipal(
-    principal,
-    "test/expiration-perm-renewable",
-    1,
-    pm.EXPIRE_TIME,
-    now + 100
-  );
-  pm.addFromPrincipal(
-    principal,
-    "test/expiration-session-renewable",
-    1,
-    pm.EXPIRE_SESSION,
-    now + 100
-  );
-
-  // And immediately renew them with longer timeouts
-  pm.updateExpireTime(
-    principal,
-    "test/expiration-perm-renewable",
-    true,
-    now + 100,
-    now + 1e6
-  );
-  pm.updateExpireTime(
-    principal,
-    "test/expiration-session-renewable",
-    true,
-    now + 1e6,
-    now + 100
-  );
-
   // check that the second two haven't expired yet
   Assert.equal(
     1,
@@ -128,17 +92,6 @@ function* do_run_test() {
   Assert.equal(
     1,
     pm.testPermissionFromPrincipal(principal, "test/expiration-perm-nexp")
-  );
-  Assert.equal(
-    1,
-    pm.testPermissionFromPrincipal(principal, "test/expiration-perm-renewable")
-  );
-  Assert.equal(
-    1,
-    pm.testPermissionFromPrincipal(
-      principal,
-      "test/expiration-session-renewable"
-    )
   );
 
   // ... and the first one has
@@ -183,18 +136,24 @@ function* do_run_test() {
     pm.getPermissionObject(principal, "test/expiration-session-exp2", false)
   );
 
-  // Check that the renewable permissions actually got renewed
-  Assert.equal(
-    1,
-    pm.testPermissionFromPrincipal(principal, "test/expiration-perm-renewable")
+  // Add a persistent permission for private browsing
+  let principalPB = Services.scriptSecurityManager.createContentPrincipal(
+    permURI,
+    { privateBrowsingId: 1 }
   );
-  Assert.equal(
-    1,
-    pm.testPermissionFromPrincipal(
-      principal,
-      "test/expiration-session-renewable"
-    )
+  pm.addFromPrincipal(
+    principalPB,
+    "test/expiration-session-pb",
+    pm.ALLOW_ACTION
   );
+
+  // The permission should be set to session expiry
+  let perm = pm.getPermissionObject(
+    principalPB,
+    "test/expiration-session-pb",
+    true
+  );
+  Assert.equal(perm.expireType, pm.EXPIRE_SESSION);
 
   do_finish_generator_test(test_generator);
 }

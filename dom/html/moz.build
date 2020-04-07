@@ -40,15 +40,16 @@ EXPORTS += [
     'nsIHTMLCollection.h',
     'nsIRadioGroupContainer.h',
     'nsIRadioVisitor.h',
-    'nsITextControlElement.h',
-    'nsTextEditorState.h',
 ]
 
 EXPORTS.mozilla += [
+    'TextControlElement.h',
+    'TextControlState.h',
     'TextInputListener.h',
 ]
 
 EXPORTS.mozilla.dom += [
+    'ElementInternals.h',
     'HTMLAllCollection.h',
     'HTMLAnchorElement.h',
     'HTMLAreaElement.h',
@@ -129,6 +130,7 @@ EXPORTS.mozilla.dom += [
 ]
 
 UNIFIED_SOURCES += [
+    'ElementInternals.cpp',
     'HTMLAllCollection.cpp',
     'HTMLAnchorElement.cpp',
     'HTMLAreaElement.cpp',
@@ -211,9 +213,9 @@ UNIFIED_SOURCES += [
     'nsHTMLDocument.cpp',
     'nsIConstraintValidation.cpp',
     'nsRadioVisitor.cpp',
-    'nsTextEditorState.cpp',
     'PlayPromise.cpp',
     'RadioNodeList.cpp',
+    'TextControlState.cpp',
     'TextTrackManager.cpp',
     'TimeRanges.cpp',
     'ValidityState.cpp',
@@ -252,9 +254,6 @@ LOCAL_INCLUDES += [
     '/layout/xul',
     '/netwerk/base',
 ]
-
-if CONFIG['MOZ_XBL']:
-    LOCAL_INCLUDES += ['/dom/xbl']
 
 FINAL_LIBRARY = 'xul'
 

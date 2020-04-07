@@ -9,6 +9,9 @@ const {
   translatePreferencesToState,
   translatePreferencesFromState,
 } = require("devtools/client/performance-new/preference-management");
+const {
+  getEnvironmentVariable,
+} = require("devtools/client/performance-new/browser");
 
 /**
  * @typedef {import("../@types/perf").Action} Action
@@ -16,6 +19,8 @@ const {
  * @typedef {import("../@types/perf").PerfFront} PerfFront
  * @typedef {import("../@types/perf").SymbolTableAsTuple} SymbolTableAsTuple
  * @typedef {import("../@types/perf").RecordingState} RecordingState
+ * @typedef {import("../@types/perf").InitializeStoreValues} InitializeStoreValues
+ * @typedef {import("../@types/perf").Presets} Presets
  */
 
 /**
@@ -100,11 +105,29 @@ exports.changeEntries = entries =>
  * @param {object} features
  * @return {ThunkAction<void>}
  */
-exports.changeFeatures = features =>
-  _dispatchAndUpdatePreferences({
-    type: "CHANGE_FEATURES",
-    features,
-  });
+exports.changeFeatures = features => {
+  return (dispatch, getState) => {
+    let promptEnvRestart = null;
+    if (selectors.getPageContext(getState()) === "aboutprofiling") {
+      // TODO Bug 1615431 - The popup supported restarting the browser, but
+      // this hasn't been updated yet for the about:profiling workflow.
+      if (
+        !getEnvironmentVariable("JS_TRACE_LOGGING") &&
+        features.includes("jstracer")
+      ) {
+        promptEnvRestart = "JS_TRACE_LOGGING";
+      }
+    }
+
+    dispatch(
+      _dispatchAndUpdatePreferences({
+        type: "CHANGE_FEATURES",
+        features,
+        promptEnvRestart,
+      })
+    );
+  };
+};
 
 /**
  * Updates the recording settings for the threads.
@@ -115,6 +138,21 @@ exports.changeThreads = threads =>
   _dispatchAndUpdatePreferences({
     type: "CHANGE_THREADS",
     threads,
+  });
+
+/**
+ * Change the preset.
+ * @param {Presets} presets
+ * @param {string} presetName
+ * @return {ThunkAction<void>}
+ */
+exports.changePreset = (presets, presetName) =>
+  _dispatchAndUpdatePreferences({
+    type: "CHANGE_PRESET",
+    presetName,
+    // Also dispatch the preset so that the reducers can pre-fill the values
+    // from a preset.
+    preset: presets[presetName],
   });
 
 /**
@@ -131,8 +169,8 @@ exports.changeObjdirs = objdirs =>
 /**
  * Receive the values to initialize the store. See the reducer for what values
  * are expected.
- * @param {object} values
- * @return {ThunkAction<void>}
+ * @param {InitializeStoreValues} values
+ * @return {Action}
  */
 exports.initializeStore = values => {
   const { recordingPreferences, ...initValues } = values;

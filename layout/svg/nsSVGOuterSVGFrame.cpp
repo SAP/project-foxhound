@@ -35,7 +35,7 @@ void nsSVGOuterSVGFrame::RegisterForeignObject(
 
   if (!mForeignObjectHash) {
     mForeignObjectHash =
-        new nsTHashtable<nsPtrHashKey<nsSVGForeignObjectFrame> >();
+        MakeUnique<nsTHashtable<nsPtrHashKey<nsSVGForeignObjectFrame>>>();
   }
 
   NS_ASSERTION(!mForeignObjectHash->GetEntry(aFrame),
@@ -134,7 +134,7 @@ void nsSVGOuterSVGFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
           bool dependsOnIntrinsicSize = DependsOnIntrinsicSize(embeddingFrame);
           if (dependsOnIntrinsicSize ||
               embeddingFrame->StylePosition()->mObjectFit !=
-                  NS_STYLE_OBJECT_FIT_FILL) {
+                  StyleObjectFit::Fill) {
             // Looks like this document is loading after the embedding element
             // has had its first reflow, and it cares about our intrinsic size
             // (either for determining its own size, or for sizing/positioning
@@ -549,9 +549,7 @@ class nsDisplayOuterSVG final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayOuterSVG);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayOuterSVG() { MOZ_COUNT_DTOR(nsDisplayOuterSVG); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayOuterSVG)
 
   virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
                        HitTestState* aState,
@@ -708,7 +706,7 @@ nsresult nsSVGOuterSVGFrame::AttributeChanged(int32_t aNameSpaceID,
         bool dependsOnIntrinsicSize = DependsOnIntrinsicSize(embeddingFrame);
         if (dependsOnIntrinsicSize ||
             embeddingFrame->StylePosition()->mObjectFit !=
-                NS_STYLE_OBJECT_FIT_FILL) {
+                StyleObjectFit::Fill) {
           // Tell embeddingFrame's presShell it needs to be reflowed (which
           // takes care of reflowing us too). And if it depends on our
           // intrinsic size, then we need to invalidate its intrinsic sizes
@@ -891,7 +889,7 @@ gfxMatrix nsSVGOuterSVGFrame::GetCanvasTM() {
 
     gfxMatrix tm = content->PrependLocalTransformsTo(
         gfxMatrix::Scaling(devPxPerCSSPx, devPxPerCSSPx));
-    mCanvasTM = new gfxMatrix(tm);
+    mCanvasTM = MakeUnique<gfxMatrix>(tm);
   }
   return *mCanvasTM;
 }

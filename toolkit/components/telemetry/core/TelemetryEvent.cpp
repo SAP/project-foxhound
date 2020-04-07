@@ -10,6 +10,7 @@
 #include <limits>
 #include "ipc/TelemetryIPCAccumulator.h"
 #include "jsapi.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
 #include "mozilla/Maybe.h"
 #include "mozilla/Pair.h"
 #include "mozilla/Preferences.h"
@@ -574,7 +575,7 @@ nsresult SerializeEventsArray(const EventRecordArray& events, JSContext* cx,
                               JS::MutableHandleObject result,
                               unsigned int dataset) {
   // We serialize the events to a JS array.
-  JS::RootedObject eventsArray(cx, JS_NewArrayObject(cx, events.Length()));
+  JS::RootedObject eventsArray(cx, JS::NewArrayObject(cx, events.Length()));
   if (!eventsArray) {
     return NS_ERROR_FAILURE;
   }
@@ -660,7 +661,7 @@ nsresult SerializeEventsArray(const EventRecordArray& events, JSContext* cx,
     }
 
     // Add the record to the events array.
-    JS::RootedObject itemsArray(cx, JS_NewArrayObject(cx, items));
+    JS::RootedObject itemsArray(cx, JS::NewArrayObject(cx, items));
     if (!JS_DefineElement(cx, eventsArray, i, itemsArray, JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
@@ -1007,7 +1008,7 @@ static bool GetArrayPropertyValues(JSContext* cx, JS::HandleObject obj,
   }
 
   bool isArray = false;
-  if (!JS_IsArrayObject(cx, value, &isArray) || !isArray) {
+  if (!JS::IsArrayObject(cx, value, &isArray) || !isArray) {
     JS_ReportErrorASCII(cx, R"(Property "%s" for event should be an array)",
                         property);
     return false;
@@ -1015,7 +1016,7 @@ static bool GetArrayPropertyValues(JSContext* cx, JS::HandleObject obj,
 
   JS::RootedObject arrayObj(cx, &value.toObject());
   uint32_t arrayLength;
-  if (!JS_GetArrayLength(cx, arrayObj, &arrayLength)) {
+  if (!JS::GetArrayLength(cx, arrayObj, &arrayLength)) {
     return false;
   }
 
@@ -1257,8 +1258,7 @@ nsresult TelemetryEvent::CreateSnapshots(uint32_t aDataset, bool aClear,
                         optional_argc,
                         aEventLimit](EventRecordsMapType& aProcessStorage) {
       for (auto iter = aProcessStorage.Iter(); !iter.Done(); iter.Next()) {
-        const EventRecordArray* eventStorage =
-            static_cast<EventRecordArray*>(iter.Data());
+        const EventRecordArray* eventStorage = iter.UserData();
         EventRecordArray events;
         EventRecordArray leftoverEvents;
 
@@ -1366,8 +1366,7 @@ size_t TelemetryEvent::SizeOfIncludingThis(
   auto getSizeOfRecords = [aMallocSizeOf](auto& storageMap) {
     size_t partial = storageMap.ShallowSizeOfExcludingThis(aMallocSizeOf);
     for (auto iter = storageMap.Iter(); !iter.Done(); iter.Next()) {
-      EventRecordArray* eventRecords =
-          static_cast<EventRecordArray*>(iter.Data());
+      EventRecordArray* eventRecords = iter.UserData();
       partial += eventRecords->ShallowSizeOfIncludingThis(aMallocSizeOf);
 
       const uint32_t len = eventRecords->Length();

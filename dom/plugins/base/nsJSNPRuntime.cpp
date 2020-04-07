@@ -8,7 +8,7 @@
 
 #include "jsfriendapi.h"
 
-#include "nsAutoPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsJSNPRuntime.h"
 #include "nsNPAPIPlugin.h"
@@ -19,7 +19,6 @@
 #include "nsDOMJSUtils.h"
 #include "nsJSUtils.h"
 #include "mozilla/dom/Document.h"
-#include "nsIXPConnect.h"
 #include "xpcpublic.h"
 #include "nsIContent.h"
 #include "nsPluginInstanceOwner.h"
@@ -281,7 +280,7 @@ static void DelayedReleaseGCCallback(JSGCStatus status) {
   if (JSGC_END == status) {
     // Take ownership of sDelayedReleases and null it out now. The
     // _releaseobject call below can reenter GC and double-free these objects.
-    nsAutoPtr<nsTArray<NPObject*>> delayedReleases(sDelayedReleases);
+    UniquePtr<nsTArray<NPObject*>> delayedReleases(sDelayedReleases);
     sDelayedReleases = nullptr;
 
     if (delayedReleases) {

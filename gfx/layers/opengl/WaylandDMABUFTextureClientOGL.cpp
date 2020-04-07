@@ -8,8 +8,7 @@
 #include "mozilla/widget/WaylandDMABufSurface.h"
 #include "gfxPlatform.h"
 
-namespace mozilla {
-namespace layers {
+namespace mozilla::layers {
 
 using namespace gfx;
 
@@ -34,8 +33,9 @@ WaylandDMABUFTextureData::~WaylandDMABUFTextureData() = default;
   if (aFormat == SurfaceFormat::B8G8R8A8) {
     flags |= DMABUF_ALPHA;
   }
-  RefPtr<WaylandDMABufSurface> surf = WaylandDMABufSurface::CreateDMABufSurface(
-      aSize.width, aSize.height, flags);
+  RefPtr<WaylandDMABufSurface> surf =
+      WaylandDMABufSurfaceRGBA::CreateDMABufSurface(aSize.width, aSize.height,
+                                                    flags);
   return new WaylandDMABUFTextureData(surf, aBackend);
 }
 
@@ -62,12 +62,17 @@ void WaylandDMABUFTextureData::FillInfo(TextureData::Info& aInfo) const {
 }
 
 bool WaylandDMABUFTextureData::Lock(OpenMode) {
-  MOZ_ASSERT(!mSurface->IsMapped(), "Already locked?");
-  mSurface->Map();
+  auto surf = mSurface->GetAsWaylandDMABufSurfaceRGBA();
+  MOZ_ASSERT(!surf->IsMapped(), "Already locked?");
+  surf->Map();
   return true;
 }
 
-void WaylandDMABUFTextureData::Unlock() { mSurface->Unmap(); }
+void WaylandDMABUFTextureData::Unlock() {
+  auto surf = mSurface->GetAsWaylandDMABufSurfaceRGBA();
+  MOZ_ASSERT(surf->IsMapped(), "Already unlocked?");
+  surf->Unmap();
+}
 
 already_AddRefed<DataSourceSurface> WaylandDMABUFTextureData::GetAsSurface() {
   // TODO: Update for debug purposes.
@@ -80,10 +85,11 @@ already_AddRefed<DrawTarget> WaylandDMABUFTextureData::BorrowDrawTarget() {
     // shouldn't happen, but degrade gracefully
     return nullptr;
   }
+  auto surf = mSurface->GetAsWaylandDMABufSurfaceRGBA();
   return Factory::CreateDrawTargetForData(
-      mBackend, (unsigned char*)mSurface->GetMappedRegion(),
-      IntSize(mSurface->GetWidth(), mSurface->GetHeight()),
-      mSurface->GetMappedRegionStride(), mSurface->GetFormat(), true);
+      mBackend, (unsigned char*)surf->GetMappedRegion(),
+      IntSize(surf->GetWidth(), surf->GetHeight()),
+      surf->GetMappedRegionStride(), surf->GetFormat(), true);
 }
 
 void WaylandDMABUFTextureData::Deallocate(LayersIPCChannel*) {
@@ -103,5 +109,4 @@ bool WaylandDMABUFTextureData::UpdateFromSurface(gfx::SourceSurface* aSurface) {
   return true;
 }
 
-}  // namespace layers
-}  // namespace mozilla
+}  // namespace mozilla::layers

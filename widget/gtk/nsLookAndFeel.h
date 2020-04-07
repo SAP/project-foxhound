@@ -21,15 +21,19 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   virtual ~nsLookAndFeel();
 
   void NativeInit() final;
-  virtual void RefreshImpl() override;
-  virtual nsresult NativeGetColor(ColorID aID, nscolor& aResult) override;
-  virtual nsresult GetIntImpl(IntID aID, int32_t& aResult) override;
-  virtual nsresult GetFloatImpl(FloatID aID, float& aResult) override;
-  virtual bool GetFontImpl(FontID aID, nsString& aFontName,
-                           gfxFontStyle& aFontStyle) override;
+  void RefreshImpl() override;
+  nsresult NativeGetColor(ColorID aID, nscolor& aResult) override;
+  nsresult GetIntImpl(IntID aID, int32_t& aResult) override;
+  nsresult GetFloatImpl(FloatID aID, float& aResult) override;
+  bool GetFontImpl(FontID aID, nsString& aFontName,
+                   gfxFontStyle& aFontStyle) override;
 
-  virtual char16_t GetPasswordCharacterImpl() override;
-  virtual bool GetEchoPasswordImpl() override;
+  char16_t GetPasswordCharacterImpl() override;
+  bool GetEchoPasswordImpl() override;
+
+  nsTArray<LookAndFeelInt> GetIntCacheImpl() override;
+  void SetIntCacheImpl(
+      const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) override;
 
   bool IsCSDAvailable() const { return mCSDAvailable; }
 
@@ -72,8 +76,8 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   nscolor mNativeHyperLinkText = kBlack;
   nscolor mComboBoxText = kBlack;
   nscolor mComboBoxBackground = kWhite;
-  nscolor mMozFieldText = kBlack;
-  nscolor mMozFieldBackground = kWhite;
+  nscolor mFieldText = kBlack;
+  nscolor mFieldBackground = kWhite;
   nscolor mMozWindowText = kBlack;
   nscolor mMozWindowBackground = kWhite;
   nscolor mMozWindowActiveBorder = kBlack;
@@ -96,9 +100,11 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   bool mCSDCloseButton = false;
   bool mCSDReversedPlacement = false;
   bool mSystemUsesDarkTheme = false;
+  bool mHighContrast = false;
   bool mInitialized = false;
 
   void EnsureInit();
+  void ConfigureContentGtkTheme();
 
  private:
   nsresult InitCellHighlightColors();

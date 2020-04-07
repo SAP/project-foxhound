@@ -281,7 +281,7 @@ nsresult nsFileStreamBase::MaybeOpen(nsIFile* aFile, int32_t aIoFlags,
     nsresult rv = aFile->Clone(getter_AddRefs(file));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    mOpenParams.localFile = file.forget();
+    mOpenParams.localFile = std::move(file);
     NS_ENSURE_TRUE(mOpenParams.localFile, NS_ERROR_UNEXPECTED);
 
     mState = eDeferredOpen;
@@ -489,7 +489,7 @@ nsFileInputStream::Read(char* aBuf, uint32_t aCount, uint32_t* _retval) {
 NS_IMETHODIMP
 nsFileInputStream::ReadLine(nsACString& aLine, bool* aResult) {
   if (!mLineBuffer) {
-    mLineBuffer = new nsLineBuffer<char>;
+    mLineBuffer = MakeUnique<nsLineBuffer<char>>();
   }
   return NS_ReadLine(this, mLineBuffer.get(), aLine, aResult);
 }
@@ -544,7 +544,7 @@ void nsFileInputStream::Serialize(InputStreamParams& aParams,
                                   FileDescriptorArray& aFileDescriptors,
                                   bool aDelayedStart, uint32_t aMaxSize,
                                   uint32_t* aSizeUsed,
-                                  mozilla::dom::ContentChild* aManager) {
+                                  ParentToChildStreamActorManager* aManager) {
   MOZ_ASSERT(aSizeUsed);
   *aSizeUsed = 0;
 
@@ -555,29 +555,7 @@ void nsFileInputStream::Serialize(InputStreamParams& aParams,
                                   FileDescriptorArray& aFileDescriptors,
                                   bool aDelayedStart, uint32_t aMaxSize,
                                   uint32_t* aSizeUsed,
-                                  PBackgroundChild* aManager) {
-  MOZ_ASSERT(aSizeUsed);
-  *aSizeUsed = 0;
-
-  SerializeInternal(aParams, aFileDescriptors);
-}
-
-void nsFileInputStream::Serialize(InputStreamParams& aParams,
-                                  FileDescriptorArray& aFileDescriptors,
-                                  bool aDelayedStart, uint32_t aMaxSize,
-                                  uint32_t* aSizeUsed,
-                                  mozilla::dom::ContentParent* aManager) {
-  MOZ_ASSERT(aSizeUsed);
-  *aSizeUsed = 0;
-
-  SerializeInternal(aParams, aFileDescriptors);
-}
-
-void nsFileInputStream::Serialize(InputStreamParams& aParams,
-                                  FileDescriptorArray& aFileDescriptors,
-                                  bool aDelayedStart, uint32_t aMaxSize,
-                                  uint32_t* aSizeUsed,
-                                  PBackgroundParent* aManager) {
+                                  ChildToParentStreamActorManager* aManager) {
   MOZ_ASSERT(aSizeUsed);
   *aSizeUsed = 0;
 

@@ -14,16 +14,12 @@
 #include "nsDocShell.h"
 #include "nsIWebProgressListener.h"
 #include "nsContentUtils.h"
-#include "nsIRequest.h"
 #include "mozilla/dom/Document.h"
-#include "nsIContentViewer.h"
 #include "nsIChannel.h"
-#include "nsIHttpChannel.h"
 #include "nsIParentChannel.h"
 #include "mozilla/Preferences.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsISecureBrowserUI.h"
-#include "nsIDocumentLoader.h"
 #include "nsIWebNavigation.h"
 #include "nsLoadGroup.h"
 #include "nsIScriptError.h"
@@ -35,6 +31,7 @@
 #include "nsISiteSecurityService.h"
 #include "prnetdb.h"
 
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
@@ -57,6 +54,11 @@ bool nsMixedContentBlocker::sBlockMixedDisplay = false;
 
 // Is mixed display content upgrading (images, audio, video) enabled?
 bool nsMixedContentBlocker::sUpgradeMixedDisplay = false;
+
+// Whitelist of hostnames that should be considered secure contexts even when
+// served over http:// or ws://
+nsCString* nsMixedContentBlocker::sSecurecontextWhitelist = nullptr;
+bool nsMixedContentBlocker::sSecurecontextWhitelistCached = false;
 
 enum MixedContentHSTSState {
   MCB_HSTS_PASSIVE_NO_HSTS = 0,
@@ -230,7 +232,7 @@ nsMixedContentBlocker::nsMixedContentBlocker() {
       &sUpgradeMixedDisplay, "security.mixed_content.upgrade_display_content");
 }
 
-nsMixedContentBlocker::~nsMixedContentBlocker() {}
+nsMixedContentBlocker::~nsMixedContentBlocker() = default;
 
 NS_IMPL_ISUPPORTS(nsMixedContentBlocker, nsIContentPolicy, nsIChannelEventSink)
 
@@ -312,7 +314,7 @@ nsMixedContentBlocker::AsyncOnChannelRedirect(
   if (requestingPrincipal) {
     // We check to see if the loadingPrincipal is systemPrincipal and return
     // early if it is
-    if (nsContentUtils::IsSystemPrincipal(requestingPrincipal)) {
+    if (requestingPrincipal->IsSystemPrincipal()) {
       return NS_OK;
     }
   }
@@ -421,6 +423,35 @@ bool nsMixedContentBlocker::IsPotentiallyTrustworthyOnion(nsIURI* aURL) {
   return StringEndsWith(host, NS_LITERAL_CSTRING(".onion"));
 }
 
+// static
+void nsMixedContentBlocker::OnPrefChange(const char* aPref, void* aClosure) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!strcmp(aPref, "dom.securecontext.whitelist"));
+  Preferences::GetCString("dom.securecontext.whitelist",
+                          *sSecurecontextWhitelist);
+}
+
+// static
+void nsMixedContentBlocker::GetSecureContextWhiteList(nsACString& aList) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!sSecurecontextWhitelistCached) {
+    MOZ_ASSERT(!sSecurecontextWhitelist);
+    sSecurecontextWhitelistCached = true;
+    sSecurecontextWhitelist = new nsCString();
+    Preferences::RegisterCallbackAndCall(OnPrefChange,
+                                         "dom.securecontext.whitelist");
+  }
+  aList = *sSecurecontextWhitelist;
+}
+
+// static
+void nsMixedContentBlocker::Shutdown() {
+  if (sSecurecontextWhitelist) {
+    delete sSecurecontextWhitelist;
+    sSecurecontextWhitelist = nullptr;
+  }
+}
+
 bool nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(nsIURI* aURI) {
   // The following implements:
   // https://w3c.github.io/webappsec-secure-contexts/#is-origin-trustworthy
@@ -475,16 +506,15 @@ bool nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(nsIURI* aURI) {
   }
 
   nsAutoCString whitelist;
-  rv = Preferences::GetCString("dom.securecontext.whitelist", whitelist);
-  if (NS_SUCCEEDED(rv)) {
-    nsCCharSeparatedTokenizer tokenizer(whitelist, ',');
-    while (tokenizer.hasMoreTokens()) {
-      const nsACString& allowedHost = tokenizer.nextToken();
-      if (host.Equals(allowedHost)) {
-        return true;
-      }
+  GetSecureContextWhiteList(whitelist);
+  nsCCharSeparatedTokenizer tokenizer(whitelist, ',');
+  while (tokenizer.hasMoreTokens()) {
+    const nsACString& allowedHost = tokenizer.nextToken();
+    if (host.Equals(allowedHost)) {
+      return true;
     }
   }
+
   // Maybe we have a .onion URL. Treat it as whitelisted as well if
   // `dom.securecontext.whitelist_onions` is `true`.
   if (nsMixedContentBlocker::IsPotentiallyTrustworthyOnion(aURI)) {
@@ -709,7 +739,7 @@ nsresult nsMixedContentBlocker::ShouldLoad(
   // 2) if aRequestingContext yields a principal but no location, we check if
   // its a system principal.
   if (principal && !requestingLocation) {
-    if (nsContentUtils::IsSystemPrincipal(principal)) {
+    if (principal->IsSystemPrincipal()) {
       *aDecision = ACCEPT;
       return NS_OK;
     }
@@ -761,10 +791,6 @@ nsresult nsMixedContentBlocker::ShouldLoad(
     return NS_OK;
   }
 
-  nsCOMPtr<nsIDocShell> docShell =
-      NS_CP_GetDocShellFromContext(aRequestingContext);
-  NS_ENSURE_TRUE(docShell, NS_OK);
-
   // Disallow mixed content loads for workers, shared workers and service
   // workers.
   if (isWorkerType) {
@@ -797,6 +823,19 @@ nsresult nsMixedContentBlocker::ShouldLoad(
   // pages. Hence, we only have to check against http: here. Skip mixed content
   // blocking if the subresource load uses http: and the CSP directive
   // 'upgrade-insecure-requests' is present on the page.
+
+  nsCOMPtr<nsIDocShell> docShell =
+      NS_CP_GetDocShellFromContext(aRequestingContext);
+  // Carve-out: if we're in the parent and we're loading media, e.g. through
+  // webbrowserpersist, don't reject it if we can't find a docshell.
+  if (XRE_IsParentProcess() && !docShell &&
+      (aContentType == TYPE_IMAGE || aContentType == TYPE_MEDIA)) {
+    *aDecision = ACCEPT;
+    return NS_OK;
+  }
+  // Otherwise, we must have a docshell
+  NS_ENSURE_TRUE(docShell, NS_OK);
+
   Document* document = docShell->GetDocument();
   MOZ_ASSERT(document, "Expected a document");
   if (isHttpScheme && document->GetUpgradeInsecureRequests(isPreload)) {

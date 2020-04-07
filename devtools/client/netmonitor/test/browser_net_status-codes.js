@@ -123,7 +123,7 @@ add_task(async function() {
     info("Verifying requests contain correct information.");
     let index = 0;
     for (const request of REQUEST_DATA) {
-      const item = getSortedRequests(store.getState()).get(index);
+      const item = getSortedRequests(store.getState())[index];
       requestItems[index] = item;
 
       info("Verifying request #" + index);
@@ -236,15 +236,15 @@ add_task(async function() {
       .split("=")
       .pop()
       .split("#")[0];
-    const treeSections = panel.querySelectorAll(".tree-section");
+    const accordionItems = panel.querySelectorAll(".accordion-item");
 
     is(
-      treeSections.length,
+      accordionItems.length,
       1,
       "There should be 1 param section displayed in this panel."
     );
     is(
-      panel.querySelectorAll("tr:not(.tree-section).treeRow").length,
+      panel.querySelectorAll("tr.treeRow").length,
       1,
       "There should be 1 param row displayed in this panel."
     );
@@ -254,15 +254,11 @@ add_task(async function() {
       "The empty notice should not be displayed in this panel."
     );
 
-    const labels = panel.querySelectorAll(
-      "tr:not(.tree-section) .treeLabelCell .treeLabel"
-    );
-    const values = panel.querySelectorAll(
-      "tr:not(.tree-section) .treeValueCell .objectBox"
-    );
+    const labels = panel.querySelectorAll("tr .treeLabelCell .treeLabel");
+    const values = panel.querySelectorAll("tr .treeValueCell .objectBox");
 
     is(
-      treeSections[0].querySelector(".treeLabel").textContent,
+      accordionItems[0].querySelector(".accordion-header-label").textContent,
       L10N.getStr("paramsQueryString"),
       "The params scope doesn't have the correct title."
     );
@@ -270,7 +266,7 @@ add_task(async function() {
     is(labels[0].textContent, "sts", "The param name was incorrect.");
     is(
       values[0].textContent,
-      statusParamValue,
+      `"${statusParamValue}"`,
       "The param value was incorrect."
     );
 

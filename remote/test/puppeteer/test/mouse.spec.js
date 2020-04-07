@@ -94,7 +94,7 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
       await page.hover('#button-91');
       expect(await page.evaluate(() => document.querySelector('button:hover').id)).toBe('button-91');
     });
-    it_fails_ffox('should trigger hover state with removed window.Node', async({page, server}) => {
+    it('should trigger hover state with removed window.Node', async({page, server}) => {
       await page.goto(server.PREFIX + '/input/scrollable.html');
       await page.evaluate(() => delete window.Node);
       await page.hover('#button-6');
@@ -138,7 +138,7 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
       ]);
     });
     // @see https://crbug.com/929806
-    xit('should work with mobile viewports and cross process navigations', async({page, server}) => {
+    it('should work with mobile viewports and cross process navigations', async({page, server}) => {
       await page.goto(server.EMPTY_PAGE);
       await page.setViewport({width: 360, height: 640, isMobile: true});
       await page.goto(server.CROSS_PROCESS_PREFIX + '/mobile.html');

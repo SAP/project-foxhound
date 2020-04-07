@@ -8,6 +8,7 @@
 #define jit_VMFunctionList_inl_h
 
 #include "builtin/Eval.h"
+#include "builtin/Promise.h"  // js::AsyncFunctionAwait
 #include "builtin/RegExp.h"
 #include "builtin/String.h"
 #include "jit/BaselineIC.h"
@@ -16,6 +17,7 @@
 #include "jit/VMFunctions.h"
 #include "vm/AsyncFunction.h"
 #include "vm/AsyncIteration.h"
+#include "vm/BigIntType.h"
 #include "vm/EqualityOperations.h"
 #include "vm/Instrumentation.h"
 #include "vm/Interpreter.h"
@@ -46,8 +48,29 @@ namespace jit {
     js::jit::BaselineCompileFromBaselineInterpreter)                           \
   _(BaselineDebugPrologue, js::jit::DebugPrologue)                             \
   _(BaselineGetFunctionThis, js::jit::BaselineGetFunctionThis)                 \
-  _(BaselineThrowInitializedThis, js::jit::BaselineThrowInitializedThis)       \
-  _(BaselineThrowUninitializedThis, js::jit::BaselineThrowUninitializedThis)   \
+  _(BigIntAdd, JS::BigInt::add)                                                \
+  _(BigIntBitAnd, JS::BigInt::bitAnd)                                          \
+  _(BigIntBitNot, JS::BigInt::bitNot)                                          \
+  _(BigIntBitOr, JS::BigInt::bitOr)                                            \
+  _(BigIntBitXor, JS::BigInt::bitXor)                                          \
+  _(BigIntDec, JS::BigInt::dec)                                                \
+  _(BigIntDiv, JS::BigInt::div)                                                \
+  _(BigIntInc, JS::BigInt::inc)                                                \
+  _(BigIntLeftShift, JS::BigInt::lsh)                                          \
+  _(BigIntMod, JS::BigInt::mod)                                                \
+  _(BigIntMul, JS::BigInt::mul)                                                \
+  _(BigIntNeg, JS::BigInt::neg)                                                \
+  _(BigIntPow, JS::BigInt::pow)                                                \
+  _(BigIntRightShift, JS::BigInt::rsh)                                         \
+  _(BigIntStringEqual,                                                         \
+    js::jit::BigIntStringEqual<js::jit::EqualityKind::Equal>)                  \
+  _(BigIntStringGreaterThanOrEqual,                                            \
+    js::jit::BigIntStringCompare<js::jit::ComparisonKind::GreaterThanOrEqual>) \
+  _(BigIntStringLessThan,                                                      \
+    js::jit::BigIntStringCompare<js::jit::ComparisonKind::LessThan>)           \
+  _(BigIntStringNotEqual,                                                      \
+    js::jit::BigIntStringEqual<js::jit::EqualityKind::NotEqual>)               \
+  _(BigIntSub, JS::BigInt::sub)                                                \
   _(BindVarOperation, js::BindVarOperation)                                    \
   _(BitAnd, js::BitAnd)                                                        \
   _(BitLsh, js::BitLsh)                                                        \
@@ -55,6 +78,7 @@ namespace jit {
   _(BitOr, js::BitOr)                                                          \
   _(BitRsh, js::BitRsh)                                                        \
   _(BitXor, js::BitXor)                                                        \
+  _(BoxBoxableValue, js::wasm::BoxBoxableValue)                                \
   _(BoxNonStrictThis, js::BoxNonStrictThis)                                    \
   _(BuiltinProtoOperation, js::BuiltinProtoOperation)                          \
   _(CallNativeGetter, js::jit::CallNativeGetter)                               \
@@ -73,10 +97,10 @@ namespace jit {
   _(CopyElementsForWrite, js::NativeObject::CopyElementsForWrite)              \
   _(CopyLexicalEnvironmentObject, js::jit::CopyLexicalEnvironmentObject)       \
   _(CreateAsyncFromSyncIterator, js::CreateAsyncFromSyncIterator)              \
-  _(CreateDerivedTypedObj, js::jit::CreateDerivedTypedObj)                     \
   _(CreateGenerator, js::jit::CreateGenerator)                                 \
-  _(CreateThis, js::jit::CreateThis)                                           \
   _(CreateThisForFunctionWithProto, js::CreateThisForFunctionWithProto)        \
+  _(CreateThisFromIC, js::jit::CreateThisFromIC)                               \
+  _(CreateThisFromIon, js::jit::CreateThisFromIon)                             \
   _(CreateThisWithTemplate, js::CreateThisWithTemplate)                        \
   _(DebugAfterYield, js::jit::DebugAfterYield)                                 \
   _(DebugEpilogueOnBaselineReturn, js::jit::DebugEpilogueOnBaselineReturn)     \
@@ -123,7 +147,6 @@ namespace jit {
   _(GreaterThan, js::jit::GreaterThan)                                         \
   _(GreaterThanOrEqual, js::jit::GreaterThanOrEqual)                           \
   _(HandleDebugTrap, js::jit::HandleDebugTrap)                                 \
-  _(HomeObjectSuperBase, js::HomeObjectSuperBase)                              \
   _(ImplicitThisOperation, js::ImplicitThisOperation)                          \
   _(ImportMetaOperation, js::ImportMetaOperation)                              \
   _(InitElemGetterSetterOperation, js::InitElemGetterSetterOperation)          \
@@ -132,7 +155,6 @@ namespace jit {
   _(InitFunctionEnvironmentObjects, js::jit::InitFunctionEnvironmentObjects)   \
   _(InitPropGetterSetterOperation, js::InitPropGetterSetterOperation)          \
   _(InitRestParameter, js::jit::InitRestParameter)                             \
-  _(InlineTypedObjectCreateCopy, js::InlineTypedObject::createCopy)            \
   _(InstrumentationActiveOperation, js::InstrumentationActiveOperation)        \
   _(InstrumentationCallbackOperation, js::InstrumentationCallbackOperation)    \
   _(InstrumentationScriptIdOperation, js::InstrumentationScriptIdOperation)    \
@@ -140,7 +162,6 @@ namespace jit {
   _(InterpretResume, js::jit::InterpretResume)                                 \
   _(InterruptCheck, js::jit::InterruptCheck)                                   \
   _(InvokeFunction, js::jit::InvokeFunction)                                   \
-  _(InvokeFunctionShuffleNewTarget, js::jit::InvokeFunctionShuffleNewTarget)   \
   _(IonBinaryArithICUpdate, js::jit::IonBinaryArithIC::update)                 \
   _(IonBindNameICUpdate, js::jit::IonBindNameIC::update)                       \
   _(IonCompareICUpdate, js::jit::IonCompareIC::update)                         \
@@ -203,7 +224,6 @@ namespace jit {
   _(OperatorInI, js::jit::OperatorInI)                                         \
   _(OptimizeSpreadCall, js::OptimizeSpreadCall)                                \
   _(PopLexicalEnv, js::jit::PopLexicalEnv)                                     \
-  _(PopVarEnv, js::jit::PopVarEnv)                                             \
   _(PowValues, js::PowValues)                                                  \
   _(ProcessCallSiteObjOperation, js::ProcessCallSiteObjOperation)              \
   _(ProxyGetProperty, js::ProxyGetProperty)                                    \
@@ -230,6 +250,10 @@ namespace jit {
   _(StartDynamicModuleImport, js::StartDynamicModuleImport)                    \
   _(StrictlyEqual, js::jit::StrictlyEqual<js::jit::EqualityKind::Equal>)       \
   _(StrictlyNotEqual, js::jit::StrictlyEqual<js::jit::EqualityKind::NotEqual>) \
+  _(StringBigIntGreaterThanOrEqual,                                            \
+    js::jit::StringBigIntCompare<js::jit::ComparisonKind::GreaterThanOrEqual>) \
+  _(StringBigIntLessThan,                                                      \
+    js::jit::StringBigIntCompare<js::jit::ComparisonKind::LessThan>)           \
   _(StringFlatReplaceString, js::StringFlatReplaceString)                      \
   _(StringFromCharCode, js::jit::StringFromCharCode)                           \
   _(StringFromCodePoint, js::jit::StringFromCodePoint)                         \
@@ -245,13 +269,17 @@ namespace jit {
   _(StringsNotEqual, js::jit::StringsEqual<js::jit::EqualityKind::NotEqual>)   \
   _(SubValues, js::SubValues)                                                  \
   _(SubstringKernel, js::SubstringKernel)                                      \
-  _(SuperFunOperation, js::SuperFunOperation)                                  \
   _(ThrowBadDerivedReturn, js::jit::ThrowBadDerivedReturn)                     \
+  _(ThrowBadDerivedReturnOrUninitializedThis,                                  \
+    js::jit::ThrowBadDerivedReturnOrUninitializedThis)                         \
   _(ThrowCheckIsObject, js::ThrowCheckIsObject)                                \
+  _(ThrowHomeObjectNotObject, js::ThrowHomeObjectNotObject)                    \
+  _(ThrowInitializedThis, js::ThrowInitializedThis)                            \
   _(ThrowMsgOperation, js::ThrowMsgOperation)                                  \
-  _(ThrowObjectCoercible, js::jit::ThrowObjectCoercible)                       \
+  _(ThrowObjectCoercible, js::ThrowObjectCoercible)                            \
   _(ThrowOperation, js::ThrowOperation)                                        \
   _(ThrowRuntimeLexicalError, js::jit::ThrowRuntimeLexicalError)               \
+  _(ThrowUninitializedThis, js::ThrowUninitializedThis)                        \
   _(ToIdOperation, js::ToIdOperation)                                          \
   _(ToObjectSlow, js::ToObjectSlow)                                            \
   _(ToStringSlow, js::ToStringSlow<CanGC>)                                     \

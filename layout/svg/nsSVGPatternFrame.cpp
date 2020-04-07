@@ -20,6 +20,7 @@
 #include "mozilla/dom/SVGUnitTypesBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "nsGkAtoms.h"
+#include "nsIFrameInlines.h"
 #include "nsSVGDisplayableFrame.h"
 #include "SVGObserverUtils.h"
 #include "SVGGeometryFrame.h"
@@ -261,7 +262,7 @@ already_AddRefed<SourceSurface> nsSVGPatternFrame::PaintPattern(
   if (patternWithChildren->mCTM) {
     *patternWithChildren->mCTM = ctm;
   } else {
-    patternWithChildren->mCTM = new gfxMatrix(ctm);
+    patternWithChildren->mCTM = MakeUnique<gfxMatrix>(ctm);
   }
 
   // Get the bounding box of the pattern.  This will be used to determine
@@ -325,7 +326,7 @@ already_AddRefed<SourceSurface> nsSVGPatternFrame::PaintPattern(
                             patternHeight / surfaceSize.height);
   }
 
-  RefPtr<DrawTarget> dt = aDrawTarget->CreateSimilarDrawTarget(
+  RefPtr<DrawTarget> dt = aDrawTarget->CreateSimilarDrawTargetWithBacking(
       surfaceSize, SurfaceFormat::B8G8R8A8);
   if (!dt || !dt->IsValid()) {
     return nullptr;
@@ -344,7 +345,7 @@ already_AddRefed<SourceSurface> nsSVGPatternFrame::PaintPattern(
   // we got at the beginning because it takes care of the
   // referenced pattern situation for us
 
-  if (aSource->IsFrameOfType(nsIFrame::eSVGGeometry)) {
+  if (aSource->IsSVGGeometryFrameOrSubclass()) {
     // Set the geometrical parent of the pattern we are rendering
     patternWithChildren->mSource = static_cast<SVGGeometryFrame*>(aSource);
   }
@@ -376,7 +377,7 @@ already_AddRefed<SourceSurface> nsSVGPatternFrame::PaintPattern(
   }
 
   // caller now owns the surface
-  return dt->Snapshot();
+  return dt->GetBackingSurface();
 }
 
 /* Will probably need something like this... */

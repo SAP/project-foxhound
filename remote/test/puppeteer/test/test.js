@@ -26,11 +26,15 @@ if (parallelArgIndex !== -1)
   parallel = parseInt(process.argv[parallelArgIndex + 1], 10);
 require('events').defaultMaxListeners *= parallel;
 
-// Timeout to 20 seconds on Appveyor instances.
-let timeout = process.env.APPVEYOR ? 20 * 1000 : 10 * 1000;
+const defaultTimeout = process.env.PUPPETEER_PRODUCT === 'firefox' ? 15 * 1000 : 10 * 1000;
+let timeout = process.env.APPVEYOR ? 20 * 1000 : defaultTimeout;
 if (!isNaN(process.env.TIMEOUT))
-  timeout = parseInt(process.env.TIMEOUT, 10);
-const testRunner = new TestRunner({timeout, parallel});
+  timeout = parseInt(process.env.TIMEOUT, defaultTimeout);
+const testRunner = new TestRunner({
+  timeout,
+  parallel,
+  breakOnFailure: process.argv.indexOf('--break-on-failure') !== -1,
+});
 const {describe, fdescribe, beforeAll, afterAll, beforeEach, afterEach} = testRunner;
 
 console.log('Testing on Node', process.version);
@@ -69,31 +73,34 @@ beforeEach(async({server, httpsServer}) => {
 });
 
 const CHROMIUM_NO_COVERAGE = new Set([
-  'page.bringToFront',
+  'page.emulateMedia', // Legacy alias for `page.emulateMediaType`.
 ]);
 
-if (process.env.BROWSER === 'firefox') {
-  testRunner.addTestDSL('it_fails_ffox', 'skip');
-  testRunner.addSuiteDSL('describe_fails_ffox', 'skip');
-  describe('Firefox', () => {
-    require('./puppeteer.spec.js').addTests({
-      product: 'Firefox',
-      puppeteerPath: path.resolve(__dirname, '../experimental/puppeteer-firefox/'),
-      testRunner,
+switch (process.env.PUPPETEER_PRODUCT) {
+  case 'firefox':
+    testRunner.addTestDSL('it_fails_ffox', 'skip');
+    testRunner.addSuiteDSL('describe_fails_ffox', 'skip');
+    describe('Firefox', () => {
+      require('./puppeteer.spec.js').addTests({
+        product: 'Firefox',
+        puppeteerPath: utils.projectRoot(),
+        testRunner,
+      });
     });
-  });
-} else {
-  testRunner.addTestDSL('it_fails_ffox', 'run');
-  testRunner.addSuiteDSL('describe_fails_ffox', 'run');
-  describe('Chromium', () => {
-    require('./puppeteer.spec.js').addTests({
-      product: 'Chromium',
-      puppeteerPath: utils.projectRoot(),
-      testRunner,
+    break;
+  case 'chrome':
+  default:
+    testRunner.addTestDSL('it_fails_ffox', 'run');
+    testRunner.addSuiteDSL('describe_fails_ffox', 'run');
+    describe('Chromium', () => {
+      require('./puppeteer.spec.js').addTests({
+        product: 'Chromium',
+        puppeteerPath: utils.projectRoot(),
+        testRunner,
+      });
+      if (process.env.COVERAGE)
+        utils.recordAPICoverage(testRunner, require('../lib/api'), require('../lib/Events').Events, CHROMIUM_NO_COVERAGE);
     });
-    if (process.env.COVERAGE)
-      utils.recordAPICoverage(testRunner, require('../lib/api'), CHROMIUM_NO_COVERAGE);
-  });
 }
 
 if (process.env.CI && testRunner.hasFocusedTestsOrSuites()) {
@@ -107,4 +114,9 @@ new Reporter(testRunner, {
   projectFolder: utils.projectRoot(),
   showSlowTests: process.env.CI ? 5 : 0,
 });
-testRunner.run();
+
+(async() => {
+  await utils.initializeFlakinessDashboardIfNeeded(testRunner);
+  testRunner.run();
+})();
+

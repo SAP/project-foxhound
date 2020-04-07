@@ -13,7 +13,9 @@ import {
   getSourceLineCount,
   isThirdParty,
   isJavaScript,
+  underRoot,
   isUrlExtension,
+  isExtensionDirectoryPath,
 } from "../source.js";
 
 import {
@@ -23,6 +25,8 @@ import {
   makeMockWasmSourceWithContent,
 } from "../test-mockup";
 import { isFulfilled } from "../async-value.js";
+
+import type { Source } from "../../types";
 
 const defaultSymbolDeclarations = {
   classes: [],
@@ -112,92 +116,91 @@ describe("sources", () => {
 
   describe("getDisplayPath", () => {
     it("should give us the path for files with same name", () => {
+      const sources: Source[] = [
+        makeMockSource("http://localhost.com:7999/increment/xyz/hello.html"),
+        makeMockSource("http://localhost.com:7999/increment/abc/hello.html"),
+        makeMockSource("http://localhost.com:7999/increment/hello.html"),
+      ];
       expect(
         getDisplayPath(
           makeMockSource("http://localhost.com:7999/increment/abc/hello.html"),
-          [
-            makeMockSource(
-              "http://localhost.com:7999/increment/xyz/hello.html"
-            ),
-            makeMockSource(
-              "http://localhost.com:7999/increment/abc/hello.html"
-            ),
-            makeMockSource("http://localhost.com:7999/increment/hello.html"),
-          ]
+          sources
         )
       ).toBe("abc");
     });
 
     it(`should give us the path for files with same name
       in directories with same name`, () => {
+      const sources: Source[] = [
+        makeMockSource(
+          "http://localhost.com:7999/increment/xyz/web/hello.html"
+        ),
+        makeMockSource(
+          "http://localhost.com:7999/increment/abc/web/hello.html"
+        ),
+        makeMockSource("http://localhost.com:7999/increment/hello.html"),
+      ];
       expect(
         getDisplayPath(
           makeMockSource(
             "http://localhost.com:7999/increment/abc/web/hello.html"
           ),
-          [
-            makeMockSource(
-              "http://localhost.com:7999/increment/xyz/web/hello.html"
-            ),
-            makeMockSource(
-              "http://localhost.com:7999/increment/abc/web/hello.html"
-            ),
-            makeMockSource("http://localhost.com:7999/increment/hello.html"),
-          ]
+          sources
         )
       ).toBe("abc/web");
     });
 
     it("should give no path for files with unique name", () => {
+      const sources: Source[] = [
+        makeMockSource("http://localhost.com:7999/increment/xyz.html"),
+        makeMockSource("http://localhost.com:7999/increment/abc.html"),
+        makeMockSource("http://localhost.com:7999/increment/hello.html"),
+      ];
       expect(
         getDisplayPath(
           makeMockSource("http://localhost.com:7999/increment/abc/web.html"),
-          [
-            makeMockSource("http://localhost.com:7999/increment/xyz.html"),
-            makeMockSource("http://localhost.com:7999/increment/abc.html"),
-            makeMockSource("http://localhost.com:7999/increment/hello.html"),
-          ]
+          sources
         )
       ).toBe(undefined);
     });
     it("should not show display path for pretty file", () => {
+      const sources: Source[] = [
+        makeMockSource("http://localhost.com:7999/increment/abc/web/hell.html"),
+        makeMockSource(
+          "http://localhost.com:7999/increment/abc/web/hello.html"
+        ),
+        makeMockSource(
+          "http://localhost.com:7999/increment/xyz.html:formatted"
+        ),
+      ];
       expect(
         getDisplayPath(
           makeMockSource(
             "http://localhost.com:7999/increment/abc/web/hello.html:formatted"
           ),
-          [
-            makeMockSource(
-              "http://localhost.com:7999/increment/abc/web/hell.html"
-            ),
-            makeMockSource(
-              "http://localhost.com:7999/increment/abc/web/hello.html"
-            ),
-            makeMockSource(
-              "http://localhost.com:7999/increment/xyz.html:formatted"
-            ),
-          ]
+          sources
         )
       ).toBe(undefined);
     });
     it(`should give us the path for files with same name when both
       are pretty and different path`, () => {
+      const sources: Source[] = [
+        makeMockSource(
+          "http://localhost.com:7999/increment/xyz/web/hello.html:formatted"
+        ),
+        makeMockSource(
+          "http://localhost.com:7999/increment/abc/web/hello.html:formatted"
+        ),
+        makeMockSource(
+          "http://localhost.com:7999/increment/hello.html:formatted"
+        ),
+      ];
       expect(
         getDisplayPath(
           makeMockSource(
             "http://localhost.com:7999/increment/abc/web/hello.html:formatted"
           ),
-          [
-            makeMockSource(
-              "http://localhost.com:7999/increment/xyz/web/hello.html:formatted"
-            ),
-            makeMockSource(
-              "http://localhost.com:7999/increment/abc/web/hello.html:formatted"
-            ),
-            makeMockSource(
-              "http://localhost.com:7999/increment/hello.html:formatted"
-            ),
-          ]
+          sources
         )
       ).toBe("abc/web");
     });
@@ -504,15 +507,58 @@ describe("sources", () => {
     });
   });
 
+  describe("underRoot", () => {
+    const threadActors = ["server0.conn1.child1/thread19"];
+
+    it("should detect normal source urls", () => {
+      const source = makeMockSource(
+        "resource://activity-stream/vendor/react.js"
+      );
+      expect(
+        underRoot(source, "resource://activity-stream", threadActors)
+      ).toBe(true);
+    });
+
+    it("should detect source urls under chrome:// as root", () => {
+      const source = makeMockSource(
+        "chrome://browser/content/contentSearchUI.js"
+      );
+      expect(underRoot(source, "chrome://", threadActors)).toBe(true);
+    });
+
+    it("should detect source urls if root is a thread actor Id", () => {
+      const source = makeMockSource(
+        "resource://activity-stream/vendor/react-dom.js"
+      );
+      expect(
+        underRoot(source, "server0.conn1.child1/thread19", threadActors)
+      ).toBe(true);
+    });
+  });
+
   describe("isUrlExtension", () => {
-    it("should detect mozilla extenstion", () => {
+    it("should detect mozilla extension", () => {
       expect(isUrlExtension("moz-extension://id/js/content.js")).toBe(true);
     });
-    it("should detect chrome extenstion", () => {
+    it("should detect chrome extension", () => {
       expect(isUrlExtension("chrome-extension://id/js/content.js")).toBe(true);
     });
     it("should return false for non-extension assets", () => {
       expect(isUrlExtension("https://example.org/init.js")).toBe(false);
+    });
+  });
+
+  describe("isExtensionDirectoryPath", () => {
+    it("should detect mozilla extension directory", () => {
+      expect(isExtensionDirectoryPath("moz-extension://id")).toBe(true);
+    });
+    it("should detect chrome extension directory", () => {
+      expect(isExtensionDirectoryPath("chrome-extension://id")).toBe(true);
+    });
+    it("should return false for child file within the extension directory", () => {
+      expect(isExtensionDirectoryPath("moz-extension://id/js/content.js")).toBe(
+        false
+      );
     });
   });
 });

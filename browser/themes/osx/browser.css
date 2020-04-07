@@ -131,7 +131,7 @@
 
 /* Draw the bottom border of the tabs toolbar when it's not using
    -moz-appearance: toolbar. */
-:root:-moz-any([sizemode="fullscreen"],[customize-entered]) #nav-bar:not([tabs-hidden="true"]),
+:root:-moz-any([sizemode="fullscreen"],[customizing]) #nav-bar:not([tabs-hidden="true"]),
 :root:not([tabsintitlebar]) #nav-bar:not([tabs-hidden="true"]),
 #nav-bar:not([tabs-hidden="true"]):-moz-lwtheme {
   box-shadow: 0 calc(-1 * var(--tabs-navbar-shadow-size)) 0 var(--tabs-border-color);
@@ -244,8 +244,16 @@
 
 %include ../shared/urlbar-searchbar.inc.css
 
-:root {
-  --toolbar-field-focus-border-color: -moz-mac-focusring;
+@supports not -moz-bool-pref("browser.urlbar.update1") {
+  :root {
+    --toolbar-field-focus-border-color: -moz-mac-focusring;
+  }
+
+  #searchbar:focus-within,
+  #urlbar:not(.megabar)[focused="true"] {
+    box-shadow: 0 0 0 1px var(--toolbar-field-focus-border-color) inset,
+                0 0 0 1px var(--toolbar-field-focus-border-color);
+  }
 }
 
 #urlbar,
@@ -257,20 +265,6 @@
  * even in non-Latin scripts. */
 #urlbar-input {
   line-height: 1.745em;
-}
-
-/* Focus ring. */
-#urlbar:not(.megabar)[focused="true"],
-#urlbar.megabar[focused="true"] > #urlbar-background,
-#searchbar:focus-within {
-  box-shadow: 0 0 0 1px var(--toolbar-field-focus-border-color) inset,
-              0 0 0 1px var(--toolbar-field-focus-border-color);
-}
-
-#urlbar.megabar[breakout][breakout-extend][focused="true"] > #urlbar-background {
-  box-shadow: 0 0 0 1px var(--toolbar-field-focus-border-color) inset,
-              0 0 0 1px var(--toolbar-field-focus-border-color),
-              0 5px 18px rgba(0, 0, 0, .2);
 }
 
 %include ../shared/identity-block/identity-block.inc.css
@@ -303,6 +297,16 @@
 
 .urlbarView {
   font-size: 14px;
+}
+
+@supports -moz-bool-pref("browser.urlbar.update2.expandTextOnFocus") {
+  .urlbarView {
+    font-size: inherit;
+  }
+
+  #urlbar[breakout-extend] {
+    font-size: 1.36em;
+  }
 }
 
 #BMB_bookmarksPopup[side="top"],
@@ -338,9 +342,9 @@
   box-shadow: var(--focus-ring-box-shadow);
 }
 
-/* The following elements come from editBookmarkPanel.inc.xul. Styling that's
+/* The following elements come from editBookmarkPanel.inc.xhtml. Styling that's
    specific to the editBookmarkPanel should be in browser.css. Styling that
-   should be shared by all editBookmarkPanel.inc.xul consumers should be in
+   should be shared by all editBookmarkPanel.inc.xhtml consumers should be in
    editBookmark.css. */
 
 #editBMPanel_newFolderBox {
@@ -601,32 +605,6 @@
   position: static;
 }
 
-/**
- * Tab Drag and Drop
- */
-
-.tab-drop-indicator-box {
-  -moz-box-align: center;
-}
-
-.tab-drop-indicator {
-  list-style-image: url(chrome://browser/skin/tabbrowser/tabDragIndicator.png);
-  margin-top: -2px;
-  z-index: 3;
-}
-
-@media (min-resolution: 2dppx) {
-  .tab-drop-indicator {
-    list-style-image: url(chrome://browser/skin/tabbrowser/tabDragIndicator@2x.png);
-    width: 12px;
-  }
-}
-
-/* Bookmarks toolbar */
-#PlacesToolbarDropIndicator {
-  list-style-image: url(chrome://browser/skin/places/toolbarDropMarker.png);
-}
-
 /* Bookmark drag and drop styles */
 
 .bookmark-item[dragover-into="true"] {
@@ -763,6 +741,14 @@ menulist.translate-infobar-element > .menulist-dropmarker {
   border-top-style: solid;
   color: #444;
   text-shadow: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  #statuspanel-label {
+    background-color: hsl(240, 1%, 20%);
+    border-color: hsl(240, 1%, 40%);
+    color: rgb(249, 249, 250);
+  }
 }
 
 #statuspanel:not([mirror]) > #statuspanel-inner > #statuspanel-label:-moz-locale-dir(ltr),

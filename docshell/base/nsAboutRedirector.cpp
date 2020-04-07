@@ -59,8 +59,8 @@ class CrashChannel final : public nsBaseChannel {
   for that you need MAKE_LINKABLE.
  */
 static const RedirEntry kRedirMap[] = {
-    {"about", "chrome://global/content/aboutAbout.xhtml", 0},
-    {"addons", "chrome://mozapps/content/extensions/extensions.xul",
+    {"about", "chrome://global/content/aboutAbout.html", 0},
+    {"addons", "chrome://mozapps/content/extensions/extensions.xhtml",
      nsIAboutModule::ALLOW_SCRIPT},
     {"buildconfig", "chrome://global/content/buildconfig.html",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT},
@@ -68,7 +68,7 @@ static const RedirEntry kRedirMap[] = {
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::ALLOW_SCRIPT},
 #ifndef MOZ_BUILD_APP_IS_BROWSER
-    {"config", "chrome://global/content/config.xul", 0},
+    {"config", "chrome://global/content/config.xhtml", 0},
 #endif
 #ifdef MOZ_CRASHREPORTER
     {"crashes", "chrome://global/content/crashes.xhtml", 0},
@@ -94,7 +94,7 @@ static const RedirEntry kRedirMap[] = {
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::URI_CAN_LOAD_IN_CHILD | nsIAboutModule::ALLOW_SCRIPT |
          nsIAboutModule::HIDE_FROM_ABOUTABOUT},
-    {"networking", "chrome://global/content/aboutNetworking.xhtml",
+    {"networking", "chrome://global/content/aboutNetworking.html",
      nsIAboutModule::ALLOW_SCRIPT},
     {"performance", "chrome://global/content/aboutPerformance.xhtml",
      nsIAboutModule::ALLOW_SCRIPT},

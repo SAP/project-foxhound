@@ -10,8 +10,8 @@ const gExpectedHistory = {
 };
 
 function get_remote_history(browser) {
-  function frame_script() {
-    let webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
+  return SpecialPowers.spawn(browser, [], () => {
+    let webNav = content.docShell.QueryInterface(Ci.nsIWebNavigation);
     let sessionHistory = webNav.sessionHistory;
     let result = {
       index: sessionHistory.index,
@@ -26,22 +26,7 @@ function get_remote_history(browser) {
       });
     }
 
-    sendAsyncMessage("Test:History", result);
-  }
-
-  return new Promise(resolve => {
-    browser.messageManager.addMessageListener(
-      "Test:History",
-      function listener({ data }) {
-        browser.messageManager.removeMessageListener("Test:History", listener);
-        resolve(data);
-      }
-    );
-
-    browser.messageManager.loadFrameScript(
-      "data:,(" + frame_script.toString() + ")();",
-      true
-    );
+    return result;
   });
 }
 
@@ -455,13 +440,26 @@ add_task(async function test_loadflags() {
   );
   await check_history();
 
+  info("5");
+  // Load another remote page from a different origin
+  await waitForLoadWithFlags(
+    "http://example.com/" + DUMMY_PATH,
+    Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY
+  );
+  is(
+    gBrowser.selectedBrowser.isRemoteBrowser,
+    expectedRemote,
+    "Remote attribute should be correct"
+  );
+  await check_history();
+
   is(
     gExpectedHistory.entries.length,
     2,
     "Should end with the right number of history entries"
   );
 
-  info("5");
+  info("6");
   gBrowser.removeCurrentTab();
   clear_history();
 });

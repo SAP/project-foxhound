@@ -7,9 +7,10 @@ from __future__ import absolute_import, print_function, unicode_literals
 import itertools
 import logging
 import os
-import traceback
+import six
 import sys
 import time
+import traceback
 
 from collections import defaultdict, OrderedDict
 from mach.mixin.logging import LoggingMixin
@@ -62,6 +63,7 @@ from .data import (
     HostRustLibrary,
     RustProgram,
     RustTests,
+    SandboxedWasmLibrary,
     SharedLibrary,
     SimpleProgram,
     Sources,
@@ -70,6 +72,9 @@ from .data import (
     TestManifest,
     UnifiedSources,
     VariablePassthru,
+    WasmDefines,
+    WasmGeneratedSources,
+    WasmSources,
     XPCOMComponentManifests,
     XPIDLModule,
 )
@@ -111,19 +116,13 @@ class TreeMetadataEmitter(LoggingMixin):
 
         mozinfo.find_and_update_from_json(config.topobjdir)
 
-        # Python 2.6 doesn't allow unicode keys to be used for keyword
-        # arguments. This gross hack works around the problem until we
-        # rid ourselves of 2.6.
-        self.info = {}
-        for k, v in mozinfo.info.items():
-            if isinstance(k, unicode):
-                k = k.encode('ascii')
-            self.info[k] = v
+        self.info = dict(mozinfo.info)
 
         self._libs = OrderedDefaultDict(list)
         self._binaries = OrderedDict()
         self._compile_dirs = set()
         self._host_compile_dirs = set()
+        self._wasm_compile_dirs = set()
         self._asm_compile_dirs = set()
         self._compile_flags = dict()
         self._compile_as_flags = dict()
@@ -295,7 +294,8 @@ class TreeMetadataEmitter(LoggingMixin):
             for o in obj.linked_libraries:
                 if isinstance(o, (HostRustLibrary, RustLibrary)):
                     libs.append(o)
-                elif isinstance(o, (HostLibrary, StaticLibrary)):
+                elif isinstance(o, (HostLibrary, StaticLibrary,
+                                    SandboxedWasmLibrary)):
                     libs.extend(rust_libraries(o))
             return libs
 
@@ -310,8 +310,9 @@ class TreeMetadataEmitter(LoggingMixin):
             raise SandboxValidationError(
                 'Cannot link the following Rust libraries into the %s:\n'
                 '%s\nOnly one is allowed.'
-                % (what, '\n'.join('  - %s' % r.basename
-                                   for r in sorted(rust_libs))),
+                % (what, '\n'.join(
+                    '  - %s' % r.basename
+                    for r in sorted(rust_libs, key=lambda r: r.basename))),
                 contexts[obj.objdir])
 
         # Propagate LIBRARY_DEFINES to all child libraries recursively.
@@ -321,7 +322,7 @@ class TreeMetadataEmitter(LoggingMixin):
                 # Propagate defines only along FINAL_LIBRARY paths, not USE_LIBS
                 # paths.
                 if (isinstance(lib, StaticLibrary) and
-                        lib.link_into == outerlib.basename):
+                    lib.link_into == outerlib.basename):
                     propagate_defines(lib, defines)
 
         for lib in (l for libs in self._libs.values() for l in libs):
@@ -354,16 +355,19 @@ class TreeMetadataEmitter(LoggingMixin):
     LIBRARY_NAME_VAR = {
         'host': 'HOST_LIBRARY_NAME',
         'target': 'LIBRARY_NAME',
+        'wasm': 'SANDBOXED_WASM_LIBRARY_NAME',
     }
 
     LIBSTDCXX_VAR = {
         'host': 'MOZ_LIBSTDCXX_HOST_VERSION',
         'target': 'MOZ_LIBSTDCXX_TARGET_VERSION',
+        'wasm': 'MOZ_LIBSTDCXX_TARGET_VERSION',
     }
 
     STDCXXCOMPAT_NAME = {
         'host': 'host_stdc++compat',
         'target': 'stdc++compat',
+        'wasm': 'stdc++compat',
     }
 
     def _link_libraries(self, context, obj, variable, extra_sources):
@@ -442,7 +446,7 @@ class TreeMetadataEmitter(LoggingMixin):
                         libs[key] = l
                     if key not in libs:
                         libs[key] = l
-            candidates = libs.values()
+            candidates = list(libs.values())
             if force_static and not candidates:
                 if dir:
                     raise SandboxValidationError(
@@ -506,9 +510,9 @@ class TreeMetadataEmitter(LoggingMixin):
 
     def _verify_deps(self, context, crate_dir, crate_name, dependencies, description='Dependency'):
         """Verify that a crate's dependencies all specify local paths."""
-        for dep_crate_name, values in dependencies.iteritems():
+        for dep_crate_name, values in six.iteritems(dependencies):
             # A simple version number.
-            if isinstance(values, (str, unicode)):
+            if isinstance(values, (six.binary_type, six.text_type)):
                 raise SandboxValidationError(
                     '%s %s of crate %s does not list a path' % (
                         description, dep_crate_name, crate_name),
@@ -535,7 +539,8 @@ class TreeMetadataEmitter(LoggingMixin):
                         description, dep_crate_name, crate_name),
                     context)
 
-    def _rust_library(self, context, libname, static_args, cls=RustLibrary):
+    def _rust_library(self, context, libname, static_args, is_gkrust=False,
+                      cls=RustLibrary):
         # We need to note any Rust library for linking purposes.
         config, cargo_file = self._parse_cargo_file(context)
         crate_name = config['package']['name']
@@ -566,7 +571,7 @@ class TreeMetadataEmitter(LoggingMixin):
 
         cargo_target_dir = context.config.topobjdir
 
-        dependencies = set(config.get('dependencies', {}).iterkeys())
+        dependencies = set(six.iterkeys(config.get('dependencies', {})))
 
         features = context.get(cls.FEATURES_VAR, [])
         unique_features = set(features)
@@ -576,7 +581,7 @@ class TreeMetadataEmitter(LoggingMixin):
                 context)
 
         return cls(context, libname, cargo_file, crate_type, dependencies,
-                   features, cargo_target_dir, **static_args)
+                   features, cargo_target_dir, is_gkrust, **static_args)
 
     def _handle_gn_dirs(self, context):
         for target_dir in context.get('GN_DIRS', []):
@@ -600,6 +605,7 @@ class TreeMetadataEmitter(LoggingMixin):
     def _handle_linkables(self, context, passthru, generated_files):
         linkables = []
         host_linkables = []
+        wasm_linkables = []
 
         def add_program(prog, var):
             if var.startswith('HOST_'):
@@ -705,6 +711,8 @@ class TreeMetadataEmitter(LoggingMixin):
         soname = context.get('SONAME')
 
         lib_defines = context.get('LIBRARY_DEFINES')
+
+        wasm_lib = context.get('SANDBOXED_WASM_LIBRARY_NAME')
 
         shared_args = {}
         static_args = {}
@@ -832,11 +840,12 @@ class TreeMetadataEmitter(LoggingMixin):
                         defines = lib.defines.get_defines()
                     yield GeneratedFile(context, script,
                                         'generate_symbols_file', lib.symbols_file,
-                                        [symbols_file], defines)
+                                        [symbols_file], defines, py2=True)
             if static_lib:
                 is_rust_library = context.get('IS_RUST_LIBRARY')
                 if is_rust_library:
-                    lib = self._rust_library(context, libname, static_args)
+                    lib = self._rust_library(context, libname, static_args,
+                                             is_gkrust=bool(context.get('IS_GKRUST')))
                 else:
                     lib = StaticLibrary(context, libname, **static_args)
                 self._libs[libname].append(lib)
@@ -849,10 +858,33 @@ class TreeMetadataEmitter(LoggingMixin):
                                                  'LIBRARY_NAME to take effect', context)
                 lib.lib_defines.update(lib_defines)
 
+        if wasm_lib:
+            if wasm_lib == libname:
+                raise SandboxValidationError(
+                    'SANDBOXED_WASM_LIBRARY_NAME and LIBRARY_NAME must have a '
+                    'different value.', context)
+            if wasm_lib == host_libname:
+                raise SandboxValidationError(
+                    'SANDBOXED_WASM_LIBRARY_NAME and HOST_LIBRARY_NAME must '
+                    'have a different value.', context)
+            if wasm_lib == shared_name:
+                raise SandboxValidationError(
+                    'SANDBOXED_WASM_LIBRARY_NAME and SHARED_NAME must have a '
+                    'different value.', context)
+            if wasm_lib == static_name:
+                raise SandboxValidationError(
+                    'SANDBOXED_WASM_LIBRARY_NAME and STATIC_NAME must have a '
+                    'different value.', context)
+            lib = SandboxedWasmLibrary(context, libname, real_name=wasm_lib)
+            self._libs[libname].append(lib)
+            self._linkage.append((context, lib, 'USE_LIBS'))
+            wasm_linkables.append(lib)
+            self._wasm_compile_dirs.add(context.objdir)
+
         # Only emit sources if we have linkables defined in the same context.
         # Note the linkables are not emitted in this function, but much later,
         # after aggregation (because of e.g. USE_LIBS processing).
-        if not (linkables or host_linkables):
+        if not (linkables or host_linkables or wasm_linkables):
             return
 
         self._compile_dirs.add(context.objdir)
@@ -868,7 +900,7 @@ class TreeMetadataEmitter(LoggingMixin):
         sources = defaultdict(list)
         gen_sources = defaultdict(list)
         all_flags = {}
-        for symbol in ('SOURCES', 'HOST_SOURCES', 'UNIFIED_SOURCES'):
+        for symbol in ('SOURCES', 'HOST_SOURCES', 'UNIFIED_SOURCES', 'WASM_SOURCES'):
             srcs = sources[symbol]
             gen_srcs = gen_sources[symbol]
             context_srcs = context.get(symbol, [])
@@ -898,7 +930,7 @@ class TreeMetadataEmitter(LoggingMixin):
         assert not gen_sources['UNIFIED_SOURCES']
 
         no_pgo = context.get('NO_PGO')
-        no_pgo_sources = [f for f, flags in all_flags.iteritems()
+        no_pgo_sources = [f for f, flags in six.iteritems(all_flags)
                           if flags.no_pgo]
         if no_pgo:
             if no_pgo_sources:
@@ -925,7 +957,7 @@ class TreeMetadataEmitter(LoggingMixin):
 
         # The inverse of the above, mapping suffixes to their canonical suffix.
         canonicalized_suffix_map = {}
-        for suffix, alternatives in suffix_map.iteritems():
+        for suffix, alternatives in six.iteritems(suffix_map):
             alternatives.add(suffix)
             for a in alternatives:
                 canonicalized_suffix_map[a] = suffix
@@ -941,6 +973,12 @@ class TreeMetadataEmitter(LoggingMixin):
             HOST_SOURCES=(HostSources, HostGeneratedSources, ['.c', '.mm', '.cpp']),
             UNIFIED_SOURCES=(UnifiedSources, None, ['.c', '.mm', '.cpp']),
         )
+        # Only include a WasmSources or WasmGeneratedSources context if there
+        # are any WASM_SOURCES. (This is going to matter later because we inject
+        # an extra .c file to compile with the wasm compiler if, and only if,
+        # there are any WASM sources.)
+        if sources['WASM_SOURCES'] or gen_sources['WASM_SOURCES']:
+            varmap['WASM_SOURCES'] = (WasmSources, WasmGeneratedSources, ['.c', '.cpp'])
         # Track whether there are any C++ source files.
         # Technically this won't do the right thing for SIMPLE_PROGRAMS in
         # a directory with mixed C and C++ source, but it's not that important.
@@ -963,6 +1001,12 @@ class TreeMetadataEmitter(LoggingMixin):
             for srcs, cls in ((sources[variable], klass),
                               (gen_sources[variable], gen_klass)):
                 # Now sort the files to let groupby work.
+                srcs = list(srcs)
+                if cls is WasmSources:
+                    srcs.append(
+                        mozpath.join(self.config.topsrcdir,
+                                     ('third_party/rust/rlbox_lucet_sandbox/'
+                                      'c_src/lucet_sandbox_wrapper.c')))
                 sorted_files = sorted(srcs, key=canonical_suffix_for_file)
                 for canonical_suffix, files in itertools.groupby(
                         sorted_files, canonical_suffix_for_file):
@@ -974,7 +1018,7 @@ class TreeMetadataEmitter(LoggingMixin):
                     if variable.startswith('UNIFIED_'):
                         arglist.append(context.get('FILES_PER_UNIFIED_FILE', 16))
                     obj = cls(*arglist)
-                    srcs = obj.files
+                    srcs = list(obj.files)
                     if isinstance(obj, UnifiedSources) and obj.have_unified_mapping:
                         srcs = dict(obj.unified_source_mapping).keys()
                     ctxt_sources[variable][canonical_suffix] += sorted(srcs)
@@ -985,15 +1029,14 @@ class TreeMetadataEmitter(LoggingMixin):
                 for target_var in ('SOURCES', 'UNIFIED_SOURCES'):
                     for suffix, srcs in ctxt_sources[target_var].items():
                         linkable.sources[suffix] += srcs
-                if no_pgo_sources:
-                    linkable.no_pgo_sources = no_pgo_sources
-                elif no_pgo:
-                    linkable.no_pgo = True
             for host_linkable in host_linkables:
                 for suffix, srcs in ctxt_sources['HOST_SOURCES'].items():
                     host_linkable.sources[suffix] += srcs
+            for wasm_linkable in wasm_linkables:
+                for suffix, srcs in ctxt_sources['WASM_SOURCES'].items():
+                    wasm_linkable.sources[suffix] += srcs
 
-        for f, flags in sorted(all_flags.iteritems()):
+        for f, flags in sorted(six.iteritems(all_flags)):
             if flags.flags:
                 ext = mozpath.splitext(f)[1]
                 yield PerSourceFlag(context, f, flags.flags)
@@ -1036,6 +1079,7 @@ class TreeMetadataEmitter(LoggingMixin):
         computed_link_flags = ComputedFlags(context, context['LINK_FLAGS'])
         computed_host_flags = ComputedFlags(context, context['HOST_COMPILE_FLAGS'])
         computed_as_flags = ComputedFlags(context, context['ASM_FLAGS'])
+        computed_wasm_flags = ComputedFlags(context, context['WASM_FLAGS'])
 
         # Proxy some variables as-is until we have richer classes to represent
         # them. We should aim to keep this set small because it violates the
@@ -1048,7 +1092,6 @@ class TreeMetadataEmitter(LoggingMixin):
             'RCINCLUDE',
             'WIN32_EXE_LDFLAGS',
             'USE_EXTENSION_MANIFEST',
-            'HAS_MISC_RULE',
         ]
         for v in varlist:
             if v in context and context[v]:
@@ -1071,6 +1114,10 @@ class TreeMetadataEmitter(LoggingMixin):
         for v in ['CXXFLAGS', 'CFLAGS']:
             if v in context and context[v]:
                 computed_flags.resolve_flags('MOZBUILD_%s' % v, context[v])
+
+        for v in ['WASM_CFLAGS', 'WASM_CXXFLAGS', 'WASM_LDFLAGS']:
+            if v in context and context[v]:
+                computed_wasm_flags.resolve_flags('MOZBUILD_%s' % v, context[v])
 
         for v in ['HOST_CXXFLAGS', 'HOST_CFLAGS']:
             if v in context and context[v]:
@@ -1123,6 +1170,7 @@ class TreeMetadataEmitter(LoggingMixin):
             computed_flags.resolve_flags('RTL', [rtl_flag])
             if not context.config.substs.get('CROSS_COMPILE'):
                 computed_host_flags.resolve_flags('RTL', [rtl_flag])
+            computed_wasm_flags.resolve_flags('RTL', [rtl_flag])
 
         generated_files = set()
         localized_generated_files = set()
@@ -1139,11 +1187,10 @@ class TreeMetadataEmitter(LoggingMixin):
             generated_files.add(str(sub.relpath))
             yield sub
 
-        for defines_var, cls, backend_flags in (('DEFINES', Defines,
-                                                 (computed_flags, computed_as_flags)),
-                                                ('HOST_DEFINES', HostDefines,
-                                                 (computed_host_flags,))
-                                                ):
+        for defines_var, cls, backend_flags in (
+                ('DEFINES', Defines, (computed_flags, computed_as_flags,)),
+                ('HOST_DEFINES', HostDefines, (computed_host_flags,)),
+                ('WASM_DEFINES', WasmDefines, (computed_wasm_flags,))):
             defines = context.get(defines_var)
             if defines:
                 defines_obj = cls(context, defines)
@@ -1205,6 +1252,7 @@ class TreeMetadataEmitter(LoggingMixin):
         computed_flags.resolve_flags('LOCAL_INCLUDES', ['-I%s' % p for p in local_includes])
         computed_as_flags.resolve_flags('LOCAL_INCLUDES', ['-I%s' % p for p in local_includes])
         computed_host_flags.resolve_flags('LOCAL_INCLUDES', ['-I%s' % p for p in local_includes])
+        computed_wasm_flags.resolve_flags('LOCAL_INCLUDES', ['-I%s' % p for p in local_includes])
 
         for obj in self._handle_linkables(context, passthru, generated_files):
             yield obj
@@ -1384,6 +1432,9 @@ class TreeMetadataEmitter(LoggingMixin):
         if context.objdir in self._host_compile_dirs:
             yield computed_host_flags
 
+        if context.objdir in self._wasm_compile_dirs:
+            yield computed_wasm_flags
+
     def _create_substitution(self, cls, context, path):
         sub = cls(context)
         sub.input_path = '%s.in' % path.full_path
@@ -1426,8 +1477,8 @@ class TreeMetadataEmitter(LoggingMixin):
             script = mozpath.join(mozpath.dirname(mozpath.dirname(__file__)),
                                   'action', 'process_define_files.py')
             yield GeneratedFile(context, script, 'process_define_file',
-                                unicode(path),
-                                [Path(context, path + '.in')])
+                                six.text_type(path),
+                                [Path(context, path + '.in')], py2=True)
 
         generated_files = context.get('GENERATED_FILES') or []
         localized_generated_files = context.get('LOCALIZED_GENERATED_FILES') or []
@@ -1470,7 +1521,8 @@ class TreeMetadataEmitter(LoggingMixin):
                     inputs.append(p)
 
                 yield GeneratedFile(context, script, method, outputs, inputs,
-                                    flags.flags, localized=localized, force=flags.force)
+                                    flags.flags, localized=localized, force=flags.force,
+                                    py2=flags.py2)
 
     def _process_test_manifests(self, context):
         for prefix, info in TEST_MANIFESTS.items():
@@ -1515,12 +1567,6 @@ class TreeMetadataEmitter(LoggingMixin):
                                                  path, ', '.join(missing)), context)
 
             out_dir = mozpath.join(install_prefix, manifest_reldir)
-            if 'install-to-subdir' in defaults:
-                # This is terrible, but what are you going to do?
-                out_dir = mozpath.join(out_dir, defaults['install-to-subdir'])
-                obj.manifest_obj_relpath = mozpath.join(manifest_reldir,
-                                                        defaults['install-to-subdir'],
-                                                        mozpath.basename(path))
 
             def process_support_files(test):
                 install_info = self._test_files_converter.convert_support_files(
@@ -1600,17 +1646,7 @@ class TreeMetadataEmitter(LoggingMixin):
                            flavor=flavor, install_prefix='%s/' % flavor,
                            relpath=mozpath.join(manifest_reldir,
                                                 mozpath.basename(manifest_path)))
-
-        for test, source_manifest in sorted(manifest.tests):
-            obj.tests.append({
-                'path': test,
-                'here': mozpath.dirname(test),
-                'manifest': source_manifest,
-                'name': mozpath.basename(test),
-                'head': '',
-                'support-files': '',
-                'subsuite': '',
-            })
+        obj.tests = list(sorted(manifest.tests, key=lambda t: t['path']))
 
         yield obj
 

@@ -24,7 +24,6 @@
 #include "nsINamed.h"
 #include "nsIObserverService.h"
 #include "StaticPtr.h"
-#include "nsIMozBrowserFrame.h"
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsIPropertyBag2.h"
@@ -188,7 +187,7 @@ class ProcessPriorityManagerChild final : public nsIObserver {
   static StaticRefPtr<ProcessPriorityManagerChild> sSingleton;
 
   ProcessPriorityManagerChild();
-  ~ProcessPriorityManagerChild() {}
+  ~ProcessPriorityManagerChild() = default;
   DISALLOW_EVIL_CONSTRUCTORS(ProcessPriorityManagerChild);
 
   void Init();

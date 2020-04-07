@@ -581,13 +581,11 @@
         };
       }
 
-      const headingChangesEnabled = SpecialPowers.getBoolPref("accessibility.heading-element-level-changes.enabled");
       for (let level = 1; level <= 6; ++level) {
         testElm("h" + level, headingWithLevel(level));
-        let expectedLevelWithAncestors = headingChangesEnabled ? level + 1 : level;
         for (const ancestor of ["section", "article", "aside", "nav"]) {
-          testElm("h" + level + "_in_" + ancestor, headingWithLevel(level == 1 ? expectedLevelWithAncestors : level));
-          testElm("h" + level + "_in_" + ancestor + "_in_hgroup", headingWithLevel(expectedLevelWithAncestors));
+          testElm("h" + level + "_in_" + ancestor, headingWithLevel(level));
+          testElm("h" + level + "_in_" + ancestor + "_in_hgroup", headingWithLevel(level));
         }
       }
 
@@ -712,25 +710,9 @@
 
       obj = {
         role: ROLE_SPINBUTTON,
-        interfaces: [ nsIAccessibleValue ],
+        interfaces: [ nsIAccessibleValue, nsIAccessibleText, nsIAccessibleEditableText ],
         children: [
-          {
-            role: ROLE_ENTRY,
-            extraStates: EXT_STATE_EDITABLE | EXT_STATE_SINGLE_LINE,
-            actions: "activate",
-            interfaces: [ nsIAccessibleText, nsIAccessibleEditableText ],
-            children: [
-              { role: ROLE_TEXT_LEAF },
-            ],
-          },
-          {
-            role: ROLE_PUSHBUTTON,
-            actions: "press",
-          },
-          {
-            role: ROLE_PUSHBUTTON,
-            actions: "press",
-          },
+          { role: ROLE_TEXT_LEAF },
         ],
       };
       testElm("input_number", obj);
@@ -1004,13 +986,15 @@
 
       obj = {
         role: ROLE_PARAGRAPH,
-        textAttrs: {
-          0: { },
-          6: { "background-color": "rgb(255, 255, 0)" },
-        },
         children: [
           { role: ROLE_TEXT_LEAF }, // plain text
-          { role: ROLE_TEXT_LEAF }, // HTML:mark text
+          { role: ROLE_MARK,  // HTML:mark text
+            attributes: { "xml-roles": "mark" },
+            interfaces: [ nsIAccessibleText, nsIAccessibleHyperText ],
+            textAttrs: {
+              0: { },
+            }
+          }
         ],
       };
       testElm("mark_container", obj);

@@ -1,10 +1,10 @@
 //! Expanding instructions as runtime library calls.
 
 use crate::ir;
-use crate::ir::{get_libcall_funcref, InstBuilder};
+use crate::ir::{libcall::get_libcall_funcref, InstBuilder};
 use crate::isa::{CallConv, TargetIsa};
 use crate::legalizer::boundary::legalize_libcall_signature;
-use std::vec::Vec;
+use alloc::vec::Vec;
 
 /// Try to expand `inst` as a library call, returning true is successful.
 pub fn expand_as_libcall(inst: ir::Inst, func: &mut ir::Function, isa: &dyn TargetIsa) -> bool {

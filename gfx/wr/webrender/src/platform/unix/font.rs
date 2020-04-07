@@ -12,8 +12,8 @@ use freetype::freetype::{FT_F26Dot6, FT_Face, FT_Glyph_Format, FT_Long, FT_UInt}
 use freetype::freetype::{FT_GlyphSlot, FT_LcdFilter, FT_New_Face, FT_New_Memory_Face};
 use freetype::freetype::{FT_Init_FreeType, FT_Load_Glyph, FT_Render_Glyph};
 use freetype::freetype::{FT_Library, FT_Outline_Get_CBox, FT_Set_Char_Size, FT_Select_Size};
-use freetype::freetype::{FT_Fixed, FT_Matrix, FT_Set_Transform, FT_String, FT_ULong};
-use freetype::freetype::{FT_Err_Unimplemented_Feature};
+use freetype::freetype::{FT_Fixed, FT_Matrix, FT_Set_Transform, FT_String, FT_ULong, FT_Vector};
+use freetype::freetype::{FT_Err_Unimplemented_Feature, FT_MulFix, FT_Outline_Embolden};
 use freetype::freetype::{FT_LOAD_COLOR, FT_LOAD_DEFAULT, FT_LOAD_FORCE_AUTOHINT};
 use freetype::freetype::{FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH, FT_LOAD_NO_AUTOHINT};
 use freetype::freetype::{FT_LOAD_NO_BITMAP, FT_LOAD_NO_HINTING};
@@ -109,6 +109,46 @@ extern "C" {
     fn FT_GlyphSlot_Embolden(slot: FT_GlyphSlot);
 }
 
+// Custom version of FT_GlyphSlot_Embolden to be less aggressive with outline
+// fonts than the default implementation in FreeType.
+#[no_mangle]
+pub extern "C" fn mozilla_glyphslot_embolden_less(slot: FT_GlyphSlot) {
+    if slot.is_null() {
+        return;
+    }
+
+    let slot_ = unsafe { &mut *slot };
+    let format = slot_.format;
+    if format != FT_Glyph_Format::FT_GLYPH_FORMAT_OUTLINE {
+        // For non-outline glyphs, just fall back to FreeType's function.
+        unsafe { FT_GlyphSlot_Embolden(slot) };
+        return;
+    }
+
+    let face_ = unsafe { *slot_.face };
+
+    // FT_GlyphSlot_Embolden uses a divisor of 24 here; we'll be only half as
+    // bold.
+    let size_ = unsafe { *face_.size };
+    let strength =
+        unsafe { FT_MulFix(face_.units_per_EM as FT_Long,
+                           size_.metrics.y_scale) / 48 };
+    unsafe { FT_Outline_Embolden(&mut slot_.outline, strength) };
+
+    // Adjust metrics to suit the fattened glyph.
+    if slot_.advance.x != 0 {
+        slot_.advance.x += strength;
+    }
+    if slot_.advance.y != 0 {
+        slot_.advance.y += strength;
+    }
+    slot_.metrics.width += strength;
+    slot_.metrics.height += strength;
+    slot_.metrics.horiAdvance += strength;
+    slot_.metrics.vertAdvance += strength;
+    slot_.metrics.horiBearingY += strength;
+}
+
 enum FontFile {
     Pathname(CString),
     Data(Arc<Vec<u8>>),
@@ -184,7 +224,7 @@ pub struct FontContext {
 // a given FontContext so it is safe to move the latter between threads.
 unsafe impl Send for FontContext {}
 
-fn get_skew_bounds(bottom: i32, top: i32, skew_factor: f32) -> (f32, f32) {
+fn get_skew_bounds(bottom: i32, top: i32, skew_factor: f32, _vertical: bool) -> (f32, f32) {
     let skew_min = ((bottom as f32 + 0.5) * skew_factor).floor();
     let skew_max = ((top as f32 - 0.5) * skew_factor).ceil();
     (skew_min, skew_max)
@@ -197,10 +237,11 @@ fn skew_bitmap(
     left: i32,
     top: i32,
     skew_factor: f32,
+    vertical: bool, // TODO: vertical skew not yet implemented!
 ) -> (Vec<u8>, usize, i32) {
     let stride = width * 4;
     // Calculate the skewed horizontal offsets of the bottom and top of the glyph.
-    let (skew_min, skew_max) = get_skew_bounds(top - height as i32, top, skew_factor);
+    let (skew_min, skew_max) = get_skew_bounds(top - height as i32, top, skew_factor, vertical);
     // Allocate enough extra width for the min/max skew offsets.
     let skew_width = width + (skew_max - skew_min) as usize;
     let mut skew_buffer = vec![0u8; skew_width * height * 4];
@@ -325,7 +366,7 @@ impl FontContext {
     }
 
     pub fn delete_font(&mut self, font_key: &FontKey) {
-        if let Some(_) = self.faces.remove(font_key) {
+        if self.faces.remove(font_key).is_some() {
             self.variations.retain(|k, _| k.0 != *font_key);
         }
     }
@@ -420,14 +461,13 @@ impl FontContext {
         load_flags |= FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH;
 
         let (x_scale, y_scale) = font.transform.compute_scale().unwrap_or((1.0, 1.0));
-        let scale = font.oversized_scale_factor(x_scale, y_scale);
         let req_size = font.size.to_f64_px();
         let face_flags = unsafe { (*face).face_flags };
         let mut result = if (face_flags & (FT_FACE_FLAG_FIXED_SIZES as FT_Long)) != 0 &&
                             (face_flags & (FT_FACE_FLAG_SCALABLE as FT_Long)) == 0 &&
                             (load_flags & FT_LOAD_NO_BITMAP) == 0 {
             unsafe { FT_Set_Transform(face, ptr::null_mut(), ptr::null_mut()) };
-            self.choose_bitmap_size(face, req_size * y_scale / scale)
+            self.choose_bitmap_size(face, req_size * y_scale)
         } else {
             let mut shape = font.transform.invert_scale(x_scale, y_scale);
             if font.flags.contains(FontInstanceFlags::FLIP_X) {
@@ -439,8 +479,12 @@ impl FontContext {
             if font.flags.contains(FontInstanceFlags::TRANSPOSE) {
                 shape = shape.swap_xy();
             }
+            let (mut tx, mut ty) = (0.0, 0.0);
             if font.synthetic_italics.is_enabled() {
-                shape = shape.synthesize_italics(font.synthetic_italics);
+                let (shape_, (tx_, ty_)) = font.synthesize_italics(shape, y_scale * req_size);
+                shape = shape_;
+                tx = tx_;
+                ty = ty_;
             };
             let mut ft_shape = FT_Matrix {
                 xx: (shape.scale_x * 65536.0) as FT_Fixed,
@@ -448,12 +492,17 @@ impl FontContext {
                 yx: (shape.skew_y * -65536.0) as FT_Fixed,
                 yy: (shape.scale_y * 65536.0) as FT_Fixed,
             };
+            // The delta vector for FT_Set_Transform is in units of 1/64 pixel.
+            let mut ft_delta = FT_Vector {
+                x: (tx * 64.0) as FT_F26Dot6,
+                y: (ty * -64.0) as FT_F26Dot6,
+            };
             unsafe {
-                FT_Set_Transform(face, &mut ft_shape, ptr::null_mut());
+                FT_Set_Transform(face, &mut ft_shape, &mut ft_delta);
                 FT_Set_Char_Size(
                     face,
-                    (req_size * x_scale / scale * 64.0 + 0.5) as FT_F26Dot6,
-                    (req_size * y_scale / scale * 64.0 + 0.5) as FT_F26Dot6,
+                    (req_size * x_scale * 64.0 + 0.5) as FT_F26Dot6,
+                    (req_size * y_scale * 64.0 + 0.5) as FT_F26Dot6,
                     0,
                     0,
                 )
@@ -496,7 +545,7 @@ impl FontContext {
         assert!(slot != ptr::null_mut());
 
         if font.flags.contains(FontInstanceFlags::SYNTHETIC_BOLD) {
-            unsafe { FT_GlyphSlot_Embolden(slot) };
+            mozilla_glyphslot_embolden_less(slot);
         }
 
         let format = unsafe { (*slot).format };
@@ -505,7 +554,7 @@ impl FontContext {
                 let y_size = unsafe { (*(*(*slot).face).size).metrics.y_ppem };
                 Some((slot, req_size as f32 / y_size as f32))
             }
-            FT_Glyph_Format::FT_GLYPH_FORMAT_OUTLINE => Some((slot, scale as f32)),
+            FT_Glyph_Format::FT_GLYPH_FORMAT_OUTLINE => Some((slot, 1.0)),
             _ => {
                 error!("Unsupported format");
                 debug!("format={:?}", format);
@@ -536,16 +585,16 @@ impl FontContext {
         glyph: &GlyphKey,
         scale: f32,
     ) -> FT_BBox {
-        let mut cbox: FT_BBox = unsafe { mem::uninitialized() };
-
         // Get the estimated bounding box from FT (control points).
+        let mut cbox = FT_BBox { xMin: 0, yMin: 0, xMax: 0, yMax: 0 };
+
         unsafe {
             FT_Outline_Get_CBox(&(*slot).outline, &mut cbox);
+        }
 
-            // For spaces and other non-printable characters, early out.
-            if (*slot).outline.n_contours == 0 {
-                return cbox;
-            }
+        // For spaces and other non-printable characters, early out.
+        if unsafe { (*slot).outline.n_contours } == 0 {
+            return cbox;
         }
 
         self.pad_bounding_box(font, &mut cbox);
@@ -621,6 +670,7 @@ impl FontContext {
                         top - height as i32,
                         top,
                         font.synthetic_italics.to_skew(),
+                        font.flags.contains(FontInstanceFlags::VERTICAL),
                     );
                     left += skew_min as i32;
                     width += (skew_max - skew_min) as i32;
@@ -719,7 +769,7 @@ impl FontContext {
         // into account the subpixel positioning.
         unsafe {
             let outline = &(*slot).outline;
-            let mut cbox: FT_BBox = mem::uninitialized();
+            let mut cbox = FT_BBox { xMin: 0, yMin: 0, xMax: 0, yMax: 0 };
             FT_Outline_Get_CBox(outline, &mut cbox);
             self.pad_bounding_box(font, &mut cbox);
             FT_Outline_Translate(
@@ -910,6 +960,7 @@ impl FontContext {
                         left,
                         top,
                         font.synthetic_italics.to_skew(),
+                        font.flags.contains(FontInstanceFlags::VERTICAL),
                     );
                     final_buffer = skew_buffer;
                     actual_width = skew_width;

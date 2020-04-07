@@ -70,9 +70,7 @@
       }
     }
     if (summaries.length) {
-      let groupName = `Instrumentation data for custom elements in ${
-        document.documentURI
-      }`;
+      let groupName = `Instrumentation data for custom elements in ${document.documentURI}`;
       console[collapsed ? "groupCollapsed" : "group"](groupName);
       console.log(
         `Total function calls ${totalCalls} and total time spent inside ${totalTime.toFixed(
@@ -521,6 +519,11 @@
     `,
           "application/xml"
         );
+
+        if (doc.documentElement.localName === "parsererror") {
+          throw new Error("not well-formed XML");
+        }
+
         // The XUL/XBL parser is set to ignore all-whitespace nodes, whereas (X)HTML
         // does not do this. Most XUL code assumes that the whitespace has been
         // stripped out, so we simply remove all text nodes after using the parser.
@@ -554,7 +557,10 @@
       static insertFTLIfNeeded(path) {
         let container = document.head || document.querySelector("linkset");
         if (!container) {
-          if (document.contentType == "application/vnd.mozilla.xul+xml") {
+          if (
+            document.documentElement.namespaceURI ===
+            "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+          ) {
             container = document.createXULElement("linkset");
             document.documentElement.appendChild(container);
           } else if (document.documentURI == AppConstants.BROWSER_CHROME_URL) {
@@ -759,11 +765,13 @@
     );
   });
 
-  // For now, don't load any elements in the extension dummy document.
-  // We will want to load <browser> when that's migrated (bug 1441935).
-  const isDummyDocument =
-    document.documentURI == "chrome://extensions/content/dummy.xul";
-  if (!isDummyDocument) {
+  // Skip loading any extra custom elements in the extension dummy document
+  // and GeckoView windows.
+  const loadExtraCustomElements = !(
+    document.documentURI == "chrome://extensions/content/dummy.xhtml" ||
+    document.documentURI == "chrome://geckoview/content/geckoview.xhtml"
+  );
+  if (loadExtraCustomElements) {
     for (let script of [
       "chrome://global/content/elements/arrowscrollbox.js",
       "chrome://global/content/elements/dialog.js",

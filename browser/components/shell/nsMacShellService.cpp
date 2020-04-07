@@ -3,15 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "CocoaFileUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsIImageLoadingContent.h"
 #include "mozilla/dom/Document.h"
 #include "nsIContent.h"
 #include "nsIObserverService.h"
-#include "nsIPrefService.h"
-#include "nsIServiceManager.h"
-#include "nsIStringBundle.h"
-#include "nsIURL.h"
 #include "nsIWebBrowserPersist.h"
 #include "nsMacShellService.h"
 #include "nsIProperties.h"
@@ -157,7 +154,8 @@ nsMacShellService::SetDesktopBackground(Element* aElement, int32_t aPosition,
   referrerInfo->InitWithNode(aElement);
 
   return wbp->SaveURI(imageURI, aElement->NodePrincipal(), 0, referrerInfo,
-                      nullptr, nullptr, mBackgroundFile, loadContext);
+                      nullptr, nullptr, mBackgroundFile,
+                      nsIContentPolicy::TYPE_IMAGE, loadContext);
 }
 
 NS_IMETHODIMP
@@ -290,4 +288,33 @@ nsMacShellService::SetDesktopBackgroundColor(uint32_t aColor) {
   // The mac desktop preferences UI uses pictures for the few solid colors it
   // supports.
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsMacShellService::ShowSecurityPreferences(const nsACString& aPaneID) {
+  nsresult rv = NS_ERROR_NOT_AVAILABLE;
+
+  CFStringRef paneID = ::CFStringCreateWithBytes(
+      kCFAllocatorDefault, (const UInt8*)PromiseFlatCString(aPaneID).get(),
+      aPaneID.Length(), kCFStringEncodingUTF8, false);
+
+  if (paneID) {
+    CFStringRef format =
+        CFSTR("x-apple.systempreferences:com.apple.preference.security?%@");
+    if (format) {
+      CFStringRef urlStr =
+          CFStringCreateWithFormat(kCFAllocatorDefault, NULL, format, paneID);
+      if (urlStr) {
+        CFURLRef url = ::CFURLCreateWithString(NULL, urlStr, NULL);
+        rv = CocoaFileUtils::OpenURL(url);
+
+        ::CFRelease(urlStr);
+      }
+
+      ::CFRelease(format);
+    }
+
+    ::CFRelease(paneID);
+  }
+  return rv;
 }

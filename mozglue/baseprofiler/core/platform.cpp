@@ -173,7 +173,6 @@ static uint32_t AvailableFeatures() {
   // Now remove features not supported on this platform/configuration.
   ProfilerFeature::ClearJava(features);
   ProfilerFeature::ClearJS(features);
-  ProfilerFeature::ClearResponsiveness(features);
   ProfilerFeature::ClearScreenshots(features);
 #  if !defined(HAVE_NATIVE_UNWIND)
   ProfilerFeature::ClearStackWalk(features);
@@ -188,8 +187,7 @@ static uint32_t AvailableFeatures() {
 // Default features common to all contexts (even if not available).
 static uint32_t DefaultFeatures() {
   return ProfilerFeature::Java | ProfilerFeature::JS | ProfilerFeature::Leaf |
-         ProfilerFeature::StackWalk | ProfilerFeature::Threads |
-         ProfilerFeature::Responsiveness;
+         ProfilerFeature::StackWalk | ProfilerFeature::Threads;
 }
 
 // Extra default features when MOZ_BASE_PROFILER_STARTUP is set (even if not
@@ -554,6 +552,11 @@ class ActivePS {
 
     for (uint32_t i = 0; i < mFilters.length(); ++i) {
       std::string filter = mFilters[i];
+
+      if (filter == "*") {
+        return true;
+      }
+
       std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
 
       // Crude, non UTF-8 compatible, case insensitive substring search
@@ -619,7 +622,7 @@ class ActivePS {
 
     size_t n = aMallocSizeOf(sInstance);
 
-    n += sInstance->mProfileBuffer.SizeOfIncludingThis(aMallocSizeOf);
+    n += sInstance->mProfileBuffer.SizeOfExcludingThis(aMallocSizeOf);
 
     // Measurement of the following members may be added later if DMD finds it
     // is worthwhile:
@@ -940,8 +943,7 @@ uint32_t ActivePS::sNextGeneration = 0;
 #  undef PS_GET_LOCKLESS
 #  undef PS_GET_AND_SET
 
-Atomic<uint32_t, MemoryOrdering::Relaxed, recordreplay::Behavior::DontPreserve>
-    RacyFeatures::sActiveAndFeatures(0);
+Atomic<uint32_t, MemoryOrdering::Relaxed> RacyFeatures::sActiveAndFeatures(0);
 
 /* static */
 void RacyFeatures::SetActive(uint32_t aFeatures) {
@@ -1049,7 +1051,7 @@ ProfilingStack* AutoProfilerLabel::GetProfilingStack() {
 MOZ_THREAD_LOCAL(ProfilingStack*) AutoProfilerLabel::sProfilingStack;
 
 // The name of the main thread.
-static const char* const kMainThreadName = "Main Thread (Base Profiler)";
+static const char* const kMainThreadName = "GeckoMain";
 
 ////////////////////////////////////////////////////////////////////////
 // BEGIN sampling/unwinding code
@@ -1622,7 +1624,7 @@ static void StreamMetaJSCustomObject(PSLockRef aLock,
                                      bool aIsShuttingDown) {
   MOZ_RELEASE_ASSERT(CorePS::Exists() && ActivePS::Exists(aLock));
 
-  aWriter.IntProperty("version", 17);
+  aWriter.IntProperty("version", 19);
 
   // The "startTime" field holds the number of milliseconds since midnight
   // January 1, 1970 GMT. This grotty code computes (Now - (Now -
@@ -1936,7 +1938,7 @@ class Sampler {
   template <typename Func>
   void SuspendAndSampleAndResumeThread(
       PSLockRef aLock, const RegisteredThread& aRegisteredThread,
-      const Func& aProcessRegs);
+      const TimeStamp& aNow, const Func& aProcessRegs);
 
  private:
 #  if defined(GP_OS_linux) || defined(GP_OS_android)
@@ -2136,7 +2138,8 @@ void SamplerThread::Run() {
             buffer.AddEntry(ProfileBufferEntry::Time(delta.ToMilliseconds()));
 
             mSampler.SuspendAndSampleAndResumeThread(
-                lock, *registeredThread, [&](const Registers& aRegs) {
+                lock, *registeredThread, now,
+                [&](const Registers& aRegs, const TimeStamp& aNow) {
                   DoPeriodicSample(lock, *registeredThread, *profiledThreadData,
                                    aRegs, samplePos, localProfileBuffer);
                 });
@@ -2145,14 +2148,17 @@ void SamplerThread::Run() {
             auto state = localBlocksRingBuffer.GetState();
             if (state.mClearedBlockCount != previousState.mClearedBlockCount) {
               LOG("Stack sample too big for local storage, needed %u bytes",
-                  unsigned(state.mRangeEnd.ConvertToU64() -
-                           previousState.mRangeEnd.ConvertToU64()));
-            } else if (state.mRangeEnd.ConvertToU64() -
-                           previousState.mRangeEnd.ConvertToU64() >=
+                  unsigned(
+                      state.mRangeEnd.ConvertToProfileBufferIndex() -
+                      previousState.mRangeEnd.ConvertToProfileBufferIndex()));
+            } else if (state.mRangeEnd.ConvertToProfileBufferIndex() -
+                           previousState.mRangeEnd
+                               .ConvertToProfileBufferIndex() >=
                        CorePS::CoreBlocksRingBuffer().BufferLength()->Value()) {
               LOG("Stack sample too big for profiler storage, needed %u bytes",
-                  unsigned(state.mRangeEnd.ConvertToU64() -
-                           previousState.mRangeEnd.ConvertToU64()));
+                  unsigned(
+                      state.mRangeEnd.ConvertToProfileBufferIndex() -
+                      previousState.mRangeEnd.ConvertToProfileBufferIndex()));
             } else {
               CorePS::CoreBlocksRingBuffer().AppendContents(
                   localBlocksRingBuffer);
@@ -3362,9 +3368,11 @@ void profiler_add_marker_for_thread(int aThreadId,
       static_cast<uint32_t>(aCategoryPair), aPayload, delta.ToMilliseconds());
 }
 
-void profiler_tracing(const char* aCategoryString, const char* aMarkerName,
-                      ProfilingCategoryPair aCategoryPair, TracingKind aKind,
-                      const Maybe<uint64_t>& aInnerWindowID) {
+void profiler_tracing_marker(const char* aCategoryString,
+                             const char* aMarkerName,
+                             ProfilingCategoryPair aCategoryPair,
+                             TracingKind aKind,
+                             const Maybe<uint64_t>& aInnerWindowID) {
   MOZ_RELEASE_ASSERT(CorePS::Exists());
 
   VTUNE_TRACING(aMarkerName, aKind);
@@ -3380,10 +3388,11 @@ void profiler_tracing(const char* aCategoryString, const char* aMarkerName,
       TracingMarkerPayload(aCategoryString, aKind, aInnerWindowID));
 }
 
-void profiler_tracing(const char* aCategoryString, const char* aMarkerName,
-                      ProfilingCategoryPair aCategoryPair, TracingKind aKind,
-                      UniqueProfilerBacktrace aCause,
-                      const Maybe<uint64_t>& aInnerWindowID) {
+void profiler_tracing_marker(const char* aCategoryString,
+                             const char* aMarkerName,
+                             ProfilingCategoryPair aCategoryPair,
+                             TracingKind aKind, UniqueProfilerBacktrace aCause,
+                             const Maybe<uint64_t>& aInnerWindowID) {
   MOZ_RELEASE_ASSERT(CorePS::Exists());
 
   VTUNE_TRACING(aMarkerName, aKind);
@@ -3436,10 +3445,12 @@ void profiler_suspend_and_sample_thread(int aThreadId, uint32_t aFeatures,
 
       // Suspend, sample, and then resume the target thread.
       Sampler sampler(lock);
+      TimeStamp now = TimeStamp::NowUnfuzzed();
       sampler.SuspendAndSampleAndResumeThread(
-          lock, registeredThread, [&](const Registers& aRegs) {
-            // The target thread is now suspended. Collect a native backtrace,
-            // and call the callback.
+          lock, registeredThread, now,
+          [&](const Registers& aRegs, const TimeStamp& aNow) {
+            // The target thread is now suspended. Collect a native
+            // backtrace, and call the callback.
             bool isSynchronous = false;
 #  if defined(HAVE_FASTINIT_NATIVE_UNWIND)
             if (aSampleNative) {
@@ -3450,7 +3461,8 @@ void profiler_suspend_and_sample_thread(int aThreadId, uint32_t aFeatures,
               DoFramePointerBacktrace(lock, registeredThread, aRegs,
                                       nativeStack);
 #    elif defined(USE_MOZ_STACK_WALK)
-          DoMozStackWalkBacktrace(lock, registeredThread, aRegs, nativeStack);
+              DoMozStackWalkBacktrace(lock, registeredThread, aRegs,
+                                      nativeStack);
 #    else
 #      error "Invalid configuration"
 #    endif

@@ -41,13 +41,12 @@ using mozilla::plugins::PluginInstanceParent;
 #include "nsIWidgetListener.h"
 #include "mozilla/Unused.h"
 #include "nsDebug.h"
-#include "nsIXULRuntime.h"
 
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "ClientLayerManager.h"
-#include "WinCompositorWidget.h"
+#include "InProcessWinCompositorWidget.h"
 
 #include "nsUXThemeData.h"
 #include "nsUXThemeConstants.h"
@@ -228,7 +227,9 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
   mLastPaintBounds = mBounds;
 
 #ifdef MOZ_XUL
-  if (!aDC && (eTransparencyTransparent == mTransparencyMode)) {
+  if (!aDC &&
+      (GetLayerManager()->GetBackendType() == LayersBackend::LAYERS_BASIC) &&
+      (eTransparencyTransparent == mTransparencyMode)) {
     // For layered translucent windows all drawing should go to memory DC and no
     // WM_PAINT messages are normally generated. To support asynchronous
     // painting we force generation of WM_PAINT messages by invalidating window
@@ -241,7 +242,7 @@ bool nsWindow::OnPaint(HDC aDC, uint32_t aNestingLevel) {
 
     // We're guaranteed to have a widget proxy since we called
     // GetLayerManager().
-    aDC = mCompositorWidgetDelegate->GetTransparentDC();
+    aDC = mBasicLayersSurface->GetTransparentDC();
   }
 #endif
 

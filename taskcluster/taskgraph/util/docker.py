@@ -5,13 +5,16 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 import hashlib
+import io
 import json
 import os
 import re
+import requests
 import requests_unixsocket
+import six
 import sys
-import urllib
-import urlparse
+
+from six.moves.urllib.parse import quote, urlencode, urlunparse
 
 from mozbuild.util import memoize
 from mozpack.files import GeneratedFile
@@ -28,12 +31,12 @@ IMAGE_DIR = os.path.join(GECKO, 'taskcluster', 'docker')
 
 def docker_url(path, **kwargs):
     docker_socket = os.environ.get('DOCKER_SOCKET', '/var/run/docker.sock')
-    return urlparse.urlunparse((
+    return urlunparse((
         'http+unix',
-        urllib.quote(docker_socket, safe=''),
+        quote(docker_socket, safe=''),
         path,
         '',
-        urllib.urlencode(kwargs),
+        urlencode(kwargs),
         ''))
 
 
@@ -44,7 +47,16 @@ def post_to_docker(tar, api_path, **kwargs):
     as data (e.g. iterator or file object).
     The extra keyword arguments are passed as arguments to the docker API.
     """
-    req = requests_unixsocket.Session().post(
+    # requests-unixsocket doesn't honor requests timeouts
+    # See https://github.com/msabramo/requests-unixsocket/issues/44
+    # We have some large docker images that trigger the default timeout,
+    # so we increase the requests-unixsocket timeout here.
+    session = requests.Session()
+    session.mount(
+        requests_unixsocket.DEFAULT_SCHEME,
+        requests_unixsocket.UnixAdapter(timeout=120),
+    )
+    req = session.post(
         docker_url(api_path, **kwargs),
         data=tar,
         stream=True,
@@ -159,7 +171,8 @@ class VoidWriter(object):
 def generate_context_hash(topsrcdir, image_path, image_name, args=None):
     """Generates a sha256 hash for context directory used to build an image."""
 
-    return stream_context_tar(topsrcdir, image_path, VoidWriter(), image_name, args)
+    return stream_context_tar(
+        topsrcdir, image_path, VoidWriter(), image_name, args)
 
 
 class HashingWriter(object):
@@ -174,7 +187,7 @@ class HashingWriter(object):
         self._writer.write(buf)
 
     def hexdigest(self):
-        return self._hash.hexdigest()
+        return six.ensure_text(self._hash.hexdigest())
 
 
 def create_context_tar(topsrcdir, context_dir, out_path, prefix, args=None):
@@ -221,14 +234,13 @@ def stream_context_tar(topsrcdir, context_dir, out_file, prefix, args=None):
             archive_files[archive_path] = source_path
 
     # Parse Dockerfile for special syntax of extra files to include.
-    with open(os.path.join(context_dir, 'Dockerfile'), 'rb') as fh:
+    with io.open(os.path.join(context_dir, 'Dockerfile'), 'r') as fh:
         for line in fh:
             if line.startswith('# %ARG'):
                 p = line[len('# %ARG '):].strip()
                 if not args or p not in args:
                     raise Exception('missing argument: {}'.format(p))
-                replace.append((re.compile(r'\${}\b'.format(p)),
-                                args[p].encode('ascii')))
+                replace.append((re.compile(r'\${}\b'.format(p)), args[p]))
                 continue
 
             for regexp, s in replace:
@@ -263,7 +275,7 @@ def stream_context_tar(topsrcdir, context_dir, out_file, prefix, args=None):
                 archive_files[archive_path] = fs_path
 
     archive_files[os.path.join(prefix, 'Dockerfile')] = \
-        GeneratedFile(b''.join(content))
+        GeneratedFile(b''.join(six.ensure_binary(s) for s in content))
 
     writer = HashingWriter(out_file)
     create_tar_gz_from_files(writer, archive_files, '%s.tar.gz' % prefix)

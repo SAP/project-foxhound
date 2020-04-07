@@ -8,6 +8,7 @@ import abc
 import errno
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -46,6 +47,11 @@ class MissingUpstreamRepo(Exception):
     """Represents a failure to automatically detect an upstream repo."""
 
 
+class CannotDeleteFromRootOfRepositoryException(Exception):
+    """Represents that the code attempted to delete all files from the root of
+    the repository, which is not permitted."""
+
+
 def get_tool_path(tool):
     """Obtain the path of `tool`."""
     if os.path.isabs(tool) and os.path.exists(tool):
@@ -57,6 +63,12 @@ def get_tool_path(tool):
                              '|mach bootstrap| to ensure your environment is up to '
                              'date.' % tool)
     return path
+
+
+def _paths_equal(a, b):
+    """Return True iff the two paths refer to the "same" file on disk."""
+    return (os.path.normpath(os.path.realpath(a)) ==
+            os.path.normpath(os.path.realpath(b)))
 
 
 class Repository(object):
@@ -207,6 +219,12 @@ class Repository(object):
         """
 
     @abc.abstractmethod
+    def clean_directory(self, path):
+        """Undo all changes (including removing new untracked files) in the
+        given `path`.
+        """
+
+    @abc.abstractmethod
     def push_to_try(self, message):
         """Create a temporary commit, push it to try and clean it up
         afterwards.
@@ -257,6 +275,9 @@ class HgRepository(Repository):
         # the process lifetime tied to a context manager.
         self._client = hglib.client.hgclient(self.path, encoding=b'UTF-8',
                                              configs=None, connect=False)
+
+        # Work around py3 compat issues in python-hglib
+        self._client._env = ensure_subprocess_env(self._client._env)
 
     @property
     def name(self):
@@ -346,7 +367,7 @@ class HgRepository(Repository):
 
     def add_remove_files(self, path):
         args = ['addremove', path]
-        if self.tool_version >= b'3.9':
+        if self.tool_version >= str('3.9'):
             args = ['--config', 'extensions.automv='] + args
         self._run(*args)
 
@@ -369,6 +390,16 @@ class HgRepository(Repository):
         # If output is empty, there are no entries of requested status, which
         # means we are clean.
         return not len(self._run(*args).strip())
+
+    def clean_directory(self, path):
+        if _paths_equal(self.path, path):
+            raise CannotDeleteFromRootOfRepositoryException()
+        self._run('revert', path)
+        for f in self._run('st', '-un', path).split():
+            if os.path.isfile(f):
+                os.remove(f)
+            else:
+                shutil.rmtree(f)
 
     def push_to_try(self, message):
         try:
@@ -473,6 +504,12 @@ class GitRepository(Repository):
             args.append('--ignored')
 
         return not len(self._run(*args).strip())
+
+    def clean_directory(self, path):
+        if _paths_equal(self.path, path):
+            raise CannotDeleteFromRootOfRepositoryException()
+        self._run('checkout', '--', path)
+        self._run('clean', '-df', path)
 
     def push_to_try(self, message):
         if not self.has_git_cinnabar:

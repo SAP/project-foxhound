@@ -51,7 +51,6 @@
 
 var EXPORTED_SYMBOLS = ["SyncedBookmarksMirror"];
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -764,11 +763,7 @@ class SyncedBookmarksMirror {
           signal.removeEventListener("abort", onAbort);
           switch (code) {
             case Cr.NS_ERROR_STORAGE_BUSY:
-              reject(
-                new SyncedBookmarksMirror.MergeConflictError(
-                  "Local tree changed during merge"
-                )
-              );
+              reject(new SyncedBookmarksMirror.MergeConflictError(message));
               break;
 
             case Cr.NS_ERROR_ABORT:
@@ -1546,9 +1541,7 @@ async function initializeMirrorDatabase(db) {
     /* The server modified time, in milliseconds. */
     serverModified INTEGER NOT NULL DEFAULT 0,
     needsMerge BOOLEAN NOT NULL DEFAULT 0,
-    validity INTEGER NOT NULL DEFAULT ${
-      Ci.mozISyncedBookmarksMerger.VALIDITY_VALID
-    },
+    validity INTEGER NOT NULL DEFAULT ${Ci.mozISyncedBookmarksMerger.VALIDITY_VALID},
     isDeleted BOOLEAN NOT NULL DEFAULT 0,
     kind INTEGER NOT NULL DEFAULT -1,
     /* The creation date, in milliseconds. */
@@ -1847,9 +1840,7 @@ async function initializeTempMirrorEntities(db) {
                      WHERE b.fk = NEW.placeId AND
                            p.title = NEW.tag AND
                            p.parent = (SELECT id FROM moz_bookmarks
-                                       WHERE guid = '${
-                                         PlacesUtils.bookmarks.tagsGuid
-                                       }')),
+                                       WHERE guid = '${PlacesUtils.bookmarks.tagsGuid}')),
                     GENERATE_GUID()),
              (SELECT b.id FROM moz_bookmarks b
               JOIN moz_bookmarks p ON p.id = b.parent
@@ -1859,9 +1850,7 @@ async function initializeTempMirrorEntities(db) {
               JOIN moz_bookmarks p ON p.id = b.parent
               WHERE p.title = NEW.tag AND
                     p.parent = (SELECT id FROM moz_bookmarks
-                                WHERE guid = '${
-                                  PlacesUtils.bookmarks.tagsGuid
-                                }')),
+                                WHERE guid = '${PlacesUtils.bookmarks.tagsGuid}')),
              ${PlacesUtils.bookmarks.TYPE_BOOKMARK}, NEW.placeId,
              NEW.lastModifiedMicroseconds,
              NEW.lastModifiedMicroseconds
@@ -2077,7 +2066,6 @@ class BookmarkObserverRecorder {
     this.notifyInStableOrder = notifyInStableOrder;
     this.signal = signal;
     this.placesEvents = [];
-    this.itemRemovedNotifications = [];
     this.guidChangedArgs = [];
     this.itemMovedArgs = [];
     this.itemChangedArgs = [];
@@ -2311,7 +2299,10 @@ class BookmarkObserverRecorder {
         index: info.position,
         url: info.urlHref || "",
         title: info.title,
-        dateAdded: info.dateAdded,
+        // Note that both the database and the legacy `onItem{Moved, Removed,
+        // Changed}` notifications use microsecond timestamps, but
+        // `PlacesBookmarkAddition` uses milliseconds.
+        dateAdded: info.dateAdded / 1000,
         guid: info.guid,
         parentGuid: info.parentGuid,
         source: PlacesUtils.bookmarks.SOURCES.SYNC,
@@ -2388,40 +2379,28 @@ class BookmarkObserverRecorder {
   }
 
   noteItemRemoved(info) {
-    let uri = info.urlHref ? Services.io.newURI(info.urlHref) : null;
-    this.itemRemovedNotifications.push({
-      isTagging: info.isUntagging,
-      args: [
-        info.id,
-        info.parentId,
-        info.position,
-        info.type,
-        uri,
-        info.guid,
-        info.parentGuid,
-        PlacesUtils.bookmarks.SOURCES.SYNC,
-      ],
-    });
+    this.placesEvents.push(
+      new PlacesBookmarkRemoved({
+        id: info.id,
+        parentId: info.parentId,
+        index: info.position,
+        url: info.urlHref || "",
+        guid: info.guid,
+        parentGuid: info.parentGuid,
+        source: PlacesUtils.bookmarks.SOURCES.SYNC,
+        itemType: info.type,
+        isTagging: info.isUntagging,
+        isDescendantRemoval: false,
+      })
+    );
   }
 
   async notifyBookmarkObservers() {
     MirrorLog.trace("Notifying bookmark observers");
     let observers = PlacesUtils.bookmarks.getObservers();
-    for (let observer of observers) {
-      this.notifyObserver(observer, "onBeginUpdateBatch");
-    }
-    await Async.yieldingForEach(
-      this.itemRemovedNotifications,
-      info => {
-        if (this.signal.aborted) {
-          throw new SyncedBookmarksMirror.InterruptedError(
-            "Interrupted while notifying observers for removed items"
-          );
-        }
-        this.notifyObserversWithInfo(observers, "onItemRemoved", info);
-      },
-      yieldState
-    );
+    // ideally we'd send `onBeginUpdateBatch` here (and `onEndUpdateBatch` at
+    // the end) to all observers, but batching is somewhat broken currently.
+    // See bug 1605881 for all the gory details...
     await Async.yieldingForEach(
       this.guidChangedArgs,
       args => {
@@ -2473,9 +2452,7 @@ class BookmarkObserverRecorder {
       },
       yieldState
     );
-    for (let observer of observers) {
-      this.notifyObserver(observer, "onEndUpdateBatch");
-    }
+    MirrorLog.trace("Notified bookmark observers");
   }
 
   notifyObserversWithInfo(observers, name, info) {

@@ -49,17 +49,17 @@ using mozilla::Nothing;
 using mozilla::Some;
 
 const JSClassOps DebuggerSource::classOps_ = {
-    nullptr,                         /* addProperty */
-    nullptr,                         /* delProperty */
-    nullptr,                         /* enumerate   */
-    nullptr,                         /* newEnumerate */
-    nullptr,                         /* resolve     */
-    nullptr,                         /* mayResolve  */
-    nullptr,                         /* finalize    */
-    nullptr,                         /* call        */
-    nullptr,                         /* hasInstance */
-    nullptr,                         /* construct   */
-    CallTraceMethod<DebuggerSource>, /* trace */
+    nullptr,                          // addProperty
+    nullptr,                          // delProperty
+    nullptr,                          // enumerate
+    nullptr,                          // newEnumerate
+    nullptr,                          // resolve
+    nullptr,                          // mayResolve
+    nullptr,                          // finalize
+    nullptr,                          // call
+    nullptr,                          // hasInstance
+    nullptr,                          // construct
+    CallTraceMethod<DebuggerSource>,  // trace
 };
 
 const JSClass DebuggerSource::class_ = {
@@ -428,7 +428,8 @@ class DebuggerSourceGetIntroductionScriptMatcher {
   using ReturnType = bool;
 
   ReturnType match(HandleScriptSourceObject sourceObject) {
-    RootedScript script(cx_, sourceObject->unwrappedIntroductionScript());
+    Rooted<BaseScript*> script(cx_,
+                               sourceObject->unwrappedIntroductionScript());
     if (script) {
       RootedObject scriptDO(cx_, dbg_->wrapScript(cx_, script));
       if (!scriptDO) {

@@ -13,7 +13,12 @@
 // This array should be sorted by `spec` attribute.
 const Types = (exports.__TypesForTests = [
   {
-    types: ["accessible", "accessiblewalker", "accessibility"],
+    types: [
+      "accessible",
+      "accessiblewalker",
+      "accessibility",
+      "parentaccessibility",
+    ],
     spec: "devtools/shared/specs/accessibility",
     front: "devtools/shared/fronts/accessibility",
   },
@@ -48,6 +53,11 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/shared/fronts/changes",
   },
   {
+    types: ["contentViewer"],
+    spec: "devtools/shared/specs/content-viewer",
+    front: "devtools/shared/fronts/content-viewer",
+  },
+  {
     types: ["cssProperties"],
     spec: "devtools/shared/specs/css-properties",
     front: "devtools/shared/fronts/css-properties",
@@ -63,6 +73,11 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/shared/fronts/descriptors/process",
   },
   {
+    types: ["tabDescriptor"],
+    spec: "devtools/shared/specs/descriptors/tab",
+    front: "devtools/shared/fronts/descriptors/tab",
+  },
+  {
     types: ["webExtensionDescriptor"],
     spec: "devtools/shared/specs/descriptors/webextension",
     front: "devtools/shared/fronts/descriptors/webextension",
@@ -73,20 +88,14 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/shared/fronts/device",
   },
   {
-    types: ["emulation"],
-    spec: "devtools/shared/specs/emulation",
-    front: "devtools/shared/fronts/emulation",
-  },
-  {
     types: ["environment"],
     spec: "devtools/shared/specs/environment",
     front: "devtools/shared/fronts/environment",
   },
-  /* frame has old fashion client and no front */
   {
     types: ["frame"],
     spec: "devtools/shared/specs/frame",
-    front: null,
+    front: "devtools/shared/fronts/frame",
   },
   {
     types: ["framerate"],
@@ -105,7 +114,7 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/shared/fronts/highlighters",
   },
   {
-    types: ["domnodelist", "domwalker", "inspector"],
+    types: ["inspector"],
     spec: "devtools/shared/specs/inspector",
     front: "devtools/shared/fronts/inspector",
   },
@@ -174,6 +183,11 @@ const Types = (exports.__TypesForTests = [
     types: ["reflow"],
     spec: "devtools/shared/specs/reflow",
     front: "devtools/shared/fronts/reflow",
+  },
+  {
+    types: ["responsive"],
+    spec: "devtools/shared/specs/responsive",
+    front: "devtools/shared/fronts/responsive",
   },
   {
     types: ["screenshot"],
@@ -267,6 +281,11 @@ const Types = (exports.__TypesForTests = [
     types: ["thread"],
     spec: "devtools/shared/specs/thread",
     front: "devtools/shared/fronts/thread",
+  },
+  {
+    types: ["domwalker"],
+    spec: "devtools/shared/specs/walker",
+    front: "devtools/shared/fronts/walker",
   },
   {
     types: ["console"],

@@ -12,7 +12,6 @@
 #include "gtest/MozGtestFriend.h"
 #include "js/ProfilingCategory.h"
 #include "js/ProfilingFrameIterator.h"
-#include "js/TrackedOptimizationInfo.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/HashTable.h"
 #include "mozilla/Maybe.h"
@@ -34,11 +33,11 @@ class ProfilerCodeAddressService;
   MACRO(FrameFlags, uint64_t, sizeof(uint64_t))                      \
   MACRO(DynamicStringFragment, char*, ProfileBufferEntry::kNumChars) \
   MACRO(JitReturnAddr, void*, sizeof(void*))                         \
+  MACRO(InnerWindowID, uint64_t, sizeof(uint64_t))                   \
   MACRO(LineNumber, int, sizeof(int))                                \
   MACRO(ColumnNumber, int, sizeof(int))                              \
   MACRO(NativeLeafAddr, void*, sizeof(void*))                        \
   MACRO(Pause, double, sizeof(double))                               \
-  MACRO(Responsiveness, double, sizeof(double))                      \
   MACRO(Resume, double, sizeof(double))                              \
   MACRO(ThreadId, int, sizeof(int))                                  \
   MACRO(Time, double, sizeof(double))                                \
@@ -78,6 +77,9 @@ class ProfileBufferEntry {
 
     // Marker data, including payload.
     MarkerData = LEGACY_LIMIT,
+
+    // Optional between TimeBeforeCompactStack and CompactStack.
+    UnresponsiveDurationMs,
 
     // Collection of legacy stack entries, must follow a ThreadId and
     // TimeBeforeCompactStack (which are not included in the CompactStack;
@@ -265,15 +267,15 @@ class UniqueStacks {
  public:
   struct FrameKey {
     explicit FrameKey(const char* aLocation)
-        : mData(NormalFrameData{nsCString(aLocation), false, mozilla::Nothing(),
-                                mozilla::Nothing()}) {}
+        : mData(NormalFrameData{nsCString(aLocation), false, 0,
+                                mozilla::Nothing(), mozilla::Nothing()}) {}
 
     FrameKey(nsCString&& aLocation, bool aRelevantForJS,
-             const mozilla::Maybe<unsigned>& aLine,
+             uint64_t aInnerWindowID, const mozilla::Maybe<unsigned>& aLine,
              const mozilla::Maybe<unsigned>& aColumn,
              const mozilla::Maybe<JS::ProfilingCategoryPair>& aCategoryPair)
-        : mData(NormalFrameData{aLocation, aRelevantForJS, aLine, aColumn,
-                                aCategoryPair}) {}
+        : mData(NormalFrameData{aLocation, aRelevantForJS, aInnerWindowID,
+                                aLine, aColumn, aCategoryPair}) {}
 
     FrameKey(void* aJITAddress, uint32_t aJITDepth, uint32_t aRangeIndex)
         : mData(JITFrameData{aJITAddress, aJITDepth, aRangeIndex}) {}
@@ -290,6 +292,7 @@ class UniqueStacks {
 
       nsCString mLocation;
       bool mRelevantForJS;
+      uint64_t mInnerWindowID;
       mozilla::Maybe<unsigned> mLine;
       mozilla::Maybe<unsigned> mColumn;
       mozilla::Maybe<JS::ProfilingCategoryPair> mCategoryPair;
@@ -317,6 +320,7 @@ class UniqueStacks {
                                     mozilla::HashString(data.mLocation.get()));
         }
         hash = mozilla::AddToHash(hash, data.mRelevantForJS);
+        hash = mozilla::AddToHash(hash, data.mInnerWindowID);
         if (data.mLine.isSome()) {
           hash = mozilla::AddToHash(hash, *data.mLine);
         }
@@ -455,11 +459,11 @@ class UniqueStacks {
 //     {
 //       "stack": 0,          /* index into stackTable */
 //       "time": 1,           /* number */
-//       "responsiveness": 2, /* number */
+//       "eventDelay": 2,     /* number */
 //     },
 //     "data":
 //     [
-//       [ 1, 0.0, 0.0 ]      /* { stack: 1, time: 0.0, responsiveness: 0.0 } */
+//       [ 1, 0.0, 0.0 ]      /* { stack: 1, time: 0.0, eventDelay: 0.0 } */
 //     ]
 //   },
 //
@@ -497,12 +501,13 @@ class UniqueStacks {
 //     {
 //       "location": 0,       /* index into stringTable */
 //       "relevantForJS": 1,  /* bool */
-//       "implementation": 2, /* index into stringTable */
-//       "optimizations": 3,  /* arbitrary JSON */
-//       "line": 4,           /* number */
-//       "column": 5,         /* number */
-//       "category": 6        /* index into profile.meta.categories */
-//       "subcategory": 7     /* index into
+//       "innerWindowID": 2,  /* inner window ID of global JS `window` object */
+//       "implementation": 3, /* index into stringTable */
+//       "optimizations": 4,  /* arbitrary JSON */
+//       "line": 5,           /* number */
+//       "column": 6,         /* number */
+//       "category": 7,       /* index into profile.meta.categories */
+//       "subcategory": 8     /* index into
 //       profile.meta.categories[category].subcategories */
 //     },
 //     "data":

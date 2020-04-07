@@ -36,6 +36,15 @@ cfr-doorhanger-extension-author = by { $name }
 # This is a notification displayed in the address bar.
 # When clicked it opens a panel with a message for the user.
 cfr-doorhanger-extension-notification = Recommendation
+cfr-doorhanger-extension-notification2 = Recommendation
+  .tooltiptext = Extension recommendation
+  .a11y-announcement = Extension recommendation available
+
+# This is a notification displayed in the address bar.
+# When clicked it opens a panel with a message for the user.
+cfr-doorhanger-feature-notification = Recommendation
+  .tooltiptext = Feature recommendation
+  .a11y-announcement = Feature recommendation available
 
 ## Add-on statistics
 ## These strings are used to display the total number of
@@ -132,6 +141,43 @@ cfr-whatsnew-lockwise-take-body =
    backed up passwords from anywhere.
 cfr-whatsnew-lockwise-take-link-text = Get the app
 
+## Search Bar
+
+cfr-whatsnew-searchbar-title = Type less, find more with the address bar
+# Variables:
+#   $searchEngineName - Name of the current default search engine as also shown in the urlbar.
+cfr-whatsnew-searchbar-body-enginename = Get to the sites you use most with a single click into the address bar. Find things faster with results from { $searchEngineName } and your browsing history.
+cfr-whatsnew-searchbar-body-generic = Get to the sites you use most with a single click into the address bar. Find things faster with search results from your browsing history.
+cfr-whatsnew-searchbar-icon-alt-text = Magnifying glass icon
+
+## Picture-in-Picture
+
+cfr-whatsnew-pip-header = Watch videos while you browse
+cfr-whatsnew-pip-body = Picture-in-picture pops video into a floating window so you can watch while working in other tabs.
+cfr-whatsnew-pip-cta = Learn more
+
+## Permission Prompt
+
+cfr-whatsnew-permission-prompt-header = Fewer annoying site pop-ups
+cfr-whatsnew-permission-prompt-body = { -brand-shorter-name } now blocks sites from automatically asking to send you pop-up messages.
+cfr-whatsnew-permission-prompt-cta = Learn more
+
+## Fingerprinter Counter
+
+# This string is displayed before a large numeral that indicates the total
+# number of tracking elements blocked. Don’t add $fingerprinterCount to your
+# localization, because it would result in the number showing twice.
+cfr-whatsnew-fingerprinter-counter-header =
+  { $fingerprinterCount ->
+    [one] Fingerprinter blocked
+   *[other] Fingerprinters blocked
+  }
+cfr-whatsnew-fingerprinter-counter-body = { -brand-shorter-name } blocks many fingerprinters that secretly gather information about your device and actions to create an advertising profile of you.
+
+# Message variation when fingerprinters count is less than 10
+cfr-whatsnew-fingerprinter-counter-header-alt = Fingerprinters
+cfr-whatsnew-fingerprinter-counter-body-alt = { -brand-shorter-name } can block fingerprinters that secretly gather information about your device and actions to create an advertising profile of you.
+
 ## Bookmark Sync
 
 cfr-doorhanger-sync-bookmarks-header = Get this bookmark on your phone
@@ -167,6 +213,8 @@ cfr-doorhanger-socialtracking-ok-button = See Protections
   .accesskey = P
 cfr-doorhanger-socialtracking-close-button = Close
   .accesskey = C
+cfr-doorhanger-socialtracking-dont-show-again = Don’t show me messages like this again
+  .accesskey = D
 cfr-doorhanger-socialtracking-heading = { -brand-short-name } stopped a social network from tracking you here
 cfr-doorhanger-socialtracking-description = Your privacy matters. { -brand-short-name } now blocks common social media trackers, limiting how much data they can collect about what you do online.
 cfr-doorhanger-fingerprinters-heading = { -brand-short-name } blocked a fingerprinter on this page

@@ -16,7 +16,6 @@
 #include "mozilla/TimeStamp.h"  // for TimeStamp
 #include "mozilla/TypedEnumBits.h"
 #include "nsRegion.h"
-#include "nsStyleConsts.h"
 
 #include <stdio.h>            // FILE
 #include "mozilla/Logging.h"  // for PR_LOG
@@ -43,6 +42,9 @@ struct ParamTraits;
 }  // namespace IPC
 
 namespace mozilla {
+
+enum class StyleBorderStyle : uint8_t;
+
 namespace layers {
 
 class TextureHost;
@@ -51,7 +53,7 @@ class TextureHost;
 #undef OPAQUE
 
 struct LayersId {
-  uint64_t mId;
+  uint64_t mId = 0;
 
   bool IsValid() const { return mId != 0; }
 
@@ -154,6 +156,8 @@ enum class LayersBackend : int8_t {
   LAYERS_WR,
   LAYERS_LAST
 };
+
+const char* GetLayersBackendName(LayersBackend aBackend);
 
 enum class TextureType : int8_t {
   Unknown = 0,
@@ -377,7 +381,7 @@ class LayerHandle final {
 
  public:
   LayerHandle() : mHandle(0) {}
-  LayerHandle(const LayerHandle& aOther) : mHandle(aOther.mHandle) {}
+  LayerHandle(const LayerHandle& aOther) = default;
   explicit LayerHandle(uint64_t aHandle) : mHandle(aHandle) {}
   bool IsValid() const { return mHandle != 0; }
   explicit operator bool() const { return IsValid(); }
@@ -399,8 +403,7 @@ class CompositableHandle final {
 
  public:
   CompositableHandle() : mHandle(0) {}
-  CompositableHandle(const CompositableHandle& aOther)
-      : mHandle(aOther.mHandle) {}
+  CompositableHandle(const CompositableHandle& aOther) = default;
   explicit CompositableHandle(uint64_t aHandle) : mHandle(aHandle) {}
   bool IsValid() const { return mHandle != 0; }
   explicit operator bool() const { return IsValid(); }

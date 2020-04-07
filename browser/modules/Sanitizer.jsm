@@ -123,7 +123,7 @@ var Sanitizer = {
         : parentWindow;
     Services.ww.openWindow(
       win,
-      "chrome://browser/content/sanitize.xul",
+      "chrome://browser/content/sanitize.xhtml",
       "Sanitize",
       "chrome,titlebar,dialog,centerscreen,modal",
       null
@@ -770,7 +770,7 @@ class PrincipalsCollector {
   async getAllPrincipalsInternal(progress) {
     progress.step = "principals-quota-manager";
     let principals = await new Promise(resolve => {
-      quotaManagerService.listOrigins(request => {
+      quotaManagerService.listOrigins().callback = request => {
         progress.step = "principals-quota-manager-listOrigins";
         if (request.resultCode != Cr.NS_OK) {
           // We are probably shutting down. We don't want to propagate the
@@ -780,9 +780,9 @@ class PrincipalsCollector {
         }
 
         let list = [];
-        for (let item of request.result) {
+        for (const origin of request.result) {
           let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
-            item.origin
+            origin
           );
           let uri = principal.URI;
           if (isSupportedURI(uri)) {
@@ -792,7 +792,7 @@ class PrincipalsCollector {
 
         progress.step = "principals-quota-manager-completed";
         resolve(list);
-      });
+      };
     }).catch(ex => {
       Cu.reportError("QuotaManagerService promise failed: " + ex);
       return [];
@@ -811,9 +811,9 @@ class PrincipalsCollector {
 
     // Let's take the list of unique hosts+OA from cookies.
     progress.step = "principals-cookies";
-    let enumerator = Services.cookies.enumerator;
+    let cookies = Services.cookies.cookies;
     let hosts = new Set();
-    for (let cookie of enumerator) {
+    for (let cookie of cookies) {
       hosts.add(
         cookie.rawHost +
           ChromeUtils.originAttributesToSuffix(cookie.originAttributes)
@@ -838,6 +838,41 @@ class PrincipalsCollector {
 
 async function sanitizeOnShutdown(progress) {
   log("Sanitizing on shutdown");
+  progress.sanitizationPrefs = {
+    network_cookie_lifetimePolicy: Services.prefs.getIntPref(
+      "network.cookie.lifetimePolicy"
+    ),
+    privacy_sanitize_sanitizeOnShutdown: Services.prefs.getBoolPref(
+      "privacy.sanitize.sanitizeOnShutdown"
+    ),
+    privacy_clearOnShutdown_cookies: Services.prefs.getBoolPref(
+      "privacy.clearOnShutdown.cookies"
+    ),
+    privacy_clearOnShutdown_history: Services.prefs.getBoolPref(
+      "privacy.clearOnShutdown.history"
+    ),
+    privacy_clearOnShutdown_formdata: Services.prefs.getBoolPref(
+      "privacy.clearOnShutdown.formdata"
+    ),
+    privacy_clearOnShutdown_downloads: Services.prefs.getBoolPref(
+      "privacy.clearOnShutdown.downloads"
+    ),
+    privacy_clearOnShutdown_cache: Services.prefs.getBoolPref(
+      "privacy.clearOnShutdown.cache"
+    ),
+    privacy_clearOnShutdown_sessions: Services.prefs.getBoolPref(
+      "privacy.clearOnShutdown.sessions"
+    ),
+    privacy_clearOnShutdown_offlineApps: Services.prefs.getBoolPref(
+      "privacy.clearOnShutdown.offlineApps"
+    ),
+    privacy_clearOnShutdown_siteSettings: Services.prefs.getBoolPref(
+      "privacy.clearOnShutdown.siteSettings"
+    ),
+    privacy_clearOnShutdown_openWindows: Services.prefs.getBoolPref(
+      "privacy.clearOnShutdown.openWindows"
+    ),
+  };
 
   let needsSyncSavePrefs = false;
   if (Sanitizer.shouldSanitizeOnShutdown) {
@@ -907,8 +942,9 @@ async function sanitizeOnShutdown(progress) {
 
   progress.advancement = "session-permission";
 
+  let exceptions = 0;
   // Let's see if we have to forget some particular site.
-  for (let permission of Services.perms.enumerator) {
+  for (let permission of Services.perms.all) {
     if (
       permission.type != "cookie" ||
       permission.capability != Ci.nsICookiePermission.ACCESS_SESSION
@@ -925,6 +961,7 @@ async function sanitizeOnShutdown(progress) {
       "Custom session cookie permission detected for: " +
         permission.principal.URI.spec
     );
+    exceptions++;
 
     // We use just the URI here, because permissions ignore OriginAttributes.
     let principals = await principalsCollector.getAllPrincipals(progress);
@@ -934,7 +971,7 @@ async function sanitizeOnShutdown(progress) {
     );
     await maybeSanitizeSessionPrincipals(progress, selectedPrincipals);
   }
-
+  progress.sanitizationPrefs.session_permission_exceptions = exceptions;
   progress.advancement = "done";
 }
 
@@ -992,7 +1029,7 @@ function cookiesAllowedForDomainOrSubDomain(principal) {
     return false;
   }
 
-  for (let perm of Services.perms.enumerator) {
+  for (let perm of Services.perms.all) {
     if (perm.type != "cookie") {
       continue;
     }

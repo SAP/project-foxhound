@@ -39,6 +39,7 @@ class MockMVMContext : public MVMContext {
   MOCK_METHOD0(Destroy, void());
 
   MOCK_METHOD1(SetVisualViewportSize, void(const CSSSize& aSize));
+  MOCK_METHOD0(PostVisualViewportResizeEventByDynamicToolbar, void());
   MOCK_METHOD0(UpdateDisplayPortMargins, void());
 
   void SetMVM(MobileViewportManager* aMVM) { mMVM = aMVM; }
@@ -58,7 +59,8 @@ class MockMVMContext : public MVMContext {
                                                     mDisplaySize.width));
     }
     return nsViewportInfo(mDefaultScale, mMinScale, mMaxScale, viewportSize,
-                          mAutoSizeFlag, mAutoScaleFlag, mZoomFlag);
+                          mAutoSizeFlag, mAutoScaleFlag, mZoomFlag,
+                          dom::ViewportFitType::Auto);
   }
   CSSToLayoutDeviceScale CSSToDevPixelScale() const { return mDeviceScale; }
   float GetResolution() const { return mResolution; }

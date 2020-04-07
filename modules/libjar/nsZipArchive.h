@@ -14,28 +14,12 @@
 
 #include "zlib.h"
 #include "zipstruct.h"
-#include "nsAutoPtr.h"
 #include "nsIFile.h"
 #include "nsISupportsImpl.h"  // For mozilla::ThreadSafeAutoRefCnt
 #include "mozilla/ArenaAllocator.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/FileLocation.h"
 #include "mozilla/UniquePtr.h"
-
-#ifdef HAVE_SEH_EXCEPTIONS
-#  define MOZ_WIN_MEM_TRY_BEGIN __try {
-#  define MOZ_WIN_MEM_TRY_CATCH(cmd)                        \
-    }                                                       \
-    __except (GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR \
-                  ? EXCEPTION_EXECUTE_HANDLER               \
-                  : EXCEPTION_CONTINUE_SEARCH) {            \
-      NS_WARNING("unexpected EXCEPTION_IN_PAGE_ERROR");     \
-      cmd;                                                  \
-    }
-#else
-#  define MOZ_WIN_MEM_TRY_BEGIN {
-#  define MOZ_WIN_MEM_TRY_CATCH(cmd) }
-#endif
 
 class nsZipFind;
 struct PRFileDesc;
@@ -231,6 +215,10 @@ class nsZipArchive final {
   // file URI, for logging
   nsCString mURI;
 
+  // Is true if we use zipLog to log accesses in jar/zip archives. This helper
+  // variable avoids grabbing zipLog's lock when not necessary.
+  bool mUseZipLog;
+
  private:
   //--- private methods ---
   nsZipItem* CreateZipItem();
@@ -381,7 +369,12 @@ class nsZipItemPtr final : public nsZipItemPtr_base {
 
 class nsZipHandle final {
   friend class nsZipArchive;
+  friend class nsZipFind;
   friend class mozilla::FileLocation;
+  friend class nsJARInputStream;
+#if defined(XP_UNIX) && !defined(XP_DARWIN)
+  friend class MmapAccessScope;
+#endif
 
  public:
   static nsresult Init(nsIFile* file, nsZipHandle** ret,
@@ -409,7 +402,7 @@ class nsZipHandle final {
 
   PRFileMap* mMap; /* nspr datastructure for mmap */
   mozilla::AutoFDClose mNSPRFileDesc;
-  nsAutoPtr<nsZipItemPtr<uint8_t> > mBuf;
+  mozilla::UniquePtr<nsZipItemPtr<uint8_t> > mBuf;
   mozilla::ThreadSafeAutoRefCnt mRefCnt; /* ref count */
   NS_DECL_OWNINGTHREAD
 

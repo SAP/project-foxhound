@@ -25,9 +25,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsDependentString.h"
 #include "nsHashKeys.h"
-#include "nsIDirectoryEnumerator.h"
 #include "nsIFile.h"
-#include "nsIFileStreams.h"
 #include "nsIInputStream.h"
 #include "nsIStringEnumerator.h"
 #include "nsIZipReader.h"
@@ -1282,7 +1280,6 @@ nsresult OpenSignedAppFile(AppTrustedRoot aTrustedRoot, nsIFile* aJarFile,
   }
 
   // Return the signer's certificate to the reader if they want it.
-  // XXX: We should return an nsIX509CertList with the whole validated chain.
   if (aSignerCert) {
     // The COSE certificate is authoritative.
     if (aPolicy.COSERequired() || (coseCertItem && coseCertItem->len != 0)) {

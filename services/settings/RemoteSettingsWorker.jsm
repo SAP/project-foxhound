@@ -23,8 +23,30 @@ XPCOMUtils.defineLazyPreferenceGetter(
   30 * 1000 // Default of 30 seconds.
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "AsyncShutdown",
+  "resource://gre/modules/AsyncShutdown.jsm"
+);
+
+// Note: we currently only ever construct one instance of Worker.
+// If it stops being a singleton, the AsyncShutdown code at the bottom
+// of this file, as well as these globals, will need adjusting.
+let gShutdown = false;
+let gShutdownResolver = null;
+
+class RemoteSettingsWorkerError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "RemoteSettingsWorkerError";
+  }
+}
+
 class Worker {
   constructor(source) {
+    if (gShutdown) {
+      Cu.reportError("Can't create worker once shutdown has started");
+    }
     this.source = source;
     this.worker = null;
 
@@ -34,17 +56,29 @@ class Worker {
   }
 
   async _execute(method, args = []) {
+    if (gShutdown) {
+      throw new RemoteSettingsWorkerError("Remote Settings has shut down.");
+    }
     // (Re)instantiate the worker if it was terminated.
     if (!this.worker) {
       this.worker = new ChromeWorker(this.source);
       this.worker.onmessage = this._onWorkerMessage.bind(this);
+      this.worker.onerror = error => {
+        // Worker crashed. Reject each pending callback.
+        for (const [, reject] of this.callbacks.values()) {
+          reject(error);
+        }
+        this.callbacks.clear();
+        // And terminate it.
+        this.stop();
+      };
     }
     // New activity: reset the idle timer.
     if (this.idleTimeoutId) {
       clearTimeout(this.idleTimeoutId);
     }
     return new Promise((resolve, reject) => {
-      const callbackId = ++this.lastCallbackId;
+      const callbackId = `${method}-${++this.lastCallbackId}`;
       this.callbacks.set(callbackId, [resolve, reject]);
       this.worker.postMessage({ callbackId, method, args });
     });
@@ -54,7 +88,7 @@ class Worker {
     const { callbackId, result, error } = event.data;
     const [resolve, reject] = this.callbacks.get(callbackId);
     if (error) {
-      reject(new Error(error));
+      reject(new RemoteSettingsWorkerError(error));
     } else {
       resolve(result);
     }
@@ -62,13 +96,24 @@ class Worker {
 
     // Terminate the worker when it's unused for some time.
     // But don't terminate it if an operation is pending.
-    if (this.callbacks.length == 0) {
-      this.idleTimeoutId = setTimeout(() => {
-        this.worker.terminate();
-        this.worker = null;
-        this.idleTimeoutId = null;
-      }, gMaxIdleMilliseconds);
+    if (!this.callbacks.size) {
+      if (gShutdown) {
+        this.stop();
+        if (gShutdownResolver) {
+          gShutdownResolver();
+        }
+      } else {
+        this.idleTimeoutId = setTimeout(() => {
+          this.stop();
+        }, gMaxIdleMilliseconds);
+      }
     }
+  }
+
+  stop() {
+    this.worker.terminate();
+    this.worker = null;
+    this.idleTimeoutId = null;
   }
 
   async canonicalStringify(localRecords, remoteRecords, timestamp) {
@@ -86,6 +131,53 @@ class Worker {
   async checkFileHash(filepath, size, hash) {
     return this._execute("checkFileHash", [filepath, size, hash]);
   }
+
+  async checkContentHash(buffer, size, hash) {
+    return this._execute("checkContentHash", [buffer, size, hash]);
+  }
+}
+
+// Now, first add a shutdown blocker. If that fails, we must have
+// shut down already.
+// We're doing this here rather than in the Worker constructor because in
+// principle having just 1 shutdown blocker for the entire file should be
+// fine. If we ever start creating more than one Worker instance, this
+// code will need adjusting to deal with that.
+try {
+  AsyncShutdown.profileBeforeChange.addBlocker(
+    "Remote Settings profile-before-change",
+    async () => {
+      // First, indicate we've shut down.
+      gShutdown = true;
+      // Then, if we have no worker or no callbacks, we're done.
+      if (
+        !RemoteSettingsWorker.worker ||
+        !RemoteSettingsWorker.callbacks.size
+      ) {
+        return null;
+      }
+      // Otherwise, return a promise that the worker will resolve.
+      return new Promise(resolve => {
+        gShutdownResolver = resolve;
+      });
+    },
+    {
+      fetchState() {
+        const remainingCallbacks = RemoteSettingsWorker.callbacks;
+        const details = Array.from(remainingCallbacks.keys()).join(", ");
+        return `Remaining: ${remainingCallbacks.size} callbacks (${details}).`;
+      },
+    }
+  );
+} catch (ex) {
+  Cu.reportError(
+    "Couldn't add shutdown blocker, assuming shutdown has started."
+  );
+  Cu.reportError(ex);
+  // If AsyncShutdown throws, `profileBeforeChange` has already fired. Ignore it
+  // and mark shutdown. Constructing the worker will report an error and do
+  // nothing.
+  gShutdown = true;
 }
 
 var RemoteSettingsWorker = new Worker(

@@ -9,13 +9,13 @@
 
 #include "nsIURI.h"
 #include "nsIHttpChannel.h"
-#include "nsIFileStreams.h"
 #include "nsThreadUtils.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIObserverService.h"
 #include "nsLiteralString.h"
 #include "nsIPromptService.h"
-#include "nsIServiceManager.h"
+#include "nsIInputStream.h"
+#include "nsIOutputStream.h"
 #include "nsIStringBundle.h"
 #include "nsContentUtils.h"
 #include "nsCRT.h"
@@ -245,7 +245,7 @@ nsresult nsAutoConfig::downloadAutoConfig() {
       getter_AddRefs(channel), url, nsContentUtils::GetSystemPrincipal(),
       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
       nsIContentPolicy::TYPE_OTHER,
-      nullptr,  // nsICookieSettings
+      nullptr,  // nsICookieJarSettings
       nullptr,  // PerformanceStorage
       nullptr,  // loadGroup
       nullptr,  // aCallbacks

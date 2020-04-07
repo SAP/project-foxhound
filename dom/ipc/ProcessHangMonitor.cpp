@@ -12,6 +12,7 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/BackgroundHangMonitor.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/CancelContentJSOptionsBinding.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Element.h"
@@ -23,6 +24,7 @@
 #include "mozilla/plugins/PluginBridge.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WeakPtr.h"
 
@@ -138,11 +140,7 @@ class HangMonitorChild : public PProcessHangMonitorChild,
  private:
   void ShutdownOnThread();
 
-  // Ordering of this atomic is not preserved while recording/replaying, as it
-  // may be accessed during the JS interrupt callback.
-  static Atomic<HangMonitorChild*, SequentiallyConsistent,
-                recordreplay::Behavior::DontPreserve>
-      sInstance;
+  static Atomic<HangMonitorChild*, SequentiallyConsistent> sInstance;
 
   const RefPtr<ProcessHangMonitor> mHangMonitor;
   Monitor mMonitor;
@@ -175,9 +173,7 @@ class HangMonitorChild : public PProcessHangMonitorChild,
   Atomic<bool> mPaintWhileInterruptingJSActive;
 };
 
-Atomic<HangMonitorChild*, SequentiallyConsistent,
-       recordreplay::Behavior::DontPreserve>
-    HangMonitorChild::sInstance;
+Atomic<HangMonitorChild*, SequentiallyConsistent> HangMonitorChild::sInstance;
 
 /* Parent process objects */
 
@@ -287,9 +283,6 @@ class HangMonitorParent : public PProcessHangMonitorParent,
 
   const RefPtr<ProcessHangMonitor> mHangMonitor;
 
-  // This field is read-only after construction.
-  bool mReportHangs;
-
   // This field is only accessed on the hang thread.
   bool mIPCOpen;
 
@@ -311,9 +304,7 @@ class HangMonitorParent : public PProcessHangMonitorParent,
 
 HangMonitorChild::HangMonitorChild(ProcessHangMonitor* aMonitor)
     : mHangMonitor(aMonitor),
-      // Ordering of this atomic is not preserved while recording/replaying, as
-      // it may be accessed during the JS interrupt callback.
-      mMonitor("HangMonitorChild lock", recordreplay::Behavior::DontPreserve),
+      mMonitor("HangMonitorChild lock"),
       mSentReport(false),
       mTerminateScript(false),
       mTerminateGlobal(false),
@@ -341,13 +332,6 @@ HangMonitorChild::~HangMonitorChild() {
 
 bool HangMonitorChild::InterruptCallback() {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
-
-  // The interrupt callback is triggered at non-deterministic points when
-  // recording/replaying, so don't perform any operations that can interact
-  // with the recording.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return true;
-  }
 
   // Don't start painting if we're not in a good place to run script. We run
   // chrome script during layout and such, and it wouldn't be good to interrupt
@@ -703,8 +687,6 @@ HangMonitorParent::HangMonitorParent(ProcessHangMonitor* aMonitor)
       mBrowserCrashDumpHashLock("mBrowserCrashDumpIds lock"),
       mMainThreadTaskFactory(this) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
-  mReportHangs =
-      mozilla::Preferences::GetBool("dom.ipc.reportProcessHangs", false);
 }
 
 HangMonitorParent::~HangMonitorParent() {
@@ -886,7 +868,7 @@ mozilla::ipc::IPCResult HangMonitorParent::RecvHangEvidence(
   // chrome process, background thread
   MOZ_RELEASE_ASSERT(IsOnThread());
 
-  if (!mReportHangs) {
+  if (!StaticPrefs::dom_ipc_reportProcessHangs()) {
     return IPC_OK();
   }
 
@@ -921,7 +903,7 @@ mozilla::ipc::IPCResult HangMonitorParent::RecvClearHang() {
   // chrome process, background thread
   MOZ_RELEASE_ASSERT(IsOnThread());
 
-  if (!mReportHangs) {
+  if (!StaticPrefs::dom_ipc_reportProcessHangs()) {
     return IPC_OK();
   }
 
@@ -1340,7 +1322,7 @@ PProcessHangMonitorParent* ProcessHangMonitor::AddProcess(
     ContentParent* aContentParent) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
-  if (!mozilla::Preferences::GetBool("dom.ipc.processHangMonitor", false)) {
+  if (!StaticPrefs::dom_ipc_processHangMonitor_AtStartup()) {
     return nullptr;
   }
 

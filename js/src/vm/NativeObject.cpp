@@ -10,12 +10,18 @@
 #include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/Maybe.h"
+
+#include <algorithm>
 
 #include "debugger/DebugAPI.h"
 #include "gc/Marking.h"
+#include "gc/MaybeRooted.h"
 #include "jit/BaselineIC.h"
 #include "js/CharacterEncoding.h"
+#include "js/Result.h"
 #include "js/Value.h"
+#include "util/Memory.h"
 #include "vm/EqualityOperations.h"  // js::SameValue
 #include "vm/TypedArrayObject.h"
 
@@ -160,9 +166,8 @@ void ObjectElements::FreezeOrSeal(JSContext* cx, NativeObject* obj,
 }
 
 #ifdef DEBUG
-static mozilla::Atomic<bool, mozilla::Relaxed,
-                       mozilla::recordreplay::Behavior::DontPreserve>
-    gShapeConsistencyChecksEnabled(false);
+static mozilla::Atomic<bool, mozilla::Relaxed> gShapeConsistencyChecksEnabled(
+    false);
 
 /* static */
 void js::NativeObject::enableShapeConsistencyChecks() {
@@ -203,9 +208,9 @@ void js::NativeObject::checkShapeConsistency() {
                     shape->slot() < slotSpan());
       if (!prev) {
         MOZ_ASSERT(lastProperty() == shape);
-        MOZ_ASSERT(shape->listp == &shape_);
+        MOZ_ASSERT(shape->dictNext.toObject() == this);
       } else {
-        MOZ_ASSERT(shape->listp == &prev->parent);
+        MOZ_ASSERT(shape->dictNext.toShape() == prev);
       }
       prev = shape;
       shape = shape->parent;
@@ -223,7 +228,7 @@ void js::NativeObject::checkShapeConsistency() {
       if (prev) {
         MOZ_ASSERT_IF(shape->isDataProperty(),
                       prev->maybeSlot() >= shape->maybeSlot());
-        shape->kids.checkConsistency(prev);
+        shape->children.checkHasChild(prev);
       }
       prev = shape;
       shape = shape->parent;
@@ -532,7 +537,7 @@ DenseElementResult NativeObject::maybeDensifySparseElements(
       if (shape->attributes() == JSPROP_ENUMERATE &&
           shape->hasDefaultGetter() && shape->hasDefaultSetter()) {
         numDenseElements++;
-        newInitializedLength = Max(newInitializedLength, index + 1);
+        newInitializedLength = std::max(newInitializedLength, index + 1);
       } else {
         /*
          * For simplicity, only densify the object if all indexed
@@ -698,7 +703,7 @@ bool NativeObject::tryUnshiftDenseElements(uint32_t count) {
 
     // Move more elements than we need, so that other unshift calls will be
     // fast. We just have to make sure we don't exceed unusedCapacity.
-    toShift = Min(toShift + unusedCapacity / 2, unusedCapacity);
+    toShift = std::min(toShift + unusedCapacity / 2, unusedCapacity);
 
     // Ensure |numShifted + toShift| does not exceed MaxShiftedElements.
     if (numShifted + toShift > ObjectElements::MaxShiftedElements) {
@@ -1701,10 +1706,12 @@ bool js::NativeDefineProperty(JSContext* cx, HandleNativeObject obj,
     }
   } else if (obj->is<TypedArrayObject>()) {
     // 9.4.5.3 step 3. Indexed properties of typed arrays are special.
-    uint64_t index;
-    if (IsTypedArrayIndex(id, &index)) {
+    mozilla::Maybe<uint64_t> index;
+    JS_TRY_VAR_OR_RETURN_FALSE(cx, index, IsTypedArrayIndex(cx, id));
+
+    if (index) {
       MOZ_ASSERT(!cx->isHelperThreadContext());
-      return DefineTypedArrayElement(cx, obj, index, desc_, result);
+      return DefineTypedArrayElement(cx, obj, index.value(), desc_, result);
     }
   } else if (obj->is<ArgumentsObject>()) {
     Rooted<ArgumentsObject*> argsobj(cx, &obj->as<ArgumentsObject>());
@@ -1740,7 +1747,9 @@ bool js::NativeDefineProperty(JSContext* cx, HandleNativeObject obj,
     // We are being called from a resolve or enumerate hook to reify a
     // lazily-resolved property. To avoid reentering the resolve hook and
     // recursing forever, skip the resolve hook when doing this lookup.
-    NativeLookupOwnPropertyNoResolve(cx, obj, id, &prop);
+    if (!NativeLookupOwnPropertyNoResolve(cx, obj, id, &prop)) {
+      return false;
+    }
   } else {
     if (!NativeLookupOwnProperty<CanGC>(cx, obj, id, &prop)) {
       return false;
@@ -1782,7 +1791,7 @@ bool js::NativeDefineProperty(JSContext* cx, HandleNativeObject obj,
     return false;
   }
   if (redundant) {
-    // In cases involving JSOP_NEWOBJECT and JSOP_INITPROP, obj can have a
+    // In cases involving JSOp::NewObject and JSOp::InitProp, obj can have a
     // type for this property that doesn't match the value in the slot.
     // Update the type here, even though this DefineProperty call is
     // otherwise a no-op. (See bug 1125624 comment 13.)
@@ -2022,11 +2031,13 @@ static bool DefineNonexistentProperty(JSContext* cx, HandleNativeObject obj,
     }
   } else if (obj->is<TypedArrayObject>()) {
     // 9.4.5.5 step 2. Indexed properties of typed arrays are special.
-    uint64_t index;
-    if (IsTypedArrayIndex(id, &index)) {
+    mozilla::Maybe<uint64_t> index;
+    JS_TRY_VAR_OR_RETURN_FALSE(cx, index, IsTypedArrayIndex(cx, id));
+
+    if (index) {
       // This method is only called for non-existent properties, which
       // means any absent indexed property must be out of range.
-      MOZ_ASSERT(index >= obj->as<TypedArrayObject>().length());
+      MOZ_ASSERT(index.value() >= obj->as<TypedArrayObject>().length());
 
       // Steps 1-2 are enforced by the caller.
 
@@ -2065,7 +2076,9 @@ static bool DefineNonexistentProperty(JSContext* cx, HandleNativeObject obj,
 
 #ifdef DEBUG
   Rooted<PropertyResult> prop(cx);
-  NativeLookupOwnPropertyNoResolve(cx, obj, id, &prop);
+  if (!NativeLookupOwnPropertyNoResolve(cx, obj, id, &prop)) {
+    return false;
+  }
   MOZ_ASSERT(!prop, "didn't expect to find an existing property");
 #endif
 
@@ -2303,9 +2316,9 @@ static MOZ_ALWAYS_INLINE bool GetExistingProperty(
     JSScript* script = cx->currentScript(&pc);
     if (script && script->hasJitScript()) {
       switch (JSOp(*pc)) {
-        case JSOP_GETPROP:
-        case JSOP_CALLPROP:
-        case JSOP_LENGTH:
+        case JSOp::GetProp:
+        case JSOp::CallProp:
+        case JSOp::Length:
           script->jitScript()->noteAccessedGetter(script->pcToOffset(pc));
           break;
         default:
@@ -2314,14 +2327,11 @@ static MOZ_ALWAYS_INLINE bool GetExistingProperty(
     }
   }
 
-  if (!allowGC) {
+  if constexpr (!allowGC) {
     return false;
+  } else {
+    return CallGetter(cx, obj, receiver, shape, vp);
   }
-
-  return CallGetter(cx, MaybeRooted<JSObject*, allowGC>::toHandle(obj),
-                    MaybeRooted<Value, allowGC>::toHandle(receiver),
-                    MaybeRooted<Shape*, allowGC>::toHandle(shape),
-                    MaybeRooted<Value, allowGC>::toMutableHandle(vp));
 }
 
 bool js::NativeGetExistingProperty(JSContext* cx, HandleObject receiver,
@@ -2352,7 +2362,7 @@ static bool Detecting(JSContext* cx, JSScript* script, jsbytecode* pc) {
   BytecodeIterator endIter = BytecodeIterator(script->endLocation());
 
   // Skip over jump targets and duplication operations.
-  while (scriptIterator->isJumpTarget() || scriptIterator->is(JSOP_DUP)) {
+  while (scriptIterator->isJumpTarget() || scriptIterator->is(JSOp::Dup)) {
     if (++scriptIterator == endIter) {
       // If we are at the end of the script, we cannot be detecting
       // the property.
@@ -2367,7 +2377,7 @@ static bool Detecting(JSContext* cx, JSScript* script, jsbytecode* pc) {
   }
 
   // Special case: Do not warn if we are checking whether the property is null.
-  if (scriptIterator->is(JSOP_NULL)) {
+  if (scriptIterator->is(JSOp::Null)) {
     if (++scriptIterator == endIter) {
       return false;
     }
@@ -2377,8 +2387,8 @@ static bool Detecting(JSContext* cx, JSScript* script, jsbytecode* pc) {
 
   // Special case #2: Do not warn if we are checking whether the property is
   // undefined.
-  if (scriptIterator->is(JSOP_GETGNAME) || scriptIterator->is(JSOP_GETNAME) ||
-      scriptIterator->is(JSOP_UNDEFINED)) {
+  if (scriptIterator->is(JSOp::GetGName) || scriptIterator->is(JSOp::GetName) ||
+      scriptIterator->is(JSOp::Undefined)) {
     // If we using the result of a variable lookup to use in the comparison
     // against the property and that lookup does not result in 'undefined',
     // the type of subsequent operations do not matter -- we always warn.
@@ -2440,7 +2450,7 @@ static bool GetNonexistentProperty(JSContext* cx, HandleId id,
     return true;
   }
 
-  if (*pc != JSOP_GETPROP && *pc != JSOP_GETELEM) {
+  if (JSOp(*pc) != JSOp::GetProp && JSOp(*pc) != JSOp::GetElem) {
     return true;
   }
 
@@ -2457,7 +2467,7 @@ static bool GetNonexistentProperty(JSContext* cx, HandleId id,
   }
 
   // Do not warn about tests like (obj[prop] == undefined).
-  pc += CodeSpec[*pc].length;
+  pc += GetBytecodeLength(pc);
   if (Detecting(cx, script, pc)) {
     return true;
   }
@@ -2653,8 +2663,8 @@ bool js::GetNameBoundInEnvironment(JSContext* cx, HandleObject envArg,
   // HasProperty from HasBinding: both are implemented as a HasPropertyOp
   // hook on a WithEnvironmentObject.
   //
-  // In the case of attempting to get the value of a binding already looked
-  // up via BINDNAME, calling HasProperty on the WithEnvironmentObject is
+  // In the case of attempting to get the value of a binding already looked up
+  // via JSOp::BindName, calling HasProperty on the WithEnvironmentObject is
   // equivalent to calling HasBinding a second time. This results in the
   // incorrect behavior of performing the @@unscopables check again.
   RootedObject env(cx, MaybeUnwrapWithEnvironment(envArg));

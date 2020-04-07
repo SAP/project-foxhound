@@ -26,6 +26,10 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/IdleDeadline.h"
 #include "mozilla/dom/JSWindowActorService.h"
+#include "mozilla/dom/MediaControlUtils.h"
+#include "mozilla/dom/MediaControlService.h"
+#include "mozilla/dom/MediaMetadata.h"
+#include "mozilla/dom/MediaSessionBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReportingHeader.h"
 #include "mozilla/dom/UnionTypes.h"
@@ -89,12 +93,12 @@ void ChromeUtils::Base64URLEncode(GlobalObject& aGlobal,
   uint8_t* data = nullptr;
   if (aSource.IsArrayBuffer()) {
     const ArrayBuffer& buffer = aSource.GetAsArrayBuffer();
-    buffer.ComputeLengthAndData();
+    buffer.ComputeState();
     length = buffer.Length();
     data = buffer.Data();
   } else if (aSource.IsArrayBufferView()) {
     const ArrayBufferView& view = aSource.GetAsArrayBufferView();
-    view.ComputeLengthAndData();
+    view.ComputeState();
     length = view.Length();
     data = view.Data();
   } else {
@@ -335,7 +339,7 @@ class IdleDispatchRunnable final : public IdleRunnable,
       RefPtr<IdleDeadline> idleDeadline =
           new IdleDeadline(mParent, mTimedOut, deadline.ToMilliseconds());
 
-      RefPtr<IdleRequestCallback> callback(mCallback.forget());
+      RefPtr<IdleRequestCallback> callback(std::move(mCallback));
       MOZ_ASSERT(!mCallback);
       callback->Call(*idleDeadline, "ChromeUtils::IdleDispatch handler");
       mParent = nullptr;
@@ -412,8 +416,8 @@ void ChromeUtils::Import(const GlobalObject& aGlobal,
 
   NS_ConvertUTF16toUTF8 registryLocation(aResourceURI);
 
-  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("ChromeUtils::Import", OTHER,
-                                        registryLocation);
+  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_NONSENSITIVE("ChromeUtils::Import",
+                                                     OTHER, registryLocation);
 
   JSContext* cx = aGlobal.Context();
 
@@ -672,12 +676,11 @@ void ChromeUtils::ClearRecentJSDevError(GlobalObject&) {
     return WebIDLProcType::_webidl
 
 static WebIDLProcType ProcTypeToWebIDL(mozilla::ProcType aType) {
-  // |strings| contains an extra non-enum value, so subtract one.
   // Max is the value of the last enum, not the length, so add one.
-  static_assert(ArrayLength(WebIDLProcTypeValues::strings) - 1 ==
-                    static_cast<size_t>(ProcType::Max) + 1,
-                "In order for this static cast to be okay, "
-                "WebIDLProcType must match ProcType exactly");
+  static_assert(
+      WebIDLProcTypeValues::Count == static_cast<size_t>(ProcType::Max) + 1,
+      "In order for this static cast to be okay, "
+      "WebIDLProcType must match ProcType exactly");
 
   switch (aType) {
     PROCTYPE_TO_WEBIDL_CASE(Web, Web);
@@ -694,6 +697,9 @@ static WebIDLProcType ProcTypeToWebIDL(mozilla::ProcType aType) {
     PROCTYPE_TO_WEBIDL_CASE(RDD, Rdd);
     PROCTYPE_TO_WEBIDL_CASE(Socket, Socket);
     PROCTYPE_TO_WEBIDL_CASE(RemoteSandboxBroker, RemoteSandboxBroker);
+#ifdef MOZ_ENABLE_FORKSERVER
+    PROCTYPE_TO_WEBIDL_CASE(ForkServer, ForkServer);
+#endif
     PROCTYPE_TO_WEBIDL_CASE(Unknown, Unknown);
   }
 
@@ -804,6 +810,11 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
                     case GeckoProcessType::GeckoProcessType_RemoteSandboxBroker:
                       type = mozilla::ProcType::RemoteSandboxBroker;
                       break;
+#ifdef MOZ_ENABLE_FORKSERVER
+                    case GeckoProcessType::GeckoProcessType_ForkServer:
+                      type = mozilla::ProcType::ForkServer;
+                      break;
+#endif
                     default:
                       // Leave the default Unknown value in |type|.
                       break;
@@ -1164,6 +1175,37 @@ void ChromeUtils::PrivateNoteIntentionalCrash(const GlobalObject& aGlobal,
     return;
   }
   aError.Throw(NS_ERROR_NOT_IMPLEMENTED);
+}
+
+/* static */
+void ChromeUtils::GenerateMediaControlKeysTestEvent(
+    const GlobalObject& aGlobal, MediaControlKeysTestEvent aEvent) {
+  RefPtr<MediaControlService> service = MediaControlService::GetService();
+  if (service) {
+    service->GenerateMediaControlKeysTestEvent(
+        ConvertMediaControlKeysTestEventToMediaControlKeysEvent(aEvent));
+  }
+}
+
+/* static */
+void ChromeUtils::GetCurrentActiveMediaMetadata(const GlobalObject& aGlobal,
+                                                MediaMetadataInit& aMetadata) {
+  if (RefPtr<MediaControlService> service = MediaControlService::GetService()) {
+    MediaMetadataBase metadata = service->GetMainControllerMediaMetadata();
+    aMetadata.mTitle = metadata.mTitle;
+    aMetadata.mArtist = metadata.mArtist;
+    aMetadata.mAlbum = metadata.mAlbum;
+    for (const auto& artwork : metadata.mArtwork) {
+      // If OOM happens resulting in not able to append the element, then we
+      // would get incorrect result and fail on test, so we don't need to throw
+      // an error explicitly.
+      if (MediaImage* image = aMetadata.mArtwork.AppendElement(fallible)) {
+        image->mSrc = artwork.mSrc;
+        image->mSizes = artwork.mSizes;
+        image->mType = artwork.mType;
+      }
+    }
+  }
 }
 
 }  // namespace dom

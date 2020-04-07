@@ -34,7 +34,6 @@ gfxFT2FontBase::gfxFT2FontBase(
     const gfxFontStyle* aFontStyle, int aLoadFlags, bool aEmbolden)
     : gfxFont(aUnscaledFont, aFontEntry, aFontStyle, kAntialiasDefault),
       mFTFace(std::move(aFTFace)),
-      mSpaceGlyph(0),
       mFTLoadFlags(aLoadFlags | FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH |
                    FT_LOAD_COLOR),
       mEmbolden(aEmbolden),
@@ -452,9 +451,6 @@ const gfxFont::Metrics& gfxFT2FontBase::GetHorizontalMetrics() {
   return mMetrics;
 }
 
-// Get the glyphID of a space
-uint32_t gfxFT2FontBase::GetSpaceGlyph() { return mSpaceGlyph; }
-
 uint32_t gfxFT2FontBase::GetGlyph(uint32_t unicode,
                                   uint32_t variation_selector) {
   if (variation_selector) {
@@ -500,6 +496,17 @@ FT_Vector gfxFT2FontBase::GetEmboldenStrength(FT_Face aFace) {
   if (!mEmbolden) {
     return strength;
   }
+
+  // If it's an outline glyph, we'll be using mozilla_glyphslot_embolden_less
+  // (see gfx/wr/webrender/src/platform/unix/font.rs), so we need to match its
+  // emboldening strength here.
+  if (aFace->glyph->format == FT_GLYPH_FORMAT_OUTLINE) {
+    strength.x =
+        FT_MulFix(aFace->units_per_EM, aFace->size->metrics.y_scale) / 48;
+    strength.y = strength.x;
+    return strength;
+  }
+
   // This is the embolden "strength" used by FT_GlyphSlot_Embolden.
   strength.x =
       FT_MulFix(aFace->units_per_EM, aFace->size->metrics.y_scale) / 24;

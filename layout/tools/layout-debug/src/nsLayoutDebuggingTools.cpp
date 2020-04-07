@@ -9,8 +9,9 @@
 #include "nsIDocShell.h"
 #include "nsPIDOMWindow.h"
 #include "nsIContentViewer.h"
+#include "nsIPrintSettings.h"
+#include "nsIPrintSettingsService.h"
 
-#include "nsIServiceManager.h"
 #include "nsAtom.h"
 #include "nsQuickSort.h"
 
@@ -21,7 +22,6 @@
 
 #include "nsLayoutCID.h"
 
-#include "nsISelectionController.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/Preferences.h"
@@ -60,16 +60,7 @@ static already_AddRefed<Document> document(nsIDocShell* aDocShell) {
 }
 #endif
 
-nsLayoutDebuggingTools::nsLayoutDebuggingTools()
-    : mPaintFlashing(false),
-      mPaintDumping(false),
-      mInvalidateDumping(false),
-      mEventDumping(false),
-      mMotionEventDumping(false),
-      mCrossingEventDumping(false),
-      mReflowCounts(false) {
-  ForceRefresh();
-}
+nsLayoutDebuggingTools::nsLayoutDebuggingTools() { ForceRefresh(); }
 
 nsLayoutDebuggingTools::~nsLayoutDebuggingTools() {}
 
@@ -121,6 +112,36 @@ nsLayoutDebuggingTools::SetReflowCounts(bool aShow) {
     printf("************************************************\n");
 #endif
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsLayoutDebuggingTools::SetPagedMode(bool aPagedMode) {
+  nsCOMPtr<nsIPrintSettingsService> printSettingsService =
+      do_GetService("@mozilla.org/gfx/printsettings-service;1");
+  nsCOMPtr<nsIPrintSettings> printSettings;
+
+  printSettingsService->GetNewPrintSettings(getter_AddRefs(printSettings));
+
+  // Use the same setup as setupPrintMode() in reftest-content.js.
+  printSettings->SetPaperWidth(5);
+  printSettings->SetPaperHeight(3);
+
+  nsIntMargin unwriteableMargin(0, 0, 0, 0);
+  printSettings->SetUnwriteableMarginInTwips(unwriteableMargin);
+
+  printSettings->SetHeaderStrLeft(NS_LITERAL_STRING(""));
+  printSettings->SetHeaderStrCenter(NS_LITERAL_STRING(""));
+  printSettings->SetHeaderStrRight(NS_LITERAL_STRING(""));
+
+  printSettings->SetFooterStrLeft(NS_LITERAL_STRING(""));
+  printSettings->SetFooterStrCenter(NS_LITERAL_STRING(""));
+  printSettings->SetFooterStrRight(NS_LITERAL_STRING(""));
+
+  nsCOMPtr<nsIContentViewer> contentViewer(doc_viewer(mDocShell));
+  contentViewer->SetPageModeForTesting(aPagedMode, printSettings);
+
+  ForceRefresh();
   return NS_OK;
 }
 

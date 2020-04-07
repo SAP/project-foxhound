@@ -116,8 +116,8 @@ partial interface HTMLMediaElement {
   attribute boolean mozPreservesPitch;
 
   // NB: for internal use with the video controls:
-  [Func="IsChromeOrXBLOrUAWidget"] attribute boolean mozAllowCasting;
-  [Func="IsChromeOrXBLOrUAWidget"] attribute boolean mozIsCasting;
+  [Func="IsChromeOrUAWidget"] attribute boolean mozAllowCasting;
+  [Func="IsChromeOrUAWidget"] attribute boolean mozIsCasting;
 
   // Mozilla extension: stream capture
   [Throws]
@@ -160,8 +160,6 @@ partial interface HTMLMediaElement {
   readonly attribute double computedVolume;
   [Pref="media.useAudioChannelService.testing"]
   readonly attribute boolean computedMuted;
-  [Pref="media.useAudioChannelService.testing"]
-  readonly attribute unsigned long computedSuspended;
 };
 
 /*

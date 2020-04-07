@@ -5,14 +5,14 @@ toolkit.jar:
 *  content/global/xul.css
    content/global/autocomplete.css
    content/global/aboutAbout.js
-   content/global/aboutAbout.xhtml
+   content/global/aboutAbout.html
 #ifdef MOZILLA_OFFICIAL
    content/global/aboutRights.xhtml
 #else
    content/global/aboutRights.xhtml           (aboutRights-unbranded.xhtml)
 #endif
    content/global/aboutNetworking.js
-   content/global/aboutNetworking.xhtml
+   content/global/aboutNetworking.html
 #ifndef ANDROID
    content/global/aboutProfiles.js
    content/global/aboutProfiles.xhtml
@@ -52,8 +52,8 @@ toolkit.jar:
    content/global/process-content.js
    content/global/resetProfile.css
    content/global/resetProfile.js
-   content/global/resetProfile.xul
-   content/global/resetProfileProgress.xul
+   content/global/resetProfile.xhtml
+   content/global/resetProfileProgress.xhtml
    content/global/TopLevelVideoDocument.js
    content/global/timepicker.xhtml
    content/global/treeUtils.js

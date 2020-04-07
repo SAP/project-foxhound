@@ -87,6 +87,8 @@ def validate(spec_json, details):
 
     details['object'] = spec_json
     assert_contains_only_fields(spec_json, [
+        "selection_pattern", "test_file_path_pattern",
+        "test_description_template", "test_page_title_template",
         "specification", "delivery_key", "subresource_schema",
         "source_context_schema", "source_context_list_schema",
         "test_expansion_schema", "excluded_tests"
@@ -105,7 +107,9 @@ def validate(spec_json, details):
     # `/common/security-features/resources/common.sub.js`.
     valid_source_context_names = [
         "top", "iframe", "iframe-blank", "srcdoc", "worker-classic",
-        "worker-module", "worker-classic-data", "worker-module-data"
+        "worker-module", "worker-classic-data", "worker-module-data",
+        "sharedworker-classic", "sharedworker-module",
+        "sharedworker-classic-data", "sharedworker-module-data"
     ]
 
     valid_subresource_names = [

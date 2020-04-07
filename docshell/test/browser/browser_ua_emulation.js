@@ -9,12 +9,12 @@ const URL = "data:text/html;charset=utf-8,<iframe id='test-iframe'></iframe>";
 async function contentTask() {
   let docshell = docShell;
   is(
-    docshell.customUserAgent,
+    docshell.browsingContext.customUserAgent,
     "",
     "There should initially be no customUserAgent"
   );
 
-  docshell.customUserAgent = "foo";
+  docshell.browsingContext.customUserAgent = "foo";
   is(
     content.navigator.userAgent,
     "foo",
@@ -52,6 +52,6 @@ add_task(async function() {
   await BrowserTestUtils.withNewTab({ gBrowser, url: URL }, async function(
     browser
   ) {
-    await ContentTask.spawn(browser, null, contentTask);
+    await SpecialPowers.spawn(browser, [], contentTask);
   });
 });

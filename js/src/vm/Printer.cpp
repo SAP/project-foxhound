@@ -13,10 +13,9 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-#include "jsutil.h"
-
 #include "ds/LifoAlloc.h"
 #include "js/CharacterEncoding.h"
+#include "util/Memory.h"
 #include "util/Text.h"
 #include "util/Windows.h"
 #include "vm/JSContext.h"

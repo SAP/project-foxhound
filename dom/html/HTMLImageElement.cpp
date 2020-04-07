@@ -15,15 +15,13 @@
 #include "mozilla/dom/Document.h"
 #include "nsImageFrame.h"
 #include "nsIScriptContext.h"
-#include "nsIURL.h"
-#include "nsIIOService.h"
-#include "nsIServiceManager.h"
 #include "nsContentUtils.h"
 #include "nsContainerFrame.h"
 #include "nsNodeInfoManager.h"
 #include "mozilla/MouseEvents.h"
 #include "nsContentPolicyUtils.h"
 #include "nsFocusManager.h"
+#include "mozilla/dom/DOMIntersectionObserver.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/UserActivation.h"
@@ -35,12 +33,9 @@
 #include "mozilla/dom/HTMLSourceElement.h"
 #include "mozilla/dom/ResponsiveImageSelector.h"
 
-#include "imgIContainer.h"
-#include "imgILoader.h"
 #include "imgINotificationObserver.h"
 #include "imgRequestProxy.h"
 
-#include "nsILoadGroup.h"
 #include "mozilla/CycleCollectedJSContext.h"
 
 #include "mozilla/EventDispatcher.h"
@@ -75,7 +70,7 @@ namespace dom {
 // Calls LoadSelectedImage on host element unless it has been superseded or
 // canceled -- this is the synchronous section of "update the image data".
 // https://html.spec.whatwg.org/multipage/embedded-content.html#update-the-image-data
-class ImageLoadTask : public MicroTaskRunnable {
+class ImageLoadTask final : public MicroTaskRunnable {
  public:
   ImageLoadTask(HTMLImageElement* aElement, bool aAlwaysLoad,
                 bool aUseUrgentStartForChannel)
@@ -87,7 +82,7 @@ class ImageLoadTask : public MicroTaskRunnable {
     mDocument->BlockOnload();
   }
 
-  virtual void Run(AutoSlowOperation& aAso) override {
+  void Run(AutoSlowOperation& aAso) override {
     if (mElement->mPendingImageLoadTask == this) {
       mElement->mPendingImageLoadTask = nullptr;
       mElement->mUseUrgentStartForChannel = mUseUrgentStartForChannel;
@@ -96,7 +91,7 @@ class ImageLoadTask : public MicroTaskRunnable {
     mDocument->UnblockOnload(false);
   }
 
-  virtual bool Suppressed() override {
+  bool Suppressed() override {
     nsIGlobalObject* global = mElement->GetOwnerGlobal();
     return global && global->IsInSyncOperation();
   }
@@ -104,7 +99,7 @@ class ImageLoadTask : public MicroTaskRunnable {
   bool AlwaysLoad() { return mAlwaysLoad; }
 
  private:
-  ~ImageLoadTask() {}
+  ~ImageLoadTask() = default;
   RefPtr<HTMLImageElement> mElement;
   nsCOMPtr<Document> mDocument;
   bool mAlwaysLoad;
@@ -167,11 +162,8 @@ bool HTMLImageElement::Complete() {
   // It is still not clear what value should img.complete return in various
   // cases, see https://github.com/whatwg/html/issues/4884
 
-  if (!HasAttr(kNameSpaceID_None, nsGkAtoms::srcset)) {
-    nsAutoString src;
-    if (!GetAttr(kNameSpaceID_None, nsGkAtoms::src, src) || src.IsEmpty()) {
-      return true;
-    }
+  if (!HasAttr(nsGkAtoms::srcset) && !HasNonEmptyAttr(nsGkAtoms::src)) {
+    return true;
   }
 
   if (!mCurrentRequest || mPendingRequest) {
@@ -202,6 +194,24 @@ void HTMLImageElement::GetDecoding(nsAString& aValue) {
   GetEnumAttr(nsGkAtoms::decoding, kDecodingTableDefault->tag, aValue);
 }
 
+// https://whatpr.org/html/3752/urls-and-fetching.html#lazy-loading-attributes
+static const nsAttrValue::EnumTable kLoadingTable[] = {
+    {"eager", HTMLImageElement::Loading::Eager},
+    {"lazy", HTMLImageElement::Loading::Lazy},
+    {nullptr, 0}};
+
+void HTMLImageElement::GetLoading(nsAString& aValue) const {
+  GetEnumAttr(nsGkAtoms::loading, kLoadingTable[0].tag, aValue);
+}
+
+HTMLImageElement::Loading HTMLImageElement::LoadingState() const {
+  const nsAttrValue* val = mAttrs.GetAttr(nsGkAtoms::loading);
+  if (!val) {
+    return HTMLImageElement::Loading::Eager;
+  }
+  return static_cast<HTMLImageElement::Loading>(val->GetEnumValue());
+}
+
 already_AddRefed<Promise> HTMLImageElement::Decode(ErrorResult& aRv) {
   return nsImageLoadingContent::QueueDecodeAsync(aRv);
 }
@@ -219,8 +229,14 @@ bool HTMLImageElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
       return true;
     }
     if (aAttribute == nsGkAtoms::decoding) {
-      return aResult.ParseEnumValue(aValue, kDecodingTable, false,
+      return aResult.ParseEnumValue(aValue, kDecodingTable,
+                                    /* aCaseSensitive = */ false,
                                     kDecodingTableDefault);
+    }
+    if (aAttribute == nsGkAtoms::loading) {
+      return aResult.ParseEnumValue(aValue, kLoadingTable,
+                                    /* aCaseSensitive = */ false,
+                                    kLoadingTable);
     }
     if (ParseImageAttribute(aAttribute, aValue, aResult)) {
       return true;
@@ -293,6 +309,20 @@ nsresult HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                         nsIPrincipal* aMaybeScriptedPrincipal,
                                         bool aNotify) {
   nsAttrValueOrString attrVal(aValue);
+
+  if (aName == nsGkAtoms::loading && aNameSpaceID == kNameSpaceID_None) {
+    if (aValue &&
+        static_cast<HTMLImageElement::Loading>(aValue->GetEnumValue()) ==
+            Loading::Lazy &&
+        !ImageState().HasState(NS_EVENT_STATE_LOADING)) {
+      SetLazyLoading();
+    } else if (aOldValue &&
+               static_cast<HTMLImageElement::Loading>(
+                   aOldValue->GetEnumValue()) == Loading::Lazy &&
+               !ImageState().HasState(NS_EVENT_STATE_LOADING)) {
+      StopLazyLoadingAndStartLoadIfNeeded();
+    }
+  }
 
   if (aValue) {
     AfterMaybeChangeAttr(aNameSpaceID, aName, attrVal, aOldValue,
@@ -394,7 +424,7 @@ void HTMLImageElement::AfterMaybeChangeAttr(
                                               mSrcTriggeringPrincipal);
       }
       QueueImageLoadTask(true);
-    } else if (aNotify && OwnerDoc()->ShouldLoadImages()) {
+    } else if (aNotify && ShouldLoadImage()) {
       // If aNotify is false, we are coming from the parser or some such place;
       // we'll get bound after all the attributes have been set, so we'll do the
       // sync image load from BindToTree. Skip the LoadImage call in that case.
@@ -452,7 +482,7 @@ void HTMLImageElement::AfterMaybeChangeAttr(
       // per spec, full selection runs when this changes, even though
       // it doesn't directly affect the source selection
       QueueImageLoadTask(true);
-    } else if (OwnerDoc()->ShouldLoadImages()) {
+    } else if (ShouldLoadImage()) {
       // Bug 1076583 - We still use the older synchronous algorithm in
       // non-responsive mode. Force a new load of the image with the
       // new cross origin policy
@@ -543,7 +573,7 @@ nsresult HTMLImageElement::BindToTree(BindContext& aContext, nsINode& aParent) {
     // If loading is temporarily disabled, don't even launch MaybeLoadImage.
     // Otherwise MaybeLoadImage may run later when someone has reenabled
     // loading.
-    if (LoadingEnabled() && aContext.OwnerDoc().ShouldLoadImages()) {
+    if (LoadingEnabled() && ShouldLoadImage()) {
       nsContentUtils::AddScriptRunner(
           NewRunnableMethod<bool>("dom::HTMLImageElement::MaybeLoadImage", this,
                                   &HTMLImageElement::MaybeLoadImage, false));
@@ -617,21 +647,17 @@ EventStates HTMLImageElement::IntrinsicState() const {
 
 void HTMLImageElement::NodeInfoChanged(Document* aOldDoc) {
   nsGenericHTMLElement::NodeInfoChanged(aOldDoc);
+
+  if (mLazyLoading) {
+    aOldDoc->GetLazyLoadImageObserver()->Unobserve(*this);
+    mLazyLoading = false;
+    SetLazyLoading();
+  }
+
   // Force reload image if adoption steps are run.
   // If loading is temporarily disabled, don't even launch script runner.
   // Otherwise script runner may run later when someone has reenabled loading.
-  if (LoadingEnabled() && OwnerDoc()->ShouldLoadImages()) {
-    // Use script runner for the case the adopt is from appendChild.
-    // Bug 1076583 - We still behave synchronously in the non-responsive case
-    nsContentUtils::AddScriptRunner(
-        (InResponsiveMode())
-            ? NewRunnableMethod<bool>(
-                  "dom::HTMLImageElement::QueueImageLoadTask", this,
-                  &HTMLImageElement::QueueImageLoadTask, true)
-            : NewRunnableMethod<bool>("dom::HTMLImageElement::MaybeLoadImage",
-                                      this, &HTMLImageElement::MaybeLoadImage,
-                                      true));
-  }
+  StartLoadingIfNeeded();
 }
 
 // static
@@ -719,7 +745,7 @@ nsresult HTMLImageElement::CopyInnerTo(HTMLImageElement* aDest) {
     // reaches a stable state.
     if (!aDest->InResponsiveMode() &&
         aDest->HasAttr(kNameSpaceID_None, nsGkAtoms::src) &&
-        aDest->OwnerDoc()->ShouldLoadImages()) {
+        aDest->ShouldLoadImage()) {
       // Mark channel as urgent-start before load image if the image load is
       // initaiated by a user interaction.
       mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
@@ -785,7 +811,7 @@ void HTMLImageElement::ClearForm(bool aRemoveFromForm) {
 void HTMLImageElement::QueueImageLoadTask(bool aAlwaysLoad) {
   // If loading is temporarily disabled, we don't want to queue tasks
   // that may then run when loading is re-enabled.
-  if (!LoadingEnabled() || !this->OwnerDoc()->ShouldLoadImages()) {
+  if (!LoadingEnabled() || !ShouldLoadImage()) {
     return;
   }
 
@@ -1212,6 +1238,57 @@ void HTMLImageElement::DestroyContent() {
 
 void HTMLImageElement::MediaFeatureValuesChanged() {
   QueueImageLoadTask(false);
+}
+
+bool HTMLImageElement::ShouldLoadImage() const {
+  return OwnerDoc()->ShouldLoadImages() && !mLazyLoading;
+}
+
+void HTMLImageElement::SetLazyLoading() {
+  if (mLazyLoading) {
+    return;
+  }
+
+  if (!StaticPrefs::dom_image_lazy_loading_enabled()) {
+    return;
+  }
+
+  // If scripting is disabled don't do lazy load.
+  // https://whatpr.org/html/3752/images.html#updating-the-image-data
+  if (!OwnerDoc()->IsScriptEnabled()) {
+    return;
+  }
+
+  // There (maybe) is a race condition that we have no LazyLoadImageObserver
+  // when the root document has been removed from the docshell.
+  // In the case we don't need to worry about lazy-loading.
+  OwnerDoc()->EnsureLazyLoadImageObserver().Observe(*this);
+  mLazyLoading = true;
+  UpdateImageState(true);
+}
+
+void HTMLImageElement::StartLoadingIfNeeded() {
+  if (LoadingEnabled() && ShouldLoadImage()) {
+    // Use script runner for the case the adopt is from appendChild.
+    // Bug 1076583 - We still behave synchronously in the non-responsive case
+    nsContentUtils::AddScriptRunner(
+        (InResponsiveMode())
+            ? NewRunnableMethod<bool>(
+                  "dom::HTMLImageElement::QueueImageLoadTask", this,
+                  &HTMLImageElement::QueueImageLoadTask, true)
+            : NewRunnableMethod<bool>("dom::HTMLImageElement::MaybeLoadImage",
+                                      this, &HTMLImageElement::MaybeLoadImage,
+                                      true));
+  }
+}
+
+void HTMLImageElement::StopLazyLoadingAndStartLoadIfNeeded() {
+  if (!mLazyLoading) {
+    return;
+  }
+  mLazyLoading = false;
+  OwnerDoc()->GetLazyLoadImageObserver()->Unobserve(*this);
+  StartLoadingIfNeeded();
 }
 
 }  // namespace dom

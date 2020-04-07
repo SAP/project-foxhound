@@ -8,7 +8,7 @@
 const TEST_URI =
   "data:text/html,<meta charset=utf8>Test in-line console layout";
 
-const MINIMUM_MESSAGE_HEIGHT = 19;
+const MINIMUM_MESSAGE_HEIGHT = 20;
 
 add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
@@ -20,19 +20,26 @@ add_task(async function() {
   );
   const outputNode = appNode.querySelector(".webconsole-output");
   const inputNode = appNode.querySelector(".jsterm-input-container");
+  const eagerNode = document.querySelector(".eager-evaluation-result");
+
+  // The app height is the sum of the filter bar, input, and eager evaluation
+  const calculateAppHeight = () =>
+    filterBarNode.offsetHeight +
+    inputNode.offsetHeight +
+    eagerNode.offsetHeight;
 
   testLayout(appNode);
 
   is(outputNode.offsetHeight, 0, "output node has no height");
   is(
-    filterBarNode.offsetHeight + inputNode.offsetHeight,
+    calculateAppHeight(),
     appNode.offsetHeight,
-    "The entire height is taken by filter bar and input"
+    "The entire height is taken by filter bar, input, and eager result"
   );
 
   info("Logging a message in the content window");
   const onLogMessage = waitForMessage(hud, "simple text message");
-  ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.console.log("simple text message");
   });
   const logMessage = await onLogMessage;
@@ -45,7 +52,7 @@ add_task(async function() {
 
   info("Logging multiple messages to make the output overflow");
   const onLastMessage = waitForMessage(hud, "message-100");
-  ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     for (let i = 1; i <= 100; i++) {
       content.wrappedJSObject.console.log("message-" + i);
     }
@@ -89,13 +96,13 @@ add_task(async function() {
   setInputValue(hud, "");
   testLayout(appNode);
 
-  ui.clearOutput();
+  await clearOutput(hud);
   testLayout(appNode);
   is(outputNode.offsetHeight, 0, "output node has no height");
   is(
-    filterBarNode.offsetHeight + inputNode.offsetHeight,
+    calculateAppHeight(),
     appNode.offsetHeight,
-    "The entire height is taken by filter bar and input"
+    "The entire height is taken by filter bar, input, and eager result"
   );
 });
 

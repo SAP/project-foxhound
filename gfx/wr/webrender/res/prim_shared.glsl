@@ -50,6 +50,31 @@ in ivec4 aData;
 #define VECS_PER_PRIM_HEADER_F 2U
 #define VECS_PER_PRIM_HEADER_I 2U
 
+struct Instance
+{
+    int prim_header_address;
+    int picture_task_address;
+    int clip_address;
+    int segment_index;
+    int flags;
+    int resource_address;
+    int brush_kind;
+};
+
+Instance decode_instance_attributes() {
+    Instance instance;
+
+    instance.prim_header_address = aData.x;
+    instance.picture_task_address = aData.y >> 16;
+    instance.clip_address = aData.y & 0xffff;
+    instance.segment_index = aData.z & 0xffff;
+    instance.flags = aData.z >> 16;
+    instance.resource_address = aData.w & 0xffffff;
+    instance.brush_kind = aData.w >> 24;
+
+    return instance;
+}
+
 struct PrimitiveHeader {
     RectWithSize local_rect;
     RectWithSize local_clip_rect;
@@ -81,19 +106,14 @@ PrimitiveHeader fetch_prim_header(int index) {
 
 struct VertexInfo {
     vec2 local_pos;
-    vec2 snap_offset;
     vec4 world_pos;
 };
 
-VertexInfo write_vertex(RectWithSize instance_rect,
+VertexInfo write_vertex(vec2 local_pos,
                         RectWithSize local_clip_rect,
                         float z,
                         Transform transform,
                         PictureTask task) {
-
-    // Select the corner of the local rect that we are processing.
-    vec2 local_pos = instance_rect.p0 + instance_rect.size * aPosition.xy;
-
     // Clamp to the two local clip rects.
     vec2 clamped_local_pos = clamp_rect(local_pos, local_clip_rect);
 
@@ -110,7 +130,6 @@ VertexInfo write_vertex(RectWithSize instance_rect,
 
     VertexInfo vi = VertexInfo(
         clamped_local_pos,
-        vec2(0.0, 0.0),
         world_pos
     );
 
@@ -193,16 +212,15 @@ VertexInfo write_transform_vertex(RectWithSize local_segment_rect,
 
     VertexInfo vi = VertexInfo(
         local_pos,
-        vec2(0.0),
         world_pos
     );
 
     return vi;
 }
 
-void write_clip(vec4 world_pos, vec2 snap_offset, ClipArea area) {
+void write_clip(vec4 world_pos, ClipArea area) {
     vec2 uv = world_pos.xy * area.device_pixel_scale +
-        world_pos.w * (snap_offset + area.common_data.task_rect.p0 - area.screen_origin);
+        world_pos.w * (area.common_data.task_rect.p0 - area.screen_origin);
     vClipMaskUvBounds = vec4(
         area.common_data.task_rect.p0,
         area.common_data.task_rect.p0 + area.common_data.task_rect.size
@@ -222,6 +240,14 @@ vec2 get_image_quad_uv(int address, vec2 f) {
 #endif //WR_VERTEX_SHADER
 
 #ifdef WR_FRAGMENT_SHADER
+
+struct Fragment {
+    vec4 color;
+#ifdef WR_FEATURE_DUAL_SOURCE_BLENDING
+    vec4 blend;
+#endif
+};
+
 
 float do_clip() {
     // check for the dummy bounds, which are given to the opaque objects

@@ -19,11 +19,12 @@
 #include "nsPresContext.h"
 #include "nsCSSRendering.h"
 #include "nsIContent.h"
+#include "nsIFrame.h"
+#include "nsIFrameInlines.h"
 #include "nsGenericHTMLElement.h"
 #include "nsAttrValueInlines.h"
 #include "nsHTMLParts.h"
 #include "nsGkAtoms.h"
-#include "nsIServiceManager.h"
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
 #include "nsTextFrame.h"
@@ -44,11 +45,7 @@ class nsDisplayTableCellSelection final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayTableCellSelection);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayTableCellSelection() {
-    MOZ_COUNT_DTOR(nsDisplayTableCellSelection);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTableCellSelection)
 
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override {
     static_cast<nsTableCellFrame*>(mFrame)->DecorateForSelection(
@@ -347,7 +344,7 @@ nsresult nsTableCellFrame::ProcessBorders(nsTableFrame* aFrame,
   if (aFrame->IsBorderCollapse() || !borderStyle->HasBorder()) return NS_OK;
 
   if (!GetContentEmpty() ||
-      StyleTableBorder()->mEmptyCells == NS_STYLE_TABLE_EMPTY_CELLS_SHOW) {
+      StyleTableBorder()->mEmptyCells == StyleEmptyCells::Show) {
     aLists.BorderBackground()->AppendNewToTop<nsDisplayBorder>(aBuilder, this);
   }
 
@@ -361,11 +358,7 @@ class nsDisplayTableCellBackground : public nsDisplayTableItem {
       : nsDisplayTableItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayTableCellBackground);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayTableCellBackground() {
-    MOZ_COUNT_DTOR(nsDisplayTableCellBackground);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTableCellBackground)
 
   virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
                        HitTestState* aState,
@@ -432,7 +425,7 @@ bool nsTableCellFrame::ShouldPaintBordersAndBackgrounds() const {
     return true;
   }
 
-  return StyleTableBorder()->mEmptyCells == NS_STYLE_TABLE_EMPTY_CELLS_SHOW;
+  return StyleTableBorder()->mEmptyCells == StyleEmptyCells::Show;
 }
 
 bool nsTableCellFrame::ShouldPaintBackground(nsDisplayListBuilder* aBuilder) {
@@ -571,11 +564,15 @@ void nsTableCellFrame::BlockDirAlignChild(WritingMode aWM, nscoord aMaxAscent) {
   nscoord kidBStart = 0;
   switch (GetVerticalAlign()) {
     case StyleVerticalAlignKeyword::Baseline:
-      // Align the baselines of the child frame with the baselines of
-      // other children in the same row which have 'vertical-align: baseline'
-      kidBStart = bStartInset + aMaxAscent - GetCellBaseline();
-      break;
-
+      if (!GetContentEmpty()) {
+        // Align the baselines of the child frame with the baselines of
+        // other children in the same row which have 'vertical-align: baseline'
+        kidBStart = bStartInset + aMaxAscent - GetCellBaseline();
+        break;
+      }
+      // Empty cells don't participate in baseline alignment -
+      // fallback to start alignment.
+      [[fallthrough]];
     case StyleVerticalAlignKeyword::Top:
       // Align the top of the child frame with the top of the content area,
       kidBStart = bStartInset;
@@ -742,15 +739,15 @@ nscoord nsTableCellFrame::GetPrefISize(gfxContext* aRenderingContext) {
   return result;
 }
 
-/* virtual */ nsIFrame::IntrinsicISizeOffsetData
+/* virtual */ nsIFrame::IntrinsicSizeOffsetData
 nsTableCellFrame::IntrinsicISizeOffsets(nscoord aPercentageBasis) {
-  IntrinsicISizeOffsetData result =
+  IntrinsicSizeOffsetData result =
       nsContainerFrame::IntrinsicISizeOffsets(aPercentageBasis);
 
-  result.hMargin = 0;
+  result.margin = 0;
 
   WritingMode wm = GetWritingMode();
-  result.hBorder = GetBorderWidth(wm).IStartEnd(wm);
+  result.border = GetBorderWidth(wm).IStartEnd(wm);
 
   return result;
 }
@@ -1106,7 +1103,7 @@ ImgDrawResult nsBCTableCellFrame::PaintBackground(gfxContext& aRenderingContext,
 
   nsStyleBorder myBorder(*StyleBorder());
 
-  NS_FOR_CSS_SIDES(side) {
+  for (const auto side : mozilla::AllPhysicalSides()) {
     myBorder.SetBorderWidth(side, borderWidth.Side(side));
   }
 

@@ -22,9 +22,10 @@
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
 var ecmaGlobals = [
+  { name: "AggregateError", nightly: true },
   "Array",
   "ArrayBuffer",
-  { name: "Atomics", disabled: true },
+  { name: "Atomics", earlyBetaOrEarlier: true },
   "Boolean",
   "BigInt",
   "BigInt64Array",
@@ -58,7 +59,7 @@ var ecmaGlobals = [
   "Reflect",
   "RegExp",
   "Set",
-  { name: "SharedArrayBuffer", disabled: true },
+  { name: "SharedArrayBuffer", earlyBetaOrEarlier: true },
   "String",
   "Symbol",
   "SyntaxError",
@@ -256,6 +257,7 @@ var interfaceNamesInGlobalScope = [
 
 function createInterfaceMap({
   isNightly,
+  isEarlyBetaOrEarlier,
   isRelease,
   isDesktop,
   isAndroid,
@@ -282,6 +284,7 @@ function createInterfaceMap({
           entry.fennecOrDesktop === (isAndroid && !isFennec) ||
           entry.fennec === !isFennec ||
           entry.release === !isRelease ||
+          entry.earlyBetaOrEarlier === !isEarlyBetaOrEarlier ||
           entry.disabled
         ) {
           interfaceMap[entry.name] = false;

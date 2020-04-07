@@ -20,7 +20,6 @@
 #include "mozilla/layers/LayersTypes.h"  // for LayersBackend, etc
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/mozalloc.h"  // for operator delete, etc
-#include "nsAutoPtr.h"         // for nsRefPtr, nsAutoArrayPtr, etc
 #include "nsAutoRef.h"         // for nsCountedRef
 #include "nsCOMPtr.h"          // for already_AddRefed
 #include "nsDebug.h"           // for NS_ASSERTION
@@ -38,15 +37,13 @@
 #ifndef XPCOM_GLUE_AVOID_NSPR
 /**
  * We need to be able to hold a reference to a Moz2D SourceSurface from Image
- * subclasses. This is potentially a problem since Images can be addrefed
- * or released off the main thread. We can ensure that we never AddRef
- * a SourceSurface off the main thread, but we might want to Release due
- * to an Image being destroyed off the main thread.
+ * subclasses. Whilst SourceSurface is atomic refcounted and thus safe to
+ * AddRef/Release on any thread, it is potentially a problem since clean up code
+ * may need to run on a the main thread.
  *
  * We use nsCountedRef<nsMainThreadSourceSurfaceRef> to reference the
- * SourceSurface. When AddRefing, we assert that we're on the main thread.
- * When Releasing, if we're not on the main thread, we post an event to
- * the main thread to do the actual release.
+ * SourceSurface. When Releasing, if we're not on the main thread, we post an
+ * event to the main thread to do the actual release.
  */
 class nsMainThreadSourceSurfaceRef;
 
@@ -80,11 +77,7 @@ class nsAutoRefTraits<nsMainThreadSourceSurfaceRef> {
     nsCOMPtr<nsIRunnable> runnable = new SurfaceReleaser(aRawRef);
     NS_DispatchToMainThread(runnable);
   }
-  static void AddRef(RawRef aRawRef) {
-    NS_ASSERTION(NS_IsMainThread(),
-                 "Can only add a reference on the main thread");
-    aRawRef->AddRef();
-  }
+  static void AddRef(RawRef aRawRef) { aRawRef->AddRef(); }
 };
 
 class nsOwningThreadSourceSurfaceRef;
@@ -164,7 +157,7 @@ struct ImageBackendData {
   virtual ~ImageBackendData() = default;
 
  protected:
-  ImageBackendData() {}
+  ImageBackendData() = default;
 };
 
 /* Forward declarations for Image derivatives. */
@@ -174,6 +167,8 @@ class SharedRGBImage;
 class SurfaceTextureImage;
 #elif defined(XP_MACOSX)
 class MacIOSurfaceImage;
+#elif MOZ_WAYLAND
+class WaylandDMABUFSurfaceImage;
 #endif
 
 /**
@@ -205,10 +200,10 @@ class Image {
   }
 
   ImageBackendData* GetBackendData(LayersBackend aBackend) {
-    return mBackendData[aBackend];
+    return mBackendData[aBackend].get();
   }
   void SetBackendData(LayersBackend aBackend, ImageBackendData* aData) {
-    mBackendData[aBackend] = aData;
+    mBackendData[aBackend] = mozilla::WrapUnique(aData);
   }
 
   int32_t GetSerial() const { return mSerial; }
@@ -234,6 +229,11 @@ class Image {
   virtual MacIOSurfaceImage* AsMacIOSurfaceImage() { return nullptr; }
 #endif
   virtual PlanarYCbCrImage* AsPlanarYCbCrImage() { return nullptr; }
+#ifdef MOZ_WAYLAND
+  virtual WaylandDMABUFSurfaceImage* AsWaylandDMABUFSurfaceImage() {
+    return nullptr;
+  }
+#endif
 
   virtual NVImage* AsNVImage() { return nullptr; }
 
@@ -246,7 +246,7 @@ class Image {
 
   mozilla::EnumeratedArray<mozilla::layers::LayersBackend,
                            mozilla::layers::LayersBackend::LAYERS_LAST,
-                           nsAutoPtr<ImageBackendData>>
+                           UniquePtr<ImageBackendData>>
       mBackendData;
 
   void* mImplData;
@@ -280,7 +280,7 @@ class BufferRecycleBin final {
   typedef mozilla::Mutex Mutex;
 
   // Private destructor, to discourage deletion outside of Release():
-  ~BufferRecycleBin() {}
+  ~BufferRecycleBin() = default;
 
   // This protects mRecycledBuffers, mRecycledBufferSize, mRecycledTextures
   // and mRecycledTextureSizes
@@ -314,7 +314,7 @@ class ImageFactory {
  protected:
   friend class ImageContainer;
 
-  ImageFactory() {}
+  ImageFactory() = default;
   virtual ~ImageFactory() = default;
 
   virtual RefPtr<PlanarYCbCrImage> CreatePlanarYCbCrImage(
@@ -548,7 +548,7 @@ class ImageContainer final : public SupportsWeakPtr<ImageContainer> {
 
 #ifdef XP_WIN
   D3D11YCbCrRecycleAllocator* GetD3D11YCbCrRecycleAllocator(
-      KnowsCompositor* aAllocator);
+      KnowsCompositor* aKnowsCompositor);
 #endif
 
   /**

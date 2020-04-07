@@ -25,7 +25,6 @@
 #include "nsIContent.h"
 #include "nsICSSDeclaration.h"
 #include "mozilla/dom/Document.h"
-#include "nsIEditor.h"
 #include "nsINode.h"
 #include "nsISupportsImpl.h"
 #include "nsISupportsUtils.h"
@@ -279,8 +278,6 @@ CSSEditUtils::CSSEditUtils(HTMLEditor* aHTMLEditor)
   mIsCSSPrefChecked = Preferences::GetBool("editor.use_css", mIsCSSPrefChecked);
 }
 
-CSSEditUtils::~CSSEditUtils() {}
-
 // Answers true if we have some CSS equivalence for the HTML style defined
 // by aProperty and/or aAttribute for the node aNode
 
@@ -455,8 +452,11 @@ nsresult CSSEditUtils::GetCSSInlinePropertyBase(nsINode* aNode,
     NS_ENSURE_STATE(cssDecl);
 
     // from these declarations, get the one we want and that one only
+    //
+    // FIXME(bug 1606994): nsAtomCString copies, we should just keep around the
+    // property id.
     MOZ_ALWAYS_SUCCEEDS(
-        cssDecl->GetPropertyValue(nsDependentAtomString(aProperty), aValue));
+        cssDecl->GetPropertyValue(nsAtomCString(aProperty), aValue));
 
     return NS_OK;
   }
@@ -467,8 +467,7 @@ nsresult CSSEditUtils::GetCSSInlinePropertyBase(nsINode* aNode,
     return NS_OK;
   }
 
-  nsCSSPropertyID prop =
-      nsCSSProps::LookupProperty(nsDependentAtomString(aProperty));
+  nsCSSPropertyID prop = nsCSSProps::LookupProperty(nsAtomCString(aProperty));
   MOZ_ASSERT(prop != eCSSProperty_UNKNOWN);
 
   decl->GetPropertyValueByID(prop, aValue);
@@ -1175,7 +1174,7 @@ bool CSSEditUtils::ElementsSameStyle(Element* aFirstElement,
     return true;
   }
 
-  nsAutoString propertyNameString;
+  nsAutoCString propertyNameString;
   nsAutoString firstValue, secondValue;
   for (uint32_t i = 0; i < firstLength; i++) {
     firstCSSDecl->Item(i, propertyNameString);

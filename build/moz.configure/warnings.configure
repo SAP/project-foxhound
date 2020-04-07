@@ -83,6 +83,9 @@ add_gcc_warning('-Wno-invalid-offsetof', cxx_compiler)
 # catches objects passed by value to variadic functions.
 check_and_add_gcc_warning('-Wclass-varargs')
 
+# catches empty if/switch/for initialization statements that have no effect
+check_and_add_gcc_warning('-Wempty-init-stmt', cxx_compiler)
+
 # catches some implicit conversion of floats to ints
 check_and_add_gcc_warning('-Wfloat-overflow-conversion')
 check_and_add_gcc_warning('-Wfloat-zero-conversion')
@@ -91,7 +94,6 @@ check_and_add_gcc_warning('-Wfloat-zero-conversion')
 check_and_add_gcc_warning('-Wloop-analysis')
 
 # catches C++ version forward-compat issues
-check_and_add_gcc_warning('-Wc++1z-compat', cxx_compiler)
 check_and_add_gcc_warning('-Wc++2a-compat', cxx_compiler)
 
 # catches possible misuse of the comma operator
@@ -102,6 +104,10 @@ check_and_add_gcc_warning('-Wduplicated-cond')
 
 # catches unintentional switch case fallthroughs
 check_and_add_gcc_warning('-Wimplicit-fallthrough', cxx_compiler)
+
+# catches unused variable/function declarations
+check_and_add_gcc_warning('-Wunused-function', cxx_compiler)
+check_and_add_gcc_warning('-Wunused-variable', cxx_compiler)
 
 # catches expressions used as a null pointer constant
 # XXX: at the time of writing, the version of clang used on the OS X test
@@ -151,7 +157,7 @@ check_and_add_gcc_warning('-Wno-error=backend-plugin')
 check_and_add_gcc_warning('-Wno-error=free-nonheap-object')
 
 # Would be a pain to fix all occurrences, for very little gain
-check_and_add_gcc_warning('-Wno-error=multistatement-macros')
+check_and_add_gcc_warning('-Wno-multistatement-macros')
 
 # Disable the -Werror for return-std-move because of a false positive
 # on nsTAutoStringN: https://bugs.llvm.org/show_bug.cgi?id=37249

@@ -71,7 +71,7 @@
   transform: rotate(-90deg);
 }
 
-html[dir="rtl"] .tree-node button:not(.expanded) {
+html[dir="rtl"] .tree-node button.arrow:not(.expanded) {
   transform: rotate(90deg);
 }
 
@@ -140,6 +140,10 @@ html[dir="rtl"] .tree-node button:not(.expanded) {
 .objectBox-string,
 .objectBox-symbol {
   color: var(--string-color);
+}
+
+.objectBox-empty-string {
+  font-style: italic;
 }
 
 .objectBox-string a,
@@ -383,7 +387,7 @@ button.jump-definition {
 /* Invoke getter button */
 
 button.invoke-getter {
-  mask: url("resource://devtools/client/shared/components/reps/images/input.svg")
+  mask: url(resource://devtools/client/shared/components/reps/images/input.svg)
     no-repeat;
   display: inline-block;
   background-color: var(--theme-icon-color);
@@ -400,6 +404,11 @@ button.invoke-getter {
 /* "more…" ellipsis */
 .more-ellipsis {
   color: var(--comment-node-color);
+}
+
+/* function parameters */
+.objectBox-function .param {
+  color: var(--theme-highlight-red);
 }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -461,10 +470,10 @@ button.invoke-getter {
 
 button.remove-set-watchpoint {
   mask: url("resource://devtools/client/debugger/images/webconsole-logpoint.svg")
-  no-repeat;
+    no-repeat;
   display: inline-block;
   vertical-align: top;
-  height: 15px;
+  height: 13px;
   width: 15px;
   margin: 0 4px 0px 20px;
   padding: 0;
@@ -475,14 +484,22 @@ button.remove-set-watchpoint {
 
 button.remove-get-watchpoint {
   mask: url("resource://devtools/client/debugger/images/webconsole-logpoint.svg")
-  no-repeat;
+    no-repeat;
   display: inline-block;
   vertical-align: top;
-  height: 15px;
+  height: 13px;
   width: 15px;
   margin: 0 4px 0px 20px;
   padding: 0;
   border: none;
   background-color: var(--purple-60);
   cursor: pointer;
+}
+.theme-dark button.remove-set-watchpoint:hover,
+.theme-light button.remove-set-watchpoint:hover {
+  background-color: var(--breakpoint-fill);
+}
+.theme-dark button.remove-get-watchpoint:hover,
+.theme-light button.remove-get-watchpoint:hover {
+  background-color: var(--purple-60);
 }

@@ -12,7 +12,8 @@
 
 #include "js/TraceLoggerAPI.h"
 #include "jsapi.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/NotNull.h"
+#include "mozilla/RefPtr.h"
 #include "nsIEventTarget.h"
 
 // This class contains the state for a single thread that is accessible without
@@ -23,11 +24,15 @@
 class RacyRegisteredThread final {
  public:
   explicit RacyRegisteredThread(int aThreadId)
-      : mThreadId(aThreadId), mSleep(AWAKE), mIsBeingProfiled(false) {
+      : mProfilingStackOwner(
+            mozilla::MakeNotNull<RefPtr<class ProfilingStackOwner>>()),
+        mThreadId(aThreadId),
+        mSleep(AWAKE),
+        mIsBeingProfiled(false) {
     MOZ_COUNT_CTOR(RacyRegisteredThread);
   }
 
-  ~RacyRegisteredThread() { MOZ_COUNT_DTOR(RacyRegisteredThread); }
+  MOZ_COUNTED_DTOR(RacyRegisteredThread)
 
   void SetIsBeingProfiled(bool aIsBeingProfiled) {
     mIsBeingProfiled = aIsBeingProfiled;
@@ -77,12 +82,18 @@ class RacyRegisteredThread final {
   int ThreadId() const { return mThreadId; }
 
   class ProfilingStack& ProfilingStack() {
-    return mProfilingStack;
+    return mProfilingStackOwner->ProfilingStack();
   }
-  const class ProfilingStack& ProfilingStack() const { return mProfilingStack; }
+  const class ProfilingStack& ProfilingStack() const {
+    return mProfilingStackOwner->ProfilingStack();
+  }
+
+  class ProfilingStackOwner& ProfilingStackOwner() {
+    return *mProfilingStackOwner;
+  }
 
  private:
-  class ProfilingStack mProfilingStack;
+  mozilla::NotNull<RefPtr<class ProfilingStackOwner>> mProfilingStackOwner;
 
   // mThreadId contains the thread ID of the current thread. It is safe to read
   // this from multiple threads concurrently, as it will never be mutated.
@@ -127,11 +138,7 @@ class RacyRegisteredThread final {
   mozilla::Atomic<int> mSleep;
 
   // Is this thread being profiled? (e.g., should markers be recorded?)
-  // Accesses to this atomic are not recorded by web replay as they may occur
-  // at non-deterministic points.
-  mozilla::Atomic<bool, mozilla::MemoryOrdering::Relaxed,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      mIsBeingProfiled;
+  mozilla::Atomic<bool, mozilla::MemoryOrdering::Relaxed> mIsBeingProfiled;
 };
 
 // This class contains information that's relevant to a single thread only
@@ -140,7 +147,7 @@ class RacyRegisteredThread final {
 // protected by the profiler state lock.
 class RegisteredThread final {
  public:
-  RegisteredThread(ThreadInfo* aInfo, nsIEventTarget* aThread, void* aStackTop);
+  RegisteredThread(ThreadInfo* aInfo, nsIThread* aThread, void* aStackTop);
   ~RegisteredThread();
 
   class RacyRegisteredThread& RacyRegisteredThread() {
@@ -152,6 +159,16 @@ class RegisteredThread final {
 
   PlatformData* GetPlatformData() const { return mPlatformData.get(); }
   const void* StackTop() const { return mStackTop; }
+
+  // aDelay is the time the event that is currently running on the thread
+  // was queued before starting to run (if a PrioritizedEventQueue
+  // (i.e. MainThread), this will be 0 for any event at a lower priority
+  // than Input).
+  // aRunning is the time the event has been running.  If no event is
+  // running these will both be TimeDuration() (i.e. 0).  Both are out
+  // params, and are always set.  Their initial value is discarded.
+  void GetRunningEventDelay(const TimeStamp& aNow, TimeDuration& aDelay,
+                            TimeDuration& aRunning);
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
@@ -179,6 +196,7 @@ class RegisteredThread final {
 
   const RefPtr<ThreadInfo> Info() const { return mThreadInfo; }
   const nsCOMPtr<nsIEventTarget> GetEventTarget() const { return mThread; }
+  void ResetMainThread(nsIThread* aThread) { mThread = aThread; }
 
   // Request that this thread start JS sampling. JS sampling won't actually
   // start until a subsequent PollJSSampling() call occurs *and* mContext has
@@ -220,9 +238,6 @@ class RegisteredThread final {
       if (mJSSampling == ACTIVE_REQUESTED) {
         mJSSampling = ACTIVE;
         js::EnableContextProfilingStack(mContext, true);
-        JS_SetGlobalJitCompilerOption(mContext,
-                                      JSJITCOMPILER_TRACK_OPTIMIZATIONS,
-                                      TrackOptimizationsEnabled());
         if (JSTracerEnabled()) {
           JS::StartTraceLogger(mContext);
         }
@@ -254,7 +269,7 @@ class RegisteredThread final {
   const void* mStackTop;
 
   const RefPtr<ThreadInfo> mThreadInfo;
-  const nsCOMPtr<nsIEventTarget> mThread;
+  nsCOMPtr<nsIThread> mThread;
 
   // If this is a JS thread, this is its JSContext, which is required for any
   // JS sampling.

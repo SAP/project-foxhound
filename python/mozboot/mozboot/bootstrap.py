@@ -4,6 +4,8 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+from collections import OrderedDict
+
 import platform
 import sys
 import os
@@ -41,6 +43,9 @@ from mozboot.util import (
     get_state_dir,
 )
 
+# Use distro package to retrieve linux platform information
+import distro
+
 APPLICATION_CHOICE = '''
 Note on Artifact Mode:
 
@@ -56,22 +61,20 @@ Please choose the version of Firefox you want to build:
 %s
 Your choice: '''
 
-APPLICATIONS_LIST = [
+APPLICATIONS = OrderedDict([
     ('Firefox for Desktop Artifact Mode', 'browser_artifact_mode'),
     ('Firefox for Desktop', 'browser'),
     ('GeckoView/Firefox for Android Artifact Mode', 'mobile_android_artifact_mode'),
     ('GeckoView/Firefox for Android', 'mobile_android'),
-]
+])
 
-# TODO Legacy Python 2.6 code, can be removed.
-# This is a workaround for the fact that we must support python2.6 (which has
-# no OrderedDict)
-APPLICATIONS = dict(
-    browser_artifact_mode=APPLICATIONS_LIST[0],
-    browser=APPLICATIONS_LIST[1],
-    mobile_android_artifact_mode=APPLICATIONS_LIST[2],
-    mobile_android=APPLICATIONS_LIST[3],
-)
+VCS_CHOICE = '''
+Firefox can be cloned using either Git or Mercurial.
+
+Please choose the VCS you want to use:
+1. Mercurial
+2. Git
+Your choice: '''
 
 STATE_DIR_INFO = '''
 The Firefox build system and related tools store shared, persistent state
@@ -96,9 +99,9 @@ Please restart bootstrap and create that directory when prompted.
 '''
 
 STYLE_NODEJS_REQUIRES_CLONE = '''
-Installing Stylo and NodeJS packages requires a checkout of mozilla-central.
-Once you have such a checkout, please re-run `./mach bootstrap` from the
-checkout directory.
+Installing Stylo and NodeJS packages requires a checkout of mozilla-central
+(or mozilla-unified). Once you have such a checkout, please re-run
+`./mach bootstrap` from the checkout directory.
 '''
 
 FINISHED = '''
@@ -114,10 +117,6 @@ Or, if you prefer Git, by following the instruction here to clone from the
 Mercurial repository:
 
     https://github.com/glandium/git-cinnabar/wiki/Mozilla:-A-git-workflow-for-Gecko-development
-
-Or, if you really prefer vanilla flavor Git:
-
-    git clone https://github.com/mozilla/gecko-dev.git
 '''
 
 CONFIGURE_MERCURIAL = '''
@@ -128,7 +127,8 @@ Would you like to run a configuration wizard to ensure Mercurial is
 optimally configured?'''
 
 CONFIGURE_GIT = '''
-Mozilla recommends using git-cinnabar to work with mozilla-central.
+Mozilla recommends using git-cinnabar to work with mozilla-central (or
+mozilla-unified).
 
 Would you like to run a few configuration steps to ensure Git is
 optimally configured?'''
@@ -167,17 +167,9 @@ download mercurial bundle and use it:
 https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code/Mercurial/Bundles'''
 
 DEBIAN_DISTROS = (
-    'Debian',
     'debian',
-    'Ubuntu',
-    # Most Linux Mint editions are based on Ubuntu. One is based on Debian.
-    # The difference is reported in dist_id from platform.linux_distribution.
-    # But it doesn't matter since we share a bootstrapper between Debian and
-    # Ubuntu.
-    'Mint',
-    'LinuxMint',
-    'Elementary OS',
-    'Elementary',
+    'ubuntu',
+    'linuxmint',
     'elementary',
     'neon',
 )
@@ -204,6 +196,14 @@ If you have questions, please ask in #build in irc.mozilla.org. If you would
 like to opt out of data collection, select (N) at the prompt.
 
 Would you like to enable build system telemetry?'''
+
+
+MOZ_PHAB_ADVERTISE = '''
+If you plan on submitting changes to Firefox use the following command to
+install the review submission tool "moz-phab":
+
+  mach install-moz-phab
+'''
 
 
 def update_or_create_build_telemetry_config(path):
@@ -247,35 +247,25 @@ class Bootstrapper(object):
                 'no_system_changes': no_system_changes}
 
         if sys.platform.startswith('linux'):
-            # TODO: don't call `linux_distribution` at all since it's deprecated
-            distro, version, dist_id = platform.linux_distribution()
+            # distro package provides reliable ids for popular distributions so
+            # we use those instead of the full distribution name
+            dist_id, version, codename = distro.linux_distribution(full_distribution_name=False)
 
-            # Read the standard `os-release` configuration
-            if distro == '' and os.path.exists('/etc/os-release'):
-                d = {}
-                for line in open('/etc/os-release'):
-                    k, v = line.rstrip().split("=")
-                    d[k] = v.strip('"')
-                distro = d.get("NAME")
-                version = d.get("VERSION_ID")
-                dist_id = d.get("ID")
-
-            if distro in ('CentOS', 'CentOS Linux', 'Fedora'):
+            if dist_id in ('centos', 'fedora'):
                 cls = CentOSFedoraBootstrapper
-                args['distro'] = distro
-            elif distro in DEBIAN_DISTROS:
+                args['distro'] = dist_id
+            elif dist_id in DEBIAN_DISTROS:
                 cls = DebianBootstrapper
-                args['distro'] = distro
-            elif distro in ('Gentoo Base System', 'Funtoo Linux - baselayout '):
+                args['distro'] = dist_id
+            elif dist_id in ('gentoo', 'funtoo'):
                 cls = GentooBootstrapper
-            elif distro in ('Solus'):
+            elif dist_id in ('solus'):
                 cls = SolusBootstrapper
-            elif os.path.exists('/etc/arch-release'):
-                # Even on archlinux, platform.linux_distribution() returns ['','','']
+            elif dist_id in ('arch') or os.path.exists('/etc/arch-release'):
                 cls = ArchlinuxBootstrapper
             else:
                 raise NotImplementedError('Bootstrap support for this Linux '
-                                          'distro not yet available: ' + distro)
+                                          'distro not yet available: ' + dist_id)
 
             args['version'] = version
             args['dist_id'] = dist_id
@@ -393,6 +383,10 @@ class Bootstrapper(object):
             self.instance.ensure_clang_static_analysis_package(state_dir, checkout_root)
             self.instance.ensure_nasm_packages(state_dir, checkout_root)
             self.instance.ensure_sccache_packages(state_dir, checkout_root)
+            self.instance.ensure_lucetc_packages(state_dir, checkout_root)
+            self.instance.ensure_wasi_sysroot_packages(state_dir, checkout_root)
+            self.instance.ensure_dump_syms_packages(state_dir, checkout_root)
+            self.instance.ensure_fix_stacks_packages(state_dir, checkout_root)
 
     def check_telemetry_opt_in(self, state_dir):
         # We can't prompt the user.
@@ -411,15 +405,17 @@ class Bootstrapper(object):
     def bootstrap(self):
         if self.choice is None:
             # Like ['1. Firefox for Desktop', '2. Firefox for Android Artifact Mode', ...].
-            labels = ['%s. %s' % (i + 1, name) for (i, (name, _)) in enumerate(APPLICATIONS_LIST)]
+            labels = ['%s. %s' % (i, name) for i, name in enumerate(APPLICATIONS.keys(), 1)]
             prompt = APPLICATION_CHOICE % '\n'.join('  {}'.format(label) for label in labels)
             prompt_choice = self.instance.prompt_int(prompt=prompt, low=1, high=len(APPLICATIONS))
-            name, application = APPLICATIONS_LIST[prompt_choice-1]
-        elif self.choice not in APPLICATIONS.keys():
+            name, application = list(APPLICATIONS.items())[prompt_choice-1]
+        elif self.choice in APPLICATIONS.keys():
+            name, application = self.choice, APPLICATIONS[self.choice]
+        elif self.choice in APPLICATIONS.values():
+            name, application = next((k, v) for k, v in APPLICATIONS.items() if v == self.choice)
+        else:
             raise Exception('Please pick a valid application choice: (%s)' %
                             '/'.join(APPLICATIONS.keys()))
-        else:
-            name, application = APPLICATIONS[self.choice]
 
         self.instance.application = application
         self.instance.artifact_mode = 'artifact_mode' in application
@@ -462,9 +458,22 @@ class Bootstrapper(object):
                                      hg=self.instance.which('hg'))
         (checkout_type, checkout_root) = r
 
+        # If we didn't specify a VCS, and we aren't in an exiting clone,
+        # offer a choice
+        if not self.vcs:
+            if checkout_type:
+                vcs = checkout_type
+            elif self.instance.no_interactive:
+                vcs = "hg"
+            else:
+                prompt_choice = self.instance.prompt_int(prompt=VCS_CHOICE, low=1, high=2)
+                vcs = ["hg", "git"][prompt_choice - 1]
+        else:
+            vcs = self.vcs
+
         # Possibly configure Mercurial, but not if the current checkout or repo
         # type is Git.
-        if hg_installed and state_dir_available and (checkout_type == 'hg' or self.vcs == 'hg'):
+        if hg_installed and state_dir_available and (checkout_type == 'hg' or vcs == 'hg'):
             configure_hg = False
             if not self.instance.no_interactive:
                 configure_hg = self.instance.prompt_yesno(prompt=CONFIGURE_MERCURIAL)
@@ -475,7 +484,7 @@ class Bootstrapper(object):
                 configure_mercurial(self.instance.which('hg'), state_dir)
 
         # Offer to configure Git, if the current checkout or repo type is Git.
-        elif self.instance.which('git') and (checkout_type == 'git' or self.vcs == 'git'):
+        elif self.instance.which('git') and (checkout_type == 'git' or vcs == 'git'):
             should_configure_git = False
             if not self.instance.no_interactive:
                 should_configure_git = self.instance.prompt_yesno(prompt=CONFIGURE_GIT)
@@ -492,12 +501,12 @@ class Bootstrapper(object):
 
         if checkout_type:
             have_clone = True
-        elif hg_installed and not self.instance.no_interactive and self.vcs == 'hg':
+        elif hg_installed and not self.instance.no_interactive and vcs == 'hg':
             dest = self.input_clone_dest()
             if dest:
                 have_clone = hg_clone_firefox(self.instance.which('hg'), dest)
                 checkout_root = dest
-        elif self.instance.which('git') and self.vcs == 'git':
+        elif self.instance.which('git') and vcs == 'git':
             dest = self.input_clone_dest(False)
             if dest:
                 git = self.instance.which('git')
@@ -519,6 +528,9 @@ class Bootstrapper(object):
         if not (self.instance.which('rustc') and self.instance._parse_version('rustc')
                 >= MODERN_RUST_VERSION):
             print("To build %s, please restart the shell (Start a new terminal window)" % name)
+
+        if not self.instance.which("moz-phab"):
+            print(MOZ_PHAB_ADVERTISE)
 
         # Like 'suggest_browser_mozconfig' or 'suggest_mobile_android_mozconfig'.
         getattr(self.instance, 'suggest_%s_mozconfig' % application)()
@@ -615,7 +627,7 @@ def hg_clone_firefox(hg, dest):
     # Strictly speaking, this could overwrite a config based on a template
     # the user has installed. Let's pretend this problem doesn't exist
     # unless someone complains about it.
-    with open(os.path.join(dest, '.hg', 'hgrc'), 'ab') as fh:
+    with open(os.path.join(dest, '.hg', 'hgrc'), 'a') as fh:
         fh.write('[paths]\n')
         fh.write('default = https://hg.mozilla.org/mozilla-unified\n')
         fh.write('\n')
@@ -649,7 +661,7 @@ def current_firefox_checkout(check_output, env, hg=None):
     Returns one of None, ``git``, or ``hg``.
     """
     HG_ROOT_REVISIONS = set([
-        # From mozilla-central.
+        # From mozilla-unified.
         '8ba995b74e18334ab3707f27e9eb8f4e37ba3d29',
     ])
 
@@ -672,7 +684,7 @@ def current_firefox_checkout(check_output, env, hg=None):
                 pass
 
         # Just check for known-good files in the checkout, to prevent attempted
-        # foot-shootings.  Determining a canonical git checkout of mozilla-central
+        # foot-shootings.  Determining a canonical git checkout of mozilla-unified
         # is...complicated
         elif os.path.exists(git_dir):
             moz_configure = os.path.join(path, 'moz.configure')

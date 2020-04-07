@@ -11,7 +11,6 @@
 #include "nsIFileStreams.h"  // New Necko file streams
 #include <algorithm>
 
-#include "nsAutoPtr.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIClassOfService.h"
@@ -19,11 +18,9 @@
 #include "nsILoadContext.h"
 #include "nsIPrivateBrowsingChannel.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIComponentRegistrar.h"
 #include "nsIStorageStream.h"
 #include "nsISeekableStream.h"
 #include "nsIHttpChannel.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsIEncodedChannel.h"
 #include "nsIUploadChannel.h"
 #include "nsICacheInfoChannel.h"
@@ -38,20 +35,13 @@
 
 #include "nsIURL.h"
 #include "nsIFileURL.h"
-#include "nsIURIMutator.h"
 #include "nsIWebProgressListener.h"
 #include "nsIAuthPrompt.h"
 #include "nsIPrompt.h"
-#include "nsISHEntry.h"
-#include "nsIWebPageDescriptor.h"
 #include "nsIFormControl.h"
 #include "nsContentUtils.h"
 
-#include "nsIImageLoadingContent.h"
-
 #include "ftpCore.h"
-#include "nsITransport.h"
-#include "nsISocketTransport.h"
 #include "nsIStringBundle.h"
 #include "nsIProtocolHandler.h"
 
@@ -62,7 +52,7 @@
 #include "nsIMIMEInfo.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLSharedElement.h"
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/Printf.h"
 #include "ReferrerInfo.h"
 
@@ -326,10 +316,8 @@ NS_IMETHODIMP nsWebBrowserPersist::GetPersistFlags(uint32_t* aPersistFlags) {
 }
 NS_IMETHODIMP nsWebBrowserPersist::SetPersistFlags(uint32_t aPersistFlags) {
   mPersistFlags = aPersistFlags;
-  mReplaceExisting =
-      (mPersistFlags & PERSIST_FLAGS_REPLACE_EXISTING_FILES) ? true : false;
-  mSerializingOutput =
-      (mPersistFlags & PERSIST_FLAGS_SERIALIZE_OUTPUT) ? true : false;
+  mReplaceExisting = (mPersistFlags & PERSIST_FLAGS_REPLACE_EXISTING_FILES);
+  mSerializingOutput = (mPersistFlags & PERSIST_FLAGS_SERIALIZE_OUTPUT);
   return NS_OK;
 }
 
@@ -371,16 +359,18 @@ NS_IMETHODIMP nsWebBrowserPersist::SaveURI(
     nsIURI* aURI, nsIPrincipal* aPrincipal, uint32_t aCacheKey,
     nsIReferrerInfo* aReferrerInfo, nsIInputStream* aPostData,
     const char* aExtraHeaders, nsISupports* aFile,
-    nsILoadContext* aPrivacyContext) {
+    nsContentPolicyType aContentPolicyType, nsILoadContext* aPrivacyContext) {
   bool isPrivate = aPrivacyContext && aPrivacyContext->UsePrivateBrowsing();
   return SavePrivacyAwareURI(aURI, aPrincipal, aCacheKey, aReferrerInfo,
-                             aPostData, aExtraHeaders, aFile, isPrivate);
+                             aPostData, aExtraHeaders, aFile,
+                             aContentPolicyType, isPrivate);
 }
 
 NS_IMETHODIMP nsWebBrowserPersist::SavePrivacyAwareURI(
     nsIURI* aURI, nsIPrincipal* aPrincipal, uint32_t aCacheKey,
     nsIReferrerInfo* aReferrerInfo, nsIInputStream* aPostData,
-    const char* aExtraHeaders, nsISupports* aFile, bool aIsPrivate) {
+    const char* aExtraHeaders, nsISupports* aFile,
+    nsContentPolicyType aContentPolicy, bool aIsPrivate) {
   NS_ENSURE_TRUE(mFirstAndOnlyUse, NS_ERROR_FAILURE);
   mFirstAndOnlyUse = false;  // Stop people from reusing this object!
 
@@ -391,9 +381,9 @@ NS_IMETHODIMP nsWebBrowserPersist::SavePrivacyAwareURI(
 
   // SaveURI doesn't like broken uris.
   mPersistFlags |= PERSIST_FLAGS_FAIL_ON_BROKEN_LINKS;
-  rv = SaveURIInternal(aURI, aPrincipal, nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD,
-                       aCacheKey, aReferrerInfo, aPostData, aExtraHeaders,
-                       fileAsURI, false, aIsPrivate);
+  rv = SaveURIInternal(aURI, aPrincipal, aContentPolicy, aCacheKey,
+                       aReferrerInfo, aPostData, aExtraHeaders, fileAsURI,
+                       false, aIsPrivate);
   return NS_FAILED(rv) ? rv : NS_OK;
 }
 
@@ -656,7 +646,7 @@ void nsWebBrowserPersist::SerializeNextFile() {
       flatMap->Add(iter.Key(), mapTo);
     }
   }
-  mFlatURIMap = flatMap.forget();
+  mFlatURIMap = std::move(flatMap);
 
   nsCOMPtr<nsIFile> localFile;
   GetLocalFileFromURI(docData->mFile, getter_AddRefs(localFile));
@@ -1230,16 +1220,16 @@ nsresult nsWebBrowserPersist::SaveURIInternal(
     loadFlags |= nsIRequest::LOAD_FROM_CACHE;
   }
 
-  // Create a new cookieSettings for this download in order to send cookies
+  // Create a new cookieJarSettings for this download in order to send cookies
   // based on the current state of the prefs/permissions.
-  nsCOMPtr<nsICookieSettings> cookieSettings =
-      mozilla::net::CookieSettings::Create();
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
+      mozilla::net::CookieJarSettings::Create();
 
   // Open a channel to the URI
   nsCOMPtr<nsIChannel> inputChannel;
   rv = NS_NewChannel(getter_AddRefs(inputChannel), aURI, aTriggeringPrincipal,
                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                     aContentPolicyType, cookieSettings,
+                     aContentPolicyType, cookieJarSettings,
                      nullptr,  // aPerformanceStorage
                      nullptr,  // aLoadGroup
                      static_cast<nsIInterfaceRequestor*>(this), loadFlags);
@@ -2009,9 +1999,15 @@ nsresult nsWebBrowserPersist::CalculateAndAppendFileExt(
           mimeInfo->ExtensionExists(fileExt, &useOldExt);
         }
 
-        // can't use old extension so use primary extension
+        // If the url doesn't have an extension, or we don't know the extension,
+        // try to use the primary extension for the type. If we don't know the
+        // primary extension for the type, just continue with the url extension.
         if (!useOldExt) {
-          mimeInfo->GetPrimaryExtension(fileExt);
+          nsAutoCString primaryExt;
+          mimeInfo->GetPrimaryExtension(primaryExt);
+          if (!primaryExt.IsEmpty()) {
+            fileExt = primaryExt;
+          }
         }
 
         if (!fileExt.IsEmpty()) {
@@ -2172,14 +2168,14 @@ nsresult nsWebBrowserPersist::FixRedirectedChannelEntry(
   if (matchingKey) {
     // If a match was found, remove the data entry with the old channel
     // key and re-add it with the new channel key.
-    nsAutoPtr<OutputData> outputData;
+    mozilla::UniquePtr<OutputData> outputData;
     mOutputMap.Remove(matchingKey, &outputData);
     NS_ENSURE_TRUE(outputData, NS_ERROR_FAILURE);
 
     // Store data again with new channel unless told to ignore redirects.
     if (!(mPersistFlags & PERSIST_FLAGS_IGNORE_REDIRECTED_DATA)) {
       nsCOMPtr<nsISupports> keyPtr = do_QueryInterface(aNewChannel);
-      mOutputMap.Put(keyPtr, outputData.forget());
+      mOutputMap.Put(keyPtr, outputData.release());
     }
   }
 

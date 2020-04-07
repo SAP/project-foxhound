@@ -49,7 +49,7 @@ async function clearHistoryAndBookmarks() {
 async function waitForPreloaded(browser) {
   let readyState = await ContentTask.spawn(
     browser,
-    {},
+    null,
     () => content.document.readyState
   );
   if (readyState !== "complete") {
@@ -132,9 +132,11 @@ function addContentHelpers() {
  *     test   {Function} The test to run in the about:newtab content task taking
  *                       an arg from "before" and returns a result to "after"
  *     after  {Function} Optional. Runs after and with the result of "test"
+ * @param browserURL {optional String}
+ *   {String} This parameter is used to explicitly specify URL opened in new tab
  */
 // eslint-disable-next-line no-unused-vars
-function test_newtab(testInfo) {
+function test_newtab(testInfo, browserURL = "about:newtab") {
   // Extract any test parts or default to just the single content task
   let { before, test: contentTask, after } = testInfo;
   if (!before) {
@@ -165,7 +167,7 @@ function test_newtab(testInfo) {
     // Open about:newtab without using the default load listener
     let tab = await BrowserTestUtils.openNewForegroundTab(
       gBrowser,
-      "about:newtab",
+      browserURL,
       false
     );
 
@@ -174,14 +176,14 @@ function test_newtab(testInfo) {
     await waitForPreloaded(browser);
 
     // Add shared helpers to the content process
-    ContentTask.spawn(browser, {}, addContentHelpers);
+    SpecialPowers.spawn(browser, [], addContentHelpers);
 
     // Wait for React to render something
     await BrowserTestUtils.waitForCondition(
       () =>
-        ContentTask.spawn(
+        SpecialPowers.spawn(
           browser,
-          {},
+          [],
           () => content.document.getElementById("root").children.length
         ),
       "Should render activity stream content"
@@ -190,9 +192,9 @@ function test_newtab(testInfo) {
     // Chain together before -> contentTask -> after data passing
     try {
       let contentArg = await before({ pushPrefs: scopedPushPrefs, tab });
-      let contentResult = await ContentTask.spawn(
+      let contentResult = await SpecialPowers.spawn(
         browser,
-        contentArg,
+        [contentArg],
         contentTask
       );
       await after(contentResult);

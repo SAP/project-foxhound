@@ -46,7 +46,6 @@ namespace layers {
 class CompositingRenderTarget;
 class CompositingRenderTargetOGL;
 class DataTextureSource;
-class GLManagerCompositor;
 class ShaderProgramOGL;
 class TextureSource;
 class TextureSourceOGL;
@@ -106,7 +105,6 @@ class PerUnitTexturePoolOGL : public CompositorTexturePoolOGL {
 class CompositorOGL final : public Compositor {
   typedef mozilla::gl::GLContext GLContext;
 
-  friend class GLManagerCompositor;
   friend class CompositingRenderTargetOGL;
 
   std::map<ShaderConfigOGL, ShaderProgramOGL*> mPrograms;
@@ -145,11 +143,10 @@ class CompositorOGL final : public Compositor {
   }
 
   // Returns a render target for the native layer.
-  // aInvalidRegion will be mutated to include existing invalid areas in the
-  // layer. aInvalidRegion is in window coordinates, i.e. in the same space
-  // as aNativeLayer->GetRect().
+  // aInvalidRegion is in window coordinates, i.e. in the same space as
+  // aNativeLayer->GetPosition().
   already_AddRefed<CompositingRenderTargetOGL> RenderTargetForNativeLayer(
-      NativeLayer* aNativeLayer, gfx::IntRegion& aInvalidRegion);
+      NativeLayer* aNativeLayer, const gfx::IntRegion& aInvalidRegion);
 
   already_AddRefed<CompositingRenderTarget> CreateRenderTarget(
       const gfx::IntRect& aRect, SurfaceInitMode aInit) override;
@@ -192,6 +189,8 @@ class CompositorOGL final : public Compositor {
   void EndFrame() override;
 
   void WaitForGPU() override;
+
+  RefPtr<SurfacePoolHandle> GetSurfacePoolHandle() override;
 
   bool SupportsPartialTextureUpdate() override;
 
@@ -295,6 +294,7 @@ class CompositorOGL final : public Compositor {
   /** Widget associated with this compositor */
   LayoutDeviceIntSize mWidgetSize;
   RefPtr<GLContext> mGLContext;
+  RefPtr<SurfacePoolHandle> mSurfacePoolHandle;
   UniquePtr<GLBlitTextureImageHelper> mBlitTextureImageHelper;
   gfx::Matrix4x4 mProjMatrix;
   bool mCanRenderToDefaultFramebuffer = true;
@@ -522,6 +522,8 @@ class CompositorOGL final : public Compositor {
    * FlipY for the y-flipping calculation and by the DEAA shader.
    */
   gfx::IntSize mViewportSize;
+
+  gfx::IntRegion mCurrentFrameInvalidRegion;
 
   ShaderProgramOGL* mCurrentProgram;
 };

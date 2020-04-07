@@ -254,21 +254,6 @@ bool NeckoChild::DeallocPUDPSocketChild(PUDPSocketChild* child) {
   return true;
 }
 
-PDNSRequestChild* NeckoChild::AllocPDNSRequestChild(
-    const nsCString& aHost, const OriginAttributes& aOriginAttributes,
-    const uint32_t& aFlags) {
-  // We don't allocate here: instead we always use IPDL constructor that takes
-  // an existing object
-  MOZ_ASSERT_UNREACHABLE("AllocPDNSRequestChild should not be called on child");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPDNSRequestChild(PDNSRequestChild* aChild) {
-  DNSRequestChild* p = static_cast<DNSRequestChild*>(aChild);
-  p->ReleaseIPDLReference();
-  return true;
-}
-
 PChannelDiverterChild* NeckoChild::AllocPChannelDiverterChild(
     const ChannelDiverterArgs& channel) {
   return new ChannelDiverterChild();
@@ -308,12 +293,13 @@ mozilla::ipc::IPCResult NeckoChild::RecvAsyncAuthPromptForNestedFrame(
 
 /* Predictor Messages */
 mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictPrefetch(
-    const URIParams& aURI, const uint32_t& aHttpStatus) {
+    nsIURI* aURI, const uint32_t& aHttpStatus) {
   MOZ_ASSERT(NS_IsMainThread(),
              "PredictorChild::RecvOnPredictPrefetch "
              "off main thread.");
-
-  nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
+  if (!aURI) {
+    return IPC_FAIL(this, "aURI is null");
+  }
 
   // Get the current predictor
   nsresult rv = NS_OK;
@@ -321,43 +307,41 @@ mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictPrefetch(
       do_GetService("@mozilla.org/network/predictor;1", &rv);
   NS_ENSURE_SUCCESS(rv, IPC_FAIL_NO_REASON(this));
 
-  predictor->OnPredictPrefetch(uri, aHttpStatus);
+  predictor->OnPredictPrefetch(aURI, aHttpStatus);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictPreconnect(
-    const URIParams& aURI) {
+mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictPreconnect(nsIURI* aURI) {
   MOZ_ASSERT(NS_IsMainThread(),
              "PredictorChild::RecvOnPredictPreconnect "
              "off main thread.");
-
-  nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
-
+  if (!aURI) {
+    return IPC_FAIL(this, "aURI is null");
+  }
   // Get the current predictor
   nsresult rv = NS_OK;
   nsCOMPtr<nsINetworkPredictorVerifier> predictor =
       do_GetService("@mozilla.org/network/predictor;1", &rv);
   NS_ENSURE_SUCCESS(rv, IPC_FAIL_NO_REASON(this));
 
-  predictor->OnPredictPreconnect(uri);
+  predictor->OnPredictPreconnect(aURI);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictDNS(
-    const URIParams& aURI) {
+mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictDNS(nsIURI* aURI) {
   MOZ_ASSERT(NS_IsMainThread(),
              "PredictorChild::RecvOnPredictDNS off "
              "main thread.");
-
-  nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
-
+  if (!aURI) {
+    return IPC_FAIL(this, "aURI is null");
+  }
   // Get the current predictor
   nsresult rv = NS_OK;
   nsCOMPtr<nsINetworkPredictorVerifier> predictor =
       do_GetService("@mozilla.org/network/predictor;1", &rv);
   NS_ENSURE_SUCCESS(rv, IPC_FAIL_NO_REASON(this));
 
-  predictor->OnPredictDNS(uri);
+  predictor->OnPredictDNS(aURI);
   return IPC_OK();
 }
 

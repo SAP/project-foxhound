@@ -16,6 +16,8 @@ const LEARN_MORE_URI =
   DOCS_GA_PARAMS;
 
 add_task(async function() {
+  await pushPref("devtools.target-switching.enabled", true);
+
   const hud = await openNewTabAndConsole(TEST_URI);
 
   await navigateAndCheckWarningMessage(
@@ -86,10 +88,10 @@ add_task(async function() {
 });
 
 async function navigateAndCheckWarningMessage({ url, name, text }, hud) {
-  hud.ui.clearOutput(true);
+  await clearOutput(hud);
 
   const onMessage = waitForMessage(hud, text, ".message.warn");
-  BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
+  await navigateTo(url);
   const { node } = await onMessage;
   ok(node, name);
 

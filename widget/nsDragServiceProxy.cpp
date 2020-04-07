@@ -6,7 +6,6 @@
 
 #include "nsDragServiceProxy.h"
 #include "mozilla/dom/Document.h"
-#include "nsISupportsPrimitives.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/UniquePtr.h"
@@ -73,7 +72,7 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
 
         mozilla::Unused << child->SendInvokeDragSession(
             dataTransfers, aActionType, Some(std::move(surfaceData)), stride,
-            dataSurface->GetFormat(), dragRect, IPC::Principal(principal), csp);
+            dataSurface->GetFormat(), dragRect, principal, csp);
         StartDragSession();
         return NS_OK;
       }
@@ -82,7 +81,7 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
 
   mozilla::Unused << child->SendInvokeDragSession(
       dataTransfers, aActionType, Nothing(), 0, static_cast<SurfaceFormat>(0),
-      dragRect, IPC::Principal(principal), csp);
+      dragRect, principal, csp);
   StartDragSession();
   return NS_OK;
 }

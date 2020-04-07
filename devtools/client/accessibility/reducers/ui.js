@@ -20,7 +20,7 @@ const {
   UPDATE_DETAILS,
   PREF_KEYS,
   PREFS,
-} = require("../constants");
+} = require("devtools/client/accessibility/constants");
 
 const TreeView = require("devtools/client/shared/components/tree/TreeView");
 
@@ -178,17 +178,14 @@ function onPrefChange(state, { name, value }) {
  * @param  {Object}  action  Redux action object
  * @return {Object}  updated state
  */
-function onReset(state, { accessibility, supports }) {
-  const { enabled, canBeDisabled, canBeEnabled } = accessibility;
+function onReset(state, { enabled, canBeDisabled, canBeEnabled, supports }) {
   const newState = {
     ...getInitialState(),
     enabled,
     canBeDisabled,
     canBeEnabled,
+    supports,
   };
-  if (supports) {
-    newState.supports = supports;
-  }
 
   return newState;
 }

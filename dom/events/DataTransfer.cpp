@@ -5,11 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Span.h"
 #include "mozilla/StaticPrefs_dom.h"
-
 #include "DataTransfer.h"
 
 #include "nsISupportsPrimitives.h"
@@ -19,6 +19,7 @@
 #include "nsError.h"
 #include "nsIDragService.h"
 #include "nsIClipboard.h"
+#include "nsIXPConnect.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
 #include "nsIObjectInputStream.h"
@@ -232,7 +233,7 @@ DataTransfer::DataTransfer(nsISupports* aParent, EventMessage aEventMessage,
                "invalid event type for DataTransfer constructor");
 }
 
-DataTransfer::~DataTransfer() {}
+DataTransfer::~DataTransfer() = default;
 
 // static
 already_AddRefed<DataTransfer> DataTransfer::Constructor(
@@ -339,43 +340,14 @@ void DataTransfer::GetTypes(nsTArray<nsString>& aTypes,
   // Gecko-internal callers too, clear it to be safe.
   aTypes.Clear();
 
-  const nsTArray<RefPtr<DataTransferItem>>* items = mItems->MozItemsAt(0);
-  if (NS_WARN_IF(!items)) {
-    return;
-  }
-
-  for (uint32_t i = 0; i < items->Length(); i++) {
-    DataTransferItem* item = items->ElementAt(i);
-    MOZ_ASSERT(item);
-
-    if (item->ChromeOnly() && aCallerType != CallerType::System) {
-      continue;
-    }
-
-    // NOTE: The reason why we get the internal type here is because we want
-    // kFileMime to appear in the types list for backwards compatibility
-    // reasons.
-    nsAutoString type;
-    item->GetInternalType(type);
-    if (item->Kind() != DataTransferItem::KIND_FILE ||
-        type.EqualsASCII(kFileMime)) {
-      // If the entry has kind KIND_STRING or KIND_OTHER we want to add it to
-      // the list.
-      aTypes.AppendElement(type);
-    }
-  }
-
-  for (uint32_t i = 0; i < mItems->Length(); ++i) {
-    bool found = false;
-    DataTransferItem* item = mItems->IndexedGetter(i, found);
-    MOZ_ASSERT(found);
-    if (item->Kind() != DataTransferItem::KIND_FILE) {
-      continue;
-    }
-    aTypes.AppendElement(NS_LITERAL_STRING("Files"));
-    break;
-  }
+  return mItems->GetTypes(aTypes, aCallerType);
 }
+
+bool DataTransfer::HasType(const nsAString& aType) const {
+  return mItems->HasType(aType);
+}
+
+bool DataTransfer::HasFile() const { return mItems->HasFile(); }
 
 void DataTransfer::GetData(const nsAString& aFormat, nsAString& aData,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
@@ -561,8 +533,7 @@ nsresult DataTransfer::GetDataAtInternal(const nsAString& aFormat,
   }
 
   // If we have chrome only content, and we aren't chrome, don't allow access
-  if (!nsContentUtils::IsSystemPrincipal(aSubjectPrincipal) &&
-      item->ChromeOnly()) {
+  if (!aSubjectPrincipal->IsSystemPrincipal() && item->ChromeOnly()) {
     return NS_OK;
   }
 
@@ -605,7 +576,7 @@ void DataTransfer::MozGetDataAt(JSContext* aCx, const nsAString& aFormat,
 bool DataTransfer::PrincipalMaySetData(const nsAString& aType,
                                        nsIVariant* aData,
                                        nsIPrincipal* aPrincipal) {
-  if (!nsContentUtils::IsSystemPrincipal(aPrincipal)) {
+  if (!aPrincipal->IsSystemPrincipal()) {
     DataTransferItem::eKind kind = DataTransferItem::KindFromData(aData);
     if (kind == DataTransferItem::KIND_OTHER) {
       NS_WARNING("Disallowing adding non string/file types to DataTransfer");
@@ -735,7 +706,6 @@ void DataTransfer::GetExternalTransferableFormats(
       aResult->AppendElement(nsCString(format));
     }
   }
-  return;
 }
 
 nsresult DataTransfer::SetDataAtInternal(const nsAString& aFormat,

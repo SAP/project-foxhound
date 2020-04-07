@@ -41,11 +41,6 @@ const FUZZ_IMAGE_32 = {
   path: "automation/taskcluster/docker-fuzz32"
 };
 
-const HACL_GEN_IMAGE = {
-  name: "hacl",
-  path: "automation/taskcluster/docker-hacl"
-};
-
 const SAW_IMAGE = {
   name: "saw",
   path: "automation/taskcluster/docker-saw"
@@ -107,6 +102,11 @@ queue.filter(task => {
   if (task.group == "Cipher" && task.platform == "aarch64" && task.env &&
       (task.env.NSS_DISABLE_PCLMUL == "1" || task.env.NSS_DISABLE_HW_AES == "1"
        || task.env.NSS_DISABLE_AVX == "1")) {
+    return false;
+  }
+
+  // Don't run DBM builds on aarch64.
+  if (task.group == "DBM" && task.platform == "aarch64") {
     return false;
   }
 
@@ -354,8 +354,7 @@ async function scheduleMac(name, base, args = "") {
        base.collection != "asan" &&
        base.collection != "fips" &&
        base.collection != "fuzz")) {
-    let nspr_gyp = gyp_cmd + "--nspr-only --nspr-test-build ";
-    // TODO (bug 1385039): nspr_gyp += "--nspr-test-run ";
+    let nspr_gyp = gyp_cmd + "--nspr-only --nspr-test-build --nspr-test-run ";
     let nspr_build = merge(build_base_without_command_symbol, {
       command: [
         MAC_CHECKOUT_CMD,
@@ -424,8 +423,7 @@ async function scheduleLinux(name, overrides, args = "") {
         overrides.collection != "asan" &&
         overrides.collection != "fips" &&
         overrides.collection != "fuzz")) {
-    let nspr_gyp = checkout_and_gyp + "--nspr-only --nspr-test-build ";
-    // TODO (bug 1385039): nspr_gyp += "--nspr-test-run ";
+    let nspr_gyp = checkout_and_gyp + "--nspr-only --nspr-test-build --nspr-test-run ";
 
     let nspr_base = merge({
       command: [
@@ -502,7 +500,7 @@ async function scheduleLinux(name, overrides, args = "") {
   }
 
   // The task that generates certificates.
-  let task_cert = queue.scheduleTask(merge(build_base, {
+  let cert_base = merge(build_base, {
     name: "Certificates",
     command: [
       "/bin/bash",
@@ -511,7 +509,8 @@ async function scheduleLinux(name, overrides, args = "") {
     ],
     parent: task_build,
     symbol: "Certs"
-  }));
+  });
+  let task_cert = queue.scheduleTask(cert_base);
 
   // Schedule tests.
   scheduleTests(task_build, task_cert, merge(base, {
@@ -593,6 +592,25 @@ async function scheduleLinux(name, overrides, args = "") {
     ],
     symbol: "modular"
   }));
+
+  if (base.collection != "make") {
+    let task_build_dbm = queue.scheduleTask(merge(extra_base, {
+      name: `${name} w/ legacy-db`,
+      command: [
+        "/bin/bash",
+        "-c",
+        checkout_and_gyp + "--enable-legacy-db"
+      ],
+      symbol: "B",
+      group: "DBM",
+    }));
+
+    let task_cert_dbm = queue.scheduleTask(merge(cert_base, {
+      parent: task_build_dbm,
+      group: "DBM",
+      symbol: "Certs"
+    }));
+  }
 
   return queue.submit();
 }
@@ -832,11 +850,11 @@ async function scheduleWindows(name, base, build_script) {
     workerType: "win2012r2",
     env: {
       PATH: "c:\\mozilla-build\\bin;c:\\mozilla-build\\python;" +
-	    "c:\\mozilla-build\\msys\\local\\bin;c:\\mozilla-build\\7zip;" +
-	    "c:\\mozilla-build\\info-zip;c:\\mozilla-build\\python\\Scripts;" +
-	    "c:\\mozilla-build\\yasm;c:\\mozilla-build\\msys\\bin;" +
-	    "c:\\Windows\\system32;c:\\mozilla-build\\upx391w;" +
-	    "c:\\mozilla-build\\moztools-x64\\bin;c:\\mozilla-build\\wget",
+           "c:\\mozilla-build\\msys\\local\\bin;c:\\mozilla-build\\7zip;" +
+           "c:\\mozilla-build\\info-zip;c:\\mozilla-build\\python\\Scripts;" +
+           "c:\\mozilla-build\\yasm;c:\\mozilla-build\\msys\\bin;" +
+           "c:\\Windows\\system32;c:\\mozilla-build\\upx391w;" +
+           "c:\\mozilla-build\\moztools-x64\\bin;c:\\mozilla-build\\wget",
       DOMSUF: "localdomain",
       HOST: "localhost",
     },
@@ -870,8 +888,7 @@ async function scheduleWindows(name, base, build_script) {
        base.collection != "fips" &&
        base.collection != "fuzz")) {
     let nspr_gyp =
-      `bash -c 'nss/automation/taskcluster/windows/${build_script} --nspr-only --nspr-test-build'`;
-      // TODO (bug 1385039): add --nspr-test-run
+      `bash -c 'nss/automation/taskcluster/windows/${build_script} --nspr-only --nspr-test-build --nspr-test-run'`;
     let nspr_build = merge(build_without_command_symbol, {
       command: [
         WINDOWS_CHECKOUT_CMD,
@@ -1004,6 +1021,10 @@ function scheduleTests(task_build, task_cert, test_base) {
       NSS_DISABLE_SSSE3: "1"
     }, group: "Cipher"
   }));
+  queue.scheduleTask(merge(cert_base_long, {
+    name: "Cipher tests", symbol: "NoSSE4.1", tests: "cipher",
+    env: {NSS_DISABLE_SSE4_1: "1"}, group: "Cipher"
+  }));
   queue.scheduleTask(merge(cert_base, {
     name: "EC tests", symbol: "EC", tests: "ec"
   }));
@@ -1041,12 +1062,6 @@ function scheduleTests(task_build, task_cert, test_base) {
   }));
   queue.scheduleTask(merge(ssl_base, {
     name: "SSL tests (pkix)", symbol: "pkix", cycle: "pkix"
-  }));
-  queue.scheduleTask(merge(ssl_base, {
-    name: "SSL tests (sharedb)", symbol: "sharedb", cycle: "sharedb"
-  }));
-  queue.scheduleTask(merge(ssl_base, {
-    name: "SSL tests (upgradedb)", symbol: "upgradedb", cycle: "upgradedb"
   }));
   queue.scheduleTask(merge(ssl_base, {
     name: "SSL tests (stress)", symbol: "stress", cycle: "sharedb",
@@ -1138,7 +1153,7 @@ async function scheduleTools() {
   queue.scheduleTask(merge(base, {
     symbol: "hacl",
     name: "hacl",
-    image: HACL_GEN_IMAGE,
+    image: LINUX_BUILDS_IMAGE,
     command: [
       "/bin/bash",
       "-c",
@@ -1184,18 +1199,22 @@ async function scheduleTools() {
     ]
   }));
 
-  queue.scheduleTask(merge(base, {
-    parent: task_saw,
-    symbol: "ChaCha20",
-    group: "SAW",
-    name: "chacha20.saw",
-    image: SAW_IMAGE,
-    command: [
-      "/bin/bash",
-      "-c",
-      "bin/checkout.sh && nss/automation/taskcluster/scripts/run_saw.sh chacha20"
-    ]
-  }));
+  // TODO: The ChaCha20 saw verification is currently disabled because the new
+  //       HACL 32-bit code can't be verified by saw right now to the best of
+  //       my knowledge.
+  //       Bug 1604130
+  // queue.scheduleTask(merge(base, {
+  //   parent: task_saw,
+  //   symbol: "ChaCha20",
+  //   group: "SAW",
+  //   name: "chacha20.saw",
+  //   image: SAW_IMAGE,
+  //   command: [
+  //     "/bin/bash",
+  //     "-c",
+  //     "bin/checkout.sh && nss/automation/taskcluster/scripts/run_saw.sh chacha20"
+  //   ]
+  // }));
 
   queue.scheduleTask(merge(base, {
     parent: task_saw,
@@ -1214,7 +1233,15 @@ async function scheduleTools() {
     symbol: "Coverage",
     name: "Coverage",
     image: FUZZ_IMAGE,
+    type: "other",
     features: ["allowPtrace"],
+    artifacts: {
+      public: {
+        expires: 24 * 7,
+        type: "directory",
+        path: "/home/worker/artifacts"
+      }
+    },
     command: [
       "/bin/bash",
       "-c",

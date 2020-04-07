@@ -58,7 +58,13 @@ XPIDL_SOURCES += [
 
 XPIDL_MODULE = 'xul'
 
+EXPORTS.mozilla.dom += [
+    'ChromeObserver.h',
+]
+
+
 UNIFIED_SOURCES += [
+    'ChromeObserver.cpp',
     'nsXULControllers.cpp',
 ]
 
@@ -73,9 +79,6 @@ LOCAL_INCLUDES += [
     '/layout/xul',
     '/layout/xul/tree',
 ]
-
-if CONFIG['MOZ_XBL']:
-    LOCAL_INCLUDES += ['/dom/xbl']
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

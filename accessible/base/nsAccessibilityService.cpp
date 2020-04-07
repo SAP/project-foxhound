@@ -26,7 +26,6 @@
 #include "nsAttrName.h"
 #include "nsDOMTokenList.h"
 #include "nsEventShell.h"
-#include "nsIURI.h"
 #include "nsTextFormatter.h"
 #include "OuterDocAccessible.h"
 #include "Role.h"
@@ -38,7 +37,6 @@
 #include "TextLeafAccessibleWrap.h"
 #include "TreeWalker.h"
 #include "xpcAccessibleApplication.h"
-#include "xpcAccessibleDocument.h"
 
 #ifdef MOZ_ACCESSIBILITY_ATK
 #  include "AtkSocketAccessible.h"
@@ -334,6 +332,25 @@ void nsAccessibilityService::NotifyOfAnchorJumpTo(nsIContent* aTargetNode) {
 void nsAccessibilityService::FireAccessibleEvent(uint32_t aEvent,
                                                  Accessible* aTarget) {
   nsEventShell::FireEvent(aEvent, aTarget);
+}
+
+void nsAccessibilityService::NotifyOfImageSizeAvailable(
+    mozilla::PresShell* aPresShell, nsIContent* aContent) {
+  // If the size of an image is initially unknown, it will have the invisible
+  // state (and a 0 width and height), causing it to be ignored by some screen
+  // readers. Fire a state change event to update any client caches.
+  DocAccessible* document = GetDocAccessible(aPresShell);
+  if (document) {
+    Accessible* accessible = document->GetAccessible(aContent);
+    // The accessible may not be an ImageAccessible if this was previously a
+    // broken image with an alt attribute. In that case, do nothing; the
+    // accessible will be recreated if this becomes a valid image.
+    if (accessible && accessible->IsImage()) {
+      RefPtr<AccEvent> event =
+          new AccStateChangeEvent(accessible, states::INVISIBLE, false);
+      document->FireDelayedEvent(event);
+    }
+  }
 }
 
 Accessible* nsAccessibilityService::GetRootDocumentAccessible(
@@ -1022,7 +1039,10 @@ Accessible* nsAccessibilityService::CreateAccessible(nsINode* aNode,
 
     if (!isARIATablePart || frame->AccessibleType() == eHTMLTableCellType ||
         frame->AccessibleType() == eHTMLTableRowType ||
-        frame->AccessibleType() == eHTMLTableType) {
+        frame->AccessibleType() == eHTMLTableType ||
+        // We should always use OuterDocAccessible for OuterDocs, even for
+        // ARIA table roles.
+        frame->AccessibleType() == eOuterDocType) {
       // Prefer to use markup to decide if and what kind of accessible to
       // create,
       const HTMLMarkupMapInfo* markupMap =

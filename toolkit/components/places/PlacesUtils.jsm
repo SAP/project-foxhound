@@ -438,14 +438,12 @@ var PlacesUtils = {
   TOPIC_INIT_COMPLETE: "places-init-complete",
   TOPIC_DATABASE_LOCKED: "places-database-locked",
   TOPIC_EXPIRATION_FINISHED: "places-expiration-finished",
-  TOPIC_FEEDBACK_UPDATED: "places-autocomplete-feedback-updated",
   TOPIC_FAVICONS_EXPIRED: "places-favicons-expired",
   TOPIC_VACUUM_STARTING: "places-vacuum-starting",
   TOPIC_BOOKMARKS_RESTORE_BEGIN: "bookmarks-restore-begin",
   TOPIC_BOOKMARKS_RESTORE_SUCCESS: "bookmarks-restore-success",
   TOPIC_BOOKMARKS_RESTORE_FAILED: "bookmarks-restore-failed",
 
-  ACTION_SCHEME: "moz-action:",
   observers: PlacesObservers,
 
   /**
@@ -577,28 +575,6 @@ var PlacesUtils = {
   },
 
   /**
-   * Makes a moz-action URI for the given action and set of parameters.
-   *
-   * @param   type
-   *          The action type.
-   * @param   params
-   *          A JS object of action params.
-   * @returns A moz-action URI as a string.
-   */
-  mozActionURI(type, params) {
-    let encodedParams = {};
-    for (let key in params) {
-      // Strip null or undefined.
-      // Regardless, don't encode them or they would be converted to a string.
-      if (params[key] === null || params[key] === undefined) {
-        continue;
-      }
-      encodedParams[key] = encodeURIComponent(params[key]);
-    }
-    return this.ACTION_SCHEME + type + "," + JSON.stringify(encodedParams);
-  },
-
-  /**
    * Parses a moz-action URL and returns its parts.
    *
    * @param url A moz-action URI.
@@ -611,7 +587,7 @@ var PlacesUtils = {
       url = url.href;
     }
     // Faster bailout.
-    if (!url.startsWith(this.ACTION_SCHEME)) {
+    if (!url.startsWith("moz-action:")) {
       return null;
     }
 
@@ -2949,49 +2925,42 @@ var GuidHelper = {
   },
 
   ensureObservingRemovedItems() {
-    if (!("observer" in this)) {
-      /**
-       * This observers serves two purposes:
-       * (1) Invalidate cached id<->GUID paris on when items are removed.
-       * (2) Cache GUIDs given us free of charge by onItemAdded/onItemRemoved.
-       *      So, for exmaple, when the NewBookmark needs the new GUID, we already
-       *      have it cached.
-       */
-      let listener = events => {
-        for (let event of events) {
-          this.updateCache(event.id, event.guid);
-          this.updateCache(event.parentId, event.parentGuid);
-        }
-      };
-      this.observer = {
-        onItemRemoved: (
-          aItemId,
-          aParentId,
-          aIndex,
-          aItemTyep,
-          aURI,
-          aGuid,
-          aParentGuid
-        ) => {
-          this.guidsForIds.delete(aItemId);
-          this.idsForGuids.delete(aGuid);
-          this.updateCache(aParentId, aParentGuid);
-        },
-
-        QueryInterface: ChromeUtils.generateQI([Ci.nsINavBookmarkObserver]),
-
-        onBeginUpdateBatch() {},
-        onEndUpdateBatch() {},
-        onItemChanged() {},
-        onItemVisited() {},
-        onItemMoved() {},
-      };
-      PlacesUtils.bookmarks.addObserver(this.observer);
-      PlacesUtils.observers.addListener(["bookmark-added"], listener);
-      PlacesUtils.registerShutdownFunction(() => {
-        PlacesUtils.bookmarks.removeObserver(this.observer);
-        PlacesUtils.observers.removeListener(["bookmark-added"], listener);
-      });
+    if (this.addListeners) {
+      return;
     }
+    /**
+     * This observers serves two purposes:
+     * (1) Invalidate cached id<->GUID paris on when items are removed.
+     * (2) Cache GUIDs given us free of charge by onItemAdded/onItemRemoved.
+     *      So, for exmaple, when the NewBookmark needs the new GUID, we already
+     *      have it cached.
+     */
+    let listener = events => {
+      for (let event of events) {
+        switch (event.type) {
+          case "bookmark-added":
+            this.updateCache(event.id, event.guid);
+            this.updateCache(event.parentId, event.parentGuid);
+            break;
+          case "bookmark-removed":
+            this.guidsForIds.delete(event.id);
+            this.idsForGuids.delete(event.guid);
+            this.updateCache(event.parentId, event.parentGuid);
+            break;
+        }
+      }
+    };
+
+    this.addListeners = true;
+    PlacesUtils.observers.addListener(
+      ["bookmark-added", "bookmark-removed"],
+      listener
+    );
+    PlacesUtils.registerShutdownFunction(() => {
+      PlacesUtils.observers.removeListener(
+        ["bookmark-added", "bookmark-removed"],
+        listener
+      );
+    });
   },
 };

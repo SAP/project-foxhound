@@ -7,7 +7,7 @@ load 308917-1.svg
 load 310436-1.svg
 load 310638.svg
 load 313737-1.xml
-load chrome://reftest/content/crashtests/layout/svg/crashtests/314244-1.xul
+load chrome://reftest/content/crashtests/layout/svg/crashtests/314244-1.xhtml
 load 322185-1.svg
 load 322215-1.svg
 load 323704-1.svg
@@ -18,7 +18,7 @@ load 327706-1.svg
 load 327711-1.svg
 load 328137-1.svg
 load 329848-1.svg
-load chrome://reftest/content/crashtests/layout/svg/crashtests/337408-1.xul
+load chrome://reftest/content/crashtests/layout/svg/crashtests/337408-1.xhtml
 load 338301-1.xhtml
 load 338312-1.xhtml
 load 340083-1.svg
@@ -61,13 +61,11 @@ load 385552-2.svg
 load 385840-1.svg
 load 385852-1.svg
 load 386475-1.xhtml
-skip-if(!xbl) load 386566-1.svg
 load 386690-1.svg
 load 387290-1.svg
 load 402408-1.svg
 load 404677-1.xhtml
 load 409565-1.xhtml
-skip-if(!xbl) load 409573-1.svg
 load 420697-1.svg
 load 420697-2.svg
 load 429774-1.svg
@@ -232,3 +230,6 @@ load 1548985-2.svg
 load 1555851.html
 load invalidation-of-opacity-0.html
 load 1563779.html
+load 1600855.html
+load 1601824.html
+load 1605223-1.html

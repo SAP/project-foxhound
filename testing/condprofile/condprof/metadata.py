@@ -5,24 +5,24 @@
 """
 import os
 import datetime
-import collections
+from collections.abc import MutableMapping
 import json
 
-from condprof.util import LOG
+from condprof.util import logger
 
 
 METADATA_NAME = "condprofile.json"
 
 
-class Metadata(collections.MutableMapping):
+class Metadata(MutableMapping):
     """ dict-like class that holds metadata for a profile.
     """
 
     def __init__(self, profile_dir):
         self.metadata_file = os.path.join(profile_dir, METADATA_NAME)
-        LOG("Reading existing metadata at %s" % self.metadata_file)
+        logger.info("Reading existing metadata at %s" % self.metadata_file)
         if not os.path.exists(self.metadata_file):
-            LOG("Could not find the metadata file in that profile")
+            logger.info("Could not find the metadata file in that profile")
             self._data = {}
         else:
             with open(self.metadata_file) as f:
@@ -67,7 +67,7 @@ class Metadata(collections.MutableMapping):
 
     def write(self, **extras):
         # writing metadata
-        LOG("Creating metadata...")
+        logger.info("Creating metadata...")
         self._data.update(**extras)
         ts = str(datetime.datetime.now())
         if "created" not in self._data:
@@ -80,6 +80,6 @@ class Metadata(collections.MutableMapping):
         # adding info about the firefox version
         # XXX build ID ??
         # XXX android ??
-        LOG("Saving metadata file in %s" % self.metadata_file)
+        logger.info("Saving metadata file in %s" % self.metadata_file)
         with open(self.metadata_file, "w") as f:
             f.write(json.dumps(self._data))

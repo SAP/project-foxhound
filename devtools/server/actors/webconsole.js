@@ -10,15 +10,14 @@ const { webconsoleSpec } = require("devtools/shared/specs/webconsole");
 
 const Services = require("Services");
 const { Cc, Ci, Cu } = require("chrome");
-const { DebuggerServer } = require("devtools/server/debugger-server");
+const { DevToolsServer } = require("devtools/server/devtools-server");
 const { ActorPool } = require("devtools/server/actors/common");
 const { ThreadActor } = require("devtools/server/actors/thread");
 const { ObjectActor } = require("devtools/server/actors/object");
-const {
-  LongStringActor,
-} = require("devtools/server/actors/object/long-string");
+const { LongStringActor } = require("devtools/server/actors/string");
 const {
   createValueGrip,
+  isArray,
   stringIsLong,
 } = require("devtools/server/actors/object/utils");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
@@ -38,8 +37,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "ConsoleProgressListener",
-  "devtools/server/actors/webconsole/listeners/console-progress",
+  "ConsoleFileActivityListener",
+  "devtools/server/actors/webconsole/listeners/console-file-activity",
   true
 );
 loader.lazyRequireGetter(
@@ -175,7 +174,7 @@ function isObject(value) {
  *
  * @constructor
  * @param object connection
- *        The connection to the client, DebuggerServerConnection.
+ *        The connection to the client, DevToolsServerConnection.
  * @param object [parentActor]
  *        Optional, the parent actor.
  */
@@ -258,7 +257,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
   _listeners: null,
 
   /**
-   * The debugger server connection instance.
+   * The devtools server connection instance.
    * @type object
    */
   conn: null,
@@ -388,9 +387,9 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
   consoleAPIListener: null,
 
   /**
-   * The ConsoleProgressListener instance.
+   * The ConsoleFileActivityListener instance.
    */
-  consoleProgressListener: null,
+  consoleFileActivityListener: null,
 
   /**
    * The ConsoleReflowListener instance.
@@ -551,6 +550,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     const actor = new ObjectActor(
       object,
       {
+        thread: this.parentActor.threadActor,
         getGripDepth: () => this._gripDepth,
         incrementGripDepth: () => this._gripDepth++,
         decrementGripDepth: () => this._gripDepth--,
@@ -579,9 +579,9 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    *         A LongStringActor object that wraps the given string.
    */
   longStringGrip: function(string, pool) {
-    const actor = new LongStringActor(string);
+    const actor = new LongStringActor(this.conn, string);
     pool.addActor(actor);
-    return actor.grip();
+    return actor.form();
   },
 
   /**
@@ -632,10 +632,33 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
   },
 
   /**
+   * Preprocess a debugger object (e.g. return the `boundTargetFunction`
+   * debugger object if the given debugger object is a bound function).
+   *
+   * This method is called by both the `inspect` binding implemented
+   * for the webconsole and the one implemented for the devtools API
+   * `browser.devtools.inspectedWindow.eval`.
+   */
+  preprocessDebuggerObject(dbgObj) {
+    // Returns the bound target function on a bound function.
+    if (dbgObj && dbgObj.isBoundFunction && dbgObj.boundTargetFunction) {
+      return dbgObj.boundTargetFunction;
+    }
+
+    return dbgObj;
+  },
+
+  /**
    * This helper is used by the WebExtensionInspectedWindowActor to
    * inspect an object in the developer toolbox.
+   *
+   * NOTE: shared parts related to preprocess the debugger object (between
+   * this function and the `inspect` webconsole command defined in
+   * "devtools/server/actor/webconsole/utils.js") should be added to
+   * the webconsole actors' `preprocessDebuggerObject` method.
    */
   inspectObject(dbgObj, inspectFromAnnotation) {
+    dbgObj = this.preprocessDebuggerObject(dbgObj);
     this.emit("inspectObject", {
       objectActor: this.createValueGrip(dbgObj),
       inspectFromAnnotation,
@@ -657,7 +680,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * @return object
    *        The response object which holds the startedListeners array.
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   startListeners: async function(listeners) {
     const startedListeners = [];
     const window = !this.parentActor.isRootActor ? this.window : null;
@@ -773,13 +796,13 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
             break;
           }
           if (this.window instanceof Ci.nsIDOMWindow) {
-            if (!this.consoleProgressListener) {
-              this.consoleProgressListener = new ConsoleProgressListener(
+            if (!this.consoleFileActivityListener) {
+              this.consoleFileActivityListener = new ConsoleFileActivityListener(
                 this.window,
                 this
               );
             }
-            this.consoleProgressListener.startMonitor();
+            this.consoleFileActivityListener.startMonitor();
             startedListeners.push(event);
           }
           break;
@@ -828,7 +851,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       traits: this.traits,
     };
   },
-  /* eslint-enable complexity */
 
   /**
    * Handler for the "stopListeners" request.
@@ -886,9 +908,9 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
           stoppedListeners.push(event);
           break;
         case "FileActivity":
-          if (this.consoleProgressListener) {
-            this.consoleProgressListener.stopMonitor();
-            this.consoleProgressListener = null;
+          if (this.consoleFileActivityListener) {
+            this.consoleFileActivityListener.stopMonitor();
+            this.consoleFileActivityListener = null;
           }
           stoppedListeners.push(event);
           break;
@@ -1137,7 +1159,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * @return object
    *         The evaluation response packet.
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   evaluateJS: function(request) {
     const input = request.text;
     const timestamp = Date.now();
@@ -1147,16 +1169,19 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       url: request.url,
       selectedNodeActor: request.selectedNodeActor,
       selectedObjectActor: request.selectedObjectActor,
+      eager: request.eager,
+      bindings: request.bindings,
+      lineNumber: request.lineNumber,
     };
     const { mapped } = request;
 
     // Set a flag on the thread actor which indicates an evaluation is being
     // done for the client. This can affect how debugger handlers behave.
-    this.parentActor.threadActor.insideClientEvaluation = true;
+    this.parentActor.threadActor.insideClientEvaluation = evalOptions;
 
     const evalInfo = evalWithDebugger(input, evalOptions, this);
 
-    this.parentActor.threadActor.insideClientEvaluation = false;
+    this.parentActor.threadActor.insideClientEvaluation = null;
 
     const evalResult = evalInfo.result;
     const helperResult = evalInfo.helperResult;
@@ -1280,7 +1305,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       }
     }
 
-    // If a value is encountered that the debugger server doesn't support yet,
+    // If a value is encountered that the devtools server doesn't support yet,
     // the console should remain functional.
     let resultGrip;
     if (!awaitResult) {
@@ -1298,16 +1323,20 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       }
     }
 
-    if (!awaitResult) {
-      this._lastConsoleInputEvaluation = result;
-    } else {
-      // If we evaluated a top-level await expression, we want to assign its result to the
-      // _lastConsoleInputEvaluation only when the promise resolves, and only if it
-      // resolves. If the promise rejects, we don't re-assign _lastConsoleInputEvaluation,
-      // it will keep its previous value.
-      awaitResult.then(res => {
-        this._lastConsoleInputEvaluation = this.makeDebuggeeValue(res);
-      });
+    // Don't update _lastConsoleInputEvaluation in eager evaluation, as it would interfere
+    // with the $_ command.
+    if (!request.eager) {
+      if (!awaitResult) {
+        this._lastConsoleInputEvaluation = result;
+      } else {
+        // If we evaluated a top-level await expression, we want to assign its result to the
+        // _lastConsoleInputEvaluation only when the promise resolves, and only if it
+        // resolves. If the promise rejects, we don't re-assign _lastConsoleInputEvaluation,
+        // it will keep its previous value.
+        awaitResult.then(res => {
+          this._lastConsoleInputEvaluation = this.makeDebuggeeValue(res);
+        });
+      }
     }
 
     return {
@@ -1325,7 +1354,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       notes: errorNotes,
     };
   },
-  /* eslint-enable complexity */
 
   /**
    * The Autocomplete request handler.
@@ -1348,7 +1376,8 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     cursor,
     frameActorId,
     selectedNodeActor,
-    authorizedEvaluations
+    authorizedEvaluations,
+    expressionVars = []
   ) {
     let dbgObject = null;
     let environment = null;
@@ -1395,6 +1424,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
         webconsoleActor: this,
         selectedNodeActor,
         authorizedEvaluations,
+        expressionVars,
       });
 
       if (result === null) {
@@ -1561,6 +1591,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       chromeWindow: this.chromeWindow.bind(this),
       makeDebuggeeValue: debuggerGlobal.makeDebuggeeValue.bind(debuggerGlobal),
       createValueGrip: this.createValueGrip.bind(this),
+      preprocessDebuggerObject: this.preprocessDebuggerObject.bind(this),
       sandbox: Object.create(null),
       helperResult: null,
       consoleActor: this,
@@ -1681,8 +1712,9 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
         lineNumber: s.line,
         columnNumber: s.column,
         functionName: s.functionDisplayName,
+        asyncCause: s.asyncCause ? s.asyncCause : undefined,
       });
-      s = s.parent;
+      s = s.parent || s.asyncParent;
     }
     return stack;
   },
@@ -1700,9 +1732,9 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     let lineText = pageError.sourceLine;
     if (
       lineText &&
-      lineText.length > DebuggerServer.LONG_STRING_INITIAL_LENGTH
+      lineText.length > DevToolsServer.LONG_STRING_INITIAL_LENGTH
     ) {
-      lineText = lineText.substr(0, DebuggerServer.LONG_STRING_INITIAL_LENGTH);
+      lineText = lineText.substr(0, DevToolsServer.LONG_STRING_INITIAL_LENGTH);
     }
 
     let notesArray = null;
@@ -1996,7 +2028,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * Handler for file activity. This method sends the file request information
    * to the remote Web Console client.
    *
-   * @see ConsoleProgressListener
+   * @see ConsoleFileActivityListener
    * @param string fileURI
    *        The requested file URI.
    */
@@ -2024,7 +2056,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     const result = WebConsoleUtils.cloneObject(message);
 
     result.workerType = WebConsoleUtils.getWorkerType(result) || "none";
-
     result.sourceId = this.getActorIdForInternalSourceId(result.sourceId);
 
     delete result.wrappedJSObject;
@@ -2050,10 +2081,92 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       return this.createValueGrip(string);
     });
 
+    if (result.level === "table") {
+      const tableItems = this._getConsoleTableMessageItems(result);
+      if (tableItems) {
+        result.arguments[0].ownProperties = tableItems;
+        result.arguments[0].preview = null;
+      }
+
+      // Only return the 2 first params.
+      result.arguments = result.arguments.slice(0, 2);
+    }
+
     result.category = message.category || "webdev";
     result.innerWindowID = message.innerID;
 
     return result;
+  },
+
+  /**
+   * Return the properties needed to display the appropriate table for a given
+   * console.table call.
+   * This function does a little more than creating an ObjectActor for the first
+   * parameter of the message. When layout out the console table in the output, we want
+   * to be able to look into sub-properties so the table can have a different layout (
+   * for arrays of arrays, objects with objects properties, arrays of objects, …).
+   * So here we need to retrieve the properties of the first parameter, and also all the
+   * sub-properties we might need.
+   *
+   * @param {Object} result: The console.table message.
+   * @returns {Object} An object containing the properties of the first argument of the
+   *                   console.table call.
+   */
+  _getConsoleTableMessageItems: function(result) {
+    if (
+      !result ||
+      !Array.isArray(result.arguments) ||
+      result.arguments.length == 0
+    ) {
+      return null;
+    }
+
+    const [tableItemGrip] = result.arguments;
+    const dataType = tableItemGrip.class;
+    const needEntries = ["Map", "WeakMap", "Set", "WeakSet"].includes(dataType);
+    const ignoreNonIndexedProperties = isArray(tableItemGrip);
+
+    const tableItemActor = this.getActorByID(tableItemGrip.actor);
+    if (!tableItemActor) {
+      return null;
+    }
+
+    // Retrieve the properties (or entries for Set/Map) of the console table first arg.
+    const iterator = needEntries
+      ? tableItemActor.enumEntries()
+      : tableItemActor.enumProperties({
+          ignoreNonIndexedProperties,
+        });
+    const { ownProperties } = iterator.all();
+
+    // The iterator returns a descriptor for each property, wherein the value could be
+    // in one of those sub-property.
+    const descriptorKeys = ["safeGetterValues", "getterValue", "value"];
+
+    Object.values(ownProperties).forEach(desc => {
+      if (typeof desc !== "undefined") {
+        descriptorKeys.forEach(key => {
+          if (desc && desc.hasOwnProperty(key)) {
+            const grip = desc[key];
+
+            // We need to load sub-properties as well to render the table in a nice way.
+            const actor = grip && this.getActorByID(grip.actor);
+            if (actor) {
+              const res = actor
+                .enumProperties({
+                  ignoreNonIndexedProperties: isArray(grip),
+                })
+                .all();
+              if (res && res.ownProperties) {
+                desc[key].ownProperties = res.ownProperties;
+              }
+            }
+          }
+        });
+      }
+    });
+
+    return ownProperties;
   },
 
   /**

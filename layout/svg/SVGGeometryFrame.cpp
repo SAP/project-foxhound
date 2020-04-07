@@ -66,7 +66,7 @@ class nsDisplaySVGGeometry final : public nsPaintedDisplayItem {
     MOZ_ASSERT(aFrame, "Must have a frame!");
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplaySVGGeometry() { MOZ_COUNT_DTOR(nsDisplaySVGGeometry); }
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplaySVGGeometry)
 #endif
 
   NS_DISPLAY_DECL_NAME("nsDisplaySVGGeometry", TYPE_SVG_GEOMETRY)
@@ -417,15 +417,17 @@ void SVGGeometryFrame::NotifySVGChanged(uint32_t aFlags) {
   // when it's not visible. See the complexities of GetBBoxContribution.
 
   if (aFlags & COORD_CONTEXT_CHANGED) {
+    auto* geom = static_cast<SVGGeometryElement*>(GetContent());
     // Stroke currently contributes to our mRect, which is why we have to take
     // account of stroke-width here. Note that we do not need to take account
     // of stroke-dashoffset since, although that can have a percentage value
     // that is resolved against our coordinate context, it does not affect our
     // mRect.
-    if (static_cast<SVGGeometryElement*>(GetContent())
-            ->GeometryDependsOnCoordCtx() ||
-        StyleSVG()->mStrokeWidth.HasPercent()) {
-      static_cast<SVGGeometryElement*>(GetContent())->ClearAnyCachedPath();
+    const auto& strokeWidth = StyleSVG()->mStrokeWidth;
+    if (geom->GeometryDependsOnCoordCtx() ||
+        (strokeWidth.IsLengthPercentage() &&
+         strokeWidth.AsLengthPercentage().HasPercent())) {
+      geom->ClearAnyCachedPath();
       nsSVGUtils::ScheduleReflowSVG(this);
     }
   }
@@ -657,8 +659,8 @@ void SVGGeometryFrame::Render(gfxContext* aContext, uint32_t aRenderComponents,
   SVGGeometryElement* element = static_cast<SVGGeometryElement*>(GetContent());
 
   AntialiasMode aaMode =
-      (StyleSVG()->mShapeRendering == NS_STYLE_SHAPE_RENDERING_OPTIMIZESPEED ||
-       StyleSVG()->mShapeRendering == NS_STYLE_SHAPE_RENDERING_CRISPEDGES)
+      (StyleSVG()->mShapeRendering == StyleShapeRendering::Optimizespeed ||
+       StyleSVG()->mShapeRendering == StyleShapeRendering::Crispedges)
           ? AntialiasMode::NONE
           : AntialiasMode::SUBPIXEL;
 

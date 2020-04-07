@@ -252,25 +252,25 @@ are three particular signed states relevant to us:
 Unsigned
   There are two ways to run unsigned extensions that use privileged APIs.
 
-  They can be loaded temporarily using a Firefox build where the build-time
-  setting ``AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS`` is true [source__]. Such
-  builds include Nightly and Developer Edition but not Beta or Release
-  [source__]. You can load extensions temporarily by visiting
-  about:debugging#/runtime/this-firefox and clicking "Load Temporary Add-on."
-  `web-ext <Workflow_>`__ also loads extensions temporarily.
+  They can be loaded temporarily using a Firefox Nightly build or
+  Developer Edition but not Beta or Release [source__]. You can load extensions
+  temporarily by visiting about:debugging#/runtime/this-firefox and clicking
+  "Load Temporary Add-on." `web-ext <Workflow_>`__ also loads extensions temporarily.
 
-  __ https://searchfox.org/mozilla-central/rev/3a61fb322f74a0396878468e50e4f4e97e369825/toolkit/components/extensions/Extension.jsm#1816
-  __ https://searchfox.org/mozilla-central/search?q=MOZ_ALLOW_LEGACY_EXTENSIONS&redirect=false
+  __ https://searchfox.org/mozilla-central/rev/053826b10f838f77c27507e5efecc96e34718541/toolkit/components/extensions/Extension.jsm#1884
 
-  They can be also be loaded normally (not temporarily) if you use a Firefox
-  build where the build-time setting ``AppConstants.MOZ_REQUIRE_SIGNING`` is
-  false [source__, source__] and you set the ``xpinstall.signatures.required``
-  pref to false. As in the previous paragraph, such builds include Nightly and
-  Developer Edition but not Beta or Release [source__].
+  They can be also be loaded normally (not temporarily) in a custom build where
+  the build-time setting ``AppConstants.MOZ_REQUIRE_SIGNING`` [source__, source__]
+  and ``xpinstall.signatures.required`` pref are both false. As in the previous
+  paragraph, such builds include Nightly and Developer Edition but not Beta or
+  Release [source__]. In addition, your custom build must modify the
+  ``Extension.isPrivileged`` getter__ to return true. This getter determines
+  whether an extension can access privileged APIs.
 
-  __ https://searchfox.org/mozilla-central/rev/7088fc958db5935eba24b413b1f16d6ab7bd13ea/toolkit/mozapps/extensions/internal/XPIProvider.jsm#2378
-  __ https://searchfox.org/mozilla-central/rev/7088fc958db5935eba24b413b1f16d6ab7bd13ea/toolkit/mozapps/extensions/internal/AddonSettings.jsm#36
+  __ https://searchfox.org/mozilla-central/rev/053826b10f838f77c27507e5efecc96e34718541/toolkit/mozapps/extensions/internal/XPIProvider.jsm#2382
+  __ https://searchfox.org/mozilla-central/rev/053826b10f838f77c27507e5efecc96e34718541/toolkit/mozapps/extensions/internal/AddonSettings.jsm#36
   __ https://searchfox.org/mozilla-central/search?q=MOZ_REQUIRE_SIGNING&case=false&regexp=false&path=
+  __ https://searchfox.org/mozilla-central/rev/053826b10f838f77c27507e5efecc96e34718541/toolkit/components/extensions/Extension.jsm#1874
 
   Extensions remain unsigned as you develop them. See the Workflow_ section for
   more.
@@ -285,7 +285,7 @@ Signed for testing (Signed for QA)
   [source__]. ``xpinstall.signatures.dev-root`` does not exist by default and
   must be created.
 
-  __ https://searchfox.org/mozilla-central/rev/25d9b05653f3417243af25a46fd6769addb6a50b/toolkit/mozapps/extensions/internal/XPIInstall.jsm#263
+  __ https://searchfox.org/mozilla-central/rev/053826b10f838f77c27507e5efecc96e34718541/toolkit/mozapps/extensions/internal/XPIInstall.jsm#262
 
   You encounter extensions that are signed for testing when you are writing
   extensions for experiments. See the Experiments_ section for details.
@@ -299,17 +299,10 @@ Signed for release
   You encounter extensions that are signed for release when you are writing
   extensions for experiments. See the Experiments_ section for details.
 
-The ``Extension.isPrivileged`` getter__ determines whether an extension can
-access privileged APIs. If you have a custom Firefox build and you want to grant
-your extension access regardless of its signed state and how it's loaded, you
-can modify the getter to return true unconditionally. This can be useful in a
-pinch.
-
-To see console logs from extensions in the browser console, check the "Show
-Content Messages" checkbox in the console. This is necessary because extensions
-run outside the main process.
-
-__ https://searchfox.org/mozilla-central/rev/34cb8d0a2a324043bcfc2c56f37b31abe7fb23a8/toolkit/components/extensions/Extension.jsm#1812
+.. important::
+  To see console logs from extensions in the browser console, select the "Show
+  Content Messages" option in the console's settings. This is necessary because
+  extensions run outside the main process.
 
 Experiments
 -----------
@@ -360,7 +353,7 @@ Add-on experiments
   Mozilla extensions.
 
   An add-on experiment can collect additional telemetry that's not collected in
-  the product by using the priveleged ``browser.telemetry`` WebExtensions API,
+  the product by using the privileged ``browser.telemetry`` WebExtensions API,
   and of course the product will continue to collect all the telemetry it
   usually does. The telemetry pings from users running the experiment will be
   correlated with the experiment with no extra work on our part.

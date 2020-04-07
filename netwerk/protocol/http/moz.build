@@ -9,7 +9,6 @@ with Files('**'):
 
 XPIDL_SOURCES += [
     'nsIBackgroundChannelRegistrar.idl',
-    'nsIChildProcessChannelListener.idl',
     'nsIHttpActivityObserver.idl',
     'nsIHttpAuthenticableChannel.idl',
     'nsIHttpAuthenticator.idl',
@@ -48,7 +47,13 @@ EXPORTS.mozilla.net += [
     'HttpBaseChannel.h',
     'HttpChannelChild.h',
     'HttpChannelParent.h',
+    'HttpConnectionMgrChild.h',
+    'HttpConnectionMgrParent.h',
+    'HttpConnectionMgrShell.h',
     'HttpInfo.h',
+    'HttpTransactionChild.h',
+    'HttpTransactionParent.h',
+    'HttpTransactionShell.h',
     'nsServerTiming.h',
     'NullHttpChannel.h',
     'ParentChannelListener.h',
@@ -77,14 +82,22 @@ UNIFIED_SOURCES += [
     'Http2Push.cpp',
     'Http2Session.cpp',
     'Http2Stream.cpp',
+    'Http3Session.cpp',
+    'Http3Stream.cpp',
     'HttpAuthUtils.cpp',
     'HttpBackgroundChannelChild.cpp',
     'HttpBackgroundChannelParent.cpp',
     'HttpBaseChannel.cpp',
     'HttpChannelChild.cpp',
     'HttpChannelParent.cpp',
+    'HttpConnectionBase.cpp',
+    'HttpConnectionMgrChild.cpp',
+    'HttpConnectionMgrParent.cpp',
+    'HttpConnectionUDP.cpp',
     'HttpInfo.cpp',
     'HttpTrafficAnalyzer.cpp',
+    'HttpTransactionChild.cpp',
+    'HttpTransactionParent.cpp',
     'InterceptedChannel.cpp',
     'InterceptedHttpChannel.cpp',
     'nsCORSListenerProxy.cpp',
@@ -109,6 +122,7 @@ UNIFIED_SOURCES += [
     'NullHttpTransaction.cpp',
     'ParentChannelListener.cpp',
     'QuicSocketControl.cpp',
+    'TRRServiceChannel.cpp',
     'TunnelUtils.cpp',
 ]
 
@@ -122,6 +136,8 @@ IPDL_SOURCES += [
     'PClassifierDummyChannel.ipdl',
     'PHttpBackgroundChannel.ipdl',
     'PHttpChannel.ipdl',
+    'PHttpConnectionMgr.ipdl',
+    'PHttpTransaction.ipdl',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
@@ -134,6 +150,7 @@ LOCAL_INCLUDES += [
     '/netwerk/base',
     '/netwerk/cookie',
     '/netwerk/ipc',
+    '/netwerk/socket/neqo_glue',
     '/netwerk/url-classifier',
 ]
 

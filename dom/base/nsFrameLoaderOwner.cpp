@@ -33,8 +33,7 @@ void nsFrameLoaderOwner::SetFrameLoader(nsFrameLoader* aNewFrameLoader) {
   mFrameLoader = aNewFrameLoader;
 }
 
-already_AddRefed<mozilla::dom::BrowsingContext>
-nsFrameLoaderOwner::GetBrowsingContext() {
+mozilla::dom::BrowsingContext* nsFrameLoaderOwner::GetBrowsingContext() {
   if (mFrameLoader) {
     return mFrameLoader->GetBrowsingContext();
   }
@@ -43,7 +42,6 @@ nsFrameLoaderOwner::GetBrowsingContext() {
 
 bool nsFrameLoaderOwner::UseRemoteSubframes() {
   RefPtr<Element> owner = do_QueryObject(this);
-  MOZ_ASSERT(this);
 
   nsILoadContext* loadContext = owner->OwnerDoc()->GetLoadContext();
   MOZ_DIAGNOSTIC_ASSERT(loadContext);
@@ -70,8 +68,9 @@ bool nsFrameLoaderOwner::ShouldPreserveBrowsingContext(
 }
 
 void nsFrameLoaderOwner::ChangeRemotenessCommon(
-    bool aPreserveContext, const nsAString& aRemoteType,
-    std::function<void()>& aFrameLoaderInit, mozilla::ErrorResult& aRv) {
+    bool aPreserveContext, bool aSwitchingInProgressLoad,
+    const nsAString& aRemoteType, std::function<void()>& aFrameLoaderInit,
+    mozilla::ErrorResult& aRv) {
   RefPtr<mozilla::dom::BrowsingContext> bc;
   bool networkCreated = false;
 
@@ -90,34 +89,42 @@ void nsFrameLoaderOwner::ChangeRemotenessCommon(
   doc->BlockOnload();
   auto cleanup = MakeScopeExit([&]() { doc->UnblockOnload(false); });
 
-  // If we already have a Frameloader, destroy it, possibly preserving its
-  // browsing context.
-  if (mFrameLoader) {
-    if (aPreserveContext) {
-      bc = mFrameLoader->GetBrowsingContext();
-      mFrameLoader->SkipBrowsingContextDetach();
+  {
+    // Introduce a script blocker to ensure no JS is executed during the
+    // nsFrameLoader teardown & recreation process. Unload listeners will be run
+    // for the previous document, and the load will be started for the new one,
+    // at the end of this block.
+    nsAutoScriptBlocker sb;
+
+    // If we already have a Frameloader, destroy it, possibly preserving its
+    // browsing context.
+    if (mFrameLoader) {
+      if (aPreserveContext) {
+        bc = mFrameLoader->GetBrowsingContext();
+        mFrameLoader->SetWillChangeProcess();
+      }
+
+      // Preserve the networkCreated status, as nsDocShells created after a
+      // process swap may shouldn't change their dynamically-created status.
+      networkCreated = mFrameLoader->IsNetworkCreated();
+      mFrameLoader->Destroy(aSwitchingInProgressLoad);
+      mFrameLoader = nullptr;
     }
 
-    // Preserve the networkCreated status, as nsDocShells created after a
-    // process swap may shouldn't change their dynamically-created status.
-    networkCreated = mFrameLoader->IsNetworkCreated();
-    mFrameLoader->Destroy();
-    mFrameLoader = nullptr;
-  }
+    mFrameLoader =
+        nsFrameLoader::Recreate(owner, bc, aRemoteType, networkCreated);
+    if (NS_WARN_IF(!mFrameLoader)) {
+      aRv.Throw(NS_ERROR_FAILURE);
+      return;
+    }
 
-  mFrameLoader =
-      nsFrameLoader::Recreate(owner, bc, aRemoteType, networkCreated);
-  if (NS_WARN_IF(!mFrameLoader)) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return;
-  }
-
-  // Invoke the frame loader initialization callback to perform setup on our new
-  // nsFrameLoader. This may cause our ErrorResult to become errored, so
-  // double-check after calling.
-  aFrameLoaderInit();
-  if (NS_WARN_IF(aRv.Failed())) {
-    return;
+    // Invoke the frame loader initialization callback to perform setup on our
+    // new nsFrameLoader. This may cause our ErrorResult to become errored, so
+    // double-check after calling.
+    aFrameLoaderInit();
+    if (NS_WARN_IF(aRv.Failed())) {
+      return;
+    }
   }
 
   // Now that we've got a new FrameLoader, we need to reset our
@@ -157,20 +164,25 @@ void nsFrameLoaderOwner::ChangeRemoteness(
     const mozilla::dom::RemotenessOptions& aOptions, mozilla::ErrorResult& rv) {
   std::function<void()> frameLoaderInit = [&] {
     if (aOptions.mError.WasPassed()) {
-      nsCOMPtr<nsIURI> uri;
-      rv = NS_NewURI(getter_AddRefs(uri), "about:blank");
-      if (NS_WARN_IF(rv.Failed())) {
-        return;
-      }
+      RefPtr<nsFrameLoader> frameLoader = mFrameLoader;
+      nsresult error = static_cast<nsresult>(aOptions.mError.Value());
+      nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+          "nsFrameLoaderOwner::DisplayLoadError", [frameLoader, error]() {
+            nsCOMPtr<nsIURI> uri;
+            nsresult rv = NS_NewURI(getter_AddRefs(uri), "about:blank");
+            if (NS_WARN_IF(NS_FAILED(rv))) {
+              return;
+            }
 
-      nsDocShell* docShell = mFrameLoader->GetDocShell(rv);
-      if (NS_WARN_IF(rv.Failed())) {
-        return;
-      }
-      bool displayed = false;
-      docShell->DisplayLoadError(static_cast<nsresult>(aOptions.mError.Value()),
-                                 uri, u"about:blank", nullptr, &displayed);
-
+            RefPtr<nsDocShell> docShell =
+                frameLoader->GetDocShell(IgnoreErrors());
+            if (NS_WARN_IF(!docShell)) {
+              return;
+            }
+            bool displayed = false;
+            docShell->DisplayLoadError(error, uri, u"about:blank", nullptr,
+                                       &displayed);
+          }));
     } else if (aOptions.mPendingSwitchID.WasPassed()) {
       mFrameLoader->ResumeLoad(aOptions.mPendingSwitchID.Value());
     } else {
@@ -179,12 +191,12 @@ void nsFrameLoaderOwner::ChangeRemoteness(
   };
 
   ChangeRemotenessCommon(ShouldPreserveBrowsingContext(aOptions),
+                         aOptions.mSwitchingInProgressLoad,
                          aOptions.mRemoteType, frameLoaderInit, rv);
 }
 
-void nsFrameLoaderOwner::ChangeRemotenessWithBridge(
-    mozilla::ipc::ManagedEndpoint<mozilla::dom::PBrowserBridgeChild> aEndpoint,
-    uint64_t aTabId, mozilla::ErrorResult& rv) {
+void nsFrameLoaderOwner::ChangeRemotenessWithBridge(BrowserBridgeChild* aBridge,
+                                                    mozilla::ErrorResult& rv) {
   MOZ_ASSERT(XRE_IsContentProcess());
   if (NS_WARN_IF(!mFrameLoader)) {
     rv.Throw(NS_ERROR_UNEXPECTED);
@@ -192,30 +204,15 @@ void nsFrameLoaderOwner::ChangeRemotenessWithBridge(
   }
 
   std::function<void()> frameLoaderInit = [&] {
-    RefPtr<BrowsingContext> browsingContext = mFrameLoader->mBrowsingContext;
-    RefPtr<BrowserBridgeChild> bridge =
-        new BrowserBridgeChild(mFrameLoader, browsingContext, TabId(aTabId));
-    Document* ownerDoc = mFrameLoader->GetOwnerDoc();
-    if (NS_WARN_IF(!ownerDoc)) {
-      rv.Throw(NS_ERROR_UNEXPECTED);
-      return;
-    }
-
-    RefPtr<BrowserChild> browser =
-        BrowserChild::GetFrom(ownerDoc->GetDocShell());
-    if (!browser->BindPBrowserBridgeEndpoint(std::move(aEndpoint), bridge)) {
-      rv.Throw(NS_ERROR_UNEXPECTED);
-      return;
-    }
-
-    RefPtr<BrowserBridgeHost> host = bridge->FinishInit();
-    browsingContext->SetEmbedderElement(mFrameLoader->GetOwnerContent());
+    RefPtr<BrowserBridgeHost> host = aBridge->FinishInit(mFrameLoader);
+    mFrameLoader->mPendingBrowsingContext->SetEmbedderElement(
+        mFrameLoader->GetOwnerContent());
     mFrameLoader->mRemoteBrowser = host;
   };
 
   // NOTE: We always use the DEFAULT_REMOTE_TYPE here, because we don't actually
   // know the real remote type, and don't need to, as we're a content process.
   ChangeRemotenessCommon(
-      /* preserve */ true, NS_LITERAL_STRING(DEFAULT_REMOTE_TYPE),
-      frameLoaderInit, rv);
+      /* preserve */ true, /* switching in progress load */ true,
+      NS_LITERAL_STRING(DEFAULT_REMOTE_TYPE), frameLoaderInit, rv);
 }

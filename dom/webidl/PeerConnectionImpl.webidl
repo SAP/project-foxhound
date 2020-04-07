@@ -37,10 +37,7 @@ interface PeerConnectionImpl  {
   [Throws]
   void setRemoteDescription(long action, DOMString sdp);
 
-  /* Stats call, calls either |onGetStatsSuccess| or |onGetStatsError| on our
-     observer. (see the |PeerConnectionObserver| interface) */
-  [Throws]
-  void getStats(MediaStreamTrack? selector);
+  Promise<RTCStatsReport> getStats(MediaStreamTrack? selector);
 
   /* Adds the tracks created by GetUserMedia */
   [Throws]
@@ -75,6 +72,7 @@ interface PeerConnectionImpl  {
   void insertAudioLevelForContributingSource(MediaStreamTrack recvTrack,
                                              unsigned long source,
                                              DOMHighResTimeStamp timestamp,
+                                             unsigned long rtpTimestamp,
                                              boolean hasLevel,
                                              byte level);
 
@@ -118,6 +116,8 @@ interface PeerConnectionImpl  {
   readonly attribute DOMString pendingLocalDescription;
   readonly attribute DOMString currentRemoteDescription;
   readonly attribute DOMString pendingRemoteDescription;
+  readonly attribute boolean? currentOfferer;
+  readonly attribute boolean? pendingOfferer;
 
   readonly attribute RTCIceConnectionState iceConnectionState;
   readonly attribute RTCIceGatheringState iceGatheringState;

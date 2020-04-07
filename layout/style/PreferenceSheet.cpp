@@ -8,6 +8,7 @@
 
 #include "ServoCSSParser.h"
 #include "MainThreadUtils.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_devtools.h"
 #include "mozilla/Telemetry.h"
@@ -17,18 +18,18 @@
 
 #define AVG2(a, b) (((a) + (b) + 1) >> 1)
 
-using mozilla::dom::Document;
-
 namespace mozilla {
+
+using dom::Document;
 
 bool PreferenceSheet::sInitialized;
 PreferenceSheet::Prefs PreferenceSheet::sContentPrefs;
 PreferenceSheet::Prefs PreferenceSheet::sChromePrefs;
 
 static void GetColor(const char* aPrefName, nscolor& aColor) {
-  nsAutoString value;
-  Preferences::GetString(aPrefName, value);
-  if (value.IsEmpty()) {
+  nsAutoCString value;
+  Preferences::GetCString(aPrefName, value);
+  if (value.IsEmpty() || Encoding::UTF8ValidUpTo(value) != value.Length()) {
     return;
   }
   nscolor result;
@@ -61,6 +62,17 @@ bool PreferenceSheet::ShouldUseChromePrefs(const Document& aDoc) {
 static bool UseAccessibilityTheme(bool aIsChrome) {
   return !aIsChrome &&
          !!LookAndFeel::GetInt(LookAndFeel::eIntID_UseAccessibilityTheme, 0);
+}
+
+static bool UseDocumentColors(bool aIsChrome, bool aUseAcccessibilityTheme) {
+  switch (StaticPrefs::browser_display_document_color_use()) {
+    case 1:
+      return true;
+    case 2:
+      return aIsChrome;
+    default:
+      return !aUseAcccessibilityTheme;
+  }
 }
 
 void PreferenceSheet::Prefs::Load(bool aIsChrome) {
@@ -119,6 +131,7 @@ void PreferenceSheet::Prefs::Load(bool aIsChrome) {
   // opaque.
   mDefaultBackgroundColor =
       NS_ComposeColors(NS_RGB(0xFF, 0xFF, 0xFF), mDefaultBackgroundColor);
+  mUseDocumentColors = UseDocumentColors(aIsChrome, mUseAccessibilityTheme);
 }
 
 void PreferenceSheet::Initialize() {

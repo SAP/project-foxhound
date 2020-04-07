@@ -1,6 +1,6 @@
 use crate::cdsl::settings::{SettingGroup, SettingGroupBuilder};
 
-pub fn define() -> SettingGroup {
+pub(crate) fn define() -> SettingGroup {
     let mut settings = SettingGroupBuilder::new("shared");
 
     settings.add_enum(
@@ -21,8 +21,8 @@ pub fn define() -> SettingGroup {
         r#"
         Run the Cranelift IR verifier at strategic times during compilation.
 
-        This makes compilation slower but catches many bugs. The verifier is
-        disabled by default, except when reading Cranelift IR from a text file.
+        This makes compilation slower but catches many bugs. The verifier is always enabled by
+        default, which is useful during development.
         "#,
         true,
     );
@@ -37,7 +37,7 @@ pub fn define() -> SettingGroup {
     );
 
     settings.add_bool(
-        "colocated_libcalls",
+        "use_colocated_libcalls",
         r#"
             Use colocated libcalls.
 
@@ -177,7 +177,7 @@ pub fn define() -> SettingGroup {
     // BaldrMonkey requires that not-yet-relocated function addresses be encoded
     // as all-ones bitpatterns.
     settings.add_bool(
-        "allones_funcaddrs",
+        "emit_all_ones_funcaddrs",
         "Emit not-yet-relocated function addresses as all-ones bit patterns.",
         false,
     );
@@ -185,7 +185,7 @@ pub fn define() -> SettingGroup {
     // Stack probing options.
 
     settings.add_bool(
-        "probestack_enabled",
+        "enable_probestack",
         r#"
             Enable the use of stack probes, for calling conventions which support this
             functionality.
@@ -218,7 +218,7 @@ pub fn define() -> SettingGroup {
     // Jump table options.
 
     settings.add_bool(
-        "jump_tables_enabled",
+        "enable_jump_tables",
         "Enable the use of jump tables in generated machine code.",
         true,
     );

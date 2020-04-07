@@ -46,13 +46,6 @@ class TabContext {
    */
   bool IsMozBrowserElement() const;
 
-  /**
-   * Does this TabContext correspond to a mozbrowser?  This is equivalent to
-   * IsMozBrowserElement().  Returns false for <xul:browser>, which isn't a
-   * mozbrowser.
-   */
-  bool IsMozBrowser() const;
-
   bool IsJSPlugin() const;
   int32_t JSPluginId() const;
 
@@ -96,6 +89,11 @@ class TabContext {
    * Set the tab context's origin attributes to a private browsing value.
    */
   void SetPrivateBrowsingAttributes(bool aIsPrivateBrowsing);
+
+  /**
+   * Set the first party domain of the tab context's origin attributes.
+   */
+  void SetFirstPartyDomainAttributes(const nsAString& aFirstPartyDomain);
 
   bool SetTabContext(bool aIsMozBrowserElement, uint64_t aChromeOuterWindowID,
                      UIStateChangeType aShowFocusRings,
@@ -193,6 +191,10 @@ class MutableTabContext : public TabContext {
 
   bool SetTabContextForJSPluginFrame(uint32_t aJSPluginID) {
     return TabContext::SetTabContextForJSPluginFrame(aJSPluginID);
+  }
+
+  void SetFirstPartyDomainAttributes(const nsAString& aFirstPartyDomain) {
+    TabContext::SetFirstPartyDomainAttributes(aFirstPartyDomain);
   }
 };
 

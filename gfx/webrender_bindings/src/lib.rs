@@ -12,6 +12,7 @@ extern crate nsstring;
 extern crate rayon;
 extern crate num_cpus;
 extern crate thread_profiler;
+extern crate thin_vec;
 extern crate bincode;
 extern crate uuid;
 extern crate fxhash;
@@ -21,6 +22,8 @@ extern crate log;
 
 #[cfg(target_os = "windows")]
 extern crate dwrote;
+#[cfg(target_os = "windows")]
+extern crate winapi;
 
 
 #[cfg(target_os = "macos")]

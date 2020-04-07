@@ -550,7 +550,7 @@ tls13_ComputeESNIKeys(const sslSocket *ss,
                                hash, hashSize,
                                kHkdfPurposeEsniKey, strlen(kHkdfPurposeEsniKey),
                                ssl3_Alg2Mech(cipherDef->calg),
-                               keySize,
+                               keySize, ss->protocolVariant,
                                &keyMat->key);
     if (rv != SECSuccess) {
         goto loser;
@@ -558,7 +558,7 @@ tls13_ComputeESNIKeys(const sslSocket *ss,
     rv = tls13_HkdfExpandLabelRaw(Zx, suite->prf_hash,
                                   hash, hashSize,
                                   kHkdfPurposeEsniIv, strlen(kHkdfPurposeEsniIv),
-                                  keyMat->iv, ivSize);
+                                  ss->protocolVariant, keyMat->iv, ivSize);
     if (rv != SECSuccess) {
         goto loser;
     }
@@ -582,7 +582,7 @@ tls13_ClientSetupESNI(sslSocket *ss)
     SECStatus rv;
     TLS13KeyShareEntry *share = NULL;
     const sslNamedGroupDef *group = NULL;
-    PRTime now = PR_Now() / PR_USEC_PER_SEC;
+    PRTime now = ssl_Time(ss) / PR_USEC_PER_SEC;
 
     PORT_Assert(!ss->xtnData.esniPrivateKey);
 
@@ -728,7 +728,7 @@ tls13_ServerDecryptEsniXtn(const sslSocket *ss, const PRUint8 *in, unsigned int 
 {
     sslReader rdr = SSL_READER(in, inLen);
     PRUint64 suite;
-    const ssl3CipherSuiteDef *suiteDef;
+    const ssl3CipherSuiteDef *suiteDef = NULL;
     SSLAEADCipher aead = NULL;
     TLSExtension *keyShareExtension;
     TLS13KeyShareEntry *entry = NULL;

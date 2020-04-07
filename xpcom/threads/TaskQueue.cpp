@@ -14,7 +14,7 @@ namespace mozilla {
 class TaskQueue::EventTargetWrapper final : public nsISerialEventTarget {
   RefPtr<TaskQueue> mTaskQueue;
 
-  ~EventTargetWrapper() {}
+  ~EventTargetWrapper() = default;
 
  public:
   explicit EventTargetWrapper(TaskQueue* aTaskQueue) : mTaskQueue(aTaskQueue) {
@@ -31,7 +31,7 @@ class TaskQueue::EventTargetWrapper final : public nsISerialEventTarget {
   Dispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags) override {
     nsCOMPtr<nsIRunnable> runnable = aEvent;
     MonitorAutoLock mon(mTaskQueue->mQueueMonitor);
-    return mTaskQueue->DispatchLocked(/* passed by ref */ runnable,
+    return mTaskQueue->DispatchLocked(/* passed by ref */ runnable, aFlags,
                                       NormalDispatch);
   }
 
@@ -58,17 +58,19 @@ NS_IMPL_ISUPPORTS(TaskQueue::EventTargetWrapper, nsIEventTarget,
                   nsISerialEventTarget)
 
 TaskQueue::TaskQueue(already_AddRefed<nsIEventTarget> aTarget,
-                     const char* aName, bool aRequireTailDispatch)
+                     const char* aName, bool aRequireTailDispatch,
+                     bool aRetainFlags)
     : AbstractThread(aRequireTailDispatch),
       mTarget(aTarget),
       mQueueMonitor("TaskQueue::Queue"),
       mTailDispatcher(nullptr),
+      mShouldRetainFlags(aRetainFlags),
       mIsRunning(false),
       mIsShutdown(false),
       mName(aName) {}
 
 TaskQueue::TaskQueue(already_AddRefed<nsIEventTarget> aTarget,
-                     bool aSupportsTailDispatch)
+                     bool aSupportsTailDispatch, bool aRetainFlags)
     : TaskQueue(std::move(aTarget), "Unnamed", aSupportsTailDispatch) {}
 
 TaskQueue::~TaskQueue() {
@@ -85,7 +87,7 @@ TaskDispatcher& TaskQueue::TailDispatcher() {
 // Note aRunnable is passed by ref to support conditional ownership transfer.
 // See Dispatch() in TaskQueue.h for more details.
 nsresult TaskQueue::DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable,
-                                   DispatchReason aReason) {
+                                   uint32_t aFlags, DispatchReason aReason) {
   mQueueMonitor.AssertCurrentThreadOwns();
   if (mIsShutdown) {
     return NS_ERROR_FAILURE;
@@ -94,15 +96,21 @@ nsresult TaskQueue::DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable,
   AbstractThread* currentThread;
   if (aReason != TailDispatch && (currentThread = GetCurrent()) &&
       RequiresTailDispatch(currentThread)) {
+    MOZ_ASSERT(aFlags == NS_DISPATCH_NORMAL,
+               "Tail dispatch doesn't support flags");
     return currentThread->TailDispatcher().AddTask(this, aRunnable.forget());
   }
 
-  mTasks.push(aRunnable.forget());
+  // If the task queue cares about individual flags, retain them in the struct.
+  uint32_t retainFlags = mShouldRetainFlags ? aFlags : 0;
+
+  mTasks.push({std::move(aRunnable), retainFlags});
+
   if (mIsRunning) {
     return NS_OK;
   }
   RefPtr<nsIRunnable> runner(new Runner(this));
-  nsresult rv = mTarget->Dispatch(runner.forget(), NS_DISPATCH_NORMAL);
+  nsresult rv = mTarget->Dispatch(runner.forget(), aFlags);
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to dispatch runnable to run TaskQueue");
     return rv;
@@ -164,7 +172,7 @@ bool TaskQueue::IsEmpty() {
 }
 
 bool TaskQueue::IsCurrentThreadIn() const {
-  bool in = mRunningThread == GetCurrentPhysicalThread();
+  bool in = mRunningThread == PR_GetCurrentThread();
   return in;
 }
 
@@ -174,7 +182,7 @@ already_AddRefed<nsISerialEventTarget> TaskQueue::WrapAsEventTarget() {
 }
 
 nsresult TaskQueue::Runner::Run() {
-  RefPtr<nsIRunnable> event;
+  TaskStruct event;
   {
     MonitorAutoLock mon(mQueue->mQueueMonitor);
     MOZ_ASSERT(mQueue->mIsRunning);
@@ -184,10 +192,10 @@ nsresult TaskQueue::Runner::Run() {
       mon.NotifyAll();
       return NS_OK;
     }
-    event = mQueue->mTasks.front().forget();
+    event = std::move(mQueue->mTasks.front());
     mQueue->mTasks.pop();
   }
-  MOZ_ASSERT(event);
+  MOZ_ASSERT(event.event);
 
   // Note that dropping the queue monitor before running the task, and
   // taking the monitor again after the task has run ensures we have memory
@@ -196,7 +204,7 @@ nsresult TaskQueue::Runner::Run() {
   // in this task queue.
   {
     AutoTaskGuard g(mQueue);
-    event->Run();
+    event.event->Run();
   }
 
   // Drop the reference to event. The event will hold a reference to the
@@ -204,7 +212,7 @@ nsresult TaskQueue::Runner::Run() {
   // making assumptions what holds references to it. This is especially
   // the case if the object is waiting for us to shutdown, so that it
   // can shutdown (like in the MediaDecoderStateMachine's SHUTDOWN case).
-  event = nullptr;
+  event.event = nullptr;
 
   {
     MonitorAutoLock mon(mQueue->mQueueMonitor);
@@ -222,7 +230,12 @@ nsresult TaskQueue::Runner::Run() {
   // run in a loop here so that we don't hog the target. This means we may
   // run on another thread next time, but we rely on the memory fences from
   // mQueueMonitor for thread safety of non-threadsafe tasks.
-  nsresult rv = mQueue->mTarget->Dispatch(this, NS_DISPATCH_AT_END);
+  nsresult rv;
+  {
+    MonitorAutoLock mon(mQueue->mQueueMonitor);
+    rv = mQueue->mTarget->Dispatch(
+        this, mQueue->mTasks.front().flags | NS_DISPATCH_AT_END);
+  }
   if (NS_FAILED(rv)) {
     // Failed to dispatch, shutdown!
     MonitorAutoLock mon(mQueue->mQueueMonitor);

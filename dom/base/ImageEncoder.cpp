@@ -74,7 +74,7 @@ already_AddRefed<DataSourceSurface> GetBRGADataSourceSurfaceSync(
 }
 
 class EncodingCompleteEvent : public CancelableRunnable {
-  virtual ~EncodingCompleteEvent() {}
+  virtual ~EncodingCompleteEvent() = default;
 
  public:
   explicit EncodingCompleteEvent(
@@ -99,7 +99,7 @@ class EncodingCompleteEvent : public CancelableRunnable {
     nsresult rv = NS_OK;
 
     // We want to null out mEncodeCompleteCallback no matter what.
-    RefPtr<EncodeCompleteCallback> callback(mEncodeCompleteCallback.forget());
+    RefPtr<EncodeCompleteCallback> callback(std::move(mEncodeCompleteCallback));
     if (!mFailed) {
       RefPtr<BlobImpl> blobImpl = new MemoryBlobImpl(mImgData, mImgSize, mType);
       rv = callback->ReceiveBlobImpl(blobImpl.forget());
@@ -133,7 +133,7 @@ class EncodingCompleteEvent : public CancelableRunnable {
 };
 
 class EncodingRunnable : public Runnable {
-  virtual ~EncodingRunnable() {}
+  virtual ~EncodingRunnable() = default;
 
  public:
   NS_INLINE_DECL_REFCOUNTING_INHERITED(EncodingRunnable, Runnable)
@@ -246,7 +246,7 @@ nsresult ImageEncoder::ExtractDataFromLayersImageAsync(
       new EncodingRunnable(aType, aOptions, nullptr, aImage, encoder,
                            completeEvent, imgIEncoder::INPUT_FORMAT_HOSTARGB,
                            size, aUsePlaceholder, aUsingCustomOptions);
-  return NS_DispatchToBackgroundThread(event.forget());
+  return NS_DispatchBackgroundTask(event.forget());
 }
 
 /* static */
@@ -265,7 +265,7 @@ nsresult ImageEncoder::ExtractDataAsync(
   nsCOMPtr<nsIRunnable> event = new EncodingRunnable(
       aType, aOptions, std::move(aImageBuffer), nullptr, encoder, completeEvent,
       aFormat, aSize, aUsePlaceholder, aUsingCustomOptions);
-  return NS_DispatchToBackgroundThread(event.forget());
+  return NS_DispatchBackgroundTask(event.forget());
 }
 
 /*static*/

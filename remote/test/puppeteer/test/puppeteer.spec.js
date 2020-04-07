@@ -34,25 +34,33 @@ module.exports.addTests = ({testRunner, product, puppeteerPath}) => {
 
   const headless = (process.env.HEADLESS || 'true').trim().toLowerCase() === 'true';
   const slowMo = parseInt((process.env.SLOW_MO || '0').trim(), 10);
+  let extraLaunchOptions = {};
+  try {
+    extraLaunchOptions = JSON.parse(process.env.EXTRA_LAUNCH_OPTIONS || '{}');
+  } catch (error) {
+    console.warn(`${YELLOW_COLOR}Error parsing EXTRA_LAUNCH_OPTIONS: ${error.message}. Skipping.${RESET_COLOR}`);
+  }
 
-  const defaultBrowserOptions = {
+  const defaultBrowserOptions = Object.assign({
     handleSIGINT: false,
-    executablePath: CHROME ? process.env.CHROME : process.env.FFOX,
+    executablePath: process.env.BINARY,
     slowMo,
     headless,
     dumpio: !!process.env.DUMPIO,
-  };
+  }, extraLaunchOptions);
+
 
   if (defaultBrowserOptions.executablePath) {
     console.warn(`${YELLOW_COLOR}WARN: running ${product} tests with ${defaultBrowserOptions.executablePath}${RESET_COLOR}`);
   } else {
-    // Make sure the `npm install` was run after the chromium roll.
-    if (!fs.existsSync(puppeteer.executablePath()))
-      throw new Error(`Browser is not downloaded. Run 'npm install' and try to re-run tests`);
+    const executablePath = puppeteer.executablePath();
+    if (!fs.existsSync(executablePath))
+      throw new Error(`Browser is not downloaded at ${executablePath}. Run 'npm install' and try to re-run tests`);
   }
 
-  const GOLDEN_DIR = path.join(__dirname, 'golden-' + product.toLowerCase());
-  const OUTPUT_DIR = path.join(__dirname, 'output-' + product.toLowerCase());
+  const suffix = FFOX ? 'firefox' : product.toLowerCase();
+  const GOLDEN_DIR = path.join(__dirname, 'golden-' + suffix);
+  const OUTPUT_DIR = path.join(__dirname, 'output-' + suffix);
   if (fs.existsSync(OUTPUT_DIR))
     rm(OUTPUT_DIR);
   const {expect} = new Matchers({
@@ -71,10 +79,6 @@ module.exports.addTests = ({testRunner, product, puppeteerPath}) => {
     headless: !!defaultBrowserOptions.headless,
   };
 
-  beforeAll(async() => {
-    if (FFOX && defaultBrowserOptions.executablePath)
-      await require('../experimental/puppeteer-firefox/misc/install-preferences')(defaultBrowserOptions.executablePath);
-  });
 
   describe('Browser', function() {
     beforeAll(async state => {
@@ -155,9 +159,11 @@ module.exports.addTests = ({testRunner, product, puppeteerPath}) => {
 
   // Top-level tests that launch Browser themselves.
   require('./ignorehttpserrors.spec.js').addTests(testOptions);
+  require('./defaultbrowsercontext.spec.js').addTests(testOptions);
   require('./launcher.spec.js').addTests(testOptions);
   require('./fixtures.spec.js').addTests(testOptions);
   if (CHROME) {
+    require('./oopif.spec.js').addTests(testOptions);
     require('./headful.spec.js').addTests(testOptions);
     require('./tracing.spec.js').addTests(testOptions);
     // Add top-level Chromium-specific tests.

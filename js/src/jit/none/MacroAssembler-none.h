@@ -65,9 +65,10 @@ static constexpr Register RegExpMatcherStringReg{Registers::invalid_reg};
 static constexpr Register RegExpMatcherLastIndexReg{Registers::invalid_reg};
 static constexpr Register RegExpMatcherStickyReg{Registers::invalid_reg};
 
-static constexpr Register JSReturnReg_Type{Registers::invalid_reg};
-static constexpr Register JSReturnReg_Data{Registers::invalid_reg};
-static constexpr Register JSReturnReg{Registers::invalid_reg};
+// Uses |invalid_reg2| to avoid static_assert failures.
+static constexpr Register JSReturnReg_Type{Registers::invalid_reg2};
+static constexpr Register JSReturnReg_Data{Registers::invalid_reg2};
+static constexpr Register JSReturnReg{Registers::invalid_reg2};
 
 #if defined(JS_NUNBOX32)
 static constexpr ValueOperand JSReturnOperand(InvalidReg, InvalidReg);
@@ -96,6 +97,7 @@ static constexpr Register WasmTableCallScratchReg1{Registers::invalid_reg};
 static constexpr Register WasmTableCallSigReg{Registers::invalid_reg};
 static constexpr Register WasmTableCallIndexReg{Registers::invalid_reg};
 static constexpr Register WasmTlsReg{Registers::invalid_reg};
+static constexpr Register WasmJitEntryReturnScratch{Registers::invalid_reg};
 
 static constexpr uint32_t ABIStackAlignment = 4;
 static constexpr uint32_t CodeAlignment = sizeof(void*);
@@ -231,6 +233,7 @@ class MacroAssemblerNone : public Assembler {
   static bool SupportsFloatingPoint() { return false; }
   static bool SupportsSimd() { return false; }
   static bool SupportsUnalignedAccesses() { return false; }
+  static bool SupportsFastUnalignedAccesses() { return false; }
 
   void executableCopy(void*, bool = true) { MOZ_CRASH(); }
   void copyJumpRelocationTable(uint8_t*) { MOZ_CRASH(); }
@@ -496,6 +499,10 @@ class MacroAssemblerNone : public Assembler {
   void unboxGCThingForPreBarrierTrampoline(const Address&, Register) {
     MOZ_CRASH();
   }
+  template <typename T>
+  void unboxObjectOrNull(const T& src, Register dest) {
+    MOZ_CRASH();
+  }
   void notBoolean(ValueOperand) { MOZ_CRASH(); }
   MOZ_MUST_USE Register extractObject(Address, Register) { MOZ_CRASH(); }
   MOZ_MUST_USE Register extractObject(ValueOperand, Register) { MOZ_CRASH(); }
@@ -563,7 +570,7 @@ class MacroAssemblerNone : public Assembler {
   Operand ToPayload(Operand base) { MOZ_CRASH(); }
   Address ToPayload(Address) { MOZ_CRASH(); }
 
-  static const Register getStackPointer() { MOZ_CRASH(); }
+  Register getStackPointer() const { MOZ_CRASH(); }
 
   // Instrumentation for entering and leaving the profiler.
   void profilerEnterFrame(Register, Register) { MOZ_CRASH(); }

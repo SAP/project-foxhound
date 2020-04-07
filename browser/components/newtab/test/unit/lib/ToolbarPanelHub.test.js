@@ -23,6 +23,7 @@ describe("ToolbarPanelHub", () => {
   let getEarliestRecordedDateStub;
   let getEventsByDateRangeStub;
   let handleUserActionStub;
+  let defaultSearchStub;
 
   beforeEach(async () => {
     sandbox = sinon.createSandbox();
@@ -42,9 +43,6 @@ describe("ToolbarPanelHub", () => {
       removeChild: sandbox.stub(),
     };
     fakeDocument = {
-      l10n: {
-        setAttributes: sandbox.stub(),
-      },
       getElementById: sandbox.stub().returns(fakeElementById),
       querySelector: sandbox.stub().returns({}),
       createElementNS: (ns, tagName) => {
@@ -92,29 +90,40 @@ describe("ToolbarPanelHub", () => {
     setBoolPrefStub = sandbox.stub();
     fakeDispatch = sandbox.stub();
     isBrowserPrivateStub = sandbox.stub();
-    globals.set("EveryWindow", everyWindowStub);
-    globals.set("Services", {
-      ...Services,
-      prefs: {
-        addObserver: addObserverStub,
-        removeObserver: removeObserverStub,
-        getBoolPref: getBoolPrefStub,
-        setBoolPref: setBoolPrefStub,
+    getEarliestRecordedDateStub = sandbox.stub().returns(
+      // A random date that's not the current timestamp
+      new Date() - 500
+    );
+    getEventsByDateRangeStub = sandbox.stub().returns([]);
+    handleUserActionStub = sandbox.stub();
+    defaultSearchStub = { defaultEngine: { name: "DDG" } };
+    globals.set({
+      EveryWindow: everyWindowStub,
+      Services: {
+        ...Services,
+        prefs: {
+          addObserver: addObserverStub,
+          removeObserver: removeObserverStub,
+          getBoolPref: getBoolPrefStub,
+          setBoolPref: setBoolPrefStub,
+        },
+        search: defaultSearchStub,
+      },
+      PrivateBrowsingUtils: {
+        isBrowserPrivate: isBrowserPrivateStub,
+      },
+      TrackingDBService: {
+        getEarliestRecordedDate: getEarliestRecordedDateStub,
+        getEventsByDateRange: getEventsByDateRangeStub,
+      },
+      RemoteL10n: {
+        l10n: {
+          translateElements: sandbox.stub(),
+          translateFragment: sandbox.stub(),
+          formatMessages: sandbox.stub().resolves([{}]),
+        },
       },
     });
-    globals.set("PrivateBrowsingUtils", {
-      isBrowserPrivate: isBrowserPrivateStub,
-    });
-    getEarliestRecordedDateStub = sandbox.stub();
-    getEventsByDateRangeStub = sandbox.stub();
-    globals.set("TrackingDBService", {
-      getEarliestRecordedDate: getEarliestRecordedDateStub.returns(
-        // A random date that's not the current timestamp
-        new Date() - 500
-      ),
-      getEventsByDateRange: getEventsByDateRangeStub.returns([]),
-    });
-    handleUserActionStub = sandbox.stub();
   });
   afterEach(() => {
     instance.uninit();
@@ -220,6 +229,19 @@ describe("ToolbarPanelHub", () => {
       assert.notCalled(everyWindowStub.registerCallback);
     });
   });
+  describe("#disableAppmenuButton", () => {
+    it("should call the unregisterCallback", () => {
+      assert.notCalled(everyWindowStub.unregisterCallback);
+
+      instance.disableAppmenuButton();
+
+      assert.calledOnce(everyWindowStub.unregisterCallback);
+      assert.calledWithExactly(
+        everyWindowStub.unregisterCallback,
+        "appMenu-whatsnew-button"
+      );
+    });
+  });
   describe("#enableToolbarButton", () => {
     it("should registerCallback on enableToolbarButton if messages.length", async () => {
       instance.init(waitForInitializedStub, {
@@ -240,16 +262,18 @@ describe("ToolbarPanelHub", () => {
       assert.notCalled(everyWindowStub.registerCallback);
     });
   });
-  it("should unhide appmenu button on _showAppmenuButton()", () => {
-    instance._showAppmenuButton(fakeWindow);
+  it("should unhide appmenu button on _showAppmenuButton()", async () => {
+    await instance._showAppmenuButton(fakeWindow);
+
     assert.calledWith(fakeElementById.removeAttribute, "hidden");
   });
   it("should hide appmenu button on _hideAppmenuButton()", () => {
     instance._hideAppmenuButton(fakeWindow);
     assert.calledWith(fakeElementById.setAttribute, "hidden", true);
   });
-  it("should unhide toolbar button on _showToolbarButton()", () => {
-    instance._showToolbarButton(fakeWindow);
+  it("should unhide toolbar button on _showToolbarButton()", async () => {
+    await instance._showToolbarButton(fakeWindow);
+
     assert.calledWith(fakeElementById.removeAttribute, "hidden");
   });
   it("should hide toolbar button on _hideToolbarButton()", () => {
@@ -273,6 +297,16 @@ describe("ToolbarPanelHub", () => {
       messages[0].content.link_text = { string_id: "link_text_id" };
 
       getMessagesStub.returns(messages);
+      const ev1 = sandbox.stub();
+      ev1.withArgs("type").returns(1); // tracker
+      ev1.withArgs("count").returns(4);
+      const ev2 = sandbox.stub();
+      ev2.withArgs("type").returns(4); // fingerprinter
+      ev2.withArgs("count").returns(3);
+      getEventsByDateRangeStub.returns([
+        { getResultByName: ev1 },
+        { getResultByName: ev2 },
+      ]);
 
       await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
 
@@ -280,6 +314,14 @@ describe("ToolbarPanelHub", () => {
         assert.ok(createdElements.find(el => el.tagName === "h2"));
         if (message.content.layout === "tracking-protections") {
           assert.ok(createdElements.find(el => el.tagName === "h4"));
+        }
+        if (message.id === "WHATS_NEW_FINGERPRINTER_COUNTER_72") {
+          assert.ok(createdElements.find(el => el.tagName === "h4"));
+          assert.ok(
+            createdElements.find(
+              el => el.tagName === "h2" && el.textContent === 3
+            )
+          );
         }
         assert.ok(createdElements.find(el => el.tagName === "p"));
       }
@@ -352,8 +394,27 @@ describe("ToolbarPanelHub", () => {
 
       await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
 
-      const imageEl = createdElements.find(el => el.tagName === "img");
-      assert.calledWithExactly(fakeDocument.l10n.setAttributes, imageEl, "foo");
+      assert.calledWithExactly(global.RemoteL10n.l10n.formatMessages, [
+        {
+          id: "foo",
+          args: instance.state.contentArguments,
+        },
+      ]);
+    });
+    it("handle fluent attributes", async () => {
+      const messages = (await PanelTestProvider.getMessages()).filter(
+        m => m.id === "WHATS_NEW_70_1"
+      );
+      messages[0].content.icon_alt = { string_id: "foo" };
+      getMessagesStub.returns(messages);
+      global.RemoteL10n.l10n.formatMessages
+        .withArgs([{ id: "foo", args: sinon.match.object }])
+        .resolves([{ attributes: [{ name: "alt", value: "bar" }] }]);
+
+      await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
+      const imgEl = createdElements.find(e => e.tagName === "img");
+
+      assert.calledWithExactly(imgEl.setAttribute, "alt", "bar");
     });
     it("should accept fluent ids for elements attributes", async () => {
       const [message] = (await PanelTestProvider.getMessages()).filter(
@@ -366,32 +427,102 @@ describe("ToolbarPanelHub", () => {
 
       await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
 
-      const subtitle = createdElements.find(el => el.tagName === "h4");
-      assert.calledWithExactly(
-        fakeDocument.l10n.setAttributes,
-        subtitle,
-        message.content.subtitle.string_id,
-        instance.state.contentArguments
-      );
+      assert.calledWithExactly(global.RemoteL10n.l10n.formatMessages, [
+        {
+          id: message.content.subtitle.string_id,
+          args: instance.state.contentArguments,
+        },
+      ]);
     });
     it("should correctly compute blocker trackers and date", async () => {
       const messages = (await PanelTestProvider.getMessages()).filter(
         m => m.template === "whatsnew_panel_message"
       );
       getMessagesStub.returns(messages);
+      const ev1 = sandbox.stub();
+      ev1.withArgs("type").returns(2); // cookie
+      ev1.withArgs("count").returns(4);
+      const ev2 = sandbox.stub();
+      ev2.withArgs("type").returns(2); // cookie
+      ev2.withArgs("count").returns(3);
       getEventsByDateRangeStub.returns([
-        { getResultByName: sandbox.stub().returns(2) },
-        { getResultByName: sandbox.stub().returns(3) },
+        { getResultByName: ev1 },
+        { getResultByName: ev2 },
       ]);
 
       await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
 
-      assert.calledWithExactly(
-        fakeDocument.l10n.setAttributes,
-        sinon.match.object,
-        sinon.match.string,
-        { blockedCount: "5", earliestDate: getEarliestRecordedDateStub() }
+      assert.calledWithExactly(global.RemoteL10n.l10n.formatMessages, [
+        {
+          id: sinon.match.string,
+          args: {
+            blockedCount: 7,
+            earliestDate: getEarliestRecordedDateStub(),
+            cookieCount: 7,
+            cryptominerCount: 0,
+            socialCount: 0,
+            trackerCount: 0,
+            fingerprinterCount: 0,
+            searchEngineName: Services.search.defaultEngine.name,
+          },
+        },
+      ]);
+    });
+    it("should correctly compute event counts per type", async () => {
+      const messages = (await PanelTestProvider.getMessages()).filter(
+        m => m.template === "whatsnew_panel_message"
       );
+      getMessagesStub.returns(messages);
+      const ev1 = sandbox.stub();
+      ev1.withArgs("type").returns(1); // tracker
+      ev1.withArgs("count").returns(4);
+      const ev2 = sandbox.stub();
+      ev2.withArgs("type").returns(4); // fingerprinter
+      ev2.withArgs("count").returns(3);
+      getEventsByDateRangeStub.returns([
+        { getResultByName: ev1 },
+        { getResultByName: ev2 },
+      ]);
+
+      await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
+
+      assert.calledWithExactly(global.RemoteL10n.l10n.formatMessages, [
+        {
+          id: sinon.match.string,
+          args: {
+            blockedCount: 7,
+            earliestDate: getEarliestRecordedDateStub(),
+            trackerCount: 4,
+            fingerprinterCount: 3,
+            cookieCount: 0,
+            cryptominerCount: 0,
+            socialCount: 0,
+            searchEngineName: Services.search.defaultEngine.name,
+          },
+        },
+      ]);
+    });
+    it("should fallback to undefined search engine name", async () => {
+      globals.set("Services", {
+        ...global.Services,
+        search: { defaultEngine: null },
+      });
+      const messages = (await PanelTestProvider.getMessages()).filter(
+        m => m.template === "whatsnew_panel_message"
+      );
+      getMessagesStub.returns(messages);
+
+      await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
+
+      assert.calledWithExactly(global.RemoteL10n.l10n.formatMessages, [
+        {
+          id: sinon.match.string,
+          args: {
+            ...instance.state.contentArguments,
+            searchEngineName: "undefined",
+          },
+        },
+      ]);
     });
     it("should only render unique dates (no duplicates)", async () => {
       const messages = (await PanelTestProvider.getMessages()).filter(
@@ -548,11 +679,9 @@ describe("ToolbarPanelHub", () => {
         } = fakeDispatch.lastCall;
         assert.propertyVal(dispatchPayload, "type", "TOOLBAR_PANEL_TELEMETRY");
         assert.propertyVal(dispatchPayload.data, "message_id", panelPingId);
-        assert.propertyVal(
-          dispatchPayload.data.value,
-          "view",
-          "toolbar_dropdown"
-        );
+        assert.deepEqual(dispatchPayload.data.event_context, {
+          view: "toolbar_dropdown",
+        });
       });
       it("should dispatch a IMPRESSION with application_menu", async () => {
         // means panel is triggered as a subview in the application menu
@@ -589,11 +718,9 @@ describe("ToolbarPanelHub", () => {
         } = fakeDispatch.lastCall;
         assert.propertyVal(dispatchPayload, "type", "TOOLBAR_PANEL_TELEMETRY");
         assert.propertyVal(dispatchPayload.data, "message_id", panelPingId);
-        assert.propertyVal(
-          dispatchPayload.data.value,
-          "view",
-          "application_menu"
-        );
+        assert.deepEqual(dispatchPayload.data.event_context, {
+          view: "application_menu",
+        });
       });
     });
     describe("#forceShowMessage", () => {
@@ -601,10 +728,10 @@ describe("ToolbarPanelHub", () => {
       let removeMessagesSpy;
       let renderMessagesStub;
       let addEventListenerStub;
-      let message;
+      let messages;
       let browser;
       beforeEach(async () => {
-        message = (await PanelTestProvider.getMessages()).find(
+        messages = (await PanelTestProvider.getMessages()).find(
           m => m.id === "WHATS_NEW_70_1"
         );
         removeMessagesSpy = sandbox.spy(instance, "removeMessages");
@@ -616,13 +743,13 @@ describe("ToolbarPanelHub", () => {
         fakeElementById.querySelectorAll.returns([fakeElementById]);
       });
       it("should call removeMessages when forcing a message to show", () => {
-        instance.forceShowMessage(browser, message);
+        instance.forceShowMessage(browser, messages);
 
         assert.calledOnce(removeMessagesSpy);
         assert.calledWithExactly(removeMessagesSpy, fakeWindow, panelSelector);
       });
       it("should call renderMessages when forcing a message to show", () => {
-        instance.forceShowMessage(browser, message);
+        instance.forceShowMessage(browser, messages);
 
         assert.calledOnce(renderMessagesStub);
         assert.calledWithExactly(
@@ -632,12 +759,12 @@ describe("ToolbarPanelHub", () => {
           panelSelector,
           {
             force: true,
-            messages: [message],
+            messages: Array.isArray(messages) ? messages : [messages],
           }
         );
       });
       it("should cleanup after the panel is hidden when forcing a message to show", () => {
-        instance.forceShowMessage(browser, message);
+        instance.forceShowMessage(browser, messages);
 
         assert.calledOnce(addEventListenerStub);
         assert.calledWithExactly(
@@ -730,6 +857,57 @@ describe("ToolbarPanelHub", () => {
         },
       });
     });
+    it("should format the url", async () => {
+      const stub = sandbox
+        .stub(global.Services.urlFormatter, "formatURL")
+        .returns("formattedURL");
+      const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+      const msg = onboardingMsgs.find(m => m.template === "protections_panel");
+
+      await fakeInsert();
+
+      eventListeners.mouseup();
+
+      assert.calledOnce(stub);
+      assert.calledWithExactly(stub, msg.content.cta_url);
+      assert.calledOnce(handleUserActionStub);
+      assert.calledWithExactly(handleUserActionStub, {
+        target: fakeWindow,
+        data: {
+          type: "OPEN_URL",
+          data: {
+            args: "formattedURL",
+            where: "tabshifted",
+          },
+        },
+      });
+    });
+    it("should report format url errors", async () => {
+      const stub = sandbox
+        .stub(global.Services.urlFormatter, "formatURL")
+        .throws();
+      const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+      const msg = onboardingMsgs.find(m => m.template === "protections_panel");
+      sandbox.spy(global.Cu, "reportError");
+
+      await fakeInsert();
+
+      eventListeners.mouseup();
+
+      assert.calledOnce(stub);
+      assert.calledOnce(global.Cu.reportError);
+      assert.calledOnce(handleUserActionStub);
+      assert.calledWithExactly(handleUserActionStub, {
+        target: fakeWindow,
+        data: {
+          type: "OPEN_URL",
+          data: {
+            args: msg.content.cta_url,
+            where: "tabshifted",
+          },
+        },
+      });
+    });
     it("should open link on click (directly attached to the message)", async () => {
       const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
       const msg = onboardingMsgs.find(m => m.template === "protections_panel");
@@ -752,6 +930,14 @@ describe("ToolbarPanelHub", () => {
           },
         },
       });
+    });
+    it("should handleUserAction from mouseup and keyup", async () => {
+      await fakeInsert();
+
+      eventListeners.mouseup();
+      eventListeners.keyup({ key: "Enter" });
+      eventListeners.keyup({ key: " " });
+      assert.calledThrice(handleUserActionStub);
     });
   });
 });

@@ -20,7 +20,7 @@ const EXPECTED_REQUESTS = [
   },
   {
     method: "GET",
-    url: "http://localhost:8080/",
+    url: "ws://localhost:8080/",
     causeType: "websocket",
     causeUri: TOP_URL,
     stack: [
@@ -37,7 +37,7 @@ const EXPECTED_REQUESTS = [
   },
   {
     method: "GET",
-    url: "https://localhost:8081/",
+    url: "wss://localhost:8081/",
     causeType: "websocket",
     causeUri: TOP_URL,
     stack: [
@@ -50,19 +50,22 @@ const EXPECTED_REQUESTS = [
 add_task(async function() {
   // Load a different URL first to instantiate the network monitor before we
   // load the page we're really interested in.
-  const { tab, monitor } = await initNetMonitor(SIMPLE_URL);
+  const { monitor } = await initNetMonitor(SIMPLE_URL);
 
   const { store, windowRequire, connector } = monitor.panelWin;
   const { getSortedRequests } = windowRequire(
     "devtools/client/netmonitor/src/selectors/index"
   );
 
-  BrowserTestUtils.loadURI(tab.linkedBrowser, TOP_URL);
-
-  await waitForNetworkEvents(monitor, EXPECTED_REQUESTS.length);
+  const onNetworkEvents = waitForNetworkEvents(
+    monitor,
+    EXPECTED_REQUESTS.length
+  );
+  await navigateTo(TOP_URL);
+  await onNetworkEvents;
 
   is(
-    store.getState().requests.requests.size,
+    store.getState().requests.requests.length,
     EXPECTED_REQUESTS.length,
     "All the page events should be recorded."
   );

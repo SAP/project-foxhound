@@ -24,8 +24,6 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "jsutil.h"
-
 #include "jit/arm64/vixl/Assembler-vixl.h"
 #include "jit/Label.h"
 
@@ -581,7 +579,7 @@ struct PoolHeader {
 
 
 void MozBaseAssembler::WritePoolHeader(uint8_t* start, js::jit::Pool* p, bool isNatural) {
-  JS_STATIC_ASSERT(sizeof(PoolHeader) == 4);
+  static_assert(sizeof(PoolHeader) == 4);
 
   // Get the total size of the pool.
   const uintptr_t totalPoolSize = sizeof(PoolHeader) + p->getPoolSize();

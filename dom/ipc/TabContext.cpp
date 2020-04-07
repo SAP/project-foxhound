@@ -9,7 +9,6 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
 
 using namespace mozilla::dom::ipc;
@@ -27,8 +26,6 @@ TabContext::TabContext()
       mMaxTouchPoints(0) {}
 
 bool TabContext::IsMozBrowserElement() const { return mIsMozBrowserElement; }
-
-bool TabContext::IsMozBrowser() const { return IsMozBrowserElement(); }
 
 bool TabContext::IsJSPlugin() const { return mJSPluginID >= 0; }
 
@@ -49,6 +46,11 @@ bool TabContext::SetTabContext(const TabContext& aContext) {
 
 void TabContext::SetPrivateBrowsingAttributes(bool aIsPrivateBrowsing) {
   mOriginAttributes.SyncAttributesWithPrivateBrowsing(aIsPrivateBrowsing);
+}
+
+void TabContext::SetFirstPartyDomainAttributes(
+    const nsAString& aFirstPartyDomain) {
+  mOriginAttributes.SetFirstPartyDomain(true, aFirstPartyDomain);
 }
 
 bool TabContext::UpdateTabContextAfterSwap(const TabContext& aContext) {

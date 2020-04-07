@@ -14,10 +14,6 @@
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
-#include "nsIFile.h"
-#include "nsIFilePicker.h"
-#include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "SineWaveGenerator.h"
 #include "Tracing.h"
 
@@ -132,8 +128,7 @@ void MediaEngineDefaultVideoSource::GetSettings(
 
 nsresult MediaEngineDefaultVideoSource::Allocate(
     const MediaTrackConstraints& aConstraints, const MediaEnginePrefs& aPrefs,
-    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
-    const char** aOutBadConstraint) {
+    uint64_t aWindowID, const char** aOutBadConstraint) {
   AssertIsOnOwningThread();
 
   MOZ_ASSERT(mState == kReleased);
@@ -369,7 +364,7 @@ class AudioSourcePullListener : public MediaTrackListener {
     MOZ_COUNT_CTOR(AudioSourcePullListener);
   }
 
-  ~AudioSourcePullListener() { MOZ_COUNT_DTOR(AudioSourcePullListener); }
+  MOZ_COUNTED_DTOR(AudioSourcePullListener)
 
   void NotifyPull(MediaTrackGraph* aGraph, TrackTime aEndOfAppendedData,
                   TrackTime aDesiredTime) override;
@@ -410,8 +405,7 @@ void MediaEngineDefaultAudioSource::GetSettings(
 
 nsresult MediaEngineDefaultAudioSource::Allocate(
     const MediaTrackConstraints& aConstraints, const MediaEnginePrefs& aPrefs,
-    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
-    const char** aOutBadConstraint) {
+    uint64_t aWindowID, const char** aOutBadConstraint) {
   AssertIsOnOwningThread();
 
   MOZ_ASSERT(mState == kReleased);
@@ -504,7 +498,9 @@ void AudioSourcePullListener::NotifyPull(MediaTrackGraph* aGraph,
   TRACE_AUDIO_CALLBACK_COMMENT("SourceMediaTrack %p", mTrack.get());
   AudioSegment segment;
   TrackTicks delta = aDesiredTime - aEndOfAppendedData;
-  RefPtr<SharedBuffer> buffer = SharedBuffer::Create(delta * sizeof(int16_t));
+  CheckedInt<size_t> bufferSize(sizeof(int16_t));
+  bufferSize *= delta;
+  RefPtr<SharedBuffer> buffer = SharedBuffer::Create(bufferSize);
   int16_t* dest = static_cast<int16_t*>(buffer->Data());
   mSineGenerator->generate(dest, delta);
   AutoTArray<const int16_t*, 1> channels;

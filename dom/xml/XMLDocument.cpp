@@ -10,19 +10,13 @@
 #include "nsIXMLContentSink.h"
 #include "nsPresContext.h"
 #include "nsIContent.h"
-#include "nsIContentViewer.h"
 #include "nsIDocShell.h"
 #include "nsHTMLParts.h"
-#include "nsIComponentManager.h"
-#include "nsIBaseWindow.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsIURI.h"
-#include "nsIServiceManager.h"
 #include "nsNetUtil.h"
 #include "nsError.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIPrincipal.h"
 #include "nsLayoutCID.h"
 #include "mozilla/dom/Attr.h"
@@ -32,10 +26,8 @@
 #include "nsThreadUtils.h"
 #include "nsJSUtils.h"
 #include "nsCRT.h"
-#include "nsIAuthPrompt.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentPolicyUtils.h"
-#include "nsNodeUtils.h"
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "nsHTMLDocument.h"
@@ -77,6 +69,8 @@ nsresult NS_NewDOMDocument(Document** aInstancePtrResult,
   } else if (aFlavor == DocumentFlavorHTML) {
     rv = NS_NewHTMLDocument(getter_AddRefs(d));
     isHTML = true;
+  } else if (aFlavor == DocumentFlavorXML) {
+    rv = NS_NewXMLDocument(getter_AddRefs(d));
   } else if (aFlavor == DocumentFlavorPlain) {
     rv = NS_NewXMLDocument(getter_AddRefs(d), aLoadedAsData, true);
   } else if (aDoctype) {
@@ -192,27 +186,6 @@ nsresult NS_NewXMLDocument(Document** aInstancePtrResult, bool aLoadedAsData,
   doc->SetLoadedAsData(aLoadedAsData);
   doc->mIsPlainDocument = aIsPlainDocument;
   doc.forget(aInstancePtrResult);
-
-  return NS_OK;
-}
-
-nsresult NS_NewXBLDocument(Document** aInstancePtrResult, nsIURI* aDocumentURI,
-                           nsIURI* aBaseURI, nsIPrincipal* aPrincipal) {
-  nsresult rv = NS_NewDOMDocument(
-      aInstancePtrResult, NS_LITERAL_STRING("http://www.mozilla.org/xbl"),
-      NS_LITERAL_STRING("bindings"), nullptr, aDocumentURI, aBaseURI,
-      aPrincipal, false, nullptr, DocumentFlavorLegacyGuess);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  Document* doc = *aInstancePtrResult;
-
-  // XBL documents must allow XUL and XBL elements in them but the usual check
-  // only checks if the document is loaded in the system principal which is
-  // sometimes not the case.
-  doc->ForceEnableXULXBL();
-
-  doc->SetLoadedAsInteractiveData(true);
-  doc->SetReadyStateInternal(Document::READYSTATE_COMPLETE);
 
   return NS_OK;
 }

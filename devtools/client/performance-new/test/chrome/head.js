@@ -140,6 +140,10 @@ class MockPerfFront extends EventEmitter {
   isLockedForPrivateBrowsing() {
     return this.mockIsLocked;
   }
+
+  getSupportedFeatures() {
+    return ["js", "stackwalk", "responsiveness", "screenshots"];
+  }
 }
 
 // Do a quick validation to make sure that our Mock has the same methods as a spec.
@@ -179,15 +183,20 @@ function setReactFriendlyInputValue(element, value) {
  * mocks where needed.
  */
 function createPerfComponent() {
-  const Perf = require("devtools/client/performance-new/components/Perf");
   const React = require("devtools/client/shared/vendor/react");
   const ReactDOM = require("devtools/client/shared/vendor/react-dom");
   const ReactRedux = require("devtools/client/shared/vendor/react-redux");
+  const DevToolsAndPopup = React.createFactory(
+    require("devtools/client/performance-new/components/DevToolsAndPopup")
+  );
+  const ProfilerEventHandling = React.createFactory(
+    require("devtools/client/performance-new/components/ProfilerEventHandling")
+  );
   const createStore = require("devtools/client/shared/redux/create-store");
   const reducers = require("devtools/client/performance-new/store/reducers");
   const actions = require("devtools/client/performance-new/store/actions");
   const selectors = require("devtools/client/performance-new/store/selectors");
-  const { getDefaultRecordingPreferences } = ChromeUtils.import(
+  const { getRecordingPreferencesFromBrowser, presets } = ChromeUtils.import(
     "resource://devtools/client/performance-new/popup/background.jsm.js"
   );
 
@@ -212,9 +221,12 @@ function createPerfComponent() {
       actions.initializeStore({
         perfFront: perfFrontMock,
         receiveProfile: receiveProfileMock,
-        recordingPreferences: getDefaultRecordingPreferences(),
+        recordingPreferences: getRecordingPreferencesFromBrowser(),
         setRecordingPreferences: recordingPreferencesMock,
+        presets,
         getSymbolTableGetter: () => noop,
+        pageContext: "devtools",
+        supportedFeatures: perfFrontMock.getSupportedFeatures(),
       })
     );
 
@@ -222,7 +234,12 @@ function createPerfComponent() {
       React.createElement(
         ReactRedux.Provider,
         { store },
-        React.createElement(Perf)
+        React.createElement(
+          React.Fragment,
+          null,
+          ProfilerEventHandling(),
+          DevToolsAndPopup()
+        )
       ),
       container
     );

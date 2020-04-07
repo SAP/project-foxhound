@@ -14,12 +14,10 @@
 #include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
 #include "nsIObserverService.h"
-#include "nsIThreadPool.h"
 #include "nsThreadManager.h"
 #include "nsThreadUtils.h"
 #include "nsXPCOMCIDInternal.h"
 #include "prsystem.h"
-#include "nsIXULRuntime.h"
 
 #include "Decoder.h"
 #include "IDecodingTask.h"
@@ -73,13 +71,15 @@ class DecodePoolImpl {
 
   /// Shut down the provided decode pool thread.
   void ShutdownThread(nsIThread* aThisThread, bool aShutdownIdle) {
+    bool removed = false;
+
     {
       // If this is an idle thread shutdown, then we need to remove it from the
       // worker array. Process shutdown will move the entire array.
       MonitorAutoLock lock(mMonitor);
       if (!mShuttingDown) {
         ++mAvailableThreads;
-        DebugOnly<bool> removed = mThreads.RemoveElement(aThisThread);
+        removed = mThreads.RemoveElement(aThisThread);
         MOZ_ASSERT(aShutdownIdle);
         MOZ_ASSERT(mAvailableThreads < mThreads.Capacity());
         MOZ_ASSERT(removed);
@@ -87,11 +87,15 @@ class DecodePoolImpl {
     }
 
     // Threads have to be shut down from another thread, so we'll ask the
-    // main thread to do it for us.
-    SystemGroup::Dispatch(
-        TaskCategory::Other,
-        NewRunnableMethod("DecodePoolImpl::ShutdownThread", aThisThread,
-                          &nsIThread::AsyncShutdown));
+    // main thread to do it for us, but only if we removed it from our thread
+    // pool explicitly. Otherwise we could try to shut down the same thread
+    // twice.
+    if (removed) {
+      SystemGroup::Dispatch(
+          TaskCategory::Other,
+          NewRunnableMethod("DecodePoolImpl::ShutdownThread", aThisThread,
+                            &nsIThread::AsyncShutdown));
+    }
   }
 
   /**

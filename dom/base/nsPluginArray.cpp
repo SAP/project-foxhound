@@ -12,7 +12,6 @@
 
 #include "nsMimeTypeArray.h"
 #include "Navigator.h"
-#include "nsIDocShell.h"
 #include "nsIWebNavigation.h"
 #include "nsPluginHost.h"
 #include "nsPluginTags.h"
@@ -59,8 +58,8 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsPluginArray)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(nsPluginArray, mWindow, mPlugins,
-                                      mCTPPlugins)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WEAK(nsPluginArray, mWindow, mPlugins,
+                                           mCTPPlugins)
 
 static void GetPluginMimeTypes(
     const nsTArray<RefPtr<nsPluginElement>>& aPlugins,

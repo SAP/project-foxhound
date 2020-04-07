@@ -14,7 +14,6 @@
 #include "nsTArray.h"
 
 #include "PLDHashTable.h"
-#include "nsIHttpChannel.h"
 #include "nsThreadUtils.h"
 #include "mozilla/dom/HTMLSharedElement.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -65,7 +64,7 @@ class nsHTMLDocument : public mozilla::dom::Document {
   virtual bool UseWidthDeviceWidthFallbackViewport() const override;
 
  public:
-  virtual Element* GetUnfocusedKeyEventTarget() override;
+  mozilla::dom::Element* GetUnfocusedKeyEventTarget() override;
 
   nsContentList* GetExistingForms() const { return mForms; }
 
@@ -124,8 +123,9 @@ class nsHTMLDocument : public mozilla::dom::Document {
     return Document::GetLocation();
   }
 
-  static bool MatchFormControls(Element* aElement, int32_t aNamespaceID,
-                                nsAtom* aAtom, void* aData);
+  static bool MatchFormControls(mozilla::dom::Element* aElement,
+                                int32_t aNamespaceID, nsAtom* aAtom,
+                                void* aData);
 
   void GetFormsAndFormControls(nsContentList** aFormList,
                                nsContentList** aFormControlList);

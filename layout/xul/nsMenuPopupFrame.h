@@ -14,15 +14,12 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/gfx/Types.h"
 #include "nsAtom.h"
-#include "nsIDOMXULSelectCntrlEl.h"
 #include "nsGkAtoms.h"
 #include "nsCOMPtr.h"
 #include "nsMenuFrame.h"
 
 #include "nsBoxFrame.h"
 #include "nsMenuParent.h"
-
-#include "nsITimer.h"
 
 #include "Units.h"
 
@@ -248,18 +245,16 @@ class nsMenuPopupFrame final : public nsBoxFrame,
   void EnsureWidget(bool aRecreate = false);
 
   nsresult CreateWidgetForView(nsView* aView);
-  uint8_t GetShadowStyle();
+  mozilla::StyleWindowShadow GetShadowStyle();
 
-  virtual bool IsLeafDynamic() const override;
+  bool IsLeafDynamic() const override;
 
-  virtual void UpdateWidgetProperties() override;
+  void DidSetComputedStyle(ComputedStyle* aOldStyle) override;
 
   // layout, position and display the popup as needed
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void LayoutPopup(nsBoxLayoutState& aState, nsIFrame* aParentMenu,
                    bool aSizedToPopup);
-
-  nsView* GetRootViewForPopup(nsIFrame* aStartFrame);
 
   // Set the position of the popup either relative to the anchor aAnchorFrame
   // (or the frame for mAnchorContent if aAnchorFrame is null), anchored at a
@@ -526,8 +521,8 @@ class nsMenuPopupFrame final : public nsBoxFrame,
     return mAnchorContent && mAnchorContent->GetPrimaryFrame()
                ? mAnchorContent->GetPrimaryFrame()
                          ->StyleVisibility()
-                         ->mDirection == NS_STYLE_DIRECTION_RTL
-               : StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+                         ->mDirection == mozilla::StyleDirection::Rtl
+               : StyleVisibility()->mDirection == mozilla::StyleDirection::Rtl;
   }
 
   // Create a popup view for this frame. The view is added a child of the root

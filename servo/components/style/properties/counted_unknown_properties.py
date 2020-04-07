@@ -10,10 +10,10 @@
 #    "offset-distance",
 #    "offset-path",
 #    "offset-rotate",
-#    "offset"
+#    "offset",
+#    "text-underline-position",
 COUNTED_UNKNOWN_PROPERTIES = [
     "-webkit-font-smoothing",
-    "zoom",
     "-webkit-tap-highlight-color",
     "speak",
     "text-size-adjust",
@@ -41,7 +41,6 @@ COUNTED_UNKNOWN_PROPERTIES = [
     "baseline-shift",
     "-webkit-hyphenate-character",
     "page",
-    "text-underline-position",
     "-webkit-highlight",
     "background-repeat-x",
     "-webkit-padding-end",

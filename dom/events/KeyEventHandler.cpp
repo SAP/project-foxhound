@@ -19,19 +19,15 @@
 #include "nsIController.h"
 #include "nsIControllers.h"
 #include "nsXULElement.h"
-#include "nsIURI.h"
 #include "nsFocusManager.h"
 #include "nsIFormControl.h"
-#include "nsIDOMEventListener.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
-#include "nsIServiceManager.h"
 #include "nsIScriptError.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsGkAtoms.h"
-#include "nsIXPConnect.h"
 #include "nsDOMCID.h"
 #include "nsUnicharUtils.h"
 #include "nsCRT.h"
@@ -680,10 +676,10 @@ void KeyEventHandler::ReportKeyConflict(const char16_t* aKey,
   params.AppendElement(aKey);
   params.AppendElement(aModifiers);
   params.AppendElement(id);
-  nsContentUtils::ReportToConsole(
-      nsIScriptError::warningFlag, NS_LITERAL_CSTRING("XBL Prototype Handler"),
-      doc, nsContentUtils::eXBL_PROPERTIES, aMessageName, params, nullptr,
-      EmptyString(), 0);
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
+                                  NS_LITERAL_CSTRING("Key Event Handler"), doc,
+                                  nsContentUtils::eDOM_PROPERTIES, aMessageName,
+                                  params, nullptr, EmptyString(), 0);
 }
 
 bool KeyEventHandler::ModifiersMatchMask(

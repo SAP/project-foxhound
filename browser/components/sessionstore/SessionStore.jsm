@@ -54,7 +54,7 @@ const OBSERVING = [
   "browser:purge-session-history-for-domain",
   "idle-daily",
   "clear-origin-attributes-data",
-  "http-on-may-change-process",
+  "channel-on-may-change-process",
 ];
 
 // XUL Window properties to (re)store
@@ -208,7 +208,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   TabStateCache: "resource:///modules/sessionstore/TabStateCache.jsm",
   TabStateFlusher: "resource:///modules/sessionstore/TabStateFlusher.jsm",
   Utils: "resource://gre/modules/sessionstore/Utils.jsm",
-  ViewSourceBrowser: "resource://gre/modules/ViewSourceBrowser.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
 });
 
@@ -902,7 +901,7 @@ var SessionStoreInternal = {
           this._forgetTabsWithUserContextId(userContextId);
         }
         break;
-      case "http-on-may-change-process":
+      case "channel-on-may-change-process":
         this.onMayChangeProcess(aSubject);
         break;
     }
@@ -1097,7 +1096,9 @@ var SessionStoreInternal = {
             !browser.userTypedValue
           ) {
             browser.userTypedValue = tabData.userTypedValue;
-            win.URLBarSetURI();
+            if (tab.selected) {
+              win.gURLBar.setURI();
+            }
           }
 
           // Remove state we don't need any longer.
@@ -1180,6 +1181,7 @@ var SessionStoreInternal = {
         this.saveStateDelayed(win);
         break;
       case "oop-browser-crashed":
+      case "oop-browser-buildid-mismatch":
         if (aEvent.isTopFrame) {
           this.onBrowserCrashed(target);
         }
@@ -2152,6 +2154,7 @@ var SessionStoreInternal = {
     let browser = aTab.linkedBrowser;
     browser.addEventListener("SwapDocShells", this);
     browser.addEventListener("oop-browser-crashed", this);
+    browser.addEventListener("oop-browser-buildid-mismatch", this);
 
     if (browser.frameLoader) {
       this._lastKnownFrameLoader.set(browser.permanentKey, browser.frameLoader);
@@ -2302,6 +2305,7 @@ var SessionStoreInternal = {
 
     browser.removeEventListener("SwapDocShells", this);
     browser.removeEventListener("oop-browser-crashed", this);
+    browser.removeEventListener("oop-browser-buildid-mismatch", this);
 
     // If this tab was in the middle of restoring or still needs to be restored,
     // we need to reset that state. If the tab was restoring, we will attempt to
@@ -2533,9 +2537,7 @@ var SessionStoreInternal = {
     aReplaceBrowsingContext
   ) {
     debug(
-      `[process-switch]: performing switch from ${
-        aBrowser.remoteType
-      } to ${aRemoteType}`
+      `[process-switch]: performing switch from ${aBrowser.remoteType} to ${aRemoteType}`
     );
 
     // Don't try to switch tabs before delayed startup is completed.
@@ -2607,11 +2609,8 @@ var SessionStoreInternal = {
   // Examine the channel response to see if we should change the process
   // performing the given load. aRequestor implements nsIProcessSwitchRequestor
   onMayChangeProcess(aRequestor) {
-    if (
-      !E10SUtils.useHttpResponseProcessSelection() &&
-      !E10SUtils.useCrossOriginOpenerPolicy()
-    ) {
-      return;
+    if (!E10SUtils.documentChannel()) {
+      throw new Error("This code is only used by document channel");
     }
 
     let switchRequestor;
@@ -2628,13 +2627,10 @@ var SessionStoreInternal = {
     }
 
     // Check that the document has a corresponding BrowsingContext.
-    let browsingContext;
-    let cp = channel.loadInfo.externalContentPolicyType;
-    if (cp == Ci.nsIContentPolicy.TYPE_DOCUMENT) {
-      browsingContext = channel.loadInfo.browsingContext;
-    } else {
-      browsingContext = channel.loadInfo.frameBrowsingContext;
-    }
+    let browsingContext = channel.loadInfo.targetBrowsingContext;
+    let isSubframe =
+      channel.loadInfo.externalContentPolicyType !=
+      Ci.nsIContentPolicy.TYPE_DOCUMENT;
 
     if (!browsingContext) {
       debug(`[process-switch]: no BrowsingContext - ignoring`);
@@ -2649,9 +2645,8 @@ var SessionStoreInternal = {
     }
 
     let topDocShell = topBC.embedderElement.ownerGlobal.docShell;
-    let useRemoteSubframes = topDocShell.QueryInterface(Ci.nsILoadContext)
-      .useRemoteSubframes;
-    if (!useRemoteSubframes && cp != Ci.nsIContentPolicy.TYPE_DOCUMENT) {
+    let { useRemoteSubframes } = topDocShell.QueryInterface(Ci.nsILoadContext);
+    if (!useRemoteSubframes && isSubframe) {
       debug(`[process-switch]: remote subframes disabled - ignoring`);
       return;
     }
@@ -2699,18 +2694,45 @@ var SessionStoreInternal = {
     let resultPrincipal = Services.scriptSecurityManager.getChannelResultPrincipal(
       channel
     );
+
+    const isCOOPSwitch =
+      E10SUtils.useCrossOriginOpenerPolicy() &&
+      switchRequestor.hasCrossOriginOpenerPolicyMismatch();
+
+    let preferredRemoteType = currentRemoteType;
+    if (
+      E10SUtils.useCrossOriginOpenerPolicy() &&
+      switchRequestor.crossOriginOpenerPolicy ==
+        Ci.nsILoadInfo.OPENER_POLICY_SAME_ORIGIN_EMBEDDER_POLICY_REQUIRE_CORP
+    ) {
+      // We want documents with a SAME_ORIGIN_EMBEDDER_POLICY_REQUIRE_CORP
+      // COOP policy to be loaded in a separate process for which we can enable
+      // high resolution timers.
+      preferredRemoteType =
+        E10SUtils.WEB_REMOTE_COOP_COEP_TYPE_PREFIX + resultPrincipal.siteOrigin;
+    } else if (isCOOPSwitch) {
+      // If it is a coop switch, but doesn't have this flag, we want to switch
+      // to a default remoteType
+      preferredRemoteType = E10SUtils.DEFAULT_REMOTE_TYPE;
+    }
+    debug(
+      `[process-switch]: currentRemoteType (${currentRemoteType}) preferredRemoteType: ${preferredRemoteType}`
+    );
+
     let remoteType = E10SUtils.getRemoteTypeForPrincipal(
       resultPrincipal,
       true,
       useRemoteSubframes,
-      currentRemoteType,
-      currentPrincipal
+      preferredRemoteType,
+      currentPrincipal,
+      isSubframe
     );
-    if (
-      currentRemoteType == remoteType &&
-      (!E10SUtils.useCrossOriginOpenerPolicy() ||
-        !switchRequestor.hasCrossOriginOpenerPolicyMismatch())
-    ) {
+
+    debug(
+      `[process-switch]: ${currentRemoteType}, ${remoteType}, ${isCOOPSwitch}`
+    );
+
+    if (currentRemoteType == remoteType && !isCOOPSwitch) {
       debug(`[process-switch]: type (${remoteType}) is compatible - ignoring`);
       return;
     }
@@ -2722,10 +2744,6 @@ var SessionStoreInternal = {
       debug(`[process-switch]: non-remote source/target - ignoring`);
       return;
     }
-
-    const isCOOPSwitch =
-      E10SUtils.useCrossOriginOpenerPolicy() &&
-      switchRequestor.hasCrossOriginOpenerPolicyMismatch();
 
     // ------------------------------------------------------------------------
     // DANGER ZONE: Perform a process switch into the new process. This is
@@ -2952,7 +2970,7 @@ var SessionStoreInternal = {
     // waiting for data from the frame script. This throbber is disabled
     // if the URI is a local about: URI.
     let uriObj = aTab.linkedBrowser.currentURI;
-    if (!uriObj || (uriObj && !aWindow.gBrowser.isLocalAboutURI(uriObj))) {
+    if (!uriObj || (uriObj && !uriObj.schemeIs("about"))) {
       newTab.setAttribute("busy", "true");
     }
 
@@ -3636,7 +3654,7 @@ var SessionStoreInternal = {
     // Start the throbber to pretend we're doing something while actually
     // waiting for data from the frame script. This throbber is disabled
     // if the URI is a local about: URI.
-    if (!uriObj || (uriObj && !window.gBrowser.isLocalAboutURI(uriObj))) {
+    if (!uriObj || (uriObj && !uriObj.schemeIs("about"))) {
       tab.setAttribute("busy", "true");
     }
 
@@ -3700,6 +3718,7 @@ var SessionStoreInternal = {
       // Make sure that SessionStore knows that this restoration is due
       // to a navigation, as opposed to us restoring a closed window or tab.
       restoreContentReason: RESTORE_TAB_CONTENT_REASON.NAVIGATE_AND_RESTORE,
+      redirectLoadSwitchId: loadArguments.redirectLoadSwitchId,
     };
 
     if (historyIndex >= 0) {
@@ -3842,6 +3861,10 @@ var SessionStoreInternal = {
       winData.sidebar = sidebar;
     } else if (winData.sidebar) {
       delete winData.sidebar;
+    }
+    let workspaceID = aWindow.getWorkspaceID();
+    if (workspaceID) {
+      winData.workspaceID = workspaceID;
     }
   },
 
@@ -4085,6 +4108,10 @@ var SessionStoreInternal = {
     // for this window, so make sure we send the SSWindowStateBusy event.
     this._setWindowStateBusy(aWindow);
 
+    if (winData.workspaceID) {
+      aWindow.moveToWorkspace(winData.workspaceID);
+    }
+
     if (!winData.tabs) {
       winData.tabs = [];
       // don't restore a single blank tab when we've had an external
@@ -4108,8 +4135,6 @@ var SessionStoreInternal = {
     }
 
     let tabbrowser = aWindow.gBrowser;
-    let newTabCount = winData.tabs.length;
-    var tabs = [];
 
     // disable smooth scrolling while adding, moving, removing and selecting tabs
     let arrowScrollbox = tabbrowser.tabContainer.arrowScrollbox;
@@ -4136,76 +4161,11 @@ var SessionStoreInternal = {
       this._prefBranch.getBoolPref("sessionstore.restore_tabs_lazily") &&
       this._restore_on_demand;
 
-    for (var t = 0; t < newTabCount; t++) {
-      let tabData = winData.tabs[t];
-
-      let userContextId = tabData.userContextId;
-      let select = t == selectTab - 1;
-      let tab;
-
-      // Re-use existing selected tab if possible to avoid the overhead of
-      // selecting a new tab.
-      if (select && tabbrowser.selectedTab.userContextId == userContextId) {
-        tab = tabbrowser.selectedTab;
-        if (!tabData.pinned) {
-          tabbrowser.unpinTab(tab);
-        }
-        tabbrowser.moveTabToEnd();
-        if (
-          aWindow.gMultiProcessBrowser &&
-          !tab.linkedBrowser.isRemoteBrowser
-        ) {
-          tabbrowser.updateBrowserRemoteness(tab.linkedBrowser, {
-            remoteType: E10SUtils.DEFAULT_REMOTE_TYPE,
-          });
-        }
-      }
-
-      // Add a new tab if needed.
-      if (!tab) {
-        let createLazyBrowser = restoreTabsLazily && !select && !tabData.pinned;
-
-        let url = "about:blank";
-        if (createLazyBrowser && tabData.entries && tabData.entries.length) {
-          // Let tabbrowser know the future URI because progress listeners won't
-          // get onLocationChange notification before the browser is inserted.
-          let activeIndex = (tabData.index || tabData.entries.length) - 1;
-          // Ensure the index is in bounds.
-          activeIndex = Math.min(activeIndex, tabData.entries.length - 1);
-          activeIndex = Math.max(activeIndex, 0);
-          url = tabData.entries[activeIndex].url;
-        }
-
-        // Setting noInitialLabel is a perf optimization. Rendering tab labels
-        // would make resizing the tabs more expensive as we're adding them.
-        // Each tab will get its initial label set in restoreTab.
-        tab = tabbrowser.addTrustedTab(url, {
-          createLazyBrowser,
-          skipAnimation: true,
-          allowInheritPrincipal: true,
-          noInitialLabel: true,
-          userContextId,
-          skipBackgroundNotify: true,
-          bulkOrderedOpen: true,
-        });
-
-        if (select) {
-          let leftoverTab = tabbrowser.selectedTab;
-          tabbrowser.selectedTab = tab;
-          tabbrowser.removeTab(leftoverTab);
-        }
-      }
-
-      tabs.push(tab);
-
-      if (tabData.hidden) {
-        tabbrowser.hideTab(tab, tabData.extData && tabData.extData.hiddenBy);
-      }
-
-      if (tabData.pinned) {
-        tabbrowser.pinTab(tab);
-      }
-    }
+    var tabs = tabbrowser.addMultipleTabs(
+      restoreTabsLazily,
+      selectTab,
+      winData.tabs
+    );
 
     // Move the originally open tabs to the end.
     if (initialTabs) {
@@ -4717,6 +4677,7 @@ var SessionStoreInternal = {
 
     let newFrameloader = aOptions.newFrameloader;
     let replaceBrowsingContext = aOptions.replaceBrowsingContext;
+    let redirectLoadSwitchId = aOptions.redirectLoadSwitchId;
     let isRemotenessUpdate;
     if (aOptions.remoteType !== undefined) {
       // We already have a selected remote type so we update to that.
@@ -4724,6 +4685,7 @@ var SessionStoreInternal = {
         remoteType: aOptions.remoteType,
         newFrameloader,
         replaceBrowsingContext,
+        redirectLoadSwitchId,
       });
     } else {
       isRemotenessUpdate = tabbrowser.updateBrowserRemotenessByURL(
@@ -4732,6 +4694,7 @@ var SessionStoreInternal = {
         {
           newFrameloader,
           replaceBrowsingContext,
+          redirectLoadSwitchId,
         }
       );
     }
@@ -4750,12 +4713,6 @@ var SessionStoreInternal = {
         loadArguments,
         isRemotenessUpdate,
       });
-    }
-
-    // If the restored browser wants to show view source content, start up a
-    // view source browser that will load the required frame script.
-    if (uri && ViewSourceBrowser.isViewSource(uri)) {
-      new ViewSourceBrowser(browser);
     }
 
     browser.messageManager.sendAsyncMessage("SessionStore:restoreTabContent", {
@@ -5237,7 +5194,7 @@ var SessionStoreInternal = {
   },
 
   /**
-   * on popup windows, the XULWindow's attributes seem not to be set correctly
+   * on popup windows, the AppWindow's attributes seem not to be set correctly
    * we use thus JSDOMWindow attributes for sizemode and normal window attributes
    * (and hope for reasonable values when maximized/minimized - since then
    * outerWidth/outerHeight aren't the dimensions of the restored window)
@@ -5276,13 +5233,13 @@ var SessionStoreInternal = {
         }
         // Width and height attribute report the inner size, but we want
         // to store the outer size, so add the difference.
-        let xulWin = aWindow.docShell.treeOwner
+        let appWin = aWindow.docShell.treeOwner
           .QueryInterface(Ci.nsIInterfaceRequestor)
-          .getInterface(Ci.nsIXULWindow);
+          .getInterface(Ci.nsIAppWindow);
         let diff =
           aAttribute == "width"
-            ? xulWin.outerToInnerWidthDifferenceInCSSPixels
-            : xulWin.outerToInnerHeightDifferenceInCSSPixels;
+            ? appWin.outerToInnerWidthDifferenceInCSSPixels
+            : appWin.outerToInnerHeightDifferenceInCSSPixels;
         return attr + diff;
       }
     }

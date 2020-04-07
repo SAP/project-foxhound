@@ -39,8 +39,7 @@ struct HttpConnInfo {
   uint32_t rtt;
   nsString protocolVersion;
 
-  void SetHTTP1ProtocolVersion(HttpVersion pv);
-  void SetHTTP2ProtocolVersion(SpdyVersion pv);
+  void SetHTTPProtocolVersion(HttpVersion pv);
 };
 
 struct HttpRetParams {
@@ -50,7 +49,7 @@ struct HttpRetParams {
   nsTArray<HalfOpenSockets> halfOpens;
   uint32_t counter;
   uint16_t port;
-  bool spdy;
+  nsCString httpVersion;
   bool ssl;
 };
 

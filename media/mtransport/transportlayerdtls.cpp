@@ -21,7 +21,6 @@
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIEventTarget.h"
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 #include "sslexp.h"
@@ -906,7 +905,7 @@ void TransportLayerDtls::Handshake() {
         MOZ_MTLOG(ML_ERROR, LAYER_INFO << "Malformed DTLS message; ignoring");
         // If this were TLS (and not DTLS), this would be fatal, but
         // here we're required to ignore bad messages, so fall through
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       case PR_WOULD_BLOCK_ERROR:
         MOZ_MTLOG(ML_NOTICE, LAYER_INFO << "Handshake would have blocked");
         PRIntervalTime timeout;
@@ -1472,26 +1471,6 @@ void TransportLayerDtls::RecordTlsTelemetry() {
               LAYER_INFO << "RecordTlsTelemetry failed to get channel info");
     return;
   }
-
-  auto protocol_label =
-      mozilla::Telemetry::LABELS_WEBRTC_DTLS_PROTOCOL_VERSION::Unknown;
-
-  switch (info.protocolVersion) {
-    case SSL_LIBRARY_VERSION_TLS_1_1:
-      protocol_label =
-          Telemetry::LABELS_WEBRTC_DTLS_PROTOCOL_VERSION::Dtls_version_1_0;
-      break;
-    case SSL_LIBRARY_VERSION_TLS_1_2:
-      protocol_label =
-          Telemetry::LABELS_WEBRTC_DTLS_PROTOCOL_VERSION::Dtls_version_1_2;
-      break;
-    case SSL_LIBRARY_VERSION_TLS_1_3:
-      protocol_label =
-          Telemetry::LABELS_WEBRTC_DTLS_PROTOCOL_VERSION::Dtls_version_1_3;
-      break;
-  }
-
-  Telemetry::AccumulateCategorical(protocol_label);
 
   uint16_t telemetry_cipher = 0;
 

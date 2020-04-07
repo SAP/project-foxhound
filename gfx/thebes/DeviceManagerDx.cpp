@@ -23,7 +23,6 @@
 #include "mozilla/layers/MLGDeviceD3D11.h"
 #include "mozilla/layers/PaintThread.h"
 #include "nsExceptionHandler.h"
-#include "nsIGfxInfo.h"
 #include "nsPrintfCString.h"
 #include "nsString.h"
 
@@ -171,6 +170,43 @@ nsTArray<DXGI_OUTPUT_DESC1> DeviceManagerDx::EnumerateOutputs() {
   return outputs;
 }
 
+bool DeviceManagerDx::CheckHardwareStretchingSupport() {
+  RefPtr<IDXGIAdapter> adapter = GetDXGIAdapter();
+
+  if (!adapter) {
+    NS_WARNING(
+        "Failed to acquire a DXGI adapter for checking hardware stretching "
+        "support.");
+    return false;
+  }
+
+  nsTArray<DXGI_OUTPUT_DESC1> outputs;
+  for (UINT i = 0;; ++i) {
+    RefPtr<IDXGIOutput> output = nullptr;
+    if (FAILED(adapter->EnumOutputs(i, getter_AddRefs(output)))) {
+      break;
+    }
+
+    RefPtr<IDXGIOutput6> output6 = nullptr;
+    if (FAILED(output->QueryInterface(__uuidof(IDXGIOutput6),
+                                      getter_AddRefs(output6)))) {
+      break;
+    }
+
+    UINT flags = 0;
+    if (FAILED(output6->CheckHardwareCompositionSupport(&flags))) {
+      break;
+    }
+
+    // XXX Do we need add a check about which flags are supported?
+    if (flags) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 #ifdef DEBUG
 static inline bool ProcessOwnsCompositor() {
   return XRE_GetProcessType() == GeckoProcessType_GPU ||
@@ -309,9 +345,6 @@ bool DeviceManagerDx::CreateCanvasDevice() {
 }
 
 void DeviceManagerDx::CreateDirectCompositionDevice() {
-// Currently, MinGW build environment does not handle IDCompositionDesktopDevice
-// and IDCompositionDevice2
-#if !defined(__MINGW32__)
   if (!gfxVars::UseWebRenderDCompWin()) {
     return;
   }
@@ -351,7 +384,6 @@ void DeviceManagerDx::CreateDirectCompositionDevice() {
   }
 
   mDirectCompositionDevice = compositionDevice;
-#endif
 }
 
 void DeviceManagerDx::ImportDeviceInfo(const D3D11DeviceStatus& aDeviceStatus) {
@@ -928,6 +960,7 @@ void DeviceManagerDx::ResetDevices() {
   mContentDevice = nullptr;
   mCanvasDevice = nullptr;
   mImageDevice = nullptr;
+  mDirectCompositionDevice = nullptr;
   mDeviceStatus = Nothing();
   mDeviceResetReason = Nothing();
   Factory::SetDirect3D11Device(nullptr);
@@ -950,6 +983,7 @@ bool DeviceManagerDx::MaybeResetAndReacquireDevices() {
   bool createCompositorDevice = !!mCompositorDevice;
   bool createContentDevice = !!mContentDevice;
   bool createCanvasDevice = !!mCanvasDevice;
+  bool createDirectCompositionDevice = !!mDirectCompositionDevice;
 
   ResetDevices();
 
@@ -962,6 +996,9 @@ bool DeviceManagerDx::MaybeResetAndReacquireDevices() {
   }
   if (createCanvasDevice) {
     CreateCanvasDevice();
+  }
+  if (createDirectCompositionDevice) {
+    CreateDirectCompositionDevice();
   }
 
   return true;
@@ -1137,19 +1174,13 @@ RefPtr<ID3D11Device> DeviceManagerDx::GetVRDevice() {
 
 RefPtr<ID3D11Device> DeviceManagerDx::GetCanvasDevice() {
   MutexAutoLock lock(mDeviceLock);
-  if (!mCanvasDevice) {
-    CreateCanvasDevice();
-  }
   return mCanvasDevice;
 }
 
-// Currently, MinGW build environment does not handle IDCompositionDevice2
-#if !defined(__MINGW32__)
 RefPtr<IDCompositionDevice2> DeviceManagerDx::GetDirectCompositionDevice() {
   MutexAutoLock lock(mDeviceLock);
   return mDirectCompositionDevice;
 }
-#endif
 
 unsigned DeviceManagerDx::GetCompositorFeatureLevel() const {
   if (!mDeviceStatus) {
@@ -1231,12 +1262,7 @@ bool DeviceManagerDx::CanUseP016() {
 
 bool DeviceManagerDx::CanUseDComp() {
   MutexAutoLock lock(mDeviceLock);
-// Currently, MinGW build environment does not handle IDCompositionDevice2
-#if !defined(__MINGW32__)
   return !!mDirectCompositionDevice;
-#else
-  return false;
-#endif
 }
 
 void DeviceManagerDx::InitializeDirectDraw() {

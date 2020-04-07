@@ -22,11 +22,12 @@
 #include "mozilla/TimeStamp.h"                   // for TimeStamp
 #include "nsDataHashtable.h"                     // for nsDataHashtable
 #include "nsString.h"
-#include "mozilla/ServoStyleConsts.h"
 #include "PLDHashTable.h"  // for PLDHashNumber
 
 struct nsStyleDisplay;
 namespace mozilla {
+enum class StyleScrollSnapStrictness : uint8_t;
+enum class StyleOverscrollBehavior : uint8_t;
 class WritingMode;
 }  // namespace mozilla
 
@@ -145,7 +146,8 @@ struct FrameMetrics {
            mIsRootContent == aOther.mIsRootContent &&
            mIsRelative == aOther.mIsRelative &&
            mDoSmoothScroll == aOther.mDoSmoothScroll &&
-           mIsScrollInfoLayer == aOther.mIsScrollInfoLayer;
+           mIsScrollInfoLayer == aOther.mIsScrollInfoLayer &&
+           mFixedLayerMargins == aOther.mFixedLayerMargins;
   }
 
   bool operator!=(const FrameMetrics& aOther) const {
@@ -510,6 +512,13 @@ struct FrameMetrics {
   // This is a no-op if mIsRootContent is false.
   void RecalculateLayoutViewportOffset();
 
+  void SetFixedLayerMargins(const ScreenMargin& aFixedLayerMargins) {
+    mFixedLayerMargins = aFixedLayerMargins;
+  }
+  const ScreenMargin& GetFixedLayerMargins() const {
+    return mFixedLayerMargins;
+  }
+
   // Helper function for RecalculateViewportOffset(). Exposed so that
   // APZC can perform the operation on other copies of the layout
   // and visual viewport rects (e.g. the "effective" ones used to implement
@@ -679,6 +688,10 @@ struct FrameMetrics {
   CSSPoint mVisualViewportOffset;
   ScrollOffsetUpdateType mVisualScrollUpdateType;
 
+  // 'fixed layer margins' on the main-thread. This is only used for the
+  // root-content scroll frame.
+  ScreenMargin mFixedLayerMargins;
+
   // Whether or not this is the root scroll frame for the root content document.
   bool mIsRootContent : 1;
 
@@ -716,7 +729,7 @@ struct FrameMetrics {
 };
 
 struct ScrollSnapInfo {
-  ScrollSnapInfo() = default;
+  ScrollSnapInfo();
 
   bool operator==(const ScrollSnapInfo& aOther) const {
     return mScrollSnapStrictnessX == aOther.mScrollSnapStrictnessX &&
@@ -728,27 +741,15 @@ struct ScrollSnapInfo {
            mSnapportSize == aOther.mSnapportSize;
   }
 
-  bool HasScrollSnapping() const {
-    return mScrollSnapStrictnessY != mozilla::StyleScrollSnapStrictness::None ||
-           mScrollSnapStrictnessX != mozilla::StyleScrollSnapStrictness::None;
-  }
-
-  bool HasSnapPositions() const {
-    return (!mSnapPositionX.IsEmpty() &&
-            mScrollSnapStrictnessX !=
-                mozilla::StyleScrollSnapStrictness::None) ||
-           (!mSnapPositionY.IsEmpty() &&
-            mScrollSnapStrictnessY != mozilla::StyleScrollSnapStrictness::None);
-  }
+  bool HasScrollSnapping() const;
+  bool HasSnapPositions() const;
 
   void InitializeScrollSnapStrictness(WritingMode aWritingMode,
                                       const nsStyleDisplay* aDisplay);
 
   // The scroll frame's scroll-snap-type.
-  mozilla::StyleScrollSnapStrictness mScrollSnapStrictnessX =
-      mozilla::StyleScrollSnapStrictness::None;
-  mozilla::StyleScrollSnapStrictness mScrollSnapStrictnessY =
-      mozilla::StyleScrollSnapStrictness::None;
+  StyleScrollSnapStrictness mScrollSnapStrictnessX;
+  StyleScrollSnapStrictness mScrollSnapStrictnessY;
 
   // The scroll positions corresponding to scroll-snap-align values.
   nsTArray<nscoord> mSnapPositionX;

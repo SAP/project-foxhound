@@ -1,5 +1,5 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim:expandtab:shiftwidth=2:tabstop=2:
  */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -21,6 +21,7 @@
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/RelativeLuminanceUtils.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "ScreenHelperGTK.h"
 
 #include "gtkdrawing.h"
@@ -218,7 +219,7 @@ nsresult nsLookAndFeel::InitCellHighlightColors() {
   // on top of another background
   int32_t minLuminosityDifference = NS_SUFFICIENT_LUMINOSITY_DIFFERENCE / 5;
   int32_t backLuminosityDifference =
-      NS_LUMINOSITY_DIFFERENCE(mMozWindowBackground, mMozFieldBackground);
+      NS_LUMINOSITY_DIFFERENCE(mMozWindowBackground, mFieldBackground);
   if (backLuminosityDifference >= minLuminosityDifference) {
     mMozCellHighlightBackground = mMozWindowBackground;
     mMozCellHighlightText = mMozWindowText;
@@ -227,8 +228,8 @@ nsresult nsLookAndFeel::InitCellHighlightColors() {
 
   uint16_t hue, sat, luminance;
   uint8_t alpha;
-  mMozCellHighlightBackground = mMozFieldBackground;
-  mMozCellHighlightText = mMozFieldText;
+  mMozCellHighlightBackground = mFieldBackground;
+  mMozCellHighlightText = mFieldText;
 
   NS_RGB2HSV(mMozCellHighlightBackground, hue, sat, luminance, alpha);
 
@@ -263,6 +264,10 @@ nsresult nsLookAndFeel::InitCellHighlightColors() {
 void nsLookAndFeel::NativeInit() { EnsureInit(); }
 
 void nsLookAndFeel::RefreshImpl() {
+  if (mShouldRetainCacheForTest) {
+    return;
+  }
+
   nsXPLookAndFeel::RefreshImpl();
   moz_gtk_refresh();
 
@@ -270,8 +275,45 @@ void nsLookAndFeel::RefreshImpl() {
   mButtonFontCached = false;
   mFieldFontCached = false;
   mMenuFontCached = false;
+  if (XRE_IsParentProcess()) {
+    mPrefersReducedMotionCached = false;
+  }
 
   mInitialized = false;
+}
+
+nsTArray<LookAndFeelInt> nsLookAndFeel::GetIntCacheImpl() {
+  nsTArray<LookAndFeelInt> lookAndFeelIntCache =
+      nsXPLookAndFeel::GetIntCacheImpl();
+
+  const IntID kIdsToCache[] = {eIntID_SystemUsesDarkTheme,
+                               eIntID_PrefersReducedMotion,
+                               eIntID_UseAccessibilityTheme};
+
+  for (IntID id : kIdsToCache) {
+    lookAndFeelIntCache.AppendElement(
+        LookAndFeelInt{.id = id, .value = GetInt(id)});
+  }
+
+  return lookAndFeelIntCache;
+}
+
+void nsLookAndFeel::SetIntCacheImpl(
+    const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) {
+  for (const auto& entry : aLookAndFeelIntCache) {
+    switch (entry.id) {
+      case eIntID_SystemUsesDarkTheme:
+        mSystemUsesDarkTheme = entry.value;
+        break;
+      case eIntID_PrefersReducedMotion:
+        mPrefersReducedMotion = entry.value;
+        mPrefersReducedMotionCached = true;
+        break;
+      case eIntID_UseAccessibilityTheme:
+        mHighContrast = entry.value;
+        break;
+    }
+  }
 }
 
 nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
@@ -425,11 +467,11 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       break;
 
     case ColorID::MozEventreerow:
-    case ColorID::MozField:
-      aColor = mMozFieldBackground;
+    case ColorID::Field:
+      aColor = mFieldBackground;
       break;
-    case ColorID::MozFieldtext:
-      aColor = mMozFieldText;
+    case ColorID::Fieldtext:
+      aColor = mFieldText;
       break;
     case ColorID::MozButtondefault:
       // default button border color
@@ -702,18 +744,24 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = mCSDReversedPlacement;
       break;
     case eIntID_PrefersReducedMotion: {
-      GtkSettings* settings;
-      gboolean enableAnimations;
-
-      settings = gtk_settings_get_default();
-      g_object_get(settings, "gtk-enable-animations", &enableAnimations,
-                   nullptr);
-      aResult = enableAnimations ? 0 : 1;
+      if (!mPrefersReducedMotionCached && XRE_IsParentProcess()) {
+        gboolean enableAnimations;
+        GtkSettings* settings = gtk_settings_get_default();
+        g_object_get(settings, "gtk-enable-animations", &enableAnimations,
+                     nullptr);
+        mPrefersReducedMotion = enableAnimations ? 0 : 1;
+      }
+      aResult = mPrefersReducedMotion;
       break;
     }
     case eIntID_SystemUsesDarkTheme: {
       EnsureInit();
       aResult = mSystemUsesDarkTheme;
+      break;
+    }
+    case eIntID_UseAccessibilityTheme: {
+      EnsureInit();
+      aResult = mHighContrast;
       break;
     }
     default:
@@ -880,24 +928,37 @@ static bool IsGtkThemeCompatibleWithHTMLColors() {
   return HasGoodContrastVisibility(backgroundColor, black);
 }
 
-static void ConfigureContentGtkTheme() {
-  LOG(("ConfigureContentGtkTheme\n"));
-
+static nsCString GetGtkTheme() {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+  nsCString ret;
   GtkSettings* settings = gtk_settings_get_for_screen(gdk_screen_get_default());
-  nsAutoCString contentThemeName;
+  char* themeName = nullptr;
+  g_object_get(settings, "gtk-theme-name", &themeName, nullptr);
+  if (themeName) {
+    ret.Assign(themeName);
+    g_free(themeName);
+  }
+  return ret;
+}
+
+void nsLookAndFeel::ConfigureContentGtkTheme() {
+  GtkSettings* settings = gtk_settings_get_for_screen(gdk_screen_get_default());
+
+  nsAutoCString themeOverride;
   mozilla::Preferences::GetCString("widget.content.gtk-theme-override",
-                                   contentThemeName);
-  if (!contentThemeName.IsEmpty()) {
-    LOG(
-        ("    widget.content.gtk-theme-override is set to %s, setting by "
-         "gtk-theme-name\n",
-         contentThemeName.get()));
-    g_object_set(settings, "gtk-theme-name", contentThemeName.get(), nullptr);
+                                   themeOverride);
+  if (!themeOverride.IsEmpty()) {
+    g_object_set(settings, "gtk-theme-name", themeOverride.get(), nullptr);
+    LOG(("ConfigureContentGtkTheme(%s)\n", themeOverride.get()));
+  } else {
+    LOG(("ConfigureContentGtkTheme(%s)\n", GetGtkTheme().get()));
   }
 
-  // Dark theme is active but user explicitly enables it so we're done now.
-  if (mozilla::Preferences::GetBool("widget.content.allow-gtk-dark-theme",
-                                    false)) {
+  // Dark theme is active but user explicitly enables it, or we're on
+  // high-contrast (in which case we prevent content to mess up with the colors
+  // of the page), so we're done now.
+  if (!themeOverride.IsEmpty() || mHighContrast ||
+      StaticPrefs::widget_content_allow_gtk_dark_theme()) {
     return;
   }
 
@@ -911,8 +972,8 @@ static void ConfigureContentGtkTheme() {
   }
 
   // ...and use a default Gtk theme as a fallback.
-  if (contentThemeName.IsEmpty() && !IsGtkThemeCompatibleWithHTMLColors()) {
-    LOG(("    Non-compatible drark theme, default to Adwaita\n"));
+  if (!IsGtkThemeCompatibleWithHTMLColors()) {
+    LOG(("    Non-compatible dark theme, default to Adwaita\n"));
     g_object_set(settings, "gtk-theme-name", "Adwaita", nullptr);
   }
 }
@@ -944,19 +1005,7 @@ void nsLookAndFeel::EnsureInit() {
   // gtk does non threadsafe refcounting
   MOZ_ASSERT(NS_IsMainThread());
 
-  GdkRGBA color;
   GtkStyleContext* style;
-
-  // It seems GTK doesn't have an API to query if the current theme is
-  // "light" or "dark", so we synthesize it from the CSS2 Window/WindowText
-  // colors instead, by comparing their luminosity.
-  GdkRGBA bg, fg;
-  style = GetStyleContext(MOZ_GTK_WINDOW);
-  gtk_style_context_get_background_color(style, GTK_STATE_FLAG_NORMAL, &bg);
-  gtk_style_context_get_color(style, GTK_STATE_FLAG_NORMAL, &fg);
-  mSystemUsesDarkTheme =
-      (RelativeLuminanceUtils::Compute(GDK_RGBA_TO_NS_RGBA(bg)) <
-       RelativeLuminanceUtils::Compute(GDK_RGBA_TO_NS_RGBA(fg)));
 
   if (XRE_IsContentProcess()) {
     LOG(("nsLookAndFeel::EnsureInit() [%p] Content process\n", (void*)this));
@@ -965,7 +1014,24 @@ void nsLookAndFeel::EnsureInit() {
     // but allow user to overide it by prefs.
     ConfigureContentGtkTheme();
   } else {
-    LOG(("nsLookAndFeel::EnsureInit() [%p] Crome process\n", (void*)this));
+    // It seems GTK doesn't have an API to query if the current theme is
+    // "light" or "dark", so we synthesize it from the CSS2 Window/WindowText
+    // colors instead, by comparing their luminosity.
+    GdkRGBA bg, fg;
+    style = GetStyleContext(MOZ_GTK_WINDOW);
+    gtk_style_context_get_background_color(style, GTK_STATE_FLAG_NORMAL, &bg);
+    gtk_style_context_get_color(style, GTK_STATE_FLAG_NORMAL, &fg);
+    LOG(("nsLookAndFeel::EnsureInit() [%p] Chrome process\n", (void*)this));
+    // Update mSystemUsesDarkTheme only in the parent process since in the child
+    // processes we forcibly set gtk-theme-name so that we can't get correct
+    // results.  Instead mSystemUsesDarkTheme in the child processes is updated
+    // via our caching machinery.
+    mSystemUsesDarkTheme =
+        (RelativeLuminanceUtils::Compute(GDK_RGBA_TO_NS_RGBA(bg)) <
+         RelativeLuminanceUtils::Compute(GDK_RGBA_TO_NS_RGBA(fg)));
+
+    mHighContrast = StaticPrefs::widget_content_gtk_high_contrast_enabled() &&
+                    GetGtkTheme().Find(NS_LITERAL_CSTRING("HighContrast")) >= 0;
   }
 
   // The label is not added to a parent widget, but shared for constructing
@@ -975,6 +1041,7 @@ void nsLookAndFeel::EnsureInit() {
   g_object_ref_sink(labelWidget);
 
   // Scrollbar colors
+  GdkRGBA color;
   style = GetStyleContext(MOZ_GTK_SCROLLBAR_TROUGH_VERTICAL);
   gtk_style_context_get_background_color(style, GTK_STATE_FLAG_NORMAL, &color);
   mMozScrollbar = GDK_RGBA_TO_NS_RGBA(color);
@@ -1062,9 +1129,9 @@ void nsLookAndFeel::EnsureInit() {
   style = GetStyleContext(MOZ_GTK_TEXT_VIEW_TEXT);
   gtk_style_context_get_background_color(style, GTK_STATE_FLAG_NORMAL, &color);
   ApplyColorOver(color, &bgColor);
-  mMozFieldBackground = GDK_RGBA_TO_NS_RGBA(bgColor);
+  mFieldBackground = GDK_RGBA_TO_NS_RGBA(bgColor);
   gtk_style_context_get_color(style, GTK_STATE_FLAG_NORMAL, &color);
-  mMozFieldText = GDK_RGBA_TO_NS_RGBA(color);
+  mFieldText = GDK_RGBA_TO_NS_RGBA(color);
 
   // Selected text and background
   gtk_style_context_get_background_color(
@@ -1235,6 +1302,8 @@ void nsLookAndFeel::EnsureInit() {
         break;
     }
   }
+
+  RecordTelemetry();
 }
 
 // virtual

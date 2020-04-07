@@ -7,7 +7,7 @@
 const {
   CanvasFrameAnonymousContentHelper,
   createNode,
-} = require("./utils/markup");
+} = require("devtools/server/actors/highlighters/utils/markup");
 
 loader.lazyGetter(this, "L10N", () => {
   const { LocalizationHelper } = require("devtools/shared/l10n");
@@ -151,7 +151,7 @@ PausedDebuggerOverlay.prototype = {
 
   onMouseMove(target) {
     // Not an element we care about
-    if (!target.id) {
+    if (!target || !target.id) {
       return;
     }
 

@@ -5,11 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceTiming.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/PerformanceTimingBinding.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "nsITimedChannel.h"
 
@@ -226,7 +228,7 @@ void PerformanceTimingData::SetPropertiesFromHttpChannel(
   aChannel->GetNativeServerTiming(mServerTiming);
 }
 
-PerformanceTiming::~PerformanceTiming() {}
+PerformanceTiming::~PerformanceTiming() = default;
 
 DOMHighResTimeStamp PerformanceTimingData::FetchStartHighRes(
     Performance* aPerformance) {
@@ -615,17 +617,11 @@ bool PerformanceTiming::IsTopLevelContentDocument() const {
   if (!document) {
     return false;
   }
-  nsCOMPtr<nsIDocShell> docShell = document->GetDocShell();
-  if (!docShell) {
-    return false;
+
+  if (BrowsingContext* bc = document->GetBrowsingContext()) {
+    return bc->IsTopContent();
   }
-  nsCOMPtr<nsIDocShellTreeItem> rootItem;
-  Unused << docShell->GetInProcessSameTypeRootTreeItem(
-      getter_AddRefs(rootItem));
-  if (rootItem.get() != static_cast<nsIDocShellTreeItem*>(docShell.get())) {
-    return false;
-  }
-  return rootItem->ItemType() == nsIDocShellTreeItem::typeContent;
+  return false;
 }
 
 nsTArray<nsCOMPtr<nsIServerTiming>> PerformanceTimingData::GetServerTiming() {

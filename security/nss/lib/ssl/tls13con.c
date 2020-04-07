@@ -131,6 +131,7 @@ const char kHkdfLabelExporterMasterSecret[] = "exp master";
 const char kHkdfLabelResumption[] = "resumption";
 const char kHkdfLabelTrafficUpdate[] = "traffic upd";
 const char kHkdfPurposeKey[] = "key";
+const char kHkdfPurposeSn[] = "sn";
 const char kHkdfPurposeIv[] = "iv";
 
 const char keylogLabelClientEarlyTrafficSecret[] = "CLIENT_EARLY_TRAFFIC_SECRET";
@@ -284,6 +285,34 @@ tls13_GetHash(const sslSocket *ss)
     /* All TLS 1.3 cipher suites must have an explict PRF hash. */
     PORT_Assert(ss->ssl3.hs.suite_def->prf_hash != ssl_hash_none);
     return ss->ssl3.hs.suite_def->prf_hash;
+}
+
+SECStatus
+tls13_GetHashAndCipher(PRUint16 version, PRUint16 cipherSuite,
+                       SSLHashType *hash, const ssl3BulkCipherDef **cipher)
+{
+    if (version < SSL_LIBRARY_VERSION_TLS_1_3) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+
+    // Lookup and check the suite.
+    SSLVersionRange vrange = { version, version };
+    if (!ssl3_CipherSuiteAllowedForVersionRange(cipherSuite, &vrange)) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+    const ssl3CipherSuiteDef *suiteDef = ssl_LookupCipherSuiteDef(cipherSuite);
+    const ssl3BulkCipherDef *cipherDef = ssl_GetBulkCipherDef(suiteDef);
+    if (cipherDef->type != type_aead) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+    *hash = suiteDef->prf_hash;
+    if (cipher != NULL) {
+        *cipher = cipherDef;
+    }
+    return SECSuccess;
 }
 
 unsigned int
@@ -641,6 +670,7 @@ tls13_UpdateTrafficKeys(sslSocket *ss, SSLSecretDirection direction)
                                strlen(kHkdfLabelTrafficUpdate),
                                tls13_GetHmacMechanism(ss),
                                tls13_GetHashSize(ss),
+                               ss->protocolVariant,
                                &updatedSecret);
     if (rv != SECSuccess) {
         return SECFailure;
@@ -798,7 +828,6 @@ tls13_HandleKeyUpdate(sslSocket *ss, PRUint8 *b, unsigned int length)
     PORT_Assert(ss->opt.noLocks || ssl_HaveRecvBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
 
-    PORT_Assert(ss->firstHsDone);
     if (!tls13_IsPostHandshake(ss)) {
         FATAL_ERROR(ss, SSL_ERROR_RX_UNEXPECTED_KEY_UPDATE, unexpected_message);
         return SECFailure;
@@ -3319,7 +3348,8 @@ tls13_DeriveSecret(sslSocket *ss, PK11SymKey *key,
                                hashes->u.raw, hashes->len,
                                label, labelLen,
                                tls13_GetHkdfMechanism(ss),
-                               tls13_GetHashSize(ss), dest);
+                               tls13_GetHashSize(ss),
+                               ss->protocolVariant, dest);
     if (rv != SECSuccess) {
         LOG_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE);
         return SECFailure;
@@ -3468,6 +3498,7 @@ tls13_DeriveTrafficKeys(sslSocket *ss, ssl3CipherSpec *spec,
                                NULL, 0,
                                kHkdfPurposeKey, strlen(kHkdfPurposeKey),
                                bulkAlgorithm, keySize,
+                               ss->protocolVariant,
                                &spec->keyMaterial.key);
     if (rv != SECSuccess) {
         LOG_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE);
@@ -3475,9 +3506,21 @@ tls13_DeriveTrafficKeys(sslSocket *ss, ssl3CipherSpec *spec,
         goto loser;
     }
 
+    if (IS_DTLS(ss) && spec->epoch > 0) {
+        rv = ssl_CreateMaskingContextInner(spec->version, ss->ssl3.hs.cipher_suite,
+                                           ss->protocolVariant, prk, kHkdfPurposeSn,
+                                           strlen(kHkdfPurposeSn), &spec->maskContext);
+        if (rv != SECSuccess) {
+            LOG_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE);
+            PORT_Assert(0);
+            goto loser;
+        }
+    }
+
     rv = tls13_HkdfExpandLabelRaw(prk, tls13_GetHash(ss),
                                   NULL, 0,
                                   kHkdfPurposeIv, strlen(kHkdfPurposeIv),
+                                  ss->protocolVariant,
                                   spec->keyMaterial.iv, ivSize);
     if (rv != SECSuccess) {
         LOG_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE);
@@ -4184,8 +4227,10 @@ tls13_HandleCertificateVerify(sslSocket *ss, PRUint8 *b, PRUint32 length)
     if (tls13_IsVerifyingWithDelegatedCredential(ss)) {
         /* DelegatedCredential.cred.expected_cert_verify_algorithm is expected
          * to match CertificateVerify.scheme.
+         * DelegatedCredential.cred.expected_cert_verify_algorithm must also be
+         * the same as was reported in ssl3_AuthCertificate.
          */
-        if (sigScheme != dc->expectedCertVerifyAlg) {
+        if (sigScheme != dc->expectedCertVerifyAlg || sigScheme != ss->sec.signatureScheme) {
             FATAL_ERROR(ss, SSL_ERROR_DC_CERT_VERIFY_ALG_MISMATCH, illegal_parameter);
             return SECFailure;
         }
@@ -4245,12 +4290,19 @@ tls13_HandleCertificateVerify(sslSocket *ss, PRUint8 *b, PRUint32 length)
         goto loser;
     }
 
-    /* Set the auth type. */
+    /* Set the auth type and verify it is what we captured in ssl3_AuthCertificate */
     if (!ss->sec.isServer) {
         ss->sec.authType = ssl_SignatureSchemeToAuthType(sigScheme);
+
+        uint32_t prelimAuthKeyBits = ss->sec.authKeyBits;
         rv = ssl_SetAuthKeyBits(ss, pubKey);
         if (rv != SECSuccess) {
             goto loser; /* Alert sent and code set. */
+        }
+
+        if (prelimAuthKeyBits != ss->sec.authKeyBits) {
+            FATAL_ERROR(ss, SSL_ERROR_DC_CERT_VERIFY_ALG_MISMATCH, illegal_parameter);
+            goto loser;
         }
     }
 
@@ -4384,7 +4436,8 @@ tls13_ComputeFinished(sslSocket *ss, PK11SymKey *baseKey,
                                NULL, 0,
                                label, strlen(label),
                                tls13_GetHmacMechanism(ss),
-                               tls13_GetHashSize(ss), &secret);
+                               tls13_GetHashSize(ss),
+                               ss->protocolVariant, &secret);
     if (rv != SECSuccess) {
         goto abort;
     }
@@ -4922,7 +4975,8 @@ tls13_SendNewSessionTicket(sslSocket *ss, const PRUint8 *appToken,
                                kHkdfLabelResumption,
                                strlen(kHkdfLabelResumption),
                                tls13_GetHkdfMechanism(ss),
-                               tls13_GetHashSize(ss), &secret);
+                               tls13_GetHashSize(ss),
+                               ss->protocolVariant, &secret);
     if (rv != SECSuccess) {
         goto loser;
     }
@@ -5156,7 +5210,8 @@ tls13_HandleNewSessionTicket(sslSocket *ss, PRUint8 *b, PRUint32 length)
                                    kHkdfLabelResumption,
                                    strlen(kHkdfLabelResumption),
                                    tls13_GetHkdfMechanism(ss),
-                                   tls13_GetHashSize(ss), &secret);
+                                   tls13_GetHashSize(ss),
+                                   ss->protocolVariant, &secret);
         if (rv != SECSuccess) {
             return SECFailure;
         }
@@ -5345,6 +5400,11 @@ tls13_ProtectRecord(sslSocket *ss,
 
         PORT_Assert(cipher_def->type == type_aead);
 
+        /* If the following condition holds, we can skip the padding logic for
+         * DTLS 1.3 (4.2.3). This will be the case until we support a cipher
+         * with tag length < 15B. */
+        PORT_Assert(tagLen + 1 /* cType */ >= 16);
+
         /* Add the content type at the end. */
         *(SSL_BUFFER_NEXT(wrBuf) + contentLen) = type;
 
@@ -5355,9 +5415,7 @@ tls13_ProtectRecord(sslSocket *ss,
             return SECFailure;
         }
         if (needsLength) {
-            rv = sslBuffer_AppendNumber(&buf, contentLen + 1 +
-                                                  cwSpec->cipherDef->tag_size,
-                                        2);
+            rv = sslBuffer_AppendNumber(&buf, contentLen + 1 + tagLen, 2);
             if (rv != SECSuccess) {
                 return SECFailure;
             }
@@ -5755,14 +5813,26 @@ tls13_HandleEarlyApplicationData(sslSocket *ss, sslBuffer *origBuf)
 }
 
 PRUint16
-tls13_EncodeDraftVersion(SSL3ProtocolVersion version, SSLProtocolVariant variant)
+tls13_EncodeVersion(SSL3ProtocolVersion version, SSLProtocolVariant variant)
 {
+    if (variant == ssl_variant_datagram) {
+        /* TODO: When DTLS 1.3 is out of draft, replace this with
+         * dtls_TLSVersionToDTLSVersion(). */
+        switch (version) {
 #ifdef DTLS_1_3_DRAFT_VERSION
-    if (version == SSL_LIBRARY_VERSION_TLS_1_3 &&
-        variant == ssl_variant_datagram) {
-        return 0x7f00 | DTLS_1_3_DRAFT_VERSION;
-    }
+            case SSL_LIBRARY_VERSION_TLS_1_3:
+                return 0x7f00 | DTLS_1_3_DRAFT_VERSION;
 #endif
+            case SSL_LIBRARY_VERSION_TLS_1_2:
+                return SSL_LIBRARY_VERSION_DTLS_1_2_WIRE;
+            case SSL_LIBRARY_VERSION_TLS_1_1:
+                /* TLS_1_1 maps to DTLS_1_0, see sslproto.h. */
+                return SSL_LIBRARY_VERSION_DTLS_1_0_WIRE;
+            default:
+                PORT_Assert(0);
+        }
+    }
+    /* Stream-variant encodings do not change. */
     return (PRUint16)version;
 }
 
@@ -5792,8 +5862,8 @@ tls13_ClientReadSupportedVersion(sslSocket *ss)
         return SECFailure;
     }
 
-    if (temp != tls13_EncodeDraftVersion(SSL_LIBRARY_VERSION_TLS_1_3,
-                                         ss->protocolVariant)) {
+    if (temp != tls13_EncodeVersion(SSL_LIBRARY_VERSION_TLS_1_3,
+                                    ss->protocolVariant)) {
         /* You cannot negotiate < TLS 1.3 with supported_versions. */
         FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_SERVER_HELLO, illegal_parameter);
         return SECFailure;
@@ -5823,7 +5893,16 @@ tls13_NegotiateVersion(sslSocket *ss, const TLSExtension *supportedVersions)
         return SECFailure;
     }
     for (version = ss->vrange.max; version >= ss->vrange.min; --version) {
-        PRUint16 wire = tls13_EncodeDraftVersion(version, ss->protocolVariant);
+        if (ss->ssl3.hs.helloRetry && version < SSL_LIBRARY_VERSION_TLS_1_3) {
+            /* Prevent negotiating to a lower version in response to a TLS 1.3 HRR.
+             * Since we check in descending (local) order, this will only fail if
+             * our vrange has changed or the client didn't offer 1.3 in response. */
+            PORT_SetError(SSL_ERROR_UNSUPPORTED_VERSION);
+            FATAL_ERROR(ss, SSL_ERROR_UNSUPPORTED_VERSION, protocol_version);
+            return SECFailure;
+        }
+
+        PRUint16 wire = tls13_EncodeVersion(version, ss->protocolVariant);
         unsigned long offset;
 
         for (offset = 0; offset < versions.len; offset += 2) {

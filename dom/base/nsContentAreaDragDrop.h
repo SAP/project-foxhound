@@ -9,7 +9,6 @@
 
 #include "nsCOMPtr.h"
 
-#include "nsIDOMEventListener.h"
 #include "nsITransferable.h"
 #include "nsIContentSecurityPolicy.h"
 
@@ -66,7 +65,7 @@ class nsContentAreaDragDrop {
 // during the drop instead of when it is added to the drag data transfer. This
 // ensures that the image data is only created when an image drop is allowed.
 class nsContentAreaDragDropDataProvider : public nsIFlavorDataProvider {
-  virtual ~nsContentAreaDragDropDataProvider() {}
+  virtual ~nsContentAreaDragDropDataProvider() = default;
 
  public:
   NS_DECL_ISUPPORTS
@@ -74,7 +73,8 @@ class nsContentAreaDragDropDataProvider : public nsIFlavorDataProvider {
 
   nsresult SaveURIToFile(nsIURI* inSourceURI,
                          nsIPrincipal* inTriggeringPrincipal,
-                         nsIFile* inDestFile, bool isPrivate);
+                         nsIFile* inDestFile, nsContentPolicyType inPolicyType,
+                         bool isPrivate);
 };
 
 #endif /* nsContentAreaDragDrop_h__ */

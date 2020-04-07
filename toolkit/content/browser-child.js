@@ -29,27 +29,25 @@ sendAsyncMessage("Content:BrowserChildReady", {
 addEventListener(
   "DOMTitleChanged",
   function(aEvent) {
-    if (!aEvent.isTrusted || aEvent.target.defaultView != content) {
+    if (
+      !aEvent.isTrusted ||
+      // Check that we haven't been closed (DOM code dispatches this event
+      // asynchronously).
+      content.closed
+    ) {
+      return;
+    }
+    // Ensure `docShell.document` (an nsIWebNavigation idl prop) is there:
+    docShell.QueryInterface(Ci.nsIWebNavigation);
+    if (
+      // Check that the document whose title changed is the toplevel document,
+      // rather than a subframe, and check that it is still the current
+      // document in the docshell - we may have started loading another one.
+      docShell.document != aEvent.target
+    ) {
       return;
     }
     sendAsyncMessage("DOMTitleChanged", { title: content.document.title });
-  },
-  false
-);
-
-addEventListener(
-  "ImageContentLoaded",
-  function(aEvent) {
-    if (content.document instanceof Ci.nsIImageDocument) {
-      let req = content.document.imageRequest;
-      if (!req.image) {
-        return;
-      }
-      sendAsyncMessage("ImageDocumentLoaded", {
-        width: req.image.width,
-        height: req.image.height,
-      });
-    }
   },
   false
 );

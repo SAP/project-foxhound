@@ -19,11 +19,13 @@ const {
 const {
   setTargetSearchResult,
 } = require("devtools/client/netmonitor/src/actions/search");
-const { FILTER_SEARCH_DELAY } = require("../constants");
+const {
+  FILTER_SEARCH_DELAY,
+} = require("devtools/client/netmonitor/src/constants");
 
 // Components
 const TreeViewClass = require("devtools/client/shared/components/tree/TreeView");
-const PropertiesViewContextMenu = require("../widgets/PropertiesViewContextMenu");
+const PropertiesViewContextMenu = require("devtools/client/netmonitor/src/widgets/PropertiesViewContextMenu");
 const JSONPreview = createFactory(
   require("devtools/client/netmonitor/src/components/JSONPreview")
 );
@@ -37,17 +39,21 @@ loader.lazyGetter(this, "TreeRow", function() {
   );
 });
 loader.lazyGetter(this, "SourceEditor", function() {
-  return createFactory(require("./SourceEditor"));
+  return createFactory(
+    require("devtools/client/netmonitor/src/components/SourceEditor")
+  );
 });
 loader.lazyGetter(this, "HTMLPreview", function() {
-  return createFactory(require("./HtmlPreview"));
+  return createFactory(
+    require("devtools/client/netmonitor/src/components/HtmlPreview")
+  );
 });
 
 // Constants
 const {
   AUTO_EXPAND_MAX_LEVEL,
   AUTO_EXPAND_MAX_NODES,
-} = require("../constants");
+} = require("devtools/client/netmonitor/src/constants");
 
 const { div, tr, td, pre } = dom;
 const EDITOR_CONFIG_ID = "EDITOR_CONFIG";
@@ -78,6 +84,7 @@ class PropertiesView extends Component {
       cropLimit: PropTypes.number,
       targetSearchResult: PropTypes.object,
       resetTargetSearchResult: PropTypes.func,
+      useQuotes: PropTypes.bool,
     };
   }
 
@@ -89,6 +96,7 @@ class PropertiesView extends Component {
       filterPlaceHolder: "",
       sectionNames: [],
       cropLimit: 1024,
+      useQuotes: false,
     };
   }
 
@@ -269,6 +277,7 @@ class PropertiesView extends Component {
       openLink,
       provider,
       selected,
+      useQuotes,
     } = this.props;
 
     return div(
@@ -297,7 +306,7 @@ class PropertiesView extends Component {
         },
         enableInput,
         expandableStrings,
-        useQuotes: false,
+        useQuotes,
         expandedNodes:
           expandedNodes ||
           TreeViewClass.getExpandedNodes(object, {

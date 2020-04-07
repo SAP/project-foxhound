@@ -192,9 +192,7 @@ bool NotificationController::QueueMutationEvent(AccTreeMutationEvent* aEvent) {
 
   // It is not possible to have a text change event for something other than a
   // hyper text accessible.
-  // If the accessible doesn't have a frame, we are probably mid frame
-  // destruction bail early.
-  if (!container->IsHyperText() || !container->GetFrame()) {
+  if (!container->IsHyperText()) {
     return true;
   }
 
@@ -640,10 +638,6 @@ void NotificationController::WillRefresh(mozilla::TimeStamp aTime) {
                  "isn't created!");
   }
 
-  // Initialize scroll support if needed.
-  if (!(mDocument->mDocFlags & DocAccessible::eScrollInitialized))
-    mDocument->AddScrollListener();
-
   // Process rendered text change notifications.
   for (auto iter = mTextHash.Iter(); !iter.Done(); iter.Next()) {
     nsCOMPtrHashKey<nsIContent>* entry = iter.Get();
@@ -930,7 +924,7 @@ void NotificationController::EventMap::PutEvent(AccTreeMutationEvent* aEvent) {
   uint64_t addr = reinterpret_cast<uintptr_t>(aEvent->GetAccessible());
   MOZ_ASSERT((addr & 0x3) == 0, "accessible is not 4 byte aligned");
   addr |= type;
-  mTable.Put(addr, aEvent);
+  mTable.Put(addr, RefPtr{aEvent});
 }
 
 AccTreeMutationEvent* NotificationController::EventMap::GetEvent(

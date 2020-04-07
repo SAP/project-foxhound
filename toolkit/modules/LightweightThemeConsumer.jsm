@@ -53,7 +53,7 @@ const toolkitVariableMap = [
         const { r, g, b } = rgbaChannels;
         element.setAttribute(
           "lwthemetextcolor",
-          _isTextColorDark(r, g, b) ? "dark" : "bright"
+          _isColorDark(r, g, b) ? "dark" : "bright"
         );
         return `rgba(${r}, ${g}, ${b})`;
       },
@@ -81,7 +81,7 @@ const toolkitVariableMap = [
 
         let { r, g, b, a } = rgbaChannels;
 
-        if (_isTextColorDark(r, g, b)) {
+        if (_isColorDark(r, g, b)) {
           element.removeAttribute("lwt-popup-brighttext");
           element.setAttribute("lwt-popup-darktext", "true");
         } else {
@@ -119,7 +119,7 @@ const toolkitVariableMap = [
           return null;
         }
         const { r, g, b, a } = rgbaChannels;
-        if (_isTextColorDark(r, g, b)) {
+        if (_isColorDark(r, g, b)) {
           element.removeAttribute("lwt-toolbar-field-brighttext");
         } else {
           element.setAttribute("lwt-toolbar-field-brighttext", "true");
@@ -138,12 +138,31 @@ const toolkitVariableMap = [
     "--lwt-toolbar-field-focus",
     {
       lwtProperty: "toolbar_field_focus",
+      fallbackProperty: "toolbar_field",
+      processColor(rgbaChannels, element, propertyOverrides) {
+        // Ensure minimum opacity as this is used behind address bar results.
+        if (!rgbaChannels) {
+          propertyOverrides.set("toolbar_field_text_focus", "black");
+          return "white";
+        }
+        const min_opacity = 0.9;
+        let { r, g, b, a } = rgbaChannels;
+        if (a < min_opacity) {
+          propertyOverrides.set(
+            "toolbar_field_text_focus",
+            _isColorDark(r, g, b) ? "white" : "black"
+          );
+          return `rgba(${r}, ${g}, ${b}, ${min_opacity})`;
+        }
+        return `rgba(${r}, ${g}, ${b}, ${a})`;
+      },
     },
   ],
   [
     "--lwt-toolbar-field-focus-color",
     {
       lwtProperty: "toolbar_field_text_focus",
+      fallbackProperty: "toolbar_field_text",
     },
   ],
   [
@@ -182,9 +201,7 @@ function LightweightThemeConsumer(aDocument) {
 
   Services.obs.addObserver(this, "lightweight-theme-styling-update");
 
-  // We're responsible for notifying LightweightThemeManager when the OS is in
-  // dark mode so it can activate the dark theme. We don't want this on Linux
-  // as the default theme picks up the right colors from dark GTK themes.
+  // In Linux, the default theme picks up the right colors from dark GTK themes.
   if (AppConstants.platform != "linux") {
     this.darkThemeMediaQuery = this._win.matchMedia("(-moz-system-dark-theme)");
     this.darkThemeMediaQuery.addListener(this);
@@ -391,11 +408,13 @@ function _setProperty(elem, active, variableName, value) {
 
 function _setProperties(root, active, themeData) {
   let properties = [];
+  let propertyOverrides = new Map();
 
   for (let map of [toolkitVariableMap, ThemeVariableMap]) {
     for (let [cssVarName, definition] of map) {
       const {
         lwtProperty,
+        fallbackProperty,
         optionalElementID,
         processColor,
         isColor = true,
@@ -403,11 +422,17 @@ function _setProperties(root, active, themeData) {
       let elem = optionalElementID
         ? root.ownerDocument.getElementById(optionalElementID)
         : root;
-      let val = themeData[lwtProperty];
+      let val = propertyOverrides.get(lwtProperty) || themeData[lwtProperty];
       if (isColor) {
         val = _sanitizeCSSColor(root.ownerDocument, val);
+        if (!val && fallbackProperty) {
+          val = _sanitizeCSSColor(
+            root.ownerDocument,
+            themeData[fallbackProperty]
+          );
+        }
         if (processColor) {
-          val = processColor(_parseRGBA(val), elem);
+          val = processColor(_parseRGBA(val), elem, propertyOverrides);
         }
       }
       properties.push([elem, cssVarName, val]);
@@ -460,6 +485,6 @@ function _parseRGBA(aColorString) {
   };
 }
 
-function _isTextColorDark(r, g, b) {
+function _isColorDark(r, g, b) {
   return 0.2125 * r + 0.7154 * g + 0.0721 * b <= 110;
 }

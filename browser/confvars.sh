@@ -6,7 +6,6 @@
 MOZ_APP_BASENAME=Taintfox
 MOZ_APP_VENDOR=SAP
 MOZ_UPDATER=1
-MOZ_PHOENIX=1
 
 if test "$OS_ARCH" = "WINNT"; then
   if ! test "$HAVE_64BIT_BUILD"; then

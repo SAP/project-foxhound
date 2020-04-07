@@ -15,12 +15,12 @@
 #include "jsapi.h"        // JS_ReportErrorNumberASCII
 #include "jsfriendapi.h"  // js::GetErrorMessage
 
-#include "builtin/Promise.h"      // js::PromiseObject
 #include "js/Conversions.h"       // JS::ToNumber
 #include "js/RootingAPI.h"        // JS::{,Mutable}Handle, JS::Rooted
 #include "vm/Interpreter.h"       // js::{Call,GetAndClearException}
 #include "vm/JSContext.h"         // JSContext
 #include "vm/ObjectOperations.h"  // js::GetProperty
+#include "vm/PromiseObject.h"     // js::PromiseObject
 #include "vm/StringType.h"        // js::PropertyName
 
 #include "vm/JSContext-inl.h"  // JSContext::check
@@ -60,6 +60,10 @@ MOZ_MUST_USE bool js::CreateAlgorithmFromUnderlyingMethod(
     JSContext* cx, Handle<Value> underlyingObject,
     const char* methodNameForErrorMessage, Handle<PropertyName*> methodName,
     MutableHandle<Value> method) {
+  cx->check(underlyingObject);
+  cx->check(methodName);
+  cx->check(method);
+
   // Step 1: Assert: underlyingObject is not undefined.
   MOZ_ASSERT(!underlyingObject.isUndefined());
 
@@ -93,8 +97,8 @@ MOZ_MUST_USE bool js::CreateAlgorithmFromUnderlyingMethod(
     //     Step ii: Return ! PromiseCall(method, underlyingObject,
     //                                   fullArgs).
     // (These steps are deferred to the code that performs the algorithm.
-    // See ReadableStreamControllerCancelSteps and
-    // ReadableStreamControllerCallPullIfNeeded.)
+    // See Perform{Write,Close}Algorithm, ReadableStreamControllerCancelSteps,
+    // and ReadableStreamControllerCallPullIfNeeded.)
     return true;
   }
 
@@ -133,33 +137,6 @@ MOZ_MUST_USE bool js::InvokeOrNoop(JSContext* cx, Handle<Value> O,
 }
 
 /**
- * Streams spec, 6.3.5. PromiseCall ( F, V, args )
- * As it happens, all callers pass exactly one argument.
- */
-MOZ_MUST_USE JSObject* js::PromiseCall(JSContext* cx, Handle<Value> F,
-                                       Handle<Value> V, Handle<Value> arg) {
-  cx->check(F, V, arg);
-
-  // Step 1: Assert: ! IsCallable(F) is true.
-  MOZ_ASSERT(IsCallable(F));
-
-  // Step 2: Assert: V is not undefined.
-  MOZ_ASSERT(!V.isUndefined());
-
-  // Step 3: Assert: args is a List (implicit).
-  // Step 4: Let returnValue be Call(F, V, args).
-  Rooted<Value> rval(cx);
-  if (!Call(cx, F, V, arg, &rval)) {
-    // Step 5: If returnValue is an abrupt completion, return a promise rejected
-    // with returnValue.[[Value]].
-    return PromiseRejectedWithPendingError(cx);
-  }
-
-  // Step 6: Otherwise, return a promise resolved with returnValue.[[Value]].
-  return PromiseObject::unforgeableResolve(cx, rval);
-}
-
-/**
  * Streams spec, 6.3.7. ValidateAndNormalizeHighWaterMark ( highWaterMark )
  */
 MOZ_MUST_USE bool js::ValidateAndNormalizeHighWaterMark(
@@ -193,6 +170,8 @@ MOZ_MUST_USE bool js::ValidateAndNormalizeHighWaterMark(
  */
 MOZ_MUST_USE bool js::MakeSizeAlgorithmFromSizeFunction(JSContext* cx,
                                                         Handle<Value> size) {
+  cx->check(size);
+
   // Step 1: If size is undefined, return an algorithm that returns 1.
   if (size.isUndefined()) {
     // Deferred. Size algorithm users must check for undefined.

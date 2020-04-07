@@ -22,6 +22,7 @@
 #include "jit/BaselineJIT.h"
 #include "jit/JitScript.h"
 #include "js/HeapAPI.h"
+#include "util/DiagnosticAssertions.h"
 #include "vm/ArrayObject.h"
 #include "vm/BooleanObject.h"
 #include "vm/JSFunction.h"
@@ -147,27 +148,114 @@ inline JS::Compartment* TypeSet::ObjectKey::maybeCompartment() {
   return Type(uintptr_t(obj));
 }
 
-inline TypeSet::Type TypeSet::GetValueType(const Value& val) {
+// static
+inline TypeSet::Type TypeSet::PrimitiveType(const JS::Value& val) {
+  MOZ_ASSERT(!val.isObject());
+  MOZ_ASSERT(!IsUntrackedValue(val));
+
   if (val.isDouble()) {
-    return TypeSet::DoubleType();
+    return DoubleType();
   }
+  return Type(val.extractNonDoubleType());
+}
+
+// static
+inline TypeSet::Type TypeSet::PrimitiveType(jit::MIRType type) {
+  switch (type) {
+    case jit::MIRType::Undefined:
+      return UndefinedType();
+    case jit::MIRType::Null:
+      return NullType();
+    case jit::MIRType::Boolean:
+      return BooleanType();
+    case jit::MIRType::Int32:
+      return Int32Type();
+    case jit::MIRType::Float32:
+    case jit::MIRType::Double:
+      return DoubleType();
+    case jit::MIRType::String:
+      return StringType();
+    case jit::MIRType::Symbol:
+      return SymbolType();
+    case jit::MIRType::BigInt:
+      return BigIntType();
+    case jit::MIRType::MagicOptimizedArguments:
+      return MagicArgType();
+    default:
+      MOZ_CRASH("Unexpected MIR type");
+  }
+}
+
+// static
+inline TypeSet::Type TypeSet::PrimitiveOrAnyObjectType(jit::MIRType type) {
+  if (type == jit::MIRType::Object) {
+    return AnyObjectType();
+  }
+  return PrimitiveType(type);
+}
+
+// static
+inline TypeSet::Type TypeSet::GetMaybeUntrackedType(jit::MIRType type) {
+  if (IsUntrackedMIRType(type)) {
+    // This type cannot be represented in a TypeSet.
+    return UnknownType();
+  }
+  return PrimitiveOrAnyObjectType(type);
+}
+
+// static
+inline TypeSet::Type TypeSet::PrimitiveTypeFromTypeFlag(TypeFlags flag) {
+  switch (flag) {
+    case TYPE_FLAG_UNDEFINED:
+      return UndefinedType();
+    case TYPE_FLAG_NULL:
+      return NullType();
+    case TYPE_FLAG_BOOLEAN:
+      return BooleanType();
+    case TYPE_FLAG_INT32:
+      return Int32Type();
+    case TYPE_FLAG_DOUBLE:
+      return DoubleType();
+    case TYPE_FLAG_STRING:
+      return StringType();
+    case TYPE_FLAG_SYMBOL:
+      return SymbolType();
+    case TYPE_FLAG_BIGINT:
+      return BigIntType();
+    case TYPE_FLAG_LAZYARGS:
+      return MagicArgType();
+    default:
+      MOZ_CRASH("Unexpected TypeFlag");
+  }
+}
+
+inline TypeSet::Type TypeSet::GetValueType(const Value& val) {
+  MOZ_ASSERT(IsTypeInferenceEnabled());
   if (val.isObject()) {
     return TypeSet::ObjectType(&val.toObject());
   }
-  return TypeSet::PrimitiveType(val.extractNonDoubleType());
+  return TypeSet::PrimitiveType(val);
 }
 
 inline bool TypeSet::IsUntrackedValue(const Value& val) {
-  return val.isMagic() && (val.whyMagic() == JS_OPTIMIZED_OUT ||
-                           val.whyMagic() == JS_UNINITIALIZED_LEXICAL);
+  // JS_OPTIMIZED_ARGUMENTS is the only MagicValue that can be stored in a
+  // TypeSet.
+  return val.isMagic() && val.whyMagic() != JS_OPTIMIZED_ARGUMENTS;
+}
+
+inline bool TypeSet::IsUntrackedMIRType(jit::MIRType type) {
+  return jit::IsMagicType(type) &&
+         type != jit::MIRType::MagicOptimizedArguments;
 }
 
 inline TypeSet::Type TypeSet::GetMaybeUntrackedValueType(const Value& val) {
   return IsUntrackedValue(val) ? UnknownType() : GetValueType(val);
 }
 
-inline TypeFlags PrimitiveTypeFlag(ValueType type) {
-  switch (type) {
+inline TypeFlags PrimitiveTypeFlag(TypeSet::Type type) {
+  MOZ_ASSERT(type.isPrimitive());
+
+  switch (type.primitive()) {
     case ValueType::Undefined:
       return TYPE_FLAG_UNDEFINED;
     case ValueType::Null:
@@ -191,7 +279,7 @@ inline TypeFlags PrimitiveTypeFlag(ValueType type) {
       break;
   }
 
-  MOZ_CRASH("Bad ValueType");
+  MOZ_CRASH("Bad primitive type");
 }
 
 inline JSValueType TypeFlagPrimitive(TypeFlags flags) {
@@ -241,6 +329,11 @@ static inline const char* TypeIdString(jsid id) {
 #else
   return "(missing)";
 #endif
+}
+
+TemporaryTypeSet::TemporaryTypeSet(LifoAlloc* alloc, jit::MIRType type)
+    : TemporaryTypeSet(alloc, PrimitiveOrAnyObjectType(type)) {
+  MOZ_ASSERT(type != jit::MIRType::Value);
 }
 
 // New script properties analyses overview.
@@ -474,7 +567,8 @@ inline void TypeMonitorCall(JSContext* cx, const js::CallArgs& args,
                             bool constructing) {
   if (args.callee().is<JSFunction>()) {
     JSFunction* fun = &args.callee().as<JSFunction>();
-    if (fun->isInterpreted() && fun->nonLazyScript()->hasJitScript()) {
+    if (fun->isInterpreted() && fun->nonLazyScript()->hasJitScript() &&
+        IsTypeInferenceEnabled()) {
       TypeMonitorCallSlow(cx, &args.callee(), args, constructing);
     }
   }
@@ -520,6 +614,7 @@ inline bool PropertyHasBeenMarkedNonConstant(JSObject* obj, jsid id) {
 
 MOZ_ALWAYS_INLINE bool HasTrackedPropertyType(JSObject* obj, jsid id,
                                               TypeSet::Type type) {
+  MOZ_ASSERT(IsTypeInferenceEnabled());
   MOZ_ASSERT(id == IdToTypeId(id));
   MOZ_ASSERT(TrackPropertyTypes(obj, id));
 
@@ -540,6 +635,8 @@ MOZ_ALWAYS_INLINE bool HasTrackedPropertyType(JSObject* obj, jsid id,
 
 MOZ_ALWAYS_INLINE bool HasTypePropertyId(JSObject* obj, jsid id,
                                          TypeSet::Type type) {
+  MOZ_ASSERT(IsTypeInferenceEnabled());
+
   id = IdToTypeId(id);
   if (!TrackPropertyTypes(obj, id)) {
     return true;
@@ -550,6 +647,7 @@ MOZ_ALWAYS_INLINE bool HasTypePropertyId(JSObject* obj, jsid id,
 
 MOZ_ALWAYS_INLINE bool HasTypePropertyId(JSObject* obj, jsid id,
                                          const Value& value) {
+  MOZ_ASSERT(IsTypeInferenceEnabled());
   return HasTypePropertyId(obj, id, TypeSet::GetValueType(value));
 }
 
@@ -561,15 +659,28 @@ void AddTypePropertyId(JSContext* cx, ObjectGroup* group, JSObject* obj,
 /* Add a possible type for a property of obj. */
 MOZ_ALWAYS_INLINE void AddTypePropertyId(JSContext* cx, JSObject* obj, jsid id,
                                          TypeSet::Type type) {
+  if (!IsTypeInferenceEnabled()) {
+    return;
+  }
   id = IdToTypeId(id);
   if (TrackPropertyTypes(obj, id) && !HasTrackedPropertyType(obj, id, type)) {
     AddTypePropertyId(cx, obj->group(), obj, id, type);
   }
 }
 
+void AddMagicTypePropertyId(JSContext* cx, JSObject* obj, jsid id,
+                            JSWhyMagic type);
+
 MOZ_ALWAYS_INLINE void AddTypePropertyId(JSContext* cx, JSObject* obj, jsid id,
                                          const Value& value) {
-  return AddTypePropertyId(cx, obj, id, TypeSet::GetValueType(value));
+  if (!IsTypeInferenceEnabled()) {
+    return;
+  }
+  if (MOZ_UNLIKELY(value.isMagic())) {
+    AddMagicTypePropertyId(cx, obj, id, value.whyMagic());
+  } else {
+    AddTypePropertyId(cx, obj, id, TypeSet::GetValueType(value));
+  }
 }
 
 inline void MarkObjectGroupFlags(JSContext* cx, JSObject* obj,
@@ -592,6 +703,9 @@ inline void MarkObjectGroupUnknownProperties(JSContext* cx, ObjectGroup* obj) {
 }
 
 inline void MarkTypePropertyNonData(JSContext* cx, JSObject* obj, jsid id) {
+  if (!IsTypeInferenceEnabled()) {
+    return;
+  }
   id = IdToTypeId(id);
   if (TrackPropertyTypes(obj, id)) {
     obj->group()->markPropertyNonData(cx, obj, id);
@@ -599,6 +713,9 @@ inline void MarkTypePropertyNonData(JSContext* cx, JSObject* obj, jsid id) {
 }
 
 inline void MarkTypePropertyNonWritable(JSContext* cx, JSObject* obj, jsid id) {
+  if (!IsTypeInferenceEnabled()) {
+    return;
+  }
   id = IdToTypeId(id);
   if (TrackPropertyTypes(obj, id)) {
     obj->group()->markPropertyNonWritable(cx, obj, id);
@@ -620,6 +737,14 @@ inline void MarkObjectStateChange(JSContext* cx, JSObject* obj) {
 /* static */ inline void jit::JitScript::MonitorBytecodeType(
     JSContext* cx, JSScript* script, jsbytecode* pc, StackTypeSet* types,
     const js::Value& rval) {
+  if (!IsTypeInferenceEnabled()) {
+    return;
+  }
+  if (MOZ_UNLIKELY(rval.isMagic())) {
+    MonitorMagicValueBytecodeType(cx, script, pc, rval);
+    return;
+  }
+
   TypeSet::Type type = TypeSet::GetValueType(rval);
   if (!types->hasType(type)) {
     MonitorBytecodeTypeSlow(cx, script, pc, types, type);
@@ -657,6 +782,9 @@ inline void MarkObjectStateChange(JSContext* cx, JSObject* obj) {
 /* static */ inline void jit::JitScript::MonitorThisType(JSContext* cx,
                                                          JSScript* script,
                                                          TypeSet::Type type) {
+  if (!IsTypeInferenceEnabled()) {
+    return;
+  }
   cx->check(script, type);
 
   JitScript* jitScript = script->maybeJitScript();
@@ -678,6 +806,18 @@ inline void MarkObjectStateChange(JSContext* cx, JSObject* obj) {
 
 /* static */ inline void jit::JitScript::MonitorThisType(
     JSContext* cx, JSScript* script, const js::Value& value) {
+  if (!IsTypeInferenceEnabled()) {
+    return;
+  }
+  // Bound functions or class constructors can use the magic TDZ value as
+  // |this| argument. See CreateThis.
+  if (MOZ_UNLIKELY(value.isMagic())) {
+    MOZ_ASSERT(value.whyMagic() == JS_UNINITIALIZED_LEXICAL);
+    MOZ_ASSERT(script->function());
+    MonitorThisType(cx, script, TypeSet::UnknownType());
+    return;
+  }
+
   MonitorThisType(cx, script, TypeSet::GetValueType(value));
 }
 
@@ -685,6 +825,9 @@ inline void MarkObjectStateChange(JSContext* cx, JSObject* obj) {
                                                         JSScript* script,
                                                         unsigned arg,
                                                         TypeSet::Type type) {
+  if (!IsTypeInferenceEnabled()) {
+    return;
+  }
   cx->check(script->compartment(), type);
 
   JitScript* jitScript = script->maybeJitScript();
@@ -706,6 +849,9 @@ inline void MarkObjectStateChange(JSContext* cx, JSObject* obj) {
 
 /* static */ inline void jit::JitScript::MonitorArgType(
     JSContext* cx, JSScript* script, unsigned arg, const js::Value& value) {
+  if (!IsTypeInferenceEnabled()) {
+    return;
+  }
   MonitorArgType(cx, script, arg, TypeSet::GetValueType(value));
 }
 
@@ -1056,7 +1202,7 @@ MOZ_ALWAYS_INLINE bool TypeSet::hasType(Type type) const {
   if (type.isUnknown()) {
     return false;
   } else if (type.isPrimitive()) {
-    return !!(flags & PrimitiveTypeFlag(type.primitive()));
+    return !!(flags & PrimitiveTypeFlag(type));
   } else if (type.isAnyObject()) {
     return !!(flags & TYPE_FLAG_ANYOBJECT);
   } else {
@@ -1121,6 +1267,12 @@ inline void HeapTypeSet::setNonConstantProperty(
   }
 
   flags |= TYPE_FLAG_NON_CONSTANT_PROPERTY;
+  newPropertyState(sweep, cx);
+}
+
+inline void HeapTypeSet::markLexicalBindingExists(
+    const AutoSweepObjectGroup& sweep, JSContext* cx) {
+  checkMagic();
   newPropertyState(sweep, cx);
 }
 
@@ -1205,6 +1357,7 @@ inline void ObjectGroup::setBasePropertyCount(const AutoSweepObjectGroup& sweep,
 inline HeapTypeSet* ObjectGroup::getProperty(const AutoSweepObjectGroup& sweep,
                                              JSContext* cx, JSObject* obj,
                                              jsid id) {
+  MOZ_ASSERT(IsTypeInferenceEnabled());
   MOZ_ASSERT(JSID_IS_VOID(id) || JSID_IS_EMPTY(id) || JSID_IS_STRING(id) ||
              JSID_IS_SYMBOL(id));
   MOZ_ASSERT_IF(!JSID_IS_EMPTY(id), id == IdToTypeId(id));
@@ -1254,6 +1407,7 @@ inline HeapTypeSet* ObjectGroup::getProperty(const AutoSweepObjectGroup& sweep,
 
 MOZ_ALWAYS_INLINE HeapTypeSet* ObjectGroup::maybeGetPropertyDontCheckGeneration(
     jsid id) {
+  MOZ_ASSERT(IsTypeInferenceEnabled());
   MOZ_ASSERT(JSID_IS_VOID(id) || JSID_IS_EMPTY(id) || JSID_IS_STRING(id) ||
              JSID_IS_SYMBOL(id));
   MOZ_ASSERT_IF(!JSID_IS_EMPTY(id), id == IdToTypeId(id));
@@ -1287,6 +1441,7 @@ inline unsigned ObjectGroup::getPropertyCount(
 
 inline ObjectGroup::Property* ObjectGroup::getProperty(
     const AutoSweepObjectGroup& sweep, unsigned i) {
+  MOZ_ASSERT(IsTypeInferenceEnabled());
   MOZ_ASSERT(i < getPropertyCount(sweep));
   Property* result;
   if (basePropertyCount(sweep) == 1) {
@@ -1318,7 +1473,7 @@ inline AutoSweepObjectGroup::~AutoSweepObjectGroup() {
 }
 #endif
 
-inline AutoSweepJitScript::AutoSweepJitScript(JSScript* script)
+inline AutoSweepJitScript::AutoSweepJitScript(BaseScript* script)
 #ifdef DEBUG
     : zone_(script->zone()),
       jitScript_(script->maybeJitScript())

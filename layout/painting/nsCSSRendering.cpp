@@ -22,11 +22,7 @@
 #include "mozilla/PresShell.h"
 #include "gfxFont.h"
 #include "ScaledFontBase.h"
-#include "SkTextBlob.h"
-#include "SkTypeface.h"
-#include "SkFont.h"
-#include "SkPoint.h"
-#include "SkScalar.h"
+#include "skia/include/core/SkTextBlob.h"
 
 #include "BorderConsts.h"
 #include "nsStyleConsts.h"
@@ -41,7 +37,6 @@
 #include "nsIContent.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsIScrollableFrame.h"
-#include "imgIRequest.h"
 #include "imgIContainer.h"
 #include "ImageOps.h"
 #include "nsCSSRendering.h"
@@ -122,7 +117,7 @@ struct InlineBackgroundData {
       // of frames that are to the left (if this is an LTR block) or right
       // (if it's RTL) of the current one.
       bool isRtlBlock = (mLineContainer->StyleVisibility()->mDirection ==
-                         NS_STYLE_DIRECTION_RTL);
+                         StyleDirection::Rtl);
       nscoord curOffset = mVertical ? aFrame->GetOffsetTo(mLineContainer).y
                                     : aFrame->GetOffsetTo(mLineContainer).x;
 
@@ -536,16 +531,12 @@ static nsRect JoinBoxesForBlockAxisSlice(nsIFrame* aFrame,
   auto wm = aFrame->GetWritingMode();
   nsIFrame* f = aFrame->GetNextContinuation();
   for (; f; f = f->GetNextContinuation()) {
-    MOZ_ASSERT(!(f->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT),
-               "anonymous ib-split block shouldn't have border/background");
     bSize += f->BSize(wm);
   }
   (wm.IsVertical() ? borderArea.width : borderArea.height) += bSize;
   bSize = 0;
   f = aFrame->GetPrevContinuation();
   for (; f; f = f->GetPrevContinuation()) {
-    MOZ_ASSERT(!(f->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT),
-               "anonymous ib-split block shouldn't have border/background");
     bSize += f->BSize(wm);
   }
   (wm.IsVertical() ? borderArea.x : borderArea.y) -= bSize;
@@ -616,8 +607,9 @@ void nsCSSRendering::ComputePixelRadii(const nscoord* aAppUnitsRadii,
                                        nscoord aAppUnitsPerPixel,
                                        RectCornerRadii* oBorderRadii) {
   Float radii[8];
-  NS_FOR_CSS_HALF_CORNERS(corner)
-  radii[corner] = Float(aAppUnitsRadii[corner]) / aAppUnitsPerPixel;
+  for (const auto corner : mozilla::AllPhysicalHalfCorners()) {
+    radii[corner] = Float(aAppUnitsRadii[corner]) / aAppUnitsPerPixel;
+  }
 
   (*oBorderRadii)[C_TL] = Size(radii[eCornerTopLeftX], radii[eCornerTopLeftY]);
   (*oBorderRadii)[C_TR] =
@@ -639,7 +631,7 @@ static Maybe<nsStyleBorder> GetBorderIfVisited(const ComputedStyle& aStyle) {
 
   result.emplace(*aStyle.StyleBorder());
   auto& newBorder = result.ref();
-  NS_FOR_CSS_SIDES(side) {
+  for (const auto side : mozilla::AllPhysicalSides()) {
     nscolor color = aStyle.GetVisitedDependentColor(
         nsStyleBorder::BorderColorFieldFor(side));
     newBorder.BorderColorFor(side) = StyleColor::FromColor(color);
@@ -710,9 +702,9 @@ ImgDrawResult nsCSSRendering::CreateWebRenderCommandsForBorderWithStyleBorder(
     mozilla::layers::RenderRootStateManager* aManager,
     nsDisplayListBuilder* aDisplayListBuilder,
     const nsStyleBorder& aStyleBorder) {
+  auto& borderImage = aStyleBorder.mBorderImageSource;
   // First try to create commands for simple borders.
-  nsStyleImageType type = aStyleBorder.mBorderImageSource.GetType();
-  if (type == eStyleImageType_Null) {
+  if (borderImage.IsNone()) {
     CreateWebRenderCommandsForNullBorder(
         aItem, aForFrame, aBorderArea, aBuilder, aResources, aSc, aStyleBorder);
     return ImgDrawResult::SUCCESS;
@@ -720,13 +712,11 @@ ImgDrawResult nsCSSRendering::CreateWebRenderCommandsForBorderWithStyleBorder(
 
   // Next we try image and gradient borders. Gradients are not supported at
   // this very moment.
-  if (type != eStyleImageType_Image) {
+  if (!borderImage.IsImageRequestType()) {
     return ImgDrawResult::NOT_SUPPORTED;
   }
 
-  if (aStyleBorder.mBorderImageRepeatH == StyleBorderImageRepeat::Round ||
-      aStyleBorder.mBorderImageRepeatH == StyleBorderImageRepeat::Space ||
-      aStyleBorder.mBorderImageRepeatV == StyleBorderImageRepeat::Round ||
+  if (aStyleBorder.mBorderImageRepeatH == StyleBorderImageRepeat::Space ||
       aStyleBorder.mBorderImageRepeatV == StyleBorderImageRepeat::Space) {
     return ImgDrawResult::NOT_SUPPORTED;
   }
@@ -811,7 +801,7 @@ static nsCSSBorderRenderer ConstructBorderRenderer(
   nscolor borderColors[4];
 
   // pull out styles, colors
-  NS_FOR_CSS_SIDES(i) {
+  for (const auto i : mozilla::AllPhysicalSides()) {
     borderStyles[i] = aStyleBorder.GetBorderStyle(i);
     borderColors[i] = aStyleBorder.BorderColorFor(i).CalcColor(*aStyle);
   }
@@ -848,14 +838,14 @@ ImgDrawResult nsCSSRendering::PaintBorderWithStyleBorder(
   // passed in ComputedStyle may be different!  Always use |aStyle|!
   const nsStyleDisplay* displayData = aStyle->StyleDisplay();
   if (displayData->HasAppearance()) {
-    nsITheme* theme = aPresContext->GetTheme();
-    if (theme && theme->ThemeSupportsWidget(aPresContext, aForFrame,
-                                            displayData->mAppearance)) {
+    nsITheme* theme = aPresContext->Theme();
+    if (theme->ThemeSupportsWidget(aPresContext, aForFrame,
+                                   displayData->mAppearance)) {
       return ImgDrawResult::SUCCESS;  // Let the theme handle it.
     }
   }
 
-  if (!aStyleBorder.mBorderImageSource.IsEmpty()) {
+  if (!aStyleBorder.mBorderImageSource.IsNone()) {
     ImgDrawResult result = ImgDrawResult::SUCCESS;
 
     uint32_t irFlags = 0;
@@ -883,7 +873,7 @@ ImgDrawResult nsCSSRendering::PaintBorderWithStyleBorder(
   // If we had a border-image, but it wasn't loaded, then we should return
   // ImgDrawResult::NOT_READY; we'll want to try again if we do a paint with
   // sync decoding enabled.
-  if (aStyleBorder.mBorderImageSource.GetType() != eStyleImageType_Null) {
+  if (!aStyleBorder.mBorderImageSource.IsNone()) {
     result = ImgDrawResult::NOT_READY;
   }
 
@@ -920,7 +910,7 @@ Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRendererWithStyleBorder(
     const nsRect& aDirtyRect, const nsRect& aBorderArea,
     const nsStyleBorder& aStyleBorder, ComputedStyle* aStyle,
     bool* aOutBorderIsEmpty, Sides aSkipSides) {
-  if (aStyleBorder.mBorderImageSource.GetType() != eStyleImageType_Null) {
+  if (!aStyleBorder.mBorderImageSource.IsNone()) {
     return Nothing();
   }
   return CreateNullBorderRendererWithStyleBorder(
@@ -936,9 +926,9 @@ nsCSSRendering::CreateNullBorderRendererWithStyleBorder(
     bool* aOutBorderIsEmpty, Sides aSkipSides) {
   const nsStyleDisplay* displayData = aStyle->StyleDisplay();
   if (displayData->HasAppearance()) {
-    nsITheme* theme = aPresContext->GetTheme();
-    if (theme && theme->ThemeSupportsWidget(aPresContext, aForFrame,
-                                            displayData->mAppearance)) {
+    nsITheme* theme = aPresContext->Theme();
+    if (theme->ThemeSupportsWidget(aPresContext, aForFrame,
+                                   displayData->mAppearance)) {
       return Nothing();
     }
   }
@@ -1030,9 +1020,9 @@ Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRendererForOutline(
   StyleBorderStyle outlineStyle;
   if (ourOutline->mOutlineStyle.IsAuto()) {
     if (StaticPrefs::layout_css_outline_style_auto_enabled()) {
-      nsITheme* theme = aPresContext->GetTheme();
-      if (theme && theme->ThemeSupportsWidget(aPresContext, aForFrame,
-                                              StyleAppearance::FocusOutline)) {
+      nsITheme* theme = aPresContext->Theme();
+      if (theme->ThemeSupportsWidget(aPresContext, aForFrame,
+                                     StyleAppearance::FocusOutline)) {
         theme->DrawWidgetBackground(aRenderingContext, aForFrame,
                                     StyleAppearance::FocusOutline, innerRect,
                                     aDirtyRect);
@@ -1539,9 +1529,9 @@ void nsCSSRendering::PaintBoxShadowOuter(nsPresContext* aPresContext,
       nsRect nativeRect = aDirtyRect;
       nativeRect.MoveBy(-shadowOffset);
       nativeRect.IntersectRect(frameRect, nativeRect);
-      aPresContext->GetTheme()->DrawWidgetBackground(shadowContext, aForFrame,
-                                                     styleDisplay->mAppearance,
-                                                     aFrameArea, nativeRect);
+      aPresContext->Theme()->DrawWidgetBackground(shadowContext, aForFrame,
+                                                  styleDisplay->mAppearance,
+                                                  aFrameArea, nativeRect);
 
       blurringArea.DoPaint();
       aRenderingContext.Restore();
@@ -1884,22 +1874,22 @@ bool nsCSSRendering::CanBuildWebRenderDisplayItemsForStyleImageLayer(
   // We cannot draw native themed backgrounds
   const nsStyleDisplay* displayData = aFrame->StyleDisplay();
   if (displayData->HasAppearance()) {
-    nsITheme* theme = aPresCtx.GetTheme();
-    if (theme && theme->ThemeSupportsWidget(&aPresCtx, aFrame,
-                                            displayData->mAppearance)) {
+    nsITheme* theme = aPresCtx.Theme();
+    if (theme->ThemeSupportsWidget(&aPresCtx, aFrame,
+                                   displayData->mAppearance)) {
       return false;
     }
   }
 
-  // We only support painting gradients and image for a single style image layer
-  const nsStyleImage* styleImage =
-      &aBackgroundStyle->mImage.mLayers[aLayer].mImage;
-  if (styleImage->GetType() == eStyleImageType_Image) {
-    if (styleImage->GetCropRect()) {
+  // We only support painting gradients and image for a single style image
+  // layer, and we don't support crop-rects.
+  const auto& styleImage = aBackgroundStyle->mImage.mLayers[aLayer].mImage;
+  if (styleImage.IsImageRequestType()) {
+    if (styleImage.IsRect()) {
       return false;
     }
 
-    imgRequestProxy* requestProxy = styleImage->GetImageData();
+    imgRequestProxy* requestProxy = styleImage.GetImageRequest();
     if (!requestProxy) {
       return false;
     }
@@ -1919,7 +1909,7 @@ bool nsCSSRendering::CanBuildWebRenderDisplayItemsForStyleImageLayer(
     return true;
   }
 
-  if (styleImage->GetType() == eStyleImageType_Gradient) {
+  if (styleImage.IsGradient()) {
     return true;
   }
 
@@ -1976,8 +1966,9 @@ static bool IsOpaqueBorderEdge(const nsStyleBorder& aBorder,
   // because we may not even have the image loaded at this point, and
   // even if we did, checking whether the relevant tile is fully
   // opaque would be too much work.
-  if (aBorder.mBorderImageSource.GetType() != eStyleImageType_Null)
+  if (!aBorder.mBorderImageSource.IsNone()) {
     return false;
+  }
 
   StyleColor color = aBorder.BorderColorFor(aSide);
   // We don't know the foreground color here, so if it's being used
@@ -1989,7 +1980,7 @@ static bool IsOpaqueBorderEdge(const nsStyleBorder& aBorder,
  * Returns true if all border edges are either missing or opaque.
  */
 static bool IsOpaqueBorder(const nsStyleBorder& aBorder) {
-  NS_FOR_CSS_SIDES(i) {
+  for (const auto i : mozilla::AllPhysicalSides()) {
     if (!IsOpaqueBorderEdge(aBorder, i)) {
       return false;
     }
@@ -2457,9 +2448,9 @@ ImgDrawResult nsCSSRendering::PaintStyleImageLayerWithSC(
   // XXXzw this ignores aParams.bgClipRect.
   const nsStyleDisplay* displayData = aParams.frame->StyleDisplay();
   if (displayData->HasAppearance()) {
-    nsITheme* theme = aParams.presCtx.GetTheme();
-    if (theme && theme->ThemeSupportsWidget(&aParams.presCtx, aParams.frame,
-                                            displayData->mAppearance)) {
+    nsITheme* theme = aParams.presCtx.Theme();
+    if (theme->ThemeSupportsWidget(&aParams.presCtx, aParams.frame,
+                                   displayData->mAppearance)) {
       nsRect drawing(aParams.borderArea);
       theme->GetWidgetOverflow(aParams.presCtx.DeviceContext(), aParams.frame,
                                displayData->mAppearance, &drawing);
@@ -2551,21 +2542,6 @@ ImgDrawResult nsCSSRendering::PaintStyleImageLayerWithSC(
 
   MOZ_ASSERT((aParams.layer < 0) ||
              (layers.mImageCount > uint32_t(aParams.layer)));
-  bool drawAllLayers = (aParams.layer < 0);
-
-  // Ensure we get invalidated for loads of the image.  We need to do
-  // this here because this might be the only code that knows about the
-  // association of the style data with the frame.
-  if (aBackgroundSC != aParams.frame->Style()) {
-    uint32_t startLayer =
-        drawAllLayers ? layers.mImageCount - 1 : aParams.layer;
-    uint32_t count = drawAllLayers ? layers.mImageCount : 1;
-    NS_FOR_VISIBLE_IMAGE_LAYERS_BACK_TO_FRONT_WITH_RANGE(i, layers, startLayer,
-                                                         count) {
-      aParams.frame->AssociateImage(layers.mLayers[i].mImage, &aParams.presCtx,
-                                    0);
-    }
-  }
 
   // The background color is rendered over the entire dirty area,
   // even if the image isn't.
@@ -2583,6 +2559,7 @@ ImgDrawResult nsCSSRendering::PaintStyleImageLayerWithSC(
 
   ImgDrawResult result = ImgDrawResult::SUCCESS;
   StyleGeometryBox currentBackgroundClip = StyleGeometryBox::BorderBox;
+  const bool drawAllLayers = (aParams.layer < 0);
   uint32_t count = drawAllLayers
                        ? layers.mImageCount  // iterate all image layers.
                        : layers.mImageCount -
@@ -2701,11 +2678,6 @@ nsCSSRendering::BuildWebRenderDisplayItemsForStyleImageLayerWithSC(
       PrepareImageLayer(&aParams.presCtx, aParams.frame, aParams.paintFlags,
                         paintBorderArea, clipState.mBGClipArea, layer, nullptr);
   result &= state.mImageRenderer.PrepareResult();
-
-  // Ensure we get invalidated for loads and animations of the image.
-  // We need to do this here because this might be the only code that
-  // knows about the association of the style data with the frame.
-  aParams.frame->AssociateImage(layer.mImage, &aParams.presCtx, 0);
 
   if (!state.mFillArea.IsEmpty()) {
     return state.mImageRenderer.BuildWebRenderDisplayItemsForLayer(
@@ -3648,7 +3620,7 @@ void nsCSSRendering::GetTableBorderSolidSegments(
         break;
       }
       // else fall through to solid
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case StyleBorderStyle::Solid:
       aSegments.AppendElement(
           SolidBeveledBorderSegment{aBorder,
@@ -3770,7 +3742,7 @@ static void GetPositioning(
 
   // the upper and lower lines/edges of the under or over line
   SkScalar upperLine, lowerLine;
-  if (aParams.decoration == mozilla::StyleTextDecorationLine_OVERLINE) {
+  if (aParams.decoration == mozilla::StyleTextDecorationLine::OVERLINE) {
     lowerLine =
         -aParams.offset + aParams.defaultLineThickness - aCenterBaselineOffset;
     upperLine = lowerLine - rectThickness;
@@ -3954,11 +3926,9 @@ static void GetTextIntercepts(const sk_sp<const SkTextBlob>& aBlob,
 // included here
 static void SkipInk(nsIFrame* aFrame, DrawTarget& aDrawTarget,
                     const nsCSSRendering::PaintDecorationLineParams& aParams,
-                    const nsTArray<SkScalar>& aIntercepts, Rect& aRect) {
+                    const nsTArray<SkScalar>& aIntercepts, Float aPadding,
+                    Rect& aRect) {
   nsCSSRendering::PaintDecorationLineParams clipParams = aParams;
-  double padding = aParams.lineSize.height;
-  double oneCSSPixel = aFrame->PresContext()->CSSPixelsToDevPixels(1.0f);
-  padding = std::max(padding, oneCSSPixel);
   int length = aIntercepts.Length();
 
   SkScalar startIntercept = 0;
@@ -3979,15 +3949,15 @@ static void SkipInk(nsIFrame* aFrame, DrawTarget& aDrawTarget,
   for (int i = 0; i <= length; i += 2) {
     // handle start/end edge cases and set up general case
     startIntercept = (i > 0) ? (dir * aIntercepts[i - 1]) + lineStart
-                             : lineStart - (dir * padding);
+                             : lineStart - (dir * aPadding);
     endIntercept = (i < length) ? (dir * aIntercepts[i]) + lineStart
-                                : lineEnd + (dir * padding);
+                                : lineEnd + (dir * aPadding);
 
     // remove padding at both ends for width
     // the start of the line is calculated so the padding removes just
     // enough so that the line starts at its normal position
     clipParams.lineSize.width =
-        (dir * (endIntercept - startIntercept)) - (2.0 * padding);
+        (dir * (endIntercept - startIntercept)) - (2.0 * aPadding);
 
     if (aParams.vertical) {
       aRect.height = clipParams.lineSize.width;
@@ -3995,21 +3965,20 @@ static void SkipInk(nsIFrame* aFrame, DrawTarget& aDrawTarget,
       aRect.width = clipParams.lineSize.width;
     }
 
-    // Don't draw decoration lines that have a smaller width than 1, or half the
-    // decoration thickness
-    if (clipParams.lineSize.width <
-        std::max(0.5 * clipParams.lineSize.height, 1.0)) {
+    // Don't draw decoration lines that have a smaller width than 1, or half
+    // the line-end padding dimension.
+    if (clipParams.lineSize.width < std::max(aPadding * 0.5, 1.0)) {
       continue;
     }
 
     // start the line right after the intercept's location plus room for
     // padding
     if (aParams.vertical) {
-      clipParams.pt.y = aParams.sidewaysLeft ? endIntercept + padding
-                                             : startIntercept + padding;
+      clipParams.pt.y = aParams.sidewaysLeft ? endIntercept + aPadding
+                                             : startIntercept + aPadding;
       aRect.y = clipParams.pt.y;
     } else {
-      clipParams.pt.x = startIntercept + padding;
+      clipParams.pt.x = startIntercept + aPadding;
       aRect.x = clipParams.pt.x;
     }
 
@@ -4029,9 +3998,9 @@ void nsCSSRendering::PaintDecorationLine(
     return;
   }
 
-  if (aParams.decoration != StyleTextDecorationLine_UNDERLINE &&
-      aParams.decoration != StyleTextDecorationLine_OVERLINE &&
-      aParams.decoration != StyleTextDecorationLine_LINE_THROUGH) {
+  if (aParams.decoration != StyleTextDecorationLine::UNDERLINE &&
+      aParams.decoration != StyleTextDecorationLine::OVERLINE &&
+      aParams.decoration != StyleTextDecorationLine::LINE_THROUGH) {
     MOZ_ASSERT_UNREACHABLE("Invalid text decoration value");
     return;
   }
@@ -4041,8 +4010,8 @@ void nsCSSRendering::PaintDecorationLine(
   mozilla::StyleTextDecorationSkipInk skipInk =
       aFrame->StyleText()->mTextDecorationSkipInk;
   bool skipInkEnabled =
-      skipInk == mozilla::StyleTextDecorationSkipInk::Auto &&
-      aParams.decoration != StyleTextDecorationLine_LINE_THROUGH &&
+      skipInk != mozilla::StyleTextDecorationSkipInk::None &&
+      aParams.decoration != StyleTextDecorationLine::LINE_THROUGH &&
       StaticPrefs::layout_css_text_decoration_skip_ink_enabled();
 
   if (!skipInkEnabled || aParams.glyphRange.Length() == 0) {
@@ -4093,28 +4062,45 @@ void nsCSSRendering::PaintDecorationLine(
   int32_t spacingOffset = isRTL ? aParams.glyphRange.Length() - 1 : 0;
   gfxTextRun::GlyphRunIterator iter(textRun, aParams.glyphRange, isRTL);
 
+  // For any glyph run where we don't actually do skipping, we'll need to
+  // advance the current position by its width.
+  // (For runs we do process, CreateTextBlob will update the position.)
+  auto currentGlyphRunAdvance = [&]() {
+    return textRun->GetAdvanceWidth(
+               gfxTextRun::Range(iter.GetStringStart(), iter.GetStringEnd()),
+               aParams.provider) /
+           appUnitsPerDevPixel;
+  };
+
   while (iter.NextRun()) {
     if (iter.GetGlyphRun()->mOrientation ==
             mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_UPRIGHT ||
-        iter.GetGlyphRun()->mIsCJK) {
+        (iter.GetGlyphRun()->mIsCJK &&
+         skipInk == mozilla::StyleTextDecorationSkipInk::Auto)) {
       // We don't support upright text in vertical modes currently
       // (see https://bugzilla.mozilla.org/show_bug.cgi?id=1572294),
       // but we do need to update textPos so that following runs will be
       // correctly positioned.
       // We also don't apply skip-ink to CJK text runs because many fonts
       // have an underline that looks really bad if this is done
-      // (see https://bugzilla.mozilla.org/show_bug.cgi?id=1573249).
-      textPos.fX +=
-          textRun->GetAdvanceWidth(
-              gfxTextRun::Range(iter.GetStringStart(), iter.GetStringEnd()),
-              aParams.provider) /
-          appUnitsPerDevPixel;
+      // (see https://bugzilla.mozilla.org/show_bug.cgi?id=1573249),
+      // when skip-ink is set to 'auto'.
+      textPos.fX += currentGlyphRunAdvance();
       continue;
     }
 
-    // get the glyph run's font
-    SkFont font;
-    if (!GetSkFontFromGfxFont(aDrawTarget, iter.GetGlyphRun()->mFont, font)) {
+    gfxFont* font = iter.GetGlyphRun()->mFont;
+    // Don't try to apply skip-ink to 'sbix' fonts like Apple Color Emoji,
+    // because old macOS (10.9) may crash trying to retrieve glyph paths
+    // that don't exist.
+    if (font->GetFontEntry()->HasFontTable(TRUETYPE_TAG('s', 'b', 'i', 'x'))) {
+      textPos.fX += currentGlyphRunAdvance();
+      continue;
+    }
+
+    // get a Skia version of the glyph run's font
+    SkFont skiafont;
+    if (!GetSkFontFromGfxFont(aDrawTarget, font, skiafont)) {
       PaintDecorationLineInternal(aFrame, aDrawTarget, aParams, rect);
       return;
     }
@@ -4122,11 +4108,12 @@ void nsCSSRendering::PaintDecorationLine(
     // Create a text blob with correctly positioned glyphs. This also updates
     // textPos.fX with the advance of the glyphs.
     sk_sp<const SkTextBlob> textBlob =
-        CreateTextBlob(textRun, characterGlyphs, font, spacing.Elements(),
+        CreateTextBlob(textRun, characterGlyphs, skiafont, spacing.Elements(),
                        iter.GetStringStart(), iter.GetStringEnd(),
                        (float)appUnitsPerDevPixel, textPos, spacingOffset);
 
     if (!textBlob) {
+      textPos.fX += currentGlyphRunAdvance();
       continue;
     }
 
@@ -4135,8 +4122,7 @@ void nsCSSRendering::PaintDecorationLine(
       // font-by-font basis since Skia lines up the text on a alphabetic
       // baseline, but for some vertical-* writing modes the offset is from the
       // center.
-      gfxFont::Metrics metrics =
-          iter.GetGlyphRun()->mFont->GetMetrics(nsFontMetrics::eHorizontal);
+      gfxFont::Metrics metrics = font->GetMetrics(nsFontMetrics::eHorizontal);
       Float centerToBaseline = (metrics.emAscent - metrics.emDescent) / 2.0f;
       GetPositioning(aParams, rect, oneCSSPixel, centerToBaseline, bounds);
     }
@@ -4147,7 +4133,13 @@ void nsCSSRendering::PaintDecorationLine(
   bool needsSkipInk = intercepts.Length() > 0;
 
   if (needsSkipInk) {
-    SkipInk(aFrame, aDrawTarget, aParams, intercepts, rect);
+    // Padding between glyph intercepts and the decoration line: we use the
+    // decoration line thickness, clamped to a minimum of 1px and a maximum
+    // of 0.2em.
+    Float padding =
+        std::min(std::max(aParams.lineSize.height, oneCSSPixel),
+                 Float(textRun->GetFontGroup()->GetStyle()->size / 5.0));
+    SkipInk(aFrame, aDrawTarget, aParams, intercepts, padding, rect);
   } else {
     PaintDecorationLineInternal(aFrame, aDrawTarget, aParams, rect);
   }
@@ -4385,7 +4377,7 @@ void nsCSSRendering::PaintDecorationLineInternal(
       // In vertical mode, to go "down" relative to the text we need to
       // decrease the block coordinate, whereas in horizontal we increase
       // it. So the sense of this flag is effectively inverted.
-      bool goDown = aParams.vertical ? false : true;
+      bool goDown = !aParams.vertical;
       uint32_t iter = 0;
       while (ptICoord < iCoordLimit) {
         if (++iter > 1000) {
@@ -4428,9 +4420,9 @@ Rect nsCSSRendering::DecorationLineToPath(
     return path;
   }
 
-  if (aParams.decoration != StyleTextDecorationLine_UNDERLINE &&
-      aParams.decoration != StyleTextDecorationLine_OVERLINE &&
-      aParams.decoration != StyleTextDecorationLine_LINE_THROUGH) {
+  if (aParams.decoration != StyleTextDecorationLine::UNDERLINE &&
+      aParams.decoration != StyleTextDecorationLine::OVERLINE &&
+      aParams.decoration != StyleTextDecorationLine::LINE_THROUGH) {
     MOZ_ASSERT_UNREACHABLE("Invalid text decoration value");
     return path;
   }
@@ -4578,7 +4570,7 @@ gfxRect nsCSSRendering::GetTextDecorationRectInternal(
   // upwards. We'll swap them to be physical coords at the end.
   gfxFloat offset = 0.0;
 
-  if (aParams.decoration == StyleTextDecorationLine_UNDERLINE) {
+  if (aParams.decoration == StyleTextDecorationLine::UNDERLINE) {
     offset = aParams.offset;
     if (canLiftUnderline) {
       if (descentLimit < -offset + r.Height()) {
@@ -4591,14 +4583,14 @@ gfxRect nsCSSRendering::GetTextDecorationRectInternal(
         offset = std::min(offsetBottomAligned, offsetTopAligned);
       }
     }
-  } else if (aParams.decoration == StyleTextDecorationLine_OVERLINE) {
+  } else if (aParams.decoration == StyleTextDecorationLine::OVERLINE) {
     // For overline, we adjust the offset by defaultlineThickness (the default
     // thickness of a single decoration line) because empirically it looks
     // better to draw the overline just inside rather than outside the font's
     // ascent, which is what nsTextFrame passes as aParams.offset (as fonts
     // don't provide an explicit overline-offset).
     offset = aParams.offset - defaultLineThickness + r.Height();
-  } else if (aParams.decoration == StyleTextDecorationLine_LINE_THROUGH) {
+  } else if (aParams.decoration == StyleTextDecorationLine::LINE_THROUGH) {
     // To maintain a consistent mid-point for line-through decorations,
     // we adjust the offset by half of the decoration rect's height.
     gfxFloat extra = floor(r.Height() / 2.0 + 0.5);
@@ -4616,8 +4608,8 @@ gfxRect nsCSSRendering::GetTextDecorationRectInternal(
   // to physical coords, and move the decoration rect to the calculated
   // offset from baseline.
   if (aParams.vertical) {
-    Swap(r.x, r.y);
-    Swap(r.width, r.height);
+    std::swap(r.x, r.y);
+    std::swap(r.width, r.height);
     // line-upwards in vertical mode = physical-right, so we /add/ offset
     // to baseline. Except in sideways-lr mode, where line-upwards will be
     // physical leftwards.

@@ -17,7 +17,7 @@ function test() {
     Services.prefs.clearUserPref("browser.preferences.instantApply");
   });
 
-  let connectionURL = "chrome://browser/content/preferences/connection.xul";
+  let connectionURL = "chrome://browser/content/preferences/connection.xhtml";
 
   /*
   The connection dialog alone won't save onaccept since it uses type="child",
@@ -31,14 +31,15 @@ function test() {
       "about:preferences loaded"
     );
     let dialog = await openAndLoadSubDialog(connectionURL);
+    let dialogElement = dialog.document.getElementById("ConnectionsDialog");
     let dialogClosingPromise = BrowserTestUtils.waitForEvent(
-      dialog.document.documentElement,
+      dialogElement,
       "dialogclosing"
     );
 
     ok(dialog, "connection window opened");
     runConnectionTests(dialog);
-    dialog.document.documentElement.acceptDialog();
+    dialogElement.acceptDialog();
 
     let dialogClosingEvent = await dialogClosingPromise;
     ok(dialogClosingEvent, "connection window closed");

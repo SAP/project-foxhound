@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 const { PromiseMessage } = ChromeUtils.import(
@@ -66,6 +70,11 @@ async function getIcon(aWindow, icons, expectedSize) {
 
 async function fetchIcon(aWindow, src) {
   const iconURL = new aWindow.URL(src, aWindow.location);
+  // If this is already a data URL then no need to load it again.
+  if (iconURL.protocol === "data:") {
+    return iconURL.href;
+  }
+
   const request = new aWindow.Request(iconURL, { mode: "cors" });
   request.overrideContentPolicyType(Ci.nsIContentPolicy.TYPE_IMAGE);
   const response = await aWindow.fetch(request);

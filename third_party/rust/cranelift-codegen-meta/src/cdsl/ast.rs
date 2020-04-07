@@ -1,4 +1,3 @@
-use crate::cdsl::formats::FormatRegistry;
 use crate::cdsl::instructions::{InstSpec, Instruction, InstructionPredicate};
 use crate::cdsl::operands::{OperandKind, OperandKindFields};
 use crate::cdsl::types::ValueType;
@@ -54,7 +53,7 @@ impl Def {
         let results = self
             .defined_vars
             .iter()
-            .map(|&x| var_pool.get(x).name)
+            .map(|&x| var_pool.get(x).name.as_str())
             .collect::<Vec<_>>();
 
         let results = if results.len() == 1 {
@@ -63,7 +62,7 @@ impl Def {
             format!("({})", results.join(", "))
         };
 
-        format!("{} << {}", results, self.apply.to_comment_string(var_pool))
+        format!("{} := {}", results, self.apply.to_comment_string(var_pool))
     }
 }
 
@@ -152,12 +151,12 @@ pub(crate) enum Literal {
     /// corresponding to a Rust enum type. An `Enumerator` object is an AST leaf node representing one
     /// of the values.
     Enumerator {
-        rust_type: String,
+        rust_type: &'static str,
         value: &'static str,
     },
 
     /// A bitwise value of an immediate operand, used for bitwise exact floating point constants.
-    Bits { rust_type: String, value: u64 },
+    Bits { rust_type: &'static str, value: u64 },
 
     /// A value of an integer immediate operand.
     Int(i64),
@@ -169,14 +168,16 @@ pub(crate) enum Literal {
 impl Literal {
     pub fn enumerator_for(kind: &OperandKind, value: &'static str) -> Self {
         let value = match &kind.fields {
-            OperandKindFields::ImmEnum(values) => values.get(value).expect(&format!(
-                "nonexistent value '{}' in enumeration '{}'",
-                value, kind.name
-            )),
+            OperandKindFields::ImmEnum(values) => values.get(value).unwrap_or_else(|| {
+                panic!(
+                    "nonexistent value '{}' in enumeration '{}'",
+                    value, kind.rust_type
+                )
+            }),
             _ => panic!("enumerator is for enum values"),
         };
         Literal::Enumerator {
-            rust_type: kind.rust_type.clone(),
+            rust_type: kind.rust_type,
             value,
         }
     }
@@ -187,7 +188,7 @@ impl Literal {
             _ => panic!("bits_of is for immediate scalar types"),
         }
         Literal::Bits {
-            rust_type: kind.rust_type.clone(),
+            rust_type: kind.rust_type,
             value: bits,
         }
     }
@@ -238,7 +239,7 @@ pub(crate) enum PatternPosition {
 ///
 /// Temporary values are defined only in the destination pattern.
 pub(crate) struct Var {
-    pub name: &'static str,
+    pub name: String,
 
     /// The `Def` defining this variable in a source pattern.
     pub src_def: Option<DefIndex>,
@@ -254,7 +255,7 @@ pub(crate) struct Var {
 }
 
 impl Var {
-    fn new(name: &'static str) -> Self {
+    fn new(name: String) -> Self {
         Self {
             name,
             src_def: None,
@@ -346,7 +347,7 @@ impl Var {
     }
 
     pub fn to_rust_code(&self) -> String {
-        self.name.into()
+        self.name.clone()
     }
     fn rust_type(&self) -> String {
         self.type_var.as_ref().unwrap().to_rust_code()
@@ -384,8 +385,53 @@ impl VarPool {
     pub fn get_mut(&mut self, index: VarIndex) -> &mut Var {
         self.pool.get_mut(index).unwrap()
     }
-    pub fn create(&mut self, name: &'static str) -> VarIndex {
-        self.pool.push(Var::new(name))
+    pub fn create(&mut self, name: impl Into<String>) -> VarIndex {
+        self.pool.push(Var::new(name.into()))
+    }
+}
+
+/// Contains constants created in the AST that must be inserted into the true [ConstantPool] when
+/// the legalizer code is generated. The constant data is named in the order it is inserted;
+/// inserting data using [insert] will avoid duplicates.
+///
+/// [ConstantPool]: ../../../cranelift_codegen/ir/constant/struct.ConstantPool.html
+/// [insert]: ConstPool::insert
+pub(crate) struct ConstPool {
+    pool: Vec<Vec<u8>>,
+}
+
+impl ConstPool {
+    /// Create an empty constant pool.
+    pub fn new() -> Self {
+        Self { pool: vec![] }
+    }
+
+    /// Create a name for a constant from its position in the pool.
+    fn create_name(position: usize) -> String {
+        format!("const{}", position)
+    }
+
+    /// Insert constant data into the pool, returning the name of the variable used to reference it.
+    /// This method will search for data that matches the new data and return the existing constant
+    /// name to avoid duplicates.
+    pub fn insert(&mut self, data: Vec<u8>) -> String {
+        let possible_position = self.pool.iter().position(|d| d == &data);
+        let position = if let Some(found_position) = possible_position {
+            found_position
+        } else {
+            let new_position = self.pool.len();
+            self.pool.push(data);
+            new_position
+        };
+        ConstPool::create_name(position)
+    }
+
+    /// Iterate over the name/value pairs in the pool.
+    pub fn iter(&self) -> impl Iterator<Item = (String, &Vec<u8>)> {
+        self.pool
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (ConstPool::create_name(i), v))
     }
 }
 
@@ -431,12 +477,12 @@ impl Apply {
                                 "Nonexistent enum value '{}' passed to field of kind '{}' -- \
                                  did you use the right enum?",
                                 value,
-                                op.kind.name
+                                op.kind.rust_type
                             );
                         } else {
                             panic!(
                                 "Passed non-enum field value {:?} to field of kind {}",
-                                literal, op.kind.name
+                                literal, op.kind.rust_type
                             );
                         }
                     }
@@ -444,14 +490,14 @@ impl Apply {
                         Literal::Enumerator { value, .. } => panic!(
                             "Expected immediate value in immediate field of kind '{}', \
                              obtained enum value '{}'",
-                            op.kind.name, value
+                            op.kind.rust_type, value
                         ),
                         Literal::Bits { .. } | Literal::Int(_) | Literal::EmptyVarArgs => {}
                     },
                     _ => {
                         panic!(
                             "Literal passed to non-literal field of kind {}",
-                            op.kind.name
+                            op.kind.rust_type
                         );
                     }
                 }
@@ -480,23 +526,23 @@ impl Apply {
         format!("{}({})", inst_name, args)
     }
 
-    pub fn inst_predicate(
-        &self,
-        format_registry: &FormatRegistry,
-        var_pool: &VarPool,
-    ) -> InstructionPredicate {
-        let iform = format_registry.get(self.inst.format);
-
+    pub fn inst_predicate(&self, var_pool: &VarPool) -> InstructionPredicate {
         let mut pred = InstructionPredicate::new();
-        for (format_field, &op_num) in iform.imm_fields.iter().zip(self.inst.imm_opnums.iter()) {
+        for (format_field, &op_num) in self
+            .inst
+            .format
+            .imm_fields
+            .iter()
+            .zip(self.inst.imm_opnums.iter())
+        {
             let arg = &self.args[op_num];
             if arg.maybe_var().is_some() {
                 // Ignore free variables for now.
                 continue;
             }
             pred = pred.and(InstructionPredicate::new_is_field_equal_ast(
-                iform,
-                &format_field,
+                &*self.inst.format,
+                format_field,
                 arg.to_rust_code(var_pool),
             ));
         }
@@ -522,12 +568,8 @@ impl Apply {
     }
 
     /// Same as `inst_predicate()`, but also check the controlling type variable.
-    pub fn inst_predicate_with_ctrl_typevar(
-        &self,
-        format_registry: &FormatRegistry,
-        var_pool: &VarPool,
-    ) -> InstructionPredicate {
-        let mut pred = self.inst_predicate(format_registry, var_pool);
+    pub fn inst_predicate_with_ctrl_typevar(&self, var_pool: &VarPool) -> InstructionPredicate {
+        let mut pred = self.inst_predicate(var_pool);
 
         if !self.value_types.is_empty() {
             let bound_type = &self.value_types[0];
@@ -543,7 +585,7 @@ impl Apply {
         pred
     }
 
-    pub fn rust_builder(&self, defined_vars: &Vec<VarIndex>, var_pool: &VarPool) -> String {
+    pub fn rust_builder(&self, defined_vars: &[VarIndex], var_pool: &VarPool) -> String {
         let mut args = self
             .args
             .iter()
@@ -567,13 +609,14 @@ impl Apply {
 pub(crate) enum DummyExpr {
     Var(DummyVar),
     Literal(Literal),
+    Constant(DummyConstant),
     Apply(InstSpec, Vec<DummyExpr>),
     Block(DummyVar),
 }
 
 #[derive(Clone)]
 pub(crate) struct DummyVar {
-    pub name: &'static str,
+    pub name: String,
 }
 
 impl Into<DummyExpr> for DummyVar {
@@ -587,8 +630,23 @@ impl Into<DummyExpr> for Literal {
     }
 }
 
-pub(crate) fn var(name: &'static str) -> DummyVar {
-    DummyVar { name }
+#[derive(Clone)]
+pub(crate) struct DummyConstant(pub(crate) Vec<u8>);
+
+pub(crate) fn constant(data: Vec<u8>) -> DummyConstant {
+    DummyConstant(data)
+}
+
+impl Into<DummyExpr> for DummyConstant {
+    fn into(self) -> DummyExpr {
+        DummyExpr::Constant(self)
+    }
+}
+
+pub(crate) fn var(name: &str) -> DummyVar {
+    DummyVar {
+        name: name.to_owned(),
+    }
 }
 
 pub(crate) struct DummyDef {
@@ -650,9 +708,46 @@ macro_rules! def {
 }
 
 // Helper macro to define legalization recipes.
-macro_rules! ebb {
-    // An basic block definition, splitting the current block in 2.
+macro_rules! block {
+    // a basic block definition, splitting the current block in 2.
     ($block: ident) => {
         ExprBuilder::block($block).assign_to(Vec::new())
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cdsl::ast::ConstPool;
+
+    #[test]
+    fn const_pool_returns_var_names() {
+        let mut c = ConstPool::new();
+        assert_eq!(c.insert([0, 1, 2].to_vec()), "const0");
+        assert_eq!(c.insert([1, 2, 3].to_vec()), "const1");
+    }
+
+    #[test]
+    fn const_pool_avoids_duplicates() {
+        let data = [0, 1, 2].to_vec();
+        let mut c = ConstPool::new();
+        assert_eq!(c.pool.len(), 0);
+
+        assert_eq!(c.insert(data.clone()), "const0");
+        assert_eq!(c.pool.len(), 1);
+
+        assert_eq!(c.insert(data), "const0");
+        assert_eq!(c.pool.len(), 1);
+    }
+
+    #[test]
+    fn const_pool_iterates() {
+        let mut c = ConstPool::new();
+        c.insert([0, 1, 2].to_vec());
+        c.insert([3, 4, 5].to_vec());
+
+        let mut iter = c.iter();
+        assert_eq!(iter.next(), Some(("const0".to_owned(), &vec![0, 1, 2])));
+        assert_eq!(iter.next(), Some(("const1".to_owned(), &vec![3, 4, 5])));
+        assert_eq!(iter.next(), None);
+    }
 }

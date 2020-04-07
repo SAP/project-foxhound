@@ -39,7 +39,7 @@ enum StructuredCloneTags {
   SCTAG_DOM_FILE,
   // IMPORTANT: Don't change the order of these enum values. You could break
   // IDB.
-  SCTAG_DOM_WASM,
+  SCTAG_DOM_WASM_MODULE,
 
   // IMPORTANT: Don't change the order of these enum values. You could break
   // IDB.
@@ -138,6 +138,8 @@ enum StructuredCloneTags {
   SCTAG_DOM_STRUCTURED_CLONE_HOLDER,
 
   SCTAG_DOM_BROWSING_CONTEXT,
+
+  SCTAG_DOM_CLONED_ERROR_OBJECT,
 
   // IMPORTANT: If you plan to add an new IDB tag, it _must_ be add before the
   // "less stable" tags!

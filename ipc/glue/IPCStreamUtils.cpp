@@ -15,10 +15,12 @@
 #include "mozilla/ipc/FileDescriptorSetChild.h"
 #include "mozilla/ipc/FileDescriptorSetParent.h"
 #include "mozilla/ipc/InputStreamUtils.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/PBackgroundParent.h"
+#include "mozilla/net/SocketProcessChild.h"
+#include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/Unused.h"
 #include "nsNetCID.h"
+#include "BackgroundParentImpl.h"
+#include "BackgroundChildImpl.h"
 
 using namespace mozilla::dom;
 
@@ -355,6 +357,28 @@ bool AutoIPCStream::Serialize(nsIInputStream* aStream,
     return true;
   }
 
+  BackgroundChildImpl* impl = static_cast<BackgroundChildImpl*>(aManager);
+  if (!SerializeInputStreamChild(aStream, impl, mValue, mOptionalValue,
+                                 mDelayedStart)) {
+    MOZ_CRASH("IPCStream creation failed!");
+  }
+
+  return true;
+}
+
+bool AutoIPCStream::Serialize(nsIInputStream* aStream,
+                              net::SocketProcessChild* aManager) {
+  MOZ_ASSERT(aStream || !mValue);
+  MOZ_ASSERT(aManager);
+  MOZ_ASSERT(mValue || mOptionalValue);
+  MOZ_ASSERT(!mTaken);
+  MOZ_ASSERT(!IsSet());
+
+  // If NormalizeOptionalValue returns false, we don't have to proceed.
+  if (!NormalizeOptionalValue(aStream, mValue, mOptionalValue)) {
+    return true;
+  }
+
   if (!SerializeInputStreamChild(aStream, aManager, mValue, mOptionalValue,
                                  mDelayedStart)) {
     MOZ_CRASH("IPCStream creation failed!");
@@ -386,6 +410,28 @@ bool AutoIPCStream::Serialize(nsIInputStream* aStream,
 
 bool AutoIPCStream::Serialize(nsIInputStream* aStream,
                               PBackgroundParent* aManager) {
+  MOZ_ASSERT(aStream || !mValue);
+  MOZ_ASSERT(aManager);
+  MOZ_ASSERT(mValue || mOptionalValue);
+  MOZ_ASSERT(!mTaken);
+  MOZ_ASSERT(!IsSet());
+
+  // If NormalizeOptionalValue returns false, we don't have to proceed.
+  if (!NormalizeOptionalValue(aStream, mValue, mOptionalValue)) {
+    return true;
+  }
+
+  BackgroundParentImpl* impl = static_cast<BackgroundParentImpl*>(aManager);
+  if (!SerializeInputStreamParent(aStream, impl, mValue, mOptionalValue,
+                                  mDelayedStart)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool AutoIPCStream::Serialize(nsIInputStream* aStream,
+                              net::SocketProcessParent* aManager) {
   MOZ_ASSERT(aStream || !mValue);
   MOZ_ASSERT(aManager);
   MOZ_ASSERT(mValue || mOptionalValue);
@@ -441,7 +487,8 @@ Maybe<IPCStream>& AutoIPCStream::TakeOptionalValue() {
 void IPDLParamTraits<nsIInputStream*>::Write(IPC::Message* aMsg,
                                              IProtocol* aActor,
                                              nsIInputStream* aParam) {
-  mozilla::ipc::AutoIPCStream autoStream;
+  auto autoStream = MakeRefPtr<HoldIPCStream>();
+
   bool ok = false;
   bool found = false;
 
@@ -453,22 +500,22 @@ void IPDLParamTraits<nsIInputStream*>::Write(IPC::Message* aMsg,
     switch (actor->GetProtocolId()) {
       case PContentMsgStart:
         if (actor->GetSide() == mozilla::ipc::ParentSide) {
-          ok = autoStream.Serialize(
+          ok = autoStream->Serialize(
               aParam, static_cast<mozilla::dom::ContentParent*>(actor));
         } else {
           MOZ_RELEASE_ASSERT(actor->GetSide() == mozilla::ipc::ChildSide);
-          ok = autoStream.Serialize(
+          ok = autoStream->Serialize(
               aParam, static_cast<mozilla::dom::ContentChild*>(actor));
         }
         found = true;
         break;
       case PBackgroundMsgStart:
         if (actor->GetSide() == mozilla::ipc::ParentSide) {
-          ok = autoStream.Serialize(
+          ok = autoStream->Serialize(
               aParam, static_cast<mozilla::ipc::PBackgroundParent*>(actor));
         } else {
           MOZ_RELEASE_ASSERT(actor->GetSide() == mozilla::ipc::ChildSide);
-          ok = autoStream.Serialize(
+          ok = autoStream->Serialize(
               aParam, static_cast<mozilla::ipc::PBackgroundChild*>(actor));
         }
         found = true;
@@ -487,7 +534,13 @@ void IPDLParamTraits<nsIInputStream*>::Write(IPC::Message* aMsg,
   }
   MOZ_RELEASE_ASSERT(ok, "Failed to serialize nsIInputStream");
 
-  WriteIPDLParam(aMsg, aActor, autoStream.TakeOptionalValue());
+  WriteIPDLParam(aMsg, aActor, autoStream->TakeOptionalValue());
+
+  // Dispatch the autoStream to an async runnable, so that we guarantee it
+  // outlives this callstack, and doesn't shut down any actors we created
+  // until after we've finished sending the current message.
+  NS_ProxyRelease("IPDLParamTraits<nsIInputStream*>::Write::autoStream",
+                  NS_GetCurrentThread(), autoStream.forget(), true);
 }
 
 bool IPDLParamTraits<nsIInputStream*>::Read(const IPC::Message* aMsg,

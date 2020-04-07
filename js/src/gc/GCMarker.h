@@ -8,11 +8,14 @@
 #define gc_GCMarker_h
 
 #include "mozilla/Maybe.h"
+#include "mozilla/Unused.h"
 
 #include "ds/OrderedHashTable.h"
 #include "js/SliceBudget.h"
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
+
+class JSRope;
 
 namespace js {
 
@@ -21,6 +24,7 @@ class WeakMapBase;
 
 static const size_t NON_INCREMENTAL_MARK_STACK_BASE_CAPACITY = 4096;
 static const size_t INCREMENTAL_MARK_STACK_BASE_CAPACITY = 32768;
+static const size_t SMALL_MARK_STACK_BASE_CAPACITY = 256;
 
 namespace gc {
 
@@ -135,9 +139,10 @@ class MarkStack {
 
   size_t position() const { return topIndex_; }
 
-  MOZ_MUST_USE bool init(JSGCMode gcMode);
+  enum StackType { MainStack, AuxiliaryStack };
+  MOZ_MUST_USE bool init(JSGCMode gcMode, StackType which);
 
-  MOZ_MUST_USE bool setCapacityForMode(JSGCMode mode);
+  MOZ_MUST_USE bool setCapacityForMode(JSGCMode mode, StackType which);
 
   size_t maxCapacity() const { return maxCapacity_; }
   void setMaxCapacity(size_t maxCapacity);
@@ -160,7 +165,13 @@ class MarkStack {
   ValueArray popValueArray();
   SavedValueArray popSavedValueArray();
 
-  void clear() { topIndex_ = 0; }
+  void clear() {
+    // Fall back to the smaller initial capacity so we don't hold on to excess
+    // memory between GCs.
+    stack().clearAndFree();
+    mozilla::Unused << stack().resize(NON_INCREMENTAL_MARK_STACK_BASE_CAPACITY);
+    topIndex_ = 0;
+  }
 
   void setGCMode(JSGCMode gcMode);
 
@@ -186,13 +197,13 @@ class MarkStack {
   MOZ_MUST_USE bool pushTaggedPtr(Tag tag, Cell* ptr);
 
   // Index of the top of the stack.
-  MainThreadData<size_t> topIndex_;
+  MainThreadOrGCTaskData<size_t> topIndex_;
 
   // The maximum stack capacity to grow to.
-  MainThreadData<size_t> maxCapacity_;
+  MainThreadOrGCTaskData<size_t> maxCapacity_;
 
   // Vector containing allocated stack memory. Unused beyond topIndex_.
-  MainThreadData<StackVector> stack_;
+  MainThreadOrGCTaskData<StackVector> stack_;
 
 #ifdef DEBUG
   mutable size_t iteratorCount_;
@@ -225,6 +236,26 @@ class MarkStackIter {
 };
 
 } /* namespace gc */
+
+enum MarkingState : uint8_t {
+  // Have not yet started marking.
+  NotActive,
+
+  // Main marking mode. Weakmap marking will be populating the weakKeys tables
+  // but not consulting them. The state will transition to WeakMarking until it
+  // is done, then back to RegularMarking.
+  RegularMarking,
+
+  // Same as RegularMarking except now every marked obj/script is immediately
+  // looked up in the weakKeys table to see if it is a weakmap key, and
+  // therefore might require marking its value. Transitions back to
+  // RegularMarking when done.
+  WeakMarking,
+
+  // Same as RegularMarking, but we OOMed (or obeyed a directive in the test
+  // marking queue) and fell back to iterating until the next GC.
+  IterativeMarking
+};
 
 class GCMarker : public JSTracer {
  public:
@@ -271,26 +302,21 @@ class GCMarker : public JSTracer {
   void setMarkColor(gc::MarkColor newColor);
   gc::MarkColor markColor() const { return color; }
 
-  // Return whether a cell is marked relative to the current marking color. If
-  // the cell is black then this returns true, but if it's gray it will return
-  // false if the mark color is black.
-  template <typename T>
-  bool isMarked(T* thingp) {
-    return color == gc::MarkColor::Black ? gc::IsMarkedBlack(runtime(), thingp)
-                                         : gc::IsMarked(runtime(), thingp);
-  }
-  template <typename T>
-  bool isMarkedUnbarriered(T* thingp) {
-    return color == gc::MarkColor::Black
-               ? gc::IsMarkedBlackUnbarriered(runtime(), thingp)
-               : gc::IsMarkedUnbarriered(runtime(), thingp);
-  }
+  // Declare which color the main mark stack will be used for. The whole stack
+  // must be empty when this is called.
+  void setMainStackColor(gc::MarkColor newColor);
 
-  void enterWeakMarkingMode();
+  bool enterWeakMarkingMode();
   void leaveWeakMarkingMode();
+
+  // Do not use linear-time weak marking for the rest of this collection.
+  // Currently, this will only be triggered by an OOM when updating needed data
+  // structures.
   void abortLinearWeakMarking() {
-    leaveWeakMarkingMode();
-    linearWeakMarkingDisabled_ = true;
+    if (state == MarkingState::WeakMarking) {
+      leaveWeakMarkingMode();
+    }
+    state = MarkingState::IterativeMarking;
   }
 
   void delayMarkingChildren(gc::Cell* cell);
@@ -308,7 +334,10 @@ class GCMarker : public JSTracer {
 
   MOZ_MUST_USE bool markUntilBudgetExhausted(SliceBudget& budget);
 
-  void setGCMode(JSGCMode mode) { stack.setGCMode(mode); }
+  void setGCMode(JSGCMode mode) {
+    // Ignore failure to resize the stack and keep using the existing stack.
+    mozilla::Unused << stack.setCapacityForMode(mode, gc::MarkStack::MainStack);
+  }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
@@ -328,6 +357,8 @@ class GCMarker : public JSTracer {
 
   template <typename T>
   void markImplicitEdges(T* oldThing);
+
+  bool isWeakMarking() const { return state == MarkingState::WeakMarking; }
 
  private:
 #ifdef DEBUG
@@ -351,7 +382,6 @@ class GCMarker : public JSTracer {
   void eagerlyMarkChildren(JSLinearString* str);
   void eagerlyMarkChildren(JSRope* rope);
   void eagerlyMarkChildren(JSString* str);
-  void eagerlyMarkChildren(LazyScript* thing);
   void eagerlyMarkChildren(Shape* shape);
   void eagerlyMarkChildren(Scope* scope);
   void lazilyMarkChildren(ObjectGroup* group);
@@ -370,11 +400,15 @@ class GCMarker : public JSTracer {
 
   inline void pushValueArray(JSObject* obj, HeapSlot* start, HeapSlot* end);
 
-  bool isMarkStackEmpty() { return stack.isEmpty(); }
+  bool isMarkStackEmpty() { return stack.isEmpty() && auxStack.isEmpty(); }
 
-  bool hasBlackEntries() const { return stack.position() > grayPosition; }
+  bool hasBlackEntries() const {
+    return !getStack(gc::MarkColor::Black).isEmpty();
+  }
 
-  bool hasGrayEntries() const { return grayPosition > 0 && !stack.isEmpty(); }
+  bool hasGrayEntries() const {
+    return !getStack(gc::MarkColor::Gray).isEmpty();
+  }
 
   MOZ_MUST_USE bool restoreValueArray(
       const gc::MarkStack::SavedValueArray& array, HeapSlot** vpp,
@@ -398,36 +432,51 @@ class GCMarker : public JSTracer {
   template <typename F>
   void forEachDelayedMarkingArena(F&& f);
 
-  /* The mark stack. Pointers in this stack are "gray" in the GC sense. */
+  /*
+   * The mark stack. Pointers in this stack are "gray" in the GC sense, but may
+   * mark the contained items either black or gray (in the CC sense) depending
+   * on mainStackColor.
+   */
   gc::MarkStack stack;
 
-  /* Stack entries at positions below this are considered gray. */
-  MainThreadData<size_t> grayPosition;
+  /*
+   * A smaller, auxiliary stack, currently only used to accumulate the rare
+   * objects that need to be marked black during gray marking.
+   */
+  gc::MarkStack auxStack;
 
   /* The color is only applied to objects and functions. */
-  MainThreadData<gc::MarkColor> color;
+  MainThreadOrGCTaskData<gc::MarkColor> color;
+
+  MainThreadOrGCTaskData<gc::MarkColor> mainStackColor;
+
+  gc::MarkStack& getStack(gc::MarkColor which) {
+    return which == mainStackColor ? stack : auxStack;
+  }
+  const gc::MarkStack& getStack(gc::MarkColor which) const {
+    return which == mainStackColor ? stack : auxStack;
+  }
+
+  gc::MarkStack& currentStack() { return getStack(color); }
 
   /* Pointer to the top of the stack of arenas we are delaying marking on. */
-  MainThreadData<js::gc::Arena*> delayedMarkingList;
+  MainThreadOrGCTaskData<js::gc::Arena*> delayedMarkingList;
 
   /* Whether more work has been added to the delayed marking list. */
-  MainThreadData<bool> delayedMarkingWorkAdded;
-
-  /*
-   * If the weakKeys table OOMs, disable the linear algorithm and fall back
-   * to iterating until the next GC.
-   */
-  MainThreadData<bool> linearWeakMarkingDisabled_;
+  MainThreadOrGCTaskData<bool> delayedMarkingWorkAdded;
 
   /* The count of marked objects during GC. */
   size_t markCount;
 
+  /* Track the state of marking. */
+  MainThreadOrGCTaskData<MarkingState> state;
+
 #ifdef DEBUG
   /* Count of arenas that are currently in the stack. */
-  MainThreadData<size_t> markLaterArenas;
+  MainThreadOrGCTaskData<size_t> markLaterArenas;
 
   /* Assert that start and stop are called with correct ordering. */
-  MainThreadData<bool> started;
+  MainThreadOrGCTaskData<bool> started;
 
   /* The test marking queue might want to be marking a particular color. */
   mozilla::Maybe<js::gc::MarkColor> queueMarkColor;
@@ -436,9 +485,17 @@ class GCMarker : public JSTracer {
    * If this is true, all marked objects must belong to a compartment being
    * GCed. This is used to look for compartment bugs.
    */
-  MainThreadData<bool> strictCompartmentChecking;
+  MainThreadOrGCTaskData<bool> strictCompartmentChecking;
 
  public:
+  /*
+   * The compartment and zone of the object whose trace hook is currently being
+   * called, if any. Used to catch cross-compartment edges traced without use of
+   * TraceCrossCompartmentEdge.
+   */
+  MainThreadOrGCTaskData<Compartment*> tracingCompartment;
+  MainThreadOrGCTaskData<Zone*> tracingZone;
+
   /*
    * List of objects to mark at the beginning of a GC. May also contains string
    * directives to change mark color or wait until different phases of the GC.
@@ -449,7 +506,6 @@ class GCMarker : public JSTracer {
    * used during shutdown GCs. In either case, unmarked objects may need to be
    * discarded.
    */
-
   JS::WeakCache<GCVector<JS::Heap<JS::Value>, 0, SystemAllocPolicy>> markQueue;
 
   /* Position within the test mark queue. */
@@ -475,6 +531,9 @@ class MOZ_RAII AutoSetMarkColor {
     marker_.setMarkColor(newColor);
   }
 
+  AutoSetMarkColor(GCMarker& marker, CellColor newColor)
+      : AutoSetMarkColor(marker, newColor.asMarkColor()) {}
+
   ~AutoSetMarkColor() { marker_.setMarkColor(initialColor_); }
 };
 
@@ -487,7 +546,6 @@ inline bool ThingIsPermanentAtomOrWellKnownSymbol(js::gc::Cell* thing) {
   return false;
 }
 bool ThingIsPermanentAtomOrWellKnownSymbol(JSString*);
-bool ThingIsPermanentAtomOrWellKnownSymbol(JSFlatString*);
 bool ThingIsPermanentAtomOrWellKnownSymbol(JSLinearString*);
 bool ThingIsPermanentAtomOrWellKnownSymbol(JSAtom*);
 bool ThingIsPermanentAtomOrWellKnownSymbol(js::PropertyName*);

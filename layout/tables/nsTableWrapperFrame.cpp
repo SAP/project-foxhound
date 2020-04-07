@@ -17,7 +17,6 @@
 #include "prinrval.h"
 #include "nsGkAtoms.h"
 #include "nsHTMLParts.h"
-#include "nsIServiceManager.h"
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
 #include "nsIFrameInlines.h"
@@ -244,11 +243,13 @@ void nsTableWrapperFrame::InitChildReflowInput(nsPresContext& aPresContext,
       pCollapsePadding = &collapsePadding;
     }
     // Propagate our stored CB size if present, minus any margins.
+    //
+    // Note that inner table computed margins are always zero, they're inherited
+    // by the table wrapper, so we need to get our margin from aOuterRI.
     if (!HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
-      LogicalSize* cb = GetProperty(GridItemCBSizeProperty());
-      if (cb) {
+      if (LogicalSize* cb = GetProperty(GridItemCBSizeProperty())) {
         cbSize.emplace(*cb);
-        *cbSize -= aReflowInput.ComputedLogicalMargin().Size(wm);
+        *cbSize -= aOuterRI.ComputedLogicalMargin().Size(wm);
       }
     }
     if (!cbSize) {
@@ -387,10 +388,10 @@ nscoord nsTableWrapperFrame::ChildShrinkWrapISize(
   if (MOZ_UNLIKELY(isGridItem) && !StyleMargin()->HasInlineAxisAuto(aWM)) {
     auto inlineAxisAlignment =
         aWM.IsOrthogonalTo(parent->GetWritingMode())
-            ? StylePosition()->UsedAlignSelf(parent->Style())
-            : StylePosition()->UsedJustifySelf(parent->Style());
-    if (inlineAxisAlignment == NS_STYLE_ALIGN_NORMAL ||
-        inlineAxisAlignment == NS_STYLE_ALIGN_STRETCH) {
+            ? StylePosition()->UsedAlignSelf(parent->Style())._0
+            : StylePosition()->UsedJustifySelf(parent->Style())._0;
+    if (inlineAxisAlignment == StyleAlignFlags::NORMAL ||
+        inlineAxisAlignment == StyleAlignFlags::STRETCH) {
       flags = nsIFrame::ComputeSizeFlags::eDefault;
     }
   }

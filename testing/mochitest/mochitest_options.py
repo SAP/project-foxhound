@@ -510,11 +510,6 @@ class MochitestArguments(ArgumentContainer):
           "default": None,
           "help": "Arguments to pass to the debugger.",
           }],
-        [["--save-recordings"],
-         {"dest": "recordingPath",
-          "default": None,
-          "help": "Directory to save Web Replay recordings in.",
-          }],
         [["--valgrind"],
          {"default": None,
           "help": "Valgrind binary to run tests with. Program name or path.",
@@ -838,6 +833,7 @@ class MochitestArguments(ArgumentContainer):
         options.leakThresholds = {
             "default": options.defaultLeakThreshold,
             "tab": options.defaultLeakThreshold,
+            "forkserver": options.defaultLeakThreshold,
             # GMP rarely gets a log, but when it does, it leaks a little.
             "gmplugin": 20000,
             "rdd": 400,

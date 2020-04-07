@@ -113,7 +113,7 @@ void Sampler::Disable(PSLockRef aLock) {}
 template <typename Func>
 void Sampler::SuspendAndSampleAndResumeThread(
     PSLockRef aLock, const RegisteredThread& aRegisteredThread,
-    const Func& aProcessRegs) {
+    const TimeStamp& aNow, const Func& aProcessRegs) {
   HANDLE profiled_thread =
       aRegisteredThread.GetPlatformData()->ProfiledThread();
   if (profiled_thread == nullptr) {
@@ -159,7 +159,7 @@ void Sampler::SuspendAndSampleAndResumeThread(
 
   Registers regs;
   PopulateRegsFromContext(regs, &context);
-  aProcessRegs(regs);
+  aProcessRegs(regs, aNow);
 
   //----------------------------------------------------------------//
   // Resume the target thread.
@@ -215,6 +215,11 @@ SamplerThread::~SamplerThread() {
   if (mThread != kNoThread) {
     CloseHandle(mThread);
   }
+
+  // Just in the unlikely case some callbacks were added between the end of the
+  // thread and now.
+  InvokePostSamplingCallbacks(std::move(mPostSamplingCallbackList),
+                              SamplingState::JustStopped);
 }
 
 void SamplerThread::SleepMicro(uint32_t aMicroseconds) {

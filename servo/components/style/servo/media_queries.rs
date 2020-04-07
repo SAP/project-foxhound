@@ -10,13 +10,13 @@ use crate::media_queries::media_feature::{Evaluator, MediaFeatureDescription};
 use crate::media_queries::media_feature_expression::RangeOrOperator;
 use crate::media_queries::MediaType;
 use crate::properties::ComputedValues;
-use crate::values::computed::font::FontSize;
 use crate::values::computed::CSSPixelLength;
+use crate::values::specified::font::FONT_MEDIUM_PX;
 use crate::values::KeyframesName;
 use app_units::Au;
 use cssparser::RGBA;
 use euclid::default::Size2D as UntypedSize2D;
-use euclid::{Scale, Size2D};
+use euclid::{Scale, SideOffsets2D, Size2D};
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use style_traits::viewport::ViewportConstraints;
 use style_traits::{CSSPixel, DevicePixel};
@@ -68,7 +68,7 @@ impl Device {
             viewport_size,
             device_pixel_ratio,
             // FIXME(bz): Seems dubious?
-            root_font_size: AtomicIsize::new(FontSize::medium().size().0 as isize),
+            root_font_size: AtomicIsize::new(Au::from_px(FONT_MEDIUM_PX).0 as isize),
             used_root_font_size: AtomicBool::new(false),
             used_viewport_units: AtomicBool::new(false),
             environment: CssEnvironment,
@@ -163,6 +163,16 @@ impl Device {
     /// Returns the default background color.
     pub fn default_background_color(&self) -> RGBA {
         RGBA::new(255, 255, 255, 255)
+    }
+
+    /// Returns the default color color.
+    pub fn default_color(&self) -> RGBA {
+        RGBA::new(0, 0, 0, 255)
+    }
+
+    /// Returns safe area insets
+    pub fn safe_area_insets(&self) -> SideOffsets2D<f32, CSSPixel> {
+        SideOffsets2D::zero()
     }
 }
 

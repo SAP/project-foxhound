@@ -7,11 +7,14 @@
 "use strict";
 
 add_task(async function() {
+  // Needed for the execute() function below
+  await pushPref("security.allow_parent_unrestricted_js_loads", true);
+
   // Show the content messages
   await pushPref("devtools.browserconsole.contentMessages", true);
 
   const hud = await BrowserConsoleManager.toggleBrowserConsole();
-  await hud.ui.clearOutput();
+  await clearOutput(hud);
   await openNewTabAndConsole(
     `data:text/html,<script>console.log("hello from content")</script>`
   );

@@ -30,7 +30,8 @@ class PresShell;
 
 namespace dom {
 class DOMStringList;
-}
+class Element;
+}  // namespace dom
 
 namespace a11y {
 
@@ -53,7 +54,8 @@ SelectionManager* SelectionMgr();
 ApplicationAccessible* ApplicationAcc();
 xpcAccessibleApplication* XPCApplicationAcc();
 
-typedef Accessible*(New_Accessible)(Element* aElement, Accessible* aContext);
+typedef Accessible*(New_Accessible)(mozilla::dom::Element* aElement,
+                                    Accessible* aContext);
 
 // These fields are not `nsStaticAtom* const` because MSVC doesn't like it.
 struct MarkupAttrInfo {
@@ -220,6 +222,15 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
   void RecreateAccessible(mozilla::PresShell* aPresShell, nsIContent* aContent);
 
   void FireAccessibleEvent(uint32_t aEvent, Accessible* aTarget);
+
+  /**
+   * Notify accessibility that the size has become available for an image.
+   * This occurs when the size of an image is initially not known, but we've
+   * now loaded enough data to know the size.
+   * Called by layout.
+   */
+  void NotifyOfImageSizeAvailable(mozilla::PresShell* aPresShell,
+                                  nsIContent* aContent);
 
   // nsAccessibiltiyService
 

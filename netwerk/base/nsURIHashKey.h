@@ -5,12 +5,13 @@
 #ifndef nsURIHashKey_h__
 #define nsURIHashKey_h__
 
+#include <utility>
+
 #include "PLDHashTable.h"
-#include "nsCOMPtr.h"
-#include "nsIURI.h"
-#include "nsHashKeys.h"
-#include "mozilla/Move.h"
 #include "mozilla/Unused.h"
+#include "nsCOMPtr.h"
+#include "nsHashKeys.h"
+#include "nsIURI.h"
 
 /**
  * Hashtable key class to use with nsTHashtable/nsBaseHashtable
@@ -27,7 +28,7 @@ class nsURIHashKey : public PLDHashEntryHdr {
       : PLDHashEntryHdr(std::move(toMove)), mKey(std::move(toMove.mKey)) {
     MOZ_COUNT_CTOR(nsURIHashKey);
   }
-  ~nsURIHashKey() { MOZ_COUNT_DTOR(nsURIHashKey); }
+  MOZ_COUNTED_DTOR(nsURIHashKey)
 
   nsIURI* GetKey() const { return mKey; }
 

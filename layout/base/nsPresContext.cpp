@@ -28,8 +28,10 @@
 #include "nsIContentViewer.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/ServoStyleSet.h"
+#include "mozilla/MediaFeatureChange.h"
 #include "nsIContent.h"
 #include "nsIFrame.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsIPrintSettings.h"
@@ -64,22 +66,23 @@
 #include "mozilla/dom/PBrowserParent.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/StaticPresData.h"
 #include "nsRefreshDriver.h"
 #include "Layers.h"
 #include "LayerUserData.h"
 #include "ClientLayerManager.h"
 #include "mozilla/dom/NotifyPaintEvent.h"
 
-#include "nsIDOMChromeWindow.h"
 #include "nsFrameLoader.h"
 #include "nsContentUtils.h"
 #include "nsPIWindowRoot.h"
 #include "mozilla/Preferences.h"
 #include "gfxTextRun.h"
 #include "nsFontFaceUtils.h"
-#include "nsLayoutStylesheetCache.h"
+#include "mozilla/GlobalStyleSheetCache.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StaticPrefs_zoom.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
@@ -87,6 +90,8 @@
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/layers/APZThreadUtils.h"
+#include "MobileViewportManager.h"
+#include "mozilla/dom/ImageTracker.h"
 
 // Needed for Start/Stop of Image Animation
 #include "imgIContainer.h"
@@ -167,6 +172,8 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mLastFontInflationScreenSize(gfxSize(-1.0, -1.0)),
       mCurAppUnitsPerDevPixel(0),
       mAutoQualityMinFontSizePixelsPref(0),
+      mDynamicToolbarMaxHeight(0),
+      mDynamicToolbarHeight(0),
       mPageSize(-1, -1),
       mPageScale(0.0),
       mPPScale(1.0f),
@@ -200,7 +207,6 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mPrefChangePendingNeedsReflow(false),
       mPostedPrefChangedRunnable(false),
       mIsGlyph(false),
-      mUsesRootEMUnits(false),
       mUsesExChUnits(false),
       mCounterStylesDirty(true),
       mFontFeatureValuesDirty(true),
@@ -270,12 +276,10 @@ void nsPresContext::Destroy() {
   }
 
   // Unregister preference callbacks
-  Preferences::UnregisterPrefixCallbacks(
-      PREF_CHANGE_METHOD(nsPresContext::PreferenceChanged),
-      gPrefixCallbackPrefs, this);
-  Preferences::UnregisterCallbacks(
-      PREF_CHANGE_METHOD(nsPresContext::PreferenceChanged), gExactCallbackPrefs,
-      this);
+  Preferences::UnregisterPrefixCallbacks(nsPresContext::PreferenceChanged,
+                                         gPrefixCallbackPrefs, this);
+  Preferences::UnregisterCallbacks(nsPresContext::PreferenceChanged,
+                                   gExactCallbackPrefs, this);
 
   mRefreshDriver = nullptr;
 }
@@ -322,13 +326,10 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsPresContext)
   // NS_RELEASE(tmp->mLanguage); // an atom
   // NS_IMPL_CYCLE_COLLECTION_UNLINK(mTheme); // a service
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPrintSettings);
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
 
   tmp->Destroy();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-// whether no native theme service exists;
-// if this gets set to true, we'll stop asking for it.
-static bool sNoTheme = false;
 
 // Set to true when LookAndFeelChanged needs to be called.  This is used
 // because the look and feel is a service, so there's no need to notify it from
@@ -423,6 +424,12 @@ void nsPresContext::AppUnitsPerDevPixelChanged() {
 
   mCurAppUnitsPerDevPixel = mDeviceContext->AppUnitsPerDevPixel();
 
+  // Recompute the size for vh units since it's changed by the dynamic toolbar
+  // max height which is stored in screen coord.
+  if (IsRootContentDocumentCrossProcess()) {
+    AdjustSizeForViewportUnits();
+  }
+
   // nsSubDocumentFrame uses a AppUnitsPerDevPixel difference between parent and
   // child document to determine if it needs to build a nsDisplayZoom item. So
   // if we that changes then we need to invalidate the subdoc frame so that
@@ -443,6 +450,11 @@ void nsPresContext::AppUnitsPerDevPixelChanged() {
   // We would also have to look at all of our child subdocuments but the
   // InvalidatePaintedLayers call above calls InvalidateFrameSubtree which
   // would invalidate all subdocument frames already.
+}
+
+// static
+void nsPresContext::PreferenceChanged(const char* aPrefName, void* aSelf) {
+  static_cast<nsPresContext*>(aSelf)->PreferenceChanged(aPrefName);
 }
 
 void nsPresContext::PreferenceChanged(const char* aPrefName) {
@@ -520,7 +532,7 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
   //
   // The first pres context that has its pref changed runnable called will
   // be the one to cause the reconstruction of the pref style sheet.
-  nsLayoutStylesheetCache::InvalidatePreferenceSheets();
+  GlobalStyleSheetCache::InvalidatePreferenceSheets();
   PreferenceSheet::Refresh();
   DispatchPrefChangedRunnableIfNeeded();
 
@@ -624,18 +636,14 @@ nsresult nsPresContext::Init(nsDeviceContext* aDeviceContext) {
         "How did we end up with a presshell if our parent doesn't "
         "have one?");
     if (parent && parent->GetPresContext()) {
-      nsCOMPtr<nsIDocShellTreeItem> ourItem = mDocument->GetDocShell();
-      if (ourItem) {
-        nsCOMPtr<nsIDocShellTreeItem> parentItem;
-        ourItem->GetInProcessSameTypeParent(getter_AddRefs(parentItem));
-        if (parentItem) {
-          Element* containingElement =
-              parent->FindContentForSubDocument(mDocument);
-          if (!containingElement->IsXULElement() ||
-              !containingElement->HasAttr(kNameSpaceID_None,
-                                          nsGkAtoms::forceOwnRefreshDriver)) {
-            mRefreshDriver = parent->GetPresContext()->RefreshDriver();
-          }
+      dom::BrowsingContext* ourItem = mDocument->GetBrowsingContext();
+      if (ourItem && !ourItem->IsTop()) {
+        Element* containingElement =
+            parent->FindContentForSubDocument(mDocument);
+        if (!containingElement->IsXULElement() ||
+            !containingElement->HasAttr(kNameSpaceID_None,
+                                        nsGkAtoms::forceOwnRefreshDriver)) {
+          mRefreshDriver = parent->GetPresContext()->RefreshDriver();
         }
       }
     }
@@ -649,17 +657,25 @@ nsresult nsPresContext::Init(nsDeviceContext* aDeviceContext) {
   }
 
   // Register callbacks so we're notified when the preferences change
-  Preferences::RegisterPrefixCallbacks(
-      PREF_CHANGE_METHOD(nsPresContext::PreferenceChanged),
-      gPrefixCallbackPrefs, this);
-  Preferences::RegisterCallbacks(
-      PREF_CHANGE_METHOD(nsPresContext::PreferenceChanged), gExactCallbackPrefs,
-      this);
+  Preferences::RegisterPrefixCallbacks(nsPresContext::PreferenceChanged,
+                                       gPrefixCallbackPrefs, this);
+  Preferences::RegisterCallbacks(nsPresContext::PreferenceChanged,
+                                 gExactCallbackPrefs, this);
 
   nsresult rv = mEventManager->Init();
   NS_ENSURE_SUCCESS(rv, rv);
 
   mEventManager->SetPresContext(this);
+
+#if defined(MOZ_WIDGET_ANDROID)
+  if (IsRootContentDocumentCrossProcess()) {
+    if (BrowserChild* browserChild =
+            BrowserChild::GetFrom(mDocument->GetDocShell())) {
+      mDynamicToolbarMaxHeight = browserChild->GetDynamicToolbarMaxHeight();
+      mDynamicToolbarHeight = mDynamicToolbarMaxHeight;
+    }
+  }
+#endif
 
 #ifdef DEBUG
   mInitialized = true;
@@ -749,7 +765,7 @@ void nsPresContext::DetachPresShell() {
   }
 }
 
-void nsPresContext::DoChangeCharSet(NotNull<const Encoding*> aCharSet) {
+void nsPresContext::DocumentCharSetChanged(NotNull<const Encoding*> aCharSet) {
   UpdateCharSet(aCharSet);
   mDeviceContext->FlushFontCache();
 
@@ -775,11 +791,6 @@ void nsPresContext::UpdateCharSet(NotNull<const Encoding*> aCharSet) {
     default:
       SetVisualMode(IsVisualCharset(aCharSet));
   }
-}
-
-void nsPresContext::DispatchCharSetChange(NotNull<const Encoding*> aEncoding) {
-  // In Servo RebuildAllStyleData is async, so no need to do the runnable dance.
-  DoChangeCharSet(aEncoding);
 }
 
 nsPresContext* nsPresContext::GetParentPresContext() {
@@ -817,9 +828,11 @@ nsPresContext* nsPresContext::GetToplevelContentDocumentPresContext() {
 
 nsIWidget* nsPresContext::GetNearestWidget(nsPoint* aOffset) {
   NS_ENSURE_TRUE(mPresShell, nullptr);
-  nsIFrame* frame = mPresShell->GetRootFrame();
-  NS_ENSURE_TRUE(frame, nullptr);
-  return frame->GetView()->GetNearestWidget(aOffset);
+  nsViewManager* vm = mPresShell->GetViewManager();
+  NS_ENSURE_TRUE(vm, nullptr);
+  nsView* rootView = vm->GetRootView();
+  NS_ENSURE_TRUE(rootView, nullptr);
+  return rootView->GetNearestWidget(aOffset);
 }
 
 nsIWidget* nsPresContext::GetRootWidget() const {
@@ -1042,12 +1055,10 @@ static bool CheckOverflow(const ComputedStyle* aComputedStyle,
     return false;
   }
 
-  WritingMode writingMode = WritingMode(aComputedStyle);
   if (display->mOverflowX == StyleOverflow::MozHiddenUnscrollable) {
-    *aStyles = ScrollStyles(writingMode, StyleOverflow::Hidden,
-                            StyleOverflow::Hidden, display);
+    *aStyles = ScrollStyles(StyleOverflow::Hidden, StyleOverflow::Hidden);
   } else {
-    *aStyles = ScrollStyles(writingMode, display);
+    *aStyles = ScrollStyles(*display);
   }
   return true;
 }
@@ -1144,10 +1155,12 @@ bool nsPresContext::ElementWouldPropagateScrollStyles(const Element& aElement) {
   return GetPropagatedScrollStylesForViewport(this, &dummy) == &aElement;
 }
 
-nsISupports* nsPresContext::GetContainerWeak() const { return GetDocShell(); }
-
-nsIDocShell* nsPresContext::GetDocShell() const {
+nsISupports* nsPresContext::GetContainerWeak() const {
   return mDocument->GetDocShell();
+}
+
+nsDocShell* nsPresContext::GetDocShell() const {
+  return nsDocShell::Cast(mDocument->GetDocShell());
 }
 
 bool nsPresContext::BidiEnabled() const { return Document()->GetBidiEnabled(); }
@@ -1251,12 +1264,15 @@ void nsPresContext::RecordInteractionTime(InteractionType aType,
   }
 }
 
-nsITheme* nsPresContext::GetTheme() {
-  if (!sNoTheme && !mTheme) {
-    mTheme = do_GetNativeTheme();
-    if (!mTheme) sNoTheme = true;
+nsITheme* nsPresContext::EnsureTheme() {
+  MOZ_ASSERT(!mTheme);
+  if (StaticPrefs::widget_disable_native_theme_for_content() &&
+      (!IsChrome() || XRE_IsContentProcess())) {
+    mTheme = do_GetBasicNativeThemeDoNotUseDirectly();
+  } else {
+    mTheme = do_GetNativeThemeDoNotUseDirectly();
   }
-
+  MOZ_RELEASE_ASSERT(mTheme);
   return mTheme;
 }
 
@@ -1273,11 +1289,6 @@ void nsPresContext::ThemeChanged() {
       mPendingThemeChanged = true;
     }
   }
-}
-
-static bool NotifyThemeChanged(BrowserParent* aBrowserParent, void* aArg) {
-  aBrowserParent->ThemeChanged();
-  return false;
 }
 
 void nsPresContext::ThemeChangedInternal() {
@@ -1307,8 +1318,13 @@ void nsPresContext::ThemeChangedInternal() {
   // Recursively notify all remote leaf descendants that the
   // system theme has changed.
   if (nsPIDOMWindowOuter* window = mDocument->GetWindow()) {
-    nsContentUtils::CallOnAllRemoteChildren(window, NotifyThemeChanged,
-                                            nullptr);
+    if (RefPtr<nsPIWindowRoot> topLevelWin = window->GetTopWindowRoot()) {
+      topLevelWin->EnumerateBrowsers(
+          [](nsIRemoteTab* aBrowserParent, void*) {
+            aBrowserParent->NotifyThemeChanged();
+          },
+          nullptr);
+    }
   }
 }
 
@@ -1340,10 +1356,6 @@ void nsPresContext::SysColorChangedInternal() {
   // Reset default background and foreground colors for the document since they
   // may be using system colors
   PreferenceSheet::Refresh();
-
-  // The system color values are computed to colors in the style data,
-  // so normal style data comparison is sufficient here.
-  RebuildAllStyleData(nsChangeHint(0), RestyleHint{0});
 }
 
 void nsPresContext::RefreshSystemMetrics() {
@@ -1383,11 +1395,10 @@ void nsPresContext::UIResolutionChangedSync() {
   }
 }
 
-/*static*/
-bool nsPresContext::UIResolutionChangedSubdocumentCallback(
-    dom::Document* aDocument, void* aData) {
-  nsPresContext* pc = aDocument->GetPresContext();
-  if (pc) {
+/* static */
+CallState nsPresContext::UIResolutionChangedSubdocumentCallback(
+    dom::Document& aDocument, void* aData) {
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
     // For subdocuments, we want to apply the parent's scale, because there
     // are cases where the subdoc's device context is connected to a widget
     // that has an out-of-date resolution (it's on a different screen, but
@@ -1395,7 +1406,7 @@ bool nsPresContext::UIResolutionChangedSubdocumentCallback(
     double scale = *static_cast<double*>(aData);
     pc->UIResolutionChangedInternalScale(scale);
   }
-  return true;
+  return CallState::Continue;
 }
 
 static void NotifyTabUIResolutionChanged(nsIRemoteTab* aTab, void* aArg) {
@@ -1454,7 +1465,7 @@ void nsPresContext::MediaFeatureValuesChanged(
   }
 
   if (!mPendingMediaFeatureValuesChange) {
-    mPendingMediaFeatureValuesChange.emplace(aChange);
+    mPendingMediaFeatureValuesChange = MakeUnique<MediaFeatureChange>(aChange);
     return;
   }
 
@@ -1462,16 +1473,11 @@ void nsPresContext::MediaFeatureValuesChanged(
 }
 
 void nsPresContext::RebuildAllStyleData(nsChangeHint aExtraHint,
-                                        RestyleHint aRestyleHint) {
+                                        const RestyleHint& aRestyleHint) {
   if (!mPresShell) {
     // We must have been torn down. Nothing to do here.
     return;
   }
-
-  // FIXME(emilio): Why is it safe to reset mUsesRootEMUnits / mUsesEXChUnits
-  // here if there's no restyle hint? That looks pretty bogus.
-  mUsesRootEMUnits = false;
-  mUsesExChUnits = false;
 
   // TODO(emilio): It's unclear to me why would these three calls below be
   // needed. In particular, RebuildAllStyleData doesn't rebuild rules or
@@ -1482,31 +1488,40 @@ void nsPresContext::RebuildAllStyleData(nsChangeHint aExtraHint,
   mDocument->MarkUserFontSetDirty();
   MarkCounterStylesDirty();
   MarkFontFeatureValuesDirty();
-
-  RestyleManager()->RebuildAllStyleData(aExtraHint, aRestyleHint);
+  PostRebuildAllStyleDataEvent(aExtraHint, aRestyleHint);
 }
 
-void nsPresContext::PostRebuildAllStyleDataEvent(nsChangeHint aExtraHint,
-                                                 RestyleHint aRestyleHint) {
+void nsPresContext::PostRebuildAllStyleDataEvent(
+    nsChangeHint aExtraHint, const RestyleHint& aRestyleHint) {
   if (!mPresShell) {
     // We must have been torn down. Nothing to do here.
     return;
   }
-  RestyleManager()->PostRebuildAllStyleDataEvent(aExtraHint, aRestyleHint);
+  if (aRestyleHint.DefinitelyRecascadesAllSubtree()) {
+    mUsesExChUnits = false;
+  }
+  RestyleManager()->RebuildAllStyleData(aExtraHint, aRestyleHint);
 }
 
-static bool MediaFeatureValuesChangedAllDocumentsCallback(Document* aDocument,
-                                                          void* aChange) {
+static CallState MediaFeatureValuesChangedAllDocumentsCallback(
+    Document& aDocument, void* aChange) {
   auto* change = static_cast<const MediaFeatureChange*>(aChange);
-  if (nsPresContext* pc = aDocument->GetPresContext()) {
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
     pc->MediaFeatureValuesChangedAllDocuments(*change);
   }
-  return true;
+  return CallState::Continue;
 }
 
 void nsPresContext::MediaFeatureValuesChangedAllDocuments(
     const MediaFeatureChange& aChange) {
+  // Handle the media feature value change in this document.
   MediaFeatureValuesChanged(aChange);
+
+  // Propagate the media feature value change down to any SVG images the
+  // document is using.
+  mDocument->ImageTracker()->MediaFeatureValuesChangedAllDocuments(aChange);
+
+  // And then into any subdocuments.
   mDocument->EnumerateSubDocuments(
       MediaFeatureValuesChangedAllDocumentsCallback,
       const_cast<MediaFeatureChange*>(&aChange));
@@ -1572,16 +1587,13 @@ void nsPresContext::FlushPendingMediaFeatureValuesChanged() {
   }
 }
 
-static bool NotifyTabSizeModeChanged(BrowserParent* aTab, void* aArg) {
-  nsSizeMode* sizeMode = static_cast<nsSizeMode*>(aArg);
-  aTab->SizeModeChanged(*sizeMode);
-  return false;
-}
-
 void nsPresContext::SizeModeChanged(nsSizeMode aSizeMode) {
   if (nsPIDOMWindowOuter* window = mDocument->GetWindow()) {
-    nsContentUtils::CallOnAllRemoteChildren(window, NotifyTabSizeModeChanged,
-                                            &aSizeMode);
+    nsContentUtils::CallOnAllRemoteChildren(
+        window, [&aSizeMode](BrowserParent* aBrowserParent) -> CallState {
+          aBrowserParent->SizeModeChanged(aSizeMode);
+          return CallState::Continue;
+        });
   }
   MediaFeatureValuesChangedAllDocuments(
       {MediaFeatureChangeReason::SizeModeChange});
@@ -1799,18 +1811,17 @@ void nsPresContext::FireDOMPaintEvent(
                                     static_cast<Event*>(event), this, nullptr);
 }
 
-static bool MayHavePaintEventListenerSubdocumentCallback(Document* aDocument,
-                                                         void* aData) {
+static CallState MayHavePaintEventListenerSubdocumentCallback(
+    Document& aDocument, void* aData) {
   bool* result = static_cast<bool*>(aData);
-  nsPresContext* pc = aDocument->GetPresContext();
-  if (pc) {
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
     *result = pc->MayHavePaintEventListenerInSubDocument();
 
     // If we found a paint event listener, then we can stop enumerating
     // sub documents.
-    return !*result;
+    return !*result ? CallState::Continue : CallState::Stop;
   }
-  return true;
+  return CallState::Continue;
 }
 
 static bool MayHavePaintEventListener(nsPIDOMWindowInner* aInnerWindow) {
@@ -1970,26 +1981,24 @@ struct NotifyDidPaintSubdocumentCallbackClosure {
   TransactionId mTransactionId;
   const mozilla::TimeStamp& mTimeStamp;
 };
-bool nsPresContext::NotifyDidPaintSubdocumentCallback(dom::Document* aDocument,
-                                                      void* aData) {
-  NotifyDidPaintSubdocumentCallbackClosure* closure =
-      static_cast<NotifyDidPaintSubdocumentCallbackClosure*>(aData);
-  nsPresContext* pc = aDocument->GetPresContext();
-  if (pc) {
+/* static */
+CallState nsPresContext::NotifyDidPaintSubdocumentCallback(
+    dom::Document& aDocument, void* aData) {
+  auto* closure = static_cast<NotifyDidPaintSubdocumentCallbackClosure*>(aData);
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
     pc->NotifyDidPaintForSubtree(closure->mTransactionId, closure->mTimeStamp);
   }
-  return true;
+  return CallState::Continue;
 }
 
-bool nsPresContext::NotifyRevokingDidPaintSubdocumentCallback(
-    dom::Document* aDocument, void* aData) {
-  NotifyDidPaintSubdocumentCallbackClosure* closure =
-      static_cast<NotifyDidPaintSubdocumentCallbackClosure*>(aData);
-  nsPresContext* pc = aDocument->GetPresContext();
-  if (pc) {
+/* static */
+CallState nsPresContext::NotifyRevokingDidPaintSubdocumentCallback(
+    dom::Document& aDocument, void* aData) {
+  auto* closure = static_cast<NotifyDidPaintSubdocumentCallbackClosure*>(aData);
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
     pc->NotifyRevokingDidPaint(closure->mTransactionId);
   }
-  return true;
+  return CallState::Continue;
 }
 
 class DelayedFireDOMPaintEvent : public Runnable {
@@ -2453,6 +2462,123 @@ void nsPresContext::FlushFontFeatureValues() {
     mFontFeatureValuesLookup = styleSet->BuildFontFeatureValueSet();
     mFontFeatureValuesDirty = false;
   }
+}
+
+void nsPresContext::SetVisibleArea(const nsRect& r) {
+  if (!r.IsEqualEdges(mVisibleArea)) {
+    mVisibleArea = r;
+    mSizeForViewportUnits = mVisibleArea.Size();
+    if (IsRootContentDocumentCrossProcess()) {
+      AdjustSizeForViewportUnits();
+    }
+    // Visible area does not affect media queries when paginated.
+    if (!IsPaginated()) {
+      MediaFeatureValuesChanged(
+          {mozilla::MediaFeatureChangeReason::ViewportChange});
+    }
+  }
+}
+
+void nsPresContext::SetDynamicToolbarMaxHeight(ScreenIntCoord aHeight) {
+  MOZ_ASSERT(IsRootContentDocumentCrossProcess());
+
+  if (mDynamicToolbarMaxHeight == aHeight) {
+    return;
+  }
+  mDynamicToolbarMaxHeight = aHeight;
+
+  AdjustSizeForViewportUnits();
+
+  if (RefPtr<mozilla::PresShell> presShell = mPresShell) {
+    // Changing the max height of the dynamic toolbar changes the ICB size, we
+    // need to kick a reflow with the current window dimensions since the max
+    // height change doesn't change the window dimensions but
+    // PresShell::ResizeReflow ends up subtracting the new dynamic toolbar
+    // height from the window dimensions and kick a reflow with the proper ICB
+    // size.
+    nscoord currentWidth, currentHeight;
+    presShell->GetViewManager()->GetWindowDimensions(&currentWidth,
+                                                     &currentHeight);
+    presShell->ResizeReflow(currentWidth, currentHeight,
+                            ResizeReflowOptions::NoOption);
+  }
+}
+
+void nsPresContext::AdjustSizeForViewportUnits() {
+  MOZ_ASSERT(IsRootContentDocumentCrossProcess());
+  if (mVisibleArea.height == NS_UNCONSTRAINEDSIZE) {
+    // Ignore `NS_UNCONSTRAINEDSIZE` since it's a temporary state during a
+    // reflow. We will end up calling this function again with a proper size in
+    // the same reflow.
+    return;
+  }
+
+  if (MOZ_UNLIKELY(mVisibleArea.height +
+                       NSIntPixelsToAppUnits(mDynamicToolbarMaxHeight,
+                                             mCurAppUnitsPerDevPixel) >
+                   nscoord_MAX)) {
+    MOZ_ASSERT_UNREACHABLE("The dynamic toolbar max height is probably wrong");
+    return;
+  }
+
+  mSizeForViewportUnits.height =
+      mVisibleArea.height +
+      NSIntPixelsToAppUnits(mDynamicToolbarMaxHeight, mCurAppUnitsPerDevPixel);
+}
+
+void nsPresContext::UpdateDynamicToolbarOffset(ScreenIntCoord aOffset) {
+  MOZ_ASSERT(IsRootContentDocumentCrossProcess());
+  if (!mPresShell) {
+    return;
+  }
+
+  if (!HasDynamicToolbar()) {
+    return;
+  }
+
+  MOZ_ASSERT(-mDynamicToolbarMaxHeight <= aOffset && aOffset <= 0);
+  if (mDynamicToolbarHeight == mDynamicToolbarMaxHeight + aOffset) {
+    return;
+  }
+
+  // Forcibly flush position:fixed elements in the case where the dynamic
+  // toolbar is going to be completely hidden or starts to be visible so that
+  // %-based style values will be recomputed with the visual viewport size which
+  // is including the area covered by the dynamic toolbar.
+  if (mDynamicToolbarHeight == 0 || aOffset == -mDynamicToolbarMaxHeight) {
+    mPresShell->MarkFixedFramesForReflow(IntrinsicDirty::Resize);
+    mPresShell->AddResizeEventFlushObserverIfNeeded();
+  }
+
+  mDynamicToolbarHeight = mDynamicToolbarMaxHeight + aOffset;
+
+  if (RefPtr<MobileViewportManager> mvm =
+          mPresShell->GetMobileViewportManager()) {
+    mvm->UpdateVisualViewportSizeByDynamicToolbar(-aOffset);
+  }
+}
+
+DynamicToolbarState nsPresContext::GetDynamicToolbarState() const {
+  if (!IsRootContentDocumentCrossProcess() || !HasDynamicToolbar()) {
+    return DynamicToolbarState::None;
+  }
+
+  if (mDynamicToolbarMaxHeight == mDynamicToolbarHeight) {
+    return DynamicToolbarState::Expanded;
+  } else if (mDynamicToolbarHeight == 0) {
+    return DynamicToolbarState::Collapsed;
+  }
+  return DynamicToolbarState::InTransition;
+}
+
+void nsPresContext::SetSafeAreaInsets(const ScreenIntMargin& aSafeAreaInsets) {
+  if (mSafeAreaInsets == aSafeAreaInsets) {
+    return;
+  }
+  mSafeAreaInsets = aSafeAreaInsets;
+
+  PostRebuildAllStyleDataEvent(nsChangeHint(0),
+                               RestyleHint::RecascadeSubtree());
 }
 
 #ifdef DEBUG

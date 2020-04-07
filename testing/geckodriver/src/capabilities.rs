@@ -181,11 +181,11 @@ impl<'a> BrowserCapabilities for FirefoxCapabilities<'a> {
                 );
                 for (key, value) in data.iter() {
                     match &**key {
-                        "androidActivity" |
-                        "androidDeviceSerial" |
-                        "androidPackage" |
-                        "binary" |
-                        "profile" => {
+                        "androidActivity"
+                        | "androidDeviceSerial"
+                        | "androidPackage"
+                        | "binary"
+                        | "profile" => {
                             if !value.is_string() {
                                 return Err(WebDriverError::new(
                                     ErrorStatus::InvalidArgument,
@@ -193,8 +193,7 @@ impl<'a> BrowserCapabilities for FirefoxCapabilities<'a> {
                                 ));
                             }
                         }
-                        "androidIntentArguments" |
-                        "args" => {
+                        "androidIntentArguments" | "args" => {
                             if !try_opt!(
                                 value.as_array(),
                                 ErrorStatus::InvalidArgument,
@@ -206,6 +205,19 @@ impl<'a> BrowserCapabilities for FirefoxCapabilities<'a> {
                                 return Err(WebDriverError::new(
                                     ErrorStatus::InvalidArgument,
                                     format!("{} entry is not a string", &**key),
+                                ));
+                            }
+                        }
+                        "env" => {
+                            let env_data = try_opt!(
+                                value.as_object(),
+                                ErrorStatus::InvalidArgument,
+                                "env value is not an object"
+                            );
+                            if !env_data.values().all(Value::is_string) {
+                                return Err(WebDriverError::new(
+                                    ErrorStatus::InvalidArgument,
+                                    "Environment values were not all strings",
                                 ));
                             }
                         }
@@ -245,7 +257,7 @@ impl<'a> BrowserCapabilities for FirefoxCapabilities<'a> {
                                 ErrorStatus::InvalidArgument,
                                 "prefs value is not an object"
                             );
-                            let is_pref_value_type = |x:&Value| {
+                            let is_pref_value_type = |x: &Value| {
                                 x.is_string() || x.is_i64() || x.is_u64() || x.is_boolean()
                             };
                             if !prefs_data.values().all(is_pref_value_type) {
@@ -326,6 +338,7 @@ pub struct FirefoxOptions {
     pub binary: Option<PathBuf>,
     pub profile: Option<Profile>,
     pub args: Option<Vec<String>>,
+    pub env: Option<Vec<(String, String)>>,
     pub log: LogOptions,
     pub prefs: Vec<(String, Pref)>,
     pub android: Option<AndroidOptions>,
@@ -344,14 +357,17 @@ impl FirefoxOptions {
         rv.binary = binary_path;
 
         if let Some(json) = matched.remove("moz:firefoxOptions") {
-            let options = json.as_object().ok_or_else(|| WebDriverError::new(
-                ErrorStatus::InvalidArgument,
-                "'moz:firefoxOptions' \
+            let options = json.as_object().ok_or_else(|| {
+                WebDriverError::new(
+                    ErrorStatus::InvalidArgument,
+                    "'moz:firefoxOptions' \
                  capability is not an object",
-            ))?;
+                )
+            })?;
 
             rv.android = FirefoxOptions::load_android(&options)?;
             rv.args = FirefoxOptions::load_args(&options)?;
+            rv.env = FirefoxOptions::load_env(&options)?;
             rv.log = FirefoxOptions::load_log(&options)?;
             rv.prefs = FirefoxOptions::load_prefs(&options)?;
             rv.profile = FirefoxOptions::load_profile(&options)?;
@@ -362,10 +378,9 @@ impl FirefoxOptions {
 
     fn load_profile(options: &Capabilities) -> WebDriverResult<Option<Profile>> {
         if let Some(profile_json) = options.get("profile") {
-            let profile_base64 = profile_json.as_str().ok_or_else(|| WebDriverError::new(
-                ErrorStatus::InvalidArgument,
-                "Profile is not a string",
-            ))?;
+            let profile_base64 = profile_json.as_str().ok_or_else(|| {
+                WebDriverError::new(ErrorStatus::InvalidArgument, "Profile is not a string")
+            })?;
             let profile_zip = &*base64::decode(profile_base64)?;
 
             // Create an emtpy profile directory
@@ -387,20 +402,50 @@ impl FirefoxOptions {
 
     fn load_args(options: &Capabilities) -> WebDriverResult<Option<Vec<String>>> {
         if let Some(args_json) = options.get("args") {
-            let args_array = args_json.as_array().ok_or_else(|| WebDriverError::new(
-                ErrorStatus::InvalidArgument,
-                "Arguments were not an \
+            let args_array = args_json.as_array().ok_or_else(|| {
+                WebDriverError::new(
+                    ErrorStatus::InvalidArgument,
+                    "Arguments were not an \
                  array",
-            ))?;
+                )
+            })?;
             let args = args_array
                 .iter()
                 .map(|x| x.as_str().map(|x| x.to_owned()))
                 .collect::<Option<Vec<String>>>()
-                .ok_or_else(|| WebDriverError::new(
-                    ErrorStatus::InvalidArgument,
-                    "Arguments entries were not all strings",
-                ))?;
+                .ok_or_else(|| {
+                    WebDriverError::new(
+                        ErrorStatus::InvalidArgument,
+                        "Arguments entries were not all strings",
+                    )
+                })?;
             Ok(Some(args))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn load_env(options: &Capabilities) -> WebDriverResult<Option<Vec<(String, String)>>> {
+        if let Some(env_data) = options.get("env") {
+            let env = env_data.as_object().ok_or_else(|| {
+                WebDriverError::new(ErrorStatus::InvalidArgument, "Env was not an object")
+            })?;
+            let mut rv = Vec::with_capacity(env.len());
+            for (key, value) in env.iter() {
+                rv.push((
+                    key.clone(),
+                    value
+                        .as_str()
+                        .ok_or_else(|| {
+                            WebDriverError::new(
+                                ErrorStatus::InvalidArgument,
+                                "Env value is not a string",
+                            )
+                        })?
+                        .to_string(),
+                ));
+            }
+            Ok(Some(rv))
         } else {
             Ok(None)
         }
@@ -408,21 +453,21 @@ impl FirefoxOptions {
 
     fn load_log(options: &Capabilities) -> WebDriverResult<LogOptions> {
         if let Some(json) = options.get("log") {
-            let log = json.as_object().ok_or_else(|| WebDriverError::new(
-                ErrorStatus::InvalidArgument,
-                "Log section is not an object",
-            ))?;
+            let log = json.as_object().ok_or_else(|| {
+                WebDriverError::new(ErrorStatus::InvalidArgument, "Log section is not an object")
+            })?;
 
             let level = match log.get("level") {
                 Some(json) => {
-                    let s = json.as_str().ok_or_else(|| WebDriverError::new(
-                        ErrorStatus::InvalidArgument,
-                        "Log level is not a string",
-                    ))?;
-                    Some(Level::from_str(s).ok().ok_or_else(|| WebDriverError::new(
-                        ErrorStatus::InvalidArgument,
-                        "Log level is unknown",
-                    ))?)
+                    let s = json.as_str().ok_or_else(|| {
+                        WebDriverError::new(
+                            ErrorStatus::InvalidArgument,
+                            "Log level is not a string",
+                        )
+                    })?;
+                    Some(Level::from_str(s).ok().ok_or_else(|| {
+                        WebDriverError::new(ErrorStatus::InvalidArgument, "Log level is unknown")
+                    })?)
                 }
                 None => None,
             };
@@ -435,10 +480,9 @@ impl FirefoxOptions {
 
     pub fn load_prefs(options: &Capabilities) -> WebDriverResult<Vec<(String, Pref)>> {
         if let Some(prefs_data) = options.get("prefs") {
-            let prefs = prefs_data.as_object().ok_or_else(|| WebDriverError::new(
-                ErrorStatus::InvalidArgument,
-                "Prefs were not an object",
-            ))?;
+            let prefs = prefs_data.as_object().ok_or_else(|| {
+                WebDriverError::new(ErrorStatus::InvalidArgument, "Prefs were not an object")
+            })?;
             let mut rv = Vec::with_capacity(prefs.len());
             for (key, value) in prefs.iter() {
                 rv.push((key.clone(), pref_from_json(value)?));
@@ -451,51 +495,68 @@ impl FirefoxOptions {
 
     pub fn load_android(options: &Capabilities) -> WebDriverResult<Option<AndroidOptions>> {
         if let Some(package_json) = options.get("androidPackage") {
-            let package = package_json.as_str().ok_or_else(|| WebDriverError::new(
-                ErrorStatus::InvalidArgument,
-                "androidPackage was not a string"
-            ))?.to_owned();
+            let package = package_json
+                .as_str()
+                .ok_or_else(|| {
+                    WebDriverError::new(
+                        ErrorStatus::InvalidArgument,
+                        "androidPackage was not a string",
+                    )
+                })?
+                .to_owned();
 
             let mut android = AndroidOptions::new(package);
 
             android.activity = match options.get("androidActivity") {
-                Some(json) => {
-                    Some(json.as_str().ok_or_else(|| WebDriverError::new(
-                        ErrorStatus::InvalidArgument,
-                        "androidActivity was not a string"
-                    ))?.to_owned())
-                },
-                None => None
+                Some(json) => Some(
+                    json.as_str()
+                        .ok_or_else(|| {
+                            WebDriverError::new(
+                                ErrorStatus::InvalidArgument,
+                                "androidActivity was not a string",
+                            )
+                        })?
+                        .to_owned(),
+                ),
+                None => None,
             };
 
             android.device_serial = match options.get("androidDeviceSerial") {
-                Some(json) => {
-                    Some(json.as_str().ok_or_else(|| WebDriverError::new(
-                        ErrorStatus::InvalidArgument,
-                        "androidDeviceSerial was not a string"
-                    ))?.to_owned())
-                },
-                None => None
+                Some(json) => Some(
+                    json.as_str()
+                        .ok_or_else(|| {
+                            WebDriverError::new(
+                                ErrorStatus::InvalidArgument,
+                                "androidDeviceSerial was not a string",
+                            )
+                        })?
+                        .to_owned(),
+                ),
+                None => None,
             };
 
             android.intent_arguments = match options.get("androidIntentArguments") {
                 Some(json) => {
-                    let args_array = json.as_array().ok_or_else(|| WebDriverError::new(
-                        ErrorStatus::InvalidArgument,
-                        "androidIntentArguments were not an array"
-                    ))?;
+                    let args_array = json.as_array().ok_or_else(|| {
+                        WebDriverError::new(
+                            ErrorStatus::InvalidArgument,
+                            "androidIntentArguments were not an array",
+                        )
+                    })?;
                     let args = args_array
                         .iter()
                         .map(|x| x.as_str().map(|x| x.to_owned()))
                         .collect::<Option<Vec<String>>>()
-                        .ok_or_else(|| WebDriverError::new(
-                            ErrorStatus::InvalidArgument,
-                            "androidIntentArguments entries were not all strings"
-                        ))?;
+                        .ok_or_else(|| {
+                            WebDriverError::new(
+                                ErrorStatus::InvalidArgument,
+                                "androidIntentArguments entries were not all strings",
+                            )
+                        })?;
 
                     Some(args)
                 }
-                None => None
+                None => None,
             };
 
             Ok(Some(android))
@@ -625,7 +686,10 @@ mod tests {
     #[test]
     fn fx_options_from_capabilities_with_binary_and_caps() {
         let mut caps = Capabilities::new();
-        caps.insert("moz:firefoxOptions".into(), Value::Object(Capabilities::new()));
+        caps.insert(
+            "moz:firefoxOptions".into(),
+            Value::Object(Capabilities::new()),
+        );
 
         let binary = PathBuf::from("foo");
 
@@ -749,6 +813,49 @@ mod tests {
         let mut firefox_opts = Capabilities::new();
         firefox_opts.insert("androidPackage".into(), json!("foo"));
         firefox_opts.insert("androidIntentArguments".into(), json!(["lorem", 42]));
+
+        make_options(firefox_opts).expect_err("invalid firefox options");
+    }
+
+    #[test]
+    fn fx_options_env() {
+        let mut env: Map<String, Value> = Map::new();
+        env.insert("TEST_KEY_A".into(), Value::String("test_value_a".into()));
+        env.insert("TEST_KEY_B".into(), Value::String("test_value_b".into()));
+
+        let mut firefox_opts = Capabilities::new();
+        firefox_opts.insert("env".into(), env.into());
+
+        let mut opts = make_options(firefox_opts).expect("valid firefox options");
+        for sorted in opts.env.iter_mut() {
+            sorted.sort()
+        }
+        assert_eq!(
+            opts.env,
+            Some(vec![
+                ("TEST_KEY_A".into(), "test_value_a".into()),
+                ("TEST_KEY_B".into(), "test_value_b".into()),
+            ])
+        );
+    }
+
+    #[test]
+    fn fx_options_env_invalid_container() {
+        let env = Value::Number(1.into());
+
+        let mut firefox_opts = Capabilities::new();
+        firefox_opts.insert("env".into(), env.into());
+
+        make_options(firefox_opts).expect_err("invalid firefox options");
+    }
+
+    #[test]
+    fn fx_options_env_invalid_value() {
+        let mut env: Map<String, Value> = Map::new();
+        env.insert("TEST_KEY".into(), Value::Number(1.into()));
+
+        let mut firefox_opts = Capabilities::new();
+        firefox_opts.insert("env".into(), env.into());
 
         make_options(firefox_opts).expect_err("invalid firefox options");
     }

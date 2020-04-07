@@ -5,10 +5,11 @@
 
 #include "PlaceholderTransaction.h"
 
+#include <utility>
+
 #include "CompositionTransaction.h"
 #include "mozilla/EditorBase.h"
 #include "mozilla/dom/Selection.h"
-#include "mozilla/Move.h"
 #include "nsGkAtoms.h"
 #include "nsQueryObject.h"
 
@@ -26,8 +27,6 @@ PlaceholderTransaction::PlaceholderTransaction(
       mCommitted(false) {
   mName = aName;
 }
-
-PlaceholderTransaction::~PlaceholderTransaction() {}
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(PlaceholderTransaction)
 

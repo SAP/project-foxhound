@@ -8,6 +8,7 @@
 
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
+#include "mozilla/StaticPresData.h"
 
 #include "DateTimeFormat.h"
 #include "nsCOMPtr.h"
@@ -15,6 +16,8 @@
 #include "nsPresContext.h"
 #include "gfxContext.h"
 #include "nsGkAtoms.h"
+#include "nsIFrame.h"
+#include "nsIFrameInlines.h"
 #include "nsIPrintSettings.h"
 #include "nsPageFrame.h"
 #include "nsSubDocumentFrame.h"

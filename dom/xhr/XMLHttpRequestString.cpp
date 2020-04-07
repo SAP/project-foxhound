@@ -85,7 +85,7 @@ class XMLHttpRequestStringBuffer final {
   }
 
  private:
-  ~XMLHttpRequestStringBuffer() {}
+  ~XMLHttpRequestStringBuffer() = default;
 
   nsString& UnsafeData() { return mData; }
 
@@ -101,7 +101,7 @@ class XMLHttpRequestStringBuffer final {
 XMLHttpRequestString::XMLHttpRequestString()
     : mBuffer(new XMLHttpRequestStringBuffer()) {}
 
-XMLHttpRequestString::~XMLHttpRequestString() {}
+XMLHttpRequestString::~XMLHttpRequestString() = default;
 
 void XMLHttpRequestString::Truncate() {
   mBuffer = new XMLHttpRequestStringBuffer();
@@ -134,15 +134,7 @@ void XMLHttpRequestString::CreateSnapshot(
 XMLHttpRequestStringSnapshot::XMLHttpRequestStringSnapshot()
     : mLength(0), mVoid(false) {}
 
-XMLHttpRequestStringSnapshot::~XMLHttpRequestStringSnapshot() {}
-
-XMLHttpRequestStringSnapshot& XMLHttpRequestStringSnapshot::operator=(
-    const XMLHttpRequestStringSnapshot& aOther) {
-  mBuffer = aOther.mBuffer;
-  mLength = aOther.mLength;
-  mVoid = aOther.mVoid;
-  return *this;
-}
+XMLHttpRequestStringSnapshot::~XMLHttpRequestStringSnapshot() = default;
 
 void XMLHttpRequestStringSnapshot::ResetInternal(bool aIsVoid) {
   mBuffer = nullptr;

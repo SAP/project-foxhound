@@ -6,6 +6,7 @@
 
 #include "mozilla/RangeUtils.h"
 
+#include "mozilla/Assertions.h"
 #include "mozilla/dom/AbstractRange.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "nsContentUtils.h"
@@ -37,13 +38,15 @@ nsINode* RangeUtils::ComputeRootNode(nsINode* aNode) {
     nsIContent* content = aNode->AsContent();
 
     // If the node is in a shadow tree then the ShadowRoot is the root.
+    //
+    // FIXME(emilio): Should this be after the NAC check below? We can have NAC
+    // inside Shadow DOM which will peek this path rather than the one below.
     if (ShadowRoot* containingShadow = content->GetContainingShadow()) {
       return containingShadow;
     }
 
-    // If the node has a binding parent, that should be the root.
-    // XXXbz maybe only for native anonymous content?
-    if (nsINode* root = content->GetBindingParent()) {
+    // If the node is in NAC, then the NAC parent should be the root.
+    if (nsINode* root = content->GetClosestNativeAnonymousSubtreeRootParent()) {
       return root;
     }
   }
@@ -67,10 +70,8 @@ bool RangeUtils::IsValidPoints(
     const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
     const RangeBoundaryBase<EPT, ERT>& aEndBoundary) {
   // Use NS_WARN_IF() only for the cases where the arguments are unexpected.
-  if (NS_WARN_IF(!aStartBoundary.IsSet()) ||
-      NS_WARN_IF(!aEndBoundary.IsSet()) ||
-      NS_WARN_IF(!IsValidOffset(aStartBoundary)) ||
-      NS_WARN_IF(!IsValidOffset(aEndBoundary))) {
+  if (NS_WARN_IF(!aStartBoundary.IsSetAndValid()) ||
+      NS_WARN_IF(!aEndBoundary.IsSetAndValid())) {
     return false;
   }
 
@@ -83,13 +84,14 @@ bool RangeUtils::IsValidPoints(
     return false;
   }
 
-  bool disconnected = false;
-  int32_t order = nsContentUtils::ComparePoints(aStartBoundary, aEndBoundary,
-                                                &disconnected);
-  if (NS_WARN_IF(disconnected)) {
+  const Maybe<int32_t> order =
+      nsContentUtils::ComparePoints(aStartBoundary, aEndBoundary);
+  if (!order) {
+    MOZ_ASSERT_UNREACHABLE();
     return false;
   }
-  return order != 1;
+
+  return *order != 1;
 }
 
 // Utility routine to detect if a content node is completely contained in a
@@ -152,23 +154,29 @@ nsresult RangeUtils::CompareNodeToRange(nsINode* aNode,
   // silence the warning. (Bug 1438996)
 
   // is RANGE(start) <= NODE(start) ?
-  bool disconnected = false;
-  *aNodeIsBeforeRange =
-      nsContentUtils::ComparePoints(aAbstractRange->StartRef().Container(),
-                                    aAbstractRange->StartRef().Offset(), parent,
-                                    nodeStart, &disconnected) > 0;
-  if (NS_WARN_IF(disconnected)) {
+  Maybe<int32_t> order = nsContentUtils::ComparePoints(
+      aAbstractRange->StartRef().Container(),
+      *aAbstractRange->StartRef().Offset(
+          RangeBoundary::OffsetFilter::kValidOrInvalidOffsets),
+      parent, nodeStart);
+  if (NS_WARN_IF(!order)) {
+    return NS_ERROR_DOM_WRONG_DOCUMENT_ERR;
+  }
+  *aNodeIsBeforeRange = *order > 0;
+
+  // is RANGE(end) >= NODE(end) ?
+  order = nsContentUtils::ComparePoints(
+      aAbstractRange->EndRef().Container(),
+      *aAbstractRange->EndRef().Offset(
+          RangeBoundary::OffsetFilter::kValidOrInvalidOffsets),
+      parent, nodeEnd);
+
+  if (NS_WARN_IF(!order)) {
     return NS_ERROR_DOM_WRONG_DOCUMENT_ERR;
   }
 
-  // is RANGE(end) >= NODE(end) ?
-  *aNodeIsAfterRange =
-      nsContentUtils::ComparePoints(aAbstractRange->EndRef().Container(),
-                                    aAbstractRange->EndRef().Offset(), parent,
-                                    nodeEnd, &disconnected) < 0;
-  if (NS_WARN_IF(disconnected)) {
-    return NS_ERROR_DOM_WRONG_DOCUMENT_ERR;
-  }
+  *aNodeIsAfterRange = *order < 0;
+
   return NS_OK;
 }
 

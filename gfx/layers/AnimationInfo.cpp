@@ -18,7 +18,7 @@ namespace layers {
 
 AnimationInfo::AnimationInfo() : mCompositorAnimationsId(0), mMutated(false) {}
 
-AnimationInfo::~AnimationInfo() {}
+AnimationInfo::~AnimationInfo() = default;
 
 void AnimationInfo::EnsureAnimationsId() {
   if (!mCompositorAnimationsId) {
@@ -60,6 +60,11 @@ void AnimationInfo::ClearAnimations() {
 
   mAnimations.Clear();
   mPropertyAnimationGroups.Clear();
+  if (mTransformLikeMetaData) {
+    mTransformLikeMetaData->Clear();
+  }
+  mTransformLikeMetaData.reset();
+  mCachedMotionPath = nullptr;
 
   mMutated = true;
 }
@@ -67,7 +72,7 @@ void AnimationInfo::ClearAnimations() {
 void AnimationInfo::ClearAnimationsForNextTransaction() {
   // Ensure we have a non-null mPendingAnimations to mark a future clear.
   if (!mPendingAnimations) {
-    mPendingAnimations = new AnimationArray;
+    mPendingAnimations = MakeUnique<AnimationArray>();
   }
 
   mPendingAnimations->Clear();
@@ -76,8 +81,15 @@ void AnimationInfo::ClearAnimationsForNextTransaction() {
 void AnimationInfo::SetCompositorAnimations(
     const CompositorAnimations& aCompositorAnimations) {
   mCompositorAnimationsId = aCompositorAnimations.id();
-  mPropertyAnimationGroups =
+
+  AnimationStorageData data =
       AnimationHelper::ExtractAnimations(aCompositorAnimations.animations());
+  mPropertyAnimationGroups.SwapElements(data.mAnimation);
+  if (data.mTransformLikeMetaData.HasData()) {
+    mTransformLikeMetaData = MakeUnique<CompositorAnimationData>(
+        std::move(data.mTransformLikeMetaData));
+  }
+  mCachedMotionPath.swap(data.mCachedMotionPath);
 }
 
 bool AnimationInfo::StartPendingAnimations(const TimeStamp& aReadyTime) {

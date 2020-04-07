@@ -15,6 +15,7 @@
 
 #include "builtin/Array.h"
 #include "builtin/intl/CommonFunctions.h"
+#include "builtin/intl/LanguageTag.h"
 #include "builtin/intl/ScopedICUObject.h"
 #include "builtin/intl/SharedIntlData.h"
 #include "builtin/intl/TimeZoneDataGenerated.h"
@@ -52,13 +53,18 @@ using js::intl::SharedIntlData;
 using js::intl::StringsAreEqual;
 
 const JSClassOps DateTimeFormatObject::classOps_ = {
-    nullptr, /* addProperty */
-    nullptr, /* delProperty */
-    nullptr, /* enumerate */
-    nullptr, /* newEnumerate */
-    nullptr, /* resolve */
-    nullptr, /* mayResolve */
-    DateTimeFormatObject::finalize};
+    nullptr,                         // addProperty
+    nullptr,                         // delProperty
+    nullptr,                         // enumerate
+    nullptr,                         // newEnumerate
+    nullptr,                         // resolve
+    nullptr,                         // mayResolve
+    DateTimeFormatObject::finalize,  // finalize
+    nullptr,                         // call
+    nullptr,                         // hasInstance
+    nullptr,                         // construct
+    nullptr,                         // trace
+};
 
 const JSClass DateTimeFormatObject::class_ = {
     js_Object_str,
@@ -172,6 +178,9 @@ void js::DateTimeFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->onMainThread());
 
   if (UDateFormat* df = obj->as<DateTimeFormatObject>().getDateFormat()) {
+    intl::RemoveICUCellMemory(fop, obj,
+                              DateTimeFormatObject::EstimatedMemoryUse);
+
     udat_close(df);
   }
 }
@@ -634,14 +643,67 @@ static UDateFormat* NewUDateFormat(
   if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
     return nullptr;
   }
-  UniqueChars locale = intl::EncodeLocale(cx, value.toString());
-  if (!locale) {
+
+  // ICU expects calendar and numberingSystem as Unicode locale extensions on
+  // locale.
+
+  intl::LanguageTag tag(cx);
+  {
+    JSLinearString* locale = value.toString()->ensureLinear(cx);
+    if (!locale) {
+      return nullptr;
+    }
+
+    if (!intl::LanguageTagParser::parse(cx, locale, tag)) {
+      return nullptr;
+    }
+  }
+
+  JS::RootedVector<intl::UnicodeExtensionKeyword> keywords(cx);
+
+  if (!GetProperty(cx, internals, internals, cx->names().calendar, &value)) {
     return nullptr;
   }
 
-  // We don't need to look at calendar and numberingSystem - they can only be
-  // set via the Unicode locale extension and are therefore already set on
-  // locale.
+  {
+    JSLinearString* calendar = value.toString()->ensureLinear(cx);
+    if (!calendar) {
+      return nullptr;
+    }
+
+    if (!keywords.emplaceBack("ca", calendar)) {
+      return nullptr;
+    }
+  }
+
+  if (!GetProperty(cx, internals, internals, cx->names().numberingSystem,
+                   &value)) {
+    return nullptr;
+  }
+
+  {
+    JSLinearString* numberingSystem = value.toString()->ensureLinear(cx);
+    if (!numberingSystem) {
+      return nullptr;
+    }
+
+    if (!keywords.emplaceBack("nu", numberingSystem)) {
+      return nullptr;
+    }
+  }
+
+  // |ApplyUnicodeExtensionToTag| applies the new keywords to the front of
+  // the Unicode extension subtag. We're then relying on ICU to follow RFC
+  // 6067, which states that any trailing keywords using the same key
+  // should be ignored.
+  if (!intl::ApplyUnicodeExtensionToTag(cx, tag, keywords)) {
+    return nullptr;
+  }
+
+  UniqueChars locale = tag.toStringZ(cx);
+  if (!locale) {
+    return nullptr;
+  }
 
   if (!GetProperty(cx, internals, internals, cx->names().timeZone, &value)) {
     return nullptr;
@@ -720,12 +782,7 @@ static FieldType GetFieldTypeForFormatField(UDateFormatField fieldName) {
       return &JSAtomState::year;
 
     case UDAT_YEAR_NAME_FIELD:
-#ifdef NIGHTLY_BUILD
       return &JSAtomState::yearName;
-#else
-      // Currently restricted to Nightly.
-      return &JSAtomState::year;
-#endif
 
     case UDAT_MONTH_FIELD:
     case UDAT_STANDALONE_MONTH_FIELD:
@@ -769,12 +826,7 @@ static FieldType GetFieldTypeForFormatField(UDateFormatField fieldName) {
 
 #ifndef U_HIDE_INTERNAL_API
     case UDAT_RELATED_YEAR_FIELD:
-#  ifdef NIGHTLY_BUILD
       return &JSAtomState::relatedYear;
-#  else
-      // Currently restricted to Nightly.
-      return &JSAtomState::unknown;
-#  endif
 #endif
 
     case UDAT_DAY_OF_YEAR_FIELD:
@@ -953,6 +1005,9 @@ bool js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
     dateTimeFormat->setDateFormat(df);
+
+    intl::AddICUCellMemory(dateTimeFormat,
+                           DateTimeFormatObject::EstimatedMemoryUse);
   }
 
   // Use the UDateFormat to actually format the time stamp.

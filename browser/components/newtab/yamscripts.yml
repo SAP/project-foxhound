@@ -15,44 +15,21 @@ scripts:
 # bundle: Build all assets for activity stream
   bundle:
     webpack: webpack --config webpack.system-addon.config.js
-    css: node-sass content-src/styles -o css
+    css: node-sass content-src/styles -o css && node-sass content-src/aboutwelcome -o aboutwelcome/content
+    welcomeBundle: webpack --config webpack.aboutwelcome.config.js
     html: rimraf prerendered && node ./bin/render-activity-stream-html.js
 
-# buildmc: Export code to mozilla central
+# buildmc: Used to do stuff when this code was in GitHub, now just an
+# alias in case it's baked into anyone's brain.
   buildmc:
-    pre: rimraf $npm_package_config_mc_dir/browser/components/newtab/
     bundle: => bundle
-    copy: rsync --exclude-from .mcignore -a . $npm_package_config_mc_dir/browser/components/newtab/
-    fluentExport: cpx "$npm_package_config_locales_dir/*.ftl" $npm_package_config_mc_dir/browser/locales/$npm_package_config_default_locale/browser/newtab/
-    copyPingCentre: cpx "ping-centre/PingCentre.jsm" $npm_package_config_mc_dir/browser/modules
 
-# builduplift: Build and export to mozilla central for uplifts without exporting strings to browser/locales
-  builduplift:
-    pre: =>prebuildmc
-    bundle: => bundle
-    copy: =>buildmc:copy
-
-# buildlibrary: Export about:library code to mozilla-central - intentionally not included in buildmc for now
-  buildlibrary:
-    webpack: webpack --config webpack.aboutlibrary.config.js
-    css: node-sass --source-map true --source-map-contents content-src/aboutlibrary -o aboutlibrary/content
-    copy: cpx "aboutlibrary/**/{,.}*" $npm_package_config_mc_dir/browser/components/library
-
-# startmc: Automatically rebuild/export to mozilla central when files are changed. NOTE: Includes sourcemaps, do not use for profiling/perf testing.
-  startmc:
+# watchmc:  Automatically rebuild when files are changed. NOTE: Includes sourcemaps, do not use for profiling/perf testing.
+  watchmc:
     _parallel: true
-    pre: =>buildmc
-    # This copies only the system addon sub-folder; changing anything outside of it will need a full rebuild.
-    copy: cpx "{{,.}*,!(node_modules)/**/{,.}*}" $npm_package_config_mc_dir/browser/components/newtab/ -w
-    copyFluent: =>buildmc:fluentExport -- -w
-    copyPingCentre: =>buildmc:copyPingCentre -- -w
     webpack: =>bundle:webpack -- --env.development -w
+    welcomeBundle: =>bundle:welcomeBundle -- --env.development -w
     css: =>bundle:css && =>bundle:css -- --source-map-embed --source-map-contents -w
-
-  # importmc: Import changes from mc to github repo
-  importmc:
-    src: rsync --exclude-from .mcignore -a $npm_package_config_mc_dir/browser/components/newtab/ .
-    ftl: rsync -a $npm_package_config_mc_dir/browser/locales/$npm_package_config_default_locale/browser/newtab/ $npm_package_config_locales_dir
 
   testmc:
     lint: =>lint
@@ -63,10 +40,12 @@ scripts:
 
   debugcoverage: open logs/coverage/index.html
 
-# lint: Run eslint and sass-lint
+# lint: Run various linters with mach or local dev dependencies
   lint:
-    eslint-check: eslint --cache --print-config AboutNewTabService.jsm | eslint-config-prettier-check
-    eslint: eslint --cache --ext=.js,.jsm,.jsx .
+    codespell: (cd $npm_package_config_mc_root && ./mach lint -l codespell $npm_package_config_newtab_path)
+    eslint: (cd $npm_package_config_mc_root && ./mach lint -l eslint $npm_package_config_newtab_path)
+    l10n: (cd $npm_package_config_mc_root && ./mach lint -l l10n --warnings browser/locales/en-US/browser/newtab)
+    license: (cd $npm_package_config_mc_root && ./mach lint -l license $npm_package_config_newtab_path)
     sasslint: sass-lint -v -q
 
 # test: Run all tests once

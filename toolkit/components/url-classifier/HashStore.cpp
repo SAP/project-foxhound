@@ -31,7 +31,6 @@
 #include "HashStore.h"
 #include "nsICryptoHash.h"
 #include "nsISeekableStream.h"
-#include "nsIStreamConverterService.h"
 #include "nsNetUtil.h"
 #include "nsCheckSummedOutputStream.h"
 #include "prio.h"
@@ -102,8 +101,7 @@ extern mozilla::LazyLogModule gUrlClassifierDbServiceLog;
 #define LOG_ENABLED() \
   MOZ_LOG_TEST(gUrlClassifierDbServiceLog, mozilla::LogLevel::Debug)
 
-namespace mozilla {
-namespace safebrowsing {
+namespace mozilla::safebrowsing {
 
 const uint32_t STORE_MAGIC = 0x1231af3b;
 const uint32_t CURRENT_VERSION = 4;
@@ -282,7 +280,7 @@ nsresult HashStore::CheckChecksum(uint32_t aFileSize) {
   compareHash.SetLength(hash.Length());
 
   if (hash.Length() > aFileSize) {
-    NS_WARNING("SafeBrowing file not long enough to store its hash");
+    NS_WARNING("SafeBrowsing file not long enough to store its hash");
     return NS_ERROR_FAILURE;
   }
   nsCOMPtr<nsISeekableStream> seekIn = do_QueryInterface(mInputStream);
@@ -294,7 +292,7 @@ nsresult HashStore::CheckChecksum(uint32_t aFileSize) {
   NS_ASSERTION(read == hash.Length(), "Could not read hash bytes");
 
   if (!hash.Equals(compareHash)) {
-    NS_WARNING("Safebrowing file failed checksum.");
+    NS_WARNING("SafeBrowsing file failed checksum.");
     return NS_ERROR_FAILURE;
   }
 
@@ -1109,8 +1107,6 @@ static void EnsureSorted(FallibleTArray<T>* aArray) {
       MOZ_ASSERT(iter->Compare(*previous) >= 0);
     }
   }
-
-  return;
 }
 #endif
 
@@ -1181,5 +1177,4 @@ ChunkSet& HashStore::SubChunks() {
   return mSubChunks;
 }
 
-}  // namespace safebrowsing
-}  // namespace mozilla
+}  // namespace mozilla::safebrowsing

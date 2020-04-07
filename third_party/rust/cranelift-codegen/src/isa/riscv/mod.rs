@@ -15,8 +15,9 @@ use crate::isa::enc_tables::{self as shared_enc_tables, lookup_enclist, Encoding
 use crate::isa::Builder as IsaBuilder;
 use crate::isa::{EncInfo, RegClass, RegInfo, TargetIsa};
 use crate::regalloc;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
 use core::fmt;
-use std::boxed::Box;
 use target_lexicon::{PointerWidth, Triple};
 
 #[allow(dead_code)]
@@ -95,7 +96,7 @@ impl TargetIsa for Isa {
         )
     }
 
-    fn legalize_signature(&self, sig: &mut ir::Signature, current: bool) {
+    fn legalize_signature(&self, sig: &mut Cow<ir::Signature>, current: bool) {
         abi::legalize_signature(sig, &self.triple, &self.isa_flags, current)
     }
 
@@ -137,8 +138,8 @@ mod tests {
     use crate::ir::{Function, InstructionData, Opcode};
     use crate::isa;
     use crate::settings::{self, Configurable};
+    use alloc::string::{String, ToString};
     use core::str::FromStr;
-    use std::string::{String, ToString};
     use target_lexicon::triple;
 
     fn encstr(isa: &dyn isa::TargetIsa, enc: Result<isa::Encoding, isa::Legalize>) -> String {
@@ -157,9 +158,9 @@ mod tests {
             .finish(shared_flags);
 
         let mut func = Function::new();
-        let ebb = func.dfg.make_ebb();
-        let arg64 = func.dfg.append_ebb_param(ebb, types::I64);
-        let arg32 = func.dfg.append_ebb_param(ebb, types::I32);
+        let block = func.dfg.make_block();
+        let arg64 = func.dfg.append_block_param(block, types::I64);
+        let arg32 = func.dfg.append_block_param(block, types::I32);
 
         // Try to encode iadd_imm.i64 v1, -10.
         let inst64 = InstructionData::BinaryImm {
@@ -208,9 +209,9 @@ mod tests {
             .finish(shared_flags);
 
         let mut func = Function::new();
-        let ebb = func.dfg.make_ebb();
-        let arg64 = func.dfg.append_ebb_param(ebb, types::I64);
-        let arg32 = func.dfg.append_ebb_param(ebb, types::I32);
+        let block = func.dfg.make_block();
+        let arg64 = func.dfg.append_block_param(block, types::I64);
+        let arg32 = func.dfg.append_block_param(block, types::I32);
 
         // Try to encode iadd_imm.i64 v1, -10.
         let inst64 = InstructionData::BinaryImm {
@@ -267,8 +268,8 @@ mod tests {
         let isa = isa_builder.finish(shared_flags);
 
         let mut func = Function::new();
-        let ebb = func.dfg.make_ebb();
-        let arg32 = func.dfg.append_ebb_param(ebb, types::I32);
+        let block = func.dfg.make_block();
+        let arg32 = func.dfg.append_block_param(block, types::I32);
 
         // Create an imul.i32 which is encodable in RV32M.
         let mul32 = InstructionData::Binary {

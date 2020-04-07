@@ -5,7 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files('*Selection*'):
-    BUG_COMPONENT = ('Core', 'Selection')
+    BUG_COMPONENT = ('Core', 'DOM: Selection')
 
 with Files("**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
@@ -91,7 +91,6 @@ EXPORTS += [
     'nsMappedAttributeElement.h',
     'nsNameSpaceManager.h',
     'nsNodeInfoManager.h',
-    'nsNodeUtils.h',
     'nsPIDOMWindow.h',
     'nsPIDOMWindowInlines.h',
     'nsPIWindowRoot.h',
@@ -122,6 +121,7 @@ if CONFIG['MOZ_WEBRTC']:
     ]
 
 EXPORTS.mozilla += [
+    'CallState.h',
     'ContentIterator.h',
     'CORSMode.h',
     'FlushType.h',
@@ -137,7 +137,9 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.dom += [
     '!UseCounterList.h',
+    '!UseCounterWorkerList.h',
     'AbstractRange.h',
+    'AncestorIterator.h',
     'AnonymousContent.h',
     'Attr.h',
     'BarProps.h',
@@ -181,6 +183,7 @@ EXPORTS.mozilla.dom += [
     'Element.h',
     'ElementInlines.h',
     'EventSource.h',
+    'FilteredNodeIterator.h',
     'FormData.h',
     'FragmentOrElement.h',
     'FromParser.h',
@@ -201,6 +204,7 @@ EXPORTS.mozilla.dom += [
     'MessageSender.h',
     'MimeType.h',
     'MozQueryInterface.h',
+    'MutationObservers.h',
     'NameSpaceConstants.h',
     'Navigator.h',
     'NodeInfo.h',
@@ -209,6 +213,7 @@ EXPORTS.mozilla.dom += [
     'ParentProcessMessageManager.h',
     'PlacesBookmark.h',
     'PlacesBookmarkAddition.h',
+    'PlacesBookmarkRemoved.h',
     'PlacesEvent.h',
     'PlacesObservers.h',
     'PlacesVisit.h',
@@ -232,6 +237,7 @@ EXPORTS.mozilla.dom += [
     'StructuredCloneHolder.h',
     'StructuredCloneTags.h',
     'StructuredCloneTester.h',
+    'StyledRange.h',
     'StyleSheetList.h',
     'SubtleCrypto.h',
     'SyncMessageSender.h',
@@ -318,6 +324,7 @@ UNIFIED_SOURCES += [
     'MessageSender.cpp',
     'MimeType.cpp',
     'MozQueryInterface.cpp',
+    'MutationObservers.cpp',
     'Navigator.cpp',
     'NodeInfo.cpp',
     'NodeIterator.cpp',
@@ -357,7 +364,6 @@ UNIFIED_SOURCES += [
     'nsNameSpaceManager.cpp',
     'nsNoDataProtocolContentPolicy.cpp',
     'nsNodeInfoManager.cpp',
-    'nsNodeUtils.cpp',
     'nsOpenURIInFrameParams.cpp',
     'nsPlainTextSerializer.cpp',
     'nsPropertyTable.cpp',
@@ -404,6 +410,7 @@ UNIFIED_SOURCES += [
     'StructuredCloneBlob.cpp',
     'StructuredCloneHolder.cpp',
     'StructuredCloneTester.cpp',
+    'StyledRange.cpp',
     'StyleSheetList.cpp',
     'SubtleCrypto.cpp',
     'TabGroup.cpp',
@@ -525,9 +532,6 @@ LOCAL_INCLUDES += [
     '/xpcom/ds',
 ]
 
-if CONFIG['MOZ_XBL']:
-    LOCAL_INCLUDES += ['/dom/xbl']
-
 if CONFIG['MOZ_WEBRTC']:
     LOCAL_INCLUDES += [
         '/netwerk/sctp/datachannel',
@@ -545,6 +549,9 @@ if CONFIG['MOZ_X11']:
 
 GeneratedFile('UseCounterList.h', script='gen-usecounters.py',
               entry_point='use_counter_list', inputs=['UseCounters.conf'])
+
+GeneratedFile('UseCounterWorkerList.h', script='gen-usecounters.py',
+              entry_point='use_counter_list', inputs=['UseCountersWorker.conf'])
 
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

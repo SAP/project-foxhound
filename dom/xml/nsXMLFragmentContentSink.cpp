@@ -17,13 +17,11 @@
 #include "mozilla/dom/NodeInfo.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsError.h"
-#include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
 #include "nsTArray.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsIDocShell.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/ProcessingInstruction.h"
@@ -122,7 +120,7 @@ nsXMLFragmentContentSink::nsXMLFragmentContentSink() : mParseError(false) {
   mRunsToCompletion = true;
 }
 
-nsXMLFragmentContentSink::~nsXMLFragmentContentSink() {}
+nsXMLFragmentContentSink::~nsXMLFragmentContentSink() = default;
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsXMLFragmentContentSink)
   NS_INTERFACE_MAP_ENTRY(nsIFragmentContentSink)

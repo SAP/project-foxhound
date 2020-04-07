@@ -236,7 +236,7 @@ class StoreBuffer {
 
   template <typename Edge>
   struct PointerEdgeHasher {
-    typedef Edge Lookup;
+    using Lookup = Edge;
     static HashNumber hash(const Lookup& l) {
       return mozilla::HashGeneric(l.edge);
     }
@@ -270,6 +270,7 @@ class StoreBuffer {
 
   using ObjectPtrEdge = CellPtrEdge<JSObject>;
   using StringPtrEdge = CellPtrEdge<JSString>;
+  using BigIntPtrEdge = CellPtrEdge<JS::BigInt>;
 
   struct ValueEdge {
     JS::Value* edge;
@@ -293,7 +294,7 @@ class StoreBuffer {
 
     explicit operator bool() const { return edge != nullptr; }
 
-    typedef PointerEdgeHasher<ValueEdge> Hasher;
+    using Hasher = PointerEdgeHasher<ValueEdge>;
   };
 
   struct SlotsEdge {
@@ -355,8 +356,8 @@ class StoreBuffer {
     // overlap.
     void merge(const SlotsEdge& other) {
       MOZ_ASSERT(overlaps(other));
-      uint32_t end = Max(start_ + count_, other.start_ + other.count_);
-      start_ = Min(start_, other.start_);
+      uint32_t end = std::max(start_ + count_, other.start_ + other.count_);
+      start_ = std::min(start_, other.start_);
       count_ = end - start_;
     }
 
@@ -368,8 +369,8 @@ class StoreBuffer {
 
     explicit operator bool() const { return objectAndKind_ != 0; }
 
-    typedef struct {
-      typedef SlotsEdge Lookup;
+    typedef struct Hasher {
+      using Lookup = SlotsEdge;
       static HashNumber hash(const Lookup& l) {
         return mozilla::HashGeneric(l.objectAndKind_, l.start_, l.count_);
       }
@@ -403,6 +404,7 @@ class StoreBuffer {
 
   MonoTypeBuffer<ValueEdge> bufferVal;
   MonoTypeBuffer<StringPtrEdge> bufStrCell;
+  MonoTypeBuffer<BigIntPtrEdge> bufBigIntCell;
   MonoTypeBuffer<ObjectPtrEdge> bufObjCell;
   MonoTypeBuffer<SlotsEdge> bufferSlot;
   WholeCellBuffer bufferWholeCell;
@@ -441,6 +443,9 @@ class StoreBuffer {
   void putCell(JSString** strp) { put(bufStrCell, StringPtrEdge(strp)); }
   void unputCell(JSString** strp) { unput(bufStrCell, StringPtrEdge(strp)); }
 
+  void putCell(JS::BigInt** bip) { put(bufBigIntCell, BigIntPtrEdge(bip)); }
+  void unputCell(JS::BigInt** bip) { unput(bufBigIntCell, BigIntPtrEdge(bip)); }
+
   void putCell(JSObject** strp) { put(bufObjCell, ObjectPtrEdge(strp)); }
   void unputCell(JSObject** strp) { unput(bufObjCell, ObjectPtrEdge(strp)); }
 
@@ -467,6 +472,7 @@ class StoreBuffer {
   void traceValues(TenuringTracer& mover) { bufferVal.trace(mover); }
   void traceCells(TenuringTracer& mover) {
     bufStrCell.trace(mover);
+    bufBigIntCell.trace(mover);
     bufObjCell.trace(mover);
   }
   void traceSlots(TenuringTracer& mover) { bufferSlot.trace(mover); }

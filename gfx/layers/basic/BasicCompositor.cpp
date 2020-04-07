@@ -1034,15 +1034,11 @@ Maybe<gfx::IntRect> BasicCompositor::BeginRenderingToNativeLayer(
   RefPtr<CompositingRenderTarget> target;
   aNativeLayer->SetSurfaceIsFlipped(false);
   IntRegion invalidRelativeToLayer = mInvalidRegion.MovedBy(-rect.TopLeft());
-  aNativeLayer->InvalidateRegionThroughoutSwapchain(invalidRelativeToLayer);
-  RefPtr<DrawTarget> dt =
-      aNativeLayer->NextSurfaceAsDrawTarget(BackendType::SKIA);
+  RefPtr<DrawTarget> dt = aNativeLayer->NextSurfaceAsDrawTarget(
+      invalidRelativeToLayer, BackendType::SKIA);
   if (!dt) {
     return Nothing();
   }
-  invalidRelativeToLayer = aNativeLayer->CurrentSurfaceInvalidRegion();
-  mInvalidRegion = invalidRelativeToLayer.MovedBy(rect.TopLeft());
-  MOZ_RELEASE_ASSERT(!mInvalidRegion.IsEmpty());
   mCurrentNativeLayer = aNativeLayer;
   IntRegion clearRegion;
   clearRegion.Sub(mInvalidRegion, aOpaqueRegion);
@@ -1110,6 +1106,15 @@ void BasicCompositor::EndFrame() {
   }
   mCurrentFrameDest = FrameDestination::NO_CURRENT_FRAME;
   mShouldInvalidateWindow = false;
+}
+
+RefPtr<SurfacePoolHandle> BasicCompositor::GetSurfacePoolHandle() {
+#ifdef XP_MACOSX
+  if (!mSurfacePoolHandle) {
+    mSurfacePoolHandle = SurfacePool::Create(0)->GetHandleForGL(nullptr);
+  }
+#endif
+  return mSurfacePoolHandle;
 }
 
 void BasicCompositor::TryToEndRemoteDrawing() {

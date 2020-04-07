@@ -9,18 +9,25 @@ const {
   selectNodeFront,
 } = require("./inspector-helpers");
 const {
-  openToolboxAndLog,
   closeToolboxAndLog,
+  garbageCollect,
+  recordPendingPaints,
   runTest,
   testSetup,
   testTeardown,
   PAGES_BASE_URL,
 } = require("../head");
 
-module.exports = async function() {
-  await testSetup(PAGES_BASE_URL + "custom/inspector/index.html");
+const { gDevTools } = require("devtools/client/framework/devtools");
 
-  let toolbox = await openToolboxAndLog("custom.inspector", "inspector");
+const TEST_URL = PAGES_BASE_URL + "custom/inspector/index.html";
+
+module.exports = async function() {
+  const tab = await testSetup(TEST_URL, { disableCache: true });
+
+  const domReference = await getContentDOMReference("#initial-node", tab);
+  let toolbox = await openToolboxWithInspectNode(domReference, tab);
+
   await reloadInspectorAndLog("custom", toolbox);
 
   await selectNodeWithManyRulesAndLog(toolbox);
@@ -29,8 +36,74 @@ module.exports = async function() {
 
   await closeToolboxAndLog("custom.inspector", toolbox);
 
+  // Bug 1590308: Wait one second and force an additional GC to reduce the
+  // side effects of the inspector custom test on the rest of the suite.
+  await new Promise(r => setTimeout(r, 1000));
+  await garbageCollect();
+
   await testTeardown();
 };
+
+// Retrieve the contentDOMReference for a provided selector that should be
+// available in the content page of the provided tab.
+async function getContentDOMReference(selector, tab) {
+  dump("Retrieve the ContentDOMReference for a given selector");
+  return new Promise(resolve => {
+    const messageManager = tab.linkedBrowser.messageManager;
+
+    messageManager.addMessageListener("get-dom-reference-done", e => {
+      const domReference = e.data;
+      resolve(domReference);
+    });
+
+    const contentMethod = function(_selector) {
+      const { ContentDOMReference } = ChromeUtils.import(
+        "resource://gre/modules/ContentDOMReference.jsm"
+      );
+      const iframe = content.document.querySelector("iframe");
+      const win = iframe.contentWindow;
+      const element = win.document.querySelector(_selector);
+      const domReference = ContentDOMReference.get(element);
+      sendAsyncMessage("get-dom-reference-done", domReference);
+    };
+
+    const wrappedMethod = encodeURIComponent(`function () {
+      (${contentMethod})("${selector}");
+     }`);
+
+    messageManager.loadFrameScript(`data:,(${wrappedMethod})()`, false);
+  });
+}
+
+async function openToolboxWithInspectNode(domReference, tab) {
+  dump("Open the toolbox using InspectNode\n");
+
+  const test = runTest(`custom.inspector.open.DAMP`);
+
+  // Wait for "toolbox-created" to easily get access to the created toolbox.
+  const onToolboxCreated = gDevTools.once("toolbox-created");
+
+  await gDevTools.inspectNode(tab, domReference);
+  const toolbox = await onToolboxCreated;
+  test.done();
+
+  // Wait for all pending paints to settle.
+  await recordPendingPaints("custom.inspector.open", toolbox);
+
+  // Toolbox creates many objects. See comment in head.js openToolboxAndLog.
+  await garbageCollect();
+
+  return toolbox;
+}
+
+async function getRootNodeFront(inspector) {
+  const root = await inspector.walker.getRootNode();
+  const iframeNodeFront = await inspector.walker.querySelector(root, "iframe");
+
+  // Using iframes, retrieve the document in the iframe front children.
+  const { nodes } = await inspector.walker.children(iframeNodeFront);
+  return nodes[0];
+}
 
 /**
  * Measure the time necessary to select a node and display the rule view when many rules
@@ -42,7 +115,7 @@ async function selectNodeWithManyRulesAndLog(toolbox) {
   let initialNodeFront = inspector.selection.nodeFront;
 
   // Retrieve the node front for the test node.
-  let root = await inspector.walker.getRootNode();
+  let root = await getRootNodeFront(inspector);
   let referenceNodeFront = await inspector.walker.querySelector(
     root,
     ".no-css-rules"
@@ -71,7 +144,7 @@ async function collapseExpandAllAndLog(toolbox) {
   let inspector = toolbox.getPanel("inspector");
 
   let initialNodeFront = inspector.selection.nodeFront;
-  let root = await inspector.walker.getRootNode();
+  let root = await getRootNodeFront(inspector);
 
   dump("Select expand-many-children node\n");
   let many = await inspector.walker.querySelector(

@@ -71,7 +71,7 @@ GMPParent::~GMPParent() {
   MOZ_ASSERT(!mProcess);
 }
 
-nsresult GMPParent::CloneFrom(const GMPParent* aOther) {
+void GMPParent::CloneFrom(const GMPParent* aOther) {
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   MOZ_ASSERT(aOther->mDirectory && aOther->mService, "null plugin directory");
 
@@ -88,7 +88,6 @@ nsresult GMPParent::CloneFrom(const GMPParent* aOther) {
     mCapabilities.AppendElement(cap);
   }
   mAdapter = aOther->mAdapter;
-  return NS_OK;
 }
 
 RefPtr<GenericPromise> GMPParent::Init(GeckoMediaPluginServiceParent* aService,
@@ -155,7 +154,7 @@ nsresult GMPParent::LoadProcess() {
     mChildPid = base::GetProcId(mProcess->GetChildProcessHandle());
     GMP_PARENT_LOG_DEBUG("%s: Launched new child process", __FUNCTION__);
 
-    bool opened = Open(mProcess->GetChannel(),
+    bool opened = Open(mProcess->TakeChannel(),
                        base::GetProcId(mProcess->GetChildProcessHandle()));
     if (!opened) {
       GMP_PARENT_LOG_DEBUG("%s: Failed to open channel to new child process",
@@ -434,10 +433,9 @@ void GMPParent::AddCrashAnnotations() {
   }
 }
 
-bool GMPParent::GetCrashID(nsString& aResult) {
+void GMPParent::GetCrashID(nsString& aResult) {
   AddCrashAnnotations();
-
-  return GenerateCrashReport(OtherPid(), &aResult);
+  GenerateCrashReport(OtherPid(), &aResult);
 }
 
 static void GMPNotifyObservers(const uint32_t aPluginID,
@@ -469,7 +467,8 @@ void GMPParent::ActorDestroy(ActorDestroyReason aWhy) {
     Telemetry::Accumulate(Telemetry::SUBPROCESS_ABNORMAL_ABORT,
                           NS_LITERAL_CSTRING("gmplugin"), 1);
     nsString dumpID;
-    if (!GetCrashID(dumpID)) {
+    GetCrashID(dumpID);
+    if (dumpID.IsEmpty()) {
       NS_WARNING("GMP crash without crash report");
       dumpID = mName;
       dumpID += '-';
@@ -669,10 +668,13 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
   MOZ_ASSERT(NS_IsMainThread());
   mozilla::dom::WidevineCDMManifest m;
   if (!m.Init(aJSON)) {
+    GMP_PARENT_LOG_DEBUG("%s: Failed to initialize json parser, failing.",
+                         __FUNCTION__);
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
 
   if (!IsCDMAPISupported(m)) {
+    GMP_PARENT_LOG_DEBUG("%s: CDM API not supported, failing.", __FUNCTION__);
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
 
@@ -718,6 +720,8 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
     mLibs = NS_LITERAL_CSTRING("dxva2.dll");
 #endif
   } else {
+    GMP_PARENT_LOG_DEBUG("%s: Unrecognized key system: %s, failing.",
+                         __FUNCTION__, mDisplayName.get());
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
   }
 
@@ -727,6 +731,15 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
   nsTArray<nsCString> codecs;
   SplitAt(",", codecsString, codecs);
 
+  // Parse the codec strings in the manifest and map them to strings used
+  // internally by Gecko for capability recognition.
+  //
+  // Google's code to parse manifests can be used as a reference for strings
+  // the manifest may contain
+  // https://cs.chromium.org/chromium/src/chrome/common/media/cdm_manifest.cc?l=73&rcl=393e60bfc2299449db7ef374c0ef1c324716e562
+  //
+  // Gecko's internal strings can be found at
+  // https://searchfox.org/mozilla-central/rev/ea63a0888d406fae720cf24f4727d87569a8cab5/dom/media/eme/MediaKeySystemAccess.cpp#149-155
   for (const nsCString& chromiumCodec : codecs) {
     nsCString codec;
     if (chromiumCodec.EqualsASCII("vp8")) {
@@ -735,7 +748,11 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
       codec = NS_LITERAL_CSTRING("vp9");
     } else if (chromiumCodec.EqualsASCII("avc1")) {
       codec = NS_LITERAL_CSTRING("h264");
+    } else if (chromiumCodec.EqualsASCII("av01")) {
+      codec = NS_LITERAL_CSTRING("av1");
     } else {
+      GMP_PARENT_LOG_DEBUG("%s: Unrecognized codec: %s, failing.", __FUNCTION__,
+                           chromiumCodec.get());
       return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
     }
 
@@ -749,6 +766,7 @@ RefPtr<GenericPromise> GMPParent::ParseChromiumManifest(
 
   mCapabilities.AppendElement(std::move(video));
 
+  GMP_PARENT_LOG_DEBUG("%s: Successfully parsed manifest.", __FUNCTION__);
   return GenericPromise::CreateAndResolve(true, __func__);
 }
 

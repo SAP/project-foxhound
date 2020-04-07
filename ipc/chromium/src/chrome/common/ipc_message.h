@@ -11,14 +11,11 @@
 
 #include "base/basictypes.h"
 #include "base/pickle.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 
 #ifdef MOZ_TASK_TRACER
 #  include "GeckoTaskTracer.h"
-#endif
-
-#if defined(OS_POSIX)
-#  include "nsAutoPtr.h"
 #endif
 
 #ifdef FUZZING
@@ -28,6 +25,12 @@
 namespace base {
 struct FileDescriptor;
 }
+
+namespace mozilla {
+namespace ipc {
+class MiniTransceiver;
+}
+}  // namespace mozilla
 
 class FileDescriptorSet;
 
@@ -59,6 +62,7 @@ class Message : public Pickle {
     NORMAL_PRIORITY = 0,
     INPUT_PRIORITY = 1,
     HIGH_PRIORITY = 2,
+    MEDIUMHIGH_PRIORITY = 3,
   };
 
   enum MessageCompression {
@@ -332,6 +336,7 @@ class Message : public Pickle {
 #ifdef FUZZING
   friend class mozilla::ipc::Faulty;
 #endif
+  friend class mozilla::ipc::MiniTransceiver;
 
 #ifdef MOZ_TASK_TRACER
   void TaskTracerDispatch();

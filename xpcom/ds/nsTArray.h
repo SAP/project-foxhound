@@ -7,7 +7,14 @@
 #ifndef nsTArray_h__
 #define nsTArray_h__
 
-#include "nsTArrayForwardDeclare.h"
+#include <string.h>
+
+#include <functional>
+#include <initializer_list>
+#include <new>
+#include <ostream>
+#include <utility>
+
 #include "mozilla/Alignment.h"
 #include "mozilla/ArrayIterator.h"
 #include "mozilla/Assertions.h"
@@ -15,29 +22,22 @@
 #include "mozilla/BinarySearch.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DbgMacro.h"
-#include "mozilla/fallible.h"
 #include "mozilla/FunctionTypeTraits.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
-#include "mozilla/mozalloc.h"
 #include "mozilla/ReverseIterator.h"
-#include "mozilla/TypeTraits.h"
 #include "mozilla/Span.h"
-
-#include <string.h>
-
-#include "nsCycleCollectionNoteChild.h"
+#include "mozilla/TypeTraits.h"
+#include "mozilla/fallible.h"
+#include "mozilla/mozalloc.h"
 #include "nsAlgorithm.h"
-#include "nscore.h"
-#include "nsQuickSort.h"
+#include "nsCycleCollectionNoteChild.h"
 #include "nsDebug.h"
 #include "nsISupportsImpl.h"
+#include "nsQuickSort.h"
 #include "nsRegionFwd.h"
-#include <functional>
-#include <initializer_list>
-#include <new>
-#include <ostream>
+#include "nsTArrayForwardDeclare.h"
+#include "nscore.h"
 
 namespace JS {
 template <class T>
@@ -69,7 +69,8 @@ class StructuredCloneData;
 namespace mozilla {
 namespace dom {
 class ClonedMessageData;
-class MessagePortMessage;
+class MessageData;
+class RefMessageData;
 namespace indexedDB {
 struct StructuredCloneReadInfo;
 class SerializedStructuredCloneReadInfo;
@@ -264,12 +265,20 @@ struct nsTArray_SafeElementAtSmartPtrHelper {
   typedef size_t index_type;
 
   elem_type SafeElementAt(index_type aIndex) {
-    return static_cast<Derived*>(this)->SafeElementAt(aIndex, nullptr);
+    auto* derived = static_cast<Derived*>(this);
+    if (aIndex < derived->Length()) {
+      return derived->Elements()[aIndex];
+    }
+    return nullptr;
   }
 
   // XXX: Probably should return const_elem_type, but callsites must be fixed.
   elem_type SafeElementAt(index_type aIndex) const {
-    return static_cast<const Derived*>(this)->SafeElementAt(aIndex, nullptr);
+    auto* derived = static_cast<const Derived*>(this);
+    if (aIndex < derived->Length()) {
+      return derived->Elements()[aIndex];
+    }
+    return nullptr;
   }
 };
 
@@ -290,26 +299,8 @@ class OwningNonNull;
 }  // namespace mozilla
 
 template <class E, class Derived>
-struct nsTArray_SafeElementAtHelper<mozilla::OwningNonNull<E>, Derived> {
-  typedef E* elem_type;
-  typedef const E* const_elem_type;
-  typedef size_t index_type;
-
-  elem_type SafeElementAt(index_type aIndex) {
-    if (aIndex < static_cast<Derived*>(this)->Length()) {
-      return static_cast<Derived*>(this)->ElementAt(aIndex);
-    }
-    return nullptr;
-  }
-
-  // XXX: Probably should return const_elem_type, but callsites must be fixed.
-  elem_type SafeElementAt(index_type aIndex) const {
-    if (aIndex < static_cast<const Derived*>(this)->Length()) {
-      return static_cast<const Derived*>(this)->ElementAt(aIndex);
-    }
-    return nullptr;
-  }
-};
+struct nsTArray_SafeElementAtHelper<mozilla::OwningNonNull<E>, Derived>
+    : public nsTArray_SafeElementAtSmartPtrHelper<E, Derived> {};
 
 // Servo bindings.
 extern "C" void Gecko_EnsureTArrayCapacity(void* aArray, size_t aCapacity,
@@ -583,7 +574,9 @@ struct AssignRangeAlgorithm<true, true> {
   template <class Item, class ElemType, class IndexType, class SizeType>
   static void implementation(ElemType* aElements, IndexType aStart,
                              SizeType aCount, const Item* aValues) {
-    memcpy(aElements + aStart, aValues, aCount * sizeof(ElemType));
+    if (aValues) {
+      memcpy(aElements + aStart, aValues, aCount * sizeof(ElemType));
+    }
   }
 };
 
@@ -731,7 +724,8 @@ DECLARE_USE_COPY_CONSTRUCTORS(mozilla::dom::indexedDB::IndexCursorResponse)
 DECLARE_USE_COPY_CONSTRUCTORS(
     mozilla::dom::indexedDB::SerializedStructuredCloneReadInfo);
 DECLARE_USE_COPY_CONSTRUCTORS(JSStructuredCloneData)
-DECLARE_USE_COPY_CONSTRUCTORS(mozilla::dom::MessagePortMessage)
+DECLARE_USE_COPY_CONSTRUCTORS(mozilla::dom::MessageData)
+DECLARE_USE_COPY_CONSTRUCTORS(mozilla::dom::RefMessageData)
 DECLARE_USE_COPY_CONSTRUCTORS(mozilla::SourceBufferTask)
 
 //
@@ -920,7 +914,7 @@ class nsTArray_Impl
   // Initialization methods
   //
 
-  nsTArray_Impl() {}
+  nsTArray_Impl() = default;
 
   // Initialize this array and pre-allocate some number of elements.
   explicit nsTArray_Impl(size_type aCapacity) { SetCapacity(aCapacity); }
@@ -1664,13 +1658,15 @@ class nsTArray_Impl
 
   // Append a new element, constructed in place from the provided arguments.
  protected:
-  template <class... Args, typename ActualAlloc = Alloc>
-  elem_type* EmplaceBack(Args&&... aItem);
+  template <typename ActualAlloc, class... Args>
+  elem_type* EmplaceBackInternal(Args&&... aItem);
 
  public:
   template <class... Args>
-  MOZ_MUST_USE elem_type* EmplaceBack(Args&&... aArgs, mozilla::fallible_t&) {
-    return EmplaceBack<Args..., FallibleAlloc>(std::forward<Args>(aArgs)...);
+  MOZ_MUST_USE elem_type* EmplaceBack(const mozilla::fallible_t&,
+                                      Args&&... aArgs) {
+    return EmplaceBackInternal<FallibleAlloc, Args...>(
+        std::forward<Args>(aArgs)...);
   }
 
   // Append a new element, move constructing if possible.
@@ -2232,7 +2228,7 @@ class nsTArray_Impl
     elem_type* elements = Elements();
     const size_type len = Length();
     for (index_type i = 0, iend = len / 2; i < iend; ++i) {
-      mozilla::Swap(elements[i], elements[len - i - 1]);
+      std::swap(elements[i], elements[len - i - 1]);
     }
   }
 
@@ -2468,8 +2464,9 @@ auto nsTArray_Impl<E, Alloc>::AppendElement(Item&& aItem) -> elem_type* {
 }
 
 template <typename E, class Alloc>
-template <class... Args, typename ActualAlloc>
-auto nsTArray_Impl<E, Alloc>::EmplaceBack(Args&&... aArgs) -> elem_type* {
+template <typename ActualAlloc, class... Args>
+auto nsTArray_Impl<E, Alloc>::EmplaceBackInternal(Args&&... aArgs)
+    -> elem_type* {
   // Length() + 1 is guaranteed to not overflow, so EnsureCapacity is OK.
   if (!ActualAlloc::Successful(this->template EnsureCapacity<ActualAlloc>(
           Length() + 1, sizeof(elem_type)))) {
@@ -2550,6 +2547,13 @@ class nsTArray : public nsTArray_Impl<E, nsTArrayInfallibleAllocator> {
   using base_type::ReplaceElementsAt;
   using base_type::SetCapacity;
   using base_type::SetLength;
+
+  template <class... Args>
+  typename base_type::elem_type* EmplaceBack(Args&&... aArgs) {
+    return this
+        ->template EmplaceBackInternal<nsTArrayInfallibleAllocator, Args...>(
+            std::forward<Args>(aArgs)...);
+  }
 };
 
 //
@@ -2562,7 +2566,7 @@ class FallibleTArray : public nsTArray_Impl<E, nsTArrayFallibleAllocator> {
   typedef FallibleTArray<E> self_type;
   typedef typename base_type::size_type size_type;
 
-  FallibleTArray() {}
+  FallibleTArray() = default;
   explicit FallibleTArray(size_type aCapacity) : base_type(aCapacity) {}
   explicit FallibleTArray(const FallibleTArray<E>& aOther)
       : base_type(aOther) {}
@@ -2728,6 +2732,34 @@ template <class ElementType, class TArrayAlloc>
 Span<const ElementType> MakeSpan(
     const nsTArray_Impl<ElementType, TArrayAlloc>& aTArray) {
   return aTArray;
+}
+
+template <typename T>
+class nsTArrayBackInserter
+    : public std::iterator<std::output_iterator_tag, void, void, void, void> {
+  nsTArray<T>* mArray;
+
+ public:
+  explicit nsTArrayBackInserter(nsTArray<T>& aArray) : mArray{&aArray} {}
+
+  nsTArrayBackInserter& operator=(const T& aValue) {
+    mArray->AppendElement(aValue);
+    return *this;
+  }
+
+  nsTArrayBackInserter& operator=(T&& aValue) {
+    mArray->AppendElement(std::move(aValue));
+    return *this;
+  }
+
+  nsTArrayBackInserter& operator*() { return *this; }
+
+  void operator++() {}
+};
+
+template <typename T>
+auto MakeBackInserter(nsTArray<T>& aArray) {
+  return nsTArrayBackInserter<T>{aArray};
 }
 
 }  // namespace mozilla

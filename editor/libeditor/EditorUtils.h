@@ -16,7 +16,6 @@
 #include "mozilla/dom/StaticRange.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
-#include "nsIEditor.h"
 #include "nsRange.h"
 #include "nscore.h"
 
@@ -221,8 +220,8 @@ class MOZ_STACK_CLASS CreateNodeResultBase final {
   explicit CreateNodeResultBase(NodeType* aNode)
       : mNode(aNode), mRv(aNode ? NS_OK : NS_ERROR_FAILURE) {}
 
-  explicit CreateNodeResultBase(already_AddRefed<NodeType>&& aNode)
-      : mNode(aNode), mRv(mNode.get() ? NS_OK : NS_ERROR_FAILURE) {}
+  explicit CreateNodeResultBase(RefPtr<NodeType>&& aNode)
+      : mNode(std::move(aNode)), mRv(mNode.get() ? NS_OK : NS_ERROR_FAILURE) {}
 
   CreateNodeResultBase(const SelfType& aOther) = delete;
   SelfType& operator=(const SelfType& aOther) = delete;
@@ -538,7 +537,7 @@ class MOZ_STACK_CLASS SplitRangeOffFromNodeResult final {
    */
   nsIContent* GetLeftContent() const { return mLeftContent; }
   dom::Element* GetLeftContentAsElement() const {
-    return Element::FromNodeOrNull(mLeftContent);
+    return dom::Element::FromNodeOrNull(mLeftContent);
   }
 
   /**
@@ -548,7 +547,7 @@ class MOZ_STACK_CLASS SplitRangeOffFromNodeResult final {
    */
   nsIContent* GetMiddleContent() const { return mMiddleContent; }
   dom::Element* GetMiddleContentAsElement() const {
-    return Element::FromNodeOrNull(mMiddleContent);
+    return dom::Element::FromNodeOrNull(mMiddleContent);
   }
 
   /**
@@ -558,7 +557,7 @@ class MOZ_STACK_CLASS SplitRangeOffFromNodeResult final {
    */
   nsIContent* GetRightContent() const { return mRightContent; }
   dom::Element* GetRightContentAsElement() const {
-    return Element::FromNodeOrNull(mRightContent);
+    return dom::Element::FromNodeOrNull(mRightContent);
   }
 
   SplitRangeOffFromNodeResult(nsIContent* aLeftContent,
@@ -732,15 +731,9 @@ class MOZ_STACK_CLASS AutoRangeArray final {
  * some helper classes for iterating the dom tree
  *****************************************************************************/
 
-class BoolDomIterFunctor {
- public:
-  virtual bool operator()(nsINode* aNode) const = 0;
-};
-
 class MOZ_RAII DOMIterator {
  public:
   explicit DOMIterator(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM);
-
   explicit DOMIterator(nsINode& aNode MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
   virtual ~DOMIterator() = default;
 
@@ -748,9 +741,24 @@ class MOZ_RAII DOMIterator {
   nsresult Init(const RawRangeBoundary& aStartRef,
                 const RawRangeBoundary& aEndRef);
 
-  void AppendList(
-      const BoolDomIterFunctor& functor,
-      nsTArray<mozilla::OwningNonNull<nsINode>>& arrayOfNodes) const;
+  template <class NodeClass>
+  void AppendAllNodesToArray(
+      nsTArray<OwningNonNull<NodeClass>>& aArrayOfNodes) const;
+
+  /**
+   * AppendNodesToArray() calls aFunctor before appending found node to
+   * aArrayOfNodes.  If aFunctor returns false, the node will be ignored.
+   * You can use aClosure instead of capturing something with lambda.
+   * Note that aNode is guaranteed that it's an instance of NodeClass
+   * or its sub-class.
+   * XXX If we can make type of aNode templated without std::function,
+   *     it'd be better, though.
+   */
+  typedef bool (*BoolFunctor)(nsINode& aNode, void* aClosure);
+  template <class NodeClass>
+  void AppendNodesToArray(BoolFunctor aFunctor,
+                          nsTArray<OwningNonNull<NodeClass>>& aArrayOfNodes,
+                          void* aClosure = nullptr) const;
 
  protected:
   ContentIteratorBase* mIter;
@@ -769,12 +777,6 @@ class MOZ_RAII DOMSubtreeIterator final : public DOMIterator {
   ContentSubtreeIterator mSubtreeIter;
   explicit DOMSubtreeIterator(nsINode& aNode MOZ_GUARD_OBJECT_NOTIFIER_PARAM) =
       delete;
-};
-
-class TrivialFunctor final : public BoolDomIterFunctor {
- public:
-  // Used to build list of all nodes iterator covers
-  virtual bool operator()(nsINode* aNode) const override { return true; }
 };
 
 class EditorUtils final {

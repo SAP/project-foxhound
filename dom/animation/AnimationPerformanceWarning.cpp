@@ -44,9 +44,6 @@ bool AnimationPerformanceWarning::ToLocalizedString(
     case Type::TransformBackfaceVisibilityHidden:
       key = "CompositorAnimationWarningTransformBackfaceVisibilityHidden";
       break;
-    case Type::TransformPreserve3D:
-      key = "CompositorAnimationWarningTransformPreserve3D";
-      break;
     case Type::TransformSVG:
       key = "CompositorAnimationWarningTransformSVG";
       break;
@@ -67,6 +64,9 @@ bool AnimationPerformanceWarning::ToLocalizedString(
       break;
     case Type::HasRenderingObserver:
       key = "CompositorAnimationWarningHasRenderingObserver";
+      break;
+    case Type::HasCurrentColor:
+      key = "CompositorAnimationWarningHasCurrentColor";
       break;
     case Type::None:
       MOZ_ASSERT_UNREACHABLE("Uninitialized type shouldn't be used");

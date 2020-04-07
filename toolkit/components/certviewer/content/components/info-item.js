@@ -64,8 +64,12 @@ export class InfoItem extends HTMLElement {
 
     if (labelId === "modulus" || labelId === "public-value") {
       info.classList.add("long-hex");
-      this.addEventListener("click", () => {
-        info.classList.toggle("long-hex-open");
+      this.addEventListener("mouseup", () => {
+        // If a range of text is selected, don't toggle the class that
+        // hides/shows additional text.
+        if (window.getSelection().type !== "Range") {
+          info.classList.toggle("long-hex-open");
+        }
       });
     }
 
@@ -106,9 +110,7 @@ export class InfoItem extends HTMLElement {
     for (let i = 0; i < certArray.length; i++) {
       encodedCertArray.push(
         encodeURI(
-          `-----BEGIN CERTIFICATE-----\r\n${
-            certArray[i]
-          }\r\n-----END CERTIFICATE-----\r\n`
+          `-----BEGIN CERTIFICATE-----\r\n${certArray[i]}\r\n-----END CERTIFICATE-----\r\n`
         )
       );
     }

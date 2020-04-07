@@ -16,6 +16,16 @@ const TEST_URI = `data:text/html,
 add_task(async function() {
   const hud = await openNewTabAndConsole(TEST_URI);
 
+  // Place the mouse on the top left corner to avoid triggering an highlighter request
+  // to the server. See Bug 1531572.
+  EventUtils.synthesizeMouse(
+    hud.ui.outputNode,
+    0,
+    0,
+    { type: "mousemove" },
+    hud.iframeWindow
+  );
+
   let message = await executeAndWaitForMessage(
     hud,
     "$x('.//li')",
@@ -39,10 +49,24 @@ add_task(async function() {
 
   message = await executeAndWaitForMessage(
     hud,
+    "$x('count(.//li)', document.body, 'number')",
+    "2"
+  );
+  ok(message, "$x works as expected number type");
+
+  message = await executeAndWaitForMessage(
+    hud,
     "$x('.//li', document.body, XPathResult.STRING_TYPE)",
     "First"
   );
   ok(message, "$x works as expected with XPathResult.STRING_TYPE");
+
+  message = await executeAndWaitForMessage(
+    hud,
+    "$x('.//li', document.body, 'string')",
+    "First"
+  );
+  ok(message, "$x works as expected with string type");
 
   message = await executeAndWaitForMessage(
     hud,
@@ -53,6 +77,13 @@ add_task(async function() {
 
   message = await executeAndWaitForMessage(
     hud,
+    "$x('//li[not(@foo)]', document.body, 'bool')",
+    "true"
+  );
+  ok(message, "$x works as expected with bool type");
+
+  message = await executeAndWaitForMessage(
+    hud,
     "$x('.//li', document.body, XPathResult.UNORDERED_NODE_ITERATOR_TYPE)",
     "Array [ li, li ]"
   );
@@ -60,6 +91,13 @@ add_task(async function() {
     message,
     "$x works as expected with XPathResult.UNORDERED_NODE_ITERATOR_TYPE"
   );
+
+  message = await executeAndWaitForMessage(
+    hud,
+    "$x('.//li', document.body, 'nodes')",
+    "Array [ li, li ]"
+  );
+  ok(message, "$x works as expected with nodes type");
 
   message = await executeAndWaitForMessage(
     hud,
@@ -84,6 +122,13 @@ add_task(async function() {
     "<li>"
   );
   ok(message, "$x works as expected with XPathResult.FIRST_ORDERED_NODE_TYPE");
+
+  message = await executeAndWaitForMessage(
+    hud,
+    "$x('.//li', document.body, 'node')",
+    "<li>"
+  );
+  ok(message, "$x works as expected with node type");
 
   message = await executeAndWaitForMessage(
     hud,

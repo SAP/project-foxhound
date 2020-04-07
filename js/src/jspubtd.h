@@ -46,14 +46,14 @@ enum JSType {
 
 /* Dense index into cached prototypes and class atoms for standard objects. */
 enum JSProtoKey {
-#define PROTOKEY_AND_INITIALIZER(name, init, clasp) JSProto_##name,
+#define PROTOKEY_AND_INITIALIZER(name, clasp) JSProto_##name,
   JS_FOR_EACH_PROTOTYPE(PROTOKEY_AND_INITIALIZER)
 #undef PROTOKEY_AND_INITIALIZER
       JSProto_LIMIT
 };
 
 /* Struct forward declarations. */
-struct JSClass;
+struct JS_PUBLIC_API JSClass;
 class JSErrorReport;
 struct JSExceptionState;
 struct JSFunctionSpec;
@@ -69,8 +69,8 @@ class JSLinearString;
 
 template <typename T>
 struct JSConstScalarSpec;
-typedef JSConstScalarSpec<double> JSConstDoubleSpec;
-typedef JSConstScalarSpec<int32_t> JSConstIntegerSpec;
+using JSConstDoubleSpec = JSConstScalarSpec<double>;
+using JSConstIntegerSpec = JSConstScalarSpec<int32_t>;
 
 namespace js {
 
@@ -113,7 +113,7 @@ class MOZ_STACK_CLASS JS_PUBLIC_API AutoEnterCycleCollection {
 extern "C" {
 
 // Defined in NSPR prio.h.
-typedef struct PRFileDesc PRFileDesc;
+using PRFileDesc = struct PRFileDesc;
 }
 
 #endif /* jspubtd_h */

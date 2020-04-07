@@ -19,7 +19,7 @@ class ChooserParser(BaseTryParser):
     name = 'chooser'
     arguments = []
     common_groups = ['push', 'task']
-    templates = [
+    task_configs = [
         'artifact',
         'browsertime',
         'chemspill-prio',
@@ -27,8 +27,9 @@ class ChooserParser(BaseTryParser):
         'env',
         'gecko-profile',
         'path',
+        'pernosco',
         'rebuild',
-        'visual-metrics-jobs',
+        'worker-overrides',
     ]
 
 

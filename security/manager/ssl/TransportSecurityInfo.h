@@ -26,7 +26,7 @@
 namespace mozilla {
 namespace psm {
 
-enum class EVStatus {
+enum class EVStatus : uint8_t {
   NotEV = 0,
   EV = 1,
 };
@@ -73,16 +73,19 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
 
   void SetStatusErrorBits(nsNSSCertificate* cert, uint32_t collected_errors);
 
-  nsresult SetFailedCertChain(UniqueCERTCertList certList);
+  nsresult SetFailedCertChain(nsTArray<nsTArray<uint8_t>>&& certList);
 
   void SetServerCert(nsNSSCertificate* aServerCert, EVStatus aEVStatus);
 
-  nsresult SetSucceededCertChain(mozilla::UniqueCERTCertList certList);
+  nsresult SetSucceededCertChain(nsTArray<nsTArray<uint8_t>>&& certList);
 
   bool HasServerCert() { return mServerCert != nullptr; }
 
-  void SetCertificateTransparencyInfo(
+  static uint16_t ConvertCertificateTransparencyInfoToStatus(
       const mozilla::psm::CertificateTransparencyInfo& info);
+
+  static nsTArray<nsTArray<uint8_t>> CreateCertBytesArray(
+      const UniqueCERTCertList& aCertChain);
 
   // Use errorCode == 0 to indicate success;
   virtual void SetCertVerificationResult(PRErrorCode errorCode){};
@@ -91,6 +94,8 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
       uint16_t aCertificateTransparencyStatus) {
     mCertificateTransparencyStatus = aCertificateTransparencyStatus;
   }
+
+  void SetResumed(bool aResumed);
 
   uint16_t mCipherSuite;
   uint16_t mProtocolVersion;
@@ -122,10 +127,9 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
  protected:
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsTArray<RefPtr<nsIX509Cert>> mSucceededCertChain;
-
-  static nsresult ConvertCertArrayToCertList(
-      const nsTArray<RefPtr<nsIX509Cert>>& aCertArray,
-      nsIX509CertList** aCertList);
+  bool mNPNCompleted;
+  nsCString mNegotiatedNPN;
+  bool mResumed;
 
  private:
   uint32_t mSecurityState;
@@ -142,9 +146,6 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
   nsTArray<RefPtr<nsIX509Cert>> mFailedCertChain;
 
   nsresult ReadSSLStatus(nsIObjectInputStream* aStream);
-  static nsresult ConvertCertListToCertArray(
-      const nsCOMPtr<nsIX509CertList>& aCertList,
-      nsTArray<RefPtr<nsIX509Cert>>& aCertArray);
 
   // This function is used to read the binary that are serialized
   // by using nsIX509CertList

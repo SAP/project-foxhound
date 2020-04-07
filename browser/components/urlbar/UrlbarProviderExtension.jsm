@@ -108,17 +108,18 @@ class UrlbarProviderExtension extends UrlbarProvider {
   }
 
   /**
-   * Whether this provider wants to restrict results to just itself.  Other
-   * providers won't be invoked, unless this provider doesn't support the
-   * current query.
+   * Gets the provider's priority.
    *
    * @param {UrlbarQueryContext} context
    *   The query context object.
-   * @returns {boolean}
-   *   Whether this provider wants to restrict results.
+   * @returns {number}
+   *   The provider's priority for the given query.
    */
-  isRestricting(context) {
-    return this.behavior == "restricting";
+  getPriority(context) {
+    // We give restricting extension providers a very high priority so that they
+    // normally override all built-in providers, but not Infinity so that we can
+    // still override them if necessary.
+    return this.behavior == "restricting" ? 999 : 0;
   }
 
   /**
@@ -226,23 +227,37 @@ class UrlbarProviderExtension extends UrlbarProvider {
   }
 
   /**
+   * This method is called when the user starts and ends an engagement with the
+   * urlbar.
+   *
+   * @param {boolean} isPrivate
+   *   True if the engagement is in a private context.
+   * @param {string} state
+   *   The state of the engagement, one of: start, engagement, abandonment,
+   *   discard.
+   */
+  onEngagement(isPrivate, state) {
+    this._notifyListener("engagement", isPrivate, state);
+  }
+
+  /**
    * Calls a listener function set by the extension API implementation, if any.
    *
    * @param {string} eventName
    *   The name of the listener to call (i.e., the name of the event to fire).
-   * @param {UrlbarQueryContext} context
-   *   The query context relevant to the event.
+   * @param {*} args
+   *   Arguments to the listener function.
    * @returns {*}
    *   The value returned by the listener function, if any.
    */
-  async _notifyListener(eventName, context) {
+  async _notifyListener(eventName, ...args) {
     let listener = this._eventListeners.get(eventName);
     if (!listener) {
       return undefined;
     }
     let result;
     try {
-      result = listener(context);
+      result = listener(...args);
     } catch (error) {
       Cu.reportError(error);
       return undefined;
@@ -318,6 +333,13 @@ class UrlbarProviderExtension extends UrlbarProvider {
         extResult.payload || {}
       )
     );
+    if (extResult.heuristic && this.behavior == "restricting") {
+      // The muxer chooses the final heuristic result by taking the first one
+      // that claims to be the heuristic.  We don't want extensions to clobber
+      // UnifiedComplete's heuristic, so we allow this only if the provider is
+      // restricting.
+      result.heuristic = extResult.heuristic;
+    }
     if (extResult.suggestedIndex !== undefined) {
       result.suggestedIndex = extResult.suggestedIndex;
     }

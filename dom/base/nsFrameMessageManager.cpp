@@ -22,12 +22,10 @@
 #include "mozilla/dom/ScriptLoader.h"
 #include "nsFrameLoader.h"
 #include "nsIInputStream.h"
-#include "nsIXULRuntime.h"
 #include "nsIScriptError.h"
 #include "nsIConsoleService.h"
 #include "nsIMemoryReporter.h"
 #include "nsIProtocolHandler.h"
-#include "nsIScriptSecurityManager.h"
 #include "xpcpublic.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/JSON.h"
@@ -54,7 +52,6 @@
 #include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
-#include "mozilla/recordreplay/ParentIPC.h"
 #include "nsPrintfCString.h"
 #include "nsXULAppAPI.h"
 #include "nsQueryObject.h"
@@ -389,7 +386,7 @@ bool nsFrameMessageManager::GetParamsForMessage(JSContext* aCx,
   JS::RootedValue v(aCx, aValue);
   JS::RootedValue t(aCx, aTransfer);
   ErrorResult rv;
-  aData.Write(aCx, v, t, rv);
+  aData.Write(aCx, v, t, JS::CloneDataPolicy(), rv);
   if (!rv.Failed()) {
     return true;
   }
@@ -444,17 +441,7 @@ static bool AllowMessage(size_t aDataLength, const nsAString& aMessageName) {
   // result in an overly large IPC message.
   static const size_t kMaxMessageSize =
       IPC::Channel::kMaximumMessageSize - 20 * 1024;
-  if (aDataLength < kMaxMessageSize) {
-    return true;
-  }
-
-  NS_ConvertUTF16toUTF8 messageName(aMessageName);
-  messageName.StripTaggedASCII(ASCIIMask::Mask0to9());
-
-  Telemetry::Accumulate(Telemetry::REJECTED_MESSAGE_MANAGER_MESSAGE,
-                        messageName);
-
-  return false;
+  return aDataLength < kMaxMessageSize;
 }
 
 void nsFrameMessageManager::SendMessage(
@@ -606,35 +593,11 @@ class MMListenerRemover {
   RefPtr<nsFrameMessageManager> mMM;
 };
 
-// When recording or replaying, return whether a message should be received in
-// the middleman process instead of the recording/replaying process.
-static bool DirectMessageToMiddleman(const nsAString& aMessage) {
-  // Middleman processes run developer tools server code and need to receive
-  // debugger related messages. The session store flush message needs to be
-  // received in order to cleanly shutdown the process.
-  return (StringBeginsWith(aMessage, NS_LITERAL_STRING("debug:")) &&
-          recordreplay::parent::DebuggerRunsInMiddleman()) ||
-         aMessage.EqualsLiteral("SessionStore:flush");
-}
-
 void nsFrameMessageManager::ReceiveMessage(
     nsISupports* aTarget, nsFrameLoader* aTargetFrameLoader, bool aTargetClosed,
     const nsAString& aMessage, bool aIsSync, StructuredCloneData* aCloneData,
     mozilla::jsipc::CpowHolder* aCpows, nsIPrincipal* aPrincipal,
     nsTArray<StructuredCloneData>* aRetVal, ErrorResult& aError) {
-  // If we are recording or replaying, we will end up here in both the
-  // middleman process and the recording/replaying process. Ignore the message
-  // in one of the processes, so that it is only received in one place.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    if (DirectMessageToMiddleman(aMessage)) {
-      return;
-    }
-  } else if (recordreplay::IsMiddleman()) {
-    if (!DirectMessageToMiddleman(aMessage)) {
-      return;
-    }
-  }
-
   MOZ_ASSERT(aTarget);
 
   nsAutoTObserverArray<nsMessageListenerInfo, 1>* listeners =
@@ -881,10 +844,13 @@ void nsFrameMessageManager::SetCallback(MessageManagerCallback* aCallback) {
 
 void nsFrameMessageManager::Close() {
   if (!mClosed) {
-    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-    if (obs) {
-      obs->NotifyObservers(this, "message-manager-close", nullptr);
-    }
+    nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+        "nsFrameMessageManager::Close", [self = nsCOMPtr<nsISupports>(this)]() {
+          if (nsCOMPtr<nsIObserverService> obs =
+                  mozilla::services::GetObserverService()) {
+            obs->NotifyObservers(self, "message-manager-close", nullptr);
+          }
+        }));
   }
   mClosed = true;
   mCallback = nullptr;
@@ -896,10 +862,14 @@ void nsFrameMessageManager::Disconnect(bool aRemoveFromParent) {
   Close();
 
   if (!mDisconnected) {
-    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-    if (obs) {
-      obs->NotifyObservers(this, "message-manager-disconnect", nullptr);
-    }
+    nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+        "nsFrameMessageManager::Disconnect",
+        [self = nsCOMPtr<nsISupports>(this)]() {
+          if (nsCOMPtr<nsIObserverService> obs =
+                  mozilla::services::GetObserverService()) {
+            obs->NotifyObservers(self, "message-manager-disconnect", nullptr);
+          }
+        }));
   }
 
   ClearParentManager(aRemoveFromParent);
@@ -1002,8 +972,7 @@ struct MessageManagerReferentCount {
 
 }  // namespace
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class MessageManagerReporter final : public nsIMemoryReporter {
   ~MessageManagerReporter() = default;
@@ -1137,8 +1106,7 @@ MessageManagerReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 already_AddRefed<ChromeMessageBroadcaster>
 nsFrameMessageManager::GetGlobalMessageManager() {

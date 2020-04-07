@@ -8,7 +8,6 @@
 #define nsAppFileLocationProvider_h
 
 #include "nsIDirectoryService.h"
-#include "nsIFile.h"
 #include "mozilla/Attributes.h"
 
 class nsIFile;
@@ -26,7 +25,7 @@ class nsAppFileLocationProvider final : public nsIDirectoryServiceProvider2 {
   NS_DECL_NSIDIRECTORYSERVICEPROVIDER2
 
  private:
-  ~nsAppFileLocationProvider() {}
+  ~nsAppFileLocationProvider() = default;
 
  protected:
   nsresult CloneMozBinDirectory(nsIFile** aLocalFile);

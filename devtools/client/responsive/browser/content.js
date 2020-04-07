@@ -81,9 +81,8 @@ var global = this;
       height,
     });
 
-    const zoom = content.windowUtils.getResolution();
-    width = content.innerWidth * zoom;
-    height = content.innerHeight * zoom;
+    width = content.innerWidth;
+    height = content.innerHeight;
     debug(`EMIT RESIZEVIEWPORT: ${width} x ${height}`);
     sendAsyncMessage("ResponsiveMode:OnResizeViewport", {
       width,
@@ -128,11 +127,6 @@ var global = this;
       .getInterface(Ci.nsIWebProgress);
     webProgress.removeProgressListener(WebProgressListener);
     docShell.deviceSizeIsPageSize = gDeviceSizeWasPageSize;
-    // Restore the original physical screen orientation values before RDM is stopped.
-    // This is necessary since the window document's `setCurrentRDMPaneOrientation`
-    // WebIDL operation can only modify the window's screen orientation values while the
-    // window content is in RDM.
-    restoreScreenOrientation();
     restoreScrollbars();
     setDocumentInRDMPane(false);
     stopOnResize();
@@ -177,16 +171,9 @@ var global = this;
     flushStyle();
   }
 
-  function restoreScreenOrientation() {
-    docShell.contentViewer.DOMDocument.setRDMPaneOrientation(
-      "landscape-primary",
-      0
-    );
-  }
-
   function setDocumentInRDMPane(inRDMPane) {
     // We don't propegate this property to descendent documents.
-    docShell.contentViewer.DOMDocument.inRDMPane = inRDMPane;
+    docShell.browsingContext.inRDMPane = inRDMPane;
   }
 
   function flushStyle() {
@@ -230,7 +217,6 @@ var global = this;
       if (flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT) {
         return;
       }
-      setDocumentInRDMPane(true);
       // Notify the Responsive UI manager to set orientation state on a location change.
       // This is necessary since we want to ensure that the RDM Document's orientation
       // state persists throughout while RDM is opened.

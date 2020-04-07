@@ -10,7 +10,7 @@ const worker = {
   active: PropTypes.bool,
   name: PropTypes.string.isRequired,
   scope: PropTypes.string.isRequired,
-  lastUpdateTime: PropTypes.number.isRequired,
+  lastUpdateTime: PropTypes.number,
   url: PropTypes.string.isRequired,
   // registrationFront can be missing in e10s.
   registrationFront: PropTypes.object,

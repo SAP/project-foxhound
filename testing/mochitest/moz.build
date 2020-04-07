@@ -22,11 +22,11 @@ FINAL_TARGET_FILES += [
 ]
 
 FINAL_TARGET_FILES.content += [
-    'browser-harness.xul',
+    'browser-harness.xhtml',
     'browser-test.js',
     'chrome-harness.js',
     'chunkifyTests.js',
-    'harness.xul',
+    'harness.xhtml',
     'manifestLibrary.js',
     'mochitest-e10s-utils.js',
     'redirect.html',
@@ -65,7 +65,6 @@ FINAL_TARGET_FILES.content.tests.SimpleTest += [
 FINAL_TARGET_FILES.content.tests.BrowserTestUtils += [
     'BrowserTestUtils/content/content-about-page-utils.js',
     'BrowserTestUtils/content/content-task.js',
-    'BrowserTestUtils/content/content-utils.js',
 ]
 
 MOCHITEST_MANIFESTS += [
@@ -90,12 +89,13 @@ TEST_HARNESS_FILES.testing.mochitest += [
     '/build/valgrind/x86_64-pc-linux-gnu.sup',
     '/netwerk/test/httpserver/httpd.js',
     'bisection.py',
-    'browser-harness.xul',
+    'browser-harness.xhtml',
     'browser-test.js',
     'chrome-harness.js',
     'chunkifyTests.js',
+    'document-builder.sjs',
     'favicon.ico',
-    'harness.xul',
+    'harness.xhtml',
     'leaks.py',
     'mach_test_package_commands.py',
     'manifest.webapp',

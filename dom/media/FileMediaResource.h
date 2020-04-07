@@ -19,11 +19,11 @@ class FileMediaResource : public BaseMediaResource {
         mSize(aSize),
         mLock("FileMediaResource.mLock"),
         mSizeInitialized(aSize != -1) {}
-  ~FileMediaResource() {}
+  ~FileMediaResource() = default;
 
   // Main thread
   nsresult Open(nsIStreamListener** aStreamListener) override;
-  nsresult Close() override;
+  RefPtr<GenericPromise> Close() override;
   void Suspend(bool aCloseImmediately) override {}
   void Resume() override {}
   already_AddRefed<nsIPrincipal> GetCurrentPrincipal() override;

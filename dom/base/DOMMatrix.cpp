@@ -60,8 +60,7 @@ static bool ValidateAndFixupMatrix2DInit(DOMMatrix2DInit& aMatrixInit,
     }                                                     \
   }
 #define ValidateAndSet(field, alias, fieldName, aliasName, defaultValue) \
-  ValidateAliases((field), (alias), NS_LITERAL_STRING(fieldName),        \
-                  NS_LITERAL_STRING(aliasName));                         \
+  ValidateAliases((field), (alias), fieldName, aliasName);               \
   SetFromAliasOrDefault((field), (alias), (defaultValue));
 
   ValidateAndSet(aMatrixInit.mM11, aMatrixInit.mA, "m11", "a", 1);
@@ -81,17 +80,16 @@ static bool ValidateAndFixupMatrix2DInit(DOMMatrix2DInit& aMatrixInit,
 // https://drafts.fxtf.org/geometry/#matrix-validate-and-fixup
 static bool ValidateAndFixupMatrixInit(DOMMatrixInit& aMatrixInit,
                                        ErrorResult& aRv) {
-#define Check3DField(field, fieldName, defaultValue)  \
-  if ((field) != (defaultValue)) {                    \
-    if (!aMatrixInit.mIs2D.WasPassed()) {             \
-      aMatrixInit.mIs2D.Construct(false);             \
-      return true;                                    \
-    }                                                 \
-    if (aMatrixInit.mIs2D.Value()) {                  \
-      aRv.ThrowTypeError<MSG_MATRIX_INIT_EXCEEDS_2D>( \
-          NS_LITERAL_STRING(fieldName));              \
-      return false;                                   \
-    }                                                 \
+#define Check3DField(field, fieldName, defaultValue)             \
+  if ((field) != (defaultValue)) {                               \
+    if (!aMatrixInit.mIs2D.WasPassed()) {                        \
+      aMatrixInit.mIs2D.Construct(false);                        \
+      return true;                                               \
+    }                                                            \
+    if (aMatrixInit.mIs2D.Value()) {                             \
+      aRv.ThrowTypeError<MSG_MATRIX_INIT_EXCEEDS_2D>(fieldName); \
+      return false;                                              \
+    }                                                            \
   }
 
   if (!ValidateAndFixupMatrix2DInit(aMatrixInit, aRv)) {
@@ -192,7 +190,7 @@ already_AddRefed<DOMMatrixReadOnly> DOMMatrixReadOnly::FromMatrix(
 already_AddRefed<DOMMatrixReadOnly> DOMMatrixReadOnly::FromFloat32Array(
     const GlobalObject& aGlobal, const Float32Array& aArray32,
     ErrorResult& aRv) {
-  aArray32.ComputeLengthAndData();
+  aArray32.ComputeState();
 
   const int length = aArray32.Length();
   const bool is2D = length == 6;
@@ -206,7 +204,7 @@ already_AddRefed<DOMMatrixReadOnly> DOMMatrixReadOnly::FromFloat32Array(
 already_AddRefed<DOMMatrixReadOnly> DOMMatrixReadOnly::FromFloat64Array(
     const GlobalObject& aGlobal, const Float64Array& aArray64,
     ErrorResult& aRv) {
-  aArray64.ComputeLengthAndData();
+  aArray64.ComputeState();
 
   const int length = aArray64.Length();
   const bool is2D = length == 6;
@@ -219,7 +217,8 @@ already_AddRefed<DOMMatrixReadOnly> DOMMatrixReadOnly::FromFloat64Array(
 
 already_AddRefed<DOMMatrixReadOnly> DOMMatrixReadOnly::Constructor(
     const GlobalObject& aGlobal,
-    const Optional<StringOrUnrestrictedDoubleSequenceOrDOMMatrixReadOnly>& aArg,
+    const Optional<UTF8StringOrUnrestrictedDoubleSequenceOrDOMMatrixReadOnly>&
+        aArg,
     ErrorResult& aRv) {
   if (!aArg.WasPassed()) {
     RefPtr<DOMMatrixReadOnly> rval =
@@ -228,7 +227,7 @@ already_AddRefed<DOMMatrixReadOnly> DOMMatrixReadOnly::Constructor(
   }
 
   const auto& arg = aArg.Value();
-  if (arg.IsString()) {
+  if (arg.IsUTF8String()) {
     nsCOMPtr<nsPIDOMWindowInner> win =
         do_QueryInterface(aGlobal.GetAsSupports());
     if (!win) {
@@ -237,7 +236,7 @@ already_AddRefed<DOMMatrixReadOnly> DOMMatrixReadOnly::Constructor(
     }
     RefPtr<DOMMatrixReadOnly> rval =
         new DOMMatrixReadOnly(aGlobal.GetAsSupports());
-    rval->SetMatrixValue(arg.GetAsString(), aRv);
+    rval->SetMatrixValue(arg.GetAsUTF8String(), aRv);
     return rval.forget();
   }
   if (arg.IsDOMMatrixReadOnly()) {
@@ -503,8 +502,7 @@ void DOMMatrixReadOnly::Stringify(nsAString& aResult, ErrorResult& aRv) {
   auto AppendDouble = [&aRv, &cbuf, &matrixStr](double d,
                                                 bool isLastItem = false) {
     if (!mozilla::IsFinite(d)) {
-      aRv.ThrowDOMException(
-          NS_ERROR_DOM_INVALID_STATE_ERR,
+      aRv.ThrowInvalidStateError(
           "Matrix with a non-finite element cannot be stringified.");
       return false;
     }
@@ -639,7 +637,7 @@ already_AddRefed<DOMMatrix> DOMMatrix::FromMatrix(
 already_AddRefed<DOMMatrix> DOMMatrix::FromFloat32Array(
     const GlobalObject& aGlobal, const Float32Array& aArray32,
     ErrorResult& aRv) {
-  aArray32.ComputeLengthAndData();
+  aArray32.ComputeState();
 
   const int length = aArray32.Length();
   const bool is2D = length == 6;
@@ -652,7 +650,7 @@ already_AddRefed<DOMMatrix> DOMMatrix::FromFloat32Array(
 already_AddRefed<DOMMatrix> DOMMatrix::FromFloat64Array(
     const GlobalObject& aGlobal, const Float64Array& aArray64,
     ErrorResult& aRv) {
-  aArray64.ComputeLengthAndData();
+  aArray64.ComputeState();
 
   const int length = aArray64.Length();
   const bool is2D = length == 6;
@@ -664,7 +662,8 @@ already_AddRefed<DOMMatrix> DOMMatrix::FromFloat64Array(
 
 already_AddRefed<DOMMatrix> DOMMatrix::Constructor(
     const GlobalObject& aGlobal,
-    const Optional<StringOrUnrestrictedDoubleSequenceOrDOMMatrixReadOnly>& aArg,
+    const Optional<UTF8StringOrUnrestrictedDoubleSequenceOrDOMMatrixReadOnly>&
+        aArg,
     ErrorResult& aRv) {
   if (!aArg.WasPassed()) {
     RefPtr<DOMMatrix> rval = new DOMMatrix(aGlobal.GetAsSupports());
@@ -672,7 +671,7 @@ already_AddRefed<DOMMatrix> DOMMatrix::Constructor(
   }
 
   const auto& arg = aArg.Value();
-  if (arg.IsString()) {
+  if (arg.IsUTF8String()) {
     nsCOMPtr<nsPIDOMWindowInner> win =
         do_QueryInterface(aGlobal.GetAsSupports());
     if (!win) {
@@ -680,7 +679,7 @@ already_AddRefed<DOMMatrix> DOMMatrix::Constructor(
       return nullptr;
     }
     RefPtr<DOMMatrix> rval = new DOMMatrix(aGlobal.GetAsSupports());
-    rval->SetMatrixValue(arg.GetAsString(), aRv);
+    rval->SetMatrixValue(arg.GetAsUTF8String(), aRv);
     return rval.forget();
   }
   if (arg.IsDOMMatrixReadOnly()) {
@@ -725,7 +724,7 @@ static void SetDataInMatrix(DOMMatrixReadOnly* aMatrix, const T* aData,
     aMatrix->SetE(aData[4]);
     aMatrix->SetF(aData[5]);
   } else {
-    nsAutoString lengthStr;
+    nsAutoCString lengthStr;
     lengthStr.AppendInt(aLength);
     aRv.ThrowTypeError<MSG_MATRIX_INIT_LENGTH_WRONG>(lengthStr);
   }
@@ -967,7 +966,7 @@ DOMMatrix* DOMMatrix::InvertSelf() {
 }
 
 DOMMatrixReadOnly* DOMMatrixReadOnly::SetMatrixValue(
-    const nsAString& aTransformList, ErrorResult& aRv) {
+    const nsACString& aTransformList, ErrorResult& aRv) {
   // An empty string is a no-op.
   if (aTransformList.IsEmpty()) {
     return this;
@@ -1001,7 +1000,7 @@ DOMMatrixReadOnly* DOMMatrixReadOnly::SetMatrixValue(
   return this;
 }
 
-DOMMatrix* DOMMatrix::SetMatrixValue(const nsAString& aTransformList,
+DOMMatrix* DOMMatrix::SetMatrixValue(const nsACString& aTransformList,
                                      ErrorResult& aRv) {
   DOMMatrixReadOnly::SetMatrixValue(aTransformList, aRv);
   return this;

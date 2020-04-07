@@ -11,15 +11,15 @@ const {
 const EventEmitter = require("devtools/shared/event-emitter");
 const { Provider } = require("devtools/client/shared/vendor/react-redux");
 const ExtensionSidebarComponent = createFactory(
-  require("./components/ExtensionSidebar")
+  require("devtools/client/inspector/extensions/components/ExtensionSidebar")
 );
 
 const {
   updateExtensionPage,
   updateObjectTreeView,
-  updateObjectValueGripView,
+  updateExpressionResultView,
   removeExtensionSidebar,
-} = require("./actions/sidebar");
+} = require("devtools/client/inspector/extensions/actions/sidebar");
 
 /**
  * ExtensionSidebar instances represents Inspector sidebars installed by add-ons
@@ -71,27 +71,26 @@ class ExtensionSidebar {
           },
           serviceContainer: {
             highlightDomElement: async (grip, options = {}) => {
-              // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
-              const nodeFront = await this.inspector.walker.gripToNodeFront(
+              const nodeFront = await this.inspector.inspectorFront.getNodeFrontFromNodeGrip(
                 grip
               );
               return nodeFront.highlighterFront.highlight(nodeFront, options);
             },
             unHighlightDomElement: async grip => {
-              // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
-              const nodeFront = await this.inspector.walker.gripToNodeFront(
+              const nodeFront = await this.inspector.inspectorFront.getNodeFrontFromNodeGrip(
                 grip
               );
               return nodeFront.highlighterFront.unhighlight();
             },
             openNodeInInspector: async grip => {
-              const { walker } = this.inspector;
-              const front = await walker.gripToNodeFront(grip);
+              const nodeFront = await this.inspector.inspectorFront.getNodeFrontFromNodeGrip(
+                grip
+              );
               const onInspectorUpdated = this.inspector.once(
                 "inspector-updated"
               );
               const onNodeFrontSet = this.inspector.toolbox.selection.setNodeFront(
-                front,
+                nodeFront,
                 {
                   reason: "inspector-extension-sidebar",
                 }
@@ -152,7 +151,7 @@ class ExtensionSidebar {
    * ObjectPreview React Component, which shows the passed value grip
    * in the sidebar.
    */
-  setObjectValueGrip(objectValueGrip, rootTitle) {
+  setExpressionResult(expressionResult, rootTitle) {
     if (this.removed) {
       throw new Error(
         "Unable to set an object preview on a removed ExtensionSidebar"
@@ -160,7 +159,7 @@ class ExtensionSidebar {
     }
 
     this.store.dispatch(
-      updateObjectValueGripView(this.id, objectValueGrip, rootTitle)
+      updateExpressionResultView(this.id, expressionResult, rootTitle)
     );
   }
 

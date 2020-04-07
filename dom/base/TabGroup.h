@@ -9,7 +9,6 @@
 
 #include "nsHashKeys.h"
 #include "nsISupportsImpl.h"
-#include "nsIPrincipal.h"
 #include "nsTHashtable.h"
 #include "nsString.h"
 
@@ -96,59 +95,13 @@ class TabGroup final : public SchedulerGroup,
 
   Iterator Iter() { return mDocGroups.Iter(); }
 
-  // Returns the size of the set of "similar-origin" DocGroups. To
-  // only consider DocGroups with at least one active document, call
-  // Count with 'aActiveOnly' = true
-  uint32_t Count(bool aActiveOnly = false) const;
-
-  // Returns the nsIDocShellTreeItem with the given name, searching each of the
-  // docShell trees which are within this TabGroup. It will pass itself as
-  // aRequestor to each docShellTreeItem which it asks to search for the name,
-  // and will not search the docShellTreeItem which is passed as aRequestor.
-  //
-  // This method is used in order to correctly namespace named windows based on
-  // their unit of related browsing contexts.
-  //
-  // It is illegal to pass in the special case-insensitive names "_blank",
-  // "_self", "_parent" or "_top", as those should be handled elsewhere.
-  nsresult FindItemWithName(const nsAString& aName,
-                            nsIDocShellTreeItem* aRequestor,
-                            nsIDocShellTreeItem* aOriginalRequestor,
-                            nsIDocShellTreeItem** aFoundItem);
-
-  nsTArray<nsPIDOMWindowOuter*> GetTopLevelWindows() const;
   const nsTArray<nsPIDOMWindowOuter*>& GetWindows() { return mWindows; }
 
   // This method is always safe to call off the main thread. The nsIEventTarget
   // can always be used off the main thread.
   nsISerialEventTarget* EventTargetFor(TaskCategory aCategory) const override;
 
-  void WindowChangedBackgroundStatus(bool aIsNowBackground);
-
-  // Returns true if all of the TabGroup's top-level windows are in
-  // the background.
-  bool IsBackground() const override;
-
-  // Increase/Decrease the number of IndexedDB transactions/databases for the
-  // decision making of the preemption in the scheduler.
-  Atomic<uint32_t>& IndexedDBTransactionCounter() {
-    return mNumOfIndexedDBTransactions;
-  }
-
-  Atomic<uint32_t>& IndexedDBDatabaseCounter() {
-    return mNumOfIndexedDBDatabases;
-  }
-
   static LinkedList<TabGroup>* GetTabGroupList() { return sTabGroups; }
-
-  // This returns true if all the window objects in all the TabGroups are
-  // either inactive (for example in bfcache) or are in background tabs which
-  // can be throttled.
-  static bool HasOnlyThrottableTabs();
-
-  nsresult QueuePostMessageEvent(already_AddRefed<nsIRunnable>&& aRunnable);
-
-  void FlushPostMessageEvents();
 
  private:
   virtual AbstractThread* AbstractMainThreadForImpl(
@@ -163,20 +116,13 @@ class TabGroup final : public SchedulerGroup,
   // Thread-safe members
   Atomic<bool> mLastWindowLeft;
   Atomic<bool> mThrottledQueuesInitialized;
-  Atomic<uint32_t> mNumOfIndexedDBTransactions;
-  Atomic<uint32_t> mNumOfIndexedDBDatabases;
   const bool mIsChrome;
 
   // Main thread only
   DocGroupMap mDocGroups;
   nsTArray<nsPIDOMWindowOuter*> mWindows;
-  uint32_t mForegroundCount;
 
   static LinkedList<TabGroup>* sTabGroups;
-
-  // A queue to store postMessage events during page load, the queue will be
-  // flushed once the page is loaded
-  RefPtr<mozilla::ThrottledEventQueue> mPostMessageEventQueue;
 };
 
 }  // namespace dom

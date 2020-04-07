@@ -2,8 +2,8 @@
 
 use crate::keys::Keys;
 use crate::EntityRef;
+use alloc::vec::Vec;
 use core::marker::PhantomData;
-use std::vec::Vec;
 
 /// A set of `K` for densely indexed entity references.
 ///
@@ -126,8 +126,7 @@ where
             // `(i + 1) * 8` = Last bit in byte.
             // `last - byte.leading_zeros()` = last set bit in byte.
             // `as usize` won't ever truncate as the potential range is `0..=8`.
-            .map(|(i, byte)| ((i + 1) * 8) - byte.leading_zeros() as usize)
-            .unwrap_or(0);
+            .map_or(0, |(i, byte)| ((i + 1) * 8) - byte.leading_zeros() as usize);
 
         Some(K::new(last_index))
     }
@@ -217,7 +216,7 @@ mod tests {
 
     #[test]
     fn pop_unordered() {
-        let mut ebbs = [
+        let mut blocks = [
             E(0),
             E(1),
             E(6),
@@ -232,14 +231,14 @@ mod tests {
         ];
 
         let mut m = EntitySet::new();
-        for &ebb in &ebbs {
-            m.insert(ebb);
+        for &block in &blocks {
+            m.insert(block);
         }
         assert_eq!(m.len, 13);
-        ebbs.sort();
+        blocks.sort();
 
-        for &ebb in ebbs.iter().rev() {
-            assert_eq!(ebb, m.pop().unwrap());
+        for &block in blocks.iter().rev() {
+            assert_eq!(block, m.pop().unwrap());
         }
 
         assert!(m.is_empty());

@@ -68,7 +68,7 @@ template <typename T>
 struct BaseGCType {
   using type =
       typename MapTraceKindToType<JS::MapTypeToTraceKind<T>::kind>::Type;
-  static_assert(mozilla::IsBaseOf<type, T>::value, "Failed to find base type");
+  static_assert(std::is_base_of<type, T>::value, "Failed to find base type");
 };
 
 // Our barrier templates are parameterized on the pointer types so that we can
@@ -95,6 +95,9 @@ template <typename T>
 bool TraceEdgeInternal(JSTracer* trc, T* thingp, const char* name);
 template <typename T>
 void TraceRangeInternal(JSTracer* trc, size_t len, T* vec, const char* name);
+template <typename T>
+bool TraceWeakMapKeyInternal(JSTracer* trc, Zone* zone, T* thingp,
+                             const char* name);
 
 #ifdef DEBUG
 void AssertRootMarkingPhase(JSTracer* trc);
@@ -113,13 +116,13 @@ inline void AssertRootMarkingPhase(JSTracer* trc) {}
 // alive) but instead arrange for the edge to be swept by calling
 // js::gc::IsAboutToBeFinalized or TraceWeakEdge during sweeping. For example,
 // see the treatment of the script_ edge in LazyScript::traceChildren and
-// js::gc::SweepLazyScripts.
+// GCRuntime::sweepLazyScripts.
 //
 // GC things that are weakly held in containers can use WeakMap or a container
 // wrapped in the WeakCache<> template to perform the appropriate sweeping.
 
 template <typename T>
-inline void TraceEdge(JSTracer* trc, WriteBarriered<T>* thingp,
+inline void TraceEdge(JSTracer* trc, const WriteBarriered<T>* thingp,
                       const char* name) {
   gc::TraceEdgeInternal(
       trc, gc::ConvertToBase(thingp->unsafeUnbarrieredForTracing()), name);
@@ -134,7 +137,7 @@ inline void TraceEdge(JSTracer* trc, WeakHeapPtr<T>* thingp, const char* name) {
 // tracing.
 
 template <typename T>
-inline void TraceNullableEdge(JSTracer* trc, WriteBarriered<T>* thingp,
+inline void TraceNullableEdge(JSTracer* trc, const WriteBarriered<T>* thingp,
                               const char* name) {
   if (InternalBarrierMethods<T>::isMarkable(thingp->get())) {
     TraceEdge(trc, thingp, name);
@@ -224,16 +227,34 @@ void TraceRootRange(JSTracer* trc, size_t len, T* vec, const char* name) {
   gc::TraceRangeInternal(trc, len, gc::ConvertToBase(vec), name);
 }
 
+// As below but with manual barriers.
+template <typename T>
+void TraceManuallyBarrieredCrossCompartmentEdge(JSTracer* trc, JSObject* src,
+                                                T* dst, const char* name);
+
 // Trace an edge that crosses compartment boundaries. If the compartment of the
 // destination thing is not being GC'd, then the edge will not be traced.
 template <typename T>
 void TraceCrossCompartmentEdge(JSTracer* trc, JSObject* src,
-                               WriteBarriered<T>* dst, const char* name);
+                               const WriteBarriered<T>* dst, const char* name) {
+  TraceManuallyBarrieredCrossCompartmentEdge(
+      trc, src, gc::ConvertToBase(dst->unsafeUnbarrieredForTracing()), name);
+}
 
-// As above but with manual barriers.
+// Trace a weak map key. For debugger weak maps these may be cross compartment,
+// but the compartment must always be within the current sweep group.
 template <typename T>
-void TraceManuallyBarrieredCrossCompartmentEdge(JSTracer* trc, JSObject* src,
-                                                T* dst, const char* name);
+void TraceWeakMapKeyEdgeInternal(JSTracer* trc, Zone* weakMapZone, T** thingp,
+                                 const char* name);
+
+template <typename T>
+inline void TraceWeakMapKeyEdge(JSTracer* trc, Zone* weakMapZone,
+                                const WriteBarriered<T>* thingp,
+                                const char* name) {
+  TraceWeakMapKeyEdgeInternal(
+      trc, weakMapZone,
+      gc::ConvertToBase(thingp->unsafeUnbarrieredForTracing()), name);
+}
 
 // Permanent atoms and well-known symbols are shared between runtimes and must
 // use a separate marking path so that we can filter them out of normal heap
@@ -250,6 +271,8 @@ void TraceGenericPointerRoot(JSTracer* trc, gc::Cell** thingp,
 // specific type.
 void TraceManuallyBarrieredGenericPointerEdge(JSTracer* trc, gc::Cell** thingp,
                                               const char* name);
+
+void TraceGCCellPtrRoot(JSTracer* trc, JS::GCCellPtr* thingp, const char* name);
 
 // Deprecated. Please use one of the strongly typed variants above.
 void TraceChildren(JSTracer* trc, void* thing, JS::TraceKind kind);

@@ -12,9 +12,7 @@
 #include "nsPresContext.h"
 #include "nsString.h"
 #include "nsNameSpaceManager.h"
-#include "nsIDOMXULMenuListElement.h"
 #include "nsStyleConsts.h"
-#include "nsIComponentManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsProgressFrame.h"
 #include "nsMeterFrame.h"
@@ -54,16 +52,6 @@ EventStates nsNativeTheme::GetContentState(nsIFrame* aFrame,
   EventStates flags;
   if (frameContent->IsElement()) {
     flags = frameContent->AsElement()->State();
-
-    // <input type=number> needs special handling since its nested native
-    // anonymous <input type=text> takes focus for it.
-    if (aAppearance == StyleAppearance::NumberInput &&
-        frameContent->IsHTMLElement(nsGkAtoms::input)) {
-      nsNumberControlFrame* numberControlFrame = do_QueryFrame(aFrame);
-      if (numberControlFrame && numberControlFrame->IsFocused()) {
-        flags |= NS_EVENT_STATE_FOCUS;
-      }
-    }
 
     nsNumberControlFrame* numberControlFrame =
         nsNumberControlFrame::GetNumberControlFrameForSpinButton(aFrame);
@@ -301,8 +289,7 @@ bool nsNativeTheme::IsWidgetStyled(nsPresContext* aPresContext,
           aAppearance == StyleAppearance::Textarea ||
           aAppearance == StyleAppearance::Listbox ||
           aAppearance == StyleAppearance::Menulist ||
-          (aAppearance == StyleAppearance::MenulistButton &&
-           StaticPrefs::layout_css_webkit_appearance_enabled())) &&
+          aAppearance == StyleAppearance::MenulistButton) &&
          aFrame->GetContent()->IsHTMLElement() &&
          aPresContext->HasAuthorSpecifiedRules(
              aFrame,
@@ -336,10 +323,10 @@ bool nsNativeTheme::IsFrameRTL(nsIFrame* aFrame) {
   if (!aFrame) {
     return false;
   }
-  WritingMode wm = aFrame->GetWritingMode();
-  return !(wm.IsVertical() ? wm.IsVerticalLR() : wm.IsBidiLTR());
+  return aFrame->GetWritingMode().IsPhysicalRTL();
 }
 
+/* static */
 bool nsNativeTheme::IsHTMLContent(nsIFrame* aFrame) {
   if (!aFrame) {
     return false;
@@ -652,6 +639,7 @@ static nsIFrame* GetBodyFrame(nsIFrame* aCanvasFrame) {
   return body->GetPrimaryFrame();
 }
 
+/* static */
 bool nsNativeTheme::IsDarkBackground(nsIFrame* aFrame) {
   nsIScrollableFrame* scrollFrame = nullptr;
   while (!scrollFrame && aFrame) {
@@ -701,6 +689,8 @@ bool nsNativeTheme::IsWidgetScrollbarPart(StyleAppearance aAppearance) {
     case StyleAppearance::ScrollbarbuttonRight:
     case StyleAppearance::ScrollbarthumbVertical:
     case StyleAppearance::ScrollbarthumbHorizontal:
+    case StyleAppearance::ScrollbartrackHorizontal:
+    case StyleAppearance::ScrollbartrackVertical:
     case StyleAppearance::Scrollcorner:
       return true;
     default:

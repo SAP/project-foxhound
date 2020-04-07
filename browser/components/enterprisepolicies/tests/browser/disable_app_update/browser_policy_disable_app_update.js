@@ -26,12 +26,12 @@ add_task(async function test_update_preferences_ui() {
     "about:preferences"
   );
 
-  await ContentTask.spawn(tab.linkedBrowser, null, async function() {
-    let updateRadioGroup = content.document.getElementById("updateRadioGroup");
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    let setting = content.document.getElementById("updateSettingsContainer");
     is(
-      updateRadioGroup.hidden,
+      setting.hidden,
       true,
-      "Update choices should be diabled when app update is locked by policy"
+      "Update choices should be disabled when app update is locked by policy"
     );
   });
 
@@ -72,7 +72,7 @@ function waitForAboutDialog() {
 
         async function aboutDialogOnLoad() {
           domwindow.removeEventListener("load", aboutDialogOnLoad, true);
-          let chromeURI = "chrome://browser/content/aboutDialog.xul";
+          let chromeURI = "chrome://browser/content/aboutDialog.xhtml";
           is(
             domwindow.document.location.href,
             chromeURI,

@@ -36,6 +36,7 @@ typedef unsigned long long GLuint64EXT;
 // section of the specification.
 enum WebGLPowerPreference { "default", "low-power", "high-performance" };
 
+[GenerateInit]
 dictionary WebGLContextAttributes {
     // We deviate from the spec for alpha and antialias:
     // * alpha: Historically, we might use rgb565 instead of rgb(x)8, for
@@ -719,33 +720,33 @@ interface mixin WebGLRenderingContextBase {
 interface WebGLRenderingContext {
     // bufferData has WebGL2 overloads.
     void bufferData(GLenum target, GLsizeiptr size, GLenum usage);
-    void bufferData(GLenum target, ArrayBuffer? data, GLenum usage);
-    void bufferData(GLenum target, ArrayBufferView data, GLenum usage);
+    void bufferData(GLenum target, [AllowShared] ArrayBuffer? data, GLenum usage);
+    void bufferData(GLenum target, [AllowShared] ArrayBufferView data, GLenum usage);
     // bufferSubData has WebGL2 overloads.
-    void bufferSubData(GLenum target, GLintptr offset, ArrayBuffer data);
-    void bufferSubData(GLenum target, GLintptr offset, ArrayBufferView data);
+    void bufferSubData(GLenum target, GLintptr offset, [AllowShared] ArrayBuffer data);
+    void bufferSubData(GLenum target, GLintptr offset, [AllowShared] ArrayBufferView data);
 
     // compressedTexImage2D has WebGL2 overloads.
     void compressedTexImage2D(GLenum target, GLint level, GLenum internalformat,
                               GLsizei width, GLsizei height, GLint border,
-                              ArrayBufferView data);
+                              [AllowShared] ArrayBufferView data);
     // compressedTexSubImage2D has WebGL2 overloads.
     void compressedTexSubImage2D(GLenum target, GLint level,
                                  GLint xoffset, GLint yoffset,
                                  GLsizei width, GLsizei height, GLenum format,
-                                 ArrayBufferView data);
+                                 [AllowShared] ArrayBufferView data);
 
     // readPixels has WebGL2 overloads.
     [Throws, NeedsCallerType]
     void readPixels(GLint x, GLint y, GLsizei width, GLsizei height,
-                    GLenum format, GLenum type, ArrayBufferView? pixels);
+                    GLenum format, GLenum type, [AllowShared] ArrayBufferView? pixels);
 
     // texImage2D has WebGL2 overloads.
     // Overloads must share [Throws].
     [Throws] // Can't actually throw.
     void texImage2D(GLenum target, GLint level, GLint internalformat,
                     GLsizei width, GLsizei height, GLint border, GLenum format,
-                    GLenum type, ArrayBufferView? pixels);
+                    GLenum type, [AllowShared] ArrayBufferView? pixels);
     [Throws] // Can't actually throw.
     void texImage2D(GLenum target, GLint level, GLint internalformat,
                     GLenum format, GLenum type, ImageBitmap pixels);
@@ -766,7 +767,7 @@ interface WebGLRenderingContext {
     [Throws] // Can't actually throw.
     void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
                        GLsizei width, GLsizei height,
-                       GLenum format, GLenum type, ArrayBufferView? pixels);
+                       GLenum format, GLenum type, [AllowShared] ArrayBufferView? pixels);
     [Throws] // Can't actually throw.
     void texSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
                        GLenum format, GLenum type, ImageBitmap pixels);
@@ -1166,4 +1167,16 @@ interface OES_fbo_render_mipmap {
  Exposed=Window]
 interface WEBGL_explicit_present {
     void present();
+};
+
+// https://immersive-web.github.io/webxr/#dom-webglcontextattributes-xrcompatible
+partial dictionary WebGLContextAttributes {
+    [Pref="dom.vr.webxr.enabled"]
+    boolean xrCompatible = false;
+};
+
+// https://immersive-web.github.io/webxr/#dom-webglrenderingcontextbase-makexrcompatible
+partial interface mixin WebGLRenderingContextBase {
+    [NewObject, Pref="dom.vr.webxr.enabled"]
+    Promise<void> makeXRCompatible();
 };

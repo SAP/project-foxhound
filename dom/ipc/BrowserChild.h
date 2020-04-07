@@ -12,7 +12,7 @@
 #include "nsIWebNavigation.h"
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
-#include "nsIWebBrowserChrome2.h"
+#include "nsIWebBrowserChrome.h"
 #include "nsIEmbeddingSiteWindow.h"
 #include "nsIWebBrowserChromeFocus.h"
 #include "nsIDOMEventListener.h"
@@ -42,7 +42,6 @@
 #include "PuppetWidget.h"
 #include "mozilla/layers/GeckoContentController.h"
 #include "nsDeque.h"
-#include "nsISHistoryListener.h"
 
 class nsBrowserStatusFilter;
 class nsIDOMWindow;
@@ -137,7 +136,7 @@ class ContentListener final : public nsIDOMEventListener {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMEVENTLISTENER
  protected:
-  ~ContentListener() {}
+  ~ContentListener() = default;
   BrowserChild* mBrowserChild;
 };
 
@@ -148,7 +147,7 @@ class ContentListener final : public nsIDOMEventListener {
 class BrowserChild final : public nsMessageManagerScriptExecutor,
                            public ipc::MessageManagerCallback,
                            public PBrowserChild,
-                           public nsIWebBrowserChrome2,
+                           public nsIWebBrowserChrome,
                            public nsIEmbeddingSiteWindow,
                            public nsIWebBrowserChromeFocus,
                            public nsIInterfaceRequestor,
@@ -208,7 +207,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSIWEBBROWSERCHROME
-  NS_DECL_NSIWEBBROWSERCHROME2
   NS_DECL_NSIEMBEDDINGSITEWINDOW
   NS_DECL_NSIWEBBROWSERCHROMEFOCUS
   NS_DECL_NSIINTERFACEREQUESTOR
@@ -261,16 +259,13 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                                const Maybe<ZoomConstraints>& aConstraints);
 
   mozilla::ipc::IPCResult RecvLoadURL(const nsCString& aURI,
-                                      const ShowInfo& aInfo);
+                                      const ParentShowInfo&);
 
   mozilla::ipc::IPCResult RecvResumeLoad(const uint64_t& aPendingSwitchID,
-                                         const ShowInfo& aInfo);
+                                         const ParentShowInfo&);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  mozilla::ipc::IPCResult RecvShow(const ScreenIntSize& aSize,
-                                   const ShowInfo& aInfo,
-                                   const bool& aParentIsActive,
-                                   const nsSizeMode& aSizeMode);
+  mozilla::ipc::IPCResult RecvShow(const ParentShowInfo&, const OwnerShowInfo&);
 
   mozilla::ipc::IPCResult RecvInitRendering(
       const TextureFactoryIdentifier& aTextureFactoryIdentifier,
@@ -278,13 +273,23 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
       const mozilla::layers::CompositorOptions& aCompositorOptions,
       const bool& aLayersConnected);
 
+  mozilla::ipc::IPCResult RecvCompositorOptionsChanged(
+      const mozilla::layers::CompositorOptions& aNewOptions);
+
   mozilla::ipc::IPCResult RecvUpdateDimensions(
       const mozilla::dom::DimensionInfo& aDimensionInfo);
   mozilla::ipc::IPCResult RecvSizeModeChanged(const nsSizeMode& aSizeMode);
 
   mozilla::ipc::IPCResult RecvChildToParentMatrix(
       const mozilla::Maybe<mozilla::gfx::Matrix4x4>& aMatrix,
-      const mozilla::ScreenRect& aRemoteDocumentRect);
+      const mozilla::ScreenRect& aTopLevelViewportVisibleRectInBrowserCoords);
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvDynamicToolbarMaxHeightChanged(
+      const mozilla::ScreenIntCoord& aHeight);
+
+  mozilla::ipc::IPCResult RecvDynamicToolbarOffsetChanged(
+      const mozilla::ScreenIntCoord& aOffset);
 
   mozilla::ipc::IPCResult RecvActivate();
 
@@ -401,12 +406,16 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvSwappedWithOtherRemoteLoader(
       const IPCTabContext& aContext);
 
+  mozilla::ipc::IPCResult RecvSafeAreaInsetsChanged(
+      const mozilla::ScreenIntMargin& aSafeAreaInsets);
+
+#ifdef ACCESSIBILITY
   PDocAccessibleChild* AllocPDocAccessibleChild(PDocAccessibleChild*,
                                                 const uint64_t&,
                                                 const uint32_t&,
                                                 const IAccessibleHolder&);
-
   bool DeallocPDocAccessibleChild(PDocAccessibleChild*);
+#endif
 
   PColorPickerChild* AllocPColorPickerChild(const nsString& aTitle,
                                             const nsString& aInitialColor);
@@ -519,8 +528,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvUpdateNativeWindowHandle(
       const uintptr_t& aNewHandle);
 
-  mozilla::ipc::IPCResult RecvSkipBrowsingContextDetach(
-      SkipBrowsingContextDetachResolver&& aResolve);
+  mozilla::ipc::IPCResult RecvWillChangeProcess(
+      WillChangeProcessResolver&& aResolve);
   /**
    * Native widget remoting protocol for use with windowed plugins with e10s.
    */
@@ -538,6 +547,9 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   LayoutDeviceIntPoint GetClientOffset() const { return mClientOffset; }
   LayoutDeviceIntPoint GetChromeOffset() const { return mChromeOffset; };
+  ScreenIntCoord GetDynamicToolbarMaxHeight() const {
+    return mDynamicToolbarMaxHeight;
+  };
 
   bool IPCOpen() const { return mIPCOpen; }
 
@@ -552,7 +564,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   Maybe<LayoutDeviceIntRect> GetVisibleRect() const;
 
   // Call RecvShow(nsIntSize(0, 0)) and block future calls to RecvShow().
-  void DoFakeShow(const ShowInfo& aShowInfo);
+  void DoFakeShow(const ParentShowInfo&);
 
   void ContentReceivedInputBlock(uint64_t aInputBlockId,
                                  bool aPreventDefault) const;
@@ -627,7 +639,14 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::LayoutDeviceToLayoutDeviceMatrix4x4
   GetChildToParentConversionMatrix() const;
 
-  mozilla::ScreenRect GetRemoteDocumentRect() const;
+  // Returns the portion of the visible rect of this remote document in the
+  // top browser window coordinate system.  This is the result of being clipped
+  // by all ancestor viewports.
+  mozilla::ScreenRect GetTopLevelViewportVisibleRectInBrowserCoords() const;
+
+  // Similar to above GetTopLevelViewportVisibleRectInBrowserCoords(), but in
+  // this out-of-process document's coordinate system.
+  Maybe<LayoutDeviceRect> GetTopLevelViewportVisibleRectInSelfCoords() const;
 
   // Prepare to dispatch all coalesced mousemove events. We'll move all data
   // in mCoalescedMouseData to a nsDeque; then we start processing them. We
@@ -673,6 +692,15 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   DoesWindowSupportProtectedMedia();
 #endif
 
+  // Notify the content blocking event in the parent process. This sends an IPC
+  // message to the BrowserParent in the parent. The BrowserParent will find the
+  // top-level WindowGlobalParent and notify the event from it.
+  void NotifyContentBlockingEvent(
+      uint32_t aEvent, nsIChannel* aChannel, bool aBlocked,
+      const nsACString& aTrackingOrigin,
+      const nsTArray<nsCString>& aTrackingFullHashes,
+      const Maybe<AntiTrackingCommon::StorageAccessGrantedReason>& aReason);
+
  protected:
   virtual ~BrowserChild();
 
@@ -693,14 +721,14 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   mozilla::ipc::IPCResult RecvParentActivated(const bool& aActivated);
 
+  mozilla::ipc::IPCResult RecvScrollbarPreferenceChanged(ScrollbarPreference);
+
   mozilla::ipc::IPCResult RecvSetKeyboardIndicators(
       const UIStateChangeType& aShowFocusRings);
 
   mozilla::ipc::IPCResult RecvStopIMEStateManagement();
 
   mozilla::ipc::IPCResult RecvAwaitLargeAlloc();
-
-  mozilla::ipc::IPCResult RecvSetWindowName(const nsString& aName);
 
   mozilla::ipc::IPCResult RecvAllowScriptsToClose();
 
@@ -709,9 +737,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   mozilla::ipc::IPCResult RecvSetWidgetNativeData(
       const WindowsHandle& aWidgetNativeData);
-
-  mozilla::ipc::IPCResult RecvGetContentBlockingLog(
-      GetContentBlockingLogResolver&& aResolve);
 
  private:
   // Wraps up a JSON object as a structured clone and sends it to the browser
@@ -752,7 +777,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   void DestroyWindow();
 
-  void ApplyShowInfo(const ShowInfo& aInfo);
+  void ApplyParentShowInfo(const ParentShowInfo&);
 
   bool HasValidInnerSize();
 
@@ -829,6 +854,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   LayoutDeviceIntPoint mClientOffset;
   // Position of tab, relative to parent widget (typically the window)
   LayoutDeviceIntPoint mChromeOffset;
+  ScreenIntCoord mDynamicToolbarMaxHeight;
   TabId mUniqueId;
 
   // Whether or not this browser is the child part of the top level PBrowser
@@ -917,7 +943,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   WindowsHandle mWidgetNativeData;
 
   Maybe<LayoutDeviceToLayoutDeviceMatrix4x4> mChildToParentConversionMatrix;
-  ScreenRect mRemoteDocumentRect;
+  ScreenRect mTopLevelViewportVisibleRectInBrowserCoords;
 
 #ifdef XP_WIN
   // Should only be accessed on main thread.

@@ -23,6 +23,9 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 // ${InstallDir}/distribution folder.
 const POLICIES_FILENAME = "policies.json";
 
+// When true browser policy is loaded per-user from
+// /run/user/$UID/appname
+const PREF_PER_USER_DIR = "toolkit.policies.perUserDir";
 // For easy testing, modify the helpers/sample.json file,
 // and set PREF_ALTERNATE_PATH in firefox.js as:
 // /your/repo/browser/components/enterprisepolicies/helpers/sample.json
@@ -54,6 +57,20 @@ let env = Cc["@mozilla.org/process/environment;1"].getService(
   Ci.nsIEnvironment
 );
 const isXpcshell = env.exists("XPCSHELL_TEST_PROFILE_DIR");
+
+// We're only testing for empty objects, not
+// empty strings or empty arrays.
+function isEmptyObject(obj) {
+  if (typeof obj != "object" || Array.isArray(obj)) {
+    return false;
+  }
+  for (let key of Object.keys(obj)) {
+    if (!isEmptyObject(obj[key])) {
+      return false;
+    }
+  }
+  return true;
+}
 
 function EnterprisePoliciesManager() {
   Services.obs.addObserver(this, "profile-after-change", true);
@@ -88,6 +105,10 @@ EnterprisePoliciesManager.prototype = {
 
     this.status = Ci.nsIEnterprisePolicies.ACTIVE;
     this._parsedPolicies = {};
+    Services.telemetry.scalarSet(
+      "policies.count",
+      Object.keys(provider.policies).length
+    );
     this._activatePolicies(provider.policies);
   },
 
@@ -440,7 +461,7 @@ class JSONPoliciesProvider {
   get hasPolicies() {
     return (
       this._failed ||
-      (this._policies !== null && Object.keys(this._policies).length)
+      (this._policies !== null && !isEmptyObject(this._policies))
     );
   }
 
@@ -455,7 +476,12 @@ class JSONPoliciesProvider {
   _getConfigurationFile() {
     let configFile = null;
     try {
-      configFile = Services.dirsvc.get("XREAppDist", Ci.nsIFile);
+      let perUserPath = Services.prefs.getBoolPref(PREF_PER_USER_DIR, false);
+      if (perUserPath) {
+        configFile = Services.dirsvc.get("XREUserRunTimeDir", Ci.nsIFile);
+      } else {
+        configFile = Services.dirsvc.get("XREAppDist", Ci.nsIFile);
+      }
       configFile.append(POLICIES_FILENAME);
     } catch (ex) {
       // Getting the correct directory will fail in xpcshell tests. This should
@@ -546,7 +572,7 @@ class WindowsGPOPoliciesProvider {
   }
 
   get hasPolicies() {
-    return this._policies !== null && Object.keys(this._policies).length;
+    return this._policies !== null && !isEmptyObject(this._policies);
   }
 
   get policies() {

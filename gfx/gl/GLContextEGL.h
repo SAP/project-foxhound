@@ -9,6 +9,7 @@
 
 #include "GLContext.h"
 #include "GLLibraryEGL.h"
+#include "nsRegion.h"
 
 class gfxASurface;
 namespace mozilla {
@@ -70,6 +71,8 @@ class GLContextEGL : public GLContext {
 
   virtual bool SwapBuffers() override;
 
+  virtual void SetDamage(const nsIntRegion& aDamageRegion) override;
+
   virtual void GetWSIInfo(nsCString* const out) const override;
 
   // hold a reference to the given surface
@@ -116,6 +119,8 @@ class GLContextEGL : public GLContext {
   bool mCanBindToTexture = false;
   bool mShareWithEGLImage = false;
   bool mOwnsContext = true;
+
+  nsIntRegion mDamageRegion;
 
   static EGLSurface CreatePBufferSurfaceTryingPowerOfTwo(
       GLLibraryEGL*, EGLConfig config, EGLenum bindToTextureFormat,

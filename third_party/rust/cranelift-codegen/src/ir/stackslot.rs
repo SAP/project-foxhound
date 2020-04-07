@@ -6,12 +6,12 @@
 use crate::entity::{Iter, IterMut, Keys, PrimaryMap};
 use crate::ir::{StackSlot, Type};
 use crate::packed_option::PackedOption;
+use alloc::vec::Vec;
 use core::cmp;
 use core::fmt;
 use core::ops::{Index, IndexMut};
 use core::slice;
 use core::str::FromStr;
-use std::vec::Vec;
 
 #[cfg(feature = "enable-serde")]
 use serde::{Deserialize, Serialize};
@@ -64,6 +64,15 @@ pub enum StackSlotKind {
     /// stack slots are only valid while setting up a call.
     OutgoingArg,
 
+    /// Space allocated in the caller's frame for the callee's return values
+    /// that are passed out via return pointer.
+    ///
+    /// If there are more return values than registers available for the callee's calling
+    /// convention, or the return value is larger than the available registers' space, then we
+    /// allocate stack space in this frame and pass a pointer to the callee, which then writes its
+    /// return values into this space.
+    StructReturnSlot,
+
     /// An emergency spill slot.
     ///
     /// Emergency slots are allocated late when the register's constraint solver needs extra space
@@ -81,6 +90,7 @@ impl FromStr for StackSlotKind {
             "spill_slot" => Ok(SpillSlot),
             "incoming_arg" => Ok(IncomingArg),
             "outgoing_arg" => Ok(OutgoingArg),
+            "sret_slot" => Ok(StructReturnSlot),
             "emergency_slot" => Ok(EmergencySlot),
             _ => Err(()),
         }
@@ -95,6 +105,7 @@ impl fmt::Display for StackSlotKind {
             SpillSlot => "spill_slot",
             IncomingArg => "incoming_arg",
             OutgoingArg => "outgoing_arg",
+            StructReturnSlot => "sret_slot",
             EmergencySlot => "emergency_slot",
         })
     }
@@ -151,6 +162,23 @@ impl fmt::Display for StackSlotData {
     }
 }
 
+/// Stack frame layout information.
+///
+/// This is computed by the `layout_stack()` method.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub struct StackLayoutInfo {
+    /// The total size of the stack frame.
+    ///
+    /// This is the distance from the stack pointer in the current function to the stack pointer in
+    /// the calling function, so it includes a pushed return address as well as space for outgoing
+    /// call arguments.
+    pub frame_size: StackSize,
+
+    /// The total size of the stack frame for inbound arguments pushed by the caller.
+    pub inbound_args_size: StackSize,
+}
+
 /// Stack frame manager.
 ///
 /// Keep track of all the stack slots used by a function.
@@ -166,14 +194,8 @@ pub struct StackSlots {
     /// All the emergency slots.
     emergency: Vec<StackSlot>,
 
-    /// The total size of the stack frame.
-    ///
-    /// This is the distance from the stack pointer in the current function to the stack pointer in
-    /// the calling function, so it includes a pushed return address as well as space for outgoing
-    /// call arguments.
-    ///
-    /// This is computed by the `layout()` method.
-    pub frame_size: Option<StackSize>,
+    /// Layout information computed from `layout_stack`.
+    pub layout_info: Option<StackLayoutInfo>,
 }
 
 /// Stack slot manager functions that behave mostly like an entity map.
@@ -184,7 +206,7 @@ impl StackSlots {
             slots: PrimaryMap::new(),
             outgoing: Vec::new(),
             emergency: Vec::new(),
-            frame_size: None,
+            layout_info: None,
         }
     }
 
@@ -193,7 +215,7 @@ impl StackSlots {
         self.slots.clear();
         self.outgoing.clear();
         self.emergency.clear();
-        self.frame_size = None;
+        self.layout_info = None;
     }
 
     /// Allocate a new stack slot.
@@ -343,7 +365,7 @@ mod tests {
     use super::*;
     use crate::ir::types;
     use crate::ir::Function;
-    use std::string::ToString;
+    use alloc::string::ToString;
 
     #[test]
     fn stack_slot() {

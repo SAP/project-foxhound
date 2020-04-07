@@ -8,16 +8,19 @@
 #define mozilla_dom_BrowsingContextGroup_h
 
 #include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/ContentParent.h"
 #include "nsHashKeys.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
 #include "nsWrapperCache.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla {
+class ThrottledEventQueue;
+
 namespace dom {
 
 class BrowsingContext;
+class ContentParent;
 
 // A BrowsingContextGroup represents the Unit of Related Browsing Contexts in
 // the standard. This object currently serves roughly the same purpose as the
@@ -108,6 +111,12 @@ class BrowsingContextGroup final : public nsWrapperCache {
     }
   }
 
+  nsresult QueuePostMessageEvent(already_AddRefed<nsIRunnable>&& aRunnable);
+
+  void FlushPostMessageEvents();
+
+  static BrowsingContextGroup* GetChromeGroup();
+
  private:
   friend class CanonicalBrowsingContext;
 
@@ -127,6 +136,10 @@ class BrowsingContextGroup final : public nsWrapperCache {
 
   // Map of cached contexts that need to stay alive due to bfcache.
   nsTHashtable<nsRefPtrHashKey<BrowsingContext>> mCachedContexts;
+
+  // A queue to store postMessage events during page load, the queue will be
+  // flushed once the page is loaded
+  RefPtr<mozilla::ThrottledEventQueue> mPostMessageEventQueue;
 };
 
 }  // namespace dom

@@ -16,7 +16,6 @@
 #include <utility>      // std::move
 
 #include "jsapi.h"
-#include "jsutil.h"
 
 #include "debugger/DebugAPI.h"
 #include "js/BuildId.h"  // JS::BuildIdCharVector
@@ -65,7 +64,7 @@ XDRResult XDRState<mode>::codeChars(Utf8Unit* units, size_t count) {
   }
 
   if (mode == XDR_ENCODE) {
-    uint8_t* ptr = buf.write(count);
+    uint8_t* ptr = buf->write(count);
     if (!ptr) {
       return fail(JS::TranscodeResult_Throw);
     }
@@ -73,7 +72,7 @@ XDRResult XDRState<mode>::codeChars(Utf8Unit* units, size_t count) {
     std::transform(units, units + count, ptr,
                    [](const Utf8Unit& unit) { return unit.toUint8(); });
   } else {
-    const uint8_t* ptr = buf.read(count);
+    const uint8_t* ptr = buf->read(count);
     if (!ptr) {
       return fail(JS::TranscodeResult_Failure_BadDecode);
     }
@@ -93,7 +92,7 @@ XDRResult XDRState<mode>::codeChars(char16_t* chars, size_t nchars) {
 
   size_t nbytes = nchars * sizeof(char16_t);
   if (mode == XDR_ENCODE) {
-    uint8_t* ptr = buf.write(nbytes);
+    uint8_t* ptr = buf->write(nbytes);
     if (!ptr) {
       return fail(JS::TranscodeResult_Throw);
     }
@@ -101,7 +100,7 @@ XDRResult XDRState<mode>::codeChars(char16_t* chars, size_t nchars) {
     // |mozilla::NativeEndian| correctly handles writing into unaligned |ptr|.
     mozilla::NativeEndian::copyAndSwapToLittleEndian(ptr, chars, nchars);
   } else {
-    const uint8_t* ptr = buf.read(nbytes);
+    const uint8_t* ptr = buf->read(nbytes);
     if (!ptr) {
       return fail(JS::TranscodeResult_Failure_BadDecode);
     }
@@ -171,6 +170,7 @@ XDRResult XDRState<mode>::codeCharsZ(XDRTranscodeString<char16_t>& buffer) {
 template <XDRMode mode>
 static XDRResult VersionCheck(XDRState<mode>* xdr) {
   JS::BuildIdCharVector buildId;
+  uint8_t profileSize = 0;
   MOZ_ASSERT(GetBuildId);
   if (!GetBuildId(&buildId)) {
     ReportOutOfMemory(xdr->cx());
@@ -181,9 +181,11 @@ static XDRResult VersionCheck(XDRState<mode>* xdr) {
   uint32_t buildIdLength;
   if (mode == XDR_ENCODE) {
     buildIdLength = buildId.length();
+    profileSize = sizeof(uintptr_t);
   }
 
   MOZ_TRY(xdr->codeUint32(&buildIdLength));
+  MOZ_TRY(xdr->codeUint8(&profileSize));
 
   if (mode == XDR_DECODE && buildIdLength != buildId.length()) {
     return xdr->fail(JS::TranscodeResult_Failure_BadBuildId);
@@ -193,6 +195,12 @@ static XDRResult VersionCheck(XDRState<mode>* xdr) {
     MOZ_TRY(xdr->codeBytes(buildId.begin(), buildIdLength));
   } else {
     JS::BuildIdCharVector decodedBuildId;
+
+    // Checks to make sure we are not decoding profiles of a
+    // different size than what was encoded.
+    if (profileSize != sizeof(uintptr_t)) {
+      return xdr->fail(JS::TranscodeResult_Failure_BadDecode);
+    }
 
     // buildIdLength is already checked against the length of current
     // buildId.
@@ -207,6 +215,60 @@ static XDRResult VersionCheck(XDRState<mode>* xdr) {
     if (!ArrayEqual(decodedBuildId.begin(), buildId.begin(), buildIdLength)) {
       return xdr->fail(JS::TranscodeResult_Failure_BadBuildId);
     }
+  }
+
+  return Ok();
+}
+
+template <XDRMode mode>
+XDRResult XDRState<mode>::codeModuleObject(MutableHandleModuleObject modp) {
+#ifdef DEBUG
+  auto sanityCheck = mozilla::MakeScopeExit(
+      [&] { MOZ_ASSERT(validateResultCode(cx(), resultCode())); });
+#endif
+  if (mode == XDR_DECODE) {
+    modp.set(nullptr);
+  } else {
+    MOZ_ASSERT(modp->status() < MODULE_STATUS_INSTANTIATING);
+  }
+
+  MOZ_TRY(XDRModuleObject(this, modp));
+  return Ok();
+}
+
+template <XDRMode mode>
+static XDRResult XDRAtomCount(XDRState<mode>* xdr, uint32_t* atomCount) {
+  return xdr->codeUint32(atomCount);
+}
+
+template <XDRMode mode>
+static XDRResult AtomTable(XDRState<mode>* xdr) {
+  uint8_t atomHeader = false;
+  if (mode == XDR_ENCODE) {
+    if (xdr->hasAtomMap()) {
+      atomHeader = true;
+    }
+  }
+
+  MOZ_TRY(xdr->codeUint8(&atomHeader));
+
+  // If we are incrementally encoding, the atom table will be built up over the
+  // course of the encoding. In XDRIncrementalEncoder::linearize, we will write
+  // the number of atoms into the header, then append the completed atom table.
+  // If we are decoding, then we read the length and decode the atom table now.
+  if (atomHeader && mode == XDR_DECODE) {
+    uint32_t atomCount;
+    MOZ_TRY(XDRAtomCount(xdr, &atomCount));
+    MOZ_ASSERT(!xdr->hasAtomTable());
+
+    for (uint32_t i = 0; i < atomCount; i++) {
+      RootedAtom atom(xdr->cx());
+      MOZ_TRY(XDRAtom(xdr, &atom));
+      if (!xdr->atomTable().append(atom)) {
+        return xdr->fail(JS::TranscodeResult_Throw);
+      }
+    }
+    xdr->finishAtomTable();
   }
 
   return Ok();
@@ -231,10 +293,10 @@ XDRResult XDRState<mode>::codeFunction(MutableHandleFunction funp,
     funp.set(nullptr);
   } else if (getTreeKey(funp) != AutoXDRTree::noKey) {
     MOZ_ASSERT(sourceObject);
-    scope = funp->nonLazyScript()->enclosingScope();
+    scope = funp->enclosingScope();
   } else {
     MOZ_ASSERT(!sourceObject);
-    MOZ_ASSERT(funp->nonLazyScript()->enclosingScope()->is<GlobalScope>());
+    MOZ_ASSERT(funp->enclosingScope()->is<GlobalScope>());
   }
 
   MOZ_TRY(VersionCheck(this));
@@ -265,7 +327,17 @@ XDRResult XDRState<mode>::codeScript(MutableHandleScript scriptp) {
     MOZ_ASSERT(!scriptp->enclosingScope());
   }
 
+  // Only write to separate header buffer if we are incrementally encoding.
+  bool useHeader = this->hasAtomMap();
+  if (useHeader) {
+    switchToHeaderBuf();
+  }
   MOZ_TRY(VersionCheck(this));
+  MOZ_TRY(AtomTable(this));
+  if (useHeader) {
+    switchToMainBuf();
+  }
+  MOZ_ASSERT(isMainBuf());
   MOZ_TRY(XDRScript(this, nullptr, nullptr, nullptr, scriptp));
 
   guard.release();
@@ -354,21 +426,12 @@ AutoXDRTree::Key XDRIncrementalEncoder::getTopLevelTreeKey() const {
 }
 
 AutoXDRTree::Key XDRIncrementalEncoder::getTreeKey(JSFunction* fun) const {
-  if (fun->isInterpretedLazy()) {
-    static_assert(
-        sizeof(fun->lazyScript()->sourceStart()) == 4 ||
-            sizeof(fun->lazyScript()->sourceEnd()) == 4,
-        "AutoXDRTree key requires LazyScripts positions to be uint32");
-    return uint64_t(fun->lazyScript()->sourceStart()) << 32 |
-           fun->lazyScript()->sourceEnd();
-  }
-
-  if (fun->isInterpreted()) {
-    static_assert(sizeof(fun->nonLazyScript()->sourceStart()) == 4 ||
-                      sizeof(fun->nonLazyScript()->sourceEnd()) == 4,
-                  "AutoXDRTree key requires JSScripts positions to be uint32");
-    return uint64_t(fun->nonLazyScript()->sourceStart()) << 32 |
-           fun->nonLazyScript()->sourceEnd();
+  if (fun->hasBaseScript()) {
+    static_assert(sizeof(fun->baseScript()->sourceStart()) == 4 &&
+                      sizeof(fun->baseScript()->sourceEnd()) == 4,
+                  "AutoXDRTree key requires BaseScript positions to be uint32");
+    return uint64_t(fun->baseScript()->sourceStart()) << 32 |
+           fun->baseScript()->sourceEnd();
   }
 
   return AutoXDRTree::noKey;
@@ -382,7 +445,7 @@ void XDRIncrementalEncoder::createOrReplaceSubTree(AutoXDRTree* child) {
     return;
   }
 
-  size_t cursor = buf.cursor();
+  size_t cursor = buf->cursor();
 
   // End the parent slice here, set the key to the child.
   if (parent) {
@@ -424,7 +487,7 @@ void XDRIncrementalEncoder::endSubTree() {
     return;
   }
 
-  size_t cursor = buf.cursor();
+  size_t cursor = buf->cursor();
 
   // End the child sub-tree.
   Slice& last = node_->back();
@@ -457,12 +520,17 @@ XDRResult XDRIncrementalEncoder::linearize(JS::TranscodeBuffer& buffer) {
   // Do not linearize while we are currently adding bytes.
   MOZ_ASSERT(scope_ == nullptr);
 
+  // Write the size of the atom buffer to the header.
+  switchToHeaderBuf();
+  MOZ_TRY(XDRAtomCount(this, &natoms_));
+  switchToMainBuf();
+
   // Visit the tree parts in a depth first order to linearize the bits.
   // Calculate the total length first so we don't incur repeated copying
   // and zeroing of memory for large trees.
   DepthFirstSliceIterator dfs(cx(), tree_);
 
-  size_t totalLength = buffer.length();
+  size_t totalLength = buffer.length() + header_.length() + atoms_.length();
   auto sliceCounter = [&](const Slice& slice) -> bool {
     totalLength += slice.sliceLength;
     return true;
@@ -477,6 +545,9 @@ XDRResult XDRIncrementalEncoder::linearize(JS::TranscodeBuffer& buffer) {
     ReportOutOfMemory(cx());
     return fail(JS::TranscodeResult_Throw);
   }
+
+  buffer.infallibleAppend(header_.begin(), header_.length());
+  buffer.infallibleAppend(atoms_.begin(), atoms_.length());
 
   auto sliceCopier = [&](const Slice& slice) -> bool {
     // Copy the bytes associated with the current slice to the transcode
@@ -498,3 +569,7 @@ XDRResult XDRIncrementalEncoder::linearize(JS::TranscodeBuffer& buffer) {
   slices_.clearAndFree();
   return Ok();
 }
+
+void XDRDecoder::trace(JSTracer* trc) { atomTable_.trace(trc); }
+
+void XDRIncrementalEncoder::trace(JSTracer* trc) { atomMap_.trace(trc); }

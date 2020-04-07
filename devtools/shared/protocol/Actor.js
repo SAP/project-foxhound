@@ -5,7 +5,7 @@
 "use strict";
 
 const { extend } = require("devtools/shared/extend");
-var { Pool } = require("./Pool");
+var { Pool } = require("devtools/shared/protocol/Pool");
 
 /**
  * Keep track of which actorSpecs have been created. If a replica of a spec
@@ -20,7 +20,7 @@ exports.actorSpecs = actorSpecs;
  * An actor in the actor tree.
  *
  * @param optional conn
- *   Either a DebuggerServerConnection or a DebuggerClient.  Must have
+ *   Either a DevToolsServerConnection or a DevToolsClient.  Must have
  *   addActorPool, removeActorPool, and poolFor.
  *   conn can be null if the subclass provides a conn property.
  * @constructor

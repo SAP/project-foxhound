@@ -21,21 +21,15 @@
 #  include <unistd.h>
 #endif /* !defined(XP_WIN) */
 
-#include "jsutil.h"
-
 #include "js/Date.h"
 #include "threading/ExclusiveData.h"
 
-#if ENABLE_INTL_API && !MOZ_SYSTEM_ICU
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
 #  include "unicode/basictz.h"
 #  include "unicode/locid.h"
-#endif /* ENABLE_INTL_API && !MOZ_SYSTEM_ICU */
-
-#if ENABLE_INTL_API && (!MOZ_SYSTEM_ICU || defined(ICU_TZ_HAS_RECREATE_DEFAULT))
 #  include "unicode/timezone.h"
 #  include "unicode/unistr.h"
-#endif /* ENABLE_INTL_API && (!MOZ_SYSTEM_ICU || \
-          defined(ICU_TZ_HAS_RECREATE_DEFAULT)) */
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
 
 #include "util/Text.h"
 #include "vm/MutexIDs.h"
@@ -195,7 +189,7 @@ void js::DateTimeInfo::updateTimeZone() {
 
   dstRange_.reset();
 
-#if ENABLE_INTL_API && !MOZ_SYSTEM_ICU
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
   utcRange_.reset();
   localRange_.reset();
 
@@ -209,7 +203,7 @@ void js::DateTimeInfo::updateTimeZone() {
 
   standardName_ = nullptr;
   daylightSavingsName_ = nullptr;
-#endif /* ENABLE_INTL_API && !MOZ_SYSTEM_ICU */
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
 
   // Propagate the time zone change to ICU, too.
   {
@@ -245,7 +239,7 @@ int32_t js::DateTimeInfo::computeDSTOffsetMilliseconds(int64_t utcSeconds) {
   MOZ_ASSERT(utcSeconds >= MinTimeT);
   MOZ_ASSERT(utcSeconds <= MaxTimeT);
 
-#if ENABLE_INTL_API && !MOZ_SYSTEM_ICU
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
   UDate date = UDate(utcSeconds * msPerSecond);
   constexpr bool dateIsLocalTime = false;
   int32_t rawOffset, dstOffset;
@@ -279,7 +273,7 @@ int32_t js::DateTimeInfo::computeDSTOffsetMilliseconds(int64_t utcSeconds) {
   }
 
   return diff * msPerSecond;
-#endif /* ENABLE_INTL_API && !MOZ_SYSTEM_ICU */
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
 }
 
 int32_t js::DateTimeInfo::internalGetDSTOffsetMilliseconds(
@@ -315,7 +309,7 @@ int32_t js::DateTimeInfo::getOrComputeValue(RangeCache& range, int64_t seconds,
 
   if (range.startSeconds <= seconds) {
     int64_t newEndSeconds =
-        Min(range.endSeconds + RangeExpansionAmount, MaxTimeT);
+        std::min({range.endSeconds + RangeExpansionAmount, MaxTimeT});
     if (newEndSeconds >= seconds) {
       int32_t endOffsetMilliseconds = (this->*compute)(newEndSeconds);
       if (endOffsetMilliseconds == range.offsetMilliseconds) {
@@ -339,7 +333,7 @@ int32_t js::DateTimeInfo::getOrComputeValue(RangeCache& range, int64_t seconds,
   }
 
   int64_t newStartSeconds =
-      Max<int64_t>(range.startSeconds - RangeExpansionAmount, MinTimeT);
+      std::max<int64_t>({range.startSeconds - RangeExpansionAmount, MinTimeT});
   if (newStartSeconds <= seconds) {
     int32_t startOffsetMilliseconds = (this->*compute)(newStartSeconds);
     if (startOffsetMilliseconds == range.offsetMilliseconds) {
@@ -387,7 +381,7 @@ void js::DateTimeInfo::RangeCache::sanityCheck() {
   assertRange(oldStartSeconds, oldEndSeconds);
 }
 
-#if ENABLE_INTL_API && !MOZ_SYSTEM_ICU
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
 int32_t js::DateTimeInfo::computeUTCOffsetMilliseconds(int64_t localSeconds) {
   MOZ_ASSERT(localSeconds >= MinTimeT);
   MOZ_ASSERT(localSeconds <= MaxTimeT);
@@ -512,7 +506,7 @@ icu::TimeZone* js::DateTimeInfo::timeZone() {
 
   return timeZone_.get();
 }
-#endif /* ENABLE_INTL_API && !MOZ_SYSTEM_ICU */
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
 
 /* static */ js::ExclusiveData<js::DateTimeInfo>* js::DateTimeInfo::instance;
 
@@ -587,7 +581,7 @@ static bool IsOlsonCompatibleWindowsTimeZoneId(const char* tz) {
   }
   return false;
 }
-#elif ENABLE_INTL_API && defined(ICU_TZ_HAS_RECREATE_DEFAULT)
+#elif JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
 static inline const char* TZContainsAbsolutePath(const char* tzVar) {
   // A TZ environment variable may be an absolute path. The path
   // format of TZ may begin with a colon. (ICU handles relative paths.)
@@ -724,16 +718,14 @@ static icu::UnicodeString ReadTimeZoneLink(const char* tz) {
 
   return icu::UnicodeString(timeZone, timeZoneLen, US_INV);
 }
-#endif /* ENABLE_INTL_API && defined(ICU_TZ_HAS_RECREATE_DEFAULT) */
+#endif /* JS_HAS_INTL_API && !MOZ_SYSTEM_ICU */
 
 void js::ResyncICUDefaultTimeZone() {
   js::DateTimeInfo::resyncICUDefaultTimeZone();
 }
 
 void js::DateTimeInfo::internalResyncICUDefaultTimeZone() {
-#if ENABLE_INTL_API && defined(ICU_TZ_HAS_RECREATE_DEFAULT)
-  bool recreate = true;
-
+#if JS_HAS_INTL_API && !MOZ_SYSTEM_ICU
   if (const char* tz = std::getenv("TZ")) {
     icu::UnicodeString tzid;
 
@@ -765,13 +757,13 @@ void js::DateTimeInfo::internalResyncICUDefaultTimeZone() {
       if (*newTimeZone != icu::TimeZone::getUnknown()) {
         // adoptDefault() takes ownership of the time zone.
         icu::TimeZone::adoptDefault(newTimeZone.release());
-        recreate = false;
+        return;
       }
     }
   }
 
-  if (recreate) {
-    icu::TimeZone::recreateDefault();
+  if (icu::TimeZone* defaultZone = icu::TimeZone::detectHostTimeZone()) {
+    icu::TimeZone::adoptDefault(defaultZone);
   }
 #endif
 }

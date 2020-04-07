@@ -21,6 +21,8 @@ registerCleanupFunction(() => {
 });
 
 add_task(async function task() {
+  await pushPref("devtools.target-switching.enabled", true);
+
   // Test that the request appears in the console.
   const hud = await openNewTabAndConsole(TEST_URI);
   const currentTab = gBrowser.selectedTab;
@@ -35,7 +37,7 @@ add_task(async function task() {
     ],
   });
 
-  await loadDocument(TEST_PATH);
+  await navigateTo(TEST_PATH);
   info("Document loaded.");
 
   await onMessageAdded;
@@ -60,15 +62,15 @@ async function testNetmonitor(toolbox) {
 
   store.dispatch(Actions.batchEnable(false));
 
-  await waitUntil(() => store.getState().requests.requests.size > 0);
+  await waitUntil(() => store.getState().requests.requests.length > 0);
 
   is(
-    store.getState().requests.requests.size,
+    store.getState().requests.requests.length,
     1,
     "Network request appears in the network panel"
   );
 
-  const item = getSortedRequests(store.getState()).get(0);
+  const item = getSortedRequests(store.getState())[0];
   is(item.method, "GET", "The attached method is correct.");
   is(item.url, TEST_PATH, "The attached url is correct.");
 }

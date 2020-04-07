@@ -54,7 +54,7 @@ class VRFieldOfView final : public nsWrapperCache {
                                JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
-  virtual ~VRFieldOfView() {}
+  virtual ~VRFieldOfView() = default;
 
   nsCOMPtr<nsISupports> mParent;
 
@@ -85,7 +85,7 @@ class VRDisplayCapabilities final : public nsWrapperCache {
   uint32_t MaxLayers() const;
 
  protected:
-  ~VRDisplayCapabilities() {}
+  ~VRDisplayCapabilities() = default;
   nsCOMPtr<nsISupports> mParent;
   gfx::VRDisplayCapabilityFlags mFlags;
 };
@@ -275,10 +275,12 @@ class VRDisplay final : public DOMEventTargetHelper, public nsIObserver {
   VRDisplayCapabilities* Capabilities();
   VRStageParameters* GetStageParameters();
 
-  uint32_t DisplayId() const { return mDisplayId; }
-  void GetDisplayName(nsAString& aDisplayName) const {
-    aDisplayName = mDisplayName;
-  }
+  uint32_t DisplayId() const;
+  void GetDisplayName(nsAString& aDisplayName) const;
+  // Replacing the old VRDisplayClient with the newest one to avoid
+  // JS needs to reload to recover VRDisplay when VRService is shutdown at the
+  // backend.
+  void UpdateDisplayClient(already_AddRefed<gfx::VRDisplayClient> aClient);
 
   static bool RefreshVRDisplays(uint64_t aWindowId);
   static void UpdateVRDisplays(nsTArray<RefPtr<VRDisplay> >& aDisplays,
@@ -334,9 +336,6 @@ class VRDisplay final : public DOMEventTargetHelper, public nsIObserver {
   void UpdateFrameInfo();
 
   RefPtr<gfx::VRDisplayClient> mClient;
-
-  uint32_t mDisplayId;
-  nsString mDisplayName;
 
   RefPtr<VRDisplayCapabilities> mCapabilities;
   RefPtr<VRStageParameters> mStageParameters;

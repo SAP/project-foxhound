@@ -137,7 +137,7 @@ reftest.Runner = class {
     assert.positiveInteger(height);
 
     let reftestWin = this.parentWindow.open(
-      "chrome://marionette/content/reftest.xul",
+      "chrome://marionette/content/reftest.xhtml",
       "reftest",
       `chrome,height=${height},width=${width}`
     );
@@ -157,7 +157,6 @@ reftest.Runner = class {
       browser = reftestWin.document.createElementNS(XUL_NS, "xul:browser");
       browser.permanentKey = {};
       browser.setAttribute("id", "browser");
-      browser.setAttribute("anonid", "initialBrowser");
       browser.setAttribute("type", "content");
       browser.setAttribute("primary", "true");
       if (this.remote) {
@@ -188,9 +187,14 @@ max-width: ${width}px; max-height: ${height}px`;
     return reftestWin;
   }
 
-  abort() {
-    if (this.reftestWin) {
+  async abort() {
+    if (this.reftestWin && this.reftestWin != this.parentWindow) {
       this.driver.closeChromeWindow();
+      let parentHandle = this.driver.findWindow(
+        [this.parentWindow],
+        () => true
+      );
+      await this.driver.setWindowHandle(parentHandle);
     }
     this.reftestWin = null;
   }
@@ -278,7 +282,7 @@ max-width: ${width}px; max-height: ${height}px`;
     let result = await Promise.race([testRunner, timeoutPromise]);
     this.parentWindow.clearTimeout(timeoutHandle);
     if (result.status === STATUS.TIMEOUT) {
-      this.abort();
+      await this.abort();
     }
 
     return result;

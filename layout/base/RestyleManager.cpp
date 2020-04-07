@@ -507,9 +507,8 @@ static nsChangeHint ChangeForContentStateChange(const Element& aElement,
     auto* disp = primaryFrame->StyleDisplay();
     if (disp->HasAppearance()) {
       nsPresContext* pc = primaryFrame->PresContext();
-      nsITheme* theme = pc->GetTheme();
-      if (theme &&
-          theme->ThemeSupportsWidget(pc, primaryFrame, disp->mAppearance)) {
+      nsITheme* theme = pc->Theme();
+      if (theme->ThemeSupportsWidget(pc, primaryFrame, disp->mAppearance)) {
         bool repaint = false;
         theme->WidgetStateChanged(primaryFrame, disp->mAppearance, nullptr,
                                   &repaint, nullptr);
@@ -563,7 +562,6 @@ nsCString RestyleManager::ChangeHintToString(nsChangeHint aHint) {
                          "UpdateBackgroundPosition",
                          "AddOrRemoveTransform",
                          "ScrollbarChange",
-                         "UpdateWidgetProperties",
                          "UpdateTableCellSpans",
                          "VisibilityChange"};
   static_assert(nsChangeHint_AllHints ==
@@ -682,7 +680,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
 
   const nsStyleDisplay* display = aFrame->StyleDisplay();
   // Changes to the offsets of a non-positioned element can safely be ignored.
-  if (display->mPosition == NS_STYLE_POSITION_STATIC) {
+  if (display->mPosition == StylePositionProperty::Static) {
     return true;
   }
 
@@ -722,7 +720,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
       return false;
     }
     // Move the frame
-    if (display->mPosition == NS_STYLE_POSITION_STICKY) {
+    if (display->mPosition == StylePositionProperty::Sticky) {
       // Update sticky positioning for an entire element at once, starting with
       // the first continuation or ib-split sibling.
       // It's rare that the frame we already have isn't already the first
@@ -740,7 +738,7 @@ static bool RecomputePosition(nsIFrame* aFrame) {
         ssc->PositionContinuations(firstContinuation);
       }
     } else {
-      MOZ_ASSERT(NS_STYLE_POSITION_RELATIVE == display->mPosition,
+      MOZ_ASSERT(StylePositionProperty::Relative == display->mPosition,
                  "Unexpected type of positioning");
       for (nsIFrame* cont = aFrame; cont;
            cont = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(cont)) {
@@ -905,22 +903,23 @@ static bool HasBoxAncestor(nsIFrame* aFrame) {
 
 /**
  * Return true if aFrame's subtree has placeholders for out-of-flow content
- * whose 'position' style's bit in aPositionMask is set that would be affected
- * due to the change to `aPossiblyChangingContainingBlock` (and thus would need
- * to get reframed).
+ * that would be affected due to the change to
+ * `aPossiblyChangingContainingBlock` (and thus would need to get reframed).
  *
  * In particular, this function returns true if there are placeholders whose OOF
  * frames may need to be reparented (via reframing) as a result of whatever
  * change actually happened.
  *
- * `aIsContainingBlock` represents whether `aPossiblyChangingContainingBlock` is
- * a containing block with the _new_ style it just got, for any of the sorts of
- * positioned descendants in aPositionMask.
+ * The `aIs{Abs,Fixed}PosContainingBlock` params represent whether
+ * `aPossiblyChangingContainingBlock` is a containing block for abs pos / fixed
+ * pos stuff, respectively, for the _new_ style that the frame already has, not
+ * the old one.
  */
 static bool ContainingBlockChangeAffectsDescendants(
     nsIFrame* aPossiblyChangingContainingBlock, nsIFrame* aFrame,
-    uint32_t aPositionMask, bool aIsContainingBlock) {
-  MOZ_ASSERT(aPositionMask & (1 << NS_STYLE_POSITION_FIXED));
+    bool aIsAbsPosContainingBlock, bool aIsFixedPosContainingBlock) {
+  // All fixed-pos containing blocks should also be abs-pos containing blocks.
+  MOZ_ASSERT_IF(aIsFixedPosContainingBlock, aIsAbsPosContainingBlock);
 
   for (nsIFrame::ChildListIterator lists(aFrame); !lists.IsDone();
        lists.Next()) {
@@ -931,11 +930,16 @@ static bool ContainingBlockChangeAffectsDescendants(
         // they ignore their position style ... but they can't.
         NS_ASSERTION(!nsSVGUtils::IsInSVGTextSubtree(outOfFlow),
                      "SVG text frames can't be out of flow");
-        if (aPositionMask & (1 << outOfFlow->StyleDisplay()->mPosition)) {
+        auto* display = outOfFlow->StyleDisplay();
+        if (display->IsAbsolutelyPositionedStyle()) {
+          const bool isContainingBlock =
+              aIsFixedPosContainingBlock ||
+              (aIsAbsPosContainingBlock &&
+               display->mPosition == StylePositionProperty::Absolute);
           // NOTE(emilio): aPossiblyChangingContainingBlock is guaranteed to be
           // a first continuation, see the assertion in the caller.
           nsIFrame* parent = outOfFlow->GetParent()->FirstContinuation();
-          if (aIsContainingBlock) {
+          if (isContainingBlock) {
             // If we are becoming a containing block, we only need to reframe if
             // this oof's current containing block is an ancestor of the new
             // frame.
@@ -962,8 +966,8 @@ static bool ContainingBlockChangeAffectsDescendants(
       // cont->MarkAsNotAbsoluteContainingBlock() before we've reframed
       // the descendant and taken it off the absolute list.
       if (ContainingBlockChangeAffectsDescendants(
-              aPossiblyChangingContainingBlock, f, aPositionMask,
-              aIsContainingBlock)) {
+              aPossiblyChangingContainingBlock, f, aIsAbsPosContainingBlock,
+              aIsFixedPosContainingBlock)) {
         return true;
       }
     }
@@ -972,40 +976,17 @@ static bool ContainingBlockChangeAffectsDescendants(
 }
 
 static bool NeedToReframeToUpdateContainingBlock(nsIFrame* aFrame) {
-  static_assert(
-      0 <= NS_STYLE_POSITION_ABSOLUTE && NS_STYLE_POSITION_ABSOLUTE < 32,
-      "Style constant out of range");
-  static_assert(0 <= NS_STYLE_POSITION_FIXED && NS_STYLE_POSITION_FIXED < 32,
-                "Style constant out of range");
+  // NOTE: This looks at the new style.
+  const bool isFixedContainingBlock = aFrame->IsFixedPosContainingBlock();
+  MOZ_ASSERT_IF(isFixedContainingBlock, aFrame->IsAbsPosContainingBlock());
 
-  uint32_t positionMask;
-  bool isContainingBlock;
-  // Don't call aFrame->IsPositioned here, since that returns true if
-  // the frame already has a transform, and we want to ignore that here
-  if (aFrame->IsAbsolutelyPositioned() || aFrame->IsRelativelyPositioned()) {
-    // This frame is a container for abs-pos descendants whether or not its
-    // containing-block-ness could change for some other reasons (since we
-    // reframe for position changes).
-    // So abs-pos descendants are no problem; we only need to reframe if
-    // we have fixed-pos descendants.
-    positionMask = 1 << NS_STYLE_POSITION_FIXED;
-    isContainingBlock = aFrame->IsFixedPosContainingBlock();
-  } else {
-    // This frame may not be a container for abs-pos descendants already.
-    // So reframe if we have abs-pos or fixed-pos descendants.
-    positionMask =
-        (1 << NS_STYLE_POSITION_FIXED) | (1 << NS_STYLE_POSITION_ABSOLUTE);
-    isContainingBlock = aFrame->IsAbsPosContainingBlock() ||
-                        aFrame->IsFixedPosContainingBlock();
-  }
-
-  MOZ_ASSERT(!aFrame->GetPrevContinuation(),
-             "We only process change hints on first continuations");
+  const bool isAbsPosContainingBlock =
+      isFixedContainingBlock || aFrame->IsAbsPosContainingBlock();
 
   for (nsIFrame* f = aFrame; f;
        f = nsLayoutUtils::GetNextContinuationOrIBSplitSibling(f)) {
-    if (ContainingBlockChangeAffectsDescendants(aFrame, f, positionMask,
-                                                isContainingBlock)) {
+    if (ContainingBlockChangeAffectsDescendants(
+            aFrame, f, isAbsPosContainingBlock, isFixedContainingBlock)) {
       return true;
     }
   }
@@ -1398,12 +1379,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
             // Under these conditions, we're OK to assume that this "overflow"
             // change only impacts the root viewport's scrollframe, which
             // already exists, so we can simply reflow instead of reframing.
-            // When requesting this reflow, we send the exact same change hints
-            // that "width" and "height" would send (since conceptually,
-            // adding/removing scrollbars is like changing the available
-            // space).
-            data.mHint |= (nsChangeHint_ReflowHintsForISizeChange |
-                           nsChangeHint_ReflowHintsForBSizeChange);
+            data.mHint |= nsChangeHint_ReflowHintsForScrollbarChange;
             doReconstruct = false;
           }
         }
@@ -1439,7 +1415,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
             start, nsCSSFrameConstructor::InsertionKind::Sync);
       } else {
         frameConstructor->ContentRangeInserted(
-            start, end, nullptr, nsCSSFrameConstructor::InsertionKind::Sync);
+            start, end, nsCSSFrameConstructor::InsertionKind::Sync);
       }
     }
     for (size_t j = lazyRangeStart; j < i; ++j) {
@@ -1621,8 +1597,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
       // for the optimization for 0.99 over opacity values since we have no way
       // to call nsSVGUtils::CanOptimizeOpacity() there.
       if ((hint & nsChangeHint_UpdateOpacityLayer) &&
-          nsSVGUtils::CanOptimizeOpacity(frame) &&
-          frame->IsFrameOfType(nsIFrame::eSVGGeometry)) {
+          nsSVGUtils::CanOptimizeOpacity(frame)) {
         hint &= ~nsChangeHint_UpdateOpacityLayer;
         hint |= nsChangeHint_RepaintFrame;
       }
@@ -1646,7 +1621,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
       // to update the overflow areas of all potentially affected frames.
       if ((hint & nsChangeHint_UpdateUsesOpacity) &&
           frame->StyleDisplay()->mTransformStyle ==
-              NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D) {
+              StyleTransformStyle::Preserve3d) {
         hint |= nsChangeHint_UpdateSubtreeOverflow;
       }
 
@@ -1788,9 +1763,6 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
         presContext->PresShell()->SynthesizeMouseMove(false);
         didUpdateCursor = true;
       }
-      if (hint & nsChangeHint_UpdateWidgetProperties) {
-        frame->UpdateWidgetProperties();
-      }
       if (hint & nsChangeHint_UpdateTableCellSpans) {
         frameConstructor->UpdateTableCellSpans(content);
       }
@@ -1801,6 +1773,7 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
   }
 
   aChangeList.Clear();
+  FlushOverflowChangedTracker();
 }
 
 /* static */
@@ -2294,18 +2267,21 @@ void RestyleManager::PostRestyleEventForAnimations(Element* aElement,
 
 void RestyleManager::RebuildAllStyleData(nsChangeHint aExtraHint,
                                          RestyleHint aRestyleHint) {
-  // NOTE(emilio): GeckoRestlyeManager does a sync style flush, which seems not
-  // to be needed in my testing.
-  PostRebuildAllStyleDataEvent(aExtraHint, aRestyleHint);
-}
-
-void RestyleManager::PostRebuildAllStyleDataEvent(nsChangeHint aExtraHint,
-                                                  RestyleHint aRestyleHint) {
   // NOTE(emilio): The semantics of these methods are quite funny, in the sense
   // that we're not supposed to need to rebuild the actual stylist data.
   //
   // That's handled as part of the MediumFeaturesChanged stuff, if needed.
-  StyleSet()->ClearCachedStyleData();
+  //
+  // Clear the cached style data only if we are guaranteed to process the whole
+  // DOM tree again.
+  //
+  // FIXME(emilio): Decouple this, probably. This probably just wants to reset
+  // the "uses viewport units / uses rem" bits, and _maybe_ clear cached anon
+  // box styles and such... But it doesn't really always need to clear the
+  // initial style of the document and similar...
+  if (aRestyleHint.DefinitelyRecascadesAllSubtree()) {
+    StyleSet()->ClearCachedStyleData();
+  }
 
   DocumentStyleRootIterator iter(mPresContext->Document());
   while (Element* root = iter.GetNextStyleRoot()) {
@@ -2439,7 +2415,7 @@ struct RestyleManager::TextPostTraversalState {
 static void UpdateBackdropIfNeeded(nsIFrame* aFrame, ServoStyleSet& aStyleSet,
                                    nsStyleChangeList& aChangeList) {
   const nsStyleDisplay* display = aFrame->Style()->StyleDisplay();
-  if (display->mTopLayer != NS_STYLE_TOP_LAYER_TOP) {
+  if (display->mTopLayer != StyleTopLayer::Top) {
     return;
   }
 
@@ -3131,8 +3107,6 @@ void RestyleManager::DoProcessPendingRestyles(ServoTraversalFlags aFlags) {
 
   doc->ClearServoRestyleRoot();
 
-  FlushOverflowChangedTracker();
-
   ClearSnapshots();
   styleSet->AssertTreeIsClean();
   mHaveNonAnimationRestyles = false;
@@ -3156,7 +3130,6 @@ static void VerifyFlatTree(const nsIContent& aContent) {
   for (auto* content = iter.GetNextChild(); content;
        content = iter.GetNextChild()) {
     MOZ_ASSERT(content->GetFlattenedTreeParentNodeForStyle() == &aContent);
-    MOZ_ASSERT(!content->IsActiveChildrenElement());
     VerifyFlatTree(*content);
   }
 }
@@ -3210,13 +3183,25 @@ void RestyleManager::ContentStateChanged(nsIContent* aContent,
 
   const EventStates kVisitedAndUnvisited =
       NS_EVENT_STATE_VISITED | NS_EVENT_STATE_UNVISITED;
-  // NOTE: We want to return ASAP for visitedness changes, but we don't want to
-  // mess up the situation where the element became a link or stopped being one.
-  if (aChangedBits.HasAllStates(kVisitedAndUnvisited) &&
-      !Gecko_VisitedStylesEnabled(element.OwnerDoc())) {
-    aChangedBits &= ~kVisitedAndUnvisited;
-    if (aChangedBits.IsEmpty()) {
-      return;
+
+  // When visited links are disabled, they cannot influence style for obvious
+  // reasons.
+  //
+  // When layout.css.always-repaint-on-unvisited is true, we'll restyle when the
+  // relevant visited query finishes, regardless of the style (see
+  // Link::VisitedQueryFinished). So there's no need to do anything as a result
+  // of this state change just yet.
+  //
+  // Note that this check checks for _both_ bits: This is only true when visited
+  // changes to unvisited or vice-versa, but not when we start or stop being a
+  // link itself.
+  if (aChangedBits.HasAllStates(kVisitedAndUnvisited)) {
+    if (!Gecko_VisitedStylesEnabled(element.OwnerDoc()) ||
+        StaticPrefs::layout_css_always_repaint_on_unvisited()) {
+      aChangedBits &= ~kVisitedAndUnvisited;
+      if (aChangedBits.IsEmpty()) {
+        return;
+      }
     }
   }
 
@@ -3344,7 +3329,8 @@ void RestyleManager::TakeSnapshotForAttributeChange(Element& aElement,
 // * lwtheme and lwthemetextcolor on root element of XUL document
 //   affects all descendants due to :-moz-lwtheme* pseudo-classes
 // * lang="" and xml:lang="" can affect all descendants due to :lang()
-//
+// * exportparts can affect all descendant parts. We could certainly integrate
+//   it better in the invalidation machinery if it was necessary.
 static inline bool AttributeChangeRequiresSubtreeRestyle(
     const Element& aElement, nsAtom* aAttr) {
   if (aAttr == nsGkAtoms::cellpadding) {
@@ -3354,7 +3340,11 @@ static inline bool AttributeChangeRequiresSubtreeRestyle(
     Document* doc = aElement.OwnerDoc();
     return doc->IsInChromeDocShell() && &aElement == doc->GetRootElement();
   }
-
+  // TODO(emilio, bug 1598094): Maybe finer-grained invalidation for exportparts
+  // attribute changes?
+  if (aAttr == nsGkAtoms::exportparts) {
+    return !!aElement.GetShadowRoot();
+  }
   return aAttr == nsGkAtoms::lang;
 }
 
@@ -3369,25 +3359,25 @@ void RestyleManager::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
   changeHint |= aElement->GetAttributeChangeHint(aAttribute, aModType);
 
   if (aAttribute == nsGkAtoms::style) {
-    restyleHint |= StyleRestyleHint_RESTYLE_STYLE_ATTRIBUTE;
+    restyleHint |= RestyleHint::RESTYLE_STYLE_ATTRIBUTE;
   } else if (AttributeChangeRequiresSubtreeRestyle(*aElement, aAttribute)) {
     restyleHint |= RestyleHint::RestyleSubtree();
   } else if (aElement->IsAttributeMapped(aAttribute)) {
     // FIXME(emilio): Does this really need to re-selector-match?
-    restyleHint |= StyleRestyleHint_RESTYLE_SELF;
+    restyleHint |= RestyleHint::RESTYLE_SELF;
   } else if (aElement->IsInShadowTree() && aAttribute == nsGkAtoms::part) {
-    // TODO(emilio): Maybe finer-grained invalidation for part attribute
-    // changes?
-    restyleHint |= StyleRestyleHint_RESTYLE_SELF;
+    // TODO(emilio, bug 1598094): Maybe finer-grained invalidation for part
+    // attribute changes?
+    restyleHint |= RestyleHint::RESTYLE_SELF;
   }
 
   if (nsIFrame* primaryFrame = aElement->GetPrimaryFrame()) {
     // See if we have appearance information for a theme.
     const nsStyleDisplay* disp = primaryFrame->StyleDisplay();
     if (disp->HasAppearance()) {
-      nsITheme* theme = PresContext()->GetTheme();
-      if (theme && theme->ThemeSupportsWidget(PresContext(), primaryFrame,
-                                              disp->mAppearance)) {
+      nsITheme* theme = PresContext()->Theme();
+      if (theme->ThemeSupportsWidget(PresContext(), primaryFrame,
+                                     disp->mAppearance)) {
         bool repaint = false;
         theme->WidgetStateChanged(primaryFrame, disp->mAppearance, aAttribute,
                                   &repaint, aOldValue);

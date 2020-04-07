@@ -13,12 +13,16 @@
 #include "gc/Zone.h"
 #include "jit/JitFrames.h"
 #include "proxy/Proxy.h"
+#include "util/DiagnosticAssertions.h"
 #include "vm/BigIntType.h"
+#include "vm/GlobalObject.h"
 #include "vm/HelperThreads.h"
 #include "vm/Interpreter.h"
 #include "vm/Iteration.h"
 #include "vm/Realm.h"
 #include "vm/SymbolType.h"
+
+#include "vm/Activation-inl.h"  // js::Activation::hasWasmExitFP
 
 namespace js {
 
@@ -30,7 +34,16 @@ class ContextChecks {
   JS::Zone* zone() const { return cx->zone(); }
 
  public:
-  explicit ContextChecks(JSContext* cx) : cx(cx) {}
+  explicit ContextChecks(JSContext* cx) : cx(cx) {
+#ifdef DEBUG
+    if (realm()) {
+      GlobalObject* global = realm()->unsafeUnbarrieredMaybeGlobal();
+      if (global) {
+        checkObject(global);
+      }
+    }
+#endif
+  }
 
   /*
    * Set a breakpoint here (break js::ContextChecks::fail) to debug
@@ -69,10 +82,14 @@ class ContextChecks {
 
   void check(JSObject* obj, int argIndex) {
     if (obj) {
-      JS::AssertObjectIsNotGray(obj);
-      MOZ_ASSERT(!js::gc::IsAboutToBeFinalizedUnbarriered(&obj));
+      checkObject(obj);
       check(obj->compartment(), argIndex);
     }
+  }
+
+  void checkObject(JSObject* obj) {
+    JS::AssertObjectIsNotGray(obj);
+    MOZ_ASSERT(!js::gc::IsAboutToBeFinalizedUnbarriered(&obj));
   }
 
   template <typename T>
@@ -454,14 +471,5 @@ inline JSScript* JSContext::currentScript(
 }
 
 inline js::RuntimeCaches& JSContext::caches() { return runtime()->caches(); }
-
-inline js::AutoKeepAtoms::AutoKeepAtoms(
-    JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
-    : cx(cx) {
-  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  cx->zone()->keepAtoms();
-}
-
-inline js::AutoKeepAtoms::~AutoKeepAtoms() { cx->zone()->releaseAtoms(); };
 
 #endif /* vm_JSContext_inl_h */

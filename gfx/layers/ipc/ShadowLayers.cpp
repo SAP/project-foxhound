@@ -152,7 +152,7 @@ void KnowsCompositor::IdentifyTextureHost(
 
 KnowsCompositor::KnowsCompositor() : mSerial(++sSerialCounter) {}
 
-KnowsCompositor::~KnowsCompositor() {}
+KnowsCompositor::~KnowsCompositor() = default;
 
 KnowsCompositorMediaProxy::KnowsCompositorMediaProxy(
     const TextureFactoryIdentifier& aIdentifier) {
@@ -163,7 +163,7 @@ KnowsCompositorMediaProxy::KnowsCompositorMediaProxy(
   mSyncObject = mThreadSafeAllocator->GetSyncObject();
 }
 
-KnowsCompositorMediaProxy::~KnowsCompositorMediaProxy() {}
+KnowsCompositorMediaProxy::~KnowsCompositorMediaProxy() = default;
 
 TextureForwarder* KnowsCompositorMediaProxy::GetTextureForwarder() {
   return mThreadSafeAllocator->GetTextureForwarder();
@@ -192,7 +192,6 @@ ShadowLayerForwarder::ShadowLayerForwarder(
       mMessageLoop(MessageLoop::current()),
       mDiagnosticTypes(DiagnosticTypes::NO_DIAGNOSTIC),
       mIsFirstPaint(false),
-      mWindowOverlayChanged(false),
       mNextLayerHandle(1) {
   mTxn = new Transaction();
   if (TabGroup* tabGroup = mClientLayerManager->GetTabGroup()) {
@@ -565,9 +564,6 @@ bool ShadowLayerForwarder::EndTransaction(
     mDiagnosticTypes = diagnostics;
     mTxn->AddEdit(OpSetDiagnosticTypes(diagnostics));
   }
-  if (mWindowOverlayChanged) {
-    mTxn->AddEdit(OpWindowOverlayChanged());
-  }
 
   AutoTxnEnd _(mTxn);
 
@@ -660,8 +656,6 @@ bool ShadowLayerForwarder::EndTransaction(
     return true;
   }
 
-  mWindowOverlayChanged = false;
-
   info.cset() = std::move(mTxn->mCset);
   info.setSimpleAttrs() = std::move(setSimpleAttrs);
   info.setAttrs() = std::move(setAttrs);
@@ -716,10 +710,6 @@ bool ShadowLayerForwarder::EndTransaction(
     mPaintTiming.sendMs() =
         (TimeStamp::Now() - startTime.value()).ToMilliseconds();
     mShadowManager->SendRecordPaintTimes(mPaintTiming);
-  }
-
-  if (recordreplay::IsRecordingOrReplaying()) {
-    recordreplay::child::NotifyPaintStart();
   }
 
   *aSent = true;

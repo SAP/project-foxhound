@@ -13,14 +13,11 @@
 #include "States.h"
 
 #include "nsComponentManagerUtils.h"
-#include "nsIAutoCompleteInput.h"
 #include "nsIAutoCompletePopup.h"
 #include "nsIDOMXULMenuListElement.h"
 #include "nsIDOMXULMultSelectCntrlEl.h"
 #include "nsIDOMXULSelectCntrlItemEl.h"
-#include "nsIMutableArray.h"
 #include "nsINodeList.h"
-#include "nsIPersistentProperties2.h"
 
 using namespace mozilla::a11y;
 
@@ -108,7 +105,7 @@ void XULListboxAccessible::Value(nsString& aValue) const {
 
   nsCOMPtr<nsIDOMXULSelectControlElement> select = Elm()->AsXULSelectControl();
   if (select) {
-    RefPtr<Element> element;
+    RefPtr<dom::Element> element;
     select->GetSelectedItem(getter_AddRefs(element));
 
     if (element) {
@@ -150,7 +147,7 @@ Accessible* XULListboxAccessible::CellAt(uint32_t aRowIndex,
   nsCOMPtr<nsIDOMXULSelectControlElement> control = Elm()->AsXULSelectControl();
   NS_ENSURE_TRUE(control, nullptr);
 
-  RefPtr<Element> element;
+  RefPtr<dom::Element> element;
   control->GetItemAtIndex(aRowIndex, getter_AddRefs(element));
   if (!element) return nullptr;
 
@@ -177,7 +174,7 @@ bool XULListboxAccessible::IsRowSelected(uint32_t aRowIdx) {
   nsCOMPtr<nsIDOMXULSelectControlElement> control = Elm()->AsXULSelectControl();
   NS_ASSERTION(control, "Doesn't implement nsIDOMXULSelectControlElement.");
 
-  RefPtr<Element> element;
+  RefPtr<dom::Element> element;
   nsresult rv = control->GetItemAtIndex(aRowIdx, getter_AddRefs(element));
   NS_ENSURE_SUCCESS(rv, false);
   if (!element) {
@@ -342,7 +339,7 @@ void XULListboxAccessible::SelectRow(uint32_t aRowIdx) {
   NS_ASSERTION(control,
                "Doesn't implement nsIDOMXULMultiSelectControlElement.");
 
-  RefPtr<Element> item;
+  RefPtr<dom::Element> item;
   control->GetItemAtIndex(aRowIdx, getter_AddRefs(item));
   if (!item) {
     return;
@@ -359,7 +356,7 @@ void XULListboxAccessible::UnselectRow(uint32_t aRowIdx) {
   NS_ASSERTION(control,
                "Doesn't implement nsIDOMXULMultiSelectControlElement.");
 
-  RefPtr<Element> item;
+  RefPtr<dom::Element> item;
   control->GetItemAtIndex(aRowIdx, getter_AddRefs(item));
   if (!item) {
     return;
@@ -448,7 +445,7 @@ Accessible* XULListitemAccessible::GetListAccessible() const {
       Elm()->AsXULSelectControlItem();
   if (!listItem) return nullptr;
 
-  RefPtr<Element> listElement;
+  RefPtr<dom::Element> listElement;
   listItem->GetControl(getter_AddRefs(listElement));
   if (!listElement) return nullptr;
 

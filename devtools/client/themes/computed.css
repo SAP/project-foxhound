@@ -2,6 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+ .theme-dark {
+  --row-striped-background: rgba(255, 255, 255, 0.05);
+ }
+
+.theme-light {
+  --row-striped-background: rgba(247, 247, 247, 0.8);
+}
+
 #sidebar-panel-computedview {
   margin: 0;
   display: flex;
@@ -15,6 +23,15 @@
 #sidebar-panel-computedview .theme-twisty:not(.open):dir(rtl),
 #sidebar-panel-computedview .theme-twisty:not([open]):-moz-locale-dir(rtl) {
   transform: rotate(-90deg);
+}
+
+#computedview-panel .inspector-tabpanel {
+  min-width: 0;
+}
+
+#computedview-panel #browser-style-checkbox-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #computed-container {
@@ -62,7 +79,7 @@
 }
 
 .row-striped {
-  background: var(--theme-body-background);
+  background: var(--row-striped-background);
 }
 
 .computed-property-hidden {
@@ -93,9 +110,6 @@
 }
 
 .computed-property-name {
-  overflow-x: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   outline: 0 !important;
 }
 
@@ -118,9 +132,6 @@
 }
 
 .computed-property-value {
-  overflow-x: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   padding-inline-start: 14px;
   outline: 0 !important;
 }
@@ -194,12 +205,7 @@
 .computed-link {
   padding: 0 3px;
   cursor: pointer;
-  float: right;
-}
-
-/* Workaround until float: inline-end; is enabled by default */
-.computed-link:dir(rtl) {
-  float: left;
+  float: inline-end;
 }
 
 /* Take away these two :visited rules to get a core dumper     */

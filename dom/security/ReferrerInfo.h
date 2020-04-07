@@ -9,7 +9,6 @@
 
 #include "nsCOMPtr.h"
 #include "nsIReferrerInfo.h"
-#include "nsISerializable.h"
 #include "nsIHttpChannel.h"
 #include "nsReadableUtils.h"
 #include "mozilla/Maybe.h"
@@ -162,12 +161,6 @@ class ReferrerInfo : public nsIReferrerInfo {
   static bool ShouldResponseInheritReferrerInfo(nsIChannel* aChannel);
 
   /*
-   * Check whether we need to hide referrer when leaving a .onion domain.
-   * Controlled by user pref: network.http.referer.hideOnionSource
-   */
-  static bool HideOnionReferrerSource();
-
-  /*
    * Check whether referrer is allowed to send in secure to insecure scenario.
    */
   static nsresult HandleSecureToInsecureReferral(nsIURI* aOriginalURI,
@@ -189,6 +182,26 @@ class ReferrerInfo : public nsIReferrerInfo {
    */
   static bool ShouldSetNullOriginHeader(net::HttpBaseChannel* aChannel,
                                         nsIURI* aOriginURI);
+
+  /**
+   * Getter for network.http.sendRefererHeader.
+   */
+  static uint32_t GetUserReferrerSendingPolicy();
+
+  /**
+   * Getter for network.http.referer.XOriginPolicy.
+   */
+  static uint32_t GetUserXOriginSendingPolicy();
+
+  /**
+   * Getter for network.http.referer.trimmingPolicy.
+   */
+  static uint32_t GetUserTrimmingPolicy();
+
+  /**
+   * Getter for network.http.referer.XOriginTrimmingPolicy.
+   */
+  static uint32_t GetUserXOriginTrimmingPolicy();
 
   /**
    * Return default referrer policy which is controlled by user
@@ -254,7 +267,7 @@ class ReferrerInfo : public nsIReferrerInfo {
   NS_DECL_NSISERIALIZABLE
 
  private:
-  virtual ~ReferrerInfo() {}
+  virtual ~ReferrerInfo() = default;
 
   ReferrerInfo(const ReferrerInfo& rhs);
 
@@ -339,8 +352,9 @@ class ReferrerInfo : public nsIReferrerInfo {
   /*
    * Compute referrer for a given channel. The computation result then will be
    * stored in this class and then used to set the actual referrer header of
-   * the channel. The computation could be controlled by sereral user prefs
-   * which is defined in all.js (see all.js for more details):
+   * the channel. The computation could be controlled by several user prefs
+   * which are defined in StaticPrefList.yaml (see StaticPrefList.yaml for more
+   * details):
    *  network.http.sendRefererHeader
    *  network.http.referer.spoofSource
    *  network.http.referer.hideOnionSource

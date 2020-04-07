@@ -13,7 +13,6 @@
 #include "nsRefPtrHashtable.h"
 #include "nsString.h"
 #include "gfxFont.h"
-#include "nsIRunnable.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/TimeStamp.h"
 #include "nsISupportsImpl.h"
@@ -57,7 +56,7 @@ class FontInfoData {
 
  protected:
   // Protected destructor, to discourage deletion outside of Release():
-  virtual ~FontInfoData() { MOZ_COUNT_DTOR(FontInfoData); }
+  MOZ_COUNTED_DTOR_VIRTUAL(FontInfoData)
 
  public:
   virtual void Load();

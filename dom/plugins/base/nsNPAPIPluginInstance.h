@@ -12,8 +12,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsITimer.h"
 #include "nsIPluginInstanceOwner.h"
-#include "nsIURI.h"
-#include "nsIChannel.h"
 #include "nsHashKeys.h"
 #include <prinrval.h>
 #include "js/TypeDecls.h"
@@ -56,7 +54,6 @@ const NPDrawingModel kDefaultDrawingModel = static_cast<NPDrawingModel>(0);
 #if defined(OS_WIN)
 static const DWORD NPAPI_INVALID_WPARAM = 0xffffffff;
 #endif
-
 
 /**
  * Used to indicate whether it's OK to reenter Gecko and repaint, flush frames,

@@ -215,8 +215,8 @@ static already_AddRefed<Element> MakeAnonButton(Document* aDoc,
 
   // Set the file picking button text depending on the current locale.
   nsAutoString buttonTxt;
-  nsContentUtils::GetLocalizedString(
-      nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, labelKey, buttonTxt);
+  nsContentUtils::GetMaybeLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
+                                          labelKey, aDoc, buttonTxt);
 
   // Set the browse button text. It's a bit of a pain to do because we want to
   // make sure we are not notifying.
@@ -487,10 +487,7 @@ bool nsFileControlFrame::DnDListener::IsValidDropData(
   }
 
   // We only support dropping files onto a file upload control
-  nsTArray<nsString> types;
-  aDataTransfer->GetTypes(types, CallerType::System);
-
-  return types.Contains(NS_LITERAL_STRING("Files"));
+  return aDataTransfer->HasFile();
 }
 
 bool nsFileControlFrame::DnDListener::CanDropTheseFiles(

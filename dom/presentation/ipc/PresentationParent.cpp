@@ -9,7 +9,6 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/Unused.h"
-#include "nsIPresentationDeviceManager.h"
 #include "nsIPresentationSessionTransport.h"
 #include "nsIPresentationSessionTransportBuilder.h"
 #include "nsServiceManagerUtils.h"
@@ -96,7 +95,7 @@ bool PresentationParent::Init(ContentParentId aContentParentId) {
   MOZ_ASSERT(!mService);
   mService = do_GetService(PRESENTATION_SERVICE_CONTRACTID);
   mChildId = aContentParentId;
-  return NS_WARN_IF(!mService) ? false : true;
+  return !NS_WARN_IF(!mService);
 }
 
 void PresentationParent::ActorDestroy(ActorDestroyReason aWhy) {

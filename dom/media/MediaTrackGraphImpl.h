@@ -19,7 +19,7 @@
 #include "nsIMemoryReporter.h"
 #include "nsINamed.h"
 #include "nsIRunnable.h"
-#include "nsIThread.h"
+#include "nsIThreadInternal.h"
 #include "nsITimer.h"
 #include "AsyncLogger.h"
 
@@ -56,7 +56,7 @@ class ControlMessage {
     MOZ_COUNT_CTOR(ControlMessage);
   }
   // All these run on the graph thread
-  virtual ~ControlMessage() { MOZ_COUNT_DTOR(ControlMessage); }
+  MOZ_COUNTED_DTOR_VIRTUAL(ControlMessage)
   // Do the action of this message on the MediaTrackGraph thread. Any actions
   // affecting graph processing should take effect at mProcessedTime.
   // All track data for times < mProcessedTime has already been
@@ -92,12 +92,15 @@ class MessageBlock {
  * object too.
  */
 class MediaTrackGraphImpl : public MediaTrackGraph,
+                            public GraphInterface,
                             public nsIMemoryReporter,
+                            public nsIThreadObserver,
                             public nsITimerCallback,
                             public nsINamed {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIMEMORYREPORTER
+  NS_DECL_NSITHREADOBSERVER
   NS_DECL_NSITIMERCALLBACK
   NS_DECL_NSINAMED
 
@@ -126,7 +129,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * True if we're on aDriver's thread, or if we're on mGraphRunner's thread
    * and mGraphRunner is currently run by aDriver.
    */
-  bool RunByGraphDriver(GraphDriver* aDriver);
+  bool InDriverIteration(GraphDriver* aDriver) override;
 #endif
 
   /**
@@ -213,14 +216,17 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Proxy method called by GraphDriver to iterate the graph.
    * If this graph was created with GraphRunType SINGLE_THREAD, mGraphRunner
    * will take care of calling OneIterationImpl from its thread. Otherwise,
-   * OneIterationImpl is called directly.
+   * OneIterationImpl is called directly. Output from the graph gets mixed into
+   * aMixer, if it is non-null.
    */
-  bool OneIteration(GraphTime aStateEnd);
+  IterationResult OneIteration(GraphTime aStateEnd, GraphTime aIterationEnd,
+                               AudioMixer* aMixer) override;
 
   /**
    * Returns true if this MediaTrackGraph should keep running
    */
-  bool OneIterationImpl(GraphTime aStateEnd);
+  IterationResult OneIterationImpl(GraphTime aStateEnd, GraphTime aIterationEnd,
+                                   AudioMixer* aMixer);
 
   /**
    * Called from the driver, when the graph thread is about to stop, to tell
@@ -279,16 +285,19 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   void UpdateGraph(GraphTime aEndBlockingDecisions);
 
   void SwapMessageQueues() {
-    MOZ_ASSERT(OnGraphThread());
-    MOZ_ASSERT(mFrontMessageQueue.IsEmpty());
+    MOZ_ASSERT(OnGraphThreadOrNotRunning());
     mMonitor.AssertCurrentThreadOwns();
+    MOZ_ASSERT(mFrontMessageQueue.IsEmpty());
     mFrontMessageQueue.SwapElements(mBackMessageQueue);
+    if (!mFrontMessageQueue.IsEmpty()) {
+      EnsureNextIteration();
+    }
   }
   /**
    * Do all the processing and play the audio and video, from
    * mProcessedTime to mStateComputedTime.
    */
-  void Process();
+  void Process(AudioMixer* aMixer);
 
   /**
    * For use during ProcessedMediaTrack::ProcessInput() or
@@ -298,23 +307,17 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    */
   void RunMessageAfterProcessing(UniquePtr<ControlMessage> aMessage);
 
-  /**
-   * Called when a suspend/resume/close operation has been completed, on the
-   * graph thread.
-   */
-  void AudioContextOperationCompleted(MediaTrack* aTrack, void* aPromise,
-                                      dom::AudioContextOperation aOperation,
-                                      dom::AudioContextOperationFlags aFlags);
+  void NotifyWhenGraphStarted(RefPtr<AudioNodeTrack> aTrack,
+                              MozPromiseHolder<GraphStartedPromise>&& aHolder);
 
   /**
-   * Apply and AudioContext operation (suspend/resume/closed), on the graph
+   * Apply an AudioContext operation (suspend/resume/close), on the graph
    * thread.
    */
-  void ApplyAudioContextOperationImpl(MediaTrack* aDestinationTrack,
-                                      const nsTArray<MediaTrack*>& aTracks,
-                                      dom::AudioContextOperation aOperation,
-                                      void* aPromise,
-                                      dom::AudioContextOperationFlags aSource);
+  void ApplyAudioContextOperationImpl(
+      MediaTrack* aDestinationTrack, const nsTArray<MediaTrack*>& aTracks,
+      dom::AudioContextOperation aOperation,
+      MozPromiseHolder<AudioContextOperationPromise>&& aHolder);
 
   /**
    * Increment suspend count on aTrack and move it to mSuspendedTracks if
@@ -387,7 +390,13 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Queue audio (mix of track audio and silence for blocked intervals)
    * to the audio output track. Returns the number of frames played.
    */
-  TrackTime PlayAudio(MediaTrack* aTrack);
+  struct TrackKeyAndVolume {
+    MediaTrack* mTrack;
+    void* mKey;
+    float mVolume;
+  };
+  TrackTime PlayAudio(AudioMixer* aMixer, const TrackKeyAndVolume& aTkv,
+                      GraphTime aPlayedTime);
   /* Runs off a message on the graph thread when something requests audio from
    * an input audio device of ID aID, and delivers the input audio frames to
    * aListener. */
@@ -407,6 +416,14 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * audio from this audio input device. */
   virtual void CloseAudioInput(Maybe<CubebUtils::AudioDeviceID>& aID,
                                AudioDataListener* aListener) override;
+
+  /* Add or remove an audio output for this track. All tracks that have an
+   * audio output are mixed and written to a single audio output stream. */
+  void RegisterAudioOutput(MediaTrack* aTrack, void* aKey);
+  void UnregisterAudioOutput(MediaTrack* aTrack, void* aKey);
+  void UnregisterAllAudioOutputs(MediaTrack* aTrack);
+  void SetAudioOutputVolume(MediaTrack* aTrack, void* aKey, float aVolume);
+
   /* Called on the graph thread when the input device settings should be
    * reevaluated, for example, if the channel count of the input track should
    * be changed. */
@@ -415,15 +432,18 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   /* Called on the graph thread when there is new output data for listeners.
    * This is the mixed audio output of this MediaTrackGraph. */
   void NotifyOutputData(AudioDataValue* aBuffer, size_t aFrames,
-                        TrackRate aRate, uint32_t aChannels);
+                        TrackRate aRate, uint32_t aChannels) override;
+  /* Called on the graph thread before the first Notify*Data after an
+   * AudioCallbackDriver starts. */
+  void NotifyStarted() override;
   /* Called on the graph thread when there is new input data for listeners. This
    * is the raw audio input for this MediaTrackGraph. */
   void NotifyInputData(const AudioDataValue* aBuffer, size_t aFrames,
-                       TrackRate aRate, uint32_t aChannels);
+                       TrackRate aRate, uint32_t aChannels) override;
   /* Called every time there are changes to input/output audio devices like
    * plug/unplug etc. This can be called on any thread, and posts a message to
    * the main thread so that it can post a message to the graph thread. */
-  void DeviceChanged();
+  void DeviceChanged() override;
   /* Called every time there are changes to input/output audio devices. This is
    * called on the graph thread. */
   void DeviceChangedImpl();
@@ -468,7 +488,10 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
     mTrackOrderDirty = true;
   }
 
-  uint32_t AudioOutputChannelCount() const { return mOutputChannels; }
+  // Get the current maximum channel count. Graph thread only.
+  uint32_t AudioOutputChannelCount() const;
+  // Set a new maximum channel count. Graph thread only.
+  void SetMaxOutputChannelCount(uint32_t aMaxChannelCount);
 
   double AudioOutputLatency();
 
@@ -536,16 +559,6 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
     return static_cast<double>(aTime) / GraphRate();
   }
 
-  GraphTime SecondsToMediaTime(double aS) const {
-    NS_ASSERTION(0 <= aS && aS <= TRACK_TICKS_MAX / TRACK_RATE_MAX,
-                 "Bad seconds");
-    return GraphRate() * aS;
-  }
-
-  GraphTime MillisecondsToMediaTime(int32_t aMS) const {
-    return RateConvertTicksRoundDown(GraphRate(), 1000, aMS);
-  }
-
   /**
    * Signal to the graph that the thread has paused indefinitly,
    * or resumed.
@@ -570,37 +583,27 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * It is only safe to call this at the very end of an iteration, when there
    * has been a SwitchAtNextIteration call during the iteration. The driver
    * should return and pass the control to the new driver shortly after.
-   * We can also switch from Revive() (on MainThread). Monitor must be held.
+   * Monitor must be held.
    */
   void SetCurrentDriver(GraphDriver* aDriver) {
-    MOZ_ASSERT(RunByGraphDriver(mDriver) || !mDriver->ThreadRunning());
-#ifdef DEBUG
-    mMonitor.AssertCurrentThreadOwns();
-#endif
+    MOZ_ASSERT_IF(mGraphDriverRunning, InDriverIteration(mDriver));
+    MOZ_ASSERT_IF(!mGraphDriverRunning, NS_IsMainThread());
+    MonitorAutoLock lock(GetMonitor());
     mDriver = aDriver;
   }
 
+  GraphDriver* NextDriver() const {
+    MOZ_ASSERT(OnGraphThread());
+    return mNextDriver;
+  }
+
+  bool Switching() const { return NextDriver(); }
+
+  void SwitchAtNextIteration(GraphDriver* aNextDriver);
+
   Monitor& GetMonitor() { return mMonitor; }
 
-  void EnsureNextIteration() {
-    mNeedAnotherIteration = true;  // atomic
-    // Note: GraphDriver must ensure that there's no race on setting
-    // mNeedAnotherIteration and mGraphDriverAsleep -- see
-    // WaitForNextIteration()
-    if (mGraphDriverAsleep) {  // atomic
-      MonitorAutoLock mon(mMonitor);
-      CurrentDriver()
-          ->WakeUp();  // Might not be the same driver; might have woken already
-    }
-  }
-
-  void EnsureNextIterationLocked() {
-    mNeedAnotherIteration = true;  // atomic
-    if (mGraphDriverAsleep) {      // atomic
-      CurrentDriver()
-          ->WakeUp();  // Might not be the same driver; might have woken already
-    }
-  }
+  void EnsureNextIteration() { CurrentDriver()->EnsureNextIteration(); }
 
   // Capture API. This allows to get a mixed-down output for a window.
   void RegisterCaptureTrackForWindow(uint64_t aWindowId,
@@ -662,7 +665,7 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * If set, the GraphRunner class handles handing over data from audio
    * callbacks to a common single thread, shared across GraphDrivers.
    */
-  const UniquePtr<GraphRunner> mGraphRunner;
+  const RefPtr<GraphRunner> mGraphRunner;
 
   /**
    * Main-thread view of the number of tracks in this graph, for lifetime
@@ -691,6 +694,12 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Must hold monitor to access it.
    */
   RefPtr<GraphDriver> mDriver;
+
+  // Set during an iteration to switch driver after the iteration has finished.
+  // Should the current iteration be the last iteration, the next driver will be
+  // discarded. Access through SwitchAtNextIteration()/NextDriver(). Graph
+  // thread only.
+  RefPtr<GraphDriver> mNextDriver;
 
   // The following state is managed on the graph thread only, unless
   // mLifecycleState > LIFECYCLE_RUNNING in which case the graph thread
@@ -728,6 +737,10 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    */
   GraphTime mProcessedTime = 0;
   /**
+   * The end of the current iteration. Only access on the graph thread.
+   */
+  GraphTime mIterationEndTime = 0;
+  /**
    * The graph should stop processing at this time.
    */
   GraphTime mEndTime;
@@ -762,11 +775,6 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   // This is only touched on the graph thread.
   nsDataHashtable<nsVoidPtrHashKey, nsTArray<RefPtr<AudioDataListener>>>
       mInputDeviceUsers;
-
-  // True if the graph needs another iteration after the current iteration.
-  Atomic<bool> mNeedAnotherIteration;
-  // GraphDriver may need a WakeUp() if something changes
-  Atomic<bool> mGraphDriverAsleep;
 
   // mMonitor guards the data below.
   // MediaTrackGraph normally does its work without holding mMonitor, so it is
@@ -859,16 +867,20 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   LifecycleState mLifecycleState;
   LifecycleState& LifecycleStateRef() {
 #if DEBUG
-    if (!mDetectedNotRunning) {
+    if (mGraphDriverRunning) {
       mMonitor.AssertCurrentThreadOwns();
+    } else {
+      MOZ_ASSERT(NS_IsMainThread());
     }
 #endif
     return mLifecycleState;
   }
   const LifecycleState& LifecycleStateRef() const {
 #if DEBUG
-    if (!mDetectedNotRunning) {
+    if (mGraphDriverRunning) {
       mMonitor.AssertCurrentThreadOwns();
+    } else {
+      MOZ_ASSERT(NS_IsMainThread());
     }
 #endif
     return mLifecycleState;
@@ -906,11 +918,11 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    */
   nsTArray<UniquePtr<ControlMessage>> mCurrentTaskMessageQueue;
   /**
-   * True when RunInStableState has determined that mLifecycleState is >
-   * LIFECYCLE_RUNNING. Since only the main thread can reset mLifecycleState to
-   * LIFECYCLE_RUNNING, this can be relied on to not change unexpectedly.
+   * True from when RunInStableState sets mLifecycleState to LIFECYCLE_RUNNING,
+   * until RunInStableState has determined that mLifecycleState is >
+   * LIFECYCLE_RUNNING.
    */
-  Atomic<bool> mDetectedNotRunning;
+  Atomic<bool> mGraphDriverRunning;
   /**
    * True when a stable state runner has been posted to the appshell to run
    * RunInStableState at the next stable state.
@@ -927,7 +939,6 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * blocking order.
    */
   bool mTrackOrderDirty;
-  AudioMixer mMixer;
   const RefPtr<AbstractThread> mAbstractMainThread;
 
   // used to limit graph shutdown time
@@ -956,11 +967,11 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * Track for window audio capture.
    */
   nsTArray<WindowAndTrack> mWindowCaptureTracks;
-
   /**
-   * Number of channels on output.
+   * Tracks that have their audio output mixed and written to an audio output
+   * device.
    */
-  const uint32_t mOutputChannels;
+  nsTArray<TrackKeyAndVolume> mAudioOutputs;
 
   /**
    * Global volume scale. Used when running tests so that the output is not too
@@ -992,6 +1003,14 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
    * whenever the audio device running this MediaTrackGraph changes.
    */
   double mAudioOutputLatency;
+
+  /**
+   * The max audio output channel count the default audio output device
+   * supports. This is cached here because it can be expensive to query. The
+   * cache is invalidated when the device is changed. This is initialized in the
+   * ctor, and the read/write only on the graph thread.
+   */
+  uint32_t mMaxOutputChannelCount;
 };
 
 }  // namespace mozilla

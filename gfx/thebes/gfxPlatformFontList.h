@@ -45,7 +45,7 @@ class CharMapHashKey : public PLDHashEntryHdr {
   CharMapHashKey(const CharMapHashKey& toCopy) : mCharMap(toCopy.mCharMap) {
     MOZ_COUNT_CTOR(CharMapHashKey);
   }
-  ~CharMapHashKey() { MOZ_COUNT_DTOR(CharMapHashKey); }
+  MOZ_COUNTED_DTOR(CharMapHashKey)
 
   gfxCharacterMap* GetKey() const { return mCharMap; }
 
@@ -234,7 +234,11 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
 
     // If set, the family name was quoted and so must not be treated as a CSS
     // generic.
-    eQuotedFamilyName = 1 << 3
+    eQuotedFamilyName = 1 << 3,
+
+    // If set, "hidden" font families (like ".SF NS Text" on macOS) are
+    // searched in addition to standard user-visible families.
+    eSearchHiddenFamilies = 1 << 4,
   };
 
   // Find family(ies) matching aFamily and append to the aOutput array
@@ -444,8 +448,17 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
     return mCodepointsWithNoFonts.test(aCh);
   }
 
+  // If using the shared font list, returns a generation count that is
+  // incremented if/when the platform list is reinitialized (e.g. because
+  // fonts are installed/removed while the browser is running), such that
+  // existing references to shared font family or face objects and character
+  // maps will no longer be valid.
+  // (The legacy (non-shared) list just returns 0 here.)
+  uint32_t GetGeneration() const;
+
  protected:
   friend class mozilla::fontlist::FontList;
+  friend class InitOtherFamilyNamesForStylo;
 
   class InitOtherFamilyNamesRunnable : public mozilla::CancelableRunnable {
    public:
@@ -480,7 +493,7 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   };
 
   class MemoryReporter final : public nsIMemoryReporter {
-    ~MemoryReporter() {}
+    ~MemoryReporter() = default;
 
    public:
     NS_DECL_ISUPPORTS
@@ -734,12 +747,12 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   bool mFaceNameListsInitialized;
 
   struct ExtraNames {
-    ExtraNames() : mFullnames(64), mPostscriptNames(64) {}
+    ExtraNames() = default;
 
     // fullname ==> font entry (unique, one name per font entry)
-    FontEntryTable mFullnames;
+    FontEntryTable mFullnames{64};
     // Postscript name ==> font entry (unique, one name per font entry)
-    FontEntryTable mPostscriptNames;
+    FontEntryTable mPostscriptNames{64};
   };
   mozilla::UniquePtr<ExtraNames> mExtraNames;
 

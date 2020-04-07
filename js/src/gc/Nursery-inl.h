@@ -100,7 +100,7 @@ namespace js {
 
 template <typename T>
 static inline T* AllocateObjectBuffer(JSContext* cx, uint32_t count) {
-  size_t nbytes = JS_ROUNDUP(count * sizeof(T), sizeof(Value));
+  size_t nbytes = RoundUp(count * sizeof(T), sizeof(Value));
   T* buffer = static_cast<T*>(cx->nursery().allocateBuffer(cx->zone(), nbytes));
   if (!buffer) {
     ReportOutOfMemory(cx);
@@ -114,7 +114,7 @@ static inline T* AllocateObjectBuffer(JSContext* cx, JSObject* obj,
   if (cx->isHelperThreadContext()) {
     return cx->pod_malloc<T>(count);
   }
-  size_t nbytes = JS_ROUNDUP(count * sizeof(T), sizeof(Value));
+  size_t nbytes = RoundUp(count * sizeof(T), sizeof(Value));
   T* buffer = static_cast<T*>(cx->nursery().allocateBuffer(obj, nbytes));
   if (!buffer) {
     ReportOutOfMemory(cx);
@@ -132,6 +132,43 @@ static inline T* ReallocateObjectBuffer(JSContext* cx, JSObject* obj,
   }
   T* buffer = static_cast<T*>(cx->nursery().reallocateBuffer(
       obj, oldBuffer, oldCount * sizeof(T), newCount * sizeof(T)));
+  if (!buffer) {
+    ReportOutOfMemory(cx);
+  }
+  return buffer;
+}
+
+static inline JS::BigInt::Digit* AllocateBigIntDigits(JSContext* cx,
+                                                      JS::BigInt* bi,
+                                                      uint32_t length) {
+  if (cx->isHelperThreadContext()) {
+    return cx->pod_malloc<JS::BigInt::Digit>(length);
+  }
+  size_t nbytes = RoundUp(length * sizeof(JS::BigInt::Digit), sizeof(Value));
+  auto* digits =
+      static_cast<JS::BigInt::Digit*>(cx->nursery().allocateBuffer(bi, nbytes));
+  if (!digits) {
+    ReportOutOfMemory(cx);
+  }
+  return digits;
+}
+
+static inline JS::BigInt::Digit* ReallocateBigIntDigits(
+    JSContext* cx, JS::BigInt* obj, JS::BigInt::Digit* oldDigits,
+    uint32_t oldLength, uint32_t newLength) {
+  if (cx->isHelperThreadContext()) {
+    MOZ_ASSERT(!cx->nursery().isInside(oldDigits));
+    return obj->zone()->pod_realloc<JS::BigInt::Digit>(oldDigits, oldLength,
+                                                       newLength);
+  }
+
+  size_t oldBytes =
+      RoundUp(oldLength * sizeof(JS::BigInt::Digit), sizeof(Value));
+  size_t newBytes =
+      RoundUp(newLength * sizeof(JS::BigInt::Digit), sizeof(Value));
+
+  auto* buffer = static_cast<JS::BigInt::Digit*>(
+      cx->nursery().reallocateBuffer(obj, oldDigits, oldBytes, newBytes));
   if (!buffer) {
     ReportOutOfMemory(cx);
   }

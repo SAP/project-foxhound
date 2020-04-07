@@ -292,7 +292,8 @@ NPError PluginInstanceChild::InternalGetNPObjectForValue(NPNVariable aValue,
       if (!(actor = mCachedElementActor)) {
         result = NPERR_GENERIC_ERROR;
         PPluginScriptableObjectChild* actorProtocol;
-        if (CallNPN_GetValue_NPNVPluginElementNPObject(&actorProtocol, &result) &&
+        if (CallNPN_GetValue_NPNVPluginElementNPObject(&actorProtocol,
+                                                       &result) &&
             (result == NPERR_NO_ERROR)) {
           actor = mCachedElementActor =
               static_cast<PluginScriptableObjectChild*>(actorProtocol);
@@ -814,10 +815,9 @@ NPError PluginInstanceChild::AudioDeviceStateChanged(
 void SetMouseEventWParam(NPEvent* aEvent) {
   // Fill in potentially missing key state info.  See
   // nsPluginInstanceOwner::ProcessEvent for circumstances where this happens.
-  const auto kMouseMessages =
-      mozilla::Array<int,9>(WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN,
-                            WM_LBUTTONUP, WM_MBUTTONUP, WM_RBUTTONUP,
-                            WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_MOUSEHWHEEL);
+  const auto kMouseMessages = mozilla::Array<int, 9>(
+      WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN, WM_LBUTTONUP,
+      WM_MBUTTONUP, WM_RBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_MOUSEHWHEEL);
 
   bool isInvalidWParam =
       (aEvent->wParam == NPAPI_INVALID_WPARAM) &&
@@ -1402,7 +1402,7 @@ bool PluginInstanceChild::RegisterWindowClass() {
   wcex.lpszClassName = kWindowClassName;
   wcex.hIconSm = 0;
 
-  return RegisterClassEx(&wcex) ? true : false;
+  return RegisterClassEx(&wcex);
 }
 
 bool PluginInstanceChild::CreatePluginWindow() {
@@ -2646,7 +2646,7 @@ NPError PluginInstanceChild::NPN_InitAsyncSurface(NPSize* size,
       // Hold the shmem alive until Finalize() is called or this actor dies.
       holder = new DirectBitmap(this, shmem, IntSize(size->width, size->height),
                                 surface->bitmap.stride, mozformat);
-      mDirectBitmaps.Put(surface, holder);
+      mDirectBitmaps.Put(surface, std::move(holder));
       return NPERR_NO_ERROR;
     }
 #if defined(XP_WIN)
@@ -4029,7 +4029,7 @@ void PluginInstanceChild::Destroy() {
   ClearAllSurfaces();
   mDirectBitmaps.Clear();
 
-  mDeletingHash = new nsTHashtable<DeletingObjectEntry>;
+  mDeletingHash = MakeUnique<nsTHashtable<DeletingObjectEntry>>();
   PluginScriptableObjectChild::NotifyOfInstanceShutdown(this);
 
   InvalidateObjects(*mDeletingHash);

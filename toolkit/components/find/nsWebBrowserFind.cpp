@@ -10,12 +10,9 @@
 // else we could use nsRange.h and nsIFind.h.
 #include "nsFind.h"
 
-#include "nsIComponentManager.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsPIDOMWindow.h"
-#include "nsIURI.h"
 #include "nsIDocShell.h"
 #include "nsPresContext.h"
 #include "mozilla/dom/Document.h"
@@ -25,7 +22,6 @@
 #include "nsReadableUtils.h"
 #include "nsIContent.h"
 #include "nsContentCID.h"
-#include "nsIServiceManager.h"
 #include "nsIObserverService.h"
 #include "nsISupportsPrimitives.h"
 #include "nsFind.h"
@@ -54,6 +50,7 @@ nsWebBrowserFind::nsWebBrowserFind()
       mWrapFind(false),
       mEntireWord(false),
       mMatchCase(false),
+      mMatchDiacritics(false),
       mSearchSubFrames(true),
       mSearchParentFrames(true) {}
 
@@ -127,10 +124,9 @@ nsWebBrowserFind::FindNext(bool* aResult) {
   auto enumDirection = mFindBackwards ? nsIDocShell::ENUMERATE_BACKWARDS
                                       : nsIDocShell::ENUMERATE_FORWARDS;
 
-  nsCOMPtr<nsISimpleEnumerator> docShellEnumerator;
-  rv = rootDocShell->GetDocShellEnumerator(nsIDocShellTreeItem::typeAll,
-                                           enumDirection,
-                                           getter_AddRefs(docShellEnumerator));
+  nsTArray<RefPtr<nsIDocShell>> docShells;
+  rv = rootDocShell->GetAllDocShellsInSubtree(nsIDocShellTreeItem::typeAll,
+                                              enumDirection, docShells);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -138,23 +134,10 @@ nsWebBrowserFind::FindNext(bool* aResult) {
   // remember where we started
   nsCOMPtr<nsIDocShellTreeItem> startingItem = searchFrame->GetDocShell();
 
-  nsCOMPtr<nsIDocShellTreeItem> curItem;
-
   // XXX We should avoid searching in frameset documents here.
   // We also need to honour mSearchSubFrames and mSearchParentFrames.
-  bool hasMore, doFind = false;
-  while (NS_SUCCEEDED(docShellEnumerator->HasMoreElements(&hasMore)) &&
-         hasMore) {
-    nsCOMPtr<nsISupports> curSupports;
-    rv = docShellEnumerator->GetNext(getter_AddRefs(curSupports));
-    if (NS_FAILED(rv)) {
-      break;
-    }
-    curItem = do_QueryInterface(curSupports, &rv);
-    if (NS_FAILED(rv)) {
-      break;
-    }
-
+  bool doFind = false;
+  for (const auto& curItem : docShells) {
     if (doFind) {
       searchFrame = curItem->GetWindow();
       if (!searchFrame) {
@@ -192,26 +175,13 @@ nsWebBrowserFind::FindNext(bool* aResult) {
 
   // because nsISimpleEnumerator is bad and isn't resettable, I have to
   // make a new one
-  docShellEnumerator = nullptr;
-  rv = rootDocShell->GetDocShellEnumerator(nsIDocShellTreeItem::typeAll,
-                                           enumDirection,
-                                           getter_AddRefs(docShellEnumerator));
+  rv = rootDocShell->GetAllDocShellsInSubtree(nsIDocShellTreeItem::typeAll,
+                                              enumDirection, docShells);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  while (NS_SUCCEEDED(docShellEnumerator->HasMoreElements(&hasMore)) &&
-         hasMore) {
-    nsCOMPtr<nsISupports> curSupports;
-    rv = docShellEnumerator->GetNext(getter_AddRefs(curSupports));
-    if (NS_FAILED(rv)) {
-      break;
-    }
-    curItem = do_QueryInterface(curSupports, &rv);
-    if (NS_FAILED(rv)) {
-      break;
-    }
-
+  for (const auto& curItem : docShells) {
     searchFrame = curItem->GetWindow();
     if (!searchFrame) {
       rv = NS_ERROR_FAILURE;
@@ -314,6 +284,19 @@ nsWebBrowserFind::GetMatchCase(bool* aMatchCase) {
 NS_IMETHODIMP
 nsWebBrowserFind::SetMatchCase(bool aMatchCase) {
   mMatchCase = aMatchCase;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsWebBrowserFind::GetMatchDiacritics(bool* aMatchDiacritics) {
+  NS_ENSURE_ARG_POINTER(aMatchDiacritics);
+  *aMatchDiacritics = mMatchDiacritics;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsWebBrowserFind::SetMatchDiacritics(bool aMatchDiacritics) {
+  mMatchDiacritics = aMatchDiacritics;
   return NS_OK;
 }
 
@@ -653,6 +636,7 @@ nsresult nsWebBrowserFind::SearchInFrame(nsPIDOMWindowOuter* aWindow,
   NS_ENSURE_SUCCESS(rv, rv);
 
   (void)find->SetCaseSensitive(mMatchCase);
+  (void)find->SetMatchDiacritics(mMatchDiacritics);
   (void)find->SetFindBackwards(mFindBackwards);
 
   (void)find->SetEntireWord(mEntireWord);
@@ -664,10 +648,9 @@ nsresult nsWebBrowserFind::SearchInFrame(nsPIDOMWindowOuter* aWindow,
   RefPtr<Selection> sel = GetFrameSelection(aWindow);
   NS_ENSURE_ARG_POINTER(sel);
 
-  RefPtr<nsRange> searchRange = new nsRange(theDoc);
-  RefPtr<nsRange> startPt = new nsRange(theDoc);
-  RefPtr<nsRange> endPt = new nsRange(theDoc);
-  NS_ENSURE_ARG_POINTER(endPt);
+  RefPtr<nsRange> searchRange = nsRange::Create(theDoc);
+  RefPtr<nsRange> startPt = nsRange::Create(theDoc);
+  RefPtr<nsRange> endPt = nsRange::Create(theDoc);
 
   RefPtr<nsRange> foundRange;
 

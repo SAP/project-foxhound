@@ -39,13 +39,19 @@ using mozilla::AssertedCast;
 using js::intl::CallICU;
 using js::intl::IcuLocale;
 
-const JSClassOps ListFormatObject::classOps_ = {nullptr, /* addProperty */
-                                                nullptr, /* delProperty */
-                                                nullptr, /* enumerate */
-                                                nullptr, /* newEnumerate */
-                                                nullptr, /* resolve */
-                                                nullptr, /* mayResolve */
-                                                ListFormatObject::finalize};
+const JSClassOps ListFormatObject::classOps_ = {
+    nullptr,                     // addProperty
+    nullptr,                     // delProperty
+    nullptr,                     // enumerate
+    nullptr,                     // newEnumerate
+    nullptr,                     // resolve
+    nullptr,                     // mayResolve
+    ListFormatObject::finalize,  // finalize
+    nullptr,                     // call
+    nullptr,                     // hasInstance
+    nullptr,                     // construct
+    nullptr,                     // trace
+};
 const JSClass ListFormatObject::class_ = {
     js_Object_str,
     JSCLASS_HAS_RESERVED_SLOTS(ListFormatObject::SLOT_COUNT) |
@@ -132,6 +138,8 @@ void js::ListFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->onMainThread());
 
   if (UListFormatter* lf = obj->as<ListFormatObject>().getListFormatter()) {
+    intl::RemoveICUCellMemory(fop, obj, ListFormatObject::EstimatedMemoryUse);
+
     ulistfmt_close(lf);
   }
 }
@@ -441,6 +449,8 @@ bool js::intl_FormatList(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
     listFormat->setListFormatter(lf);
+
+    intl::AddICUCellMemory(listFormat, ListFormatObject::EstimatedMemoryUse);
   }
 
   // Collect all strings and their lengths.

@@ -48,29 +48,6 @@ registerCleanupFunction(function() {
   );
 });
 
-var navigateTo = async function(inspector, url) {
-  const markuploaded = inspector.once("markuploaded");
-  const onNewRoot = inspector.once("new-root");
-  const onUpdated = inspector.once("inspector-updated");
-  const onReloaded = inspector.once("reloaded");
-
-  info("Navigating to: " + url);
-  const target = inspector.toolbox.target;
-  await target.navigateTo({ url });
-
-  info("Waiting for markup view to load after navigation.");
-  await markuploaded;
-
-  info("Waiting for new root.");
-  await onNewRoot;
-
-  info("Waiting for inspector to update after new-root event.");
-  await onUpdated;
-
-  info("Waiting for inspector updates after page reload");
-  await onReloaded;
-};
-
 /**
  * Start the element picker and focus the content window.
  * @param {Toolbox} toolbox
@@ -83,7 +60,7 @@ var startPicker = async function(toolbox, skipFocus) {
   if (!skipFocus) {
     // By default make sure the content window is focused since the picker may not focus
     // the content window by default.
-    await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
       content.focus();
     });
   }
@@ -240,6 +217,24 @@ var getNodeFrontInFrame = async function(selector, frameSelector, inspector) {
 };
 
 /**
+ * Get the NodeFront for the shadowRoot of a shadow host.
+ *
+ * @param {String|NodeFront} hostSelector
+ *        Selector or front of the element to which the shadow root is attached.
+ * @param {InspectorPanel} inspector
+ *        The instance of InspectorPanel currently loaded in the toolbox
+ * @return {Promise} Resolves the node front when the inspector is updated with the new
+ *         node.
+ */
+var getShadowRoot = async function(hostSelector, inspector) {
+  const hostFront = await getNodeFront(hostSelector, inspector);
+  const { nodes } = await inspector.walker.children(hostFront);
+
+  // Find the shadow root in the children of the host element.
+  return nodes.filter(node => node.isShadowRoot)[0];
+};
+
+/**
  * Get the NodeFront for a node that matches a given css selector inside a shadow root.
  *
  * @param {String} selector
@@ -256,11 +251,7 @@ var getNodeFrontInShadowDom = async function(
   hostSelector,
   inspector
 ) {
-  const hostFront = await getNodeFront(hostSelector, inspector);
-  const { nodes } = await inspector.walker.children(hostFront);
-
-  // Find the shadow root in the children of the host element.
-  const shadowRoot = nodes.filter(node => node.isShadowRoot)[0];
+  const shadowRoot = await getShadowRoot(hostSelector, inspector);
   if (!shadowRoot) {
     throw new Error(
       "Could not find a shadow root under selector: " + hostSelector
@@ -522,7 +513,8 @@ const getHighlighterHelperFor = type =>
 
         return {
           getComputedStyle: async function(options = {}) {
-            return inspector.pageStyle.getComputed(highlightedNode, options);
+            const pageStyle = highlightedNode.inspectorFront.pageStyle;
+            return pageStyle.getComputed(highlightedNode, options);
           },
         };
       },

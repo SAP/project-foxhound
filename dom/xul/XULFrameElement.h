@@ -63,8 +63,13 @@ class XULFrameElement final : public nsXULElement, public nsFrameLoaderOwner {
                                 nsIPrincipal* aSubjectPrincipal,
                                 bool aNotify) override;
 
+  NS_IMPL_FROMNODE_HELPER(XULFrameElement,
+                          IsAnyOfXULElements(nsGkAtoms::iframe,
+                                             nsGkAtoms::browser,
+                                             nsGkAtoms::editor))
+
  protected:
-  virtual ~XULFrameElement() {}
+  virtual ~XULFrameElement() = default;
 
   RefPtr<BrowsingContext> mOpener;
 

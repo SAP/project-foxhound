@@ -13,7 +13,6 @@
 #include "mozilla/dom/cache/ManagerId.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozIStorageConnection.h"
-#include "nsIFile.h"
 #include "nsIPrincipal.h"
 #include "nsIRunnable.h"
 #include "nsThreadUtils.h"
@@ -25,7 +24,7 @@ using mozilla::dom::cache::QuotaInfo;
 
 class NullAction final : public Action {
  public:
-  NullAction() {}
+  NullAction() = default;
 
   virtual void RunOnTarget(Resolver* aResolver, const QuotaInfo&,
                            Data*) override {
@@ -150,7 +149,7 @@ class Context::QuotaInitRunnable final : public nsIRunnable,
     nsresult Result() const { return mResult; }
 
    private:
-    ~SyncResolver() {}
+    ~SyncResolver() = default;
 
     bool mResolved;
     nsresult mResult;
@@ -225,18 +224,23 @@ void Context::QuotaInitRunnable::OpenDirectory() {
   // a listener.  We will then get DirectoryLockAcquired() on the owning
   // thread when it is safe to access our storage directory.
   mState = STATE_WAIT_FOR_DIRECTORY_LOCK;
-  QuotaManager::Get()->OpenDirectory(PERSISTENCE_TYPE_DEFAULT,
-                                     mQuotaInfo.mGroup, mQuotaInfo.mOrigin,
-                                     quota::Client::DOMCACHE,
-                                     /* aExclusive */ false, this);
+  RefPtr<DirectoryLock> pendingDirectoryLock =
+      QuotaManager::Get()->OpenDirectory(PERSISTENCE_TYPE_DEFAULT,
+                                         mQuotaInfo.mGroup, mQuotaInfo.mOrigin,
+                                         quota::Client::DOMCACHE,
+                                         /* aExclusive */ false, this);
 }
 
 void Context::QuotaInitRunnable::DirectoryLockAcquired(DirectoryLock* aLock) {
   NS_ASSERT_OWNINGTHREAD(QuotaInitRunnable);
+  MOZ_DIAGNOSTIC_ASSERT(aLock);
   MOZ_DIAGNOSTIC_ASSERT(mState == STATE_WAIT_FOR_DIRECTORY_LOCK);
   MOZ_DIAGNOSTIC_ASSERT(!mDirectoryLock);
 
   mDirectoryLock = aLock;
+
+  MOZ_DIAGNOSTIC_ASSERT(mDirectoryLock->Id() >= 0);
+  mQuotaInfo.mDirectoryLockId = mDirectoryLock->Id();
 
   if (mCanceled) {
     Complete(NS_ERROR_ABORT);
@@ -387,9 +391,10 @@ Context::QuotaInitRunnable::Run() {
 
       QuotaManager* qm = QuotaManager::Get();
       MOZ_DIAGNOSTIC_ASSERT(qm);
-      nsresult rv = qm->EnsureOriginIsInitialized(
+      nsresult rv = qm->EnsureStorageAndOriginIsInitialized(
           PERSISTENCE_TYPE_DEFAULT, mQuotaInfo.mSuffix, mQuotaInfo.mGroup,
-          mQuotaInfo.mOrigin, getter_AddRefs(mQuotaInfo.mDir));
+          mQuotaInfo.mOrigin, quota::Client::DOMCACHE,
+          getter_AddRefs(mQuotaInfo.mDir));
       if (NS_FAILED(rv)) {
         resolver->Resolve(rv);
         break;

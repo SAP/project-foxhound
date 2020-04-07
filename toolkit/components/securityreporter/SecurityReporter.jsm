@@ -50,12 +50,12 @@ SecurityReporter.prototype = {
       return;
     }
 
-    // Convert the nsIX509CertList into a format that can be parsed into
+    // Convert the array of nsIX509Cert into a format that can be parsed into
     // JSON
     let asciiCertChain = [];
 
     if (transportSecurityInfo.failedCertChain) {
-      for (let cert of transportSecurityInfo.failedCertChain.getEnumerator()) {
+      for (let cert of transportSecurityInfo.failedCertChain) {
         asciiCertChain.push(cert.getBase64DERString());
       }
     }

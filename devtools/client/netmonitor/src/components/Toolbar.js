@@ -14,18 +14,25 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const {
   connect,
 } = require("devtools/client/shared/redux/visibility-handler-connect");
-const Actions = require("../actions/index");
-const { FILTER_SEARCH_DELAY, FILTER_TAGS, PANELS } = require("../constants");
+const Actions = require("devtools/client/netmonitor/src/actions/index");
+const {
+  FILTER_SEARCH_DELAY,
+  FILTER_TAGS,
+  PANELS,
+} = require("devtools/client/netmonitor/src/constants");
 const {
   getDisplayedRequests,
   getRecordingState,
   getTypeFilteredRequests,
-} = require("../selectors/index");
+  getSelectedRequest,
+} = require("devtools/client/netmonitor/src/selectors/index");
 const {
   autocompleteProvider,
-} = require("../utils/filter-autocomplete-provider");
-const { L10N } = require("../utils/l10n");
-const { fetchNetworkUpdatePacket } = require("../utils/request-utils");
+} = require("devtools/client/netmonitor/src/utils/filter-autocomplete-provider");
+const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  fetchNetworkUpdatePacket,
+} = require("devtools/client/netmonitor/src/utils/request-utils");
 
 loader.lazyRequireGetter(
   this,
@@ -34,7 +41,9 @@ loader.lazyRequireGetter(
 );
 
 // MDN
-const { getFilterBoxURL } = require("../utils/mdn-utils");
+const {
+  getFilterBoxURL,
+} = require("devtools/client/netmonitor/src/utils/mdn-utils");
 const LEARN_MORE_URL = getFilterBoxURL();
 
 // Components
@@ -55,6 +64,7 @@ const SEARCH_KEY_SHORTCUT = L10N.getStr("netmonitor.toolbar.search.key");
 const SEARCH_PLACE_HOLDER = L10N.getStr(
   "netmonitor.toolbar.filterFreetext.label"
 );
+const COPY_KEY_SHORTCUT = L10N.getStr("netmonitor.toolbar.copy.key");
 const TOOLBAR_CLEAR = L10N.getStr("netmonitor.toolbar.clear");
 const TOOLBAR_TOGGLE_RECORDING = L10N.getStr(
   "netmonitor.toolbar.toggleRecording"
@@ -102,6 +112,12 @@ loader.lazyRequireGetter(
   "devtools/client/netmonitor/src/har/har-menu-utils",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "copyString",
+  "devtools/shared/platform/clipboard",
+  true
+);
 
 // Throttling
 const Types = require("devtools/client/shared/components/throttling/types");
@@ -144,10 +160,11 @@ class Toolbar extends Component {
       // Executed when throttling changes (through toolbar button).
       onChangeNetworkThrottling: PropTypes.func.isRequired,
       toggleSearchPanel: PropTypes.func.isRequired,
-      networkActionBarOpen: PropTypes.bool.isRequired,
+      networkActionBarOpen: PropTypes.bool,
       toggleRequestBlockingPanel: PropTypes.func.isRequired,
       networkActionBarSelectedPanel: PropTypes.string.isRequired,
       hasBlockedRequests: PropTypes.bool.isRequired,
+      selectedRequest: PropTypes.object,
     };
   }
 
@@ -183,6 +200,12 @@ class Toolbar extends Component {
       event.preventDefault();
       this.props.toggleSearchPanel();
     });
+
+    this.shortcuts.on(COPY_KEY_SHORTCUT, () => {
+      if (this.props.selectedRequest && this.props.selectedRequest.url) {
+        copyString(this.props.selectedRequest.url);
+      }
+    });
   }
 
   shouldComponentUpdate(nextProps) {
@@ -211,6 +234,10 @@ class Toolbar extends Component {
       DEVTOOLS_DISABLE_CACHE_PREF,
       this.updateBrowserCacheDisabled
     );
+
+    if (this.shortcuts) {
+      this.shortcuts.destroy();
+    }
   }
 
   toggleRequestFilterType(evt) {
@@ -592,8 +619,9 @@ module.exports = connect(
     recording: getRecordingState(state),
     requestFilterTypes: state.filters.requestFilterTypes,
     networkThrottling: state.networkThrottling,
-    networkActionBarOpen: state.search.panelOpen,
+    networkActionBarOpen: state.ui.networkActionOpen,
     networkActionBarSelectedPanel: state.ui.selectedActionBarTabId || "",
+    selectedRequest: getSelectedRequest(state),
   }),
   dispatch => ({
     clearRequests: () => dispatch(Actions.clearRequests()),

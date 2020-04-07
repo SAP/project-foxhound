@@ -111,6 +111,7 @@ function TextPropertyEditor(ruleEditor, property) {
   this.getGridlineNames = this.getGridlineNames.bind(this);
   this.update = this.update.bind(this);
   this.updatePropertyState = this.updatePropertyState.bind(this);
+  this._onEnableChanged = this._onEnableChanged.bind(this);
   this._onEnableClicked = this._onEnableClicked.bind(this);
   this._onExpandClicked = this._onExpandClicked.bind(this);
   this._onNameDone = this._onNameDone.bind(this);
@@ -152,6 +153,7 @@ TextPropertyEditor.prototype = {
   _create: function() {
     this.element = this.doc.createElementNS(HTML_NS, "li");
     this.element.classList.add("ruleview-property");
+    this.element.dataset.declarationId = this.prop.id;
     this.element._textPropertyEditor = this;
 
     this.container = createChild(this.element, "div", {
@@ -159,8 +161,10 @@ TextPropertyEditor.prototype = {
     });
 
     // The enable checkbox will disable or enable the rule.
-    this.enable = createChild(this.container, "div", {
-      class: "ruleview-enableproperty theme-checkbox",
+    this.enable = createChild(this.container, "input", {
+      type: "checkbox",
+      class: "ruleview-enableproperty",
+      "aria-labelledby": this.prop.id,
       tabindex: "-1",
     });
 
@@ -173,6 +177,7 @@ TextPropertyEditor.prototype = {
     this.nameSpan = createChild(this.nameContainer, "span", {
       class: "ruleview-propertyname theme-fg-color3",
       tabindex: this.ruleEditor.isEditable ? "0" : "-1",
+      id: this.prop.id,
     });
 
     appendText(this.nameContainer, ": ");
@@ -244,6 +249,7 @@ TextPropertyEditor.prototype = {
     // Only bind event handlers if the rule is editable.
     if (this.ruleEditor.isEditable) {
       this.enable.addEventListener("click", this._onEnableClicked, true);
+      this.enable.addEventListener("change", this._onEnableChanged, true);
 
       this.nameContainer.addEventListener("click", event => {
         // Clicks within the name shouldn't propagate any further.
@@ -439,7 +445,7 @@ TextPropertyEditor.prototype = {
   /**
    * Populate the span based on changes to the TextProperty.
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   update: function() {
     if (this.ruleView.isDestroyed) {
       return;
@@ -706,7 +712,6 @@ TextPropertyEditor.prototype = {
       }
     }
   },
-  /* eslint-enable complexity */
 
   _onStartEditing: function() {
     this.element.classList.remove("ruleview-overridden");
@@ -911,9 +916,16 @@ TextPropertyEditor.prototype = {
   },
 
   /**
-   * Handles clicks on the disabled property.
+   * Stop clicks propogating down the tree from the enable / disable checkbox.
    */
   _onEnableClicked: function(event) {
+    event.stopPropagation();
+  },
+
+  /**
+   * Handles clicks on the disabled property.
+   */
+  _onEnableChanged: function(event) {
     const checked = this.enable.hasAttribute("checked");
     if (checked) {
       this.enable.removeAttribute("checked");

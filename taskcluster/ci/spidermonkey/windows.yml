@@ -33,9 +33,11 @@ sm-plain-win32/debug:
     treeherder:
         platform: windows2012-32/debug
         symbol: SM(p)
+        tier: 2
     run:
         spidermonkey-variant: plaindebug
         spidermonkey-platform: win32
+    run-on-projects: ['mozilla-central', 'try']
     fetches:
         toolchain:
             - win64-clang-cl
@@ -66,9 +68,11 @@ sm-plain-win32/opt:
     treeherder:
         platform: windows2012-32/opt
         symbol: SM(p)
+        tier: 2
     run:
         spidermonkey-variant: plain
         spidermonkey-platform: win32
+    run-on-projects: ['mozilla-central', 'try']
     fetches:
         toolchain:
             - win64-clang-cl
@@ -99,6 +103,7 @@ sm-compacting-win32/debug:
     treeherder:
         platform: windows2012-32/debug
         symbol: SM(cgc)
+        tier: 2
     run:
         spidermonkey-variant: compacting
         spidermonkey-platform: win32
@@ -110,19 +115,3 @@ sm-compacting-win32/debug:
     worker:
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win32/releng.manifest"
-
-sm-plain-win64-aarch64/opt:
-    description: "Spidermonkey Plain win64-aarch64 opt"
-    index:
-        job-name: sm-plain-win64-aarch64-opt
-    treeherder:
-        platform: windows2012-aarch64/opt
-        symbol: SM(p)
-        tier: 2
-    run:
-        spidermonkey-variant: plain
-        spidermonkey-platform: win64
-    fetches:
-        toolchain:
-            - win64-clang-cl
-            - win64-rust

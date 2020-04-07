@@ -34,8 +34,8 @@ StaticRefPtr<TaskQueue> sRemoteDecoderManagerTaskQueue;
 
 SurfaceDescriptorGPUVideo RemoteDecoderManagerParent::StoreImage(
     Image* aImage, TextureClient* aTexture) {
-  SurfaceDescriptorGPUVideo ret;
-  aTexture->GPUVideoDesc(&ret);
+  SurfaceDescriptorRemoteDecoder ret;
+  aTexture->GetSurfaceDescriptorRemoteDecoder(&ret);
 
   mImageMap[ret.handle()] = aImage;
   mTextureMap[ret.handle()] = aTexture;
@@ -46,7 +46,7 @@ class RemoteDecoderManagerThreadHolder {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RemoteDecoderManagerThreadHolder)
 
  public:
-  RemoteDecoderManagerThreadHolder() {}
+  RemoteDecoderManagerThreadHolder() = default;
 
  private:
   ~RemoteDecoderManagerThreadHolder() {
@@ -174,7 +174,7 @@ bool RemoteDecoderManagerParent::CreateForContent(
   return true;
 }
 
-bool RemoteDecoderManagerParent::CreateVideoBridgeToParentProcess(
+bool RemoteDecoderManagerParent::CreateVideoBridgeToOtherProcess(
     Endpoint<PVideoBridgeChild>&& aEndpoint) {
   // We never want to decode in the GPU process, but output
   // frames to the parent process.
@@ -185,9 +185,9 @@ bool RemoteDecoderManagerParent::CreateVideoBridgeToParentProcess(
     return false;
   }
 
-  RefPtr<Runnable> task = NewRunnableFunction(
-      "gfx::VideoBridgeChild::Open", &VideoBridgeChild::OpenToParentProcess,
-      std::move(aEndpoint));
+  RefPtr<Runnable> task =
+      NewRunnableFunction("gfx::VideoBridgeChild::Open",
+                          &VideoBridgeChild::Open, std::move(aEndpoint));
   sRemoteDecoderManagerParentThread->Dispatch(task.forget(),
                                               NS_DISPATCH_NORMAL);
   return true;
@@ -256,7 +256,8 @@ void RemoteDecoderManagerParent::ActorDealloc() { Release(); }
 
 mozilla::ipc::IPCResult RemoteDecoderManagerParent::RecvReadback(
     const SurfaceDescriptorGPUVideo& aSD, SurfaceDescriptor* aResult) {
-  RefPtr<Image> image = mImageMap[aSD.handle()];
+  const SurfaceDescriptorRemoteDecoder& sd = aSD;
+  RefPtr<Image> image = mImageMap[sd.handle()];
   if (!image) {
     *aResult = null_t();
     return IPC_OK();
@@ -299,8 +300,9 @@ mozilla::ipc::IPCResult RemoteDecoderManagerParent::RecvReadback(
 mozilla::ipc::IPCResult
 RemoteDecoderManagerParent::RecvDeallocateSurfaceDescriptorGPUVideo(
     const SurfaceDescriptorGPUVideo& aSD) {
-  mImageMap.erase(aSD.handle());
-  mTextureMap.erase(aSD.handle());
+  const SurfaceDescriptorRemoteDecoder& sd = aSD;
+  mImageMap.erase(sd.handle());
+  mTextureMap.erase(sd.handle());
   return IPC_OK();
 }
 

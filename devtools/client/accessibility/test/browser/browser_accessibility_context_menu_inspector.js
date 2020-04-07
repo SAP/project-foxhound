@@ -65,8 +65,18 @@ async function checkAccessibleObjectSelection(
   const expectedNode = isText
     ? inspector.selection.nodeFront.inlineTextChild
     : inspector.selection.nodeFront;
-  const expectedSelected = await panel.walker.getAccessibleFor(expectedNode);
+  const expectedSelected = await panel.accessibilityProxy.accessibleWalkerFront.getAccessibleFor(
+    expectedNode
+  );
   is(selected, expectedSelected, "Accessible front selected correctly");
+
+  const doc = panel.panelWin.document;
+  const propertiesTree = doc.querySelector(".tree");
+  is(doc.activeElement, propertiesTree, "Properties list must be focused.");
+  ok(
+    isVisible(doc.querySelector(".treeTable .treeRow.selected")),
+    "Selected row is visible."
+  );
 }
 
 addA11YPanelTask(

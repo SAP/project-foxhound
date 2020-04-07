@@ -23,7 +23,7 @@ AddonTestUtils.initMochitest(this);
 const TEST_DIR = gTestPath.substr(0, gTestPath.lastIndexOf("/"));
 const CHROME_URL_ROOT = TEST_DIR + "/";
 const PERMISSIONS_URL =
-  "chrome://browser/content/preferences/sitePermissions.xul";
+  "chrome://browser/content/preferences/sitePermissions.xhtml";
 let sitePermissionsDialog;
 
 function getSupportsFile(path) {
@@ -98,7 +98,7 @@ function waitForMessageContent(messageId, l10nId, doc) {
 async function openNotificationsPermissionDialog() {
   let dialogOpened = promiseLoadSubDialog(PERMISSIONS_URL);
 
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
     let doc = content.document;
     let settingsButton = doc.getElementById("notificationSettingsButton");
     settingsButton.click();
@@ -970,7 +970,7 @@ add_task(async function testExtensionControlledProxyConfig() {
   const CONTROLLED_SECTION_ID = "proxyExtensionContent";
   const CONTROLLED_BUTTON_ID = "disableProxyExtension";
   const CONNECTION_SETTINGS_DESC_ID = "connectionSettingsDescription";
-  const PANEL_URL = "chrome://browser/content/preferences/connection.xul";
+  const PANEL_URL = "chrome://browser/content/preferences/connection.xhtml";
 
   await SpecialPowers.pushPrefEnv({ set: [[PROXY_PREF, PROXY_DEFAULT]] });
 
@@ -1057,9 +1057,7 @@ add_task(async function testExtensionControlledProxyConfig() {
         is(
           element.disabled,
           disabled,
-          `Manual proxy controls should be ${controlState} - control: ${
-            element.outerHTML
-          }.`
+          `Manual proxy controls should be ${controlState} - control: ${element.outerHTML}.`
         );
       }
       for (let element of controls.pacControls) {
@@ -1067,18 +1065,14 @@ add_task(async function testExtensionControlledProxyConfig() {
         is(
           element.disabled,
           disabled,
-          `PAC proxy controls should be ${controlState} - control: ${
-            element.outerHTML
-          }.`
+          `PAC proxy controls should be ${controlState} - control: ${element.outerHTML}.`
         );
       }
       for (let element of controls.otherControls) {
         is(
           element.disabled,
           isControlled,
-          `Other proxy controls should be ${controlState} - control: ${
-            element.outerHTML
-          }.`
+          `Other proxy controls should be ${controlState} - control: ${element.outerHTML}.`
         );
       }
     } else {
@@ -1122,7 +1116,7 @@ add_task(async function testExtensionControlledProxyConfig() {
   async function openProxyPanel() {
     let panel = await openAndLoadSubDialog(PANEL_URL);
     let closingPromise = waitForEvent(
-      panel.document.documentElement,
+      panel.document.getElementById("ConnectionsDialog"),
       "dialogclosing"
     );
     ok(panel, "Proxy panel opened.");
@@ -1130,7 +1124,8 @@ add_task(async function testExtensionControlledProxyConfig() {
   }
 
   async function closeProxyPanel(panelObj) {
-    panelObj.panel.document.documentElement.cancelDialog();
+    let dialog = panelObj.panel.document.getElementById("ConnectionsDialog");
+    dialog.cancelDialog();
     let panelClosingEvent = await panelObj.closingPromise;
     ok(panelClosingEvent, "Proxy panel closed.");
   }

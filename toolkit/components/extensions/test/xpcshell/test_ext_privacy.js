@@ -20,6 +20,7 @@ const {
 } = AddonTestUtils;
 
 AddonTestUtils.init(this);
+AddonTestUtils.overrideCertDB();
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "42");
 
@@ -277,6 +278,10 @@ add_task(async function test_privacy_other_prefs() {
       "media.peerconnection.ice.proxy_only_if_behind_proxy": false,
       "media.peerconnection.ice.proxy_only": false,
     },
+    "network.tlsVersionRestriction": {
+      "security.tls.version.min": 1,
+      "security.tls.version.max": 4,
+    },
     "network.peerConnectionEnabled": {
       "media.peerconnection.enabled": true,
     },
@@ -373,7 +378,11 @@ add_task(async function test_privacy_other_prefs() {
   async function testSetting(setting, value, expected, expectedValue = value) {
     extension.sendMessage("set", { value: value }, setting);
     let data = await extension.awaitMessage("settingData");
-    deepEqual(data.value, expectedValue);
+    deepEqual(
+      data.value,
+      expectedValue,
+      `Got expected result on setting ${setting} to ${uneval(value)}`
+    );
     for (let pref in expected) {
       equal(
         Preferences.get(pref),
@@ -555,6 +564,97 @@ add_task(async function test_privacy_other_prefs() {
       "network.cookie.lifetimePolicy": cookieSvc.ACCEPT_NORMALLY,
     },
     { behavior: "reject_trackers", nonPersistentCookies: false }
+  );
+
+  await testSetting(
+    "network.tlsVersionRestriction",
+    {
+      minimum: "TLSv1.2",
+      maximum: "TLSv1.3",
+    },
+    {
+      "security.tls.version.min": 3,
+      "security.tls.version.max": 4,
+    }
+  );
+
+  // Invalid update (TLSv <= 1.2)
+  await testSetting(
+    "network.tlsVersionRestriction",
+    {
+      minimum: "invalid",
+      maximum: "TLSv1.1",
+    },
+    {
+      "security.tls.version.min": 1,
+      "security.tls.version.max": 2,
+    },
+    {
+      minimum: "TLSv1",
+      maximum: "TLSv1.1",
+    }
+  );
+
+  await testSetting(
+    "network.tlsVersionRestriction",
+    {
+      minimum: "invalid",
+      maximum: "invalid",
+    },
+    {
+      "security.tls.version.min": 1,
+      "security.tls.version.max": 4,
+    },
+    {
+      minimum: "TLSv1",
+      maximum: "TLSv1.3",
+    }
+  );
+
+  await testSetting(
+    "network.tlsVersionRestriction",
+    {
+      minimum: "TLSv1.3",
+      maximum: "invalid",
+    },
+    {
+      "security.tls.version.min": 4,
+      "security.tls.version.max": 4,
+    },
+    {
+      minimum: "TLSv1.3",
+      maximum: "TLSv1.3",
+    }
+  );
+
+  await testSetting(
+    "network.tlsVersionRestriction",
+    {
+      minimum: "TLSv1.2",
+    },
+    {
+      "security.tls.version.min": 3,
+      "security.tls.version.max": 4,
+    },
+    {
+      minimum: "TLSv1.2",
+      maximum: "TLSv1.3",
+    }
+  );
+
+  await testSetting(
+    "network.tlsVersionRestriction",
+    {
+      maximum: "TLSv1.2",
+    },
+    {
+      "security.tls.version.min": 1,
+      "security.tls.version.max": 3,
+    },
+    {
+      minimum: "TLSv1",
+      maximum: "TLSv1.2",
+    }
   );
 
   await extension.unload();

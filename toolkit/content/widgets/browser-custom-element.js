@@ -22,6 +22,30 @@
     "resource://gre/actors/BrowserElementParent.jsm"
   );
 
+  ChromeUtils.defineModuleGetter(
+    LazyModules,
+    "E10SUtils",
+    "resource://gre/modules/E10SUtils.jsm"
+  );
+
+  ChromeUtils.defineModuleGetter(
+    LazyModules,
+    "RemoteWebNavigation",
+    "resource://gre/modules/RemoteWebNavigation.jsm"
+  );
+
+  ChromeUtils.defineModuleGetter(
+    LazyModules,
+    "PopupBlocker",
+    "resource://gre/actors/PopupBlockingParent.jsm"
+  );
+
+  ChromeUtils.defineModuleGetter(
+    LazyModules,
+    "XPCOMUtils",
+    "resource://gre/modules/XPCOMUtils.jsm"
+  );
+
   const elementsToDestroyOnUnload = new Set();
 
   window.addEventListener(
@@ -48,9 +72,8 @@
       // Only do this when the rebuild frameloaders pref is off. This update isn't
       // required when we rebuild the frameloaders in the backend.
       let rebuildFrameLoaders =
-        Services.prefs.getBoolPref(
-          "fission.rebuild_frameloaders_on_remoteness_change"
-        ) || this.ownerGlobal.docShell.nsILoadContext.useRemoteSubframes;
+        LazyModules.E10SUtils.rebuildFrameloadersOnRemotenessChange ||
+        this.ownerGlobal.docShell.nsILoadContext.useRemoteSubframes;
       if (
         !rebuildFrameLoaders &&
         name === "remote" &&
@@ -83,6 +106,10 @@
       // Track progress listeners added to this <browser>. These need to persist
       // between calls to destroy().
       this.progressListeners = [];
+
+      LazyModules.XPCOMUtils.defineLazyGetter(this, "popupBlocker", () => {
+        return new LazyModules.PopupBlocker(this);
+      });
 
       this.addEventListener(
         "keypress",
@@ -280,8 +307,6 @@
 
       this._loadContext = null;
 
-      this._imageDocument = null;
-
       this._webBrowserFind = null;
 
       this._finder = null;
@@ -332,8 +357,6 @@
 
       this._mStrBundle = null;
 
-      this.blockedPopups = null;
-
       this._audioMuted = false;
 
       this._hasAnyPlayingMediaBeenBlocked = false;
@@ -366,7 +389,7 @@
 
       this._AUTOSCROLL_SNAP = 10;
 
-      this._scrolling = false;
+      this._autoScrollBrowsingContext = null;
 
       this._startX = null;
 
@@ -493,7 +516,7 @@
       }
 
       // Create an anchor for the popup
-      popupAnchor = document.createXULElement("hbox");
+      popupAnchor = document.createElement("div");
       popupAnchor.className = "popup-anchor";
       popupAnchor.hidden = true;
       stack.appendChild(popupAnchor);
@@ -554,24 +577,6 @@
       }
 
       return this.docShellIsActive;
-    }
-
-    get imageDocument() {
-      if (this.isRemoteBrowser) {
-        return this._imageDocument;
-      }
-      var document = this.contentDocument;
-      if (!document || !(document instanceof Ci.nsIImageDocument)) {
-        return null;
-      }
-
-      try {
-        return {
-          width: document.imageRequest.image.width,
-          height: document.imageRequest.image.height,
-        };
-      } catch (e) {}
-      return null;
     }
 
     get isRemoteBrowser() {
@@ -680,7 +685,10 @@
     }
 
     get browsingContext() {
-      return this.frameLoader.browsingContext;
+      if (this.frameLoader) {
+        return this.frameLoader.browsingContext;
+      }
+      return null;
     }
     /**
      * Note that this overrides webNavigation on XULFrameElement, and duplicates the return value for the non-remote case
@@ -789,25 +797,13 @@
       }
     }
 
-    set showWindowResizer(val) {
-      if (val) {
-        this.setAttribute("showresizer", "true");
-      } else {
-        this.removeAttribute("showresizer");
-      }
-    }
-
-    get showWindowResizer() {
-      return this.getAttribute("showresizer") == "true";
-    }
-
     set fullZoom(val) {
       if (this.isRemoteBrowser) {
         let changed = val.toFixed(2) != this._fullZoom.toFixed(2);
 
         if (changed) {
           this._fullZoom = val;
-          this.sendMessageToActor("FullZoom", { value: val }, "Zoom", true);
+          this.sendMessageToActor("FullZoom", { value: val }, "Zoom", "roots");
 
           let event = new Event("FullZoomChange", { bubbles: true });
           this.dispatchEvent(event);
@@ -836,7 +832,7 @@
 
         if (changed) {
           this._textZoom = val;
-          this.sendMessageToActor("TextZoom", { value: val }, "Zoom", true);
+          this.sendMessageToActor("TextZoom", { value: val }, "Zoom", "roots");
 
           let event = new Event("TextZoomChange", { bubbles: true });
           this.dispatchEvent(event);
@@ -861,10 +857,7 @@
     }
 
     get hasContentOpener() {
-      if (this.isRemoteBrowser) {
-        return this.frameLoader.remoteTab.hasContentOpener;
-      }
-      return !!this.contentWindow.opener;
+      return !!this.browsingContext.opener;
     }
 
     get mStrBundle() {
@@ -1014,20 +1007,6 @@
       this._wrapURIChangeCall(() => this.webNavigation.gotoIndex(aIndex));
     }
 
-    /**
-     * Used by session restore to ensure that currentURI is set so
-     * that switch-to-tab works before the tab is fully
-     * restored. This function also invokes onLocationChanged
-     * listeners in tabbrowser.xml.
-     */
-    _setCurrentURI(aURI) {
-      if (this.isRemoteBrowser) {
-        this._remoteWebProgressManager.setCurrentURI(aURI);
-      } else {
-        this.docShell.setCurrentURI(aURI);
-      }
-    }
-
     preserveLayers(preserve) {
       if (!this.isRemoteBrowser) {
         return;
@@ -1113,38 +1092,6 @@
       }
     }
 
-    updateBlockedPopups() {
-      let event = document.createEvent("Events");
-      event.initEvent("DOMUpdateBlockedPopups", true, true);
-      this.dispatchEvent(event);
-    }
-
-    retrieveListOfBlockedPopups() {
-      this.messageManager.sendAsyncMessage(
-        "PopupBlocking:GetBlockedPopupList",
-        null
-      );
-      return new Promise(resolve => {
-        let self = this;
-        this.messageManager.addMessageListener(
-          "PopupBlocking:ReplyGetBlockedPopupList",
-          function replyReceived(msg) {
-            self.messageManager.removeMessageListener(
-              "PopupBlocking:ReplyGetBlockedPopupList",
-              replyReceived
-            );
-            resolve(msg.data.popupData);
-          }
-        );
-      });
-    }
-
-    unblockPopup(aPopupIndex) {
-      this.messageManager.sendAsyncMessage("PopupBlocking:UnblockPopup", {
-        index: aPopupIndex,
-      });
-    }
-
     audioPlaybackStarted() {
       if (this._audioMuted) {
         return;
@@ -1202,31 +1149,6 @@
       context.notifyMediaMutedChanged(false);
     }
 
-    pauseMedia(disposable) {
-      let suspendedReason;
-      if (disposable) {
-        suspendedReason = "mediaControlPaused";
-      } else {
-        suspendedReason = "lostAudioFocusTransiently";
-      }
-
-      this.sendMessageToActor(
-        "AudioPlayback",
-        { type: suspendedReason },
-        "AudioPlayback",
-        true
-      );
-    }
-
-    stopMedia() {
-      this.sendMessageToActor(
-        "AudioPlayback",
-        { type: "mediaControlStopped" },
-        "AudioPlayback",
-        true
-      );
-    }
-
     resumeMedia() {
       this.frameLoader.browsingContext.notifyStartDelayedAutoplayMedia();
       if (this._hasAnyPlayingMediaBeenBlocked) {
@@ -1263,16 +1185,9 @@
          * the <browser> element may not be initialized yet.
          */
 
-        this._remoteWebNavigation = Cc[
-          "@mozilla.org/remote-web-navigation;1"
-        ].createInstance(Ci.nsIWebNavigation);
-        this._remoteWebNavigationImpl = this._remoteWebNavigation.wrappedJSObject;
-        this._remoteWebNavigationImpl.swapBrowser(this);
+        this._remoteWebNavigation = new LazyModules.RemoteWebNavigation(this);
 
         // Initialize contentPrincipal to the about:blank principal for this loadcontext
-        let { Services } = ChromeUtils.import(
-          "resource://gre/modules/Services.jsm"
-        );
         let aboutBlank = Services.io.newURI("about:blank");
         let ssm = Services.scriptSecurityManager;
         this._contentPrincipal = ssm.getLoadContextContentPrincipal(
@@ -1285,7 +1200,6 @@
 
         this.messageManager.addMessageListener("Browser:Init", this);
         this.messageManager.addMessageListener("DOMTitleChanged", this);
-        this.messageManager.addMessageListener("ImageDocumentLoaded", this);
 
         let jsm = "resource://gre/modules/RemoteWebProgress.jsm";
         let { RemoteWebProgressManager } = ChromeUtils.import(jsm, {});
@@ -1321,10 +1235,9 @@
           );
         }
 
-        let rc_js = "resource://gre/modules/RemoteController.js";
-        let scope = {};
-        Services.scriptloader.loadSubScript(rc_js, scope);
-        let RemoteController = scope.RemoteController;
+        const { RemoteController } = ChromeUtils.import(
+          "resource://gre/modules/RemoteController.jsm"
+        );
         this._controller = new RemoteController(this);
         this.controllers.appendController(this._controller);
       }
@@ -1384,12 +1297,6 @@
 
       if (this.messageManager) {
         this.messageManager.addMessageListener(
-          "PopupBlocking:UpdateBlockedPopups",
-          this
-        );
-        this.messageManager.addMessageListener("Autoscroll:Start", this);
-        this.messageManager.addMessageListener("Autoscroll:Cancel", this);
-        this.messageManager.addMessageListener(
           "UnselectedTabHover:Toggle",
           this
         );
@@ -1415,6 +1322,17 @@
         }
       }
 
+      // All controllers are released upon browser element removal, but not
+      // when destruction is triggered before element removal in tabbrowser.
+      // Release the controller in the latter case.
+      if (this._controller && this.controllers.getControllerCount()) {
+        try {
+          this.controllers.removeController(this._controller);
+        } catch (ex) {
+          Cu.reportError(ex);
+        }
+      }
+
       this.resetFields();
 
       if (!this.mInitialized) {
@@ -1422,17 +1340,6 @@
       }
 
       this.mInitialized = false;
-
-      if (this.isRemoteBrowser) {
-        try {
-          this.controllers.removeController(this._controller);
-        } catch (ex) {
-          // This can fail when this browser element is not attached to a
-          // BrowserDOMWindow.
-        }
-        return;
-      }
-
       this.lastURI = null;
 
       if (!this.isRemoteBrowser) {
@@ -1452,50 +1359,6 @@
     _receiveMessage(aMessage) {
       let data = aMessage.data;
       switch (aMessage.name) {
-        case "PopupBlocking:UpdateBlockedPopups": {
-          this.blockedPopups = {
-            length: data.count,
-            reported: !data.freshPopup,
-          };
-
-          this.updateBlockedPopups();
-          break;
-        }
-        case "Autoscroll:Start": {
-          if (!this.autoscrollEnabled) {
-            return { autoscrollEnabled: false, usingApz: false };
-          }
-          this.startScroll(data.scrolldir, data.screenX, data.screenY);
-          let usingApz = false;
-          if (
-            this.isRemoteBrowser &&
-            data.scrollId != null &&
-            this.mPrefs.getBoolPref("apz.autoscroll.enabled", false)
-          ) {
-            let { remoteTab } = this.frameLoader;
-            if (remoteTab) {
-              // If APZ is handling the autoscroll, it may decide to cancel
-              // it of its own accord, so register an observer to allow it
-              // to notify us of that.
-              var os = Services.obs;
-              os.addObserver(this.observer, "apz:cancel-autoscroll", true);
-
-              usingApz = remoteTab.startApzAutoscroll(
-                data.screenX,
-                data.screenY,
-                data.scrollId,
-                data.presShellId
-              );
-            }
-            // Save the IDs for later
-            this._autoScrollScrollId = data.scrollId;
-            this._autoScrollPresShellId = data.presShellId;
-          }
-          return { autoscrollEnabled: true, usingApz };
-        }
-        case "Autoscroll:Cancel":
-          this._autoScrollPopup.hidePopup();
-          break;
         case "UnselectedTabHover:Toggle":
           this._shouldSendUnselectedTabHover = data.enable
             ? ++this._unselectedTabHoverMessageListenerCount > 0
@@ -1517,12 +1380,6 @@
           break;
         case "DOMTitleChanged":
           this._contentTitle = data.title;
-          break;
-        case "ImageDocumentLoaded":
-          this._imageDocument = {
-            width: data.width,
-            height: data.height,
-          };
           break;
         default:
           return this._receiveMessage(aMessage);
@@ -1554,16 +1411,6 @@
       }
     }
 
-    updateSecurityUIForContentBlockingEvent(aEvent) {
-      if (this.isRemoteBrowser && this.messageManager) {
-        // Invoking this getter triggers the generation of the underlying object,
-        // which we need to access with ._securityUI, because .securityUI returns
-        // a wrapper that makes _update inaccessible.
-        void this.securityUI;
-        this._securityUI._updateContentBlockingEvent(aEvent);
-      }
-    }
-
     get remoteWebProgressManager() {
       return this._remoteWebProgressManager;
     }
@@ -1586,9 +1433,8 @@
 
     updateWebNavigationForLocationChange(aCanGoBack, aCanGoForward) {
       if (this.isRemoteBrowser && this.messageManager) {
-        let remoteWebNav = this._remoteWebNavigationImpl;
-        remoteWebNav.canGoBack = aCanGoBack;
-        remoteWebNav.canGoForward = aCanGoForward;
+        this._remoteWebNavigation.canGoBack = aCanGoBack;
+        this._remoteWebNavigation.canGoForward = aCanGoForward;
       }
     }
 
@@ -1621,10 +1467,9 @@
           this._documentContentType = aContentType;
         }
 
-        this._remoteWebNavigationImpl._currentURI = aLocation;
+        this._remoteWebNavigation._currentURI = aLocation;
         this._documentURI = aDocumentURI;
         this._contentTitle = aTitle;
-        this._imageDocument = null;
         this._contentPrincipal = aContentPrincipal;
         this._contentStoragePrincipal = aContentStoragePrincipal;
         this._contentBlockingAllowListPrincipal = aContentBlockingAllowListPrincipal;
@@ -1640,15 +1485,15 @@
 
     purgeSessionHistory() {
       if (this.isRemoteBrowser) {
-        this._remoteWebNavigationImpl.canGoBack = false;
-        this._remoteWebNavigationImpl.canGoForward = false;
+        this._remoteWebNavigation.canGoBack = false;
+        this._remoteWebNavigation.canGoForward = false;
       }
       try {
         this.sendMessageToActor(
           "Browser:PurgeSessionHistory",
           {},
           "PurgeSessionHistory",
-          true
+          "roots"
         );
       } catch (ex) {
         // This can throw if the browser has started to go away.
@@ -1700,8 +1545,7 @@
     }
 
     stopScroll() {
-      if (this._scrolling) {
-        this._scrolling = false;
+      if (this._autoScrollBrowsingContext) {
         window.removeEventListener("mousemove", this, true);
         window.removeEventListener("mousedown", this, true);
         window.removeEventListener("mouseup", this, true);
@@ -1710,7 +1554,14 @@
         window.removeEventListener("keydown", this, true);
         window.removeEventListener("keypress", this, true);
         window.removeEventListener("keyup", this, true);
-        this.messageManager.sendAsyncMessage("Autoscroll:Stop");
+
+        let autoScrollWnd = this._autoScrollBrowsingContext.currentWindowGlobal;
+        if (autoScrollWnd) {
+          autoScrollWnd
+            .getActor("AutoScroll")
+            .sendAsyncMessage("Autoscroll:Stop", {});
+        }
+        this._autoScrollBrowsingContext = null;
 
         try {
           Services.obs.removeObserver(this.observer, "apz:cancel-autoscroll");
@@ -1735,16 +1586,24 @@
     _createAutoScrollPopup() {
       var popup = document.createXULElement("panel");
       popup.className = "autoscroller";
-      // We set this attribute on the element so that mousemove
-      // events can be handled by browser-content.js.
-      popup.setAttribute("mousethrough", "always");
       popup.setAttribute("consumeoutsideclicks", "true");
       popup.setAttribute("rolluponmousewheel", "true");
       popup.setAttribute("hidden", "true");
       return popup;
     }
 
-    startScroll(scrolldir, screenX, screenY) {
+    startScroll({
+      scrolldir,
+      screenX,
+      screenY,
+      scrollId,
+      presShellId,
+      browsingContext,
+    }) {
+      if (!this.autoscrollEnabled) {
+        return { autoscrollEnabled: false, usingApz: false };
+      }
+
       const POPUP_SIZE = 32;
       if (!this._autoScrollPopup) {
         if (this.hasAttribute("autoscrollpopup")) {
@@ -1814,9 +1673,9 @@
       let popupY = Math.max(minY, Math.min(maxY, screenY));
       this._autoScrollPopup.openPopupAtScreen(popupX, popupY);
       this._ignoreMouseEvents = true;
-      this._scrolling = true;
       this._startX = screenX;
       this._startY = screenY;
+      this._autoScrollBrowsingContext = browsingContext;
 
       window.addEventListener("mousemove", this, true);
       window.addEventListener("mousedown", this, true);
@@ -1826,10 +1685,45 @@
       window.addEventListener("keydown", this, true);
       window.addEventListener("keypress", this, true);
       window.addEventListener("keyup", this, true);
+
+      let usingApz = false;
+      if (
+        this.isRemoteBrowser &&
+        scrollId != null &&
+        this.mPrefs.getBoolPref("apz.autoscroll.enabled", false)
+      ) {
+        let { remoteTab } = this.frameLoader;
+        if (remoteTab) {
+          // If APZ is handling the autoscroll, it may decide to cancel
+          // it of its own accord, so register an observer to allow it
+          // to notify us of that.
+          Services.obs.addObserver(
+            this.observer,
+            "apz:cancel-autoscroll",
+            true
+          );
+
+          usingApz = remoteTab.startApzAutoscroll(
+            screenX,
+            screenY,
+            scrollId,
+            presShellId
+          );
+        }
+        // Save the IDs for later
+        this._autoScrollScrollId = scrollId;
+        this._autoScrollPresShellId = presShellId;
+      }
+
+      return { autoscrollEnabled: true, usingApz };
+    }
+
+    cancelScroll() {
+      this._autoScrollPopup.hidePopup();
     }
 
     handleEvent(aEvent) {
-      if (this._scrolling) {
+      if (this._autoScrollBrowsingContext) {
         switch (aEvent.type) {
           case "mousemove": {
             var x = aEvent.screenX - this._startX;
@@ -1964,7 +1858,6 @@
         fieldsToSwap.push(
           ...[
             "_remoteWebNavigation",
-            "_remoteWebNavigationImpl",
             "_remoteWebProgressManager",
             "_remoteWebProgress",
             "_remoteFinder",
@@ -1978,7 +1871,6 @@
             "_contentPrincipal",
             "_contentStoragePrincipal",
             "_contentBlockingAllowListPrincipal",
-            "_imageDocument",
             "_fullZoom",
             "_textZoom",
             "_isSyntheticDocument",
@@ -2017,8 +1909,8 @@
         this._fastFind = aOtherBrowser._fastFind = null;
       } else {
         // Rewire the remote listeners
-        this._remoteWebNavigationImpl.swapBrowser(this);
-        aOtherBrowser._remoteWebNavigationImpl.swapBrowser(aOtherBrowser);
+        this._remoteWebNavigation.swapBrowser(this);
+        aOtherBrowser._remoteWebNavigation.swapBrowser(aOtherBrowser);
 
         if (
           this._remoteWebProgressManager &&
@@ -2096,11 +1988,17 @@
       );
     }
 
-    drawSnapshot(x, y, w, h, scale, backgroundColor) {
-      if (!this.frameLoader) {
-        throw Components.Exception("No frame loader.", Cr.NS_ERROR_FAILURE);
+    async drawSnapshot(x, y, w, h, scale, backgroundColor) {
+      let rect = new DOMRect(x, y, w, h);
+      try {
+        return this.browsingContext.currentWindowGlobal.drawSnapshot(
+          rect,
+          scale,
+          backgroundColor
+        );
+      } catch (e) {
+        return false;
       }
-      return this.frameLoader.drawSnapshot(x, y, w, h, scale, backgroundColor);
     }
 
     dropLinks(aLinks, aTriggeringPrincipal) {
@@ -2120,57 +2018,63 @@
     }
 
     getContentBlockingLog() {
-      if (this.isRemoteBrowser) {
-        return this.frameLoader.remoteTab.getContentBlockingLog();
+      let windowGlobal = this.browsingContext.currentWindowGlobal;
+      if (!windowGlobal) {
+        return null;
       }
-      return this.docShell
-        ? this.docShell.getContentBlockingLog()
-        : Promise.reject("docshell isn't available");
+      return windowGlobal.contentBlockingLog;
+    }
+
+    getContentBlockingEvents() {
+      let windowGlobal = this.browsingContext.currentWindowGlobal;
+      if (!windowGlobal) {
+        return 0;
+      }
+      return windowGlobal.contentBlockingEvents;
     }
 
     // Send an asynchronous message to the remote child via an actor.
     // Note: use this only for messages through an actor. For old-style
-    // messages, use the message manager. If 'all' is true, then send
-    // a message to all descendant processes.
-    sendMessageToActor(messageName, args, actorName, all) {
+    // messages, use the message manager.
+    // The value of the scope argument determines which browsing contexts
+    // are sent to:
+    //   'all' - send to actors associated with all descendant child frames.
+    //   'roots' - send only to actors associated with process roots.
+    //   undefined/'' - send only to the top-level actor and not any descendants.
+    sendMessageToActor(messageName, args, actorName, scope) {
       if (!this.frameLoader) {
         return;
       }
 
-      let windowGlobal = this.browsingContext.currentWindowGlobal;
-      if (!windowGlobal) {
-        // Workaround for bug 1523638 where about:blank is loaded in a tab.
-        if (messageName == "Browser:AppTab") {
-          setTimeout(() => {
-            this.sendMessageToActor(messageName, args, actorName);
-          }, 0);
-        }
-        return;
-      }
-
-      function sendToChildren(browsingContext, checkRoot) {
+      function sendToChildren(browsingContext, childScope) {
         let windowGlobal = browsingContext.currentWindowGlobal;
-        if (windowGlobal && (!checkRoot || windowGlobal.isProcessRoot)) {
+        // If 'roots' is set, only send if windowGlobal.isProcessRoot is true.
+        if (
+          windowGlobal &&
+          (childScope != "roots" || windowGlobal.isProcessRoot)
+        ) {
           windowGlobal.getActor(actorName).sendAsyncMessage(messageName, args);
         }
 
-        if (all) {
-          let contexts = browsingContext.getChildren();
-          for (let context of contexts) {
-            sendToChildren(context, true);
+        // Iterate as long as scope in assigned. Note that we use the original
+        // passed in scope, not childScope here.
+        if (scope) {
+          for (let context of browsingContext.children) {
+            sendToChildren(context, scope);
           }
         }
       }
 
-      sendToChildren(this.browsingContext, false);
+      // Pass no second argument to always send to the top-level browsing context.
+      sendToChildren(this.browsingContext);
     }
 
     enterModalState() {
-      this.sendMessageToActor("EnterModalState", {}, "BrowserElement", true);
+      this.sendMessageToActor("EnterModalState", {}, "BrowserElement", "roots");
     }
 
     leaveModalState() {
-      this.sendMessageToActor("LeaveModalState", {}, "BrowserElement", true);
+      this.sendMessageToActor("LeaveModalState", {}, "BrowserElement", "roots");
     }
 
     getDevicePermissionOrigins(key) {

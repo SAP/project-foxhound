@@ -8,10 +8,13 @@
 #define mozilla_dom_indexeddb_filemanager_h__
 
 #include "mozilla/Attributes.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
 #include "nsISupportsImpl.h"
+#include "FlippedOnce.h"
+#include "InitializedOnce.h"
 
 class nsIFile;
 class mozIStorageConnection;
@@ -24,17 +27,15 @@ class FileInfo;
 
 // Implemented in ActorsParent.cpp.
 class FileManager final {
-  friend class FileInfo;
-
   typedef mozilla::dom::quota::PersistenceType PersistenceType;
 
-  PersistenceType mPersistenceType;
-  nsCString mGroup;
-  nsCString mOrigin;
-  nsString mDatabaseName;
+  const PersistenceType mPersistenceType;
+  const nsCString mGroup;
+  const nsCString mOrigin;
+  const nsString mDatabaseName;
 
-  nsString mDirectoryPath;
-  nsString mJournalDirectoryPath;
+  InitializedOnce<const nsString, LazyInit::Allow> mDirectoryPath;
+  InitializedOnce<const nsString, LazyInit::Allow> mJournalDirectoryPath;
 
   int64_t mLastFileId;
 
@@ -42,18 +43,16 @@ class FileManager final {
   nsDataHashtable<nsUint64HashKey, FileInfo*> mFileInfos;
 
   const bool mEnforcingQuota;
-  bool mInvalidated;
+  FlippedOnce<false> mInvalidated;
 
  public:
-  static already_AddRefed<nsIFile> GetFileForId(nsIFile* aDirectory,
-                                                int64_t aId);
+  static MOZ_MUST_USE nsCOMPtr<nsIFile> GetFileForId(nsIFile* aDirectory,
+                                                     int64_t aId);
 
-  static already_AddRefed<nsIFile> GetCheckedFileForId(nsIFile* aDirectory,
-                                                       int64_t aId);
+  static MOZ_MUST_USE nsCOMPtr<nsIFile> GetCheckedFileForId(nsIFile* aDirectory,
+                                                            int64_t aId);
 
   static nsresult InitDirectory(nsIFile* aDirectory, nsIFile* aDatabaseFile,
-                                PersistenceType aPersistenceType,
-                                const nsACString& aGroup,
                                 const nsACString& aOrigin,
                                 uint32_t aTelemetryId);
 
@@ -81,17 +80,19 @@ class FileManager final {
 
   nsresult Invalidate();
 
-  already_AddRefed<nsIFile> GetDirectory();
+  MOZ_MUST_USE nsCOMPtr<nsIFile> GetDirectory();
 
-  already_AddRefed<nsIFile> GetCheckedDirectory();
+  MOZ_MUST_USE nsCOMPtr<nsIFile> GetCheckedDirectory();
 
-  already_AddRefed<nsIFile> GetJournalDirectory();
+  MOZ_MUST_USE nsCOMPtr<nsIFile> GetJournalDirectory();
 
-  already_AddRefed<nsIFile> EnsureJournalDirectory();
+  MOZ_MUST_USE nsCOMPtr<nsIFile> EnsureJournalDirectory();
 
-  already_AddRefed<FileInfo> GetFileInfo(int64_t aId);
+  MOZ_MUST_USE RefPtr<FileInfo> GetFileInfo(int64_t aId) const;
 
-  already_AddRefed<FileInfo> GetNewFileInfo();
+  MOZ_MUST_USE RefPtr<FileInfo> CreateFileInfo();
+
+  void RemoveFileInfo(int64_t aId, const MutexAutoLock& aFilesMutexLock);
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FileManager)
 

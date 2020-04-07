@@ -60,6 +60,7 @@ import {
   type SourceActorId,
   type SourceActorOuterState,
 } from "./source-actors";
+import { getThreads, getMainThread } from "./threads";
 import type {
   Source,
   SourceId,
@@ -98,9 +99,10 @@ export type SourceBase = {|
   +extensionName: ?string,
   +isExtension: boolean,
   +isWasm: boolean,
+  +isOriginal: boolean,
 |};
 
-type SourceResource = Resource<{
+export type SourceResource = Resource<{
   ...SourceBase,
   content: AsyncValue<SourceContent> | null,
 }>;
@@ -130,7 +132,7 @@ export type SourcesState = {
   pendingSelectedLocation?: PendingSelectedLocation,
   selectedLocation: ?SourceLocation,
   projectDirectoryRoot: string,
-  chromeAndExtenstionsEnabled: boolean,
+  chromeAndExtensionsEnabled: boolean,
   focusedItem: ?FocusItem,
 };
 
@@ -147,7 +149,7 @@ export function initialSourcesState(): SourcesState {
     selectedLocation: undefined,
     pendingSelectedLocation: prefs.pendingSelectedLocation,
     projectDirectoryRoot: prefs.projectDirectoryRoot,
-    chromeAndExtenstionsEnabled: prefs.chromeAndExtenstionsEnabled,
+    chromeAndExtensionsEnabled: prefs.chromeAndExtensionsEnabled,
     focusedItem: null,
   };
 }
@@ -261,7 +263,7 @@ function update(
   return state;
 }
 
-const resourceAsSourceBase = memoizeResourceShallow(
+export const resourceAsSourceBase = memoizeResourceShallow(
   ({ content, ...source }: SourceResource): SourceBase => source
 );
 
@@ -373,9 +375,21 @@ function removeSourceActors(state: SourcesState, action) {
  * Update sources when the project directory root changes
  */
 function updateProjectDirectoryRoot(state: SourcesState, root: string) {
-  prefs.projectDirectoryRoot = root;
+  // Only update prefs when projectDirectoryRoot isn't a thread actor,
+  // because when debugger is reopened, thread actor will change. See bug 1596323.
+  if (actorType(root) !== "thread") {
+    prefs.projectDirectoryRoot = root;
+  }
 
   return updateRootRelativeValues(state, undefined, root);
+}
+
+/* Checks if a path is a thread actor or not
+ * e.g returns 'thread' for "server0.conn1.child1/workerTarget42/thread1"
+ */
+function actorType(actor: string) {
+  const match = actor.match(/\/([a-z]+)\d+/);
+  return match ? match[1] : null;
 }
 
 function updateRootRelativeValues(
@@ -796,6 +810,7 @@ const queryAllDisplayedSources: ReduceQuery<
     projectDirectoryRoot: string,
     chromeAndExtensionsEnabled: boolean,
     debuggeeIsWebExtension: boolean,
+    threadActors: Array<ThreadId>,
   |},
   Array<SourceId>
 > = makeReduceQuery(
@@ -807,11 +822,12 @@ const queryAllDisplayedSources: ReduceQuery<
         projectDirectoryRoot,
         chromeAndExtensionsEnabled,
         debuggeeIsWebExtension,
+        threadActors,
       }
     ) => ({
       id: resource.id,
       displayed:
-        underRoot(resource, projectDirectoryRoot) &&
+        underRoot(resource, projectDirectoryRoot, threadActors) &&
         (!resource.isExtension ||
           chromeAndExtensionsEnabled ||
           debuggeeIsWebExtension),
@@ -831,8 +847,12 @@ function getAllDisplayedSources(
 ): Array<SourceId> {
   return queryAllDisplayedSources(state.sources.sources, {
     projectDirectoryRoot: state.sources.projectDirectoryRoot,
-    chromeAndExtensionsEnabled: state.sources.chromeAndExtenstionsEnabled,
+    chromeAndExtensionsEnabled: state.sources.chromeAndExtensionsEnabled,
     debuggeeIsWebExtension: state.threads.isWebExtension,
+    threadActors: [
+      getMainThread(state).actor,
+      ...getThreads(state).map(t => t.actor),
+    ],
   });
 }
 

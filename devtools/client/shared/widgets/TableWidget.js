@@ -614,12 +614,14 @@ TableWidget.prototype = {
 
     if (this._editableFieldsEngine) {
       this._editableFieldsEngine.selectors = selectors;
+      this._editableFieldsEngine.items = this.items;
     } else {
       this._editableFieldsEngine = new EditableFieldsEngine({
         root: this.tbody,
         onTab: this.onEditorTab,
         onTriggerEvent: "dblclick",
         selectors: selectors,
+        items: this.items,
       });
 
       this._editableFieldsEngine.on("change", this.onChange);
@@ -1424,13 +1426,16 @@ Column.prototype = {
     }
     if (checked) {
       this.wrapper.removeAttribute("hidden");
+      this.tbody.insertBefore(this.splitter, this.wrapper.nextSibling);
     } else {
       this.wrapper.setAttribute("hidden", "true");
+      this.splitter.remove();
     }
   },
 
   /**
-   * Removes the corresponding item from the column.
+   * Removes the corresponding item from the column and hide the last visible
+   * splitter with CSS, so we do not add splitter elements for hidden columns.
    */
   remove: function(item) {
     this._updateItems();
@@ -1750,6 +1755,7 @@ function EditableFieldsEngine(options) {
   this.selectors = options.selectors;
   this.onTab = options.onTab;
   this.onTriggerEvent = options.onTriggerEvent || "dblclick";
+  this.items = options.items;
 
   this.edit = this.edit.bind(this);
   this.cancelEdit = this.cancelEdit.bind(this);
@@ -1835,6 +1841,14 @@ EditableFieldsEngine.prototype = {
    */
   edit: function(target) {
     if (!target) {
+      return;
+    }
+
+    // Some item names and values are not parsable by the client or server so should not be
+    // editable.
+    const name = target.getAttribute("data-id");
+    const item = this.items.get(name);
+    if ("isValueEditable" in item && !item.isValueEditable) {
       return;
     }
 

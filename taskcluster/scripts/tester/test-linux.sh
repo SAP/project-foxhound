@@ -4,7 +4,7 @@ set -x -e
 
 echo "running as" $(id)
 
-# Detect release version.
+# Detect distribution
 . /etc/os-release
 if [ "${ID}" == "ubuntu" ]; then
     DISTRIBUTION="Ubuntu"
@@ -12,6 +12,15 @@ elif [ "${ID}" == "debian" ]; then
     DISTRIBUTION="Debian"
 else
     DISTRIBUTION="Unknown"
+fi
+
+# Detect release version if supported
+FILE="/etc/lsb-release"
+if [ -e $FILE ] ; then
+    . /etc/lsb-release
+    RELEASE="${DISTRIB_RELEASE}"
+else
+    RELEASE="unknown"
 fi
 
 ####
@@ -28,7 +37,6 @@ fi
 : MOZHARNESS_OPTIONS            ${MOZHARNESS_OPTIONS}
 : NEED_XVFB                     ${NEED_XVFB:=true}
 : NEED_WINDOW_MANAGER           ${NEED_WINDOW_MANAGER:=false}
-: NEED_COMPIZ                   ${NEED_COMPIZ}
 : NEED_PULSEAUDIO               ${NEED_PULSEAUDIO:=false}
 : START_VNC                     ${START_VNC:=false}
 : TASKCLUSTER_INTERACTIVE       ${TASKCLUSTER_INTERACTIVE:=false}
@@ -49,33 +57,9 @@ fail() {
 # start pulseaudio
 maybe_start_pulse() {
     if $NEED_PULSEAUDIO; then
-        # call pulseaudio with varying parameters
+        # call pulseaudio for Ubuntu only
         if [ $DISTRIBUTION == "Ubuntu" ]; then
             pulseaudio --fail --daemonize --start
-        elif [ $DISTRIBUTION == "Debian" ]; then
-            # temporarily turn errexit off
-            # nicely kill existing daemons/processes if exist
-            set +e
-            pulseaudio --kill
-
-            # Debian needs additional stabilization and debugging
-            ps ax | grep 'pulseaudio'
-            ps -ef | grep 'pulseaudio' | grep -v grep | awk '{print $2}' | xargs -r kill -9
-            ps ax | grep 'pulseaudio'
-
-            # check and start pulseaudio with debugging
-            pulseaudio --check; echo $?
-            pulseaudio --fail --daemonize --start -vvvv --exit-idle-time=-1 --log-level=4 --log-time=1
-            set -e
-        else
-            :
-        fi
-
-        pulseaudio --check
-        if [ $? -eq 0 ]; then
-            echo "Pulseaudio successfully initialized"
-        else
-            echo "Pulseaudio failed to initialize, trying again"
         fi
     fi
 }
@@ -161,7 +145,15 @@ fi
 
 if $NEED_WINDOW_MANAGER; then
     # This is read by xsession to select the window manager
-    echo DESKTOP_SESSION=ubuntu > $HOME/.xsessionrc
+    . /etc/lsb-release
+    if [ $DISTRIBUTION == "Ubuntu" ] && [ $RELEASE == "16.04" ]; then
+        echo DESKTOP_SESSION=ubuntu > $HOME/.xsessionrc
+    elif [ $DISTRIBUTION == "Ubuntu" ] && [ $RELEASE == "18.04" ]; then
+        echo export DESKTOP_SESSION=gnome > $HOME/.xsessionrc
+        echo export XDG_SESSION_TYPE=x11 >> $HOME/.xsessionrc
+    else
+        :
+    fi
 
     # DISPLAY has already been set above
     # XXX: it would be ideal to add a semaphore logic to make sure that the
@@ -172,6 +164,7 @@ if $NEED_WINDOW_MANAGER; then
     gsettings set org.gnome.desktop.screensaver idle-activation-enabled false
     gsettings set org.gnome.desktop.screensaver lock-enabled false
     gsettings set org.gnome.desktop.screensaver lock-delay 3600
+
     # Disable the screen saver
     xset s off s reset
 
@@ -185,19 +178,11 @@ if $NEED_WINDOW_MANAGER; then
     eval `echo '' | /usr/bin/gnome-keyring-daemon -r -d --unlock --components=secrets`
 fi
 
-if $NEED_COMPIZ; then
-    if [ $DISTRIBUTION == "Ubuntu" ]; then
-        compiz 2>&1 &
-    fi
+if [ $DISTRIBUTION == "Ubuntu" ] && [ $RELEASE == "16.04" ]; then
+    compiz 2>&1 &
 fi
 
 maybe_start_pulse
-
-if $NEED_PULSEAUDIO; then
-    # Load null-sink using pactl, and if it was successful.
-    pactl load-module module-null-sink
-    pactl list modules short
-fi
 
 # For telemetry purposes, the build process wants information about the
 # source it is running

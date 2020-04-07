@@ -8,42 +8,40 @@
 
 #include "nsBulletFrame.h"
 
+#include <algorithm>
+#include <utility>
+
+#include "CounterStyleManager.h"
+#include "ImageLayers.h"
+#include "SVGImageContext.h"
+#include "TextDrawTarget.h"
+#include "UnitTransforms.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
-
 #include "gfxUtils.h"
+#include "imgIContainer.h"
+#include "imgRequestProxy.h"
+#include "mozilla/MathAlgorithms.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/layers/LayersMessages.h"
-#include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/layers/RenderRootStateManager.h"
+#include "mozilla/layers/StackingContextHelper.h"
+#include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/WebRenderMessages.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/Move.h"
-#include "mozilla/PresShell.h"
+#include "nsAttrValueInlines.h"
+#include "nsBidiUtils.h"
 #include "nsCOMPtr.h"
 #include "nsCSSFrameConstructor.h"
-#include "nsFontMetrics.h"
-#include "nsGkAtoms.h"
-#include "nsGenericHTMLElement.h"
-#include "nsAttrValueInlines.h"
-#include "nsPresContext.h"
-#include "mozilla/dom/Document.h"
-#include "nsDisplayList.h"
 #include "nsCounterManager.h"
-#include "nsBidiUtils.h"
-#include "CounterStyleManager.h"
-#include "UnitTransforms.h"
-
-#include "imgIContainer.h"
-#include "ImageLayers.h"
-#include "imgRequestProxy.h"
+#include "nsDisplayList.h"
+#include "nsFontMetrics.h"
+#include "nsGenericHTMLElement.h"
+#include "nsGkAtoms.h"
 #include "nsIURI.h"
-#include "SVGImageContext.h"
-#include "TextDrawTarget.h"
-#include "mozilla/layers/WebRenderBridgeChild.h"
-
-#include <algorithm>
+#include "nsPresContext.h"
 
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"
@@ -548,9 +546,7 @@ class nsDisplayBullet final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayBullet);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayBullet() { MOZ_COUNT_DTOR(nsDisplayBullet); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayBullet)
 
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override {
@@ -756,8 +752,7 @@ Maybe<BulletRenderer> nsBulletFrame::CreateBulletRenderer(
         builder->LineTo(NSPointToPoint(
             (rect.BottomLeft() + rect.BottomRight()) / 2, appUnitsPerDevPixel));
       } else {
-        bool isLR = isVertical ? wm.IsVerticalLR() : wm.IsBidiLTR();
-        if (isLR) {
+        if (wm.IsPhysicalLTR()) {
           // to right
           builder->MoveTo(NSPointToPoint(rect.TopLeft(), appUnitsPerDevPixel));
           builder->LineTo(NSPointToPoint(
@@ -843,7 +838,7 @@ void nsBulletFrame::GetListItemText(CounterStyle* aStyle,
 
   aResult.Truncate();
   aResult.Append(prefix);
-  if (aWritingMode.IsBidiLTR() != isRTL) {
+  if (aWritingMode.IsBidiRTL() == isRTL) {
     aResult.Append(counter);
   } else {
     // RLM = 0x200f, LRM = 0x200e
@@ -1184,7 +1179,7 @@ void nsBulletFrame::SetFontSizeInflation(float aInflation) {
   if (aInflation == 1.0f) {
     if (HasFontSizeInflation()) {
       RemoveStateBits(BULLET_FRAME_HAS_FONT_INFLATION);
-      DeleteProperty(FontSizeInflationProperty());
+      RemoveProperty(FontSizeInflationProperty());
     }
     return;
   }

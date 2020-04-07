@@ -15,20 +15,27 @@ class CompositorVsyncDispatcher;
 
 namespace widget {
 
+namespace remote_backbuffer {
+class Provider;
+}
+
 class CompositorWidgetChild final : public PCompositorWidgetChild,
                                     public PlatformCompositorWidgetDelegate {
  public:
   CompositorWidgetChild(RefPtr<CompositorVsyncDispatcher> aVsyncDispatcher,
-                        RefPtr<CompositorWidgetVsyncObserver> aVsyncObserver);
+                        RefPtr<CompositorWidgetVsyncObserver> aVsyncObserver,
+                        const CompositorWidgetInitData& aInitData);
   ~CompositorWidgetChild() override;
+
+  bool Initialize();
 
   void EnterPresentLock() override;
   void LeavePresentLock() override;
   void OnDestroyWindow() override;
+  bool OnWindowResize(const LayoutDeviceIntSize& aSize) override;
+  void OnWindowModeChange(nsSizeMode aSizeMode) override;
   void UpdateTransparency(nsTransparencyMode aMode) override;
   void ClearTransparentWindow() override;
-  HDC GetTransparentDC() const override;
-  void SetParentWnd(const HWND aParentWnd) override;
 
   mozilla::ipc::IPCResult RecvObserveVsync() override;
   mozilla::ipc::IPCResult RecvUnobserveVsync() override;
@@ -40,7 +47,11 @@ class CompositorWidgetChild final : public PCompositorWidgetChild,
   RefPtr<CompositorVsyncDispatcher> mVsyncDispatcher;
   RefPtr<CompositorWidgetVsyncObserver> mVsyncObserver;
   HWND mCompositorWnd;
-  HWND mParentWnd;
+
+  HWND mWnd;
+  nsTransparencyMode mTransparencyMode;
+
+  std::unique_ptr<remote_backbuffer::Provider> mRemoteBackbufferProvider;
 };
 
 }  // namespace widget

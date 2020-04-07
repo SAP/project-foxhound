@@ -4,20 +4,47 @@
 
 "use strict";
 
-const { COMPATIBILITY_UPDATE_SELECTED_NODE } = require("./index");
+const {
+  COMPATIBILITY_UPDATE_SELECTED_NODE_START,
+  COMPATIBILITY_UPDATE_SELECTED_NODE_SUCCESS,
+  COMPATIBILITY_UPDATE_SELECTED_NODE_FAILURE,
+  COMPATIBILITY_UPDATE_SELECTED_NODE_COMPLETE,
+  COMPATIBILITY_UPDATE_TARGET_BROWSERS,
+} = require("devtools/client/inspector/compatibility/actions/index");
 
 function updateSelectedNode(nodeFront) {
   return async ({ dispatch }) => {
-    const pageStyle = nodeFront.inspectorFront.pageStyle;
-    const styles = await pageStyle.getApplied(nodeFront, { skipPseudo: false });
-    const declarationBlocks = styles
-      .map(({ rule }) => rule.declarations.filter(d => !d.commentOffsets))
-      .filter(declarations => declarations.length);
+    dispatch({ type: COMPATIBILITY_UPDATE_SELECTED_NODE_START });
 
-    dispatch({ type: COMPATIBILITY_UPDATE_SELECTED_NODE, declarationBlocks });
+    try {
+      const pageStyle = nodeFront.inspectorFront.pageStyle;
+      const styles = await pageStyle.getApplied(nodeFront, {
+        skipPseudo: false,
+      });
+      const declarationBlocks = styles
+        .map(({ rule }) => rule.declarations.filter(d => !d.commentOffsets))
+        .filter(declarations => declarations.length);
+
+      dispatch({
+        type: COMPATIBILITY_UPDATE_SELECTED_NODE_SUCCESS,
+        declarationBlocks,
+      });
+    } catch (error) {
+      dispatch({ type: COMPATIBILITY_UPDATE_SELECTED_NODE_FAILURE, error });
+    }
+
+    dispatch({ type: COMPATIBILITY_UPDATE_SELECTED_NODE_COMPLETE });
+  };
+}
+
+function updateTargetBrowsers(targetBrowsers) {
+  return {
+    type: COMPATIBILITY_UPDATE_TARGET_BROWSERS,
+    targetBrowsers,
   };
 }
 
 module.exports = {
   updateSelectedNode,
+  updateTargetBrowsers,
 };

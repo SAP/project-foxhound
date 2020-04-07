@@ -2,6 +2,8 @@
 use crate::Aarch64Architecture::*;
 #[allow(unused_imports)]
 use crate::ArmArchitecture::*;
+#[allow(unused_imports)]
+use crate::CustomVendor;
 
 /// The `Triple` of the current host.
 pub const HOST: Triple = Triple {

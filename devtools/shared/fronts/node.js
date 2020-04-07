@@ -142,6 +142,8 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
       form.nodeValue = form.incompleteValue ? null : form.shortValue;
     }
 
+    this.traits = form.traits || {};
+
     // Shallow copy of the form.  We could just store a reference, but
     // eventually we'll want to update some of the data.
     this._form = Object.assign({}, form);
@@ -508,8 +510,8 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
       console.warn("Tried to use rawNode on a remote connection.");
       return null;
     }
-    const { DebuggerServer } = require("devtools/server/debugger-server");
-    const actor = DebuggerServer.searchAllConnectionsForActor(this.actorID);
+    const { DevToolsServer } = require("devtools/server/devtools-server");
+    const actor = DevToolsServer.searchAllConnectionsForActor(this.actorID);
     if (!actor) {
       // Can happen if we try to get the raw node for an already-expired
       // actor.
@@ -532,6 +534,17 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     );
     this._remoteFrameTarget = await descriptor.getTarget();
     return this._remoteFrameTarget;
+  }
+
+  async getAllSelectors() {
+    if (!this.traits.supportsGetAllSelectors) {
+      // Backward compatibility: if the server does not support getAllSelectors
+      // fallback on getUniqueSelector and wrap the response in an array.
+      // getAllSelectors was added in FF72.
+      const selector = await super.getUniqueSelector();
+      return [selector];
+    }
+    return super.getAllSelectors();
   }
 }
 

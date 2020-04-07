@@ -22,6 +22,7 @@
 #include "jit/JSJitFrameIter.h"
 #include "js/TraceLoggerAPI.h"
 #include "util/StringBuffer.h"
+#include "vm/FrameIter.h"  // js::OnlyJSJitFrameIter
 #include "vm/JSScript.h"
 
 #include "gc/Marking-inl.h"
@@ -172,6 +173,7 @@ const char* GeckoProfilerRuntime::profileString(JSContext* cx,
     if (!str) {
       return nullptr;
     }
+    MOZ_ASSERT(script->hasBytecode());
     if (!strings().add(s, script, std::move(str))) {
       ReportOutOfMemory(cx);
       return nullptr;
@@ -223,7 +225,9 @@ bool GeckoProfilerThread::enter(JSContext* cx, JSScript* script) {
   }
 #endif
 
-  profilingStack_->pushJsFrame("", dynamicString, script, script->code());
+  profilingStack_->pushJsFrame(
+      "", dynamicString, script, script->code(),
+      script->realm()->creationOptions().profilerRealmID());
   return true;
 }
 
@@ -279,7 +283,7 @@ UniqueChars GeckoProfilerRuntime::allocProfileString(JSContext* cx,
   bool hasName = false;
   size_t nameLength = 0;
   UniqueChars nameStr;
-  JSFunction* func = script->functionDelazifying();
+  JSFunction* func = script->function();
   if (func && func->displayAtom()) {
     nameStr = StringToNewUTF8CharsZ(cx, *func->displayAtom());
     if (!nameStr) {
@@ -290,15 +294,17 @@ UniqueChars GeckoProfilerRuntime::allocProfileString(JSContext* cx,
     hasName = true;
   }
 
-  // Calculate filename length.
+  // Calculate filename length. We cap this to a reasonable limit to avoid
+  // performance impact of strlen/alloc/memcpy.
+  constexpr size_t MaxFilenameLength = 200;
   const char* filenameStr = script->filename() ? script->filename() : "(null)";
-  size_t filenameLength = strlen(filenameStr);
+  size_t filenameLength = js_strnlen(filenameStr, MaxFilenameLength);
 
   // Calculate line + column length.
   bool hasLineAndColumn = false;
   size_t lineAndColumnLength = 0;
   char lineAndColumnStr[30];
-  if (hasName || script->functionNonDelazifying() || script->isForEval()) {
+  if (hasName || script->isFunction() || script->isForEval()) {
     lineAndColumnLength = SprintfLiteral(lineAndColumnStr, "%u:%u",
                                          script->lineno(), script->column());
     hasLineAndColumn = true;

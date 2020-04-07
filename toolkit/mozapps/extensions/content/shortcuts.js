@@ -226,9 +226,17 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   }
 
   function setInputMessage(type, input, messageId, args) {
-    let { x, y, height } = input.getBoundingClientRect();
+    let { x, y, height, right } = input.getBoundingClientRect();
     error.style.top = `${y + window.scrollY + height - 5}px`;
-    error.style.left = `${x}px`;
+
+    if (document.dir == "ltr") {
+      error.style.left = `${x}px`;
+      error.style.right = null;
+    } else {
+      error.style.right = `${document.documentElement.clientWidth - right}px`;
+      error.style.left = null;
+    }
+
     error.setAttribute("type", type);
     document.l10n.setAttributes(
       error.querySelector(".error-message-label"),
@@ -391,6 +399,15 @@ XPCOMUtils.defineLazyModuleGetters(this, {
       return;
     }
 
+    if (!e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
+      if (e.key == "Delete" || e.key == "Backspace") {
+        // Avoid triggering back-navigation.
+        e.preventDefault();
+        assignShortcutToInput(input, "");
+        return;
+      }
+    }
+
     e.preventDefault();
     e.stopPropagation();
 
@@ -418,33 +435,15 @@ XPCOMUtils.defineLazyModuleGetters(this, {
           break;
         }
 
-        let addonId = input.closest(".card").getAttribute("addon-id");
-        let extension = extensionForAddonId(addonId);
-
         // Check if shortcut is already assigned.
         if (shortcutKeyMap.has(shortcutString)) {
           setError(input, "shortcuts-exists", {
             addon: getAddonName(shortcutString),
           });
-          break;
         } else {
           // Update the shortcut if it isn't reserved or assigned.
-          let oldShortcut = input.getAttribute("shortcut");
-          let addonName = input.closest(".card").getAttribute("addon-name");
-          let commandName = input.getAttribute("name");
-
-          removeShortcut(oldShortcut, addonName, commandName);
-          recordShortcut(shortcutString, addonName, commandName);
+          assignShortcutToInput(input, shortcutString);
         }
-
-        // This is async, but we're not awaiting it to keep the handler sync.
-        extension.shortcuts.updateCommand({
-          name: input.getAttribute("name"),
-          shortcut: shortcutString,
-        });
-        input.setAttribute("shortcut", shortcutString);
-        input.blur();
-        setDuplicateWarnings();
         break;
       case ShortcutUtils.MODIFIER_REQUIRED:
         if (AppConstants.platform == "macosx") {
@@ -460,6 +459,36 @@ XPCOMUtils.defineLazyModuleGetters(this, {
         setError(input, "shortcuts-letter");
         break;
     }
+  }
+
+  function onShortcutRemove(e) {
+    let removeButton = e.target;
+    let input = removeButton.parentNode.querySelector(".shortcut-input");
+    if (input.getAttribute("shortcut")) {
+      input.value = "";
+      assignShortcutToInput(input, "");
+    }
+  }
+
+  function assignShortcutToInput(input, shortcutString) {
+    let addonId = input.closest(".card").getAttribute("addon-id");
+    let extension = extensionForAddonId(addonId);
+
+    let oldShortcut = input.getAttribute("shortcut");
+    let addonName = input.closest(".card").getAttribute("addon-name");
+    let commandName = input.getAttribute("name");
+
+    removeShortcut(oldShortcut, addonName, commandName);
+    recordShortcut(shortcutString, addonName, commandName);
+
+    // This is async, but we're not awaiting it to keep the handler sync.
+    extension.shortcuts.updateCommand({
+      name: commandName,
+      shortcut: shortcutString,
+    });
+    input.setAttribute("shortcut", shortcutString);
+    input.blur();
+    setDuplicateWarnings();
   }
 
   function renderNoShortcutAddons(addons) {
@@ -561,6 +590,9 @@ XPCOMUtils.defineLazyModuleGetters(this, {
           input.addEventListener("keyup", onShortcutChange);
           input.addEventListener("blur", inputBlurred);
           input.addEventListener("focus", onFocus);
+
+          let removeButton = row.querySelector(".shortcut-remove-button");
+          removeButton.addEventListener("click", onShortcutRemove);
 
           if (willHideCommands && i == limit) {
             firstHiddenInput = input;

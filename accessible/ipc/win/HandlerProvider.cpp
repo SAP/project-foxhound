@@ -6,6 +6,10 @@
 
 #include "mozilla/a11y/HandlerProvider.h"
 
+#include <memory.h>
+
+#include <utility>
+
 #include "Accessible2_3.h"
 #include "AccessibleDocument.h"
 #include "AccessibleRelation.h"
@@ -15,10 +19,10 @@
 #include "HandlerData.h"
 #include "HandlerData_i.c"
 #include "mozilla/Assertions.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/a11y/AccessibleWrap.h"
 #include "mozilla/a11y/HandlerDataCleanup.h"
 #include "mozilla/dom/ContentChild.h"
-#include "mozilla/Move.h"
 #include "mozilla/mscom/AgileReference.h"
 #include "mozilla/mscom/FastMarshaler.h"
 #include "mozilla/mscom/Interceptor.h"
@@ -27,11 +31,8 @@
 #include "mozilla/mscom/Ptr.h"
 #include "mozilla/mscom/StructStream.h"
 #include "mozilla/mscom/Utils.h"
-#include "mozilla/UniquePtr.h"
-#include "nsThreadUtils.h"
 #include "nsTArray.h"
-
-#include <memory.h>
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 namespace a11y {
@@ -103,11 +104,12 @@ void HandlerProvider::GetAndSerializePayload(
 
   IA2Payload payload{};
 
-  if (!mscom::InvokeOnMainThread("HandlerProvider::BuildInitialIA2Data", this,
-                                 &HandlerProvider::BuildInitialIA2Data,
-                                 std::forward<NotNull<mscom::IInterceptor*>>(aInterceptor),
-                                 std::forward<StaticIA2Data*>(&payload.mStaticData),
-                                 std::forward<DynamicIA2Data*>(&payload.mDynamicData)) ||
+  if (!mscom::InvokeOnMainThread(
+          "HandlerProvider::BuildInitialIA2Data", this,
+          &HandlerProvider::BuildInitialIA2Data,
+          std::forward<NotNull<mscom::IInterceptor*>>(aInterceptor),
+          std::forward<StaticIA2Data*>(&payload.mStaticData),
+          std::forward<DynamicIA2Data*>(&payload.mDynamicData)) ||
       !payload.mDynamicData.mUniqueId) {
     return;
   }
@@ -634,8 +636,7 @@ HandlerProvider::get_AllTextInfo(BSTR* aText,
           std::forward<IAccessibleHyperlink***>(aHyperlinks),
           std::forward<long*>(aNHyperlinks),
           std::forward<IA2TextSegment**>(aAttribRuns),
-          std::forward<long*>(aNAttribRuns),
-          std::forward<HRESULT*>(&hr))) {
+          std::forward<long*>(aNAttribRuns), std::forward<HRESULT*>(&hr))) {
     return E_FAIL;
   }
 
@@ -700,12 +701,11 @@ HandlerProvider::get_RelationsInfo(IARelationData** aRelations,
   }
 
   HRESULT hr;
-  if (!mscom::InvokeOnMainThread("HandlerProvider::GetRelationsInfoMainThread",
-                                 this,
-                                 &HandlerProvider::GetRelationsInfoMainThread,
-                                 std::forward<IARelationData**>(aRelations),
-                                 std::forward<long*>(aNRelations),
-                                 std::forward<HRESULT*>(&hr))) {
+  if (!mscom::InvokeOnMainThread(
+          "HandlerProvider::GetRelationsInfoMainThread", this,
+          &HandlerProvider::GetRelationsInfoMainThread,
+          std::forward<IARelationData**>(aRelations),
+          std::forward<long*>(aNRelations), std::forward<HRESULT*>(&hr))) {
     return E_FAIL;
   }
 
@@ -843,12 +843,11 @@ HandlerProvider::get_AllChildren(AccChildData** aChildren, ULONG* aNChildren) {
   MOZ_ASSERT(mscom::IsCurrentThreadMTA());
 
   HRESULT hr;
-  if (!mscom::InvokeOnMainThread("HandlerProvider::GetAllChildrenMainThread",
-                                 this,
-                                 &HandlerProvider::GetAllChildrenMainThread,
-                                 std::forward<AccChildData**>(aChildren),
-                                 std::forward<ULONG*>(aNChildren),
-                                 std::forward<HRESULT*>(&hr))) {
+  if (!mscom::InvokeOnMainThread(
+          "HandlerProvider::GetAllChildrenMainThread", this,
+          &HandlerProvider::GetAllChildrenMainThread,
+          std::forward<AccChildData**>(aChildren),
+          std::forward<ULONG*>(aNChildren), std::forward<HRESULT*>(&hr))) {
     return E_FAIL;
   }
 

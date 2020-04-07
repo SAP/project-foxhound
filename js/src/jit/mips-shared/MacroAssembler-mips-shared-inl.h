@@ -472,7 +472,7 @@ void MacroAssembler::branchFloat(DoubleCondition cond, FloatRegister lhs,
 
 void MacroAssembler::branchTruncateFloat32ToInt32(FloatRegister src,
                                                   Register dest, Label* fail) {
-  MOZ_CRASH();
+  convertFloat32ToInt32(src, dest, fail, false);
 }
 
 void MacroAssembler::branchDouble(DoubleCondition cond, FloatRegister lhs,
@@ -482,7 +482,7 @@ void MacroAssembler::branchDouble(DoubleCondition cond, FloatRegister lhs,
 
 void MacroAssembler::branchTruncateDoubleToInt32(FloatRegister src,
                                                  Register dest, Label* fail) {
-  MOZ_CRASH();
+  convertDoubleToInt32(src, dest, fail, false);
 }
 
 template <typename T>
@@ -716,6 +716,13 @@ void MacroAssembler::branchTestSymbol(Condition cond, const BaseIndex& address,
   branchTestSymbol(cond, scratch2, label);
 }
 
+void MacroAssembler::branchTestBigInt(Condition cond, const Address& address,
+                                      Label* label) {
+  SecondScratchRegisterScope scratch2(*this);
+  extractTag(address, scratch2);
+  branchTestBigInt(cond, scratch2, label);
+}
+
 void MacroAssembler::branchTestNull(Condition cond, Register tag,
                                     Label* label) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
@@ -856,6 +863,14 @@ void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Register rhs,
   Label skip;
   branch32(cond, rhs, lhs, &skip);
   load32(src, dest);
+  bind(&skip);
+}
+
+void MacroAssembler::cmp32LoadPtr(Condition cond, const Address& lhs, Imm32 rhs,
+                                  const Address& src, Register dest) {
+  Label skip;
+  branch32(Assembler::InvertCondition(cond), lhs, rhs, &skip);
+  loadPtr(src, dest);
   bind(&skip);
 }
 

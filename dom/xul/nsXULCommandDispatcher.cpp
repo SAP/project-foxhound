@@ -56,6 +56,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULCommandDispatcher)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsXULCommandDispatcher)
   tmp->Disconnect();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsXULCommandDispatcher)
@@ -326,7 +327,7 @@ nsXULCommandDispatcher::UpdateCommands(const nsAString& aEventName) {
   RefPtr<Element> element;
   GetFocusedElement(getter_AddRefs(element));
   if (element) {
-    element->GetAttribute(NS_LITERAL_STRING("id"), id);
+    element->GetAttr(nsGkAtoms::id, id);
   }
 
   nsCOMArray<nsIContent> updaters;

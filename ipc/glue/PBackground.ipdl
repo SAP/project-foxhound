@@ -26,7 +26,6 @@ include protocol PHttpBackgroundChannel;
 include protocol PIdleScheduler;
 include protocol PIPCBlobInputStream;
 include protocol PMediaTransport;
-include protocol PPendingIPCBlob;
 include protocol PRemoteWorker;
 include protocol PRemoteWorkerController;
 include protocol PRemoteWorkerService;
@@ -46,6 +45,7 @@ include protocol PServiceWorkerManager;
 include protocol PServiceWorkerRegistration;
 include protocol PWebAuthnTransaction;
 include protocol PUDPSocket;
+include protocol PVerifySSLServerCert;
 include protocol PVsync;
 
 include DOMTypes;
@@ -57,6 +57,7 @@ include PBackgroundSharedTypes;
 include PBackgroundIDBSharedTypes;
 include PFileSystemParams;
 include ProtocolTypes;
+include PSMIPCTypes;
 include RemoteWorkerTypes;
 include MIDITypes;
 
@@ -95,7 +96,6 @@ sync protocol PBackground
   manages PIdleScheduler;
   manages PIPCBlobInputStream;
   manages PMediaTransport;
-  manages PPendingIPCBlob;
   manages PRemoteWorker;
   manages PRemoteWorkerController;
   manages PRemoteWorkerService;
@@ -115,6 +115,7 @@ sync protocol PBackground
   manages PServiceWorkerRegistration;
   manages PWebAuthnTransaction;
   manages PUDPSocket;
+  manages PVerifySSLServerCert;
   manages PVsync;
 
 parent:
@@ -128,7 +129,8 @@ parent:
   // Use only for testing!
   async FlushPendingFileDeletions();
 
-  async PBackgroundSDBConnection(PrincipalInfo principalInfo);
+  async PBackgroundSDBConnection(PersistenceType persistenceType,
+                                 PrincipalInfo principalInfo);
 
   async PBackgroundLSDatabase(PrincipalInfo principalInfo,
                               uint32_t privateBrowsingId,
@@ -237,13 +239,22 @@ parent:
 
   async PMediaTransport();
 
+  async PVerifySSLServerCert(ByteArray aServerCert,
+                             ByteArray[] aPeerCertChain,
+                             nsCString aHostName,
+                             int32_t aPort,
+                             OriginAttributes aOriginAttributes,
+                             ByteArray? aStapledOCSPResponse,
+                             ByteArray? aSctsFromTLSExtension,
+                             DelegatedCredentialInfoArg? aDcInfo,
+                             uint32_t aProviderFlags,
+                             uint32_t aCertVerifierFlags);
+
 child:
   async PCache();
   async PCacheStreamControl();
 
   async PParentToChildStream();
-
-  async PPendingIPCBlob(IPCBlob blob);
 
   async PRemoteWorker(RemoteWorkerData data);
 

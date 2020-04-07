@@ -10,6 +10,7 @@
 
 #include <gtk/gtk.h>
 #include <functional>
+#include <vector>
 
 /*
  * MozContainer
@@ -79,10 +80,14 @@ struct _MozContainer {
   struct wl_egl_window* eglwindow;
   struct wl_callback* frame_callback_handler;
   int frame_callback_handler_surface_id;
-  gboolean surface_position_update;
+  gboolean opaque_region_needs_update;
+  gboolean opaque_region_subtract_corners;
+  gboolean opaque_region_fullscreen;
+  gboolean surface_position_needs_update;
   gboolean surface_needs_clear;
   gboolean ready_to_draw;
-  std::function<void(void)> inital_draw_cb;
+  std::vector<std::function<void(void)>> initial_draw_cbs;
+  gboolean is_accelerated;
 #endif
   gboolean force_default_visual;
 };
@@ -99,18 +104,24 @@ void moz_container_force_default_visual(MozContainer* container);
 
 #ifdef MOZ_WAYLAND
 struct wl_surface* moz_container_get_wl_surface(MozContainer* container);
-struct wl_egl_window* moz_container_get_wl_egl_window(MozContainer* container);
+struct wl_egl_window* moz_container_get_wl_egl_window(MozContainer* container,
+                                                      int scale);
 
 gboolean moz_container_has_wl_egl_window(MozContainer* container);
 gboolean moz_container_surface_needs_clear(MozContainer* container);
-void moz_container_scale_changed(MozContainer* container,
-                                 GtkAllocation* aAllocation);
-void moz_container_set_initial_draw_callback(
-    MozContainer* container, std::function<void(void)> inital_draw_cb);
 void moz_container_move_resize(MozContainer* container, int dx, int dy,
                                int width, int height);
 void moz_container_egl_window_set_size(MozContainer* container, int width,
                                        int height);
+void moz_container_scale_changed(MozContainer* container,
+                                 GtkAllocation* aAllocation);
+void moz_container_add_initial_draw_callback(
+    MozContainer* container, const std::function<void(void)>& initial_draw_cb);
+wl_surface* moz_gtk_widget_get_wl_surface(GtkWidget* aWidget);
+void moz_container_update_opaque_region(MozContainer* container,
+                                        bool aSubtractCorners,
+                                        bool aFullScreen);
+void moz_container_set_accelerated(MozContainer* container);
 #endif
 
 #endif /* __MOZ_CONTAINER_H__ */

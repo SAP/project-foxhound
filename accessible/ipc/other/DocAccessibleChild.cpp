@@ -16,7 +16,6 @@
 #include "TableAccessible.h"
 #include "TableCellAccessible.h"
 #include "nsIPersistentProperties2.h"
-#include "nsISimpleEnumerator.h"
 #include "nsAccUtils.h"
 #ifdef MOZ_ACCESSIBILITY_ATK
 #  include "AccessibleWrap.h"
@@ -103,11 +102,12 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvNativeState(const uint64_t& aID,
 }
 
 mozilla::ipc::IPCResult DocAccessibleChild::RecvName(const uint64_t& aID,
-                                                     nsString* aName) {
+                                                     nsString* aName,
+                                                     uint32_t* aFlag) {
   Accessible* acc = IdToAccessible(aID);
   if (!acc) return IPC_OK();
 
-  acc->Name(*aName);
+  *aFlag = acc->Name(*aName);
   return IPC_OK();
 }
 
@@ -317,13 +317,30 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvSelectionCount(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvTextSubstring(
     const uint64_t& aID, const int32_t& aStartOffset, const int32_t& aEndOffset,
     nsString* aText, bool* aValid) {
-  HyperTextAccessible* acc = IdToHyperTextAccessible(aID);
+  Accessible* acc = IdToAccessible(aID);
   if (!acc) {
     return IPC_OK();
   }
 
-  *aValid = acc->IsValidRange(aStartOffset, aEndOffset);
-  acc->TextSubstring(aStartOffset, aEndOffset, *aText);
+  TextLeafAccessible* leaf = acc->AsTextLeaf();
+  if (leaf) {
+    if (aStartOffset != 0 || aEndOffset != -1) {
+      // We don't support fetching partial text from a leaf.
+      *aValid = false;
+      return IPC_OK();
+    }
+    *aValid = true;
+    *aText = leaf->Text();
+    return IPC_OK();
+  }
+
+  HyperTextAccessible* hyper = acc->AsHyperText();
+  if (!hyper) {
+    return IPC_OK();
+  }
+
+  *aValid = hyper->IsValidRange(aStartOffset, aEndOffset);
+  hyper->TextSubstring(aStartOffset, aEndOffset, *aText);
   return IPC_OK();
 }
 
@@ -1690,6 +1707,11 @@ bool DocAccessibleChild::DeallocPDocAccessiblePlatformExtChild(
 PDocAccessiblePlatformExtChild*
 DocAccessibleChild::AllocPDocAccessiblePlatformExtChild() {
   return new DocAccessiblePlatformExtChild();
+}
+
+DocAccessiblePlatformExtChild* DocAccessibleChild::GetPlatformExtension() {
+  return static_cast<DocAccessiblePlatformExtChild*>(
+      SingleManagedOrNull(ManagedPDocAccessiblePlatformExtChild()));
 }
 
 }  // namespace a11y

@@ -108,11 +108,6 @@ DIRS += [
     'l10n',
 ]
 
-if CONFIG['MOZ_XBL']:
-    DIRS += ['xbl']
-else:
-    EXPORTS += ['xbl/stub/nsXBLBinding.h']
-
 if CONFIG['OS_ARCH'] == 'WINNT':
     DIRS += ['plugins/ipc/hangui']
 
@@ -126,4 +121,4 @@ TEST_DIRS += [
 if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk', 'cocoa', 'windows'):
     TEST_DIRS += ['plugins/test']
 
-SPHINX_TREES['dom'] = 'docs'
+SPHINX_TREES['/dom'] = 'docs'

@@ -21,7 +21,6 @@ use crate::values::specified::font::{
 use crate::values::specified::length::{FontBaseSize, NoCalcLength};
 use crate::values::CSSFloat;
 use crate::Atom;
-use app_units::Au;
 use byteorder::{BigEndian, ByteOrder};
 use cssparser::{serialize_identifier, CssStringWriter, Parser};
 #[cfg(feature = "gecko")]
@@ -148,15 +147,16 @@ impl FontWeight {
 
 impl FontSize {
     /// The actual computed font size.
-    pub fn size(self) -> Au {
-        self.size.into()
+    #[inline]
+    pub fn size(&self) -> Length {
+        self.size.0
     }
 
     #[inline]
     /// Get default value of font size.
     pub fn medium() -> Self {
         Self {
-            size: Au::from_px(specified::FONT_MEDIUM_PX).into(),
+            size: NonNegative(Length::new(specified::FONT_MEDIUM_PX as CSSFloat)),
             keyword_info: Some(KeywordInfo::medium()),
         }
     }
@@ -309,8 +309,10 @@ pub enum SingleFontFamily {
 #[allow(missing_docs)]
 pub enum GenericFontFamily {
     /// No generic family specified, only for internal usage.
+    ///
+    /// NOTE(emilio): Gecko code relies on this variant being zero.
     #[css(skip)]
-    None,
+    None = 0,
     Serif,
     SansSerif,
     #[parse(aliases = "-moz-fixed")]
@@ -351,19 +353,22 @@ impl SingleFontFamily {
         };
 
         let mut value = first_ident.as_ref().to_owned();
+        let mut serialize_quoted = value.contains(' ');
 
         // These keywords are not allowed by themselves.
         // The only way this value can be valid with with another keyword.
         if reserved {
             let ident = input.expect_ident()?;
+            serialize_quoted = serialize_quoted || ident.contains(' ');
             value.push(' ');
             value.push_str(&ident);
         }
         while let Ok(ident) = input.try(|i| i.expect_ident_cloned()) {
+            serialize_quoted = serialize_quoted || ident.contains(' ');
             value.push(' ');
             value.push_str(&ident);
         }
-        let syntax = if value.starts_with(' ') || value.ends_with(' ') || value.contains("  ") {
+        let syntax = if serialize_quoted {
             // For font family names which contains special white spaces, e.g.
             // `font-family: \ a\ \ b\ \ c\ ;`, it is tricky to serialize them
             // as identifiers correctly. Just mark them quoted so we don't need

@@ -51,7 +51,7 @@ class WebConsoleConnectionProxy {
   }
 
   /**
-   * Initialize a debugger client and connect it to the debugger server.
+   * Initialize a devtools client and connect it to the devtools server.
    *
    * @return object
    *         A promise object that is resolved/rejected based on the success of
@@ -68,7 +68,7 @@ class WebConsoleConnectionProxy {
     const connection = (async () => {
       this.client = this.target.client;
       this.webConsoleFront = await this.target.getFront("console");
-      this._addWebConsoleFrontEventListeners();
+
       await this._attachConsole();
 
       // There is no way to view response bodies from the Browser Console, so do
@@ -85,6 +85,8 @@ class WebConsoleConnectionProxy {
       const messages = cachedMessages.concat(networkMessages);
       messages.sort((a, b) => a.timeStamp - b.timeStamp);
       this.dispatchMessagesAdd(messages);
+
+      this._addWebConsoleFrontEventListeners();
 
       if (!this.webConsoleFront.hasNativeConsoleAPI) {
         await this.webConsoleUI.logWarningAboutReplacedAPI();
@@ -186,9 +188,7 @@ class WebConsoleConnectionProxy {
 
     if (response.error) {
       throw new Error(
-        `Web Console getCachedMessages error: ${response.error} ${
-          response.message
-        }`
+        `Web Console getCachedMessages error: ${response.error} ${response.message}`
       );
     }
 
@@ -352,24 +352,6 @@ class WebConsoleConnectionProxy {
       return;
     }
     this.webConsoleUI.wrapper.dispatchMessageUpdate(networkInfo, response);
-  }
-
-  /**
-   * Release an object actor.
-   *
-   * @param string actor
-   *        The actor ID to send the request to.
-   */
-  releaseActor(actor) {
-    if (this.client) {
-      const objFront = this.client.getFrontByID(actor);
-      if (objFront) {
-        objFront.release().catch(() => {});
-        return;
-      }
-      // In case there's no object front, use the client's release method.
-      this.client.release(actor).catch(() => {});
-    }
   }
 
   /**

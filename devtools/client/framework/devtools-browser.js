@@ -14,7 +14,7 @@
 
 const { Cc, Ci } = require("chrome");
 const Services = require("Services");
-const { gDevTools } = require("./devtools");
+const { gDevTools } = require("devtools/client/framework/devtools");
 
 // Load target and toolbox lazily as they need gDevTools to be fully initialized
 loader.lazyRequireGetter(
@@ -31,14 +31,14 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "DebuggerServer",
-  "devtools/server/debugger-server",
+  "DevToolsServer",
+  "devtools/server/devtools-server",
   true
 );
 loader.lazyRequireGetter(
   this,
-  "DebuggerClient",
-  "devtools/shared/client/debugger-client",
+  "DevToolsClient",
+  "devtools/shared/client/devtools-client",
   true
 );
 loader.lazyRequireGetter(
@@ -65,13 +65,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyImporter(
   this,
-  "BrowserToolboxProcess",
-  "resource://devtools/client/framework/ToolboxProcess.jsm"
-);
-loader.lazyImporter(
-  this,
-  "ScratchpadManager",
-  "resource://devtools/client/scratchpad/scratchpad-manager.jsm"
+  "BrowserToolboxLauncher",
+  "resource://devtools/client/framework/browser-toolbox/Launcher.jsm"
 );
 
 const { LocalizationHelper } = require("devtools/shared/l10n");
@@ -149,16 +144,6 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
       "menu_browserContentToolbox",
       remoteEnabled && win.gMultiProcessBrowser
     );
-
-    // Enable record/replay menu items?
-    try {
-      const recordReplayEnabled = Services.prefs.getBoolPref(
-        "devtools.recordreplay.enabled"
-      );
-      toggleMenuItem("menu_webreplay", recordReplayEnabled);
-    } catch (e) {
-      // devtools.recordreplay.enabled only exists on certain platforms.
-    }
 
     // The profiler's popup is experimental. The plan is to eventually turn it on
     // everywhere, but while it's under active development we don't want everyone
@@ -320,8 +305,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
    *         from devtools-startup.js's KeyShortcuts array. The useful fields here
    *         are:
    *         - `toolId` used to identify a toolbox's panel like inspector or webconsole,
-   *         - `id` used to identify any other key shortcuts like scratchpad or
-   *         about:debugging
+   *         - `id` used to identify any other key shortcuts like about:debugging
    * @param {Number} startTime
    *        Optional, indicates the time at which the key event fired. This is a
    *        `Cu.now()` timing.
@@ -348,7 +332,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
         await gDevToolsBrowser.toggleToolboxCommand(window.gBrowser, startTime);
         break;
       case "browserToolbox":
-        BrowserToolboxProcess.init();
+        BrowserToolboxLauncher.init();
         break;
       case "browserConsole":
         const {
@@ -360,9 +344,6 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
         ResponsiveUIManager.toggle(window, window.gBrowser.selectedTab, {
           trigger: "shortcut",
         });
-        break;
-      case "scratchpad":
-        ScratchpadManager.openScratchpad();
         break;
     }
   },
@@ -377,18 +358,19 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
   },
 
   async _getContentProcessTarget(processId) {
-    // Create a DebuggerServer in order to connect locally to it
-    DebuggerServer.init();
-    DebuggerServer.registerAllActors();
-    DebuggerServer.allowChromeProcess = true;
+    // Create a DevToolsServer in order to connect locally to it
+    DevToolsServer.init();
+    DevToolsServer.registerAllActors();
+    DevToolsServer.allowChromeProcess = true;
 
-    const transport = DebuggerServer.connectPipe();
-    const client = new DebuggerClient(transport);
+    const transport = DevToolsServer.connectPipe();
+    const client = new DevToolsClient(transport);
 
     await client.connect();
-    const target = await client.mainRoot.getProcess(processId);
+    const targetDescriptor = await client.mainRoot.getProcess(processId);
+    const target = await targetDescriptor.getTarget();
     // Ensure closing the connection in order to cleanup
-    // the debugger client and also the server created in the
+    // the devtools client and also the server created in the
     // content process
     target.on("close", () => {
       client.close();
@@ -637,7 +619,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
   hasToolboxOpened(win) {
     const tab = win.gBrowser.selectedTab;
     for (const [target] of gDevTools._toolboxes) {
-      if (target.tab == tab) {
+      if (target.localTab == tab) {
         return true;
       }
     }
@@ -747,7 +729,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
 
     // Destroy toolboxes for closed window
     for (const [target, toolbox] of gDevTools._toolboxes) {
-      if (target.tab && target.tab.ownerDocument.defaultView == win) {
+      if (target.localTab && target.localTab.ownerDocument.defaultView == win) {
         toolbox.destroy();
       }
     }
@@ -797,7 +779,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
     }
 
     // Remove scripts loaded in content process to support the Browser Content Toolbox.
-    DebuggerServer.removeContentServerScript();
+    DevToolsServer.removeContentServerScript();
 
     gDevTools.destroy({ shuttingDown });
   },

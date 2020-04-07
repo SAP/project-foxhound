@@ -6,14 +6,14 @@
 //! A large part of this module is auto-generated from the instruction descriptions in the meta
 //! directory.
 
+use alloc::vec::Vec;
 use core::fmt::{self, Display, Formatter};
 use core::ops::{Deref, DerefMut};
 use core::str::FromStr;
-use std::vec::Vec;
 
 use crate::ir;
 use crate::ir::types;
-use crate::ir::{Ebb, FuncRef, JumpTable, SigRef, Type, Value};
+use crate::ir::{Block, FuncRef, JumpTable, SigRef, Type, Value};
 use crate::isa;
 
 use crate::bitset::BitSet;
@@ -101,7 +101,7 @@ pub struct VariableArgs(Vec<Value>);
 impl VariableArgs {
     /// Create an empty argument list.
     pub fn new() -> Self {
-        VariableArgs(Vec::new())
+        Self(Vec::new())
     }
 
     /// Add an argument to the end.
@@ -164,39 +164,39 @@ impl Default for VariableArgs {
 impl InstructionData {
     /// Return information about the destination of a branch or jump instruction.
     ///
-    /// Any instruction that can transfer control to another EBB reveals its possible destinations
+    /// Any instruction that can transfer control to another block reveals its possible destinations
     /// here.
     pub fn analyze_branch<'a>(&'a self, pool: &'a ValueListPool) -> BranchInfo<'a> {
         match *self {
-            InstructionData::Jump {
+            Self::Jump {
                 destination,
                 ref args,
                 ..
             } => BranchInfo::SingleDest(destination, args.as_slice(pool)),
-            InstructionData::BranchInt {
+            Self::BranchInt {
                 destination,
                 ref args,
                 ..
             }
-            | InstructionData::BranchFloat {
+            | Self::BranchFloat {
                 destination,
                 ref args,
                 ..
             }
-            | InstructionData::Branch {
+            | Self::Branch {
                 destination,
                 ref args,
                 ..
             } => BranchInfo::SingleDest(destination, &args.as_slice(pool)[1..]),
-            InstructionData::BranchIcmp {
+            Self::BranchIcmp {
                 destination,
                 ref args,
                 ..
             } => BranchInfo::SingleDest(destination, &args.as_slice(pool)[2..]),
-            InstructionData::BranchTable {
+            Self::BranchTable {
                 table, destination, ..
             } => BranchInfo::Table(table, Some(destination)),
-            InstructionData::IndirectJump { table, .. } => BranchInfo::Table(table, None),
+            Self::IndirectJump { table, .. } => BranchInfo::Table(table, None),
             _ => {
                 debug_assert!(!self.opcode().is_branch());
                 BranchInfo::NotABranch
@@ -208,14 +208,14 @@ impl InstructionData {
     /// branch or jump.
     ///
     /// Multi-destination branches like `br_table` return `None`.
-    pub fn branch_destination(&self) -> Option<Ebb> {
+    pub fn branch_destination(&self) -> Option<Block> {
         match *self {
-            InstructionData::Jump { destination, .. }
-            | InstructionData::Branch { destination, .. }
-            | InstructionData::BranchInt { destination, .. }
-            | InstructionData::BranchFloat { destination, .. }
-            | InstructionData::BranchIcmp { destination, .. } => Some(destination),
-            InstructionData::BranchTable { .. } | InstructionData::IndirectJump { .. } => None,
+            Self::Jump { destination, .. }
+            | Self::Branch { destination, .. }
+            | Self::BranchInt { destination, .. }
+            | Self::BranchFloat { destination, .. }
+            | Self::BranchIcmp { destination, .. } => Some(destination),
+            Self::BranchTable { .. } | Self::IndirectJump { .. } => None,
             _ => {
                 debug_assert!(!self.opcode().is_branch());
                 None
@@ -227,29 +227,29 @@ impl InstructionData {
     /// single destination branch or jump.
     ///
     /// Multi-destination branches like `br_table` return `None`.
-    pub fn branch_destination_mut(&mut self) -> Option<&mut Ebb> {
+    pub fn branch_destination_mut(&mut self) -> Option<&mut Block> {
         match *self {
-            InstructionData::Jump {
+            Self::Jump {
                 ref mut destination,
                 ..
             }
-            | InstructionData::Branch {
+            | Self::Branch {
                 ref mut destination,
                 ..
             }
-            | InstructionData::BranchInt {
+            | Self::BranchInt {
                 ref mut destination,
                 ..
             }
-            | InstructionData::BranchFloat {
+            | Self::BranchFloat {
                 ref mut destination,
                 ..
             }
-            | InstructionData::BranchIcmp {
+            | Self::BranchIcmp {
                 ref mut destination,
                 ..
             } => Some(destination),
-            InstructionData::BranchTable { .. } => None,
+            Self::BranchTable { .. } => None,
             _ => {
                 debug_assert!(!self.opcode().is_branch());
                 None
@@ -262,10 +262,10 @@ impl InstructionData {
     /// Any instruction that can call another function reveals its call signature here.
     pub fn analyze_call<'a>(&'a self, pool: &'a ValueListPool) -> CallInfo<'a> {
         match *self {
-            InstructionData::Call {
+            Self::Call {
                 func_ref, ref args, ..
             } => CallInfo::Direct(func_ref, args.as_slice(pool)),
-            InstructionData::CallIndirect {
+            Self::CallIndirect {
                 sig_ref, ref args, ..
             } => CallInfo::Indirect(sig_ref, &args.as_slice(pool)[1..]),
             _ => {
@@ -279,15 +279,15 @@ impl InstructionData {
 /// Information about branch and jump instructions.
 pub enum BranchInfo<'a> {
     /// This is not a branch or jump instruction.
-    /// This instruction will not transfer control to another EBB in the function, but it may still
+    /// This instruction will not transfer control to another block in the function, but it may still
     /// affect control flow by returning or trapping.
     NotABranch,
 
-    /// This is a branch or jump to a single destination EBB, possibly taking value arguments.
-    SingleDest(Ebb, &'a [Value]),
+    /// This is a branch or jump to a single destination block, possibly taking value arguments.
+    SingleDest(Block, &'a [Value]),
 
-    /// This is a jump table branch which can have many destination EBBs and maybe one default EBB.
-    Table(JumpTable, Option<Ebb>),
+    /// This is a jump table branch which can have many destination blocks and maybe one default block.
+    Table(JumpTable, Option<Block>),
 }
 
 /// Information about call instructions.
@@ -560,7 +560,7 @@ pub enum ResolvedConstraint {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::string::ToString;
+    use alloc::string::ToString;
 
     #[test]
     fn opcodes() {

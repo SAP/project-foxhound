@@ -9,10 +9,11 @@
 
 #include "js/TypeDecls.h"
 #include "vm/BytecodeUtil.h"
+#include "vm/StringType.h"
 
 namespace js {
 
-typedef uint32_t RawBytecodeLocationOffset;
+using RawBytecodeLocationOffset = uint32_t;
 
 class PropertyName;
 
@@ -26,7 +27,7 @@ class BytecodeLocationOffset {
   RawBytecodeLocationOffset rawOffset() const { return rawOffset_; }
 };
 
-typedef jsbytecode* RawBytecode;
+using RawBytecode = jsbytecode*;
 
 // A immutable representation of a program location
 //
@@ -35,6 +36,7 @@ class BytecodeLocation {
 #ifdef DEBUG
   const JSScript* debugOnlyScript_;
 #endif
+
   // Construct a new BytecodeLocation, while borrowing scriptIdentity
   // from some other BytecodeLocation.
   BytecodeLocation(const BytecodeLocation& loc, RawBytecode pc)
@@ -65,7 +67,7 @@ class BytecodeLocation {
 
   // Return true if this bytecode location is valid for the given script.
   // This includes the location 1-past the end of the bytecode.
-  bool isValid(const JSScript* script) const;
+  JS_PUBLIC_API bool isValid(const JSScript* script) const;
 
   // Return true if this bytecode location is within the bounds of the
   // bytecode for a given script.
@@ -73,13 +75,31 @@ class BytecodeLocation {
 
   uint32_t bytecodeToOffset(const JSScript* script) const;
 
+  uint32_t tableSwitchCaseOffset(const JSScript* script,
+                                 uint32_t caseIndex) const;
+
+  uint32_t getJumpTargetOffset(const JSScript* script) const;
+
+  uint32_t getTableSwitchDefaultOffset(const JSScript* script) const;
+
+  uint32_t useCount() const;
+
+  uint32_t defCount() const;
+
+  int32_t jumpOffset() const { return GET_JUMP_OFFSET(rawBytecode_); }
+  int32_t codeOffset() const { return GET_CODE_OFFSET(rawBytecode_); }
+
   PropertyName* getPropertyName(const JSScript* script) const;
+
+  Scope* innermostScope(const JSScript* script) const;
 
 #ifdef DEBUG
   bool hasSameScript(const BytecodeLocation& other) const {
     return debugOnlyScript_ == other.debugOnlyScript_;
   }
 #endif
+
+  // Overloaded operators
 
   bool operator==(const BytecodeLocation& other) const {
     MOZ_ASSERT(this->debugOnlyScript_ == other.debugOnlyScript_);
@@ -124,9 +144,19 @@ class BytecodeLocation {
     return getOp() == op;
   }
 
+  // Accessors:
+
+  uint32_t length() const { return GetBytecodeLength(rawBytecode_); }
+
   bool isJumpTarget() const { return BytecodeIsJumpTarget(getOp()); }
 
   bool isJump() const { return IsJumpOpcode(getOp()); }
+
+  bool isBackedge() const { return IsBackedgePC(rawBytecode_); }
+
+  bool isBackedgeForLoophead(BytecodeLocation loopHead) const {
+    return IsBackedgeForLoopHead(rawBytecode_, loopHead.rawBytecode_);
+  }
 
   bool opHasTypeSet() const { return BytecodeOpHasTypeSet(getOp()); }
 
@@ -140,9 +170,7 @@ class BytecodeLocation {
 
   bool isEqualityOp() const { return IsEqualityOp(getOp()); }
 
-  bool isStrictEqualityOp() const {
-    return is(JSOP_STRICTEQ) || is(JSOP_STRICTNE);
-  }
+  bool isStrictEqualityOp() const { return IsStrictEqualityOp(getOp()); }
 
   bool isDetectingOp() const { return IsDetecting(getOp()); }
 
@@ -152,22 +180,66 @@ class BytecodeLocation {
   JSOp getOp() const { return JSOp(*rawBytecode_); }
 
   BytecodeLocation getJumpTarget() const {
-    // The default target of a JSOP_TABLESWITCH also follows this format.
-    MOZ_ASSERT(isJump() || is(JSOP_TABLESWITCH));
+    // The default target of a JSOp::TableSwitch also follows this format.
+    MOZ_ASSERT(isJump() || is(JSOp::TableSwitch));
     return BytecodeLocation(*this,
                             rawBytecode_ + GET_JUMP_OFFSET(rawBytecode_));
   }
 
   // Return the 'low' parameter to the tableswitch opcode
   int32_t getTableSwitchLow() const {
-    MOZ_ASSERT(is(JSOP_TABLESWITCH));
+    MOZ_ASSERT(is(JSOp::TableSwitch));
     return GET_JUMP_OFFSET(rawBytecode_ + JUMP_OFFSET_LEN);
   }
 
   // Return the 'high' parameter to the tableswitch opcode
   int32_t getTableSwitchHigh() const {
-    MOZ_ASSERT(is(JSOP_TABLESWITCH));
+    MOZ_ASSERT(is(JSOp::TableSwitch));
     return GET_JUMP_OFFSET(rawBytecode_ + (2 * JUMP_OFFSET_LEN));
+  }
+
+  uint32_t getPopCount() const {
+    MOZ_ASSERT(is(JSOp::PopN));
+    return GET_UINT16(rawBytecode_);
+  }
+
+  uint32_t getDupAtIndex() const {
+    MOZ_ASSERT(is(JSOp::DupAt));
+    return GET_UINT24(rawBytecode_);
+  }
+
+  uint8_t getPickDepth() const {
+    MOZ_ASSERT(is(JSOp::Pick));
+    return GET_UINT8(rawBytecode_);
+  }
+  uint8_t getUnpickDepth() const {
+    MOZ_ASSERT(is(JSOp::Unpick));
+    return GET_UINT8(rawBytecode_);
+  }
+
+  int8_t getInt8() const {
+    MOZ_ASSERT(is(JSOp::Int8));
+    return GET_INT8(rawBytecode_);
+  }
+  uint16_t getUint16() const {
+    MOZ_ASSERT(is(JSOp::Uint16));
+    return GET_UINT16(rawBytecode_);
+  }
+  uint32_t getUint24() const {
+    MOZ_ASSERT(is(JSOp::Uint24));
+    return GET_UINT24(rawBytecode_);
+  }
+  int32_t getInt32() const {
+    MOZ_ASSERT(is(JSOp::Int32));
+    return GET_INT32(rawBytecode_);
+  }
+  uint32_t getResumeIndex() const {
+    MOZ_ASSERT(is(JSOp::ResumeIndex));
+    return GET_RESUMEINDEX(rawBytecode_);
+  }
+  Value getInlineValue() const {
+    MOZ_ASSERT(is(JSOp::Double));
+    return GET_INLINE_VALUE(rawBytecode_);
   }
 
 #ifdef DEBUG

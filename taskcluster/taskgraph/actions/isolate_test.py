@@ -12,6 +12,8 @@ import logging
 import os
 import re
 
+import six
+
 from slugid import nice as slugid
 from taskgraph.util.taskcluster import list_artifacts, get_artifact, get_task_definition
 from ..util.parameterization import resolve_task_references
@@ -117,6 +119,9 @@ def create_isolate_failure_tasks(task_definition, failures, level, times):
     """
     logger.info("Isolate task:\n{}".format(json.dumps(task_definition, indent=2)))
 
+    # Operate on a copy of the original task_definition
+    task_definition = copy.deepcopy(task_definition)
+
     task_name = task_definition['metadata']['name']
     repeatable_task = False
     if ('crashtest' in task_name or 'mochitest' in task_name or
@@ -128,8 +133,6 @@ def create_isolate_failure_tasks(task_definition, failures, level, times):
     is_windows = 'windows' in th_dict['machine']['platform']
 
     suite = task_definition['extra']['suite']
-    if '-chunked' in suite:
-        suite = suite[:suite.index('-chunked')]
     if '-coverage' in suite:
         suite = suite[:suite.index('-coverage')]
     is_wpt = 'web-platform-tests' in suite
@@ -151,14 +154,20 @@ def create_isolate_failure_tasks(task_definition, failures, level, times):
         task_definition['payload']['maxRunTime'] = 3600 * 3
 
     for failure_group in failures:
+        if len(failures[failure_group]) == 0:
+            continue
         if failure_group == 'dirs':
             failure_group_suffix = '-id'
             # execute 5 total loops
             repeat_args = ['--repeat=4'] if repeatable_task else []
-        else:
+        elif failure_group == 'tests':
             failure_group_suffix = '-it'
             # execute 20 total loops
             repeat_args = ['--repeat=19'] if repeatable_task else []
+        else:
+            logger.error("create_isolate_failure_tasks: Unknown failure_group {}".format(
+                failure_group))
+            continue
 
         if repeat_args:
             task_definition['payload']['command'] = add_args_to_command(command,
@@ -184,8 +193,8 @@ def create_isolate_failure_tasks(task_definition, failures, level, times):
                     saved_command,
                     extra_args=include_args)
             else:
-                task_definition['payload']['env']['MOZHARNESS_TEST_PATHS'] = json.dumps(
-                    {suite: [failure_path]})
+                task_definition['payload']['env']['MOZHARNESS_TEST_PATHS'] = six.ensure_text(
+                    json.dumps({suite: [failure_path]}))
 
             logger.info("Creating task for path {} with command {}".format(
                 failure_path,

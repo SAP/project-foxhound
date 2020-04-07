@@ -13,7 +13,6 @@
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsDataHashtable.h"
-#include "nsIClientAuthDialogs.h"
 #include "nsIProxyInfo.h"
 #include "nsISSLSocketControl.h"
 #include "nsNSSCertificate.h"
@@ -70,6 +69,7 @@ class nsNSSSocketInfo final : public CommonSocketControl {
   NS_IMETHOD GetEsniTxt(nsACString& aEsniTxt) override;
   NS_IMETHOD SetEsniTxt(const nsACString& aEsniTxt) override;
   NS_IMETHOD GetPeerId(nsACString& aResult) override;
+  NS_IMETHOD SetResumptionTokenFromExternalCache() override;
 
   PRStatus CloseSocketAndDestroy();
 
@@ -79,6 +79,7 @@ class nsNSSSocketInfo final : public CommonSocketControl {
   void SetHandshakeCompleted();
   bool IsHandshakeCompleted() const { return mHandshakeCompleted; }
   void NoteTimeUntilReady();
+  void NoteSessionResumptionTime(bool aUsingExternalCache);
 
   void SetFalseStartCallbackCalled() { mFalseStartCallbackCalled = true; }
   void SetFalseStarted() { mFalseStarted = true; }

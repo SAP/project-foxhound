@@ -9,7 +9,7 @@ ${helpers.four_sides_shorthand(
     "border-color",
     "border-%s-color",
     "specified::Color::parse",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     spec="https://drafts.csswg.org/css-backgrounds/#border-color",
     allow_quirks="Yes",
 )}
@@ -18,14 +18,14 @@ ${helpers.four_sides_shorthand(
     "border-style",
     "border-%s-style",
     "specified::BorderStyle::parse",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     needs_context=False,
     spec="https://drafts.csswg.org/css-backgrounds/#border-style",
 )}
 
 <%helpers:shorthand
     name="border-width"
-    engines="gecko servo-2013"
+    engines="gecko servo-2013 servo-2020"
     sub_properties="${
         ' '.join('border-%s-width' % side
                  for side in PHYSICAL_SIDES)}"
@@ -111,7 +111,6 @@ pub fn parse_border<'i, 't>(
     <%helpers:shorthand
         name="border-${side}"
         engines="gecko servo-2013 servo-2020"
-        servo_2020_pref="layout.2020.unimplemented"
         sub_properties="${' '.join(
             'border-%s-%s' % (side, prop)
             for prop in ['color', 'style', 'width']
@@ -146,7 +145,7 @@ pub fn parse_border<'i, 't>(
 % endfor
 
 <%helpers:shorthand name="border"
-    engines="gecko servo-2013"
+    engines="gecko servo-2013 servo-2020"
     sub_properties="${' '.join('border-%s-%s' % (side, prop)
         for side in PHYSICAL_SIDES
         for prop in ['color', 'style', 'width'])}
@@ -180,6 +179,16 @@ pub fn parse_border<'i, 't>(
 
     impl<'a> ToCss for LonghandsToSerialize<'a>  {
         fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result where W: fmt::Write {
+            use crate::properties::longhands;
+
+            // If any of the border-image longhands differ from their initial specified values we should not
+            // invoke serialize_directional_border(), so there is no point in continuing on to compute all_equal.
+            % for name in "outset repeat slice source width".split():
+                if *self.border_image_${name} != longhands::border_image_${name}::get_initial_specified_value() {
+                    return Ok(());
+                }
+            % endfor
+
             let all_equal = {
                 % for side in PHYSICAL_SIDES:
                   let border_${side}_width = self.border_${side}_width;
@@ -230,7 +239,7 @@ pub fn parse_border<'i, 't>(
 
 <%helpers:shorthand
     name="border-radius"
-    engines="gecko servo-2013"
+    engines="gecko servo-2013 servo-2020"
     sub_properties="${' '.join(
         'border-%s-radius' % (corner)
          for corner in ['top-left', 'top-right', 'bottom-right', 'bottom-left']
@@ -384,7 +393,7 @@ pub fn parse_border<'i, 't>(
             spec = "https://drafts.csswg.org/css-logical/#propdef-border-%s-%s" % (axis, prop)
         %>
         <%helpers:shorthand
-            engines="gecko servo-2013"
+            engines="gecko servo-2013 servo-2020"
             name="border-${axis}-${prop}"
             sub_properties="${' '.join(
                 'border-%s-%s-%s' % (axis, side, prop)
@@ -430,7 +439,7 @@ pub fn parse_border<'i, 't>(
     %>
     <%helpers:shorthand
         name="border-${axis}"
-        engines="gecko servo-2013"
+        engines="gecko servo-2013 servo-2020"
         sub_properties="${' '.join(
             'border-%s-%s-width' % (axis, side)
             for side in ['start', 'end']

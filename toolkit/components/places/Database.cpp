@@ -10,10 +10,8 @@
 
 #include "Database.h"
 
-#include "nsIAnnotationService.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIFile.h"
-#include "nsIWritablePropertyBag2.h"
 
 #include "nsNavBookmarks.h"
 #include "nsNavHistory.h"
@@ -34,6 +32,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/Unused.h"
+#include "mozIStorageService.h"
 #include "prtime.h"
 
 #include "nsXULAppAPI.h"
@@ -2599,7 +2598,7 @@ void Database::Shutdown() {
   // Break cycles with the shutdown blockers.
   mClientsShutdown = nullptr;
   nsCOMPtr<mozIStorageCompletionCallback> connectionShutdown =
-      mConnectionShutdown.forget();
+      std::move(mConnectionShutdown);
 
   if (!mMainConn) {
     // The connection has never been initialized. Just mark it as closed.

@@ -24,8 +24,8 @@ class PICStub {
   friend class PICChain<Category>;
 
  private:
-  typedef typename Category::Stub CatStub;
-  typedef typename Category::Chain CatChain;
+  using CatStub = typename Category::Stub;
+  using CatChain = typename Category::Chain;
 
  protected:
   CatStub* next_;
@@ -51,8 +51,8 @@ class PICStub {
 template <typename Category>
 class PICChain {
  private:
-  typedef typename Category::Stub CatStub;
-  typedef typename Category::Chain CatChain;
+  using CatStub = typename Category::Stub;
+  using CatChain = typename Category::Chain;
 
  protected:
   CatStub* stubs_;
@@ -86,8 +86,8 @@ struct ForOfPIC {
   ForOfPIC() = delete;
   ForOfPIC(const ForOfPIC& other) = delete;
 
-  typedef PICStub<ForOfPIC> BaseStub;
-  typedef PICChain<ForOfPIC> BaseChain;
+  using BaseStub = PICStub<ForOfPIC>;
+  using BaseChain = PICChain<ForOfPIC>;
 
   /*
    * A ForOfPIC has only one kind of stub for now: one that holds the shape
@@ -135,7 +135,7 @@ struct ForOfPIC {
   class Chain : public BaseChain {
    private:
     // Pointer to owning JSObject for memory accounting purposes.
-    GCPtrObject picObject_;
+    const GCPtrObject picObject_;
 
     // Pointer to canonical Array.prototype and ArrayIterator.prototype
     GCPtrNativeObject arrayProto_;

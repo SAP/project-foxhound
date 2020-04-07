@@ -180,55 +180,6 @@ def target_tasks_default(full_task_graph, parameters, graph_config):
             and filter_out_nightly(t, parameters)]
 
 
-@_target_task('ash_tasks')
-def target_tasks_ash(full_task_graph, parameters, graph_config):
-    """Target tasks that only run on the ash branch."""
-    def filter(task):
-        attr = task.attributes
-        platform = attr.get('build_platform')
-        # Early return if platform is None
-        if not platform:
-            return False
-        # Only on Linux platforms
-        if 'linux' not in platform:
-            return False
-        # No random non-build jobs either. This is being purposely done as a
-        # blacklist so newly-added jobs aren't missed by default.
-        for p in ('shippable', 'haz', 'artifact', 'cov', 'add-on'):
-            if p in platform:
-                return False
-        for k in ('toolchain', 'l10n'):
-            if k in attr['kind']:
-                return False
-        # and none of this linux64-asan/debug stuff
-        if platform == 'linux64-asan' and attr['build_type'] == 'debug':
-            return False
-
-        if attr.get('unittest_suite'):
-            # no non-e10s tests
-            if not attr.get('e10s'):
-                return False
-
-            # filter out by test platform
-            for p in ('-qr',):
-                if p in attr['test_platform']:
-                    return False
-
-            # filter out raptor-fis (they are broken)
-            if attr['unittest_suite'] == 'raptor' and attr.get('unittest_variant') == 'fission':
-                return False
-
-        # don't upload symbols
-        if attr['kind'] == 'upload-symbols':
-            return False
-        return True
-
-    return [l for l, t in full_task_graph.tasks.iteritems()
-            if filter(t)
-            and standard_filter(t, parameters)
-            and filter_out_nightly(t, parameters)]
-
-
 @_target_task('graphics_tasks')
 def target_tasks_graphics(full_task_graph, parameters, graph_config):
     """In addition to doing the filtering by project that the 'default'
@@ -281,31 +232,6 @@ def target_tasks_mozilla_release(full_task_graph, parameters, graph_config):
             and standard_filter(t, parameters)]
 
 
-@_target_task('mozilla_esr60_tasks')
-def target_tasks_mozilla_esr60(full_task_graph, parameters, graph_config):
-    """Select the set of tasks required for a promotable beta or release build
-    of desktop. The candidates build process involves a pipeline of builds and
-    signing, but does not include beetmover or balrog jobs."""
-
-    def filter(task):
-        if not filter_release_tasks(task, parameters):
-            return False
-
-        if not standard_filter(task, parameters):
-            return False
-
-        platform = task.attributes.get('build_platform')
-
-        # Android is not built on esr60.
-        if platform and 'android' in platform:
-            return False
-
-        # All else was already filtered
-        return True
-
-    return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
-
-
 @_target_task('mozilla_esr68_tasks')
 def target_tasks_mozilla_esr68(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a promotable beta or release build
@@ -356,6 +282,14 @@ def target_tasks_promote_desktop(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
 
+def is_geckoview(task, parameters):
+    return (
+        task.attributes.get('shipping_product') == 'fennec' and
+        task.kind in ('beetmover-geckoview', 'upload-symbols') and
+        parameters['release_product'] == 'firefox'
+    )
+
+
 @_target_task('push_desktop')
 def target_tasks_push_desktop(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to push a build of desktop to cdns.
@@ -370,6 +304,11 @@ def target_tasks_push_desktop(full_task_graph, parameters, graph_config):
         # Include promotion tasks; these will be optimized out
         if task.label in filtered_for_candidates:
             return True
+        # XXX: Bug 1612540 - include beetmover jobs for publishing geckoview, along
+        # with the regular Firefox (not Devedition!) releases so that they are at sync
+        if is_geckoview(task, parameters):
+            return True
+
         if task.attributes.get('shipping_product') == parameters['release_product'] and \
                 task.attributes.get('shipping_phase') == 'push':
             return True
@@ -400,6 +339,11 @@ def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
         # Include promotion tasks; these will be optimized out
         if task.label in filtered_for_candidates:
             return True
+
+        # XXX: Bug 1619603 - geckoview also ships alongside Firefox RC
+        if is_geckoview(task, parameters) and is_rc:
+            return True
+
         if task.attributes.get('shipping_product') != parameters['release_product'] or \
                 task.attributes.get('shipping_phase') != 'ship':
             return False
@@ -501,6 +445,7 @@ def target_tasks_fennec_v68(full_task_graph, parameters, graph_config):
     """
     def filter(task):
         platform = task.attributes.get('build_platform')
+        test_platform = task.attributes.get('test_platform')
         attributes = task.attributes
 
         if platform and 'android' not in platform:
@@ -508,6 +453,11 @@ def target_tasks_fennec_v68(full_task_graph, parameters, graph_config):
         if attributes.get('unittest_suite') != 'raptor':
             return False
         if '-fennec68-' in attributes.get('raptor_try_name'):
+            if '-p2' in test_platform and '-arm7' in test_platform:
+                return False
+            if '-youtube-playback-' in attributes.get('raptor_try_name') \
+                    and 'opt' in test_platform:
+                return False
             return True
 
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
@@ -524,10 +474,21 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
         if attributes.get('unittest_suite') != 'raptor':
             return False
         try_name = attributes.get('raptor_try_name')
+
         # Run chrome and chromium on all platforms available
         if '-chrome' in try_name:
             return True
         if '-chromium' in try_name:
+            return True
+
+        # Run raptor scn-power-idle and speedometer for fenix and fennec68
+        if 'raptor-scn-power-idle' in try_name \
+                and 'pgo' in platform \
+                and ('-fenix' in try_name or '-fennec68' in try_name):
+            return True
+        if 'raptor-speedometer' in try_name \
+                and 'pgo' in platform \
+                and ('-fenix' in try_name or '-fennec68' in try_name):
             return True
 
         # Run the following tests on android geckoview
@@ -630,6 +591,18 @@ def target_tasks_nightly_asan(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t, parameters)]
 
 
+@_target_task('daily_releases')
+def target_tasks_daily_releases(full_task_graph, parameters, graph_config):
+    """Select the set of tasks required to identify if we should release.
+    If we determine that we should the task will communicate to ship-it to
+    schedule the release itself."""
+
+    def filter(task):
+        return task.kind in ['maybe-release']
+
+    return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
+
+
 @_target_task('nightly_desktop')
 def target_tasks_nightly_desktop(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of linux, mac,
@@ -678,13 +651,13 @@ def target_tasks_chromium_update(full_task_graph, parameters, graph_config):
             'fetch-mac-chromium']
 
 
-@_target_task('pipfile_update')
-def target_tasks_pipfile_update(full_task_graph, parameters, graph_config):
+@_target_task('python_dependency_update')
+def target_tasks_python_update(full_task_graph, parameters, graph_config):
     """Select the set of tasks required to perform nightly in-tree pipfile updates
     """
     def filter(task):
         # For now any task in the repo-update kind is ok
-        return task.kind in ['pipfile-update']
+        return task.kind in ['python-dependency-update']
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
 
@@ -696,6 +669,23 @@ def target_tasks_file_update(full_task_graph, parameters, graph_config):
         # For now any task in the repo-update kind is ok
         return task.kind in ['repo-update']
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
+
+
+@_target_task('l10n_bump')
+def target_tasks_l10n_bump(full_task_graph, parameters, graph_config):
+    """Select the set of tasks required to perform l10n bumping.
+    """
+    def filter(task):
+        # For now any task in the repo-update kind is ok
+        return task.kind in ['l10n-bump']
+    return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
+
+
+@_target_task('merge_automation')
+def target_tasks_merge_automation(full_task_graph, parameters, graph_config):
+    """Select the set of tasks required to perform repository merges.
+    """
+    return ['merge-automation']
 
 
 @_target_task('cron_bouncer_check')
@@ -741,7 +731,7 @@ def target_tasks_release_simulation(full_task_graph, parameters, graph_config):
         'nightly': 'mozilla-central',
         'beta': 'mozilla-beta',
         'release': 'mozilla-release',
-        'esr60': 'mozilla-esr60',
+        'esr68': 'mozilla-esr68',
     }
     target_project = project_by_release.get(parameters['release_type'])
     if target_project is None:
@@ -819,4 +809,14 @@ def target_tasks_condprof(full_task_graph, parameters, graph_config):
     """
     for name, task in full_task_graph.tasks.iteritems():
         if task.kind == "condprof":
+            yield name
+
+
+@_target_task('system_symbols')
+def target_tasks_system_symbols(full_task_graph, parameters, graph_config):
+    """
+    Select tasks for uploading system-symbols.
+    """
+    for name, task in full_task_graph.tasks.iteritems():
+        if task.kind == "system-symbols-upload":
             yield name

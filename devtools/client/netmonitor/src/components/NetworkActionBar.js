@@ -13,9 +13,9 @@ const {
   connect,
 } = require("devtools/client/shared/redux/visibility-handler-connect");
 const { div } = require("devtools/client/shared/vendor/react-dom-factories");
-const { L10N } = require("../utils/l10n");
-const Actions = require("../actions/index");
-const { PANELS } = require("../constants");
+const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const Actions = require("devtools/client/netmonitor/src/actions/index");
+const { PANELS } = require("devtools/client/netmonitor/src/constants");
 
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
@@ -27,11 +27,15 @@ const TabPanel = createFactory(
 );
 
 loader.lazyGetter(this, "SearchPanel", function() {
-  return createFactory(require("./search/SearchPanel"));
+  return createFactory(
+    require("devtools/client/netmonitor/src/components/search/SearchPanel")
+  );
 });
 
 loader.lazyGetter(this, "RequestBlockingPanel", function() {
-  return createFactory(require("./request-blocking/RequestBlockingPanel"));
+  return createFactory(
+    require("devtools/client/netmonitor/src/components/request-blocking/RequestBlockingPanel")
+  );
 });
 
 class NetworkActionBar extends Component {
@@ -40,6 +44,7 @@ class NetworkActionBar extends Component {
       connector: PropTypes.object.isRequired,
       selectedActionBarTabId: PropTypes.string,
       selectActionBarTab: PropTypes.func.isRequired,
+      toggleNetworkActionBar: PropTypes.func.isRequired,
     };
   }
 
@@ -48,6 +53,7 @@ class NetworkActionBar extends Component {
       connector,
       selectedActionBarTabId,
       selectActionBarTab,
+      toggleNetworkActionBar,
     } = this.props;
 
     // The request blocking and search panels are available behind a pref
@@ -64,6 +70,14 @@ class NetworkActionBar extends Component {
         {
           activeTabId: selectedActionBarTabId,
           onSelect: id => selectActionBarTab(id),
+          sidebarToggleButton: {
+            collapsed: false,
+            collapsePaneTitle: L10N.getStr("collapseActionPane"),
+            expandPaneTitle: "",
+            onClick: toggleNetworkActionBar,
+            alignRight: true,
+            canVerticalSplit: false,
+          },
         },
         showSearchPanel &&
           TabPanel(
@@ -94,5 +108,6 @@ module.exports = connect(
   }),
   dispatch => ({
     selectActionBarTab: id => dispatch(Actions.selectActionBarTab(id)),
+    toggleNetworkActionBar: () => dispatch(Actions.toggleNetworkActionBar()),
   })
 )(NetworkActionBar);

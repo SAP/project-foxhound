@@ -15,6 +15,7 @@
 #include "nsThreadUtils.h"
 #include "nsThreadPool.h"
 #include "nsCOMPtr.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/SHA1.h"
@@ -38,31 +39,14 @@ class nsNotifyAddrListener : public nsINetworkLinkService,
                                    mozilla::SHA1Sum& sha1);
 
  protected:
-  class ChangeEvent : public mozilla::Runnable {
-   public:
-    NS_DECL_NSIRUNNABLE
-    ChangeEvent(nsINetworkLinkService* aService, const char* aEventID)
-        : Runnable("nsNotifyAddrListener::ChangeEvent"),
-          mService(aService),
-          mEventID(aEventID) {}
-
-   private:
-    nsCOMPtr<nsINetworkLinkService> mService;
-    const char* mEventID;
-  };
-
   bool mLinkUp;
   bool mStatusKnown;
   bool mCheckAttempted;
 
   nsresult Shutdown(void);
-  nsresult SendEvent(const char* aEventID);
+  nsresult NotifyObservers(const char* aTopic, const char* aData);
 
   DWORD CheckAdaptersAddresses(void);
-
-  // Checks for an Internet Connection Sharing (ICS) gateway.
-  bool CheckICSGateway(PIP_ADAPTER_ADDRESSES aAdapter);
-  bool CheckICSStatus(PWCHAR aAdapterName);
 
   // This threadpool only ever holds 1 thread. It is a threadpool and not a
   // regular thread so that we may call shutdownWithTimeout on it.
@@ -86,7 +70,11 @@ class nsNotifyAddrListener : public nsINetworkLinkService,
   HANDLE mCheckEvent;
 
   // set true when mCheckEvent means shutdown
-  bool mShutdown;
+  mozilla::Atomic<bool> mShutdown;
+
+  // Contains a set of flags that codify the reasons for which
+  // the platform indicates DNS should be used instead of TRR.
+  mozilla::Atomic<uint32_t, mozilla::Relaxed> mPlatformDNSIndications;
 
   // This is a checksum of various meta data for all network interfaces
   // considered UP at last check.
@@ -100,9 +88,6 @@ class nsNotifyAddrListener : public nsINetworkLinkService,
 
   // Time stamp for first event during coalescing
   mozilla::TimeStamp mChangeTime;
-
-  // Time stamp of last NS_NETWORK_LINK_DATA_CHANGED event
-  mozilla::TimeStamp mNetworkChangeTime;
 };
 
 #endif /* NSNOTIFYADDRLISTENER_H_ */

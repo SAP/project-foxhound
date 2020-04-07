@@ -77,7 +77,6 @@
 #endif
 
 #if defined(MOZ_WAYLAND)
-#  include "nsAutoPtr.h"
 #  include "nsDataHashtable.h"
 
 #  include <gtk/gtk.h>
@@ -85,6 +84,10 @@
 #  include <gdk/gdkwayland.h>
 #  include <wayland-egl.h>
 #  include <dlfcn.h>
+
+#  define IS_WAYLAND_DISPLAY()    \
+    (gdk_display_get_default() && \
+     !GDK_IS_X11_DISPLAY(gdk_display_get_default()))
 #endif
 
 using namespace mozilla::gfx;
@@ -111,7 +114,7 @@ static nsDataHashtable<nsPtrHashKey<void>, WaylandGLSurface*> sWaylandGLSurface;
 void DeleteWaylandGLSurface(EGLSurface surface) {
   // We're running on Wayland which means our EGLSurface may
   // have attached Wayland backend data which must be released.
-  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (IS_WAYLAND_DISPLAY()) {
     auto entry = sWaylandGLSurface.Lookup(surface);
     if (entry) {
       delete entry.Data();
@@ -239,8 +242,8 @@ class GLContextEGLFactory {
                                             bool aWebRender);
 
  private:
-  GLContextEGLFactory() {}
-  ~GLContextEGLFactory() {}
+  GLContextEGLFactory() = default;
+  ~GLContextEGLFactory() = default;
 };
 
 already_AddRefed<GLContext> GLContextEGLFactory::Create(
@@ -294,8 +297,7 @@ already_AddRefed<GLContext> GLContextEGLFactory::Create(
   gl->SetIsDoubleBuffered(doubleBuffered);
 
 #if defined(MOZ_WAYLAND)
-  if (surface != EGL_NO_SURFACE &&
-      !GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (surface != EGL_NO_SURFACE && IS_WAYLAND_DISPLAY()) {
     // Make eglSwapBuffers() non-blocking on wayland
     egl->fSwapInterval(egl->Display(), 0);
   }
@@ -416,15 +418,6 @@ bool GLContextEGL::ReleaseTexImage() {
 }
 
 void GLContextEGL::SetEGLSurfaceOverride(EGLSurface surf) {
-  if (Screen()) {
-    /* Blit `draw` to `read` if we need to, before we potentially juggle
-     * `read` around. If we don't, we might attach a different `read`,
-     * and *then* hit AssureBlitted, which will blit a dirty `draw` onto
-     * the wrong `read`!
-     */
-    Screen()->AssureBlitted();
-  }
-
   mSurfaceOverride = surf;
   DebugOnly<bool> ok = MakeCurrent(true);
   MOZ_ASSERT(ok);
@@ -481,7 +474,7 @@ bool GLContextEGL::RenewSurface(CompositorWidget* aWidget) {
   const bool ok = MakeCurrent(true);
   MOZ_ASSERT(ok);
 #if defined(MOZ_WAYLAND)
-  if (mSurface && !GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (mSurface && IS_WAYLAND_DISPLAY()) {
     // Make eglSwapBuffers() non-blocking on wayland
     mEgl->fSwapInterval(mEgl->Display(), 0);
   }
@@ -507,10 +500,30 @@ bool GLContextEGL::SwapBuffers() {
   EGLSurface surface =
       mSurfaceOverride != EGL_NO_SURFACE ? mSurfaceOverride : mSurface;
   if (surface) {
+    if ((mEgl->IsExtensionSupported(
+             GLLibraryEGL::EXT_swap_buffers_with_damage) ||
+         mEgl->IsExtensionSupported(
+             GLLibraryEGL::KHR_swap_buffers_with_damage))) {
+      std::vector<EGLint> rects;
+      for (auto iter = mDamageRegion.RectIter(); !iter.Done(); iter.Next()) {
+        const IntRect& r = iter.Get();
+        rects.push_back(r.X());
+        rects.push_back(r.Y());
+        rects.push_back(r.Width());
+        rects.push_back(r.Height());
+      }
+      mDamageRegion.SetEmpty();
+      return mEgl->fSwapBuffersWithDamage(mEgl->Display(), surface,
+                                          rects.data(), rects.size() / 4);
+    }
     return mEgl->fSwapBuffers(mEgl->Display(), surface);
   } else {
     return false;
   }
+}
+
+void GLContextEGL::SetDamage(const nsIntRegion& aDamageRegion) {
+  mDamageRegion = aDamageRegion;
 }
 
 void GLContextEGL::GetWSIInfo(nsCString* const out) const {
@@ -554,6 +567,12 @@ already_AddRefed<GLContextEGL> GLContextEGL::CreateGLContext(
     required_attribs.push_back(3);
   } else {
     required_attribs.push_back(2);
+  }
+
+  if ((flags & CreateContextFlags::PREFER_EXACT_VERSION) && egl->IsANGLE()) {
+    required_attribs.push_back(
+        LOCAL_EGL_CONTEXT_OPENGL_BACKWARDS_COMPATIBLE_ANGLE);
+    required_attribs.push_back(LOCAL_EGL_FALSE);
   }
 
   const auto debugFlags = GLContext::ChooseDebugFlags(flags);
@@ -898,13 +917,6 @@ already_AddRefed<GLContext> GLContextProviderEGL::CreateForCompositorWidget(
   return GLContextEGLFactory::Create(window, aWebRender);
 }
 
-already_AddRefed<GLContext> GLContextProviderEGL::CreateForWindow(
-    nsIWidget* aWidget, bool aWebRender, bool aForceAccelerated) {
-  MOZ_ASSERT(aWidget);
-  return GLContextEGLFactory::Create(
-      GET_NATIVE_WINDOW_FROM_REAL_WIDGET(aWidget), aWebRender);
-}
-
 #if defined(MOZ_WIDGET_ANDROID)
 EGLSurface GLContextEGL::CreateCompatibleSurface(void* aWindow) {
   if (mConfig == EGL_NO_CONFIG) {
@@ -954,7 +966,7 @@ static void FillContextAttribs(bool alpha, bool depth, bool stencil, bool bpp16,
                                bool es3, nsTArray<EGLint>* out) {
   out->AppendElement(LOCAL_EGL_SURFACE_TYPE);
 #if defined(MOZ_WAYLAND)
-  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (IS_WAYLAND_DISPLAY()) {
     // Wayland on desktop does not support PBuffer or FBO.
     // We create a dummy wl_egl_window instead.
     out->AppendElement(LOCAL_EGL_WINDOW_BIT);
@@ -1083,7 +1095,7 @@ already_AddRefed<GLContextEGL> GLContextEGL::CreateEGLPBufferOffscreenContext(
   mozilla::gfx::IntSize pbSize(size);
   EGLSurface surface = nullptr;
 #if defined(MOZ_WAYLAND)
-  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (IS_WAYLAND_DISPLAY()) {
     surface = GLContextEGL::CreateWaylandBufferSurface(egl, config, pbSize);
   } else
 #endif

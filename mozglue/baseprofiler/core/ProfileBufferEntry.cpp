@@ -240,7 +240,8 @@ UniqueStacks::StackKey UniqueStacks::AppendFrame(const StackKey& aStack,
 bool UniqueStacks::FrameKey::NormalFrameData::operator==(
     const NormalFrameData& aOther) const {
   return mLocation == aOther.mLocation &&
-         mRelevantForJS == aOther.mRelevantForJS && mLine == aOther.mLine &&
+         mRelevantForJS == aOther.mRelevantForJS &&
+         mInnerWindowID == aOther.mInnerWindowID && mLine == aOther.mLine &&
          mColumn == aOther.mColumn && mCategoryPair == aOther.mCategoryPair;
 }
 
@@ -301,12 +302,13 @@ void UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame) {
   enum Schema : uint32_t {
     LOCATION = 0,
     RELEVANT_FOR_JS = 1,
-    IMPLEMENTATION = 2,
-    OPTIMIZATIONS = 3,
-    LINE = 4,
-    COLUMN = 5,
-    CATEGORY = 6,
-    SUBCATEGORY = 7
+    INNER_WINDOW_ID = 2,
+    IMPLEMENTATION = 3,
+    OPTIMIZATIONS = 4,
+    LINE = 5,
+    COLUMN = 6,
+    CATEGORY = 7,
+    SUBCATEGORY = 8
   };
 
   AutoArraySchemaWriter writer(mFrameTableWriter, *mUniqueStrings);
@@ -314,6 +316,11 @@ void UniqueStacks::StreamNonJITFrame(const FrameKey& aFrame) {
   const NormalFrameData& data = aFrame.mData.as<NormalFrameData>();
   writer.StringElement(LOCATION, data.mLocation.c_str());
   writer.BoolElement(RELEVANT_FOR_JS, data.mRelevantForJS);
+
+  // It's okay to convert uint64_t to double here because DOM always creates IDs
+  // that are convertible to double.
+  writer.DoubleElement(INNER_WINDOW_ID, data.mInnerWindowID);
+
   if (data.mLine.isSome()) {
     writer.IntElement(LINE, *data.mLine);
   }
@@ -347,7 +354,7 @@ static void WriteSample(SpliceableJSONWriter& aWriter,
   enum Schema : uint32_t {
     STACK = 0,
     TIME = 1,
-    RESPONSIVENESS = 2,
+    EVENT_DELAY = 2,
   };
 
   AutoArraySchemaWriter writer(aWriter, aUniqueStrings);
@@ -357,7 +364,7 @@ static void WriteSample(SpliceableJSONWriter& aWriter,
   writer.DoubleElement(TIME, aSample.mTime);
 
   if (aSample.mResponsiveness.isSome()) {
-    writer.DoubleElement(RESPONSIVENESS, *aSample.mResponsiveness);
+    writer.DoubleElement(EVENT_DELAY, *aSample.mResponsiveness);
   }
 }
 
@@ -365,8 +372,9 @@ class EntryGetter {
  public:
   explicit EntryGetter(BlocksRingBuffer::Reader& aReader,
                        uint64_t aInitialReadPos = 0)
-      : mBlockIt(aReader.At(
-            BlocksRingBuffer::BlockIndex::ConvertFromU64(aInitialReadPos))),
+      : mBlockIt(
+            aReader.At(ProfileBufferBlockIndex::CreateFromProfileBufferIndex(
+                aInitialReadPos))),
         mBlockItEnd(aReader.end()) {
     if (!ReadLegacyOrEnd()) {
       // Find and read the next non-legacy entry.
@@ -393,11 +401,13 @@ class EntryGetter {
     }
   }
 
-  ProfileBuffer::BlockIndex CurBlockIndex() const {
+  ProfileBufferBlockIndex CurBlockIndex() const {
     return mBlockIt.CurrentBlockIndex();
   }
 
-  uint64_t CurPos() const { return CurBlockIndex().ConvertToU64(); }
+  uint64_t CurPos() const {
+    return CurBlockIndex().ConvertToProfileBufferIndex();
+  }
 
  private:
   // Try to read the entry at the current `mBlockIt` position.
@@ -740,6 +750,12 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
             frameLabel += label;
           }
 
+          uint64_t innerWindowID = 0;
+          if (e.Has() && e.Get().IsInnerWindowID()) {
+            innerWindowID = uint64_t(e.Get().GetUint64());
+            e.Next();
+          }
+
           Maybe<unsigned> line;
           if (e.Has() && e.Get().IsLineNumber()) {
             line = Some(unsigned(e.Get().GetInt()));
@@ -760,9 +776,9 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
           }
 
           stack = aUniqueStacks.AppendFrame(
-              stack,
-              UniqueStacks::FrameKey(std::move(frameLabel), relevantForJS, line,
-                                     column, categoryPair));
+              stack, UniqueStacks::FrameKey(std::move(frameLabel),
+                                            relevantForJS, innerWindowID, line,
+                                            column, categoryPair));
 
         } else {
           break;
@@ -1079,7 +1095,7 @@ void ProfileBuffer::StreamCountersToJSON(SpliceableJSONWriter& aWriter,
       aWriter.StringProperty("category", base_counter->mCategory);
       aWriter.StringProperty("description", base_counter->mDescription);
 
-      aWriter.StartObjectProperty("sample_groups");
+      aWriter.StartArrayProperty("sample_groups");
       for (auto counter_iter = counter.iter(); !counter_iter.done();
            counter_iter.next()) {
         CounterKeyedSamples& samples = counter_iter.get().value();
@@ -1089,42 +1105,49 @@ void ProfileBuffer::StreamCountersToJSON(SpliceableJSONWriter& aWriter,
         if (size == 0) {
           continue;
         }
-        aWriter.IntProperty("id", static_cast<int64_t>(key));
-        aWriter.StartObjectProperty("samples");
+
+        aWriter.StartObjectElement();
         {
-          // XXX Can we assume a missing count means 0?
-          JSONSchemaWriter schema(aWriter);
-          schema.WriteField("time");
-          schema.WriteField("number");
-          schema.WriteField("count");
-        }
-
-        aWriter.StartArrayProperty("data");
-        uint64_t previousNumber = 0;
-        int64_t previousCount = 0;
-        for (size_t i = 0; i < size; i++) {
-          // Encode as deltas, and only encode if different than the last sample
-          if (i == 0 || samples[i].mNumber != previousNumber ||
-              samples[i].mCount != previousCount) {
-            MOZ_ASSERT(i == 0 || samples[i].mTime >= samples[i - 1].mTime);
-            MOZ_ASSERT(samples[i].mNumber >= previousNumber);
-            MOZ_ASSERT(samples[i].mNumber - previousNumber <=
-                       uint64_t(std::numeric_limits<int64_t>::max()));
-
-            AutoArraySchemaWriter writer(aWriter);
-            writer.DoubleElement(TIME, samples[i].mTime);
-            writer.IntElement(NUMBER, static_cast<int64_t>(samples[i].mNumber -
-                                                           previousNumber));
-            writer.IntElement(COUNT, samples[i].mCount - previousCount);
-            previousNumber = samples[i].mNumber;
-            previousCount = samples[i].mCount;
+          aWriter.IntProperty("id", static_cast<int64_t>(key));
+          aWriter.StartObjectProperty("samples");
+          {
+            // XXX Can we assume a missing count means 0?
+            JSONSchemaWriter schema(aWriter);
+            schema.WriteField("time");
+            schema.WriteField("number");
+            schema.WriteField("count");
           }
+
+          aWriter.StartArrayProperty("data");
+          uint64_t previousNumber = 0;
+          int64_t previousCount = 0;
+          for (size_t i = 0; i < size; i++) {
+            // Encode as deltas, and only encode if different than the last
+            // sample
+            if (i == 0 || samples[i].mNumber != previousNumber ||
+                samples[i].mCount != previousCount) {
+              MOZ_ASSERT(i == 0 || samples[i].mTime >= samples[i - 1].mTime);
+              MOZ_ASSERT(samples[i].mNumber >= previousNumber);
+              MOZ_ASSERT(samples[i].mNumber - previousNumber <=
+                         uint64_t(std::numeric_limits<int64_t>::max()));
+
+              AutoArraySchemaWriter writer(aWriter);
+              writer.DoubleElement(TIME, samples[i].mTime);
+              writer.IntElement(
+                  NUMBER,
+                  static_cast<int64_t>(samples[i].mNumber - previousNumber));
+              writer.IntElement(COUNT, samples[i].mCount - previousCount);
+              previousNumber = samples[i].mNumber;
+              previousCount = samples[i].mCount;
+            }
+          }
+          aWriter.EndArray();   // data
+          aWriter.EndObject();  // samples
         }
-        aWriter.EndArray();   // data
-        aWriter.EndObject();  // samples
+        aWriter.EndObject();  // sample_groups item
       }
-      aWriter.EndObject();  // sample groups
-      aWriter.End();        // for each counter
+      aWriter.EndArray();  // sample groups
+      aWriter.End();       // for each counter
     }
     aWriter.EndArray();  // counters
   });
@@ -1331,7 +1354,7 @@ bool ProfileBuffer::DuplicateLastSample(int aThreadId,
 }
 
 void ProfileBuffer::DiscardSamplesBeforeTime(double aTime) {
-  const BlockIndex firstBlockToKeep =
+  const ProfileBufferBlockIndex firstBlockToKeep =
       mEntries.Read([&](BlocksRingBuffer::Reader* aReader) {
         MOZ_ASSERT(aReader,
                    "BlocksRingBuffer cannot be out-of-session when sampler is "
@@ -1339,7 +1362,7 @@ void ProfileBuffer::DiscardSamplesBeforeTime(double aTime) {
 
         EntryGetter e(*aReader);
 
-        const BlockIndex bufferStartPos = e.CurBlockIndex();
+        const ProfileBufferBlockIndex bufferStartPos = e.CurBlockIndex();
         for (;;) {
           // This block skips entries until we find the start of the next
           // sample. This is useful in three situations.
@@ -1364,7 +1387,7 @@ void ProfileBuffer::DiscardSamplesBeforeTime(double aTime) {
           }
 
           MOZ_RELEASE_ASSERT(e.Get().IsThreadId());
-          const BlockIndex sampleStartPos = e.CurBlockIndex();
+          const ProfileBufferBlockIndex sampleStartPos = e.CurBlockIndex();
           e.Next();
 
           if (e.Has() && e.Get().IsTime()) {

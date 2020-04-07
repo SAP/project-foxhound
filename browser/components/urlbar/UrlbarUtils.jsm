@@ -91,7 +91,13 @@ var UrlbarUtils = {
     // Payload: { url, icon, device, title }
     REMOTE_TAB: 6,
     // An actionable message to help the user with their query.
-    // Payload: { text, buttonText, data, [buttonUrl], [helpUrl] }
+    // `type` is a string and is required.  It will be used in the names of keys
+    // in the `urlbar.tips` keyed scalar telemetry (see telemetry.rst).  If you
+    // add a new type, then you are also adding new `urlbar.tips` keys and
+    // therefore need an expanded data collection review.
+    // textData and buttonTextData are objects containing an l10n id and args.
+    // If a tip is untranslated it's possible to provide text and buttonText.
+    // Payload: { type, icon, textData, buttonTextData, [buttonUrl], [helpUrl] }
     TIP: 7,
   },
 
@@ -270,6 +276,8 @@ var UrlbarUtils = {
     return mimeStream.QueryInterface(Ci.nsIInputStream);
   },
 
+  _compareIgnoringDiacritics: null,
+
   /**
    * Returns a list of all the token substring matches in a string.  Matching is
    * case insensitive.  Each match in the returned list is a tuple: [matchIndex,
@@ -296,18 +304,53 @@ var UrlbarUtils = {
     let hits = new Array(str.length).fill(
       highlightType == this.HIGHLIGHT.SUGGESTED ? 1 : 0
     );
-    for (let { lowerCaseValue } of tokens) {
+    let compareIgnoringDiacritics;
+    for (let { lowerCaseValue: needle } of tokens) {
       // Ideally we should never hit the empty token case, but just in case
       // the `needle` check protects us from an infinite loop.
-      for (let index = 0, needle = lowerCaseValue; index >= 0 && needle; ) {
+      if (!needle) {
+        continue;
+      }
+      let index = 0;
+      let found = false;
+      // First try a diacritic-sensitive search.
+      for (;;) {
         index = str.indexOf(needle, index);
-        if (index >= 0) {
-          hits.fill(
-            highlightType == this.HIGHLIGHT.SUGGESTED ? 0 : 1,
-            index,
-            index + needle.length
-          );
-          index += needle.length;
+        if (index < 0) {
+          break;
+        }
+        hits.fill(
+          highlightType == this.HIGHLIGHT.SUGGESTED ? 0 : 1,
+          index,
+          index + needle.length
+        );
+        index += needle.length;
+        found = true;
+      }
+      // If that fails to match anything, try a (computationally intensive)
+      // diacritic-insensitive search.
+      if (!found) {
+        if (!compareIgnoringDiacritics) {
+          if (!this._compareIgnoringDiacritics) {
+            this._compareIgnoringDiacritics = new Intl.Collator(undefined, {
+              sensitivity: "base",
+            }).compare;
+          }
+          compareIgnoringDiacritics = this._compareIgnoringDiacritics;
+        }
+        index = 0;
+        while (index < str.length) {
+          let hay = str.substr(index, needle.length);
+          if (compareIgnoringDiacritics(needle, hay) === 0) {
+            hits.fill(
+              highlightType == this.HIGHLIGHT.SUGGESTED ? 0 : 1,
+              index,
+              index + needle.length
+            );
+            index += needle.length;
+          } else {
+            index++;
+          }
         }
       }
     }
@@ -542,6 +585,12 @@ class UrlbarQueryContext {
    *   Whether or not to allow providers to include autofill results.
    * @param {number} options.userContextId
    *   The container id where this context was generated, if any.
+   * @param {array} [options.sources]
+   *   A list of acceptable UrlbarUtils.RESULT_SOURCE for the context.
+   * @param {string} [options.engineName]
+   *   If sources is restricting to just SEARCH, this property can be used to
+   *   pick a specific search engine, by setting it to the name under which the
+   *   engine is registered with the search service.
    */
   constructor(options = {}) {
     this._checkRequiredOptions(options, [
@@ -557,22 +606,25 @@ class UrlbarQueryContext {
       );
     }
 
-    if (
-      options.providers &&
-      (!Array.isArray(options.providers) || !options.providers.length)
-    ) {
-      throw new Error(`Invalid providers list`);
-    }
-
-    if (
-      options.sources &&
-      (!Array.isArray(options.sources) || !options.sources.length)
-    ) {
-      throw new Error(`Invalid sources list`);
+    // Manage optional properties of options.
+    for (let [prop, checkFn] of [
+      ["providers", v => Array.isArray(v) && v.length],
+      ["sources", v => Array.isArray(v) && v.length],
+      ["engineName", v => typeof v == "string" && !!v.length],
+      ["currentPage", v => typeof v == "string" && !!v.length],
+    ]) {
+      if (options[prop]) {
+        if (!checkFn(options[prop])) {
+          throw new Error(`Invalid value for option "${prop}"`);
+        }
+        this[prop] = options[prop];
+      }
     }
 
     this.lastResultCount = 0;
-    this.userContextId = options.userContextId;
+    this.userContextId =
+      options.userContextId ||
+      Ci.nsIScriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
   }
 
   /**
@@ -653,15 +705,17 @@ class UrlbarProvider {
   }
 
   /**
-   * Whether this provider wants to restrict results to just itself.
-   * Other providers won't be invoked, unless this provider doesn't
-   * support the current query.
+   * Gets the provider's priority.  Priorities are numeric values starting at
+   * zero and increasing in value.  Smaller values are lower priorities, and
+   * larger values are higher priorities.  For a given query, `startQuery` is
+   * called on only the active and highest-priority providers.
    * @param {UrlbarQueryContext} queryContext The query context object
-   * @returns {boolean} Whether this provider wants to restrict results.
+   * @returns {number} The provider's priority for the given query.
    * @abstract
    */
-  isRestricting(queryContext) {
-    throw new Error("Trying to access the base class, must be overridden");
+  getPriority(queryContext) {
+    // By default, all providers share the lowest priority.
+    return 0;
   }
 
   /**
@@ -697,6 +751,15 @@ class UrlbarProvider {
   pickResult(result) {
     throw new Error("Trying to access the base class, must be overridden");
   }
+
+  /**
+   * Called when the user starts and ends an engagement with the urlbar.
+   *
+   * @param {boolean} isPrivate True if the engagement is in a private context.
+   * @param {string} state The state of the engagement, one of: start,
+   *        engagement, abandonment, discard.
+   */
+  onEngagement(isPrivate, state) {}
 }
 
 /**

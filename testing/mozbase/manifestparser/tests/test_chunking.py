@@ -2,14 +2,16 @@
 
 from __future__ import absolute_import
 
-from itertools import chain
-from unittest import TestCase
 import os
 import random
+from collections import defaultdict
+from itertools import chain
+from unittest import TestCase
+
+from six.moves import range
+from six import iteritems
 
 import mozunit
-from six.moves import range
-
 from manifestparser.filters import (
     chunk_by_dir,
     chunk_by_runtime,
@@ -90,8 +92,8 @@ class ChunkByDir(TestCase):
                         { <dir>: <num tests> }
         """
         i = 0
-        for d, num in dirs.iteritems():
-            for j in range(num):
+        for d, num in iteritems(dirs):
+            for _ in range(num):
                 i += 1
                 name = 'test%i' % i
                 test = {'name': name,
@@ -118,7 +120,7 @@ class ChunkByDir(TestCase):
                     f = chunk_by_dir(this, total, depth)
                     res.append(list(f(tests, {})))
 
-                lengths = map(num_groups, res)
+                lengths = list(map(num_groups, res))
                 # the chunk with the most dirs should have at most one more
                 # dir than the chunk with the least dirs
                 self.assertLessEqual(max(lengths) - min(lengths), 1)
@@ -181,30 +183,31 @@ class ChunkByRuntime(TestCase):
                      { <dir>: <num tests> }
         """
         i = 0
-        for d, num in dirs.iteritems():
-            for j in range(num):
+        for d, num in iteritems(dirs):
+            for _ in range(num):
                 i += 1
                 name = 'test%i' % i
-                test = {'name': name,
-                        'relpath': os.path.join(d, name),
-                        'manifest': os.path.join(d, 'manifest.ini')}
+                manifest = os.path.join(d, 'manifest.ini')
+                test = {
+                    'name': name,
+                    'relpath': os.path.join(d, name),
+                    'manifest': manifest,
+                    'manifest_relpath': manifest,
+                }
                 yield test
 
     def get_runtimes(self, tests):
-        runtimes = {}
+        runtimes = defaultdict(int)
         for test in tests:
-            runtimes[test['relpath']] = random.randint(0, 100)
+            runtimes[test['manifest_relpath']] += random.randint(0, 100)
         return runtimes
 
-    def chunk_by_round_robin(self, tests, runtimes):
-        manifests = set(t['manifest'] for t in tests)
+    def chunk_by_round_robin(self, tests, total, runtimes):
         tests_by_manifest = []
-        for manifest in manifests:
-            mtests = [t for t in tests if t['manifest'] == manifest]
-            total = sum(runtimes[t['relpath']] for t in mtests
-                        if 'disabled' not in t)
-            tests_by_manifest.append((total, mtests))
-        tests_by_manifest.sort()
+        for manifest, runtime in iteritems(runtimes):
+            mtests = [t for t in tests if t['manifest_relpath'] == manifest]
+            tests_by_manifest.append((runtime, mtests))
+        tests_by_manifest.sort(key=lambda x: x[0], reverse=False)
 
         chunks = [[] for i in range(total)]
         d = 1  # direction
@@ -223,7 +226,6 @@ class ChunkByRuntime(TestCase):
         self.assertEqual(len(all_chunks), len(tests))
         for t in tests:
             self.assertIn(t, all_chunks)
-
         return chunks
 
     def run_all_combos(self, dirs):
@@ -248,15 +250,20 @@ class ChunkByRuntime(TestCase):
             def runtime_delta(chunks):
                 totals = []
                 for chunk in chunks:
-                    total = sum(runtimes[t['relpath']] for t in chunk
-                                if 'disabled' not in t)
+                    manifests = set([t['manifest_relpath'] for t in chunk])
+                    total = sum(runtimes[m] for m in manifests)
                     totals.append(total)
                 return max(totals) - min(totals)
             delta = runtime_delta(chunks)
 
             # redo the chunking a second time using a round robin style
             # algorithm
-            chunks = self.chunk_by_round_robin(tests, runtimes)
+            chunks = self.chunk_by_round_robin(tests, total, runtimes)
+            # sanity check the round robin algorithm
+            all_chunks = list(chain.from_iterable(chunks))
+            self.assertEqual(len(all_chunks), len(tests))
+            for t in tests:
+                self.assertIn(t, all_chunks)
 
             # since chunks will never have exactly equal runtimes, it's hard
             # to tell if they were chunked optimally. Make sure it at least

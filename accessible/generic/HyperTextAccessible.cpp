@@ -19,6 +19,7 @@
 
 #include "nsCaret.h"
 #include "nsContentUtils.h"
+#include "nsDebug.h"
 #include "nsFocusManager.h"
 #include "nsIEditingSession.h"
 #include "nsContainerFrame.h"
@@ -27,11 +28,10 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsPersistentProperties.h"
 #include "nsIScrollableFrame.h"
-#include "nsIServiceManager.h"
-#include "nsITextControlElement.h"
 #include "nsIMathMLFrame.h"
 #include "nsRange.h"
 #include "nsTextFragment.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/MathAlgorithms.h"
@@ -329,7 +329,7 @@ uint32_t HyperTextAccessible::TransformOffset(Accessible* aDescendant,
  *     ancestors too.
  */
 static nsIContent* GetElementAsContentOf(nsINode* aNode) {
-  if (Element* element = Element::FromNode(aNode)) {
+  if (auto* element = dom::Element::FromNode(aNode)) {
     return element;
   }
   return aNode->GetParentElement();
@@ -1283,13 +1283,15 @@ nsresult HyperTextAccessible::SetSelectionRange(int32_t aStartPos,
   // some input controls
   if (isFocusable) TakeFocus();
 
-  dom::Selection* domSel = DOMSelection();
+  RefPtr<dom::Selection> domSel = DOMSelection();
   NS_ENSURE_STATE(domSel);
 
   // Set up the selection.
-  for (int32_t idx = domSel->RangeCount() - 1; idx > 0; idx--)
-    domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(
-        *domSel->GetRangeAt(idx), IgnoreErrors());
+  for (int32_t idx = domSel->RangeCount() - 1; idx > 0; idx--) {
+    RefPtr<nsRange> range{domSel->GetRangeAt(idx)};
+    domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
+                                                           IgnoreErrors());
+  }
   SetSelectionBoundsAt(0, aStartPos, aEndPos);
 
   // Make sure it is visible
@@ -1535,9 +1537,15 @@ bool HyperTextAccessible::SelectionBoundsAt(int32_t aSelectionNum,
 
   // Make sure start is before end, by swapping DOM points.  This occurs when
   // the user selects backwards in the text.
-  int32_t rangeCompare =
+  const Maybe<int32_t> order =
       nsContentUtils::ComparePoints(endNode, endOffset, startNode, startOffset);
-  if (rangeCompare < 0) {
+
+  if (!order) {
+    MOZ_ASSERT_UNREACHABLE();
+    return false;
+  }
+
+  if (*order < 0) {
     nsINode* tempNode = startNode;
     startNode = endNode;
     endNode = tempNode;
@@ -1569,15 +1577,16 @@ bool HyperTextAccessible::SetSelectionBoundsAt(int32_t aSelectionNum,
     return false;
   }
 
-  dom::Selection* domSel = DOMSelection();
+  RefPtr<dom::Selection> domSel = DOMSelection();
   if (!domSel) return false;
 
   RefPtr<nsRange> range;
   uint32_t rangeCount = domSel->RangeCount();
-  if (aSelectionNum == static_cast<int32_t>(rangeCount))
-    range = new nsRange(mContent);
-  else
+  if (aSelectionNum == static_cast<int32_t>(rangeCount)) {
+    range = nsRange::Create(mContent);
+  } else {
     range = domSel->GetRangeAt(aSelectionNum);
+  }
 
   if (!range) return false;
 
@@ -1606,22 +1615,23 @@ bool HyperTextAccessible::SetSelectionBoundsAt(int32_t aSelectionNum,
 }
 
 bool HyperTextAccessible::RemoveFromSelection(int32_t aSelectionNum) {
-  dom::Selection* domSel = DOMSelection();
+  RefPtr<dom::Selection> domSel = DOMSelection();
   if (!domSel) return false;
 
   if (aSelectionNum < 0 ||
       aSelectionNum >= static_cast<int32_t>(domSel->RangeCount()))
     return false;
 
-  domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(
-      *domSel->GetRangeAt(aSelectionNum), IgnoreErrors());
+  const RefPtr<nsRange> range{domSel->GetRangeAt(aSelectionNum)};
+  domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
+                                                         IgnoreErrors());
   return true;
 }
 
 void HyperTextAccessible::ScrollSubstringTo(int32_t aStartOffset,
                                             int32_t aEndOffset,
                                             uint32_t aScrollType) {
-  RefPtr<nsRange> range = new nsRange(mContent);
+  RefPtr<nsRange> range = nsRange::Create(mContent);
   if (OffsetsToDOMRange(aStartOffset, aEndOffset, range))
     nsCoreUtils::ScrollSubstringTo(GetFrame(), range, aScrollType);
 }
@@ -1636,7 +1646,7 @@ void HyperTextAccessible::ScrollSubstringToPoint(int32_t aStartOffset,
   nsIntPoint coords =
       nsAccUtils::ConvertToScreenCoords(aX, aY, aCoordinateType, this);
 
-  RefPtr<nsRange> range = new nsRange(mContent);
+  RefPtr<nsRange> range = nsRange::Create(mContent);
   if (!OffsetsToDOMRange(aStartOffset, aEndOffset, range)) return;
 
   nsPresContext* presContext = frame->PresContext();
@@ -1665,7 +1675,8 @@ void HyperTextAccessible::ScrollSubstringToPoint(int32_t aStartOffset,
         int16_t vPercent = offsetPointY * 100 / size.height;
 
         nsresult rv = nsCoreUtils::ScrollSubstringTo(
-            frame, range, ScrollAxis(vPercent), ScrollAxis(hPercent));
+            frame, range, ScrollAxis(vPercent, WhenToScroll::Always),
+            ScrollAxis(hPercent, WhenToScroll::Always));
         if (NS_FAILED(rv)) return;
 
         initialScrolled = true;
@@ -2027,9 +2038,15 @@ void HyperTextAccessible::GetSpellTextAttr(
     // case there is another range after this one.
     nsINode* endNode = range->GetEndContainer();
     int32_t endNodeOffset = range->EndOffset();
-    if (nsContentUtils::ComparePoints(aNode, aNodeOffset, endNode,
-                                      endNodeOffset) >= 0)
+    Maybe<int32_t> order = nsContentUtils::ComparePoints(
+        aNode, aNodeOffset, endNode, endNodeOffset);
+    if (NS_WARN_IF(!order)) {
       continue;
+    }
+
+    if (*order >= 0) {
+      continue;
+    }
 
     // At this point our point is either in this range or before it but after
     // the previous range.  So we check to see if the range starts before the
@@ -2037,8 +2054,17 @@ void HyperTextAccessible::GetSpellTextAttr(
     // must be before the range and after the previous one if any.
     nsINode* startNode = range->GetStartContainer();
     int32_t startNodeOffset = range->StartOffset();
-    if (nsContentUtils::ComparePoints(startNode, startNodeOffset, aNode,
-                                      aNodeOffset) <= 0) {
+    order = nsContentUtils::ComparePoints(startNode, startNodeOffset, aNode,
+                                          aNodeOffset);
+    if (!order) {
+      // As (`aNode`, `aNodeOffset`) is comparable to the end of the range, it
+      // should also be comparable to the range's start. Returning here
+      // prevents crashes in release builds.
+      MOZ_ASSERT_UNREACHABLE();
+      return;
+    }
+
+    if (*order <= 0) {
       startOffset = DOMPointToOffset(startNode, startNodeOffset);
 
       endOffset = DOMPointToOffset(endNode, endNodeOffset);

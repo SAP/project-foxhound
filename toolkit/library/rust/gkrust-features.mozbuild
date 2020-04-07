@@ -12,7 +12,7 @@ if CONFIG['MOZ_DEBUG']:
         'gecko_refcount_logging',
     ]
 
-gkrust_features += ['quantum_render']
+gkrust_features += ['quantum_render', 'webgpu']
 if CONFIG['MOZ_WEBRENDER_DEBUGGER']:
     gkrust_features += ['webrender_debugger']
 
@@ -24,9 +24,6 @@ if CONFIG['MOZ_AUDIOUNIT_RUST']:
 
 if CONFIG['MOZ_RUST_SIMD']:
     gkrust_features += ['simd-accel']
-
-if CONFIG['MOZ_XBL']:
-    gkrust_features += ['moz_xbl']
 
 # This feature is not yet supported on all platforms, and this check needs to
 # match MOZ_CUBEB_REMOTING in CubebUtils.cpp.
@@ -50,6 +47,9 @@ if CONFIG['ENABLE_WASM_CRANELIFT']:
     else:
         gkrust_features += ['cranelift_none']
 
+if CONFIG['JS_ENABLE_SMOOSH']:
+    gkrust_features += ['smoosh']
+
 if CONFIG['MOZ_GECKO_PROFILER']:
     gkrust_features += ['gecko_profiler']
 
@@ -70,3 +70,12 @@ if CONFIG['FUZZING_INTERFACES']:
 
 if CONFIG['MOZ_WEBRTC']:
     gkrust_features += ['webrtc']
+
+if CONFIG['ENABLE_REMOTE_AGENT']:
+    gkrust_features += ['remote_agent']
+
+if CONFIG['MOZ_FOGOTYPE']:
+    gkrust_features += ['fogotype']
+
+if CONFIG['MOZ_USING_WASM_SANDBOXING']:
+    gkrust_features += ['wasm_library_sandboxing']

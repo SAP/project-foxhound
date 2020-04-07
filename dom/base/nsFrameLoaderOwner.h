@@ -14,13 +14,9 @@ namespace mozilla {
 class ErrorResult;
 namespace dom {
 class BrowsingContext;
-class PBrowserBridgeChild;
+class BrowserBridgeChild;
 struct RemotenessOptions;
 }  // namespace dom
-namespace ipc {
-template <typename T>
-class ManagedEndpoint;
-}  // namespace ipc
 }  // namespace mozilla
 
 // IID for the FrameLoaderOwner interface
@@ -46,7 +42,7 @@ class nsFrameLoaderOwner : public nsISupports {
   already_AddRefed<nsFrameLoader> GetFrameLoader();
   void SetFrameLoader(nsFrameLoader* aNewFrameLoader);
 
-  already_AddRefed<mozilla::dom::BrowsingContext> GetBrowsingContext();
+  mozilla::dom::BrowsingContext* GetBrowsingContext();
 
   // Destroy (if it exists) and recreate our frameloader, based on new
   // remoteness requirements. This should follow the same path as
@@ -57,16 +53,15 @@ class nsFrameLoaderOwner : public nsISupports {
   void ChangeRemoteness(const mozilla::dom::RemotenessOptions& aOptions,
                         mozilla::ErrorResult& rv);
 
-  void ChangeRemotenessWithBridge(
-      mozilla::ipc::ManagedEndpoint<mozilla::dom::PBrowserBridgeChild>
-          aEndpoint,
-      uint64_t aTabId, mozilla::ErrorResult& rv);
+  void ChangeRemotenessWithBridge(mozilla::dom::BrowserBridgeChild* aBridge,
+                                  mozilla::ErrorResult& rv);
 
  private:
   bool UseRemoteSubframes();
   bool ShouldPreserveBrowsingContext(
       const mozilla::dom::RemotenessOptions& aOptions);
   void ChangeRemotenessCommon(bool aPreserveContext,
+                              bool aSwitchingInProgressLoad,
                               const nsAString& aRemoteType,
                               std::function<void()>& aFrameLoaderInit,
                               mozilla::ErrorResult& aRv);

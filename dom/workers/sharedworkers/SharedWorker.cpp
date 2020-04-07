@@ -70,8 +70,8 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   }
 
   if (ShouldPartitionStorage(storageAllowed) &&
-      !StoragePartitioningEnabled(storageAllowed,
-                                  window->GetExtantDoc()->CookieSettings())) {
+      !StoragePartitioningEnabled(
+          storageAllowed, window->GetExtantDoc()->CookieJarSettings())) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return nullptr;
   }
@@ -171,7 +171,7 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
     return nullptr;
   }
 
-  MessagePortIdentifier portIdentifier;
+  UniqueMessagePortId portIdentifier;
   channel->Port1()->CloneAndDisentangle(portIdentifier);
 
   URIParams resolvedScriptURL;
@@ -200,7 +200,7 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
       storageAllowed, void_t() /* OptionalServiceWorkerData */, agentClusterId);
 
   PSharedWorkerChild* pActor = actorChild->SendPSharedWorkerConstructor(
-      remoteWorkerData, loadInfo.mWindowID, portIdentifier);
+      remoteWorkerData, loadInfo.mWindowID, portIdentifier.release());
 
   RefPtr<SharedWorkerChild> actor = static_cast<SharedWorkerChild*>(pActor);
   MOZ_ASSERT(actor);

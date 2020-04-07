@@ -7,7 +7,6 @@
 #ifndef __GFXMESSAGEUTILS_H__
 #define __GFXMESSAGEUTILS_H__
 
-#include "mozilla/webrender/webrender_ffi.h"
 #include "FilterSupport.h"
 #include "ImageTypes.h"
 #include "RegionBuilder.h"
@@ -25,6 +24,9 @@
 #include "nsRect.h"
 #include "nsRegion.h"
 #include "mozilla/Array.h"
+#include "mozilla/layers/VideoBridgeUtils.h"
+#include "mozilla/ipc/ProtocolUtils.h"
+#include "mozilla/ipc/Shmem.h"
 
 #include <stdint.h>
 
@@ -262,6 +264,12 @@ struct ParamTraits<mozilla::gfx::ColorSpace>
     : public ContiguousEnumSerializer<mozilla::gfx::ColorSpace,
                                       mozilla::gfx::ColorSpace::SRGB,
                                       mozilla::gfx::ColorSpace::Max> {};
+
+template <>
+struct ParamTraits<mozilla::gfx::CompositionOp>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::gfx::CompositionOp, mozilla::gfx::CompositionOp::OP_OVER,
+          mozilla::gfx::CompositionOp::OP_COUNT> {};
 
 /*
 template <>
@@ -590,6 +598,26 @@ struct ParamTraits<mozilla::gfx::Margin> {
 template <class T>
 struct ParamTraits<mozilla::gfx::MarginTyped<T>> {
   typedef mozilla::gfx::MarginTyped<T> paramType;
+
+  static void Write(Message* msg, const paramType& param) {
+    WriteParam(msg, param.top);
+    WriteParam(msg, param.right);
+    WriteParam(msg, param.bottom);
+    WriteParam(msg, param.left);
+  }
+
+  static bool Read(const Message* msg, PickleIterator* iter,
+                   paramType* result) {
+    return (ReadParam(msg, iter, &result->top) &&
+            ReadParam(msg, iter, &result->right) &&
+            ReadParam(msg, iter, &result->bottom) &&
+            ReadParam(msg, iter, &result->left));
+  }
+};
+
+template <class T>
+struct ParamTraits<mozilla::gfx::IntMarginTyped<T>> {
+  typedef mozilla::gfx::IntMarginTyped<T> paramType;
 
   static void Write(Message* msg, const paramType& param) {
     WriteParam(msg, param.top);
@@ -1173,22 +1201,64 @@ struct ParamTraits<mozilla::Array<T, Length>> {
 };
 
 template <>
-struct ParamTraits<mozilla::gfx::PaintFragment> {
+struct ParamTraits<mozilla::SideBits>
+    : public BitFlagsEnumSerializer<mozilla::SideBits,
+                                    mozilla::SideBits::eAll> {};
+
+} /* namespace IPC */
+
+namespace mozilla {
+namespace ipc {
+
+template <>
+struct IPDLParamTraits<gfx::PaintFragment> {
   typedef mozilla::gfx::PaintFragment paramType;
-  static void Write(Message* aMsg, paramType&& aParam) {
+  static void Write(IPC::Message* aMsg, IProtocol* aActor, paramType&& aParam) {
+    Shmem shmem;
+    if (aParam.mSize.IsEmpty() ||
+        !aActor->AllocShmem(aParam.mRecording.mLen, SharedMemory::TYPE_BASIC,
+                            &shmem)) {
+      WriteParam(aMsg, gfx::IntSize(0, 0));
+      return;
+    }
+
+    memcpy(shmem.get<uint8_t>(), aParam.mRecording.mData,
+           aParam.mRecording.mLen);
+
     WriteParam(aMsg, aParam.mSize);
-    WriteParam(aMsg, std::move(aParam.mRecording));
+    WriteIPDLParam(aMsg, aActor, std::move(shmem));
     WriteParam(aMsg, aParam.mDependencies);
   }
 
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    return ReadParam(aMsg, aIter, &aResult->mSize) &&
-           ReadParam(aMsg, aIter, &aResult->mRecording) &&
-           ReadParam(aMsg, aIter, &aResult->mDependencies);
+  static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
+                   IProtocol* aActor, paramType* aResult) {
+    if (!ReadParam(aMsg, aIter, &aResult->mSize)) {
+      return false;
+    }
+    if (aResult->mSize.IsEmpty()) {
+      return true;
+    }
+    Shmem shmem;
+    if (!ReadIPDLParam(aMsg, aIter, aActor, &shmem) ||
+        !ReadParam(aMsg, aIter, &aResult->mDependencies)) {
+      aActor->DeallocShmem(shmem);
+      return false;
+    }
+
+    if (!aResult->mRecording.Allocate(shmem.Size<uint8_t>())) {
+      aResult->mSize.SizeTo(0, 0);
+      aActor->DeallocShmem(shmem);
+      return true;
+    }
+
+    memcpy(aResult->mRecording.mData, shmem.get<uint8_t>(),
+           shmem.Size<uint8_t>());
+    aActor->DeallocShmem(shmem);
+    return true;
   }
 };
 
-} /* namespace IPC */
+}  // namespace ipc
+}  // namespace mozilla
 
 #endif /* __GFXMESSAGEUTILS_H__ */

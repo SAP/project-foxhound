@@ -5,15 +5,14 @@
 #include "nsString.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
-#include "nsIPrincipal.h"
 #include "nsScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
 #include "nsNetUtil.h"
 #include "NullPrincipal.h"
 #include "nsCycleCollector.h"
+#include "nsSandboxFlags.h"
 
 #include "nsFtpProtocolHandler.h"
-#include "nsIFTPChannel.h"
 
 #include "FuzzingInterface.h"
 #include "FuzzingStreamListener.h"
@@ -22,11 +21,23 @@
 namespace mozilla {
 namespace net {
 
+static nsAutoCString ftpSpec;
+
 static int FuzzingInitNetworkFtp(int* argc, char*** argv) {
   Preferences::SetBool("network.dns.native-is-localhost", true);
   Preferences::SetBool("fuzzing.necko.enabled", true);
   Preferences::SetBool("network.connectivity-service.enabled", false);
+
+  if (ftpSpec.IsEmpty()) {
+    ftpSpec = "ftp://127.0.0.1/";
+  }
+
   return 0;
+}
+
+static int FuzzingInitNetworkFtpDownload(int* argc, char*** argv) {
+  ftpSpec = "ftp://127.0.0.1/test.txt";
+  return FuzzingInitNetworkFtp(argc, argv);
 }
 
 static int FuzzingRunNetworkFtp(const uint8_t* data, size_t size) {
@@ -35,7 +46,7 @@ static int FuzzingRunNetworkFtp(const uint8_t* data, size_t size) {
     // If we have more than 1024 bytes, we use the excess for
     // an optional data connection.
     addNetworkFuzzingBuffer(data, 1024, true);
-    addNetworkFuzzingBuffer(data+1024, size-1024, true, true);
+    addNetworkFuzzingBuffer(data + 1024, size - 1024, true, true);
   } else {
     addNetworkFuzzingBuffer(data, size, true);
   }
@@ -47,8 +58,7 @@ static int FuzzingRunNetworkFtp(const uint8_t* data, size_t size) {
     nsAutoCString spec;
     nsresult rv;
 
-    spec = "ftp://127.0.0.1/";
-    if (NS_NewURI(getter_AddRefs(url), spec) != NS_OK) {
+    if (NS_NewURI(getter_AddRefs(url), ftpSpec) != NS_OK) {
       MOZ_CRASH("Call to NS_NewURI failed.");
     }
 
@@ -58,19 +68,19 @@ static int FuzzingRunNetworkFtp(const uint8_t* data, size_t size) {
                 nsIRequest::LOAD_FRESH_CONNECTION |
                 nsIChannel::LOAD_INITIAL_DOCUMENT_URI;
     nsSecurityFlags secFlags;
-    secFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL |
-               nsILoadInfo::SEC_SANDBOXED;
+    secFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
+    uint32_t sandboxFlags = SANDBOXED_ORIGIN;
     nsCOMPtr<nsIChannel> channel;
     rv = NS_NewChannel(getter_AddRefs(channel), url,
                        nsContentUtils::GetSystemPrincipal(), secFlags,
                        nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST,
-                       nullptr,    // aCookieSettings
+                       nullptr,    // aCookieJarSettings
                        nullptr,    // aPerformanceStorage
                        nullptr,    // loadGroup
                        nullptr,    // aCallbacks
                        loadFlags,  // aLoadFlags
-                       nullptr     // aIoService
-    );
+                       nullptr,    // aIoService
+                       sandboxFlags);
 
     if (rv != NS_OK) {
       MOZ_CRASH("Call to NS_NewChannel failed.");
@@ -123,5 +133,7 @@ static int FuzzingRunNetworkFtp(const uint8_t* data, size_t size) {
 MOZ_FUZZING_INTERFACE_RAW(FuzzingInitNetworkFtp, FuzzingRunNetworkFtp,
                           NetworkFtp);
 
+MOZ_FUZZING_INTERFACE_RAW(FuzzingInitNetworkFtpDownload, FuzzingRunNetworkFtp,
+                          NetworkFtpDownload);
 }  // namespace net
 }  // namespace mozilla

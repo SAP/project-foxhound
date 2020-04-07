@@ -18,11 +18,11 @@ function waitForAttributeChange(tab, attr) {
 function waitForPendingIcon() {
   return new Promise(resolve => {
     let listener = () => {
-      window.messageManager.removeMessageListener("Link:LoadingIcon", listener);
+      LinkHandlerParent.removeListenerForTests(listener);
       resolve();
     };
 
-    window.messageManager.addMessageListener("Link:LoadingIcon", listener);
+    LinkHandlerParent.addListenerForTests(listener);
   });
 }
 
@@ -83,7 +83,7 @@ add_task(async () => {
       let label = tab.textLabel;
       let bounds = label.getBoundingClientRect();
 
-      await ContentTask.spawn(browser, null, () => {
+      await SpecialPowers.spawn(browser, [], () => {
         let link = content.document.createElement("link");
         link.setAttribute("href", "file_favicon.png");
         link.setAttribute("rel", "icon");

@@ -17,8 +17,11 @@
 #endif
 #include "jit/VMFunctions.h"
 #include "jit/x86/SharedICHelpers-x86.h"
+#include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "vm/Realm.h"
-#include "vtune/VTuneWrapper.h"
+#ifdef MOZ_VTUNE
+#  include "vtune/VTuneWrapper.h"
+#endif
 
 #include "jit/MacroAssembler-inl.h"
 #include "vm/JSScript-inl.h"
@@ -791,7 +794,7 @@ uint32_t JitRuntime::generatePreBarrier(JSContext* cx, MacroAssembler& masm,
                                         MIRType type) {
   uint32_t offset = startTrampolineCode(masm);
 
-  MOZ_ASSERT(PreBarrierReg == edx);
+  static_assert(PreBarrierReg == edx);
   Register temp1 = eax;
   Register temp2 = ebx;
   Register temp3 = ecx;

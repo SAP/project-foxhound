@@ -28,9 +28,8 @@ findbar[noanim] {
 }
 
 .findbar-container {
+  padding-block: 4px;
   padding-inline-start: 8px;
-  padding-top: 4px;
-  padding-bottom: 4px;
 }
 
 .findbar-closebutton {
@@ -41,7 +40,7 @@ findbar[noanim] {
 
 /* Don't apply theme colors on findbar when header image is applied to avoid
 contrast issues, see bug 1506913 */
-:root[lwtheme-image] findbar {
+html|html[lwtheme-image] findbar {
   --lwt-toolbar-field-background-color: initial;
   --lwt-toolbar-field-color: initial;
   --lwt-toolbar-field-border-color: initial;
@@ -139,12 +138,14 @@ html|input.findbar-textbox.minimal {
 
 .findbar-highlight,
 .findbar-case-sensitive,
+.findbar-match-diacritics,
 .findbar-entire-word {
   margin-inline-start: 5px;
 }
 
 .findbar-highlight > .toolbarbutton-icon,
 .findbar-case-sensitive > .toolbarbutton-icon,
+.findbar-match-diacritics > .toolbarbutton-icon,
 .findbar-entire-word > .toolbarbutton-icon {
   display: none;
 }

@@ -13,6 +13,7 @@
 #include "base/task.h"           // for NewRunnableMethod, etc
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/TabGroup.h"
+#include "mozilla/dom/WebGLChild.h"
 #include "mozilla/layers/CompositorManagerChild.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/APZChild.h"
@@ -30,11 +31,11 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/webgpu/WebGPUChild.h"
 #include "mozilla/mozalloc.h"  // for operator new, etc
 #include "mozilla/Telemetry.h"
-#include "nsAutoPtr.h"
+#include "gfxConfig.h"
 #include "nsDebug.h"          // for NS_WARNING
-#include "nsIObserver.h"      // for nsIObserver
 #include "nsISupportsImpl.h"  // for MOZ_COUNT_CTOR, etc
 #include "nsTArray.h"         // for nsTArray, nsTArray_Impl
 #include "nsXULAppAPI.h"      // for XRE_GetIOMessageLoop, etc
@@ -44,6 +45,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/Unused.h"
 #include "mozilla/DebugOnly.h"
+#include "nsThreadUtils.h"
 #if defined(XP_WIN)
 #  include "WinUtils.h"
 #endif
@@ -108,6 +110,17 @@ bool CompositorBridgeChild::IsSameProcess() const {
   return OtherPid() == base::GetCurrentProcId();
 }
 
+void CompositorBridgeChild::PrepareFinalDestroy() {
+  // Because of medium high priority DidComposite, we need to repost to
+  // medium high priority queue to ensure the actor is destroyed after possible
+  // pending DidComposite message.
+  nsCOMPtr<nsIRunnable> runnable =
+      NewRunnableMethod("CompositorBridgeChild::AfterDestroy", this,
+                        &CompositorBridgeChild::AfterDestroy);
+  NS_DispatchToCurrentThreadQueue(runnable.forget(),
+                                  EventQueuePriority::MediumHigh);
+}
+
 void CompositorBridgeChild::AfterDestroy() {
   // Note that we cannot rely upon mCanSend here because we already set that to
   // false to prevent normal IPDL calls from being made after SendWillClose.
@@ -158,8 +171,8 @@ void CompositorBridgeChild::Destroy() {
     // or CompositorBridgeChild::ActorDestroy was called. Ensure that we do our
     // post destroy clean up no matter what. It is safe to call multiple times.
     MessageLoop::current()->PostTask(
-        NewRunnableMethod("CompositorBridgeChild::AfterDestroy", selfRef,
-                          &CompositorBridgeChild::AfterDestroy));
+        NewRunnableMethod("CompositorBridgeChild::PrepareFinalDestroy", selfRef,
+                          &CompositorBridgeChild::PrepareFinalDestroy));
     return;
   }
 
@@ -183,6 +196,12 @@ void CompositorBridgeChild::Destroy() {
   ManagedPAPZChild(apzChildren);
   for (PAPZChild* child : apzChildren) {
     Unused << child->SendDestroy();
+  }
+
+  AutoTArray<PWebGPUChild*, 16> webGPUChildren;
+  ManagedPWebGPUChild(webGPUChildren);
+  for (PWebGPUChild* child : webGPUChildren) {
+    Unused << child->SendShutdown();
   }
 
   const ManagedContainer<PTextureChild>& textures = ManagedPTextureChild();
@@ -214,8 +233,8 @@ void CompositorBridgeChild::Destroy() {
 
   // From now on we can't send any message message.
   MessageLoop::current()->PostTask(
-      NewRunnableMethod("CompositorBridgeChild::AfterDestroy", selfRef,
-                        &CompositorBridgeChild::AfterDestroy));
+      NewRunnableMethod("CompositorBridgeChild::PrepareFinalDestroy", selfRef,
+                        &CompositorBridgeChild::PrepareFinalDestroy));
 }
 
 // static
@@ -831,6 +850,18 @@ mozilla::ipc::IPCResult CompositorBridgeChild::RecvObserveLayersUpdate(
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult CompositorBridgeChild::RecvCompositorOptionsChanged(
+    const LayersId& aLayersId, const CompositorOptions& aNewOptions) {
+  MOZ_ASSERT(aLayersId.IsValid());
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (RefPtr<dom::BrowserParent> tab =
+          dom::BrowserParent::GetBrowserParentFromLayersId(aLayersId)) {
+    Unused << tab->SendCompositorOptionsChanged(aNewOptions);
+  }
+  return IPC_OK();
+}
+
 void CompositorBridgeChild::HoldUntilCompositableRefReleasedIfNecessary(
     TextureClient* aClient) {
   if (!aClient) {
@@ -958,6 +989,16 @@ void CompositorBridgeChild::EndCanvasTransaction() {
   }
 }
 
+RefPtr<webgpu::WebGPUChild> CompositorBridgeChild::GetWebGPUChild() {
+  MOZ_ASSERT(gfx::gfxConfig::IsEnabled(gfx::Feature::WEBGPU));
+  if (!mWebGPUChild) {
+    webgpu::PWebGPUChild* bridge = SendPWebGPUConstructor();
+    mWebGPUChild = static_cast<webgpu::WebGPUChild*>(bridge);
+  }
+
+  return mWebGPUChild;
+}
+
 bool CompositorBridgeChild::AllocUnsafeShmem(
     size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
     ipc::Shmem* aShmem) {
@@ -1031,6 +1072,8 @@ bool CompositorBridgeChild::DeallocPAPZCTreeManagerChild(
   return true;
 }
 
+// -
+
 void CompositorBridgeChild::WillEndTransaction() { ResetShmemCounter(); }
 
 PWebRenderBridgeChild* CompositorBridgeChild::AllocPWebRenderBridgeChild(
@@ -1048,9 +1091,21 @@ bool CompositorBridgeChild::DeallocPWebRenderBridgeChild(
   return true;
 }
 
+webgpu::PWebGPUChild* CompositorBridgeChild::AllocPWebGPUChild() {
+  webgpu::WebGPUChild* child = new webgpu::WebGPUChild();
+  child->AddIPDLReference();
+  return child;
+}
+
+bool CompositorBridgeChild::DeallocPWebGPUChild(webgpu::PWebGPUChild* aActor) {
+  webgpu::WebGPUChild* child = static_cast<webgpu::WebGPUChild*>(aActor);
+  child->ReleaseIPDLReference();
+  return true;
+}
+
 void CompositorBridgeChild::ClearSharedFrameMetricsData(LayersId aLayersId) {
   for (auto iter = mFrameMetricsTable.Iter(); !iter.Done(); iter.Next()) {
-    nsAutoPtr<SharedFrameMetricsData>& data = iter.Data();
+    auto data = iter.UserData();
     if (data->GetLayersId() == aLayersId) {
       iter.Remove();
     }

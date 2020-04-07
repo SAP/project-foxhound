@@ -6,6 +6,8 @@
 
 #include "IDBRequest.h"
 
+#include <utility>
+
 #include "BackgroundChildImpl.h"
 #include "IDBCursor.h"
 #include "IDBDatabase.h"
@@ -15,11 +17,11 @@
 #include "IDBObjectStore.h"
 #include "IDBTransaction.h"
 #include "IndexedDatabaseManager.h"
+#include "ReportInternalError.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/Move.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/ErrorEventBinding.h"
 #include "mozilla/dom/IDBOpenDBRequestBinding.h"
@@ -28,11 +30,10 @@
 #include "mozilla/dom/WorkerRef.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
+#include "nsIGlobalObject.h"
 #include "nsIScriptContext.h"
 #include "nsJSUtils.h"
-#include "nsIGlobalObject.h"
 #include "nsString.h"
-#include "ReportInternalError.h"
 
 // Include this last to avoid path problems on Windows.
 #include "ActorsChild.h"
@@ -87,9 +88,8 @@ void IDBRequest::InitMembers() {
 }
 
 // static
-already_AddRefed<IDBRequest> IDBRequest::Create(JSContext* aCx,
-                                                IDBDatabase* aDatabase,
-                                                IDBTransaction* aTransaction) {
+RefPtr<IDBRequest> IDBRequest::Create(JSContext* aCx, IDBDatabase* aDatabase,
+                                      IDBTransaction* aTransaction) {
   MOZ_ASSERT(aCx);
   MOZ_ASSERT(aDatabase);
   aDatabase->AssertIsOnOwningThread();
@@ -99,36 +99,36 @@ already_AddRefed<IDBRequest> IDBRequest::Create(JSContext* aCx,
 
   request->mTransaction = aTransaction;
 
-  return request.forget();
+  return request;
 }
 
 // static
-already_AddRefed<IDBRequest> IDBRequest::Create(
-    JSContext* aCx, IDBObjectStore* aSourceAsObjectStore,
-    IDBDatabase* aDatabase, IDBTransaction* aTransaction) {
+RefPtr<IDBRequest> IDBRequest::Create(JSContext* aCx,
+                                      IDBObjectStore* aSourceAsObjectStore,
+                                      IDBDatabase* aDatabase,
+                                      IDBTransaction* aTransaction) {
   MOZ_ASSERT(aSourceAsObjectStore);
   aSourceAsObjectStore->AssertIsOnOwningThread();
 
-  RefPtr<IDBRequest> request = Create(aCx, aDatabase, aTransaction);
+  auto request = Create(aCx, aDatabase, aTransaction);
 
   request->mSourceAsObjectStore = aSourceAsObjectStore;
 
-  return request.forget();
+  return request;
 }
 
 // static
-already_AddRefed<IDBRequest> IDBRequest::Create(JSContext* aCx,
-                                                IDBIndex* aSourceAsIndex,
-                                                IDBDatabase* aDatabase,
-                                                IDBTransaction* aTransaction) {
+RefPtr<IDBRequest> IDBRequest::Create(JSContext* aCx, IDBIndex* aSourceAsIndex,
+                                      IDBDatabase* aDatabase,
+                                      IDBTransaction* aTransaction) {
   MOZ_ASSERT(aSourceAsIndex);
   aSourceAsIndex->AssertIsOnOwningThread();
 
-  RefPtr<IDBRequest> request = Create(aCx, aDatabase, aTransaction);
+  auto request = Create(aCx, aDatabase, aTransaction);
 
   request->mSourceAsIndex = aSourceAsIndex;
 
-  return request.forget();
+  return request;
 }
 
 // static
@@ -137,7 +137,7 @@ uint64_t IDBRequest::NextSerialNumber() {
       BackgroundChildImpl::GetThreadLocalForCurrentThread();
   MOZ_ASSERT(threadLocal);
 
-  ThreadLocal* idbThreadLocal = threadLocal->mIndexedDBThreadLocal;
+  const auto& idbThreadLocal = threadLocal->mIndexedDBThreadLocal;
   MOZ_ASSERT(idbThreadLocal);
 
   return idbThreadLocal->NextRequestSN();
@@ -387,8 +387,9 @@ IDBOpenDBRequest::~IDBOpenDBRequest() {
 }
 
 // static
-already_AddRefed<IDBOpenDBRequest> IDBOpenDBRequest::Create(
-    JSContext* aCx, IDBFactory* aFactory, nsIGlobalObject* aGlobal) {
+RefPtr<IDBOpenDBRequest> IDBOpenDBRequest::Create(JSContext* aCx,
+                                                  IDBFactory* aFactory,
+                                                  nsIGlobalObject* aGlobal) {
   MOZ_ASSERT(aFactory);
   aFactory->AssertIsOnOwningThread();
   MOZ_ASSERT(aGlobal);
@@ -414,7 +415,7 @@ already_AddRefed<IDBOpenDBRequest> IDBOpenDBRequest::Create(
 
   request->IncreaseActiveDatabaseCount();
 
-  return request.forget();
+  return request;
 }
 
 void IDBOpenDBRequest::SetTransaction(IDBTransaction* aTransaction) {
@@ -437,9 +438,8 @@ void IDBOpenDBRequest::DispatchNonTransactionError(nsresult aErrorCode) {
   SetError(aErrorCode);
 
   // Make an error event and fire it at the target.
-  RefPtr<Event> event = CreateGenericEvent(
-      this, nsDependentString(kErrorEventType), eDoesBubble, eCancelable);
-  MOZ_ASSERT(event);
+  auto event = CreateGenericEvent(this, nsDependentString(kErrorEventType),
+                                  eDoesBubble, eCancelable);
 
   IgnoredErrorResult rv;
   DispatchEvent(*event, rv);

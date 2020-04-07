@@ -1,5 +1,5 @@
 /* -*- Mode: C++; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 8 -*- */
-/* vim: set sw=4 ts=8 et tw=80 ft=cpp : */
+/* vim: set sw=2 ts=8 et tw=80 ft=cpp : */
 
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -7,7 +7,9 @@
 
 include protocol PColorPicker;
 include protocol PContent;
+#ifdef ACCESSIBILITY
 include protocol PDocAccessible;
+#endif
 include protocol PFilePicker;
 include protocol PPluginWidget;
 include protocol PRemotePrintJob;
@@ -28,6 +30,7 @@ include PPrintingTypes;
 include PTabContext;
 include PBackgroundSharedTypes;
 
+include "mozilla/AntiTrackingIPCUtils.h";
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
@@ -37,8 +40,9 @@ using mozilla::gfx::MaybeMatrix4x4 from "mozilla/gfx/Matrix.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::LayoutDevicePoint from "Units.h";
+using mozilla::ScreenIntCoord from "Units.h";
+using mozilla::ScreenIntMargin from "Units.h";
 using mozilla::ScreenIntPoint from "Units.h";
-using ScreenIntSize from "Units.h";
 using ScreenRect from "Units.h";
 using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 using struct mozilla::layers::ZoomConstraints from "mozilla/layers/ZoomConstraints.h";
@@ -71,7 +75,6 @@ using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/Comp
 using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
 using mozilla::CSSToScreenScale from "Units.h";
 using mozilla::CommandInt from "mozilla/EventForwards.h";
-using mozilla::WritingMode from "mozilla/WritingModes.h";
 using nsIWidget::TouchPointerState from "nsIWidget.h";
 using nsCursor from "nsIWidget.h";
 using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
@@ -80,13 +83,11 @@ using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/Structu
 using mozilla::EventMessage from "mozilla/EventForwards.h";
 using nsEventStatus from "mozilla/EventForwards.h";
 using mozilla::Modifiers from "mozilla/EventForwards.h";
-using nsSizeMode from "nsIWidgetListener.h";
 using mozilla::widget::CandidateWindowPosition from "ipc/nsGUIEventIPC.h";
 using class mozilla::NativeEventData from "ipc/nsGUIEventIPC.h";
 using mozilla::FontRange from "ipc/nsGUIEventIPC.h";
 using mozilla::a11y::IAccessibleHolder from "mozilla/a11y/IPCTypes.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
-using refcounted class mozilla::dom::BrowsingContext from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::EffectsInfo from "mozilla/dom/TabMessageUtils.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using mozilla::ScrollAxis from "mozilla/PresShellForwards.h";
@@ -94,21 +95,11 @@ using mozilla::ScrollFlags from "mozilla/PresShellForwards.h";
 using struct InputFormData from "mozilla/dom/SessionStoreMessageUtils.h";
 using struct CollectedInputDataValue from "mozilla/dom/SessionStoreMessageUtils.h";
 using refcounted class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
+using mozilla::AntiTrackingCommon::StorageAccessGrantedReason from "mozilla/AntiTrackingCommon.h";
+using CallerType from "mozilla/dom/BindingDeclarations.h";
 
 namespace mozilla {
 namespace dom {
-
-struct ShowInfo
-{
-  nsString name;
-  bool fullscreenAllowed;
-  bool isPrivate;
-  bool fakeShowInfo;
-  bool isTransparent;
-  float dpi;
-  int32_t widgetRounding;
-  double defaultScale;
-};
 
 struct WebProgressData
 {
@@ -181,7 +172,11 @@ nested(upto inside_cpow) sync refcounted protocol PBrowser
     manager PContent;
 
     manages PColorPicker;
+
+#ifdef ACCESSIBILITY
     manages PDocAccessible;
+#endif
+
     manages PFilePicker;
     manages PPluginWidget;
     manages PPaymentRequest;
@@ -193,6 +188,7 @@ both:
                        nsIPrincipal aPrincipal, ClonedMessageData aData);
 
 parent:
+#ifdef ACCESSIBILITY
     /**
      * Tell the parent process a new accessible document has been created.
      * aParentDoc is the accessible document it was created in if any, and
@@ -203,6 +199,7 @@ parent:
      */
     async PDocAccessible(nullable PDocAccessible aParentDoc, uint64_t aParentAcc,
                          uint32_t aMsaaID, IAccessibleHolder aDocCOMProxy);
+#endif
 
     /*
      * Creates a new remoted nsIWidget connection for windowed plugins
@@ -212,13 +209,6 @@ parent:
     sync PPluginWidget();
 
     async PPaymentRequest();
-
-    /**
-     * Construct a new Remote iframe actor.
-     */
-    async PBrowserBridge(nsString aPresentationURL, nsString aRemoteType,
-                         BrowsingContext aContext, uint32_t aChromeFlags,
-                         TabId tabId);
 
     /**
      * Sends an NS_NATIVE_CHILD_OF_SHAREABLE_WINDOW to be adopted by the
@@ -413,7 +403,7 @@ parent:
      * Request that the parent process move focus to the browser's frame. If
      * canRaise is true, the window can be raised if it is inactive.
      */
-    async RequestFocus(bool canRaise);
+    async RequestFocus(bool canRaise, CallerType aCallerType);
 
     /**
      * Indicate, based on the current state, that some commands are enabled and
@@ -462,9 +452,9 @@ parent:
 
     /**
      * Used to set the current text of the status tooltip.
-     * Nowadays this is mainly used for link locations on hover.
+     * Nowadays this is only used for link locations on hover.
      */
-    async SetStatus(uint32_t type, nsString status);
+    async SetLinkStatus(nsString status);
 
     /**
      * Show/hide a tooltip when the mouse hovers over an element in the content
@@ -612,8 +602,10 @@ parent:
                            RequestData aRequestData, uint32_t aState,
                            WebProgressSecurityChangeData? aSecurityChangeData);
 
-    async OnContentBlockingEvent(WebProgressData? aWebProgressData,
-                                 RequestData aRequestData, uint32_t aEvent);
+    async NotifyContentBlockingEvent(uint32_t aEvent, RequestData aRequestData,
+                                     bool aBlocked, nsCString aTrackingOrigin,
+                                     nsCString[] aTrackingFullHashes,
+                                     StorageAccessGrantedReason? aReason);
 
     async NavigationFinished();
 
@@ -670,7 +662,8 @@ parent:
      * Sent by the child to the parent to inform it that an update to the
      * dimensions has been requested, likely through win.moveTo or resizeTo
      */
-    async SetDimensions(uint32_t aFlags, int32_t aX, int32_t aY, int32_t aCx, int32_t aCy);
+    async SetDimensions(uint32_t aFlags, int32_t aX, int32_t aY,
+                        int32_t aCx, int32_t aCy, double aScale);
 
     nested(inside_sync) sync DispatchWheelEvent(WidgetWheelEvent event);
     nested(inside_sync) sync DispatchMouseEvent(WidgetMouseEvent event);
@@ -717,27 +710,23 @@ parent:
 
 child:
     /**
-     * Notify the remote browser that it has been Show()n on this
-     * side, with the given |visibleRect|.  This message is expected
-     * to trigger creation of the remote browser's "widget".
-     *
-     * |Show()| and |Move()| take IntSizes rather than Rects because
-     * content processes always render to a virtual <0, 0> top-left
-     * point.
+     * Notify the remote browser that it has been Show()n on this side. This
+     * message is expected to trigger creation of the remote browser's "widget".
      */
-    async Show(ScreenIntSize size,
-               ShowInfo info,
-               bool parentIsActive,
-               nsSizeMode sizeMode);
+    async Show(ParentShowInfo parentInfo, OwnerShowInfo childInfo);
+
+    async ScrollbarPreferenceChanged(ScrollbarPreference pref);
 
     async InitRendering(TextureFactoryIdentifier textureFactoryIdentifier,
                         LayersId layersId,
                         CompositorOptions compositorOptions,
                         bool layersConnected);
 
-    async LoadURL(nsCString uri, ShowInfo info);
+    async CompositorOptionsChanged(CompositorOptions newOptions);
 
-    async ResumeLoad(uint64_t pendingSwitchID, ShowInfo info);
+    async LoadURL(nsCString uri, ParentShowInfo info);
+
+    async ResumeLoad(uint64_t pendingSwitchID, ParentShowInfo info);
 
     async UpdateDimensions(DimensionInfo dimensions) compressall;
 
@@ -747,6 +736,10 @@ child:
                               ScreenRect aRemoteDocumentRect);
 
     async SetIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
+
+    async DynamicToolbarMaxHeightChanged(ScreenIntCoord height);
+
+    async DynamicToolbarOffsetChanged(ScreenIntCoord height);
 
     async ParentActivated(bool aActivated);
 
@@ -944,6 +937,12 @@ child:
     async ThemeChanged(LookAndFeelInt[] lookAndFeelIntCache);
 
     /**
+     * Tell the child that the safe area of widget has changed.
+     *
+     */
+    async SafeAreaInsetsChanged(ScreenIntMargin aSafeAreaInsets);
+
+    /**
      * Tell the browser that its frame loader has been swapped
      * with another.
      */
@@ -1001,11 +1000,6 @@ child:
     async AwaitLargeAlloc();
 
     /**
-     * Tell the BrowserChild to set the name of its toplevel docshell to the given name.
-     */
-    async SetWindowName(nsString aName);
-
-    /**
      * Tell the BrowserChild to allow scripts in the docshell to close the window.
      */
     async AllowScriptsToClose();
@@ -1022,18 +1016,18 @@ child:
      */
     async SetWidgetNativeData(WindowsHandle aHandle);
 
-    /**
-     * Requests the content blocking log, which is sent back in response.
-     */
-    async GetContentBlockingLog() returns(IPCStream ipcStream, bool success);
-
-    async SkipBrowsingContextDetach() returns (bool success);
+    async WillChangeProcess() returns (bool success);
 
 parent:
     /**
      * Fetches whether this window supports protected media, which is sent back in response.
      */
     async IsWindowSupportingProtectedMedia(uint64_t aOuterWindowID) returns(bool isSupported);
+
+    /**
+    * Fetches whether this window supports WebVR, which is sent back in response.
+    */
+    async IsWindowSupportingWebVR(uint64_t aOuterWindowID) returns(bool isSupported);
 
     /** Records a history visit. */
     async VisitURI(URIParams aURI, URIParams? aLastVisitedURI,

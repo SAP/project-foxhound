@@ -11,7 +11,9 @@ const {
 const {
   connect,
 } = require("devtools/client/shared/redux/visibility-handler-connect");
-const { FILTER_SEARCH_DELAY } = require("../../constants");
+const {
+  FILTER_SEARCH_DELAY,
+} = require("devtools/client/netmonitor/src/constants");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const Actions = require("devtools/client/netmonitor/src/actions/index");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
@@ -68,16 +70,6 @@ class Toolbar extends Component {
         this.props.search(connector, event.target.value);
         break;
     }
-  }
-
-  renderCloseButton() {
-    const { closeSearch } = this.props;
-    return button({
-      id: "devtools-network-search-close",
-      className: "devtools-button",
-      title: L10N.getStr("netmonitor.search.toolbar.close"),
-      onClick: () => closeSearch(),
-    });
   }
 
   renderModifiers() {
@@ -147,8 +139,7 @@ class Toolbar extends Component {
         className: "devtools-toolbar devtools-input-toolbar",
       },
       this.renderFilterBox(),
-      this.renderModifiers(),
-      this.renderCloseButton()
+      this.renderModifiers()
     );
   }
 }

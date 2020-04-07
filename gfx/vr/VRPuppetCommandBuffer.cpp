@@ -8,8 +8,7 @@
 #include "prthread.h"
 #include "mozilla/ClearOnShutdown.h"
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 static StaticRefPtr<VRPuppetCommandBuffer> sVRPuppetCommandBufferSingleton;
 
@@ -199,27 +198,27 @@ bool VRPuppetCommandBuffer::RunCommand(uint64_t aCommand, double aDeltaTime) {
 
     case VRPuppet_Command::VRPuppet_Data7:
       WriteData((aCommand & 0x00ff000000000000) >> 48);
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
       // Purposefully, no break
     case VRPuppet_Command::VRPuppet_Data6:
       WriteData((aCommand & 0x0000ff0000000000) >> 40);
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
       // Purposefully, no break
     case VRPuppet_Command::VRPuppet_Data5:
       WriteData((aCommand & 0x000000ff00000000) >> 32);
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
       // Purposefully, no break
     case VRPuppet_Command::VRPuppet_Data4:
       WriteData((aCommand & 0x00000000ff000000) >> 24);
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
       // Purposefully, no break
     case VRPuppet_Command::VRPuppet_Data3:
       WriteData((aCommand & 0x0000000000ff0000) >> 16);
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
       // Purposefully, no break
     case VRPuppet_Command::VRPuppet_Data2:
       WriteData((aCommand & 0x000000000000ff00) >> 8);
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
       // Purposefully, no break
     case VRPuppet_Command::VRPuppet_Data1:
       WriteData(aCommand & 0x00000000000000ff);
@@ -508,5 +507,4 @@ void VRPuppetCommandBuffer::EncodeStruct(nsTArray<uint64_t>& aBuffer,
   purgeBuffer();
 }
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx

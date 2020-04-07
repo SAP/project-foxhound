@@ -27,6 +27,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(Blob)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Blob)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -40,9 +41,8 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Blob)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIMutable)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(Blob)
-  NS_INTERFACE_MAP_ENTRY(nsIMutable)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END
 
@@ -206,12 +206,6 @@ nsresult Blob::GetSendInfo(nsIInputStream** aBody, uint64_t* aContentLength,
   return mImpl->GetSendInfo(aBody, aContentLength, aContentType, aCharset);
 }
 
-NS_IMETHODIMP
-Blob::GetMutable(bool* aMutable) { return mImpl->GetMutable(aMutable); }
-
-NS_IMETHODIMP
-Blob::SetMutable(bool aMutable) { return mImpl->SetMutable(aMutable); }
-
 JSObject* Blob::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
   return Blob_Binding::Wrap(aCx, this, aGivenProto);
 }
@@ -226,7 +220,7 @@ already_AddRefed<Blob> Blob::Constructor(
     nsAutoString type(aBag.mType);
     MakeValidBlobType(type);
     impl->InitializeBlob(aData.Value(), type,
-                         aBag.mEndings == EndingTypes::Native, aRv);
+                         aBag.mEndings == EndingType::Native, aRv);
   } else {
     impl->InitializeBlob(aRv);
   }

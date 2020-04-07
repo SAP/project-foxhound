@@ -14,7 +14,6 @@
 #include "mozilla/a11y/Platform.h"
 #include "RelationType.h"
 #include "mozilla/a11y/Role.h"
-#include "xpcAccessibleDocument.h"
 
 namespace mozilla {
 namespace a11y {
@@ -31,8 +30,10 @@ uint64_t ProxyAccessible::NativeState() const {
   return state;
 }
 
-void ProxyAccessible::Name(nsString& aName) const {
-  Unused << mDoc->SendName(mID, &aName);
+uint32_t ProxyAccessible::Name(nsString& aName) const {
+  uint32_t flag;
+  Unused << mDoc->SendName(mID, &aName, &flag);
+  return flag;
 }
 
 void ProxyAccessible::Value(nsString& aValue) const {

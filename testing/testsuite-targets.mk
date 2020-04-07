@@ -223,8 +223,6 @@ endif
 stage-android: make-stage-dir
 	$(NSINSTALL) $(topsrcdir)/mobile/android/fonts $(DEPTH)/_tests/reftest
 	$(NSINSTALL) $(topsrcdir)/mobile/android/fonts $(DEPTH)/_tests/testing/mochitest
-	$(NSINSTALL) -D $(DEPTH)/_tests/reftest/hyphenation
-	$(NSINSTALL) $(wildcard $(topsrcdir)/intl/locales/*/hyphenation/*.dic) $(DEPTH)/_tests/reftest/hyphenation
 
 ifdef MOZ_COPY_PDBS
 CPP_UNIT_TEST_BINS=$(filter-out $(wildcard $(DIST)/cppunittests/*.pdb), $(wildcard $(DIST)/cppunittests/*))
@@ -271,6 +269,9 @@ check::
 	@echo "Starting 'mach python-test' with -j$(cores)"
 	@$(topsrcdir)/mach --log-no-times python-test -j$(cores) --subsuite default
 	@echo "Finished 'mach python-test' successfully"
+	@echo "Starting 'mach python-test' with --python $(PYTHON3) -j$(cores)"
+	@$(topsrcdir)/mach --log-no-times python-test --python python3 -j$(cores) --subsuite default
+	@echo "Finished 'mach python-test' with py3 successfully"
 
 
 .PHONY: \

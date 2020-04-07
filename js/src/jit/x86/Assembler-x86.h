@@ -75,10 +75,8 @@ static constexpr Register CallTempReg4 = esi;
 static constexpr Register CallTempReg5 = edx;
 
 // We have no arg regs, so our NonArgRegs are just our CallTempReg*
-// Use "const" instead of constexpr here to work around a bug
-// of VS2015 Update 1. See bug 1229604.
-static const Register CallTempNonArgRegs[] = {edi, eax, ebx, ecx, esi, edx};
-static const uint32_t NumCallTempNonArgRegs =
+static constexpr Register CallTempNonArgRegs[] = {edi, eax, ebx, ecx, esi, edx};
+static constexpr uint32_t NumCallTempNonArgRegs =
     mozilla::ArrayLength(CallTempNonArgRegs);
 
 class ABIArgGenerator {
@@ -125,6 +123,11 @@ static constexpr Register WasmTableCallScratchReg0 = ABINonArgReg0;
 static constexpr Register WasmTableCallScratchReg1 = ABINonArgReg1;
 static constexpr Register WasmTableCallSigReg = ABINonArgReg2;
 static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
+
+// Register used as a scratch along the return path in the fast js -> wasm stub
+// code.  This must not overlap ReturnReg, JSReturnOperand, or WasmTlsReg. It
+// must be a volatile register.
+static constexpr Register WasmJitEntryReturnScratch = ebx;
 
 static constexpr Register OsrFrameReg = edx;
 static constexpr Register PreBarrierReg = edx;
@@ -178,8 +181,8 @@ static_assert(JitStackAlignment % SimdMemoryAlignment == 0,
               "spilled values.  Thus it should be larger than the alignment "
               "for SIMD accesses.");
 
-static const uint32_t WasmStackAlignment = SimdMemoryAlignment;
-static const uint32_t WasmTrapInstructionLength = 2;
+static constexpr uint32_t WasmStackAlignment = SimdMemoryAlignment;
+static constexpr uint32_t WasmTrapInstructionLength = 2;
 
 struct ImmTag : public Imm32 {
   explicit ImmTag(JSValueTag mask) : Imm32(int32_t(mask)) {}
@@ -189,7 +192,7 @@ struct ImmType : public ImmTag {
   explicit ImmType(JSValueType type) : ImmTag(JSVAL_TYPE_TO_TAG(type)) {}
 };
 
-static const Scale ScalePointer = TimesFour;
+static constexpr Scale ScalePointer = TimesFour;
 
 }  // namespace jit
 }  // namespace js

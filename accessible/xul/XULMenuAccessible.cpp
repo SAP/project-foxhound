@@ -13,11 +13,8 @@
 #include "States.h"
 #include "XULFormControlAccessible.h"
 
-#include "nsIMutableArray.h"
 #include "nsIDOMXULContainerElement.h"
 #include "nsIDOMXULSelectCntrlItemEl.h"
-#include "nsIDOMXULMultSelectCntrlEl.h"
-#include "nsIServiceManager.h"
 #include "nsIContent.h"
 #include "nsMenuBarFrame.h"
 #include "nsMenuPopupFrame.h"
@@ -51,8 +48,8 @@ uint64_t XULMenuitemAccessible::NativeState() const {
   }
 
   // Checkable/checked?
-  static Element::AttrValuesArray strings[] = {nsGkAtoms::radio,
-                                               nsGkAtoms::checkbox, nullptr};
+  static dom::Element::AttrValuesArray strings[] = {
+      nsGkAtoms::radio, nsGkAtoms::checkbox, nullptr};
 
   if (mContent->AsElement()->FindAttrValueIn(kNameSpaceID_None, nsGkAtoms::type,
                                              strings, eCaseMatters) >= 0) {
@@ -181,7 +178,7 @@ KeyBinding XULMenuitemAccessible::KeyboardShortcut() const {
   mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::key, keyElmId);
   if (keyElmId.IsEmpty()) return KeyBinding();
 
-  Element* keyElm = mContent->OwnerDoc()->GetElementById(keyElmId);
+  dom::Element* keyElm = mContent->OwnerDoc()->GetElementById(keyElmId);
   if (!keyElm) return KeyBinding();
 
   uint32_t key = 0;

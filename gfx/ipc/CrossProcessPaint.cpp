@@ -15,6 +15,7 @@
 #include "mozilla/dom/WindowGlobalActorsBinding.h"
 #include "mozilla/gfx/DrawEventRecorder.h"
 #include "mozilla/gfx/InlineTranslator.h"
+#include "mozilla/Logging.h"
 #include "mozilla/PresShell.h"
 
 #include "gfxPlatform.h"
@@ -24,16 +25,13 @@
 #include "nsIDocShell.h"
 #include "nsPresContext.h"
 
-#define ENABLE_PAINT_LOG 0
-// #define ENABLE_PAINT_LOG 1
+static mozilla::LazyLogModule gCrossProcessPaintLog("CrossProcessPaint");
+static mozilla::LazyLogModule gPaintFragmentLog("PaintFragment");
 
-#if ENABLE_PAINT_LOG
-#  define PF_LOG(...) printf_stderr("PaintFragment: " __VA_ARGS__)
-#  define CPP_LOG(...) printf_stderr("CrossProcessPaint: " __VA_ARGS__)
-#else
-#  define PF_LOG(...)
-#  define CPP_LOG(...)
-#endif
+#define CPP_LOG(msg, ...) \
+  MOZ_LOG(gCrossProcessPaintLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
+#define PF_LOG(msg, ...) \
+  MOZ_LOG(gPaintFragmentLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
 
 namespace mozilla {
 namespace gfx {
@@ -136,6 +134,10 @@ PaintFragment PaintFragment::Record(nsIDocShell* aDocShell,
                                         thebes);
   }
 
+  if (!recorder->mOutputStream.mValid) {
+    return PaintFragment{};
+  }
+
   ByteBuf recording = ByteBuf((uint8_t*)recorder->mOutputStream.mData,
                               recorder->mOutputStream.mLength,
                               recorder->mOutputStream.mCapacity);
@@ -184,6 +186,10 @@ bool CrossProcessPaint::Start(dom::WindowGlobalParent* aRoot,
                                (float)aRect->Width(), (float)aRect->Height()));
   }
 
+  if (rect && rect->IsEmpty()) {
+    return false;
+  }
+
   RefPtr<CrossProcessPaint> resolver =
       new CrossProcessPaint(aPromise, aScale, aRoot);
 
@@ -214,7 +220,7 @@ CrossProcessPaint::CrossProcessPaint(dom::Promise* aPromise, float aScale,
                                      dom::WindowGlobalParent* aRoot)
     : mPromise{aPromise}, mRoot{aRoot}, mScale{aScale}, mPendingFragments{0} {}
 
-CrossProcessPaint::~CrossProcessPaint() {}
+CrossProcessPaint::~CrossProcessPaint() = default;
 
 static dom::TabId GetTabId(dom::WindowGlobalParent* aWGP) {
   // There is no unique TabId for a given WindowGlobalParent, as multiple
@@ -237,7 +243,6 @@ void CrossProcessPaint::ReceiveFragment(dom::WindowGlobalParent* aWGP,
 
   MOZ_ASSERT(mPendingFragments > 0);
   MOZ_ASSERT(!mReceivedFragments.GetValue(surfaceId));
-  MOZ_ASSERT(!aFragment.IsEmpty());
 
   // Double check our invariants to protect against a compromised content
   // process
@@ -248,7 +253,8 @@ void CrossProcessPaint::ReceiveFragment(dom::WindowGlobalParent* aWGP,
     return;
   }
 
-  CPP_LOG("Receiving fragment from %p(%llu).\n", aWGP, (uint64_t)surfaceId);
+  CPP_LOG("Receiving fragment from %p(%" PRIu64 ").\n", aWGP,
+          (uint64_t)surfaceId);
 
   // Queue paints for child tabs
   for (auto iter = aFragment.mDependencies.Iter(); !iter.Done(); iter.Next()) {
@@ -265,7 +271,7 @@ void CrossProcessPaint::ReceiveFragment(dom::WindowGlobalParent* aWGP,
         browser->GetBrowsingContext()->GetCurrentWindowGlobal();
 
     if (!wgp) {
-      CPP_LOG("Skipping dependency %llu with no current WGP.\n",
+      CPP_LOG("Skipping dependency %" PRIu64 "with no current WGP.\n",
               (uint64_t)dependency);
       continue;
     }
@@ -349,7 +355,7 @@ void CrossProcessPaint::MaybeResolve() {
     mPromise->MaybeResolve(bitmap);
   } else {
     CPP_LOG("Couldn't create ImageBitmap for SourceSurface.\n");
-    mPromise->MaybeReject(rv);
+    mPromise->MaybeReject(std::move(rv));
   }
   Clear();
 }
@@ -359,7 +365,7 @@ nsresult CrossProcessPaint::ResolveInternal(dom::TabId aTabId,
   // We should not have resolved this paint already
   MOZ_ASSERT(!aResolved->GetWeak(aTabId));
 
-  CPP_LOG("Resolving fragment %llu.\n", (uint64_t)aTabId);
+  CPP_LOG("Resolving fragment %" PRIu64 ".\n", (uint64_t)aTabId);
 
   Maybe<PaintFragment> fragment = mReceivedFragments.GetAndRemove(aTabId);
   if (!fragment) {
@@ -381,7 +387,7 @@ nsresult CrossProcessPaint::ResolveInternal(dom::TabId aTabId,
       gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(
           fragment->mSize, SurfaceFormat::B8G8R8A8);
   if (!drawTarget || !drawTarget->IsValid()) {
-    CPP_LOG("Couldn't create (%d x %d) surface for fragment %llu.\n",
+    CPP_LOG("Couldn't create (%d x %d) surface for fragment %" PRIu64 ".\n",
             fragment->mSize.width, fragment->mSize.height, (uint64_t)aTabId);
     return NS_ERROR_FAILURE;
   }
@@ -392,7 +398,7 @@ nsresult CrossProcessPaint::ResolveInternal(dom::TabId aTabId,
     translator.SetExternalSurfaces(aResolved);
     if (!translator.TranslateRecording((char*)fragment->mRecording.mData,
                                        fragment->mRecording.mLen)) {
-      CPP_LOG("Couldn't translate recording for fragment %llu.\n",
+      CPP_LOG("Couldn't translate recording for fragment %" PRIu64 ".\n",
               (uint64_t)aTabId);
       return NS_ERROR_FAILURE;
     }
@@ -400,7 +406,8 @@ nsresult CrossProcessPaint::ResolveInternal(dom::TabId aTabId,
 
   RefPtr<SourceSurface> snapshot = drawTarget->Snapshot();
   if (!snapshot) {
-    CPP_LOG("Couldn't get snapshot for fragment %llu.\n", (uint64_t)aTabId);
+    CPP_LOG("Couldn't get snapshot for fragment %" PRIu64 ".\n",
+            (uint64_t)aTabId);
     return NS_ERROR_FAILURE;
   }
 
@@ -411,7 +418,7 @@ nsresult CrossProcessPaint::ResolveInternal(dom::TabId aTabId,
     aResolved->Remove(dependency);
   }
 
-  aResolved->Put(aTabId, snapshot);
+  aResolved->Put(aTabId, std::move(snapshot));
   return NS_OK;
 }
 

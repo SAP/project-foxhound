@@ -12,10 +12,16 @@
 #include "jspubtd.h"
 #include "Taint.h"
 
+#include "js/GCAnnotations.h"
 #include "js/TraceKind.h"
 #include "js/Utility.h"
 
-struct JSStringFinalizer;
+#ifndef JS_BITS_PER_WORD
+#  error \
+      "JS_BITS_PER_WORD must be defined. Did you forget to include js-config.h?"
+#endif
+
+struct JSExternalStringCallbacks;
 
 /* These values are private to the JS engine. */
 namespace js {
@@ -230,14 +236,15 @@ struct Zone {
 };
 
 struct String {
-  static const uint32_t NON_ATOM_BIT = JS_BIT(1);
-  static const uint32_t LINEAR_BIT = JS_BIT(4);
-  static const uint32_t INLINE_CHARS_BIT = JS_BIT(6);
-  static const uint32_t LATIN1_CHARS_BIT = JS_BIT(9);
-  static const uint32_t EXTERNAL_FLAGS = LINEAR_BIT | NON_ATOM_BIT | JS_BIT(8);
-  static const uint32_t TYPE_FLAGS_MASK = JS_BITMASK(9) - JS_BIT(2) - JS_BIT(0);
-  static const uint32_t PERMANENT_ATOM_MASK = NON_ATOM_BIT | JS_BIT(8);
-  static const uint32_t PERMANENT_ATOM_FLAGS = JS_BIT(8);
+  static const uint32_t NON_ATOM_BIT = js::Bit(1);
+  static const uint32_t LINEAR_BIT = js::Bit(4);
+  static const uint32_t INLINE_CHARS_BIT = js::Bit(6);
+  static const uint32_t LATIN1_CHARS_BIT = js::Bit(9);
+  static const uint32_t EXTERNAL_FLAGS = LINEAR_BIT | NON_ATOM_BIT | js::Bit(8);
+  static const uint32_t TYPE_FLAGS_MASK =
+      js::BitMask(9) - js::Bit(2) - js::Bit(0);
+  static const uint32_t PERMANENT_ATOM_MASK = NON_ATOM_BIT | js::Bit(8);
+  static const uint32_t PERMANENT_ATOM_FLAGS = js::Bit(8);
 
   uintptr_t flags_;
 #if JS_BITS_PER_WORD == 32
@@ -253,7 +260,7 @@ struct String {
     JS::Latin1Char inlineStorageLatin1[1];
     char16_t inlineStorageTwoByte[1];
   };
-  const JSStringFinalizer* externalFinalizer;
+  const JSExternalStringCallbacks* externalCallbacks;
 
   inline uint32_t flags() const { return uint32_t(flags_); }
   inline uint32_t length() const {
@@ -307,6 +314,8 @@ class JS_FRIEND_API GCCellPtr {
       : ptr(checkedCast(p, JS::MapTypeToTraceKind<T>::kind)) {}
   explicit GCCellPtr(JSFunction* p)
       : ptr(checkedCast(p, JS::TraceKind::Object)) {}
+  explicit GCCellPtr(JSScript* p)
+      : ptr(checkedCast(p, JS::TraceKind::Script)) {}
   explicit GCCellPtr(const Value& v);
 
   JS::TraceKind kind() const {
@@ -381,12 +390,10 @@ class JS_FRIEND_API GCCellPtr {
     return uintptr_t(p) | (uintptr_t(traceKind) & OutOfLineTraceKindMask);
   }
 
-  bool mayBeOwnedByOtherRuntimeSlow() const;
-
   JS::TraceKind outOfLineKind() const;
 
   uintptr_t ptr;
-};
+} JS_HAZ_GC_POINTER;
 
 // Unwraps the given GCCellPtr, calls the functor |f| with a template argument
 // of the actual type of the pointer, and returns the result.
@@ -520,12 +527,16 @@ MOZ_ALWAYS_INLINE bool IsInsideNursery(const Cell* cell) {
   return location == ChunkLocation::Nursery;
 }
 
-// Allow use before the compiler knows the derivation of JSObject and JSString.
+// Allow use before the compiler knows the derivation of JSObject, JSString, and
+// JS::BigInt.
 MOZ_ALWAYS_INLINE bool IsInsideNursery(const JSObject* obj) {
   return IsInsideNursery(reinterpret_cast<const Cell*>(obj));
 }
 MOZ_ALWAYS_INLINE bool IsInsideNursery(const JSString* str) {
   return IsInsideNursery(reinterpret_cast<const Cell*>(str));
+}
+MOZ_ALWAYS_INLINE bool IsInsideNursery(const JS::BigInt* bi) {
+  return IsInsideNursery(reinterpret_cast<const Cell*>(bi));
 }
 
 MOZ_ALWAYS_INLINE bool IsCellPointerValid(const void* cell) {
@@ -583,6 +594,10 @@ extern JS_PUBLIC_API JS::TraceKind GCThingTraceKind(void* thing);
 extern JS_PUBLIC_API void EnableNurseryStrings(JSContext* cx);
 
 extern JS_PUBLIC_API void DisableNurseryStrings(JSContext* cx);
+
+extern JS_PUBLIC_API void EnableNurseryBigInts(JSContext* cx);
+
+extern JS_PUBLIC_API void DisableNurseryBigInts(JSContext* cx);
 
 /*
  * Returns true when writes to GC thing pointers (and reads from weak pointers)

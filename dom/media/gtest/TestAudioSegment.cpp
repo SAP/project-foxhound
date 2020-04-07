@@ -240,4 +240,64 @@ TEST(AudioSegment, Test)
   TestDownmixStereo<int16_t>();
 }
 
+template <class T>
+void fillChunkWithStereo(AudioChunk* c, int duration) {
+  c->mDuration = duration;
+
+  AutoTArray<nsTArray<T>, 2> stereo;
+  stereo.SetLength(2);
+  T* ch1 = stereo[0].AppendElements(duration);
+  T* ch2 = stereo[1].AppendElements(duration);
+
+  for (int i = 0; i < duration; ++i) {
+    ch1[i] = GetHighValue<T>();
+    ch2[i] = GetHighValue<T>();
+  }
+
+  c->mBuffer = new mozilla::SharedChannelArrayBuffer<T>(&stereo);
+
+  c->mChannelData.SetLength(2);
+  c->mChannelData[0] = ch1;
+  c->mChannelData[1] = ch2;
+
+  c->mBufferFormat = AUDIO_FORMAT_FLOAT32;
+}
+
+TEST(AudioSegment, FlushAfter_ZeroDuration)
+{
+  AudioChunk c;
+  fillChunkWithStereo<float>(&c, 10);
+
+  AudioSegment s;
+  s.AppendAndConsumeChunk(&c);
+  s.FlushAfter(0);
+  EXPECT_EQ(s.GetDuration(), 0);
+}
+
+TEST(AudioSegment, FlushAfter_SmallerDuration)
+{
+  // It was crashing when the first chunk was silence (null) and FlushAfter
+  // was called for a duration, smaller or equal to the duration of the
+  // first chunk.
+  TrackTime duration = 10;
+  TrackTime smaller_duration = 8;
+  AudioChunk c1;
+  c1.SetNull(duration);
+  AudioChunk c2;
+  fillChunkWithStereo<float>(&c2, duration);
+
+  AudioSegment s;
+  s.AppendAndConsumeChunk(&c1);
+  s.AppendAndConsumeChunk(&c2);
+  s.FlushAfter(smaller_duration);
+  EXPECT_EQ(s.GetDuration(), smaller_duration) << "Check new duration";
+
+  TrackTime chunkByChunkDuration = 0;
+  for (AudioSegment::ChunkIterator iter(s); !iter.IsEnded(); iter.Next()) {
+    chunkByChunkDuration += iter->GetDuration();
+  }
+  EXPECT_EQ(s.GetDuration(), chunkByChunkDuration)
+      << "Confirm duration chunk by chunk";
+}
+
 }  // namespace audio_segment

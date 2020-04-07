@@ -57,7 +57,6 @@ interface nsIRemoteTab : nsISupports
    */
   readonly attribute int32_t osPid;
 
-  readonly attribute boolean hasContentOpener;
   /**
    * True if we've previously received layers for this tab when switching to
    * it.
@@ -75,11 +74,6 @@ interface nsIRemoteTab : nsISupports
    * an onbeforeunload event handler.
    */
   readonly attribute boolean hasBeforeUnload;
-
-  /**
-   * The frame element which currently embeds this nsIRemoteTab object.
-   */
-  readonly attribute Element ownerElement;
 
   /**
    * Notify APZ to start autoscrolling.
@@ -100,23 +94,6 @@ interface nsIRemoteTab : nsISupports
    * autoscrolled.
    */
   void stopApzAutoscroll(in nsViewID aScrollId, in uint32_t aPresShellId);
-
-  /**
-   * Save a recording of the associated content process' behavior to the
-   * specified filename. Returns whether the process is being recorded.
-   */
-  bool saveRecording(in AString aFileName);
-
-  /**
-   * Asynchronously retrieve a JSON string representing a log of the
-   * content blocking events happened so far in the current tab from the
-   * content process.
-   *
-   * This returns a Promise which resolves to a string on success, and is
-   * rejected on failure.  For documentation on the string format, please
-   * see nsISecureBrowserUI.contentBlockingLogJSON.
-   */
-  Promise getContentBlockingLog();
 
   cenum NavigationType : 8 {
     NAVIGATE_BACK = 0,
@@ -139,4 +116,8 @@ interface nsIRemoteTab : nsISupports
    * Notify the remote tab that the resolution has changed.
    */
   [noscript] void notifyResolutionChanged();
+  /**
+   * Notify the remote tab that system theme has changed.
+   */
+  [noscript] void notifyThemeChanged();
 };

@@ -14,6 +14,7 @@
 #include "js/GCVector.h"
 #include "js/HeapAPI.h"
 #include "js/Wrapper.h"
+#include "vm/BytecodeUtil.h"
 #include "vm/Printer.h"
 #include "vm/Shape.h"
 #include "vm/StringType.h"
@@ -87,7 +88,7 @@ class JSObject : public js::gc::Cell {
   js::GCPtrShape shape_;
 
  private:
-  friend class js::Shape;
+  friend class js::DictionaryShapeLink;
   friend class js::GCMarker;
   friend class js::NewObjectCache;
   friend class js::Nursery;
@@ -810,11 +811,6 @@ Value GetThisValueOfLexical(JSObject* env);
 
 Value GetThisValueOfWith(JSObject* env);
 
-/* * */
-
-using ClassInitializerOp = JSObject* (*)(JSContext* cx,
-                                         Handle<GlobalObject*> global);
-
 } /* namespace js */
 
 namespace js {
@@ -998,12 +994,35 @@ extern JSObject* PrimitiveToObject(JSContext* cx, const Value& v);
 
 namespace js {
 
-/* For converting stack values to objects. */
-MOZ_ALWAYS_INLINE JSObject* ToObjectFromStack(JSContext* cx, HandleValue vp) {
+JSObject* ToObjectSlowForPropertyAccess(JSContext* cx, JS::HandleValue val,
+                                        int valIndex, HandleId key);
+JSObject* ToObjectSlowForPropertyAccess(JSContext* cx, JS::HandleValue val,
+                                        int valIndex, HandlePropertyName key);
+JSObject* ToObjectSlowForPropertyAccess(JSContext* cx, JS::HandleValue val,
+                                        int valIndex, HandleValue keyValue);
+
+MOZ_ALWAYS_INLINE JSObject* ToObjectFromStackForPropertyAccess(JSContext* cx,
+                                                               HandleValue vp,
+                                                               int vpIndex,
+                                                               HandleId key) {
   if (vp.isObject()) {
     return &vp.toObject();
   }
-  return js::ToObjectSlow(cx, vp, true);
+  return js::ToObjectSlowForPropertyAccess(cx, vp, vpIndex, key);
+}
+MOZ_ALWAYS_INLINE JSObject* ToObjectFromStackForPropertyAccess(
+    JSContext* cx, HandleValue vp, int vpIndex, HandlePropertyName key) {
+  if (vp.isObject()) {
+    return &vp.toObject();
+  }
+  return js::ToObjectSlowForPropertyAccess(cx, vp, vpIndex, key);
+}
+MOZ_ALWAYS_INLINE JSObject* ToObjectFromStackForPropertyAccess(
+    JSContext* cx, HandleValue vp, int vpIndex, HandleValue key) {
+  if (vp.isObject()) {
+    return &vp.toObject();
+  }
+  return js::ToObjectSlowForPropertyAccess(cx, vp, vpIndex, key);
 }
 
 template <XDRMode mode>

@@ -26,8 +26,6 @@
 #include "nsIFile.h"
 #include "nsIMutableArray.h"
 #include "nsIObserverService.h"
-#include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "nsIPrompt.h"
 #include "nsNSSCertHelper.h"
 #include "nsNSSCertTrust.h"
@@ -67,7 +65,7 @@ nsNSSCertificateDB::FindCertByDBKey(const nsACString& aDBKey,
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsresult rv = BlockUntilLoadableRootsLoaded();
+  nsresult rv = BlockUntilLoadableCertsLoaded();
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -687,7 +685,7 @@ nsNSSCertificateDB::IsCertTrusted(nsIX509Cert* cert, uint32_t certType,
   NS_ENSURE_ARG_POINTER(_isTrusted);
   *_isTrusted = false;
 
-  nsresult rv = BlockUntilLoadableRootsLoaded();
+  nsresult rv = BlockUntilLoadableCertsLoaded();
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -696,7 +694,11 @@ nsNSSCertificateDB::IsCertTrusted(nsIX509Cert* cert, uint32_t certType,
   UniqueCERTCertificate nsscert(cert->GetCert());
   CERTCertTrust nsstrust;
   srv = CERT_GetCertTrust(nsscert.get(), &nsstrust);
-  if (srv != SECSuccess) return NS_ERROR_FAILURE;
+  if (srv != SECSuccess) {
+    // CERT_GetCertTrust returns SECFailure if given a temporary cert that
+    // doesn't have any trust information yet. This isn't an error.
+    return NS_OK;
+  }
 
   nsNSSCertTrust trust(&nsstrust);
   if (certType == nsIX509Cert::CA_CERT) {
@@ -784,7 +786,7 @@ nsNSSCertificateDB::ImportPKCS12File(nsIFile* aFile, const nsAString& aPassword,
   if (!NS_IsMainThread()) {
     return NS_ERROR_NOT_SAME_THREAD;
   }
-  nsresult rv = BlockUntilLoadableRootsLoaded();
+  nsresult rv = BlockUntilLoadableCertsLoaded();
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -809,7 +811,7 @@ nsNSSCertificateDB::ExportPKCS12File(
   if (!NS_IsMainThread()) {
     return NS_ERROR_NOT_SAME_THREAD;
   }
-  nsresult rv = BlockUntilLoadableRootsLoaded();
+  nsresult rv = BlockUntilLoadableCertsLoaded();
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -842,21 +844,31 @@ nsNSSCertificateDB::ConstructX509FromBase64(const nsACString& base64,
     return rv;
   }
 
-  return ConstructX509(certDER, _retval);
+  return ConstructX509FromSpan(AsBytes(MakeSpan(certDER)), _retval);
 }
 
 NS_IMETHODIMP
-nsNSSCertificateDB::ConstructX509(const nsACString& certDER,
+nsNSSCertificateDB::ConstructX509(const nsTArray<uint8_t>& certDER,
                                   nsIX509Cert** _retval) {
+  return ConstructX509FromSpan(MakeSpan(certDER.Elements(), certDER.Length()),
+                               _retval);
+}
+
+nsresult nsNSSCertificateDB::ConstructX509FromSpan(
+    Span<const uint8_t> aInputSpan, nsIX509Cert** _retval) {
   if (NS_WARN_IF(!_retval)) {
     return NS_ERROR_INVALID_POINTER;
   }
 
+  if (aInputSpan.Length() > std::numeric_limits<unsigned int>::max()) {
+    return NS_ERROR_ILLEGAL_VALUE;
+  }
+
   SECItem certData;
   certData.type = siDERCertBuffer;
-  certData.data =
-      BitwiseCast<unsigned char*, const char*>(certDER.BeginReading());
-  certData.len = certDER.Length();
+  certData.data = const_cast<unsigned char*>(
+      reinterpret_cast<const unsigned char*>(aInputSpan.Elements()));
+  certData.len = aInputSpan.Length();
 
   UniqueCERTCertificate cert(CERT_NewTempCertificate(
       CERT_GetDefaultCertDB(), &certData, nullptr, false, true));
@@ -879,7 +891,7 @@ void nsNSSCertificateDB::get_default_nickname(CERTCertificate* cert,
 
   CK_OBJECT_HANDLE keyHandle;
 
-  if (NS_FAILED(BlockUntilLoadableRootsLoaded())) {
+  if (NS_FAILED(BlockUntilLoadableCertsLoaded())) {
     return;
   }
 
@@ -1002,7 +1014,8 @@ nsNSSCertificateDB::AddCert(const nsACString& aCertDER,
   }
 
   nsCOMPtr<nsIX509Cert> newCert;
-  nsresult rv = ConstructX509(aCertDER, getter_AddRefs(newCert));
+  nsresult rv = ConstructX509FromSpan(AsBytes(MakeSpan(aCertDER)),
+                                      getter_AddRefs(newCert));
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1134,7 +1147,7 @@ NS_IMETHODIMP nsNSSCertificateDB::AsPKCS7Blob(
 
 NS_IMETHODIMP
 nsNSSCertificateDB::GetCerts(nsTArray<RefPtr<nsIX509Cert>>& _retval) {
-  nsresult rv = BlockUntilLoadableRootsLoaded();
+  nsresult rv = BlockUntilLoadableCertsLoaded();
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1157,14 +1170,17 @@ nsresult VerifyCertAtTime(nsIX509Cert* aCert,
                           int64_t /*SECCertificateUsage*/ aUsage,
                           uint32_t aFlags, const nsACString& aHostname,
                           mozilla::pkix::Time aTime,
-                          nsIX509CertList** aVerifiedChain, bool* aHasEVPolicy,
+                          nsTArray<RefPtr<nsIX509Cert>>& aVerifiedChain,
+                          bool* aHasEVPolicy,
                           int32_t* /*PRErrorCode*/ _retval) {
   NS_ENSURE_ARG_POINTER(aCert);
   NS_ENSURE_ARG_POINTER(aHasEVPolicy);
-  NS_ENSURE_ARG_POINTER(aVerifiedChain);
   NS_ENSURE_ARG_POINTER(_retval);
 
-  *aVerifiedChain = nullptr;
+  if (!aVerifiedChain.IsEmpty()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   *aHasEVPolicy = false;
   *_retval = PR_UNKNOWN_ERROR;
 
@@ -1181,36 +1197,43 @@ nsresult VerifyCertAtTime(nsIX509Cert* aCert,
   mozilla::pkix::Result result;
 
   if (!aHostname.IsVoid() && aUsage == certificateUsageSSLServer) {
-    result = certVerifier->VerifySSLServerCert(
-        nssCert,
-        Maybe<nsTArray<uint8_t>>(),  // stapledOCSPResponse
-        Maybe<nsTArray<uint8_t>>(),  // sctsFromTLSExtension
-        aTime,
-        nullptr,  // Assume no context
-        aHostname, resultChain,
-        false,  // don't save intermediates
-        aFlags, OriginAttributes(), &evOidPolicy);
+    result =
+        certVerifier->VerifySSLServerCert(nssCert, aTime,
+                                          nullptr,  // Assume no context
+                                          aHostname, resultChain, aFlags,
+                                          Nothing(),  // extraCertificates
+                                          Nothing(),  // stapledOCSPResponse
+                                          Nothing(),  // sctsFromTLSExtension
+                                          Nothing(),  // dcInfo
+                                          OriginAttributes(),
+                                          false,  // don't save intermediates
+                                          &evOidPolicy);
   } else {
     const nsCString& flatHostname = PromiseFlatCString(aHostname);
     result = certVerifier->VerifyCert(
         nssCert.get(), aUsage, aTime,
         nullptr,  // Assume no context
         aHostname.IsVoid() ? nullptr : flatHostname.get(), resultChain, aFlags,
-        Maybe<nsTArray<uint8_t>>(),  // stapledOCSPResponse
-        Maybe<nsTArray<uint8_t>>(),  // sctsFromTLSExtension
+        Nothing(),  // extraCertificates
+        Nothing(),  // stapledOCSPResponse
+        Nothing(),  // sctsFromTLSExtension
         OriginAttributes(), &evOidPolicy);
   }
 
-  nsCOMPtr<nsIX509CertList> nssCertList;
-  // This adopts the list
-  nssCertList = new nsNSSCertList(std::move(resultChain));
-  NS_ENSURE_TRUE(nssCertList, NS_ERROR_FAILURE);
+  if (result == mozilla::pkix::Success) {
+    nsresult rv = nsNSSCertificateDB::ConstructCertArrayFromUniqueCertList(
+        resultChain, aVerifiedChain);
+
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    if (evOidPolicy != SEC_OID_UNKNOWN) {
+      *aHasEVPolicy = true;
+    }
+  }
 
   *_retval = mozilla::pkix::MapResultToPRErrorCode(result);
-  if (result == mozilla::pkix::Success && evOidPolicy != SEC_OID_UNKNOWN) {
-    *aHasEVPolicy = true;
-  }
-  nssCertList.forget(aVerifiedChain);
 
   return NS_OK;
 }
@@ -1228,7 +1251,6 @@ class VerifyCertAtTimeTask final : public CryptoTask {
         mCallback(new nsMainThreadPtrHolder<nsICertVerificationCallback>(
             "nsICertVerificationCallback", aCallback)),
         mPRErrorCode(SEC_ERROR_LIBRARY_FAILURE),
-        mVerifiedCertList(nullptr),
         mHasEVPolicy(false) {}
 
  private:
@@ -1239,14 +1261,14 @@ class VerifyCertAtTimeTask final : public CryptoTask {
     }
     return VerifyCertAtTime(mCert, mUsage, mFlags, mHostname,
                             mozilla::pkix::TimeFromEpochInSeconds(mTime),
-                            getter_AddRefs(mVerifiedCertList), &mHasEVPolicy,
-                            &mPRErrorCode);
+                            mVerifiedCertList, &mHasEVPolicy, &mPRErrorCode);
   }
 
   virtual void CallCallback(nsresult rv) override {
     if (NS_FAILED(rv)) {
-      Unused << mCallback->VerifyCertFinished(SEC_ERROR_LIBRARY_FAILURE,
-                                              nullptr, false);
+      nsTArray<RefPtr<nsIX509Cert>> tmp;
+      Unused << mCallback->VerifyCertFinished(SEC_ERROR_LIBRARY_FAILURE, tmp,
+                                              false);
     } else {
       Unused << mCallback->VerifyCertFinished(mPRErrorCode, mVerifiedCertList,
                                               mHasEVPolicy);
@@ -1260,7 +1282,7 @@ class VerifyCertAtTimeTask final : public CryptoTask {
   uint64_t mTime;
   nsMainThreadPtrHandle<nsICertVerificationCallback> mCallback;
   int32_t mPRErrorCode;
-  nsCOMPtr<nsIX509CertList> mVerifiedCertList;
+  nsTArray<RefPtr<nsIX509Cert>> mVerifiedCertList;
   bool mHasEVPolicy;
 };
 

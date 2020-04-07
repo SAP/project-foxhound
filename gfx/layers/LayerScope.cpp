@@ -29,9 +29,6 @@
 #include "GLContextProvider.h"
 #include "GLReadTexImageHelper.h"
 
-#include "nsIServiceManager.h"
-#include "nsIConsoleService.h"
-
 #include <memory>
 #include "mozilla/LinkedList.h"
 #include "mozilla/Base64.h"
@@ -44,7 +41,6 @@
 #include "nsNetCID.h"
 #include "nsIOutputStream.h"
 #include "nsIAsyncInputStream.h"
-#include "nsIEventTarget.h"
 #include "nsProxyRelease.h"
 #include <list>
 
@@ -137,7 +133,7 @@ class LayerScopeWebSocketManager {
    public:
     NS_DECL_THREADSAFE_ISUPPORTS
 
-    SocketListener() {}
+    SocketListener() = default;
 
     /* nsIServerSocketListener */
     NS_IMETHOD OnSocketAccepted(nsIServerSocket* aServ,

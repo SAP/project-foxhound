@@ -7,6 +7,9 @@ const { ASRouterTriggerListeners } = ChromeUtils.import(
 const { ASRouter } = ChromeUtils.import(
   "resource://activity-stream/lib/ASRouter.jsm"
 );
+const { CFRMessageProvider } = ChromeUtils.import(
+  "resource://activity-stream/lib/CFRMessageProvider.jsm"
+);
 
 const createDummyRecommendation = ({
   action,
@@ -15,65 +18,73 @@ const createDummyRecommendation = ({
   layout,
   skip_address_bar_notifier,
   template,
-}) => ({
-  template,
-  content: {
-    layout: layout || "addon_recommendation",
-    category,
-    anchor_id: "page-action-buttons",
-    skip_address_bar_notifier,
-    notification_text: "Mochitest",
-    heading_text: heading_text || "Mochitest",
-    info_icon: {
-      label: { attributes: { tooltiptext: "Why am I seeing this" } },
-      sumo_path: "extensionrecommendations",
-    },
-    icon: "foo",
-    icon_dark_theme: "bar",
-    learn_more: "extensionrecommendations",
-    addon: {
-      id: "addon-id",
-      title: "Addon name",
-      icon: "foo",
-      author: "Author name",
-      amo_url: "https://example.com",
-    },
-    descriptionDetails: { steps: [] },
-    text: "Mochitest",
-    buttons: {
-      primary: {
-        label: {
-          value: "OK",
-          attributes: { accesskey: "O" },
-        },
-        action: {
-          type: action.type,
-          data: {},
-        },
+}) => {
+  let recommendation = {
+    template,
+    groups: ["mochitest-group"],
+    content: {
+      layout: layout || "addon_recommendation",
+      category,
+      anchor_id: "page-action-buttons",
+      skip_address_bar_notifier,
+      heading_text: heading_text || "Mochitest",
+      info_icon: {
+        label: { attributes: { tooltiptext: "Why am I seeing this" } },
+        sumo_path: "extensionrecommendations",
       },
-      secondary: [
-        {
+      icon: "foo",
+      icon_dark_theme: "bar",
+      learn_more: "extensionrecommendations",
+      addon: {
+        id: "addon-id",
+        title: "Addon name",
+        icon: "foo",
+        author: "Author name",
+        amo_url: "https://example.com",
+      },
+      descriptionDetails: { steps: [] },
+      text: "Mochitest",
+      buttons: {
+        primary: {
           label: {
-            value: "Cancel",
-            attributes: { accesskey: "C" },
+            value: "OK",
+            attributes: { accesskey: "O" },
+          },
+          action: {
+            type: action.type,
+            data: {},
           },
         },
-        {
-          label: {
-            value: "Cancel 1",
-            attributes: { accesskey: "A" },
+        secondary: [
+          {
+            label: {
+              value: "Cancel",
+              attributes: { accesskey: "C" },
+            },
           },
-        },
-        {
-          label: {
-            value: "Cancel 2",
-            attributes: { accesskey: "B" },
+          {
+            label: {
+              value: "Cancel 1",
+              attributes: { accesskey: "A" },
+            },
           },
-        },
-      ],
+          {
+            label: {
+              value: "Cancel 2",
+              attributes: { accesskey: "B" },
+            },
+          },
+        ],
+      },
     },
-  },
-});
+  };
+  recommendation.content.notification_text = new String("Mochitest"); // eslint-disable-line
+  recommendation.content.notification_text.attributes = {
+    tooltiptext: "Mochitest tooltip",
+    "a11y-announcement": "Mochitest announcement",
+  };
+  return recommendation;
+};
 
 function checkCFRFeaturesElements(notification) {
   Assert.ok(notification.hidden === false, "Panel should be visible");
@@ -329,6 +340,53 @@ add_task(async function test_cfr_notification_show() {
   );
 });
 
+add_task(async function test_cfr_notification_minimize() {
+  // addRecommendation checks that scheme starts with http and host matches
+  let browser = gBrowser.selectedBrowser;
+  await BrowserTestUtils.loadURI(browser, "http://example.com/");
+  await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
+
+  let response = await trigger_cfr_panel(browser, "example.com");
+  Assert.ok(
+    response,
+    "Should return true if addRecommendation checks were successful"
+  );
+
+  await BrowserTestUtils.waitForCondition(
+    () => gURLBar.hasAttribute("cfr-recommendation-state"),
+    "Wait for the notification to show up and have a state"
+  );
+  Assert.ok(
+    gURLBar.getAttribute("cfr-recommendation-state") === "expanded",
+    "CFR recomendation state is correct"
+  );
+
+  gURLBar.focus();
+
+  await BrowserTestUtils.waitForCondition(
+    () => gURLBar.getAttribute("cfr-recommendation-state") === "collapsed",
+    "After urlbar focus the CFR notification should collapse"
+  );
+
+  // Open the panel and click to dismiss to ensure cleanup
+  const showPanel = BrowserTestUtils.waitForEvent(
+    PopupNotifications.panel,
+    "popupshown"
+  );
+  // Open the panel
+  document.getElementById("contextual-feature-recommendation").click();
+  await showPanel;
+
+  let hidePanel = BrowserTestUtils.waitForEvent(
+    PopupNotifications.panel,
+    "popuphidden"
+  );
+  document
+    .getElementById("contextual-feature-recommendation-notification")
+    .button.click();
+  await hidePanel;
+});
+
 add_task(async function test_cfr_addon_install() {
   // addRecommendation checks that scheme starts with http and host matches
   const browser = gBrowser.selectedBrowser;
@@ -385,16 +443,7 @@ add_task(async function test_cfr_addon_install() {
     "Should try to install the addon"
   );
 
-  // This removes the `Addon install failure` notifications
-  while (PopupNotifications._currentNotifications.length) {
-    PopupNotifications.remove(PopupNotifications._currentNotifications[0]);
-  }
-  // There should be no more notifications left
-  Assert.equal(
-    PopupNotifications._currentNotifications.length,
-    0,
-    "Should have removed the notification"
-  );
+  clearNotifications();
 });
 
 add_task(async function test_cfr_pin_tab_notification_show() {
@@ -876,4 +925,74 @@ add_task(async function test_cfr_notification_keyboard() {
   EventUtils.synthesizeKey("KEY_Escape");
   await hidden;
   Assert.ok(true, "Panel hidden after Escape pressed");
+
+  const showPanel = BrowserTestUtils.waitForEvent(
+    PopupNotifications.panel,
+    "popupshown"
+  );
+  // Need to dismiss the notification to clear the RecommendationMap
+  document.getElementById("contextual-feature-recommendation").click();
+  await showPanel;
+
+  const hidePanel = BrowserTestUtils.waitForEvent(
+    PopupNotifications.panel,
+    "popuphidden"
+  );
+  document
+    .getElementById("contextual-feature-recommendation-notification")
+    .button.click();
+  await hidePanel;
+});
+
+add_task(function test_updateCycleForProviders() {
+  Services.prefs
+    .getChildList("browser.newtabpage.activity-stream.asrouter.providers.")
+    .forEach(provider => {
+      const prefValue = JSON.parse(Services.prefs.getStringPref(provider, ""));
+      if (prefValue.type === "remote-settings") {
+        Assert.ok(prefValue.updateCycleInMs);
+      }
+    });
+});
+
+add_task(async function test_heartbeat_tactic_2() {
+  clearNotifications();
+  registerCleanupFunction(() => {
+    // Remove the tab opened by clicking the heartbeat message
+    gBrowser.removeCurrentTab();
+    clearNotifications();
+  });
+
+  const msg = CFRMessageProvider.getMessages().find(
+    m => m.id === "HEARTBEAT_TACTIC_2"
+  );
+  const shown = await CFRPageActions.addRecommendation(
+    gBrowser.selectedBrowser,
+    null,
+    {
+      ...msg,
+      id: `HEARTBEAT_MOCHITEST_${Date.now()}`,
+      groups: ["mochitest-group"],
+      targeting: true,
+    },
+    // Use the real AS dispatch method to trigger real notifications
+    ASRouter.dispatch
+  );
+
+  Assert.ok(shown, "Heartbeat CFR added");
+
+  // Wait for visibility change
+  BrowserTestUtils.waitForCondition(
+    () => document.getElementById("contextual-feature-recommendation"),
+    "Heartbeat button exists"
+  );
+
+  document.getElementById("contextual-feature-recommendation").click();
+
+  // This will fail if the URL from the message does not load
+  await BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    false,
+    Services.urlFormatter.formatURL(msg.content.action.url)
+  );
 });

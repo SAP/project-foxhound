@@ -4,7 +4,7 @@
 
 %include ../../../shared/incontentprefs/preferences.inc.css
 
-:root > * {
+body {
   font-size: 1.11em;
 }
 
@@ -14,6 +14,5 @@
 }
 
 .actionsMenu > .menulist-label-box > .menulist-icon {
-  margin-inline-start: 1px;
-  margin-inline-end: 8px;
+  margin-inline: 1px 8px;
 }

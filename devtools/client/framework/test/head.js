@@ -25,51 +25,29 @@ function toggleAllTools(state) {
   }
 }
 
-function getParentProcessActors(callback) {
-  const { DebuggerServer } = require("devtools/server/debugger-server");
-  const { DebuggerClient } = require("devtools/shared/client/debugger-client");
+async function getParentProcessActors(callback) {
+  const { DevToolsServer } = require("devtools/server/devtools-server");
+  const { DevToolsClient } = require("devtools/shared/client/devtools-client");
 
-  DebuggerServer.init();
-  DebuggerServer.registerAllActors();
-  DebuggerServer.allowChromeProcess = true;
-
-  const client = new DebuggerClient(DebuggerServer.connectPipe());
-  client
-    .connect()
-    .then(() => client.mainRoot.getMainProcess())
-    .then(front => {
-      callback(client, front);
-    });
+  DevToolsServer.init();
+  DevToolsServer.registerAllActors();
+  DevToolsServer.allowChromeProcess = true;
 
   SimpleTest.registerCleanupFunction(() => {
-    DebuggerServer.destroy();
+    DevToolsServer.destroy();
   });
+
+  const client = new DevToolsClient(DevToolsServer.connectPipe());
+  await client.connect();
+  const mainProcessDescriptor = await client.mainRoot.getMainProcess();
+  const mainProcessTargetFront = await mainProcessDescriptor.getTarget();
+
+  callback(client, mainProcessTargetFront);
 }
 
 function getSourceActor(aSources, aURL) {
   const item = aSources.getItemForAttachment(a => a.source.url === aURL);
   return item && item.value;
-}
-
-/**
- * Open a Scratchpad window.
- *
- * @return nsIDOMWindow
- *         The new window object that holds Scratchpad.
- */
-async function openScratchpadWindow() {
-  const win = ScratchpadManager.openScratchpad();
-
-  await once(win, "load");
-
-  return new Promise(resolve => {
-    win.Scratchpad.addObserver({
-      onReady: function() {
-        win.Scratchpad.removeObserver(this);
-        resolve(win);
-      },
-    });
-  });
 }
 
 /**
@@ -418,6 +396,16 @@ function getElementByToolIdOrExtensionIdOrSelector(toolbox, idOrSelector) {
   return tabEl ? tabEl : toolbox.doc.querySelector(idOrSelector);
 }
 
+/**
+ * Returns a toolbox tab element, even if it's overflowed
+ **/
+function getToolboxTab(doc, toolId) {
+  return (
+    doc.getElementById(`toolbox-tab-${toolId}`) ||
+    doc.getElementById(`tools-chevron-menupopup-${toolId}`)
+  );
+}
+
 function getWindow(toolbox) {
   return toolbox.topWindow;
 }
@@ -458,28 +446,6 @@ async function openAboutToolbox(params) {
     tab,
     document: browser.contentDocument,
   };
-}
-
-/**
- * Enable temporary preferences useful to run browser toolbox process tests.
- * Returns a promise that will resolve when the preferences are set.
- */
-function setupPreferencesForBrowserToolbox() {
-  const options = {
-    set: [
-      ["devtools.debugger.prompt-connection", false],
-      ["devtools.debugger.remote-enabled", true],
-      ["devtools.chrome.enabled", true],
-      // Test-only pref to allow passing `testScript` argument to the browser
-      // toolbox
-      ["devtools.browser-toolbox.allow-unsafe-script", true],
-      // On debug test runner, it takes more than the default time (20s)
-      // to get a initialized console
-      ["devtools.debugger.remote-timeout", 120000],
-    ],
-  };
-
-  return SpecialPowers.pushPrefEnv(options);
 }
 
 /**

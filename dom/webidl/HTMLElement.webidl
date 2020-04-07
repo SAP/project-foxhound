@@ -51,6 +51,8 @@ interface HTMLElement : Element {
   [CEReactions, SetterThrows, Pure]
            attribute boolean spellcheck;
 
+  attribute DOMString nonce;
+
   // command API
   //readonly attribute DOMString? commandType;
   //readonly attribute DOMString? commandLabel;
@@ -58,6 +60,10 @@ interface HTMLElement : Element {
   //readonly attribute boolean? commandHidden;
   //readonly attribute boolean? commandDisabled;
   //readonly attribute boolean? commandChecked;
+
+  // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-attachinternals
+  [Pref="dom.webcomponents.elementInternals.enabled", Throws]
+  ElementInternals attachInternals();
 };
 
 // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-htmlelement-interface

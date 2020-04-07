@@ -66,7 +66,7 @@ class RequestResolver final : public nsIQuotaCallback {
   NS_DECL_NSIQUOTACALLBACK
 
  private:
-  ~RequestResolver() {}
+  ~RequestResolver() = default;
 
   nsresult GetStorageEstimate(nsIVariant* aResult);
 
@@ -253,15 +253,15 @@ already_AddRefed<Promise> ExecuteOpOnMainOrWorkerThread(
       switch (aType) {
         case RequestResolver::Type::Persisted:
           promise->MaybeRejectWithTypeError(
-              u"persisted() called for opaque origin");
+              "persisted() called for opaque origin");
           break;
         case RequestResolver::Type::Persist:
           promise->MaybeRejectWithTypeError(
-              u"persist() called for opaque origin");
+              "persist() called for opaque origin");
           break;
         case RequestResolver::Type::Estimate:
           promise->MaybeRejectWithTypeError(
-              u"estimate() called for opaque origin");
+              "estimate() called for opaque origin");
           break;
       }
 
@@ -285,6 +285,8 @@ already_AddRefed<Promise> ExecuteOpOnMainOrWorkerThread(
 
         // In private browsing mode, no permission prompt.
         if (nsContentUtils::IsInPrivateBrowsing(doc)) {
+          aRv = request->Cancel();
+        } else if (!request->CheckPermissionDelegate()) {
           aRv = request->Cancel();
         } else {
           aRv = request->Start();
@@ -396,7 +398,7 @@ void RequestResolver::ResolveOrReject() {
       promise->MaybeResolve(mStorageEstimate);
     } else {
       promise->MaybeRejectWithTypeError(
-          u"Internal error while estimating storage usage");
+          "Internal error while estimating storage usage");
     }
 
     return;
@@ -686,7 +688,7 @@ StorageManager::StorageManager(nsIGlobalObject* aGlobal) : mOwner(aGlobal) {
   MOZ_ASSERT(aGlobal);
 }
 
-StorageManager::~StorageManager() {}
+StorageManager::~StorageManager() = default;
 
 already_AddRefed<Promise> StorageManager::Persisted(ErrorResult& aRv) {
   MOZ_ASSERT(mOwner);

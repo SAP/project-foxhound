@@ -8,30 +8,13 @@
 
 #include <utility>
 
-#include "nsAutoPtr.h"
-#include "nsContentUtils.h"
-#include "nsIConsoleReportCollector.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsINetworkInterceptController.h"
-#include "nsIOutputStream.h"
-#include "nsIScriptError.h"
-#include "nsITimedChannel.h"
-#include "mozilla/Encoding.h"
-#include "nsContentPolicyUtils.h"
-#include "nsContentUtils.h"
-#include "nsComponentManagerUtils.h"
-#include "nsServiceManagerUtils.h"
-#include "nsStreamUtils.h"
-#include "nsNetCID.h"
-#include "nsNetUtil.h"
-#include "nsSerializationHelper.h"
-#include "nsQueryObject.h"
 #include "ServiceWorker.h"
 #include "ServiceWorkerManager.h"
-
+#include "js/Conversions.h"
+#include "js/TypeDecls.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/LoadInfo.h"
-#include "mozilla/Move.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/BodyUtil.h"
 #include "mozilla/dom/Client.h"
@@ -43,15 +26,25 @@
 #include "mozilla/dom/PushMessageDataBinding.h"
 #include "mozilla/dom/PushUtil.h"
 #include "mozilla/dom/Request.h"
+#include "mozilla/dom/Response.h"
 #include "mozilla/dom/ServiceWorkerOp.h"
 #include "mozilla/dom/TypedArray.h"
-#include "mozilla/dom/Response.h"
-#include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerScope.h"
 #include "mozilla/net/NeckoChannelParams.h"
-
-#include "js/Conversions.h"
-#include "js/TypeDecls.h"
+#include "nsAutoPtr.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
+#include "nsIConsoleReportCollector.h"
+#include "nsINetworkInterceptController.h"
+#include "nsIScriptError.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "nsSerializationHelper.h"
+#include "nsServiceManagerUtils.h"
+#include "nsStreamUtils.h"
 #include "xpcpublic.h"
 
 using namespace mozilla;
@@ -125,10 +118,9 @@ FetchEvent::FetchEvent(EventTarget* aOwner)
     : ExtendableEvent(aOwner),
       mPreventDefaultLineNumber(0),
       mPreventDefaultColumnNumber(0),
-      mIsReload(false),
       mWaitToRespond(false) {}
 
-FetchEvent::~FetchEvent() {}
+FetchEvent::~FetchEvent() = default;
 
 void FetchEvent::PostInit(
     nsMainThreadPtrHandle<nsIInterceptedChannel>& aChannel,
@@ -161,7 +153,6 @@ already_AddRefed<FetchEvent> FetchEvent::Constructor(
   e->mRequest = aOptions.mRequest;
   e->mClientId = aOptions.mClientId;
   e->mResultingClientId = aOptions.mResultingClientId;
-  e->mIsReload = aOptions.mIsReload;
   return e.forget();
 }
 
@@ -218,7 +209,7 @@ class FinishResponse final : public Runnable {
 class BodyCopyHandle final : public nsIInterceptedBodyCallback {
   UniquePtr<RespondWithClosure> mClosure;
 
-  ~BodyCopyHandle() {}
+  ~BodyCopyHandle() = default;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -633,9 +624,8 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
 
   if (response->Type() == ResponseType::Opaque &&
       mRequestMode != RequestMode::No_cors) {
-    uint32_t mode = static_cast<uint32_t>(mRequestMode);
-    NS_ConvertASCIItoUTF16 modeString(RequestModeValues::strings[mode].value,
-                                      RequestModeValues::strings[mode].length);
+    NS_ConvertASCIItoUTF16 modeString(
+        RequestModeValues::GetString(mRequestMode));
 
     autoCancel.SetCancelMessage(
         NS_LITERAL_CSTRING("BadOpaqueInterceptionRequestModeWithURL"),
@@ -786,7 +776,7 @@ void RespondWithHandler::CancelRequest(nsresult aStatus) {
 }  // namespace
 
 void FetchEvent::RespondWith(JSContext* aCx, Promise& aArg, ErrorResult& aRv) {
-  if (EventPhase() == Event_Binding::NONE || mWaitToRespond) {
+  if (!GetDispatchFlag() || mWaitToRespond) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
@@ -881,7 +871,7 @@ class WaitUntilHandler final : public PromiseNativeHandler {
   uint32_t mColumn;
   nsString mRejectValue;
 
-  ~WaitUntilHandler() {}
+  ~WaitUntilHandler() = default;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -955,6 +945,27 @@ NS_IMPL_ISUPPORTS0(WaitUntilHandler)
 
 }  // anonymous namespace
 
+ExtendableEvent::ExtensionsHandler::~ExtensionsHandler() {
+  MOZ_ASSERT(!mExtendableEvent);
+}
+
+bool ExtendableEvent::ExtensionsHandler::GetDispatchFlag() const {
+  // mExtendableEvent should set itself as nullptr in its destructor, and we
+  // can't be dispatching an event that doesn't exist, so this should work for
+  // as long as it's not needed to determine whether the event is still alive,
+  // which seems unlikely.
+  if (!mExtendableEvent) {
+    return false;
+  }
+
+  return mExtendableEvent->GetDispatchFlag();
+}
+
+void ExtendableEvent::ExtensionsHandler::SetExtendableEvent(
+    const ExtendableEvent* const aExtendableEvent) {
+  mExtendableEvent = aExtendableEvent;
+}
+
 NS_IMPL_ADDREF_INHERITED(FetchEvent, ExtendableEvent)
 NS_IMPL_RELEASE_INHERITED(FetchEvent, ExtendableEvent)
 
@@ -980,6 +991,7 @@ void ExtendableEvent::SetKeepAliveHandler(
   MOZ_ASSERT(worker);
   worker->AssertIsOnWorkerThread();
   mExtensionsHandler = aExtensionsHandler;
+  mExtensionsHandler->SetExtendableEvent(this);
 }
 
 void ExtendableEvent::WaitUntil(JSContext* aCx, Promise& aPromise,
@@ -1055,7 +1067,7 @@ PushMessageData::PushMessageData(nsIGlobalObject* aOwner,
                                  nsTArray<uint8_t>&& aBytes)
     : mOwner(aOwner), mBytes(std::move(aBytes)) {}
 
-PushMessageData::~PushMessageData() {}
+PushMessageData::~PushMessageData() = default;
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(PushMessageData, mOwner)
 

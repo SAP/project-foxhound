@@ -14,6 +14,9 @@
  * @typedef {import("./@types/perf").PreferenceFront} PreferenceFront
  * @typedef {import("./@types/perf").PerformancePref} PerformancePref
  * @typedef {import("./@types/perf").RecordingStateFromPreferences} RecordingStateFromPreferences
+ * @typedef {import("./@types/perf").RestartBrowserWithEnvironmentVariable} RestartBrowserWithEnvironmentVariable
+ * @typedef {import("./@types/perf").GetEnvironmentVariable} GetEnvironmentVariable
+ * @typedef {import("./@types/perf").GetActiveBrowsingContextID} GetActiveBrowsingContextID
  */
 
 /**
@@ -40,6 +43,8 @@ const lazyServices = requireLazy(() =>
   require("resource://gre/modules/Services.jsm")
 );
 
+const lazyChrome = requireLazy(() => require("chrome"));
+
 const lazyOS = requireLazy(() => require("resource://gre/modules/osfile.jsm"));
 
 const lazyProfilerGetSymbols = requireLazy(() =>
@@ -58,7 +63,8 @@ const INTERVAL_PREF = "devtools.performance.recording.interval";
 const FEATURES_PREF = "devtools.performance.recording.features";
 /** @type {PerformancePref["Threads"]} */
 const THREADS_PREF = "devtools.performance.recording.threads";
-
+/** @type {PerformancePref["Preset"]} */
+const PRESET_PREF = "devtools.performance.recording.preset";
 /** @type {PerformancePref["ObjDirs"]} */
 const OBJDIRS_PREF = "devtools.performance.recording.objdirs";
 /** @type {PerformancePref["UIBaseUrl"]} */
@@ -97,7 +103,7 @@ function receiveProfile(profile, getSymbolTableCallback) {
     throw new Error("No browser window");
   }
   const browser = win.gBrowser;
-  Services.focus.activeWindow = win;
+  win.focus();
 
   // Allow the user to point to something other than profiler.firefox.com.
   const baseUrl = Services.prefs.getStringPref(
@@ -135,11 +141,13 @@ function receiveProfile(profile, getSymbolTableCallback) {
         });
       },
       error => {
+        // Re-wrap the error object into an object that is Structured Clone-able.
+        const { name, message, lineNumber, fileName } = error;
         mm.sendAsyncMessage(SYMBOL_TABLE_RESPONSE_EVENT, {
           status: "error",
           debugName,
           breakpadId,
-          error: `${error}`,
+          error: { name, message, lineNumber, fileName },
         });
       }
     );
@@ -152,7 +160,8 @@ function receiveProfile(profile, getSymbolTableCallback) {
  * function always returns a valid array of strings.
  * @param {PreferenceFront} preferenceFront
  * @param {string} prefName
- * @param {string[]} defaultValue
+ * @param {string[]} defaultValue Default value of the preference. We don't need
+ *   this value since Firefox 72, but we keep it to support older Firefox versions.
  */
 async function _getArrayOfStringsPref(preferenceFront, prefName, defaultValue) {
   let array;
@@ -180,7 +189,8 @@ async function _getArrayOfStringsPref(preferenceFront, prefName, defaultValue) {
  * even exists. Gracefully handle malformed data or missing data. Ensure that this
  * function always returns a valid array of strings.
  * @param {string} prefName
- * @param {string[]} defaultValue
+ * @param {string[]} defaultValue Default value of the preference. We don't need
+ *   this value since Firefox 72, but we keep it to support older Firefox versions.
  */
 async function _getArrayOfStringsHostPref(prefName, defaultValue) {
   const { Services } = lazyServices();
@@ -210,11 +220,29 @@ async function _getArrayOfStringsHostPref(prefName, defaultValue) {
  *
  * @param {PreferenceFront} preferenceFront
  * @param {string} prefName
- * @param {number} defaultValue
+ * @param {number} defaultValue Default value of the preference. We don't need
+ *   this value since Firefox 72, but we keep it to support older Firefox versions.
  */
 async function _getIntPref(preferenceFront, prefName, defaultValue) {
   try {
     return await preferenceFront.getIntPref(prefName);
+  } catch (error) {
+    return defaultValue;
+  }
+}
+
+/**
+ * Attempt to get a char preference value from the debuggee.
+ *
+ * @param {PreferenceFront} preferenceFront
+ * @param {string} prefName
+ * @param {string} defaultValue Default value of the preference. We don't need
+ *   this value since Firefox 72, but we keep it to support older Firefox versions.
+ * @returns Promise<string>
+ */
+async function _getCharPref(preferenceFront, prefName, defaultValue) {
+  try {
+    return await preferenceFront.getCharPref(prefName);
   } catch (error) {
     return defaultValue;
   }
@@ -227,37 +255,36 @@ async function _getIntPref(preferenceFront, prefName, defaultValue) {
  * different features or configurations.
  *
  * @param {PreferenceFront} preferenceFront
- * @param {RecordingStateFromPreferences} defaultPrefs
+ * @param {RecordingStateFromPreferences} defaultPrefs Default preference values.
+ *   We don't need this value since Firefox 72, but we keep it to support older
+ *   Firefox versions.
+ * @returns {Promise<RecordingStateFromPreferences>}
  */
 async function getRecordingPreferencesFromDebuggee(
   preferenceFront,
   defaultPrefs
 ) {
-  const [entries, interval, features, threads, objdirs] = await Promise.all([
-    _getIntPref(
-      preferenceFront,
-      `devtools.performance.recording.entries`,
-      defaultPrefs.entries
-    ),
-    _getIntPref(
-      preferenceFront,
-      `devtools.performance.recording.interval`,
-      defaultPrefs.interval
-    ),
+  const [
+    presetName,
+    entries,
+    interval,
+    features,
+    threads,
+    objdirs,
+  ] = await Promise.all([
+    _getCharPref(preferenceFront, PRESET_PREF, defaultPrefs.presetName),
+    _getIntPref(preferenceFront, ENTRIES_PREF, defaultPrefs.entries),
+    _getIntPref(preferenceFront, INTERVAL_PREF, defaultPrefs.interval),
     _getArrayOfStringsPref(
       preferenceFront,
-      `devtools.performance.recording.features`,
+      FEATURES_PREF,
       defaultPrefs.features
     ),
-    _getArrayOfStringsPref(
-      preferenceFront,
-      `devtools.performance.recording.threads`,
-      defaultPrefs.threads
-    ),
+    _getArrayOfStringsPref(preferenceFront, THREADS_PREF, defaultPrefs.threads),
     _getArrayOfStringsHostPref(OBJDIRS_PREF, defaultPrefs.objdirs),
   ]);
 
-  return { entries, interval, features, threads, objdirs };
+  return { presetName, entries, interval, features, threads, objdirs };
 }
 
 /**
@@ -486,9 +513,65 @@ function createMultiModalGetSymbolTableFn(profile, getObjdirs, perfFront) {
   };
 }
 
+/**
+ * Restarts the browser with a given environment variable set to a value.
+ *
+ * @type {RestartBrowserWithEnvironmentVariable}
+ */
+function restartBrowserWithEnvironmentVariable(envName, value) {
+  const { Services } = lazyServices();
+  const { Cc, Ci } = lazyChrome();
+  const env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
+  env.set(envName, value);
+
+  Services.startup.quit(
+    Services.startup.eForceQuit | Services.startup.eRestart
+  );
+}
+
+/**
+ * Gets an environment variable from the browser.
+ *
+ * @type {GetEnvironmentVariable}
+ */
+function getEnvironmentVariable(envName) {
+  const { Cc, Ci } = lazyChrome();
+  const env = Cc["@mozilla.org/process/environment;1"].getService(
+    Ci.nsIEnvironment
+  );
+  return env.get(envName);
+}
+
+/**
+ * @param {Window} window
+ * @param {string[]} objdirs
+ * @param {(objdirs: string[]) => unknown} changeObjdirs
+ */
+function openFilePickerForObjdir(window, objdirs, changeObjdirs) {
+  const { Cc, Ci } = lazyChrome();
+  const FilePicker = Cc["@mozilla.org/filepicker;1"].createInstance(
+    Ci.nsIFilePicker
+  );
+  FilePicker.init(window, "Pick build directory", FilePicker.modeGetFolder);
+  FilePicker.open(rv => {
+    if (rv == FilePicker.returnOK) {
+      const path = FilePicker.file.path;
+      if (path && !objdirs.includes(path)) {
+        const newObjdirs = [...objdirs, path];
+        changeObjdirs(newObjdirs);
+      }
+    }
+  });
+}
+
 module.exports = {
   receiveProfile,
   getRecordingPreferencesFromDebuggee,
   setRecordingPreferencesOnDebuggee,
   createMultiModalGetSymbolTableFn,
+  restartBrowserWithEnvironmentVariable,
+  getEnvironmentVariable,
+  openFilePickerForObjdir,
 };

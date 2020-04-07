@@ -4,7 +4,7 @@
 
 export const description = ``;
 import { attemptGarbageCollection } from '../../framework/collect_garbage.js';
-import { TestGroup } from '../../framework/index.js';
+import { TestGroup, raceWithRejectOnTimeout } from '../../framework/index.js';
 import { GPUTest } from './gpu_test.js';
 export const g = new TestGroup(GPUTest);
 g.test('initial/no descriptor', t => {
@@ -34,13 +34,20 @@ g.test('wait/equal to signaled', async t => {
   t.queue.signal(fence, 2);
   await fence.onCompletion(2);
   t.expect(fence.getCompletedValue() === 2);
-}); // Test it is illegal to wait on a value greater than the signaled value.
+}); // All promises resolve when signal is called once.
 
-g.test('wait/greater than signaled', async t => {
+g.test('wait/signaled once', async t => {
   const fence = t.queue.createFence();
-  t.queue.signal(fence, 2);
-  const promise = fence.onCompletion(3);
-  await t.shouldReject('OperationError', promise);
+  t.queue.signal(fence, 20);
+  const promises = [];
+
+  for (let i = 0; i <= 20; ++i) {
+    promises.push(fence.onCompletion(i).then(() => {
+      t.expect(fence.getCompletedValue() >= i);
+    }));
+  }
+
+  await Promise.all(promises);
 }); // Promise resolves when signal is called multiple times.
 
 g.test('wait/signaled multiple times', async t => {
@@ -64,19 +71,6 @@ g.test('wait/already completed', async t => {
   t.expect(fence.getCompletedValue() === 2);
   await fence.onCompletion(2);
   t.expect(fence.getCompletedValue() === 2);
-}); // Test it is illegal to wait on a fence without signaling the value.
-
-g.test('wait/without signal', async t => {
-  const fence = t.queue.createFence();
-  const promise = fence.onCompletion(2);
-  await t.shouldReject('OperationError', promise);
-}); // Test it is illegal to wait on a fence before it is signaled.
-
-g.test('wait/before signaled', async t => {
-  const fence = t.queue.createFence();
-  const promise = fence.onCompletion(2);
-  t.queue.signal(fence, 2);
-  await t.shouldReject('OperationError', promise);
 }); // Test many calls to signal and wait on fence values one at a time.
 
 g.test('wait/many/serially', async t => {
@@ -102,6 +96,15 @@ g.test('wait/many/parallel', async t => {
 
   await Promise.all(promises);
   t.expect(fence.getCompletedValue() === 20);
+}); // Test onCompletion promise resolves within a time limit.
+
+g.test('wait/resolves within timeout', t => {
+  const fence = t.queue.createFence();
+  t.queue.signal(fence, 2);
+  return raceWithRejectOnTimeout((async () => {
+    await fence.onCompletion(2);
+    t.expect(fence.getCompletedValue() === 2);
+  })(), 100, 'The fence has not been resolved within time limit.');
 }); // Test dropping references to the fence and onCompletion promise does not crash.
 
 g.test('drop/fence and promise', t => {

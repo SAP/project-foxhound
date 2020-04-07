@@ -13,6 +13,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLLinkElementBinding.h"
@@ -26,7 +27,6 @@
 #include "nsINode.h"
 #include "nsIPrefetchService.h"
 #include "nsIStyleSheetLinkingElement.h"
-#include "nsIURL.h"
 #include "nsPIDOMWindow.h"
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
@@ -67,7 +67,7 @@ HTMLLinkElement::HTMLLinkElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)), Link(this) {}
 
-HTMLLinkElement::~HTMLLinkElement() {}
+HTMLLinkElement::~HTMLLinkElement() = default;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLLinkElement)
 
@@ -395,16 +395,32 @@ void HTMLLinkElement::GetLinkTarget(nsAString& aTarget) {
 }
 
 static const DOMTokenListSupportedToken sSupportedRelValues[] = {
-    // Keep this in sync with ToLinkMask in nsStyleLinkElement.cpp.
+    // Keep this and the one below in sync with ToLinkMask in
+    // nsStyleLinkElement.cpp.
     // "preload" must come first because it can be disabled.
     "preload",   "prefetch",   "dns-prefetch", "stylesheet", "next",
     "alternate", "preconnect", "icon",         "search",     nullptr};
 
+static const DOMTokenListSupportedToken sSupportedRelValuesWithManifest[] = {
+    // Keep this in sync with ToLinkMask in nsStyleLinkElement.cpp.
+    // "preload" and "manifest" must come first because they can be disabled.
+    "preload",   "manifest",   "prefetch", "dns-prefetch", "stylesheet", "next",
+    "alternate", "preconnect", "icon",     "search",       nullptr};
+
 nsDOMTokenList* HTMLLinkElement::RelList() {
   if (!mRelList) {
-    if (Preferences::GetBool("network.preload")) {
+    auto preload = Preferences::GetBool("network.preload") ||
+                   StaticPrefs::network_preload_experimental();
+    auto manifest = StaticPrefs::dom_manifest_enabled();
+    if (manifest && preload) {
+      mRelList = new nsDOMTokenList(this, nsGkAtoms::rel,
+                                    sSupportedRelValuesWithManifest);
+    } else if (manifest && !preload) {
+      mRelList = new nsDOMTokenList(this, nsGkAtoms::rel,
+                                    &sSupportedRelValuesWithManifest[1]);
+    } else if (!manifest && preload) {
       mRelList = new nsDOMTokenList(this, nsGkAtoms::rel, sSupportedRelValues);
-    } else {
+    } else {  // both false...drop preload
       mRelList =
           new nsDOMTokenList(this, nsGkAtoms::rel, &sSupportedRelValues[1]);
     }
@@ -424,7 +440,7 @@ Maybe<nsStyleLinkElement::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
     return Nothing();
   }
 
-  if (!IsCSSMimeTypeAttribute(*this)) {
+  if (!IsCSSMimeTypeAttributeForLinkElement(*this)) {
     return Nothing();
   }
 
@@ -448,10 +464,20 @@ Maybe<nsStyleLinkElement::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
     return Nothing();
   }
 
+  nsAutoString integrity;
+  GetAttr(kNameSpaceID_None, nsGkAtoms::integrity, integrity);
+
   nsCOMPtr<nsIURI> uri = Link::GetURI();
   nsCOMPtr<nsIPrincipal> prin = mTriggeringPrincipal;
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
   referrerInfo->InitWithNode(this);
+
+  nsAutoString nonce;
+  nsString* cspNonce = static_cast<nsString*>(GetProperty(nsGkAtoms::nonce));
+  if (cspNonce) {
+    nonce = *cspNonce;
+  }
+
   return Some(SheetInfo{
       *OwnerDoc(),
       this,
@@ -461,6 +487,8 @@ Maybe<nsStyleLinkElement::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
       GetCORSMode(),
       title,
       media,
+      integrity,
+      nonce,
       alternate ? HasAlternateRel::Yes : HasAlternateRel::No,
       IsInline::No,
       mExplicitlyEnabled ? IsExplicitlyEnabled::Yes : IsExplicitlyEnabled::No,
@@ -849,6 +877,19 @@ bool HTMLLinkElement::CheckPreloadAttrs(const nsAttrValue& aAs,
     }
   }
   return false;
+}
+
+bool HTMLLinkElement::IsCSSMimeTypeAttributeForLinkElement(
+    const Element& aSelf) {
+  // Processing the type attribute per
+  // https://html.spec.whatwg.org/multipage/semantics.html#processing-the-type-attribute
+  // for HTML link elements.
+  nsAutoString type;
+  nsAutoString mimeType;
+  nsAutoString notUsed;
+  aSelf.GetAttr(kNameSpaceID_None, nsGkAtoms::type, type);
+  nsContentUtils::SplitMimeType(type, mimeType, notUsed);
+  return mimeType.IsEmpty() || mimeType.LowerCaseEqualsLiteral("text/css");
 }
 
 }  // namespace dom

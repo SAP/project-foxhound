@@ -245,9 +245,7 @@ var gHomePane = {
           element.getAttribute("data-preference-related");
         if (!pref) {
           throw new Error(
-            `Element with id ${
-              element.id
-            } did not have preference or data-preference-related attribute defined.`
+            `Element with id ${element.id} did not have preference or data-preference-related attribute defined.`
           );
         }
 
@@ -396,7 +394,7 @@ var gHomePane = {
   setHomePageToBookmark() {
     const rv = { urls: null, names: null };
     gSubDialog.open(
-      "chrome://browser/content/preferences/selectBookmark.xul",
+      "chrome://browser/content/preferences/selectBookmark.xhtml",
       "resizable=yes, modal=yes",
       rv,
       this._setHomePageToBookmarkClosed.bind(this, rv)

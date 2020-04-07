@@ -11,15 +11,16 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/GuardObjects.h"
 #include "mozilla/LinkedList.h"
-#include "mozilla/Move.h"
 #include "mozilla/TypeTraits.h"
 
 #include <type_traits>
+#include <utility>
 
 #include "jspubtd.h"
 
 #include "js/GCAnnotations.h"
 #include "js/GCPolicyAPI.h"
+#include "js/GCTypeMacros.h"  // JS_FOR_EACH_PUBLIC_{,TAGGED_}GC_POINTER_TYPE
 #include "js/HeapAPI.h"
 #include "js/ProfilingStack.h"
 #include "js/Realm.h"
@@ -145,18 +146,12 @@ struct IsHeapConstructibleType {
   struct IsHeapConstructibleType<T> {         \
     static constexpr bool value = true;       \
   };
-FOR_EACH_PUBLIC_GC_POINTER_TYPE(DECLARE_IS_HEAP_CONSTRUCTIBLE_TYPE)
-FOR_EACH_PUBLIC_TAGGED_GC_POINTER_TYPE(DECLARE_IS_HEAP_CONSTRUCTIBLE_TYPE)
+JS_FOR_EACH_PUBLIC_GC_POINTER_TYPE(DECLARE_IS_HEAP_CONSTRUCTIBLE_TYPE)
+JS_FOR_EACH_PUBLIC_TAGGED_GC_POINTER_TYPE(DECLARE_IS_HEAP_CONSTRUCTIBLE_TYPE)
 #undef DECLARE_IS_HEAP_CONSTRUCTIBLE_TYPE
 
 template <typename T, typename Wrapper>
 class PersistentRootedBase : public MutableWrappedPtrOperations<T, Wrapper> {};
-
-template <typename T>
-class FakeRooted;
-
-template <typename T>
-class FakeMutableHandle;
 
 namespace gc {
 struct Cell;
@@ -213,10 +208,15 @@ JS_FRIEND_API void HeapObjectPostWriteBarrier(JSObject** objp, JSObject* prev,
                                               JSObject* next);
 JS_FRIEND_API void HeapStringPostWriteBarrier(JSString** objp, JSString* prev,
                                               JSString* next);
+JS_FRIEND_API void HeapBigIntPostWriteBarrier(JS::BigInt** bip,
+                                              JS::BigInt* prev,
+                                              JS::BigInt* next);
 JS_FRIEND_API void HeapObjectWriteBarriers(JSObject** objp, JSObject* prev,
                                            JSObject* next);
 JS_FRIEND_API void HeapStringWriteBarriers(JSString** objp, JSString* prev,
                                            JSString* next);
+JS_FRIEND_API void HeapBigIntWriteBarriers(JS::BigInt** bip, JS::BigInt* prev,
+                                           JS::BigInt* next);
 JS_FRIEND_API void HeapScriptWriteBarriers(JSScript** objp, JSScript* prev,
                                            JSScript* next);
 
@@ -320,7 +320,13 @@ class MOZ_NON_MEMMOVABLE Heap : public js::HeapBase<T, Heap<T>> {
    * that will be used for both lvalue and rvalue copies, so we can simply
    * omit the rvalue variant.
    */
-  explicit Heap(const Heap<T>& p) { init(p.ptr); }
+  explicit Heap(const Heap<T>& other) { init(other.ptr); }
+
+  Heap& operator=(Heap<T>&& other) {
+    set(other.unbarrieredGet());
+    other.set(SafelyInitialized<T>());
+    return *this;
+  }
 
   ~Heap() { postWriteBarrier(ptr, SafelyInitialized<T>()); }
 
@@ -335,6 +341,12 @@ class MOZ_NON_MEMMOVABLE Heap : public js::HeapBase<T, Heap<T>> {
     return ptr;
   }
   const T& unbarrieredGet() const { return ptr; }
+
+  void set(const T& newPtr) {
+    T tmp = ptr;
+    ptr = newPtr;
+    postWriteBarrier(tmp, ptr);
+  }
 
   T* unsafeGet() { return &ptr; }
 
@@ -351,12 +363,6 @@ class MOZ_NON_MEMMOVABLE Heap : public js::HeapBase<T, Heap<T>> {
   void init(const T& newPtr) {
     ptr = newPtr;
     postWriteBarrier(SafelyInitialized<T>(), ptr);
-  }
-
-  void set(const T& newPtr) {
-    T tmp = ptr;
-    ptr = newPtr;
-    postWriteBarrier(tmp, ptr);
   }
 
   void postWriteBarrier(const T& prev, const T& next) {
@@ -518,6 +524,22 @@ class TenuredHeap : public js::HeapBase<T, TenuredHeap<T>> {
 
   uintptr_t bits;
 };
+
+// std::swap uses a stack temporary, which prevents classes like Heap<T>
+// from being declared MOZ_HEAP_CLASS.
+template <typename T>
+void swap(TenuredHeap<T>& aX, TenuredHeap<T>& aY) {
+  T tmp = aX;
+  aX = aY;
+  aY = tmp;
+}
+
+template <typename T>
+void swap(Heap<T>& aX, Heap<T>& aY) {
+  T tmp = aX;
+  aX = aY;
+  aY = tmp;
+}
 
 static MOZ_ALWAYS_INLINE bool ObjectIsMarkedGray(
     const JS::TenuredHeap<JSObject*>& obj) {
@@ -744,6 +766,15 @@ struct BarrierMethods<JSString*>
   }
 };
 
+template <>
+struct BarrierMethods<JS::BigInt*>
+    : public detail::PtrBarrierMethodsBase<JS::BigInt> {
+  static void postWriteBarrier(JS::BigInt** vp, JS::BigInt* prev,
+                               JS::BigInt* next) {
+    JS::HeapBigIntPostWriteBarrier(vp, prev, next);
+  }
+};
+
 // Provide hash codes for Cell kinds that may be relocated and, thus, not have
 // a stable address to use as the base for a hash code. Instead of the address,
 // this hasher uses Cell::getUniqueId to provide exact matches and as a base
@@ -916,12 +947,11 @@ class RootingContext {
 class JS_PUBLIC_API AutoGCRooter {
  protected:
   enum class Tag : uint8_t {
-    Array,      /* js::AutoArrayRooter */
-    ValueArray, /* js::AutoValueArray */
-    Parser,     /* js::frontend::Parser */
-#if defined(JS_BUILD_BINAST)
-    BinASTParser,  /* js::frontend::BinASTParser */
-#endif             // defined(JS_BUILD_BINAST)
+    Array,         /* js::AutoArrayRooter */
+    ValueArray,    /* js::AutoValueArray */
+    Parser,        /* js::frontend::Parser */
+    BinASTParser,  /* js::frontend::BinASTParser; only used if built with
+                    * JS_BUILD_BINAST support */
     WrapperVector, /* js::AutoWrapperVector */
     Wrapper,       /* js::AutoWrapperRooter */
     Custom         /* js::CustomAutoRooter */
@@ -1157,38 +1187,6 @@ class HandleBase<JSObject*, Container>
   JS::Handle<U*> as() const;
 };
 
-/**
- * Types for a variable that either should or shouldn't be rooted, depending on
- * the template parameter allowGC. Used for implementing functions that can
- * operate on either rooted or unrooted data.
- *
- * The toHandle() and toMutableHandle() functions are for calling functions
- * which require handle types and are only called in the CanGC case. These
- * allow the calling code to type check.
- */
-enum AllowGC { NoGC = 0, CanGC = 1 };
-template <typename T, AllowGC allowGC>
-class MaybeRooted {};
-
-template <typename T>
-class MaybeRooted<T, CanGC> {
- public:
-  typedef JS::Handle<T> HandleType;
-  typedef JS::Rooted<T> RootType;
-  typedef JS::MutableHandle<T> MutableHandleType;
-
-  static inline JS::Handle<T> toHandle(HandleType v) { return v; }
-
-  static inline JS::MutableHandle<T> toMutableHandle(MutableHandleType v) {
-    return v;
-  }
-
-  template <typename T2>
-  static inline JS::Handle<T2*> downcastHandle(HandleType v) {
-    return v.template as<T2>();
-  }
-};
-
 } /* namespace js */
 
 namespace JS {
@@ -1381,13 +1379,13 @@ class PersistentRooted
     return ptr;
   }
 
- private:
   template <typename U>
   void set(U&& value) {
     MOZ_ASSERT(initialized());
     ptr = std::forward<U>(value);
   }
 
+ private:
   detail::MaybeWrapped<T> ptr;
 } JS_HAZ_ROOTED;
 
@@ -1436,29 +1434,7 @@ void CallTraceCallbackOnNonHeap(T* v, const TraceCallbacks& aCallbacks,
 }
 
 } /* namespace gc */
-} /* namespace js */
 
-// mozilla::Swap uses a stack temporary, which prevents classes like Heap<T>
-// from being declared MOZ_HEAP_CLASS.
-namespace mozilla {
-
-template <typename T>
-inline void Swap(JS::Heap<T>& aX, JS::Heap<T>& aY) {
-  T tmp = aX;
-  aX = aY;
-  aY = tmp;
-}
-
-template <typename T>
-inline void Swap(JS::TenuredHeap<T>& aX, JS::TenuredHeap<T>& aY) {
-  T tmp = aX;
-  aX = aY;
-  aY = tmp;
-}
-
-} /* namespace mozilla */
-
-namespace js {
 namespace detail {
 
 // DefineComparisonOps is a trait which selects which wrapper classes to define
@@ -1503,16 +1479,6 @@ struct DefineComparisonOps<JS::MutableHandle<T>> : mozilla::TrueType {
 template <typename T>
 struct DefineComparisonOps<JS::PersistentRooted<T>> : mozilla::TrueType {
   static const T& get(const JS::PersistentRooted<T>& v) { return v.get(); }
-};
-
-template <typename T>
-struct DefineComparisonOps<js::FakeRooted<T>> : mozilla::TrueType {
-  static const T& get(const js::FakeRooted<T>& v) { return v.get(); }
-};
-
-template <typename T>
-struct DefineComparisonOps<js::FakeMutableHandle<T>> : mozilla::TrueType {
-  static const T& get(const js::FakeMutableHandle<T>& v) { return v.get(); }
 };
 
 } /* namespace detail */

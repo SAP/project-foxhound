@@ -26,7 +26,7 @@ nsFont::nsFont(StyleGenericFontFamily aGenericType, nscoord aSize)
 
 nsFont::nsFont(const nsFont& aOther) = default;
 
-nsFont::~nsFont() {}
+nsFont::~nsFont() = default;
 
 bool nsFont::Equals(const nsFont& aOther) const {
   return CalcDifference(aOther) == MaxDifference::eNone;
@@ -246,6 +246,15 @@ void nsFont::AddFontFeaturesToStyle(gfxFontStyle* aStyle,
   aStyle->noFallbackVariantFeatures =
       (aStyle->variantCaps == NS_FONT_VARIANT_CAPS_NORMAL) &&
       (variantPosition == NS_FONT_VARIANT_POSITION_NORMAL);
+
+  // If the feature list is not empty, we insert a "fake" feature with tag=0
+  // as delimiter between the above "high-level" features from font-variant-*
+  // etc and those coming from the low-level font-feature-settings property.
+  // This will allow us to distinguish high- and low-level settings when it
+  // comes to potentially disabling ligatures because of letter-spacing.
+  if (!aStyle->featureSettings.IsEmpty() || !fontFeatureSettings.IsEmpty()) {
+    aStyle->featureSettings.AppendElement(gfxFontFeature{0, 0});
+  }
 
   // add in features from font-feature-settings
   aStyle->featureSettings.AppendElements(fontFeatureSettings);

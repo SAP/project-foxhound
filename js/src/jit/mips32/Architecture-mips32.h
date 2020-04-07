@@ -25,7 +25,7 @@ static const uint32_t ShadowStackSpace = 4 * sizeof(uintptr_t);
 // These offsets are specific to nunboxing, and capture offsets into the
 // components of a js::Value.
 // Size of MIPS32 general purpose registers is 32 bits.
-#if MOZ_LITTLE_ENDIAN
+#if MOZ_LITTLE_ENDIAN()
 static const int32_t NUNBOX32_TYPE_OFFSET = 4;
 static const int32_t NUNBOX32_PAYLOAD_OFFSET = 0;
 #else
@@ -137,6 +137,7 @@ class FloatRegister : public FloatRegisterMIPSShared {
 
   bool isSingle() const { return kind_ == Single; }
   bool isDouble() const { return kind_ == Double; }
+  bool isInvalid() const { return code_ == FloatRegisters::invalid_freg; }
 
   FloatRegister doubleOverlay() const;
   FloatRegister singleOverlay() const;

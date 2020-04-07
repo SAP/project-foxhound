@@ -25,14 +25,18 @@ const testDevice = {
 // Add the new device to the list
 addDeviceForTest(testDevice);
 
-addRDMTask(TEST_URL, async function({ ui, manager }) {
-  await waitStartup(ui);
+addRDMTask(
+  TEST_URL,
+  async function({ ui, manager }) {
+    await waitStartup(ui);
 
-  await testDefaults(ui);
-  await testChangingDevice(ui);
-  await testResetWhenResizingViewport(ui);
-  await testChangingDevicePixelRatio(ui);
-});
+    await testDefaults(ui);
+    await testChangingDevice(ui);
+    await testResetWhenResizingViewport(ui);
+    await testChangingDevicePixelRatio(ui);
+  },
+  { usingBrowserUI: true, waitForDeviceList: true }
+);
 
 async function waitStartup(ui) {
   const { store } = ui.toolWindow;
@@ -133,7 +137,7 @@ function testViewportDevicePixelRatioSelect(ui, expected) {
 }
 
 function waitForDevicePixelRatio(ui, expected) {
-  return ContentTask.spawn(ui.getViewportBrowser(), { expected }, function(
+  return SpecialPowers.spawn(ui.getViewportBrowser(), [{ expected }], function(
     args
   ) {
     const initial = content.devicePixelRatio;

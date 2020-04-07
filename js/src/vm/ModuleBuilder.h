@@ -9,6 +9,7 @@
 
 #include "mozilla/Attributes.h"  // MOZ_STACK_CLASS
 
+#include "jstypes.h"               // JS_PUBLIC_API
 #include "builtin/ModuleObject.h"  // js::{{Im,Ex}portEntry,Requested{Module,}}Object
 #include "frontend/EitherParser.h"  // js::frontend::EitherParser
 #include "js/GCHashTable.h"         // JS::GCHash{Map,Set}
@@ -16,8 +17,8 @@
 #include "js/RootingAPI.h"          // JS::{Handle,Rooted}
 #include "vm/AtomsTable.h"          // js::AtomSet
 
-struct JSContext;
-class JSAtom;
+struct JS_PUBLIC_API JSContext;
+class JS_PUBLIC_API JSAtom;
 
 namespace js {
 
@@ -32,14 +33,13 @@ class ParseNode;
 // Process a module's parse tree to collate the import and export data used when
 // creating a ModuleObject.
 class MOZ_STACK_CLASS ModuleBuilder {
-  explicit ModuleBuilder(JSContext* cx, JS::Handle<ModuleObject*> module,
+  explicit ModuleBuilder(JSContext* cx,
                          const frontend::EitherParser& eitherParser);
 
  public:
   template <class Parser>
-  explicit ModuleBuilder(JSContext* cx, JS::Handle<ModuleObject*> module,
-                         Parser* parser)
-      : ModuleBuilder(cx, module, frontend::EitherParser(parser)) {}
+  explicit ModuleBuilder(JSContext* cx, Parser* parser)
+      : ModuleBuilder(cx, frontend::EitherParser(parser)) {}
 
   bool processImport(frontend::BinaryNode* importNode);
   bool processExport(frontend::ParseNode* exportNode);
@@ -53,7 +53,7 @@ class MOZ_STACK_CLASS ModuleBuilder {
   }
 
   bool buildTables();
-  bool initModule();
+  bool initModule(JS::Handle<ModuleObject*> module);
 
  private:
   using RequestedModuleVector = JS::GCVector<RequestedModuleObject*>;
@@ -65,7 +65,6 @@ class MOZ_STACK_CLASS ModuleBuilder {
   using RootedImportEntryMap = JS::Rooted<ImportEntryMap>;
 
   JSContext* cx_;
-  JS::Rooted<ModuleObject*> module_;
   frontend::EitherParser eitherParser_;
   RootedAtomSet requestedModuleSpecifiers_;
   RootedRequestedModuleVector requestedModules_;
@@ -98,11 +97,14 @@ class MOZ_STACK_CLASS ModuleBuilder {
   bool maybeAppendRequestedModule(JS::Handle<JSAtom*> specifier,
                                   frontend::ParseNode* node);
 
-  template <typename T>
-  ArrayObject* createArray(const JS::Rooted<JS::GCVector<T>>& vector);
   template <typename K, typename V>
-  ArrayObject* createArray(const JS::Rooted<JS::GCHashMap<K, V>>& map);
+  ArrayObject* createArrayFromHashMap(
+      const JS::Rooted<JS::GCHashMap<K, V>>& map);
 };
+
+template <typename T>
+ArrayObject* CreateArray(JSContext* cx,
+                         const JS::Rooted<JS::GCVector<T>>& vector);
 
 }  // namespace js
 

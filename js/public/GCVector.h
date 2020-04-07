@@ -78,6 +78,17 @@ class GCVector {
     return vector.append(std::forward<U>(item));
   }
 
+  void erase(T* it) { vector.erase(it); }
+  void erase(T* begin, T* end) { vector.erase(begin, end); }
+  template <typename Pred>
+  void eraseIf(Pred pred) {
+    vector.eraseIf(pred);
+  }
+  template <typename U>
+  void eraseIfEqual(const U& u) {
+    vector.eraseIfEqual(u);
+  }
+
   template <typename... Args>
   MOZ_MUST_USE bool emplaceBack(Args&&... args) {
     return vector.emplaceBack(std::forward<Args>(args)...);
@@ -137,19 +148,20 @@ class GCVector {
   bool needsSweep() const { return !this->empty(); }
 
   void sweep() {
-    uint32_t src, dst = 0;
-    for (src = 0; src < length(); src++) {
-      if (!GCPolicy<T>::needsSweep(&vector[src])) {
-        if (dst != src) {
-          vector[dst] = vector[src].unbarrieredGet();
+    T* src = begin();
+    T* dst = begin();
+    while (src != end()) {
+      if (!GCPolicy<T>::needsSweep(src)) {
+        if (src != dst) {
+          *dst = std::move(*src);
         }
         dst++;
       }
+      src++;
     }
 
-    if (dst != length()) {
-      vector.shrinkTo(dst);
-    }
+    MOZ_ASSERT(dst <= end());
+    shrinkBy(end() - dst);
   }
 };
 
@@ -279,6 +291,14 @@ class MutableWrappedPtrOperations<JS::GCVector<T, Capacity, AllocPolicy>,
   }
   void erase(T* aT) { vec().erase(aT); }
   void erase(T* aBegin, T* aEnd) { vec().erase(aBegin, aEnd); }
+  template <typename Pred>
+  void eraseIf(Pred pred) {
+    vec().eraseIf(pred);
+  }
+  template <typename U>
+  void eraseIfEqual(const U& u) {
+    vec().eraseIfEqual(u);
+  }
 };
 
 template <typename Wrapper, typename T, typename AllocPolicy>

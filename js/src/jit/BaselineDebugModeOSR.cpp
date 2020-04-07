@@ -53,7 +53,7 @@ struct DebugModeOSREntry {
   }
 };
 
-typedef Vector<DebugModeOSREntry> DebugModeOSREntryVector;
+using DebugModeOSREntryVector = Vector<DebugModeOSREntry>;
 
 class UniqueScriptOSREntryIter {
   const DebugModeOSREntryVector& entries_;
@@ -182,6 +182,8 @@ static const char* RetAddrEntryKindToString(RetAddrEntry::Kind kind) {
       return "warmup counter";
     case RetAddrEntry::Kind::StackCheck:
       return "stack check";
+    case RetAddrEntry::Kind::InterruptCheck:
+      return "interrupt check";
     case RetAddrEntry::Kind::DebugTrap:
       return "debug trap";
     case RetAddrEntry::Kind::DebugPrologue:
@@ -205,7 +207,7 @@ static void SpewPatchBaselineFrame(const uint8_t* oldReturnAddress,
           "Patch return %p -> %p on BaselineJS frame (%s:%u:%u) from %s at %s",
           oldReturnAddress, newReturnAddress, script->filename(),
           script->lineno(), script->column(),
-          RetAddrEntryKindToString(frameKind), CodeName[(JSOp)*pc]);
+          RetAddrEntryKindToString(frameKind), CodeName(JSOp(*pc)));
 }
 
 static void PatchBaselineFramesForDebugMode(
@@ -230,7 +232,7 @@ static void PatchBaselineFramesForDebugMode(
   //  E. From the debug trap handler.
   //  F. From the debug prologue.
   //  G. From the debug epilogue.
-  //  H. From a JSOP_AFTERYIELD instruction.
+  //  H. From a JSOp::AfterYield instruction.
   //
   // In general, we patch the return address from VM calls and ICs to the
   // corresponding entry in the recompiled BaselineScript. For entries that are
@@ -284,6 +286,7 @@ static void PatchBaselineFramesForDebugMode(
         switch (kind) {
           case RetAddrEntry::Kind::IC:
           case RetAddrEntry::Kind::CallVM:
+          case RetAddrEntry::Kind::InterruptCheck:
           case RetAddrEntry::Kind::WarmupCounter:
           case RetAddrEntry::Kind::StackCheck: {
             // Cases A, B, C, D above.
@@ -298,6 +301,7 @@ static void PatchBaselineFramesForDebugMode(
             switch (kind) {
               case RetAddrEntry::Kind::IC:
               case RetAddrEntry::Kind::CallVM:
+              case RetAddrEntry::Kind::InterruptCheck:
                 retAddrEntry = &bl->retAddrEntryFromPCOffset(pcOffset, kind);
                 break;
               case RetAddrEntry::Kind::WarmupCounter:
@@ -515,7 +519,7 @@ bool jit::RecompileOnStackBaselineScriptsForDebugMode(
       return false;
     }
   } else {
-    typedef DebugAPI::ExecutionObservableSet::ZoneRange ZoneRange;
+    using ZoneRange = DebugAPI::ExecutionObservableSet::ZoneRange;
     for (ZoneRange r = obs.zones()->all(); !r.empty(); r.popFront()) {
       if (!InvalidateScriptsInZone(cx, r.front(), entries)) {
         return false;

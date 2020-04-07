@@ -72,9 +72,6 @@
 
 using namespace js;
 
-const JSClass AtomicsObject::class_ = {
-    "Atomics", JSCLASS_HAS_CACHED_PROTO(JSProto_Atomics)};
-
 static bool ReportBadArrayType(JSContext* cx) {
   JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                             JSMSG_ATOMICS_BAD_ARRAY);
@@ -88,7 +85,7 @@ static bool ReportOutOfRange(JSContext* cx) {
   return false;
 }
 
-static bool GetSharedTypedArray(JSContext* cx, HandleValue v,
+static bool GetSharedTypedArray(JSContext* cx, HandleValue v, bool waitable,
                                 MutableHandle<TypedArrayObject*> viewp) {
   if (!v.isObject()) {
     return ReportBadArrayType(cx);
@@ -99,6 +96,29 @@ static bool GetSharedTypedArray(JSContext* cx, HandleValue v,
   viewp.set(&v.toObject().as<TypedArrayObject>());
   if (!viewp->isSharedMemory()) {
     return ReportBadArrayType(cx);
+  }
+  if (waitable) {
+    switch (viewp->type()) {
+      case Scalar::Int32:
+      case Scalar::BigInt64:
+        break;
+      default:
+        return ReportBadArrayType(cx);
+    }
+  } else {
+    switch (viewp->type()) {
+      case Scalar::Int8:
+      case Scalar::Uint8:
+      case Scalar::Int16:
+      case Scalar::Uint16:
+      case Scalar::Int32:
+      case Scalar::Uint32:
+      case Scalar::BigInt64:
+      case Scalar::BigUint64:
+        break;
+      default:
+        return ReportBadArrayType(cx);
+    }
   }
   return true;
 }
@@ -216,7 +236,7 @@ struct ArrayOps<uint64_t> {
 template <template <typename> class F, typename... Args>
 bool perform(JSContext* cx, HandleValue objv, HandleValue idxv, Args... args) {
   Rooted<TypedArrayObject*> view(cx, nullptr);
-  if (!GetSharedTypedArray(cx, objv, &view)) {
+  if (!GetSharedTypedArray(cx, objv, false, &view)) {
     return false;
   }
   uint32_t offset;
@@ -237,14 +257,13 @@ bool perform(JSContext* cx, HandleValue objv, HandleValue idxv, Args... args) {
       return F<int32_t>::run(cx, viewData.cast<int32_t*>() + offset, args...);
     case Scalar::Uint32:
       return F<uint32_t>::run(cx, viewData.cast<uint32_t*>() + offset, args...);
-    case Scalar::Float32:
-    case Scalar::Float64:
-    case Scalar::Uint8Clamped:
-      return ReportBadArrayType(cx);
     case Scalar::BigInt64:
       return F<int64_t>::run(cx, viewData.cast<int64_t*>() + offset, args...);
     case Scalar::BigUint64:
       return F<uint64_t>::run(cx, viewData.cast<uint64_t*>() + offset, args...);
+    case Scalar::Float32:
+    case Scalar::Float64:
+    case Scalar::Uint8Clamped:
     case Scalar::MaxTypedArrayViewType:
     case Scalar::Int64:
       break;
@@ -443,7 +462,7 @@ bool js::atomics_isLockFree(JSContext* cx, unsigned argc, Value* vp) {
     if (!ToInteger(cx, v, &dsize)) {
       return false;
     }
-    if (!mozilla::NumberIsInt32(dsize, &size)) {
+    if (!mozilla::NumberEqualsInt32(dsize, &size)) {
       args.rval().setBoolean(false);
       return true;
     }
@@ -614,13 +633,10 @@ bool js::atomics_wait(JSContext* cx, unsigned argc, Value* vp) {
   MutableHandleValue r = args.rval();
 
   Rooted<TypedArrayObject*> view(cx, nullptr);
-  if (!GetSharedTypedArray(cx, objv, &view)) {
+  if (!GetSharedTypedArray(cx, objv, true, &view)) {
     return false;
   }
-
-  if (view->type() != Scalar::Int32 && view->type() != Scalar::BigInt64) {
-    return ReportBadArrayType(cx);
-  }
+  MOZ_ASSERT(view->type() == Scalar::Int32 || view->type() == Scalar::BigInt64);
 
   uint32_t offset;
   if (!GetTypedArrayIndex(cx, idxv, view, &offset)) {
@@ -686,12 +702,10 @@ bool js::atomics_notify(JSContext* cx, unsigned argc, Value* vp) {
   MutableHandleValue r = args.rval();
 
   Rooted<TypedArrayObject*> view(cx, nullptr);
-  if (!GetSharedTypedArray(cx, objv, &view)) {
+  if (!GetSharedTypedArray(cx, objv, true, &view)) {
     return false;
   }
-  if (view->type() != Scalar::Int32 && view->type() != Scalar::BigInt64) {
-    return ReportBadArrayType(cx);
-  }
+  MOZ_ASSERT(view->type() == Scalar::Int32 || view->type() == Scalar::BigInt64);
   uint32_t elementSize =
       view->type() == Scalar::Int32 ? sizeof(int32_t) : sizeof(int64_t);
   uint32_t offset;
@@ -750,8 +764,7 @@ void js::FutexThread::lock() {
   lock->lock();
 }
 
-/* static */ mozilla::Atomic<js::Mutex*, mozilla::SequentiallyConsistent,
-                             mozilla::recordreplay::Behavior::DontPreserve>
+/* static */ mozilla::Atomic<js::Mutex*, mozilla::SequentiallyConsistent>
     FutexThread::lock_;
 
 /* static */
@@ -940,42 +953,25 @@ const JSFunctionSpec AtomicsMethods[] = {
     JS_FN("wake", atomics_notify, 3, 0),  // Legacy name
     JS_FS_END};
 
-JSObject* AtomicsObject::initClass(JSContext* cx,
-                                   Handle<GlobalObject*> global) {
-  // Create Atomics Object.
-  RootedObject objProto(cx,
-                        GlobalObject::getOrCreateObjectPrototype(cx, global));
-  if (!objProto) {
-    return nullptr;
-  }
-  RootedObject Atomics(cx, NewObjectWithGivenProto(cx, &AtomicsObject::class_,
-                                                   objProto, SingletonObject));
-  if (!Atomics) {
-    return nullptr;
-  }
+static const JSPropertySpec AtomicsProperties[] = {
+    JS_STRING_SYM_PS(toStringTag, "Atomics", JSPROP_READONLY), JS_PS_END};
 
-  if (!JS_DefineFunctions(cx, Atomics, AtomicsMethods)) {
+static JSObject* CreateAtomicsObject(JSContext* cx, JSProtoKey key) {
+  Handle<GlobalObject*> global = cx->global();
+  RootedObject proto(cx, GlobalObject::getOrCreateObjectPrototype(cx, global));
+  if (!proto) {
     return nullptr;
   }
-  if (!DefineToStringTag(cx, Atomics, cx->names().Atomics)) {
-    return nullptr;
-  }
-
-  RootedValue AtomicsValue(cx, ObjectValue(*Atomics));
-
-  // Everything is set up, install Atomics on the global object.
-  if (!DefineDataProperty(cx, global, cx->names().Atomics, AtomicsValue,
-                          JSPROP_RESOLVING)) {
-    return nullptr;
-  }
-
-  global->setConstructor(JSProto_Atomics, AtomicsValue);
-  return Atomics;
+  return NewObjectWithGivenProto(cx, &AtomicsObject::class_, proto,
+                                 SingletonObject);
 }
 
-JSObject* js::InitAtomicsClass(JSContext* cx, Handle<GlobalObject*> global) {
-  return AtomicsObject::initClass(cx, global);
-}
+static const ClassSpec AtomicsClassSpec = {CreateAtomicsObject, nullptr,
+                                           AtomicsMethods, AtomicsProperties};
+
+const JSClass AtomicsObject::class_ = {
+    "Atomics", JSCLASS_HAS_CACHED_PROTO(JSProto_Atomics), JS_NULL_CLASS_OPS,
+    &AtomicsClassSpec};
 
 #undef CXX11_ATOMICS
 #undef GNU_ATOMICS

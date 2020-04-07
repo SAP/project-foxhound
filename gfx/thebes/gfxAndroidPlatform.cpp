@@ -20,7 +20,6 @@
 #include "gfxTextRun.h"
 #include "nsXULAppAPI.h"
 #include "nsIScreen.h"
-#include "nsIScreenManager.h"
 #include "nsServiceManagerUtils.h"
 #include "nsUnicodeProperties.h"
 #include "cairo.h"
@@ -123,7 +122,7 @@ static bool IsJapaneseLocale() {
     sInitialized = true;
 
     nsAutoCString appLocale;
-    LocaleService::GetInstance()->GetAppLocaleAsLangTag(appLocale);
+    LocaleService::GetInstance()->GetAppLocaleAsBCP47(appLocale);
 
     const nsDependentCSubstring lang(appLocale, 0, 2);
     if (lang.EqualsLiteral("ja")) {

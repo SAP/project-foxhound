@@ -22,10 +22,9 @@
 #include <setjmp.h>
 
 #include "builtin/AtomicsObject.h"
-#ifdef ENABLE_INTL_API
+#ifdef JS_HAS_INTL_API
 #  include "builtin/intl/SharedIntlData.h"
 #endif
-#include "builtin/Promise.h"
 #include "frontend/BinASTRuntimeSupport.h"
 #include "frontend/NameCollections.h"
 #include "gc/GCRuntime.h"
@@ -54,6 +53,8 @@
 #include "vm/GeckoProfiler.h"
 #include "vm/JSAtom.h"
 #include "vm/JSScript.h"
+#include "vm/OffThreadPromiseRuntimeState.h"  // js::OffThreadPromiseRuntimeState
+#include "vm/PromiseObject.h"                 // js::PromiseObject
 #include "vm/Scope.h"
 #include "vm/SharedImmutableStringsCache.h"
 #include "vm/Stack.h"
@@ -134,7 +135,7 @@ struct JSAtomState {
 #define PROPERTYNAME_FIELD(idpart, id, text) js::ImmutablePropertyNamePtr id;
   FOR_EACH_COMMON_PROPERTYNAME(PROPERTYNAME_FIELD)
 #undef PROPERTYNAME_FIELD
-#define PROPERTYNAME_FIELD(name, init, clasp) js::ImmutablePropertyNamePtr name;
+#define PROPERTYNAME_FIELD(name, clasp) js::ImmutablePropertyNamePtr name;
   JS_FOR_EACH_PROTOTYPE(PROPERTYNAME_FIELD)
 #undef PROPERTYNAME_FIELD
 #define PROPERTYNAME_FIELD(name) js::ImmutablePropertyNamePtr name;
@@ -305,8 +306,7 @@ struct JSRuntime {
    * considered inaccessible, and those JitcodeGlobalTable entry can be
    * disposed of.
    */
-  mozilla::Atomic<uint64_t, mozilla::ReleaseAcquire,
-                  mozilla::recordreplay::Behavior::DontPreserve>
+  mozilla::Atomic<uint64_t, mozilla::ReleaseAcquire>
       profilerSampleBufferRangeStart_;
 
   mozilla::Maybe<uint64_t> profilerSampleBufferRangeStart() {
@@ -355,9 +355,7 @@ struct JSRuntime {
   void removeUnhandledRejectedPromise(JSContext* cx, js::HandleObject promise);
 
   /* Had an out-of-memory error which did not populate an exception. */
-  mozilla::Atomic<bool, mozilla::SequentiallyConsistent,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      hadOutOfMemory;
+  mozilla::Atomic<bool, mozilla::SequentiallyConsistent> hadOutOfMemory;
 
   /*
    * Allow relazifying functions in compartments that are active. This is
@@ -383,10 +381,6 @@ struct JSRuntime {
 
   /* Call this to get the name of a realm. */
   js::MainThreadData<JS::RealmNameCallback> realmNameCallback;
-
-  /* Callback for doing memory reporting on external strings. */
-  js::MainThreadData<JSExternalStringSizeofCallback>
-      externalStringSizeofCallback;
 
   js::MainThreadData<mozilla::UniquePtr<js::SourceHook>> sourceHook;
 
@@ -502,8 +496,7 @@ struct JSRuntime {
 #endif
 
   // Number of zones which may be operated on by helper threads.
-  mozilla::Atomic<size_t, mozilla::SequentiallyConsistent,
-                  mozilla::recordreplay::Behavior::DontPreserve>
+  mozilla::Atomic<size_t, mozilla::SequentiallyConsistent>
       numActiveHelperThreadZones;
 
   friend class js::AutoLockScriptData;
@@ -631,7 +624,6 @@ struct JSRuntime {
   bool isSelfHostingGlobal(JSObject* global) {
     return global == selfHostingGlobal_;
   }
-  bool isSelfHostingZone(const JS::Zone* zone) const;
   bool createLazySelfHostedFunctionClone(JSContext* cx,
                                          js::HandlePropertyName selfHostedName,
                                          js::HandleAtom name, unsigned nargs,
@@ -645,6 +637,11 @@ struct JSRuntime {
                             js::MutableHandleValue vp);
   void assertSelfHostedFunctionHasCanonicalName(JSContext* cx,
                                                 js::HandlePropertyName name);
+#if DEBUG
+  bool isSelfHostingZone(const JS::Zone* zone) const {
+    return selfHostingGlobal_ && selfHostingGlobal_->zone() == zone;
+  }
+#endif
 
   //-------------------------------------------------------------------------
   // Locale information
@@ -680,7 +677,7 @@ struct JSRuntime {
   js::WriteOnceData<js::PropertyName*> emptyString;
 
  private:
-  js::MainThreadData<JSFreeOp*> defaultFreeOp_;
+  js::MainThreadOrGCTaskData<JSFreeOp*> defaultFreeOp_;
 
  public:
   JSFreeOp* defaultFreeOp() {
@@ -688,7 +685,7 @@ struct JSRuntime {
     return defaultFreeOp_;
   }
 
-#if !ENABLE_INTL_API
+#if !JS_HAS_INTL_API
   /* Number localization, used by jsnum.cpp. */
   js::WriteOnceData<const char*> thousandsSeparator;
   js::WriteOnceData<const char*> decimalSeparator;
@@ -766,7 +763,9 @@ struct JSRuntime {
   }
   JS::Zone* unsafeAtomsZone() { return gc.atomsZone; }
 
+#ifdef DEBUG
   bool isAtomsZone(const JS::Zone* zone) const { return zone == gc.atomsZone; }
+#endif
 
   bool activeGCInAtomsZone();
 
@@ -808,7 +807,7 @@ struct JSRuntime {
   // these are shared with the parentRuntime, if any.
   js::WriteOnceData<js::WellKnownSymbols*> wellKnownSymbols;
 
-#ifdef ENABLE_INTL_API
+#ifdef JS_HAS_INTL_API
   /* Shared Intl data for this runtime. */
   js::MainThreadData<js::intl::SharedIntlData> sharedIntlData;
 
@@ -844,6 +843,24 @@ struct JSRuntime {
 
   JSRuntime* thisFromCtor() { return this; }
 
+ private:
+  // Number of live SharedArrayBuffer objects, including those in Wasm shared
+  // memories.  uint64_t to avoid any risk of overflow.
+  js::MainThreadData<uint64_t> liveSABs;
+
+ public:
+  void incSABCount() {
+    MOZ_RELEASE_ASSERT(liveSABs != UINT64_MAX);
+    liveSABs++;
+  }
+
+  void decSABCount() {
+    MOZ_RELEASE_ASSERT(liveSABs > 0);
+    liveSABs--;
+  }
+
+  bool hasLiveSABs() const { return liveSABs > 0; }
+
  public:
   void reportAllocationOverflow() { js::ReportAllocationOverflow(nullptr); }
 
@@ -871,11 +888,9 @@ struct JSRuntime {
 
  private:
   // Settings for how helper threads can be used.
-  mozilla::Atomic<bool, mozilla::SequentiallyConsistent,
-                  mozilla::recordreplay::Behavior::DontPreserve>
+  mozilla::Atomic<bool, mozilla::SequentiallyConsistent>
       offthreadIonCompilationEnabled_;
-  mozilla::Atomic<bool, mozilla::SequentiallyConsistent,
-                  mozilla::recordreplay::Behavior::DontPreserve>
+  mozilla::Atomic<bool, mozilla::SequentiallyConsistent>
       parallelParsingEnabled_;
 
 #ifdef DEBUG

@@ -11,11 +11,11 @@
 #include "mozStorageConnection.h"
 #include "nsAutoPtr.h"
 #include "nsCollationCID.h"
+#include "nsComponentManagerUtils.h"
 #include "nsEmbedCID.h"
 #include "nsExceptionHandler.h"
 #include "nsThreadUtils.h"
 #include "mozStoragePrivateHelpers.h"
-#include "nsIXPConnect.h"
 #include "nsIObserverService.h"
 #include "nsIPropertyBag2.h"
 #include "mozilla/Services.h"
@@ -31,8 +31,6 @@
 // "windows.h" was included and it can #define lots of things we care about...
 #  undef CompareString
 #endif
-
-#include "nsIPromptService.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Defines
@@ -184,31 +182,6 @@ already_AddRefed<Service> Service::getSingleton() {
     return do_AddRef(gService);
   }
 
-  // Ensure that we are using the same version of SQLite that we compiled with
-  // or newer.  Our configure check ensures we are using a new enough version
-  // at compile time.
-  if (SQLITE_VERSION_NUMBER > ::sqlite3_libversion_number() ||
-      !::sqlite3_compileoption_used("SQLITE_SECURE_DELETE") ||
-      !::sqlite3_compileoption_used("SQLITE_THREADSAFE=1") ||
-      !::sqlite3_compileoption_used("SQLITE_ENABLE_FTS3") ||
-      !::sqlite3_compileoption_used("SQLITE_ENABLE_UNLOCK_NOTIFY") ||
-      !::sqlite3_compileoption_used("SQLITE_ENABLE_DBSTAT_VTAB")) {
-    nsCOMPtr<nsIPromptService> ps(do_GetService(NS_PROMPTSERVICE_CONTRACTID));
-    if (ps) {
-      nsAutoString title, message;
-      title.AppendLiteral("SQLite Version Error");
-      message.AppendLiteral(
-          "The application has been updated, but the SQLite "
-          "library wasn't updated properly and the application "
-          "cannot run. Please try to launch the application again. "
-          "If that should still fail, please try reinstalling "
-          "it, or contact the support of where you got the "
-          "application from.");
-      (void)ps->Alert(nullptr, title.get(), message.get());
-    }
-    MOZ_CRASH("SQLite Version Error");
-  }
-
   // The first reference to the storage service must be obtained on the
   // main thread.
   NS_ENSURE_TRUE(NS_IsMainThread(), nullptr);
@@ -269,7 +242,7 @@ void Service::unregisterConnection(Connection* aConnection) {
         // spinning a nested event loop if the connection was not properly
         // shutdown, we want to do that outside this loop so that we can finish
         // mutating the array and drop our mutex.
-        forgettingRef = mConnections[i].forget();
+        forgettingRef = std::move(mConnections[i]);
         mConnections.RemoveElementAt(i);
         break;
       }
@@ -579,7 +552,7 @@ Service::OpenAsyncDatabase(nsIVariant* aDatabaseStore,
     nsCOMPtr<nsIFile> cloned;
     rv = storageFile->Clone(getter_AddRefs(cloned));
     MOZ_ASSERT(NS_SUCCEEDED(rv));
-    storageFile = cloned.forget();
+    storageFile = std::move(cloned);
 
     if (!readOnly) {
       // Ensure that SQLITE_OPEN_CREATE is passed in for compatibility reasons.
@@ -737,24 +710,22 @@ Service::Observe(nsISupports*, const char* aTopic, const char16_t*) {
       return true;
     });
 
-    if (gShutdownChecks == SCM_CRASH) {
-      nsTArray<RefPtr<Connection>> connections;
-      getConnections(connections);
-      for (uint32_t i = 0, n = connections.Length(); i < n; i++) {
-        if (!connections[i]->isClosed()) {
-          // getFilename is only the leaf name for the database file,
-          // so it shouldn't contain privacy-sensitive information.
-          CrashReporter::AnnotateCrashReport(
-              CrashReporter::Annotation::StorageConnectionNotClosed,
-              connections[i]->getFilename());
 #ifdef DEBUG
-          printf_stderr("Storage connection not closed: %s",
-                        connections[i]->getFilename().get());
-#endif
-          MOZ_CRASH();
-        }
+    nsTArray<RefPtr<Connection>> connections;
+    getConnections(connections);
+    for (uint32_t i = 0, n = connections.Length(); i < n; i++) {
+      if (!connections[i]->isClosed()) {
+        // getFilename is only the leaf name for the database file,
+        // so it shouldn't contain privacy-sensitive information.
+        CrashReporter::AnnotateCrashReport(
+            CrashReporter::Annotation::StorageConnectionNotClosed,
+            connections[i]->getFilename());
+        printf_stderr("Storage connection not closed: %s",
+                      connections[i]->getFilename().get());
+        MOZ_CRASH();
       }
     }
+#endif
   }
 
   return NS_OK;

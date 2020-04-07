@@ -133,6 +133,7 @@ Remote files are not downloaded automatically. In order to keep attachments in s
 
 The provided helper will:
 - fetch the remote binary content
+- write the file in the profile folder
 - check the file size
 - check the content SHA256 hash
 - do nothing if the file is already present and sound locally.
@@ -150,6 +151,10 @@ The provided helper will:
     The ``download()`` method does not return a file path but instead a ``file://`` URL which points to the locally-downloaded file.
     This will allow us to package attachments as part of a Firefox release (see `Bug 1542177 <https://bugzilla.mozilla.org/show_bug.cgi?id=1542177>`_)
     and return them to calling code as ``resource://`` from within a package archive.
+
+.. notes::
+
+    A ``downloadAsBytes()`` method returning an ``ArrayBuffer`` is also available, if writing the attachment into the user profile is not necessary.
 
 
 .. _services/initial-data:
@@ -289,6 +294,12 @@ The synchronization of every known remote settings clients can be triggered manu
 
     await RemoteSettings.pollChanges()
 
+In order to ignore last synchronization status during polling for changes, set the ``full`` option:
+
+.. code-block:: js
+
+    await RemoteSettings.pollChanges({ full: true })
+
 The synchronization of a single client can be forced with the ``.sync()`` method:
 
 .. code-block:: js
@@ -308,10 +319,20 @@ The internal IndexedDB of Remote Settings can be accessed via the Storage Inspec
 For example, the local data of the ``"key"`` collection can be accessed in the ``remote-settings`` database at *Browser Toolbox* > *Storage* > *IndexedDB* > *chrome*, in the ``records`` store.
 
 
+Delete all local data
+---------------------
+
+All local data, of **every collection**, including downloaded attachments, can be deleted with:
+
+.. code-block:: js
+
+    await RemoteSettings.clearAll();
+
+
 Unit Tests
 ==========
 
-As a foreword, we would like to underline the fact that your tests should not test Remote Settings itself. Your tests should assume Remote Settings works, and should only run assertions on the integration part. For example, if you see yourself mocking the server responses, your tests may go over their responsability.
+As a foreword, we would like to underline the fact that your tests should not test Remote Settings itself. Your tests should assume Remote Settings works, and should only run assertions on the integration part. For example, if you see yourself mocking the server responses, your tests may go over their responsibility.
 
 If your code relies on the ``"sync"`` event, you are likely to be interested in faking this event and make sure your code runs as expected. If it relies on ``.get()``, you will probably want to insert some fake local data.
 

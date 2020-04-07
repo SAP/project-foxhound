@@ -7,18 +7,18 @@
 
 /* Original author: bcampen@mozilla.com */
 
-#include <cstdarg>
-
 #include "rlogconnector.h"
 
+#include <cstdarg>
 #include <deque>
 #include <string>
+#include <utility>  // Pinch hitting for <utility> and std::move
+#include <vector>
+
 #include "logging.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Move.h"  // Pinch hitting for <utility> and std::move
 #include "mozilla/Mutex.h"
 #include "mozilla/Sprintf.h"
-#include <vector>
 
 extern "C" {
 #include <csi_platform.h>
@@ -68,7 +68,7 @@ RLogConnector* RLogConnector::instance;
 RLogConnector::RLogConnector()
     : log_limit_(4096), mutex_("RLogConnector::mutex_"), disableCount_(0) {}
 
-RLogConnector::~RLogConnector() {}
+RLogConnector::~RLogConnector() = default;
 
 void RLogConnector::SetLogLimit(uint32_t new_limit) {
   OffTheBooksMutexAutoLock lock(mutex_);

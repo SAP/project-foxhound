@@ -24,7 +24,7 @@ HTMLStyleElement::HTMLStyleElement(
   AddMutationObserver(this);
 }
 
-HTMLStyleElement::~HTMLStyleElement() {}
+HTMLStyleElement::~HTMLStyleElement() = default;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLStyleElement)
 
@@ -164,7 +164,7 @@ void HTMLStyleElement::SetTextContentInternal(const nsAString& aTextContent,
 }
 
 Maybe<nsStyleLinkElement::SheetInfo> HTMLStyleElement::GetStyleSheetInfo() {
-  if (!IsCSSMimeTypeAttribute(*this)) {
+  if (!IsCSSMimeTypeAttributeForStyleElement(*this)) {
     return Nothing();
   }
 
@@ -174,16 +174,20 @@ Maybe<nsStyleLinkElement::SheetInfo> HTMLStyleElement::GetStyleSheetInfo() {
 
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
   referrerInfo->InitWithNode(this);
-  nsCOMPtr<nsIPrincipal> prin = mTriggeringPrincipal;
+
   return Some(SheetInfo{
       *OwnerDoc(),
       this,
       nullptr,
-      prin.forget(),
+      do_AddRef(mTriggeringPrincipal),
       referrerInfo.forget(),
       CORS_NONE,
       title,
       media,
+      /* integrity = */ EmptyString(),
+      /* nsStyleUtil::CSPAllowsInlineStyle takes care of nonce checking for
+         inline styles. Bug 1607011 */
+      /* nonce = */ EmptyString(),
       HasAlternateRel::No,
       IsInline::Yes,
       IsExplicitlyEnabled::No,

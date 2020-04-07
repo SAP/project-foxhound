@@ -67,7 +67,7 @@ nsXMLContentSerializer::nsXMLContentSerializer()
       mBodyOnly(false),
       mInBody(0) {}
 
-nsXMLContentSerializer::~nsXMLContentSerializer() {}
+nsXMLContentSerializer::~nsXMLContentSerializer() = default;
 
 NS_IMPL_ISUPPORTS(nsXMLContentSerializer, nsIContentSerializer)
 
@@ -1421,7 +1421,7 @@ bool nsXMLContentSerializer::AppendFormatedWrapped_WhitespaceSequence(
       case ' ':
       case '\t':
         sawBlankOrTab = true;
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       case '\n':
         ++aPos;
         // do not increase mColPos,

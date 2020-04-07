@@ -235,27 +235,31 @@ PreviewController.prototype = {
    * Capture a new thumbnail image for this preview. Called by the controller
    * in response to a request for a new thumbnail image.
    */
-  updateCanvasPreview(aFullScale, aCallback) {
+  updateCanvasPreview(aFullScale) {
     // Update our cached browser dims so that delayed resize
     // events don't trigger another invalidation if this tab becomes active.
     this.cacheBrowserDims();
-    PageThumbs.captureToCanvas(
-      this.linkedBrowser,
-      this.canvasPreview,
-      aCallback,
-      { fullScale: aFullScale }
-    );
+    AeroPeek.resetCacheTimer();
+    return PageThumbs.captureToCanvas(this.linkedBrowser, this.canvasPreview, {
+      fullScale: aFullScale,
+    }).catch(e => Cu.reportError(e));
     // If we're updating the canvas, then we're in the middle of a peek so
     // don't discard the cache of previews.
-    AeroPeek.resetCacheTimer();
   },
 
-  updateTitleAndTooltip() {
-    let title = this.win.tabbrowser.getWindowTitleForBrowser(
+  async updateTitleAndTooltip() {
+    let { id, args } = this.win.tabbrowser.getWindowTitleForBrowser(
       this.linkedBrowser
     );
-    this.preview.title = title;
-    this.preview.tooltip = title;
+    let title = await this.win.tabbrowser.ownerDocument.l10n.formatValue(
+      id,
+      args
+    );
+    // Since the previous call is async, the `this.preview` may become empty.
+    if (this.preview) {
+      this.preview.title = title;
+      this.preview.tooltip = title;
+    }
   },
 
   // nsITaskbarPreviewController
@@ -288,7 +292,7 @@ PreviewController.prototype = {
   requestPreview(aTaskbarCallback) {
     // Grab a high res content preview
     this.resetCanvasPreview();
-    this.updateCanvasPreview(true, aPreviewCanvas => {
+    this.updateCanvasPreview(true).then(aPreviewCanvas => {
       let winWidth = this.win.width;
       let winHeight = this.win.height;
 
@@ -340,7 +344,7 @@ PreviewController.prototype = {
    */
   requestThumbnail(aTaskbarCallback, aRequestedWidth, aRequestedHeight) {
     this.resizeCanvasPreview(aRequestedWidth, aRequestedHeight);
-    this.updateCanvasPreview(false, aThumbnailCanvas => {
+    this.updateCanvasPreview(false).then(aThumbnailCanvas => {
       aTaskbarCallback.done(aThumbnailCanvas, false);
     });
   },

@@ -89,7 +89,7 @@ class FxAccountsKeys {
           });
           userData = await currentState.getUserAccountData();
         }
-        if (DERIVED_KEYS_NAMES.every(k => userData[k])) {
+        if (DERIVED_KEYS_NAMES.every(k => !!userData[k])) {
           return userData;
         }
         if (!currentState.whenKeysReadyDeferred) {
@@ -186,9 +186,6 @@ class FxAccountsKeys {
       }
 
       await currentState.updateUserAccountData(updateData);
-      // Some parts of the device registration depend on the Sync keys being available,
-      // so let's re-trigger it now that we have them.
-      await this._fxia.updateDeviceRegistration();
       data = await currentState.getUserAccountData();
       return data;
     });
@@ -262,14 +259,6 @@ class FxAccountsKeys {
       "identity.mozilla.com/picl/v1/oldsync",
       2 * 32
     );
-  }
-
-  /**
-   * Invalidate the FxA certificate, so that it will be refreshed from the server
-   * the next time it is needed.
-   */
-  invalidateCertificate() {
-    return this._fxia.invalidateCertificate();
   }
 
   /**

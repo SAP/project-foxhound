@@ -11,8 +11,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/Sprintf.h"
 
-#include "jsutil.h"
-
 #include "gc/Marking.h"
 #include "jit/arm/disasm/Disasm-arm.h"
 #include "jit/arm/MacroAssembler-arm.h"
@@ -50,6 +48,7 @@ ABIArg ABIArgGenerator::softNext(MIRType type) {
     case MIRType::Int32:
     case MIRType::Pointer:
     case MIRType::RefOrNull:
+    case MIRType::StackResults:
       if (intRegIndex_ == NumIntArgRegs) {
         current_ = ABIArg(stackOffset_);
         stackOffset_ += sizeof(uint32_t);
@@ -111,6 +110,7 @@ ABIArg ABIArgGenerator::hardNext(MIRType type) {
     case MIRType::Int32:
     case MIRType::Pointer:
     case MIRType::RefOrNull:
+    case MIRType::StackResults:
       if (intRegIndex_ == NumIntArgRegs) {
         current_ = ABIArg(stackOffset_);
         stackOffset_ += sizeof(uint32_t);
@@ -1114,13 +1114,6 @@ VFPRegister VFPRegister::uintOverlay(unsigned int which) const {
   }
   MOZ_ASSERT(which == 0);
   return VFPRegister(code_, UInt);
-}
-
-bool VFPRegister::isInvalid() const { return _isInvalid; }
-
-bool VFPRegister::isMissing() const {
-  MOZ_ASSERT(!_isInvalid);
-  return _isMissing;
 }
 
 bool Assembler::oom() const {
@@ -2274,13 +2267,13 @@ struct PoolHeader : Instruction {
         : size(size_), isNatural(isNatural_), ONES(0xffff) {}
 
     explicit Header(const Instruction* i) {
-      JS_STATIC_ASSERT(sizeof(Header) == sizeof(uint32_t));
+      static_assert(sizeof(Header) == sizeof(uint32_t));
       memcpy(this, i, sizeof(Header));
       MOZ_ASSERT(ONES == 0xffff);
     }
 
     uint32_t raw() const {
-      JS_STATIC_ASSERT(sizeof(Header) == sizeof(uint32_t));
+      static_assert(sizeof(Header) == sizeof(uint32_t));
       uint32_t dest;
       memcpy(&dest, this, sizeof(Header));
       return dest;

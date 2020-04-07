@@ -24,7 +24,6 @@ const TEST_CASES = [
   { width: 800, height: 600 },
   { width: 640, height: 400 },
   { width: 500, height: 350 },
-  { width: 300, height: 170 },
 ];
 
 function getPlatform() {
@@ -188,9 +187,9 @@ async function test_dynamical_window_rounding(aWindow, aCheckFunc) {
 
     info(caseString + "Get innerWidth/Height from the content.");
     await BrowserTestUtils.waitForCondition(async () => {
-      let { contentWidth, contentHeight } = await ContentTask.spawn(
+      let { contentWidth, contentHeight } = await SpecialPowers.spawn(
         tab.linkedBrowser,
-        null,
+        [],
         () => {
           return {
             contentWidth: content.innerWidth,
@@ -259,16 +258,12 @@ async function test_customize_width_and_height(aWindow) {
     if (getPlatform() != "linux") {
       ok(
         handleOSFuzziness(aContentWidth, targetDimensions.width),
-        `Custom Dimension: The content window width is correctly rounded into. ${aRealWidth}px -> ${aContentWidth}px should equal ${
-          targetDimensions.width
-        }`
+        `Custom Dimension: The content window width is correctly rounded into. ${aRealWidth}px -> ${aContentWidth}px should equal ${targetDimensions.width}`
       );
 
       ok(
         handleOSFuzziness(aContentHeight, targetDimensions.height),
-        `Custom Dimension: The content window height is correctly rounded into. ${aRealHeight}px -> ${aContentHeight}px should equal ${
-          targetDimensions.height
-        }`
+        `Custom Dimension: The content window height is correctly rounded into. ${aRealHeight}px -> ${aContentHeight}px should equal ${targetDimensions.height}`
       );
 
       // Using ok() above will cause Win/Mac to fail on even the first test, we don't need to repeat it, return true so waitForCondition ends

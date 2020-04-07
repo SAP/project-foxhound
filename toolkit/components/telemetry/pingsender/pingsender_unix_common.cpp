@@ -177,9 +177,9 @@ bool FallbackIsValidDestination(const string& aUrl) {
   std::transform(url.begin(), url.end(), url.begin(),
                  [](unsigned char c) { return std::tolower(c); });
   // Strip off the scheme in the beginning
-  if (url.find_first_of("http://") != std::string::npos) {
+  if (url.find("http://") == 0) {
     url = url.substr(7);
-  } else if (url.find_first_of("https://") != std::string::npos) {
+  } else if (url.find("https://") == 0) {
     url = url.substr(8);
   }
 
@@ -290,6 +290,10 @@ bool Post(const string& url, const string& payload) {
   }
 
   return curl.Post(url, payload);
+}
+
+void ChangeCurrentWorkingDirectory(const string& pingPath) {
+  // This is not needed under Linux/macOS
 }
 
 }  // namespace PingSender

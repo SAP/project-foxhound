@@ -20,13 +20,16 @@ DIRS += [
     'locales',
     'node-properties',
     'performance',
+    'performance-new',
     'platform',
     'protocol',
     'qrcode',
+    'resources',
     'screenshot',
     'security',
     'sprintfjs',
     'specs',
+    'storage',
     'transport',
     'webconsole',
     'worker',
@@ -37,8 +40,8 @@ if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
 
 BROWSER_CHROME_MANIFESTS += ['test-helpers/browser.ini']
 
-MOCHITEST_CHROME_MANIFESTS += ['tests/mochitest/chrome.ini']
-XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
+MOCHITEST_CHROME_MANIFESTS += ['tests/chrome/chrome.ini']
+XPCSHELL_TESTS_MANIFESTS += ['tests/xpcshell/xpcshell.ini']
 
 JAR_MANIFESTS += ['jar.mn']
 
@@ -53,10 +56,10 @@ DevToolsModules(
     'debounce.js',
     'defer.js',
     'DevToolsUtils.js',
+    'dom-helpers.js',
     'dom-node-constants.js',
     'dom-node-filter-constants.js',
     'event-emitter.js',
-    'execution-point-utils.js',
     'extend.js',
     'flags.js',
     'generate-uuid.js',
@@ -67,6 +70,7 @@ DevToolsModules(
     'Loader.jsm',
     'natural-sort.js',
     'path.js',
+    'picker-constants.js',
     'plural-form.js',
     'protocol.js',
     'service-workers-debug-helper.js',

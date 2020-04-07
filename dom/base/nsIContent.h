@@ -21,10 +21,6 @@ class nsAttrValue;
 class nsAttrName;
 class nsTextFragment;
 class nsIFrame;
-#ifdef MOZ_XBL
-class nsXBLBinding;
-#endif
-class nsITextControlElement;
 
 namespace mozilla {
 class EventChainPreVisitor;
@@ -72,6 +68,7 @@ class nsIContent : public nsINode {
   explicit nsIContent(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : nsINode(std::move(aNodeInfo)) {
     MOZ_ASSERT(mNodeInfo);
+    MOZ_ASSERT(static_cast<nsINode*>(this) == reinterpret_cast<nsINode*>(this));
     SetNodeIsContent();
   }
 #endif  // MOZILLA_INTERNAL_API
@@ -177,7 +174,7 @@ class nsIContent : public nsINode {
    * @see nsIAnonymousContentCreator
    */
   void SetIsNativeAnonymousRoot() {
-    SetFlags(NODE_IS_ANONYMOUS_ROOT | NODE_IS_IN_NATIVE_ANONYMOUS_SUBTREE |
+    SetFlags(NODE_IS_IN_NATIVE_ANONYMOUS_SUBTREE |
              NODE_IS_NATIVE_ANONYMOUS_ROOT);
   }
 
@@ -187,27 +184,15 @@ class nsIContent : public nsINode {
    */
   nsIContent* FindFirstNonChromeOnlyAccessContent() const;
 
-#ifdef DEBUG
-  void AssertAnonymousSubtreeRelatedInvariants() const;
-#endif
-
   /**
    * Returns true if and only if this node has a parent, but is not in
    * its parent's child list.
+   *
+   * FIXME(emilio): Remove along nsINode::IsInAnonymousSubtree.
    */
   bool IsRootOfAnonymousSubtree() const {
-#ifdef DEBUG
-    AssertAnonymousSubtreeRelatedInvariants();
-#endif
-    return HasFlag(NODE_IS_ANONYMOUS_ROOT);
+    return IsRootOfNativeAnonymousSubtree();
   }
-
-  /**
-   * Returns true if there is NOT a path through child lists
-   * from the top of this node's parent chain back to this node or
-   * if the node is in native anonymous subtree without a parent.
-   */
-  inline bool IsInAnonymousSubtree() const;
 
   /**
    * Return true iff this node is in an HTML document (in the HTML5 sense of
@@ -273,8 +258,6 @@ class nsIContent : public nsINode {
   inline bool IsAnyOfMathMLElements(First aFirst, Args... aArgs) const {
     return IsMathMLElement() && IsNodeInternal(aFirst, aArgs...);
   }
-
-  inline bool IsActiveChildrenElement() const;
 
   bool IsGeneratedContentContainerForBefore() const {
     return IsRootOfNativeAnonymousSubtree() &&
@@ -383,38 +366,6 @@ class nsIContent : public nsINode {
   virtual IMEState GetDesiredIMEState();
 
   /**
-   * Gets content node with the binding (or native code, possibly on the
-   * frame) responsible for our construction (and existence).  Used by
-   * anonymous content (both XBL-generated and native-anonymous).
-   *
-   * null for all explicit content (i.e., content reachable from the top
-   * of its GetParent() chain via child lists).
-   *
-   * @return the binding parent
-   */
-  virtual mozilla::dom::Element* GetBindingParent() const {
-    const nsExtendedContentSlots* slots = GetExistingExtendedContentSlots();
-    return slots ? slots->mBindingParent.get() : nullptr;
-  }
-
-#ifdef MOZ_XBL
-  /**
-   * Gets the current XBL binding that is bound to this element.
-   *
-   * @return the current binding.
-   */
-  nsXBLBinding* GetXBLBinding() const {
-    if (!HasFlag(NODE_MAY_BE_IN_BINDING_MNGR)) {
-      return nullptr;
-    }
-
-    return DoGetXBLBinding();
-  }
-
-  virtual nsXBLBinding* DoGetXBLBinding() const = 0;
-#endif
-
-  /**
    * Gets the ShadowRoot binding for this element.
    *
    * @return The ShadowRoot currently bound to this element.
@@ -423,8 +374,6 @@ class nsIContent : public nsINode {
 
   /**
    * Gets the root of the node tree for this content if it is in a shadow tree.
-   * This method is called |GetContainingShadow| instead of |GetRootShadowRoot|
-   * to avoid confusion with |GetShadowRoot|.
    *
    * @return The ShadowRoot that is the root of the node tree.
    */
@@ -432,14 +381,6 @@ class nsIContent : public nsINode {
     const nsExtendedContentSlots* slots = GetExistingExtendedContentSlots();
     return slots ? slots->mContainingShadow.get() : nullptr;
   }
-
-  /**
-   * Gets the shadow host if this content is in a shadow tree. That is, the host
-   * of |GetContainingShadow|, if its not null.
-   *
-   * @return The shadow host, if this is in shadow tree, or null.
-   */
-  nsIContent* GetContainingShadowHost() const;
 
   /**
    * Gets the assigned slot associated with this content.
@@ -466,29 +407,6 @@ class nsIContent : public nsINode {
    * @return The assigned slot element or null.
    */
   mozilla::dom::HTMLSlotElement* GetAssignedSlotByMode() const;
-
-  nsIContent* GetXBLInsertionParent() const {
-    nsIContent* ip = GetXBLInsertionPoint();
-    return ip ? ip->GetParent() : nullptr;
-  }
-
-  /**
-   * Gets the insertion parent element of the XBL binding.
-   * The insertion parent is our one true parent in the transformed DOM.
-   *
-   * @return the insertion parent element.
-   */
-  nsIContent* GetXBLInsertionPoint() const {
-    const nsExtendedContentSlots* slots = GetExistingExtendedContentSlots();
-    return slots ? slots->mXBLInsertionPoint.get() : nullptr;
-  }
-
-  /**
-   * Sets the insertion parent element of the XBL binding.
-   *
-   * @param aContent The insertion parent element.
-   */
-  void SetXBLInsertionPoint(nsIContent* aContent);
 
   /**
    * Same as GetFlattenedTreeParentNode, but returns null if the parent is
@@ -780,18 +698,6 @@ class nsIContent : public nsINode {
         mozilla::MallocSizeOf aMallocSizeOf) const;
 
     /**
-     * The nearest enclosing content node with a binding that created us.
-     *
-     * @see nsIContent::GetBindingParent
-     */
-    RefPtr<mozilla::dom::Element> mBindingParent;
-
-    /**
-     * @see nsIContent::GetXBLInsertionPoint
-     */
-    nsCOMPtr<nsIContent> mXBLInsertionPoint;
-
-    /**
      * @see nsIContent::GetContainingShadow
      */
     RefPtr<mozilla::dom::ShadowRoot> mContainingShadow;
@@ -893,7 +799,7 @@ class nsIContent : public nsINode {
    */
   nsAtom* DoGetID() const;
 
-  ~nsIContent() {}
+  ~nsIContent() = default;
 
  public:
 #ifdef DEBUG
@@ -928,14 +834,5 @@ class nsIContent : public nsINode {
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIContent, NS_ICONTENT_IID)
-
-inline nsIContent* nsINode::AsContent() {
-  MOZ_ASSERT(IsContent());
-  return static_cast<nsIContent*>(this);
-}
-
-inline const nsIContent* nsINode::AsContent() const {
-  return const_cast<nsINode*>(this)->AsContent();
-}
 
 #endif /* nsIContent_h___ */

@@ -20,6 +20,7 @@ const TEST_URI = `data:text/html;charset=utf8,<p>test [ completion.
   </script>`;
 
 add_task(async function() {
+  await pushPref("devtools.editor.autoclosebrackets", false);
   const hud = await openNewTabAndConsole(TEST_URI);
 
   await testInputs(hud);
@@ -145,9 +146,8 @@ async function testInput(
   EventUtils.sendString(input);
   await onPopUpOpen;
 
-  is(
-    getAutocompletePopupLabels(autocompletePopup).join("|"),
-    expectedItems.join("|"),
+  ok(
+    hasExactPopupLabels(autocompletePopup, expectedItems),
     `${description} - popup has expected item, in expected order`
   );
   checkInputCompletionValue(
@@ -182,9 +182,12 @@ async function testCompletionTextUpdateOnPopupNavigate(hud) {
   EventUtils.sendString(input);
   await onPopUpOpen;
 
-  is(
-    getAutocompletePopupLabels(autocompletePopup).join("|"),
-    `"data-test"|"dataTest"|"DATA-TEST"`,
+  ok(
+    hasExactPopupLabels(autocompletePopup, [
+      `"data-test"`,
+      `"dataTest"`,
+      `"DATA-TEST"`,
+    ]),
     `popup has expected items, in expected order`
   );
   checkInputCompletionValue(hud, `-test"]`, `completeNode has expected value`);
@@ -217,9 +220,8 @@ async function testAcceptCompletionExistingClosingBracket(hud) {
   const onPopUpOpen = autocompletePopup.once("popup-opened");
   EventUtils.sendString("b");
   await onPopUpOpen;
-  is(
-    getAutocompletePopupLabels(autocompletePopup).join("|"),
-    `"bar"`,
+  ok(
+    hasExactPopupLabels(autocompletePopup, [`"bar"`]),
     `popup has expected item`
   );
 
@@ -231,8 +233,4 @@ async function testAcceptCompletionExistingClosingBracket(hud) {
     `window.testObject["bar"|]`,
     `input was completed as expected, without adding a closing bracket`
   );
-}
-
-function getAutocompletePopupLabels(autocompletePopup) {
-  return autocompletePopup.items.map(i => i.label);
 }

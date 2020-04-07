@@ -10,7 +10,6 @@
 #include "nsWidgetsCID.h"
 #include "nsWindow.h"
 #include "nsSystemInfo.h"
-#include "nsIServiceManager.h"
 #include "nsXPCOM.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIIOService.h"
@@ -233,7 +232,7 @@ static void OnSourceGrabEventAfter(GtkWidget* widget, GdkEvent* event,
     // Update the cursor position.  The last of these recorded gets used for
     // the eDragEnd event.
     nsDragService* dragService = static_cast<nsDragService*>(user_data);
-    gint scale = ScreenHelperGTK::GetGTKMonitorScaleFactor();
+    gint scale = mozilla::widget::ScreenHelperGTK::GetGTKMonitorScaleFactor();
     auto p = LayoutDeviceIntPoint::Round(event->motion.x_root * scale,
                                          event->motion.y_root * scale);
     dragService->SetDragEndPoint(p);
@@ -427,7 +426,7 @@ bool nsDragService::SetAlphaPixmap(SourceSurface* aSurface,
       (void (*)(cairo_surface_t*, double, double))dlsym(
           RTLD_DEFAULT, "cairo_surface_set_device_scale");
   if (sCairoSurfaceSetDeviceScalePtr) {
-    gint scale = ScreenHelperGTK::GetGTKMonitorScaleFactor();
+    gint scale = mozilla::widget::ScreenHelperGTK::GetGTKMonitorScaleFactor();
     sCairoSurfaceSetDeviceScalePtr(surf, scale, scale);
   }
 
@@ -1270,7 +1269,7 @@ void nsDragService::SourceEndDragSession(GdkDragContext* aContext,
     gint x, y;
     GdkDisplay* display = gdk_display_get_default();
     if (display) {
-      gint scale = ScreenHelperGTK::GetGTKMonitorScaleFactor();
+      gint scale = mozilla::widget::ScreenHelperGTK::GetGTKMonitorScaleFactor();
       gdk_display_get_pointer(display, nullptr, &x, &y, nullptr);
       SetDragEndPoint(LayoutDeviceIntPoint(x * scale, y * scale));
     }
@@ -1378,24 +1377,24 @@ void nsDragService::SourceDataGet(GtkWidget* aWidget, GdkDragContext* aContext,
                                   guint32 aTime) {
   MOZ_LOG(sDragLm, LogLevel::Debug, ("nsDragService::SourceDataGet"));
   GdkAtom target = gtk_selection_data_get_target(aSelectionData);
-  nsCString mimeFlavor;
-  gchar* typeName = 0;
-  typeName = gdk_atom_name(target);
+  gchar* typeName = gdk_atom_name(target);
   if (!typeName) {
     MOZ_LOG(sDragLm, LogLevel::Debug, ("failed to get atom name.\n"));
     return;
   }
 
+
   MOZ_LOG(sDragLm, LogLevel::Debug, ("Type is %s\n", typeName));
-  // make a copy since |nsCString| won't use |g_free|...
-  mimeFlavor.Adopt(strdup(typeName));
-  g_free(typeName);
+  auto freeTypeName = mozilla::MakeScopeExit([&] {
+    g_free(typeName);
+  });
   // check to make sure that we have data items to return.
   if (!mSourceDataItems) {
     MOZ_LOG(sDragLm, LogLevel::Debug, ("Failed to get our data items\n"));
     return;
   }
 
+  nsDependentCSubstring mimeFlavor(typeName, strlen(typeName));
   nsCOMPtr<nsITransferable> item;
   item = do_QueryElementAt(mSourceDataItems, 0);
   if (item) {
@@ -1504,7 +1503,7 @@ void nsDragService::SourceDataGet(GtkWidget* aWidget, GdkDragContext* aContext,
       // Request a different type in GetTransferData.
       actualFlavor = kFilePromiseMime;
     } else {
-      actualFlavor = mimeFlavor.get();
+      actualFlavor = typeName;
     }
     nsresult rv;
     nsCOMPtr<nsISupports> data;
@@ -1844,7 +1843,7 @@ gboolean nsDragService::RunScheduledTask() {
                             mPendingWindowPoint != mTargetWindowPoint;
   DragTask task = mScheduledTask;
   mScheduledTask = eDragTaskNone;
-  mTargetWindow = mPendingWindow.forget();
+  mTargetWindow = std::move(mPendingWindow);
   mTargetWindowPoint = mPendingWindowPoint;
 
   if (task == eDragTaskLeave || task == eDragTaskSourceEnd) {
@@ -1869,7 +1868,7 @@ gboolean nsDragService::RunScheduledTask() {
   mTargetWidget = mTargetWindow->GetMozContainerWidget();
   mTargetDragContext.steal(mPendingDragContext);
 #ifdef MOZ_WAYLAND
-  mTargetWaylandDragContext = mPendingWaylandDragContext.forget();
+  mTargetWaylandDragContext = std::move(mPendingWaylandDragContext);
 #endif
   mTargetTime = mPendingTime;
 
@@ -1977,8 +1976,7 @@ void nsDragService::UpdateDragAction() {
   }
 #ifdef MOZ_WAYLAND
   else if (mTargetWaylandDragContext) {
-    // We got the selected D&D action from compositor on Wayland.
-    gdkAction = mTargetWaylandDragContext->GetSelectedDragAction();
+    gdkAction = mTargetWaylandDragContext->GetAvailableDragActions();
   }
 #endif
 

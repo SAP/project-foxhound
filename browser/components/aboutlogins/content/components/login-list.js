@@ -8,6 +8,7 @@ import { recordTelemetryEvent } from "../aboutLoginsUtils.js";
 const collator = new Intl.Collator();
 const sortFnOptions = {
   name: (a, b) => collator.compare(a.title, b.title),
+  "name-reverse": (a, b) => collator.compare(b.title, a.title),
   "last-used": (a, b) => a.timeLastUsed < b.timeLastUsed,
   "last-changed": (a, b) => a.timePasswordChanged < b.timePasswordChanged,
   breached: (a, b, breachesByLoginGUID) => {
@@ -261,21 +262,24 @@ export default class LoginList extends HTMLElement {
         }
         break;
       }
+      case "keyup":
       case "keydown": {
-        this._handleTabbingToExternalElements(event);
+        if (event.type == "keydown") {
+          this._handleTabbingToExternalElements(event);
 
-        // Since Space will select a login in the list, prevent it from
-        // also scrolling the list.
-        if (
-          this.shadowRoot.activeElement &&
-          this.shadowRoot.activeElement.closest("ol") &&
-          event.key == " "
-        ) {
-          event.preventDefault();
+          if (
+            this.shadowRoot.activeElement &&
+            this.shadowRoot.activeElement.closest("ol") &&
+            (event.key == " " ||
+              event.key == "ArrowUp" ||
+              event.key == "ArrowDown")
+          ) {
+            // Since Space, ArrowUp and ArrowDown will perform actions, prevent
+            // them from also scrolling the list.
+            event.preventDefault();
+          }
         }
-        break;
-      }
-      case "keyup": {
+
         this._handleKeyboardNavWithinList(event);
         break;
       }
@@ -549,45 +553,52 @@ export default class LoginList extends HTMLElement {
     while (nextItem && nextItem.hidden) {
       nextItem = nextItem.nextElementSibling;
     }
-    switch (event.key) {
-      case "ArrowDown": {
-        if (!nextItem) {
+    if (event.type == "keydown") {
+      switch (event.key) {
+        case "ArrowDown": {
+          if (!nextItem) {
+            return;
+          }
+          newlyFocusedItem = nextItem;
+          break;
+        }
+        case "ArrowLeft": {
+          let item = isLTR ? previousItem : nextItem;
+          if (!item) {
+            return;
+          }
+          newlyFocusedItem = item;
+          break;
+        }
+        case "ArrowRight": {
+          let item = isLTR ? nextItem : previousItem;
+          if (!item) {
+            return;
+          }
+          newlyFocusedItem = item;
+          break;
+        }
+        case "ArrowUp": {
+          if (!previousItem) {
+            return;
+          }
+          newlyFocusedItem = previousItem;
+          break;
+        }
+        default:
+          return;
+      }
+    } else if (event.type == "keyup") {
+      switch (event.key) {
+        case " ":
+        case "Enter": {
+          event.preventDefault();
+          activeDescendant.click();
           return;
         }
-        newlyFocusedItem = nextItem;
-        break;
-      }
-      case "ArrowLeft": {
-        let item = isLTR ? previousItem : nextItem;
-        if (!item) {
+        default:
           return;
-        }
-        newlyFocusedItem = item;
-        break;
       }
-      case "ArrowRight": {
-        let item = isLTR ? nextItem : previousItem;
-        if (!item) {
-          return;
-        }
-        newlyFocusedItem = item;
-        break;
-      }
-      case "ArrowUp": {
-        if (!previousItem) {
-          return;
-        }
-        newlyFocusedItem = previousItem;
-        break;
-      }
-      case " ":
-      case "Enter": {
-        event.preventDefault();
-        activeDescendant.click();
-        return;
-      }
-      default:
-        return;
     }
     event.preventDefault();
     this._list.setAttribute("aria-activedescendant", newlyFocusedItem.id);

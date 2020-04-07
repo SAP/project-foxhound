@@ -7,10 +7,13 @@ from __future__ import absolute_import, print_function, unicode_literals
 from mozboot.base import BaseBootstrapper
 from mozboot.linux_common import (
     ClangStaticAnalysisInstall,
+    FixStacksInstall,
+    LucetcInstall,
     NasmInstall,
     NodeInstall,
     SccacheInstall,
     StyloInstall,
+    WasiSysrootInstall,
 )
 
 try:
@@ -22,8 +25,16 @@ import re
 import subprocess
 
 
-class GentooBootstrapper(NasmInstall, NodeInstall, StyloInstall, ClangStaticAnalysisInstall,
-                         SccacheInstall, BaseBootstrapper):
+class GentooBootstrapper(
+        ClangStaticAnalysisInstall,
+        FixStacksInstall,
+        LucetcInstall,
+        NasmInstall,
+        NodeInstall,
+        SccacheInstall,
+        StyloInstall,
+        WasiSysrootInstall,
+        BaseBootstrapper):
 
     def __init__(self, version, dist_id, **kwargs):
         BaseBootstrapper.__init__(self, **kwargs)

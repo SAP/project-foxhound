@@ -25,7 +25,9 @@ add_task(async function() {
   let wait = waitForNetworkEvents(monitor, REQUESTS.length);
   for (const [fmt] of REQUESTS) {
     const url = CONTENT_TYPE_SJS + "?fmt=" + fmt;
-    await ContentTask.spawn(tab.linkedBrowser, { url }, async function(args) {
+    await SpecialPowers.spawn(tab.linkedBrowser, [{ url }], async function(
+      args
+    ) {
       content.wrappedJSObject.performRequests(1, args.url);
     });
   }
@@ -37,13 +39,14 @@ add_task(async function() {
     const requestsListStatus = requestItem.querySelector(".status-code");
     EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
     await waitUntil(() => requestsListStatus.title);
+    await waitForDOMIfNeeded(requestItem, ".requests-list-timings-total");
   }
 
   REQUESTS.forEach(([fmt], i) => {
     verifyRequestItemTarget(
       document,
       getDisplayedRequests(store.getState()),
-      getSortedRequests(store.getState()).get(i),
+      getSortedRequests(store.getState())[i],
       "GET",
       CONTENT_TYPE_SJS + "?fmt=" + fmt,
       {

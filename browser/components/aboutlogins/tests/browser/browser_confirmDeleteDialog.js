@@ -14,7 +14,7 @@ add_task(async function setup() {
 add_task(async function test() {
   let browser = gBrowser.selectedBrowser;
 
-  await ContentTask.spawn(browser, null, async () => {
+  await SpecialPowers.spawn(browser, [], async () => {
     let loginItem = Cu.waiveXrays(content.document.querySelector("login-item"));
 
     let showPromise = loginItem.showConfirmationDialog("delete");
@@ -39,7 +39,7 @@ add_task(async function test() {
 
     is(
       title.textContent,
-      "Delete this login?",
+      "Remove this login?",
       "Title contents should match l10n attribute set on outer element"
     );
     is(
@@ -54,8 +54,8 @@ add_task(async function test() {
     );
     is(
       confirmDeleteButton.textContent,
-      "Delete",
-      "Delete button contents should match l10n attribute set on outer element"
+      "Remove",
+      "Remove button contents should match l10n attribute set on outer element"
     );
 
     cancelButton.click();

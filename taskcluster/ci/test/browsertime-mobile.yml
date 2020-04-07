@@ -3,13 +3,23 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 job-defaults:
-    max-run-time: 1800
+    max-run-time: 3600
     suite: raptor
     workdir: /builds/worker
     run-on-projects:
         by-app:
-            fenix: []
-            geckoview: ["integration", "try"]
+            fenix:
+                by-test-platform:
+                    android-hw-p2-.*aarch64.*/pgo: ["mozilla-central", "try"]
+                    default: []
+            geckoview:
+                by-test-platform:
+                    android-hw-p2-.*aarch64.*/pgo: ["mozilla-central", "try"]
+                    default: []
+            fennec:
+                by-test-platform:
+                    android-hw-p2-.*aarch64.*/pgo: ["mozilla-central", "try"]
+                    default: []
             refbrow: []
     tier: 3
     target:
@@ -17,11 +27,19 @@ job-defaults:
             fenix:
                 by-test-platform:
                     android-hw.*-aarch64.*/.*:
-                        index: project.mobile.fenix.v2.performance-test.latest.aarch64
-                        name: target.apk
+                        index: project.mobile.fenix.v2.performance-test.latest
+                        name: build/arm64-v8a/geckoNightly/target.apk
                     default:
-                        index: project.mobile.fenix.v2.performance-test.latest.arm
-                        name: target.apk
+                        index: project.mobile.fenix.v2.performance-test.latest
+                        name: build/armeabi-v7a/geckoNightly/target.apk
+            fennec:
+                by-test-platform:
+                    android-hw-p2-8-0-android-aarch64.*:
+                        index: gecko.v2.mozilla-esr68.latest.mobile.android-aarch64-opt
+                        name: build/target.apk
+                    default:
+                        index: gecko.v2.mozilla-esr68.latest.mobile.android-api-16-opt
+                        name: build/target.apk
             geckoview: geckoview_example.apk
             refbrow:
                 by-test-platform:
@@ -37,11 +55,13 @@ job-defaults:
         by-app:
             fenix: org.mozilla.fenix.IntentReceiverActivity
             geckoview: org.mozilla.geckoview_example.GeckoViewActivity
+            fennec: org.mozilla.gecko.BrowserApp
             refbrow: org.mozilla.reference.browser.BrowserTestActivity
     binary-path:
         by-app:
             fenix: org.mozilla.fenix.performancetest
             geckoview: org.mozilla.geckoview_example
+            fennec: org.mozilla.fennec_aurora
             refbrow: org.mozilla.reference.browser.raptor
     mozharness:
         script: raptor_script.py
@@ -50,9 +70,85 @@ job-defaults:
         extra-options:
             - --browsertime
 
-browsertime-tp6m-1:
-    description: "Raptor (browsertime) tp6m-1"
-    apps: ["fenix", "geckoview", "refbrow"]
-    cold: true
-    treeherder-symbol: Btime(tp6m-1)
-    raptor-test: raptor-tp6m-1
+browsertime-tp6m:
+    description: "Raptor (browsertime) tp6 page-load tests on android"
+    raptor-test: tp6m
+    raptor-subtests:
+        by-app:
+            fenix:
+                - aframe
+                - allrecipes
+                - amazon
+                - amazon-search
+                - bbc
+                - bing
+                - bing-search-restaurants
+                - booking
+                - cnn
+                - cnn-ampstories
+                - ebay-kleinanzeigen
+                - ebay-kleinanzeigen-search
+                - espn
+                - facebook
+                - facebook-cristiano
+                - google
+                - google-maps
+                - google-search-restaurants
+                - instagram
+                - imdb
+                - jianshu
+                - microsoft-support
+                - reddit
+                - stackoverflow
+                - web-de
+                - wikipedia
+                - youtube
+                - youtube-watch
+            default:
+                - amazon
+                - youtube
+    apps: ["geckoview", "fenix", "fennec"]
+    run-on-projects:
+        by-raptor-test:
+            amazon:
+                by-test-platform:
+                    android-hw-p2-.*aarch64.*/pgo: ["mozilla-central", "try"]
+                    default: []
+            youtube:
+                by-test-platform:
+                    android-hw-p2-.*aarch64.*/pgo: ["mozilla-central", "try"]
+                    default: []
+            default: []
+    pageload:
+        by-app:
+            fenix: both
+            default: cold
+    run-visual-metrics:
+        by-app:
+            fennec: false
+            default: true
+    treeherder-symbol: Btime(tp6m)
+
+browsertime-tp6m-profiling:
+    description: "Raptor (browsertime) tp6 page-load tests on android with Gecko profiling"
+    raptor-test: tp6m
+    raptor-subtests: ['amazon', 'youtube']
+    apps: ["geckoview"]
+    pageload: cold
+    treeherder-symbol: Btime-Prof(tp6m)
+    mozharness:
+        script: raptor_script.py
+        config:
+            - raptor/android_hw_config.py
+        extra-options:
+            - --browsertime
+            - --gecko-profile
+
+browsertime-benchmark-speedometer:
+    description: "Browsertime speedometer on android"
+    apps: ["geckoview", "fenix", "fennec"]
+    treeherder-symbol: Btime(sp)
+    mozharness:
+        extra-options:
+            - --browsertime
+            - --test=raptor-speedometer

@@ -9,6 +9,7 @@ import copy
 import logging
 import re
 import shlex
+import six
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,6 @@ UNITTEST_ALIASES = {
     'crashtest-e10s': alias_prefix('crashtest-e10s'),
     'e10s': alias_contains('e10s'),
     'firefox-ui-functional': alias_prefix('firefox-ui-functional'),
-    'firefox-ui-functional-e10s': alias_prefix('firefox-ui-functional-e10s'),
     'gaia-js-integration': alias_contains('gaia-js-integration'),
     'gtest': alias_prefix('gtest'),
     'jittest': alias_prefix('jittest'),
@@ -69,7 +69,6 @@ UNITTEST_ALIASES = {
     'jsreftest': alias_prefix('jsreftest'),
     'jsreftest-e10s': alias_prefix('jsreftest-e10s'),
     'marionette': alias_prefix('marionette'),
-    'marionette-e10s': alias_prefix('marionette-e10s'),
     'mochitest': alias_prefix('mochitest'),
     'mochitests': alias_prefix('mochitest'),
     'mochitest-e10s': alias_prefix('mochitest-e10s'),
@@ -99,6 +98,7 @@ UNITTEST_ALIASES = {
     'web-platform-test': alias_prefix('web-platform-tests'),
     'web-platform-tests': alias_prefix('web-platform-tests'),
     'web-platform-tests-e10s': alias_prefix('web-platform-tests-e10s'),
+    'web-platform-tests-crashtests': alias_prefix('web-platform-tests-crashtests'),
     'web-platform-tests-reftests': alias_prefix('web-platform-tests-reftests'),
     'web-platform-tests-reftests-e10s': alias_prefix('web-platform-tests-reftests-e10s'),
     'web-platform-tests-wdspec': alias_prefix('web-platform-tests-wdspec'),
@@ -121,30 +121,22 @@ UNITTEST_PLATFORM_PRETTY_NAMES = {
         'linux32',
         'linux64',
         'linux64-asan',
-        'linux64-stylo-sequential'
+        'linux1804-64',
+        'linux1804-64-asan'
     ],
     'x64': [
         'linux64',
         'linux64-asan',
-        'linux64-stylo-sequential'
+        'linux1804-64',
+        'linux1804-64-asan'
     ],
     'Android 7.0 Moto G5 32bit': ['android-hw-g5-7.0-arm7-api-16'],
     'Android 8.0 Google Pixel 2 32bit': ['android-hw-p2-8.0-arm7-api-16'],
     'Android 8.0 Google Pixel 2 64bit': ['android-hw-p2-8.0-android-aarch64'],
     '10.14': ['macosx1014-64'],
-    # other commonly-used substrings for platforms not yet supported with
-    # in-tree taskgraphs:
-    # '10.10.5': [..TODO..],
-    # '10.6': [..TODO..],
-    # '10.8': [..TODO..],
-    # 'Android 2.3 API9': [..TODO..],
     'Windows 7':  ['windows7-32'],
     'Windows 7 VM':  ['windows7-32-vm'],
-    'Windows 8':  ['windows8-64'],
     'Windows 10':  ['windows10-64'],
-    # 'Windows XP': [..TODO..],
-    # 'win32': [..TODO..],
-    # 'win64': [..TODO..],
 }
 
 TEST_CHUNK_SUFFIX = re.compile('(.*)-([0-9]+)$')
@@ -304,7 +296,7 @@ class TryOptionSyntax(object):
 
     def generate_test_tiers(self, full_task_graph):
         retval = defaultdict(set)
-        for t in full_task_graph.tasks.itervalues():
+        for t in six.itervalues(full_task_graph.tasks):
             if t.attributes.get('kind') == 'test':
                 try:
                     tier = t.task['extra']['treeherder']['tier']
@@ -329,11 +321,11 @@ class TryOptionSyntax(object):
         if build_types_arg is None:
             build_types_arg = []
 
-        build_types = filter(None, [BUILD_TYPE_ALIASES.get(build_type) for
-                             build_type in build_types_arg])
+        build_types = [_f for _f in (BUILD_TYPE_ALIASES.get(build_type) for
+                       build_type in build_types_arg) if _f]
 
         all_types = set(t.attributes['build_type']
-                        for t in full_task_graph.tasks.itervalues()
+                        for t in six.itervalues(full_task_graph.tasks)
                         if 'build_type' in t.attributes)
         bad_types = set(build_types) - all_types
         if bad_types:
@@ -358,10 +350,10 @@ class TryOptionSyntax(object):
                             (build, ', '.join(RIDEALONG_BUILDS[build])))
 
         test_platforms = set(t.attributes['test_platform']
-                             for t in full_task_graph.tasks.itervalues()
+                             for t in six.itervalues(full_task_graph.tasks)
                              if 'test_platform' in t.attributes)
         build_platforms = set(t.attributes['build_platform']
-                              for t in full_task_graph.tasks.itervalues()
+                              for t in six.itervalues(full_task_graph.tasks)
                               if 'build_platform' in t.attributes)
         all_platforms = test_platforms | build_platforms
         bad_platforms = set(results) - all_platforms
@@ -387,7 +379,7 @@ class TryOptionSyntax(object):
             return []
 
         all_platforms = set(t.attributes['test_platform'].split('/')[0]
-                            for t in full_task_graph.tasks.itervalues()
+                            for t in six.itervalues(full_task_graph.tasks)
                             if 'test_platform' in t.attributes)
 
         tests = self.parse_test_opts(test_arg, all_platforms)
@@ -396,7 +388,7 @@ class TryOptionSyntax(object):
             return []
 
         all_tests = set(t.attributes[attr_name]
-                        for t in full_task_graph.tasks.itervalues()
+                        for t in six.itervalues(full_task_graph.tasks)
                         if attr_name in t.attributes)
 
         # Special case where tests is 'all' and must be expanded
@@ -553,7 +545,7 @@ class TryOptionSyntax(object):
 
     def find_all_attribute_suffixes(self, graph, prefix):
         rv = set()
-        for t in graph.tasks.itervalues():
+        for t in six.itervalues(graph.tasks):
             for a in t.attributes:
                 if a.startswith(prefix):
                     rv.add(a[len(prefix):])

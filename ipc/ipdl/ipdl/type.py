@@ -255,7 +255,7 @@ class IPDLType(Type):
 class MessageType(IPDLType):
     def __init__(self, nested, prio, sendSemantics, direction,
                  ctor=False, dtor=False, cdtype=None, compress=False,
-                 verify=False):
+                 tainted=False, verify=False):
         assert not (ctor and dtor)
         assert not (ctor or dtor) or cdtype is not None
 
@@ -270,6 +270,7 @@ class MessageType(IPDLType):
         self.dtor = dtor
         self.cdtype = cdtype
         self.compress = compress
+        self.tainted = tainted
         self.verify = verify
 
     def isMessage(self): return True
@@ -526,8 +527,9 @@ class FDType(IPDLType):
 
 
 class EndpointType(IPDLType):
-    def __init__(self, qname):
+    def __init__(self, qname, actor):
         self.qname = qname
+        self.actor = actor
 
     def isEndpoint(self): return True
 
@@ -539,8 +541,9 @@ class EndpointType(IPDLType):
 
 
 class ManagedEndpointType(IPDLType):
-    def __init__(self, qname):
+    def __init__(self, qname, actor):
         self.qname = qname
+        self.actor = actor
 
     def isManagedEndpoint(self): return True
 
@@ -793,25 +796,29 @@ class GatherDecls(TcheckVisitor):
             p.parentEndpointDecl = self.declare(
                 loc=p.loc,
                 type=EndpointType(QualifiedId(p.loc, 'Endpoint<' +
-                                              fullname + 'Parent>', ['mozilla', 'ipc'])),
+                                              fullname + 'Parent>', ['mozilla', 'ipc']),
+                                  ActorType(p.decl.type)),
                 shortname='Endpoint<' + p.name + 'Parent>')
             p.childEndpointDecl = self.declare(
                 loc=p.loc,
                 type=EndpointType(QualifiedId(p.loc, 'Endpoint<' +
-                                              fullname + 'Child>', ['mozilla', 'ipc'])),
+                                              fullname + 'Child>', ['mozilla', 'ipc']),
+                                  ActorType(p.decl.type)),
                 shortname='Endpoint<' + p.name + 'Child>')
 
             p.parentManagedEndpointDecl = self.declare(
                 loc=p.loc,
                 type=ManagedEndpointType(QualifiedId(p.loc, 'ManagedEndpoint<' +
                                                      fullname + 'Parent>',
-                                                     ['mozilla', 'ipc'])),
+                                                     ['mozilla', 'ipc']),
+                                         ActorType(p.decl.type)),
                 shortname='ManagedEndpoint<' + p.name + 'Parent>')
             p.childManagedEndpointDecl = self.declare(
                 loc=p.loc,
                 type=ManagedEndpointType(QualifiedId(p.loc, 'ManagedEndpoint<' +
                                                      fullname + 'Child>',
-                                                     ['mozilla', 'ipc'])),
+                                                     ['mozilla', 'ipc']),
+                                         ActorType(p.decl.type)),
                 shortname='ManagedEndpoint<' + p.name + 'Child>')
 
             # XXX ugh, this sucks.  but we need this information to compute
@@ -1079,7 +1086,7 @@ class GatherDecls(TcheckVisitor):
 
         msgtype = MessageType(md.nested, md.prio, md.sendSemantics, md.direction,
                               ctor=isctor, dtor=isdtor, cdtype=cdtype,
-                              compress=md.compress, verify=md.verify)
+                              compress=md.compress, tainted=md.tainted, verify=md.verify)
 
         # replace inparam Param nodes with proper Decls
         def paramToDecl(param):

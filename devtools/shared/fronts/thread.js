@@ -9,13 +9,16 @@ const {
   FrontClassWithSpec,
   registerFront,
 } = require("devtools/shared/protocol");
+
 const { threadSpec } = require("devtools/shared/specs/thread");
 
 loader.lazyRequireGetter(
   this,
-  "ObjectClient",
-  "devtools/shared/client/object-client"
+  "ObjectFront",
+  "devtools/shared/fronts/object",
+  true
 );
+loader.lazyRequireGetter(this, "FrameFront", "devtools/shared/fronts/frame");
 loader.lazyRequireGetter(
   this,
   "SourceFront",
@@ -28,7 +31,7 @@ loader.lazyRequireGetter(
  * is a front to the thread actor created in the server side, hiding the
  * protocol details in a traditional JavaScript API.
  *
- * @param client DebuggerClient
+ * @param client DevToolsClient
  * @param actor string
  *        The actor ID for this thread.
  */
@@ -61,12 +64,20 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
     return this.actorID;
   }
 
+  getWebconsoleFront() {
+    return this.targetFront.getFront("console");
+  }
+
   _assertPaused(command) {
     if (!this.paused) {
       throw Error(
         command + " command sent while not paused. Currently " + this._state
       );
     }
+  }
+
+  getFrames(start, count) {
+    return super.frames(start, count);
   }
 
   /**
@@ -77,12 +88,8 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
    *        An object with a type property set to the appropriate limit (next,
    *        step, or finish) per the remote debugging protocol specification.
    *        Use null to specify no limit.
-   * @param bool aRewind
-   *        Whether execution should rewind until the limit is reached, rather
-   *        than proceeding forwards. This parameter has no effect if the
-   *        server does not support rewinding.
    */
-  async _doResume(resumeLimit, rewind) {
+  async _doResume(resumeLimit) {
     this._assertPaused("resume");
 
     // Put the client in a tentative "resuming" state so we can prevent
@@ -90,7 +97,7 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
     this._previousState = this._state;
     this._state = "resuming";
     try {
-      await super.resume(resumeLimit, rewind);
+      await super.resume(resumeLimit);
     } catch (e) {
       if (this._state == "resuming") {
         // There was an error resuming, update the state to the new one
@@ -111,7 +118,7 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
    * Resume a paused thread.
    */
   resume() {
-    return this._doResume(null, false);
+    return this._doResume(null);
   }
 
   /**
@@ -119,47 +126,28 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
    *
    */
   resumeThenPause() {
-    return this._doResume({ type: "break" }, false);
-  }
-
-  /**
-   * Rewind a thread until a breakpoint is hit.
-   */
-  async rewind() {
-    if (!this.paused) {
-      this.interrupt();
-      await this.once("paused");
-    }
-
-    this._doResume(null, true);
+    return this._doResume({ type: "break" });
   }
 
   /**
    * Step over a function call.
    */
   stepOver() {
-    return this._doResume({ type: "next" }, false);
+    return this._doResume({ type: "next" });
   }
 
   /**
    * Step into a function call.
    */
   stepIn() {
-    return this._doResume({ type: "step" }, false);
+    return this._doResume({ type: "step" });
   }
 
   /**
    * Step out of a function call.
    */
   stepOut() {
-    return this._doResume({ type: "finish" }, false);
-  }
-
-  /**
-   * Rewind step over a function call.
-   */
-  reverseStepOver() {
-    return this._doResume({ type: "next" }, true);
+    return this._doResume({ type: "finish" });
   }
 
   /**
@@ -216,19 +204,6 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
   }
 
   /**
-   * Request frames from the callstack for the current thread.
-   *
-   * @param start integer
-   *        The number of the youngest stack frame to return (the youngest
-   *        frame is 0).
-   * @param count integer
-   *        The maximum number of frames to return, or null to return all
-   *        frames.
-   */
-  getFrames(start, count) {
-    return super.frames(start, count);
-  }
-  /**
    * attach to the thread actor.
    */
   async attach(options) {
@@ -254,16 +229,7 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
   }
 
   /**
-   * Request the frame environment.
-   *
-   * @param frameId string
-   */
-  getEnvironment(frameId) {
-    return this.client.request({ to: frameId, type: "getEnvironment" });
-  }
-
-  /**
-   * Return a ObjectClient object for the given object grip.
+   * Return a ObjectFront object for the given object grip.
    *
    * @param grip object
    *        A pause-lifetime object grip returned by the protocol.
@@ -273,22 +239,35 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
       return this._pauseGrips[grip.actor];
     }
 
-    const client = new ObjectClient(this.client, grip);
-    this._pauseGrips[grip.actor] = client;
-    return client;
+    const objectFront = new ObjectFront(
+      this.conn,
+      this.targetFront,
+      this,
+      grip
+    );
+    this._pauseGrips[grip.actor] = objectFront;
+    return objectFront;
   }
 
   /**
-   * Clear and invalidate all the grip clients from the given cache.
+   * Clear and invalidate all the grip fronts from the given cache.
    *
    * @param gripCacheName
    *        The property name of the grip cache we want to clear.
    */
-  _clearObjectClients(gripCacheName) {
+  _clearObjectFronts(gripCacheName) {
     for (const id in this[gripCacheName]) {
       this[gripCacheName][id].valid = false;
     }
     this[gripCacheName] = {};
+  }
+
+  _clearFrameFronts() {
+    for (const front of this.poolChildren()) {
+      if (front instanceof FrameFront) {
+        this.unmanage(front);
+      }
+    }
   }
 
   /**
@@ -296,7 +275,7 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
    * clients.
    */
   _clearPauseGrips() {
-    this._clearObjectClients("_pauseGrips");
+    this._clearObjectFronts("_pauseGrips");
   }
 
   /**
@@ -304,7 +283,7 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
    * clients.
    */
   _clearThreadGrips() {
-    this._clearObjectClients("_threadGrips");
+    this._clearObjectFronts("_threadGrips");
   }
 
   _beforePaused(packet) {
@@ -315,12 +294,14 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
   _beforeResumed() {
     this._state = "attached";
     this._onThreadState(null);
+    this._clearFrameFronts();
   }
 
   _beforeDetached(packet) {
     this._state = "detached";
     this._onThreadState(packet);
     this._clearThreadGrips();
+    this._clearFrameFronts();
   }
 
   /**
@@ -346,8 +327,10 @@ class ThreadFront extends FrontClassWithSpec(threadSpec) {
       return this._threadGrips[form.actor];
     }
 
-    this._threadGrips[form.actor] = new SourceFront(this.client, form);
-    return this._threadGrips[form.actor];
+    const sourceFront = new SourceFront(this.client, form);
+    this.manage(sourceFront);
+    this._threadGrips[form.actor] = sourceFront;
+    return sourceFront;
   }
 }
 

@@ -218,6 +218,8 @@ const OPTIONAL_PROPERTIES = [
   "ip",
   "frameAncestors",
   "urlClassification",
+  "requestSize",
+  "responseSize",
 ];
 
 function serializeRequestData(eventName) {
@@ -231,6 +233,7 @@ function serializeRequestData(eventName) {
     timeStamp: Date.now(),
     frameId: this.windowId,
     parentFrameId: this.parentWindowId,
+    thirdParty: this.thirdParty,
   };
 
   if (MAYBE_CACHED_EVENTS.has(eventName)) {
@@ -768,6 +771,7 @@ HttpObserverManager = {
       type: channel.type,
       fromCache: channel.fromCache,
       originAttributes,
+      thirdParty: channel.thirdParty,
 
       originUrl: channel.originURL || undefined,
       documentUrl: channel.documentURL || undefined,
@@ -782,6 +786,9 @@ HttpObserverManager = {
       proxyInfo: channel.proxyInfo,
 
       serialize: serializeRequestData,
+      requestSize: channel.requestSize,
+      responseSize: channel.responseSize,
+      urlClassification: channel.urlClassification,
     };
 
     return Object.assign(data, extraData);
@@ -846,13 +853,6 @@ HttpObserverManager = {
           }
         }
         let data = Object.create(commonData);
-
-        // We're limiting access to urlClassification while the feature is
-        // further fleshed out.
-        let { policy } = opts;
-        if (policy && policy.extension.isPrivileged) {
-          data.urlClassification = channel.urlClassification;
-        }
 
         if (registerFilter && opts.blocking && opts.policy) {
           data.registerTraceableChannel = (policy, remoteTab) => {
@@ -966,7 +966,17 @@ HttpObserverManager = {
 
         if (result.cancel) {
           channel.suspended = false;
-          channel.cancel(Cr.NS_ERROR_ABORT);
+          channel.cancel(
+            Cr.NS_ERROR_ABORT,
+            Ci.nsILoadInfo.BLOCKING_REASON_EXTENSION_WEBREQUEST
+          );
+          let { policy } = opts;
+          if (policy) {
+            let properties = channel.channel.QueryInterface(
+              Ci.nsIWritablePropertyBag
+            );
+            properties.setProperty("cancelledByExtension", policy.id);
+          }
           return;
         }
 

@@ -18,15 +18,17 @@ class SearchOneOffs {
     this.container.appendChild(
       MozXULElement.parseXULToFragment(
         `
-      <hbox class="search-panel-one-offs-header search-panel-header search-panel-current-input">
+      <hbox class="search-panel-one-offs-header search-panel-header">
         <label class="search-panel-one-offs-header-label" data-l10n-id="search-one-offs-with-title"/>
       </hbox>
-      <hbox class="search-panel-one-offs" role="group"/>
+      <box class="search-panel-one-offs-container">
+        <hbox class="search-panel-one-offs" role="group"/>
+        <hbox class="search-one-offs-spacer"/>
+        <button class="searchbar-engine-one-off-item search-setting-button-compact" data-l10n-id="search-one-offs-change-settings-compact-button"/>
+      </box>
       <vbox class="search-add-engines"/>
-      <hbox class="search-one-offs-spacer"/>
-      <button class="searchbar-engine-one-off-item search-setting-button-compact" data-l10n-id="search-one-offs-change-settings-compact-button"/>
       <button class="search-setting-button" data-l10n-id="search-one-offs-change-settings-button"/>
-      <box style="visibiltiy:collapse">
+      <box>
         <menupopup class="search-one-offs-context-menu">
           <menuitem class="search-one-offs-context-open-in-new-tab" data-l10n-id="search-one-offs-context-open-new-tab"/>
           <menuitem class="search-one-offs-context-set-default" data-l10n-id="search-one-offs-context-set-as-default"/>
@@ -210,9 +212,11 @@ class SearchOneOffs {
   set popup(val) {
     if (this._popup) {
       this._popup.removeEventListener("popupshowing", this);
+      this._popup.removeEventListener("popuphidden", this);
     }
     if (val) {
       val.addEventListener("popupshowing", this);
+      val.addEventListener("popuphidden", this);
     }
     this._popup = val;
 
@@ -436,9 +440,6 @@ class SearchOneOffs {
    * Builds all the UI.
    */
   async __rebuild() {
-    this.selectedButton = null;
-    this._contextEngine = null;
-
     // Handle opensearch items. This needs to be done before building the
     // list of one off providers, as that code will return early if all the
     // alternative engines are hidden.
@@ -1269,11 +1270,20 @@ class SearchOneOffs {
   }
 
   _on_popupshowing() {
-    this._rebuild();
+    this.onViewOpen();
+  }
+
+  _on_popuphidden() {
+    this.onViewClose();
   }
 
   onViewOpen() {
     this._rebuild();
+  }
+
+  onViewClose() {
+    this.selectedButton = null;
+    this._contextEngine = null;
   }
 }
 

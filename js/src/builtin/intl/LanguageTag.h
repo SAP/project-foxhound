@@ -10,7 +10,7 @@
 #define builtin_intl_LanguageTag_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Range.h"
+#include "mozilla/Span.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/Variant.h"
@@ -28,65 +28,62 @@
 #include "js/Utility.h"
 #include "js/Vector.h"
 
-struct JSContext;
+struct JS_PUBLIC_API JSContext;
 class JSLinearString;
-class JSString;
+class JS_PUBLIC_API JSString;
+class JS_PUBLIC_API JSTracer;
 
 namespace js {
 
 namespace intl {
 
+/**
+ * Return true if |language| is a valid language subtag.
+ */
+template <typename CharT>
+bool IsStructurallyValidLanguageTag(mozilla::Span<const CharT> language);
+
+/**
+ * Return true if |script| is a valid script subtag.
+ */
+template <typename CharT>
+bool IsStructurallyValidScriptTag(mozilla::Span<const CharT> script);
+
+/**
+ * Return true if |region| is a valid region subtag.
+ */
+template <typename CharT>
+bool IsStructurallyValidRegionTag(mozilla::Span<const CharT> region);
+
 #ifdef DEBUG
-
 /**
- * Return true if |language| is a valid, case-normalized language subtag.
+ * Return true if |variant| is a valid variant subtag.
  */
-template <typename CharT>
-bool IsStructurallyValidLanguageTag(
-    const mozilla::Range<const CharT>& language);
+bool IsStructurallyValidVariantTag(mozilla::Span<const char> variant);
 
 /**
- * Return true if |script| is a valid, case-normalized script subtag.
- */
-template <typename CharT>
-bool IsStructurallyValidScriptTag(const mozilla::Range<const CharT>& script);
-
-/**
- * Return true if |region| is a valid, case-normalized region subtag.
- */
-template <typename CharT>
-bool IsStructurallyValidRegionTag(const mozilla::Range<const CharT>& region);
-
-/**
- * Return true if |variant| is a valid, case-normalized variant subtag.
- */
-bool IsStructurallyValidVariantTag(const mozilla::Range<const char>& variant);
-
-/**
- * Return true if |extension| is a valid, case-normalized Unicode extension
- * subtag.
+ * Return true if |extension| is a valid Unicode extension subtag.
  */
 bool IsStructurallyValidUnicodeExtensionTag(
-    const mozilla::Range<const char>& extension);
+    mozilla::Span<const char> extension);
 
 /**
- * Return true if |privateUse| is a valid, case-normalized private-use subtag.
+ * Return true if |privateUse| is a valid private-use subtag.
  */
-bool IsStructurallyValidPrivateUseTag(
-    const mozilla::Range<const char>& privateUse);
+bool IsStructurallyValidPrivateUseTag(mozilla::Span<const char> privateUse);
 
 #endif
 
 template <typename CharT>
 char AsciiToLowerCase(CharT c) {
   MOZ_ASSERT(mozilla::IsAscii(c));
-  return mozilla::IsAsciiUppercaseAlpha(c) ? (c | 0x20) : c;
+  return mozilla::IsAsciiUppercaseAlpha(c) ? (c + 0x20) : c;
 }
 
 template <typename CharT>
 char AsciiToUpperCase(CharT c) {
   MOZ_ASSERT(mozilla::IsAscii(c));
-  return mozilla::IsAsciiLowercaseAlpha(c) ? (c & ~0x20) : c;
+  return mozilla::IsAsciiLowercaseAlpha(c) ? (c - 0x20) : c;
 }
 
 template <typename CharT>
@@ -141,7 +138,7 @@ static constexpr size_t TransformKeyLength = 2;
 template <size_t Length>
 class LanguageTagSubtag final {
   uint8_t length_ = 0;
-  char chars_[Length];
+  char chars_[Length] = {};  // zero initialize
 
  public:
   LanguageTagSubtag() = default;
@@ -150,21 +147,31 @@ class LanguageTagSubtag final {
   LanguageTagSubtag& operator=(const LanguageTagSubtag&) = delete;
 
   size_t length() const { return length_; }
+  bool missing() const { return length_ == 0; }
+  bool present() const { return length_ > 0; }
 
-  mozilla::Range<const char> range() const { return {chars_, length_}; }
+  mozilla::Span<const char> span() const { return {chars_, length_}; }
 
   template <typename CharT>
-  void set(const mozilla::Range<const CharT>& str) {
-    MOZ_ASSERT(str.length() <= Length);
-    std::copy_n(str.begin().get(), str.length(), chars_);
-    length_ = str.length();
+  void set(mozilla::Span<const CharT> str) {
+    MOZ_ASSERT(str.size() <= Length);
+    std::copy_n(str.data(), str.size(), chars_);
+    length_ = str.size();
   }
 
-  void toLowerCase() { AsciiToLowerCase(chars_, length(), chars_); }
+  // The toXYZCase() methods are using |Length| instead of |length()|, because
+  // current compilers (tested GCC and Clang) can't infer the maximum string
+  // length - even when using hints like |std::min| - and instead are emitting
+  // SIMD optimized code. Using a fixed sized length avoids emitting the SIMD
+  // code. (Emitting SIMD code doesn't make sense here, because the SIMD code
+  // only kicks in for long strings.) A fixed length will additionally ensure
+  // the compiler unrolls the loop in the case conversion code.
 
-  void toUpperCase() { AsciiToUpperCase(chars_, length(), chars_); }
+  void toLowerCase() { AsciiToLowerCase(chars_, Length, chars_); }
 
-  void toTitleCase() { AsciiToTitleCase(chars_, length(), chars_); }
+  void toUpperCase() { AsciiToUpperCase(chars_, Length, chars_); }
+
+  void toTitleCase() { AsciiToTitleCase(chars_, Length, chars_); }
 
   template <size_t N>
   bool equalTo(const char (&str)[N]) const {
@@ -198,14 +205,8 @@ class MOZ_STACK_CLASS LanguageTag final {
 
   friend class LanguageTagParser;
 
- public:
-  // Flag to request canonicalized Unicode extensions.
-  enum class UnicodeExtensionCanonicalForm : bool { No, Yes };
-
- private:
-  bool canonicalizeUnicodeExtension(
-      JSContext* cx, JS::UniqueChars& unicodeExtension,
-      UnicodeExtensionCanonicalForm canonicalForm);
+  bool canonicalizeUnicodeExtension(JSContext* cx,
+                                    JS::UniqueChars& unicodeExtension);
 
   bool canonicalizeTransformExtension(JSContext* cx,
                                       JS::UniqueChars& transformExtension);
@@ -220,12 +221,24 @@ class MOZ_STACK_CLASS LanguageTag final {
 
   void performComplexLanguageMappings();
   void performComplexRegionMappings();
+  MOZ_MUST_USE bool performVariantMappings(JSContext* cx);
 
   MOZ_MUST_USE bool updateGrandfatheredMappings(JSContext* cx);
 
+  static const char* replaceTransformExtensionType(
+      mozilla::Span<const char> key, mozilla::Span<const char> type);
+
+ public:
+  /**
+   * Given a Unicode key and type, return the null-terminated preferred
+   * replacement for that type if there is one, or null if there is none, e.g.
+   * in effect
+   * |replaceUnicodeExtensionType("ca", "islamicc") == "islamic-civil"|
+   * and
+   * |replaceUnicodeExtensionType("ca", "islamic-civil") == nullptr|.
+   */
   static const char* replaceUnicodeExtensionType(
-      const mozilla::Range<const char>& key,
-      const mozilla::Range<const char>& type);
+      mozilla::Span<const char> key, mozilla::Span<const char> type);
 
  public:
   explicit LanguageTag(JSContext* cx) : variants_(cx), extensions_(cx) {}
@@ -241,65 +254,68 @@ class MOZ_STACK_CLASS LanguageTag final {
   const char* privateuse() const { return privateuse_.get(); }
 
   /**
-   * Set the language subtag. The input must be a valid, case-normalized
-   * language subtag.
+   * Return the Unicode extension subtag or nullptr if not present.
+   */
+  const char* unicodeExtension() const;
+
+ private:
+  ptrdiff_t unicodeExtensionIndex() const;
+
+ public:
+  /**
+   * Set the language subtag. The input must be a valid language subtag.
    */
   template <size_t N>
   void setLanguage(const char (&language)[N]) {
-    mozilla::Range<const char> range(language, N - 1);
-    MOZ_ASSERT(IsStructurallyValidLanguageTag(range));
-    language_.set(range);
+    mozilla::Span<const char> span(language, N - 1);
+    MOZ_ASSERT(IsStructurallyValidLanguageTag(span));
+    language_.set(span);
   }
 
   /**
-   * Set the language subtag. The input must be a valid, case-normalized
-   * language subtag.
+   * Set the language subtag. The input must be a valid language subtag.
    */
   void setLanguage(const LanguageSubtag& language) {
-    MOZ_ASSERT(IsStructurallyValidLanguageTag(language.range()));
-    language_.set(language.range());
+    MOZ_ASSERT(IsStructurallyValidLanguageTag(language.span()));
+    language_.set(language.span());
   }
 
   /**
-   * Set the script subtag. The input must be a valid, case-normalized
-   * script subtag or the empty string.
+   * Set the script subtag. The input must be a valid script subtag.
    */
   template <size_t N>
   void setScript(const char (&script)[N]) {
-    mozilla::Range<const char> range(script, N - 1);
-    MOZ_ASSERT(IsStructurallyValidScriptTag(range));
-    script_.set(range);
+    mozilla::Span<const char> span(script, N - 1);
+    MOZ_ASSERT(IsStructurallyValidScriptTag(span));
+    script_.set(span);
   }
 
   /**
-   * Set the script subtag. The input must be a valid, case-normalized
-   * script subtag or the empty string.
+   * Set the script subtag. The input must be a valid script subtag or the empty
+   * string.
    */
   void setScript(const ScriptSubtag& script) {
-    MOZ_ASSERT(script.length() == 0 ||
-               IsStructurallyValidScriptTag(script.range()));
-    script_.set(script.range());
+    MOZ_ASSERT(script.missing() || IsStructurallyValidScriptTag(script.span()));
+    script_.set(script.span());
   }
 
   /**
-   * Set the region subtag. The input must be a valid, case-normalized
-   * region subtag or the empty string.
+   * Set the region subtag. The input must be a valid region subtag.
    */
   template <size_t N>
   void setRegion(const char (&region)[N]) {
-    mozilla::Range<const char> range(region, N - 1);
-    MOZ_ASSERT(IsStructurallyValidRegionTag(range));
-    region_.set(range);
+    mozilla::Span<const char> span(region, N - 1);
+    MOZ_ASSERT(IsStructurallyValidRegionTag(span));
+    region_.set(span);
   }
 
   /**
-   * Set the region subtag. The input must be a valid, case-normalized
-   * region subtag or the empty string.
+   * Set the region subtag. The input must be a valid region subtag or the empty
+   * empty string.
    */
   void setRegion(const RegionSubtag& region) {
-    MOZ_ASSERT(region.length() == 0 ||
-               IsStructurallyValidRegionTag(region.range()));
-    region_.set(region.range());
+    MOZ_ASSERT(region.missing() || IsStructurallyValidRegionTag(region.span()));
+    region_.set(region.span());
   }
 
   /**
@@ -308,8 +324,8 @@ class MOZ_STACK_CLASS LanguageTag final {
   void clearVariants() { variants_.clearAndFree(); }
 
   /**
-   * Set the Unicode extension subtag. The input must be a valid,
-   * case-normalized Unicode extension subtag.
+   * Set the Unicode extension subtag. The input must be a valid Unicode
+   * extension subtag.
    */
   bool setUnicodeExtension(JS::UniqueChars extension);
 
@@ -319,8 +335,8 @@ class MOZ_STACK_CLASS LanguageTag final {
   void clearUnicodeExtension();
 
   /**
-   * Set the private-use subtag. The input must be a valid, case-normalized
-   * private-use subtag or the empty string.
+   * Set the private-use subtag. The input must be a valid private-use subtag
+   * or nullptr.
    */
   void setPrivateuse(JS::UniqueChars privateuse) {
     MOZ_ASSERT(!privateuse ||
@@ -329,17 +345,24 @@ class MOZ_STACK_CLASS LanguageTag final {
     privateuse_ = std::move(privateuse);
   }
 
+ private:
+  enum class DuplicateVariants { Reject, Accept };
+
+  bool canonicalizeBaseName(JSContext* cx, DuplicateVariants duplicateVariants);
+
+ public:
   /**
    * Canonicalize the base-name subtags, that means the language, script,
    * region, and variant subtags.
    */
-  bool canonicalizeBaseName(JSContext* cx);
+  bool canonicalizeBaseName(JSContext* cx) {
+    return canonicalizeBaseName(cx, DuplicateVariants::Reject);
+  }
 
   /**
    * Canonicalize all extension subtags.
    */
-  bool canonicalizeExtensions(JSContext* cx,
-                              UnicodeExtensionCanonicalForm canonicalForm);
+  bool canonicalizeExtensions(JSContext* cx);
 
   /**
    * Canonicalizes the given structurally valid Unicode BCP 47 locale
@@ -358,28 +381,22 @@ class MOZ_STACK_CLASS LanguageTag final {
    *
    * becomes zh-Hans-MM-variant1-variant2-t-zh-latn-u-ca-chinese-x-private
    *
-   * UTS 35 specifies two different canonicalization algorithms. There's one to
-   * canonicalize BCP 47 language tags and other one to canonicalize Unicode
-   * locale identifiers. The latter one wasn't present when ECMA-402 was changed
-   * to use Unicode BCP 47 locale identifiers instead of BCP 47 language tags,
-   * so ECMA-402 currently only uses the former to canonicalize Unicode BCP 47
-   * locale identifiers.
-   *
    * Spec: ECMAScript Internationalization API Specification, 6.2.3.
-   * Spec:
-   * https://unicode.org/reports/tr35/#Canonical_Unicode_Locale_Identifiers
-   * Spec: https://unicode.org/reports/tr35/#BCP_47_Language_Tag_Conversion
    */
-  bool canonicalize(JSContext* cx,
-                    UnicodeExtensionCanonicalForm canonicalForm) {
-    return canonicalizeBaseName(cx) &&
-           canonicalizeExtensions(cx, canonicalForm);
+  bool canonicalize(JSContext* cx) {
+    return canonicalizeBaseName(cx) && canonicalizeExtensions(cx);
   }
 
   /**
    * Return the string representation of this language tag.
    */
   JSString* toString(JSContext* cx) const;
+
+  /**
+   * Return the string representation of this language tag as a null-terminated
+   * C-string.
+   */
+  JS::UniqueChars toStringZ(JSContext* cx) const;
 
   /**
    * Add likely-subtags to the language tag.
@@ -462,10 +479,10 @@ class MOZ_STACK_CLASS LanguageTagParser final {
     size_t length = tok.length();
     if (locale_.is<const JS::Latin1Char*>()) {
       using T = const JS::Latin1Char;
-      subtag.set(mozilla::Range<T>(locale_.as<T*>() + index, length));
+      subtag.set(mozilla::MakeSpan(locale_.as<T*>() + index, length));
     } else {
       using T = const char16_t;
-      subtag.set(mozilla::Range<T>(locale_.as<T*>() + index, length));
+      subtag.set(mozilla::MakeSpan(locale_.as<T*>() + index, length));
     }
   }
 
@@ -477,10 +494,15 @@ class MOZ_STACK_CLASS LanguageTagParser final {
     return chars(cx, tok.index(), tok.length());
   }
 
-  Token nextToken();
-
   JS::UniqueChars extension(JSContext* cx, const Token& start,
-                            const Token& end) const;
+                            const Token& end) const {
+    MOZ_ASSERT(start.index() < end.index());
+
+    size_t length = end.index() - 1 - start.index();
+    return chars(cx, start.index(), length);
+  }
+
+  Token nextToken();
 
   // unicode_language_subtag = alpha{2,3} | alpha{5,8} ;
   //
@@ -513,8 +535,7 @@ class MOZ_STACK_CLASS LanguageTagParser final {
   // Always returns the lower case form of an alphabetical character.
   char singletonKey(const Token& tok) const {
     MOZ_ASSERT(tok.length() == 1);
-    char c = charAt(tok.index());
-    return mozilla::IsAsciiUppercaseAlpha(c) ? (c | 0x20) : c;
+    return AsciiToLowerCase(charAt(tok.index()));
   }
 
   // extensions = unicode_locale_extensions |
@@ -581,23 +602,18 @@ class MOZ_STACK_CLASS LanguageTagParser final {
     return 1 <= tok.length() && tok.length() <= 8;
   }
 
-  enum class BaseNameParsing : bool { Normal, WithinTransformExtension };
-
   // Helper function for use in |parseBaseName| and
   // |parseTlangInTransformExtension|.  Do not use this directly!
   static JS::Result<bool> internalParseBaseName(JSContext* cx,
                                                 LanguageTagParser& ts,
-                                                LanguageTag& tag, Token& tok,
-                                                BaseNameParsing parseType);
+                                                LanguageTag& tag, Token& tok);
 
   // Parse the `unicode_language_id` production, i.e. the
-  // language/script/region/variants portion of a language tag, into |tag|,
-  // which will be filled with canonical-cased components (lowercase language,
-  // titlecase script, uppercase region, lowercased and alphabetized and
-  // deduplicated variants). |tok| must be the current token.
+  // language/script/region/variants portion of a language tag, into |tag|.
+  // |tok| must be the current token.
   static JS::Result<bool> parseBaseName(JSContext* cx, LanguageTagParser& ts,
                                         LanguageTag& tag, Token& tok) {
-    return internalParseBaseName(cx, ts, tag, tok, BaseNameParsing::Normal);
+    return internalParseBaseName(cx, ts, tag, tok);
   }
 
   // Parse the `tlang` production within a parsed 't' transform extension.
@@ -611,17 +627,14 @@ class MOZ_STACK_CLASS LanguageTagParser final {
   // Return an error on internal failure. Otherwise, return a success value. If
   // there was no `tlang`, then |tag.language().missing()|. But if there was a
   // `tlang`, then |tag| is filled with subtags exactly as they appeared in the
-  // parse input: fully lowercase, variants in alphabetical order without
-  // duplicates.
+  // parse input.
   static JS::Result<JS::Ok> parseTlangInTransformExtension(
       JSContext* cx, LanguageTagParser& ts, LanguageTag& tag, Token& tok) {
     MOZ_ASSERT(ts.isLanguage(tok));
-    return internalParseBaseName(cx, ts, tag, tok,
-                                 BaseNameParsing::WithinTransformExtension)
-        .map([](bool parsed) {
-          MOZ_ASSERT(parsed);
-          return JS::Ok();
-        });
+    return internalParseBaseName(cx, ts, tag, tok).map([](bool parsed) {
+      MOZ_ASSERT(parsed);
+      return JS::Ok();
+    });
   }
 
   friend class LanguageTag;
@@ -650,20 +663,28 @@ class MOZ_STACK_CLASS LanguageTagParser final {
   // `tlang` and `tfield` components. Data in |tag| is lowercase, consistent
   // with |extension|.
   static JS::Result<bool> parseTransformExtension(
-      JSContext* cx, mozilla::Range<const char> extension, LanguageTag& tag,
+      JSContext* cx, mozilla::Span<const char> extension, LanguageTag& tag,
       TFieldVector& fields);
 
   // Parse |extension|, which must be a validated, fully lowercase
   // `unicode_locale_extensions` subtag, and fill |attributes| and |keywords|
   // from the `attribute` and `keyword` components.
   static JS::Result<bool> parseUnicodeExtension(
-      JSContext* cx, mozilla::Range<const char> extension,
+      JSContext* cx, mozilla::Span<const char> extension,
       AttributesVector& attributes, KeywordsVector& keywords);
+
+  static JS::Result<bool> tryParse(JSContext* cx, LocaleChars& localeChars,
+                                   size_t localeLength, LanguageTag& tag);
 
  public:
   // Parse the input string as a language tag. Reports an error to the context
   // if the input can't be parsed completely.
   static bool parse(JSContext* cx, JSLinearString* locale, LanguageTag& tag);
+
+  // Parse the input string as a language tag. Reports an error to the context
+  // if the input can't be parsed completely.
+  static bool parse(JSContext* cx, mozilla::Span<const char> locale,
+                    LanguageTag& tag);
 
   // Parse the input string as a language tag. Returns Ok(true) if the input
   // could be completely parsed, Ok(false) if the input couldn't be parsed,
@@ -671,13 +692,20 @@ class MOZ_STACK_CLASS LanguageTagParser final {
   static JS::Result<bool> tryParse(JSContext* cx, JSLinearString* locale,
                                    LanguageTag& tag);
 
+  // Parse the input string as a language tag. Returns Ok(true) if the input
+  // could be completely parsed, Ok(false) if the input couldn't be parsed,
+  // or Err() in case of internal error.
+  static JS::Result<bool> tryParse(JSContext* cx,
+                                   mozilla::Span<const char> locale,
+                                   LanguageTag& tag);
+
   // Parse the input string as the base-name parts (language, script, region,
   // variants) of a language tag. Ignores any trailing characters.
-  static bool parseBaseName(JSContext* cx, mozilla::Range<const char> locale,
+  static bool parseBaseName(JSContext* cx, mozilla::Span<const char> locale,
                             LanguageTag& tag);
 
   // Return true iff |extension| can be parsed as a Unicode extension subtag.
-  static bool canParseUnicodeExtension(mozilla::Range<const char> extension);
+  static bool canParseUnicodeExtension(mozilla::Span<const char> extension);
 
   // Return true iff |unicodeType| can be parsed as a Unicode extension type.
   static bool canParseUnicodeExtensionType(JSLinearString* unicodeType);
@@ -687,24 +715,21 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(LanguageTagParser::TokenKind)
 
 /**
  * Parse a string as a standalone |language| tag. If |str| is a standalone
- * language tag, store it in case-normalized form in |result| and return true.
- * Otherwise return false.
+ * language tag, store it in |result| and return true. Otherwise return false.
  */
-MOZ_MUST_USE bool ParseStandaloneLanguagTag(JS::Handle<JSLinearString*> str,
-                                            LanguageSubtag& result);
+MOZ_MUST_USE bool ParseStandaloneLanguageTag(JS::Handle<JSLinearString*> str,
+                                             LanguageSubtag& result);
 
 /**
  * Parse a string as a standalone |script| tag. If |str| is a standalone script
- * tag, store it in case-normalized form in |result| and return true. Otherwise
- * return false.
+ * tag, store it in |result| and return true. Otherwise return false.
  */
 MOZ_MUST_USE bool ParseStandaloneScriptTag(JS::Handle<JSLinearString*> str,
                                            ScriptSubtag& result);
 
 /**
  * Parse a string as a standalone |region| tag. If |str| is a standalone region
- * tag, store it in case-normalized form in |result| and return true. Otherwise
- * return false.
+ * tag, store it in |result| and return true. Otherwise return false.
  */
 MOZ_MUST_USE bool ParseStandaloneRegionTag(JS::Handle<JSLinearString*> str,
                                            RegionSubtag& result);
@@ -716,6 +741,28 @@ MOZ_MUST_USE bool ParseStandaloneRegionTag(JS::Handle<JSLinearString*> str,
  */
 JS::Result<JSString*> ParseStandaloneISO639LanguageTag(
     JSContext* cx, JS::Handle<JSLinearString*> str);
+
+class UnicodeExtensionKeyword final {
+  char key_[LanguageTagLimits::UnicodeKeyLength];
+  JSLinearString* type_;
+
+ public:
+  using UnicodeKey = const char (&)[LanguageTagLimits::UnicodeKeyLength + 1];
+  using UnicodeKeySpan =
+      mozilla::Span<const char, LanguageTagLimits::UnicodeKeyLength>;
+
+  UnicodeExtensionKeyword(UnicodeKey key, JSLinearString* type)
+      : key_{key[0], key[1]}, type_(type) {}
+
+  UnicodeKeySpan key() const { return {key_, sizeof(key_)}; }
+  JSLinearString* type() const { return type_; }
+
+  void trace(JSTracer* trc);
+};
+
+extern MOZ_MUST_USE bool ApplyUnicodeExtensionToTag(
+    JSContext* cx, LanguageTag& tag,
+    JS::HandleVector<UnicodeExtensionKeyword> keywords);
 
 }  // namespace intl
 

@@ -20,7 +20,6 @@ const HELPERS = [
   "help",
   "inspect",
   "keys",
-  "pprint",
   "screenshot",
   "values",
 ];
@@ -41,9 +40,9 @@ add_task(async function() {
 
   for (const helper of HELPERS) {
     await setInputValueForAutocompletion(hud, helper);
-    const autocompleteItems = getPopupLabels(autocompletePopup).filter(
-      l => l === helper
-    );
+    const autocompleteItems = getAutocompletePopupLabels(
+      autocompletePopup
+    ).filter(l => l === helper);
     is(
       autocompleteItems.length,
       1,
@@ -59,7 +58,3 @@ add_task(async function() {
     ok(true, `output is correct for ${helper}()`);
   }
 });
-
-function getPopupLabels(popup) {
-  return popup.getItems().map(item => item.label);
-}

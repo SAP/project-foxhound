@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import shutil
+import six
 
 from collections import OrderedDict
 
@@ -177,7 +178,7 @@ class PackageFrontend(MachCommandBase):
     def artifact_toolchain(self, verbose=False, cache_dir=None,
                            skip_cache=False, from_build=(),
                            tooltool_manifest=None, authentication_file=None,
-                           no_unpack=False, retry=None,
+                           no_unpack=False, retry=0,
                            artifact_manifest=None, files=()):
         '''Download, cache and install pre-built toolchains.
         '''
@@ -189,11 +190,13 @@ class PackageFrontend(MachCommandBase):
         )
         import redo
         import requests
+        import time
 
         from taskgraph.util.taskcluster import (
             get_artifact_url,
         )
 
+        start = time.time()
         self._set_log_level(verbose)
         # Normally, we'd use self.log_manager.enable_unstructured(),
         # but that enables all logging, while we only really want tooltool's
@@ -248,7 +251,7 @@ class PackageFrontend(MachCommandBase):
                     cot.raise_for_status()
 
                 digest = algorithm = None
-                data = json.loads(cot.content)
+                data = json.loads(cot.text)
                 for algorithm, digest in (data.get('artifacts', {})
                                               .get(artifact_name, {}).items()):
                     pass
@@ -283,7 +286,7 @@ class PackageFrontend(MachCommandBase):
             from taskgraph.parameters import Parameters
             from taskgraph.generator import load_tasks_for_kind
             params = Parameters(
-                level=os.environ.get('MOZ_SCM_LEVEL', '3'),
+                level=six.ensure_text(os.environ.get('MOZ_SCM_LEVEL', '3')),
                 strict=False,
             )
 
@@ -335,9 +338,9 @@ class PackageFrontend(MachCommandBase):
             record = ArtifactRecord(task_id, name)
             records[record.filename] = record
 
-        for record in records.itervalues():
+        for record in six.itervalues(records):
             self.log(logging.INFO, 'artifact', {'name': record.basename},
-                     'Downloading {name}')
+                     'Setting up artifact {name}')
             valid = False
             # sleeptime is 60 per retry.py, used by tooltool_wrapper.sh
             for attempt, _ in enumerate(redo.retrier(attempts=retry+1,
@@ -428,5 +431,21 @@ class PackageFrontend(MachCommandBase):
             ensureParentDir(artifact_manifest)
             with open(artifact_manifest, 'w') as fh:
                 json.dump(artifacts, fh, indent=4, sort_keys=True)
+
+        if 'MOZ_AUTOMATION' in os.environ:
+            end = time.time()
+
+            perfherder_data = {
+                'framework': {'name': 'build_metrics'},
+                'suites': [{
+                    'name': 'mach_artifact_toolchain',
+                    'value': end - start,
+                    'lowerIsBetter': True,
+                    'shouldAlert': False,
+                    'subtests': [],
+                }],
+            }
+            self.log(logging.INFO, 'perfherder', {'data': json.dumps(perfherder_data)},
+                     'PERFHERDER_DATA: {data}')
 
         return 0

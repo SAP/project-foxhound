@@ -6,8 +6,6 @@ var { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-const MAX_FOLDER_ITEM_IN_MENU_LIST = 5;
-
 var gEditItemOverlay = {
   // Array of PlacesTransactions accumulated by internal changes. It can be used
   // to wait for completion.
@@ -474,7 +472,7 @@ var gEditItemOverlay = {
     }
 
     var numberOfItems = Math.min(
-      MAX_FOLDER_ITEM_IN_MENU_LIST,
+      PlacesUIUtils.maxRecentFolders,
       this._recentFolders.length
     );
     for (let i = 0; i < numberOfItems; i++) {
@@ -770,11 +768,12 @@ var gEditItemOverlay = {
   },
 
   toggleFolderTreeVisibility() {
-    var expander = this._element("foldersExpander");
-    var folderTreeRow = this._element("folderTreeRow");
-    expander.classList.toggle("expander-up", folderTreeRow.collapsed);
-    expander.classList.toggle("expander-down", !folderTreeRow.collapsed);
-    if (!folderTreeRow.collapsed) {
+    let expander = this._element("foldersExpander");
+    let folderTreeRow = this._element("folderTreeRow");
+    let wasCollapsed = folderTreeRow.collapsed;
+    expander.classList.toggle("expander-up", wasCollapsed);
+    expander.classList.toggle("expander-down", !wasCollapsed);
+    if (!wasCollapsed) {
       expander.setAttribute(
         "tooltiptext",
         expander.getAttribute("tooltiptextdown")
@@ -783,6 +782,9 @@ var gEditItemOverlay = {
       this._element("chooseFolderSeparator").hidden = this._element(
         "chooseFolderMenuItem"
       ).hidden = false;
+      // Unlinking the view will break the connection with the result. We don't
+      // want to pay for live updates while the view is not visible.
+      this._folderTree.view = null;
     } else {
       expander.setAttribute(
         "tooltiptext",
@@ -809,8 +811,9 @@ var gEditItemOverlay = {
   /**
    * Get the corresponding menu-item in the folder-menu-list for a bookmarks
    * folder if such an item exists. Otherwise, this creates a menu-item for the
-   * folder. If the items-count limit (see MAX_FOLDERS_IN_MENU_LIST) is reached,
-   * the new item replaces the last menu-item.
+   * folder. If the items-count limit (see
+   * browser.bookmarks.editDialog.maxRecentFolders preference) is reached, the
+   * new item replaces the last menu-item.
    * @param aFolderGuid
    *        The identifier of the bookmarks folder.
    * @param aTitle
@@ -828,7 +831,7 @@ var gEditItemOverlay = {
     }
 
     // 3 special folders + separator + folder-items-count limit
-    if (menupopup.children.length == 4 + MAX_FOLDER_ITEM_IN_MENU_LIST) {
+    if (menupopup.children.length == 4 + PlacesUIUtils.maxRecentFolders) {
       menupopup.removeChild(menupopup.lastElementChild);
     }
 
@@ -889,6 +892,12 @@ var gEditItemOverlay = {
   },
 
   onFolderTreeSelect() {
+    // Ignore this event when the folder tree is hidden, even if the tree is
+    // alive, it's clearly not a user activated action.
+    if (this._element("folderTreeRow").collapsed) {
+      return;
+    }
+
     var selectedNode = this._folderTree.selectedNode;
 
     // Disable the "New Folder" button if we cannot create a new folder
@@ -1241,7 +1250,6 @@ var gEditItemOverlay = {
     });
   },
 
-  onItemRemoved() {},
   onBeginUpdateBatch() {},
   onEndUpdateBatch() {},
   onItemVisited() {},

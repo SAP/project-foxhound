@@ -14,7 +14,6 @@
 #include "nsIChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIIOService.h"
-#include "nsIPrefService.h"
 #include "nsISimpleEnumerator.h"
 #include "nsIStreamListener.h"
 #include "nsIStringStream.h"
@@ -25,7 +24,6 @@
 #include "nsIUrlClassifierDBService.h"
 #include "nsIX509Cert.h"
 #include "nsIX509CertDB.h"
-#include "nsIX509CertList.h"
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/BasePrincipal.h"
@@ -38,7 +36,6 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/intl/LocaleService.h"
 
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsDependentSubstring.h"
@@ -707,7 +704,8 @@ class PendingLookup final : public nsIStreamListener,
 
   // Parse the XPCOM certificate lists and stick them into the protocol buffer
   // version.
-  nsresult ParseCertificates(nsIArray* aSigArray);
+  nsresult ParseCertificates(
+      const nsTArray<nsTArray<nsTArray<uint8_t>>>& aSigArray);
 
   // Adds the redirects to mBlocklistSpecs to be looked up.
   nsresult AddRedirects(nsIArray* aRedirects);
@@ -1191,19 +1189,19 @@ nsresult PendingLookup::GenerateWhitelistStringsForChain(
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIX509Cert> signer;
-  nsDependentCSubstring signerDER(
-      const_cast<char*>(aChain.element(0).certificate().data()),
-      aChain.element(0).certificate().size());
-  rv = certDB->ConstructX509(signerDER, getter_AddRefs(signer));
+  nsTArray<uint8_t> signerBytes;
+  signerBytes.AppendElements(aChain.element(0).certificate().data(),
+                             aChain.element(0).certificate().size());
+  rv = certDB->ConstructX509(signerBytes, getter_AddRefs(signer));
   NS_ENSURE_SUCCESS(rv, rv);
 
   for (int i = 1; i < aChain.element_size(); ++i) {
     // Get the issuer.
     nsCOMPtr<nsIX509Cert> issuer;
-    nsDependentCSubstring issuerDER(
-        const_cast<char*>(aChain.element(i).certificate().data()),
-        aChain.element(i).certificate().size());
-    rv = certDB->ConstructX509(issuerDER, getter_AddRefs(issuer));
+    nsTArray<uint8_t> issuerBytes;
+    issuerBytes.AppendElements(aChain.element(i).certificate().data(),
+                               aChain.element(i).certificate().size());
+    rv = certDB->ConstructX509(issuerBytes, getter_AddRefs(issuer));
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = GenerateWhitelistStringsForPair(signer, issuer);
@@ -1437,11 +1435,11 @@ nsresult PendingLookup::DoLookupInternal() {
   // We can skip parsing certificate for non-binary files because we only
   // check local block list for them.
   if (mIsBinaryFile) {
-    nsCOMPtr<nsIArray> sigArray;
-    rv = mQuery->GetSignatureInfo(getter_AddRefs(sigArray));
+    nsTArray<nsTArray<nsTArray<uint8_t>>> sigArray;
+    rv = mQuery->GetSignatureInfo(sigArray);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    if (sigArray) {
+    if (!sigArray.IsEmpty()) {
       rv = ParseCertificates(sigArray);
       NS_ENSURE_SUCCESS(rv, rv);
     }
@@ -1519,58 +1517,20 @@ nsresult PendingLookup::OnComplete(uint32_t aVerdict, Reason aReason,
   return res;
 }
 
-nsresult PendingLookup::ParseCertificates(nsIArray* aSigArray) {
-  // If we haven't been set for any reason, bail.
-  NS_ENSURE_ARG_POINTER(aSigArray);
-
+nsresult PendingLookup::ParseCertificates(
+    const nsTArray<nsTArray<nsTArray<uint8_t>>>& aSigArray) {
   // Binaries may be signed by multiple chains of certificates. If there are no
   // chains, the binary is unsigned (or we were unable to extract signature
   // information on a non-Windows platform)
-  nsCOMPtr<nsISimpleEnumerator> chains;
-  nsresult rv = aSigArray->Enumerate(getter_AddRefs(chains));
-  NS_ENSURE_SUCCESS(rv, rv);
 
-  bool hasMoreChains = false;
-  rv = chains->HasMoreElements(&hasMoreChains);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  while (hasMoreChains) {
-    nsCOMPtr<nsISupports> chainSupports;
-    rv = chains->GetNext(getter_AddRefs(chainSupports));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsCOMPtr<nsIX509CertList> certList = do_QueryInterface(chainSupports, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
+  // Each chain may have multiple certificates.
+  for (const auto& certList : aSigArray) {
     safe_browsing::ClientDownloadRequest_CertificateChain* certChain =
         mRequest.mutable_signature()->add_certificate_chain();
-    nsCOMPtr<nsISimpleEnumerator> chainElt;
-    rv = certList->GetEnumerator(getter_AddRefs(chainElt));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    // Each chain may have multiple certificates.
-    bool hasMoreCerts = false;
-    rv = chainElt->HasMoreElements(&hasMoreCerts);
-    while (hasMoreCerts) {
-      nsCOMPtr<nsISupports> certSupports;
-      rv = chainElt->GetNext(getter_AddRefs(certSupports));
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      nsCOMPtr<nsIX509Cert> cert = do_QueryInterface(certSupports, &rv);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      nsTArray<uint8_t> data;
-      rv = cert->GetRawDER(data);
-      NS_ENSURE_SUCCESS(rv, rv);
-
+    for (const auto& cert : certList) {
       // Add this certificate to the protobuf to send remotely.
-      certChain->add_element()->set_certificate(data.Elements(), data.Length());
-
-      rv = chainElt->HasMoreElements(&hasMoreCerts);
-      NS_ENSURE_SUCCESS(rv, rv);
+      certChain->add_element()->set_certificate(cert.Elements(), cert.Length());
     }
-    rv = chains->HasMoreElements(&hasMoreChains);
-    NS_ENSURE_SUCCESS(rv, rv);
   }
   if (mRequest.signature().certificate_chain_size() > 0) {
     mRequest.mutable_signature()->set_trusted(true);
@@ -1636,7 +1596,7 @@ nsresult PendingLookup::SendRemoteQueryInternal(Reason& aReason) {
   mRequest.set_user_initiated(true);
 
   nsCString locale;
-  rv = LocaleService::GetInstance()->GetAppLocaleAsLangTag(locale);
+  rv = LocaleService::GetInstance()->GetAppLocaleAsBCP47(locale);
   NS_ENSURE_SUCCESS(rv, rv);
   mRequest.set_locale(locale.get());
   nsCString sha256Hash;
@@ -2017,4 +1977,10 @@ nsresult ApplicationReputationService::QueryReputationInternal(
 
   observerService->AddObserver(lookup, "quit-application", true);
   return lookup->StartLookup();
+}
+
+nsresult ApplicationReputationService::IsBinary(const nsACString& aFileName,
+                                                bool* aBinary) {
+  *aBinary = ::IsBinary(aFileName);
+  return NS_OK;
 }

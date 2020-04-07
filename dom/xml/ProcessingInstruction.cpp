@@ -57,7 +57,7 @@ ProcessingInstruction::ProcessingInstruction(
                   false, aData.Taint());  // Don't notify (bug 420429).
 }
 
-ProcessingInstruction::~ProcessingInstruction() {}
+ProcessingInstruction::~ProcessingInstruction() = default;
 
 // If you add nsIStyleSheetLinkingElement here, make sure we actually
 // implement the nsStyleLinkElement methods.

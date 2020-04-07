@@ -10,7 +10,6 @@
 #include "nsIChannel.h"
 #include "nsIClassOfService.h"
 #include "nsIContentPolicy.h"
-#include "nsIEventTarget.h"
 #include "nsIIOService.h"
 #include "nsILoadInfo.h"
 #include "nsIProtocolProxyService.h"
@@ -34,7 +33,7 @@ class WebrtcTCPData {
     MOZ_COUNT_CTOR(WebrtcTCPData);
   }
 
-  ~WebrtcTCPData() { MOZ_COUNT_DTOR(WebrtcTCPData); }
+  MOZ_COUNTED_DTOR(WebrtcTCPData)
 
   const nsTArray<uint8_t>& GetData() const { return mData; }
 

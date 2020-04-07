@@ -41,7 +41,6 @@ class nsDOMCSSValueList;
 struct nsMargin;
 class nsROCSSPrimitiveValue;
 class nsStyleGradient;
-struct nsStyleImage;
 
 class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
                                  public nsStubMutationObserver {
@@ -70,11 +69,12 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   NS_DECL_NSIDOMCSSSTYLEDECLARATION_HELPER
   nsresult GetPropertyValue(const nsCSSPropertyID aPropID,
                             nsAString& aValue) override;
-  nsresult SetPropertyValue(const nsCSSPropertyID aPropID,
-                            const nsAString& aValue,
-                            nsIPrincipal* aSubjectPrincipal) override;
+  void SetPropertyValue(const nsCSSPropertyID aPropID, const nsACString& aValue,
+                        nsIPrincipal* aSubjectPrincipal,
+                        mozilla::ErrorResult& aRv) override;
 
-  void IndexedGetter(uint32_t aIndex, bool& aFound, nsAString& aPropName) final;
+  void IndexedGetter(uint32_t aIndex, bool& aFound,
+                     nsACString& aPropName) final;
 
   enum StyleType {
     eDefaultOnly,  // Only includes UA and user sheets
@@ -105,8 +105,8 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
     mExposeVisitedStyle = aExpose;
   }
 
-  void GetCSSImageURLs(const nsAString& aPropertyName,
-                       nsTArray<nsString>& aImageURLs,
+  void GetCSSImageURLs(const nsACString& aPropertyName,
+                       nsTArray<nsCString>& aImageURLs,
                        mozilla::ErrorResult& aRv) final;
 
   // nsDOMCSSDeclaration abstract methods which should never be called

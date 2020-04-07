@@ -42,6 +42,12 @@ void rijndael_native_key_expansion(AESContext *cx, const unsigned char *key,
 void rijndael_native_encryptBlock(AESContext *cx,
                                   unsigned char *output,
                                   const unsigned char *input);
+void rijndael_native_decryptBlock(AESContext *cx,
+                                  unsigned char *output,
+                                  const unsigned char *input);
+void native_xorBlock(unsigned char *out,
+                     const unsigned char *a,
+                     const unsigned char *b);
 
 /* Stub definitions for the above rijndael_native_* functions, which
  * shouldn't be used unless NSS_X86_OR_X64 is defined */
@@ -58,6 +64,23 @@ void
 rijndael_native_encryptBlock(AESContext *cx,
                              unsigned char *output,
                              const unsigned char *input)
+{
+    PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+    PORT_Assert(0);
+}
+
+void
+rijndael_native_decryptBlock(AESContext *cx,
+                             unsigned char *output,
+                             const unsigned char *input)
+{
+    PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+    PORT_Assert(0);
+}
+
+void
+native_xorBlock(unsigned char *out, const unsigned char *a,
+                const unsigned char *b)
 {
     PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
     PORT_Assert(0);
@@ -330,7 +353,7 @@ rijndael_key_expansion7(AESContext *cx, const unsigned char *key, unsigned int N
     PRUint32 *W;
     PRUint32 *pW;
     PRUint32 tmp;
-    W = cx->expandedKey;
+    W = cx->k.expandedKey;
     /* 1.  the first Nk words contain the cipher key */
     memcpy(W, key, Nk * 4);
     i = Nk;
@@ -362,7 +385,7 @@ rijndael_key_expansion(AESContext *cx, const unsigned char *key, unsigned int Nk
         rijndael_key_expansion7(cx, key, Nk);
         return;
     }
-    W = cx->expandedKey;
+    W = cx->k.expandedKey;
     /* The first Nk words contain the input cipher key */
     memcpy(W, key, Nk * 4);
     i = Nk;
@@ -439,7 +462,7 @@ rijndael_invkey_expansion(AESContext *cx, const unsigned char *key, unsigned int
     /* ... but has the additional step of InvMixColumn,
      * excepting the first and last round keys.
      */
-    roundkeyw = cx->expandedKey + cx->Nb;
+    roundkeyw = cx->k.expandedKey + cx->Nb;
     for (r = 1; r < cx->Nr; ++r) {
         /* each key word, roundkeyw, represents a column in the key
          * matrix.  Each column is multiplied by the InvMixColumn matrix.
@@ -509,6 +532,15 @@ typedef union {
 
 #define STATE_BYTE(i) state.b[i]
 
+// out = a ^ b
+inline static void
+xorBlock(unsigned char *out, const unsigned char *a, const unsigned char *b)
+{
+    for (unsigned int j = 0; j < AES_BLOCK_SIZE; ++j) {
+        (out)[j] = (a)[j] ^ (b)[j];
+    }
+}
+
 static void NO_SANITIZE_ALIGNMENT
 rijndael_encryptBlock128(AESContext *cx,
                          unsigned char *output,
@@ -537,7 +569,7 @@ rijndael_encryptBlock128(AESContext *cx,
         pOut = (unsigned char *)output;
     }
 #endif
-    roundkeyw = cx->expandedKey;
+    roundkeyw = cx->k.expandedKey;
     /* Step 1: Add Round Key 0 to initial state */
     COLUMN_0(state) = *((PRUint32 *)(pIn)) ^ *roundkeyw++;
     COLUMN_1(state) = *((PRUint32 *)(pIn + 4)) ^ *roundkeyw++;
@@ -604,7 +636,7 @@ rijndael_encryptBlock128(AESContext *cx,
 #endif
 }
 
-static SECStatus NO_SANITIZE_ALIGNMENT
+static void NO_SANITIZE_ALIGNMENT
 rijndael_decryptBlock128(AESContext *cx,
                          unsigned char *output,
                          const unsigned char *input)
@@ -632,7 +664,7 @@ rijndael_decryptBlock128(AESContext *cx,
         pOut = (unsigned char *)output;
     }
 #endif
-    roundkeyw = cx->expandedKey + cx->Nb * cx->Nr + 3;
+    roundkeyw = cx->k.expandedKey + cx->Nb * cx->Nr + 3;
     /* reverse the final key addition */
     COLUMN_3(state) = *((PRUint32 *)(pIn + 12)) ^ *roundkeyw--;
     COLUMN_2(state) = *((PRUint32 *)(pIn + 8)) ^ *roundkeyw--;
@@ -693,7 +725,6 @@ rijndael_decryptBlock128(AESContext *cx,
         memcpy(output, outBuf, sizeof outBuf);
     }
 #endif
-    return SECSuccess;
 }
 
 /**************************************************************************
@@ -707,16 +738,13 @@ rijndael_encryptECB(AESContext *cx, unsigned char *output,
                     unsigned int *outputLen, unsigned int maxOutputLen,
                     const unsigned char *input, unsigned int inputLen)
 {
-    AESBlockFunc *encryptor;
-
-    if (aesni_support()) {
-        /* Use hardware acceleration for normal AES parameters. */
-        encryptor = &rijndael_native_encryptBlock;
-    } else {
-        encryptor = &rijndael_encryptBlock128;
-    }
+    PRBool aesni = aesni_support();
     while (inputLen > 0) {
-        (*encryptor)(cx, output, input);
+        if (aesni) {
+            rijndael_native_encryptBlock(cx, output, input);
+        } else {
+            rijndael_encryptBlock128(cx, output, input);
+        }
         output += AES_BLOCK_SIZE;
         input += AES_BLOCK_SIZE;
         inputLen -= AES_BLOCK_SIZE;
@@ -729,20 +757,23 @@ rijndael_encryptCBC(AESContext *cx, unsigned char *output,
                     unsigned int *outputLen, unsigned int maxOutputLen,
                     const unsigned char *input, unsigned int inputLen)
 {
-    unsigned int j;
-    unsigned char *lastblock;
+    unsigned char *lastblock = cx->iv;
     unsigned char inblock[AES_BLOCK_SIZE * 8];
+    PRBool aesni = aesni_support();
 
     if (!inputLen)
         return SECSuccess;
-    lastblock = cx->iv;
     while (inputLen > 0) {
-        /* XOR with the last block (IV if first block) */
-        for (j = 0; j < AES_BLOCK_SIZE; ++j) {
-            inblock[j] = input[j] ^ lastblock[j];
+        if (aesni) {
+            /* XOR with the last block (IV if first block) */
+            native_xorBlock(inblock, input, lastblock);
+            /* encrypt */
+            rijndael_native_encryptBlock(cx, output, inblock);
+        } else {
+            xorBlock(inblock, input, lastblock);
+            rijndael_encryptBlock128(cx, output, inblock);
         }
-        /* encrypt */
-        rijndael_encryptBlock128(cx, output, inblock);
+
         /* move to the next block */
         lastblock = output;
         output += AES_BLOCK_SIZE;
@@ -758,9 +789,12 @@ rijndael_decryptECB(AESContext *cx, unsigned char *output,
                     unsigned int *outputLen, unsigned int maxOutputLen,
                     const unsigned char *input, unsigned int inputLen)
 {
+    PRBool aesni = aesni_support();
     while (inputLen > 0) {
-        if (rijndael_decryptBlock128(cx, output, input) != SECSuccess) {
-            return SECFailure;
+        if (aesni) {
+            rijndael_native_decryptBlock(cx, output, input);
+        } else {
+            rijndael_decryptBlock128(cx, output, input);
         }
         output += AES_BLOCK_SIZE;
         input += AES_BLOCK_SIZE;
@@ -776,8 +810,8 @@ rijndael_decryptCBC(AESContext *cx, unsigned char *output,
 {
     const unsigned char *in;
     unsigned char *out;
-    unsigned int j;
     unsigned char newIV[AES_BLOCK_SIZE];
+    PRBool aesni = aesni_support();
 
     if (!inputLen)
         return SECSuccess;
@@ -786,21 +820,26 @@ rijndael_decryptCBC(AESContext *cx, unsigned char *output,
     memcpy(newIV, in, AES_BLOCK_SIZE);
     out = output + (inputLen - AES_BLOCK_SIZE);
     while (inputLen > AES_BLOCK_SIZE) {
-        if (rijndael_decryptBlock128(cx, out, in) != SECSuccess) {
-            return SECFailure;
+        if (aesni) {
+            // Use hardware acceleration for normal AES parameters.
+            rijndael_native_decryptBlock(cx, out, in);
+            native_xorBlock(out, out, &in[-AES_BLOCK_SIZE]);
+        } else {
+            rijndael_decryptBlock128(cx, out, in);
+            xorBlock(out, out, &in[-AES_BLOCK_SIZE]);
         }
-        for (j = 0; j < AES_BLOCK_SIZE; ++j)
-            out[j] ^= in[(int)(j - AES_BLOCK_SIZE)];
         out -= AES_BLOCK_SIZE;
         in -= AES_BLOCK_SIZE;
         inputLen -= AES_BLOCK_SIZE;
     }
     if (in == input) {
-        if (rijndael_decryptBlock128(cx, out, in) != SECSuccess) {
-            return SECFailure;
+        if (aesni) {
+            rijndael_native_decryptBlock(cx, out, in);
+            native_xorBlock(out, out, cx->iv);
+        } else {
+            rijndael_decryptBlock128(cx, out, in);
+            xorBlock(out, out, cx->iv);
         }
-        for (j = 0; j < AES_BLOCK_SIZE; ++j)
-            out[j] ^= cx->iv[j];
     }
     memcpy(cx->iv, newIV, AES_BLOCK_SIZE);
     return SECSuccess;
@@ -988,7 +1027,7 @@ AES_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
             break;
         case NSS_AES_CTR:
             cx->worker_cx = CTR_CreateContext(cx, cx->worker, iv);
-#if defined(USE_HW_AES) && defined(_MSC_VER)
+#if defined(USE_HW_AES) && defined(_MSC_VER) && defined(NSS_X86_OR_X64)
             if (aesni_support() && (keysize % 8) == 0) {
                 cx->worker = (freeblCipherFunc)CTR_Update_HW_AES;
             } else

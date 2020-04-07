@@ -40,15 +40,17 @@ function uuid() {
  *   object. But it can also be any global object, like a worker global scope object.
  */
 class ExecutionContext {
-  constructor(dbg, debuggee) {
+  constructor(dbg, debuggee, id, isDefault) {
     this._debugger = dbg;
     this._debuggee = this._debugger.addDebuggee(debuggee);
 
     // Here, we assume that debuggee is a window object and we will propably have
     // to adapt that once we cover workers or contexts that aren't a document.
     const { windowUtils } = debuggee;
-    this.id = windowUtils.currentInnerWindowID;
-    this.frameId = windowUtils.outerWindowID;
+    this.windowId = windowUtils.currentInnerWindowID;
+    this.id = id;
+    this.frameId = debuggee.docShell.browsingContext.id.toString();
+    this.isDefault = isDefault;
 
     this._remoteObjects = new Map();
   }
@@ -184,16 +186,12 @@ class ExecutionContext {
     }
 
     if (returnByValue) {
-      return {
-        result: {
-          value: this._serialize(result),
-        },
-      };
+      result = this._toRemoteObjectByValue(result);
+    } else {
+      result = this._toRemoteObject(result);
     }
 
-    return {
-      result: this._toRemoteObject(result),
-    };
+    return { result };
   }
 
   getProperties({ objectId, ownProperties }) {
@@ -244,28 +242,6 @@ class ExecutionContext {
   }
 
   /**
-   * Convert a given `Debugger.Object` to a JSON string.
-   *
-   * @param {Debugger.Object} obj
-   *  The object to convert
-   * @return {String}
-   *  The JSON string
-   */
-  _serialize(obj) {
-    if (typeof obj == "undefined") {
-      return undefined;
-    }
-    const result = this._debuggee.executeInGlobalWithBindings(
-      "JSON.stringify(e)",
-      { e: obj }
-    );
-    if (result.throw) {
-      throw new Error("Object is not serializable");
-    }
-    return JSON.parse(result.return);
-  }
-
-  /**
    * Given a CDP `CallArgument`, return a JS value that represent this argument.
    * Note that `CallArgument` is actually very similar to `RemoteObject`
    */
@@ -276,18 +252,26 @@ class ExecutionContext {
       }
       return this._remoteObjects.get(arg.objectId);
     }
+
     if (arg.unserializableValue) {
       switch (arg.unserializableValue) {
+        case "-0":
+          return -0;
         case "Infinity":
           return Infinity;
         case "-Infinity":
           return -Infinity;
-        case "-0":
-          return -0;
         case "NaN":
           return NaN;
+        default:
+          if (/^\d+n$/.test(arg.unserializableValue)) {
+            // eslint-disable-next-line no-undef
+            return BigInt(arg.unserializableValue.slice(0, -1));
+          }
+          throw new Error("Couldn't parse value object in call argument");
       }
     }
+
     return this._deserialize(arg.value);
   }
 
@@ -401,5 +385,70 @@ class ExecutionContext {
       subtype,
       value: debuggerObj,
     };
+  }
+
+  /**
+   * Given a `Debugger.Object` object, return a JSON-serializable description of it
+   * matching `RemoteObject` CDP type.
+   *
+   * @param {Debugger.Object} debuggerObj
+   *  The object to serialize
+   * @return {RemoteObject}
+   *  The serialized description of the given object
+   */
+  _toRemoteObjectByValue(debuggerObj) {
+    const type = typeof debuggerObj;
+
+    if (type == "undefined") {
+      return { type };
+    }
+
+    let unserializableValue = undefined;
+    if (Object.is(debuggerObj, -0)) {
+      unserializableValue = "-0";
+    } else if (Object.is(debuggerObj, NaN)) {
+      unserializableValue = "NaN";
+    } else if (Object.is(debuggerObj, Infinity)) {
+      unserializableValue = "Infinity";
+    } else if (Object.is(debuggerObj, -Infinity)) {
+      unserializableValue = "-Infinity";
+    } else if (typeof debuggerObj == "bigint") {
+      unserializableValue = `${debuggerObj}n`;
+    }
+
+    if (unserializableValue) {
+      return {
+        type,
+        unserializableValue,
+        description: unserializableValue,
+      };
+    }
+
+    const value = this._serialize(debuggerObj);
+    return {
+      type: typeof value,
+      value,
+      description: value != null ? value.toString() : value,
+    };
+  }
+
+  /**
+   * Convert a given `Debugger.Object` to an object.
+   *
+   * @param {Debugger.Object} obj
+   *  The object to convert
+   * @return {Object}
+   *  The converted object
+   */
+  _serialize(debuggerObj) {
+    const result = this._debuggee.executeInGlobalWithBindings(
+      "JSON.stringify(e)",
+      { e: debuggerObj }
+    );
+    if (result.throw) {
+      throw new Error("Object is not serializable");
+    }
+
+    return JSON.parse(result.return);
   }
 }

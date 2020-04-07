@@ -12,10 +12,10 @@ const TEST_URI =
 add_task(async function() {
   await pushPref("devtools.hud.loglimit", 140);
   const hud = await openNewTabAndConsole(TEST_URI);
-  hud.ui.clearOutput();
+  await clearOutput(hud);
 
   let onMessage = waitForMessage(hud, "test message [149]");
-  ContentTask.spawn(gBrowser.selectedBrowser, {}, async function() {
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
     for (let i = 0; i < 150; i++) {
       content.console.log(`test message [${i}]`);
     }
@@ -32,7 +32,7 @@ add_task(async function() {
   );
 
   onMessage = waitForMessage(hud, "hello world");
-  ContentTask.spawn(gBrowser.selectedBrowser, {}, async function() {
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
     content.console.log("hello world");
   });
   await onMessage;

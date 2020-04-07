@@ -7,16 +7,17 @@
 #ifndef vm_AsyncFunction_h
 #define vm_AsyncFunction_h
 
-#include "builtin/Promise.h"
 #include "js/Class.h"
 #include "vm/GeneratorObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
+#include "vm/PromiseObject.h"
 
 namespace js {
 
 class AsyncFunctionGeneratorObject;
-class GlobalObject;
+
+extern const JSClass AsyncFunctionClass;
 
 // Resume the async function when the `await` operand resolves.
 // Split into two functions depending on whether the awaited value was
@@ -47,6 +48,7 @@ class AsyncFunctionGeneratorObject : public AbstractGeneratorObject {
   };
 
   static const JSClass class_;
+  static const JSClassOps classOps_;
 
   static AsyncFunctionGeneratorObject* create(JSContext* cx,
                                               HandleFunction asyncGen);
@@ -55,9 +57,6 @@ class AsyncFunctionGeneratorObject : public AbstractGeneratorObject {
     return &getFixedSlot(PROMISE_SLOT).toObject().as<PromiseObject>();
   }
 };
-
-extern JSObject* InitAsyncFunction(JSContext* cx,
-                                   js::Handle<GlobalObject*> global);
 
 }  // namespace js
 

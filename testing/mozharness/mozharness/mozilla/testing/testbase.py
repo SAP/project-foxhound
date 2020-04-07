@@ -8,9 +8,9 @@
 import copy
 import os
 import platform
-import urllib2
+from six.moves import urllib
 import json
-from urlparse import urlparse, ParseResult
+from six.moves.urllib.parse import urlparse, ParseResult
 
 from mozharness.base.errors import BaseErrorList
 from mozharness.base.log import FATAL, WARNING
@@ -117,7 +117,6 @@ class TestingMixin(VirtualenvMixin, AutomationMixin, ResourceMonitoringMixin,
     symbols_path = None
     jsshell_url = None
     minidump_stackwalk_path = None
-    default_tools_repo = 'https://hg.mozilla.org/build/tools'
 
     def query_build_dir_url(self, file_name):
         """
@@ -132,7 +131,7 @@ class TestingMixin(VirtualenvMixin, AutomationMixin, ResourceMonitoringMixin,
             self.fatal("Can't figure out build directory urls without an installer_url "
                        "or test_packages_url!")
 
-        reference_url = urllib2.unquote(reference_url)
+        reference_url = urllib.parse.unquote(reference_url)
         parts = list(urlparse(reference_url))
 
         last_slash = parts[2].rfind('/')
@@ -230,7 +229,7 @@ class TestingMixin(VirtualenvMixin, AutomationMixin, ResourceMonitoringMixin,
         if c.get("test_packages_url"):
             c["test_packages_url"] = _replace_url(c["test_packages_url"], c["replace_urls"])
 
-        for key, value in self.config.iteritems():
+        for key, value in self.config.items():
             if type(value) == str and value.startswith("http"):
                 self.config[key] = _replace_url(value, c["replace_urls"])
 
@@ -253,20 +252,20 @@ class TestingMixin(VirtualenvMixin, AutomationMixin, ResourceMonitoringMixin,
 
             self.https_username, self.https_password = get_credentials()
             # This creates a password manager
-            passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
+            passman = urllib.request.HTTPPasswordMgrWithDefaultRealm()
             # Because we have put None at the start it will use this username/password
             # combination from here on
             passman.add_password(None, url, self.https_username, self.https_password)
-            authhandler = urllib2.HTTPBasicAuthHandler(passman)
+            authhandler = urllib.request.HTTPBasicAuthHandler(passman)
 
-            return urllib2.build_opener(authhandler).open(url, **kwargs)
+            return urllib.request.build_opener(authhandler).open(url, **kwargs)
 
         # If we have the developer_run flag enabled then we will switch
         # URLs to the right place and enable http authentication
         if "developer_config.py" in self.config["config_files"]:
             return _urlopen_basic_auth(url, **kwargs)
         else:
-            return urllib2.urlopen(url, **kwargs)
+            return urllib.request.urlopen(url, **kwargs)
 
     def _query_binary_version(self, regex, cmd):
         output = self.get_output_from_command(cmd, silent=False)
@@ -318,6 +317,7 @@ You can set this by specifying --test-url URL
             'mochitest-webgl2-core': 'mochitest',
             'mochitest-webgl2-ext': 'mochitest',
             'mochitest-webgl2-deqp': 'mochitest',
+            'mochitest-webgpu': 'mochitest',
             'geckoview': 'mochitest',
             'geckoview-junit': 'mochitest',
             'jsreftest': 'reftest',
@@ -539,73 +539,28 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?""")
     def uninstall(self):
         self.uninstall_app()
 
-    def query_minidump_tooltool_manifest(self):
-        if self.config.get('minidump_tooltool_manifest_path'):
-            return self.config['minidump_tooltool_manifest_path']
-
-        self.info('Minidump tooltool manifest unknown. Determining based upon '
-                  'platform and architecture.')
-        platform_name = self.platform_name()
-
-        if platform_name:
-            tooltool_path = "config/tooltool-manifests/%s/releng.manifest" % \
-                TOOLTOOL_PLATFORM_DIR[platform_name]
-            return tooltool_path
-        else:
-            self.fatal('We could not determine the minidump\'s filename.')
-
-    def query_minidump_filename(self):
-        if self.config.get('minidump_stackwalk_path'):
-            return self.config['minidump_stackwalk_path']
-
-        self.info('Minidump filename unknown. Determining based upon platform '
-                  'and architecture.')
-        platform_name = self.platform_name()
-        if platform_name:
-            minidump_filename = '%s-minidump_stackwalk' % TOOLTOOL_PLATFORM_DIR[platform_name]
-            if platform_name in ('win32', 'win64'):
-                minidump_filename += '.exe'
-            return minidump_filename
-        else:
-            self.fatal('We could not determine the minidump\'s filename.')
-
     def query_minidump_stackwalk(self, manifest=None):
         if self.minidump_stackwalk_path:
             return self.minidump_stackwalk_path
 
-        c = self.config
-        dirs = self.query_abs_dirs()
+        minidump_stackwalk_path = None
 
-        # This is the path where we either download to or is already on the host
-        minidump_stackwalk_path = self.query_minidump_filename()
+        if 'MOZ_FETCHES_DIR' in os.environ:
+            minidump_stackwalk_path = os.path.join(
+                os.environ['MOZ_FETCHES_DIR'],
+                'minidump_stackwalk',
+                'minidump_stackwalk')
 
-        if not manifest:
-            tooltool_manifest_path = self.query_minidump_tooltool_manifest()
-            manifest = os.path.join(dirs.get('abs_test_install_dir',
-                                             os.path.join(dirs['abs_work_dir'], 'tests')),
-                                    tooltool_manifest_path)
+            if self.platform_name() in ('win32', 'win64'):
+                minidump_stackwalk_path += '.exe'
 
-        self.info('grabbing minidump binary from tooltool')
-        try:
-            self.tooltool_fetch(
-                manifest=manifest,
-                output_dir=dirs['abs_work_dir'],
-                cache=c.get('tooltool_cache')
-            )
-        except KeyError:
-            self.error('missing a required key.')
-
-        abs_minidump_path = os.path.join(dirs['abs_work_dir'],
-                                         minidump_stackwalk_path)
-        if os.path.exists(abs_minidump_path):
-            self.chmod(abs_minidump_path, 0o755)
-            self.minidump_stackwalk_path = abs_minidump_path
-        else:
-            self.warning("minidump stackwalk path was given but couldn't be found. "
-                         "Tried looking in '%s'" % abs_minidump_path)
+        if not minidump_stackwalk_path or not os.path.isfile(minidump_stackwalk_path):
+            self.error("minidump_stackwalk path was not fetched?")
             # don't burn the job but we should at least turn them orange so it is caught
             self.record_status(TBPL_WARNING, WARNING)
+            return None
 
+        self.minidump_stackwalk_path = minidump_stackwalk_path
         return self.minidump_stackwalk_path
 
     def query_options(self, *args, **kwargs):

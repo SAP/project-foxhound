@@ -102,12 +102,16 @@ describe("<DiscoveryStreamBase>", () => {
     };
     return shallow(
       <DiscoveryStreamBase
+        locale="en-US"
         DiscoveryStream={defaultProps}
         Prefs={{
           values: {
             "feeds.section.topstories": true,
             "feeds.topsites": true,
           },
+        }}
+        document={{
+          documentElement: { lang: "en-US" },
         }}
         Sections={[
           {

@@ -17,37 +17,20 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "UptakeTelemetry",
-  "resource://services-common/uptake-telemetry.js"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "pushBroadcastService",
-  "resource://gre/modules/PushBroadcastService.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "RemoteSettingsClient",
-  "resource://services-settings/RemoteSettingsClient.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Utils",
-  "resource://services-settings/Utils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "FilterExpressions",
-  "resource://gre/modules/components-utils/FilterExpressions.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  UptakeTelemetry: "resource://services-common/uptake-telemetry.js",
+  pushBroadcastService: "resource://gre/modules/PushBroadcastService.jsm",
+  RemoteSettingsClient: "resource://services-settings/RemoteSettingsClient.jsm",
+  Utils: "resource://services-settings/Utils.jsm",
+  FilterExpressions:
+    "resource://gre/modules/components-utils/FilterExpressions.jsm",
+  RemoteSettingsWorker: "resource://services-settings/RemoteSettingsWorker.jsm",
+});
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 
 const PREF_SETTINGS_DEFAULT_BUCKET = "services.settings.default_bucket";
 const PREF_SETTINGS_BRANCH = "services.settings.";
-const PREF_SETTINGS_SERVER = "server";
 const PREF_SETTINGS_DEFAULT_SIGNER = "default_signer";
 const PREF_SETTINGS_SERVER_BACKOFF = "server.backoff";
 const PREF_SETTINGS_LAST_UPDATE = "last_update_seconds";
@@ -70,11 +53,6 @@ XPCOMUtils.defineLazyGetter(this, "gPrefs", () => {
   return Services.prefs.getBranch(PREF_SETTINGS_BRANCH);
 });
 XPCOMUtils.defineLazyGetter(this, "console", () => Utils.log);
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "gServerURL",
-  PREF_SETTINGS_BRANCH + PREF_SETTINGS_SERVER
-);
 
 /**
  * Default entry filtering function, in charge of excluding remote settings entries
@@ -177,17 +155,37 @@ function remoteSettingsFunction() {
    * @param {Object} options
 .  * @param {Object} options.expectedTimestamp (optional) The expected timestamp to be received — used by servers for cache busting.
    * @param {string} options.trigger           (optional) label to identify what triggered this sync (eg. ``"timer"``, default: `"manual"`)
+   * @param {bool}   options.full              (optional) Ignore last polling status and fetch all changes (default: `false`)
    * @returns {Promise} or throws error if something goes wrong.
    */
   remoteSettings.pollChanges = async ({
     expectedTimestamp,
     trigger = "manual",
+    full = false,
   } = {}) => {
-    const startedAt = new Date();
+    // When running in full mode, we ignore last polling status.
+    if (full) {
+      gPrefs.clearUserPref(PREF_SETTINGS_SERVER_BACKOFF);
+      gPrefs.clearUserPref(PREF_SETTINGS_LAST_UPDATE);
+      gPrefs.clearUserPref(PREF_SETTINGS_LAST_ETAG);
+    }
+
     let pollTelemetryArgs = {
       source: TELEMETRY_SOURCE_POLL,
       trigger,
     };
+
+    if (Utils.isOffline) {
+      console.info("Network is offline. Give up.");
+      await UptakeTelemetry.report(
+        TELEMETRY_COMPONENT,
+        UptakeTelemetry.STATUS.NETWORK_OFFLINE_ERROR,
+        pollTelemetryArgs
+      );
+      return;
+    }
+
+    const startedAt = new Date();
 
     // Check if the server backoff time is elapsed.
     if (gPrefs.prefHasUserValue(PREF_SETTINGS_SERVER_BACKOFF)) {
@@ -228,7 +226,7 @@ function remoteSettingsFunction() {
 
     let pollResult;
     try {
-      pollResult = await Utils.fetchLatestChanges(gServerURL, {
+      pollResult = await Utils.fetchLatestChanges(Utils.SERVER_URL, {
         expectedTimestamp,
         lastEtag,
       });
@@ -337,6 +335,7 @@ function remoteSettingsFunction() {
     const syncTelemetryArgs = {
       source: TELEMETRY_SOURCE_SYNC,
       duration: durationMilliseconds,
+      timestamp: `${currentEtag}`,
       trigger,
     };
 
@@ -375,7 +374,7 @@ function remoteSettingsFunction() {
     const {
       changes,
       currentEtag: serverTimestamp,
-    } = await Utils.fetchLatestChanges(gServerURL);
+    } = await Utils.fetchLatestChanges(Utils.SERVER_URL);
 
     const collections = await Promise.all(
       changes.map(async change => {
@@ -384,8 +383,7 @@ function remoteSettingsFunction() {
         if (!client) {
           return null;
         }
-        const kintoCol = await client.openCollection();
-        const localTimestamp = await kintoCol.db.getLastModified();
+        const localTimestamp = await client.getLastModified();
         const lastCheck = Services.prefs.getIntPref(
           client.lastCheckTimePref,
           0
@@ -402,8 +400,8 @@ function remoteSettingsFunction() {
     );
 
     return {
-      serverURL: gServerURL,
-      pollingEndpoint: gServerURL + Utils.CHANGES_PATH,
+      serverURL: Utils.SERVER_URL,
+      pollingEndpoint: Utils.SERVER_URL + Utils.CHANGES_PATH,
       serverTimestamp,
       localTimestamp: gPrefs.getCharPref(PREF_SETTINGS_LAST_ETAG, null),
       lastCheck: gPrefs.getIntPref(PREF_SETTINGS_LAST_UPDATE, 0),
@@ -411,6 +409,26 @@ function remoteSettingsFunction() {
       defaultSigner: DEFAULT_SIGNER,
       collections: collections.filter(c => !!c),
     };
+  };
+
+  /**
+   * Delete all local data, of every collection.
+   */
+  remoteSettings.clearAll = async () => {
+    const { collections } = await remoteSettings.inspect();
+    await Promise.all(
+      collections.map(async ({ collection }) => {
+        const client = RemoteSettings(collection);
+        // Delete all potential attachments.
+        await client.attachments.deleteAll();
+        // Delete local data.
+        const kintoCollection = await client.openCollection();
+        await kintoCollection.clear();
+        await kintoCollection.db.close();
+        // Remove status pref.
+        Services.prefs.clearUserPref(client.lastCheckTimePref);
+      })
+    );
   };
 
   /**

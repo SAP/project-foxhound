@@ -116,7 +116,8 @@ add_task(async function() {
 
     const { engines, privateDefault } = engineSelector.fetchEngineConfiguration(
       "us",
-      "en-US"
+      "en-US",
+      "default"
     );
     let names = engines.map(obj => obj.engineName);
     Assert.deepEqual(
@@ -125,7 +126,7 @@ add_task(async function() {
       `Should have the correct order for the engines: test ${i}`
     );
     Assert.equal(
-      privateDefault,
+      privateDefault && privateDefault.engineName,
       test.expectedPrivate,
       `Should have the correct selection for the private engine: test ${i++}`
     );

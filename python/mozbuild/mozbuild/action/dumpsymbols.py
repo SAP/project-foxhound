@@ -28,18 +28,28 @@ def dump_symbols(target, tracking_file, count_ctors=False):
     # Build default args for symbolstore.py based on platform.
     sym_store_args = []
 
-    dump_syms_bin = os.path.join(buildconfig.topobjdir,
-                                 'dist', 'host',
-                                 'bin', 'dump_syms')
-    dump_syms_bin = '%s%s' % (dump_syms_bin, buildconfig.substs['BIN_SUFFIX'])
+    # Find the `dump_syms` binary to use.
+    dump_syms_bin = None
+    dump_syms_binaries = []
+
+    default_bin = buildconfig.substs.get('DUMP_SYMS')
+    if default_bin:
+        dump_syms_binaries.append(default_bin)
+
+    # Fallback to the in-tree breakpad version.
+    dump_syms_binaries.append(
+        os.path.join(buildconfig.topobjdir, 'dist', 'host', 'bin',
+                     'dump_syms' + buildconfig.substs['BIN_SUFFIX']))
+
+    for dump_syms_bin in dump_syms_binaries:
+        if os.path.exists(dump_syms_bin):
+            break
 
     os_arch = buildconfig.substs['OS_ARCH']
     if os_arch == 'WINNT':
         sym_store_args.extend(['-c', '--vcs-info'])
         if os.environ.get('PDBSTR_PATH'):
             sym_store_args.append('-i')
-        os.environ['PATH'] = os.pathsep.join((buildconfig.substs['WIN_DIA_SDK_BIN_DIR'],
-                                              os.environ['PATH']))
     elif os_arch == 'Darwin':
         cpu = {
             'x86': 'i386',

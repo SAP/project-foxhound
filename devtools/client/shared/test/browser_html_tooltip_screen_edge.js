@@ -14,7 +14,7 @@
  */
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
-const TEST_URI = CHROME_URL_ROOT + "doc_html_tooltip_doorhanger-01.xul";
+const TEST_URI = CHROME_URL_ROOT + "doc_html_tooltip_doorhanger-01.xhtml";
 
 const {
   HTMLTooltip,
@@ -25,16 +25,16 @@ add_task(async function() {
   // Force the toolbox to be 200px high;
   await pushPref("devtools.toolbox.footer.height", 200);
 
-  const [, win, doc] = await createHost("bottom", TEST_URI);
+  const { win, doc } = await createHost("bottom", TEST_URI);
 
   const originalTop = win.screenTop;
   const originalLeft = win.screenLeft;
   const screenWidth = win.screen.width;
-  win.moveTo(screenWidth - win.outerWidth, originalTop);
+  await moveWindowTo(win, screenWidth - win.outerWidth, originalTop);
 
-  registerCleanupFunction(() => {
-    info(`Restore original window position. ${originalTop}, ${originalLeft}`);
-    win.moveTo(originalLeft, originalTop);
+  registerCleanupFunction(async () => {
+    info(`Restore original window position. ${originalLeft}, ${originalTop}`);
+    await moveWindowTo(win, originalLeft, originalTop);
   });
 
   info("Create a doorhanger HTML tooltip with XULPanel");

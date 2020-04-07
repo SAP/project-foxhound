@@ -40,7 +40,8 @@ class RangeUtils final {
     // If aNode isn't in the child nodes of its parent node, we hit this case.
     // This may occur when we're called by a mutation observer while aNode is
     // removed from the parent node.
-    if (NS_WARN_IF(afterNode.Offset() == 0)) {
+    if (NS_WARN_IF(
+            !afterNode.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets))) {
       return RawRangeBoundary();
     }
     return afterNode;
@@ -83,14 +84,6 @@ class RangeUtils final {
    *     nsRange should accept only 0 - INT32_MAX as valid offset for now.
    */
   static bool IsValidOffset(uint32_t aOffset) { return aOffset <= INT32_MAX; }
-  static bool IsValidOffset(nsINode* aNode, uint32_t aOffset) {
-    return aNode && IsValidOffset(aOffset) &&
-           static_cast<size_t>(aOffset) <= aNode->Length();
-  }
-  template <typename PT, typename RT>
-  static bool IsValidOffset(const RangeBoundaryBase<PT, RT>& aBoundary) {
-    return IsValidOffset(aBoundary.Container(), aBoundary.Offset());
-  }
 
   /**
    * Return true if aStartContainer/aStartOffset and aEndContainer/aEndOffset

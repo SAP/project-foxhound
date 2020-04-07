@@ -11,7 +11,6 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Services.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Telemetry.h"
 
 #include "AndroidBridge.h"
 
@@ -134,55 +133,91 @@ nsAndroidNetworkLinkService::GetNetworkID(nsACString& aNetworkID) {
 NS_IMETHODIMP
 nsAndroidNetworkLinkService::GetDnsSuffixList(
     nsTArray<nsCString>& aDnsSuffixList) {
+  aDnsSuffixList.Clear();
+  if (!mozilla::AndroidBridge::Bridge()) {
+    NS_WARNING("GetDnsSuffixList is not supported without a bridge connection");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  auto suffixList = java::GeckoAppShell::GetDNSDomains();
+  if (!suffixList) {
+    return NS_OK;
+  }
+
+  nsAutoCString list(suffixList->ToCString());
+  for (const nsACString& suffix : list.Split(',')) {
+    aDnsSuffixList.AppendElement(suffix);
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsAndroidNetworkLinkService::GetPlatformDNSIndications(
+    uint32_t* aPlatformDNSIndications) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 void nsAndroidNetworkLinkService::OnNetworkChanged() {
   if (mozilla::StaticPrefs::network_notify_changed()) {
-    if (!mNetworkChangeTime.IsNull()) {
-      mozilla::Telemetry::AccumulateTimeDelta(
-          mozilla::Telemetry::NETWORK_TIME_BETWEEN_NETWORK_CHANGE_EVENTS,
-          mNetworkChangeTime);
-    }
-    mNetworkChangeTime = mozilla::TimeStamp::Now();
-
     RefPtr<nsAndroidNetworkLinkService> self = this;
     NS_DispatchToMainThread(NS_NewRunnableFunction(
-        "nsAndroidNetworkLinkService::OnNetworkChanged",
-        [self]() { self->SendEvent(NS_NETWORK_LINK_DATA_CHANGED); }));
+        "nsAndroidNetworkLinkService::OnNetworkChanged", [self]() {
+          self->NotifyObservers(NS_NETWORK_LINK_TOPIC,
+                                NS_NETWORK_LINK_DATA_CHANGED);
+        }));
   }
+}
+
+void nsAndroidNetworkLinkService::OnNetworkIDChanged() {
+  RefPtr<nsAndroidNetworkLinkService> self = this;
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "nsAndroidNetworkLinkService::OnNetworkIDChanged", [self]() {
+        self->NotifyObservers(NS_NETWORK_ID_CHANGED_TOPIC, nullptr);
+      }));
 }
 
 void nsAndroidNetworkLinkService::OnLinkUp() {
   RefPtr<nsAndroidNetworkLinkService> self = this;
-  NS_DispatchToMainThread(NS_NewRunnableFunction(
-      "nsAndroidNetworkLinkService::OnLinkUp",
-      [self]() { self->SendEvent(NS_NETWORK_LINK_DATA_UP); }));
+  NS_DispatchToMainThread(
+      NS_NewRunnableFunction("nsAndroidNetworkLinkService::OnLinkUp", [self]() {
+        self->NotifyObservers(NS_NETWORK_LINK_TOPIC, NS_NETWORK_LINK_DATA_UP);
+      }));
 }
 
 void nsAndroidNetworkLinkService::OnLinkDown() {
   RefPtr<nsAndroidNetworkLinkService> self = this;
   NS_DispatchToMainThread(NS_NewRunnableFunction(
-      "nsAndroidNetworkLinkService::OnLinkDown",
-      [self]() { self->SendEvent(NS_NETWORK_LINK_DATA_DOWN); }));
+      "nsAndroidNetworkLinkService::OnLinkDown", [self]() {
+        self->NotifyObservers(NS_NETWORK_LINK_TOPIC, NS_NETWORK_LINK_DATA_DOWN);
+      }));
 }
 
 void nsAndroidNetworkLinkService::OnLinkStatusKnown() { mStatusIsKnown = true; }
 
-/* Sends the given event. Assumes aEventID never goes out of scope (static
+void nsAndroidNetworkLinkService::OnDnsSuffixListUpdated() {
+  RefPtr<nsAndroidNetworkLinkService> self = this;
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "nsAndroidNetworkLinkService::OnDnsSuffixListUpdated", [self]() {
+        self->NotifyObservers(NS_DNS_SUFFIX_LIST_UPDATED_TOPIC, nullptr);
+      }));
+}
+
+/* Sends the given event. Assumes aTopic/aData never goes out of scope (static
  * strings are ideal).
  */
-void nsAndroidNetworkLinkService::SendEvent(const char* aEventID) {
+void nsAndroidNetworkLinkService::NotifyObservers(const char* aTopic,
+                                                  const char* aData) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  LOG(("SendEvent: %s\n", aEventID));
+  LOG(("nsAndroidNetworkLinkService::NotifyObservers: topic:%s data:%s\n",
+       aTopic, aData ? aData : ""));
 
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
 
   if (observerService) {
-    observerService->NotifyObservers(static_cast<nsINetworkLinkService*>(this),
-                                     NS_NETWORK_LINK_TOPIC,
-                                     NS_ConvertASCIItoUTF16(aEventID).get());
+    observerService->NotifyObservers(
+        static_cast<nsINetworkLinkService*>(this), aTopic,
+        aData ? NS_ConvertASCIItoUTF16(aData).get() : nullptr);
   }
 }

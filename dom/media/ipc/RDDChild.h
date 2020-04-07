@@ -10,6 +10,7 @@
 #include "mozilla/ipc/CrashReporterHelper.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/gfxVarReceiver.h"
+#include "mozilla/gfx/GPUProcessListener.h"
 
 namespace mozilla {
 
@@ -25,26 +26,26 @@ class RDDProcessHost;
 
 class RDDChild final : public PRDDChild,
                        public ipc::CrashReporterHelper<GeckoProcessType_RDD>,
-                       public gfx::gfxVarReceiver {
+                       public gfx::gfxVarReceiver,
+                       public gfx::GPUProcessListener {
   typedef mozilla::dom::MemoryReportRequestHost MemoryReportRequestHost;
 
  public:
   explicit RDDChild(RDDProcessHost* aHost);
   ~RDDChild();
 
-  bool Init(bool aStartMacSandbox);
+  bool Init();
 
-  bool EnsureRDDReady();
-
+  void OnCompositorUnexpectedShutdown() override;
   void OnVarChanged(const GfxVarUpdate& aVar) override;
-
-  // PRDDChild overrides.
-  mozilla::ipc::IPCResult RecvInitComplete();
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
   mozilla::ipc::IPCResult RecvAddMemoryReport(const MemoryReport& aReport);
   mozilla::ipc::IPCResult RecvFinishMemoryReport(const uint32_t& aGeneration);
+  mozilla::ipc::IPCResult RecvGetModulesTrust(
+      ModulePaths&& aModPaths, bool aRunAtNormalPriority,
+      GetModulesTrustResolver&& aResolver);
 
   bool SendRequestMemoryReport(const uint32_t& aGeneration,
                                const bool& aAnonymize,
@@ -59,7 +60,6 @@ class RDDChild final : public PRDDChild,
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   UniquePtr<SandboxBroker> mSandboxBroker;
 #endif
-  bool mRDDReady;
 };
 
 }  // namespace mozilla

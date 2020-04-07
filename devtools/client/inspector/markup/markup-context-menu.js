@@ -203,8 +203,7 @@ class MarkupContextMenu {
     if (!this.selection.isNode()) {
       return;
     }
-
-    this.markup.beginEditingOuterHTML(this.selection.nodeFront);
+    this.markup.beginEditingHTML(this.selection.nodeFront);
   }
 
   /**
@@ -346,7 +345,7 @@ class MarkupContextMenu {
   _showDOMProperties() {
     this.toolbox.openSplitConsole().then(() => {
       const { hud } = this.toolbox.getPanel("webconsole");
-      hud.ui.wrapper.dispatchEvaluateExpression("inspect($0)");
+      hud.ui.wrapper.dispatchEvaluateExpression("inspect($0, true)");
     });
   }
 
@@ -372,7 +371,7 @@ class MarkupContextMenu {
     const options = {
       selectedNodeActor: this.selection.nodeFront.actorID,
     };
-    const res = await hud.ui.evaluateJSAsync(evalString, options);
+    const res = await hud.evaluateJSAsync(evalString, options);
     hud.setInputValue(res.result);
     this.inspector.emit("console-var-ready");
   }
@@ -472,14 +471,14 @@ class MarkupContextMenu {
     return null;
   }
 
-  _getCopySubmenu(markupContainer, isSelectionElement) {
+  _getCopySubmenu(markupContainer, isElement, isFragment) {
     const copySubmenu = new Menu();
     copySubmenu.append(
       new MenuItem({
         id: "node-menu-copyinner",
         label: INSPECTOR_L10N.getStr("inspectorCopyInnerHTML.label"),
         accesskey: INSPECTOR_L10N.getStr("inspectorCopyInnerHTML.accesskey"),
-        disabled: !isSelectionElement,
+        disabled: !isElement && !isFragment,
         click: () => this._copyInnerHTML(),
       })
     );
@@ -488,7 +487,7 @@ class MarkupContextMenu {
         id: "node-menu-copyouter",
         label: INSPECTOR_L10N.getStr("inspectorCopyOuterHTML.label"),
         accesskey: INSPECTOR_L10N.getStr("inspectorCopyOuterHTML.accesskey"),
-        disabled: !isSelectionElement,
+        disabled: !isElement,
         click: () => this._copyOuterHTML(),
       })
     );
@@ -497,7 +496,7 @@ class MarkupContextMenu {
         id: "node-menu-copyuniqueselector",
         label: INSPECTOR_L10N.getStr("inspectorCopyCSSSelector.label"),
         accesskey: INSPECTOR_L10N.getStr("inspectorCopyCSSSelector.accesskey"),
-        disabled: !isSelectionElement,
+        disabled: !isElement,
         click: () => this._copyUniqueSelector(),
       })
     );
@@ -506,7 +505,7 @@ class MarkupContextMenu {
         id: "node-menu-copycsspath",
         label: INSPECTOR_L10N.getStr("inspectorCopyCSSPath.label"),
         accesskey: INSPECTOR_L10N.getStr("inspectorCopyCSSPath.accesskey"),
-        disabled: !isSelectionElement,
+        disabled: !isElement,
         click: () => this._copyCssPath(),
       })
     );
@@ -515,7 +514,7 @@ class MarkupContextMenu {
         id: "node-menu-copyxpath",
         label: INSPECTOR_L10N.getStr("inspectorCopyXPath.label"),
         accesskey: INSPECTOR_L10N.getStr("inspectorCopyXPath.accesskey"),
-        disabled: !isSelectionElement,
+        disabled: !isElement,
         click: () => this._copyXPath(),
       })
     );
@@ -524,9 +523,7 @@ class MarkupContextMenu {
         id: "node-menu-copyimagedatauri",
         label: INSPECTOR_L10N.getStr("inspectorImageDataUri.label"),
         disabled:
-          !isSelectionElement ||
-          !markupContainer ||
-          !markupContainer.isPreviewable(),
+          !isElement || !markupContainer || !markupContainer.isPreviewable(),
         click: () => this._copyImageDataUri(),
       })
     );
@@ -534,7 +531,7 @@ class MarkupContextMenu {
     return copySubmenu;
   }
 
-  _getDOMBreakpointSubmenu(isSelectionElement) {
+  _getDOMBreakpointSubmenu(isElement) {
     const menu = new Menu();
     const mutationBreakpoints = this.selection.nodeFront.mutationBreakpoints;
 
@@ -543,7 +540,7 @@ class MarkupContextMenu {
         id: "node-menu-mutation-breakpoint-subtree",
         checked: mutationBreakpoints.subtree,
         click: () => this.markup.toggleMutationBreakpoint("subtree"),
-        disabled: !isSelectionElement,
+        disabled: !isElement,
         label: INSPECTOR_L10N.getStr("inspectorSubtreeModification.label"),
         type: "checkbox",
       })
@@ -554,7 +551,7 @@ class MarkupContextMenu {
         id: "node-menu-mutation-breakpoint-attribute",
         checked: mutationBreakpoints.attribute,
         click: () => this.markup.toggleMutationBreakpoint("attribute"),
-        disabled: !isSelectionElement,
+        disabled: !isElement,
         label: INSPECTOR_L10N.getStr("inspectorAttributeModification.label"),
         type: "checkbox",
       })
@@ -564,7 +561,7 @@ class MarkupContextMenu {
       new MenuItem({
         checked: mutationBreakpoints.removal,
         click: () => this.markup.toggleMutationBreakpoint("removal"),
-        disabled: !isSelectionElement,
+        disabled: !isElement,
         label: INSPECTOR_L10N.getStr("inspectorNodeRemoval.label"),
         type: "checkbox",
       })
@@ -632,16 +629,21 @@ class MarkupContextMenu {
     return [linkFollow, linkCopy];
   }
 
-  _getPasteSubmenu(isEditableElement) {
+  _getPasteSubmenu(isElement, isFragment, isAnonymous) {
     const isPasteable =
-      isEditableElement && this._getClipboardContentForPaste();
+      !isAnonymous &&
+      (isFragment || isElement) &&
+      this._getClipboardContentForPaste();
     const disableAdjacentPaste =
       !isPasteable ||
+      !isElement ||
       this.selection.isRoot() ||
       this.selection.isBodyNode() ||
       this.selection.isHeadNode();
     const disableFirstLastPaste =
-      !isPasteable || (this.selection.isHTMLNode() && this.selection.isRoot());
+      !isPasteable ||
+      !isElement ||
+      (this.selection.isHTMLNode() && this.selection.isRoot());
 
     const pasteSubmenu = new Menu();
     pasteSubmenu.append(
@@ -658,7 +660,7 @@ class MarkupContextMenu {
         id: "node-menu-pasteouterhtml",
         label: INSPECTOR_L10N.getStr("inspectorPasteOuterHTML.label"),
         accesskey: INSPECTOR_L10N.getStr("inspectorPasteOuterHTML.accesskey"),
-        disabled: !isPasteable,
+        disabled: !isPasteable || !isElement,
         click: () => this._pasteOuterHTML(),
       })
     );
@@ -706,7 +708,7 @@ class MarkupContextMenu {
     return pasteSubmenu;
   }
 
-  _getPseudoClassSubmenu(isSelectionElement) {
+  _getPseudoClassSubmenu(isElement) {
     const menu = new Menu();
 
     // Set the pseudo classes
@@ -718,7 +720,7 @@ class MarkupContextMenu {
         click: () => this.inspector.togglePseudoClass(name),
       });
 
-      if (isSelectionElement) {
+      if (isElement) {
         const checked = this.selection.nodeFront.hasPseudoClassLock(name);
         menuitem.checked = checked;
       } else {
@@ -743,16 +745,14 @@ class MarkupContextMenu {
     this.nodeMenuTriggerInfo =
       markupContainer && markupContainer.editor.getInfoAtNode(target);
 
-    const isSelectionElement =
+    const isFragment = this.selection.isDocumentFragmentNode();
+    const isAnonymous = this.selection.isAnonymousNode();
+    const isElement =
       this.selection.isElementNode() && !this.selection.isPseudoElementNode();
-    const isEditableElement =
-      isSelectionElement && !this.selection.isAnonymousNode();
     const isDuplicatableElement =
-      isSelectionElement &&
-      !this.selection.isAnonymousNode() &&
-      !this.selection.isRoot();
+      isElement && !isAnonymous && !this.selection.isRoot();
     const isScreenshotable =
-      isSelectionElement && this.selection.nodeFront.isTreeDisplayed;
+      isElement && this.selection.nodeFront.isTreeDisplayed;
 
     const menu = new Menu();
     menu.append(
@@ -760,7 +760,7 @@ class MarkupContextMenu {
         id: "node-menu-edithtml",
         label: INSPECTOR_L10N.getStr("inspectorHTMLEdit.label"),
         accesskey: INSPECTOR_L10N.getStr("inspectorHTMLEdit.accesskey"),
-        disabled: !isEditableElement,
+        disabled: isAnonymous || (!isElement && !isFragment),
         click: () => this._editHTML(),
       })
     );
@@ -797,7 +797,7 @@ class MarkupContextMenu {
         accesskey: INSPECTOR_L10N.getStr(
           "inspectorAttributesSubmenu.accesskey"
         ),
-        submenu: this._getAttributesSubmenu(isEditableElement),
+        submenu: this._getAttributesSubmenu(isElement && !isAnonymous),
       })
     );
 
@@ -816,7 +816,10 @@ class MarkupContextMenu {
       menu.append(
         new MenuItem({
           label: INSPECTOR_L10N.getStr("inspectorBreakpointSubmenu.label"),
-          submenu: this._getDOMBreakpointSubmenu(isSelectionElement),
+          // FIXME(bug 1598952): This doesn't work in shadow trees at all, but
+          // we still display the active menu. Also, this should probably be
+          // enabled for ShadowRoot, at least the non-attribute breakpoints.
+          submenu: this._getDOMBreakpointSubmenu(isElement),
           id: "node-menu-mutation-breakpoint",
         })
       );
@@ -861,7 +864,7 @@ class MarkupContextMenu {
     menu.append(
       new MenuItem({
         label: INSPECTOR_L10N.getStr("inspectorPseudoClassSubmenu.label"),
-        submenu: this._getPseudoClassSubmenu(isSelectionElement),
+        submenu: this._getPseudoClassSubmenu(isElement),
       })
     );
 
@@ -881,7 +884,7 @@ class MarkupContextMenu {
         accesskey: INSPECTOR_L10N.getStr(
           "inspectorScrollNodeIntoView.accesskey"
         ),
-        disabled: !isSelectionElement,
+        disabled: !isElement,
         click: () => this.markup.scrollNodeIntoView(),
       })
     );
@@ -895,14 +898,14 @@ class MarkupContextMenu {
     menu.append(
       new MenuItem({
         label: INSPECTOR_L10N.getStr("inspectorCopyHTMLSubmenu.label"),
-        submenu: this._getCopySubmenu(markupContainer, isSelectionElement),
+        submenu: this._getCopySubmenu(markupContainer, isElement, isFragment),
       })
     );
 
     menu.append(
       new MenuItem({
         label: INSPECTOR_L10N.getStr("inspectorPasteHTMLSubmenu.label"),
-        submenu: this._getPasteSubmenu(isEditableElement),
+        submenu: this._getPasteSubmenu(isElement, isFragment, isAnonymous),
       })
     );
 
@@ -950,16 +953,6 @@ class MarkupContextMenu {
   }
 
   async _updateA11YMenuItem(menuItem) {
-    const hasMethod = await this.target
-      .actorHasMethod("domwalker", "hasAccessibilityProperties")
-      .catch(
-        // Connection to DOMWalker might have been already closed.
-        error => console.warn(error)
-      );
-    if (!hasMethod) {
-      return;
-    }
-
     const hasA11YProps = await this.walker.hasAccessibilityProperties(
       this.selection.nodeFront
     );

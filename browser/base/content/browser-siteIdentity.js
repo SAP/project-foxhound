@@ -290,6 +290,11 @@ var gIdentityHandler = {
     return (this._geoSharingIcon = document.getElementById("geo-sharing-icon"));
   },
 
+  get _xrSharingIcon() {
+    delete this._xrSharingIcon;
+    return (this._xrSharingIcon = document.getElementById("xr-sharing-icon"));
+  },
+
   get _webRTCSharingIcon() {
     delete this._webRTCSharingIcon;
     return (this._webRTCSharingIcon = document.getElementById(
@@ -572,6 +577,7 @@ var gIdentityHandler = {
     this._webRTCSharingIcon.removeAttribute("paused");
     this._webRTCSharingIcon.removeAttribute("sharing");
     this._geoSharingIcon.removeAttribute("sharing");
+    this._xrSharingIcon.removeAttribute("sharing");
 
     if (this._sharingState) {
       if (
@@ -590,6 +596,9 @@ var gIdentityHandler = {
       }
       if (this._sharingState.geo) {
         this._geoSharingIcon.setAttribute("sharing", this._sharingState.geo);
+      }
+      if (this._sharingState.xr) {
+        this._xrSharingIcon.setAttribute("sharing", this._sharingState.xr);
       }
     }
 
@@ -677,10 +686,9 @@ var gIdentityHandler = {
    */
   _hasCustomRoot() {
     let issuerCert = null;
-    // Walk the whole chain to get the last cert.
-    // eslint-disable-next-line no-empty
-    for (issuerCert of this._secInfo.succeededCertChain.getEnumerator()) {
-    }
+    issuerCert = this._secInfo.succeededCertChain[
+      this._secInfo.succeededCertChain.length - 1
+    ];
 
     return !issuerCert.isBuiltInRoot;
   },
@@ -898,10 +906,7 @@ var gIdentityHandler = {
 
     // Show blocked popup icon in the identity-box if popups are blocked
     // irrespective of popup permission capability value.
-    if (
-      gBrowser.selectedBrowser.blockedPopups &&
-      gBrowser.selectedBrowser.blockedPopups.length
-    ) {
+    if (gBrowser.selectedBrowser.popupBlocker.getBlockedPopupCount()) {
       let icon = permissionAnchors.popup;
       icon.setAttribute("showing", "true");
     }
@@ -1294,7 +1299,13 @@ var gIdentityHandler = {
     let tabIcon = gBrowser.selectedTab.iconImage;
     let image = new Image();
     image.src = tabIcon.src;
-    ctx.drawImage(image, 0, 0, 16 * scale, 16 * scale);
+    try {
+      ctx.drawImage(image, 0, 0, 16 * scale, 16 * scale);
+    } catch (e) {
+      // Sites might specify invalid data URIs favicons that
+      // will result in errors when trying to draw, we can
+      // just ignore this case and not paint any favicon.
+    }
 
     let dt = event.dataTransfer;
     dt.setData("text/x-moz-url", urlString);
@@ -1303,8 +1314,8 @@ var gIdentityHandler = {
     dt.setData("text/html", htmlString);
     dt.setDragImage(canvas, 16, 16);
 
-    // Make sure we don't cover the tab bar or other potential drop targets.
-    gURLBar.endLayoutExtend(true);
+    // Don't cover potential drop targets on the toolbars or in content.
+    gURLBar.view.close();
   },
 
   onLocationChange() {
@@ -1346,6 +1357,20 @@ var gIdentityHandler = {
       }
     }
 
+    if (this._sharingState && this._sharingState.xr) {
+      let xrPermission = permissions.find(perm => perm.id === "xr");
+      if (xrPermission) {
+        xrPermission.sharingState = true;
+      } else {
+        permissions.push({
+          id: "xr",
+          state: SitePermissions.ALLOW,
+          scope: SitePermissions.SCOPE_REQUEST,
+          sharingState: true,
+        });
+      }
+    }
+
     if (this._sharingState && this._sharingState.webRTC) {
       let webrtcState = this._sharingState.webRTC;
       // If WebRTC device or screen permissions are in use, we need to find
@@ -1376,6 +1401,7 @@ var gIdentityHandler = {
       }
     }
 
+    let totalBlockedPopups = gBrowser.selectedBrowser.popupBlocker.getBlockedPopupCount();
     let hasBlockedPopupIndicator = false;
     for (let permission of permissions) {
       if (permission.id == "storage-access") {
@@ -1389,12 +1415,8 @@ var gIdentityHandler = {
       }
       this._permissionList.appendChild(item);
 
-      if (
-        permission.id == "popup" &&
-        gBrowser.selectedBrowser.blockedPopups &&
-        gBrowser.selectedBrowser.blockedPopups.length
-      ) {
-        this._createBlockedPopupIndicator();
+      if (permission.id == "popup" && totalBlockedPopups) {
+        this._createBlockedPopupIndicator(totalBlockedPopups);
         hasBlockedPopupIndicator = true;
       } else if (
         permission.id == "geo" &&
@@ -1404,11 +1426,7 @@ var gIdentityHandler = {
       }
     }
 
-    if (
-      gBrowser.selectedBrowser.blockedPopups &&
-      gBrowser.selectedBrowser.blockedPopups.length &&
-      !hasBlockedPopupIndicator
-    ) {
+    if (totalBlockedPopups && !hasBlockedPopupIndicator) {
       let permission = {
         id: "popup",
         state: SitePermissions.getDefault("popup"),
@@ -1416,7 +1434,7 @@ var gIdentityHandler = {
       };
       let item = this._createPermissionItem(permission);
       this._permissionList.appendChild(item);
-      this._createBlockedPopupIndicator();
+      this._createBlockedPopupIndicator(totalBlockedPopups);
     }
 
     // Show a placeholder text if there's no permission and no reload hint.
@@ -1573,9 +1591,12 @@ var gIdentityHandler = {
       return container;
     }
 
-    if (aPermission.id == "geo") {
+    if (aPermission.id == "geo" || aPermission.id == "xr") {
       let block = document.createXULElement("vbox");
-      block.setAttribute("id", "identity-popup-geo-container");
+      block.setAttribute(
+        "id",
+        "identity-popup-" + aPermission.id + "-container"
+      );
 
       let button = this._createPermissionClearButton(aPermission, block);
       container.appendChild(button);
@@ -1609,8 +1630,8 @@ var gIdentityHandler = {
       let browser = gBrowser.selectedBrowser;
       this._permissionList.removeChild(container);
       if (aPermission.sharingState) {
-        if (aPermission.id === "geo") {
-          let origins = browser.getDevicePermissionOrigins("geo");
+        if (aPermission.id === "geo" || aPermission.id === "xr") {
+          let origins = browser.getDevicePermissionOrigins(aPermission.id);
           for (let origin of origins) {
             let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               origin
@@ -1645,10 +1666,11 @@ var gIdentityHandler = {
               }
             }
           }
-          browser.messageManager.sendAsyncMessage(
-            "webrtc:StopSharing",
-            windowId
-          );
+
+          let bc = this._sharingState.webRTC.browsingContext;
+          bc.currentWindowGlobal
+            .getActor("WebRTC")
+            .sendAsyncMessage("webrtc:StopSharing", windowId);
           webrtcUI.forgetActivePermissionsFromBrowser(gBrowser.selectedBrowser);
         }
       }
@@ -1665,6 +1687,8 @@ var gIdentityHandler = {
 
       if (aPermission.id === "geo") {
         gBrowser.updateBrowserSharing(browser, { geo: false });
+      } else if (aPermission.id === "xr") {
+        gBrowser.updateBrowserSharing(browser, { xr: false });
       }
     });
 
@@ -1729,7 +1753,7 @@ var gIdentityHandler = {
       .appendChild(indicator);
   },
 
-  _createBlockedPopupIndicator() {
+  _createBlockedPopupIndicator(aTotalBlockedPopups) {
     let indicator = document.createXULElement("hbox");
     indicator.setAttribute("class", "identity-popup-permission-item");
     indicator.setAttribute("align", "center");
@@ -1742,18 +1766,17 @@ var gIdentityHandler = {
     text.setAttribute("flex", "1");
     text.setAttribute("class", "identity-popup-permission-label");
 
-    let popupCount = gBrowser.selectedBrowser.blockedPopups.length;
     let messageBase = gNavigatorBundle.getString(
       "popupShowBlockedPopupsIndicatorText"
     );
-    let message = PluralForm.get(popupCount, messageBase).replace(
+    let message = PluralForm.get(aTotalBlockedPopups, messageBase).replace(
       "#1",
-      popupCount
+      aTotalBlockedPopups
     );
     text.textContent = message;
 
     text.addEventListener("click", () => {
-      gPopupBlockerObserver.showAllBlockedPopups(gBrowser.selectedBrowser);
+      gBrowser.selectedBrowser.popupBlocker.unblockAllPopups();
     });
 
     indicator.appendChild(icon);

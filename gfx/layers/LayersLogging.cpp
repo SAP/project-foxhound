@@ -434,11 +434,20 @@ void AppendToString(std::stringstream& aStream, gfx::SurfaceType aType,
     case SurfaceType::RECORDING:
       aStream << "SurfaceType::RECORDING";
       break;
+    case SurfaceType::WRAP_AND_RECORD:
+      aStream << "SurfaceType::WRAP_AND_RECORD";
+      break;
     case SurfaceType::TILED:
       aStream << "SurfaceType::TILED";
       break;
     case SurfaceType::DATA_SHARED:
       aStream << "SurfaceType::DATA_SHARED";
+      break;
+    case SurfaceType::DATA_RECYCLING_SHARED:
+      aStream << "SurfaceType::DATA_RECYCLING_SHARED";
+      break;
+    case SurfaceType::DATA_ALIGNED:
+      aStream << "SurfaceType::DATA_ALIGNED";
       break;
     default:
       NS_ERROR("unknown surface type");

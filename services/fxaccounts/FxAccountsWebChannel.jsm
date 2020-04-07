@@ -166,7 +166,7 @@ this.FxAccountsWebChannel = function(options) {
   this._setupChannel();
 };
 
-this.FxAccountsWebChannel.prototype = {
+FxAccountsWebChannel.prototype = {
   /**
    * WebChannel that is used to communicate with content page
    */
@@ -222,17 +222,15 @@ this.FxAccountsWebChannel.prototype = {
           accountServer.asciiHost.endsWith("." + val)
         );
       });
-    if (
-      shouldCheckRemoteType &&
-      sendingContext.browser.remoteType != "privilegedmozilla"
-    ) {
+    let { currentRemoteType } = sendingContext.browsingContext;
+    if (shouldCheckRemoteType && currentRemoteType != "privilegedmozilla") {
       log.error(
-        "Rejected FxA webchannel message from remoteType = " +
-          sendingContext.browser.remoteType
+        `Rejected FxA webchannel message from remoteType = ${currentRemoteType}`
       );
       return;
     }
 
+    let browser = sendingContext.browsingContext.top.embedderElement;
     switch (command) {
       case COMMAND_PROFILE_CHANGE:
         Services.obs.notifyObservers(
@@ -265,14 +263,11 @@ this.FxAccountsWebChannel.prototype = {
         this._channel.send(response, sendingContext);
         break;
       case COMMAND_SYNC_PREFERENCES:
-        this._helpers.openSyncPreferences(
-          sendingContext.browser,
-          data.entryPoint
-        );
+        this._helpers.openSyncPreferences(browser, data.entryPoint);
         break;
       case COMMAND_PAIR_PREFERENCES:
         if (pairingEnabled) {
-          sendingContext.browser.loadURI("about:preferences?action=pair#sync", {
+          browser.loadURI("about:preferences?action=pair#sync", {
             triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
           });
         }
@@ -360,9 +355,9 @@ this.FxAccountsWebChannel.prototype = {
      *        Command message
      * @param sendingContext {Object}
      *        Message sending context.
-     *        @param sendingContext.browser {browser}
-     *               The <browser> object that captured the
-     *               WebChannelMessageToChrome.
+     *        @param sendingContext.browsingContext {BrowsingContext}
+     *               The browsingcontext from which the
+     *               WebChannelMessageToChrome was sent.
      *        @param sendingContext.eventTarget {EventTarget}
      *               The <EventTarget> where the message was sent.
      *        @param sendingContext.principal {Principal}
@@ -405,7 +400,7 @@ this.FxAccountsWebChannelHelpers = function(options) {
     options.privateBrowsingUtils || PrivateBrowsingUtils;
 };
 
-this.FxAccountsWebChannelHelpers.prototype = {
+FxAccountsWebChannelHelpers.prototype = {
   // If the last fxa account used for sync isn't this account, we display
   // a modal dialog checking they really really want to do this...
   // (This is sync-specific, so ideally would be in sync's identity module,
@@ -438,6 +433,11 @@ this.FxAccountsWebChannelHelpers.prototype = {
 
     // Remember who it was so we can log out next time.
     this.setPreviousAccountNameHashPref(accountData.email);
+
+    await this._fxAccounts.telemetry.recordConnection(
+      Object.keys(requestedServices || {}),
+      "webchannel"
+    );
 
     // A sync-specific hack - we want to ensure sync has been initialized
     // before we set the signed-in user.
@@ -484,15 +484,15 @@ this.FxAccountsWebChannelHelpers.prototype = {
    *
    * @param the uid of the account which have been logged out
    */
-  logout(uid) {
-    return fxAccounts.getSignedInUser().then(userData => {
-      if (userData && userData.uid === uid) {
-        // true argument is `localOnly`, because server-side stuff
-        // has already been taken care of by the content server
-        return fxAccounts.signOut(true);
-      }
-      return null;
-    });
+  async logout(uid) {
+    let fxa = this._fxAccounts;
+    let userData = await fxa._internal.getUserAccountData(["uid"]);
+    if (userData && userData.uid === uid) {
+      await fxa.telemetry.recordDisconnection(null, "webchannel");
+      // true argument is `localOnly`, because server-side stuff
+      // has already been taken care of by the content server
+      await fxa.signOut(true);
+    }
   },
 
   /**
@@ -504,8 +504,9 @@ this.FxAccountsWebChannelHelpers.prototype = {
       return true;
     }
 
+    let browser = sendingContext.browsingContext.top.embedderElement;
     const isPrivateBrowsing = this._privateBrowsingUtils.isBrowserPrivate(
-      sendingContext.browser
+      browser
     );
     log.debug("is private browsing", isPrivateBrowsing);
     return isPrivateBrowsing;
@@ -545,11 +546,18 @@ this.FxAccountsWebChannelHelpers.prototype = {
    * If returning status information is not allowed or no user is signed into
    * Sync, `user_data` will be null.
    */
-  async getFxaStatus(service, sendingContext, isPairing) {
+  async getFxaStatus(service, sendingContext, isPairing, context) {
     let signedInUser = null;
 
-    if (this.shouldAllowFxaStatus(service, sendingContext, isPairing)) {
-      const userData = await this._fxAccounts.getSignedInUser();
+    if (
+      this.shouldAllowFxaStatus(service, sendingContext, isPairing, context)
+    ) {
+      const userData = await this._fxAccounts._internal.getUserAccountData([
+        "email",
+        "sessionToken",
+        "uid",
+        "verified",
+      ]);
       if (userData) {
         signedInUser = {
           email: userData.email,
@@ -730,7 +738,7 @@ var EnsureFxAccountsWebChannel = () => {
       if (contentUri) {
         // The FxAccountsWebChannel listens for events and updates
         // the state machine accordingly.
-        singleton = new this.FxAccountsWebChannel({
+        singleton = new FxAccountsWebChannel({
           content_uri: contentUri,
           channel_id: WEBCHANNEL_ID,
         });

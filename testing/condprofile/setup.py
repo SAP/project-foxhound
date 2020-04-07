@@ -7,7 +7,7 @@ PY3 = sys.version_info.major == 3
 if PY3:
     entry_points = """
       [console_scripts]
-      cp-creator = condprof.runner:main
+      cp-creator = condprof.main:main
       cp-client = condprof.client:main
       """
 else:
@@ -18,7 +18,7 @@ else:
 
 setup(
     name="conditioned-profile",
-    version="0.1",
+    version="0.2",
     packages=find_packages(),
     description="Firefox Heavy Profile creator",
     include_package_data=True,

@@ -6,15 +6,20 @@
 
 import { differenceBy } from "lodash";
 import type { Action, ThunkArgs } from "./types";
-import type { ThreadType } from "../types";
 import { removeSourceActors } from "./source-actors";
+import { newGeneratedSources } from "./sources";
 
-import { getContext, getThreads, getSourceActorsForThread } from "../selectors";
+import {
+  getContext,
+  getAllThreads,
+  getThreads,
+  getSourceActorsForThread,
+} from "../selectors";
 
-export function updateThreads(type: ?ThreadType) {
+export function updateThreads() {
   return async function({ dispatch, getState, client }: ThunkArgs) {
     const cx = getContext(getState());
-    const threads = await client.fetchThreads(type);
+    const threads = await client.fetchThreads();
 
     const currentThreads = getThreads(getState());
 
@@ -36,6 +41,47 @@ export function updateThreads(type: ?ThreadType) {
     }
     if (addedThreads.length > 0) {
       dispatch(({ type: "INSERT_THREADS", cx, threads: addedThreads }: Action));
+
+      // Fetch the sources and install breakpoints on any new workers.
+      // NOTE: This runs in the background and fails quietly because it is
+      // pretty easy for sources to throw during the fetch if their thread
+      // shuts down, which would cause test failures.
+      for (const thread of addedThreads) {
+        client
+          .fetchThreadSources(thread.actor)
+          .then(sources => dispatch(newGeneratedSources(sources)))
+          .catch(e => console.error(e));
+      }
+    }
+
+    // Update the status of any service workers.
+    for (const thread of currentThreads) {
+      if (thread.serviceWorkerStatus) {
+        for (const fetchedThread of threads) {
+          if (
+            fetchedThread.actor == thread.actor &&
+            fetchedThread.serviceWorkerStatus != thread.serviceWorkerStatus
+          ) {
+            dispatch(
+              ({
+                type: "UPDATE_SERVICE_WORKER_STATUS",
+                cx,
+                thread: thread.actor,
+                status: fetchedThread.serviceWorkerStatus,
+              }: Action)
+            );
+          }
+        }
+      }
+    }
+  };
+}
+
+export function ensureHasThread(thread: string) {
+  return async function({ dispatch, getState, client }: ThunkArgs) {
+    const currentThreads = getAllThreads(getState());
+    if (!currentThreads.some(t => t.actor == thread)) {
+      await dispatch(updateThreads());
     }
   };
 }

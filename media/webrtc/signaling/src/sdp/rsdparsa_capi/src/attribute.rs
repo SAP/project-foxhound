@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use std::slice;
 use libc::{size_t, c_float};
 use std::ptr;
@@ -256,7 +260,7 @@ impl<'a> From<&'a SdpAttributeRtpmap> for RustSdpAttributeRtpmap {
             payload_type: other.payload_type as u8,
             codec_name: StringView::from(other.codec_name.as_str()),
             frequency: other.frequency as u32,
-            channels: other.channels.unwrap_or(1)
+            channels: other.channels.unwrap_or(0)
         }
     }
 }
@@ -1175,10 +1179,15 @@ pub struct RustSdpAttributeExtmap {
 
 impl<'a> From<&'a SdpAttributeExtmap> for RustSdpAttributeExtmap {
     fn from(other: &SdpAttributeExtmap) -> Self {
+        let dir = if other.direction.is_some() {
+            RustDirection::from(&other.direction)
+        } else {
+            RustDirection::from(&Some(SdpAttributeDirection::Sendrecv))
+        };
         RustSdpAttributeExtmap {
             id : other.id as u16,
             direction_specified: other.direction.is_some(),
-            direction: RustDirection::from(&other.direction),
+            direction: dir,
             url: StringView::from(other.url.as_str()),
             extension_attributes: StringView::from(&other.extension_attributes)
         }

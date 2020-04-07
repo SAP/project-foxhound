@@ -49,7 +49,6 @@ add_task(function test() {
   );
 
   let id = 0;
-
   function insertOrigin(
     origin,
     type,
@@ -85,6 +84,7 @@ add_task(function test() {
     };
   }
 
+  // eslint-disable-next-line no-unused-vars
   let created6 = [
     insertOrigin("https://foo.com", "A", 2, 0, 0, 0),
     insertOrigin("http://foo.com", "A", 2, 0, 0, 0),
@@ -111,7 +111,7 @@ add_task(function test() {
   Services.obs.notifyObservers(null, "testonly-reload-permissions-from-disk");
 
   // Force initialization of the nsPermissionManager
-  for (let permission of Services.perms.enumerator) {
+  for (let permission of Services.perms.all) {
     let isExpected = false;
 
     expected.forEach((it, i) => {

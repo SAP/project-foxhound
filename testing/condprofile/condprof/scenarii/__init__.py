@@ -1,7 +1,8 @@
 from __future__ import absolute_import
 
-from condprof.scenarii.heavy import heavy
-from condprof.scenarii.cold import cold
+from condprof.scenarii.full import full
+from condprof.scenarii.settled import settled
+from condprof.scenarii.settled2 import settled2
 
 
-scenarii = {"heavy": heavy, "cold": cold}
+scenarii = {"full": full, "settled": settled, "settled2": settled2}

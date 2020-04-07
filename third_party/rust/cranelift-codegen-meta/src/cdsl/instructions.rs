@@ -1,45 +1,35 @@
+use cranelift_codegen_shared::condcodes::IntCC;
 use cranelift_entity::{entity_impl, PrimaryMap};
 
 use std::collections::HashMap;
 use std::fmt;
-use std::ops;
+use std::fmt::{Display, Error, Formatter};
 use std::rc::Rc;
 
 use crate::cdsl::camel_case;
-use crate::cdsl::formats::{
-    FormatField, FormatRegistry, InstructionFormat, InstructionFormatIndex,
-};
+use crate::cdsl::formats::{FormatField, InstructionFormat};
 use crate::cdsl::operands::Operand;
 use crate::cdsl::type_inference::Constraint;
 use crate::cdsl::types::{LaneType, ReferenceType, ValueType, VectorType};
 use crate::cdsl::typevar::TypeVar;
-use cranelift_codegen_shared::condcodes::IntCC;
+
+use crate::shared::formats::Formats;
+use crate::shared::types::{Bool, Float, Int, Reference};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct OpcodeNumber(u32);
+pub(crate) struct OpcodeNumber(u32);
 entity_impl!(OpcodeNumber);
 
-pub type AllInstructions = PrimaryMap<OpcodeNumber, Instruction>;
+pub(crate) type AllInstructions = PrimaryMap<OpcodeNumber, Instruction>;
 
-pub struct InstructionGroupBuilder<'format_reg, 'all_inst> {
-    _name: &'static str,
-    _doc: &'static str,
-    format_registry: &'format_reg FormatRegistry,
+pub(crate) struct InstructionGroupBuilder<'all_inst> {
     all_instructions: &'all_inst mut AllInstructions,
     own_instructions: Vec<Instruction>,
 }
 
-impl<'format_reg, 'all_inst> InstructionGroupBuilder<'format_reg, 'all_inst> {
-    pub fn new(
-        name: &'static str,
-        doc: &'static str,
-        all_instructions: &'all_inst mut AllInstructions,
-        format_registry: &'format_reg FormatRegistry,
-    ) -> Self {
+impl<'all_inst> InstructionGroupBuilder<'all_inst> {
+    pub fn new(all_instructions: &'all_inst mut AllInstructions) -> Self {
         Self {
-            _name: name,
-            _doc: doc,
-            format_registry,
             all_instructions,
             own_instructions: Vec::new(),
         }
@@ -47,7 +37,7 @@ impl<'format_reg, 'all_inst> InstructionGroupBuilder<'format_reg, 'all_inst> {
 
     pub fn push(&mut self, builder: InstructionBuilder) {
         let opcode_number = OpcodeNumber(self.all_instructions.next_key().as_u32());
-        let inst = builder.build(self.format_registry, opcode_number);
+        let inst = builder.build(opcode_number);
         // Note this clone is cheap, since Instruction is a Rc<> wrapper for InstructionContent.
         self.own_instructions.push(inst.clone());
         self.all_instructions.push(inst);
@@ -55,8 +45,6 @@ impl<'format_reg, 'all_inst> InstructionGroupBuilder<'format_reg, 'all_inst> {
 
     pub fn build(self) -> InstructionGroup {
         InstructionGroup {
-            _name: self._name,
-            _doc: self._doc,
             instructions: self.own_instructions,
         }
     }
@@ -65,9 +53,7 @@ impl<'format_reg, 'all_inst> InstructionGroupBuilder<'format_reg, 'all_inst> {
 /// Every instruction must belong to exactly one instruction group. A given
 /// target architecture can support instructions from multiple groups, and it
 /// does not necessarily support all instructions in a group.
-pub struct InstructionGroup {
-    _name: &'static str,
-    _doc: &'static str,
+pub(crate) struct InstructionGroup {
     instructions: Vec<Instruction>,
 }
 
@@ -75,20 +61,28 @@ impl InstructionGroup {
     pub fn by_name(&self, name: &'static str) -> &Instruction {
         self.instructions
             .iter()
-            .find(|inst| &inst.name == name)
-            .expect(&format!("unexisting instruction with name {}", name))
+            .find(|inst| inst.name == name)
+            .unwrap_or_else(|| panic!("unexisting instruction with name {}", name))
     }
 }
 
+/// Instructions can have parameters bound to them to specialize them for more specific encodings
+/// (e.g. the encoding for adding two float types may be different than that of adding two
+/// integer types)
+pub(crate) trait Bindable {
+    /// Bind a parameter to an instruction
+    fn bind(&self, parameter: impl Into<BindParameter>) -> BoundInstruction;
+}
+
 #[derive(Debug)]
-pub struct PolymorphicInfo {
+pub(crate) struct PolymorphicInfo {
     pub use_typevar_operand: bool,
     pub ctrl_typevar: TypeVar,
     pub other_typevars: Vec<TypeVar>,
 }
 
 #[derive(Debug)]
-pub struct InstructionContent {
+pub(crate) struct InstructionContent {
     /// Instruction mnemonic, also becomes opcode name.
     pub name: String,
     pub camel_name: String,
@@ -105,7 +99,7 @@ pub struct InstructionContent {
     pub constraints: Vec<Constraint>,
 
     /// Instruction format, automatically derived from the input operands.
-    pub format: InstructionFormatIndex,
+    pub format: Rc<InstructionFormat>,
 
     /// One of the input or output operands is a free type variable. None if the instruction is not
     /// polymorphic, set otherwise.
@@ -118,7 +112,7 @@ pub struct InstructionContent {
     /// Indices in operands_out of output operands that are values.
     pub value_results: Vec<usize>,
 
-    /// True for instructions that terminate the EBB.
+    /// True for instructions that terminate the block.
     pub is_terminator: bool,
     /// True for all branch or jump instructions.
     pub is_branch: bool,
@@ -142,19 +136,7 @@ pub struct InstructionContent {
     pub writes_cpu_flags: bool,
 }
 
-#[derive(Clone, Debug)]
-pub struct Instruction {
-    content: Rc<InstructionContent>,
-}
-
-impl ops::Deref for Instruction {
-    type Target = InstructionContent;
-    fn deref(&self) -> &Self::Target {
-        &*self.content
-    }
-}
-
-impl Instruction {
+impl InstructionContent {
     pub fn snake_name(&self) -> &str {
         if &self.name == "return" {
             "return_"
@@ -173,36 +155,19 @@ impl Instruction {
             None => Vec::new(),
         }
     }
+}
 
-    pub fn bind(&self, lane_type: impl Into<LaneType>) -> BoundInstruction {
-        bind(self.clone(), Some(lane_type.into()), Vec::new())
-    }
+pub(crate) type Instruction = Rc<InstructionContent>;
 
-    pub fn bind_ref(&self, reference_type: impl Into<ReferenceType>) -> BoundInstruction {
-        bind_ref(self.clone(), Some(reference_type.into()), Vec::new())
-    }
-
-    pub fn bind_vector_from_lane(
-        &self,
-        lane_type: impl Into<LaneType>,
-        vector_size_in_bits: u64,
-    ) -> BoundInstruction {
-        bind_vector(
-            self.clone(),
-            lane_type.into(),
-            vector_size_in_bits,
-            Vec::new(),
-        )
-    }
-
-    pub fn bind_any(&self) -> BoundInstruction {
-        bind(self.clone(), None, Vec::new())
+impl Bindable for Instruction {
+    fn bind(&self, parameter: impl Into<BindParameter>) -> BoundInstruction {
+        BoundInstruction::new(self).bind(parameter)
     }
 }
 
-impl fmt::Display for Instruction {
+impl fmt::Display for InstructionContent {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        if self.operands_out.len() > 0 {
+        if !self.operands_out.is_empty() {
             let operands_out = self
                 .operands_out
                 .iter()
@@ -215,7 +180,7 @@ impl fmt::Display for Instruction {
 
         fmt.write_str(&self.name)?;
 
-        if self.operands_in.len() > 0 {
+        if !self.operands_in.is_empty() {
             let operands_in = self
                 .operands_in
                 .iter()
@@ -230,9 +195,10 @@ impl fmt::Display for Instruction {
     }
 }
 
-pub struct InstructionBuilder {
+pub(crate) struct InstructionBuilder {
     name: String,
     doc: String,
+    format: Rc<InstructionFormat>,
     operands_in: Option<Vec<Operand>>,
     operands_out: Option<Vec<Operand>>,
     constraints: Option<Vec<Constraint>>,
@@ -251,10 +217,11 @@ pub struct InstructionBuilder {
 }
 
 impl InstructionBuilder {
-    pub fn new<S: Into<String>>(name: S, doc: S) -> Self {
+    pub fn new<S: Into<String>>(name: S, doc: S, format: &Rc<InstructionFormat>) -> Self {
         Self {
             name: name.into(),
             doc: doc.into(),
+            format: format.clone(),
             operands_in: None,
             operands_out: None,
             constraints: None,
@@ -277,59 +244,76 @@ impl InstructionBuilder {
         self.operands_in = Some(operands.iter().map(|x| (*x).clone()).collect());
         self
     }
+
     pub fn operands_out(mut self, operands: Vec<&Operand>) -> Self {
         assert!(self.operands_out.is_none());
         self.operands_out = Some(operands.iter().map(|x| (*x).clone()).collect());
         self
     }
+
     pub fn constraints(mut self, constraints: Vec<Constraint>) -> Self {
         assert!(self.constraints.is_none());
         self.constraints = Some(constraints);
         self
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_terminator(mut self, val: bool) -> Self {
         self.is_terminator = val;
         self
     }
+
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_branch(mut self, val: bool) -> Self {
         self.is_branch = val;
         self
     }
+
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_indirect_branch(mut self, val: bool) -> Self {
         self.is_indirect_branch = val;
         self
     }
+
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_call(mut self, val: bool) -> Self {
         self.is_call = val;
         self
     }
+
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_return(mut self, val: bool) -> Self {
         self.is_return = val;
         self
     }
+
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_ghost(mut self, val: bool) -> Self {
         self.is_ghost = val;
         self
     }
+
     pub fn can_load(mut self, val: bool) -> Self {
         self.can_load = val;
         self
     }
+
     pub fn can_store(mut self, val: bool) -> Self {
         self.can_store = val;
         self
     }
+
     pub fn can_trap(mut self, val: bool) -> Self {
         self.can_trap = val;
         self
     }
+
     pub fn other_side_effects(mut self, val: bool) -> Self {
         self.other_side_effects = val;
         self
     }
 
-    fn build(self, format_registry: &FormatRegistry, opcode_number: OpcodeNumber) -> Instruction {
+    fn build(self, opcode_number: OpcodeNumber) -> Instruction {
         let operands_in = self.operands_in.unwrap_or_else(Vec::new);
         let operands_out = self.operands_out.unwrap_or_else(Vec::new);
 
@@ -338,7 +322,7 @@ impl InstructionBuilder {
         for (i, op) in operands_in.iter().enumerate() {
             if op.is_value() {
                 value_opnums.push(i);
-            } else if op.is_immediate() {
+            } else if op.is_immediate_or_entityref() {
                 imm_opnums.push(i);
             } else {
                 assert!(op.is_varargs());
@@ -351,49 +335,47 @@ impl InstructionBuilder {
             .filter_map(|(i, op)| if op.is_value() { Some(i) } else { None })
             .collect();
 
-        let format_index = format_registry.lookup(&operands_in);
-        let format = format_registry.get(format_index);
+        verify_format(&self.name, &operands_in, &self.format);
+
         let polymorphic_info =
-            verify_polymorphic(&operands_in, &operands_out, &format, &value_opnums);
+            verify_polymorphic(&operands_in, &operands_out, &self.format, &value_opnums);
 
         // Infer from output operands whether an instruciton clobbers CPU flags or not.
         let writes_cpu_flags = operands_out.iter().any(|op| op.is_cpu_flags());
 
         let camel_name = camel_case(&self.name);
 
-        Instruction {
-            content: Rc::new(InstructionContent {
-                name: self.name,
-                camel_name,
-                opcode_number,
-                doc: self.doc,
-                operands_in,
-                operands_out,
-                constraints: self.constraints.unwrap_or_else(Vec::new),
-                format: format_index,
-                polymorphic_info,
-                value_opnums,
-                value_results,
-                imm_opnums,
-                is_terminator: self.is_terminator,
-                is_branch: self.is_branch,
-                is_indirect_branch: self.is_indirect_branch,
-                is_call: self.is_call,
-                is_return: self.is_return,
-                is_ghost: self.is_ghost,
-                can_load: self.can_load,
-                can_store: self.can_store,
-                can_trap: self.can_trap,
-                other_side_effects: self.other_side_effects,
-                writes_cpu_flags,
-            }),
-        }
+        Rc::new(InstructionContent {
+            name: self.name,
+            camel_name,
+            opcode_number,
+            doc: self.doc,
+            operands_in,
+            operands_out,
+            constraints: self.constraints.unwrap_or_else(Vec::new),
+            format: self.format,
+            polymorphic_info,
+            value_opnums,
+            value_results,
+            imm_opnums,
+            is_terminator: self.is_terminator,
+            is_branch: self.is_branch,
+            is_indirect_branch: self.is_indirect_branch,
+            is_call: self.is_call,
+            is_return: self.is_return,
+            is_ghost: self.is_ghost,
+            can_load: self.can_load,
+            can_store: self.can_store,
+            can_trap: self.can_trap,
+            other_side_effects: self.other_side_effects,
+            writes_cpu_flags,
+        })
     }
 }
 
 /// A thin wrapper like Option<ValueType>, but with more precise semantics.
 #[derive(Clone)]
-pub enum ValueTypeOrAny {
+pub(crate) enum ValueTypeOrAny {
     ValueType(ValueType),
     Any,
 }
@@ -407,45 +389,226 @@ impl ValueTypeOrAny {
     }
 }
 
+/// The number of bits in the vector
+type VectorBitWidth = u64;
+
+/// An parameter used for binding instructions to specific types or values
+pub(crate) enum BindParameter {
+    Any,
+    Lane(LaneType),
+    Vector(LaneType, VectorBitWidth),
+    Reference(ReferenceType),
+    Immediate(Immediate),
+}
+
+/// Constructor for more easily building vector parameters from any lane type
+pub(crate) fn vector(parameter: impl Into<LaneType>, vector_size: VectorBitWidth) -> BindParameter {
+    BindParameter::Vector(parameter.into(), vector_size)
+}
+
+impl From<Int> for BindParameter {
+    fn from(ty: Int) -> Self {
+        BindParameter::Lane(ty.into())
+    }
+}
+
+impl From<Bool> for BindParameter {
+    fn from(ty: Bool) -> Self {
+        BindParameter::Lane(ty.into())
+    }
+}
+
+impl From<Float> for BindParameter {
+    fn from(ty: Float) -> Self {
+        BindParameter::Lane(ty.into())
+    }
+}
+
+impl From<LaneType> for BindParameter {
+    fn from(ty: LaneType) -> Self {
+        BindParameter::Lane(ty)
+    }
+}
+
+impl From<Reference> for BindParameter {
+    fn from(ty: Reference) -> Self {
+        BindParameter::Reference(ty.into())
+    }
+}
+
+impl From<Immediate> for BindParameter {
+    fn from(imm: Immediate) -> Self {
+        BindParameter::Immediate(imm)
+    }
+}
+
 #[derive(Clone)]
-pub struct BoundInstruction {
+pub(crate) enum Immediate {
+    // When needed, this enum should be expanded to include other immediate types (e.g. u8, u128).
+    IntCC(IntCC),
+}
+
+impl Display for Immediate {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        match self {
+            Immediate::IntCC(x) => write!(f, "IntCC::{:?}", x),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct BoundInstruction {
     pub inst: Instruction,
     pub value_types: Vec<ValueTypeOrAny>,
+    pub immediate_values: Vec<Immediate>,
 }
 
 impl BoundInstruction {
-    pub fn bind(self, lane_type: impl Into<LaneType>) -> BoundInstruction {
-        bind(self.inst, Some(lane_type.into()), self.value_types)
+    /// Construct a new bound instruction (with nothing bound yet) from an instruction
+    fn new(inst: &Instruction) -> Self {
+        BoundInstruction {
+            inst: inst.clone(),
+            value_types: vec![],
+            immediate_values: vec![],
+        }
     }
 
-    pub fn bind_ref(self, reference_type: impl Into<ReferenceType>) -> BoundInstruction {
-        bind_ref(self.inst, Some(reference_type.into()), self.value_types)
+    /// Verify that the bindings for a BoundInstruction are correct.
+    fn verify_bindings(&self) -> Result<(), String> {
+        // Verify that binding types to the instruction does not violate the polymorphic rules.
+        if !self.value_types.is_empty() {
+            match &self.inst.polymorphic_info {
+                Some(poly) => {
+                    if self.value_types.len() > 1 + poly.other_typevars.len() {
+                        return Err(format!(
+                            "trying to bind too many types for {}",
+                            self.inst.name
+                        ));
+                    }
+                }
+                None => {
+                    return Err(format!(
+                        "trying to bind a type for {} which is not a polymorphic instruction",
+                        self.inst.name
+                    ));
+                }
+            }
+        }
+
+        // Verify that only the right number of immediates are bound.
+        let immediate_count = self
+            .inst
+            .operands_in
+            .iter()
+            .filter(|o| o.is_immediate_or_entityref())
+            .count();
+        if self.immediate_values.len() > immediate_count {
+            return Err(format!(
+                "trying to bind too many immediates ({}) to instruction {} which only expects {} \
+                 immediates",
+                self.immediate_values.len(),
+                self.inst.name,
+                immediate_count
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+impl Bindable for BoundInstruction {
+    fn bind(&self, parameter: impl Into<BindParameter>) -> BoundInstruction {
+        let mut modified = self.clone();
+        match parameter.into() {
+            BindParameter::Any => modified.value_types.push(ValueTypeOrAny::Any),
+            BindParameter::Lane(lane_type) => modified
+                .value_types
+                .push(ValueTypeOrAny::ValueType(lane_type.into())),
+            BindParameter::Vector(lane_type, vector_size_in_bits) => {
+                let num_lanes = vector_size_in_bits / lane_type.lane_bits();
+                assert!(
+                    num_lanes >= 2,
+                    "Minimum lane number for bind_vector is 2, found {}.",
+                    num_lanes,
+                );
+                let vector_type = ValueType::Vector(VectorType::new(lane_type, num_lanes));
+                modified
+                    .value_types
+                    .push(ValueTypeOrAny::ValueType(vector_type));
+            }
+            BindParameter::Reference(reference_type) => {
+                modified
+                    .value_types
+                    .push(ValueTypeOrAny::ValueType(reference_type.into()));
+            }
+            BindParameter::Immediate(immediate) => modified.immediate_values.push(immediate),
+        }
+        modified.verify_bindings().unwrap();
+        modified
+    }
+}
+
+/// Checks that the input operands actually match the given format.
+fn verify_format(inst_name: &str, operands_in: &[Operand], format: &InstructionFormat) {
+    // A format is defined by:
+    // - its number of input value operands,
+    // - its number and names of input immediate operands,
+    // - whether it has a value list or not.
+    let mut num_values = 0;
+    let mut num_immediates = 0;
+
+    for operand in operands_in.iter() {
+        if operand.is_varargs() {
+            assert!(
+                format.has_value_list,
+                "instruction {} has varargs, but its format {} doesn't have a value list; you may \
+                 need to use a different format.",
+                inst_name, format.name
+            );
+        }
+        if operand.is_value() {
+            num_values += 1;
+        }
+        if operand.is_immediate_or_entityref() {
+            if let Some(format_field) = format.imm_fields.get(num_immediates) {
+                assert_eq!(
+                    format_field.kind.rust_field_name,
+                    operand.kind.rust_field_name,
+                    "{}th operand of {} should be {} (according to format), not {} (according to \
+                     inst definition). You may need to use a different format.",
+                    num_immediates,
+                    inst_name,
+                    format_field.kind.rust_field_name,
+                    operand.kind.rust_field_name
+                );
+                num_immediates += 1;
+            }
+        }
     }
 
-    pub fn bind_vector_from_lane(
-        self,
-        lane_type: impl Into<LaneType>,
-        vector_size_in_bits: u64,
-    ) -> BoundInstruction {
-        bind_vector(
-            self.inst,
-            lane_type.into(),
-            vector_size_in_bits,
-            self.value_types,
-        )
-    }
+    assert_eq!(
+        num_values, format.num_value_operands,
+        "inst {} doesnt' have as many value input operand as its format {} declares; you may need \
+         to use a different format.",
+        inst_name, format.name
+    );
 
-    pub fn bind_any(self) -> BoundInstruction {
-        bind(self.inst, None, self.value_types)
-    }
+    assert_eq!(
+        num_immediates,
+        format.imm_fields.len(),
+        "inst {} doesn't have as many immediate input \
+         operands as its format {} declares; you may need to use a different format.",
+        inst_name,
+        format.name
+    );
 }
 
 /// Check if this instruction is polymorphic, and verify its use of type variables.
 fn verify_polymorphic(
-    operands_in: &Vec<Operand>,
-    operands_out: &Vec<Operand>,
+    operands_in: &[Operand],
+    operands_out: &[Operand],
     format: &InstructionFormat,
-    value_opnums: &Vec<usize>,
+    value_opnums: &[usize],
 ) -> Option<PolymorphicInfo> {
     // The instruction is polymorphic if it has one free input or output operand.
     let is_polymorphic = operands_in
@@ -489,7 +652,7 @@ fn verify_polymorphic(
     // If we reached here, it means the type variable indicated as the typevar operand couldn't
     // control every other input and output type variable. We need to look at the result type
     // variables.
-    if operands_out.len() == 0 {
+    if operands_out.is_empty() {
         // No result means no other possible type variable, so it's a type inference failure.
         match maybe_error_message {
             Some(msg) => panic!(msg),
@@ -526,8 +689,8 @@ fn verify_polymorphic(
 /// Return a vector of other type variables used, or a string explaining what went wrong.
 fn is_ctrl_typevar_candidate(
     ctrl_typevar: &TypeVar,
-    operands_in: &Vec<Operand>,
-    operands_out: &Vec<Operand>,
+    operands_in: &[Operand],
+    operands_out: &[Operand],
 ) -> Result<Vec<TypeVar>, String> {
     let mut other_typevars = Vec::new();
 
@@ -591,7 +754,7 @@ fn is_ctrl_typevar_candidate(
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub enum FormatPredicateKind {
+pub(crate) enum FormatPredicateKind {
     /// Is the field member equal to the expected value (stored here)?
     IsEqual(String),
 
@@ -616,10 +779,10 @@ pub enum FormatPredicateKind {
     IsZero64BitFloat,
 
     /// Is the immediate format field member equal zero in all lanes?
-    IsAllZeroes128Bit,
+    IsAllZeroes,
 
     /// Does the immediate format field member have ones in all bits of all lanes?
-    IsAllOnes128Bit,
+    IsAllOnes,
 
     /// Has the value list (in member_name) the size specified in parameter?
     LengthEquals(usize),
@@ -629,13 +792,10 @@ pub enum FormatPredicateKind {
 
     /// Is the referenced data object colocated?
     IsColocatedData,
-
-    /// Does the operation have a specific condition code?
-    HasConditionCode(IntCC),
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub struct FormatPredicateNode {
+pub(crate) struct FormatPredicateNode {
     format_name: &'static str,
     member_name: &'static str,
     kind: FormatPredicateKind,
@@ -700,12 +860,12 @@ impl FormatPredicateNode {
             FormatPredicateKind::IsZero64BitFloat => {
                 format!("predicates::is_zero_64_bit_float({})", self.member_name)
             }
-            FormatPredicateKind::IsAllZeroes128Bit => format!(
-                "predicates::is_all_zeroes_128_bit(func.dfg.constants.get({}))",
+            FormatPredicateKind::IsAllZeroes => format!(
+                "predicates::is_all_zeroes(func.dfg.constants.get({}))",
                 self.member_name
             ),
-            FormatPredicateKind::IsAllOnes128Bit => format!(
-                "predicates::is_all_ones_128_bit(func.dfg.constants.get({}))",
+            FormatPredicateKind::IsAllOnes => format!(
+                "predicates::is_all_ones(func.dfg.constants.get({}))",
                 self.member_name
             ),
             FormatPredicateKind::LengthEquals(num) => format!(
@@ -718,16 +878,12 @@ impl FormatPredicateNode {
             FormatPredicateKind::IsColocatedData => {
                 format!("predicates::is_colocated_data({}, func)", self.member_name)
             }
-            FormatPredicateKind::HasConditionCode(code) => format!(
-                "predicates::is_equal({}, IntCC::{:?})",
-                self.member_name, code
-            ),
         }
     }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub enum TypePredicateNode {
+pub(crate) enum TypePredicateNode {
     /// Is the value argument (at the index designated by the first member) the same type as the
     /// type name (second member)?
     TypeVarCheck(usize, String),
@@ -738,14 +894,14 @@ pub enum TypePredicateNode {
 }
 
 impl TypePredicateNode {
-    fn rust_predicate(&self) -> String {
+    fn rust_predicate(&self, func_str: &str) -> String {
         match self {
             TypePredicateNode::TypeVarCheck(index, value_type_name) => format!(
-                "func.dfg.value_type(args[{}]) == {}",
-                index, value_type_name
+                "{}.dfg.value_type(args[{}]) == {}",
+                func_str, index, value_type_name
             ),
             TypePredicateNode::CtrlTypeVarCheck(value_type_name) => {
-                format!("func.dfg.ctrl_typevar(inst) == {}", value_type_name)
+                format!("{}.dfg.ctrl_typevar(inst) == {}", func_str, value_type_name)
             }
         }
     }
@@ -753,7 +909,7 @@ impl TypePredicateNode {
 
 /// A basic node in an instruction predicate: either an atom, or an AND of two conditions.
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub enum InstructionPredicateNode {
+pub(crate) enum InstructionPredicateNode {
     FormatPredicate(FormatPredicateNode),
 
     TypePredicate(TypePredicateNode),
@@ -766,18 +922,18 @@ pub enum InstructionPredicateNode {
 }
 
 impl InstructionPredicateNode {
-    fn rust_predicate(&self) -> String {
+    fn rust_predicate(&self, func_str: &str) -> String {
         match self {
             InstructionPredicateNode::FormatPredicate(node) => node.rust_predicate(),
-            InstructionPredicateNode::TypePredicate(node) => node.rust_predicate(),
+            InstructionPredicateNode::TypePredicate(node) => node.rust_predicate(func_str),
             InstructionPredicateNode::And(nodes) => nodes
                 .iter()
-                .map(|x| x.rust_predicate())
+                .map(|x| x.rust_predicate(func_str))
                 .collect::<Vec<_>>()
                 .join(" && "),
             InstructionPredicateNode::Or(nodes) => nodes
                 .iter()
-                .map(|x| x.rust_predicate())
+                .map(|x| x.rust_predicate(func_str))
                 .collect::<Vec<_>>()
                 .join(" || "),
         }
@@ -823,7 +979,7 @@ impl InstructionPredicateNode {
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub struct InstructionPredicate {
+pub(crate) struct InstructionPredicate {
     node: Option<InstructionPredicateNode>,
 }
 
@@ -851,8 +1007,7 @@ impl InstructionPredicate {
             .value_opnums
             .iter()
             .enumerate()
-            .filter(|(_, &op_num)| inst.operands_in[op_num].type_var().unwrap() == type_var)
-            .next()
+            .find(|(_, &op_num)| inst.operands_in[op_num].type_var().unwrap() == type_var)
             .unwrap()
             .0;
         InstructionPredicateNode::TypePredicate(TypePredicateNode::TypeVarCheck(
@@ -951,25 +1106,25 @@ impl InstructionPredicate {
         ))
     }
 
-    pub fn new_is_all_zeroes_128bit(
+    pub fn new_is_all_zeroes(
         format: &InstructionFormat,
         field_name: &'static str,
     ) -> InstructionPredicateNode {
         InstructionPredicateNode::FormatPredicate(FormatPredicateNode::new(
             format,
             field_name,
-            FormatPredicateKind::IsAllZeroes128Bit,
+            FormatPredicateKind::IsAllZeroes,
         ))
     }
 
-    pub fn new_is_all_ones_128bit(
+    pub fn new_is_all_ones(
         format: &InstructionFormat,
         field_name: &'static str,
     ) -> InstructionPredicateNode {
         InstructionPredicateNode::FormatPredicate(FormatPredicateNode::new(
             format,
             field_name,
-            FormatPredicateKind::IsAllOnes128Bit,
+            FormatPredicateKind::IsAllOnes,
         ))
     }
 
@@ -996,24 +1151,12 @@ impl InstructionPredicate {
         ))
     }
 
-    pub fn new_is_colocated_data(format_registry: &FormatRegistry) -> InstructionPredicateNode {
-        let format = format_registry.get(format_registry.by_name("UnaryGlobalValue"));
+    pub fn new_is_colocated_data(formats: &Formats) -> InstructionPredicateNode {
+        let format = &formats.unary_global_value;
         InstructionPredicateNode::FormatPredicate(FormatPredicateNode::new(
-            format,
+            &*format,
             "global_value",
             FormatPredicateKind::IsColocatedData,
-        ))
-    }
-
-    pub fn new_has_condition_code(
-        format: &InstructionFormat,
-        condition_code: IntCC,
-        field_name: &'static str,
-    ) -> InstructionPredicateNode {
-        InstructionPredicateNode::FormatPredicate(FormatPredicateNode::new(
-            format,
-            field_name,
-            FormatPredicateKind::HasConditionCode(condition_code),
         ))
     }
 
@@ -1051,17 +1194,18 @@ impl InstructionPredicate {
         self
     }
 
-    pub fn rust_predicate(&self) -> String {
-        match &self.node {
-            Some(root) => root.rust_predicate(),
-            None => "true".into(),
-        }
+    pub fn rust_predicate(&self, func_str: &str) -> Option<String> {
+        self.node.as_ref().map(|root| root.rust_predicate(func_str))
     }
 
-    /// Returns true if the predicate only depends on type parameters (and not on an instruction
-    /// format).
-    pub fn is_type_predicate(&self) -> bool {
-        self.node.as_ref().unwrap().is_type_predicate()
+    /// Returns the type predicate if this is one, or None otherwise.
+    pub fn type_predicate(&self, func_str: &str) -> Option<String> {
+        let node = self.node.as_ref().unwrap();
+        if node.is_type_predicate() {
+            Some(node.rust_predicate(func_str))
+        } else {
+            None
+        }
     }
 
     /// Returns references to all the nodes that are leaves in the condition (i.e. by flattening
@@ -1072,15 +1216,16 @@ impl InstructionPredicate {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct InstructionPredicateNumber(u32);
+pub(crate) struct InstructionPredicateNumber(u32);
 entity_impl!(InstructionPredicateNumber);
 
-pub type InstructionPredicateMap = PrimaryMap<InstructionPredicateNumber, InstructionPredicate>;
+pub(crate) type InstructionPredicateMap =
+    PrimaryMap<InstructionPredicateNumber, InstructionPredicate>;
 
 /// A registry of predicates to help deduplicating them, during Encodings construction. When the
 /// construction process is over, it needs to be extracted with `extract` and associated to the
 /// TargetIsa.
-pub struct InstructionPredicateRegistry {
+pub(crate) struct InstructionPredicateRegistry {
     /// Maps a predicate number to its actual predicate.
     map: InstructionPredicateMap,
 
@@ -1112,7 +1257,7 @@ impl InstructionPredicateRegistry {
 }
 
 /// An instruction specification, containing an instruction that has bound types or not.
-pub enum InstSpec {
+pub(crate) enum InstSpec {
     Inst(Instruction),
     Bound(BoundInstruction),
 }
@@ -1124,17 +1269,13 @@ impl InstSpec {
             InstSpec::Bound(bound_inst) => &bound_inst.inst,
         }
     }
-    pub fn bind(&self, lane_type: impl Into<LaneType>) -> BoundInstruction {
-        match self {
-            InstSpec::Inst(inst) => inst.bind(lane_type),
-            InstSpec::Bound(inst) => inst.clone().bind(lane_type),
-        }
-    }
+}
 
-    pub fn bind_ref(&self, reference_type: impl Into<ReferenceType>) -> BoundInstruction {
+impl Bindable for InstSpec {
+    fn bind(&self, parameter: impl Into<BindParameter>) -> BoundInstruction {
         match self {
-            InstSpec::Inst(inst) => inst.bind_ref(reference_type),
-            InstSpec::Bound(inst) => inst.clone().bind_ref(reference_type),
+            InstSpec::Inst(inst) => inst.bind(parameter.into()),
+            InstSpec::Bound(inst) => inst.bind(parameter.into()),
         }
     }
 }
@@ -1151,79 +1292,94 @@ impl Into<InstSpec> for BoundInstruction {
     }
 }
 
-/// Helper bind reused by {Bound,}Instruction::bind.
-fn bind(
-    inst: Instruction,
-    lane_type: Option<LaneType>,
-    mut value_types: Vec<ValueTypeOrAny>,
-) -> BoundInstruction {
-    match lane_type {
-        Some(lane_type) => {
-            value_types.push(ValueTypeOrAny::ValueType(lane_type.into()));
-        }
-        None => {
-            value_types.push(ValueTypeOrAny::Any);
-        }
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::cdsl::formats::InstructionFormatBuilder;
+    use crate::cdsl::operands::{OperandKind, OperandKindFields};
+    use crate::cdsl::typevar::TypeSetBuilder;
+    use crate::shared::types::Int::{I32, I64};
+
+    fn field_to_operand(index: usize, field: OperandKindFields) -> Operand {
+        // Pretend the index string is &'static.
+        let name = Box::leak(index.to_string().into_boxed_str());
+        // Format's name / rust_type don't matter here.
+        let kind = OperandKind::new(name, name, field);
+        let operand = Operand::new(name, kind);
+        operand
     }
 
-    verify_polymorphic_binding(&inst, &value_types);
-
-    BoundInstruction { inst, value_types }
-}
-
-/// Helper bind for reference types reused by {Bound,}Instruction::bind_ref.
-fn bind_ref(
-    inst: Instruction,
-    reference_type: Option<ReferenceType>,
-    mut value_types: Vec<ValueTypeOrAny>,
-) -> BoundInstruction {
-    match reference_type {
-        Some(reference_type) => {
-            value_types.push(ValueTypeOrAny::ValueType(reference_type.into()));
-        }
-        None => {
-            value_types.push(ValueTypeOrAny::Any);
-        }
+    fn field_to_operands(types: Vec<OperandKindFields>) -> Vec<Operand> {
+        types
+            .iter()
+            .enumerate()
+            .map(|(i, f)| field_to_operand(i, f.clone()))
+            .collect()
     }
 
-    verify_polymorphic_binding(&inst, &value_types);
-
-    BoundInstruction { inst, value_types }
-}
-
-/// Helper bind for vector types reused by {Bound,}Instruction::bind.
-fn bind_vector(
-    inst: Instruction,
-    lane_type: LaneType,
-    vector_size_in_bits: u64,
-    mut value_types: Vec<ValueTypeOrAny>,
-) -> BoundInstruction {
-    let num_lanes = vector_size_in_bits / lane_type.lane_bits();
-    assert!(
-        num_lanes >= 2,
-        "Minimum lane number for bind_vector is 2, found {}.",
-        num_lanes,
-    );
-    let vector_type = ValueType::Vector(VectorType::new(lane_type, num_lanes));
-    value_types.push(ValueTypeOrAny::ValueType(vector_type));
-    verify_polymorphic_binding(&inst, &value_types);
-    BoundInstruction { inst, value_types }
-}
-
-/// Helper to verify that binding types to the instruction does not violate polymorphic rules
-fn verify_polymorphic_binding(inst: &Instruction, value_types: &Vec<ValueTypeOrAny>) {
-    match &inst.polymorphic_info {
-        Some(poly) => {
-            assert!(
-                value_types.len() <= 1 + poly.other_typevars.len(),
-                format!("trying to bind too many types for {}", inst.name)
-            );
+    fn build_fake_instruction(
+        inputs: Vec<OperandKindFields>,
+        outputs: Vec<OperandKindFields>,
+    ) -> Instruction {
+        // Setup a format from the input operands.
+        let mut format = InstructionFormatBuilder::new("fake");
+        for (i, f) in inputs.iter().enumerate() {
+            match f {
+                OperandKindFields::TypeVar(_) => format = format.value(),
+                OperandKindFields::ImmValue => {
+                    format = format.imm(&field_to_operand(i, f.clone()).kind)
+                }
+                _ => {}
+            };
         }
-        None => {
-            panic!(format!(
-                "trying to bind a type for {} which is not a polymorphic instruction",
-                inst.name
-            ));
-        }
+        let format = format.build();
+
+        // Create the fake instruction.
+        InstructionBuilder::new("fake", "A fake instruction for testing.", &format)
+            .operands_in(field_to_operands(inputs).iter().collect())
+            .operands_out(field_to_operands(outputs).iter().collect())
+            .build(OpcodeNumber(42))
+    }
+
+    #[test]
+    fn ensure_bound_instructions_can_bind_lane_types() {
+        let type1 = TypeSetBuilder::new().ints(8..64).build();
+        let in1 = OperandKindFields::TypeVar(TypeVar::new("a", "...", type1));
+        let inst = build_fake_instruction(vec![in1], vec![]);
+        inst.bind(LaneType::Int(I32));
+    }
+
+    #[test]
+    fn ensure_bound_instructions_can_bind_immediates() {
+        let inst = build_fake_instruction(vec![OperandKindFields::ImmValue], vec![]);
+        let bound_inst = inst.bind(Immediate::IntCC(IntCC::Equal));
+        assert!(bound_inst.verify_bindings().is_ok());
+    }
+
+    #[test]
+    #[should_panic]
+    fn ensure_instructions_fail_to_bind() {
+        let inst = build_fake_instruction(vec![], vec![]);
+        inst.bind(BindParameter::Lane(LaneType::Int(I32)));
+        // Trying to bind to an instruction with no inputs should fail.
+    }
+
+    #[test]
+    #[should_panic]
+    fn ensure_bound_instructions_fail_to_bind_too_many_types() {
+        let type1 = TypeSetBuilder::new().ints(8..64).build();
+        let in1 = OperandKindFields::TypeVar(TypeVar::new("a", "...", type1));
+        let inst = build_fake_instruction(vec![in1], vec![]);
+        inst.bind(LaneType::Int(I32)).bind(LaneType::Int(I64));
+    }
+
+    #[test]
+    #[should_panic]
+    fn ensure_instructions_fail_to_bind_too_many_immediates() {
+        let inst = build_fake_instruction(vec![OperandKindFields::ImmValue], vec![]);
+        inst.bind(BindParameter::Immediate(Immediate::IntCC(IntCC::Equal)))
+            .bind(BindParameter::Immediate(Immediate::IntCC(IntCC::Equal)));
+        // Trying to bind too many immediates to an instruction should fail; note that the immediate
+        // values are nonsensical but irrelevant to the purpose of this test.
     }
 }

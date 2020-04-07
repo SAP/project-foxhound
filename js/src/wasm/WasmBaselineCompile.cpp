@@ -111,6 +111,7 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "jit/AtomicOp.h"
@@ -138,6 +139,7 @@
 #  include "jit/mips64/Assembler-mips64.h"
 #endif
 
+#include "util/Memory.h"
 #include "wasm/WasmGC.h"
 #include "wasm/WasmGenerator.h"
 #include "wasm/WasmInstance.h"
@@ -163,7 +165,6 @@ using InvertBranch = bool;
 using IsKnownNotZero = bool;
 using IsUnsigned = bool;
 using NeedsBoundsCheck = bool;
-using PopStack = bool;
 using WantResult = bool;
 using ZeroOnOverflow = bool;
 
@@ -198,9 +199,9 @@ enum class InterModule { False = false, True = true };
 #  define RABALDR_SCRATCH_F32
 #  define RABALDR_SCRATCH_F64
 
-static const Register RabaldrScratchI32 = Register::Invalid();
-static const FloatRegister RabaldrScratchF32 = InvalidFloatReg;
-static const FloatRegister RabaldrScratchF64 = InvalidFloatReg;
+static constexpr Register RabaldrScratchI32 = Register::Invalid();
+static constexpr FloatRegister RabaldrScratchF32 = InvalidFloatReg;
+static constexpr FloatRegister RabaldrScratchF64 = InvalidFloatReg;
 #endif
 
 #ifdef JS_CODEGEN_ARM64
@@ -210,16 +211,16 @@ static const FloatRegister RabaldrScratchF64 = InvalidFloatReg;
 #  define RABALDR_SCRATCH_F64
 #  define RABALDR_SCRATCH_F32_ALIASES_F64
 
-static const Register RabaldrScratchI32 = Register::FromCode(15);
+static constexpr Register RabaldrScratchI32{Registers::x15};
 
 // Note, the float scratch regs cannot be registers that are used for parameter
 // passing in any ABI we use.  Argregs tend to be low-numbered; register 30
 // should be safe.
 
-static constexpr FloatRegister RabaldrScratchF32 =
-    FloatRegister(30, FloatRegisters::Single);
-static constexpr FloatRegister RabaldrScratchF64 =
-    FloatRegister(30, FloatRegisters::Double);
+static constexpr FloatRegister RabaldrScratchF32{FloatRegisters::s30,
+                                                 FloatRegisters::Single};
+static constexpr FloatRegister RabaldrScratchF64{FloatRegisters::d30,
+                                                 FloatRegisters::Double};
 
 static_assert(RabaldrScratchF32 != ScratchFloat32Reg, "Too busy");
 static_assert(RabaldrScratchF64 != ScratchDoubleReg, "Too busy");
@@ -228,16 +229,17 @@ static_assert(RabaldrScratchF64 != ScratchDoubleReg, "Too busy");
 #ifdef JS_CODEGEN_X86
 // The selection of EBX here steps gingerly around: the need for EDX
 // to be allocatable for multiply/divide; ECX to be allocatable for
-// shift/rotate; EAX (= ReturnReg) to be allocatable as the joinreg;
-// EBX not being one of the WasmTableCall registers; and needing a
-// temp register for load/store that has a single-byte persona.
+// shift/rotate; EAX (= ReturnReg) to be allocatable as the result
+// register; EBX not being one of the WasmTableCall registers; and
+// needing a temp register for load/store that has a single-byte
+// persona.
 //
 // The compiler assumes that RabaldrScratchI32 has a single-byte
 // persona.  Code for 8-byte atomic operations assumes that
 // RabaldrScratchI32 is in fact ebx.
 
 #  define RABALDR_SCRATCH_I32
-static const Register RabaldrScratchI32 = ebx;
+static constexpr Register RabaldrScratchI32 = ebx;
 
 #  define RABALDR_INT_DIV_I64_CALLOUT
 #endif
@@ -249,7 +251,7 @@ static const Register RabaldrScratchI32 = ebx;
 // worth it yet.  CallTempReg2 seems safe.
 
 #  define RABALDR_SCRATCH_I32
-static const Register RabaldrScratchI32 = CallTempReg2;
+static constexpr Register RabaldrScratchI32 = CallTempReg2;
 
 #  define RABALDR_INT_DIV_I64_CALLOUT
 #  define RABALDR_I64_TO_FLOAT_CALLOUT
@@ -258,7 +260,7 @@ static const Register RabaldrScratchI32 = CallTempReg2;
 
 #ifdef JS_CODEGEN_MIPS32
 #  define RABALDR_SCRATCH_I32
-static const Register RabaldrScratchI32 = CallTempReg2;
+static constexpr Register RabaldrScratchI32 = CallTempReg2;
 
 #  define RABALDR_INT_DIV_I64_CALLOUT
 #  define RABALDR_I64_TO_FLOAT_CALLOUT
@@ -267,7 +269,7 @@ static const Register RabaldrScratchI32 = CallTempReg2;
 
 #ifdef JS_CODEGEN_MIPS64
 #  define RABALDR_SCRATCH_I32
-static const Register RabaldrScratchI32 = CallTempReg2;
+static constexpr Register RabaldrScratchI32 = CallTempReg2;
 #endif
 
 #ifdef RABALDR_SCRATCH_F32_ALIASES_F64
@@ -297,42 +299,50 @@ struct RegTypeOf<MIRType::Double> {
 
 struct RegI32 : public Register {
   RegI32() : Register(Register::Invalid()) {}
-  explicit RegI32(Register reg) : Register(reg) {}
-  bool isValid() const { return *this != Invalid(); }
-  bool isInvalid() const { return !isValid(); }
-  static RegI32 Invalid() { return RegI32(Register::Invalid()); }
+  explicit RegI32(Register reg) : Register(reg) {
+    MOZ_ASSERT(reg != Invalid());
+  }
+  bool isInvalid() const { return *this == Invalid(); }
+  bool isValid() const { return !isInvalid(); }
+  static RegI32 Invalid() { return RegI32(); }
 };
 
 struct RegI64 : public Register64 {
   RegI64() : Register64(Register64::Invalid()) {}
-  explicit RegI64(Register64 reg) : Register64(reg) {}
-  bool isValid() const { return *this != Invalid(); }
-  bool isInvalid() const { return !isValid(); }
-  static RegI64 Invalid() { return RegI64(Register64::Invalid()); }
+  explicit RegI64(Register64 reg) : Register64(reg) {
+    MOZ_ASSERT(reg != Invalid());
+  }
+  bool isInvalid() const { return *this == Invalid(); }
+  bool isValid() const { return !isInvalid(); }
+  static RegI64 Invalid() { return RegI64(); }
 };
 
 struct RegPtr : public Register {
   RegPtr() : Register(Register::Invalid()) {}
-  explicit RegPtr(Register reg) : Register(reg) {}
-  bool isValid() const { return *this != Invalid(); }
-  bool isInvalid() const { return !isValid(); }
-  static RegPtr Invalid() { return RegPtr(Register::Invalid()); }
+  explicit RegPtr(Register reg) : Register(reg) {
+    MOZ_ASSERT(reg != Invalid());
+  }
+  bool isInvalid() const { return *this == Invalid(); }
+  bool isValid() const { return !isInvalid(); }
+  static RegPtr Invalid() { return RegPtr(); }
 };
 
 struct RegF32 : public FloatRegister {
   RegF32() : FloatRegister() {}
-  explicit RegF32(FloatRegister reg) : FloatRegister(reg) {}
-  bool isValid() const { return *this != Invalid(); }
-  bool isInvalid() const { return !isValid(); }
-  static RegF32 Invalid() { return RegF32(InvalidFloatReg); }
+  explicit RegF32(FloatRegister reg) : FloatRegister(reg) {
+    MOZ_ASSERT(isSingle());
+  }
+  bool isValid() const { return !isInvalid(); }
+  static RegF32 Invalid() { return RegF32(); }
 };
 
 struct RegF64 : public FloatRegister {
   RegF64() : FloatRegister() {}
-  explicit RegF64(FloatRegister reg) : FloatRegister(reg) {}
-  bool isValid() const { return *this != Invalid(); }
-  bool isInvalid() const { return !isValid(); }
-  static RegF64 Invalid() { return RegF64(InvalidFloatReg); }
+  explicit RegF64(FloatRegister reg) : FloatRegister(reg) {
+    MOZ_ASSERT(isDouble());
+  }
+  bool isValid() const { return !isInvalid(); }
+  static RegF64 Invalid() { return RegF64(); }
 };
 
 struct AnyReg {
@@ -484,6 +494,8 @@ class BaseCompilerInterface {
   // TODO / OPTIMIZE (Bug 1316802): It's possible to do better here by
   // spilling only enough registers to satisfy current needs.
   virtual void sync() = 0;
+  virtual void saveTempPtr(RegPtr r) = 0;
+  virtual void restoreTempPtr(RegPtr r) = 0;
 };
 
 // Register allocator.
@@ -510,7 +522,7 @@ class BaseRegAlloc {
   // not allocatable; if s0 and s1 are freed individually then d0 becomes
   // allocatable.
 
-  BaseCompilerInterface& bc;
+  BaseCompilerInterface* bc;
   AllocatableGeneralRegisterSet availGPR;
   AllocatableFloatRegisterSet availFPU;
 #ifdef DEBUG
@@ -635,8 +647,8 @@ class BaseRegAlloc {
   void freeFPU(FloatRegister r) { availFPU.add(r); }
 
  public:
-  explicit BaseRegAlloc(BaseCompilerInterface& bc)
-      : bc(bc),
+  explicit BaseRegAlloc()
+      : bc(nullptr),
         availGPR(GeneralRegisterSet::All()),
         availFPU(FloatRegisterSet::All())
 #ifdef DEBUG
@@ -658,8 +670,8 @@ class BaseRegAlloc {
 #endif
 
 #ifdef RABALDR_SCRATCH_F32_ALIASES_F64
-    MOZ_ASSERT(RabaldrScratchF32 != InvalidFloatReg, "Float reg definition");
-    MOZ_ASSERT(RabaldrScratchF64 != InvalidFloatReg, "Float reg definition");
+    static_assert(RabaldrScratchF32 != InvalidFloatReg, "Float reg definition");
+    static_assert(RabaldrScratchF64 != InvalidFloatReg, "Float reg definition");
 #endif
 
 #if defined(RABALDR_SCRATCH_F32) && !defined(RABALDR_SCRATCH_F32_ALIASES_F64)
@@ -685,6 +697,8 @@ class BaseRegAlloc {
     allFPU = availFPU;
 #endif
   }
+
+  void init(BaseCompilerInterface* bc) { this->bc = bc; }
 
   enum class ScratchKind { I32 = 1, F32 = 2, F64 = 4 };
 
@@ -727,70 +741,84 @@ class BaseRegAlloc {
 
   MOZ_MUST_USE RegI32 needI32() {
     if (!hasGPR()) {
-      bc.sync();
+      bc->sync();
     }
     return RegI32(allocGPR());
   }
 
   void needI32(RegI32 specific) {
     if (!isAvailableI32(specific)) {
-      bc.sync();
+      bc->sync();
     }
     allocGPR(specific);
   }
 
   MOZ_MUST_USE RegI64 needI64() {
     if (!hasGPR64()) {
-      bc.sync();
+      bc->sync();
     }
     return RegI64(allocInt64());
   }
 
   void needI64(RegI64 specific) {
     if (!isAvailableI64(specific)) {
-      bc.sync();
+      bc->sync();
     }
     allocInt64(specific);
   }
 
   MOZ_MUST_USE RegPtr needPtr() {
     if (!hasGPR()) {
-      bc.sync();
+      bc->sync();
     }
     return RegPtr(allocGPR());
   }
 
   void needPtr(RegPtr specific) {
     if (!isAvailablePtr(specific)) {
-      bc.sync();
+      bc->sync();
     }
     allocGPR(specific);
   }
 
+  // Use when you need a register for a short time but explicitly want to avoid
+  // a full sync().
+  MOZ_MUST_USE RegPtr needTempPtr(RegPtr fallback, bool* saved) {
+    if (hasGPR()) {
+      *saved = false;
+      return RegPtr(allocGPR());
+    }
+    *saved = true;
+    bc->saveTempPtr(fallback);
+    MOZ_ASSERT(isAvailablePtr(fallback));
+    allocGPR(fallback);
+    return RegPtr(fallback);
+  }
+
   MOZ_MUST_USE RegF32 needF32() {
     if (!hasFPU<MIRType::Float32>()) {
-      bc.sync();
+      bc->sync();
     }
     return RegF32(allocFPU<MIRType::Float32>());
   }
 
   void needF32(RegF32 specific) {
     if (!isAvailableF32(specific)) {
-      bc.sync();
+      bc->sync();
     }
     allocFPU(specific);
   }
 
   MOZ_MUST_USE RegF64 needF64() {
     if (!hasFPU<MIRType::Double>()) {
-      bc.sync();
+      bc->sync();
     }
     return RegF64(allocFPU<MIRType::Double>());
   }
 
   void needF64(RegF64 specific) {
     if (!isAvailableF64(specific)) {
-      bc.sync();
+      bc->sync();
     }
     allocFPU(specific);
   }
@@ -805,10 +833,18 @@ class BaseRegAlloc {
 
   void freeF32(RegF32 r) { freeFPU(r); }
 
+  void freeTempPtr(RegPtr r, bool saved) {
+    freePtr(r);
+    if (saved) {
+      bc->restoreTempPtr(r);
+      MOZ_ASSERT(!isAvailablePtr(r));
+    }
+  }
+
 #ifdef JS_CODEGEN_ARM
   MOZ_MUST_USE RegI64 needI64Pair() {
     if (!hasGPRPair()) {
-      bc.sync();
+      bc->sync();
     }
     Register low, high;
     allocGPRPair(&low, &high);
@@ -953,47 +989,58 @@ using ScratchI8 = ScratchI32;
 // The stack frame has four parts ("below" means at lower addresses):
 //
 //  - the Frame element;
-//  - the Local area, including the DebugFrame element; allocated below the
-//    header with various forms of alignment;
+//  - the Local area, including the DebugFrame element and possibly a spilled
+//    pointer to stack results, if any; allocated below the header with various
+//    forms of alignment;
 //  - the Dynamic area, comprising the temporary storage the compiler uses for
 //    register spilling, allocated below the Local area;
 //  - the Arguments area, comprising memory allocated for outgoing calls,
 //    allocated below the Dynamic area.
 //
-//                 +============================+
-//                 |    Incoming arg            |
-//                 |    ...                     |
-// --------------  +============================+
-//                 |    Frame (fixed size)      |
-// --------------  +============================+ <-------------------- FP
-//          ^      |    DebugFrame (optional)   |    ^                ^^
-//          |      +----------------------------+    |                ||
-//    localSize    |    Local (static size)     |    |                ||
-//          |      |    ...                     |    |        framePushed
-//          v      |    (padding)               |    |                ||
-// --------------  +============================+ currentStackHeight  ||
-//          ^      |    Dynamic (variable size) |    |                ||
-//   dynamicSize   |    ...                     |    |                ||
-//          v      |    ...                     |    v                ||
-// --------------  |    (free space, sometimes) | ---------           v|
-//                 +============================+ <----- SP not-during calls
-//                 |    Arguments (sometimes)   |                      |
-//                 |    ...                     |                      v
-//                 +============================+ <----- SP during calls
+//                +==============================+
+//                |    Incoming stack arg        |
+//                |    ...                       |
+// -------------  +==============================+
+//                |    Frame (fixed size)        |
+// -------------  +==============================+ <-------------------- FP
+//         ^      |    DebugFrame (optional)     |    ^  ^             ^^
+//   localSize    |    Register arg local        |    |  |             ||
+//         |      |    ...                       |    |  |     framePushed
+//         |      |    Register stack result ptr?|    |  |             ||
+//         |      |    Non-arg local             |    |  |             ||
+//         |      |    ...                       |    |  |             ||
+//         |      +------------------------------+    |  |             ||
+//         v      |    (padding)                 |    |  v             ||
+// -------------  +==============================+ currentStackHeight  ||
+//         ^      |    Dynamic (variable size)   |    |                ||
+//  dynamicSize   |    ...                       |    |                ||
+//         v      |    ...                       |    v                ||
+// -------------  |    (free space, sometimes)   | ---------           v|
+//                +==============================+ <----- SP not-during calls
+//                |    Arguments (sometimes)     |                      |
+//                |    ...                       |                      v
+//                +==============================+ <----- SP during calls
 //
 // The Frame is addressed off the stack pointer.  masm.framePushed() is always
 // correct, and masm.getStackPointer() + masm.framePushed() always addresses the
 // Frame, with the DebugFrame optionally below it.
 //
-// The Local area (including the DebugFrame) is laid out by BaseLocalIter and is
-// allocated and deallocated by standard prologue and epilogue functions that
-// manipulate the stack pointer, but it is accessed via BaseStackFrame.
+// The Local area (including the DebugFrame and, if needed, the spilled value of
+// the stack results area pointer) is laid out by BaseLocalIter and is allocated
+// and deallocated by standard prologue and epilogue functions that manipulate
+// the stack pointer, but it is accessed via BaseStackFrame.
 //
 // The Dynamic area is maintained by and accessed via BaseStackFrame.  On some
 // systems (such as ARM64), the Dynamic memory may be allocated in chunks
 // because the SP needs a specific alignment, and in this case there will
 // normally be some free space directly above the SP.  The stack height does not
 // include the free space, it reflects the logically used space only.
+//
+// The Dynamic area is where space for stack results is allocated when calling
+// functions that return results on the stack.  If a function has stack results,
+// a pointer to the low address of the stack result area is passed as an
+// additional argument, according to the usual ABI.  See
+// ABIResultIter::HasStackResults.
 //
 // The Arguments area is allocated and deallocated via BaseStackFrame (see
 // comments later) but is accessed directly off the stack pointer.
@@ -1004,40 +1051,49 @@ using ScratchI8 = ScratchI32;
 // The implementation of BaseLocalIter is the property of the BaseStackFrame.
 // But it is also exposed for eg the debugger to use.
 
-BaseLocalIter::BaseLocalIter(const ValTypeVector& locals, size_t argsLength,
-                             bool debugEnabled)
+BaseLocalIter::BaseLocalIter(const ValTypeVector& locals,
+                             const ArgTypeVector& args, bool debugEnabled)
     : locals_(locals),
-      argsLength_(argsLength),
-      argsRange_(locals.begin(), argsLength),
-      argsIter_(argsRange_),
+      args_(args),
+      argsIter_(args_),
       index_(0),
-      localSize_(debugEnabled ? DebugFrame::offsetOfFrame() : 0),
-      reservedSize_(localSize_),
-      frameOffset_(UINT32_MAX),
+      nextFrameSize_(debugEnabled ? DebugFrame::offsetOfFrame() : 0),
+      frameOffset_(INT32_MAX),
+      stackResultPointerOffset_(INT32_MAX),
       mirType_(MIRType::Undefined),
       done_(false) {
-  MOZ_ASSERT(argsLength <= locals.length());
+  MOZ_ASSERT(args.lengthWithoutStackResults() <= locals.length());
   settle();
 }
 
 int32_t BaseLocalIter::pushLocal(size_t nbytes) {
   MOZ_ASSERT(nbytes % 4 == 0 && nbytes <= 16);
-  localSize_ = AlignBytes(localSize_, nbytes) + nbytes;
-  return localSize_;  // Locals grow down so capture base address.
+  nextFrameSize_ = AlignBytes(frameSize_, nbytes) + nbytes;
+  return nextFrameSize_;  // Locals grow down so capture base address.
 }
 
 void BaseLocalIter::settle() {
-  if (index_ < argsLength_) {
-    MOZ_ASSERT(!argsIter_.done());
+  MOZ_ASSERT(!done_);
+  frameSize_ = nextFrameSize_;
+
+  if (!argsIter_.done()) {
     mirType_ = argsIter_.mirType();
+    MIRType concreteType = mirType_;
     switch (mirType_) {
+      case MIRType::StackResults:
+        // The pointer to stack results is handled like any other argument:
+        // either addressed in place if it is passed on the stack, or we spill
+        // it in the frame if it's in a register.
+        MOZ_ASSERT(args_.isSyntheticStackResultPointerArg(index_));
+        concreteType = MIRType::Pointer;
+        [[fallthrough]];
       case MIRType::Int32:
       case MIRType::Int64:
       case MIRType::Double:
       case MIRType::Float32:
       case MIRType::RefOrNull:
         if (argsIter_->argInRegister()) {
-          frameOffset_ = pushLocal(MIRTypeToSize(mirType_));
+          frameOffset_ = pushLocal(MIRTypeToSize(concreteType));
         } else {
           frameOffset_ = -(argsIter_->offsetFromArgBase() + sizeof(Frame));
         }
@@ -1045,26 +1101,31 @@ void BaseLocalIter::settle() {
       default:
         MOZ_CRASH("Argument type");
     }
-    return;
+    if (mirType_ == MIRType::StackResults) {
+      stackResultPointerOffset_ = frameOffset();
+      // Advance past the synthetic stack result pointer argument and fall
+      // through to the next case.
+      argsIter_++;
+      frameSize_ = nextFrameSize_;
+      MOZ_ASSERT(argsIter_.done());
+    } else {
+      return;
+    }
   }
 
-  MOZ_ASSERT(argsIter_.done());
   if (index_ < locals_.length()) {
-    switch (locals_[index_].code()) {
+    switch (locals_[index_].kind()) {
       case ValType::I32:
       case ValType::I64:
       case ValType::F32:
       case ValType::F64:
       case ValType::Ref:
-      case ValType::FuncRef:
-      case ValType::AnyRef:
         // TODO/AnyRef-boxing: With boxed immediates and strings, the
         // debugger must be made aware that AnyRef != Pointer.
         ASSERT_ANYREF_IS_JSOBJECT;
         mirType_ = ToMIRType(locals_[index_]);
         frameOffset_ = pushLocal(MIRTypeToSize(mirType_));
         break;
-      case ValType::NullRef:
       default:
         MOZ_CRASH("Compiler bug: Unexpected local type");
     }
@@ -1094,6 +1155,38 @@ class StackHeight {
   explicit StackHeight(uint32_t h) : height(h) {}
   static StackHeight Invalid() { return StackHeight(UINT32_MAX); }
   bool isValid() const { return height != UINT32_MAX; }
+  bool operator==(StackHeight rhs) const {
+    MOZ_ASSERT(isValid() && rhs.isValid());
+    return height == rhs.height;
+  }
+  bool operator!=(StackHeight rhs) const { return !(*this == rhs); }
+};
+
+// Abstraction for where multi-value results go on the machine stack.
+
+class StackResultsLoc {
+  uint32_t bytes_;
+  size_t count_;
+  Maybe<uint32_t> height_;
+
+ public:
+  StackResultsLoc() : bytes_(0), count_(0){};
+  StackResultsLoc(uint32_t bytes, size_t count, uint32_t height)
+      : bytes_(bytes), count_(count), height_(Some(height)) {
+    MOZ_ASSERT(bytes != 0);
+    MOZ_ASSERT(count != 0);
+    MOZ_ASSERT(height != 0);
+  }
+
+  uint32_t bytes() const { return bytes_; }
+  uint32_t count() const { return count_; }
+  uint32_t height() const { return height_.value(); }
+
+  bool hasStackResults() const { return bytes() != 0; }
+  StackResults stackResults() const {
+    return hasStackResults() ? StackResults::HasStackResults
+                             : StackResults::NoStackResults;
+  }
 };
 
 // Abstraction of the baseline compiler's stack frame (except for the Frame /
@@ -1243,6 +1336,13 @@ class BaseStackFrameAllocator {
 
   int32_t stackOffset(int32_t offset) { return masm.framePushed() - offset; }
 
+  uint32_t computeHeightWithStackResults(StackHeight stackBase,
+                                         uint32_t stackResultBytes) {
+    MOZ_ASSERT(stackResultBytes);
+    MOZ_ASSERT(currentStackHeight() >= stackBase.height);
+    return stackBase.height + stackResultBytes;
+  }
+
 #ifdef RABALDR_CHUNKY_STACK
   void pushChunkyBytes(uint32_t bytes) {
     MOZ_ASSERT(bytes <= ChunkSize);
@@ -1335,46 +1435,51 @@ class BaseStackFrameAllocator {
   //
   // Note these operate directly on the stack pointer register.
 
-  void popStackBeforeBranch(StackHeight destStackHeight) {
+  void popStackBeforeBranch(StackHeight destStackHeight,
+                            uint32_t stackResultBytes) {
     uint32_t framePushedHere = masm.framePushed();
-    uint32_t framePushedThere = framePushedForHeight(destStackHeight);
+    StackHeight heightThere =
+        StackHeight(destStackHeight.height + stackResultBytes);
+    uint32_t framePushedThere = framePushedForHeight(heightThere);
     if (framePushedHere > framePushedThere) {
       masm.addToStackPtr(Imm32(framePushedHere - framePushedThere));
     }
   }
 
-  bool willPopStackBeforeBranch(StackHeight destStackHeight) {
-    uint32_t framePushedHere = masm.framePushed();
-    uint32_t framePushedThere = framePushedForHeight(destStackHeight);
-    return framePushedHere > framePushedThere;
+  void popStackBeforeBranch(StackHeight destStackHeight, ResultType type) {
+    popStackBeforeBranch(destStackHeight,
+                         ABIResultIter::MeasureStackBytes(type));
   }
 
-  // Before exiting a nested control region, pop the execution stack
-  // to the level expected by the nesting region, and free the
-  // stack.
-  //
-  // Note this operates on the stack height, which is not the same as the
-  // stack pointer on chunky-stack systems; the stack pointer may or may not
-  // change on such systems.
+  // Given that there are |stackParamSize| bytes on the dynamic stack
+  // corresponding to the stack results, return the stack height once these
+  // parameters are popped.
 
-  void popStackOnBlockExit(StackHeight destStackHeight, bool deadCode) {
-    uint32_t stackHeightHere = currentStackHeight();
-    uint32_t stackHeightThere = destStackHeight.height;
-    if (stackHeightHere > stackHeightThere) {
-#ifdef RABALDR_CHUNKY_STACK
-      if (deadCode) {
-        setStackHeight(destStackHeight);
-      } else {
-        popChunkyBytes(stackHeightHere - stackHeightThere);
-      }
-#else
-      if (deadCode) {
-        masm.setFramePushed(stackHeightThere);
-      } else {
-        masm.freeStack(stackHeightHere - stackHeightThere);
-      }
-#endif
-    }
+  StackHeight stackResultsBase(uint32_t stackParamSize) {
+    return StackHeight(currentStackHeight() - stackParamSize);
+  }
+
+  // For most of WebAssembly, adjacent instructions have fallthrough control
+  // flow between them, which allows us to simply thread the current stack
+  // height through the compiler.  There are two exceptions to this rule: when
+  // leaving a block via dead code, and when entering the "else" arm of an "if".
+  // In these cases, the stack height is the block entry height, plus any stack
+  // values (results in the block exit case, parameters in the else entry case).
+
+  void resetStackHeight(StackHeight destStackHeight, ResultType type) {
+    uint32_t height = destStackHeight.height;
+    height += ABIResultIter::MeasureStackBytes(type);
+    setStackHeight(StackHeight(height));
+  }
+
+  // Return offset of stack result.
+
+  uint32_t locateStackResult(const ABIResult& result, StackHeight stackBase,
+                             uint32_t stackResultBytes) {
+    MOZ_ASSERT(result.onStack());
+    MOZ_ASSERT(result.stackOffset() + result.size() <= stackResultBytes);
+    uint32_t end = computeHeightWithStackResults(stackBase, stackResultBytes);
+    return end - result.stackOffset();
   }
 
  public:
@@ -1429,6 +1534,9 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
 
   // Patch point where we check for stack overflow.
   CodeOffset stackAddOffset_;
+
+  // Low byte offset of pointer to stack results, if any.
+  Maybe<int32_t> stackResultsPtrOffset_;
 
   // Low byte offset of local area for true locals (not parameters).
   uint32_t varLow_;
@@ -1521,33 +1629,35 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
   using LocalVector = Vector<Local, 16, SystemAllocPolicy>;
 
   // Initialize `localInfo` based on the types of `locals` and `args`.
-  bool setupLocals(const ValTypeVector& locals, const ValTypeVector& args,
+  bool setupLocals(const ValTypeVector& locals, const ArgTypeVector& args,
                    bool debugEnabled, LocalVector* localInfo) {
     if (!localInfo->reserve(locals.length())) {
       return false;
     }
 
     DebugOnly<uint32_t> index = 0;
-    BaseLocalIter i(locals, args.length(), debugEnabled);
-    varLow_ = i.reservedSize();
-    for (; !i.done() && i.index() < args.length(); i++) {
+    BaseLocalIter i(locals, args, debugEnabled);
+    for (; !i.done() && i.index() < args.lengthWithoutStackResults(); i++) {
       MOZ_ASSERT(i.isArg());
       MOZ_ASSERT(i.index() == index);
       localInfo->infallibleEmplaceBack(i.mirType(), i.frameOffset());
-      varLow_ = i.currentLocalSize();
       index++;
     }
 
-    varHigh_ = varLow_;
+    varLow_ = i.frameSize();
     for (; !i.done(); i++) {
       MOZ_ASSERT(!i.isArg());
       MOZ_ASSERT(i.index() == index);
       localInfo->infallibleEmplaceBack(i.mirType(), i.frameOffset());
-      varHigh_ = i.currentLocalSize();
       index++;
     }
+    varHigh_ = i.frameSize();
 
     setLocalSize(AlignBytes(varHigh_, WasmStackAlignment));
+
+    if (args.hasSyntheticStackResultPointerArg()) {
+      stackResultsPtrOffset_ = Some(i.stackResultPointerOffset());
+    }
 
     return true;
   }
@@ -1607,6 +1717,33 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
   // Offset off of sp_ for `local`.
   int32_t localOffset(const Local& local) { return localOffset(local.offs); }
 
+  // The incoming stack result area pointer is for stack results of the function
+  // being compiled.
+  void loadIncomingStackResultAreaPtr(RegPtr reg) {
+    masm.loadPtr(Address(sp_, stackOffset(stackResultsPtrOffset_.value())),
+                 reg);
+  }
+  void storeIncomingStackResultAreaPtr(RegPtr reg) {
+    // If we get here, that means the pointer to the stack results area was
+    // passed in as a register, and therefore it will be spilled below the
+    // frame, so the offset is a positive height.
+    MOZ_ASSERT(stackResultsPtrOffset_.value() > 0);
+    masm.storePtr(reg,
+                  Address(sp_, stackOffset(stackResultsPtrOffset_.value())));
+  }
+
+  // An outgoing stack result area pointer is for stack results of callees of
+  // the function being compiled.
+  void computeOutgoingStackResultAreaPtr(const StackResultsLoc& results,
+                                         RegPtr dest) {
+    MOZ_ASSERT(results.height() <= masm.framePushed());
+    uint32_t offsetFromSP = masm.framePushed() - results.height();
+    masm.movePtr(AsRegister(sp_), dest);
+    if (offsetFromSP) {
+      masm.addPtr(Imm32(offsetFromSP), dest);
+    }
+  }
+
  private:
   // Offset off of sp_ for a local with offset `offset` from Frame.
   int32_t localOffset(int32_t offset) { return masm.framePushed() - offset; }
@@ -1616,22 +1753,10 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
   //
   // Dynamic area
 
-  // Sizes of items in the stack area.
-  //
-  // The size values come from the implementations of Push() in
-  // MacroAssembler-x86-shared.cpp and MacroAssembler-arm-shared.cpp, and from
-  // VFPRegister::size() in Architecture-arm.h.
-  //
-  // On ARM unlike on x86 we push a single for float.
-
-  static const size_t StackSizeOfPtr = sizeof(intptr_t);
-  static const size_t StackSizeOfInt64 = sizeof(int64_t);
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS32)
-  static const size_t StackSizeOfFloat = sizeof(float);
-#else
-  static const size_t StackSizeOfFloat = sizeof(double);
-#endif
-  static const size_t StackSizeOfDouble = sizeof(double);
+  static const size_t StackSizeOfPtr = ABIResult::StackSizeOfPtr;
+  static const size_t StackSizeOfInt64 = ABIResult::StackSizeOfInt64;
+  static const size_t StackSizeOfFloat = ABIResult::StackSizeOfFloat;
+  static const size_t StackSizeOfDouble = ABIResult::StackSizeOfDouble;
 
   uint32_t pushPtr(Register r) {
     DebugOnly<uint32_t> stackBefore = currentStackHeight();
@@ -1641,7 +1766,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
 #else
     masm.Push(r);
 #endif
-    maxFramePushed_ = Max(maxFramePushed_, masm.framePushed());
+    maxFramePushed_ = std::max(maxFramePushed_, masm.framePushed());
     MOZ_ASSERT(stackBefore + StackSizeOfPtr == currentStackHeight());
     return currentStackHeight();
   }
@@ -1654,7 +1779,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
 #else
     masm.Push(r);
 #endif
-    maxFramePushed_ = Max(maxFramePushed_, masm.framePushed());
+    maxFramePushed_ = std::max(maxFramePushed_, masm.framePushed());
     MOZ_ASSERT(stackBefore + StackSizeOfFloat == currentStackHeight());
     return currentStackHeight();
   }
@@ -1667,7 +1792,7 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
 #else
     masm.Push(r);
 #endif
-    maxFramePushed_ = Max(maxFramePushed_, masm.framePushed());
+    maxFramePushed_ = std::max(maxFramePushed_, masm.framePushed());
     MOZ_ASSERT(stackBefore + StackSizeOfDouble == currentStackHeight());
     return currentStackHeight();
   }
@@ -1746,6 +1871,124 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
 
   void loadStackF32(int32_t offset, RegF32 dest) {
     masm.loadFloat32(Address(sp_, stackOffset(offset)), dest);
+  }
+
+  uint32_t prepareStackResultArea(StackHeight stackBase,
+                                  uint32_t stackResultBytes) {
+    uint32_t end = computeHeightWithStackResults(stackBase, stackResultBytes);
+    if (currentStackHeight() < end) {
+      uint32_t bytes = end - currentStackHeight();
+#ifdef RABALDR_CHUNKY_STACK
+      pushChunkyBytes(bytes);
+#else
+      masm.reserveStack(bytes);
+#endif
+      maxFramePushed_ = std::max(maxFramePushed_, masm.framePushed());
+    }
+    return end;
+  }
+
+  void finishStackResultArea(StackHeight stackBase, uint32_t stackResultBytes) {
+    uint32_t end = computeHeightWithStackResults(stackBase, stackResultBytes);
+    MOZ_ASSERT(currentStackHeight() >= end);
+    popBytes(currentStackHeight() - end);
+  }
+
+  void shuffleStackResultsTowardFP(uint32_t srcHeight, uint32_t destHeight,
+                                   uint32_t bytes, Register temp) {
+    MOZ_ASSERT(destHeight < srcHeight);
+    MOZ_ASSERT(bytes % sizeof(uint32_t) == 0);
+    uint32_t destOffset = stackOffset(destHeight) + bytes;
+    uint32_t srcOffset = stackOffset(srcHeight) + bytes;
+    while (bytes >= sizeof(intptr_t)) {
+      destOffset -= sizeof(intptr_t);
+      srcOffset -= sizeof(intptr_t);
+      bytes -= sizeof(intptr_t);
+      masm.loadPtr(Address(sp_, srcOffset), temp);
+      masm.storePtr(temp, Address(sp_, destOffset));
+    }
+    if (bytes) {
+      MOZ_ASSERT(bytes == sizeof(uint32_t));
+      destOffset -= sizeof(uint32_t);
+      srcOffset -= sizeof(uint32_t);
+      masm.load32(Address(sp_, srcOffset), temp);
+      masm.store32(temp, Address(sp_, destOffset));
+    }
+  }
+
+  void shuffleStackResultsTowardFP(StackHeight srcHeight,
+                                   StackHeight destHeight, uint32_t bytes,
+                                   Register temp) {
+    MOZ_ASSERT(srcHeight.isValid());
+    MOZ_ASSERT(destHeight.isValid());
+    uint32_t src = computeHeightWithStackResults(srcHeight, bytes);
+    uint32_t dest = computeHeightWithStackResults(destHeight, bytes);
+    MOZ_ASSERT(src <= currentStackHeight());
+    MOZ_ASSERT(dest <= currentStackHeight());
+    shuffleStackResultsTowardFP(src - bytes, dest - bytes, bytes, temp);
+  }
+
+  void shuffleStackResultsTowardSP(uint32_t srcHeight, uint32_t destHeight,
+                                   uint32_t bytes, Register temp) {
+    MOZ_ASSERT(destHeight > srcHeight);
+    MOZ_ASSERT(bytes % sizeof(uint32_t) == 0);
+    uint32_t destOffset = stackOffset(destHeight);
+    uint32_t srcOffset = stackOffset(srcHeight);
+    while (bytes >= sizeof(intptr_t)) {
+      masm.loadPtr(Address(sp_, srcOffset), temp);
+      masm.storePtr(temp, Address(sp_, destOffset));
+      destOffset += sizeof(intptr_t);
+      srcOffset += sizeof(intptr_t);
+      bytes -= sizeof(intptr_t);
+    }
+    if (bytes) {
+      MOZ_ASSERT(bytes == sizeof(uint32_t));
+      masm.load32(Address(sp_, srcOffset), temp);
+      masm.store32(temp, Address(sp_, destOffset));
+    }
+  }
+
+  // Copy results from the top of the current stack frame to an area of memory,
+  // and pop the stack accordingly.  `dest` is the address of the low byte of
+  // that memory.
+  void popStackResultsToMemory(Register dest, uint32_t bytes, Register temp) {
+    MOZ_ASSERT(bytes <= currentStackHeight());
+    MOZ_ASSERT(bytes % sizeof(uint32_t) == 0);
+    uint32_t bytesToPop = bytes;
+    uint32_t srcOffset = stackOffset(currentStackHeight());
+    uint32_t destOffset = 0;
+    while (bytes >= sizeof(intptr_t)) {
+      masm.loadPtr(Address(sp_, srcOffset), temp);
+      masm.storePtr(temp, Address(dest, destOffset));
+      destOffset += sizeof(intptr_t);
+      srcOffset += sizeof(intptr_t);
+      bytes -= sizeof(intptr_t);
+    }
+    if (bytes) {
+      MOZ_ASSERT(bytes == sizeof(uint32_t));
+      masm.load32(Address(sp_, srcOffset), temp);
+      masm.store32(temp, Address(dest, destOffset));
+    }
+    popBytes(bytesToPop);
+  }
+
+  void storeImmediateToStack(int32_t imm, uint32_t destHeight, Register temp) {
+    masm.move32(Imm32(imm), temp);
+    masm.store32(temp, Address(sp_, stackOffset(destHeight)));
+  }
+
+  void storeImmediateToStack(int64_t imm, uint32_t destHeight, Register temp) {
+#ifdef JS_PUNBOX64
+    masm.move64(Imm64(imm), Register64(temp));
+    masm.store64(Register64(temp), Address(sp_, stackOffset(destHeight)));
+#else
+    union {
+      int64_t i64;
+      int32_t i32[2];
+    } bits = {.i64 = imm};
+    storeImmediateToStack(bits.i32[0], destHeight, temp);
+    storeImmediateToStack(bits.i32[1], destHeight - sizeof(int32_t), temp);
+#endif
   }
 };
 
@@ -1924,6 +2167,29 @@ struct Stk {
     Stk s;
     s.kind_ = ConstRef;
     s.refval_ = v;
+    return s;
+  }
+  static Stk StackResult(ValType type, uint32_t offs) {
+    Kind k;
+    switch (type.kind()) {
+      case ValType::I32:
+        k = Stk::MemI32;
+        break;
+      case ValType::I64:
+        k = Stk::MemI64;
+        break;
+      case ValType::F32:
+        k = Stk::MemF32;
+        break;
+      case ValType::F64:
+        k = Stk::MemF64;
+        break;
+      case ValType::Ref:
+        k = Stk::MemRef;
+        break;
+    }
+    Stk s;
+    s.setOffs(k, offs);
     return s;
   }
 
@@ -2160,7 +2426,7 @@ struct StackMapGenerator {
   // trapExitLayoutNumWords_, which together comprise a description of the
   // layout and are created by GenerateTrapExitMachineState().
   MOZ_MUST_USE bool generateStackmapEntriesForTrapExit(
-      const ValTypeVector& args, ExitStubMapVector* extras) {
+      const ArgTypeVector& args, ExitStubMapVector* extras) {
     return GenerateStackmapEntriesForTrapExit(args, trapExitLayout_,
                                               trapExitLayoutNumWords_, extras);
   }
@@ -2565,16 +2831,6 @@ class BaseCompiler final : public BaseCompilerInterface {
 
   SpecificRegs specific_;
 
-  // The join registers are used to carry values out of blocks.
-  // JoinRegI32 and joinRegI64_ must overlap: emitBrIf and
-  // emitBrTable assume that.
-
-  RegI32 joinRegI32_;
-  RegI64 joinRegI64_;
-  RegPtr joinRegPtr_;
-  RegF32 joinRegF32_;
-  RegF64 joinRegF64_;
-
   // There are more members scattered throughout.
 
  public:
@@ -2599,6 +2855,8 @@ class BaseCompiler final : public BaseCompilerInterface {
   // Used by some of the ScratchRegister implementations.
   operator MacroAssembler&() const { return masm; }
   operator BaseRegAlloc&() { return ra; }
+
+  bool usesSharedMemory() const { return env_.usesSharedMemory(); }
 
  private:
   ////////////////////////////////////////////////////////////
@@ -2787,106 +3045,143 @@ class BaseCompiler final : public BaseCompilerInterface {
     }
   }
 
-  void maybeReserveJoinRegI(ResultType type) {
+  ////////////////////////////////////////////////////////////////////////////
+  //
+  // Block parameters and results.
+  //
+  // Blocks may have multiple parameters and multiple results.  Blocks can also
+  // be the target of branches: the entry for loops, and the exit for
+  // non-loops.
+  //
+  // Passing multiple values to a non-branch target (i.e., the entry of a
+  // "block") falls out naturally: any items on the value stack can flow
+  // directly from one block to another.
+  //
+  // However, for branch targets, we need to allocate well-known locations for
+  // the branch values.  The approach taken in the baseline compiler is to
+  // allocate registers to the top N values (currently N=1), and then stack
+  // locations for the rest.
+  //
+
+  enum class RegKind { All, OnlyGPRs };
+
+  inline void needResultRegisters(ResultType type, RegKind which) {
     if (type.empty()) {
       return;
     }
-    MOZ_ASSERT(type.length() == 1, "multi-value joins unimplemented");
-    switch (type[0].code()) {
-      case ValType::I32:
-        needI32(joinRegI32_);
-        break;
-      case ValType::I64:
-        needI64(joinRegI64_);
-        break;
-      case ValType::F32:
-      case ValType::F64:
-        break;
-      case ValType::FuncRef:
-      case ValType::AnyRef:
-      case ValType::NullRef:
-      case ValType::Ref:
-        needRef(joinRegPtr_);
-        break;
+
+    for (ABIResultIter iter(type); !iter.done(); iter.next()) {
+      ABIResult result = iter.cur();
+      // Register results are visited first; when we see a stack result we're
+      // done.
+      if (!result.inRegister()) {
+        return;
+      }
+      switch (result.type().kind()) {
+        case ValType::I32:
+          needI32(RegI32(result.gpr()));
+          break;
+        case ValType::I64:
+          needI64(RegI64(result.gpr64()));
+          break;
+        case ValType::F32:
+          if (which == RegKind::All) {
+            needF32(RegF32(result.fpr()));
+          }
+          break;
+        case ValType::F64:
+          if (which == RegKind::All) {
+            needF64(RegF64(result.fpr()));
+          }
+          break;
+        case ValType::Ref:
+          needRef(RegPtr(result.gpr()));
+          break;
+      }
     }
   }
 
-  void maybeUnreserveJoinRegI(ResultType type) {
+  inline void freeResultRegisters(ResultType type, RegKind which) {
     if (type.empty()) {
       return;
     }
-    MOZ_ASSERT(type.length() == 1, "multi-value joins unimplemented");
-    switch (type[0].code()) {
-      case ValType::I32:
-        freeI32(joinRegI32_);
-        break;
-      case ValType::I64:
-        freeI64(joinRegI64_);
-        break;
-      case ValType::F32:
-      case ValType::F64:
-        break;
-      case ValType::FuncRef:
-      case ValType::AnyRef:
-      case ValType::NullRef:
-      case ValType::Ref:
-        freeRef(joinRegPtr_);
-        break;
+
+    for (ABIResultIter iter(type); !iter.done(); iter.next()) {
+      ABIResult result = iter.cur();
+      // Register results are visited first; when we see a stack result we're
+      // done.
+      if (!result.inRegister()) {
+        return;
+      }
+      switch (result.type().kind()) {
+        case ValType::I32:
+          freeI32(RegI32(result.gpr()));
+          break;
+        case ValType::I64:
+          freeI64(RegI64(result.gpr64()));
+          break;
+        case ValType::F32:
+          if (which == RegKind::All) {
+            freeF32(RegF32(result.fpr()));
+          }
+          break;
+        case ValType::F64:
+          if (which == RegKind::All) {
+            freeF64(RegF64(result.fpr()));
+          }
+          break;
+        case ValType::Ref:
+          freeRef(RegPtr(result.gpr()));
+          break;
+      }
     }
   }
 
-  void maybeReserveJoinReg(ResultType type) {
-    if (type.empty()) {
-      return;
-    }
-    MOZ_ASSERT(type.length() == 1, "multi-value joins unimplemented");
-    switch (type[0].code()) {
-      case ValType::I32:
-        needI32(joinRegI32_);
-        break;
-      case ValType::I64:
-        needI64(joinRegI64_);
-        break;
-      case ValType::F32:
-        needF32(joinRegF32_);
-        break;
-      case ValType::F64:
-        needF64(joinRegF64_);
-        break;
-      case ValType::Ref:
-      case ValType::NullRef:
-      case ValType::FuncRef:
-      case ValType::AnyRef:
-        needRef(joinRegPtr_);
-        break;
-    }
+  void needIntegerResultRegisters(ResultType type) {
+    needResultRegisters(type, RegKind::OnlyGPRs);
+  }
+  void freeIntegerResultRegisters(ResultType type) {
+    freeResultRegisters(type, RegKind::OnlyGPRs);
   }
 
-  void maybeUnreserveJoinReg(ResultType type) {
-    if (type.empty()) {
-      return;
+  void needResultRegisters(ResultType type) {
+    needResultRegisters(type, RegKind::All);
+  }
+  void freeResultRegisters(ResultType type) {
+    freeResultRegisters(type, RegKind::All);
+  }
+
+  void assertResultRegistersAvailable(ResultType type) {
+#ifdef DEBUG
+    for (ABIResultIter iter(type); !iter.done(); iter.next()) {
+      ABIResult result = iter.cur();
+      if (!result.inRegister()) {
+        return;
+      }
+      switch (result.type().kind()) {
+        case ValType::I32:
+          MOZ_ASSERT(isAvailableI32(RegI32(result.gpr())));
+          break;
+        case ValType::I64:
+          MOZ_ASSERT(isAvailableI64(RegI64(result.gpr64())));
+          break;
+        case ValType::F32:
+          MOZ_ASSERT(isAvailableF32(RegF32(result.fpr())));
+          break;
+        case ValType::F64:
+          MOZ_ASSERT(isAvailableF64(RegF64(result.fpr())));
+          break;
+        case ValType::Ref:
+          MOZ_ASSERT(isAvailableRef(RegPtr(result.gpr())));
+          break;
+      }
     }
-    MOZ_ASSERT(type.length() == 1, "multi-value joins unimplemented");
-    switch (type[0].code()) {
-      case ValType::I32:
-        freeI32(joinRegI32_);
-        break;
-      case ValType::I64:
-        freeI64(joinRegI64_);
-        break;
-      case ValType::F32:
-        freeF32(joinRegF32_);
-        break;
-      case ValType::F64:
-        freeF64(joinRegF64_);
-        break;
-      case ValType::Ref:
-      case ValType::NullRef:
-      case ValType::FuncRef:
-      case ValType::AnyRef:
-        freeRef(joinRegPtr_);
-        break;
-    }
+#endif
+  }
+
+  void captureResultRegisters(ResultType type) {
+    assertResultRegistersAvailable(type);
+    needResultRegisters(type);
   }
 
   ////////////////////////////////////////////////////////////
@@ -3281,6 +3576,20 @@ class BaseCompiler final : public BaseCompilerInterface {
         }
       }
     }
+  }
+
+  void saveTempPtr(RegPtr r) final {
+    MOZ_ASSERT(!ra.isAvailablePtr(r));
+    fr.pushPtr(r);
+    ra.freePtr(r);
+    MOZ_ASSERT(ra.isAvailablePtr(r));
+  }
+
+  void restoreTempPtr(RegPtr r) final {
+    MOZ_ASSERT(ra.isAvailablePtr(r));
+    ra.needPtr(r);
+    fr.popPtr(r);
+    MOZ_ASSERT(!ra.isAvailablePtr(r));
   }
 
   // Various methods for creating a stack map.  Stack maps are indexed by the
@@ -3719,6 +4028,18 @@ class BaseCompiler final : public BaseCompilerInterface {
     return true;
   }
 
+  MOZ_MUST_USE bool peek2xI32(int32_t* c0, int32_t* c1) {
+    MOZ_ASSERT(stk_.length() >= 2);
+    const Stk& v0 = *(stk_.end() - 1);
+    const Stk& v1 = *(stk_.end() - 2);
+    if (v0.kind() != Stk::ConstI32 || v1.kind() != Stk::ConstI32) {
+      return false;
+    }
+    *c0 = v0.i32val();
+    *c1 = v1.i32val();
+    return true;
+  }
+
   MOZ_MUST_USE bool popConstPositivePowerOfTwoI32(int32_t* c,
                                                   uint_fast8_t* power,
                                                   int32_t cutoff) {
@@ -3760,151 +4081,307 @@ class BaseCompiler final : public BaseCompilerInterface {
     return true;
   }
 
-  // TODO / OPTIMIZE (Bug 1316818): At the moment we use ReturnReg
-  // for JoinReg.  It is possible other choices would lead to better
-  // register allocation, as ReturnReg is often first in the
-  // register set and will be heavily wanted by the register
-  // allocator that uses takeFirst().
+  // TODO / OPTIMIZE (Bug 1316818): At the moment we use the Wasm
+  // inter-procedure ABI for block returns, which allocates ReturnReg as the
+  // single block result register.  It is possible other choices would lead to
+  // better register allocation, as ReturnReg is often first in the register set
+  // and will be heavily wanted by the register allocator that uses takeFirst().
   //
   // Obvious options:
   //  - pick a register at the back of the register set
   //  - pick a random register per block (different blocks have
   //    different join regs)
-  //
-  // On the other hand, we sync() before every block and only the
-  // JoinReg is live out of the block.  But on the way out, we
-  // currently pop the JoinReg before freeing regs to be discarded,
-  // so there is a real risk of some pointless shuffling there.  If
-  // we instead integrate the popping of the join reg into the
-  // popping of the stack we can just use the JoinReg as it will
-  // become available in that process.
 
-  MOZ_MUST_USE Maybe<AnyReg> popJoinRegUnlessVoid(ResultType type) {
-    if (type.empty()) {
-      return Nothing();
-    }
-    MOZ_ASSERT(type.length() == 1, "multi-value return unimplemented");
-    switch (type[0].code()) {
-      case ValType::I32: {
-        DebugOnly<Stk::Kind> k(stk_.back().kind());
-        MOZ_ASSERT(k == Stk::RegisterI32 || k == Stk::ConstI32 ||
-                   k == Stk::MemI32 || k == Stk::LocalI32);
-        return Some(AnyReg(popI32(joinRegI32_)));
+  void popRegisterResults(ABIResultIter& iter) {
+    // Pop register results.  Note that in the single-value case, popping to a
+    // register may cause a sync(); for multi-value we sync'd already.
+    for (; !iter.done(); iter.next()) {
+      const ABIResult& result = iter.cur();
+      if (!result.inRegister()) {
+        // TODO / OPTIMIZE: We sync here to avoid solving the general parallel
+        // move problem in popStackResults.  However we could avoid syncing the
+        // values that are going to registers anyway, if they are already in
+        // registers.
+        sync();
+        break;
       }
-      case ValType::I64: {
-        DebugOnly<Stk::Kind> k(stk_.back().kind());
-        MOZ_ASSERT(k == Stk::RegisterI64 || k == Stk::ConstI64 ||
-                   k == Stk::MemI64 || k == Stk::LocalI64);
-        return Some(AnyReg(popI64(joinRegI64_)));
-      }
-      case ValType::F64: {
-        DebugOnly<Stk::Kind> k(stk_.back().kind());
-        MOZ_ASSERT(k == Stk::RegisterF64 || k == Stk::ConstF64 ||
-                   k == Stk::MemF64 || k == Stk::LocalF64);
-        return Some(AnyReg(popF64(joinRegF64_)));
-      }
-      case ValType::F32: {
-        DebugOnly<Stk::Kind> k(stk_.back().kind());
-        MOZ_ASSERT(k == Stk::RegisterF32 || k == Stk::ConstF32 ||
-                   k == Stk::MemF32 || k == Stk::LocalF32);
-        return Some(AnyReg(popF32(joinRegF32_)));
-      }
-      case ValType::Ref:
-      case ValType::NullRef:
-      case ValType::FuncRef:
-      case ValType::AnyRef: {
-        DebugOnly<Stk::Kind> k(stk_.back().kind());
-        MOZ_ASSERT(k == Stk::RegisterRef || k == Stk::ConstRef ||
-                   k == Stk::MemRef || k == Stk::LocalRef);
-        return Some(AnyReg(popRef(joinRegPtr_)));
+      switch (result.type().kind()) {
+        case ValType::I32:
+          popI32(RegI32(result.gpr()));
+          break;
+        case ValType::I64:
+          popI64(RegI64(result.gpr64()));
+          break;
+        case ValType::F32:
+          popF32(RegF32(result.fpr()));
+          break;
+        case ValType::F64:
+          popF64(RegF64(result.fpr()));
+          break;
+        case ValType::Ref:
+          popRef(RegPtr(result.gpr()));
+          break;
       }
     }
-    MOZ_CRASH("Compiler bug: unexpected expression type");
   }
 
-  // If we ever start not sync-ing on entry to Block (but instead try to sync
-  // lazily) then this may start asserting because it does not spill the
-  // joinreg if the joinreg is already allocated.  Note, it *can't* spill the
-  // joinreg in the contexts it's being used, so some other solution will need
-  // to be found.
+  void popStackResults(ABIResultIter& iter, StackHeight stackBase) {
+    MOZ_ASSERT(!iter.done());
 
-  MOZ_MUST_USE Maybe<AnyReg> captureJoinRegUnlessVoid(ResultType type) {
-    if (type.empty()) {
-      return Nothing();
+    // The iterator should be advanced beyond register results, and register
+    // results should be popped already from the value stack.
+    uint32_t alreadyPopped = iter.index();
+
+    // At this point, only stack arguments are remaining.  Iterate through them
+    // to measure how much stack space they will take up.
+    for (; !iter.done(); iter.next()) {
+      MOZ_ASSERT(iter.cur().onStack());
     }
-    MOZ_ASSERT(type.length() == 1, "multi-value return unimplemented");
-    switch (type[0].code()) {
-      case ValType::I32:
-        MOZ_ASSERT(isAvailableI32(joinRegI32_));
-        needI32(joinRegI32_);
-        return Some(AnyReg(joinRegI32_));
-      case ValType::I64:
-        MOZ_ASSERT(isAvailableI64(joinRegI64_));
-        needI64(joinRegI64_);
-        return Some(AnyReg(joinRegI64_));
-      case ValType::F32:
-        MOZ_ASSERT(isAvailableF32(joinRegF32_));
-        needF32(joinRegF32_);
-        return Some(AnyReg(joinRegF32_));
-      case ValType::F64:
-        MOZ_ASSERT(isAvailableF64(joinRegF64_));
-        needF64(joinRegF64_);
-        return Some(AnyReg(joinRegF64_));
-      case ValType::Ref:
-      case ValType::NullRef:
-      case ValType::FuncRef:
-      case ValType::AnyRef:
-        MOZ_ASSERT(isAvailableRef(joinRegPtr_));
-        needRef(joinRegPtr_);
-        return Some(AnyReg(joinRegPtr_));
+
+    // Calculate the space needed to store stack results, in bytes.
+    uint32_t stackResultBytes = iter.stackBytesConsumedSoFar();
+    MOZ_ASSERT(stackResultBytes);
+
+    // Compute the stack height including the stack results.  Note that it's
+    // possible that this call expands the stack, for example if some of the
+    // results are supplied by constants and so are not already on the machine
+    // stack.
+    uint32_t endHeight = fr.prepareStackResultArea(stackBase, stackResultBytes);
+
+    // Find a free GPR to use when shuffling stack values.  If none is
+    // available, push ReturnReg and restore it after we're done.
+    bool saved = false;
+    RegPtr temp = ra.needTempPtr(RegPtr(ReturnReg), &saved);
+
+    // The sequence of Stk values is in the same order on the machine stack as
+    // the result locations, but there is a complication: constant values are
+    // not actually pushed on the machine stack.  (At this point registers and
+    // locals have been spilled already.)  So, moving the Stk values into place
+    // isn't simply a shuffle-down or shuffle-up operation.  There is a part of
+    // the Stk sequence that shuffles toward the FP, a part that's already in
+    // place, and a part that shuffles toward the SP.  After shuffling, we have
+    // to materialize the constants.
+
+    // Shuffle mem values toward the frame pointer, copying deepest values
+    // first.  Stop when we run out of results, get to a register result, or
+    // find a Stk value that is closer to the FP than the result.
+    for (iter.switchToPrev(); !iter.done(); iter.prev()) {
+      const ABIResult& result = iter.cur();
+      if (!result.onStack()) {
+        break;
+      }
+      MOZ_ASSERT(result.stackOffset() < stackResultBytes);
+      uint32_t destHeight = endHeight - result.stackOffset();
+      uint32_t stkBase = stk_.length() - (iter.count() - alreadyPopped);
+      Stk& v = stk_[stkBase + iter.index()];
+      if (v.isMem()) {
+        uint32_t srcHeight = v.offs();
+        if (srcHeight <= destHeight) {
+          break;
+        }
+        fr.shuffleStackResultsTowardFP(srcHeight, destHeight, result.size(),
+                                       temp);
+      }
     }
-    MOZ_CRASH("Compiler bug: unexpected type");
+
+    // Reset iterator and skip register results.
+    for (iter.reset(); !iter.done(); iter.next()) {
+      if (iter.cur().onStack()) {
+        break;
+      }
+    }
+
+    // Revisit top stack values, shuffling mem values toward the stack pointer,
+    // copying shallowest values first.
+    for (; !iter.done(); iter.next()) {
+      const ABIResult& result = iter.cur();
+      MOZ_ASSERT(result.onStack());
+      MOZ_ASSERT(result.stackOffset() < stackResultBytes);
+      uint32_t destHeight = endHeight - result.stackOffset();
+      Stk& v = stk_[stk_.length() - (iter.index() - alreadyPopped) - 1];
+      if (v.isMem()) {
+        uint32_t srcHeight = v.offs();
+        if (srcHeight >= destHeight) {
+          break;
+        }
+        fr.shuffleStackResultsTowardSP(srcHeight, destHeight, result.size(),
+                                       temp);
+      }
+    }
+
+    // Reset iterator and skip register results, which are already popped off
+    // the value stack.
+    for (iter.reset(); !iter.done(); iter.next()) {
+      if (iter.cur().onStack()) {
+        break;
+      }
+    }
+
+    // Materialize constants and pop the remaining items from the value stack.
+    for (; !iter.done(); iter.next()) {
+      const ABIResult& result = iter.cur();
+      uint32_t resultHeight = endHeight - result.stackOffset();
+      Stk& v = stk_.back();
+      switch (v.kind()) {
+        case Stk::ConstI32:
+        case Stk::ConstF32:
+          // Rely on the fact that Stk stores its immediate values in a union,
+          // and that the bits of an f32 will be in the i32.
+          fr.storeImmediateToStack(v.i32val_, resultHeight, temp);
+          break;
+        case Stk::ConstI64:
+        case Stk::ConstF64:
+          // Likewise, rely on f64 bits being punned to i64.
+          fr.storeImmediateToStack(v.i64val_, resultHeight, temp);
+          break;
+        case Stk::ConstRef:
+          if (sizeof(intptr_t) == sizeof(int32_t)) {
+            fr.storeImmediateToStack(int32_t(v.refval_), resultHeight, temp);
+          } else {
+            fr.storeImmediateToStack(int64_t(v.refval_), resultHeight, temp);
+          }
+          break;
+        case Stk::MemRef:
+          // Update bookkeeping as we pop the Stk entry.
+          stackMapGenerator_.memRefsOnStk--;
+          break;
+        default:
+          MOZ_ASSERT(v.isMem());
+          break;
+      }
+      stk_.popBack();
+    }
+
+    ra.freeTempPtr(temp, saved);
+
+    // This will pop the stack if needed.
+    fr.finishStackResultArea(stackBase, stackResultBytes);
   }
 
-  void pushJoinRegUnlessVoid(const Maybe<AnyReg>& r) {
-    if (!r) {
+  enum class ContinuationKind { Fallthrough, Jump };
+
+  void popBlockResults(ResultType type, StackHeight stackBase,
+                       ContinuationKind kind) {
+    if (!type.empty()) {
+      ABIResultIter iter(type);
+      popRegisterResults(iter);
+      if (!iter.done()) {
+        popStackResults(iter, stackBase);
+        // Because popStackResults might clobber the stack, it leaves the stack
+        // pointer already in the right place for the continuation, whether the
+        // continuation is a jump or fallthrough.
+        return;
+      }
+    }
+    // We get here if there are no stack results.  For a fallthrough, the stack
+    // is already at the right height.  For a jump, we may need to pop the stack
+    // pointer if the continuation's stack height is lower than the current
+    // stack height.
+    if (kind == ContinuationKind::Jump) {
+      fr.popStackBeforeBranch(stackBase, type);
+    }
+  }
+
+  Stk captureStackResult(const ABIResult& result, uint32_t stackResultBytes) {
+    MOZ_ASSERT(result.onStack());
+    uint32_t offs = fr.locateStackResult(result, controlItem().stackHeight,
+                                         stackResultBytes);
+    return Stk::StackResult(result.type(), offs);
+  }
+
+  void pushBlockResults(ResultType type) {
+    if (type.empty()) {
       return;
     }
-    switch (r->tag) {
-      case AnyReg::I32:
-        pushI32(r->i32());
+
+    // We need to push the results in reverse order, so first iterate through
+    // all results to determine the locations of stack result types.
+    ABIResultIter iter(type);
+    while (!iter.done()) {
+      iter.next();
+    }
+    uint32_t stackResultBytes = iter.stackBytesConsumedSoFar();
+
+    for (iter.switchToPrev(); !iter.done(); iter.prev()) {
+      const ABIResult& result = iter.cur();
+      if (!result.onStack()) {
         break;
-      case AnyReg::I64:
-        pushI64(r->i64());
-        break;
-      case AnyReg::F64:
-        pushF64(r->f64());
-        break;
-      case AnyReg::F32:
-        pushF32(r->f32());
-        break;
-      case AnyReg::REF:
-        pushRef(r->ref());
-        break;
+      }
+      Stk v = captureStackResult(result, stackResultBytes);
+      push(v);
+      if (v.kind() == Stk::MemRef) {
+        stackMapGenerator_.memRefsOnStk++;
+      }
+    }
+
+    for (; !iter.done(); iter.prev()) {
+      const ABIResult& result = iter.cur();
+      MOZ_ASSERT(result.inRegister());
+      switch (result.type().kind()) {
+        case ValType::I32:
+          pushI32(RegI32(result.gpr()));
+          break;
+        case ValType::I64:
+          pushI64(RegI64(result.gpr64()));
+          break;
+        case ValType::F32:
+          pushF32(RegF32(result.fpr()));
+          break;
+        case ValType::F64:
+          pushF64(RegF64(result.fpr()));
+          break;
+        case ValType::Ref:
+          pushRef(RegPtr(result.gpr()));
+          break;
+      }
     }
   }
 
-  void freeJoinRegUnlessVoid(const Maybe<AnyReg>& r) {
-    if (!r) {
-      return;
+  // A combination of popBlockResults + pushBlockResults, to shuffle the top
+  // stack values into the expected block result locations for the given type.
+  StackHeight topBlockResults(ResultType type) {
+    if (type.empty()) {
+      return fr.stackHeight();
     }
-    switch (r->tag) {
-      case AnyReg::I32:
-        freeI32(r->i32());
-        break;
-      case AnyReg::I64:
-        freeI64(r->i64());
-        break;
-      case AnyReg::F64:
-        freeF64(r->f64());
-        break;
-      case AnyReg::F32:
-        freeF32(r->f32());
-        break;
-      case AnyReg::REF:
-        freeRef(r->ref());
-        break;
+    StackHeight base = fr.stackResultsBase(stackConsumed(type.length()));
+    popBlockResults(type, base, ContinuationKind::Fallthrough);
+    pushBlockResults(type);
+    return base;
+  }
+
+  // Conditional branches with fallthrough are preceded by a topBlockResults, so
+  // we know that there are no stack results that need to be materialized.  In
+  // that case, we can just shuffle the whole block down before popping the
+  // stack.
+  void shuffleStackResultsBeforeBranch(StackHeight srcHeight,
+                                       StackHeight destHeight,
+                                       ResultType type) {
+    uint32_t stackResultBytes = 0;
+
+    if (ABIResultIter::HasStackResults(type)) {
+      MOZ_ASSERT(stk_.length() >= type.length());
+      ABIResultIter iter(type);
+      for (ABIResultIter iter(type); !iter.done(); iter.next()) {
+#ifdef DEBUG
+        const ABIResult& result = iter.cur();
+        const Stk& v = stk_[stk_.length() - iter.index() - 1];
+        MOZ_ASSERT(v.isMem() == result.onStack());
+#endif
+      }
+      stackResultBytes = iter.stackBytesConsumedSoFar();
+
+      if (stackResultBytes) {
+        // Find a free GPR to use when shuffling stack values.  If none is
+        // available, push ReturnReg and restore it after we're done.
+        bool saved = false;
+        RegPtr temp = ra.needTempPtr(RegPtr(ReturnReg), &saved);
+        fr.shuffleStackResultsTowardFP(srcHeight, destHeight, stackResultBytes,
+                                       temp);
+        ra.freeTempPtr(temp, saved);
+      }
     }
+
+    fr.popStackBeforeBranch(destHeight, stackResultBytes);
   }
 
   // Return the amount of execution stack consumed by the top numval
@@ -4017,6 +4494,13 @@ class BaseCompiler final : public BaseCompilerInterface {
   }
 
   void assertStackInvariants() const {
+    if (deadCode_) {
+      // Nonlocal control flow can pass values in stack locations in a way that
+      // isn't accounted for by the value stack.  In dead code, which occurs
+      // after unconditional non-local control flow, there is no invariant to
+      // assert.
+      return;
+    }
     size_t size = 0;
     for (const Stk& v : stk_) {
       switch (v.kind()) {
@@ -4049,12 +4533,14 @@ class BaseCompiler final : public BaseCompilerInterface {
   //
   // Control stack
 
-  void initControl(Control& item) {
+  void initControl(Control& item, ResultType params) {
     // Make sure the constructor was run properly
     MOZ_ASSERT(!item.stackHeight.isValid() && item.stackSize == UINT32_MAX);
 
-    item.stackHeight = fr.stackHeight();
-    item.stackSize = stk_.length();
+    uint32_t paramCount = deadCode_ ? 0 : params.length();
+    uint32_t stackParamSize = stackConsumed(paramCount);
+    item.stackHeight = fr.stackResultsBase(stackParamSize);
+    item.stackSize = stk_.length() - paramCount;
     item.deadOnArrival = deadCode_;
     item.bceSafeOnEntry = bceSafe_;
   }
@@ -4093,11 +4579,10 @@ class BaseCompiler final : public BaseCompilerInterface {
     // as to determine which of them are both in-memory and pointer-typed, and
     // add entries to machineStackTracker as appropriate.
 
-    const ValTypeVector& argTys = env_.funcTypes[func_.index]->args();
-
-    size_t nInboundStackArgBytes = StackArgAreaSizeUnaligned(argTys);
-    MOZ_ASSERT(nInboundStackArgBytes % sizeof(void*) == 0);
-    stackMapGenerator_.numStackArgWords = nInboundStackArgBytes / sizeof(void*);
+    ArgTypeVector args(funcType());
+    size_t inboundStackArgBytes = StackArgAreaSizeUnaligned(args);
+    MOZ_ASSERT(inboundStackArgBytes % sizeof(void*) == 0);
+    stackMapGenerator_.numStackArgWords = inboundStackArgBytes / sizeof(void*);
 
     MOZ_ASSERT(stackMapGenerator_.machineStackTracker.length() == 0);
     if (!stackMapGenerator_.machineStackTracker.pushNonGCPointers(
@@ -4105,18 +4590,17 @@ class BaseCompiler final : public BaseCompilerInterface {
       return false;
     }
 
-    for (ABIArgIter<const ValTypeVector> i(argTys); !i.done(); i++) {
+    // Identify GC-managed pointers passed on the stack.
+    for (ABIArgIter i(args); !i.done(); i++) {
       ABIArg argLoc = *i;
-      const ValType& ty = argTys[i.index()];
-      MOZ_ASSERT(ToMIRType(ty) != MIRType::Pointer);
-      if (argLoc.kind() != ABIArg::Stack || !ty.isReference()) {
-        continue;
+      if (argLoc.kind() == ABIArg::Stack &&
+          args[i.index()] == MIRType::RefOrNull) {
+        uint32_t offset = argLoc.offsetFromArgBase();
+        MOZ_ASSERT(offset < inboundStackArgBytes);
+        MOZ_ASSERT(offset % sizeof(void*) == 0);
+        stackMapGenerator_.machineStackTracker.setGCPointer(offset /
+                                                            sizeof(void*));
       }
-      uint32_t offset = argLoc.offsetFromArgBase();
-      MOZ_ASSERT(offset < nInboundStackArgBytes);
-      MOZ_ASSERT(offset % sizeof(void*) == 0);
-      stackMapGenerator_.machineStackTracker.setGCPointer(offset /
-                                                          sizeof(void*));
     }
 
     GenerateFunctionPrologue(
@@ -4170,7 +4654,6 @@ class BaseCompiler final : public BaseCompilerInterface {
 
     fr.checkStack(ABINonArgReg0, BytecodeOffset(func_.lineOrBytecode));
 
-    const ValTypeVector& args = funcType().args();
     ExitStubMapVector extras;
     if (!stackMapGenerator_.generateStackmapEntriesForTrapExit(args, &extras)) {
       return false;
@@ -4202,11 +4685,17 @@ class BaseCompiler final : public BaseCompilerInterface {
     }
 
     // Copy arguments from registers to stack.
-    for (ABIArgIter<const ValTypeVector> i(args); !i.done(); i++) {
+    for (ABIArgIter i(args); !i.done(); i++) {
       if (!i->argInRegister()) {
         continue;
       }
-      Local& l = localInfo_[i.index()];
+      if (args.isSyntheticStackResultPointerArg(i.index())) {
+        // The synthetic stack result area parameter was passed in a register.
+        // Store it to the stack.
+        fr.storeIncomingStackResultAreaPtr(RegPtr(i->gpr()));
+        continue;
+      }
+      Local& l = localInfo_[args.naturalIndex(i.index())];
       switch (i.mirType()) {
         case MIRType::Int32:
           fr.storeLocalI32(RegI32(i->gpr()), l);
@@ -4252,69 +4741,90 @@ class BaseCompiler final : public BaseCompilerInterface {
     return true;
   }
 
-  void saveResult() {
+  void popStackReturnValues(const ResultType& resultType) {
+    uint32_t bytes = ABIResultIter::MeasureStackBytes(resultType);
+    if (bytes == 0) {
+      return;
+    }
+    Register target = ABINonArgReturnReg0;
+    Register temp = ABINonArgReturnReg1;
+    fr.loadIncomingStackResultAreaPtr(RegPtr(target));
+    fr.popStackResultsToMemory(target, bytes, temp);
+  }
+
+  void saveRegisterReturnValues(const ResultType& resultType) {
     MOZ_ASSERT(env_.debugEnabled());
     size_t debugFrameOffset = masm.framePushed() - DebugFrame::offsetOfFrame();
     Address resultsAddress(masm.getStackPointer(),
                            debugFrameOffset + DebugFrame::offsetOfResults());
-    Maybe<ValType> ret = funcType().ret();
-    if (!ret) {
-      return;
-    }
-    switch (ret.ref().code()) {
-      case ValType::I32:
-        masm.store32(RegI32(ReturnReg), resultsAddress);
+
+    for (ABIResultIter i(resultType); !i.done(); i.next()) {
+      const ABIResult result = i.cur();
+      if (!result.inRegister()) {
+#ifdef DEBUG
+        for (i.next(); !i.done(); i.next()) {
+          MOZ_ASSERT(!i.cur().inRegister());
+        }
+#endif
         break;
-      case ValType::I64:
-        masm.store64(RegI64(ReturnReg64), resultsAddress);
-        break;
-      case ValType::F64:
-        masm.storeDouble(RegF64(ReturnDoubleReg), resultsAddress);
-        break;
-      case ValType::F32:
-        masm.storeFloat32(RegF32(ReturnFloat32Reg), resultsAddress);
-        break;
-      case ValType::Ref:
-      case ValType::FuncRef:
-      case ValType::AnyRef:
-        masm.storePtr(RegPtr(ReturnReg), resultsAddress);
-        break;
-      case ValType::NullRef:
-      default:
-        MOZ_CRASH("Function return type");
+      }
+      MOZ_ASSERT(i.index() == 0,
+                 "debug frame only has space for one stored register result");
+      switch (result.type().kind()) {
+        case ValType::I32:
+          masm.store32(RegI32(result.gpr()), resultsAddress);
+          break;
+        case ValType::I64:
+          masm.store64(RegI64(result.gpr64()), resultsAddress);
+          break;
+        case ValType::F64:
+          masm.storeDouble(RegF64(result.fpr()), resultsAddress);
+          break;
+        case ValType::F32:
+          masm.storeFloat32(RegF32(result.fpr()), resultsAddress);
+          break;
+        case ValType::Ref:
+          masm.storePtr(RegPtr(result.gpr()), resultsAddress);
+          break;
+      }
     }
   }
 
-  void restoreResult() {
+  void restoreRegisterReturnValues(const ResultType& resultType) {
     MOZ_ASSERT(env_.debugEnabled());
     size_t debugFrameOffset = masm.framePushed() - DebugFrame::offsetOfFrame();
     Address resultsAddress(masm.getStackPointer(),
                            debugFrameOffset + DebugFrame::offsetOfResults());
-    Maybe<ValType> ret = funcType().ret();
-    if (!ret) {
-      return;
-    }
-    switch (ret.ref().code()) {
-      case ValType::I32:
-        masm.load32(resultsAddress, RegI32(ReturnReg));
+
+    for (ABIResultIter i(resultType); !i.done(); i.next()) {
+      const ABIResult result = i.cur();
+      if (!result.inRegister()) {
+#ifdef DEBUG
+        for (i.next(); !i.done(); i.next()) {
+          MOZ_ASSERT(!i.cur().inRegister());
+        }
+#endif
         break;
-      case ValType::I64:
-        masm.load64(resultsAddress, RegI64(ReturnReg64));
-        break;
-      case ValType::F64:
-        masm.loadDouble(resultsAddress, RegF64(ReturnDoubleReg));
-        break;
-      case ValType::F32:
-        masm.loadFloat32(resultsAddress, RegF32(ReturnFloat32Reg));
-        break;
-      case ValType::Ref:
-      case ValType::FuncRef:
-      case ValType::AnyRef:
-        masm.loadPtr(resultsAddress, RegPtr(ReturnReg));
-        break;
-      case ValType::NullRef:
-      default:
-        MOZ_CRASH("Function return type");
+      }
+      MOZ_ASSERT(i.index() == 0,
+                 "debug frame only has space for one stored register result");
+      switch (result.type().kind()) {
+        case ValType::I32:
+          masm.load32(resultsAddress, RegI32(result.gpr()));
+          break;
+        case ValType::I64:
+          masm.load64(resultsAddress, RegI64(result.gpr64()));
+          break;
+        case ValType::F64:
+          masm.loadDouble(resultsAddress, RegF64(result.fpr()));
+          break;
+        case ValType::F32:
+          masm.loadFloat32(resultsAddress, RegF32(result.fpr()));
+          break;
+        case ValType::Ref:
+          masm.loadPtr(resultsAddress, RegPtr(result.gpr()));
+          break;
+      }
     }
   }
 
@@ -4337,6 +4847,10 @@ class BaseCompiler final : public BaseCompilerInterface {
 
     masm.bind(&returnLabel_);
 
+    ResultType resultType(ResultType::Vector(funcType().results()));
+
+    popStackReturnValues(resultType);
+
     if (env_.debugEnabled()) {
       // If a return type is a ref, we need to note that in the stack maps
       // generated here.  Note that this assumes that DebugFrame::result* and
@@ -4352,7 +4866,7 @@ class BaseCompiler final : public BaseCompilerInterface {
       }
       // Store and reload the return value from DebugFrame::return so that
       // it can be clobbered, and/or modified by the debug trap.
-      saveResult();
+      saveRegisterReturnValues(resultType);
       insertBreakablePoint(CallSiteDesc::Breakpoint);
       if (!createStackMap("debug: breakpoint", refDebugFrame)) {
         return false;
@@ -4361,7 +4875,7 @@ class BaseCompiler final : public BaseCompilerInterface {
       if (!createStackMap("debug: leave frame", refDebugFrame)) {
         return false;
       }
-      restoreResult();
+      restoreRegisterReturnValues(resultType);
     }
 
     GenerateFunctionEpilogue(masm, fr.fixedAllocSize(), &offsets_);
@@ -4518,7 +5032,7 @@ class BaseCompiler final : public BaseCompilerInterface {
   // info we read.
 
   void passArg(ValType type, const Stk& arg, FunctionCall* call) {
-    switch (type.code()) {
+    switch (type.kind()) {
       case ValType::I32: {
         ABIArg argLoc = call->abi.next(MIRType::Int32);
         if (argLoc.kind() == ABIArg::Stack) {
@@ -4572,7 +5086,7 @@ class BaseCompiler final : public BaseCompilerInterface {
 #  elif defined(JS_CODEGEN_MIPS32)
             ScratchF64 scratch(*this);
             loadF64(arg, scratch);
-            MOZ_ASSERT(MOZ_LITTLE_ENDIAN);
+            MOZ_ASSERT(MOZ_LITTLE_ENDIAN());
             masm.moveFromDoubleLo(scratch, argLoc.evenGpr());
             masm.moveFromDoubleHi(scratch, argLoc.oddGpr());
             break;
@@ -4623,9 +5137,7 @@ class BaseCompiler final : public BaseCompilerInterface {
         }
         break;
       }
-      case ValType::Ref:
-      case ValType::FuncRef:
-      case ValType::AnyRef: {
+      case ValType::Ref: {
         ABIArg argLoc = call->abi.next(MIRType::RefOrNull);
         if (argLoc.kind() == ABIArg::Stack) {
           ScratchPtr scratch(*this);
@@ -4637,10 +5149,6 @@ class BaseCompiler final : public BaseCompilerInterface {
         }
         break;
       }
-      case ValType::NullRef:
-        MOZ_CRASH("NullRef not expressible");
-      default:
-        MOZ_CRASH("Function argument type");
     }
   }
 
@@ -4847,13 +5355,6 @@ class BaseCompiler final : public BaseCompilerInterface {
     MOZ_ASSERT(isAvailableRef(r));
     needRef(r);
     return r;
-  }
-
-  void returnCleanup(bool popStack) {
-    if (popStack) {
-      fr.popStackBeforeBranch(controlOutermost().stackHeight);
-    }
-    masm.jump(&returnLabel_);
   }
 
   void checkDivideByZeroI32(RegI32 rhs) {
@@ -5388,10 +5889,10 @@ class BaseCompiler final : public BaseCompilerInterface {
       switch (access.type()) {
         case Scalar::Float64:
           *temp3 = needI32();
-          MOZ_FALLTHROUGH;
+          [[fallthrough]];
         case Scalar::Float32:
           *temp2 = needI32();
-          MOZ_FALLTHROUGH;
+          [[fallthrough]];
         default:
           *temp1 = needI32();
           break;
@@ -5601,7 +6102,7 @@ class BaseCompiler final : public BaseCompilerInterface {
   struct Atomic32Temps : mozilla::Array<RegI32, Count> {
     // Allocate all temp registers if 'allocate' is not specified.
     void allocate(BaseCompiler* bc, size_t allocate = Count) {
-      MOZ_ASSERT(Count != 0);
+      static_assert(Count != 0);
       for (size_t i = 0; i < allocate; ++i) {
         this->operator[](i) = bc->needI32();
       }
@@ -6466,6 +6967,8 @@ class BaseCompiler final : public BaseCompilerInterface {
 
   RegI32 popMemoryAccess(MemoryAccessDesc* access, AccessCheck* check);
 
+  void pushHeapBase();
+
   ////////////////////////////////////////////////////////////
   //
   // Sundry helpers.
@@ -6594,8 +7097,9 @@ class BaseCompiler final : public BaseCompilerInterface {
     };
 
     Label* const label;             // The target of the branch, never NULL
-    const StackHeight stackHeight;  // The value to pop to along the taken edge,
-                                    // unless !hasPop()
+    const StackHeight stackHeight;  // The stack base above which to place
+                                    // stack-spilled block results, if
+                                    // hasBlockResults().
     const bool invertBranch;        // If true, invert the sense of the branch
     const ResultType resultType;    // The result propagated along the edges
 
@@ -6618,7 +7122,7 @@ class BaseCompiler final : public BaseCompilerInterface {
           invertBranch(invertBranch),
           resultType(resultType) {}
 
-    bool hasPop() const { return stackHeight.isValid(); }
+    bool hasBlockResults() const { return stackHeight.isValid(); }
   };
 
   void setLatentCompare(Assembler::Condition compareOp, ValType operandType) {
@@ -6678,22 +7182,25 @@ class BaseCompiler final : public BaseCompilerInterface {
   // Lhs "when applicable".
 
   template <typename Cond, typename Lhs, typename Rhs>
-  void jumpConditionalWithJoinReg(BranchState* b, Cond cond, Lhs lhs, Rhs rhs) {
-    Maybe<AnyReg> r = popJoinRegUnlessVoid(b->resultType);
+  void jumpConditionalWithResults(BranchState* b, Cond cond, Lhs lhs, Rhs rhs) {
+    if (b->hasBlockResults()) {
+      StackHeight resultsBase = topBlockResults(b->resultType);
+      if (b->stackHeight != resultsBase) {
+        Label notTaken;
+        branchTo(b->invertBranch ? cond : Assembler::InvertCondition(cond), lhs,
+                 rhs, &notTaken);
 
-    if (b->hasPop() && fr.willPopStackBeforeBranch(b->stackHeight)) {
-      Label notTaken;
-      branchTo(b->invertBranch ? cond : Assembler::InvertCondition(cond), lhs,
-               rhs, &notTaken);
-      fr.popStackBeforeBranch(b->stackHeight);
-      masm.jump(b->label);
-      masm.bind(&notTaken);
-    } else {
-      branchTo(b->invertBranch ? Assembler::InvertCondition(cond) : cond, lhs,
-               rhs, b->label);
+        // Shuffle stack args.
+        shuffleStackResultsBeforeBranch(resultsBase, b->stackHeight,
+                                        b->resultType);
+        masm.jump(b->label);
+        masm.bind(&notTaken);
+        return;
+      }
     }
 
-    pushJoinRegUnlessVoid(r);
+    branchTo(b->invertBranch ? Assembler::InvertCondition(cond) : cond, lhs,
+             rhs, b->label);
   }
 
   // sniffConditionalControl{Cmp,Eqz} may modify the latentWhatever_ state in
@@ -6721,8 +7228,23 @@ class BaseCompiler final : public BaseCompilerInterface {
   MOZ_MUST_USE bool emitBrTable();
   MOZ_MUST_USE bool emitDrop();
   MOZ_MUST_USE bool emitReturn();
+
+  enum class CalleeOnStack {
+    // After the arguments to the call, there is a callee pushed onto value
+    // stack.  This is only the case for callIndirect.  To get the arguments to
+    // the call, emitCallArgs has to reach one element deeper into the value
+    // stack, to skip the callee.
+    True,
+
+    // No callee on the stack.
+    False
+  };
+
   MOZ_MUST_USE bool emitCallArgs(const ValTypeVector& args,
-                                 FunctionCall* baselineCall);
+                                 const StackResultsLoc& results,
+                                 FunctionCall* baselineCall,
+                                 CalleeOnStack calleeOnStack);
+
   MOZ_MUST_USE bool emitCall();
   MOZ_MUST_USE bool emitCallIndirect();
   MOZ_MUST_USE bool emitUnaryMathBuiltinCall(SymbolicAddress callee,
@@ -6736,22 +7258,27 @@ class BaseCompiler final : public BaseCompilerInterface {
   MOZ_MUST_USE RegI32 maybeLoadTlsForAccess(const AccessCheck& check,
                                             RegI32 specific);
   MOZ_MUST_USE bool emitLoad(ValType type, Scalar::Type viewType);
-  MOZ_MUST_USE bool loadCommon(MemoryAccessDesc* access, ValType type);
+  MOZ_MUST_USE bool loadCommon(MemoryAccessDesc* access, AccessCheck check,
+                               ValType type);
   MOZ_MUST_USE bool emitStore(ValType resultType, Scalar::Type viewType);
-  MOZ_MUST_USE bool storeCommon(MemoryAccessDesc* access, ValType resultType);
+  MOZ_MUST_USE bool storeCommon(MemoryAccessDesc* access, AccessCheck check,
+                                ValType resultType);
   MOZ_MUST_USE bool emitSelect(bool typed);
 
   template <bool isSetLocal>
   MOZ_MUST_USE bool emitSetOrTeeLocal(uint32_t slot);
 
   void endBlock(ResultType type);
-  void endLoop(ResultType type);
-  void endIfThen();
+  void endIfThen(ResultType type);
   void endIfThenElse(ResultType type);
 
-  void doReturn(bool popStack);
-  void pushReturnValueOfCall(const FunctionCall& call, ValType type);
+  void doReturn(ContinuationKind kind);
   void pushReturnValueOfCall(const FunctionCall& call, MIRType type);
+
+  bool pushStackResultsForCall(const ResultType& type, RegPtr temp,
+                               StackResultsLoc* loc);
+  void popStackResultsAfterCall(const StackResultsLoc& results,
+                                uint32_t stackArgBytes);
 
   void emitCompareI32(Assembler::Condition compareOp, ValType compareType);
   void emitCompareI64(Assembler::Condition compareOp, ValType compareType);
@@ -6888,9 +7415,14 @@ class BaseCompiler final : public BaseCompilerInterface {
   MOZ_MUST_USE bool emitAtomicXchg(ValType type, Scalar::Type viewType);
   void emitAtomicXchg64(MemoryAccessDesc* access, WantResult wantResult);
   MOZ_MUST_USE bool bulkmemOpsEnabled();
-  MOZ_MUST_USE bool emitMemOrTableCopy(bool isMem);
+  MOZ_MUST_USE bool emitMemCopy();
+  MOZ_MUST_USE bool emitMemCopyCall(uint32_t lineOrBytecode);
+  MOZ_MUST_USE bool emitMemCopyInline();
+  MOZ_MUST_USE bool emitTableCopy();
   MOZ_MUST_USE bool emitDataOrElemDrop(bool isData);
   MOZ_MUST_USE bool emitMemFill();
+  MOZ_MUST_USE bool emitMemFillCall(uint32_t lineOrBytecode);
+  MOZ_MUST_USE bool emitMemFillInline();
   MOZ_MUST_USE bool emitMemOrTableInit(bool isMem);
 #ifdef ENABLE_WASM_REFTYPES
   MOZ_MUST_USE bool emitTableFill();
@@ -8020,7 +8552,10 @@ bool BaseCompiler::sniffConditionalControlEqz(ValType operandType) {
 }
 
 void BaseCompiler::emitBranchSetup(BranchState* b) {
-  maybeReserveJoinReg(b->resultType);
+  // Avoid allocating operands to latentOp_ to result registers.
+  if (b->hasBlockResults()) {
+    needResultRegisters(b->resultType);
+  }
 
   // Set up fields so that emitBranchPerform() need not switch on latentOp_.
   switch (latentOp_) {
@@ -8033,7 +8568,7 @@ void BaseCompiler::emitBranchSetup(BranchState* b) {
       break;
     }
     case LatentOp::Compare: {
-      switch (latentType_.code()) {
+      switch (latentType_.kind()) {
         case ValType::I32: {
           if (popConstI32(&b->i32.imm)) {
             b->i32.lhs = popI32();
@@ -8064,7 +8599,7 @@ void BaseCompiler::emitBranchSetup(BranchState* b) {
       break;
     }
     case LatentOp::Eqz: {
-      switch (latentType_.code()) {
+      switch (latentType_.kind()) {
         case ValType::I32: {
           latentIntCmp_ = Assembler::Equal;
           b->i32.lhs = popI32();
@@ -8087,17 +8622,19 @@ void BaseCompiler::emitBranchSetup(BranchState* b) {
     }
   }
 
-  maybeUnreserveJoinReg(b->resultType);
+  if (b->hasBlockResults()) {
+    freeResultRegisters(b->resultType);
+  }
 }
 
 void BaseCompiler::emitBranchPerform(BranchState* b) {
-  switch (latentType_.code()) {
+  switch (latentType_.kind()) {
     case ValType::I32: {
       if (b->i32.rhsImm) {
-        jumpConditionalWithJoinReg(b, latentIntCmp_, b->i32.lhs,
+        jumpConditionalWithResults(b, latentIntCmp_, b->i32.lhs,
                                    Imm32(b->i32.imm));
       } else {
-        jumpConditionalWithJoinReg(b, latentIntCmp_, b->i32.lhs, b->i32.rhs);
+        jumpConditionalWithResults(b, latentIntCmp_, b->i32.lhs, b->i32.rhs);
         freeI32(b->i32.rhs);
       }
       freeI32(b->i32.lhs);
@@ -8105,23 +8642,23 @@ void BaseCompiler::emitBranchPerform(BranchState* b) {
     }
     case ValType::I64: {
       if (b->i64.rhsImm) {
-        jumpConditionalWithJoinReg(b, latentIntCmp_, b->i64.lhs,
+        jumpConditionalWithResults(b, latentIntCmp_, b->i64.lhs,
                                    Imm64(b->i64.imm));
       } else {
-        jumpConditionalWithJoinReg(b, latentIntCmp_, b->i64.lhs, b->i64.rhs);
+        jumpConditionalWithResults(b, latentIntCmp_, b->i64.lhs, b->i64.rhs);
         freeI64(b->i64.rhs);
       }
       freeI64(b->i64.lhs);
       break;
     }
     case ValType::F32: {
-      jumpConditionalWithJoinReg(b, latentDoubleCmp_, b->f32.lhs, b->f32.rhs);
+      jumpConditionalWithResults(b, latentDoubleCmp_, b->f32.lhs, b->f32.rhs);
       freeF32(b->f32.lhs);
       freeF32(b->f32.rhs);
       break;
     }
     case ValType::F64: {
-      jumpConditionalWithJoinReg(b, latentDoubleCmp_, b->f64.lhs, b->f64.rhs);
+      jumpConditionalWithResults(b, latentDoubleCmp_, b->f64.lhs, b->f64.rhs);
       freeF64(b->f64.lhs);
       freeF64(b->f64.rhs);
       break;
@@ -8147,7 +8684,8 @@ void BaseCompiler::emitBranchPerform(BranchState* b) {
 //  - The exit value is always in a designated join register (type dependent).
 
 bool BaseCompiler::emitBlock() {
-  if (!iter_.readBlock()) {
+  ResultType params;
+  if (!iter_.readBlock(&params)) {
     return false;
   }
 
@@ -8155,7 +8693,7 @@ bool BaseCompiler::emitBlock() {
     sync();  // Simplifies branching out from block
   }
 
-  initControl(controlItem());
+  initControl(controlItem(), params);
 
   return true;
 }
@@ -8163,38 +8701,37 @@ bool BaseCompiler::emitBlock() {
 void BaseCompiler::endBlock(ResultType type) {
   Control& block = controlItem();
 
-  // Save the value.
-  Maybe<AnyReg> r;
-  if (!deadCode_) {
-    r = popJoinRegUnlessVoid(type);
+  if (deadCode_) {
+    // Block does not fall through; reset stack.
+    fr.resetStackHeight(block.stackHeight, type);
+    popValueStackTo(block.stackSize);
+  } else {
+    // If the block label is used, we have a control join, so we need to shuffle
+    // fallthrough values into place.  Otherwise if it's not a control join, we
+    // can leave the value stack alone.
+    MOZ_ASSERT(stk_.length() == block.stackSize + type.length());
+    if (block.label.used()) {
+      popBlockResults(type, block.stackHeight, ContinuationKind::Fallthrough);
+    }
     block.bceSafeOnExit &= bceSafe_;
   }
-
-  // Leave the block.
-  fr.popStackOnBlockExit(block.stackHeight, deadCode_);
-  popValueStackTo(block.stackSize);
 
   // Bind after cleanup: branches out will have popped the stack.
   if (block.label.used()) {
     masm.bind(&block.label);
-    // No value was provided by the fallthrough but the branch out will
-    // have stored one in joinReg, so capture that.
     if (deadCode_) {
-      r = captureJoinRegUnlessVoid(type);
+      captureResultRegisters(type);
+      deadCode_ = false;
     }
-    deadCode_ = false;
+    pushBlockResults(type);
   }
 
   bceSafe_ = block.bceSafeOnExit;
-
-  // Retain the value stored in joinReg by all paths, if there are any.
-  if (!deadCode_) {
-    pushJoinRegUnlessVoid(r);
-  }
 }
 
 bool BaseCompiler::emitLoop() {
-  if (!iter_.readLoop()) {
+  ResultType params;
+  if (!iter_.readLoop(&params)) {
     return false;
   }
 
@@ -8202,12 +8739,17 @@ bool BaseCompiler::emitLoop() {
     sync();  // Simplifies branching out from block
   }
 
-  initControl(controlItem());
+  initControl(controlItem(), params);
   bceSafe_ = 0;
 
   if (!deadCode_) {
+    // Loop entry is a control join, so shuffle the entry parameters into the
+    // well-known locations.
+    topBlockResults(params);
     masm.nopAlign(CodeAlignment);
     masm.bind(&controlItem(0).label);
+    // The interrupt check barfs if there are live registers.
+    sync();
     if (!addInterruptCheck()) {
       return false;
     }
@@ -8231,33 +8773,57 @@ bool BaseCompiler::emitLoop() {
 // evaluated.
 
 bool BaseCompiler::emitIf() {
+  ResultType params;
   Nothing unused_cond;
-  if (!iter_.readIf(&unused_cond)) {
+  if (!iter_.readIf(&params, &unused_cond)) {
     return false;
   }
 
   BranchState b(&controlItem().otherLabel, InvertBranch(true));
   if (!deadCode_) {
+    needResultRegisters(params);
     emitBranchSetup(&b);
+    freeResultRegisters(params);
     sync();
   } else {
     resetLatentOp();
   }
 
-  initControl(controlItem());
+  initControl(controlItem(), params);
 
   if (!deadCode_) {
+    // Because params can flow immediately to results in the case of an empty
+    // "then" or "else" block, and the result of an if/then is a join in
+    // general, we shuffle params eagerly to the result allocations.
+    topBlockResults(params);
     emitBranchPerform(&b);
   }
 
   return true;
 }
 
-void BaseCompiler::endIfThen() {
+void BaseCompiler::endIfThen(ResultType type) {
   Control& ifThen = controlItem();
 
-  fr.popStackOnBlockExit(ifThen.stackHeight, deadCode_);
-  popValueStackTo(ifThen.stackSize);
+  // The parameters to the "if" logically flow to both the "then" and "else"
+  // blocks, but the "else" block is empty.  Since we know that the "if"
+  // type-checks, that means that the "else" parameters are the "else" results,
+  // and that the "if"'s result type is the same as its parameter type.
+
+  if (deadCode_) {
+    // "then" arm does not fall through; reset stack.
+    fr.resetStackHeight(ifThen.stackHeight, type);
+    popValueStackTo(ifThen.stackSize);
+    if (!ifThen.deadOnArrival) {
+      captureResultRegisters(type);
+    }
+  } else {
+    MOZ_ASSERT(stk_.length() == ifThen.stackSize + type.length());
+    // Assume we have a control join, so place results in block result
+    // allocations.
+    popBlockResults(type, ifThen.stackHeight, ContinuationKind::Fallthrough);
+    MOZ_ASSERT(!ifThen.deadOnArrival);
+  }
 
   if (ifThen.otherLabel.used()) {
     masm.bind(&ifThen.otherLabel);
@@ -8272,15 +8838,18 @@ void BaseCompiler::endIfThen() {
   }
 
   deadCode_ = ifThen.deadOnArrival;
+  if (!deadCode_) {
+    pushBlockResults(type);
+  }
 
   bceSafe_ = ifThen.bceSafeOnExit & ifThen.bceSafeOnEntry;
 }
 
 bool BaseCompiler::emitElse() {
-  ResultType thenType;
+  ResultType params, results;
   NothingVector unused_thenValues;
 
-  if (!iter_.readElse(&thenType, &unused_thenValues)) {
+  if (!iter_.readElse(&params, &results, &unused_thenValues)) {
     return false;
   }
 
@@ -8292,13 +8861,15 @@ bool BaseCompiler::emitElse() {
 
   ifThenElse.deadThenBranch = deadCode_;
 
-  Maybe<AnyReg> r;
-  if (!deadCode_) {
-    r = popJoinRegUnlessVoid(thenType);
+  if (deadCode_) {
+    fr.resetStackHeight(ifThenElse.stackHeight, results);
+    popValueStackTo(ifThenElse.stackSize);
+  } else {
+    MOZ_ASSERT(stk_.length() == ifThenElse.stackSize + results.length());
+    popBlockResults(results, ifThenElse.stackHeight, ContinuationKind::Jump);
+    freeResultRegisters(results);
+    MOZ_ASSERT(!ifThenElse.deadOnArrival);
   }
-
-  fr.popStackOnBlockExit(ifThenElse.stackHeight, deadCode_);
-  popValueStackTo(ifThenElse.stackSize);
 
   if (!deadCode_) {
     masm.jump(&ifThenElse.label);
@@ -8311,12 +8882,18 @@ bool BaseCompiler::emitElse() {
   // Reset to the "else" branch.
 
   if (!deadCode_) {
-    freeJoinRegUnlessVoid(r);
     ifThenElse.bceSafeOnExit &= bceSafe_;
   }
 
   deadCode_ = ifThenElse.deadOnArrival;
   bceSafe_ = ifThenElse.bceSafeOnEntry;
+
+  fr.resetStackHeight(ifThenElse.stackHeight, params);
+
+  if (!deadCode_) {
+    captureResultRegisters(params);
+    pushBlockResults(params);
+  }
 
   return true;
 }
@@ -8330,14 +8907,19 @@ void BaseCompiler::endIfThenElse(ResultType type) {
   // full expression is I32.  So restore whatever's there, not what
   // we want to find there.  The "then" arm has the same constraint.
 
-  Maybe<AnyReg> r;
-  if (!deadCode_) {
-    r = popJoinRegUnlessVoid(type);
+  if (deadCode_) {
+    // "then" arm does not fall through; reset stack.
+    fr.resetStackHeight(ifThenElse.stackHeight, type);
+    popValueStackTo(ifThenElse.stackSize);
+  } else {
+    MOZ_ASSERT(stk_.length() == ifThenElse.stackSize + type.length());
+    // Assume we have a control join, so place results in block result
+    // allocations.
+    popBlockResults(type, ifThenElse.stackHeight,
+                    ContinuationKind::Fallthrough);
     ifThenElse.bceSafeOnExit &= bceSafe_;
+    MOZ_ASSERT(!ifThenElse.deadOnArrival);
   }
-
-  fr.popStackOnBlockExit(ifThenElse.stackHeight, deadCode_);
-  popValueStackTo(ifThenElse.stackSize);
 
   if (ifThenElse.label.used()) {
     masm.bind(&ifThenElse.label);
@@ -8348,10 +8930,10 @@ void BaseCompiler::endIfThenElse(ResultType type) {
       (!ifThenElse.deadThenBranch || !deadCode_ || ifThenElse.label.bound());
 
   if (joinLive) {
-    // No value was provided by the "then" path but capture the one
+    // No values were provided by the "then" path, but capture the values
     // provided by the "else" path.
     if (deadCode_) {
-      r = captureJoinRegUnlessVoid(type);
+      captureResultRegisters(type);
     }
     deadCode_ = false;
   }
@@ -8359,7 +8941,7 @@ void BaseCompiler::endIfThenElse(ResultType type) {
   bceSafe_ = ifThenElse.bceSafeOnExit;
 
   if (!deadCode_) {
-    pushJoinRegUnlessVoid(r);
+    pushBlockResults(type);
   }
 }
 
@@ -8367,26 +8949,26 @@ bool BaseCompiler::emitEnd() {
   LabelKind kind;
   ResultType type;
   NothingVector unused_values;
-  if (!iter_.readEnd(&kind, &type, &unused_values)) {
+  if (!iter_.readEnd(&kind, &type, &unused_values, &unused_values)) {
     return false;
   }
 
   switch (kind) {
     case LabelKind::Body:
       endBlock(type);
+      doReturn(ContinuationKind::Fallthrough);
       iter_.popEnd();
       MOZ_ASSERT(iter_.controlStackEmpty());
-      doReturn(PopStack(false));
       return iter_.readFunctionEnd(iter_.end());
     case LabelKind::Block:
       endBlock(type);
       break;
     case LabelKind::Loop:
       // The end of a loop isn't a branch target, so we can just leave its
-      // results on the stack to be consumed by the outer block.
+      // results on the expression stack to be consumed by the outer block.
       break;
     case LabelKind::Then:
-      endIfThen();
+      endIfThen(type);
       break;
     case LabelKind::Else:
       endIfThenElse(type);
@@ -8413,18 +8995,16 @@ bool BaseCompiler::emitBr() {
   Control& target = controlItem(relativeDepth);
   target.bceSafeOnExit &= bceSafe_;
 
-  // Save any value in the designated join register, where the
-  // normal block exit code will also leave it.
+  // Save any values in the designated join registers, as if the target block
+  // returned normally.
 
-  Maybe<AnyReg> r = popJoinRegUnlessVoid(type);
-
-  fr.popStackBeforeBranch(target.stackHeight);
+  popBlockResults(type, target.stackHeight, ContinuationKind::Jump);
   masm.jump(&target.label);
 
-  // The register holding the join value is free for the remainder
-  // of this block.
+  // The registers holding the join values are free for the remainder of this
+  // block.
 
-  freeJoinRegUnlessVoid(r);
+  freeResultRegisters(type);
 
   deadCode_ = true;
 
@@ -8459,16 +9039,16 @@ bool BaseCompiler::emitBrIf() {
 bool BaseCompiler::emitBrTable() {
   Uint32Vector depths;
   uint32_t defaultDepth;
-  ResultType type;
+  ResultType branchParams;
   NothingVector unused_values;
   Nothing unused_index;
-  // N.B., `type' gets set to the type of the default branch target.  In the
-  // presence of subtyping, it could be that the different branch targets have
-  // different types.  Here we rely on the assumption that the value
+  // N.B., `branchParams' gets set to the type of the default branch target.  In
+  // the presence of subtyping, it could be that the different branch targets
+  // have different types.  Here we rely on the assumption that the value
   // representations (e.g. Stk value types) of all branch target types are the
   // same, in the baseline compiler.  Notably, this means that all Ref types
   // should be represented the same.
-  if (!iter_.readBrTable(&depths, &defaultDepth, &type, &unused_values,
+  if (!iter_.readBrTable(&depths, &defaultDepth, &branchParams, &unused_values,
                          &unused_index)) {
     return false;
   }
@@ -8477,22 +9057,23 @@ bool BaseCompiler::emitBrTable() {
     return true;
   }
 
-  // Don't use joinReg for rc
-  maybeReserveJoinRegI(type);
+  // Don't use param registers for rc
+  needIntegerResultRegisters(branchParams);
 
   // Table switch value always on top.
   RegI32 rc = popI32();
 
-  maybeUnreserveJoinRegI(type);
+  freeIntegerResultRegisters(branchParams);
 
-  Maybe<AnyReg> r = popJoinRegUnlessVoid(type);
+  StackHeight resultsBase = topBlockResults(branchParams);
 
   Label dispatchCode;
   masm.branch32(Assembler::Below, rc, Imm32(depths.length()), &dispatchCode);
 
   // This is the out-of-range stub.  rc is dead here but we don't need it.
 
-  fr.popStackBeforeBranch(controlItem(defaultDepth).stackHeight);
+  shuffleStackResultsBeforeBranch(
+      resultsBase, controlItem(defaultDepth).stackHeight, branchParams);
   controlItem(defaultDepth).bceSafeOnExit &= bceSafe_;
   masm.jump(&controlItem(defaultDepth).label);
 
@@ -8512,7 +9093,8 @@ bool BaseCompiler::emitBrTable() {
   for (uint32_t depth : depths) {
     stubs.infallibleEmplaceBack(NonAssertingLabel());
     masm.bind(&stubs.back());
-    fr.popStackBeforeBranch(controlItem(depth).stackHeight);
+    shuffleStackResultsBeforeBranch(resultsBase, controlItem(depth).stackHeight,
+                                    branchParams);
     controlItem(depth).bceSafeOnExit &= bceSafe_;
     masm.jump(&controlItem(depth).label);
   }
@@ -8531,7 +9113,7 @@ bool BaseCompiler::emitBrTable() {
   // Clean up.
 
   freeI32(rc);
-  freeJoinRegUnlessVoid(r);
+  popValueStackBy(branchParams.length());
 
   return true;
 }
@@ -8549,53 +9131,16 @@ bool BaseCompiler::emitDrop() {
   return true;
 }
 
-void BaseCompiler::doReturn(bool popStack) {
+void BaseCompiler::doReturn(ContinuationKind kind) {
   if (deadCode_) {
     return;
   }
-  Maybe<ValType> type = funcType().ret();
-  if (!type) {
-    returnCleanup(popStack);
-    return;
-  }
-  switch (type.ref().code()) {
-    case ValType::I32: {
-      RegI32 rv = popI32(RegI32(ReturnReg));
-      returnCleanup(popStack);
-      freeI32(rv);
-      break;
-    }
-    case ValType::I64: {
-      RegI64 rv = popI64(RegI64(ReturnReg64));
-      returnCleanup(popStack);
-      freeI64(rv);
-      break;
-    }
-    case ValType::F64: {
-      RegF64 rv = popF64(RegF64(ReturnDoubleReg));
-      returnCleanup(popStack);
-      freeF64(rv);
-      break;
-    }
-    case ValType::F32: {
-      RegF32 rv = popF32(RegF32(ReturnFloat32Reg));
-      returnCleanup(popStack);
-      freeF32(rv);
-      break;
-    }
-    case ValType::Ref:
-    case ValType::NullRef:
-    case ValType::FuncRef:
-    case ValType::AnyRef: {
-      RegPtr rv = popRef(RegPtr(ReturnReg));
-      returnCleanup(popStack);
-      freeRef(rv);
-      break;
-    }
-    default: {
-      MOZ_CRASH("Function return type");
-    }
-  }
+
+  StackHeight height = controlOutermost().stackHeight;
+  ResultType type = ResultType::Vector(funcType().results());
+  popBlockResults(type, height, kind);
+  masm.jump(&returnLabel_);
+  freeResultRegisters(type);
 }
 
 bool BaseCompiler::emitReturn() {
@@ -8608,21 +9153,47 @@ bool BaseCompiler::emitReturn() {
     return true;
   }
 
-  doReturn(PopStack(true));
+  doReturn(ContinuationKind::Jump);
   deadCode_ = true;
 
   return true;
 }
 
 bool BaseCompiler::emitCallArgs(const ValTypeVector& argTypes,
-                                FunctionCall* baselineCall) {
+                                const StackResultsLoc& results,
+                                FunctionCall* baselineCall,
+                                CalleeOnStack calleeOnStack) {
   MOZ_ASSERT(!deadCode_);
 
-  startCallArgs(StackArgAreaSizeUnaligned(argTypes), baselineCall);
+  ArgTypeVector args(argTypes, results.stackResults());
+  uint32_t naturalArgCount = argTypes.length();
+  uint32_t abiArgCount = args.length();
+  startCallArgs(StackArgAreaSizeUnaligned(args), baselineCall);
 
-  uint32_t numArgs = argTypes.length();
-  for (size_t i = 0; i < numArgs; ++i) {
-    passArg(argTypes[i], peek(numArgs - 1 - i), baselineCall);
+  // Args are deeper on the stack than the stack result area, if any.
+  size_t argsDepth = results.count();
+  // They're deeper than the callee too, for callIndirect.
+  if (calleeOnStack == CalleeOnStack::True) {
+    argsDepth++;
+  }
+
+  for (size_t i = 0; i < abiArgCount; ++i) {
+    if (args.isNaturalArg(i)) {
+      size_t naturalIndex = args.naturalIndex(i);
+      size_t stackIndex = naturalArgCount - 1 - naturalIndex + argsDepth;
+      passArg(argTypes[naturalIndex], peek(stackIndex), baselineCall);
+    } else {
+      // The synthetic stack result area pointer.
+      ABIArg argLoc = baselineCall->abi.next(MIRType::Pointer);
+      if (argLoc.kind() == ABIArg::Stack) {
+        ScratchPtr scratch(*this);
+        fr.computeOutgoingStackResultAreaPtr(results, scratch);
+        masm.storePtr(scratch, Address(masm.getStackPointer(),
+                                       argLoc.offsetFromArgBase()));
+      } else {
+        fr.computeOutgoingStackResultAreaPtr(results, RegPtr(argLoc.gpr()));
+      }
+    }
   }
 
   masm.loadWasmTlsRegFromFrame();
@@ -8664,10 +9235,71 @@ void BaseCompiler::pushReturnValueOfCall(const FunctionCall& call,
   }
 }
 
-void BaseCompiler::pushReturnValueOfCall(const FunctionCall& call,
-                                         ValType type) {
-  MOZ_ASSERT(type.code() != ValType::NullRef);
-  pushReturnValueOfCall(call, ToMIRType(type));
+bool BaseCompiler::pushStackResultsForCall(const ResultType& type, RegPtr temp,
+                                           StackResultsLoc* loc) {
+  if (!ABIResultIter::HasStackResults(type)) {
+    return true;
+  }
+
+  // This method is the only one in the class that can increase stk_.length() by
+  // an unbounded amount, so it's the only one that requires an allocation.
+  // (The general case is handled in emitBody.)
+  if (!stk_.reserve(stk_.length() + type.length())) {
+    return false;
+  }
+
+  // Measure stack results.
+  ABIResultIter i(type);
+  size_t count = 0;
+  for (; !i.done(); i.next()) {
+    if (i.cur().onStack()) {
+      count++;
+    }
+  }
+  uint32_t bytes = i.stackBytesConsumedSoFar();
+
+  // Reserve space for the stack results.
+  uint32_t height = fr.prepareStackResultArea(fr.stackHeight(), bytes);
+
+  // Push Stk values onto the value stack, and zero out Ref values.
+  for (i.switchToPrev(); !i.done(); i.prev()) {
+    const ABIResult& result = i.cur();
+    if (result.onStack()) {
+      Stk v = captureStackResult(result, bytes);
+      push(v);
+      if (v.kind() == Stk::MemRef) {
+        stackMapGenerator_.memRefsOnStk++;
+        if (sizeof(intptr_t) == sizeof(int32_t)) {
+          fr.storeImmediateToStack(int32_t(0), v.offs(), temp);
+        } else {
+          fr.storeImmediateToStack(int64_t(0), v.offs(), temp);
+        }
+      }
+    }
+  }
+
+  *loc = StackResultsLoc(bytes, count, height);
+
+  return true;
+}
+
+// After a call, some results may be written to the stack result locations that
+// are pushed on the machine stack after any stack args.  If there are stack
+// args and stack results, these results need to be shuffled down, as the args
+// are "consumed" by the call.
+void BaseCompiler::popStackResultsAfterCall(const StackResultsLoc& results,
+                                            uint32_t stackArgBytes) {
+  if (results.bytes() != 0) {
+    popValueStackBy(results.count());
+    if (stackArgBytes != 0) {
+      uint32_t srcHeight = results.height();
+      MOZ_ASSERT(srcHeight >= stackArgBytes + results.bytes());
+      uint32_t destHeight = srcHeight - stackArgBytes;
+
+      fr.shuffleStackResultsTowardFP(srcHeight, destHeight, results.bytes(),
+                                     ABINonArgReturnVolatileReg);
+    }
+  }
 }
 
 // For now, always sync() at the beginning of the call to easily save live
@@ -8702,13 +9334,20 @@ bool BaseCompiler::emitCall() {
   bool import = env_.funcIsImport(funcIndex);
 
   uint32_t numArgs = funcType.args().length();
-  size_t stackSpace = stackConsumed(numArgs);
+  size_t stackArgBytes = stackConsumed(numArgs);
+
+  ResultType resultType(ResultType::Vector(funcType.results()));
+  StackResultsLoc results;
+  if (!pushStackResultsForCall(resultType, RegPtr(ABINonArgReg0), &results)) {
+    return false;
+  }
 
   FunctionCall baselineCall(lineOrBytecode);
   beginCall(baselineCall, UseABI::Wasm,
             import ? InterModule::True : InterModule::False);
 
-  if (!emitCallArgs(funcType.args(), &baselineCall)) {
+  if (!emitCallArgs(funcType.args(), results, &baselineCall,
+                    CalleeOnStack::False)) {
     return false;
   }
 
@@ -8724,13 +9363,14 @@ bool BaseCompiler::emitCall() {
     return false;
   }
 
-  endCall(baselineCall, stackSpace);
+  popStackResultsAfterCall(results, stackArgBytes);
+
+  endCall(baselineCall, stackArgBytes);
 
   popValueStackBy(numArgs);
 
-  if (funcType.ret()) {
-    pushReturnValueOfCall(baselineCall, funcType.ret().ref());
-  }
+  captureResultRegisters(resultType);
+  pushBlockResults(resultType);
 
   return true;
 }
@@ -8756,35 +9396,38 @@ bool BaseCompiler::emitCallIndirect() {
 
   // Stack: ... arg1 .. argn callee
 
-  uint32_t numArgs = funcType.args().length();
-  size_t stackSpace = stackConsumed(numArgs + 1);
+  uint32_t numArgs = funcType.args().length() + 1;
+  size_t stackArgBytes = stackConsumed(numArgs);
 
-  // The arguments must be at the stack top for emitCallArgs, so pop the
-  // callee if it is on top.  Note this only pops the compiler's stack,
-  // not the CPU stack.
-
-  Stk callee = stk_.popCopy();
+  ResultType resultType(ResultType::Vector(funcType.results()));
+  StackResultsLoc results;
+  if (!pushStackResultsForCall(resultType, RegPtr(ABINonArgReg0), &results)) {
+    return false;
+  }
 
   FunctionCall baselineCall(lineOrBytecode);
   beginCall(baselineCall, UseABI::Wasm, InterModule::True);
 
-  if (!emitCallArgs(funcType.args(), &baselineCall)) {
+  if (!emitCallArgs(funcType.args(), results, &baselineCall,
+                    CalleeOnStack::True)) {
     return false;
   }
 
+  const Stk& callee = peek(results.count());
   CodeOffset raOffset =
       callIndirect(funcTypeIndex, tableIndex, callee, baselineCall);
   if (!createStackMap("emitCallIndirect", raOffset)) {
     return false;
   }
 
-  endCall(baselineCall, stackSpace);
+  popStackResultsAfterCall(results, stackArgBytes);
+
+  endCall(baselineCall, stackArgBytes);
 
   popValueStackBy(numArgs);
 
-  if (funcType.ret()) {
-    pushReturnValueOfCall(baselineCall, funcType.ret().ref());
-  }
+  captureResultRegisters(resultType);
+  pushBlockResults(resultType);
 
   return true;
 }
@@ -8829,11 +9472,13 @@ bool BaseCompiler::emitUnaryMathBuiltinCall(SymbolicAddress callee,
   ValType retType = operandType;
   uint32_t numArgs = signature.length();
   size_t stackSpace = stackConsumed(numArgs);
+  StackResultsLoc noStackResults;
 
   FunctionCall baselineCall(lineOrBytecode);
   beginCall(baselineCall, UseABI::Builtin, InterModule::False);
 
-  if (!emitCallArgs(signature, &baselineCall)) {
+  if (!emitCallArgs(signature, noStackResults, &baselineCall,
+                    CalleeOnStack::False)) {
     return false;
   }
 
@@ -8846,7 +9491,7 @@ bool BaseCompiler::emitUnaryMathBuiltinCall(SymbolicAddress callee,
 
   popValueStackBy(numArgs);
 
-  pushReturnValueOfCall(baselineCall, retType);
+  pushReturnValueOfCall(baselineCall, ToMIRType(retType));
 
   return true;
 }
@@ -9012,7 +9657,7 @@ bool BaseCompiler::emitGetLocal() {
   // until needed, until they may be affected by a store, or until a
   // sync.  This is intended to reduce register pressure.
 
-  switch (locals_[slot].code()) {
+  switch (locals_[slot].kind()) {
     case ValType::I32:
       pushLocalI32(slot);
       break;
@@ -9026,13 +9671,8 @@ bool BaseCompiler::emitGetLocal() {
       pushLocalF32(slot);
       break;
     case ValType::Ref:
-    case ValType::FuncRef:
-    case ValType::AnyRef:
       pushLocalRef(slot);
       break;
-    case ValType::NullRef:
-    default:
-      MOZ_CRASH("Local variable type");
   }
 
   return true;
@@ -9045,7 +9685,7 @@ bool BaseCompiler::emitSetOrTeeLocal(uint32_t slot) {
   }
 
   bceLocalIsUpdated(slot);
-  switch (locals_[slot].code()) {
+  switch (locals_[slot].kind()) {
     case ValType::I32: {
       RegI32 rv = popI32();
       syncLocal(slot);
@@ -9090,9 +9730,7 @@ bool BaseCompiler::emitSetOrTeeLocal(uint32_t slot) {
       }
       break;
     }
-    case ValType::Ref:
-    case ValType::FuncRef:
-    case ValType::AnyRef: {
+    case ValType::Ref: {
       RegPtr rv = popRef();
       syncLocal(slot);
       fr.storeLocalPtr(rv, localFromSlot(slot, MIRType::RefOrNull));
@@ -9103,9 +9741,6 @@ bool BaseCompiler::emitSetOrTeeLocal(uint32_t slot) {
       }
       break;
     }
-    case ValType::NullRef:
-    default:
-      MOZ_CRASH("Local variable type");
   }
 
   return true;
@@ -9143,7 +9778,7 @@ bool BaseCompiler::emitGetGlobal() {
 
   if (global.isConstant()) {
     LitVal value = global.constantValue();
-    switch (value.type().code()) {
+    switch (value.type().kind()) {
       case ValType::I32:
         pushI32(value.i32());
         break;
@@ -9157,19 +9792,15 @@ bool BaseCompiler::emitGetGlobal() {
         pushF64(value.f64());
         break;
       case ValType::Ref:
-      case ValType::FuncRef:
-      case ValType::AnyRef:
         pushRef(intptr_t(value.ref().forCompiledCode()));
         break;
-      case ValType::NullRef:
-        MOZ_CRASH("NullRef not expressible");
       default:
         MOZ_CRASH("Global constant type");
     }
     return true;
   }
 
-  switch (global.type().code()) {
+  switch (global.type().kind()) {
     case ValType::I32: {
       RegI32 rv = needI32();
       ScratchI32 tmp(*this);
@@ -9198,17 +9829,13 @@ bool BaseCompiler::emitGetGlobal() {
       pushF64(rv);
       break;
     }
-    case ValType::Ref:
-    case ValType::FuncRef:
-    case ValType::AnyRef: {
+    case ValType::Ref: {
       RegPtr rv = needRef();
       ScratchI32 tmp(*this);
       masm.loadPtr(addressOfGlobalVar(global, tmp), rv);
       pushRef(rv);
       break;
     }
-    case ValType::NullRef:
-      MOZ_CRASH("NullRef not expressible");
     default:
       MOZ_CRASH("Global variable type");
       break;
@@ -9229,7 +9856,7 @@ bool BaseCompiler::emitSetGlobal() {
 
   const GlobalDesc& global = env_.globals[id];
 
-  switch (global.type().code()) {
+  switch (global.type().kind()) {
     case ValType::I32: {
       RegI32 rv = popI32();
       ScratchI32 tmp(*this);
@@ -9258,9 +9885,7 @@ bool BaseCompiler::emitSetGlobal() {
       freeF64(rv);
       break;
     }
-    case ValType::Ref:
-    case ValType::FuncRef:
-    case ValType::AnyRef: {
+    case ValType::Ref: {
       RegPtr valueAddr(PreBarrierReg);
       needRef(valueAddr);
       {
@@ -9276,8 +9901,6 @@ bool BaseCompiler::emitSetGlobal() {
       freeRef(rv);
       break;
     }
-    case ValType::NullRef:
-      MOZ_CRASH("NullRef not expressible");
     default:
       MOZ_CRASH("Global variable type");
       break;
@@ -9389,6 +10012,26 @@ RegI32 BaseCompiler::popMemoryAccess(MemoryAccessDesc* access,
   return popI32();
 }
 
+void BaseCompiler::pushHeapBase() {
+#if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_ARM64) || \
+    defined(JS_CODEGEN_MIPS64)
+  RegI64 heapBase = needI64();
+  moveI64(RegI64(Register64(HeapReg)), heapBase);
+  pushI64(heapBase);
+#elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_MIPS32)
+  RegI32 heapBase = needI32();
+  moveI32(RegI32(HeapReg), heapBase);
+  pushI32(heapBase);
+#elif defined(JS_CODEGEN_X86)
+  RegI32 heapBase = needI32();
+  masm.loadWasmTlsRegFromFrame(heapBase);
+  masm.loadPtr(Address(heapBase, offsetof(TlsData, memoryBase)), heapBase);
+  pushI32(heapBase);
+#else
+  MOZ_CRASH("BaseCompiler platform hook: pushHeapBase");
+#endif
+}
+
 RegI32 BaseCompiler::maybeLoadTlsForAccess(const AccessCheck& check) {
   RegI32 tls;
   if (needTlsForAccess(check)) {
@@ -9407,13 +10050,12 @@ RegI32 BaseCompiler::maybeLoadTlsForAccess(const AccessCheck& check,
   return RegI32::Invalid();
 }
 
-bool BaseCompiler::loadCommon(MemoryAccessDesc* access, ValType type) {
-  AccessCheck check;
-
+bool BaseCompiler::loadCommon(MemoryAccessDesc* access, AccessCheck check,
+                              ValType type) {
   RegI32 tls, temp1, temp2, temp3;
   needLoadTemps(*access, &temp1, &temp2, &temp3);
 
-  switch (type.code()) {
+  switch (type.kind()) {
     case ValType::I32: {
       RegI32 rp = popMemoryAccess(access, &check);
 #ifdef JS_CODEGEN_ARM
@@ -9496,16 +10138,15 @@ bool BaseCompiler::emitLoad(ValType type, Scalar::Type viewType) {
   }
 
   MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset());
-  return loadCommon(&access, type);
+  return loadCommon(&access, AccessCheck(), type);
 }
 
-bool BaseCompiler::storeCommon(MemoryAccessDesc* access, ValType resultType) {
-  AccessCheck check;
-
+bool BaseCompiler::storeCommon(MemoryAccessDesc* access, AccessCheck check,
+                               ValType resultType) {
   RegI32 tls;
   RegI32 temp = needStoreTemp(*access, resultType);
 
-  switch (resultType.code()) {
+  switch (resultType.kind()) {
     case ValType::I32: {
       RegI32 rv = popI32();
       RegI32 rp = popMemoryAccess(access, &check);
@@ -9574,7 +10215,7 @@ bool BaseCompiler::emitStore(ValType resultType, Scalar::Type viewType) {
   }
 
   MemoryAccessDesc access(viewType, addr.align, addr.offset, bytecodeOffset());
-  return storeCommon(&access, resultType);
+  return storeCommon(&access, AccessCheck(), resultType);
 }
 
 bool BaseCompiler::emitSelect(bool typed) {
@@ -9598,7 +10239,7 @@ bool BaseCompiler::emitSelect(bool typed) {
   BranchState b(&done);
   emitBranchSetup(&b);
 
-  switch (NonBottomToValType(type).code()) {
+  switch (type.valType().kind()) {
     case ValType::I32: {
       RegI32 r, rs;
       pop2xI32(&r, &rs);
@@ -9666,10 +10307,7 @@ bool BaseCompiler::emitSelect(bool typed) {
       pushF64(r);
       break;
     }
-    case ValType::Ref:
-    case ValType::NullRef:
-    case ValType::FuncRef:
-    case ValType::AnyRef: {
+    case ValType::Ref: {
       RegPtr r, rs;
       pop2xRef(&r, &rs);
       emitBranchPerform(&b);
@@ -9808,7 +10446,7 @@ bool BaseCompiler::emitInstanceCall(uint32_t lineOrBytecode,
         t = ValType::I64;
         break;
       case MIRType::RefOrNull:
-        t = ValType::AnyRef;
+        t = RefType::any();
         break;
       case MIRType::Pointer:
         // Instance function args can now be uninterpreted pointers (eg, for
@@ -9988,7 +10626,7 @@ bool BaseCompiler::emitAtomicLoad(ValType type, Scalar::Type viewType) {
                           Synchronization::Load());
 
   if (Scalar::byteSize(viewType) <= sizeof(void*)) {
-    return loadCommon(&access, type);
+    return loadCommon(&access, AccessCheck(), type);
   }
 
   MOZ_ASSERT(type == ValType::I64 && Scalar::byteSize(viewType) == 8);
@@ -10105,7 +10743,7 @@ bool BaseCompiler::emitAtomicStore(ValType type, Scalar::Type viewType) {
                           Synchronization::Store());
 
   if (Scalar::byteSize(viewType) <= sizeof(void*)) {
-    return storeCommon(&access, type);
+    return storeCommon(&access, AccessCheck(), type);
   }
 
   MOZ_ASSERT(type == ValType::I64 && Scalar::byteSize(viewType) == 8);
@@ -10198,7 +10836,7 @@ bool BaseCompiler::emitWait(ValType type, uint32_t byteSize) {
     return true;
   }
 
-  switch (type.code()) {
+  switch (type.kind()) {
     case ValType::I32:
       if (!emitInstanceCall(lineOrBytecode, SASigWaitI32)) {
         return false;
@@ -10254,7 +10892,7 @@ bool BaseCompiler::bulkmemOpsEnabled() {
   return true;
 }
 
-bool BaseCompiler::emitMemOrTableCopy(bool isMem) {
+bool BaseCompiler::emitMemCopy() {
   if (!bulkmemOpsEnabled()) {
     return false;
   }
@@ -10264,7 +10902,7 @@ bool BaseCompiler::emitMemOrTableCopy(bool isMem) {
   uint32_t dstMemOrTableIndex = 0;
   uint32_t srcMemOrTableIndex = 0;
   Nothing nothing;
-  if (!iter_.readMemOrTableCopy(isMem, &dstMemOrTableIndex, &nothing,
+  if (!iter_.readMemOrTableCopy(true, &dstMemOrTableIndex, &nothing,
                                 &srcMemOrTableIndex, &nothing, &nothing)) {
     return false;
   }
@@ -10273,20 +10911,231 @@ bool BaseCompiler::emitMemOrTableCopy(bool isMem) {
     return true;
   }
 
-  if (isMem) {
-    MOZ_ASSERT(srcMemOrTableIndex == 0);
-    MOZ_ASSERT(dstMemOrTableIndex == 0);
-    if (!emitInstanceCall(lineOrBytecode, SASigMemCopy,
-                          /*pushReturnedValue=*/false)) {
+  int32_t signedLength;
+  if (MacroAssembler::SupportsFastUnalignedAccesses() &&
+      peekConstI32(&signedLength) && signedLength != 0 &&
+      uint32_t(signedLength) <= MaxInlineMemoryCopyLength) {
+    return emitMemCopyInline();
+  }
+
+  return emitMemCopyCall(lineOrBytecode);
+}
+
+bool BaseCompiler::emitMemCopyCall(uint32_t lineOrBytecode) {
+  pushHeapBase();
+  if (!emitInstanceCall(lineOrBytecode,
+                        usesSharedMemory() ? SASigMemCopyShared : SASigMemCopy,
+                        /*pushReturnedValue=*/false)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool BaseCompiler::emitMemCopyInline() {
+  MOZ_ASSERT(MaxInlineMemoryCopyLength != 0);
+
+  int32_t signedLength;
+  MOZ_ALWAYS_TRUE(popConstI32(&signedLength));
+  uint32_t length = signedLength;
+  MOZ_ASSERT(length != 0 && length <= MaxInlineMemoryCopyLength);
+
+  RegI32 src = popI32();
+  RegI32 dest = popI32();
+
+  // Compute the number of copies of each width we will need to do
+  size_t remainder = length;
+#ifdef JS_64BIT
+  size_t numCopies8 = remainder / sizeof(uint64_t);
+  remainder %= sizeof(uint64_t);
+#endif
+  size_t numCopies4 = remainder / sizeof(uint32_t);
+  remainder %= sizeof(uint32_t);
+  size_t numCopies2 = remainder / sizeof(uint16_t);
+  remainder %= sizeof(uint16_t);
+  size_t numCopies1 = remainder;
+
+  // Load all source bytes onto the value stack from low to high using the
+  // widest transfer width we can for the system. We will trap without writing
+  // anything if any source byte is out-of-bounds.
+  bool omitBoundsCheck = false;
+  size_t offset = 0;
+
+#ifdef JS_64BIT
+  for (uint32_t i = 0; i < numCopies8; i++) {
+    RegI32 temp = needI32();
+    moveI32(src, temp);
+    pushI32(temp);
+
+    MemoryAccessDesc access(Scalar::Int64, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    check.omitBoundsCheck = omitBoundsCheck;
+    if (!loadCommon(&access, check, ValType::I64)) {
       return false;
     }
-  } else {
-    pushI32(dstMemOrTableIndex);
-    pushI32(srcMemOrTableIndex);
-    if (!emitInstanceCall(lineOrBytecode, SASigTableCopy,
-                          /*pushReturnedValue=*/false)) {
+
+    offset += sizeof(uint64_t);
+    omitBoundsCheck = true;
+  }
+#endif
+
+  for (uint32_t i = 0; i < numCopies4; i++) {
+    RegI32 temp = needI32();
+    moveI32(src, temp);
+    pushI32(temp);
+
+    MemoryAccessDesc access(Scalar::Uint32, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    check.omitBoundsCheck = omitBoundsCheck;
+    if (!loadCommon(&access, check, ValType::I32)) {
       return false;
     }
+
+    offset += sizeof(uint32_t);
+    omitBoundsCheck = true;
+  }
+
+  if (numCopies2) {
+    RegI32 temp = needI32();
+    moveI32(src, temp);
+    pushI32(temp);
+
+    MemoryAccessDesc access(Scalar::Uint16, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    check.omitBoundsCheck = omitBoundsCheck;
+    if (!loadCommon(&access, check, ValType::I32)) {
+      return false;
+    }
+
+    offset += sizeof(uint16_t);
+    omitBoundsCheck = true;
+  }
+
+  if (numCopies1) {
+    RegI32 temp = needI32();
+    moveI32(src, temp);
+    pushI32(temp);
+
+    MemoryAccessDesc access(Scalar::Uint8, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    check.omitBoundsCheck = omitBoundsCheck;
+    if (!loadCommon(&access, check, ValType::I32)) {
+      return false;
+    }
+  }
+
+  // Store all source bytes from the value stack to the destination from
+  // high to low. We will trap without writing anything on the first store
+  // if any dest byte is out-of-bounds.
+  offset = length;
+  omitBoundsCheck = false;
+
+  if (numCopies1) {
+    offset -= sizeof(uint8_t);
+
+    RegI32 value = popI32();
+    RegI32 temp = needI32();
+    moveI32(dest, temp);
+    pushI32(temp);
+    pushI32(value);
+
+    MemoryAccessDesc access(Scalar::Uint8, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    if (!storeCommon(&access, check, ValType::I32)) {
+      return false;
+    }
+
+    omitBoundsCheck = true;
+  }
+
+  if (numCopies2) {
+    offset -= sizeof(uint16_t);
+
+    RegI32 value = popI32();
+    RegI32 temp = needI32();
+    moveI32(dest, temp);
+    pushI32(temp);
+    pushI32(value);
+
+    MemoryAccessDesc access(Scalar::Uint16, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    check.omitBoundsCheck = omitBoundsCheck;
+    if (!storeCommon(&access, check, ValType::I32)) {
+      return false;
+    }
+
+    omitBoundsCheck = true;
+  }
+
+  for (uint32_t i = 0; i < numCopies4; i++) {
+    offset -= sizeof(uint32_t);
+
+    RegI32 value = popI32();
+    RegI32 temp = needI32();
+    moveI32(dest, temp);
+    pushI32(temp);
+    pushI32(value);
+
+    MemoryAccessDesc access(Scalar::Uint32, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    check.omitBoundsCheck = omitBoundsCheck;
+    if (!storeCommon(&access, check, ValType::I32)) {
+      return false;
+    }
+
+    omitBoundsCheck = true;
+  }
+
+#ifdef JS_64BIT
+  for (uint32_t i = 0; i < numCopies8; i++) {
+    offset -= sizeof(uint64_t);
+
+    RegI64 value = popI64();
+    RegI32 temp = needI32();
+    moveI32(dest, temp);
+    pushI32(temp);
+    pushI64(value);
+
+    MemoryAccessDesc access(Scalar::Int64, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    check.omitBoundsCheck = omitBoundsCheck;
+    if (!storeCommon(&access, check, ValType::I64)) {
+      return false;
+    }
+
+    omitBoundsCheck = true;
+  }
+#endif
+
+  freeI32(dest);
+  freeI32(src);
+  return true;
+}
+
+bool BaseCompiler::emitTableCopy() {
+  if (!bulkmemOpsEnabled()) {
+    return false;
+  }
+
+  uint32_t lineOrBytecode = readCallSiteLineOrBytecode();
+
+  uint32_t dstMemOrTableIndex = 0;
+  uint32_t srcMemOrTableIndex = 0;
+  Nothing nothing;
+  if (!iter_.readMemOrTableCopy(false, &dstMemOrTableIndex, &nothing,
+                                &srcMemOrTableIndex, &nothing, &nothing)) {
+    return false;
+  }
+
+  if (deadCode_) {
+    return true;
+  }
+
+  pushI32(dstMemOrTableIndex);
+  pushI32(srcMemOrTableIndex);
+  if (!emitInstanceCall(lineOrBytecode, SASigTableCopy,
+                        /*pushReturnedValue=*/false)) {
+    return false;
   }
 
   return true;
@@ -10332,8 +11181,139 @@ bool BaseCompiler::emitMemFill() {
     return true;
   }
 
-  return emitInstanceCall(lineOrBytecode, SASigMemFill,
-                          /*pushReturnedValue=*/false);
+  int32_t signedLength;
+  int32_t signedValue;
+  if (MacroAssembler::SupportsFastUnalignedAccesses() &&
+      peek2xI32(&signedLength, &signedValue) && signedLength != 0 &&
+      uint32_t(signedLength) <= MaxInlineMemoryFillLength) {
+    return emitMemFillInline();
+  }
+  return emitMemFillCall(lineOrBytecode);
+}
+
+bool BaseCompiler::emitMemFillCall(uint32_t lineOrBytecode) {
+  pushHeapBase();
+  return emitInstanceCall(
+      lineOrBytecode, usesSharedMemory() ? SASigMemFillShared : SASigMemFill,
+      /*pushReturnedValue=*/false);
+}
+
+bool BaseCompiler::emitMemFillInline() {
+  MOZ_ASSERT(MaxInlineMemoryFillLength != 0);
+
+  int32_t signedLength;
+  int32_t signedValue;
+  MOZ_ALWAYS_TRUE(popConstI32(&signedLength));
+  MOZ_ALWAYS_TRUE(popConstI32(&signedValue));
+  uint32_t length = uint32_t(signedLength);
+  uint32_t value = uint32_t(signedValue);
+  MOZ_ASSERT(length != 0 && length <= MaxInlineMemoryFillLength);
+
+  RegI32 dest = popI32();
+
+  // Compute the number of copies of each width we will need to do
+  size_t remainder = length;
+#ifdef JS_64BIT
+  size_t numCopies8 = remainder / sizeof(uint64_t);
+  remainder %= sizeof(uint64_t);
+#endif
+  size_t numCopies4 = remainder / sizeof(uint32_t);
+  remainder %= sizeof(uint32_t);
+  size_t numCopies2 = remainder / sizeof(uint16_t);
+  remainder %= sizeof(uint16_t);
+  size_t numCopies1 = remainder;
+
+  MOZ_ASSERT(numCopies2 <= 1 && numCopies1 <= 1);
+
+  // Generate splatted definitions for wider fills as needed
+#ifdef JS_64BIT
+  uint64_t val8 = SplatByteToUInt<uint64_t>(value, 8);
+#endif
+  uint32_t val4 = SplatByteToUInt<uint32_t>(value, 4);
+  uint32_t val2 = SplatByteToUInt<uint32_t>(value, 2);
+  uint32_t val1 = value;
+
+  // Store the fill value to the destination from high to low. We will trap
+  // without writing anything on the first store if any dest byte is
+  // out-of-bounds.
+  size_t offset = length;
+  bool omitBoundsCheck = false;
+
+  if (numCopies1) {
+    offset -= sizeof(uint8_t);
+
+    RegI32 temp = needI32();
+    moveI32(dest, temp);
+    pushI32(temp);
+    pushI32(val1);
+
+    MemoryAccessDesc access(Scalar::Uint8, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    if (!storeCommon(&access, check, ValType::I32)) {
+      return false;
+    }
+
+    omitBoundsCheck = true;
+  }
+
+  if (numCopies2) {
+    offset -= sizeof(uint16_t);
+
+    RegI32 temp = needI32();
+    moveI32(dest, temp);
+    pushI32(temp);
+    pushI32(val2);
+
+    MemoryAccessDesc access(Scalar::Uint16, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    check.omitBoundsCheck = omitBoundsCheck;
+    if (!storeCommon(&access, check, ValType::I32)) {
+      return false;
+    }
+
+    omitBoundsCheck = true;
+  }
+
+  for (uint32_t i = 0; i < numCopies4; i++) {
+    offset -= sizeof(uint32_t);
+
+    RegI32 temp = needI32();
+    moveI32(dest, temp);
+    pushI32(temp);
+    pushI32(val4);
+
+    MemoryAccessDesc access(Scalar::Uint32, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    check.omitBoundsCheck = omitBoundsCheck;
+    if (!storeCommon(&access, check, ValType::I32)) {
+      return false;
+    }
+
+    omitBoundsCheck = true;
+  }
+
+#ifdef JS_64BIT
+  for (uint32_t i = 0; i < numCopies8; i++) {
+    offset -= sizeof(uint64_t);
+
+    RegI32 temp = needI32();
+    moveI32(dest, temp);
+    pushI32(temp);
+    pushI64(val8);
+
+    MemoryAccessDesc access(Scalar::Int64, 1, offset, bytecodeOffset());
+    AccessCheck check;
+    check.omitBoundsCheck = omitBoundsCheck;
+    if (!storeCommon(&access, check, ValType::I64)) {
+      return false;
+    }
+
+    omitBoundsCheck = true;
+  }
+#endif
+
+  freeI32(dest);
+  return true;
 }
 
 bool BaseCompiler::emitMemOrTableInit(bool isMem) {
@@ -10516,7 +11496,7 @@ bool BaseCompiler::emitStructNew() {
   uint32_t fieldNo = structType.fields_.length();
   while (fieldNo-- > 0) {
     uint32_t offs = structType.fields_[fieldNo].offset;
-    switch (structType.fields_[fieldNo].type.code()) {
+    switch (structType.fields_[fieldNo].type.kind()) {
       case ValType::I32: {
         RegI32 r = popI32();
         masm.store32(r, Address(rdata, offs));
@@ -10541,9 +11521,7 @@ bool BaseCompiler::emitStructNew() {
         freeF64(r);
         break;
       }
-      case ValType::Ref:
-      case ValType::FuncRef:
-      case ValType::AnyRef: {
+      case ValType::Ref: {
         RegPtr value = popRef();
         masm.storePtr(value, Address(rdata, offs));
 
@@ -10591,8 +11569,6 @@ bool BaseCompiler::emitStructNew() {
         masm.bind(&skipBarrier);
         break;
       }
-      case ValType::NullRef:
-        MOZ_CRASH("NullRef not expressible");
       default: {
         MOZ_CRASH("Unexpected field type");
       }
@@ -10634,7 +11610,7 @@ bool BaseCompiler::emitStructGet() {
   }
 
   uint32_t offs = structType.fields_[fieldIndex].offset;
-  switch (structType.fields_[fieldIndex].type.code()) {
+  switch (structType.fields_[fieldIndex].type.kind()) {
     case ValType::I32: {
       RegI32 r = needI32();
       masm.load32(Address(rp, offs), r);
@@ -10659,16 +11635,11 @@ bool BaseCompiler::emitStructGet() {
       pushF64(r);
       break;
     }
-    case ValType::Ref:
-    case ValType::FuncRef:
-    case ValType::AnyRef: {
+    case ValType::Ref: {
       RegPtr r = needRef();
       masm.loadPtr(Address(rp, offs), r);
       pushRef(r);
       break;
-    }
-    case ValType::NullRef: {
-      MOZ_CRASH("NullRef not expressible");
     }
     default: {
       MOZ_CRASH("Unexpected field type");
@@ -10708,7 +11679,7 @@ bool BaseCompiler::emitStructSet() {
     needRef(valueAddr);
   }
 
-  switch (structType.fields_[fieldIndex].type.code()) {
+  switch (structType.fields_[fieldIndex].type.kind()) {
     case ValType::I32:
       ri = popI32();
       break;
@@ -10722,12 +11693,8 @@ bool BaseCompiler::emitStructSet() {
       rd = popF64();
       break;
     case ValType::Ref:
-    case ValType::FuncRef:
-    case ValType::AnyRef:
       rr = popRef();
       break;
-    case ValType::NullRef:
-      MOZ_CRASH("NullRef not expressible");
     default:
       MOZ_CRASH("Unexpected field type");
   }
@@ -10744,7 +11711,7 @@ bool BaseCompiler::emitStructSet() {
   }
 
   uint32_t offs = structType.fields_[fieldIndex].offset;
-  switch (structType.fields_[fieldIndex].type.code()) {
+  switch (structType.fields_[fieldIndex].type.kind()) {
     case ValType::I32: {
       masm.store32(ri, Address(rp, offs));
       freeI32(ri);
@@ -10765,19 +11732,21 @@ bool BaseCompiler::emitStructSet() {
       freeF64(rd);
       break;
     }
-    case ValType::Ref:
-    case ValType::FuncRef:
-    case ValType::AnyRef: {
+    case ValType::Ref: {
       masm.computeEffectiveAddress(Address(rp, offs), valueAddr);
+
+      // Bug 1617908.  Ensure that if a TypedObject is not inline, then its
+      // underlying ArrayBuffer also is not inline, or the barrier logic fails.
+      static_assert(InlineTypedObject::MaxInlineBytes >=
+                    ArrayBufferObject::MaxInlineBytes);
+
       // emitBarrieredStore consumes valueAddr
-      if (!emitBarrieredStore(Some(rp), valueAddr, rr)) {
+      if (!emitBarrieredStore(structType.isInline_ ? Some(rp) : Nothing(),
+                              valueAddr, rr)) {
         return false;
       }
       freeRef(rr);
       break;
-    }
-    case ValType::NullRef: {
-      MOZ_CRASH("NullRef not expressible");
     }
     default: {
       MOZ_CRASH("Unexpected field type");
@@ -10802,13 +11771,15 @@ bool BaseCompiler::emitStructNarrow() {
     return true;
   }
 
-  // Currently not supported by struct.narrow validation.
-  MOZ_ASSERT(inputType != ValType::FuncRef);
-  MOZ_ASSERT(outputType != ValType::FuncRef);
+  // struct.narrow validation ensures that these hold.
+
+  MOZ_ASSERT(inputType.isAnyRef() || env_.isStructType(inputType));
+  MOZ_ASSERT(outputType.isAnyRef() || env_.isStructType(outputType));
+  MOZ_ASSERT_IF(outputType.isAnyRef(), inputType.isAnyRef());
 
   // AnyRef -> AnyRef is a no-op, just leave the value on the stack.
 
-  if (inputType == ValType::AnyRef && outputType == ValType::AnyRef) {
+  if (inputType.isAnyRef() && outputType.isAnyRef()) {
     return true;
   }
 
@@ -10816,11 +11787,11 @@ bool BaseCompiler::emitStructNarrow() {
 
   // AnyRef -> (ref T) must first unbox; leaves rp or null
 
-  bool mustUnboxAnyref = inputType == ValType::AnyRef;
+  bool mustUnboxAnyref = inputType.isAnyRef();
 
   // Dynamic downcast (ref T) -> (ref U), leaves rp or null
   const StructType& outputStruct =
-      env_.types[outputType.refTypeIndex()].structType();
+      env_.types[outputType.refType().typeIndex()].structType();
 
   pushI32(mustUnboxAnyref);
   pushI32(outputStruct.moduleIndex_);
@@ -10835,7 +11806,7 @@ bool BaseCompiler::emitBody() {
     return false;
   }
 
-  initControl(controlItem());
+  initControl(controlItem(), ResultType::Empty());
 
   uint32_t overhead = 0;
 
@@ -11516,7 +12487,7 @@ bool BaseCompiler::emitBody() {
           return iter_.unrecognizedOpcode(&op);
         }
         CHECK_NEXT(
-            emitComparison(emitCompareRef, ValType::AnyRef, Assembler::Equal));
+            emitComparison(emitCompareRef, RefType::any(), Assembler::Equal));
 #endif
 #ifdef ENABLE_WASM_REFTYPES
       case uint16_t(Op::RefFunc):
@@ -11526,8 +12497,7 @@ bool BaseCompiler::emitBody() {
         CHECK_NEXT(emitRefNull());
         break;
       case uint16_t(Op::RefIsNull):
-        CHECK_NEXT(
-            emitConversion(emitRefIsNull, ValType::AnyRef, ValType::I32));
+        CHECK_NEXT(emitConversion(emitRefIsNull, RefType::any(), ValType::I32));
         break;
 #endif
 
@@ -11591,7 +12561,7 @@ bool BaseCompiler::emitBody() {
                 ValType::F64, ValType::I64));
 #endif
           case uint32_t(MiscOp::MemCopy):
-            CHECK_NEXT(emitMemOrTableCopy(/*isMem=*/true));
+            CHECK_NEXT(emitMemCopy());
           case uint32_t(MiscOp::DataDrop):
             CHECK_NEXT(emitDataOrElemDrop(/*isData=*/true));
           case uint32_t(MiscOp::MemFill):
@@ -11599,7 +12569,7 @@ bool BaseCompiler::emitBody() {
           case uint32_t(MiscOp::MemInit):
             CHECK_NEXT(emitMemOrTableInit(/*isMem=*/true));
           case uint32_t(MiscOp::TableCopy):
-            CHECK_NEXT(emitMemOrTableCopy(/*isMem=*/false));
+            CHECK_NEXT(emitTableCopy());
           case uint32_t(MiscOp::ElemDrop):
             CHECK_NEXT(emitDataOrElemDrop(/*isData=*/false));
           case uint32_t(MiscOp::TableInit):
@@ -11890,15 +12860,9 @@ BaseCompiler::BaseCompiler(const ModuleEnvironment& env,
       latentIntCmp_(Assembler::Equal),
       latentDoubleCmp_(Assembler::DoubleEqual),
       masm(*masm),
-      ra(*this),
       fr(*masm),
       stackMapGenerator_(stackMaps, trapExitLayout, trapExitLayoutNumWords,
                          *masm),
-      joinRegI32_(RegI32(ReturnReg)),
-      joinRegI64_(RegI64(ReturnReg64)),
-      joinRegPtr_(RegPtr(ReturnReg)),
-      joinRegF32_(RegF32(ReturnFloat32Reg)),
-      joinRegF64_(RegF64(ReturnDoubleReg)),
       stkSource_(stkSource) {
   // Our caller, BaselineCompileFunctions, will lend us the vector contents to
   // use for the eval stack.  To get hold of those contents, we'll temporarily
@@ -11922,6 +12886,8 @@ BaseCompiler::~BaseCompiler() {
 }
 
 bool BaseCompiler::init() {
+  ra.init(this);
+
   if (!SigD_.append(ValType::F64)) {
     return false;
   }
@@ -11929,8 +12895,8 @@ bool BaseCompiler::init() {
     return false;
   }
 
-  if (!fr.setupLocals(locals_, funcType().args(), env_.debugEnabled(),
-                      &localInfo_)) {
+  ArgTypeVector args(funcType());
+  if (!fr.setupLocals(locals_, args, env_.debugEnabled(), &localInfo_)) {
     return false;
   }
 
@@ -12050,9 +13016,9 @@ bool js::wasm::BaselineCompileFunctions(const ModuleEnvironment& env,
 bool js::wasm::IsValidStackMapKey(bool debugEnabled, const uint8_t* nextPC) {
 #  if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86)
   const uint8_t* insn = nextPC;
-  return (insn[-2] == 0x0F && insn[-1] == 0x0B) ||  // ud2
-         (insn[-2] == 0xFF && insn[-1] == 0xD0) ||  // call *%{rax,eax}
-         insn[-5] == 0xE8 ||                        // call simm32
+  return (insn[-2] == 0x0F && insn[-1] == 0x0B) ||           // ud2
+         (insn[-2] == 0xFF && (insn[-1] & 0xF8) == 0xD0) ||  // call *%r_
+         insn[-5] == 0xE8 ||                                 // call simm32
          (debugEnabled && insn[-5] == 0x0F && insn[-4] == 0x1F &&
           insn[-3] == 0x44 && insn[-2] == 0x00 &&
           insn[-1] == 0x00);  // nop_five

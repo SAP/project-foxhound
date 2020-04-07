@@ -34,7 +34,6 @@
 #include "mozilla/ServoStyleSetInlines.h"
 #include "mozilla/dom/Element.h"
 #include "nsDisplayList.h"
-#include "nsNodeUtils.h"
 #include "mozAutoDocUpdate.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/ChildIterator.h"
@@ -1334,11 +1333,7 @@ class nsDisplayFramesetBorder : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayFramesetBorder);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayFramesetBorder() {
-    MOZ_COUNT_DTOR(nsDisplayFramesetBorder);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayFramesetBorder)
 
   // REVIEW: see old GetFrameForPoint
   // Receives events in its bounds
@@ -1521,9 +1516,7 @@ class nsDisplayFramesetBlank : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayFramesetBlank);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayFramesetBlank() { MOZ_COUNT_DTOR(nsDisplayFramesetBlank); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayFramesetBlank)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("FramesetBlank", TYPE_FRAMESET_BLANK)

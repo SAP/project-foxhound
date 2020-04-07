@@ -22,9 +22,8 @@
 #include "nsIAppShellService.h"
 #include "nsIOSPermissionRequest.h"
 #include "nsIRunnable.h"
-#include "nsIXULWindow.h"
+#include "nsIAppWindow.h"
 #include "nsIBaseWindow.h"
-#include "nsIServiceManager.h"
 #include "nsMenuUtilsX.h"
 #include "nsToolkit.h"
 #include "nsCRT.h"
@@ -37,6 +36,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPrefs_media.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -274,7 +274,7 @@ nsIWidget* nsCocoaUtils::GetHiddenWindowWidget() {
     return nullptr;
   }
 
-  nsCOMPtr<nsIXULWindow> hiddenWindow;
+  nsCOMPtr<nsIAppWindow> hiddenWindow;
   appShell->GetHiddenWindow(getter_AddRefs(hiddenWindow));
   if (!hiddenWindow) {
     // Don't warn, this happens during shutdown, bug 358607.
@@ -284,7 +284,7 @@ nsIWidget* nsCocoaUtils::GetHiddenWindowWidget() {
   nsCOMPtr<nsIBaseWindow> baseHiddenWindow;
   baseHiddenWindow = do_GetInterface(hiddenWindow);
   if (!baseHiddenWindow) {
-    NS_WARNING("Couldn't get nsIBaseWindow from hidden window (nsIXULWindow)");
+    NS_WARNING("Couldn't get nsIBaseWindow from hidden window (nsIAppWindow)");
     return nullptr;
   }
 
@@ -1240,14 +1240,19 @@ nsresult nsCocoaUtils::GetScreenCapturePermissionState(uint16_t& aPermissionStat
   // Only attempt to check screen recording authorization status on 10.15+.
   // On earlier macOS versions, screen recording is allowed by default.
   if (@available(macOS 10.15, *)) {
+    if (!StaticPrefs::media_macos_screenrecording_oscheck_enabled()) {
+      aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
+      LOG("screen authorization status: authorized (test disabled via pref)");
+      return NS_OK;
+    }
+
     // Unlike with camera and microphone capture, there is no support for
     // checking the screen recording permission status. Instead, an application
     // can use the presence of window names (which are privacy sensitive) in
     // the window info list as an indication. The list only includes window
     // names if the calling application has been authorized to record the
-    // screen. However, this does not allow us to differentiate between the
-    // denied and not-yet-decided state which is what is what
-    // AVAuthorizationStatusNotDetermined indicates for camera and microphone.
+    // screen. We use the window name, window level, and owning PID as
+    // heuristics to determine if we have screen recording permission.
     AutoCFRelease<CFArrayRef> windowArray =
         CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowID);
     if (!windowArray) {
@@ -1255,45 +1260,65 @@ nsresult nsCocoaUtils::GetScreenCapturePermissionState(uint16_t& aPermissionStat
       return NS_ERROR_UNEXPECTED;
     }
 
+    int32_t windowLevelDock = CGWindowLevelForKey(kCGDockWindowLevelKey);
+    int32_t windowLevelNormal = CGWindowLevelForKey(kCGNormalWindowLevelKey);
+    LOG("GetScreenCapturePermissionState(): DockWindowLevel: %d, "
+        "NormalWindowLevel: %d",
+        windowLevelDock, windowLevelNormal);
+
+    int32_t thisPid = [[NSProcessInfo processInfo] processIdentifier];
+
     CFIndex windowCount = CFArrayGetCount(windowArray);
     LOG("GetScreenCapturePermissionState() returned %ld windows", windowCount);
     if (windowCount == 0) {
       return NS_ERROR_UNEXPECTED;
     }
 
-    uint32_t windowsWithNames = 0;
     for (CFIndex i = 0; i < windowCount; i++) {
       CFDictionaryRef windowDict =
           reinterpret_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(windowArray, i));
 
-      // Check for the presence of the window name
+      // Get the window owner's PID
+      int32_t windowOwnerPid = -1;
+      CFNumberRef windowPidRef =
+          reinterpret_cast<CFNumberRef>(CFDictionaryGetValue(windowDict, kCGWindowOwnerPID));
+      if (!windowPidRef || !CFNumberGetValue(windowPidRef, kCFNumberIntType, &windowOwnerPid)) {
+        LOG("GetScreenCapturePermissionState() ERROR: failed to get window owner");
+        continue;
+      }
+
+      // Our own window names are always readable and
+      // therefore not relevant to the heuristic.
+      if (thisPid == windowOwnerPid) {
+        continue;
+      }
+
       CFStringRef windowName =
           reinterpret_cast<CFStringRef>(CFDictionaryGetValue(windowDict, kCGWindowName));
-      if (windowName) {
-        windowsWithNames++;
-      } else {
-        // We encountered a window with no name property indicating we
-        // don't have screen recording permission. No need to continue.
-        break;
+      if (!windowName) {
+        continue;
+      }
+
+      CFNumberRef windowLayerRef =
+          reinterpret_cast<CFNumberRef>(CFDictionaryGetValue(windowDict, kCGWindowLayer));
+      int32_t windowLayer;
+      if (!windowLayerRef || !CFNumberGetValue(windowLayerRef, kCFNumberIntType, &windowLayer)) {
+        LOG("GetScreenCapturePermissionState() ERROR: failed to get layer");
+        continue;
+      }
+
+      // If we have a window name and the window is in the dock or normal window
+      // level, and for another process, assume we have screen recording access.
+      LOG("GetScreenCapturePermissionState(): windowLayer: %d", windowLayer);
+      if (windowLayer == windowLevelDock || windowLayer == windowLevelNormal) {
+        aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
+        LOG("screen authorization status: authorized");
+        return NS_OK;
       }
     }
 
-    LOG("GetScreenCapturePermissionState(): %d/%d named windows", windowsWithNames,
-        (uint32_t)windowCount);
-
-    if (windowsWithNames == windowCount) {
-      // All windows in the list have the name property. We have already
-      // been given permission to record the screen.
-      LOG("screen authorization status: authorized");
-      aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
-    } else {
-      // We don't have permission to record the screen and we can't
-      // differntiate between the scenario when the user explicitly
-      // denied permission and when the user has not been asked yet.
-      LOG("screen authorization status: not authorized");
-      aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_DENIED;
-    }
-
+    aPermissionState = nsIOSPermissionRequest::PERMISSION_STATE_DENIED;
+    LOG("screen authorization status: not authorized");
     return NS_OK;
   }
 

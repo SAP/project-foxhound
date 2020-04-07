@@ -229,10 +229,9 @@ class MachFormatter(base.BaseFormatter):
             else:
                 for test_id, results in intermittent_logs.items():
                     test = self._get_file_name(test_id)
-                    assert len(results) == 1
-                    data = results[0]
-                    assert "subtest" not in data
-                    rv.append(self._format_status(test, data).rstrip())
+                    for data in results:
+                        assert "subtest" not in data
+                        rv.append(self._format_status(test, data).rstrip())
 
         # Format status
         testfailed = any(count[key]["unexpected"] for key in ('test', 'subtest', 'assert'))
@@ -252,10 +251,9 @@ class MachFormatter(base.BaseFormatter):
             else:
                 for test_id, results in logs.items():
                     test = self._get_file_name(test_id)
-                    assert len(results) == 1
-                    data = results[0]
-                    assert "subtest" not in data
-                    rv.append(self._format_status(test, data).rstrip())
+                    for data in results:
+                        assert "subtest" not in data
+                        rv.append(self._format_status(test, data).rstrip())
 
             # Format harness errors
             if harness_errors:
@@ -450,21 +448,27 @@ class MachFormatter(base.BaseFormatter):
         rv = ["pid:%s. Test:%s. Minidump analysed:%s. Signature:[%s]" %
               (data.get("pid", None), test, success, data["signature"])]
 
-        if data.get("minidump_path"):
-            rv.append("Crash dump filename: %s" % data["minidump_path"])
+        if data.get("java_stack"):
+            rv.append("Java exception: %s" % data["java_stack"])
+        else:
+            if data.get("reason"):
+                rv.append("Mozilla crash reason: %s" % data["reason"])
 
-        if data.get("stackwalk_returncode", 0) != 0:
-            rv.append("minidump_stackwalk exited with return code %d" %
-                      data["stackwalk_returncode"])
+            if data.get("minidump_path"):
+                rv.append("Crash dump filename: %s" % data["minidump_path"])
 
-        if data.get("stackwalk_stderr"):
-            rv.append("stderr from minidump_stackwalk:")
-            rv.append(data["stackwalk_stderr"])
-        elif data.get("stackwalk_stdout"):
-            rv.append(data["stackwalk_stdout"])
+            if data.get("stackwalk_returncode", 0) != 0:
+                rv.append("minidump_stackwalk exited with return code %d" %
+                          data["stackwalk_returncode"])
 
-        if data.get("stackwalk_errors"):
-            rv.extend(data.get("stackwalk_errors"))
+            if data.get("stackwalk_stderr"):
+                rv.append("stderr from minidump_stackwalk:")
+                rv.append(data["stackwalk_stderr"])
+            elif data.get("stackwalk_stdout"):
+                rv.append(data["stackwalk_stdout"])
+
+            if data.get("stackwalk_errors"):
+                rv.extend(data.get("stackwalk_errors"))
 
         rv = "\n".join(rv)
         if not rv[-1] == "\n":

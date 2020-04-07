@@ -6,6 +6,10 @@
 
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 
+const {
+  evalWithDebugger,
+} = require("devtools/server/actors/webconsole/eval-with-debugger");
+
 if (!isWorker) {
   loader.lazyRequireGetter(
     this,
@@ -57,6 +61,9 @@ const MAX_AUTOCOMPLETIONS = (exports.MAX_AUTOCOMPLETIONS = 1500);
  *        evaluation result or create a debuggee value.
  * - {String}: selectedNodeActor
  *        The actor id of the selected node in the inspector.
+ * - {Array<string>}: expressionVars
+ *        Optional array containing variable defined in the expression. Those variables
+ *        are extracted from CodeMirror state.
  * @returns null or object
  *          If the inputValue is an unsafe getter and invokeUnsafeGetter is false, the
  *          following form is returned:
@@ -79,7 +86,7 @@ const MAX_AUTOCOMPLETIONS = (exports.MAX_AUTOCOMPLETIONS = 1500);
  *                               access (e.g. `window["addEvent`).
  *            }
  */
-/* eslint-disable complexity */
+// eslint-disable-next-line complexity
 function JSPropertyProvider({
   dbgObject,
   environment,
@@ -88,6 +95,7 @@ function JSPropertyProvider({
   authorizedEvaluations = [],
   webconsoleActor,
   selectedNodeActor,
+  expressionVars = [],
 }) {
   if (cursor === undefined) {
     cursor = inputValue.length;
@@ -97,64 +105,68 @@ function JSPropertyProvider({
 
   // Analyse the inputValue and find the beginning of the last part that
   // should be completed.
-  const { err, state, lastStatement, isElementAccess } = analyzeInputString(
-    inputValue
-  );
+  const inputAnalysis = analyzeInputString(inputValue);
 
-  // There was an error analysing the string.
-  if (err) {
-    console.error("Failed to analyze input string", err);
+  if (!shouldInputBeAutocompleted(inputAnalysis)) {
     return null;
   }
 
-  // If the current state is not STATE_NORMAL, then we are inside of an string
-  // which means that no completion is possible.
-  if (state != STATE_NORMAL) {
-    return null;
-  }
+  let {
+    mainExpression,
+    matchProp,
+    isPropertyAccess,
+  } = splitInputAtLastPropertyAccess(inputAnalysis);
+  const { lastStatement, isElementAccess } = inputAnalysis;
 
-  // Don't complete on just an empty string.
-  if (lastStatement.trim() == "") {
-    return null;
-  }
+  // Eagerly evaluate the main expression and return the results properties.
+  // e.g. `obj.func().a` will evaluate `obj.func()` and return properties matching `a`.
+  // NOTE: this is only useful when the input has a property access.
+  if (webconsoleActor && shouldInputBeEagerlyEvaluated(inputAnalysis)) {
+    const eagerResponse = evalWithDebugger(
+      mainExpression,
+      { eager: true, selectedNodeActor },
+      webconsoleActor
+    );
 
-  if (
-    NO_AUTOCOMPLETE_PREFIXES.some(prefix =>
-      lastStatement.startsWith(prefix + " ")
-    )
-  ) {
-    return null;
-  }
+    const ret =
+      eagerResponse && eagerResponse.result && eagerResponse.result.return;
 
-  const env = environment || dbgObject.asEnvironment();
-  const completionPart = lastStatement;
-  const lastDotIndex = completionPart.lastIndexOf(".");
-  const lastOpeningBracketIndex = isElementAccess
-    ? completionPart.lastIndexOf("[")
-    : -1;
-  const lastCompletionCharIndex = Math.max(
-    lastDotIndex,
-    lastOpeningBracketIndex
-  );
-  const startQuoteRegex = /^('|"|`)/;
+    // Only send matches if eager evaluation returned something meaningful
+    if (ret && ret !== undefined) {
+      const matches =
+        typeof ret != "object"
+          ? getMatchedProps(ret, matchProp)
+          : getMatchedPropsInDbgObject(ret, matchProp);
+
+      return prepareReturnedObject({
+        matches,
+        search: matchProp,
+        isElementAccess,
+      });
+    }
+  }
 
   // AST representation of the expression before the last access char (`.` or `[`).
   let astExpression;
-  let matchProp = completionPart.slice(lastCompletionCharIndex + 1).trimLeft();
+  const startQuoteRegex = /^('|"|`)/;
+  const env = environment || dbgObject.asEnvironment();
 
   // Catch literals like [1,2,3] or "foo" and return the matches from
   // their prototypes.
   // Don't run this is a worker, migrating to acorn should allow this
   // to run in a worker - Bug 1217198.
-  if (!isWorker && lastCompletionCharIndex > 0) {
-    const parsedExpression = completionPart.slice(0, lastCompletionCharIndex);
-    const syntaxTrees = getSyntaxTrees(parsedExpression);
+  if (!isWorker && isPropertyAccess) {
+    const syntaxTrees = getSyntaxTrees(mainExpression);
     const lastTree = syntaxTrees[syntaxTrees.length - 1];
     const lastBody = lastTree && lastTree.body[lastTree.body.length - 1];
 
     // Finding the last expression since we've sliced up until the dot.
     // If there were parse errors this won't exist.
     if (lastBody) {
+      if (!lastBody.expression) {
+        return null;
+      }
+
       astExpression = lastBody.expression;
       let matchingObject;
 
@@ -176,7 +188,7 @@ function JSPropertyProvider({
         // (but the following are fine: `1..`, `(1.).`).
         if (
           !Number.isInteger(astExpression.value) ||
-          /\d[^\.]{0}\.$/.test(completionPart) === false
+          /\d[^\.]{0}\.$/.test(lastStatement) === false
         ) {
           matchingObject = getContentPrototypeObject(env, "Number");
         } else {
@@ -194,6 +206,7 @@ function JSPropertyProvider({
         }
 
         let props = getMatchedPropsInDbgObject(matchingObject, search);
+
         if (isElementAccess) {
           props = wrapMatchesInQuotes(props, elementAccessQuote);
         }
@@ -211,7 +224,7 @@ function JSPropertyProvider({
   let properties = [];
 
   if (astExpression) {
-    if (lastCompletionCharIndex > -1) {
+    if (isPropertyAccess) {
       properties = getPropertiesFromAstExpression(astExpression);
 
       if (properties === null) {
@@ -219,7 +232,7 @@ function JSPropertyProvider({
       }
     }
   } else {
-    properties = completionPart.split(".");
+    properties = lastStatement.split(".");
     if (isElementAccess) {
       const lastPart = properties[properties.length - 1];
       const openBracketIndex = lastPart.lastIndexOf("[");
@@ -242,10 +255,19 @@ function JSPropertyProvider({
 
   let obj = dbgObject;
   if (properties.length === 0) {
+    const environmentProperties = getMatchedPropsInEnvironment(env, search);
+    const expressionVariables = new Set(
+      expressionVars.filter(variableName => variableName.startsWith(matchProp))
+    );
+
+    for (const prop of environmentProperties) {
+      expressionVariables.add(prop);
+    }
+
     return {
       isElementAccess,
       matchProp,
-      matches: getMatchedPropsInEnvironment(env, search),
+      matches: expressionVariables,
     };
   }
 
@@ -317,38 +339,115 @@ function JSPropertyProvider({
     }
   }
 
-  const prepareReturnedObject = matches => {
-    if (isElementAccess) {
-      // If it's an element access, we need to wrap properties in quotes (either the one
-      // the user already typed, or `"`).
-      matches = wrapMatchesInQuotes(matches, elementAccessQuote);
-    } else if (!isWorker) {
-      // If we're not performing an element access, we need to check that the property
-      // are suited for a dot access. (Reflect.jsm is not available in worker context yet,
-      // see Bug 1507181).
-      for (const match of matches) {
-        try {
-          // In order to know if the property is suited for dot notation, we use Reflect
-          // to parse an expression where we try to access the property with a dot. If it
-          // throws, this means that we need to do an element access instead.
-          Reflect.parse(`({${match}: true})`);
-        } catch (e) {
-          matches.delete(match);
-        }
-      }
-    }
+  const matches =
+    typeof obj != "object"
+      ? getMatchedProps(obj, search)
+      : getMatchedPropsInDbgObject(obj, search);
+  return prepareReturnedObject({
+    matches,
+    search,
+    isElementAccess,
+    elementAccessQuote,
+  });
+}
 
-    return { isElementAccess, matchProp, matches };
-  };
+function shouldInputBeEagerlyEvaluated({ lastStatement }) {
+  const inComputedProperty =
+    lastStatement.lastIndexOf("[") !== -1 &&
+    lastStatement.lastIndexOf("[") > lastStatement.lastIndexOf("]");
 
-  // If the final property is a primitive
-  if (typeof obj != "object") {
-    return prepareReturnedObject(getMatchedProps(obj, search));
+  const hasPropertyAccess =
+    lastStatement.includes(".") || lastStatement.includes("[");
+
+  return hasPropertyAccess && !inComputedProperty;
+}
+
+function shouldInputBeAutocompleted(inputAnalysisState) {
+  const { err, state, lastStatement } = inputAnalysisState;
+
+  // There was an error analysing the string.
+  if (err) {
+    console.error("Failed to analyze input string", err);
+    return false;
   }
 
-  return prepareReturnedObject(getMatchedPropsInDbgObject(obj, search));
+  // If the current state is not STATE_NORMAL, then we are inside of an string
+  // which means that no completion is possible.
+  if (state != STATE_NORMAL) {
+    return false;
+  }
+
+  // Don't complete on just an empty string.
+  if (lastStatement.trim() == "") {
+    return false;
+  }
+
+  if (
+    NO_AUTOCOMPLETE_PREFIXES.some(prefix =>
+      lastStatement.startsWith(prefix + " ")
+    )
+  ) {
+    return false;
+  }
+
+  return true;
 }
-/* eslint-enable complexity */
+
+/**
+ * Function that will process the result of analyzeInputString and return useful information
+ * about the expression.
+ *
+ * @param {Object} inputAnalysisState: Result of analyzeInputString.
+ * @returns {Object} An object of the following shape:
+ *                    - mainExpression: The part of the expression before any property access,
+ *                                      (e.g. `a.b` if expression is `a.b.`)
+ *                    - matchProp: The part of the expression that should match the properties
+ *                                 on the mainExpression (e.g. `que` when expression is `document.body.que`)
+ *                    - isPropertyAccess: true of the expression indicate that the
+ *                                        expression has a property access (e.g. `a.x` or `a["x"`).
+ */
+function splitInputAtLastPropertyAccess(inputAnalysisState) {
+  const { lastStatement, isElementAccess } = inputAnalysisState;
+  const lastDotIndex = lastStatement.lastIndexOf(".");
+  const lastOpeningBracketIndex = isElementAccess
+    ? lastStatement.lastIndexOf("[")
+    : -1;
+  const lastCompletionCharIndex = Math.max(
+    lastDotIndex,
+    lastOpeningBracketIndex
+  );
+
+  const matchProp = lastStatement.slice(lastCompletionCharIndex + 1).trimLeft();
+  const matchPropPrefix = lastStatement.slice(0, lastCompletionCharIndex + 1);
+
+  const optionalChainingElementAccessRegex = /\s*\?\.\s*\[\s*$/;
+  const isPropertyAccess = lastCompletionCharIndex > 0;
+
+  let mainExpression;
+  if (!isPropertyAccess) {
+    mainExpression = matchProp;
+  } else if (
+    isElementAccess &&
+    optionalChainingElementAccessRegex.test(matchPropPrefix)
+  ) {
+    // Strip the optional chaining operator at the end;
+    mainExpression = matchPropPrefix.replace(
+      optionalChainingElementAccessRegex,
+      ""
+    );
+  } else if (!isElementAccess && matchPropPrefix.endsWith("?.")) {
+    mainExpression = matchPropPrefix.slice(0, matchPropPrefix.length - 2);
+  } else {
+    mainExpression = matchPropPrefix.slice(0, matchPropPrefix.length - 1);
+  }
+  mainExpression = mainExpression.trim();
+
+  return {
+    mainExpression,
+    matchProp,
+    isPropertyAccess,
+  };
+}
 
 function hasArrayIndex(str) {
   return /\[\d+\]$/.test(str);
@@ -363,6 +462,7 @@ const STATE_SLASH = Symbol("STATE_SLASH");
 const STATE_INLINE_COMMENT = Symbol("STATE_INLINE_COMMENT");
 const STATE_MULTILINE_COMMENT = Symbol("STATE_MULTILINE_COMMENT");
 const STATE_MULTILINE_COMMENT_CLOSE = Symbol("STATE_MULTILINE_COMMENT_CLOSE");
+const STATE_QUESTION_MARK = Symbol("STATE_QUESTION_MARK");
 
 const OPEN_BODY = "{[(".split("");
 const CLOSE_BODY = "}])".split("");
@@ -373,7 +473,7 @@ const OPEN_CLOSE_BODY = {
 };
 
 const NO_AUTOCOMPLETE_PREFIXES = ["var", "const", "let", "function", "class"];
-const OPERATOR_CHARS_SET = new Set(";,:=<>+-*%|&^~?!".split(""));
+const OPERATOR_CHARS_SET = new Set(";,:=<>+-*%|&^~!".split(""));
 
 /**
  * Analyses a given string to find the last statement that is interesting for
@@ -396,7 +496,7 @@ const OPERATOR_CHARS_SET = new Set(";,:=<>+-*%|&^~?!".split(""));
  *                               element access (e.g. `x["match`).
  *            }
  */
-/* eslint-disable complexity */
+// eslint-disable-next-line complexity
 function analyzeInputString(str) {
   // work variables.
   const bodyStack = [];
@@ -426,10 +526,17 @@ function analyzeInputString(str) {
     switch (state) {
       // Normal JS state.
       case STATE_NORMAL:
+        if (lastStatement.endsWith("?.") && /\d/.test(c)) {
+          // If the current char is a number, the engine will consider we're not
+          // performing an optional chaining, but a ternary (e.g. x ?.4 : 2).
+          lastStatement = "";
+        }
+
         // If the last characters were spaces, and the current one is not.
         if (pendingWhitespaceChars && !isWhitespaceChar) {
-          // If we have a legitimate property/element access, we append the spaces.
-          if (c === "[" || c === ".") {
+          // If we have a legitimate property/element access, or potential optional
+          // chaining call, we append the spaces.
+          if (c === "[" || c === "." || c === "?") {
             lastStatement = lastStatement + pendingWhitespaceChars;
           } else {
             // if not, we can be sure the statement was over, and we can start a new one.
@@ -446,6 +553,8 @@ function analyzeInputString(str) {
           state = STATE_TEMPLATE_LITERAL;
         } else if (c == "/") {
           state = STATE_SLASH;
+        } else if (c == "?") {
+          state = STATE_QUESTION_MARK;
         } else if (OPERATOR_CHARS_SET.has(c)) {
           // If the character is an operator, we can update the current statement.
           resetLastStatement = true;
@@ -556,6 +665,18 @@ function analyzeInputString(str) {
           state = STATE_MULTILINE_COMMENT;
         }
         break;
+
+      case STATE_QUESTION_MARK:
+        state = STATE_NORMAL;
+        if (c === "?") {
+          // If we have a nullish coalescing operator, we start a new statement
+          resetLastStatement = true;
+        } else if (c !== ".") {
+          // If we're not dealing with optional chaining (?.), it means we have a ternary,
+          // so we are starting a new statement that includes the current character.
+          lastStatement = "";
+        }
+        break;
     }
 
     if (!isWhitespaceChar) {
@@ -598,7 +719,6 @@ function analyzeInputString(str) {
     isElementAccess,
   };
 }
-/* eslint-enable complexity */
 
 /**
  * For a given environment and constructor name, returns its Debugger.Object wrapped
@@ -633,12 +753,17 @@ function getPropertiesFromAstExpression(ast) {
   if (!ast) {
     return result;
   }
-  const { type, property, object, name } = ast;
+  const { type, property, object, name, expression } = ast;
   if (type === "ThisExpression") {
     result.unshift("this");
   } else if (type === "Identifier" && name) {
     result.unshift(name);
-  } else if (type === "MemberExpression") {
+  } else if (type === "OptionalExpression" && expression) {
+    result = (getPropertiesFromAstExpression(expression) || []).concat(result);
+  } else if (
+    type === "MemberExpression" ||
+    type === "OptionalMemberExpression"
+  ) {
     if (property) {
       if (property.type === "Identifier" && property.name) {
         result.unshift(property.name);
@@ -765,6 +890,36 @@ function isObjectUsable(object) {
  */
 function getVariableInEnvironment(environment, name) {
   return getExactMatchImpl(environment, name, DebuggerEnvironmentSupport);
+}
+
+function prepareReturnedObject({
+  matches,
+  search,
+  isElementAccess,
+  elementAccessQuote,
+}) {
+  if (isElementAccess) {
+    // If it's an element access, we need to wrap properties in quotes (either the one
+    // the user already typed, or `"`).
+
+    matches = wrapMatchesInQuotes(matches, elementAccessQuote);
+  } else if (!isWorker) {
+    // If we're not performing an element access, we need to check that the property
+    // are suited for a dot access. (Reflect.jsm is not available in worker context yet,
+    // see Bug 1507181).
+    for (const match of matches) {
+      try {
+        // In order to know if the property is suited for dot notation, we use Reflect
+        // to parse an expression where we try to access the property with a dot. If it
+        // throws, this means that we need to do an element access instead.
+        Reflect.parse(`({${match}: true})`);
+      } catch (e) {
+        matches.delete(match);
+      }
+    }
+  }
+
+  return { isElementAccess, matchProp: search, matches };
 }
 
 /**
@@ -969,9 +1124,9 @@ var DebuggerEnvironmentSupport = {
 
     // FIXME: Need actual UI, bug 941287.
     if (
-      result === undefined ||
-      result.optimizedOut ||
-      result.missingArguments
+      result == null ||
+      (typeof result == "object" &&
+        (result.optimizedOut || result.missingArguments))
     ) {
       return null;
     }

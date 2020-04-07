@@ -51,6 +51,10 @@
   color: var(--string-color);
 }
 
+.objectBox-empty-string {
+  font-style: italic;
+}
+
 .objectBox-string a,
 .objectBox-string a:visited {
   color: currentColor;
@@ -309,4 +313,9 @@ button.invoke-getter {
 /* "more…" ellipsis */
 .more-ellipsis {
   color: var(--comment-node-color);
+}
+
+/* function parameters */
+.objectBox-function .param {
+  color: var(--theme-highlight-red);
 }

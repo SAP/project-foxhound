@@ -22,6 +22,16 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 const { debug, warn } = GeckoViewUtils.initLogging("Startup"); // eslint-disable-line no-unused-vars
 
 const ACTORS = {
+  BrowserTab: {
+    parent: {
+      moduleURI: "resource:///actors/BrowserTabParent.jsm",
+    },
+  },
+  GeckoViewContent: {
+    child: {
+      moduleURI: "resource:///actors/GeckoViewContentChild.jsm",
+    },
+  },
   LoadURIDelegate: {
     child: {
       moduleURI: "resource:///actors/LoadURIDelegateChild.jsm",
@@ -31,6 +41,7 @@ const ACTORS = {
     child: {
       moduleURI: "resource:///actors/WebBrowserChromeChild.jsm",
     },
+    includeChrome: true,
   },
 };
 
@@ -42,7 +53,7 @@ GeckoViewStartup.prototype = {
   QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
 
   /* ----------  nsIObserver  ---------- */
-  observe: function(aSubject, aTopic, aData) {
+  observe(aSubject, aTopic, aData) {
     debug`observe: ${aTopic}`;
     switch (aTopic) {
       case "app-startup": {
@@ -69,10 +80,22 @@ GeckoViewStartup.prototype = {
         GeckoViewUtils.addLazyGetter(this, "GeckoViewWebExtension", {
           module: "resource://gre/modules/GeckoViewWebExtension.jsm",
           ged: [
+            "GeckoView:ActionDelegate:Attached",
+            "GeckoView:BrowserAction:Click",
+            "GeckoView:PageAction:Click",
             "GeckoView:RegisterWebExtension",
             "GeckoView:UnregisterWebExtension",
+            "GeckoView:WebExtension:Get",
+            "GeckoView:WebExtension:Disable",
+            "GeckoView:WebExtension:Enable",
+            "GeckoView:WebExtension:Install",
+            "GeckoView:WebExtension:InstallBuiltIn",
+            "GeckoView:WebExtension:List",
             "GeckoView:WebExtension:PortDisconnect",
             "GeckoView:WebExtension:PortMessageFromApp",
+            "GeckoView:WebExtension:SetPBAllowed",
+            "GeckoView:WebExtension:Uninstall",
+            "GeckoView:WebExtension:Update",
           ],
         });
 
@@ -99,6 +122,7 @@ GeckoViewStartup.prototype = {
             ged: [
               "ContentBlocking:AddException",
               "ContentBlocking:RemoveException",
+              "ContentBlocking:RemoveExceptionByPrincipal",
               "ContentBlocking:CheckException",
               "ContentBlocking:SaveList",
               "ContentBlocking:RestoreList",
@@ -196,6 +220,8 @@ GeckoViewStartup.prototype = {
           "GeckoView:SetDefaultPrefs",
           "GeckoView:SetLocale",
         ]);
+
+        Services.obs.notifyObservers(null, "geckoview-startup-complete");
         break;
       }
     }

@@ -12,7 +12,7 @@
             addAccessibleTask, findAccessibleChildByID, isDefunct,
             CURRENT_CONTENT_DIR, loadScripts, loadContentScripts, snippetToURL,
             Cc, Cu, arrayFromChildren, forceGC, contentSpawnMutation,
-            FISSION_IFRAME_ID, DEFAULT_FISSION_DOC_BODY_ID, invokeContentTask,
+            DEFAULT_IFRAME_ID, DEFAULT_IFRAME_DOC_BODY_ID, invokeContentTask,
             matchContentDoc, currentContentDoc */
 
 const CURRENT_FILE_DIR = "/browser/accessible/tests/browser/";
@@ -35,13 +35,39 @@ const CURRENT_CONTENT_DIR = `http://example.com${CURRENT_FILE_DIR}`;
 const LOADED_CONTENT_SCRIPTS = new Map();
 
 const DEFAULT_CONTENT_DOC_BODY_ID = "body";
-const FISSION_IFRAME_ID = "fission-iframe";
-const DEFAULT_FISSION_DOC_BODY_ID = "fission-body";
+const DEFAULT_IFRAME_ID = "default-iframe-id";
+const DEFAULT_IFRAME_DOC_BODY_ID = "default-iframe-body-id";
 
-let gIsFission = false;
+const HTML_MIME_TYPE = "text/html";
+const XHTML_MIME_TYPE = "application/xhtml+xml";
+
+function loadHTMLFromFile(path) {
+  // Load the HTML to return in the response from file.
+  // Since it's relative to the cwd of the test runner, we start there and
+  // append to get to the actual path of the file.
+  const testHTMLFile = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+  const dirs = path.split("/");
+  for (let i = 0; i < dirs.length; i++) {
+    testHTMLFile.append(dirs[i]);
+  }
+
+  const testHTMLFileStream = Cc[
+    "@mozilla.org/network/file-input-stream;1"
+  ].createInstance(Ci.nsIFileInputStream);
+  testHTMLFileStream.init(testHTMLFile, -1, 0, 0);
+  const testHTML = NetUtil.readInputStreamToString(
+    testHTMLFileStream,
+    testHTMLFileStream.available()
+  );
+
+  return testHTML;
+}
+
+let gIsIframe = false;
+let gIsRemoteIframe = false;
 
 function currentContentDoc() {
-  return gIsFission ? DEFAULT_FISSION_DOC_BODY_ID : DEFAULT_CONTENT_DOC_BODY_ID;
+  return gIsIframe ? DEFAULT_IFRAME_DOC_BODY_ID : DEFAULT_CONTENT_DOC_BODY_ID;
 }
 
 /**
@@ -206,19 +232,47 @@ function invokeFocus(browser, id) {
 function invokeContentTask(browser, args, task) {
   return SpecialPowers.spawn(
     browser,
-    [FISSION_IFRAME_ID, task.toString(), ...args],
-    (fissionFrameId, contentTask, ...contentArgs) => {
+    [DEFAULT_IFRAME_ID, task.toString(), ...args],
+    (iframeId, contentTask, ...contentArgs) => {
       // eslint-disable-next-line no-eval
       const runnableTask = eval(`
       (() => {
         return (${contentTask});
       })();`);
-      const frame = content.document.getElementById(fissionFrameId);
+      const frame = content.document.getElementById(iframeId);
 
       return frame
         ? SpecialPowers.spawn(frame, contentArgs, runnableTask)
         : runnableTask.call(this, ...contentArgs);
     }
+  );
+}
+
+/**
+ * Compare process ID's between the top level content process and possible
+ * remote/local iframe proccess.
+ * @param {Object}  browser
+ *        Top level browser object for a tab.
+ * @param {Boolean} isRemote
+ *        Indicates if we expect the iframe content process to be remote or not.
+ */
+async function comparePIDs(browser, isRemote) {
+  function getProcessID() {
+    const { Services } = ChromeUtils.import(
+      "resource://gre/modules/Services.jsm"
+    );
+
+    return Services.appinfo.processID;
+  }
+
+  const contentPID = await SpecialPowers.spawn(browser, [], getProcessID);
+  const iframePID = await invokeContentTask(browser, [], getProcessID);
+  is(
+    isRemote,
+    contentPID !== iframePID,
+    isRemote
+      ? "Remote IFRAME is in a different process."
+      : "IFRAME is in the same process."
   );
 }
 
@@ -275,30 +329,52 @@ function attrsToString(attrs) {
     .join(" ");
 }
 
-function wrapWithFissionIFrame(doc, options = {}) {
-  const srcURL = new URL(`${CURRENT_CONTENT_DIR}fission_document_builder.sjs`);
-  if (doc.endsWith("html")) {
-    srcURL.searchParams.append("file", `${CURRENT_FILE_DIR}e10s/${doc}`);
+function wrapWithIFrame(doc, options = {}) {
+  let src;
+  let { iframeAttrs = {}, iframeDocBodyAttrs = {} } = options;
+  iframeDocBodyAttrs = {
+    id: DEFAULT_IFRAME_DOC_BODY_ID,
+    ...iframeDocBodyAttrs,
+  };
+  if (options.remoteIframe) {
+    const srcURL = new URL(`http://example.net/document-builder.sjs`);
+    if (doc.endsWith("html")) {
+      srcURL.searchParams.append("file", `${CURRENT_FILE_DIR}e10s/${doc}`);
+    } else {
+      srcURL.searchParams.append(
+        "html",
+        `<html>
+          <head>
+            <meta charset="utf-8"/>
+            <title>Accessibility Fission Test</title>
+          </head>
+          <body ${attrsToString(iframeDocBodyAttrs)}>${doc}</body>
+        </html>`
+      );
+    }
+    src = srcURL.href;
   } else {
-    const { fissionDocBodyAttrs = {} } = options;
-    const attrs = {
-      id: DEFAULT_FISSION_DOC_BODY_ID,
-      ...fissionDocBodyAttrs,
-    };
+    const mimeType = doc.endsWith("xhtml") ? XHTML_MIME_TYPE : HTML_MIME_TYPE;
+    if (doc.endsWith("html")) {
+      doc = loadHTMLFromFile(`${CURRENT_FILE_DIR}e10s/${doc}`);
+      doc = doc.replace(
+        /<body[.\s\S]*?>/,
+        `<body ${attrsToString(iframeDocBodyAttrs)}>`
+      );
+    } else {
+      doc = `<body ${attrsToString(iframeDocBodyAttrs)}>${doc}</body>`;
+    }
 
-    srcURL.searchParams.append(
-      "html",
-      `<html>
-        <head>
-          <meta charset="utf-8"/>
-          <title>Accessibility Fission Test</title>
-        </head>
-        <body ${attrsToString(attrs)}>${doc}</body>
-      </html>`
-    );
+    src = `data:${mimeType};charset=utf-8,${encodeURIComponent(doc)}`;
   }
 
-  return `<iframe id="${FISSION_IFRAME_ID}" src="${srcURL.href}"/>`;
+  iframeAttrs = {
+    id: DEFAULT_IFRAME_ID,
+    src,
+    ...iframeAttrs,
+  };
+
+  return `<iframe ${attrsToString(iframeAttrs)}/>`;
 }
 
 /**
@@ -306,16 +382,8 @@ function wrapWithFissionIFrame(doc, options = {}) {
  * document with the snippet or the URL as a source for the IFRAME.
  * @param {String} doc
  *        a markup snippet or url.
- * @param {Object} options
- *        additonal options:
- *        - {Boolean} fission
- *          true if the content document should be wrapped inside a fission
- *          iframe
- *        - {Object} contentDocBodyAttrs
- *          a set of attributes to be applied to a top level content document
- *          body
- *        - {Object} fissionDocBodyAttrs
- *          a set of attributes to be applied to a fission content document body
+ * @param {Object} options (see options in addAccessibleTask).
+ *
  * @return {String}
  *        a base64 encoded data url of the document container the snippet.
  **/
@@ -326,8 +394,8 @@ function snippetToURL(doc, options = {}) {
     ...contentDocBodyAttrs,
   };
 
-  if (options.fission) {
-    doc = wrapWithFissionIFrame(doc, options);
+  if (gIsIframe) {
+    doc = wrapWithIFrame(doc, options);
   }
 
   const encodedDoc = encodeURIComponent(
@@ -345,8 +413,10 @@ function snippetToURL(doc, options = {}) {
 
 function accessibleTask(doc, task, options = {}) {
   return async function() {
+    gIsRemoteIframe = options.remoteIframe;
+    gIsIframe = options.iframe || gIsRemoteIframe;
     let url;
-    if (doc.endsWith("html") && !options.fission) {
+    if (doc.endsWith("html") && !gIsIframe) {
       url = `${CURRENT_CONTENT_DIR}e10s/${doc}`;
     } else {
       url = snippetToURL(doc, options);
@@ -365,15 +435,12 @@ function accessibleTask(doc, task, options = {}) {
       DEFAULT_CONTENT_DOC_BODY_ID
     );
 
-    let onFissionDocLoad;
-    if (options.fission) {
-      gIsFission = true;
-      if (gFissionBrowser) {
-        onFissionDocLoad = waitForEvent(
-          EVENT_DOCUMENT_LOAD_COMPLETE,
-          DEFAULT_FISSION_DOC_BODY_ID
-        );
-      }
+    let onIframeDocLoad;
+    if (options.remoteIframe && !options.skipFissionDocLoad) {
+      onIframeDocLoad = waitForEvent(
+        EVENT_DOCUMENT_LOAD_COMPLETE,
+        DEFAULT_IFRAME_DOC_BODY_ID
+      );
     }
 
     await BrowserTestUtils.withNewTab(
@@ -394,24 +461,25 @@ function accessibleTask(doc, task, options = {}) {
         await SimpleTest.promiseFocus(browser);
         await loadContentScripts(browser, "Common.jsm");
 
-        Logger.log(
-          `e10s enabled: ${Services.appinfo.browserTabsRemoteAutostart}`
-        );
-        Logger.log(`Actually remote browser: ${browser.isRemoteBrowser}`);
+        ok(Services.appinfo.browserTabsRemoteAutostart, "e10s enabled");
+        ok(browser.isRemoteBrowser, "Actually remote browser");
 
         const { accessible: docAccessible } = await onContentDocLoad;
-        let fissionDocAccessible;
-        if (options.fission) {
-          fissionDocAccessible = gFissionBrowser
-            ? (await onFissionDocLoad).accessible
-            : findAccessibleChildByID(docAccessible, FISSION_IFRAME_ID)
-                .firstChild;
+        let iframeDocAccessible;
+        if (gIsIframe) {
+          if (!options.skipFissionDocLoad) {
+            await comparePIDs(browser, options.remoteIframe);
+            iframeDocAccessible = onIframeDocLoad
+              ? (await onIframeDocLoad).accessible
+              : findAccessibleChildByID(docAccessible, DEFAULT_IFRAME_ID)
+                  .firstChild;
+          }
         }
 
         await task(
           browser,
-          fissionDocAccessible || docAccessible,
-          fissionDocAccessible && docAccessible
+          iframeDocAccessible || docAccessible,
+          iframeDocAccessible && docAccessible
         );
       }
     );
@@ -434,18 +502,50 @@ function accessibleTask(doc, task, options = {}) {
  *         - {Boolean} iframe
  *           Flag to run the test with content wrapped in an iframe. Default is
  *           false.
+ *         - {Boolean} remoteIframe
+ *           Flag to run the test with content wrapped in a remote iframe.
+ *           Default is false.
+ *         - {Object} iframeAttrs
+ *           A map of attribute/value pairs to be applied to IFRAME element.
+ *         - {Boolean} skipFissionDocLoad
+ *           If true, the test will not wait for iframe document document
+ *           loaded event (useful for when IFRAME is initially hidden).
+ *         - {Object} contentDocBodyAttrs
+ *           a set of attributes to be applied to a top level content document
+ *           body
+ *         - {Object} iframeDocBodyAttrs
+ *           a set of attributes to be applied to a iframe content document body
  */
-function addAccessibleTask(
-  doc,
-  task,
-  { topLevel = true, iframe = false } = {}
-) {
+function addAccessibleTask(doc, task, options = {}) {
+  const { topLevel = true, iframe = false, remoteIframe = false } = options;
   if (topLevel) {
-    add_task(accessibleTask(doc, task));
+    add_task(
+      accessibleTask(doc, task, {
+        ...options,
+        iframe: false,
+        remoteIframe: false,
+      })
+    );
   }
 
   if (iframe) {
-    add_task(accessibleTask(doc, task, { fission: true }));
+    add_task(
+      accessibleTask(doc, task, {
+        ...options,
+        topLevel: false,
+        remoteIframe: false,
+      })
+    );
+  }
+
+  if (gFissionBrowser && remoteIframe) {
+    add_task(
+      accessibleTask(doc, task, {
+        ...options,
+        topLevel: false,
+        iframe: false,
+      })
+    );
   }
 }
 

@@ -133,8 +133,12 @@ some kinds, ``-j`` also matches against ``build_platform``.
 test_chunk
 ==========
 
-This is the chunk number of a chunked test suite (talos or unittest).  Note
-that this is a string!
+This is the chunk number of a chunked test suite. Note that this is a string!
+
+test_manifests
+==============
+
+A list of the test manifests that run in this task.
 
 e10s
 ====
@@ -161,7 +165,7 @@ be used for nightlies or releases.
 all_locales
 ===========
 
-For the ``l10n`` and ``nightly-l10n`` kinds, this attribute contains the list
+For the ``l10n`` and ``shippable-l10n`` kinds, this attribute contains the list
 of relevant locales for the platform.
 
 all_locales_with_changesets
@@ -171,12 +175,12 @@ Contains a dict of l10n changesets, mapped by locales (same as in ``all_locales`
 
 l10n_chunk
 ==========
-For the ``l10n`` and ``nightly-l10n`` kinds, this attribute contains the chunk
+For the ``l10n`` and ``shippable-l10n`` kinds, this attribute contains the chunk
 number of the job. Note that this is a string!
 
 chunk_locales
 =============
-For the ``l10n`` and ``nightly-l10n`` kinds, this attribute contains an array of
+For the ``l10n`` and ``shippable-l10n`` kinds, this attribute contains an array of
 the individual locales this chunk is responsible for processing.
 
 locale
@@ -216,10 +220,11 @@ real toolchain job name in the toolchains list for build jobs.
 always_target
 =============
 
-Tasks with this attribute will be included in the ``target_task_graph`` regardless
-of any target task filtering that occurs. When a task is included in this manner
-(i.e it otherwise would have been filtered out), it will be considered for
-optimization even if the ``optimize_target_tasks`` parameter is False.
+Tasks with this attribute will be included in the ``target_task_graph`` if
+``parameters["tasks_for"]`` is ``hg-push``, regardless of any target task
+filtering that occurs. When a task is included in this manner (i.e it otherwise
+would have been filtered out), it will be considered for optimization even if
+the ``optimize_target_tasks`` parameter is False.
 
 This is meant to be used for tasks which a developer would almost always want to
 run. Typically these tasks will be short running and have a high risk of causing
@@ -326,3 +331,19 @@ disable-build-signing
 =====================
 Some GeckoView-only tasks produce APKs, but not APKs that should be
 signed.  Set this to ``true`` to disable APK signing.
+
+enable-build-signing
+====================
+We enable build-signing for ``shippable``, ``nightly``, and ``enable-build-signing`` tasks.
+
+run-visual-metrics
+==================
+If set to true, will run the visual metrics task on the provided
+video files.
+
+skip-verify-test-packaging
+==================
+If set to true, this task will not be checked to see that
+MOZ_AUTOMATION_PACKAGE_TESTS is set correctly based on whether or not the task
+has dependent tests. This should only be used in very unique situations, such
+as Windows AArch64 builds that copy test packages between build tasks.

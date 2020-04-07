@@ -42,7 +42,6 @@ MOZHARNESS_SCRIPTS = {
             'jittest1',
             'jittest2',
             'jsreftest',
-            'mochitest-devtools-chrome-webreplay',
             'mochitest-valgrind-plain',
             'reftest-gpu',
             'reftest-no-accel',
@@ -91,9 +90,6 @@ def generate_suites_from_config(path):
     config = mod.config
 
     for category in sorted(config['suite_definitions']):
-        if category == 'mozmill':
-            continue
-
         key = 'all_{}_suites'.format(category)
         if key not in config:
             yield category,

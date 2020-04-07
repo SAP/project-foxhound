@@ -107,6 +107,7 @@
 @supports -moz-bool-pref("browser.in-content.dark-mode") {
 @media (prefers-color-scheme: dark) {
   :root {
+    /* Keep this in sync with layout/base/PresShell.cpp! */
     --in-content-page-background: #2A2A2E;
     --in-content-page-color: rgb(249, 249, 250);
     --in-content-text-color: var(--in-content-page-color);
@@ -140,6 +141,7 @@
     --in-content-link-color: var(--blue-40);
     --in-content-link-color-hover: var(--blue-50);
     --in-content-link-color-active: var(--blue-60);
+    --in-content-link-color-visited: var(--blue-40);
 
     --in-content-tab-color: var(--in-content-page-color);
 
@@ -994,6 +996,10 @@ input[type="text"][warning]:enabled:not(:focus) {
   margin: -16px -16px 16px;
 }
 
+.card-heading-image:dir(rtl) {
+  transform: scaleX(-1);
+}
+
 .sidebar-footer-button {
   padding: 1px; /* Adding padding around help label in order to make entire keyboard focusing outline visible */
 }
@@ -1077,4 +1083,21 @@ input[type="text"][warning]:enabled:not(:focus) {
   .sidebar-footer-label {
     display: none;
   }
+}
+
+.back-button {
+  -moz-context-properties: fill;
+  fill: currentColor;
+  background-image: url("chrome://global/skin/icons/arrow-left.svg");
+  background-repeat: no-repeat;
+  background-position: center;
+  min-width: auto;
+  width: 32px;
+  margin-block: 0;
+  margin-inline-start: 0;
+}
+
+.back-button:-moz-locale-dir(rtl),
+.back-button:dir(rtl) {
+  transform: scaleX(-1);
 }

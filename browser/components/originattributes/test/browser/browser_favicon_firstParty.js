@@ -2,7 +2,7 @@
  * Bug 1277803 - A test case for testing favicon loading across different first party domains.
  */
 
-if (Services.prefs.getBoolPref("fission.autostart")) {
+if (SpecialPowers.useRemoteSubframes) {
   requestLongerTimeout(2);
 }
 
@@ -206,7 +206,9 @@ async function assignCookiesUnderFirstParty(aURL, aFirstParty, aCookieValue) {
   let tabInfo = await openTabInFirstParty(aURL, aFirstParty);
 
   // Add cookies into the iframe.
-  await ContentTask.spawn(tabInfo.browser, aCookieValue, async function(value) {
+  await SpecialPowers.spawn(tabInfo.browser, [aCookieValue], async function(
+    value
+  ) {
     content.document.cookie = value;
   });
 

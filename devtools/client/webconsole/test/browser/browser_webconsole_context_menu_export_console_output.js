@@ -46,10 +46,10 @@ var FileUtils = Cu.import("resource://gre/modules/FileUtils.jsm").FileUtils;
 
 add_task(async function testExportToClipboard() {
   const hud = await openNewTabAndConsole(TEST_URI);
-  hud.ui.clearOutput();
+  await clearOutput(hud);
 
   info("Call the log function defined in the test page");
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
     content.wrappedJSObject.logStuff();
   });
 
@@ -70,10 +70,10 @@ add_task(async function testExportToClipboard() {
 
 add_task(async function testExportToFile() {
   const hud = await openNewTabAndConsole(TEST_URI);
-  hud.ui.clearOutput();
+  await clearOutput(hud);
 
   info("Call the log function defined in the test page");
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
     content.wrappedJSObject.logStuff();
   });
 

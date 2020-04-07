@@ -9,6 +9,7 @@
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
 #include "mozilla/dom/AtomList.h"
+#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventQueue.h"
 #include "mozilla/ThreadEventQueue.h"
@@ -20,9 +21,6 @@ namespace {
 
 // The size of the worklet runtime heaps in bytes.
 #define WORKLET_DEFAULT_RUNTIME_HEAPSIZE 32 * 1024 * 1024
-
-// The size of the generational GC nursery for worklet, in bytes.
-#define WORKLET_DEFAULT_NURSERY_SIZE 1 * 1024 * 1024
 
 // The C stack size. We use the same stack size on all platforms for
 // consistency.
@@ -85,7 +83,7 @@ class WorkletJSRuntime final : public mozilla::CycleCollectedJSRuntime {
     // destructor will trigger a final GC.  The nsCycleCollector_collect()
     // call can be skipped in this GC as ~CycleCollectedJSContext removes the
     // context from |this|.
-    if (aStatus == JSGC_END && !Contexts().isEmpty()) {
+    if (aStatus == JSGC_END && GetContext()) {
       nsCycleCollector_collect(nullptr);
     }
   }
@@ -123,8 +121,7 @@ class WorkletJSContext final : public CycleCollectedJSContext {
     MOZ_ASSERT(!NS_IsMainThread());
 
     nsresult rv = CycleCollectedJSContext::Initialize(
-        aParentRuntime, WORKLET_DEFAULT_RUNTIME_HEAPSIZE,
-        WORKLET_DEFAULT_NURSERY_SIZE);
+        aParentRuntime, WORKLET_DEFAULT_RUNTIME_HEAPSIZE);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -155,7 +152,7 @@ class WorkletJSContext final : public CycleCollectedJSContext {
 #endif
 
     JS::JobQueueMayNotBeEmpty(cx);
-    GetMicroTaskQueue().push(runnable.forget());
+    GetMicroTaskQueue().push(std::move(runnable));
   }
 
   bool IsSystemCaller() const override {
@@ -260,10 +257,7 @@ WorkletThread::WorkletThread(WorkletImpl* aWorkletImpl)
   nsContentUtils::RegisterShutdownObserver(this);
 }
 
-WorkletThread::~WorkletThread() {
-  // This should be set during the termination step.
-  MOZ_ASSERT(mExitLoop);
-}
+WorkletThread::~WorkletThread() = default;
 
 // static
 already_AddRefed<WorkletThread> WorkletThread::Create(
@@ -311,7 +305,33 @@ WorkletThread::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t aFlags) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-/* static */
+static bool DispatchToEventLoop(void* aClosure,
+                                JS::Dispatchable* aDispatchable) {
+  // This callback may execute either on the worklet thread or a random
+  // JS-internal helper thread.
+
+  // See comment at JS::InitDispatchToEventLoop() below for how we know the
+  // WorkletThread is alive.
+  WorkletThread* workletThread = reinterpret_cast<WorkletThread*>(aClosure);
+
+  nsresult rv = workletThread->DispatchRunnable(NS_NewRunnableFunction(
+      "WorkletThread::DispatchToEventLoop", [aDispatchable]() {
+        CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::Get();
+        if (!ccjscx) {
+          return;
+        }
+
+        WorkletJSContext* wjc = ccjscx->GetAsWorkletJSContext();
+        if (!wjc) {
+          return;
+        }
+
+        aDispatchable->run(wjc->Context(), JS::Dispatchable::NotShuttingDown);
+      }));
+
+  return NS_SUCCEEDED(rv);
+}
+
 void WorkletThread::EnsureCycleCollectedJSContext(JSRuntime* aParentRuntime) {
   CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::Get();
   if (ccjscx) {
@@ -333,6 +353,11 @@ void WorkletThread::EnsureCycleCollectedJSContext(JSRuntime* aParentRuntime) {
   // FIXME: JS_AddInterruptCallback
   // FIXME: JS::SetCTypesActivityCallback
   // FIXME: JS_SetGCZeal
+
+  // A WorkletThread lives strictly longer than its JSRuntime so we can safely
+  // store a raw pointer as the callback's closure argument on the JSRuntime.
+  JS::InitDispatchToEventLoop(context->Context(), DispatchToEventLoop,
+                              (void*)this);
 
   JS_SetNativeStackQuota(context->Context(),
                          WORKLET_CONTEXT_NATIVE_STACK_LIMIT);
@@ -373,7 +398,7 @@ void WorkletThread::Terminate() {
 }
 
 void WorkletThread::TerminateInternal() {
-  AssertIsOnWorkletThread();
+  MOZ_ASSERT(!CycleCollectedJSContext::Get() || IsOnWorkletThread());
 
   mExitLoop = true;
 
@@ -388,6 +413,9 @@ void WorkletThread::DeleteCycleCollectedJSContext() {
   if (!ccjscx) {
     return;
   }
+
+  // Release any MessagePort kept alive by its ipc actor.
+  mozilla::ipc::BackgroundChild::CloseForCurrentThread();
 
   WorkletJSContext* workletjscx = ccjscx->GetAsWorkletJSContext();
   MOZ_ASSERT(workletjscx);

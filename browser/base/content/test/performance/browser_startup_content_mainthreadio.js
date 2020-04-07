@@ -143,18 +143,6 @@ const processes = {
       condition: !WIN,
       stat: 1,
     },
-    {
-      // bug 1357205
-      path: "XREAppFeat:formautofill@mozilla.org.xpi",
-      condition: !WIN,
-      stat: 1,
-    },
-    {
-      // bug 1357205
-      path: "XREAppFeat:screenshots@mozilla.org.xpi",
-      condition: !WIN,
-      close: 1,
-    },
   ],
 };
 
@@ -375,9 +363,7 @@ add_task(async function() {
       if (!expected) {
         record(
           false,
-          `unexpected ${marker.operation} on ${
-            marker.filename
-          } in ${procName} process`,
+          `unexpected ${marker.operation} on ${marker.filename} in ${procName} process`,
           undefined,
           "  " + getStackFromProfile(profile, marker.stackId).join("\n  ")
         );

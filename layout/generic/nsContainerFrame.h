@@ -154,16 +154,11 @@ class nsContainerFrame : public nsSplittableFrame {
                                     nsIFrame* aOldParentFrame,
                                     nsIFrame* aNewParentFrame);
 
-  static nsresult ReparentFrameViewList(const nsFrameList& aChildFrameList,
-                                        nsIFrame* aOldParentFrame,
-                                        nsIFrame* aNewParentFrame);
+  static void ReparentFrameViewList(const nsFrameList& aChildFrameList,
+                                    nsIFrame* aOldParentFrame,
+                                    nsIFrame* aNewParentFrame);
 
   // Set the view's size and position after its frame has been reflowed.
-  //
-  // Flags:
-  // NoMoveView - don't position the frame's view. Set this if you
-  //    don't want to automatically sync the frame and view
-  // NoSizeView - don't size the view
   static void SyncFrameViewAfterReflow(
       nsPresContext* aPresContext, nsIFrame* aFrame, nsView* aView,
       const nsRect& aVisualOverflowArea,
@@ -210,19 +205,18 @@ class nsContainerFrame : public nsSplittableFrame {
       const mozilla::LogicalSize& aPadding, ComputeSizeFlags aFlags) override;
 
   /**
-   * Positions aChildFrame and its view (if requested), and then calls Reflow().
-   * If the reflow status after reflowing the child is FULLY_COMPLETE then any
+   * Positions aKidFrame and its view (if requested), and then calls Reflow().
+   * If the reflow status after reflowing the child is FullyComplete then any
    * next-in-flows are deleted using DeleteNextInFlowChild().
    *
-   * @param aContainerSize  size of the border-box of the containing frame
+   * @param aWM Containing frame's writing-mode.
+   * @param aPos Position of the aKidFrame to be moved.
+   * @param aContainerSize Size of the border-box of the containing frame.
    *
-   * Flags:
-   * NoMoveView - don't position the frame's view. Set this if you
-   *    don't want to automatically sync the frame and view
-   * NoMoveFrame - don't move the frame. aPos is ignored in this
-   *    case. Also implies NoMoveView
+   * Note: If ReflowChildFlags::NoMoveFrame is requested, both aPos and
+   * aContainerSize are ignored.
    */
-  void ReflowChild(nsIFrame* aChildFrame, nsPresContext* aPresContext,
+  void ReflowChild(nsIFrame* aKidFrame, nsPresContext* aPresContext,
                    ReflowOutput& aDesiredSize, const ReflowInput& aReflowInput,
                    const mozilla::WritingMode& aWM,
                    const mozilla::LogicalPoint& aPos,
@@ -240,14 +234,13 @@ class nsContainerFrame : public nsSplittableFrame {
    * - sets the view's visibility, opacity, content transparency, and clip
    * - invoked the DidReflow() function
    *
-   * @param aContainerSize  size of the border-box of the containing frame
+   * @param aWM Containing frame's writing-mode.
+   * @param aPos Position of the aKidFrame to be positioned.
+   * @param aContainerSize Size of the border-box of the containing frame.
    *
-   * Flags:
-   * NoMoveFrame - don't move the frame. aPos is ignored in this
-   *    case. Also implies NoMoveView
-   * NoMoveView - don't position the frame's view. Set this if you
-   *    don't want to automatically sync the frame and view
-   * NoSizeView - don't size the frame's view
+   * Note: If ReflowChildFlags::NoMoveFrame is requested, both aPos and
+   * aContainerSize are ignored unless
+   * ReflowChildFlags::ApplyRelativePositioning is requested.
    */
   static void FinishReflowChild(
       nsIFrame* aKidFrame, nsPresContext* aPresContext,
@@ -307,6 +300,8 @@ class nsContainerFrame : public nsSplittableFrame {
    * The nsOverflowContinuationTracker helper class should be used for tracking
    * overflow containers and adding them to the appropriate list.
    * See nsBlockFrame::Reflow for a sample implementation.
+   *
+   * For more information, see https://wiki.mozilla.org/Gecko:Continuation_Model
    */
 
   friend class nsOverflowContinuationTracker;
@@ -431,15 +426,8 @@ class nsContainerFrame : public nsSplittableFrame {
    * @param aLogicalAxis The axis (of this container frame) in which the caller
    *                     would like to align the child frame.
    */
-  virtual uint16_t CSSAlignmentForAbsPosChild(
+  virtual mozilla::StyleAlignFlags CSSAlignmentForAbsPosChild(
       const ReflowInput& aChildRI, mozilla::LogicalAxis aLogicalAxis) const;
-
-#ifdef ACCESSIBILITY
-  /**
-   * Return the ::marker text equivalent, without flushing.
-   */
-  void GetSpokenMarkerText(nsAString& aText) const;
-#endif
 
 #define NS_DECLARE_FRAME_PROPERTY_FRAMELIST(prop) \
   NS_DECLARE_FRAME_PROPERTY_WITH_DTOR_NEVER_CALLED(prop, nsFrameList)
@@ -837,7 +825,7 @@ inline nsFrameList* nsContainerFrame::GetOverflowFrames() const {
 }
 
 inline nsFrameList* nsContainerFrame::StealOverflowFrames() {
-  nsFrameList* list = RemoveProperty(OverflowProperty());
+  nsFrameList* list = TakeProperty(OverflowProperty());
   NS_ASSERTION(!list || !list->IsEmpty(), "Unexpected empty overflow list");
   return list;
 }

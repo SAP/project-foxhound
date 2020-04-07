@@ -16,14 +16,13 @@
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
-#include "nsIURL.h"
 #include "nsIFileStreams.h"
 #include "nsILineInputStream.h"
 #include "nsIFile.h"
 #include "nsIProcess.h"
 #include "nsNetCID.h"
 #include "nsXPCOM.h"
-#include "nsISupportsPrimitives.h"
+#include "nsComponentManagerUtils.h"
 #include "nsCRT.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
@@ -1055,6 +1054,12 @@ NS_IMETHODIMP nsOSHelperAppService::GetApplicationDescription(
 #else
   return NS_ERROR_NOT_AVAILABLE;
 #endif
+}
+
+NS_IMETHODIMP nsOSHelperAppService::IsCurrentAppOSDefaultForProtocol(
+    const nsACString& aScheme, bool* _retval) {
+  *_retval = false;
+  return NS_OK;
 }
 
 nsresult nsOSHelperAppService::GetFileTokenForPath(

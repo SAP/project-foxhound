@@ -13,16 +13,19 @@
 #include "nsIHttpHeaderVisitor.h"
 #include "nsIInputStream.h"
 #include "nsIInterfaceRequestor.h"
-#include "nsIStreamLoader.h"
 #include "nsINSSErrorsService.h"
+#include "nsITransportSecurityInfo.h"
 #include "nsIUploadChannel2.h"
+#include "nsIWebProgressListener.h"
+#include "nsIX509Cert.h"
 
 #include "nsIDNSService.h"
 #include "nsIDNSListener.h"
 #include "nsIDNSRecord.h"
 
 #include "mozilla/net/DNS.h"  // for NetAddr
-#include "mozilla/net/CookieSettings.h"
+#include "mozilla/net/CookieJarSettings.h"
+#include "mozilla/Preferences.h"
 
 #include "nsNetUtil.h"  // for NS_NewURI, NS_NewChannel, NS_NewStreamLoader
 
@@ -34,8 +37,35 @@ using namespace net;
 
 namespace widget {
 
+static jni::ByteArray::LocalRef CertificateFromChannel(nsIChannel* aChannel) {
+  MOZ_ASSERT(aChannel);
+
+  nsCOMPtr<nsISupports> securityInfo;
+  aChannel->GetSecurityInfo(getter_AddRefs(securityInfo));
+  if (!securityInfo) {
+    return nullptr;
+  }
+
+  nsresult rv;
+  nsCOMPtr<nsITransportSecurityInfo> tsi = do_QueryInterface(securityInfo, &rv);
+  NS_ENSURE_SUCCESS(rv, nullptr);
+
+  nsCOMPtr<nsIX509Cert> cert;
+  tsi->GetServerCert(getter_AddRefs(cert));
+  if (!cert) {
+    return nullptr;
+  }
+
+  nsTArray<uint8_t> derBytes;
+  rv = cert->GetRawDER(derBytes);
+  NS_ENSURE_SUCCESS(rv, nullptr);
+
+  return jni::ByteArray::New(
+      reinterpret_cast<const int8_t*>(derBytes.Elements()), derBytes.Length());
+}
+
 static void CompleteWithError(java::GeckoResult::Param aResult,
-                              nsresult aStatus) {
+                              nsresult aStatus, nsIChannel* aChannel) {
   nsCOMPtr<nsINSSErrorsService> errSvc =
       do_GetService("@mozilla.org/nss_errors_service;1");
   MOZ_ASSERT(errSvc);
@@ -46,10 +76,20 @@ static void CompleteWithError(java::GeckoResult::Param aResult,
     errorClass = 0;
   }
 
+  jni::ByteArray::LocalRef certBytes;
+  if (aChannel) {
+    certBytes = CertificateFromChannel(aChannel);
+  }
+
   java::WebRequestError::LocalRef error = java::WebRequestError::FromGeckoError(
-      int64_t(aStatus), NS_ERROR_GET_MODULE(aStatus), errorClass);
+      int64_t(aStatus), NS_ERROR_GET_MODULE(aStatus), errorClass, certBytes);
 
   aResult->CompleteExceptionally(error.Cast<jni::Throwable>());
+}
+
+static void CompleteWithError(java::GeckoResult::Param aResult,
+                              nsresult aStatus) {
+  CompleteWithError(aResult, aStatus, nullptr);
 }
 
 class ByteBufferStream final : public nsIInputStream {
@@ -143,14 +183,24 @@ class StreamSupport final
  public:
   typedef java::GeckoInputStream::Support::Natives<StreamSupport> Base;
   using Base::AttachNative;
-  using Base::DisposeNative;
   using Base::GetNative;
 
-  explicit StreamSupport(nsIRequest* aRequest) : mRequest(aRequest) {}
+  explicit StreamSupport(java::GeckoInputStream::Support::Param aInstance,
+                         nsIRequest* aRequest)
+      : mInstance(aInstance), mRequest(aRequest) {}
+
+  void Close() {
+    mRequest->Cancel(NS_ERROR_ABORT);
+    mRequest->Resume();
+
+    // This is basically `delete this`, so don't run anything else!
+    Base::DisposeNative(mInstance);
+  }
 
   void Resume() { mRequest->Resume(); }
 
  private:
+  java::GeckoInputStream::Support::GlobalRef mInstance;
   nsCOMPtr<nsIRequest> mRequest;
 };
 
@@ -161,8 +211,10 @@ class LoaderListener final : public nsIStreamListener,
   NS_DECL_THREADSAFE_ISUPPORTS
 
   explicit LoaderListener(java::GeckoResult::Param aResult,
-                          bool aAllowRedirects)
-      : mResult(aResult), mAllowRedirects(aAllowRedirects) {
+                          bool aAllowRedirects, bool testStreamFailure)
+      : mResult(aResult),
+        mTestStreamFailure(testStreamFailure),
+        mAllowRedirects(aAllowRedirects) {
     MOZ_ASSERT(mResult);
   }
 
@@ -173,7 +225,8 @@ class LoaderListener final : public nsIStreamListener,
     nsresult status;
     aRequest->GetStatus(&status);
     if (NS_FAILED(status)) {
-      CompleteWithError(mResult, status);
+      nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
+      CompleteWithError(mResult, status, channel);
       return NS_OK;
     }
 
@@ -181,8 +234,8 @@ class LoaderListener final : public nsIStreamListener,
 
     // We're expecting data later via OnDataAvailable, so create the stream now.
     mSupport = java::GeckoInputStream::Support::New();
-    StreamSupport::AttachNative(mSupport,
-                                mozilla::MakeUnique<StreamSupport>(aRequest));
+    StreamSupport::AttachNative(
+        mSupport, mozilla::MakeUnique<StreamSupport>(mSupport, aRequest));
 
     mStream = java::GeckoInputStream::New(mSupport);
 
@@ -192,7 +245,8 @@ class LoaderListener final : public nsIStreamListener,
 
     nsresult rv = HandleWebResponse(aRequest);
     if (NS_FAILED(rv)) {
-      CompleteWithError(mResult, rv);
+      nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
+      CompleteWithError(mResult, rv, channel);
       return NS_OK;
     }
 
@@ -202,7 +256,11 @@ class LoaderListener final : public nsIStreamListener,
   NS_IMETHOD
   OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) override {
     if (mStream) {
-      mStream->SendEof();
+      if (NS_FAILED(aStatusCode)) {
+        mStream->SendError();
+      } else {
+        mStream->SendEof();
+      }
     }
     return NS_OK;
   }
@@ -211,6 +269,10 @@ class LoaderListener final : public nsIStreamListener,
   OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInputStream,
                   uint64_t aOffset, uint32_t aCount) override {
     MOZ_ASSERT(mStream);
+
+    if (mTestStreamFailure) {
+      return NS_ERROR_UNEXPECTED;
+    }
 
     // We only need this for the ReadSegments call, the value is unused.
     uint32_t countRead;
@@ -302,6 +364,34 @@ class LoaderListener final : public nsIStreamListener,
       builder->Body(mStream);
     }
 
+    // Secure status
+    nsCOMPtr<nsISupports> securityInfo;
+    channel->GetSecurityInfo(getter_AddRefs(securityInfo));
+    if (securityInfo) {
+      nsCOMPtr<nsITransportSecurityInfo> tsi =
+          do_QueryInterface(securityInfo, &rv);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      uint32_t securityState = 0;
+      tsi->GetSecurityState(&securityState);
+      builder->IsSecure(securityState ==
+                        nsIWebProgressListener::STATE_IS_SECURE);
+
+      nsCOMPtr<nsIX509Cert> cert;
+      tsi->GetServerCert(getter_AddRefs(cert));
+      if (cert) {
+        nsTArray<uint8_t> derBytes;
+        rv = cert->GetRawDER(derBytes);
+        NS_ENSURE_SUCCESS(rv, rv);
+
+        auto bytes = jni::ByteArray::New(
+            reinterpret_cast<const int8_t*>(derBytes.Elements()),
+            derBytes.Length());
+        rv = builder->CertificateBytes(bytes);
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+    }
+
     mResult->Complete(builder->Build());
     return NS_OK;
   }
@@ -311,6 +401,7 @@ class LoaderListener final : public nsIStreamListener,
   const java::GeckoResult::GlobalRef mResult;
   java::GeckoInputStream::GlobalRef mStream;
   java::GeckoInputStream::Support::GlobalRef mSupport;
+  const bool mTestStreamFailure;
 
   bool mAllowRedirects;
 };
@@ -441,11 +532,12 @@ nsresult WebExecutorSupport::CreateStreamLoader(
     channel->SetLoadFlags(nsIRequest::LOAD_ANONYMOUS);
   }
 
-  nsCOMPtr<nsICookieSettings> cookieSettings = CookieSettings::Create();
-  MOZ_ASSERT(cookieSettings);
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
+      CookieJarSettings::Create();
+  MOZ_ASSERT(cookieJarSettings);
 
   nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
-  loadInfo->SetCookieSettings(cookieSettings);
+  loadInfo->SetCookieJarSettings(cookieJarSettings);
 
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel, &rv));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -517,8 +609,12 @@ nsresult WebExecutorSupport::CreateStreamLoader(
   const bool allowRedirects =
       !(aFlags & java::GeckoWebExecutor::FETCH_FLAGS_NO_REDIRECTS);
 
+  const bool testStreamFailure =
+      (aFlags & java::GeckoWebExecutor::FETCH_FLAGS_STREAM_FAILURE_TEST);
+
   // All done, set up the listener
-  RefPtr<LoaderListener> listener = new LoaderListener(aResult, allowRedirects);
+  RefPtr<LoaderListener> listener =
+      new LoaderListener(aResult, allowRedirects, testStreamFailure);
 
   rv = channel->SetNotificationCallbacks(listener);
   NS_ENSURE_SUCCESS(rv, rv);

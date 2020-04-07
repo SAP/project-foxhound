@@ -24,6 +24,7 @@
 namespace mozilla {
 
 struct SVGMark;
+enum class StyleStrokeLinecap : uint8_t;
 
 class SVGPathDataParser;  // IWYU pragma: keep
 
@@ -163,7 +164,7 @@ class SVGPathData {
   already_AddRefed<Path> BuildPathForMeasuring() const;
 
   already_AddRefed<Path> BuildPath(PathBuilder* aBuilder,
-                                   uint8_t aStrokeLineCap,
+                                   StyleStrokeLinecap aStrokeLineCap,
                                    Float aStrokeWidth) const;
   /**
    * This function tries to build the path from an array of StylePathCommand,
@@ -172,7 +173,7 @@ class SVGPathData {
    */
   static already_AddRefed<Path> BuildPath(Span<const StylePathCommand> aPath,
                                           PathBuilder* aBuilder,
-                                          uint8_t aStrokeLineCap,
+                                          StyleStrokeLinecap aStrokeLineCap,
                                           Float aStrokeWidth,
                                           float aZoomFactor = 1.0);
 

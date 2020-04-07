@@ -155,6 +155,10 @@ bool RemoteDecoderManagerChild::DeallocPRemoteDecoderChild(
   return true;
 }
 
+RemoteDecoderManagerChild::RemoteDecoderManagerChild(
+    layers::VideoBridgeSource aSource)
+    : mSource(aSource) {}
+
 void RemoteDecoderManagerChild::OpenForRDDProcess(
     Endpoint<PRemoteDecoderManagerChild>&& aEndpoint) {
   MOZ_ASSERT(NS_GetCurrentThread() == GetManagerThread());
@@ -170,7 +174,8 @@ void RemoteDecoderManagerChild::OpenForRDDProcess(
   }
   sRemoteDecoderManagerChildForRDDProcess = nullptr;
   if (aEndpoint.IsValid()) {
-    RefPtr<RemoteDecoderManagerChild> manager = new RemoteDecoderManagerChild();
+    RefPtr<RemoteDecoderManagerChild> manager =
+        new RemoteDecoderManagerChild(VideoBridgeSource::RddProcess);
     if (aEndpoint.Bind(manager)) {
       sRemoteDecoderManagerChildForRDDProcess = manager;
       manager->InitIPDL();
@@ -184,7 +189,8 @@ void RemoteDecoderManagerChild::OpenForGPUProcess(
   // fail since this is as close to being recreated as we will ever be.
   sRemoteDecoderManagerChildForGPUProcess = nullptr;
   if (aEndpoint.IsValid()) {
-    RefPtr<RemoteDecoderManagerChild> manager = new RemoteDecoderManagerChild();
+    RefPtr<RemoteDecoderManagerChild> manager =
+        new RemoteDecoderManagerChild(VideoBridgeSource::GpuProcess);
     if (aEndpoint.Bind(manager)) {
       sRemoteDecoderManagerChildForGPUProcess = manager;
       manager->InitIPDL();
@@ -288,13 +294,13 @@ already_AddRefed<SourceSurface> RemoteDecoderManagerChild::Readback(
   return source.forget();
 }
 
-void RemoteDecoderManagerChild::DeallocateSurfaceDescriptorGPUVideo(
+void RemoteDecoderManagerChild::DeallocateSurfaceDescriptor(
     const SurfaceDescriptorGPUVideo& aSD) {
   RefPtr<RemoteDecoderManagerChild> ref = this;
   SurfaceDescriptorGPUVideo sd = std::move(aSD);
   sRemoteDecoderManagerChildThread->Dispatch(
       NS_NewRunnableFunction(
-          "RemoteDecoderManagerChild::DeallocateSurfaceDescriptorGPUVideo",
+          "RemoteDecoderManagerChild::DeallocateSurfaceDescriptor",
           [ref, sd]() {
             if (ref->CanSend()) {
               ref->SendDeallocateSurfaceDescriptorGPUVideo(sd);

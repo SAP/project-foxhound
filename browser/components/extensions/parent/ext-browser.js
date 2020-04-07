@@ -20,6 +20,11 @@ ChromeUtils.defineModuleGetter(
   "BrowserWindowTracker",
   "resource:///modules/BrowserWindowTracker.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "PromiseUtils",
+  "resource://gre/modules/PromiseUtils.jsm"
+);
 
 var { ExtensionError } = ExtensionUtils;
 
@@ -123,6 +128,24 @@ global.makeWidgetId = id => {
   id = id.toLowerCase();
   // FIXME: This allows for collisions.
   return id.replace(/[^a-z0-9_-]/g, "_");
+};
+
+global.clickModifiersFromEvent = event => {
+  const map = {
+    shiftKey: "Shift",
+    altKey: "Alt",
+    metaKey: "Command",
+    ctrlKey: "Ctrl",
+  };
+  let modifiers = Object.keys(map)
+    .filter(key => event[key])
+    .map(key => map[key]);
+
+  if (event.ctrlKey && AppConstants.platform === "macosx") {
+    modifiers.push("MacCtrl");
+  }
+
+  return modifiers;
 };
 
 global.waitForTabLoaded = (tab, url) => {
@@ -306,6 +329,7 @@ class TabTracker extends TabTrackerBase {
     this._browsers = new WeakMap();
     this._tabIds = new Map();
     this._nextId = 1;
+    this._deferredTabOpenEvents = new WeakMap();
 
     this._handleTabDestroyed = this._handleTabDestroyed.bind(this);
   }
@@ -471,6 +495,23 @@ class TabTracker extends TabTrackerBase {
     tab.openerTab = openerTab;
   }
 
+  deferredForTabOpen(nativeTab) {
+    let deferred = this._deferredTabOpenEvents.get(nativeTab);
+    if (!deferred) {
+      deferred = PromiseUtils.defer();
+      this._deferredTabOpenEvents.set(nativeTab, deferred);
+      deferred.promise.then(() => {
+        this._deferredTabOpenEvents.delete(nativeTab);
+      });
+    }
+    return deferred;
+  }
+
+  async maybeWaitForTabOpen(nativeTab) {
+    let deferred = this._deferredTabOpenEvents.get(nativeTab);
+    return deferred && deferred.promise;
+  }
+
   /**
    * @param {Event} event
    *        The DOM Event to handle.
@@ -508,7 +549,9 @@ class TabTracker extends TabTrackerBase {
           // We need to delay sending this event until the next tick, since the
           // tab can become selected immediately after "TabOpen", then onCreated
           // should be fired with `active: true`.
+          let deferred = this.deferredForTabOpen(event.originalTarget);
           Promise.resolve().then(() => {
+            deferred.resolve();
             if (!event.originalTarget.parentNode) {
               // If the tab is already be destroyed, do nothing.
               return;
@@ -534,7 +577,7 @@ class TabTracker extends TabTrackerBase {
       case "TabSelect":
         // Because we are delaying calling emitCreated above, we also need to
         // delay sending this event because it shouldn't fire before onCreated.
-        Promise.resolve().then(() => {
+        this.maybeWaitForTabOpen(nativeTab).then(() => {
           if (!nativeTab.parentNode) {
             // If the tab is already be destroyed, do nothing.
             return;
@@ -547,6 +590,7 @@ class TabTracker extends TabTrackerBase {
         if (this.has("tabs-highlighted")) {
           // Because we are delaying calling emitCreated above, we also need to
           // delay sending this event because it shouldn't fire before onCreated.
+          // event.target is gBrowser, so we don't use maybeWaitForTabOpen.
           Promise.resolve().then(() => {
             this.emitHighlighted(event.target.ownerGlobal);
           });
@@ -699,13 +743,20 @@ class TabTracker extends TabTrackerBase {
   }
 
   getBrowserData(browser) {
-    let { gBrowser } = browser.ownerGlobal;
+    let window = browser.ownerGlobal;
+    if (!window) {
+      return {
+        tabId: -1,
+        windowId: -1,
+      };
+    }
+    let { gBrowser } = window;
     // Some non-browser windows have gBrowser but not getTabForBrowser!
     if (!gBrowser || !gBrowser.getTabForBrowser) {
-      if (browser.ownerGlobal.top.document.documentURI === "about:addons") {
+      if (window.top.document.documentURI === "about:addons") {
         // When we're loaded into a <browser> inside about:addons, we need to go up
         // one more level.
-        browser = browser.ownerGlobal.docShell.chromeEventHandler;
+        browser = window.docShell.chromeEventHandler;
 
         ({ gBrowser } = browser.ownerGlobal);
       } else {
@@ -953,10 +1004,14 @@ class Window extends WindowBase {
   }
 
   setTitlePreface(titlePreface) {
-    this.window.document.documentElement.setAttribute(
-      "titlepreface",
-      titlePreface
-    );
+    if (!titlePreface) {
+      this.window.document.documentElement.removeAttribute("titlepreface");
+    } else {
+      this.window.document.documentElement.setAttribute(
+        "titlepreface",
+        titlePreface
+      );
+    }
   }
 
   get focused() {
@@ -984,7 +1039,7 @@ class Window extends WindowBase {
   }
 
   get alwaysOnTop() {
-    return this.xulWindow.zLevel >= Ci.nsIXULWindow.raisedZ;
+    return this.appWindow.zLevel >= Ci.nsIAppWindow.raisedZ;
   }
 
   get isLastFocused() {

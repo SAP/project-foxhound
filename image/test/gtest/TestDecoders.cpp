@@ -12,14 +12,11 @@
 #include "IDecodingTask.h"
 #include "ImageOps.h"
 #include "imgIContainer.h"
-#include "imgITools.h"
 #include "ImageFactory.h"
 #include "mozilla/gfx/2D.h"
 #include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
 #include "nsIInputStream.h"
-#include "nsIRunnable.h"
-#include "nsIThread.h"
 #include "mozilla/RefPtr.h"
 #include "nsStreamUtils.h"
 #include "nsString.h"
@@ -70,8 +67,8 @@ static already_AddRefed<SourceSurface> CheckDecoderState(
 
   // Verify that the resulting surfaces matches our expectations.
   EXPECT_TRUE(surface->IsDataSourceSurface());
-  EXPECT_TRUE(surface->GetFormat() == SurfaceFormat::B8G8R8X8 ||
-              surface->GetFormat() == SurfaceFormat::B8G8R8A8);
+  EXPECT_TRUE(surface->GetFormat() == SurfaceFormat::OS_RGBX ||
+              surface->GetFormat() == SurfaceFormat::OS_RGBA);
   EXPECT_EQ(aTestCase.mOutputSize, surface->GetSize());
 
   return surface.forget();
@@ -296,8 +293,8 @@ static void CheckAnimationDecoderResults(const ImageTestCase& aTestCase,
 
     // Verify that the resulting surfaces matches our expectations.
     EXPECT_TRUE(surface->IsDataSourceSurface());
-    EXPECT_TRUE(surface->GetFormat() == SurfaceFormat::B8G8R8X8 ||
-                surface->GetFormat() == SurfaceFormat::B8G8R8A8);
+    EXPECT_TRUE(surface->GetFormat() == SurfaceFormat::OS_RGBX ||
+                surface->GetFormat() == SurfaceFormat::OS_RGBA);
     EXPECT_EQ(aTestCase.mOutputSize, surface->GetSize());
     EXPECT_TRUE(IsSolidColor(surface, framePixels[i],
                              aTestCase.mFlags & TEST_CASE_IS_FUZZY ? 1 : 0));

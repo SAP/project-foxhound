@@ -32,7 +32,10 @@ if CONFIG['MOZ_BUILD_APP'] == 'browser':
     ]
 
 if CONFIG['ENABLE_TESTS'] or CONFIG['MOZ_DMD']:
-    FINAL_TARGET_FILES += ['/tools/rb/fix_stack_using_bpsyms.py']
+    FINAL_TARGET_FILES += [
+        '/tools/rb/fix_stack_using_bpsyms.py',
+        '/tools/rb/fix_stacks.py',
+    ]
     if CONFIG['OS_ARCH'] == 'Darwin':
         FINAL_TARGET_FILES += ['/tools/rb/fix_macosx_stack.py']
     if CONFIG['OS_ARCH'] == 'Linux':
@@ -51,6 +54,10 @@ OBJDIR_FILES += ['!/dist/bin/.gdbinit_python']
 if CONFIG['MOZ_ASAN'] and CONFIG['CC_TYPE'] == 'clang-cl':
     FINAL_TARGET_FILES += ['%' + CONFIG['MOZ_CLANG_RT_ASAN_LIB_PATH']]
     FINAL_TARGET_FILES += ['%' + CONFIG['MOZ_CLANG_RT_ASAN_LIB_PATH'].replace(".dll", ".pdb")]
+
+# Install the clang runtime library for ASAN next to the binaries we produce.
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android' and CONFIG['MOZ_ASAN']:
+    FINAL_TARGET_FILES += ['%' + CONFIG['MOZ_CLANG_RT_ASAN_LIB_PATH']]
 
 if CONFIG['LLVM_SYMBOLIZER']:
     FINAL_TARGET_FILES += ['/' + CONFIG['LLVM_SYMBOLIZER']]
@@ -84,7 +91,7 @@ if CONFIG['MOZ_APP_BASENAME']:
         entry_point='generate',
         inputs=['application.ini.in'],
         flags=['-D%s=%s' % (k, '1' if v is True else v)
-               for k, v in appini_defines.iteritems()])
+               for k, v in appini_defines.items()])
     
     FINAL_TARGET_FILES += ['!application.ini']
     if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'android' and CONFIG['MOZ_UPDATER']:

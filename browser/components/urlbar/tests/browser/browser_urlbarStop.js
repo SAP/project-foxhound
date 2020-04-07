@@ -16,14 +16,14 @@ add_task(async function() {
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   is(
     gURLBar.value,
-    gURLBar.trimValue(goodURL),
+    BrowserUtils.trimURL(goodURL),
     "location bar reflects loaded page"
   );
 
   await typeAndSubmitAndStop(badURL);
   is(
     gURLBar.value,
-    gURLBar.trimValue(goodURL),
+    BrowserUtils.trimURL(goodURL),
     "location bar reflects loaded page after stop()"
   );
   gBrowser.removeCurrentTab();
@@ -34,17 +34,22 @@ add_task(async function() {
   await typeAndSubmitAndStop(badURL);
   is(
     gURLBar.value,
-    gURLBar.trimValue(badURL),
+    BrowserUtils.trimURL(badURL),
     "location bar reflects stopped page in an empty tab"
   );
   gBrowser.removeCurrentTab();
 });
 
 async function typeAndSubmitAndStop(url) {
-  await promiseAutocompleteResultPopup(url, window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: url,
+    fireInputEvent: true,
+  });
   is(
     gURLBar.value,
-    gURLBar.trimValue(url),
+    BrowserUtils.trimURL(url),
     "location bar reflects loading page"
   );
 
@@ -53,7 +58,7 @@ async function typeAndSubmitAndStop(url) {
     gBrowser.selectedBrowser
   );
 
-  // When the load is stopped, tabbrowser calls URLBarSetURI and then calls
+  // When the load is stopped, tabbrowser calls gURLBar.setURI and then calls
   // onStateChange on its progress listeners.  So to properly wait until the
   // urlbar value has been updated, add our own progress listener here.
   let progressPromise = new Promise(resolve => {

@@ -5,14 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Location.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIScriptContext.h"
 #include "nsDocShellLoadState.h"
 #include "nsIWebNavigation.h"
 #include "nsIURIFixup.h"
 #include "nsIURL.h"
-#include "nsIURIMutator.h"
 #include "nsIJARURI.h"
 #include "nsNetUtil.h"
 #include "nsCOMPtr.h"
@@ -20,7 +18,6 @@
 #include "nsPresContext.h"
 #include "nsError.h"
 #include "nsReadableUtils.h"
-#include "nsITextToSubURI.h"
 #include "nsJSUtils.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
@@ -48,7 +45,7 @@ Location::Location(nsPIDOMWindowInner* aWindow,
   }
 }
 
-Location::~Location() {}
+Location::~Location() = default;
 
 // QueryInterface implementation for Location
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Location)
@@ -663,7 +660,7 @@ bool Location::CallerSubsumes(nsIPrincipal* aSubjectPrincipal) {
   // even though we only allow limited cross-origin access to Location objects
   // in general.
   nsCOMPtr<nsPIDOMWindowOuter> outer = bc->GetDOMWindow();
-  MOZ_DIAGNOSTIC_ASSERT(outer);
+  MOZ_ASSERT(outer);
   if (MOZ_UNLIKELY(!outer)) return false;
 
   nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(outer);

@@ -13,9 +13,12 @@ import glob
 from mozboot.base import BaseBootstrapper
 from mozboot.linux_common import (
     ClangStaticAnalysisInstall,
+    FixStacksInstall,
+    LucetcInstall,
     NodeInstall,
     SccacheInstall,
     StyloInstall,
+    WasiSysrootInstall,
 )
 
 # NOTE: This script is intended to be run with a vanilla Python install.  We
@@ -25,8 +28,15 @@ if sys.version_info < (3,):
     input = raw_input  # noqa
 
 
-class ArchlinuxBootstrapper(NodeInstall, StyloInstall, SccacheInstall,
-                            ClangStaticAnalysisInstall, BaseBootstrapper):
+class ArchlinuxBootstrapper(
+        ClangStaticAnalysisInstall,
+        FixStacksInstall,
+        LucetcInstall,
+        NodeInstall,
+        SccacheInstall,
+        StyloInstall,
+        WasiSysrootInstall,
+        BaseBootstrapper):
     '''Archlinux experimental bootstrapper.'''
 
     SYSTEM_PACKAGES = [
@@ -180,6 +190,7 @@ class ArchlinuxBootstrapper(NodeInstall, StyloInstall, SccacheInstall,
     def makepkg(self, name):
         command = ['makepkg', '-s']
         makepkg_env = os.environ.copy()
+        makepkg_env['PKGDEST'] = '.'
         makepkg_env['PKGEXT'] = '.pkg.tar.xz'
         self.run(command, env=makepkg_env)
         pack = glob.glob(name + '*.pkg.tar.xz')[0]

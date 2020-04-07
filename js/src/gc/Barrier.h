@@ -15,6 +15,7 @@
 #include "js/Id.h"
 #include "js/RootingAPI.h"
 #include "js/Value.h"
+#include "util/Poison.h"
 
 /*
  * [SMDOC] GC Barriers
@@ -284,8 +285,6 @@
  * is not usually necessary and should be done with caution.
  */
 
-class JSFlatString;
-
 namespace js {
 
 class NativeObject;
@@ -299,6 +298,8 @@ bool CurrentThreadIsIonCompiling();
 bool CurrentThreadIsIonCompilingSafeForMinorGC();
 
 bool CurrentThreadIsGCSweeping();
+
+bool CurrentThreadIsGCFinalizing();
 
 bool IsMarkedBlack(JSObject* obj);
 
@@ -348,13 +349,13 @@ struct InternalBarrierMethods<Value> {
 
     // If the target needs an entry, add it.
     js::gc::StoreBuffer* sb;
-    if ((next.isObject() || next.isString()) &&
+    if ((next.isObject() || next.isString() || next.isBigInt()) &&
         (sb = next.toGCThing()->storeBuffer())) {
       // If we know that the prev has already inserted an entry, we can
       // skip doing the lookup to add the new entry. Note that we cannot
       // safely assert the presence of the entry because it may have been
       // added via a different store buffer.
-      if ((prev.isObject() || prev.isString()) &&
+      if ((prev.isObject() || prev.isString() || prev.isBigInt()) &&
           prev.toGCThing()->storeBuffer()) {
         return;
       }
@@ -362,7 +363,7 @@ struct InternalBarrierMethods<Value> {
       return;
     }
     // Remove the prev entry if the new value does not need it.
-    if ((prev.isObject() || prev.isString()) &&
+    if ((prev.isObject() || prev.isString() || prev.isBigInt()) &&
         (sb = prev.toGCThing()->storeBuffer())) {
       sb->unputValue(vp);
     }
@@ -416,11 +417,13 @@ class MOZ_NON_MEMMOVABLE BarrieredBase {
   T value;
 
  public:
+  using ElementType = T;
+
   // Note: this is public because C++ cannot friend to a specific template
   // instantiation. Friending to the generic template leads to a number of
   // unintended consequences, including template resolution ambiguity and a
   // circular dependency with Tracing.h.
-  T* unsafeUnbarrieredForTracing() { return &value; }
+  T* unsafeUnbarrieredForTracing() const { return const_cast<T*>(&value); }
 };
 
 // Base class for barriered pointer types that intercept only writes.
@@ -434,8 +437,6 @@ class WriteBarriered : public BarrieredBase<T>,
   explicit WriteBarriered(const T& v) : BarrieredBase<T>(v) {}
 
  public:
-  using ElementType = T;
-
   DECLARE_POINTER_CONSTREF_OPS(T);
 
   // Use this if the automatic coercion to T isn't working.
@@ -457,6 +458,13 @@ class WriteBarriered : public BarrieredBase<T>,
   }
 };
 
+#define DECLARE_POINTER_ASSIGN_AND_MOVE_OPS(Wrapper, T) \
+  DECLARE_POINTER_ASSIGN_OPS(Wrapper, T)                \
+  Wrapper<T>& operator=(Wrapper<T>&& other) {           \
+    setUnchecked(other.release());                      \
+    return *this;                                       \
+  }
+
 /*
  * PreBarriered only automatically handles pre-barriers. Post-barriers must be
  * manually implemented when using this class. GCPtr and HeapPtr should be used
@@ -475,25 +483,36 @@ class PreBarriered : public WriteBarriered<T> {
    * DebuggerWeakMap::markKeys.
    */
   MOZ_IMPLICIT PreBarriered(const T& v) : WriteBarriered<T>(v) {}
-  explicit PreBarriered(const PreBarriered<T>& v)
-      : WriteBarriered<T>(v.value) {}
+
+  explicit PreBarriered(const PreBarriered<T>& other)
+      : WriteBarriered<T>(other.value) {}
+
+  PreBarriered(PreBarriered<T>&& other) : WriteBarriered<T>(other.release()) {}
+
   ~PreBarriered() { this->pre(); }
 
   void init(const T& v) { this->value = v; }
 
   /* Use to set the pointer to nullptr. */
-  void clear() {
-    this->pre();
-    this->value = nullptr;
-  }
+  void clear() { set(JS::SafelyInitialized<T>()); }
 
-  DECLARE_POINTER_ASSIGN_OPS(PreBarriered, T);
+  DECLARE_POINTER_ASSIGN_AND_MOVE_OPS(PreBarriered, T);
 
  private:
   void set(const T& v) {
     AssertTargetIsNotGray(v);
+    setUnchecked(v);
+  }
+
+  void setUnchecked(const T& v) {
     this->pre();
     this->value = v;
+  }
+
+  T release() {
+    T tmp = this->value;
+    this->value = JS::SafelyInitialized<T>();
+    return tmp;
   }
 };
 
@@ -512,12 +531,15 @@ template <class T>
 class GCPtr : public WriteBarriered<T> {
  public:
   GCPtr() : WriteBarriered<T>(JS::SafelyInitialized<T>()) {}
+
   explicit GCPtr(const T& v) : WriteBarriered<T>(v) {
     this->post(JS::SafelyInitialized<T>(), v);
   }
+
   explicit GCPtr(const GCPtr<T>& v) : WriteBarriered<T>(v) {
     this->post(JS::SafelyInitialized<T>(), v);
   }
+
 #ifdef DEBUG
   ~GCPtr() {
     // No barriers are necessary as this only happens when we are sweeping
@@ -529,8 +551,9 @@ class GCPtr : public WriteBarriered<T> {
     //
     // Note that when sweeping the wrapped pointer may already have been
     // freed by this point.
-    MOZ_ASSERT(CurrentThreadIsGCSweeping() ||
-               this->value == JS::SafelyInitialized<T>());
+    MOZ_ASSERT_IF(
+        !CurrentThreadIsGCSweeping() && !CurrentThreadIsGCFinalizing(),
+        this->value == JS::SafelyInitialized<T>());
     Poison(this, JS_FREED_HEAP_PTR_PATTERN, sizeof(*this),
            MemCheckKind::MakeNoAccess);
   }
@@ -547,6 +570,10 @@ class GCPtr : public WriteBarriered<T> {
  private:
   void set(const T& v) {
     AssertTargetIsNotGray(v);
+    setUnchecked(v);
+  }
+
+  void setUnchecked(const T& v) {
     this->pre();
     T tmp = this->value;
     this->value = v;
@@ -595,13 +622,11 @@ class HeapPtr : public WriteBarriered<T> {
     this->post(JS::SafelyInitialized<T>(), this->value);
   }
 
-  /*
-   * For HeapPtr, move semantics are equivalent to copy semantics. In
-   * C++, a copy constructor taking const-ref is the way to get a single
-   * function that will be used for both lvalue and rvalue copies, so we can
-   * simply omit the rvalue variant.
-   */
-  MOZ_IMPLICIT HeapPtr(const HeapPtr<T>& v) : WriteBarriered<T>(v) {
+  MOZ_IMPLICIT HeapPtr(const HeapPtr<T>& other) : WriteBarriered<T>(other) {
+    this->post(JS::SafelyInitialized<T>(), this->value);
+  }
+
+  HeapPtr(HeapPtr<T>&& other) : WriteBarriered<T>(other.release()) {
     this->post(JS::SafelyInitialized<T>(), this->value);
   }
 
@@ -611,12 +636,13 @@ class HeapPtr : public WriteBarriered<T> {
   }
 
   void init(const T& v) {
+    MOZ_ASSERT(this->value == JS::SafelyInitialized<T>());
     AssertTargetIsNotGray(v);
     this->value = v;
     this->post(JS::SafelyInitialized<T>(), this->value);
   }
 
-  DECLARE_POINTER_ASSIGN_OPS(HeapPtr, T);
+  DECLARE_POINTER_ASSIGN_AND_MOVE_OPS(HeapPtr, T);
 
   /* Make this friend so it can access pre() and post(). */
   template <class T1, class T2>
@@ -626,15 +652,24 @@ class HeapPtr : public WriteBarriered<T> {
  protected:
   void set(const T& v) {
     AssertTargetIsNotGray(v);
+    setUnchecked(v);
+  }
+
+  void setUnchecked(const T& v) {
     this->pre();
     postBarrieredSet(v);
   }
 
   void postBarrieredSet(const T& v) {
-    AssertTargetIsNotGray(v);
     T tmp = this->value;
     this->value = v;
     this->post(tmp, this->value);
+  }
+
+  T release() {
+    T tmp = this->value;
+    postBarrieredSet(JS::SafelyInitialized<T>());
+    return tmp;
   }
 };
 
@@ -645,7 +680,6 @@ class ReadBarriered : public BarrieredBase<T> {
   // ReadBarriered is not directly instantiable.
   explicit ReadBarriered(const T& v) : BarrieredBase<T>(v) {}
 
- protected:
   void read() const { InternalBarrierMethods<T>::readBarrier(this->value); }
   void post(const T& prev, const T& next) {
     InternalBarrierMethods<T>::postBarrier(&this->value, prev, next);
@@ -675,14 +709,14 @@ class WeakHeapPtr : public ReadBarriered<T>,
 
   // The copy constructor creates a new weak edge but the wrapped pointer does
   // not escape, so no read barrier is necessary.
-  explicit WeakHeapPtr(const WeakHeapPtr& v) : ReadBarriered<T>(v) {
-    this->post(JS::SafelyInitialized<T>(), v.unbarrieredGet());
+  explicit WeakHeapPtr(const WeakHeapPtr& other) : ReadBarriered<T>(other) {
+    this->post(JS::SafelyInitialized<T>(), value);
   }
 
   // Move retains the lifetime status of the source edge, so does not fire
   // the read barrier of the defunct edge.
-  WeakHeapPtr(WeakHeapPtr&& v) : ReadBarriered<T>(std::move(v)) {
-    this->post(JS::SafelyInitialized<T>(), v.value);
+  WeakHeapPtr(WeakHeapPtr&& other) : ReadBarriered<T>(other.release()) {
+    this->post(JS::SafelyInitialized<T>(), value);
   }
 
   ~WeakHeapPtr() { this->post(this->value, JS::SafelyInitialized<T>()); }
@@ -715,9 +749,20 @@ class WeakHeapPtr : public ReadBarriered<T>,
 
   void set(const T& v) {
     AssertTargetIsNotGray(v);
+    setUnchecked(v);
+  }
+
+ private:
+  void setUnchecked(const T& v) {
     T tmp = this->value;
     this->value = v;
     this->post(tmp, v);
+  }
+
+  T release() {
+    T tmp = value;
+    set(JS::SafelyInitialized<T>());
+    return tmp;
   }
 };
 
@@ -761,7 +806,8 @@ class HeapSlot : public WriteBarriered<Value> {
 #ifdef DEBUG
     assertPreconditionForWriteBarrierPost(owner, kind, slot, target);
 #endif
-    if (this->value.isObject() || this->value.isString()) {
+    if (this->value.isObject() || this->value.isString() ||
+        this->value.isBigInt()) {
       gc::Cell* cell = this->value.toGCThing();
       if (cell->storeBuffer()) {
         cell->storeBuffer()->putSlot(owner, kind, slot, 1);
@@ -790,8 +836,8 @@ class HeapSlotArray {
   }
 
   operator const Value*() const {
-    JS_STATIC_ASSERT(sizeof(GCPtr<Value>) == sizeof(Value));
-    JS_STATIC_ASSERT(sizeof(HeapSlot) == sizeof(Value));
+    static_assert(sizeof(GCPtr<Value>) == sizeof(Value));
+    static_assert(sizeof(HeapSlot) == sizeof(Value));
     return reinterpret_cast<const Value*>(array);
   }
   operator HeapSlot*() const {
@@ -823,6 +869,8 @@ class HeapSlotArray {
 template <class T1, class T2>
 static inline void BarrieredSetPair(Zone* zone, HeapPtr<T1*>& v1, T1* val1,
                                     HeapPtr<T2*>& v2, T2* val2) {
+  AssertTargetIsNotGray(val1);
+  AssertTargetIsNotGray(val2);
   if (T1::needWriteBarrierPre(zone)) {
     v1.pre();
     v2.pre();
@@ -936,8 +984,8 @@ struct MovableCellHasher<WeakHeapPtr<T>> {
 /* Useful for hashtables with a HeapPtr as key. */
 template <class T>
 struct HeapPtrHasher {
-  typedef HeapPtr<T> Key;
-  typedef T Lookup;
+  using Key = HeapPtr<T>;
+  using Lookup = T;
 
   static HashNumber hash(Lookup obj) { return DefaultHasher<T>::hash(obj); }
   static bool match(const Key& k, Lookup l) { return k.get() == l; }
@@ -946,8 +994,8 @@ struct HeapPtrHasher {
 
 template <class T>
 struct PreBarrieredHasher {
-  typedef PreBarriered<T> Key;
-  typedef T Lookup;
+  using Key = PreBarriered<T>;
+  using Lookup = T;
 
   static HashNumber hash(Lookup obj) { return DefaultHasher<T>::hash(obj); }
   static bool match(const Key& k, Lookup l) { return k.get() == l; }
@@ -957,29 +1005,14 @@ struct PreBarrieredHasher {
 /* Useful for hashtables with a WeakHeapPtr as key. */
 template <class T>
 struct WeakHeapPtrHasher {
-  typedef WeakHeapPtr<T> Key;
-  typedef T Lookup;
+  using Key = WeakHeapPtr<T>;
+  using Lookup = T;
 
   static HashNumber hash(Lookup obj) { return DefaultHasher<T>::hash(obj); }
   static bool match(const Key& k, Lookup l) { return k.unbarrieredGet() == l; }
   static void rekey(Key& k, const Key& newKey) {
     k.set(newKey.unbarrieredGet());
   }
-};
-
-// Wrapper around GCCellPtr for use with RootedVector<StackGCCellPtr>.
-class MOZ_STACK_CLASS StackGCCellPtr {
-  JS::GCCellPtr ptr_;
-
- public:
-  MOZ_IMPLICIT StackGCCellPtr(JS::GCCellPtr ptr) : ptr_(ptr) {}
-  StackGCCellPtr() = default;
-
-  void operator=(const StackGCCellPtr& other) { ptr_ = other.ptr_; }
-
-  void trace(JSTracer* trc);
-
-  JS::GCCellPtr get() const { return ptr_; }
 };
 
 }  // namespace js
@@ -1031,7 +1064,6 @@ using GCPtrArrayObject = GCPtr<ArrayObject*>;
 using GCPtrBaseShape = GCPtr<BaseShape*>;
 using GCPtrAtom = GCPtr<JSAtom*>;
 using GCPtrBigInt = GCPtr<BigInt*>;
-using GCPtrFlatString = GCPtr<JSFlatString*>;
 using GCPtrFunction = GCPtr<JSFunction*>;
 using GCPtrLinearString = GCPtr<JSLinearString*>;
 using GCPtrObject = GCPtr<JSObject*>;
@@ -1060,6 +1092,7 @@ using WeakHeapPtrWasmInstanceObject = WeakHeapPtr<WasmInstanceObject*>;
 using WeakHeapPtrWasmTableObject = WeakHeapPtr<WasmTableObject*>;
 
 using HeapPtrJitCode = HeapPtr<jit::JitCode*>;
+using HeapPtrObject = HeapPtr<JSObject*>;
 using HeapPtrRegExpShared = HeapPtr<RegExpShared*>;
 using HeapPtrValue = HeapPtr<Value>;
 

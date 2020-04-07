@@ -13,26 +13,23 @@ static StaticRefPtr<ChildProcessChannelListener> sCPCLSingleton;
 
 void ChildProcessChannelListener::RegisterCallback(uint64_t aIdentifier,
                                                    Callback&& aCallback) {
-  if (auto channel = mChannels.GetAndRemove(aIdentifier)) {
-    aCallback(*channel);
+  if (auto args = mChannelArgs.GetAndRemove(aIdentifier)) {
+    aCallback(args->mLoadState, std::move(args->mRedirects), args->mTiming);
   } else {
     mCallbacks.Put(aIdentifier, std::move(aCallback));
   }
 }
 
-NS_IMETHODIMP ChildProcessChannelListener::OnChannelReady(
-    nsIChildChannel* aChannel, uint64_t aIdentifier) {
+void ChildProcessChannelListener::OnChannelReady(
+    nsDocShellLoadState* aLoadState, uint64_t aIdentifier,
+    nsTArray<net::DocumentChannelRedirect>&& aRedirects,
+    nsDOMNavigationTiming* aTiming) {
   if (auto callback = mCallbacks.GetAndRemove(aIdentifier)) {
-    (*callback)(aChannel);
+    (*callback)(aLoadState, std::move(aRedirects), aTiming);
   } else {
-    mChannels.Put(aIdentifier, aChannel);
+    mChannelArgs.Put(aIdentifier, {aLoadState, std::move(aRedirects), aTiming});
   }
-  return NS_OK;
 }
-
-ChildProcessChannelListener::ChildProcessChannelListener() = default;
-
-ChildProcessChannelListener::~ChildProcessChannelListener() = default;
 
 already_AddRefed<ChildProcessChannelListener>
 ChildProcessChannelListener::GetSingleton() {
@@ -43,8 +40,6 @@ ChildProcessChannelListener::GetSingleton() {
   RefPtr<ChildProcessChannelListener> cpcl = sCPCLSingleton;
   return cpcl.forget();
 }
-
-NS_IMPL_ISUPPORTS(ChildProcessChannelListener, nsIChildProcessChannelListener);
 
 }  // namespace dom
 }  // namespace mozilla

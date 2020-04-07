@@ -1,8 +1,9 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// This test makes sure that the up/down, page-up/down, and tab keys properly
-// adjust the selection.  See also browser_caret_navigation.js.
+// This test makes sure that the up/down and page-up/down properly adjust the
+// selection.  See also browser_caret_navigation.js and
+// browser_urlbar_tabKeyBehavior.js.
 
 "use strict";
 
@@ -18,7 +19,12 @@ add_task(async function init() {
 });
 
 add_task(async function downKey() {
-  await promiseAutocompleteResultPopup("exam", window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: "exam",
+    fireInputEvent: true,
+  });
   Assert.equal(
     UrlbarTestUtils.getSelectedRowIndex(window),
     0,
@@ -42,7 +48,12 @@ add_task(async function downKey() {
 });
 
 add_task(async function upKey() {
-  await promiseAutocompleteResultPopup("exam", window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: "exam",
+    fireInputEvent: true,
+  });
   Assert.equal(
     UrlbarTestUtils.getSelectedRowIndex(window),
     0,
@@ -69,7 +80,12 @@ add_task(async function upKey() {
 });
 
 add_task(async function pageDownKey() {
-  await promiseAutocompleteResultPopup("exam", window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: "exam",
+    fireInputEvent: true,
+  });
   Assert.equal(
     UrlbarTestUtils.getSelectedRowIndex(window),
     0,
@@ -92,7 +108,12 @@ add_task(async function pageDownKey() {
 });
 
 add_task(async function pageUpKey() {
-  await promiseAutocompleteResultPopup("exam", window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: "exam",
+    fireInputEvent: true,
+  });
   Assert.equal(
     UrlbarTestUtils.getSelectedRowIndex(window),
     0,
@@ -115,7 +136,12 @@ add_task(async function pageUpKey() {
 });
 
 add_task(async function pageDownKeyShowsView() {
-  await promiseAutocompleteResultPopup("exam", window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: "exam",
+    fireInputEvent: true,
+  });
   await UrlbarTestUtils.promisePopupClose(window);
   EventUtils.synthesizeKey("KEY_PageDown");
   await UrlbarTestUtils.promiseSearchComplete(window);
@@ -124,50 +150,15 @@ add_task(async function pageDownKeyShowsView() {
 });
 
 add_task(async function pageUpKeyShowsView() {
-  await promiseAutocompleteResultPopup("exam", window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: "exam",
+    fireInputEvent: true,
+  });
   await UrlbarTestUtils.promisePopupClose(window);
   EventUtils.synthesizeKey("KEY_PageUp");
   await UrlbarTestUtils.promiseSearchComplete(window);
   Assert.ok(UrlbarTestUtils.isPopupOpen(window));
   Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), 0);
-});
-
-add_task(async function tabKey() {
-  await promiseAutocompleteResultPopup("exam", window, true);
-  Assert.equal(
-    UrlbarTestUtils.getSelectedRowIndex(window),
-    0,
-    "The heuristic autofill result should be selected initially"
-  );
-  for (let i = 1; i < MAX_RESULTS; i++) {
-    EventUtils.synthesizeKey("KEY_Tab");
-    Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), i);
-  }
-  EventUtils.synthesizeKey("KEY_Tab");
-  Assert.equal(
-    UrlbarTestUtils.getSelectedRowIndex(window),
-    0,
-    "The heuristic autofill result should be selected again"
-  );
-});
-
-add_task(async function tabKeyReverse() {
-  await promiseAutocompleteResultPopup("exam", window, true);
-  Assert.equal(
-    UrlbarTestUtils.getSelectedRowIndex(window),
-    0,
-    "The heuristic autofill result should be selected initially"
-  );
-  for (let i = 1; i < MAX_RESULTS; i++) {
-    EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
-    Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), MAX_RESULTS - i);
-  }
-});
-
-add_task(async function tabKeyBlur() {
-  await promiseAutocompleteResultPopup("exam", window, true);
-  await UrlbarTestUtils.promisePopupClose(window);
-  Assert.equal(document.activeElement, gURLBar.inputField);
-  EventUtils.synthesizeKey("KEY_Tab");
-  Assert.notEqual(document.activeElement, gURLBar.inputField);
 });

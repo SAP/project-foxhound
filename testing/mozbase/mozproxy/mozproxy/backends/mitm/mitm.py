@@ -11,6 +11,7 @@ import sys
 import time
 import socket
 from subprocess import PIPE
+import signal
 
 import mozinfo
 from mozprocess import ProcessHandler
@@ -20,6 +21,7 @@ from mozproxy.utils import (
     transform_platform,
     tooltool_download,
     download_file_from_url,
+    get_available_port,
     LOG,
 )
 
@@ -42,6 +44,14 @@ except Exception:
 if os.name == "nt" and "/" in DEFAULT_CERT_PATH:
     DEFAULT_CERT_PATH = DEFAULT_CERT_PATH.replace("/", "\\")
 
+
+def normalize_path(path):
+    path = os.path.normpath(path)
+    if mozinfo.os == "win":
+        return path.replace("\\", "\\\\\\")
+    return path
+
+
 # maximal allowed runtime of a mitmproxy command
 MITMDUMP_COMMAND_TIMEOUT = 30
 
@@ -53,8 +63,8 @@ POLICIES_CONTENT_ON = """{
     },
     "Proxy": {
       "Mode": "manual",
-      "HTTPProxy": "%(host)s:8080",
-      "SSLProxy": "%(host)s:8080",
+      "HTTPProxy": "%(host)s:%(port)d",
+      "SSLProxy": "%(host)s:%(port)d",
       "Passthrough": "%(host)s",
       "Locked": true
     }
@@ -74,9 +84,11 @@ POLICIES_CONTENT_OFF = """{
 class Mitmproxy(Playback):
     def __init__(self, config):
         self.config = config
+        self.host = "127.0.0.1" if 'localhost' in self.config["host"] else self.config["host"]
+        self.port = None
         self.mitmproxy_proc = None
         self.mitmdump_path = None
-        self.browser_path = config.get("binary")
+        self.browser_path = os.path.normpath(config.get("binary"))
         self.policies_dir = None
         self.ignore_mitmdump_exit_failure = config.get(
             "ignore_mitmdump_exit_failure", False
@@ -138,8 +150,10 @@ class Mitmproxy(Playback):
         transformed_manifest = transform_platform(_manifest, self.config["platform"])
 
         # generate the mitmdump_path
-        self.mitmdump_path = os.path.join(self.mozproxy_dir, "mitmdump-%s" %
-                                          self.config["playback_version"], "mitmdump")
+        self.mitmdump_path = os.path.normpath(
+                os.path.join(self.mozproxy_dir, "mitmdump-%s" %
+                             self.config["playback_version"],
+                             "mitmdump"))
 
         # Check if mitmproxy bin exists
         if os.path.exists(self.mitmdump_path):
@@ -189,6 +203,7 @@ class Mitmproxy(Playback):
         """Startup mitmproxy and replay the specified flow file"""
         if self.mitmproxy_proc is not None:
             raise Exception("Proxy already started.")
+        self.port = get_available_port()
         LOG.info("mitmdump path: %s" % mitmdump_path)
         LOG.info("browser path: %s" % browser_path)
 
@@ -196,6 +211,10 @@ class Mitmproxy(Playback):
         env = os.environ.copy()
         env["PATH"] = os.path.dirname(browser_path) + os.pathsep + env["PATH"]
         command = [mitmdump_path]
+
+        # add proxy host and port options
+        command.extend(["--listen-host", self.host,
+                        "--listen-port", str(self.port)])
 
         if "playback_tool_args" in self.config:
             LOG.info("Staring Proxy using provided command line!")
@@ -205,20 +224,18 @@ class Mitmproxy(Playback):
                 os.path.dirname(os.path.realpath(__file__)), "scripts",
                 "alternate-server-replay-{}.py".format(
                     self.config["playback_version"]))
-            recording_paths = self.config["playback_files"]
-            # this part is platform-specific
-            if mozinfo.os == "win":
-                script = script.replace("\\", "\\\\\\")
-                recording_paths = [recording_path.replace("\\", "\\\\\\")
-                                   for recording_path in recording_paths]
+
+            recording_paths = [normalize_path(recording_path)
+                               for recording_path in self.config["playback_files"]]
 
             if self.config["playback_version"] == "4.0.4":
                 args = [
                     "-v",
                     "--set", "upstream_cert=false",
+                    "--set", "upload_dir=" + normalize_path(self.upload_dir),
                     "--set", "websocket=false",
                     "--set", "server_replay_files={}".format(",".join(recording_paths)),
-                    "--scripts", script,
+                    "--scripts", normalize_path(script),
                 ]
                 command.extend(args)
             else:
@@ -232,17 +249,18 @@ class Mitmproxy(Playback):
         # to turn off mitmproxy log output, use these params for Popen:
         # Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         self.mitmproxy_proc = ProcessHandler(
-            command, logfile=os.path.join(self.upload_dir, "mitmproxy.log"), env=env
+            command, logfile=os.path.join(self.upload_dir, "mitmproxy.log"),
+            env=env, processStderrLine=LOG.error, storeOutput=False
         )
         self.mitmproxy_proc.run()
         end_time = time.time() + MITMDUMP_COMMAND_TIMEOUT
         ready = False
         while time.time() < end_time:
-            ready = self.check_proxy()
+            ready = self.check_proxy(host=self.host, port=self.port)
             if ready:
                 LOG.info(
-                    "Mitmproxy playback successfully started as pid %d"
-                    % self.mitmproxy_proc.pid
+                    "Mitmproxy playback successfully started on %s:%d as pid %d"
+                    % (self.host, self.port, self.mitmproxy_proc.pid)
                 )
                 return
             time.sleep(0.25)
@@ -258,25 +276,37 @@ class Mitmproxy(Playback):
         LOG.info(
             "Stopping mitmproxy playback, killing process %d" % self.mitmproxy_proc.pid
         )
+        # On Windows, mozprocess brutally kills mitmproxy with TerminateJobObject
+        # The process has no chance to gracefully shutdown.
+        # Here, we send the process a break event to give it a chance to wrapup.
+        # See the signal handler in the alternate-server-replay-4.0.4.py script
+        if mozinfo.os == "win":
+            LOG.info("Sending CTRL_BREAK_EVENT to mitmproxy")
+            os.kill(self.mitmproxy_proc.pid, signal.CTRL_BREAK_EVENT)
+            time.sleep(2)
 
         exit_code = self.mitmproxy_proc.kill()
+        self.mitmproxy_proc = None
+
         if exit_code != 0:
-            # I *think* we can still continue, as process will be automatically
-            # killed anyway when mozharness is done (?) if not, we won't be able
-            # to startup mitmxproy next time if it is already running
             if exit_code is None:
                 LOG.error("Failed to kill the mitmproxy playback process")
-            else:
-                log_func = LOG.error
-                if self.ignore_mitmdump_exit_failure:
-                    log_func = LOG.info
-                log_func("Mitmproxy exited with error code %d" % exit_code)
+                return
+
+            if mozinfo.os == "win":
+                from mozprocess.winprocess import ERROR_CONTROL_C_EXIT  # noqa
+                if exit_code == ERROR_CONTROL_C_EXIT:
+                    LOG.info("Successfully killed the mitmproxy playback process"
+                             " with exit code %d" % exit_code)
+                    return
+            log_func = LOG.error
+            if self.ignore_mitmdump_exit_failure:
+                log_func = LOG.info
+            log_func("Mitmproxy exited with error code %d" % exit_code)
         else:
             LOG.info("Successfully killed the mitmproxy playback process")
 
-        self.mitmproxy_proc = None
-
-    def check_proxy(self, host="localhost", port=8080):
+    def check_proxy(self, host, port):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.connect((host, port))
@@ -332,7 +362,8 @@ class MitmproxyDesktop(Mitmproxy):
         self.write_policies_json(
             self.policies_dir,
             policies_content=POLICIES_CONTENT_ON % {"cert": self.cert_path,
-                                                    "host": self.config["host"]},
+                                                    "host": self.host,
+                                                    "port": self.port},
         )
 
         # cannot continue if failed to add CA cert to Firefox, need to check
@@ -366,7 +397,7 @@ class MitmproxyDesktop(Mitmproxy):
             LOG.info(contents)
             if (
                     POLICIES_CONTENT_ON
-                    % {"cert": self.cert_path, "host": self.config["host"]}
+                    % {"cert": self.cert_path, "host": self.host, "port": self.port}
             ) in contents:
                 LOG.info("Verified mitmproxy CA certificate is installed in Firefox")
             else:

@@ -77,7 +77,6 @@ impl ToComputedValue for LineHeight {
 
     #[inline]
     fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
-        use crate::values::computed::Length as ComputedLength;
         use crate::values::specified::length::FontBaseSize;
         match *self {
             GenericLineHeight::Normal => GenericLineHeight::Normal,
@@ -97,16 +96,8 @@ impl ToComputedValue for LineHeight {
                     LengthPercentage::Calc(ref calc) => {
                         let computed_calc =
                             calc.to_computed_value_zoomed(context, FontBaseSize::CurrentStyle);
-                        let font_relative_length =
-                            FontRelativeLength::Em(computed_calc.percentage())
-                                .to_computed_value(context, FontBaseSize::CurrentStyle)
-                                .px();
-
-                        let absolute_length = computed_calc.unclamped_length().px();
-                        let pixel = computed_calc
-                            .clamping_mode
-                            .clamp(absolute_length + font_relative_length);
-                        ComputedLength::new(pixel)
+                        let base = context.style().get_font().clone_font_size().size();
+                        computed_calc.resolve(base)
                     },
                 };
                 GenericLineHeight::Length(result.into())
@@ -421,7 +412,7 @@ impl Parse for TextTransform {
                 },
                 "full-size-kana" if !result.other_.intersects(TextTransformOther::FULL_SIZE_KANA) => {
                     result.other_.insert(TextTransformOther::FULL_SIZE_KANA)
-                }
+                },
                 _ => return Err(location.new_custom_error(
                     SelectorParseErrorKind::UnexpectedIdent(ident.clone())
                 )),
@@ -520,6 +511,35 @@ impl ToCss for TextTransformOther {
     }
 }
 
+/// Specified and computed value of text-align-last.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    FromPrimitive,
+    Hash,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[allow(missing_docs)]
+#[repr(u8)]
+pub enum TextAlignLast {
+    Auto,
+    Start,
+    End,
+    Left,
+    Right,
+    Center,
+    Justify,
+}
+
 /// Specified value of text-align keyword value.
 #[derive(
     Clone,
@@ -538,28 +558,30 @@ impl ToCss for TextTransformOther {
     ToShmem,
 )]
 #[allow(missing_docs)]
+#[repr(u8)]
 pub enum TextAlignKeyword {
     Start,
-    End,
     Left,
     Right,
     Center,
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     Justify,
+    #[css(skip)]
+    #[cfg(feature = "gecko")]
+    Char,
+    End,
     #[cfg(feature = "gecko")]
     MozCenter,
     #[cfg(feature = "gecko")]
     MozLeft,
     #[cfg(feature = "gecko")]
     MozRight,
-    #[cfg(feature = "servo")]
+    #[cfg(feature = "servo-layout-2013")]
     ServoCenter,
-    #[cfg(feature = "servo")]
+    #[cfg(feature = "servo-layout-2013")]
     ServoLeft,
-    #[cfg(feature = "servo")]
+    #[cfg(feature = "servo-layout-2013")]
     ServoRight,
-    #[css(skip)]
-    #[cfg(feature = "gecko")]
-    Char,
 }
 
 /// Specified value of text-align property.
@@ -581,14 +603,6 @@ pub enum TextAlign {
     MozCenterOrInherit,
 }
 
-impl TextAlign {
-    /// Convert an enumerated value coming from Gecko to a `TextAlign`.
-    #[cfg(feature = "gecko")]
-    pub fn from_gecko_keyword(kw: u32) -> Self {
-        TextAlign::Keyword(TextAlignKeyword::from_gecko_keyword(kw))
-    }
-}
-
 impl ToComputedValue for TextAlign {
     type ComputedValue = TextAlignKeyword;
 
@@ -604,7 +618,7 @@ impl ToComputedValue for TextAlign {
                 // In that case, the default behavior here will set it to left,
                 // but we want to set it to right -- instead set it to the default (`start`),
                 // which will do the right thing in this case (but not the general case)
-                if _context.is_root_element {
+                if _context.builder.is_root_element {
                     return TextAlignKeyword::Start;
                 }
                 let parent = _context
@@ -1012,7 +1026,7 @@ pub enum OverflowWrap {
     Anywhere,
 }
 
-/// Implements text-decoration-skip-ink which takes the keywords auto | none
+/// Implements text-decoration-skip-ink which takes the keywords auto | none | all
 ///
 /// https://drafts.csswg.org/css-text-decor-4/#text-decoration-skip-ink-property
 #[repr(u8)]
@@ -1035,10 +1049,11 @@ pub enum OverflowWrap {
 pub enum TextDecorationSkipInk {
     Auto,
     None,
+    All,
 }
 
-/// Implements type for `text-underline-offset` and `text-decoration-thickness` properties
-pub type TextDecorationLength = GenericTextDecorationLength<Length>;
+/// Implements type for `text-decoration-thickness` property
+pub type TextDecorationLength = GenericTextDecorationLength<LengthPercentage>;
 
 impl TextDecorationLength {
     /// `Auto` value.
@@ -1051,5 +1066,108 @@ impl TextDecorationLength {
     #[inline]
     pub fn is_auto(&self) -> bool {
         matches!(*self, GenericTextDecorationLength::Auto)
+    }
+}
+
+bitflags! {
+    #[derive(MallocSizeOf, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
+    #[value_info(other_values = "auto,from-font,under,left,right")]
+    #[repr(C)]
+    /// Specified keyword values for the text-underline-position property.
+    /// (Non-exclusive, but not all combinations are allowed: the spec grammar gives
+    /// `auto | [ from-font | under ] || [ left | right ]`.)
+    /// https://drafts.csswg.org/css-text-decor-4/#text-underline-position-property
+    pub struct TextUnderlinePosition: u8 {
+        /// Use automatic positioning below the alphabetic baseline.
+        const AUTO = 0;
+        /// Use underline position from the first available font.
+        const FROM_FONT = 1 << 0;
+        /// Below the glyph box.
+        const UNDER = 1 << 1;
+        /// In vertical mode, place to the left of the text.
+        const LEFT = 1 << 2;
+        /// In vertical mode, place to the right of the text.
+        const RIGHT = 1 << 3;
+    }
+}
+
+impl Parse for TextUnderlinePosition {
+    fn parse<'i, 't>(
+        _context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<TextUnderlinePosition, ParseError<'i>> {
+        let mut result = TextUnderlinePosition::empty();
+
+        loop {
+            let location = input.current_source_location();
+            let ident = match input.next() {
+                Ok(&Token::Ident(ref ident)) => ident,
+                Ok(other) => return Err(location.new_unexpected_token_error(other.clone())),
+                Err(..) => break,
+            };
+
+            match_ignore_ascii_case! { ident,
+                "auto" if result.is_empty() => {
+                    return Ok(result);
+                },
+                "from-font" if !result.intersects(TextUnderlinePosition::FROM_FONT |
+                                                  TextUnderlinePosition::UNDER) => {
+                    result.insert(TextUnderlinePosition::FROM_FONT);
+                },
+                "under" if !result.intersects(TextUnderlinePosition::FROM_FONT |
+                                              TextUnderlinePosition::UNDER) => {
+                    result.insert(TextUnderlinePosition::UNDER);
+                },
+                "left" if !result.intersects(TextUnderlinePosition::LEFT |
+                                             TextUnderlinePosition::RIGHT) => {
+                    result.insert(TextUnderlinePosition::LEFT);
+                },
+                "right" if !result.intersects(TextUnderlinePosition::LEFT |
+                                              TextUnderlinePosition::RIGHT) => {
+                    result.insert(TextUnderlinePosition::RIGHT);
+                },
+                _ => return Err(location.new_custom_error(
+                    SelectorParseErrorKind::UnexpectedIdent(ident.clone())
+                )),
+            }
+        }
+
+        if !result.is_empty() {
+            Ok(result)
+        } else {
+            Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+        }
+    }
+}
+
+impl ToCss for TextUnderlinePosition {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        if self.is_empty() {
+            return dest.write_str("auto");
+        }
+
+        let mut writer = SequenceWriter::new(dest, " ");
+        let mut any = false;
+
+        macro_rules! maybe_write {
+            ($ident:ident => $str:expr) => {
+                if self.contains(TextUnderlinePosition::$ident) {
+                    any = true;
+                    writer.raw_item($str)?;
+                }
+            };
+        }
+
+        maybe_write!(FROM_FONT => "from-font");
+        maybe_write!(UNDER => "under");
+        maybe_write!(LEFT => "left");
+        maybe_write!(RIGHT => "right");
+
+        debug_assert!(any);
+
+        Ok(())
     }
 }

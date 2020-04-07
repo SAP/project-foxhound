@@ -6,9 +6,9 @@
 
 #include "TelemetryIOInterposeObserver.h"
 #include "core/TelemetryCommon.h"
+#include "js/Array.h"  // JS::NewArrayObject
 
-namespace mozilla {
-namespace Telemetry {
+namespace mozilla::Telemetry {
 
 TelemetryIOInterposeObserver::TelemetryIOInterposeObserver(nsIFile* aXreDir)
     : mCurStage(STAGE_STARTUP) {
@@ -127,7 +127,7 @@ bool TelemetryIOInterposeObserver::ReflectFileStats(FileIOEntryType* entry,
     stats[5].setNumber(fileStats.stats);
 
     // Create jsStats as array of elements above
-    JS::RootedObject jsStats(cx, JS_NewArrayObject(cx, stats));
+    JS::RootedObject jsStats(cx, JS::NewArrayObject(cx, stats));
     if (!jsStats) {
       continue;
     }
@@ -135,7 +135,7 @@ bool TelemetryIOInterposeObserver::ReflectFileStats(FileIOEntryType* entry,
     stages[s].setObject(*jsStats);
   }
 
-  JS::Rooted<JSObject*> jsEntry(cx, JS_NewArrayObject(cx, stages));
+  JS::Rooted<JSObject*> jsEntry(cx, JS::NewArrayObject(cx, stages));
   if (!jsEntry) {
     return false;
   }
@@ -175,5 +175,4 @@ size_t TelemetryIOInterposeObserver::SizeOfExcludingThis(
   return size;
 }
 
-}  // namespace Telemetry
-}  // namespace mozilla
+}  // namespace mozilla::Telemetry

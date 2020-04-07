@@ -250,7 +250,7 @@ class ChromeMessagePort extends MessagePort {
   // Called when the content process is requesting some data.
   async handleRequest(name, data) {
     if (name == "FxAccountsEndpoint") {
-      return FxAccounts.config.promiseEmailFirstURI(data);
+      return FxAccounts.config.promiseConnectAccountURI(data);
     }
 
     throw new Error(`Unknown request ${name}.`);
@@ -262,6 +262,7 @@ class ChromeMessagePort extends MessagePort {
       target: this.publicPort,
       name: messagedata.name,
       data: messagedata.data,
+      browsingContextID: messagedata.browsingContextID,
     };
     this.listener.callListeners(message);
 

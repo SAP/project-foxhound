@@ -26,6 +26,7 @@
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
 #include "nsString.h"
+#include "xpcpublic.h"
 
 class nsIScriptContext;
 class nsIScriptElement;
@@ -241,29 +242,43 @@ class nsJSUtils {
       JSContext* aCx, mozilla::dom::Element* aElement,
       JS::MutableHandleVector<JSObject*> aScopeChain);
 
-#ifdef MOZ_XBL
-  // Returns a scope chain suitable for XBL execution.
-  //
-  // This is by default GetScopeChainForElemenet, but will be different if the
-  // <binding> element had the simpleScopeChain attribute.
-  //
-  // This is to prevent footguns like bug 1446342.
-  static bool GetScopeChainForXBL(
-      JSContext* aCx, mozilla::dom::Element* aBoundElement,
-      const nsXBLPrototypeBinding& aProtoBinding,
-      JS::MutableHandleVector<JSObject*> aScopeChain);
-#endif
-
   static void ResetTimeZone();
 
   static bool DumpEnabled();
 };
 
-template <typename T>
+inline void AssignFromStringBuffer(nsStringBuffer* buffer, size_t len,
+                                   nsAString& dest) {
+  buffer->ToString(len, dest);
+}
+
+template <typename T, typename std::enable_if_t<std::is_same<
+                          typename T::char_type, char16_t>::value>* = nullptr>
 inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   size_t len = JS::GetStringLength(s);
   static_assert(js::MaxStringLength < (1 << 30),
                 "Shouldn't overflow here or in SetCapacity");
+
+  const char16_t* chars;
+  if (XPCStringConvert::MaybeGetDOMStringChars(s, &chars)) {
+    // The characters represent an existing string buffer that we shared with
+    // JS.  We can share that buffer ourselves if the string corresponds to the
+    // whole buffer; otherwise we have to copy.
+    if (chars[len] == '\0') {
+      AssignFromStringBuffer(
+          nsStringBuffer::FromData(const_cast<char16_t*>(chars)), len, dest);
+      return true;
+    }
+  } else if (XPCStringConvert::MaybeGetLiteralStringChars(s, &chars)) {
+    // The characters represent a literal char16_t string constant
+    // compiled into libxul; we can just use it as-is.
+    dest.AssignLiteral(chars, len);
+    return true;
+  }
+
+  // We don't bother checking for a dynamic-atom external string, because we'd
+  // just need to copy out of it anyway.
+
   if (MOZ_UNLIKELY(!dest.SetLength(len, mozilla::fallible))) {
     JS_ReportOutOfMemory(cx);
     return false;
@@ -273,6 +288,50 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   dest.AssignTaint(JS_GetStringTaint(s));
 
   return js::CopyStringChars(cx, dest.BeginWriting(), s, len);
+}
+
+// Specialization for UTF8String.
+template <typename T, typename std::enable_if_t<std::is_same<
+                          typename T::char_type, char>::value>* = nullptr>
+inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
+  using namespace mozilla;
+  CheckedInt<size_t> bufLen(JS::GetStringLength(s));
+  // From the contract for JS_EncodeStringToUTF8BufferPartial, to guarantee that
+  // the whole string is converted.
+  if (js::StringHasLatin1Chars(s)) {
+    bufLen *= 2;
+  } else {
+    bufLen *= 3;
+  }
+
+  if (MOZ_UNLIKELY(!bufLen.isValid())) {
+    JS_ReportOutOfMemory(cx);
+    return false;
+  }
+
+  // Shouldn't really matter, but worth being safe.
+  const bool kAllowShrinking = true;
+
+  nsresult rv;
+  auto handle = dest.BulkWrite(bufLen.value(), 0, kAllowShrinking, rv);
+  if (MOZ_UNLIKELY(NS_FAILED(rv))) {
+    JS_ReportOutOfMemory(cx);
+    return false;
+  }
+
+  auto maybe = JS_EncodeStringToUTF8BufferPartial(cx, s, handle.AsSpan());
+  if (MOZ_UNLIKELY(!maybe)) {
+    JS_ReportOutOfMemory(cx);
+    return false;
+  }
+
+  size_t read;
+  size_t written;
+  Tie(read, written) = *maybe;
+
+  MOZ_ASSERT(read == JS::GetStringLength(s));
+  handle.Finish(written, kAllowShrinking);
+  return true;
 }
 
 inline void AssignJSLinearString(nsAString& dest, JSLinearString* s) {
@@ -287,13 +346,14 @@ inline void AssignJSLinearString(nsAString& dest, JSLinearString* s) {
   js::CopyLinearStringChars(dest.BeginWriting(), s, len);
 }
 
-class nsAutoJSString : public nsAutoString {
+template <typename T>
+class nsTAutoJSString : public nsTAutoString<T> {
  public:
   /**
-   * nsAutoJSString should be default constructed, which leaves it empty
+   * nsTAutoJSString should be default constructed, which leaves it empty
    * (this->IsEmpty()), and initialized with one of the init() methods below.
    */
-  nsAutoJSString() {}
+  nsTAutoJSString() = default;
 
   bool init(JSContext* aContext, JSString* str) {
     return AssignJSString(aContext, *this, str);
@@ -323,8 +383,13 @@ class nsAutoJSString : public nsAutoString {
 
   bool init(const JS::Value& v);
 
-  ~nsAutoJSString() {}
+  ~nsTAutoJSString() = default;
 };
+
+using nsAutoJSString = nsTAutoJSString<char16_t>;
+
+// Note that this is guaranteed to be UTF-8.
+using nsAutoJSCString = nsTAutoJSString<char>;
 
 // Extend the taintflow
 nsresult MarkTaintOperation(nsAString &str, const char* name);
@@ -371,6 +436,5 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, 
 nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString &arg);
 
 nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char* name);
-
 
 #endif /* nsJSUtils_h__ */

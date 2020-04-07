@@ -39,7 +39,7 @@ const GeckoViewContentBlockingController = {
       case "ContentBlocking:AddException": {
         const sessionWindow = Services.ww.getWindowByName(
           aData.sessionId,
-          this.window
+          null
         );
         ContentBlockingAllowList.add(sessionWindow.browser);
         break;
@@ -48,16 +48,22 @@ const GeckoViewContentBlockingController = {
       case "ContentBlocking:RemoveException": {
         const sessionWindow = Services.ww.getWindowByName(
           aData.sessionId,
-          this.window
+          null
         );
         ContentBlockingAllowList.remove(sessionWindow.browser);
+        break;
+      }
+
+      case "ContentBlocking:RemoveExceptionByPrincipal": {
+        const principal = E10SUtils.deserializePrincipal(aData.principal);
+        ContentBlockingAllowList.removeByPrincipal(principal);
         break;
       }
 
       case "ContentBlocking:CheckException": {
         const sessionWindow = Services.ww.getWindowByName(
           aData.sessionId,
-          this.window
+          null
         );
         const res = ContentBlockingAllowList.includes(sessionWindow.browser);
         aCallback.onSuccess(res);

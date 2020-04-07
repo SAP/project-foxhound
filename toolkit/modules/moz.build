@@ -48,9 +48,6 @@ with Files('tests/xpcshell/test_UpdateUtils*.js'):
 with Files('AsyncPrefs.jsm'):
     BUG_COMPONENT = ('Core', 'Security: Process Sandboxing')
 
-with Files('AutoScrollController.jsm'):
-    BUG_COMPONENT = ('Core', 'Panning and Zooming')
-
 with Files('CharsetMenu.jsm'):
     BUG_COMPONENT = ('Firefox', 'Toolbars and Customization')
 
@@ -79,7 +76,7 @@ with Files('IndexedDB.jsm'):
     BUG_COMPONENT = ('Toolkit', 'Async Tooling')
 
 with Files('InlineSpellChecker*.jsm'):
-    BUG_COMPONENT = ('Core', 'Spell Checker')
+    BUG_COMPONENT = ('Core', 'Spelling checker')
 
 with Files('Integration.jsm'):
     BUG_COMPONENT = ('Toolkit', 'Async Tooling')
@@ -117,14 +114,14 @@ with Files('PrivateBrowsingUtils.jsm'):
 with Files('Promise*.jsm'):
     BUG_COMPONENT = ('Toolkit', 'Async Tooling')
 
-with Files('RemoteController.js'):
+with Files('RemoteController.jsm'):
     BUG_COMPONENT = ('Core', 'Widget')
 
 with Files('RemoteSecurityUI.jsm'):
     BUG_COMPONENT = ('Firefox', 'Tabbed Browser')
 
 with Files('RemoteWebProgress.jsm'):
-    BUG_COMPONENT = ('Core', 'Document Navigation')
+    BUG_COMPONENT = ('Core', 'DOM: Navigation')
 
 with Files('ResponsivenessMonitor.jsm'):
     BUG_COMPONENT = ('Firefox', 'Migration')
@@ -165,7 +162,6 @@ EXTRA_JS_MODULES += [
     'ActorManagerParent.jsm',
     'AppMenuNotifications.jsm',
     'AsyncPrefs.jsm',
-    'AutoScrollController.jsm',
     'BinarySearch.jsm',
     'BrowserUtils.jsm',
     'CanonicalJSON.jsm',
@@ -175,7 +171,6 @@ EXTRA_JS_MODULES += [
     'Console.jsm',
     'ContentDOMReference.jsm',
     'CreditCard.jsm',
-    'css-selector.js',
     'DateTimePickerPanel.jsm',
     'DeferredTask.jsm',
     'Deprecated.jsm',
@@ -190,9 +185,6 @@ EXTRA_JS_MODULES += [
     'FirstStartup.jsm',
     'FormLikeFactory.jsm',
     'Geometry.jsm',
-    'GMPExtractorWorker.js',
-    'GMPInstallManager.jsm',
-    'GMPUtils.jsm',
     'HiddenFrame.jsm',
     'Http.jsm',
     'IgnoreLists.jsm',
@@ -216,7 +208,7 @@ EXTRA_JS_MODULES += [
     'Promise.jsm',
     'PromiseMessage.jsm',
     'PromiseUtils.jsm',
-    'RemoteController.js',
+    'RemoteController.jsm',
     'RemoteSecurityUI.jsm',
     'RemoteWebProgress.jsm',
     'ResetProfile.jsm',
@@ -256,6 +248,9 @@ EXTRA_PP_JS_MODULES += [
 
 if 'Android' != CONFIG['OS_TARGET']:
     EXTRA_JS_MODULES += [
+        'GMPExtractorWorker.js',
+        'GMPInstallManager.jsm',
+        'GMPUtils.jsm',
         'LightweightThemeConsumer.jsm',
     ]
 
@@ -292,7 +287,8 @@ for var in ('ANDROID_PACKAGE_NAME',
             'OMNIJAR_NAME'):
             DEFINES[var] = CONFIG[var]
 
-for var in ('MOZ_SYSTEM_NSS',
+for var in ('MOZ_ALLOW_ADDON_SIDELOAD',
+            'MOZ_SYSTEM_NSS',
             'MOZ_UNSIGNED_APP_SCOPE',
             'MOZ_UNSIGNED_SYSTEM_SCOPE',
             'MOZ_UPDATER'):

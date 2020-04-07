@@ -167,9 +167,7 @@ this.windows = class extends ExtensionAPI {
           if (needResize) {
             if (createData.state !== null && createData.state != "normal") {
               return Promise.reject({
-                message: `"state": "${
-                  createData.state
-                }" may not be combined with "left", "top", "width", or "height"`,
+                message: `"state": "${createData.state}" may not be combined with "left", "top", "width", or "height"`,
               });
             }
             createData.state = "normal";
@@ -380,7 +378,7 @@ this.windows = class extends ExtensionAPI {
           });
         },
 
-        update: function(windowId, updateInfo) {
+        update: async function(windowId, updateInfo) {
           if (updateInfo.state !== null && updateInfo.state != "normal") {
             if (
               updateInfo.left !== null ||
@@ -389,9 +387,7 @@ this.windows = class extends ExtensionAPI {
               updateInfo.height !== null
             ) {
               return Promise.reject({
-                message: `"state": "${
-                  updateInfo.state
-                }" may not be combined with "left", "top", "width", or "height"`,
+                message: `"state": "${updateInfo.state}" may not be combined with "left", "top", "width", or "height"`,
               });
             }
           }
@@ -403,7 +399,7 @@ this.windows = class extends ExtensionAPI {
             });
           }
           if (updateInfo.focused) {
-            Services.focus.activeWindow = win.window;
+            win.window.focus();
           }
 
           if (updateInfo.state !== null) {
@@ -419,12 +415,12 @@ this.windows = class extends ExtensionAPI {
 
           if (updateInfo.titlePreface !== null) {
             win.setTitlePreface(updateInfo.titlePreface);
-            win.window.gBrowser.updateTitlebar();
+            await win.window.gBrowser.updateTitlebar();
           }
 
           // TODO: All the other properties, focused=false...
 
-          return Promise.resolve(win.convert());
+          return win.convert();
         },
 
         remove: function(windowId) {

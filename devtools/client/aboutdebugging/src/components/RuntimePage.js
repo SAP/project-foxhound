@@ -15,47 +15,71 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const FluentReact = require("devtools/client/shared/vendor/fluent-react");
 const Localized = createFactory(FluentReact.Localized);
 
-const CompatibilityWarning = createFactory(require("./CompatibilityWarning"));
-const DebugTargetPane = createFactory(require("./debugtarget/DebugTargetPane"));
-const ExtensionDetail = createFactory(require("./debugtarget/ExtensionDetail"));
-const InspectAction = createFactory(require("./debugtarget/InspectAction"));
-const ProfilerDialog = createFactory(require("./ProfilerDialog"));
-const RuntimeActions = createFactory(require("./RuntimeActions"));
-const RuntimeInfo = createFactory(require("./RuntimeInfo"));
+const CompatibilityWarning = createFactory(
+  require("devtools/client/aboutdebugging/src/components/CompatibilityWarning")
+);
+const DebugTargetPane = createFactory(
+  require("devtools/client/aboutdebugging/src/components/debugtarget/DebugTargetPane")
+);
+const ExtensionDetail = createFactory(
+  require("devtools/client/aboutdebugging/src/components/debugtarget/ExtensionDetail")
+);
+const InspectAction = createFactory(
+  require("devtools/client/aboutdebugging/src/components/debugtarget/InspectAction")
+);
+const ProfilerDialog = createFactory(
+  require("devtools/client/aboutdebugging/src/components/ProfilerDialog")
+);
+const RuntimeActions = createFactory(
+  require("devtools/client/aboutdebugging/src/components/RuntimeActions")
+);
+const RuntimeInfo = createFactory(
+  require("devtools/client/aboutdebugging/src/components/RuntimeInfo")
+);
 const ServiceWorkerAction = createFactory(
-  require("./debugtarget/ServiceWorkerAction")
+  require("devtools/client/aboutdebugging/src/components/debugtarget/ServiceWorkerAction")
 );
 const ServiceWorkerAdditionalActions = createFactory(
-  require("./debugtarget/ServiceWorkerAdditionalActions")
+  require("devtools/client/aboutdebugging/src/components/debugtarget/ServiceWorkerAdditionalActions")
 );
-const ServiceWorkersWarning = createFactory(require("./ServiceWorkersWarning"));
-const ProcessDetail = createFactory(require("./debugtarget/ProcessDetail"));
-const TabDetail = createFactory(require("./debugtarget/TabDetail"));
+const ServiceWorkersWarning = createFactory(
+  require("devtools/client/aboutdebugging/src/components/ServiceWorkersWarning")
+);
+const ProcessDetail = createFactory(
+  require("devtools/client/aboutdebugging/src/components/debugtarget/ProcessDetail")
+);
+const TabDetail = createFactory(
+  require("devtools/client/aboutdebugging/src/components/debugtarget/TabDetail")
+);
 const TemporaryExtensionAdditionalActions = createFactory(
-  require("./debugtarget/TemporaryExtensionAdditionalActions")
+  require("devtools/client/aboutdebugging/src/components/debugtarget/TemporaryExtensionAdditionalActions")
 );
 const TemporaryExtensionDetail = createFactory(
-  require("./debugtarget/TemporaryExtensionDetail")
+  require("devtools/client/aboutdebugging/src/components/debugtarget/TemporaryExtensionDetail")
 );
 const TemporaryExtensionInstallSection = createFactory(
-  require("./debugtarget/TemporaryExtensionInstallSection")
+  require("devtools/client/aboutdebugging/src/components/debugtarget/TemporaryExtensionInstallSection")
 );
-const WorkerDetail = createFactory(require("./debugtarget/WorkerDetail"));
+const WorkerDetail = createFactory(
+  require("devtools/client/aboutdebugging/src/components/debugtarget/WorkerDetail")
+);
 
-const Actions = require("../actions/index");
+const Actions = require("devtools/client/aboutdebugging/src/actions/index");
 const {
   DEBUG_TARGETS,
   DEBUG_TARGET_PANE,
   PAGE_TYPES,
-} = require("../constants");
-const Types = require("../types/index");
+} = require("devtools/client/aboutdebugging/src/constants");
+const Types = require("devtools/client/aboutdebugging/src/types/index");
 
 const {
   getCurrentRuntimeDetails,
-} = require("../modules/runtimes-state-helper");
+} = require("devtools/client/aboutdebugging/src/modules/runtimes-state-helper");
 const {
   isSupportedDebugTargetPane,
-} = require("../modules/debug-target-support");
+  supportsTemporaryExtensionInstaller,
+  supportsTemporaryExtensionAdditionalActions,
+} = require("devtools/client/aboutdebugging/src/modules/debug-target-support");
 
 class RuntimePage extends PureComponent {
   static get propTypes() {
@@ -138,11 +162,13 @@ class RuntimePage extends PureComponent {
   }
 
   renderTemporaryExtensionInstallSection() {
+    const runtimeType = this.props.runtimeDetails.info.type;
     if (
       !isSupportedDebugTargetPane(
-        this.props.runtimeDetails.info.type,
+        runtimeType,
         DEBUG_TARGET_PANE.TEMPORARY_EXTENSION
-      )
+      ) ||
+      !supportsTemporaryExtensionInstaller(runtimeType)
     ) {
       return null;
     }
@@ -202,7 +228,9 @@ class RuntimePage extends PureComponent {
         temporaryExtensions,
         this.renderTemporaryExtensionInstallSection(),
         InspectAction,
-        TemporaryExtensionAdditionalActions,
+        supportsTemporaryExtensionAdditionalActions(runtimeDetails.info.type)
+          ? TemporaryExtensionAdditionalActions
+          : null,
         TemporaryExtensionDetail,
         DEBUG_TARGET_PANE.TEMPORARY_EXTENSION,
         "about-debugging-runtime-temporary-extensions"

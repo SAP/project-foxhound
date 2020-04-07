@@ -10,9 +10,7 @@
 #include "nsCRT.h"
 #include "nsScanner.h"
 #include "plstr.h"
-#include "nsIStringStream.h"
 #include "nsIChannel.h"
-#include "nsICachingChannel.h"
 #include "nsIInputStream.h"
 #include "CNavDTD.h"
 #include "prenv.h"
@@ -22,9 +20,6 @@
 #include "nsReadableUtils.h"
 #include "nsCOMPtr.h"
 #include "nsExpatDriver.h"
-#include "nsIServiceManager.h"
-#include "nsICategoryManager.h"
-#include "nsISupportsPrimitives.h"
 #include "nsIFragmentContentSink.h"
 #include "nsStreamUtils.h"
 #include "nsHTMLTokenizer.h"
@@ -176,6 +171,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsParser)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDTD)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSink)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mObserver)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsParser)

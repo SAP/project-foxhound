@@ -1058,7 +1058,7 @@ void ReflowInput::ApplyRelativePositioning(nsIFrame* aFrame,
                  "We assume that changing the 'position' property causes "
                  "frame reconstruction.  If that ever changes, this code "
                  "should call "
-                 "aFrame->DeleteProperty(nsIFrame::NormalPositionProperty())");
+                 "aFrame->RemoveProperty(nsIFrame::NormalPositionProperty())");
     return;
   }
 
@@ -1073,9 +1073,9 @@ void ReflowInput::ApplyRelativePositioning(nsIFrame* aFrame,
   }
 
   const nsStyleDisplay* display = aFrame->StyleDisplay();
-  if (NS_STYLE_POSITION_RELATIVE == display->mPosition) {
+  if (StylePositionProperty::Relative == display->mPosition) {
     *aPosition += nsPoint(aComputedOffsets.left, aComputedOffsets.top);
-  } else if (NS_STYLE_POSITION_STICKY == display->mPosition &&
+  } else if (StylePositionProperty::Sticky == display->mPosition &&
              !aFrame->GetNextContinuation() && !aFrame->GetPrevContinuation() &&
              !(aFrame->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT)) {
     // Sticky positioning for elements with multiple frames needs to be
@@ -2134,11 +2134,12 @@ LogicalSize ReflowInput::ComputeContainingBlockRectangle(
       return aSize.ConvertsToPercentage();
     };
     // an element in quirks mode gets a containing block based on looking for a
-    // parent with a non-auto height if the element has a percent height
-    // Note: We don't emulate this quirk for percents in calc() or in
-    // vertical writing modes.
+    // parent with a non-auto height if the element has a percent height.
+    // Note: We don't emulate this quirk for percents in calc(), or in vertical
+    // writing modes, or if the containing block is a flex or grid item.
     if (!wm.IsVertical() && NS_UNCONSTRAINEDSIZE == cbSize.BSize(wm)) {
       if (eCompatibility_NavQuirks == aPresContext->CompatibilityMode() &&
+          !aContainingBlockRI->mFrame->IsFlexOrGridItem() &&
           (IsQuirky(mStylePosition->mHeight) ||
            (mFrame->IsTableWrapperFrame() &&
             IsQuirky(mFrame->PrincipalChildList()
@@ -2275,7 +2276,8 @@ void ReflowInput::InitConstraints(
           // in quirks mode, get the cb height using the special quirk method
           if (!wm.IsVertical() &&
               eCompatibility_NavQuirks == aPresContext->CompatibilityMode()) {
-            if (!cbri->mFrame->IsTableCellFrame()) {
+            if (!cbri->mFrame->IsTableCellFrame() &&
+                !cbri->mFrame->IsFlexOrGridItem()) {
               cbSize.BSize(wm) = CalcQuirkContainingBlockHeight(cbri);
               if (cbSize.BSize(wm) == NS_UNCONSTRAINEDSIZE) {
                 isAutoBSize = true;
@@ -2309,7 +2311,7 @@ void ReflowInput::InitConstraints(
     // until the scroll container knows its size, so we compute offsets
     // from StickyScrollContainer::UpdatePositions.)
     if (mStyleDisplay->IsRelativelyPositioned(mFrame) &&
-        NS_STYLE_POSITION_RELATIVE == mStyleDisplay->mPosition) {
+        StylePositionProperty::Relative == mStyleDisplay->mPosition) {
       ComputeRelativeOffsets(cbwm, mFrame, cbSize.ConvertTo(cbwm, wm),
                              ComputedPhysicalOffsets());
     } else {
@@ -2426,10 +2428,10 @@ void ReflowInput::InitConstraints(
         // in its inline axis.
         auto inlineAxisAlignment =
             wm.IsOrthogonalTo(cbwm)
-                ? mStylePosition->UsedAlignSelf(alignCB->Style())
-                : mStylePosition->UsedJustifySelf(alignCB->Style());
-        if ((inlineAxisAlignment != NS_STYLE_ALIGN_STRETCH &&
-             inlineAxisAlignment != NS_STYLE_ALIGN_NORMAL) ||
+                ? mStylePosition->UsedAlignSelf(alignCB->Style())._0
+                : mStylePosition->UsedJustifySelf(alignCB->Style())._0;
+        if ((inlineAxisAlignment != StyleAlignFlags::STRETCH &&
+             inlineAxisAlignment != StyleAlignFlags::NORMAL) ||
             mStyleMargin->mMargin.GetIStart(wm).IsAuto() ||
             mStyleMargin->mMargin.GetIEnd(wm).IsAuto()) {
           computeSizeFlags = ComputeSizeFlags(computeSizeFlags |
@@ -2516,7 +2518,7 @@ static void UpdateProp(nsIFrame* aFrame,
       aFrame->AddProperty(aProperty, new nsMargin(aNewValue));
     }
   } else {
-    aFrame->DeleteProperty(aProperty);
+    aFrame->RemoveProperty(aProperty);
   }
 }
 
@@ -2531,7 +2533,7 @@ void SizeComputationInput::InitOffsets(WritingMode aWM, nscoord aPercentBasis,
   // Since we are in reflow, we don't need to store these properties anymore
   // unless they are dependent on width, in which case we store the new value.
   nsPresContext* presContext = mFrame->PresContext();
-  mFrame->DeleteProperty(nsIFrame::UsedBorderProperty());
+  mFrame->RemoveProperty(nsIFrame::UsedBorderProperty());
 
   // Compute margins from the specified margin style information. These
   // become the default computed values, and may be adjusted below
@@ -2549,7 +2551,7 @@ void SizeComputationInput::InitOffsets(WritingMode aWM, nscoord aPercentBasis,
   bool isThemed = mFrame->IsThemed(disp);
   bool needPaddingProp;
   LayoutDeviceIntMargin widgetPadding;
-  if (isThemed && presContext->GetTheme()->GetWidgetPadding(
+  if (isThemed && presContext->Theme()->GetWidgetPadding(
                       presContext->DeviceContext(), mFrame, disp->mAppearance,
                       &widgetPadding)) {
     ComputedPhysicalPadding() = LayoutDevicePixel::ToAppUnits(
@@ -2585,6 +2587,11 @@ void SizeComputationInput::InitOffsets(WritingMode aWM, nscoord aPercentBasis,
       }
       mComputedPadding.Side(wm.PhysicalSide(side)) += val;
       needPaddingProp = true;
+      if (aAxis == eLogicalAxisBlock && val > 0) {
+        // We have a baseline-adjusted block-axis start padding, so
+        // we need this to mark lines dirty when mIsBResize is true:
+        this->mFrame->AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
+      }
     }
   };
   if (!aFlags.mUseAutoBSize) {
@@ -2595,7 +2602,7 @@ void SizeComputationInput::InitOffsets(WritingMode aWM, nscoord aPercentBasis,
   }
 
   if (isThemed) {
-    LayoutDeviceIntMargin border = presContext->GetTheme()->GetWidgetBorder(
+    LayoutDeviceIntMargin border = presContext->Theme()->GetWidgetBorder(
         presContext->DeviceContext(), mFrame, disp->mAppearance);
     ComputedPhysicalBorderPadding() = LayoutDevicePixel::ToAppUnits(
         border, presContext->AppUnitsPerDevPixel());
@@ -2715,19 +2722,19 @@ void ReflowInput::CalculateBlockSideMargins(LayoutFrameType aFrameType) {
       // of the table wrapper's parent.
       pri = pri->mParentReflowInput;
     }
-    if (pri && (pri->mStyleText->mTextAlign == NS_STYLE_TEXT_ALIGN_MOZ_LEFT ||
-                pri->mStyleText->mTextAlign == NS_STYLE_TEXT_ALIGN_MOZ_CENTER ||
-                pri->mStyleText->mTextAlign == NS_STYLE_TEXT_ALIGN_MOZ_RIGHT)) {
+    if (pri && (pri->mStyleText->mTextAlign == StyleTextAlign::MozLeft ||
+                pri->mStyleText->mTextAlign == StyleTextAlign::MozCenter ||
+                pri->mStyleText->mTextAlign == StyleTextAlign::MozRight)) {
       if (pri->mWritingMode.IsBidiLTR()) {
         isAutoStartMargin =
-            pri->mStyleText->mTextAlign != NS_STYLE_TEXT_ALIGN_MOZ_LEFT;
+            pri->mStyleText->mTextAlign != StyleTextAlign::MozLeft;
         isAutoEndMargin =
-            pri->mStyleText->mTextAlign != NS_STYLE_TEXT_ALIGN_MOZ_RIGHT;
+            pri->mStyleText->mTextAlign != StyleTextAlign::MozRight;
       } else {
         isAutoStartMargin =
-            pri->mStyleText->mTextAlign != NS_STYLE_TEXT_ALIGN_MOZ_RIGHT;
+            pri->mStyleText->mTextAlign != StyleTextAlign::MozRight;
         isAutoEndMargin =
-            pri->mStyleText->mTextAlign != NS_STYLE_TEXT_ALIGN_MOZ_LEFT;
+            pri->mStyleText->mTextAlign != StyleTextAlign::MozLeft;
       }
     }
     // Otherwise apply the CSS rules, and ignore one margin by forcing

@@ -7,6 +7,7 @@
 #include "nsTArray.h"
 #include "gtest/gtest.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/RefPtr.h"
 
 using namespace mozilla;
 
@@ -442,5 +443,54 @@ TEST(TArray, RemoveElementsAt_ByIterator)
   const nsTArray<int> expected{1, 2};
   ASSERT_EQ(expected, array);
 }
+
+static_assert(std::is_copy_assignable<decltype(
+                  MakeBackInserter(std::declval<nsTArray<int>&>()))>::value,
+              "output iteraror must be copy-assignable");
+static_assert(std::is_copy_constructible<decltype(
+                  MakeBackInserter(std::declval<nsTArray<int>&>()))>::value,
+              "output iterator must be copy-constructible");
+
+TEST(TArray, MakeBackInserter)
+{
+  const std::vector<int> src{1, 2, 3, 4};
+  nsTArray<int> dst;
+
+  std::copy(src.begin(), src.end(), MakeBackInserter(dst));
+
+  const nsTArray<int> expected{1, 2, 3, 4};
+  ASSERT_EQ(expected, dst);
+}
+
+TEST(TArray, MakeBackInserter_Move)
+{
+  uint32_t destructionCounter = 0;
+
+  {
+    std::vector<Movable> src(1);
+    src[0].mDestructionCounter = &destructionCounter;
+
+    nsTArray<Movable> dst;
+
+    std::copy(std::make_move_iterator(src.begin()),
+              std::make_move_iterator(src.end()), MakeBackInserter(dst));
+
+    ASSERT_EQ(1u, dst.Length());
+    ASSERT_EQ(0u, destructionCounter);
+  }
+
+  ASSERT_EQ(1u, destructionCounter);
+}
+
+// This should compile:
+struct RefCounted;
+
+class Foo {
+  ~Foo();  // Intentionally out of line
+
+  nsTArray<RefPtr<RefCounted>> mArray;
+
+  const RefCounted* GetFirst() const { return mArray.SafeElementAt(0); }
+};
 
 }  // namespace TestTArray

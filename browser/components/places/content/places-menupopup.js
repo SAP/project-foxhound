@@ -37,7 +37,7 @@
       <html:link rel="stylesheet" href="chrome://global/skin/global.css" />
       <hbox flex="1" part="innerbox">
         <vbox part="drop-indicator-bar" hidden="true">
-          <image part="drop-indicator" mousethrough="always"></image>
+          <image part="drop-indicator"/>
         </vbox>
         <arrowscrollbox class="popup-internal-box" flex="1" orient="vertical"
                         smoothscroll="false" part="popupbox">
@@ -389,7 +389,7 @@
         }
 
         if (linkURI) {
-          window.XULBrowserWindow.setOverLink(linkURI, null);
+          window.XULBrowserWindow.setOverLink(linkURI);
         }
       }
     }
@@ -401,7 +401,7 @@
       }
 
       if (window.XULBrowserWindow) {
-        window.XULBrowserWindow.setOverLink("", null);
+        window.XULBrowserWindow.setOverLink("");
       }
     }
 
@@ -604,7 +604,7 @@
         </box>
         <box class="panel-arrowcontent" part="arrowcontent" flex="1">
           <vbox part="drop-indicator-bar" hidden="true">
-            <image part="drop-indicator" mousethrough="always"/>
+            <image part="drop-indicator"/>
           </vbox>
           <arrowscrollbox class="popup-internal-box" flex="1"
                           orient="vertical" smoothscroll="false"
@@ -660,12 +660,12 @@
       // if this panel has a "sliding" arrow, we may have previously set margins...
       arrowbox.style.removeProperty("transform");
       if (position.indexOf("start_") == 0 || position.indexOf("end_") == 0) {
-        container.orient = "horizontal";
-        arrowbox.orient = "vertical";
+        container.setAttribute("orient", "horizontal");
+        arrowbox.setAttribute("orient", "vertical");
         if (position.indexOf("_after") > 0) {
-          arrowbox.pack = "end";
+          arrowbox.setAttribute("pack", "end");
         } else {
-          arrowbox.pack = "start";
+          arrowbox.setAttribute("pack", "start");
         }
         arrowbox.style.transform = "translate(0, " + -offset + "px)";
 
@@ -673,30 +673,30 @@
         let isRTL = this.matches(":-moz-locale-dir(rtl)");
 
         if (position.indexOf("start_") == 0) {
-          container.dir = "reverse";
+          container.style.MozBoxDirection = "reverse";
           this.setAttribute("side", isRTL ? "left" : "right");
         } else {
-          container.dir = "";
+          container.style.removeProperty("-moz-box-direction");
           this.setAttribute("side", isRTL ? "right" : "left");
         }
       } else if (
         position.indexOf("before_") == 0 ||
         position.indexOf("after_") == 0
       ) {
-        container.orient = "";
-        arrowbox.orient = "";
+        container.removeAttribute("orient");
+        arrowbox.removeAttribute("orient");
         if (position.indexOf("_end") > 0) {
-          arrowbox.pack = "end";
+          arrowbox.setAttribute("pack", "end");
         } else {
-          arrowbox.pack = "start";
+          arrowbox.setAttribute("pack", "start");
         }
         arrowbox.style.transform = "translate(" + -offset + "px, 0)";
 
         if (position.indexOf("before_") == 0) {
-          container.dir = "reverse";
+          container.style.MozBoxDirection = "reverse";
           this.setAttribute("side", "bottom");
         } else {
-          container.dir = "";
+          container.style.removeProperty("-moz-box-direction");
           this.setAttribute("side", "top");
         }
       }

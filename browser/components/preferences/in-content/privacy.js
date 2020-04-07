@@ -222,17 +222,8 @@ function dataCollectionCheckboxHandler({
       checkbox.removeAttribute("checked");
     }
 
-    // We can't use checkbox.disabled here because the XBL binding may not be present,
-    // in which case setting the property won't work properly.
-    if (
-      !collectionEnabled ||
-      Services.prefs.prefIsLocked(pref) ||
-      isDisabled()
-    ) {
-      checkbox.setAttribute("disabled", "true");
-    } else {
-      checkbox.removeAttribute("disabled");
-    }
+    checkbox.disabled =
+      !collectionEnabled || Services.prefs.prefIsLocked(pref) || isDisabled();
   }
 
   Preferences.get(PREF_UPLOAD_ENABLED).on("change", updateCheckbox);
@@ -533,6 +524,11 @@ var gPrivacyPane = {
       gPrivacyPane.showLocationExceptions
     );
     setEventListener(
+      "xrSettingsButton",
+      "command",
+      gPrivacyPane.showXRExceptions
+    );
+    setEventListener(
       "cameraSettingsButton",
       "command",
       gPrivacyPane.showCameraExceptions
@@ -631,6 +627,11 @@ var gPrivacyPane = {
         "submitHealthReportBox",
         "command",
         gPrivacyPane.updateSubmitHealthReport
+      );
+      setEventListener(
+        "telemetryDataDeletionLearnMore",
+        "command",
+        gPrivacyPane.showDataDeletion
       );
       if (AppConstants.MOZ_NORMANDY) {
         this.initOptOutStudyCheckbox();
@@ -1319,7 +1320,7 @@ var gPrivacyPane = {
    */
   showClearPrivateDataSettings() {
     gSubDialog.open(
-      "chrome://browser/content/preferences/sanitize.xul",
+      "chrome://browser/content/preferences/sanitize.xhtml",
       "resizable=no"
     );
   },
@@ -1337,7 +1338,7 @@ var gPrivacyPane = {
     }
 
     gSubDialog.open(
-      "chrome://browser/content/sanitize.xul",
+      "chrome://browser/content/sanitize.xhtml",
       "resizable=no",
       null,
       () => {
@@ -1445,7 +1446,7 @@ var gPrivacyPane = {
       hideStatusColumn: true,
     };
     gSubDialog.open(
-      "chrome://browser/content/preferences/permissions.xul",
+      "chrome://browser/content/preferences/permissions.xhtml",
       null,
       params
     );
@@ -1456,7 +1457,7 @@ var gPrivacyPane = {
    */
   showBlockLists() {
     gSubDialog.open(
-      "chrome://browser/content/preferences/blocklists.xul",
+      "chrome://browser/content/preferences/blocklists.xhtml",
       null
     );
   },
@@ -1616,7 +1617,7 @@ var gPrivacyPane = {
       permissionType: "cookie",
     };
     gSubDialog.open(
-      "chrome://browser/content/preferences/permissions.xul",
+      "chrome://browser/content/preferences/permissions.xhtml",
       null,
       params
     );
@@ -1624,7 +1625,7 @@ var gPrivacyPane = {
 
   showSiteDataSettings() {
     gSubDialog.open(
-      "chrome://browser/content/preferences/siteDataSettings.xul"
+      "chrome://browser/content/preferences/siteDataSettings.xhtml"
     );
   },
 
@@ -1660,7 +1661,7 @@ var gPrivacyPane = {
   },
 
   clearSiteData() {
-    gSubDialog.open("chrome://browser/content/preferences/clearSiteData.xul");
+    gSubDialog.open("chrome://browser/content/preferences/clearSiteData.xhtml");
   },
 
   // GEOLOCATION
@@ -1673,7 +1674,23 @@ var gPrivacyPane = {
     let params = { permissionType: "geo" };
 
     gSubDialog.open(
-      "chrome://browser/content/preferences/sitePermissions.xul",
+      "chrome://browser/content/preferences/sitePermissions.xhtml",
+      "resizable=yes",
+      params
+    );
+  },
+
+  // XR
+
+  /**
+   * Displays the XR exceptions dialog where specific site XR
+   * preferences can be set.
+   */
+  showXRExceptions() {
+    let params = { permissionType: "xr" };
+
+    gSubDialog.open(
+      "chrome://browser/content/preferences/sitePermissions.xhtml",
       "resizable=yes",
       params
     );
@@ -1689,7 +1706,7 @@ var gPrivacyPane = {
     let params = { permissionType: "camera" };
 
     gSubDialog.open(
-      "chrome://browser/content/preferences/sitePermissions.xul",
+      "chrome://browser/content/preferences/sitePermissions.xhtml",
       "resizable=yes",
       params
     );
@@ -1705,7 +1722,7 @@ var gPrivacyPane = {
     let params = { permissionType: "microphone" };
 
     gSubDialog.open(
-      "chrome://browser/content/preferences/sitePermissions.xul",
+      "chrome://browser/content/preferences/sitePermissions.xhtml",
       "resizable=yes",
       params
     );
@@ -1721,7 +1738,7 @@ var gPrivacyPane = {
     let params = { permissionType: "desktop-notification" };
 
     gSubDialog.open(
-      "chrome://browser/content/preferences/sitePermissions.xul",
+      "chrome://browser/content/preferences/sitePermissions.xhtml",
       "resizable=yes",
       params
     );
@@ -1733,7 +1750,7 @@ var gPrivacyPane = {
     var params = { permissionType: "autoplay-media" };
 
     gSubDialog.open(
-      "chrome://browser/content/preferences/sitePermissions.xul",
+      "chrome://browser/content/preferences/sitePermissions.xhtml",
       "resizable=yes",
       params
     );
@@ -1755,7 +1772,7 @@ var gPrivacyPane = {
     };
 
     gSubDialog.open(
-      "chrome://browser/content/preferences/permissions.xul",
+      "chrome://browser/content/preferences/permissions.xhtml",
       "resizable=yes",
       params
     );
@@ -1800,7 +1817,7 @@ var gPrivacyPane = {
     };
 
     gSubDialog.open(
-      "chrome://browser/content/preferences/permissions.xul",
+      "chrome://browser/content/preferences/permissions.xhtml",
       null,
       params
     );
@@ -1864,7 +1881,7 @@ var gPrivacyPane = {
       this._initMasterPasswordUI();
     } else {
       gSubDialog.open(
-        "chrome://mozapps/content/preferences/removemp.xul",
+        "chrome://mozapps/content/preferences/removemp.xhtml",
         null,
         null,
         this._initMasterPasswordUI.bind(this)
@@ -1877,7 +1894,7 @@ var gPrivacyPane = {
    */
   changeMasterPassword() {
     gSubDialog.open(
-      "chrome://mozapps/content/preferences/changemp.xul",
+      "chrome://mozapps/content/preferences/changemp.xhtml",
       "resizable=no",
       null,
       this._initMasterPasswordUI.bind(this)
@@ -1903,16 +1920,14 @@ var gPrivacyPane = {
    */
   showPasswords() {
     if (LoginHelper.managementURI) {
-      window.docShell.messageManager.sendAsyncMessage(
-        "PasswordManager:OpenPreferences",
-        {
-          entryPoint: "preferences",
-        }
-      );
+      let loginManager = window.windowGlobalChild.getActor("LoginManager");
+      loginManager.sendAsyncMessage("PasswordManager:OpenPreferences", {
+        entryPoint: "preferences",
+      });
       return;
     }
     Services.telemetry.recordEvent("pwmgr", "open_management", "preferences");
-    gSubDialog.open("chrome://passwordmgr/content/passwordManager.xul");
+    gSubDialog.open("chrome://passwordmgr/content/passwordManager.xhtml");
   },
 
   /**
@@ -1994,32 +2009,24 @@ var gPrivacyPane = {
       safeBrowsingMalwarePref.value = enableSafeBrowsing.checked;
 
       if (enableSafeBrowsing.checked) {
-        if (blockDownloads) {
-          blockDownloads.removeAttribute("disabled");
-          if (blockDownloads.checked) {
-            blockUncommonUnwanted.removeAttribute("disabled");
-          }
-        } else {
+        blockDownloads.removeAttribute("disabled");
+        if (blockDownloads.checked) {
           blockUncommonUnwanted.removeAttribute("disabled");
         }
       } else {
-        if (blockDownloads) {
-          blockDownloads.setAttribute("disabled", "true");
-        }
+        blockDownloads.setAttribute("disabled", "true");
         blockUncommonUnwanted.setAttribute("disabled", "true");
       }
     });
 
-    if (blockDownloads) {
-      blockDownloads.addEventListener("command", function() {
-        blockDownloadsPref.value = blockDownloads.checked;
-        if (blockDownloads.checked) {
-          blockUncommonUnwanted.removeAttribute("disabled");
-        } else {
-          blockUncommonUnwanted.setAttribute("disabled", "true");
-        }
-      });
-    }
+    blockDownloads.addEventListener("command", function() {
+      blockDownloadsPref.value = blockDownloads.checked;
+      if (blockDownloads.checked) {
+        blockUncommonUnwanted.removeAttribute("disabled");
+      } else {
+        blockUncommonUnwanted.setAttribute("disabled", "true");
+      }
+    });
 
     blockUncommonUnwanted.addEventListener("command", function() {
       blockUnwantedPref.value = blockUncommonUnwanted.checked;
@@ -2031,7 +2038,7 @@ var gPrivacyPane = {
           x =>
             x !== "goog-unwanted-proto" &&
             x !== "goog-unwanted-shavar" &&
-            x !== "test-unwanted-simple"
+            x !== "moztest-unwanted-simple"
         );
 
       if (blockUncommonUnwanted.checked) {
@@ -2041,7 +2048,7 @@ var gPrivacyPane = {
           malware.push("goog-unwanted-proto");
         }
 
-        malware.push("test-unwanted-simple");
+        malware.push("moztest-unwanted-simple");
       }
 
       // sort alphabetically to keep the pref consistent
@@ -2058,20 +2065,14 @@ var gPrivacyPane = {
     enableSafeBrowsing.checked =
       safeBrowsingPhishingPref.value && safeBrowsingMalwarePref.value;
     if (!enableSafeBrowsing.checked) {
-      if (blockDownloads) {
-        blockDownloads.setAttribute("disabled", "true");
-      }
-
+      blockDownloads.setAttribute("disabled", "true");
       blockUncommonUnwanted.setAttribute("disabled", "true");
     }
 
-    if (blockDownloads) {
-      blockDownloads.checked = blockDownloadsPref.value;
-      if (!blockDownloadsPref.value) {
-        blockUncommonUnwanted.setAttribute("disabled", "true");
-      }
+    blockDownloads.checked = blockDownloadsPref.value;
+    if (!blockDownloadsPref.value) {
+      blockUncommonUnwanted.setAttribute("disabled", "true");
     }
-
     blockUncommonUnwanted.checked =
       blockUnwantedPref.value && blockUncommonPref.value;
   },
@@ -2083,7 +2084,7 @@ var gPrivacyPane = {
     var params = this._addonParams;
 
     gSubDialog.open(
-      "chrome://browser/content/preferences/permissions.xul",
+      "chrome://browser/content/preferences/permissions.xhtml",
       null,
       params
     );
@@ -2146,14 +2147,24 @@ var gPrivacyPane = {
    * Displays the user's certificates and associated options.
    */
   showCertificates() {
-    gSubDialog.open("chrome://pippki/content/certManager.xul");
+    gSubDialog.open("chrome://pippki/content/certManager.xhtml");
   },
 
   /**
    * Displays a dialog from which the user can manage his security devices.
    */
   showSecurityDevices() {
-    gSubDialog.open("chrome://pippki/content/device_manager.xul");
+    gSubDialog.open("chrome://pippki/content/device_manager.xhtml");
+  },
+
+  /**
+   * Displays the learn more health report page when a user opts out of data collection.
+   */
+  showDataDeletion() {
+    let url =
+      Services.urlFormatter.formatURLPref("app.support.baseURL") +
+      "telemetry-clientid";
+    window.open(url, "_blank");
   },
 
   initDataCollection() {
@@ -2217,7 +2228,15 @@ var gPrivacyPane = {
    */
   updateSubmitHealthReport() {
     let checkbox = document.getElementById("submitHealthReportBox");
+    let telemetryContainer = document.getElementById("telemetry-container");
+
     Services.prefs.setBoolPref(PREF_UPLOAD_ENABLED, checkbox.checked);
+
+    if (!checkbox.checked) {
+      telemetryContainer.hidden = checkbox.checked;
+    } else {
+      telemetryContainer.hidden = checkbox.checked;
+    }
   },
 
   /**

@@ -15,24 +15,25 @@
 
 #include "jsfriendapi.h"  // js::AssertSameCompartment
 
-#include "builtin/Promise.h"                           // js::PromiseObject
 #include "builtin/streams/ReadableStreamController.h"  // js::ReadableStreamController{,CancelSteps}
 #include "builtin/streams/ReadableStreamReader.h"  // js::ReadableStream{,Default}Reader, js::ForAuthorCodeBool
-#include "gc/AllocKind.h"  // js::gc::AllocKind
-#include "js/CallArgs.h"   // JS::CallArgs{,FromVp}
-#include "js/GCAPI.h"      // JS::AutoSuppressGCAnalysis
-#include "js/Promise.h"  // JS::CallOriginalPromiseThen, JS::{Resolve,Reject}Promise
+#include "gc/AllocKind.h"   // js::gc::AllocKind
+#include "js/CallArgs.h"    // JS::CallArgs{,FromVp}
+#include "js/GCAPI.h"       // JS::AutoSuppressGCAnalysis
+#include "js/Promise.h"     // JS::CallOriginalPromiseThen, JS::ResolvePromise
 #include "js/Result.h"      // JS_TRY_VAR_OR_RETURN_NULL
 #include "js/RootingAPI.h"  // JS::Handle, JS::Rooted
 #include "js/Stream.h"  // JS::ReadableStreamUnderlyingSource, JS::ReadableStreamMode
 #include "js/Value.h"  // JS::Value, JS::{Boolean,Object}Value, JS::UndefinedHandleValue
-#include "vm/JSContext.h"     // JSContext
-#include "vm/JSFunction.h"    // JSFunction, js::NewNativeFunction
-#include "vm/NativeObject.h"  // js::NativeObject
-#include "vm/ObjectGroup.h"   // js::GenericObject
-#include "vm/Realm.h"         // JS::Realm
-#include "vm/StringType.h"    // js::PropertyName
+#include "vm/JSContext.h"      // JSContext
+#include "vm/JSFunction.h"     // JSFunction, js::NewNativeFunction
+#include "vm/NativeObject.h"   // js::NativeObject
+#include "vm/ObjectGroup.h"    // js::GenericObject
+#include "vm/PromiseObject.h"  // js::PromiseObject
+#include "vm/Realm.h"          // JS::Realm
+#include "vm/StringType.h"     // js::PropertyName
 
+#include "builtin/streams/MiscellaneousOperations-inl.h"  // js::{Reject,Resolve}UnwrappedPromiseWithUndefined, js::SetSettledPromiseIsHandled
 #include "builtin/streams/ReadableStreamReader-inl.h"  // js::js::UnwrapReaderFromStream{,NoThrow}
 #include "vm/Compartment-inl.h"                        // JS::Compartment::wrap
 #include "vm/JSContext-inl.h"                          // JSContext::check
@@ -63,7 +64,7 @@ using JS::Value;
  * places as the standard, but the effect is the same. See the comment on
  * `ReadableStreamReader::forAuthorCode()`.
  */
-MOZ_MUST_USE JSObject* js::ReadableStreamAddReadOrReadIntoRequest(
+MOZ_MUST_USE js::PromiseObject* js::ReadableStreamAddReadOrReadIntoRequest(
     JSContext* cx, Handle<ReadableStream*> unwrappedStream) {
   // Step 1: Assert: ! IsReadableStream{BYOB,Default}Reader(stream.[[reader]])
   //         is true.
@@ -82,7 +83,7 @@ MOZ_MUST_USE JSObject* js::ReadableStreamAddReadOrReadIntoRequest(
                 unwrappedStream->readable());
 
   // Step 3: Let promise be a new promise.
-  Rooted<JSObject*> promise(cx, PromiseObject::createSkippingExecutor(cx));
+  Rooted<PromiseObject*> promise(cx, PromiseObject::createSkippingExecutor(cx));
   if (!promise) {
     return nullptr;
   }
@@ -123,14 +124,15 @@ MOZ_MUST_USE JSObject* js::ReadableStreamCancel(
   // Step 1: Set stream.[[disturbed]] to true.
   unwrappedStream->setDisturbed();
 
-  // Step 2: If stream.[[state]] is "closed", return a new promise resolved
-  //         with undefined.
+  // Step 2: If stream.[[state]] is "closed", return a promise resolved with
+  //         undefined.
   if (unwrappedStream->closed()) {
-    return PromiseObject::unforgeableResolve(cx, UndefinedHandleValue);
+    return PromiseObject::unforgeableResolveWithNonPromise(
+        cx, UndefinedHandleValue);
   }
 
-  // Step 3: If stream.[[state]] is "errored", return a new promise rejected
-  //         with stream.[[storedError]].
+  // Step 3: If stream.[[state]] is "errored", return a promise rejected with
+  //         stream.[[storedError]].
   if (unwrappedStream->errored()) {
     Rooted<Value> storedError(cx, unwrappedStream->storedError());
     if (!cx->compartment()->wrap(cx, &storedError)) {
@@ -154,8 +156,8 @@ MOZ_MUST_USE JSObject* js::ReadableStreamCancel(
     return nullptr;
   }
 
-  // Step 6: Return the result of transforming sourceCancelPromise with a
-  //         fulfillment handler that returns undefined.
+  // Step 6: Return the result of reacting to sourceCancelPromise with a
+  //         fulfillment step that returns undefined.
   Handle<PropertyName*> funName = cx->names().empty;
   Rooted<JSFunction*> returnUndefined(
       cx, NewNativeFunction(cx, ReturnUndefined, 0, funName,
@@ -226,11 +228,8 @@ MOZ_MUST_USE bool js::ReadableStreamCloseInternal(
   }
 
   // Step 6: Resolve reader.[[closedPromise]] with undefined.
-  Rooted<JSObject*> closedPromise(cx, unwrappedReader->closedPromise());
-  if (!cx->compartment()->wrap(cx, &closedPromise)) {
-    return false;
-  }
-  if (!ResolvePromise(cx, closedPromise, UndefinedHandleValue)) {
+  if (!ResolveUnwrappedPromiseWithUndefined(cx,
+                                            unwrappedReader->closedPromise())) {
     return false;
   }
 
@@ -319,24 +318,19 @@ MOZ_MUST_USE bool js::ReadableStreamErrorInternal(
   // Steps 7-8: (Identical in our implementation.)
   // Step 7.a/8.b: Repeat for each read{Into}Request that is an element of
   //               reader.[[read{Into}Requests]],
-  Rooted<ListObject*> unwrappedReadRequests(cx, unwrappedReader->requests());
-  Rooted<JSObject*> readRequest(cx);
-  Rooted<Value> val(cx);
-  uint32_t len = unwrappedReadRequests->length();
-  for (uint32_t i = 0; i < len; i++) {
-    // Step i: Reject read{Into}Request.[[promise]] with e.
-    val = unwrappedReadRequests->get(i);
-    readRequest = &val.toObject();
-
-    // Responses have to be created in the compartment from which the
-    // error was triggered, which might not be the same as the one the
-    // request was created in, so we have to wrap requests here.
-    if (!cx->compartment()->wrap(cx, &readRequest)) {
-      return false;
-    }
-
-    if (!RejectPromise(cx, readRequest, e)) {
-      return false;
+  {
+    Rooted<ListObject*> unwrappedReadRequests(cx, unwrappedReader->requests());
+    Rooted<JSObject*> readRequest(cx);
+    uint32_t len = unwrappedReadRequests->length();
+    for (uint32_t i = 0; i < len; i++) {
+      // Step i: Reject read{Into}Request.[[promise]] with e.
+      // Responses have to be created in the compartment from which the error
+      // was triggered, which might not be the same as the one the request was
+      // created in, so we have to wrap requests here.
+      readRequest = &unwrappedReadRequests->get(i).toObject();
+      if (!RejectUnwrappedPromiseWithError(cx, &readRequest, e)) {
+        return false;
+      }
     }
   }
 
@@ -347,17 +341,20 @@ MOZ_MUST_USE bool js::ReadableStreamErrorInternal(
   }
 
   // Step 9: Reject reader.[[closedPromise]] with e.
+  if (!RejectUnwrappedPromiseWithError(cx, unwrappedReader->closedPromise(),
+                                       e)) {
+    return false;
+  }
+
+  // Step 10: Set reader.[[closedPromise]].[[PromiseIsHandled]] to true.
   //
-  // The closedPromise might have been created in another compartment.
-  // RejectPromise can deal with wrapped Promise objects, but all its arguments
-  // must be same-compartment with cx, so we do need to wrap the Promise.
+  // `closedPromise` can return a CCW, but that case is filtered out by step 6,
+  // given the only place that can set [[closedPromise]] to a CCW is
+  // 3.8.5 ReadableStreamReaderGenericRelease step 4, and
+  // 3.8.5 ReadableStreamReaderGenericRelease step 6 sets
+  // stream.[[reader]] to undefined.
   Rooted<JSObject*> closedPromise(cx, unwrappedReader->closedPromise());
-  if (!cx->compartment()->wrap(cx, &closedPromise)) {
-    return false;
-  }
-  if (!RejectPromise(cx, closedPromise, e)) {
-    return false;
-  }
+  SetSettledPromiseIsHandled(cx, closedPromise.as<PromiseObject>());
 
   if (unwrappedStream->mode() == JS::ReadableStreamMode::ExternalSource) {
     // Make sure we're in the stream's compartment.

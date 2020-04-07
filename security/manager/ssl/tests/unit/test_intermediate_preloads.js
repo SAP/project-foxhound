@@ -15,8 +15,9 @@ const { RemoteSecuritySettings } = ChromeUtils.import(
 const { TestUtils } = ChromeUtils.import(
   "resource://testing-common/TestUtils.jsm"
 );
-const { X509 } = ChromeUtils.import("resource://gre/modules/psm/X509.jsm");
-
+const { TelemetryTestUtils } = ChromeUtils.import(
+  "resource://testing-common/TelemetryTestUtils.jsm"
+);
 const { IntermediatePreloadsClient } = RemoteSecuritySettings.init();
 
 let server;
@@ -46,6 +47,22 @@ function getHashCommon(aStr, useBase64) {
 // Get a hexified SHA-256 hash of the given string.
 function getHash(aStr) {
   return hexify(getHashCommon(aStr, false));
+}
+
+function countTelemetryReports(histogram) {
+  let count = 0;
+  for (let x in histogram.values) {
+    count += histogram.values[x];
+  }
+  return count;
+}
+
+function clearTelemetry() {
+  Services.telemetry.getHistogramById("INTERMEDIATE_PRELOADING_ERRORS").clear();
+  Services.telemetry
+    .getHistogramById("INTERMEDIATE_PRELOADING_UPDATE_TIME_MS")
+    .clear();
+  Services.telemetry.clearScalars();
 }
 
 function getSubjectBytes(certDERString) {
@@ -147,7 +164,9 @@ add_task(
     // load the first root and end entity, ignore the initial intermediate
     addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
 
-    let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
+    let ee_cert = constructCertFromFile(
+      "test_intermediate_preloads/default-ee.pem"
+    );
     notEqual(ee_cert, null, "EE cert should have successfully loaded");
 
     equal(
@@ -198,14 +217,38 @@ add_task(
     skip_if: () => !AppConstants.MOZ_NEW_CERT_STORAGE,
   },
   async function test_preload_invalid_hash() {
+    // Enable the collection (during test) for all products so even products
+    // that don't collect the data will be able to run the test without failure.
+    Services.prefs.setBoolPref(
+      "toolkit.telemetry.testing.overrideProductsCheck",
+      true
+    );
+
     Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
     const invalidHash =
       "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d";
+
+    clearTelemetry();
 
     const result = await syncAndDownload(["int.pem"], {
       hashFunc: () => invalidHash,
     });
     equal(result, "success", "Preloading update should have run");
+
+    let errors_histogram = Services.telemetry
+      .getHistogramById("INTERMEDIATE_PRELOADING_ERRORS")
+      .snapshot();
+
+    equal(
+      countTelemetryReports(errors_histogram),
+      1,
+      "There should be one error report"
+    );
+    equal(
+      errors_histogram.values[7],
+      1,
+      "There should be one invalid hash error"
+    );
 
     equal(
       (await locallyDownloaded()).length,
@@ -220,7 +263,9 @@ add_task(
     // load the first root and end entity, ignore the initial intermediate
     addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
 
-    let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
+    let ee_cert = constructCertFromFile(
+      "test_intermediate_preloads/default-ee.pem"
+    );
     notEqual(ee_cert, null, "EE cert should have successfully loaded");
 
     // We should still have a missing intermediate.
@@ -240,10 +285,27 @@ add_task(
   async function test_preload_invalid_length() {
     Services.prefs.setBoolPref(INTERMEDIATES_ENABLED_PREF, true);
 
+    clearTelemetry();
+
     const result = await syncAndDownload(["int.pem"], {
       lengthFunc: () => 42,
     });
     equal(result, "success", "Preloading update should have run");
+
+    let errors_histogram = Services.telemetry
+      .getHistogramById("INTERMEDIATE_PRELOADING_ERRORS")
+      .snapshot();
+
+    equal(
+      countTelemetryReports(errors_histogram),
+      1,
+      "There should be only one error report"
+    );
+    equal(
+      errors_histogram.values[7],
+      1,
+      "There should be one invalid content hash error"
+    );
 
     equal(
       (await locallyDownloaded()).length,
@@ -258,7 +320,9 @@ add_task(
     // load the first root and end entity, ignore the initial intermediate
     addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
 
-    let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
+    let ee_cert = constructCertFromFile(
+      "test_intermediate_preloads/default-ee.pem"
+    );
     notEqual(ee_cert, null, "EE cert should have successfully loaded");
 
     // We should still have a missing intermediate.
@@ -286,7 +350,9 @@ add_task(
     // load the first root and end entity, ignore the initial intermediate
     addCertFromFile(certDB, "test_intermediate_preloads/ca.pem", "CTu,,");
 
-    let ee_cert = constructCertFromFile("test_intermediate_preloads/ee.pem");
+    let ee_cert = constructCertFromFile(
+      "test_intermediate_preloads/default-ee.pem"
+    );
     notEqual(ee_cert, null, "EE cert should have successfully loaded");
 
     // load the second end entity, ignore both intermediate and root
@@ -338,6 +404,32 @@ add_task(
 
     // check that ee cert 1 verifies now the update has happened and there is
     // an intermediate
+
+    // First verify by connecting to a server that uses that end-entity
+    // certificate but doesn't send the intermediate.
+    await asyncStartTLSTestServer(
+      "BadCertAndPinningServer",
+      "test_intermediate_preloads"
+    );
+    // This ensures the test server doesn't include the intermediate in the
+    // handshake.
+    let certDir = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+    certDir.append("test_intermediate_preloads");
+    Assert.ok(certDir.exists(), "test_intermediate_preloads should exist");
+    let args = ["-D", "-n", "int"];
+    // If the certdb is cached from a previous run, the intermediate will have
+    // already been deleted, so this may "fail".
+    run_certutil_on_directory(certDir.path, args, false);
+    let certsCachedPromise = TestUtils.topicObserved(
+      "psm:intermediate-certs-cached"
+    );
+    await asyncConnectTo("ee.example.com", PRErrorCodeSuccess);
+    let subjectAndData = await certsCachedPromise;
+    Assert.equal(subjectAndData.length, 2, "expecting [subject, data]");
+    // Since the intermediate is preloaded, we don't save it to the profile's
+    // certdb.
+    Assert.equal(subjectAndData[1], "0", `expecting "0" certs imported`);
+
     await checkCertErrorGeneric(
       certDB,
       ee_cert,
@@ -392,6 +484,8 @@ add_task(
       files.push(["int.pem", "int2.pem"][i % 2]);
     }
 
+    clearTelemetry();
+
     let result = await syncAndDownload(files);
     equal(result, "success", "Preloading update should have run");
 
@@ -399,6 +493,33 @@ add_task(
       (await locallyDownloaded()).length,
       100,
       "There should have been only 100 downloaded"
+    );
+
+    const scalars = TelemetryTestUtils.getProcessScalars("parent");
+    TelemetryTestUtils.assertScalar(
+      scalars,
+      "security.intermediate_preloading_num_preloaded",
+      100,
+      "Should have preloaded 100 certs"
+    );
+    TelemetryTestUtils.assertScalar(
+      scalars,
+      "security.intermediate_preloading_num_pending",
+      100,
+      "Should report 100 pending"
+    );
+
+    let time_histogram = Services.telemetry
+      .getHistogramById("INTERMEDIATE_PRELOADING_UPDATE_TIME_MS")
+      .snapshot();
+    let errors_histogram = Services.telemetry
+      .getHistogramById("INTERMEDIATE_PRELOADING_ERRORS")
+      .snapshot();
+    equal(countTelemetryReports(time_histogram), 1, "Should report time once");
+    equal(
+      countTelemetryReports(errors_histogram),
+      0,
+      "There should be no error reports"
     );
 
     // Re-run

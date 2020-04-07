@@ -11,15 +11,16 @@
 #include "nsDocShellCID.h"
 #include "nsIWebNavigationInfo.h"
 #include "mozilla/dom/Document.h"
-#include "nsIHttpChannel.h"
 #include "nsError.h"
 #include "nsContentSecurityManager.h"
 #include "nsDocShellLoadTypes.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIMultiPartChannel.h"
+#include "nsWebNavigationInfo.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 NS_IMPL_ADDREF(MaybeCloseWindowHelper)
 NS_IMPL_RELEASE(MaybeCloseWindowHelper)
@@ -28,10 +29,8 @@ NS_INTERFACE_MAP_BEGIN(MaybeCloseWindowHelper)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
-MaybeCloseWindowHelper::MaybeCloseWindowHelper(
-    nsIInterfaceRequestor* aContentContext)
-    : mContentContext(aContentContext),
-      mWindowToClose(nullptr),
+MaybeCloseWindowHelper::MaybeCloseWindowHelper(BrowsingContext* aContentContext)
+    : mBrowsingContext(aContentContext),
       mTimer(nullptr),
       mShouldCloseWindow(false) {}
 
@@ -41,36 +40,32 @@ void MaybeCloseWindowHelper::SetShouldCloseWindow(bool aShouldCloseWindow) {
   mShouldCloseWindow = aShouldCloseWindow;
 }
 
-nsIInterfaceRequestor* MaybeCloseWindowHelper::MaybeCloseWindow() {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(mContentContext);
-  NS_ENSURE_TRUE(window, mContentContext);
-
+BrowsingContext* MaybeCloseWindowHelper::MaybeCloseWindow() {
   if (mShouldCloseWindow) {
     // Reset the window context to the opener window so that the dependent
     // dialogs have a parent
-    nsCOMPtr<nsPIDOMWindowOuter> opener =
-        nsGlobalWindowOuter::Cast(window)->GetSameProcessOpener();
+    RefPtr<BrowsingContext> opener = mBrowsingContext->GetOpener();
 
-    if (opener && !opener->Closed()) {
-      mContentContext = do_QueryInterface(opener);
+    if (opener && !opener->IsDiscarded()) {
+      mBCToClose = mBrowsingContext;
+      mBrowsingContext = opener;
 
       // Now close the old window.  Do it on a timer so that we don't run
       // into issues trying to close the window before it has fully opened.
       NS_ASSERTION(!mTimer, "mTimer was already initialized once!");
       NS_NewTimerWithCallback(getter_AddRefs(mTimer), this, 0,
                               nsITimer::TYPE_ONE_SHOT);
-      mWindowToClose = window;
     }
   }
-  return mContentContext;
+  return mBrowsingContext;
 }
 
 NS_IMETHODIMP
 MaybeCloseWindowHelper::Notify(nsITimer* timer) {
-  NS_ASSERTION(mWindowToClose, "No window to close after timer fired");
+  NS_ASSERTION(mBCToClose, "No window to close after timer fired");
 
-  mWindowToClose->Close();
-  mWindowToClose = nullptr;
+  mBCToClose->Close(CallerType::System, IgnoreErrors());
+  mBCToClose = nullptr;
   mTimer = nullptr;
 
   return NS_OK;
@@ -82,13 +77,6 @@ nsDSURIContentListener::nsDSURIContentListener(nsDocShell* aDocShell)
       mParentContentListener(nullptr) {}
 
 nsDSURIContentListener::~nsDSURIContentListener() {}
-
-nsresult nsDSURIContentListener::Init() {
-  nsresult rv;
-  mNavInfo = do_GetService(NS_WEBNAVIGATION_INFO_CONTRACTID, &rv);
-  NS_ASSERTION(NS_SUCCEEDED(rv), "Failed to get webnav info");
-  return rv;
-}
 
 NS_IMPL_ADDREF(nsDSURIContentListener)
 NS_IMPL_RELEASE(nsDSURIContentListener)
@@ -143,15 +131,11 @@ nsDSURIContentListener::DoContent(const nsACString& aContentType,
       aRequest->Cancel(NS_ERROR_DOM_BAD_URI);
       *aAbortProcess = true;
       // close the window since the navigation to a data URI was blocked
-      if (mDocShell) {
-        nsCOMPtr<nsIInterfaceRequestor> contentContext =
-            do_QueryInterface(mDocShell->GetWindow());
-        if (contentContext) {
-          RefPtr<MaybeCloseWindowHelper> maybeCloseWindowHelper =
-              new MaybeCloseWindowHelper(contentContext);
-          maybeCloseWindowHelper->SetShouldCloseWindow(true);
-          maybeCloseWindowHelper->MaybeCloseWindow();
-        }
+      if (mDocShell && mDocShell->GetBrowsingContext()) {
+        RefPtr<MaybeCloseWindowHelper> maybeCloseWindowHelper =
+            new MaybeCloseWindowHelper(mDocShell->GetBrowsingContext());
+        maybeCloseWindowHelper->SetShouldCloseWindow(true);
+        maybeCloseWindowHelper->MaybeCloseWindow();
       }
       return NS_OK;
     }
@@ -206,7 +190,7 @@ nsDSURIContentListener::DoContent(const nsACString& aContentType,
     nsCOMPtr<nsPIDOMWindowOuter> domWindow =
         mDocShell ? mDocShell->GetWindow() : nullptr;
     NS_ENSURE_TRUE(domWindow, NS_ERROR_FAILURE);
-    domWindow->Focus();
+    domWindow->Focus(mozilla::dom::CallerType::System);
   }
 
   return NS_OK;
@@ -252,15 +236,13 @@ nsDSURIContentListener::CanHandleContent(const char* aContentType,
   *aCanHandleContent = false;
   *aDesiredContentType = nullptr;
 
-  nsresult rv = NS_OK;
   if (aContentType) {
-    uint32_t canHandle = nsIWebNavigationInfo::UNSUPPORTED;
-    rv = mNavInfo->IsTypeSupported(nsDependentCString(aContentType), mDocShell,
-                                   &canHandle);
+    uint32_t canHandle = nsWebNavigationInfo::IsTypeSupported(
+        nsDependentCString(aContentType), mDocShell);
     *aCanHandleContent = (canHandle != nsIWebNavigationInfo::UNSUPPORTED);
   }
 
-  return rv;
+  return NS_OK;
 }
 
 NS_IMETHODIMP

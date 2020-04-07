@@ -5,6 +5,11 @@
  * Test Google search plugin URLs
  * TODO: This test is a near duplicate of browser_searchEngine_behaviors.js but
  * specific to Google. This is required due to bug 1315953.
+ *
+ * Note: Although we have tests for codes in
+ * toolkit/components/tests/xpcshell/searchconfigs, we also need this test as an
+ * integration test to check the search service to selector integration is
+ * working correctly (especially the ESR codes).
  */
 
 "use strict";
@@ -50,7 +55,7 @@ if (code) {
 }
 
 function promiseContentSearchReady(browser) {
-  return ContentTask.spawn(browser, {}, async function(args) {
+  return SpecialPowers.spawn(browser, [], async function(args) {
     return new Promise(resolve => {
       if (content.wrappedJSObject.gContentSearchController) {
         let searchController = content.wrappedJSObject.gContentSearchController;
@@ -161,7 +166,7 @@ async function testSearchEngine(engineDetails) {
         await promiseContentSearchReady(browser);
       },
       async run(tab) {
-        await ContentTask.spawn(tab.linkedBrowser, {}, async function(args) {
+        await SpecialPowers.spawn(tab.linkedBrowser, [], async function(args) {
           let input = content.document.querySelector("input[id*=search-]");
           input.focus();
           input.value = "foo";

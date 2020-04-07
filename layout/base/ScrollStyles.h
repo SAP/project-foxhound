@@ -8,13 +8,14 @@
 #define mozilla_ScrollStyles_h
 
 #include <stdint.h>
-#include "nsStyleConsts.h"
 #include "mozilla/dom/WindowBinding.h"
 
 // Forward declarations
 struct nsStyleDisplay;
 
 namespace mozilla {
+
+enum class StyleOverflow : uint8_t;
 
 // NOTE: Only styles that are propagated from the <body> should end up in this
 // class.
@@ -23,32 +24,17 @@ struct ScrollStyles {
   StyleOverflow mHorizontal;
   StyleOverflow mVertical;
 
-  // FIXME(emilio): we shouldn't propagate this.
-  StyleOverscrollBehavior mOverscrollBehaviorX;
-  StyleOverscrollBehavior mOverscrollBehaviorY;
-
   ScrollStyles(StyleOverflow aH, StyleOverflow aV)
-      : mHorizontal(aH),
-        mVertical(aV),
-        mOverscrollBehaviorX(StyleOverscrollBehavior::Auto),
-        mOverscrollBehaviorY(StyleOverscrollBehavior::Auto) {}
+      : mHorizontal(aH), mVertical(aV) {}
 
-  ScrollStyles(WritingMode aWritingMode, const nsStyleDisplay* aDisplay);
-  ScrollStyles(WritingMode aWritingMode, StyleOverflow aH, StyleOverflow aV,
-               const nsStyleDisplay* aDisplay);
+  explicit ScrollStyles(const nsStyleDisplay&);
   bool operator==(const ScrollStyles& aStyles) const {
-    return aStyles.mHorizontal == mHorizontal &&
-           aStyles.mVertical == mVertical &&
-           aStyles.mOverscrollBehaviorX == mOverscrollBehaviorX &&
-           aStyles.mOverscrollBehaviorY == mOverscrollBehaviorY;
+    return aStyles.mHorizontal == mHorizontal && aStyles.mVertical == mVertical;
   }
   bool operator!=(const ScrollStyles& aStyles) const {
     return !(*this == aStyles);
   }
-  bool IsHiddenInBothDirections() const {
-    return mHorizontal == StyleOverflow::Hidden &&
-           mVertical == StyleOverflow::Hidden;
-  }
+  bool IsHiddenInBothDirections() const;
 };
 
 }  // namespace mozilla

@@ -114,36 +114,16 @@ function is_in_detail(aManager, view, canGoBack, canGoForward) {
 }
 
 function is_in_discovery(aManager, url, canGoBack, canGoForward) {
-  if (
-    Services.prefs.getBoolPref("extensions.htmlaboutaddons.discover.enabled")
-  ) {
-    is(
-      get_current_view(aManager).id,
-      "html-view",
-      "the current view should be set to the HTML about:addons browser"
-    );
-    const doc = aManager.getHtmlBrowser().contentDocument;
-    ok(
-      doc.querySelector("discovery-pane"),
-      "Got a discovery panel in the HTML about:addons browser"
-    );
-  } else {
-    var browser = aManager.document.getElementById("discover-browser");
-
-    is(
-      aManager.document.getElementById("discover-view").selectedPanel,
-      browser,
-      "Browser should be visible"
-    );
-
-    var spec = browser.currentURI.spec;
-    var pos = spec.indexOf("#");
-    if (pos != -1) {
-      spec = spec.substring(0, pos);
-    }
-
-    is(spec, url, "Should have loaded the right url");
-  }
+  is(
+    get_current_view(aManager).id,
+    "html-view",
+    "the current view should be set to the HTML about:addons browser"
+  );
+  const doc = aManager.getHtmlBrowser().contentDocument;
+  ok(
+    doc.querySelector("discovery-pane"),
+    "Got a discovery panel in the HTML about:addons browser"
+  );
 
   check_state(canGoBack, canGoForward);
 }
@@ -153,23 +133,8 @@ async function expand_addon_element(aManager, aId) {
   addon.click();
 }
 
-function wait_for_page_show(browser) {
-  let promise = new Promise(resolve => {
-    let removeFunc;
-    let listener = () => {
-      removeFunc();
-      resolve();
-    };
-    removeFunc = BrowserTestUtils.addContentEventListener(
-      browser,
-      "pageshow",
-      listener,
-      {},
-      event => event.target.location == "http://example.com/",
-      /* autoremove = */ false
-    );
-  });
-  return promise;
+function wait_for_page_load(browser) {
+  return BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
 }
 
 // Tests simple forward and back navigation and that the right heading and
@@ -401,7 +366,7 @@ add_task(async function test_navigate_back_from_website() {
   is_in_list(aManager, "addons://list/plugin", false, false);
 
   BrowserTestUtils.loadURI(gBrowser, "http://example.com/");
-  await wait_for_page_show(gBrowser.selectedBrowser);
+  await wait_for_page_load(gBrowser.selectedBrowser);
 
   info("Part 2");
 
@@ -425,7 +390,7 @@ add_task(async function test_navigate_back_from_website() {
         is_in_list(aManager, "addons://list/plugin", false, true);
 
         executeSoon(() => go_forward());
-        wait_for_page_show(gBrowser.selectedBrowser).then(() => {
+        wait_for_page_load(gBrowser.selectedBrowser).then(() => {
           info("Part 4");
 
           executeSoon(function() {
@@ -585,10 +550,7 @@ add_task(async function test_open_last_view() {
 // Tests that navigating the discovery page works when that was the first view
 add_task(async function test_discopane_first_history_entry() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.htmlaboutaddons.discover.enabled", true],
-      ["extensions.getAddons.discovery.api_url", DISCOAPI_URL],
-    ],
+    set: [["extensions.getAddons.discovery.api_url", DISCOAPI_URL]],
   });
 
   let aManager = await open_manager("addons://discover/");

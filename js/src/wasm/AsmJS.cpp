@@ -28,10 +28,10 @@
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "mozilla/Variant.h"
 
+#include <algorithm>
 #include <new>
 
 #include "jsmath.h"
-#include "jsutil.h"
 
 #include "frontend/ParseNode.h"
 #include "frontend/Parser.h"
@@ -387,7 +387,7 @@ struct js::AsmJSMetadata : Metadata, AsmJSMetadataCacheablePod {
   const AsmJSMetadataCacheablePod& pod() const { return *this; }
 };
 
-typedef RefPtr<AsmJSMetadata> MutableAsmJSMetadata;
+using MutableAsmJSMetadata = RefPtr<AsmJSMetadata>;
 
 /*****************************************************************************/
 // ParseNode utilities
@@ -968,31 +968,31 @@ class Type {
     return isVoid() ? Nothing() : Some(canonicalToValType());
   }
 
-  // Convert this type to a wasm::ExprType for use in a wasm
+  // Convert this type to a wasm::TypeCode for use in a wasm
   // block signature. This works for all types, including non-canonical
   // ones. Consequently, the type isn't valid for subsequent asm.js
   // validation; it's only valid for use in producing wasm.
-  ExprType toWasmBlockSignatureType() const {
+  TypeCode toWasmBlockSignatureType() const {
     switch (which()) {
       case Fixnum:
       case Signed:
       case Unsigned:
       case Int:
       case Intish:
-        return ExprType::I32;
+        return TypeCode::I32;
 
       case Float:
       case MaybeFloat:
       case Floatish:
-        return ExprType::F32;
+        return TypeCode::F32;
 
       case DoubleLit:
       case Double:
       case MaybeDouble:
-        return ExprType::F64;
+        return TypeCode::F64;
 
       case Void:
-        return ExprType::Void;
+        return TypeCode::BlockVoid;
     }
     MOZ_CRASH("Invalid Type");
   }
@@ -1224,11 +1224,8 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
       MOZ_ASSERT(which_ == FFI);
       return u.ffiIndex_;
     }
-    bool isAnyArrayView() const {
-      return which_ == ArrayView || which_ == ArrayViewCtor;
-    }
     Scalar::Type viewType() const {
-      MOZ_ASSERT(isAnyArrayView());
+      MOZ_ASSERT(which_ == ArrayView || which_ == ArrayViewCtor);
       return u.viewType_;
     }
     bool isMathFunction() const { return which_ == MathBuiltinFunction; }
@@ -1353,8 +1350,9 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
         funcImportMap_(cx),
         arrayViews_(cx),
         compilerEnv_(CompileMode::Once, Tier::Optimized, OptimizedBackend::Ion,
-                     DebugEnabled::False, /* ref types */ false,
-                     /* gc types */ false, /* huge memory */ false),
+                     DebugEnabled::False, /* multi value */ false,
+                     /* ref types */ false, /* gc types */ false,
+                     /* huge memory */ false, /* bigint */ false),
         env_(&compilerEnv_, Shareable::False, ModuleKind::AsmJS) {
     compilerEnv_.computeParameters(/* gc types */ false);
     env_.minMemoryLength = RoundUpToNextValidAsmJSHeapLength(0);
@@ -1431,7 +1429,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
   MOZ_MUST_USE bool initDummyFunction() {
     // This flows into FunctionBox, so must be tenured.
     dummyFunction_ = NewScriptedFunction(
-        cx_, 0, FunctionFlags::INTERPRETED, nullptr,
+        cx_, 0, FunctionFlags::BASESCRIPT, nullptr,
         /* proto = */ nullptr, gc::AllocKind::FUNCTION, TenuredObject);
     if (!dummyFunction_) {
       return false;
@@ -1916,8 +1914,9 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
     ErrorMetadata metadata;
     if (ts.computeErrorMetadata(&metadata, AsVariant(offset))) {
       if (ts.anyCharsAccess().options().throwOnAsmJSValidationFailureOption) {
-        ReportCompileError(cx_, std::move(metadata), nullptr, JSREPORT_ERROR,
-                           JSMSG_USE_ASM_TYPE_FAIL, &args);
+        ReportCompileErrorLatin1(cx_, std::move(metadata), nullptr,
+                                 JSREPORT_ERROR, JSMSG_USE_ASM_TYPE_FAIL,
+                                 &args);
       } else {
         // asm.js type failure is indicated by calling one of the fail*
         // functions below.  These functions always return false to
@@ -1944,7 +1943,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidator
     }
 
     asmJSMetadata_->toStringStart =
-        moduleFunctionNode_->funbox()->toStringStart;
+        moduleFunctionNode_->funbox()->extent.toStringStart;
     asmJSMetadata_->srcStart = moduleFunctionNode_->body()->pn_pos.begin;
     asmJSMetadata_->strict = parser_.pc_->sc()->strict() &&
                              !parser_.pc_->sc()->hasExplicitUseStrict();
@@ -2441,7 +2440,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
  public:
   bool pushBreakableBlock() {
     return encoder().writeOp(Op::Block) &&
-           encoder().writeFixedU8(uint8_t(ExprType::Void)) &&
+           encoder().writeFixedU8(uint8_t(TypeCode::BlockVoid)) &&
            breakableStack_.append(blockDepth_++);
   }
   bool popBreakableBlock() {
@@ -2459,7 +2458,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
     }
     blockDepth_++;
     return encoder().writeOp(Op::Block) &&
-           encoder().writeFixedU8(uint8_t(ExprType::Void));
+           encoder().writeFixedU8(uint8_t(TypeCode::BlockVoid));
   }
   bool popUnbreakableBlock(const LabelVector* labels = nullptr) {
     if (labels) {
@@ -2473,7 +2472,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
 
   bool pushContinuableBlock() {
     return encoder().writeOp(Op::Block) &&
-           encoder().writeFixedU8(uint8_t(ExprType::Void)) &&
+           encoder().writeFixedU8(uint8_t(TypeCode::BlockVoid)) &&
            continuableStack_.append(blockDepth_++);
   }
   bool popContinuableBlock() {
@@ -2483,9 +2482,9 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
 
   bool pushLoop() {
     return encoder().writeOp(Op::Block) &&
-           encoder().writeFixedU8(uint8_t(ExprType::Void)) &&
+           encoder().writeFixedU8(uint8_t(TypeCode::BlockVoid)) &&
            encoder().writeOp(Op::Loop) &&
-           encoder().writeFixedU8(uint8_t(ExprType::Void)) &&
+           encoder().writeFixedU8(uint8_t(TypeCode::BlockVoid)) &&
            breakableStack_.append(blockDepth_++) &&
            continuableStack_.append(blockDepth_++);
   }
@@ -2503,15 +2502,15 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
     MOZ_ASSERT(blockDepth_ > 0);
     return encoder().writeOp(Op::Else);
   }
-  void setIfType(size_t typeAt, ExprType type) {
-    encoder().patchFixedU7(typeAt, uint8_t(type.code()));
+  void setIfType(size_t typeAt, TypeCode type) {
+    encoder().patchFixedU7(typeAt, uint8_t(type));
   }
   bool popIf() {
     MOZ_ASSERT(blockDepth_ > 0);
     --blockDepth_;
     return encoder().writeOp(Op::End);
   }
-  bool popIf(size_t typeAt, ExprType type) {
+  bool popIf(size_t typeAt, TypeCode type) {
     MOZ_ASSERT(blockDepth_ > 0);
     --blockDepth_;
     if (!encoder().writeOp(Op::End)) {
@@ -3413,7 +3412,7 @@ static bool CheckArrayAccess(FunctionValidator<Unit>& f, ParseNode* viewName,
 
   const ModuleValidatorShared::Global* global =
       f.lookupGlobal(viewName->as<NameNode>().name());
-  if (!global || !global->isAnyArrayView()) {
+  if (!global || global->which() != ModuleValidatorShared::Global::ArrayView) {
     return f.fail(viewName,
                   "base of array access must be a typed array view name");
   }
@@ -4693,8 +4692,7 @@ static bool CheckComma(FunctionValidator<Unit>& f, ParseNode* comma,
     return false;
   }
 
-  f.encoder().patchFixedU7(typeAt,
-                           uint8_t(type->toWasmBlockSignatureType().code()));
+  f.encoder().patchFixedU7(typeAt, uint8_t(type->toWasmBlockSignatureType()));
 
   return f.encoder().writeOp(Op::End);
 }
@@ -5584,7 +5582,7 @@ recurse:
     return false;
   }
 
-  f.setIfType(typeAt, ExprType::Void);
+  f.setIfType(typeAt, TypeCode::BlockVoid);
 
   if (!CheckStatement(f, thenStmt)) {
     return false;
@@ -5677,8 +5675,8 @@ static bool CheckSwitchRange(FunctionValidatorShared& f, ParseNode* stmt,
       return false;
     }
 
-    *low = Min(*low, i);
-    *high = Max(*high, i);
+    *low = std::min(*low, i);
+    *high = std::max(*high, i);
   }
 
   int64_t i64 = (int64_t(*high) - int64_t(*low)) + 1;
@@ -6541,7 +6539,7 @@ static bool ValidateGlobalVariable(JSContext* cx, const AsmJSGlobal& global,
         return LinkFail(cx, "Imported values must be primitives");
       }
 
-      switch (global.varInitImportType().code()) {
+      switch (global.varInitImportType().kind()) {
         case ValType::I32: {
           int32_t i32;
           if (!ToInt32(cx, v, &i32)) {
@@ -6568,10 +6566,7 @@ static bool ValidateGlobalVariable(JSContext* cx, const AsmJSGlobal& global,
           val->emplace(d);
           return true;
         }
-        case ValType::Ref:
-        case ValType::NullRef:
-        case ValType::AnyRef:
-        case ValType::FuncRef: {
+        case ValType::Ref: {
           MOZ_CRASH("not available in asm.js");
         }
       }
@@ -7115,6 +7110,7 @@ static bool DoCompileAsmJS(JSContext* cx, AsmJSParser<Unit>& parser,
   // The module function dynamically links the AsmJSModule when called and
   // generates a set of functions wrapping all the exports.
   FunctionBox* funbox = parser.pc_->functionBox();
+
   RootedFunction moduleFun(cx, NewAsmJSModuleFunction(cx, funbox, moduleObj));
   if (!moduleFun) {
     return false;
@@ -7127,10 +7123,12 @@ static bool DoCompileAsmJS(JSContext* cx, AsmJSParser<Unit>& parser,
   MOZ_ASSERT(funbox->isInterpreted());
   funbox->clobberFunction(moduleFun);
 
-  // Clear any deferred allocation data. This is important in particular
+  // Clear any function creation data. This is important in particular
   // to avoid publishing a deferred function allocation on top of the
   // module function set on the funbox above.
-  funbox->clearDeferredAllocationInfo();
+  if (funbox->hasFunctionCreationIndex()) {
+    funbox->clearFunctionCreationData();
+  }
 
   // Success! Write to the console with a "warning" message indicating
   // total compilation time.

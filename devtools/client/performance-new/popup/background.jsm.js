@@ -25,6 +25,9 @@ const { AppConstants } = ChromeUtils.import(
  * @typedef {import("../@types/perf").PopupBackgroundFeatures} PopupBackgroundFeatures
  * @typedef {import("../@types/perf").SymbolTableAsTuple} SymbolTableAsTuple
  * @typedef {import("../@types/perf").PerformancePref} PerformancePref
+ * @typedef {import("../@types/perf").ProfilerWebChannel} ProfilerWebChannel
+ * @typedef {import("../@types/perf").MessageFromFrontend} MessageFromFrontend
+ * @typedef {import("../@types/perf").Presets} Presets
  */
 
 /** @type {PerformancePref["Entries"]} */
@@ -39,6 +42,10 @@ const THREADS_PREF = "devtools.performance.recording.threads";
 const OBJDIRS_PREF = "devtools.performance.recording.objdirs";
 /** @type {PerformancePref["Duration"]} */
 const DURATION_PREF = "devtools.performance.recording.duration";
+/** @type {PerformancePref["Preset"]} */
+const PRESET_PREF = "devtools.performance.recording.preset";
+/** @type {PerformancePref["PopupFeatureFlag"]} */
+const POPUP_FEATURE_FLAG_PREF = "devtools.performance.popup.feature-flag";
 
 // The following utilities are lazily loaded as they are not needed when controlling the
 // global state of the profiler, and only are used during specific funcationality like
@@ -74,13 +81,13 @@ const lazyProfilerGetSymbols = requireLazy(() =>
   (ChromeUtils.import("resource://gre/modules/ProfilerGetSymbols.jsm"))
 );
 
-const lazyReceiveProfile = requireLazy(() => {
+const lazyBrowserModule = requireLazy(() => {
   const { require } = ChromeUtils.import(
     "resource://devtools/shared/Loader.jsm"
   );
   /** @type {import("devtools/client/performance-new/browser")} */
   const browserModule = require("devtools/client/performance-new/browser");
-  return browserModule.receiveProfile;
+  return browserModule;
 });
 
 const lazyPreferenceManagement = requireLazy(() => {
@@ -93,11 +100,65 @@ const lazyPreferenceManagement = requireLazy(() => {
   return preferenceManagementModule;
 });
 
+const lazyRecordingUtils = requireLazy(() => {
+  const { require } = ChromeUtils.import(
+    "resource://devtools/shared/Loader.jsm"
+  );
+
+  /** @type {import("devtools/shared/performance-new/recording-utils")} */
+  const recordingUtils = require("devtools/shared/performance-new/recording-utils");
+  return recordingUtils;
+});
+
+const lazyProfilerMenuButton = requireLazy(() =>
+  /** @type {import("devtools/client/performance-new/popup/menu-button.jsm.js")} */
+  (ChromeUtils.import(
+    "resource://devtools/client/performance-new/popup/menu-button.jsm.js"
+  ))
+);
+
+/** @type {Presets} */
+const presets = {
+  "web-developer": {
+    label: "Web Developer",
+    description:
+      "Recommended preset for most web app debugging, with low overhead.",
+    entries: 10000000,
+    interval: 1,
+    features: ["js"],
+    threads: ["GeckoMain", "Compositor", "Renderer", "DOM Worker"],
+    duration: 0,
+  },
+  "firefox-platform": {
+    label: "Firefox Platform",
+    description: "Recommended preset for internal Firefox platform debugging.",
+    entries: 10000000,
+    interval: 1,
+    features: ["js", "leaf", "stackwalk"],
+    threads: ["GeckoMain", "Compositor", "Renderer"],
+    duration: 0,
+  },
+  "firefox-front-end": {
+    label: "Firefox Front-End",
+    description: "Recommended preset for internal Firefox front-end debugging.",
+    entries: 10000000,
+    interval: 1,
+    features: ["js", "leaf", "stackwalk"],
+    threads: ["GeckoMain", "Compositor", "Renderer", "DOM Worker"],
+    duration: 0,
+  },
+};
+
 /**
  * This Map caches the symbols from the shared libraries.
  * @type {Map<string, { path: string, debugPath: string }>}
  */
 const symbolCache = new Map();
+
+/**
+ * @param {string} debugName
+ * @param {string} breakpadId
+ */
 async function getSymbolsFromThisBrowser(debugName, breakpadId) {
   if (symbolCache.size === 0) {
     // Prime the symbols cache.
@@ -159,7 +220,7 @@ async function captureProfile() {
       }
     );
 
-  const receiveProfile = lazyReceiveProfile();
+  const receiveProfile = lazyBrowserModule().receiveProfile;
   receiveProfile(profile, getSymbolsFromThisBrowser);
 
   Services.profiler.StopProfiler();
@@ -179,11 +240,16 @@ function startProfiler() {
     duration,
   } = translatePreferencesToState(getRecordingPreferencesFromBrowser());
 
+  // Get the active BrowsingContext ID from browser.
+  const { getActiveBrowsingContextID } = lazyRecordingUtils();
+  const activeBrowsingContextID = getActiveBrowsingContextID();
+
   Services.profiler.StartProfiler(
     entries,
     interval,
     features,
     threads,
+    activeBrowsingContextID,
     duration
   );
 }
@@ -220,112 +286,48 @@ function restartProfiler() {
 
 /**
  * @param {string} prefName
- * @param {string[]} defaultValue
  * @return {string[]}
  */
-function _getArrayOfStringsPref(prefName, defaultValue) {
-  let array;
-  try {
-    const text = Services.prefs.getCharPref(prefName);
-    array = JSON.parse(text);
-  } catch (error) {
-    return defaultValue;
-  }
-
-  if (
-    Array.isArray(array) &&
-    array.every(feature => typeof feature === "string")
-  ) {
-    return array;
-  }
-
-  return defaultValue;
+function _getArrayOfStringsPref(prefName) {
+  const text = Services.prefs.getCharPref(prefName);
+  return JSON.parse(text);
 }
 
 /**
  * @param {string} prefName
- * @param {string[]} defaultValue
  * @return {string[]}
  */
-function _getArrayOfStringsHostPref(prefName, defaultValue) {
-  let array;
-  try {
-    const text = Services.prefs.getStringPref(
-      prefName,
-      JSON.stringify(defaultValue)
-    );
-    array = JSON.parse(text);
-  } catch (error) {
-    return defaultValue;
-  }
-
-  if (
-    Array.isArray(array) &&
-    array.every(feature => typeof feature === "string")
-  ) {
-    return array;
-  }
-
-  return defaultValue;
-}
-
-/**
- * A simple cache for the default recording preferences.
- * @type {RecordingStateFromPreferences}
- */
-let _defaultPrefs;
-
-/**
- * This function contains the canonical defaults for the data store in the
- * preferences in the user profile. They represent the default values for both
- * the popup and panel's recording settings.
- */
-function getDefaultRecordingPreferences() {
-  if (!_defaultPrefs) {
-    _defaultPrefs = {
-      entries: 10000000, // ~80mb,
-      // Do not expire markers, let them roll off naturally from the circular buffer.
-      duration: 0,
-      interval: 1000, // 1000µs = 1ms
-      features: ["js", "leaf", "responsiveness", "stackwalk"],
-      threads: ["GeckoMain", "Compositor"],
-      objdirs: [],
-    };
-
-    if (AppConstants.platform === "android") {
-      // Java profiling is only meaningful on android.
-      _defaultPrefs.features.push("java");
-    }
-  }
-
-  return _defaultPrefs;
+function _getArrayOfStringsHostPref(prefName) {
+  const text = Services.prefs.getStringPref(prefName);
+  return JSON.parse(text);
 }
 
 /**
  * @returns {RecordingStateFromPreferences}
  */
 function getRecordingPreferencesFromBrowser() {
-  const defaultPrefs = getDefaultRecordingPreferences();
+  // If you add a new preference here, please do not forget to update
+  // `revertRecordingPreferences` as well.
+  const objdirs = _getArrayOfStringsHostPref(OBJDIRS_PREF);
+  const presetName = Services.prefs.getCharPref(PRESET_PREF);
 
-  const entries = Services.prefs.getIntPref(ENTRIES_PREF, defaultPrefs.entries);
-  const interval = Services.prefs.getIntPref(
-    INTERVAL_PREF,
-    defaultPrefs.interval
-  );
-  const features = _getArrayOfStringsPref(FEATURES_PREF, defaultPrefs.features);
-  const threads = _getArrayOfStringsPref(THREADS_PREF, defaultPrefs.threads);
-  const objdirs = _getArrayOfStringsHostPref(
-    OBJDIRS_PREF,
-    defaultPrefs.objdirs
-  );
-  const duration = Services.prefs.getIntPref(
-    DURATION_PREF,
-    defaultPrefs.duration
-  );
+  // First try to get the values from a preset.
+  const recordingPrefs = getRecordingPrefsFromPreset(presetName, objdirs);
+  if (recordingPrefs) {
+    return recordingPrefs;
+  }
+
+  // Next use the preferences to get the values.
+  const entries = Services.prefs.getIntPref(ENTRIES_PREF);
+  const interval = Services.prefs.getIntPref(INTERVAL_PREF);
+  const features = _getArrayOfStringsPref(FEATURES_PREF);
+  const threads = _getArrayOfStringsPref(THREADS_PREF);
+  const duration = Services.prefs.getIntPref(DURATION_PREF);
 
   const supportedFeatures = new Set(Services.profiler.GetFeatures());
 
   return {
+    presetName: "custom",
     entries,
     interval,
     // Validate the features before passing them to the profiler.
@@ -337,9 +339,42 @@ function getRecordingPreferencesFromBrowser() {
 }
 
 /**
+ * @param {string} presetName
+ * @param {string[]} objdirs
+ * @return {RecordingStateFromPreferences | null}
+ */
+function getRecordingPrefsFromPreset(presetName, objdirs) {
+  if (presetName === "custom") {
+    return null;
+  }
+
+  const preset = presets[presetName];
+  if (!preset) {
+    console.error(`Unknown profiler preset was encountered: "${presetName}"`);
+    return null;
+  }
+
+  const supportedFeatures = new Set(Services.profiler.GetFeatures());
+
+  return {
+    presetName,
+    entries: preset.entries,
+    // The interval is stored in preferences as microseconds, but the preset
+    // defines it in terms of milliseconds. Make the conversion here.
+    interval: preset.interval * 1000,
+    // Validate the features before passing them to the profiler.
+    features: preset.features.filter(feature => supportedFeatures.has(feature)),
+    threads: preset.threads,
+    objdirs,
+    duration: preset.duration,
+  };
+}
+
+/**
  * @param {RecordingStateFromPreferences} prefs
  */
 function setRecordingPreferencesOnBrowser(prefs) {
+  Services.prefs.setCharPref(PRESET_PREF, prefs.presetName);
   Services.prefs.setIntPref(ENTRIES_PREF, prefs.entries);
   // The interval pref stores the value in microseconds for extra precision.
   Services.prefs.setIntPref(INTERVAL_PREF, prefs.interval);
@@ -354,19 +389,164 @@ const platform = AppConstants.platform;
  * @type {() => void}
  */
 function revertRecordingPreferences() {
-  setRecordingPreferencesOnBrowser(getDefaultRecordingPreferences());
+  Services.prefs.clearUserPref(PRESET_PREF);
+  Services.prefs.clearUserPref(ENTRIES_PREF);
+  Services.prefs.clearUserPref(INTERVAL_PREF);
+  Services.prefs.clearUserPref(FEATURES_PREF);
+  Services.prefs.clearUserPref(THREADS_PREF);
+  Services.prefs.clearUserPref(OBJDIRS_PREF);
+  Services.prefs.clearUserPref(DURATION_PREF);
+  Services.prefs.clearUserPref(POPUP_FEATURE_FLAG_PREF);
 }
 
-var EXPORTED_SYMBOLS = [
-  "captureProfile",
-  "startProfiler",
-  "stopProfiler",
-  "restartProfiler",
-  "toggleProfiler",
-  "platform",
-  "getSymbolsFromThisBrowser",
-  "getDefaultRecordingPreferences",
-  "getRecordingPreferencesFromBrowser",
-  "setRecordingPreferencesOnBrowser",
-  "revertRecordingPreferences",
-];
+/**
+ * Change the prefs based on a preset. This mechanism is used by the popup to
+ * easily switch between different settings.
+ * @param {string} presetName
+ */
+function changePreset(presetName) {
+  const objdirs = _getArrayOfStringsHostPref(OBJDIRS_PREF);
+  let recordingPrefs = getRecordingPrefsFromPreset(presetName, objdirs);
+
+  if (!recordingPrefs) {
+    // No recordingPrefs were found for that preset. Most likely this means this
+    // is a custom preset, or it's one that we dont recognize for some reason.
+    // Get the preferences from the individual preference values.
+    Services.prefs.setCharPref(PRESET_PREF, presetName);
+    recordingPrefs = getRecordingPreferencesFromBrowser();
+  }
+
+  setRecordingPreferencesOnBrowser(recordingPrefs);
+}
+
+/**
+ * A simple cache for the default recording preferences.
+ * @type {RecordingStateFromPreferences}
+ */
+let _defaultPrefsForOlderFirefox;
+
+/**
+ * This function contains the canonical defaults for the data store in the
+ * preferences in the user profile. They represent the default values for both
+ * the popup and panel's recording settings.
+ *
+ * NOTE: We don't need that function anymore, because have recording default
+ * values in the all.js file since Firefox 72. But we still keep this to support
+ * older Firefox versions. See Bug 1603415.
+ *
+ * @return {RecordingStateFromPreferences}
+ */
+function getDefaultRecordingPreferencesForOlderFirefox() {
+  if (!_defaultPrefsForOlderFirefox) {
+    _defaultPrefsForOlderFirefox = {
+      presetName: "custom",
+      entries: 10000000, // ~80mb,
+      // Do not expire markers, let them roll off naturally from the circular buffer.
+      duration: 0,
+      interval: 1000, // 1000µs = 1ms
+      features: ["js", "leaf", "stackwalk"],
+      threads: ["GeckoMain", "Compositor"],
+      objdirs: [],
+    };
+
+    if (AppConstants.platform === "android") {
+      // Java profiling is only meaningful on android.
+      _defaultPrefsForOlderFirefox.features.push("java");
+    }
+  }
+
+  return _defaultPrefsForOlderFirefox;
+}
+
+/**
+ * This handler handles any messages coming from the WebChannel from profiler.firefox.com.
+ *
+ * @param {ProfilerWebChannel} channel
+ * @param {string} id
+ * @param {any} message
+ * @param {MockedExports.WebChannelTarget} target
+ */
+function handleWebChannelMessage(channel, id, message, target) {
+  if (typeof message !== "object" || typeof message.type !== "string") {
+    console.error(
+      "An malformed message was received by the profiler's WebChannel handler.",
+      message
+    );
+    return;
+  }
+  const messageFromFrontend = /** @type {MessageFromFrontend} */ (message);
+  const { requestId } = messageFromFrontend;
+  switch (messageFromFrontend.type) {
+    case "STATUS_QUERY": {
+      // The content page wants to know if this channel exists. It does, so respond
+      // back to the ping.
+      const { ProfilerMenuButton } = lazyProfilerMenuButton();
+      channel.send(
+        {
+          type: "STATUS_RESPONSE",
+          menuButtonIsEnabled: ProfilerMenuButton.isEnabled(),
+          requestId,
+        },
+        target
+      );
+      break;
+    }
+    case "ENABLE_MENU_BUTTON": {
+      // Enable the profiler menu button.
+      const { ProfilerMenuButton } = lazyProfilerMenuButton();
+      if (!ProfilerMenuButton.isEnabled()) {
+        const { ownerDocument } = target.browser;
+        if (!ownerDocument) {
+          throw new Error(
+            "Could not find the owner document for the current browser while enabling " +
+              "the profiler menu button"
+          );
+        }
+        // The menu button toggle is only enabled on Nightly by default. Once the profiler
+        // is turned on once, make sure that the menu button is also available.
+        Services.prefs.setBoolPref(POPUP_FEATURE_FLAG_PREF, true);
+
+        ProfilerMenuButton.toggle(ownerDocument);
+      }
+
+      // Respond back that we've done it.
+      channel.send(
+        {
+          type: "ENABLE_MENU_BUTTON_DONE",
+          requestId,
+        },
+        target
+      );
+      break;
+    }
+    default:
+      console.error(
+        "An unknown message type was received by the profiler's WebChannel handler.",
+        message
+      );
+  }
+}
+
+// Provide a fake module.exports for the JSM to be properly read by TypeScript.
+/** @type {any} */ (this).module = { exports: {} };
+
+module.exports = {
+  presets,
+  captureProfile,
+  startProfiler,
+  stopProfiler,
+  restartProfiler,
+  toggleProfiler,
+  platform,
+  getSymbolsFromThisBrowser,
+  getRecordingPreferencesFromBrowser,
+  setRecordingPreferencesOnBrowser,
+  revertRecordingPreferences,
+  changePreset,
+  getDefaultRecordingPreferencesForOlderFirefox,
+  handleWebChannelMessage,
+};
+
+// Object.keys() confuses the linting which expects a static array expression.
+// eslint-disable-next-line
+var EXPORTED_SYMBOLS = Object.keys(module.exports);

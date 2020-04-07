@@ -4,7 +4,6 @@
 
 "use strict";
 
-const { Utils: WebConsoleUtils } = require("devtools/client/webconsole/utils");
 const EventEmitter = require("devtools/shared/event-emitter");
 const Services = require("Services");
 const {
@@ -17,6 +16,9 @@ var ChromeUtils = require("ChromeUtils");
 const { BrowserLoader } = ChromeUtils.import(
   "resource://devtools/client/shared/browser-loader.js"
 );
+const {
+  getAdHocFrontOrPrimitiveGrip,
+} = require("devtools/shared/fronts/object");
 
 loader.lazyRequireGetter(
   this,
@@ -26,10 +28,17 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "PREFS",
-  "devtools/client/webconsole/constants",
+  "constants",
+  "devtools/client/webconsole/constants"
+);
+
+loader.lazyRequireGetter(
+  this,
+  "START_IGNORE_ACTION",
+  "devtools/client/shared/redux/middleware/ignore",
   true
 );
+const ConsoleCommands = require("devtools/client/webconsole/commands.js");
 
 const ZoomKeys = require("devtools/client/shared/zoom-keys");
 
@@ -62,9 +71,8 @@ class WebConsoleUI {
     this._onChangeSplitConsoleState = this._onChangeSplitConsoleState.bind(
       this
     );
-    this._listProcessesAndCreateProxies = this._listProcessesAndCreateProxies.bind(
-      this
-    );
+    this._onTargetAvailable = this._onTargetAvailable.bind(this);
+    this._onTargetDestroyed = this._onTargetDestroyed.bind(this);
 
     EventEmitter.decorate(this);
   }
@@ -106,13 +114,15 @@ class WebConsoleUI {
     let proxies = [this.getProxy()];
 
     if (this.additionalProxies) {
-      proxies = proxies.concat(this.additionalProxies);
+      proxies = proxies.concat([...this.additionalProxies.values()]);
     }
 
     // Ignore Fronts that are already destroyed
     if (filterDisconnectedProxies) {
       proxies = proxies.filter(proxy => {
-        return proxy.webConsoleFront && !!proxy.webConsoleFront.actorID;
+        return (
+          proxy && proxy.webConsoleFront && !!proxy.webConsoleFront.actorID
+        );
       });
     }
 
@@ -132,12 +142,16 @@ class WebConsoleUI {
     this._initializer = (async () => {
       this._initUI();
       await this._attachTargets();
-      await this.wrapper.init();
 
-      const id = WebConsoleUtils.supportsString(this.hudId);
-      if (Services.obs) {
-        Services.obs.notifyObservers(id, "web-console-created");
-      }
+      this._commands = new ConsoleCommands({
+        devToolsClient: this.hud.currentTarget.client,
+        proxy: this.getProxy(),
+        hud: this.hud,
+        threadFront: this.hud.toolbox && this.hud.toolbox.threadFront,
+        currentTarget: this.hud.currentTarget,
+      });
+
+      await this.wrapper.init();
     })();
 
     return this._initializer;
@@ -149,6 +163,10 @@ class WebConsoleUI {
     }
 
     this.React = this.ReactDOM = this.FrameView = null;
+
+    if (this.wrapper) {
+      this.wrapper.getStore().dispatch(START_IGNORE_ACTION);
+    }
 
     if (this.outputNode) {
       // We do this because it's much faster than letting React handle the ConsoleOutput
@@ -168,13 +186,13 @@ class WebConsoleUI {
       toolbox.off("select", this._onChangeSplitConsoleState);
     }
 
-    const target = this.hud.currentTarget;
-    if (target) {
-      target.client.mainRoot.off(
-        "processListChanged",
-        this._listProcessesAndCreateProxies
-      );
-    }
+    // Stop listening for targets
+    const targetList = this.hud.targetList;
+    targetList.unwatchTargets(
+      targetList.ALL_TYPES,
+      this._onTargetAvailable,
+      this._onTargetDestroy
+    );
 
     for (const proxy of this.getAllProxies()) {
       proxy.disconnect();
@@ -184,31 +202,6 @@ class WebConsoleUI {
 
     // Nullify `hud` last as it nullify also target which is used on destroy
     this.window = this.hud = this.wrapper = null;
-  }
-
-  async switchToTarget(newTarget) {
-    // Fake a will-navigate and navigate event packets
-    // The only three attribute being used are the following:
-    const packet = {
-      url: newTarget.url,
-      title: newTarget.title,
-      // We always pass true here as the warning message will
-      // be logged when calling `connect`. This flag is also returned
-      // by `startListeners` request
-      nativeConsoleAPI: true,
-    };
-    this.handleTabWillNavigate(packet);
-
-    // Disconnect all previous proxies, including the top level one
-    for (const proxy of this.getAllProxies()) {
-      proxy.disconnect();
-    }
-    this.proxy = null;
-    this.additionalProxies = [];
-
-    await this._attachTargets();
-
-    this.handleTabNavigated(packet);
   }
 
   /**
@@ -233,7 +226,7 @@ class WebConsoleUI {
     if (clearStorage) {
       this.clearMessagesCache();
     }
-    this.emit("messages-cleared");
+    this.emitForTests("messages-cleared");
   }
 
   clearNetworkRequests() {
@@ -256,16 +249,20 @@ class WebConsoleUI {
   clearPrivateMessages() {
     if (this.wrapper) {
       this.wrapper.dispatchPrivateMessagesClear();
-      this.emit("private-messages-cleared");
+      this.emitForTests("private-messages-cleared");
     }
   }
 
   inspectObjectActor(objectActor) {
+    const webConsoleFront = this.webConsoleFront;
     this.wrapper.dispatchMessageAdd(
       {
         helperResult: {
           type: "inspectObject",
-          object: objectActor,
+          object:
+            objectActor && objectActor.getGrip
+              ? objectActor
+              : getAdHocFrontOrPrimitiveGrip(objectActor, webConsoleFront),
         },
       },
       true
@@ -313,72 +310,103 @@ class WebConsoleUI {
    *         A promise object that is resolved/reject based on the proxies connections.
    */
   async _attachTargets() {
-    const target = this.hud.currentTarget;
-    const fissionSupport = Services.prefs.getBoolPref(
-      PREFS.FEATURES.BROWSER_TOOLBOX_FISSION
+    this.additionalProxies = new Map();
+    // Listen for all target types, including:
+    // - frames, in order to get the parent process target
+    // which is considered as a frame rather than a process.
+    // - workers, for similar reason. When we open a toolbox
+    // for just a worker, the top level target is a worker target.
+    // - processes, as we want to spawn additional proxies for them.
+    await this.hud.targetList.watchTargets(
+      this.hud.targetList.ALL_TYPES,
+      this._onTargetAvailable,
+      this._onTargetDestroy
     );
-    const needContentProcessMessagesListener =
-      target.isParentProcess && !target.isAddon && !fissionSupport;
-
-    this.proxy = new WebConsoleConnectionProxy(
-      this,
-      target,
-      needContentProcessMessagesListener
-    );
-
-    const onConnect = this.proxy.connect();
-
-    if (fissionSupport && target.isParentProcess && !target.isAddon) {
-      this.additionalProxies = [];
-
-      await this._listProcessesAndCreateProxies();
-      target.client.mainRoot.on(
-        "processListChanged",
-        this._listProcessesAndCreateProxies
-      );
-    }
-
-    await onConnect;
   }
 
-  async _listProcessesAndCreateProxies() {
-    const target = this.hud.currentTarget;
-    const { mainRoot } = target.client;
-    const { processes } = await mainRoot.listProcesses();
+  /**
+   * Called any time a new target is available.
+   * i.e. it was already existing or has just been created.
+   *
+   * @private
+   * @param string type
+   *        One of the string of TargetList.TYPES to describe which
+   *        type of target is available.
+   * @param Front targetFront
+   *        The Front of the target that is available.
+   *        This Front inherits from TargetMixin and is typically
+   *        composed of a BrowsingContextTargetFront or ContentProcessTargetFront.
+   * @param boolean isTopLevel
+   *        If true, means that this is the top level target.
+   *        This typically happens on startup, providing the current
+   *        top level target. But also on navigation, when we navigate
+   *        to an URL which has to be loaded in a distinct process.
+   *        A new top level target is created.
+   */
+  async _onTargetAvailable({ type, targetFront, isTopLevel }) {
+    const dispatchTargetAvailable = () => {
+      const store = this.wrapper && this.wrapper.getStore();
+      if (store) {
+        this.wrapper.getStore().dispatch({
+          type: constants.TARGET_AVAILABLE,
+          targetType: type,
+        });
+      }
+    };
 
-    if (!this.additionalProxies) {
+    // This is a top level target. It may update on process switches
+    // when navigating to another domain.
+    if (isTopLevel) {
+      const fissionSupport = Services.prefs.getBoolPref(
+        constants.PREFS.FEATURES.BROWSER_TOOLBOX_FISSION
+      );
+      const needContentProcessMessagesListener =
+        targetFront.isParentProcess && !targetFront.isAddon && !fissionSupport;
+      this.proxy = new WebConsoleConnectionProxy(
+        this,
+        targetFront,
+        needContentProcessMessagesListener
+      );
+      await this.proxy.connect();
+      dispatchTargetAvailable();
       return;
     }
 
-    const newProxies = [];
-    for (const processDescriptor of processes) {
-      const targetFront = await processDescriptor.getTarget();
-
-      // Don't create a proxy for the "main" target,
-      // as we already created it in this.proxy.
-      if (targetFront === target) {
-        continue;
-      }
-
-      if (!targetFront) {
-        console.warn(
-          "Can't retrieve the target front for process",
-          processDescriptor
-        );
-        continue;
-      }
-
-      if (this.additionalProxies.some(proxy => proxy.target == targetFront)) {
-        continue;
-      }
-
-      const proxy = new WebConsoleConnectionProxy(this, targetFront);
-
-      newProxies.push(proxy);
-      this.additionalProxies.push(proxy);
+    // Allow frame, but only in content toolbox, when the fission/content toolbox pref is
+    // set. i.e. still ignore them in the content of the browser toolbox as we inspect
+    // messages via the process targets
+    // Also ignore workers as they are not supported yet. (see bug 1592584)
+    const isContentToolbox = this.hud.targetList.targetFront.isLocalTab;
+    const listenForFrames =
+      isContentToolbox &&
+      Services.prefs.getBoolPref("devtools.contenttoolbox.fission");
+    if (
+      type != this.hud.targetList.TYPES.PROCESS &&
+      (type != this.hud.targetList.TYPES.FRAME || !listenForFrames)
+    ) {
+      return;
     }
+    const proxy = new WebConsoleConnectionProxy(this, targetFront);
+    this.additionalProxies.set(targetFront, proxy);
+    await proxy.connect();
+    dispatchTargetAvailable();
+  }
 
-    await Promise.all(newProxies.map(proxy => proxy.connect()));
+  /**
+   * Called any time a target has been destroyed.
+   *
+   * @private
+   * See _onTargetAvailable for param's description.
+   */
+  _onTargetDestroyed({ type, targetFront, isTopLevel }) {
+    if (isTopLevel) {
+      this.proxy.disconnect();
+      this.proxy = null;
+    } else {
+      const proxy = this.additionalProxies.get(targetFront);
+      proxy.disconnect();
+      this.additionalProxies.delete(targetFront);
+    }
   }
 
   _initUI() {
@@ -394,7 +422,7 @@ class WebConsoleUI {
     const WebConsoleWrapper = BrowserLoader({
       baseURI: "resource://devtools/client/webconsole/",
       window: this.window,
-    }).require("./webconsole-wrapper");
+    }).require("devtools/client/webconsole/webconsole-wrapper");
 
     this.wrapper = new WebConsoleWrapper(
       this.outputNode,
@@ -485,33 +513,8 @@ class WebConsoleUI {
     }
   }
 
-  /**
-   * Release an actor.
-   *
-   * @private
-   * @param string actor
-   *        The actor ID you want to release.
-   */
-  releaseActor(actor) {
-    const proxy = this.getProxy();
-    if (!proxy) {
-      return null;
-    }
-
-    return proxy.releaseActor(actor);
-  }
-
-  /**
-   * @param {String} expression
-   * @param {Object} options
-   * @returns {Promise}
-   */
-  evaluateJSAsync(expression, options) {
-    return this.getProxy().webConsoleFront.evaluateJSAsync(expression, options);
-  }
-
   getLongString(grip) {
-    this.getProxy().webConsoleFront.getString(grip);
+    return this.getProxy().webConsoleFront.getString(grip);
   }
 
   /**
@@ -566,39 +569,48 @@ class WebConsoleUI {
     this[id] = node;
   }
 
-  /**
-   * Retrieve the FrameActor ID given a frame depth, or the selected one if no
-   * frame depth given.
-   *
-   * @return { frameActor: String|null, webConsoleFront: WebConsoleFront }:
-   *         frameActor is the FrameActor ID for the given frame depth
-   *         (or the selected frame if it exists), null if no frame was found.
-   *         webConsoleFront is the front for the thread the frame is associated with.
-   */
-  getFrameActor() {
+  // Retrieves the debugger's currently selected frame front
+  async getFrameActor() {
     const state = this.hud.getDebuggerFrames();
     if (!state) {
-      return { frameActor: null, webConsoleFront: this.webConsoleFront };
+      return null;
     }
 
-    const grip = state.frames[state.selected];
+    const frame = state.frames[state.selected];
 
-    if (!grip) {
-      return { frameActor: null, webConsoleFront: this.webConsoleFront };
+    if (!frame) {
+      return null;
     }
 
-    return {
-      frameActor: grip.actor,
-      webConsoleFront: state.target.activeConsole,
-    };
+    return frame.actor;
+  }
+
+  getWebconsoleFront({ frameActorId } = {}) {
+    if (frameActorId) {
+      const frameFront = this.hud.getFrontByID(frameActorId);
+      return frameFront.getWebConsoleFront();
+    }
+
+    if (!this.hud.toolbox) {
+      return this.webConsoleFront;
+    }
+
+    const threadFront = this.hud.toolbox.getSelectedThreadFront();
+    if (!threadFront) {
+      return this.webConsoleFront;
+    }
+
+    return threadFront.getWebconsoleFront();
   }
 
   getSelectedNodeActor() {
+    const front = this.getSelectedNodeFront();
+    return front ? front.actorID : null;
+  }
+
+  getSelectedNodeFront() {
     const inspectorSelection = this.hud.getInspectorSelection();
-    if (inspectorSelection && inspectorSelection.nodeFront) {
-      return inspectorSelection.nodeFront.actorID;
-    }
-    return null;
+    return inspectorSelection ? inspectorSelection.nodeFront : null;
   }
 
   onMessageHover(type, message) {

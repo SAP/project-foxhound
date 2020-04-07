@@ -22,7 +22,6 @@
 #include "mozilla/Span.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Telemetry.h"
-#include "nsAutoPtr.h"
 #include "nsPrintfCString.h"
 
 extern mozilla::LazyLogModule gMediaDemuxerLog;
@@ -392,7 +391,7 @@ already_AddRefed<MediaRawData> MP4TrackDemuxer::GetNextSample() {
       H264::FrameType type = H264::GetFrameType(sample);
       switch (type) {
         case H264::FrameType::I_FRAME:
-          MOZ_FALLTHROUGH;
+          [[fallthrough]];
         case H264::FrameType::OTHER: {
           bool keyframe = type == H264::FrameType::I_FRAME;
           if (sample->mKeyframe != keyframe) {

@@ -142,6 +142,13 @@
 #define XRE_ADDON_APP_DIR "XREAddonAppDir"
 
 /**
+ * A directory service key which specifies the distribution specific files for
+ * the application unique for each user.
+ * It's located at /run/user/$UID/<product name>/
+ */
+#define XRE_USER_RUNTIME_DIR "XREUserRunTimeDir"
+
+/**
  * A directory service key which provides the update directory. Callers should
  * fall back to appDir.
  * Windows:    If vendor name exists:
@@ -373,7 +380,7 @@ static const char* const kGeckoProcessTypeString[] = {
 static_assert(MOZ_ARRAY_LENGTH(kGeckoProcessTypeString) == GeckoProcessType_End,
               "Array length mismatch");
 
-XRE_API(const char*, XRE_ChildProcessTypeToString,
+XRE_API(const char*, XRE_GeckoProcessTypeToString,
         (GeckoProcessType aProcessType))
 XRE_API(const char*, XRE_ChildProcessTypeToAnnotation,
         (GeckoProcessType aProcessType))
@@ -403,16 +410,19 @@ XRE_API(bool, XRE_SetRemoteExceptionHandler,
 XRE_API(bool, XRE_SetRemoteExceptionHandler, (const char* aPipe))
 #endif
 
-namespace mozilla {
-namespace gmp {
-class GMPLoader;
-}  // namespace gmp
-}  // namespace mozilla
-
 XRE_API(nsresult, XRE_InitChildProcess,
         (int aArgc, char* aArgv[], const XREChildData* aChildData))
 
+/**
+ * Return the GeckoProcessType of the current process.
+ */
 XRE_API(GeckoProcessType, XRE_GetProcessType, ())
+
+/**
+ * Return the string representation of the GeckoProcessType of the current
+ * process.
+ */
+XRE_API(const char*, XRE_GetProcessTypeString, ())
 
 /**
  * Returns true when called in the e10s parent process.  Does *NOT* return true
@@ -498,5 +508,11 @@ XRE_API(int, XRE_XPCShellMain,
 XRE_API(void, XRE_LibFuzzerSetDriver, (LibFuzzerDriver))
 
 #endif  // LIBFUZZER
+
+#ifdef MOZ_ENABLE_FORKSERVER
+
+XRE_API(int, XRE_ForkServer, (int* aArgc, char*** aArgv))
+
+#endif  // MOZ_ENABLE_FORKSERVER
 
 #endif  // _nsXULAppAPI_h__

@@ -292,9 +292,7 @@ var SitePermissions = {
     }
 
     let permissions = Services.perms.getAllForPrincipal(principal);
-    while (permissions.hasMoreElements()) {
-      let permission = permissions.getNext();
-
+    for (let permission of permissions) {
       // filter out unknown permissions
       if (gPermissionObject[permission.type]) {
         // Hide canvas permission when privacy.resistFingerprinting is false.
@@ -965,6 +963,10 @@ var gPermissionObject = {
   },
 
   geo: {
+    exactHostMatch: true,
+  },
+
+  xr: {
     exactHostMatch: true,
   },
 

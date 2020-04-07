@@ -9,6 +9,7 @@
 #include "mozilla/BinarySearch.h"
 #include "mozilla/NativeNt.h"
 #include "mozilla/Types.h"
+#include "mozilla/WindowsDllBlocklist.h"
 
 #include "DllBlocklist.h"
 #include "LoaderPrivateAPI.h"
@@ -90,7 +91,9 @@ void NativeNtBlockSet::Add(const UNICODE_STRING& aName, uint64_t aVersion) {
 
   // Not present, add it
   NativeNtBlockSetEntry* newEntry = NewEntry(aName, aVersion, mFirstEntry);
-  mFirstEntry = newEntry;
+  if (newEntry) {
+    mFirstEntry = newEntry;
+  }
 }
 
 void NativeNtBlockSet::Write(HANDLE aFile) {
@@ -178,9 +181,13 @@ static BlockAction CheckBlockInfo(const DllBlockInfo* aInfo, void* aBaseAddress,
     }
   }
 
-  // We're not bootstrapping child processes at this time, so this case is
-  // always true.
-  if (aInfo->mFlags & DllBlockInfo::CHILD_PROCESSES_ONLY) {
+  if ((aInfo->mFlags & DllBlockInfo::CHILD_PROCESSES_ONLY) &&
+      !(gBlocklistInitFlags & eDllBlocklistInitFlagIsChildProcess)) {
+    return BlockAction::Allow;
+  }
+
+  if ((aInfo->mFlags & DllBlockInfo::BROWSER_PROCESS_ONLY) &&
+      (gBlocklistInitFlags & eDllBlocklistInitFlagIsChildProcess)) {
     return BlockAction::Allow;
   }
 
@@ -311,30 +318,39 @@ NTSTATUS NTAPI patched_NtMapViewOfSection(
   }
 
   // Get the section name
-  nt::AllocatedUnicodeString sectionFileName(
-      gLoaderPrivateAPI.GetSectionName(*aBaseAddress));
+  nt::MemorySectionNameBuf sectionFileName(
+      gLoaderPrivateAPI.GetSectionNameBuffer(*aBaseAddress));
   if (sectionFileName.IsEmpty()) {
     ::NtUnmapViewOfSection(aProcess, *aBaseAddress);
     return STATUS_ACCESS_DENIED;
   }
 
   // Find the leaf name
-  UNICODE_STRING leaf;
-  nt::GetLeafName(&leaf, sectionFileName);
+  UNICODE_STRING leafOnStack;
+  nt::GetLeafName(&leafOnStack, sectionFileName);
 
   // Check blocklist
-  BlockAction blockAction = IsDllAllowed(leaf, *aBaseAddress);
+  BlockAction blockAction = IsDllAllowed(leafOnStack, *aBaseAddress);
 
   if (blockAction == BlockAction::Allow) {
-    ModuleLoadFrame::NotifySectionMap(std::move(sectionFileName), *aBaseAddress,
-                                      stubStatus);
+    if (nt::RtlGetProcessHeap()) {
+      ModuleLoadFrame::NotifySectionMap(
+          nt::AllocatedUnicodeString(sectionFileName), *aBaseAddress,
+          stubStatus);
+    }
     return stubStatus;
   }
 
   if (blockAction == BlockAction::SubstituteLSP) {
+    // The process heap needs to be available here because
+    // NotifyLSPSubstitutionRequired below copies a given string into the heap.
+    // We use a soft assert here, assuming LSP load always occurs after the heap
+    // is initialized.
+    MOZ_ASSERT(nt::RtlGetProcessHeap());
+
     // Notify patched_LdrLoadDll that it will be necessary to perform a
     // substitution before returning.
-    ModuleLoadFrame::NotifyLSPSubstitutionRequired(&leaf);
+    ModuleLoadFrame::NotifyLSPSubstitutionRequired(&leafOnStack);
   }
 
   ::NtUnmapViewOfSection(aProcess, *aBaseAddress);

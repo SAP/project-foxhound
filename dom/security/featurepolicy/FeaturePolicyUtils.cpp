@@ -5,12 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FeaturePolicyUtils.h"
-#include "mozilla/dom/FeaturePolicy.h"
+#include "nsIURIFixup.h"
+
+#include "mozilla/dom/DOMTypes.h"
+#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/dom/FeaturePolicyViolationReportBody.h"
 #include "mozilla/dom/ReportingUtils.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/Document.h"
-#include "nsIURIFixup.h"
 
 namespace mozilla {
 namespace dom {
@@ -25,24 +27,45 @@ struct FeatureMap {
  * DOM Security peer!
  */
 static FeatureMap sSupportedFeatures[] = {
+    {"camera", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"geolocation", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"microphone", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"display-capture", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+    {"fullscreen", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
+};
+
+/*
+ * This is experimental features list, which is disabled by default by pref
+ * dom.security.featurePolicy.experimental.enabled.
+ */
+static FeatureMap sExperimentalFeatures[] = {
     // We don't support 'autoplay' for now, because it would be overwrote by
     // 'user-gesture-activation' policy. However, we can still keep it in the
     // list as we might start supporting it after we use different autoplay
     // policy.
     {"autoplay", FeaturePolicyUtils::FeaturePolicyValue::eAll},
-    {"camera", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"encrypted-media", FeaturePolicyUtils::FeaturePolicyValue::eAll},
-    {"fullscreen", FeaturePolicyUtils::FeaturePolicyValue::eAll},
-    {"geolocation", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
-    {"microphone", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"midi", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"payment", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     {"document-domain", FeaturePolicyUtils::FeaturePolicyValue::eAll},
-    {"display-capture", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     // TODO: not supported yet!!!
     {"speaker", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"vr", FeaturePolicyUtils::FeaturePolicyValue::eAll},
 };
+
+/* static */
+bool FeaturePolicyUtils::IsExperimentalFeature(const nsAString& aFeatureName) {
+  uint32_t numFeatures =
+      (sizeof(sExperimentalFeatures) / sizeof(sExperimentalFeatures[0]));
+  for (uint32_t i = 0; i < numFeatures; ++i) {
+    if (aFeatureName.LowerCaseEqualsASCII(
+            sExperimentalFeatures[i].mFeatureName)) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 /* static */
 bool FeaturePolicyUtils::IsSupportedFeature(const nsAString& aFeatureName) {
@@ -53,7 +76,9 @@ bool FeaturePolicyUtils::IsSupportedFeature(const nsAString& aFeatureName) {
       return true;
     }
   }
-  return false;
+
+  return StaticPrefs::dom_security_featurePolicy_experimental_enabled() &&
+         IsExperimentalFeature(aFeatureName);
 }
 
 /* static */
@@ -63,6 +88,14 @@ void FeaturePolicyUtils::ForEachFeature(
       (sizeof(sSupportedFeatures) / sizeof(sSupportedFeatures[0]));
   for (uint32_t i = 0; i < numFeatures; ++i) {
     aCallback(sSupportedFeatures[i].mFeatureName);
+  }
+
+  if (StaticPrefs::dom_security_featurePolicy_experimental_enabled()) {
+    numFeatures =
+        (sizeof(sExperimentalFeatures) / sizeof(sExperimentalFeatures[0]));
+    for (uint32_t i = 0; i < numFeatures; ++i) {
+      aCallback(sExperimentalFeatures[i].mFeatureName);
+    }
   }
 }
 
@@ -76,7 +109,63 @@ FeaturePolicyUtils::DefaultAllowListFeature(const nsAString& aFeatureName) {
     }
   }
 
+  if (StaticPrefs::dom_security_featurePolicy_experimental_enabled()) {
+    numFeatures =
+        (sizeof(sExperimentalFeatures) / sizeof(sExperimentalFeatures[0]));
+    for (uint32_t i = 0; i < numFeatures; ++i) {
+      if (aFeatureName.LowerCaseEqualsASCII(
+              sExperimentalFeatures[i].mFeatureName)) {
+        return sExperimentalFeatures[i].mDefaultAllowList;
+      }
+    }
+  }
+
   return FeaturePolicyValue::eNone;
+}
+
+static bool IsSameOriginAsTop(Document* aDocument) {
+  MOZ_ASSERT(aDocument);
+
+  BrowsingContext* browsingContext = aDocument->GetBrowsingContext();
+  if (!browsingContext) {
+    return false;
+  }
+
+  nsPIDOMWindowOuter* topWindow = browsingContext->Top()->GetDOMWindow();
+  if (!topWindow) {
+    // If we don't have a DOMWindow, We are not in same origin.
+    return false;
+  }
+
+  Document* topLevelDocument = topWindow->GetExtantDoc();
+  if (!topLevelDocument) {
+    return false;
+  }
+
+  return NS_SUCCEEDED(
+      nsContentUtils::CheckSameOrigin(topLevelDocument, aDocument));
+}
+
+/* static */
+bool FeaturePolicyUtils::IsFeatureUnsafeAllowedAll(
+    Document* aDocument, const nsAString& aFeatureName) {
+  MOZ_ASSERT(aDocument);
+
+  if (!StaticPrefs::dom_security_featurePolicy_enabled()) {
+    return false;
+  }
+
+  if (!aDocument->IsHTMLDocument()) {
+    return false;
+  }
+
+  FeaturePolicy* policy = aDocument->FeaturePolicy();
+  MOZ_ASSERT(policy);
+
+  return policy->HasFeatureUnsafeAllowsAll(aFeatureName) &&
+         !policy->AllowsFeatureExplicitlyInAncestorChain(
+             aFeatureName, policy->DefaultOrigin()) &&
+         !IsSameOriginAsTop(aDocument);
 }
 
 /* static */
@@ -85,6 +174,12 @@ bool FeaturePolicyUtils::IsFeatureAllowed(Document* aDocument,
   MOZ_ASSERT(aDocument);
 
   if (!StaticPrefs::dom_security_featurePolicy_enabled()) {
+    return true;
+  }
+
+  // Skip apply features in experimental pharse
+  if (!StaticPrefs::dom_security_featurePolicy_experimental_enabled() &&
+      IsExperimentalFeature(aFeatureName)) {
     return true;
   }
 
@@ -162,4 +257,64 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
 }
 
 }  // namespace dom
+
+namespace ipc {
+void IPDLParamTraits<dom::FeaturePolicy*>::Write(IPC::Message* aMsg,
+                                                 IProtocol* aActor,
+                                                 dom::FeaturePolicy* aParam) {
+  if (!aParam) {
+    WriteIPDLParam(aMsg, aActor, false);
+    return;
+  }
+
+  WriteIPDLParam(aMsg, aActor, true);
+
+  dom::FeaturePolicyInfo info;
+  info.defaultOrigin() = aParam->DefaultOrigin();
+  info.selfOrigin() = aParam->GetSelfOrigin();
+  info.srcOrigin() = aParam->GetSrcOrigin();
+
+  aParam->GetDeclaredString(info.declaredString());
+  aParam->GetInheritedDeniedFeatureNames(info.inheritedDeniedFeatureNames());
+
+  WriteIPDLParam(aMsg, aActor, info);
+}
+
+bool IPDLParamTraits<dom::FeaturePolicy*>::Read(
+    const IPC::Message* aMsg, PickleIterator* aIter, IProtocol* aActor,
+    RefPtr<dom::FeaturePolicy>* aResult) {
+  *aResult = nullptr;
+  bool notnull = false;
+  if (!ReadIPDLParam(aMsg, aIter, aActor, &notnull)) {
+    return false;
+  }
+
+  if (!notnull) {
+    return true;
+  }
+
+  dom::FeaturePolicyInfo info;
+  if (!ReadIPDLParam(aMsg, aIter, aActor, &info)) {
+    return false;
+  }
+
+  // Note that we only do IPC for feature policy to inherit poicy from parent
+  // to child document. That does not need to bind feature policy with a node.
+  RefPtr<dom::FeaturePolicy> featurePolicy = new dom::FeaturePolicy(nullptr);
+  featurePolicy->SetDefaultOrigin(info.defaultOrigin());
+  featurePolicy->SetInheritedDeniedFeatureNames(
+      info.inheritedDeniedFeatureNames());
+
+  nsString declaredString = info.declaredString();
+  if (declaredString.IsEmpty() || !info.selfOrigin()) {
+    *aResult = std::move(featurePolicy);
+    return true;
+  }
+  featurePolicy->SetDeclaredPolicy(nullptr, declaredString, info.selfOrigin(),
+                                   info.srcOrigin());
+  *aResult = std::move(featurePolicy);
+  return true;
+}
+}  // namespace ipc
+
 }  // namespace mozilla

@@ -137,7 +137,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(Exception, MOZILLA_EXCEPTION_IID)
 class DOMException : public Exception {
  public:
   DOMException(nsresult aRv, const nsACString& aMessage,
-               const nsACString& aName, uint16_t aCode);
+               const nsACString& aName, uint16_t aCode,
+               nsIStackFrame* aLocation = nullptr);
 
   NS_INLINE_DECL_REFCOUNTING_INHERITED(DOMException, Exception)
 
@@ -170,7 +171,7 @@ class DOMException : public Exception {
                                                const nsACString& aMessage);
 
  protected:
-  virtual ~DOMException() {}
+  virtual ~DOMException() = default;
 
   uint16_t mCode;
 };

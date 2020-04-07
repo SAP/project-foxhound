@@ -12,7 +12,6 @@
 #include "nsIAuthPrompt.h"
 #include "nsIDHCPClient.h"
 #include "nsIHttpChannel.h"
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsIPromptFactory.h"
 #include "nsIProtocolProxyService.h"
@@ -637,7 +636,7 @@ void nsPACMan::ContinueLoadingAfterPACUriKnown() {
                       nsContentUtils::GetSystemPrincipal(),
                       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                       nsIContentPolicy::TYPE_OTHER,
-                      nullptr,  // nsICookieSettings
+                      nullptr,  // nsICookieJarSettings
                       nullptr,  // PerformanceStorage
                       nullptr,  // aLoadGroup
                       nullptr,  // aCallbacks

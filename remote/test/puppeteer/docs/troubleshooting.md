@@ -7,6 +7,7 @@
   * [[recommended] Enable user namespace cloning](#recommended-enable-user-namespace-cloning)
   * [[alternative] Setup setuid sandbox](#alternative-setup-setuid-sandbox)
 - [Running Puppeteer on Travis CI](#running-puppeteer-on-travis-ci)
+- [Running Puppeteer on CircleCI](#running-puppeteer-on-circleci)
 - [Running Puppeteer in Docker](#running-puppeteer-in-docker)
   * [Running on Alpine](#running-on-alpine)
     - [Tips](#tips)
@@ -33,7 +34,7 @@ const browser = await puppeteer.launch({
 });
 ```
 
-> Context: [issue 3681](https://github.com/GoogleChrome/puppeteer/issues/3681#issuecomment-447865342).
+> Context: [issue 3681](https://github.com/puppeteer/puppeteer/issues/3681#issuecomment-447865342).
 
 ## Chrome headless doesn't launch on UNIX
 
@@ -122,10 +123,10 @@ yum update nss -y
 
 <details>
   <summary>Check out discussions</summary>
-  
-- [#290](https://github.com/GoogleChrome/puppeteer/issues/290) - Debian troubleshooting <br/>
-- [#391](https://github.com/GoogleChrome/puppeteer/issues/391) - CentOS troubleshooting <br/>
-- [#379](https://github.com/GoogleChrome/puppeteer/issues/379) - Alpine troubleshooting <br/>
+
+- [#290](https://github.com/puppeteer/puppeteer/issues/290) - Debian troubleshooting <br/>
+- [#391](https://github.com/puppeteer/puppeteer/issues/391) - CentOS troubleshooting <br/>
+- [#379](https://github.com/puppeteer/puppeteer/issues/379) - Alpine troubleshooting <br/>
 </details>
 
 ## Setting Up Chrome Linux Sandbox
@@ -182,7 +183,7 @@ export CHROME_DEVEL_SANDBOX=/usr/local/sbin/chrome-devel-sandbox
 
 ## Running Puppeteer on Travis CI
 
-> 👋 We run our tests for Puppeteer on Travis CI - see our [`.travis.yml`](https://github.com/GoogleChrome/puppeteer/blob/master/.travis.yml) for reference.
+> 👋 We run our tests for Puppeteer on Travis CI - see our [`.travis.yml`](https://github.com/puppeteer/puppeteer/blob/master/.travis.yml) for reference.
 
 Tips-n-tricks:
 - The `libnss3` package must be installed in order to run Chromium on Ubuntu Trusty
@@ -214,10 +215,41 @@ before_install:
   - "sh -e /etc/init.d/xvfb start"
 ```
 
+## Running Puppeteer on CircleCI
+
+Running Puppeteer smoothly on CircleCI requires the following steps:
+
+1. Start with a [NodeJS
+   image](https://circleci.com/docs/2.0/circleci-images/#nodejs) in your config
+   like so:
+   ```yaml
+   docker:
+     - image: circleci/node:12 # Use your desired version
+       environment:
+         NODE_ENV: development # Only needed if puppeteer is in `devDependencies`
+   ```
+1. Dependencies like `libXtst6` probably need to be installed via `apt-get`,
+   so use the
+   [threetreeslight/puppeteer](https://circleci.com/orbs/registry/orb/threetreeslight/puppeteer)
+   orb
+   ([instructions](https://circleci.com/orbs/registry/orb/threetreeslight/puppeteer#quick-start)),
+   or paste parts of its
+   [source](https://circleci.com/orbs/registry/orb/threetreeslight/puppeteer#orb-source)
+   into your own config.
+1. Lastly, if you’re using Puppeteer through Jest, then you may encounter an
+   error spawning child processes:
+   ```
+   [00:00.0]  jest args: --e2e --spec --max-workers=36
+   Error: spawn ENOMEM
+      at ChildProcess.spawn (internal/child_process.js:394:11)
+   ```
+   This is likely caused by Jest autodetecting the number of processes on the
+   entire machine (`36`) rather than the number allowed to your container
+   (`2`). To fix this, set `jest --maxWorkers=2` in your test command.
 
 ## Running Puppeteer in Docker
 
-> 👋 We use [Cirrus Ci](https://cirrus-ci.org/) to run our tests for Puppeteer in a Docker container - see our [`Dockerfile.linux`](https://github.com/GoogleChrome/puppeteer/blob/master/.ci/node8/Dockerfile.linux) for reference.
+> 👋 We use [Cirrus Ci](https://cirrus-ci.org/) to run our tests for Puppeteer in a Docker container - see our [`Dockerfile.linux`](https://github.com/puppeteer/puppeteer/blob/master/.ci/node8/Dockerfile.linux) for reference.
 
 Getting headless Chrome up and running in Docker can be tricky.
 The bundled Chromium that Puppeteer installs is missing the necessary
@@ -235,7 +267,7 @@ FROM node:10-slim
 RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
     && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
     && apt-get update \
-    && apt-get install -y google-chrome-unstable fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst ttf-freefont \
+    && apt-get install -y google-chrome-unstable fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf \
       --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
@@ -271,7 +303,7 @@ Build the container:
 docker build -t puppeteer-chrome-linux .
 ```
 
-Run the container by passing `node -e "<yourscript.js content as a string>` as the command:
+Run the container by passing `node -e "<yourscript.js content as a string>"` as the command:
 
 ```bash
  docker run -i --init --rm --cap-add=SYS_ADMIN \
@@ -284,31 +316,32 @@ how to run this Dockerfile from a webserver running on App Engine Flex (Node).
 
 ### Running on Alpine
 
-The [newest Chromium package](https://pkgs.alpinelinux.org/package/edge/community/x86_64/chromium) supported on Alpine is 72, which was corresponding to [Puppeteer v1.11.0](https://github.com/GoogleChrome/puppeteer/releases/tag/v1.11.0).
+The [newest Chromium package](https://pkgs.alpinelinux.org/package/edge/community/x86_64/chromium) supported on Alpine is 77, which corresponds to [Puppeteer v1.19.0](https://github.com/puppeteer/puppeteer/releases/tag/v1.19.0).
 
 Example Dockerfile:
 
 ```Dockerfile
-FROM node:10-alpine
+FROM alpine:edge
 
-# Installs latest Chromium (72) package.
-RUN apk update && apk upgrade && \
-    echo @edge http://nl.alpinelinux.org/alpine/edge/community >> /etc/apk/repositories && \
-    echo @edge http://nl.alpinelinux.org/alpine/edge/main >> /etc/apk/repositories && \
-    apk add --no-cache \
-      chromium@edge=72.0.3626.121-r0 \
-      nss@edge \
-      freetype@edge \
-      harfbuzz@edge \
-      ttf-freefont@edge
+# Installs latest Chromium (77) package.
+RUN apk add --no-cache \
+      chromium \
+      nss \
+      freetype \
+      freetype-dev \
+      harfbuzz \
+      ca-certificates \
+      ttf-freefont \
+      nodejs \
+      yarn
 
 ...
 
 # Tell Puppeteer to skip installing Chrome. We'll be using the installed package.
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD true
 
-# Puppeteer v1.11.0 works with Chromium 72.
-RUN yarn add puppeteer@1.11.0
+# Puppeteer v1.19.0 works with Chromium 77.
+RUN yarn add puppeteer@1.19.0
 
 # Add user so we don't need --no-sandbox.
 RUN addgroup -S pptruser && adduser -S -g pptruser pptruser \
@@ -374,6 +407,8 @@ To use `puppeteer`, simply list the module as a dependency in your `package.json
 Running Puppeteer on Heroku requires some additional dependencies that aren't included on the Linux box that Heroku spins up for you. To add the dependencies on deploy, add the Puppeteer Heroku buildpack to the list of buildpacks for your app under Settings > Buildpacks.
 
 The url for the buildpack is https://github.com/jontewks/puppeteer-heroku-buildpack
+
+Ensure that you're using `'--no-sandbox'` mode when launching Puppeteer. This can be done by passing it as an argument to your `.launch()` call: `puppeteer.launch({ args: ['--no-sandbox'] });`.
 
 When you click add buildpack, simply paste that url into the input, and click save. On the next deploy, your app will also install the dependencies that Puppeteer needs to run.
 

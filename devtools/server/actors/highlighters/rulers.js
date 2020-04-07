@@ -13,7 +13,7 @@ const {
   CanvasFrameAnonymousContentHelper,
   createSVGNode,
   createNode,
-} = require("./utils/markup");
+} = require("devtools/server/actors/highlighters/utils/markup");
 
 // Maximum size, in pixel, for the horizontal ruler and vertical ruler
 // used by RulersHighlighter
@@ -317,6 +317,10 @@ RulersHighlighter.prototype = {
       this.ID_CLASS_PREFIX + "elements",
       "hidden"
     );
+    this.markup.removeAttributeForElement(
+      this.ID_CLASS_PREFIX + "viewport-infobar-container",
+      "hidden"
+    );
 
     this._update();
 
@@ -326,6 +330,11 @@ RulersHighlighter.prototype = {
   hide: function() {
     this.markup.setAttributeForElement(
       this.ID_CLASS_PREFIX + "elements",
+      "hidden",
+      "true"
+    );
+    this.markup.setAttributeForElement(
+      this.ID_CLASS_PREFIX + "viewport-infobar-container",
       "hidden",
       "true"
     );

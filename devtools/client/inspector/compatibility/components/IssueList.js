@@ -11,9 +11,11 @@ const {
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
-const Types = require("../types");
+const Types = require("devtools/client/inspector/compatibility/types");
 
-const IssueItem = createFactory(require("./IssueItem"));
+const IssueItem = createFactory(
+  require("devtools/client/inspector/compatibility/components/IssueItem")
+);
 
 class IssueList extends PureComponent {
   static get propTypes() {
@@ -25,7 +27,10 @@ class IssueList extends PureComponent {
   render() {
     const { issues } = this.props;
 
-    return dom.ul({}, issues.map(issue => IssueItem({ ...issue })));
+    return dom.ul(
+      { className: "compatibility-issue-list" },
+      issues.map(issue => IssueItem({ ...issue }))
+    );
   }
 }
 

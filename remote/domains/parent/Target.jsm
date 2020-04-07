@@ -6,17 +6,20 @@
 
 var EXPORTED_SYMBOLS = ["Target"];
 
+const { ContextualIdentityService } = ChromeUtils.import(
+  "resource://gre/modules/ContextualIdentityService.jsm"
+);
 const { Domain } = ChromeUtils.import(
   "chrome://remote/content/domains/Domain.jsm"
 );
 const { TabManager } = ChromeUtils.import(
-  "chrome://remote/content/domains/parent/target/TabManager.jsm"
+  "chrome://remote/content/TabManager.jsm"
 );
 const { TabSession } = ChromeUtils.import(
   "chrome://remote/content/sessions/TabSession.jsm"
 );
-const { ContextualIdentityService } = ChromeUtils.import(
-  "resource://gre/modules/ContextualIdentityService.jsm"
+const { WindowManager } = ChromeUtils.import(
+  "chrome://remote/content/WindowManager.jsm"
 );
 
 let sessionIds = 1;
@@ -95,14 +98,33 @@ class Target extends Domain {
   closeTarget({ targetId }) {
     const { targets } = this.session.target;
     const target = targets.getById(targetId);
-    target.window.gBrowser.removeTab(target.tab);
+
+    if (!target) {
+      throw new Error(`Unable to find target with id '${targetId}'`);
+    }
+
+    TabManager.removeTab(target.tab);
+  }
+
+  async activateTarget({ targetId }) {
+    const { targets, window } = this.session.target;
+    const target = targets.getById(targetId);
+
+    if (!target) {
+      throw new Error(`Unable to find target with id '${targetId}'`);
+    }
+
+    // Focus the window, and select the corresponding tab
+    await WindowManager.focus(window);
+    TabManager.selectTab(target.tab);
   }
 
   attachToTarget({ targetId }) {
     const { targets } = this.session.target;
     const target = targets.getById(targetId);
+
     if (!target) {
-      return new Error(`Unable to find target with id '${targetId}'`);
+      throw new Error(`Unable to find target with id '${targetId}'`);
     }
 
     const tabSession = new TabSession(

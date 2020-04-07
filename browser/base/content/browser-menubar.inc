@@ -25,6 +25,14 @@
                 <menuitem id="menu_newPrivateWindow"
                           command="Tools:PrivateBrowsing"
                           key="key_privatebrowsing" data-l10n-id="menu-file-new-private-window"/>
+#ifdef NIGHTLY_BUILD
+                <menuitem id="menu_newFissionWindow"
+                          command="Tools:FissionWindow"
+                          accesskey="s" label="New Fission Window"/>
+                <menuitem id="menu_newNonFissionWindow"
+                          command="Tools:NonFissionWindow"
+                          accesskey="s" label="New Non-Fission Window"/>
+#endif
                 <menuitem id="menu_openLocation"
                           hidden="true"
                           command="Browser:OpenLocation"
@@ -88,27 +96,27 @@
                          onpopuphidden="updateEditUIVisibility()">
                 <menuitem id="menu_undo"
                           key="key_undo"
-                          command="cmd_undo" data-l10n-id="menu-edit-undo"/>
+                          command="cmd_undo" data-l10n-id="text-action-undo"/>
                 <menuitem id="menu_redo"
                           key="key_redo"
-                          command="cmd_redo" data-l10n-id="menu-edit-redo"/>
+                          command="cmd_redo" data-l10n-id="text-action-redo"/>
                 <menuseparator/>
                 <menuitem id="menu_cut"
                           key="key_cut"
-                          command="cmd_cut" data-l10n-id="menu-edit-cut"/>
+                          command="cmd_cut" data-l10n-id="text-action-cut"/>
                 <menuitem id="menu_copy"
                           key="key_copy"
-                          command="cmd_copy" data-l10n-id="menu-edit-copy"/>
+                          command="cmd_copy" data-l10n-id="text-action-copy"/>
                 <menuitem id="menu_paste"
                           key="key_paste"
-                          command="cmd_paste" data-l10n-id="menu-edit-paste"/>
+                          command="cmd_paste" data-l10n-id="text-action-paste"/>
                 <menuitem id="menu_delete"
                           key="key_delete"
-                          command="cmd_delete" data-l10n-id="menu-edit-delete"/>
+                          command="cmd_delete" data-l10n-id="text-action-delete"/>
                 <menuseparator/>
                 <menuitem id="menu_selectAll"
                           key="key_selectAll"
-                          command="cmd_selectAll" data-l10n-id="menu-edit-select-all"/>
+                          command="cmd_selectAll" data-l10n-id="text-action-select-all"/>
                 <menuseparator/>
                 <menuitem id="menu_find"
                           key="key_find"
@@ -171,7 +179,7 @@
                     <menuseparator/>
                     <menuitem id="menu_zoomReset"
                               key="key_fullZoomReset"
-                              command="cmd_fullZoomReset" data-l10n-id="menu-view-full-zoom-reset"/>
+                              command="cmd_fullZoomReset" data-l10n-id="menu-view-full-zoom-actual-size"/>
                     <menuseparator/>
                     <menuitem id="toggle_zoom"
                               type="checkbox"
@@ -227,7 +235,7 @@
                 <menuseparator hidden="true" id="documentDirection-separator"/>
                 <menuitem id="documentDirection-swap"
                           hidden="true"
-                          oncommand="gBrowser.selectedBrowser.sendMessageToActor('SwitchDocumentDirection', {}, 'SwitchDocumentDirection', true);" data-l10n-id="menu-view-bidi-switch-page-direction"/>
+                          oncommand="gBrowser.selectedBrowser.sendMessageToActor('SwitchDocumentDirection', {}, 'SwitchDocumentDirection', 'roots');" data-l10n-id="menu-view-bidi-switch-page-direction"/>
               </menupopup>
             </menu>
 
@@ -286,7 +294,8 @@
   <menu id="bookmarksMenu"
         ondragenter="PlacesMenuDNDHandler.onDragEnter(event);"
         ondragover="PlacesMenuDNDHandler.onDragOver(event);"
-        ondrop="PlacesMenuDNDHandler.onDrop(event);" data-l10n-id="menu-bookmarks-menu">
+        ondrop="PlacesMenuDNDHandler.onDrop(event);"
+        data-l10n-id="menu-bookmarks-menu">
     <menupopup id="bookmarksMenuPopup"
 #ifndef XP_MACOSX
                placespopup="true"
@@ -303,19 +312,23 @@
                tooltip="bhTooltip" popupsinherittooltip="true">
       <menuitem id="bookmarksShowAll"
                 command="Browser:ShowAllBookmarks"
-                key="manBookmarkKb" data-l10n-id="menu-bookmarks-show-all"/>
+                key="manBookmarkKb"
+                data-l10n-id="menu-bookmarks-show-all"/>
       <menuseparator id="organizeBookmarksSeparator"/>
       <menuitem id="menu_bookmarkThisPage"
                 command="Browser:AddBookmarkAs"
-                key="addBookmarkAsKb"/>
+                key="addBookmarkAsKb"
+                data-l10n-id="menu-bookmark-this-page"/>
       <menuitem id="menu_bookmarkAllTabs"
                 class="show-only-for-keyboard"
                 command="Browser:BookmarkAllTabs"
-                key="bookmarkAllTabsKb" data-l10n-id="menu-bookmarks-all-tabs"/>
+                key="bookmarkAllTabsKb"
+                data-l10n-id="menu-bookmarks-all-tabs"/>
       <menuseparator id="bookmarksToolbarSeparator"/>
       <menu id="bookmarksToolbarFolderMenu"
             class="menu-iconic bookmark-item"
-            container="true" data-l10n-id="menu-bookmarks-toolbar">
+            container="true"
+            data-l10n-id="menu-bookmarks-toolbar">
         <menupopup id="bookmarksToolbarFolderPopup"
 #ifndef XP_MACOSX
                    placespopup="true"
@@ -327,7 +340,8 @@
       </menu>
       <menu id="menu_unsortedBookmarks"
             class="menu-iconic bookmark-item"
-            container="true" data-l10n-id="menu-bookmarks-other">
+            container="true"
+            data-l10n-id="menu-bookmarks-other">
         <menupopup id="otherBookmarksFolderPopup"
 #ifndef XP_MACOSX
                    placespopup="true"
@@ -340,7 +354,8 @@
       <menu id="menu_mobileBookmarks"
             class="menu-iconic bookmark-item"
             hidden="true"
-            container="true" data-l10n-id="menu-bookmarks-mobile">
+            container="true"
+            data-l10n-id="menu-bookmarks-mobile">
         <menupopup id="mobileBookmarksFolderPopup"
 #ifndef XP_MACOSX
                    placespopup="true"
@@ -394,9 +409,7 @@
                 </menupopup>
               </menu>
               <menuitem id="menu_pageInfo"
-#ifndef XP_WIN
                         key="key_viewInfo"
-#endif
                         command="View:PageInfo" data-l10n-id="menu-tools-page-info"/>
 #ifndef XP_UNIX
               <menuseparator id="prefSep"/>
@@ -407,7 +420,7 @@
               <menuitem id="menu_layout_debugger"
                         data-l10n-id="menu-tools-layout-debugger"
                         oncommand="toOpenWindowByType('mozapp:layoutdebug',
-                                          'chrome://layoutdebug/content/');"/>
+                                          'chrome://layoutdebug/content/layoutdebug.xhtml');"/>
 #endif
 #ifdef XP_MACOSX
 <!-- nsMenuBarX hides these and uses them to build the Application menu. -->
@@ -473,6 +486,7 @@
                           disabled="true"
                           oncommand="ReportFalseDeceptiveSite();"
                           onclick="checkForMiddleClick(this, event);"
+                          data-l10n-id="menu-help-not-deceptive"
                           hidden="true"/>
                 <menuseparator id="helpPolicySeparator"
                           hidden="true"/>

@@ -95,11 +95,15 @@ class APZSampler {
       const LayerMetricsWrapper& aLayer);
   AsyncTransformComponentMatrix GetCurrentAsyncTransformWithOverscroll(
       const LayerMetricsWrapper& aLayer);
+  Maybe<CompositionPayload> NotifyScrollSampling(
+      const LayerMetricsWrapper& aLayer);
 
   void MarkAsyncTransformAppliedToContent(const LayerMetricsWrapper& aLayer);
   bool HasUnusedAsyncTransform(const LayerMetricsWrapper& aLayer);
 
   ScrollableLayerGuid GetGuid(const LayerMetricsWrapper& aLayer);
+
+  ScreenMargin GetGeckoFixedLayerMargins() const;
 
   /**
    * This can be used to assert that the current thread is the

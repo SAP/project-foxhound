@@ -17,7 +17,6 @@
 #include "mozilla/MemoryReporting.h"
 
 #include "gc/Barrier.h"
-#include "gc/Heap.h"
 #include "gc/Marking.h"
 #include "gc/ZoneAllocator.h"
 #include "js/AllocPolicy.h"
@@ -101,7 +100,7 @@ class RegExpShared : public gc::TenuredCell {
   RegExpCompilation compilationArray[4];
 
   /* Source to the RegExp, for lazy compilation. */
-  GCPtr<JSAtom*> source;
+  const GCPtrAtom source;
 
   uint32_t parenCount;
   JS::RegExpFlags flags;
@@ -225,7 +224,7 @@ class RegExpZone {
         : atom(shared.unbarrieredGet()->getSource()),
           flags(shared.unbarrieredGet()->getFlags()) {}
 
-    typedef Key Lookup;
+    using Lookup = Key;
     static HashNumber hash(const Lookup& l) {
       HashNumber hash = DefaultHasher<JSAtom*>::hash(l.atom);
       return mozilla::AddToHash(hash, l.flags.value());
@@ -256,9 +255,6 @@ class RegExpZone {
   }
 
   RegExpShared* get(JSContext* cx, HandleAtom source, JS::RegExpFlags flags);
-
-  /* Like 'get', but compile 'maybeOpt' (if non-null). */
-  RegExpShared* get(JSContext* cx, HandleAtom source, JSString* maybeOpt);
 
 #ifdef DEBUG
   void clear() { set_.clear(); }

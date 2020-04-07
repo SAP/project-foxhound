@@ -11,6 +11,7 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/WrappingOperations.h"
 
+#include <algorithm>
 #include <string.h>
 #include <type_traits>
 
@@ -265,7 +266,7 @@ SharedMem<uint8_t*> DataViewObject::getDataPointer(JSContext* cx,
 }
 
 static inline bool needToSwapBytes(bool littleEndian) {
-#if MOZ_LITTLE_ENDIAN
+#if MOZ_LITTLE_ENDIAN()
   return !littleEndian;
 #else
   return littleEndian;
@@ -291,47 +292,47 @@ static inline uint64_t swapBytes(uint64_t x) {
 
 template <typename DataType>
 struct DataToRepType {
-  typedef DataType result;
+  using result = DataType;
 };
 template <>
 struct DataToRepType<int8_t> {
-  typedef uint8_t result;
+  using result = uint8_t;
 };
 template <>
 struct DataToRepType<uint8_t> {
-  typedef uint8_t result;
+  using result = uint8_t;
 };
 template <>
 struct DataToRepType<int16_t> {
-  typedef uint16_t result;
+  using result = uint16_t;
 };
 template <>
 struct DataToRepType<uint16_t> {
-  typedef uint16_t result;
+  using result = uint16_t;
 };
 template <>
 struct DataToRepType<int32_t> {
-  typedef uint32_t result;
+  using result = uint32_t;
 };
 template <>
 struct DataToRepType<uint32_t> {
-  typedef uint32_t result;
+  using result = uint32_t;
 };
 template <>
 struct DataToRepType<int64_t> {
-  typedef uint64_t result;
+  using result = uint64_t;
 };
 template <>
 struct DataToRepType<uint64_t> {
-  typedef uint64_t result;
+  using result = uint64_t;
 };
 template <>
 struct DataToRepType<float> {
-  typedef uint32_t result;
+  using result = uint32_t;
 };
 template <>
 struct DataToRepType<double> {
-  typedef uint64_t result;
+  using result = uint64_t;
 };
 
 static inline void Memcpy(uint8_t* dest, uint8_t* src, size_t nbytes) {
@@ -350,12 +351,14 @@ static inline void Memcpy(SharedMem<uint8_t*> dest, uint8_t* src,
 
 template <typename DataType, typename BufferPtrType>
 struct DataViewIO {
-  typedef typename DataToRepType<DataType>::result ReadWriteType;
+  using ReadWriteType = typename DataToRepType<DataType>::result;
+
+  static constexpr auto alignMask =
+      std::min<size_t>(MOZ_ALIGNOF(void*), sizeof(DataType)) - 1;
 
   static void fromBuffer(DataType* dest, BufferPtrType unalignedBuffer,
                          bool wantSwap) {
-    MOZ_ASSERT((reinterpret_cast<uintptr_t>(dest) &
-                (Min<size_t>(MOZ_ALIGNOF(void*), sizeof(DataType)) - 1)) == 0);
+    MOZ_ASSERT((reinterpret_cast<uintptr_t>(dest) & alignMask) == 0);
     Memcpy((uint8_t*)dest, unalignedBuffer, sizeof(ReadWriteType));
     if (wantSwap) {
       ReadWriteType* rwDest = reinterpret_cast<ReadWriteType*>(dest);
@@ -365,8 +368,7 @@ struct DataViewIO {
 
   static void toBuffer(BufferPtrType unalignedBuffer, const DataType* src,
                        bool wantSwap) {
-    MOZ_ASSERT((reinterpret_cast<uintptr_t>(src) &
-                (Min<size_t>(MOZ_ALIGNOF(void*), sizeof(DataType)) - 1)) == 0);
+    MOZ_ASSERT((reinterpret_cast<uintptr_t>(src) & alignMask) == 0);
     ReadWriteType temp = *reinterpret_cast<const ReadWriteType*>(src);
     if (wantSwap) {
       temp = swapBytes(temp);
@@ -441,7 +443,7 @@ static inline bool WebIDLCast(JSContext* cx, HandleValue value,
 template <>
 inline bool WebIDLCast<int64_t>(JSContext* cx, HandleValue value,
                                 int64_t* out) {
-  RootedBigInt bi(cx, ToBigInt(cx, value));
+  BigInt* bi = ToBigInt(cx, value);
   if (!bi) {
     return false;
   }
@@ -452,7 +454,7 @@ inline bool WebIDLCast<int64_t>(JSContext* cx, HandleValue value,
 template <>
 inline bool WebIDLCast<uint64_t>(JSContext* cx, HandleValue value,
                                  uint64_t* out) {
-  RootedBigInt bi(cx, ToBigInt(cx, value));
+  BigInt* bi = ToBigInt(cx, value);
   if (!bi) {
     return false;
   }
@@ -981,17 +983,19 @@ JSObject* DataViewObject::CreatePrototype(JSContext* cx, JSProtoKey key) {
                                             &DataViewObject::protoClass_);
 }
 
-static const JSClassOps DataViewObjectClassOps = {nullptr, /* addProperty */
-                                                  nullptr, /* delProperty */
-                                                  nullptr, /* enumerate */
-                                                  nullptr, /* newEnumerate */
-                                                  nullptr, /* resolve */
-                                                  nullptr, /* mayResolve */
-                                                  nullptr, /* finalize */
-                                                  nullptr, /* call */
-                                                  nullptr, /* hasInstance */
-                                                  nullptr, /* construct */
-                                                  ArrayBufferViewObject::trace};
+static const JSClassOps DataViewObjectClassOps = {
+    nullptr,                       // addProperty
+    nullptr,                       // delProperty
+    nullptr,                       // enumerate
+    nullptr,                       // newEnumerate
+    nullptr,                       // resolve
+    nullptr,                       // mayResolve
+    nullptr,                       // finalize
+    nullptr,                       // call
+    nullptr,                       // hasInstance
+    nullptr,                       // construct
+    ArrayBufferViewObject::trace,  // trace
+};
 
 const ClassSpec DataViewObject::classSpec_ = {
     GenericCreateConstructor<DataViewObject::construct, 1,

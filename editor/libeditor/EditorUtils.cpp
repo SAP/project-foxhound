@@ -9,13 +9,13 @@
 #include "mozilla/EditorDOMPoint.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/TextEditor.h"
+#include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
 #include "nsContentUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsError.h"
 #include "nsIContent.h"
-#include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsINode.h"
@@ -26,6 +26,20 @@ class nsRange;
 namespace mozilla {
 
 using namespace dom;
+
+template void DOMIterator::AppendAllNodesToArray(
+    nsTArray<OwningNonNull<nsIContent>>& aArrayOfNodes) const;
+template void DOMIterator::AppendAllNodesToArray(
+    nsTArray<OwningNonNull<HTMLBRElement>>& aArrayOfNodes) const;
+template void DOMIterator::AppendNodesToArray(
+    BoolFunctor aFunctor, nsTArray<OwningNonNull<nsIContent>>& aArrayOfNodes,
+    void* aClosure) const;
+template void DOMIterator::AppendNodesToArray(
+    BoolFunctor aFunctor, nsTArray<OwningNonNull<Element>>& aArrayOfNodes,
+    void* aClosure) const;
+template void DOMIterator::AppendNodesToArray(
+    BoolFunctor aFunctor, nsTArray<OwningNonNull<Text>>& aArrayOfNodes,
+    void* aClosure) const;
 
 /******************************************************************************
  * mozilla::EditActionResult
@@ -82,15 +96,24 @@ DOMIterator::DOMIterator(MOZ_GUARD_OBJECT_NOTIFIER_ONLY_PARAM_IN_IMPL)
   MOZ_GUARD_OBJECT_NOTIFIER_INIT;
 }
 
-void DOMIterator::AppendList(
-    const BoolDomIterFunctor& functor,
-    nsTArray<OwningNonNull<nsINode>>& arrayOfNodes) const {
-  // Iterate through dom and build list
+template <class NodeClass>
+void DOMIterator::AppendAllNodesToArray(
+    nsTArray<OwningNonNull<NodeClass>>& aArrayOfNodes) const {
   for (; !mIter->IsDone(); mIter->Next()) {
-    nsCOMPtr<nsINode> node = mIter->GetCurrentNode();
+    if (NodeClass* node = NodeClass::FromNode(mIter->GetCurrentNode())) {
+      aArrayOfNodes.AppendElement(*node);
+    }
+  }
+}
 
-    if (functor(node)) {
-      arrayOfNodes.AppendElement(*node);
+template <class NodeClass>
+void DOMIterator::AppendNodesToArray(
+    BoolFunctor aFunctor, nsTArray<OwningNonNull<NodeClass>>& aArrayOfNodes,
+    void* aClosure /* = nullptr */) const {
+  for (; !mIter->IsDone(); mIter->Next()) {
+    NodeClass* node = NodeClass::FromNode(mIter->GetCurrentNode());
+    if (node && aFunctor(*node, aClosure)) {
+      aArrayOfNodes.AppendElement(*node);
     }
   }
 }

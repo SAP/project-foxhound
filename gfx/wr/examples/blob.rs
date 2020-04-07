@@ -17,7 +17,7 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use webrender::api::{self, DisplayListBuilder, DocumentId, PipelineId, PrimitiveFlags, RenderApi, Transaction};
-use webrender::api::{ColorF, CommonItemProperties, SpaceAndClipInfo};
+use webrender::api::{ColorF, CommonItemProperties, SpaceAndClipInfo, ImageDescriptorFlags};
 use webrender::api::units::*;
 use webrender::euclid::size2;
 
@@ -160,6 +160,7 @@ impl api::BlobImageHandler for CheckerboardRenderer {
         _requests: &[api::BlobImageParams],
     ) {}
 
+    fn enable_multithreading(&mut self, _: bool) {}
     fn delete_font(&mut self, _font: api::FontKey) {}
     fn delete_font_instance(&mut self, _instance: api::FontInstanceKey) {}
     fn clear_namespace(&mut self, _namespace: api::IdNamespace) {}
@@ -218,7 +219,12 @@ impl Example for App {
         let blob_img1 = api.generate_blob_image_key();
         txn.add_blob_image(
             blob_img1,
-            api::ImageDescriptor::new(size1.width, size1.height, api::ImageFormat::BGRA8, true, false),
+            api::ImageDescriptor::new(
+                size1.width,
+                size1.height,
+                api::ImageFormat::BGRA8,
+                ImageDescriptorFlags::IS_OPAQUE,
+            ),
             serialize_blob(api::ColorU::new(50, 50, 150, 255)),
             size1.into(),
             Some(128),
@@ -237,7 +243,12 @@ impl Example for App {
         let blob_img2 = api.generate_blob_image_key();
         txn.add_blob_image(
             blob_img2,
-            api::ImageDescriptor::new(size2.width, size2.height, api::ImageFormat::BGRA8, true, false),
+            api::ImageDescriptor::new(
+                size2.width,
+                size2.height,
+                api::ImageFormat::BGRA8,
+                ImageDescriptorFlags::IS_OPAQUE,
+            ),
             serialize_blob(api::ColorU::new(50, 150, 50, 255)),
             size2.into(),
             None,

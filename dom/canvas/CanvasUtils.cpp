@@ -6,15 +6,14 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-#include "nsIServiceManager.h"
-
-#include "nsIConsoleService.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsIHTMLCollection.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/UserActivation.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "nsIPrincipal.h"
 
 #include "nsGfxCIID.h"
@@ -34,7 +33,6 @@
 #include "nsContentUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsPrintfCString.h"
-#include "nsIConsoleService.h"
 #include "jsapi.h"
 
 #define TOPIC_CANVAS_PERMISSIONS_PROMPT "canvas-permissions-prompt"
@@ -60,7 +58,7 @@ bool IsImageExtractionAllowed(Document* aDocument, JSContext* aCx,
   }
 
   // The system principal can always extract canvas data.
-  if (nsContentUtils::IsSystemPrincipal(&aPrincipal)) {
+  if (aPrincipal.IsSystemPrincipal()) {
     return true;
   }
 
@@ -202,7 +200,7 @@ bool GetCanvasContextType(const nsAString& str,
     return true;
   }
 
-  if (WebGL2Context::IsSupported()) {
+  if (StaticPrefs::webgl_enable_webgl2()) {
     if (str.EqualsLiteral("webgl2")) {
       *out_type = dom::CanvasContextType::WebGL2;
       return true;

@@ -9,7 +9,7 @@ const {
   Component,
 } = require("devtools/client/shared/vendor/react");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { L10N } = require("../utils/l10n");
+const { L10N } = require("devtools/client/accessibility/utils/l10n");
 
 const { hr } = require("devtools/client/shared/vendor/react-dom-factories");
 
@@ -29,19 +29,22 @@ loader.lazyGetter(this, "MenuList", function() {
   );
 });
 
-const { A11Y_LEARN_MORE_LINK } = require("../constants");
+const {
+  A11Y_LEARN_MORE_LINK,
+} = require("devtools/client/accessibility/constants");
 const { openDocLink } = require("devtools/client/shared/link");
 
-const { updatePref } = require("../actions/ui");
+const { updatePref } = require("devtools/client/accessibility/actions/ui");
 
 const { connect } = require("devtools/client/shared/vendor/react-redux");
-const { PREFS } = require("../constants");
+const { PREFS } = require("devtools/client/accessibility/constants");
 
-class AccessibilityTreeFilter extends Component {
+class AccessibilityPrefs extends Component {
   static get propTypes() {
     return {
       dispatch: PropTypes.func.isRequired,
       [PREFS.SCROLL_INTO_VIEW]: PropTypes.bool.isRequired,
+      toolboxDoc: PropTypes.object.isRequired,
     };
   }
 
@@ -64,7 +67,7 @@ class AccessibilityTreeFilter extends Component {
     return MenuButton(
       {
         menuId: "accessibility-tree-filters-prefs-menu",
-        doc: document,
+        toolboxDoc: this.props.toolboxDoc,
         className: `devtools-button badge toolbar-menu-button prefs`,
         title: L10N.getStr("accessibility.tree.filters.prefs"),
       },
@@ -96,4 +99,4 @@ const mapStateToProps = ({ ui }) => ({
 });
 
 // Exports from this module
-module.exports = connect(mapStateToProps)(AccessibilityTreeFilter);
+module.exports = connect(mapStateToProps)(AccessibilityPrefs);

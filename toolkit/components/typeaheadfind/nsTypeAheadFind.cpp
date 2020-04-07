@@ -4,24 +4,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCOMPtr.h"
+#include "nsDocShell.h"
 #include "nsMemory.h"
-#include "nsIServiceManager.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/ModuleUtils.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
-#include "nsIWebBrowserChrome.h"
 #include "nsCURILoader.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsNetUtil.h"
 #include "nsIURL.h"
 #include "nsIURI.h"
 #include "nsIDocShell.h"
-#include "nsIDocShellTreeOwner.h"
 #include "nsISimpleEnumerator.h"
 #include "nsPIDOMWindow.h"
 #include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "nsString.h"
 #include "nsCRT.h"
 #include "nsGenericHTMLElement.h"
@@ -29,14 +26,12 @@
 #include "nsIFrame.h"
 #include "nsContainerFrame.h"
 #include "nsFrameTraversal.h"
-#include "nsIImageDocument.h"
 #include "mozilla/dom/Document.h"
 #include "nsIContent.h"
 #include "nsTextFragment.h"
 #include "nsIEditor.h"
 
 #include "nsIDocShellTreeItem.h"
-#include "nsIWebNavigation.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsContentCID.h"
@@ -44,7 +39,6 @@
 #include "nsWidgetsCID.h"
 #include "nsIFormControl.h"
 #include "nsNameSpaceManager.h"
-#include "nsIWindowWatcher.h"
 #include "nsIObserverService.h"
 #include "nsFocusManager.h"
 #include "mozilla/dom/Element.h"
@@ -54,9 +48,6 @@
 #include "mozilla/dom/RangeBinding.h"
 #include "mozilla/dom/Selection.h"
 #include "nsRange.h"
-#ifdef MOZ_XBL
-#  include "nsXBLBinding.h"
-#endif
 
 #include "nsTypeAheadFind.h"
 
@@ -73,10 +64,10 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsTypeAheadFind)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsTypeAheadFind)
 
-NS_IMPL_CYCLE_COLLECTION(nsTypeAheadFind, mFoundLink, mFoundEditable,
-                         mCurrentWindow, mStartFindRange, mSearchRange,
-                         mStartPointRange, mEndPointRange, mSoundInterface,
-                         mFind, mFoundRange)
+NS_IMPL_CYCLE_COLLECTION_WEAK(nsTypeAheadFind, mFoundLink, mFoundEditable,
+                              mCurrentWindow, mStartFindRange, mSearchRange,
+                              mStartPointRange, mEndPointRange, mSoundInterface,
+                              mFind, mFoundRange)
 
 static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 
@@ -89,7 +80,8 @@ nsTypeAheadFind::nsTypeAheadFind()
       mLastFindLength(0),
       mIsSoundInitialized(false),
       mCaseSensitive(false),
-      mEntireWord(false) {}
+      mEntireWord(false),
+      mMatchDiacritics(false) {}
 
 nsTypeAheadFind::~nsTypeAheadFind() {
   nsCOMPtr<nsIPrefBranch> prefInternal(
@@ -210,6 +202,24 @@ nsTypeAheadFind::SetEntireWord(bool isEntireWord) {
 NS_IMETHODIMP
 nsTypeAheadFind::GetEntireWord(bool* isEntireWord) {
   *isEntireWord = mEntireWord;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsTypeAheadFind::SetMatchDiacritics(bool matchDiacritics) {
+  mMatchDiacritics = matchDiacritics;
+
+  if (mFind) {
+    mFind->SetMatchDiacritics(mMatchDiacritics);
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsTypeAheadFind::GetMatchDiacritics(bool* matchDiacritics) {
+  *matchDiacritics = mMatchDiacritics;
 
   return NS_OK;
 }
@@ -374,9 +384,11 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
 
   nsCOMPtr<nsIDocShell> currentDocShell;
   nsCOMPtr<nsISupports> currentContainer;
-  nsCOMPtr<nsISimpleEnumerator> docShellEnumerator;
   nsCOMPtr<nsIDocShellTreeItem> rootContentTreeItem;
   nsCOMPtr<nsIDocShell> rootContentDocShell;
+  typedef nsTArray<RefPtr<nsIDocShell>> DocShells;
+  DocShells docShells;
+  DocShells::const_iterator it, it_end;
   if (!aDontIterateFrames) {
     // The use of GetInProcessSameTypeRootTreeItem (and later in this method) is
     // OK here as out-of-process frames are handled externally by
@@ -388,22 +400,17 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
 
     if (!rootContentDocShell) return NS_ERROR_FAILURE;
 
-    rootContentDocShell->GetDocShellEnumerator(
+    rootContentDocShell->GetAllDocShellsInSubtree(
         nsIDocShellTreeItem::typeContent, nsIDocShell::ENUMERATE_FORWARDS,
-        getter_AddRefs(docShellEnumerator));
+        docShells);
 
     // Default: can start at the current document
     currentContainer = do_QueryInterface(rootContentDocShell);
 
     // Iterate up to current shell, if there's more than 1 that we're
     // dealing with
-    bool hasMoreDocShells;
-
-    while (
-        NS_SUCCEEDED(docShellEnumerator->HasMoreElements(&hasMoreDocShells)) &&
-        hasMoreDocShells) {
-      docShellEnumerator->GetNext(getter_AddRefs(currentContainer));
-      currentDocShell = do_QueryInterface(currentContainer);
+    for (it = docShells.begin(), it_end = docShells.end(); it != it_end; ++it) {
+      currentDocShell = *it;
       if (!currentDocShell || currentDocShell == startingDocShell ||
           aIsFirstVisiblePreferred)
         break;
@@ -428,7 +435,7 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
   }
 
   if (!mStartPointRange) {
-    mStartPointRange = new nsRange(presShell->GetDocument());
+    mStartPointRange = nsRange::Create(presShell->GetDocument());
   }
 
   // XXXbz Should this really be ignoring errors?
@@ -561,9 +568,11 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
         nsCOMPtr<nsINode> node = returnRange->GetStartContainer();
         while (node) {
           nsCOMPtr<nsIEditor> editor;
-          if (auto input = HTMLInputElement::FromNode(node)) {
+          if (RefPtr<HTMLInputElement> input =
+                  HTMLInputElement::FromNode(node)) {
             editor = input->GetEditor();
-          } else if (auto textarea = HTMLTextAreaElement::FromNode(node)) {
+          } else if (RefPtr<HTMLTextAreaElement> textarea =
+                         HTMLTextAreaElement::FromNode(node)) {
             editor = textarea->GetEditor();
           } else {
             node = node->GetParentNode();
@@ -653,12 +662,10 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
     bool hasTriedFirstDoc = false;
     do {
       // ==== Second inner loop - get another while  ====
-      bool hasMoreDocShells;
-      if (NS_SUCCEEDED(
-              docShellEnumerator->HasMoreElements(&hasMoreDocShells)) &&
-          hasMoreDocShells) {
-        docShellEnumerator->GetNext(getter_AddRefs(currentContainer));
-        NS_ASSERTION(currentContainer, "HasMoreElements lied to us!");
+      if (it != it_end) {
+        currentContainer = *it;
+        ++it;
+        NS_ASSERTION(currentContainer, "We're not at the end yet!");
         currentDocShell = do_QueryInterface(currentContainer);
 
         if (currentDocShell) break;
@@ -666,11 +673,13 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
         return NS_ERROR_FAILURE;    // No content doc shells
 
       // Reached last doc shell, loop around back to first doc shell
-      rootContentDocShell->GetDocShellEnumerator(
+      rootContentDocShell->GetAllDocShellsInSubtree(
           nsIDocShellTreeItem::typeContent, nsIDocShell::ENUMERATE_FORWARDS,
-          getter_AddRefs(docShellEnumerator));
+          docShells);
+      it = docShells.begin();
+      it_end = docShells.end();
       hasTriedFirstDoc = true;
-    } while (docShellEnumerator);  // ==== end second inner while  ===
+    } while (it != it_end);  // ==== end second inner while  ===
 
     bool continueLoop = false;
     if (currentDocShell != startingDocShell)
@@ -697,7 +706,7 @@ nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
         // at end of document and go to beginning
         RefPtr<nsRange> tempRange = mStartPointRange->CloneRange();
         if (!mEndPointRange) {
-          mEndPointRange = new nsRange(presShell->GetDocument());
+          mEndPointRange = nsRange::Create(presShell->GetDocument());
         }
 
         mStartPointRange = mEndPointRange;
@@ -781,38 +790,22 @@ nsresult nsTypeAheadFind::GetSearchContainers(
   }
 
   if (!mSearchRange) {
-    mSearchRange = new nsRange(doc);
+    mSearchRange = nsRange::Create(doc);
   }
   nsCOMPtr<nsINode> searchRootNode(rootContent);
 
-#ifdef MOZ_XBL
-  // Hack for XMLPrettyPrinter. nsFind can't handle complex anonymous content.
-  // If the root node has an XBL binding then there's not much we can do in
-  // in general, but we can try searching the binding's first child, which
-  // in the case of XMLPrettyPrinter contains the visible pretty-printed
-  // content.
-  nsXBLBinding* binding = rootContent->GetXBLBinding();
-  if (binding) {
-    nsIContent* anonContent = binding->GetAnonymousContent();
-    if (anonContent) {
-      searchRootNode = anonContent->GetFirstChild();
-    }
-  }
-#endif
   mSearchRange->SelectNodeContents(*searchRootNode, IgnoreErrors());
 
   if (!mStartPointRange) {
-    mStartPointRange = new nsRange(doc);
+    mStartPointRange = nsRange::Create(doc);
   }
-  mStartPointRange->SetStart(*searchRootNode, 0, IgnoreErrors());
-  mStartPointRange->Collapse(true);  // collapse to start
+  mStartPointRange->SetStartAndEnd(searchRootNode, 0, searchRootNode, 0);
 
   if (!mEndPointRange) {
-    mEndPointRange = new nsRange(doc);
+    mEndPointRange = nsRange::Create(doc);
   }
-  mEndPointRange->SetEnd(*searchRootNode, searchRootNode->Length(),
-                         IgnoreErrors());
-  mEndPointRange->Collapse(false);  // collapse to end
+  mEndPointRange->SetStartAndEnd(searchRootNode, searchRootNode->Length(),
+                                 searchRootNode, searchRootNode->Length());
 
   // Consider current selection as null if
   // it's not in the currently focused document
@@ -833,6 +826,10 @@ nsresult nsTypeAheadFind::GetSearchContainers(
     // IsRangeVisible. It returns the first visible range after searchRange
     IsRangeVisible(mSearchRange, aIsFirstVisiblePreferred, true,
                    getter_AddRefs(mStartPointRange), nullptr);
+    // We want to search in the visible selection range. That means that the
+    // start point needs to be the end if we're looking backwards, or vice
+    // versa.
+    mStartPointRange->Collapse(!aFindPrev);
   } else {
     uint32_t startOffset;
     nsCOMPtr<nsINode> startNode;
@@ -851,9 +848,8 @@ nsresult nsTypeAheadFind::GetSearchContainers(
     // We need to set the start point this way, other methods haven't worked
     mStartPointRange->SelectNode(*startNode, IgnoreErrors());
     mStartPointRange->SetStart(*startNode, startOffset, IgnoreErrors());
+    mStartPointRange->Collapse(true);  // collapse to start
   }
-
-  mStartPointRange->Collapse(true);  // collapse to start
 
   presShell.forget(aPresShell);
   presContext.forget(aPresContext);
@@ -1425,7 +1421,8 @@ nsTypeAheadFind::IsRangeRendered(nsRange* aRange, bool* aResult) {
 
 bool nsTypeAheadFind::IsRangeRendered(nsRange* aRange) {
   using FrameForPointOption = nsLayoutUtils::FrameForPointOption;
-  nsCOMPtr<nsIContent> content = do_QueryInterface(aRange->GetCommonAncestor());
+  nsCOMPtr<nsIContent> content =
+      do_QueryInterface(aRange->GetClosestCommonInclusiveAncestor());
   if (!content) {
     return false;
   }

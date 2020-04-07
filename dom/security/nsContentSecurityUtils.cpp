@@ -9,14 +9,21 @@
 #include "nsContentSecurityUtils.h"
 
 #include "nsIContentSecurityPolicy.h"
+#include "nsIChannel.h"
+#include "nsIHttpChannel.h"
+#include "nsIMultiPartChannel.h"
 #include "nsIURI.h"
 #if defined(XP_WIN)
 #  include "WinUtils.h"
 #  include <wininet.h>
 #endif
 
+#include "js/Array.h"  // JS::GetArrayLength
+#include "mozilla/ExtensionPolicyService.h"
+#include "mozilla/Logging.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/StaticPrefs_extensions.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 /*
  * Performs a Regular Expression match, optionally returning the results.
@@ -78,7 +85,7 @@ nsresult RegexEval(const nsAString& aPattern, const nsAString& aString,
   // Now we know we have a result, and we need to extract it so we can read it.
   uint32_t length;
   JS::RootedObject regexResultObj(cx, &regexResult.toObject());
-  if (!JS_GetArrayLength(cx, regexResultObj, &length)) {
+  if (!JS::GetArrayLength(cx, regexResultObj, &length)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
   MOZ_LOG(sCSMLog, LogLevel::Verbose, ("Regex Matched %i strings", length));
@@ -131,7 +138,7 @@ nsString OptimizeFileName(const nsAString& aFileName) {
 }
 
 /*
- * FilenameToEvalType takes a fileName and returns a Pair of strings.
+ * FilenameToFilenameType takes a fileName and returns a Pair of strings.
  * The First entry is a string indicating the type of fileName
  * The Second entry is a Maybe<string> that can contain additional details to
  * report.
@@ -143,11 +150,13 @@ nsString OptimizeFileName(const nsAString& aFileName) {
  */
 
 /* static */
-FilenameType nsContentSecurityUtils::FilenameToEvalType(
-    const nsString& fileName) {
+FilenameTypeAndDetails nsContentSecurityUtils::FilenameToFilenameType(
+    const nsString& fileName, bool collectAdditionalExtensionData) {
   // These are strings because the Telemetry Events API only accepts strings
   static NS_NAMED_LITERAL_CSTRING(kChromeURI, "chromeuri");
   static NS_NAMED_LITERAL_CSTRING(kResourceURI, "resourceuri");
+  static NS_NAMED_LITERAL_CSTRING(kBlobUri, "bloburi");
+  static NS_NAMED_LITERAL_CSTRING(kDataUri, "dataurl");
   static NS_NAMED_LITERAL_CSTRING(kSingleString, "singlestring");
   static NS_NAMED_LITERAL_CSTRING(kMozillaExtension, "mozillaextension");
   static NS_NAMED_LITERAL_CSTRING(kOtherExtension, "otherextension");
@@ -168,15 +177,23 @@ FilenameType nsContentSecurityUtils::FilenameToEvalType(
 
   // resource:// and chrome://
   if (StringBeginsWith(fileName, NS_LITERAL_STRING("chrome://"))) {
-    return FilenameType(kChromeURI, Some(fileName));
+    return FilenameTypeAndDetails(kChromeURI, Some(fileName));
   }
   if (StringBeginsWith(fileName, NS_LITERAL_STRING("resource://"))) {
-    return FilenameType(kResourceURI, Some(fileName));
+    return FilenameTypeAndDetails(kResourceURI, Some(fileName));
+  }
+
+  // blob: and data:
+  if (StringBeginsWith(fileName, NS_LITERAL_STRING("blob:"))) {
+    return FilenameTypeAndDetails(kBlobUri, Nothing());
+  }
+  if (StringBeginsWith(fileName, NS_LITERAL_STRING("data:"))) {
+    return FilenameTypeAndDetails(kDataUri, Nothing());
   }
 
   if (!NS_IsMainThread()) {
     // We can't do Regex matching off the main thread; so just report.
-    return FilenameType(kOtherWorker, Nothing());
+    return FilenameTypeAndDetails(kOtherWorker, Nothing());
   }
 
   // Extension
@@ -185,7 +202,7 @@ FilenameType nsContentSecurityUtils::FilenameToEvalType(
   nsresult rv = RegexEval(kExtensionRegex, fileName, /* aOnlyMatch = */ false,
                           regexMatch, &regexResults);
   if (NS_FAILED(rv)) {
-    return FilenameType(kRegexFailure, Nothing());
+    return FilenameTypeAndDetails(kRegexFailure, Nothing());
   }
   if (regexMatch) {
     nsCString type =
@@ -194,26 +211,27 @@ FilenameType nsContentSecurityUtils::FilenameToEvalType(
             : kOtherExtension;
     auto& extensionNameAndPath =
         Substring(regexResults[0], ArrayLength("extensions/") - 1);
-    return FilenameType(type, Some(OptimizeFileName(extensionNameAndPath)));
+    return FilenameTypeAndDetails(type,
+                                  Some(OptimizeFileName(extensionNameAndPath)));
   }
 
   // Single File
   rv = RegexEval(kSingleFileRegex, fileName, /* aOnlyMatch = */ true,
                  regexMatch);
   if (NS_FAILED(rv)) {
-    return FilenameType(kRegexFailure, Nothing());
+    return FilenameTypeAndDetails(kRegexFailure, Nothing());
   }
   if (regexMatch) {
-    return FilenameType(kSingleString, Some(fileName));
+    return FilenameTypeAndDetails(kSingleString, Some(fileName));
   }
 
   // Suspected userChromeJS script
   rv = RegexEval(kUCJSRegex, fileName, /* aOnlyMatch = */ true, regexMatch);
   if (NS_FAILED(rv)) {
-    return FilenameType(kRegexFailure, Nothing());
+    return FilenameTypeAndDetails(kRegexFailure, Nothing());
   }
   if (regexMatch) {
-    return FilenameType(kSuspectedUserChromeJS, Nothing());
+    return FilenameTypeAndDetails(kSuspectedUserChromeJS, Nothing());
   }
 
 #if defined(XP_WIN)
@@ -232,15 +250,51 @@ FilenameType nsContentSecurityUtils::FilenameToEvalType(
       if (sanitizedPathAndScheme == NS_LITERAL_STRING("file")) {
         sanitizedPathAndScheme.Append(NS_LITERAL_STRING("://.../"));
         sanitizedPathAndScheme.Append(strSanitizedPath);
+      } else if (sanitizedPathAndScheme == NS_LITERAL_STRING("moz-extension") &&
+                 collectAdditionalExtensionData) {
+        sanitizedPathAndScheme.Append(NS_LITERAL_STRING("://["));
+
+        nsCOMPtr<nsIURI> uri;
+        nsresult rv = NS_NewURI(getter_AddRefs(uri), fileName);
+        if (NS_FAILED(rv)) {
+          // Return after adding ://[ so we know we failed here.
+          return FilenameTypeAndDetails(kSanitizedWindowsURL,
+                                        Some(sanitizedPathAndScheme));
+        }
+
+        mozilla::extensions::URLInfo url(uri);
+        if (NS_IsMainThread()) {
+          // EPS is only usable on main thread
+          auto* policy =
+              ExtensionPolicyService::GetSingleton().GetByHost(url.Host());
+          if (policy) {
+            nsString addOnId;
+            policy->GetId(addOnId);
+
+            sanitizedPathAndScheme.Append(addOnId);
+            sanitizedPathAndScheme.Append(NS_LITERAL_STRING(": "));
+            sanitizedPathAndScheme.Append(policy->Name());
+          } else {
+            sanitizedPathAndScheme.Append(
+                NS_LITERAL_STRING("failed finding addon by host"));
+          }
+        } else {
+          sanitizedPathAndScheme.Append(
+              NS_LITERAL_STRING("can't get addon off main thread"));
+        }
+        sanitizedPathAndScheme.Append(NS_LITERAL_STRING("]"));
+        sanitizedPathAndScheme.Append(url.FilePath());
       }
-      return FilenameType(kSanitizedWindowsURL, Some(sanitizedPathAndScheme));
+      return FilenameTypeAndDetails(kSanitizedWindowsURL,
+                                    Some(sanitizedPathAndScheme));
     } else {
-      return FilenameType(kSanitizedWindowsPath, Some(strSanitizedPath));
+      return FilenameTypeAndDetails(kSanitizedWindowsPath,
+                                    Some(strSanitizedPath));
     }
   }
 #endif
 
-  return FilenameType(kOther, Nothing());
+  return FilenameTypeAndDetails(kOther, Nothing());
 }
 
 class EvalUsageNotificationRunnable final : public Runnable {
@@ -271,6 +325,11 @@ class EvalUsageNotificationRunnable final : public Runnable {
   uint32_t mLineNumber;
   uint32_t mColumnNumber;
 };
+
+// The Web Extension process pref may be toggled during a session, at which
+// point stuff may be loaded in the parent process but we would send telemetry
+// for it. Avoid this by observing if the pref ever was disabled.
+static bool sWebExtensionsRemoteWasEverDisabled = false;
 
 /* static */
 bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
@@ -314,6 +373,12 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
     return true;
   }
 
+  if (JS::ContextOptionsRef(cx).disableEvalSecurityChecks()) {
+    MOZ_LOG(sCSMLog, LogLevel::Debug,
+            ("Allowing eval() because this JSContext was set to allow it"));
+    return true;
+  }
+
   if (aIsSystemPrincipal &&
       StaticPrefs::security_allow_eval_with_system_principal()) {
     MOZ_LOG(sCSMLog, LogLevel::Debug,
@@ -334,7 +399,7 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
   // (because a String-based preference check is only safe on Main Thread.)
   // The consequence of this is that if a user is using userChromeJS _and_
   // the scripts they use start a worker and that worker uses eval - we will
-  // enter this function, skip over these pref checks that would normally cause
+  // enter this function, skip over this pref check that would normally cause
   // us to allow the eval usage - and we will block it.
   // While not ideal, we do not officially support userChromeJS, and hopefully
   // the usage of workers and eval in workers is even lower that userChromeJS
@@ -354,29 +419,20 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
                                    : "in parent process")));
       return true;
     }
-
-    // This preference is better known as userchrome.css which allows
-    // customization of the Firefox UI. Believe it or not, you can also
-    // use XBL bindings to get it to run Javascript in the same manner
-    // as userChromeJS above, so even though 99.9% of people using
-    // userchrome.css aren't doing that, we're still going to need to
-    // disable the eval() assertion for them.
-    if (Preferences::GetBool(
-            "toolkit.legacyUserProfileCustomizations.stylesheets")) {
-      MOZ_LOG(sCSMLog, LogLevel::Debug,
-              ("Allowing eval() %s because of "
-               "toolkit.legacyUserProfileCustomizations.stylesheets",
-               (aIsSystemPrincipal ? "with System Principal"
-                                   : "in parent process")));
-      return true;
-    }
   }
 
   if (XRE_IsE10sParentProcess() &&
       !StaticPrefs::extensions_webextensions_remote()) {
+    sWebExtensionsRemoteWasEverDisabled = true;
     MOZ_LOG(sCSMLog, LogLevel::Debug,
             ("Allowing eval() in parent process because the web extension "
              "process is disabled"));
+    return true;
+  }
+  if (XRE_IsE10sParentProcess() && sWebExtensionsRemoteWasEverDisabled) {
+    MOZ_LOG(sCSMLog, LogLevel::Debug,
+            ("Allowing eval() in parent process because the web extension "
+             "process was disabled at some point"));
     return true;
   }
 
@@ -452,18 +508,7 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
       fileName.get(), NS_ConvertUTF16toUTF8(aScript).get());
 #endif
 
-
-#if defined(RELEASE_OR_BETA) && !defined(EARLY_BETA_OR_EARLIER)
-  // Until we understand the events coming from release, we don't want to enforce
-  // eval restrictions on release. However there's no RELEASE define, only RELEASE_OR_BETA
-  // so we enforce eval restrictions on Nightly and Early Beta; but not Release or Late Beta.
-  return false;
-#else
-  // Do not enforce eval usage blocking on Worker threads; because this is
-  // new behavior and we want to be conservative. Bug 1584602 will enforce
-  // things.
-  return !NS_IsMainThread();
-#endif
+  return true;
 }
 
 /* static */
@@ -477,12 +522,13 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
       aIsSystemPrincipal ? Telemetry::EventID::Security_Evalusage_Systemcontext
                          : Telemetry::EventID::Security_Evalusage_Parentprocess;
 
-  FilenameType fileNameType = FilenameToEvalType(aFileNameA);
+  FilenameTypeAndDetails fileNameTypeAndDetails =
+      FilenameToFilenameType(aFileNameA, false);
   mozilla::Maybe<nsTArray<EventExtraEntry>> extra;
-  if (fileNameType.second().isSome()) {
+  if (fileNameTypeAndDetails.second().isSome()) {
     extra = Some<nsTArray<EventExtraEntry>>({EventExtraEntry{
         NS_LITERAL_CSTRING("fileinfo"),
-        NS_ConvertUTF16toUTF8(fileNameType.second().value())}});
+        NS_ConvertUTF16toUTF8(fileNameTypeAndDetails.second().value())}});
   } else {
     extra = Nothing();
   }
@@ -490,7 +536,8 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
     sTelemetryEventEnabled = true;
     Telemetry::SetEventRecordingEnabled(NS_LITERAL_CSTRING("security"), true);
   }
-  Telemetry::RecordEvent(eventType, mozilla::Some(fileNameType.first()), extra);
+  Telemetry::RecordEvent(eventType,
+                         mozilla::Some(fileNameTypeAndDetails.first()), extra);
 
   // Report an error to console
   nsCOMPtr<nsIConsoleService> console(
@@ -532,6 +579,33 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
   console->LogMessage(error);
 }
 
+/* static */
+nsresult nsContentSecurityUtils::GetHttpChannelFromPotentialMultiPart(
+    nsIChannel* aChannel, nsIHttpChannel** aHttpChannel) {
+  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
+  if (httpChannel) {
+    httpChannel.forget(aHttpChannel);
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIMultiPartChannel> multipart = do_QueryInterface(aChannel);
+  if (!multipart) {
+    *aHttpChannel = nullptr;
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIChannel> baseChannel;
+  nsresult rv = multipart->GetBaseChannel(getter_AddRefs(baseChannel));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  httpChannel = do_QueryInterface(baseChannel);
+  httpChannel.forget(aHttpChannel);
+
+  return NS_OK;
+}
+
 #if defined(DEBUG)
 /* static */
 void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
@@ -546,7 +620,7 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
   // object-src 'none'"/>
 
   // Check if we should skip the assertion
-  if (Preferences::GetBool("csp.skip_about_page_has_csp_assert")) {
+  if (StaticPrefs::dom_security_skip_about_page_has_csp_assert()) {
     return;
   }
 
@@ -584,7 +658,7 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
 
   // Check if we should skip the allowlist and assert right away. Please note
   // that this pref can and should only be set for automated testing.
-  if (Preferences::GetBool("csp.skip_about_page_csp_allowlist_and_assert")) {
+  if (StaticPrefs::dom_security_skip_about_page_csp_allowlist_and_assert()) {
     NS_ASSERTION(foundDefaultSrc, "about: page must have a CSP");
     return;
   }
@@ -665,3 +739,117 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
              "about: page must not contain a CSP including 'unsafe-inline'");
 }
 #endif
+
+/* static */
+bool nsContentSecurityUtils::ValidateScriptFilename(const char* aFilename,
+                                                    bool aIsSystemRealm) {
+  static Maybe<bool> sGeneralConfigFilenameSet;
+  // If the pref is permissive, allow everything
+  if (StaticPrefs::security_allow_parent_unrestricted_js_loads()) {
+    return true;
+  }
+
+  // If we're not in the parent process allow everything (presently)
+  if (!XRE_IsE10sParentProcess()) {
+    return true;
+  }
+
+  // We only perform a check of this preference on the Main Thread
+  // (because a String-based preference check is only safe on Main Thread.)
+  // The consequence of this is that if a user is using userChromeJS _and_
+  // the scripts they use start a worker - we will enter this function,
+  // skip over this pref check that would normally cause us to allow the
+  // load - and we will block it.
+  // While not ideal, we do not officially support userChromeJS, and hopefully
+  // the usage of workers is even lower than userChromeJS usage.
+  if (NS_IsMainThread()) {
+    // This preference is a file used for autoconfiguration of Firefox
+    // by administrators. It will also run in the parent process and throw
+    // assumptions about what can run where out of the window.
+    if (!sGeneralConfigFilenameSet.isSome()) {
+      nsAutoString jsConfigPref;
+      Preferences::GetString("general.config.filename", jsConfigPref);
+      sGeneralConfigFilenameSet.emplace(!jsConfigPref.IsEmpty());
+    }
+    if (sGeneralConfigFilenameSet.value()) {
+      MOZ_LOG(sCSMLog, LogLevel::Debug,
+              ("Allowing a javascript load of %s because "
+               "general.config.filename is set",
+               aFilename));
+      return true;
+    }
+  }
+
+  if (XRE_IsE10sParentProcess() &&
+      !StaticPrefs::extensions_webextensions_remote()) {
+    sWebExtensionsRemoteWasEverDisabled = true;
+    MOZ_LOG(sCSMLog, LogLevel::Debug,
+            ("Allowing a javascript load of %s because the web extension "
+             "process is disabled.",
+             aFilename));
+    return true;
+  }
+  if (XRE_IsE10sParentProcess() && sWebExtensionsRemoteWasEverDisabled) {
+    MOZ_LOG(sCSMLog, LogLevel::Debug,
+            ("Allowing a javascript load of %s because the web extension "
+             "process was disabled at some point.",
+             aFilename));
+    return true;
+  }
+
+  NS_ConvertUTF8toUTF16 filenameU(aFilename);
+  if (StringBeginsWith(filenameU, NS_LITERAL_STRING("chrome://"))) {
+    // If it's a chrome:// url, allow it
+    return true;
+  }
+  if (StringBeginsWith(filenameU, NS_LITERAL_STRING("resource://"))) {
+    // If it's a resource:// url, allow it
+    return true;
+  }
+  if (StringBeginsWith(filenameU, NS_LITERAL_STRING("file://"))) {
+    // We will temporarily allow all file:// URIs through for now
+    return true;
+  }
+  if (StringBeginsWith(filenameU, NS_LITERAL_STRING("jar:file://"))) {
+    // We will temporarily allow all jar URIs through for now
+    return true;
+  }
+  if (filenameU.Equals(NS_LITERAL_STRING("about:sync-log"))) {
+    // about:sync-log runs in the parent process and displays a directory
+    // listing. The listing has inline javascript that executes on load.
+    return true;
+  }
+
+  // Log to MOZ_LOG
+  MOZ_LOG(sCSMLog, LogLevel::Info,
+          ("ValidateScriptFilename System:%i %s\n", (aIsSystemRealm ? 1 : 0),
+           aFilename));
+
+  // Send Telemetry
+  FilenameTypeAndDetails fileNameTypeAndDetails =
+      FilenameToFilenameType(filenameU, true);
+
+  Telemetry::EventID eventType =
+      Telemetry::EventID::Security_Javascriptload_Parentprocess;
+
+  mozilla::Maybe<nsTArray<EventExtraEntry>> extra;
+  if (fileNameTypeAndDetails.second().isSome()) {
+    extra = Some<nsTArray<EventExtraEntry>>({EventExtraEntry{
+        NS_LITERAL_CSTRING("fileinfo"),
+        NS_ConvertUTF16toUTF8(fileNameTypeAndDetails.second().value())}});
+  } else {
+    extra = Nothing();
+  }
+
+  if (!sTelemetryEventEnabled.exchange(true)) {
+    sTelemetryEventEnabled = true;
+    Telemetry::SetEventRecordingEnabled(NS_LITERAL_CSTRING("security"), true);
+  }
+  Telemetry::RecordEvent(eventType,
+                         mozilla::Some(fileNameTypeAndDetails.first()), extra);
+
+  // Presently we are not enforcing any restrictions for the script filename,
+  // we're only reporting Telemetry. In the future we will assert in debug
+  // builds and return false to prevent execution in non-debug builds.
+  return true;
+}

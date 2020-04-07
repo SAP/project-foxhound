@@ -21,53 +21,40 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIURI.h"
-#include "nsIContentViewer.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/ScriptLoader.h"
-#include "nsIAppShell.h"
 #include "nsCRT.h"
 #include "prtime.h"
 #include "mozilla/Logging.h"
-#include "nsNodeUtils.h"
 #include "nsIContent.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/Preferences.h"
 
 #include "nsGenericHTMLElement.h"
 
 #include "nsIScriptElement.h"
 
-#include "nsIComponentManager.h"
-#include "nsIServiceManager.h"
-
 #include "nsDocElementCreatedNotificationRunner.h"
 #include "nsGkAtoms.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
-#include "nsIHttpChannel.h"
-#include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
 #include "nsStubDocumentObserver.h"
 #include "nsHTMLDocument.h"
-#include "nsICookieService.h"
 #include "nsTArray.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsIPrincipal.h"
 #include "nsTextFragment.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsNameSpaceManager.h"
 
 #include "nsIStyleSheetLinkingElement.h"
-#include "nsITimer.h"
 #include "nsError.h"
 #include "nsContentPolicyUtils.h"
 #include "nsIScriptContext.h"
 #include "nsStyleLinkElement.h"
 
-#include "nsIPrompt.h"
 #include "nsLayoutCID.h"
-#include "nsIDocShellTreeItem.h"
 
 #include "nsEscape.h"
 #include "nsNodeInfoManager.h"
@@ -872,7 +859,8 @@ void HTMLContentSink::NotifyInsert(nsIContent* aContent,
     // Note that aContent->OwnerDoc() may be different to mDocument already.
     MOZ_AUTO_DOC_UPDATE(aContent ? aContent->OwnerDoc() : mDocument.get(),
                         true);
-    nsNodeUtils::ContentInserted(NODE_FROM(aContent, mDocument), aChildContent);
+    MutationObservers::NotifyContentInserted(NODE_FROM(aContent, mDocument),
+                                             aChildContent);
     mLastNotificationTime = PR_Now();
   }
 

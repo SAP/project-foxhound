@@ -8,13 +8,13 @@
 #ifndef SkTypeface_win_dw_DEFINED
 #define SkTypeface_win_dw_DEFINED
 
-#include "SkAdvancedTypefaceMetrics.h"
-#include "SkDWrite.h"
-#include "SkHRESULT.h"
-#include "SkLeanWindows.h"
-#include "SkTScopedComPtr.h"
-#include "SkTypeface.h"
-#include "SkTypefaceCache.h"
+#include "include/core/SkTypeface.h"
+#include "src/core/SkAdvancedTypefaceMetrics.h"
+#include "src/core/SkLeanWindows.h"
+#include "src/core/SkTypefaceCache.h"
+#include "src/utils/win/SkDWrite.h"
+#include "src/utils/win/SkHRESULT.h"
+#include "src/utils/win/SkTScopedComPtr.h"
 
 #include <dwrite.h>
 #include <dwrite_1.h>
@@ -60,6 +60,7 @@ private:
         , fRenderingMode(DWRITE_RENDERING_MODE_DEFAULT)
         , fGamma(2.2f)
         , fContrast(1.0f)
+        , fClearTypeLevel(1.0f)
     {
         if (!SUCCEEDED(fDWriteFontFace->QueryInterface(&fDWriteFontFace1))) {
             // IUnknown::QueryInterface states that if it fails, punk will be set to nullptr.
@@ -107,7 +108,8 @@ public:
                                       SkFontStyle aStyle,
                                       DWRITE_RENDERING_MODE aRenderingMode,
                                       float aGamma,
-                                      float aContrast) {
+                                      float aContrast,
+                                      float aClearTypeLevel) {
         DWriteFontTypeface* typeface =
                 new DWriteFontTypeface(aStyle, factory, fontFace,
                                        nullptr, nullptr,
@@ -115,11 +117,13 @@ public:
         typeface->fRenderingMode = aRenderingMode;
         typeface->fGamma = aGamma;
         typeface->fContrast = aContrast;
+        typeface->fClearTypeLevel = aClearTypeLevel;
         return typeface;
     }
 
     bool ForceGDI() const { return fRenderingMode == DWRITE_RENDERING_MODE_GDI_CLASSIC; }
     DWRITE_RENDERING_MODE GetRenderingMode() const { return fRenderingMode; }
+    float GetClearTypeLevel() const { return fClearTypeLevel; }
 
 protected:
     void weak_dispose() const override {
@@ -142,9 +146,9 @@ protected:
     void getGlyphToUnicodeMap(SkUnichar* glyphToUnicode) const override;
     std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override;
     void onGetFontDescriptor(SkFontDescriptor*, bool*) const override;
-    int onCharsToGlyphs(const void* chars, Encoding encoding,
-                        uint16_t glyphs[], int glyphCount) const override;
+    void onCharsToGlyphs(const SkUnichar* chars, int count, SkGlyphID glyphs[]) const override;
     int onCountGlyphs() const override;
+    void getPostScriptGlyphNames(SkString*) const override;
     int onGetUPEM() const override;
     void onGetFamilyName(SkString* familyName) const override;
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override;
@@ -154,12 +158,14 @@ protected:
                                        int parameterCount) const override;
     int onGetTableTags(SkFontTableTag tags[]) const override;
     size_t onGetTableData(SkFontTableTag, size_t offset, size_t length, void* data) const override;
+    sk_sp<SkData> onCopyTableData(SkFontTableTag) const override;
 
 private:
     typedef SkTypeface INHERITED;
     DWRITE_RENDERING_MODE fRenderingMode;
     float fGamma;
     float fContrast;
+    float fClearTypeLevel;
 };
 
 #endif

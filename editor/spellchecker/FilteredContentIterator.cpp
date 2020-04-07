@@ -5,17 +5,17 @@
 
 #include "FilteredContentIterator.h"
 
-#include "mozilla/ContentIterator.h"
-#include "mozilla/Move.h"
-#include "mozilla/mozalloc.h"
-#include "mozilla/dom/AbstractRange.h"
+#include <utility>
 
+#include "mozilla/ContentIterator.h"
+#include "mozilla/dom/AbstractRange.h"
+#include "mozilla/mozalloc.h"
+#include "nsAtom.h"
 #include "nsComponentManagerUtils.h"
 #include "nsComposeTxtSrvFilter.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsError.h"
-#include "nsAtom.h"
 #include "nsIContent.h"
 #include "nsINode.h"
 #include "nsISupportsBase.h"
@@ -48,7 +48,7 @@ nsresult FilteredContentIterator::Init(nsINode* aRoot) {
   mDirection = eForward;
   mCurrentIterator = &mPreIterator;
 
-  mRange = new nsRange(aRoot);
+  mRange = nsRange::Create(aRoot);
   mRange->SelectNode(*aRoot, IgnoreErrors());
 
   nsresult rv = mPreIterator.Init(mRange);
@@ -225,11 +225,12 @@ static bool ContentIsInTraversalRange(nsIContent* aContent, bool aIsPreMode,
 
   if (!aIsPreMode) ++indx;
 
-  int32_t startRes = nsContentUtils::ComparePoints(
+  const Maybe<int32_t> startRes = nsContentUtils::ComparePoints(
       aStartContainer, aStartOffset, parentNode, indx);
-  int32_t endRes = nsContentUtils::ComparePoints(aEndContainer, aEndOffset,
-                                                 parentNode, indx);
-  return (startRes <= 0) && (endRes >= 0);
+  const Maybe<int32_t> endRes = nsContentUtils::ComparePoints(
+      aEndContainer, aEndOffset, parentNode, indx);
+  return !NS_WARN_IF(!startRes || !endRes) && (*startRes <= 0) &&
+         (*endRes >= 0);
 }
 
 static bool ContentIsInTraversalRange(nsRange* aRange, nsIContent* aNextContent,

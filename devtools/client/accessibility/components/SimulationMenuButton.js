@@ -16,7 +16,7 @@ const {
   div,
 } = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { L10N } = require("../utils/l10n");
+const { L10N } = require("devtools/client/accessibility/utils/l10n");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 const MenuButton = createFactory(
   require("devtools/client/shared/components/menu/MenuButton")
@@ -28,7 +28,7 @@ const {
 const {
   accessibility: { SIMULATION_TYPE },
 } = require("devtools/shared/constants");
-const actions = require("../actions/simulation");
+const actions = require("devtools/client/accessibility/actions/simulation");
 
 loader.lazyGetter(this, "MenuItem", function() {
   return createFactory(
@@ -58,9 +58,10 @@ const SIMULATION_MENU_LABELS = {
 class SimulationMenuButton extends Component {
   static get propTypes() {
     return {
-      simulator: PropTypes.object.isRequired,
+      simulate: PropTypes.func,
       simulation: PropTypes.object.isRequired,
       dispatch: PropTypes.func.isRequired,
+      toolboxDoc: PropTypes.object.isRequired,
     };
   }
 
@@ -71,20 +72,20 @@ class SimulationMenuButton extends Component {
   }
 
   disableSimulation() {
-    const { dispatch, simulator } = this.props;
+    const { dispatch, simulate: simulateFunc } = this.props;
 
-    dispatch(actions.simulate(simulator));
+    dispatch(actions.simulate(simulateFunc));
   }
 
   toggleSimulation(simKey) {
-    const { dispatch, simulation, simulator } = this.props;
+    const { dispatch, simulation, simulate: simulateFunc } = this.props;
 
     if (!simulation[simKey]) {
       if (gTelemetry) {
         gTelemetry.keyedScalarAdd(TELEMETRY_SIMULATION_ACTIVATED, simKey, 1);
       }
 
-      dispatch(actions.simulate(simulator, [simKey]));
+      dispatch(actions.simulate(simulateFunc, [simKey]));
       return;
     }
 
@@ -92,7 +93,7 @@ class SimulationMenuButton extends Component {
   }
 
   render() {
-    const { simulation } = this.props;
+    const { simulation, toolboxDoc } = this.props;
     const simulationMenuButtonId = "simulation-menu-button";
     const toolbarLabelID = "accessibility-simulation-label";
     const currSimulation = Object.entries(simulation).find(
@@ -145,7 +146,7 @@ class SimulationMenuButton extends Component {
           className: `devtools-button toolbar-menu-button simulation${
             currSimulation ? " active" : ""
           }`,
-          doc: document,
+          toolboxDoc,
           label: L10N.getStr(
             SIMULATION_MENU_LABELS[currSimulation ? currSimulation[0] : "NONE"]
           ),

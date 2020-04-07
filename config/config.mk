@@ -136,17 +136,11 @@ ifdef MOZ_PROFILE_GENERATE
 PGO_CFLAGS += -DNS_FREE_PERMANENT_DATA=1
 PGO_CFLAGS += $(if $(filter $(notdir $<),$(notdir $(NO_PROFILE_GUIDED_OPTIMIZE))),,$(PROFILE_GEN_CFLAGS))
 PGO_LDFLAGS += $(PROFILE_GEN_LDFLAGS)
-ifeq (WINNT,$(OS_ARCH))
-AR_FLAGS += -LTCG
-endif
 endif # MOZ_PROFILE_GENERATE
 
 ifdef MOZ_PROFILE_USE
 PGO_CFLAGS += $(if $(filter $(notdir $<),$(notdir $(NO_PROFILE_GUIDED_OPTIMIZE))),,$(PROFILE_USE_CFLAGS))
 PGO_LDFLAGS += $(PROFILE_USE_LDFLAGS)
-ifeq (WINNT,$(OS_ARCH))
-AR_FLAGS += -LTCG
-endif
 endif # MOZ_PROFILE_USE
 endif # NO_PROFILE_GUIDED_OPTIMIZE
 
@@ -195,6 +189,10 @@ HOST_CXXFLAGS = $(COMPUTED_HOST_CXXFLAGS) $(_HOST_DEPEND_CFLAGS)
 HOST_C_LDFLAGS = $(COMPUTED_HOST_C_LDFLAGS)
 HOST_CXX_LDFLAGS = $(COMPUTED_HOST_CXX_LDFLAGS)
 
+WASM_CFLAGS = $(COMPUTED_WASM_CFLAGS) $(_DEPEND_CFLAGS) $(MK_COMPILE_DEFINES)
+WASM_CXXFLAGS = $(COMPUTED_WASM_CXXFLAGS) $(_DEPEND_CFLAGS) $(MK_COMPILE_DEFINES)
+WASM_LDFLAGS = $(COMPUTED_WASM_LDFLAGS)
+
 ifdef MOZ_LTO
 ifeq (Darwin,$(OS_TARGET))
 # When linking on macOS, debug info is not linked along with the final binary,
@@ -230,6 +228,9 @@ color_flags_vars := \
   COMPILE_CMFLAGS \
   COMPILE_CMMFLAGS \
   LDFLAGS \
+  WASM_LDFLAGS \
+  WASM_CFLAGS \
+  WASM_CXXFLAGS \
   $(NULL)
 
 ifdef MACH_STDOUT_ISATTY
@@ -427,23 +428,6 @@ endif # ! WINNT
 # autoconf.mk sets OBJ_SUFFIX to an error to avoid use before including
 # this file
 OBJ_SUFFIX := $(_OBJ_SUFFIX)
-
-OBJS_VAR_SUFFIX := OBJS
-
-# PGO builds with GCC and clang-cl build objects with instrumentation in
-# a first pass, then objects optimized, without instrumentation, in a
-# second pass. If we overwrite the objects from the first pass with
-# those from the second, we end up not getting instrumentation data for
-# better optimization on incremental builds. As a consequence, we use a
-# different object suffix for the first pass.
-ifdef MOZ_PROFILE_GENERATE
-ifneq (,$(GNU_CC)$(CLANG_CL))
-OBJS_VAR_SUFFIX := PGO_OBJS
-ifndef NO_PROFILE_GUIDED_OPTIMIZE
-OBJ_SUFFIX := i_o
-endif
-endif
-endif
 
 PLY_INCLUDE = -I$(MOZILLA_DIR)/other-licenses/ply
 

@@ -6,14 +6,13 @@
 module.exports = {
   attachRefToWebConsoleUI: () => {},
   canRewind: () => false,
-  emitEvent: () => {},
+  emitForTests: () => {},
   proxy: {
     client: {},
     releaseActor: actor => console.log("Release actor", actor),
   },
   onViewSourceInDebugger: () => {},
   onViewSourceInStyleEditor: () => {},
-  onViewSourceInScratchpad: () => {},
   openNetworkPanel: () => {},
   resendNetworkRequest: () => {},
   sourceMapService: {

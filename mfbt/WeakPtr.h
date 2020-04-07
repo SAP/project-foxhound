@@ -215,8 +215,13 @@ template <typename T>
 class SupportsWeakPtr {
  protected:
   ~SupportsWeakPtr() {
-    static_assert(IsBaseOf<SupportsWeakPtr<T>, T>::value,
+    static_assert(std::is_base_of<SupportsWeakPtr<T>, T>::value,
                   "T must derive from SupportsWeakPtr<T>");
+    DetachWeakPtr();
+  }
+
+ protected:
+  void DetachWeakPtr() {
     if (mSelfReferencingWeakPtr) {
       mSelfReferencingWeakPtr.mRef->detach();
     }
@@ -329,6 +334,28 @@ class WeakPtr {
 
   RefPtr<WeakReference> mRef;
 };
+
+#define NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR tmp->DetachWeakPtr();
+
+#define NS_IMPL_CYCLE_COLLECTION_WEAK_PTR(class_, ...) \
+  NS_IMPL_CYCLE_COLLECTION_CLASS(class_)               \
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(class_)        \
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(__VA_ARGS__)       \
+    NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR           \
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_END                  \
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(class_)      \
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(__VA_ARGS__)     \
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+#define NS_IMPL_CYCLE_COLLECTION_WEAK_PTR_INHERITED(class_, super_, ...) \
+  NS_IMPL_CYCLE_COLLECTION_CLASS(class_)                                 \
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(class_, super_)        \
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(__VA_ARGS__)                         \
+    NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR                             \
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_END                                    \
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(class_, super_)      \
+    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(__VA_ARGS__)                       \
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 }  // namespace mozilla
 

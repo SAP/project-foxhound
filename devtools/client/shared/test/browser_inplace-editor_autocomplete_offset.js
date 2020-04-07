@@ -8,7 +8,8 @@ const AutocompletePopup = require("devtools/client/shared/autocomplete-popup");
 const { InplaceEditor } = require("devtools/client/shared/inplace-editor");
 loadHelperScript("helper_inplace_editor.js");
 
-const TEST_URI = CHROME_URL_ROOT + "doc_inplace-editor_autocomplete_offset.xul";
+const TEST_URI =
+  CHROME_URL_ROOT + "doc_inplace-editor_autocomplete_offset.xhtml";
 
 // Test the inplace-editor autocomplete popup is aligned with the completed query.
 // Which means when completing "style=display:flex; color:" the popup will aim to be
@@ -57,7 +58,7 @@ add_task(async function() {
   await addTab(
     "data:text/html;charset=utf-8,inplace editor CSS value autocomplete"
   );
-  const [host, , doc] = await createHost("bottom", TEST_URI);
+  const { host, doc } = await createHost("bottom", TEST_URI);
 
   const popup = new AutocompletePopup(doc, { autoSelect: true });
 

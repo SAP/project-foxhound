@@ -14,6 +14,7 @@
 #include "mozilla/Result.h"      // for Result
 
 #include "jsapi.h"             // for JSContext
+#include "jstypes.h"           // for JS_PUBLIC_API
 #include "NamespaceImports.h"  // for Value, MutableHandleValue, HandleId
 
 #include "gc/Rooting.h"       // for HandleDebuggerObject
@@ -22,7 +23,7 @@
 #include "vm/JSObject.h"      // for JSObject (ptr only)
 #include "vm/NativeObject.h"  // for NativeObject
 
-class JSAtom;
+class JS_PUBLIC_API JSAtom;
 
 namespace js {
 
@@ -164,6 +165,7 @@ class DebuggerObject : public NativeObject {
   bool isArrowFunction() const;
   bool isAsyncFunction() const;
   bool isGeneratorFunction() const;
+  bool isClassConstructor() const;
   bool isGlobal() const;
   bool isScriptedProxy() const;
   bool isPromise() const;
@@ -200,6 +202,7 @@ class DebuggerObject : public NativeObject {
   static MOZ_MUST_USE bool construct(JSContext* cx, unsigned argc, Value* vp);
 
   struct CallData;
+  struct PromiseReactionRecordBuilder;
 
   static MOZ_MUST_USE bool getErrorReport(JSContext* cx,
                                           HandleObject maybeError,

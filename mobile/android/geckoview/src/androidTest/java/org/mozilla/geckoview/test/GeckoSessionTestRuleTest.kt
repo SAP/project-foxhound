@@ -13,8 +13,8 @@ import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.*
 import org.mozilla.geckoview.test.util.Callbacks
 import org.mozilla.geckoview.test.util.UiThreadUtils
 
-import android.support.test.filters.MediumTest
-import android.support.test.runner.AndroidJUnit4
+import androidx.test.filters.MediumTest
+import androidx.test.ext.junit.runners.AndroidJUnit4
 
 import org.hamcrest.Matchers.*
 import org.json.JSONArray
@@ -1260,15 +1260,12 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
         assertThat("Callback count should be correct", counter, equalTo(2))
     }
 
-    @WithDisplay(width = 10, height = 10)
+    @WithDisplay(width = 100, height = 100)
     @Test fun synthesizeTap() {
-        // synthesizeTap is unreliable under e10s.
-        assumeThat(sessionRule.env.isMultiprocess, equalTo(false))
-
         sessionRule.session.loadTestPath(CLICK_TO_RELOAD_HTML_PATH)
         sessionRule.session.waitForPageStop()
 
-        sessionRule.session.synthesizeTap(5, 5)
+        sessionRule.session.synthesizeTap(50, 50)
         sessionRule.session.waitForPageStop()
     }
 
@@ -1641,10 +1638,6 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     @IgnoreCrash
     @Test fun contentCrashIgnored() {
         assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
-        // Cannot test x86 debug builds due to Gecko's "ah_crap_handler"
-        // that waits for debugger to attach during a SIGSEGV.
-        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
-                   equalTo(false))
 
         mainSession.loadUri(CONTENT_CRASH_URL)
         mainSession.waitUntilCalled(object : Callbacks.ContentDelegate {
@@ -1657,10 +1650,6 @@ class GeckoSessionTestRuleTest : BaseSessionTest(noErrorCollector = true) {
     fun contentCrashFails() {
         assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
         assumeThat(sessionRule.env.shouldShutdownOnCrash(), equalTo(false))
-        // Cannot test x86 debug builds due to Gecko's "ah_crap_handler"
-        // that waits for debugger to attach during a SIGSEGV.
-        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
-                   equalTo(false))
 
         sessionRule.session.loadUri(CONTENT_CRASH_URL)
         sessionRule.waitForPageStop()

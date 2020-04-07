@@ -24,7 +24,7 @@ ${helpers.single_keyword(
     "-moz-top-layer",
     "none top",
     engines="gecko",
-    gecko_constant_prefix="NS_STYLE_TOP_LAYER",
+    gecko_enum_prefix="StyleTopLayer",
     gecko_ffi_name="mTopLayer",
     animation_value_type="none",
     enabled_in="ua",
@@ -47,6 +47,7 @@ ${helpers.single_keyword(
     values="static absolute relative fixed ${'sticky' if engine in ['gecko', 'servo-2013'] else ''}"
     engines="gecko servo-2013 servo-2020"
     animation_value_type="discrete"
+    gecko_enum_prefix="StylePositionProperty"
     flags="CREATES_STACKING_CONTEXT ABSPOS_CB"
     spec="https://drafts.csswg.org/css-position/#position-property"
     servo_restyle_damage="rebuild_and_reflow"
@@ -54,6 +55,9 @@ ${helpers.single_keyword(
 impl computed_value::T {
     pub fn is_absolutely_positioned(self) -> bool {
         matches!(self, Self::Absolute | Self::Fixed)
+    }
+    pub fn is_relative(self) -> bool {
+        self == Self::Relative
     }
 }
 </%helpers:single_keyword>
@@ -128,7 +132,6 @@ ${helpers.single_keyword(
         "Overflow",
         "computed::Overflow::Visible",
         engines="gecko servo-2013 servo-2020",
-        servo_2020_pref="layout.2020.unimplemented",
         logical_group="overflow",
         logical=logical,
         animation_value_type="discrete",
@@ -397,7 +400,7 @@ ${helpers.predefined_type(
     engines="gecko",
     animation_value_type="ComputedValue",
     gecko_pref="layout.css.motion-path.enabled",
-    flags="CREATES_STACKING_CONTEXT FIXPOS_CB",
+    flags="CREATES_STACKING_CONTEXT FIXPOS_CB CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-path-property",
     servo_restyle_damage="reflow_out_of_flow"
 )}
@@ -410,6 +413,7 @@ ${helpers.predefined_type(
     engines="gecko",
     animation_value_type="ComputedValue",
     gecko_pref="layout.css.motion-path.enabled",
+    flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-distance-property",
     servo_restyle_damage="reflow_out_of_flow"
 )}
@@ -422,6 +426,7 @@ ${helpers.predefined_type(
     engines="gecko",
     animation_value_type="ComputedValue",
     gecko_pref="layout.css.motion-path.enabled",
+    flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-rotate-property",
     servo_restyle_damage="reflow_out_of_flow"
 )}
@@ -434,6 +439,7 @@ ${helpers.predefined_type(
     engines="gecko",
     animation_value_type="ComputedValue",
     gecko_pref="layout.css.motion-path.enabled",
+    flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-anchor-property",
     servo_restyle_damage="reflow_out_of_flow",
     boxed=True
@@ -447,6 +453,7 @@ ${helpers.single_keyword(
     engines="gecko",
     spec="https://drafts.csswg.org/cssom-view/#propdef-scroll-behavior",
     animation_value_type="discrete",
+    gecko_enum_prefix="StyleScrollBehavior",
 )}
 
 ${helpers.predefined_type(
@@ -467,13 +474,15 @@ ${helpers.predefined_type(
     animation_value_type="discrete",
 )}
 
-% for axis in ["x", "y"]:
+% for (axis, logical) in ALL_AXES:
     ${helpers.predefined_type(
         "overscroll-behavior-" + axis,
         "OverscrollBehavior",
         "computed::OverscrollBehavior::Auto",
         engines="gecko",
         needs_context=False,
+        logical_group="overscroll-behavior",
+        logical=logical,
         gecko_pref="layout.css.overscroll-behavior.enabled",
         spec="https://wicg.github.io/overscroll-behavior/#overscroll-behavior-properties",
         animation_value_type="discrete",
@@ -488,6 +497,7 @@ ${helpers.single_keyword(
     engines="gecko",
     spec="https://drafts.fxtf.org/compositing/#isolation",
     flags="CREATES_STACKING_CONTEXT",
+    gecko_enum_prefix="StyleIsolation",
     animation_value_type="discrete",
 )}
 
@@ -583,7 +593,7 @@ ${helpers.single_keyword(
 ${helpers.predefined_type(
     "transform-style",
     "TransformStyle",
-    "computed::TransformStyle::" + ("Flat" if engine == "gecko" else "Auto"),
+    "computed::TransformStyle::Flat",
     engines="gecko servo-2013 servo-2020",
     servo_2020_pref="layout.2020.unimplemented",
     spec="https://drafts.csswg.org/css-transforms-2/#transform-style-property",
@@ -625,22 +635,10 @@ ${helpers.predefined_type(
     "Appearance",
     "computed::Appearance::None",
     engines="gecko",
-    alias="-webkit-appearance:layout.css.webkit-appearance.enabled",
+    alias="-webkit-appearance",
     spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-appearance)",
     animation_value_type="discrete",
     gecko_ffi_name="mAppearance",
-)}
-
-${helpers.predefined_type(
-    "-moz-binding",
-    "url::UrlOrNone",
-    "computed::url::UrlOrNone::none()",
-    engines="gecko",
-    animation_value_type="none",
-    gecko_ffi_name="mBinding",
-    gecko_pref="layout.css.moz-binding.content.enabled",
-    enabled_in="chrome",
-    spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-binding)",
 )}
 
 ${helpers.single_keyword(
@@ -683,10 +681,10 @@ ${helpers.predefined_type(
 
 ${helpers.predefined_type(
     "shape-outside",
-    "basic_shape::FloatAreaShape",
-    "generics::basic_shape::ShapeSource::None",
+    "basic_shape::ShapeOutside",
+    "generics::basic_shape::ShapeOutside::None",
     engines="gecko",
-    animation_value_type="basic_shape::FloatAreaShape",
+    animation_value_type="basic_shape::ShapeOutside",
     spec="https://drafts.csswg.org/css-shapes/#shape-outside-property",
 )}
 

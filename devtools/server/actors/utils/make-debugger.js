@@ -6,7 +6,6 @@
 
 const EventEmitter = require("devtools/shared/event-emitter");
 const Debugger = require("Debugger");
-const ReplayDebugger = require("../replay/debugger");
 
 const { reportException } = require("devtools/shared/DevToolsUtils");
 
@@ -59,22 +58,15 @@ module.exports = function makeDebugger({
   findDebuggees,
   shouldAddNewGlobalAsDebuggee,
 } = {}) {
-  const dbg = isReplaying ? new ReplayDebugger() : new Debugger();
+  const dbg = new Debugger();
   EventEmitter.decorate(dbg);
 
   dbg.allowUnobservedAsmJS = true;
   dbg.uncaughtExceptionHook = reportDebuggerHookException;
 
-  function onNewDebuggee(global) {
-    if (dbg.onNewDebuggee) {
-      dbg.onNewDebuggee(global);
-    }
-  }
-
   const onNewGlobalObject = function(global) {
     if (shouldAddNewGlobalAsDebuggee(global)) {
       safeAddDebuggee(this, global);
-      onNewDebuggee(global);
     }
   };
 
@@ -82,7 +74,6 @@ module.exports = function makeDebugger({
   dbg.addDebuggees = function() {
     for (const global of findDebuggees(this)) {
       safeAddDebuggee(this, global);
-      onNewDebuggee(global);
     }
   };
 
@@ -105,9 +96,15 @@ const reportDebuggerHookException = e => reportException("DBG-SERVER", e);
  * Add |global| as a debuggee to |dbg|, handling error cases.
  */
 function safeAddDebuggee(dbg, global) {
+  let globalDO;
   try {
-    dbg.addDebuggee(global);
+    globalDO = dbg.addDebuggee(global);
   } catch (e) {
     // Ignoring attempt to add the debugger's compartment as a debuggee.
+    return;
+  }
+
+  if (dbg.onNewDebuggee) {
+    dbg.onNewDebuggee(globalDO);
   }
 }

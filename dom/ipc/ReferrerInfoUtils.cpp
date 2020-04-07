@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ReferrerInfoUtils.h"
-#include "nsISerializable.h"
 #include "nsSerializationHelper.h"
 
 namespace IPC {
@@ -46,7 +45,7 @@ bool ParamTraits<nsIReferrerInfo*>::Read(const Message* aMsg,
   NS_ENSURE_SUCCESS(rv, false);
   nsCOMPtr<nsIReferrerInfo> referrerInfo = do_QueryInterface(iSupports);
   NS_ENSURE_TRUE(referrerInfo, false);
-  *aResult = referrerInfo.forget();
+  *aResult = ToRefPtr(std::move(referrerInfo));
   return true;
 }
 

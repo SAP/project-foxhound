@@ -131,7 +131,8 @@ WebExtensionPolicy::WebExtensionPolicy(GlobalObject& aGlobal,
     : mId(NS_AtomizeMainThread(aInit.mId)),
       mHostname(aInit.mMozExtensionHostname),
       mName(aInit.mName),
-      mContentSecurityPolicy(aInit.mContentSecurityPolicy),
+      mExtensionPageCSP(aInit.mExtensionPageCSP),
+      mContentScriptCSP(aInit.mContentScriptCSP),
       mLocalizeCallback(aInit.mLocalizeCallback),
       mIsPrivileged(aInit.mIsPrivileged),
       mPermissions(new AtomSet(aInit.mPermissions)) {
@@ -158,8 +159,12 @@ WebExtensionPolicy::WebExtensionPolicy(GlobalObject& aGlobal,
         aInit.mBackgroundScripts.Value());
   }
 
-  if (mContentSecurityPolicy.IsVoid()) {
-    EPS().DefaultCSP(mContentSecurityPolicy);
+  if (mExtensionPageCSP.IsVoid()) {
+    EPS().GetDefaultCSP(mExtensionPageCSP);
+  }
+
+  if (mContentScriptCSP.IsVoid()) {
+    EPS().GetDefaultCSP(mContentScriptCSP);
   }
 
   mContentScripts.SetCapacity(aInit.mContentScripts.Length());
@@ -480,9 +485,11 @@ void WebExtensionPolicy::GetReadyPromise(
   }
 }
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(WebExtensionPolicy, mParent,
-                                      mLocalizeCallback, mHostPermissions,
-                                      mWebAccessiblePaths, mContentScripts)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WEAK_PTR(WebExtensionPolicy, mParent,
+                                               mLocalizeCallback,
+                                               mHostPermissions,
+                                               mWebAccessiblePaths,
+                                               mContentScripts)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WebExtensionPolicy)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY

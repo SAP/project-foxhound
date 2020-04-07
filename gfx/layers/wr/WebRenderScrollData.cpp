@@ -21,10 +21,11 @@ WebRenderLayerScrollData::WebRenderLayerScrollData()
     : mDescendantCount(-1),
       mTransformIsPerspective(false),
       mEventRegionsOverride(EventRegionsOverride::NoOverride),
+      mFixedPositionSides(mozilla::SideBits::eNone),
       mFixedPosScrollContainerId(ScrollableLayerGuid::NULL_SCROLL_ID),
       mRenderRoot(wr::RenderRoot::Default) {}
 
-WebRenderLayerScrollData::~WebRenderLayerScrollData() {}
+WebRenderLayerScrollData::~WebRenderLayerScrollData() = default;
 
 void WebRenderLayerScrollData::InitializeRoot(int32_t aDescendantCount) {
   mDescendantCount = aDescendantCount;

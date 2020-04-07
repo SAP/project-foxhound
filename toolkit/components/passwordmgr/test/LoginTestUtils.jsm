@@ -78,7 +78,7 @@ this.LoginTestUtils = {
     let { LoginManagerParent } = ChromeUtils.import(
       "resource://gre/modules/LoginManagerParent.jsm"
     );
-    LoginManagerParent._generatedPasswordsByPrincipalOrigin.clear();
+    LoginManagerParent.getGeneratedPasswordsByPrincipalOrigin().clear();
   },
 
   /**
@@ -126,7 +126,7 @@ this.LoginTestUtils = {
  * Any modification to the test data requires updating the tests accordingly, in
  * particular the search tests.
  */
-this.LoginTestUtils.testData = {
+LoginTestUtils.testData = {
   /**
    * Returns a new nsILoginInfo for use with form submits.
    *
@@ -147,6 +147,9 @@ this.LoginTestUtils.testData = {
     loginInfo.QueryInterface(Ci.nsILoginMetaInfo);
     if (modifications) {
       for (let [name, value] of Object.entries(modifications)) {
+        if (name == "httpRealm" && value !== null) {
+          throw new Error("httpRealm not supported for form logins");
+        }
         loginInfo[name] = value;
       }
     }
@@ -171,6 +174,11 @@ this.LoginTestUtils.testData = {
     loginInfo.QueryInterface(Ci.nsILoginMetaInfo);
     if (modifications) {
       for (let [name, value] of Object.entries(modifications)) {
+        if (name == "formActionOrigin" && value !== null) {
+          throw new Error(
+            "formActionOrigin not supported for HTTP auth. logins"
+          );
+        }
         loginInfo[name] = value;
       }
     }
@@ -207,7 +215,7 @@ this.LoginTestUtils.testData = {
         "form_field_password"
       ),
 
-      // Subdomains are treated as completely different sites.
+      // Subdomains can be treated as completely different sites depending on the UI invoked.
       new LoginInfo(
         "https://example.com",
         "https://example.com",
@@ -447,7 +455,7 @@ this.LoginTestUtils.testData = {
   },
 };
 
-this.LoginTestUtils.recipes = {
+LoginTestUtils.recipes = {
   getRecipeParent() {
     let { LoginManagerParent } = ChromeUtils.import(
       "resource://gre/modules/LoginManagerParent.jsm"
@@ -461,7 +469,7 @@ this.LoginTestUtils.recipes = {
   },
 };
 
-this.LoginTestUtils.masterPassword = {
+LoginTestUtils.masterPassword = {
   masterPassword: "omgsecret!",
 
   _set(enable) {
@@ -504,7 +512,7 @@ this.LoginTestUtils.masterPassword = {
 /**
  * Utilities related to interacting with login fields in content.
  */
-this.LoginTestUtils.loginField = {
+LoginTestUtils.loginField = {
   checkPasswordMasked(field, expected, msg) {
     let { editor } = field;
     let valueLength = field.value.length;
@@ -526,12 +534,12 @@ this.LoginTestUtils.loginField = {
   },
 };
 
-this.LoginTestUtils.generation = {
+LoginTestUtils.generation = {
   LENGTH: 15,
   REGEX: /^[a-km-np-zA-HJ-NP-Z2-9]{15}$/,
 };
 
-this.LoginTestUtils.telemetry = {
+LoginTestUtils.telemetry = {
   async waitForEventCount(count, process = "content", category = "pwmgr") {
     let events = await TestUtils.waitForCondition(() => {
       let events = Services.telemetry.snapshotEvents(

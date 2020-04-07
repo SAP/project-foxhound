@@ -10,7 +10,6 @@
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIObserverService.h"
-#include "nsIPrincipal.h"
 #include "mozilla/LoadContextInfo.h"
 
 using namespace mozilla;
@@ -123,7 +122,10 @@ nsApplicationCacheService::ChooseApplicationCache(
 
   RefPtr<nsOfflineCacheDevice> device;
   nsresult rv = mCacheService->GetOfflineDevice(getter_AddRefs(device));
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_FAILED(rv)) {
+    // Silently fail and provide no appcache to the caller.
+    return NS_OK;
+  }
 
   return device->ChooseApplicationCache(key, aLoadContextInfo, out);
 }
@@ -187,49 +189,4 @@ nsApplicationCacheService::GetGroupsTimeOrdered(nsTArray<nsCString>& keys) {
   nsresult rv = mCacheService->GetOfflineDevice(getter_AddRefs(device));
   NS_ENSURE_SUCCESS(rv, rv);
   return device->GetGroupsTimeOrdered(keys);
-}
-
-//-----------------------------------------------------------------------------
-// AppCacheClearDataObserver: handles clearing appcache data for app uninstall
-// and clearing user data events.
-//-----------------------------------------------------------------------------
-
-namespace {
-
-class AppCacheClearDataObserver final : public nsIObserver {
- public:
-  NS_DECL_ISUPPORTS
-
-  // nsIObserver implementation.
-  NS_IMETHOD
-  Observe(nsISupports* aSubject, const char* aTopic,
-          const char16_t* aData) override {
-    MOZ_ASSERT(!nsCRT::strcmp(aTopic, "clear-origin-attributes-data"));
-
-    nsresult rv;
-
-    nsCOMPtr<nsIApplicationCacheService> cacheService =
-        do_GetService(NS_APPLICATIONCACHESERVICE_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    return cacheService->EvictMatchingOriginAttributes(
-        nsDependentString(aData));
-  }
-
- private:
-  ~AppCacheClearDataObserver() = default;
-};
-
-NS_IMPL_ISUPPORTS(AppCacheClearDataObserver, nsIObserver)
-
-}  // namespace
-
-// Instantiates and registers AppCacheClearDataObserver for notifications
-void nsApplicationCacheService::AppClearDataObserverInit() {
-  nsCOMPtr<nsIObserverService> observerService = services::GetObserverService();
-  if (observerService) {
-    RefPtr<AppCacheClearDataObserver> obs = new AppCacheClearDataObserver();
-    observerService->AddObserver(obs, "clear-origin-attributes-data",
-                                 /*ownsWeak=*/false);
-  }
 }

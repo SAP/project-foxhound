@@ -25,7 +25,6 @@
 #include "mozilla/media/MediaUtils.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "nsIScriptError.h"
 #include "nsIUUIDGenerator.h"
 #include "nsPIDOMWindow.h"
 #include "nsProxyRelease.h"
@@ -90,7 +89,7 @@ class DOMMediaStream::PlaybackTrackListener : public MediaStreamTrackConsumer {
   }
 
  protected:
-  virtual ~PlaybackTrackListener() {}
+  virtual ~PlaybackTrackListener() = default;
 
   RefPtr<DOMMediaStream> mStream;
 };
@@ -110,6 +109,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(DOMMediaStream,
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mTracks)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mConsumersToKeepAlive)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mPlaybackTrackListener)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(DOMMediaStream,
@@ -373,6 +373,7 @@ already_AddRefed<DOMMediaStream> DOMMediaStream::Clone() {
 }
 
 bool DOMMediaStream::Active() const { return mActive; }
+bool DOMMediaStream::Audible() const { return mAudible; }
 
 MediaStreamTrack* DOMMediaStream::GetTrackById(const nsAString& aId) const {
   for (const auto& track : mTracks) {
@@ -394,6 +395,16 @@ void DOMMediaStream::AddTrackInternal(MediaStreamTrack* aTrack) {
       ("DOMMediaStream %p Adding owned track %p", this, aTrack));
   AddTrack(*aTrack);
   DispatchTrackEvent(NS_LITERAL_STRING("addtrack"), aTrack);
+}
+
+void DOMMediaStream::RemoveTrackInternal(MediaStreamTrack* aTrack) {
+  LOG(LogLevel::Debug,
+      ("DOMMediaStream %p Removing owned track %p", this, aTrack));
+  if (!HasTrack(*aTrack)) {
+    return;
+  }
+  RemoveTrack(*aTrack);
+  DispatchTrackEvent(NS_LITERAL_STRING("removetrack"), aTrack);
 }
 
 already_AddRefed<nsIPrincipal> DOMMediaStream::GetPrincipal() {
@@ -455,20 +466,6 @@ void DOMMediaStream::UnregisterTrackListener(TrackListener* aListener) {
   mTrackListeners.RemoveElement(aListener);
 }
 
-void DOMMediaStream::SetFinishedOnInactive(bool aFinishedOnInactive) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  if (mFinishedOnInactive == aFinishedOnInactive) {
-    return;
-  }
-
-  mFinishedOnInactive = aFinishedOnInactive;
-
-  if (mFinishedOnInactive && !ContainsLiveTracks(mTracks)) {
-    NotifyTrackRemoved(nullptr);
-  }
-}
-
 void DOMMediaStream::NotifyTrackAdded(const RefPtr<MediaStreamTrack>& aTrack) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -515,10 +512,6 @@ void DOMMediaStream::NotifyTrackRemoved(
       NS_ASSERTION(false, "Shouldn't remove a live track if already inactive");
       return;
     }
-  }
-
-  if (!mFinishedOnInactive) {
-    return;
   }
 
   if (mAudible) {

@@ -190,15 +190,6 @@ class WindowsError final {
 template <typename T>
 using WindowsErrorResult = Result<T, WindowsError>;
 
-#if defined(MOZILLA_INTERNAL_API)
-
-template <typename T>
-using LauncherResult = WindowsErrorResult<T>;
-
-using WindowsErrorType = WindowsError;
-
-#else
-
 struct LauncherError {
   LauncherError(const char* aFile, int aLine, WindowsError aWin32Error)
       : mFile(aFile), mLine(aLine), mError(aWin32Error) {}
@@ -220,14 +211,31 @@ struct LauncherError {
   bool operator!=(const WindowsError& aOther) const { return mError != aOther; }
 };
 
+#if defined(MOZILLA_INTERNAL_API)
+
+template <typename T>
+using LauncherResult = WindowsErrorResult<T>;
+
+template <typename T>
+using LauncherResultWithLineInfo = Result<T, LauncherError>;
+
+using WindowsErrorType = WindowsError;
+
+#else
+
 template <typename T>
 using LauncherResult = Result<T, LauncherError>;
+
+template <typename T>
+using LauncherResultWithLineInfo = LauncherResult<T>;
 
 using WindowsErrorType = LauncherError;
 
 #endif  // defined(MOZILLA_INTERNAL_API)
 
 using LauncherVoidResult = LauncherResult<Ok>;
+
+using LauncherVoidResultWithLineInfo = LauncherResultWithLineInfo<Ok>;
 
 #if defined(MOZILLA_INTERNAL_API)
 
@@ -309,6 +317,9 @@ inline bool WaitForInputIdle(HANDLE aProcess,
     if (elapsed >= aTimeoutMs) {
       return false;
     }
+
+    // ::WaitForInputIdle() doesn't always set the last-error code on failure
+    ::SetLastError(ERROR_SUCCESS);
 
     DWORD waitResult = ::WaitForInputIdle(aProcess, aTimeoutMs - elapsed);
     if (!waitResult) {
@@ -449,7 +460,7 @@ class FileUniqueId final {
 class MOZ_RAII AutoVirtualProtect final {
  public:
   AutoVirtualProtect(void* aAddress, size_t aLength, DWORD aProtFlags,
-                     HANDLE aTargetProcess = nullptr)
+                     HANDLE aTargetProcess = ::GetCurrentProcess())
       : mAddress(aAddress),
         mLength(aLength),
         mTargetProcess(aTargetProcess),
@@ -473,6 +484,8 @@ class MOZ_RAII AutoVirtualProtect final {
   explicit operator bool() const { return mError.IsSuccess(); }
 
   WindowsError GetError() const { return mError; }
+
+  DWORD PrevProt() const { return mPrevProt; }
 
   AutoVirtualProtect(const AutoVirtualProtect&) = delete;
   AutoVirtualProtect(AutoVirtualProtect&&) = delete;
@@ -526,6 +539,8 @@ inline UniquePtr<wchar_t[]> GetFullBinaryPath() {
 
 class ModuleVersion final {
  public:
+  constexpr ModuleVersion() : mVersion(0ULL) {}
+
   explicit ModuleVersion(const VS_FIXEDFILEINFO& aFixedInfo)
       : mVersion((static_cast<uint64_t>(aFixedInfo.dwFileVersionMS) << 32) |
                  static_cast<uint64_t>(aFixedInfo.dwFileVersionLS)) {}
@@ -554,6 +569,11 @@ class ModuleVersion final {
   }
 
   bool operator<(const uint64_t& aOther) const { return mVersion < aOther; }
+
+  ModuleVersion& operator=(const uint64_t aIntVersion) {
+    mVersion = aIntVersion;
+    return *this;
+  }
 
  private:
   uint64_t mVersion;
@@ -612,6 +632,18 @@ inline LauncherResult<ModuleVersion> GetModuleVersion(nsIFile* aFile) {
 struct CoTaskMemFreeDeleter {
   void operator()(void* aPtr) { ::CoTaskMemFree(aPtr); }
 };
+
+inline LauncherResult<TOKEN_ELEVATION_TYPE> GetElevationType(
+    const nsAutoHandle& aToken) {
+  DWORD retLen;
+  TOKEN_ELEVATION_TYPE elevationType;
+  if (!::GetTokenInformation(aToken.get(), TokenElevationType, &elevationType,
+                             sizeof(elevationType), &retLen)) {
+    return LAUNCHER_ERROR_FROM_LAST();
+  }
+
+  return elevationType;
+}
 
 }  // namespace mozilla
 

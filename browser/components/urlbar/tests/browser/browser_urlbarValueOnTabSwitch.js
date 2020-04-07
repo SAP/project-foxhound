@@ -12,6 +12,12 @@
 const TEST_URL = `${TEST_BASE_URL}dummy_page.html`;
 
 add_task(async function() {
+  // autofill may conflict with the test scope, by filling missing parts of
+  // the url due to openViewOnFocus.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.autoFill", false]],
+  });
+
   let charsToDelete,
     deletedURLTab,
     fullURLTab,
@@ -45,7 +51,7 @@ add_task(async function() {
   BrowserTestUtils.loadURI(partialURLTab.linkedBrowser, testURL);
   await Promise.all([loaded1, loaded2, loaded3]);
 
-  testURL = gURLBar.trimValue(testURL);
+  testURL = BrowserUtils.trimURL(testURL);
   testPartialURL = testURL.substr(0, testURL.length - charsToDelete);
 
   function cleanUp() {

@@ -16,11 +16,9 @@
 #include "mozilla/dom/nsCSPService.h"
 #include "nsContentPolicy.h"
 #include "nsIURI.h"
-#include "nsIDocShell.h"
 #include "nsIBrowserChild.h"
 #include "nsIContent.h"
 #include "nsIImageLoadingContent.h"
-#include "nsILoadContext.h"
 #include "nsCOMArray.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
@@ -44,7 +42,7 @@ nsresult NS_NewContentPolicy(nsIContentPolicy** aResult) {
 
 nsContentPolicy::nsContentPolicy() : mPolicies(NS_CONTENTPOLICY_CATEGORY) {}
 
-nsContentPolicy::~nsContentPolicy() {}
+nsContentPolicy::~nsContentPolicy() = default;
 
 #ifdef DEBUG
 #  define WARN_IF_URI_UNINITIALIZED(uri, name)            \

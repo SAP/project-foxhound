@@ -58,37 +58,38 @@ ScriptAndCounts::ScriptAndCounts(ScriptAndCounts&& sac)
 void SetFrameArgumentsObject(JSContext* cx, AbstractFramePtr frame,
                              HandleScript script, JSObject* argsobj);
 
-/* static */ inline JSFunction* LazyScript::functionDelazifying(
-    JSContext* cx, Handle<LazyScript*> script) {
-  RootedFunction fun(cx, script->functionNonDelazifying());
-  if (fun && !JSFunction::getOrCreateScript(cx, fun)) {
-    return nullptr;
-  }
-  return fun;
+inline void ScriptWarmUpData::initEnclosingScript(BaseScript* enclosingScript) {
+  MOZ_ASSERT(data_ == ResetState());
+  setTaggedPtr<EnclosingScriptTag>(enclosingScript);
+  static_assert(std::is_base_of<gc::TenuredCell, BaseScript>::value,
+                "BaseScript must be TenuredCell to avoid post-barriers");
+}
+inline void ScriptWarmUpData::clearEnclosingScript() {
+  BaseScript::writeBarrierPre(toEnclosingScript());
+  data_ = ResetState();
+}
+
+inline void ScriptWarmUpData::initEnclosingScope(Scope* enclosingScope) {
+  MOZ_ASSERT(data_ == ResetState());
+  setTaggedPtr<EnclosingScopeTag>(enclosingScope);
+  static_assert(std::is_base_of<gc::TenuredCell, Scope>::value,
+                "Scope must be TenuredCell to avoid post-barriers");
+}
+inline void ScriptWarmUpData::clearEnclosingScope() {
+  Scope::writeBarrierPre(toEnclosingScope());
+  data_ = ResetState();
+}
+
+inline JSPrincipals* BaseScript::principals() const {
+  return realm()->principals();
+}
+
+inline JSScript* BaseScript::asJSScript() {
+  MOZ_ASSERT(!isLazyScript());
+  return static_cast<JSScript*>(this);
 }
 
 }  // namespace js
-
-inline JSFunction* JSScript::functionDelazifying() const {
-  JSFunction* fun = function();
-  if (fun && fun->isInterpretedLazy()) {
-    fun->setUnlazifiedScript(const_cast<JSScript*>(this));
-    // If this script has a LazyScript, make sure the LazyScript has a
-    // reference to the script when delazifying its canonical function.
-    if (lazyScript && !lazyScript->maybeScript()) {
-      lazyScript->initScript(const_cast<JSScript*>(this));
-    }
-  }
-  return fun;
-}
-
-inline void JSScript::ensureNonLazyCanonicalFunction() {
-  // Infallibly delazify the canonical script.
-  JSFunction* fun = function();
-  if (fun && fun->isInterpretedLazy()) {
-    functionDelazifying();
-  }
-}
 
 inline JSFunction* JSScript::getFunction(size_t index) {
   JSObject* obj = getObject(index);
@@ -157,8 +158,6 @@ inline js::Shape* JSScript::initialEnvironmentShape() const {
   }
   return nullptr;
 }
-
-inline JSPrincipals* JSScript::principals() { return realm()->principals(); }
 
 inline bool JSScript::ensureHasAnalyzedArgsUsage(JSContext* cx) {
   if (analyzedArgsUsage()) {

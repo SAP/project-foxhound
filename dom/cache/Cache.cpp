@@ -6,6 +6,7 @@
 
 #include "mozilla/dom/cache/Cache.h"
 
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "mozilla/dom/Headers.h"
 #include "mozilla/dom/InternalResponse.h"
 #include "mozilla/dom/Promise.h"
@@ -44,8 +45,9 @@ bool IsValidPutRequestURL(const nsAString& aUrl, ErrorResult& aRv) {
   }
 
   if (!validScheme) {
-    aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>(NS_LITERAL_STRING("Request"),
-                                               aUrl);
+    // `url` has been modified, so don't use it here.
+    aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>("Request",
+                                               NS_ConvertUTF16toUTF8(aUrl));
     return false;
   }
 
@@ -56,8 +58,7 @@ static bool IsValidPutRequestMethod(const Request& aRequest, ErrorResult& aRv) {
   nsAutoCString method;
   aRequest.GetMethod(method);
   if (!method.LowerCaseEqualsLiteral("get")) {
-    NS_ConvertASCIItoUTF16 label(method);
-    aRv.ThrowTypeError<MSG_INVALID_REQUEST_METHOD>(label);
+    aRv.ThrowTypeError<MSG_INVALID_REQUEST_METHOD>(method);
     return false;
   }
 
@@ -79,14 +80,13 @@ static bool IsValidPutResponseStatus(Response& aResponse,
                                      ErrorResult& aRv) {
   if ((aPolicy == PutStatusPolicy::RequireOK && !aResponse.Ok()) ||
       aResponse.Status() == 206) {
-    uint32_t t = static_cast<uint32_t>(aResponse.Type());
-    NS_ConvertASCIItoUTF16 type(ResponseTypeValues::strings[t].value,
-                                ResponseTypeValues::strings[t].length);
-    nsAutoString status;
+    nsCString type(ResponseTypeValues::GetString(aResponse.Type()));
+    nsAutoCString status;
     status.AppendInt(aResponse.Status());
     nsAutoString url;
     aResponse.GetUrl(url);
-    aRv.ThrowTypeError<MSG_CACHE_ADD_FAILED_RESPONSE>(type, status, url);
+    aRv.ThrowTypeError<MSG_CACHE_ADD_FAILED_RESPONSE>(
+        type, status, NS_ConvertUTF16toUTF8(url));
     return false;
   }
 
@@ -129,7 +129,7 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
     responseList.SetCapacity(mRequestList.Length());
 
     bool isArray;
-    if (NS_WARN_IF(!JS_IsArrayObject(aCx, aValue, &isArray) || !isArray)) {
+    if (NS_WARN_IF(!JS::IsArrayObject(aCx, aValue, &isArray) || !isArray)) {
       Fail();
       return;
     }
@@ -137,7 +137,7 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
     JS::Rooted<JSObject*> obj(aCx, &aValue.toObject());
 
     uint32_t length;
-    if (NS_WARN_IF(!JS_GetArrayLength(aCx, obj, &length))) {
+    if (NS_WARN_IF(!JS::GetArrayLength(aCx, obj, &length))) {
       Fail();
       return;
     }
@@ -177,7 +177,7 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
       if (!IsValidPutResponseStatus(*response, PutStatusPolicy::RequireOK,
                                     errorResult)) {
         // TODO: abort the fetch requests we have running (bug 1157434)
-        mPromise->MaybeReject(errorResult);
+        mPromise->MaybeReject(std::move(errorResult));
         return;
       }
 
@@ -196,7 +196,7 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
     result.WouldReportJSException();
     if (NS_WARN_IF(result.Failed())) {
       // TODO: abort the fetch requests we have running (bug 1157434)
-      mPromise->MaybeReject(result);
+      mPromise->MaybeReject(std::move(result));
       return;
     }
 
@@ -212,7 +212,7 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
   }
 
  private:
-  ~FetchHandler() {}
+  ~FetchHandler() = default;
 
   void Fail() { mPromise->MaybeRejectWithTypeError<MSG_FETCH_FAILED>(); }
 
@@ -364,9 +364,8 @@ already_AddRefed<Promise> Cache::AddAll(
         return nullptr;
       }
     } else {
-      requestOrString.SetAsUSVString().Rebind(
-          aRequestList[i].GetAsUSVString().Data(),
-          aRequestList[i].GetAsUSVString().Length());
+      requestOrString.SetAsUSVString().ShareOrDependUpon(
+          aRequestList[i].GetAsUSVString());
     }
 
     RefPtr<Request> request =

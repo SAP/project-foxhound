@@ -136,7 +136,6 @@ struct ParamTraits<mozilla::WidgetMouseEventBase> {
     WriteParam(aMsg, aParam.mButton);
     WriteParam(aMsg, aParam.mButtons);
     WriteParam(aMsg, aParam.mPressure);
-    WriteParam(aMsg, aParam.mHitCluster);
     WriteParam(aMsg, aParam.mInputSource);
   }
 
@@ -147,7 +146,6 @@ struct ParamTraits<mozilla::WidgetMouseEventBase> {
            ReadParam(aMsg, aIter, &aResult->mButton) &&
            ReadParam(aMsg, aIter, &aResult->mButtons) &&
            ReadParam(aMsg, aIter, &aResult->mPressure) &&
-           ReadParam(aMsg, aIter, &aResult->mHitCluster) &&
            ReadParam(aMsg, aIter, &aResult->mInputSource);
   }
 };
@@ -484,7 +482,8 @@ struct ParamTraits<mozilla::TextRangeStyle> {
 
   static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mDefinedStyles);
-    WriteParam(aMsg, aParam.mLineStyle);
+    WriteParam(aMsg, static_cast<mozilla::TextRangeStyle::LineStyleType>(
+                         aParam.mLineStyle));
     WriteParam(aMsg, aParam.mIsBoldLine);
     WriteParam(aMsg, aParam.mForegroundColor);
     WriteParam(aMsg, aParam.mBackgroundColor);
@@ -493,12 +492,17 @@ struct ParamTraits<mozilla::TextRangeStyle> {
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
                    paramType* aResult) {
-    return ReadParam(aMsg, aIter, &aResult->mDefinedStyles) &&
-           ReadParam(aMsg, aIter, &aResult->mLineStyle) &&
-           ReadParam(aMsg, aIter, &aResult->mIsBoldLine) &&
-           ReadParam(aMsg, aIter, &aResult->mForegroundColor) &&
-           ReadParam(aMsg, aIter, &aResult->mBackgroundColor) &&
-           ReadParam(aMsg, aIter, &aResult->mUnderlineColor);
+    mozilla::TextRangeStyle::LineStyleType lineStyle;
+    if (!ReadParam(aMsg, aIter, &aResult->mDefinedStyles) ||
+        !ReadParam(aMsg, aIter, &lineStyle) ||
+        !ReadParam(aMsg, aIter, &aResult->mIsBoldLine) ||
+        !ReadParam(aMsg, aIter, &aResult->mForegroundColor) ||
+        !ReadParam(aMsg, aIter, &aResult->mBackgroundColor) ||
+        !ReadParam(aMsg, aIter, &aResult->mUnderlineColor)) {
+      return false;
+    }
+    aResult->mLineStyle = mozilla::TextRangeStyle::ToLineStyle(lineStyle);
+    return true;
   }
 };
 
@@ -1354,6 +1358,13 @@ struct ParamTraits<mozilla::WheelDeltaAdjustmentStrategy>
           mozilla::WheelDeltaAdjustmentStrategy::eSentinel> {};
 
 template <>
+struct ParamTraits<mozilla::layers::APZWheelAction>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::layers::APZWheelAction,
+          mozilla::layers::APZWheelAction::Scroll,
+          mozilla::layers::kHighestAPZWheelAction> {};
+
+template <>
 struct ParamTraits<mozilla::ScrollWheelInput> {
   typedef mozilla::ScrollWheelInput paramType;
 
@@ -1375,6 +1386,7 @@ struct ParamTraits<mozilla::ScrollWheelInput> {
     WriteParam(aMsg, aParam.mIsMomentum);
     WriteParam(aMsg, aParam.mAllowToOverrideSystemScrollSpeed);
     WriteParam(aMsg, aParam.mWheelDeltaAdjustmentStrategy);
+    WriteParam(aMsg, aParam.mAPZAction);
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
@@ -1396,7 +1408,8 @@ struct ParamTraits<mozilla::ScrollWheelInput> {
            ReadParam(aMsg, aIter, &aResult->mIsMomentum) &&
            ReadParam(aMsg, aIter,
                      &aResult->mAllowToOverrideSystemScrollSpeed) &&
-           ReadParam(aMsg, aIter, &aResult->mWheelDeltaAdjustmentStrategy);
+           ReadParam(aMsg, aIter, &aResult->mWheelDeltaAdjustmentStrategy) &&
+           ReadParam(aMsg, aIter, &aResult->mAPZAction);
   }
 };
 

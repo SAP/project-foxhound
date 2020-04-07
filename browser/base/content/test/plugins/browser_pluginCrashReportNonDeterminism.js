@@ -57,7 +57,7 @@ const CRASH_URL =
  *        the crash reporter state.
  */
 function preparePlugin(browser, pluginFallbackState) {
-  return ContentTask.spawn(browser, pluginFallbackState, async function(
+  return SpecialPowers.spawn(browser, [pluginFallbackState], async function(
     contentPluginFallbackState
   ) {
     let plugin = content.document.getElementById("plugin");
@@ -105,6 +105,9 @@ let crashObserver = (subject, topic, data) => {
 
   let propBag = subject.QueryInterface(Ci.nsIPropertyBag2);
   let minidumpID = propBag.getPropertyAsAString("pluginDumpID");
+  let additionalMinidumps = propBag.getPropertyAsACString(
+    "additionalMinidumps"
+  );
 
   Services.crashmanager.ensureCrashIsPresent(minidumpID).then(() => {
     let minidumpDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
@@ -121,6 +124,16 @@ let crashObserver = (subject, topic, data) => {
 
     pluginDumpFile.remove(false);
     extraFile.remove(false);
+
+    if (additionalMinidumps.length) {
+      const names = additionalMinidumps.split(",");
+      for (const name of names) {
+        let additionalDumpFile = minidumpDir.clone();
+        additionalDumpFile.append(minidumpID + "-" + name + ".dmp");
+        additionalDumpFile.remove(false);
+      }
+    }
+
     crashDeferred.resolve();
   });
 };
@@ -158,7 +171,7 @@ add_task(async function testChromeHearsPluginCrashFirst() {
   // for crash data. in `testContentHearsCrashFirst we will delay the
   // response (simulating what happens if the parent doesn't know about
   // the crash yet).
-  await ContentTask.spawn(browser, null, async function() {
+  await SpecialPowers.spawn(browser, [], async function() {
     // At this point, the content process should have heard the
     // plugin crash message from the parent, and we are OK to emit
     // the PluginCrashed event.
@@ -184,7 +197,6 @@ add_task(async function testChromeHearsPluginCrashFirst() {
     let event = new content.PluginCrashedEvent("PluginCrashed", {
       pluginName: "",
       pluginDumpID: "",
-      browserDumpID: "",
       submittedCrashReport: false,
       bubbles: true,
       cancelable: true,
@@ -244,7 +256,7 @@ add_task(async function testContentHearsCrashFirst() {
     });
   });
 
-  await ContentTask.spawn(browser, null, async function() {
+  await SpecialPowers.spawn(browser, [], async function() {
     // At this point, the content process has not yet heard from the
     // parent about the crash report. Let's ensure that by making sure
     // we're not showing the plugin crash report UI.
@@ -260,7 +272,6 @@ add_task(async function testContentHearsCrashFirst() {
     let event = new content.PluginCrashedEvent("PluginCrashed", {
       pluginName: "",
       pluginDumpID: "",
-      browserDumpID: "",
       submittedCrashReport: false,
       bubbles: true,
       cancelable: true,
@@ -271,7 +282,7 @@ add_task(async function testContentHearsCrashFirst() {
   let receivedData = await parentRequestPromise;
   is(receivedData.runID, runID, "Should get a request for the same crash.");
 
-  await ContentTask.spawn(browser, null, function() {
+  await SpecialPowers.spawn(browser, [], function() {
     let plugin = content.document.getElementById("plugin");
     let statusDiv = plugin.openOrClosedShadowRoot.getElementById(
       "submitStatus"
@@ -286,7 +297,7 @@ add_task(async function testContentHearsCrashFirst() {
   // Now allow the parent to respond to the child with crash info:
   allowParentToRespond.resolve();
 
-  await ContentTask.spawn(browser, null, async function() {
+  await SpecialPowers.spawn(browser, [], async function() {
     // At this point, the content process will have heard the message
     // from the parent and reacted to it. We should be showing the plugin
     // crash report UI now.

@@ -11,6 +11,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
   RemoteSettingsClient: "resource://services-settings/RemoteSettingsClient.jsm",
+  SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
   Services: "resource://gre/modules/Services.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
@@ -42,16 +43,12 @@ var XULRuntime = Cc["@mozilla.org/xre/runtime;1"].getService(Ci.nsIXULRuntime);
 // Expand the amount of information available in error logs
 Services.prefs.setBoolPref("browser.search.log", true);
 
-// The geo-specific search tests assume certain prefs are already setup, which
-// might not be true when run in comm-central etc.  So create them here.
-Services.prefs.setBoolPref("browser.search.geoSpecificDefaults", true);
-Services.prefs.setIntPref("browser.search.geoip.timeout", 3000);
-// But still disable geoip lookups - tests that need it will re-configure this.
-Services.prefs.setCharPref("browser.search.geoip.url", "");
-// Also disable region defaults - tests using it will also re-configure it.
-Services.prefs
-  .getDefaultBranch(SearchUtils.BROWSER_SEARCH_PREF)
-  .setCharPref("geoSpecificDefaults.url", "");
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "gModernConfig",
+  SearchUtils.BROWSER_SEARCH_PREF + "modernConfig",
+  false
+);
 
 AddonTestUtils.init(this, false);
 AddonTestUtils.createAppInfo(
@@ -61,38 +58,54 @@ AddonTestUtils.createAppInfo(
   "42"
 );
 
+// Allow telemetry probes which may otherwise be disabled for some applications (e.g. Thunderbird)
+Services.prefs.setBoolPref(
+  "toolkit.telemetry.testing.overrideProductsCheck",
+  true
+);
+
 /**
- * Configure preferences to load engines from
- * chrome://testsearchplugin/locale/searchplugins/
+ * Load engines from test data located in particular folders.
+ *
+ * @param {string} [folder]
+ *   The folder name to use.
+ * @param {string} [subFolder]
+ *   The subfolder to use, if any.
+ * @param {array} [config]
+ *   An array which contains the configuration to set.
+ * @returns {object|null}
+ *   If this is the modern configuration, returns a stub for the method
+ *   that the configuration is obtained from.
  */
-function configureToLoadJarEngines() {
-  let searchExtensions = do_get_cwd();
-  searchExtensions.append("data");
-  searchExtensions.append("search-extensions");
-  let url = "file://" + searchExtensions.path;
+async function useTestEngines(
+  folder = "data",
+  subFolder = null,
+  config = null
+) {
+  let url = `resource://test/${folder}/`;
+  if (subFolder) {
+    url += `${subFolder}/`;
+  }
   let resProt = Services.io
     .getProtocolHandler("resource")
     .QueryInterface(Ci.nsIResProtocolHandler);
   resProt.setSubstitution("search-extensions", Services.io.newURI(url));
-}
-
-/**
- * Load engines from test data located in 'folder'.
- *
- * @param {string} folder
- *   The folder name to use.
- */
-function useTestEngines(folder) {
-  let searchExtensions = do_get_cwd();
-  searchExtensions.append("data");
-  searchExtensions.append(folder);
-  let resProt = Services.io
-    .getProtocolHandler("resource")
-    .QueryInterface(Ci.nsIResProtocolHandler);
-  resProt.setSubstitution(
-    "search-extensions",
-    Services.io.newURI("file://" + searchExtensions.path)
-  );
+  if (gModernConfig) {
+    if (config) {
+      return sinon
+        .stub(SearchEngineSelector.prototype, "getEngineConfiguration")
+        .returns(config);
+    }
+    let chan = NetUtil.newChannel({
+      uri: "resource://search-extensions/engines.json",
+      loadUsingSystemPrincipal: true,
+    });
+    let json = parseJsonFromStream(chan.open());
+    return sinon
+      .stub(SearchEngineSelector.prototype, "getEngineConfiguration")
+      .returns(json.data);
+  }
+  return null;
 }
 
 async function promiseCacheData() {
@@ -186,20 +199,6 @@ function isUSTimezone() {
 const kDefaultenginenamePref = "browser.search.defaultenginename";
 const kTestEngineName = "Test search engine";
 const TOPIC_LOCALES_CHANGE = "intl:app-locales-changed";
-
-/**
- * Overrides list.json with test data from the specified location,
- * e.g. data/list.json.
- *
- * @param {string} url
- *   The resource url to set the location from.
- */
-function useTestEngineConfig(url = "resource://test/data/") {
-  const resProt = Services.io
-    .getProtocolHandler("resource")
-    .QueryInterface(Ci.nsIResProtocolHandler);
-  resProt.setSubstitution("search-extensions", Services.io.newURI(url));
-}
 
 /**
  * Loads the current default engine list.json via parsing the json manually.
@@ -314,17 +313,28 @@ function readJSONFile(aFile) {
  *
  * @param {object} expectedObj
  * @param {object} actualObj
+ * @param {function} skipProp
+ *   A function that is called with the property name and its value, to see if
+ *   testing that property should be skipped or not.
  */
-function isSubObjectOf(expectedObj, actualObj) {
+function isSubObjectOf(expectedObj, actualObj, skipProp) {
   for (let prop in expectedObj) {
+    if (skipProp && skipProp(prop, expectedObj[prop])) {
+      continue;
+    }
     if (expectedObj[prop] instanceof Object) {
-      Assert.equal(expectedObj[prop].length, actualObj[prop].length);
-      isSubObjectOf(expectedObj[prop], actualObj[prop]);
+      Assert.equal(
+        actualObj[prop].length,
+        expectedObj[prop].length,
+        `Should have the correct length for property ${prop}`
+      );
+      isSubObjectOf(expectedObj[prop], actualObj[prop], skipProp);
     } else {
-      if (expectedObj[prop] != actualObj[prop]) {
-        info("comparing property " + prop);
-      }
-      Assert.equal(expectedObj[prop], actualObj[prop]);
+      Assert.equal(
+        actualObj[prop],
+        expectedObj[prop],
+        `Should have the correct value for property ${prop}`
+      );
     }
   }
 }
@@ -423,7 +433,7 @@ async function withGeoServer(
   let defaultBranch = Services.prefs.getDefaultBranch(
     SearchUtils.BROWSER_SEARCH_PREF
   );
-  let originalURL = defaultBranch.getCharPref(PREF_SEARCH_URL);
+  let originalURL = defaultBranch.getCharPref(PREF_SEARCH_URL, "");
   defaultBranch.setCharPref(PREF_SEARCH_URL, url);
   // Set a bogus user value so that running the test ensures we ignore it.
   Services.prefs.setCharPref(
@@ -434,7 +444,7 @@ async function withGeoServer(
   let geoLookupUrl = geoLookupData
     ? `http://localhost:${srv.identity.primaryPort}/lookup_geoip`
     : 'data:application/json,{"country_code": "FR"}';
-  Services.prefs.setCharPref("browser.search.geoip.url", geoLookupUrl);
+  Services.prefs.setCharPref("geo.provider-country.network.url", geoLookupUrl);
 
   try {
     await testFn(gRequests);
@@ -444,7 +454,7 @@ async function withGeoServer(
     Services.prefs.clearUserPref(
       SearchUtils.BROWSER_SEARCH_PREF + PREF_SEARCH_URL
     );
-    Services.prefs.clearUserPref("browser.search.geoip.url");
+    Services.prefs.clearUserPref("geo.provider-country.network.url");
   }
 }
 
@@ -520,21 +530,15 @@ function installTestEngine() {
   return addTestEngines([{ name: kTestEngineName, xmlFileName: "engine.xml" }]);
 }
 
-async function asyncReInit({
-  waitForRegionFetch = false,
-  skipReset = false,
-} = {}) {
+async function asyncReInit({ awaitRegionFetch = false } = {}) {
   let promises = [SearchTestUtils.promiseSearchNotification("reinit-complete")];
-  if (waitForRegionFetch) {
+  if (awaitRegionFetch) {
     promises.push(
       SearchTestUtils.promiseSearchNotification("ensure-known-region-done")
     );
   }
 
-  if (!skipReset) {
-    Services.search.reset();
-  }
-  Services.search.reInit(!waitForRegionFetch);
+  Services.search.reInit(awaitRegionFetch);
 
   return Promise.all(promises);
 }

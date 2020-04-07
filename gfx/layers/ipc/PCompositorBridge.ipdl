@@ -8,6 +8,7 @@
 include LayersSurfaces;
 include LayersMessages;
 include PlatformWidgetTypes;
+include PCompositorBridgeTypes;
 include protocol PAPZ;
 include protocol PAPZCTreeManager;
 include protocol PBrowser;
@@ -16,7 +17,9 @@ include protocol PCompositorManager;
 include protocol PCompositorWidget;
 include protocol PLayerTransaction;
 include protocol PTexture;
+include protocol PWebGL;
 include protocol PWebRenderBridge;
+include protocol PWebGPU;
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
 include "mozilla/layers/WebRenderMessageUtils.h";
@@ -44,6 +47,9 @@ using base::ProcessId from "base/process.h";
 using mozilla::wr::MaybeExternalImageId from "mozilla/webrender/WebRenderTypes.h";
 using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::TransactionId from "mozilla/layers/LayersTypes.h";
+using struct DxgiAdapterDesc from "mozilla/D3DMessageUtils.h";
+using mozilla::webgl::InitContextDesc from "mozilla/dom/WebGLIpdl.h";
+using mozilla::webgl::InitContextResult from "mozilla/dom/WebGLIpdl.h";
 
 namespace mozilla {
 namespace layers {
@@ -63,7 +69,6 @@ struct FrameStats {
   uint32_t skippedComposites;
   nsCString url;
 };
-
 
 /**
  * The PCompositorBridge protocol is a top-level protocol for the compositor.
@@ -101,6 +106,8 @@ sync refcounted protocol PCompositorBridge
   manages PTexture;
   manages PCompositorWidget;
   manages PWebRenderBridge;
+  manages PWebGL;
+  manages PWebGPU;
 
 child:
   // The child should invalidate retained layers. This is used for local
@@ -113,8 +120,9 @@ child:
   // the root layer tree).
   // transactionId is the id of the transaction before this composite, or 0
   // if there was no transaction since the last composite.
-  async DidComposite(LayersId id, TransactionId transactionId,
-                     TimeStamp compositeStart, TimeStamp compositeEnd);
+  prio(mediumhigh) async DidComposite(LayersId id, TransactionId transactionId,
+                                      TimeStamp compositeStart,
+                                      TimeStamp compositeEnd);
 
   async NotifyFrameStats(FrameStats[] aFrameStats);
 
@@ -153,6 +161,8 @@ child:
 
   async ObserveLayersUpdate(LayersId aLayersId, LayersObserverEpoch aEpoch, bool aActive);
 
+  async CompositorOptionsChanged(LayersId id, CompositorOptions newOptions);
+
 parent:
   async __delete__();
 
@@ -165,6 +175,10 @@ parent:
   // Must be called after Initialize(), and only succeeds if AsyncPanZoomEnabled() is true.
   async PAPZ(LayersId layersId);
   async PAPZCTreeManager(LayersId layersId);
+
+  // Constructor for WebGPU IPDL
+  // Must be called before Initialize().
+  async PWebGPU();
 
   /**
    * Confirmation callback for UpdatePluginConfigurations and HideAllPlugins.
@@ -271,11 +285,24 @@ parent:
   async BeginRecording(TimeStamp aRecordingStart)
     returns (bool success);
 
-  sync EndRecording()
+  async EndRecordingToDisk()
     returns (bool success);
+
+  async EndRecordingToMemory()
+    returns (CollectedFramesParams? frames);
+
+  sync SupportsAsyncDXGISurface()
+    returns (bool value);
+  sync PreferredDXGIAdapter()
+    returns (DxgiAdapterDesc desc);
 
   // To set up sharing the composited output to Firefox Reality on Desktop
   async RequestFxrOutput();
+
+  // Actor that represents one WebGL context.
+  // (modeled after `sync PBackgroundLSSnapshot`)
+  sync PWebGL(InitContextDesc desc)
+    returns (InitContextResult res);
 
 child:
   // Send back Compositor Frame Metrics from APZCs so tiled layers can

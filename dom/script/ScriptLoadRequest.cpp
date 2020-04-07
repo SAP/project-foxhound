@@ -12,7 +12,6 @@
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 #include "nsContentUtils.h"
-#include "nsICacheInfoChannel.h"
 #include "ScriptLoadRequest.h"
 #include "ScriptSettings.h"
 
@@ -95,8 +94,7 @@ ScriptLoadRequest::ScriptLoadRequest(ScriptKind aKind, nsIURI* aURI,
       mLineNo(1),
       mIntegrity(aIntegrity),
       mReferrer(aReferrer),
-      mUnreportedPreloadError(NS_OK),
-      mStreamingTime() {
+      mUnreportedPreloadError(NS_OK) {
   MOZ_ASSERT(mFetchOptions);
 }
 
@@ -156,8 +154,11 @@ inline ModuleLoadRequest* ScriptLoadRequest::AsModuleRequest() {
   return static_cast<ModuleLoadRequest*>(this);
 }
 
-void ScriptLoadRequest::SetScriptMode(bool aDeferAttr, bool aAsyncAttr) {
-  if (aAsyncAttr) {
+void ScriptLoadRequest::SetScriptMode(bool aDeferAttr, bool aAsyncAttr,
+                                      bool aLinkPreload) {
+  if (aLinkPreload) {
+    mScriptMode = ScriptMode::eLinkPreload;
+  } else if (aAsyncAttr) {
     mScriptMode = ScriptMode::eAsync;
   } else if (aDeferAttr || IsModuleRequest()) {
     mScriptMode = ScriptMode::eDeferred;

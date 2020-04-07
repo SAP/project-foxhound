@@ -13,15 +13,20 @@
 #include "mozilla/Poison.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "nsIWidget.h"
 #include "nsViewManager.h"
 #include "nsIFrame.h"
 #include "nsPresArena.h"
 #include "nsXULPopupManager.h"
+#include "nsIScreen.h"
 #include "nsIWidgetListener.h"
 #include "nsContentUtils.h"  // for nsAutoScriptBlocker
+#include "nsDocShell.h"
 #include "mozilla/TimelineConsumers.h"
 #include "mozilla/CompositeTimelineMarker.h"
+#include "mozilla/StartupTimeline.h"
 
 using namespace mozilla;
 
@@ -965,6 +970,69 @@ bool nsView::WindowResized(nsIWidget* aWidget, int32_t aWidth,
   return false;
 }
 
+#if defined(MOZ_WIDGET_ANDROID)
+void nsView::DynamicToolbarMaxHeightChanged(ScreenIntCoord aHeight) {
+  MOZ_ASSERT(XRE_IsParentProcess(),
+             "Should be only called for the browser parent process");
+  MOZ_ASSERT(this == mViewManager->GetRootView(),
+             "Should be called for the root view");
+
+  PresShell* presShell = mViewManager->GetPresShell();
+  if (!presShell) {
+    return;
+  }
+
+  dom::Document* document = presShell->GetDocument();
+  if (!document) {
+    return;
+  }
+
+  nsPIDOMWindowOuter* window = document->GetWindow();
+  if (!window) {
+    return;
+  }
+
+  nsContentUtils::CallOnAllRemoteChildren(
+      window, [&aHeight](dom::BrowserParent* aBrowserParent) -> CallState {
+        aBrowserParent->DynamicToolbarMaxHeightChanged(aHeight);
+        return CallState::Continue;
+      });
+}
+
+void nsView::DynamicToolbarOffsetChanged(ScreenIntCoord aOffset) {
+  MOZ_ASSERT(XRE_IsParentProcess(),
+             "Should be only called for the browser parent process");
+  MOZ_ASSERT(this == mViewManager->GetRootView(),
+             "Should be called for the root view");
+
+  PresShell* presShell = mViewManager->GetPresShell();
+  if (!presShell) {
+    return;
+  }
+
+  dom::Document* document = presShell->GetDocument();
+  if (!document) {
+    return;
+  }
+
+  nsPIDOMWindowOuter* window = document->GetWindow();
+  if (!window) {
+    return;
+  }
+
+  nsContentUtils::CallOnAllRemoteChildren(
+      window, [&aOffset](dom::BrowserParent* aBrowserParent) -> CallState {
+        // Skip background tabs.
+        if (!aBrowserParent->GetDocShellIsActive()) {
+          return CallState::Continue;
+        }
+
+        aBrowserParent->DynamicToolbarOffsetChanged(aOffset);
+        return CallState::Stop;
+      });
+}
+#endif
+
 bool nsView::RequestWindowClose(nsIWidget* aWidget) {
   if (mFrame && IsPopupWidget(aWidget) && mFrame->IsMenuPopupFrame()) {
     nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
@@ -1010,6 +1078,9 @@ void nsView::DidCompositeWindow(mozilla::layers::TransactionId aTransactionId,
   if (rootContext) {
     rootContext->NotifyDidPaintForSubtree(aTransactionId, aCompositeEnd);
   }
+
+  mozilla::StartupTimeline::RecordOnce(mozilla::StartupTimeline::FIRST_PAINT2,
+                                       aCompositeEnd);
 
   // If the two timestamps are identical, this was likely a fake composite
   // event which wouldn't be terribly useful to display.
@@ -1065,6 +1136,49 @@ nsEventStatus nsView::HandleEvent(WidgetGUIEvent* aEvent,
   }
 
   return result;
+}
+
+void nsView::SafeAreaInsetsChanged(const ScreenIntMargin& aSafeAreaInsets) {
+  if (!IsRoot()) {
+    return;
+  }
+
+  PresShell* presShell = mViewManager->GetPresShell();
+  if (!presShell) {
+    return;
+  }
+
+  ScreenIntMargin windowSafeAreaInsets;
+  LayoutDeviceIntRect windowRect = mWindow->GetScreenBounds();
+  nsCOMPtr<nsIScreen> screen = mWindow->GetWidgetScreen();
+  if (screen) {
+    windowSafeAreaInsets = nsContentUtils::GetWindowSafeAreaInsets(
+        screen, aSafeAreaInsets, windowRect);
+  }
+
+  presShell->GetPresContext()->SetSafeAreaInsets(windowSafeAreaInsets);
+
+  // https://github.com/w3c/csswg-drafts/issues/4670
+  // Actually we don't set this value on sub document. This behaviour is
+  // same as Blink.
+
+  dom::Document* document = presShell->GetDocument();
+  if (!document) {
+    return;
+  }
+
+  nsPIDOMWindowOuter* window = document->GetWindow();
+  if (!window) {
+    return;
+  }
+
+  nsContentUtils::CallOnAllRemoteChildren(
+      window,
+      [windowSafeAreaInsets](dom::BrowserParent* aBrowserParent) -> CallState {
+        Unused << aBrowserParent->SendSafeAreaInsetsChanged(
+            windowSafeAreaInsets);
+        return CallState::Continue;
+      });
 }
 
 bool nsView::IsPrimaryFramePaintSuppressed() {

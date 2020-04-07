@@ -96,6 +96,10 @@ nsresult GetOrigin(nsPIDOMWindowInner* aParent,
     return NS_ERROR_FAILURE;
   }
 
+  if (principal->GetIsIpAddress()) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+
   if (aOrigin.EqualsLiteral("null")) {
     // 4.1.1.3 If callerOrigin is an opaque origin, reject promise with a
     // DOMException whose name is "NotAllowedError", and terminate this
@@ -247,7 +251,7 @@ already_AddRefed<Promise> WebAuthnManager::MakeCredential(
   nsCString rpId;
   rv = GetOrigin(mParent, origin, rpId);
   if (NS_WARN_IF(rv.Failed())) {
-    promise->MaybeReject(rv);
+    promise->MaybeReject(std::move(rv));
     return promise.forget();
   }
 
@@ -258,7 +262,7 @@ already_AddRefed<Promise> WebAuthnManager::MakeCredential(
   CryptoBuffer userId;
   userId.Assign(aOptions.mUser.mId);
   if (userId.Length() > 64) {
-    promise->MaybeReject(NS_ERROR_DOM_TYPE_ERR);
+    promise->MaybeRejectWithTypeError("user.id is too long");
     return promise.forget();
   }
 
@@ -466,7 +470,7 @@ already_AddRefed<Promise> WebAuthnManager::GetAssertion(
   nsCString rpId;
   rv = GetOrigin(mParent, origin, rpId);
   if (NS_WARN_IF(rv.Failed())) {
-    promise->MaybeReject(rv);
+    promise->MaybeReject(std::move(rv));
     return promise.forget();
   }
 
@@ -539,8 +543,7 @@ already_AddRefed<Promise> WebAuthnManager::GetAssertion(
           NS_ConvertUTF16toUTF8 cStr(str);
           int i = FindEnumStringIndexImpl(
               cStr.get(), cStr.Length(), AuthenticatorTransportValues::strings);
-          if (i < 0 ||
-              i >= static_cast<int>(AuthenticatorTransport::EndGuard_)) {
+          if (i < 0) {
             continue;  // Unknown enum
           }
           AuthenticatorTransport t = static_cast<AuthenticatorTransport>(i);

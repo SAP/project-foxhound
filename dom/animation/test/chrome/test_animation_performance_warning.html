@@ -399,8 +399,7 @@ function testStyleChanges() {
       expected: [
         {
           property: 'transform',
-          runningOnCompositor: false,
-          warning: 'CompositorAnimationWarningTransformPreserve3D'
+          runningOnCompositor: true,
         }
       ]
     },
@@ -413,8 +412,7 @@ function testStyleChanges() {
       expected: [
         {
           property: 'translate',
-          runningOnCompositor: false,
-          warning: 'CompositorAnimationWarningTransformPreserve3D'
+          runningOnCompositor: true,
         }
       ]
     },
@@ -461,13 +459,11 @@ function testStyleChanges() {
         },
         {
           property: 'transform',
-          runningOnCompositor: false,
-          warning: 'CompositorAnimationWarningTransformPreserve3D'
+          runningOnCompositor: true,
         },
         {
           property: 'translate',
-          runningOnCompositor: false,
-          warning: 'CompositorAnimationWarningTransformPreserve3D'
+          runningOnCompositor: true,
         }
       ]
     },
@@ -617,8 +613,7 @@ function testMultipleAnimations() {
           expected: [
             {
               property: 'transform',
-              runningOnCompositor: false,
-              warning: 'CompositorAnimationWarningTransformPreserve3D'
+              runningOnCompositor: true,
             }
           ]
         },
@@ -629,8 +624,7 @@ function testMultipleAnimations() {
           expected: [
             {
               property: 'translate',
-              runningOnCompositor: false,
-              warning: 'CompositorAnimationWarningTransformPreserve3D'
+              runningOnCompositor: true,
             }
           ]
         },
@@ -1470,32 +1464,27 @@ function testTooLargeFrame() {
       await waitForFrame();
 
       // viewport depends on test environment.
-      const isWebRender =
-        SpecialPowers.DOMWindowUtils.layerManagerType == 'WebRender';
       var expectedWarning = new RegExp(
         "Animation cannot be run on the compositor because the area of the frame " +
         "\\(\\d+\\) is too large relative to the viewport " +
         "\\(larger than \\d+\\)");
-      if (isWebRender) {
-        // With WebRender, the large size frame could run on compositor.
-        assert_animation_property_state_equals(
-          animation.effect.getProperties(),
-          [ { property: subtest.property, runningOnCompositor: true } ]);
-      } else {
-        assert_animation_property_state_equals(
-          animation.effect.getProperties(),
-          [ {
-            property: subtest.property,
-            runningOnCompositor: false,
-            warning: expectedWarning
-          } ]);
-      }
+      assert_animation_property_state_equals(
+        animation.effect.getProperties(),
+        [ {
+          property: subtest.property,
+          runningOnCompositor: false,
+          warning: expectedWarning
+        } ]);
       animation.effect.target.style = 'width: 100px; height: 100px';
       await waitForFrame();
 
+      // With WebRender we appear to stick to the previous layerization decision
+      // after changing the bounds back to a smaller object.
+      const isWebRender =
+        SpecialPowers.DOMWindowUtils.layerManagerType == 'WebRender';
       assert_animation_property_state_equals(
         animation.effect.getProperties(),
-        [ { property: subtest.property, runningOnCompositor: true } ]);
+        [ { property: subtest.property, runningOnCompositor: !isWebRender } ]);
     }, subtest.property + ' on too big element - area');
 
     promise_test(async t => {
@@ -1512,33 +1501,26 @@ function testTooLargeFrame() {
       await waitForFrame();
 
       // viewport depends on test environment.
-      const isWebRender =
-        SpecialPowers.DOMWindowUtils.layerManagerType == 'WebRender';
       var expectedWarning = new RegExp(
         "Animation cannot be run on the compositor because the frame size " +
         "\\(20000, 1\\) is too large relative to the viewport " +
         "\\(larger than \\(\\d+, \\d+\\)\\) or larger than the " +
         "maximum allowed value \\(\\d+, \\d+\\)");
-      if (isWebRender) {
-        // With WebRender, the large size frame could run on compositor.
-        assert_animation_property_state_equals(
-          animation.effect.getProperties(),
-          [ { property: subtest.property, runningOnCompositor: true } ]);
-      } else {
-        assert_animation_property_state_equals(
-          animation.effect.getProperties(),
-          [ {
-            property: subtest.property,
-            runningOnCompositor: false,
-            warning: expectedWarning
-          } ]);
-      }
+      assert_animation_property_state_equals(
+        animation.effect.getProperties(),
+        [ {
+          property: subtest.property,
+          runningOnCompositor: false,
+          warning: expectedWarning
+        } ]);
       animation.effect.target.style = 'width: 100px; height: 100px';
       await waitForFrame();
 
+      const isWebRender =
+        SpecialPowers.DOMWindowUtils.layerManagerType == 'WebRender';
       assert_animation_property_state_equals(
         animation.effect.getProperties(),
-        [ { property: subtest.property, runningOnCompositor: true } ]);
+        [ { property: subtest.property, runningOnCompositor: !isWebRender } ]);
     }, subtest.property + ' on too big element - dimensions');
   });
 }
@@ -1644,6 +1626,27 @@ function testImportantRuleOverride() {
      'compositor because any of the properties has important rules');
 }
 
+function testCurrentColor() {
+  if (SpecialPowers.DOMWindowUtils.layerManagerType == 'WebRender') {
+    return; // skip this test until bug 1510030 landed.
+  }
+  promise_test(async t => {
+    const animation = addDivAndAnimate(t, { class: 'compositable' },
+                                       { backgroundColor: [ 'currentColor',
+                                                            'red' ] },
+                                       100 * MS_PER_SEC);
+    await waitForPaints();
+
+    assert_animation_property_state_equals(
+      animation.effect.getProperties(),
+      [ { property: 'background-color',
+          runningOnCompositor: false,
+          warning: 'CompositorAnimationWarningHasCurrentColor'
+      } ]);
+  }, 'Background color animations with `current-color` don\'t run on the '
+     + 'compositor');
+}
+
 function start() {
   var bundleService = SpecialPowers.Cc['@mozilla.org/intl/stringbundle;1']
     .getService(SpecialPowers.Ci.nsIStringBundleService);
@@ -1663,6 +1666,7 @@ function start() {
   testTooLargeFrame();
   testTransformSVG();
   testImportantRuleOverride();
+  testCurrentColor();
 
   promise_test(async t => {
     var div = addDiv(t, { class: 'compositable',

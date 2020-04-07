@@ -1,6 +1,12 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 :root {
   --section-width: 664px;
   --addon-icon-size: 32px;
+  --z-index-sticky-container: 1;
+  --z-index-popup: 10;
 }
 
 *|*[hidden] {
@@ -9,10 +15,68 @@
 
 body {
   cursor: default;
+  /* The page starts to look really bad lower than this. */
+  min-width: 500px;
 }
 
 .header-name {
   -moz-user-select: initial;
+}
+
+.sticky-container {
+  background: var(--in-content-page-background);
+  width: 100%;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-index-sticky-container);
+}
+
+.main-search {
+  background: var(--in-content-page-background);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding-inline-start: 28px;
+  padding-top: 20px;
+  padding-bottom: 30px;
+  max-width: var(--section-width);
+}
+
+search-addons > search-textbox {
+  margin-inline-end: 0;
+  width: 20em;
+}
+
+.search-label {
+  margin-inline-end: 8px;
+}
+
+.main-heading {
+  background: var(--in-content-page-background);
+  display: flex;
+  margin-inline-start: 28px;
+  padding-bottom: 16px;
+  max-width: var(--section-width);
+}
+
+.spacer {
+  flex-grow: 1;
+}
+
+#updates-message {
+  display: flex;
+  align-items: center;
+  margin-inline-end: 8px;
+}
+
+.back-button {
+  margin-inline-end: 16px;
+}
+
+/* Plugins aren't yet disabled by safemode (bug 342333),
+   so don't show that warning when viewing plugins. */
+#page-header[current-param="plugin"] message-bar[warning-type="safe-mode"] {
+  display: none;
 }
 
 #main {
@@ -21,6 +85,7 @@ body {
   max-width: var(--section-width);
 }
 
+global-warnings,
 #abuse-reports-messages {
   margin-inline-start: 28px;
   max-width: var(--section-width);
@@ -102,6 +167,7 @@ addon-card[expanded] .addon-card-message {
   /* Adjust height so that the image preserves the aspect ratio from AMO.
    * For details, see https://bugzilla.mozilla.org/show_bug.cgi?id=1546123 */
   height: calc(var(--section-width) * 92 / 680);
+  object-fit: cover;
 }
 
 .card-heading-icon {
@@ -118,10 +184,6 @@ addon-card[expanded] .addon-card-message {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-}
-
-.card-actions {
-  flex-shrink: 0;
 }
 
 .addon-name-container {
@@ -153,6 +215,7 @@ addon-card[expanded] .addon-card-message {
   background-size: 16px;
   background-repeat: no-repeat;
   background-position: center;
+  flex-shrink: 0;
 }
 
 .addon-badge-private-browsing-allowed {
@@ -168,6 +231,15 @@ addon-card[expanded] .addon-card-message {
   -moz-context-properties: fill;
 }
 
+.theme-enable-button {
+  min-width: auto;
+  height: auto;
+  font-size: 13px;
+  min-height: auto;
+  height: 24px;
+  margin: 0;
+}
+
 .addon-description {
   font-size: 14px;
   line-height: 20px;
@@ -177,9 +249,9 @@ addon-card[expanded] .addon-card-message {
 
 /* Prevent the content from wrapping unless expanded. */
 addon-card:not([expanded]) .card-contents {
-  /* Card padding times 4: 2 times for card, 1 between icon and content,
-   * 1 for the ... button. */
-  width: calc(var(--section-width) - var(--card-padding) * 4 - var(--addon-icon-size));
+  /* We're hiding the content when it's too long, so we need to define the
+   * width. As long as this is less than the width of its parent it works. */
+  width: 1px;
   white-space: nowrap;
 }
 
@@ -190,23 +262,23 @@ addon-card:not([expanded]) .addon-description {
   overflow-x: hidden;
 }
 
-.more-options-menu {
-  position: relative;
-  /* Add some negative margin to account for the button's padding */
-  margin-top: -10px;
-  margin-inline-end: -8px;
+.page-options-menu {
+  align-self: center;
+}
+
+.page-options-menu > .more-options-button {
+  background-image: url("chrome://mozapps/skin/extensions/utilities.svg");
+  width: 32px;
+  height: 32px;
 }
 
 /* Recommended add-ons on list views */
 .recommended-heading {
+  margin-bottom: 24px;
   margin-top: 48px;
 }
 
 /* Discopane extensions to the add-on card */
-
-recommended-addon-card .addon-name {
-  display: flex;
-}
 
 recommended-addon-card .addon-description:not(:empty) {
   margin-top: 0.5em;
@@ -216,6 +288,13 @@ recommended-addon-card .addon-description:not(:empty) {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
+}
+
+.disco-addon-name {
+  font-size: inherit;
+  font-weight: normal;
+  line-height: normal;
+  margin: 0;
 }
 
 .disco-addon-author {
@@ -353,10 +432,16 @@ addon-details {
   width: 24px;
   height: 24px;
   margin: 0;
+  margin-inline-start: 8px;
   -moz-context-properties: fill;
   fill: currentColor;
-  background: url("chrome://global/skin/icons/more.svg") no-repeat center center;
-  position: relative;
+  background-image: url("chrome://global/skin/icons/more.svg");
+  background-repeat: no-repeat;
+  background-position: center center;
+  /* Get the -badged ::after element in the right spot. */
+  padding: 1px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .more-options-button-badged::after {
@@ -366,16 +451,6 @@ addon-details {
   height: 5px;
   border-radius: 50%;
   background: var(--blue-50);
-  position: absolute;
-  top: 0;
-}
-
-.more-options-button-badged:-moz-locale-dir(ltr)::after {
-  right: 0;
-}
-
-.more-options-button-badged:-moz-locale-dir(rtl)::after {
-  left: 0;
 }
 
 panel-item {
@@ -443,4 +518,8 @@ addon-permissions-list > .addon-detail-row:first-of-type {
   margin-top: 8px;
   /* Pull the buttons flush with the side of the card */
   margin-inline: calc(var(--card-padding) * -1);
+}
+
+panel-list {
+  font-size: 13px;
 }

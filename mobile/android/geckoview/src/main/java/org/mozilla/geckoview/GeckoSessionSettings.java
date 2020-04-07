@@ -101,18 +101,6 @@ public final class GeckoSessionSettings implements Parcelable {
         }
 
         /**
-         * Set whether multi-process support should be enabled.
-         *
-         * @param flag A flag determining whether multi-process should be enabled.
-         *             Default is false.
-         * @return This Builder instance.
-         */
-        public @NonNull Builder useMultiprocess(final boolean flag) {
-            mSettings.setUseMultiprocess(flag);
-            return this;
-        }
-
-        /**
          * Set whether tracking protection should be enabled.
          *
          * @param flag A flag determining whether tracking protection should be enabled.
@@ -284,13 +272,6 @@ public final class GeckoSessionSettings implements Parcelable {
         new Key<Boolean>("usePrivateMode", /* initOnly */ true, /* values */ null);
 
     /**
-     * Key to enable and disable multiprocess browsing (e10s).
-     * Read-only once session is open.
-     */
-    private static final Key<Boolean> USE_MULTIPROCESS =
-        new Key<Boolean>("useMultiprocess", /* initOnly */ true, /* values */ null);
-
-    /**
      * Key to specify which user agent mode we should use.
      */
     private static final Key<Integer> USER_AGENT_MODE =
@@ -337,6 +318,13 @@ public final class GeckoSessionSettings implements Parcelable {
             new Key<Boolean>("fullAccessibilityTree", /* initOnly */ false, /* values */ null);
 
     /**
+     * Key to specify if this GeckoSession is a Popup or not. Popup sessions can paint over other
+     * sessions and are not exposed to the tabs WebExtension API.
+     */
+    private static final Key<Boolean> IS_POPUP =
+            new Key<Boolean>("isPopup", /* initOnly */ false, /* values */ null);
+
+    /**
      * Internal Gecko key to specify the session context ID.
      * Derived from `UNSAFE_CONTEXT_ID`.
      */
@@ -374,10 +362,10 @@ public final class GeckoSessionSettings implements Parcelable {
         mBundle.putInt(SCREEN_ID.name, 0);
         mBundle.putBoolean(USE_TRACKING_PROTECTION.name, false);
         mBundle.putBoolean(USE_PRIVATE_MODE.name, false);
-        mBundle.putBoolean(USE_MULTIPROCESS.name, true);
         mBundle.putBoolean(SUSPEND_MEDIA_WHEN_INACTIVE.name, false);
         mBundle.putBoolean(ALLOW_JAVASCRIPT.name, true);
         mBundle.putBoolean(FULL_ACCESSIBILITY_TREE.name, false);
+        mBundle.putBoolean(IS_POPUP.name, false);
         mBundle.putInt(USER_AGENT_MODE.name, USER_AGENT_MODE_MOBILE);
         mBundle.putString(USER_AGENT_OVERRIDE.name, null);
         mBundle.putInt(VIEWPORT_MODE.name, VIEWPORT_MODE_MOBILE);
@@ -404,17 +392,6 @@ public final class GeckoSessionSettings implements Parcelable {
      */
     private void setUsePrivateMode(final boolean value) {
         setBoolean(USE_PRIVATE_MODE, value);
-    }
-
-
-    /**
-     * Set whether multi-process support should be enabled.
-     *
-     * @param value A flag determining whether multi-process should be enabled.
-     *             Default is false.
-     */
-    private void setUseMultiprocess(final boolean value) {
-        setBoolean(USE_MULTIPROCESS, value);
     }
 
     /**
@@ -447,6 +424,10 @@ public final class GeckoSessionSettings implements Parcelable {
      */
     public void setFullAccessibilityTree(final boolean value) {
         setBoolean(FULL_ACCESSIBILITY_TREE, value);
+    }
+
+    /* package */ void setIsPopup(final boolean value) {
+        setBoolean(IS_POPUP, value);
     }
 
     private void setBoolean(final Key<Boolean> key, final boolean value) {
@@ -487,15 +468,6 @@ public final class GeckoSessionSettings implements Parcelable {
     }
 
     /**
-     * Whether multiprocess is enabled.
-     *
-     * @return true if multiprocess is enabled, false if not.
-     */
-    public boolean getUseMultiprocess() {
-        return getBoolean(USE_MULTIPROCESS);
-    }
-
-    /**
      * Whether media will be suspended when the session is inactice.
      *
      * @return true if media will be suspended, false if not.
@@ -520,6 +492,10 @@ public final class GeckoSessionSettings implements Parcelable {
      */
     public boolean getFullAccessibilityTree() {
         return getBoolean(FULL_ACCESSIBILITY_TREE);
+    }
+
+    /* package */ boolean getIsPopup() {
+        return getBoolean(IS_POPUP);
     }
 
     private boolean getBoolean(final Key<Boolean> key) {

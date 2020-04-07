@@ -5,10 +5,410 @@
 "use strict";
 
 /**
- * This module implements logic for managing JavaScript actor instances bound to
- * message managers. It handles lazily instantiating those actors based on
- * DOM events, IPC messages, or observer notifications, and is meant to entirely
- * replace the existing concept of frame scripts.
+ * This module handles 2 types of JavaScript-implemented actors.
+ * The first is implementations of JSWindowActor, registered through DOM IPC
+ * infrastructure, and are fission-compatible.
+ * The second is legacy implementations of ActorChild/ActorParent, which are
+ * JS classes managed through this module and ActorManagerChild.jsm, which use the
+ * message manager.
+ *
+ * The lists of both types of actors start with documentation for that type of actor.
+ */
+
+var EXPORTED_SYMBOLS = ["ActorManagerParent"];
+
+const { ExtensionUtils } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+const { DefaultMap } = ExtensionUtils;
+
+/**
+ * Fission-compatible JSWindowActor implementations.
+ * Each actor options object takes the form of a WindowActorOptions dictionary.
+ * Detailed documentation of these options is in dom/docs/Fission.rst,
+ * available at https://firefox-source-docs.mozilla.org/dom/Fission.html#jswindowactor
+ */
+let ACTORS = {
+  AudioPlayback: {
+    parent: {
+      moduleURI: "resource://gre/actors/AudioPlaybackParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/AudioPlaybackChild.jsm",
+      observers: ["audio-playback"],
+    },
+
+    allFrames: true,
+  },
+
+  AutoComplete: {
+    parent: {
+      moduleURI: "resource://gre/actors/AutoCompleteParent.jsm",
+      // These two messages are also used, but are currently synchronous calls
+      // through the per-process message manager.
+      // "FormAutoComplete:GetSelectedIndex",
+      // "FormAutoComplete:SelectBy"
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/AutoCompleteChild.jsm",
+      events: {
+        DOMContentLoaded: {},
+        pageshow: { capture: true },
+        pagehide: { capture: true },
+        unload: { capture: true },
+        focus: { capture: true },
+        blur: { capture: true },
+        mousedown: { capture: true },
+        input: { capture: true },
+        keydown: { capture: true },
+        keypress: { capture: true, mozSystemGroup: true },
+        compositionstart: { capture: true },
+        compositionend: { capture: true },
+        contextmenu: { capture: true },
+      },
+    },
+
+    allFrames: true,
+  },
+
+  Autoplay: {
+    parent: {
+      moduleURI: "resource://gre/actors/AutoplayParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/AutoplayChild.jsm",
+      events: {
+        GloballyAutoplayBlocked: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  AutoScroll: {
+    parent: {
+      moduleURI: "resource://gre/actors/AutoScrollParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/AutoScrollChild.jsm",
+      events: {
+        mousedown: { capture: true, mozSystemGroup: true },
+      },
+    },
+
+    allFrames: true,
+  },
+
+  BrowserElement: {
+    parent: {
+      moduleURI: "resource://gre/actors/BrowserElementParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/BrowserElementChild.jsm",
+      events: {
+        DOMWindowClose: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  Conduits: {
+    parent: {
+      moduleURI: "resource://gre/modules/ConduitsParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/modules/ConduitsChild.jsm",
+    },
+
+    allFrames: true,
+  },
+
+  DateTimePicker: {
+    parent: {
+      moduleURI: "resource://gre/actors/DateTimePickerParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/DateTimePickerChild.jsm",
+      events: {
+        MozOpenDateTimePicker: {},
+        MozUpdateDateTimePicker: {},
+        MozCloseDateTimePicker: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  ExtFind: {
+    child: {
+      moduleURI: "resource://gre/actors/ExtFindChild.jsm",
+    },
+
+    allFrames: true,
+  },
+
+  FindBar: {
+    parent: {
+      moduleURI: "resource://gre/actors/FindBarParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/FindBarChild.jsm",
+      events: {
+        keypress: { mozSystemGroup: true },
+      },
+    },
+
+    allFrames: true,
+  },
+
+  // This is the actor that responds to requests from the find toolbar and
+  // searches for matches and highlights them.
+  Finder: {
+    child: {
+      moduleURI: "resource://gre/actors/FinderChild.jsm",
+    },
+
+    allFrames: true,
+  },
+
+  FormHistory: {
+    parent: {
+      moduleURI: "resource://gre/actors/FormHistoryParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/FormHistoryChild.jsm",
+      events: {
+        DOMFormBeforeSubmit: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  InlineSpellChecker: {
+    parent: {
+      moduleURI: "resource://gre/actors/InlineSpellCheckerParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/InlineSpellCheckerChild.jsm",
+    },
+
+    allFrames: true,
+  },
+
+  KeyPressEventModelChecker: {
+    child: {
+      moduleURI: "resource://gre/actors/KeyPressEventModelCheckerChild.jsm",
+      events: {
+        CheckKeyPressEventModel: { capture: true, mozSystemGroup: true },
+      },
+    },
+
+    allFrames: true,
+  },
+
+  LoginManager: {
+    parent: {
+      moduleURI: "resource://gre/modules/LoginManagerParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/modules/LoginManagerChild.jsm",
+      events: {
+        DOMFormBeforeSubmit: {},
+        DOMFormHasPassword: {},
+        DOMInputPasswordAdded: {},
+      },
+    },
+
+    allFrames: true,
+  },
+  PictureInPicture: {
+    parent: {
+      moduleURI: "resource://gre/modules/PictureInPicture.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/PictureInPictureChild.jsm",
+      events: {
+        MozTogglePictureInPicture: { capture: true },
+        MozStopPictureInPicture: { capture: true },
+      },
+    },
+
+    allFrames: true,
+  },
+
+  PictureInPictureToggle: {
+    parent: {
+      moduleURI: "resource://gre/modules/PictureInPicture.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/PictureInPictureChild.jsm",
+      events: {
+        UAWidgetSetupOrChange: {},
+        contextmenu: { capture: true },
+      },
+    },
+
+    allFrames: true,
+  },
+
+  PopupBlocking: {
+    parent: {
+      moduleURI: "resource://gre/actors/PopupBlockingParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/PopupBlockingChild.jsm",
+      events: {
+        DOMPopupBlocked: { capture: true },
+      },
+    },
+    allFrames: true,
+  },
+
+  PurgeSessionHistory: {
+    child: {
+      moduleURI: "resource://gre/actors/PurgeSessionHistoryChild.jsm",
+    },
+    allFrames: true,
+  },
+
+  Select: {
+    parent: {
+      moduleURI: "resource://gre/actors/SelectParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/SelectChild.jsm",
+      events: {
+        mozshowdropdown: {},
+        "mozshowdropdown-sourcetouch": {},
+        mozhidedropdown: { mozSystemGroup: true },
+      },
+    },
+
+    allFrames: true,
+  },
+
+  SidebarSearch: {
+    parent: {
+      moduleURI: "resource://gre/actors/SidebarSearchParent.jsm",
+    },
+
+    allFrames: true,
+  },
+
+  // This actor is available for all pages that one can
+  // view the source of, however it won't be created until a
+  // request to view the source is made via the message
+  // 'ViewSource:LoadSource' or 'ViewSource:LoadSourceWithSelection'.
+  ViewSource: {
+    child: {
+      moduleURI: "resource://gre/actors/ViewSourceChild.jsm",
+    },
+
+    allFrames: true,
+  },
+
+  // This actor is for the view-source page itself.
+  ViewSourcePage: {
+    parent: {
+      moduleURI: "resource://gre/actors/ViewSourcePageParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/ViewSourcePageChild.jsm",
+      events: {
+        pageshow: { capture: true },
+        click: {},
+      },
+    },
+
+    matches: ["view-source:*"],
+    allFrames: true,
+  },
+
+  WebChannel: {
+    parent: {
+      moduleURI: "resource://gre/actors/WebChannelParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/WebChannelChild.jsm",
+      events: {
+        WebChannelMessageToChrome: { capture: true, wantUntrusted: true },
+      },
+    },
+
+    allFrames: true,
+  },
+
+  Thumbnails: {
+    child: {
+      moduleURI: "resource://gre/actors/ThumbnailsChild.jsm",
+    },
+  },
+
+  UAWidgets: {
+    child: {
+      moduleURI: "resource://gre/actors/UAWidgetsChild.jsm",
+      events: {
+        UAWidgetSetupOrChange: {},
+        UAWidgetTeardown: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  WebNavigation: {
+    child: {
+      moduleURI: "resource://gre/actors/WebNavigationChild.jsm",
+    },
+  },
+
+  Zoom: {
+    parent: {
+      moduleURI: "resource://gre/actors/ZoomParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/ZoomChild.jsm",
+      events: {
+        PreFullZoomChange: {},
+        FullZoomChange: {},
+        TextZoomChange: {},
+        DoZoomEnlargeBy10: {
+          capture: true,
+          mozSystemGroup: true,
+        },
+        DoZoomReduceBy10: {
+          capture: true,
+          mozSystemGroup: true,
+        },
+        mozupdatedremoteframedimensions: {
+          capture: true,
+          mozSystemGroup: true,
+        },
+      },
+    },
+
+    allFrames: true,
+  },
+};
+
+/*
+ * The following code implements logic for managing JavaScript actor instances
+ * bound to message managers. It handles lazily instantiating those actors based
+ * on DOM events, IPC messages, or observer notifications, and is meant to
+ * entirely replace the existing concept of frame scripts.
  *
  * All actors must be registered in the parent process, before the first child
  * process starts. Once all actors have been registered, the actor data is
@@ -92,265 +492,11 @@
  * If Fission is being simulated, and an actor needs to receive events from
  * sub-frames, it must use "allFrames".
  */
-
-var EXPORTED_SYMBOLS = ["ActorManagerParent"];
-
-const { ExtensionUtils } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionUtils.jsm"
-);
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-const { DefaultMap } = ExtensionUtils;
-
-let ACTORS = {
-  AudioPlayback: {
-    parent: {
-      moduleURI: "resource://gre/actors/AudioPlaybackParent.jsm",
-    },
-
-    child: {
-      moduleURI: "resource://gre/actors/AudioPlaybackChild.jsm",
-      observers: ["audio-playback"],
-    },
-
-    allFrames: true,
-  },
-
-  AutoComplete: {
-    parent: {
-      moduleURI: "resource://gre/actors/AutoCompleteParent.jsm",
-      messages: [
-        "FormAutoComplete:SelectBy",
-        "FormAutoComplete:SetSelectedIndex",
-        "FormAutoComplete:MaybeOpenPopup",
-        "FormAutoComplete:Invalidate",
-        "FormAutoComplete:ClosePopup",
-        "FormAutoComplete:Disconnect",
-        // These two messages are also used, but are currently synchronous calls
-        // through the per-process message manager.
-        // "FormAutoComplete:GetSelectedIndex",
-        // "FormAutoComplete:SelectBy"
-      ],
-    },
-
-    child: {
-      moduleURI: "resource://gre/actors/AutoCompleteChild.jsm",
-      events: {
-        DOMContentLoaded: {},
-        pageshow: { capture: true },
-        pagehide: { capture: true },
-        unload: { capture: true },
-        focus: { capture: true },
-        blur: { capture: true },
-        mousedown: { capture: true },
-        input: { capture: true },
-        keydown: { capture: true },
-        keypress: { capture: true, mozSystemGroup: true },
-        compositionstart: { capture: true },
-        compositionend: { capture: true },
-        contextmenu: { capture: true },
-      },
-      messages: [
-        "FormAutoComplete:HandleEnter",
-        "FormAutoComplete:PopupClosed",
-        "FormAutoComplete:PopupOpened",
-      ],
-    },
-
-    allFrames: true,
-  },
-
-  Autoplay: {
-    parent: {
-      moduleURI: "resource://gre/actors/AutoplayParent.jsm",
-    },
-
-    child: {
-      moduleURI: "resource://gre/actors/AutoplayChild.jsm",
-      events: {
-        GloballyAutoplayBlocked: {},
-      },
-    },
-
-    allFrames: true,
-  },
-
-  BrowserElement: {
-    parent: {
-      moduleURI: "resource://gre/actors/BrowserElementParent.jsm",
-    },
-
-    child: {
-      moduleURI: "resource://gre/actors/BrowserElementChild.jsm",
-      events: {
-        DOMWindowClose: {},
-      },
-    },
-
-    allFrames: true,
-  },
-
-  DateTimePicker: {
-    parent: {
-      moduleURI: "resource://gre/actors/DateTimePickerParent.jsm",
-    },
-
-    child: {
-      moduleURI: "resource://gre/actors/DateTimePickerChild.jsm",
-      events: {
-        MozOpenDateTimePicker: {},
-        MozUpdateDateTimePicker: {},
-        MozCloseDateTimePicker: {},
-      },
-    },
-
-    allFrames: true,
-  },
-
-  ExtFind: {
-    child: {
-      moduleURI: "resource://gre/actors/ExtFindChild.jsm",
-      messages: [
-        "ext-Finder:CollectResults",
-        "ext-Finder:HighlightResults",
-        "ext-Finder:ClearHighlighting",
-      ],
-    },
-
-    allFrames: true,
-  },
-
-  FindBar: {
-    parent: {
-      moduleURI: "resource://gre/actors/FindBarParent.jsm",
-      messages: ["Findbar:Keypress", "Findbar:Mouseup"],
-    },
-    child: {
-      moduleURI: "resource://gre/actors/FindBarChild.jsm",
-      events: {
-        keypress: { mozSystemGroup: true },
-      },
-    },
-
-    allFrames: true,
-  },
-
-  // This is the actor that responds to requests from the find toolbar and
-  // searches for matches and highlights them.
-  Finder: {
-    child: {
-      moduleURI: "resource://gre/actors/FinderChild.jsm",
-      messages: [
-        "Finder:CaseSensitive",
-        "Finder:EntireWord",
-        "Finder:Find",
-        "Finder:SetSearchStringToSelection",
-        "Finder:GetInitialSelection",
-        "Finder:Highlight",
-        "Finder:UpdateHighlightAndMatchCount",
-        "Finder:HighlightAllChange",
-        "Finder:EnableSelection",
-        "Finder:RemoveSelection",
-        "Finder:FocusContent",
-        "Finder:FindbarClose",
-        "Finder:FindbarOpen",
-        "Finder:KeyPress",
-        "Finder:MatchesCount",
-        "Finder:ModalHighlightChange",
-      ],
-    },
-
-    allFrames: true,
-  },
-
-  InlineSpellChecker: {
-    parent: {
-      moduleURI: "resource://gre/actors/InlineSpellCheckerParent.jsm",
-    },
-
-    child: {
-      moduleURI: "resource://gre/actors/InlineSpellCheckerChild.jsm",
-    },
-
-    allFrames: true,
-  },
-
-  Select: {
-    parent: {
-      moduleURI: "resource://gre/actors/SelectParent.jsm",
-    },
-
-    child: {
-      moduleURI: "resource://gre/actors/SelectChild.jsm",
-      events: {
-        mozshowdropdown: {},
-        "mozshowdropdown-sourcetouch": {},
-        mozhidedropdown: { mozSystemGroup: true },
-      },
-    },
-
-    allFrames: true,
-  },
-
-  Zoom: {
-    parent: {
-      moduleURI: "resource://gre/actors/ZoomParent.jsm",
-    },
-    child: {
-      moduleURI: "resource://gre/actors/ZoomChild.jsm",
-      events: {
-        FullZoomChange: {},
-        TextZoomChange: {},
-        ZoomChangeUsingMouseWheel: {},
-      },
-    },
-
-    allFrames: true,
-  },
-
-  UAWidgets: {
-    child: {
-      moduleURI: "resource://gre/actors/UAWidgetsChild.jsm",
-      events: {
-        UAWidgetSetupOrChange: {},
-        UAWidgetTeardown: {},
-      },
-    },
-
-    allFrames: true,
-  },
-  PurgeSessionHistory: {
-    child: {
-      moduleURI: "resource://gre/actors/PurgeSessionHistoryChild.jsm",
-    },
-    allFrames: true,
-  },
-};
-
 let LEGACY_ACTORS = {
   Controllers: {
     child: {
       module: "resource://gre/actors/ControllersChild.jsm",
       messages: ["ControllerCommands:Do", "ControllerCommands:DoWithParams"],
-    },
-  },
-
-  FormSubmit: {
-    child: {
-      module: "resource://gre/actors/FormSubmitChild.jsm",
-      allFrames: true,
-      events: {
-        DOMFormBeforeSubmit: {},
-      },
-    },
-  },
-
-  KeyPressEventModelChecker: {
-    child: {
-      module: "resource://gre/actors/KeyPressEventModelCheckerChild.jsm",
-      events: {
-        CheckKeyPressEventModel: { capture: true, mozSystemGroup: true },
-      },
     },
   },
 
@@ -363,43 +509,6 @@ let LEGACY_ACTORS = {
         "DOM:WebManifest:fetchIcon",
         "DOM:WebManifest:hasManifestLink",
       ],
-    },
-  },
-
-  PictureInPicture: {
-    child: {
-      module: "resource://gre/actors/PictureInPictureChild.jsm",
-      events: {
-        MozTogglePictureInPicture: { capture: true },
-        MozStopPictureInPicture: { capture: true },
-      },
-
-      messages: [
-        "PictureInPicture:SetupPlayer",
-        "PictureInPicture:Play",
-        "PictureInPicture:Pause",
-        "PictureInPicture:KeyToggle",
-      ],
-    },
-  },
-
-  PictureInPictureToggle: {
-    child: {
-      allFrames: true,
-      module: "resource://gre/actors/PictureInPictureChild.jsm",
-      events: {
-        UAWidgetSetupOrChange: {},
-        contextmenu: { capture: true },
-      },
-    },
-  },
-
-  PopupBlocking: {
-    child: {
-      module: "resource://gre/actors/PopupBlockingChild.jsm",
-      events: {
-        DOMPopupBlocked: { capture: true },
-      },
     },
   },
 
@@ -420,24 +529,6 @@ let LEGACY_ACTORS = {
     },
   },
 
-  SelectionSource: {
-    child: {
-      module: "resource://gre/actors/SelectionSourceChild.jsm",
-      messages: ["ViewSource:GetSelection"],
-    },
-  },
-
-  Thumbnails: {
-    child: {
-      module: "resource://gre/actors/ThumbnailsChild.jsm",
-      messages: [
-        "Browser:Thumbnail:Request",
-        "Browser:Thumbnail:CheckState",
-        "Browser:Thumbnail:GetOriginalURL",
-      ],
-    },
-  },
-
   UnselectedTabHover: {
     child: {
       module: "resource://gre/actors/UnselectedTabHoverChild.jsm",
@@ -446,30 +537,6 @@ let LEGACY_ACTORS = {
         "UnselectedTabHover:Disable": {},
       },
       messages: ["Browser:UnselectedTabHover"],
-    },
-  },
-
-  WebChannel: {
-    child: {
-      module: "resource://gre/actors/WebChannelChild.jsm",
-      events: {
-        WebChannelMessageToChrome: { capture: true, wantUntrusted: true },
-      },
-      messages: ["WebChannelMessageToContent"],
-    },
-  },
-
-  WebNavigation: {
-    child: {
-      module: "resource://gre/actors/WebNavigationChild.jsm",
-      messages: [
-        "WebNavigation:GoBack",
-        "WebNavigation:GoForward",
-        "WebNavigation:GotoIndex",
-        "WebNavigation:Reload",
-        "WebNavigation:SetOriginAttributes",
-        "WebNavigation:Stop",
-      ],
     },
   },
 };

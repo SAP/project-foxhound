@@ -8,6 +8,7 @@
 #define frontend_FunctionTree_h
 
 #include "mozilla/Attributes.h"
+#include "jsfriendapi.h"
 
 #include "js/Vector.h"
 
@@ -46,7 +47,7 @@ class FunctionTree {
   FunctionBox* funbox() { return funbox_; }
   void setFunctionBox(FunctionBox* node) { funbox_ = node; }
 
-  typedef bool (*FunctionTreeVisitorFunction)(ParserBase*, FunctionTree*);
+  using FunctionTreeVisitorFunction = bool (*)(ParserBase*, FunctionTree*);
   bool visitRecursively(JSContext* cx, ParserBase* parser,
                         FunctionTreeVisitorFunction func) {
     if (!CheckRecursionLimit(cx)) {
@@ -70,35 +71,21 @@ class FunctionTree {
 
 // Owner of a function tree
 //
-// The holder mode can be eager or deferred:
-//
-// - In Eager mode, deferred items happens right away and the tree is not
-//   constructed.
-// - In Deferred mode, deferred items happens only when publishDeferredItems
-//   is called.
-//
 // Note: Function trees point to function boxes, which only have the lifetime of
 //       the BytecodeCompiler, so exercise caution when holding onto a
 //       holder.
 class FunctionTreeHolder {
- public:
-  enum Mode { Eager, Deferred };
-
  private:
   FunctionTree treeRoot_;
   FunctionTree* currentParent_;
-  Mode mode_;
 
  public:
-  explicit FunctionTreeHolder(JSContext* cx, Mode mode = Mode::Eager)
-      : treeRoot_(cx), currentParent_(&treeRoot_), mode_(mode) {}
+  explicit FunctionTreeHolder(JSContext* cx)
+      : treeRoot_(cx), currentParent_(&treeRoot_) {}
 
   FunctionTree* getFunctionTree() { return &treeRoot_; }
   FunctionTree* getCurrentParent() { return currentParent_; }
   void setCurrentParent(FunctionTree* parent) { currentParent_ = parent; }
-
-  bool isEager() { return mode_ == Mode::Eager; }
-  bool isDeferred() { return mode_ == Mode::Deferred; }
 
   // When a parse has failed, we need to reset the root of the
   // function tree as we don't want a reparse to have old entries.

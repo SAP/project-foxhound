@@ -17,6 +17,10 @@
       }
     },
 
+    "AppAutoUpdate": {
+      "type": "boolean"
+    },
+
     "AppUpdateURL": {
       "type": "URL"
     },
@@ -191,6 +195,10 @@
       "type": "boolean"
     },
 
+    "DisableDefaultBrowserAgent": {
+      "type": "boolean"
+    },
+
     "DisableDeveloperTools": {
       "type": "boolean"
     },
@@ -277,7 +285,8 @@
     },
 
     "DisplayMenuBar": {
-      "type": "boolean"
+      "type": ["boolean", "string"],
+      "enum": ["always", "never", "default-on", "default-off"]
     },
 
     "DNSOverHTTPS": {
@@ -288,6 +297,12 @@
         },
         "ProviderURL": {
           "type": "URLorEmpty"
+        },
+        "ExcludedDomains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "Locked": {
           "type": "boolean"
@@ -317,6 +332,13 @@
         },
         "Fingerprinting": {
           "type": "boolean"
+        },
+        "Exceptions": {
+          "type": "array",
+          "strict": false,
+          "items": {
+            "type": "origin"
+          }
         }
       }
     },
@@ -597,6 +619,27 @@
           }
         },
 
+        "Autoplay": {
+          "type": "object",
+          "properties": {
+            "Allow": {
+              "type": "array",
+              "strict": false,
+              "items": {
+                "type": "origin"
+              }
+            },
+
+            "Block": {
+              "type": "array",
+              "strict": false,
+              "items": {
+                "type": "origin"
+              }
+            }
+          }
+        },
+
         "Location": {
           "type": "object",
           "properties": {
@@ -685,9 +728,6 @@
           "type": "number",
           "enum": [-1, 0, 1]
         },
-        "app.update.auto": {
-          "type": "boolean"
-        },
         "browser.bookmarks.autoExportHTML": {
           "type": "boolean"
         },
@@ -705,6 +745,9 @@
         },
         "browser.fixup.dns_first_for_single_words": {
           "type": "boolean"
+        },
+        "browser.newtabpage.activity-stream.default.sites": {
+          "type": "string"
         },
         "browser.safebrowsing.phishing.enabled": {
           "type": "boolean"
@@ -763,6 +806,9 @@
         "extensions.getAddons.showPane": {
           "type": "boolean"
         },
+        "extensions.htmlaboutaddons.recommendations.enabled": {
+          "type": "boolean"
+        },
         "geo.enabled": {
           "type": "boolean"
         },
@@ -777,6 +823,12 @@
         },
         "media.gmp-widevinecdm.enabled": {
           "type": "boolean"
+        },
+        "media.peerconnection.enabled": {
+          "type": "boolean"
+        },
+        "media.peerconnection.ice.obfuscate_host_addresses.whitelist": {
+          "type": "string"
         },
         "network.dns.disableIPv6": {
           "type": "boolean"
@@ -796,14 +848,23 @@
         "security.default_personal_cert": {
           "type": "string"
         },
+        "security.mixed_content.block_active_content": {
+          "type": "boolean"
+        },
+        "security.osclientcerts.autoload": {
+          "type": "boolean"
+        },
         "security.ssl.errorReporting.enabled": {
           "type": "boolean"
         },
-        "security.mixed_content.block_active_content": {
+        "security.tls.hello_downgrade_check": {
           "type": "boolean"
         },
         "ui.key.menuAccessKeyFocuses": {
           "type": "boolean"
+        },
+        "widget.content.gtk-theme-override": {
+          "type": "string"
         }
       }
     },
@@ -899,6 +960,9 @@
           "type": "boolean"
         },
         "OfflineApps": {
+          "type": "boolean"
+        },
+        "Locked": {
           "type": "boolean"
         }
       }
@@ -1002,6 +1066,27 @@
         }
       },
       "required": ["Title", "URL"],
+    },
+
+    "UserMessaging": {
+      "type": "object",
+      "properties": {
+        "WhatsNew": {
+          "type": "boolean"
+        },
+        "ExtensionRecommendations": {
+          "type": "boolean"
+        },
+        "FeatureRecommendations": {
+          "type": "boolean"
+        },
+        "UrlbarInterventions": {
+          "type": "boolean"
+        },
+        "Locked": {
+          "type": "boolean"
+        }
+      }
     },
 
     "WebsiteFilter": {

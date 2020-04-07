@@ -2,14 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{BuiltDisplayList, ColorF, DynamicProperties, Epoch, FontRenderMode};
-use api::{PipelineId, PropertyBinding, PropertyBindingId, MixBlendMode, StackingContext};
+use api::{BuiltDisplayList, DisplayListWithCache, ColorF, DynamicProperties, Epoch, FontRenderMode};
+use api::{PipelineId, PropertyBinding, PropertyBindingId, PropertyValue, MixBlendMode, StackingContext};
 use api::units::*;
+use crate::composite::CompositorKind;
 use crate::clip::{ClipStore, ClipDataStore};
-use crate::clip_scroll_tree::ClipScrollTree;
+use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
 use crate::frame_builder::{ChasePrimitive, FrameBuilderConfig};
 use crate::hit_test::{HitTester, HitTestingScene, HitTestingSceneStats};
-use crate::internal_types::FastHashMap;
+use crate::internal_types::{FastHashMap, FastHashSet};
 use crate::prim_store::{PrimitiveStore, PrimitiveStoreStats, PictureIndex};
 use std::sync::Arc;
 
@@ -21,6 +22,7 @@ use std::sync::Arc;
 pub struct SceneProperties {
     transform_properties: FastHashMap<PropertyBindingId, LayoutTransform>,
     float_properties: FastHashMap<PropertyBindingId, f32>,
+    color_properties: FastHashMap<PropertyBindingId, ColorF>,
     current_properties: DynamicProperties,
     pending_properties: Option<DynamicProperties>,
 }
@@ -30,6 +32,7 @@ impl SceneProperties {
         SceneProperties {
             transform_properties: FastHashMap::default(),
             float_properties: FastHashMap::default(),
+            color_properties: FastHashMap::default(),
             current_properties: DynamicProperties::default(),
             pending_properties: None,
         }
@@ -41,13 +44,12 @@ impl SceneProperties {
     }
 
     /// Add to the current property list for this display list.
-    pub fn add_properties(&mut self, properties: DynamicProperties) {
+    pub fn add_transforms(&mut self, transforms: Vec<PropertyValue<LayoutTransform>>) {
         let mut pending_properties = self.pending_properties
             .take()
             .unwrap_or_default();
 
-        pending_properties.transforms.extend(properties.transforms);
-        pending_properties.floats.extend(properties.floats);
+        pending_properties.transforms.extend(transforms);
 
         self.pending_properties = Some(pending_properties);
     }
@@ -75,6 +77,11 @@ impl SceneProperties {
 
                 for property in &pending_properties.floats {
                     self.float_properties
+                        .insert(property.key.id, property.value);
+                }
+
+                for property in &pending_properties.colors {
+                    self.color_properties
                         .insert(property.key.id, property.value);
                 }
 
@@ -121,6 +128,27 @@ impl SceneProperties {
     pub fn float_properties(&self) -> &FastHashMap<PropertyBindingId, f32> {
         &self.float_properties
     }
+
+    /// Get the current value for a color property.
+    pub fn resolve_color(
+        &self,
+        property: &PropertyBinding<ColorF>
+    ) -> ColorF {
+        match *property {
+            PropertyBinding::Value(value) => value,
+            PropertyBinding::Binding(ref key, v) => {
+                self.color_properties
+                    .get(&key.id)
+                    .cloned()
+                    .unwrap_or(v)
+            }
+        }
+    }
+
+    pub fn color_properties(&self) -> &FastHashMap<PropertyBindingId, ColorF> {
+        &self.color_properties
+    }
+
 }
 
 /// A representation of the layout within the display port for a given document or iframe.
@@ -132,7 +160,7 @@ pub struct ScenePipeline {
     pub viewport_size: LayoutSize,
     pub content_size: LayoutSize,
     pub background_color: Option<ColorF>,
-    pub display_list: BuiltDisplayList,
+    pub display_list: DisplayListWithCache,
 }
 
 /// A complete representation of the layout bundling visible pipelines together.
@@ -141,7 +169,7 @@ pub struct ScenePipeline {
 #[derive(Clone)]
 pub struct Scene {
     pub root_pipeline_id: Option<PipelineId>,
-    pub pipelines: FastHashMap<PipelineId, Arc<ScenePipeline>>,
+    pub pipelines: FastHashMap<PipelineId, ScenePipeline>,
     pub pipeline_epochs: FastHashMap<PipelineId, Epoch>,
 }
 
@@ -167,6 +195,16 @@ impl Scene {
         viewport_size: LayoutSize,
         content_size: LayoutSize,
     ) {
+        // Adds a cache to the given display list. If this pipeline already had
+        // a display list before, that display list is updated and used instead.
+        let display_list = match self.pipelines.remove(&pipeline_id) {
+            Some(mut pipeline) => {
+                pipeline.display_list.update(display_list);
+                pipeline.display_list
+            }
+            None => DisplayListWithCache::new_from_list(display_list)
+        };
+
         let new_pipeline = ScenePipeline {
             pipeline_id,
             viewport_size,
@@ -175,7 +213,7 @@ impl Scene {
             display_list,
         };
 
-        self.pipelines.insert(pipeline_id, Arc::new(new_pipeline));
+        self.pipelines.insert(pipeline_id, new_pipeline);
         self.pipeline_epochs.insert(pipeline_id, epoch);
     }
 
@@ -216,41 +254,48 @@ impl StackingContextHelpers for StackingContext {
 
 /// WebRender's internal representation of the scene.
 pub struct BuiltScene {
-    /// The scene this object was built from.
-    pub src: Scene,
+    pub has_root_pipeline: bool,
+    pub pipeline_epochs: FastHashMap<PipelineId, Epoch>,
     pub output_rect: DeviceIntRect,
     pub background_color: Option<ColorF>,
     pub root_pic_index: PictureIndex,
     pub prim_store: PrimitiveStore,
     pub clip_store: ClipStore,
     pub config: FrameBuilderConfig,
-    pub clip_scroll_tree: ClipScrollTree,
+    pub spatial_tree: SpatialTree,
     pub hit_testing_scene: Arc<HitTestingScene>,
+    pub content_slice_count: usize,
+    pub picture_cache_spatial_nodes: FastHashSet<SpatialNodeIndex>,
 }
 
 impl BuiltScene {
     pub fn empty() -> Self {
         BuiltScene {
-            src: Scene::new(),
+            has_root_pipeline: false,
+            pipeline_epochs: FastHashMap::default(),
             output_rect: DeviceIntRect::zero(),
             background_color: None,
             root_pic_index: PictureIndex(0),
             prim_store: PrimitiveStore::new(&PrimitiveStoreStats::empty()),
             clip_store: ClipStore::new(),
-            clip_scroll_tree: ClipScrollTree::new(),
+            spatial_tree: SpatialTree::new(),
             hit_testing_scene: Arc::new(HitTestingScene::new(&HitTestingSceneStats::empty())),
+            content_slice_count: 0,
+            picture_cache_spatial_nodes: FastHashSet::default(),
             config: FrameBuilderConfig {
                 default_font_render_mode: FontRenderMode::Mono,
                 dual_source_blending_is_enabled: true,
                 dual_source_blending_is_supported: false,
                 chase_primitive: ChasePrimitive::Nothing,
-                enable_picture_caching: false,
+                global_enable_picture_caching: false,
                 testing: false,
                 gpu_supports_fast_clears: false,
                 gpu_supports_advanced_blend: false,
                 advanced_blend_is_coherent: false,
                 batch_lookback_count: 0,
                 background_color: None,
+                compositor_kind: CompositorKind::default(),
+                tile_size_override: None,
             },
         }
     }
@@ -269,7 +314,7 @@ impl BuiltScene {
     ) -> HitTester {
         HitTester::new(
             Arc::clone(&self.hit_testing_scene),
-            &self.clip_scroll_tree,
+            &self.spatial_tree,
             &self.clip_store,
             clip_data_store,
         )

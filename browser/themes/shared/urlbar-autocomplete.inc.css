@@ -8,9 +8,8 @@
 %define urlbarViewPadding 4px
 %define urlbarViewIconMarginEnd (@identityBoxPaddingInline@ + @identityBoxMarginInlineEnd@)
 %define urlbarViewFaviconOffset (@urlbarViewPadding@ + 16px /* type icon width */ + @urlbarViewIconMarginEnd@)
-%define urlbarViewMarginInline 5px
-%define urlbarViewPaddingInline 30px
-%define urlbarViewItemPaddingStart (@urlbarViewPaddingInline@ - (/* type icon: */ 16px + @urlbarViewIconMarginEnd@))
+%define urlbarViewMarginInline 7px
+%define urlbarViewItemInlinePadding 6px
 
 :root {
   --autocomplete-popup-background: var(--arrowpanel-background);
@@ -53,15 +52,18 @@
   width: calc(100% - 2 * @urlbarViewMarginInline@);
   /* Match urlbar-background's border. */
   border-inline: 1px solid transparent;
+  /* Offsets the toolbar overlap so the view's top border aligns with the
+     toolbar. */
+  margin-block-start: -@urlbarBreakoutExtend@;
 }
 
-.urlbarView:not([hidden]) {
+.urlbarView {
   display: block;
 }
 
 .urlbarView.megabar .urlbarView-body-inner {
   width: 100%;
-  border-top: 1px solid var(--panel-separator-color);
+  border-top: 1px solid var(--urlbar-separator-color);
 }
 
 .urlbarView:not(.megabar) {
@@ -75,50 +77,6 @@
   box-shadow: 0 5px 18px rgba(0, 0, 0, .2);
 }
 
-#urlbar-contextual-tip {
-  align-items: center;
-  display: flex;
-  padding-top: 24px;
-  padding-bottom: 24px;
-  padding-inline-start: calc(@urlbarViewItemPaddingStart@);
-  padding-inline-end: @urlbarViewPaddingInline@;
-}
-
-.urlbarView:not(.megabar) #urlbar-contextual-tip {
-  padding-inline-start: var(--item-padding-start, calc(5px + @urlbarViewFaviconOffset@));
-  padding-inline-end: var(--item-padding-end, 5px);
-}
-
-#urlbar-contextual-tip-title {
-  flex-grow: 1;
-  padding-inline-end: 75px;
-}
-
-#urlbar-contextual-tip-button {
-  height: 2.3em;
-  width: 9.15em;
-  border: none;
-  border-radius: 2px;
-  color: white;
-  background-color: var(--in-content-primary-button-background);
-}
-
-#urlbar-contextual-tip-button:hover {
-  background-color: var(--in-content-primary-button-background-hover);
-}
-
-#urlbar-contextual-tip-button:active {
-  background-color: var(--in-content-primary-button-background-active);
-}
-
-#urlbar-contextual-tip-button:-moz-focusring {
-  box-shadow: 0 0 0 1px #0a84ff inset, 0 0 0 1px #0a84ff, 0 0 0 4px rgba(10, 132, 255, 0.3);
-}
-
-#urlbar-contextual-tip-link {
-  text-align: end;
-}
-
 .urlbarView-results {
   padding-block: @urlbarViewPadding@;
   white-space: nowrap;
@@ -129,11 +87,20 @@
 }
 
 .urlbarView-row {
-  border-radius: 2px;
   fill: currentColor;
   fill-opacity: .6;
+  padding-block: 3px;
+}
+
+.urlbarView:not(.megabar) .urlbarView-row,
+.urlbarView.megabar .urlbarView-row-inner {
+  border-radius: 2px;
+  padding-inline-start: @urlbarViewItemInlinePadding@;
+}
+
+.urlbarView:not(.megabar) .urlbarView-row:not([type=tip]),
+.urlbarView.megabar .urlbarView-row-inner {
   padding-block: 6px;
-  padding-inline-start: calc(@urlbarViewItemPaddingStart@);
 }
 
 .urlbarView:not(.megabar) .urlbarView-row {
@@ -141,23 +108,69 @@
   padding-inline-end: var(--item-padding-end, 5px);
 }
 
-:root[uidensity=touch] .urlbarView-row {
+:root[uidensity=touch] .urlbarView-row:not([type=tip]) {
   padding-block: 11px;
 }
 
-.urlbarView-row-inner {
+.urlbarView:not(.megabar) .urlbarView-row[type=tip] {
+  padding-block-start: 24px;
+  /* Compensating for the 16px bottom margin on the tip elements. */
+  padding-block-end: calc(24px - 16px);
+}
+
+.urlbarView.megabar .urlbarView-row[type=tip] {
+  padding-block-start: 18px;
+  /* Compensating for the 16px bottom margin on the tip elements. */
+  padding-block-end: calc(18px - 16px);
+  /* Compensating for the 4px focus ring on tip buttons. */
+  padding-inline-end: calc(@urlbarViewItemInlinePadding@ + 4px);
+}
+
+.urlbarView-row-inner,
+.urlbarView-no-wrap {
   display: flex;
   flex-wrap: nowrap;
   align-items: end;
   justify-content: start;
 }
 
-.urlbarView-title[overflow],
+.urlbarView[actionoverride] .urlbarView-row[has-url] > .urlbarView-row-inner > .urlbarView-no-wrap,
+.urlbarView-row[has-url]:not([type$=tab]) > .urlbarView-row-inner > .urlbarView-no-wrap,
+.urlbarView-row[has-url][type=remotetab]:-moz-any(:hover, [selected]) > .urlbarView-row-inner > .urlbarView-no-wrap {
+  /* We prioritize icons + title + action over the url, so they can grow freely,
+     but the url should never disappear when it's visible */
+  flex-shrink: 0;
+  max-width: calc(70% - 2 * (16px + (6px + 2px)));
+}
+
+/* Wrap the url to a second line when the window is small */
+@media screen and (min-height: 600px) {
+  .urlbarView.megabar .urlbarView-results[wrap] > .urlbarView-row > .urlbarView-row-inner {
+    flex-wrap: wrap;
+  }
+  .urlbarView.megabar .urlbarView-results[wrap] > .urlbarView-row > .urlbarView-row-inner > .urlbarView-no-wrap {
+    max-width: 100% !important;
+    flex-basis: 100%;
+  }
+  .urlbarView.megabar .urlbarView-results[wrap] > .urlbarView-row[has-url] > .urlbarView-row-inner > .urlbarView-url {
+    margin-top: 2px;
+    padding-inline-start: calc(@urlbarViewItemInlinePadding@ + @identityBoxMarginInlineEnd@ + /* favicon */ 16px);
+  }
+  /* Note: switchtab entries show the url only in override mode,
+     remotetab only when selected or :hover */
+  .urlbarView.megabar[actionoverride] .urlbarView-results[wrap] > .urlbarView-row[has-url] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
+  .urlbarView.megabar .urlbarView-results[wrap] > .urlbarView-row[has-url]:not([type$=tab]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
+  .urlbarView.megabar .urlbarView-results[wrap] > .urlbarView-row[type=remotetab]:-moz-any(:hover, [selected]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator {
+    display: none;
+  }
+}
+
+.urlbarView-row:not([type=tip]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title[overflow],
 .urlbarView-url[overflow] {
   mask-image: linear-gradient(to left, transparent, black 2em);
 }
 
-.urlbarView-title[overflow]:not([isurl]):-moz-locale-dir(rtl) {
+.urlbarView-row:not([type=tip]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title[overflow]:not([isurl]):-moz-locale-dir(rtl) {
   mask-image: linear-gradient(to right, transparent, black 2em);
 }
 
@@ -166,11 +179,13 @@
   direction: ltr !important;
 }
 
-.urlbarView-row:not([type=tip]):hover {
+.urlbarView:not(.megabar) .urlbarView-row:not([type=tip]):hover,
+.urlbarView.megabar .urlbarView-row:not([type=tip]):hover > .urlbarView-row-inner {
   background: var(--arrowpanel-dimmed);
 }
 
-.urlbarView-row:not([type=tip])[selected] {
+.urlbarView:not(.megabar) .urlbarView-row:not([type=tip])[selected],
+.urlbarView.megabar .urlbarView-row:not([type=tip])[selected] > .urlbarView-row-inner {
   background: var(--autocomplete-popup-highlight-background);
   color: var(--autocomplete-popup-highlight-color);
   fill-opacity: 1;
@@ -180,17 +195,36 @@
 .urlbarView-favicon {
   min-width: 16px;
   height: 16px;
-  margin-inline-end: calc(@urlbarViewIconMarginEnd@);
   background-repeat: no-repeat;
   background-size: contain;
   -moz-context-properties: fill, fill-opacity;
 }
 
+.urlbarView:not(.megabar) .urlbarView-type-icon,
+.urlbarView-favicon {
+  margin-inline-end: calc(@urlbarViewIconMarginEnd@);
+}
+
+.urlbarView.megabar .urlbarView-type-icon {
+  position: absolute;
+  min-width: 12px;
+  height: 12px;
+  margin-bottom: -4px;
+  margin-inline-start: 8px;
+  -moz-context-properties: fill, stroke;
+}
+
 .urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-favicon {
   min-width: 24px;
   height: 24px;
-  margin-inline-start: calc(12px + @urlbarViewIconMarginEnd@);
   margin-inline-end: 12px;
+  flex-basis: 24px;
+  flex-grow:  0;
+  flex-shrink: 0;
+}
+
+.urlbarView:not(.megabar) .urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-favicon {
+  margin-inline-start: calc(12px + @urlbarViewIconMarginEnd@);
 }
 
 /* The help icon is a standard Photon ghost button. */
@@ -218,35 +252,44 @@
   background-color: var(--in-content-button-background-active);
 }
 
-#urlbar-contextual-tip-icon {
-  min-width: 24px;
-  height: 24px;
-  margin-inline-end: calc(@urlbarViewIconMarginEnd@);
-  background-repeat: no-repeat;
-  background-size: contain;
-  -moz-context-properties: fill, fill-opacity;
-}
-
 @media (min-resolution: 2dppx) {
   .urlbarView-type-icon,
-  .urlbarView-favicon,
-  #urlbar-contextual-tip-icon {
+  .urlbarView-favicon {
       transform: translateY(-1.5px);
   }
 }
 
-.urlbarView-row[type=bookmark] > .urlbarView-row-inner > .urlbarView-type-icon {
+.urlbarView.megabar .urlbarView-row[type=bookmark] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon {
+  background-image: url(chrome://browser/skin/bookmark-12.svg);
+  color: #0060df; /* Blue-60 */
+  stroke: #fff;
+}
+
+.urlbarView.megabar .urlbarView-row[type=remotetab] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon,
+.urlbarView.megabar:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon {
+  background-image: url(chrome://browser/skin/tab-12.svg);
+  color: #008eaf; /* Teal-70 */
+  stroke: #fff;
+}
+
+:root[lwt-toolbar-field-brighttext] .urlbarView.megabar .urlbarView-row[type=bookmark] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon {
+  color: #0a84ff; /* Blue-50 */
+  stroke: #38383d; /* Grey-70 */
+}
+
+:root[lwt-toolbar-field-brighttext] .urlbarView.megabar .urlbarView-row[type=remotetab] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon,
+:root[lwt-toolbar-field-brighttext] .urlbarView.megabar:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon {
+  color: #00c8d7; /* Teal-60 */
+  stroke: #38383d; /* Grey-70 */
+}
+
+.urlbarView-row[type=bookmark] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon {
   background-image: url(chrome://browser/skin/bookmark.svg);
 }
 
-.urlbarView-row[type=remotetab] > .urlbarView-row-inner > .urlbarView-type-icon,
-.urlbarView:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-type-icon {
+.urlbarView-row[type=remotetab] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon,
+.urlbarView:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-type-icon {
   background-image: url(chrome://browser/skin/tab.svg);
-}
-
-.urlbarView-row[type=tip] {
-  padding-block: 24px;
-  padding-inline-end: @urlbarViewPaddingInline@;
 }
 
 .urlbarView-row[type=tip]:not(:last-child) {
@@ -266,6 +309,24 @@
   width: 100%;
 }
 
+/* For non-megabar tips in narrow windows, wrap the buttons below the text. */
+@media screen and (max-width: 800px) {
+  .urlbarView:not(.megabar) .urlbarView-row[type=tip] > .urlbarView-row-inner {
+    flex-wrap: wrap;
+  }
+}
+
+/* For tips, give the title some bottom margin so that when the window is narrow
+   and the buttons wrap below it, there's space between it and the buttons.  We
+   then need to give the same bottom margin to the other tip elements so that
+   they all remain vertically aligned. */
+.urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-favicon,
+.urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-title,
+.urlbarView-tip-button,
+.urlbarView-tip-help {
+  margin-block-end: 16px;
+}
+
 /* The tip button is a Photon default button when unfocused and a
    primary button in all other states. */
 .urlbarView-tip-button {
@@ -278,6 +339,7 @@
   background-color: var(--in-content-button-background);
   min-width: 8.75em;
   text-align: center;
+  flex-basis: initial;
   flex-shrink: 0;
 }
 
@@ -297,28 +359,35 @@
 }
 
 .urlbarView-tip-button-spacer {
-  flex: 1;
-  min-width: 75px;
+  flex-basis: 48px;
+  flex-grow: 1;
+  flex-shrink: 1;
 }
 
 .urlbarView-title {
   overflow: hidden;
   white-space: nowrap;
-  /* We prioritize the title over the url, so it can grow freely, but it should
-     never crop the url completely */
-  flex-shrink: 0;
-  max-width: calc(70% - 2 * (16px + @urlbarViewIconMarginEnd@));
 }
 
 .urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-title {
-   white-space: normal;
-   flex: auto;
+  white-space: normal;
+  /* Give the tip title appropriate flex so that when the window is narrow, the
+     tip buttons wrap around under it.  We want the icon and title to remain on
+     one line.  So make the title's flex-basis the width of the parent minus the
+     width of the icon. */
+  flex-basis: calc(100% - /* .urlbarView-row-inner padding-inline-start */ 6px - /* .urlbarView-favicon width */ 24px - /* .urlbarView-favicon margin-inline-end */ 12px);
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+
+.urlbarView:not(.megabar) .urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-title {
+  flex-basis: calc(100% - /* .urlbarView-favicon margin-inline-start */ (12px + @urlbarViewIconMarginEnd@) - /* .urlbarView-favicon width */ 24px - /* .urlbarView-favicon margin-inline-end */ 12px);
 }
 
 .urlbarView-title-separator::before {
   content: "\2014";
-  color: var(--panel-disabled-color);
   margin: 0 .4em;
+  opacity: 0.6;
 }
 
 .urlbarView-title:empty + .urlbarView-tags:empty + .urlbarView-title-separator {
@@ -326,44 +395,46 @@
 }
 
 .urlbarView-tags,
-.urlbarView-title:not(:empty) ~ .urlbarView-secondary {
+.urlbarView-url,
+.urlbarView-title:not(:empty) ~ .urlbarView-action {
   font-size: .85em;
 }
 
-.urlbarView-title > strong,
-.urlbarView-url > strong,
-.urlbarView-tag > strong {
+/* The megabar uses full bold weight (700). */
+.urlbarView:not(.megabar) .urlbarView-title > strong,
+.urlbarView:not(.megabar) .urlbarView-url > strong,
+.urlbarView:not(.megabar) .urlbarView-tag > strong {
   font-weight: 600;
 }
 
-.urlbarView-title:not(:empty) ~ .urlbarView-secondary {
+.urlbarView-title:not(:empty) ~ .urlbarView-action {
   color: var(--urlbar-popup-action-color);
 }
 
 .urlbarView-url {
   overflow: hidden;
-}
-
-.urlbarView-title:not(:empty) ~ .urlbarView-url {
   color: var(--urlbar-popup-url-color);
 }
 
-.urlbarView-row[selected] > .urlbarView-row-inner > .urlbarView-title-separator::before,
-.urlbarView-row[selected] > .urlbarView-row-inner > .urlbarView-secondary {
+.urlbarView-row[selected] > .urlbarView-row-inner > .urlbarView-no-wrap >.urlbarView-action,
+.urlbarView-row[selected] > .urlbarView-row-inner > .urlbarView-url {
   color: inherit;
 }
 
-.urlbarView-row[type=remotetab][selected] > .urlbarView-row-inner > .urlbarView-action,
-.urlbarView-row[type=remotetab]:hover > .urlbarView-row-inner > .urlbarView-action,
 .urlbarView-row[type=remotetab]:not([selected]):not(:hover) > .urlbarView-row-inner > .urlbarView-url,
-.urlbarView-row[type=search]:not([selected]):not(:hover) > .urlbarView-row-inner > .urlbarView-title:not(:empty) ~ .urlbarView-action,
-.urlbarView-row[type=search]:not([selected]):not(:hover) > .urlbarView-row-inner > .urlbarView-title-separator,
-.urlbarView[actionoverride] .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-action,
+.urlbarView-row[type=search]:not([selected]):not(:hover):not([show-action-text]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-title-separator,
 .urlbarView:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-url {
   /* Use visibility:collapse instead of display:none since the latter can
      confuse the overflow state of title and url elements when their content
      changes while they're hidden. */
   visibility: collapse;
+}
+
+.urlbarView-row[type=remotetab][selected] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action,
+.urlbarView-row[type=remotetab]:hover > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action,
+.urlbarView-row[type=search]:not([selected]):not(:hover):not([show-action-text]) > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action,
+.urlbarView[actionoverride] .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-action {
+  display: none;
 }
 
 .urlbarView-tags {
@@ -378,7 +449,7 @@
   margin-inline-start: .4em;
 }
 
-.urlbarView-row[selected] > .urlbarView-row-inner > .urlbarView-tags > .urlbarView-tag {
+.urlbarView-row[selected] > .urlbarView-row-inner > .urlbarView-no-wrap > .urlbarView-tags > .urlbarView-tag {
   background-color: var(--autocomplete-popup-highlight-color);
   color: var(--autocomplete-popup-highlight-background);
 }
@@ -388,22 +459,17 @@
   display: flex;
   align-items: start;
   padding-block: 16px;
-}
-
-.urlbarView.megabar .search-one-offs {
-  padding-inline: @urlbarViewPaddingInline@;
+  flex-wrap: wrap;
 }
 
 #urlbar:not(.megabar) .search-one-offs {
-  padding-inline-start: var(--item-padding-start, 5px);
+  padding-inline-start: calc(var(--item-padding-start, 5px) - /* icon padding */ 8px);
   padding-inline-end: var(--item-padding-end, 5px);
 }
 
-#urlbar .search-panel-one-offs {
-  padding-inline-start: 12px;
-  /* Make sure we can fit at least three buttons horizontally. */
-  min-width: 120px;
-  box-sizing: content-box;
+#urlbar .search-panel-one-offs-container {
+  /* Make sure horizontally we can fit four buttons, empty space, settings. */
+  min-width: calc(4 * /* one-off with end margin */ 40px + /* settings with start margin */ 56px);
 }
 
 #urlbar .search-panel-header {
@@ -415,13 +481,26 @@
 }
 
 #urlbar .search-panel-one-offs-header-label {
+  white-space: nowrap;
   margin: 0;
+  padding-inline-start: 8px;
+  padding-inline-end: 16px;
 }
 
 #urlbar .searchbar-engine-one-off-item {
   min-width: 32px;
   height: 32px;
-  margin: 0 4px;
+  margin-inline-end: 8px;
+}
+
+#urlbar .searchbar-engine-one-off-item:last-child {
+  /* This applies to both the last one-off and the compact settings button */
+  margin-inline-end: 0;
+}
+
+#urlbar .search-setting-button-compact {
+  /* Force empty space before the button */
+  margin-inline-start: calc(32px - /* settings start padding */ 8px );
 }
 
 #urlbar .search-one-offs-spacer {

@@ -31,6 +31,11 @@ namespace dom {
 class BrowserChild;
 }  // namespace dom
 
+namespace webgpu {
+class PWebGPUChild;
+class WebGPUChild;
+}  // namespace webgpu
+
 namespace widget {
 class CompositorWidget;
 }  // namespace widget
@@ -127,6 +132,8 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 
   void EndCanvasTransaction();
 
+  RefPtr<webgpu::WebGPUChild> GetWebGPUChild();
+
   /**
    * Request that the parent tell us when graphics are ready on GPU.
    * When we get that message, we bounce it to the BrowserParent via
@@ -221,6 +228,9 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
       const wr::PipelineId& aPipelineId, const LayoutDeviceIntSize&);
   bool DeallocPWebRenderBridgeChild(PWebRenderBridgeChild* aActor);
 
+  webgpu::PWebGPUChild* AllocPWebGPUChild();
+  bool DeallocPWebGPUChild(webgpu::PWebGPUChild* aActor);
+
   wr::MaybeExternalImageId GetNextExternalImageId() override;
 
   wr::PipelineId GetNextPipelineId();
@@ -265,6 +275,7 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   // and resumes IPC.
   void ResumeIPCAfterAsyncPaint();
 
+  void PrepareFinalDestroy();
   void AfterDestroy();
 
   PLayerTransactionChild* AllocPLayerTransactionChild(
@@ -287,6 +298,9 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   mozilla::ipc::IPCResult RecvObserveLayersUpdate(
       const LayersId& aLayersId, const LayersObserverEpoch& aEpoch,
       const bool& aActive);
+
+  mozilla::ipc::IPCResult RecvCompositorOptionsChanged(
+      const LayersId& aLayersId, const CompositorOptions& aNewOptions);
 
   uint64_t GetNextResourceId();
 
@@ -399,6 +413,8 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   uintptr_t mTotalFlushCount;
 
   RefPtr<CanvasChild> mCanvasChild;
+
+  RefPtr<webgpu::WebGPUChild> mWebGPUChild;
 };
 
 }  // namespace layers

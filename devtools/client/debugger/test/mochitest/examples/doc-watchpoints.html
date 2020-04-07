@@ -1,21 +1,31 @@
-<!DOCTYPE HTML>
+<!DOCTYPE html>
 <html>
+  <script>
+    function getB(obj) {
+      debugger;
+      obj.b;
+    }
+  </script>
+  <script>
+    const obj = { a: { b: 2, c: 3 }, b: 2 };
+    debugger;
+    obj.b = 3;
 
-<script>
-  const obj = { a: { b: 2, c: 3 }, b: 2 };
-  debugger
-  obj.b = 3;
+    obj.a.b = 3;
+    obj.a.b = 4;
 
-  obj.a.b = 3;
-  obj.a.b = 4;
+    console.log(obj.b);
+    obj.b = 4;
+    obj.b;
+    obj.b;
+    debugger;
 
-  console.log(obj.b);
-  obj.b = 4;
+    getB(obj);
+    debugger;
+    obj.b;
+  </script>
 
-  debugger;
-</script>
-
-<body>
-Hello World!
-</body>
+  <body>
+    Hello World!
+  </body>
 </html>

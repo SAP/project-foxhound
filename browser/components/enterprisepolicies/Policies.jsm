@@ -77,6 +77,18 @@ var Policies = {
     },
   },
 
+  AppAutoUpdate: {
+    onBeforeUIStartup(manager, param) {
+      // Logic feels a bit reversed here, but it's correct. If AppAutoUpdate is
+      // true, we disallow turning off auto updating, and visa versa.
+      if (param) {
+        manager.disallowFeature("app-auto-updates-off");
+      } else {
+        manager.disallowFeature("app-auto-updates-on");
+      }
+    },
+  },
+
   AppUpdateURL: {
     onBeforeAddons(manager, param) {
       setDefaultPref("app.update.url", param.href);
@@ -251,9 +263,13 @@ var Policies = {
                 return;
               }
               let certFile = reader.result;
+              let certFileArray = [];
+              for (let i = 0; i < certFile.length; i++) {
+                certFileArray.push(certFile.charCodeAt(i));
+              }
               let cert;
               try {
-                cert = gCertDB.constructX509(certFile);
+                cert = gCertDB.constructX509(certFileArray);
               } catch (e) {
                 try {
                   // It might be PEM instead of DER.
@@ -262,30 +278,23 @@ var Policies = {
                   log.error(`Unable to add certificate - ${certfile.path}`);
                 }
               }
-              let now = Date.now() / 1000;
               if (cert) {
-                gCertDB.asyncVerifyCertAtTime(
-                  cert,
-                  0x0008 /* certificateUsageSSLCA */,
-                  0,
-                  null,
-                  now,
-                  (aPRErrorCode, aVerifiedChain, aHasEVPolicy) => {
-                    if (aPRErrorCode == Cr.NS_OK) {
-                      // Certificate is already installed.
-                      return;
-                    }
-                    try {
-                      gCertDB.addCert(certFile, "CT,CT,");
-                    } catch (e) {
-                      // It might be PEM instead of DER.
-                      gCertDB.addCertFromBase64(
-                        pemToBase64(certFile),
-                        "CT,CT,"
-                      );
-                    }
-                  }
-                );
+                if (
+                  gCertDB.isCertTrusted(
+                    cert,
+                    Ci.nsIX509Cert.CA_CERT,
+                    Ci.nsIX509CertDB.TRUSTED_SSL
+                  )
+                ) {
+                  // Certificate is already installed.
+                  return;
+                }
+                try {
+                  gCertDB.addCert(certFile, "CT,CT,");
+                } catch (e) {
+                  // It might be PEM instead of DER.
+                  gCertDB.addCertFromBase64(pemToBase64(certFile), "CT,CT,");
+                }
               }
             };
             reader.readAsBinaryString(file);
@@ -387,6 +396,12 @@ var Policies = {
     },
   },
 
+  DisableDefaultBrowserAgent: {
+    // The implementation of this policy is in the default browser agent itself
+    // (/toolkit/mozapps/defaultagent); we need an entry for it here so that it
+    // shows up in about:policies as a real policy and not as an error.
+  },
+
   DisableDeveloperTools: {
     onBeforeAddons(manager, param) {
       if (param) {
@@ -397,6 +412,7 @@ var Policies = {
         blockAboutPage(manager, "about:devtools");
         blockAboutPage(manager, "about:debugging");
         blockAboutPage(manager, "about:devtools-toolbox");
+        blockAboutPage(manager, "about:profiling");
       }
     },
   },
@@ -584,29 +600,75 @@ var Policies = {
 
   DisplayMenuBar: {
     onBeforeUIStartup(manager, param) {
-      let value = (!param).toString();
-      // This policy is meant to change the default behavior, not to force it.
-      // If this policy was alreay applied and the user chose to re-hide the
-      // menu bar, do not show it again.
-      runOncePerModification("displayMenuBar", value, () => {
+      let value;
+      if (
+        typeof param === "boolean" ||
+        param == "default-on" ||
+        param == "default-off"
+      ) {
+        switch (param) {
+          case "default-on":
+            value = "false";
+            break;
+          case "default-off":
+            value = "true";
+            break;
+          default:
+            value = (!param).toString();
+            break;
+        }
+        // This policy is meant to change the default behavior, not to force it.
+        // If this policy was already applied and the user chose to re-hide the
+        // menu bar, do not show it again.
+        runOncePerModification("displayMenuBar", value, () => {
+          gXulStore.setValue(
+            BROWSER_DOCUMENT_URL,
+            "toolbar-menubar",
+            "autohide",
+            value
+          );
+        });
+      } else {
+        switch (param) {
+          case "always":
+            value = "false";
+            break;
+          case "never":
+            // Make sure Alt key doesn't show the menubar
+            setAndLockPref("ui.key.menuAccessKeyFocuses", false);
+            value = "true";
+            break;
+        }
         gXulStore.setValue(
           BROWSER_DOCUMENT_URL,
           "toolbar-menubar",
           "autohide",
           value
         );
-      });
+        manager.disallowFeature("hideShowMenuBar");
+      }
     },
   },
 
   DNSOverHTTPS: {
     onBeforeAddons(manager, param) {
+      let locked = false;
+      if ("Locked" in param) {
+        locked = param.Locked;
+      }
       if ("Enabled" in param) {
         let mode = param.Enabled ? 2 : 5;
-        setDefaultPref("network.trr.mode", mode, param.Locked);
+        setDefaultPref("network.trr.mode", mode, locked);
       }
-      if (param.ProviderURL) {
-        setDefaultPref("network.trr.uri", param.ProviderURL.href, param.Locked);
+      if ("ProviderURL" in param) {
+        setDefaultPref("network.trr.uri", param.ProviderURL.href, locked);
+      }
+      if ("ExcludedDomains" in param) {
+        setDefaultPref(
+          "network.trr.excluded-domains",
+          param.ExcludedDomains.join(","),
+          locked
+        );
       }
     },
   },
@@ -658,6 +720,9 @@ var Policies = {
           param.Fingerprinting,
           param.Locked
         );
+      }
+      if ("Exceptions" in param) {
+        addAllowDenyPermissions("trackingprotection", param.Exceptions);
       }
     },
   },
@@ -739,11 +804,16 @@ var Policies = {
           blockAllExtensions = true;
           // Turn off discovery pane in about:addons
           setAndLockPref("extensions.getAddons.showPane", false);
+          // Turn off recommendations
+          setAndLockPref(
+            "extensions.htmlaboutaddons.recommendations.enable",
+            false
+          );
           // Block about:debugging
           blockAboutPage(manager, "about:debugging");
         }
       }
-      let { addons } = await AddonManager.getActiveAddons();
+      let addons = await AddonManager.getAllAddons();
       let allowedExtensions = [];
       for (let extensionID in extensionSettings) {
         if (extensionID == "*") {
@@ -1045,7 +1115,7 @@ var Policies = {
     onBeforeUIStartup(manager, param) {
       if (!param) {
         blockAboutPage(manager, "about:logins", true);
-        gBlockedChromePages.push("passwordManager.xul");
+        gBlockedChromePages.push("passwordManager.xhtml");
         setAndLockPref("pref.privacy.disable_button.view_passwords", true);
       }
       setAndLockPref("signon.rememberSignons", param);
@@ -1070,6 +1140,15 @@ var Policies = {
           param.Microphone.Block
         );
         setDefaultPermission("microphone", param.Microphone);
+      }
+
+      if (param.Autoplay) {
+        addAllowDenyPermissions(
+          "autoplay-media",
+          param.Autoplay.Allow,
+          param.Autoplay.Block
+        );
+        setDefaultPermission("autoplay-media", param.Autoplay);
       }
 
       if (param.Location) {
@@ -1137,8 +1216,10 @@ var Policies = {
     onBeforeAddons(manager, param) {
       if (Array.isArray(param)) {
         Services.locale.requestedLocales = param;
-      } else {
+      } else if (param) {
         Services.locale.requestedLocales = param.split(",");
+      } else {
+        Services.locale.requestedLocales = [];
       }
     },
   },
@@ -1158,47 +1239,100 @@ var Policies = {
           setAndLockPref("privacy.clearOnShutdown.offlineApps", true);
         }
       } else {
-        setAndLockPref("privacy.sanitize.sanitizeOnShutdown", true);
+        let locked = true;
+        // Needed to preserve original behavior in perpetuity.
+        let lockDefaultPrefs = true;
+        if ("Locked" in param) {
+          locked = param.Locked;
+          lockDefaultPrefs = false;
+        }
+        setDefaultPref("privacy.sanitize.sanitizeOnShutdown", true, locked);
         if ("Cache" in param) {
-          setAndLockPref("privacy.clearOnShutdown.cache", param.Cache);
+          setDefaultPref("privacy.clearOnShutdown.cache", param.Cache, locked);
         } else {
-          setAndLockPref("privacy.clearOnShutdown.cache", false);
+          setDefaultPref(
+            "privacy.clearOnShutdown.cache",
+            false,
+            lockDefaultPrefs
+          );
         }
         if ("Cookies" in param) {
-          setAndLockPref("privacy.clearOnShutdown.cookies", param.Cookies);
+          setDefaultPref(
+            "privacy.clearOnShutdown.cookies",
+            param.Cookies,
+            locked
+          );
         } else {
-          setAndLockPref("privacy.clearOnShutdown.cookies", false);
+          setDefaultPref(
+            "privacy.clearOnShutdown.cookies",
+            false,
+            lockDefaultPrefs
+          );
         }
         if ("Downloads" in param) {
-          setAndLockPref("privacy.clearOnShutdown.downloads", param.Downloads);
+          setDefaultPref(
+            "privacy.clearOnShutdown.downloads",
+            param.Downloads,
+            locked
+          );
         } else {
-          setAndLockPref("privacy.clearOnShutdown.downloads", false);
+          setDefaultPref(
+            "privacy.clearOnShutdown.downloads",
+            false,
+            lockDefaultPrefs
+          );
         }
         if ("FormData" in param) {
-          setAndLockPref("privacy.clearOnShutdown.formdata", param.FormData);
+          setDefaultPref(
+            "privacy.clearOnShutdown.formdata",
+            param.FormData,
+            locked
+          );
         } else {
-          setAndLockPref("privacy.clearOnShutdown.formdata", false);
+          setDefaultPref(
+            "privacy.clearOnShutdown.formdata",
+            false,
+            lockDefaultPrefs
+          );
         }
         if ("History" in param) {
-          setAndLockPref("privacy.clearOnShutdown.history", param.History);
+          setDefaultPref(
+            "privacy.clearOnShutdown.history",
+            param.History,
+            locked
+          );
         } else {
-          setAndLockPref("privacy.clearOnShutdown.history", false);
+          setDefaultPref(
+            "privacy.clearOnShutdown.history",
+            false,
+            lockDefaultPrefs
+          );
         }
         if ("Sessions" in param) {
-          setAndLockPref("privacy.clearOnShutdown.sessions", param.Sessions);
+          setDefaultPref(
+            "privacy.clearOnShutdown.sessions",
+            param.Sessions,
+            locked
+          );
         } else {
-          setAndLockPref("privacy.clearOnShutdown.sessions", false);
+          setDefaultPref(
+            "privacy.clearOnShutdown.sessions",
+            false,
+            lockDefaultPrefs
+          );
         }
         if ("SiteSettings" in param) {
-          setAndLockPref(
+          setDefaultPref(
             "privacy.clearOnShutdown.siteSettings",
-            param.SiteSettings
+            param.SiteSettings,
+            locked
           );
         }
         if ("OfflineApps" in param) {
-          setAndLockPref(
+          setDefaultPref(
             "privacy.clearOnShutdown.offlineApps",
-            param.OfflineApps
+            param.OfflineApps,
+            locked
           );
         }
       }
@@ -1429,6 +1563,39 @@ var Policies = {
   SupportMenu: {
     onProfileAfterChange(manager, param) {
       manager.setSupportMenu(param);
+    },
+  },
+
+  UserMessaging: {
+    onBeforeAddons(manager, param) {
+      let locked = false;
+      if ("Locked" in param) {
+        locked = param.Locked;
+      }
+      if ("WhatsNew" in param) {
+        setDefaultPref(
+          "browser.messaging-system.whatsNewPanel.enabled",
+          param.WhatsNew,
+          locked
+        );
+      }
+      if ("ExtensionRecommendations" in param) {
+        setDefaultPref(
+          "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons",
+          param.ExtensionRecommendations,
+          locked
+        );
+      }
+      if ("FeatureRecommendations" in param) {
+        setDefaultPref(
+          "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
+          param.FeatureRecommendations,
+          locked
+        );
+      }
+      if ("UrlbarInterventions" in param && !param.UrlbarInterventions) {
+        manager.disallowFeature("urlbarinterventions");
+      }
     },
   },
 
@@ -1670,9 +1837,7 @@ function installAddonFromURL(url, extensionID) {
       onDownloadEnded: install => {
         if (extensionID && install.addon.id != extensionID) {
           log.error(
-            `Add-on downloaded from ${url} had unexpected id (got ${
-              install.addon.id
-            } expected ${extensionID})`
+            `Add-on downloaded from ${url} had unexpected id (got ${install.addon.id} expected ${extensionID})`
           );
           install.removeListener(listener);
           install.cancel();
@@ -1734,7 +1899,7 @@ function blockAboutPage(manager, feature, neededOnContentProcess = false) {
   gBlockedChromePages.push(fileName);
   if (feature == "about:config") {
     // Hide old page until it is removed
-    gBlockedChromePages.push("config.xul");
+    gBlockedChromePages.push("config.xhtml");
   }
 }
 

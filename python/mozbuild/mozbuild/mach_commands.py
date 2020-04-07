@@ -11,6 +11,7 @@ import logging
 import operator
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -114,7 +115,11 @@ class CargoProvider(MachCommandBase):
     @CommandArgument('--all-crates', default=None, action='store_true',
                      help='Check all of the crates in the tree.')
     @CommandArgument('crates', default=None, nargs='*', help='The crate name(s) to check.')
-    def check(self, all_crates=None, crates=None):
+    @CommandArgument('--jobs', '-j', default='1', nargs='?', metavar='jobs', type=int,
+                     help='Run the tests in parallel using multiple processes.')
+    @CommandArgument('-v', '--verbose', action='store_true',
+                     help='Verbose output.')
+    def check(self, all_crates=None, crates=None, jobs=0, verbose=False):
         # XXX duplication with `mach vendor rust`
         crates_and_roots = {
             'gkrust': 'toolkit/library/rust',
@@ -145,8 +150,9 @@ class CargoProvider(MachCommandBase):
             ]
 
             ret = self._run_make(srcdir=False, directory=root,
-                                 ensure_exit_code=0, silent=True,
-                                 print_directory=False, target=check_targets)
+                                 ensure_exit_code=0, silent=not verbose,
+                                 print_directory=False, target=check_targets,
+                                 num_jobs=jobs)
             if ret != 0:
                 return ret
 
@@ -170,7 +176,7 @@ class Doctor(MachCommandBase):
 @CommandProvider
 class Clobber(MachCommandBase):
     NO_AUTO_LOG = True
-    CLOBBER_CHOICES = ['objdir', 'python']
+    CLOBBER_CHOICES = ['objdir', 'python', 'gradle']
 
     @Command('clobber', category='build',
              description='Clobber the tree (delete the object directory).')
@@ -199,6 +205,9 @@ class Clobber(MachCommandBase):
         version control in well-known Python package directories will be
         deleted. Run the `status` command of your VCS to see if any untracked
         files you haven't committed yet will be deleted.
+
+        The `gradle` target will remove the "gradle" subdirectory of the object
+        directory.
         """
         invalid = set(what) - set(self.CLOBBER_CHOICES)
         if invalid:
@@ -232,6 +241,10 @@ class Clobber(MachCommandBase):
                 cmd = ['find', '.', '-type', 'f', '-name', '*.py[cdo]',
                        '-delete']
             ret = subprocess.call(cmd, cwd=self.topsrcdir)
+
+        if 'gradle' in what:
+            shutil.rmtree(mozpath.join(self.topobjdir, 'gradle'))
+
         return ret
 
     @property
@@ -340,7 +353,7 @@ class Warnings(MachCommandBase):
             dirpath = None
 
         type_counts = database.type_counts(dirpath)
-        sorted_counts = sorted(type_counts.iteritems(),
+        sorted_counts = sorted(type_counts.items(),
                                key=operator.itemgetter(1))
 
         total = 0
@@ -498,10 +511,12 @@ class GTestCommands(MachCommandBase):
                 print("--jobs is not supported on Android and will be ignored")
             if debug or debugger or debugger_args:
                 print("--debug options are not supported on Android and will be ignored")
+            from mozrunner.devices.android_device import InstallIntent
             return self.android_gtest(cwd, shuffle, gtest_filter,
                                       package, adb_path, device_serial,
                                       remote_test_root, libxul_path,
-                                      enable_webrender, not no_install)
+                                      enable_webrender,
+                                      InstallIntent.NO if no_install else InstallIntent.PROMPT)
 
         if package or adb_path or device_serial or remote_test_root or libxul_path or no_install:
             print("One or more Android-only options will be ignored")
@@ -699,8 +714,8 @@ class Install(MachCommandBase):
              description='Install the package on the machine (or device in the case of Android).')
     def install(self, **kwargs):
         if conditions.is_android(self):
-            from mozrunner.devices.android_device import verify_android_device
-            ret = verify_android_device(self, install=True, **kwargs) == 0
+            from mozrunner.devices.android_device import (verify_android_device, InstallIntent)
+            ret = verify_android_device(self, install=InstallIntent.YES, **kwargs) == 0
         else:
             ret = self._run_make(directory=".", target='install', ensure_exit_code=False)
 
@@ -745,6 +760,30 @@ def _get_android_run_parser():
                         help='Fail if application is already running (default: False)')
     parser.add_argument('--restart', action='store_true', default=False,
                         help='Stop the application if it is already running (default: False)')
+    return parser
+
+
+def _get_jsshell_run_parser():
+    parser = argparse.ArgumentParser()
+    group = parser.add_argument_group('the compiled program')
+    group.add_argument('params', nargs='...', default=[],
+                       help='Command-line arguments to be passed through to the program. Not '
+                       'specifying a --profile or -P option will result in a temporary profile '
+                       'being used.')
+
+    group = parser.add_argument_group('debugging')
+    group.add_argument('--debug', action='store_true',
+                       help='Enable the debugger. Not specifying a --debugger option will result '
+                       'in the default debugger being used.')
+    group.add_argument('--debugger', default=None, type=str,
+                       help='Name of debugger to use.')
+    group.add_argument('--debugger-args', default=None, metavar='params', type=str,
+                       help='Command-line arguments to pass to the debugger itself; '
+                       'split as the Bourne shell would.')
+    group.add_argument('--debugparams', action=StoreDebugParamsAndWarnAction,
+                       default=None, type=str, dest='debugger_args',
+                       help=argparse.SUPPRESS)
+
     return parser
 
 
@@ -808,6 +847,8 @@ def setup_run_parser():
     build = MozbuildObject.from_environment(cwd=here)
     if conditions.is_android(build):
         return _get_android_run_parser()
+    if conditions.is_jsshell(build):
+        return _get_jsshell_run_parser()
     return _get_desktop_run_parser()
 
 
@@ -816,17 +857,21 @@ class RunProgram(MachCommandBase):
     """Run the compiled program."""
 
     @Command('run', category='post-build',
-             conditions=[conditions.has_build],
+             conditions=[conditions.has_build_or_shell],
              parser=setup_run_parser,
              description='Run the compiled program, possibly under a debugger or DMD.')
     def run(self, **kwargs):
         if conditions.is_android(self):
             return self._run_android(**kwargs)
+        if conditions.is_jsshell(self):
+            return self._run_jsshell(**kwargs)
         return self._run_desktop(**kwargs)
 
     def _run_android(self, app='org.mozilla.geckoview_example', intent=None, env=[], profile=None,
                      url=None, no_install=None, no_wait=None, fail_if_running=None, restart=None):
-        from mozrunner.devices.android_device import verify_android_device, _get_device
+        from mozrunner.devices.android_device import (verify_android_device,
+                                                      _get_device,
+                                                      InstallIntent)
         from six.moves import shlex_quote
 
         if app == 'org.mozilla.geckoview_example':
@@ -839,7 +884,8 @@ class RunProgram(MachCommandBase):
             raise RuntimeError('Application not recognized: {}'.format(app))
 
         # `verify_android_device` respects `DEVICE_SERIAL` if it is set and sets it otherwise.
-        verify_android_device(self, app=app, install=not no_install)
+        verify_android_device(self, app=app,
+                              install=InstallIntent.NO if no_install else InstallIntent.PROMPT)
         device_serial = os.environ.get('DEVICE_SERIAL')
         if not device_serial:
             print('No ADB devices connected.')
@@ -900,6 +946,58 @@ class RunProgram(MachCommandBase):
             fail_if_running=fail_if_running)
 
         return 0
+
+    def _run_jsshell(self, params, debug, debugger, debugger_args):
+        try:
+            binpath = self.get_binary_path('app')
+        except Exception as e:
+            print("It looks like your program isn't built.",
+                  "You can run |mach build| to build it.")
+            print(e)
+            return 1
+
+        args = [binpath]
+
+        if params:
+            args.extend(params)
+
+        extra_env = {
+            'RUST_BACKTRACE': 'full',
+        }
+
+        if debug or debugger or debugger_args:
+            if 'INSIDE_EMACS' in os.environ:
+                self.log_manager.terminal_handler.setLevel(logging.WARNING)
+
+            import mozdebug
+            if not debugger:
+                # No debugger name was provided. Look for the default ones on
+                # current OS.
+                debugger = mozdebug.get_default_debugger_name(mozdebug.DebuggerSearch.KeepLooking)
+
+            if debugger:
+                self.debuggerInfo = mozdebug.get_debugger_info(debugger, debugger_args)
+
+            if not debugger or not self.debuggerInfo:
+                print("Could not find a suitable debugger in your PATH.")
+                return 1
+
+            # Parameters come from the CLI. We need to convert them before
+            # their use.
+            if debugger_args:
+                from mozbuild import shellutil
+                try:
+                    debugger_args = shellutil.split(debugger_args)
+                except shellutil.MetaCharacterException as e:
+                    print("The --debugger-args you passed require a real shell to parse them.")
+                    print("(We can't handle the %r character.)" % e.char)
+                    return 1
+
+            # Prepend the debugger args.
+            args = [self.debuggerInfo.path] + self.debuggerInfo.args + args
+
+        return self.run_process(args=args, ensure_exit_code=False,
+                                pass_thru=True, append_env=extra_env)
 
     def _run_desktop(self, params, remote, background, noprofile, disable_e10s,
                      enable_crash_reporter, setpref, temp_profile, macos_open, debug, debugger,
@@ -1120,7 +1218,7 @@ class MachDebug(MachCommandBase):
     @Command('environment', category='build-dev',
              description='Show info about the mach and build environment.')
     @CommandArgument('--format', default='pretty',
-                     choices=['pretty', 'configure', 'json'],
+                     choices=['pretty', 'json'],
                      help='Print data in the given format.')
     @CommandArgument('--output', '-o', type=str,
                      help='Output to the given file.')

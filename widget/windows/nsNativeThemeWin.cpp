@@ -13,6 +13,7 @@
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/gfx/Types.h"  // for Color::FromABGR
+#include "nsNativeBasicTheme.h"
 #include "nsColor.h"
 #include "nsDeviceContext.h"
 #include "nsRect.h"
@@ -745,11 +746,9 @@ mozilla::Maybe<nsUXThemeClass> nsNativeThemeWin::GetThemeClass(
     case StyleAppearance::Resizerpanel:
     case StyleAppearance::Resizer:
       return Some(eUXStatus);
-    // NOTE: if you change Menulist and MenulistButton to behave differently,
-    // be sure to handle StaticPrefs::layout_css_webkit_appearance_enabled.
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
-    case StyleAppearance::MozMenulistButton:
+    case StyleAppearance::MozMenulistArrowButton:
       return Some(eUXCombobox);
     case StyleAppearance::Treeheadercell:
     case StyleAppearance::Treeheadersortarrow:
@@ -834,11 +833,6 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
                                                 StyleAppearance aAppearance,
                                                 int32_t& aPart,
                                                 int32_t& aState) {
-  if (aAppearance == StyleAppearance::MenulistButton &&
-      StaticPrefs::layout_css_webkit_appearance_enabled()) {
-    aAppearance = StyleAppearance::Menulist;
-  }
-
   switch (aAppearance) {
     case StyleAppearance::Button: {
       aPart = BP_BUTTON;
@@ -870,7 +864,6 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
 
       enum InputState { UNCHECKED = 0, CHECKED, INDETERMINATE };
       InputState inputState = UNCHECKED;
-      bool isXULCheckboxRadio = false;
 
       if (!aFrame) {
         aState = TS_NORMAL;
@@ -882,8 +875,7 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
           inputState = INDETERMINATE;
         }
 
-        EventStates eventState = GetContentState(
-            isXULCheckboxRadio ? aFrame->GetParent() : aFrame, aAppearance);
+        EventStates eventState = GetContentState(aFrame, aAppearance);
         if (IsDisabled(aFrame, eventState)) {
           aState = TS_DISABLED;
         } else {
@@ -1239,6 +1231,7 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
 
       return NS_OK;
     }
+    case StyleAppearance::MenulistButton:
     case StyleAppearance::Menulist: {
       nsIContent* content = aFrame->GetContent();
       bool useDropBorder = content && content->IsHTMLElement();
@@ -1273,8 +1266,7 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
 
       return NS_OK;
     }
-    case StyleAppearance::MenulistButton:
-    case StyleAppearance::MozMenulistButton: {
+    case StyleAppearance::MozMenulistArrowButton: {
       bool isHTML = IsHTMLContent(aFrame);
       nsIFrame* parentFrame = aFrame->GetParent();
       bool isMenulist = !isHTML && parentFrame->IsMenuFrame();
@@ -1514,9 +1506,26 @@ static bool IsScrollbarWidthThin(nsIFrame* aFrame) {
   return IsScrollbarWidthThin(style);
 }
 
-static bool ShouldDrawCustomScrollbar(ComputedStyle* aStyle) {
-  return aStyle->StyleUI()->HasCustomScrollbars() ||
-         IsScrollbarWidthThin(aStyle);
+// Returns the style for custom scrollbar if the scrollbar part frame should
+// use the custom drawing path, nullptr otherwise.
+//
+// Optionally the caller can pass a pointer to aForDarkBg for whether custom
+// scrollbar may be drawn due to dark background.
+static ComputedStyle* GetCustomScrollbarStyle(nsIFrame* aFrame,
+                                              bool* aDarkScrollbar = nullptr) {
+  ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
+  if (style->StyleUI()->HasCustomScrollbars()) {
+    return style;
+  }
+  bool useDarkScrollbar = !StaticPrefs::widget_disable_dark_scrollbar() &&
+                          nsNativeTheme::IsDarkBackground(aFrame);
+  if (useDarkScrollbar || IsScrollbarWidthThin(style)) {
+    if (aDarkScrollbar) {
+      *aDarkScrollbar = useDarkScrollbar;
+    }
+    return style;
+  }
+  return nullptr;
 }
 
 NS_IMETHODIMP
@@ -1524,16 +1533,10 @@ nsNativeThemeWin::DrawWidgetBackground(gfxContext* aContext, nsIFrame* aFrame,
                                        StyleAppearance aAppearance,
                                        const nsRect& aRect,
                                        const nsRect& aDirtyRect) {
-  if (aAppearance == StyleAppearance::MenulistButton &&
-      StaticPrefs::layout_css_webkit_appearance_enabled()) {
-    aAppearance = StyleAppearance::Menulist;
-  }
-
   if (IsWidgetScrollbarPart(aAppearance)) {
-    ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
-    if (ShouldDrawCustomScrollbar(style)) {
-      return DrawCustomScrollbarPart(aContext, aFrame, style, aAppearance,
-                                     aRect, aDirtyRect);
+    if (MayDrawCustomScrollbarPart(aContext, aFrame, aAppearance, aRect,
+                                   aDirtyRect)) {
+      return NS_OK;
     }
   }
 
@@ -1814,8 +1817,7 @@ RENDER_AGAIN:
   }
   // The following widgets need to be RTL-aware
   else if (aAppearance == StyleAppearance::Resizer ||
-           aAppearance == StyleAppearance::MenulistButton ||
-           aAppearance == StyleAppearance::MozMenulistButton) {
+           aAppearance == StyleAppearance::MozMenulistArrowButton) {
     DrawThemeBGRTLAware(theme, hdc, part, state, &widgetRect, &clipRect,
                         IsFrameRTL(aFrame));
   } else if (aAppearance == StyleAppearance::MenulistTextfield ||
@@ -2040,11 +2042,6 @@ bool nsNativeThemeWin::GetWidgetPadding(nsDeviceContext* aContext,
                                         nsIFrame* aFrame,
                                         StyleAppearance aAppearance,
                                         LayoutDeviceIntMargin* aResult) {
-  if (aAppearance == StyleAppearance::MenulistButton &&
-      StaticPrefs::layout_css_webkit_appearance_enabled()) {
-    aAppearance = StyleAppearance::Menulist;
-  }
-
   switch (aAppearance) {
     // Radios and checkboxes return a fixed size in GetMinimumWidgetSize
     // and have a meaningful baseline, so they can't have
@@ -2119,6 +2116,7 @@ bool nsNativeThemeWin::GetWidgetPadding(nsDeviceContext* aContext,
       aAppearance == StyleAppearance::NumberInput ||
       aAppearance == StyleAppearance::Textfield ||
       aAppearance == StyleAppearance::Textarea ||
+      aAppearance == StyleAppearance::MenulistButton ||
       aAppearance == StyleAppearance::Menulist) {
     // If we have author-specified padding for these elements, don't do the
     // fixups below.
@@ -2142,7 +2140,8 @@ bool nsNativeThemeWin::GetWidgetPadding(nsDeviceContext* aContext,
     ScaleForFrameDPI(aResult, aFrame);
     return ok;
   } else if (IsHTMLContent(aFrame) &&
-             aAppearance == StyleAppearance::Menulist) {
+             (aAppearance == StyleAppearance::Menulist ||
+              aAppearance == StyleAppearance::MenulistButton)) {
     /* For content menulist controls, we need an extra pixel so that we have
      * room to draw our focus rectangle stuff. Otherwise, the focus rect might
      * overlap the control's border.
@@ -2206,8 +2205,8 @@ bool nsNativeThemeWin::GetWidgetOverflow(nsDeviceContext* aContext,
    * This is fairly minor, as by default there is nothing in that area, and
    * a border only shows up if the widget is being hovered.
    *
-   * TODO(jwatt): Figure out what do to about StyleAppearance::MozMenulistButton
-   * too.
+   * TODO(jwatt): Figure out what do to about
+   * StyleAppearance::MozMenulistArrowButton too.
    */
 #if 0
   /* We explicitly draw dropdown buttons in HTML content 1px bigger up, right,
@@ -2249,11 +2248,6 @@ nsNativeThemeWin::GetMinimumWidgetSize(nsPresContext* aPresContext,
                                        StyleAppearance aAppearance,
                                        LayoutDeviceIntSize* aResult,
                                        bool* aIsOverridable) {
-  if (aAppearance == StyleAppearance::MenulistButton &&
-      StaticPrefs::layout_css_webkit_appearance_enabled()) {
-    aAppearance = StyleAppearance::Menulist;
-  }
-
   aResult->width = aResult->height = 0;
   *aIsOverridable = true;
   nsresult rv = NS_OK;
@@ -2311,8 +2305,7 @@ nsNativeThemeWin::GetMinimumWidgetSize(nsPresContext* aPresContext,
     case StyleAppearance::ScrollbarbuttonRight:
     case StyleAppearance::ScrollbarHorizontal:
     case StyleAppearance::ScrollbarVertical:
-    case StyleAppearance::MenulistButton:
-    case StyleAppearance::MozMenulistButton: {
+    case StyleAppearance::MozMenulistArrowButton: {
       rv = ClassicGetMinimumWidgetSize(aFrame, aAppearance, aResult,
                                        aIsOverridable);
       ScaleForFrameDPI(aResult, aFrame);
@@ -2496,11 +2489,6 @@ nsNativeThemeWin::WidgetStateChanged(nsIFrame* aFrame,
                                      StyleAppearance aAppearance,
                                      nsAtom* aAttribute, bool* aShouldRepaint,
                                      const nsAttrValue* aOldValue) {
-  if (aAppearance == StyleAppearance::MenulistButton &&
-      StaticPrefs::layout_css_webkit_appearance_enabled()) {
-    aAppearance = StyleAppearance::Menulist;
-  }
-
   // Some widget types just never change state.
   if (aAppearance == StyleAppearance::Toolbox ||
       aAppearance == StyleAppearance::MozWinMediaToolbox ||
@@ -2538,13 +2526,10 @@ nsNativeThemeWin::WidgetStateChanged(nsIFrame* aFrame,
 
   // We need to repaint the dropdown arrow in vista HTML combobox controls when
   // the control is closed to get rid of the hover effect.
-  //
-  // NOTE: if you change Menulist and MenulistButton to behave differently,
-  // be sure to handle StaticPrefs::layout_css_webkit_appearance_enabled.
   if ((aAppearance == StyleAppearance::Menulist ||
        aAppearance == StyleAppearance::MenulistButton ||
-       aAppearance == StyleAppearance::MozMenulistButton) &&
-      IsHTMLContent(aFrame)) {
+       aAppearance == StyleAppearance::MozMenulistArrowButton) &&
+      nsNativeTheme::IsHTMLContent(aFrame)) {
     *aShouldRepaint = true;
     return NS_OK;
   }
@@ -2607,14 +2592,8 @@ bool nsNativeThemeWin::ThemeSupportsWidget(nsPresContext* aPresContext,
 }
 
 bool nsNativeThemeWin::WidgetIsContainer(StyleAppearance aAppearance) {
-  if (aAppearance == StyleAppearance::MenulistButton &&
-      StaticPrefs::layout_css_webkit_appearance_enabled()) {
-    aAppearance = StyleAppearance::Menulist;
-  }
-
   // XXXdwh At some point flesh all of this out.
-  if (aAppearance == StyleAppearance::MenulistButton ||
-      aAppearance == StyleAppearance::MozMenulistButton ||
+  if (aAppearance == StyleAppearance::MozMenulistArrowButton ||
       aAppearance == StyleAppearance::Radio ||
       aAppearance == StyleAppearance::Checkbox)
     return false;
@@ -2659,8 +2638,7 @@ nsITheme::ThemeGeometryType nsNativeThemeWin::ThemeGeometryTypeForWidget(
 nsITheme::Transparency nsNativeThemeWin::GetWidgetTransparency(
     nsIFrame* aFrame, StyleAppearance aAppearance) {
   if (IsWidgetScrollbarPart(aAppearance)) {
-    ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
-    if (ShouldDrawCustomScrollbar(style)) {
+    if (ComputedStyle* style = GetCustomScrollbarStyle(aFrame)) {
       auto* ui = style->StyleUI();
       if (ui->mScrollbarColor.IsAuto() ||
           ui->mScrollbarColor.AsColors().track.MaybeTransparent()) {
@@ -2772,12 +2750,10 @@ bool nsNativeThemeWin::ClassicThemeSupportsWidget(nsIFrame* aFrame,
     case StyleAppearance::ScaleVertical:
     case StyleAppearance::ScalethumbHorizontal:
     case StyleAppearance::ScalethumbVertical:
-    // NOTE: if you change Menulist and MenulistButton to behave differently,
-    // be sure to handle StaticPrefs::layout_css_webkit_appearance_enabled.
     case StyleAppearance::Menulist:
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::MenulistButton:
-    case StyleAppearance::MozMenulistButton:
+    case StyleAppearance::MenulistTextfield:
+    case StyleAppearance::MozMenulistArrowButton:
     case StyleAppearance::InnerSpinButton:
     case StyleAppearance::SpinnerUpbutton:
     case StyleAppearance::SpinnerDownbutton:
@@ -2820,11 +2796,6 @@ bool nsNativeThemeWin::ClassicThemeSupportsWidget(nsIFrame* aFrame,
 
 LayoutDeviceIntMargin nsNativeThemeWin::ClassicGetWidgetBorder(
     nsDeviceContext* aContext, nsIFrame* aFrame, StyleAppearance aAppearance) {
-  if (aAppearance == StyleAppearance::MenulistButton &&
-      StaticPrefs::layout_css_webkit_appearance_enabled()) {
-    aAppearance = StyleAppearance::Menulist;
-  }
-
   LayoutDeviceIntMargin result;
   switch (aAppearance) {
     case StyleAppearance::Groupbox:
@@ -2838,6 +2809,7 @@ LayoutDeviceIntMargin nsNativeThemeWin::ClassicGetWidgetBorder(
     case StyleAppearance::Listbox:
     case StyleAppearance::Treeview:
     case StyleAppearance::Menulist:
+    case StyleAppearance::MenulistButton:
     case StyleAppearance::MenulistTextfield:
     case StyleAppearance::Tab:
     case StyleAppearance::NumberInput:
@@ -2917,11 +2889,6 @@ bool nsNativeThemeWin::ClassicGetWidgetPadding(nsDeviceContext* aContext,
 nsresult nsNativeThemeWin::ClassicGetMinimumWidgetSize(
     nsIFrame* aFrame, StyleAppearance aAppearance, LayoutDeviceIntSize* aResult,
     bool* aIsOverridable) {
-  if (aAppearance == StyleAppearance::MenulistButton &&
-      StaticPrefs::layout_css_webkit_appearance_enabled()) {
-    aAppearance = StyleAppearance::Menulist;
-  }
-
   (*aResult).width = (*aResult).height = 0;
   *aIsOverridable = true;
   switch (aAppearance) {
@@ -2993,11 +2960,11 @@ nsresult nsNativeThemeWin::ClassicGetMinimumWidgetSize(
       (*aResult).height = 12;
       *aIsOverridable = false;
       break;
-    case StyleAppearance::MenulistButton:
-    case StyleAppearance::MozMenulistButton:
+    case StyleAppearance::MozMenulistArrowButton:
       (*aResult).width = ::GetSystemMetrics(SM_CXVSCROLL);
       break;
     case StyleAppearance::Menulist:
+    case StyleAppearance::MenulistButton:
     case StyleAppearance::Button:
     case StyleAppearance::Groupbox:
     case StyleAppearance::Listbox:
@@ -3114,11 +3081,6 @@ nsresult nsNativeThemeWin::ClassicGetMinimumWidgetSize(
 nsresult nsNativeThemeWin::ClassicGetThemePartAndState(
     nsIFrame* aFrame, StyleAppearance aAppearance, int32_t& aPart,
     int32_t& aState, bool& aFocused) {
-  if (aAppearance == StyleAppearance::MenulistButton &&
-      StaticPrefs::layout_css_webkit_appearance_enabled()) {
-    aAppearance = StyleAppearance::Menulist;
-  }
-
   aFocused = false;
   switch (aAppearance) {
     case StyleAppearance::Button: {
@@ -3253,6 +3215,7 @@ nsresult nsNativeThemeWin::ClassicGetThemePartAndState(
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Menulist:
+    case StyleAppearance::MenulistButton:
     case StyleAppearance::MenulistTextfield:
     case StyleAppearance::Range:
     case StyleAppearance::RangeThumb:
@@ -3280,8 +3243,7 @@ nsresult nsNativeThemeWin::ClassicGetThemePartAndState(
     case StyleAppearance::Groupbox:
       // these don't use DrawFrameControl
       return NS_OK;
-    case StyleAppearance::MenulistButton:
-    case StyleAppearance::MozMenulistButton: {
+    case StyleAppearance::MozMenulistArrowButton: {
       aPart = DFC_SCROLL;
       aState = DFCS_SCROLLCOMBOBOX;
 
@@ -3657,8 +3619,7 @@ RENDER_AGAIN:
     case StyleAppearance::InnerSpinButton:
     case StyleAppearance::SpinnerUpbutton:
     case StyleAppearance::SpinnerDownbutton:
-    case StyleAppearance::MenulistButton:
-    case StyleAppearance::MozMenulistButton:
+    case StyleAppearance::MozMenulistArrowButton:
     case StyleAppearance::Resizer: {
       int32_t oldTA;
       // setup DC to make DrawFrameControl draw correctly
@@ -3673,6 +3634,7 @@ RENDER_AGAIN:
     case StyleAppearance::Textarea:
     case StyleAppearance::Listbox:
     case StyleAppearance::Menulist:
+    case StyleAppearance::MenulistButton:
     case StyleAppearance::MenulistTextfield: {
       // Paint the border, except for 'menulist-textfield' that isn't focused:
       if (aAppearance != StyleAppearance::MenulistTextfield || focused) {
@@ -4029,8 +3991,8 @@ uint32_t nsNativeThemeWin::GetWidgetNativeDrawingFlags(
     case StyleAppearance::FocusOutline:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
-
     case StyleAppearance::Menulist:
+    case StyleAppearance::MenulistButton:
     case StyleAppearance::MenulistTextfield:
       return gfxWindowsNativeDrawing::CANNOT_DRAW_TO_COLOR_ALPHA |
              gfxWindowsNativeDrawing::CAN_AXIS_ALIGNED_SCALE |
@@ -4039,8 +4001,7 @@ uint32_t nsNativeThemeWin::GetWidgetNativeDrawingFlags(
     // the dropdown button /almost/ renders correctly with scaling,
     // except that the graphic in the dropdown button (the downward arrow)
     // doesn't get scaled up.
-    case StyleAppearance::MenulistButton:
-    case StyleAppearance::MozMenulistButton:
+    case StyleAppearance::MozMenulistArrowButton:
     // these are definitely no; they're all graphics that don't get scaled up
     case StyleAppearance::Checkbox:
     case StyleAppearance::Radio:
@@ -4158,9 +4119,17 @@ static nscolor AdjustScrollbarFaceColor(nscolor aFaceColor,
 }
 
 // This tries to draw a Windows 10 style scrollbar with given colors.
-nsresult nsNativeThemeWin::DrawCustomScrollbarPart(
-    gfxContext* aContext, nsIFrame* aFrame, ComputedStyle* aStyle,
-    StyleAppearance aAppearance, const nsRect& aRect, const nsRect& aClipRect) {
+bool nsNativeThemeWin::MayDrawCustomScrollbarPart(gfxContext* aContext,
+                                                  nsIFrame* aFrame,
+                                                  StyleAppearance aAppearance,
+                                                  const nsRect& aRect,
+                                                  const nsRect& aClipRect) {
+  bool darkScrollbar = false;
+  ComputedStyle* style = GetCustomScrollbarStyle(aFrame, &darkScrollbar);
+  if (!style) {
+    return false;
+  }
+
   EventStates eventStates = GetContentState(aFrame, aAppearance);
 
   gfxContextAutoSaveRestore autoSave(aContext);
@@ -4172,11 +4141,12 @@ nsresult nsNativeThemeWin::DrawCustomScrollbarPart(
   gfxRect rect =
       ThebesRect(LayoutDevicePixel::FromAppUnits(aRect, p2a).ToUnknownRect());
 
-  const nsStyleUI* ui = aStyle->StyleUI();
+  const nsStyleUI* ui = style->StyleUI();
   auto* customColors =
       ui->mScrollbarColor.IsAuto() ? nullptr : &ui->mScrollbarColor.AsColors();
-  nscolor trackColor = customColors ? customColors->track.CalcColor(*aStyle)
-                                    : NS_RGB(240, 240, 240);
+  nscolor trackColor = customColors ? customColors->track.CalcColor(*style)
+                                    : (darkScrollbar ? NS_RGBA(20, 20, 25, 77)
+                                                     : NS_RGB(240, 240, 240));
   switch (aAppearance) {
     case StyleAppearance::ScrollbarHorizontal:
     case StyleAppearance::ScrollbarVertical:
@@ -4184,7 +4154,7 @@ nsresult nsNativeThemeWin::DrawCustomScrollbarPart(
       ctx->SetColor(Color::FromABGR(trackColor));
       ctx->Rectangle(rect);
       ctx->Fill();
-      return NS_OK;
+      return true;
     }
     default:
       break;
@@ -4211,8 +4181,10 @@ nsresult nsNativeThemeWin::DrawCustomScrollbarPart(
   switch (aAppearance) {
     case StyleAppearance::ScrollbarthumbVertical:
     case StyleAppearance::ScrollbarthumbHorizontal: {
-      nscolor faceColor = customColors ? customColors->thumb.CalcColor(*aStyle)
-                                       : NS_RGB(205, 205, 205);
+      nscolor faceColor = customColors
+                              ? customColors->thumb.CalcColor(*style)
+                              : (darkScrollbar ? NS_RGBA(249, 249, 250, 102)
+                                               : NS_RGB(205, 205, 205));
       faceColor = AdjustScrollbarFaceColor(faceColor, eventStates);
       ctx->SetColor(Color::FromABGR(faceColor));
       ctx->Rectangle(bgRect);
@@ -4276,16 +4248,14 @@ nsresult nsNativeThemeWin::DrawCustomScrollbarPart(
     default:
       MOZ_ASSERT_UNREACHABLE("Unknown widget type");
   }
-  return NS_OK;
+  return true;
 }
 
 ///////////////////////////////////////////
 // Creation Routine
 ///////////////////////////////////////////
 
-already_AddRefed<nsITheme> do_GetNativeTheme() {
-  if (StaticPrefs::widget_disable_native_theme()) return nullptr;
-
+already_AddRefed<nsITheme> do_GetNativeThemeDoNotUseDirectly() {
   static nsCOMPtr<nsITheme> inst;
 
   if (!inst) {

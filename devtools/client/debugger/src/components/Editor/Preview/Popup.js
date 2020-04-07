@@ -25,8 +25,6 @@ import { getThreadContext } from "../../../selectors";
 import Popover from "../../shared/Popover";
 import PreviewFunction from "../../shared/PreviewFunction";
 
-import { createObjectClient } from "../../../client/firefox";
-
 import "./Popup.css";
 
 import type { ThreadContext } from "../../../types";
@@ -103,19 +101,26 @@ export class Popup extends Component<Props> {
     const {
       cx,
       selectSourceURL,
-      preview: { result },
+      preview: { resultGrip },
     } = this.props;
+
+    if (!resultGrip) {
+      return null;
+    }
+
+    const { location } = resultGrip;
 
     return (
       <div
         className="preview-popup"
         onClick={() =>
-          selectSourceURL(cx, result.location.url, {
-            line: result.location.line,
+          location &&
+          selectSourceURL(cx, location.url, {
+            line: location.line,
           })
         }
       >
-        <PreviewFunction func={result} />
+        <PreviewFunction func={resultGrip} />
       </div>
     );
   }
@@ -129,6 +134,14 @@ export class Popup extends Component<Props> {
       unHighlightDomElement,
     } = this.props;
 
+    if (properties.length == 0) {
+      return (
+        <div className="preview-popup">
+          <span className="label">{L10N.getStr("preview.noProperties")}</span>
+        </div>
+      );
+    }
+
     return (
       <div
         className="preview-popup"
@@ -140,7 +153,6 @@ export class Popup extends Component<Props> {
           disableWrap={true}
           focusable={false}
           openLink={openLink}
-          createObjectClient={grip => createObjectClient(grip)}
           onDOMNodeClick={grip => openElementInInspector(grip)}
           onInspectIconClick={grip => openElementInInspector(grip)}
           onDOMNodeMouseOver={grip => highlightDomElement(grip)}
@@ -153,12 +165,12 @@ export class Popup extends Component<Props> {
   renderSimplePreview() {
     const {
       openLink,
-      preview: { result },
+      preview: { resultGrip },
     } = this.props;
     return (
       <div className="preview-popup">
         {Rep({
-          object: result,
+          object: resultGrip,
           mode: MODE.LONG,
           openLink,
         })}
@@ -188,9 +200,14 @@ export class Popup extends Component<Props> {
 
   getPreviewType() {
     const {
-      preview: { root },
+      preview: { root, properties },
     } = this.props;
-    if (nodeIsPrimitive(root) || nodeIsFunction(root)) {
+    if (
+      nodeIsPrimitive(root) ||
+      nodeIsFunction(root) ||
+      !Array.isArray(properties) ||
+      properties.length === 0
+    ) {
       return "tooltip";
     }
 
@@ -204,15 +221,18 @@ export class Popup extends Component<Props> {
 
   render() {
     const {
-      preview: { cursorPos, result },
+      preview: { cursorPos, resultGrip },
       editorRef,
     } = this.props;
-    const type = this.getPreviewType();
 
-    if (typeof result == "undefined" || result.optimizedOut) {
+    if (
+      typeof resultGrip == "undefined" ||
+      (resultGrip && resultGrip.optimizedOut)
+    ) {
       return null;
     }
 
+    const type = this.getPreviewType();
     return (
       <Popover
         targetPosition={cursorPos}

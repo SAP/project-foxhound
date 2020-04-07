@@ -39,9 +39,9 @@ class ChildDevToolsPanel extends ExtensionCommon.EventEmitter {
     this.id = id;
     this._panelContext = null;
 
-    this.mm = context.messageManager;
-    this.mm.addMessageListener("Extension:DevToolsPanelShown", this);
-    this.mm.addMessageListener("Extension:DevToolsPanelHidden", this);
+    this.conduit = context.openConduit(this, {
+      recv: ["PanelHidden", "PanelShown"],
+    });
   }
 
   get panelContext() {
@@ -69,29 +69,11 @@ class ChildDevToolsPanel extends ExtensionCommon.EventEmitter {
     return null;
   }
 
-  receiveMessage({ name, data }) {
-    // Filter out any message that is not related to the id of this
-    // toolbox panel.
-    if (!data || data.toolboxPanelId !== this.id) {
+  recvPanelShown() {
+    // Ignore received call before the panel context exist.
+    if (!this.panelContext || !this.panelContext.contentWindow) {
       return;
     }
-
-    switch (name) {
-      case "Extension:DevToolsPanelShown":
-        // Filter out *Shown message received while the panel context do not yet
-        // exist.
-        if (!this.panelContext || !this.panelContext.contentWindow) {
-          return;
-        }
-        this.onParentPanelShown();
-        break;
-      case "Extension:DevToolsPanelHidden":
-        this.onParentPanelHidden();
-        break;
-    }
-  }
-
-  onParentPanelShown() {
     const { document } = this.panelContext.contentWindow;
 
     // Ensure that the onShown event is fired when the panel document has
@@ -101,7 +83,7 @@ class ChildDevToolsPanel extends ExtensionCommon.EventEmitter {
     });
   }
 
-  onParentPanelHidden() {
+  recvPanelHidden() {
     this.emit("hidden");
   }
 
@@ -140,9 +122,6 @@ class ChildDevToolsPanel extends ExtensionCommon.EventEmitter {
   }
 
   close() {
-    this.mm.removeMessageListener("Extension:DevToolsPanelShown", this);
-    this.mm.removeMessageListener("Extension:DevToolsPanelHidden", this);
-
     this._panelContext = null;
     this.context = null;
   }
@@ -166,50 +145,21 @@ class ChildDevToolsInspectorSidebar extends ExtensionCommon.EventEmitter {
 
     this.id = id;
 
-    this.mm = context.messageManager;
-    this.mm.addMessageListener("Extension:DevToolsInspectorSidebarShown", this);
-    this.mm.addMessageListener(
-      "Extension:DevToolsInspectorSidebarHidden",
-      this
-    );
+    this.conduit = context.openConduit(this, {
+      recv: ["InspectorSidebarHidden", "InspectorSidebarShown"],
+    });
   }
 
   close() {
-    this.mm.removeMessageListener(
-      "Extension:DevToolsInspectorSidebarShown",
-      this
-    );
-    this.mm.removeMessageListener(
-      "Extension:DevToolsInspectorSidebarHidden",
-      this
-    );
-
-    this.content = null;
+    this.context = null;
   }
 
-  receiveMessage({ name, data }) {
-    // Filter out any message that is not related to the id of this
-    // toolbox panel.
-    if (!data || data.inspectorSidebarId !== this.id) {
-      return;
-    }
-
-    switch (name) {
-      case "Extension:DevToolsInspectorSidebarShown":
-        this.onParentSidebarShown();
-        break;
-      case "Extension:DevToolsInspectorSidebarHidden":
-        this.onParentSidebarHidden();
-        break;
-    }
-  }
-
-  onParentSidebarShown() {
+  recvInspectorSidebarShown() {
     // TODO: wait and emit sidebar contentWindow once sidebar.setPage is supported.
     this.emit("shown");
   }
 
-  onParentSidebarHidden() {
+  recvInspectorSidebarHidden() {
     this.emit("hidden");
   }
 
@@ -229,9 +179,7 @@ class ChildDevToolsInspectorSidebar extends ExtensionCommon.EventEmitter {
         extensionURL.host !== sidebarPageURL.host
       ) {
         throw new context.cloneScope.Error(
-          `Invalid sidebar URL: ${
-            sidebarPageURL.href
-          } is not a valid extension URL`
+          `Invalid sidebar URL: ${sidebarPageURL.href} is not a valid extension URL`
         );
       }
 

@@ -504,11 +504,8 @@ END_GLOBALS
 // 6.25% of the process address space on a 32-bit OS for later use.
 static const size_t gRecycleLimit = 128_MiB;
 
-// The current amount of recycled bytes, updated atomically. Malloc may be
-// called non-deterministically when recording/replaying, so this atomic's
-// accesses are not recorded.
-static Atomic<size_t, ReleaseAcquire, recordreplay::Behavior::DontPreserve>
-    gRecycledSize;
+// The current amount of recycled bytes, updated atomically.
+static Atomic<size_t, ReleaseAcquire> gRecycledSize;
 
 // Maximum number of dirty pages per arena.
 #define DIRTY_MAX_DEFAULT (1U << 8)
@@ -547,11 +544,7 @@ static void* base_alloc(size_t aSize);
 // threads are created.
 static bool malloc_initialized;
 #else
-// Malloc may be called non-deterministically when recording/replaying, so this
-// atomic's accesses are not recorded.
-static Atomic<bool, SequentiallyConsistent,
-              recordreplay::Behavior::DontPreserve>
-    malloc_initialized;
+static Atomic<bool, SequentiallyConsistent> malloc_initialized;
 #endif
 
 static StaticMutex gInitLock = {STATIC_MUTEX_INIT};
@@ -585,8 +578,13 @@ enum ChunkType {
 
 // Tree of extents.
 struct extent_node_t {
-  // Linkage for the size/address-ordered tree.
-  RedBlackTreeNode<extent_node_t> mLinkBySize;
+  union {
+    // Linkage for the size/address-ordered tree for chunk recycling.
+    RedBlackTreeNode<extent_node_t> mLinkBySize;
+    // Arena id for huge allocations. It's meant to match mArena->mId,
+    // which only holds true when the arena hasn't been disposed of.
+    arena_id_t mArenaId;
+  };
 
   // Linkage for the address-ordered tree.
   RedBlackTreeNode<extent_node_t> mLinkByAddr;
@@ -881,9 +879,13 @@ struct arena_t {
 #  define ARENA_MAGIC 0x947d3d24
 #endif
 
-  arena_id_t mId;
   // Linkage for the tree of arenas by id.
   RedBlackTreeNode<arena_t> mLink;
+
+  // Arena id, that we keep away from the beginning of the struct so that
+  // free list pointers in TypedBaseAlloc<arena_t> don't overflow in it,
+  // and it keeps the value it had after the destructor.
+  arena_id_t mId;
 
   // All operations on this arena require that lock be locked.
   Mutex mLock;
@@ -958,6 +960,7 @@ struct arena_t {
   arena_bin_t mBins[1];  // Dynamically sized.
 
   explicit arena_t(arena_params_t* aParams);
+  ~arena_t();
 
  private:
   void InitChunk(arena_chunk_t* aChunk, bool aZeroed);
@@ -1025,15 +1028,9 @@ struct arena_t {
 #if !defined(_MSC_VER) || defined(_CPPUNWIND)
       noexcept
 #endif
-  {
-    MOZ_ASSERT(aCount == sizeof(arena_t));
-    // Allocate enough space for trailing bins.
-    return base_alloc(
-        aCount + (sizeof(arena_bin_t) * (kNumTinyClasses + kNumQuantumClasses +
-                                         gNumSubPageClasses - 1)));
-  }
+      ;
 
-  void operator delete(void*) = delete;
+  void operator delete(void*);
 };
 
 struct ArenaTreeTrait {
@@ -1072,10 +1069,10 @@ class ArenaCollection {
 
   void DisposeArena(arena_t* aArena) {
     MutexAutoLock lock(mLock);
-    (mPrivateArenas.Search(aArena) ? mPrivateArenas : mArenas).Remove(aArena);
-    // The arena is leaked, and remaining allocations in it still are alive
-    // until they are freed. After that, the arena will be empty but still
-    // taking have at least a chunk taking address space. TODO: bug 1364359.
+    MOZ_RELEASE_ASSERT(mPrivateArenas.Search(aArena),
+                       "Can only dispose of private arenas");
+    mPrivateArenas.Remove(aArena);
+    delete aArena;
   }
 
   using Tree = RedBlackTree<arena_t, ArenaTreeTrait>;
@@ -1155,7 +1152,6 @@ static void* base_pages;
 static void* base_next_addr;
 static void* base_next_decommitted;
 static void* base_past_addr;  // Addr immediately past base_pages.
-static extent_node_t* base_nodes;
 static Mutex base_mtx;
 static size_t base_mapped;
 static size_t base_committed;
@@ -1294,7 +1290,19 @@ static inline void pages_decommit(void* aAddr, size_t aSize) {
 #else
   if (mmap(aAddr, aSize, PROT_NONE, MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1,
            0) == MAP_FAILED) {
-    MOZ_CRASH();
+    // We'd like to report the OOM for our tooling, but we can't allocate
+    // memory at this point, so avoid the use of printf.
+    const char out_of_mappings[] =
+        "[unhandlable oom] Failed to mmap, likely no more mappings "
+        "available " __FILE__ " : " MOZ_STRINGIFY(__LINE__);
+    if (errno == ENOMEM) {
+#  ifndef ANDROID
+      fputs(out_of_mappings, stderr);
+      fflush(stderr);
+#  endif
+      MOZ_CRASH_ANNOTATE(out_of_mappings);
+    }
+    MOZ_REALLY_CRASH(__LINE__);
   }
   MozTagAnonymousMemory(aAddr, aSize, "jemalloc-decommitted");
 #endif
@@ -1394,33 +1402,59 @@ static void* base_calloc(size_t aNumber, size_t aSize) {
   return ret;
 }
 
-static extent_node_t* base_node_alloc(void) {
-  extent_node_t* ret;
+// A specialization of the base allocator with a free list.
+template <typename T>
+struct TypedBaseAlloc {
+  static T* sFirstFree;
 
-  base_mtx.Lock();
-  if (base_nodes) {
-    ret = base_nodes;
-    base_nodes = *(extent_node_t**)ret;
-    base_mtx.Unlock();
-  } else {
-    base_mtx.Unlock();
-    ret = (extent_node_t*)base_alloc(sizeof(extent_node_t));
+  static size_t size_of() { return sizeof(T); }
+
+  static T* alloc() {
+    T* ret;
+
+    base_mtx.Lock();
+    if (sFirstFree) {
+      ret = sFirstFree;
+      sFirstFree = *(T**)ret;
+      base_mtx.Unlock();
+    } else {
+      base_mtx.Unlock();
+      ret = (T*)base_alloc(size_of());
+    }
+
+    return ret;
   }
 
-  return ret;
-}
-
-static void base_node_dealloc(extent_node_t* aNode) {
-  MutexAutoLock lock(base_mtx);
-  *(extent_node_t**)aNode = base_nodes;
-  base_nodes = aNode;
-}
-
-struct BaseNodeFreePolicy {
-  void operator()(extent_node_t* aPtr) { base_node_dealloc(aPtr); }
+  static void dealloc(T* aNode) {
+    MutexAutoLock lock(base_mtx);
+    *(T**)aNode = sFirstFree;
+    sFirstFree = aNode;
+  }
 };
 
-using UniqueBaseNode = UniquePtr<extent_node_t, BaseNodeFreePolicy>;
+using ExtentAlloc = TypedBaseAlloc<extent_node_t>;
+
+template <>
+extent_node_t* ExtentAlloc::sFirstFree = nullptr;
+
+template <>
+arena_t* TypedBaseAlloc<arena_t>::sFirstFree = nullptr;
+
+template <>
+size_t TypedBaseAlloc<arena_t>::size_of() {
+  // Allocate enough space for trailing bins.
+  return sizeof(arena_t) +
+         (sizeof(arena_bin_t) *
+          (kNumTinyClasses + kNumQuantumClasses + gNumSubPageClasses - 1));
+}
+
+template <typename T>
+struct BaseAllocFreePolicy {
+  void operator()(T* aPtr) { TypedBaseAlloc<T>::dealloc(aPtr); }
+};
+
+using UniqueBaseNode =
+    UniquePtr<extent_node_t, BaseAllocFreePolicy<extent_node_t>>;
 
 // End Utility functions/macros.
 // ***************************************************************************
@@ -1782,12 +1816,12 @@ static void* chunk_recycle(size_t aSize, size_t aAlignment, bool* aZeroed) {
     // Insert the trailing space as a smaller chunk.
     if (!node) {
       // An additional node is required, but
-      // base_node_alloc() can cause a new base chunk to be
+      // TypedBaseAlloc::alloc() can cause a new base chunk to be
       // allocated.  Drop chunks_mtx in order to avoid
       // deadlock, and if node allocation fails, deallocate
       // the result before returning an error.
       chunks_mtx.Unlock();
-      node = base_node_alloc();
+      node = ExtentAlloc::alloc();
       if (!node) {
         chunk_dealloc(ret, aSize, chunk_type);
         return nullptr;
@@ -1807,7 +1841,7 @@ static void* chunk_recycle(size_t aSize, size_t aAlignment, bool* aZeroed) {
   chunks_mtx.Unlock();
 
   if (node) {
-    base_node_dealloc(node);
+    ExtentAlloc::dealloc(node);
   }
   if (!pages_commit(ret, aSize)) {
     return nullptr;
@@ -1893,10 +1927,10 @@ static void chunk_record(void* aChunk, size_t aSize, ChunkType aType) {
   }
 
   // Allocate a node before acquiring chunks_mtx even though it might not
-  // be needed, because base_node_alloc() may cause a new base chunk to
+  // be needed, because TypedBaseAlloc::alloc() may cause a new base chunk to
   // be allocated, which could cause deadlock if chunks_mtx were already
   // held.
-  UniqueBaseNode xnode(base_node_alloc());
+  UniqueBaseNode xnode(ExtentAlloc::alloc());
   // Use xprev to implement conditional deferred deallocation of prev.
   UniqueBaseNode xprev;
 
@@ -1920,7 +1954,7 @@ static void chunk_record(void* aChunk, size_t aSize, ChunkType aType) {
   } else {
     // Coalescing forward failed, so insert a new node.
     if (!xnode) {
-      // base_node_alloc() failed, which is an exceedingly
+      // TypedBaseAlloc::alloc() failed, which is an exceedingly
       // unlikely failure.  Leak chunk; its pages have
       // already been purged, so this is only a virtual
       // memory leak.
@@ -3085,7 +3119,18 @@ class AllocInfo {
   size_t Size() { return mSize; }
 
   arena_t* Arena() {
-    return (mSize <= gMaxLargeClass) ? mChunk->arena : mNode->mArena;
+    if (mSize <= gMaxLargeClass) {
+      return mChunk->arena;
+    }
+    // Best effort detection that we're not trying to access an already
+    // disposed arena. In the case of a disposed arena, the memory location
+    // pointed by mNode->mArena is either free (but still a valid memory
+    // region, per TypedBaseAlloc<arena_t>), in which case its id was reset,
+    // or has been reallocated for a new region, and its id is very likely
+    // different (per randomness). In both cases, the id is unlikely to
+    // match what it was for the disposed arena.
+    MOZ_RELEASE_ASSERT(mNode->mArenaId == mNode->mArena->mId);
+    return mNode->mArena;
   }
 
  private:
@@ -3450,6 +3495,19 @@ void* arena_t::Ralloc(void* aPtr, size_t aSize, size_t aOldSize) {
                                    : RallocHuge(aPtr, aSize, aOldSize);
 }
 
+void* arena_t::operator new(size_t aCount, const fallible_t&)
+#if !defined(_MSC_VER) || defined(_CPPUNWIND)
+    noexcept
+#endif
+{
+  MOZ_ASSERT(aCount == sizeof(arena_t));
+  return TypedBaseAlloc<arena_t>::alloc();
+}
+
+void arena_t::operator delete(void* aPtr) {
+  TypedBaseAlloc<arena_t>::dealloc((arena_t*)aPtr);
+}
+
 arena_t::arena_t(arena_params_t* aParams) {
   unsigned i;
 
@@ -3499,6 +3557,32 @@ arena_t::arena_t(arena_params_t* aParams) {
 #endif
 }
 
+arena_t::~arena_t() {
+  size_t i;
+  MutexAutoLock lock(mLock);
+  MOZ_RELEASE_ASSERT(!mLink.Left() && !mLink.Right(),
+                     "Arena is still registered");
+  MOZ_RELEASE_ASSERT(!mStats.allocated_small && !mStats.allocated_large,
+                     "Arena is not empty");
+  if (mSpare) {
+    chunk_dealloc(mSpare, kChunkSize, ARENA_CHUNK);
+  }
+  for (i = 0; i < kNumTinyClasses + kNumQuantumClasses + gNumSubPageClasses;
+       i++) {
+    MOZ_RELEASE_ASSERT(!mBins[i].mNonFullRuns.First(), "Bin is not empty");
+  }
+#ifdef MOZ_DEBUG
+  {
+    MutexAutoLock lock(huge_mtx);
+    // This is an expensive check, so we only do it on debug builds.
+    for (auto node : huge.iter()) {
+      MOZ_RELEASE_ASSERT(node->mArenaId != mId, "Arena has huge allocations");
+    }
+  }
+#endif
+  mId = 0;
+}
+
 arena_t* ArenaCollection::CreateArena(bool aIsPrivate,
                                       arena_params_t* aParams) {
   fallible_t fallible;
@@ -3532,6 +3616,11 @@ arena_t* ArenaCollection::CreateArena(bool aIsPrivate,
   while (true) {
     mozilla::Maybe<uint64_t> maybeRandomId = mozilla::RandomUint64();
     MOZ_RELEASE_ASSERT(maybeRandomId.isSome());
+
+    // Avoid 0 as an arena Id. We use 0 for disposed arenas.
+    if (!maybeRandomId.value()) {
+      continue;
+    }
 
     // Keep looping until we ensure that the random number we just generated
     // isn't already in use by another active arena
@@ -3571,7 +3660,7 @@ void* arena_t::PallocHuge(size_t aSize, size_t aAlignment, bool aZero) {
   }
 
   // Allocate an extent node with which to track the chunk.
-  node = base_node_alloc();
+  node = ExtentAlloc::alloc();
   if (!node) {
     return nullptr;
   }
@@ -3579,7 +3668,7 @@ void* arena_t::PallocHuge(size_t aSize, size_t aAlignment, bool aZero) {
   // Allocate one or more contiguous chunks for this request.
   ret = chunk_alloc(csize, aAlignment, false, &zeroed);
   if (!ret) {
-    base_node_dealloc(node);
+    ExtentAlloc::dealloc(node);
     return nullptr;
   }
   psize = PAGE_CEILING(aSize);
@@ -3593,6 +3682,7 @@ void* arena_t::PallocHuge(size_t aSize, size_t aAlignment, bool aZero) {
   node->mAddr = ret;
   node->mSize = psize;
   node->mArena = this;
+  node->mArenaId = mId;
 
   {
     MutexAutoLock lock(huge_mtx);
@@ -3717,6 +3807,8 @@ static void huge_dalloc(void* aPtr, arena_t* aArena) {
     MOZ_RELEASE_ASSERT(node, "Double-free?");
     MOZ_ASSERT(node->mAddr == aPtr);
     MOZ_RELEASE_ASSERT(!aArena || node->mArena == aArena);
+    // See AllocInfo::Arena.
+    MOZ_RELEASE_ASSERT(node->mArenaId == node->mArena->mId);
     huge.Remove(node);
 
     mapped = CHUNK_CEILING(node->mSize + gPageSize);
@@ -3727,7 +3819,7 @@ static void huge_dalloc(void* aPtr, arena_t* aArena) {
   // Unmap chunk.
   chunk_dealloc(node->mAddr, mapped, HUGE_CHUNK);
 
-  base_node_dealloc(node);
+  ExtentAlloc::dealloc(node);
 }
 
 static size_t GetKernelPageSize() {
@@ -3869,7 +3961,6 @@ static bool malloc_init_hard() {
   // Initialize base allocation data structures.
   base_mapped = 0;
   base_committed = 0;
-  base_nodes = nullptr;
   base_mtx.Init();
 
   // Initialize arenas collection here.
@@ -4338,10 +4429,6 @@ inline arena_id_t MozJemalloc::moz_create_arena_with_params(
 
 template <>
 inline void MozJemalloc::moz_dispose_arena(arena_id_t aArenaId) {
-  // Until Bug 1364359 is fixed it is unsafe to call moz_dispose_arena.
-  // We want to catch any such occurances of that behavior.
-  MOZ_CRASH("Do not call moz_dispose_arena until Bug 1364359 is fixed.");
-
   arena_t* arena = gArenas.GetById(aArenaId, /* IsPrivate = */ true);
   MOZ_RELEASE_ASSERT(arena);
   gArenas.DisposeArena(arena);
@@ -4463,8 +4550,7 @@ static malloc_table_t gDynamicMallocTable = {
 // This briefly points to gDefaultMallocTable at startup. After that, it points
 // to either gOriginalMallocTable or gDynamicMallocTable. It's atomic to avoid
 // races when switching between tables.
-static Atomic<malloc_table_t const*, mozilla::MemoryOrdering::Relaxed,
-              recordreplay::Behavior::DontPreserve>
+static Atomic<malloc_table_t const*, mozilla::MemoryOrdering::Relaxed>
     gMallocTablePtr;
 
 #  ifdef MOZ_DYNAMIC_REPLACE_INIT

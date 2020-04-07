@@ -9,16 +9,16 @@
 #include <cstring>
 #include "mozilla/TimeStamp.h"
 #include "mozilla/StaticPrefs_toolkit.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIConsoleService.h"
 #include "nsITelemetry.h"
+#include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "nsVersionComparator.h"
 #include "TelemetryProcessData.h"
 #include "Telemetry.h"
 
-namespace mozilla {
-namespace Telemetry {
-namespace Common {
+namespace mozilla::Telemetry::Common {
 
 bool IsExpiredVersion(const char* aExpiration) {
   MOZ_ASSERT(aExpiration);
@@ -197,6 +197,4 @@ SupportedProduct GetCurrentProduct() {
 #endif
 }
 
-}  // namespace Common
-}  // namespace Telemetry
-}  // namespace mozilla
+}  // namespace mozilla::Telemetry::Common

@@ -19,10 +19,12 @@
 #include "wasm/WasmTypes.h"
 
 #include "js/Printf.h"
+#include "util/Memory.h"
 #include "vm/ArrayBufferObject.h"
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmSerialize.h"
+#include "wasm/WasmStubs.h"
 
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -63,7 +65,7 @@ static_assert(HugeMappedSize > ArrayBufferObject::MaxBufferByteLength,
 
 Val::Val(const LitVal& val) {
   type_ = val.type();
-  switch (type_.code()) {
+  switch (type_.kind()) {
     case ValType::I32:
       u.i32_ = val.i32();
       return;
@@ -77,12 +79,8 @@ Val::Val(const LitVal& val) {
       u.f64_ = val.f64();
       return;
     case ValType::Ref:
-    case ValType::FuncRef:
-    case ValType::AnyRef:
       u.ref_ = val.ref();
       return;
-    case ValType::NullRef:
-      break;
   }
   MOZ_CRASH();
 }
@@ -102,17 +100,6 @@ void AnyRef::trace(JSTracer* trc) {
     TraceManuallyBarrieredEdge(trc, &value_, "wasm anyref referent");
   }
 }
-
-class WasmValueBox : public NativeObject {
-  static const unsigned VALUE_SLOT = 0;
-
- public:
-  static const unsigned RESERVED_SLOTS = 1;
-  static const JSClass class_;
-
-  static WasmValueBox* create(JSContext* cx, HandleValue val);
-  Value value() const { return getFixedSlot(VALUE_SLOT); }
-};
 
 const JSClass WasmValueBox::class_ = {
     "WasmValueBox", JSCLASS_HAS_RESERVED_SLOTS(RESERVED_SLOTS)};
@@ -147,6 +134,11 @@ bool wasm::BoxAnyRef(JSContext* cx, HandleValue val, MutableHandleAnyRef addr) {
   return true;
 }
 
+JSObject* wasm::BoxBoxableValue(JSContext* cx, HandleValue val) {
+  MOZ_ASSERT(!val.isNull() && !val.isObject());
+  return WasmValueBox::create(cx, val);
+}
+
 Value wasm::UnboxAnyRef(AnyRef val) {
   // If UnboxAnyRef needs to allocate then we need a more complicated API, and
   // we need to root the value in the callers, see comments in callExport().
@@ -159,6 +151,14 @@ Value wasm::UnboxAnyRef(AnyRef val) {
   } else {
     result.setObjectOrNull(obj);
   }
+  return result;
+}
+
+Value wasm::UnboxFuncRef(FuncRef val) {
+  JSFunction* fn = val.asJSFunction();
+  Value result;
+  MOZ_ASSERT_IF(fn, fn->is<JSFunction>());
+  result.setObjectOrNull(fn);
   return result;
 }
 
@@ -239,7 +239,7 @@ size_t FuncType::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
   return args_.sizeOfExcludingThis(mallocSizeOf);
 }
 
-typedef uint32_t ImmediateType;  // for 32/64 consistency
+using ImmediateType = uint32_t;  // for 32/64 consistency
 static const unsigned sTotalBits = sizeof(ImmediateType) * 8;
 static const unsigned sTagBits = 1;
 static const unsigned sReturnBit = 1;
@@ -249,24 +249,29 @@ static const unsigned sMaxTypes =
     (sTotalBits - sTagBits - sReturnBit - sLengthBits) / sTypeBits;
 
 static bool IsImmediateType(ValType vt) {
-  switch (vt.code()) {
+  switch (vt.kind()) {
     case ValType::I32:
     case ValType::I64:
     case ValType::F32:
     case ValType::F64:
-    case ValType::FuncRef:
-    case ValType::AnyRef:
       return true;
-    case ValType::NullRef:
     case ValType::Ref:
-      return false;
+      switch (vt.refTypeKind()) {
+        case RefType::Func:
+        case RefType::Any:
+        case RefType::Null:
+          return true;
+        case RefType::TypeIndex:
+          return false;
+      }
+      break;
   }
   MOZ_CRASH("bad ValType");
 }
 
 static unsigned EncodeImmediateType(ValType vt) {
   static_assert(4 < (1 << sTypeBits), "fits");
-  switch (vt.code()) {
+  switch (vt.kind()) {
     case ValType::I32:
       return 0;
     case ValType::I64:
@@ -275,12 +280,17 @@ static unsigned EncodeImmediateType(ValType vt) {
       return 2;
     case ValType::F64:
       return 3;
-    case ValType::FuncRef:
-      return 4;
-    case ValType::AnyRef:
-      return 5;
-    case ValType::NullRef:
     case ValType::Ref:
+      switch (vt.refTypeKind()) {
+        case RefType::Func:
+          return 4;
+        case RefType::Any:
+          return 5;
+        case RefType::Null:
+          return 6;
+        case RefType::TypeIndex:
+          break;
+      }
       break;
   }
   MOZ_CRASH("bad ValType");
@@ -373,6 +383,11 @@ const uint8_t* FuncTypeWithId::deserialize(const uint8_t* cursor) {
 size_t FuncTypeWithId::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
   return FuncType::sizeOfExcludingThis(mallocSizeOf);
 }
+
+ArgTypeVector::ArgTypeVector(const FuncType& funcType)
+    : args_(funcType.args()),
+      hasStackResults_(ABIResultIter::HasStackResults(
+          ResultType::Vector(funcType.results()))) {}
 
 // A simple notion of prefix: types and mutability must match exactly.
 
@@ -655,12 +670,20 @@ JSObject* DebugFrame::environmentChain() const {
 bool DebugFrame::getLocal(uint32_t localIndex, MutableHandleValue vp) {
   ValTypeVector locals;
   size_t argsLength;
-  if (!instance()->debug().debugGetLocalTypes(funcIndex(), &locals,
-                                              &argsLength)) {
+  StackResults stackResults;
+  if (!instance()->debug().debugGetLocalTypes(funcIndex(), &locals, &argsLength,
+                                              &stackResults)) {
     return false;
   }
 
-  BaseLocalIter iter(locals, argsLength, /* debugEnabled = */ true);
+  ValTypeVector args;
+  MOZ_ASSERT(argsLength <= locals.length());
+  if (!args.append(locals.begin(), argsLength)) {
+    return false;
+  }
+  ArgTypeVector abiArgs(args, stackResults);
+
+  BaseLocalIter iter(locals, abiArgs, /* debugEnabled = */ true);
   while (!iter.done() && iter.index() < localIndex) {
     iter++;
   }
@@ -702,7 +725,7 @@ bool DebugFrame::updateReturnJSValue() {
     return true;
   }
   MOZ_ASSERT(results.length() == 1, "multi-value return unimplemented");
-  switch (results[0].code()) {
+  switch (results[0].kind()) {
     case ValType::I32:
       cachedReturnJSValue_.setInt32(resultI32_);
       break;
@@ -717,11 +740,19 @@ bool DebugFrame::updateReturnJSValue() {
       cachedReturnJSValue_.setDouble(JS::CanonicalizeNaN(resultF64_));
       break;
     case ValType::Ref:
-      cachedReturnJSValue_ = ObjectOrNullValue((JSObject*)resultRef_);
-      break;
-    case ValType::FuncRef:
-    case ValType::AnyRef:
-      cachedReturnJSValue_ = UnboxAnyRef(resultAnyRef_);
+      switch (results[0].refTypeKind()) {
+        case RefType::TypeIndex:
+          cachedReturnJSValue_ = ObjectOrNullValue((JSObject*)resultRef_);
+          break;
+        case RefType::Func:
+          cachedReturnJSValue_ =
+              UnboxFuncRef(FuncRef::fromAnyRefUnchecked(resultAnyRef_));
+          break;
+        case RefType::Any:
+        case RefType::Null:
+          cachedReturnJSValue_ = UnboxAnyRef(resultAnyRef_);
+          break;
+      }
       break;
     default:
       MOZ_CRASH("result type");
@@ -777,9 +808,9 @@ void TrapSiteVectorArray::swap(TrapSiteVectorArray& rhs) {
   }
 }
 
-void TrapSiteVectorArray::podResizeToFit() {
+void TrapSiteVectorArray::shrinkStorageToFit() {
   for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
-    (*this)[trap].podResizeToFit();
+    (*this)[trap].shrinkStorageToFit();
   }
 }
 

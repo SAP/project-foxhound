@@ -9,7 +9,6 @@
 #include <algorithm>
 #include "DOMSVGAnimatedNumberList.h"
 #include "DOMSVGAnimatedLength.h"
-#include "imgIContainer.h"
 #include "nsGkAtoms.h"
 #include "nsCOMPtr.h"
 #include "nsIFrame.h"
@@ -132,7 +131,7 @@ bool SVGFE::StyleIsSetToSRGB() {
 
   ComputedStyle* style = frame->Style();
   return style->StyleSVG()->mColorInterpolationFilters ==
-         NS_STYLE_COLOR_INTERPOLATION_SRGB;
+         StyleColorInterpolation::Srgb;
 }
 
 /* virtual */

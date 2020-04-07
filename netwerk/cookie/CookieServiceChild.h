@@ -60,7 +60,8 @@ class CookieServiceChild : public PCookieServiceChild,
                                    nsACString& aCookieString);
 
   void GetCookieStringFromCookieHashTable(
-      nsIURI* aHostURI, bool aIsForeign, bool aIsTrackingResource,
+      nsIURI* aHostURI, bool aIsForeign, bool aIsThirdPartyTrackingResource,
+      bool aIsThirdPartySocialTrackingResource,
       bool aFirstPartyStorageAccessGranted, uint32_t aRejectedReason,
       bool aIsSafeTopLevelNav, bool aIsSameSiteForeign, nsIChannel* aChannel,
       nsACString& aCookieString);
@@ -82,7 +83,7 @@ class CookieServiceChild : public PCookieServiceChild,
 
   void PrefChanged(nsIPrefBranch* aPrefBranch);
 
-  bool RequireThirdPartyCheck(nsILoadInfo* aLoadInfo);
+  static bool RequireThirdPartyCheck(nsILoadInfo* aLoadInfo);
 
   mozilla::ipc::IPCResult RecvTrackCookiesLoad(
       nsTArray<CookieStruct>&& aCookiesList, const OriginAttributes& aAttrs);

@@ -29,8 +29,8 @@ namespace wasm {
 // stateful objects exposed to WebAssembly. asm.js also uses Tables to represent
 // its homogeneous function-pointer tables.
 //
-// A table of FuncRef holds FunctionTableElems, which are (instance*,index)
-// pairs, where the instance must be traced.
+// A table of FuncRef holds FunctionTableElems, which are (code*,tls*) pairs,
+// where the tls must be traced.
 //
 // A table of AnyRef holds JSObject pointers, which must be traced.
 
@@ -71,6 +71,18 @@ class Table : public ShareableBase<Table> {
   void trace(JSTracer* trc);
 
   TableKind kind() const { return kind_; }
+  TableRepr repr() const {
+    switch (kind()) {
+      case TableKind::AnyRef:
+      case TableKind::NullRef:
+        return TableRepr::Ref;
+      case TableKind::FuncRef:
+      case TableKind::AsmJS:
+        return TableRepr::Func;
+    }
+    MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE("switch is exhaustive");
+  }
+
   bool isFunction() const {
     return kind_ == TableKind::FuncRef || kind_ == TableKind::AsmJS;
   }
@@ -88,7 +100,7 @@ class Table : public ShareableBase<Table> {
   bool getFuncRef(JSContext* cx, uint32_t index,
                   MutableHandleFunction fun) const;
   void setFuncRef(uint32_t index, void* code, const Instance* instance);
-  void fillFuncRef(uint32_t index, uint32_t fillCount, AnyRef ref,
+  void fillFuncRef(uint32_t index, uint32_t fillCount, FuncRef ref,
                    JSContext* cx);
 
   AnyRef getAnyRef(uint32_t index) const;
@@ -112,7 +124,7 @@ class Table : public ShareableBase<Table> {
   size_t gcMallocBytes() const;
 };
 
-typedef RefPtr<Table> SharedTable;
+using SharedTable = RefPtr<Table>;
 typedef Vector<SharedTable, 0, SystemAllocPolicy> SharedTableVector;
 
 }  // namespace wasm

@@ -370,7 +370,7 @@ var ContentSearch = {
       currentPrivateEngine: await this._currentEngineObj(true),
     };
 
-    let pref = Services.prefs.getCharPref("browser.search.hiddenOneOffs");
+    let pref = Services.prefs.getStringPref("browser.search.hiddenOneOffs");
     let hiddenList = pref ? pref.split(",") : [];
     for (let engine of await Services.search.getVisibleEngines()) {
       let uri = engine.getIconURLBySize(16, 16);
@@ -450,6 +450,17 @@ var ContentSearch = {
   _onMessageGetState(msg, data) {
     return this.currentStateObj(msg.target.ownerGlobal).then(state => {
       this._reply(msg, "State", state);
+    });
+  },
+
+  _onMessageGetEngine(msg, data) {
+    return this.currentStateObj(msg.target.ownerGlobal).then(state => {
+      this._reply(msg, "Engine", {
+        isPrivateWindow: state.isPrivateWindow,
+        engine: state.isPrivateWindow
+          ? state.currentPrivateEngine
+          : state.currentEngine,
+      });
     });
   },
 

@@ -406,6 +406,8 @@ function InitializeNumberFormat(numberFormat, thisValue, locales, options) {
     //     opt: // opt object computed in InitializeNumberFormat
     //       {
     //         localeMatcher: "lookup" / "best fit",
+    //
+    //         nu: string matching a Unicode extension type, // optional
     //       }
     //
     //     minimumIntegerDigits: integer ∈ [1, 21],
@@ -455,6 +457,19 @@ function InitializeNumberFormat(numberFormat, thisValue, locales, options) {
     // Steps 5-6.
     var matcher = GetOption(options, "localeMatcher", "string", ["lookup", "best fit"], "best fit");
     opt.localeMatcher = matcher;
+
+// https://github.com/tc39/ecma402/pull/175
+#ifdef NIGHTLY_BUILD
+    var numberingSystem = GetOption(options, "numberingSystem", "string", undefined, undefined);
+
+    if (numberingSystem !== undefined) {
+        numberingSystem = intl_ValidateAndCanonicalizeUnicodeExtensionType(numberingSystem,
+                                                                           "numberingSystem",
+                                                                           "nu");
+    }
+
+    opt.nu = numberingSystem;
+#endif
 
     // Compute formatting options.
     // Step 12.
@@ -684,7 +699,7 @@ function createNumberFormatFormat(nf) {
         var x = ToNumeric(value);
 
         // Step 5.
-        return intl_FormatNumber(nf, x, /* formatToParts = */ false);
+        return intl_FormatNumber(nf, x, /* formatToParts = */ false, /* unitStyle = */ false);
     };
 }
 
@@ -732,14 +747,14 @@ function Intl_NumberFormat_formatToParts(value) {
                             "Intl_NumberFormat_formatToParts");
     }
 
-    // Ensure the NumberFormat internals are resolved.
-    getNumberFormatInternals(nf);
+    var internals = getNumberFormatInternals(nf);
+    var unitStyle = internals.style === "unit";
 
     // Step 4.
     var x = ToNumeric(value);
 
     // Step 5.
-    return intl_FormatNumber(nf, x, /* formatToParts = */ true);
+    return intl_FormatNumber(nf, x, /* formatToParts = */ true, unitStyle);
 }
 
 /**

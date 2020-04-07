@@ -5,6 +5,7 @@
 
 #include "nsAppStartup.h"
 
+#include "nsComponentManagerUtils.h"
 #include "nsIAppShellService.h"
 #include "nsPIDOMWindow.h"
 #include "nsIInterfaceRequestor.h"
@@ -13,19 +14,15 @@
 #include "nsIPrefBranch.h"
 #include "nsIPrefService.h"
 #include "nsIProcess.h"
-#include "nsIPromptService.h"
-#include "nsIStringBundle.h"
-#include "nsISupportsPrimitives.h"
 #include "nsIToolkitProfile.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsIWindowMediator.h"
-#include "nsIWindowWatcher.h"
 #include "nsIXULRuntime.h"
-#include "nsIXULWindow.h"
+#include "nsIAppWindow.h"
 #include "nsNativeCharsetUtils.h"
 #include "nsThreadUtils.h"
-#include "nsAutoPtr.h"
 #include "nsString.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/Unused.h"
@@ -38,7 +35,6 @@
 #include "nsAppShellCID.h"
 #include "nsXPCOMCIDInternal.h"
 #include "mozilla/Services.h"
-#include "nsIXPConnect.h"
 #include "jsapi.h"
 #include "js/Date.h"
 #include "prenv.h"
@@ -158,7 +154,6 @@ nsAppStartup::nsAppStartup()
       mShuttingDown(false),
       mStartingUp(true),
       mAttemptingQuit(false),
-      mRestart(false),
       mInterrupted(false),
       mIsSafeModeNecessary(false),
       mStartupCrashTrackingEnded(false) {}
@@ -283,7 +278,7 @@ nsAppStartup::Run(void) {
   Quit(eForceQuit);
 
   nsresult retval = NS_OK;
-  if (mRestart) {
+  if (mozilla::AppShutdown::IsRestarting()) {
     retval = NS_SUCCESS_RESTART_APP;
   }
 
@@ -307,11 +302,7 @@ nsAppStartup::Quit(uint32_t aMode) {
 #ifdef XP_MACOSX
     nsCOMPtr<nsIAppShellService> appShell(
         do_GetService(NS_APPSHELLSERVICE_CONTRACTID));
-    bool hasHiddenPrivateWindow = false;
-    if (appShell) {
-      appShell->GetHasHiddenPrivateWindow(&hasHiddenPrivateWindow);
-    }
-    int32_t suspiciousCount = hasHiddenPrivateWindow ? 2 : 1;
+    int32_t suspiciousCount = 1;
 #endif
 
     if (mConsiderQuitStopper == 0) {
@@ -327,15 +318,10 @@ nsAppStartup::Quit(uint32_t aMode) {
 
       bool usefulHiddenWindow;
       appShell->GetApplicationProvidedHiddenWindow(&usefulHiddenWindow);
-      nsCOMPtr<nsIXULWindow> hiddenWindow;
+      nsCOMPtr<nsIAppWindow> hiddenWindow;
       appShell->GetHiddenWindow(getter_AddRefs(hiddenWindow));
       // If the remaining windows are useful, we won't quit:
-      nsCOMPtr<nsIXULWindow> hiddenPrivateWindow;
-      if (hasHiddenPrivateWindow) {
-        appShell->GetHiddenPrivateWindow(getter_AddRefs(hiddenPrivateWindow));
-        if ((!hiddenWindow && !hiddenPrivateWindow) || usefulHiddenWindow)
-          return NS_OK;
-      } else if (!hiddenWindow || usefulHiddenWindow) {
+      if (!hiddenWindow || usefulHiddenWindow) {
         return NS_OK;
       }
 
@@ -372,12 +358,14 @@ nsAppStartup::Quit(uint32_t aMode) {
 
     PROFILER_ADD_MARKER("Shutdown start", OTHER);
     mozilla::RecordShutdownStartTimeStamp();
-    mShuttingDown = true;
-    if (!mRestart) {
-      mRestart = (aMode & eRestart) != 0;
-    }
 
-    if (mRestart) {
+    mShuttingDown = true;
+    auto shutdownMode = ((aMode & eRestart) != 0)
+                            ? mozilla::AppShutdownMode::Restart
+                            : mozilla::AppShutdownMode::Normal;
+    mozilla::AppShutdown::Init(shutdownMode);
+
+    if (mozilla::AppShutdown::IsRestarting()) {
       // Mark the next startup as a restart.
       PR_SetEnv("MOZ_APP_RESTART=1");
 
@@ -440,12 +428,14 @@ nsAppStartup::Quit(uint32_t aMode) {
 
   if (ferocity == eForceQuit) {
     // do it!
+    mozilla::AppShutdown::OnShutdownConfirmed();
 
     // No chance of the shutdown being cancelled from here on; tell people
     // we're shutting down for sure while all services are still available.
     if (obsService) {
+      bool isRestarting = mozilla::AppShutdown::IsRestarting();
       obsService->NotifyObservers(nullptr, "quit-application",
-                                  mRestart ? u"restart" : u"shutdown");
+                                  isRestarting ? u"restart" : u"shutdown");
     }
 
     if (!mRunning) {
@@ -466,7 +456,9 @@ nsAppStartup::Quit(uint32_t aMode) {
 
   // turn off the reentrancy check flag, but not if we have
   // more asynchronous work to do still.
-  if (!postedExitEvent) mShuttingDown = false;
+  if (!postedExitEvent) {
+    mShuttingDown = false;
+  }
   return rv;
 }
 
@@ -536,7 +528,7 @@ nsAppStartup::DoneStartingUp() {
 
 NS_IMETHODIMP
 nsAppStartup::GetRestarting(bool* aResult) {
-  *aResult = mRestart;
+  *aResult = mozilla::AppShutdown::IsRestarting();
   return NS_OK;
 }
 
@@ -611,16 +603,16 @@ nsAppStartup::CreateChromeWindow(nsIWebBrowserChrome* aParent,
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMPtr<nsIXULWindow> newWindow;
+  nsCOMPtr<nsIAppWindow> newWindow;
 
   if (aParent) {
-    nsCOMPtr<nsIXULWindow> xulParent(do_GetInterface(aParent));
-    NS_ASSERTION(xulParent,
-                 "window created using non-XUL parent. that's unexpected, but "
+    nsCOMPtr<nsIAppWindow> appParent(do_GetInterface(aParent));
+    NS_ASSERTION(appParent,
+                 "window created using non-app parent. that's unexpected, but "
                  "may work.");
 
-    if (xulParent)
-      xulParent->CreateNewWindow(aChromeFlags, aOpeningTab, aOpener,
+    if (appParent)
+      appParent->CreateNewWindow(aChromeFlags, aOpeningTab, aOpener,
                                  aNextRemoteTabId, getter_AddRefs(newWindow));
     // And if it fails, don't try again without a parent. It could fail
     // intentionally (bug 115969).

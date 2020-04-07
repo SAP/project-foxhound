@@ -6,8 +6,8 @@
 #include "nsIContentPolicy.idl"
 
 interface nsIURI;
-interface nsIDocShell;
 interface nsIEventTarget;
+interface nsILoadInfo;
 interface nsIPrincipal;
 interface nsICSPEventListener;
 
@@ -150,7 +150,7 @@ interface nsIContentSecurityPolicy : nsISerializable
    * Whether this policy allows a navigation subject to the navigate-to
    * policy.
    * @param aURI The target URI
-   * @param aLoadInfo used to check if the navigation was initiated by a form submission. This
+   * @param aIsFormSubmission True if the navigation was initiated by a form submission. This
    *        is important since the form-action directive overrides navigate-to in that case.  
    * @param aWasRedirect True if a redirect has happened. Important for path-sensitivity.
    * @param aEnforceWhitelist True if the whitelist of allowed targets must be enforced. If 
@@ -160,7 +160,7 @@ interface nsIContentSecurityPolicy : nsISerializable
    *     Whether or not the effects of the navigation is allowed
    */
   boolean getAllowsNavigateTo(in nsIURI aURI, 
-                              in nsILoadInfo aLoadInfo,
+                              in boolean aIsFormSubmission,
                               in boolean aWasRedirected,
                               in boolean aEnforceWhitelist);
 
@@ -275,14 +275,14 @@ interface nsIContentSecurityPolicy : nsISerializable
    * NOTE: Calls to this may trigger violation reports when queried, so this
    * value should not be cached.
    *
-   * @param docShell
-   *    containing the protected resource
+   * @param aLoadInfo
+   *    The loadinfo of the channel containing the protected resource
    * @return
    *    true if the frame's ancestors are all allowed by policy (except for
    *    report-only policies, which will send reports and then return true
    *    here when violated).
    */
-  boolean permitsAncestry(in nsIDocShell docShell);
+  boolean permitsAncestry(in nsILoadInfo aLoadInfo);
 
 
   /**

@@ -9,7 +9,8 @@ use peek_poke::PeekPoke;
 use std::ops::{Add, Sub};
 use std::sync::Arc;
 // local imports
-use crate::api::{IdNamespace, TileSize};
+use crate::api::{IdNamespace, PipelineId, TileSize};
+use crate::display_item::ImageRendering;
 use crate::font::{FontInstanceKey, FontInstanceData, FontKey, FontTemplate};
 use crate::units::*;
 
@@ -45,7 +46,7 @@ pub struct BlobImageKey(pub ImageKey);
 
 impl BlobImageKey {
     /// Interpret this blob image as an image for a display item.
-    pub fn as_image(&self) -> ImageKey {
+    pub fn as_image(self) -> ImageKey {
         self.0
     }
 }
@@ -56,6 +57,54 @@ impl BlobImageKey {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct ExternalImageId(pub u64);
+
+/// The source for an external image.
+pub enum ExternalImageSource<'a> {
+    /// A raw pixel buffer.
+    RawData(&'a [u8]),
+    /// A gl::GLuint texture handle.
+    NativeTexture(u32),
+    /// An invalid source.
+    Invalid,
+}
+
+/// The data that an external client should provide about
+/// an external image. For instance, if providing video frames,
+/// the application could call wr.render() whenever a new
+/// video frame is ready. Note that the UV coords are supplied
+/// in texel-space!
+pub struct ExternalImage<'a> {
+    /// UV coordinates for the image.
+    pub uv: TexelRect,
+    /// The source for this image's contents.
+    pub source: ExternalImageSource<'a>,
+}
+
+/// The interfaces that an application can implement to support providing
+/// external image buffers.
+/// When the application passes an external image to WR, it should keep that
+/// external image life time. People could check the epoch id in RenderNotifier
+/// at the client side to make sure that the external image is not used by WR.
+/// Then, do the clean up for that external image.
+pub trait ExternalImageHandler {
+    /// Lock the external image. Then, WR could start to read the image content.
+    /// The WR client should not change the image content until the unlock()
+    /// call. Provide ImageRendering for NativeTexture external images.
+    fn lock(&mut self, key: ExternalImageId, channel_index: u8, rendering: ImageRendering) -> ExternalImage;
+    /// Unlock the external image. WR should not read the image content
+    /// after this call.
+    fn unlock(&mut self, key: ExternalImageId, channel_index: u8);
+}
+
+/// Allows callers to receive a texture with the contents of a specific
+/// pipeline copied to it.
+pub trait OutputImageHandler {
+    /// Return the native texture handle and the size of the texture.
+    fn lock(&mut self, pipeline_id: PipelineId) -> Option<(u32, FramebufferIntSize)>;
+    /// Unlock will only be called if the lock() call succeeds, when WR has issued
+    /// the GL commands to copy the output to the texture handle.
+    fn unlock(&mut self, pipeline_id: PipelineId);
+}
 
 /// Specifies the type of texture target in driver terms.
 #[repr(u8)]
@@ -189,6 +238,22 @@ impl ColorDepth {
     }
 }
 
+bitflags! {
+    /// Various flags that are part of an image descriptor.
+    #[derive(Deserialize, Serialize)]
+    pub struct ImageDescriptorFlags: u32 {
+        /// Whether this image is opaque, or has an alpha channel. Avoiding blending
+        /// for opaque surfaces is an important optimization.
+        const IS_OPAQUE = 1;
+        /// Whether to allow the driver to automatically generate mipmaps. If images
+        /// are already downscaled appropriately, mipmap generation can be wasted
+        /// work, and cause performance problems on some cards/drivers.
+        ///
+        /// See https://github.com/servo/webrender/pull/2555/
+        const ALLOW_MIPMAPS = 2;
+    }
+}
+
 /// Metadata (but not storage) describing an image In WebRender.
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ImageDescriptor {
@@ -207,15 +272,8 @@ pub struct ImageDescriptor {
     /// tells the texture upload machinery where to find the bytes to upload for
     /// this tile. Non-tiled images generally set this to zero.
     pub offset: i32,
-    /// Whether this image is opaque, or has an alpha channel. Avoiding blending
-    /// for opaque surfaces is an important optimization.
-    pub is_opaque: bool,
-    /// Whether to allow the driver to automatically generate mipmaps. If images
-    /// are already downscaled appropriately, mipmap generation can be wasted
-    /// work, and cause performance problems on some cards/drivers.
-    ///
-    /// See https://github.com/servo/webrender/pull/2555/
-    pub allow_mipmaps: bool,
+    /// Various bool flags related to this descriptor.
+    pub flags: ImageDescriptorFlags,
 }
 
 impl ImageDescriptor {
@@ -224,16 +282,14 @@ impl ImageDescriptor {
         width: i32,
         height: i32,
         format: ImageFormat,
-        is_opaque: bool,
-        allow_mipmaps: bool,
+        flags: ImageDescriptorFlags,
     ) -> Self {
         ImageDescriptor {
             size: size2(width, height),
             format,
             stride: None,
             offset: 0,
-            is_opaque,
-            allow_mipmaps,
+            flags,
         }
     }
 
@@ -254,6 +310,16 @@ impl ImageDescriptor {
             DeviceIntPoint::zero(),
             self.size,
         )
+    }
+
+    /// Returns true if this descriptor is opaque
+    pub fn is_opaque(&self) -> bool {
+        self.flags.contains(ImageDescriptorFlags::IS_OPAQUE)
+    }
+
+    /// Returns true if this descriptor allows mipmaps
+    pub fn allow_mipmaps(&self) -> bool {
+        self.flags.contains(ImageDescriptorFlags::ALLOW_MIPMAPS)
     }
 }
 
@@ -343,6 +409,9 @@ pub trait BlobImageHandler: Send {
     /// A hook to let the handler clean up any state related a given namespace before the
     /// resource cache deletes them.
     fn clear_namespace(&mut self, namespace: IdNamespace);
+
+    /// Whether to allow rendering blobs on multiple threads.
+    fn enable_multithreading(&mut self, enable: bool);
 }
 
 /// A group of rasterization requests to execute synchronously on the scene builder thread.

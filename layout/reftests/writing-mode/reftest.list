@@ -31,7 +31,7 @@ random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 1102175-1b.html 1102175-
 == 1105268-2-min-max-dimensions.html 1105268-2-min-max-dimensions-ref.html
 == 1106669-1-intrinsic-for-container.html 1106669-1-intrinsic-for-container-ref.html
 == 1108923-1-percentage-margins.html 1108923-1-percentage-margins-ref.html
-fuzzy-if(Android,0-128,0-78) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 1111944-1-list-marker.html 1111944-1-list-marker-ref.html # Bug 1392106
+fuzzy-if(Android,0-128,0-94) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 1111944-1-list-marker.html 1111944-1-list-marker-ref.html # Bug 1392106
 fuzzy(0-116,0-94) fuzzy-if(winWidget,0-135,0-124) == 1115916-1-vertical-metrics.html 1115916-1-vertical-metrics-ref.html
 == 1117210-1-vertical-baseline-snap.html 1117210-1-vertical-baseline-snap-ref.html
 == 1117227-1-text-overflow.html 1117227-1-text-overflow-ref.html
@@ -62,13 +62,21 @@ fuzzy(0-116,0-94) fuzzy-if(winWidget,0-135,0-124) == 1115916-1-vertical-metrics.
 == ua-style-sheet-size-2.html ua-style-sheet-size-2-ref.html
 
 == ua-style-sheet-fieldset-1.html ua-style-sheet-fieldset-1-ref.html
-skip-if(Android||winWidget) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1a-ref.html
-skip-if(!(Android)) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1b-ref.html
+
+# These don't like padding on textareas by default different to the UA stylesheet ones.
+# FIXME(emilio): Maybe these should be rewritten to use -moz-appearance: none?
+skip-if(Android||winWidget||!nativeThemePref) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1a-ref.html
+skip-if(!(Android&&nativeThemePref)) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1b-ref.html
 skip-if(!winWidget) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1c-ref.html
+
 fuzzy-if(Android,0-1,0-18) == ua-style-sheet-checkbox-radio-1.html ua-style-sheet-checkbox-radio-1-ref.html
 # Android uses different margins for buttons compared to the ref.
 skip-if(Android) fuzzy-if(skiaContent&&!Android,0-2,0-6) == ua-style-sheet-button-1.html ua-style-sheet-button-1a-ref.html
-skip-if(!(Android)) == ua-style-sheet-button-1.html ua-style-sheet-button-1b-ref.html
+
+# These don't like padding on buttons by default different to the UA stylesheet ones.
+# FIXME(emilio): Maybe these should be rewritten to use -moz-appearance: none?
+skip-if(!(Android&&nativeThemePref)) == ua-style-sheet-button-1.html ua-style-sheet-button-1b-ref.html
+
 # Android uses different margins for buttons compared to the ref.
 skip-if(Android) == ua-style-sheet-input-color-1.html ua-style-sheet-input-color-1-ref.html
 fuzzy-if(gtkWidget,0-1,0-15) == ua-style-sheet-input-number-1.html ua-style-sheet-input-number-1-ref.html
@@ -117,7 +125,6 @@ fuzzy-if(winWidget,0-255,0-236) == 1136557-3-nested-spans.html 1136557-3-nested-
 != 1138356-2-button-contents-alignment.html 1138356-2-button-contents-alignment-notref.html
 
 # Font inflation behaves wrong in vertical writing mode: bug 1138495
-default-preferences pref(layout.accessiblecaret.enabled_on_touch,false) # Disable AccessibleCaret to work around bug 1588025
 test-pref(dom.meta-viewport.enabled,true) test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.forceEnabled,true) test-pref(font.size.inflation.lineThreshold,0) == font-inflation-1a.html font-inflation-1-ref.html
 test-pref(dom.meta-viewport.enabled,true) test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.forceEnabled,true) test-pref(font.size.inflation.lineThreshold,0) == font-inflation-1b.html font-inflation-1-ref.html
 test-pref(dom.meta-viewport.enabled,true) test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.forceEnabled,true) test-pref(font.size.inflation.lineThreshold,0) != font-inflation-1c.html font-inflation-1-ref.html
@@ -125,7 +132,7 @@ test-pref(dom.meta-viewport.enabled,true) test-pref(font.size.inflation.emPerLin
 pref(dom.meta-viewport.enabled,true) pref(font.size.inflation.emPerLine,15) pref(font.size.inflation.forceEnabled,true) pref(font.size.inflation.lineThreshold,0) != font-inflation-1c.html font-inflation-1d.html
 test-pref(dom.meta-viewport.enabled,true) test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.forceEnabled,true) test-pref(font.size.inflation.lineThreshold,0) == font-inflation-1c.html font-inflation-1c-ref.html
 test-pref(dom.meta-viewport.enabled,true) test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.forceEnabled,true) test-pref(font.size.inflation.lineThreshold,0) == font-inflation-1d.html font-inflation-1d-ref.html
-default-preferences pref(layout.accessiblecaret.enabled_on_touch,true)
+test-pref(dom.meta-viewport.enabled,true) test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.forceEnabled,true) test-pref(font.size.inflation.lineThreshold,0) test-pref(layout.accessiblecaret.enabled,true) == font-inflation-1e.html font-inflation-1-ref.html
 
 == 1144501-1a-block-end-margin-orthogonal-size.html 1144501-1-block-end-margin-orthogonal-size-ref.html
 == 1144501-1b-block-end-margin-orthogonal-size.html 1144501-1-block-end-margin-orthogonal-size-ref.html

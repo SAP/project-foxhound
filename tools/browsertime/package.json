@@ -5,7 +5,7 @@
   "license": "MPL-2.0",
   "dependencies": {},
   "devDependencies": {
-    "browsertime": "https://github.com/mozilla/browsertime/tarball/c795660ef1e589dfb8bf01397782811934c90696"
+    "browsertime": "https://github.com/sitespeedio/browsertime/tarball/3cca3aca5224aaf583be37a4191a75c4034e8f83"
   },
   "notes(private)": "We don't want to publish to npm, so this is marked as private",
   "private": true

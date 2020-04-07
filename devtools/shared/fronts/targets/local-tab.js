@@ -44,43 +44,30 @@ class LocalTabTargetFront extends BrowsingContextTargetFront {
   get isLocalTab() {
     return true;
   }
-  get tab() {
+  get localTab() {
     return this._tab;
   }
-  get contentPrincipal() {
-    return this.tab.linkedBrowser.contentPrincipal;
-  }
-  get csp() {
-    return this.tab.linkedBrowser.csp;
-  }
   toString() {
-    return `Target:${this.tab}`;
+    return `Target:${this.localTab}`;
   }
 
   /**
    * Listen to the different events.
    */
   _setupTabListeners() {
-    this.tab.addEventListener("TabClose", this._handleTabEvent);
-    this.tab.ownerDocument.defaultView.addEventListener(
-      "unload",
-      this._handleTabEvent
-    );
-    this.tab.addEventListener("TabRemotenessChange", this._handleTabEvent);
+    this.localTab.addEventListener("TabClose", this._handleTabEvent);
+    this.localTab.addEventListener("TabRemotenessChange", this._handleTabEvent);
   }
 
   /**
    * Teardown event listeners.
    */
   _teardownTabListeners() {
-    if (this.tab.ownerDocument.defaultView) {
-      this.tab.ownerDocument.defaultView.removeEventListener(
-        "unload",
-        this._handleTabEvent
-      );
-    }
-    this.tab.removeEventListener("TabClose", this._handleTabEvent);
-    this.tab.removeEventListener("TabRemotenessChange", this._handleTabEvent);
+    this.localTab.removeEventListener("TabClose", this._handleTabEvent);
+    this.localTab.removeEventListener(
+      "TabRemotenessChange",
+      this._handleTabEvent
+    );
   }
 
   /**
@@ -103,9 +90,6 @@ class LocalTabTargetFront extends BrowsingContextTargetFront {
           await toolbox.destroy();
         }
         break;
-      case "unload":
-        this.destroy();
-        break;
       case "TabRemotenessChange":
         this._onRemotenessChange();
         break;
@@ -121,7 +105,7 @@ class LocalTabTargetFront extends BrowsingContextTargetFront {
     // Responsive design does a crazy dance around tabs and triggers
     // remotenesschange events. But we should ignore them as at the end
     // the content doesn't change its remoteness.
-    if (this.tab.isResponsiveDesignMode) {
+    if (this.localTab.isResponsiveDesignMode) {
       return;
     }
 
@@ -136,7 +120,7 @@ class LocalTabTargetFront extends BrowsingContextTargetFront {
     const client = this.client;
 
     if (targetSwitchingEnabled) {
-      // By default, we do close the DebuggerClient when the target is destroyed.
+      // By default, we do close the DevToolsClient when the target is destroyed.
       // This happens when we close the toolbox (Toolbox.destroy calls Target.destroy),
       // or when the tab is closes, the server emits tabDetached and the target
       // destroy itself.
@@ -159,7 +143,7 @@ class LocalTabTargetFront extends BrowsingContextTargetFront {
     // Only try to fetch the the target from the existing client when target switching
     // is enabled. We keep the toolbox open with the original client we created it from.
     const newTarget = await TargetFactory.forTab(
-      this.tab,
+      this.localTab,
       targetSwitchingEnabled ? client : null
     );
 

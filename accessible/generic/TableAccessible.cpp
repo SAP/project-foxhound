@@ -41,6 +41,8 @@ bool TableAccessible::IsProbablyLayoutTable() {
 
   Accessible* thisacc = AsAccessible();
 
+  MOZ_ASSERT(!thisacc->IsDefunct(), "Table accessible should not be defunct");
+
   // Need to see all elements while document is being edited.
   if (thisacc->Document()->State() & states::EDITABLE) {
     RETURN_LAYOUT_ANSWER(false, "In editable document");
@@ -67,9 +69,7 @@ bool TableAccessible::IsProbablyLayoutTable() {
   }
 
   // Check for legitimate data table attributes.
-  nsAutoString summary;
-  if (el->GetAttr(kNameSpaceID_None, nsGkAtoms::summary, summary) &&
-      !summary.IsEmpty()) {
+  if (el->Element::HasNonEmptyAttr(nsGkAtoms::summary)) {
     RETURN_LAYOUT_ANSWER(false, "Has summary -- legitimate table structures");
   }
 

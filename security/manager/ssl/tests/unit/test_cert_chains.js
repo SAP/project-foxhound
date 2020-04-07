@@ -27,52 +27,6 @@ function test_cert_equals() {
   );
 }
 
-function test_bad_cert_list_serialization() {
-  // Normally the serialization of an nsIX509CertList consists of some header
-  // junk (IIDs and whatnot), 4 bytes representing how many nsIX509Cert follow,
-  // and then the serialization of each nsIX509Cert. This serialization consists
-  // of the header junk for an nsIX509CertList with 1 "nsIX509Cert", but then
-  // instead of an nsIX509Cert, the subsequent bytes represent the serialization
-  // of another nsIX509CertList (with 0 nsIX509Cert). This test ensures that
-  // nsIX509CertList safely handles this unexpected input when deserializing.
-  const badCertListSerialization =
-    "lZ+xZWUXSH+rm9iRO+UxlwAAAAAAAAAAwAAAAAAAAEYAAAABlZ+xZWUXSH+rm9iRO+UxlwAAAAAA" +
-    "AAAAwAAAAAAAAEYAAAAA";
-  let serHelper = Cc["@mozilla.org/network/serialization-helper;1"].getService(
-    Ci.nsISerializationHelper
-  );
-  throws(
-    () => serHelper.deserializeObject(badCertListSerialization),
-    /NS_ERROR_UNEXPECTED/,
-    "deserializing a bogus nsIX509CertList should throw NS_ERROR_UNEXPECTED"
-  );
-}
-
-function test_cert_list_serialization() {
-  let certList = build_cert_chain(["default-ee", "expired-ee"]);
-
-  throws(
-    () => certList.addCert(null),
-    /NS_ERROR_ILLEGAL_VALUE/,
-    "trying to add a null cert to an nsIX509CertList should throw"
-  );
-
-  // Serialize the cert list to a string
-  let serHelper = Cc["@mozilla.org/network/serialization-helper;1"].getService(
-    Ci.nsISerializationHelper
-  );
-  certList.QueryInterface(Ci.nsISerializable);
-  let serialized = serHelper.serializeToString(certList);
-
-  // Deserialize from the string and compare to the original object
-  let deserialized = serHelper.deserializeObject(serialized);
-  deserialized.QueryInterface(Ci.nsIX509CertList);
-  ok(
-    certList.equals(deserialized),
-    "Deserialized cert list should equal the original"
-  );
-}
-
 // We hard-code the following certificates for the pkcs7 export tests so that we
 // don't have to change the test data when the certificates change each year.
 // Luckily these tests don't depend on the certificates being valid, so it's ok
@@ -97,6 +51,26 @@ v0swx/+oUxCfLb0VIl/kdUqLkbGYrAmtjeOKZLaqVtRH0BnmbPowLak1pi6nQYOU
 +aL9QOuvT/j3rXoimcdo6X3TK1SN2/64fGMyG/pwas+JXehbReUf4n1ewk84ADtb
 +ew8tRAKf/uxzKUj5t/UgqDsnTWq5wUc5IJKwoHT41sQnNqPg12x4+WGWiAsWCpR
 /hKYHFGr7rb4JTGEPAJpWcv9WtZYAvwT78a2xpHp5XNglj16IjWEukvJuU1W
+-----END CERTIFICATE-----`;
+
+const gExpiredEEPEM = `-----BEGIN CERTIFICATE-----
+MIIDHDCCAgSgAwIBAgIUY9ERAIKj0js/YbhJoMrcLnj++uowDQYJKoZIhvcNAQEL
+BQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAiGA8yMDEzMDEwMTAwMDAwMFoYDzIwMTQw
+MTAxMDAwMDAwWjAiMSAwHgYDVQQDDBdFeHBpcmVkIFRlc3QgRW5kLWVudGl0eTCC
+ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALqIUahEjhbWQf1utogGNhA9
+PBPZ6uQ1SrTs9WhXbCR7wcclqODYH72xnAabbhqG8mvir1p1a2pkcQh6pVqnRYf3
+HNUknAJ+zUP8HmnQOCApk6sgw0nk27lMwmtsDu0Vgg/xfq1pGrHTAjqLKkHup3Dg
+Dw2N/WYLK7AkkqR9uYhheZCxV5A90jvF4LhIH6g304hD7ycW2FW3ZlqqfgKQLzp7
+EIAGJMwcbJetlmFbt+KWEsB1MaMMkd20yvf8rR0l0wnvuRcOp2jhs3svIm9p47SK
+lWEd7ibWJZ2rkQhONsscJAQsvxaLL+Xxj5kXMbiz/kkj+nJRxDHVA6zaGAo17Y0C
+AwEAAaNWMFQwHgYDVR0RBBcwFYITZXhwaXJlZC5leGFtcGxlLmNvbTAyBggrBgEF
+BQcBAQQmMCQwIgYIKwYBBQUHMAGGFmh0dHA6Ly9sb2NhbGhvc3Q6ODg4OC8wDQYJ
+KoZIhvcNAQELBQADggEBAImiFuy275T6b+Ud6gl/El6qpgWHUXeYiv2sp7d+HVzf
+T+ow5WVsxI/GMKhdA43JaKT9gfMsbnP1qiI2zel3U+F7IAMO1CEr5FVdCOVTma5h
+mu/81rkJLmZ8RQDWWOhZKyn/7aD7TH1C1e768yCt5E2DDl8mHil9zR8BPsoXwuS3
+L9zJ2JqNc60+hB8l297ZaSl0nbKffb47ukvn5kSJ7tI9n/fSXdj1JrukwjZP+74V
+kQyNobaFzDZ+Zr3QmfbejEsY2EYnq8XuENgIO4DuYrm80/p6bMO6laB0Uv5W6uXZ
+gBZdRTe1WMdYWGhmvnFFQmf+naeOOl6ryFwWwtnoK7I=
 -----END CERTIFICATE-----`;
 
 const gTestCAPEM = `-----BEGIN CERTIFICATE-----
@@ -467,13 +441,13 @@ function test_old_succeeded_certlist_deseralization_v1() {
   deserialized.QueryInterface(Ci.nsITransportSecurityInfo);
 
   equal(
-    deserialized.failedCertChain,
-    null,
-    "failedCertChain for a successful connection should be null"
+    deserialized.failedCertChain.length,
+    0,
+    "failedCertChain for a successful connection should be empty"
   );
-  let certChain = build_cert_chain(["default-ee", "test-ca"]);
+  let certChain = build_cert_list_from_pem_list([gDefaultEEPEM, gTestCAPEM]);
   ok(
-    certChain.equals(deserialized.succeededCertChain),
+    areCertArraysEqual(certChain, deserialized.succeededCertChain),
     "succeededCertChain should be deserialized correctly"
   );
 }
@@ -544,13 +518,13 @@ function test_old_succeeded_certlist_deseralization_v2() {
   deserialized.QueryInterface(Ci.nsITransportSecurityInfo);
 
   equal(
-    deserialized.failedCertChain,
-    null,
-    "failedCertChain for a successful connection should be null"
+    deserialized.failedCertChain.length,
+    [],
+    "failedCertChain for a successful connection should be empty"
   );
-  let certChain = build_cert_chain(["default-ee", "test-ca"]);
+  let certChain = build_cert_list_from_pem_list([gDefaultEEPEM, gTestCAPEM]);
   ok(
-    certChain.equals(deserialized.succeededCertChain),
+    areCertArraysEqual(certChain, deserialized.succeededCertChain),
     "succeededCertChain should be deserialized correctly"
   );
 }
@@ -623,13 +597,13 @@ function test_old_failed_certlist_deseralization_v1() {
   deserialized.QueryInterface(Ci.nsITransportSecurityInfo);
 
   equal(
-    deserialized.succeededCertChain,
-    null,
-    "succeededCertChain should be null"
+    deserialized.succeededCertChain.length,
+    0,
+    "succeededCertChain should be empty"
   );
-  let certChain = build_cert_chain(["expired-ee", "test-ca"]);
+  let certChain = build_cert_list_from_pem_list([gExpiredEEPEM, gTestCAPEM]);
   ok(
-    certChain.equals(deserialized.failedCertChain),
+    areCertArraysEqual(certChain, deserialized.failedCertChain),
     "failedCertChain should be deserialized correctly"
   );
 }
@@ -695,9 +669,9 @@ function test_old_failed_certlist_deseralization_v2() {
   let deserialized = serHelper.deserializeObject(serialized);
   deserialized.QueryInterface(Ci.nsITransportSecurityInfo);
 
-  let certChain = build_cert_chain(["expired-ee", "test-ca"]);
+  let certChain = build_cert_list_from_pem_list([gExpiredEEPEM, gTestCAPEM]);
   ok(
-    certChain.equals(deserialized.failedCertChain),
+    areCertArraysEqual(certChain, deserialized.failedCertChain),
     "failedCertChain should be deserialized correctly"
   );
 }
@@ -708,17 +682,6 @@ function run_test() {
   // Test nsIX509Cert.equals
   add_test(function() {
     test_cert_equals();
-    run_next_test();
-  });
-
-  add_test(function() {
-    test_bad_cert_list_serialization();
-    run_next_test();
-  });
-
-  // Test serialization of nsIX509CertList
-  add_test(function() {
-    test_cert_list_serialization();
     run_next_test();
   });
 
@@ -762,8 +725,8 @@ function run_test() {
       aTransportSecurityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
       test_security_info_serialization(aTransportSecurityInfo, 0);
       equal(
-        aTransportSecurityInfo.failedCertChain,
-        null,
+        aTransportSecurityInfo.failedCertChain.length,
+        0,
         "failedCertChain for a successful connection should be null"
       );
     }
@@ -788,7 +751,7 @@ function run_test() {
       );
       let originalCertChain = build_cert_chain(["expired-ee", "test-ca"]);
       ok(
-        originalCertChain.equals(securityInfo.failedCertChain),
+        areCertArraysEqual(originalCertChain, securityInfo.failedCertChain),
         "failedCertChain should equal the original cert chain for an" +
           " overrideable connection failure"
       );
@@ -811,7 +774,7 @@ function run_test() {
       );
       let originalCertChain = build_cert_chain(["unknownissuer"]);
       ok(
-        originalCertChain.equals(securityInfo.failedCertChain),
+        areCertArraysEqual(originalCertChain, securityInfo.failedCertChain),
         "failedCertChain should equal the original cert chain for an" +
           " overrideable connection failure"
       );
@@ -840,7 +803,7 @@ function run_test() {
         "test-ca",
       ]);
       ok(
-        originalCertChain.equals(securityInfo.failedCertChain),
+        areCertArraysEqual(originalCertChain, securityInfo.failedCertChain),
         "failedCertChain should equal the original cert chain for a" +
           " non-overrideable connection failure"
       );

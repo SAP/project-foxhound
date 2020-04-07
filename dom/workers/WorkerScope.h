@@ -142,12 +142,14 @@ class WorkerGlobalScope : public DOMEventTargetHelper,
   void ClearInterval(int32_t aHandle);
 
   void GetOrigin(nsAString& aOrigin) const;
+  bool CrossOriginIsolated() const;
 
   void Atob(const nsAString& aAtob, nsAString& aOutput, ErrorResult& aRv) const;
   void Btoa(const nsAString& aBtoa, nsAString& aOutput, ErrorResult& aRv) const;
 
   IMPL_EVENT_HANDLER(online)
   IMPL_EVENT_HANDLER(offline)
+  IMPL_EVENT_HANDLER(languagechange)
   IMPL_EVENT_HANDLER(rejectionhandled)
   IMPL_EVENT_HANDLER(unhandledrejection)
 
@@ -214,6 +216,8 @@ class WorkerGlobalScope : public DOMEventTargetHelper,
         mozilla::dom::EventCallbackDebuggerNotificationType::Global);
   }
 
+  bool IsSharedMemoryAllowed() const override;
+
   Maybe<ClientInfo> GetClientInfo() const override;
 
   Maybe<ClientState> GetClientState() const;
@@ -227,13 +231,15 @@ class WorkerGlobalScope : public DOMEventTargetHelper,
   GetOrCreateServiceWorkerRegistration(
       const ServiceWorkerRegistrationDescriptor& aDescriptor) override;
 
+  uint64_t WindowID() const;
+
   void FirstPartyStorageAccessGranted();
 };
 
 class DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
   const nsString mName;
 
-  ~DedicatedWorkerGlobalScope() {}
+  ~DedicatedWorkerGlobalScope() = default;
 
  public:
   DedicatedWorkerGlobalScope(WorkerPrivate* aWorkerPrivate,
@@ -258,7 +264,7 @@ class DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
 class SharedWorkerGlobalScope final : public WorkerGlobalScope {
   const nsString mName;
 
-  ~SharedWorkerGlobalScope() {}
+  ~SharedWorkerGlobalScope() = default;
 
  public:
   SharedWorkerGlobalScope(WorkerPrivate* aWorkerPrivate, const nsString& aName);

@@ -33,9 +33,6 @@ user_pref("browser.contentHandlers.types.5.uri", "http://test1.example.org/rss?u
 user_pref("browser.download.panel.shown", true);
 user_pref("browser.newtabpage.activity-stream.default.sites", "");
 user_pref("browser.newtabpage.activity-stream.telemetry", false);
-// Make sure PingCentre doesn't hit the network.
-user_pref("browser.ping-centre.production.endpoint", "");
-user_pref("browser.ping-centre.staging.endpoint", "");
 // Point the url-classifier to the local testing server for fast failures
 user_pref("browser.safebrowsing.downloads.remote.url", "http://{server}/safebrowsing-dummy/update");
 user_pref("browser.safebrowsing.provider.google.gethashURL", "http://{server}/safebrowsing-dummy/gethash");
@@ -68,9 +65,6 @@ user_pref("browser.urlbar.speculativeConnect.enabled", false);
 // connections.
 user_pref("browser.urlbar.suggest.searches", false);
 user_pref("browser.urlbar.usepreloadedtopurls.enabled", false);
-// Turn off the location bar search suggestions opt-in.  It interferes with
-// tests that don't expect it to be there.
-user_pref("browser.urlbar.userMadeSearchSuggestionsChoice", true);
 user_pref("browser.warnOnQuit", false);
 // Enable webapps testing mode, which bypasses native installation.
 user_pref("browser.webapps.testing", true);
@@ -113,7 +107,6 @@ user_pref("extensions.defaultProviders.enabled", true);
 user_pref("extensions.getAddons.cache.enabled", false);
 // Make sure AddonRepository won't hit the network
 user_pref("extensions.getAddons.get.url", "http://{server}/extensions-dummy/repositoryGetURL");
-user_pref("extensions.getAddons.compatOverides.url", "http://{server}/extensions-dummy/repositoryCompatOverridesURL");
 user_pref("extensions.getAddons.search.browseURL", "http://{server}/extensions-dummy/repositoryBrowseURL");
 user_pref("extensions.hotfix.url", "http://{server}/extensions-dummy/hotfixURL");
 // Disable intalling any distribution add-ons
@@ -126,7 +119,6 @@ user_pref("extensions.update.background.url", "http://{server}/extensions-dummy/
 user_pref("extensions.update.url", "http://{server}/extensions-dummy/updateURL");
 // Make sure opening about:addons won't hit the network
 user_pref("extensions.webservice.discoverURL", "http://{server}/extensions-dummy/discoveryURL");
-user_pref("extensions.privatebrowsing.notification", true);
 user_pref("findbar.highlightAll", false);
 user_pref("findbar.modalHighlight", false);
 // Existing tests assume there is no font size inflation.
@@ -136,10 +128,10 @@ user_pref("general.useragent.updates.url", "https://example.com/0/%APP_ID%");
 // Always use network provider for geolocation tests
 // so we bypass the OSX dialog raised by the corelocation provider
 user_pref("geo.provider.testing", true);
-user_pref("geo.wifi.logging.enabled", true);
-user_pref("geo.wifi.scan", false);
-user_pref("geo.wifi.timeToWaitBeforeSending", 2000);
-user_pref("geo.wifi.uri", "http://{server}/tests/dom/tests/mochitest/geolocation/network_geolocation.sjs");
+user_pref("geo.provider.network.logging.enabled", true);
+user_pref("geo.provider.network.scan", false);
+user_pref("geo.provider.network.timeToWaitBeforeSending", 2000);
+user_pref("geo.provider.network.url", "http://{server}/tests/dom/tests/mochitest/geolocation/network_geolocation.sjs");
 user_pref("gfx.color_management.force_srgb", true);
 user_pref("gfx.logging.level", 1);
 // We don't want to hit the real Firefox Accounts server for tests.  We don't

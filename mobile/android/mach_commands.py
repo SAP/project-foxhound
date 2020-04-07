@@ -189,15 +189,18 @@ REMOVED/DEPRECATED: Use 'mach lint --linter android-checkstyle'.""")
     @CommandArgument('--archive', action='store_true',
                      help='Generate a javadoc archive.')
     @CommandArgument('--upload', metavar='USER/REPO',
-                     help='Upload generated javadoc to Github, '
+                     help='Upload geckoview documentation to Github, '
                      'using the specified USER/REPO.')
     @CommandArgument('--upload-branch', metavar='BRANCH[/PATH]',
-                     default='gh-pages/javadoc',
-                     help='Use the specified branch/path for commits.')
+                     default='gh-pages',
+                     help='Use the specified branch/path for documentation commits.')
+    @CommandArgument('--javadoc-path', metavar='/PATH',
+                     default='javadoc',
+                     help='Use the specified path for javadoc commits.')
     @CommandArgument('--upload-message', metavar='MSG',
                      default='GeckoView docs upload',
                      help='Use the specified message for commits.')
-    def android_geckoview_docs(self, archive, upload, upload_branch,
+    def android_geckoview_docs(self, archive, upload, upload_branch, javadoc_path,
                                upload_message):
 
         tasks = (self.substs['GRADLE_ANDROID_GECKOVIEW_DOCS_ARCHIVE_TASKS'] if archive or upload
@@ -237,21 +240,35 @@ REMOVED/DEPRECATED: Use 'mach lint --linter android-checkstyle'.""")
             env['GIT_SSH_COMMAND'] = 'ssh -i "%s" -o StrictHostKeyChecking=no' % keyfile
 
         # Clone remote repo.
-        branch, _, branch_path = upload_branch.partition('/')
+        branch = upload_branch.format(**fmt)
         repo_url = 'git@github.com:%s.git' % upload
         repo_path = mozpath.abspath('gv-docs-repo')
-        self.run_process(['git', 'clone', '--branch', branch, '--depth', '1',
+        self.run_process(['git', 'clone', '--branch', upload_branch, '--depth', '1',
                           repo_url, repo_path], append_env=env, pass_thru=True)
         env['GIT_DIR'] = mozpath.join(repo_path, '.git')
         env['GIT_WORK_TREE'] = repo_path
         env['GIT_AUTHOR_NAME'] = env['GIT_COMMITTER_NAME'] = 'GeckoView Docs Bot'
         env['GIT_AUTHOR_EMAIL'] = env['GIT_COMMITTER_EMAIL'] = 'nobody@mozilla.com'
 
-        # Extract new javadoc to specified directory inside repo.
+        # Copy over user documentation.
         import mozfile
+
+        # Remove existing geckoview docs and replace with the local copy.
+        # Keep all the files that are git specific and not part of the GV documentation.
+        keep_files = [".git", ".gitignore", "_site", "CODE_OF_CONDUCT.md",
+                      "Gemfile.lock", "README.md"]
+        for filename in os.listdir(repo_path):
+            if filename not in keep_files:
+                filepath = mozpath.join(repo_path, filename)
+                mozfile.remove(filepath)
+
+        src_path = mozpath.join(self.topsrcdir, 'mobile', 'android', 'docs', 'geckoview')
+        os.system("rsync -aruz {}/ {}/".format(src_path, repo_path))
+
+        # Extract new javadoc to specified directory inside repo.
         src_tar = mozpath.join(self.topobjdir, 'gradle', 'build', 'mobile', 'android',
                                'geckoview', 'libs', 'geckoview-javadoc.jar')
-        dst_path = mozpath.join(repo_path, branch_path.format(**fmt))
+        dst_path = mozpath.join(repo_path, javadoc_path.format(**fmt))
         mozfile.remove(dst_path)
         mozfile.extract_zip(src_tar, dst_path)
 
@@ -263,7 +280,7 @@ REMOVED/DEPRECATED: Use 'mach lint --linter android-checkstyle'.""")
             self.run_process(['git', 'commit',
                               '--message', upload_message.format(**fmt)],
                              append_env=env, pass_thru=True)
-            self.run_process(['git', 'push', 'origin', 'gh-pages'],
+            self.run_process(['git', 'push', 'origin', branch],
                              append_env=env, pass_thru=True)
 
         mozfile.remove(repo_path)
@@ -348,9 +365,14 @@ class AndroidEmulatorCommands(MachCommandBase):
              conditions=[],
              description='Run the Android emulator with an AVD from test automation.')
     @CommandArgument('--version', metavar='VERSION',
-                     choices=['4.3', 'x86', 'x86-7.0'],
-                     help='Specify Android version to run in emulator. '
-                     'One of "4.3", "x86", or "x86-7.0".')
+                     choices=['arm-4.3', 'x86-4.2', 'x86-7.0'],
+                     help='Specify which AVD to run in emulator. '
+                     'One of "arm-4.3" (Android 4.3 supporting armv7 binaries), '
+                     '"x86-4.2" (Android 4.2 supporting x86 binaries), or '
+                     '"x86-7.0" (Android 7.0 supporting x86 or x86_64 binaries, '
+                     'recommended for most applications). '
+                     'By default, "arm-4.3" will be used if the current build environment '
+                     'architecture is arm; otherwise "x86-7.0".')
     @CommandArgument('--wait', action='store_true',
                      help='Wait for emulator to be closed.')
     @CommandArgument('--force-update', action='store_true',

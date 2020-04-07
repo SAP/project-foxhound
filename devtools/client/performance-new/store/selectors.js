@@ -12,6 +12,10 @@
  * @typedef {import("../@types/perf").ReceiveProfile} ReceiveProfile
  * @typedef {import("../@types/perf").SetRecordingPreferences} SetRecordingPreferences
  * @typedef {import("../@types/perf").GetSymbolTableCallback} GetSymbolTableCallback
+ * @typedef {import("../@types/perf").RestartBrowserWithEnvironmentVariable} RestartBrowserWithEnvironmentVariable
+ * @typedef {import("../@types/perf").GetEnvironmentVariable} GetEnvironmentVariable
+ * @typedef {import("../@types/perf").PageContext} PageContext
+ * @typedef {import("../@types/perf").Presets} Presets
  */
 /**
  * @template S
@@ -46,6 +50,12 @@ const getThreadsString = state => getThreads(state).join(",");
 /** @type {Selector<string[]>} */
 const getObjdirs = state => state.objdirs;
 
+/** @type {Selector<Presets>} */
+const getPresets = state => getInitializedValues(state).presets;
+
+/** @type {Selector<string>} */
+const getPresetName = state => state.presetName;
+
 /**
  * Warning! This function returns a new object on every run, and so should not
  * be used directly as a React prop.
@@ -53,7 +63,26 @@ const getObjdirs = state => state.objdirs;
  * @type {Selector<RecordingStateFromPreferences>}
  */
 const getRecordingSettings = state => {
+  const presets = getPresets(state);
+  const presetName = getPresetName(state);
+  const preset = presets[presetName];
+  if (preset) {
+    // Use the the settings from the preset.
+    return {
+      presetName: presetName,
+      entries: preset.entries,
+      interval: preset.interval,
+      features: preset.features,
+      threads: preset.threads,
+      objdirs: getObjdirs(state),
+      // The client doesn't implement durations yet. See Bug 1587165.
+      duration: preset.duration,
+    };
+  }
+
+  // Use the the custom settings from the panel.
   return {
+    presetName: "custom",
     entries: getEntries(state),
     interval: getInterval(state),
     features: getFeatures(state),
@@ -83,12 +112,19 @@ const getReceiveProfileFn = state => getInitializedValues(state).receiveProfile;
 const getSetRecordingPreferencesFn = state =>
   getInitializedValues(state).setRecordingPreferences;
 
-/** @type {Selector<boolean>} */
-const getIsPopup = state => getInitializedValues(state).isPopup;
+/** @type {Selector<PageContext>} */
+const getPageContext = state => getInitializedValues(state).pageContext;
 
 /** @type {Selector<(profile: Object) => GetSymbolTableCallback>} */
 const getSymbolTableGetter = state =>
   getInitializedValues(state).getSymbolTableGetter;
+
+/** @type {Selector<string[] | null>} */
+const getSupportedFeatures = state =>
+  getInitializedValues(state).supportedFeatures;
+
+/** @type {Selector<string | null>} */
+const getPromptEnvRestart = state => state.promptEnvRestart;
 
 module.exports = {
   getRecordingState,
@@ -100,11 +136,15 @@ module.exports = {
   getThreads,
   getThreadsString,
   getObjdirs,
+  getPresets,
+  getPresetName,
   getRecordingSettings,
   getInitializedValues,
   getPerfFront,
   getReceiveProfileFn,
   getSetRecordingPreferencesFn,
-  getIsPopup,
+  getPageContext,
   getSymbolTableGetter,
+  getPromptEnvRestart,
+  getSupportedFeatures,
 };

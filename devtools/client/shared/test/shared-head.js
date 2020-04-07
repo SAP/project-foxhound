@@ -43,9 +43,6 @@ if (DEBUG_ALLOCATIONS) {
   });
 }
 
-const { ScratchpadManager } = ChromeUtils.import(
-  "resource://devtools/client/scratchpad/scratchpad-manager.jsm"
-);
 const { loader, require } = ChromeUtils.import(
   "resource://devtools/shared/Loader.jsm"
 );
@@ -169,15 +166,15 @@ registerCleanupFunction(async function cleanup() {
   await waitForTick();
 
   // All connections must be cleaned up by the test when the test ends.
-  const { DebuggerServer } = require("devtools/server/debugger-server");
+  const { DevToolsServer } = require("devtools/server/devtools-server");
   ok(
-    !DebuggerServer.hasConnection(),
-    "The main process DebuggerServer has no pending connection when the test ends"
+    !DevToolsServer.hasConnection(),
+    "The main process DevToolsServer has no pending connection when the test ends"
   );
   // If there is still open connection, close all of them so that following tests
   // could pass.
-  if (DebuggerServer.hasConnection()) {
-    for (const conn of Object.values(DebuggerServer._connections)) {
+  if (DevToolsServer.hasConnection()) {
+    for (const conn of Object.values(DevToolsServer._connections)) {
       conn.close();
     }
   }
@@ -252,6 +249,139 @@ var refreshTab = async function(tab = gBrowser.selectedTab) {
   await finished;
   info("Tab finished refreshing.");
 };
+
+/**
+ * Navigate the currently selected tab to a new URL and wait for it to load.
+ * Also wait for the toolbox to attach to the new target, if we navigated
+ * to a new process.
+ *
+ * @param {String} url The url to be loaded in the current tab.
+ * @param {JSON} options Optional dictionary object with the following keys:
+ *        - {Boolean} isErrorPage You may pass `true` is the URL is an error
+ *                    page. Otherwise BrowserTestUtils.browserLoaded will wait
+ *                    for 'load' event, which never fires for error pages.
+ *
+ * @return a promise that resolves when the page has fully loaded.
+ */
+async function navigateTo(uri, { isErrorPage = false } = {}) {
+  const target = await TargetFactory.forTab(gBrowser.selectedTab);
+  const toolbox = gDevTools.getToolbox(target);
+
+  // If we're switching origins, we need to wait for the 'switched-target'
+  // event to make sure everything is ready.
+  // Navigating from/to pages loaded in the parent process, like about:robots,
+  // also spawn new targets.
+  // (If target-switching pref is false, the toolbox will reboot)
+  const onTargetSwitched = toolbox.once("switched-target");
+  // Otherwise, if we don't switch target, it is safe to wait for navigate event.
+  const onNavigate = target.once("navigate");
+
+  // Register panel-specific listeners, which would be useful to wait
+  // for panel-specific events.
+  const onPanelReloaded = waitForPanelReload(
+    toolbox.currentToolId,
+    toolbox.target,
+    toolbox.getCurrentPanel()
+  );
+
+  info(`Load document "${uri}"`);
+  const browser = gBrowser.selectedBrowser;
+  const currentPID = browser.browsingContext.currentWindowGlobal.osPid;
+  const onBrowserLoaded = BrowserTestUtils.browserLoaded(
+    browser,
+    false,
+    null,
+    isErrorPage
+  );
+  await BrowserTestUtils.loadURI(browser, uri);
+
+  info(`Waiting for page to be loaded…`);
+  await onBrowserLoaded;
+  info(`→ page loaded`);
+
+  // Compare the PIDs (and not the toolbox's targets) as PIDs are updated also immediately,
+  // while target may be updated slightly later.
+  const switchedToAnotherProcess =
+    currentPID !== browser.browsingContext.currentWindowGlobal.osPid;
+
+  // If we switched to another process and the target switching pref is false,
+  // the toolbox will close and reopen.
+  // For now, this helper doesn't support this case
+  if (
+    switchedToAnotherProcess &&
+    !Services.prefs.getBoolPref("devtools.target-switching.enabled", false)
+  ) {
+    ok(
+      false,
+      `navigateTo(${uri}) navigated to another process, but the target-switching preference is false`
+    );
+    return;
+  }
+
+  if (onPanelReloaded) {
+    info(`Waiting for ${toolbox.currentToolId} to be reloaded…`);
+    await onPanelReloaded();
+    info(`→ panel reloaded`);
+  }
+
+  // If the tab navigated to another process, expect a target switching
+  if (switchedToAnotherProcess) {
+    info(`Waiting for target switch…`);
+    await onTargetSwitched;
+    info(`→ switched-target emitted`);
+  } else {
+    info(`Waiting for target 'navigate' event…`);
+    await onNavigate;
+    info(`→ 'navigate' emitted`);
+  }
+}
+
+/**
+ * Return a function, specific for each panel, in order
+ * to wait for any update which may happen when reloading a page.
+ */
+function waitForPanelReload(currentToolId, target, panel) {
+  if (currentToolId == "inspector") {
+    const inspector = panel;
+    const markuploaded = inspector.once("markuploaded");
+    const onNewRoot = inspector.once("new-root");
+    const onUpdated = inspector.once("inspector-updated");
+    const onReloaded = inspector.once("reloaded");
+
+    return async function() {
+      info("Waiting for markup view to load after navigation.");
+      await markuploaded;
+
+      info("Waiting for new root.");
+      await onNewRoot;
+
+      info("Waiting for inspector to update after new-root event.");
+      await onUpdated;
+
+      info("Waiting for inspector updates after page reload");
+      await onReloaded;
+    };
+  } else if (currentToolId == "netmonitor") {
+    const monitor = panel;
+    const onReloaded = monitor.once("reloaded");
+    return async function() {
+      info("Waiting for netmonitor updates after page reload");
+      await onReloaded;
+    };
+  }
+  return null;
+}
+
+function isFissionEnabled() {
+  return SpecialPowers.useRemoteSubframes;
+}
+
+function isTargetSwitchingEnabled() {
+  return (
+    isFissionEnabled() &&
+    Services.prefs.getBoolPref("devtools.target-switching.enabled", false)
+  );
+}
 
 /**
  * Open the inspector in a tab with given URL.
@@ -763,7 +893,7 @@ function createTestHTTPServer() {
  * @param {string} url
  *        Actor module URL or absolute require path
  * @param {json} options
- *        Arguments to be passed to DebuggerServer.registerModule
+ *        Arguments to be passed to DevToolsServer.registerModule
  */
 async function registerActorInContentProcess(url, options) {
   function convertChromeToFile(uri) {
@@ -774,14 +904,38 @@ async function registerActorInContentProcess(url, options) {
   // chrome://mochitests URI is registered only in the parent process, so convert these
   // URLs to file:// one in order to work in the content processes
   url = url.startsWith("chrome://mochitests") ? convertChromeToFile(url) : url;
-  return ContentTask.spawn(gBrowser.selectedBrowser, { url, options }, args => {
-    // eslint-disable-next-line no-shadow
-    const { require } = ChromeUtils.import(
-      "resource://devtools/shared/Loader.jsm"
-    );
-    const {
-      ActorRegistry,
-    } = require("devtools/server/actors/utils/actor-registry");
-    ActorRegistry.registerModule(args.url, args.options);
-  });
+  return SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [{ url, options }],
+    args => {
+      // eslint-disable-next-line no-shadow
+      const { require } = ChromeUtils.import(
+        "resource://devtools/shared/Loader.jsm"
+      );
+      const {
+        ActorRegistry,
+      } = require("devtools/server/actors/utils/actor-registry");
+      ActorRegistry.registerModule(args.url, args.options);
+    }
+  );
+}
+
+/**
+ * Move the provided Window to the provided left, top coordinates and wait for
+ * the window position to be updated.
+ */
+async function moveWindowTo(win, left, top) {
+  // Check that the expected coordinates are within the window available area.
+  left = Math.max(win.screen.availLeft, left);
+  left = Math.min(win.screen.width, left);
+  top = Math.max(win.screen.availTop, top);
+  top = Math.min(win.screen.height, top);
+
+  info(`Moving window to {${left}, ${top}}`);
+  win.moveTo(left, top);
+
+  // Bug 1600809: window move/resize can be async on Linux sometimes.
+  // Wait so that the anchor's position is correctly measured.
+  info("Wait for window screenLeft and screenTop to be updated");
+  return waitUntil(() => win.screenLeft === left && win.screenTop === top);
 }

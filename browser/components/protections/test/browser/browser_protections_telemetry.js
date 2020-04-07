@@ -30,7 +30,7 @@ const LOG = {
   "https://6.example.com": [
     [
       Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_ALL |
-        Ci.nsIWebProgressListener.STATE_LOADED_TRACKING_CONTENT,
+        Ci.nsIWebProgressListener.STATE_LOADED_LEVEL_1_TRACKING_CONTENT,
       true,
       4,
     ],
@@ -49,12 +49,15 @@ add_task(async function setup() {
       // Change the endpoints to prevent non-local network connections when landing on the page.
       ["browser.contentblocking.report.monitor.url", ""],
       ["browser.contentblocking.report.monitor.sign_in_url", ""],
-      ["browser.contentblocking.report.lockwise.url", ""],
       ["browser.contentblocking.report.social.url", ""],
       ["browser.contentblocking.report.cookie.url", ""],
       ["browser.contentblocking.report.tracker.url", ""],
       ["browser.contentblocking.report.fingerprinter.url", ""],
       ["browser.contentblocking.report.cryptominer.url", ""],
+      ["browser.contentblocking.report.lockwise.mobile-android.url", ""],
+      ["browser.contentblocking.report.lockwise.mobile-ios.url", ""],
+      ["browser.contentblocking.report.mobile-ios.url", ""],
+      ["browser.contentblocking.report.mobile-android.url", ""],
     ],
   });
 
@@ -174,7 +177,7 @@ add_task(async function checkTelemetryClickEvents() {
     gBrowser,
   });
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     // Show all elements, so we can click on them, even though our user is not logged in.
     let hidden_elements = content.document.querySelectorAll(".hidden");
     for (let el of hidden_elements) {
@@ -198,7 +201,7 @@ add_task(async function checkTelemetryClickEvents() {
   );
   is(events.length, 1, `recorded telemetry for lw_app_link`);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const openAboutLogins = await ContentTaskUtils.waitForCondition(() => {
       // Opens an extra tab
       return content.document.getElementById("open-about-logins-button");
@@ -217,12 +220,15 @@ add_task(async function checkTelemetryClickEvents() {
   );
   is(events.length, 1, `recorded telemetry for lw_open_button`);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
-    const lockwiseAppLink = await ContentTaskUtils.waitForCondition(() => {
-      return content.document.getElementById("lockwise-inline-link");
-    }, "lockwiseAppLink exists");
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const lockwiseAndroidAppLink = await ContentTaskUtils.waitForCondition(
+      () => {
+        return content.document.getElementById("lockwise-android-inline-link");
+      },
+      "lockwiseAndroidAppLink exists"
+    );
 
-    lockwiseAppLink.click();
+    lockwiseAndroidAppLink.click();
   });
 
   events = await waitForTelemetryEventCount(4);
@@ -231,11 +237,12 @@ add_task(async function checkTelemetryClickEvents() {
     e =>
       e[1] == "security.ui.protections" &&
       e[2] == "click" &&
-      e[3] == "lw_sync_link"
+      e[3] == "lw_sync_link" &&
+      e[4] == "android"
   );
-  is(events.length, 1, `recorded telemetry for lw_sync_link`);
+  is(events.length, 1, `recorded telemetry for lw_sync_link, android`);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const lockwiseReportLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("lockwise-how-it-works");
     }, "lockwiseReportLink exists");
@@ -253,7 +260,7 @@ add_task(async function checkTelemetryClickEvents() {
   );
   is(events.length, 1, `recorded telemetry for lw_about_link`);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     let openLockwise = await ContentTaskUtils.waitForCondition(() => {
       // Opens an extra tab
       return content.document.getElementById("lockwise-link");
@@ -272,7 +279,7 @@ add_task(async function checkTelemetryClickEvents() {
   );
   is(events.length, 1, `recorded telemetry for lw_open_breach_link`);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     let monitorReportLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("monitor-inline-link");
     }, "monitorReportLink exists");
@@ -290,7 +297,7 @@ add_task(async function checkTelemetryClickEvents() {
   );
   is(events.length, 1, `recorded telemetry for mtr_report_link`);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     let monitorAboutLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("monitor-link");
     }, "monitorAboutLink exists");
@@ -308,7 +315,7 @@ add_task(async function checkTelemetryClickEvents() {
   );
   is(events.length, 1, `recorded telemetry for mtr_about_link`);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const signUpForMonitorLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("sign-up-for-monitor-link");
     }, "signUpForMonitorLink exists");
@@ -326,7 +333,7 @@ add_task(async function checkTelemetryClickEvents() {
   );
   is(events.length, 1, `recorded telemetry for mtr_signup_button`);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const socialLearnMoreLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("social-link");
     }, "Learn more link for social tab exists");
@@ -345,7 +352,7 @@ add_task(async function checkTelemetryClickEvents() {
   );
   is(events.length, 1, `recorded telemetry for social trackers_about_link`);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const cookieLearnMoreLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("cookie-link");
     }, "Learn more link for cookie tab exists");
@@ -364,7 +371,7 @@ add_task(async function checkTelemetryClickEvents() {
   );
   is(events.length, 1, `recorded telemetry for cookie trackers_about_link`);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const trackerLearnMoreLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("tracker-link");
     }, "Learn more link for tracker tab exists");
@@ -387,7 +394,7 @@ add_task(async function checkTelemetryClickEvents() {
     `recorded telemetry for content tracker trackers_about_link`
   );
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const fingerprinterLearnMoreLink = await ContentTaskUtils.waitForCondition(
       () => {
         return content.document.getElementById("fingerprinter-link");
@@ -413,7 +420,7 @@ add_task(async function checkTelemetryClickEvents() {
     `recorded telemetry for fingerprinter trackers_about_link`
   );
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, async function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const cryptominerLearnMoreLink = await ContentTaskUtils.waitForCondition(
       () => {
         return content.document.getElementById("cryptominer-link");
@@ -438,6 +445,48 @@ add_task(async function checkTelemetryClickEvents() {
     1,
     `recorded telemetry for cryptominer trackers_about_link`
   );
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const lockwiseIOSAppLink = await ContentTaskUtils.waitForCondition(() => {
+      return content.document.getElementById("lockwise-ios-inline-link");
+    }, "lockwiseIOSAppLink exists");
+
+    lockwiseIOSAppLink.click();
+  });
+
+  events = await waitForTelemetryEventCount(15);
+
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "lw_sync_link" &&
+      e[4] == "ios"
+  );
+  is(events.length, 1, `recorded telemetry for lw_sync_link`);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    // Show all elements, so we can click on them, even though our user is not logged in.
+    let hidden_elements = content.document.querySelectorAll(".hidden");
+    for (let el of hidden_elements) {
+      el.style.display = "block ";
+    }
+
+    const mobileAppLink = await ContentTaskUtils.waitForCondition(() => {
+      return content.document.getElementById("android-mobile-inline-link");
+    }, "android-mobile-inline-link exists");
+
+    mobileAppLink.click();
+  });
+
+  events = await waitForTelemetryEventCount(16);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "mobile_app_link"
+  );
+  is(events.length, 1, `recorded telemetry for mobile_app_link`);
 
   await BrowserTestUtils.removeTab(tab);
   // We open three extra tabs with the click events.

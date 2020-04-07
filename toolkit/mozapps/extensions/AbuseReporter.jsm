@@ -23,6 +23,9 @@ const MAX_STRING_LENGTH = 255;
 // Minimum time between report submissions (in ms).
 const MIN_MS_BETWEEN_SUBMITS = 30000;
 
+// The addon types currently supported by the integrated abuse report panel.
+const SUPPORTED_ADDON_TYPES = ["extension", "theme"];
+
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AMTelemetry: "resource://gre/modules/AddonManager.jsm",
@@ -239,7 +242,7 @@ const AbuseReporter = {
       return null;
     }
 
-    const locale = Services.locale.appLocaleAsLangTag;
+    const locale = Services.locale.appLocaleAsBCP47;
 
     // Get a string value from a translated value
     // (https://addons-server.readthedocs.io/en/latest/topics/api/overview.html#api-overview-translations)
@@ -316,6 +319,8 @@ const AbuseReporter = {
         addon.sourceURI && truncateString(addon.sourceURI.spec),
       install_date: addon.installDate && addon.installDate.toISOString(),
       addon_install_source: normalizeValue(installInfo.source),
+      addon_install_source_url:
+        installInfo.sourceURL && truncateString(installInfo.sourceURL),
       addon_install_method: normalizeValue(installInfo.method),
     };
 
@@ -356,7 +361,7 @@ const AbuseReporter = {
 
     data.app = Services.appinfo.name.toLowerCase();
     data.appversion = Services.appinfo.version;
-    data.lang = Services.locale.appLocaleAsLangTag;
+    data.lang = Services.locale.appLocaleAsBCP47;
     data.operating_system = AppConstants.platform;
     data.operating_system_version = Services.sysinfo.getProperty("version");
 
@@ -422,6 +427,13 @@ const AbuseReporter = {
     const report = await AbuseReporter.createAbuseReport(addonId, {
       reportEntryPoint,
     });
+
+    if (!SUPPORTED_ADDON_TYPES.includes(report.addon.type)) {
+      throw new Error(
+        `Addon type "${report.addon.type}" is not currently supported by the integrated abuse reporting feature`
+      );
+    }
+
     const params = Cc["@mozilla.org/array;1"].createInstance(
       Ci.nsIMutableArray
     );

@@ -235,7 +235,7 @@ class MediaStreamTrackSource : public nsISupports {
   }
 
  protected:
-  virtual ~MediaStreamTrackSource() {}
+  virtual ~MediaStreamTrackSource() = default;
 
   bool IsActive() {
     for (const WeakPtr<Sink>& sink : mSinks) {
@@ -308,7 +308,7 @@ class MediaStreamTrackSource : public nsISupports {
   }
 
   // Principal identifying who may access the contents of this source.
-  nsCOMPtr<nsIPrincipal> mPrincipal;
+  RefPtr<nsIPrincipal> mPrincipal;
 
   // Currently registered sinks.
   nsTArray<WeakPtr<Sink>> mSinks;
@@ -339,7 +339,7 @@ class BasicTrackSource : public MediaStreamTrackSource {
   void Enable() override {}
 
  protected:
-  ~BasicTrackSource() {}
+  ~BasicTrackSource() = default;
 
   const MediaSourceEnum mMediaSource;
 };
@@ -359,6 +359,11 @@ class MediaStreamTrackConsumer
    * including MediaStreamTrack::Stop().
    */
   virtual void NotifyEnded(MediaStreamTrack* aTrack){};
+
+  /**
+   * Called when the track's enabled state changes.
+   */
+  virtual void NotifyEnabledChanged(MediaStreamTrack* aTrack, bool aEnabled){};
 };
 
 // clang-format off
@@ -414,6 +419,7 @@ class MediaStreamTrack : public DOMEventTargetHelper,
       nsPIDOMWindowInner* aWindow, mozilla::MediaTrack* aInputTrack,
       MediaStreamTrackSource* aSource,
       MediaStreamTrackState aReadyState = MediaStreamTrackState::Live,
+      bool aMuted = false,
       const MediaTrackConstraints& aConstraints = MediaTrackConstraints());
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -575,6 +581,12 @@ class MediaStreamTrack : public DOMEventTargetHelper,
    * Notifies all MediaStreamTrackConsumers that this track ended.
    */
   void NotifyEnded();
+
+  /**
+   * Called when this track's enabled state has changed.
+   * Notifies all MediaStreamTrackConsumers.
+   */
+  void NotifyEnabledChanged();
 
   /**
    * Called when mSource's principal has changed.

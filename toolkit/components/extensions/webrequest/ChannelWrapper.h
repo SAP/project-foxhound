@@ -135,7 +135,7 @@ class ChannelWrapper final : public DOMEventTargetHelper,
 
   void SetChannel(nsIChannel* aChannel);
 
-  void Cancel(uint32_t result, ErrorResult& aRv);
+  void Cancel(uint32_t result, uint32_t reason, ErrorResult& aRv);
 
   void RedirectTo(nsIURI* uri, ErrorResult& aRv);
   void UpgradeToSecure(ErrorResult& aRv);
@@ -158,6 +158,10 @@ class ChannelWrapper final : public DOMEventTargetHelper,
   dom::MozContentPolicyType Type() const;
 
   uint32_t StatusCode() const;
+
+  uint64_t ResponseSize() const;
+
+  uint64_t RequestSize() const;
 
   void GetStatusLine(nsCString& aRetVal) const;
 
@@ -229,6 +233,8 @@ class ChannelWrapper final : public DOMEventTargetHelper,
 
   void GetUrlClassification(dom::Nullable<dom::MozUrlClassification>& aRetVal,
                             ErrorResult& aRv) const;
+
+  bool ThirdParty() const;
 
   using EventTarget::EventListenerAdded;
   using EventTarget::EventListenerRemoved;

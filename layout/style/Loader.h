@@ -9,24 +9,25 @@
 #ifndef mozilla_css_Loader_h
 #define mozilla_css_Loader_h
 
-#include "nsIPrincipal.h"
+#include <utility>
+
+#include "mozilla/Attributes.h"
+#include "mozilla/CORSMode.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCompatibility.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDataHashtable.h"
+#include "nsIPrincipal.h"
+#include "nsIStyleSheetLinkingElement.h"
 #include "nsRefPtrHashtable.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
 #include "nsTObserverArray.h"
 #include "nsURIHashKey.h"
-#include "nsIStyleSheetLinkingElement.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/CORSMode.h"
-#include "mozilla/StyleSheetInlines.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
-#include "mozilla/StyleSheet.h"
-#include "mozilla/UniquePtr.h"
 
 class nsICSSLoaderObserver;
 class nsIConsoleReportCollector;
@@ -86,7 +87,7 @@ class MOZ_RAII LoaderReusableStyleSheets {
 };
 
 class Loader final {
-  typedef mozilla::dom::ReferrerPolicy ReferrerPolicy;
+  using ReferrerPolicy = dom::ReferrerPolicy;
 
  public:
   typedef nsIStyleSheetLinkingElement::Completed Completed;
@@ -102,8 +103,8 @@ class Loader final {
   // aDocGroup is used for dispatching SheetLoadData in PostLoadEvent(). It
   // can be null if you want to use this constructor, and there's no
   // document when the Loader is constructed.
-  explicit Loader(mozilla::dom::DocGroup*);
-  explicit Loader(mozilla::dom::Document*);
+  explicit Loader(dom::DocGroup*);
+  explicit Loader(dom::Document*);
 
  private:
   // Private destructor, to discourage deletion outside of Release():
@@ -205,7 +206,15 @@ class Loader final {
       nsIURI*, SheetParsingMode = eAuthorSheetFeatures,
       UseSystemPrincipal = UseSystemPrincipal::No);
 
-  enum class IsPreload { No, Yes };
+  enum class IsPreload {
+    No,
+    // This is a speculative load initiated by a <link rel=stylesheet> tag
+    // scanned by the parser, or @import rules found in a <style> tag.
+    FromParser,
+    // This is a speculative load as well, but initiated by
+    // <link rel="preload" as="style">
+    FromLink,
+  };
 
   /**
    * Asynchronously load the stylesheet at aURL.  If a successful result is
@@ -266,7 +275,7 @@ class Loader final {
   /**
    * Get the document we live for. May return null.
    */
-  mozilla::dom::Document* GetDocument() const { return mDocument; }
+  dom::Document* GetDocument() const { return mDocument; }
 
   /**
    * Return true if this loader has pending loads (ones that would send
@@ -306,7 +315,7 @@ class Loader final {
   typedef nsTArray<RefPtr<SheetLoadData>> LoadDataArray;
 
   // Measure our size.
-  size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+  size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 
  private:
   friend class SheetLoadData;
@@ -323,7 +332,7 @@ class Loader final {
   nsresult CheckContentPolicy(nsIPrincipal* aLoadingPrincipal,
                               nsIPrincipal* aTriggeringPrincipal,
                               nsIURI* aTargetURI, nsINode* aRequestingNode,
-                              IsPreload);
+                              const nsAString& aNonce, IsPreload);
 
   enum class SheetState : uint8_t {
     Unknown = 0,
@@ -431,11 +440,10 @@ class Loader final {
 
   // This reference is nulled by the Document in it's destructor through
   // DropDocumentReference().
-  mozilla::dom::Document* MOZ_NON_OWNING_REF
-      mDocument;  // the document we live for
+  dom::Document* MOZ_NON_OWNING_REF mDocument;  // the document we live for
 
   // For dispatching events via DocGroup::Dispatch() when mDocument is nullptr.
-  RefPtr<mozilla::dom::DocGroup> mDocGroup;
+  RefPtr<dom::DocGroup> mDocGroup;
 
   // Number of datas still waiting to be notified on if we're notifying on a
   // whole bunch at once (e.g. in one of the stop methods).  This is used to

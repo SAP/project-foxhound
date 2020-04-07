@@ -4,6 +4,7 @@
 
 "use strict";
 
+const Debugger = require("Debugger");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 
 loader.lazyRequireGetter(
@@ -29,6 +30,23 @@ loader.lazyRequireGetter(
   "WebConsoleCommands",
   "devtools/server/actors/webconsole/utils",
   true
+);
+
+loader.lazyRequireGetter(
+  this,
+  "LongStringActor",
+  "devtools/server/actors/string",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "eagerEcmaWhitelist",
+  "devtools/server/actors/webconsole/eager-ecma-whitelist"
+);
+loader.lazyRequireGetter(
+  this,
+  "eagerFunctionWhitelist",
+  "devtools/server/actors/webconsole/eager-function-whitelist"
 );
 
 function isObject(value) {
@@ -83,8 +101,9 @@ function isObject(value) {
  *        in the Inspector (or null, if there is no selection). This is used
  *        for helper functions that make reference to the currently selected
  *        node, like $0.
- *         - url: the url to evaluate the script as. Defaults to
- *         "debugger eval code".
+ *        - eager: Set to true if you want the evaluation to bail if it may have side effects.
+ *        - url: the url to evaluate the script as. Defaults to "debugger eval code",
+ *        or "debugger eager eval code" if eager is true.
  * @return object
  *         An object that holds the following properties:
  *         - dbg: the debugger where the string was evaluated.
@@ -98,13 +117,18 @@ function isObject(value) {
 exports.evalWithDebugger = function(string, options = {}, webConsole) {
   const evalString = getEvalInput(string);
   const { frame, dbg } = getFrameDbg(options, webConsole);
+
   // early return for replay
   if (dbg.replaying) {
+    if (options.eager) {
+      throw new Error("Eager evaluations are not supported while replaying");
+    }
     return evalReplay(frame, dbg, evalString);
   }
+
   const { dbgWindow, bindSelf } = getDbgWindow(options, dbg, webConsole);
   const helpers = getHelpers(dbgWindow, options, webConsole);
-  const { bindings, helperCache } = bindCommands(
+  let { bindings, helperCache } = bindCommands(
     isCommand(string),
     dbgWindow,
     bindSelf,
@@ -112,12 +136,30 @@ exports.evalWithDebugger = function(string, options = {}, webConsole) {
     helpers
   );
 
+  if (options.bindings) {
+    bindings = { ...(bindings || {}), ...options.bindings };
+  }
+
   // Ready to evaluate the string.
   helpers.evalInput = string;
-  const evalOptions =
-    typeof options.url === "string" ? { url: options.url } : null;
+  const evalOptions = {};
+
+  const urlOption =
+    options.url || (options.eager ? "debugger eager eval code" : null);
+  if (typeof urlOption === "string") {
+    evalOptions.url = urlOption;
+  }
+
+  if (typeof options.lineNumber === "number") {
+    evalOptions.lineNumber = options.lineNumber;
+  }
 
   updateConsoleInputEvaluation(dbg, dbgWindow, webConsole);
+
+  let sideEffectData = null;
+  if (options.eager) {
+    sideEffectData = preventSideEffects(dbg);
+  }
 
   const result = getEvalResult(
     evalString,
@@ -126,6 +168,17 @@ exports.evalWithDebugger = function(string, options = {}, webConsole) {
     frame,
     dbgWindow
   );
+
+  if (options.eager) {
+    allowSideEffects(sideEffectData);
+  }
+
+  // Attempt to initialize any declarations found in the evaluated string
+  // since they may now be stuck in an "initializing" state due to the
+  // error. Already-initialized bindings will be ignored.
+  if (!frame && result && "throw" in result) {
+    parseErrorOutput(dbgWindow, string);
+  }
 
   const { helperResult } = helpers;
 
@@ -148,21 +201,16 @@ function getEvalResult(string, evalOptions, bindings, frame, dbgWindow) {
   if (frame) {
     return frame.evalWithBindings(string, bindings, evalOptions);
   }
-  const result = dbgWindow.executeInGlobalWithBindings(
-    string,
-    bindings,
-    evalOptions
-  );
-  // Attempt to initialize any declarations found in the evaluated string
-  // since they may now be stuck in an "initializing" state due to the
-  // error. Already-initialized bindings will be ignored.
-  if ("throw" in result) {
-    parseErrorOutput(dbgWindow, string);
-  }
-  return result;
+  return dbgWindow.executeInGlobalWithBindings(string, bindings, evalOptions);
 }
 
 function parseErrorOutput(dbgWindow, string) {
+  // Reflect is not usable in workers, so return early to avoid logging an error
+  // to the console when loading it.
+  if (isWorker) {
+    return;
+  }
+
   let ast;
   // Parse errors will raise an exception. We can/should ignore the error
   // since it's already being handled elsewhere and we are only interested
@@ -221,6 +269,148 @@ function parseErrorOutput(dbgWindow, string) {
       dbgWindow.forceLexicalInitializationByName(name);
     }
   }
+}
+
+function preventSideEffects(dbg) {
+  if (dbg.onEnterFrame || dbg.onNativeCall) {
+    throw new Error("Debugger has hook installed");
+  }
+
+  // We ensure that the metadata for native functions is loaded before we
+  // initialize sideeffect-prevention because the data is lazy-loaded, and this
+  // logic can run inside of debuggee compartments because the
+  // "addAllGlobalsAsDebuggees" considers the vast majority of realms
+  // valid debuggees. Without this, eager-eval runs the risk of failing
+  // because building the list of valid native functions is itself a
+  // side-effectful operation because it needs to populate a
+  // module cache, among any number of other things.
+  ensureSideEffectFreeNatives();
+
+  // Note: It is critical for debuggee performance that we implement all of
+  // this debuggee tracking logic with a separate Debugger instance.
+  // Bug 1617666 arises otherwise if we set an onEnterFrame hook on the
+  // existing debugger object and then later clear it.
+  const newDbg = new Debugger();
+  newDbg.addAllGlobalsAsDebuggees();
+
+  const timeoutDuration = 100;
+  const endTime = Date.now() + timeoutDuration;
+  let count = 0;
+  function shouldCancel() {
+    // To keep the evaled code as quick as possible, we avoid querying the
+    // current time on ever single step and instead check every 100 steps
+    // as an arbitrary count that seemed to be "often enough".
+    return ++count % 100 === 0 && Date.now() > endTime;
+  }
+
+  const executedScripts = new Set();
+  const handler = {
+    hit: () => null,
+  };
+
+  newDbg.onEnterFrame = frame => {
+    if (shouldCancel()) {
+      return null;
+    }
+    frame.onStep = () => {
+      if (shouldCancel()) {
+        return null;
+      }
+      return undefined;
+    };
+
+    const script = frame.script;
+
+    if (executedScripts.has(script)) {
+      return undefined;
+    }
+    executedScripts.add(script);
+
+    const offsets = script.getEffectfulOffsets();
+    for (const offset of offsets) {
+      script.setBreakpoint(offset, handler);
+    }
+
+    return undefined;
+  };
+
+  // The debugger only calls onNativeCall handlers on the debugger that is
+  // explicitly calling eval, so we need to add this hook on "dbg" even though
+  // the rest of our hooks work via "newDbg".
+  dbg.onNativeCall = (callee, reason) => {
+    try {
+      // Getters are never considered effectful, and setters are always effectful.
+      // Natives called normally are handled with a whitelist.
+      if (
+        reason == "get" ||
+        (reason == "call" && nativeHasNoSideEffects(callee))
+      ) {
+        // Returning undefined causes execution to continue normally.
+        return undefined;
+      }
+    } catch (err) {
+      DevToolsUtils.reportException(
+        "evalWithDebugger onNativeCall",
+        new Error("Unable to validate native function against whitelist")
+      );
+    }
+    // Returning null terminates the current evaluation.
+    return null;
+  };
+
+  return {
+    dbg,
+    newDbg,
+  };
+}
+
+function allowSideEffects(data) {
+  data.dbg.onNativeCall = undefined;
+  data.newDbg.removeAllDebuggees();
+}
+
+// Native functions which are considered to be side effect free.
+let gSideEffectFreeNatives; // string => Array(Function)
+
+function ensureSideEffectFreeNatives() {
+  if (gSideEffectFreeNatives) {
+    return;
+  }
+
+  const natives = [
+    ...eagerEcmaWhitelist,
+
+    // Pull in all of the non-ECMAScript native functions that we want to
+    // whitelist as well.
+    ...eagerFunctionWhitelist,
+  ];
+
+  const map = new Map();
+  for (const n of natives) {
+    if (!map.has(n.name)) {
+      map.set(n.name, []);
+    }
+    map.get(n.name).push(n);
+  }
+
+  gSideEffectFreeNatives = map;
+}
+
+function nativeHasNoSideEffects(fn) {
+  if (fn.isBoundFunction) {
+    fn = fn.boundTargetFunction;
+  }
+
+  // Natives with certain names are always considered side effect free.
+  switch (fn.name) {
+    case "toString":
+    case "toLocaleString":
+    case "valueOf":
+      return true;
+  }
+
+  const natives = gSideEffectFreeNatives.get(fn.name);
+  return natives && natives.some(n => fn.isSameNative(n));
 }
 
 function updateConsoleInputEvaluation(dbg, dbgWindow, webConsole) {
@@ -313,14 +503,13 @@ function getDbgWindow(options, dbg, webConsole) {
     return { bindSelf: null, dbgWindow };
   }
 
-  const objActor = webConsole.getActorByID(options.selectedObjectActor);
+  const actor = webConsole.getActorByID(options.selectedObjectActor);
 
-  if (!objActor) {
+  if (!actor) {
     return { bindSelf: null, dbgWindow };
   }
 
-  const jsVal = objActor.rawValue();
-
+  const jsVal = actor instanceof LongStringActor ? actor.str : actor.rawValue();
   if (!isObject(jsVal)) {
     return { bindSelf: jsVal, dbgWindow };
   }
@@ -364,11 +553,8 @@ function bindCommands(isCmd, dbgWindow, bindSelf, frame, helpers) {
   }
   // Check if the Debugger.Frame or Debugger.Object for the global include any of the
   // helper function we set. We will not overwrite these functions with the Web Console
-  // commands. The exception being "print" which should exist everywhere as
-  // `window.print`, and that we don't want to trigger from the console.
-  const availableHelpers = [
-    ...WebConsoleCommands._originalCommands.keys(),
-  ].filter(h => h !== "print");
+  // commands.
+  const availableHelpers = [...WebConsoleCommands._originalCommands.keys()];
 
   let helpersToDisable = [];
   const helperCache = {};

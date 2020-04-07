@@ -14,7 +14,7 @@
 #
 # IMPORTANT: For robustness, each test should be listed *twice* in this
 # manifest -- once with the high quality downscaling pref disabled, and once
-# with this pref enabled. The pref is set via "default-preferences", so
+# with this pref enabled. The pref is set via "defaults", so
 # simply appending a new test to the lists below each of those lines should be
 # sufficient.
 #
@@ -35,7 +35,7 @@ fuzzy(0-51,0-90) fuzzy-if(skiaContent,0-142,0-77) fuzzy-if(webrender,64-64,31-31
 
 # RUN TESTS WITH DOWNSCALE-DURING-DECODE DISABLED:
 # ================================================
-default-preferences pref(image.downscale-during-decode.enabled,false)
+defaults pref(image.downscale-during-decode.enabled,false)
 
 fuzzy-if(winWidget,0-16,0-20) fuzzy-if(cocoaWidget,0-106,0-31) == downscale-1.html downscale-1-ref.html
 
@@ -89,7 +89,7 @@ fuzzy(0-20,0-999) fails-if(OSX>=1008&&!skiaContent) != downscale-2e.html?205,53,
 
 # Skip on Android because it runs reftests via http, and moz-icon isn't
 # accessible from http/https origins anymore.
-fuzzy(0-17,0-1571) skip-if(Android||/^Linux\x20i686/.test(http.oscpu)) == downscale-moz-icon-1.html downscale-moz-icon-1-ref.html # linux32 timeout, bug 1328771
+fuzzy(0-17,0-3221) fuzzy-if(gtkWidget&&!webrender,4-4,2616-2616) fuzzy-if(gtkWidget&&!webrender&&!layersGPUAccelerated,4-4,2209-2209) fuzzy-if(gtkWidget&&webrender,0-0,0-0) skip-if(Android) == downscale-moz-icon-1.html downscale-moz-icon-1-ref.html # gtkWidget Bug 1592059: regular is 2616, no-accel is 2209, qr passes with 0
 
 == downscale-png.html?16,16,interlaced downscale-png.html?16,16,normal
 == downscale-png.html?24,24,interlaced downscale-png.html?24,24,normal
@@ -112,7 +112,7 @@ fuzzy(0-1,0-1024) == downscale-32px.html?.jpg downscale-32px-ref.html
 
 # RUN TESTS WITH DOWNSCALE-DURING-DECODE ENABLED:
 # ===============================================
-default-preferences pref(image.downscale-during-decode.enabled,true)
+defaults pref(image.downscale-during-decode.enabled,true)
 
 fuzzy(0-31,0-127) fuzzy-if(d2d,0-31,0-147) == downscale-1.html downscale-1-ref.html # intermittently 147 pixels on win7 accelerated only (not win8)
 
@@ -175,7 +175,7 @@ fuzzy(0-20,0-999) != downscale-2f.html?205,53,bottom about:blank
 # Skip on WinXP with skia content
 # Skip on Android because it runs reftests via http, and moz-icon isn't
 # accessible from http/https origins anymore.
-fuzzy(0-53,0-3604) fails-if(/^Windows\x20NT\x205\.1/.test(http.oscpu)) skip-if(Android||/^Linux\x20i686/.test(http.oscpu)) == downscale-moz-icon-1.html downscale-moz-icon-1-ref.html # linux32 timeout, bug 1328771
+fuzzy(0-53,0-6391) fuzzy-if(gtkWidget&&webrender,19-19,5502-5534) fails-if(/^Windows\x20NT\x205\.1/.test(http.oscpu)) skip-if(Android) == downscale-moz-icon-1.html downscale-moz-icon-1-ref.html # gtkWidget Bug 1592059
 
 == downscale-png.html?16,16,interlaced downscale-png.html?16,16,normal
 == downscale-png.html?24,24,interlaced downscale-png.html?24,24,normal

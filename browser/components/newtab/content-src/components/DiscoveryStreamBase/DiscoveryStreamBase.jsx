@@ -4,9 +4,9 @@
 
 import { actionCreators as ac } from "common/Actions.jsm";
 import { CardGrid } from "content-src/components/DiscoveryStreamComponents/CardGrid/CardGrid";
+import { CollectionCardGrid } from "content-src/components/DiscoveryStreamComponents/CollectionCardGrid/CollectionCardGrid";
 import { CollapsibleSection } from "content-src/components/CollapsibleSection/CollapsibleSection";
 import { connect } from "react-redux";
-import { DSDismiss } from "content-src/components/DiscoveryStreamComponents/DSDismiss/DSDismiss";
 import { DSMessage } from "content-src/components/DiscoveryStreamComponents/DSMessage/DSMessage";
 import { DSPrivacyModal } from "content-src/components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal";
 import { DSTextPromo } from "content-src/components/DiscoveryStreamComponents/DSTextPromo/DSTextPromo";
@@ -26,7 +26,7 @@ const ALLOWED_CSS_URL_PREFIXES = [
   "https://img-getpocket.cdn.mozilla.net/",
 ];
 const DUMMY_CSS_SELECTOR = "DUMMY#CSS.SELECTOR";
-let rickRollCache = []; // Cache of random probability values for a spoc position
+let rollCache = []; // Cache of random probability values for a spoc position
 
 /**
  * Validate a CSS declaration. The values are assumed to be normalized by CSSOM.
@@ -137,55 +137,12 @@ export class _DiscoveryStreamBase extends React.PureComponent {
           />
         );
       case "TextPromo":
-        if (
-          !component.data ||
-          !component.data.spocs ||
-          !component.data.spocs[0]
-        ) {
-          return null;
-        }
-        // Grab the first item in the array as we only have 1 spoc position.
-        const [spoc] = component.data.spocs;
-        const {
-          image_src,
-          raw_image_src,
-          alt_text,
-          title,
-          url,
-          context,
-          cta,
-          campaign_id,
-          id,
-          shim,
-        } = spoc;
-
         return (
-          <DSDismiss
-            data={{
-              url: spoc.url,
-              guid: spoc.id,
-              shim: spoc.shim,
-            }}
+          <DSTextPromo
             dispatch={this.props.dispatch}
-            shouldSendImpressionStats={true}
-            extraClasses={`ds-dismiss-ds-text-promo`}
-          >
-            <DSTextPromo
-              dispatch={this.props.dispatch}
-              image={image_src}
-              raw_image_src={raw_image_src}
-              alt_text={alt_text || title}
-              header={title}
-              cta_text={cta}
-              cta_url={url}
-              subtitle={context}
-              campaignId={campaign_id}
-              id={id}
-              pos={0}
-              shim={shim}
-              type={component.type}
-            />
-          </DSDismiss>
+            type={component.type}
+            data={component.data}
+          />
         );
       case "Message":
         return (
@@ -205,6 +162,23 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             links={component.properties.links}
             alignment={component.properties.alignment}
             header={component.header}
+          />
+        );
+      case "CollectionCardGrid":
+        const { DiscoveryStream } = this.props;
+        return (
+          <CollectionCardGrid
+            data={component.data}
+            feed={component.feed}
+            spocs={DiscoveryStream.spocs}
+            placement={component.placement}
+            border={component.properties.border}
+            type={component.type}
+            items={component.properties.items}
+            cta_variant={component.cta_variant}
+            display_engagement_labels={ENGAGEMENT_LABEL_ENABLED}
+            dismissible={this.props.DiscoveryStream.isCollectionDismissible}
+            dispatch={this.props.dispatch}
           />
         );
       case "CardGrid":
@@ -264,17 +238,18 @@ export class _DiscoveryStreamBase extends React.PureComponent {
 
   componentWillReceiveProps(oldProps) {
     if (this.props.DiscoveryStream.layout !== oldProps.DiscoveryStream.layout) {
-      rickRollCache = [];
+      rollCache = [];
     }
   }
 
   render() {
     // Select layout render data by adding spocs and position to recommendations
-    const { layoutRender, spocsFill } = selectLayoutRender(
-      this.props.DiscoveryStream,
-      this.props.Prefs.values,
-      rickRollCache
-    );
+    const { layoutRender, spocsFill } = selectLayoutRender({
+      state: this.props.DiscoveryStream,
+      prefs: this.props.Prefs.values,
+      rollCache,
+      locale: this.props.locale,
+    });
     const { config, spocs, feeds } = this.props.DiscoveryStream;
 
     // Send SPOCS Fill if any. Note that it should not send it again if the same
@@ -323,6 +298,7 @@ export class _DiscoveryStreamBase extends React.PureComponent {
 
     // Extract TopSites to render before the rest and Message to use for header
     const topSites = extractComponent("TopSites");
+    const sponsoredCollection = extractComponent("CollectionCardGrid");
     const message = extractComponent("Message") || {
       header: {
         link_text: topStories.learnMore.link.message,
@@ -342,6 +318,13 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             {
               width: 12,
               components: [topSites],
+            },
+          ])}
+        {sponsoredCollection &&
+          this.renderLayout([
+            {
+              width: 12,
+              components: [sponsoredCollection],
             },
           ])}
         {!!layoutRender.length && (
@@ -412,4 +395,5 @@ export const DiscoveryStreamBase = connect(state => ({
   DiscoveryStream: state.DiscoveryStream,
   Prefs: state.Prefs,
   Sections: state.Sections,
+  document: global.document,
 }))(_DiscoveryStreamBase);

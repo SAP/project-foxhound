@@ -20,8 +20,8 @@ import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
 import org.mozilla.geckoview.test.util.Callbacks
 
 import android.support.annotation.AnyThread
-import android.support.test.filters.MediumTest
-import android.support.test.runner.AndroidJUnit4
+import androidx.test.filters.MediumTest
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import android.util.Pair
 import android.util.SparseArray
 import android.view.Surface
@@ -88,10 +88,6 @@ class ContentDelegateTest : BaseSessionTest() {
     @Test fun crashContent() {
         // This test doesn't make sense without multiprocess
         assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
-        // Cannot test x86 debug builds due to Gecko's "ah_crap_handler"
-        // that waits for debugger to attach during a SIGSEGV.
-        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
-                   equalTo(false))
 
         mainSession.loadUri(CONTENT_CRASH_URL)
         mainSession.waitUntilCalled(object : Callbacks.ContentDelegate {
@@ -118,10 +114,6 @@ class ContentDelegateTest : BaseSessionTest() {
     @Test fun crashContent_tapAfterCrash() {
         // This test doesn't make sense without multiprocess
         assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
-        // Cannot test x86 debug builds due to Gecko's "ah_crap_handler"
-        // that waits for debugger to attach during a SIGSEGV.
-        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
-                   equalTo(false))
 
         mainSession.delegateUntilTestEnd(object : Callbacks.ContentDelegate {
             override fun onCrash(session: GeckoSession) {
@@ -143,10 +135,6 @@ class ContentDelegateTest : BaseSessionTest() {
     @Test fun crashContentMultipleSessions() {
         // This test doesn't make sense without multiprocess
         assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
-        // Cannot test x86 debug builds due to Gecko's "ah_crap_handler"
-        // that waits for debugger to attach during a SIGSEGV.
-        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
-                   equalTo(false))
 
         // XXX we need to make sure all sessions in a given content process receive onCrash().
         // If we add multiple content processes, this test will need to be fixed to ensure the
@@ -247,6 +235,7 @@ class ContentDelegateTest : BaseSessionTest() {
         mainSession.waitForPageStop()
         mainSession.evaluateJS("document.querySelector('#fullscreen').requestFullscreen(); true")
         sessionRule.waitUntilCalled(object : Callbacks.ContentDelegate {
+            @AssertCalled(count = 1)
             override  fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {
                 assertThat("Div went fullscreen", fullScreen, equalTo(true))
             }
@@ -255,8 +244,9 @@ class ContentDelegateTest : BaseSessionTest() {
 
     private fun waitForFullscreenExit() {
         sessionRule.waitUntilCalled(object : Callbacks.ContentDelegate {
+            @AssertCalled(count = 1)
             override  fun onFullScreen(session: GeckoSession, fullScreen: Boolean) {
-                assertThat("Div went fullscreen", fullScreen, equalTo(false))
+                assertThat("Div left fullscreen", fullScreen, equalTo(false))
             }
         })
     }
@@ -306,6 +296,30 @@ class ContentDelegateTest : BaseSessionTest() {
         })
     }
 
+    @Test fun webAppManifestPref() {
+        val initialState = sessionRule.runtime.settings.getWebManifestEnabled()
+        val jsToRun = "document.querySelector('link[rel=manifest]').relList.supports('manifest');"
+
+        // Check pref'ed off
+        sessionRule.runtime.settings.setWebManifestEnabled(false)
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        sessionRule.waitForPageStop(mainSession)
+
+        var result = equalTo(mainSession.evaluateJS(jsToRun) as Boolean)
+
+        assertThat("Disabling pref makes relList.supports('manifest') return false", false, result)
+
+        // Check pref'ed on
+        sessionRule.runtime.settings.setWebManifestEnabled(true)
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        sessionRule.waitForPageStop(mainSession)
+
+        result = equalTo(mainSession.evaluateJS(jsToRun) as Boolean)
+        assertThat("Enabling pref makes relList.supports('manifest') return true", true, result)
+
+        sessionRule.runtime.settings.setWebManifestEnabled(initialState)
+    }
+
     @Test fun webAppManifest() {
         mainSession.loadTestPath(HELLO_HTML_PATH)
         mainSession.waitUntilCalled(object : Callbacks.All {
@@ -321,9 +335,9 @@ class ContentDelegateTest : BaseSessionTest() {
                 assertThat("short_name should match", manifest.getString("short_name"), equalTo("app"))
                 assertThat("display should match", manifest.getString("display"), equalTo("standalone"))
 
-                // The color here is "cadetblue" converted to hex.
-                assertThat("theme_color should match", manifest.getString("theme_color"), equalTo("#5f9ea0"))
-                assertThat("background_color should match", manifest.getString("background_color"), equalTo("#c0feee"))
+                // The color here is "cadetblue" converted to #aarrggbb.
+                assertThat("theme_color should match", manifest.getString("theme_color"), equalTo("#ff5f9ea0"))
+                assertThat("background_color should match", manifest.getString("background_color"), equalTo("#eec0ffee"))
                 assertThat("start_url should match", manifest.getString("start_url"), endsWith("/assets/www/start/index.html"))
 
                 val icon = manifest.getJSONArray("icons").getJSONObject(0);
@@ -337,6 +351,33 @@ class ContentDelegateTest : BaseSessionTest() {
         })
     }
 
+    @Test fun viewportFit() {
+        mainSession.loadTestPath(VIEWPORT_PATH)
+        mainSession.waitUntilCalled(object : Callbacks.All {
+            @AssertCalled(count = 1)
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                assertThat("Page load should succeed", success, equalTo(true))
+            }
+
+            @AssertCalled(count = 1)
+            override fun onMetaViewportFitChange(session: GeckoSession, viewportFit: String) {
+                assertThat("viewport-fit should match", viewportFit, equalTo("cover"))
+            }
+        })
+
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        mainSession.waitUntilCalled(object : Callbacks.All {
+            @AssertCalled(count = 1)
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                assertThat("Page load should succeed", success, equalTo(true))
+            }
+
+            @AssertCalled(count = 1)
+            override fun onMetaViewportFitChange(session: GeckoSession, viewportFit: String) {
+                assertThat("viewport-fit should match", viewportFit, equalTo("auto"))
+            }
+        })
+    }
 
     /**
      * Preferences to induce wanted behaviour.

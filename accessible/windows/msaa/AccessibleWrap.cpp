@@ -30,14 +30,12 @@
 #  include "Logging.h"
 #endif
 
-#include "nsIMutableArray.h"
 #include "nsIFrame.h"
 #include "nsIScrollableFrame.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/BrowserParent.h"
-#include "nsIServiceManager.h"
 #include "nsNameSpaceManager.h"
 #include "nsTextFormatter.h"
 #include "nsView.h"
@@ -46,7 +44,6 @@
 #include "nsArrayUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ReverseIterator.h"
-#include "nsIXULRuntime.h"
 #include "mozilla/mscom/AsyncInvoker.h"
 #include "mozilla/mscom/Interceptor.h"
 
@@ -1016,7 +1013,25 @@ STDMETHODIMP
 AccessibleWrap::put_accValue(
     /* [optional][in] */ VARIANT varChild,
     /* [in] */ BSTR szValue) {
-  return E_NOTIMPL;
+  RefPtr<IAccessible> accessible;
+  HRESULT hr = ResolveChild(varChild, getter_AddRefs(accessible));
+  if (FAILED(hr)) {
+    return hr;
+  }
+
+  if (accessible) {
+    return accessible->put_accValue(kVarChildIdSelf, szValue);
+  }
+
+  HyperTextAccessible* ht = AsHyperText();
+  if (!ht) {
+    return E_NOTIMPL;
+  }
+
+  uint32_t length = ::SysStringLen(szValue);
+  nsAutoString text(szValue, length);
+  ht->ReplaceText(text);
+  return S_OK;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1567,7 +1582,9 @@ already_AddRefed<IAccessible> AccessibleWrap::GetRemoteIAccessibleFor(
 
     DebugOnly<HRESULT> hr =
         disp->QueryInterface(IID_IAccessible, getter_AddRefs(result));
-    MOZ_ASSERT(SUCCEEDED(hr));
+    // QI can fail on rare occasions if the Accessible dies after we fetched
+    // disp but before we QI.
+    NS_WARNING_ASSERTION(SUCCEEDED(hr), "QI failed on remote IDispatch");
     return result.forget();
   }
 

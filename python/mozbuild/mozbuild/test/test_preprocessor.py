@@ -6,9 +6,9 @@ from __future__ import absolute_import, print_function
 
 import unittest
 
-from StringIO import StringIO
 import os
 import shutil
+from six import StringIO
 
 from tempfile import mkdtemp
 
@@ -629,7 +629,7 @@ class TestPreprocessor(unittest.TestCase):
                         '//@line 1 "$OBJDIR/baz.js"\n'
                         'baz\n'
                         '//@line 6 "$SRCDIR/f.js"\n'
-                        'fin\n').replace('DIR/', 'DIR' + os.sep)
+                        'fin\n')
 
         # Try with separate srcdir/objdir
         with MockedOpen(files):

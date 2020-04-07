@@ -86,14 +86,25 @@ const Agent = {
       // File does not exist.
       return false;
     }
+    const buffer = await resp.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    return this.checkContentHash(bytes, size, hash);
+  },
+
+  /**
+   * Check that the specified content matches the expected size and SHA-256 hash.
+   * @param {ArrayBuffer} buffer binary content
+   * @param {Number} size expected file size
+   * @param {String} size expected file SHA-256 as hex string
+   * @returns {boolean}
+   */
+  async checkContentHash(buffer, size, hash) {
+    const bytes = new Uint8Array(buffer);
     // Has expected size? (saves computing hash)
-    const fileSize = parseInt(resp.headers.get("Content-Length"), 10);
-    if (fileSize !== size) {
+    if (bytes.length !== size) {
       return false;
     }
     // Has expected content?
-    const buffer = await resp.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
     const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
     const hashBytes = new Uint8Array(hashBuffer);
     const toHex = b => b.toString(16).padStart(2, "0");
@@ -178,6 +189,19 @@ async function importDumpIDB(bucket, collection, records) {
   await executeIDB(db, IDB_TIMESTAMPS_STORE, store =>
     store.put({ cid, value: timestamp })
   );
+  // Close now that we're done.
+  db.close();
+}
+
+/**
+ * Wrap IndexedDB errors to catch them more easily.
+ */
+class IndexedDBError extends Error {
+  constructor(error) {
+    super(`IndexedDB: ${error.message}`);
+    this.name = error.name;
+    this.stack = error.stack;
+  }
 }
 
 /**
@@ -189,10 +213,12 @@ async function openIDB(dbname, version) {
     request.onupgradeneeded = () => {
       // We should never have to initialize the DB here.
       reject(
-        new Error(`Error accessing ${dbname} Chrome IDB at version ${version}`)
+        new Error(
+          `IndexedDB: Error accessing ${dbname} Chrome IDB at version ${version}`
+        )
       );
     };
-    request.onerror = event => reject(event.target.error);
+    request.onerror = event => reject(new IndexedDBError(event.target.error));
     request.onsuccess = event => {
       const db = event.target.result;
       resolve(db);
@@ -217,9 +243,10 @@ async function executeIDB(db, storeName, callback) {
       result = callback(store);
     } catch (e) {
       transaction.abort();
-      reject(e);
+      reject(new IndexedDBError(e));
     }
-    transaction.onerror = event => reject(event.target.error);
+    transaction.onerror = event =>
+      reject(new IndexedDBError(event.target.error));
     transaction.oncomplete = event => resolve(result);
   });
 }

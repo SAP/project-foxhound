@@ -36,7 +36,6 @@
 #include "mozilla/dom/quota/QuotaManagerService.h"
 
 #include "nsIEventListenerService.h"
-#include "nsIMessageManager.h"
 
 // view stuff
 #include "nsContentCreatorFunctions.h"
@@ -44,9 +43,11 @@
 #include "mozilla/dom/LocalStorageCommon.h"
 #include "mozilla/dom/LocalStorageManager.h"
 #include "mozilla/dom/LocalStorageManager2.h"
+#include "mozilla/dom/SessionStorageManager.h"
 
 #ifdef MOZ_WEBSPEECH
 #  include "mozilla/dom/nsSynthVoiceRegistry.h"
+#  include "mozilla/dom/OnlineSpeechRecognitionService.h"
 #endif
 
 #include "mozilla/dom/PushNotifier.h"
@@ -238,9 +239,14 @@ nsresult LocalStorageManagerConstructor(nsISupports* aOuter, REFNSIID aIID,
   return manager->QueryInterface(aIID, aResult);
 }
 
+nsresult SessionStorageManagerConstructor(nsISupports* aOuter, REFNSIID aIID,
+                                          void** aResult) {
+  RefPtr<SessionStorageManager> manager = new SessionStorageManager(nullptr);
+  return manager->QueryInterface(aIID, aResult);
+}
+
 static const mozilla::Module::CategoryEntry kLayoutCategories[] = {
     // clang-format off
-  { "clear-origin-attributes-data", "QuotaManagerService", "service," QUOTAMANAGER_SERVICE_CONTRACTID },
     {nullptr}
     // clang-format on
 };

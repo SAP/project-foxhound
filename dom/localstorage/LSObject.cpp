@@ -9,6 +9,7 @@
 #include "ActorsChild.h"
 #include "IPCBlobInputStreamThread.h"
 #include "LocalStorageCommon.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "mozilla/dom/quota/QuotaManager.h"
@@ -63,7 +64,7 @@ class NestedEventTargetWrapper final : public nsISerialEventTarget {
       : mNestedEventTarget(aNestedEventTarget), mDisconnected(false) {}
 
  private:
-  ~NestedEventTargetWrapper() {}
+  ~NestedEventTargetWrapper() = default;
 
   NS_DECL_THREADSAFE_ISUPPORTS
 
@@ -180,7 +181,7 @@ class RequestHelper final : public Runnable, public LSRequestChildCallback {
   nsresult StartAndReturnResponse(LSRequestResponse& aResponse);
 
  private:
-  ~RequestHelper() {}
+  ~RequestHelper() = default;
 
   nsresult Start();
 
@@ -261,7 +262,7 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
     return NS_ERROR_FAILURE;
   }
 
-  if (nsContentUtils::IsSystemPrincipal(principal)) {
+  if (principal->IsSystemPrincipal()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -276,16 +277,16 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  nsAutoPtr<PrincipalInfo> principalInfo(new PrincipalInfo());
-  rv = PrincipalToPrincipalInfo(principal, principalInfo);
+  auto principalInfo = MakeUnique<PrincipalInfo>();
+  rv = PrincipalToPrincipalInfo(principal, principalInfo.get());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
   MOZ_ASSERT(principalInfo->type() == PrincipalInfo::TContentPrincipalInfo);
 
-  nsAutoPtr<PrincipalInfo> storagePrincipalInfo(new PrincipalInfo());
-  rv = PrincipalToPrincipalInfo(storagePrincipal, storagePrincipalInfo);
+  auto storagePrincipalInfo = MakeUnique<PrincipalInfo>();
+  rv = PrincipalToPrincipalInfo(storagePrincipal, storagePrincipalInfo.get());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -299,8 +300,8 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
 
   nsCString suffix;
   nsCString origin;
-  rv = QuotaManager::GetInfoFromPrincipal(storagePrincipal, &suffix, nullptr,
-                                          &origin);
+  rv = QuotaManager::GetInfoFromPrincipal(storagePrincipal.get(), &suffix,
+                                          nullptr, &origin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -360,8 +361,8 @@ nsresult LSObject::CreateForPrincipal(nsPIDOMWindowInner* aWindow,
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  nsAutoPtr<PrincipalInfo> principalInfo(new PrincipalInfo());
-  rv = PrincipalToPrincipalInfo(aPrincipal, principalInfo);
+  auto principalInfo = MakeUnique<PrincipalInfo>();
+  rv = PrincipalToPrincipalInfo(aPrincipal, principalInfo.get());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -369,8 +370,8 @@ nsresult LSObject::CreateForPrincipal(nsPIDOMWindowInner* aWindow,
   MOZ_ASSERT(principalInfo->type() == PrincipalInfo::TContentPrincipalInfo ||
              principalInfo->type() == PrincipalInfo::TSystemPrincipalInfo);
 
-  nsAutoPtr<PrincipalInfo> storagePrincipalInfo(new PrincipalInfo());
-  rv = PrincipalToPrincipalInfo(aStoragePrincipal, storagePrincipalInfo);
+  auto storagePrincipalInfo = MakeUnique<PrincipalInfo>();
+  rv = PrincipalToPrincipalInfo(aStoragePrincipal, storagePrincipalInfo.get());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

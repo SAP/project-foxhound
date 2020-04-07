@@ -20,12 +20,12 @@
   font-weight: normal;
   margin: 0;
   padding: 3px;
-  color: var(--panel-disabled-color);
 }
 
 .search-panel-header > label {
   margin-top: 2px;
   margin-bottom: 1px;
+  opacity: .6;
 }
 
 /**
@@ -49,26 +49,24 @@
   padding-inline-start: 6px;
 }
 
-.search-panel-tree[collapsed=true] + .search-one-offs > .search-panel-header,
-.search-panel-tree[collapsed=true] + .search-one-offs > .search-panel-one-offs,
-.search-panel-tree[collapsed=true] + .search-one-offs > vbox > .addengine-item:first-of-type {
+.search-panel-tree[collapsed=true] + .search-one-offs {
   border-top: none;
 }
 
-.search-panel-tree[collapsed=true] + .search-one-offs > .searchbar-engine-one-off-item,
-.search-panel-tree[collapsed=true] + .search-one-offs > .search-panel-current-input,
-.search-panel-tree[collapsed=true] + .search-one-offs > .search-panel-one-offs,
-.search-panel-tree[collapsed=true] + .search-one-offs > vbox > .addengine-item:last-of-type {
-  border-bottom: 1px solid var(--panel-separator-color);
+.search-panel-one-offs,
+.search-panel-one-offs-container {
+  display: flex;
+  flex-direction: row;
+  flex-grow: 1;
 }
 
 .search-panel-one-offs {
   margin: 0 !important;
   /* Bug 1108841: prevent font-size from affecting the layout */
   line-height: 0;
-  display: flex;
-  flex-direction: row;
   flex-wrap: wrap;
+  /* Show at least 3 buttons */
+  min-width: calc(48px * 3);
 }
 
 .searchbar-engine-one-off-item {
@@ -78,7 +76,7 @@
   height: 32px;
   margin: 0;
   padding: 0;
-  color: var(--panel-disabled-color);
+  color: inherit;
 }
 
 .searchbar-engine-one-off-item:not([selected]):hover,
@@ -205,8 +203,7 @@
 
 .search-setting-button-compact {
   max-height: 32px;
-  /* For alignment with the Urlbar Go button. */
-  margin-inline-end: -2px !important;
+  align-self: end;
 }
 
 .search-setting-button:hover,
@@ -216,6 +213,7 @@
 
 .search-setting-button-compact > .button-box > .button-icon {
   list-style-image: url("chrome://browser/skin/settings.svg");
-  -moz-context-properties: fill;
+  -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
+  fill-opacity: .6;
 }

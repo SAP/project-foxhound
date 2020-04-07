@@ -591,6 +591,7 @@ var snapshotFormatters = {
       ["supportsHardwareH264", "hardware-h264"],
       ["direct2DEnabled", "#Direct2D"],
       ["windowProtocol", "graphics-window-protocol"],
+      ["desktopEnvironment", "graphics-desktop-environment"],
       "usesTiling",
       "contentUsesTiling",
       "offMainThreadPaintEnabled",
@@ -931,6 +932,14 @@ var snapshotFormatters = {
 
   javaScript(data) {
     $("javascript-incremental-gc").textContent = data.incrementalGCEnabled;
+  },
+
+  remoteAgent(data) {
+    if (!AppConstants.ENABLE_REMOTE_AGENT) {
+      return;
+    }
+    $("remote-debugging-accepting-connections").textContent = data.listening;
+    $("remote-debugging-url").textContent = data.url;
   },
 
   accessibility(data) {
@@ -1496,7 +1505,7 @@ function setupEventListeners() {
     if (button) {
       button.addEventListener("click", function(event) {
         window.docShell.rootTreeItem.domWindow.openDialog(
-          "chrome://mozapps/content/update/history.xul",
+          "chrome://mozapps/content/update/history.xhtml",
           "Update:History",
           "centerscreen,resizable=no,titlebar,modal"
         );

@@ -15,8 +15,6 @@
 #include "nsTArray.h"
 #include "nsJSUtils.h"
 #include "nsContentUtils.h"
-#include "nsIScriptError.h"
-#include "nsIXPConnect.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -207,7 +205,7 @@ void MultipartBlobImpl::InitializeBlob(const Sequence<Blob::BlobPart>& aData,
 
     else if (data.IsArrayBuffer()) {
       const ArrayBuffer& buffer = data.GetAsArrayBuffer();
-      buffer.ComputeLengthAndData();
+      buffer.ComputeState();
       aRv = blobSet.AppendVoidPtr(buffer.Data(), buffer.Length());
       if (aRv.Failed()) {
         return;
@@ -216,7 +214,7 @@ void MultipartBlobImpl::InitializeBlob(const Sequence<Blob::BlobPart>& aData,
 
     else if (data.IsArrayBufferView()) {
       const ArrayBufferView& buffer = data.GetAsArrayBufferView();
-      buffer.ComputeLengthAndData();
+      buffer.ComputeState();
       aRv = blobSet.AppendVoidPtr(buffer.Data(), buffer.Length());
       if (aRv.Failed()) {
         return;
@@ -234,8 +232,9 @@ void MultipartBlobImpl::InitializeBlob(const Sequence<Blob::BlobPart>& aData,
 }
 
 void MultipartBlobImpl::SetLengthAndModifiedDate(ErrorResult& aRv) {
-  MOZ_ASSERT(mLength == UINT64_MAX);
-  MOZ_ASSERT(mLastModificationDate == INT64_MAX);
+  MOZ_ASSERT(mLength == MULTIPARTBLOBIMPL_UNKNOWN_LENGTH);
+  MOZ_ASSERT_IF(mIsFile, mLastModificationDate ==
+                             MULTIPARTBLOBIMPL_UNKNOWN_LAST_MODIFIED);
 
   uint64_t totalLength = 0;
   int64_t lastModified = 0;
@@ -244,11 +243,6 @@ void MultipartBlobImpl::SetLengthAndModifiedDate(ErrorResult& aRv) {
   for (uint32_t index = 0, count = mBlobImpls.Length(); index < count;
        index++) {
     RefPtr<BlobImpl>& blob = mBlobImpls[index];
-
-#ifdef DEBUG
-    MOZ_ASSERT(!blob->IsSizeUnknown());
-    MOZ_ASSERT(!blob->IsDateUnknown());
-#endif
 
     uint64_t subBlobLength = blob->GetSize(aRv);
     if (NS_WARN_IF(aRv.Failed())) {
@@ -283,43 +277,6 @@ void MultipartBlobImpl::SetLengthAndModifiedDate(ErrorResult& aRv) {
     // mLastModificationDate is an absolute timestamp so we supply a zero
     // context mix-in
   }
-}
-
-nsresult MultipartBlobImpl::SetMutable(bool aMutable) {
-  nsresult rv;
-
-  // This looks a little sketchy since BlobImpl objects are supposed to be
-  // threadsafe. However, we try to enforce that all BlobImpl objects must be
-  // set to immutable *before* being passed to another thread, so this should
-  // be safe.
-  if (!aMutable && !mImmutable && !mBlobImpls.IsEmpty()) {
-    for (uint32_t index = 0, count = mBlobImpls.Length(); index < count;
-         index++) {
-      rv = mBlobImpls[index]->SetMutable(aMutable);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-    }
-  }
-
-  rv = BaseBlobImpl::SetMutable(aMutable);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  MOZ_ASSERT_IF(!aMutable, mImmutable);
-
-  return NS_OK;
-}
-
-bool MultipartBlobImpl::MayBeClonedToOtherThreads() const {
-  for (uint32_t i = 0; i < mBlobImpls.Length(); ++i) {
-    if (!mBlobImpls[i]->MayBeClonedToOtherThreads()) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 size_t MultipartBlobImpl::GetAllocationSize() const {
@@ -367,4 +324,8 @@ void MultipartBlobImpl::GetBlobImplType(nsAString& aBlobImplType) const {
   }
 
   aBlobImplType.AppendLiteral("]");
+}
+
+void MultipartBlobImpl::SetLastModified(int64_t aLastModified) {
+  mLastModificationDate = aLastModified * PR_USEC_PER_MSEC;
 }

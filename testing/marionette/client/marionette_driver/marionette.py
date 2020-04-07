@@ -1262,7 +1262,7 @@ class Marionette(object):
         return self._send_message("WebDriver:GetPageSource",
                                   key="value")
 
-    def open(self, type=None, focus=False):
+    def open(self, type=None, focus=False, private=False):
         """Open a new window, or tab based on the specified context type.
 
         If no context type is given the application will choose the best
@@ -1270,10 +1270,11 @@ class Marionette(object):
 
         :param type: Type of window to be opened. Can be one of "tab" or "window"
         :param focus: If true, the opened window will be focused
+        :param private: If true, open a private window
 
         :returns: Dict with new window handle, and type of opened window
         """
-        body = {"type": type, "focus": focus}
+        body = {"type": type, "focus": focus, "private": private}
         return self._send_message("WebDriver:NewWindow", body)
 
     def close(self):
@@ -1677,9 +1678,9 @@ class Marionette(object):
 
         :param method: The method to use to locate the element; one of:
             "id", "name", "class name", "tag name", "css selector",
-            "link text", "partial link text", "xpath", "anon" and "anon
-            attribute". Note that the "name", "link text" and "partial
-            link test" methods are not supported in the chrome DOM.
+            "link text", "partial link text" and "xpath".
+            Note that the "name", "link text" and "partial link test"
+            methods are not supported in the chrome DOM.
         :param target: The target of the search.  For example, if method =
             "tag", target might equal "div".  If method = "id", target would
             be an element id.
@@ -1707,9 +1708,9 @@ class Marionette(object):
 
         :param method: The method to use to locate the elements; one
             of: "id", "name", "class name", "tag name", "css selector",
-            "link text", "partial link text", "xpath", "anon" and "anon
-            attribute". Note that the "name", "link text" and "partial link
-            test" methods are not supported in the chrome DOM.
+            "link text", "partial link text" and "xpath".
+            Note that the "name", "link text" and "partial link test"
+            methods are not supported in the chrome DOM.
         :param target: The target of the search.  For example, if method =
             "tag", target might equal "div".  If method = "id", target would be
             an element id.

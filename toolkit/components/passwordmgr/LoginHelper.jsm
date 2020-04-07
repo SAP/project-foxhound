@@ -27,9 +27,11 @@ const { XPCOMUtils } = ChromeUtils.import(
 this.LoginHelper = {
   debug: null,
   enabled: null,
+  storageEnabled: null,
   formlessCaptureEnabled: null,
   generationAvailable: null,
   generationEnabled: null,
+  includeOtherSubdomainsInLookup: null,
   insecureAutofill: null,
   managementURI: null,
   privateBrowsingCaptureEnabled: null,
@@ -41,6 +43,7 @@ this.LoginHelper = {
     Services.prefs.addObserver("signon.", () => this.updateSignonPrefs());
     this.updateSignonPrefs();
     Services.telemetry.setEventRecordingEnabled("pwmgr", true);
+    Services.telemetry.setEventRecordingEnabled("form_autocomplete", true);
   },
 
   updateSignonPrefs() {
@@ -50,6 +53,10 @@ this.LoginHelper = {
     );
     this.debug = Services.prefs.getBoolPref("signon.debug");
     this.enabled = Services.prefs.getBoolPref("signon.rememberSignons");
+    this.storageEnabled = Services.prefs.getBoolPref(
+      "signon.storeSignons",
+      true
+    );
     this.formlessCaptureEnabled = Services.prefs.getBoolPref(
       "signon.formlessCapture.enabled"
     );
@@ -61,6 +68,9 @@ this.LoginHelper = {
     );
     this.insecureAutofill = Services.prefs.getBoolPref(
       "signon.autofillForms.http"
+    );
+    this.includeOtherSubdomainsInLookup = Services.prefs.getBoolPref(
+      "signon.includeOtherSubdomainsInLookup"
     );
     this.managementURI = Services.prefs.getStringPref(
       "signon.management.overrideURI",
@@ -75,6 +85,12 @@ this.LoginHelper = {
     );
     this.storeWhenAutocompleteOff = Services.prefs.getBoolPref(
       "signon.storeWhenAutocompleteOff"
+    );
+    this.userInputRequiredToCapture = Services.prefs.getBoolPref(
+      "signon.userInputRequiredToCapture.enabled"
+    );
+    this.passwordEditCaptureEnabled = Services.prefs.getBoolPref(
+      "signon.passwordEditCapture.enabled"
     );
   },
 
@@ -203,6 +219,7 @@ this.LoginHelper = {
   /**
    * Helper to avoid the property bags when calling
    * Services.logins.searchLogins from JS.
+   * @deprecated Use Services.logins.searchLoginsAsync instead.
    *
    * @param {Object} aSearchOptions - A regular JS object to copy to a property bag before searching
    * @return {nsILoginInfo[]} - The result of calling searchLogins.
@@ -808,7 +825,7 @@ this.LoginHelper = {
       win.focus();
     } else {
       window.openDialog(
-        "chrome://passwordmgr/content/passwordManager.xul",
+        "chrome://passwordmgr/content/passwordManager.xhtml",
         "Toolkit:PasswordManager",
         "",
         { filterString }
@@ -1027,10 +1044,9 @@ this.LoginHelper = {
     let formLogin = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(
       Ci.nsILoginInfo
     );
-    // For compatibility for the Lockwise extension we fallback to hostname/formSubmitURL
     formLogin.init(
-      login.origin || login.hostname,
-      "formSubmitURL" in login ? login.formSubmitURL : login.formActionOrigin,
+      login.origin,
+      login.formActionOrigin,
       login.httpRealm,
       login.username,
       login.password,
@@ -1096,7 +1112,7 @@ this.LoginHelper = {
   },
 
   isUserFacingLogin(login) {
-    return !login.origin.startsWith("chrome://");
+    return login.origin != "chrome://FirefoxAccounts"; // FXA_PWDMGR_HOST
   },
 
   async getAllUserFacingLogins() {
@@ -1122,6 +1138,40 @@ this.LoginHelper = {
     return Components.Exception("This login already exists.", {
       data: guidSupportsString,
     });
+  },
+
+  /**
+   * Determine the <browser> that a prompt should be shown on.
+   *
+   * Some sites pop up a temporary login window, which disappears
+   * upon submission of credentials. We want to put the notification
+   * prompt in the opener window if this seems to be happening.
+   *
+   * @param {Element} browser
+   *        The <browser> that a prompt was triggered for
+   * @returns {Element} The <browser> that the prompt should be shown on,
+   *                    which could be in a different window.
+   */
+  getBrowserForPrompt(browser) {
+    let chromeWindow = browser.ownerGlobal;
+    let openerBrowsingContext = browser.browsingContext.opener;
+    let openerBrowser = openerBrowsingContext
+      ? openerBrowsingContext.top.embedderElement
+      : null;
+    if (openerBrowser) {
+      let chromeDoc = chromeWindow.document.documentElement;
+
+      // Check to see if the current window was opened with chrome
+      // disabled, and if so use the opener window. But if the window
+      // has been used to visit other pages (ie, has a history),
+      // assume it'll stick around and *don't* use the opener.
+      if (chromeDoc.getAttribute("chromehidden") && !browser.canGoBack) {
+        log.debug("Using opener window for prompt.");
+        return openerBrowser;
+      }
+    }
+
+    return browser;
   },
 };
 

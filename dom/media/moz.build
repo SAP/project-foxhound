@@ -84,7 +84,10 @@ MOCHITEST_MANIFESTS += [
     'tests/mochitest/identity/mochitest.ini',
 ]
 
-BROWSER_CHROME_MANIFESTS += ['mediacontrol/tests/browser.ini']
+BROWSER_CHROME_MANIFESTS += [
+    'mediacontrol/tests/browser.ini',
+    'mediasession/test/browser.ini',
+]
 
 if CONFIG['MOZ_WEBRTC']:
     MOCHITEST_MANIFESTS += ['tests/mochitest/mochitest.ini']
@@ -132,6 +135,9 @@ EXPORTS += [
     'FileBlockCache.h',
     'ForwardedInputTrack.h',
     'FrameStatistics.h',
+    'GVAutoplayPermissionRequest.h',
+    'GVAutoplayRequestStatusIPC.h',
+    'GVAutoplayRequestUtils.h',
     'ImageToI420.h',
     'Intervals.h',
     'MediaCache.h',
@@ -199,10 +205,6 @@ if not CONFIG['MOZ_WEBRTC']:
       '../../media/mtransport/runnable_utils.h',
   ]
 
-IPDL_SOURCES += [
-    'webrtc/PWebrtcGlobal.ipdl',
-]
-
 EXPORTS.mozilla.dom += [
     'AudioDeviceInfo.h',
     'AudioStreamTrack.h',
@@ -258,6 +260,7 @@ UNIFIED_SOURCES += [
     'GetUserMediaRequest.cpp',
     'GraphDriver.cpp',
     'GraphRunner.cpp',
+    'GVAutoplayPermissionRequest.cpp',
     'ImageToI420.cpp',
     'MediaCache.cpp',
     'MediaContainerType.cpp',
@@ -343,7 +346,6 @@ if CONFIG['MOZ_WEBRTC']:
 EXTRA_JS_MODULES.media += [
     'IdpSandbox.jsm',
     'PeerConnectionIdp.jsm',
-    'RTCStatsReport.jsm',
 ]
 
 LOCAL_INCLUDES += [
@@ -354,6 +356,7 @@ LOCAL_INCLUDES += [
     '/layout/xul',
     '/media/libyuv/libyuv/include',
     '/netwerk/base',
+    '/toolkit/content/tests/browser/',
 ]
 
 if CONFIG['MOZ_WEBRTC']:
@@ -369,6 +372,24 @@ DEFINES['TRACING'] = True
 if CONFIG['MOZ_ANDROID_HLS_SUPPORT']:
     DEFINES['MOZ_ANDROID_HLS_SUPPORT'] = True
 
+if CONFIG['COMPILE_ENVIRONMENT']:
+    EXPORTS += [
+        '!audioipc_client_ffi_generated.h',
+        '!audioipc_server_ffi_generated.h',
+    ]
+
+    GeneratedFile('audioipc_client_ffi_generated.h',
+                  script='/build/RunCbindgen.py', entry_point='generate',
+                  inputs=[
+                      '/media/audioipc/client',
+                  ])
+
+    GeneratedFile('audioipc_server_ffi_generated.h',
+                  script='/build/RunCbindgen.py', entry_point='generate',
+                  inputs=[
+                      '/media/audioipc/server',
+                  ])
+
 include('/ipc/chromium/chromium-config.mozbuild')
 
 # Suppress some GCC warnings being treated as errors:
@@ -381,7 +402,3 @@ if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     ]
 
 FINAL_LIBRARY = 'xul'
-
-MARIONETTE_DOM_MEDIA_MANIFESTS += [
- 'test/marionette/manifest.ini'
-]

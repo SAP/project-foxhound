@@ -185,7 +185,7 @@ Layer::Layer(LayerManager* aManager, void* aImplData)
 {
 }
 
-Layer::~Layer() {}
+Layer::~Layer() = default;
 
 void Layer::SetCompositorAnimations(
     const CompositorAnimations& aCompositorAnimations) {
@@ -770,7 +770,7 @@ ContainerLayer::ContainerLayer(LayerManager* aManager, void* aImplData)
       mMayHaveReadbackChild(false),
       mChildrenChanged(false) {}
 
-ContainerLayer::~ContainerLayer() {}
+ContainerLayer::~ContainerLayer() = default;
 
 bool ContainerLayer::InsertAfter(Layer* aChild, Layer* aAfter) {
   if (aChild->Manager() != Manager()) {
@@ -1303,7 +1303,7 @@ void ContainerLayer::DidInsertChild(Layer* aLayer) {
 
 void RefLayer::FillSpecificAttributes(SpecificLayerAttributes& aAttrs) {
   aAttrs = RefLayerAttributes(GetReferentId(), mEventRegionsOverride,
-                              mRemoteDocumentRect);
+                              mRemoteDocumentSize);
 }
 
 /**
@@ -1722,11 +1722,12 @@ void Layer::PrintInfo(std::stringstream& aStream, const char* aPrefix) {
   }
   if (GetIsFixedPosition()) {
     LayerPoint anchor = GetFixedPositionAnchor();
-    aStream << nsPrintfCString(" [isFixedPosition scrollId=%" PRIu64
-                               " sides=0x%x anchor=%s]",
-                               GetFixedPositionScrollContainerId(),
-                               GetFixedPositionSides(),
-                               ToString(anchor).c_str())
+    aStream << nsPrintfCString(
+                   " [isFixedPosition scrollId=%" PRIu64
+                   " sides=0x%x anchor=%s]",
+                   GetFixedPositionScrollContainerId(),
+                   static_cast<unsigned int>(GetFixedPositionSides()),
+                   ToString(anchor).c_str())
                    .get();
   }
   if (GetIsStickyPosition()) {
@@ -2322,6 +2323,10 @@ void RecordCompositionPayloadsPresented(
       if (payload.mType == CompositionPayloadType::eKeyPress) {
         Telemetry::AccumulateTimeDelta(
             mozilla::Telemetry::KEYPRESS_PRESENT_LATENCY, payload.mTimeStamp,
+            presented);
+      } else if (payload.mType == CompositionPayloadType::eAPZScroll) {
+        Telemetry::AccumulateTimeDelta(
+            mozilla::Telemetry::SCROLL_PRESENT_LATENCY, payload.mTimeStamp,
             presented);
       }
     }

@@ -9,8 +9,7 @@ const promise = require("promise");
 const EventEmitter = require("devtools/shared/event-emitter");
 const { executeSoon } = require("devtools/shared/DevToolsUtils");
 const { Toolbox } = require("devtools/client/framework/toolbox");
-const ReflowTracker = require("devtools/client/inspector/shared/reflow-tracker");
-const Store = require("devtools/client/inspector/store");
+const createStore = require("devtools/client/inspector/store");
 const InspectorStyleChangeTracker = require("devtools/client/inspector/shared/style-change-tracker");
 
 // Use privileged promise in panel documents to prevent having them to freeze
@@ -68,10 +67,13 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "ObjectClient",
-  "devtools/shared/client/object-client"
+  "PICKER_TYPES",
+  "devtools/shared/picker-constants"
 );
 
+// This import to chrome code is forbidden according to the inspector specific
+// eslintrc. TODO: Fix in Bug 1591091.
+// eslint-disable-next-line mozilla/reject-some-requires
 loader.lazyImporter(
   this,
   "DeferredTask",
@@ -150,24 +152,7 @@ function Inspector(toolbox) {
   this.panelWin = window;
   this.panelWin.inspector = this;
   this.telemetry = toolbox.telemetry;
-  this.store = Store({
-    createObjectClient: object => {
-      return new ObjectClient(toolbox.target.client, object);
-    },
-    releaseActor: actor => {
-      if (!actor) {
-        return;
-      }
-      const objFront = toolbox.target.client.getFrontByID(actor);
-      if (objFront) {
-        objFront.release();
-        return;
-      }
-
-      // In case there's no object front, use the client's release method.
-      toolbox.target.client.release(actor).catch(() => {});
-    },
-  });
+  this.store = createStore();
 
   // Map [panel id => panel instance]
   // Stores all the instances of sidebar panels like rule view, computed view, ...
@@ -177,6 +162,8 @@ function Inspector(toolbox) {
   this._handleRejectionIfNotDestroyed = this._handleRejectionIfNotDestroyed.bind(
     this
   );
+  this._onTargetAvailable = this._onTargetAvailable.bind(this);
+  this._onTargetDestroyed = this._onTargetDestroyed.bind(this);
   this._onBeforeNavigate = this._onBeforeNavigate.bind(this);
   this._onMarkupFrameLoad = this._onMarkupFrameLoad.bind(this);
   this._updateSearchResultsLabel = this._updateSearchResultsLabel.bind(this);
@@ -195,8 +182,7 @@ function Inspector(toolbox) {
   this.onSidebarSelect = this.onSidebarSelect.bind(this);
   this.onSidebarShown = this.onSidebarShown.bind(this);
   this.onSidebarToggle = this.onSidebarToggle.bind(this);
-  this.handleThreadPaused = this.handleThreadPaused.bind(this);
-  this.handleThreadResumed = this.handleThreadResumed.bind(this);
+  this.onReflowInSelection = this.onReflowInSelection.bind(this);
 }
 
 Inspector.prototype = {
@@ -209,34 +195,15 @@ Inspector.prototype = {
     // Localize all the nodes containing a data-localization attribute.
     localizeMarkup(this.panelDoc);
 
-    // When replaying, we need to listen to changes in the target's pause state.
-    if (this.currentTarget.isReplayEnabled()) {
-      let dbg = this._toolbox.getPanel("jsdebugger");
-      if (!dbg) {
-        dbg = await this._toolbox.loadTool("jsdebugger");
-      }
-      this._replayResumed = !dbg.isPaused();
-
-      this.currentTarget.threadFront.on("paused", this.handleThreadPaused);
-      this.currentTarget.threadFront.on("resumed", this.handleThreadResumed);
-    }
-
-    await this.initInspectorFront();
-
-    this.currentTarget.on("will-navigate", this._onBeforeNavigate);
-
-    await Promise.all([
-      this._getCssProperties(),
-      this._getPageStyle(),
-      this._getDefaultSelection(),
-      this._getAccessibilityFront(),
-      this._getChangesFront(),
-    ]);
+    await this.toolbox.targetList.watchTargets(
+      [this.toolbox.targetList.TYPES.FRAME],
+      this._onTargetAvailable,
+      this._onTargetDestroyed
+    );
 
     // Store the URL of the target page prior to navigation in order to ensure
     // telemetry counts in the Grid Inspector are not double counted on reload.
     this.previousURL = this.currentTarget.url;
-    this.reflowTracker = new ReflowTracker(this.currentTarget);
     this.styleChangeTracker = new InspectorStyleChangeTracker(this);
 
     this._markupBox = this.panelDoc.getElementById("markup-box");
@@ -244,14 +211,70 @@ Inspector.prototype = {
     return this._deferredOpen();
   },
 
-  async initInspectorFront() {
-    this.inspectorFront = await this.currentTarget.getFront("inspector");
+  async _onTargetAvailable({ type, targetFront, isTopLevel }) {
+    // Ignore all targets but the top level one
+    if (!isTopLevel) {
+      return;
+    }
+
+    await this.initInspectorFront(targetFront);
+
+    targetFront.on("will-navigate", this._onBeforeNavigate);
+
+    await Promise.all([
+      this._getCssProperties(),
+      this._getDefaultSelection(),
+      this._getAccessibilityFront(),
+    ]);
+
+    // When we navigate to another process and switch to a new
+    // target and the inspector is already ready, we want to
+    // update the markup view accordingly. So force a new-root event.
+    // For the initial panel startup, the initial top level target
+    // update the markup view from _deferredOpen.
+    // We might want to followup here in order to share the same
+    // codepath between the initial top level target and the next
+    // one we switch to. i.e. extract from deferredOpen code
+    // which has to be called only once on inspector startup.
+    // Then move the rest to onNewRoot and always call onNewRoot from here.
+    if (this.isReady) {
+      this.onNewRoot();
+    }
+  },
+
+  _onTargetDestroyed({ type, targetFront, isTopLevel }) {
+    // Ignore all targets but the top level one
+    if (!isTopLevel) {
+      return;
+    }
+    targetFront.off("will-navigate", this._onBeforeNavigate);
+
+    this._defaultNode = null;
+    this.selection.setNodeFront(null);
+  },
+
+  async initInspectorFront(targetFront) {
+    this.inspectorFront = await targetFront.getFront("inspector");
     this.highlighter = this.inspectorFront.highlighter;
     this.walker = this.inspectorFront.walker;
   },
 
   get toolbox() {
     return this._toolbox;
+  },
+
+  /**
+   * Get the list of InspectorFront instances that correspond to all of the inspectable
+   * targets in remote frames nested within the document inspected here, as well as the
+   * current InspectorFront instance.
+   *
+   * @return {Array} The list of InspectorFront instances.
+   */
+  async getAllInspectorFronts() {
+    return this.toolbox.targetList.getAllFronts(
+      this.toolbox.targetList.TYPES.FRAME,
+      "inspector"
+    );
   },
 
   get highlighters() {
@@ -357,7 +380,7 @@ Inspector.prototype = {
       "visible";
 
     // Setup the sidebar panels.
-    await this.setupSidebar();
+    this.setupSidebar();
 
     await onMarkupLoaded;
     this.isReady = true;
@@ -409,27 +432,12 @@ Inspector.prototype = {
     return this.accessibilityFront;
   },
 
-  _getChangesFront: async function() {
-    // Get the Changes front, then call a method on it, which will instantiate
-    // the ChangesActor. We want the ChangesActor to be guaranteed available before
-    // the user makes any changes.
-    this.changesFront = await this.currentTarget.getFront("changes");
-    await this.changesFront.start();
-    return this.changesFront;
-  },
-
   _getDefaultSelection: function() {
     // This may throw if the document is still loading and we are
     // refering to a dead about:blank document
     return this._getDefaultNodeForSelection().catch(
       this._handleRejectionIfNotDestroyed
     );
-  },
-
-  _getPageStyle: function() {
-    return this.inspectorFront.getPageStyle().then(pageStyle => {
-      this.pageStyle = pageStyle;
-    }, this._handleRejectionIfNotDestroyed);
   },
 
   /**
@@ -445,10 +453,8 @@ Inspector.prototype = {
 
     // A helper to tell if the target has or is about to navigate.
     // this._pendingSelection changes on "will-navigate" and "new-root" events.
-    // When replaying, if the target is unpaused then we consider it to be
-    // navigating so that its tree will not be constructed.
     const hasNavigated = () => {
-      return pendingSelection !== this._pendingSelection || this._replayResumed;
+      return pendingSelection !== this._pendingSelection;
     };
 
     // If available, set either the previously selected node or the body
@@ -463,8 +469,8 @@ Inspector.prototype = {
         }
 
         rootNode = node;
-        if (this.selectionCssSelector) {
-          return walker.querySelector(rootNode, this.selectionCssSelector);
+        if (this.selectionCssSelectors.length) {
+          return walker.findNodeFront(this.selectionCssSelectors);
         }
         return null;
       })
@@ -504,10 +510,10 @@ Inspector.prototype = {
   },
 
   /**
-   * Target getter.
+   * Top level target front getter.
    */
   get currentTarget() {
-    return this._target;
+    return this.toolbox.targetList.targetFront;
   },
 
   /**
@@ -807,7 +813,7 @@ Inspector.prototype = {
   async onSidebarToggle() {
     this.is3PaneModeEnabled = !this.is3PaneModeEnabled;
     await this.setupToolbar();
-    await this.addRuleView({ skipQueue: true });
+    this.addRuleView({ skipQueue: true });
   },
 
   /**
@@ -878,7 +884,7 @@ Inspector.prototype = {
    * @params {String} defaultTab
    *         Thie id of the default tab for the sidebar.
    */
-  async addRuleView({ defaultTab = "ruleview", skipQueue = false } = {}) {
+  addRuleView({ defaultTab = "ruleview", skipQueue = false } = {}) {
     const ruleViewSidebar = this.sidebarSplitBoxRef.current.startPanelContainer;
 
     if (this.is3PaneModeEnabled) {
@@ -892,7 +898,7 @@ Inspector.prototype = {
       // Force the rule view panel creation by calling getPanel
       this.getPanel("ruleview");
 
-      await this.sidebar.removeTab("ruleview");
+      this.sidebar.removeTab("ruleview");
 
       this.ruleViewSideBar.addExistingTab(
         "ruleview",
@@ -926,7 +932,7 @@ Inspector.prototype = {
       });
 
       this.ruleViewSideBar.hide();
-      await this.ruleViewSideBar.removeTab("ruleview");
+      this.ruleViewSideBar.removeTab("ruleview");
 
       if (skipQueue) {
         this.sidebar.addExistingTab(
@@ -1034,7 +1040,7 @@ Inspector.prototype = {
   /**
    * Build the sidebar.
    */
-  async setupSidebar() {
+  setupSidebar() {
     const sidebar = this.panelDoc.getElementById("inspector-sidebar");
     const options = {
       showAllTabsMenu: true,
@@ -1066,7 +1072,7 @@ Inspector.prototype = {
 
     // Append all side panels
 
-    await this.addRuleView({ defaultTab });
+    this.addRuleView({ defaultTab });
 
     // Inspector sidebar panels in order of appearance.
     const sidebarPanels = [
@@ -1346,22 +1352,6 @@ Inspector.prototype = {
   },
 
   /**
-   * When replaying, reset the inspector whenever the target pauses.
-   */
-  handleThreadPaused() {
-    this._replayResumed = false;
-    this.onNewRoot();
-  },
-
-  /**
-   * When replaying, reset the inspector whenever the target resumes.
-   */
-  handleThreadResumed() {
-    this._replayResumed = true;
-    this.onNewRoot();
-  },
-
-  /**
    * Handler for "markuploaded" event fired on a new root mutation and after the markup
    * view is initialized. Expands the current selected node and restores the saved
    * highlighter state.
@@ -1404,46 +1394,63 @@ Inspector.prototype = {
     }
   },
 
-  _selectionCssSelector: null,
+  _selectionCssSelectors: null,
 
   /**
-   * Set the currently selected node unique css selector.
+   * Set the array of CSS selectors for the currently selected node.
+   * We use an array of selectors in case the element is in iframes.
    * Will store the current target url along with it to allow pre-selection at
    * reload
    */
-  set selectionCssSelector(cssSelector = null) {
+  set selectionCssSelectors(cssSelectors = []) {
     if (this._destroyed) {
       return;
     }
 
-    this._selectionCssSelector = {
-      selector: cssSelector,
-      url: this._target.url,
+    this._selectionCssSelectors = {
+      selectors: cssSelectors,
+      url: this.currentTarget.url,
     };
   },
 
   /**
-   * Get the current selection unique css selector if any, that is, if a node
+   * Get the CSS selectors for the current selection if any, that is, if a node
    * is actually selected and that node has been selected while on the same url
    */
-  get selectionCssSelector() {
+  get selectionCssSelectors() {
     if (
-      this._selectionCssSelector &&
-      this._selectionCssSelector.url === this._target.url
+      this._selectionCssSelectors &&
+      this._selectionCssSelectors.url === this.currentTarget.url
     ) {
-      return this._selectionCssSelector.selector;
+      return this._selectionCssSelectors.selectors;
     }
+    return [];
+  },
+
+  /**
+   * Some inspector ruleview helpers rely on the selectionCssSelector to get the
+   * unique CSS selector of the selected element only within its host document,
+   * disregarding ancestor iframes.
+   * They should not care about the complete array of CSS selectors, only
+   * relevant in order to reselect the proper node when reloading pages with
+   * frames.
+   */
+  get selectionCssSelector() {
+    if (this.selectionCssSelectors.length) {
+      return this.selectionCssSelectors[this.selectionCssSelectors.length - 1];
+    }
+
     return null;
   },
 
   /**
-   * On any new selection made by the user, store the unique css selector
+   * On any new selection made by the user, store the array of css selectors
    * of the selected node so it can be restored after reload of the same page
    */
-  updateSelectionCssSelector() {
+  updateSelectionCssSelectors() {
     if (this.selection.isElementNode()) {
-      this.selection.nodeFront.getUniqueSelector().then(selector => {
-        this.selectionCssSelector = selector;
+      this.selection.nodeFront.getAllSelectors().then(selectors => {
+        this.selectionCssSelectors = selectors;
       }, this._handleRejectionIfNotDestroyed);
     }
   },
@@ -1513,7 +1520,8 @@ Inspector.prototype = {
     }
 
     this.updateAddElementButton();
-    this.updateSelectionCssSelector();
+    this.updateSelectionCssSelectors();
+    this.trackReflowsInSelection();
 
     const selfUpdate = this.updating("inspector-panel");
     executeSoon(() => {
@@ -1524,6 +1532,43 @@ Inspector.prototype = {
         console.error(ex);
       }
     });
+  },
+
+  /**
+   * Starts listening for reflows in the targetFront of the currently selected nodeFront.
+   */
+  async trackReflowsInSelection() {
+    this.untrackReflowsInSelection();
+    if (!this.selection.nodeFront) {
+      return;
+    }
+
+    const { targetFront } = this.selection.nodeFront;
+    this.reflowFront = await targetFront.getFront("reflow");
+    this.reflowFront.on("reflows", this.onReflowInSelection);
+    this.reflowFront.start();
+  },
+
+  /**
+   * Stops listening for reflows.
+   */
+  untrackReflowsInSelection() {
+    // Check the actorID because the reflowFront is a target scoped actor and
+    // might have been destroyed after switching targets.
+    if (!this.reflowFront || !this.reflowFront.actorID) {
+      return;
+    }
+
+    this.reflowFront.off("reflows", this.onReflowInSelection);
+    this.reflowFront.stop();
+    this.reflowFront = null;
+  },
+
+  onReflowInSelection() {
+    // This event will be fired whenever a reflow is detected in the target front of the
+    // selected node front (so when a reflow is detected inside any of the windows that
+    // belong to the BrowsingContext when the currently selected node lives).
+    this.emit("reflow-in-selected-target");
   },
 
   /**
@@ -1607,7 +1652,6 @@ Inspector.prototype = {
 
     if (this.walker) {
       this.walker.off("new-root", this.onNewRoot);
-      this.pageStyle = null;
     }
 
     this.cancelUpdate();
@@ -1655,9 +1699,14 @@ Inspector.prototype = {
     this.teardownToolbar();
 
     this.breadcrumbs.destroy();
-    this.reflowTracker.destroy();
     this.styleChangeTracker.destroy();
     this.searchboxShortcuts.destroy();
+
+    this.toolbox.targetList.unwatchTargets(
+      [this.toolbox.targetList.TYPES.FRAME],
+      this._onTargetAvailable,
+      this._onTargetDestroyed
+    );
 
     this._is3PaneModeChromeEnabled = null;
     this._is3PaneModeEnabled = null;
@@ -1707,7 +1756,6 @@ Inspector.prototype = {
     this._markupFrame.contentWindow.focus();
     this._markupBox.style.visibility = "visible";
     this.markup = new MarkupView(this, this._markupFrame, this._toolbox.win);
-    this.markup.init();
     this.emit("markuploaded");
   },
 
@@ -1733,14 +1781,14 @@ Inspector.prototype = {
   },
 
   startEyeDropperListeners: function() {
-    this.toolbox.tellRDMAboutPickerState(true);
+    this.toolbox.tellRDMAboutPickerState(true, PICKER_TYPES.EYEDROPPER);
     this.inspectorFront.once("color-pick-canceled", this.onEyeDropperDone);
     this.inspectorFront.once("color-picked", this.onEyeDropperDone);
     this.walker.once("new-root", this.onEyeDropperDone);
   },
 
   stopEyeDropperListeners: function() {
-    this.toolbox.tellRDMAboutPickerState(false);
+    this.toolbox.tellRDMAboutPickerState(false, PICKER_TYPES.EYEDROPPER);
     this.inspectorFront.off("color-pick-canceled", this.onEyeDropperDone);
     this.inspectorFront.off("color-picked", this.onEyeDropperDone);
     this.walker.off("new-root", this.onEyeDropperDone);
@@ -1885,8 +1933,9 @@ Inspector.prototype = {
   },
 
   async inspectNodeActor(nodeActor, inspectFromAnnotation) {
-    // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
-    const nodeFront = await this.walker.gripToNodeFront({ actor: nodeActor });
+    const nodeFront = await this.inspectorFront.getNodeFrontFromNodeGrip({
+      actor: nodeActor,
+    });
     if (!nodeFront) {
       console.error(
         "The object cannot be linked to the inspector, the " +

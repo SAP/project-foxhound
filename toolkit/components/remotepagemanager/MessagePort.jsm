@@ -41,17 +41,21 @@ let RPMAccessManager = {
       getFormatURLPref: ["app.support.baseURL"],
       getBoolPref: [
         "security.certerrors.mitm.priming.enabled",
+        "security.certerrors.permanentOverride",
         "security.enterprise_roots.auto-enabled",
         "security.certerror.hideAddException",
         "security.ssl.errorReporting.automatic",
         "security.ssl.errorReporting.enabled",
       ],
+      setBoolPref: ["security.ssl.errorReporting.automatic"],
       getIntPref: [
         "services.settings.clock_skew_seconds",
         "services.settings.last_update_seconds",
       ],
       getAppBuildID: ["yes"],
+      isWindowPrivate: ["yes"],
       recordTelemetryEvent: ["yes"],
+      addToHistogram: ["yes"],
     },
     "about:neterror": {
       getFormatURLPref: ["app.support.baseURL"],
@@ -60,7 +64,11 @@ let RPMAccessManager = {
         "security.ssl.errorReporting.automatic",
         "security.ssl.errorReporting.enabled",
         "security.tls.version.enable-deprecated",
+        "security.certerrors.tls.version.show-override",
       ],
+      setBoolPref: ["security.ssl.errorReporting.automatic"],
+      prefIsLocked: ["security.tls.version.min"],
+      addToHistogram: ["yes"],
     },
     "about:privatebrowsing": {
       // "sendAsyncMessage": handled within AboutPrivateBrowsingHandler.jsm
@@ -68,20 +76,34 @@ let RPMAccessManager = {
       isWindowPrivate: ["yes"],
     },
     "about:protections": {
+      setBoolPref: [
+        "browser.contentblocking.report.hide_lockwise_app",
+        "browser.contentblocking.report.show_mobile_app",
+      ],
       getBoolPref: [
         "browser.contentblocking.report.lockwise.enabled",
         "browser.contentblocking.report.monitor.enabled",
         "privacy.socialtracking.block_cookies.enabled",
         "browser.contentblocking.report.proxy.enabled",
+        "privacy.trackingprotection.cryptomining.enabled",
+        "privacy.trackingprotection.fingerprinting.enabled",
+        "privacy.trackingprotection.enabled",
+        "privacy.trackingprotection.socialtracking.enabled",
+        "browser.contentblocking.report.hide_lockwise_app",
+        "browser.contentblocking.report.show_mobile_app",
       ],
       getStringPref: [
         "browser.contentblocking.category",
-        "browser.contentblocking.report.lockwise.url",
         "browser.contentblocking.report.monitor.url",
         "browser.contentblocking.report.monitor.sign_in_url",
         "browser.contentblocking.report.manage_devices.url",
         "browser.contentblocking.report.proxy_extension.url",
+        "browser.contentblocking.report.lockwise.mobile-android.url",
+        "browser.contentblocking.report.lockwise.mobile-ios.url",
+        "browser.contentblocking.report.mobile-ios.url",
+        "browser.contentblocking.report.mobile-android.url",
       ],
+      getIntPref: ["network.cookie.cookieBehavior"],
       getFormatURLPref: [
         "browser.contentblocking.report.monitor.how_it_works.url",
         "browser.contentblocking.report.lockwise.how_it_works.url",
@@ -226,8 +248,8 @@ class MessageListener {
  * nsIMessageListenerManager
  */
 class MessagePort {
-  constructor(messageManager, portID) {
-    this.messageManager = messageManager;
+  constructor(messageManagerOrActor, portID) {
+    this.messageManager = messageManagerOrActor;
     this.portID = portID;
     this.destroyed = false;
     this.listener = new MessageListener();
@@ -244,6 +266,10 @@ class MessagePort {
   }
 
   addMessageListeners() {
+    if (!(this.messageManager instanceof Ci.nsIMessageSender)) {
+      return;
+    }
+
     this.messageManager.addMessageListener("RemotePage:Message", this.message);
     this.messageManager.addMessageListener(
       "RemotePage:Request",
@@ -256,6 +282,10 @@ class MessagePort {
   }
 
   removeMessageListeners() {
+    if (!(this.messageManager instanceof Ci.nsIMessageSender)) {
+      return;
+    }
+
     this.messageManager.removeMessageListener(
       "RemotePage:Message",
       this.message
@@ -388,11 +418,20 @@ class MessagePort {
       throw new Error("Message port has been destroyed");
     }
 
-    this.messageManager.sendAsyncMessage("RemotePage:Message", {
-      portID: this.portID,
-      name,
-      data,
-    });
+    let id;
+    if (this.window) {
+      id = this.window.docShell.browsingContext.id;
+    }
+    if (this.messageManager instanceof Ci.nsIMessageSender) {
+      this.messageManager.sendAsyncMessage("RemotePage:Message", {
+        portID: this.portID,
+        browsingContextID: id,
+        name,
+        data,
+      });
+    } else {
+      this.messageManager.sendAsyncMessage(name, data);
+    }
   }
 
   // Called to destroy this port
@@ -471,6 +510,14 @@ class MessagePort {
     return this.wrapPromise(AsyncPrefs.set(aPref, aVal));
   }
 
+  prefIsLocked(aPref) {
+    let doc = this.window.document;
+    if (!RPMAccessManager.checkAllowAccess(doc, "prefIsLocked", aPref)) {
+      throw new Error("RPMAccessManager does not allow access to prefIsLocked");
+    }
+    return Services.prefs.prefIsLocked(aPref);
+  }
+
   getFormatURLPref(aFormatURL) {
     let doc = this.window.document;
     if (
@@ -532,5 +579,16 @@ class MessagePort {
       value,
       extra
     );
+  }
+
+  addToHistogram(histID, bin) {
+    let doc = this.window.document;
+    if (!RPMAccessManager.checkAllowAccess(doc, "addToHistogram", "yes")) {
+      throw new Error(
+        "RPMAccessManager does not allow access to addToHistogram"
+      );
+    }
+
+    Services.telemetry.getHistogramById(histID).add(bin);
   }
 }

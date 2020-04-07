@@ -242,9 +242,7 @@ class KintoServer {
   installCatchAll() {
     this.httpServer.registerPathHandler("/", (request, response) => {
       dump(
-        `got request: ${request.method}:${request.path}?${
-          request.queryString
-        }\n`
+        `got request: ${request.method}:${request.path}?${request.queryString}\n`
       );
       dump(
         `${CommonUtils.readBytesFromInputStream(request.bodyInputStream)}\n`
@@ -372,9 +370,7 @@ class KintoServer {
       (request, response) => {
         if (request.method != "DELETE") {
           dump(
-            `got a non-delete action on bucket: ${request.method} ${
-              request.path
-            }\n`
+            `got a non-delete action on bucket: ${request.method} ${request.path}\n`
           );
           return;
         }
@@ -486,16 +482,24 @@ async function withContextAndServer(f) {
 async function withSignedInUser(user, f) {
   let fxaServiceMock = {
     getSignedInUser() {
-      return Promise.resolve(user);
+      return Promise.resolve({ uid: user.uid });
     },
     getOAuthToken() {
       return Promise.resolve("some-access-token");
     },
-    sessionStatus() {
+    checkAccountStatus() {
       return Promise.resolve(true);
     },
     removeCachedOAuthToken() {
       return Promise.resolve();
+    },
+    keys: {
+      getKeys() {
+        return Promise.resolve({
+          kExtSync: user.kExtSync,
+          kExtKbHash: user.kExtKbHash,
+        });
+      },
     },
   };
 
@@ -572,9 +576,7 @@ const assertPostedEncryptedKeys = async function(fxaService, post) {
 // assertEqual, but for keyring[extensionId] == key.
 function assertKeyRingKey(keyRing, extensionId, expectedKey, message) {
   if (!message) {
-    message = `expected keyring's key for ${extensionId} to match ${
-      expectedKey.keyPairB64
-    }`;
+    message = `expected keyring's key for ${extensionId} to match ${expectedKey.keyPairB64}`;
   }
   ok(
     keyRing.hasKeysFor([extensionId]),

@@ -19,6 +19,9 @@ const { CommonUtils } = ChromeUtils.import(
   "resource://services-common/utils.js"
 );
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const { SearchTestUtils } = ChromeUtils.import(
+  "resource://testing-common/SearchTestUtils.jsm"
+);
 
 // AttributionCode is only needed for Firefox
 ChromeUtils.defineModuleGetter(
@@ -625,26 +628,26 @@ function checkSystemSection(data, assertProcessData) {
     "MemoryMB must be a number."
   );
 
-  if (gIsWindows || gIsMac || gIsLinux) {
-    let EXTRA_CPU_FIELDS = [
-      "cores",
-      "model",
-      "family",
-      "stepping",
-      "l2cacheKB",
-      "l3cacheKB",
-      "speedMHz",
-      "vendor",
-    ];
+  if (assertProcessData) {
+    if (gIsWindows || gIsMac || gIsLinux) {
+      let EXTRA_CPU_FIELDS = [
+        "cores",
+        "model",
+        "family",
+        "stepping",
+        "l2cacheKB",
+        "l3cacheKB",
+        "speedMHz",
+        "vendor",
+      ];
 
-    for (let f of EXTRA_CPU_FIELDS) {
-      // Note this is testing TelemetryEnvironment.js only, not that the
-      // values are valid - null is the fallback.
-      Assert.ok(f in data.system.cpu, f + " must be available under cpu.");
-    }
+      for (let f of EXTRA_CPU_FIELDS) {
+        // Note this is testing TelemetryEnvironment.js only, not that the
+        // values are valid - null is the fallback.
+        Assert.ok(f in data.system.cpu, f + " must be available under cpu.");
+      }
 
-    if (gIsWindows) {
-      if (assertProcessData) {
+      if (gIsWindows) {
         Assert.equal(
           typeof data.system.isWow64,
           "boolean",
@@ -655,45 +658,61 @@ function checkSystemSection(data, assertProcessData) {
           "boolean",
           "isWowARM64 must be available on Windows and have the correct type."
         );
+        Assert.ok(
+          "virtualMaxMB" in data.system,
+          "virtualMaxMB must be available."
+        );
+        Assert.ok(
+          Number.isFinite(data.system.virtualMaxMB),
+          "virtualMaxMB must be a number."
+        );
+
+        for (let f of [
+          "count",
+          "model",
+          "family",
+          "stepping",
+          "l2cacheKB",
+          "l3cacheKB",
+          "speedMHz",
+        ]) {
+          Assert.ok(
+            Number.isFinite(data.system.cpu[f]),
+            f + " must be a number if non null."
+          );
+        }
       }
-      Assert.ok(
-        "virtualMaxMB" in data.system,
-        "virtualMaxMB must be available."
-      );
-      Assert.ok(
-        Number.isFinite(data.system.virtualMaxMB),
-        "virtualMaxMB must be a number."
-      );
-    }
 
-    // We insist these are available
-    for (let f of ["cores"]) {
-      Assert.ok(
-        !(f in data.system.cpu) || Number.isFinite(data.system.cpu[f]),
-        f + " must be a number if non null."
-      );
-    }
+      // These should be numbers if they are not null
+      for (let f of [
+        "count",
+        "model",
+        "family",
+        "stepping",
+        "l2cacheKB",
+        "l3cacheKB",
+        "speedMHz",
+      ]) {
+        Assert.ok(
+          !(f in data.system.cpu) ||
+            data.system.cpu[f] === null ||
+            Number.isFinite(data.system.cpu[f]),
+          f + " must be a number if non null."
+        );
+      }
 
-    // These should be numbers if they are not null
-    for (let f of [
-      "model",
-      "family",
-      "stepping",
-      "l2cacheKB",
-      "l3cacheKB",
-      "speedMHz",
-    ]) {
-      Assert.ok(
-        !(f in data.system.cpu) ||
-          data.system.cpu[f] === null ||
-          Number.isFinite(data.system.cpu[f]),
-        f + " must be a number if non null."
-      );
+      // We insist these are available
+      for (let f of ["cores"]) {
+        Assert.ok(
+          !(f in data.system.cpu) || Number.isFinite(data.system.cpu[f]),
+          f + " must be a number if non null."
+        );
+      }
     }
   }
 
   let cpuData = data.system.cpu;
-  Assert.ok(Number.isFinite(cpuData.count), "CPU count must be a number.");
+
   Assert.ok(
     Array.isArray(cpuData.extensions),
     "CPU extensions must be available."
@@ -1060,6 +1079,9 @@ add_task(async function setup() {
   await AddonTestUtils.overrideBuiltIns({ system: [] });
   AddonTestUtils.addonStartup.remove(true);
   await AddonTestUtils.promiseStartupManager();
+  // Override ExtensionXPCShellUtils.jsm's overriding of the pref as the
+  // search service needs it.
+  Services.prefs.clearUserPref("services.settings.default_bucket");
 
   // Register a fake plugin host for consistent flash version data.
   registerFakePluginHost();
@@ -1081,7 +1103,8 @@ add_task(async function setup() {
   }
 
   await spoofProfileReset();
-  TelemetryEnvironment.delayedInit();
+  await TelemetryEnvironment.delayedInit();
+  await SearchTestUtils.useTestEngines("data", "search-extensions");
 });
 
 add_task(async function test_checkEnvironment() {
@@ -1381,7 +1404,7 @@ add_task(async function test_addonsWatch_InterestingChange() {
 });
 
 add_task(async function test_pluginsWatch_Add() {
-  if (gIsAndroid) {
+  if (!gIsFirefox) {
     Assert.ok(true, "Skipping: there is no Plugin Manager on Android.");
     return;
   }
@@ -1423,7 +1446,7 @@ add_task(async function test_pluginsWatch_Add() {
 });
 
 add_task(async function test_pluginsWatch_Remove() {
-  if (gIsAndroid) {
+  if (!gIsFirefox) {
     Assert.ok(true, "Skipping: there is no Plugin Manager on Android.");
     return;
   }
@@ -1880,19 +1903,6 @@ add_task(async function test_collectionWithbrokenAddonData() {
 });
 
 async function checkDefaultSearch(privateOn, reInitSearchService) {
-  // Check that no default engine is in the environment before the search service is
-  // initialized.
-  let searchExtensions = do_get_cwd();
-  searchExtensions.append("data");
-  searchExtensions.append("search-extensions");
-  let resProt = Services.io
-    .getProtocolHandler("resource")
-    .QueryInterface(Ci.nsIResProtocolHandler);
-  resProt.setSubstitution(
-    "search-extensions",
-    Services.io.newURI("file://" + searchExtensions.path)
-  );
-
   // Start off with separate default engine for private browsing turned off.
   Preferences.set(
     "browser.search.separatePrivateDefault.ui.enabled",
@@ -1955,38 +1965,41 @@ async function checkDefaultSearch(privateOn, reInitSearchService) {
     );
   }
 
-  // Remove all the search engines.
-  for (let engine of await Services.search.getEngines()) {
-    await Services.search.removeEngine(engine);
-  }
-  // The search service does not notify "engine-default" when removing a default engine.
-  // Manually force the notification.
-  // TODO: remove this when bug 1165341 is resolved.
-  Services.obs.notifyObservers(
-    null,
-    "browser-search-engine-modified",
-    "engine-default"
-  );
-  if (privateOn) {
+  if (!Services.prefs.getBoolPref("browser.search.modernConfig")) {
+    // Remove all the search engines.
+    for (let engine of await Services.search.getEngines()) {
+      await Services.search.removeEngine(engine);
+    }
+    // The search service does not notify "engine-default" when removing a default engine.
+    // Manually force the notification.
+    // TODO: remove this when bug 1165341 is resolved.
     Services.obs.notifyObservers(
       null,
       "browser-search-engine-modified",
-      "engine-default-private"
+      "engine-default"
     );
-  }
-  await promiseNextTick();
+    if (privateOn) {
+      Services.obs.notifyObservers(
+        null,
+        "browser-search-engine-modified",
+        "engine-default-private"
+      );
+    }
+    await promiseNextTick();
 
-  // Then check that no default engine is reported if none is available.
-  data = TelemetryEnvironment.currentEnvironment;
-  checkEnvironmentData(data);
-  Assert.equal(data.settings.defaultSearchEngine, "NONE");
-  Assert.deepEqual(data.settings.defaultSearchEngineData, { name: "NONE" });
-  if (privateOn) {
-    Assert.equal(data.settings.defaultPrivateSearchEngine, "NONE");
-    Assert.deepEqual(data.settings.defaultPrivateSearchEngineData, {
-      name: "NONE",
-    });
+    // Then check that no default engine is reported if none is available.
+    data = TelemetryEnvironment.currentEnvironment;
+    checkEnvironmentData(data);
+    Assert.equal(data.settings.defaultSearchEngine, "NONE");
+    Assert.deepEqual(data.settings.defaultSearchEngineData, { name: "NONE" });
+    if (privateOn) {
+      Assert.equal(data.settings.defaultPrivateSearchEngine, "NONE");
+      Assert.deepEqual(data.settings.defaultPrivateSearchEngineData, {
+        name: "NONE",
+      });
+    }
   }
+
   // Add a new search engine (this will have no engine identifier).
   const SEARCH_ENGINE_ID = "telemetry_default";
   const SEARCH_ENGINE_URL = `http://www.example.org/${
@@ -2123,6 +2136,18 @@ add_task(async function test_defaultSearchEngine() {
   Assert.equal(data.settings.defaultSearchEngineData.origin, "invalid");
   await Services.search.removeEngine(engine);
 
+  const SEARCH_ENGINE_ID = "telemetry_default";
+  const EXPECTED_SEARCH_ENGINE = "other-" + SEARCH_ENGINE_ID;
+  // Work around bug 1165341: Intentionally set the default engine.
+  await Services.search.setDefault(
+    Services.search.getEngineByName(SEARCH_ENGINE_ID)
+  );
+
+  // Double-check the default for the next part of the test.
+  data = TelemetryEnvironment.currentEnvironment;
+  checkEnvironmentData(data);
+  Assert.equal(data.settings.defaultSearchEngine, EXPECTED_SEARCH_ENGINE);
+
   // Define and reset the test preference.
   const PREF_TEST = "toolkit.telemetry.test.pref1";
   const PREFS_TO_WATCH = new Map([
@@ -2145,8 +2170,6 @@ add_task(async function test_defaultSearchEngine() {
   // Check that the search engine information is correctly retained when prefs change.
   data = TelemetryEnvironment.currentEnvironment;
   checkEnvironmentData(data);
-  const SEARCH_ENGINE_ID = "telemetry_default";
-  const EXPECTED_SEARCH_ENGINE = "other-" + SEARCH_ENGINE_ID;
   Assert.equal(data.settings.defaultSearchEngine, EXPECTED_SEARCH_ENGINE);
 
   // Check that by default we are not sending a cohort identifier...
@@ -2519,6 +2542,28 @@ if (gIsWindows) {
       typeof data.system.isWowARM64,
       "boolean",
       "isWowARM64 must be a boolean."
+    );
+    // These should be numbers if they are not null
+    for (let f of [
+      "count",
+      "model",
+      "family",
+      "stepping",
+      "l2cacheKB",
+      "l3cacheKB",
+      "speedMHz",
+      "cores",
+    ]) {
+      Assert.ok(
+        !(f in data.system.cpu) ||
+          data.system.cpu[f] === null ||
+          Number.isFinite(data.system.cpu[f]),
+        f + " must be a number if non null."
+      );
+    }
+    Assert.ok(
+      checkString(data.system.cpu.vendor),
+      "vendor must be a valid string."
     );
   });
 

@@ -265,7 +265,11 @@ bool Channel::ChannelImpl::Connect() {
   MessageLoopForIO::current()->RegisterIOHandler(pipe_, this);
 
   // Check to see if there is a client connected to our pipe...
-  if (waiting_connect_) ProcessConnection();
+  if (waiting_connect_) {
+    if (!ProcessConnection()) {
+      return false;
+    }
+  }
 
   if (!input_state_.is_pending) {
     // Complete setup asynchronously. By not setting input_state_.is_pending
@@ -303,6 +307,9 @@ bool Channel::ChannelImpl::ProcessConnection() {
     case ERROR_PIPE_CONNECTED:
       waiting_connect_ = false;
       break;
+    case ERROR_NO_DATA:
+      // The pipe is being closed.
+      return false;
     default:
       NOTREACHED();
       return false;
@@ -338,7 +345,9 @@ bool Channel::ChannelImpl::ProcessIncomingMessages(
           input_state_.is_pending = true;
           return true;
         }
-        CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+        if (err != ERROR_BROKEN_PIPE) {
+          CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+        }
         return false;
       }
       input_state_.is_pending = true;
@@ -455,7 +464,9 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages(
     output_state_.is_pending = false;
     if (!context || bytes_written == 0) {
       DWORD err = GetLastError();
-      CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+      if (err != ERROR_BROKEN_PIPE) {
+        CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+      }
       return false;
     }
     // Message was sent.
@@ -499,7 +510,9 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages(
 
       return true;
     }
-    CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+    if (err != ERROR_BROKEN_PIPE) {
+      CHROMIUM_LOG(ERROR) << "pipe error: " << err;
+    }
     return false;
   }
 

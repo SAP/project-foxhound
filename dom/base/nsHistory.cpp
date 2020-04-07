@@ -13,10 +13,8 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsIDocShell.h"
 #include "nsIWebNavigation.h"
-#include "nsIURI.h"
 #include "nsReadableUtils.h"
 #include "nsContentUtils.h"
-#include "nsISHistory.h"
 #include "mozilla/dom/Location.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -38,7 +36,7 @@ NS_INTERFACE_MAP_END
 nsHistory::nsHistory(nsPIDOMWindowInner* aInnerWindow)
     : mInnerWindow(do_GetWeakReference(aInnerWindow)) {}
 
-nsHistory::~nsHistory() {}
+nsHistory::~nsHistory() = default;
 
 nsPIDOMWindowInner* nsHistory::GetParentObject() const {
   nsCOMPtr<nsPIDOMWindowInner> win(do_QueryReferent(mInnerWindow));

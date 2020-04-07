@@ -57,9 +57,16 @@ class FilterPath(object):
         a = os.path.abspath(self.path)
         b = os.path.normpath(os.path.abspath(other))
 
-        if b.startswith(a):
-            return True
-        return False
+        parts_a = a.split(os.sep)
+        parts_b = b.split(os.sep)
+
+        if len(parts_a) > len(parts_b):
+            return False
+
+        for i, part in enumerate(parts_a):
+            if part != parts_b[i]:
+                return False
+        return True
 
     def __repr__(self):
         return repr(self.path)
@@ -93,10 +100,14 @@ def collapse(paths, base=None, dotfiles=False):
 
     if not base:
         paths = list(map(mozpath.abspath, paths))
-        base = mozpath.commonprefix(paths)
+        base = mozpath.commonprefix(paths).rstrip('/')
 
-        if not os.path.isdir(base):
-            base = os.path.dirname(base)
+        # Make sure `commonprefix` factors in sibling directories that have the
+        # same prefix in their basenames.
+        parent = mozpath.dirname(base)
+        same_prefix = [p for p in os.listdir(parent) if p.startswith(mozpath.basename(base))]
+        if not os.path.isdir(base) or len(same_prefix) > 1:
+            base = parent
 
     if base in paths:
         return [base]

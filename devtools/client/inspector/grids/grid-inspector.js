@@ -12,12 +12,12 @@ const {
   updateGridColor,
   updateGridHighlighted,
   updateGrids,
-} = require("./actions/grids");
+} = require("devtools/client/inspector/grids/actions/grids");
 const {
   updateShowGridAreas,
   updateShowGridLineNumbers,
   updateShowInfiniteLines,
-} = require("./actions/highlighter-settings");
+} = require("devtools/client/inspector/grids/actions/highlighter-settings");
 
 loader.lazyRequireGetter(
   this,
@@ -153,7 +153,7 @@ class GridInspector {
    * @return {Array} The list of LayoutActor fronts
    */
   async getLayoutFronts() {
-    const inspectorFronts = await this.inspector.inspectorFront.getAllInspectorFronts();
+    const inspectorFronts = await this.inspector.getAllInspectorFronts();
 
     const layoutFronts = [];
     for (const { walker } of inspectorFronts) {
@@ -180,7 +180,7 @@ class GridInspector {
     this.inspector.sidebar.off("select", this.onSidebarSelect);
     this.inspector.off("new-root", this.onNavigate);
 
-    this.inspector.reflowTracker.untrackReflows(this, this.onReflow);
+    this.inspector.off("reflow-in-selected-target", this.onReflow);
 
     this._highlighters = null;
     this.document = null;
@@ -309,19 +309,24 @@ class GridInspector {
    * Updates the grid panel by dispatching the new grid data. This is called when the
    * layout view becomes visible or the view needs to be updated with new grid data.
    */
-  // eslint-disable-next-line complexity
   async updateGridPanel() {
     // Stop refreshing if the inspector or store is already destroyed.
     if (!this.inspector || !this.store) {
       return;
     }
 
-    const gridFronts = await this.getGrids();
-
-    // Stop if the panel has been destroyed during the call to getGrids
-    if (!this.inspector) {
-      return;
+    try {
+      await this._updateGridPanel();
+    } catch (e) {
+      this._throwUnlessDestroyed(
+        e,
+        "Inspector destroyed while executing updateGridPanel"
+      );
     }
+  }
+
+  async _updateGridPanel() {
+    const gridFronts = await this.getGrids();
 
     if (!gridFronts.length) {
       try {
@@ -368,10 +373,6 @@ class GridInspector {
         } catch (e) {
           // This call might fail if called asynchrously after the toolbox is finished
           // closing.
-          return;
-        }
-        // Stop if the panel has been destroyed during the call getNodeFromActor
-        if (!this.inspector) {
           return;
         }
       }
@@ -531,7 +532,7 @@ class GridInspector {
   }
 
   /**
-   * Handler for the "reflow" event fired by the inspector's reflow tracker. On reflows,
+   * Handler for reflow events fired by the inspector when a node is selected. On reflows,
    * update the grid panel content, because the shape or number of grids on the page may
    * have changed.
    *
@@ -544,47 +545,49 @@ class GridInspector {
    * grid.
    */
   async onReflow() {
-    if (!this.isPanelVisible()) {
-      return;
+    try {
+      if (!this.isPanelVisible()) {
+        return;
+      }
+
+      // The list of grids currently displayed.
+      const { grids } = this.store.getState();
+
+      // The new list of grids from the server.
+      const newGridFronts = await this.getGrids();
+
+      // In some cases, the nodes for current grids may have been removed from the DOM in
+      // which case we need to update.
+      if (grids.length && grids.some(grid => !grid.nodeFront.actorID)) {
+        await this.updateGridPanel(newGridFronts);
+        return;
+      }
+
+      // Get the node front(s) from the current grid(s) so we can compare them to them to
+      // the node(s) of the new grids.
+      const oldNodeFronts = grids.map(grid => grid.nodeFront.actorID);
+      const newNodeFronts = newGridFronts
+        .filter(grid => grid.containerNode)
+        .map(grid => grid.containerNodeFront.actorID);
+
+      if (
+        grids.length === newGridFronts.length &&
+        oldNodeFronts.sort().join(",") == newNodeFronts.sort().join(",") &&
+        !this.haveCurrentFragmentsChanged(newGridFronts)
+      ) {
+        // Same list of containers and the geometry of all the displayed grids remained the
+        // same, we can safely abort.
+        return;
+      }
+
+      // Either the list of containers or the current fragments have changed, do update.
+      await this.updateGridPanel(newGridFronts);
+    } catch (e) {
+      this._throwUnlessDestroyed(
+        e,
+        "Inspector destroyed while executing onReflow callback"
+      );
     }
-
-    // The list of grids currently displayed.
-    const { grids } = this.store.getState();
-
-    // The new list of grids from the server.
-    const newGridFronts = await this.getGrids();
-
-    // Stop if the panel has been destroyed during the call to getGrids
-    if (!this.inspector) {
-      return;
-    }
-
-    // In some cases, the nodes for current grids may have been removed from the DOM in
-    // which case we need to update.
-    if (grids.length && grids.some(grid => !grid.nodeFront.actorID)) {
-      this.updateGridPanel(newGridFronts);
-      return;
-    }
-
-    // Get the node front(s) from the current grid(s) so we can compare them to them to
-    // the node(s) of the new grids.
-    const oldNodeFronts = grids.map(grid => grid.nodeFront.actorID);
-    const newNodeFronts = newGridFronts
-      .filter(grid => grid.containerNode)
-      .map(grid => grid.containerNodeFront.actorID);
-
-    if (
-      grids.length === newGridFronts.length &&
-      oldNodeFronts.sort().join(",") == newNodeFronts.sort().join(",") &&
-      !this.haveCurrentFragmentsChanged(newGridFronts)
-    ) {
-      // Same list of containers and the geometry of all the displayed grids remained the
-      // same, we can safely abort.
-      return;
-    }
-
-    // Either the list of containers or the current fragments have changed, do update.
-    this.updateGridPanel(newGridFronts);
   }
 
   /**
@@ -665,11 +668,11 @@ class GridInspector {
    */
   onSidebarSelect() {
     if (!this.isPanelVisible()) {
-      this.inspector.reflowTracker.untrackReflows(this, this.onReflow);
+      this.inspector.off("reflow-in-selected-target", this.onReflow);
       return;
     }
 
-    this.inspector.reflowTracker.trackReflows(this, this.onReflow);
+    this.inspector.on("reflow-in-selected-target", this.onReflow);
     this.updateGridPanel();
   }
 
@@ -762,6 +765,26 @@ class GridInspector {
       if (grid.highlighted) {
         this.highlighters.showGridHighlighter(grid.nodeFront);
       }
+    }
+  }
+
+  /**
+   * Some grid-inspector methods are highly asynchronous and might still run
+   * after the inspector was destroyed. Swallow errors if the grid inspector is
+   * already destroyed, throw otherwise.
+   *
+   * @param {Error} error
+   *        The original error object.
+   * @param {String} message
+   *        The message to log in case the inspector is already destroyed and
+   *        the error is swallowed.
+   */
+  _throwUnlessDestroyed(error, message) {
+    if (!this.inspector) {
+      console.warn(message);
+    } else {
+      // If the grid inspector was not destroyed, this is an unexpected error.
+      throw error;
     }
   }
 

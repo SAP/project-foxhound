@@ -1,58 +1,27 @@
+/* import-globals-from ../shared-head.js */
+
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/tools/profiler/tests/browser/shared-head.js",
+  this
+);
+
 const { BrowserTestUtils } = ChromeUtils.import(
   "resource://testing-common/BrowserTestUtils.jsm"
 );
 
 const BASE_URL = "http://example.com/browser/tools/profiler/tests/browser/";
 
-const defaultSettings = {
-  entries: 1000000, // 9MB
-  interval: 1, // ms
-  features: ["threads"],
-  threads: ["GeckoMain"],
-};
-
-function startProfiler(callersSettings) {
-  const settings = Object.assign({}, defaultSettings, callersSettings);
-  Services.profiler.StartProfiler(
-    settings.entries,
-    settings.interval,
-    settings.features,
-    settings.threads,
-    settings.duration
-  );
-}
 /**
- * This function spins on a while loop until at least one
- * periodic sample is taken. Use this function to ensure
- * that markers are properly collected for a test or that
- * at least one sample in which we are interested is collected.
- */
-async function doAtLeastOnePeriodicSample() {
-  async function getProfileSampleCount() {
-    const profile = await Services.profiler.getProfileDataAsync();
-    return profile.threads[0].samples.data.length;
-  }
-
-  const sampleCount = await getProfileSampleCount();
-  // Create an infinite loop until a sample has been collected.
-  while (true) {
-    if (sampleCount < (await getProfileSampleCount())) {
-      return;
-    }
-  }
-}
-
-/**
- * This is a helper function that will stop the profiler of the browser
- * running with PID contentPid. The profiler in that PID
- * will not stop until there is at least one periodic sample taken, though.
+ * This is a helper function that will stop the profiler of the browser running
+ * with PID contentPid.
+ * This happens immediately, without waiting for any sampling to happen or
+ * finish. Use stopProfilerAndGetThreads (without "Now") below instead to wait
+ * for samples before stopping.
  *
  * @param {number} contentPid
  * @returns {Promise}
  */
-async function stopProfilerAndGetThreads(contentPid) {
-  await doAtLeastOnePeriodicSample();
-
+async function stopProfilerNowAndGetThreads(contentPid) {
   const profile = await Services.profiler.getProfileDataAsync();
   Services.profiler.StopProfiler();
 
@@ -77,35 +46,16 @@ async function stopProfilerAndGetThreads(contentPid) {
 }
 
 /**
- * This is a helper function be able to run `await wait(500)`. Unfortunately this
- * is needed as the act of collecting functions relies on the periodic sampling of
- * the threads. See: https://bugzilla.mozilla.org/show_bug.cgi?id=1529053
+ * This is a helper function that will stop the profiler of the browser running
+ * with PID contentPid.
+ * As opposed to stopProfilerNowAndGetThreads (with "Now") above, the profiler
+ * in that PID will not stop until there is at least one periodic sample taken.
  *
- * @param {number} time
+ * @param {number} contentPid
  * @returns {Promise}
  */
-function wait(time) {
-  return new Promise(resolve => {
-    // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-    setTimeout(resolve, time);
-  });
-}
+async function stopProfilerAndGetThreads(contentPid) {
+  await Services.profiler.waitOnePeriodicSampling();
 
-/**
- * Get the payloads of a type from a single thread.
- *
- * @param {Object} thread The thread from a profile.
- * @param {string} type The marker payload type, e.g. "DiskIO".
- * @return {Array} The payloads.
- */
-function getPayloadsOfType(thread, type) {
-  const { markers } = thread;
-  const results = [];
-  for (const markerTuple of markers.data) {
-    const payload = markerTuple[markers.schema.data];
-    if (payload && payload.type === type) {
-      results.push(payload);
-    }
-  }
-  return results;
+  return stopProfilerNowAndGetThreads(contentPid);
 }

@@ -11,9 +11,10 @@
 #include "mozilla/Range.h"
 #include "mozilla/ScopeExit.h"
 
+#include <algorithm>
+
 #include "jsnum.h"
 #include "jstypes.h"
-#include "jsutil.h"
 
 #include "builtin/Array.h"
 #include "builtin/BigInt.h"
@@ -39,9 +40,6 @@ using mozilla::Maybe;
 using mozilla::RangedPtr;
 
 using JS::AutoStableStringChars;
-
-const JSClass js::JSONClass = {js_JSON_str,
-                               JSCLASS_HAS_CACHED_PROTO(JSProto_JSON)};
 
 // TaintFox: expanding taint information
 template <typename SrcCharT, typename DstCharT>
@@ -523,7 +521,9 @@ static bool JO(JSContext* cx, HandleObject obj, StringifyContext* scx) {
     if (scx->maybeSafely) {
       RootedNativeObject nativeObj(cx, &obj->as<NativeObject>());
       Rooted<PropertyResult> prop(cx);
-      NativeLookupOwnPropertyNoResolve(cx, nativeObj, id, &prop);
+      if (!NativeLookupOwnPropertyNoResolve(cx, nativeObj, id, &prop)) {
+        return false;
+      }
       MOZ_ASSERT(prop && prop.isNativeProperty() &&
                  prop.shape()->isDataDescriptor());
     }
@@ -793,7 +793,7 @@ bool js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_,
       // size, the set will naturally resize to accommodate them.
       const uint32_t MaxInitialSize = 32;
       Rooted<GCHashSet<jsid>> idSet(
-          cx, GCHashSet<jsid>(cx, Min(len, MaxInitialSize)));
+          cx, GCHashSet<jsid>(cx, std::min(len, MaxInitialSize)));
 
       /* Step 4b(iii)(4). */
       uint32_t k = 0;
@@ -871,7 +871,7 @@ bool js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_,
     /* Step 6. */
     double d;
     MOZ_ALWAYS_TRUE(ToInteger(cx, space, &d));
-    d = Min(10.0, d);
+    d = std::min(10.0, d);
     if (d >= 1 && !gap.appendN(' ', uint32_t(d))) {
       return false;
     }
@@ -881,7 +881,7 @@ bool js::Stringify(JSContext* cx, MutableHandleValue vp, JSObject* replacer_,
     if (!str) {
       return false;
     }
-    size_t len = Min(size_t(10), str->length());
+    size_t len = std::min(size_t(10), str->length());
     if (!gap.appendSubstring(str, 0, len)) {
       return false;
     }
@@ -1153,30 +1153,21 @@ static const JSFunctionSpec json_static_methods[] = {
     JS_FN("parse", json_parse, 2, 0), JS_FN("stringify", json_stringify, 3, 0),
     JS_FS_END};
 
-JSObject* js::InitJSONClass(JSContext* cx, Handle<GlobalObject*> global) {
+static const JSPropertySpec json_static_properties[] = {
+    JS_STRING_SYM_PS(toStringTag, "JSON", JSPROP_READONLY), JS_PS_END};
+
+static JSObject* CreateJSONObject(JSContext* cx, JSProtoKey key) {
+  Handle<GlobalObject*> global = cx->global();
   RootedObject proto(cx, GlobalObject::getOrCreateObjectPrototype(cx, global));
   if (!proto) {
     return nullptr;
   }
-  RootedObject JSON(
-      cx, NewObjectWithGivenProto(cx, &JSONClass, proto, SingletonObject));
-  if (!JSON) {
-    return nullptr;
-  }
-
-  if (!JS_DefineProperty(cx, global, js_JSON_str, JSON, JSPROP_RESOLVING)) {
-    return nullptr;
-  }
-
-  if (!JS_DefineFunctions(cx, JSON, json_static_methods)) {
-    return nullptr;
-  }
-
-  if (!DefineToStringTag(cx, JSON, cx->names().JSON)) {
-    return nullptr;
-  }
-
-  global->setConstructor(JSProto_JSON, ObjectValue(*JSON));
-
-  return JSON;
+  return NewObjectWithGivenProto(cx, &JSONClass, proto, SingletonObject);
 }
+
+static const ClassSpec JSONClassSpec = {
+    CreateJSONObject, nullptr, json_static_methods, json_static_properties};
+
+const JSClass js::JSONClass = {js_JSON_str,
+                               JSCLASS_HAS_CACHED_PROTO(JSProto_JSON),
+                               JS_NULL_CLASS_OPS, &JSONClassSpec};

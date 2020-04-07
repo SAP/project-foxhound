@@ -22,16 +22,39 @@ const getDisplayedFrames = createSelector(
       return framesArray;
     }
 
+    const filter = searchFilter(frameFilterText);
+
     // If frame payload is > 10,000 characters long, we check the LongStringActor payload string
     return framesArray.filter(
       frame =>
         (frame.payload.initial
-          ? frame.payload.initial.includes(frameFilterText)
-          : frame.payload.includes(frameFilterText)) &&
+          ? filter(frame.payload.initial)
+          : filter(frame.payload)) &&
         (frameFilterType === "all" || frameFilterType === frame.type)
     );
   }
 );
+
+function searchFilter(frameFilterText) {
+  let regex;
+  if (looksLikeRegex(frameFilterText)) {
+    try {
+      regex = regexFromText(frameFilterText);
+    } catch (e) {}
+  }
+
+  return regex
+    ? payload => regex.test(payload)
+    : payload => payload.includes(frameFilterText);
+}
+
+function looksLikeRegex(text) {
+  return text.startsWith("/") && text.endsWith("/") && text.length > 2;
+}
+
+function regexFromText(text) {
+  return new RegExp(text.slice(1, -1), "im");
+}
 
 /**
  * Checks if the selected frame is visible.
@@ -62,9 +85,16 @@ const getDisplayedFramesSummary = createSelector(
   displayedFrames => {
     let firstStartedMs = +Infinity;
     let lastEndedMs = -Infinity;
+    let sentSize = 0;
+    let receivedSize = 0;
     let totalSize = 0;
 
     displayedFrames.forEach(frame => {
+      if (frame.type == "received") {
+        receivedSize += frame.payload.length;
+      } else if (frame.type == "sent") {
+        sentSize += frame.payload.length;
+      }
       totalSize += frame.payload.length;
       if (frame.timeStamp < firstStartedMs) {
         firstStartedMs = frame.timeStamp;
@@ -77,9 +107,30 @@ const getDisplayedFramesSummary = createSelector(
     return {
       count: displayedFrames.length,
       totalMs: (lastEndedMs - firstStartedMs) / 1000,
+      sentSize,
+      receivedSize,
       totalSize,
     };
   }
+);
+
+/**
+ * Returns if the currentChannelId is closed
+ */
+const isCurrentChannelClosed = createSelector(
+  state => state.webSockets,
+  ({ closedConnections, currentChannelId }) =>
+    closedConnections.has(currentChannelId)
+);
+
+/**
+ * Returns the closed connection details of the currentChannelId
+ * Null, if the connection is still open
+ */
+const getClosedConnectionDetails = createSelector(
+  state => state.webSockets,
+  ({ closedConnections, currentChannelId }) =>
+    closedConnections.get(currentChannelId)
 );
 
 module.exports = {
@@ -87,4 +138,6 @@ module.exports = {
   isSelectedFrameVisible,
   getDisplayedFrames,
   getDisplayedFramesSummary,
+  isCurrentChannelClosed,
+  getClosedConnectionDetails,
 };

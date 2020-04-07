@@ -81,6 +81,10 @@ class NS_ConvertASCIItoUTF16 : public nsAutoString {
     this->AssignTaint(aCString.Taint());
   }
 
+  explicit NS_ConvertASCIItoUTF16(mozilla::Span<const char> aCString) {
+    AppendASCIItoUTF16(aCString, *this);
+  }
+
  private:
   // NOT TO BE IMPLEMENTED
   NS_ConvertASCIItoUTF16(char16_t) = delete;

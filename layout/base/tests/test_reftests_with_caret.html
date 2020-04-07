@@ -260,6 +260,8 @@ var tests = [
     [ 'bug1518339-1.html' , 'bug1518339-1-ref.html' ] ,
     [ 'bug1518339-2.html' , 'bug1518339-2-ref.html' ] ,
     [ 'bug1524266-1.html' , 'bug1524266-1-ref.html' ] ,
+    // Checks that the caret isn't occluded by children background content.
+    [ 'bug1591282-1.html' , 'bug1591282-1-ref.html' ] ,
     function() {SpecialPowers.pushPrefEnv({'clear': [['layout.accessiblecaret.enabled_on_touch']]}, nextTest);} ,
     function() {SpecialPowers.pushPrefEnv({'set': [['accessibility.browsewithcaret', true]]}, nextTest);} ,
     [ 'bug1529492-1.html' , 'bug1529492-1-ref.html' ] ,
@@ -383,18 +385,27 @@ if (navigator.platform.includes("Linux")) {
     [ 'bug1524266-3.html' , 'bug1524266-2-ref.html' ] ,
     // Tries to select and delete non-editable content in a user-select subtree.
     [ 'bug1524266-4.html' , 'bug1524266-2-ref.html' ] ,
+    // Tries to edit an <input type="number"> with arrows inside a user-select: none element.
+    [ 'bug1611661.html' , 'bug1611661-ref.html' ] ,
     function() {SpecialPowers.pushPrefEnv({'clear': [['layout.accessiblecaret.enabled_on_touch']]}, nextTest);} ,
   ]);
 }
 
 var testIndex = 0;
 
+// Change it to something like /bug1524266/ to skip all other tests and make
+// debugging easier...
+const DEBUG_TEST_FILTER = null;
+
 function nextTest() {
   if (testIndex < tests.length) {
-    if (typeof(tests[testIndex]) == 'function') {
-      tests[testIndex]();
+    let test = tests[testIndex];
+    if (typeof(test) == 'function') {
+      test();
+    } else if (!DEBUG_TEST_FILTER || DEBUG_TEST_FILTER.test(test[0])) {
+      refTest(test[0], test[1]);
     } else {
-      refTest(tests[testIndex][0],tests[testIndex][1]);
+      setTimeout(nextTest, 0);
     }
     ++testIndex;
   } else {

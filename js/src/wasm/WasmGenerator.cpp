@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <thread>
 
+#include "util/Memory.h"
 #include "util/Text.h"
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmCompile.h"
@@ -213,13 +214,13 @@ bool ModuleGenerator::init(Metadata* maybeAsmJSMetadata) {
   // final reallocs. In particular, the MacroAssembler can be enormous, so be
   // extra conservative. Since large over-reservations may fail when the
   // actual allocations will succeed, ignore OOM failures. Note,
-  // podResizeToFit calls at the end will trim off unneeded capacity.
+  // shrinkStorageToFit calls at the end will trim off unneeded capacity.
 
   size_t codeSectionSize = env_->codeSection ? env_->codeSection->size : 0;
 
   size_t estimatedCodeSize =
       1.2 * EstimateCompiledCodeSize(tier(), codeSectionSize);
-  Unused << masm_.reserve(Min(estimatedCodeSize, MaxCodeBytesPerProcess));
+  Unused << masm_.reserve(std::min(estimatedCodeSize, MaxCodeBytesPerProcess));
 
   Unused << metadataTier_->codeRanges.reserve(2 * env_->numFuncDefs());
 
@@ -470,7 +471,7 @@ static bool InRange(uint32_t caller, uint32_t callee) {
   // slight difference between 'caller' (which is really the return address
   // offset) and the actual base of the relative displacement computation
   // isn't significant.
-  uint32_t range = Min(JitOptions.jumpThreshold, JumpImmediateRange);
+  uint32_t range = std::min(JitOptions.jumpThreshold, JumpImmediateRange);
   if (caller < callee) {
     return callee - caller < range;
   }
@@ -617,7 +618,7 @@ static bool AppendForEach(Vec* dstVec, const Vec& srcVec, Op op) {
     return false;
   }
 
-  typedef typename Vec::ElementType T;
+  using T = typename Vec::ElementType;
 
   const T* src = srcVec.begin();
 
@@ -996,13 +997,13 @@ bool ModuleGenerator::finishMetadataTier() {
   // These Vectors can get large and the excess capacity can be significant,
   // so realloc them down to size.
 
-  metadataTier_->funcToCodeRange.podResizeToFit();
-  metadataTier_->codeRanges.podResizeToFit();
-  metadataTier_->callSites.podResizeToFit();
-  metadataTier_->trapSites.podResizeToFit();
-  metadataTier_->debugTrapFarJumpOffsets.podResizeToFit();
+  metadataTier_->funcToCodeRange.shrinkStorageToFit();
+  metadataTier_->codeRanges.shrinkStorageToFit();
+  metadataTier_->callSites.shrinkStorageToFit();
+  metadataTier_->trapSites.shrinkStorageToFit();
+  metadataTier_->debugTrapFarJumpOffsets.shrinkStorageToFit();
   for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
-    metadataTier_->trapSites[trap].podResizeToFit();
+    metadataTier_->trapSites[trap].shrinkStorageToFit();
   }
 
   return true;
@@ -1085,6 +1086,7 @@ SharedMetadata ModuleGenerator::finishMetadata(const Bytes& bytecode) {
   metadata_->moduleName = env_->moduleName;
   metadata_->funcNames = std::move(env_->funcNames);
   metadata_->omitsBoundsChecks = env_->hugeMemoryEnabled();
+  metadata_->bigIntEnabled = env_->bigIntEnabled();
 
   // Copy over additional debug information.
 

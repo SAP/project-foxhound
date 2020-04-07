@@ -111,7 +111,7 @@ ServiceWorker::ServiceWorker(nsIGlobalObject* aGlobal,
               global->GetOrCreateServiceWorkerRegistration(aDescriptor);
           self->MaybeAttachToRegistration(reg);
         },
-        [](ErrorResult& aRv) {
+        [](ErrorResult&& aRv) {
           // do nothing
           aRv.SuppressException();
         });
@@ -205,7 +205,7 @@ void ServiceWorker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
   }
 
   RefPtr<ServiceWorkerCloneData> data = new ServiceWorkerCloneData();
-  data->Write(aCx, aMessage, transferable, aRv);
+  data->Write(aCx, aMessage, transferable, JS::CloneDataPolicy(), aRv);
   if (aRv.Failed()) {
     return;
   }

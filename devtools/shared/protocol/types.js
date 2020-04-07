@@ -4,7 +4,7 @@
 
 "use strict";
 
-var { Actor } = require("./Actor");
+var { Actor } = require("devtools/shared/protocol/Actor");
 var { lazyLoadSpec, lazyLoadFront } = require("devtools/shared/specs/index");
 
 /**
@@ -314,7 +314,7 @@ types.addActorType = function(name) {
       // existing front on the connection, and create the front
       // if it isn't found.
       const actorID = typeof v === "string" ? v : v.actor;
-      // `ctx.conn` is a DebuggerClient
+      // `ctx.conn` is a DevToolsClient
       let front = ctx.conn.getFrontByID(actorID);
 
       // When the type `${name}#actorid` is used, `v` is a string refering to the
@@ -370,6 +370,68 @@ types.addActorType = function(name) {
   return type;
 };
 
+types.addPolymorphicType = function(name, subtypes) {
+  // Assert that all subtypes are actors, as the marshalling implementation depends on that.
+  for (const subTypeName of subtypes) {
+    const subtype = types.getType(subTypeName);
+    if (subtype.category != "actor") {
+      throw new Error(
+        `In polymorphic type '${subtypes.join(
+          ","
+        )}', the type '${subTypeName}' isn't an actor`
+      );
+    }
+  }
+
+  return types.addType(name, {
+    category: "polymorphic",
+    read: (value, ctx) => {
+      // `value` is either a string which is an Actor ID or a form object
+      // where `actor` is an actor ID
+      const actorID = typeof value === "string" ? value : value.actor;
+      if (!actorID) {
+        throw new Error(
+          `Was expecting one of these actors '${subtypes}' but instead got value: '${value}'`
+        );
+      }
+
+      // Extract the typeName out of the actor ID, which should be composed like this
+      // ${DevToolsServerConnectionPrefix}.${typeName}${Number}
+      const typeName = actorID.match(/\.([a-zA-Z]+)\d+$/)[1];
+      if (!subtypes.includes(typeName)) {
+        throw new Error(
+          `Was expecting one of these actors '${subtypes}' but instead got an actor of type: '${typeName}'`
+        );
+      }
+
+      const subtype = types.getType(typeName);
+      return subtype.read(value, ctx);
+    },
+    write: (value, ctx) => {
+      if (!value) {
+        throw new Error(
+          `Was expecting one of these actors '${subtypes}' but instead got an empty value.`
+        );
+      }
+      // value is either an `Actor` or a `Front` and both classes exposes a `typeName`
+      const typeName = value.typeName;
+      if (!typeName) {
+        throw new Error(
+          `Was expecting one of these actors '${subtypes}' but instead got value: '${value}'. Did you pass a form instead of an Actor?`
+        );
+      }
+
+      if (!subtypes.includes(typeName)) {
+        throw new Error(
+          `Was expecting one of these actors '${subtypes}' but instead got an actor of type: '${typeName}'`
+        );
+      }
+
+      const subtype = types.getType(typeName);
+      return subtype.write(value, ctx);
+    },
+  });
+};
 types.addNullableType = function(subtype) {
   subtype = types.getType(subtype);
   return types.addType("nullable:" + subtype.name, {
@@ -491,8 +553,8 @@ exports.registerFront = function(cls) {
  * front of the given type by picking its actor ID out of either the target or root
  * front's form.
  *
- * @param DebuggerClient client
- *    The DebuggerClient instance to use.
+ * @param DevToolsClient client
+ *    The DevToolsClient instance to use.
  * @param string typeName
  *    The type name of the front to instantiate. This is defined in its specifiation.
  * @param json form

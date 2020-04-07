@@ -52,6 +52,13 @@ inline bool IsLowerCase(uint32_t c) { return ToUpperCase(c) != c; }
 
 #ifdef MOZILLA_INTERNAL_API
 
+uint32_t ToFoldedCase(uint32_t aChar);
+void ToFoldedCase(nsAString& aString);
+void ToFoldedCase(const char16_t* aIn, char16_t* aOut, uint32_t aLen);
+
+uint32_t ToNaked(uint32_t aChar);
+void ToNaked(nsAString& aString);
+
 class nsCaseInsensitiveStringComparator : public nsStringComparator {
  public:
   nsCaseInsensitiveStringComparator() = default;
@@ -76,7 +83,7 @@ class nsCaseInsensitiveStringArrayComparator {
 
 class nsASCIICaseInsensitiveStringComparator : public nsStringComparator {
  public:
-  nsASCIICaseInsensitiveStringComparator() {}
+  nsASCIICaseInsensitiveStringComparator() = default;
   virtual int operator()(const char16_t*, const char16_t*, uint32_t,
                          uint32_t) const override;
 };
@@ -118,8 +125,9 @@ uint32_t GetLowerUTF8Codepoint(const char* aStr, const char* aEnd,
 
 /**
  * This function determines whether the UTF-8 sequence pointed to by aLeft is
- * case-insensitively-equal to the UTF-8 sequence pointed to by aRight, as
- * defined by having matching lower-cased codepoints.
+ * case insensitively equal to the UTF-8 sequence pointed to by aRight (or
+ * optionally, case and diacritic insensitively equal), as defined by having
+ * matching (naked) lower-cased codepoints.
  *
  * aLeftEnd marks the first memory location past aLeft that is not part of
  * aLeft; aRightEnd similarly marks the end of aRight.
@@ -135,11 +143,15 @@ uint32_t GetLowerUTF8Codepoint(const char* aStr, const char* aEnd,
  * false, possibly leaving aLeftNext and aRightNext uninitialized.  If the
  * function returns true, aErr is guaranteed to be false and both aLeftNext and
  * aRightNext are guaranteed to be initialized.
+ *
+ * If aMatchDiacritics is false, the comparison is neither case-sensitive nor
+ * diacritic-sensitive.
  */
 bool CaseInsensitiveUTF8CharsEqual(const char* aLeft, const char* aRight,
                                    const char* aLeftEnd, const char* aRightEnd,
                                    const char** aLeftNext,
-                                   const char** aRightNext, bool* aErr);
+                                   const char** aRightNext, bool* aErr,
+                                   bool aMatchDiacritics = true);
 
 namespace mozilla {
 

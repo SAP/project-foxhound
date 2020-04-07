@@ -4,11 +4,11 @@
 
 "use strict";
 
-/* globals module, require */
+/* globals browser, module, require */
 
 // This is a hack for the tests.
-if (typeof getMatchPatternsForGoogleURL === "undefined") {
-  var getMatchPatternsForGoogleURL = require("../lib/google");
+if (typeof InterventionHelpers === "undefined") {
+  var InterventionHelpers = require("../lib/intervention_helpers");
 }
 
 /**
@@ -31,32 +31,6 @@ const AVAILABLE_UA_OVERRIDES = [
           UAHelpers.getPrefix(originalUA) +
           " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.98 Safari/537.36 for WebCompat"
         );
-      },
-    },
-  },
-  {
-    /*
-     * Bug 1564594 - Create UA override for Enhanced Search on Firefox Android
-     *
-     * Enables the Chrome Google Search experience for Fennec users.
-     */
-    id: "bug1564594",
-    platform: "android",
-    domain: "Enhanced Search",
-    bug: "1567945",
-    config: {
-      matches: [
-        ...getMatchPatternsForGoogleURL("images.google"),
-        ...getMatchPatternsForGoogleURL("maps.google"),
-        ...getMatchPatternsForGoogleURL("news.google"),
-        ...getMatchPatternsForGoogleURL("www.google"),
-      ],
-      blocks: [...getMatchPatternsForGoogleURL("www.google", "serviceworker")],
-      permanentPref: "enable_enhanced_search",
-      telemetryKey: "enhancedSearch",
-      experiment: ["enhanced-search", "enhanced-search-control"],
-      uaTransformer: originalUA => {
-        return UAHelpers.getDeviceAppropriateChromeUA();
       },
     },
   },
@@ -174,23 +148,44 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1480710 - m.imgur.com - Build UA override
-     * WebCompat issue #13154 - https://webcompat.com/issues/13154
+     * Bug 1610010 - criticalcareontario.ca - UA override for criticalcareontario.ca
+     * WebCompat issue #40267 - https://webcompat.com/issues/40267
      *
-     * imgur returns a 404 for requests to CSS and JS file if requested with a Fennec
-     * User Agent. By removing the Fennec identifies and adding Chrome Mobile's, we
-     * receive the correct CSS and JS files.
+     * criticalcareontario.ca enters a reload loop based on UA detection
+     * Spoofing as Chrome prevents the site from doing a constant page refresh
      */
-    id: "bug1480710",
-    platform: "android",
-    domain: "m.imgur.com",
-    bug: "1480710",
+    id: "bug1610010",
+    platform: "desktop",
+    domain: "criticalcareontario.ca",
+    bug: "1610010",
     config: {
-      matches: ["*://m.imgur.com/*"],
+      matches: ["https://www.criticalcareontario.ca/*"],
       uaTransformer: originalUA => {
         return (
           UAHelpers.getPrefix(originalUA) +
-          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.85 Mobile Safari/537.36"
+          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"
+        );
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1610026 - www.mobilesuica.com - UA override for www.mobilesuica.com
+     * WebCompat issue #4608 - https://webcompat.com/issues/4608
+     *
+     * mobilesuica.com showing unsupported message for Firefox users
+     * Spoofing as Chrome allows to access the page
+     */
+    id: "bug1610026",
+    platform: "all",
+    domain: "www.mobilesuica.com",
+    bug: "1610026",
+    config: {
+      matches: ["https://www.mobilesuica.com/*"],
+      uaTransformer: originalUA => {
+        return (
+          UAHelpers.getPrefix(originalUA) +
+          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"
         );
       },
     },
@@ -198,6 +193,7 @@ const AVAILABLE_UA_OVERRIDES = [
   {
     /*
      * Bug 945963 - tieba.baidu.com serves simplified mobile content to Firefox Android
+     * additionally, Bug 1525839 for more domains
      * WebCompat issue #18455 - https://webcompat.com/issues/18455
      *
      * tieba.baidu.com and tiebac.baidu.com serve a heavily simplified and less functional
@@ -210,12 +206,16 @@ const AVAILABLE_UA_OVERRIDES = [
     bug: "945963",
     config: {
       matches: [
+        "*://baike.baidu.com/*",
+        "*://image.baidu.com/*",
+        "*://news.baidu.com/*",
         "*://tieba.baidu.com/*",
         "*://tiebac.baidu.com/*",
+        "*://wenku.baidu.com/*",
         "*://zhidao.baidu.com/*",
       ],
       uaTransformer: originalUA => {
-        return originalUA + " AppleWebKit/537.36 (KHTML, like Gecko)";
+        return UAHelpers.getDeviceAppropriateChromeUA();
       },
     },
   },
@@ -254,25 +254,6 @@ const AVAILABLE_UA_OVERRIDES = [
       matches: ["*://*.nhk.or.jp/*"],
       uaTransformer: originalUA => {
         return originalUA + " AppleWebKit";
-      },
-    },
-  },
-  {
-    /*
-     * Bug 1338260 - Add UA override for directTV
-     * (Imported from ua-update.json.in)
-     *
-     * DirectTV has issues with scrolling and cut-off images. Pretending to be
-     * Chrome for Android fixes those issues.
-     */
-    id: "bug1338260",
-    platform: "android",
-    domain: "directv.com",
-    bug: "1338260",
-    config: {
-      matches: ["*://*.directv.com/*"],
-      uaTransformer: _ => {
-        return "Mozilla/5.0 (Linux; Android 6.0.1; SM-G920F Build/MMB29K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.91 Mobile Safari/537.36";
       },
     },
   },
@@ -356,29 +337,6 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1509852 - redbull.com - Add UA override for redbull.com
-     * WebCompat issue #21439 - https://webcompat.com/issues/21439
-     *
-     * Redbull.com blocks some features, for example the live video player, for
-     * Fennec. Spoofing as Chrome results in us rendering the video just fine,
-     * and everything else works as well.
-     */
-    id: "bug1509852",
-    platform: "android",
-    domain: "redbull.com",
-    bug: "1509852",
-    config: {
-      matches: ["*://*.redbull.com/*"],
-      uaTransformer: originalUA => {
-        return (
-          UAHelpers.getPrefix(originalUA) +
-          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.91 Mobile Safari/537.36"
-        );
-      },
-    },
-  },
-  {
-    /*
      * Bug 1509873 - zmags.com - Add UA override for secure.viewer.zmags.com
      * WebCompat issue #21576 - https://webcompat.com/issues/21576
      *
@@ -417,25 +375,6 @@ const AVAILABLE_UA_OVERRIDES = [
       matches: ["*://posts.google.com/*"],
       uaTransformer: _ => {
         return "Mozilla/5.0 (Linux; Android 6.0.1; SM-G900M) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.101 Mobile Safari/537.36";
-      },
-    },
-  },
-  {
-    /*
-     * Bug 1567945 - Create UA override for beeg.com on Firefox Android
-     * WebCompat issue #16648 - https://webcompat.com/issues/16648
-     *
-     * beeg.com is hiding content of a page with video if Firefox exists in UA,
-     * replacing "Firefox" with an empty string makes the page load
-     */
-    id: "bug1567945",
-    platform: "android",
-    domain: "beeg.com",
-    bug: "1567945",
-    config: {
-      matches: ["*://beeg.com/*"],
-      uaTransformer: originalUA => {
-        return originalUA.replace(/Firefox.+$/, "");
       },
     },
   },
@@ -485,28 +424,6 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1577240 - UA override for heb.com on Firefox for Android
-     * WebCompat issue #33613 - https://webcompat.com/issues/33613
-     *
-     * heb.com shows desktop site on Firefox for Android for some pages based on
-     * UA detection. Spoofing as Chrome allows to get mobile site.
-     */
-    id: "bug1577240",
-    platform: "android",
-    domain: "heb.com",
-    bug: "1577240",
-    config: {
-      matches: ["*://*.heb.com/*"],
-      uaTransformer: originalUA => {
-        return (
-          UAHelpers.getPrefix(originalUA) +
-          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.111 Mobile Safari/537.36"
-        );
-      },
-    },
-  },
-  {
-    /*
      * Bug 1577250 - UA override for homebook.pl on Firefox for Android
      * WebCompat issue #24044 - https://webcompat.com/issues/24044
      *
@@ -546,6 +463,169 @@ const AVAILABLE_UA_OVERRIDES = [
           UAHelpers.getPrefix(originalUA) +
           " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.111 Mobile Safari/537.36"
         );
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1598198 - User Agent extension for Samsung's galaxy.store URLs
+     *
+     * Samsung's galaxy.store shortlinks are supposed to redirect to a Samsung
+     * intent:// URL on Samsung devices, but to an error page on other brands.
+     * As we do not provide device info in our user agent string, this check
+     * fails, and even Samsung users land on an error page if they use Firefox
+     * for Android.
+     * This intervention adds a simple "Samsung" identifier to the User Agent
+     * on only the Galaxy Store URLs if the device happens to be a Samsung.
+     */
+    id: "bug1598198",
+    platform: "android",
+    domain: "galaxy.store",
+    bug: "1598198",
+    config: {
+      matches: [
+        "*://galaxy.store/*",
+        "*://dev.galaxy.store/*",
+        "*://stg.galaxy.store/*",
+      ],
+      uaTransformer: originalUA => {
+        if (!browser.systemManufacturer) {
+          return originalUA;
+        }
+
+        const manufacturer = browser.systemManufacturer.getManufacturer();
+        if (manufacturer && manufacturer.toLowerCase() === "samsung") {
+          return originalUA.replace("Mobile;", "Mobile; Samsung;");
+        }
+
+        return originalUA;
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1610370 - UA override for answers.yahoo.com on Firefox for Android
+     * WebCompat issue #5460 - https://webcompat.com/issues/5460
+     *
+     * answers.yahoo.com is not showing lazy loaded content based on UA detection
+     * When spoofing as Chrome it's possible to load the content
+     */
+    id: "bug1610370",
+    platform: "android",
+    domain: "answers.yahoo.com",
+    bug: "1610370",
+    config: {
+      matches: ["https://answers.yahoo.com/*"],
+      uaTransformer: originalUA => {
+        return (
+          UAHelpers.getPrefix(originalUA) +
+          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.117 Mobile Safari/537.36"
+        );
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1595215 - UA overrides for Uniqlo sites
+     * Webcompat issue #38825 - https://webcompat.com/issues/38825
+     *
+     * To receive the proper mobile version instead of the desktop version or
+     * avoid redirect loop, the UA is spoofed.
+     */
+    id: "bug1595215",
+    platform: "android",
+    domain: "uniqlo.com",
+    bug: "1595215",
+    config: {
+      matches: ["*://*.uniqlo.com/*"],
+      uaTransformer: originalUA => {
+        return originalUA + " Mobile Safari";
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1621065 - UA overrides for bracketchallenge.ncaa.com
+     * Webcompat issue #49886 - https://webcompat.com/issues/49886
+     *
+     * The NCAA bracket challenge website mistakenly classifies
+     * any non-Chrome browser on Android as "is_old_android". As a result,
+     * a modal is shown telling them they have security flaws. We have
+     * attempted to reach out for a fix (and clarification).
+     */
+    id: "bug1621065",
+    platform: "android",
+    domain: "bracketchallenge.ncaa.com",
+    bug: "1621065",
+    config: {
+      matches: ["*://bracketchallenge.ncaa.com/*"],
+      uaTransformer: originalUA => {
+        return originalUA + " Chrome";
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1622063 - UA override for wp1-ext.usps.gov
+     * Webcompat issue #29867 - https://webcompat.com/issues/29867
+     *
+     * The Job Search site for USPS does not work for Firefox Mobile
+     * browsers (a 500 is returned).
+     */
+    id: "bug1622063",
+    platform: "android",
+    domain: "wp1-ext.usps.gov",
+    bug: "1622063",
+    config: {
+      matches: ["*://wp1-ext.usps.gov/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1622059 - UA overrides for img.weblogssl.com breakage
+     * Webcompat issue #49166 - https://webcompat.com/issues/49166
+     * Webcompat issue #48650 - https://webcompat.com/issues/48650
+     * Webcompat issue #48787 - https://webcompat.com/issues/48787
+     *
+     * These pages throw due to some poor UA sniffing assumptions, so
+     * we add a "Version/99.0" token so comments will be visible. They
+     * all share a common file hosted at:
+     * https://img.weblogssl.com/LPbackend/prod/v2/js
+     */
+    id: "bug1622059",
+    platform: "android",
+    domain: "img.weblogssl.com",
+    bug: "1622059",
+    config: {
+      matches: [
+        "*://www.genbeta.com/*",
+        "*://www.xataka.com/*",
+        "*://www.xatakandroid.com/*",
+      ],
+      uaTransformer: originalUA => {
+        return originalUA + " Version/99.0";
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1622081 - UA override for m2.bmo.com
+     * Webcompat issue #45019 - https://webcompat.com/issues/45019
+     *
+     * Unless the UA string contains "Chrome", m2.bmo.com will
+     * display a modal saying the browser is out-of-date.
+     */
+    id: "bug1622081",
+    platform: "android",
+    domain: "m2.bmo.com",
+    bug: "1622081",
+    config: {
+      matches: ["*://m2.bmo.com/*"],
+      uaTransformer: originalUA => {
+        return originalUA + " Chrome";
       },
     },
   },

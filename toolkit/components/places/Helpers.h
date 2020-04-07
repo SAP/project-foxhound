@@ -16,6 +16,7 @@
 #include "nsProxyRelease.h"
 #include "prtime.h"
 #include "mozilla/Telemetry.h"
+#include "mozIStorageStatementCallback.h"
 
 namespace mozilla {
 namespace places {
@@ -257,20 +258,6 @@ class FinalizeStatementCacheProxy : public Runnable {
  * @return true if this visit should be hidden.
  */
 bool GetHiddenState(bool aIsRedirect, uint32_t aTransitionType);
-
-/**
- * Used to notify a topic to system observers on async execute completion.
- */
-class AsyncStatementCallbackNotifier : public AsyncStatementCallback {
- public:
-  explicit AsyncStatementCallbackNotifier(const char* aTopic)
-      : mTopic(aTopic) {}
-
-  NS_IMETHOD HandleCompletion(uint16_t aReason) override;
-
- private:
-  const char* mTopic;
-};
 
 /**
  * Used to notify a topic to system observers on async execute completion.

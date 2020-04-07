@@ -5,12 +5,6 @@
 
 #include "Classifier.h"
 #include "LookupCacheV4.h"
-#include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
-#include "nsISimpleEnumerator.h"
-#include "nsIRandomGenerator.h"
-#include "nsIInputStream.h"
-#include "nsISeekableStream.h"
 #include "nsIFile.h"
 #include "nsNetCID.h"
 #include "nsPrintfCString.h"
@@ -19,6 +13,7 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/LazyIdleThread.h"
 #include "mozilla/Logging.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/Base64.h"
@@ -42,8 +37,20 @@ extern mozilla::LazyLogModule gUrlClassifierDbServiceLog;
 #define V4_METADATA_SUFFIX NS_LITERAL_CSTRING(".metadata")
 #define V2_METADATA_SUFFIX NS_LITERAL_CSTRING(".sbstore")
 
+// The amount of time, in milliseconds, that our IO thread will stay alive after
+// the last event it processes.
+#define DEFAULT_THREAD_TIMEOUT_MS 5000
+
 namespace mozilla {
 namespace safebrowsing {
+
+bool Classifier::OnUpdateThread() const {
+  bool onthread = false;
+  if (mUpdateThread) {
+    mUpdateThread->IsOnCurrentThread(&onthread);
+  }
+  return onthread;
+}
 
 void Classifier::SplitTables(const nsACString& str,
                              nsTArray<nsCString>& tables) {
@@ -129,11 +136,20 @@ Classifier::Classifier()
     : mIsTableRequestResultOutdated(true),
       mUpdateInterrupted(true),
       mIsClosed(false) {
-  NS_NewNamedThread(NS_LITERAL_CSTRING("Classifier Update"),
-                    getter_AddRefs(mUpdateThread));
+  // Make a lazy thread for any IO
+  mUpdateThread = new LazyIdleThread(
+      DEFAULT_THREAD_TIMEOUT_MS, NS_LITERAL_CSTRING("Classifier Update"),
+      LazyIdleThread::ShutdownMethod::ManualShutdown);
 }
 
-Classifier::~Classifier() { Close(); }
+Classifier::~Classifier() {
+  if (mUpdateThread) {
+    mUpdateThread->Shutdown();
+    mUpdateThread = nullptr;
+  }
+
+  Close();
+}
 
 nsresult Classifier::SetupPathNames() {
   // Get the root directory where to store all the databases.
@@ -306,26 +322,30 @@ void Classifier::Close() {
 }
 
 void Classifier::Reset() {
-  MOZ_ASSERT(NS_GetCurrentThread() != mUpdateThread,
-             "Reset() MUST NOT be called on update thread");
+  MOZ_ASSERT(!OnUpdateThread(), "Reset() MUST NOT be called on update thread");
 
   LOG(("Reset() is called so we interrupt the update."));
   mUpdateInterrupted = true;
 
-  RefPtr<Classifier> self = this;
-  auto resetFunc = [self] {
-    if (self->mIsClosed) {
+  // We don't pass the ref counted object 'Classifier' to resetFunc because we
+  // don't want to release 'Classifier in the update thread, which triggers an
+  // assertion when LazyIdelUpdate thread is not created and removed by the same
+  // thread (worker thread). Since |resetFuc| is a synchronous call, we can just
+  // pass the reference of Classifier because Classifier's life cycle is
+  // guarantee longer than |resetFunc|.
+  auto resetFunc = [&] {
+    if (this->mIsClosed) {
       return;  // too late to reset, bail
     }
-    self->DropStores();
+    this->DropStores();
 
-    self->mRootStoreDirectory->Remove(true);
-    self->mBackupDirectory->Remove(true);
-    self->mUpdatingDirectory->Remove(true);
-    self->mToDeleteDirectory->Remove(true);
+    this->mRootStoreDirectory->Remove(true);
+    this->mBackupDirectory->Remove(true);
+    this->mUpdatingDirectory->Remove(true);
+    this->mToDeleteDirectory->Remove(true);
 
-    self->CreateStoreDirectory();
-    self->RegenActiveTables();
+    this->CreateStoreDirectory();
+    this->RegenActiveTables();
   };
 
   if (!mUpdateThread) {
@@ -589,7 +609,7 @@ void Classifier::RemoveUpdateIntermediaries() {
 }
 
 void Classifier::CopyAndInvalidateFullHashCache() {
-  MOZ_ASSERT(NS_GetCurrentThread() != mUpdateThread,
+  MOZ_ASSERT(!OnUpdateThread(),
              "CopyAndInvalidateFullHashCache cannot be called on update thread "
              "since it mutates mLookupCaches which is only safe on "
              "worker thread.");
@@ -615,7 +635,7 @@ void Classifier::CopyAndInvalidateFullHashCache() {
 }
 
 void Classifier::MergeNewLookupCaches() {
-  MOZ_ASSERT(NS_GetCurrentThread() != mUpdateThread,
+  MOZ_ASSERT(!OnUpdateThread(),
              "MergeNewLookupCaches cannot be called on update thread "
              "since it mutates mLookupCaches which is only safe on "
              "worker thread.");
@@ -634,7 +654,7 @@ void Classifier::MergeNewLookupCaches() {
       mLookupCaches.AppendElement(nullptr);
     }
 
-    Swap(mLookupCaches[swapIndex], newCache);
+    std::swap(mLookupCaches[swapIndex], newCache);
     mLookupCaches[swapIndex]->UpdateRootDirHandle(mRootStoreDirectory);
   }
 
@@ -722,14 +742,13 @@ nsresult Classifier::AsyncApplyUpdates(const TableUpdateArray& aUpdates,
   }
 
   nsCOMPtr<nsIThread> callerThread = NS_GetCurrentThread();
-  MOZ_ASSERT(callerThread != mUpdateThread);
+  MOZ_ASSERT(!OnUpdateThread());
 
   RefPtr<Classifier> self = this;
   nsCOMPtr<nsIRunnable> bgRunnable = NS_NewRunnableFunction(
       "safebrowsing::Classifier::AsyncApplyUpdates",
-      [self, aUpdates, aCallback, callerThread] {
-        MOZ_ASSERT(NS_GetCurrentThread() == self->mUpdateThread,
-                   "MUST be on update thread");
+      [self, aUpdates, aCallback, callerThread]() mutable {
+        MOZ_ASSERT(self->OnUpdateThread(), "MUST be on update thread");
 
         nsresult bgRv;
         nsTArray<nsCString> failedTableNames;
@@ -748,19 +767,28 @@ nsresult Classifier::AsyncApplyUpdates(const TableUpdateArray& aUpdates,
           bgRv = NS_ERROR_OUT_OF_MEMORY;
         }
 
+        // Classifier is created in the worker thread and it has to be released
+        // in the worker thread(because of the constrain that LazyIdelThread has
+        // to be created and released in the same thread). We transfer the
+        // ownership to the caller thread here to gurantee that we don't release
+        // it in the udpate thread.
         nsCOMPtr<nsIRunnable> fgRunnable = NS_NewRunnableFunction(
             "safebrowsing::Classifier::AsyncApplyUpdates",
-            [self, aCallback, bgRv, failedTableNames, callerThread] {
+            [self = std::move(self), aCallback, bgRv, failedTableNames,
+             callerThread]() mutable {
+              RefPtr<Classifier> classifier = std::move(self);
+
               MOZ_ASSERT(NS_GetCurrentThread() == callerThread,
                          "MUST be on caller thread");
 
               LOG(("Step 2. ApplyUpdatesForeground on caller thread"));
               nsresult rv =
-                  self->ApplyUpdatesForeground(bgRv, failedTableNames);
+                  classifier->ApplyUpdatesForeground(bgRv, failedTableNames);
 
               LOG(("Step 3. Updates applied! Fire callback."));
               aCallback(rv);
             });
+
         callerThread->Dispatch(fgRunnable, NS_DISPATCH_NORMAL);
       });
 
@@ -881,7 +909,7 @@ nsresult Classifier::ApplyUpdatesForeground(
 }
 
 nsresult Classifier::ApplyFullHashes(ConstTableUpdateArray& aUpdates) {
-  MOZ_ASSERT(NS_GetCurrentThread() != mUpdateThread,
+  MOZ_ASSERT(!OnUpdateThread(),
              "ApplyFullHashes() MUST NOT be called on update thread");
   MOZ_ASSERT(
       !NS_IsMainThread(),
@@ -1512,7 +1540,7 @@ nsresult Classifier::UpdateCache(RefPtr<const TableUpdate> aUpdate) {
 RefPtr<LookupCache> Classifier::GetLookupCache(const nsACString& aTable,
                                                bool aForUpdate) {
   // GetLookupCache(aForUpdate==true) can only be called on update thread.
-  MOZ_ASSERT_IF(aForUpdate, NS_GetCurrentThread() == mUpdateThread);
+  MOZ_ASSERT_IF(aForUpdate, OnUpdateThread());
 
   LookupCacheArray& lookupCaches =
       aForUpdate ? mNewLookupCaches : mLookupCaches;
@@ -1536,6 +1564,17 @@ RefPtr<LookupCache> Classifier::GetLookupCache(const nsACString& aTable,
   //        '-proto'.
   RefPtr<LookupCache> cache;
   nsCString provider = GetProvider(aTable);
+
+  // Google requests SafeBrowsing related feature should only be enabled when
+  // the databases are update-to-date. Since we disable Safe Browsing update in
+  // Safe Mode, ignore tables provided by Google to ensure we don't show
+  // outdated warnings.
+  if (nsUrlClassifierUtils::IsInSafeMode()) {
+    if (provider.EqualsASCII("google") || provider.EqualsASCII("google4")) {
+      return nullptr;
+    }
+  }
+
   if (StringEndsWith(aTable, NS_LITERAL_CSTRING("-proto"))) {
     cache = new LookupCacheV4(aTable, provider, rootStoreDirectory);
   } else {
@@ -1625,7 +1664,7 @@ nsresult Classifier::ReadNoiseEntries(const Prefix& aPrefix,
     // In the case V4 little endian, we did swapping endian when converting from
     // char* to int, should revert endian to make sure we will send hex string
     // correctly See https://bugzilla.mozilla.org/show_bug.cgi?id=1283007#c23
-    if (!cacheV2 && !bool(MOZ_BIG_ENDIAN)) {
+    if (!cacheV2 && !bool(MOZ_BIG_ENDIAN())) {
       hash = NativeEndian::swapFromBigEndian(prefixes[idx]);
     }
 

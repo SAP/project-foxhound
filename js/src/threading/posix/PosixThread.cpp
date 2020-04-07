@@ -6,7 +6,7 @@
 
 #include "mozilla/Assertions.h"
 
-#include "jsutil.h"
+#include "js/Utility.h"
 #include "threading/posix/ThreadPlatformData.h"
 #include "threading/Thread.h"
 
@@ -106,7 +106,7 @@ void ThisThread::SetName(const char* name) {
 #else
   rv = pthread_setname_np(pthread_self(), name);
 #endif
-  MOZ_RELEASE_ASSERT(!rv || mozilla::recordreplay::IsRecordingOrReplaying());
+  MOZ_RELEASE_ASSERT(!rv);
 }
 
 void ThisThread::GetName(char* nameBuffer, size_t len) {

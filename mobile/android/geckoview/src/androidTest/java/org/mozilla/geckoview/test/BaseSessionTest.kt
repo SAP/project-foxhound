@@ -6,7 +6,7 @@
 package org.mozilla.geckoview.test
 
 import android.os.Parcel
-import android.support.test.InstrumentationRegistry
+import androidx.test.platform.app.InstrumentationRegistry
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
@@ -31,6 +31,8 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val DOWNLOAD_HTML_PATH = "/assets/www/download.html"
         const val FORMS_HTML_PATH = "/assets/www/forms.html"
         const val FORMS2_HTML_PATH = "/assets/www/forms2.html"
+        const val FORMS3_HTML_PATH = "/assets/www/forms3.html"
+        const val FORMS_AUTOCOMPLETE_HTML_PATH = "/assets/www/forms_autocomplete.html"
         const val HELLO_HTML_PATH = "/assets/www/hello.html"
         const val HELLO2_HTML_PATH = "/assets/www/hello2.html"
         const val HELLO_IFRAME_HTML_PATH = "/assets/www/iframe_hello.html"
@@ -59,11 +61,15 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val SCROLL_TEST_PATH = "/assets/www/scroll.html"
         const val COLORS_HTML_PATH = "/assets/www/colors.html"
         const val FIXED_BOTTOM = "/assets/www/fixedbottom.html"
+        const val FIXED_VH = "/assets/www/fixedvh.html"
+        const val FIXED_PERCENT = "/assets/www/fixedpercent.html"
         const val STORAGE_TITLE_HTML_PATH = "/assets/www/reflect_local_storage_into_title.html"
         const val HUNG_SCRIPT = "/assets/www/hungScript.html"
         const val PUSH_HTML_PATH = "/assets/www/push/push.html"
         const val OPEN_WINDOW_PATH = "/assets/www/worker/open_window.html"
         const val OPEN_WINDOW_TARGET_PATH = "/assets/www/worker/open_window_target.html"
+
+        const val TEST_ENDPOINT = GeckoSessionTestRule.TEST_ENDPOINT
     }
 
     @get:Rule val sessionRule = GeckoSessionTestRule()
@@ -86,11 +92,8 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
     fun <T> forEachCall(vararg values: T): T = sessionRule.forEachCall(*values)
 
     fun getTestBytes(path: String) =
-            InstrumentationRegistry.getTargetContext().resources.assets
+            InstrumentationRegistry.getInstrumentation().targetContext.resources.assets
                     .open(path.removePrefix("/assets/")).readBytes()
-
-    val GeckoSession.isRemote
-        get() = this.settings.getUseMultiprocess()
 
     fun createTestUrl(path: String) = GeckoSessionTestRule.TEST_ENDPOINT + path
 
@@ -166,6 +169,8 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
 
     fun GeckoSession.waitForJS(js: String): Any? =
             sessionRule.waitForJS(this, js)
+
+    fun GeckoSession.waitForRoundTrip() = sessionRule.waitForRoundTrip(this)
 
     @Suppress("UNCHECKED_CAST")
     fun Any?.asJsonArray(): JSONArray = this as JSONArray

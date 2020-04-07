@@ -41,19 +41,15 @@ class ContinueActivateRunnable final : public LifeCycleEventCallback {
 
 void ServiceWorkerRegistrationInfo::ShutdownWorkers() {
   ForEachWorker([](RefPtr<ServiceWorkerInfo>& aWorker) {
-    if (aWorker) {
-      aWorker->WorkerPrivate()->NoteDeadServiceWorkerInfo();
-      aWorker = nullptr;
-    }
+    aWorker->WorkerPrivate()->NoteDeadServiceWorkerInfo();
+    aWorker = nullptr;
   });
 }
 
 void ServiceWorkerRegistrationInfo::Clear() {
   ForEachWorker([](RefPtr<ServiceWorkerInfo>& aWorker) {
-    if (aWorker) {
-      aWorker->UpdateState(ServiceWorkerState::Redundant);
-      aWorker->UpdateRedundantTime();
-    }
+    aWorker->UpdateState(ServiceWorkerState::Redundant);
+    aWorker->UpdateRedundantTime();
   });
 
   // FIXME: Abort any inflight requests from installing worker.
@@ -174,7 +170,7 @@ ServiceWorkerRegistrationInfo::GetScope(nsAString& aScope) {
 NS_IMETHODIMP
 ServiceWorkerRegistrationInfo::GetScriptSpec(nsAString& aScriptSpec) {
   MOZ_ASSERT(NS_IsMainThread());
-  RefPtr<ServiceWorkerInfo> newest = Newest();
+  RefPtr<ServiceWorkerInfo> newest = NewestIncludingEvaluating();
   if (newest) {
     CopyUTF8toUTF16(newest->ScriptSpec(), aScriptSpec);
   }
@@ -192,6 +188,15 @@ ServiceWorkerRegistrationInfo::GetLastUpdateTime(PRTime* _retval) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(_retval);
   *_retval = mLastUpdateTime;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ServiceWorkerRegistrationInfo::GetEvaluatingWorker(
+    nsIServiceWorkerInfo** aResult) {
+  MOZ_ASSERT(NS_IsMainThread());
+  RefPtr<ServiceWorkerInfo> info = mEvaluatingWorker;
+  info.forget(aResult);
   return NS_OK;
 }
 
@@ -534,6 +539,11 @@ void ServiceWorkerRegistrationInfo::SetEvaluating(
   MOZ_ASSERT(mActiveWorker != aServiceWorker);
 
   mEvaluatingWorker = aServiceWorker;
+
+  // We don't call UpdateRegistrationState() here because the evaluating worker
+  // is currently not exposed to content on the registration, so calling it here
+  // would produce redundant IPC traffic.
+  NotifyChromeRegistrationListeners();
 }
 
 void ServiceWorkerRegistrationInfo::ClearEvaluating() {
@@ -547,6 +557,9 @@ void ServiceWorkerRegistrationInfo::ClearEvaluating() {
   // We don't update the redundant time for the sw here, since we've not expose
   // evalutingWorker yet.
   mEvaluatingWorker = nullptr;
+
+  // As for SetEvaluating, UpdateRegistrationState() does not need to be called.
+  NotifyChromeRegistrationListeners();
 }
 
 void ServiceWorkerRegistrationInfo::ClearInstalling() {
@@ -556,7 +569,7 @@ void ServiceWorkerRegistrationInfo::ClearInstalling() {
     return;
   }
 
-  RefPtr<ServiceWorkerInfo> installing = mInstallingWorker.forget();
+  RefPtr<ServiceWorkerInfo> installing = std::move(mInstallingWorker);
   installing->UpdateState(ServiceWorkerState::Redundant);
   installing->UpdateRedundantTime();
 
@@ -569,7 +582,7 @@ void ServiceWorkerRegistrationInfo::TransitionEvaluatingToInstalling() {
   MOZ_ASSERT(mEvaluatingWorker);
   MOZ_ASSERT(!mInstallingWorker);
 
-  mInstallingWorker = mEvaluatingWorker.forget();
+  mInstallingWorker = std::move(mEvaluatingWorker);
   mInstallingWorker->UpdateState(ServiceWorkerState::Installing);
 
   UpdateRegistrationState();
@@ -586,7 +599,7 @@ void ServiceWorkerRegistrationInfo::TransitionInstallingToWaiting() {
     mWaitingWorker->UpdateRedundantTime();
   }
 
-  mWaitingWorker = mInstallingWorker.forget();
+  mWaitingWorker = std::move(mInstallingWorker);
   mWaitingWorker->UpdateState(ServiceWorkerState::Installed);
   mWaitingWorker->UpdateInstalledTime();
 
@@ -641,7 +654,7 @@ void ServiceWorkerRegistrationInfo::TransitionWaitingToActive() {
 
   // We are transitioning from waiting to active normally, so go to
   // the activating state.
-  mActiveWorker = mWaitingWorker.forget();
+  mActiveWorker = std::move(mWaitingWorker);
   mActiveWorker->UpdateState(ServiceWorkerState::Activating);
 
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
@@ -741,6 +754,11 @@ void ServiceWorkerRegistrationInfo::ClearWhenIdle() {
   MOZ_ASSERT(!IsControllingClients());
   MOZ_ASSERT(!IsIdle(), "Already idle!");
 
+  RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+  MOZ_ASSERT(swm);
+
+  swm->AddOrphanedRegistration(this);
+
   /**
    * Although a Service Worker will transition to idle many times during its
    * lifetime, the promise is only resolved once `GetIdlePromise` has been
@@ -768,6 +786,11 @@ void ServiceWorkerRegistrationInfo::ClearWhenIdle() {
         MOZ_ASSERT(!self->IsControllingClients());
         MOZ_ASSERT(self->IsIdle());
         self->Clear();
+
+        RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+        if (swm) {
+          swm->RemoveOrphanedRegistration(self);
+        }
       });
 }
 

@@ -2396,127 +2396,125 @@ addAsyncAnimTest(async function() {
   done_div();
 });
 
-if (SpecialPowers.DOMWindowUtils.layerManagerType != 'WebRender') {
-  // Normal background-color animation.
-  addAsyncAnimTest(async function() {
-    new_div("background-color: rgb(255, 0, 0); " +
-            "transition: background-color 10s linear");
-    await waitForPaintsFlushed();
+// Normal background-color animation.
+addAsyncAnimTest(async function() {
+  new_div("background-color: rgb(255, 0, 0); " +
+          "transition: background-color 10s linear");
+  await waitForPaintsFlushed();
 
-    gDiv.style.backgroundColor = "rgb(0, 255, 0)";
-    await waitForPaintsFlushed();
+  gDiv.style.backgroundColor = "rgb(0, 255, 0)";
+  await waitForPaintsFlushed();
 
-    omta_is("background-color", "rgb(255, 0, 0)", RunningOn.Compositor,
-            "background-color transition runs on compositor thread");
+  omta_is("background-color", "rgb(255, 0, 0)", RunningOn.Compositor,
+          "background-color transition runs on compositor thread");
 
-    advance_clock(5000);
-    omta_is("background-color", "rgb(128, 128, 0)", RunningOn.Compositor,
-            "background-color on compositor at 5s");
+  advance_clock(5000);
+  omta_is("background-color", "rgb(128, 128, 0)", RunningOn.Compositor,
+          "background-color on compositor at 5s");
 
-    done_div();
-  });
+  done_div();
+});
 
-  // background-color animation with currentColor.
-  addAsyncAnimTest(async function() {
-    new_div("color: rgb(255, 0, 0); " +
-            "background-color: currentColor; " +
-            "transition: background-color 10s linear");
-    await waitForPaintsFlushed();
+// background-color animation with currentColor.
+addAsyncAnimTest(async function() {
+  new_div("color: rgb(255, 0, 0); " +
+          "background-color: currentColor; " +
+          "transition: background-color 10s linear");
+  await waitForPaintsFlushed();
 
-    gDiv.style.backgroundColor = "rgb(0, 255, 0)";
-    await waitForPaintsFlushed();
+  gDiv.style.backgroundColor = "rgb(0, 255, 0)";
+  await waitForPaintsFlushed();
 
-    omta_is("background-color", "rgb(255, 0, 0)", RunningOn.Compositor,
-            "background-color transition starting with current-color runs on " +
-            "compositor thread");
+  omta_todo_is("background-color", "rgb(255, 0, 0)", RunningOn.ToDoCompositor,
+          "background-color transition starting with current-color runs on " +
+          "compositor thread");
 
-    advance_clock(5000);
-    omta_is("background-color", "rgb(128, 128, 0)", RunningOn.Compositor,
-            "background-color on compositor at 5s");
+  advance_clock(5000);
+  omta_todo_is("background-color", "rgb(128, 128, 0)", RunningOn.ToDoCompositor,
+          "background-color on compositor at 5s");
 
-    done_div();
-  });
+  done_div();
+});
 
-  // Tests that a background-color animation from inherited currentColor to
-  // a normal color on the compositor is updated when the parent color is
-  // changed.
-  addAsyncAnimTest(async function() {
-    new_div("");
-    const parent = document.createElement("div");
-    gDiv.parentNode.insertBefore(parent, gDiv);
-    parent.style.color = "rgb(255, 0, 0)";
-    parent.appendChild(gDiv);
+// Tests that a background-color animation from inherited currentColor to
+// a normal color on the compositor is updated when the parent color is
+// changed.
+addAsyncAnimTest(async function() {
+  new_div("");
+  const parent = document.createElement("div");
+  gDiv.parentNode.insertBefore(parent, gDiv);
+  parent.style.color = "rgb(255, 0, 0)";
+  parent.appendChild(gDiv);
 
-    gDiv.animate({ backgroundColor: [ "currentColor", "rgb(0, 255, 0)" ] }, 1000);
+  gDiv.animate({ backgroundColor: [ "currentColor", "rgb(0, 255, 0)" ] }, 1000);
 
-    await waitForPaintsFlushed();
+  await waitForPaintsFlushed();
 
-    omta_is("background-color", "rgb(255, 0, 0)", RunningOn.Compositor,
-            "background-color animation starting with current-color runs on " +
-            "compositor thread");
+  omta_todo_is("background-color", "rgb(255, 0, 0)", RunningOn.ToDoCompositor,
+          "background-color animation starting with current-color runs on " +
+          "compositor thread");
 
-    advance_clock(500);
+  advance_clock(500);
 
-    omta_is("background-color", "rgb(128, 128, 0)", RunningOn.Compositor,
-            "background-color on compositor at 5s");
+  omta_todo_is("background-color", "rgb(128, 128, 0)", RunningOn.ToDoCompositor,
+          "background-color on compositor at 5s");
 
-    // Change the parent's color in the middle of the animation.
-    parent.style.color = "rgb(0, 0, 255)";
-    await waitForPaintsFlushed();
+  // Change the parent's color in the middle of the animation.
+  parent.style.color = "rgb(0, 0, 255)";
+  await waitForPaintsFlushed();
 
-    omta_is("background-color", "rgb(0, 128, 128)", RunningOn.Compositor,
-            "background-color on compositor is reflected by the parent's " +
-            "color change");
+  omta_todo_is("background-color", "rgb(0, 128, 128)", RunningOn.ToDoCompositor,
+          "background-color on compositor is reflected by the parent's " +
+          "color change");
 
-    done_div();
-    parent.remove();
-  });
+  done_div();
+  parent.remove();
+});
 
-  // Tests that a background-color animation from currentColor to a normal color
-  // on <a> element is updated when the link is visited.
-  addAsyncAnimTest(async function() {
-    if (isGeckoView()) {
-      todo(false, "no global history on GeckoView; can't run test");
-      return;
-    }
+// Tests that a background-color animation from currentColor to a normal color
+// on <a> element is updated when the link is visited.
+addAsyncAnimTest(async function() {
+  if (isGeckoView()) {
+    todo(false, "no global history on GeckoView; can't run test");
+    return;
+  }
 
-    [ gDiv ] = new_element("a", "display: block");
-    gDiv.setAttribute("href", "not-exist.html");
-    gDiv.classList.add("visited");
+  [ gDiv ] = new_element("a", "display: block");
+  gDiv.setAttribute("href", "not-exist.html");
+  gDiv.classList.add("visited");
 
-    const extraStyle = document.createElement('style');
-    document.head.appendChild(extraStyle);
-    extraStyle.sheet.insertRule(".visited:visited { color: rgb(0, 0, 255); }", 0);
-    extraStyle.sheet.insertRule(".visited:link { color: rgb(255, 0, 0); }", 1);
+  const extraStyle = document.createElement('style');
+  document.head.appendChild(extraStyle);
+  extraStyle.sheet.insertRule(".visited:visited { color: rgb(0, 0, 255); }", 0);
+  extraStyle.sheet.insertRule(".visited:link { color: rgb(255, 0, 0); }", 1);
 
-    gDiv.animate({ backgroundColor: [ "currentColor", "rgb(0, 255, 0)" ] }, 1000);
-    await waitForPaintsFlushed();
+  gDiv.animate({ backgroundColor: [ "currentColor", "rgb(0, 255, 0)" ] }, 1000);
+  await waitForPaintsFlushed();
 
-    omta_is("background-color", "rgb(255, 0, 0)", RunningOn.Compositor,
-            "background-color animation starting with current-color runs on " +
-            "compositor thread");
+  omta_todo_is("background-color", "rgb(255, 0, 0)", RunningOn.ToDoCompositor,
+          "background-color animation starting with current-color runs on " +
+          "compositor thread");
 
-    advance_clock(500);
+  advance_clock(500);
 
-    omta_is("background-color", "rgb(128, 128, 0)", RunningOn.Compositor,
-            "background-color on compositor at 5s");
+  omta_todo_is("background-color", "rgb(128, 128, 0)", RunningOn.ToDoCompositor,
+          "background-color on compositor at 5s");
 
-    gDiv.setAttribute("href", window.top.location.href);
-    await waitForVisitedLinkColoring(gDiv, "color", "rgb(0, 0, 255)");
-    await waitForPaintsFlushed();
+  gDiv.setAttribute("href", window.top.location.href);
+  await waitForVisitedLinkColoring(gDiv, "color", "rgb(0, 0, 255)");
+  await waitForPaintsFlushed();
 
-    // `omta_is` checks that the result on the compositor equals to the value by
-    // getComputedValue() but getComputedValue lies for visited link values so
-    // we use getOMTAStyle directly instead.
-    is(SpecialPowers.DOMWindowUtils.getOMTAStyle(gDiv, "background-color"),
-       "rgb(0, 128, 128)",
-       "background-color on <a> element after the link is visited");
+  // `omta_is` checks that the result on the compositor equals to the value by
+  // getComputedValue() but getComputedValue lies for visited link values so
+  // we use getOMTAStyle directly instead.
+  todo_is(SpecialPowers.DOMWindowUtils.getOMTAStyle(gDiv, "background-color"),
+     "rgb(0, 128, 128)",
+     "background-color on <a> element after the link is visited");
 
-    extraStyle.remove();
-    done_element();
-    gDiv = null;
-  });
-}
+  extraStyle.remove();
+  done_element();
+  gDiv = null;
+});
 
 // Normal translate animation.
 addAsyncAnimTest(async function() {
@@ -2695,36 +2693,154 @@ addAsyncAnimTest(async function() {
   done_div();
 });
 
-// Multiple transform-like properties animation. The motion-path shouldn't be
-// overridden by other transform animations. So, in this case, we should fall
-// back transform animations to main thread if offset-path presents.
-// FIXME: Bug 1429305: Run animations of motion path on the compositor thread.
+// Normal offset-path animation with path().
+addAsyncAnimTest(async function() {
+  new_div("offset-path: path('M50 50L100 100'); " +
+          "offset-distance: 50%; " +
+          "offset-rotate: 0deg; " +
+          "transition: offset-path 10s linear");
+  await waitForPaintsFlushed();
+
+  gDiv.style.offsetPath = "path('M50 50L200 200')";
+  await waitForPaintsFlushed();
+
+  omta_is("offset-path",
+          { compositorValue: { tx: 25, ty: 25 },
+            computed: 'path("M 50 50 L 100 100")' },
+          RunningOn.Compositor,
+          "offset-path transition runs on compositor thread");
+
+  advance_clock(5000);
+
+  omta_is("offset-path",
+          { compositorValue: { tx: 50, ty: 50 },
+            computed: 'path("M 50 50 L 150 150")' },
+          RunningOn.Compositor,
+          "offset-path on compositor at 5s");
+
+  done_div();
+});
+
+// FIXME: Add test for ray() after we fix Bug 1590542.
+
+// Normal offset-distance animation.
+addAsyncAnimTest(async function() {
+  new_div("offset-path: path('M50 50v100'); " +
+          "offset-distance: 0%; " +
+          "offset-rotate: 0deg; " +
+          "transition: offset-distance 10s linear");
+  await waitForPaintsFlushed();
+
+  gDiv.style.offsetDistance = "100%";
+  await waitForPaintsFlushed();
+
+  omta_is("offset-distance",
+          { compositorValue: { ty: 0 }, computed: '0%' },
+          RunningOn.Compositor,
+          "offset-distance transition runs on compositor thread");
+
+  advance_clock(5000);
+
+  omta_is("offset-distance",
+          { compositorValue: { ty: 50 }, computed: '50%' },
+          RunningOn.Compositor,
+          "offset-distance on compositor at 5s");
+
+  done_div();
+});
+
+// Normal offset-rotate animation.
+addAsyncAnimTest(async function() {
+  new_div("offset-path: path('M50 50v100'); " +
+          "offset-rotate: auto; " +
+          "transition: offset-rotate 10s linear");
+  await waitForPaintsFlushed();
+
+  gDiv.style.offsetRotate = "auto 90deg";
+  await waitForPaintsFlushed();
+
+  // The direction vector is 90deg (because the path go from top to bottom), and
+  // offset-rotate is auto 0deg, so the entire rotation is 90deg.
+  // The matrix is [cos(pi/2), sin(pi/2), -sin(pi/2), cos(pi/2), 0, 0].
+  omta_is("offset-rotate",
+          { compositorValue: [ 0, 1, -1, 0, 0, 0 ], computed: 'auto' },
+          RunningOn.Compositor,
+          "offset-rotate transition runs on compositor thread");
+
+  advance_clock(5000);
+
+  // At 50%, offset-rotate is auto 45deg, so the entire rotation is 135deg
+  // (= 90deg + 45deg = pi * 3/4), so the matrix is
+  // [cos(pi * 3/4), sin(pi * 3/4), -sin(pi * 3/4), cos(pi * 3/4), 0, 0]
+  omta_is("offset-rotate",
+          {
+            compositorValue: [
+              Math.cos(Math.PI * 3/4), Math.sin(Math.PI * 3/4),
+             -Math.sin(Math.PI * 3/4), Math.cos(Math.PI * 3/4),
+              0, 0
+            ],
+            computed: 'auto 45deg',
+          },
+          RunningOn.Compositor,
+          "offset-rotate on compositor at 5s");
+
+  done_div();
+});
+
+// Normal offset-anchor animation.
+addAsyncAnimTest(async function() {
+  new_div("offset-path: path('M50 50v100'); " +
+          "offset-rotate: 0deg; " +
+          "offset-anchor: 0% 0%; " +
+          "transition: offset-anchor 10s linear");
+  await waitForPaintsFlushed();
+
+  gDiv.style.offsetAnchor = "100% 100%";
+  await waitForPaintsFlushed();
+
+  omta_is("offset-anchor",
+          { compositorValue: { tx: 50, ty: 50 }, computed: '0% 0%' },
+          RunningOn.Compositor,
+          "offset-anchor transition runs on compositor thread");
+
+  advance_clock(5000);
+
+  omta_is("offset-anchor",
+          { compositorValue: { tx: 0, ty: 0 }, computed: '50% 50%' },
+          RunningOn.Compositor,
+          "offset-anchor on compositor at 5s");
+
+  done_div();
+});
+
+// Normal multiple transform-like properties animation (including motion-path).
 addAsyncAnimTest(async function() {
   new_div("translate: 0px; " +
-          "offset-path: path('M50 0v100');" +
+          "offset-path: path('M50 50v100');" +
+          "offset-distance: 0%;" +
           "transform: translateX(0px); " +
           "transition: all 10s linear");
   await waitForPaintsFlushed();
 
   gDiv.style.translate = "0px 100px";
   gDiv.style.transform = "translateX(-100px)";
+  gDiv.style.offsetDistance = "100%";
   await waitForPaintsFlushed();
 
-  omta_is("translate", "0px" , RunningOn.MainThread,
-          "translate transition doesn't run on compositor thread");
-  omta_is("transform", { tx: 0 }, RunningOn.MainThread,
-          "transform transition doesn't run on compositor thread");
+  omta_is("transform", { compositorValue: [ 0, 1, -1, 0, 0, 0 ],
+                         usesMultipleProperties: true },
+          RunningOn.Compositor,
+          "transform-like properties transition runs on compositor thread");
 
   advance_clock(5000);
 
-  omta_is("translate", "0px 50px" , RunningOn.MainThread,
-          "translate on main thread at 5s");
-  omta_is("transform", { tx: -50 }, RunningOn.MainThread,
-          "transform on main thread at 5s");
+  omta_is("transform", { compositorValue: [ 0, 1, -1, 0, 0, 50 ],
+                         usesMultipleProperties: true },
+          RunningOn.Compositor,
+          "transform-like properties transition runs on compositor thread");
 
   done_div();
 });
-
 
 </script>
 </html>

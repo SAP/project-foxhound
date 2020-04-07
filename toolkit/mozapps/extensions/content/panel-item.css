@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 :host {
   display: flex;
   align-items: center;
@@ -11,6 +15,10 @@
   --icon: url("chrome://global/skin/icons/check.svg");
   -moz-context-properties: fill;
   fill: currentColor;
+}
+
+:host([checked]) button {
+  background-size: 1em;
 }
 
 button {
@@ -43,7 +51,7 @@ button:dir(rtl) {
   background: var(--blue-50);
   position: absolute;
   top: 4px;
-  left: 28px;
+  inset-inline-start: 28px;
 }
 
 button:focus,

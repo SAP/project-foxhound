@@ -13,9 +13,8 @@
 
 #include "jsfriendapi.h"  // js::AssertSameCompartment
 
-#include "builtin/Promise.h"  // js::PromiseObject
 #include "builtin/Stream.h"  // js::ReadableByteStreamControllerClearPendingPullIntos
-#include "builtin/streams/MiscellaneousOperations.h"  // js::CreateAlgorithmFromUnderlyingMethod, js::InvokeOrNoop, js::IsMaybeWrapped, js::PromiseCall
+#include "builtin/streams/MiscellaneousOperations.h"  // js::CreateAlgorithmFromUnderlyingMethod, js::InvokeOrNoop, js::IsMaybeWrapped
 #include "builtin/streams/QueueWithSizes.h"  // js::EnqueueValueWithSize, js::ResetQueue
 #include "builtin/streams/ReadableStreamController.h"  // js::ReadableStream{,Default}Controller, js::ReadableByteStreamController, js::ReadableStreamControllerStart{,Failed}Handler
 #include "builtin/streams/ReadableStreamInternals.h"  // js::ReadableStream{CloseInternal,ErrorInternal,FulfillReadOrReadIntoRequest,GetNumReadRequests}
@@ -26,15 +25,17 @@
 #include "js/RootingAPI.h"             // JS::Handle, JS::Rooted
 #include "js/Stream.h"                 // JS::ReadableStreamUnderlyingSource
 #include "js/Value.h"  // JS::{,Int32,Object}Value, JS::UndefinedHandleValue
-#include "vm/Compartment.h"  // JS::Compartment
-#include "vm/Interpreter.h"  // js::Call, js::GetAndClearExceptionAndStack
-#include "vm/JSContext.h"    // JSContext
-#include "vm/JSObject.h"     // JSObject
-#include "vm/List.h"         // js::ListObject
-#include "vm/Runtime.h"      // JSAtomState
-#include "vm/SavedFrame.h"   // js::SavedFrame
+#include "vm/Compartment.h"    // JS::Compartment
+#include "vm/Interpreter.h"    // js::Call, js::GetAndClearExceptionAndStack
+#include "vm/JSContext.h"      // JSContext
+#include "vm/JSObject.h"       // JSObject
+#include "vm/List.h"           // js::ListObject
+#include "vm/PromiseObject.h"  // js::PromiseObject
+#include "vm/Runtime.h"        // JSAtomState
+#include "vm/SavedFrame.h"     // js::SavedFrame
 
-#include "builtin/streams/HandlerFunction-inl.h"  // js::NewHandler
+#include "builtin/streams/HandlerFunction-inl.h"          // js::NewHandler
+#include "builtin/streams/MiscellaneousOperations-inl.h"  // js::PromiseCall
 #include "vm/Compartment-inl.h"  // JS::Compartment::wrap, js::UnwrapCalleeSlot
 #include "vm/JSContext-inl.h"    // JSContext::check
 #include "vm/JSObject-inl.h"     // js::IsCallable, js::NewBuiltinClassInstance
@@ -199,17 +200,18 @@ MOZ_MUST_USE bool js::ReadableStreamControllerCallPullIfNeeded(
     } else {
       // CreateAlgorithmFromUnderlyingMethod step 6.b.i.
       {
-        AutoRealm ar(cx, &unwrappedPullMethod.toObject());
-        Rooted<Value> underlyingSource(cx, unwrappedUnderlyingSource);
-        if (!cx->compartment()->wrap(cx, &underlyingSource)) {
-          return false;
-        }
+        AutoRealm ar(cx, unwrappedController);
+
+        // |unwrappedPullMethod| and |unwrappedUnderlyingSource| come directly
+        // from |unwrappedController| slots so must be same-compartment with it.
+        cx->check(unwrappedPullMethod);
+        cx->check(unwrappedUnderlyingSource);
+
         Rooted<Value> controller(cx, ObjectValue(*unwrappedController));
-        if (!cx->compartment()->wrap(cx, &controller)) {
-          return false;
-        }
-        pullPromise =
-            PromiseCall(cx, unwrappedPullMethod, underlyingSource, controller);
+        cx->check(controller);
+
+        pullPromise = PromiseCall(cx, unwrappedPullMethod,
+                                  unwrappedUnderlyingSource, controller);
         if (!pullPromise) {
           return false;
         }

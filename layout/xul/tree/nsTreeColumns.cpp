@@ -87,8 +87,7 @@ nsresult nsTreeColumn::GetRect(nsTreeBodyFrame* aBodyFrame, nscoord aY,
     return NS_ERROR_FAILURE;
   }
 
-  bool isRTL =
-      aBodyFrame->StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+  bool isRTL = aBodyFrame->StyleVisibility()->mDirection == StyleDirection::Rtl;
   *aResult = frame->GetRect();
   aResult->y = aY;
   aResult->height = aHeight;
@@ -149,14 +148,14 @@ void nsTreeColumn::Invalidate(ErrorResult& aRv) {
 
   mTextAlignment = textStyle->mTextAlign;
   // START or END alignment sometimes means RIGHT
-  if ((mTextAlignment == NS_STYLE_TEXT_ALIGN_START &&
-       vis->mDirection == NS_STYLE_DIRECTION_RTL) ||
-      (mTextAlignment == NS_STYLE_TEXT_ALIGN_END &&
-       vis->mDirection == NS_STYLE_DIRECTION_LTR)) {
-    mTextAlignment = NS_STYLE_TEXT_ALIGN_RIGHT;
-  } else if (mTextAlignment == NS_STYLE_TEXT_ALIGN_START ||
-             mTextAlignment == NS_STYLE_TEXT_ALIGN_END) {
-    mTextAlignment = NS_STYLE_TEXT_ALIGN_LEFT;
+  if ((mTextAlignment == StyleTextAlign::Start &&
+       vis->mDirection == StyleDirection::Rtl) ||
+      (mTextAlignment == StyleTextAlign::End &&
+       vis->mDirection == StyleDirection::Ltr)) {
+    mTextAlignment = StyleTextAlign::Right;
+  } else if (mTextAlignment == StyleTextAlign::Start ||
+             mTextAlignment == StyleTextAlign::End) {
+    mTextAlignment = StyleTextAlign::Left;
   }
 
   // Figure out if we're the primary column (that has to have indentation
@@ -411,38 +410,6 @@ void nsTreeColumns::InvalidateColumns() {
     currCol->SetColumns(nullptr);
   }
   mFirstColumn = nullptr;
-}
-
-void nsTreeColumns::RestoreNaturalOrder() {
-  if (!mTree) {
-    return;
-  }
-
-  nsIContent* content = mTree->GetBaseElement();
-
-  // Strong ref, since we'll be setting attributes
-  nsCOMPtr<nsIContent> colsContent =
-      nsTreeUtils::GetImmediateChild(content, nsGkAtoms::treecols);
-  if (!colsContent) {
-    return;
-  }
-
-  int32_t i = 0;
-  for (nsINode* child = colsContent->GetFirstChild(); child;
-       child = child->GetNextSibling()) {
-    nsAutoString ordinal;
-    ordinal.AppendInt(i++);
-    if (child->IsElement()) {
-      child->AsElement()->SetAttr(kNameSpaceID_None, nsGkAtoms::ordinal,
-                                  ordinal, true);
-    }
-  }
-
-  nsTreeColumns::InvalidateColumns();
-
-  if (mTree) {
-    mTree->Invalidate();
-  }
 }
 
 nsTreeColumn* nsTreeColumns::GetPrimaryColumn() {

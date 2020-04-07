@@ -28,7 +28,7 @@ interface nsILoginManagerStorage : nsISupports {
    * @resolves When initialization is complete.
    * @rejects JavaScript exception.
    */
-  jsval initialize();
+  Promise initialize();
 
 
   /**
@@ -41,7 +41,7 @@ interface nsILoginManagerStorage : nsISupports {
    * @resolves When finalization is complete.
    * @rejects JavaScript exception.
    */
-  jsval terminate();
+  Promise terminate();
 
 
   /**
@@ -99,6 +99,19 @@ interface nsILoginManagerStorage : nsISupports {
 
 
   /**
+   * Record that the password of a saved login was used (e.g. submitted or copied).
+   *
+   * @param nsILoginInfo aLogin
+   *        The login record of the password that was used.
+   *
+   * If only the username was used, this method shouldn't be called as we don't
+   * want to double-count the use if both the username and password are copied.
+   * Copying of the username normally precedes the copying of the password anyways.
+   */
+  void recordPasswordUse(in nsILoginInfo aLogin);
+
+
+  /**
    * Remove all stored logins.
    *
    * The browser sanitization feature allows the user to clear any stored
@@ -122,11 +135,25 @@ interface nsILoginManagerStorage : nsISupports {
    *
    * @return An array of nsILoginInfo objects.
    */
-  jsval getAllLoginsAsync();
+  Promise getAllLoginsAsync();
+
+  /**
+   * Asynchonously search for logins in the login manager. The Promise always
+   * resolves to an array; if there are no logins the array is empty.
+   *
+   * @param {object} matchData
+   *        The data used to search as a JS object. This does not follow the same
+   *        requirements as findLogins for those fields. Wildcard matches are
+   *        simply not specified.
+   * @return A promise resolving to an array of nsILoginInfo objects.
+   */
+  Promise searchLoginsAsync(in jsval matchData);
 
   /**
    * Search for logins in the login manager. An array is always returned;
    * if there are no logins the array is empty.
+   * @deprecated New code should use `searchLoginsAsync`.
+   *             Only autocomplete, prompt, and test code still use this.
    *
    * @param matchData
    *        The data used to search. This does not follow the same
@@ -136,16 +163,15 @@ interface nsILoginManagerStorage : nsISupports {
    */
   Array<nsILoginInfo> searchLogins(in nsIPropertyBag matchData);
 
-
   /**
    * Search for logins matching the specified criteria. Called when looking
    * for logins that might be applicable to a form or authentication request.
    *
-   * @param aHostname
+   * @param aOrigin
    *        The origin to restrict searches to. For example: "http://www.site.com".
    * @param aActionURL
    *        For form logins, this argument should be the origin to which the
-   *        form will be submitted. For protocol logins, specify null.
+   *        form will be submitted. For HTTP auth. logins, specify null.
    * @param aHttpRealm
    *        For protocol logins, this argument should be the HTTP Realm
    *        for which the login applies. This is obtained from the
@@ -153,7 +179,7 @@ interface nsILoginManagerStorage : nsISupports {
    *        specify null.
    * @return An array of nsILoginInfo objects.
    */
-  Array<nsILoginInfo> findLogins(in AString aHostname, in AString aActionURL,
+  Array<nsILoginInfo> findLogins(in AString aOrigin, in AString aActionOrigin,
 				 in AString aHttpRealm);
 
 
@@ -164,11 +190,11 @@ interface nsILoginManagerStorage : nsISupports {
    * check for logins without causing the user to be prompted for a master
    * password to decrypt the logins.
    *
-   * @param aHostname
+   * @param aOrigin
    *        The origin to restrict searches to. Specify an empty string
    *        to match all origins. A null value will not match any logins, and
    *        will thus always return a count of 0.
-   * @param aActionURL
+   * @param aActionOrigin
    *        The origin to which a form login will be submitted. To match any
    *        form login, specify an empty string. To not match any form
    *        login, specify null.
@@ -177,7 +203,7 @@ interface nsILoginManagerStorage : nsISupports {
    *        any realm, specify an empty string. To not match logins for any
    *        realm, specify null.
    */
-  unsigned long countLogins(in AString aHostname, in AString aActionURL,
+  unsigned long countLogins(in AString aOrigin, in AString aActionOrigin,
                             in AString aHttpRealm);
   /**
    * True when a master password prompt is being shown.

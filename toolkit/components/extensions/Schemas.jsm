@@ -1063,6 +1063,10 @@ const FORMATS = {
   contentSecurityPolicy(string, context) {
     let error = contentPolicyService.validateAddonCSP(string);
     if (error != null) {
+      // The SyntaxError raised below is not reported as part of the "choices" error message,
+      // we log the CSP validation error explicitly here to make it easier for the addon developers
+      // to see and fix the extension CSP.
+      context.logError(`Error processing ${context.currentTarget}: ${error}`);
       throw new SyntaxError(error);
     }
     return string;
@@ -1094,6 +1098,10 @@ const FORMATS = {
       `or a media key. For details see: ` +
       `https://developer.mozilla.org/en-US/Add-ons/WebExtensions/manifest.json/commands#Key_combinations`;
     throw new Error(errorMessage);
+  },
+
+  manifestShortcutKeyOrEmpty(string, context) {
+    return string === "" ? "" : FORMATS.manifestShortcutKey(string, context);
   },
 };
 
@@ -2214,18 +2222,14 @@ class ArrayType extends Type {
 
     if (result.length < this.minItems) {
       return context.error(
-        `Array requires at least ${this.minItems} items; you have ${
-          result.length
-        }`,
+        `Array requires at least ${this.minItems} items; you have ${result.length}`,
         `have at least ${this.minItems} items`
       );
     }
 
     if (result.length > this.maxItems) {
       return context.error(
-        `Array requires at most ${this.maxItems} items; you have ${
-          result.length
-        }`,
+        `Array requires at most ${this.maxItems} items; you have ${result.length}`,
         `have at most ${this.maxItems} items`
       );
     }
@@ -2980,9 +2984,7 @@ class Namespace extends Map {
         );
       } else if (!(targetType instanceof ChoiceType)) {
         throw new Error(
-          `Internal error: Attempt to extend a non-extensible type ${
-            type.$extend
-          }`
+          `Internal error: Attempt to extend a non-extensible type ${type.$extend}`
         );
       }
     }

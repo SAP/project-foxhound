@@ -222,6 +222,7 @@
 
   .icon-dismiss {
     border: 0;
+    border-radius: 4px;
     cursor: pointer;
     inset-inline-end: 15px;
     padding: 15px;
@@ -231,7 +232,7 @@
 
     &:hover,
     &:focus {
-      background-color: var(--newtab-element-hover-color);
+      background-color: var(--newtab-element-active-color);
     }
   }
 }
@@ -265,11 +266,14 @@
   box-shadow: var(--newtab-card-shadow);
 
   font-size: 13px;
-  padding: 20px;
+  padding: 20px 40px 60px;
+
+  @media (max-width: 865px) {
+    padding: 20px 40px;
+  }
 
   @media (min-width: $break-point-widest) {
     font-size: 15px;
-    padding: 40px;
   }
 
   .onboardingTitle {
@@ -330,10 +334,6 @@
 .inline-onboarding {
   &.activity-stream.welcome {
     overflow-y: hidden;
-  }
-
-  .modalOverlayInner {
-    position: absolute;
   }
 
   .outer-wrapper {

@@ -19,5 +19,6 @@ add_task(async function() {
 
   prettyPrint(dbg);
   await waitForTabCounts(dbg, 2);
+  await waitForElementWithSelector(dbg, selectors.prettyPrintLoader);
   await waitForSelectedLocation(dbg, 5);
 });

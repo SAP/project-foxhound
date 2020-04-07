@@ -23,15 +23,9 @@
 #include "nsIClassInfo.h"
 #include "nsIFile.h"
 #include "nsIObserver.h"
-#include "nsIObserverService.h"
 #include "nsIOutputStream.h"
-#include "nsIStorageStream.h"
-#include "nsIStreamBufferAccess.h"
-#include "nsIStringStream.h"
 #include "nsISupports.h"
 #include "nsITimer.h"
-#include "nsIZipWriter.h"
-#include "nsIZipReader.h"
 #include "nsZipArchive.h"
 #include "mozilla/Omnijar.h"
 #include "prenv.h"
@@ -108,6 +102,10 @@ static nsresult MapLZ4ErrorToNsresult(size_t aError) {
   return NS_ERROR_FAILURE;
 }
 
+StartupCache* StartupCache::GetSingletonNoInit() {
+  return StartupCache::gStartupCache;
+}
+
 StartupCache* StartupCache::GetSingleton() {
   if (!gStartupCache) {
     if (!XRE_IsParentProcess()) {
@@ -144,8 +142,8 @@ NS_IMPL_ISUPPORTS(StartupCache, nsIMemoryReporter)
 
 StartupCache::StartupCache()
     : mDirty(false),
-      mStartupWriteInitiated(false),
       mWrittenOnce(false),
+      mStartupWriteInitiated(false),
       mCurTableReferenced(false),
       mRequestedCount(0),
       mCacheEntriesBaseOffset(0),
@@ -153,26 +151,7 @@ StartupCache::StartupCache()
       mPrefetchThread(nullptr) {}
 
 StartupCache::~StartupCache() {
-  if (mTimer) {
-    mTimer->Cancel();
-  }
-
-  // Generally, the in-memory table should be empty here,
-  // but an early shutdown means either mTimer didn't run
-  // or the write thread is still running.
   WaitOnWriteThread();
-  WaitOnPrefetchThread();
-
-  // If we shutdown quickly timer wont have fired. Instead of writing
-  // it on the main thread and block the shutdown we simply wont update
-  // the startup cache. Always do this if the file doesn't exist since
-  // we use it part of the package step.
-  if (!mCacheData.initialized() || ShouldCompactCache()) {
-    mDirty = true;
-    auto result = WriteToDisk();
-    Unused << NS_WARN_IF(result.isErr());
-  }
-
   UnregisterWeakMemoryReporter(this);
 }
 
@@ -283,7 +262,8 @@ Result<Ok, nsresult> StartupCache::LoadArchive() {
   headerSize = LittleEndian::readUint32(data.get());
   data += sizeof(headerSize);
 
-  if (data + headerSize > end) {
+  if (headerSize > end - data) {
+    MOZ_ASSERT(false, "StartupCache file is corrupt.");
     return Err(NS_ERROR_UNEXPECTED);
   }
 
@@ -312,7 +292,8 @@ Result<Ok, nsresult> StartupCache::LoadArchive() {
       buf.codeUint32(uncompressedSize);
       buf.codeString(key);
 
-      if (data + offset + compressedSize > end) {
+      if (offset + compressedSize > end - data) {
+        MOZ_ASSERT(false, "StartupCache file is corrupt.");
         return Err(NS_ERROR_UNEXPECTED);
       }
 
@@ -323,8 +304,17 @@ Result<Ok, nsresult> StartupCache::LoadArchive() {
       }
       currentOffset += compressedSize;
 
-      if (!mTable.putNew(key, StartupCacheEntry(offset, compressedSize,
-                                                uncompressedSize))) {
+      // We could use mTable.putNew if we knew the file we're loading weren't
+      // corrupt. However, we don't know that, so check if the key already
+      // exists. If it does, we know the file must be corrupt.
+      decltype(mTable)::AddPtr p = mTable.lookupForAdd(key);
+      if (p) {
+        return Err(NS_ERROR_UNEXPECTED);
+      }
+
+      if (!mTable.add(
+              p, key,
+              StartupCacheEntry(offset, compressedSize, uncompressedSize))) {
         return Err(NS_ERROR_UNEXPECTED);
       }
     }
@@ -608,6 +598,15 @@ void StartupCache::InvalidateCache(bool memoryOnly) {
   }
 }
 
+void StartupCache::MaybeInitShutdownWrite() {
+  if (mTimer) {
+    mTimer->Cancel();
+  }
+  gShutdownInitiated = true;
+
+  MaybeSpawnWriteThread();
+}
+
 void StartupCache::IgnoreDiskCache() {
   gIgnoreDiskCache = true;
   if (gStartupCache) gStartupCache->InvalidateCache();
@@ -685,22 +684,28 @@ void StartupCache::WriteTimeout(nsITimer* aTimer, void* aClosure) {
    * if the StartupCache object is valid.
    */
   StartupCache* startupCacheObj = static_cast<StartupCache*>(aClosure);
-  if (startupCacheObj->mWrittenOnce) {
+  startupCacheObj->MaybeSpawnWriteThread();
+}
+
+/*
+ * See StartupCache::WriteTimeout above - this is just the non-static body.
+ */
+void StartupCache::MaybeSpawnWriteThread() {
+  if (mWriteThread || mWrittenOnce) {
     return;
   }
 
-  if (startupCacheObj->mCacheData.initialized() &&
-      !startupCacheObj->ShouldCompactCache()) {
+  if (mCacheData.initialized() && !ShouldCompactCache()) {
     return;
   }
 
-  startupCacheObj->WaitOnPrefetchThread();
-  startupCacheObj->mStartupWriteInitiated = false;
-  startupCacheObj->mDirty = true;
-  startupCacheObj->mCacheData.reset();
-  startupCacheObj->mWriteThread = PR_CreateThread(
-      PR_USER_THREAD, StartupCache::ThreadedWrite, startupCacheObj,
-      PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 512 * 1024);
+  WaitOnPrefetchThread();
+  mStartupWriteInitiated = false;
+  mDirty = true;
+  mCacheData.reset();
+  mWriteThread = PR_CreateThread(PR_USER_THREAD, StartupCache::ThreadedWrite,
+                                 this, PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD,
+                                 PR_JOINABLE_THREAD, 512 * 1024);
 }
 
 // We don't want to refcount StartupCache, so we'll just
@@ -715,6 +720,7 @@ nsresult StartupCacheListener::Observe(nsISupports* subject, const char* topic,
   if (strcmp(topic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
     // Do not leave the thread running past xpcom shutdown
     sc->WaitOnWriteThread();
+    sc->WaitOnPrefetchThread();
     StartupCache::gShutdownInitiated = true;
   } else if (strcmp(topic, "startupcache-invalidate") == 0) {
     sc->InvalidateCache(data && nsCRT::strcmp(data, u"memoryOnly") == 0);

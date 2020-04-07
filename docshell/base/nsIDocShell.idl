@@ -47,7 +47,6 @@ interface nsIContentSecurityPolicy;
 interface nsIDocShellLoadInfo;
 interface nsIEditor;
 interface nsIEditingSession;
-interface nsISimpleEnumerator;
 interface nsIInputStream;
 interface nsIRequest;
 interface nsISHEntry;
@@ -180,11 +179,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   attribute EventTarget chromeEventHandler;
 
   /**
-   * This allows chrome to set a custom User agent on a specific docshell
-   */
-  attribute AString customUserAgent;
-
-  /**
    * Whether CSS error reporting is enabled.
    */
   attribute boolean cssErrorReportingEnabled;
@@ -254,7 +248,7 @@ interface nsIDocShell : nsIDocShellTreeItem
   [infallible] attribute boolean inheritPrivateBrowsingId;
 
   /**
-   * Get an enumerator over this docShell and its children.
+   * Get an array of this docShell and its children.
    *
    * @param aItemType  - Only include docShells of this type, or if typeAll,
    *                     include all child shells.
@@ -267,8 +261,8 @@ interface nsIDocShell : nsIDocShellTreeItem
     ENUMERATE_BACKWARDS = 1
   };
 
-  nsISimpleEnumerator getDocShellEnumerator(in long aItemType,
-                                            in nsIDocShell_DocShellEnumeratorDirection aDirection);
+  Array<nsIDocShell> getAllDocShellsInSubtree(in long aItemType,
+                                              in nsIDocShell_DocShellEnumeratorDirection aDirection);
 
   /**
    * The type of application that created this window.
@@ -302,22 +296,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    * no zoom.
    */
   attribute float zoom;
-
-  /*
-   * The size, in CSS pixels, of the horizontal margins for the <body> of an
-   * HTML document in this docshell; used to implement the marginwidth attribute
-   * on HTML <frame>/<iframe> elements.  A value smaller than zero indicates
-   * that the attribute was not set.
-   */
-  attribute long marginWidth;
-
-  /*
-   * The size, in CSS pixels, of the vertical margins for the <body> of an HTML
-   * document in this docshell; used to implement the marginheight attribute on
-   * HTML <frame>/<iframe> elements.  A value smaller than zero indicates that
-   * the attribute was not set.
-   */
-  attribute long marginHeight;
 
   /*
    * Tells the docshell to offer focus to its tree owner.
@@ -425,6 +403,8 @@ interface nsIDocShell : nsIDocShellTreeItem
    */
   void finishRestore();
 
+  void clearCachedUserAgent();
+
   /* Track whether we're currently restoring a document presentation. */
   readonly attribute boolean restoringDocument;
 
@@ -528,12 +508,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    * hasMixedActiveContentBlocked.
    */
   [infallible] readonly attribute boolean hasMixedDisplayContentBlocked;
-
-   /**
-   * This attribute determines whether a document has Tracking Content
-   * that has been blocked from loading.
-   */
-  [infallible] readonly attribute boolean hasTrackingContentBlocked;
 
   /**
    * Disconnects this docshell's editor from its window, and stores the
@@ -773,20 +747,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   readonly attribute bool asyncPanZoomEnabled;
 
   /**
-   * The sandbox flags on the docshell. These reflect the value of the sandbox
-   * attribute of the associated IFRAME or CSP-protectable content, if
-   * existent. See the HTML5 spec for more details.
-   * These flags on the docshell reflect the current state of the sandbox
-   * attribute, which is modifiable. They are only used when loading new
-   * content, sandbox flags are also immutably set on the document when it is
-   * loaded.
-   * The sandbox flags of a document depend on the sandbox flags on its
-   * docshell and of its parent document, if any.
-   * See nsSandboxFlags.h for the possible flags.
-   */
-  attribute unsigned long sandboxFlags;
-
-  /**
    * Returns true if we are sandboxed from aTargetDocShell.
    * aTargetDocShell - the browsing context we are attempting to navigate.
    */
@@ -873,10 +833,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    */
   void makeEditable(in boolean inWaitForUriLoad);
 
-  /**
-   * Get the SHEntry associated with a child docshell
-   */
-  nsISHEntry getChildSHEntry(in long aChildOffset);
 
   /**
    * Add a Child SHEntry for a frameset page, given the child's loadtype.
@@ -1058,20 +1014,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   [infallible] attribute nsIDocShell_MetaViewportOverride metaViewportOverride;
 
   /**
-   * This value is `true` if its corresponding unit of related browsing contexts
-   * (TabGroup) contains only 1 toplevel window, and that window is the outer
-   * window corresponding to this docshell.
-   *
-   * The value is `false` otherwise. This is the case if the docshell is an
-   * iframe, has window.opener set, or another window with window.opener
-   * referring to this window exists.
-   *
-   * If this value is `false`, it would be web content visible for a load
-   * occuring in this docshell to be performed within a different docshell.
-   */
-  [infallible] readonly attribute boolean isOnlyToplevelInTabGroup;
-
-  /**
    * Returns `true` if this docshell was created due to a Large-Allocation
    * header, and has not seen the initiating load yet.
    */
@@ -1105,6 +1047,12 @@ interface nsIDocShell : nsIDocShellTreeItem
   UniqueClientSource TakeInitialClientSource();
 
   void setColorMatrix(in Array<float> aMatrix);
+
+  /**
+   * Returns true if the current load is a forced reload,
+   * e.g. started by holding shift whilst triggering reload.
+   */
+  readonly attribute bool isForceReloading;
 
   Array<float> getColorMatrix();
 
@@ -1146,16 +1094,12 @@ interface nsIDocShell : nsIDocShellTreeItem
    */
   [infallible] readonly attribute ContentFrameMessageManager messageManager;
 
-  /**
-   * Asynchronously retrieve a JSON string representing a log of the
-   * content blocking events happened so far in the current tab from the
-   * content process.
-   *
-   * This returns a Promise which resolves to a string on success, and is
-   * rejected on failure.  For documentation on the string format, please
-   * see nsISecureBrowserUI.contentBlockingLogJSON.
+   /**
+   * This returns a Promise which resolves to a boolean. True when the
+   * document has Tracking Content that has been blocked from loading, false
+   * otherwise.
    */
-  Promise getContentBlockingLog();
+  Promise getHasTrackingContentBlocked();
 
   /**
    * Return whether this docshell is "attempting to navigate" in the
@@ -1180,4 +1124,9 @@ interface nsIDocShell : nsIDocShellTreeItem
    *   nsIWebNavigation.loadURI
    */
   [infallible] readonly attribute boolean isNavigating;
+
+  /**
+   * @see nsISHEntry synchronizeLayoutHistoryState().
+   */
+  void synchronizeLayoutHistoryState();
 };

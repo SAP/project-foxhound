@@ -4,13 +4,24 @@ function createIframe(src) {
   document.body.appendChild(ifr);
 }
 
+function createImage(src) {
+  let img = document.createElement("img");
+  img.src = src;
+  img.onload = () => {
+    parent.postMessage("done", "*");
+  };
+  document.body.appendChild(img);
+}
+
 onmessage = event => {
   switch (event.data) {
     case "tracking":
       createIframe("https://trackertest.org/");
       break;
     case "socialtracking":
-      createIframe("https://socialtracking.example.com/");
+      createIframe(
+        "https://social-tracking.example.org/browser/browser/base/content/test/trackingUI/cookieServer.sjs"
+      );
       break;
     case "cryptomining":
       createIframe("http://cryptomining.example.com/");
@@ -37,6 +48,11 @@ onmessage = event => {
     case "third-party-cookie":
       createIframe(
         "https://test1.example.org/browser/browser/base/content/test/trackingUI/cookieServer.sjs"
+      );
+      break;
+    case "image":
+      createImage(
+        "http://trackertest.org/browser/browser/base/content/test/trackingUI/cookieServer.sjs?type=image-no-cookie"
       );
       break;
     case "window-open":

@@ -195,6 +195,10 @@ Preferences.addAll([
   { id: "browser.search.update", type: "bool" },
 
   { id: "privacy.userContext.enabled", type: "bool" },
+  {
+    id: "privacy.userContext.newTabContainerOnLeftClick.enabled",
+    type: "bool",
+  },
 
   // Picture-in-Picture
   {
@@ -285,7 +289,7 @@ var gMainPane = {
   _backoffIndex: 0,
 
   /**
-   * Initialization of this.
+   * Initialization of gMainPane.
    */
   init() {
     function setEventListener(aId, aEventType, aCallback) {
@@ -368,6 +372,11 @@ var gMainPane = {
     if (Services.prefs.getBoolPref("intl.multilingual.enabled")) {
       gMainPane.initBrowserLocale();
     }
+
+    // We call `initDefaultZoomValues` to set and unhide the
+    // default zoom preferences menu, and to establish a
+    // listener for future menu changes.
+    gMainPane.initDefaultZoomValues();
 
     let cfrLearnMoreUrl =
       Services.urlFormatter.formatURLPref("app.support.baseURL") +
@@ -511,6 +520,15 @@ var gMainPane = {
     // Initializes the fonts dropdowns displayed in this pane.
     this._rebuildFonts();
 
+    if (Services.prefs.getBoolPref("intl.charset.detector.ng.enabled", false)) {
+      let advancedBtn = document.getElementById("advancedFonts");
+      let l10nIds = advancedBtn
+        .getAttribute("search-l10n-ids")
+        .split(/\s*,\s*/);
+      l10nIds = l10nIds.filter(id => !id.includes("languages-fallback"));
+      advancedBtn.setAttribute("search-l10n-ids", l10nIds.join(", "));
+    }
+
     this.updateOnScreenKeyboardVisibility();
 
     // Show translation preferences if we may:
@@ -621,10 +639,12 @@ var gMainPane = {
       });
       setEventListener("showUpdateHistory", "command", gMainPane.showUpdates);
 
-      if (Services.policies && !Services.policies.isAllowed("appUpdate")) {
+      let updateDisabled =
+        Services.policies && !Services.policies.isAllowed("appUpdate");
+      if (updateDisabled || UpdateUtils.appUpdateAutoSettingIsLocked()) {
         document.getElementById("updateAllowDescription").hidden = true;
-        document.getElementById("updateRadioGroup").hidden = true;
-        if (AppConstants.MOZ_MAINTENANCE_SERVICE) {
+        document.getElementById("updateSettingsContainer").hidden = true;
+        if (updateDisabled && AppConstants.MOZ_MAINTENANCE_SERVICE) {
           document.getElementById("useService").hidden = true;
         }
       } else {
@@ -857,7 +877,9 @@ var gMainPane = {
       win.openTrustedLinkIn("about:preferences#sync", "current");
       return;
     }
-    let url = await FxAccounts.config.promiseSignInURI("dev-edition-setup");
+    let url = await FxAccounts.config.promiseConnectAccountURI(
+      "dev-edition-setup"
+    );
     let accountsTab = win.gBrowser.addWebTab(url);
     win.gBrowser.selectedTab = accountsTab;
   },
@@ -923,6 +945,49 @@ var gMainPane = {
         warnOnQuitCheckbox.setAttribute("disabled", "true");
       }
     }
+  },
+  /**
+   * Fetch the existing default zoom value, initialise and unhide
+   * the preferences menu. This method also establishes a listener
+   * to ensure handleDefaultZoomChange is called on future menu
+   * changes.
+   */
+  async initDefaultZoomValues() {
+    let win = window.docShell.rootTreeItem.domWindow;
+    let selected = await win.ZoomUI.getGlobalValue();
+    let menulist = document.getElementById("defaultZoom");
+
+    new SelectionChangedMenulist(menulist, event => {
+      let parsedZoom = parseFloat((event.target.value / 100).toFixed(2));
+      gMainPane.handleDefaultZoomChange(parsedZoom);
+    });
+
+    setEventListener("zoomText", "command", function() {
+      win.ZoomManager.toggleZoom();
+    });
+
+    let zoomValues = win.ZoomManager.zoomValues.map(a => {
+      return Math.round(a * 100);
+    });
+
+    let fragment = document.createDocumentFragment();
+    for (let zoomLevel of zoomValues) {
+      let menuitem = document.createXULElement("menuitem");
+      document.l10n.setAttributes(menuitem, "preferences-default-zoom-value", {
+        percentage: zoomLevel,
+      });
+      menuitem.setAttribute("value", zoomLevel);
+      fragment.appendChild(menuitem);
+    }
+
+    let menupopup = menulist.querySelector("menupopup");
+    menupopup.appendChild(fragment);
+    menulist.value = Math.round(selected * 100);
+
+    let checkbox = document.getElementById("zoomText");
+    checkbox.checked = !win.ZoomManager.useFullZoom;
+
+    document.getElementById("zoomBox").hidden = false;
   },
 
   initBrowserLocale() {
@@ -1099,6 +1164,27 @@ var gMainPane = {
     this.showConfirmLanguageChangeMessageBar(locales);
   },
 
+  /**
+   * Takes as newZoom a floating point value representing the
+   * new default zoom. This value should not be a string, and
+   * should not carry a percentage sign/other localisation
+   * characteristics.
+   */
+  handleDefaultZoomChange(newZoom) {
+    let cps2 = Cc["@mozilla.org/content-pref/service;1"].getService(
+      Ci.nsIContentPrefService2
+    );
+    let nonPrivateLoadContext = Cu.createLoadContext();
+    /* Because our setGlobal function takes in a browsing context, and
+     * because we want to keep this property consistent across both private
+     * and non-private contexts, we crate a non-private context and use that
+     * to set the property, regardless of our actual context.
+     */
+
+    let win = window.docShell.rootTreeItem.domWindow;
+    cps2.setGlobal(win.FullZoom.name, newZoom, nonPrivateLoadContext);
+  },
+
   onBrowserRestoreSessionChange(event) {
     const value = event.target.checked;
     const startupPref = Preferences.get("browser.startup.page");
@@ -1231,7 +1317,7 @@ var gMainPane = {
    * Shows a dialog in which the preferred language for web content may be set.
    */
   showLanguages() {
-    gSubDialog.open("chrome://browser/content/preferences/languages.xul");
+    gSubDialog.open("chrome://browser/content/preferences/languages.xhtml");
   },
 
   recordBrowserLanguagesTelemetry(method, value = null) {
@@ -1254,7 +1340,7 @@ var gMainPane = {
 
     let opts = { selected: gMainPane.selectedLocales, search, telemetryId };
     gSubDialog.open(
-      "chrome://browser/content/preferences/browserLanguages.xul",
+      "chrome://browser/content/preferences/browserLanguages.xhtml",
       null,
       opts,
       this.browserLanguagesClosed
@@ -1287,7 +1373,7 @@ var gMainPane = {
    * translation preferences can be set.
    */
   showTranslationExceptions() {
-    gSubDialog.open("chrome://browser/content/preferences/translation.xul");
+    gSubDialog.open("chrome://browser/content/preferences/translation.xhtml");
   },
 
   openTranslationProviderAttribution() {
@@ -1303,7 +1389,7 @@ var gMainPane = {
    */
   configureFonts() {
     gSubDialog.open(
-      "chrome://browser/content/preferences/fonts.xul",
+      "chrome://browser/content/preferences/fonts.xhtml",
       "resizable=no"
     );
   },
@@ -1314,7 +1400,7 @@ var gMainPane = {
    */
   configureColors() {
     gSubDialog.open(
-      "chrome://browser/content/preferences/colors.xul",
+      "chrome://browser/content/preferences/colors.xhtml",
       "resizable=no"
     );
   },
@@ -1325,7 +1411,7 @@ var gMainPane = {
    */
   showConnections() {
     gSubDialog.open(
-      "chrome://browser/content/preferences/connection.xul",
+      "chrome://browser/content/preferences/connection.xhtml",
       null,
       null,
       this.updateProxySettingsUI.bind(this)
@@ -1768,7 +1854,7 @@ var gMainPane = {
    * Displays the history of installed updates.
    */
   showUpdates() {
-    gSubDialog.open("chrome://mozapps/content/update/history.xul");
+    gSubDialog.open("chrome://mozapps/content/update/history.xhtml");
   },
 
   destroy() {
@@ -2334,9 +2420,7 @@ var gMainPane = {
                 .join(", ");
               Cu.reportError(
                 new Error(
-                  `Preferred handler for ${
-                    handlerInfo.type
-                  } not in list of possible handlers!? (List: ${possible})`
+                  `Preferred handler for ${handlerInfo.type} not in list of possible handlers!? (List: ${possible})`
                 )
               );
               menu.selectedItem = askMenuItem;
@@ -2516,7 +2600,7 @@ var gMainPane = {
     };
 
     gSubDialog.open(
-      "chrome://browser/content/preferences/applicationManager.xul",
+      "chrome://browser/content/preferences/applicationManager.xhtml",
       "resizable=no",
       handlerInfo,
       onComplete
@@ -2582,7 +2666,7 @@ var gMainPane = {
       };
 
       gSubDialog.open(
-        "chrome://global/content/appPicker.xul",
+        "chrome://global/content/appPicker.xhtml",
         null,
         params,
         onAppSelected

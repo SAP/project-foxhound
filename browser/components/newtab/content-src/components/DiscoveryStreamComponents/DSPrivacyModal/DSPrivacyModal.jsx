@@ -3,24 +3,28 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import React from "react";
-import { actionCreators as ac } from "common/Actions.jsm";
-import { SafeAnchor } from "../SafeAnchor/SafeAnchor";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
 import { ModalOverlayWrapper } from "content-src/asrouter/components/ModalOverlay/ModalOverlay";
 
 export class DSPrivacyModal extends React.PureComponent {
   constructor(props) {
     super(props);
     this.closeModal = this.closeModal.bind(this);
-    this.onLinkClick = this.onLinkClick.bind(this);
+    this.onLearnLinkClick = this.onLearnLinkClick.bind(this);
+    this.onManageLinkClick = this.onManageLinkClick.bind(this);
   }
 
-  onLinkClick(event) {
+  onLearnLinkClick(event) {
     this.props.dispatch(
       ac.UserEvent({
         event: "CLICK_PRIVACY_INFO",
         source: "DS_PRIVACY_MODAL",
       })
     );
+  }
+
+  onManageLinkClick(event) {
+    this.props.dispatch(ac.OnlyToMain({ type: at.SETTINGS_OPEN }));
   }
 
   closeModal() {
@@ -38,13 +42,19 @@ export class DSPrivacyModal extends React.PureComponent {
       >
         <div className="privacy-notice">
           <h3 data-l10n-id="newtab-privacy-modal-header" />
-          <p data-l10n-id="newtab-privacy-modal-paragraph" />
-          <SafeAnchor
-            onLinkClick={this.onLinkClick}
-            url="https://www.mozilla.org/en-US/privacy/firefox/"
+          <p data-l10n-id="newtab-privacy-modal-paragraph-2" />
+          <a
+            className="modal-link modal-link-privacy"
+            data-l10n-id="newtab-privacy-modal-link"
+            onClick={this.onLearnLinkClick}
+            href="https://help.getpocket.com/article/1142-firefox-new-tab-recommendations-faq"
+          />
+          <button
+            className="modal-link modal-link-manage"
+            onClick={this.onManageLinkClick}
           >
-            <span data-l10n-id="newtab-privacy-modal-link" />
-          </SafeAnchor>
+            Manage sponsored content settings
+          </button>
         </div>
         <section className="actions">
           <button

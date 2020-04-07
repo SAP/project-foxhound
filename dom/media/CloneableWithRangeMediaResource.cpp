@@ -57,7 +57,8 @@ class InputStreamReader final : public nsIInputStreamCallback {
   OnInputStreamReady(nsIAsyncInputStream* aStream) override {
     // Let's continue with SyncRead().
     MonitorAutoLock lock(mMonitor);
-    return lock.Notify();
+    lock.Notify();
+    return NS_OK;
   }
 
  private:
@@ -148,7 +149,9 @@ nsresult CloneableWithRangeMediaResource::Open(
   return NS_OK;
 }
 
-nsresult CloneableWithRangeMediaResource::Close() { return NS_OK; }
+RefPtr<GenericPromise> CloneableWithRangeMediaResource::Close() {
+  return GenericPromise::CreateAndResolve(true, __func__);
+}
 
 already_AddRefed<nsIPrincipal>
 CloneableWithRangeMediaResource::GetCurrentPrincipal() {

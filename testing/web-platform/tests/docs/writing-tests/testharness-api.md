@@ -180,8 +180,12 @@ In the example above, `foo()` returns a Promise that resolves with the string
 "foo". The `test_function` passed into `promise_test` invokes `foo` and attaches
 a resolve reaction that verifies the returned value.
 
-Note that in the promise chain constructed in `test_function` assertions don't
-need to be wrapped in `step` or `step_func` calls.
+Note that in the promise chain constructed in `test_function`
+assertions don't need to be wrapped in `step` or `step_func`
+calls. However when mixing event handlers and `promise_test`, the
+event handler callback functions *do* need to be wrapped since an
+exception in these functions does not cause the promise chain to
+reject.
 
 Unlike Asynchronous Tests, Promise Tests don't start running until after the
 previous Promise Test finishes. [Under rare
@@ -191,14 +195,18 @@ test may begin to execute before the returned promise has settled. Use
 resetting global state that need to happen consistently before the next test
 starts.
 
-`promise_rejects` can be used to test Promises that need to reject:
+`promise_rejects_dom`, `promise_rejects_js`, and `promise_rejects_exactly` can
+be used to test Promises that need to reject:
 
 ```js
-promise_rejects(test_object, code, promise, description)
+promise_rejects_dom(test_object, code, promise, description)
+promise_rejects_js(test_object, constructor, promise, description)
+promise_rejects_exactly(test_object, value, promise, description)
 ```
 
-The `code` argument is equivalent to the same argument to the `assert_throws`
-function.
+The `code`, `constructor`, and `value` arguments are equivalent to the same
+argument to the `assert_throws_dom`, `assert_throws_js`, and
+`assert_throws_exactly` functions.  The `promise_rejects_dom` function can also be called with a DOMException constructor argument between the `code` and `promise` arguments, just like `assert_throws_dom`, when we want to assert that the DOMException comes from a non-default global.
 
 Here's an example where the `bar()` function returns a Promise that rejects
 with a TypeError:
@@ -209,7 +217,7 @@ function bar() {
 }
 
 promise_test(function(t) {
-  return promise_rejects(t, new TypeError(), bar());
+  return promise_rejects_js(t, TypeError, bar());
 }, "Another example");
 ```
 
@@ -279,12 +287,6 @@ In order for a test to be interpreted as a single page test, it should set the
 
 The test title for single page tests is always taken from `document.title`.
 
-(Prior to October 2019, this behavior would be enabled implicitly for any test
-that did not call `test()` or `async_test()` anywhere on the page and that
-eventually called the `done()` function. [This behavior was found to be prone
-to errors and is in the process of being
-removed.](https://github.com/web-platform-tests/rfcs/blob/master/rfcs/single_test.md))
-
 ## Making assertions ##
 
 Functions for making assertions start `assert_`. The full list of
@@ -310,6 +312,41 @@ NOTE: All asserts must be located in a `test()` or a step of an
 `async_test()`, unless the test is a single page test. Asserts outside
 these places won't be detected correctly by the harness and may cause
 unexpected exceptions that will lead to an error in the harness.
+
+## Preconditions ##
+
+When a test would be invalid unless certain conditions are met, but yet
+doesn't explicitly depend on those preconditions, `assert_precondition` can be
+used. For example:
+
+```js
+async_test((t) => {
+  const video = document.createElement("video");
+  assert_precondition(video.canPlayType("video/webm"));
+  video.src = "multitrack.webm";
+  // test something specific to multiple audio tracks in a WebM container
+  t.done();
+}, "WebM with multiple audio tracks");
+```
+
+A failing `assert_precondition` call is reported as a status of
+`PRECONDITION_FAILED` for the subtest.
+
+`assert_precondition` can also be used during test setup. For example:
+
+```js
+setup(() => {
+  assert_precondition("onfoo" in document.body, "'foo' event supported");
+});
+async_test(() => { /* test #1 waiting for "foo" event */ });
+async_test(() => { /* test #2 waiting for "foo" event */ });
+```
+
+A failing `assert_precondition` during setup is reported as a status of
+`PRECONDITION_FAILED` for the test, and the subtests will not run.
+
+See also the `.optional` [file name convention](file-names.md), which is
+appropriate when the precondition is explicitly optional behavior.
 
 ## Cleanup ##
 
@@ -401,18 +438,38 @@ not possible to make the test reliable in some other way.
 
 ## Setup ##
 
-Sometimes tests require non-trivial setup that may fail. For this purpose
-there is a `setup()` function, that may be called with one or two arguments.
-The two argument version is:
+Sometimes tests require non-trivial setup that may fail. testharness.js
+provides two global functions for this purpose, `setup` and `promise_setup`.
+
+`setup()` may be called with one or two arguments. The two argument version is:
 
 ```js
 setup(func, properties)
 ```
 
-The one argument versions may omit either argument.
-func is a function to be run synchronously. `setup()` becomes a no-op once
-any tests have returned results. Properties are global properties of the test
-harness. Currently recognised properties are:
+The one argument version may omit either argument. `func` is a function to be
+run synchronously. `setup()` becomes a no-op once any tests have returned
+results. `properties` is an object which specifies global properties of the
+test harness (enumerated in the following section).
+
+`promise_setup()` allows authors to pause testing until some asynchronous
+operation has completed. It has the following signature:
+
+```js
+promise_setup(func, properties)
+```
+
+Here, the `func` argument is required. This argument must be a function which
+returns an object with a `then` method (e.g. an ECMAScript Promise instance);
+the harness will wait for the fulfillment of this value before executing any
+additional subtests defined with the `promise_test` function. If the value is
+rejected, the harness will report an error and cancel the remaining tests.
+`properties` may optionally be provided as an object which specifies global
+properties of the test harness (enumerated in the following section).
+
+### Setup properties ##
+
+Both setup functions recognize the following properties:
 
 `explicit_done` - Wait for an explicit call to done() before declaring all
 tests complete (see below; implicitly true for single page tests)
@@ -452,7 +509,9 @@ is called, the two conditions above apply like normal.
 
 Dedicated and shared workers don't have an event that corresponds to the `load`
 event in a document. Therefore these worker tests always behave as if the
-`explicit_done` property is set to true. Service workers depend on the
+`explicit_done` property is set to true (unless they are defined using [the
+"multi-global" pattern](testharness.html#multi-global-tests)). Service workers
+depend on the
 [install](https://w3c.github.io/ServiceWorker/#service-worker-global-scope-install-event)
 event which is fired following the completion of [running the
 worker](https://html.spec.whatwg.org/multipage/workers.html#run-a-worker).
@@ -525,7 +584,8 @@ the following methods:
 Tests have the following properties:
 
   * `status` - A status code. This can be compared to the `PASS`, `FAIL`,
-               `TIMEOUT` and `NOTRUN` properties on the test object
+               `PRECONDITION_FAILED`, `TIMEOUT` and `NOTRUN` properties on the
+               test object
 
   * `message` - A message indicating the reason for failure. In the future this
                 will always be a string
@@ -533,9 +593,11 @@ Tests have the following properties:
  The status object gives the overall status of the harness. It has the
  following properties:
 
- * `status` - Can be compared to the `OK`, `ERROR` and `TIMEOUT` properties
+ * `status` - Can be compared to the `OK`, `PRECONDITION_FAILED`, `ERROR` and
+              `TIMEOUT` properties
 
- * `message` - An error message set when the status is `ERROR`
+ * `message` - An error message set when the status is `PRECONDITION_FAILED`
+               or `ERROR`.
 
 ## External API ##
 
@@ -710,6 +772,10 @@ workers and want to ensure they run in series:
 
 ## List of Assertions ##
 
+### `assert_precondition(condition, description)`
+asserts that `condition` is truthy.
+See [preconditions](#preconditions) for usage.
+
 ### `assert_true(actual, description)`
 asserts that `actual` is strictly true
 
@@ -792,7 +858,7 @@ attribute attribute_name following the conditions specified by WebIDL
 ### `assert_readonly(object, property_name, description)`
 assert that property `property_name` on object is readonly
 
-### `assert_throws(code, func, description)`
+### `assert_throws_dom(code, func, description)` or `assert_throws_dom(code, constructor, func, description)`
 `code` - the expected exception. This can take several forms:
 
   * string - asserts that the thrown exception must be a DOMException
@@ -800,9 +866,22 @@ assert that property `property_name` on object is readonly
              compatibility with existing tests, the name of a
              DOMException constant can also be given, e.g.,
              "TIMEOUT_ERR")
-  * object - asserts that the thrown exception must be any other kind
-             of exception, with a property called "name" that matches
-             `code.name`.
+  * number - asserts that the thrown exception must be a DOMException
+             with the fiven code value (e.g. DOMException.TIMEOUT_ERR).
+
+`func` - a function that should throw
+
+`constructor` - The DOMException constructor that the resulting DOMException should have as its `.constructor`.  This should be used when a DOMException from a non-default global is expected to be thrown.
+
+### `assert_throws_js(constructor, func, description)`
+`constructor` - the expected exception. This is the constructor object
+that the exception should have as its .constructor.  For example,
+`TypeError` or `someOtherWindow.RangeError`.
+
+`func` - a function that should throw
+
+### `assert_throws_exactly(value, func, description)`
+`value` - the exact value that `func` is expected to throw if called.
 
 `func` - a function that should throw
 
@@ -818,7 +897,15 @@ asserts that one `assert_func(actual, expected_array_N, extra_arg1, ..., extra_a
   allows multiple behaviours. Test authors should not use this method simply to hide
   UA bugs.
 
-## Formatting ##
+## Utility functions ##
+
+### **DEPRECATED** `on_event(object, event, callback)`
+
+Register a function as a DOM event listener to the given object for the event
+bubbling phase. New tests should not use this function. Instead, they should
+invoke the `addEventListener` method of the `object` value.
+
+### `format_value(value)`
 
 When many JavaScript Object values are coerced to a String, the resulting value
 will be `"[object Object]"`. This obscures helpful information, making the

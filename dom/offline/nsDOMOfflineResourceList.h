@@ -18,7 +18,6 @@
 #include "nsCOMPtr.h"
 #include "nsWeakReference.h"
 #include "nsCOMArray.h"
-#include "nsIDOMEventListener.h"
 #include "nsIObserver.h"
 #include "nsIScriptContext.h"
 #include "nsCycleCollectionParticipant.h"
@@ -94,10 +93,10 @@ class nsDOMOfflineResourceList final : public mozilla::DOMEventTargetHelper,
   virtual ~nsDOMOfflineResourceList();
 
  private:
-  nsresult SendEvent(const nsAString& aEventName);
+  void SendEvent(const nsAString& aEventName);
 
-  nsresult UpdateAdded(nsIOfflineCacheUpdate* aUpdate);
-  nsresult UpdateCompleted(nsIOfflineCacheUpdate* aUpdate);
+  void UpdateAdded(nsIOfflineCacheUpdate* aUpdate);
+  void UpdateCompleted(nsIOfflineCacheUpdate* aUpdate);
 
   already_AddRefed<nsIApplicationCacheContainer> GetDocumentAppCacheContainer();
   already_AddRefed<nsIApplicationCache> GetDocumentAppCache();

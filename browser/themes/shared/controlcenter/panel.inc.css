@@ -190,7 +190,7 @@
   width: 38px;
   border-style: none;
   -moz-appearance: none;
-  background: url("chrome://browser/skin/arrow-left.svg") center no-repeat;
+  background: url("chrome://global/skin/icons/arrow-left.svg") center no-repeat;
   background-size: 16px, auto;
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
@@ -259,6 +259,7 @@
 }
 
 #protections-popup-mainView-panel-header-section {
+  overflow: hidden;
   color: white;
   background: radial-gradient(circle farthest-side at top right, #9059FF, #0250BB);
 }
@@ -479,6 +480,11 @@ description#identity-popup-content-verifier,
   margin-inline-start: 0;
 }
 
+#protections-popup-sendReportView-report-error {
+  margin-bottom: 24px;
+  color: #d74345;
+}
+
 .protections-popup-category {
   /* Overwrite toolbarbutton styles */
   -moz-appearance: none;
@@ -507,7 +513,7 @@ description#identity-popup-content-verifier,
   -moz-context-properties: fill, fill-opacity;
   fill-opacity: .6;
   transform: scaleX(-1) translateY(1px);
-  float: right;
+  float: inline-end;
 }
 
 .protections-popup-category:-moz-locale-dir(rtl)::after {
@@ -809,6 +815,10 @@ description#identity-popup-content-verifier,
   padding: 0 var(--horizontal-padding);
 }
 
+.protections-popup-category[uidisabled] {
+  display: none;
+}
+
 .identity-popup-permission-item {
   padding-inline-end: 8px;
   margin-top: 0.25em;
@@ -933,7 +943,8 @@ description#identity-popup-content-verifier,
   margin: 0;
 }
 
-#protections-popup-tp-switch-breakage-link {
+#protections-popup-tp-switch-breakage-link,
+#protections-popup-tp-switch-breakage-fixed-link {
   margin-top: calc(0.5 * var(--vertical-section-padding)) !important;
 }
 
@@ -1085,6 +1096,7 @@ description#identity-popup-content-verifier,
   visibility: hidden;
   opacity: 0;
   transition: opacity 200ms linear;
+  justify-self: end;
 }
 
 #protections-popup-trackers-blocked-counter-box[showing] {

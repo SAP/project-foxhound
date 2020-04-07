@@ -9,7 +9,9 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Range.h"
 
+#include "ds/LifoAlloc.h"
 #include "frontend/BytecodeCompilation.h"
+#include "frontend/CompilationInfo.h"
 #include "gc/HashUtil.h"
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
@@ -60,10 +62,7 @@ static bool IsEvalCacheCandidate(JSScript* script) {
 
 /* static */
 HashNumber EvalCacheHashPolicy::hash(const EvalCacheLookup& l) {
-  AutoCheckCannotGC nogc;
-  uint32_t hash = l.str->hasLatin1Chars()
-                      ? HashString(l.str->latin1Chars(nogc), l.str->length())
-                      : HashString(l.str->twoByteChars(nogc), l.str->length());
+  HashNumber hash = HashStringChars(l.str);
   return AddToHash(hash, l.callerScript.get(), l.pc);
 }
 
@@ -120,7 +119,7 @@ class EvalScriptGuard {
   }
 
   void setNewScript(JSScript* script) {
-    // JSScript::initFromEmitter has already called js_CallNewScriptHook.
+    // JSScript::fullyInitFromStencil has already called js_CallNewScriptHook.
     MOZ_ASSERT(!script_ && script);
     script_ = script;
   }
@@ -211,6 +210,8 @@ static EvalJSONResult TryEvalJSON(JSContext* cx, JSLinearString* str,
 
 enum EvalType { DIRECT_EVAL, INDIRECT_EVAL };
 
+// 18.2.1.1 PerformEval
+//
 // Common code implementing direct and indirect eval.
 //
 // Evaluate call.argv[2], if it is a string, in the context of the given calling
@@ -227,20 +228,21 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
   MOZ_ASSERT_IF(evalType == INDIRECT_EVAL, IsGlobalLexicalEnvironment(env));
   AssertInnerizedEnvironmentChain(cx, *env);
 
-  if (!GlobalObject::isRuntimeCodeGenEnabled(cx, v, cx->global())) {
+  // Step 2.
+  if (!v.isString()) {
+    vp.set(v);
+    return true;
+  }
+
+  // Steps 3-4.
+  RootedString str(cx, v.toString());
+  if (!GlobalObject::isRuntimeCodeGenEnabled(cx, str, cx->global())) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_CSP_BLOCKED_EVAL);
     return false;
   }
 
-  // ES5 15.1.2.1 step 1.
-  if (!v.isString()) {
-    vp.set(v);
-    return true;
-  }
-  RootedString str(cx, v.toString());
-
-  // ES5 15.1.2.1 steps 2-8.
+  // Step 5 ff.
 
   // Per ES5, indirect eval runs in the global scope. (eval is specified this
   // way so that the compiler can make assumptions about what bindings may or
@@ -329,8 +331,17 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
       return false;
     }
 
-    frontend::EvalScriptInfo info(cx, options, env, enclosing);
-    RootedScript compiled(cx, frontend::CompileEvalScript(info, srcBuf));
+    LifoAllocScope allocScope(&cx->tempLifoAlloc());
+    frontend::CompilationInfo compilationInfo(cx, allocScope, options);
+    if (!compilationInfo.init(cx)) {
+      return false;
+    }
+
+    frontend::EvalSharedContext evalsc(cx, env, compilationInfo, enclosing,
+                                       compilationInfo.directives,
+                                       options.extraWarningsOption);
+    RootedScript compiled(
+        cx, frontend::CompileEvalScript(compilationInfo, evalsc, env, srcBuf));
     if (!compiled) {
       return false;
     }
@@ -350,8 +361,7 @@ bool js::DirectEvalStringFromIon(JSContext* cx, HandleObject env,
                                  jsbytecode* pc, MutableHandleValue vp) {
   AssertInnerizedEnvironmentChain(cx, *env);
 
-  RootedValue v(cx, StringValue(str));
-  if (!GlobalObject::isRuntimeCodeGenEnabled(cx, v, cx->global())) {
+  if (!GlobalObject::isRuntimeCodeGenEnabled(cx, str, cx->global())) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_CSP_BLOCKED_EVAL);
     return false;
@@ -424,8 +434,17 @@ bool js::DirectEvalStringFromIon(JSContext* cx, HandleObject env,
       return false;
     }
 
-    frontend::EvalScriptInfo info(cx, options, env, enclosing);
-    JSScript* compiled = frontend::CompileEvalScript(info, srcBuf);
+    LifoAllocScope allocScope(&cx->tempLifoAlloc());
+    frontend::CompilationInfo compilationInfo(cx, allocScope, options);
+    if (!compilationInfo.init(cx)) {
+      return false;
+    }
+
+    frontend::EvalSharedContext evalsc(cx, env, compilationInfo, enclosing,
+                                       compilationInfo.directives,
+                                       options.extraWarningsOption);
+    JSScript* compiled =
+        frontend::CompileEvalScript(compilationInfo, evalsc, env, srcBuf);
     if (!compiled) {
       return false;
     }
@@ -453,10 +472,10 @@ bool js::DirectEval(JSContext* cx, HandleValue v, MutableHandleValue vp) {
   ScriptFrameIter iter(cx);
   AbstractFramePtr caller = iter.abstractFramePtr();
 
-  MOZ_ASSERT(JSOp(*iter.pc()) == JSOP_EVAL ||
-             JSOp(*iter.pc()) == JSOP_STRICTEVAL ||
-             JSOp(*iter.pc()) == JSOP_SPREADEVAL ||
-             JSOp(*iter.pc()) == JSOP_STRICTSPREADEVAL);
+  MOZ_ASSERT(JSOp(*iter.pc()) == JSOp::Eval ||
+             JSOp(*iter.pc()) == JSOp::StrictEval ||
+             JSOp(*iter.pc()) == JSOp::SpreadEval ||
+             JSOp(*iter.pc()) == JSOp::StrictSpreadEval);
   MOZ_ASSERT(caller.realm() == caller.script()->realm());
 
   RootedObject envChain(cx, caller.environmentChain());
@@ -573,9 +592,7 @@ JS_FRIEND_API bool js::ExecuteInJSMEnvironment(JSContext* cx,
     //      WithEnvironmentObject[target=targetObj]
     //      LexicalEnvironmentObject[this=targetObj] (*)
     //
-    //  (*) This environment intentionally intercepts JSOP_GLOBALTHIS, but
-    //  not JSOP_FUNCTIONTHIS (which instead will fallback to the NSVO). I
-    //  don't make the rules, I just record them.
+    //  (*) This environment intercepts JSOp::GlobalThis.
 
     // Wrap the target objects in WithEnvironments.
     if (!js::CreateObjectsForEnvironmentChain(cx, targetObj, env, &env)) {

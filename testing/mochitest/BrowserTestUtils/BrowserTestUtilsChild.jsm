@@ -8,6 +8,99 @@ var EXPORTED_SYMBOLS = ["BrowserTestUtilsChild"];
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
+class BrowserTestUtilsChildObserver {
+  constructor() {
+    this.currentObserverStatus = "";
+    this.observerItems = [];
+  }
+
+  startObservingTopics(aTopics) {
+    for (let topic of aTopics) {
+      Services.obs.addObserver(this, topic);
+      this.observerItems.push({ topic });
+    }
+  }
+
+  stopObservingTopics(aTopics) {
+    if (aTopics) {
+      for (let topic of aTopics) {
+        let index = this.observerItems.findIndex(item => item.topic == topic);
+        if (index >= 0) {
+          Services.obs.removeObserver(this, topic);
+          this.observerItems.splice(index, 1);
+        }
+      }
+    } else {
+      for (let topic of this.observerItems) {
+        Services.obs.removeObserver(this, topic);
+      }
+      this.observerItems = [];
+    }
+
+    if (this.currentObserverStatus) {
+      let error = new Error(this.currentObserverStatus);
+      this.currentObserverStatus = "";
+      throw error;
+    }
+  }
+
+  observeTopic(topic, count, filterFn, callbackResolver) {
+    // If the topic is in the list already, assume that it came from a
+    // startObservingTopics call. If it isn't in the list already, assume
+    // that it isn't within a start/stop set and the observer has to be
+    // removed afterwards.
+    let removeObserver = false;
+    let index = this.observerItems.findIndex(item => item.topic == topic);
+    if (index == -1) {
+      removeObserver = true;
+      this.startObservingTopics([topic]);
+    }
+
+    for (let item of this.observerItems) {
+      if (item.topic == topic) {
+        item.count = count || 1;
+        item.filterFn = filterFn;
+        item.promiseResolver = () => {
+          if (removeObserver) {
+            this.stopObservingTopics([topic]);
+          }
+          callbackResolver();
+        };
+        break;
+      }
+    }
+  }
+
+  observe(aSubject, aTopic, aData) {
+    for (let item of this.observerItems) {
+      if (item.topic != aTopic) {
+        continue;
+      }
+      if (item.filterFn && !item.filterFn(aSubject, aTopic, aData)) {
+        break;
+      }
+
+      if (--item.count >= 0) {
+        if (item.count == 0 && item.promiseResolver) {
+          item.promiseResolver();
+        }
+        return;
+      }
+    }
+
+    // Otherwise, if the observer doesn't match, fail.
+    console.log(
+      "Failed: Observer topic " + aTopic + " not expected in content process"
+    );
+    this.currentObserverStatus +=
+      "Topic " + aTopic + " not expected in content process\n";
+  }
+}
+
+BrowserTestUtilsChildObserver.prototype.QueryInterface = ChromeUtils.generateQI(
+  [Ci.nsIObserver, Ci.nsISupportsWeakReference]
+);
+
 class BrowserTestUtilsChild extends JSWindowActorChild {
   actorCreated() {
     this._EventUtils = null;
@@ -81,6 +174,40 @@ class BrowserTestUtilsChild extends JSWindowActorChild {
         );
         break;
 
+      case "BrowserTestUtils:StartObservingTopics": {
+        this.observer = new BrowserTestUtilsChildObserver();
+        this.observer.startObservingTopics(aMessage.data.topics);
+        break;
+      }
+
+      case "BrowserTestUtils:StopObservingTopics": {
+        if (this.observer) {
+          this.observer.stopObservingTopics(aMessage.data.topics);
+          this.observer = null;
+        }
+        break;
+      }
+
+      case "BrowserTestUtils:ObserveTopic": {
+        return new Promise(resolve => {
+          let filterFn;
+          if (aMessage.data.filterFunctionSource) {
+            /* eslint-disable-next-line no-eval */
+            filterFn = eval(
+              `(() => (${aMessage.data.filterFunctionSource}))()`
+            );
+          }
+
+          let observer = this.observer || new BrowserTestUtilsChildObserver();
+          observer.observeTopic(
+            aMessage.data.topic,
+            aMessage.data.count,
+            filterFn,
+            resolve
+          );
+        });
+      }
+
       case "BrowserTestUtils:CrashFrame": {
         // This is to intentionally crash the frame.
         // We crash by using js-ctypes and dereferencing
@@ -104,6 +231,19 @@ class BrowserTestUtilsChild extends JSWindowActorChild {
     }
 
     return undefined;
+  }
+
+  handleEvent(aEvent) {
+    switch (aEvent.type) {
+      case "DOMContentLoaded":
+      case "load": {
+        this.sendAsyncMessage(aEvent.type, {
+          internalURL: aEvent.target.documentURI,
+          visibleURL: aEvent.target.location.href,
+        });
+        break;
+      }
+    }
   }
 
   synthesizeMouse(data, window) {

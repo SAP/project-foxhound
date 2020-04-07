@@ -4,6 +4,11 @@
 "use strict";
 
 /**
+ * Allow tests to use "require".
+ */
+const { require } = ChromeUtils.import("resource://devtools/shared/Loader.jsm");
+
+/**
  * Wait for a single requestAnimationFrame tick.
  */
 function tick() {
@@ -67,6 +72,21 @@ async function waitUntil(condition, message) {
 }
 
 /**
+ * This function looks inside of a document for some element that has a label.
+ * It runs in a loop every requestAnimationFrame until it finds the element. If
+ * it doesn't find the element it throws an error.
+ *
+ * @param {string} label
+ * @returns {Promise<HTMLElement>}
+ */
+function getElementByLabel(document, label) {
+  return waitUntil(
+    () => document.querySelector(`[label="${label}"]`),
+    `Trying to find the button with the label "${label}".`
+  );
+}
+
+/**
  * This function will select a node from the XPath.
  * @returns {HTMLElement?}
  */
@@ -81,23 +101,47 @@ function getElementByXPath(document, path) {
 }
 
 /**
- * This function looks inside of the profiler popup's iframe for some element
- * that contains some text. It runs in a loop every requestAnimationFrame until
- * it finds an element. If it doesn't find the element it throws an error.
- * It also doesn't assume the popup will be visible yet, as this popup showing
- * is an async event.
+ * This function looks inside of a document for some element that contains
+ * the given text. It runs in a loop every requestAnimationFrame until it
+ * finds the element. If it doesn't find the element it throws an error.
+ *
+ * @param {HTMLDocument} document
  * @param {string} text
- * @param {number} maxTicks (optional)
+ * @returns {Promise<HTMLElement>}
  */
-async function getElementFromPopupByText(text) {
+async function getElementFromDocumentByText(document, text) {
   const xpath = `//*[contains(text(), '${text}')]`;
-  return waitUntil(() => {
-    const iframe = document.getElementById("PanelUI-profilerIframe");
-    if (iframe) {
-      return getElementByXPath(iframe.contentDocument, xpath);
-    }
-    return null;
-  }, `Trying to find the element with the text "${text}".`);
+  return waitUntil(
+    () => getElementByXPath(document, xpath),
+    `Trying to find the element with the text "${text}".`
+  );
+}
+
+/**
+ * This function is similar to getElementFromDocumentByText, but it immediately
+ * returns and does not wait for an element to exist.
+ * @param {HTMLDocument} document
+ * @param {string} text
+ * @returns {HTMLElement?}
+ */
+function maybeGetElementFromDocumentByText(document, text) {
+  info(`Immediately trying to find the element with the text "${text}".`);
+  const xpath = `//*[contains(text(), '${text}')]`;
+  return getElementByXPath(document, xpath);
+}
+
+/**
+ * Returns the popup's document.
+ * @returns {Document}
+ */
+function getIframeDocument() {
+  const iframe = document.getElementById("PanelUI-profilerIframe");
+  if (!iframe) {
+    throw new Error(
+      "This function assumes the profiler iframe is already present."
+    );
+  }
+  return iframe.contentDocument;
 }
 
 /**
@@ -140,9 +184,10 @@ async function makeSureProfilerPopupIsEnabled() {
 
 /**
  * This function toggles the profiler menu button, and then uses user gestures
- * to click it open.
+ * to click it open. It waits a tick to make sure it has a chance to initialize.
+ * @return {Promise<void>}
  */
-function toggleOpenProfilerPopup() {
+async function toggleOpenProfilerPopup() {
   info("Toggle open the profiler popup.");
 
   info("> Find the profiler menu button.");
@@ -153,6 +198,7 @@ function toggleOpenProfilerPopup() {
 
   info("> Trigger a click on the profiler menu button.");
   profilerButton.click();
+  await tick();
 }
 
 /**
@@ -212,4 +258,214 @@ async function checkTabLoadedProfile({
         return false;
     }
   });
+}
+
+/**
+ * This function checks the document title of a tab as an easy way to pass
+ * messages from a content page to the mochitest.
+ * @param {string} title
+ */
+async function waitForTabTitle(title) {
+  const logPeriodically = createPeriodicLogger();
+
+  info(`Waiting for the selected tab to have the title "${title}".`);
+
+  return waitUntil(() => {
+    if (gBrowser.selectedTab.textContent === title) {
+      ok(true, `The selected tab has the title ${title}`);
+      return true;
+    }
+    logPeriodically(`> Waiting for the tab title to change.`);
+    return false;
+  });
+}
+
+/**
+ * Close the popup, and wait for it to be destroyed.
+ */
+async function closePopup() {
+  const iframe = document.querySelector("#PanelUI-profilerIframe");
+
+  if (!iframe) {
+    throw new Error(
+      "Could not find the profiler iframe when attempting to close the popup. Was it " +
+        "already closed?"
+    );
+  }
+
+  const panel = iframe.closest("panel");
+  if (!panel) {
+    throw new Error(
+      "Could not find the closest panel to the profiler's iframe."
+    );
+  }
+
+  info("Hide the profiler popup.");
+  panel.hidePopup();
+
+  info("Wait for the profiler popup to be completely hidden.");
+  while (true) {
+    if (!iframe.ownerDocument.contains(iframe)) {
+      info("The iframe was removed.");
+      return;
+    }
+    await tick();
+  }
+}
+
+/**
+ * Open about:profiling in a new tab, and output helpful log messages.
+ *
+ * @template T
+ * @param {(Document) => T} callback
+ * @returns {Promise<T>}
+ */
+function withAboutProfiling(callback) {
+  info("Begin to open about:profiling in a new tab.");
+  return BrowserTestUtils.withNewTab(
+    "about:profiling",
+    async contentBrowser => {
+      info("about:profiling is now open in a tab.");
+      return callback(contentBrowser.contentDocument);
+    }
+  );
+}
+
+/**
+ * Start and stop the profiler to get the current active configuration. This is
+ * done programmtically through the nsIProfiler interface, rather than through click
+ * interactions, since the about:profiling page does not include buttons to control
+ * the recording.
+ *
+ * @returns {Object}
+ */
+function getActiveConfiguration() {
+  const { startProfiler, stopProfiler } = ChromeUtils.import(
+    "resource://devtools/client/performance-new/popup/background.jsm.js"
+  );
+
+  info("Start the profiler with the current about:profiling configuration.");
+  startProfiler();
+
+  // Immediately pause the sampling, to make sure the test runs fast. The profiler
+  // only needs to be started to initialize the configuration.
+  Services.profiler.PauseSampling();
+
+  const { activeConfiguration } = Services.profiler;
+  if (!activeConfiguration) {
+    throw new Error(
+      "Expected to find an active configuration for the profile."
+    );
+  }
+
+  info("Stop the profiler after getting the active configuration.");
+  stopProfiler();
+
+  return activeConfiguration;
+}
+
+/**
+ * Start the profiler programmatically and check that the active configuration has
+ * a feature enabled
+ *
+ * @param {string} feature
+ * @return {boolean}
+ */
+function activeConfigurationHasFeature(feature) {
+  const { features } = getActiveConfiguration();
+  return features.includes(feature);
+}
+
+/**
+ * Start the profiler programmatically and check that the active configuration is
+ * tracking a thread.
+ *
+ * @param {string} thread
+ * @return {boolean}
+ */
+function activeConfigurationHasThread(thread) {
+  const { threads } = getActiveConfiguration();
+  return threads.includes(thread);
+}
+
+/**
+ * Grabs the associated input from the element, or it walks up the DOM from a text
+ * element and tries to query select an input.
+ *
+ * @param {Document} document
+ * @param {string} text
+ * @param {HTMLInputElement}
+ */
+async function getNearestInputFromText(document, text) {
+  const textElement = await getElementFromDocumentByText(document, text);
+  if (textElement.control) {
+    // This is a label, just grab the input.
+    return textElement.control;
+  }
+  // A non-label node
+  let next = textElement;
+  while ((next = next.parentElement)) {
+    const input = next.querySelector("input");
+    if (input) {
+      return input;
+    }
+  }
+  throw new Error("Could not find an input near text element.");
+}
+
+/**
+ * Wait until the profiler menu button is added.
+ *
+ * @returns Promise<void>
+ */
+async function waitForProfilerMenuButton() {
+  info("Checking if the profiler menu button is enabled.");
+  await waitUntil(
+    () => gBrowser.ownerDocument.getElementById("profiler-button"),
+    "> Waiting until the profiler button is added to the browser."
+  );
+}
+
+/**
+ * Make sure the profiler popup is disabled for the test.
+ */
+async function makeSureProfilerPopupIsDisabled() {
+  info("Make sure the profiler popup is dsiabled.");
+
+  info("> Load the profiler menu button module.");
+  const { ProfilerMenuButton } = ChromeUtils.import(
+    "resource://devtools/client/performance-new/popup/menu-button.jsm.js"
+  );
+
+  const originallyIsEnabled = ProfilerMenuButton.isEnabled();
+
+  if (originallyIsEnabled) {
+    info("> The menu button is enabled, turn it off for this test.");
+    ProfilerMenuButton.toggle(document);
+  } else {
+    info("> The menu button was already disabled.");
+  }
+
+  registerCleanupFunction(() => {
+    info("Revert the profiler menu button to its original enabled state.");
+    if (originallyIsEnabled !== ProfilerMenuButton.isEnabled()) {
+      ProfilerMenuButton.toggle(document);
+    }
+  });
+}
+
+/**
+ * Open the WebChannel test document, that will enable the profiler popup via
+ * WebChannel.
+ * @param {Function} callback
+ */
+function withWebChannelTestDocument(callback) {
+  return BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url:
+        "http://example.com/browser/devtools/client/performance-new/test/browser/webchannel.html",
+    },
+    callback
+  );
 }

@@ -109,7 +109,7 @@ class nsTableCellFrame : public nsContainerFrame,
 
   virtual nscoord GetMinISize(gfxContext* aRenderingContext) override;
   virtual nscoord GetPrefISize(gfxContext* aRenderingContext) override;
-  IntrinsicISizeOffsetData IntrinsicISizeOffsets(
+  IntrinsicSizeOffsetData IntrinsicISizeOffsets(
       nscoord aPercentageBasis = NS_UNCONSTRAINEDSIZE) override;
 
   virtual void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
@@ -130,7 +130,8 @@ class nsTableCellFrame : public nsContainerFrame,
   virtual mozilla::StyleVerticalAlignKeyword GetVerticalAlign() const;
 
   bool HasVerticalAlignBaseline() const {
-    return GetVerticalAlign() == mozilla::StyleVerticalAlignKeyword::Baseline;
+    return GetVerticalAlign() == mozilla::StyleVerticalAlignKeyword::Baseline &&
+           !GetContentEmpty();
   }
 
   bool CellHasVisibleContent(nscoord aBSize, nsTableFrame* tableFrame,

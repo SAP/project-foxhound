@@ -135,6 +135,7 @@
 
       // Force an initial build.
       if (this.place) {
+        // eslint-disable-next-line no-self-assign
         this.place = this.place;
       }
     }
@@ -159,6 +160,9 @@
      * overriding
      */
     set view(val) {
+      // We save the view so that we can avoid expensive get calls when
+      // we need to get the view again.
+      this._view = val;
       /* eslint-disable no-undef */
       return Object.getOwnPropertyDescriptor(
         XULTreeElement.prototype,
@@ -168,18 +172,7 @@
     }
 
     get view() {
-      try {
-        /* eslint-disable no-undef */
-        return (
-          Object.getOwnPropertyDescriptor(
-            XULTreeElement.prototype,
-            "view"
-          ).get.call(this).wrappedJSObject || null
-        );
-        /* eslint-enable no-undef */
-      } catch (e) {
-        return null;
-      }
+      return this._view;
     }
 
     get associatedElement() {
@@ -191,6 +184,7 @@
         this.setAttribute("flatList", val);
         // reload with the last place set
         if (this.place) {
+          // eslint-disable-next-line no-self-assign
           this.place = this.place;
         }
       }
@@ -826,7 +820,7 @@
 
     destroyContextMenu(aPopup) {}
     disconnectedCallback() {
-      // Unregister the controllber before unlinking the view, otherwise it
+      // Unregister the controller before unlinking the view, otherwise it
       // may still try to update commands on a view with a null result.
       if (this._controller) {
         this._controller.terminate();

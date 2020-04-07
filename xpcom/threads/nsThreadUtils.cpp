@@ -164,11 +164,6 @@ nsresult NS_NewNamedThread(const nsACString& aName, nsIThread** aResult,
   return NS_OK;
 }
 
-nsresult NS_NewThread(nsIThread** aResult, nsIRunnable* aEvent,
-                      uint32_t aStackSize) {
-  return NS_NewNamedThread(NS_LITERAL_CSTRING(""), aResult, aEvent, aStackSize);
-}
-
 nsresult NS_GetCurrentThread(nsIThread** aResult) {
 #ifdef MOZILLA_INTERNAL_API
   return nsThreadManager::get().nsThreadManager::GetCurrentThread(aResult);
@@ -327,7 +322,7 @@ class IdleRunnableWrapper final : public IdleRunnable {
       return NS_OK;
     }
     CancelTimer();
-    nsCOMPtr<nsIRunnable> runnable = mRunnable.forget();
+    nsCOMPtr<nsIRunnable> runnable = std::move(mRunnable);
     return runnable->Run();
   }
 
@@ -518,17 +513,29 @@ nsCString nsThreadPoolNaming::GetNextThreadName(const nsACString& aPoolName) {
   return name;
 }
 
-nsresult NS_DispatchToBackgroundThread(already_AddRefed<nsIRunnable> aEvent,
-                                       uint32_t aDispatchFlags) {
+nsresult NS_DispatchBackgroundTask(already_AddRefed<nsIRunnable> aEvent,
+                                   uint32_t aDispatchFlags) {
   nsCOMPtr<nsIRunnable> event(aEvent);
   return nsThreadManager::get().DispatchToBackgroundThread(event,
                                                            aDispatchFlags);
 }
 
-nsresult NS_DispatchToBackgroundThread(nsIRunnable* aEvent,
-                                       uint32_t aDispatchFlags) {
+nsresult NS_DispatchBackgroundTask(nsIRunnable* aEvent,
+                                   uint32_t aDispatchFlags) {
   return nsThreadManager::get().DispatchToBackgroundThread(aEvent,
                                                            aDispatchFlags);
+}
+
+nsresult NS_CreateBackgroundTaskQueue(const char* aName,
+                                      nsISerialEventTarget** aTarget) {
+  nsCOMPtr<nsISerialEventTarget> target =
+      nsThreadManager::get().CreateBackgroundTaskQueue(aName);
+  if (!target) {
+    return NS_ERROR_FAILURE;
+  }
+
+  target.forget(aTarget);
+  return NS_OK;
 }
 
 // nsAutoLowPriorityIO
@@ -614,8 +621,8 @@ size_t GetNumberOfProcessors() {
 }  // namespace mozilla
 
 bool nsIEventTarget::IsOnCurrentThread() {
-  if (mVirtualThread) {
-    return mVirtualThread == GetCurrentVirtualThread();
+  if (mThread) {
+    return mThread == PR_GetCurrentThread();
   }
   return IsOnCurrentThreadInfallible();
 }

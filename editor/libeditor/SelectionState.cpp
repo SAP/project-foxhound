@@ -581,8 +581,6 @@ void RangeUpdater::DidMoveNode(nsINode* aOldParent, int32_t aOldOffset,
 
 RangeItem::RangeItem() : mStartOffset{0}, mEndOffset{0} {}
 
-RangeItem::~RangeItem() {}
-
 NS_IMPL_CYCLE_COLLECTION(RangeItem, mStartContainer, mEndContainer)
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(RangeItem, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(RangeItem, Release)
@@ -596,11 +594,10 @@ void RangeItem::StoreRange(nsRange* aRange) {
 }
 
 already_AddRefed<nsRange> RangeItem::GetRange() {
-  RefPtr<nsRange> range = new nsRange(mStartContainer);
-  if (NS_FAILED(range->SetStartAndEnd(mStartContainer, mStartOffset,
-                                      mEndContainer, mEndOffset))) {
-    return nullptr;
-  }
+  IgnoredErrorResult ignoredError;
+  RefPtr<nsRange> range = nsRange::Create(
+      mStartContainer, mStartOffset, mEndContainer, mEndOffset, ignoredError);
+  NS_WARNING_ASSERTION(!ignoredError.Failed(), "Failed to create a range");
   return range.forget();
 }
 

@@ -14,6 +14,7 @@
 #include "TelemetryCommon.h"
 #include "TelemetryOriginEnums.h"
 
+#include "js/Array.h"  // JS::NewArrayObject
 #include "mozilla/Atomics.h"
 #include "mozilla/Base64.h"
 #include "mozilla/dom/PrioEncoder.h"
@@ -319,10 +320,8 @@ void TelemetryOrigin::InitializeGlobalState() {
 
   // This map shouldn't change at runtime, so make debug builds complain
   // if it tries.
-#ifdef DEBUG
   gOriginToIndexMap->MarkImmutable();
   gHashToIndexMap->MarkImmutable();
-#endif  // DEBUG
 
   gInitDone = true;
 }
@@ -543,7 +542,7 @@ nsresult TelemetryOrigin::GetEncodedOriginSnapshot(
   // }, ...]
 
   JS::RootedObject prioDataArray(aCx,
-                                 JS_NewArrayObject(aCx, prioData.Length()));
+                                 JS::NewArrayObject(aCx, prioData.Length()));
   if (NS_WARN_IF(!prioDataArray)) {
     return NS_ERROR_FAILURE;
   }

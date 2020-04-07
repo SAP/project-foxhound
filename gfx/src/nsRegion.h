@@ -10,21 +10,22 @@
 #include <stddef.h>     // for size_t
 #include <stdint.h>     // for uint32_t, uint64_t
 #include <sys/types.h>  // for int32_t
-#include <ostream>      // for std::ostream
-#include "nsCoord.h"    // for nscoord
-#include "nsError.h"    // for nsresult
-#include "nsPoint.h"    // for nsIntPoint, nsPoint
-#include "nsRect.h"     // for mozilla::gfx::IntRect, nsRect
-#include "nsRectAbsolute.h"
-#include "nsMargin.h"               // for nsIntMargin
-#include "nsRegionFwd.h"            // for nsIntRegion
-#include "nsString.h"               // for nsCString
-#include "mozilla/ArrayView.h"      // for ArrayView
-#include "mozilla/Move.h"           // for mozilla::Move
-#include "mozilla/gfx/MatrixFwd.h"  // for mozilla::gfx::Matrix4x4
-#include "mozilla/gfx/Logging.h"
-#include "nsTArray.h"
 
+#include <ostream>  // for std::ostream
+#include <utility>  // for mozilla::Move
+
+#include "mozilla/ArrayView.h"  // for ArrayView
+#include "mozilla/gfx/Logging.h"
+#include "mozilla/gfx/MatrixFwd.h"  // for mozilla::gfx::Matrix4x4
+#include "nsCoord.h"                // for nscoord
+#include "nsError.h"                // for nsresult
+#include "nsMargin.h"               // for nsIntMargin
+#include "nsPoint.h"                // for nsIntPoint, nsPoint
+#include "nsRect.h"                 // for mozilla::gfx::IntRect, nsRect
+#include "nsRectAbsolute.h"
+#include "nsRegionFwd.h"  // for nsIntRegion
+#include "nsString.h"     // for nsCString
+#include "nsTArray.h"
 #include "pixman.h"
 
 // Uncomment this line to get additional integrity checking.
@@ -111,12 +112,8 @@ struct Band {
     mStrips.AppendElement(Strip{aRect.X(), aRect.XMost()});
   }
 
-  Band(const Band& aOther)
-      : top(aOther.top), bottom(aOther.bottom), mStrips(aOther.mStrips) {}
-  Band(const Band&& aOther)
-      : top(aOther.top),
-        bottom(aOther.bottom),
-        mStrips(std::move(aOther.mStrips)) {}
+  Band(const Band& aOther) = default;
+  Band(Band&& aOther) = default;
 
   void InsertStrip(const Strip& aStrip) {
     for (size_t i = 0; i < mStrips.Length(); i++) {
@@ -491,7 +488,7 @@ class nsRegion {
   typedef nsPoint PointType;
   typedef nsMargin MarginType;
 
-  nsRegion() {}
+  nsRegion() = default;
   MOZ_IMPLICIT nsRegion(const nsRect& aRect) {
     mBounds = nsRectAbsolute::FromRect(aRect);
   }
@@ -527,10 +524,6 @@ class nsRegion {
 
   friend std::ostream& operator<<(std::ostream& stream, const nsRegion& m);
   void OutputToStream(std::string aObjName, std::ostream& stream) const;
-
-  static nsresult InitStatic() { return NS_OK; }
-
-  static void ShutdownStatic() {}
 
  private:
 #ifdef DEBUG_REGIONS
@@ -2220,7 +2213,7 @@ class BaseIntRegion {
   typedef Point PointType;
   typedef Margin MarginType;
 
-  BaseIntRegion() {}
+  BaseIntRegion() = default;
   MOZ_IMPLICIT BaseIntRegion(const Rect& aRect) : mImpl(ToRect(aRect)) {}
   explicit BaseIntRegion(mozilla::gfx::ArrayView<pixman_box32_t> aRects)
       : mImpl(aRects) {}
@@ -2493,7 +2486,7 @@ class IntRegionTyped
   typedef IntMarginTyped<units> MarginType;
 
   // Forward constructors.
-  IntRegionTyped() {}
+  IntRegionTyped() = default;
   MOZ_IMPLICIT IntRegionTyped(const IntRectTyped<units>& aRect)
       : Super(aRect) {}
   IntRegionTyped(const IntRegionTyped& aRegion) : Super(aRegion) {}

@@ -10,20 +10,15 @@
 #include "nsMimeTypes.h"
 #include "nsNetUtil.h"
 #include "nsEscape.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
-#include "nsIViewSourceChannel.h"
 #include "nsContentUtils.h"
 #include "nsProxyRelease.h"
 #include "nsContentSecurityManager.h"
 
-#include "nsIScriptSecurityManager.h"
-#include "nsIPrincipal.h"
 #include "nsIFileURL.h"
 
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
-#include "nsIBrowserChild.h"
 #include "private/pprio.h"
 #include "nsInputStreamPump.h"
 #include "nsThreadUtils.h"
@@ -63,9 +58,7 @@ static LazyLogModule gJarProtocolLog("nsJarProtocol");
 
 class nsJARInputThunk : public nsIInputStream {
  public:
-  // Preserve refcount changes when record/replaying, as otherwise the thread
-  // which destroys the thunk may vary between recording and replaying.
-  NS_DECL_THREADSAFE_ISUPPORTS_WITH_RECORDING(recordreplay::Behavior::Preserve)
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAM
 
   nsJARInputThunk(nsIZipReader* zipReader, nsIURI* fullJarURI,
@@ -172,6 +165,7 @@ nsJARInputThunk::IsNonBlocking(bool* nonBlocking) {
 
 nsJARChannel::nsJARChannel()
     : mOpened(false),
+      mCanceled(false),
       mContentLength(-1),
       mLoadFlags(LOAD_NORMAL),
       mStatus(NS_OK),
@@ -565,6 +559,7 @@ nsJARChannel::GetStatus(nsresult* status) {
 
 NS_IMETHODIMP
 nsJARChannel::Cancel(nsresult status) {
+  mCanceled = true;
   mStatus = status;
   if (mPump) {
     return mPump->Cancel(status);
@@ -574,6 +569,12 @@ nsJARChannel::Cancel(nsresult status) {
     mPendingEvent.isCanceled = true;
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsJARChannel::GetCanceled(bool* aCanceled) {
+  *aCanceled = mCanceled;
   return NS_OK;
 }
 
@@ -612,6 +613,16 @@ NS_IMETHODIMP
 nsJARChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
   mLoadFlags = aLoadFlags;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsJARChannel::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return GetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
+nsJARChannel::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return SetTRRModeImpl(aTRRMode);
 }
 
 NS_IMETHODIMP
@@ -863,7 +874,8 @@ nsJARChannel::AsyncOpen(nsIStreamListener* aListener) {
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
-           nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
+           mLoadInfo->LoadingPrincipal() &&
+           mLoadInfo->LoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
 
   NS_ENSURE_ARG_POINTER(listener);

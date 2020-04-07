@@ -1,30 +1,27 @@
 [package]
 authors = ["The Cranelift Project Developers"]
 name = "cranelift-frontend"
-version = "0.44.0"
+version = "0.58.0"
 description = "Cranelift IR builder helper"
 license = "Apache-2.0 WITH LLVM-exception"
 documentation = "https://cranelift.readthedocs.io/"
 categories = ["no-std"]
-repository = "https://github.com/CraneStation/cranelift"
+repository = "https://github.com/bytecodealliance/cranelift"
 readme = "README.md"
 edition = "2018"
 
 [dependencies]
-cranelift-codegen = { path = "../cranelift-codegen", version = "0.44.0", default-features = false }
-target-lexicon = "0.8.1"
+cranelift-codegen = { path = "../cranelift-codegen", version = "0.58.0", default-features = false }
+target-lexicon = "0.10"
 log = { version = "0.4.6", default-features = false }
-hashmap_core = { version = "0.1.9", optional = true }
-smallvec = { version = "0.6.10" }
+hashbrown = { version = "0.6", optional = true }
+smallvec = { version = "1.0.0" }
 
 [features]
 default = ["std"]
 std = ["cranelift-codegen/std"]
-core = ["hashmap_core", "cranelift-codegen/core"]
-
-# Temporary feature that enforces basic block semantics.
-basic-blocks = ["cranelift-codegen/basic-blocks"]
+core = ["hashbrown", "cranelift-codegen/core"]
 
 [badges]
 maintenance = { status = "experimental" }
-travis-ci = { repository = "CraneStation/cranelift" }
+travis-ci = { repository = "bytecodealliance/cranelift" }

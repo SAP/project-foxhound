@@ -16,11 +16,9 @@ let gContainersPane = {
     this._list = document.getElementById("containersView");
 
     document
-      .getElementById("backContainersLink")
-      .addEventListener("click", function(event) {
-        if (event.button == 0) {
-          gotoPref("general");
-        }
+      .getElementById("backContainersButton")
+      .addEventListener("command", function() {
+        gotoPref("general");
       });
 
     document
@@ -64,8 +62,6 @@ let gContainersPane = {
 
       let containerButtons = document.createXULElement("hbox");
       containerButtons.className = "container-buttons";
-      containerButtons.setAttribute("flex", 1);
-      containerButtons.setAttribute("align", "right");
       item.appendChild(containerButtons);
 
       let prefsButton = document.createXULElement("button");
@@ -156,7 +152,7 @@ let gContainersPane = {
 
     const params = { userContextId, identity };
     gSubDialog.open(
-      "chrome://browser/content/preferences/containers.xul",
+      "chrome://browser/content/preferences/containers.xhtml",
       null,
       params
     );

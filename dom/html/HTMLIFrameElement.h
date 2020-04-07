@@ -34,7 +34,6 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
   }
 
   // nsIContent
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
   virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                               const nsAString& aValue,
                               nsIPrincipal* aMaybeScriptedPrincipal,
@@ -44,6 +43,8 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
       const override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  void BindToBrowsingContext(BrowsingContext* aBrowsingContext);
 
   uint32_t GetSandboxFlags() const;
 
@@ -199,6 +200,12 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
    * @param aNotify Whether we plan to notify document observers.
    */
   void AfterMaybeChangeAttr(int32_t aNamespaceID, nsAtom* aName, bool aNotify);
+
+  /**
+   * Feature policy inheritance is broken in cross process model, so we may
+   * have to store feature policy in browsingContext when neccesary.
+   */
+  void MaybeStoreCrossOriginFeaturePolicy();
 
   RefPtr<dom::FeaturePolicy> mFeaturePolicy;
   RefPtr<nsDOMTokenList> mSandbox;

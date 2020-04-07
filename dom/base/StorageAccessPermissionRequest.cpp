@@ -20,21 +20,16 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(StorageAccessPermissionRequest,
 
 StorageAccessPermissionRequest::StorageAccessPermissionRequest(
     nsPIDOMWindowInner* aWindow, nsIPrincipal* aNodePrincipal,
-    AllowCallback&& aAllowCallback,
-    AllowAnySiteCallback&& aAllowAnySiteCallback,
-    CancelCallback&& aCancelCallback)
+    AllowCallback&& aAllowCallback, CancelCallback&& aCancelCallback)
     : ContentPermissionRequestBase(aNodePrincipal, aWindow,
                                    NS_LITERAL_CSTRING("dom.storage_access"),
                                    NS_LITERAL_CSTRING("storage-access")),
       mAllowCallback(std::move(aAllowCallback)),
-      mAllowAnySiteCallback(std::move(aAllowAnySiteCallback)),
       mCancelCallback(std::move(aCancelCallback)),
       mCallbackCalled(false) {
   mPermissionRequests.AppendElement(
       PermissionRequest(mType, nsTArray<nsString>()));
 }
-
-StorageAccessPermissionRequest::~StorageAccessPermissionRequest() { Cancel(); }
 
 NS_IMETHODIMP
 StorageAccessPermissionRequest::Cancel() {
@@ -58,11 +53,7 @@ StorageAccessPermissionRequest::Allow(JS::HandleValue aChoices) {
 
   if (!mCallbackCalled) {
     mCallbackCalled = true;
-    if (choices.Length() == 1 &&
-        choices[0].choice().EqualsLiteral("allow-on-any-site")) {
-      mAllowAnySiteCallback();
-    } else if (choices.Length() == 1 &&
-               choices[0].choice().EqualsLiteral("allow")) {
+    if (choices.Length() == 1 && choices[0].choice().EqualsLiteral("allow")) {
       mAllowCallback();
     }
   }
@@ -103,10 +94,9 @@ StorageAccessPermissionRequest::MaybeDelayAutomaticGrants() {
 }
 
 already_AddRefed<StorageAccessPermissionRequest>
-StorageAccessPermissionRequest::Create(
-    nsPIDOMWindowInner* aWindow, AllowCallback&& aAllowCallback,
-    AllowAnySiteCallback&& aAllowAnySiteCallback,
-    CancelCallback&& aCancelCallback) {
+StorageAccessPermissionRequest::Create(nsPIDOMWindowInner* aWindow,
+                                       AllowCallback&& aAllowCallback,
+                                       CancelCallback&& aCancelCallback) {
   if (!aWindow) {
     return nullptr;
   }
@@ -115,9 +105,9 @@ StorageAccessPermissionRequest::Create(
     return nullptr;
   }
   RefPtr<StorageAccessPermissionRequest> request =
-      new StorageAccessPermissionRequest(
-          aWindow, win->GetPrincipal(), std::move(aAllowCallback),
-          std::move(aAllowAnySiteCallback), std::move(aCancelCallback));
+      new StorageAccessPermissionRequest(aWindow, win->GetPrincipal(),
+                                         std::move(aAllowCallback),
+                                         std::move(aCancelCallback));
   return request.forget();
 }
 
@@ -126,12 +116,11 @@ unsigned StorageAccessPermissionRequest::CalculateSimulatedDelay() {
     return 0;
   }
 
-  // Generate a random time value that is at least 5 seconds and at most 15
-  // minutes.
+  // Generate a random time value that is at least 0 and and most 3 seconds.
   std::srand(static_cast<unsigned>(PR_Now()));
 
-  const unsigned kMin = 5000;
-  const unsigned kMax = 6000;
+  const unsigned kMin = 0;
+  const unsigned kMax = 3000;
   const unsigned random = std::abs(std::rand());
 
   return kMin + random % (kMax - kMin);

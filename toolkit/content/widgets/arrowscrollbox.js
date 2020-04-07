@@ -135,6 +135,13 @@
       }
       this.hasConnected = true;
 
+      if (!this.hasAttribute("smoothscroll")) {
+        this.smoothScroll = Services.prefs.getBoolPref(
+          "toolkit.scrollbox.smoothScroll",
+          true
+        );
+      }
+
       this.setAttribute("notoverflowing", "true");
       this.initializeAttributeInheritance();
       this._updateScrollButtonsDisabledState();
@@ -181,13 +188,6 @@
     }
 
     get smoothScroll() {
-      if (!this.hasAttribute("smoothscroll")) {
-        this.smoothScroll = Services.prefs.getBoolPref(
-          "toolkit.scrollbox.smoothScroll",
-          true
-        );
-      }
-
       return this.getAttribute("smoothscroll") == "true";
     }
 
@@ -196,13 +196,13 @@
     }
 
     get scrollClientSize() {
-      return this.orient == "vertical"
+      return this.getAttribute("orient") == "vertical"
         ? this.scrollbox.clientHeight
         : this.scrollbox.clientWidth;
     }
 
     get scrollSize() {
-      return this.orient == "vertical"
+      return this.getAttribute("orient") == "vertical"
         ? this.scrollbox.scrollHeight
         : this.scrollbox.scrollWidth;
     }
@@ -217,7 +217,7 @@
     }
 
     get scrollPosition() {
-      return this.orient == "vertical"
+      return this.getAttribute("orient") == "vertical"
         ? this.scrollbox.scrollTop
         : this.scrollbox.scrollLeft;
     }
@@ -225,7 +225,9 @@
     get startEndProps() {
       if (!this._startEndProps) {
         this._startEndProps =
-          this.orient == "vertical" ? ["top", "bottom"] : ["left", "right"];
+          this.getAttribute("orient") == "vertical"
+            ? ["top", "bottom"]
+            : ["left", "right"];
       }
       return this._startEndProps;
     }
@@ -233,7 +235,7 @@
     get isRTLScrollbox() {
       if (!this._isRTLScrollbox) {
         this._isRTLScrollbox =
-          this.orient != "vertical" &&
+          this.getAttribute("orient") != "vertical" &&
           document.defaultView.getComputedStyle(this.scrollbox).direction ==
             "rtl";
       }
@@ -359,11 +361,6 @@
       if (nodes.length == 1) {
         let node = nodes[0];
         if (
-          node.localName == "children" &&
-          node.namespaceURI == "http://www.mozilla.org/xbl"
-        ) {
-          nodes = document.getBindingParent(this).children;
-        } else if (
           node.localName == "slot" &&
           node.namespaceURI == "http://www.w3.org/1999/xhtml"
         ) {
@@ -654,7 +651,7 @@
       let doScroll = false;
       let instant;
       let scrollAmount = 0;
-      if (this.orient == "vertical") {
+      if (this.getAttribute("orient") == "vertical") {
         doScroll = true;
         if (event.deltaMode == event.DOM_DELTA_PIXEL) {
           scrollAmount = event.deltaY;
@@ -723,7 +720,7 @@
         this._touchStart = -1;
       } else {
         this._touchStart =
-          this.orient == "vertical"
+          this.getAttribute("orient") == "vertical"
             ? event.touches[0].screenY
             : event.touches[0].screenX;
       }
@@ -732,7 +729,7 @@
     on_touchmove(event) {
       if (event.touches.length == 1 && this._touchStart >= 0) {
         var touchPoint =
-          this.orient == "vertical"
+          this.getAttribute("orient") == "vertical"
             ? event.touches[0].screenY
             : event.touches[0].screenX;
         var delta = this._touchStart - touchPoint;
@@ -764,7 +761,7 @@
       //   0: vertical
       //   1: horizontal
       //   2: both
-      if (this.orient == "vertical") {
+      if (this.getAttribute("orient") == "vertical") {
         if (event.detail == 1) {
           return;
         }
@@ -789,7 +786,7 @@
       //   0: vertical
       //   1: horizontal
       //   2: both
-      if (this.orient == "vertical") {
+      if (this.getAttribute("orient") == "vertical") {
         if (event.detail == 1) {
           return;
         }

@@ -24,7 +24,7 @@ const {
   MESSAGE_UPDATE_PAYLOAD,
   PAUSED_EXECUTION_POINT,
   PRIVATE_MESSAGES_CLEAR,
-} = require("../constants");
+} = require("devtools/client/webconsole/constants");
 
 const defaultIdGenerator = new IdGenerator();
 
@@ -116,17 +116,6 @@ function messageGetMatchingElements(id, cssSelectors) {
   };
 }
 
-function messageGetTableData(id, grip, dataType) {
-  return async ({ dispatch, client }) => {
-    const needEntries = ["Map", "WeakMap", "Set", "WeakSet"].includes(dataType);
-    const results = await (needEntries
-      ? client.fetchObjectEntries(grip)
-      : client.fetchObjectProperties(grip, dataType === "Array"));
-
-    dispatch(messageUpdatePayload(id, results));
-  };
-}
-
 /**
  * Associate additional data with a message without mutating the original message object.
  *
@@ -178,7 +167,6 @@ module.exports = {
   messageOpen,
   messageClose,
   messageGetMatchingElements,
-  messageGetTableData,
   messageUpdatePayload,
   networkMessageUpdate,
   networkUpdateRequest,

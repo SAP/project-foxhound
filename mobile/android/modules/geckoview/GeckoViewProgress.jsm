@@ -28,6 +28,10 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIIDNService"
 );
 
+XPCOMUtils.defineLazyModuleGetters(this, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
+});
+
 var IdentityHandler = {
   // The definitions below should be kept in sync with those in GeckoView.ProgressListener.SecurityInformation
   // No trusted identity information. No site identity icon is shown.
@@ -142,10 +146,7 @@ var IdentityHandler = {
 
     const cert = aBrowser.securityUI.secInfo.serverCert;
 
-    result.organization = cert.organization;
-    result.subjectName = cert.subjectName;
-    result.issuerOrganization = cert.issuerOrganization;
-    result.issuerCommonName = cert.issuerCommonName;
+    result.certificate = aBrowser.securityUI.secInfo.serverCert.getBase64DERString();
 
     try {
       result.securityException = OverrideService.hasMatchingOverride(
@@ -270,6 +271,11 @@ class GeckoViewProgress extends GeckoViewModule {
       };
 
       this.eventDispatcher.sendRequest(message);
+
+      BrowserUtils.recordSiteOriginTelemetry(
+        Services.wm.getEnumerator("navigator:geckoview"),
+        true
+      );
     }
   }
 
@@ -316,7 +322,7 @@ class GeckoViewProgress extends GeckoViewModule {
 
     const message = {
       type: "GeckoView:SecurityChanged",
-      identity: identity,
+      identity,
     };
 
     this.eventDispatcher.sendRequest(message);

@@ -10,7 +10,10 @@ import json
 import logging
 import time
 import sys
+from collections import defaultdict
 
+import six
+from six import text_type
 from redo import retry
 import yaml
 
@@ -20,6 +23,7 @@ from .create import create_tasks
 from .generator import TaskGraphGenerator
 from .parameters import Parameters, get_version, get_app_version
 from .taskgraph import TaskGraph
+from taskgraph.util.python_path import find_object
 from .try_option_syntax import parse_message
 from .util.hg import get_hg_revision_branch, get_hg_commit_message
 from .util.partials import populate_release_history
@@ -27,7 +31,7 @@ from .util.schema import validate_schema, Schema
 from .util.taskcluster import get_artifact
 from .util.taskgraph import find_decision_task, find_existing_tasks_from_previous_kinds
 from .util.yaml import load_yaml
-from voluptuous import Required, Optional, Url
+from voluptuous import Required, Optional
 
 
 logger = logging.getLogger(__name__)
@@ -46,7 +50,7 @@ PER_PROJECT_PARAMETERS = {
     },
 
     'ash': {
-        'target_tasks_method': 'ash_tasks',
+        'target_tasks_method': 'default',
     },
 
     'cedar': {
@@ -77,11 +81,6 @@ PER_PROJECT_PARAMETERS = {
         'release_type': 'release',
     },
 
-    'mozilla-esr60': {
-        'target_tasks_method': 'mozilla_esr60_tasks',
-        'release_type': 'esr60',
-    },
-
     'mozilla-esr68': {
         'target_tasks_method': 'mozilla_esr68_tasks',
         'release_type': 'esr68',
@@ -95,11 +94,6 @@ PER_PROJECT_PARAMETERS = {
     'comm-beta': {
         'target_tasks_method': 'mozilla_beta_tasks',
         'release_type': 'beta',
-    },
-
-    'comm-esr60': {
-        'target_tasks_method': 'mozilla_esr60_tasks',
-        'release_type': 'release',
     },
 
     'comm-esr68': {
@@ -117,32 +111,26 @@ PER_PROJECT_PARAMETERS = {
     }
 }
 
-visual_metrics_jobs_schema = Schema({
-        Required('jobs'): [
-            {
-                Required('browsertime_json_url'): Url(),
-                Required('video_url'): Url(),
-            }
-        ]
-})
-
 try_task_config_schema = Schema({
-    Required('tasks'): [basestring],
-    Optional('templates'): {basestring: object},
-    Optional('disable-pgo'): bool,
+    Required('tasks'): [text_type],
     Optional('browsertime'): bool,
+    Optional('chemspill-prio'): bool,
+    Optional('disable-pgo'): bool,
+    Optional('env'): {text_type: text_type},
     Optional('gecko-profile'): bool,
-    # Keep in sync with JOB_SCHEMA in taskcluster/docker/visual-metrics/run-visual-metrics.py.
-    Optional('visual-metrics-jobs'): visual_metrics_jobs_schema,
+    Optional('rebuild'): int,
+    Optional('use-artifact-builds'): bool,
     Optional(
-        "debian-tests",
-        description="Run linux desktop tests on debian 10 (buster)."
-        ): bool,
+        "worker-overrides",
+        description="Mapping of worker alias to worker pools to use for those aliases."
+    ): {text_type: text_type}
 })
-
+"""
+Schema for try_task_config.json files.
+"""
 
 try_task_config_schema_v2 = Schema({
-    Optional('parameters'): {basestring: object},
+    Optional('parameters'): {text_type: object},
 })
 
 
@@ -163,6 +151,17 @@ def full_task_graph_to_runnable_jobs(full_task_json):
         if th.get('machine', {}).get('platform'):
             runnable_jobs[label]['platform'] = th['machine']['platform']
     return runnable_jobs
+
+
+def full_task_graph_to_manifests_by_task(full_task_json):
+    manifests_by_task = defaultdict(list)
+    for label, node in full_task_json.iteritems():
+        manifests = node['attributes'].get('test_manifests')
+        if not manifests:
+            continue
+
+        manifests_by_task[label].extend(manifests)
+    return manifests_by_task
 
 
 def try_syntax_from_message(message):
@@ -209,6 +208,9 @@ def taskgraph_decision(options, parameters=None):
 
     # write out the public/runnable-jobs.json file
     write_artifact('runnable-jobs.json', full_task_graph_to_runnable_jobs(full_task_json))
+
+    # write out the public/manifests-by-task.json file
+    write_artifact('manifests-by-task.json', full_task_graph_to_manifests_by_task(full_task_json))
 
     # this is just a test to check whether the from_json() function is working
     _, _ = TaskGraph.from_json(full_task_json)
@@ -295,8 +297,8 @@ def get_decision_parameters(graph_config, options):
     # use the pushdate as build_date if given, else use current time
     parameters['build_date'] = parameters['pushdate'] or int(time.time())
     # moz_build_date is the build identifier based on build_date
-    parameters['moz_build_date'] = time.strftime("%Y%m%d%H%M%S",
-                                                 time.gmtime(parameters['build_date']))
+    parameters['moz_build_date'] = six.ensure_text(
+        time.strftime("%Y%m%d%H%M%S", time.gmtime(parameters['build_date'])))
 
     project = parameters['project']
     try:
@@ -339,6 +341,10 @@ def get_decision_parameters(graph_config, options):
 
     if options.get('optimize_target_tasks') is not None:
         parameters['optimize_target_tasks'] = options['optimize_target_tasks']
+
+    if 'decision-parameters' in graph_config['taskgraph']:
+        find_object(graph_config['taskgraph']['decision-parameters'])(graph_config,
+                                                                      parameters)
 
     result = Parameters(**parameters)
     result.check()

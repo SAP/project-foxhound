@@ -11,6 +11,7 @@ import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ClosedSessionAtStart
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.NullDelegate
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
 import org.mozilla.geckoview.test.util.Callbacks
 import org.mozilla.geckoview.test.util.UiThreadUtils
 import org.junit.Ignore
@@ -19,9 +20,9 @@ import android.os.Bundle
 import android.os.Debug
 import android.os.Parcelable
 import android.os.SystemClock
-import android.support.test.InstrumentationRegistry
-import android.support.test.filters.MediumTest
-import android.support.test.runner.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.filters.MediumTest
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import android.util.Log
 import android.util.SparseArray
 
@@ -284,7 +285,7 @@ class SessionLifecycleTest : BaseSessionTest() {
 
     private fun testRestoreInstanceState(fromSession: GeckoSession?,
                                          ontoSession: GeckoSession?) =
-            GeckoView(InstrumentationRegistry.getTargetContext()).apply {
+            GeckoView(InstrumentationRegistry.getInstrumentation().targetContext).apply {
                 id = 0
                 autofillEnabled = false
 
@@ -461,9 +462,34 @@ class SessionLifecycleTest : BaseSessionTest() {
         waitUntilCollected(createSession())
     }
 
+    @WithDisplay(width = 100, height = 100)
+    @Test fun asyncScriptsSuspendedWhileInactive() {
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        mainSession.waitForPageStop()
+
+        // Deactivate the GeckoSession and confirm that rAF/setTimeout/etc callbacks do not run
+        mainSession.setActive(false)
+        mainSession.evaluateJS(
+            """function fail() {
+                 document.documentElement.style.backgroundColor = 'green';
+               }
+               requestAnimationFrame(fail);
+               setTimeout(fail, 1);
+               fetch("missing.html").catch(fail);""")
+        mainSession.waitForJS("new Promise(resolve => { resolve() })")
+        val isNotGreen = mainSession.evaluateJS("document.documentElement.style.backgroundColor !== 'green'") as Boolean
+        assertThat("requestAnimationFrame has not run yet", isNotGreen, equalTo(true))
+
+        // Reactivate the GeckoSession and confirm that rAF/setTimeout/etc callbacks now run
+        mainSession.setActive(true)
+        mainSession.waitForJS("new Promise(resolve => requestAnimationFrame(() => { resolve(); }))");
+        var isGreen = mainSession.evaluateJS("document.documentElement.style.backgroundColor === 'green'") as Boolean
+        assertThat("requestAnimationFrame has run", isGreen, equalTo(true))
+    }
+
     private fun dumpHprof() {
         try {
-            val dest = File(InstrumentationRegistry.getTargetContext()
+            val dest = File(InstrumentationRegistry.getInstrumentation().targetContext
                     .filesDir.parent, "dump.hprof").absolutePath
             Debug.dumpHprofData(dest)
             Log.d(LOGTAG, "Dumped hprof to $dest")

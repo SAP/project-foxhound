@@ -11,18 +11,15 @@
 # shell because `''':'`, `':'` and `:` are all equivalent, and `:` is a no-op.
 ''':'
 py2commands="
-    addtest
     analyze
     android
     android-emulator
     artifact
     awsy-test
-    bootstrap
     browsertime
     build
     build-backend
     buildsymbols
-    busted
     cargo
     check-spidermonkey
     clang-format
@@ -32,18 +29,16 @@ py2commands="
     cramtest
     crashtest
     devtools-css-db
-    doc
     doctor
     empty-makefiles
-    environment
     file-info
     firefox-ui-functional
-    fluent-migration-test
     geckodriver
     geckodriver-test
     geckoview-junit
     gradle
     gtest
+    hazards
     ide
     import-pr
     install
@@ -63,7 +58,6 @@ py2commands="
     prettier-format
     puppeteer-test
     python
-    python-safety
     python-test
     raptor
     raptor-test
@@ -87,12 +81,9 @@ py2commands="
     test-info
     tps-build
     try
-    uuid
     valgrind-test
-    vendor
     visualmetrics
     warnings-list
-    warnings-summary
     watch
     web-platform-tests
     web-platform-tests-update
@@ -104,6 +95,7 @@ py2commands="
     wpt-metadata-merge
     wpt-metadata-summary
     wpt-serve
+    wpt-test-paths
     wpt-unittest
     wpt-update
     xpcshell-test
@@ -130,6 +122,10 @@ if [ "$first_arg" = "help" ]; then
     # When running `./mach help <command>`, the correct Python for <command>
     # needs to be used.
     first_arg=$2
+elif [ "$first_arg" = "mach-completion" ]; then
+    # When running `./mach mach-completion /path/to/mach <command>`, the
+    # correct Python for <command> needs to be used.
+    first_arg=$3
 fi
 
 if [ -z "$first_arg" ]; then

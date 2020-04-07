@@ -150,16 +150,7 @@ function ciphertextHMAC(keyBundle, id, IV, ciphertext) {
  * @returns {string} sha256 of the user's kB as a hex string
  */
 const getKBHash = async function(fxaService) {
-  const signedInUser = await fxaService.getSignedInUser();
-  if (!signedInUser) {
-    throw new Error("User isn't signed in!");
-  }
-
-  if (!signedInUser.kExtKbHash) {
-    throw new Error("User doesn't have KbHash??");
-  }
-
-  return signedInUser.kExtKbHash;
+  return (await fxaService.keys.getKeys()).kExtKbHash;
 };
 
 /**
@@ -288,18 +279,12 @@ class KeyRingEncryptionRemoteTransformer extends EncryptionRemoteTransformer {
     throwIfNoFxA(this._fxaService, "encrypting chrome.storage.sync records");
     const self = this;
     return (async function() {
-      const user = await self._fxaService.getSignedInUser();
-      // FIXME: we should permit this if the user is self-hosting
-      // their storage
-      if (!user) {
-        throw new Error("user isn't signed in to FxA; can't sync");
-      }
-
-      if (!user.kExtSync) {
+      let keys = await self._fxaService.keys.getKeys();
+      if (!keys.kExtSync) {
         throw new Error("user doesn't have kExtSync");
       }
 
-      return BulkKeyBundle.fromHexKey(user.kExtSync);
+      return BulkKeyBundle.fromHexKey(keys.kExtSync);
     })();
   }
   // Pass through the kbHash field from the unencrypted record. If
@@ -698,9 +683,7 @@ let CollectionKeyEncryptionRemoteTransformer = class extends EncryptionRemoteTra
       // This should never happen. Keys should be created (and
       // synced) at the beginning of the sync cycle.
       throw new Error(
-        `tried to encrypt records for ${
-          this.extensionId
-        }, but key is not present`
+        `tried to encrypt records for ${this.extensionId}, but key is not present`
       );
     }
     return collectionKeys.keyForCollection(this.extensionId);
@@ -852,8 +835,8 @@ class ExtensionStorageSync {
 
   async sync(extension, collection) {
     throwIfNoFxA(this._fxaService, "syncing chrome.storage.sync");
-    const signedInUser = await this._fxaService.getSignedInUser();
-    if (!signedInUser) {
+    const isSignedIn = !!(await this._fxaService.getSignedInUser());
+    if (!isSignedIn) {
       // FIXME: this should support syncing to self-hosted
       log.info("User was not signed into FxA; cannot sync");
       throw new Error("Not signed in to FxA");
@@ -1075,8 +1058,8 @@ class ExtensionStorageSync {
    */
   async updateKeyRingKB() {
     throwIfNoFxA(this._fxaService, 'use of chrome.storage.sync "keyring"');
-    const signedInUser = await this._fxaService.getSignedInUser();
-    if (!signedInUser) {
+    const isSignedIn = !!(await this._fxaService.getSignedInUser());
+    if (!isSignedIn) {
       // Although this function is meant to be called on login,
       // it's not unreasonable to check any time, even if we aren't
       // logged in.
@@ -1189,9 +1172,7 @@ class ExtensionStorageSync {
 
         if (keyResolution.accepted.uuid != cryptoKeyRecord.uuid) {
           log.info(
-            `Detected a new UUID (${keyResolution.accepted.uuid}, was ${
-              cryptoKeyRecord.uuid
-            }). Resetting sync status for everything.`
+            `Detected a new UUID (${keyResolution.accepted.uuid}, was ${cryptoKeyRecord.uuid}). Resetting sync status for everything.`
           );
           await this.cryptoCollection.resetSyncStatus();
 
@@ -1211,7 +1192,7 @@ class ExtensionStorageSync {
       ) {
         // Check if our token is still valid, or if we got locked out
         // between starting the sync and talking to Kinto.
-        const isSessionValid = await this._fxaService.sessionStatus();
+        const isSessionValid = await this._fxaService.checkAccountStatus();
         if (isSessionValid) {
           log.error(
             "Couldn't decipher old keyring; deleting the default bucket and resetting sync status"
@@ -1286,7 +1267,7 @@ class ExtensionStorageSync {
           changes[key] = {
             newValue: item,
           };
-          if (oldRecord && oldRecord.data) {
+          if (oldRecord) {
             // Extract the "data" field from the old record, which
             // represents the value part of the key-value store
             changes[key].oldValue = oldRecord.data;

@@ -100,7 +100,7 @@ this.InsecurePasswordUtils = {
       if (uri.schemeIs("http")) {
         isFormSubmitHTTP = true;
         if (
-          gContentSecurityManager.isOriginPotentiallyTrustworthy(principal) ||
+          principal.isOriginPotentiallyTrustworthy ||
           // Ignore sites with local IP addresses pointing to local forms.
           (this._isPrincipalForLocalIPAddress(
             aForm.rootElement.nodePrincipal
@@ -152,9 +152,16 @@ this.InsecurePasswordUtils = {
       let isLocalIP = this._isPrincipalForLocalIPAddress(
         aForm.rootElement.nodePrincipal
       );
-      let topWindow = aForm.ownerDocument.defaultView.top;
+      // XXXndeakin fix this: bug 1582499 - top document not accessible in OOP frame
+      // So for now, just use the current document if access to top fails.
+      let topDocument;
+      try {
+        topDocument = aForm.ownerDocument.defaultView.top.document;
+      } catch (ex) {
+        topDocument = aForm.ownerDocument.defaultView.document;
+      }
       let topIsLocalIP = this._isPrincipalForLocalIPAddress(
-        topWindow.document.nodePrincipal
+        topDocument.nodePrincipal
       );
 
       // Only consider the page safe if the top window has a local IP address
@@ -228,7 +235,7 @@ this.InsecurePasswordUtils = {
 };
 
 XPCOMUtils.defineLazyPreferenceGetter(
-  this.InsecurePasswordUtils,
+  InsecurePasswordUtils,
   "_ignoreLocalIPAddress",
   "security.insecure_field_warning.ignore_local_ip_address",
   true

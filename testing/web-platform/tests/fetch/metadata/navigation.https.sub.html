@@ -6,16 +6,16 @@
 <script>
   test(t => {
     let expected = {
-      "dest": "document",
       "mode": "navigate",
       "site": "none",
+      "dest": "document"
     };
 
     let actual = {
-      "dest": "{{headers[sec-fetch-dest]}}",
       "mode": "{{headers[sec-fetch-mode]}}",
       "site": "{{headers[sec-fetch-site]}}",
       // Skipping `Sec-Fetch-User`, as the test harness isn't consistent here.
+      "dest": "{{headers[sec-fetch-dest]}}"
     };
 
     assert_header_equals(actual, expected);

@@ -6,16 +6,18 @@ with Files("**"):
     BUG_COMPONENT = ("Firefox", "Address Bar")
 
 EXTRA_JS_MODULES += [
-    'UrlbarContextualTip.jsm',
     'UrlbarController.jsm',
     'UrlbarEventBufferer.jsm',
     'UrlbarInput.jsm',
     'UrlbarMuxerUnifiedComplete.jsm',
     'UrlbarPrefs.jsm',
     'UrlbarProviderExtension.jsm',
+    'UrlbarProviderInterventions.jsm',
     'UrlbarProviderOpenTabs.jsm',
     'UrlbarProviderPrivateSearch.jsm',
+    'UrlbarProviderSearchTips.jsm',
     'UrlbarProvidersManager.jsm',
+    'UrlbarProviderTopSites.jsm',
     'UrlbarProviderUnifiedComplete.jsm',
     'UrlbarResult.jsm',
     'UrlbarTokenizer.jsm',
@@ -29,6 +31,9 @@ TESTING_JS_MODULES += [
 ]
 BROWSER_CHROME_MANIFESTS += [
     'tests/browser/browser.ini',
+    'tests/browser/tips/browser.ini',
+    'tests/ext/browser/browser.ini',
+    'tests/ext/browser/update/browser.ini',
 ]
 XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
 

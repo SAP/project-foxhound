@@ -39,8 +39,8 @@
 #include "mozilla/layers/CanvasRenderer.h"
 #include "mozilla/layers/LayerAttributes.h"
 #include "mozilla/layers/LayersTypes.h"
+#include "mozilla/webrender/WebRenderTypes.h"
 #include "mozilla/mozalloc.h"        // for operator delete, etc
-#include "nsAutoPtr.h"               // for nsAutoPtr, nsRefPtr, etc
 #include "nsCOMPtr.h"                // for already_AddRefed
 #include "nsCSSPropertyID.h"         // for nsCSSPropertyID
 #include "nsDebug.h"                 // for NS_ASSERTION
@@ -1200,7 +1200,7 @@ class Layer {
    * the next transaction is opened.
    */
   void SetBaseTransformForNextTransaction(const gfx::Matrix4x4& aMatrix) {
-    mPendingTransform = new gfx::Matrix4x4(aMatrix);
+    mPendingTransform = mozilla::MakeUnique<gfx::Matrix4x4>(aMatrix);
   }
 
   void SetPostScale(float aXScale, float aYScale) {
@@ -1406,7 +1406,7 @@ class Layer {
   }
   bool IsScrollbarContainer() const;
   Layer* GetMaskLayer() const { return mMaskLayer; }
-  bool HasPendingTransform() const { return mPendingTransform; }
+  bool HasPendingTransform() const { return !!mPendingTransform; }
 
   void CheckCanary() const { mCanary.Check(); }
 
@@ -1461,10 +1461,15 @@ class Layer {
   nsTArray<PropertyAnimationGroup>& GetPropertyAnimationGroups() {
     return mAnimationInfo.GetPropertyAnimationGroups();
   }
+  const CompositorAnimationData* GetTransformLikeMetaData() const {
+    return mAnimationInfo.GetTransformLikeMetaData();
+  }
 
   Maybe<uint64_t> GetAnimationGeneration() const {
     return mAnimationInfo.GetAnimationGeneration();
   }
+
+  gfx::Path* CachedMotionPath() { return mAnimationInfo.CachedMotionPath(); }
 
   bool HasTransformAnimation() const;
 
@@ -1970,7 +1975,7 @@ class Layer {
   // A mutation of |mTransform| that we've queued to be applied at the
   // end of the next transaction (if nothing else overrides it in the
   // meantime).
-  nsAutoPtr<gfx::Matrix4x4> mPendingTransform;
+  UniquePtr<gfx::Matrix4x4> mPendingTransform;
   gfx::Matrix4x4 mEffectiveTransform;
   AnimationInfo mAnimationInfo;
   Maybe<ParentLayerIntRect> mClipRect;
@@ -2678,16 +2683,16 @@ class RefLayer : public ContainerLayer {
    * CONSTRUCTION PHASE ONLY
    * Set remote subdocument iframe size.
    */
-  void SetRemoteDocumentRect(const LayerIntRect& aRemoteDocumentRect) {
-    if (mRemoteDocumentRect.IsEqualEdges(aRemoteDocumentRect)) {
+  void SetRemoteDocumentSize(const LayerIntSize& aRemoteDocumentSize) {
+    if (mRemoteDocumentSize == aRemoteDocumentSize) {
       return;
     }
-    mRemoteDocumentRect = aRemoteDocumentRect;
+    mRemoteDocumentSize = aRemoteDocumentSize;
     Mutated();
   }
 
-  const LayerIntRect& GetRemoteDocumentRect() const {
-    return mRemoteDocumentRect;
+  const LayerIntSize& GetRemoteDocumentSize() const {
+    return mRemoteDocumentSize;
   }
 
   /**
@@ -2725,7 +2730,9 @@ class RefLayer : public ContainerLayer {
   // 0 is a special value that means "no ID".
   LayersId mId;
   EventRegionsOverride mEventRegionsOverride;
-  LayerIntRect mRemoteDocumentRect;
+  // The remote documents only need their size because their origin is always
+  // (0, 0).
+  LayerIntSize mRemoteDocumentSize;
 };
 
 void SetAntialiasingFlags(Layer* aLayer, gfx::DrawTarget* aTarget);

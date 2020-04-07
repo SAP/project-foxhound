@@ -9,16 +9,17 @@
 #include <windows.h>
 
 #include "mozilla/CmdLineAndEnvUtils.h"
+#include "mozilla/DynamicallyLinkedFunctionPtr.h"
 #include "mozilla/FileUtilsWin.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/RandomNum.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WinDllServices.h"
 #include "ModuleEvaluator.h"
 #include "nsCOMPtr.h"
-#include "nsIFile.h"
-#include "nsIObserverService.h"
+#include "nsDebug.h"
 #include "nsXULAppAPI.h"
 #include "WinUtils.h"
 
@@ -73,23 +74,39 @@ static Maybe<double> QPCLoadDurationToMilliseconds(
 
 namespace mozilla {
 
-ModuleRecord::ModuleRecord(const nsAString& aResolvedPath)
-    : mTrustFlags(ModuleTrustFlags::None) {
-  if (aResolvedPath.IsEmpty()) {
+ModuleRecord::ModuleRecord() : mTrustFlags(ModuleTrustFlags::None) {}
+
+ModuleRecord::ModuleRecord(const nsAString& aResolvedNtPath)
+    : mResolvedNtName(aResolvedNtPath), mTrustFlags(ModuleTrustFlags::None) {
+  if (aResolvedNtPath.IsEmpty()) {
+    return;
+  }
+
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  nsAutoString resolvedDosPath;
+  if (!NtPathToDosPath(aResolvedNtPath, resolvedDosPath)) {
+#if defined(DEBUG)
+    nsAutoCString msg;
+    msg.AppendLiteral("NtPathToDosPath failed for path \"");
+    msg.Append(NS_ConvertUTF16toUTF8(aResolvedNtPath));
+    msg.AppendLiteral("\"");
+    NS_WARNING(msg.get());
+#endif  // defined(DEBUG)
     return;
   }
 
   nsresult rv =
-      NS_NewLocalFile(aResolvedPath, false, getter_AddRefs(mResolvedDllName));
-  if (NS_FAILED(rv) || !mResolvedDllName) {
+      NS_NewLocalFile(resolvedDosPath, false, getter_AddRefs(mResolvedDosName));
+  if (NS_FAILED(rv) || !mResolvedDosName) {
     return;
   }
 
-  GetVersionAndVendorInfo(aResolvedPath);
+  GetVersionAndVendorInfo(resolvedDosPath);
 
   // Now sanitize the resolved DLL name. If we cannot sanitize this then this
   // record must not be considered valid.
-  nsAutoString strSanitizedPath(aResolvedPath);
+  nsAutoString strSanitizedPath(resolvedDosPath);
   if (!widget::WinUtils::PreparePathForTelemetry(strSanitizedPath)) {
     return;
   }
@@ -99,8 +116,12 @@ ModuleRecord::ModuleRecord(const nsAString& aResolvedPath)
 
 void ModuleRecord::GetVersionAndVendorInfo(const nsAString& aPath) {
   RefPtr<DllServices> dllSvc(DllServices::Get());
+
+  // WinVerifyTrust is too slow and of limited utility for our purposes, so
+  // we pass SkipTrustVerification here to avoid it.
   UniquePtr<wchar_t[]> signedBy(
-      dllSvc->GetBinaryOrgName(PromiseFlatString(aPath).get()));
+      dllSvc->GetBinaryOrgName(PromiseFlatString(aPath).get(),
+                               AuthenticodeFlags::SkipTrustVerification));
   if (signedBy) {
     mVendorInfo = Some(VendorInfo(VendorInfo::Source::Signature,
                                   nsDependentString(signedBy.get())));
@@ -122,12 +143,12 @@ void ModuleRecord::GetVersionAndVendorInfo(const nsAString& aPath) {
 }
 
 bool ModuleRecord::IsXUL() const {
-  if (!mResolvedDllName) {
+  if (!mResolvedDosName) {
     return false;
   }
 
   nsAutoString leafName;
-  nsresult rv = mResolvedDllName->GetLeafName(leafName);
+  nsresult rv = mResolvedDosName->GetLeafName(leafName);
   if (NS_FAILED(rv)) {
     return false;
   }
@@ -140,7 +161,7 @@ int32_t ModuleRecord::GetScoreThreshold() const {
   // Check whether we are running as an xpcshell test.
   if (MOZ_UNLIKELY(mozilla::EnvHasValue("XPCSHELL_TEST_PROFILE_DIR"))) {
     nsAutoString dllLeaf;
-    if (NS_SUCCEEDED(mResolvedDllName->GetLeafName(dllLeaf))) {
+    if (NS_SUCCEEDED(mResolvedDosName->GetLeafName(dllLeaf))) {
       // During xpcshell tests, this DLL is hard-coded to pass through all
       // criteria checks and still result in "untrusted" status, so it shows up
       // in the untrusted modules ping for the test to examine.
@@ -176,6 +197,9 @@ bool ModuleRecord::IsTrusted() const {
   return score >= GetScoreThreshold();
 }
 
+ProcessedModuleLoadEvent::ProcessedModuleLoadEvent()
+    : mProcessUptimeMS(0ULL), mThreadId(0UL), mBaseAddress(0U) {}
+
 ProcessedModuleLoadEvent::ProcessedModuleLoadEvent(
     glue::EnhancedModuleLoadInfo&& aModLoadInfo,
     RefPtr<ModuleRecord>&& aModuleRecord)
@@ -206,23 +230,26 @@ Maybe<LONGLONG>
 ProcessedModuleLoadEvent::ComputeQPCTimeStampForProcessCreation() {
   // This is similar to the algorithm used by TimeStamp::ProcessCreation:
 
-  // 1. Get current timestamps as both QPC and FILETIME;
-  LARGE_INTEGER nowQPC;
-  ::QueryPerformanceCounter(&nowQPC);
-
-  SYSTEMTIME nowSys;
-  ::GetSystemTime(&nowSys);
-
-  FILETIME nowFile;
-  if (!::SystemTimeToFileTime(&nowSys, &nowFile)) {
-    return Nothing();
-  }
-
-  // 2. Get the process creation timestamp as FILETIME;
+  // 1. Get the process creation timestamp as FILETIME;
   FILETIME creationTime, exitTime, kernelTime, userTime;
   if (!::GetProcessTimes(::GetCurrentProcess(), &creationTime, &exitTime,
                          &kernelTime, &userTime)) {
     return Nothing();
+  }
+
+  // 2. Get current timestamps as both QPC and FILETIME;
+  LARGE_INTEGER nowQPC;
+  ::QueryPerformanceCounter(&nowQPC);
+
+  static const StaticDynamicallyLinkedFunctionPtr<void(WINAPI*)(LPFILETIME)>
+      pGetSystemTimePreciseAsFileTime(L"kernel32.dll",
+                                      "GetSystemTimePreciseAsFileTime");
+
+  FILETIME nowFile;
+  if (pGetSystemTimePreciseAsFileTime) {
+    pGetSystemTimePreciseAsFileTime(&nowFile);
+  } else {
+    ::GetSystemTimeAsFileTime(&nowFile);
   }
 
   // 3. Take the difference between the FILETIMEs from (1) and (2),
@@ -260,7 +287,7 @@ uint64_t ProcessedModuleLoadEvent::QPCTimeStampToProcessUptimeMilliseconds(
 }
 
 bool ProcessedModuleLoadEvent::IsXULLoad() const {
-  if (!mModule || !mLoadDurationMS || !IsTrusted()) {
+  if (!mModule || !mLoadDurationMS) {
     return false;
   }
 
@@ -273,6 +300,37 @@ bool ProcessedModuleLoadEvent::IsTrusted() const {
   }
 
   return mModule->IsTrusted();
+}
+
+void UntrustedModulesData::VerifyConsistency() const {
+#ifdef NIGHTLY_BUILD
+  if (!mIsDiagnosticsAssertEnabled) {
+    return;
+  }
+
+  for (auto& evt : mEvents) {
+    MOZ_DIAGNOSTIC_ASSERT(evt.mModule, "Empty module");
+    MOZ_DIAGNOSTIC_ASSERT(!evt.mModule->mResolvedNtName.IsEmpty(),
+                          "Empty mResolvedNtName");
+    MOZ_DIAGNOSTIC_ASSERT(mModules.Get(evt.mModule->mResolvedNtName, nullptr),
+                          "No match in the table");
+  }
+#endif  // NIGHTLY_BUILD
+}
+
+/* static */
+bool UntrustedModulesData::IsDiagnosticsAssertEnabled() {
+#ifdef NIGHTLY_BUILD
+  // Trigger MOZ_DIAGNOSTIC_ASSERT with a probability of 1/16
+  constexpr double kDiagnosticsAssertRatio = 0.0625;
+
+  constexpr uint64_t kBoundary =
+      std::numeric_limits<uint64_t>::max() * kDiagnosticsAssertRatio;
+  Maybe<uint64_t> randomNum = RandomUint64();
+  return randomNum.isSome() && randomNum.value() <= kBoundary;
+#else
+  return false;
+#endif  // NIGHTLY_BUILD
 }
 
 void UntrustedModulesData::AddNewLoads(
@@ -293,6 +351,9 @@ void UntrustedModulesData::AddNewLoads(
     }
 
     RefPtr<ModuleRecord> rec(iter.Data());
+    if (mIsDiagnosticsAssertEnabled) {
+      MOZ_DIAGNOSTIC_ASSERT(rec->mResolvedNtName == iter.Key());
+    }
     addPtr.OrInsert([rec = std::move(rec)]() { return rec; });
   }
 

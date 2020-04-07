@@ -27,18 +27,18 @@ function* do_run_test() {
   Services.prefs.setIntPref("network.cookie.cookieBehavior", 0);
 
   // Start the cookieservice, to force creation of a database.
-  // Get the sessionEnumerator to join the initialization in cookie thread
-  Services.cookiemgr.sessionEnumerator;
+  // Get the sessionCookies to join the initialization in cookie thread
+  Services.cookiemgr.sessionCookies;
 
   // Open a database connection now, after synchronous initialization has
   // completed. We may not be able to open one later once asynchronous writing
   // begins.
   Assert.ok(do_get_cookie_file(profile).exists());
-  let db = new CookieDatabaseConnection(do_get_cookie_file(profile), 4);
+  let db = new CookieDatabaseConnection(do_get_cookie_file(profile), 11);
 
   for (let i = 0; i < CMAX; ++i) {
     let uri = NetUtil.newURI("http://" + i + ".com/");
-    Services.cookies.setCookieString(uri, null, "oh=hai; max-age=1000", null);
+    Services.cookies.setCookieString(uri, "oh=hai; max-age=1000", null);
   }
 
   Assert.equal(do_count_cookies(), CMAX);

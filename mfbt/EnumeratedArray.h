@@ -9,8 +9,9 @@
 #ifndef mozilla_EnumeratedArray_h
 #define mozilla_EnumeratedArray_h
 
+#include <utility>
+
 #include "mozilla/Array.h"
-#include "mozilla/Move.h"
 
 namespace mozilla {
 
@@ -49,7 +50,7 @@ class EnumeratedArray {
   ArrayType mArray;
 
  public:
-  EnumeratedArray() {}
+  EnumeratedArray() = default;
 
   template <typename... Args>
   MOZ_IMPLICIT constexpr EnumeratedArray(Args&&... aArgs)

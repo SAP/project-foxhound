@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, unicode_literals, print_function
 
 import os
 import re
@@ -47,13 +47,6 @@ class ReftestRunner(MozbuildObject):
     def _setup_objdir(self, args):
         # reftest imports will happen from the objdir
         sys.path.insert(0, self.reftest_dir)
-
-        if args.suite != 'jstestbrowser' and not args.tests:
-            test_subdir = {
-                "reftest": os.path.join('layout', 'reftests'),
-                "crashtest": os.path.join('layout', 'crashtest'),
-            }[args.suite]
-            args.tests = [test_subdir]
 
         tests = os.path.join(self.reftest_dir, 'tests')
         if not os.path.isdir(tests):
@@ -236,8 +229,8 @@ class MachCommands(MachCommandBase):
         # adb which uses an unstructured logger in its constructor.
         reftest.log_manager.enable_unstructured()
         if conditions.is_android(self):
-            from mozrunner.devices.android_device import verify_android_device
-            install = not kwargs.get('no_install')
+            from mozrunner.devices.android_device import (verify_android_device, InstallIntent)
+            install = InstallIntent.NO if kwargs.get('no_install') else InstallIntent.PROMPT
             verify_android_device(self, install=install, xre=True, network=True,
                                   app=kwargs["app"], device_serial=kwargs["deviceSerial"])
             return reftest.run_android_test(**kwargs)

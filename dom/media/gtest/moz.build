@@ -6,6 +6,7 @@
 
 include('/media/webrtc/webrtc.mozbuild')
 
+DEFINES['ENABLE_SET_CUBEB_BACKEND'] = True
 
 LOCAL_INCLUDES += [
     '/media/webrtc/signaling/src/common',
@@ -117,4 +118,7 @@ if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 if CONFIG['CC_TYPE'] in ('clang', 'clang-cl'):
-    CXXFLAGS += ['-Wno-unused-private-field']
+    CXXFLAGS += [
+        '-Wno-inconsistent-missing-override',
+        '-Wno-unused-private-field',
+    ]

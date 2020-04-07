@@ -243,8 +243,10 @@ void MainThreadParsePersistedProbes(const nsACString& aProbeData) {
   ANDROID_LOG("MainThreadParsePersistedProbes");
 
   // We need a JS context to run the parsing stuff in.
-  JS::Rooted<JSObject*> cleanGlobal(mozilla::dom::RootingCx(),
-                                    SimpleGlobalObject::Create(SimpleGlobalObject::GlobalType::BindingDetail));
+  JS::Rooted<JSObject*> cleanGlobal(
+      mozilla::dom::RootingCx(),
+      SimpleGlobalObject::Create(
+          SimpleGlobalObject::GlobalType::BindingDetail));
   if (!cleanGlobal) {
     ANDROID_LOG(
         "MainThreadParsePersistedProbes - Failed to create a JS global object");
@@ -523,7 +525,7 @@ void TelemetryGeckoViewPersistence::InitPersistence() {
     return;
   }
 
-  gPersistenceThread = thread.forget();
+  gPersistenceThread = ToRefPtr(std::move(thread));
 
   // From now on all scalar operations should be recorded.
   TelemetryScalar::DeserializationStarted();

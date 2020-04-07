@@ -17,23 +17,17 @@
 #include "nsNetUtil.h"
 
 #include "nsIStreamListener.h"
-#include "nsIComponentManager.h"
-#include "nsIServiceManager.h"
 #include "nsIURI.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIPrincipal.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIWindowMediator.h"
 #include "nsPIDOMWindow.h"
-#include "nsIConsoleService.h"
 #include "nsEscape.h"
 #include "nsIWebNavigation.h"
 #include "nsIDocShell.h"
 #include "nsIContentViewer.h"
-#include "nsIXPConnect.h"
 #include "nsContentUtils.h"
 #include "nsJSUtils.h"
 #include "nsThreadUtils.h"
@@ -45,7 +39,9 @@
 #include "nsIWritablePropertyBag2.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsSandboxFlags.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/dom/DOMSecurityMonitor.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "nsContentSecurityManager.h"
@@ -160,12 +156,32 @@ nsresult nsJSThunk::EvaluateScript(
   }
 
   NS_ENSURE_ARG_POINTER(aChannel);
+  MOZ_ASSERT(aOriginalInnerWindow,
+             "We should not have gotten here if this was null!");
+
+  // Set the channel's resultPrincipalURI to the active document's URI.  This
+  // corresponds to treating that URI as the URI of our channel's response.  In
+  // the spec we're supposed to use the URL of the active document, but since
+  // we bail out of here if the inner window has changed, and GetDocumentURI()
+  // on the inner window returns the URL of the active document if the inner
+  // window is current, this is equivalent to the spec behavior.
+  nsCOMPtr<nsIURI> docURI = aOriginalInnerWindow->GetDocumentURI();
+  if (!docURI) {
+    // We're not going to be able to have a sane URL, so just don't run the
+    // script at all.
+    return NS_ERROR_DOM_RETVAL_UNDEFINED;
+  }
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  loadInfo->SetResultPrincipalURI(docURI);
+
+#ifdef DEBUG
+  DOMSecurityMonitor::AuditUseOfJavaScriptURI(aChannel);
+#endif
 
   // Get principal of code for execution
   nsCOMPtr<nsISupports> owner;
   aChannel->GetOwner(getter_AddRefs(owner));
   nsCOMPtr<nsIPrincipal> principal = do_QueryInterface(owner);
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   if (!principal) {
     if (loadInfo->GetForceInheritPrincipal()) {
       principal = loadInfo->FindPrincipalToInherit(aChannel);
@@ -270,7 +286,7 @@ nsresult nsJSThunk::EvaluateScript(
   }
 
   // Fail if someone tries to execute in a global with system principal.
-  if (nsContentUtils::IsSystemPrincipal(objectPrincipal)) {
+  if (objectPrincipal->IsSystemPrincipal()) {
     return NS_ERROR_DOM_SECURITY_ERR;
   }
 
@@ -486,6 +502,14 @@ nsJSChannel::Cancel(nsresult aStatus) {
     mStreamChannel->Cancel(aStatus);
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsJSChannel::GetCanceled(bool* aCanceled) {
+  nsresult status = NS_ERROR_FAILURE;
+  GetStatus(&status);
+  *aCanceled = NS_FAILED(status);
   return NS_OK;
 }
 
@@ -834,6 +858,16 @@ nsJSChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
 }
 
 NS_IMETHODIMP
+nsJSChannel::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return GetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
+nsJSChannel::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return SetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
 nsJSChannel::GetLoadGroup(nsILoadGroup** aLoadGroup) {
   return mStreamChannel->GetLoadGroup(aLoadGroup);
 }
@@ -1043,27 +1077,11 @@ bool nsJSChannel::GetIsDocumentLoad() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-nsJSProtocolHandler::nsJSProtocolHandler() {}
+nsJSProtocolHandler::nsJSProtocolHandler() = default;
 
-nsresult nsJSProtocolHandler::Init() { return NS_OK; }
-
-nsJSProtocolHandler::~nsJSProtocolHandler() {}
+nsJSProtocolHandler::~nsJSProtocolHandler() = default;
 
 NS_IMPL_ISUPPORTS(nsJSProtocolHandler, nsIProtocolHandler)
-
-nsresult nsJSProtocolHandler::Create(nsISupports* aOuter, REFNSIID aIID,
-                                     void** aResult) {
-  if (aOuter) return NS_ERROR_NO_AGGREGATION;
-
-  nsJSProtocolHandler* ph = new nsJSProtocolHandler();
-  NS_ADDREF(ph);
-  nsresult rv = ph->Init();
-  if (NS_SUCCEEDED(rv)) {
-    rv = ph->QueryInterface(aIID, aResult);
-  }
-  NS_RELEASE(ph);
-  return rv;
-}
 
 /* static */ nsresult nsJSProtocolHandler::EnsureUTF8Spec(
     const nsCString& aSpec, const char* aCharset, nsACString& aUTF8Spec) {

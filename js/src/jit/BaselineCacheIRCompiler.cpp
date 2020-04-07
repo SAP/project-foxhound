@@ -201,7 +201,7 @@ JitCode* BaselineCacheIRCompiler::compile() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardShape() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
   Register obj = allocator.useRegister(masm, objId);
   AutoScratchRegister scratch1(allocator, masm);
@@ -232,7 +232,7 @@ bool BaselineCacheIRCompiler::emitGuardShape() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardGroup() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
   Register obj = allocator.useRegister(masm, objId);
   AutoScratchRegister scratch1(allocator, masm);
@@ -263,7 +263,7 @@ bool BaselineCacheIRCompiler::emitGuardGroup() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardProto() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -279,7 +279,7 @@ bool BaselineCacheIRCompiler::emitGuardProto() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardCompartment() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -303,7 +303,7 @@ bool BaselineCacheIRCompiler::emitGuardCompartment() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardAnyClass() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
   Register obj = allocator.useRegister(masm, objId);
   AutoScratchRegister scratch(allocator, masm);
@@ -326,7 +326,7 @@ bool BaselineCacheIRCompiler::emitGuardAnyClass() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardHasProxyHandler() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -344,7 +344,7 @@ bool BaselineCacheIRCompiler::emitGuardHasProxyHandler() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardSpecificObject() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
 
   FailurePath* failure;
@@ -358,7 +358,7 @@ bool BaselineCacheIRCompiler::emitGuardSpecificObject() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardSpecificAtom() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register str = allocator.useRegister(masm, reader.stringOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -406,7 +406,7 @@ bool BaselineCacheIRCompiler::emitGuardSpecificAtom() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardSpecificSymbol() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register sym = allocator.useRegister(masm, reader.symbolOperandId());
 
   FailurePath* failure;
@@ -420,14 +420,14 @@ bool BaselineCacheIRCompiler::emitGuardSpecificSymbol() {
 }
 
 bool BaselineCacheIRCompiler::emitLoadValueResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   masm.loadValue(stubAddress(reader.stubOffset()), output.valueReg());
   return true;
 }
 
 bool BaselineCacheIRCompiler::emitLoadFixedSlotResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -438,7 +438,7 @@ bool BaselineCacheIRCompiler::emitLoadFixedSlotResult() {
 }
 
 bool BaselineCacheIRCompiler::emitLoadDynamicSlotResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -451,7 +451,7 @@ bool BaselineCacheIRCompiler::emitLoadDynamicSlotResult() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardHasGetterSetter() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Address shapeAddr = stubAddress(reader.stubOffset());
 
@@ -543,7 +543,7 @@ bool BaselineCacheIRCompiler::emitCallScriptedGetterResultShared(
 }
 
 bool BaselineCacheIRCompiler::emitCallScriptedGetterResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
 
   return emitCallScriptedGetterResultShared(
@@ -551,7 +551,7 @@ bool BaselineCacheIRCompiler::emitCallScriptedGetterResult() {
 }
 
 bool BaselineCacheIRCompiler::emitCallScriptedGetterByValueResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
 
   return emitCallScriptedGetterResultShared(val);
@@ -582,7 +582,7 @@ bool BaselineCacheIRCompiler::emitCallNativeGetterResultShared(
 }
 
 bool BaselineCacheIRCompiler::emitCallNativeGetterResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
 
   return emitCallNativeGetterResultShared(obj, [this]() {
@@ -593,7 +593,7 @@ bool BaselineCacheIRCompiler::emitCallNativeGetterResult() {
 }
 
 bool BaselineCacheIRCompiler::emitCallNativeGetterByValueResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
 
   return emitCallNativeGetterResultShared(val, [this]() {
@@ -604,7 +604,7 @@ bool BaselineCacheIRCompiler::emitCallNativeGetterByValueResult() {
 }
 
 bool BaselineCacheIRCompiler::emitCallProxyGetResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Address idAddr(stubAddress(reader.stubOffset()));
 
@@ -629,7 +629,7 @@ bool BaselineCacheIRCompiler::emitCallProxyGetResult() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardFrameHasNoArgumentsObject() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   FailurePath* failure;
   if (!addFailurePath(&failure)) {
     return false;
@@ -643,7 +643,7 @@ bool BaselineCacheIRCompiler::emitGuardFrameHasNoArgumentsObject() {
 }
 
 bool BaselineCacheIRCompiler::emitLoadFrameCalleeResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
 
@@ -654,7 +654,7 @@ bool BaselineCacheIRCompiler::emitLoadFrameCalleeResult() {
 }
 
 bool BaselineCacheIRCompiler::emitLoadFrameNumActualArgsResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
 
@@ -664,31 +664,8 @@ bool BaselineCacheIRCompiler::emitLoadFrameNumActualArgsResult() {
   return true;
 }
 
-bool BaselineCacheIRCompiler::emitLoadTypedObjectResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
-  AutoOutputRegister output(*this);
-  Register obj = allocator.useRegister(masm, reader.objOperandId());
-  AutoScratchRegister scratch1(allocator, masm);
-  AutoScratchRegister scratch2(allocator, masm);
-
-  TypedThingLayout layout = reader.typedThingLayout();
-  uint32_t typeDescr = reader.typeDescrKey();
-  Address fieldOffset(stubAddress(reader.stubOffset()));
-
-  // Get the object's data pointer.
-  LoadTypedThingData(masm, layout, obj, scratch1);
-
-  // Get the address being written to.
-  masm.load32(fieldOffset, scratch2);
-  masm.addPtr(scratch2, scratch1);
-
-  Address fieldAddr(scratch1, 0);
-  emitLoadTypedObjectResultShared(fieldAddr, scratch2, typeDescr, output);
-  return true;
-}
-
 bool BaselineCacheIRCompiler::emitLoadFrameArgumentResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register index = allocator.useRegister(masm, reader.int32OperandId());
   AutoScratchRegister scratch1(allocator, masm);
@@ -713,7 +690,7 @@ bool BaselineCacheIRCompiler::emitLoadFrameArgumentResult() {
 }
 
 bool BaselineCacheIRCompiler::emitLoadEnvironmentFixedSlotResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -735,7 +712,7 @@ bool BaselineCacheIRCompiler::emitLoadEnvironmentFixedSlotResult() {
 }
 
 bool BaselineCacheIRCompiler::emitLoadEnvironmentDynamicSlotResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
@@ -759,7 +736,7 @@ bool BaselineCacheIRCompiler::emitLoadEnvironmentDynamicSlotResult() {
 }
 
 bool BaselineCacheIRCompiler::emitLoadStringResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
 
@@ -769,7 +746,7 @@ bool BaselineCacheIRCompiler::emitLoadStringResult() {
 }
 
 bool BaselineCacheIRCompiler::emitCompareStringResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   Register left = allocator.useRegister(masm, reader.stringOperandId());
@@ -788,10 +765,10 @@ bool BaselineCacheIRCompiler::emitCompareStringResult() {
     AutoStubFrame stubFrame(*this);
     stubFrame.enter(masm, scratch);
 
-    // Push the operands in reverse order for JSOP_LE and JSOP_GT:
+    // Push the operands in reverse order for JSOp::Le and JSOp::Gt:
     // - |left <= right| is implemented as |right >= left|.
     // - |left > right| is implemented as |right < left|.
-    if (op == JSOP_LE || op == JSOP_GT) {
+    if (op == JSOp::Le || op == JSOp::Gt) {
       masm.Push(left);
       masm.Push(right);
     } else {
@@ -800,14 +777,14 @@ bool BaselineCacheIRCompiler::emitCompareStringResult() {
     }
 
     using Fn = bool (*)(JSContext*, HandleString, HandleString, bool*);
-    if (op == JSOP_EQ || op == JSOP_STRICTEQ) {
+    if (op == JSOp::Eq || op == JSOp::StrictEq) {
       callVM<Fn, jit::StringsEqual<EqualityKind::Equal>>(masm);
-    } else if (op == JSOP_NE || op == JSOP_STRICTNE) {
+    } else if (op == JSOp::Ne || op == JSOp::StrictNe) {
       callVM<Fn, jit::StringsEqual<EqualityKind::NotEqual>>(masm);
-    } else if (op == JSOP_LT || op == JSOP_GT) {
+    } else if (op == JSOp::Lt || op == JSOp::Gt) {
       callVM<Fn, jit::StringsCompare<ComparisonKind::LessThan>>(masm);
     } else {
-      MOZ_ASSERT(op == JSOP_LE || op == JSOP_GE);
+      MOZ_ASSERT(op == JSOp::Le || op == JSOp::Ge);
       callVM<Fn, jit::StringsCompare<ComparisonKind::GreaterThanOrEqual>>(masm);
     }
 
@@ -824,6 +801,10 @@ bool BaselineCacheIRCompiler::callTypeUpdateIC(
     LiveGeneralRegisterSet saveRegs) {
   // Ensure the stack is empty for the VM call below.
   allocator.discardStack(masm);
+
+  if (!IsTypeInferenceEnabled()) {
+    return true;
+  }
 
   // R0 contains the value that needs to be typechecked.
   MOZ_ASSERT(val == R0);
@@ -879,7 +860,7 @@ bool BaselineCacheIRCompiler::callTypeUpdateIC(
 }
 
 bool BaselineCacheIRCompiler::emitStoreSlotShared(bool isFixed) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
   Address offsetAddr = stubAddress(reader.stubOffset());
 
@@ -920,17 +901,17 @@ bool BaselineCacheIRCompiler::emitStoreSlotShared(bool isFixed) {
 }
 
 bool BaselineCacheIRCompiler::emitStoreFixedSlot() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   return emitStoreSlotShared(true);
 }
 
 bool BaselineCacheIRCompiler::emitStoreDynamicSlot() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   return emitStoreSlotShared(false);
 }
 
 bool BaselineCacheIRCompiler::emitAddAndStoreSlotShared(CacheOp op) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
   Address offsetAddr = stubAddress(reader.stubOffset());
 
@@ -1030,22 +1011,22 @@ bool BaselineCacheIRCompiler::emitAddAndStoreSlotShared(CacheOp op) {
 }
 
 bool BaselineCacheIRCompiler::emitAddAndStoreFixedSlot() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   return emitAddAndStoreSlotShared(CacheOp::AddAndStoreFixedSlot);
 }
 
 bool BaselineCacheIRCompiler::emitAddAndStoreDynamicSlot() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   return emitAddAndStoreSlotShared(CacheOp::AddAndStoreDynamicSlot);
 }
 
 bool BaselineCacheIRCompiler::emitAllocateAndStoreDynamicSlot() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   return emitAddAndStoreSlotShared(CacheOp::AllocateAndStoreDynamicSlot);
 }
 
 bool BaselineCacheIRCompiler::emitStoreTypedObjectReferenceProperty() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
   Address offsetAddr = stubAddress(reader.stubOffset());
   TypedThingLayout layout = reader.typedThingLayout();
@@ -1082,7 +1063,7 @@ bool BaselineCacheIRCompiler::emitStoreTypedObjectReferenceProperty() {
 }
 
 bool BaselineCacheIRCompiler::emitStoreDenseElement() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
   Int32OperandId indexId = reader.int32OperandId();
 
@@ -1160,7 +1141,7 @@ bool BaselineCacheIRCompiler::emitStoreDenseElement() {
 }
 
 bool BaselineCacheIRCompiler::emitStoreDenseElementHole() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
   Int32OperandId indexId = reader.int32OperandId();
 
@@ -1308,7 +1289,7 @@ bool BaselineCacheIRCompiler::emitStoreDenseElementHole() {
 }
 
 bool BaselineCacheIRCompiler::emitArrayPush() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
   ValOperandId rhsId = reader.valOperandId();
 
@@ -1422,7 +1403,7 @@ bool BaselineCacheIRCompiler::emitArrayPush() {
 }
 
 bool BaselineCacheIRCompiler::emitCallNativeSetter() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Address setterAddr(stubAddress(reader.stubOffset()));
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
@@ -1449,7 +1430,7 @@ bool BaselineCacheIRCompiler::emitCallNativeSetter() {
 }
 
 bool BaselineCacheIRCompiler::emitCallScriptedSetter() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoScratchRegister scratch1(allocator, masm);
   AutoScratchRegister scratch2(allocator, masm);
 
@@ -1518,7 +1499,7 @@ bool BaselineCacheIRCompiler::emitCallScriptedSetter() {
 }
 
 bool BaselineCacheIRCompiler::emitCallSetArrayLength() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   bool strict = reader.readBool();
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
@@ -1542,7 +1523,7 @@ bool BaselineCacheIRCompiler::emitCallSetArrayLength() {
 }
 
 bool BaselineCacheIRCompiler::emitCallProxySet() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
   Address idAddr(stubAddress(reader.stubOffset()));
@@ -1571,7 +1552,7 @@ bool BaselineCacheIRCompiler::emitCallProxySet() {
 }
 
 bool BaselineCacheIRCompiler::emitCallProxySetByValue() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   ValueOperand idVal = allocator.useValueRegister(masm, reader.valOperandId());
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
@@ -1605,7 +1586,7 @@ bool BaselineCacheIRCompiler::emitCallProxySetByValue() {
 }
 
 bool BaselineCacheIRCompiler::emitCallAddOrUpdateSparseElementHelper() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register id = allocator.useRegister(masm, reader.int32OperandId());
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
@@ -1631,7 +1612,7 @@ bool BaselineCacheIRCompiler::emitCallAddOrUpdateSparseElementHelper() {
 }
 
 bool BaselineCacheIRCompiler::emitMegamorphicSetElement() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   ValueOperand idVal = allocator.useValueRegister(masm, reader.valOperandId());
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
@@ -1667,21 +1648,25 @@ bool BaselineCacheIRCompiler::emitMegamorphicSetElement() {
 }
 
 bool BaselineCacheIRCompiler::emitTypeMonitorResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   allocator.discardStack(masm);
-  EmitEnterTypeMonitorIC(masm);
+  if (IsTypeInferenceEnabled()) {
+    EmitEnterTypeMonitorIC(masm);
+  } else {
+    EmitReturnFromIC(masm);
+  }
   return true;
 }
 
 bool BaselineCacheIRCompiler::emitReturnFromIC() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   allocator.discardStack(masm);
   EmitReturnFromIC(masm);
   return true;
 }
 
 bool BaselineCacheIRCompiler::emitLoadArgumentFixedSlot() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValueOperand resultReg =
       allocator.defineValueRegister(masm, reader.valOperandId());
   Address addr =
@@ -1691,7 +1676,7 @@ bool BaselineCacheIRCompiler::emitLoadArgumentFixedSlot() {
 }
 
 bool BaselineCacheIRCompiler::emitLoadArgumentDynamicSlot() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValueOperand resultReg =
       allocator.defineValueRegister(masm, reader.valOperandId());
   Register argcReg = allocator.useRegister(masm, reader.int32OperandId());
@@ -1702,7 +1687,7 @@ bool BaselineCacheIRCompiler::emitLoadArgumentDynamicSlot() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardAndGetIterator() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
 
   AutoScratchRegister scratch1(allocator, masm);
@@ -1752,7 +1737,7 @@ bool BaselineCacheIRCompiler::emitGuardAndGetIterator() {
 }
 
 bool BaselineCacheIRCompiler::emitGuardDOMExpandoMissingOrGuardShape() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
   AutoScratchRegister shapeScratch(allocator, masm);
   AutoScratchRegister objScratch(allocator, masm);
@@ -1779,7 +1764,7 @@ bool BaselineCacheIRCompiler::emitGuardDOMExpandoMissingOrGuardShape() {
 }
 
 bool BaselineCacheIRCompiler::emitLoadDOMExpandoValueGuardGeneration() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Address expandoAndGenerationAddr(stubAddress(reader.stubOffset()));
   Address generationAddr(stubAddress(reader.stubOffset()));
@@ -1898,8 +1883,6 @@ bool BaselineCacheIRCompiler::init(CacheKind kind) {
   return true;
 }
 
-static const size_t MaxOptimizedCacheIRStubs = 16;
-
 static void ResetEnteredCounts(ICFallbackStub* stub) {
   for (ICStubIterator iter = stub->beginChain(); !iter.atEnd(); iter++) {
     switch (iter->kind()) {
@@ -1935,7 +1918,10 @@ ICStub* js::jit::AttachBaselineCacheIRStub(
 
   // Just a sanity check: the caller should ensure we don't attach an
   // unlimited number of stubs.
+#ifdef DEBUG
+  static const size_t MaxOptimizedCacheIRStubs = 16;
   MOZ_ASSERT(stub->numOptimizedStubs() < MaxOptimizedCacheIRStubs);
+#endif
 
   uint32_t stubDataOffset = 0;
   switch (stubKind) {
@@ -2081,14 +2067,17 @@ ICStub* js::jit::AttachBaselineCacheIRStub(
       return newStub;
     }
     case BaselineCacheIRStubKind::Monitored: {
-      ICTypeMonitor_Fallback* typeMonitorFallback =
-          stub->toMonitoredFallbackStub()->getFallbackMonitorStub(cx,
-                                                                  outerScript);
-      if (!typeMonitorFallback) {
-        cx->recoverFromOutOfMemory();
-        return nullptr;
+      ICStub* monitorStub = nullptr;
+      if (IsTypeInferenceEnabled()) {
+        ICTypeMonitor_Fallback* typeMonitorFallback =
+            stub->toMonitoredFallbackStub()->getFallbackMonitorStub(
+                cx, outerScript);
+        if (!typeMonitorFallback) {
+          cx->recoverFromOutOfMemory();
+          return nullptr;
+        }
+        monitorStub = typeMonitorFallback->firstMonitorStub();
       }
-      ICStub* monitorStub = typeMonitorFallback->firstMonitorStub();
       auto newStub =
           new (newStubMem) ICCacheIR_Monitored(code, monitorStub, stubInfo);
       writer.copyStubData(newStub->stubDataStart());
@@ -2124,32 +2113,8 @@ uint8_t* ICCacheIR_Updated::stubDataStart() {
   return reinterpret_cast<uint8_t*>(this) + stubInfo_->stubDataOffset();
 }
 
-bool BaselineCacheIRCompiler::emitCallStringConcatResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
-  AutoOutputRegister output(*this);
-  Register lhs = allocator.useRegister(masm, reader.stringOperandId());
-  Register rhs = allocator.useRegister(masm, reader.stringOperandId());
-  AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
-
-  allocator.discardStack(masm);
-
-  AutoStubFrame stubFrame(*this);
-  stubFrame.enter(masm, scratch);
-
-  masm.push(rhs);
-  masm.push(lhs);
-
-  using Fn = JSString* (*)(JSContext*, HandleString, HandleString);
-  callVM<Fn, ConcatStrings<CanGC>>(masm);
-
-  masm.tagValue(JSVAL_TYPE_STRING, ReturnReg, output.valueReg());
-
-  stubFrame.leave(masm);
-  return true;
-}
-
 bool BaselineCacheIRCompiler::emitCallStringObjectConcatResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValueOperand lhs = allocator.useValueRegister(masm, reader.valOperandId());
   ValueOperand rhs = allocator.useValueRegister(masm, reader.valOperandId());
 
@@ -2242,7 +2207,7 @@ bool BaselineCacheIRCompiler::updateArgc(CallFlags flags, Register argcReg,
 }
 
 bool BaselineCacheIRCompiler::emitGuardFunApply() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register argcReg = allocator.useRegister(masm, reader.int32OperandId());
   AutoScratchRegister scratch(allocator, masm);
   AutoScratchRegister scratch2(allocator, masm);
@@ -2650,12 +2615,12 @@ bool BaselineCacheIRCompiler::emitCallNativeShared(NativeCallType callType) {
 }
 
 bool BaselineCacheIRCompiler::emitCallNativeFunction() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   return emitCallNativeShared(NativeCallType::Native);
 }
 
 bool BaselineCacheIRCompiler::emitCallClassHook() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   return emitCallNativeShared(NativeCallType::ClassHook);
 }
 
@@ -2715,10 +2680,10 @@ void BaselineCacheIRCompiler::createThis(Register argcReg, Register calleeReg,
   loadStackObject(ArgumentKind::Callee, flags, depth, argcReg, scratch);
   masm.push(scratch);
 
-  // Call CreateThis
+  // Call CreateThisFromIC.
   using Fn =
       bool (*)(JSContext*, HandleObject, HandleObject, MutableHandleValue);
-  callVM<Fn, CreateThis>(masm);
+  callVM<Fn, CreateThisFromIC>(masm);
 
 #ifdef DEBUG
   Label createdThisOK;
@@ -2788,7 +2753,7 @@ void BaselineCacheIRCompiler::updateReturnValue() {
 }
 
 bool BaselineCacheIRCompiler::emitCallScriptedFunction() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
   AutoScratchRegister scratch2(allocator, masm);

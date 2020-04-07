@@ -21,7 +21,6 @@
 #include "nsGZFileWriter.h"
 #include "nsJSEnvironment.h"
 #include "nsPrintfCString.h"
-#include "nsISimpleEnumerator.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIFile.h"
 
@@ -110,7 +109,7 @@ class GCAndCCLogDumpRunnable final : public Runnable,
   NS_IMETHOD OnFinish() override { return NS_OK; }
 
  private:
-  ~GCAndCCLogDumpRunnable() {}
+  ~GCAndCCLogDumpRunnable() = default;
 
   const nsString mIdentifier;
   const bool mDumpAllTraces;
@@ -241,9 +240,9 @@ void OnFifoEnabledChange(const char* /*unused*/, void* /*unused*/) {
 
 NS_IMPL_ISUPPORTS(nsMemoryInfoDumper, nsIMemoryInfoDumper)
 
-nsMemoryInfoDumper::nsMemoryInfoDumper() {}
+nsMemoryInfoDumper::nsMemoryInfoDumper() = default;
 
-nsMemoryInfoDumper::~nsMemoryInfoDumper() {}
+nsMemoryInfoDumper::~nsMemoryInfoDumper() = default;
 
 /* static */
 void nsMemoryInfoDumper::Initialize() {
@@ -482,7 +481,7 @@ class HandleReportAndFinishReportingCallbacks final
   }
 
  private:
-  ~HandleReportAndFinishReportingCallbacks() {}
+  ~HandleReportAndFinishReportingCallbacks() = default;
 
   UniquePtr<JSONWriter> mWriter;
   nsCOMPtr<nsIFinishDumpingCallback> mFinishDumping;
@@ -560,7 +559,7 @@ class TempDirFinishCallback final : public nsIFinishDumpingCallback {
   }
 
  private:
-  ~TempDirFinishCallback() {}
+  ~TempDirFinishCallback() = default;
 
   nsCOMPtr<nsIFile> mReportsTmpFile;
   nsCString mReportsFilename;

@@ -24,7 +24,7 @@ const TEST_SERVICE_WORKER_URL =
   ) + "/service_worker_test.html";
 
 const REMOVE_DIALOG_URL =
-  "chrome://browser/content/preferences/siteDataRemoveSelected.xul";
+  "chrome://browser/content/preferences/siteDataRemoveSelected.xhtml";
 
 const { DownloadUtils } = ChromeUtils.import(
   "resource://gre/modules/DownloadUtils.jsm"
@@ -150,7 +150,7 @@ function openSiteDataSettingsDialog() {
   let settingsBtn = doc.getElementById("siteDataSettings");
   let dialogOverlay = content.gSubDialog._preloadDialog._overlay;
   let dialogLoadPromise = promiseLoadSubDialog(
-    "chrome://browser/content/preferences/siteDataSettings.xul"
+    "chrome://browser/content/preferences/siteDataSettings.xhtml"
   );
   let dialogInitPromise = TestUtils.topicObserved(
     "sitedata-settings-init",
@@ -180,7 +180,7 @@ function promiseSettingsDialogClose() {
       function unload() {
         if (
           dialogWin.document.documentURI ===
-          "chrome://browser/content/preferences/siteDataSettings.xul"
+          "chrome://browser/content/preferences/siteDataSettings.xhtml"
         ) {
           isnot(
             dialogOverlay.style.visibility,
@@ -247,9 +247,9 @@ function promiseCookiesCleared() {
 async function loadServiceWorkerTestPage(url) {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
   await BrowserTestUtils.waitForCondition(() => {
-    return ContentTask.spawn(
+    return SpecialPowers.spawn(
       tab.linkedBrowser,
-      {},
+      [],
       () =>
         content.document.body.getAttribute(
           "data-test-service-worker-registered"

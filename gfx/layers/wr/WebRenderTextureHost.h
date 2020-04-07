@@ -75,7 +75,8 @@ class WebRenderTextureHost : public TextureHost {
   void PushResourceUpdates(wr::TransactionBuilder& aResources,
                            ResourceUpdateOp aOp,
                            const Range<wr::ImageKey>& aImageKeys,
-                           const wr::ExternalImageId& aExtID) override;
+                           const wr::ExternalImageId& aExtID,
+                           const bool aPreferCompositorSurface) override;
 
   void PushDisplayItems(wr::DisplayListBuilder& aBuilder,
                         const wr::LayoutRect& aBounds,
@@ -83,8 +84,6 @@ class WebRenderTextureHost : public TextureHost {
                         const Range<wr::ImageKey>& aImageKeys) override;
 
   bool NeedsYFlip() const override;
-
-  void MaybeNofityForUse(wr::TransactionBuilder& aTxn);
 
  protected:
   void CreateRenderTextureHost(const SurfaceDescriptor& aDesc,

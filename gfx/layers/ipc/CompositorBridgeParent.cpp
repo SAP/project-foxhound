@@ -65,9 +65,11 @@
 #include "mozilla/layers/WebRenderBridgeParent.h"
 #include "mozilla/layers/AsyncImagePipelineManager.h"
 #include "mozilla/webrender/WebRenderAPI.h"
+#include "mozilla/webgpu/WebGPUParent.h"
 #include "mozilla/media/MediaSystemResourceService.h"  // for MediaSystemResourceService
 #include "mozilla/mozalloc.h"                          // for operator new, etc
 #include "mozilla/PerfStats.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/Telemetry.h"
 #ifdef MOZ_WIDGET_GTK
 #  include "basic/X11BasicCompositor.h"  // for X11BasicCompositor
@@ -132,7 +134,7 @@ CompositorBridgeParentBase::CompositorBridgeParentBase(
     CompositorManagerParent* aManager)
     : mCanSend(true), mCompositorManager(aManager) {}
 
-CompositorBridgeParentBase::~CompositorBridgeParentBase() {}
+CompositorBridgeParentBase::~CompositorBridgeParentBase() = default;
 
 ProcessId CompositorBridgeParentBase::GetChildProcessId() { return OtherPid(); }
 
@@ -168,8 +170,8 @@ bool CompositorBridgeParentBase::AllocUnsafeShmem(
   return PCompositorBridgeParent::AllocUnsafeShmem(aSize, aType, aShmem);
 }
 
-void CompositorBridgeParentBase::DeallocShmem(ipc::Shmem& aShmem) {
-  PCompositorBridgeParent::DeallocShmem(aShmem);
+bool CompositorBridgeParentBase::DeallocShmem(ipc::Shmem& aShmem) {
+  return PCompositorBridgeParent::DeallocShmem(aShmem);
 }
 
 static inline MessageLoop* CompositorLoop() {
@@ -260,6 +262,18 @@ inline void CompositorBridgeParent::ForEachIndirectLayerTree(
   }
 }
 
+/*static*/ template <typename Lambda>
+inline void CompositorBridgeParent::ForEachWebRenderBridgeParent(
+    const Lambda& aCallback) {
+  sIndirectLayerTreesLock->AssertCurrentThreadOwns();
+  for (auto& it : sIndirectLayerTrees) {
+    LayerTreeState* state = &it.second;
+    if (state->mWrBridge) {
+      aCallback(state->mWrBridge);
+    }
+  }
+}
+
 /**
  * A global map referencing each compositor by ID.
  *
@@ -346,7 +360,7 @@ CompositorBridgeParent::CompositorBridgeParent(
 
 void CompositorBridgeParent::InitSameProcess(widget::CompositorWidget* aWidget,
                                              const LayersId& aLayerTreeId) {
-  MOZ_ASSERT(XRE_IsParentProcess() || recordreplay::IsRecordingOrReplaying());
+  MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
 
   mWidget = aWidget;
@@ -932,7 +946,7 @@ void CompositorBridgeParent::SetShadowProperties(Layer* aLayer) {
 
 void CompositorBridgeParent::CompositeToTarget(VsyncId aId, DrawTarget* aTarget,
                                                const gfx::IntRect* aRect) {
-  AUTO_PROFILER_TRACING("Paint", "Composite", GRAPHICS);
+  AUTO_PROFILER_TRACING_MARKER("Paint", "Composite", GRAPHICS);
   AUTO_PROFILER_LABEL("CompositorBridgeParent::CompositeToTarget", GRAPHICS);
   PerfStats::AutoMetricRecording<PerfStats::Metric::Compositing> autoRecording;
 
@@ -1007,11 +1021,7 @@ void CompositorBridgeParent::CompositeToTarget(VsyncId aId, DrawTarget* aTarget,
   bool requestNextFrame =
       mCompositionManager->TransformShadowTree(time, mVsyncRate);
 
-  // Don't eagerly schedule new compositions here when recording or replaying.
-  // Recording/replaying processes schedule composites at the top of the main
-  // thread's event loop rather than via PVsync, which can cause the composites
-  // scheduled here to pile up without any drawing actually happening.
-  if (requestNextFrame && !recordreplay::IsRecordingOrReplaying()) {
+  if (requestNextFrame) {
     ScheduleComposition();
 #if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
     // If we have visible windowed plugins then we need to wait for content (and
@@ -1465,6 +1475,13 @@ void CompositorBridgeParent::InitializeLayerManager(
     if (!mCompositor) {
       return;
     }
+#ifdef XP_WIN
+    if (mCompositor->AsBasicCompositor() && XRE_IsGPUProcess()) {
+      // BasicCompositor does not use CompositorWindow,
+      // then if CompositorWindow exists, it needs to be destroyed.
+      mWidget->AsWindows()->DestroyCompositorWindow();
+    }
+#endif
     mLayerManager = new LayerManagerComposite(mCompositor);
   }
   mLayerManager->SetCompositorBridgeID(mCompositorBridgeID);
@@ -1588,7 +1605,8 @@ PLayerTransactionParent* CompositorBridgeParent::AllocPLayerTransactionParent(
 #ifdef XP_WIN
   // This is needed to avoid freezing the window on a device crash on double
   // buffering, see bug 1549674.
-  if (gfxVars::UseDoubleBufferingWithCompositor() && XRE_IsGPUProcess()) {
+  if (gfxVars::UseDoubleBufferingWithCompositor() && XRE_IsGPUProcess() &&
+      aBackendHints.Contains(LayersBackend::LAYERS_D3D11)) {
     mWidget->AsWindows()->EnsureCompositorWindow();
   }
 #endif
@@ -1733,11 +1751,32 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvMapAndNotifyChildCreated(
   return IPC_OK();
 }
 
+enum class CompositorOptionsChangeKind {
+  eSupported,
+  eBestEffort,
+  eUnsupported
+};
+
+static CompositorOptionsChangeKind ClassifyCompositorOptionsChange(
+    const CompositorOptions& aOld, const CompositorOptions& aNew) {
+  if (aOld == aNew) {
+    return CompositorOptionsChangeKind::eSupported;
+  }
+  if (aOld.UseAdvancedLayers() == aNew.UseAdvancedLayers() &&
+      aOld.UseWebRender() == aNew.UseWebRender() &&
+      aOld.InitiallyPaused() == aNew.InitiallyPaused()) {
+    // Only APZ enablement changed.
+    return CompositorOptionsChangeKind::eBestEffort;
+  }
+  return CompositorOptionsChangeKind::eUnsupported;
+}
+
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvAdoptChild(
     const LayersId& child) {
   RefPtr<APZUpdater> oldApzUpdater;
   APZCTreeManagerParent* parent;
   bool scheduleComposition = false;
+  bool apzEnablementChanged = false;
   RefPtr<ContentCompositorBridgeParent> cpcp;
   RefPtr<WebRenderBridgeParent> childWrBridge;
 
@@ -1758,9 +1797,28 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvAdoptChild(
     }
 
     if (sIndirectLayerTrees[child].mParent) {
-      // We currently don't support adopting children from one compositor to
-      // another if the two compositors don't have the same options.
-      MOZ_ASSERT(sIndirectLayerTrees[child].mParent->mOptions == mOptions);
+      switch (ClassifyCompositorOptionsChange(
+          sIndirectLayerTrees[child].mParent->mOptions, mOptions)) {
+        case CompositorOptionsChangeKind::eUnsupported: {
+          MOZ_ASSERT(false,
+                     "Moving tab between windows whose compositor options"
+                     "differ in unsupported ways. Things may break in "
+                     "unexpected ways");
+          break;
+        }
+        case CompositorOptionsChangeKind::eBestEffort: {
+          NS_WARNING(
+              "Moving tab between windows with different APZ enablement. "
+              "This is supported on a best-effort basis, but some things may "
+              "break.");
+          apzEnablementChanged = true;
+          break;
+        }
+        case CompositorOptionsChangeKind::eSupported: {
+          // The common case, no action required.
+          break;
+        }
+      }
       oldApzUpdater = sIndirectLayerTrees[child].mParent->mApzUpdater;
     }
     NotifyChildCreated(child);
@@ -1799,18 +1857,11 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvAdoptChild(
   }
 
   if (oldApzUpdater) {
-    // We don't fully support moving a child from an APZ-enabled compositor to a
-    // APZ-disabled compositor. The mOptions assertion above should already
-    // ensure this, since APZ-ness is one of the things in mOptions. Note
-    // however it is possible for mApzUpdater to be non-null here with
-    // oldApzUpdater null, because the child may not have been previously
-    // composited.
-    MOZ_ASSERT(mApzUpdater);
-
-    // As this nonetheless can happen (if e.g. a WebExtension moves a tab
-    // into a popup window), try to handle it gracefully by clearing the
-    // old layer transforms associated with the child. (Since the new compositor
-    // is APZ-disabled, there will be nothing to update the transforms going
+    // If we are moving a child from an APZ-enabled window to an APZ-disabled
+    // window (which can happen if e.g. a WebExtension moves a tab into a
+    // popup window), try to handle it gracefully by clearing the old layer
+    // transforms associated with the child. (Since the new compositor is
+    // APZ-disabled, there will be nothing to update the transforms going
     // forward.)
     if (!mApzUpdater && oldRootController) {
       // Tell the old APZCTreeManager not to send any more layer transforms
@@ -1830,6 +1881,9 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvAdoptChild(
     }
     mApzUpdater->NotifyLayerTreeAdopted(
         WRRootId(child, gfxUtils::GetContentRenderRoot()), oldApzUpdater);
+  }
+  if (apzEnablementChanged) {
+    Unused << SendCompositorOptionsChanged(child, mOptions);
   }
   return IPC_OK();
 }
@@ -1922,6 +1976,22 @@ bool CompositorBridgeParent::DeallocPWebRenderBridgeParent(
   return true;
 }
 
+webgpu::PWebGPUParent* CompositorBridgeParent::AllocPWebGPUParent() {
+  MOZ_ASSERT(!mWebGPUBridge);
+  mWebGPUBridge = new webgpu::WebGPUParent();
+  mWebGPUBridge.get()->AddRef();  // IPDL reference
+  return mWebGPUBridge;
+}
+
+bool CompositorBridgeParent::DeallocPWebGPUParent(
+    webgpu::PWebGPUParent* aActor) {
+  webgpu::WebGPUParent* parent = static_cast<webgpu::WebGPUParent*>(aActor);
+  MOZ_ASSERT(mWebGPUBridge == parent);
+  parent->Release();  // IPDL reference
+  mWebGPUBridge = nullptr;
+  return true;
+}
+
 void CompositorBridgeParent::NotifyMemoryPressure() {
   if (mWrBridge) {
     RefPtr<wr::WebRenderAPI> api =
@@ -1940,6 +2010,92 @@ void CompositorBridgeParent::AccumulateMemoryReport(wr::MemoryReport* aReport) {
       api->AccumulateMemoryReport(aReport);
     }
   }
+}
+
+/*static*/
+void CompositorBridgeParent::InitializeStatics() {
+  gfxVars::SetAllowSacrificingSubpixelAAListener(&UpdateQualitySettings);
+  gfxVars::SetWebRenderDebugFlagsListener(&UpdateDebugFlags);
+  gfxVars::SetUseWebRenderMultithreadingListener(
+      &UpdateWebRenderMultithreading);
+  gfxVars::SetWebRenderBatchingLookbackListener(
+      &UpdateWebRenderBatchingParameters);
+}
+
+/*static*/
+void CompositorBridgeParent::UpdateQualitySettings() {
+  if (!CompositorThreadHolder::IsInCompositorThread()) {
+    if (CompositorLoop()) {
+      CompositorLoop()->PostTask(
+          NewRunnableFunction("CompositorBridgeParent::UpdateQualitySettings",
+                              &CompositorBridgeParent::UpdateQualitySettings));
+    }
+
+    // If there is no compositor loop, e.g. due to shutdown, then we can
+    // safefully just ignore this request.
+    return;
+  }
+
+  MonitorAutoLock lock(*sIndirectLayerTreesLock);
+  ForEachWebRenderBridgeParent([&](WebRenderBridgeParent* wrBridge) -> void {
+    wrBridge->UpdateQualitySettings();
+  });
+}
+
+/*static*/
+void CompositorBridgeParent::UpdateDebugFlags() {
+  if (!CompositorThreadHolder::IsInCompositorThread()) {
+    if (CompositorLoop()) {
+      CompositorLoop()->PostTask(
+          NewRunnableFunction("CompositorBridgeParent::UpdateDebugFlags",
+                              &CompositorBridgeParent::UpdateDebugFlags));
+    }
+
+    // If there is no compositor loop, e.g. due to shutdown, then we can
+    // safefully just ignore this request.
+    return;
+  }
+
+  MonitorAutoLock lock(*sIndirectLayerTreesLock);
+  ForEachWebRenderBridgeParent([&](WebRenderBridgeParent* wrBridge) -> void {
+    wrBridge->UpdateDebugFlags();
+  });
+}
+
+/*static*/
+void CompositorBridgeParent::UpdateWebRenderMultithreading() {
+  if (!CompositorThreadHolder::IsInCompositorThread()) {
+    if (CompositorLoop()) {
+      CompositorLoop()->PostTask(NewRunnableFunction(
+          "CompositorBridgeParent::UpdateWebRenderMultithreading",
+          &CompositorBridgeParent::UpdateWebRenderMultithreading));
+    }
+
+    return;
+  }
+
+  MonitorAutoLock lock(*sIndirectLayerTreesLock);
+  ForEachWebRenderBridgeParent([&](WebRenderBridgeParent* wrBridge) -> void {
+    wrBridge->UpdateMultithreading();
+  });
+}
+
+/*static*/
+void CompositorBridgeParent::UpdateWebRenderBatchingParameters() {
+  if (!CompositorThreadHolder::IsInCompositorThread()) {
+    if (CompositorLoop()) {
+      CompositorLoop()->PostTask(NewRunnableFunction(
+          "CompositorBridgeParent::UpdateWebRenderBatchingParameters",
+          &CompositorBridgeParent::UpdateWebRenderBatchingParameters));
+    }
+
+    return;
+  }
+
+  MonitorAutoLock lock(*sIndirectLayerTreesLock);
+  ForEachWebRenderBridgeParent([&](WebRenderBridgeParent* wrBridge) -> void {
+    wrBridge->UpdateBatchingParameters();
+  });
 }
 
 RefPtr<WebRenderBridgeParent> CompositorBridgeParent::GetWebRenderBridgeParent()
@@ -2156,7 +2312,7 @@ void CompositorBridgeParent::DidComposite(const VsyncId& aId,
 
 void CompositorBridgeParent::NotifyDidSceneBuild(
     const nsTArray<wr::RenderRoot>& aRenderRoots,
-    RefPtr<wr::WebRenderPipelineInfo> aInfo) {
+    RefPtr<const wr::WebRenderPipelineInfo> aInfo) {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   if (mPaused) {
     return;
@@ -2386,6 +2542,13 @@ void CompositorBridgeParent::NotifyWebRenderContextPurge() {
   RefPtr<wr::WebRenderAPI> api =
       mWrBridge->GetWebRenderAPI(wr::RenderRoot::Default);
   api->ClearAllCaches();
+}
+
+void CompositorBridgeParent::NotifyWebRenderDisableNativeCompositor() {
+  MOZ_ASSERT(CompositorLoop() == MessageLoop::current());
+  if (mWrBridge) {
+    mWrBridge->DisableNativeCompositor();
+  }
 }
 
 #if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
@@ -2743,23 +2906,88 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvBeginRecording(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult CompositorBridgeParent::RecvEndRecording(
-    bool* aOutSuccess) {
+mozilla::ipc::IPCResult CompositorBridgeParent::RecvEndRecordingToDisk(
+    EndRecordingToDiskResolver&& aResolve) {
   if (!mHaveCompositionRecorder) {
-    *aOutSuccess = false;
+    aResolve(false);
     return IPC_OK();
   }
 
   if (mLayerManager) {
     mLayerManager->WriteCollectedFrames();
+    aResolve(true);
   } else if (mWrBridge) {
-    mWrBridge->WriteCollectedFrames();
+    mWrBridge->WriteCollectedFrames()->Then(
+        MessageLoop::current()->SerialEventTarget(), __func__,
+        [resolve{aResolve}](const bool success) { resolve(success); },
+        [resolve{aResolve}]() { resolve(false); });
+  } else {
+    aResolve(false);
   }
 
   mHaveCompositionRecorder = false;
-  *aOutSuccess = true;
 
   return IPC_OK();
+}
+
+mozilla::ipc::IPCResult CompositorBridgeParent::RecvEndRecordingToMemory(
+    EndRecordingToMemoryResolver&& aResolve) {
+  if (!mHaveCompositionRecorder) {
+    aResolve(Nothing());
+    return IPC_OK();
+  }
+
+  if (mLayerManager) {
+    Maybe<CollectedFrames> frames = mLayerManager->GetCollectedFrames();
+    if (frames) {
+      aResolve(WrapCollectedFrames(std::move(*frames)));
+    } else {
+      aResolve(Nothing());
+    }
+  } else if (mWrBridge) {
+    RefPtr<CompositorBridgeParent> self = this;
+    mWrBridge->GetCollectedFrames()->Then(
+        MessageLoop::current()->SerialEventTarget(), __func__,
+        [self, resolve{aResolve}](CollectedFrames&& frames) {
+          resolve(self->WrapCollectedFrames(std::move(frames)));
+        },
+        [resolve{aResolve}]() { resolve(Nothing()); });
+  }
+
+  mHaveCompositionRecorder = false;
+
+  return IPC_OK();
+}
+
+Maybe<CollectedFramesParams> CompositorBridgeParent::WrapCollectedFrames(
+    CollectedFrames&& aFrames) {
+  CollectedFramesParams ipcFrames;
+  ipcFrames.recordingStart() = aFrames.mRecordingStart;
+
+  size_t totalLength = 0;
+  for (const CollectedFrame& frame : aFrames.mFrames) {
+    totalLength += frame.mDataUri.Length();
+  }
+
+  Shmem shmem;
+  if (!AllocShmem(totalLength, SharedMemory::TYPE_BASIC, &shmem)) {
+    return Nothing();
+  }
+
+  {
+    char* raw = shmem.get<char>();
+    for (CollectedFrame& frame : aFrames.mFrames) {
+      size_t length = frame.mDataUri.Length();
+
+      PodCopy(raw, frame.mDataUri.get(), length);
+      raw += length;
+
+      ipcFrames.frames().EmplaceBack(frame.mTimeOffset, length);
+    }
+  }
+  ipcFrames.buffer() = std::move(shmem);
+
+  return Some(std::move(ipcFrames));
 }
 
 }  // namespace layers

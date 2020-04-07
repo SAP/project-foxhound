@@ -16,8 +16,6 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/ThrottledEventQueue.h"
 #include "nsIDocShell.h"
-#include "nsIEffectiveTLDService.h"
-#include "nsIURI.h"
 
 namespace mozilla {
 namespace dom {
@@ -29,10 +27,7 @@ LinkedList<TabGroup>* TabGroup::sTabGroups = nullptr;
 TabGroup::TabGroup(bool aIsChrome)
     : mLastWindowLeft(false),
       mThrottledQueuesInitialized(false),
-      mNumOfIndexedDBTransactions(0),
-      mNumOfIndexedDBDatabases(0),
-      mIsChrome(aIsChrome),
-      mForegroundCount(0) {
+      mIsChrome(aIsChrome) {
   if (!sTabGroups) {
     sTabGroups = new LinkedList<TabGroup>();
   }
@@ -112,11 +107,6 @@ TabGroup* TabGroup::GetFromWindow(mozIDOMWindowProxy* aWindow) {
 TabGroup* TabGroup::GetFromActor(BrowserChild* aBrowserChild) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
-  // Middleman processes do not assign event targets to their tab children.
-  if (recordreplay::IsMiddleman()) {
-    return GetChromeTabGroup();
-  }
-
   nsCOMPtr<nsIEventTarget> target =
       aBrowserChild->Manager()->GetEventTargetFor(aBrowserChild);
   if (!target) {
@@ -176,10 +166,6 @@ already_AddRefed<TabGroup> TabGroup::Join(nsPIDOMWindowOuter* aWindow,
   MOZ_ASSERT(!tabGroup->mWindows.Contains(aWindow));
   tabGroup->mWindows.AppendElement(aWindow);
 
-  if (!aWindow->IsBackground()) {
-    tabGroup->mForegroundCount++;
-  }
-
   return tabGroup.forget();
 }
 
@@ -187,11 +173,6 @@ void TabGroup::Leave(nsPIDOMWindowOuter* aWindow) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mWindows.Contains(aWindow));
   mWindows.RemoveElement(aWindow);
-
-  if (!aWindow->IsBackground()) {
-    MOZ_DIAGNOSTIC_ASSERT(mForegroundCount > 0);
-    mForegroundCount--;
-  }
 
   MaybeDestroy();
 }
@@ -204,64 +185,6 @@ void TabGroup::MaybeDestroy() {
     mLastWindowLeft = true;
     Shutdown(false);
   }
-}
-
-nsresult TabGroup::FindItemWithName(const nsAString& aName,
-                                    nsIDocShellTreeItem* aRequestor,
-                                    nsIDocShellTreeItem* aOriginalRequestor,
-                                    nsIDocShellTreeItem** aFoundItem) {
-  MOZ_ASSERT(NS_IsMainThread());
-  NS_ENSURE_ARG_POINTER(aFoundItem);
-  *aFoundItem = nullptr;
-
-  MOZ_ASSERT(!aName.LowerCaseEqualsLiteral("_blank") &&
-             !aName.LowerCaseEqualsLiteral("_top") &&
-             !aName.LowerCaseEqualsLiteral("_parent") &&
-             !aName.LowerCaseEqualsLiteral("_self"));
-
-  for (nsPIDOMWindowOuter* outerWindow : mWindows) {
-    // Ignore non-toplevel windows
-    if (outerWindow->GetInProcessScriptableParentOrNull()) {
-      continue;
-    }
-
-    nsCOMPtr<nsIDocShellTreeItem> docshell = outerWindow->GetDocShell();
-    if (!docshell) {
-      continue;
-    }
-
-    BrowsingContext* bc = outerWindow->GetBrowsingContext();
-    if (!bc || !bc->IsTargetable()) {
-      continue;
-    }
-
-    nsCOMPtr<nsIDocShellTreeItem> root;
-    docshell->GetInProcessSameTypeRootTreeItem(getter_AddRefs(root));
-    MOZ_RELEASE_ASSERT(docshell == root);
-    if (root && aRequestor != root) {
-      root->FindItemWithName(aName, aRequestor, aOriginalRequestor,
-                             /* aSkipTabGroup = */ true, aFoundItem);
-      if (*aFoundItem) {
-        break;
-      }
-    }
-  }
-
-  return NS_OK;
-}
-
-nsTArray<nsPIDOMWindowOuter*> TabGroup::GetTopLevelWindows() const {
-  MOZ_ASSERT(NS_IsMainThread());
-  nsTArray<nsPIDOMWindowOuter*> array;
-
-  for (nsPIDOMWindowOuter* outerWindow : mWindows) {
-    if (outerWindow->GetDocShell() &&
-        !outerWindow->GetInProcessScriptableParentOrNull()) {
-      array.AppendElement(outerWindow);
-    }
-  }
-
-  return array;
 }
 
 TabGroup::HashEntry::HashEntry(const nsACString* aKey)
@@ -284,118 +207,6 @@ AbstractThread* TabGroup::AbstractMainThreadForImpl(TaskCategory aCategory) {
   }
 
   return SchedulerGroup::AbstractMainThreadForImpl(aCategory);
-}
-
-void TabGroup::WindowChangedBackgroundStatus(bool aIsNowBackground) {
-  MOZ_RELEASE_ASSERT(NS_IsMainThread());
-
-  if (aIsNowBackground) {
-    MOZ_DIAGNOSTIC_ASSERT(mForegroundCount > 0);
-    mForegroundCount -= 1;
-  } else {
-    mForegroundCount += 1;
-  }
-}
-
-bool TabGroup::IsBackground() const {
-  MOZ_RELEASE_ASSERT(NS_IsMainThread());
-
-#ifdef DEBUG
-  uint32_t foregrounded = 0;
-  for (auto& window : mWindows) {
-    if (!window->IsBackground()) {
-      foregrounded++;
-    }
-  }
-  MOZ_ASSERT(foregrounded == mForegroundCount);
-#endif
-
-  return mForegroundCount == 0;
-}
-
-nsresult TabGroup::QueuePostMessageEvent(
-    already_AddRefed<nsIRunnable>&& aRunnable) {
-  if (StaticPrefs::dom_separate_event_queue_for_post_message_enabled()) {
-    if (!mPostMessageEventQueue) {
-      nsCOMPtr<nsISerialEventTarget> target = GetMainThreadSerialEventTarget();
-      mPostMessageEventQueue = ThrottledEventQueue::Create(
-          target, "PostMessage Queue",
-          nsIRunnablePriority::PRIORITY_DEFERRED_TIMERS);
-      nsresult rv = mPostMessageEventQueue->SetIsPaused(false);
-      MOZ_ALWAYS_SUCCEEDS(rv);
-    }
-
-    // Ensure the queue is enabled
-    if (mPostMessageEventQueue->IsPaused()) {
-      nsresult rv = mPostMessageEventQueue->SetIsPaused(false);
-      MOZ_ALWAYS_SUCCEEDS(rv);
-    }
-
-    if (mPostMessageEventQueue) {
-      mPostMessageEventQueue->Dispatch(std::move(aRunnable),
-                                       NS_DISPATCH_NORMAL);
-      return NS_OK;
-    }
-  }
-  return NS_ERROR_FAILURE;
-}
-
-void TabGroup::FlushPostMessageEvents() {
-  if (StaticPrefs::dom_separate_event_queue_for_post_message_enabled()) {
-    if (mPostMessageEventQueue) {
-      nsresult rv = mPostMessageEventQueue->SetIsPaused(true);
-      MOZ_ALWAYS_SUCCEEDS(rv);
-      nsCOMPtr<nsIRunnable> event;
-      while ((event = mPostMessageEventQueue->GetEvent())) {
-        Dispatch(TaskCategory::Other, event.forget());
-      }
-    }
-  }
-}
-
-uint32_t TabGroup::Count(bool aActiveOnly) const {
-  if (!aActiveOnly) {
-    return mDocGroups.Count();
-  }
-
-  uint32_t count = 0;
-  for (auto iter = mDocGroups.ConstIter(); !iter.Done(); iter.Next()) {
-    if (iter.Get()->mDocGroup->IsActive()) {
-      ++count;
-    }
-  }
-
-  return count;
-}
-
-/*static*/
-bool TabGroup::HasOnlyThrottableTabs() {
-  if (!sTabGroups) {
-    return false;
-  }
-
-  for (TabGroup* tabGroup = sTabGroups->getFirst(); tabGroup;
-       tabGroup =
-           static_cast<LinkedListElement<TabGroup>*>(tabGroup)->getNext()) {
-    for (auto iter = tabGroup->Iter(); !iter.Done(); iter.Next()) {
-      DocGroup* docGroup = iter.Get()->mDocGroup;
-      for (auto* documentInDocGroup : *docGroup) {
-        if (documentInDocGroup->IsCurrentActiveDocument()) {
-          nsPIDOMWindowInner* win = documentInDocGroup->GetInnerWindow();
-          if (win && win->IsCurrentInnerWindow()) {
-            nsPIDOMWindowOuter* outer = win->GetOuterWindow();
-            if (outer) {
-              TimeoutManager& tm = win->TimeoutManager();
-              if (!tm.BudgetThrottlingEnabled(outer->IsBackground())) {
-                return false;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  return true;
 }
 
 }  // namespace dom

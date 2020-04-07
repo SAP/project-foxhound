@@ -288,8 +288,10 @@ nsresult AlertImageRequest::Start() {
   // Unfortunately, the PB loader checks the load group, and asserts if its
   // load context's PB flag isn't set. The fix is to pass the load group to
   // `nsIAlertNotification::loadImage`.
-  int32_t loadFlags =
-      mInPrivateBrowsing ? nsIRequest::LOAD_ANONYMOUS : nsIRequest::LOAD_NORMAL;
+  int32_t loadFlags = nsIRequest::LOAD_NORMAL;
+  if (mInPrivateBrowsing) {
+    loadFlags = nsIRequest::LOAD_ANONYMOUS;
+  }
 
   rv = il->LoadImageXPCOM(
       mURI, nullptr, nullptr, mPrincipal, nullptr, this, nullptr, loadFlags,
@@ -307,7 +309,7 @@ nsresult AlertImageRequest::NotifyMissing() {
     mTimer = nullptr;
   }
   if (nsCOMPtr<nsIAlertNotificationImageListener> listener =
-          mListener.forget()) {
+          std::move(mListener)) {
     nsresult rv = listener->OnImageMissing(mUserData);
     NS_RELEASE_THIS();
     return rv;
@@ -321,7 +323,7 @@ nsresult AlertImageRequest::NotifyComplete() {
     mTimer = nullptr;
   }
   if (nsCOMPtr<nsIAlertNotificationImageListener> listener =
-          mListener.forget()) {
+          std::move(mListener)) {
     nsresult rv = listener->OnImageReady(mUserData, mRequest);
     NS_RELEASE_THIS();
     return rv;

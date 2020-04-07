@@ -21,8 +21,10 @@ use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 #[derive(
     Clone,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToComputedValue,
@@ -40,13 +42,12 @@ impl SVGPathData {
     /// Get the array of PathCommand.
     #[inline]
     pub fn commands(&self) -> &[PathCommand] {
-        debug_assert!(!self.0.is_empty());
         &self.0
     }
 
     /// Create a normalized copy of this path by converting each relative
     /// command to an absolute command.
-    fn normalize(&self) -> Box<[PathCommand]> {
+    pub fn normalize(&self) -> Self {
         let mut state = PathTraversalState {
             subpath_start: CoordPair::new(0.0, 0.0),
             pos: CoordPair::new(0.0, 0.0),
@@ -56,7 +57,8 @@ impl SVGPathData {
             .iter()
             .map(|seg| seg.normalize(&mut state))
             .collect::<Vec<_>>();
-        result.into_boxed_slice()
+
+        SVGPathData(crate::ArcSlice::from_iter(result.into_iter()))
     }
 }
 
@@ -89,10 +91,6 @@ impl Parse for SVGPathData {
     ) -> Result<Self, ParseError<'i>> {
         let location = input.current_source_location();
         let path_string = input.expect_string()?.as_ref();
-        if path_string.is_empty() {
-            // Treat an empty string as invalid, so we will not set it.
-            return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
-        }
 
         // Parse the svg path string as multiple sub-paths.
         let mut path_parser = PathParser::new(path_string);
@@ -119,8 +117,9 @@ impl Animate for SVGPathData {
         // re-normalize again.
         let result = self
             .normalize()
+            .0
             .iter()
-            .zip(other.normalize().iter())
+            .zip(other.normalize().0.iter())
             .map(|(a, b)| a.animate(&b, procedure))
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -134,8 +133,9 @@ impl ComputeSquaredDistance for SVGPathData {
             return Err(());
         }
         self.normalize()
+            .0
             .iter()
-            .zip(other.normalize().iter())
+            .zip(other.normalize().0.iter())
             .map(|(this, other)| this.compute_squared_distance(&other))
             .sum()
     }
@@ -153,8 +153,10 @@ impl ComputeSquaredDistance for SVGPathData {
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToShmem,
@@ -480,8 +482,10 @@ impl ToCss for PathCommand {
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToShmem,
@@ -508,8 +512,10 @@ impl IsAbsolute {
     ComputeSquaredDistance,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToCss,
@@ -527,7 +533,9 @@ impl CoordPair {
 }
 
 /// The EllipticalArc flag type.
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToShmem)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize, SpecifiedValueInfo, ToShmem,
+)]
 #[repr(C)]
 pub struct ArcFlag(bool);
 

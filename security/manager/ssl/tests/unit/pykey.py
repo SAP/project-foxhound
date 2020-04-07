@@ -584,7 +584,7 @@ class RSAKey(object):
         while b64:
             output += '\n' + b64[:64]
             b64 = b64[64:]
-        output += '\n-----END PRIVATE KEY-----\n'
+        output += '\n-----END PRIVATE KEY-----'
         return output
 
     def asSubjectPublicKeyInfo(self):
@@ -732,7 +732,7 @@ class ECCKey(object):
         while b64:
             output += '\n' + b64[:64]
             b64 = b64[64:]
-        output += '\n-----END EC PRIVATE KEY-----\n'
+        output += '\n-----END EC PRIVATE KEY-----'
         return output
 
     def toDER(self):
@@ -814,7 +814,7 @@ def keyFromSpecification(specification):
 
 def main(output, inputPath):
     with open(inputPath) as configStream:
-        output.write(keyFromSpecification(configStream.read().strip()).toPEM())
+        output.write(keyFromSpecification(configStream.read().strip()).toPEM() + '\n')
 
 
 # When run as a standalone program, this will read a specification from

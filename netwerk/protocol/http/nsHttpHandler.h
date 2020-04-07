@@ -11,6 +11,7 @@
 #include "nsHttp.h"
 #include "nsHttpAuthCache.h"
 #include "nsHttpConnectionMgr.h"
+#include "AlternateServices.h"
 #include "ASpdySession.h"
 #include "HttpTrafficAnalyzer.h"
 
@@ -24,8 +25,13 @@
 #include "nsIHttpProtocolHandler.h"
 #include "nsIObserver.h"
 #include "nsISpeculativeConnect.h"
+#include "nsDataHashtable.h"
+#ifdef DEBUG
+#  include "nsIOService.h"
+#endif
 
 class nsIHttpChannel;
+class nsIHttpUpgradeListener;
 class nsIPrefBranch;
 class nsICancelable;
 class nsICookieService;
@@ -45,8 +51,10 @@ class EventTokenBucket;
 class Tickler;
 class nsHttpConnection;
 class nsHttpConnectionInfo;
-class nsHttpTransaction;
+class HttpTransactionShell;
 class AltSvcMapping;
+class TRR;
+class TRRServiceChannel;
 
 /*
  * FRAMECHECK_LAX - no check
@@ -245,7 +253,15 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   nsHttpAuthCache* AuthCache(bool aPrivate) {
     return aPrivate ? &mPrivateAuthCache : &mAuthCache;
   }
-  nsHttpConnectionMgr* ConnMgr() { return mConnMgr; }
+  nsHttpConnectionMgr* ConnMgr() {
+    MOZ_ASSERT_IF(nsIOService::UseSocketProcess(), XRE_IsSocketProcess());
+    return mConnMgr->AsHttpConnectionMgr();
+  }
+
+  AltSvcCache* AltServiceCache() const {
+    MOZ_ASSERT(XRE_IsParentProcess());
+    return mAltSvcCache.get();
+  }
 
   // cache support
   uint32_t GenerateUniqueID() { return ++mLastUniqueID; }
@@ -264,43 +280,32 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // Called to kick-off a new transaction, by default the transaction
   // will be put on the pending transaction queue if it cannot be
   // initiated at this time.  Callable from any thread.
-  MOZ_MUST_USE nsresult InitiateTransaction(nsHttpTransaction* trans,
-                                            int32_t priority) {
-    return mConnMgr->AddTransaction(trans, priority);
-  }
+  MOZ_MUST_USE nsresult InitiateTransaction(HttpTransactionShell* trans,
+                                            int32_t priority);
 
   // This function is also called to kick-off a new transaction. But the new
   // transaction will take a sticky connection from |transWithStickyConn|
   // and reuse it.
-  MOZ_MUST_USE nsresult
-  InitiateTransactionWithStickyConn(nsHttpTransaction* trans, int32_t priority,
-                                    nsHttpTransaction* transWithStickyConn) {
-    return mConnMgr->AddTransactionWithStickyConn(trans, priority,
-                                                  transWithStickyConn);
-  }
+  MOZ_MUST_USE nsresult InitiateTransactionWithStickyConn(
+      HttpTransactionShell* trans, int32_t priority,
+      HttpTransactionShell* transWithStickyConn);
 
   // Called to change the priority of an existing transaction that has
   // already been initiated.
-  MOZ_MUST_USE nsresult RescheduleTransaction(nsHttpTransaction* trans,
-                                              int32_t priority) {
-    return mConnMgr->RescheduleTransaction(trans, priority);
-  }
+  MOZ_MUST_USE nsresult RescheduleTransaction(HttpTransactionShell* trans,
+                                              int32_t priority);
 
-  void UpdateClassOfServiceOnTransaction(nsHttpTransaction* trans,
-                                         uint32_t classOfService) {
-    mConnMgr->UpdateClassOfServiceOnTransaction(trans, classOfService);
-  }
+  void UpdateClassOfServiceOnTransaction(HttpTransactionShell* trans,
+                                         uint32_t classOfService);
 
   // Called to cancel a transaction, which may or may not be assigned to
   // a connection.  Callable from any thread.
-  MOZ_MUST_USE nsresult CancelTransaction(nsHttpTransaction* trans,
-                                          nsresult reason) {
-    return mConnMgr->CancelTransaction(trans, reason);
-  }
+  MOZ_MUST_USE nsresult CancelTransaction(HttpTransactionShell* trans,
+                                          nsresult reason);
 
   // Called when a connection is done processing a transaction.  Callable
   // from any thread.
-  MOZ_MUST_USE nsresult ReclaimConnection(nsHttpConnection* conn) {
+  MOZ_MUST_USE nsresult ReclaimConnection(HttpConnectionBase* conn) {
     return mConnMgr->ReclaimConnection(conn);
   }
 
@@ -328,16 +333,16 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   void UpdateAltServiceMapping(AltSvcMapping* map, nsProxyInfo* proxyInfo,
                                nsIInterfaceRequestor* callbacks, uint32_t caps,
                                const OriginAttributes& originAttributes) {
-    mConnMgr->UpdateAltServiceMapping(map, proxyInfo, callbacks, caps,
-                                      originAttributes);
+    mAltSvcCache->UpdateAltServiceMapping(map, proxyInfo, callbacks, caps,
+                                          originAttributes);
   }
 
   already_AddRefed<AltSvcMapping> GetAltServiceMapping(
       const nsACString& scheme, const nsACString& host, int32_t port, bool pb,
       bool isolated, const nsACString& topWindowOrigin,
       const OriginAttributes& originAttributes) {
-    return mConnMgr->GetAltServiceMapping(scheme, host, port, pb, isolated,
-                                          topWindowOrigin, originAttributes);
+    return mAltSvcCache->GetAltServiceMapping(
+        scheme, host, port, pb, isolated, topWindowOrigin, originAttributes);
   }
 
   //
@@ -408,10 +413,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     NotifyObservers(chan, NS_HTTP_ON_EXAMINE_CACHED_RESPONSE_TOPIC);
   }
 
-  void OnMayChangeProcess(nsIProcessSwitchRequestor* request) {
-    NotifyObservers(request, NS_HTTP_ON_MAY_CHANGE_PROCESS_TOPIC);
-  }
-
   // Generates the host:port string for use in the Host: header as well as the
   // CONNECT line for proxies. This handles IPv6 literals correctly.
   static MOZ_MUST_USE nsresult GenerateHostPort(const nsCString& host,
@@ -435,6 +436,15 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   bool Bug1563538() const { return mBug1563538; }
   bool Bug1563695() const { return mBug1563695; }
   bool Bug1556491() const { return mBug1556491; }
+
+  bool IsHttp3VersionSupportedHex(const nsACString& version);
+  nsCString Http3Version() { return kHttp3Version; }
+
+  bool IsHttp3Enabled() const { return mHttp3Enabled; }
+  uint32_t DefaultQpackTableSize() const { return mQpackTableSize; }
+  uint16_t DefaultHttp3MaxBlockedStreams() const {
+    return (uint16_t)mHttp3MaxBlockedStreams;
+  }
 
   uint32_t MaxHttpResponseHeaderSize() const {
     return mMaxHttpResponseHeaderSize;
@@ -460,6 +470,11 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   bool GetThroughCaptivePortal() { return mThroughCaptivePortal; }
 
+  nsresult CompleteUpgrade(HttpTransactionShell* aTrans,
+                           nsIHttpUpgradeListener* aUpgradeListener);
+
+  nsresult DoShiftReloadConnectionCleanup(nsHttpConnectionInfo* aCI = nullptr);
+
  private:
   nsHttpHandler();
 
@@ -472,6 +487,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   //
   void BuildUserAgent();
   void InitUserAgentComponents();
+  static void PrefsChanged(const char* pref, void* self);
   void PrefsChanged(const char* pref);
 
   MOZ_MUST_USE nsresult SetAcceptLanguages();
@@ -480,13 +496,23 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   MOZ_MUST_USE nsresult InitConnectionMgr();
 
   void NotifyObservers(nsIChannel* chan, const char* event);
-  void NotifyObservers(nsIProcessSwitchRequestor* request, const char* event);
 
   void SetFastOpenOSSupport();
 
   // Checks if there are any user certs or active smart cards on a different
   // thread. Updates mSpeculativeConnectEnabled when done.
   void MaybeEnableSpeculativeConnect();
+
+  // We only allow TRR and TRRServiceChannel itself to create TRRServiceChannel.
+  friend class TRRServiceChannel;
+  friend class TRR;
+  nsresult CreateTRRServiceChannel(nsIURI* uri, nsIProxyInfo* givenProxyInfo,
+                                   uint32_t proxyResolveFlags, nsIURI* proxyURI,
+                                   nsILoadInfo* aLoadInfo, nsIChannel** result);
+  nsresult SetupChannelInternal(HttpBaseChannel* aChannel, nsIURI* uri,
+                                nsIProxyInfo* givenProxyInfo,
+                                uint32_t proxyResolveFlags, nsIURI* proxyURI,
+                                nsILoadInfo* aLoadInfo, nsIChannel** result);
 
  private:
   // cached services
@@ -500,11 +526,9 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   nsHttpAuthCache mPrivateAuthCache;
 
   // the connection manager
-  RefPtr<nsHttpConnectionMgr> mConnMgr;
+  RefPtr<HttpConnectionMgrShell> mConnMgr;
 
-  // This thread is used for performing operations that should not block
-  // the main thread.
-  nsCOMPtr<nsIThread> mBackgroundThread;
+  UniquePtr<AltSvcCache> mAltSvcCache;
 
   //
   // prefs
@@ -562,6 +586,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   uint8_t mQoSBits;
 
   bool mEnforceAssocReq;
+
+  nsCString mImageAcceptHeader;
 
   nsCString mAcceptLanguages;
   nsCString mHttpAcceptEncodings;
@@ -687,6 +713,13 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   Atomic<bool, Relaxed> mBug1563695;
   Atomic<bool, Relaxed> mBug1556491;
 
+  Atomic<bool, Relaxed> mHttp3Enabled;
+  // Http3 parameters
+  Atomic<uint32_t, Relaxed> mQpackTableSize;
+  Atomic<uint32_t, Relaxed>
+      mHttp3MaxBlockedStreams;  // uint16_t is enough here, but Atomic only
+                                // supports uint32_t or uint64_t.
+
   // The max size (in bytes) for received Http response header.
   uint32_t mMaxHttpResponseHeaderSize;
 
@@ -753,7 +786,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   // State for generating channelIds
   uint32_t mProcessId;
-  uint32_t mNextChannelId;
+  Atomic<uint32_t, Relaxed> mNextChannelId;
 
   // The last time any of the active tab page load optimization took place.
   // This is accessed on multiple threads, hence a lock is needed.
@@ -767,8 +800,13 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   Mutex mLastActiveTabLoadOptimizationLock;
   TimeStamp mLastActiveTabLoadOptimizationHit;
 
+  Mutex mSpdyBlacklistLock;
+
  public:
   MOZ_MUST_USE nsresult NewChannelId(uint64_t& channelId);
+  void AddHttpChannel(uint64_t aId, nsISupports* aChannel);
+  void RemoveHttpChannel(uint64_t aId);
+  nsWeakPtr GetWeakHttpChannel(uint64_t aId);
 
   void BlacklistSpdy(const nsHttpConnectionInfo* ci);
   MOZ_MUST_USE bool IsSpdyBlacklisted(const nsHttpConnectionInfo* ci);
@@ -777,6 +815,9 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   nsTHashtable<nsCStringHashKey> mBlacklistedSpdyOrigins;
 
   bool mThroughCaptivePortal;
+
+  // The mapping of channel id and the weak pointer of nsHttpChannel.
+  nsDataHashtable<nsUint64HashKey, nsWeakPtr> mIDToHttpChannelMap;
 };
 
 extern StaticRefPtr<nsHttpHandler> gHttpHandler;

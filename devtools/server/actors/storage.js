@@ -7,11 +7,12 @@
 const { Cc, Ci, Cu, CC } = require("chrome");
 const protocol = require("devtools/shared/protocol");
 const { LongStringActor } = require("devtools/server/actors/string");
-const { DebuggerServer } = require("devtools/server/debugger-server");
+const { DevToolsServer } = require("devtools/server/devtools-server");
 const Services = require("Services");
 const defer = require("devtools/shared/defer");
 const { isWindowIncluded } = require("devtools/shared/layout/utils");
 const specs = require("devtools/shared/specs/storage");
+const { parseItemValue } = require("devtools/shared/storage/utils");
 loader.lazyGetter(this, "ExtensionProcessScript", () => {
   return require("resource://gre/modules/ExtensionProcessScript.jsm")
     .ExtensionProcessScript;
@@ -26,8 +27,6 @@ loader.lazyGetter(
   () => Cu.getGlobalForObject(ExtensionProcessScript).WebExtensionPolicy
 );
 
-const CHROME_ENABLED_PREF = "devtools.chrome.enabled";
-const REMOTE_ENABLED_PREF = "devtools.debugger.remote-enabled";
 const EXTENSION_STORAGE_ENABLED_PREF =
   "devtools.storage.extensionStorage.enabled";
 
@@ -40,15 +39,13 @@ loader.lazyRequireGetter(
   true
 );
 
-// "Lax", "Strict" and "Unset" are special values of the sameSite property
+// "Lax", "Strict" and "None" are special values of the sameSite property
 // that should not be translated.
 const COOKIE_SAMESITE = {
   LAX: "Lax",
   STRICT: "Strict",
-  UNSET: "Unset",
+  NONE: "None",
 };
-
-const SAFE_HOSTS_PREFIXES_REGEX = /^(about\+|https?\+|file\+|moz-extension\+)/;
 
 // GUID to be used as a separator in compound keys. This must match the same
 // constant in devtools/client/storage/ui.js,
@@ -155,8 +152,7 @@ StorageActors.defaults = function(typeName, observationTopics) {
 
     /**
      * Returns a list of currently known hosts for the target window. This list
-     * contains unique hosts from the window + all inner windows. If
-     * this._internalHosts is defined then these will also be added to the list.
+     * contains unique hosts from the window + all inner windows.
      */
     get hosts() {
       const hosts = new Set();
@@ -164,11 +160,6 @@ StorageActors.defaults = function(typeName, observationTopics) {
         const host = this.getHostName(location);
 
         if (host) {
-          hosts.add(host);
-        }
-      }
-      if (this._internalHosts) {
-        for (const host of this._internalHosts) {
           hosts.add(host);
         }
       }
@@ -514,7 +505,7 @@ StorageActors.createActor(
       // We need to remove the cookie listeners early in E10S mode so we need to
       // use a conditional here to ensure that we only attempt to remove them in
       // single process mode.
-      if (!DebuggerServer.isInChildProcess) {
+      if (!DevToolsServer.isInChildProcess) {
         this.removeCookieObservers();
       }
 
@@ -587,6 +578,8 @@ StorageActors.createActor(
         // because creationTime is in micro seconds
         creationTime: cookie.creationTime / 1000,
 
+        size: cookie.name.length + (cookie.value || "").length,
+
         // - do -
         lastAccessed: cookie.lastAccessed / 1000,
         value: new LongStringActor(this.conn, cookie.value || ""),
@@ -605,7 +598,7 @@ StorageActors.createActor(
           return COOKIE_SAMESITE.STRICT;
       }
       // cookie.SAMESITE_NONE
-      return COOKIE_SAMESITE.UNSET;
+      return COOKIE_SAMESITE.NONE;
     },
 
     populateStoresForHost(host) {
@@ -717,16 +710,17 @@ StorageActors.createActor(
       return [
         { name: "uniqueKey", editable: false, private: true },
         { name: "name", editable: true, hidden: false },
+        { name: "value", editable: true, hidden: false },
         { name: "host", editable: true, hidden: false },
         { name: "path", editable: true, hidden: false },
         { name: "expires", editable: true, hidden: false },
+        { name: "size", editable: false, hidden: false },
+        { name: "isHttpOnly", editable: true, hidden: false },
+        { name: "isSecure", editable: true, hidden: false },
+        { name: "sameSite", editable: false, hidden: false },
         { name: "lastAccessed", editable: false, hidden: false },
         { name: "creationTime", editable: false, hidden: true },
-        { name: "value", editable: true, hidden: false },
         { name: "hostOnly", editable: false, hidden: true },
-        { name: "isSecure", editable: true, hidden: true },
-        { name: "isHttpOnly", editable: true, hidden: false },
-        { name: "sameSite", editable: false, hidden: false },
       ];
     },
 
@@ -780,7 +774,7 @@ StorageActors.createActor(
     maybeSetupChildProcess() {
       cookieHelpers.onCookieChanged = this.onCookieChanged.bind(this);
 
-      if (!DebuggerServer.isInChildProcess) {
+      if (!DevToolsServer.isInChildProcess) {
         this.getCookiesFromHost = cookieHelpers.getCookiesFromHost.bind(
           cookieHelpers
         );
@@ -872,9 +866,7 @@ var cookieHelpers = {
 
     host = trimHttpHttpsPort(host);
 
-    return Array.from(
-      Services.cookies.getCookiesFromHost(host, originAttributes)
-    );
+    return Services.cookies.getCookiesFromHost(host, originAttributes);
   },
 
   /**
@@ -902,7 +894,7 @@ var cookieHelpers = {
    *          }
    *        }
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   editCookie(data) {
     let { field, oldValue, newValue } = data;
     const origName = field === "name" ? oldValue : data.items.name;
@@ -996,7 +988,6 @@ var cookieHelpers = {
       cookie.sameSite
     );
   },
-  /* eslint-enable complexity */
 
   _removeCookies(host, opts = {}) {
     // We use a uniqueId to emulate compound keys for cookies. We need to
@@ -1408,6 +1399,120 @@ const extensionStorageHelpers = {
   // a separate extensionStorage actor targeting that addon. The addonId is passed into the listener,
   // so that changes propagate only if the storage actor has a matching addonId.
   onChangedChildListeners: new Set(),
+  /**
+   * Editing is supported only for serializable types. Examples of unserializable
+   * types include Map, Set and ArrayBuffer.
+   */
+  isEditable(value) {
+    // Bug 1542038: the managed storage area is never editable
+    for (const { test } of Object.values(this.supportedTypes)) {
+      if (test(value)) {
+        return true;
+      }
+    }
+    return false;
+  },
+  isPrimitive(value) {
+    const primitiveValueTypes = ["string", "number", "boolean"];
+    return primitiveValueTypes.includes(typeof value) || value === null;
+  },
+  isObjectLiteral(value) {
+    return (
+      value &&
+      typeof value === "object" &&
+      Cu.getClassName(value, true) === "Object"
+    );
+  },
+  // Nested arrays or object literals are only editable 2 levels deep
+  isArrayOrObjectLiteralEditable(obj) {
+    const topLevelValuesArr = Array.isArray(obj) ? obj : Object.values(obj);
+    if (
+      topLevelValuesArr.some(
+        value =>
+          !this.isPrimitive(value) &&
+          !Array.isArray(value) &&
+          !this.isObjectLiteral(value)
+      )
+    ) {
+      // At least one value is too complex to parse
+      return false;
+    }
+    const arrayOrObjects = topLevelValuesArr.filter(
+      value => Array.isArray(value) || this.isObjectLiteral(value)
+    );
+    if (arrayOrObjects.length === 0) {
+      // All top level values are primitives
+      return true;
+    }
+
+    // One or more top level values was an array or object literal.
+    // All of these top level values must themselves have only primitive values
+    // for the object to be editable
+    for (const nestedObj of arrayOrObjects) {
+      const secondLevelValuesArr = Array.isArray(nestedObj)
+        ? nestedObj
+        : Object.values(nestedObj);
+      if (secondLevelValuesArr.some(value => !this.isPrimitive(value))) {
+        return false;
+      }
+    }
+    return true;
+  },
+  typesFromString: {
+    // Helper methods to parse string values in editItem
+    jsonifiable: {
+      test(str) {
+        try {
+          JSON.parse(str);
+        } catch (e) {
+          return false;
+        }
+        return true;
+      },
+      parse(str) {
+        return JSON.parse(str);
+      },
+    },
+  },
+  supportedTypes: {
+    // Helper methods to determine the value type of an item in isEditable
+    array: {
+      test(value) {
+        if (Array.isArray(value)) {
+          return extensionStorageHelpers.isArrayOrObjectLiteralEditable(value);
+        }
+        return false;
+      },
+    },
+    boolean: {
+      test(value) {
+        return typeof value === "boolean";
+      },
+    },
+    null: {
+      test(value) {
+        return value === null;
+      },
+    },
+    number: {
+      test(value) {
+        return typeof value === "number";
+      },
+    },
+    object: {
+      test(value) {
+        if (extensionStorageHelpers.isObjectLiteral(value)) {
+          return extensionStorageHelpers.isArrayOrObjectLiteralEditable(value);
+        }
+        return false;
+      },
+    },
+    string: {
+      test(value) {
+        return typeof value === "string";
+      },
+    },
+  },
 
   // Sets the parent process message manager
   setPpmm(ppmm) {
@@ -1777,11 +1882,14 @@ if (Services.prefs.getBoolPref(EXTENSION_STORAGE_ENABLED_PREF, false)) {
           storeMap.set(key, value);
         }
 
-        // Show the storage actor in the add-on storage inspector even when there
-        // is no extension page currently open
-        const storageData = {};
-        storageData[host] = this.getNamesForHost(host);
-        this.storageActor.update("added", this.typeName, storageData);
+        if (this.storageActor.parentActor.fallbackWindow) {
+          // Show the storage actor in the add-on storage inspector even when there
+          // is no extension page currently open
+          // This strategy may need to change depending on the outcome of Bug 1597900
+          const storageData = {};
+          storageData[host] = this.getNamesForHost(host);
+          this.storageActor.update("added", this.typeName, storageData);
+        }
       },
 
       async getStoragePrincipal(addonId) {
@@ -1818,7 +1926,9 @@ if (Services.prefs.getBoolPref(EXTENSION_STORAGE_ENABLED_PREF, false)) {
 
       /**
        * Converts a storage item to an "extensionobject" as defined in
-       * devtools/shared/specs/storage.js
+       * devtools/shared/specs/storage.js. Behavior largely mirrors the "indexedDB" storage actor,
+       * except where it would throw an unhandled error (i.e. for a `BigInt` or `undefined`
+       * `item.value`).
        * @param {Object} item - The storage item to convert
        * @param {String} item.name - The storage item key
        * @param {*} item.value - The storage item value
@@ -1829,48 +1939,122 @@ if (Services.prefs.getBoolPref(EXTENSION_STORAGE_ENABLED_PREF, false)) {
           return null;
         }
 
-        const { name, value } = item;
+        let { name, value } = item;
+        let isValueEditable = extensionStorageHelpers.isEditable(value);
 
-        let newValue;
-        if (typeof value === "string") {
-          newValue = value;
-        } else {
-          try {
-            newValue = JSON.stringify(value) || String(value);
-          } catch (error) {
-            // throws for bigint
-            newValue = String(value);
-          }
-
-          // JavaScript objects that are not JSON stringifiable will be represented
-          // by the string "Object"
-          if (newValue === "{}") {
-            newValue = "Object";
-          }
+        // `JSON.stringify()` throws for `BigInt`, adds extra quotes to strings and `Date` strings,
+        // and doesn't modify `undefined`.
+        switch (typeof value) {
+          case "bigint":
+            value = `${value.toString()}n`;
+            break;
+          case "string":
+            break;
+          case "undefined":
+            value = "undefined";
+            break;
+          default:
+            value = JSON.stringify(value);
+            if (
+              // can't use `instanceof` across frame boundaries
+              Object.prototype.toString.call(item.value) === "[object Date]"
+            ) {
+              value = JSON.parse(value);
+            }
         }
 
         // FIXME: Bug 1318029 - Due to a bug that is thrown whenever a
-        // LongStringActor string reaches DebuggerServer.LONG_STRING_LENGTH we need
+        // LongStringActor string reaches DevToolsServer.LONG_STRING_LENGTH we need
         // to trim the value. When the bug is fixed we should stop trimming the
         // string here.
-        const maxLength = DebuggerServer.LONG_STRING_LENGTH - 1;
-        if (newValue.length > maxLength) {
-          newValue = newValue.substr(0, maxLength);
+        const maxLength = DevToolsServer.LONG_STRING_LENGTH - 1;
+        if (value.length > maxLength) {
+          value = value.substr(0, maxLength);
+          isValueEditable = false;
         }
 
         return {
           name,
-          value: new LongStringActor(this.conn, newValue || ""),
+          value: new LongStringActor(this.conn, value),
           area: "local", // Bug 1542038, 1542039: set the correct storage area
+          isValueEditable,
         };
       },
 
       getFields() {
         return [
           { name: "name", editable: false },
-          { name: "value", editable: false },
+          { name: "value", editable: true },
           { name: "area", editable: false },
+          { name: "isValueEditable", editable: false, private: true },
         ];
+      },
+
+      onItemUpdated(action, host, names) {
+        this.storageActor.update(action, this.typeName, {
+          [host]: names,
+        });
+      },
+
+      async editItem({ host, field, items, oldValue }) {
+        const db = this.dbConnectionForHost.get(host);
+        if (!db) {
+          return;
+        }
+
+        const { name, value } = items;
+
+        let parsedValue = parseItemValue(value);
+        if (parsedValue === value) {
+          const { typesFromString } = extensionStorageHelpers;
+          for (const { test, parse } of Object.values(typesFromString)) {
+            if (test(value)) {
+              parsedValue = parse(value);
+              break;
+            }
+          }
+        }
+        const changes = await db.set({ [name]: parsedValue });
+        this.fireOnChangedExtensionEvent(host, changes);
+
+        this.onItemUpdated("changed", host, [name]);
+      },
+
+      async removeItem(host, name) {
+        const db = this.dbConnectionForHost.get(host);
+        if (!db) {
+          return;
+        }
+
+        const changes = await db.remove(name);
+        this.fireOnChangedExtensionEvent(host, changes);
+
+        this.onItemUpdated("deleted", host, [name]);
+      },
+
+      async removeAll(host) {
+        const db = this.dbConnectionForHost.get(host);
+        if (!db) {
+          return;
+        }
+
+        const changes = await db.clear();
+        this.fireOnChangedExtensionEvent(host, changes);
+
+        this.onItemUpdated("cleared", host, []);
+      },
+
+      /**
+       * Let the extension know that storage data has been changed by the user from
+       * the storage inspector.
+       */
+      fireOnChangedExtensionEvent(host, changes) {
+        // Bug 1542038, 1542039: Which message to send depends on the storage area
+        const uuid = new URL(host).host;
+        Services.cpmm.sendAsyncMessage(
+          `Extension:StorageLocalOnChanged:${uuid}`,
+          changes
+        );
       },
     }
   );
@@ -1882,13 +2066,12 @@ StorageActors.createActor(
   },
   {
     async getCachesForHost(host) {
-      const uri = Services.io.newURI(host);
-      const attrs = this.storageActor.document.effectiveStoragePrincipal
-        .originAttributes;
-      const principal = Services.scriptSecurityManager.createContentPrincipal(
-        uri,
-        attrs
-      );
+      const win = this.storageActor.getWindowFromHost(host);
+      if (!win) {
+        return null;
+      }
+
+      const principal = win.document.effectiveStoragePrincipal;
 
       // The first argument tells if you want to get |content| cache or |chrome|
       // cache.
@@ -1896,10 +2079,10 @@ StorageActors.createActor(
       // (service worker or web page).
       // The |chrome| cache is the cache implicitely cached by the platform,
       // hosting the source file of the service worker.
-      const { CacheStorage } = this.storageActor.window;
+      const { CacheStorage } = win;
 
       if (!CacheStorage) {
-        return [];
+        return null;
       }
 
       const cache = new CacheStorage("content", principal);
@@ -2138,7 +2321,7 @@ ObjectStoreMetadata.prototype = {
  * @param {IDBDatabase} db
  *        The particular indexed db.
  * @param {String} storage
- *        Storage type, either "temporary", "default" or "persistent".
+ *        Storage type, either "temporary" or "default".
  */
 function DatabaseMetadata(origin, db, storage) {
   this._origin = origin;
@@ -2209,21 +2392,6 @@ StorageActors.createActor(
       protocol.Actor.prototype.destroy.call(this);
 
       this.storageActor = null;
-    },
-
-    /**
-     * Returns a list of currently known hosts for the target window. This list
-     * contains unique hosts from the window, all inner windows and all permanent
-     * indexedDB hosts defined inside the browser.
-     */
-    async getHosts() {
-      // Add internal hosts to this._internalHosts, which will be picked up by
-      // the this.hosts getter. Because this.hosts is a property on the default
-      // storage actor and inherited by all storage actors we have to do it this
-      // way.
-      this._internalHosts = await this.getInternalHosts();
-
-      return this.hosts;
     },
 
     /**
@@ -2347,7 +2515,7 @@ StorageActors.createActor(
     async preListStores() {
       this.hostVsStores = new Map();
 
-      for (const host of await this.getHosts()) {
+      for (const host of this.hosts) {
         await this.populateStoresForHost(host);
       }
     },
@@ -2403,10 +2571,10 @@ StorageActors.createActor(
       let value = JSON.stringify(item.value);
 
       // FIXME: Bug 1318029 - Due to a bug that is thrown whenever a
-      // LongStringActor string reaches DebuggerServer.LONG_STRING_LENGTH we need
+      // LongStringActor string reaches DevToolsServer.LONG_STRING_LENGTH we need
       // to trim the value. When the bug is fixed we should stop trimming the
       // string here.
-      const maxLength = DebuggerServer.LONG_STRING_LENGTH - 1;
+      const maxLength = DevToolsServer.LONG_STRING_LENGTH - 1;
       if (value.length > maxLength) {
         value = value.substr(0, maxLength);
       }
@@ -2444,7 +2612,7 @@ StorageActors.createActor(
     },
 
     maybeSetupChildProcess() {
-      if (!DebuggerServer.isInChildProcess) {
+      if (!DevToolsServer.isInChildProcess) {
         this.backToChild = (func, rv) => rv;
         this.clearDBStore = indexedDBHelpers.clearDBStore;
         this.findIDBPathsForHost = indexedDBHelpers.findIDBPathsForHost;
@@ -2460,7 +2628,6 @@ StorageActors.createActor(
         this.removeDB = indexedDBHelpers.removeDB;
         this.removeDBRecord = indexedDBHelpers.removeDBRecord;
         this.splitNameAndStorage = indexedDBHelpers.splitNameAndStorage;
-        this.getInternalHosts = indexedDBHelpers.getInternalHosts;
         return;
       }
 
@@ -2476,10 +2643,6 @@ StorageActors.createActor(
       this.splitNameAndStorage = callParentProcessAsync.bind(
         null,
         "splitNameAndStorage"
-      );
-      this.getInternalHosts = callParentProcessAsync.bind(
-        null,
-        "getInternalHosts"
       );
       this.getDBNamesForHost = callParentProcessAsync.bind(
         null,
@@ -2613,34 +2776,6 @@ var indexedDBHelpers = {
   },
 
   /**
-   * Get all "internal" hosts. Internal hosts are database namespaces used by
-   * the browser.
-   */
-  async getInternalHosts() {
-    // Return an empty array if the browser toolbox is not enabled.
-    if (
-      !Services.prefs.getBoolPref(CHROME_ENABLED_PREF) ||
-      !Services.prefs.getBoolPref(REMOTE_ENABLED_PREF)
-    ) {
-      return this.backToChild("getInternalHosts", []);
-    }
-
-    const profileDir = OS.Constants.Path.profileDir;
-    const storagePath = OS.Path.join(profileDir, "storage", "permanent");
-    const iterator = new OS.File.DirectoryIterator(storagePath);
-    const hosts = [];
-
-    await iterator.forEach(entry => {
-      if (entry.isDir && !SAFE_HOSTS_PREFIXES_REGEX.test(entry.name)) {
-        hosts.push(entry.name);
-      }
-    });
-    iterator.close();
-
-    return this.backToChild("getInternalHosts", hosts);
-  },
-
-  /**
    * Opens an indexed db connection for the given `principal` and
    * database `name`.
    */
@@ -2767,14 +2902,11 @@ var indexedDBHelpers = {
     // We expect sqlite DB paths to look something like this:
     // - PathToProfileDir/storage/default/http+++www.example.com/
     //   idb/1556056096MeysDaabta.sqlite
-    // - PathToProfileDir/storage/permanent/http+++www.example.com/
-    //   idb/1556056096MeysDaabta.sqlite
     // - PathToProfileDir/storage/temporary/http+++www.example.com/
     //   idb/1556056096MeysDaabta.sqlite
     // The subdirectory inside the storage folder is determined by the storage
     // type:
     // - default:   { storage: "default" } or not specified.
-    // - permanent: { storage: "persistent" }.
     // - temporary: { storage: "temporary" }.
     const sqliteFiles = await this.findSqlitePathsForHost(
       storagePath,
@@ -2789,7 +2921,7 @@ var indexedDBHelpers = {
 
       files.push({
         file: relative,
-        storage: storage === "permanent" ? "persistent" : storage,
+        storage,
       });
     }
 
@@ -2844,15 +2976,19 @@ var indexedDBHelpers = {
   },
 
   /**
-   * Find all the storage types, such as "default", "permanent", or "temporary".
-   * These names have changed over time, so it seems simpler to look through all types
-   * that currently exist in the profile.
+   * Find all the storage types, such as "default" or "temporary".
+   * These names have changed over time, so it seems simpler to look through all
+   * types that currently exist in the profile.
    */
   async findStorageTypePaths(storagePath) {
     const iterator = new OS.File.DirectoryIterator(storagePath);
     const typePaths = [];
     await iterator.forEach(entry => {
-      if (entry.isDir) {
+      if (
+        entry.isDir &&
+        (OS.Path.basename(entry.path) === "default" ||
+          OS.Path.basename(entry.path) === "temporary")
+      ) {
         typePaths.push(entry.path);
       }
     });
@@ -2977,7 +3113,7 @@ var indexedDBHelpers = {
    * @param {string} dbName
    *        The name of the indexed db from the above host.
    * @param {String} storage
-   *        Storage type, either "temporary", "default" or "persistent".
+   *        Storage type, either "temporary" or "default".
    * @param {Object} requestOptions
    *        An object in the following format:
    *        {
@@ -3100,9 +3236,6 @@ var indexedDBHelpers = {
       case "getDBMetaData": {
         const [host, principal, name, storage] = args;
         return indexedDBHelpers.getDBMetaData(host, principal, name, storage);
-      }
-      case "getInternalHosts": {
-        return indexedDBHelpers.getInternalHosts();
       }
       case "splitNameAndStorage": {
         const [name] = args;
@@ -3447,7 +3580,7 @@ const StorageActor = protocol.ActorClassWithSpec(specs.storageSpec, {
    *           Pass an empty array if the host itself was affected: either completely
    *           removed or cleared.
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   update(action, storeType, data) {
     if (action == "cleared") {
       this.emit("stores-cleared", { [storeType]: data });
@@ -3524,7 +3657,6 @@ const StorageActor = protocol.ActorClassWithSpec(specs.storageSpec, {
 
     return null;
   },
-  /* eslint-enable complexity */
 
   /**
    * This method removes data from the this.boundUpdate object in the same

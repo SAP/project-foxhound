@@ -11,7 +11,6 @@
 #include "nsIContent.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
-#include "nsIDocShell.h"
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsHTMLParts.h"
 #include "nsCRT.h"
@@ -22,28 +21,20 @@
 #include "nsDocElementCreatedNotificationRunner.h"
 #include "nsIScriptContext.h"
 #include "nsNameSpaceManager.h"
-#include "nsIServiceManager.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsIContentViewer.h"
 #include "nsIScriptError.h"
 #include "prtime.h"
 #include "mozilla/Logging.h"
 #include "nsRect.h"
-#include "nsIWebNavigation.h"
 #include "nsIScriptElement.h"
 #include "nsStyleLinkElement.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
-#include "nsICookieService.h"
-#include "nsIPrompt.h"
 #include "nsIChannel.h"
-#include "nsIPrincipal.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsIContentPolicy.h"
 #include "nsContentPolicyUtils.h"
 #include "nsError.h"
-#include "nsNodeUtils.h"
 #include "nsIScriptGlobalObject.h"
 #include "mozAutoDocUpdate.h"
 #include "nsMimeTypes.h"
@@ -86,8 +77,7 @@ nsresult NS_NewPrototypeDocumentContentSink(nsIContentSink** aResult,
   return NS_OK;
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 PrototypeDocumentContentSink::PrototypeDocumentContentSink()
     : mNextSrcLoadWaiter(nullptr),
@@ -1063,7 +1053,7 @@ nsresult PrototypeDocumentContentSink::CreateElementFromPrototype(
   }
 
   if (result->HasAttr(kNameSpaceID_None, nsGkAtoms::datal10nid)) {
-    mDocument->mL10nProtoElements.Put(result, aPrototype);
+    mDocument->mL10nProtoElements.Put(result, RefPtr{aPrototype});
     result->SetElementCreatedFromPrototypeAndHasUnmodifiedL10n();
   }
   result.forget(aResult);
@@ -1089,5 +1079,4 @@ nsresult PrototypeDocumentContentSink::AddAttributes(
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

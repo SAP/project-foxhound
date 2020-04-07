@@ -8,7 +8,6 @@
 #define mozilla_dom_PerformanceNavigationTiming_h___
 
 #include "nsCOMPtr.h"
-#include "nsIChannel.h"
 #include "nsITimedChannel.h"
 #include "nsRFPService.h"
 #include "mozilla/dom/PerformanceResourceTiming.h"
@@ -61,7 +60,7 @@ class PerformanceNavigationTiming final : public PerformanceResourceTiming {
                                        nsITimedChannel* aChannel);
 
  private:
-  ~PerformanceNavigationTiming() {}
+  ~PerformanceNavigationTiming() = default;
 };
 
 }  // namespace dom

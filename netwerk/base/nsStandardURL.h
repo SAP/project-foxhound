@@ -11,7 +11,6 @@
 #include "nsIFileURL.h"
 #include "nsIStandardURL.h"
 #include "mozilla/Encoding.h"
-#include "nsIObserver.h"
 #include "nsCOMPtr.h"
 #include "nsURLHelper.h"
 #include "nsIClassInfo.h"
@@ -373,7 +372,7 @@ class nsStandardURL : public nsIFileURL,
       if (NS_FAILED(rv)) {
         return rv;
       }
-      BaseURIMutator<T>::mURI = uri.forget();
+      BaseURIMutator<T>::mURI = std::move(uri);
       return NS_OK;
     }
 

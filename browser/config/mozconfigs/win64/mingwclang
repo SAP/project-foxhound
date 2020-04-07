@@ -3,10 +3,12 @@
 #    SOCORRO_SYMBOL_UPLOAD_TOKEN_FILE - shouldn't be used?
 #    TOOLTOOL_DIR
 #    MAKECAB - shouldn't be used?
+#    DUMP_SYMS - isn't used.
 . "$topsrcdir/build/mozconfig.win-common"
 
 # MinGW does not have (or need) makecab
 unset MAKECAB
+unset DUMP_SYMS
 
 # Sets:
 #  build/mozconfig.common
@@ -33,6 +35,7 @@ ac_add_options --with-toolchain-prefix=x86_64-w64-mingw32-
 
 ac_add_options --disable-warnings-as-errors
 MOZ_COPY_PDBS=1
+mk_add_options "export WIDL_TIME_OVERRIDE=0"
 
 # This replicates Tor's configuration
 ac_add_options --enable-proxy-bypass-protection
@@ -57,7 +60,7 @@ BINDGEN_CFLAGS="-I$MOZ_FETCHES_DIR/clang/x86_64-w64-mingw32/include/c++/v1 -I$MO
 
 # We want to make sure we use binutils and other binaries in the tooltool
 # package.
-mk_add_options "export PATH=$MOZ_FETCHES_DIR/clang/bin:$MOZ_FETCHES_DIR/mingw32/bin:$MOZ_FETCHES_DIR/wine/bin:$MOZ_FETCHES_DIR/upx/bin:$MOZ_FETCHES_DIR/fxc2/bin:$PATH"
+mk_add_options "export PATH=$MOZ_FETCHES_DIR/clang/bin:$MOZ_FETCHES_DIR/mingw32/bin:$MOZ_FETCHES_DIR/wine/bin:$MOZ_FETCHES_DIR/upx/bin:$MOZ_FETCHES_DIR/fxc2/bin:$MOZ_FETCHES_DIR/binutils/bin:$PATH"
 
 LD_LIBRARY_PATH=${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$MOZ_FETCHES_DIR/mingw32/lib64:$MOZ_FETCHES_DIR/clang/lib
 mk_add_options "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH"

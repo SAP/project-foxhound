@@ -19,6 +19,7 @@ const TEST_URI = `data:text/html;charset=utf8,<p>test [ completion cached result
   </script>`;
 
 add_task(async function() {
+  await pushPref("devtools.editor.autoclosebrackets", false);
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
 
@@ -87,15 +88,15 @@ add_task(async function() {
   for (const test of tests) {
     info(test.description);
 
-    const onPopUpOpen = autocompletePopup.once("popup-opened");
+    let onPopupUpdate = jsterm.once("autocomplete-updated");
     EventUtils.sendString(test.initialInput);
-    await onPopUpOpen;
+    await onPopupUpdate;
 
-    is(
-      getAutocompletePopupLabels(autocompletePopup).join("|"),
-      test.expectedItems.join("|"),
+    ok(
+      hasExactPopupLabels(autocompletePopup, test.expectedItems),
       `popup has expected items, in expected order`
     );
+
     checkInputCompletionValue(
       hud,
       test.expectedCompletionText,
@@ -106,13 +107,12 @@ add_task(async function() {
       expectedItems,
       expectedCompletionText,
     } of test.sequence) {
-      const onPopupUpdate = jsterm.once("autocomplete-updated");
+      onPopupUpdate = jsterm.once("autocomplete-updated");
       EventUtils.sendString(char);
       await onPopupUpdate;
 
-      is(
-        getAutocompletePopupLabels(autocompletePopup).join("|"),
-        expectedItems.join("|"),
+      ok(
+        hasExactPopupLabels(autocompletePopup, expectedItems),
         `popup has expected items, in expected order`
       );
       checkInputCompletionValue(
@@ -122,13 +122,9 @@ add_task(async function() {
       );
     }
 
-    setInputValue(hud, "");
     const onPopupClose = autocompletePopup.once("popup-closed");
     EventUtils.synthesizeKey("KEY_Escape");
     await onPopupClose;
+    setInputValue(hud, "");
   }
 });
-
-function getAutocompletePopupLabels(autocompletePopup) {
-  return autocompletePopup.items.map(i => i.label);
-}

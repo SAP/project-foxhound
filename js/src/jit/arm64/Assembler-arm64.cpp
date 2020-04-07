@@ -10,8 +10,6 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
 
-#include "jsutil.h"
-
 #include "gc/Marking.h"
 #include "jit/arm64/Architecture-arm64.h"
 #include "jit/arm64/MacroAssembler-arm64.h"
@@ -37,6 +35,7 @@ ABIArg ABIArgGenerator::next(MIRType type) {
     case MIRType::Int64:
     case MIRType::Pointer:
     case MIRType::RefOrNull:
+    case MIRType::StackResults:
       if (intRegIndex_ == NumIntArgRegs) {
         current_ = ABIArg(stackOffset_);
         stackOffset_ += sizeof(uintptr_t);
@@ -53,9 +52,10 @@ ABIArg ABIArgGenerator::next(MIRType type) {
         stackOffset_ += sizeof(double);
         break;
       }
-      current_ = ABIArg(FloatRegister(
-          floatRegIndex_, type == MIRType::Double ? FloatRegisters::Double
-                                                  : FloatRegisters::Single));
+      current_ = ABIArg(FloatRegister(FloatRegisters::Encoding(floatRegIndex_),
+                                      type == MIRType::Double
+                                          ? FloatRegisters::Double
+                                          : FloatRegisters::Single));
       floatRegIndex_++;
       break;
 

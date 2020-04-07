@@ -75,7 +75,6 @@ void SetProfileDirectory(nsIFile* aDir);
 void UpdateCrashEventsDir();
 void SetMemoryReportFile(nsIFile* aFile);
 nsresult GetDefaultMemoryReportFile(nsIFile** aFile);
-void SetTelemetrySessionId(const nsACString& id);
 
 /**
  * Get the path where crash event files should be written.
@@ -116,6 +115,9 @@ nsresult UnregisterAppMemory(void* ptr);
 
 // Include heap regions of the crash context.
 void SetIncludeContextHeap(bool aValue);
+
+void GetAnnotation(uint32_t childPid, Annotation annotation,
+                   nsACString& outStr);
 
 // Functions for working with minidumps and .extras
 typedef mozilla::EnumeratedArray<Annotation, Annotation::Count, nsCString>
@@ -182,8 +184,11 @@ bool TakeMinidumpForChild(uint32_t childPid, nsIFile** dump,
  *
  * @param aChildPid The pid of the crashed child process
  * @param aType The type of the crashed process
+ * @param aDumpId A string that will be filled with the dump ID
  */
-bool FinalizeOrphanedMinidump(uint32_t aChildPid, GeckoProcessType aType);
+MOZ_MUST_USE bool FinalizeOrphanedMinidump(uint32_t aChildPid,
+                                           GeckoProcessType aType,
+                                           nsString* aDumpId = nullptr);
 
 #if defined(XP_WIN)
 typedef HANDLE ProcessHandle;

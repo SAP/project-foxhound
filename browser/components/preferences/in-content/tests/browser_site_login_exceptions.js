@@ -1,5 +1,6 @@
 "use strict";
-const PERMISSIONS_URL = "chrome://browser/content/preferences/permissions.xul";
+const PERMISSIONS_URL =
+  "chrome://browser/content/preferences/permissions.xhtml";
 
 var exceptionsDialog;
 
@@ -12,7 +13,7 @@ add_task(async function openLoginExceptionsSubDialog() {
 
   // Undo the save password change.
   registerCleanupFunction(async function() {
-    await ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
+    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
       let doc = content.document;
       let savePasswordCheckBox = doc.getElementById("savePasswords");
       if (savePasswordCheckBox.checked) {
@@ -27,7 +28,7 @@ add_task(async function openLoginExceptionsSubDialog() {
 
   let dialogOpened = promiseLoadSubDialog(PERMISSIONS_URL);
 
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
     let doc = content.document;
     let savePasswordCheckBox = doc.getElementById("savePasswords");
     Assert.ok(

@@ -213,6 +213,7 @@ enum class ComponentType : uint8_t {
   NormUInt,  // RGBA8
   Float,     // RGBA32F
 };
+const char* ToString(ComponentType);
 
 enum class TextureBaseType : uint8_t {
   Int = uint8_t(ComponentType::Int),
@@ -273,29 +274,6 @@ struct FormatInfo {
     // Alpha is a 'color format' since it's 'color-attachable'.
     return bool(compression) || bool(r | g | b | a);
   }
-};
-
-struct PackingInfo {
-  GLenum format;
-  GLenum type;
-
-  bool operator<(const PackingInfo& x) const {
-    if (format != x.format) return format < x.format;
-
-    return type < x.type;
-  }
-
-  bool operator==(const PackingInfo& x) const {
-    return (format == x.format && type == x.type);
-  }
-};
-
-struct DriverUnpackInfo {
-  GLenum internalFormat;
-  GLenum unpackFormat;
-  GLenum unpackType;
-
-  PackingInfo ToPacking() const { return {unpackFormat, unpackType}; }
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////
@@ -402,7 +380,7 @@ class FormatUsageAuthority {
   static UniquePtr<FormatUsageAuthority> CreateForWebGL2(gl::GLContext* gl);
 
  private:
-  FormatUsageAuthority() {}
+  FormatUsageAuthority() = default;
 
  public:
   FormatUsageInfo* EditUsage(EffectiveFormat format);

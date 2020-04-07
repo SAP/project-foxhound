@@ -7,8 +7,10 @@
 const { Component } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { L10N } = require("../utils/l10n");
-const { propertiesEqual } = require("../utils/request-utils");
+const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
+const {
+  propertiesEqual,
+} = require("devtools/client/netmonitor/src/utils/request-utils");
 
 const { div, img } = dom;
 
@@ -68,11 +70,11 @@ class StatusCode extends Component {
         {
           className:
             "requests-list-status-code status-code status-code-blocked",
-          title: L10N.getStr("networkMenu.blocked"),
+          title: L10N.getStr("networkMenu.blockedTooltip"),
         },
         img({
           src: BLOCKED_ICON,
-          alt: L10N.getStr("networkMenu.blocked"),
+          alt: L10N.getStr("networkMenu.blockedTooltip"),
         })
       );
     }

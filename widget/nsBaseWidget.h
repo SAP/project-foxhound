@@ -168,6 +168,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
 
   virtual void SetSizeMode(nsSizeMode aMode) override;
   virtual nsSizeMode SizeMode() override { return mSizeMode; }
+  virtual int32_t GetWorkspaceID() override;
+  virtual void MoveToWorkspace(int32_t workspaceID) override;
   virtual bool IsTiled() const override { return mIsTiled; }
 
   virtual bool IsFullyOccluded() const override { return mIsFullyOccluded; }
@@ -179,7 +181,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   virtual nsTransparencyMode GetTransparencyMode() override;
   virtual void GetWindowClipRegion(
       nsTArray<LayoutDeviceIntRect>* aRects) override;
-  virtual void SetWindowShadowStyle(int32_t aStyle) override {}
+  virtual void SetWindowShadowStyle(
+      mozilla::StyleWindowShadow aStyle) override {}
   virtual void SetShowsToolbarButton(bool aShow) override {}
   virtual void SetShowsFullScreenButton(bool aShow) override {}
   virtual void SetWindowAnimationType(WindowAnimationType aType) override {}
@@ -213,7 +216,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
 
   already_AddRefed<mozilla::CompositorVsyncDispatcher>
   GetCompositorVsyncDispatcher();
-  void CreateCompositorVsyncDispatcher();
+  virtual void CreateCompositorVsyncDispatcher();
   virtual void CreateCompositor();
   virtual void CreateCompositor(int aWidth, int aHeight);
   virtual void SetCompositorWidgetDelegate(CompositorWidgetDelegate* delegate) {
@@ -448,9 +451,6 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   virtual RefPtr<mozilla::layers::NativeLayerRoot> GetNativeLayerRoot() {
     return nullptr;
   }
-  virtual void DrawWindowOverlay(
-      mozilla::widget::WidgetRenderingContext* aContext,
-      LayoutDeviceIntRect aRect) {}
   virtual already_AddRefed<DrawTarget> StartRemoteDrawing();
   virtual already_AddRefed<DrawTarget> StartRemoteDrawingInRegion(
       LayoutDeviceIntRegion& aInvalidRegion, BufferMode* aBufferMode) {
@@ -697,6 +697,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   nsPopupType mPopupType;
   SizeConstraints mSizeConstraints;
   bool mHasRemoteContent;
+  bool mFissionWindow;
 
   bool mUpdateCursor;
   bool mUseAttachedEvents;

@@ -330,8 +330,7 @@ Directionality GetDirectionFromText(const char16_t* aText,
     uint32_t current = start - aText;
     uint32_t ch = *start++;
 
-    if (NS_IS_HIGH_SURROGATE(ch) && start < end &&
-        NS_IS_LOW_SURROGATE(*start)) {
+    if (start < end && NS_IS_SURROGATE_PAIR(ch, *start)) {
       ch = SURROGATE_TO_UCS4(ch, *start++);
       current++;
     }
@@ -509,9 +508,7 @@ class nsTextNodeDirectionalityMap {
     aTextNode->SetHasTextNodeDirectionalityMap();
   }
 
-  ~nsTextNodeDirectionalityMap() {
-    MOZ_COUNT_DTOR(nsTextNodeDirectionalityMap);
-  }
+  MOZ_COUNTED_DTOR(nsTextNodeDirectionalityMap)
 
   static void nsTextNodeDirectionalityMapPropertyDestructor(
       void* aObject, nsAtom* aProperty, void* aPropertyValue, void* aData) {
@@ -539,7 +536,7 @@ class nsTextNodeDirectionalityMap {
 
     mElements.Remove(aElement);
     aElement->ClearHasDirAutoSet();
-    aElement->DeleteProperty(nsGkAtoms::dirAutoSetBy);
+    aElement->RemoveProperty(nsGkAtoms::dirAutoSetBy);
   }
 
   void RemoveEntryForProperty(Element* aElement) {
@@ -605,7 +602,7 @@ class nsTextNodeDirectionalityMap {
       nsTextNodeDirectionalityMap::AddEntryToMap(newTextNode, rootNode);
     } else {
       rootNode->ClearHasDirAutoSet();
-      rootNode->DeleteProperty(nsGkAtoms::dirAutoSetBy);
+      rootNode->RemoveProperty(nsGkAtoms::dirAutoSetBy);
     }
     return OpRemove;
   }
@@ -634,7 +631,7 @@ class nsTextNodeDirectionalityMap {
     mElements.EnumerateEntries(TakeEntries, &entries);
     for (Element* el : entries) {
       el->ClearHasDirAutoSet();
-      el->DeleteProperty(nsGkAtoms::dirAutoSetBy);
+      el->RemoveProperty(nsGkAtoms::dirAutoSetBy);
     }
   }
 

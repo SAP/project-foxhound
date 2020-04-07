@@ -62,14 +62,17 @@ export type SourceAction =
       +tabIndex: number,
     |}
   | {|
+      +type: "MOVE_TAB_BY_SOURCE_ID",
+      +sourceId: string,
+      +tabIndex: number,
+    |}
+  | {|
       +type: "CLOSE_TAB",
-      +url: string,
-      +tabs: any,
+      +source: Source,
     |}
   | {|
       +type: "CLOSE_TABS",
       +sources: Array<Source>,
-      +tabs: any,
     |}
   | {|
       type: "SET_ORIGINAL_BREAKABLE_LINES",

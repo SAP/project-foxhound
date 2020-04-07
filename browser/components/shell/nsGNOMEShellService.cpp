@@ -8,17 +8,14 @@
 #include "nsCOMPtr.h"
 #include "nsGNOMEShellService.h"
 #include "nsShellService.h"
-#include "nsIServiceManager.h"
 #include "nsIFile.h"
 #include "nsIProperties.h"
 #include "nsDirectoryServiceDefs.h"
-#include "nsIPrefService.h"
 #include "prenv.h"
 #include "nsString.h"
 #include "nsIGIOService.h"
 #include "nsIGSettingsService.h"
 #include "nsIStringBundle.h"
-#include "nsIOutputStream.h"
 #include "nsServiceManagerUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIImageLoadingContent.h"
@@ -74,7 +71,19 @@ static const MimeTypeAssociation appTypes[] = {
 #define kDesktopDrawBGGSKey "draw-background"
 #define kDesktopColorGSKey "primary-color"
 
-static bool IsRunningAsASnap() { return (PR_GetEnv("SNAP") != nullptr); }
+static bool IsRunningAsASnap() {
+  // SNAP holds the path to the snap, use SNAP_NAME
+  // which is easier to parse.
+  const char* snap_name = PR_GetEnv("SNAP_NAME");
+
+  // return early if not set.
+  if (snap_name == nullptr) {
+    return false;
+  }
+
+  // snap_name as defined on https://snapcraft.io/firefox
+  return (strcmp(snap_name, "firefox") == 0);
+}
 
 nsresult nsGNOMEShellService::Init() {
   nsresult rv;

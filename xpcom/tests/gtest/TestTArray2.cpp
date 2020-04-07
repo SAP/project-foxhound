@@ -11,7 +11,6 @@
 #include <stdio.h>
 #include <iostream>
 #include "nsTArray.h"
-#include "nsAutoPtr.h"
 #include "nsString.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
@@ -228,14 +227,10 @@ class Object {
  public:
   Object() : mNum(0) {}
   Object(const char* str, uint32_t num) : mStr(str), mNum(num) {}
-  Object(const Object& other) : mStr(other.mStr), mNum(other.mNum) {}
-  ~Object() {}
+  Object(const Object& other) = default;
+  ~Object() = default;
 
-  Object& operator=(const Object& other) {
-    mStr = other.mStr;
-    mNum = other.mNum;
-    return *this;
-  }
+  Object& operator=(const Object& other) = default;
 
   bool operator==(const Object& other) const {
     return mStr == other.mStr && mNum == other.mNum;
@@ -526,7 +521,7 @@ class RefcountedObject {
   void Release() {
     if (--rc == 0) delete this;
   }
-  ~RefcountedObject() {}
+  ~RefcountedObject() = default;
 
  private:
   int32_t rc;

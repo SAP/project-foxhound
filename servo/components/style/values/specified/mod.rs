@@ -31,7 +31,7 @@ use style_traits::{CssWriter, ParseError, SpecifiedValueInfo, StyleParseErrorKin
 pub use self::align::{AlignContent, AlignItems, AlignSelf, ContentDistribution};
 #[cfg(feature = "gecko")]
 pub use self::align::{JustifyContent, JustifyItems, JustifySelf, SelfAlignment};
-pub use self::angle::Angle;
+pub use self::angle::{AllowUnitlessZeroAngle, Angle};
 pub use self::background::{BackgroundRepeat, BackgroundSize};
 pub use self::basic_shape::FillRule;
 pub use self::border::{BorderCornerRadius, BorderImageSlice, BorderImageWidth};
@@ -55,8 +55,8 @@ pub use self::font::{FontSize, FontSizeAdjust, FontStretch, FontSynthesis};
 pub use self::font::{FontVariantAlternates, FontWeight};
 pub use self::font::{FontVariantEastAsian, FontVariationSettings};
 pub use self::font::{MozScriptLevel, MozScriptMinSize, MozScriptSizeMultiplier, XLang, XTextZoom};
-pub use self::image::{ColorStop, EndingShape as GradientEndingShape, Gradient};
-pub use self::image::{GradientItem, GradientKind, Image, ImageLayer, MozImageRect};
+pub use self::image::{EndingShape as GradientEndingShape, Gradient};
+pub use self::image::{Image, MozImageRect};
 pub use self::length::{AbsoluteLength, CalcLengthPercentage, CharacterWidth};
 pub use self::length::{FontRelativeLength, Length, LengthOrNumber, NonNegativeLengthOrNumber};
 pub use self::length::{LengthOrAuto, LengthPercentage, LengthPercentageOrAuto};
@@ -80,10 +80,12 @@ pub use self::svg::MozContextProperties;
 pub use self::svg::{SVGLength, SVGOpacity, SVGPaint};
 pub use self::svg::{SVGPaintOrder, SVGStrokeDashArray, SVGWidth};
 pub use self::svg_path::SVGPathData;
+pub use self::text::TextUnderlinePosition;
 pub use self::text::{InitialLetter, LetterSpacing, LineBreak, LineHeight, TextAlign};
 pub use self::text::{OverflowWrap, TextEmphasisPosition, TextEmphasisStyle, WordBreak};
 pub use self::text::{TextAlignKeyword, TextDecorationLine, TextOverflow, WordSpacing};
 pub use self::text::{TextDecorationLength, TextDecorationSkipInk, TextTransform};
+pub use self::text::TextAlignLast;
 pub use self::time::Time;
 pub use self::transform::{Rotate, Scale, Transform};
 pub use self::transform::{TransformOrigin, TransformStyle, Translate};
@@ -129,6 +131,47 @@ pub mod transform;
 pub mod ui;
 pub mod url;
 
+/// <angle> | <percentage>
+/// https://drafts.csswg.org/css-values/#typedef-angle-percentage
+#[allow(missing_docs)]
+#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+pub enum AngleOrPercentage {
+    Percentage(Percentage),
+    Angle(Angle),
+}
+
+impl AngleOrPercentage {
+    fn parse_internal<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+        allow_unitless_zero: AllowUnitlessZeroAngle,
+    ) -> Result<Self, ParseError<'i>> {
+        if let Ok(per) = input.try(|i| Percentage::parse(context, i)) {
+            return Ok(AngleOrPercentage::Percentage(per));
+        }
+
+        Angle::parse_internal(context, input, allow_unitless_zero).map(AngleOrPercentage::Angle)
+    }
+
+    /// Allow unitless angles, used for conic-gradients as specified by the spec.
+    /// https://drafts.csswg.org/css-images-4/#valdef-conic-gradient-angle
+    pub fn parse_with_unitless<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        AngleOrPercentage::parse_internal(context, input, AllowUnitlessZeroAngle::Yes)
+    }
+}
+
+impl Parse for AngleOrPercentage {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        AngleOrPercentage::parse_internal(context, input, AllowUnitlessZeroAngle::No)
+    }
+}
+
 /// Parse a `<number>` value, with a given clamping mode.
 fn parse_number_with_clamping_mode<'i, 't>(
     context: &ParserContext,
@@ -136,24 +179,23 @@ fn parse_number_with_clamping_mode<'i, 't>(
     clamping_mode: AllowedNumericType,
 ) -> Result<Number, ParseError<'i>> {
     let location = input.current_source_location();
-    // FIXME: remove early returns when lifetimes are non-lexical
     match *input.next()? {
         Token::Number { value, .. } if clamping_mode.is_ok(context.parsing_mode, value) => {
-            return Ok(Number {
+            Ok(Number {
                 value: value.min(f32::MAX).max(f32::MIN),
                 calc_clamping_mode: None,
-            });
+            })
         },
-        Token::Function(ref name) if name.eq_ignore_ascii_case("calc") => {},
-        ref t => return Err(location.new_unexpected_token_error(t.clone())),
+        Token::Function(ref name) => {
+            let function = CalcNode::math_function(name, location)?;
+            let result = CalcNode::parse_number(context, input, function)?;
+            Ok(Number {
+                value: result.min(f32::MAX).max(f32::MIN),
+                calc_clamping_mode: Some(clamping_mode),
+            })
+        },
+        ref t => Err(location.new_unexpected_token_error(t.clone())),
     }
-
-    let result = input.parse_nested_block(|i| CalcNode::parse_number(context, i))?;
-
-    Ok(Number {
-        value: result.min(f32::MAX).max(f32::MIN),
-        calc_clamping_mode: Some(clamping_mode),
-    })
 }
 
 /// A CSS `<number>` specified value.
@@ -179,11 +221,24 @@ impl Parse for Number {
 
 impl Number {
     /// Returns a new number with the value `val`.
-    pub fn new(val: CSSFloat) -> Self {
-        Number {
-            value: val,
-            calc_clamping_mode: None,
+    fn new_with_clamping_mode(
+        value: CSSFloat,
+        calc_clamping_mode: Option<AllowedNumericType>,
+    ) -> Self {
+        Self {
+            value,
+            calc_clamping_mode,
         }
+    }
+
+    /// Returns this percentage as a number.
+    pub fn to_percentage(&self) -> Percentage {
+        Percentage::new_with_clamping_mode(self.value, self.calc_clamping_mode)
+    }
+
+    /// Returns a new number with the value `val`.
+    pub fn new(val: CSSFloat) -> Self {
+        Self::new_with_clamping_mode(val, None)
     }
 
     /// Returns whether this number came from a `calc()` expression.
@@ -370,6 +425,22 @@ impl NumberOrPercentage {
     ) -> Result<Self, ParseError<'i>> {
         Self::parse_with_clamping_mode(context, input, AllowedNumericType::NonNegative)
     }
+
+    /// Convert the number or the percentage to a number.
+    pub fn to_percentage(self) -> Percentage {
+        match self {
+            Self::Percentage(p) => p,
+            Self::Number(n) => n.to_percentage(),
+        }
+    }
+
+    /// Convert the number or the percentage to a number.
+    pub fn to_number(self) -> Number {
+        match self {
+            Self::Percentage(p) => p.to_number(),
+            Self::Number(n) => n,
+        }
+    }
 }
 
 impl Parse for NumberOrPercentage {
@@ -419,17 +490,7 @@ impl Parse for Opacity {
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        let number = match NumberOrPercentage::parse(context, input)? {
-            NumberOrPercentage::Percentage(p) => Number {
-                value: p.get(),
-                calc_clamping_mode: if p.is_calc() {
-                    Some(AllowedNumericType::All)
-                } else {
-                    None
-                },
-            },
-            NumberOrPercentage::Number(n) => n,
-        };
+        let number = NumberOrPercentage::parse(context, input)?.to_number();
         Ok(Opacity(number))
     }
 }
@@ -521,19 +582,17 @@ impl Parse for Integer {
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
         let location = input.current_source_location();
-
-        // FIXME: remove early returns when lifetimes are non-lexical
         match *input.next()? {
             Token::Number {
                 int_value: Some(v), ..
-            } => return Ok(Integer::new(v)),
-            Token::Function(ref name) if name.eq_ignore_ascii_case("calc") => {},
-            ref t => return Err(location.new_unexpected_token_error(t.clone())),
+            } => Ok(Integer::new(v)),
+            Token::Function(ref name) => {
+                let function = CalcNode::math_function(name, location)?;
+                let result = CalcNode::parse_integer(context, input, function)?;
+                Ok(Integer::from_calc(result))
+            },
+            ref t => Err(location.new_unexpected_token_error(t.clone())),
         }
-
-        let result = input.parse_nested_block(|i| CalcNode::parse_integer(context, i))?;
-
-        Ok(Integer::from_calc(result))
     }
 }
 
@@ -544,16 +603,16 @@ impl Integer {
         input: &mut Parser<'i, 't>,
         min: i32,
     ) -> Result<Integer, ParseError<'i>> {
-        match Integer::parse(context, input) {
-            // FIXME(emilio): The spec asks us to avoid rejecting it at parse
-            // time except until computed value time.
-            //
-            // It's not totally clear it's worth it though, and no other browser
-            // does this.
-            Ok(value) if value.value() >= min => Ok(value),
-            Ok(_value) => Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError)),
-            Err(e) => Err(e),
+        let value = Integer::parse(context, input)?;
+        // FIXME(emilio): The spec asks us to avoid rejecting it at parse
+        // time except until computed value time.
+        //
+        // It's not totally clear it's worth it though, and no other browser
+        // does this.
+        if value.value() < min {
+            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
         }
+        Ok(value)
     }
 
     /// Parse a non-negative integer.
@@ -752,9 +811,12 @@ impl AllowQuirks {
     ToShmem,
 )]
 #[css(function)]
+#[repr(C)]
 pub struct Attr {
-    /// Optional namespace prefix and URL.
-    pub namespace: Option<(Prefix, Namespace)>,
+    /// Optional namespace prefix.
+    pub namespace_prefix: Prefix,
+    /// Optional namespace URL.
+    pub namespace_url: Namespace,
     /// Attribute name
     pub attribute: Atom,
 }
@@ -799,7 +861,7 @@ impl Attr {
                         ref t => return Err(location.new_unexpected_token_error(t.clone())),
                     };
 
-                    let prefix_and_ns = if let Some(ns) = first {
+                    let (namespace_prefix, namespace_url) = if let Some(ns) = first {
                         let prefix = Prefix::from(ns.as_ref());
                         let ns = match get_namespace_for_prefix(&prefix, context) {
                             Some(ns) => ns,
@@ -808,17 +870,18 @@ impl Attr {
                                     .new_custom_error(StyleParseErrorKind::UnspecifiedError));
                             },
                         };
-                        Some((prefix, ns))
+                        (prefix, ns)
                     } else {
-                        None
+                        (Prefix::default(), Namespace::default())
                     };
                     return Ok(Attr {
-                        namespace: prefix_and_ns,
+                        namespace_prefix,
+                        namespace_url,
                         attribute: Atom::from(second_token.as_ref()),
                     });
                 },
                 // In the case of attr(foobar    ) we don't want to error out
-                // because of the trailing whitespace
+                // because of the trailing whitespace.
                 Token::WhiteSpace(..) => {},
                 ref t => return Err(input.new_unexpected_token_error(t.clone())),
             }
@@ -826,7 +889,8 @@ impl Attr {
 
         if let Some(first) = first {
             Ok(Attr {
-                namespace: None,
+                namespace_prefix: Prefix::default(),
+                namespace_url: Namespace::default(),
                 attribute: Atom::from(first.as_ref()),
             })
         } else {
@@ -841,8 +905,8 @@ impl ToCss for Attr {
         W: Write,
     {
         dest.write_str("attr(")?;
-        if let Some((ref prefix, ref _url)) = self.namespace {
-            serialize_atom_identifier(prefix, dest)?;
+        if !self.namespace_prefix.is_empty() {
+            serialize_atom_identifier(&self.namespace_prefix, dest)?;
             dest.write_str("|")?;
         }
         serialize_atom_identifier(&self.attribute, dest)?;

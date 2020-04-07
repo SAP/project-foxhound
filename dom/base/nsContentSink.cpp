@@ -13,6 +13,7 @@
 #include "mozilla/Components.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/SRILogHelper.h"
 #include "nsStyleLinkElement.h"
@@ -33,9 +34,7 @@
 #include "nsNetCID.h"
 #include "nsIOfflineCacheUpdate.h"
 #include "nsIApplicationCache.h"
-#include "nsIApplicationCacheContainer.h"
 #include "nsIApplicationCacheChannel.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsICookieService.h"
 #include "nsContentUtils.h"
 #include "nsNodeInfoManager.h"
@@ -85,6 +84,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsContentSink)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCSSLoader)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mNodeInfoManager)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mScriptLoader)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsContentSink)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocument)
@@ -248,40 +248,6 @@ nsresult nsContentSink::ProcessHeaderData(nsAtom* aHeader,
   // necko doesn't process headers coming in from the parser
 
   mDocument->SetHeaderData(aHeader, aValue);
-
-  if (aHeader == nsGkAtoms::setcookie &&
-      StaticPrefs::dom_metaElement_setCookie_allowed()) {
-    // Note: Necko already handles cookies set via the channel.  We can't just
-    // call SetCookie on the channel because we want to do some security checks
-    // here.
-    nsCOMPtr<nsICookieService> cookieServ =
-        do_GetService(NS_COOKIESERVICE_CONTRACTID, &rv);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    // Get a URI from the document principal
-
-    // We use the original content URI in case the principal was changed
-    // by SetDomain
-
-    // Note that a non-content principal (eg the system principal) will return
-    // a null URI.
-    nsCOMPtr<nsIURI> contentURI;
-    rv = mDocument->NodePrincipal()->GetURI(getter_AddRefs(contentURI));
-    NS_ENSURE_TRUE(contentURI, rv);
-
-    nsCOMPtr<nsIChannel> channel;
-    if (mParser) {
-      mParser->GetChannel(getter_AddRefs(channel));
-    }
-
-    rv = cookieServ->SetCookieString(contentURI, nullptr,
-                                     NS_ConvertUTF16toUTF8(aValue), channel);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-  }
 
   return rv;
 }
@@ -716,6 +682,8 @@ nsresult nsContentSink::ProcessStyleLinkFromHeader(
       CORS_NONE,
       aTitle,
       aMedia,
+      /* integrity = */ EmptyString(),
+      /* nonce = */ EmptyString(),
       aAlternate ? Loader::HasAlternateRel::Yes : Loader::HasAlternateRel::No,
       Loader::IsInline::No,
       Loader::IsExplicitlyEnabled::No,
@@ -751,13 +719,6 @@ nsresult nsContentSink::ProcessMETATag(nsIContent* aContent) {
     nsContentUtils::ASCIIToLower(header);
     if (nsGkAtoms::refresh->Equals(header) &&
         (mDocument->GetSandboxFlags() & SANDBOXED_AUTOMATIC_FEATURES)) {
-      return NS_OK;
-    }
-
-    // Don't allow setting cookies in <meta http-equiv> in cookie averse
-    // documents.
-    if (nsGkAtoms::setcookie->Equals(header) && mDocument->IsCookieAverse() &&
-        StaticPrefs::dom_metaElement_setCookie_allowed()) {
       return NS_OK;
     }
 
@@ -859,7 +820,8 @@ void nsContentSink::PrefetchDNS(const nsAString& aHref) {
 
   if (!hostname.IsEmpty() && nsHTMLDNSPrefetch::IsAllowed(mDocument)) {
     nsHTMLDNSPrefetch::PrefetchLow(
-        hostname, isHttps, mDocument->NodePrincipal()->OriginAttributesRef());
+        hostname, isHttps, mDocument->NodePrincipal()->OriginAttributesRef(),
+        mDocument->GetChannel()->GetTRRMode());
   }
 }
 
@@ -921,7 +883,7 @@ nsresult nsContentSink::SelectDocAppCache(
   } else {
     // The document was not loaded from an application cache
     // Here we know the manifest has the same origin as the
-    // document. There is call to CheckMayLoad() on it above.
+    // document. There is call to CheckMayLoadWithReporting() on it above.
 
     if (!aFetchedWithHTTPGetOrEquiv) {
       // The document was not loaded using HTTP GET or equivalent
@@ -1059,7 +1021,8 @@ void nsContentSink::ProcessOfflineManifest(const nsAString& aManifestSpec) {
     }
 
     // Documents must list a manifest from the same origin
-    rv = mDocument->NodePrincipal()->CheckMayLoad(manifestURI, true, false);
+    rv = mDocument->NodePrincipal()->CheckMayLoadWithReporting(
+        manifestURI, false, mDocument->InnerWindowID());
     if (NS_FAILED(rv)) {
       action = CACHE_SELECTION_RESELECT_WITHOUT_MANIFEST;
     } else {
@@ -1200,7 +1163,7 @@ void nsContentSink::NotifyAppend(nsIContent* aContainer, uint32_t aStartIndex) {
     //
     // Note that aContainer->OwnerDoc() may not be mDocument.
     MOZ_AUTO_DOC_UPDATE(aContainer->OwnerDoc(), true);
-    nsNodeUtils::ContentAppended(
+    MutationObservers::NotifyContentAppended(
         aContainer, aContainer->GetChildAt_Deprecated(aStartIndex));
     mLastNotificationTime = PR_Now();
   }
@@ -1450,7 +1413,8 @@ void nsContentSink::DropParserAndPerfHint(void) {
   // actually broken.
   // Drop our reference to the parser to get rid of a circular
   // reference.
-  RefPtr<nsParserBase> kungFuDeathGrip(mParser.forget());
+  RefPtr<nsParserBase> kungFuDeathGrip = std::move(mParser);
+  mozilla::Unused << kungFuDeathGrip;
 
   if (mDynamicLowerValue) {
     // Reset the performance hint which was set to FALSE

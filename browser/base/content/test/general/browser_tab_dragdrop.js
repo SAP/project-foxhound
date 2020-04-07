@@ -3,7 +3,7 @@ function swapTabsAndCloseOther(a, b) {
 }
 
 var getClicks = function(tab) {
-  return ContentTask.spawn(tab.linkedBrowser, {}, function() {
+  return SpecialPowers.spawn(tab.linkedBrowser, [], function() {
     return content.wrappedJSObject.clicks;
   });
 };
@@ -11,7 +11,7 @@ var getClicks = function(tab) {
 var clickTest = async function(tab) {
   let clicks = await getClicks(tab);
 
-  await ContentTask.spawn(tab.linkedBrowser, {}, function() {
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function() {
     let target = content.document.body;
     let rect = target.getBoundingClientRect();
     let left = (rect.left + rect.right) / 2;
@@ -76,15 +76,11 @@ async function cleanupObjectValue(browser) {
       win.checkObjectValueListener
     );
     info(
-      `about to delete checkObjectValueListener: ${
-        win.checkObjectValueListener
-      }`
+      `about to delete checkObjectValueListener: ${win.checkObjectValueListener}`
     );
     delete win.checkObjectValueListener;
     info(
-      `deleted objectValue (${win.objectValue}) and checkObjectValueListener (${
-        win.checkObjectValueListener
-      })`
+      `deleted objectValue (${win.objectValue}) and checkObjectValueListener (${win.checkObjectValueListener})`
     );
   });
   info("exiting cleanupObjectValue");

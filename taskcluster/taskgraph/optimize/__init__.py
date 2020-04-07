@@ -310,11 +310,12 @@ import_sibling_modules()
 register_strategy('test', args=('skip-unless-schedules', 'seta'))(Either)
 register_strategy('test-inclusive', args=('skip-unless-schedules',))(Alias)
 register_strategy('test-try', args=('skip-unless-schedules',))(Alias)
+register_strategy('fuzzing-builds', args=('skip-unless-schedules', 'seta'))(Either)
 
 
-# Experimental strategy that replaces the default SETA with a version that runs
-# all tasks every 10th push or 2 hours.
-seta_10_120 = {
-    'seta': Alias('seta_10_120'),
-    'test': Either('skip-unless-schedules', 'seta_10_120'),
+# Experimental strategies that run in 'shadow-scheduler' tasks.
+
+# Runs task containing tests in the same directories as modified files.
+relevant_tests = {
+    'test': Either('skip-unless-schedules', 'skip-unless-has-relevant-tests'),
 }

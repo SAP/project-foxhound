@@ -6,7 +6,9 @@
 
 /* global waitUntilState, gBrowser */
 /* exported addTestTab, checkTreeState, checkSidebarState, checkAuditState, selectRow,
-            toggleRow, toggleMenuItem, addA11yPanelTestsTask, reload, navigate, openSimulationMenu, toggleSimulationOption */
+            toggleRow, toggleMenuItem, addA11yPanelTestsTask, reload, navigate,
+            openSimulationMenu, toggleSimulationOption, TREE_FILTERS_MENU_ID,
+            PREFS_MENU_ID, checkHighlighted */
 
 "use strict";
 
@@ -37,6 +39,13 @@ const {
 Services.prefs.setBoolPref("devtools.accessibility.enabled", true);
 
 const SIMULATION_MENU_BUTTON_ID = "#simulation-menu-button";
+const TREE_FILTERS_MENU_ID = "accessibility-tree-filters-menu";
+const PREFS_MENU_ID = "accessibility-tree-filters-prefs-menu";
+
+const MENU_INDEXES = {
+  [TREE_FILTERS_MENU_ID]: 0,
+  [PREFS_MENU_ID]: 1,
+};
 
 /**
  * Enable accessibility service and wait for a11y init event.
@@ -133,7 +142,7 @@ async function addTestTab(url) {
 
   // Wait for inspector load here to avoid protocol errors on shutdown, since
   // accessibility panel test can be too fast.
-  await win.gToolbox.loadTool("inspector");
+  await panel._toolbox.loadTool("inspector");
 
   return {
     tab,
@@ -154,7 +163,7 @@ async function disableAccessibilityInspector(env) {
   const { doc, win, panel } = env;
   // Disable accessibility service through the panel and wait for the shutdown
   // event.
-  const shutdown = panel.front.once("shutdown");
+  const shutdown = panel.accessibilityProxy.accessibilityFront.once("shutdown");
   const disableButton = await BrowserTestUtils.waitForCondition(
     () => doc.getElementById("accessibility-disable-button"),
     "Wait for the disable button."
@@ -596,32 +605,39 @@ async function toggleRow(doc, rowNumber) {
 
 /**
  * Toggle a specific menu item based on its index in the menu.
+ * @param  {document} toolboxDoc
+ *         toolbox document.
  * @param  {document} doc
  *         panel document.
- * @param  {document} menuButtonIndex
- *         index of the menu button in the toolbar.
+ * @param  {String} menuId
+ *         The id of the menu (menuId passed to the MenuButton component)
  * @param  {Number}   menuItemIndex
  *         index of the menu item to be toggled.
  */
-async function toggleMenuItem(doc, menuButtonIndex, menuItemIndex) {
-  const win = doc.defaultView;
+async function toggleMenuItem(doc, toolboxDoc, menuId, menuItemIndex) {
+  const toolboxWin = toolboxDoc.defaultView;
+  const panelWin = doc.defaultView;
+
   const menuButton = doc.querySelectorAll(".toolbar-menu-button")[
-    menuButtonIndex
+    MENU_INDEXES[menuId]
   ];
-  const menuItem = doc
-    .querySelectorAll(".tooltip-container")
-    [menuButtonIndex].querySelectorAll(".command")[menuItemIndex];
+  ok(menuButton, "Expected menu button");
+
+  const menuEl = toolboxDoc.getElementById(menuId);
+  const menuItem = menuEl.querySelectorAll(".command")[menuItemIndex];
+  ok(menuItem, "Expected menu item");
+
   const expected =
     menuItem.getAttribute("aria-checked") === "true" ? null : "true";
 
   // Make the menu visible first.
-  EventUtils.synthesizeMouseAtCenter(menuButton, {}, win);
+  EventUtils.synthesizeMouseAtCenter(menuButton, {}, panelWin);
   await BrowserTestUtils.waitForCondition(
     () => !!menuItem.offsetParent,
     "Menu item is visible."
   );
 
-  EventUtils.synthesizeMouseAtCenter(menuItem, {}, win);
+  EventUtils.synthesizeMouseAtCenter(menuItem, {}, toolboxWin);
   await BrowserTestUtils.waitForCondition(
     () => expected === menuItem.getAttribute("aria-checked"),
     "Menu item updated."
@@ -648,12 +664,17 @@ async function toggleSimulationOption(doc, optionIndex) {
 }
 
 async function findAccessibleFor(
-  { toolbox: { target }, panel: { walker: accessibilityWalker } },
+  {
+    toolbox: { target },
+    panel: {
+      accessibilityProxy: { accessibleWalkerFront },
+    },
+  },
   selector
 ) {
   const domWalker = (await target.getFront("inspector")).walker;
   const node = await domWalker.querySelector(domWalker.rootNode, selector);
-  return accessibilityWalker.getAccessibleFor(node);
+  return accessibleWalkerFront.getAccessibleFor(node);
 }
 
 async function selectAccessibleForNode(env, selector) {
@@ -787,12 +808,16 @@ function reload(target, waitForTargetEvent = "navigate") {
 }
 
 /**
- * Navigate to a new URL within the panel target.
- * @param  {Object} target             Panel target.
- * @param  {Srting} url                URL to navigate to.
- * @param  {String} waitForTargetEvent Event to wait for after reload.
+ * Wait and check that the state of the accessibility tab in the toolbox is
+ * correct.
+ * @param {Object}   toolbox
+ *                   DevTools toolbox to be checked.
+ * @param {Boolean}  expected
+ *                   Expected highlighted state of the accessibility tab.
  */
-function navigate(target, url, waitForTargetEvent = "navigate") {
-  executeSoon(() => target.navigateTo({ url }));
-  return once(target, waitForTargetEvent);
+async function checkHighlighted(toolbox, expected) {
+  await BrowserTestUtils.waitForCondition(async function() {
+    const isHighlighted = await toolbox.isToolHighlighted("accessibility");
+    return isHighlighted === expected;
+  });
 }

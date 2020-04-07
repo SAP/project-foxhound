@@ -10,10 +10,23 @@
 namespace mozilla {
 namespace webgpu {
 
-RenderPipeline::~RenderPipeline() = default;
-
 GPU_IMPL_CYCLE_COLLECTION(RenderPipeline, mParent)
 GPU_IMPL_JS_WRAP(RenderPipeline)
+
+RenderPipeline::RenderPipeline(Device* const aParent, RawId aId)
+    : ChildOf(aParent), mId(aId) {}
+
+RenderPipeline::~RenderPipeline() { Cleanup(); }
+
+void RenderPipeline::Cleanup() {
+  if (mValid && mParent) {
+    mValid = false;
+    WebGPUChild* bridge = mParent->mBridge;
+    if (bridge && bridge->IsOpen()) {
+      bridge->DestroyRenderPipeline(mId);
+    }
+  }
+}
 
 }  // namespace webgpu
 }  // namespace mozilla

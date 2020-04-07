@@ -24,9 +24,10 @@ typedef AutoTArray<RefPtr<dom::Element>, 16> ManualNACArray;
  */
 class ManualNACPtr final {
  public:
-  ManualNACPtr() {}
+  ManualNACPtr() = default;
   MOZ_IMPLICIT ManualNACPtr(decltype(nullptr)) {}
-  explicit ManualNACPtr(already_AddRefed<Element> aNewNAC) : mPtr(aNewNAC) {
+  explicit ManualNACPtr(already_AddRefed<dom::Element> aNewNAC)
+      : mPtr(aNewNAC) {
     if (!mPtr) {
       return;
     }
@@ -44,10 +45,10 @@ class ManualNACPtr final {
   }
 
   // We use move semantics, and delete the copy-constructor and operator=.
-  ManualNACPtr(ManualNACPtr&& aOther) : mPtr(aOther.mPtr.forget()) {}
+  ManualNACPtr(ManualNACPtr&& aOther) : mPtr(std::move(aOther.mPtr)) {}
   ManualNACPtr(ManualNACPtr& aOther) = delete;
   ManualNACPtr& operator=(ManualNACPtr&& aOther) {
-    mPtr = aOther.mPtr.forget();
+    mPtr = std::move(aOther.mPtr);
     return *this;
   }
   ManualNACPtr& operator=(ManualNACPtr& aOther) = delete;
@@ -59,7 +60,7 @@ class ManualNACPtr final {
       return;
     }
 
-    RefPtr<Element> ptr = mPtr.forget();
+    RefPtr<dom::Element> ptr = std::move(mPtr);
     RemoveContentFromNACArray(ptr);
   }
 
@@ -78,19 +79,19 @@ class ManualNACPtr final {
     if (nac) {
       nac->RemoveElement(aAnonymousContent);
       if (nac->IsEmpty()) {
-        parentContent->DeleteProperty(nsGkAtoms::manualNACProperty);
+        parentContent->RemoveProperty(nsGkAtoms::manualNACProperty);
       }
     }
 
     aAnonymousContent->UnbindFromTree();
   }
 
-  Element* get() const { return mPtr.get(); }
-  Element* operator->() const { return get(); }
-  operator Element*() const& { return get(); }
+  dom::Element* get() const { return mPtr.get(); }
+  dom::Element* operator->() const { return get(); }
+  operator dom::Element*() const& { return get(); }
 
  private:
-  RefPtr<Element> mPtr;
+  RefPtr<dom::Element> mPtr;
 };
 
 }  // namespace mozilla

@@ -63,9 +63,7 @@ class nsDisplayCanvas final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayCanvas);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayCanvas() { MOZ_COUNT_DTOR(nsDisplayCanvas); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayCanvas)
 
   NS_DISPLAY_DECL_NAME("nsDisplayCanvas", TYPE_CANVAS)
 
@@ -116,7 +114,7 @@ class nsDisplayCanvas final : public nsPaintedDisplayItem {
       nsDisplayListBuilder* aDisplayListBuilder) override {
     HTMLCanvasElement* element =
         static_cast<HTMLCanvasElement*>(mFrame->GetContent());
-    element->HandlePrintCallback(mFrame->PresContext()->Type());
+    element->HandlePrintCallback(mFrame->PresContext());
 
     switch (element->GetCurrentContextType()) {
       case CanvasContextType::Canvas2D:
@@ -186,7 +184,39 @@ class nsDisplayCanvas final : public nsPaintedDisplayItem {
         break;
       }
       case CanvasContextType::ImageBitmap: {
-        // TODO: Support ImageBitmap
+        nsHTMLCanvasFrame* canvasFrame =
+            static_cast<nsHTMLCanvasFrame*>(mFrame);
+        nsIntSize canvasSizeInPx = canvasFrame->GetCanvasSize();
+        if (canvasSizeInPx.width <= 0 || canvasSizeInPx.height <= 0) {
+          return true;
+        }
+        bool isRecycled;
+        RefPtr<WebRenderCanvasData> canvasData =
+            aManager->CommandBuilder()
+                .CreateOrRecycleWebRenderUserData<WebRenderCanvasData>(
+                    this, aBuilder.GetRenderRoot(), &isRecycled);
+        if (!canvasFrame->UpdateWebRenderCanvasData(aDisplayListBuilder,
+                                                    canvasData)) {
+          canvasData->ClearImageContainer();
+          return true;
+        }
+
+        IntrinsicSize intrinsicSize =
+            IntrinsicSizeFromCanvasSize(canvasSizeInPx);
+        AspectRatio intrinsicRatio =
+            IntrinsicRatioFromCanvasSize(canvasSizeInPx);
+
+        nsRect area =
+            mFrame->GetContentRectRelativeToSelf() + ToReferenceFrame();
+        nsRect dest = nsLayoutUtils::ComputeObjectDestRect(
+            area, intrinsicSize, intrinsicRatio, mFrame->StylePosition());
+
+        LayoutDeviceRect bounds = LayoutDeviceRect::FromAppUnits(
+            dest, mFrame->PresContext()->AppUnitsPerDevPixel());
+
+        aManager->CommandBuilder().PushImage(
+            this, canvasData->GetImageContainer(), aBuilder, aResources, aSc,
+            bounds, bounds);
         break;
       }
       case CanvasContextType::NoContext:
@@ -406,13 +436,13 @@ already_AddRefed<Layer> nsHTMLCanvasFrame::BuildLayer(
   nsIntSize canvasSizeInPx = GetCanvasSize();
 
   nsPresContext* presContext = PresContext();
-  element->HandlePrintCallback(presContext->Type());
+  element->HandlePrintCallback(presContext);
 
   if (canvasSizeInPx.width <= 0 || canvasSizeInPx.height <= 0 || area.IsEmpty())
     return nullptr;
 
-  CanvasLayer* oldLayer = static_cast<CanvasLayer*>(
-      aManager->GetLayerBuilder()->GetLeafLayerFor(aBuilder, aItem));
+  Layer* oldLayer =
+      aManager->GetLayerBuilder()->GetLeafLayerFor(aBuilder, aItem);
   RefPtr<Layer> layer = element->GetCanvasLayer(aBuilder, oldLayer, aManager);
   if (!layer) return nullptr;
 

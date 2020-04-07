@@ -15,8 +15,6 @@
 #include "nsCOMPtr.h"
 #include "mozilla/media/MediaUtils.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mtransport/runnable_utils.h"
@@ -53,7 +51,8 @@ using LocalDirection = MediaSessionConduitLocalDirection;
  * Factory Method for AudioConduit
  */
 RefPtr<AudioSessionConduit> AudioSessionConduit::Create(
-    RefPtr<WebRtcCallWrapper> aCall, nsCOMPtr<nsIEventTarget> aStsThread) {
+    RefPtr<WebRtcCallWrapper> aCall,
+    nsCOMPtr<nsISerialEventTarget> aStsThread) {
   CSFLogDebug(LOGTAG, "%s ", __FUNCTION__);
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -159,6 +158,7 @@ void WebrtcAudioConduit::SetSyncGroup(const std::string& group) {
 bool WebrtcAudioConduit::GetSendPacketTypeStats(
     webrtc::RtcpPacketTypeCounter* aPacketCounts) {
   ASSERT_ON_THREAD(mStsThread);
+  MutexAutoLock lock(mMutex);
   if (!mSendStream) {
     return false;
   }
@@ -168,6 +168,7 @@ bool WebrtcAudioConduit::GetSendPacketTypeStats(
 bool WebrtcAudioConduit::GetRecvPacketTypeStats(
     webrtc::RtcpPacketTypeCounter* aPacketCounts) {
   ASSERT_ON_THREAD(mStsThread);
+  MutexAutoLock lock(mMutex);
   if (!mEngineReceiving) {
     return false;
   }
@@ -179,6 +180,7 @@ bool WebrtcAudioConduit::GetRTPReceiverStats(unsigned int* jitterMs,
   ASSERT_ON_THREAD(mStsThread);
   *jitterMs = 0;
   *cumulativeLost = 0;
+  MutexAutoLock lock(mMutex);
   if (!mRecvStream) {
     return false;
   }
@@ -198,6 +200,7 @@ bool WebrtcAudioConduit::GetRTCPReceiverReport(uint32_t* jitterMs,
   int64_t timestampTmp = 0;
   int64_t rttMsTmp = 0;
   bool res = false;
+  MutexAutoLock lock(mMutex);
   if (mSendChannelProxy) {
     res = mSendChannelProxy->GetRTCPReceiverStatistics(
         &timestampTmp, jitterMs, cumulativeLost, packetsReceived, bytesReceived,
@@ -233,6 +236,7 @@ bool WebrtcAudioConduit::GetRTCPReceiverReport(uint32_t* jitterMs,
 bool WebrtcAudioConduit::GetRTCPSenderReport(unsigned int* packetsSent,
                                              uint64_t* bytesSent) {
   ASSERT_ON_THREAD(mStsThread);
+  MutexAutoLock lock(mMutex);
   if (!mRecvChannelProxy) {
     return false;
   }
@@ -278,6 +282,34 @@ void WebrtcAudioConduit::OnRtpPacket(const webrtc::RTPHeader& aHeader,
   mRtpSourceObserver.OnRtpPacket(aHeader, aTimestamp, aJitter);
 }
 
+void WebrtcAudioConduit::OnRtcpBye() {
+  RefPtr<WebrtcAudioConduit> self = this;
+  NS_DispatchToMainThread(media::NewRunnableFrom([self]() mutable {
+    MOZ_ASSERT(NS_IsMainThread());
+    if (self->mRtcpEventObserver) {
+      self->mRtcpEventObserver->OnRtcpBye();
+    }
+    return NS_OK;
+  }));
+}
+
+void WebrtcAudioConduit::OnRtcpTimeout() {
+  RefPtr<WebrtcAudioConduit> self = this;
+  NS_DispatchToMainThread(media::NewRunnableFrom([self]() mutable {
+    MOZ_ASSERT(NS_IsMainThread());
+    if (self->mRtcpEventObserver) {
+      self->mRtcpEventObserver->OnRtcpTimeout();
+    }
+    return NS_OK;
+  }));
+}
+
+void WebrtcAudioConduit::SetRtcpEventObserver(
+    mozilla::RtcpEventObserver* observer) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mRtcpEventObserver = observer;
+}
+
 void WebrtcAudioConduit::GetRtpSources(
     const int64_t aTimeNow, nsTArray<dom::RTCRtpSourceEntry>& outSources) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -287,22 +319,26 @@ void WebrtcAudioConduit::GetRtpSources(
 // test-only: inserts a CSRC entry in a RtpSourceObserver's history for
 // getContributingSources mochitests
 void InsertAudioLevelForContributingSource(RtpSourceObserver& observer,
-                                           uint32_t aCsrcSource,
-                                           int64_t aTimestamp,
-                                           bool aHasAudioLevel,
-                                           uint8_t aAudioLevel) {
+                                           const uint32_t aCsrcSource,
+                                           const int64_t aTimestamp,
+                                           const uint32_t aRtpTimestamp,
+                                           const bool aHasAudioLevel,
+                                           const uint8_t aAudioLevel) {
   using EntryType = dom::RTCRtpSourceEntryType;
   auto key = RtpSourceObserver::GetKey(aCsrcSource, EntryType::Contributing);
   auto& hist = observer.mRtpSources[key];
-  hist.Insert(aTimestamp, aTimestamp, aHasAudioLevel, aAudioLevel);
+  hist.Insert(aTimestamp, aTimestamp, aRtpTimestamp, aHasAudioLevel,
+              aAudioLevel);
 }
 
 void WebrtcAudioConduit::InsertAudioLevelForContributingSource(
-    uint32_t aCsrcSource, int64_t aTimestamp, bool aHasAudioLevel,
-    uint8_t aAudioLevel) {
+    const uint32_t aCsrcSource, const int64_t aTimestamp,
+    const uint32_t aRtpTimestamp, const bool aHasAudioLevel,
+    const uint8_t aAudioLevel) {
   MOZ_ASSERT(NS_IsMainThread());
   mozilla::InsertAudioLevelForContributingSource(
-      mRtpSourceObserver, aCsrcSource, aTimestamp, aHasAudioLevel, aAudioLevel);
+      mRtpSourceObserver, aCsrcSource, aTimestamp, aRtpTimestamp,
+      aHasAudioLevel, aAudioLevel);
 }
 
 /*
@@ -371,11 +407,6 @@ MediaConduitErrorCode WebrtcAudioConduit::ConfigureSendMediaCodec(
   }
 
   mDtmfEnabled = codecConfig->mDtmfEnabled;
-
-  condError = StartTransmitting();
-  if (condError != kMediaConduitNoError) {
-    return condError;
-  }
 
   return kMediaConduitNoError;
 }
@@ -712,7 +743,18 @@ MediaConduitErrorCode WebrtcAudioConduit::ReceivedRTCPPacket(const void* data,
     CSFLogError(LOGTAG, "%s RTCP Processing Failed", __FUNCTION__);
     return kMediaConduitRTPProcessingFailed;
   }
+
+  // TODO(bug 1496533): We will need to keep separate timestamps for each SSRC,
+  // and for each SSRC we will need to keep a timestamp for SR and RR.
+  mLastRtcpReceived = Some(GetNow());
   return kMediaConduitNoError;
+}
+
+// TODO(bug 1496533): We will need to add a type (ie; SR or RR) param here, or
+// perhaps break this function into two functions, one for each type.
+Maybe<DOMHighResTimeStamp> WebrtcAudioConduit::LastRtcpReceived() const {
+  ASSERT_ON_THREAD(mStsThread);
+  return mLastRtcpReceived;
 }
 
 MediaConduitErrorCode WebrtcAudioConduit::StopTransmitting() {
@@ -1066,6 +1108,7 @@ MediaConduitErrorCode WebrtcAudioConduit::CreateChannels() {
   }
 
   mRecvChannelProxy->SetRtpPacketObserver(this);
+  mRecvChannelProxy->SetRtcpEventObserver(this);
   mRecvChannelProxy->RegisterTransport(this);
 
   mSendChannelProxy = vei->GetChannelProxy(mSendChannel);
@@ -1091,6 +1134,7 @@ void WebrtcAudioConduit::DeleteChannels() {
   }
 
   if (mRecvChannel != -1) {
+    mRecvChannelProxy->SetRtcpEventObserver(nullptr);
     mRecvChannelProxy = nullptr;
     mPtrVoEBase->DeleteChannel(mRecvChannel);
     mRecvChannel = -1;

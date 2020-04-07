@@ -14,6 +14,7 @@
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/SystemGroup.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/SharedMemory.h"  // for SharedMemory, etc
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/ISurfaceAllocator.h"
@@ -69,8 +70,7 @@
     } while (0)
 #endif
 
-namespace mozilla {
-namespace layers {
+namespace mozilla::layers {
 
 using namespace mozilla::ipc;
 using namespace mozilla::gl;
@@ -268,8 +268,7 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
        aLayersBackend == LayersBackend::LAYERS_WR) &&
       (aBackendType == gfx::BackendType::DIRECT2D ||
        aBackendType == gfx::BackendType::DIRECT2D1_1 ||
-       (!!(aAllocFlags & ALLOC_FOR_OUT_OF_BAND_CONTENT) &&
-        DeviceManagerDx::Get()->GetContentDevice())) &&
+       (!!(aAllocFlags & ALLOC_FOR_OUT_OF_BAND_CONTENT))) &&
       aSize.width <= aMaxTextureSize && aSize.height <= aMaxTextureSize &&
       !(aAllocFlags & ALLOC_UPDATE_FROM_SURFACE)) {
     return TextureType::D3D11;
@@ -285,7 +284,7 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
 #ifdef MOZ_WAYLAND
   if ((aLayersBackend == LayersBackend::LAYERS_OPENGL ||
        aLayersBackend == LayersBackend::LAYERS_WR) &&
-      gfxPlatformGtk::GetPlatform()->UseWaylandDMABufSurfaces() &&
+      gfxPlatformGtk::GetPlatform()->UseWaylandDMABufTextures() &&
       aFormat != SurfaceFormat::A8) {
     return TextureType::WaylandDMABUF;
   }
@@ -1055,7 +1054,8 @@ bool TextureClient::InitIPDLActor(CompositableForwarder* aForwarder) {
         }
       }
       mActor->mCompositableForwarder = aForwarder;
-      mActor->mUsesImageBridge = aForwarder->GetTextureForwarder()->UsesImageBridge();
+      mActor->mUsesImageBridge =
+          aForwarder->GetTextureForwarder()->UsesImageBridge();
     }
     return true;
   }
@@ -1485,14 +1485,16 @@ void TextureClient::PrintInfo(std::stringstream& aStream, const char* aPrefix) {
 #endif
 }
 
-void TextureClient::GPUVideoDesc(SurfaceDescriptorGPUVideo* const aOutDesc) {
+void TextureClient::GetSurfaceDescriptorRemoteDecoder(
+    SurfaceDescriptorRemoteDecoder* const aOutDesc) {
   const auto handle = GetSerial();
 
-  GPUVideoSubDescriptor subDesc = null_t();
+  RemoteDecoderVideoSubDescriptor subDesc = null_t();
   MOZ_RELEASE_ASSERT(mData);
   mData->GetSubDescriptor(&subDesc);
 
-  *aOutDesc = SurfaceDescriptorGPUVideo(handle, std::move(subDesc));
+  *aOutDesc =
+      SurfaceDescriptorRemoteDecoder(handle, std::move(subDesc), Nothing());
 }
 
 class MemoryTextureReadLock : public NonBlockingTextureReadLock {
@@ -1904,5 +1906,4 @@ bool MappedYCbCrChannelData::CopyInto(MappedYCbCrChannelData& aDst) {
   return true;
 }
 
-}  // namespace layers
-}  // namespace mozilla
+}  // namespace mozilla::layers

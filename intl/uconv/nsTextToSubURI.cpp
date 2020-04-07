@@ -12,11 +12,10 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
-#include "nsISupportsPrimitives.h"
 
 using namespace mozilla;
 
-nsTextToSubURI::~nsTextToSubURI() {}
+nsTextToSubURI::~nsTextToSubURI() = default;
 
 NS_IMPL_ISUPPORTS(nsTextToSubURI, nsITextToSubURI)
 

@@ -418,51 +418,6 @@
 #ifdef __cplusplus
 
 /**
- * MOZ_FALLTHROUGH is an annotation to suppress compiler warnings about switch
- * cases that fall through without a break or return statement. MOZ_FALLTHROUGH
- * is only needed on cases that have code.
- *
- * MOZ_FALLTHROUGH_ASSERT is an annotation to suppress compiler warnings about
- * switch cases that MOZ_ASSERT(false) (or its alias MOZ_ASSERT_UNREACHABLE) in
- * debug builds, but intentionally fall through in release builds. See comment
- * in Assertions.h for more details.
- *
- * switch (foo) {
- *   case 1: // These cases have no code. No fallthrough annotations are needed.
- *   case 2:
- *   case 3: // This case has code, so a fallthrough annotation is needed!
- *     foo++;
- *     MOZ_FALLTHROUGH;
- *   case 4:
- *     return foo;
- *
- *   default:
- *     // This case asserts in debug builds, falls through in release.
- *     MOZ_FALLTHROUGH_ASSERT("Unexpected foo value?!");
- *   case 5:
- *     return 5;
- * }
- */
-#  ifndef __has_cpp_attribute
-#    define __has_cpp_attribute(x) 0
-#  endif
-
-#  if __has_cpp_attribute(clang::fallthrough)
-#    define MOZ_FALLTHROUGH [[clang::fallthrough]]
-#  elif __has_cpp_attribute(gnu::fallthrough)
-#    define MOZ_FALLTHROUGH [[gnu::fallthrough]]
-#  elif defined(_MSC_VER)
-/*
- * MSVC's __fallthrough annotations are checked by /analyze (Code Analysis):
- * https://msdn.microsoft.com/en-us/library/ms235402%28VS.80%29.aspx
- */
-#    include <sal.h>
-#    define MOZ_FALLTHROUGH __fallthrough
-#  else
-#    define MOZ_FALLTHROUGH /* FALLTHROUGH */
-#  endif
-
-/**
  * C++11 lets unions contain members that have non-trivial special member
  * functions (default/copy/move constructor, copy/move assignment operator,
  * destructor) if the user defines the corresponding functions on the union.
@@ -560,8 +515,24 @@
  *   file may not see the annotation.
  * MOZ_CAN_RUN_SCRIPT_BOUNDARY: Applies to functions which need to call
  *   MOZ_CAN_RUN_SCRIPT functions, but should not themselves be considered
- *   MOZ_CAN_RUN_SCRIPT. This is important for some bindings and low level code
- *   which need to opt out of the safety checks performed by MOZ_CAN_RUN_SCRIPT.
+ *   MOZ_CAN_RUN_SCRIPT. This should generally be avoided but can be used in
+ *   two cases:
+ *     1) As a temporary measure to limit the scope of changes when adding
+ *        MOZ_CAN_RUN_SCRIPT.  Such a use must be accompanied by a follow-up bug
+ *        to replace the MOZ_CAN_RUN_SCRIPT_BOUNDARY with MOZ_CAN_RUN_SCRIPT and
+ *        a comment linking to that bug.
+ *     2) If we can reason that the MOZ_CAN_RUN_SCRIPT callees of the function
+ *        do not in fact run script (for example, because their behavior depends
+ *        on arguments and we pass the arguments that don't allow script
+ *        execution).  Such a use must be accompanied by a comment that explains
+ *        why it's OK to have the MOZ_CAN_RUN_SCRIPT_BOUNDARY, as well as
+ *        comments in the callee pointing out that if its behavior changes the
+ *        caller might need adjusting.  And perhaps also a followup bug to
+ *        refactor things so the "script" and "no script" codepaths do not share
+ *        a chokepoint.
+ *   Importantly, any use MUST be accompanied by a comment explaining why it's
+ *   there, and should ideally have an action plan for getting rid of the
+ *   MOZ_CAN_RUN_SCRIPT_BOUNDARY annotation.
  * MOZ_MUST_OVERRIDE: Applies to all C++ member functions. All immediate
  *   subclasses must provide an exact override of this method; if a subclass
  *   does not override this method, the compiler will emit an error. This

@@ -4,57 +4,56 @@
 
 "use strict";
 
-const ObjectClient = require("devtools/shared/client/object-client");
-const LongStringClient = require("devtools/shared/client/long-string-client");
-
 class ConsoleCommands {
-  constructor({ debuggerClient, proxy, threadFront, currentTarget }) {
-    this.debuggerClient = debuggerClient;
-    this.proxy = proxy;
+  constructor({ devToolsClient, hud, threadFront }) {
+    this.devToolsClient = devToolsClient;
+    this.hud = hud;
     this.threadFront = threadFront;
-    this.currentTarget = currentTarget;
   }
 
-  evaluateJSAsync(expression, options) {
-    return this.proxy.webConsoleFront.evaluateJSAsync(expression, options);
+  getFrontByID(id) {
+    return this.devToolsClient.getFrontByID(id);
   }
 
-  createObjectClient(object) {
-    return new ObjectClient(this.debuggerClient, object);
-  }
+  async evaluateJSAsync(expression, options = {}) {
+    const {
+      selectedNodeFront,
+      selectedThreadFront,
+      frameActor,
+      selectedObjectActor,
+    } = options;
+    let front = await this.hud.currentTarget.getFront("console");
 
-  createLongStringClient(object) {
-    return new LongStringClient(this.debuggerClient, object);
-  }
-
-  releaseActor(actor) {
-    if (!actor) {
-      return null;
+    // Defer to the selected paused thread front
+    if (frameActor) {
+      const frameFront = this.getFrontByID(frameActor);
+      if (frameFront) {
+        front = await frameFront.targetFront.getFront("console");
+      }
     }
 
-    const objFront = this.debuggerClient.getFrontByID(actor);
-    if (objFront) {
-      return objFront.release();
+    // NOTE: once we handle the other tasks in console evaluation,
+    // all of the implicit actions like pausing, selecting a frame in the inspector,
+    // etc will update the selected thread and we will no longer need to support these other
+    // cases.
+    if (selectedThreadFront) {
+      front = await selectedThreadFront.targetFront.getFront("console");
+
+      // If there's a selectedObjectActor option, this means the user intend to do a
+      // given action on a specific object, so it should take precedence over selected
+      // node front.
+    } else if (selectedObjectActor) {
+      const objectFront = this.getFrontByID(selectedObjectActor);
+      if (objectFront) {
+        front = await objectFront.targetFront.getFront("console");
+      }
+    } else if (selectedNodeFront) {
+      // Defer to the selected node's thread console front
+      front = await selectedNodeFront.targetFront.getFront("console");
+      options.selectedNodeActor = selectedNodeFront.actorID;
     }
 
-    // In case there's no object front, use the client's release method.
-    return this.debuggerClient.release(actor).catch(() => {});
-  }
-
-  async fetchObjectProperties(grip, ignoreNonIndexedProperties) {
-    const client = new ObjectClient(this.currentTarget.client, grip);
-    const iterator = await client.enumProperties({
-      ignoreNonIndexedProperties,
-    });
-    const { ownProperties } = await iterator.slice(0, iterator.count);
-    return ownProperties;
-  }
-
-  async fetchObjectEntries(grip) {
-    const client = new ObjectClient(this.currentTarget.client, grip);
-    const iterator = await client.enumEntries();
-    const { ownProperties } = await iterator.slice(0, iterator.count);
-    return ownProperties;
+    return front.evaluateJSAsync(expression, options);
   }
 
   timeWarp(executionPoint) {

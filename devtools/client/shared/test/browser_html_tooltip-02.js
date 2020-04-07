@@ -8,7 +8,7 @@
  */
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
-const TEST_URI = CHROME_URL_ROOT + "doc_html_tooltip-02.xul";
+const TEST_URI = CHROME_URL_ROOT + "doc_html_tooltip-02.xhtml";
 const PROMISE_TIMEOUT = 3000;
 
 const {
@@ -20,7 +20,7 @@ let useXulWrapper;
 
 add_task(async function() {
   await addTab("about:blank");
-  const [, , doc] = await createHost("bottom", TEST_URI);
+  const { doc } = await createHost("bottom", TEST_URI);
 
   info("Run tests for a Tooltip without using a XUL panel");
   useXulWrapper = false;
@@ -200,11 +200,10 @@ async function testClickInInnerIframe(doc) {
 
   iframe.srcdoc = "<div id=test style='height:50px'></div>";
   await new Promise(r => {
-    const domHelper = new DOMHelpers(iframe.contentWindow);
     const frameLoad = () => {
       r();
     };
-    domHelper.onceDOMReady(frameLoad);
+    DOMHelpers.onceDOMReady(iframe.contentWindow, frameLoad);
   });
 
   await waitUntil(() => iframe.contentWindow.document.getElementById("test"));

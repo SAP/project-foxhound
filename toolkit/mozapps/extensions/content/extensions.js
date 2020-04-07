@@ -5,35 +5,18 @@
 "use strict";
 
 /* import-globals-from ../../../content/customElements.js */
-/* import-globals-from ../../../content/contentAreaUtils.js */
 /* import-globals-from aboutaddonsCommon.js */
 /* globals ProcessingInstruction */
 /* exported loadView */
 
-const { DeferredTask } = ChromeUtils.import(
-  "resource://gre/modules/DeferredTask.jsm"
-);
 const { AddonManager } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
-);
-const { AddonRepository } = ChromeUtils.import(
-  "resource://gre/modules/addons/AddonRepository.jsm"
 );
 
 ChromeUtils.defineModuleGetter(
   this,
   "AMTelemetry",
   "resource://gre/modules/AddonManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ClientID",
-  "resource://gre/modules/ClientID.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -43,17 +26,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   true
 );
 
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "useHtmlDiscover",
-  "extensions.htmlaboutaddons.discover.enabled"
-);
-
-const PREF_DISCOVERURL = "extensions.webservice.discoverURL";
 const PREF_DISCOVER_ENABLED = "extensions.getAddons.showPane";
-const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
-const PREF_GETADDONS_CACHE_ID_ENABLED =
-  "extensions.%ID%.getAddons.cache.enabled";
 const PREF_UI_TYPE_HIDDEN = "extensions.ui.%TYPE%.hidden";
 const PREF_UI_LASTCATEGORY = "extensions.ui.lastCategory";
 
@@ -106,19 +79,6 @@ function initialize(event) {
   }
   document.removeEventListener("load", initialize, true);
 
-  let contentAreaContextMenu = document.getElementById(
-    "contentAreaContextMenu"
-  );
-  contentAreaContextMenu.addEventListener("popupshowing", function(event) {
-    Cu.reportError("This dummy menupopup is not supposed to be shown");
-    return false;
-  });
-
-  let globalCommandSet = document.getElementById("globalCommandSet");
-  globalCommandSet.addEventListener("command", function(event) {
-    gViewController.doCommand(event.target.id);
-  });
-
   let addonPage = document.getElementById("addons-page");
   addonPage.addEventListener("dragenter", function(event) {
     gDragDrop.onDragOver(event);
@@ -129,12 +89,14 @@ function initialize(event) {
   addonPage.addEventListener("drop", function(event) {
     gDragDrop.onDrop(event);
   });
-  addonPage.addEventListener("keypress", function(event) {
-    gHeader.onKeyPress(event);
-  });
   if (!isDiscoverEnabled()) {
     gViewDefault = "addons://list/extension";
   }
+
+  // Support focusing the search bar from the XUL document.
+  document.addEventListener("keypress", e => {
+    htmlBrowser.contentDocument.querySelector("search-addons").handleEvent(e);
+  });
 
   let helpButton = document.getElementById("helpButton");
   let helpUrl =
@@ -166,14 +128,9 @@ function initialize(event) {
 
   gViewController.initialize();
   gCategories.initialize();
-  gHeader.initialize();
   gEventManager.initialize();
   Services.obs.addObserver(sendEMPong, "EM-ping");
   Services.obs.notifyObservers(window, "EM-loaded");
-
-  if (!XPINSTALL_ENABLED) {
-    document.getElementById("cmd_installFromFile").hidden = true;
-  }
 
   // If the initial view has already been selected (by a call to loadView from
   // the above notifications) then bail out now
@@ -229,23 +186,7 @@ function sendEMPong(aSubject, aTopic, aData) {
 
 function recordLinkTelemetry(target) {
   let extra = { view: getCurrentViewName() };
-  if (target == "search") {
-    let searchBar = document.getElementById("header-search");
-    extra.type = searchBar.getAttribute("data-addon-type");
-  }
   AMTelemetry.recordLinkEvent({ object: "aboutAddons", value: target, extra });
-}
-
-function recordActionTelemetry({ action, value, view, addon }) {
-  view = view || getCurrentViewName();
-  AMTelemetry.recordActionEvent({
-    // The max-length for an object is 20, which it enough to be unique.
-    object: "aboutAddons",
-    value,
-    view,
-    action,
-    addon,
-  });
 }
 
 async function recordViewTelemetry(param) {
@@ -263,21 +204,6 @@ async function recordViewTelemetry(param) {
   }
 
   AMTelemetry.recordViewEvent({ view: getCurrentViewName(), addon, type });
-}
-
-function recordSetUpdatePolicyTelemetry() {
-  // Record telemetry for changing the update policy.
-  let updatePolicy = [];
-  if (AddonManager.autoUpdateDefault) {
-    updatePolicy.push("default");
-  }
-  if (AddonManager.updateEnabled) {
-    updatePolicy.push("enabled");
-  }
-  recordActionTelemetry({
-    action: "setUpdatePolicy",
-    value: updatePolicy.join(","),
-  });
 }
 
 function getCurrentViewName() {
@@ -305,12 +231,6 @@ function loadView(aViewId) {
 }
 
 function isDiscoverEnabled() {
-  if (
-    Services.prefs.getPrefType(PREF_DISCOVERURL) == Services.prefs.PREF_INVALID
-  ) {
-    return false;
-  }
-
   try {
     if (!Services.prefs.getBoolPref(PREF_DISCOVER_ENABLED)) {
       return false;
@@ -322,27 +242,6 @@ function isDiscoverEnabled() {
   }
 
   return true;
-}
-
-function setSearchLabel(type) {
-  let searchLabel = document.getElementById("search-label");
-  document
-    .getElementById("header-search")
-    .setAttribute("data-addon-type", type);
-  let keyMap = {
-    extension: "extension",
-    shortcuts: "extension",
-    theme: "theme",
-  };
-  if (type in keyMap) {
-    searchLabel.textContent = gStrings.ext.GetStringFromName(
-      `searchLabel.${keyMap[type]}`
-    );
-    searchLabel.hidden = false;
-  } else {
-    searchLabel.textContent = "";
-    searchLabel.hidden = true;
-  }
 }
 
 /**
@@ -365,14 +264,10 @@ var HTML5History = {
 
   back() {
     window.history.back();
-    gViewController.updateCommand("cmd_back");
-    gViewController.updateCommand("cmd_forward");
   },
 
   forward() {
     window.history.forward();
-    gViewController.updateCommand("cmd_back");
-    gViewController.updateCommand("cmd_forward");
   },
 
   pushState(aState) {
@@ -393,8 +288,6 @@ var HTML5History = {
     }
     window.addEventListener("popstate", onStatePopped, true);
     window.history.back();
-    gViewController.updateCommand("cmd_back");
-    gViewController.updateCommand("cmd_forward");
   },
 };
 
@@ -424,8 +317,6 @@ var FakeHistory = {
 
     this.pos--;
     gViewController.updateState(this.states[this.pos]);
-    gViewController.updateCommand("cmd_back");
-    gViewController.updateCommand("cmd_forward");
   },
 
   forward() {
@@ -435,8 +326,6 @@ var FakeHistory = {
 
     this.pos++;
     gViewController.updateState(this.states[this.pos]);
-    gViewController.updateCommand("cmd_back");
-    gViewController.updateCommand("cmd_forward");
   },
 
   pushState(aState) {
@@ -458,8 +347,6 @@ var FakeHistory = {
     this.pos--;
 
     gViewController.updateState(this.states[this.pos]);
-    gViewController.updateCommand("cmd_back");
-    gViewController.updateCommand("cmd_forward");
   },
 };
 
@@ -516,9 +403,6 @@ var gEventManager = {
     AddonManager.addManagerListener(this);
     AddonManager.addInstallListener(this);
     AddonManager.addAddonListener(this);
-
-    this.refreshGlobalWarning();
-    this.refreshAutoUpdateDefault();
   },
 
   shutdown() {
@@ -597,60 +481,6 @@ var gEventManager = {
       }
     }
   },
-
-  refreshGlobalWarning() {
-    var page = document.getElementById("addons-page");
-
-    if (Services.appinfo.inSafeMode) {
-      page.setAttribute("warning", "safemode");
-      return;
-    }
-
-    if (
-      AddonManager.checkUpdateSecurityDefault &&
-      !AddonManager.checkUpdateSecurity
-    ) {
-      page.setAttribute("warning", "updatesecurity");
-      return;
-    }
-
-    if (!AddonManager.checkCompatibility) {
-      page.setAttribute("warning", "checkcompatibility");
-      return;
-    }
-
-    page.removeAttribute("warning");
-  },
-
-  refreshAutoUpdateDefault() {
-    var updateEnabled = AddonManager.updateEnabled;
-    var autoUpdateDefault = AddonManager.autoUpdateDefault;
-
-    // The checkbox needs to reflect that both prefs need to be true
-    // for updates to be checked for and applied automatically
-    document
-      .getElementById("utils-autoUpdateDefault")
-      .setAttribute("checked", updateEnabled && autoUpdateDefault);
-
-    document.getElementById(
-      "utils-resetAddonUpdatesToAutomatic"
-    ).hidden = !autoUpdateDefault;
-    document.getElementById(
-      "utils-resetAddonUpdatesToManual"
-    ).hidden = autoUpdateDefault;
-  },
-
-  onCompatibilityModeChanged() {
-    this.refreshGlobalWarning();
-  },
-
-  onCheckUpdateSecurityChanged() {
-    this.refreshGlobalWarning();
-  },
-
-  onUpdateModeChanged() {
-    this.refreshAutoUpdateDefault();
-  },
 };
 
 var gViewController = {
@@ -667,13 +497,11 @@ var gViewController = {
   viewChangeCallback: null,
   initialViewSelected: false,
   lastHistoryIndex: -1,
-  backButton: null,
 
   initialize() {
     this.viewPort = document.getElementById("view-port");
     this.headeredViews = document.getElementById("headered-views");
     this.headeredViewsDeck = document.getElementById("headered-views-content");
-    this.backButton = document.getElementById("go-back");
 
     this.viewObjects.shortcuts = htmlView("shortcuts");
     this.viewObjects.list = htmlView("list");
@@ -682,11 +510,10 @@ var gViewController = {
     // gUpdatesView still handles when the Available Updates category is
     // shown. Include it in viewObjects so it gets initialized and shutdown.
     this.viewObjects._availableUpdatesSidebar = gUpdatesView;
+    this.viewObjects.discover = htmlView("discover");
 
-    if (useHtmlDiscover && isDiscoverEnabled()) {
-      this.viewObjects.discover = htmlView("discover");
-    } else {
-      this.viewObjects.discover = gDiscoverView;
+    if (!isDiscoverEnabled()) {
+      gCategories.get("addons://discover/").hidden = true;
     }
 
     for (let type in this.viewObjects) {
@@ -754,7 +581,7 @@ var gViewController = {
     );
   },
 
-  loadView(aViewId, sourceEvent) {
+  loadView(aViewId) {
     var isRefresh = false;
     if (aViewId == this.currentViewId) {
       if (this.isLoading) {
@@ -769,14 +596,10 @@ var gViewController = {
       isRefresh = true;
     }
 
-    let isKeyboardNavigation =
-      sourceEvent &&
-      sourceEvent.mozInputSource === MouseEvent.MOZ_SOURCE_KEYBOARD;
     var state = {
       view: aViewId,
       previousView: this.currentViewId,
       historyEntryId: ++this.nextHistoryEntryId,
-      isKeyboardNavigation,
     };
     if (!isRefresh) {
       gHistory.pushState(state);
@@ -867,25 +690,6 @@ var gViewController = {
 
     recordViewTelemetry(view.param);
 
-    let headingName = document.getElementById("heading-name");
-    let headingLabel;
-    if (view.type == "discover") {
-      headingLabel = gStrings.ext.formatStringFromName("listHeading.discover", [
-        gStrings.brandShortName,
-      ]);
-    } else {
-      try {
-        headingLabel = gStrings.ext.GetStringFromName(
-          `listHeading.${view.param}`
-        );
-      } catch (e) {
-        // Some views don't have a label, like the updates view.
-        headingLabel = "";
-      }
-    }
-    headingName.textContent = headingLabel;
-    setSearchLabel(view.param);
-
     if (aViewId == aPreviousView) {
       this.currentViewObj.refresh(
         view.param,
@@ -895,8 +699,6 @@ var gViewController = {
     } else {
       this.currentViewObj.show(view.param, ++this.currentViewRequest, aState);
     }
-
-    this.backButton.hidden = this.currentViewObj.isRoot || !gHistory.canGoBack;
 
     this.initialViewSelected = true;
   },
@@ -918,357 +720,6 @@ var gViewController = {
     var event = document.createEvent("Events");
     event.initEvent("ViewChanged", true, true);
     this.currentViewObj.node.dispatchEvent(event);
-  },
-
-  commands: {
-    cmd_back: {
-      isEnabled() {
-        return gHistory.canGoBack;
-      },
-      doCommand() {
-        gHistory.back();
-      },
-    },
-
-    cmd_forward: {
-      isEnabled() {
-        return gHistory.canGoForward;
-      },
-      doCommand() {
-        gHistory.forward();
-      },
-    },
-
-    cmd_focusSearch: {
-      isEnabled: () => true,
-      doCommand() {
-        gHeader.focusSearchBox();
-      },
-    },
-
-    cmd_enableCheckCompatibility: {
-      isEnabled() {
-        return true;
-      },
-      doCommand() {
-        AddonManager.checkCompatibility = true;
-      },
-    },
-
-    cmd_enableUpdateSecurity: {
-      isEnabled() {
-        return true;
-      },
-      doCommand() {
-        AddonManager.checkUpdateSecurity = true;
-      },
-    },
-
-    cmd_toggleAutoUpdateDefault: {
-      isEnabled() {
-        return true;
-      },
-      doCommand() {
-        if (!AddonManager.updateEnabled || !AddonManager.autoUpdateDefault) {
-          // One or both of the prefs is false, i.e. the checkbox is not checked.
-          // Now toggle both to true. If the user wants us to auto-update
-          // add-ons, we also need to auto-check for updates.
-          AddonManager.updateEnabled = true;
-          AddonManager.autoUpdateDefault = true;
-        } else {
-          // Both prefs are true, i.e. the checkbox is checked.
-          // Toggle the auto pref to false, but don't touch the enabled check.
-          AddonManager.autoUpdateDefault = false;
-        }
-
-        recordSetUpdatePolicyTelemetry();
-      },
-    },
-
-    cmd_resetAddonAutoUpdate: {
-      isEnabled() {
-        return true;
-      },
-      async doCommand() {
-        let aAddonList = await AddonManager.getAllAddons();
-        for (let addon of aAddonList) {
-          if ("applyBackgroundUpdates" in addon) {
-            addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DEFAULT;
-          }
-        }
-        recordActionTelemetry({ action: "resetUpdatePolicy" });
-      },
-    },
-
-    cmd_goToDiscoverPane: {
-      isEnabled() {
-        return gDiscoverView.enabled;
-      },
-      doCommand() {
-        gViewController.loadView("addons://discover/");
-      },
-    },
-
-    cmd_goToRecentUpdates: {
-      isEnabled() {
-        return true;
-      },
-      doCommand() {
-        gViewController.loadView("addons://updates/recent");
-      },
-    },
-
-    cmd_goToAvailableUpdates: {
-      isEnabled() {
-        return true;
-      },
-      doCommand() {
-        gViewController.loadView("addons://updates/available");
-      },
-    },
-
-    cmd_findAllUpdates: {
-      inProgress: false,
-      isEnabled() {
-        return !this.inProgress;
-      },
-      async doCommand() {
-        this.inProgress = true;
-        gViewController.updateCommand("cmd_findAllUpdates");
-        document.getElementById("updates-noneFound").hidden = true;
-        document.getElementById("updates-progress").hidden = false;
-        document.getElementById("updates-manualUpdatesFound-btn").hidden = true;
-
-        var pendingChecks = 0;
-        var numUpdated = 0;
-        var numManualUpdates = 0;
-
-        let updateStatus = () => {
-          if (pendingChecks > 0) {
-            return;
-          }
-
-          this.inProgress = false;
-          gViewController.updateCommand("cmd_findAllUpdates");
-          document.getElementById("updates-progress").hidden = true;
-          gUpdatesView.maybeRefresh();
-
-          Services.obs.notifyObservers(null, "EM-update-check-finished");
-
-          if (numManualUpdates > 0 && numUpdated == 0) {
-            document.getElementById(
-              "updates-manualUpdatesFound-btn"
-            ).hidden = false;
-            return;
-          }
-
-          if (numUpdated == 0) {
-            document.getElementById("updates-noneFound").hidden = false;
-            return;
-          }
-
-          document.getElementById("updates-installed").hidden = false;
-        };
-
-        var updateInstallListener = {
-          onDownloadFailed() {
-            pendingChecks--;
-            updateStatus();
-          },
-          onInstallCancelled() {
-            pendingChecks--;
-            updateStatus();
-          },
-          onInstallFailed() {
-            pendingChecks--;
-            updateStatus();
-          },
-          onInstallEnded(aInstall, aAddon) {
-            pendingChecks--;
-            numUpdated++;
-            updateStatus();
-          },
-        };
-
-        var updateCheckListener = {
-          onUpdateAvailable(aAddon, aInstall) {
-            gEventManager.delegateAddonEvent("onUpdateAvailable", [
-              aAddon,
-              aInstall,
-            ]);
-            attachUpdateHandler(aInstall);
-            if (AddonManager.shouldAutoUpdate(aAddon)) {
-              aInstall.addListener(updateInstallListener);
-              aInstall.install();
-            } else {
-              pendingChecks--;
-              numManualUpdates++;
-              updateStatus();
-            }
-          },
-          onNoUpdateAvailable(aAddon) {
-            pendingChecks--;
-            updateStatus();
-          },
-          onUpdateFinished(aAddon, aError) {
-            gEventManager.delegateAddonEvent("onUpdateFinished", [
-              aAddon,
-              aError,
-            ]);
-          },
-        };
-
-        let aAddonList = await AddonManager.getAddonsByTypes(null);
-        for (let addon of aAddonList) {
-          if (addon.permissions & AddonManager.PERM_CAN_UPGRADE) {
-            pendingChecks++;
-            addon.findUpdates(
-              updateCheckListener,
-              AddonManager.UPDATE_WHEN_USER_REQUESTED
-            );
-          }
-        }
-
-        recordActionTelemetry({ action: "checkForUpdates" });
-
-        if (pendingChecks == 0) {
-          updateStatus();
-        }
-      },
-    },
-
-    cmd_installFromFile: {
-      isEnabled() {
-        return XPINSTALL_ENABLED;
-      },
-      doCommand() {
-        const nsIFilePicker = Ci.nsIFilePicker;
-        var fp = Cc["@mozilla.org/filepicker;1"].createInstance(nsIFilePicker);
-        fp.init(
-          window,
-          gStrings.ext.GetStringFromName("installFromFile.dialogTitle"),
-          nsIFilePicker.modeOpenMultiple
-        );
-        try {
-          fp.appendFilter(
-            gStrings.ext.GetStringFromName("installFromFile.filterName"),
-            "*.xpi;*.jar;*.zip"
-          );
-          fp.appendFilters(nsIFilePicker.filterAll);
-        } catch (e) {}
-
-        fp.open(async result => {
-          if (result != nsIFilePicker.returnOK) {
-            return;
-          }
-
-          let installTelemetryInfo = {
-            source: "about:addons",
-            method: "install-from-file",
-          };
-
-          let browser = getBrowserElement();
-          for (let file of fp.files) {
-            let install = await AddonManager.getInstallForFile(
-              file,
-              null,
-              installTelemetryInfo
-            );
-            AddonManager.installAddonFromAOM(
-              browser,
-              document.documentURIObject,
-              install
-            );
-            recordActionTelemetry({
-              action: "installFromFile",
-              value: install.installId,
-            });
-          }
-        });
-      },
-    },
-
-    cmd_debugAddons: {
-      isEnabled() {
-        return true;
-      },
-      doCommand() {
-        let mainWindow = window.windowRoot.ownerGlobal;
-        recordLinkTelemetry("about:debugging");
-        if ("switchToTabHavingURI" in mainWindow) {
-          mainWindow.switchToTabHavingURI(
-            `about:debugging#/runtime/this-firefox`,
-            true,
-            {
-              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-            }
-          );
-        }
-      },
-    },
-
-    cmd_showShortcuts: {
-      isEnabled() {
-        return true;
-      },
-      doCommand() {
-        gViewController.loadView("addons://shortcuts/shortcuts");
-      },
-    },
-  },
-
-  supportsCommand(aCommand) {
-    return aCommand in this.commands;
-  },
-
-  isCommandEnabled(aCommand) {
-    if (!this.supportsCommand(aCommand)) {
-      return false;
-    }
-    var addon = this.currentViewObj.getSelectedAddon();
-    return this.commands[aCommand].isEnabled(addon);
-  },
-
-  updateCommands() {
-    // wait until the view is initialized
-    if (!this.currentViewObj) {
-      return;
-    }
-    var addon = this.currentViewObj.getSelectedAddon();
-    for (let commandId in this.commands) {
-      this.updateCommand(commandId, addon);
-    }
-  },
-
-  updateCommand(aCommandId, aAddon) {
-    if (typeof aAddon == "undefined") {
-      aAddon = this.currentViewObj.getSelectedAddon();
-    }
-    var cmd = this.commands[aCommandId];
-    var cmdElt = document.getElementById(aCommandId);
-    cmdElt.setAttribute("disabled", !cmd.isEnabled(aAddon));
-    if ("getTooltip" in cmd) {
-      let tooltip = cmd.getTooltip(aAddon);
-      if (tooltip) {
-        cmdElt.setAttribute("tooltiptext", tooltip);
-      } else {
-        cmdElt.removeAttribute("tooltiptext");
-      }
-    }
-  },
-
-  doCommand(aCommand, aAddon) {
-    if (!this.supportsCommand(aCommand)) {
-      return;
-    }
-    var cmd = this.commands[aCommand];
-    if (!aAddon) {
-      aAddon = this.currentViewObj.getSelectedAddon();
-    }
-    if (!cmd.isEnabled(aAddon)) {
-      return;
-    }
-    cmd.doCommand(aAddon);
   },
 
   onEvent() {},
@@ -1335,18 +786,14 @@ var gCategories = {
     }
 
     this.node.addEventListener("select", () => {
+      // This is needed for keyboard support.
       gViewController.loadView(this.node.selectedItem.value);
     });
-
-    this.node.addEventListener("click", aEvent => {
-      var selectedItem = this.node.selectedItem;
-      if (
-        aEvent.target.localName == "richlistitem" &&
-        aEvent.target == selectedItem
-      ) {
-        var viewId = selectedItem.value;
-
-        gViewController.loadView(viewId);
+    this.node.addEventListener("click", e => {
+      let item = e.target.closest("richlistitem");
+      if (item) {
+        // This is needed to return from details/shortcuts back to the list view.
+        gViewController.loadView(item.value);
       }
     });
   },
@@ -1581,429 +1028,6 @@ var gCategories = {
 // categories are in the XUL markup.
 gCategories._defineCustomElement();
 
-var gHeader = {
-  _search: null,
-  _dest: "",
-
-  initialize() {
-    this._search = document.getElementById("header-search");
-
-    this._search.addEventListener("command", function(aEvent) {
-      var query = aEvent.target.value;
-      if (!query.length) {
-        return;
-      }
-
-      let url = AddonRepository.getSearchURL(query);
-
-      let browser = getBrowserElement();
-      let chromewin = browser.ownerGlobal;
-      chromewin.openLinkIn(url, "tab", {
-        fromChrome: true,
-        triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
-          {}
-        ),
-      });
-
-      recordLinkTelemetry("search");
-    });
-  },
-
-  focusSearchBox() {
-    this._search.focus();
-  },
-
-  onKeyPress(aEvent) {
-    if (String.fromCharCode(aEvent.charCode) == "/") {
-      this.focusSearchBox();
-    }
-  },
-
-  get shouldShowNavButtons() {
-    var docshellItem = window.docShell;
-
-    // If there is no outer frame then make the buttons visible
-    if (docshellItem.rootTreeItem == docshellItem) {
-      return true;
-    }
-
-    var outerWin = docshellItem.rootTreeItem.domWindow;
-    var outerDoc = outerWin.document;
-    var node = outerDoc.getElementById("back-button");
-    // If the outer frame has no back-button then make the buttons visible
-    if (!node) {
-      return true;
-    }
-
-    // If the back-button or any of its parents are hidden then make the buttons
-    // visible
-    while (node != outerDoc) {
-      var style = outerWin.getComputedStyle(node);
-      if (style.display == "none") {
-        return true;
-      }
-      if (style.visibility != "visible") {
-        return true;
-      }
-      node = node.parentNode;
-    }
-
-    return false;
-  },
-
-  get searchQuery() {
-    return this._search.value;
-  },
-
-  set searchQuery(aQuery) {
-    this._search.value = aQuery;
-  },
-};
-
-var gDiscoverView = {
-  node: null,
-  enabled: true,
-  // Set to true after the view is first shown. If initialization completes
-  // after this then it must also load the discover homepage
-  loaded: false,
-  _browser: null,
-  _loading: null,
-  _error: null,
-  homepageURL: null,
-  _loadListeners: [],
-  hideHeader: true,
-  isRoot: true,
-
-  get clientIdDiscoveryEnabled() {
-    // These prefs match Discovery.jsm for enabling clientId cookies.
-    return (
-      Services.prefs.getBoolPref(
-        "datareporting.healthreport.uploadEnabled",
-        false
-      ) &&
-      Services.prefs.getBoolPref("browser.discovery.enabled", false) &&
-      !PrivateBrowsingUtils.isContentWindowPrivate(window)
-    );
-  },
-
-  async getClientHeader() {
-    if (!this.clientIdDiscoveryEnabled) {
-      return undefined;
-    }
-    let clientId = await ClientID.getClientIdHash();
-
-    let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
-      Ci.nsISupportsCString
-    );
-    stream.data = `Moz-Client-Id: ${clientId}\r\n`;
-    return stream;
-  },
-
-  async initialize() {
-    this.enabled = isDiscoverEnabled();
-    if (!this.enabled) {
-      gCategories.get("addons://discover/").hidden = true;
-      return null;
-    }
-
-    this.node = document.getElementById("discover-view");
-    this._loading = document.getElementById("discover-loading");
-    this._error = document.getElementById("discover-error");
-    this._browser = document.getElementById("discover-browser");
-
-    let compatMode = "normal";
-    if (!AddonManager.checkCompatibility) {
-      compatMode = "ignore";
-    } else if (AddonManager.strictCompatibility) {
-      compatMode = "strict";
-    }
-
-    var url = Services.prefs.getCharPref(PREF_DISCOVERURL);
-    url = url.replace("%COMPATIBILITY_MODE%", compatMode);
-    url = Services.urlFormatter.formatURL(url);
-
-    let setURL = async aURL => {
-      try {
-        this.homepageURL = Services.io.newURI(aURL);
-      } catch (e) {
-        this.showError();
-        notifyInitialized();
-        return;
-      }
-
-      this._browser.addProgressListener(
-        this,
-        Ci.nsIWebProgress.NOTIFY_STATE_ALL |
-          Ci.nsIWebProgress.NOTIFY_SECURITY |
-          Ci.nsIWebProgress.NOTIFY_LOCATION
-      );
-
-      if (this.loaded) {
-        this._loadURL(
-          this.homepageURL.spec,
-          false,
-          notifyInitialized,
-          Services.scriptSecurityManager.getSystemPrincipal(),
-          await this.getClientHeader()
-        );
-      } else {
-        notifyInitialized();
-      }
-    };
-
-    if (!Services.prefs.getBoolPref(PREF_GETADDONS_CACHE_ENABLED)) {
-      return setURL(url);
-    }
-
-    gPendingInitializations++;
-    let aAddons = await AddonManager.getAddonsByTypes(["extension", "theme"]);
-    var list = {};
-    for (let addon of aAddons) {
-      var prefName = PREF_GETADDONS_CACHE_ID_ENABLED.replace("%ID%", addon.id);
-      try {
-        if (!Services.prefs.getBoolPref(prefName)) {
-          continue;
-        }
-      } catch (e) {}
-      list[addon.id] = {
-        name: addon.name,
-        version: addon.version,
-        type: addon.type,
-        userDisabled: addon.userDisabled,
-        isCompatible: addon.isCompatible,
-        isBlocklisted:
-          addon.blocklistState == Ci.nsIBlocklistService.STATE_BLOCKED,
-      };
-    }
-
-    return setURL(url + "#" + JSON.stringify(list));
-  },
-
-  destroy() {
-    try {
-      this._browser.removeProgressListener(this);
-    } catch (e) {
-      // Ignore the case when the listener wasn't already registered
-    }
-  },
-
-  async show(aParam, aRequest, aState, aIsRefresh) {
-    gViewController.updateCommands();
-
-    // If we're being told to load a specific URL then just do that
-    if (aState && "url" in aState) {
-      this.loaded = true;
-      this._loadURL(aState.url);
-    }
-
-    // If the view has loaded before and still at the homepage (if refreshing),
-    // and the error page is not visible then there is nothing else to do
-    if (
-      this.loaded &&
-      this.node.selectedPanel != this._error &&
-      (!aIsRefresh ||
-        (this._browser.currentURI &&
-          this._browser.currentURI.spec == this.homepageURL.spec))
-    ) {
-      gViewController.notifyViewChanged();
-      return;
-    }
-
-    this.loaded = true;
-
-    // No homepage means initialization isn't complete, the browser will get
-    // loaded once initialization is complete
-    if (!this.homepageURL) {
-      this._loadListeners.push(
-        gViewController.notifyViewChanged.bind(gViewController)
-      );
-      return;
-    }
-
-    this._loadURL(
-      this.homepageURL.spec,
-      aIsRefresh,
-      gViewController.notifyViewChanged.bind(gViewController),
-      Services.scriptSecurityManager.getSystemPrincipal(),
-      await this.getClientHeader()
-    );
-  },
-
-  canRefresh() {
-    if (
-      this._browser.currentURI &&
-      this._browser.currentURI.spec == this.homepageURL.spec
-    ) {
-      return false;
-    }
-    return true;
-  },
-
-  refresh(aParam, aRequest, aState) {
-    this.show(aParam, aRequest, aState, true);
-  },
-
-  hide() {},
-
-  showError() {
-    this.node.selectedPanel = this._error;
-  },
-
-  _loadURL(aURL, aKeepHistory, aCallback, aPrincipal, headers) {
-    if (this._browser.currentURI && this._browser.currentURI.spec == aURL) {
-      if (aCallback) {
-        aCallback();
-      }
-      return;
-    }
-
-    if (aCallback) {
-      this._loadListeners.push(aCallback);
-    }
-
-    var flags = 0;
-    if (!aKeepHistory) {
-      flags |= Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY;
-    }
-
-    this._browser.loadURI(aURL, {
-      flags,
-      triggeringPrincipal:
-        aPrincipal || Services.scriptSecurityManager.createNullPrincipal({}),
-      headers,
-    });
-  },
-
-  onLocationChange(aWebProgress, aRequest, aLocation, aFlags) {
-    // Ignore the about:blank load
-    if (aLocation.spec == "about:blank") {
-      return;
-    }
-
-    // When using the real session history the inner-frame will update the
-    // session history automatically, if using the fake history though it must
-    // be manually updated
-    if (gHistory == FakeHistory) {
-      var docshell = aWebProgress.QueryInterface(Ci.nsIDocShell);
-
-      var state = {
-        view: "addons://discover/",
-        url: aLocation.spec,
-      };
-
-      var replaceHistory = Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY << 16;
-      if (docshell.loadType & replaceHistory) {
-        gHistory.replaceState(state);
-      } else {
-        gHistory.pushState(state);
-      }
-      gViewController.lastHistoryIndex = gHistory.index;
-    }
-
-    gViewController.updateCommands();
-
-    // If the hostname is the same as the new location's host and either the
-    // default scheme is insecure or the new location is secure then continue
-    // with the load
-    if (
-      aLocation.host == this.homepageURL.host &&
-      (!this.homepageURL.schemeIs("https") || aLocation.schemeIs("https"))
-    ) {
-      return;
-    }
-
-    // Canceling the request will send an error to onStateChange which will show
-    // the error page
-    aRequest.cancel(Cr.NS_BINDING_ABORTED);
-  },
-
-  onSecurityChange(aWebProgress, aRequest, aState) {
-    // Don't care about security if the page is not https
-    if (!this.homepageURL.schemeIs("https")) {
-      return;
-    }
-
-    // If the request was secure then it is ok
-    if (aState & Ci.nsIWebProgressListener.STATE_IS_SECURE) {
-      return;
-    }
-
-    // Canceling the request will send an error to onStateChange which will show
-    // the error page
-    aRequest.cancel(Cr.NS_BINDING_ABORTED);
-  },
-
-  onStateChange(aWebProgress, aRequest, aStateFlags, aStatus) {
-    let transferStart =
-      Ci.nsIWebProgressListener.STATE_IS_DOCUMENT |
-      Ci.nsIWebProgressListener.STATE_IS_REQUEST |
-      Ci.nsIWebProgressListener.STATE_TRANSFERRING;
-    // Once transferring begins show the content
-    if ((aStateFlags & transferStart) === transferStart) {
-      this.node.selectedPanel = this._browser;
-    }
-
-    // Only care about the network events
-    if (!(aStateFlags & Ci.nsIWebProgressListener.STATE_IS_NETWORK)) {
-      return;
-    }
-
-    // If this is the start of network activity then show the loading page
-    if (aStateFlags & Ci.nsIWebProgressListener.STATE_START) {
-      this.node.selectedPanel = this._loading;
-    }
-
-    // Ignore anything except stop events
-    if (!(aStateFlags & Ci.nsIWebProgressListener.STATE_STOP)) {
-      return;
-    }
-
-    // Consider the successful load of about:blank as still loading
-    if (
-      aRequest instanceof Ci.nsIChannel &&
-      aRequest.URI.spec == "about:blank"
-    ) {
-      return;
-    }
-
-    // If there was an error loading the page or the new hostname is not the
-    // same as the default hostname or the default scheme is secure and the new
-    // scheme is insecure then show the error page
-    const NS_ERROR_PARSED_DATA_CACHED = 0x805d0021;
-    if (
-      !(
-        Components.isSuccessCode(aStatus) ||
-        aStatus == NS_ERROR_PARSED_DATA_CACHED
-      ) ||
-      (aRequest &&
-        aRequest instanceof Ci.nsIHttpChannel &&
-        !aRequest.requestSucceeded)
-    ) {
-      this.showError();
-    } else {
-      // Got a successful load, make sure the browser is visible
-      this.node.selectedPanel = this._browser;
-      gViewController.updateCommands();
-    }
-
-    var listeners = this._loadListeners;
-    this._loadListeners = [];
-
-    for (let listener of listeners) {
-      listener();
-    }
-  },
-
-  QueryInterface: ChromeUtils.generateQI([
-    Ci.nsIWebProgressListener,
-    Ci.nsISupportsWeakReference,
-  ]),
-
-  getSelectedAddon() {
-    return null;
-  },
-};
-
 var gUpdatesView = {
   _categoryItem: null,
   isRoot: true,
@@ -2139,28 +1163,6 @@ var gDragDrop = {
   },
 };
 
-// Force the options_ui remote browser to recompute window.mozInnerScreenX and
-// window.mozInnerScreenY when the "addon details" page has been scrolled
-// (See Bug 1390445 for rationale).
-{
-  const UPDATE_POSITION_DELAY = 100;
-
-  const updatePositionTask = new DeferredTask(() => {
-    const browser = document.getElementById("addon-options");
-    if (browser && browser.isRemoteBrowser) {
-      browser.frameLoader.requestUpdatePosition();
-    }
-  }, UPDATE_POSITION_DELAY);
-
-  window.addEventListener(
-    "scroll",
-    () => {
-      updatePositionTask.arm();
-    },
-    true
-  );
-}
-
 const addonTypes = new Set([
   "extension",
   "theme",
@@ -2169,9 +1171,9 @@ const addonTypes = new Set([
   "locale",
 ]);
 const htmlViewOpts = {
-  loadViewFn(view, sourceEvent) {
+  loadViewFn(view) {
     let viewId = `addons://${view}`;
-    gViewController.loadView(viewId, sourceEvent);
+    gViewController.loadView(viewId);
   },
   replaceWithDefaultViewFn() {
     gViewController.replaceView(gViewDefault);
@@ -2197,7 +1199,12 @@ function getHtmlBrowser() {
       }
     );
     htmlBrowserLoaded = new Promise(resolve =>
-      htmlBrowser.addEventListener("load", resolve, { once: true })
+      htmlBrowser.addEventListener("load", function loadListener() {
+        if (htmlBrowser.contentWindow.location.href != "about:blank") {
+          htmlBrowser.removeEventListener("load", loadListener);
+          resolve();
+        }
+      })
     ).then(() => htmlBrowser.contentWindow.initialize(htmlViewOpts));
   }
   return htmlBrowser;
@@ -2220,7 +1227,6 @@ function htmlView(type) {
       this.node.setAttribute("type", type);
       this.node.setAttribute("param", param);
       await this._browser.contentWindow.show(type, param, state);
-      gViewController.updateCommands();
       gViewController.notifyViewChanged();
     },
 

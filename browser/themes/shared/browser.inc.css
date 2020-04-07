@@ -6,8 +6,11 @@
 %include addons/extension-controlled.inc.css
 
 %filter substitution
+%define identityBoxPaddingInline 6px
+%define identityBoxMarginInlineEnd 2px
+%define lwtPopupBrighttextLinkColor #74c0ff
 %define themeTransition background-color 0.1s cubic-bezier(.17,.67,.83,.67)
-%define lwtPopupBrighttextLinkColor #45a1ff
+%define urlbarBreakoutExtend 2px
 
 :root {
   /* Note: Setting this to 0 (without px) breaks CSS calculations for OSX. */
@@ -89,6 +92,11 @@
   min-height: 22px;
 }
 
+#PlacesToolbarDropIndicator {
+  list-style-image: url(chrome://browser/skin/toolbar-drag-indicator.svg);
+  pointer-events: none;
+}
+
 /* rules for menupopup drop indicators */
 menupopup::part(drop-indicator-bar) {
   position: relative;
@@ -102,6 +110,7 @@ menupopup::part(drop-indicator) {
   height: 2px;
   margin-inline-end: -4em;
   background-color: Highlight;
+  pointer-events: none;
 }
 
 /* Required for Library animation */
@@ -197,6 +206,10 @@ menupopup::part(drop-indicator) {
 
 #widget-overflow .webextension-popup-browser {
   background: #fff;
+
+  /* height set via JS can be lower than the stack min-height,
+     ensure the browser takes up at least that min-height */
+  min-height: 100%;
 }
 
 #addon-progress-notification-progressmeter {
@@ -231,6 +244,7 @@ menupopup::part(drop-indicator) {
   margin: 7px;
   color: inherit;
   cursor: default;
+  justify-self: end;
 }
 
 #cfr-notification-header-image {
@@ -322,18 +336,6 @@ menupopup::part(drop-indicator) {
 
 #contextual-feature-recommendation-notification[data-notification-bucket="CFR_MILESTONE_MESSAGE"] .popup-notification-button.popup-notification-primary-button:active {
   background-color: rgba(216, 216, 216, 0.5);
-}
-
-:root[lwt-popup-brighttext] #contextual-feature-recommendation-notification[data-notification-bucket="CFR_MILESTONE_MESSAGE"] .popup-notification-button.popup-notification-primary-button {
-  background-color: rgba(216, 216, 216, 0.5);
-}
-
-:root[lwt-popup-brighttext] #contextual-feature-recommendation-notification[data-notification-bucket="CFR_MILESTONE_MESSAGE"] .popup-notification-button.popup-notification-primary-button:hover {
-  background-color: rgba(216, 216, 216, 0.4);
-}
-
-:root[lwt-popup-brighttext] #contextual-feature-recommendation-notification[data-notification-bucket="CFR_MILESTONE_MESSAGE"] .popup-notification-button.popup-notification-primary-button:active {
-  background-color: rgba(216, 216, 216, 0.2);
 }
 
 #contextual-feature-recommendation-notification[data-notification-bucket="CFR_MILESTONE_MESSAGE"] .popup-notification-header-container {

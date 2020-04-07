@@ -316,6 +316,7 @@ class ObjectGroup : public gc::TenuredCell {
   }
 
   void setInterpretedFunction(JSFunction* fun) {
+    MOZ_ASSERT(!gc::IsInsideNursery(reinterpret_cast<gc::Cell*>(fun)));
     setAddendum(Addendum_InterpretedFunction, fun);
   }
 
@@ -324,7 +325,7 @@ class ObjectGroup : public gc::TenuredCell {
     // Identifier for this property, JSID_VOID for the aggregate integer
     // index property, or JSID_EMPTY for properties holding constraints
     // listening to changes in the group's state.
-    GCPtrId id;
+    const GCPtrId id;
 
     // Possible own types for this property.
     HeapTypeSet types;
@@ -446,8 +447,8 @@ class ObjectGroup : public gc::TenuredCell {
                                    uint32_t count);
 
   static void staticAsserts() {
-    JS_STATIC_ASSERT(offsetof(ObjectGroup, proto_) ==
-                     offsetof(js::shadow::ObjectGroup, proto));
+    static_assert(offsetof(ObjectGroup, proto_) ==
+                  offsetof(js::shadow::ObjectGroup, proto));
   }
 
  public:
@@ -474,11 +475,6 @@ class ObjectGroup : public gc::TenuredCell {
   static void setDefaultNewGroupUnknown(JSContext* cx, ObjectGroupRealm& realm,
                                         const JSClass* clasp,
                                         JS::HandleObject obj);
-
-#ifdef DEBUG
-  static bool hasDefaultNewGroup(JSObject* proto, const JSClass* clasp,
-                                 ObjectGroup* group);
-#endif
 
   // Static accessors for ObjectGroupRealm ArrayObjectTable and
   // PlainObjectTable.
@@ -619,9 +615,6 @@ class ObjectGroupRealm {
 
   static ObjectGroupRealm& get(const ObjectGroup* group);
   static ObjectGroupRealm& getForNewObject(JSContext* cx);
-
-  void replaceAllocationSiteGroup(JSScript* script, jsbytecode* pc,
-                                  JSProtoKey kind, ObjectGroup* group);
 
   void removeDefaultNewGroup(const JSClass* clasp, TaggedProto proto,
                              JSObject* associated);

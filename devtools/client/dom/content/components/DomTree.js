@@ -24,9 +24,9 @@ const { Rep } = REPS;
 
 const Grip = REPS.Grip;
 // DOM Panel
-const { GripProvider } = require("../grip-provider");
+const { GripProvider } = require("devtools/client/dom/content/grip-provider");
 
-const { DomDecorator } = require("../dom-decorator");
+const { DomDecorator } = require("devtools/client/dom/content/dom-decorator");
 
 /**
  * Renders DOM panel tree.
@@ -77,34 +77,34 @@ class DomTree extends Component {
     const toolbox = DomProvider.getToolbox();
     if (toolbox) {
       onDOMNodeMouseOver = async (grip, options = {}) => {
-        // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
-        const walkerFront = (await toolbox.target.getFront("inspector")).walker;
-        const nodeFront = await walkerFront.gripToNodeFront(grip);
+        const inspectorFront = await toolbox.target.getFront("inspector");
+        const nodeFront = await inspectorFront.getNodeFrontFromNodeGrip(grip);
         const { highlighterFront } = nodeFront;
         return highlighterFront.highlight(nodeFront, options);
       };
       onDOMNodeMouseOut = async grip => {
-        // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
-        const walkerFront = (await toolbox.target.getFront("inspector")).walker;
-        const nodeFront = await walkerFront.gripToNodeFront(grip);
+        const inspectorFront = await toolbox.target.getFront("inspector");
+        const nodeFront = await inspectorFront.getNodeFrontFromNodeGrip(grip);
         nodeFront.highlighterFront.unhighlight();
       };
       onInspectIconClick = async grip => {
-        // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
-        const walkerFront = (await toolbox.target.getFront("inspector")).walker;
         const onSelectInspector = toolbox.selectTool(
           "inspector",
           "inspect_dom"
         );
-        const onGripNodeToFront = walkerFront.gripToNodeFront(grip);
-        const [front, inspector] = await Promise.all([
-          onGripNodeToFront,
+        const onNodeFront = toolbox.target
+          .getFront("inspector")
+          .then(inspectorFront =>
+            inspectorFront.getNodeFrontFromNodeGrip(grip)
+          );
+        const [nodeFront, inspectorPanel] = await Promise.all([
+          onNodeFront,
           onSelectInspector,
         ]);
 
-        const onInspectorUpdated = inspector.once("inspector-updated");
-        const onNodeFrontSet = toolbox.selection.setNodeFront(front, {
-          reason: "console",
+        const onInspectorUpdated = inspectorPanel.once("inspector-updated");
+        const onNodeFrontSet = toolbox.selection.setNodeFront(nodeFront, {
+          reason: "dom",
         });
 
         return Promise.all([onNodeFrontSet, onInspectorUpdated]);
@@ -115,15 +115,20 @@ class DomTree extends Component {
     // Reps to render all values. The code also specifies default rep
     // used for data types that don't have its own specific template.
     const renderValue = props => {
-      return Rep(
-        Object.assign({}, props, {
-          onDOMNodeMouseOver,
-          onDOMNodeMouseOut,
-          onInspectIconClick,
-          defaultRep: Grip,
-          cropLimit: 50,
-        })
-      );
+      const repProps = Object.assign({}, props, {
+        onDOMNodeMouseOver,
+        onDOMNodeMouseOut,
+        onInspectIconClick,
+        defaultRep: Grip,
+        cropLimit: 50,
+      });
+
+      // Object can be an objectFront, while Rep always expect grips.
+      if (props && props.object && props.object.getGrip) {
+        repProps.object = props.object.getGrip();
+      }
+
+      return Rep(repProps);
     };
 
     return TreeView({

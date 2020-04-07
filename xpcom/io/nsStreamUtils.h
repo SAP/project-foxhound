@@ -12,6 +12,7 @@
 #include "nsIInputStream.h"
 #include "nsITaintawareInputStream.h"
 #include "nsTArray.h"
+#include "nsIRunnable.h"
 #include "Taint.h"
 
 class nsIAsyncInputStream;
@@ -29,10 +30,13 @@ class nsIEventTarget;
  *
  * This function is designed to be used to implement AsyncWait when the
  * aTarget parameter is non-null.
+ *
+ * The optional aPriority parameter allows the input stream runnable events
+ * to be dispatched with a different priority than normal.
  */
 extern already_AddRefed<nsIInputStreamCallback> NS_NewInputStreamReadyEvent(
-    const char* aName, nsIInputStreamCallback* aNotify,
-    nsIEventTarget* aTarget);
+    const char* aName, nsIInputStreamCallback* aNotify, nsIEventTarget* aTarget,
+    uint32_t aPriority = nsIRunnablePriority::PRIORITY_NORMAL);
 
 /**
  * A "one-shot" proxy of the OnOutputStreamReady callback.  The resulting

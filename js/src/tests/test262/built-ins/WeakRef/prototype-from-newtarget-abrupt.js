@@ -1,4 +1,3 @@
-// |reftest| skip -- WeakRef is not supported
 // Copyright (C) 2019 Leo Balter. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -41,4 +40,5 @@ assert.throws(Test262Error, function() {
 });
 
 assert.sameValue(calls, 1);
+
 reportCompare(0, 0);

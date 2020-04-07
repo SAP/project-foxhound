@@ -78,9 +78,6 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   virtual nsresult Status() = 0;
   virtual uint32_t Caps() = 0;
 
-  // called to notify that a requested DNS cache entry was refreshed.
-  virtual void SetDNSWasRefreshed() = 0;
-
   // called to read request data from the transaction.
   virtual MOZ_MUST_USE nsresult ReadSegments(nsAHttpSegmentReader* reader,
                                              uint32_t count,
@@ -183,6 +180,14 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   virtual void MakeNonSticky() {}
   virtual void ReuseConnectionOnRestartOK(bool) {}
 
+  // We call this function if we want to use alt-svc host again on the next
+  // restart. If this function is not called on the next restart the
+  // transaction will use the original route.
+  // For example in case we receive a GOAWAY frame from a server, we can
+  // restart and use the same alt-svc. If we get VersionFallback we do not
+  // want to use the alt-svc on the restart.
+  virtual void DoNotRemoveAltSvc() {}
+
   // Returns true if early-data or fast open is possible.
   virtual MOZ_MUST_USE bool CanDo0RTT() { return false; }
   // Returns true if early-data is possible and transaction will remember
@@ -214,6 +219,8 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   }
 
   virtual void SetFastOpenStatus(uint8_t aStatus) {}
+
+  virtual void OnProxyConnectComplete(int32_t aResponseCode) {}
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpTransaction, NS_AHTTPTRANSACTION_IID)
@@ -227,7 +234,6 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpTransaction, NS_AHTTPTRANSACTION_IID)
   bool IsDone() override;                                                      \
   nsresult Status() override;                                                  \
   uint32_t Caps() override;                                                    \
-  void SetDNSWasRefreshed() override;                                          \
   virtual MOZ_MUST_USE nsresult ReadSegments(nsAHttpSegmentReader*, uint32_t,  \
                                              uint32_t*) override;              \
   virtual MOZ_MUST_USE nsresult WriteSegments(nsAHttpSegmentWriter*, uint32_t, \

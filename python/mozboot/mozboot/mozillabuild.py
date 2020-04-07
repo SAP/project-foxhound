@@ -67,21 +67,25 @@ class MozillaBuildBootstrapper(BaseBootstrapper):
         pass
 
     def install_mobile_android_packages(self):
-        pass
+        self.ensure_mobile_android_packages()
 
     def install_mobile_android_artifact_mode_packages(self):
         self.ensure_mobile_android_packages(artifact_mode=True)
 
     def ensure_mobile_android_packages(self, artifact_mode=False):
         # Get java path from registry key
-        import _winreg
+        try:
+            import _winreg
+        except ImportError:
+            import winreg as _winreg
 
         key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE,
                               r'SOFTWARE\JavaSoft\Java Development Kit\1.8')
         java_path, regtype = _winreg.QueryValueEx(key, 'JavaHome')
         _winreg.CloseKey(key)
-        os.environ['PATH'] = \
-            '{}{}{}'.format(os.path.join(java_path, 'bin'), os.pathsep, os.environ['PATH'])
+        from mach.util import setenv
+        setenv('PATH', '{}{}{}'.format(os.path.join(java_path, 'bin'), os.pathsep,
+                                       os.environ['PATH']))
         self.ensure_java()
 
         from mozboot import android
@@ -134,6 +138,16 @@ class MozillaBuildBootstrapper(BaseBootstrapper):
         node_artifact = node.WIN32 if is_aarch64_host() else node.WIN64
         self.install_toolchain_artifact(
             state_dir, checkout_root, node_artifact)
+
+    def ensure_dump_syms_packages(self, state_dir, checkout_root):
+        from mozboot import dump_syms
+
+        self.install_toolchain_artifact(state_dir, checkout_root, dump_syms.WIN64_DUMP_SYMS)
+
+    def ensure_fix_stacks_packages(self, state_dir, checkout_root):
+        from mozboot import fix_stacks
+
+        self.install_toolchain_artifact(state_dir, checkout_root, fix_stacks.WINDOWS_FIX_STACKS)
 
     def _update_package_manager(self):
         pass

@@ -49,10 +49,6 @@ class CompileRuntime {
   const void* addressOfInterruptBits();
   const void* addressOfZone();
 
-#ifdef DEBUG
-  bool isInsideNursery(gc::Cell* cell);
-#endif
-
   // DOM callbacks must be threadsafe (and will hopefully be removed soon).
   const DOMCallbacks* DOMcallbacks();
 
@@ -76,12 +72,15 @@ class CompileZone {
   gc::FreeSpan** addressOfFreeList(gc::AllocKind allocKind);
   void* addressOfNurseryPosition();
   void* addressOfStringNurseryPosition();
+  void* addressOfBigIntNurseryPosition();
   const void* addressOfNurseryCurrentEnd();
   const void* addressOfStringNurseryCurrentEnd();
+  const void* addressOfBigIntNurseryCurrentEnd();
 
   uint32_t* addressOfNurseryAllocCount();
 
   bool canNurseryAllocateStrings();
+  bool canNurseryAllocateBigInts();
   void setMinorGCShouldCancelIonCompilations();
 };
 

@@ -7,32 +7,38 @@
 
 #include "mozilla/ipc/MessageChannel.h"
 
+#include <math.h>
+
+#include <utility>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/ipc/ProcessChild.h"
-#include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Move.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/ipc/ProcessChild.h"
+#include "mozilla/ipc/ProtocolUtils.h"
 #include "nsAppRunner.h"
-#include "nsAutoPtr.h"
 #include "nsContentUtils.h"
 #include "nsDataHashtable.h"
 #include "nsDebug.h"
+#include "nsIMemoryReporter.h"
 #include "nsISupportsImpl.h"
 #include "nsPrintfCString.h"
-#include <math.h>
 
 #ifdef MOZ_TASK_TRACER
 #  include "GeckoTaskTracer.h"
 using namespace mozilla::tasktracer;
+#endif
+
+#ifdef MOZ_GECKO_PROFILER
+#  include "ProfilerMarkerPayload.h"
 #endif
 
 // Undo the damage done by mozzconf.h
@@ -443,7 +449,7 @@ class AutoEnterTransaction {
 };
 
 class PendingResponseReporter final : public nsIMemoryReporter {
-  ~PendingResponseReporter() {}
+  ~PendingResponseReporter() = default;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -555,18 +561,6 @@ static void TryRegisterStrongMemoryReporter() {
 
 Atomic<size_t> MessageChannel::gUnresolvedResponses;
 
-// Channels in record/replay middleman processes can forward messages that
-// originated in a child recording process. Middleman processes are given
-// a large negative sequence number so that sequence numbers on their messages
-// can be distinguished from those on recording process messages.
-static const int32_t MiddlemanStartSeqno = -(1 << 30);
-
-/* static */
-bool MessageChannel::MessageOriginatesFromMiddleman(const Message& aMessage) {
-  MOZ_ASSERT(recordreplay::IsMiddleman());
-  return aMessage.seqno() < MiddlemanStartSeqno;
-}
-
 MessageChannel::MessageChannel(const char* aName, IToplevelProtocol* aListener)
     : mName(aName),
       mListener(aListener),
@@ -616,10 +610,6 @@ MessageChannel::MessageChannel(const char* aName, IToplevelProtocol* aListener)
 
   TryRegisterStrongMemoryReporter<PendingResponseReporter>();
   TryRegisterStrongMemoryReporter<ChannelCountReporter>();
-
-  if (recordreplay::IsMiddleman()) {
-    mNextSeqno = MiddlemanStartSeqno;
-  }
 }
 
 MessageChannel::~MessageChannel() {
@@ -823,18 +813,19 @@ void MessageChannel::Clear() {
   }
 }
 
-bool MessageChannel::Open(Transport* aTransport, MessageLoop* aIOLoop,
-                          Side aSide) {
+bool MessageChannel::Open(mozilla::UniquePtr<Transport> aTransport,
+                          MessageLoop* aIOLoop, Side aSide) {
   MOZ_ASSERT(!mLink, "Open() called > once");
 
   mMonitor = new RefCountedMonitor();
   mWorkerLoop = MessageLoop::current();
-  mWorkerThread = GetCurrentVirtualThread();
+  mWorkerThread = PR_GetCurrentThread();
   mWorkerLoop->AddDestructionObserver(this);
   mListener->OnIPCChannelOpened();
 
   ProcessLink* link = new ProcessLink(this);
-  link->Open(aTransport, aIOLoop, aSide);  // :TODO: n.b.: sets mChild
+  link->Open(std::move(aTransport), aIOLoop,
+             aSide);  // :TODO: n.b.: sets mChild
   mLink = link;
   mIsCrossProcess = true;
   ChannelCountReporter::Increment(mName);
@@ -910,7 +901,7 @@ void MessageChannel::OnOpenAsSlave(MessageChannel* aTargetChan, Side aSide) {
 void MessageChannel::CommonThreadOpenInit(MessageChannel* aTargetChan,
                                           Side aSide) {
   mWorkerLoop = MessageLoop::current();
-  mWorkerThread = GetCurrentVirtualThread();
+  mWorkerThread = PR_GetCurrentThread();
   mWorkerLoop->AddDestructionObserver(this);
   mListener->OnIPCChannelOpened();
 
@@ -1002,11 +993,17 @@ bool MessageChannel::Send(Message* aMsg) {
     return false;
   }
 
+  if (msg->seqno() == 0) {
+    msg->set_seqno(NextSeqno());
+  }
+
   MonitorAutoLock lock(*mMonitor);
   if (!Connected()) {
     ReportConnectionError("MessageChannel", msg.get());
     return false;
   }
+
+  AddProfilerMarker(msg.get(), MessageDirection::eSending);
   SendMessageToLink(msg.release());
   return true;
 }
@@ -1100,7 +1097,7 @@ bool MessageChannel::SendBuildIDsMatchMessage(const char* aParentBuildID) {
     return false;
   }
 
-  nsAutoPtr<BuildIDsMatchMessage> msg(new BuildIDsMatchMessage());
+  auto msg = MakeUnique<BuildIDsMatchMessage>();
 
   MOZ_RELEASE_ASSERT(!msg->is_sync());
   MOZ_RELEASE_ASSERT(msg->nested_level() != IPC::Message::NESTED_INSIDE_SYNC);
@@ -1111,10 +1108,10 @@ bool MessageChannel::SendBuildIDsMatchMessage(const char* aParentBuildID) {
 
   MonitorAutoLock lock(*mMonitor);
   if (!Connected()) {
-    ReportConnectionError("MessageChannel", msg);
+    ReportConnectionError("MessageChannel", msg.get());
     return false;
   }
-  mLink->SendMessage(msg.forget());
+  mLink->SendMessage(msg.release());
   return true;
 }
 
@@ -1531,6 +1528,7 @@ bool MessageChannel::Send(Message* aMsg, Message* aReply) {
   // msg will be destroyed soon, but name() is not owned by msg.
   const char* msgName = msg->name();
 
+  AddProfilerMarker(msg.get(), MessageDirection::eSending);
   SendMessageToLink(msg.release());
 
   while (true) {
@@ -1618,6 +1616,8 @@ bool MessageChannel::Send(Message* aMsg, Message* aReply) {
   MOZ_RELEASE_ASSERT(reply->type() == replyType, "wrong reply type");
   MOZ_RELEASE_ASSERT(reply->is_sync());
 
+  AddProfilerMarker(reply.get(), MessageDirection::eReceiving);
+
   *aReply = std::move(*reply);
   if (aReply->size() >= kMinTelemetryMessageSize) {
     Telemetry::Accumulate(Telemetry::IPC_REPLY_SIZE,
@@ -1668,6 +1668,9 @@ bool MessageChannel::Call(Message* aMsg, Message* aReply) {
   msg->set_interrupt_remote_stack_depth_guess(mRemoteStackDepthGuess);
   msg->set_interrupt_local_stack_depth(1 + InterruptStackDepth());
   mInterruptStack.push(MessageInfo(*msg));
+
+  AddProfilerMarker(msg.get(), MessageDirection::eSending);
+
   mLink->SendMessage(msg.release());
 
   while (true) {
@@ -1774,6 +1777,8 @@ bool MessageChannel::Call(Message* aMsg, Message* aReply) {
       // We received a reply to our most recent outstanding call. Pop
       // this frame and return the reply.
       mInterruptStack.pop();
+
+      AddProfilerMarker(&recvd, MessageDirection::eReceiving);
 
       bool is_reply_error = recvd.is_reply_error();
       if (!is_reply_error) {
@@ -2034,24 +2039,18 @@ void MessageChannel::MessageTask::Clear() {
 
 NS_IMETHODIMP
 MessageChannel::MessageTask::GetPriority(uint32_t* aPriority) {
-  if (recordreplay::IsRecordingOrReplaying()) {
-    // Ignore message priorities in recording/replaying processes. Incoming
-    // messages were sorted in the middleman process according to their
-    // priority before being forwarded here, and reordering them again in this
-    // process can cause problems such as dispatching messages for an actor
-    // before the constructor for that actor.
-    *aPriority = PRIORITY_NORMAL;
-    return NS_OK;
-  }
   switch (mMessage.priority()) {
     case Message::NORMAL_PRIORITY:
       *aPriority = PRIORITY_NORMAL;
       break;
     case Message::INPUT_PRIORITY:
-      *aPriority = PRIORITY_INPUT;
+      *aPriority = PRIORITY_INPUT_HIGH;
       break;
     case Message::HIGH_PRIORITY:
       *aPriority = PRIORITY_HIGH;
+      break;
+    case Message::MEDIUMHIGH_PRIORITY:
+      *aPriority = PRIORITY_MEDIUMHIGH;
       break;
     default:
       MOZ_ASSERT(false);
@@ -2083,10 +2082,11 @@ void MessageChannel::DispatchMessage(Message&& aMsg) {
     nojsapi.emplace();
   }
 
-  nsAutoPtr<Message> reply;
+  UniquePtr<Message> reply;
 
   IPC_LOG("DispatchMessage: seqno=%d, xid=%d", aMsg.seqno(),
           aMsg.transaction_id());
+  AddProfilerMarker(&aMsg, MessageDirection::eReceiving);
 
   {
     AutoEnterTransaction transaction(this, aMsg);
@@ -2125,7 +2125,9 @@ void MessageChannel::DispatchMessage(Message&& aMsg) {
   if (reply && ChannelConnected == mChannelState) {
     IPC_LOG("Sending reply seqno=%d, xid=%d", aMsg.seqno(),
             aMsg.transaction_id());
-    mLink->SendMessage(reply.forget());
+    AddProfilerMarker(reply.get(), MessageDirection::eSending);
+
+    mLink->SendMessage(reply.release());
   }
 }
 
@@ -2138,10 +2140,8 @@ void MessageChannel::DispatchSyncMessage(ActorLifecycleProxy* aProxy,
 
   int nestedLevel = aMsg.nested_level();
 
-  MOZ_RELEASE_ASSERT(
-      nestedLevel == IPC::Message::NOT_NESTED || NS_IsMainThread() ||
-      // Middleman processes forward sync messages on a non-main thread.
-      recordreplay::IsMiddleman());
+  MOZ_RELEASE_ASSERT(nestedLevel == IPC::Message::NOT_NESTED ||
+                     NS_IsMainThread());
 #ifdef MOZ_TASK_TRACER
   AutoScopedLabel autolabel("sync message %s", aMsg.name());
 #endif
@@ -2213,20 +2213,21 @@ void MessageChannel::DispatchInterruptMessage(ActorLifecycleProxy* aProxy,
   SyncStackFrame frame(this, true);
 #endif
 
-  nsAutoPtr<Message> reply;
+  UniquePtr<Message> reply;
 
   ++mRemoteStackDepthGuess;
   Result rv = aProxy->Get()->OnCallReceived(aMsg, *getter_Transfers(reply));
   --mRemoteStackDepthGuess;
 
   if (!MaybeHandleError(rv, aMsg, "DispatchInterruptMessage")) {
-    reply = Message::ForInterruptDispatchError();
+    reply = WrapUnique(Message::ForInterruptDispatchError());
   }
   reply->set_seqno(aMsg.seqno());
 
   MonitorAutoLock lock(*mMonitor);
   if (ChannelConnected == mChannelState) {
-    mLink->SendMessage(reply.forget());
+    AddProfilerMarker(reply.get(), MessageDirection::eSending);
+    mLink->SendMessage(reply.release());
   }
 }
 
@@ -2808,6 +2809,19 @@ void MessageChannel::DumpInterruptStack(const char* const pfx) const {
     printf_stderr("%s[(%u) %s %s %s(actor=%d) ]\n", pfx, i, dir, sems, name,
                   id);
   }
+}
+
+void MessageChannel::AddProfilerMarker(const IPC::Message* aMessage,
+                                       MessageDirection aDirection) {
+#ifdef MOZ_GECKO_PROFILER
+  if (profiler_feature_active(ProfilerFeature::IPCMessages)) {
+    int32_t pid = mPeerPid == -1 ? base::GetCurrentProcId() : mPeerPid;
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "IPC", IPC, IPCMarkerPayload,
+        (pid, aMessage->seqno(), aMessage->type(), mSide, aDirection,
+         aMessage->is_sync(), TimeStamp::Now()));
+  }
+#endif
 }
 
 int32_t MessageChannel::GetTopmostMessageRoutingId() const {

@@ -2,10 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-// This error shows up sometimes when running the test, and while this is a
-// strange problem that shouldn't be happening it doesn't prevent the test from
-// completing successfully.
 PromiseTestUtils.whitelistRejectionsGlobally(/Current state is running/);
+PromiseTestUtils.whitelistRejectionsGlobally(/Connection closed/);
 
 function findNode(dbg, text) {
   for (let index = 0; ; index++) {
@@ -35,7 +33,7 @@ add_task(async function() {
   const workerSource = findSource(dbg, "scopes-worker.js");
 
   await addBreakpoint(dbg, workerSource, 11);
-  await dbg.toolbox._target.waitForRequestsToSettle();
+  await dbg.toolbox.target.waitForRequestsToSettle();
   invokeInTab("startWorker");
   await waitForPaused(dbg, "scopes-worker.js");
   const onRemoved = waitForDispatch(dbg, "REMOVE_BREAKPOINT");

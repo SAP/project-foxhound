@@ -17,16 +17,17 @@ use crate::capture::ExternalCaptureImage;
 use crate::capture::PlainExternalImage;
 #[cfg(any(feature = "replay", feature = "png"))]
 use crate::capture::CaptureConfig;
+use crate::composite::{NativeSurfaceId, NativeSurfaceOperation, NativeTileId, NativeSurfaceOperationDetails};
 use crate::device::TextureFilter;
 use euclid::{point2, size2};
 use crate::glyph_cache::GlyphCache;
 use crate::glyph_cache::GlyphCacheEntry;
-use crate::glyph_rasterizer::{BaseFontInstance, FontInstance, GlyphFormat, GlyphKey, GlyphRasterizer};
+use crate::glyph_rasterizer::{GLYPH_FLASHING, BaseFontInstance, FontInstance, GlyphFormat, GlyphKey, GlyphRasterizer};
 use crate::gpu_cache::{GpuCache, GpuCacheAddress, GpuCacheHandle};
 use crate::gpu_types::UvRectKind;
 use crate::image::{compute_tile_size, compute_tile_rect, compute_tile_range, for_each_tile_in_range};
 use crate::image::compute_valid_tiles_if_bounds_change;
-use crate::internal_types::{FastHashMap, FastHashSet, TextureSource, TextureUpdateList};
+use crate::internal_types::{FastHashMap, FastHashSet, TextureSource, ResourceUpdateList};
 use crate::profiler::{ResourceProfileCounters, TextureCacheProfileCounters};
 use crate::render_backend::{FrameId, FrameStamp};
 use crate::render_task_graph::{RenderTaskGraph, RenderTaskId};
@@ -43,11 +44,16 @@ use std::os::raw::c_void;
 #[cfg(any(feature = "capture", feature = "replay"))]
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
+use std::u32;
 use crate::texture_cache::{TextureCache, TextureCacheHandle, Eviction};
 use crate::util::drain_filter;
 
 const DEFAULT_TILE_SIZE: TileSize = 512;
+
+// Counter for generating unique native surface ids
+static NEXT_NATIVE_SURFACE_ID: AtomicU64 = AtomicU64::new(0);
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
@@ -179,6 +185,15 @@ struct BlobImageTemplate {
     valid_tiles_after_bounds_change: Option<TileRange>,
 }
 
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ImageGeneration(pub u32);
+
+impl ImageGeneration {
+    pub const INVALID: ImageGeneration = ImageGeneration(u32::MAX);
+}
+
 struct ImageResource {
     data: CachedImageData,
     descriptor: ImageDescriptor,
@@ -186,6 +201,7 @@ struct ImageResource {
     /// This is used to express images that are virtually very large
     /// but with only a visible sub-set that is valid at a given time.
     visible_rect: DeviceIntRect,
+    generation: ImageGeneration,
 }
 
 #[derive(Clone, Debug)]
@@ -384,7 +400,7 @@ impl ImageResult {
                 entry.mark_unused(texture_cache);
             },
             ImageResult::Multi(ref mut entries) => {
-                for (_, entry) in &mut entries.resources {
+                for entry in entries.resources.values_mut() {
                     entry.mark_unused(texture_cache);
                 }
             },
@@ -436,9 +452,7 @@ pub struct BlobImageRasterizerEpoch(usize);
 
 /// Stores parameters for clearing blob image tiles.
 ///
-/// The clearing is necessary when originally requested tile range exceeds
-/// MAX_TILES_PER_REQUEST. In this case, some tiles are not rasterized by
-/// AsyncBlobImageRasterizer. They need to be cleared.
+/// TODO(nical) this can be removed.
 #[derive(Clone, Copy, Debug)]
 pub struct BlobImageClearParams {
     pub key: BlobImageKey,
@@ -502,12 +516,9 @@ pub struct ResourceCache {
     /// A log of the last three frames worth of deleted image keys kept
     /// for debugging purposes.
     deleted_blob_keys: VecDeque<Vec<BlobImageKey>>,
-    /// A set of the image keys that have been requested, and require
-    /// updates to the texture cache. Images in this category trigger
-    /// invalidations for picture caching tiles.
-    dirty_image_keys: FastHashSet<ImageKey>,
-    /// A set of the image keys that are used for render.
-    active_image_keys: FastHashSet<ImageKey>,
+
+    /// A list of queued compositor surface updates to apply next frame.
+    pending_native_surface_updates: Vec<NativeSurfaceOperation>,
 }
 
 impl ResourceCache {
@@ -537,13 +548,19 @@ impl ResourceCache {
             blob_image_rasterizer_consumed_epoch: BlobImageRasterizerEpoch(0),
             // We want to keep three frames worth of delete blob keys
             deleted_blob_keys: vec![Vec::new(), Vec::new(), Vec::new()].into(),
-            dirty_image_keys: FastHashSet::default(),
-            active_image_keys: FastHashSet::default(),
+            pending_native_surface_updates: Vec::new(),
         }
     }
 
     pub fn max_texture_size(&self) -> i32 {
         self.texture_cache.max_texture_size()
+    }
+
+    pub fn enable_multithreading(&mut self, enable: bool) {
+        self.glyph_rasterizer.enable_multithreading(enable);
+        if let Some(ref mut handler) = self.blob_image_handler {
+            handler.enable_multithreading(enable);
+        }
     }
 
     fn should_tile(limit: i32, descriptor: &ImageDescriptor, data: &CachedImageData) -> bool {
@@ -730,35 +747,6 @@ impl ResourceCache {
             self.blob_image_rasterizer = Some(rasterizer);
             self.blob_image_rasterizer_consumed_epoch = supp.epoch;
         }
-
-        // Discard blob image tiles that are not rendered by AsyncBlobImageRasterizer.
-        // It happens when originally requested tile range exceeds MAX_TILES_PER_REQUEST.
-        for req in supp.clear_requests {
-            let tiles = match self.rasterized_blob_images.get_mut(&req.key) {
-                Some(RasterizedBlob::Tiled(tiles)) => tiles,
-                _ => { continue; }
-            };
-
-            tiles.retain(|tile, _| {
-                !req.original_tile_range.contains(*tile) ||
-                req.actual_tile_range.contains(*tile)
-            });
-
-            let texture_cache = &mut self.texture_cache;
-            match self.cached_images.try_get_mut(&req.key.as_image()) {
-                Some(&mut ImageResult::Multi(ref mut entries)) => {
-                    entries.retain(|key, entry| {
-                        if !req.original_tile_range.contains(key.tile.unwrap()) ||
-                           req.actual_tile_range.contains(key.tile.unwrap()) {
-                            return true;
-                        }
-                        entry.mark_unused(texture_cache);
-                        return false;
-                    });
-                }
-                _ => {}
-            }
-        }
     }
 
     pub fn add_rasterized_blob_images(
@@ -805,17 +793,15 @@ impl ResourceCache {
                     _ => {}
                 }
 
-            } else {
-                if let RasterizedBlob::NonTiled(ref mut queue) = *image {
-                    // If our new rasterized rect overwrites items in the queue, discard them.
-                    queue.retain(|img| {
-                        !data.rasterized_rect.contains_rect(&img.rasterized_rect)
-                    });
+            } else if let RasterizedBlob::NonTiled(ref mut queue) = *image {
+                // If our new rasterized rect overwrites items in the queue, discard them.
+                queue.retain(|img| {
+                    !data.rasterized_rect.contains_rect(&img.rasterized_rect)
+                });
 
-                    queue.push(data);
-                } else {
-                    *image = RasterizedBlob::NonTiled(vec![data]);
-                }
+                queue.push(data);
+            } else {
+                *image = RasterizedBlob::NonTiled(vec![data]);
             }
         }
     }
@@ -908,6 +894,7 @@ impl ResourceCache {
             data,
             tiling,
             visible_rect: *visible_rect,
+            generation: ImageGeneration(0),
         };
 
         self.resources.image_templates.insert(image_key, resource);
@@ -955,7 +942,7 @@ impl ResourceCache {
                                     tile,
                                 ).into();
 
-                                rect.intersection(&tile_rect).unwrap_or(DeviceIntRect::zero())
+                                rect.intersection(&tile_rect).unwrap_or_else(DeviceIntRect::zero)
                             })
                         }
                         (None, Some(..)) => DirtyRect::All,
@@ -976,6 +963,7 @@ impl ResourceCache {
             data,
             tiling,
             visible_rect: descriptor.size.into(),
+            generation: ImageGeneration(image.generation.0 + 1),
         };
     }
 
@@ -1037,7 +1025,7 @@ impl ResourceCache {
 
         match (image.valid_tiles_after_bounds_change, valid_tiles_after_bounds_change) {
             (Some(old), Some(ref mut new)) => {
-                *new = new.intersection(&old).unwrap_or(TileRange::zero());
+                *new = new.intersection(&old).unwrap_or_else(TileRange::zero);
             }
             (Some(old), None) => {
                 valid_tiles_after_bounds_change = Some(old);
@@ -1059,7 +1047,7 @@ impl ResourceCache {
             image.dirty_rect = image.dirty_rect.union(dirty_rect);
         }
 
-        image.tiling = get_blob_tiling(image.tiling, blob_size, max_texture_size);;
+        image.tiling = get_blob_tiling(image.tiling, blob_size, max_texture_size);
         image.valid_tiles_after_bounds_change = valid_tiles_after_bounds_change;
         image.visible_rect = *visible_rect;
     }
@@ -1088,26 +1076,12 @@ impl ResourceCache {
         }
     }
 
-    /// Check if an image has changed since it was last requested.
-    pub fn is_image_dirty(
-        &self,
-        image_key: ImageKey,
-    ) -> bool {
-        self.dirty_image_keys.contains(&image_key)
-    }
-
-    pub fn is_image_active(
-        &self,
-        image_key: ImageKey,
-    ) -> bool {
-        self.active_image_keys.contains(&image_key)
-    }
-
-    pub fn set_image_active(
-        &mut self,
-        image_key: ImageKey,
-    ) {
-        self.active_image_keys.insert(image_key);
+    /// Return the current generation of an image template
+    pub fn get_image_generation(&self, key: ImageKey) -> ImageGeneration {
+        self.resources
+            .image_templates
+            .get(key)
+            .map_or(ImageGeneration::INVALID, |template| template.generation)
     }
 
     pub fn request_image(
@@ -1211,10 +1185,6 @@ impl ResourceCache {
             return
         }
 
-        // By this point, we know that the image request is considered dirty, and will
-        // require a texture cache modification.
-        self.dirty_image_keys.insert(request.key);
-
         if template.data.is_blob() {
             let request: BlobImageRequest = request.into();
             let missing = match (self.rasterized_blob_images.get(&request.key), request.tile) {
@@ -1266,7 +1236,6 @@ impl ResourceCache {
             return (None, Vec::new());
         }
 
-        let mut blob_tiles_clear_requests = Vec::new();
         let mut blob_request_params = Vec::new();
         for key in keys {
             let template = self.blob_image_templates.get_mut(key).unwrap();
@@ -1274,7 +1243,7 @@ impl ResourceCache {
             if let Some(tile_size) = template.tiling {
                 // If we know that only a portion of the blob image is in the viewport,
                 // only request these visible tiles since blob images can be huge.
-                let mut tiles = compute_tile_range(
+                let tiles = compute_tile_range(
                     &template.visible_rect,
                     tile_size,
                 );
@@ -1301,46 +1270,6 @@ impl ResourceCache {
                     }
                     DirtyRect::All => tiles,
                 };
-
-                let original_tile_range = tiles;
-
-                // This code tries to keep things sane if Gecko sends
-                // nonsensical blob image requests.
-                // Constant here definitely needs to be tweaked.
-                const MAX_TILES_PER_REQUEST: i32 = 512;
-                // For truly nonsensical requests, we might run into overflow
-                // when computing width * height, so we first check each extent
-                // individually.
-                while !tiles.size.is_empty_or_negative()
-                    && (tiles.size.width > MAX_TILES_PER_REQUEST
-                        || tiles.size.height > MAX_TILES_PER_REQUEST
-                        || tiles.size.width * tiles.size.height > MAX_TILES_PER_REQUEST) {
-                    let limit = 46340; // sqrt(i32::MAX) rounded down to avoid overflow.
-                    let w = tiles.size.width.min(limit);
-                    let h = tiles.size.height.min(limit);
-                    let diff = w * h - MAX_TILES_PER_REQUEST;
-                    // Remove tiles in the largest dimension.
-                    if tiles.size.width > tiles.size.height {
-                        tiles.size.width -= diff / h + 1;
-                        tiles.origin.x += diff / (2 * h);
-                    } else {
-                        tiles.size.height -= diff / w + 1;
-                        tiles.origin.y += diff / (2 * w);
-                    }
-                }
-
-                // When originally requested tile range exceeds MAX_TILES_PER_REQUEST,
-                // some tiles are not rasterized by AsyncBlobImageRasterizer.
-                // They need to be cleared.
-                if original_tile_range != tiles {
-                    let clear_params = BlobImageClearParams {
-                        key: *key,
-                        original_tile_range,
-                        actual_tile_range: tiles,
-                    };
-                    blob_tiles_clear_requests.push(clear_params);
-                }
-
 
                 for_each_tile_in_range(&tiles, |tile| {
                     let still_valid = template.valid_tiles_after_bounds_change
@@ -1431,7 +1360,7 @@ impl ResourceCache {
         self.blob_image_rasterizer_produced_epoch.0 += 1;
         let info = AsyncBlobImageInfo {
             epoch: self.blob_image_rasterizer_produced_epoch,
-            clear_requests: blob_tiles_clear_requests,
+            clear_requests: Vec::new(),
         };
         let handler = self.blob_image_handler.as_mut().unwrap();
         handler.prepare_resources(&self.resources, &blob_request_params);
@@ -1510,8 +1439,11 @@ impl ResourceCache {
         );
     }
 
-    pub fn pending_updates(&mut self) -> TextureUpdateList {
-        self.texture_cache.pending_updates()
+    pub fn pending_updates(&mut self) -> ResourceUpdateList {
+        ResourceUpdateList {
+            texture_updates: self.texture_cache.pending_updates(),
+            native_surface_updates: mem::replace(&mut self.pending_native_surface_updates, Vec::new()),
+        }
     }
 
     pub fn fetch_glyphs<F>(
@@ -1656,7 +1588,6 @@ impl ResourceCache {
         );
         self.cached_render_tasks.begin_frame(&mut self.texture_cache);
         self.current_frame_id = stamp.frame_id();
-        self.active_image_keys.clear();
 
         // pop the old frame and push a new one
         self.deleted_blob_keys.pop_front();
@@ -1810,7 +1741,7 @@ impl ResourceCache {
                         // that is > 512 in either dimension, so it should cover
                         // the most important use cases. We may want to support
                         // mip-maps on shared cache items in the future.
-                        if descriptor.allow_mipmaps &&
+                        if descriptor.allow_mipmaps() &&
                            descriptor.size.width > 512 &&
                            descriptor.size.height > 512 &&
                            !self.texture_cache.is_allowed_in_shared_cache(
@@ -1848,14 +1779,81 @@ impl ResourceCache {
         }
     }
 
+    /// Queue up allocation of a new OS native compositor surface with the
+    /// specified tile size.
+    pub fn create_compositor_surface(
+        &mut self,
+        virtual_offset: DeviceIntPoint,
+        tile_size: DeviceIntSize,
+        is_opaque: bool,
+    ) -> NativeSurfaceId {
+        let id = NativeSurfaceId(NEXT_NATIVE_SURFACE_ID.fetch_add(1, Ordering::Relaxed));
+
+        self.pending_native_surface_updates.push(
+            NativeSurfaceOperation {
+                details: NativeSurfaceOperationDetails::CreateSurface {
+                    id,
+                    virtual_offset,
+                    tile_size,
+                    is_opaque,
+                },
+            }
+        );
+
+        id
+    }
+
+    /// Queue up destruction of an existing native OS surface. This is used when
+    /// a picture cache surface is dropped or resized.
+    pub fn destroy_compositor_surface(
+        &mut self,
+        id: NativeSurfaceId,
+    ) {
+        self.pending_native_surface_updates.push(
+            NativeSurfaceOperation {
+                details: NativeSurfaceOperationDetails::DestroySurface {
+                    id,
+                }
+            }
+        );
+    }
+
+    /// Queue construction of a native compositor tile on a given surface.
+    pub fn create_compositor_tile(
+        &mut self,
+        id: NativeTileId,
+    ) {
+        self.pending_native_surface_updates.push(
+            NativeSurfaceOperation {
+                details: NativeSurfaceOperationDetails::CreateTile {
+                    id,
+                },
+            }
+        );
+    }
+
+    /// Queue destruction of a native compositor tile.
+    pub fn destroy_compositor_tile(
+        &mut self,
+        id: NativeTileId,
+    ) {
+        self.pending_native_surface_updates.push(
+            NativeSurfaceOperation {
+                details: NativeSurfaceOperationDetails::DestroyTile {
+                    id,
+                },
+            }
+        );
+    }
+
     pub fn end_frame(&mut self, texture_cache_profile: &mut TextureCacheProfileCounters) {
         debug_assert_eq!(self.state, State::QueryResources);
         self.state = State::Idle;
         self.texture_cache.end_frame(texture_cache_profile);
-        self.dirty_image_keys.clear();
     }
 
     pub fn set_debug_flags(&mut self, flags: DebugFlags) {
+        GLYPH_FLASHING.store(flags.contains(DebugFlags::GLYPH_FLASHING), std::sync::atomic::Ordering::Relaxed);
         self.texture_cache.set_debug_flags(flags);
     }
 
@@ -1957,11 +1955,18 @@ impl ResourceCache {
             self.delete_image_template(key);
         }
 
-        let blob_f = |key: &BlobImageKey| { f(&key.as_image()) };
-        debug_assert!(!self.resources.image_templates.images.keys().any(&f));
-        debug_assert!(!self.cached_images.resources.keys().any(&f));
-        debug_assert!(!self.blob_image_templates.keys().any(&blob_f));
-        debug_assert!(!self.rasterized_blob_images.keys().any(&blob_f));
+        #[cfg(features="leak_checks")]
+        let check_leaks = true;
+        #[cfg(not(features="leak_checks"))]
+        let check_leaks = false;
+
+        if check_leaks {
+            let blob_f = |key: &BlobImageKey| { f(&key.as_image()) };
+            assert!(!self.resources.image_templates.images.keys().any(&f));
+            assert!(!self.cached_images.resources.keys().any(&f));
+            assert!(!self.blob_image_templates.keys().any(&blob_f));
+            assert!(!self.rasterized_blob_images.keys().any(&blob_f));
+        }
     }
 }
 
@@ -2000,6 +2005,7 @@ struct PlainImageTemplate {
     data: String,
     descriptor: ImageDescriptor,
     tiling: Option<TileSize>,
+    generation: ImageGeneration,
 }
 
 #[cfg(any(feature = "capture", feature = "replay"))]
@@ -2236,6 +2242,7 @@ impl ResourceCache {
                         },
                         descriptor: template.descriptor.clone(),
                         tiling: template.tiling,
+                        generation: template.generation,
                     })
                 })
                 .collect(),
@@ -2361,6 +2368,7 @@ impl ResourceCache {
                 descriptor: template.descriptor,
                 tiling: template.tiling,
                 visible_rect: template.descriptor.size.into(),
+                generation: template.generation,
             });
         }
 

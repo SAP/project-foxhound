@@ -208,7 +208,8 @@ ExtensionManager = {
         allowedOrigins: extension.whiteListedHosts,
         webAccessibleResources: extension.webAccessibleResources,
 
-        contentSecurityPolicy: extension.contentSecurityPolicy,
+        extensionPageCSP: extension.extensionPageCSP,
+        contentScriptCSP: extension.contentScriptCSP,
 
         localizeCallback,
 
@@ -314,9 +315,7 @@ ExtensionManager = {
             if (registeredContentScripts.has(data.scriptId)) {
               Cu.reportError(
                 new Error(
-                  `Registering ${type} ${data.scriptId} on ${
-                    data.id
-                  } more than once`
+                  `Registering ${type} ${data.scriptId} on ${data.id} more than once`
                 )
               );
             } else {

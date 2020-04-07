@@ -106,12 +106,20 @@ const SHADERS: &[Shader] = &[
         features: BRUSH_FEATURES,
     },
     Shader {
+        name: "brush_conic_gradient",
+        features: GRADIENT_FEATURES,
+    },
+    Shader {
         name: "brush_radial_gradient",
         features: GRADIENT_FEATURES,
     },
     Shader {
         name: "brush_linear_gradient",
         features: GRADIENT_FEATURES,
+    },
+    Shader {
+        name: "brush_opacity",
+        features: BRUSH_FEATURES,
     },
 ];
 

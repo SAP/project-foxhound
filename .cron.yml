@@ -5,6 +5,21 @@
 ---
 
 jobs:
+    - name: daily-releases
+      job:
+          type: decision-task
+          treeherder-symbol: RPd
+          target-tasks-method: daily_releases
+      run-on-projects:
+          - mozilla-beta
+      when:
+          by-project:
+              # No default
+              mozilla-beta:
+                  - {weekday: 'Monday', hour: 2, minute: 0}
+                  - {weekday: 'Wednesday', hour: 2, minute: 0}
+                  - {weekday: 'Friday', hour: 2, minute: 0}
+
     - name: nightly-desktop
       job:
           type: decision-task
@@ -77,13 +92,9 @@ jobs:
           include-push-tasks: true
       run-on-projects:
           - mozilla-central
-          - mozilla-beta
       when:
           by-project:
               mozilla-central: [{hour: 10, minute: 0}]
-              mozilla-beta:
-                  - {weekday: 'Monday', hour: 10, minute: 0}
-                  - {weekday: 'Thursday', hour: 10, minute: 0}
 
     - name: tp6m-fennec-v68
       job:
@@ -119,7 +130,6 @@ jobs:
           - mozilla-beta
           - mozilla-release
           - mozilla-esr68
-          - ash
       when:
           - {hour: 10, minute: 0}
 
@@ -153,18 +163,23 @@ jobs:
           treeherder-symbol: Rel
           target-tasks-method: cron_bouncer_check
       run-on-projects:
+          - mozilla-central
           - mozilla-beta
           - mozilla-release
+          - mozilla-esr68
       when:
           by-project:
               # No default branch
+              mozilla-central:
+                  - {hour: 7, minute: 0}
+                  - {hour: 19, minute: 0}
               mozilla-beta:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
               mozilla-release:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
-              mozilla-esr60:
+              mozilla-esr68:
                   - {hour: 7, minute: 0}
                   - {hour: 19, minute: 0}
 
@@ -177,17 +192,16 @@ jobs:
           - mozilla-central
           - mozilla-beta
           - mozilla-release
-          - mozilla-esr60
           - mozilla-esr68
       when:
           - {weekday: 'Monday', hour: 10, minute: 0}
           - {weekday: 'Thursday', hour: 10, minute: 0}
 
-    - name: pipfile-update
+    - name: python-dependency-update
       job:
           type: decision-task
           treeherder-symbol: Nfile
-          target-tasks-method: pipfile_update
+          target-tasks-method: python_dependency_update
       run-on-projects:
           - mozilla-central
       when:
@@ -222,3 +236,25 @@ jobs:
           - mozilla-central
       when:
           - {hour: 16, minute: 00}
+
+    - name: l10n-bumper
+      job:
+          type: decision-task
+          treeherder-symbol: l10n-bump
+          target-tasks-method: l10n_bump
+      run-on-projects:
+          - mozilla-central
+          - mozilla-beta
+          - mozilla-esr68
+      when:
+          - {minute: 45}
+
+    - name: system-symbols
+      job:
+          type: decision-task
+          treeherder-symbol: system-symbols
+          target-tasks-method: system_symbols
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {hour: 0, minute: 0}

@@ -96,12 +96,12 @@ window.addEventListener(
 window.addEventListener("contextmenu", e => {
   const HTML_NS = "http://www.w3.org/1999/xhtml";
   let needsContextMenu =
-    e.target.ownerDocument == document &&
+    e.composedTarget.ownerDocument == document &&
     !e.defaultPrevented &&
-    e.target.parentNode.nodeName != "moz-input-box" &&
-    ((["textarea", "input"].includes(e.target.localName) &&
-      e.target.namespaceURI == HTML_NS) ||
-      e.target.closest("search-textbox"));
+    e.composedTarget.parentNode.nodeName != "moz-input-box" &&
+    ((["textarea", "input"].includes(e.composedTarget.localName) &&
+      e.composedTarget.namespaceURI == HTML_NS) ||
+      e.composedTarget.closest("search-textbox"));
 
   if (!needsContextMenu) {
     return;
@@ -109,18 +109,18 @@ window.addEventListener("contextmenu", e => {
 
   let popup = document.getElementById("textbox-contextmenu");
   if (!popup) {
-    MozXULElement.insertFTLIfNeeded("toolkit/main-window/editmenu.ftl");
+    MozXULElement.insertFTLIfNeeded("toolkit/global/textActions.ftl");
     document.documentElement.appendChild(
       MozXULElement.parseXULToFragment(`
       <menupopup id="textbox-contextmenu" class="textbox-contextmenu">
-        <menuitem data-l10n-id="editmenu-undo" command="cmd_undo"></menuitem>
+        <menuitem data-l10n-id="text-action-undo" command="cmd_undo"></menuitem>
         <menuseparator></menuseparator>
-        <menuitem data-l10n-id="editmenu-cut" command="cmd_cut"></menuitem>
-        <menuitem data-l10n-id="editmenu-copy" command="cmd_copy"></menuitem>
-        <menuitem data-l10n-id="editmenu-paste" command="cmd_paste"></menuitem>
-        <menuitem data-l10n-id="editmenu-delete" command="cmd_delete"></menuitem>
+        <menuitem data-l10n-id="text-action-cut" command="cmd_cut"></menuitem>
+        <menuitem data-l10n-id="text-action-copy" command="cmd_copy"></menuitem>
+        <menuitem data-l10n-id="text-action-paste" command="cmd_paste"></menuitem>
+        <menuitem data-l10n-id="text-action-delete" command="cmd_delete"></menuitem>
         <menuseparator></menuseparator>
-        <menuitem data-l10n-id="editmenu-select-all" command="cmd_selectAll"></menuitem>
+        <menuitem data-l10n-id="text-action-select-all" command="cmd_selectAll"></menuitem>
       </menupopup>
     `)
     );

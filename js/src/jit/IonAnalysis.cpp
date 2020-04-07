@@ -6,6 +6,7 @@
 
 #include "jit/IonAnalysis.h"
 
+#include <algorithm>
 #include <utility>  // for ::std::pair
 
 #include "jit/AliasAnalysis.h"
@@ -17,6 +18,7 @@
 #include "jit/LIR.h"
 #include "jit/Lowering.h"
 #include "jit/MIRGraph.h"
+#include "util/CheckedArithmetic.h"
 #include "vm/RegExpObject.h"
 #include "vm/SelfHosting.h"
 
@@ -1122,7 +1124,7 @@ static void EliminateTriviallyDeadResumePointOperands(MIRGraph& graph,
                                                       MResumePoint* rp) {
   // If we will pop the top of the stack immediately after resuming,
   // then don't preserve the top value in the resume point.
-  if (rp->mode() != MResumePoint::ResumeAt || *rp->pc() != JSOP_POP) {
+  if (rp->mode() != MResumePoint::ResumeAt || JSOp(*rp->pc()) != JSOp::Pop) {
     return;
   }
 
@@ -1199,10 +1201,9 @@ bool jit::EliminateDeadResumePointOperands(MIRGenerator* mir, MIRGraph& graph) {
       }
 
       // Early intermediate values captured by resume points, such as
-      // TypedObject, ArrayState and its allocation, may be legitimately
-      // dead in Ion code, but are still needed if we bail out. They can
-      // recover on bailout.
-      if (ins->isNewDerivedTypedObject() || ins->isRecoveredOnBailout()) {
+      // ArrayState and its allocation, may be legitimately dead in Ion code,
+      // but are still needed if we bail out. They can recover on bailout.
+      if (ins->isRecoveredOnBailout()) {
         MOZ_ASSERT(ins->canRecoverOnBailout());
         continue;
       }
@@ -1240,7 +1241,7 @@ bool jit::EliminateDeadResumePointOperands(MIRGenerator* mir, MIRGraph& graph) {
           maxDefinition = UINT32_MAX;
           break;
         }
-        maxDefinition = Max(maxDefinition, def->id());
+        maxDefinition = std::max(maxDefinition, def->id());
       }
       if (maxDefinition == UINT32_MAX) {
         continue;
@@ -1637,7 +1638,10 @@ static MIRType GuessPhiType(MPhi* phi, bool* hasInputsWithEmptyTypes) {
       }
       continue;
     }
-    if (type != in->type()) {
+
+    if (type == in->type()) {
+      convertibleToFloat32 = convertibleToFloat32 && in->canProduceFloat32();
+    } else {
       if (convertibleToFloat32 && in->type() == MIRType::Float32) {
         // If we only saw definitions that can be converted into Float32 before
         // and encounter a Float32 value, promote previous values to Float32
@@ -1646,7 +1650,7 @@ static MIRType GuessPhiType(MPhi* phi, bool* hasInputsWithEmptyTypes) {
                  IsTypeRepresentableAsDouble(in->type())) {
         // Specialize phis with int32 and double operands as double.
         type = MIRType::Double;
-        convertibleToFloat32 &= in->canProduceFloat32();
+        convertibleToFloat32 = convertibleToFloat32 && in->canProduceFloat32();
       } else {
         return MIRType::Value;
       }
@@ -1869,10 +1873,13 @@ bool TypeAnalyzer::adjustPhiInputs(MPhi* phi) {
       continue;
     }
 
-    // The input is being explicitly unboxed, so sneak past and grab
-    // the original box.
-    if (in->isUnbox() && phi->typeIncludes(in->toUnbox()->input())) {
-      in = in->toUnbox()->input();
+    // The input is being explicitly unboxed, so sneak past and grab the
+    // original box. Don't bother optimizing if magic values are involved.
+    if (in->isUnbox()) {
+      MDefinition* unboxInput = in->toUnbox()->input();
+      if (!IsMagicType(unboxInput->type()) && phi->typeIncludes(unboxInput)) {
+        in = in->toUnbox()->input();
+      }
     }
 
     if (in->type() != MIRType::Value) {
@@ -2258,298 +2265,6 @@ bool jit::ApplyTypeInformation(MIRGenerator* mir, MIRGraph& graph) {
 
   if (!analyzer.analyze()) {
     return false;
-  }
-
-  return true;
-}
-
-// Check if `def` is only the N-th operand of `useDef`.
-static inline size_t IsExclusiveNthOperand(MDefinition* useDef, size_t n,
-                                           MDefinition* def) {
-  uint32_t num = useDef->numOperands();
-  if (n >= num || useDef->getOperand(n) != def) {
-    return false;
-  }
-
-  for (uint32_t i = 0; i < num; i++) {
-    if (i == n) {
-      continue;
-    }
-    if (useDef->getOperand(i) == def) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-static size_t IsExclusiveThisArg(MCall* call, MDefinition* def) {
-  return IsExclusiveNthOperand(call, MCall::IndexOfThis(), def);
-}
-
-static size_t IsExclusiveFirstArg(MCall* call, MDefinition* def) {
-  return IsExclusiveNthOperand(call, MCall::IndexOfArgument(0), def);
-}
-
-static bool IsRegExpHoistableCall(CompileRuntime* runtime, MCall* call,
-                                  MDefinition* def) {
-  if (call->isConstructing()) {
-    return false;
-  }
-
-  JSAtom* name;
-  if (WrappedFunction* fun = call->getSingleTarget()) {
-    if (!fun->isSelfHostedBuiltin()) {
-      return false;
-    }
-
-    // Avoid accessing `JSFunction.flags_` via `JSFunction::isExtended`.
-    if (!fun->isExtended()) {
-      return false;
-    }
-    name = GetClonedSelfHostedFunctionNameOffMainThread(fun->rawJSFunction());
-  } else {
-    MDefinition* funDef = call->getFunction();
-    if (funDef->isDebugCheckSelfHosted()) {
-      funDef = funDef->toDebugCheckSelfHosted()->input();
-    }
-    if (funDef->isTypeBarrier()) {
-      funDef = funDef->toTypeBarrier()->input();
-    }
-
-    if (!funDef->isCallGetIntrinsicValue()) {
-      return false;
-    }
-    name = funDef->toCallGetIntrinsicValue()->name();
-  }
-
-  // Hoistable only if the RegExp is the first argument of RegExpBuiltinExec.
-  if (name == runtime->names().RegExpBuiltinExec ||
-      name == runtime->names().UnwrapAndCallRegExpBuiltinExec ||
-      name == runtime->names().RegExpMatcher ||
-      name == runtime->names().RegExpTester ||
-      name == runtime->names().RegExpSearcher) {
-    return IsExclusiveFirstArg(call, def);
-  }
-
-  if (name == runtime->names().RegExp_prototype_Exec ||
-      name == runtime->names().CallRegExpMethodIfWrapped) {
-    return IsExclusiveThisArg(call, def);
-  }
-
-  return false;
-}
-
-static bool CanCompareRegExp(MCompare* compare, MDefinition* def) {
-  MDefinition* value;
-  if (compare->lhs() == def) {
-    value = compare->rhs();
-  } else {
-    MOZ_ASSERT(compare->rhs() == def);
-    value = compare->lhs();
-  }
-
-  // Comparing two regexp that weren't cloned will give different result
-  // than if they were cloned.
-  if (value->mightBeType(MIRType::Object)) {
-    return false;
-  }
-
-  // Make sure @@toPrimitive is not called which could notice
-  // the difference between a not cloned/cloned regexp.
-
-  JSOp op = compare->jsop();
-  // Strict equality comparison won't invoke @@toPrimitive.
-  if (op == JSOP_STRICTEQ || op == JSOP_STRICTNE) {
-    return true;
-  }
-
-  if (op != JSOP_EQ && op != JSOP_NE) {
-    // Relational comparison always invoke @@toPrimitive.
-    MOZ_ASSERT(IsRelationalOp(op));
-    return false;
-  }
-
-  // Loose equality comparison can invoke @@toPrimitive.
-  if (value->mightBeType(MIRType::Boolean) ||
-      value->mightBeType(MIRType::String) ||
-      value->mightBeType(MIRType::Int32) ||
-      value->mightBeType(MIRType::Double) ||
-      value->mightBeType(MIRType::Float32) ||
-      value->mightBeType(MIRType::Symbol) ||
-      value->mightBeType(MIRType::BigInt)) {
-    return false;
-  }
-
-  return true;
-}
-
-static inline void SetNotInWorklist(MDefinitionVector& worklist) {
-  for (size_t i = 0; i < worklist.length(); i++) {
-    worklist[i]->setNotInWorklist();
-  }
-}
-
-static bool IsRegExpHoistable(MIRGenerator* mir, MDefinition* regexp,
-                              MDefinitionVector& worklist, bool* hoistable) {
-  MOZ_ASSERT(worklist.length() == 0);
-
-  if (!worklist.append(regexp)) {
-    return false;
-  }
-  regexp->setInWorklist();
-
-  for (size_t i = 0; i < worklist.length(); i++) {
-    MDefinition* def = worklist[i];
-    if (mir->shouldCancel("IsRegExpHoistable outer loop")) {
-      return false;
-    }
-
-    for (MUseIterator use = def->usesBegin(); use != def->usesEnd(); use++) {
-      if (mir->shouldCancel("IsRegExpHoistable inner loop")) {
-        return false;
-      }
-
-      // Ignore resume points. At this point all uses are listed.
-      // No DCE or GVN or something has happened.
-      if (use->consumer()->isResumePoint()) {
-        continue;
-      }
-
-      MDefinition* useDef = use->consumer()->toDefinition();
-
-      // Step through a few white-listed ops.
-      if (useDef->isPhi() || useDef->isFilterTypeSet() ||
-          useDef->isGuardShape()) {
-        if (useDef->isInWorklist()) {
-          continue;
-        }
-
-        if (!worklist.append(useDef)) {
-          return false;
-        }
-        useDef->setInWorklist();
-        continue;
-      }
-
-      // Instructions that doesn't invoke unknown code that may modify
-      // RegExp instance or pass it to elsewhere.
-      if (useDef->isRegExpMatcher() || useDef->isRegExpTester() ||
-          useDef->isRegExpSearcher()) {
-        if (IsExclusiveNthOperand(useDef, 0, def)) {
-          continue;
-        }
-      } else if (useDef->isLoadFixedSlot() || useDef->isTypeOf()) {
-        continue;
-      } else if (useDef->isCompare()) {
-        if (CanCompareRegExp(useDef->toCompare(), def)) {
-          continue;
-        }
-      }
-      // Instructions that modifies `lastIndex` property.
-      else if (useDef->isStoreFixedSlot()) {
-        if (IsExclusiveNthOperand(useDef, 0, def)) {
-          MStoreFixedSlot* store = useDef->toStoreFixedSlot();
-          if (store->slot() == RegExpObject::lastIndexSlot()) {
-            continue;
-          }
-        }
-      } else if (useDef->isSetPropertyCache()) {
-        if (IsExclusiveNthOperand(useDef, 0, def)) {
-          MSetPropertyCache* setProp = useDef->toSetPropertyCache();
-          if (setProp->idval()->isConstant()) {
-            Value propIdVal = setProp->idval()->toConstant()->toJSValue();
-            if (propIdVal.isString()) {
-              CompileRuntime* runtime = mir->runtime;
-              if (propIdVal.toString() == runtime->names().lastIndex) {
-                continue;
-              }
-            }
-          }
-        }
-      }
-      // MCall is safe only for some known safe functions.
-      else if (useDef->isCall()) {
-        if (IsRegExpHoistableCall(mir->runtime, useDef->toCall(), def)) {
-          continue;
-        }
-      }
-
-      // Everything else is unsafe.
-      SetNotInWorklist(worklist);
-      worklist.clear();
-      *hoistable = false;
-
-      return true;
-    }
-  }
-
-  SetNotInWorklist(worklist);
-  worklist.clear();
-  *hoistable = true;
-  return true;
-}
-
-bool jit::MakeMRegExpHoistable(MIRGenerator* mir, MIRGraph& graph) {
-  // If we are compiling try blocks, regular expressions may be observable
-  // from catch blocks (which Ion does not compile). For now just disable the
-  // pass in this case.
-  if (graph.hasTryBlock()) {
-    return true;
-  }
-
-  MDefinitionVector worklist(graph.alloc());
-
-  for (ReversePostorderIterator block(graph.rpoBegin());
-       block != graph.rpoEnd(); block++) {
-    if (mir->shouldCancel("MakeMRegExpHoistable outer loop")) {
-      return false;
-    }
-
-    for (MDefinitionIterator iter(*block); iter; iter++) {
-      if (!*iter) {
-        MOZ_CRASH("confirm bug 1263794.");
-      }
-
-      if (mir->shouldCancel("MakeMRegExpHoistable inner loop")) {
-        return false;
-      }
-
-      if (!iter->isRegExp()) {
-        continue;
-      }
-
-      MRegExp* regexp = iter->toRegExp();
-
-      bool hoistable = false;
-      if (!IsRegExpHoistable(mir, regexp, worklist, &hoistable)) {
-        return false;
-      }
-
-      if (!hoistable) {
-        continue;
-      }
-
-      // Make MRegExp hoistable
-      regexp->setMovable();
-      regexp->setDoNotClone();
-
-      // That would be incorrect for global/sticky, because lastIndex
-      // could be wrong.  Therefore setting the lastIndex to 0. That is
-      // faster than a not movable regexp.
-      RegExpObject* source = regexp->source();
-      if (source->sticky() || source->global()) {
-        if (!graph.alloc().ensureBallast()) {
-          return false;
-        }
-        MConstant* zero = MConstant::New(graph.alloc(), Int32Value(0));
-        regexp->block()->insertAfter(regexp, zero);
-
-        MStoreFixedSlot* lastIndex = MStoreFixedSlot::New(
-            graph.alloc(), regexp, RegExpObject::lastIndexSlot(), zero);
-        regexp->block()->insertAfter(zero, lastIndex);
-      }
-    }
   }
 
   return true;
@@ -3236,6 +2951,7 @@ static bool IsResumableMIRType(MIRType type) {
     case MIRType::Doublex2:  // NYI, see also RSimdBox::recover
     case MIRType::Int64:
     case MIRType::RefOrNull:
+    case MIRType::StackResults:
       return false;
   }
   MOZ_CRASH("Unknown MIRType.");
@@ -3570,20 +3286,20 @@ bool jit::ExtractLinearInequality(MTest* test, BranchDirection direction,
 
   // Normalize operations to use <= or >=.
   switch (jsop) {
-    case JSOP_LE:
+    case JSOp::Le:
       *plessEqual = true;
       break;
-    case JSOP_LT:
+    case JSOp::Lt:
       /* x < y ==> x + 1 <= y */
       if (!SafeAdd(lsum.constant, 1, &lsum.constant)) {
         return false;
       }
       *plessEqual = true;
       break;
-    case JSOP_GE:
+    case JSOp::Ge:
       *plessEqual = false;
       break;
-    case JSOP_GT:
+    case JSOp::Gt:
       /* x > y ==> x - 1 >= y */
       if (!SafeSub(lsum.constant, 1, &lsum.constant)) {
         return false;
@@ -3659,8 +3375,8 @@ static bool TryEliminateBoundsCheck(BoundsCheckMap& checks, size_t blockIndex,
   // Update the dominating check to cover both ranges, denormalizing the
   // result per the constant offset in the index.
   int32_t newMinimum, newMaximum;
-  if (!SafeSub(Min(minimumA, minimumB), sumA.constant, &newMinimum) ||
-      !SafeSub(Max(maximumA, maximumB), sumA.constant, &newMaximum)) {
+  if (!SafeSub(std::min(minimumA, minimumB), sumA.constant, &newMinimum) ||
+      !SafeSub(std::max(maximumA, maximumB), sumA.constant, &newMaximum)) {
     return false;
   }
 
@@ -3942,7 +3658,6 @@ bool jit::EliminateRedundantChecks(MIRGraph& graph) {
           break;
         case MDefinition::Opcode::LoadFixedSlot:
         case MDefinition::Opcode::LoadSlot:
-        case MDefinition::Opcode::LoadUnboxedObjectOrNull:
           if (!TryOptimizeLoadObjectOrNull(def, &eliminateList)) {
             return false;
           }
@@ -4037,7 +3752,6 @@ bool jit::AddKeepAliveInstructions(MIRGraph& graph) {
           continue;
         case MDefinition::Opcode::Elements:
         case MDefinition::Opcode::TypedArrayElements:
-        case MDefinition::Opcode::TypedObjectElements:
           MOZ_ASSERT(ins->numOperands() == 1);
           ownerObject = ins->getOperand(0);
           break;
@@ -4320,7 +4034,7 @@ MCompare* jit::ConvertLinearInequality(TempAllocator& alloc, MBasicBlock* block,
   }
 
   MDefinition* lhsDef = nullptr;
-  JSOp op = JSOP_GE;
+  JSOp op = JSOp::Ge;
 
   do {
     if (!lhs.numTerms()) {
@@ -4336,7 +4050,7 @@ MCompare* jit::ConvertLinearInequality(TempAllocator& alloc, MBasicBlock* block,
     }
 
     if (lhs.constant() == -1) {
-      op = JSOP_GT;
+      op = JSOp::Gt;
       break;
     }
 
@@ -4529,7 +4243,7 @@ bool jit::AnalyzeNewScriptDefiniteProperties(
     return false;
   }
 
-  if (!jit::IsIonEnabled() || !jit::IsBaselineJitEnabled() ||
+  if (!jit::IsIonEnabled(cx) || !jit::IsBaselineJitEnabled(cx) ||
       !CanBaselineInterpretScript(script)) {
     return true;
   }
@@ -4588,8 +4302,9 @@ bool jit::AnalyzeNewScriptDefiniteProperties(
   BaselineInspector inspector(script);
   const JitCompileOptions options(cx);
 
-  IonBuilder builder(cx, CompileRealm::get(cx->realm()), options, &temp, &graph,
-                     constraints, &inspector, &info, optimizationInfo,
+  MIRGenerator mirGen(CompileRealm::get(cx->realm()), options, &temp, &graph,
+                      &info, optimizationInfo);
+  IonBuilder builder(cx, mirGen, &info, constraints, &inspector,
                      /* baselineFrame = */ nullptr);
 
   AbortReasonOr<Ok> buildResult = builder.build();
@@ -4620,7 +4335,7 @@ bool jit::AnalyzeNewScriptDefiniteProperties(
     return false;
   }
 
-  if (!EliminatePhis(&builder, graph, AggressiveObservability)) {
+  if (!EliminatePhis(&mirGen, graph, AggressiveObservability)) {
     ReportOutOfMemory(cx);
     return false;
   }
@@ -4734,7 +4449,7 @@ static bool ArgumentsUseCanBeLazy(JSContext* cx, JSScript* script,
                                   bool* argumentsContentsObserved) {
   // We can read the frame's arguments directly for f.apply(x, arguments).
   if (ins->isCall()) {
-    if (*ins->toCall()->resumePoint()->pc() == JSOP_FUNAPPLY &&
+    if (JSOp(*ins->toCall()->resumePoint()->pc()) == JSOp::FunApply &&
         ins->toCall()->numActualArgs() == 2 &&
         index == MCall::IndexOfArgument(1)) {
       *argumentsContentsObserved = true;
@@ -4742,7 +4457,7 @@ static bool ArgumentsUseCanBeLazy(JSContext* cx, JSScript* script,
     }
   }
 
-  // arguments[i] can read fp->canonicalActualArg(i) directly.
+  // arguments[i] can read fp->unaliasedActual(i) directly.
   if (ins->isCallGetElement() && index == 0) {
     *argumentsContentsObserved = true;
     return true;
@@ -4772,6 +4487,7 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
   AutoEnterAnalysis enter(cx);
 
   MOZ_ASSERT(!script->analyzedArgsUsage());
+  MOZ_ASSERT(script->argumentsHasVarBinding());
 
   // Treat the script as needing an arguments object until we determine it
   // does not need one. This both allows us to easily see where the arguments
@@ -4789,7 +4505,12 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
     return true;
   }
 
-  if (!jit::IsIonEnabled()) {
+  if (!jit::IsIonEnabled(cx)) {
+    return true;
+  }
+
+  if (JitOptions.warpBuilder) {
+    // TODO: support using WarpBuilder for arguments analysis.
     return true;
   }
 
@@ -4831,7 +4552,7 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
   }
 
   CompileInfo info(CompileRuntime::get(cx->runtime()), script,
-                   script->functionNonDelazifying(),
+                   script->function(),
                    /* osrPc = */ nullptr, Analysis_ArgumentsUsage,
                    /* needsArgsObj = */ true, inlineScriptTree);
 
@@ -4847,8 +4568,9 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
   BaselineInspector inspector(script);
   const JitCompileOptions options(cx);
 
-  IonBuilder builder(nullptr, CompileRealm::get(cx->realm()), options, &temp,
-                     &graph, constraints, &inspector, &info, optimizationInfo,
+  MIRGenerator mirGen(CompileRealm::get(cx->realm()), options, &temp, &graph,
+                      &info, optimizationInfo);
+  IonBuilder builder(nullptr, mirGen, &info, constraints, &inspector,
                      /* baselineFrame = */ nullptr);
 
   AbortReasonOr<Ok> buildResult = builder.build();
@@ -4877,7 +4599,7 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
     return false;
   }
 
-  if (!EliminatePhis(&builder, graph, AggressiveObservability)) {
+  if (!EliminatePhis(&mirGen, graph, AggressiveObservability)) {
     ReportOutOfMemory(cx);
     return false;
   }
@@ -4885,6 +4607,10 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
   MDefinition* argumentsValue = graph.entryBlock()->getSlot(info.argsObjSlot());
 
   bool argumentsContentsObserved = false;
+
+  if (argumentsValue->isImplicitlyUsed()) {
+    return true;
+  }
 
   for (MUseDefIterator uses(argumentsValue); uses; uses++) {
     MDefinition* use = uses.def();
@@ -4911,6 +4637,16 @@ bool jit::AnalyzeArgumentsUsage(JSContext* cx, JSScript* scriptArg) {
         return true;
       }
     }
+  }
+
+  // If we assign to a positional formal parameter and the arguments object is
+  // unmapped (strict mode or function with default/rest/destructing args),
+  // parameters do not alias arguments[i], and to make the arguments object
+  // reflect initial parameter values prior to any mutation we create it eagerly
+  // whenever parameters are (or might, in the case of calls to eval) assigned.
+  if (!script->hasMappedArgsObj() && script->jitScript()->modifiesArguments() &&
+      argumentsContentsObserved) {
+    return true;
   }
 
   script->setNeedsArgsObj(false);
@@ -5132,41 +4868,6 @@ void MRootList::trace(JSTracer* trc) {
   TraceVector<type*>(trc, *roots_[JS::RootKind::name], "mir-root-" #name);
   JS_FOR_EACH_TRACEKIND(TRACE_ROOTS)
 #undef TRACE_ROOTS
-}
-
-MOZ_MUST_USE bool jit::CreateMIRRootList(IonBuilder& builder) {
-  MOZ_ASSERT(!builder.info().isAnalysis());
-
-  TempAllocator& alloc = builder.alloc();
-  MIRGraph& graph = builder.graph();
-
-  MRootList* roots = new (alloc.fallible()) MRootList(alloc);
-  if (!roots) {
-    return false;
-  }
-
-  JSScript* prevScript = nullptr;
-
-  for (ReversePostorderIterator block(graph.rpoBegin());
-       block != graph.rpoEnd(); block++) {
-    JSScript* script = block->info().script();
-    if (script != prevScript) {
-      if (!roots->append(script)) {
-        return false;
-      }
-      prevScript = script;
-    }
-
-    for (MInstructionIterator iter(block->begin()), end(block->end());
-         iter != end; iter++) {
-      if (!iter->appendRoots(*roots)) {
-        return false;
-      }
-    }
-  }
-
-  builder.setRootList(*roots);
-  return true;
 }
 
 #ifdef JS_JITSPEW

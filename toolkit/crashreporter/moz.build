@@ -31,9 +31,6 @@ if CONFIG['MOZ_CRASHREPORTER']:
             'breakpad-windows-libxul',
         ]
 
-        if CONFIG['WIN_DIA_SDK_BIN_DIR']:
-            DIRS += ['google-breakpad/src/tools/windows/dump_syms']
-
         if CONFIG['MOZ_CRASHREPORTER_INJECTOR']:
             DIRS += ['breakpad-windows-standalone']
 
@@ -92,7 +89,6 @@ if CONFIG['MOZ_CRASHREPORTER']:
     EXTRA_JS_MODULES += [
         'CrashReports.jsm',
         'CrashSubmit.jsm',
-        'KeyValueParser.jsm',
     ]
 
     include('/ipc/chromium/chromium-config.mozbuild')

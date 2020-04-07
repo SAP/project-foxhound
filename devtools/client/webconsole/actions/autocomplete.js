@@ -18,18 +18,20 @@ const {
  *                         from the cache).
  * @param {Array<String>} getterPath: Array representing the getter access (i.e.
  *                                    `a.b.c.d.` is described as ['a', 'b', 'c', 'd'] ).
+ * @param {Array<String>} expressionVars: Array of the variables defined in the expression.
  */
-function autocompleteUpdate(force, getterPath) {
-  return ({ dispatch, getState, webConsoleUI, hud }) => {
+function autocompleteUpdate(force, getterPath, expressionVars) {
+  return async ({ dispatch, getState, webConsoleUI, hud }) => {
     if (hud.inputHasSelection()) {
       return dispatch(autocompleteClear());
     }
 
     const inputValue = hud.getInputValue();
-    const {
-      frameActor: frameActorId,
-      webConsoleFront,
-    } = webConsoleUI.getFrameActor();
+    const frameActorId = await webConsoleUI.getFrameActor();
+    const webconsoleFront = await webConsoleUI.getWebconsoleFront({
+      frameActorId,
+    });
+
     const cursor = webConsoleUI.getInputCursor();
 
     const state = getState().autocomplete;
@@ -79,9 +81,10 @@ function autocompleteUpdate(force, getterPath) {
       autocompleteDataFetch({
         input,
         frameActorId,
-        webConsoleFront,
+        webconsoleFront,
         authorizedEvaluations,
         force,
+        expressionVars,
       })
     );
   };
@@ -131,20 +134,23 @@ function autocompleteDataFetch({
   input,
   frameActorId,
   force,
-  webConsoleFront,
+  webconsoleFront,
   authorizedEvaluations,
+  expressionVars,
 }) {
-  return ({ dispatch, webConsoleUI }) => {
+  return async ({ dispatch, webConsoleUI }) => {
     const selectedNodeActor = webConsoleUI.getSelectedNodeActor();
     const id = generateRequestId();
     dispatch({ type: AUTOCOMPLETE_PENDING_REQUEST, id });
-    webConsoleFront
+
+    webconsoleFront
       .autocomplete(
         input,
         undefined,
         frameActorId,
         selectedNodeActor,
-        authorizedEvaluations
+        authorizedEvaluations,
+        expressionVars
       )
       .then(data => {
         dispatch(
@@ -155,6 +161,7 @@ function autocompleteDataFetch({
             frameActorId,
             data,
             authorizedEvaluations,
+            expressionVars,
           })
         );
       })

@@ -16,9 +16,15 @@ define(function(require, exports, module) {
   const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
   // Reps
-  const { ObjectProvider } = require("./ObjectProvider");
-  const TreeRow = createFactory(require("./TreeRow"));
-  const TreeHeader = createFactory(require("./TreeHeader"));
+  const {
+    ObjectProvider,
+  } = require("devtools/client/shared/components/tree/ObjectProvider");
+  const TreeRow = createFactory(
+    require("devtools/client/shared/components/tree/TreeRow")
+  );
+  const TreeHeader = createFactory(
+    require("devtools/client/shared/components/tree/TreeHeader")
+  );
 
   const { scrollIntoView } = require("devtools/client/shared/scroll");
 
@@ -298,7 +304,7 @@ define(function(require, exports, module) {
 
     // Event Handlers
 
-    /* eslint-disable complexity */
+    // eslint-disable-next-line complexity
     onKeyDown(event) {
       if (!SUPPORTED_KEYS.includes(event.key)) {
         return;
@@ -384,7 +390,6 @@ define(function(require, exports, module) {
       this.treeRef.current.focus();
       event.preventDefault();
     }
-    /* eslint-enable complexity */
 
     onClickRow(nodePath, event) {
       const onClickRow = this.props.onClickRow;

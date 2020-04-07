@@ -14,12 +14,17 @@
 #include <stddef.h>  // ptrdiff_t, size_t
 #include <stdint.h>  // uint16_t, int32_t, uint32_t
 
-#include "NamespaceImports.h"          // ValueVector
+#include "jstypes.h"           // JS_PUBLIC_API
+#include "NamespaceImports.h"  // ValueVector
+
+#include "frontend/AbstractScope.h"    // AbstractScope
 #include "frontend/BytecodeOffset.h"   // BytecodeOffset
 #include "frontend/JumpList.h"         // JumpTarget
 #include "frontend/NameCollections.h"  // AtomIndexMap, PooledMapPtr
+#include "frontend/ObjLiteral.h"       // ObjLiteralCreationData
 #include "frontend/ParseNode.h"        // BigIntLiteral
 #include "frontend/SourceNotes.h"      // jssrcnote
+#include "frontend/Stencil.h"          // Stencils
 #include "gc/Barrier.h"                // GCPtrObject, GCPtrScope, GCPtrValue
 #include "gc/Rooting.h"                // JS::Rooted
 #include "js/GCVariant.h"              // GCPolicy<mozilla::Variant>
@@ -28,7 +33,7 @@
 #include "js/Value.h"                  // JS::Vector
 #include "js/Vector.h"                 // Vector
 #include "vm/JSScript.h"               // JSTryNote, JSTryNoteKind, ScopeNote
-#include "vm/Opcodes.h"                // JSOP_*
+#include "vm/Opcodes.h"                // JSOpLength_JumpTarget
 
 namespace js {
 
@@ -42,7 +47,10 @@ class BigIntLiteral;
 class ObjectBox;
 
 struct MOZ_STACK_CLASS GCThingList {
-  using ListType = mozilla::Variant<StackGCCellPtr, BigIntCreationData>;
+  using ListType =
+      mozilla::Variant<JS::GCCellPtr, BigIntIndex, ObjLiteralCreationData,
+                       RegExpIndex, ScopeIndex>;
+  CompilationInfo& compilationInfo;
   JS::RootedVector<ListType> vector;
 
   // Last emitted object.
@@ -51,12 +59,22 @@ struct MOZ_STACK_CLASS GCThingList {
   // Index of the first scope in the vector.
   mozilla::Maybe<uint32_t> firstScopeIndex;
 
-  explicit GCThingList(JSContext* cx) : vector(cx) {}
+  explicit GCThingList(JSContext* cx, CompilationInfo& compilationInfo)
+      : compilationInfo(compilationInfo), vector(cx) {}
 
+  MOZ_MUST_USE bool append(ScopeIndex scope, uint32_t* index) {
+    *index = vector.length();
+    if (!vector.append(mozilla::AsVariant(scope))) {
+      return false;
+    }
+    if (!firstScopeIndex) {
+      firstScopeIndex.emplace(*index);
+    }
+    return true;
+  }
   MOZ_MUST_USE bool append(Scope* scope, uint32_t* index) {
     *index = vector.length();
-    if (!vector.append(
-            mozilla::AsVariant(StackGCCellPtr(JS::GCCellPtr(scope))))) {
+    if (!vector.append(mozilla::AsVariant(JS::GCCellPtr(scope)))) {
       return false;
     }
     if (!firstScopeIndex) {
@@ -66,23 +84,36 @@ struct MOZ_STACK_CLASS GCThingList {
   }
   MOZ_MUST_USE bool append(BigIntLiteral* literal, uint32_t* index) {
     *index = vector.length();
+    return vector.append(mozilla::AsVariant(literal->index()));
+  }
+  MOZ_MUST_USE bool append(RegExpLiteral* literal, uint32_t* index) {
+    *index = vector.length();
     if (literal->isDeferred()) {
-      return vector.append(mozilla::AsVariant(literal->creationData()));
+      return vector.append(mozilla::AsVariant(literal->index()));
     }
     return vector.append(
-        mozilla::AsVariant(StackGCCellPtr(JS::GCCellPtr(literal->value()))));
+        mozilla::AsVariant(JS::GCCellPtr(literal->objbox()->object())));
+  }
+  MOZ_MUST_USE bool append(ObjLiteralCreationData&& objlit, uint32_t* index) {
+    *index = vector.length();
+    return vector.append(mozilla::AsVariant(std::move(objlit)));
   }
   MOZ_MUST_USE bool append(ObjectBox* obj, uint32_t* index);
 
   uint32_t length() const { return vector.length(); }
-  MOZ_MUST_USE bool finish(JSContext* cx, mozilla::Span<JS::GCCellPtr> array);
+  MOZ_MUST_USE bool finish(JSContext* cx, CompilationInfo& compilationInfo,
+                           mozilla::Span<JS::GCCellPtr> array);
   void finishInnerFunctions();
 
-  Scope* getScope(size_t index) const {
-    return &vector[index].get().as<StackGCCellPtr>().get().as<Scope>();
+  AbstractScope getScope(size_t index) const {
+    auto& elem = vector[index].get();
+    if (elem.is<JS::GCCellPtr>()) {
+      return AbstractScope(&elem.as<JS::GCCellPtr>().as<Scope>());
+    }
+    return AbstractScope(compilationInfo, elem.as<ScopeIndex>());
   }
 
-  Scope* firstScope() const {
+  AbstractScope firstScope() const {
     MOZ_ASSERT(firstScopeIndex.isSome());
     return getScope(*firstScopeIndex);
   }
@@ -172,7 +203,7 @@ class BytecodeSection {
   bool lastOpcodeIsJumpTarget() const {
     return lastTarget_.offset.valid() &&
            offset() - lastTarget_.offset ==
-               BytecodeOffsetDiff(JSOP_JUMPTARGET_LENGTH);
+               BytecodeOffsetDiff(JSOpLength_JumpTarget);
   }
 
   // JumpTarget should not be part of the emitted statement, as they can be
@@ -312,7 +343,7 @@ class BytecodeSection {
   // code array).
   CGResumeOffsetList resumeOffsetList_;
 
-  // Number of yield instructions emitted. Does not include JSOP_AWAIT.
+  // Number of yield instructions emitted. Does not include JSOp::Await.
   uint32_t numYields_ = 0;
 
   // ---- Line and column ----
@@ -354,7 +385,8 @@ class BytecodeSection {
 // bytecode, but referred from bytecode is stored in this class.
 class PerScriptData {
  public:
-  explicit PerScriptData(JSContext* cx);
+  explicit PerScriptData(JSContext* cx,
+                         frontend::CompilationInfo& compilationInfo);
 
   MOZ_MUST_USE bool init(JSContext* cx);
 
@@ -376,9 +408,9 @@ class PerScriptData {
 } /* namespace js */
 
 namespace JS {
-template <>
-struct GCPolicy<js::frontend::BigIntCreationData>
-    : JS::IgnoreGCPolicy<js::frontend::BigIntCreationData> {};
+template <typename T>
+struct GCPolicy<js::frontend::TypedIndex<T>>
+    : JS::IgnoreGCPolicy<js::frontend::TypedIndex<T>> {};
 }  // namespace JS
 
 #endif /* frontend_BytecodeSection_h */

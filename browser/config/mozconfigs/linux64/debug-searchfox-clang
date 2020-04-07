@@ -1,5 +1,4 @@
 MOZ_AUTOMATION_BUILD_SYMBOLS=0
-MOZ_AUTOMATION_PACKAGE_TESTS=0
 MOZ_AUTOMATION_L10N_CHECK=0
 MOZ_AUTOMATION_CHECK=0
 
@@ -8,6 +7,7 @@ MOZ_AUTOMATION_CHECK=0
 ac_add_options --enable-debug
 
 . $topsrcdir/build/mozconfig.stylo
+. $topsrcdir/build/mozconfig.wasm-sandboxing
 
 # Use Clang as specified in manifest
 export CC="$MOZ_FETCHES_DIR/clang/bin/clang"

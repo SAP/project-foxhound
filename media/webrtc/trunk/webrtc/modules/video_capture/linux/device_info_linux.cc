@@ -12,6 +12,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
@@ -72,16 +73,13 @@ void DeviceInfoLinux::HandleEvent(inotify_event* event, int fd)
 
 int DeviceInfoLinux::EventCheck(int fd)
 {
-    struct timeval timeout;
-    fd_set rfds;
+    struct pollfd fds = {
+      .fd = fd,
+      .events = POLLIN,
+      .revents = 0
+    };
 
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 100000;
-
-    FD_ZERO(&rfds);
-    FD_SET(fd, &rfds);
-
-    return select(fd+1, &rfds, NULL, NULL, &timeout);
+    return poll(&fds, 1, 100);
 }
 
 int DeviceInfoLinux::HandleEvents(int fd)
@@ -217,11 +215,11 @@ uint32_t DeviceInfoLinux::NumberOfDevices() {
 
 int32_t DeviceInfoLinux::GetDeviceName(uint32_t deviceNumber,
                                        char* deviceNameUTF8,
-                                       uint32_t deviceNameLength,
+                                       uint32_t deviceNameSize,
                                        char* deviceUniqueIdUTF8,
-                                       uint32_t deviceUniqueIdUTF8Length,
+                                       uint32_t deviceUniqueIdUTF8Size,
                                        char* /*productUniqueIdUTF8*/,
-                                       uint32_t /*productUniqueIdUTF8Length*/,
+                                       uint32_t /*productUniqueIdUTF8Size*/,
                                        pid_t* /*pid*/) {
   RTC_LOG(LS_INFO) << __FUNCTION__;
 
@@ -260,10 +258,10 @@ int32_t DeviceInfoLinux::GetDeviceName(uint32_t deviceNumber,
   close(fd);
 
   char cameraName[64];
-  memset(deviceNameUTF8, 0, deviceNameLength);
+  memset(deviceNameUTF8, 0, deviceNameSize);
   memcpy(cameraName, cap.card, sizeof(cap.card));
 
-  if (deviceNameLength >= strlen(cameraName)) {
+  if (deviceNameSize > strlen(cameraName)) {
     memcpy(deviceNameUTF8, cameraName, strlen(cameraName));
   } else {
     RTC_LOG(LS_INFO) << "buffer passed is too small";
@@ -273,8 +271,8 @@ int32_t DeviceInfoLinux::GetDeviceName(uint32_t deviceNumber,
   if (cap.bus_info[0] != 0)  // may not available in all drivers
   {
     // copy device id
-    if (deviceUniqueIdUTF8Length >= strlen((const char*)cap.bus_info)) {
-      memset(deviceUniqueIdUTF8, 0, deviceUniqueIdUTF8Length);
+    if (deviceUniqueIdUTF8Size > strlen((const char*)cap.bus_info)) {
+      memset(deviceUniqueIdUTF8, 0, deviceUniqueIdUTF8Size);
       memcpy(deviceUniqueIdUTF8, cap.bus_info,
              strlen((const char*)cap.bus_info));
     } else {
@@ -284,8 +282,8 @@ int32_t DeviceInfoLinux::GetDeviceName(uint32_t deviceNumber,
   } else {
     // if there's no bus info to use for uniqueId, invent one - and it has to be repeatable
     if (snprintf(deviceUniqueIdUTF8,
-                 deviceUniqueIdUTF8Length, "fake_%u", device_index) >=
-        (int) deviceUniqueIdUTF8Length)
+                 deviceUniqueIdUTF8Size, "fake_%u", device_index) >=
+        (int) deviceUniqueIdUTF8Size)
     {
       return -1;
     }
@@ -300,7 +298,7 @@ int32_t DeviceInfoLinux::CreateCapabilityMap(const char* deviceUniqueIdUTF8) {
 
   const int32_t deviceUniqueIdUTF8Length =
       (int32_t)strlen((char*)deviceUniqueIdUTF8);
-  if (deviceUniqueIdUTF8Length > kVideoCaptureUniqueNameLength) {
+  if (deviceUniqueIdUTF8Length > kVideoCaptureUniqueNameSize) {
     RTC_LOG(LS_INFO) << "Device name too long";
     return -1;
   }

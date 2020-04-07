@@ -9,6 +9,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import copy
 
+from six import text_type
 from taskgraph.loader.single_dep import schema
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.attributes import copy_attributes_from_dependent_job
@@ -37,13 +38,13 @@ PACKAGE_FORMATS['installer-stub']['args'].extend(["--package-name", "{package-na
 
 packaging_description_schema = schema.extend({
     # depname is used in taskref's to identify the taskID of the signed things
-    Required('depname', default='build'): basestring,
+    Required('depname', default='build'): text_type,
 
     # unique label to describe this repackaging task
-    Optional('label'): basestring,
+    Optional('label'): text_type,
 
     # Routes specific to this task, if defined
-    Optional('routes'): [basestring],
+    Optional('routes'): [text_type],
 
     # passed through directly to the job description
     Optional('extra'): task_description_schema['extra'],
@@ -52,16 +53,16 @@ packaging_description_schema = schema.extend({
     Optional('shipping-product'): task_description_schema['shipping-product'],
     Optional('shipping-phase'): task_description_schema['shipping-phase'],
 
-    Required('package-formats'): _by_platform([basestring]),
+    Required('package-formats'): _by_platform([text_type]),
 
     # All l10n jobs use mozharness
     Required('mozharness'): {
         # Config files passed to the mozharness script
-        Required('config'): _by_platform([basestring]),
+        Required('config'): _by_platform([text_type]),
 
         # Additional paths to look for mozharness configs in. These should be
         # relative to the base of the source checkout
-        Optional('config-paths'): [basestring],
+        Optional('config-paths'): [text_type],
 
         # if true, perform a checkout of a comm-central based branch inside the
         # gecko checkout
@@ -164,7 +165,6 @@ def make_job_description(config, jobs):
             'script': 'mozharness/scripts/repackage.py',
             'job-script': 'taskcluster/scripts/builder/repackage.sh',
             'actions': ['setup', 'repackage'],
-            'extra-workspace-cache-key': 'repackage',
             'extra-config': {
                 'repackage_config': repackage_config,
             },
@@ -273,7 +273,7 @@ def _generate_task_output_files(task, worker_implementation, repackage_config, p
     if worker_implementation == ('docker-worker', 'linux'):
         local_prefix = '/builds/worker/workspace/'
     elif worker_implementation == ('generic-worker', 'windows'):
-        local_prefix = ''
+        local_prefix = 'workspace/'
     else:
         raise NotImplementedError(
             'Unsupported worker implementation: "{}"'.format(worker_implementation))
@@ -282,7 +282,7 @@ def _generate_task_output_files(task, worker_implementation, repackage_config, p
     for config in repackage_config:
         output_files.append({
             'type': 'file',
-            'path': '{}build/outputs/{}{}'
+            'path': '{}outputs/{}{}'
                     .format(local_prefix, partner_output_path, config['output']),
             'name': '{}/{}{}'.format(artifact_prefix, partner_output_path, config['output']),
         })

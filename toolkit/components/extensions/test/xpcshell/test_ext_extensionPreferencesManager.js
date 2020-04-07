@@ -17,6 +17,9 @@ ChromeUtils.defineModuleGetter(
   "Preferences",
   "resource://gre/modules/Preferences.jsm"
 );
+var { PromiseUtils } = ChromeUtils.import(
+  "resource://gre/modules/PromiseUtils.jsm"
+);
 
 const {
   createAppInfo,
@@ -563,8 +566,13 @@ add_task(async function test_preference_manager_set_when_disabled() {
   ok(isUndefinedPref("foo"), "test pref is not set");
 
   await ExtensionSettingsStore.initialize();
+  let lastItemChange = PromiseUtils.defer();
   ExtensionPreferencesManager.addSetting("some-pref", {
     prefNames: ["foo", "bar"],
+    onPrefsChanged(item) {
+      lastItemChange.resolve(item);
+      lastItemChange = PromiseUtils.defer();
+    },
     setCallback(value) {
       return { [this.prefNames[0]]: value, [this.prefNames[1]]: false };
     },
@@ -620,11 +628,16 @@ add_task(async function test_preference_manager_set_when_disabled() {
   await ExtensionSettingsStore._reloadFile(true);
 
   // Now unload the extension to test prefs are reset properly.
+  let promise = lastItemChange.promise;
   await extension.unload();
 
   // Test that the pref is unset when an extension is uninstalled.
-  item = await ExtensionPreferencesManager.getSetting("prefs", "some-pref");
-  equal(item, null, "The value has been reset");
+  item = await promise;
+  deepEqual(
+    item,
+    { key: "some-pref", initialValue: { bar: true } },
+    "The value has been reset"
+  );
   ok(isUndefinedPref("foo"), "user pref is not set");
   equal(
     Services.prefs.getBoolPref("bar"),
@@ -634,4 +647,241 @@ add_task(async function test_preference_manager_set_when_disabled() {
   Services.prefs.clearUserPref("bar");
 
   await promiseShutdownManager();
+});
+
+add_task(async function test_preference_default_upgraded() {
+  await promiseStartupManager();
+
+  let id = "@upgrade-pref";
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    manifest: {
+      applications: { gecko: { id } },
+    },
+  });
+
+  await extension.startup();
+
+  // We set the default value for a pref here so it will be
+  // picked up by EPM.
+  let defaultPrefs = Services.prefs.getDefaultBranch(null);
+  defaultPrefs.setStringPref("bar", "initial default");
+
+  await ExtensionSettingsStore.initialize();
+  ExtensionPreferencesManager.addSetting("some-pref", {
+    prefNames: ["bar"],
+    setCallback(value) {
+      return { [this.prefNames[0]]: value };
+    },
+  });
+
+  await ExtensionPreferencesManager.setSetting(id, "some-pref", "new value");
+  let item = ExtensionSettingsStore.getSetting("prefs", "some-pref");
+  equal(item.value, "new value", "The value is set");
+
+  defaultPrefs.setStringPref("bar", "new default");
+
+  item = ExtensionSettingsStore.getSetting("prefs", "some-pref");
+  equal(item.value, "new value", "The value is still set");
+
+  let prefsChanged = await ExtensionPreferencesManager.removeSetting(
+    id,
+    "some-pref"
+  );
+  ok(prefsChanged, "pref changed on removal of setting.");
+  equal(Preferences.get("bar"), "new default", "default value is correct");
+
+  await extension.unload();
+  await promiseShutdownManager();
+});
+
+add_task(async function test_preference_select() {
+  await promiseStartupManager();
+
+  let extensionData = {
+    useAddonManager: "temporary",
+    manifest: {
+      applications: { gecko: { id: "@one" } },
+    },
+  };
+  let one = ExtensionTestUtils.loadExtension(extensionData);
+
+  await one.startup();
+
+  // We set the default value for a pref here so it will be
+  // picked up by EPM.
+  let defaultPrefs = Services.prefs.getDefaultBranch(null);
+  defaultPrefs.setStringPref("bar", "initial default");
+
+  await ExtensionSettingsStore.initialize();
+  ExtensionPreferencesManager.addSetting("some-pref", {
+    prefNames: ["bar"],
+    setCallback(value) {
+      return { [this.prefNames[0]]: value };
+    },
+  });
+
+  ok(
+    await ExtensionPreferencesManager.setSetting(
+      one.id,
+      "some-pref",
+      "new value"
+    ),
+    "setting was changed"
+  );
+  let item = await ExtensionPreferencesManager.getSetting("some-pref");
+  equal(item.value, "new value", "The value is set");
+
+  // User-set the setting.
+  await ExtensionPreferencesManager.selectSetting(null, "some-pref");
+  item = await ExtensionPreferencesManager.getSetting("some-pref");
+  deepEqual(
+    item,
+    { key: "some-pref", initialValue: {} },
+    "The value is user-set"
+  );
+
+  // Extensions installed before cannot gain control again.
+  let levelOfControl = await ExtensionPreferencesManager.getLevelOfControl(
+    one.id,
+    "some-pref"
+  );
+  equal(
+    levelOfControl,
+    "not_controllable",
+    "getLevelOfControl returns correct levelOfControl when user-set."
+  );
+
+  // Enabling the top-precedence addon does not take over a user-set setting.
+  await ExtensionPreferencesManager.disableSetting(one.id, "some-pref");
+  await ExtensionPreferencesManager.enableSetting(one.id, "some-pref");
+  item = await ExtensionPreferencesManager.getSetting("some-pref");
+  deepEqual(
+    item,
+    { key: "some-pref", initialValue: {} },
+    "The value is user-set"
+  );
+
+  // Upgrading does not override the user-set setting.
+  extensionData.manifest.version = "2.0";
+  extensionData.manifest.incognito = "not_allowed";
+  await one.upgrade(extensionData);
+  levelOfControl = await ExtensionPreferencesManager.getLevelOfControl(
+    one.id,
+    "some-pref"
+  );
+  equal(
+    levelOfControl,
+    "not_controllable",
+    "getLevelOfControl returns correct levelOfControl when user-set after addon upgrade."
+  );
+
+  // We can re-select the extension.
+  await ExtensionPreferencesManager.selectSetting(one.id, "some-pref");
+  item = await ExtensionPreferencesManager.getSetting("some-pref");
+  deepEqual(item.value, "new value", "The value is extension set");
+
+  // An extension installed after user-set can take over the setting.
+  await ExtensionPreferencesManager.selectSetting(null, "some-pref");
+  item = await ExtensionPreferencesManager.getSetting("some-pref");
+  deepEqual(
+    item,
+    { key: "some-pref", initialValue: {} },
+    "The value is user-set"
+  );
+
+  let two = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    manifest: {
+      applications: { gecko: { id: "@two" } },
+    },
+  });
+
+  await two.startup();
+  levelOfControl = await ExtensionPreferencesManager.getLevelOfControl(
+    two.id,
+    "some-pref"
+  );
+  equal(
+    levelOfControl,
+    "controllable_by_this_extension",
+    "getLevelOfControl returns correct levelOfControl when user-set after addon install."
+  );
+
+  await ExtensionPreferencesManager.setSetting(
+    two.id,
+    "some-pref",
+    "another value"
+  );
+  item = ExtensionSettingsStore.getSetting("prefs", "some-pref");
+  equal(item.value, "another value", "The value is set");
+
+  // A new installed extension can override a user selected extension.
+  let three = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    manifest: {
+      applications: { gecko: { id: "@three" } },
+    },
+  });
+
+  // user selects specific extension to take control
+  await ExtensionPreferencesManager.selectSetting(one.id, "some-pref");
+
+  // two cannot control
+  levelOfControl = await ExtensionPreferencesManager.getLevelOfControl(
+    two.id,
+    "some-pref"
+  );
+  equal(
+    levelOfControl,
+    "not_controllable",
+    "getLevelOfControl returns correct levelOfControl when user-set after addon install."
+  );
+
+  // three can control after install
+  await three.startup();
+  levelOfControl = await ExtensionPreferencesManager.getLevelOfControl(
+    three.id,
+    "some-pref"
+  );
+  equal(
+    levelOfControl,
+    "controllable_by_this_extension",
+    "getLevelOfControl returns correct levelOfControl when user-set after addon install."
+  );
+
+  await ExtensionPreferencesManager.setSetting(
+    three.id,
+    "some-pref",
+    "third value"
+  );
+  item = ExtensionSettingsStore.getSetting("prefs", "some-pref");
+  equal(item.value, "third value", "The value is set");
+
+  // We have returned to precedence based settings.
+  await ExtensionPreferencesManager.removeSetting(three.id, "some-pref");
+  await ExtensionPreferencesManager.removeSetting(two.id, "some-pref");
+  item = await ExtensionPreferencesManager.getSetting("some-pref");
+  equal(item.value, "new value", "The value is extension set");
+
+  await one.unload();
+  await two.unload();
+  await three.unload();
+  await promiseShutdownManager();
+});
+
+add_task(async function test_preference_select() {
+  let prefNames = await ExtensionPreferencesManager.getManagedPrefDetails();
+  // Just check a subset of settings that are in this test file.
+  Assert.ok(prefNames.size > 0, "some prefs exist");
+  for (let settingName in SETTINGS) {
+    let setting = SETTINGS[settingName];
+    for (let prefName of setting.prefNames) {
+      Assert.equal(
+        prefNames.get(prefName),
+        settingName,
+        "setting retrieved prefNames"
+      );
+    }
+  }
 });

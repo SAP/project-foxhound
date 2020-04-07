@@ -13,12 +13,10 @@
 #include "xpcpublic.h"
 
 #include "nsIAppStartup.h"
-#include "nsIDirectoryEnumerator.h"
 #include "nsIFile.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsISimpleEnumerator.h"
-#include "nsIToolkitChromeRegistry.h"
 #include "nsIToolkitProfileService.h"
 #include "nsIXULRuntime.h"
 #include "commonupdatedir.h"
@@ -45,6 +43,7 @@
 #include "mozilla/Omnijar.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
+#include "nsPrintfCString.h"
 
 #include <stdlib.h>
 
@@ -103,7 +102,7 @@ nsCOMPtr<nsIFile> gDataDirProfile = nullptr;
 
 // These are required to allow nsXREDirProvider to be usable in xpcshell tests.
 // where gAppData is null.
-#if defined(XP_MACOSX) || defined(XP_WIN)
+#if defined(XP_MACOSX) || defined(XP_WIN) || defined(XP_UNIX)
 static const char* GetAppName() {
   if (gAppData) {
     return gAppData->name;
@@ -461,6 +460,14 @@ nsXREDirProvider::GetFile(const char* aProperty, bool* aPersistent,
 #endif
   } else if (!strcmp(aProperty, XRE_USER_SYS_EXTENSION_DEV_DIR)) {
     return GetSysUserExtensionsDevDirectory(aFile);
+  } else if (!strcmp(aProperty, XRE_USER_RUNTIME_DIR)) {
+#if defined(XP_UNIX)
+    nsPrintfCString path("/run/user/%d/%s/", getuid(), GetAppName());
+    ToLowerCase(path);
+    return NS_NewNativeLocalFile(path, false, aFile);
+#else
+    return NS_ERROR_FAILURE;
+#endif
   } else if (!strcmp(aProperty, XRE_APP_DISTRIBUTION_DIR)) {
     bool persistent = false;
     rv = GetFile(NS_GRE_DIR, &persistent, getter_AddRefs(file));
@@ -607,7 +614,6 @@ static const char* GetProcessTempBaseDirKey() {
 #  endif
 }
 
-#  if defined(MOZ_SANDBOX)
 //
 // Sets mContentTempDir so that it refers to the appropriate temp dir.
 // If the sandbox is enabled, NS_APP_CONTENT_PROCESS_TEMP_DIR, otherwise
@@ -633,7 +639,7 @@ nsresult nsXREDirProvider::LoadContentProcessTempDir() {
     }
   }
 
-#    if defined(XP_WIN)
+#  if defined(XP_WIN)
   // The content temp dir can be used in sandbox rules, so we need to make sure
   // it doesn't contain any junction points or symlinks or the sandbox will
   // reject those rules.
@@ -641,11 +647,10 @@ nsresult nsXREDirProvider::LoadContentProcessTempDir() {
           mContentTempDir)) {
     NS_WARNING("Failed to resolve Content Temp Dir.");
   }
-#    endif
+#  endif
 
   return NS_OK;
 }
-#  endif
 
 //
 // Sets mPluginTempDir so that it refers to the appropriate temp dir.
@@ -732,11 +737,9 @@ static already_AddRefed<nsIFile> GetProcessSandboxTempDir(
 //
 static already_AddRefed<nsIFile> CreateProcessSandboxTempDir(
     GeckoProcessType procType) {
-#  if defined(MOZ_SANDBOX)
   if ((procType == GeckoProcessType_Content) && IsContentSandboxDisabled()) {
     return nullptr;
   }
-#  endif
 
   MOZ_ASSERT((procType == GeckoProcessType_Content) ||
              (procType == GeckoProcessType_Plugin));
@@ -875,6 +878,17 @@ void nsXREDirProvider::InitializeUserPrefs() {
     mProfileNotified = true;
 
     mozilla::Preferences::InitializeUserPrefs();
+  }
+}
+
+void nsXREDirProvider::FinishInitializingUserPrefs() {
+  if (!mPrefsInitialized) {
+    // See InitializeUserPrefs above.
+    mozilla::AutoRestore<bool> ar(mProfileNotified);
+    mProfileNotified = true;
+
+    mozilla::Preferences::FinishInitializingUserPrefs();
+
     mPrefsInitialized = true;
   }
 }

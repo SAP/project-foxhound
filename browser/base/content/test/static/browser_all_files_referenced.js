@@ -32,11 +32,12 @@ var gExceptionPaths = [
 
   // These resources are referenced using relative paths from html files.
   "resource://payments/",
-  "resource://normandy-content/shield-content-frame.js",
-  "resource://normandy-content/shield-content-process.js",
 
   // https://github.com/mozilla/activity-stream/issues/3053
   "resource://activity-stream/data/content/tippytop/images/",
+  "resource://activity-stream/data/content/tippytop/favicons/",
+  // These resources are referenced by messages delivered through Remote Settings
+  "resource://activity-stream/data/content/assets/remote/",
 
   // browser/extensions/pdfjs/content/build/pdf.js#1999
   "resource://pdf.js/web/images/",
@@ -47,6 +48,10 @@ var gExceptionPaths = [
 
   // Exclude all search-extensions because they aren't referenced by filename
   "resource://search-extensions/",
+
+  // Exclude all services-automation because they are used through webdriver
+  "resource://gre/modules/services-automation/",
+  "resource://services-automation/ServicesAutomation.jsm",
 
   // Bug 1550165 - Exclude localized App/Play store badges. These badges
   // are displayed in a promo area on the first load of about:logins.
@@ -70,7 +75,7 @@ var whitelist = [
   { file: "chrome://pdf.js/locale/viewer.properties" },
 
   // security/manager/pki/resources/content/device_manager.js
-  { file: "chrome://pippki/content/load_device.xul" },
+  { file: "chrome://pippki/content/load_device.xhtml" },
 
   // The l10n build system can't package string files only for some platforms.
   // See bug 1339424 for why this is hard to fix.
@@ -169,12 +174,17 @@ var whitelist = [
     file: "chrome://browser/locale/taskbar.properties",
     platforms: ["linux", "macosx"],
   },
+  // Bug 1619090 to clean up platform-specific crypto
+  {
+    file: "resource://gre/modules/OSCrypto.jsm",
+    platforms: ["linux", "macosx"],
+  },
   // Bug 1356031 (only used by devtools)
   { file: "chrome://global/skin/icons/error-16.png" },
   // Bug 1344267
-  { file: "chrome://marionette/content/test_anonymous_content.xul" },
+  { file: "chrome://marionette/content/test.xhtml" },
   { file: "chrome://marionette/content/test_dialog.properties" },
-  { file: "chrome://marionette/content/test_dialog.xul" },
+  { file: "chrome://marionette/content/test_dialog.xhtml" },
   // Bug 1348533
   {
     file: "chrome://mozapps/skin/downloads/buttons.png",
@@ -185,11 +195,11 @@ var whitelist = [
     platforms: ["linux", "win"],
   },
   // Bug 1348559
-  { file: "chrome://pippki/content/resetpassword.xul" },
+  { file: "chrome://pippki/content/resetpassword.xhtml" },
   // Bug 1337345
   { file: "resource://gre/modules/Manifest.jsm" },
   // Bug 1356045
-  { file: "chrome://global/content/test-ipc.xul" },
+  { file: "chrome://global/content/test-ipc.xhtml" },
   // Bug 1378173 (warning: still used by devtools)
   { file: "resource://gre/modules/Promise.jsm" },
   // Bug 1494170
@@ -208,6 +218,12 @@ var whitelist = [
     isFromDevTools: true,
   },
   { file: "chrome://devtools/skin/images/next.svg", isFromDevTools: true },
+  // Feature gates are available but not used yet - Bug 1479127
+  { file: "resource://featuregates/FeatureGate.jsm" },
+  {
+    file: "resource://featuregates/FeatureGateImplementation.jsm",
+  },
+  { file: "resource://featuregates/feature_definitions.json" },
   // Bug 1526672
   {
     file: "resource://app/localization/en-US/browser/touchbar/touchbar.ftl",
@@ -218,7 +234,18 @@ var whitelist = [
 
   // Bug 1559554
   { file: "chrome://browser/content/aboutlogins/aboutLoginsUtils.js" },
+
+  // Referenced from the screenshots webextension
+  { file: "resource://app/localization/en-US/browser/screenshots.ftl" },
 ];
+
+if (AppConstants.NIGHTLY_BUILD && AppConstants.platform != "win") {
+  // This path is refereneced in nsFxrCommandLineHandler.cpp, which is only
+  // compiled in Windows. Whitelisted this path so that non-Windows builds
+  // can access the FxR UI via --chrome rather than --fxr (which includes VR-
+  // specific functionality)
+  whitelist.push({ file: "chrome://fxr/content/fxrui.html" });
+}
 
 whitelist = new Set(
   whitelist

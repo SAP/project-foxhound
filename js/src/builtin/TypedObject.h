@@ -10,6 +10,7 @@
 #include "mozilla/CheckedInt.h"
 
 #include "builtin/TypedObjectConstants.h"
+#include "gc/Allocator.h"
 #include "gc/WeakMap.h"
 #include "js/Conversions.h"
 #include "vm/ArrayBufferObject.h"
@@ -93,8 +94,6 @@
  */
 
 namespace js {
-
-class GlobalObject;
 
 /*
  * Helper method for converting a double into other scalar
@@ -199,13 +198,13 @@ class TypeDescr : public NativeObject {
         getFixedSlot(JS_DESCR_SLOT_TRACE_LIST).toPrivate());
   }
 
-  void initInstances(const JSRuntime* rt, uint8_t* mem, size_t length);
-  void traceInstances(JSTracer* trace, uint8_t* mem, size_t length);
+  void initInstance(const JSRuntime* rt, uint8_t* mem);
+  void traceInstance(JSTracer* trace, uint8_t* mem);
 
   static void finalize(JSFreeOp* fop, JSObject* obj);
 };
 
-typedef Handle<TypeDescr*> HandleTypeDescr;
+using HandleTypeDescr = Handle<TypeDescr*>;
 
 class SimpleTypeDescr : public TypeDescr {};
 
@@ -215,7 +214,7 @@ class SimpleTypeDescr : public TypeDescr {};
 // an opaque reference type.)
 class ScalarTypeDescr : public SimpleTypeDescr {
  public:
-  typedef Scalar::Type Type;
+  using Type = Scalar::Type;
 
   static const type::Kind Kind = type::Scalar;
   static const bool Opaque = false;
@@ -311,7 +310,7 @@ enum class ReferenceType {
 class ReferenceTypeDescr : public SimpleTypeDescr {
  public:
   // Must match order of JS_FOR_EACH_REFERENCE_TYPE_REPR below
-  typedef ReferenceType Type;
+  using Type = ReferenceType;
   static const char* typeName(Type type);
 
   static const int32_t TYPE_MAX = int32_t(ReferenceType::TYPE_STRING) + 1;
@@ -356,7 +355,6 @@ class ComplexTypeDescr : public TypeDescr {
 };
 
 bool IsTypedObjectClass(const JSClass* clasp);  // Defined below
-bool IsTypedObjectArray(JSObject& obj);
 
 MOZ_MUST_USE bool CreateUserSizeAndAlignmentProperties(JSContext* cx,
                                                        HandleTypeDescr obj);
@@ -513,7 +511,7 @@ class StructTypeDescr : public ComplexTypeDescr {
   }
 };
 
-typedef Handle<StructTypeDescr*> HandleStructTypeDescr;
+using HandleStructTypeDescr = Handle<StructTypeDescr*>;
 
 /*
  * This object exists in order to encapsulate the typed object types
@@ -535,6 +533,9 @@ class TypedObjectModuleObject : public NativeObject {
   };
 
   static const JSClass class_;
+
+ private:
+  static const ClassSpec classSpec_;
 };
 
 /* Base type for transparent and opaque typed objects. */
@@ -607,7 +608,6 @@ class TypedObject : public JSObject {
   uint32_t offset() const;
   uint32_t length() const;
   uint8_t* typedMem(const JS::AutoRequireNoGC&) const { return typedMem(); }
-  bool isAttached() const;
 
   uint32_t size() const { return typeDescr().size(); }
 
@@ -633,16 +633,12 @@ class TypedObject : public JSObject {
   // callee here is the type descriptor.
   static MOZ_MUST_USE bool construct(JSContext* cx, unsigned argc, Value* vp);
 
-  /* Accessors for self hosted code. */
-  static MOZ_MUST_USE bool GetByteOffset(JSContext* cx, unsigned argc,
-                                         Value* vp);
-
   Shape** addressOfShapeFromGC() {
     return shape_.unsafeUnbarrieredForTracing();
   }
 };
 
-typedef Handle<TypedObject*> HandleTypedObject;
+using HandleTypedObject = Handle<TypedObject*>;
 
 class OutlineTypedObject : public TypedObject {
   // The object which owns the data this object points to. Because this
@@ -655,6 +651,8 @@ class OutlineTypedObject : public TypedObject {
 
   void setOwnerAndData(JSObject* owner, uint8_t* data);
 
+  void setData(uint8_t* data) { data_ = data; }
+
  public:
   // JIT accessors.
   static size_t offsetOfData() { return offsetof(OutlineTypedObject, data_); }
@@ -665,17 +663,9 @@ class OutlineTypedObject : public TypedObject {
     return *owner_;
   }
 
-  JSObject* maybeOwner() const { return owner_; }
-
   uint8_t* outOfLineTypedMem() const { return data_; }
 
-  void setData(uint8_t* data) { data_ = data; }
-
-  void resetOffset(size_t offset) {
-    MOZ_ASSERT(offset <= (size_t)size());
-    setData(typedMemBase() + offset);
-  }
-
+ private:
   // Helper for createUnattached()
   static OutlineTypedObject* createUnattachedWithClass(
       JSContext* cx, const JSClass* clasp, HandleTypeDescr type,
@@ -692,6 +682,10 @@ class OutlineTypedObject : public TypedObject {
       JSContext* cx, HandleTypeDescr type,
       gc::InitialHeap heap = gc::DefaultHeap);
 
+ public:
+  static OutlineTypedObject* createZeroed(JSContext* cx, HandleTypeDescr descr,
+                                          gc::InitialHeap heap);
+
   // Creates a typedObj that aliases the memory pointed at by `owner`
   // at the given offset. The typedObj will be a handle iff type is a
   // handle and a typed object otherwise.
@@ -699,15 +693,18 @@ class OutlineTypedObject : public TypedObject {
                                            Handle<TypedObject*> typedContents,
                                            uint32_t offset);
 
+  static OutlineTypedObject* createOpaque(JSContext* cx, HandleTypeDescr descr,
+                                          Handle<TypedObject*> target,
+                                          uint32_t offset);
+
+ private:
   // Use this method when `buffer` is the owner of the memory.
-  void attach(JSContext* cx, ArrayBufferObject& buffer, uint32_t offset);
+  void attach(ArrayBufferObject& buffer, uint32_t offset);
 
   // Otherwise, use this to attach to memory referenced by another typedObj.
   void attach(JSContext* cx, TypedObject& typedObj, uint32_t offset);
 
-  // Invoked when array buffer is transferred elsewhere
-  void notifyBufferDetached(void* newData);
-
+ public:
   static void obj_trace(JSTracer* trace, JSObject* object);
 };
 
@@ -731,7 +728,8 @@ class InlineTypedObject : public TypedObject {
   // Start of the inline data, which immediately follows the shape and type.
   uint8_t data_[1];
 
-  static const size_t MaximumSize =
+ public:
+  static const size_t MaxInlineBytes =
       JSObject::MAX_BYTE_SIZE - sizeof(TypedObject);
 
  protected:
@@ -740,10 +738,10 @@ class InlineTypedObject : public TypedObject {
  public:
   static inline gc::AllocKind allocKindForTypeDescriptor(TypeDescr* descr);
 
-  static bool canAccommodateSize(size_t size) { return size <= MaximumSize; }
+  static bool canAccommodateSize(size_t size) { return size <= MaxInlineBytes; }
 
   static bool canAccommodateType(TypeDescr* type) {
-    return type->size() <= MaximumSize;
+    return type->size() <= MaxInlineBytes;
   }
 
   uint8_t* inlineTypedMem(const JS::AutoRequireNoGC&) const {
@@ -784,9 +782,11 @@ class InlineOpaqueTypedObject : public InlineTypedObject {
 };
 
 /*
- * Usage: NewOpaqueTypedObject(typeObj)
+ * Usage: NewOpaqueTypedObject(typeObj, newDatum, newOffset)
  *
- * Constructs a new, unattached instance of `Handle`.
+ * Constructs a new, unattached instance of `Handle`, and then moves the new
+ * instance to point at the memory referenced by `newDatum` with the offset
+ * `newOffset`.
  */
 MOZ_MUST_USE bool NewOpaqueTypedObject(JSContext* cx, unsigned argc, Value* vp);
 
@@ -797,22 +797,6 @@ MOZ_MUST_USE bool NewOpaqueTypedObject(JSContext* cx, unsigned argc, Value* vp);
  */
 MOZ_MUST_USE bool NewDerivedTypedObject(JSContext* cx, unsigned argc,
                                         Value* vp);
-
-/*
- * Usage: AttachTypedObject(typedObj, newDatum, newOffset)
- *
- * Moves `typedObj` to point at the memory referenced by `newDatum` with
- * the offset `newOffset`.
- */
-MOZ_MUST_USE bool AttachTypedObject(JSContext* cx, unsigned argc, Value* vp);
-
-/*
- * Usage: SetTypedObjectOffset(typedObj, offset)
- *
- * Changes the offset for `typedObj` within its buffer to `offset`.
- * `typedObj` must already be attached.
- */
-MOZ_MUST_USE bool SetTypedObjectOffset(JSContext*, unsigned argc, Value* vp);
 
 /*
  * Usage: ObjectIsTypeDescr(obj)
@@ -828,37 +812,12 @@ MOZ_MUST_USE bool ObjectIsTypeDescr(JSContext* cx, unsigned argc, Value* vp);
  */
 MOZ_MUST_USE bool ObjectIsTypedObject(JSContext* cx, unsigned argc, Value* vp);
 
-/*
- * Usage: ObjectIsOpaqueTypedObject(obj)
- *
- * True if `obj` is an opaque typed object.
- */
-MOZ_MUST_USE bool ObjectIsOpaqueTypedObject(JSContext* cx, unsigned argc,
-                                            Value* vp);
-
-/*
- * Usage: ObjectIsTransparentTypedObject(obj)
- *
- * True if `obj` is a transparent typed object.
- */
-MOZ_MUST_USE bool ObjectIsTransparentTypedObject(JSContext* cx, unsigned argc,
-                                                 Value* vp);
-
 // Predicates on type descriptor objects.  In all cases, 'obj' must be a type
 // descriptor.
 
 MOZ_MUST_USE bool TypeDescrIsSimpleType(JSContext*, unsigned argc, Value* vp);
 
 MOZ_MUST_USE bool TypeDescrIsArrayType(JSContext*, unsigned argc, Value* vp);
-
-/*
- * Usage: TypedObjectIsAttached(obj)
- *
- * Given a TypedObject `obj`, returns true if `obj` is
- * "attached" (i.e., its data pointer is nullptr).
- */
-MOZ_MUST_USE bool TypedObjectIsAttached(JSContext* cx, unsigned argc,
-                                        Value* vp);
 
 /*
  * Usage: TypedObjectTypeDescr(obj)
@@ -1050,9 +1009,6 @@ inline bool IsTypeDescrClass(const JSClass* clasp) {
 inline bool TypedObject::opaque() const {
   return IsOpaqueTypedObjectClass(getClass());
 }
-
-JSObject* InitTypedObjectModuleObject(JSContext* cx,
-                                      JS::Handle<GlobalObject*> global);
 
 }  // namespace js
 

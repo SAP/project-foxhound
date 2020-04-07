@@ -7,13 +7,23 @@
 #include "SocketProcessLogging.h"
 
 #include "base/task.h"
+#include "InputChannelThrottleQueueChild.h"
+#include "HttpTransactionChild.h"
+#include "HttpConnectionMgrChild.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/CrashReporterClient.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/FileDescriptorSetChild.h"
+#include "mozilla/ipc/IPCStreamAlloc.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/net/DNSRequestChild.h"
+#include "mozilla/ipc/PChildToParentStreamChild.h"
+#include "mozilla/ipc/PParentToChildStreamChild.h"
 #include "mozilla/Preferences.h"
 #include "nsDebugImpl.h"
+#include "nsIDNSService.h"
+#include "nsIHttpActivityObserver.h"
 #include "nsThreadManager.h"
 #include "ProcessUtils.h"
 #include "SocketProcessBridgeParent.h"
@@ -31,9 +41,9 @@ namespace net {
 
 using namespace ipc;
 
-static SocketProcessChild* sSocketProcessChild;
+SocketProcessChild* sSocketProcessChild;
 
-SocketProcessChild::SocketProcessChild() {
+SocketProcessChild::SocketProcessChild() : mShuttingDown(false) {
   LOG(("CONSTRUCT SocketProcessChild::SocketProcessChild\n"));
   nsDebugImpl::SetMultiprocessMode("Socket");
 
@@ -60,11 +70,11 @@ void CGSShutdownServerConnections();
 
 bool SocketProcessChild::Init(base::ProcessId aParentPid,
                               const char* aParentBuildID, MessageLoop* aIOLoop,
-                              IPC::Channel* aChannel) {
+                              UniquePtr<IPC::Channel> aChannel) {
   if (NS_WARN_IF(NS_FAILED(nsThreadManager::get().Init()))) {
     return false;
   }
-  if (NS_WARN_IF(!Open(aChannel, aParentPid, aIOLoop))) {
+  if (NS_WARN_IF(!Open(std::move(aChannel), aParentPid, aIOLoop))) {
     return false;
   }
   // This must be sent before any IPDL message, which may hit sentinel
@@ -84,6 +94,7 @@ bool SocketProcessChild::Init(base::ProcessId aParentPid,
     return false;
   }
 
+  BackgroundChild::Startup();
   SetThisProcessName("Socket Process");
 #if defined(XP_MACOSX)
   // Close all current connections to the WindowServer. This ensures that the
@@ -96,6 +107,8 @@ bool SocketProcessChild::Init(base::ProcessId aParentPid,
 
 void SocketProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
   LOG(("SocketProcessChild::ActorDestroy\n"));
+
+  mShuttingDown = true;
 
   if (AbnormalShutdown == aWhy) {
     NS_WARNING("Shutting down Socket process early due to a crash!");
@@ -166,8 +179,8 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvInitSocketProcessBridgeParent(
   MOZ_ASSERT(!mSocketProcessBridgeParentMap.Get(aContentProcessId, nullptr));
 
   mSocketProcessBridgeParentMap.Put(
-      aContentProcessId,
-      new SocketProcessBridgeParent(aContentProcessId, std::move(aEndpoint)));
+      aContentProcessId, MakeRefPtr<SocketProcessBridgeParent>(
+                             aContentProcessId, std::move(aEndpoint)));
   return IPC_OK();
 }
 
@@ -212,19 +225,104 @@ bool SocketProcessChild::DeallocPWebrtcTCPSocketChild(
   return true;
 }
 
-PDNSRequestChild* SocketProcessChild::AllocPDNSRequestChild(
-    const nsCString& aHost, const OriginAttributes& aOriginAttributes,
-    const uint32_t& aFlags) {
-  // We don't allocate here: instead we always use IPDL constructor that takes
-  // an existing object
-  MOZ_ASSERT_UNREACHABLE("AllocPDNSRequestChild should not be called on child");
+already_AddRefed<PHttpTransactionChild>
+SocketProcessChild::AllocPHttpTransactionChild() {
+  RefPtr<HttpTransactionChild> actor = new HttpTransactionChild();
+  return actor.forget();
+}
+
+PFileDescriptorSetChild* SocketProcessChild::AllocPFileDescriptorSetChild(
+    const FileDescriptor& aFD) {
+  return new FileDescriptorSetChild(aFD);
+}
+
+bool SocketProcessChild::DeallocPFileDescriptorSetChild(
+    PFileDescriptorSetChild* aActor) {
+  delete aActor;
+  return true;
+}
+
+PChildToParentStreamChild*
+SocketProcessChild::AllocPChildToParentStreamChild() {
+  MOZ_CRASH("PChildToParentStreamChild actors should be manually constructed!");
+}
+
+bool SocketProcessChild::DeallocPChildToParentStreamChild(
+    PChildToParentStreamChild* aActor) {
+  delete aActor;
+  return true;
+}
+
+PParentToChildStreamChild*
+SocketProcessChild::AllocPParentToChildStreamChild() {
+  return mozilla::ipc::AllocPParentToChildStreamChild();
+}
+
+bool SocketProcessChild::DeallocPParentToChildStreamChild(
+    PParentToChildStreamChild* aActor) {
+  delete aActor;
+  return true;
+}
+
+PChildToParentStreamChild*
+SocketProcessChild::SendPChildToParentStreamConstructor(
+    PChildToParentStreamChild* aActor) {
+  MOZ_ASSERT(NS_IsMainThread());
+  return PSocketProcessChild::SendPChildToParentStreamConstructor(aActor);
+}
+
+PFileDescriptorSetChild* SocketProcessChild::SendPFileDescriptorSetConstructor(
+    const FileDescriptor& aFD) {
+  MOZ_ASSERT(NS_IsMainThread());
+  return PSocketProcessChild::SendPFileDescriptorSetConstructor(aFD);
+}
+
+already_AddRefed<PHttpConnectionMgrChild>
+SocketProcessChild::AllocPHttpConnectionMgrChild() {
+  LOG(("SocketProcessChild::AllocPHttpConnectionMgrChild \n"));
+  if (!gHttpHandler) {
+    nsresult rv;
+    nsCOMPtr<nsIIOService> ios = do_GetIOService(&rv);
+    if (NS_FAILED(rv)) {
+      return nullptr;
+    }
+
+    nsCOMPtr<nsIProtocolHandler> handler;
+    rv = ios->GetProtocolHandler("http", getter_AddRefs(handler));
+    if (NS_FAILED(rv)) {
+      return nullptr;
+    }
+
+    // Initialize DNS Service here, since it needs to be done in main thread.
+    nsCOMPtr<nsIDNSService> dns =
+        do_GetService("@mozilla.org/network/dns-service;1", &rv);
+    if (NS_FAILED(rv)) {
+      return nullptr;
+    }
+
+    RefPtr<HttpConnectionMgrChild> actor = new HttpConnectionMgrChild();
+    return actor.forget();
+  }
+
   return nullptr;
 }
 
-bool SocketProcessChild::DeallocPDNSRequestChild(PDNSRequestChild* aChild) {
-  DNSRequestChild* p = static_cast<DNSRequestChild*>(aChild);
-  p->ReleaseIPDLReference();
-  return true;
+mozilla::ipc::IPCResult
+SocketProcessChild::RecvOnHttpActivityDistributorActivated(
+    const bool& aIsActivated) {
+  if (nsCOMPtr<nsIHttpActivityObserver> distributor =
+          services::GetActivityDistributor()) {
+    distributor->SetIsActive(aIsActivated);
+  }
+  return IPC_OK();
+}
+already_AddRefed<PInputChannelThrottleQueueChild>
+SocketProcessChild::AllocPInputChannelThrottleQueueChild(
+    const uint32_t& aMeanBytesPerSecond, const uint32_t& aMaxBytesPerSecond) {
+  RefPtr<InputChannelThrottleQueueChild> p =
+      new InputChannelThrottleQueueChild();
+  p->Init(aMeanBytesPerSecond, aMaxBytesPerSecond);
+  return p.forget();
 }
 
 }  // namespace net

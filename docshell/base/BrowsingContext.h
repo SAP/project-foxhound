@@ -7,6 +7,8 @@
 #ifndef mozilla_dom_BrowsingContext_h
 #define mozilla_dom_BrowsingContext_h
 
+#include "GVAutoplayRequestUtils.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Tuple.h"
@@ -14,9 +16,14 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/LoadURIOptionsBinding.h"
 #include "mozilla/dom/LocationBase.h"
+#include "mozilla/dom/MaybeDiscarded.h"
+#include "mozilla/dom/FeaturePolicyUtils.h"
+#include "mozilla/dom/SessionStorageManager.h"
 #include "mozilla/dom/UserActivation.h"
+#include "mozilla/dom/SyncedContext.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsID.h"
 #include "nsIDocShell.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -25,6 +32,7 @@
 
 class nsDocShellLoadState;
 class nsGlobalWindowOuter;
+class nsILoadInfo;
 class nsIPrincipal;
 class nsOuterWindowProxy;
 class PickleIterator;
@@ -56,28 +64,53 @@ struct Nullable;
 template <typename T>
 class Sequence;
 class StructuredCloneHolder;
+class WindowContext;
 struct WindowPostMessageOptions;
 class WindowProxyHolder;
 
-class BrowsingContextBase {
- protected:
-  BrowsingContextBase() {
-    // default-construct each field.
-#define MOZ_BC_FIELD(name, type) m##name = type();
-#include "mozilla/dom/BrowsingContextFieldList.h"
-  }
-  ~BrowsingContextBase() = default;
-
-#define MOZ_BC_FIELD(name, type)                                    \
-  type m##name;                                                     \
-                                                                    \
-  /* shadow to validate fields. aSource is setter process or null*/ \
-  bool MaySet##name(type const& aValue, ContentParent* aSource) {   \
-    return true;                                                    \
-  }                                                                 \
-  void DidSet##name() {}
-#include "mozilla/dom/BrowsingContextFieldList.h"
-};
+// Fields are, by default, settable by any process and readable by any process.
+// Racy sets will be resolved as-if they occurred in the order the parent
+// process finds out about them.
+// This defines the default do-nothing implementations for DidSetXxxx()
+// and MaySetXxxxx() for all the fields. See below for descriptions
+// of what these do if overridden.
+#define MOZ_EACH_BC_FIELD(FIELD)                                             \
+  FIELD(Name, nsString)                                                      \
+  FIELD(Closed, bool)                                                        \
+  FIELD(IsActive, bool)                                                      \
+  FIELD(EmbedderPolicy, nsILoadInfo::CrossOriginEmbedderPolicy)              \
+  FIELD(OpenerPolicy, nsILoadInfo::CrossOriginOpenerPolicy)                  \
+  /* Current opener for the BrowsingContext. Weak reference */               \
+  FIELD(OpenerId, uint64_t)                                                  \
+  FIELD(OnePermittedSandboxedNavigatorId, uint64_t)                          \
+  /* WindowID of the inner window which embeds this BC */                    \
+  FIELD(EmbedderInnerWindowId, uint64_t)                                     \
+  FIELD(CurrentInnerWindowId, uint64_t)                                      \
+  FIELD(HadOriginalOpener, bool)                                             \
+  FIELD(IsPopupSpam, bool)                                                   \
+  /* Controls whether the BrowsingContext is currently considered to be      \
+   * activated by a gesture */                                               \
+  FIELD(UserActivationState, UserActivation::State)                          \
+  /* Hold the audio muted state and should be used on top level browsing     \
+   * contexts only */                                                        \
+  FIELD(Muted, bool)                                                         \
+  FIELD(FeaturePolicy, RefPtr<mozilla::dom::FeaturePolicy>)                  \
+  /* See nsSandboxFlags.h for the possible flags. */                         \
+  FIELD(SandboxFlags, uint32_t)                                              \
+  FIELD(HistoryID, nsID)                                                     \
+  FIELD(InRDMPane, bool)                                                     \
+  FIELD(Loading, bool)                                                       \
+  FIELD(AncestorLoading, bool)                                               \
+  /* These field are used to store the states of autoplay media request on   \
+   * GeckoView only, and it would only be modified on the top level browsing \
+   * context. */                                                             \
+  FIELD(GVAudibleAutoplayRequestStatus, GVAutoplayRequestStatus)             \
+  FIELD(GVInaudibleAutoplayRequestStatus, GVAutoplayRequestStatus)           \
+  /* ScreenOrientation-related APIs */                                       \
+  FIELD(CurrentOrientationAngle, float)                                      \
+  FIELD(CurrentOrientationType, mozilla::dom::OrientationType)               \
+  FIELD(UserAgentOverride, nsString)                                         \
+  FIELD(EmbedderElementType, Maybe<nsString>)
 
 // BrowsingContext, in this context, is the cross process replicated
 // environment in which information about documents is stored. In
@@ -95,9 +128,9 @@ class BrowsingContextBase {
 // Trees of BrowsingContexts should only ever contain nodes of the
 // same BrowsingContext::Type. This is enforced by asserts in the
 // BrowsingContext::Create* methods.
-class BrowsingContext : public nsISupports,
-                        public nsWrapperCache,
-                        public BrowsingContextBase {
+class BrowsingContext : public nsISupports, public nsWrapperCache {
+  MOZ_DECL_SYNCED_CONTEXT(BrowsingContext, MOZ_EACH_BC_FIELD)
+
  public:
   enum class Type { Chrome, Content };
 
@@ -126,6 +159,26 @@ class BrowsingContext : public nsISupports,
                                                   const nsAString& aName,
                                                   Type aType);
 
+  // Same as the above, but does not immediately attach the browsing context.
+  // `EnsureAttached()` must be called before the BrowsingContext is used for a
+  // DocShell, BrowserParent, or BrowserBridgeChild.
+  static already_AddRefed<BrowsingContext> CreateDetached(
+      BrowsingContext* aParent, BrowsingContext* aOpener,
+      const nsAString& aName, Type aType);
+
+  // Same as Create, but for a BrowsingContext which does not belong to a
+  // visible window, and will always be detached by the process that created it.
+  // In contrast, any top-level BrowsingContext created in a content process
+  // using Create() is assumed to belong to a <browser> element in the parent
+  // process, which will be responsible for detaching it.
+  static already_AddRefed<BrowsingContext> CreateWindowless(
+      BrowsingContext* aParent, BrowsingContext* aOpener,
+      const nsAString& aName, Type aType);
+
+  void EnsureAttached();
+
+  bool EverAttached() const { return mEverAttached; }
+
   // Cast this object to a canonical browsing context, and return it.
   CanonicalBrowsingContext* Canonical();
 
@@ -138,6 +191,9 @@ class BrowsingContext : public nsISupports,
   // been destroyed, and may not be available on the other side of an IPC
   // message.
   bool IsDiscarded() const { return mIsDiscarded; }
+
+  bool Windowless() const { return mWindowless; }
+  void SetWindowless();
 
   // Get the DocShell for this BrowsingContext if it is in-process, or
   // null if it's not.
@@ -158,6 +214,11 @@ class BrowsingContext : public nsISupports,
   // in-process, or null if it's not.
   Element* GetEmbedderElement() const { return mEmbedderElement; }
   void SetEmbedderElement(Element* aEmbedder);
+
+  // Called after the BrowingContext has been embedded in a FrameLoader. This
+  // happens after `SetEmbedderElement` is called on the BrowsingContext and
+  // after the BrowsingContext has been set on the FrameLoader.
+  void Embed();
 
   // Get the outer window object for this BrowsingContext if it is in-process
   // and still has a docshell, or null otherwise.
@@ -191,8 +252,9 @@ class BrowsingContext : public nsISupports,
   nsresult LoadURI(BrowsingContext* aAccessor, nsDocShellLoadState* aLoadState,
                    bool aSetNavigating = false);
 
-  void LoadURI(const nsAString& aURI, const LoadURIOptions& aOptions,
-               ErrorResult& aError);
+  nsresult InternalLoad(BrowsingContext* aAccessor,
+                        nsDocShellLoadState* aLoadState,
+                        nsIDocShell** aDocShell, nsIRequest** aRequest);
 
   void DisplayLoadError(const nsAString& aURI);
 
@@ -204,25 +266,29 @@ class BrowsingContext : public nsISupports,
   // it is neither closed, cached, nor discarded).
   bool IsTargetable();
 
-  const nsString& Name() const { return mName; }
-  void GetName(nsAString& aName) { aName = mName; }
-  bool NameEquals(const nsAString& aName) { return mName.Equals(aName); }
+  const nsString& Name() const { return GetName(); }
+  void GetName(nsAString& aName) { aName = GetName(); }
+  bool NameEquals(const nsAString& aName) { return GetName().Equals(aName); }
 
+  Type GetType() const { return mType; }
   bool IsContent() const { return mType == Type::Content; }
   bool IsChrome() const { return !IsContent(); }
+
+  bool IsTop() const { return !GetParent(); }
 
   bool IsTopContent() const { return IsContent() && !GetParent(); }
 
   bool IsContentSubframe() const { return IsContent() && GetParent(); }
-
   uint64_t Id() const { return mBrowsingContextId; }
 
-  BrowsingContext* GetParent() const { return mParent; }
-
+  BrowsingContext* GetParent() const {
+    MOZ_ASSERT_IF(mParent, mParent->mType == mType);
+    return mParent;
+  }
   BrowsingContext* Top();
 
   already_AddRefed<BrowsingContext> GetOpener() const {
-    RefPtr<BrowsingContext> opener(Get(mOpenerId));
+    RefPtr<BrowsingContext> opener(Get(GetOpenerId()));
     if (!mIsDiscarded && opener && !opener->mIsDiscarded) {
       MOZ_DIAGNOSTIC_ASSERT(opener->mType == mType);
       return opener.forget();
@@ -237,7 +303,7 @@ class BrowsingContext : public nsISupports,
 
   bool HasOpener() const;
 
-  bool HadOriginalOpener() const { return mHadOriginalOpener; }
+  bool HadOriginalOpener() const { return GetHadOriginalOpener(); }
 
   /**
    * When a new browsing context is opened by a sandboxed document, it needs to
@@ -245,10 +311,10 @@ class BrowsingContext : public nsISupports,
    * navigated by it.  This is the "one permitted sandboxed navigator".
    */
   already_AddRefed<BrowsingContext> GetOnePermittedSandboxedNavigator() const {
-    return Get(mOnePermittedSandboxedNavigatorId);
+    return Get(GetOnePermittedSandboxedNavigatorId());
   }
   void SetOnePermittedSandboxedNavigator(BrowsingContext* aNavigator) {
-    if (mOnePermittedSandboxedNavigatorId) {
+    if (GetOnePermittedSandboxedNavigatorId()) {
       MOZ_ASSERT(false,
                  "One Permitted Sandboxed Navigator should only be set once.");
     } else {
@@ -256,14 +322,40 @@ class BrowsingContext : public nsISupports,
     }
   }
 
+  uint32_t SandboxFlags() { return GetSandboxFlags(); }
+
   void GetChildren(Children& aChildren);
 
+  void GetWindowContexts(nsTArray<RefPtr<WindowContext>>& aWindows);
+
+  void RegisterWindowContext(WindowContext* aWindow);
+  void UnregisterWindowContext(WindowContext* aWindow);
+  WindowContext* GetCurrentWindowContext() const {
+    return mCurrentWindowContext;
+  }
+
   BrowsingContextGroup* Group() { return mGroup; }
+
+  bool InRDMPane() const { return GetInRDMPane(); }
+
+  bool IsLoading();
+
+  // ScreenOrientation related APIs
+  void SetCurrentOrientation(OrientationType aType, float aAngle) {
+    SetCurrentOrientationType(aType);
+    SetCurrentOrientationAngle(aAngle);
+  }
+
+  void SetRDMPaneOrientation(OrientationType aType, float aAngle) {
+    if (InRDMPane()) {
+      SetCurrentOrientation(aType, aAngle);
+    }
+  }
 
   // Using the rules for choosing a browsing context we try to find
   // the browsing context with the given name in the set of
   // transitively reachable browsing contexts. Performs access control
-  // with regards to this.
+  // checks with regard to this.
   // See
   // https://html.spec.whatwg.org/multipage/browsers.html#the-rules-for-choosing-a-browsing-context-given-a-browsing-context-name.
   //
@@ -271,14 +363,21 @@ class BrowsingContext : public nsISupports,
   // calling nsIDocShellTreeItem::FindItemWithName(aName, nullptr,
   // nullptr, false, <return value>).
   BrowsingContext* FindWithName(const nsAString& aName,
-                                BrowsingContext& aRequestingContext);
+                                bool aUseEntryGlobalForAccessCheck = true);
 
   // Find a browsing context in this context's list of
   // children. Doesn't consider the special names, '_self', '_parent',
-  // '_top', or '_blank'. Performs access control with regard to
+  // '_top', or '_blank'. Performs access control checks with regard to
   // 'this'.
   BrowsingContext* FindChildWithName(const nsAString& aName,
                                      BrowsingContext& aRequestingContext);
+
+  // Find a browsing context in the subtree rooted at 'this' Doesn't
+  // consider the special names, '_self', '_parent', '_top', or
+  // '_blank'. Performs access control checks with regard to
+  // 'aRequestingContext'.
+  BrowsingContext* FindWithNameInSubtree(const nsAString& aName,
+                                         BrowsingContext& aRequestingContext);
 
   nsISupports* GetParentObject() const;
   JSObject* WrapObject(JSContext* aCx,
@@ -326,6 +425,9 @@ class BrowsingContext : public nsISupports,
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(BrowsingContext)
 
   const Children& GetChildren() { return mChildren; }
+  const nsTArray<RefPtr<WindowContext>>& GetWindowContexts() {
+    return mWindowContexts;
+  }
 
   // Perform a pre-order walk of this BrowsingContext subtree.
   void PreOrderWalk(const std::function<void(BrowsingContext*)>& aCallback) {
@@ -350,8 +452,8 @@ class BrowsingContext : public nsISupports,
   void Location(JSContext* aCx, JS::MutableHandle<JSObject*> aLocation,
                 ErrorResult& aError);
   void Close(CallerType aCallerType, ErrorResult& aError);
-  bool GetClosed(ErrorResult&) { return mClosed; }
-  void Focus(ErrorResult& aError);
+  bool GetClosed(ErrorResult&) { return GetClosed(); }
+  void Focus(CallerType aCallerType, ErrorResult& aError);
   void Blur(ErrorResult& aError);
   WindowProxyHolder GetFrames(ErrorResult& aError);
   int32_t Length() const { return mChildren.Length(); }
@@ -367,6 +469,11 @@ class BrowsingContext : public nsISupports,
                       const WindowPostMessageOptions& aOptions,
                       nsIPrincipal& aSubjectPrincipal, ErrorResult& aError);
 
+  void GetCustomUserAgent(nsString& aUserAgent) {
+    aUserAgent = Top()->GetUserAgentOverride();
+  }
+  void SetCustomUserAgent(const nsAString& aUserAgent);
+
   JSObject* WrapObject(JSContext* aCx);
 
   static JSObject* ReadStructuredClone(JSContext* aCx,
@@ -377,62 +484,17 @@ class BrowsingContext : public nsISupports,
 
   void StartDelayedAutoplayMediaComponents();
 
-  /**
-   * Transaction object. This object is used to specify and then commit
-   * modifications to synchronized fields in BrowsingContexts.
-   */
-  class Transaction {
-   public:
-    // Apply the changes from this transaction to the specified BrowsingContext
-    // in all processes. This method will call the correct `MaySet` and
-    // `DidSet` methods, as well as move the value.
-    //
-    // If the target has been discarded, changes will be ignored.
-    //
-    // NOTE: This method mutates `this`, resetting all members to `Nothing()`
-    nsresult Commit(BrowsingContext* aOwner);
-
-    // This method should be called before invoking `Apply` on this transaction
-    // object in the original process, and the parent process.
-    //
-    // |aSource| is the ContentParent which is performing the mutation in the
-    // parent process.
-    MOZ_MUST_USE bool Validate(BrowsingContext* aOwner, ContentParent* aSource);
-
-    // This method shold be called before invoking `Apply` on this transaction
-    // object in child processes messaged by the parent process. It clears out
-    // out-of-date sets resolving epoch conflicts.
-    MOZ_MUST_USE bool ValidateEpochs(BrowsingContext* aOwner, uint64_t aEpoch);
-
-    // You probably don't want to directly call this method - instead call
-    // `Commit`, which will perform the necessary synchronization.
-    //
-    // `Validate` must be called before calling this method.
-    void Apply(BrowsingContext* aOwner);
-
-#define MOZ_BC_FIELD(name, type) mozilla::Maybe<type> m##name;
-#include "mozilla/dom/BrowsingContextFieldList.h"
-
-   private:
-    friend struct mozilla::ipc::IPDLParamTraits<Transaction>;
-
-    // Has `Validate` been called on this method yet?
-    // NOTE: This field is not synced, and must be called in every process.
-    bool mValidated = false;
-  };
-
-#define MOZ_BC_FIELD(name, type)                        \
-  template <typename... Args>                           \
-  void Set##name(Args&&... aValue) {                    \
-    Transaction txn;                                    \
-    txn.m##name.emplace(std::forward<Args>(aValue)...); \
-    txn.Commit(this);                                   \
-  }                                                     \
-                                                        \
-  type const& Get##name() const { return m##name; }
-#include "mozilla/dom/BrowsingContextFieldList.h"
+  void ResetGVAutoplayRequestStatus();
 
   /**
+  // Every BrowsingContext has a set of GetXxxx() and SetXxxxx() methods for
+  // all the fields defined in mozilla/dom/BrowsingContextFieldList.h.
+  // They all have optional DidSetXxxx() and MaySetXxxx() methods, which
+  // have default inherited do-nothing implementations, but we can override
+  // here.  DidSetXxxx() is used to run code in any process that sees the
+  // the value updated (note: even if the value itself didn't change).
+  // MaySetXxxx() is used to verify that the setting is allowed, and will
+  // assert if it fails in Debug builds.
    * Information required to initialize a BrowsingContext in another process.
    * This object may be serialized over IPC.
    */
@@ -446,11 +508,12 @@ class BrowsingContext : public nsISupports,
     already_AddRefed<BrowsingContext> GetParent();
     already_AddRefed<BrowsingContext> GetOpener();
 
+    uint64_t GetOpenerId() const { return mozilla::Get<IDX_OpenerId>(mFields); }
+
     bool mCached;
-    // Include each field, skipping mOpener, as we want to handle it
-    // separately.
-#define MOZ_BC_FIELD(name, type) type m##name;
-#include "mozilla/dom/BrowsingContextFieldList.h"
+    bool mWindowless;
+
+    FieldTuple mFields;
   };
 
   // Create an IPCInitializer object for this BrowsingContext.
@@ -464,30 +527,32 @@ class BrowsingContext : public nsISupports,
   // Performs access control to check that 'this' can access 'aTarget'.
   bool CanAccess(BrowsingContext* aTarget, bool aConsiderOpener = true);
 
+  // The runnable will be called once there is idle time, or the top level
+  // page has been loaded or if a timeout has fired.
+  // Must be called only on the top level BrowsingContext.
+  void AddDeprioritizedLoadRunner(nsIRunnable* aRunner);
+
+  RefPtr<SessionStorageManager> GetSessionStorageManager();
+
+  bool PendingInitialization() const { return mPendingInitialization; };
+  void SetPendingInitialization(bool aVal) { mPendingInitialization = aVal; };
+
  protected:
   virtual ~BrowsingContext();
   BrowsingContext(BrowsingContext* aParent, BrowsingContextGroup* aGroup,
-                  uint64_t aBrowsingContextId, Type aType);
+                  uint64_t aBrowsingContextId, Type aType,
+                  FieldTuple&& aFields);
 
  private:
-  // Returns true if the given name is one of the "special" names, currently:
-  // "_self", "_parent", "_top", or "_blank".
-  static bool IsSpecialName(const nsAString& aName);
-
   // Find the special browsing context if aName is '_self', '_parent',
   // '_top', but not '_blank'. The latter is handled in FindWithName
   BrowsingContext* FindWithSpecialName(const nsAString& aName,
                                        BrowsingContext& aRequestingContext);
 
-  // Find a browsing context in the subtree rooted at 'this' Doesn't
-  // consider the special names, '_self', '_parent', '_top', or
-  // '_blank'. Performs access control with regard to
-  // 'aRequestingContext'.
-  BrowsingContext* FindWithNameInSubtree(const nsAString& aName,
-                                         BrowsingContext& aRequestingContext);
-
   friend class ::nsOuterWindowProxy;
   friend class ::nsGlobalWindowOuter;
+  friend class WindowContext;
+
   // Update the window proxy object that corresponds to this browsing context.
   // This should be called from the window proxy object's objectMoved hook, if
   // the object mWindowProxy points to was moved by the JS GC.
@@ -527,8 +592,15 @@ class BrowsingContext : public nsISupports,
     already_AddRefed<nsIDocShell> GetDocShell() override { return nullptr; }
   };
 
+  // Send a given `BaseTransaction` object to the correct remote.
+  void SendCommitTransaction(ContentParent* aParent,
+                             const BaseTransaction& aTxn, uint64_t aEpoch);
+  void SendCommitTransaction(ContentChild* aChild, const BaseTransaction& aTxn,
+                             uint64_t aEpoch);
+
   // Ensure that opener is in the same BrowsingContextGroup.
-  bool MaySetOpener(const uint64_t& aValue, ContentParent* aSource) {
+  bool CanSet(FieldIndex<IDX_OpenerId>, const uint64_t& aValue,
+              ContentParent* aSource) {
     if (aValue != 0) {
       RefPtr<BrowsingContext> opener = Get(aValue);
       return opener && opener->Group() == Group();
@@ -536,19 +608,51 @@ class BrowsingContext : public nsISupports,
     return true;
   }
 
-  void DidSetUserActivationState();
+  void DidSet(FieldIndex<IDX_UserActivationState>);
 
   // Ensure that we only set the flag on the top level browsingContext.
   // And then, we do a pre-order walk in the tree to refresh the
   // volume of all media elements.
-  void DidSetMuted();
+  void DidSet(FieldIndex<IDX_Muted>);
 
-  bool MaySetEmbedderInnerWindowId(const uint64_t& aValue,
-                                   ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_EmbedderInnerWindowId>, const uint64_t& aValue,
+              ContentParent* aSource);
 
-  bool MaySetIsPopupSpam(const bool& aValue, ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_CurrentInnerWindowId>, const uint64_t& aValue,
+              ContentParent* aSource);
 
-  void DidSetIsPopupSpam();
+  void DidSet(FieldIndex<IDX_CurrentInnerWindowId>);
+
+  bool CanSet(FieldIndex<IDX_IsPopupSpam>, const bool& aValue,
+              ContentParent* aSource);
+
+  void DidSet(FieldIndex<IDX_IsPopupSpam>);
+
+  void DidSet(FieldIndex<IDX_GVAudibleAutoplayRequestStatus>);
+  void DidSet(FieldIndex<IDX_GVInaudibleAutoplayRequestStatus>);
+
+  void DidSet(FieldIndex<IDX_Loading>);
+
+  void DidSet(FieldIndex<IDX_AncestorLoading>);
+
+  void DidSet(FieldIndex<IDX_UserAgentOverride>);
+  bool CanSet(FieldIndex<IDX_UserAgentOverride>, const nsString& aUserAgent,
+              ContentParent* aSource);
+
+  bool CanSet(FieldIndex<IDX_EmbedderElementType>,
+              const Maybe<nsString>& aInitiatorType, ContentParent* aSource);
+
+  template <size_t I, typename T>
+  bool CanSet(FieldIndex<I>, const T&, ContentParent*) {
+    return true;
+  }
+
+  template <size_t I>
+  void DidSet(FieldIndex<I>) {}
+
+  // True if the process attempting to set field is the same as the embedder's
+  // process.
+  bool CheckOnlyEmbedderCanSet(ContentParent* aSource);
 
   // Type of BrowsingContent
   const Type mType;
@@ -558,10 +662,15 @@ class BrowsingContext : public nsISupports,
 
   RefPtr<BrowsingContextGroup> mGroup;
   RefPtr<BrowsingContext> mParent;
+  // Note: BrowsingContext_Binding::ClearCachedChildrenValue must be called any
+  // time this array is mutated to keep the JS-exposed reflection in sync.
   Children mChildren;
   nsCOMPtr<nsIDocShell> mDocShell;
 
   RefPtr<Element> mEmbedderElement;
+
+  nsTArray<RefPtr<WindowContext>> mWindowContexts;
+  RefPtr<WindowContext> mCurrentWindowContext;
 
   // This is not a strong reference, but using a JS::Heap for that should be
   // fine. The JSObject stored in here should be a proxy with a
@@ -570,17 +679,8 @@ class BrowsingContext : public nsISupports,
   JS::Heap<JSObject*> mWindowProxy;
   LocationProxy mLocation;
 
-  // Whenever a `Transaction` is committed, it is associated with a new
-  // "Browsing Context Epoch". The epoch is associated with a specific content
-  // process. This `mEpochs` field tracks the epoch of the most recent comitted
-  // transaction in this process, and is used to resolve races between processes
-  // and ensure browsing context field consistency.
-  //
-  // This field is only used by content processes.
-  struct {
-#define MOZ_BC_FIELD(name, ...) uint64_t name = 0;
-#include "mozilla/dom/BrowsingContextFieldList.h"
-  } mEpochs;
+  // True if Attach() has been called on this BrowsingContext already.
+  bool mEverAttached : 1;
 
   // Is the most recent Document in this BrowsingContext loaded within this
   // process? This may be true with a null mDocShell after the Window has been
@@ -591,13 +691,49 @@ class BrowsingContext : public nsISupports,
   // only be discarded once.
   bool mIsDiscarded : 1;
 
+  // True if this BrowsingContext has no associated visible window, and is owned
+  // by whichever process created it, even if top-level.
+  bool mWindowless : 1;
+
   // This is true if the BrowsingContext was out of process, but is now in
   // process, and might have remote window proxies that need to be cleaned up.
   bool mDanglingRemoteOuterProxies : 1;
 
+  // If true, the docShell has not been fully initialized, and may not be used
+  // as the target of a load.
+  bool mPendingInitialization : 1;
+
+  // True if this BrowsingContext has been embedded in a element in this
+  // process.
+  bool mEmbeddedByThisProcess : 1;
+
   // The start time of user gesture, this is only available if the browsing
   // context is in process.
   TimeStamp mUserGestureStart;
+
+  class DeprioritizedLoadRunner
+      : public mozilla::Runnable,
+        public mozilla::LinkedListElement<DeprioritizedLoadRunner> {
+   public:
+    explicit DeprioritizedLoadRunner(nsIRunnable* aInner)
+        : Runnable("DeprioritizedLoadRunner"), mInner(aInner) {}
+
+    NS_IMETHOD Run() override {
+      if (mInner) {
+        RefPtr<nsIRunnable> inner = std::move(mInner);
+        inner->Run();
+      }
+
+      return NS_OK;
+    }
+
+   private:
+    RefPtr<nsIRunnable> mInner;
+  };
+
+  mozilla::LinkedList<DeprioritizedLoadRunner> mDeprioritizedLoadRunner;
+
+  RefPtr<dom::SessionStorageManager> mSessionStorageManager;
 };
 
 /**
@@ -617,30 +753,25 @@ extern bool GetRemoteOuterWindowProxy(JSContext* aCx, BrowsingContext* aContext,
                                       JS::Handle<JSObject*> aTransplantTo,
                                       JS::MutableHandle<JSObject*> aRetVal);
 
-typedef BrowsingContext::Transaction BrowsingContextTransaction;
-typedef BrowsingContext::IPCInitializer BrowsingContextInitializer;
-typedef BrowsingContext::Children BrowsingContextChildren;
+using BrowsingContextTransaction = BrowsingContext::BaseTransaction;
+using BrowsingContextInitializer = BrowsingContext::IPCInitializer;
+using BrowsingContextChildren = BrowsingContext::Children;
+using MaybeDiscardedBrowsingContext = MaybeDiscarded<BrowsingContext>;
+
+// Specialize the transaction object for every translation unit it's used in.
+extern template class syncedcontext::Transaction<BrowsingContext>;
 
 }  // namespace dom
 
 // Allow sending BrowsingContext objects over IPC.
 namespace ipc {
 template <>
-struct IPDLParamTraits<dom::BrowsingContext*> {
+struct IPDLParamTraits<dom::MaybeDiscarded<dom::BrowsingContext>> {
   static void Write(IPC::Message* aMsg, IProtocol* aActor,
-                    dom::BrowsingContext* aParam);
+                    const dom::MaybeDiscarded<dom::BrowsingContext>& aParam);
   static bool Read(const IPC::Message* aMsg, PickleIterator* aIter,
-                   IProtocol* aActor, RefPtr<dom::BrowsingContext>* aResult);
-};
-
-template <>
-struct IPDLParamTraits<dom::BrowsingContext::Transaction> {
-  static void Write(IPC::Message* aMessage, IProtocol* aActor,
-                    const dom::BrowsingContext::Transaction& aTransaction);
-
-  static bool Read(const IPC::Message* aMessage, PickleIterator* aIterator,
                    IProtocol* aActor,
-                   dom::BrowsingContext::Transaction* aTransaction);
+                   dom::MaybeDiscarded<dom::BrowsingContext>* aResult);
 };
 
 template <>
@@ -652,7 +783,6 @@ struct IPDLParamTraits<dom::BrowsingContext::IPCInitializer> {
                    IProtocol* aActor,
                    dom::BrowsingContext::IPCInitializer* aInitializer);
 };
-
 }  // namespace ipc
 }  // namespace mozilla
 

@@ -5,55 +5,67 @@
 
 const {
   STUBS_UPDATE_ENV,
-  formatPacket,
-  formatStub,
-  formatFile,
-  getStubFilePath,
-} = require("devtools/client/webconsole/test/browser/stub-generator-helpers");
+  getCleanedPacket,
+  getSerializedPacket,
+  getStubFile,
+  writeStubsToFile,
+} = require("chrome://mochitests/content/browser/devtools/client/webconsole/test/browser/stub-generator-helpers");
 
 const TEST_URI =
   "http://example.com/browser/devtools/client/webconsole/test/browser/test-console-api.html";
+const STUB_FILE = "pageError.js";
 
 add_task(async function() {
+  await pushPref("javascript.options.asyncstack", true);
+
   const isStubsUpdate = env.get(STUBS_UPDATE_ENV) == "true";
-  const filePath = getStubFilePath("pageError.js", env);
-  info(`${isStubsUpdate ? "Update" : "Check"} stubs at ${filePath}`);
+  info(`${isStubsUpdate ? "Update" : "Check"} ${STUB_FILE}`);
 
   const generatedStubs = await generatePageErrorStubs();
 
   if (isStubsUpdate) {
-    await OS.File.writeAtomic(filePath, generatedStubs);
-    ok(true, `${filePath} was successfully updated`);
+    await writeStubsToFile(env, STUB_FILE, generatedStubs);
+    ok(true, `${STUB_FILE} was updated`);
     return;
   }
 
-  const repoStubFileContent = await OS.File.read(filePath, {
-    encoding: "utf-8",
-  });
+  const existingStubs = getStubFile(STUB_FILE);
+  const FAILURE_MSG =
+    "The pageError stubs file needs to be updated by running " +
+    "`mach test devtools/client/webconsole/test/browser/" +
+    "browser_webconsole_stubs_page_error.js --headless " +
+    "--setenv WEBCONSOLE_STUBS_UPDATE=true`";
 
-  is(generatedStubs, repoStubFileContent, "stubs file is up to date");
-
-  if (generatedStubs != repoStubFileContent) {
-    ok(
-      false,
-      "The pageError stubs file needs to be updated by running " +
-        "`mach test devtools/client/webconsole/test/browser/" +
-        "browser_webconsole_stubs_page_error.js --headless " +
-        "--setenv WEBCONSOLE_STUBS_UPDATE=true`"
-    );
+  if (generatedStubs.size !== existingStubs.rawPackets.size) {
+    ok(false, FAILURE_MSG);
+    return;
   }
+
+  let failed = false;
+  for (const [key, packet] of generatedStubs) {
+    const packetStr = getSerializedPacket(packet);
+    const existingPacketStr = getSerializedPacket(
+      existingStubs.rawPackets.get(key)
+    );
+    is(packetStr, existingPacketStr, `"${key}" packet has expected value`);
+    failed = failed || packetStr !== existingPacketStr;
+  }
+
+  if (failed) {
+    ok(false, FAILURE_MSG);
+  } else {
+    ok(true, "Stubs are up to date");
+  }
+
+  await closeTabAndToolbox();
 });
 
 async function generatePageErrorStubs() {
-  const stubs = {
-    preparedMessages: [],
-    packets: [],
-  };
-
+  const stubs = new Map();
   const toolbox = await openNewTabAndToolbox(TEST_URI, "webconsole");
-
+  const webConsoleFront = await toolbox.target.getFront("console");
   for (const [key, code] of getCommands()) {
-    const onPageError = toolbox.target.activeConsole.once("pageError");
+    const onPageError = webConsoleFront.once("pageError");
 
     // On e10s, the exception is triggered in child process
     // and is ignored by test harness
@@ -62,6 +74,8 @@ async function generatePageErrorStubs() {
       expectUncaughtException();
     }
 
+    // Note: This needs to use ContentTask rather than SpecialPowers.spawn
+    // because the latter includes cross-process stack information.
     await ContentTask.spawn(gBrowser.selectedBrowser, code, function(subCode) {
       const script = content.document.createElement("script");
       script.append(content.document.createTextNode(subCode));
@@ -70,12 +84,10 @@ async function generatePageErrorStubs() {
     });
 
     const packet = await onPageError;
-    stubs.packets.push(formatPacket(key, packet));
-    stubs.preparedMessages.push(formatStub(key, packet));
+    stubs.set(key, getCleanedPacket(key, packet));
   }
 
-  await closeTabAndToolbox();
-  return formatFile(stubs, "ConsoleMessage");
+  return stubs;
 }
 
 function getCommands() {

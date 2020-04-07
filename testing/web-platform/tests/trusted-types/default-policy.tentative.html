@@ -39,7 +39,6 @@ promise_test(t => {
 }, "Count SecurityPolicyViolation events.");
 
 const testCases = [
-  [ "a", "href"],
   [ "script", "src" ],
   [ "div", "innerHTML" ],
   [ "script", "text" ],
@@ -49,7 +48,7 @@ const testCases = [
 testCases.forEach(c => {
   test(t => {
     const element = document.createElement(c[0]);
-    assert_throws(TypeError(), _ => element[c[1]] = "nodefault");
+    assert_throws_js(TypeError, _ => element[c[1]] = "nodefault");
     assert_equals(element[c[1]], "");
   }, `${c[0]}.${c[1]} no default policy`);
 });
@@ -70,8 +69,7 @@ function policy(str) {
     return "sanitized: " + str;
 }
 
-TrustedTypes.createPolicy("default", {
-  createURL: policy,
+trustedTypes.createPolicy("default", {
   createScriptURL: policy,
   createHTML: policy,
   createScript: policy
@@ -86,25 +84,25 @@ testCases.forEach(c => {
   }, name + "default");
   test(t => {
     const element = document.createElement(c[0]);
-    assert_throws(TypeError(), _ => element[c[1]] = "null");
+    assert_throws_js(TypeError, _ => element[c[1]] = "null");
     assert_equals(element[c[1]], "");
   }, name + "null");
   test(t => {
     const element = document.createElement(c[0]);
-    assert_throws(RangeError(), _ => element[c[1]] = "throw");
+    assert_throws_js(RangeError, _ => element[c[1]] = "throw");
   }, name + "throw");
   test(t => {
     const element = document.createElement(c[0]);
-    assert_throws(TypeError(), _ => element[c[1]] = "undefined");
+    assert_throws_js(TypeError, _ => element[c[1]] = "undefined");
     assert_equals(element[c[1]], "");
   }, name + "undefined");
   test(t => {
     const element = document.createElement(c[0]);
-    assert_throws(TypeError(), _ => element[c[1]] = "typeerror");
+    assert_throws_js(TypeError, _ => element[c[1]] = "typeerror");
   }, name + "typeerror");
 });
 
 // Trigger the exit condition in the "Count" promise test above.
-try { document.createElement("a").href = "done"; } catch (e) {}
+try { document.createElement("script").text = "done"; } catch (e) {}
 </script>
 </body>

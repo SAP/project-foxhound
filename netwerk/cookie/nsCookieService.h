@@ -15,19 +15,14 @@
 #include "nsCookie.h"
 #include "nsCookieKey.h"
 #include "nsString.h"
-#include "nsAutoPtr.h"
 #include "nsHashKeys.h"
 #include "nsIMemoryReporter.h"
 #include "nsTHashtable.h"
 #include "mozIStorageStatement.h"
 #include "mozIStorageAsyncStatement.h"
-#include "mozIStoragePendingStatement.h"
 #include "mozIStorageConnection.h"
-#include "mozIStorageRow.h"
 #include "mozIStorageCompletionCallback.h"
 #include "mozIStorageStatementCallback.h"
-#include "mozIStorageFunction.h"
-#include "nsIVariant.h"
 #include "nsIFile.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/BasePrincipal.h"
@@ -39,7 +34,7 @@
 using mozilla::OriginAttributes;
 
 class nsICookiePermission;
-class nsICookieSettings;
+class nsICookieJarSettings;
 class nsIEffectiveTLDService;
 class nsIIDNService;
 class nsIPrefBranch;
@@ -67,7 +62,7 @@ using mozilla::net::nsCookieKey;
 class nsCookieEntry : public nsCookieKey {
  public:
   // Hash methods
-  typedef nsTArray<RefPtr<nsCookie> > ArrayType;
+  typedef nsTArray<RefPtr<nsCookie>> ArrayType;
   typedef ArrayType::index_type IndexType;
 
   explicit nsCookieEntry(KeyTypePointer aKey) : nsCookieKey(aKey) {}
@@ -176,8 +171,6 @@ class nsCookieService final : public nsICookieService,
  private:
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
-  static bool sSameSiteEnabled;  // cached pref
-
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
@@ -195,7 +188,6 @@ class nsCookieService final : public nsICookieService,
    * (thus instantiating it, if necessary) and clear all the cookies for that
    * app.
    */
-  static void AppClearDataObserverInit();
   static nsAutoCString GetPathFromURI(nsIURI* aHostURI);
   static nsresult GetBaseDomain(nsIEffectiveTLDService* aTLDService,
                                 nsIURI* aHostURI, nsCString& aBaseDomain,
@@ -212,23 +204,35 @@ class nsCookieService final : public nsICookieService,
                            bool aFromHttp, nsIChannel* aChannel,
                            bool& aSetCookie,
                            mozIThirdPartyUtil* aThirdPartyUtil);
-  static CookieStatus CheckPrefs(
-      nsICookieSettings* aCookieSettings, nsIURI* aHostURI, bool aIsForeign,
-      bool aIsTrackingResource, bool aIsFirstPartyStorageAccessGranted,
-      const nsACString& aCookieHeader, const int aNumOfCookies,
-      const OriginAttributes& aOriginAttrs, uint32_t* aRejectedReason);
+  static CookieStatus CheckPrefs(nsICookieJarSettings* aCookieJarSettings,
+                                 nsIURI* aHostURI, bool aIsForeign,
+                                 bool aIsThirdPartyTrackingResource,
+                                 bool aIsThirdPartySocialTrackingResource,
+                                 bool aFirstPartyStorageAccessGranted,
+                                 const nsACString& aCookieHeader,
+                                 const int aNumOfCookies,
+                                 const OriginAttributes& aOriginAttrs,
+                                 uint32_t* aRejectedReason);
   static int64_t ParseServerTime(const nsACString& aServerTime);
 
-  static already_AddRefed<nsICookieSettings> GetCookieSettings(
+  static already_AddRefed<nsICookieJarSettings> GetCookieJarSettings(
       nsIChannel* aChannel);
 
   void GetCookiesForURI(nsIURI* aHostURI, nsIChannel* aChannel, bool aIsForeign,
-                        bool aIsTrackingResource,
+                        bool aIsThirdPartyTrackingResource,
+                        bool aIsThirdPartySocialTrackingResource,
                         bool aFirstPartyStorageAccessGranted,
                         uint32_t aRejectedReason, bool aIsSafeTopLevelNav,
                         bool aIsSameSiteForeign, bool aHttpBound,
                         const OriginAttributes& aOriginAttrs,
                         nsTArray<nsCookie*>& aCookieList);
+
+  /**
+   * This method is a helper that allows calling nsICookieManager::Remove()
+   * with OriginAttributes parameter.
+   */
+  nsresult Remove(const nsACString& aHost, const OriginAttributes& aAttrs,
+                  const nsACString& aName, const nsACString& aPath);
 
  protected:
   virtual ~nsCookieService();
@@ -239,7 +243,6 @@ class nsCookieService final : public nsICookieService,
   void InitDBConn();
   nsresult InitDBConnInternal();
   nsresult CreateTableWorker(const char* aName);
-  nsresult CreateIndex();
   nsresult CreateTable();
   nsresult CreateTableForSchemaVersion6();
   nsresult CreateTableForSchemaVersion5();
@@ -256,20 +259,20 @@ class nsCookieService final : public nsICookieService,
   nsresult NormalizeHost(nsCString& aHost);
   nsresult GetCookieStringCommon(nsIURI* aHostURI, nsIChannel* aChannel,
                                  bool aHttpBound, nsACString& aCookie);
-  void GetCookieStringInternal(nsIURI* aHostURI, nsIChannel* aChannel,
-                               bool aIsForeign, bool aIsTrackingResource,
-                               bool aFirstPartyStorageAccessGranted,
-                               uint32_t aRejectedReason,
-                               bool aIsSafeTopLevelNav, bool aIsSameSiteForeign,
-                               bool aHttpBound,
-                               const OriginAttributes& aOriginAttrs,
-                               nsACString& aCookie);
+  void GetCookieStringInternal(
+      nsIURI* aHostURI, nsIChannel* aChannel, bool aIsForeign,
+      bool aIsThirdPartyTrackingResource,
+      bool aIsThirdPartySocialTrackingResource,
+      bool aFirstPartyStorageAccessGranted, uint32_t aRejectedReason,
+      bool aIsSafeTopLevelNav, bool aIsSameSiteForeign, bool aHttpBound,
+      const OriginAttributes& aOriginAttrs, nsACString& aCookie);
   nsresult SetCookieStringCommon(nsIURI* aHostURI,
                                  const nsACString& aCookieHeader,
                                  const nsACString& aServerTime,
                                  nsIChannel* aChannel, bool aFromHttp);
   void SetCookieStringInternal(
-      nsIURI* aHostURI, bool aIsForeign, bool aIsTrackingResource,
+      nsIURI* aHostURI, bool aIsForeign, bool aIsThirdPartyTrackingResource,
+      bool aIsThirdPartySocialTrackingResource,
       bool aFirstPartyStorageAccessGranted, uint32_t aRejectedReason,
       nsCString& aCookieHeader, const nsACString& aServerTime, bool aFromHttp,
       const OriginAttributes& aOriginAttrs, nsIChannel* aChannel);
@@ -331,18 +334,14 @@ class nsCookieService final : public nsICookieService,
 
   nsresult GetCookiesWithOriginAttributes(
       const mozilla::OriginAttributesPattern& aPattern,
-      const nsCString& aBaseDomain, nsISimpleEnumerator** aEnumerator);
+      const nsCString& aBaseDomain, nsTArray<RefPtr<nsICookie>>& aResult);
   nsresult RemoveCookiesWithOriginAttributes(
       const mozilla::OriginAttributesPattern& aPattern,
       const nsCString& aBaseDomain);
 
-  /**
-   * This method is a helper that allows calling nsICookieManager::Remove()
-   * with OriginAttributes parameter.
-   * NOTE: this could be added to a public interface if we happen to need it.
-   */
-  nsresult Remove(const nsACString& aHost, const OriginAttributes& aAttrs,
-                  const nsACString& aName, const nsACString& aPath);
+  nsresult CountCookiesFromHostInternal(const nsACString& aHost,
+                                        uint32_t aPrivateBrowsingId,
+                                        uint32_t* aCountFromHost);
 
  protected:
   nsresult RemoveCookiesFromExactHost(

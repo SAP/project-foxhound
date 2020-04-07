@@ -16,15 +16,28 @@
 
   const kDTDs = ["chrome://global/locale/wizard.dtd"];
 
+  // Note: MozWizard currently supports adding, but not removing MozWizardPage
+  //       children.
   class MozWizard extends MozXULElement {
     constructor() {
       super();
 
+      // About this._accessMethod:
+      //   There are two possible access methods: "sequential" and "random".
+      //   "sequential" causes the MozWizardPage's to be displayed in the order
+      //   that they are added to the DOM.
+      //   The "random" method name is a bit misleading since the pages aren't
+      //   displayed in a random order. Instead, each MozWizardPage must have
+      //   a "next" attribute containing the id of the MozWizardPage that should
+      //   be loaded next.
       this._accessMethod = null;
       this._currentPage = null;
       this._canAdvance = true;
       this._canRewind = false;
       this._hasLoaded = false;
+      this._hasStarted = false; // Whether any MozWizardPage has been shown yet
+      this._wizardButtonsReady = false;
+      this.pageCount = 0;
       this._pageStack = [];
 
       this._bundle = Services.strings.createBundle(
@@ -95,17 +108,11 @@
     }
 
     connectedCallback() {
-      if (this.delayConnectedCallback()) {
-        return;
-      }
-
-      this.pageCount = this.wizardPages.length;
-
-      this._initPages();
-      this.advance(); // start off on the first page
+      document.documentElement.setAttribute("role", "dialog");
+      this._maybeStartWizard();
 
       window.addEventListener("close", event => {
-        if (document.documentElement.cancel()) {
+        if (this.cancel()) {
           event.preventDefault();
         }
       });
@@ -114,12 +121,12 @@
       // onload completes, see bug 103197.
       window.addEventListener("load", () =>
         window.setTimeout(() => {
-          document.documentElement._hasLoaded = true;
+          this._hasLoaded = true;
           if (!document.commandDispatcher.focusedElement) {
             document.commandDispatcher.advanceFocusIntoSubtree(this);
           }
           try {
-            let button = document.documentElement._wizardButtons.defaultButton;
+            let button = this._wizardButtons.defaultButton;
             if (button) {
               window.notifyDefaultButtonLoaded(button);
             }
@@ -174,32 +181,11 @@
       // Setting this attribute allows wizard's clients to dynamically
       // change the styles of each page based on purpose of the page.
       this.setAttribute("currentpageid", val.pageid);
-      if (this.onFirstPage) {
-        this.canRewind = false;
-        this.setAttribute("firstpage", "true");
-        if (AppConstants.platform == "linux") {
-          this.getButton("back").setAttribute("hidden", "true");
-        }
-      } else {
-        this.canRewind = true;
-        this.setAttribute("firstpage", "false");
-        if (AppConstants.platform == "linux") {
-          this.getButton("back").setAttribute("hidden", "false");
-        }
-      }
 
-      if (this.onLastPage) {
-        this.canAdvance = true;
-        this.setAttribute("lastpage", "true");
-      } else {
-        this.setAttribute("lastpage", "false");
-      }
+      this._initCurrentPage();
 
       this._deck.setAttribute("selectedIndex", val.pageIndex);
       this._advanceFocusToPage(val);
-
-      this._adjustWizardHeader();
-      this._wizardButtons.onPageChange();
 
       this._fireEvent(val, "pageshow");
 
@@ -355,6 +341,32 @@
       return false;
     }
 
+    _initCurrentPage() {
+      if (this.onFirstPage) {
+        this.canRewind = false;
+        this.setAttribute("firstpage", "true");
+        if (AppConstants.platform == "linux") {
+          this.getButton("back").setAttribute("hidden", "true");
+        }
+      } else {
+        this.canRewind = true;
+        this.setAttribute("firstpage", "false");
+        if (AppConstants.platform == "linux") {
+          this.getButton("back").setAttribute("hidden", "false");
+        }
+      }
+
+      if (this.onLastPage) {
+        this.canAdvance = true;
+        this.setAttribute("lastpage", "true");
+      } else {
+        this.setAttribute("lastpage", "false");
+      }
+
+      this._adjustWizardHeader();
+      this._wizardButtons.onPageChange();
+    }
+
     _advanceFocusToPage(aPage) {
       if (!this._hasLoaded) {
         return;
@@ -373,17 +385,37 @@
       }
     }
 
-    _initPages() {
-      var meth = "sequential";
-      var pages = this.wizardPages;
-      for (var i = 0; i < pages.length; ++i) {
-        var page = pages[i];
-        page.pageIndex = i;
-        if (page.next != "") {
-          meth = "random";
-        }
+    _registerPage(aPage) {
+      aPage.pageIndex = this.pageCount;
+      this.pageCount += 1;
+      if (!this._accessMethod) {
+        this._accessMethod = aPage.next == "" ? "sequential" : "random";
       }
-      this._accessMethod = meth;
+      if (!this._maybeStartWizard() && this._hasStarted) {
+        // If the wizard has already started, adding a page might require
+        // updating elements to reflect that (ex: changing the Finish button to
+        // the Next button).
+        this._initCurrentPage();
+      }
+    }
+
+    _onWizardButtonsReady() {
+      this._wizardButtonsReady = true;
+      this._maybeStartWizard();
+    }
+
+    _maybeStartWizard(aIsConnected) {
+      if (
+        !this._hasStarted &&
+        this.isConnected &&
+        this._wizardButtonsReady &&
+        this.pageCount > 0
+      ) {
+        this._hasStarted = true;
+        this.advance();
+        return true;
+      }
+      return false;
     }
 
     _adjustWizardHeader() {
@@ -440,6 +472,11 @@
     }
     connectedCallback() {
       this.setAttribute("slot", "wizardpage");
+
+      let wizard = this.closest("wizard");
+      if (wizard) {
+        wizard._registerPage(this);
+      }
     }
     get pageid() {
       return this.getAttribute("pageid");
@@ -461,6 +498,8 @@
 
   class MozWizardButtons extends MozXULElement {
     connectedCallback() {
+      this._wizard = this.getRootNode().host;
+
       this.textContent = "";
       this.appendChild(MozXULElement.parseXULToFragment(this._markup, kDTDs));
 
@@ -469,12 +508,12 @@
       this.initializeAttributeInheritance();
 
       const listeners = [
-        ["back", () => document.documentElement.rewind()],
-        ["next", () => document.documentElement.advance()],
-        ["finish", () => document.documentElement.advance()],
-        ["cancel", () => document.documentElement.cancel()],
-        ["extra1", () => document.documentElement.extra1()],
-        ["extra2", () => document.documentElement.extra2()],
+        ["back", () => this._wizard.rewind()],
+        ["next", () => this._wizard.advance()],
+        ["finish", () => this._wizard.advance()],
+        ["cancel", () => this._wizard.cancel()],
+        ["extra1", () => this._wizard.extra1()],
+        ["extra2", () => this._wizard.extra2()],
       ];
       for (let [name, listener] of listeners) {
         let btn = this.getButton(name);
@@ -482,6 +521,8 @@
           btn.addEventListener("command", listener);
         }
       }
+
+      this._wizard._onWizardButtonsReady();
     }
 
     static get inheritedAttributes() {

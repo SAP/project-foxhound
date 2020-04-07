@@ -13,9 +13,9 @@ import {
 
 export interface PanelWindow {
   gToolbox?: any;
-  gTarget?: any;
   gInit(perfFront: any, preferenceFront: any): void;
   gDestroy(): void;
+  gReportReady?(): void
 }
 
 /**
@@ -34,16 +34,33 @@ export interface Toolbox {
 }
 
 /**
+ * The actor version of the ActorReadyGeckoProfilerInterface returns promises,
+ * while if it's instantiated directly it will not return promises.
+ */
+type MaybePromise<T> = Promise<T> | T;
+
+/**
  * TS-TODO - Stub.
+ *
+ * Any method here that returns a MaybePromise<T> is because the
+ * ActorReadyGeckoProfilerInterface returns T while the PerfFront returns Promise<T>.
+ * Any method here that returns Promise<T> is because both the
+ * ActorReadyGeckoProfilerInterface and the PerfFront return promises.
  */
 export interface PerfFront {
-  startProfiler: any;
-  getProfileAndStopProfiler: any;
-  stopProfilerAndDiscardProfile: any;
-  getSymbolTable: any;
-  isActive: any;
-  isSupportedPlatform: any;
-  isLockedForPrivateBrowsing: any;
+  startProfiler: (options: RecordingStateFromPreferences) => MaybePromise<boolean>;
+  getProfileAndStopProfiler: () => Promise<any>;
+  stopProfilerAndDiscardProfile: () => MaybePromise<void>;
+  getSymbolTable: (path: string, breakpadId: string) => Promise<[number[], number[], number[]]>;
+  isActive: () => MaybePromise<boolean>;
+  isSupportedPlatform: () => MaybePromise<boolean>;
+  isLockedForPrivateBrowsing: () => MaybePromise<boolean>;
+  on: (type: string, listener: () => void) => void;
+  off: (type: string, listener: () => void) => void;
+  /**
+   * This method was was added in Firefox 72.
+   */
+  getSupportedFeatures: () => MaybePromise<string[]>
 }
 
 /**
@@ -71,12 +88,15 @@ export type RecordingState =
   // An async request has been sent to stop the profiler.
   | "request-to-stop-profiler"
   // The profiler notified us that our request to start it actually started
-  // it.
+  // it, or it was already started.
   | "recording"
-  // Some other code with access to the profiler started it.
-  | "other-is-recording"
   // Profiling is not available when in private browsing mode.
   | "locked-by-private-browsing";
+
+// We are currently migrating to a new UX workflow with about:profiling.
+// This type provides an easy way to change the implementation based
+// on context.
+export type PageContext = "devtools" | "aboutprofiling";
 
 export interface State {
   recordingState: RecordingState;
@@ -87,7 +107,9 @@ export interface State {
   features: string[];
   threads: string[];
   objdirs: string[];
+  presetName: string;
   initializedValues: InitializedValues | null;
+  promptEnvRestart: null | string
 }
 
 export type Selector<T> = (state: State) => T;
@@ -135,7 +157,26 @@ export type ReceiveProfile = (
   getSymbolTableCallback: GetSymbolTableCallback
 ) => void;
 
-export type SetRecordingPreferences = (settings: object) => void;
+export type SetRecordingPreferences = (settings: RecordingStateFromPreferences) => MaybePromise<void>;
+
+/**
+ * This is the type signature for a function to restart the browser with a given
+ * environment variable. Currently only implemented for the popup.
+ */
+export type RestartBrowserWithEnvironmentVariable =
+    (envName: string, value: string) => void;
+
+/**
+ * This is the type signature for a function to query the browser for an
+ * environment variable. Currently only implemented for the popup.
+ */
+export type GetEnvironmentVariable = (envName: string) => string;
+
+/**
+ * This is the type signature for a function to query the browser for the
+ * ID of BrowsingContext of active tab.
+ */
+export type GetActiveBrowsingContextID = () => number;
 
 /**
  * This interface is injected into profiler.firefox.com
@@ -146,13 +187,14 @@ interface GeckoProfilerFrameScriptInterface {
 }
 
 export interface RecordingStateFromPreferences {
+  presetName: string;
   entries: number;
   interval: number;
   features: string[];
   threads: string[];
   objdirs: string[];
   // The duration is currently not wired up to the UI yet. See Bug 1587165.
-  duration: number;
+  duration?: number;
 }
 
 /**
@@ -167,11 +209,17 @@ export interface InitializedValues {
   receiveProfile: ReceiveProfile;
   // A function to set the recording settings.
   setRecordingPreferences: SetRecordingPreferences;
-  // A boolean value that sets lets the UI know if it is in the popup window
-  // or inside of devtools.
-  isPopup: boolean;
+  // The current list of presets, loaded in from a JSM.
+  presets: Presets;
+  // Determine the current page context.
+  pageContext: PageContext;
   // The popup and devtools panel use different codepaths for getting symbol tables.
   getSymbolTableGetter: (profile: object) => GetSymbolTableCallback;
+  // The list of profiler features that the current target supports. Note that
+  // this value is only null to support older Firefox browsers that are targeted
+  // by the actor system. This compatibility can be required when the ESR version
+  // is running at least Firefox 72.
+  supportedFeatures: string[] | null
 }
 
 /**
@@ -202,6 +250,7 @@ export type Action =
   | {
       type: "CHANGE_FEATURES";
       features: string[];
+      promptEnvRestart: string | null
     }
   | {
       type: "CHANGE_THREADS";
@@ -216,10 +265,28 @@ export type Action =
       perfFront: PerfFront;
       receiveProfile: ReceiveProfile;
       setRecordingPreferences: SetRecordingPreferences;
-      isPopup: boolean;
+      presets: Presets;
+      pageContext: PageContext;
       recordingSettingsFromPreferences: RecordingStateFromPreferences;
       getSymbolTableGetter: (profile: object) => GetSymbolTableCallback;
+      supportedFeatures: string[] | null;
+    }
+  | {
+      type: "CHANGE_PRESET";
+      presetName: string;
+      preset: PresetDefinition | undefined;
     };
+
+export interface InitializeStoreValues {
+  perfFront: PerfFront;
+  receiveProfile: ReceiveProfile;
+  setRecordingPreferences: SetRecordingPreferences;
+  presets: Presets;
+  pageContext: PageContext;
+  recordingPreferences: RecordingStateFromPreferences;
+  supportedFeatures: string[] | null;
+  getSymbolTableGetter: (profile: object) => GetSymbolTableCallback;
+}
 
 export type PopupBackgroundFeatures = { [feature: string]: boolean };
 
@@ -247,6 +314,11 @@ export interface ContentFrameMessageManager {
  * one of the properties of this interface.
  */
 export interface PerformancePref {
+  /**
+   * The recording preferences by default are controlled by different presets.
+   * This pref stores that preset.
+   */
+  Preset: "devtools.performance.recording.preset";
   /**
    * Stores the total number of entries to be used in the profile buffer.
    */
@@ -295,4 +367,89 @@ export interface PerformancePref {
    * and update it elsewhere.
    */
   PopupEnabled: "devtools.performance.popup.enabled";
+  /**
+   * The profiler popup has some introductory text explaining what it is the first
+   * time that you open it. After that, it is not displayed by default.
+   */
+  PopupIntroDisplayed: "devtools.performance.popup.intro-displayed";
+  /**
+   * This preference is used outside of the performance-new type system
+   * (in DevToolsStartup). It toggles the availability of the menu item
+   * "Tools -> Web Developer -> Enable Profiler Toolbar Icon".
+   */
+  PopupFeatureFlag: "devtools.performance.popup.feature-flag";
+}
+
+/**
+ * This interface represents the global values that are potentially on the window
+ * object in the popup. Coerce the "window" object into this interface.
+ */
+export interface PopupWindow extends Window {
+  gResizePopup?: (height: number) => void;
+  gIsDarkMode?: boolean;
+}
+
+/**
+ * Scale a number value.
+ */
+export type NumberScaler = (value: number) => number;
+
+/**
+ * A collection of functions to scale numbers.
+ */
+export interface ScaleFunctions {
+  fromFractionToValue: NumberScaler,
+  fromValueToFraction: NumberScaler,
+  fromFractionToSingleDigitValue: NumberScaler,
+}
+
+export interface PresetDefinition {
+  label: string;
+  description: string;
+  entries: number;
+  interval: number;
+  features: string[];
+  threads: string[];
+  duration: number;
+}
+
+export interface Presets {
+  [presetName: string]: PresetDefinition;
+}
+
+export type MessageFromFrontend =
+  | {
+      type: "STATUS_QUERY";
+      requestId: number;
+    }
+  | {
+      type: "ENABLE_MENU_BUTTON";
+      requestId: number;
+    };
+
+export type MessageToFrontend =
+  | {
+      type: "STATUS_RESPONSE";
+      menuButtonIsEnabled: boolean;
+      requestId: number;
+    }
+  | {
+      type: "ENABLE_MENU_BUTTON_DONE";
+      requestId: number;
+    }
+
+/**
+ * This represents an event channel that can talk to a content page on the web.
+ * This interface is a manually typed version of toolkit/modules/WebChannel.jsm
+ * and is opinionated about the types of messages we can send with it.
+ *
+ * The definition is here rather than gecko.d.ts because it was simpler than getting
+ * generics working with the ChromeUtils.import machinery.
+ */
+export class ProfilerWebChannel {
+  constructor(id: string, url: MockedExports.nsIURI);
+  send: (message: MessageToFrontend, target: MockedExports.WebChannelTarget) => void;
+  listen: (
+    handler: (idle: string, message: MessageFromFrontend, target: MockedExports.WebChannelTarget) => void
+  ) => void;
 }

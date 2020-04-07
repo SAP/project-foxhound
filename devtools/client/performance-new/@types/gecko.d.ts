@@ -37,7 +37,9 @@ declare namespace MockedExports {
     addWebTab: (url: string, options: any) => BrowserTab;
     contentPrincipal: any;
     selectedTab: BrowserTab;
+    selectedBrowser?: ChromeBrowser;
     messageManager: MessageManager;
+    ownerDocument?: ChromeDocument;
   }
 
   interface BrowserTab {
@@ -48,8 +50,18 @@ declare namespace MockedExports {
     gBrowser: Browser;
   }
 
+  interface ChromeBrowser {
+    browsingContext?: BrowsingContext;
+  }
+
+  interface BrowsingContext {
+    id: number;
+  }
+
   type GetPref<T> = (prefName: string, defaultValue?: T) => T;
   type SetPref<T> = (prefName: string, value?: T) => T;
+
+  interface nsIURI {}
 
   type Services = {
     prefs: {
@@ -76,7 +88,15 @@ declare namespace MockedExports {
     focus: {
       activeWindow: ChromeWindow;
     };
+    io: {
+      newURI(url: string): nsIURI;
+    },
     scriptSecurityManager: any;
+    startup: {
+      quit: (optionsBitmask: number) => void,
+      eForceQuit: number,
+      eRestart: number
+    };
   };
 
   const ServicesJSM: {
@@ -122,7 +142,84 @@ declare namespace MockedExports {
     };
   };
 
+  interface BrowsingContextStub {}
+  interface PrincipalStub {}
+
+  interface WebChannelTarget {
+    browsingContext: BrowsingContextStub,
+    browser: Browser,
+    eventTarget: null,
+    principal: PrincipalStub,
+  }
+
+  const WebChannelJSM: any;
+
+  // TS-TODO
+  const CustomizableUIJSM: any;
+  const CustomizableWidgetsJSM: any;
+  const PanelMultiViewJSM: any;
+
   const Services: Services;
+
+  // This class is needed by the Cc importing mechanism. e.g.
+  // Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+  class nsIFilePicker {}
+
+  interface FilePicker {
+    init: (window: Window, title: string, mode: number) => void;
+    open: (callback: (rv: number) => unknown) => void;
+    // The following are enum values.
+    modeGetFolder: number;
+    returnOK: number;
+    file: {
+      path: string
+    }
+  }
+
+  // This class is needed by the Cc importing mechanism. e.g.
+  // Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment);
+  class nsIEnvironment {}
+
+  interface Environment {
+    get(envName: string): string;
+    set(envName: string, value: string): void;
+  }
+
+  const chrome: {
+    Cc: {
+      "@mozilla.org/process/environment;1": {
+        getService(service: nsIEnvironment): Environment
+      },
+      "@mozilla.org/filepicker;1": {
+        createInstance(instance: nsIFilePicker): FilePicker
+      }
+    },
+    Ci: {
+      nsIFilePicker: nsIFilePicker;
+      nsIEnvironment: nsIEnvironment;
+    },
+  };
+}
+
+
+declare module "devtools/client/shared/vendor/react" {
+  import * as React from "react";
+  export = React;
+}
+
+declare module "devtools/client/shared/vendor/react-dom-factories" {
+  import * as ReactDomFactories from "react-dom-factories";
+  export = ReactDomFactories;
+}
+
+declare module "devtools/client/shared/vendor/redux" {
+  import * as Redux from "redux";
+  export = Redux;
+}
+
+declare module "devtools/client/shared/vendor/react-redux" {
+  import * as ReactRedux from "react-redux";
+  export = ReactRedux;
 }
 
 declare module "devtools/shared/event-emitter2" {
@@ -137,6 +234,10 @@ declare module "Services" {
   export = MockedExports.Services;
 }
 
+declare module "chrome" {
+  export = MockedExports.chrome;
+}
+
 declare module "resource://gre/modules/osfile.jsm" {
   export = MockedExports.osfileJSM;
 }
@@ -147,6 +248,27 @@ declare module "resource://gre/modules/AppConstants.jsm" {
 
 declare module "resource://gre/modules/ProfilerGetSymbols.jsm" {
   export = MockedExports.ProfilerGetSymbolsJSM;
+}
+
+declare module "resource://gre/modules/WebChannel.jsm" {
+  export = MockedExports.WebChannelJSM;
+}
+
+declare module "resource://devtools/client/performance-new/popup/background.jsm.js" {
+  import * as Background from "devtools/client/performance-new/popup/background.jsm.js";
+  export = Background
+}
+
+declare module "resource:///modules/CustomizableUI.jsm" {
+  export = MockedExports.CustomizableUIJSM;
+}
+
+declare module "resource:///modules/CustomizableWidgets.jsm" {
+  export = MockedExports.CustomizableWidgetsJSM;
+}
+
+declare module "resource:///modules/PanelMultiView.jsm" {
+  export = MockedExports.PanelMultiViewJSM;
 }
 
 declare var ChromeUtils: MockedExports.ChromeUtils;
@@ -180,4 +302,31 @@ declare interface XULIframeElement extends XULElement {
   src: string;
 }
 
-declare interface ChromeWindow extends Window {}
+declare interface ChromeWindow extends Window {
+  openWebLinkIn: (
+    url: string,
+    where: "current" | "tab" | "tabshifted" | "window" | "save",
+    // TS-TODO
+    params?: unknown
+  ) => void;
+  openTrustedLinkIn: (
+    url: string,
+    where: "current" | "tab" | "tabshifted" | "window" | "save",
+    // TS-TODO
+    params?: unknown
+  ) => void;
+}
+
+declare interface MenuListElement extends XULElement {
+  value: string;
+  disabled: boolean;
+}
+
+declare interface XULCommandEvent extends Event {
+  target: XULElement
+}
+
+declare interface XULElementWithCommandHandler {
+  addEventListener: (type: "command", handler: (event: XULCommandEvent) => void, isCapture?: boolean) => void
+  removeEventListener: (type: "command", handler: (event: XULCommandEvent) => void, isCapture?: boolean) => void
+}

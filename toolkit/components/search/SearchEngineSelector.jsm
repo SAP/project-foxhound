@@ -6,6 +6,7 @@
 
 var EXPORTED_SYMBOLS = ["SearchEngineSelector"];
 
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -18,11 +19,63 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 
 const EXT_SEARCH_PREFIX = "resource://search-extensions/";
-const ENGINE_CONFIG_URL = `${EXT_SEARCH_PREFIX}engines.json`;
+const DEFAULT_CONFIG_URL = `${EXT_SEARCH_PREFIX}engines.json`;
+const ENGINE_CONFIG_PREF = "search.config.url";
+
 const USER_LOCALE = "$USER_LOCALE";
 
 function log(str) {
   SearchUtils.log("SearchEngineSelector " + str + "\n");
+}
+
+function getAppInfo(key) {
+  let value = null;
+  try {
+    // Services.appinfo is often null in tests.
+    value = Services.appinfo[key].toLowerCase();
+  } catch (e) {}
+  return value;
+}
+
+function hasAppKey(config, key) {
+  return "application" in config && key in config.application;
+}
+
+function sectionExcludes(config, key, value) {
+  return hasAppKey(config, key) && !config.application[key].includes(value);
+}
+
+function sectionIncludes(config, key, value) {
+  return hasAppKey(config, key) && config.application[key].includes(value);
+}
+
+function isDistroExcluded(config, key, distroID) {
+  // Should be excluded when:
+  // - There's a distroID and that is not in the non-empty distroID list.
+  // - There's no distroID and the distroID list is not empty.
+  const appKey = hasAppKey(config, key);
+  if (!appKey) {
+    return false;
+  }
+  const distroList = config.application[key];
+  if (distroID) {
+    return distroList.length && !distroList.includes(distroID);
+  }
+  return !!distroList.length;
+}
+
+function belowMinVersion(config, version) {
+  return (
+    hasAppKey(config, "minVersion") &&
+    Services.vc.compare(version, config.application.minVersion) < 0
+  );
+}
+
+function aboveMaxVersion(config, version) {
+  return (
+    hasAppKey(config, "maxVersion") &&
+    Services.vc.compare(version, config.application.maxVersion) > 0
+  );
 }
 
 /**
@@ -34,8 +87,9 @@ class SearchEngineSelector {
   /**
    * @param {string} url - Location of the configuration.
    */
-  async init(url = ENGINE_CONFIG_URL) {
-    this.configuration = await this.getEngineConfiguration(url);
+  async init(url = DEFAULT_CONFIG_URL) {
+    let configUrl = Services.prefs.getStringPref(ENGINE_CONFIG_PREF, url);
+    this.configuration = await this.getEngineConfiguration(configUrl);
   }
 
   /**
@@ -49,28 +103,46 @@ class SearchEngineSelector {
   /**
    * @param {string} locale - Users locale.
    * @param {string} region - Users region.
-   * @returns {object} result - An object with "engines" field, a sorted
-   *   list of engines and optionally "privateDefault" indicating the
-   *   name of the engine which should be the default in private.
+   * @param {string} channel - The update channel the application is running on.
+   * @param {string} distroID - The distribution ID of the application.
+   * @returns {object}
+   *   An object with "engines" field, a sorted list of engines and
+   *   optionally "privateDefault" which is an object containing the engine
+   *   details for the engine which should be the default in Private Browsing mode.
    */
-  fetchEngineConfiguration(locale, region = "default") {
-    log(`fetchEngineConfiguration ${region}:${locale}`);
+  fetchEngineConfiguration(locale, region, channel, distroID) {
     let cohort = Services.prefs.getCharPref("browser.search.cohort", null);
+    let name = getAppInfo("name");
+    let version = getAppInfo("version");
+    log(
+      `fetchEngineConfiguration ${region}:${locale}:${channel}:${distroID}:${cohort}:${name}:${version}`
+    );
     let engines = [];
     const lcLocale = locale.toLowerCase();
     const lcRegion = region.toLowerCase();
     for (let config of this.configuration) {
       const appliesTo = config.appliesTo || [];
       const applies = appliesTo.filter(section => {
+        if ("cohort" in section && cohort != section.cohort) {
+          return false;
+        }
+        if (
+          sectionExcludes(section, "channel", channel) ||
+          sectionExcludes(section, "name", name) ||
+          (distroID &&
+            sectionIncludes(section, "excludedDistributions", distroID)) ||
+          isDistroExcluded(section, "distributions", distroID) ||
+          belowMinVersion(section, version) ||
+          aboveMaxVersion(section, version)
+        ) {
+          return false;
+        }
         let included =
           "included" in section &&
           this._isInSection(lcRegion, lcLocale, section.included);
         let excluded =
           "excluded" in section &&
           this._isInSection(lcRegion, lcLocale, section.excluded);
-        if ("cohort" in section && cohort != section.cohort) {
-          return false;
-        }
         return included && !excluded;
       });
 
@@ -83,13 +155,24 @@ class SearchEngineSelector {
           this._copyObject(baseConfig, section);
         }
 
-        if ("webExtensionLocales" in baseConfig) {
-          baseConfig.webExtensionLocales = baseConfig.webExtensionLocales.map(
-            val => (val == USER_LOCALE ? locale : val)
-          );
+        if (
+          "webExtension" in baseConfig &&
+          "locales" in baseConfig.webExtension
+        ) {
+          for (const webExtensionLocale of baseConfig.webExtension.locales) {
+            const engine = { ...baseConfig };
+            engine.webExtension = { ...baseConfig.webExtension };
+            delete engine.webExtension.locales;
+            engine.webExtension.locale =
+              webExtensionLocale == USER_LOCALE ? locale : webExtensionLocale;
+            engines.push(engine);
+          }
+        } else {
+          const engine = { ...baseConfig };
+          (engine.webExtension = engine.webExtension || {}).locale =
+            SearchUtils.DEFAULT_TAG;
+          engines.push(engine);
         }
-
-        engines.push(baseConfig);
       }
     }
 
@@ -136,11 +219,14 @@ class SearchEngineSelector {
     let result = { engines };
 
     if (privateEngine) {
-      result.privateDefault = privateEngine.engineName;
+      result.privateDefault = privateEngine;
     }
 
     if (SearchUtils.loggingEnabled) {
-      log("fetchEngineConfiguration: " + JSON.stringify(result));
+      log(
+        "fetchEngineConfiguration: " +
+          result.engines.map(e => e.webExtension.id)
+      );
     }
     return result;
   }
@@ -192,7 +278,7 @@ class SearchEngineSelector {
         .getCharPref("ignoredJAREngines")
         .split(",");
       let filteredEngines = engines.filter(engine => {
-        let name = engine.webExtensionId.split("@")[0];
+        let name = engine.webExtension.id.split("@")[0];
         return !ignoredJAREngines.includes(name);
       });
       // Don't allow all engines to be hidden
@@ -223,7 +309,15 @@ class SearchEngineSelector {
       if (["included", "excluded", "appliesTo"].includes(key)) {
         continue;
       }
-      target[key] = source[key];
+      if (key == "webExtension") {
+        if (key in target) {
+          this._copyObject(target[key], source[key]);
+        } else {
+          target[key] = { ...source[key] };
+        }
+      } else {
+        target[key] = source[key];
+      }
     }
     return target;
   }

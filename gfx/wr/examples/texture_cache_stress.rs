@@ -62,17 +62,17 @@ impl ImageGenerator {
     }
 }
 
-impl webrender::ExternalImageHandler for ImageGenerator {
+impl ExternalImageHandler for ImageGenerator {
     fn lock(
         &mut self,
         _key: ExternalImageId,
         channel_index: u8,
         _rendering: ImageRendering
-    ) -> webrender::ExternalImage {
+    ) -> ExternalImage {
         self.generate_image(channel_index as i32);
-        webrender::ExternalImage {
+        ExternalImage {
             uv: TexelRect::new(0.0, 0.0, 1.0, 1.0),
-            source: webrender::ExternalImageSource::RawData(&self.current_image),
+            source: ExternalImageSource::RawData(&self.current_image),
         }
     }
     fn unlock(&mut self, _key: ExternalImageId, _channel_index: u8) {}
@@ -116,7 +116,7 @@ impl Example for App {
             self.image_generator.generate_image(128);
             txn.add_image(
                 key0,
-                ImageDescriptor::new(128, 128, ImageFormat::BGRA8, true, false),
+                ImageDescriptor::new(128, 128, ImageFormat::BGRA8, ImageDescriptorFlags::IS_OPAQUE),
                 ImageData::new(self.image_generator.take()),
                 None,
             );
@@ -124,7 +124,7 @@ impl Example for App {
             self.image_generator.generate_image(128);
             txn.add_image(
                 key1,
-                ImageDescriptor::new(128, 128, ImageFormat::BGRA8, true, false),
+                ImageDescriptor::new(128, 128, ImageFormat::BGRA8, ImageDescriptorFlags::IS_OPAQUE),
                 ImageData::new(self.image_generator.take()),
                 None,
             );
@@ -220,7 +220,12 @@ impl Example for App {
 
                                 txn.add_image(
                                     image_key,
-                                    ImageDescriptor::new(size, size, ImageFormat::BGRA8, true, false),
+                                    ImageDescriptor::new(
+                                        size,
+                                        size,
+                                        ImageFormat::BGRA8,
+                                        ImageDescriptorFlags::IS_OPAQUE,
+                                    ),
                                     ImageData::new(self.image_generator.take()),
                                     None,
                                 );
@@ -238,7 +243,7 @@ impl Example for App {
 
                         txn.update_image(
                             image_key,
-                            ImageDescriptor::new(size, size, ImageFormat::BGRA8, true, false),
+                            ImageDescriptor::new(size, size, ImageFormat::BGRA8, ImageDescriptorFlags::IS_OPAQUE),
                             ImageData::new(self.image_generator.take()),
                             &DirtyRect::All,
                         );
@@ -259,7 +264,7 @@ impl Example for App {
 
                         txn.add_image(
                             image_key,
-                            ImageDescriptor::new(size, size, ImageFormat::BGRA8, true, false),
+                            ImageDescriptor::new(size, size, ImageFormat::BGRA8, ImageDescriptorFlags::IS_OPAQUE),
                             ImageData::External(image_data),
                             None,
                         );
@@ -277,7 +282,7 @@ impl Example for App {
 
                         txn.add_image(
                             image_key,
-                            ImageDescriptor::new(size, size, ImageFormat::BGRA8, true, false),
+                            ImageDescriptor::new(size, size, ImageFormat::BGRA8, ImageDescriptorFlags::IS_OPAQUE),
                             ImageData::new(self.image_generator.take()),
                             None,
                         );
@@ -299,8 +304,8 @@ impl Example for App {
     fn get_image_handlers(
         &mut self,
         _gl: &dyn gl::Gl,
-    ) -> (Option<Box<dyn webrender::ExternalImageHandler>>,
-          Option<Box<dyn webrender::OutputImageHandler>>) {
+    ) -> (Option<Box<dyn ExternalImageHandler>>,
+          Option<Box<dyn OutputImageHandler>>) {
         (Some(Box::new(ImageGenerator::new())), None)
     }
 }

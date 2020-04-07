@@ -3,7 +3,7 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint complexity: ["error", 50] */
+/* eslint complexity: ["error", 53] */
 
 "use strict";
 
@@ -18,9 +18,6 @@ const QUERYTYPE_AUTOFILL_ORIGIN = 1;
 const QUERYTYPE_AUTOFILL_URL = 2;
 const QUERYTYPE_ADAPTIVE = 3;
 
-// Telemetry probes.
-const TELEMETRY_1ST_RESULT = "PLACES_AUTOCOMPLETE_1ST_RESULT_TIME_MS";
-const TELEMETRY_6_FIRST_RESULTS = "PLACES_AUTOCOMPLETE_6_FIRST_RESULTS_TIME_MS";
 // The default frecency value used when inserting matches with unknown frecency.
 const FRECENCY_DEFAULT = 1000;
 
@@ -174,7 +171,7 @@ const SQL_AUTOFILL_WITH = `
   )
 `;
 
-const SQL_AUTOFILL_FRECENCY_THRESHOLD = `(
+const SQL_AUTOFILL_FRECENCY_THRESHOLD = `host_frecency >= (
   SELECT value FROM autofill_frecency_threshold
 )`;
 
@@ -200,8 +197,7 @@ function originQuery({ select = "", where = "", having = "" }) {
             WHERE host BETWEEN :searchString AND :searchString || X'FFFF'
                   ${where}
             GROUP BY host
-            HAVING host_frecency >= ${SQL_AUTOFILL_FRECENCY_THRESHOLD}
-                   ${having}
+            HAVING ${having}
             UNION ALL
             SELECT host,
                    fixup_url(host) AS fixed_up_host,
@@ -216,8 +212,7 @@ function originQuery({ select = "", where = "", having = "" }) {
             WHERE host BETWEEN 'www.' || :searchString AND 'www.' || :searchString || X'FFFF'
                   ${where}
             GROUP BY host
-            HAVING host_frecency >= ${SQL_AUTOFILL_FRECENCY_THRESHOLD}
-                   ${having}
+            HAVING ${having}
           ) AS grouped_hosts
           JOIN moz_origins ON moz_origins.host = grouped_hosts.host
           ORDER BY frecency DESC, id DESC
@@ -225,12 +220,12 @@ function originQuery({ select = "", where = "", having = "" }) {
 }
 
 const QUERY_ORIGIN_HISTORY_BOOKMARK = originQuery({
-  having: `OR bookmarked`,
+  having: `bookmarked OR ${SQL_AUTOFILL_FRECENCY_THRESHOLD}`,
 });
 
 const QUERY_ORIGIN_PREFIX_HISTORY_BOOKMARK = originQuery({
   where: `AND prefix BETWEEN :prefix AND :prefix || X'FFFF'`,
-  having: `OR bookmarked`,
+  having: `bookmarked OR ${SQL_AUTOFILL_FRECENCY_THRESHOLD}`,
 });
 
 const QUERY_ORIGIN_HISTORY = originQuery({
@@ -239,7 +234,7 @@ const QUERY_ORIGIN_HISTORY = originQuery({
     FROM moz_places
     WHERE moz_places.origin_id = moz_origins.id
    ) AS visited`,
-  having: `AND (visited OR NOT bookmarked)`,
+  having: `visited AND ${SQL_AUTOFILL_FRECENCY_THRESHOLD}`,
 });
 
 const QUERY_ORIGIN_PREFIX_HISTORY = originQuery({
@@ -249,16 +244,16 @@ const QUERY_ORIGIN_PREFIX_HISTORY = originQuery({
     WHERE moz_places.origin_id = moz_origins.id
    ) AS visited`,
   where: `AND prefix BETWEEN :prefix AND :prefix || X'FFFF'`,
-  having: `AND (visited OR NOT bookmarked)`,
+  having: `visited AND ${SQL_AUTOFILL_FRECENCY_THRESHOLD}`,
 });
 
 const QUERY_ORIGIN_BOOKMARK = originQuery({
-  having: `AND bookmarked`,
+  having: `bookmarked`,
 });
 
 const QUERY_ORIGIN_PREFIX_BOOKMARK = originQuery({
   where: `AND prefix BETWEEN :prefix AND :prefix || X'FFFF'`,
-  having: `AND bookmarked`,
+  having: `bookmarked`,
 });
 
 // Result row indexes for urlQuery()
@@ -362,7 +357,9 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesSearchAutocompleteProvider:
     "resource://gre/modules/PlacesSearchAutocompleteProvider.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   ProfileAge: "resource://gre/modules/ProfileAge.jsm",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
   Sqlite: "resource://gre/modules/Sqlite.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
   UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.jsm",
@@ -455,6 +452,15 @@ XPCOMUtils.defineLazyGetter(this, "typeToBehaviorMap", () => {
   ]);
 });
 
+XPCOMUtils.defineLazyGetter(this, "sourceToBehaviorMap", () => {
+  return new Map([
+    [UrlbarUtils.RESULT_SOURCE.HISTORY, "history"],
+    [UrlbarUtils.RESULT_SOURCE.BOOKMARKS, "bookmark"],
+    [UrlbarUtils.RESULT_SOURCE.TABS, "openpage"],
+    [UrlbarUtils.RESULT_SOURCE.SEARCH, "search"],
+  ]);
+});
+
 // Helper functions
 
 /**
@@ -516,7 +522,7 @@ function stripHttpAndTrim(spec, trimSlash = true) {
 function makeKeyForMatch(match) {
   // For autofill entries, we need to have a key based on the comment rather
   // than the value field, because the latter may have been trimmed.
-  if (match.hasOwnProperty("style") && match.style.includes("autofill")) {
+  if (match.style && match.style.includes("autofill")) {
     return [stripHttpAndTrim(match.comment), null];
   }
 
@@ -556,7 +562,7 @@ function looksLikeUrl(str, ignoreAlphanumericHosts = false) {
     !REGEXP_SPACES.test(str) &&
     (["/", "@", ":", "["].some(c => str.includes(c)) ||
       (ignoreAlphanumericHosts
-        ? /^([\[\]A-Z0-9.-]+\.){3,}[^.]+$/i.test(str)
+        ? /^([\[\]A-Z0-9-]+\.){3,}[^.]+$/i.test(str)
         : str.includes(".")))
   );
 }
@@ -594,6 +600,28 @@ function substringAfter(sourceStr, targetStr) {
 }
 
 /**
+ * Makes a moz-action url for the given action and set of parameters.
+ *
+ * @param   type
+ *          The action type.
+ * @param   params
+ *          A JS object of action params.
+ * @returns A moz-action url as a string.
+ */
+function makeActionUrl(type, params) {
+  let encodedParams = {};
+  for (let key in params) {
+    // Strip null or undefined.
+    // Regardless, don't encode them or they would be converted to a string.
+    if (params[key] === null || params[key] === undefined) {
+      continue;
+    }
+    encodedParams[key] = encodeURIComponent(params[key]);
+  }
+  return `moz-action:${type},${JSON.stringify(encodedParams)}`;
+}
+
+/**
  * Manages a single instance of an autocomplete search.
  *
  * The first three parameters all originate from the similarly named parameters
@@ -619,8 +647,10 @@ function substringAfter(sourceStr, targetStr) {
  *        An nsIAutoCompleteSearch.
  * @param prohibitSearchSuggestions
  *        Whether search suggestions are allowed for this search.
- * @param [optional] previousResult
+ * @param {Object} [previousResult]
  *        The result object from the previous search. if available.
+ * @param {UrlbarQueryContext} [queryContext]
+ *        The query context, undefined for legacy consumers.
  */
 function Search(
   searchString,
@@ -628,7 +658,8 @@ function Search(
   autocompleteListener,
   autocompleteSearch,
   prohibitSearchSuggestions,
-  previousResult
+  previousResult,
+  queryContext
 ) {
   // We want to store the original string for case sensitive searches.
   this._originalSearchString = searchString;
@@ -647,24 +678,32 @@ function Search(
     ? UrlbarPrefs.get("defaultBehavior")
     : UrlbarPrefs.get("emptySearchDefaultBehavior");
 
-  let params = new Set(searchParam.split(" "));
-  this._enableActions = params.has("enable-actions");
-  this._disablePrivateActions = params.has("disable-private-actions");
-  this._inPrivateWindow = params.has("private-window");
-  this._prohibitAutoFill = params.has("prohibit-autofill");
-  this._disableTelemetry = params.has("disable-telemetry");
-
-  // Extract the max-results param.
-  let maxResults = searchParam.match(REGEXP_MAX_RESULTS);
-  this._maxResults = maxResults
-    ? parseInt(maxResults[1])
-    : UrlbarPrefs.get("maxRichResults");
-
-  // Extract the user-context-id param.
-  let userContextId = searchParam.match(REGEXP_USER_CONTEXT_ID);
-  this._userContextId = userContextId
-    ? parseInt(userContextId[1], 10)
-    : Ci.nsIScriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
+  if (queryContext) {
+    this._enableActions = true;
+    this._inPrivateWindow = queryContext.isPrivate;
+    this._disablePrivateActions =
+      this._inPrivateWindow && !PrivateBrowsingUtils.permanentPrivateBrowsing;
+    this._prohibitAutoFill = !queryContext.allowAutofill;
+    this._maxResults = queryContext.maxResults;
+    this._userContextId = queryContext.userContextId;
+    this._currentPage = queryContext.currentPage;
+  } else {
+    let params = new Set(searchParam.split(" "));
+    this._enableActions = params.has("enable-actions");
+    this._disablePrivateActions = params.has("disable-private-actions");
+    this._inPrivateWindow = params.has("private-window");
+    this._prohibitAutoFill = params.has("prohibit-autofill");
+    // Extract the max-results param.
+    let maxResults = searchParam.match(REGEXP_MAX_RESULTS);
+    this._maxResults = maxResults
+      ? parseInt(maxResults[1])
+      : UrlbarPrefs.get("maxRichResults");
+    // Extract the user-context-id param.
+    let userContextId = searchParam.match(REGEXP_USER_CONTEXT_ID);
+    this._userContextId = userContextId
+      ? parseInt(userContextId[1], 10)
+      : Ci.nsIScriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
+  }
 
   // Use the original string here, not the stripped one, so the tokenizer can
   // properly recognize token types.
@@ -690,20 +729,50 @@ function Search(
     }
   }
 
-  this._searchTokens = this.filterTokens(tokens);
+  // The behavior can be set through:
+  // 1. a specific restrictSource in the QueryContext
+  // 2. typed restriction tokens
+  if (
+    queryContext &&
+    queryContext.restrictSource &&
+    sourceToBehaviorMap.has(queryContext.restrictSource)
+  ) {
+    this._searchTokens = tokens;
+    this._behavior = 0;
+    this.setBehavior("restrict");
+    let behavior = sourceToBehaviorMap.get(queryContext.restrictSource);
+    this.setBehavior(behavior);
+    if (behavior == "search" && queryContext.engineName) {
+      this._engineName = queryContext.engineName;
+    }
+    if (behavior != "search") {
+      prohibitSearchSuggestions = true;
+    }
+    // When we are in restrict mode, all the tokens are valid for searching, so
+    // there is no _heuristicToken.
+    this._heuristicToken = null;
+  } else {
+    this._searchTokens = this.filterTokens(tokens);
+    // The heuristic token is the first filtered search token, but only when it's
+    // actually the first thing in the search string.  If a prefix or restriction
+    // character occurs first, then the heurstic token is null.  We use the
+    // heuristic token to help determine the heuristic result.  It may be a Places
+    // keyword, a search engine alias, an extension keyword, or simply a URL or
+    // part of the search string the user has typed.  We won't know until we
+    // create the heuristic result.
+    let firstToken = !!this._searchTokens.length && this._searchTokens[0].value;
+    this._heuristicToken =
+      firstToken && this._trimmedOriginalSearchString.startsWith(firstToken)
+        ? firstToken
+        : null;
+  }
 
-  // The heuristic token is the first filtered search token, but only when it's
-  // actually the first thing in the search string.  If a prefix or restriction
-  // character occurs first, then the heurstic token is null.  We use the
-  // heuristic token to help determine the heuristic result.  It may be a Places
-  // keyword, a search engine alias, an extension keyword, or simply a URL or
-  // part of the search string the user has typed.  We won't know until we
-  // create the heuristic result.
-  let firstToken = !!this._searchTokens.length && this._searchTokens[0].value;
-  this._heuristicToken =
-    firstToken && this._trimmedOriginalSearchString.startsWith(firstToken)
-      ? firstToken
-      : null;
+  // Set the right JavaScript behavior based on our preference.  Note that the
+  // preference is whether or not we should filter JavaScript, and the
+  // behavior is if we should search it or not.
+  if (!UrlbarPrefs.get("filter.javascript")) {
+    this.setBehavior("javascript");
+  }
 
   this._keywordSubstitute = null;
 
@@ -864,12 +933,6 @@ Search.prototype = {
         }
       }
     }
-    // Set the right JavaScript behavior based on our preference.  Note that the
-    // preference is whether or not we should filter JavaScript, and the
-    // behavior is if we should search it or not.
-    if (!UrlbarPrefs.get("filter.javascript")) {
-      this.setBehavior("javascript");
-    }
     return filtered;
   },
 
@@ -928,16 +991,15 @@ Search.prototype = {
       }
     };
 
-    if (!this._disableTelemetry) {
-      TelemetryStopwatch.start(TELEMETRY_1ST_RESULT, this);
-      TelemetryStopwatch.start(TELEMETRY_6_FIRST_RESULTS, this);
-    }
-
-    // Since we call the synchronous parseSubmissionURL function later, we must
-    // wait for the initialization of PlacesSearchAutocompleteProvider first.
-    await PlacesSearchAutocompleteProvider.ensureInitialized();
-    if (!this.pending) {
-      return;
+    if (UrlbarPrefs.get("restyleSearches")) {
+      // This explicit initialization is only necessary for
+      // _maybeRestyleSearchMatch, because it calls the synchronous
+      // parseSubmissionURL that can't wait for async initialization of
+      // PlacesSearchAutocompleteProvider.
+      await PlacesSearchAutocompleteProvider.ensureInitialized();
+      if (!this.pending) {
+        return;
+      }
     }
 
     // For any given search, we run many queries/heuristics:
@@ -1061,10 +1123,12 @@ Search.prototype = {
           if (this._searchEngineAliasMatch) {
             engine = this._searchEngineAliasMatch.engine;
           } else {
-            engine = await PlacesSearchAutocompleteProvider.currentEngine(
-              this._inPrivateWindow
-            );
-            if (!this.pending) {
+            engine = this._engineName
+              ? Services.search.getEngineByName(this._engineName)
+              : await PlacesSearchAutocompleteProvider.currentEngine(
+                  this._inPrivateWindow
+                );
+            if (!this.pending || !engine) {
               return;
             }
           }
@@ -1131,7 +1195,7 @@ Search.prototype = {
     }
     queries.push(this._searchQuery);
 
-    // Finally run all the other queries.
+    // Finally run all the remaining queries.
     for (let [query, params] of queries) {
       await conn.executeCached(query, params, this._onResultRow.bind(this));
       if (!this.pending) {
@@ -1168,7 +1232,11 @@ Search.prototype = {
       this._counts[UrlbarUtils.RESULT_GROUP.HEURISTIC];
     if (count < this._maxResults) {
       this._matchBehavior = Ci.mozIPlacesAutoComplete.MATCH_ANYWHERE;
-      for (let [query, params] of [this._adaptiveQuery, this._searchQuery]) {
+      let queries = [this._adaptiveQuery, this._searchQuery];
+      if (this.hasBehavior("openpage")) {
+        queries.unshift(this._switchToTabQuery);
+      }
+      for (let [query, params] of queries) {
         await conn.executeCached(query, params, this._onResultRow.bind(this));
         if (!this.pending) {
           return;
@@ -1333,7 +1401,7 @@ Search.prototype = {
           this._result.setDefaultIndex(0);
           this._addMatch({
             value,
-            finalCompleteValue: PlacesUtils.mozActionURI("searchengine", {
+            finalCompleteValue: makeActionUrl("searchengine", {
               engineName: engine.name,
               alias: aliasPreservingUserCase,
               input: value,
@@ -1367,27 +1435,27 @@ Search.prototype = {
     // We always try to make the first result a special "heuristic" result.  The
     // heuristics below determine what type of result it will be, if any.
 
-    let hasSearchTerms = !!this._searchTokens.length;
-
-    if (hasSearchTerms) {
+    if (this._heuristicToken) {
       // It may be a keyword registered by an extension.
-      let matched = await this._matchExtensionHeuristicResult();
+      let matched = await this._matchExtensionHeuristicResult(
+        this._heuristicToken
+      );
       if (matched) {
         return true;
       }
     }
 
-    if (this._enableActions && hasSearchTerms) {
+    if (this.pending && this._enableActions && this._heuristicToken) {
       // It may be a search engine with an alias - which works like a keyword.
-      let matched = await this._matchSearchEngineAlias();
+      let matched = await this._matchSearchEngineAlias(this._heuristicToken);
       if (matched) {
         return true;
       }
     }
 
-    if (this.pending && hasSearchTerms) {
+    if (this.pending && this._heuristicToken) {
       // It may be a Places keyword.
-      let matched = await this._matchPlacesKeyword();
+      let matched = await this._matchPlacesKeyword(this._heuristicToken);
       if (matched) {
         return true;
       }
@@ -1433,7 +1501,7 @@ Search.prototype = {
       }
     }
 
-    if (this.pending && hasSearchTerms && this._enableActions) {
+    if (this.pending && this._searchTokens.length && this._enableActions) {
       // If we don't have a result that matches what we know about, then
       // we use a fallback for things we don't know about.
 
@@ -1595,26 +1663,19 @@ Search.prototype = {
     return gotResult;
   },
 
-  _matchExtensionHeuristicResult() {
+  _matchExtensionHeuristicResult(keyword) {
     if (
-      this._heuristicToken &&
-      ExtensionSearchHandler.isKeywordRegistered(this._heuristicToken) &&
-      substringAfter(this._originalSearchString, this._heuristicToken)
+      ExtensionSearchHandler.isKeywordRegistered(keyword) &&
+      substringAfter(this._originalSearchString, keyword)
     ) {
-      let description = ExtensionSearchHandler.getDescription(
-        this._heuristicToken
-      );
+      let description = ExtensionSearchHandler.getDescription(keyword);
       this._addExtensionMatch(this._originalSearchString, description);
       return true;
     }
     return false;
   },
 
-  async _matchPlacesKeyword() {
-    if (!this._heuristicToken) {
-      return false;
-    }
-    let keyword = this._heuristicToken;
+  async _matchPlacesKeyword(keyword) {
     let entry = await PlacesUtils.keywords.fetch(keyword);
     if (!entry) {
       return false;
@@ -1642,7 +1703,7 @@ Search.prototype = {
     let value = url;
     if (this._enableActions) {
       style = "action " + style;
-      value = PlacesUtils.mozActionURI("keyword", {
+      value = makeActionUrl("keyword", {
         url,
         keyword,
         input: this._originalSearchString,
@@ -1735,12 +1796,7 @@ Search.prototype = {
     return true;
   },
 
-  async _matchSearchEngineAlias() {
-    if (!this._heuristicToken) {
-      return false;
-    }
-
-    let alias = this._heuristicToken;
+  async _matchSearchEngineAlias(alias) {
     let engine = await PlacesSearchAutocompleteProvider.engineForAlias(alias);
     if (!engine) {
       return false;
@@ -1760,9 +1816,11 @@ Search.prototype = {
   },
 
   async _matchCurrentSearchEngine() {
-    let engine = await PlacesSearchAutocompleteProvider.currentEngine(
-      this._inPrivateWindow
-    );
+    let engine = this._engineName
+      ? Services.search.getEngineByName(this._engineName)
+      : await PlacesSearchAutocompleteProvider.currentEngine(
+          this._inPrivateWindow
+        );
     if (!engine || !this.pending) {
       return false;
     }
@@ -1787,7 +1845,7 @@ Search.prototype = {
     }
 
     this._addMatch({
-      value: PlacesUtils.mozActionURI("extension", {
+      value: makeActionUrl("extension", {
         content,
         keyword: this._heuristicToken,
       }),
@@ -1856,7 +1914,7 @@ Search.prototype = {
       match.type = UrlbarUtils.RESULT_GROUP.SUGGESTION;
     }
 
-    match.value = PlacesUtils.mozActionURI("searchengine", actionURLParams);
+    match.value = makeActionUrl("searchengine", actionURLParams);
     this._addMatch(match);
   },
 
@@ -1915,7 +1973,7 @@ Search.prototype = {
       let match = {
         // We include the deviceName in the action URL so we can render it in
         // the URLBar.
-        value: PlacesUtils.mozActionURI("remotetab", { url, deviceName }),
+        value: makeActionUrl("remotetab", { url, deviceName }),
         comment: title || url,
         style: "action remotetab",
         // we want frecency > FRECENCY_DEFAULT so it doesn't get pushed out
@@ -1959,7 +2017,7 @@ Search.prototype = {
         e.result == Cr.NS_ERROR_MALFORMED_URI &&
         !UrlbarPrefs.get("keyword.enabled")
       ) {
-        let value = PlacesUtils.mozActionURI("visiturl", {
+        let value = makeActionUrl("visiturl", {
           url: searchUrl,
           input: searchUrl,
         });
@@ -2005,7 +2063,7 @@ Search.prototype = {
       escapedURL
     );
 
-    let value = PlacesUtils.mozActionURI("visiturl", {
+    let value = makeActionUrl("visiturl", {
       url: escapedURL,
       input: searchUrl,
     });
@@ -2084,7 +2142,7 @@ Search.prototype = {
     }
 
     // Turn the match into a searchengine action with a favicon.
-    match.value = PlacesUtils.mozActionURI("searchengine", {
+    match.value = makeActionUrl("searchengine", {
       engineName: parseResult.engineName,
       input: parseResult.terms,
       searchQuery: parseResult.terms,
@@ -2144,14 +2202,6 @@ Search.prototype = {
     this._currentMatchCount++;
     this._counts[match.type]++;
 
-    if (!this._disableTelemetry) {
-      if (this._currentMatchCount == 1) {
-        TelemetryStopwatch.finish(TELEMETRY_1ST_RESULT, this);
-      }
-      if (this._currentMatchCount == 6) {
-        TelemetryStopwatch.finish(TELEMETRY_6_FIRST_RESULTS, this);
-      }
-    }
     this.notifyResult(true, match.type == UrlbarUtils.RESULT_GROUP.HEURISTIC);
   },
 
@@ -2442,8 +2492,12 @@ Search.prototype = {
       openPageCount > 0 &&
       this.hasBehavior("openpage")
     ) {
+      if (this._currentPage == match.value) {
+        // Don't suggest switching to the current tab.
+        return;
+      }
       // Actions are enabled and the page is open.  Add a switch-to-tab result.
-      match.value = PlacesUtils.mozActionURI("switchtab", { url: match.value });
+      match.value = makeActionUrl("switchtab", { url: match.value });
       match.style = "action switchtab";
     } else if (
       this.hasBehavior("history") &&
@@ -2855,9 +2909,52 @@ UnifiedComplete.prototype = {
     PreloadedSiteStorage.populate(json);
   },
 
+  /**
+   * This is a wrapper around startSearch, with a better interface towards
+   * Quantum Bar. Long term this provider should be migrated to new separate
+   * providers and this won't be necessary
+   * @param {UrlbarQueryContext} queryContext
+   *        The context for the current search.
+   * @param {Function} onAutocompleteResult
+   *        A callback to notify each result to.
+   */
+  startQuery(queryContext, onAutocompleteResult) {
+    let deferred = PromiseUtils.defer();
+    let listener = {
+      onSearchResult(_, result) {
+        let done =
+          [
+            Ci.nsIAutoCompleteResult.RESULT_IGNORED,
+            Ci.nsIAutoCompleteResult.RESULT_FAILURE,
+            Ci.nsIAutoCompleteResult.RESULT_NOMATCH,
+            Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
+          ].includes(result.searchResult) || result.errorDescription;
+        onAutocompleteResult(result);
+        if (done) {
+          deferred.resolve();
+        }
+      },
+    };
+    this.startSearch(
+      queryContext.searchString,
+      "",
+      null,
+      listener,
+      queryContext
+    );
+    this._deferred = deferred;
+    return this._deferred.promise;
+  },
+
   // nsIAutoCompleteSearch
 
-  startSearch(searchString, searchParam, acPreviousResult, listener) {
+  startSearch(
+    searchString,
+    searchParam,
+    acPreviousResult,
+    listener,
+    queryContext
+  ) {
     // Stop the search in case the controller has not taken care of it.
     if (this._currentSearch) {
       this.stopSearch();
@@ -2887,10 +2984,13 @@ UnifiedComplete.prototype = {
     // complete, we remove those stale matches with _cleanUpNonCurrentMatches().
 
     // Extract the insert-method param if it exists.
-    let insertMethod = searchParam.match(REGEXP_INSERT_METHOD);
-    insertMethod = insertMethod
-      ? parseInt(insertMethod[1])
-      : UrlbarPrefs.get("insertMethod");
+    let insertMethod = UrlbarUtils.INSERTMETHOD.APPEND;
+    if (!queryContext) {
+      insertMethod = searchParam.match(REGEXP_INSERT_METHOD);
+      insertMethod = insertMethod
+        ? parseInt(insertMethod[1])
+        : UrlbarPrefs.get("insertMethod");
+    }
 
     let previousResult = null;
     if (
@@ -2918,7 +3018,8 @@ UnifiedComplete.prototype = {
       listener,
       this,
       prohibitSearchSuggestions,
-      previousResult
+      previousResult,
+      queryContext
     ));
     this.getDatabaseHandle()
       .then(conn => search.execute(conn))
@@ -2937,6 +3038,9 @@ UnifiedComplete.prototype = {
     if (this._currentSearch) {
       this._currentSearch.stop();
     }
+    if (this._deferred) {
+      this._deferred.resolve();
+    }
     // Don't notify since we are canceling this search.  This also means we
     // won't fire onSearchComplete for this search.
     this.finishSearch();
@@ -2950,10 +3054,6 @@ UnifiedComplete.prototype = {
    *        results or not.
    */
   finishSearch(notify = false) {
-    if (!this._disableTelemetry) {
-      TelemetryStopwatch.cancel(TELEMETRY_1ST_RESULT, this);
-      TelemetryStopwatch.cancel(TELEMETRY_6_FIRST_RESULTS, this);
-    }
     // Clear state now to avoid race conditions, see below.
     let search = this._currentSearch;
     if (!search) {

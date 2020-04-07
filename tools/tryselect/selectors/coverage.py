@@ -9,6 +9,7 @@ import json
 import hashlib
 import os
 import shutil
+import six
 import sqlite3
 import subprocess
 import requests
@@ -56,7 +57,14 @@ class CoverageParser(BaseTryParser):
     name = 'coverage'
     arguments = []
     common_groups = ['push', 'task']
-    templates = ['artifact', 'env', 'rebuild', 'chemspill-prio', 'disable-pgo']
+    task_configs = [
+        "artifact",
+        "env",
+        "rebuild",
+        "chemspill-prio",
+        "disable-pgo",
+        "worker-overrides",
+    ]
 
 
 def read_test_manifests():
@@ -114,7 +122,7 @@ def download_coverage_mapping(base_revision):
     except (IOError, ValueError):
         print('Chunk mapping file not found.')
 
-    CHUNK_MAPPING_URL_TEMPLATE = 'https://index.taskcluster.net/v1/task/project.releng.services.project.production.code_coverage_bot.{}/artifacts/public/chunk_mapping.tar.xz'  # noqa
+    CHUNK_MAPPING_URL_TEMPLATE = 'https://firefox-ci-tc.services.mozilla.com/api/index/v1/task/project.releng.services.project.production.code_coverage_bot.{}/artifacts/public/chunk_mapping.tar.xz'  # noqa
     JSON_PUSHES_URL_TEMPLATE = 'https://hg.mozilla.org/mozilla-central/json-pushes?version=2&tipsonly=1&startdate={}'  # noqa
 
     # Get pushes from at most one month ago.
@@ -372,8 +380,9 @@ def run(try_config={}, full=False, parameters=None, push=True, message='{msg}', 
     print('Found ' + test_count_message)
 
     # Set the test paths to be run by setting MOZHARNESS_TEST_PATHS.
-    path_env = {'MOZHARNESS_TEST_PATHS': json.dumps(resolve_tests_by_suite(test_files))}
-    try_config.setdefault('templates', {}).setdefault('env', {}).update(path_env)
+    path_env = {'MOZHARNESS_TEST_PATHS': six.ensure_text(
+        json.dumps(resolve_tests_by_suite(test_files)))}
+    try_config.setdefault('env', {}).update(path_env)
 
     # Build commit message.
     msg = 'try coverage - ' + test_count_message

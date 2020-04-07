@@ -10,7 +10,6 @@ DIRS += [
     'actors',
     'connectors',
     'performance',
-    'performance-new',
     'socket',
     'startup',
 ]
@@ -18,12 +17,12 @@ DIRS += [
 if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
     BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
 
-MOCHITEST_CHROME_MANIFESTS += ['tests/mochitest/chrome.ini']
-XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
+MOCHITEST_CHROME_MANIFESTS += ['tests/chrome/chrome.ini']
+XPCSHELL_TESTS_MANIFESTS += ['tests/xpcshell/xpcshell.ini']
 
 DevToolsModules(
-    'debugger-server-connection.js',
-    'debugger-server.js',
+    'devtools-server-connection.js',
+    'devtools-server.js',
 )
 
 with Files('**'):

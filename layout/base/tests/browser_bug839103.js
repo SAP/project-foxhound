@@ -7,7 +7,7 @@ add_task(async function test() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: gTestRoot + "file_bug839103.html" },
     async function(browser) {
-      await ContentTask.spawn(browser, gTestRoot, testBody);
+      await SpecialPowers.spawn(browser, [gTestRoot], testBody);
     }
   );
 });
@@ -25,14 +25,10 @@ async function testBody(testRoot) {
   // Now add a stylesheet on the fly and make sure we see it.
   let doc = content.document;
   doc.styleSheetChangeEventsEnabled = true;
-  doc.addEventListener("StyleSheetAdded", unexpectedContentEvent);
-  doc.addEventListener("StyleSheetRemoved", unexpectedContentEvent);
   doc.addEventListener(
     "StyleSheetApplicableStateChanged",
     unexpectedContentEvent
   );
-  doc.defaultView.addEventListener("StyleSheetAdded", unexpectedContentEvent);
-  doc.defaultView.addEventListener("StyleSheetRemoved", unexpectedContentEvent);
   doc.defaultView.addEventListener(
     "StyleSheetApplicableStateChanged",
     unexpectedContentEvent
@@ -43,26 +39,15 @@ async function testBody(testRoot) {
   link.setAttribute("type", "text/css");
   link.setAttribute("href", testRoot + gStyleSheet);
 
-  let sheetAdded = ContentTaskUtils.waitForEvent(this, "StyleSheetAdded", true);
   let stateChanged = ContentTaskUtils.waitForEvent(
-    this,
+    docShell.chromeEventHandler,
     "StyleSheetApplicableStateChanged",
     true
   );
   doc.body.appendChild(link);
 
-  let evt = await sheetAdded;
-  info("received dynamic style sheet event");
-  is(evt.type, "StyleSheetAdded", "evt.type has expected value");
-  is(evt.target, doc, "event targets correct document");
-  ok(evt.stylesheet, "evt.stylesheet is defined");
-  ok(
-    evt.stylesheet.toString().includes("CSSStyleSheet"),
-    "evt.stylesheet is a stylesheet"
-  );
-  ok(evt.documentSheet, "style sheet is a document sheet");
-
-  evt = await stateChanged;
+  info("waiting for applicable state change event");
+  let evt = await stateChanged;
   info("received dynamic style sheet applicable state change event");
   is(
     evt.type,
@@ -74,7 +59,7 @@ async function testBody(testRoot) {
   is(evt.applicable, true, "evt.applicable has the right value");
 
   stateChanged = ContentTaskUtils.waitForEvent(
-    this,
+    docShell.chromeEventHandler,
     "StyleSheetApplicableStateChanged",
     true
   );
@@ -93,84 +78,5 @@ async function testBody(testRoot) {
   is(evt.stylesheet, link.sheet, "evt.stylesheet has the right value");
   is(evt.applicable, false, "evt.applicable has the right value");
 
-  let sheetRemoved = ContentTaskUtils.waitForEvent(
-    this,
-    "StyleSheetRemoved",
-    true
-  );
   doc.body.removeChild(link);
-
-  evt = await sheetRemoved;
-  info("received dynamic style sheet removal");
-  is(evt.type, "StyleSheetRemoved", "evt.type has expected value");
-  is(evt.target, doc, "event targets correct document");
-  ok(evt.stylesheet, "evt.stylesheet is defined");
-  ok(
-    evt.stylesheet.toString().includes("CSSStyleSheet"),
-    "evt.stylesheet is a stylesheet"
-  );
-  ok(
-    evt.stylesheet.href.includes(gStyleSheet),
-    "evt.stylesheet is the removed stylesheet"
-  );
-
-  let ruleAdded = ContentTaskUtils.waitForEvent(this, "StyleRuleAdded", true);
-  doc.querySelector("style").sheet.insertRule("*{color:black}", 0);
-
-  evt = await ruleAdded;
-  info("received style rule added event");
-  is(evt.type, "StyleRuleAdded", "evt.type has expected value");
-  is(evt.target, doc, "event targets correct document");
-  ok(evt.stylesheet, "evt.stylesheet is defined");
-  ok(
-    evt.stylesheet.toString().includes("CSSStyleSheet"),
-    "evt.stylesheet is a stylesheet"
-  );
-  ok(evt.rule, "evt.rule is defined");
-  is(
-    evt.rule.cssText,
-    "* { color: black; }",
-    "evt.rule.cssText has expected value"
-  );
-
-  let ruleChanged = ContentTaskUtils.waitForEvent(
-    this,
-    "StyleRuleChanged",
-    true
-  );
-  evt.rule.style.cssText = "color:green";
-
-  evt = await ruleChanged;
-  ok(true, "received style rule changed event");
-  is(evt.type, "StyleRuleChanged", "evt.type has expected value");
-  is(evt.target, doc, "event targets correct document");
-  ok(evt.stylesheet, "evt.stylesheet is defined");
-  ok(
-    evt.stylesheet.toString().includes("CSSStyleSheet"),
-    "evt.stylesheet is a stylesheet"
-  );
-  ok(evt.rule, "evt.rule is defined");
-  is(
-    evt.rule.cssText,
-    "* { color: green; }",
-    "evt.rule.cssText has expected value"
-  );
-
-  let ruleRemoved = ContentTaskUtils.waitForEvent(
-    this,
-    "StyleRuleRemoved",
-    true
-  );
-  evt.stylesheet.deleteRule(0);
-
-  evt = await ruleRemoved;
-  info("received style rule removed event");
-  is(evt.type, "StyleRuleRemoved", "evt.type has expected value");
-  is(evt.target, doc, "event targets correct document");
-  ok(evt.stylesheet, "evt.stylesheet is defined");
-  ok(
-    evt.stylesheet.toString().includes("CSSStyleSheet"),
-    "evt.stylesheet is a stylesheet"
-  );
-  ok(evt.rule, "evt.rule is defined");
 }

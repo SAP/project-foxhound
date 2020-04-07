@@ -39,6 +39,7 @@
 #include "gc/FreeOp.h"
 #include "gc/Policy.h"
 #include "jit/AtomicOperations.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
 #include "js/ArrayBuffer.h"  // JS::{IsArrayBufferObject,GetArrayBufferData,GetArrayBuffer{ByteLength,Data}}
 #include "js/CharacterEncoding.h"
 #include "js/PropertySpec.h"
@@ -47,6 +48,7 @@
 #include "js/UniquePtr.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
+#include "util/Text.h"
 #include "util/Unicode.h"
 #include "util/Windows.h"
 #include "vm/JSContext.h"
@@ -62,21 +64,20 @@ using mozilla::IsAsciiDigit;
 using JS::AutoCheckCannotGC;
 using JS::AutoStableStringChars;
 
-namespace js {
-namespace ctypes {
+namespace js::ctypes {
 
 static bool HasUnpairedSurrogate(const char16_t* chars, size_t nchars,
                                  char16_t* unpaired) {
   for (const char16_t* end = chars + nchars; chars != end; chars++) {
     char16_t c = *chars;
-    if (unicode::LeadSurrogateMin <= c && c <= unicode::TrailSurrogateMax) {
+    if (unicode::IsSurrogate(c)) {
       chars++;
-      if (c >= unicode::TrailSurrogateMin || chars == end) {
+      if (unicode::IsTrailSurrogate(c) || chars == end) {
         *unpaired = c;
         return true;
       }
       char16_t c2 = *chars;
-      if (c2 < unicode::TrailSurrogateMin || c2 > unicode::TrailSurrogateMax) {
+      if (!unicode::IsTrailSurrogate(c2)) {
         *unpaired = c;
         return true;
       }
@@ -444,8 +445,18 @@ static const JSClass sCABIClass = {"CABI",
 // This exists to give said prototypes a class of "CType", and to provide
 // reserved slots for stashing various other prototype objects.
 static const JSClassOps sCTypeProtoClassOps = {
-    nullptr, nullptr, nullptr,           nullptr, nullptr,
-    nullptr, nullptr, ConstructAbstract, nullptr, ConstructAbstract};
+    nullptr,            // addProperty
+    nullptr,            // delProperty
+    nullptr,            // enumerate
+    nullptr,            // newEnumerate
+    nullptr,            // resolve
+    nullptr,            // mayResolve
+    nullptr,            // finalize
+    ConstructAbstract,  // call
+    nullptr,            // hasInstance
+    ConstructAbstract,  // construct
+    nullptr,            // trace
+};
 static const JSClass sCTypeProtoClass = {
     "CType", JSCLASS_HAS_RESERVED_SLOTS(CTYPEPROTO_SLOTS),
     &sCTypeProtoClassOps};
@@ -454,42 +465,55 @@ static const JSClass sCTypeProtoClass = {
 // of CTypes. This exists to give said prototypes a class of "CData".
 static const JSClass sCDataProtoClass = {"CData", 0};
 
-static const JSClassOps sCTypeClassOps = {nullptr,
-                                          nullptr,
-                                          nullptr,
-                                          nullptr,
-                                          nullptr,
-                                          nullptr,
-                                          CType::Finalize,
-                                          CType::ConstructData,
-                                          CType::HasInstance,
-                                          CType::ConstructData,
-                                          CType::Trace};
+static const JSClassOps sCTypeClassOps = {
+    nullptr,               // addProperty
+    nullptr,               // delProperty
+    nullptr,               // enumerate
+    nullptr,               // newEnumerate
+    nullptr,               // resolve
+    nullptr,               // mayResolve
+    CType::Finalize,       // finalize
+    CType::ConstructData,  // call
+    CType::HasInstance,    // hasInstance
+    CType::ConstructData,  // construct
+    CType::Trace,          // trace
+};
 static const JSClass sCTypeClass = {
     "CType",
     JSCLASS_HAS_RESERVED_SLOTS(CTYPE_SLOTS) | JSCLASS_FOREGROUND_FINALIZE,
     &sCTypeClassOps};
 
 static const JSClassOps sCDataClassOps = {
-    nullptr, nullptr,           nullptr,         nullptr,
-    nullptr, nullptr,           CData::Finalize, FunctionType::Call,
-    nullptr, FunctionType::Call};
+    nullptr,             // addProperty
+    nullptr,             // delProperty
+    nullptr,             // enumerate
+    nullptr,             // newEnumerate
+    nullptr,             // resolve
+    nullptr,             // mayResolve
+    CData::Finalize,     // finalize
+    FunctionType::Call,  // call
+    nullptr,             // hasInstance
+    FunctionType::Call,  // construct
+    nullptr,             // trace
+};
 static const JSClass sCDataClass = {
     "CData",
     JSCLASS_HAS_RESERVED_SLOTS(CDATA_SLOTS) | JSCLASS_FOREGROUND_FINALIZE,
     &sCDataClassOps};
 
-static const JSClassOps sCClosureClassOps = {nullptr,
-                                             nullptr,
-                                             nullptr,
-                                             nullptr,
-                                             nullptr,
-                                             nullptr,
-                                             CClosure::Finalize,
-                                             nullptr,
-                                             nullptr,
-                                             nullptr,
-                                             CClosure::Trace};
+static const JSClassOps sCClosureClassOps = {
+    nullptr,             // addProperty
+    nullptr,             // delProperty
+    nullptr,             // enumerate
+    nullptr,             // newEnumerate
+    nullptr,             // resolve
+    nullptr,             // mayResolve
+    CClosure::Finalize,  // finalize
+    nullptr,             // call
+    nullptr,             // hasInstance
+    nullptr,             // construct
+    CClosure::Trace,     // trace
+};
 static const JSClass sCClosureClass = {
     "CClosure",
     JSCLASS_HAS_RESERVED_SLOTS(CCLOSURE_SLOTS) | JSCLASS_FOREGROUND_FINALIZE,
@@ -506,13 +530,19 @@ static const JSClass sCDataFinalizerProtoClass = {"CDataFinalizer", 0};
  * Instances of CDataFinalizer have both private data (with type
  * |CDataFinalizer::Private|) and slots (see |CDataFinalizerSlots|).
  */
-static const JSClassOps sCDataFinalizerClassOps = {nullptr,
-                                                   nullptr,
-                                                   nullptr,
-                                                   nullptr,
-                                                   nullptr,
-                                                   nullptr,
-                                                   CDataFinalizer::Finalize};
+static const JSClassOps sCDataFinalizerClassOps = {
+    nullptr,                   // addProperty
+    nullptr,                   // delProperty
+    nullptr,                   // enumerate
+    nullptr,                   // newEnumerate
+    nullptr,                   // resolve
+    nullptr,                   // mayResolve
+    CDataFinalizer::Finalize,  // finalize
+    nullptr,                   // call
+    nullptr,                   // hasInstance
+    nullptr,                   // construct
+    nullptr,                   // trace
+};
 static const JSClass sCDataFinalizerClass = {
     "CDataFinalizer",
     JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(CDATAFINALIZER_SLOTS) |
@@ -674,7 +704,18 @@ static const JSClass sInt64ProtoClass = {"Int64", 0};
 static const JSClass sUInt64ProtoClass = {"UInt64", 0};
 
 static const JSClassOps sInt64ClassOps = {
-    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, Int64Base::Finalize};
+    nullptr,              // addProperty
+    nullptr,              // delProperty
+    nullptr,              // enumerate
+    nullptr,              // newEnumerate
+    nullptr,              // resolve
+    nullptr,              // mayResolve
+    Int64Base::Finalize,  // finalize
+    nullptr,              // call
+    nullptr,              // hasInstance
+    nullptr,              // construct
+    nullptr,              // trace
+};
 
 static const JSClass sInt64Class = {
     "Int64",
@@ -2277,8 +2318,7 @@ static bool GetObjectProperty(JSContext* cx, HandleObject obj,
   return true;
 }
 
-} /* namespace ctypes */
-} /* namespace js */
+}  // namespace js::ctypes
 
 using namespace js;
 using namespace js::ctypes;
@@ -2376,17 +2416,17 @@ namespace ctypes {
 // autoconverts to a primitive JS number; to support ILP64 architectures, it
 // would need to autoconvert to an Int64 object instead. Therefore we enforce
 // this invariant here.)
-JS_STATIC_ASSERT(sizeof(bool) == 1 || sizeof(bool) == 4);
-JS_STATIC_ASSERT(sizeof(char) == 1);
-JS_STATIC_ASSERT(sizeof(short) == 2);
-JS_STATIC_ASSERT(sizeof(int) == 4);
-JS_STATIC_ASSERT(sizeof(unsigned) == 4);
-JS_STATIC_ASSERT(sizeof(long) == 4 || sizeof(long) == 8);
-JS_STATIC_ASSERT(sizeof(long long) == 8);
-JS_STATIC_ASSERT(sizeof(size_t) == sizeof(uintptr_t));
-JS_STATIC_ASSERT(sizeof(float) == 4);
-JS_STATIC_ASSERT(sizeof(PRFuncPtr) == sizeof(void*));
-JS_STATIC_ASSERT(numeric_limits<double>::is_signed);
+static_assert(sizeof(bool) == 1 || sizeof(bool) == 4);
+static_assert(sizeof(char) == 1);
+static_assert(sizeof(short) == 2);
+static_assert(sizeof(int) == 4);
+static_assert(sizeof(unsigned) == 4);
+static_assert(sizeof(long) == 4 || sizeof(long) == 8);
+static_assert(sizeof(long long) == 8);
+static_assert(sizeof(size_t) == sizeof(uintptr_t));
+static_assert(sizeof(float) == 4);
+static_assert(sizeof(PRFuncPtr) == sizeof(void*));
+static_assert(numeric_limits<double>::is_signed);
 
 template <typename TargetType, typename FromType,
           bool FromIsIntegral = std::is_integral<FromType>::value>
@@ -2466,7 +2506,7 @@ static MOZ_ALWAYS_INLINE bool IsAlwaysExact() {
 template <class TargetType, class FromType, bool TargetSigned, bool FromSigned>
 struct IsExactImpl {
   static MOZ_ALWAYS_INLINE bool Test(FromType i, TargetType j) {
-    JS_STATIC_ASSERT(numeric_limits<TargetType>::is_exact);
+    static_assert(numeric_limits<TargetType>::is_exact);
     return FromType(j) == i;
   }
 };
@@ -2475,7 +2515,7 @@ struct IsExactImpl {
 template <class TargetType, class FromType>
 struct IsExactImpl<TargetType, FromType, false, true> {
   static MOZ_ALWAYS_INLINE bool Test(FromType i, TargetType j) {
-    JS_STATIC_ASSERT(numeric_limits<TargetType>::is_exact);
+    static_assert(numeric_limits<TargetType>::is_exact);
     return i >= 0 && FromType(j) == i;
   }
 };
@@ -2484,7 +2524,7 @@ struct IsExactImpl<TargetType, FromType, false, true> {
 template <class TargetType, class FromType>
 struct IsExactImpl<TargetType, FromType, true, false> {
   static MOZ_ALWAYS_INLINE bool Test(FromType i, TargetType j) {
-    JS_STATIC_ASSERT(numeric_limits<TargetType>::is_exact);
+    static_assert(numeric_limits<TargetType>::is_exact);
     return TargetType(i) >= 0 && FromType(j) == i;
   }
 };
@@ -2556,7 +2596,7 @@ static bool jsvalToBool(JSContext* cx, HandleValue val, bool* result) {
 template <class IntegerType>
 static bool jsvalToInteger(JSContext* cx, HandleValue val,
                            IntegerType* result) {
-  JS_STATIC_ASSERT(numeric_limits<IntegerType>::is_exact);
+  static_assert(numeric_limits<IntegerType>::is_exact);
 
   if (val.isInt32()) {
     // Make sure the integer fits in the alotted precision, and has the right
@@ -2643,7 +2683,7 @@ static bool jsvalToInteger(JSContext* cx, HandleValue val,
 // representable by FloatType.
 template <class FloatType>
 static bool jsvalToFloat(JSContext* cx, HandleValue val, FloatType* result) {
-  JS_STATIC_ASSERT(!numeric_limits<FloatType>::is_exact);
+  static_assert(!numeric_limits<FloatType>::is_exact);
 
   // The following casts may silently throw away some bits, but there's
   // no good way around it. Sternly requiring that the 64-bit double
@@ -2698,7 +2738,7 @@ static bool jsvalToFloat(JSContext* cx, HandleValue val, FloatType* result) {
 template <class IntegerType, class CharT>
 static bool StringToInteger(JSContext* cx, CharT* cp, size_t length,
                             IntegerType* result, bool* overflow) {
-  JS_STATIC_ASSERT(numeric_limits<IntegerType>::is_exact);
+  static_assert(numeric_limits<IntegerType>::is_exact);
 
   const CharT* end = cp + length;
   if (cp == end) {
@@ -2774,7 +2814,7 @@ static bool StringToInteger(JSContext* cx, JSString* string,
 template <class IntegerType>
 static bool jsvalToBigInteger(JSContext* cx, HandleValue val, bool allowString,
                               IntegerType* result, bool* overflow) {
-  JS_STATIC_ASSERT(numeric_limits<IntegerType>::is_exact);
+  static_assert(numeric_limits<IntegerType>::is_exact);
 
   if (val.isInt32()) {
     // Make sure the integer fits in the alotted precision, and has the right
@@ -2842,7 +2882,7 @@ static bool jsvalToSize(JSContext* cx, HandleValue val, bool allowString,
 template <class IntegerType>
 static bool jsidToBigInteger(JSContext* cx, jsid val, bool allowString,
                              IntegerType* result) {
-  JS_STATIC_ASSERT(numeric_limits<IntegerType>::is_exact);
+  static_assert(numeric_limits<IntegerType>::is_exact);
 
   if (JSID_IS_INT(val)) {
     // Make sure the integer fits in the alotted precision, and has the right
@@ -2887,7 +2927,7 @@ static bool SizeTojsval(JSContext* cx, size_t size, MutableHandleValue result) {
 // Forcefully convert val to IntegerType when explicitly requested.
 template <class IntegerType>
 static bool jsvalToIntegerExplicit(HandleValue val, IntegerType* result) {
-  JS_STATIC_ASSERT(numeric_limits<IntegerType>::is_exact);
+  static_assert(numeric_limits<IntegerType>::is_exact);
 
   if (val.isDouble()) {
     // Convert using ToInt32-style semantics: non-finite numbers become 0, and
@@ -2970,7 +3010,7 @@ static bool jsvalToPtrExplicit(JSContext* cx, HandleValue val,
 template <class IntegerType, class CharType, size_t N>
 void IntegerToString(IntegerType i, int radix,
                      StringBuilder<CharType, N>& result) {
-  JS_STATIC_ASSERT(numeric_limits<IntegerType>::is_exact);
+  static_assert(numeric_limits<IntegerType>::is_exact);
 
   // The buffer must be big enough for all the bits of IntegerType to fit,
   // in base-2, including '-'.
@@ -2997,17 +3037,6 @@ void IntegerToString(IntegerType i, int radix,
   if (!result.append(cp, end)) {
     return;
   }
-}
-
-template <class CharType>
-static size_t strnlen(const CharType* begin, size_t max) {
-  for (size_t i = 0; i < max; i++) {
-    if (begin[i] == '\0') {
-      return i;
-    }
-  }
-
-  return max;
 }
 
 // Convert C binary value 'data' of CType 'typeObj' to a JS primitive, where
@@ -3514,7 +3543,7 @@ static bool ImplicitConvert(JSContext* cx, HandleValue val,
         if (cls == ESClass::Array) {
           // Convert each element of the array by calling ImplicitConvert.
           uint32_t sourceLength;
-          if (!JS_GetArrayLength(cx, valObj, &sourceLength) ||
+          if (!JS::GetArrayLength(cx, valObj, &sourceLength) ||
               targetLength != size_t(sourceLength)) {
             MOZ_ASSERT(!funObj);
             return ArrayLengthMismatch(cx, targetLength, targetType,
@@ -5801,7 +5830,7 @@ bool StructType::Create(JSContext* cx, unsigned argc, Value* vp) {
     if (!arr) {
       isArray = false;
     } else {
-      if (!JS_IsArrayObject(cx, arr, &isArray)) {
+      if (!JS::IsArrayObject(cx, arr, &isArray)) {
         return false;
       }
     }
@@ -5825,7 +5854,7 @@ bool StructType::DefineInternal(JSContext* cx, JSObject* typeObj_,
   RootedObject fieldsObj(cx, fieldsObj_);
 
   uint32_t len;
-  MOZ_ALWAYS_TRUE(JS_GetArrayLength(cx, fieldsObj, &len));
+  MOZ_ALWAYS_TRUE(JS::GetArrayLength(cx, fieldsObj, &len));
 
   // Get the common prototype for CData objects of this type from
   // ctypes.CType.prototype.
@@ -6080,7 +6109,7 @@ bool StructType::Define(JSContext* cx, unsigned argc, Value* vp) {
   if (!arg.isObject()) {
     isArray = false;
   } else {
-    if (!JS_IsArrayObject(cx, arg, &isArray)) {
+    if (!JS::IsArrayObject(cx, arg, &isArray)) {
       return false;
     }
   }
@@ -6221,7 +6250,7 @@ JSObject* StructType::BuildFieldsArray(JSContext* cx, JSObject* obj) {
       return nullptr;
   }
 
-  RootedObject fieldsProp(cx, JS_NewArrayObject(cx, fieldsVec));
+  RootedObject fieldsProp(cx, JS::NewArrayObject(cx, fieldsVec));
   if (!fieldsProp) {
     return nullptr;
   }
@@ -6739,7 +6768,7 @@ bool FunctionType::Create(JSContext* cx, unsigned argc, Value* vp) {
     if (!args[2].isObject()) {
       isArray = false;
     } else {
-      if (!JS_IsArrayObject(cx, args[2], &isArray)) {
+      if (!JS::IsArrayObject(cx, args[2], &isArray)) {
         return false;
       }
     }
@@ -6751,7 +6780,7 @@ bool FunctionType::Create(JSContext* cx, unsigned argc, Value* vp) {
     arrayObj = &args[2].toObject();
 
     uint32_t len;
-    MOZ_ALWAYS_TRUE(JS_GetArrayLength(cx, arrayObj, &len));
+    MOZ_ALWAYS_TRUE(JS::GetArrayLength(cx, arrayObj, &len));
 
     if (!argTypes.resize(len)) {
       JS_ReportOutOfMemory(cx);
@@ -7102,7 +7131,7 @@ bool FunctionType::ArgTypesGetter(JSContext* cx, const JS::CallArgs& args) {
       vec[i].setObject(*fninfo->mArgTypes[i]);
     }
 
-    argTypes = JS_NewArrayObject(cx, vec);
+    argTypes = JS::NewArrayObject(cx, vec);
     if (!argTypes) {
       return false;
     }
@@ -7687,8 +7716,8 @@ bool CData::GetRuntime(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-typedef JS::TwoByteCharsZ (*InflateUTF8Method)(JSContext*, const JS::UTF8Chars,
-                                               size_t*, arena_id_t);
+using InflateUTF8Method = JS::TwoByteCharsZ (*)(JSContext*, const JS::UTF8Chars,
+                                                size_t*, arena_id_t);
 
 static bool ReadStringCommon(JSContext* cx, InflateUTF8Method inflateUTF8,
                              unsigned argc, Value* vp, const char* funName,
@@ -7761,7 +7790,7 @@ static bool ReadStringCommon(JSContext* cx, InflateUTF8Method inflateUTF8,
     case TYPE_signed_char:
     case TYPE_unsigned_char: {
       char* bytes = static_cast<char*>(data);
-      size_t length = strnlen(bytes, maxLength);
+      size_t length = js_strnlen(bytes, maxLength);
 
       // Determine the length.
       UniqueTwoByteChars dst(
@@ -7784,7 +7813,7 @@ static bool ReadStringCommon(JSContext* cx, InflateUTF8Method inflateUTF8,
     case TYPE_unsigned_short:
     case TYPE_char16_t: {
       char16_t* chars = static_cast<char16_t*>(data);
-      size_t length = strnlen(chars, maxLength);
+      size_t length = js_strnlen(chars, maxLength);
       result = JS_NewUCStringCopyN(cx, chars, length);
       break;
     }

@@ -8,26 +8,31 @@
 #define vm_ErrorObject_h_
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/Assertions.h"
 
+#include <stdint.h>
+
+#include "jspubtd.h"
+#include "NamespaceImports.h"
+
+#include "gc/Barrier.h"
+#include "js/Class.h"
+#include "js/ErrorReport.h"
+#include "js/RootingAPI.h"
+#include "js/TypeDecls.h"
 #include "js/UniquePtr.h"
+#include "js/Value.h"
+#include "vm/JSObject.h"
 #include "vm/NativeObject.h"
-#include "vm/SavedStacks.h"
 #include "vm/Shape.h"
 
 namespace js {
-
-/*
- * Initialize the exception constructor/prototype hierarchy.
- */
-extern JSObject* InitExceptionClasses(JSContext* cx, HandleObject obj);
+class ArrayObject;
 
 class ErrorObject : public NativeObject {
   static JSObject* createProto(JSContext* cx, JSProtoKey key);
 
   static JSObject* createConstructor(JSContext* cx, JSProtoKey key);
-
-  /* For access to createProto. */
-  friend JSObject* js::InitExceptionClasses(JSContext* cx, HandleObject global);
 
   static bool init(JSContext* cx, Handle<ErrorObject*> obj, JSExnType type,
                    UniquePtr<JSErrorReport> errorReport, HandleString fileName,
@@ -46,9 +51,8 @@ class ErrorObject : public NativeObject {
   static const uint32_t COLUMNNUMBER_SLOT = LINENUMBER_SLOT + 1;
   static const uint32_t MESSAGE_SLOT = COLUMNNUMBER_SLOT + 1;
   static const uint32_t SOURCEID_SLOT = MESSAGE_SLOT + 1;
-  static const uint32_t TIME_WARP_SLOT = SOURCEID_SLOT + 1;
 
-  static const uint32_t RESERVED_SLOTS = TIME_WARP_SLOT + 1;
+  static const uint32_t RESERVED_SLOTS = SOURCEID_SLOT + 1;
 
  public:
   static const JSClass classes[JSEXN_ERROR_LIMIT];
@@ -100,7 +104,6 @@ class ErrorObject : public NativeObject {
   inline uint32_t lineNumber() const;
   inline uint32_t columnNumber() const;
   inline JSObject* stack() const;
-  inline uint64_t timeWarpTarget() const;
 
   JSString* getMessage() const {
     const HeapSlot& slot = getReservedSlotRef(MESSAGE_SLOT);
@@ -114,11 +117,34 @@ class ErrorObject : public NativeObject {
   static bool setStack_impl(JSContext* cx, const CallArgs& args);
 };
 
+class AggregateErrorObject : public ErrorObject {
+  friend class ErrorObject;
+
+  // [[AggregateErrors]] slot of AggregateErrorObjects.
+  static const uint32_t AGGREGATE_ERRORS_SLOT = ErrorObject::RESERVED_SLOTS;
+  static const uint32_t RESERVED_SLOTS = AGGREGATE_ERRORS_SLOT + 1;
+
+ public:
+  ArrayObject* aggregateErrors() const;
+  void setAggregateErrors(ArrayObject* errors);
+
+  // Getter for the AggregateError.prototype.errors accessor.
+  static bool getErrors(JSContext* cx, unsigned argc, Value* vp);
+  static bool getErrors_impl(JSContext* cx, const CallArgs& args);
+};
+
+JSString* ErrorToSource(JSContext* cx, HandleObject obj);
+
 }  // namespace js
 
 template <>
 inline bool JSObject::is<js::ErrorObject>() const {
   return js::ErrorObject::isErrorClass(getClass());
+}
+
+template <>
+inline bool JSObject::is<js::AggregateErrorObject>() const {
+  return hasClass(js::ErrorObject::classForType(JSEXN_AGGREGATEERR));
 }
 
 #endif  // vm_ErrorObject_h_

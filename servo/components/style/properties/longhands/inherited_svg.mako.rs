@@ -17,6 +17,7 @@ ${helpers.single_keyword(
     engines="gecko",
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/css-inline-3/#propdef-dominant-baseline",
+    gecko_enum_prefix="StyleDominantBaseline",
 )}
 
 ${helpers.single_keyword(
@@ -25,6 +26,7 @@ ${helpers.single_keyword(
     engines="gecko",
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/SVG/text.html#TextAnchorProperty",
+    gecko_enum_prefix="StyleTextAnchor",
 )}
 
 // Section 11 - Painting: Filling, Stroking and Marker Symbols
@@ -34,15 +36,16 @@ ${helpers.single_keyword(
     engines="gecko",
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/SVG11/painting.html#ColorInterpolationProperty",
+    gecko_enum_prefix="StyleColorInterpolation",
 )}
 
 ${helpers.single_keyword(
     "color-interpolation-filters",
     "linearrgb auto srgb",
     engines="gecko",
-    gecko_constant_prefix="NS_STYLE_COLOR_INTERPOLATION",
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/SVG11/painting.html#ColorInterpolationFiltersProperty",
+    gecko_enum_prefix="StyleColorInterpolation",
 )}
 
 ${helpers.predefined_type(
@@ -80,6 +83,7 @@ ${helpers.single_keyword(
     engines="gecko",
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/SVG11/painting.html#ShapeRenderingProperty",
+    gecko_enum_prefix = "StyleShapeRendering",
 )}
 
 ${helpers.predefined_type(
@@ -107,6 +111,7 @@ ${helpers.single_keyword(
     engines="gecko",
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/SVG11/painting.html#StrokeLinecapProperty",
+    gecko_enum_prefix = "StyleStrokeLinecap",
 )}
 
 ${helpers.single_keyword(
@@ -115,6 +120,7 @@ ${helpers.single_keyword(
     engines="gecko",
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/SVG11/painting.html#StrokeLinejoinProperty",
+    gecko_enum_prefix = "StyleStrokeLinejoin",
 )}
 
 ${helpers.predefined_type(

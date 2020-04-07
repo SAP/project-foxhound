@@ -451,9 +451,6 @@ function testtag_tree_TreeSelection(tree, testid, multiple) {
     []
   );
 
-  // XXXndeakin invertSelection isn't implemented
-  //  selection.invertSelection();
-
   is(selection.shiftSelectPivot, -1, testid + "shiftSelectPivot set to -1");
 
   // rangedSelect and clearRange set the currentIndex to the endIndex. The
@@ -1814,8 +1811,8 @@ function getSortedColumnArray(aTree) {
   }
 
   array.sort(function(a, b) {
-    var o1 = parseInt(a.element.getAttribute("ordinal"));
-    var o2 = parseInt(b.element.getAttribute("ordinal"));
+    var o1 = parseInt(a.element.style.MozBoxOrdinalGroup);
+    var o2 = parseInt(b.element.style.MozBoxOrdinalGroup);
     return o1 - o2;
   });
   return array;

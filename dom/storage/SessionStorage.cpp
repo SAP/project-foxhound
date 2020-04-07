@@ -12,7 +12,6 @@
 #include "mozilla/Preferences.h"
 #include "nsContentUtils.h"
 #include "nsIPrincipal.h"
-#include "nsIWebProgressListener.h"
 #include "nsPIDOMWindow.h"
 
 #define DATASET                                          \
@@ -43,7 +42,7 @@ SessionStorage::SessionStorage(nsPIDOMWindowInner* aWindow,
   MOZ_ASSERT(aCache);
 }
 
-SessionStorage::~SessionStorage() {}
+SessionStorage::~SessionStorage() = default;
 
 int64_t SessionStorage::GetOriginQuotaUsage() const {
   return mCache->GetOriginQuotaUsage(DATASET);

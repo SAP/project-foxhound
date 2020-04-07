@@ -5,8 +5,8 @@
 
 "use strict";
 
-add_task(function test_setup() {
-  useTestEngineConfig();
+add_task(async function setup() {
+  await useTestEngines();
 
   Services.prefs.setBoolPref(
     SearchUtils.BROWSER_SEARCH_PREF + "separatePrivateDefault.ui.enabled",
@@ -84,7 +84,7 @@ add_task(async function test_listJSONlocaleSwitch() {
 add_task(async function test_listJSONRegionOverride() {
   Services.prefs.setCharPref("browser.search.region", "RU");
 
-  await asyncReInit({ skipReset: true });
+  await asyncReInit();
 
   Assert.ok(Services.search.isInitialized, "search initialized");
 

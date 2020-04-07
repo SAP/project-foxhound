@@ -20,8 +20,6 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h"
-#include "nsIAppShell.h"
-#include "nsIObserver.h"
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWidgetsCID.h"
@@ -60,10 +58,14 @@ void ForwardedInputTrack::RemoveInput(MediaInputPort* aPort) {
   TRACK_LOG(LogLevel::Debug,
             ("ForwardedInputTrack %p removing input %p", this, aPort));
   MOZ_ASSERT(aPort == mInputPort);
-  nsTArray<RefPtr<DirectMediaTrackListener>> listeners(mOwnedDirectListeners);
-  for (const auto& listener : listeners) {
-    // Remove listeners while the entry still exists.
-    RemoveDirectListenerImpl(listener);
+
+  for (const auto& listener : mOwnedDirectListeners) {
+    MediaTrack* source = mInputPort->GetSource();
+    TRACK_LOG(LogLevel::Debug,
+              ("ForwardedInputTrack %p removing direct listener "
+               "%p. Forwarding to input track %p.",
+               this, listener.get(), aPort->GetSource()));
+    source->RemoveDirectListenerImpl(listener);
   }
   mInputPort = nullptr;
   ProcessedMediaTrack::RemoveInput(aPort);
@@ -86,8 +88,9 @@ void ForwardedInputTrack::SetInput(MediaInputPort* aPort) {
 }
 
 void ForwardedInputTrack::ProcessInputImpl(MediaTrack* aSource,
-                                           MediaSegment* aSegment, GraphTime aFrom,
-                                           GraphTime aTo, uint32_t aFlags) {
+                                           MediaSegment* aSegment,
+                                           GraphTime aFrom, GraphTime aTo,
+                                           uint32_t aFlags) {
   GraphTime next;
   for (GraphTime t = aFrom; t < aTo; t = next) {
     MediaInputPort::InputInterval interval =
@@ -161,6 +164,10 @@ void ForwardedInputTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
     ProcessInputImpl(source, &video, aFrom, aTo, aFlags);
   } else {
     MOZ_CRASH("Unknown segment type");
+  }
+
+  if (mEnded) {
+    RemoveAllDirectListenersImpl();
   }
 }
 

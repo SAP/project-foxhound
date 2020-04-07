@@ -15,17 +15,11 @@
 #include "XPCJSMemoryReporter.h"
 #include "WrapperFactory.h"
 #include "mozJSComponentLoader.h"
-#include "nsAutoPtr.h"
 #include "nsNetUtil.h"
 #include "nsThreadUtils.h"
 
-#include "nsIMemoryInfoDumper.h"
-#include "nsIMemoryReporter.h"
 #include "nsIObserverService.h"
-#include "nsIBrowserChild.h"
 #include "nsIDebug2.h"
-#include "nsIDocShell.h"
-#include "nsIRunnable.h"
 #include "nsPIDOMWindow.h"
 #include "nsPrintfCString.h"
 #include "mozilla/Preferences.h"
@@ -63,7 +57,6 @@
 #include "nsAboutProtocolUtils.h"
 
 #include "GeckoProfiler.h"
-#include "nsIInputStream.h"
 #include "nsIXULRuntime.h"
 #include "nsJSPrincipals.h"
 #include "ExpandedPrincipal.h"
@@ -79,8 +72,6 @@
 #  include <algorithm>
 #  include <windows.h>
 #endif
-
-static MOZ_THREAD_LOCAL(XPCJSContext*) gTlsContext;
 
 using namespace mozilla;
 using namespace xpc;
@@ -278,8 +269,8 @@ class WatchdogManager {
   }
 
  private:
-  static void PrefsChanged(const char* aPref, WatchdogManager* aSelf) {
-    aSelf->RefreshWatchdog();
+  static void PrefsChanged(const char* aPref, void* aSelf) {
+    static_cast<WatchdogManager*>(aSelf)->RefreshWatchdog();
   }
 
  public:
@@ -289,7 +280,7 @@ class WatchdogManager {
 
   void RegisterContext(XPCJSContext* aContext) {
     MOZ_ASSERT(NS_IsMainThread());
-    AutoLockWatchdog lock(mWatchdog);
+    AutoLockWatchdog lock(mWatchdog.get());
 
     if (aContext->mActive == XPCJSContext::CONTEXT_ACTIVE) {
       mActiveContexts.insertBack(aContext);
@@ -303,7 +294,7 @@ class WatchdogManager {
 
   void UnregisterContext(XPCJSContext* aContext) {
     MOZ_ASSERT(NS_IsMainThread());
-    AutoLockWatchdog lock(mWatchdog);
+    AutoLockWatchdog lock(mWatchdog.get());
 
     // aContext must be in one of our two lists, simply remove it.
     aContext->LinkedListElement<XPCJSContext>::remove();
@@ -323,7 +314,7 @@ class WatchdogManager {
   void RecordContextActivity(XPCJSContext* aContext, bool active) {
     // The watchdog reads this state, so acquire the lock before writing it.
     MOZ_ASSERT(NS_IsMainThread());
-    AutoLockWatchdog lock(mWatchdog);
+    AutoLockWatchdog lock(mWatchdog.get());
 
     // Write state.
     aContext->mLastStateChange = PR_Now();
@@ -373,7 +364,7 @@ class WatchdogManager {
     return mTimestamps[aCategory];
   }
 
-  Watchdog* GetWatchdog() { return mWatchdog; }
+  Watchdog* GetWatchdog() { return mWatchdog.get(); }
 
   void RefreshWatchdog() {
     bool wantWatchdog = Preferences::GetBool("dom.use_watchdog", true);
@@ -408,7 +399,7 @@ class WatchdogManager {
 
   void StartWatchdog() {
     MOZ_ASSERT(!mWatchdog);
-    mWatchdog = new Watchdog(this);
+    mWatchdog = mozilla::MakeUnique<Watchdog>(this);
     mWatchdog->Init();
   }
 
@@ -450,7 +441,7 @@ class WatchdogManager {
 
   LinkedList<XPCJSContext> mActiveContexts;
   LinkedList<XPCJSContext> mInactiveContexts;
-  nsAutoPtr<Watchdog> mWatchdog;
+  mozilla::UniquePtr<Watchdog> mWatchdog;
 
   // We store ContextStateChange on the contexts themselves.
   PRTime mTimestamps[kWatchdogTimestampCategoryCount - 1];
@@ -567,12 +558,6 @@ bool XPCJSContext::RecordScriptActivity(bool aActive) {
     return oldValue;
   }
 
-  // Since the slow script dialog never activates if we are recording or
-  // replaying, don't record/replay JS activity notifications.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return oldValue;
-  }
-
   if (!aActive) {
     ProcessHangMonitor::ClearHang();
   }
@@ -591,12 +576,6 @@ AutoScriptActivity::~AutoScriptActivity() {
 
 // static
 bool XPCJSContext::InterruptCallback(JSContext* cx) {
-  // The slow script dialog never activates if we are recording or replaying,
-  // since the precise timing of the dialog cannot be replayed.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return true;
-  }
-
   XPCJSContext* self = XPCJSContext::Get();
 
   // Now is a good time to turn on profiling if it's pending.
@@ -766,14 +745,24 @@ bool xpc::ExtraWarningsForSystemJS() { return false; }
 static mozilla::Atomic<bool> sSharedMemoryEnabled(false);
 static mozilla::Atomic<bool> sStreamsEnabled(false);
 static mozilla::Atomic<bool> sFieldsEnabled(false);
+
 static mozilla::Atomic<bool> sAwaitFixEnabled(false);
+static mozilla::Atomic<bool> sPropertyErrorMessageFixEnabled(false);
+static mozilla::Atomic<bool> sWeakRefsEnabled(false);
 
 void xpc::SetPrefableRealmOptions(JS::RealmOptions& options) {
   options.creationOptions()
       .setSharedMemoryAndAtomicsEnabled(sSharedMemoryEnabled)
+      .setCoopAndCoepEnabled(
+          StaticPrefs::browser_tabs_remote_useCrossOriginOpenerPolicy() &&
+          StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy())
       .setStreamsEnabled(sStreamsEnabled)
+      .setWritableStreamsEnabled(
+          StaticPrefs::javascript_options_writable_streams())
       .setFieldsEnabled(sFieldsEnabled)
-      .setAwaitFixEnabled(sAwaitFixEnabled);
+      .setAwaitFixEnabled(sAwaitFixEnabled)
+      .setPropertyErrorMessageFixEnabled(sPropertyErrorMessageFixEnabled)
+      .setWeakRefsEnabled(sWeakRefsEnabled);
 }
 
 static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
@@ -788,6 +777,8 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
   bool useBaselineInterp = Preferences::GetBool(JS_OPTIONS_DOT_STR "blinterp");
   bool useBaselineJit = Preferences::GetBool(JS_OPTIONS_DOT_STR "baselinejit");
   bool useIon = Preferences::GetBool(JS_OPTIONS_DOT_STR "ion");
+  bool useJitForTrustedPrincipals =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "jit_trustedprincipals");
   bool useNativeRegExp =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "native_regexp");
 
@@ -837,6 +828,7 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
       useBaselineInterp = false;
       useBaselineJit = false;
       useIon = false;
+      useJitForTrustedPrincipals = false;
       useNativeRegExp = false;
     }
   }
@@ -846,6 +838,8 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_BASELINE_ENABLE,
                                 useBaselineJit);
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_ION_ENABLE, useIon);
+  JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_JIT_TRUSTEDPRINCIPALS_ENABLE,
+                                useJitForTrustedPrincipals);
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_NATIVE_REGEXP_ENABLE,
                                 useNativeRegExp);
 
@@ -889,9 +883,10 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
   }
 }
 
-static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
+static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
   // Note: Prefs that require a restart are handled in LoadStartupJSPrefs above.
 
+  auto xpccx = static_cast<XPCJSContext*>(aXpccx);
   JSContext* cx = xpccx->Context();
 
   bool useAsmJS = Preferences::GetBool(JS_OPTIONS_DOT_STR "asmjs");
@@ -937,6 +932,12 @@ static void ReloadPrefsCallback(const char* pref, XPCJSContext* xpccx) {
       Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.fields");
   sAwaitFixEnabled =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.await_fix");
+  sPropertyErrorMessageFixEnabled =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "property_error_message_fix");
+#ifdef NIGHTLY_BUILD
+  sWeakRefsEnabled =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.weakrefs");
+#endif
 
 #ifdef DEBUG
   sExtraWarningsForSystemJS =
@@ -1027,8 +1028,6 @@ XPCJSContext::~XPCJSContext() {
   }
 
   PROFILER_CLEAR_JS_CONTEXT();
-
-  gTlsContext.set(nullptr);
 }
 
 XPCJSContext::XPCJSContext()
@@ -1044,15 +1043,18 @@ XPCJSContext::XPCJSContext()
       mActive(CONTEXT_INACTIVE),
       mLastStateChange(PR_Now()) {
   MOZ_COUNT_CTOR_INHERITED(XPCJSContext, CycleCollectedJSContext);
-  MOZ_RELEASE_ASSERT(!gTlsContext.get());
   MOZ_ASSERT(mWatchdogManager);
   ++sInstanceCount;
   mWatchdogManager->RegisterContext(this);
-  gTlsContext.set(this);
 }
 
 /* static */
-XPCJSContext* XPCJSContext::Get() { return gTlsContext.get(); }
+XPCJSContext* XPCJSContext::Get() {
+  // Do an explicit null check, because this can get called from a process that
+  // does not run JS.
+  nsXPConnect* xpc = static_cast<nsXPConnect*>(nsXPConnect::XPConnect());
+  return xpc ? xpc->GetContext() : nullptr;
+}
 
 #ifdef XP_WIN
 static size_t GetWindowsStackSize() {
@@ -1097,14 +1099,9 @@ CycleCollectedJSRuntime* XPCJSContext::CreateRuntime(JSContext* aCx) {
   return new XPCJSRuntime(aCx);
 }
 
-nsresult XPCJSContext::Initialize(XPCJSContext* aPrimaryContext) {
-  nsresult rv;
-  if (aPrimaryContext) {
-    rv = CycleCollectedJSContext::InitializeNonPrimary(aPrimaryContext);
-  } else {
-    rv = CycleCollectedJSContext::Initialize(nullptr, JS::DefaultHeapMaxBytes,
-                                             JS::DefaultNurseryMaxBytes);
-  }
+nsresult XPCJSContext::Initialize() {
+  nsresult rv =
+      CycleCollectedJSContext::Initialize(nullptr, JS::DefaultHeapMaxBytes);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -1251,9 +1248,7 @@ nsresult XPCJSContext::Initialize(XPCJSContext* aPrimaryContext) {
 
   JS_AddInterruptCallback(cx, InterruptCallback);
 
-  if (!aPrimaryContext) {
-    Runtime()->Initialize(cx);
-  }
+  Runtime()->Initialize(cx);
 
   LoadStartupJSPrefs(this);
 
@@ -1265,6 +1260,19 @@ nsresult XPCJSContext::Initialize(XPCJSContext* aPrimaryContext) {
 #ifdef FUZZING
   Preferences::RegisterCallback(ReloadPrefsCallback, "fuzzing.enabled", this);
 #endif
+
+  if (!JS::InitSelfHostedCode(cx)) {
+    // Note: If no exception is pending, failure is due to OOM.
+    if (!JS_IsExceptionPending(cx) || JS_IsThrowingOutOfMemory(cx)) {
+      NS_ABORT_OOM(0);  // Size is unknown.
+    }
+
+    // Failed to execute self-hosted JavaScript! Uh oh.
+    MOZ_CRASH("InitSelfHostedCode failed");
+  }
+
+  MOZ_RELEASE_ASSERT(Runtime()->InitializeStrings(cx),
+                     "InitializeStrings failed");
 
   return NS_OK;
 }
@@ -1287,12 +1295,9 @@ WatchdogManager* XPCJSContext::GetWatchdogManager() {
 }
 
 // static
-void XPCJSContext::InitTLS() { MOZ_RELEASE_ASSERT(gTlsContext.init()); }
-
-// static
-XPCJSContext* XPCJSContext::NewXPCJSContext(XPCJSContext* aPrimaryContext) {
+XPCJSContext* XPCJSContext::NewXPCJSContext() {
   XPCJSContext* self = new XPCJSContext();
-  nsresult rv = self->Initialize(aPrimaryContext);
+  nsresult rv = self->Initialize();
   if (NS_FAILED(rv)) {
     MOZ_CRASH("new XPCJSContext failed to initialize.");
   }

@@ -36,13 +36,30 @@ chai.use(chaiAssertions);
 chai.use(chaiJsonSchema);
 
 const overrider = new GlobalOverrider();
+
+const RemoteSettings = name => ({
+  get: () => {
+    if (name === "attachment") {
+      return Promise.resolve([{ attachment: {} }]);
+    }
+    return Promise.resolve([]);
+  },
+  on: () => {},
+  off: () => {},
+});
+RemoteSettings.pollChanges = () => {};
+
 const TEST_GLOBAL = {
   AddonManager: {
     getActiveAddons() {
       return Promise.resolve({ addons: [], fullData: false });
     },
   },
-  AppConstants: { MOZILLA_OFFICIAL: true, MOZ_APP_VERSION: "69.0a1" },
+  AppConstants: {
+    MOZILLA_OFFICIAL: true,
+    MOZ_APP_VERSION: "69.0a1",
+    platform: "win",
+  },
   UpdateUtils: { getUpdateChannel() {} },
   BrowserWindowTracker: { getTopWindow() {} },
   ChromeUtils: {
@@ -73,8 +90,11 @@ const TEST_GLOBAL = {
     },
     isSuccessCode: () => true,
   },
+  // NB: These are functions/constructors
   // eslint-disable-next-line object-shorthand
-  ContentSearchUIController: function() {}, // NB: This is a function/constructor
+  ContentSearchUIController: function() {},
+  // eslint-disable-next-line object-shorthand
+  ContentSearchHandoffUIController: function() {},
   Cc: {
     "@mozilla.org/browser/nav-bookmarks-service;1": {
       addObserver() {},
@@ -131,6 +151,13 @@ const TEST_GLOBAL = {
     nsITimer: { TYPE_ONE_SHOT: 1 },
     nsIWebProgressListener: { LOCATION_CHANGE_SAME_DOCUMENT: 1 },
     nsIDOMWindow: Object,
+    nsITrackingDBService: {
+      TRACKERS_ID: 1,
+      TRACKING_COOKIES_ID: 2,
+      CRYPTOMINERS_ID: 3,
+      FINGERPRINTERS_ID: 4,
+      SOCIAL_ID: 5,
+    },
   },
   Cu: {
     importGlobalProperties() {},
@@ -202,7 +229,7 @@ const TEST_GLOBAL = {
       get: () => ({ parent: { parent: { path: "appPath" } } }),
     },
     locale: {
-      get appLocaleAsLangTag() {
+      get appLocaleAsBCP47() {
         return "en-US";
       },
       negotiateLanguages() {},
@@ -216,10 +243,12 @@ const TEST_GLOBAL = {
     obs: {
       addObserver() {},
       removeObserver() {},
+      notifyObservers() {},
     },
     telemetry: {
       setEventRecordingEnabled: () => {},
       recordEvent: eventDetails => {},
+      scalarSet: () => {},
     },
     console: { logStringMessage: () => {} },
     prefs: {
@@ -322,7 +351,12 @@ const TEST_GLOBAL = {
     defineLazyModuleGetters() {},
     defineLazyServiceGetter() {},
     defineLazyServiceGetters() {},
-    defineLazyPreferenceGetter() {},
+    defineLazyPreferenceGetter(obj, name) {
+      Object.defineProperty(obj, name, {
+        configurable: true,
+        get: () => "",
+      });
+    },
     generateQI() {
       return {};
     },
@@ -334,17 +368,7 @@ const TEST_GLOBAL = {
       return Promise.resolve(false);
     },
   },
-  RemoteSettings(name) {
-    return {
-      get() {
-        if (name === "attachment") {
-          return Promise.resolve([{ attachment: {} }]);
-        }
-        return Promise.resolve([]);
-      },
-      on() {},
-    };
-  },
+  RemoteSettings,
   Localization: class {
     async formatMessages(stringsIds) {
       return Promise.resolve(
@@ -353,16 +377,35 @@ const TEST_GLOBAL = {
     }
   },
   FxAccountsConfig: {
-    promiseEmailFirstURI(id) {
+    promiseConnectAccountURI(id) {
       return Promise.resolve(id);
     },
   },
+  FX_MONITOR_OAUTH_CLIENT_ID: "fake_client_id",
   TelemetryEnvironment: {
     setExperimentActive() {},
+    currentEnvironment: { profile: { creationDate: 16587 } },
+  },
+  TelemetryStopwatch: {
+    start: () => {},
+    finish: () => {},
   },
   Sampling: {
     ratioSample(seed, ratios) {
       return Promise.resolve(0);
+    },
+  },
+  BrowserHandler: {
+    get kiosk() {
+      return false;
+    },
+  },
+  TelemetrySession: {
+    getMetadata(reason) {
+      return {
+        reason,
+        sessionId: "fake_session_id",
+      };
     },
   },
 };

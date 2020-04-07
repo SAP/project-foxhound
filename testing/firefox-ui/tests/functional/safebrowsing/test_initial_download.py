@@ -5,12 +5,11 @@
 from __future__ import absolute_import
 import os
 
-from firefox_puppeteer import PuppeteerMixin
 from marionette_driver import Wait
 from marionette_harness import MarionetteTestCase
 
 
-class TestSafeBrowsingInitialDownload(PuppeteerMixin, MarionetteTestCase):
+class TestSafeBrowsingInitialDownload(MarionetteTestCase):
 
     v2_file_extensions = [
         'vlpset',
@@ -71,13 +70,15 @@ class TestSafeBrowsingInitialDownload(PuppeteerMixin, MarionetteTestCase):
         super(TestSafeBrowsingInitialDownload, self).setUp()
 
         self.safebrowsing_v2_files = self.get_safebrowsing_files(False)
-        if any(f.startswith('goog') for f in self.safebrowsing_v2_files):
+        if any(f.startswith('goog-') or f.startswith('googpub-')
+               for f in self.safebrowsing_v2_files):
             self.prefs_provider_update_time.update({
                 'browser.safebrowsing.provider.google.nextupdatetime': 1,
             })
 
         self.safebrowsing_v4_files = self.get_safebrowsing_files(True)
-        if any(f.startswith('goog') for f in self.safebrowsing_v4_files):
+        if any(f.startswith('goog-') or f.startswith('googpub-')
+               for f in self.safebrowsing_v4_files):
             self.prefs_provider_update_time.update({
                 'browser.safebrowsing.provider.google4.nextupdatetime': 1,
             })
@@ -93,7 +94,7 @@ class TestSafeBrowsingInitialDownload(PuppeteerMixin, MarionetteTestCase):
     def tearDown(self):
         try:
             # Restart with a fresh profile
-            self.restart(clean=True)
+            self.marionette.restart(clean=True)
         finally:
             super(TestSafeBrowsingInitialDownload, self).tearDown()
 

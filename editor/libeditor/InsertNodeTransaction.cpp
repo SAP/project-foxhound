@@ -51,8 +51,6 @@ InsertNodeTransaction::InsertNodeTransaction(
   Unused << mPointToInsert.GetChild();
 }
 
-InsertNodeTransaction::~InsertNodeTransaction() {}
-
 NS_IMPL_CYCLE_COLLECTION_INHERITED(InsertNodeTransaction, EditTransactionBase,
                                    mEditorBase, mContentToInsert,
                                    mPointToInsert)
@@ -62,8 +60,7 @@ NS_IMPL_RELEASE_INHERITED(InsertNodeTransaction, EditTransactionBase)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(InsertNodeTransaction)
 NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
 
-MOZ_CAN_RUN_SCRIPT_BOUNDARY
-NS_IMETHODIMP
+MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP
 InsertNodeTransaction::DoTransaction() {
   if (NS_WARN_IF(!mEditorBase) || NS_WARN_IF(!mContentToInsert) ||
       NS_WARN_IF(!mPointToInsert.IsSet())) {
@@ -96,7 +93,13 @@ InsertNodeTransaction::DoTransaction() {
   nsCOMPtr<nsIContent> contentToInsert = mContentToInsert;
   nsCOMPtr<nsINode> container = mPointToInsert.GetContainer();
   nsCOMPtr<nsIContent> refChild = mPointToInsert.GetChild();
-  editorBase->MarkNodeDirty(contentToInsert);
+  if (contentToInsert->IsElement()) {
+    nsresult rv = editorBase->MarkElementDirty(
+        MOZ_KnownLive(*contentToInsert->AsElement()));
+    if (NS_WARN_IF(rv == NS_ERROR_EDITOR_DESTROYED)) {
+      return EditorBase::ToGenericNSResult(rv);
+    }
+  }
 
   ErrorResult error;
   container->InsertBefore(*contentToInsert, refChild, error);

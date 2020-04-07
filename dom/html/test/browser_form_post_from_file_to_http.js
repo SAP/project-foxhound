@@ -5,16 +5,7 @@ const TEST_HTTP_POST =
   "http://example.org/browser/dom/html/test/form_submit_server.sjs";
 
 // Test for bug 1351358.
-add_task(async function() {
-  // Set prefs to ensure file content process, to allow linked web content in
-  // file URI process and allow more that one file content process.
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.tabs.remote.separateFileUriProcess", true],
-      ["browser.tabs.remote.allowLinkedWebInFileUriProcess", true],
-    ],
-  });
-
+async function runTest() {
   // Create file URI and test data file paths.
   let testFile = getChromeDir(getResolvedURI(gTestPath));
   testFile.append("dummy_page.html");
@@ -34,9 +25,9 @@ add_task(async function() {
       TEST_HTTP_POST
     );
     /* eslint-disable no-shadow */
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       fileBrowser,
-      [TEST_HTTP_POST, filePaths],
+      [[TEST_HTTP_POST, filePaths]],
       ([actionUri, filePaths]) => {
         Cu.importGlobalProperties(["File"]);
 
@@ -95,7 +86,7 @@ add_task(async function() {
     } else {
       binContentType = "application/octet-stream";
     }
-    await ContentTask.spawn(fileBrowser, { binContentType }, args => {
+    await SpecialPowers.spawn(fileBrowser, [{ binContentType }], args => {
       let data = JSON.parse(content.document.body.textContent);
       is(
         data[0].headers["Content-Disposition"],
@@ -142,4 +133,36 @@ add_task(async function() {
       );
     });
   });
+}
+
+if (!SpecialPowers.useRemoteSubframes) {
+  add_task(async function runWithAllowLinked() {
+    // Set prefs to ensure file content process, to allow linked web content in
+    // file URI process and allow more that one file content process.
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["browser.tabs.remote.separateFileUriProcess", true],
+        ["browser.tabs.remote.allowLinkedWebInFileUriProcess", true],
+        ["browser.tabs.documentchannel", false],
+      ],
+    });
+
+    await runTest();
+
+    await SpecialPowers.popPrefEnv();
+  });
+}
+
+add_task(async function runWithDocumentChannel() {
+  // Set prefs to use documentchannel instead.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.tabs.remote.allowLinkedWebInFileUriProcess", false],
+      ["browser.tabs.documentchannel", true],
+    ],
+  });
+
+  await runTest();
+
+  await SpecialPowers.popPrefEnv();
 });

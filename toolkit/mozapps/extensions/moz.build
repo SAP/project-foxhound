@@ -32,6 +32,7 @@ built_in_addons = 'built_in_addons.json'
 GENERATED_FILES += [built_in_addons]
 manifest = GENERATED_FILES[built_in_addons]
 manifest.script = 'gen_built_in_addons.py'
+manifest.py2 = True
 
 if CONFIG['MOZ_BUILD_APP'] == 'browser':
     manifest.flags = ['--features=browser/features']
@@ -43,6 +44,12 @@ elif CONFIG['MOZ_BUILD_APP'] == 'mobile/android':
     manifest.flags = ['--features=features']
 
     FINAL_TARGET_FILES.chrome.chrome.content += [
+        '!%s' % built_in_addons,
+    ]
+elif CONFIG['MOZ_BUILD_APP'] == 'comm/mail':
+    manifest.flags = ['--features=features']
+
+    FINAL_TARGET_FILES.chrome.browser.content += [
         '!%s' % built_in_addons,
     ]
 

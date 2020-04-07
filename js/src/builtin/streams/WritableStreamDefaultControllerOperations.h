@@ -11,15 +11,25 @@
 
 #include "mozilla/Attributes.h"  // MOZ_MUST_USE
 
+#include "jstypes.h"        // JS_PUBLIC_API
 #include "js/RootingAPI.h"  // JS::Handle
 #include "js/Value.h"       // JS::Value
 
-struct JSContext;
+struct JS_PUBLIC_API JSContext;
 
 namespace js {
 
 class WritableStream;
 class WritableStreamDefaultController;
+
+extern JSObject* WritableStreamControllerAbortSteps(
+    JSContext* cx,
+    JS::Handle<WritableStreamDefaultController*> unwrappedController,
+    JS::Handle<JS::Value> reason);
+
+extern MOZ_MUST_USE bool WritableStreamControllerErrorSteps(
+    JSContext* cx,
+    JS::Handle<WritableStreamDefaultController*> unwrappedController);
 
 extern MOZ_MUST_USE bool WritableStreamControllerStartHandler(JSContext* cx,
                                                               unsigned argc,
@@ -51,15 +61,47 @@ extern MOZ_MUST_USE bool SetUpWritableStreamDefaultControllerFromUnderlyingSink(
     JS::Handle<JS::Value> underlyingSink, double highWaterMark,
     JS::Handle<JS::Value> sizeAlgorithm);
 
+extern void WritableStreamDefaultControllerClearAlgorithms(
+    WritableStreamDefaultController* unwrappedController);
+
 extern MOZ_MUST_USE bool WritableStreamDefaultControllerClose(
     JSContext* cx,
     JS::Handle<WritableStreamDefaultController*> unwrappedController);
 
+extern MOZ_MUST_USE bool WritableStreamDefaultControllerGetChunkSize(
+    JSContext* cx,
+    JS::Handle<WritableStreamDefaultController*> unwrappedController,
+    JS::Handle<JS::Value> chunk, JS::MutableHandle<JS::Value> returnValue);
+
 extern double WritableStreamDefaultControllerGetDesiredSize(
     const WritableStreamDefaultController* controller);
 
+extern MOZ_MUST_USE bool WritableStreamDefaultControllerWrite(
+    JSContext* cx,
+    JS::Handle<WritableStreamDefaultController*> unwrappedController,
+    JS::Handle<JS::Value> chunk, JS::Handle<JS::Value> chunkSize);
+
+extern MOZ_MUST_USE bool WritableStreamDefaultControllerErrorIfNeeded(
+    JSContext* cx,
+    JS::Handle<WritableStreamDefaultController*> unwrappedController,
+    JS::Handle<JS::Value> error);
+
+extern MOZ_MUST_USE bool WritableStreamDefaultControllerProcessClose(
+    JSContext* cx,
+    JS::Handle<WritableStreamDefaultController*> unwrappedController);
+
+extern MOZ_MUST_USE bool WritableStreamDefaultControllerProcessWrite(
+    JSContext* cx,
+    JS::Handle<WritableStreamDefaultController*> unwrappedController,
+    JS::Handle<JS::Value> chunk);
+
 extern bool WritableStreamDefaultControllerGetBackpressure(
-    const WritableStreamDefaultController* controller);
+    const WritableStreamDefaultController* unwrappedController);
+
+extern MOZ_MUST_USE bool WritableStreamDefaultControllerError(
+    JSContext* cx,
+    JS::Handle<WritableStreamDefaultController*> unwrappedController,
+    JS::Handle<JS::Value> error);
 
 }  // namespace js
 

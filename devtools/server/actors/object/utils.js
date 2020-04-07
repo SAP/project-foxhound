@@ -4,16 +4,17 @@
 
 "use strict";
 
-const { DebuggerServer } = require("devtools/server/debugger-server");
+const { DevToolsServer } = require("devtools/server/devtools-server");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { assert } = DevToolsUtils;
 
 loader.lazyRequireGetter(
   this,
-  "longStringGrip",
-  "devtools/server/actors/object/long-string",
+  "LongStringActor",
+  "devtools/server/actors/string",
   true
 );
+
 loader.lazyRequireGetter(
   this,
   "symbolGrip",
@@ -48,6 +49,17 @@ function getPromiseState(obj) {
 }
 
 /**
+ * Returns true if value is an object or function
+ *
+ * @param value
+ * @returns {boolean}
+ */
+
+function isObjectOrFunction(value) {
+  return value && (typeof value == "object" || typeof value == "function");
+}
+
+/**
  * Make a debuggee value for the given object, if needed. Primitive values
  * are left the same.
  *
@@ -61,7 +73,7 @@ function getPromiseState(obj) {
  * @return object
  */
 function makeDebuggeeValueIfNeeded(obj, value) {
-  if (value && (typeof value == "object" || typeof value == "function")) {
+  if (isObjectOrFunction(value)) {
     return obj.makeDebuggeeValue(value);
   }
   return value;
@@ -88,7 +100,15 @@ function createValueGrip(value, pool, makeObjectGrip) {
 
     case "string":
       if (stringIsLong(value)) {
-        return longStringGrip(value, pool);
+        for (const child of pool.poolChildren()) {
+          if (child instanceof LongStringActor && child.str == value) {
+            return child.form();
+          }
+        }
+
+        const actor = new LongStringActor(pool.conn, value);
+        pool.addActor(actor);
+        return actor.form();
       }
       return value;
 
@@ -148,7 +168,7 @@ function createValueGrip(value, pool, makeObjectGrip) {
  *        The string we are checking the length of.
  */
 function stringIsLong(str) {
-  return str.length >= DebuggerServer.LONG_STRING_LENGTH;
+  return str.length >= DevToolsServer.LONG_STRING_LENGTH;
 }
 
 const TYPED_ARRAY_CLASSES = [
@@ -161,6 +181,8 @@ const TYPED_ARRAY_CLASSES = [
   "Int32Array",
   "Float32Array",
   "Float64Array",
+  "BigInt64Array",
+  "BigUint64Array",
 ];
 
 /**
@@ -198,10 +220,8 @@ function getArrayLength(object) {
     throw new Error("Expected an array, got a " + object.class);
   }
 
-  // Real arrays have a reliable `length` own property. When replaying, always
-  // get the length property, as we can't invoke getters on the proxy returned
-  // by unsafeDereference().
-  if (object.class === "Array" || isReplaying) {
+  // Real arrays have a reliable `length` own property.
+  if (object.class === "Array") {
     return DevToolsUtils.getProperty(object, "length");
   }
 
@@ -256,6 +276,101 @@ function getStorageLength(object) {
   return DevToolsUtils.getProperty(object, "length");
 }
 
+/**
+ * Returns an array of properties based on event class name.
+ *
+ * @param className
+ * @returns {Array}
+ */
+function getPropsForEvent(className) {
+  const positionProps = ["buttons", "clientX", "clientY", "layerX", "layerY"];
+  const eventToPropsMap = {
+    MouseEvent: positionProps,
+    DragEvent: positionProps,
+    PointerEvent: positionProps,
+    SimpleGestureEvent: positionProps,
+    WheelEvent: positionProps,
+    KeyboardEvent: ["key", "charCode", "keyCode"],
+    TransitionEvent: ["propertyName", "pseudoElement"],
+    AnimationEvent: ["animationName", "pseudoElement"],
+    ClipboardEvent: ["clipboardData"],
+  };
+
+  if (className in eventToPropsMap) {
+    return eventToPropsMap[className];
+  }
+
+  return [];
+}
+
+/**
+ * Returns an array of of all properties of an object
+ *
+ * @param obj
+ * @param rawObj
+ * @returns {Array}
+ */
+function getPropNamesFromObject(obj, rawObj) {
+  let names = [];
+
+  try {
+    if (isStorage(obj)) {
+      // local and session storage cannot be iterated over using
+      // Object.getOwnPropertyNames() because it skips keys that are duplicated
+      // on the prototype e.g. "key", "getKeys" so we need to gather the real
+      // keys using the storage.key() function.
+      for (let j = 0; j < rawObj.length; j++) {
+        names.push(rawObj.key(j));
+      }
+    } else {
+      names = obj.getOwnPropertyNames();
+    }
+  } catch (ex) {
+    // Calling getOwnPropertyNames() on some wrapped native prototypes is not
+    // allowed: "cannot modify properties of a WrappedNative". See bug 952093.
+  }
+
+  return names;
+}
+
+/**
+ * Returns an array of all symbol properties of an object
+ *
+ * @param obj
+ * @returns {Array}
+ */
+function getSafeOwnPropertySymbols(obj) {
+  try {
+    return obj.getOwnPropertySymbols();
+  } catch (ex) {
+    return [];
+  }
+}
+
+/**
+ * Returns an array modifiers based on keys
+ *
+ * @param rawObj
+ * @returns {Array}
+ */
+function getModifiersForEvent(rawObj) {
+  const modifiers = [];
+  const keysToModifiersMap = {
+    altKey: "Alt",
+    ctrlKey: "Control",
+    metaKey: "Meta",
+    shiftKey: "Shift",
+  };
+
+  for (const key in keysToModifiersMap) {
+    if (keysToModifiersMap.hasOwnProperty(key) && rawObj[key]) {
+      modifiers.push(keysToModifiersMap[key]);
+    }
+  }
+
+  return modifiers;
+}
+
 module.exports = {
   getPromiseState,
   makeDebuggeeValueIfNeeded,
@@ -268,4 +383,9 @@ module.exports = {
   getArrayLength,
   getStorageLength,
   isArrayIndex,
+  getPropsForEvent,
+  getPropNamesFromObject,
+  getSafeOwnPropertySymbols,
+  getModifiersForEvent,
+  isObjectOrFunction,
 };

@@ -14,17 +14,38 @@
 #include "js/RootingAPI.h"  // JS::{,Mutable}Handle
 #include "js/Value.h"       // JS::Value
 
-class JSObject;
+struct JS_PUBLIC_API JSContext;
+class JS_PUBLIC_API JSObject;
 
 namespace js {
 
 class WritableStreamDefaultWriter;
 
+extern JSObject* WritableStreamDefaultWriterAbort(
+    JSContext* cx, JS::Handle<WritableStreamDefaultWriter*> unwrappedWriter,
+    JS::Handle<JS::Value> reason);
+
 extern JSObject* WritableStreamDefaultWriterClose(
     JSContext* cx, JS::Handle<WritableStreamDefaultWriter*> unwrappedWriter);
 
-extern JS::Value WritableStreamDefaultWriterGetDesiredSize(
-    const WritableStreamDefaultWriter* unwrappedWriter);
+extern MOZ_MUST_USE bool WritableStreamDefaultWriterEnsureClosedPromiseRejected(
+    JSContext* cx, JS::Handle<WritableStreamDefaultWriter*> unwrappedWriter,
+    JS::Handle<JS::Value> error);
+
+extern MOZ_MUST_USE bool WritableStreamDefaultWriterEnsureReadyPromiseRejected(
+    JSContext* cx, JS::Handle<WritableStreamDefaultWriter*> unwrappedWriter,
+    JS::Handle<JS::Value> error);
+
+extern MOZ_MUST_USE bool WritableStreamDefaultWriterGetDesiredSize(
+    JSContext* cx, JS::Handle<WritableStreamDefaultWriter*> unwrappedWriter,
+    JS::MutableHandle<JS::Value> size);
+
+extern MOZ_MUST_USE bool WritableStreamDefaultWriterRelease(
+    JSContext* cx, JS::Handle<WritableStreamDefaultWriter*> unwrappedWriter);
+
+extern JSObject* WritableStreamDefaultWriterWrite(
+    JSContext* cx, JS::Handle<WritableStreamDefaultWriter*> unwrappedWriter,
+    JS::Handle<JS::Value> chunk);
 
 }  // namespace js
 

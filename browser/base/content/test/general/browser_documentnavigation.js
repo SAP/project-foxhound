@@ -160,7 +160,7 @@ add_task(async function() {
     "basic focus content page with button focused"
   );
 
-  await ContentTask.spawn(gBrowser.selectedBrowser, {}, async function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
     return content.document.getElementById("button1").focus();
   });
 
@@ -182,7 +182,7 @@ add_task(async function() {
   );
 
   // Check to ensure that the root element is focused
-  await ContentTask.spawn(gBrowser.selectedBrowser, {}, async function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
     Assert.ok(
       content.document.activeElement == content.document.documentElement,
       "basic focus again content page with button focused child root is focused"
@@ -492,7 +492,7 @@ add_task(async function() {
 
 function promiseButtonShown(id) {
   let dwu = window.windowUtils;
-  return BrowserTestUtils.waitForCondition(() => {
+  return TestUtils.waitForCondition(() => {
     let target = document.getElementById(id);
     let bounds = dwu.getBoundsWithoutFlushing(target);
     return bounds.width > 0 && bounds.height > 0;

@@ -1,7 +1,11 @@
 <!DOCTYPE HTML>
 <html>
 <!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=202251
 https://bugzilla.mozilla.org/show_bug.cgi?id=450048
+https://bugzilla.mozilla.org/show_bug.cgi?id=969980
+https://bugzilla.mozilla.org/show_bug.cgi?id=1589786
+https://bugzilla.mozilla.org/show_bug.cgi?id=1611568
 -->
 <head>
   <meta charset="UTF-8">
@@ -11,7 +15,6 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=450048
 
 <script type="application/javascript">
 
-/** Test for Bug 450048 **/
 SimpleTest.waitForExplicitFinish();
 
 async function runTests() {
@@ -45,14 +48,53 @@ async function runTests() {
   rf.findBackwards = false;
 
   rf.caseSensitive = false;
+  rf.matchDiacritics = false;
 
   searchValue = "TexT";
   retRange = rf.Find(searchValue, searchRange, startPt, endPt);
   ok(retRange, "\"" + searchValue + "\" not found (not caseSensitive)");
 
+  searchValue = "λογος";
+  retRange = rf.Find(searchValue, searchRange, startPt, endPt);
+  ok(retRange, "\"" + searchValue + "\" not found (not caseSensitive)");
+
+  searchValue = "유";
+  retRange = rf.Find(searchValue, searchRange, startPt, endPt);
+  ok(!retRange, "\"" + searchValue + "\" found (not caseSensitive)");
+
+  searchValue = "degrees k";
+  retRange = rf.Find(searchValue, searchRange, startPt, endPt);
+  ok(retRange, "\"" + searchValue + "\" not found (not caseSensitive)");
+
+  searchValue = "guahe";
+  retRange = rf.Find(searchValue, searchRange, startPt, endPt);
+  ok(retRange, "\"" + searchValue + "\" not found (not caseSensitive)");
+
+  searchValue = "g̃uah̰e";
+  retRange = rf.Find(searchValue, searchRange, startPt, endPt);
+  ok(retRange, "\"" + searchValue + "\" not found (not caseSensitive)");
+
+  searchValue = "𐐸𐐯𐑊𐐬";
+  retRange = rf.Find(searchValue, searchRange, startPt, endPt);
+  ok(retRange, "\"" + searchValue + "\" not found (not caseSensitive)");
+
+  rf.matchDiacritics = true;
+
+  searchValue = "λογος";
+  retRange = rf.Find(searchValue, searchRange, startPt, endPt);
+  ok(!retRange, "\"" + searchValue + "\" found (matchDiacritics on)");
+
+  searchValue = "g̃uahe";
+  retRange = rf.Find(searchValue, searchRange, startPt, endPt);
+  ok(retRange, "\"" + searchValue + "\" not found (matchDiacritics on)");
+
+  searchValue = "guahe";
+  retRange = rf.Find(searchValue, searchRange, startPt, endPt);
+  ok(!retRange, "\"" + searchValue + "\" found (matchDiacritics on)");
+
   rf.caseSensitive = true;
 
-  // searchValue = "TexT";
+  searchValue = "TexT";
   retRange = rf.Find(searchValue, searchRange, startPt, endPt);
   ok(!retRange, "\"" + searchValue + "\" found (caseSensitive)");
 
@@ -252,6 +294,11 @@ async function runTests() {
 <p id="quotes">"straight" and &ldquo;curly&rdquo; and &lsquo;didn't&rsquo; and 'doesn&rsquo;t'</p>
 <p id="nullcharsnative">native null&#0;</p>
 <p id="nullcharsinjected"></p>
+<p id="greek">ΛΌΓΟΣ</p>
+<p id="korean">위</p>
+<p id="kelvin">degrees &#x212A;</p>
+<p id="guarani">G̃uahe</p>
+<p id="deseret">𐐐𐐯𐑊𐐬 𐐶𐐯𐑉𐑊𐐼!</p>
 <div id="content" style="display: none">
 
 </div>

@@ -240,10 +240,9 @@ SubDialog.prototype = {
     }
 
     // Provide the ability for the dialog to know that it is being loaded "in-content".
-    this._frame.contentDocument.documentElement.setAttribute(
-      "subdialog",
-      "true"
-    );
+    for (let dialog of this._frame.contentDocument.querySelectorAll("dialog")) {
+      dialog.setAttribute("subdialog", "true");
+    }
 
     this._frame.contentWindow.addEventListener("dialogclosing", this);
 
@@ -320,16 +319,8 @@ SubDialog.prototype = {
       2 * parseFloat(getComputedStyle(this._frame).marginLeft);
 
     // Then determine and set a bunch of width stuff:
-    let frameMinWidth = docEl.style.width;
-    if (!frameMinWidth) {
-      if (docEl.ownerDocument.body) {
-        // HTML documents have a body but XUL documents don't
-        frameMinWidth = docEl.ownerDocument.body.scrollWidth;
-      } else {
-        frameMinWidth = docEl.scrollWidth;
-      }
-      frameMinWidth += "px";
-    }
+    let { scrollWidth } = docEl.ownerDocument.body || docEl;
+    let frameMinWidth = docEl.style.width || scrollWidth + "px";
     let frameWidth = docEl.getAttribute("width")
       ? docEl.getAttribute("width") + "px"
       : frameMinWidth;
@@ -400,7 +391,8 @@ SubDialog.prototype = {
     // Now do the same but for the height. We need to do this afterwards because otherwise
     // XUL assumes we'll optimize for height and gives us "wrong" values which then are no
     // longer correct after we set the width:
-    let frameMinHeight = docEl.style.height || docEl.scrollHeight + "px";
+    let { scrollHeight } = docEl.ownerDocument.body || docEl;
+    let frameMinHeight = docEl.style.height || scrollHeight + "px";
     let frameHeight = docEl.getAttribute("height")
       ? docEl.getAttribute("height") + "px"
       : frameMinHeight;
@@ -438,8 +430,14 @@ SubDialog.prototype = {
       frameMinHeight = maxHeight + "px";
       let contentPane =
         this._frame.contentDocument.querySelector(".contentPane") ||
-        this._frame.contentDocument.documentElement;
-      contentPane.classList.add("doScroll");
+        this._frame.contentDocument.querySelector("dialog");
+      if (contentPane) {
+        // There are also instances where the subdialog is neither implemented
+        // using a content pane, nor a <dialog> (such as manageAddresses.xhtml)
+        // so make sure to check that we actually got a contentPane before we
+        // use it.
+        contentPane.classList.add("doScroll");
+      }
     }
 
     this._frame.style.height = frameHeight;
@@ -618,6 +616,7 @@ var gSubDialog = {
   _dialogTemplate: null,
   _nextDialogID: 0,
   _preloadDialog: null,
+  _topLevelPrevActiveElement: null,
   get _topDialog() {
     return this._dialogs.length
       ? this._dialogs[this._dialogs.length - 1]
@@ -640,10 +639,13 @@ var gSubDialog = {
       return;
     }
 
-    if (!this._dialogs.length) {
+    if (this._dialogs.length) {
+      this._topDialog._prevActiveElement = document.activeElement;
+    } else {
       // When opening the first dialog, show the dialog stack to make sure
       // the browser binding can be constructed.
       this._dialogStack.hidden = false;
+      this._topLevelPrevActiveElement = document.activeElement;
     }
 
     this._preloadDialog.open(aURL, aFeatures, aParams, aClosingCallback);
@@ -688,7 +690,6 @@ var gSubDialog = {
   },
 
   _onDialogClose(dialog) {
-    let fm = Services.focus;
     if (this._topDialog == dialog) {
       // XXX: When a top-most dialog is closed, we reuse the closed dialog and
       //      remove the preloadDialog. This is a temporary solution before we
@@ -701,16 +702,11 @@ var gSubDialog = {
     }
 
     if (this._topDialog) {
-      fm.moveFocus(
-        this._topDialog._frame.contentWindow,
-        null,
-        fm.MOVEFOCUS_FIRST,
-        fm.FLAG_BYKEY
-      );
+      this._topDialog._prevActiveElement.focus();
       this._topDialog._overlay.setAttribute("topmost", true);
       this._topDialog._addDialogEventListeners();
     } else {
-      fm.moveFocus(window, null, fm.MOVEFOCUS_ROOT, fm.FLAG_BYKEY);
+      this._topLevelPrevActiveElement.focus();
       this._dialogStack.hidden = true;
       this._removeStackEventListeners();
     }

@@ -10,7 +10,7 @@
 
 interface nsIChannel;
 interface nsIContentSecurityPolicy;
-interface nsICookieSettings;
+interface nsICookieJarSettings;
 interface nsICSPEventListener;
 interface nsINode;
 interface nsIPrincipal;
@@ -164,24 +164,12 @@ interface nsILoadInfo : nsISupports
    * is loading the URI "http://b.com/whatever", GetChannelResultPrincipal
    * will return a principal from "http://a.com/".
    *
-   * This flag can not be used together with SEC_SANDBOXED.  If both are passed
-   * to the LoadInfo constructor then this flag will be dropped.  If you need
-   * to know whether this flag would have been present but was dropped due to
-   * sandboxing, check for the forceInheritPrincipalDropped flag.
+   * This flag can not be used together with SANDBOXED_ORIGIN sandbox flag.  If
+   * both are passed to the LoadInfo constructor then this flag will be dropped.
+   * If you need to know whether this flag would have been present but was dropped
+   * due to sandboxing, check for the forceInheritPrincipalDropped flag.
    */
   const unsigned long SEC_FORCE_INHERIT_PRINCIPAL = (1<<7);
-
-  /**
-   * Sandbox the load. The resulting resource will use a freshly created
-   * null principal. So GetChannelResultPrincipal will always return a
-   * null principal whenever this flag is set.
-   *
-   * This will happen independently of the scheme of the URI that the
-   * channel is loading.
-   *
-   * This flag can not be used together with SEC_FORCE_INHERIT_PRINCIPAL.
-   */
-  const unsigned long SEC_SANDBOXED = (1<<8);
 
   /**
    * Inherit the Principal for about:blank.
@@ -410,6 +398,11 @@ interface nsILoadInfo : nsISupports
 %}
 
   /**
+   * The sandboxFlags of that channel.
+   */
+  [infallible] readonly attribute unsigned long sandboxFlags;
+
+  /**
    * Allows to query only the security mode bits from above.
    */
   [infallible] readonly attribute unsigned long securityMode;
@@ -440,10 +433,10 @@ interface nsILoadInfo : nsISupports
   [infallible] readonly attribute unsigned long cookiePolicy;
 
   /**
-   * The cookie settings inherited from the top-level document's loadInfo.
+   * The cookie jar settings inherited from the top-level document's loadInfo.
    * It cannot be null.
    */
-  attribute nsICookieSettings cookieSettings;
+  attribute nsICookieJarSettings cookieJarSettings;
 
   /**
    * If forceInheritPrincipal is true, the data coming from the channel should
@@ -517,15 +510,6 @@ interface nsILoadInfo : nsISupports
    * Returns true if SEC_LOAD_ERROR_PAGE is set.
    */
   [infallible] readonly attribute boolean loadErrorPage;
-
-  /**
-   * Returns true if this is a non-subresource request that was triggered
-   * by docshell with the LOAD_CMD_RELOAD flag set.  Note, this is more
-   * specific than looking at the load flags which indicate whether to
-   * bypass the http cache.  The load flags can be set for other reasons,
-   * so they can't be used to infer this value.
-   */
-  [infallible] attribute boolean isDocshellReload;
 
   /**
    * True if the load was initiated by a form request.
@@ -634,9 +618,9 @@ interface nsILoadInfo : nsISupports
 
   /**
    * The SEC_FORCE_INHERIT_PRINCIPAL flag may be dropped when a load info
-   * object is created.  Specifically, it will be dropped if the SEC_SANDBOXED
-   * flag is also present.  This flag is set if SEC_FORCE_INHERIT_PRINCIPAL was
-   * dropped.
+   * object is created.  Specifically, it will be dropped if the SANDBOXED_ORIGIN
+   * sandbox flag is also present.  This flag is set if SEC_FORCE_INHERIT_PRINCIPAL
+   * was dropped.
    */
   [infallible] readonly attribute boolean forceInheritPrincipalDropped;
 
@@ -677,6 +661,15 @@ interface nsILoadInfo : nsISupports
    */
   [infallible] readonly attribute unsigned long long frameBrowsingContextID;
   readonly attribute BrowsingContext frameBrowsingContext;
+
+  /**
+   * If the element being loaded is a nsFrameLoaderOwner,
+   * `targetBrowsingContext` is the Browsing Context which will contain the
+   * loading document (see `frameBrowsingContext`). Otherwise, it is the
+   * Browsing Context performing the load (see `browsingContext`).
+   */
+  [infallible] readonly attribute unsigned long long targetBrowsingContextID;
+  readonly attribute BrowsingContext targetBrowsingContext;
 
   /**
    * Resets the PrincipalToInherit to a freshly created NullPrincipal
@@ -916,7 +909,7 @@ interface nsILoadInfo : nsISupports
   attribute nsIURI resultPrincipalURI;
 
   /**
-   * Returns the null principal of the resulting resource if the SEC_SANDBOXED
+   * Returns the null principal of the resulting resource if the SANDBOXED_ORIGIN
    * flag is set.  Otherwise returns null.  This is used by
    * GetChannelResultPrincipal() to ensure that the same null principal object
    * is returned every time.
@@ -1140,6 +1133,16 @@ interface nsILoadInfo : nsISupports
   [infallible] attribute boolean documentHasLoaded;
 
   /**
+    * During a top-level document channel redirect from tracking to
+    * non-tracking resources, our anti-tracking heuristic, grants the storage
+    * access permission for a short amount of seconds (See
+    * privacy.restrict3rdpartystorage.expiration_redirect pref).
+    * We use this flag to remember this decision even if this channel is part
+    * of a chain of redirects.
+    */
+  [infallible] attribute boolean allowListFutureDocumentsCreatedFromThisRedirectChain;
+
+  /**
    * A snapshot of the nonce at load start time which is used for CSP
    * checks and only set for:
    *  * TYPE_SCRIPT and
@@ -1186,6 +1189,10 @@ interface nsILoadInfo : nsISupports
   const uint32_t BLOCKING_REASON_CONTENT_POLICY_DATA_DOCUMENT = 4004;
   const uint32_t BLOCKING_REASON_CONTENT_POLICY_WEB_BROWSER = 4005;
   const uint32_t BLOCKING_REASON_CONTENT_POLICY_PRELOAD = 4006;
+  // The reason used when SEC_REQUIRE_SAME_ORIGIN_* is set and not satisifed.
+  const uint32_t BLOCKING_REASON_NOT_SAME_ORIGIN = 5000;
+  // The reason used when an extension cancels the request via the WebRequest api.
+  const uint32_t BLOCKING_REASON_EXTENSION_WEBREQUEST = 6000;
 
   /**
    * If the request associated with this load info was blocked by some of
@@ -1214,19 +1221,13 @@ interface nsILoadInfo : nsISupports
   [infallible] readonly attribute boolean isFromProcessingFrameAttributes;
 
   cenum CrossOriginOpenerPolicy : 8 {
-    OPENER_POLICY_NULL = 0,
+    OPENER_POLICY_UNSAFE_NONE = 0,
     OPENER_POLICY_SAME_ORIGIN = 1,
-    OPENER_POLICY_SAME_SITE = 2,
-    OPENER_POLICY_SAMENESS_MASK = 0x0f,
+    OPENER_POLICY_SAME_ORIGIN_ALLOW_POPUPS = 2,
     OPENER_POLICY_EMBEDDER_POLICY_REQUIRE_CORP_FLAG = 0x10,
-    OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG = 0x80,
     OPENER_POLICY_SAME_ORIGIN_EMBEDDER_POLICY_REQUIRE_CORP =
         OPENER_POLICY_SAME_ORIGIN |
-        OPENER_POLICY_EMBEDDER_POLICY_REQUIRE_CORP_FLAG,
-    OPENER_POLICY_SAME_ORIGIN_ALLOW_OUTGOING =
-        OPENER_POLICY_SAME_ORIGIN | OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG,
-    OPENER_POLICY_SAME_SITE_ALLOW_OUTGOING =
-        OPENER_POLICY_SAME_SITE | OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG
+        OPENER_POLICY_EMBEDDER_POLICY_REQUIRE_CORP_FLAG
   };
 
   cenum CrossOriginEmbedderPolicy : 8 {

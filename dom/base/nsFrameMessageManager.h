@@ -17,7 +17,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"
 #include "nsIPrincipal.h"
-#include "nsIXPConnect.h"
 #include "nsDataHashtable.h"
 #include "nsClassHashtable.h"
 #include "mozilla/Services.h"
@@ -78,7 +77,7 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(MessageManagerFlags);
 
 class MessageManagerCallback {
  public:
-  virtual ~MessageManagerCallback() {}
+  virtual ~MessageManagerCallback() = default;
 
   virtual bool DoLoadMessageManagerScript(const nsAString& aURL,
                                           bool aRunInGlobalScope) {
@@ -403,9 +402,7 @@ struct nsMessageManagerScriptHolder {
     MOZ_COUNT_CTOR(nsMessageManagerScriptHolder);
   }
 
-  ~nsMessageManagerScriptHolder() {
-    MOZ_COUNT_DTOR(nsMessageManagerScriptHolder);
-  }
+  MOZ_COUNTED_DTOR(nsMessageManagerScriptHolder)
 
   JS::PersistentRooted<JSScript*> mScript;
 };
@@ -422,9 +419,7 @@ class nsMessageManagerScriptExecutor {
   nsMessageManagerScriptExecutor() {
     MOZ_COUNT_CTOR(nsMessageManagerScriptExecutor);
   }
-  ~nsMessageManagerScriptExecutor() {
-    MOZ_COUNT_DTOR(nsMessageManagerScriptExecutor);
-  }
+  MOZ_COUNTED_DTOR(nsMessageManagerScriptExecutor)
 
   void DidCreateScriptLoader();
   void LoadScriptInternal(JS::Handle<JSObject*> aMessageManager,
@@ -450,7 +445,7 @@ class nsMessageManagerScriptExecutor {
 };
 
 class nsScriptCacheCleaner final : public nsIObserver {
-  ~nsScriptCacheCleaner() {}
+  ~nsScriptCacheCleaner() = default;
 
   NS_DECL_ISUPPORTS
 

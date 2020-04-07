@@ -13,49 +13,24 @@
 #
 # Test names given here reference tests.yml.
 
-##
-# Universal tests
-#
-# Tests that run just about everywhere; common-tests is the shared core, with
-# a few add-on test sets that are included or omitted on some platforms.
-
-common-tests:
-    - cppunit
-    - crashtest
-    - firefox-ui-functional-local
-    - firefox-ui-functional-remote
-    - gtest
-    - jittest
-    - jsreftest
-    - marionette
-    - mochitest
-    - mochitest-a11y
-    - mochitest-browser-chrome
-    - mochitest-chrome
-    - mochitest-devtools-chrome
-    - mochitest-gpu
-    - mochitest-media
-    - mochitest-remote
-    - mochitest-webgl1-core
-    - mochitest-webgl1-ext
-    - reftest
-    - reftest-no-accel
-    - telemetry-tests-client
-    - test-verify
-    - test-verify-gpu
-    - test-verify-wpt
-    - xpcshell
+### Feature-specific test groups
 
 web-platform-tests:
     - web-platform-tests
+    - web-platform-tests-crashtests
     - web-platform-tests-reftests
+    - web-platform-tests-wdspec
+
+web-platform-tests-1804:
+    - web-platform-tests
+    - web-platform-tests-crashtests
+    - web-platform-tests-reftests
+
+web-platform-tests-1604:
     - web-platform-tests-wdspec
 
 web-platform-tests-wdspec-headless:
     - web-platform-tests-wdspec-headless
-
-opt-only-tests:
-    - mochitest-valgrind
 
 talos:
     - talos-bcv
@@ -74,11 +49,34 @@ talos:
     - talos-perf-reftest-singletons
     - talos-tabswitch
     - talos-realworld-webextensions
+    - talos-webgl
     # - talos-h1 Bug 1487031 - Disabled for not finding actionable regressions
     # - talos-h2 Bug 1487031 - Disabled for not finding actionable regressions
 
+talos-profiling:
+    - talos-bcv-profiling
+    - talos-chrome-profiling
+    # - talos-damp-profiling - Disabled b/c of Bug 1597734
+    - talos-dromaeojs-profiling
+    # - talos-flex-profiling - Disabled b/c of Bug 1597736
+    - talos-g1-profiling
+    - talos-g3-profiling
+    - talos-g4-profiling
+    - talos-g5-profiling
+    - talos-motionmark-profiling
+    - talos-other-profiling
+    - talos-sessionrestore-many-windows-profiling
+    - talos-perf-reftest-profiling
+    - talos-perf-reftest-singletons-profiling
+    - talos-svgr-profiling
+    - talos-tp5o-profiling
+    - talos-tabswitch-profiling
+    - talos-realworld-webextensions-profiling
+    - talos-webgl-profiling
+
 talos-ref-hw:
     - talos-g4
+    - talos-webgl
 
 raptor-firefox:
     - raptor-tp6-1-firefox
@@ -183,6 +181,7 @@ raptor-chrome:
     - raptor-tp6-30-chrome-cold
     - raptor-ares6-chrome
     - raptor-jetstream2-chrome
+    - raptor-youtube-playback-chrome
 
 raptor-profiling:
     - raptor-tp6-1-firefox-profiling
@@ -204,6 +203,7 @@ raptor-profiling:
     - raptor-wasm-godot-firefox-profiling
     - raptor-ares6-firefox-profiling
     - raptor-jetstream2-firefox-profiling
+    - raptor-youtube-playback-firefox-profiling
 
 raptor-chromium:
     - raptor-tp6-1-chromium
@@ -289,6 +289,12 @@ raptor-fetch-chromium:
     - raptor-assorted-dom-chromium
     - raptor-jetstream2-chromium
 
+browsertime:
+    - browsertime-tp6
+    - browsertime-speedometer
+    - browsertime-ares6
+    - browsertime-tp6-profiling
+
 # Raptor desktop power tests
 # (requires Intel Power Gadget to be pre-installed)
 raptor-firefox-power:
@@ -302,26 +308,111 @@ awsy:
     - awsy-base-dmd
     - awsy-tp6
 
-awsy-stylo-sequential:
-    - awsy-stylo-sequential
+ccov-code-coverage-tests:
+    - test-coverage
+    - test-coverage-wpt
 
-##
-# Limited test sets for specific platforms
+marionette-gpu-tests:
+    - marionette-gpu
 
-linux-qr-tests:
+mochitest-headless:
+    - mochitest-plain-headless
+
+mochitest-valgrind:
+    - mochitest-valgrind
+
+marionette-headless:
+    - marionette-headless
+
+desktop-screenshot-capture:
+    - browser-screenshots
+
+
+### Specific platform test sets
+
+# Linux
+
+linux32-tests:
+    - web-platform-tests
+
+linux-common-tests:
+    - marionette
+
+linux1804-tests:
+    - cppunit
+    - crashtest
+    - firefox-ui-functional-local
+    - firefox-ui-functional-remote
+    - gtest
+    - jsreftest
+    - jittest
+    - mochitest-plain
+    - mochitest-a11y
+    - mochitest-browser-chrome
+    - mochitest-chrome
+    - mochitest-devtools-chrome
+    - mochitest-gpu
+    - mochitest-media
+    - mochitest-remote
+    - mochitest-webgpu
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - reftest
+    - reftest-no-accel
+    - telemetry-tests-client
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
+    - xpcshell
+
+linux1804-qr-tests:
     - cppunit
     - crashtest
     - gtest
     - jittest
     - jsreftest
-    - mochitest
+    - mochitest-plain
     - mochitest-a11y
     - mochitest-chrome
     - mochitest-gpu
     - mochitest-media
+    - mochitest-webgpu
     - mochitest-webgl1-core
     - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
     - reftest
+    - xpcshell
+
+linux1804-ccov-tests:
+    - cppunit
+    - crashtest
+    - firefox-ui-functional-local
+    - firefox-ui-functional-remote
+    - gtest
+    - jittest
+    - jsreftest
+    - mochitest-plain
+    - mochitest-a11y
+    - mochitest-browser-chrome
+    - mochitest-chrome
+    - mochitest-devtools-chrome
+    - mochitest-gpu
+    - mochitest-media
+    - mochitest-remote
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - mochitest-webgpu
+    - reftest
+    - reftest-no-accel
+    - telemetry-tests-client
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
     - xpcshell
 
 linux-qr-smoketests:
@@ -331,21 +422,18 @@ linux-qr-smoketests:
 linux-talos-flex:
     - talos-flex
 
+# Windows
+
 windows-qr-tests:
     - crashtest
-    - mochitest
+    - mochitest-plain
     - mochitest-browser-chrome
     - mochitest-gpu
     - mochitest-media
     - mochitest-webgl1-core
-    - mochitest-webgl1-ext
     - mochitest-webgl2-core
-    - mochitest-webgl2-ext
+    - mochitest-webgpu
     - reftest
-
-ccov-code-coverage-tests:
-    - test-coverage
-    - test-coverage-wpt
 
 windows-reftest-gpu:
     - reftest-gpu
@@ -359,7 +447,7 @@ windows-tests:
     - jittest
     - jsreftest
     - marionette
-    - mochitest
+    - mochitest-plain
     - mochitest-a11y
     - mochitest-browser-chrome
     - mochitest-chrome
@@ -371,6 +459,7 @@ windows-tests:
     - mochitest-webgl1-ext
     - mochitest-webgl2-core
     - mochitest-webgl2-ext
+    - mochitest-webgpu
     - reftest
     - reftest-no-accel
     - telemetry-tests-client
@@ -389,6 +478,7 @@ mingwclang-tests-debug:
     - mochitest-webgl1-ext
     - mochitest-webgl2-core
     - mochitest-webgl2-ext
+    - mochitest-webgpu
     - reftest
     - telemetry-tests-client
 
@@ -397,26 +487,9 @@ mingwclang-tests-opt:
     - mochitest-gpu
 
 windows-aarch64-tests:
-    - cppunit
     - crashtest
-    - gtest
-    - marionette
-    - mochitest
-    - mochitest-a11y
-    - mochitest-browser-chrome
-    - mochitest-chrome
-    - mochitest-devtools-chrome
-    - mochitest-gpu
     - mochitest-media
-    - mochitest-remote
-    - mochitest-webgl1-core
-    - mochitest-webgl1-ext
-    - mochitest-webgl2-core
-    - mochitest-webgl2-ext
     - reftest
-    - web-platform-tests
-    - web-platform-tests-reftests
-    - xpcshell
 
 windows-talos:
     - talos-bcv
@@ -435,13 +508,10 @@ windows-talos:
     - talos-xperf
     - talos-tabswitch
     - talos-realworld-webextensions
+    - talos-webgl
     # - talos-h1 Bug 1487031 - Disabled for not finding actionable regressions
 
-marionette-gpu-tests:
-    - marionette-gpu
-
-marionette-media-tests:
-    - marionette-media
+# macOS
 
 macosx1014-64-tests:
     - cppunit
@@ -452,25 +522,26 @@ macosx1014-64-tests:
     - jittest
     - jsreftest
     - marionette
-    - mochitest
+    - mochitest-plain
     - mochitest-a11y
     - mochitest-browser-chrome
     - mochitest-chrome
     - mochitest-devtools-chrome
-    - mochitest-devtools-webreplay
     - mochitest-gpu
     - mochitest-media
     - mochitest-remote
     - mochitest-webgl1-core
     - mochitest-webgl1-ext
     - mochitest-webgl2-core
-    # - mochitest-webgl2-ext test  # timeouts
+    - mochitest-webgl2-ext
+    - mochitest-webgpu
     - reftest
     - telemetry-tests-client
     - test-verify
     - test-verify-gpu
     - test-verify-wpt
     - web-platform-tests
+    - web-platform-tests-crashtests
     - web-platform-tests-reftests
     - web-platform-tests-wdspec
     - xpcshell
@@ -494,62 +565,70 @@ macosx64-talos:
     - talos-perf-reftest
     - talos-perf-reftest-singletons
     - talos-realworld-webextensions
+    - talos-webgl
     # - talos-tabswitch # Bug 1453007 times out
     # - talos-h1 # too long to unpack profile- Bug 1442893
 
-linux32-tests:
-    - web-platform-tests
-
-desktop-screenshot-capture:
-    - browser-screenshots
+# Android
 
 android-x86_64-tests:
     - cppunit
     - crashtest
     - geckoview-junit
     - gtest
-    - mochitest
+    - mochitest-plain
     - mochitest-gpu
+    - mochitest-media
+    # - mochitest-webgl1-core # Harness issues?
+    # - mochitest-webgl1-ext
+    # - mochitest-webgl2-core # Emulator not creating ES3?
+    # - mochitest-webgl2-ext
     - reftest
     - test-verify
     - web-platform-tests
+    - web-platform-tests-crashtests
     - web-platform-tests-reftests
     - xpcshell
 
-devtools-tests:
-    - mochitest-devtools-chrome
+android-x86_64-qr-tests:
+    - crashtest
+    - reftest
 
-mochitest-headless:
-    - mochitest-plain-headless
-
-marionette-headless:
-    - marionette-headless
-
-remote-tests:
-    - mochitest-remote
-
-android-hw-arm7-opt-unittests:
+android-hw-aarch64-opt-unittests:
     - mochitest-media
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
 
 android-hw-arm7-pgo-unittests:
     - jittest
     - jsreftest
+
+android-hw-aarch64-pgo-unittests:
     - mochitest-media
 
 android-hw-arm7-debug-unittests:
     - jittest
     - jsreftest
-    - mochitest-media
 
-android-hw-arm7-qr:
+android-hw-aarch64-debug-unittests:
+    - mochitest-media
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+
+android-hw-aarch64-qr:
     - crashtest
     - reftest
 
 android-hw-arm7-raptor:
     - raptor-speedometer-geckoview
     - raptor-speedometer-refbrow
+    - raptor-speedometer-fenix
+    - raptor-speedometer-fennec68
     - raptor-youtube-playback-fenix
     - raptor-youtube-playback-geckoview
+    - raptor-youtube-playback-fennec68
     - raptor-tp6m-1-geckoview
     - raptor-tp6m-2-geckoview
     - raptor-tp6m-3-geckoview
@@ -692,8 +771,11 @@ android-hw-arm7-raptor:
 android-hw-aarch64-raptor:
     - raptor-speedometer-geckoview
     - raptor-speedometer-refbrow
+    - raptor-speedometer-fenix
+    - raptor-speedometer-fennec68
     - raptor-youtube-playback-fenix
     - raptor-youtube-playback-geckoview
+    - raptor-youtube-playback-fennec68
     - raptor-tp6m-1-geckoview
     - raptor-tp6m-2-geckoview
     - raptor-tp6m-3-geckoview
@@ -780,6 +862,16 @@ android-hw-aarch64-raptor:
     - raptor-tp6m-26-geckoview-cold
     - raptor-tp6m-27-geckoview-cold
     - raptor-tp6m-28-geckoview-cold
+    - raptor-tp6m-1-fennec68
+    - raptor-tp6m-2-fennec68
+    - raptor-tp6m-3-fennec68
+    - raptor-tp6m-4-fennec68
+    - raptor-tp6m-5-fennec68
+    - raptor-tp6m-6-fennec68
+    - raptor-tp6m-7-fennec68
+    - raptor-tp6m-8-fennec68
+    - raptor-tp6m-9-fennec68
+    - raptor-tp6m-10-fennec68
     - raptor-tp6m-1-fennec68-cold
     - raptor-tp6m-2-fennec68-cold
     - raptor-tp6m-3-fennec68-cold
@@ -825,10 +917,14 @@ android-hw-aarch64-raptor:
 
 android-hw-arm7-raptor-power:
     - raptor-speedometer-geckoview-power
+    - raptor-speedometer-fenix-power
+    - raptor-speedometer-fennec68-power
     - raptor-scn-power-idle-fenix
+    - raptor-scn-power-idle-fennec68
     - raptor-scn-power-idle-geckoview
     - raptor-scn-power-idle-refbrow
     - raptor-scn-power-idle-bg-fenix
+    - raptor-scn-power-idle-bg-fennec68
     - raptor-scn-power-idle-bg-geckoview
     - raptor-scn-power-idle-bg-refbrow
 
@@ -852,10 +948,14 @@ android-hw-arm7-raptor-cpu-memory-power:
 
 android-hw-aarch64-raptor-power:
     - raptor-speedometer-geckoview-power
+    - raptor-speedometer-fenix-power
+    - raptor-speedometer-fennec68-power
     - raptor-scn-power-idle-fenix
+    - raptor-scn-power-idle-fennec68
     - raptor-scn-power-idle-geckoview
     - raptor-scn-power-idle-refbrow
     - raptor-scn-power-idle-bg-fenix
+    - raptor-scn-power-idle-bg-fennec68
     - raptor-scn-power-idle-bg-geckoview
     - raptor-scn-power-idle-bg-refbrow
 
@@ -877,23 +977,16 @@ android-hw-aarch64-raptor-cpu-memory-power:
     - raptor-scn-cpu-memory-power-idle-bg-geckoview
     - raptor-scn-cpu-memory-power-idle-bg-refbrow
 
-android-hw-arm7-raptor-nightly:
-    - raptor-tp6m-1-fennec68
-    - raptor-tp6m-2-fennec68
-    - raptor-tp6m-3-fennec68
-    - raptor-tp6m-4-fennec68
-    - raptor-tp6m-5-fennec68
-    - raptor-tp6m-6-fennec68
-    - raptor-tp6m-7-fennec68
-    - raptor-tp6m-8-fennec68
-    - raptor-tp6m-9-fennec68
-    - raptor-tp6m-10-fennec68
-
-browsertime:
-    - browsertime-tp6-1
-
 android-hw-aarch64-browsertime:
-    - browsertime-tp6m-1
+    - browsertime-tp6m
+    - browsertime-tp6m-profiling
+    - browsertime-benchmark-speedometer
 
 android-hw-arm7-browsertime:
-    - browsertime-tp6m-1
+    - browsertime-tp6m
+    - browsertime-tp6m-profiling
+    - browsertime-benchmark-speedometer
+
+linux-tsan-tests:
+    - mochitest-plain
+    - xpcshell

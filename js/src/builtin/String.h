@@ -42,13 +42,7 @@ extern bool str_includes(JSContext* cx, unsigned argc, Value* vp);
 
 extern bool str_indexOf(JSContext* cx, unsigned argc, Value* vp);
 
-extern bool str_lastIndexOf(JSContext* cx, unsigned argc, Value* vp);
-
 extern bool str_startsWith(JSContext* cx, unsigned argc, Value* vp);
-
-extern bool str_toLowerCase(JSContext* cx, unsigned argc, Value* vp);
-
-extern bool str_toUpperCase(JSContext* cx, unsigned argc, Value* vp);
 
 extern bool str_toString(JSContext* cx, unsigned argc, Value* vp);
 
@@ -59,7 +53,7 @@ extern bool str_charCodeAt(JSContext* cx, unsigned argc, Value* vp);
 
 extern bool str_endsWith(JSContext* cx, unsigned argc, Value* vp);
 
-#if ENABLE_INTL_API
+#if JS_HAS_INTL_API
 /**
  * Returns the input string converted to lower case based on the language
  * specific case mappings for the input locale.
@@ -90,6 +84,10 @@ JSString* StringFlatReplaceString(JSContext* cx, HandleString string,
 JSString* str_replace_string_raw(JSContext* cx, HandleString string,
                                  HandleString pattern,
                                  HandleString replacement);
+
+JSString* str_replaceAll_string_raw(JSContext* cx, HandleString string,
+                                    HandleString pattern,
+                                    HandleString replacement);
 
 extern JSString* StringToLowerCase(JSContext* cx, HandleString string);
 

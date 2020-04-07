@@ -14,13 +14,12 @@
 
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadContext.h"
-#include "nsIRequest.h"
 #include "nsISupportsImpl.h"
 #include "nsIWeakReferenceUtils.h"
 
 class nsIChannel;
 class nsIContentSecurityPolicy;
-class nsICookieSettings;
+class nsICookieJarSettings;
 class nsILoadGroup;
 class nsIPrincipal;
 class nsIRunnable;
@@ -55,7 +54,7 @@ struct WorkerLoadInfoData {
   nsCOMPtr<nsIPrincipal> mStoragePrincipal;
 
   // Taken from the parent context.
-  nsCOMPtr<nsICookieSettings> mCookieSettings;
+  nsCOMPtr<nsICookieJarSettings> mCookieJarSettings;
 
   nsCOMPtr<nsIScriptContext> mScriptContext;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
@@ -85,7 +84,7 @@ struct WorkerLoadInfoData {
     }
 
    private:
-    ~InterfaceRequestor() {}
+    ~InterfaceRequestor() = default;
 
     already_AddRefed<nsIBrowserChild> GetAnyLiveBrowserChild();
 

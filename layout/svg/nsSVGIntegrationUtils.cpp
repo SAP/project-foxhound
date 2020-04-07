@@ -32,6 +32,7 @@
 #include "mozilla/Unused.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
 using namespace mozilla::image;
@@ -182,12 +183,11 @@ bool nsSVGIntegrationUtils::UsingSimpleClipPathForFrame(
   }
 
   const auto& clipPath = style->mClipPath;
-  if (clipPath.GetType() != StyleShapeSourceType::Shape) {
+  if (!clipPath.IsShape()) {
     return false;
   }
 
-  const auto& shape = clipPath.BasicShape();
-  return !shape.IsPolygon();
+  return !clipPath.AsShape()._0->IsPolygon();
 }
 
 nsPoint nsSVGIntegrationUtils::GetOffsetToBoundingBox(nsIFrame* aFrame) {

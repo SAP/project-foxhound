@@ -329,7 +329,17 @@ Next, we declare the content events, if fired in a BrowsingContext, will cause t
 
 Next, we declare that ``PluginChild`` should observe the ``decoder-doctor-notification`` ``nsIObserver`` notification. When that observer notification fires, the ``PluginChild`` will be instantiated for all ``BrowsingContext``'s, and the ``observe`` method on the ``PluginChild`` implementation will be called.
 
-Finally, we say that the ``PluginChild`` actor should apply to ``allFrames``. This means that the ``PluginChild`` is allowed to be loaded in any subframe. If ``allFrames`` is set to false, the actor will only ever load in the top-level frame.
+Finally, we say that the ``PluginChild`` actor should apply to ``allFrames``. This means that the ``PluginChild`` is allowed to be loaded in any subframe. If ``allFrames`` is set to false (the default), the actor will only ever load in the top-level frame.
+
+Design considerations when adding a new JSWindowActor
+`````````````````````````````````````````````````````
+
+A few things worth bearing in mind when adding your own actor registration:
+
+- Any ``child`` or ``parent`` side you register **must** have a ``moduleURI`` property.
+- You do not need to have both ``child`` and ``parent`` modules, and should avoid having actor sides that do nothing but send messages. The process without a defined module will still get an actor, and you can send messages from that side, but cannot receive them via ``receiveMessage``. Note that you **can** also use ``sendQuery`` from this side, enabling you to handle a response from the other process despite not having a ``receiveMessage`` method.
+- Consider whether you really need ``allFrames`` - it'll save memory and CPU time if we don't need to instantiate the actor for subframes.
+- When copying/moving "Legacy" :ref:`fission.message-manager-actors`, remove their ``messages`` properties. They are no longer necessary.
 
 Using ContentDOMReference instead of CPOWs
 ``````````````````````````````````````````
@@ -345,7 +355,7 @@ How to start porting parent-process browser code to use JSWindowActors
 
 The :ref:`fission.message-manager-actors` work made it much easier to migrate away from framescripts towards something that is similar to ``JSWindowActors``. It did not, however, substantially change how the parent process interacted with those framescripts.
 
-So when porting code to work with ``JSWindowActors``, we find that this is often where the time goes - refactoring the parent process browser code to accomodate the new ``JSWindowActor`` model.
+So when porting code to work with ``JSWindowActors``, we find that this is often where the time goes - refactoring the parent process browser code to accommodate the new ``JSWindowActor`` model.
 
 Usually, the first thing to do is to find a reasonable name for your actor pair, and get them registered (see :ref:`fission.registering-a-new-jswindowactor`), even if the actors implementations themselves are nothing but unmodified subclasses of ``JSWindowActorParent`` and ``JSWindowActorChild``.
 
@@ -389,7 +399,7 @@ However, if any of the frames on the page are running in their own process, they
       let actor = global.getActor("PageInfo");
       actor.sendAsyncMessage("PageInfo:getInfoForFrame", { someArgument: 123 });
 
-      contextsToVisit.push(...currentContext.getChildren());
+      contextsToVisit.push(...currentContext.children);
     }
 
 The original ``"PageInfo:info"`` message listener will need to be updated, too. Any responses from the ``PageInfoChild`` actor will end up being passed to the ``receiveMessage`` method of the ``PageInfoParent`` actor. It will be necessary to pass that information along to the interested party (in this case, the dialog code which is showing the table of interesting Page Info).
@@ -439,9 +449,6 @@ Minimal Example Actors
   // resource://testing-common/TestParent.jsm
   var EXPORTED_SYMBOLS = ["TestParent"];
   class TestParent extends JSWindowActorParent {
-    constructor() {
-      super();
-    }
     ...
   }
 
@@ -450,9 +457,6 @@ Minimal Example Actors
   // resource://testing-common/TestChild.jsm
   var EXPORTED_SYMBOLS = ["TestChild"];
   class TestChild extends JSWindowActorChild {
-    constructor() {
-      super();
-    }
     ...
   }
 
@@ -465,7 +469,7 @@ Minimal Example Actors
   let parentActor = this.browser.browsingContext.currentWindowGlobal.getActor("Test");
 
   // get child side actor
-  let childActor = content.window.getWindowGlobalChild().getActor("Test");
+  let childActor = content.windowGlobalChild.getActor("Test");
 
 .. _Electrolysis Project: https://wiki.mozilla.org/Electrolysis
 .. _IPC Actors: https://developer.mozilla.org/en-US/docs/Mozilla/IPDL/Tutorial

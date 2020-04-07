@@ -258,36 +258,84 @@ add_task(async function test_amo_report_on_report_already_inprogress() {
     "menu",
     gBrowser.selectedBrowser
   );
-  const panelEl = await AbuseReportTestUtils.promiseReportDialogRendered();
+  await AbuseReportTestUtils.promiseReportDialogRendered();
   ok(reportDialog.window, "Got an open report dialog");
 
+  let promiseWinClosed = waitClosedWindow();
+
   await BrowserTestUtils.withNewTab(TESTPAGE, async browser => {
-    let promiseWebAPIResult = SpecialPowers.spawn(browser, [ADDON_ID], id =>
-      content.navigator.mozAddonManager.reportAbuse(id).catch(err => {
-        return {
-          promiseRejected: true,
-          message: err.message,
-        };
-      })
+    const promiseAMOResult = SpecialPowers.spawn(browser, [ADDON_ID], id =>
+      content.navigator.mozAddonManager.reportAbuse(id)
     );
 
+    await promiseWinClosed;
+    ok(reportDialog.window.closed, "previous report dialog should be closed");
+
+    is(
+      await reportDialog.promiseAMOResult,
+      undefined,
+      "old report cancelled after AMO called mozAddonManager.reportAbuse"
+    );
+
+    const panelEl = await AbuseReportTestUtils.promiseReportDialogRendered();
+
+    const { report } = AbuseReportTestUtils.getReportDialogParams();
     Assert.deepEqual(
-      await promiseWebAPIResult,
       {
-        promiseRejected: true,
-        message: "An abuse report is already in progress",
+        reportEntryPoint: report.reportEntryPoint,
+        addonId: report.addon.id,
       },
-      "Expect reportAbuse to reject when a report dialog is already open"
+      {
+        reportEntryPoint: "amo",
+        addonId: ADDON_ID,
+      },
+      "Got the expected report from the opened report dialog"
+    );
+
+    promiseWinClosed = waitClosedWindow();
+    AbuseReportTestUtils.clickPanelButton(panelEl._btnCancel);
+    await promiseWinClosed;
+
+    is(
+      await promiseAMOResult,
+      false,
+      "AMO report request resolved to false on cancel button clicked"
     );
   });
 
-  ok(!reportDialog.window.closed, "report dialog should still be open");
-
-  let promiseWinClosed = waitClosedWindow();
-  AbuseReportTestUtils.clickPanelButton(panelEl._btnCancel);
-  await promiseWinClosed;
-
   await extension.unload();
+});
+
+add_task(async function test_reject_on_unsupported_addon_types() {
+  const addonId = "not-supported-addon-type@mochi.test";
+
+  await BrowserTestUtils.withNewTab(TESTPAGE, async browser => {
+    const fakeAMODetails = {
+      name: "fake name",
+      current_version: { version: "1.0" },
+      type: "fake-unsupported-addon-type",
+    };
+
+    AbuseReportTestUtils.amoAddonDetailsMap.set(addonId, fakeAMODetails);
+    registerCleanupFunction(() =>
+      AbuseReportTestUtils.amoAddonDetailsMap.clear()
+    );
+
+    let webAPIResult = await SpecialPowers.spawn(browser, [addonId], id =>
+      content.navigator.mozAddonManager
+        .reportAbuse(id)
+        .then(
+          res => ({ gotRejection: false, result: res }),
+          err => ({ gotRejection: true, message: err.message })
+        )
+    );
+
+    Assert.deepEqual(
+      webAPIResult,
+      { gotRejection: true, message: "Error creating abuse report" },
+      "Got the expected rejection from mozAddonManager.reportAbuse"
+    );
+  });
 });
 
 add_task(async function test_report_on_disabled_webapi() {

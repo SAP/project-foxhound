@@ -11,7 +11,7 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
-struct JSContext;
+struct JS_PUBLIC_API JSContext;
 
 namespace JS {
 
@@ -24,25 +24,25 @@ class JS_PUBLIC_API ContextOptions {
         wasmVerbose_(false),
         wasmBaseline_(true),
         wasmIon_(true),
-#ifdef ENABLE_WASM_CRANELIFT
         wasmCranelift_(false),
-#endif
-#ifdef ENABLE_WASM_GC
         wasmGc_(false),
-#endif
         testWasmAwaitTier2_(false),
+#ifdef ENABLE_WASM_BIGINT
+        enableWasmBigInt_(true),
+#endif
         throwOnAsmJSValidationFailure_(false),
+        disableIon_(false),
+        disableEvalSecurityChecks_(false),
         asyncStack_(true),
         throwOnDebuggeeWouldRun_(true),
         dumpStackOnDebuggeeWouldRun_(false),
         werror_(false),
         strictMode_(false),
-        extraWarnings_(false)
-#ifdef FUZZING
-        ,
-        fuzzing_(false)
+        extraWarnings_(false),
+#ifdef JS_ENABLE_SMOOSH
+        trySmoosh_(false),
 #endif
-  {
+        fuzzing_(false) {
   }
 
   bool asmJS() const { return asmJS_; }
@@ -89,13 +89,9 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-#ifdef ENABLE_WASM_CRANELIFT
   bool wasmCranelift() const { return wasmCranelift_; }
-  ContextOptions& setWasmCranelift(bool flag) {
-    wasmCranelift_ = flag;
-    return *this;
-  }
-#endif
+  // Defined out-of-line because it depends on a compile-time option
+  ContextOptions& setWasmCranelift(bool flag);
 
   bool testWasmAwaitTier2() const { return testWasmAwaitTier2_; }
   ContextOptions& setTestWasmAwaitTier2(bool flag) {
@@ -103,13 +99,17 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-#ifdef ENABLE_WASM_GC
-  bool wasmGc() const { return wasmGc_; }
-  ContextOptions& setWasmGc(bool flag) {
-    wasmGc_ = flag;
+#ifdef ENABLE_WASM_BIGINT
+  bool isWasmBigIntEnabled() const { return enableWasmBigInt_; }
+  ContextOptions& setWasmBigIntEnabled(bool flag) {
+    enableWasmBigInt_ = flag;
     return *this;
   }
 #endif
+
+  bool wasmGc() const { return wasmGc_; }
+  // Defined out-of-line because it depends on a compile-time option
+  ContextOptions& setWasmGc(bool flag);
 
   bool throwOnAsmJSValidationFailure() const {
     return throwOnAsmJSValidationFailure_;
@@ -120,6 +120,23 @@ class JS_PUBLIC_API ContextOptions {
   }
   ContextOptions& toggleThrowOnAsmJSValidationFailure() {
     throwOnAsmJSValidationFailure_ = !throwOnAsmJSValidationFailure_;
+    return *this;
+  }
+
+  // Override to allow disabling Ion for this context irrespective of the
+  // process-wide Ion-enabled setting. This must be set right after creating
+  // the context.
+  bool disableIon() const { return disableIon_; }
+  ContextOptions& setDisableIon() {
+    disableIon_ = true;
+    return *this;
+  }
+
+  // Override to allow disabling the eval restriction security checks for
+  // this context.
+  bool disableEvalSecurityChecks() const { return disableEvalSecurityChecks_; }
+  ContextOptions& setDisableEvalSecurityChecks() {
+    disableEvalSecurityChecks_ = true;
     return *this;
   }
 
@@ -173,22 +190,26 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-#ifdef FUZZING
-  bool fuzzing() const { return fuzzing_; }
-  ContextOptions& setFuzzing(bool flag) {
-    fuzzing_ = flag;
+#ifdef JS_ENABLE_SMOOSH
+  // Try compiling SmooshMonkey frontend first, and fallback to C++
+  // implementation when it fails.
+  bool trySmoosh() const { return trySmoosh_; }
+  ContextOptions& setTrySmoosh(bool flag) {
+    trySmoosh_ = flag;
     return *this;
   }
-#endif
+#endif  // JS_ENABLE_SMOOSH
+
+  bool fuzzing() const { return fuzzing_; }
+  // Defined out-of-line because it depends on a compile-time option
+  ContextOptions& setFuzzing(bool flag);
 
   void disableOptionsForSafeMode() {
     setAsmJS(false);
     setWasm(false);
     setWasmBaseline(false);
     setWasmIon(false);
-#ifdef ENABLE_WASM_GC
     setWasmGc(false);
-#endif
   }
 
  private:
@@ -198,23 +219,25 @@ class JS_PUBLIC_API ContextOptions {
   bool wasmVerbose_ : 1;
   bool wasmBaseline_ : 1;
   bool wasmIon_ : 1;
-#ifdef ENABLE_WASM_CRANELIFT
   bool wasmCranelift_ : 1;
-#endif
-#ifdef ENABLE_WASM_GC
   bool wasmGc_ : 1;
-#endif
   bool testWasmAwaitTier2_ : 1;
+#ifdef ENABLE_WASM_BIGINT
+  bool enableWasmBigInt_ : 1;
+#endif
   bool throwOnAsmJSValidationFailure_ : 1;
+  bool disableIon_ : 1;
+  bool disableEvalSecurityChecks_ : 1;
   bool asyncStack_ : 1;
   bool throwOnDebuggeeWouldRun_ : 1;
   bool dumpStackOnDebuggeeWouldRun_ : 1;
   bool werror_ : 1;
   bool strictMode_ : 1;
   bool extraWarnings_ : 1;
-#ifdef FUZZING
-  bool fuzzing_ : 1;
+#ifdef JS_ENABLE_SMOOSH
+  bool trySmoosh_ : 1;
 #endif
+  bool fuzzing_ : 1;
 };
 
 JS_PUBLIC_API ContextOptions& ContextOptionsRef(JSContext* cx);

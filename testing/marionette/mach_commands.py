@@ -8,6 +8,8 @@ import argparse
 import os
 import sys
 
+from six import iteritems
+
 from mach.decorators import (
     CommandProvider,
     Command,
@@ -44,7 +46,7 @@ def run_marionette(tests, binary=None, topsrcdir=None, **kwargs):
     args.binary = binary
     args.logger = kwargs.pop('log', None)
 
-    for k, v in kwargs.iteritems():
+    for k, v in iteritems(kwargs):
         setattr(args, k, v)
 
     parser.verify_usage(args)
@@ -95,10 +97,6 @@ class MarionetteTest(MachCommandBase):
             else:
                 tests = [os.path.join(self.topsrcdir,
                          "testing/marionette/harness/marionette_harness/tests/unit-tests.ini")]
-
-        # Force disable e10s because it is not supported in Fennec
-        if kwargs.get("app") == "fennec":
-            kwargs["e10s"] = False
 
         if not kwargs.get("binary") and \
                 (conditions.is_firefox(self) or conditions.is_thunderbird(self)):

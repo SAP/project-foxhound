@@ -78,6 +78,10 @@ SourceMapURLService.prototype._getLoadingPromise = function() {
       }
 
       // Start fetching the sources now.
+      if (!this._toolbox.threadFront) {
+        return Promise.reject("threadFront is null");
+      }
+
       const loadingPromise = this._toolbox.threadFront.getSources().then(
         ({ sources }) => {
           // Ignore errors.  Register the sources we got; we can't rely on
@@ -266,8 +270,17 @@ SourceMapURLService.prototype.originalPositionFor = async function(
   line,
   column
 ) {
+  if (!this._prefValue) {
+    return null;
+  }
+
   // Ensure the sources are loaded before replying.
-  await this._getLoadingPromise();
+  try {
+    await this._getLoadingPromise();
+  } catch (e) {
+    console.warn("Error in _getLoadingPromise", e);
+    return null;
+  }
 
   // Maybe we were shut down while waiting.
   if (!this._urls) {
@@ -425,11 +438,12 @@ SourceMapURLService.prototype.unsubscribe = function(
  * This function notifies all subscribers of the state change.
  */
 SourceMapURLService.prototype._onPrefChanged = function() {
+  this._prefValue = Services.prefs.getBoolPref(SOURCE_MAP_PREF);
+
   if (!this._subscriptions) {
     return;
   }
 
-  this._prefValue = Services.prefs.getBoolPref(SOURCE_MAP_PREF);
   for (const [, subscriptionEntry] of this._subscriptions) {
     for (const callback of subscriptionEntry.callbacks) {
       this._callOneCallback(subscriptionEntry, callback);

@@ -5,6 +5,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/IdleTaskRunner.h"
+#include "mozilla/RefCounted.h"
 #include "mozilla/UniquePtr.h"
 
 #include "gtest/gtest.h"
@@ -40,7 +41,7 @@ class nsFoo : public nsISupports {
   }
 
  private:
-  virtual ~nsFoo() {}
+  virtual ~nsFoo() = default;
 };
 
 NS_IMPL_ISUPPORTS0(nsFoo)
@@ -66,7 +67,7 @@ class TestSuicide : public mozilla::Runnable {
 };
 
 class nsBar : public nsISupports {
-  virtual ~nsBar() {}
+  virtual ~nsBar() = default;
 
  public:
   NS_DECL_ISUPPORTS
@@ -129,7 +130,7 @@ struct TestCopyWithNoMove {
   explicit TestCopyWithNoMove(int* aCopyCounter) : mCopyCounter(aCopyCounter) {}
   TestCopyWithNoMove(const TestCopyWithNoMove& a)
       : mCopyCounter(a.mCopyCounter) {
-    ++mCopyCounter;
+    *mCopyCounter += 1;
   };
   // No 'move' declaration, allows passing object by rvalue copy.
   // Destructor nulls member variable...
@@ -143,7 +144,7 @@ struct TestCopyWithDeletedMove {
       : mCopyCounter(aCopyCounter) {}
   TestCopyWithDeletedMove(const TestCopyWithDeletedMove& a)
       : mCopyCounter(a.mCopyCounter) {
-    ++mCopyCounter;
+    *mCopyCounter += 1;
   };
   // Deleted move prevents passing by rvalue (even if copy would work)
   TestCopyWithDeletedMove(TestCopyWithDeletedMove&&) = delete;
@@ -156,7 +157,7 @@ struct TestMove {
   TestMove(const TestMove&) = delete;
   TestMove(TestMove&& a) : mMoveCounter(a.mMoveCounter) {
     a.mMoveCounter = nullptr;
-    ++mMoveCounter;
+    *mMoveCounter += 1;
   }
   ~TestMove() { mMoveCounter = nullptr; }
   void operator()() { MOZ_RELEASE_ASSERT(mMoveCounter); }
@@ -167,12 +168,12 @@ struct TestCopyMove {
       : mCopyCounter(aCopyCounter), mMoveCounter(aMoveCounter) {}
   TestCopyMove(const TestCopyMove& a)
       : mCopyCounter(a.mCopyCounter), mMoveCounter(a.mMoveCounter) {
-    ++mCopyCounter;
+    *mCopyCounter += 1;
   };
   TestCopyMove(TestCopyMove&& a)
       : mCopyCounter(a.mCopyCounter), mMoveCounter(a.mMoveCounter) {
     a.mMoveCounter = nullptr;
-    ++mMoveCounter;
+    *mMoveCounter += 1;
   }
   ~TestCopyMove() {
     mCopyCounter = nullptr;
@@ -184,6 +185,10 @@ struct TestCopyMove {
   }
   int* mCopyCounter;
   int* mMoveCounter;
+};
+
+struct TestRefCounted : RefCounted<TestRefCounted> {
+  MOZ_DECLARE_REFCOUNTED_TYPENAME(TestRefCounted);
 };
 
 static void Expect(const char* aContext, int aCounter, int aMaxExpected) {
@@ -198,24 +203,44 @@ static void ExpectRunnableName(Runnable* aRunnable, const char* aExpectedName) {
 #endif
 }
 
-static void TestNewRunnableFunction(bool aNamed) {
-  // Test NS_NewRunnableFunction with copyable-only function object.
+struct BasicRunnableFactory {
+  static constexpr bool SupportsCopyWithDeletedMove = true;
+
+  template <typename Function>
+  static auto Create(const char* aName, Function&& aFunc) {
+    return NS_NewRunnableFunction(aName, std::forward<Function>(aFunc));
+  }
+};
+
+struct CancelableRunnableFactory {
+  static constexpr bool SupportsCopyWithDeletedMove = false;
+
+  template <typename Function>
+  static auto Create(const char* aName, Function&& aFunc) {
+    return NS_NewCancelableRunnableFunction(aName,
+                                            std::forward<Function>(aFunc));
+  }
+};
+
+template <typename RunnableFactory>
+static void TestRunnableFactory(bool aNamed) {
+  // Test RunnableFactory with copyable-only function object.
   {
     int copyCounter = 0;
     {
       nsCOMPtr<nsIRunnable> trackedRunnable;
       {
         TestCopyWithNoMove tracker(&copyCounter);
-        trackedRunnable =
-            aNamed ? NS_NewRunnableFunction("unused", tracker)
-                   : NS_NewRunnableFunction("TestNewRunnableFunction", tracker);
+        trackedRunnable = aNamed ? RunnableFactory::Create("unused", tracker)
+                                 : RunnableFactory::Create(
+                                       "TestNewRunnableFunction", tracker);
         // Original 'tracker' is destroyed here.
       }
       // Verify that the runnable contains a non-destroyed function object.
       trackedRunnable->Run();
     }
     Expect(
-        "NS_NewRunnableFunction with copyable-only (and no move) function, "
+        "RunnableFactory with copyable-only (and no move) function, "
         "copies",
         copyCounter, 1);
   }
@@ -227,37 +252,37 @@ static void TestNewRunnableFunction(bool aNamed) {
         // Passing as rvalue, but using copy.
         // (TestCopyWithDeletedMove wouldn't allow this.)
         trackedRunnable =
-            aNamed ? NS_NewRunnableFunction("unused",
-                                            TestCopyWithNoMove(&copyCounter))
-                   : NS_NewRunnableFunction("TestNewRunnableFunction",
-                                            TestCopyWithNoMove(&copyCounter));
+            aNamed ? RunnableFactory::Create("unused",
+                                             TestCopyWithNoMove(&copyCounter))
+                   : RunnableFactory::Create("TestNewRunnableFunction",
+                                             TestCopyWithNoMove(&copyCounter));
       }
       trackedRunnable->Run();
     }
     Expect(
-        "NS_NewRunnableFunction with copyable-only (and no move) function "
+        "RunnableFactory with copyable-only (and no move) function "
         "rvalue, copies",
         copyCounter, 1);
   }
-  {
+  if constexpr (RunnableFactory::SupportsCopyWithDeletedMove) {
     int copyCounter = 0;
     {
       nsCOMPtr<nsIRunnable> trackedRunnable;
       {
         TestCopyWithDeletedMove tracker(&copyCounter);
-        trackedRunnable =
-            aNamed ? NS_NewRunnableFunction("unused", tracker)
-                   : NS_NewRunnableFunction("TestNewRunnableFunction", tracker);
+        trackedRunnable = aNamed ? RunnableFactory::Create("unused", tracker)
+                                 : RunnableFactory::Create(
+                                       "TestNewRunnableFunction", tracker);
       }
       trackedRunnable->Run();
     }
     Expect(
-        "NS_NewRunnableFunction with copyable-only (and deleted move) "
+        "RunnableFactory with copyable-only (and deleted move) "
         "function, copies",
         copyCounter, 1);
   }
 
-  // Test NS_NewRunnableFunction with movable-only function object.
+  // Test RunnableFactory with movable-only function object.
   {
     int moveCounter = 0;
     {
@@ -265,14 +290,13 @@ static void TestNewRunnableFunction(bool aNamed) {
       {
         TestMove tracker(&moveCounter);
         trackedRunnable =
-            aNamed ? NS_NewRunnableFunction("unused", std::move(tracker))
-                   : NS_NewRunnableFunction("TestNewRunnableFunction",
-                                            std::move(tracker));
+            aNamed ? RunnableFactory::Create("unused", std::move(tracker))
+                   : RunnableFactory::Create("TestNewRunnableFunction",
+                                             std::move(tracker));
       }
       trackedRunnable->Run();
     }
-    Expect("NS_NewRunnableFunction with movable-only function, moves",
-           moveCounter, 1);
+    Expect("RunnableFactory with movable-only function, moves", moveCounter, 1);
   }
   {
     int moveCounter = 0;
@@ -280,17 +304,17 @@ static void TestNewRunnableFunction(bool aNamed) {
       nsCOMPtr<nsIRunnable> trackedRunnable;
       {
         trackedRunnable =
-            aNamed ? NS_NewRunnableFunction("unused", TestMove(&moveCounter))
-                   : NS_NewRunnableFunction("TestNewRunnableFunction",
-                                            TestMove(&moveCounter));
+            aNamed ? RunnableFactory::Create("unused", TestMove(&moveCounter))
+                   : RunnableFactory::Create("TestNewRunnableFunction",
+                                             TestMove(&moveCounter));
       }
       trackedRunnable->Run();
     }
-    Expect("NS_NewRunnableFunction with movable-only function rvalue, moves",
+    Expect("RunnableFactory with movable-only function rvalue, moves",
            moveCounter, 1);
   }
 
-  // Test NS_NewRunnableFunction with copyable&movable function object.
+  // Test RunnableFactory with copyable&movable function object.
   {
     int copyCounter = 0;
     int moveCounter = 0;
@@ -299,16 +323,16 @@ static void TestNewRunnableFunction(bool aNamed) {
       {
         TestCopyMove tracker(&copyCounter, &moveCounter);
         trackedRunnable =
-            aNamed ? NS_NewRunnableFunction("unused", std::move(tracker))
-                   : NS_NewRunnableFunction("TestNewRunnableFunction",
-                                            std::move(tracker));
+            aNamed ? RunnableFactory::Create("unused", std::move(tracker))
+                   : RunnableFactory::Create("TestNewRunnableFunction",
+                                             std::move(tracker));
       }
       trackedRunnable->Run();
     }
-    Expect("NS_NewRunnableFunction with copyable&movable function, copies",
+    Expect("RunnableFactory with copyable&movable function, copies",
            copyCounter, 0);
-    Expect("NS_NewRunnableFunction with copyable&movable function, moves",
-           moveCounter, 1);
+    Expect("RunnableFactory with copyable&movable function, moves", moveCounter,
+           1);
   }
   {
     int copyCounter = 0;
@@ -317,23 +341,21 @@ static void TestNewRunnableFunction(bool aNamed) {
       nsCOMPtr<nsIRunnable> trackedRunnable;
       {
         trackedRunnable =
-            aNamed ? NS_NewRunnableFunction(
+            aNamed ? RunnableFactory::Create(
                          "unused", TestCopyMove(&copyCounter, &moveCounter))
-                   : NS_NewRunnableFunction(
+                   : RunnableFactory::Create(
                          "TestNewRunnableFunction",
                          TestCopyMove(&copyCounter, &moveCounter));
       }
       trackedRunnable->Run();
     }
-    Expect(
-        "NS_NewRunnableFunction with copyable&movable function rvalue, copies",
-        copyCounter, 0);
-    Expect(
-        "NS_NewRunnableFunction with copyable&movable function rvalue, moves",
-        moveCounter, 1);
+    Expect("RunnableFactory with copyable&movable function rvalue, copies",
+           copyCounter, 0);
+    Expect("RunnableFactory with copyable&movable function rvalue, moves",
+           moveCounter, 1);
   }
 
-  // Test NS_NewRunnableFunction with copyable-only lambda capture.
+  // Test RunnableFactory with copyable-only lambda capture.
   {
     int copyCounter = 0;
     {
@@ -342,15 +364,16 @@ static void TestNewRunnableFunction(bool aNamed) {
         TestCopyWithNoMove tracker(&copyCounter);
         // Expect 2 copies (here -> local lambda -> runnable lambda).
         trackedRunnable =
-            aNamed ? NS_NewRunnableFunction("unused",
-                                            [tracker]() mutable { tracker(); })
-                   : NS_NewRunnableFunction("TestNewRunnableFunction",
-                                            [tracker]() mutable { tracker(); });
+            aNamed
+                ? RunnableFactory::Create("unused",
+                                          [tracker]() mutable { tracker(); })
+                : RunnableFactory::Create("TestNewRunnableFunction",
+                                          [tracker]() mutable { tracker(); });
       }
       trackedRunnable->Run();
     }
     Expect(
-        "NS_NewRunnableFunction with copyable-only (and no move) capture, "
+        "RunnableFactory with copyable-only (and no move) capture, "
         "copies",
         copyCounter, 2);
   }
@@ -362,15 +385,16 @@ static void TestNewRunnableFunction(bool aNamed) {
         TestCopyWithDeletedMove tracker(&copyCounter);
         // Expect 2 copies (here -> local lambda -> runnable lambda).
         trackedRunnable =
-            aNamed ? NS_NewRunnableFunction("unused",
-                                            [tracker]() mutable { tracker(); })
-                   : NS_NewRunnableFunction("TestNewRunnableFunction",
-                                            [tracker]() mutable { tracker(); });
+            aNamed
+                ? RunnableFactory::Create("unused",
+                                          [tracker]() mutable { tracker(); })
+                : RunnableFactory::Create("TestNewRunnableFunction",
+                                          [tracker]() mutable { tracker(); });
       }
       trackedRunnable->Run();
     }
     Expect(
-        "NS_NewRunnableFunction with copyable-only (and deleted move) capture, "
+        "RunnableFactory with copyable-only (and deleted move) capture, "
         "copies",
         copyCounter, 2);
   }
@@ -378,7 +402,7 @@ static void TestNewRunnableFunction(bool aNamed) {
   // Note: Not possible to use move-only captures.
   // (Until we can use C++14 generalized lambda captures)
 
-  // Test NS_NewRunnableFunction with copyable&movable lambda capture.
+  // Test RunnableFactory with copyable&movable lambda capture.
   {
     int copyCounter = 0;
     int moveCounter = 0;
@@ -387,29 +411,30 @@ static void TestNewRunnableFunction(bool aNamed) {
       {
         TestCopyMove tracker(&copyCounter, &moveCounter);
         trackedRunnable =
-            aNamed ? NS_NewRunnableFunction("unused",
-                                            [tracker]() mutable { tracker(); })
-                   : NS_NewRunnableFunction("TestNewRunnableFunction",
-                                            [tracker]() mutable { tracker(); });
+            aNamed
+                ? RunnableFactory::Create("unused",
+                                          [tracker]() mutable { tracker(); })
+                : RunnableFactory::Create("TestNewRunnableFunction",
+                                          [tracker]() mutable { tracker(); });
         // Expect 1 copy (here -> local lambda) and 1 move (local -> runnable
         // lambda).
       }
       trackedRunnable->Run();
     }
-    Expect("NS_NewRunnableFunction with copyable&movable capture, copies",
-           copyCounter, 1);
-    Expect("NS_NewRunnableFunction with copyable&movable capture, moves",
-           moveCounter, 1);
+    Expect("RunnableFactory with copyable&movable capture, copies", copyCounter,
+           1);
+    Expect("RunnableFactory with copyable&movable capture, moves", moveCounter,
+           1);
   }
 }
 
 TEST(ThreadUtils, NewRunnableFunction)
-{ TestNewRunnableFunction(/*aNamed*/ false); }
+{ TestRunnableFactory<BasicRunnableFactory>(/*aNamed*/ false); }
 
 TEST(ThreadUtils, NewNamedRunnableFunction)
 {
   // The named overload shall behave identical to the non-named counterpart.
-  TestNewRunnableFunction(/*aNamed*/ true);
+  TestRunnableFactory<BasicRunnableFactory>(/*aNamed*/ true);
 
   // Test naming.
   {
@@ -417,6 +442,38 @@ TEST(ThreadUtils, NewNamedRunnableFunction)
     RefPtr<Runnable> NamedRunnable =
         NS_NewRunnableFunction(expectedName, [] {});
     ExpectRunnableName(NamedRunnable, expectedName);
+  }
+}
+
+TEST(ThreadUtils, NewCancelableRunnableFunction)
+{ TestRunnableFactory<CancelableRunnableFactory>(/*aNamed*/ false); }
+
+TEST(ThreadUtils, NewNamedCancelableRunnableFunction)
+{
+  // The named overload shall behave identical to the non-named counterpart.
+  TestRunnableFactory<CancelableRunnableFactory>(/*aNamed*/ true);
+
+  // Test naming.
+  {
+    const char* expectedName = "NamedRunnable";
+    RefPtr<Runnable> NamedRunnable =
+        NS_NewCancelableRunnableFunction(expectedName, [] {});
+    ExpectRunnableName(NamedRunnable, expectedName);
+  }
+
+  // Test release on cancelation.
+  {
+    auto foo = MakeRefPtr<TestRefCounted>();
+    bool ran = false;
+
+    RefPtr<CancelableRunnable> func =
+        NS_NewCancelableRunnableFunction("unused", [foo, &ran] { ran = true; });
+
+    EXPECT_EQ(foo->refCount(), 2u);
+    func->Cancel();
+
+    EXPECT_EQ(foo->refCount(), 1u);
+    EXPECT_FALSE(ran);
   }
 }
 
@@ -536,7 +593,7 @@ class IdleObjectWithoutSetDeadline final {
   bool mRunnableExecuted;
 
  private:
-  ~IdleObjectWithoutSetDeadline() {}
+  ~IdleObjectWithoutSetDeadline() = default;
 };
 
 class IdleObjectParentWithSetDeadline {
@@ -555,7 +612,7 @@ class IdleObjectInheritedSetDeadline final
   bool mRunnableExecuted;
 
  private:
-  ~IdleObjectInheritedSetDeadline() {}
+  ~IdleObjectInheritedSetDeadline() = default;
 };
 
 class IdleObject final {
@@ -653,7 +710,7 @@ class IdleObject final {
   nsCOMPtr<nsITimer> mTimer;
   bool mRunnableExecuted[8];
   bool mSetIdleDeadlineCalled;
-  ~IdleObject() {}
+  ~IdleObject() = default;
 };
 
 TEST(ThreadUtils, IdleRunnableMethod)
@@ -1161,7 +1218,7 @@ NS_IMPL_ISUPPORTS(ThreadUtilsObject, IThreadUtilsObject)
 class ThreadUtilsRefCountedFinal final {
  public:
   ThreadUtilsRefCountedFinal() : m_refCount(0) {}
-  ~ThreadUtilsRefCountedFinal() {}
+  ~ThreadUtilsRefCountedFinal() = default;
   // 'AddRef' and 'Release' methods with different return types, to verify
   // that the return type doesn't influence storage selection.
   long AddRef(void) { return ++m_refCount; }
@@ -1174,7 +1231,7 @@ class ThreadUtilsRefCountedFinal final {
 class ThreadUtilsRefCountedBase {
  public:
   ThreadUtilsRefCountedBase() : m_refCount(0) {}
-  virtual ~ThreadUtilsRefCountedBase() {}
+  virtual ~ThreadUtilsRefCountedBase() = default;
   // 'AddRef' and 'Release' methods with different return types, to verify
   // that the return type doesn't influence storage selection.
   virtual void AddRef(void) { ++m_refCount; }

@@ -11,14 +11,17 @@
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/Attributes.h"  // MOZ_STACK_CLASS, MOZ_MUST_USE, MOZ_ALWAYS_INLINE, MOZ_NEVER_INLINE, MOZ_RAII
-#include "mozilla/Maybe.h"  // mozilla::Maybe, mozilla::Some
-#include "mozilla/Span.h"   // mozilla::Span
+#include "mozilla/Maybe.h"   // mozilla::Maybe, mozilla::Some
+#include "mozilla/Span.h"    // mozilla::Span
+#include "mozilla/Vector.h"  // mozilla::Vector
 
-#include <stddef.h>  // ptrdiff_t
-#include <stdint.h>  // uint16_t, uint32_t
+#include <functional>  // std::function
+#include <stddef.h>    // ptrdiff_t
+#include <stdint.h>    // uint16_t, uint32_t
 
 #include "jsapi.h"  // CompletionKind
 
+#include "frontend/AbstractScope.h"
 #include "frontend/BCEParserHandle.h"            // BCEParserHandle
 #include "frontend/BytecodeControlStructures.h"  // NestableControl
 #include "frontend/BytecodeOffset.h"             // BytecodeOffset
@@ -38,15 +41,20 @@
 #include "frontend/ValueUsage.h"     // ValueUsage
 #include "js/RootingAPI.h"           // JS::Rooted, JS::Handle
 #include "js/TypeDecls.h"            // jsbytecode
-#include "vm/BigIntType.h"           // BigInt
 #include "vm/BytecodeUtil.h"         // JSOp
 #include "vm/Instrumentation.h"      // InstrumentationKind
 #include "vm/Interpreter.h"          // CheckIsObjectKind, CheckIsCallableKind
 #include "vm/Iteration.h"            // IteratorKind
 #include "vm/JSFunction.h"           // JSFunction, FunctionPrefixKind
-#include "vm/JSScript.h"  // JSScript, LazyScript, FieldInitializers, JSTryNoteKind
+#include "vm/JSScript.h"  // JSScript, BaseScript, FieldInitializers, JSTryNoteKind
 #include "vm/Runtime.h"     // ReportOutOfMemory
 #include "vm/StringType.h"  // JSAtom
+
+namespace js {
+
+enum class GeneratorResumeKind;
+
+}  // namespace js
 
 namespace js {
 namespace frontend {
@@ -57,6 +65,8 @@ class ElemOpEmitter;
 class EmitterScope;
 class NestableControl;
 class PropertyEmitter;
+class PropOpEmitter;
+class OptionalEmitter;
 class TDZCheckCache;
 class TryEmitter;
 
@@ -73,7 +83,7 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   JS::Rooted<JSScript*> script;
 
   // The lazy script if mode is LazyFunction, nullptr otherwise.
-  JS::Rooted<LazyScript*> lazyScript;
+  JS::Rooted<BaseScript*> lazyScript;
 
  private:
   BytecodeSection bytecodeSection_;
@@ -102,7 +112,9 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   mozilla::Maybe<EitherParser> ep_ = {};
   BCEParserHandle* parser = nullptr;
 
-  // First line and column, for JSScript::initFromEmitter.
+  CompilationInfo& compilationInfo;
+
+  // First line and column, for JSScript::fullyInitFromStencil.
   unsigned firstLine = 0;
   unsigned firstColumn = 0;
 
@@ -132,9 +144,6 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
     return innermostEmitterScope_;
   }
 
-  // Script contains JSOP_CALLSITEOBJ.
-  bool hasCallSiteObj = false;
-
   // Script contains finally block.
   bool hasTryFinally = false;
 
@@ -146,9 +155,9 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   enum EmitterMode {
     Normal,
 
-    // Emit JSOP_GETINTRINSIC instead of JSOP_GETNAME and assert that
-    // JSOP_GETNAME and JSOP_*GNAME don't ever get emitted. See the comment for
-    // the field |selfHostingMode| in Parser.h for details.
+    // Emit JSOp::GetIntrinsic instead of JSOp::GetName and assert that
+    // JSOp::GetName and JSOp::*GName don't ever get emitted. See the comment
+    // for the field |selfHostingMode| in Parser.h for details.
     SelfHosting,
 
     // Check the static scope chain of the root function for resolving free
@@ -177,8 +186,8 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // Internal constructor, for delegation use only.
   BytecodeEmitter(
       BytecodeEmitter* parent, SharedContext* sc, JS::Handle<JSScript*> script,
-      JS::Handle<LazyScript*> lazyScript, uint32_t line, uint32_t column,
-      EmitterMode emitterMode,
+      JS::Handle<BaseScript*> lazyScript, uint32_t line, uint32_t column,
+      CompilationInfo& compilationInfo, EmitterMode emitterMode,
       FieldInitializers fieldInitializers = FieldInitializers::Invalid());
 
   void initFromBodyPosition(TokenPos bodyPosition);
@@ -195,25 +204,28 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
  public:
   BytecodeEmitter(
       BytecodeEmitter* parent, BCEParserHandle* parser, SharedContext* sc,
-      JS::Handle<JSScript*> script, JS::Handle<LazyScript*> lazyScript,
-      uint32_t line, uint32_t column, EmitterMode emitterMode = Normal,
+      JS::Handle<JSScript*> script, JS::Handle<BaseScript*> lazyScript,
+      uint32_t line, uint32_t column, CompilationInfo& compilationInfo,
+      EmitterMode emitterMode = Normal,
       FieldInitializers fieldInitializers = FieldInitializers::Invalid());
 
   BytecodeEmitter(
       BytecodeEmitter* parent, const EitherParser& parser, SharedContext* sc,
-      JS::Handle<JSScript*> script, JS::Handle<LazyScript*> lazyScript,
-      uint32_t line, uint32_t column, EmitterMode emitterMode = Normal,
+      JS::Handle<JSScript*> script, JS::Handle<BaseScript*> lazyScript,
+      uint32_t line, uint32_t column, CompilationInfo& compilationInfo,
+      EmitterMode emitterMode = Normal,
       FieldInitializers fieldInitializers = FieldInitializers::Invalid());
 
   template <typename Unit>
   BytecodeEmitter(
       BytecodeEmitter* parent, Parser<FullParseHandler, Unit>* parser,
       SharedContext* sc, JS::Handle<JSScript*> script,
-      JS::Handle<LazyScript*> lazyScript, uint32_t line, uint32_t column,
-      EmitterMode emitterMode = Normal,
+      JS::Handle<BaseScript*> lazyScript, uint32_t line, uint32_t column,
+      CompilationInfo& compilationInfo, EmitterMode emitterMode = Normal,
       FieldInitializers fieldInitializers = FieldInitializers::Invalid())
       : BytecodeEmitter(parent, EitherParser(parser), sc, script, lazyScript,
-                        line, column, emitterMode, fieldInitializers) {}
+                        line, column, compilationInfo, emitterMode,
+                        fieldInitializers) {}
 
   MOZ_MUST_USE bool init();
   MOZ_MUST_USE bool init(TokenPos bodyPosition);
@@ -249,11 +261,11 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
     varEmitterScope = emitterScope;
   }
 
-  Scope* outermostScope() const {
+  AbstractScope outermostScope() const {
     return perScriptData().gcThingList().firstScope();
   }
-  Scope* innermostScope() const;
-  Scope* bodyScope() const {
+  AbstractScope innermostScope() const;
+  AbstractScope bodyScope() const {
     return perScriptData().gcThingList().getScope(bodyScopeIndex);
   }
 
@@ -287,8 +299,6 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
 
   MOZ_MUST_USE bool emitThisEnvironmentCallee();
   MOZ_MUST_USE bool emitSuperBase();
-
-  void tellDebuggerAboutCompiledScript(JSContext* cx);
 
   uint32_t mainOffset() const { return *mainOffset_; }
 
@@ -357,11 +367,20 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // Emit code for the tree rooted at pn.
   MOZ_MUST_USE bool emitTree(ParseNode* pn,
                              ValueUsage valueUsage = ValueUsage::WantValue,
-                             EmitLineNumberNote emitLineNote = EMIT_LINENOTE);
+                             EmitLineNumberNote emitLineNote = EMIT_LINENOTE,
+                             bool isInner = false);
+
+  MOZ_MUST_USE bool emitOptionalTree(
+      ParseNode* pn, OptionalEmitter& oe,
+      ValueUsage valueUsage = ValueUsage::WantValue);
 
   // Emit global, eval, or module code for tree rooted at body. Always
   // encompasses the entire source.
   MOZ_MUST_USE bool emitScript(ParseNode* body);
+
+  // Calculate the `nslots` value for BCEScriptStencil constructor parameter.
+  // Fails if it overflows.
+  MOZ_MUST_USE bool getNslots(uint32_t* nslots);
 
   // Emit function code for the tree rooted at body.
   enum class TopLevelFunction { No, Yes };
@@ -392,13 +411,13 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // values to duplicate, in theiro original order.
   MOZ_MUST_USE bool emitDupAt(unsigned slotFromTop, unsigned count = 1);
 
-  // Helper to emit JSOP_POP or JSOP_POPN.
+  // Helper to emit JSOp::Pop or JSOp::PopN.
   MOZ_MUST_USE bool emitPopN(unsigned n);
 
-  // Helper to emit JSOP_CHECKISOBJ.
+  // Helper to emit JSOp::CheckIsObj.
   MOZ_MUST_USE bool emitCheckIsObj(CheckIsObjectKind kind);
 
-  // Helper to emit JSOP_CHECKISCALLABLE.
+  // Helper to emit JSOp::CheckIsCallable.
   MOZ_MUST_USE bool emitCheckIsCallable(CheckIsCallableKind kind);
 
   // Push whether the value atop of the stack is non-undefined and non-null.
@@ -432,8 +451,6 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   MOZ_MUST_USE bool emitJumpTarget(JumpTarget* target);
   MOZ_MUST_USE bool emitJumpNoFallthrough(JSOp op, JumpList* jump);
   MOZ_MUST_USE bool emitJump(JSOp op, JumpList* jump);
-  MOZ_MUST_USE bool emitBackwardJump(JSOp op, JumpTarget target, JumpList* jump,
-                                     JumpTarget* fallthrough);
   void patchJumpsToTarget(JumpList jump, JumpTarget target);
   MOZ_MUST_USE bool emitJumpTargetAndPatch(JumpList jump);
 
@@ -444,51 +461,73 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
 
   mozilla::Maybe<uint32_t> getOffsetForLoop(ParseNode* nextpn);
 
+  enum class GotoKind { Break, Continue };
   MOZ_MUST_USE bool emitGoto(NestableControl* target, JumpList* jumplist,
-                             SrcNoteType noteType = SRC_NULL);
+                             GotoKind kind);
 
-  MOZ_MUST_USE bool emitIndex32(JSOp op, uint32_t index);
   MOZ_MUST_USE bool emitIndexOp(JSOp op, uint32_t index);
 
   MOZ_MUST_USE bool emitAtomOp(
-      JSAtom* atom, JSOp op,
+      JSOp op, JSAtom* atom,
       ShouldInstrument shouldInstrument = ShouldInstrument::No);
   MOZ_MUST_USE bool emitAtomOp(
-      uint32_t atomIndex, JSOp op,
+      JSOp op, uint32_t atomIndex,
       ShouldInstrument shouldInstrument = ShouldInstrument::No);
 
   MOZ_MUST_USE bool emitArrayLiteral(ListNode* array);
-  MOZ_MUST_USE bool emitArray(ParseNode* arrayHead, uint32_t count);
+  MOZ_MUST_USE bool emitArray(ParseNode* arrayHead, uint32_t count,
+                              bool isInner = false);
 
   MOZ_MUST_USE bool emitInternedScopeOp(uint32_t index, JSOp op);
   MOZ_MUST_USE bool emitInternedObjectOp(uint32_t index, JSOp op);
-  MOZ_MUST_USE bool emitObjectOp(ObjectBox* objbox, JSOp op);
-  MOZ_MUST_USE bool emitObjectPairOp(ObjectBox* objbox1, ObjectBox* objbox2,
-                                     JSOp op);
+  MOZ_MUST_USE bool emitObjectPairOp(uint32_t index1, uint32_t index2, JSOp op);
   MOZ_MUST_USE bool emitRegExp(uint32_t index);
 
   MOZ_NEVER_INLINE MOZ_MUST_USE bool emitFunction(
       FunctionNode* funNode, bool needsProto = false,
       ListNode* classContentsIfConstructor = nullptr);
-  MOZ_NEVER_INLINE MOZ_MUST_USE bool emitObject(ListNode* objNode);
-
-  MOZ_MUST_USE bool replaceNewInitWithNewObject(JSObject* obj,
-                                                BytecodeOffset offset);
+  MOZ_NEVER_INLINE MOZ_MUST_USE bool emitObject(ListNode* objNode,
+                                                bool isInner = false);
 
   MOZ_MUST_USE bool emitHoistedFunctionsInList(ListNode* stmtList);
 
-  MOZ_MUST_USE bool emitPropertyList(ListNode* obj, PropertyEmitter& pe,
-                                     PropListType type);
+  // Can we use the object-literal writer either in singleton-object mode (with
+  // values) or in template mode (field names only, no values) for the property
+  // list?
+  void isPropertyListObjLiteralCompatible(ListNode* obj, bool* withValues,
+                                          bool* withoutValues);
+  bool isArrayObjLiteralCompatible(ParseNode* arrayHead);
 
-  FieldInitializers setupFieldInitializers(ListNode* classMembers);
-  MOZ_MUST_USE bool emitCreateFieldKeys(ListNode* obj);
-  MOZ_MUST_USE bool emitCreateFieldInitializers(ClassEmitter& ce,
-                                                ListNode* obj);
+  MOZ_MUST_USE bool emitPropertyList(ListNode* obj, PropertyEmitter& pe,
+                                     PropListType type, bool isInner = false);
+
+  MOZ_MUST_USE bool emitPropertyListObjLiteral(ListNode* obj,
+                                               ObjLiteralFlags flags);
+
+  MOZ_MUST_USE bool emitDestructuringRestExclusionSetObjLiteral(
+      ListNode* pattern);
+
+  MOZ_MUST_USE bool emitObjLiteralArray(ParseNode* arrayHead, bool isCow);
+
+  // Is a field value OBJLITERAL-compatible?
+  MOZ_MUST_USE bool isRHSObjLiteralCompatible(ParseNode* value);
+
+  MOZ_MUST_USE bool emitObjLiteralValue(ObjLiteralCreationData* data,
+                                        ParseNode* value);
+
+  enum class FieldPlacement { Instance, Static };
+  mozilla::Maybe<FieldInitializers> setupFieldInitializers(
+      ListNode* classMembers, FieldPlacement placement);
+  MOZ_MUST_USE bool emitCreateFieldKeys(ListNode* obj,
+                                        FieldPlacement placement);
+  MOZ_MUST_USE bool emitCreateFieldInitializers(ClassEmitter& ce, ListNode* obj,
+                                                FieldPlacement placement);
   const FieldInitializers& findFieldInitializersForCall();
   MOZ_MUST_USE bool emitInitializeInstanceFields();
+  MOZ_MUST_USE bool emitInitializeStaticFields(ListNode* classMembers);
 
   // To catch accidental misuse, emitUint16Operand/emit3 assert that they are
-  // not used to unconditionally emit JSOP_GETLOCAL. Variable access should
+  // not used to unconditionally emit JSOp::GetLocal. Variable access should
   // instead be emitted using EmitVarOp. In special cases, when the caller
   // definitely knows that a given local slot is unaliased, this function may be
   // used as a non-asserting version of emitUint16Operand.
@@ -523,9 +562,6 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
                                       HandleAtom anonFunctionName);
   MOZ_MUST_USE bool emitAssignmentRhs(uint8_t offset);
 
-  MOZ_MUST_USE bool emitNewInit();
-  MOZ_MUST_USE bool emitSingletonInitialiser(ListNode* objOrArray);
-
   MOZ_MUST_USE bool emitPrepareIteratorResult();
   MOZ_MUST_USE bool emitFinishIteratorResult(bool done);
   MOZ_MUST_USE bool iteratorResultShape(uint32_t* shape);
@@ -550,13 +586,15 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   MOZ_MUST_USE bool emitAwaitInInnermostScope(UnaryNode* awaitNode);
   MOZ_MUST_USE bool emitAwaitInScope(EmitterScope& currentScope);
 
+  MOZ_MUST_USE bool emitPushResumeKind(GeneratorResumeKind kind);
+
   MOZ_MUST_USE bool emitPropLHS(PropertyAccess* prop);
   MOZ_MUST_USE bool emitPropIncDec(UnaryNode* incDec);
 
   MOZ_MUST_USE bool emitComputedPropertyName(UnaryNode* computedPropName);
 
-  // Emit bytecode to put operands for a JSOP_GETELEM/CALLELEM/SETELEM/DELELEM
-  // opcode onto the stack in the right order. In the case of SETELEM, the
+  // Emit bytecode to put operands for a JSOp::GetElem/CallElem/SetElem/DelElem
+  // opcode onto the stack in the right order. In the case of SetElem, the
   // value to be assigned must already be pushed.
   enum class EmitElemOption { Get, Call, IncDec, CompoundAssign, Ref };
   MOZ_MUST_USE bool emitElemOperands(PropertyByValue* elem,
@@ -661,9 +699,11 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   MOZ_MUST_USE bool emitAnonymousFunctionWithComputedName(
       ParseNode* node, FunctionPrefixKind prefixKind);
 
-  MOZ_MUST_USE bool setFunName(JSFunction* fun, JSAtom* name);
+  MOZ_MUST_USE bool setFunName(FunctionBox* fun, JSAtom* name);
   MOZ_MUST_USE bool emitInitializer(ParseNode* initializer, ParseNode* pattern);
 
+  MOZ_MUST_USE bool emitCallSiteObjectArray(ListNode* cookedOrRaw,
+                                            uint32_t* arrayIndex);
   MOZ_MUST_USE bool emitCallSiteObject(CallSiteNode* callSiteObj);
   MOZ_MUST_USE bool emitTemplateString(ListNode* templateString);
   MOZ_MUST_USE bool emitAssignmentOrInit(ParseNodeKind kind, ParseNode* lhs,
@@ -678,13 +718,35 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   MOZ_MUST_USE bool emitDeleteElement(UnaryNode* deleteNode);
   MOZ_MUST_USE bool emitDeleteExpression(UnaryNode* deleteNode);
 
-  // |op| must be JSOP_TYPEOF or JSOP_TYPEOFEXPR.
+  // Optional methods which emit Optional Jump Target
+  MOZ_MUST_USE bool emitOptionalChain(UnaryNode* expr, ValueUsage valueUsage);
+  MOZ_MUST_USE bool emitCalleeAndThisForOptionalChain(UnaryNode* expr,
+                                                      CallNode* callNode,
+                                                      CallOrNewEmitter& cone);
+  MOZ_MUST_USE bool emitDeleteOptionalChain(UnaryNode* deleteNode);
+
+  // Optional methods which emit a shortCircuit jump. They need to be called by
+  // a method which emits an Optional Jump Target, see below.
+  MOZ_MUST_USE bool emitOptionalDotExpression(PropertyAccessBase* expr,
+                                              PropOpEmitter& poe, bool isSuper,
+                                              OptionalEmitter& oe);
+  MOZ_MUST_USE bool emitOptionalElemExpression(PropertyByValueBase* elem,
+                                               ElemOpEmitter& poe, bool isSuper,
+                                               OptionalEmitter& oe);
+  MOZ_MUST_USE bool emitOptionalCall(CallNode* callNode, OptionalEmitter& oe,
+                                     ValueUsage valueUsage);
+  MOZ_MUST_USE bool emitDeletePropertyInOptChain(PropertyAccessBase* propExpr,
+                                                 OptionalEmitter& oe);
+  MOZ_MUST_USE bool emitDeleteElementInOptChain(PropertyByValueBase* elemExpr,
+                                                OptionalEmitter& oe);
+
+  // |op| must be JSOp::Typeof or JSOp::TypeofExpr.
   MOZ_MUST_USE bool emitTypeof(UnaryNode* typeofNode, JSOp op);
 
   MOZ_MUST_USE bool emitUnary(UnaryNode* unaryNode);
   MOZ_MUST_USE bool emitRightAssociative(ListNode* node);
   MOZ_MUST_USE bool emitLeftAssociative(ListNode* node);
-  MOZ_MUST_USE bool emitLogical(ListNode* node);
+  MOZ_MUST_USE bool emitShortCircuit(ListNode* node);
   MOZ_MUST_USE bool emitSequenceExpr(
       ListNode* node, ValueUsage valueUsage = ValueUsage::WantValue);
 
@@ -695,6 +757,10 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
       ValueUsage valueUsage = ValueUsage::WantValue);
 
   bool isRestParameter(ParseNode* expr);
+
+  MOZ_MUST_USE ParseNode* getCoordNode(ParseNode* callNode,
+                                       ParseNode* calleeNode, JSOp op,
+                                       ListNode* argsList);
 
   MOZ_MUST_USE bool emitArguments(ListNode* argsList, bool isCall,
                                   bool isSpread, CallOrNewEmitter& cone);
@@ -762,13 +828,17 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   MOZ_MUST_USE bool emitCalleeAndThis(ParseNode* callee, ParseNode* call,
                                       CallOrNewEmitter& cone);
 
+  MOZ_MUST_USE bool emitOptionalCalleeAndThis(ParseNode* callee, CallNode* call,
+                                              CallOrNewEmitter& cone,
+                                              OptionalEmitter& oe);
+
   MOZ_MUST_USE bool emitPipeline(ListNode* node);
 
   MOZ_MUST_USE bool emitExportDefault(BinaryNode* exportNode);
 
   MOZ_MUST_USE bool emitReturnRval() {
     return emitInstrumentation(InstrumentationKind::Exit) &&
-           emit1(JSOP_RETRVAL);
+           emit1(JSOp::RetRval);
   }
 
   MOZ_MUST_USE bool emitInstrumentation(InstrumentationKind kind,

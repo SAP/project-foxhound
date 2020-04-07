@@ -14,8 +14,8 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const FluentReact = require("devtools/client/shared/vendor/fluent-react");
 const Localized = createFactory(FluentReact.Localized);
 
-const Actions = require("../../actions/index");
-const Types = require("../../types/index");
+const Actions = require("devtools/client/aboutdebugging/src/actions/index");
+const Types = require("devtools/client/aboutdebugging/src/types/index");
 
 /**
  * This component provides inspect button.
@@ -26,7 +26,7 @@ class InspectAction extends PureComponent {
       dispatch: PropTypes.func.isRequired,
       disabled: PropTypes.bool,
       target: Types.debugTarget.isRequired,
-      title: Types.string,
+      title: PropTypes.string,
     };
   }
 

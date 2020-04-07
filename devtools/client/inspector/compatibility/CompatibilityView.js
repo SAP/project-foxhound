@@ -10,10 +10,19 @@ const {
 } = require("devtools/client/shared/vendor/react");
 const { Provider } = require("devtools/client/shared/vendor/react-redux");
 
-const { updateSelectedNode } = require("./actions/compatibility");
+loader.lazyRequireGetter(
+  this,
+  "browsersDataset",
+  "devtools/client/inspector/compatibility/lib/dataset/browsers.json"
+);
+
+const {
+  updateSelectedNode,
+  updateTargetBrowsers,
+} = require("devtools/client/inspector/compatibility/actions/compatibility");
 
 const CompatibilityApp = createFactory(
-  require("./components/CompatibilityApp")
+  require("devtools/client/inspector/compatibility/components/CompatibilityApp")
 );
 
 class CompatibilityView {
@@ -61,18 +70,28 @@ class CompatibilityView {
         { once: true }
       );
     }
+
+    this._initTargetBrowsers();
   }
 
-  _isVisible() {
+  async _initTargetBrowsers() {
+    this.inspector.store.dispatch(
+      updateTargetBrowsers(_getDefaultTargetBrowsers())
+    );
+  }
+
+  _isAvailable() {
     return (
       this.inspector &&
       this.inspector.sidebar &&
-      this.inspector.sidebar.getCurrentTabID() === "compatibilityview"
+      this.inspector.sidebar.getCurrentTabID() === "compatibilityview" &&
+      this.inspector.selection &&
+      this.inspector.selection.isConnected()
     );
   }
 
   _onNewNode() {
-    if (!this._isVisible()) {
+    if (!this._isAvailable()) {
       return;
     }
 
@@ -87,6 +106,44 @@ class CompatibilityView {
       this.inspector.getPanel("ruleview").view
     );
   }
+}
+
+/**
+ * Return target browsers that will be checked as default.
+ * The default target browsers includes major browsers that have been releasing as `esr`,
+ * `release`, `beta` or `nightly`.
+ *
+ * @return e.g, [{ id: "firefox", name: "Firefox", version: "70", status: "nightly"},...]
+ */
+function _getDefaultTargetBrowsers() {
+  const TARGET_BROWSER_ID = [
+    "firefox",
+    "firefox_android",
+    "chrome",
+    "chrome_android",
+    "safari",
+    "safari_ios",
+    "edge",
+  ];
+  const TARGET_BROWSER_STATUS = ["esr", "current", "beta", "nightly"];
+
+  // Retrieve the information that matches to the browser id and the status
+  // from the browsersDataset.
+  // For the structure of then browsersDataset,
+  // see https://github.com/mdn/browser-compat-data/blob/master/browsers/firefox.json
+  const targets = [];
+  for (const id of TARGET_BROWSER_ID) {
+    const { name, releases } = browsersDataset[id];
+
+    for (const version in releases) {
+      const { status } = releases[version];
+
+      if (TARGET_BROWSER_STATUS.includes(status)) {
+        targets.push({ id, name, version, status });
+      }
+    }
+  }
+  return targets;
 }
 
 module.exports = CompatibilityView;

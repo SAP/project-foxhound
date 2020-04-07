@@ -50,6 +50,7 @@ class Debugger {
     this._flags = new Map();
     this._visualDebugging = false;
     this._visualEventDebugging = false;
+    this._pagedMode = false;
     this._attached = false;
 
     for (let [name, pref] of Object.entries(FEATURES)) {
@@ -110,6 +111,20 @@ class Debugger {
     v = !!v;
     this._visualEventDebugging = v;
     this._sendMessage("setVisualEventDebugging", v);
+  }
+
+  get pagedMode() {
+    return this._pagedMode;
+  }
+
+  set pagedMode(v) {
+    v = !!v;
+    this._pagedMode = v;
+    this.setPagedMode(this._pagedMode);
+  }
+
+  setPagedMode(v) {
+    this._sendMessage("setPagedMode", v);
   }
 
   _sendMessage(name, arg) {
@@ -201,6 +216,11 @@ nsLDBBrowserContentListener.prototype = {
       this.mStatusText.value = gURLBar.value + " loaded";
       this.mLoading = false;
 
+      if (gDebugger.pagedMode) {
+        // Change to paged mode after the page is loaded.
+        gDebugger.setPagedMode(true);
+      }
+
       if (gBrowser.currentURI.spec != "about:blank") {
         // We check for about:blank just to avoid one or two STATE_STOP
         // notifications that occur before the loadURI() call completes.
@@ -257,6 +277,7 @@ function parseArguments() {
     url: null,
     autoclose: false,
     delay: 0,
+    paged: false,
   };
   if (window.arguments) {
     args.url = window.arguments[0];
@@ -268,6 +289,8 @@ function parseArguments() {
       } else if (/^profile=(.*)$/.test(arg)) {
         args.profile = true;
         args.profileFilename = RegExp.$1;
+      } else if (/^paged$/.test(arg)) {
+        args.paged = true;
       } else {
         throw `Unknown option ${arg}`;
       }
@@ -297,8 +320,6 @@ function OnLDBLoad() {
   gURLBar = document.getElementById("urlbar");
 
   gDebugger = new Debugger();
-
-  checkPersistentMenus();
 
   Services.obs.addObserver(TabCrashedObserver, "ipc:content-shutdown");
   Services.obs.addObserver(TabCrashedObserver, "oop-frameloader-crashed");
@@ -342,9 +363,16 @@ function OnLDBLoad() {
     }
   }
 
+  // The URI is not loaded yet. Just set the internal variable.
+  gDebugger._pagedMode = gArgs.paged;
+
   if (gArgs.url) {
     loadURI(gArgs.url);
   }
+
+  // Some command line arguments may toggle menu items. Call this after
+  // processing all the arguments.
+  checkPersistentMenus();
 }
 
 function checkPersistentMenu(item) {
@@ -361,6 +389,7 @@ function checkPersistentMenus() {
   checkPersistentMenu("motionEventDumping");
   checkPersistentMenu("crossingEventDumping");
   checkPersistentMenu("reflowCounts");
+  checkPersistentMenu("pagedMode");
 }
 
 function dumpProfile() {

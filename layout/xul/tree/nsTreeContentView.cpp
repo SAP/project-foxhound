@@ -146,7 +146,7 @@ nsTreeContentView::SetSelection(nsITreeSelection* aSelection) {
 void nsTreeContentView::SetSelection(nsITreeSelection* aSelection,
                                      ErrorResult& aError) {
   if (aSelection && !CanTrustTreeSelection(aSelection)) {
-    aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    aError.ThrowSecurityError("Not allowed to set tree selection");
     return;
   }
 
@@ -215,7 +215,7 @@ void nsTreeContentView::GetColumnProperties(nsTreeColumn& aColumn,
   RefPtr<Element> element = aColumn.Element();
 
   if (element) {
-    element->GetAttribute(NS_LITERAL_STRING("properties"), aProperties);
+    element->GetAttr(nsGkAtoms::properties, aProperties);
   }
 }
 
@@ -520,7 +520,7 @@ nsTreeContentView::SetTree(XULTreeElement* aTree) {
 
     RefPtr<dom::Element> bodyElement = mTree->GetTreeBody();
     if (bodyElement) {
-      mBody = bodyElement.forget();
+      mBody = std::move(bodyElement);
       int32_t index = 0;
       Serialize(mBody, -1, &index, mRows);
     }

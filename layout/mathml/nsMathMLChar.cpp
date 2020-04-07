@@ -12,9 +12,9 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsDeviceContext.h"
 #include "nsFontMetrics.h"
@@ -170,7 +170,7 @@ class nsPropertiesTable final : public nsGlyphTable {
         aPrimaryFontName, StyleFontFamilyNameSyntax::Identifiers));
   }
 
-  ~nsPropertiesTable() { MOZ_COUNT_DTOR(nsPropertiesTable); }
+  MOZ_COUNTED_DTOR(nsPropertiesTable)
 
   const FontFamilyName& PrimaryFontName() const { return mGlyphCodeFonts[0]; }
 
@@ -378,7 +378,7 @@ already_AddRefed<gfxTextRun> nsPropertiesTable::MakeTextRun(
 // forwarded to the gfx code.
 class nsOpenTypeTable final : public nsGlyphTable {
  public:
-  ~nsOpenTypeTable() { MOZ_COUNT_DTOR(nsOpenTypeTable); }
+  MOZ_COUNTED_DTOR(nsOpenTypeTable)
 
   virtual nsGlyphCode ElementAt(DrawTarget* aDrawTarget,
                                 int32_t aAppUnitsPerDevPixel,
@@ -406,11 +406,11 @@ class nsOpenTypeTable final : public nsGlyphTable {
   // This returns a new OpenTypeTable instance to give access to OpenType MATH
   // table or nullptr if the font does not have such table. Ownership is passed
   // to the caller.
-  static nsOpenTypeTable* Create(gfxFont* aFont) {
+  static UniquePtr<nsOpenTypeTable> Create(gfxFont* aFont) {
     if (!aFont->TryGetMathTable()) {
       return nullptr;
     }
-    return new nsOpenTypeTable(aFont);
+    return WrapUnique(new nsOpenTypeTable(aFont));
   }
 
  private:
@@ -1299,7 +1299,7 @@ bool nsMathMLChar::StretchEnumContext::EnumCallback(
     return true;  // Could not set the family
 
   // Determine the glyph table to use for this font.
-  nsAutoPtr<nsOpenTypeTable> openTypeTable;
+  UniquePtr<nsOpenTypeTable> openTypeTable;
   nsGlyphTable* glyphTable;
   if (aGeneric) {
     // This is a generic font, use the Unicode table.
@@ -1308,7 +1308,7 @@ bool nsMathMLChar::StretchEnumContext::EnumCallback(
     // If the font contains an Open Type MATH table, use it.
     openTypeTable = nsOpenTypeTable::Create(fontGroup->GetFirstValidFont());
     if (openTypeTable) {
-      glyphTable = openTypeTable;
+      glyphTable = openTypeTable.get();
     } else {
       // Otherwise try to find a .properties file corresponding to that font
       // family or fallback to the Unicode table.
@@ -1689,11 +1689,7 @@ class nsDisplayMathMLSelectionRect final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame), mRect(aRect) {
     MOZ_COUNT_CTOR(nsDisplayMathMLSelectionRect);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayMathMLSelectionRect() {
-    MOZ_COUNT_DTOR(nsDisplayMathMLSelectionRect);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLSelectionRect)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLSelectionRect", TYPE_MATHML_SELECTION_RECT)
@@ -1724,11 +1720,7 @@ class nsDisplayMathMLCharForeground final : public nsPaintedDisplayItem {
         mIsSelected(aIsSelected) {
     MOZ_COUNT_CTOR(nsDisplayMathMLCharForeground);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayMathMLCharForeground() {
-    MOZ_COUNT_DTOR(nsDisplayMathMLCharForeground);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLCharForeground)
 
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override {
@@ -1774,11 +1766,7 @@ class nsDisplayMathMLCharDebug final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame), mRect(aRect) {
     MOZ_COUNT_CTOR(nsDisplayMathMLCharDebug);
   }
-#  ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayMathMLCharDebug() {
-    MOZ_COUNT_DTOR(nsDisplayMathMLCharDebug);
-  }
-#  endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLCharDebug)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLCharDebug", TYPE_MATHML_CHAR_DEBUG)

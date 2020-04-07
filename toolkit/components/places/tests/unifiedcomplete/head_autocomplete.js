@@ -341,9 +341,7 @@ async function check_autocomplete(test) {
 
         if (!found) {
           do_throw(
-            `Didn't find the current result ("${result.value}", "${
-              result.comment
-            }") in matches`
+            `Didn't find the current result ("${result.value}", "${result.comment}") in matches`
           );
         } // ' (Emacs syntax highlighting fix)
       }
@@ -408,15 +406,15 @@ var addBookmark = async function(aBookmarkObj) {
   }
 };
 
-function addOpenPages(aUri, aCount = 1, aUserContextId = 0) {
+async function addOpenPages(aUri, aCount = 1, aUserContextId = 0) {
   for (let i = 0; i < aCount; i++) {
-    UrlbarProviderOpenTabs.registerOpenTab(aUri.spec, aUserContextId);
+    await UrlbarProviderOpenTabs.registerOpenTab(aUri.spec, aUserContextId);
   }
 }
 
-function removeOpenPages(aUri, aCount = 1, aUserContextId = 0) {
+async function removeOpenPages(aUri, aCount = 1, aUserContextId = 0) {
   for (let i = 0; i < aCount; i++) {
-    UrlbarProviderOpenTabs.unregisterOpenTab(aUri.spec, aUserContextId);
+    await UrlbarProviderOpenTabs.unregisterOpenTab(aUri.spec, aUserContextId);
   }
 }
 
@@ -448,7 +446,7 @@ function makeActionURI(action, params) {
     encodedParams[key] = encodeURIComponent(params[key]);
   }
   let url = "moz-action:" + action + "," + JSON.stringify(encodedParams);
-  return NetUtil.newURI(url);
+  return Services.io.newURI(url);
 }
 
 // Creates a full "match" entry for a search result, suitable for passing as
@@ -591,10 +589,9 @@ add_task(async function ensure_search_engine() {
   // keyword.enabled is necessary for the tests to see keyword searches.
   Services.prefs.setBoolPref("keyword.enabled", true);
 
-  // Initialize the search service, but first set this geo IP pref to a dummy
+  // Before initializing the search service, set the geo IP url pref to a dummy
   // string.  When the search service is initialized, it contacts the URI named
-  // in this pref, which breaks the test since outside connections aren't
-  // allowed.
+  // in this pref, causing unnecessary error logs.
   let geoPref = "browser.search.geoip.url";
   Services.prefs.setCharPref(geoPref, "");
   registerCleanupFunction(() => Services.prefs.clearUserPref(geoPref));
@@ -609,34 +606,3 @@ add_task(async function ensure_search_engine() {
   let engine = Services.search.getEngineByName("MozSearch");
   await Services.search.setDefault(engine);
 });
-
-/**
- * Add a adaptive result for a given (url, string) tuple.
- * @param {string} aUrl
- *        The url to add an adaptive result for.
- * @param {string} aSearch
- *        The string to add an adaptive result for.
- * @resolves When the operation is complete.
- */
-function addAdaptiveFeedback(aUrl, aSearch) {
-  let promise = TestUtils.topicObserved("places-autocomplete-feedback-updated");
-  let thing = {
-    QueryInterface: ChromeUtils.generateQI([
-      Ci.nsIAutoCompleteInput,
-      Ci.nsIAutoCompletePopup,
-      Ci.nsIAutoCompleteController,
-    ]),
-    get popup() {
-      return thing;
-    },
-    get controller() {
-      return thing;
-    },
-    popupOpen: true,
-    selectedIndex: 0,
-    getValueAt: () => aUrl,
-    searchString: aSearch,
-  };
-  Services.obs.notifyObservers(thing, "autocomplete-will-enter-text");
-  return promise;
-}

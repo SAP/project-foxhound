@@ -12,13 +12,13 @@
 
 // Interfaces
 #include "nsDeviceContext.h"
-#include "nsIPrintProgressParams.h"
 #include "nsIPrintSettings.h"
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
 #include "nsCOMArray.h"
 
 class nsPrintObject;
+class nsIPrintProgressParams;
 class nsIWebProgressListener;
 
 namespace mozilla {
@@ -79,8 +79,6 @@ class nsPrintData {
 
   nsCOMPtr<nsIPrintSettings> mPrintSettings;
   RefPtr<PrintPreviewUserEventSuppressor> mPPEventSuppressor;
-
-  nsString mBrandName;  //  needed as a substitute name for a document
 
  private:
   nsPrintData() = delete;

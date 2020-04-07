@@ -18,33 +18,24 @@ const {
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 
-const Button = createFactory(require("./Button").Button);
-const LearnMoreLink = createFactory(require("./LearnMoreLink"));
-const { enable, updateCanBeEnabled } = require("../actions/ui");
+const Button = createFactory(
+  require("devtools/client/accessibility/components/Button").Button
+);
+const LearnMoreLink = createFactory(
+  require("devtools/client/accessibility/components/LearnMoreLink")
+);
+const {
+  enable,
+  updateCanBeEnabled,
+} = require("devtools/client/accessibility/actions/ui");
 
 // Localization
-const { L10N } = require("../utils/l10n");
+const { L10N } = require("devtools/client/accessibility/utils/l10n");
 
 const {
   A11Y_LEARN_MORE_LINK,
   A11Y_SERVICE_ENABLED_COUNT,
-} = require("../constants");
-
-class OldVersionDescription extends Component {
-  render() {
-    return div(
-      { className: "description" },
-      p(
-        { className: "general" },
-        img({
-          src: "chrome://devtools/skin/images/accessibility.svg",
-          alt: L10N.getStr("accessibility.logo"),
-        }),
-        L10N.getStr("accessibility.description.oldVersion")
-      )
-    );
-  }
-}
+} = require("devtools/client/accessibility/constants");
 
 /**
  * Landing UI for the accessibility panel when Accessibility features are
@@ -53,9 +44,11 @@ class OldVersionDescription extends Component {
 class Description extends Component {
   static get propTypes() {
     return {
-      accessibility: PropTypes.object.isRequired,
       canBeEnabled: PropTypes.bool,
       dispatch: PropTypes.func.isRequired,
+      enableAccessibility: PropTypes.func.isRequired,
+      startListeningForLifecycleEvents: PropTypes.func.isRequired,
+      stopListeningForLifecycleEvents: PropTypes.func.isRequired,
     };
   }
 
@@ -71,28 +64,26 @@ class Description extends Component {
   }
 
   componentWillMount() {
-    this.props.accessibility.on(
-      "can-be-enabled-change",
-      this.onCanBeEnabledChange
-    );
+    this.props.startListeningForLifecycleEvents({
+      "can-be-enabled-change": this.onCanBeEnabledChange,
+    });
   }
 
   componentWillUnmount() {
-    this.props.accessibility.off(
-      "can-be-enabled-change",
-      this.onCanBeEnabledChange
-    );
+    this.props.stopListeningForLifecycleEvents({
+      "can-be-enabled-change": this.onCanBeEnabledChange,
+    });
   }
 
   onEnable() {
-    const { accessibility, dispatch } = this.props;
+    const { enableAccessibility, dispatch } = this.props;
     this.setState({ enabling: true });
 
     if (gTelemetry) {
       gTelemetry.scalarAdd(A11Y_SERVICE_ENABLED_COUNT, 1);
     }
 
-    dispatch(enable(accessibility))
+    dispatch(enable(enableAccessibility))
       .then(() => this.setState({ enabling: false }))
       .catch(() => this.setState({ enabling: false }));
   }
@@ -160,4 +151,3 @@ const mapStateToProps = ({ ui }) => ({
 
 // Exports from this module
 exports.Description = connect(mapStateToProps)(Description);
-exports.OldVersionDescription = OldVersionDescription;

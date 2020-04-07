@@ -9,7 +9,7 @@ loadHelperScript("helper_color_data.js");
 
 add_task(async function() {
   await addTab("about:blank");
-  const [host, , doc] = await createHost("bottom");
+  const { host, doc } = await createHost("bottom");
 
   info("Creating a test canvas element to test colors");
   const canvas = createTestCanvas(doc);
@@ -104,7 +104,9 @@ function testColorMatch(name, hex, hsl, rgb, rgba, canvas) {
     ok(!rgbFail, "color " + rgba + " matches target. Type: " + type);
     if (rgbFail) {
       info(
-        `target: ${target.toSource()}, color: [r: ${r}, g: ${g}, b: ${b}, a: ${a}]`
+        `target: ${JSON.stringify(
+          target
+        )}, color: [r: ${r}, g: ${g}, b: ${b}, a: ${a}]`
       );
     }
 

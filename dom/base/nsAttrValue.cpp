@@ -20,6 +20,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoUtils.h"
+#include "mozilla/ShadowParts.h"
 #include "mozilla/DeclarationBlock.h"
 #include "nsContentUtils.h"
 #include "nsReadableUtils.h"
@@ -27,6 +28,7 @@
 #include "nsStyledElement.h"
 #include "nsIURI.h"
 #include "mozilla/dom/Document.h"
+#include "ReferrerInfo.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -38,7 +40,7 @@ using namespace mozilla;
 MiscContainer* nsAttrValue::AllocMiscContainer() {
   MOZ_ASSERT(NS_IsMainThread());
   MiscContainer* cont = nullptr;
-  Swap(cont, sMiscContainerCache);
+  std::swap(cont, sMiscContainerCache);
 
   if (cont) {
     return new (cont) MiscContainer;
@@ -169,10 +171,9 @@ nsAttrValue::nsAttrValue(const nsIntMargin& aValue) : mBits(0) {
 nsAttrValue::~nsAttrValue() { ResetIfSet(); }
 
 /* static */
-nsresult nsAttrValue::Init() {
-  NS_ASSERTION(!sEnumTableArray, "nsAttrValue already initialized");
+void nsAttrValue::Init() {
+  MOZ_ASSERT(!sEnumTableArray, "nsAttrValue already initialized");
   sEnumTableArray = new nsTArray<const EnumTable*>;
-  return NS_OK;
 }
 
 /* static */
@@ -280,6 +281,7 @@ void nsAttrValue::SetTo(const nsAttrValue& aOther) {
       cont->mValue.mColor = otherCont->mValue.mColor;
       break;
     }
+    case eShadowParts:
     case eCSSDeclaration: {
       MOZ_CRASH("These should be refcounted!");
     }
@@ -300,9 +302,10 @@ void nsAttrValue::SetTo(const nsAttrValue& aOther) {
       break;
     }
     case eIntMarginValue: {
-      if (otherCont->mValue.mIntMargin)
+      if (otherCont->mValue.mIntMargin) {
         cont->mValue.mIntMargin =
             new nsIntMargin(*otherCont->mValue.mIntMargin);
+      }
       break;
     }
     default: {
@@ -1154,12 +1157,23 @@ void nsAttrValue::ParseAtomArray(const nsAString& aValue) {
 void nsAttrValue::ParseStringOrAtom(const nsAString& aValue) {
   uint32_t len = aValue.Length();
   // Don't bother with atoms if it's an empty string since
-  // we can store those efficently anyway.
+  // we can store those efficiently anyway.
   if (len && len <= NS_ATTRVALUE_MAX_STRINGLENGTH_ATOM) {
     ParseAtom(aValue);
   } else {
     SetTo(aValue);
   }
+}
+
+void nsAttrValue::ParsePartMapping(const nsAString& aValue) {
+  ResetIfSet();
+  MiscContainer* cont = EnsureEmptyMiscContainer();
+
+  cont->mType = eShadowParts;
+  cont->mValue.mShadowParts = new ShadowParts(ShadowParts::Parse(aValue));
+  NS_ADDREF(cont);
+  SetMiscAtomOrString(&aValue);
+  MOZ_ASSERT(cont->mValue.mRefCount == 1);
 }
 
 void nsAttrValue::SetIntValueAndType(int32_t aValue, ValueType aType,
@@ -1624,7 +1638,7 @@ bool nsAttrValue::ParseStyleAttribute(const nsAString& aString,
   }
 
   nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      ReferrerInfo::CreateForInternalCSSResources(ownerDoc);
+      dom::ReferrerInfo::CreateForInternalCSSResources(ownerDoc);
   RefPtr<URLExtraData> data =
       new URLExtraData(baseURI, referrerInfo, principal);
   RefPtr<DeclarationBlock> decl = DeclarationBlock::FromCssText(
@@ -1737,6 +1751,12 @@ MiscContainer* nsAttrValue::ClearMiscContainer() {
           cont->Release();
           cont->Evict();
           NS_RELEASE(cont->mValue.mCSSDeclaration);
+          break;
+        }
+        case eShadowParts: {
+          MOZ_ASSERT(cont->mValue.mRefCount == 1);
+          cont->Release();
+          delete cont->mValue.mShadowParts;
           break;
         }
         case eURL: {

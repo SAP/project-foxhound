@@ -111,18 +111,25 @@ JSWindowActorProtocol::FromWebIDLOptions(const nsAString& aName,
     proto->mRemoteTypes = aOptions.mRemoteTypes.Value();
   }
 
-  if (aOptions.mParent.mModuleURI.WasPassed()) {
-    proto->mParent.mModuleURI.emplace(aOptions.mParent.mModuleURI.Value());
+  if (aOptions.mParent.WasPassed()) {
+    proto->mParent.mModuleURI.emplace(aOptions.mParent.Value().mModuleURI);
+  }
+  if (aOptions.mChild.WasPassed()) {
+    proto->mChild.mModuleURI.emplace(aOptions.mChild.Value().mModuleURI);
   }
 
-  if (aOptions.mChild.mModuleURI.WasPassed()) {
-    proto->mChild.mModuleURI.emplace(aOptions.mChild.mModuleURI.Value());
+  if (!aOptions.mChild.WasPassed() && !aOptions.mParent.WasPassed()) {
+    aRv.ThrowNotSupportedError(
+        "No point registering an actor with neither child nor parent "
+        "specifications.");
+    return nullptr;
   }
 
   // For each event declared in the source dictionary, initialize the
-  // corresponding envent declaration entry in the JSWindowActorProtocol.
-  if (aOptions.mChild.mEvents.WasPassed()) {
-    auto& entries = aOptions.mChild.mEvents.Value().Entries();
+  // corresponding event declaration entry in the JSWindowActorProtocol.
+  if (aOptions.mChild.WasPassed() &&
+      aOptions.mChild.Value().mEvents.WasPassed()) {
+    auto& entries = aOptions.mChild.Value().mEvents.Value().Entries();
     proto->mChild.mEvents.SetCapacity(entries.Length());
 
     for (auto& entry : entries) {
@@ -148,8 +155,9 @@ JSWindowActorProtocol::FromWebIDLOptions(const nsAString& aName,
     }
   }
 
-  if (aOptions.mChild.mObservers.WasPassed()) {
-    proto->mChild.mObservers = aOptions.mChild.mObservers.Value();
+  if (aOptions.mChild.WasPassed() &&
+      aOptions.mChild.Value().mObservers.WasPassed()) {
+    proto->mChild.mObservers = aOptions.mChild.Value().mObservers.Value();
   }
 
   return proto.forget();
@@ -160,6 +168,8 @@ JSWindowActorProtocol::FromWebIDLOptions(const nsAString& aName,
  * This will work in both content and parent processes.
  */
 NS_IMETHODIMP JSWindowActorProtocol::HandleEvent(Event* aEvent) {
+  MOZ_ASSERT(nsContentUtils::IsSafeToRunScript());
+
   // Determine which inner window we're associated with, and get its
   // WindowGlobalChild actor.
   EventTarget* target = aEvent->GetOriginalTarget();
@@ -203,6 +213,8 @@ NS_IMETHODIMP JSWindowActorProtocol::HandleEvent(Event* aEvent) {
 NS_IMETHODIMP JSWindowActorProtocol::Observe(nsISupports* aSubject,
                                              const char* aTopic,
                                              const char16_t* aData) {
+  MOZ_ASSERT(nsContentUtils::IsSafeToRunScript());
+
   nsCOMPtr<nsPIDOMWindowInner> inner = do_QueryInterface(aSubject);
   RefPtr<WindowGlobalChild> wgc;
 
@@ -368,7 +380,9 @@ void JSWindowActorService::RegisterWindowActor(
 
   auto entry = mDescriptors.LookupForAdd(aName);
   if (entry) {
-    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    aRv.ThrowNotSupportedError(
+        nsPrintfCString("'%s' actor is already registered.",
+                        NS_ConvertUTF16toUTF8(aName).get()));
     return;
   }
 
@@ -376,6 +390,7 @@ void JSWindowActorService::RegisterWindowActor(
   RefPtr<JSWindowActorProtocol> proto =
       JSWindowActorProtocol::FromWebIDLOptions(aName, aOptions, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
+    entry.OrRemove();
     return;
   }
 
@@ -429,7 +444,7 @@ void JSWindowActorService::LoadJSWindowActorInfos(
     // Create our JSWindowActorProtocol, register it in mDescriptors.
     RefPtr<JSWindowActorProtocol> proto =
         JSWindowActorProtocol::FromIPC(aInfos[i]);
-    mDescriptors.Put(aInfos[i].name(), proto);
+    mDescriptors.Put(aInfos[i].name(), RefPtr{proto});
 
     // Register listeners for each chrome target.
     for (EventTarget* target : mChromeEventTargets) {

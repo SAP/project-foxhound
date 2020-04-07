@@ -13,6 +13,7 @@
 #include "mozilla/Maybe.h"
 
 #include "gc/Zone.h"
+#include "vm/Runtime.h"
 
 #include "gc/ArenaList-inl.h"
 
@@ -108,7 +109,9 @@ class ArenaCellIter {
         arenaAddr(nullptr),
         thing(0),
         traceKind(JS::TraceKind::Null),
-        initialized(false) {}
+        initialized(false) {
+    span.initAsEmpty();
+  }
 
   explicit ArenaCellIter(Arena* arena) : initialized(false) { init(arena); }
 

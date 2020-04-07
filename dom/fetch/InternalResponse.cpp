@@ -15,7 +15,6 @@
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/RandomNum.h"
 #include "nsIRandomGenerator.h"
-#include "nsIURI.h"
 #include "nsStreamUtils.h"
 
 namespace mozilla {
@@ -95,7 +94,7 @@ InternalResponse::InternalResponse(uint16_t aStatus,
   return response;
 }
 
-InternalResponse::~InternalResponse() {}
+InternalResponse::~InternalResponse() = default;
 
 template void InternalResponse::ToIPC<mozilla::ipc::PBackgroundChild>(
     IPCInternalResponse* aIPCResponse, mozilla::ipc::PBackgroundChild* aManager,

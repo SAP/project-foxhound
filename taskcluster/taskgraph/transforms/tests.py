@@ -21,10 +21,19 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import copy
 import logging
-import os
+from six import text_type
+
+from mozbuild.schedules import INCLUSIVE_COMPONENTS
+from moztest.resolve import TEST_SUITES
+from voluptuous import (
+    Any,
+    Optional,
+    Required,
+    Exclusive,
+)
 
 from taskgraph.transforms.base import TransformSequence
-from taskgraph.util.attributes import match_run_on_projects
+from taskgraph.util.attributes import match_run_on_projects, keymatch
 from taskgraph.util.keyed_by import evaluate_keyed_by
 from taskgraph.util.schema import resolve_keyed_by, OptimizationSchema
 from taskgraph.util.templates import merge
@@ -34,22 +43,16 @@ from taskgraph.util.schema import (
     optionally_keyed_by,
     Schema,
 )
+from taskgraph.util.chunking import (
+    get_chunked_manifests,
+    guess_mozinfo_from_task,
+)
 from taskgraph.util.taskcluster import (
     get_artifact_path,
     get_index_url,
 )
-from mozbuild.schedules import INCLUSIVE_COMPONENTS
-
 from taskgraph.util.perfile import perfile_number_of_chunks
 
-from voluptuous import (
-    Any,
-    Optional,
-    Required,
-    Exclusive,
-)
-
-here = os.path.abspath(os.path.dirname(__file__))
 
 # default worker types keyed by instance-size
 LINUX_WORKER_TYPES = {
@@ -158,28 +161,14 @@ TEST_VARIANTS = {
         'suffix': 'fis',
         'replace': {
             'e10s': True,
-            'run-on-projects': ['ash', 'try'],
         },
         'merge': {
-            'tier': 2,
+            # Ensures the default state is to not run anywhere.
+            'fission-run-on-projects': [],
             'mozharness': {
-                'extra-options': ['--setpref="fission.autostart=true"',
-                                  '--setpref="dom.serviceWorkers.parent_intercept=true"',
-                                  '--setpref="browser.tabs.documentchannel=true"'],
-            },
-        },
-    },
-    'serviceworker': {
-        'description': "{description} with serviceworker-e10s redesign enabled",
-        'filterfn': runs_on_central,
-        'suffix': 'sw',
-        'replace': {
-            'run-on-projects': ['mozilla-central'],
-        },
-        'merge': {
-            'tier': 2,
-            'mozharness': {
-                'extra-options': ['--setpref="dom.serviceWorkers.parent_intercept=true"'],
+                'extra-options': ['--setpref=fission.autostart=true',
+                                  '--setpref=dom.serviceWorkers.parent_intercept=true',
+                                  '--setpref=browser.tabs.documentchannel=true'],
             },
         },
     },
@@ -213,42 +202,42 @@ transforms = TransformSequence()
 # *****WARNING*****
 test_description_schema = Schema({
     # description of the suite, for the task metadata
-    'description': basestring,
+    'description': text_type,
 
     # test suite category and name
     Optional('suite'): Any(
-        basestring,
-        {Optional('category'): basestring, Optional('name'): basestring},
+        text_type,
+        {Optional('category'): text_type, Optional('name'): text_type},
     ),
 
     # base work directory used to set up the task.
     Optional('workdir'): optionally_keyed_by(
         'test-platform',
-        Any(basestring, 'default')),
+        Any(text_type, 'default')),
 
     # the name by which this test suite is addressed in try syntax; defaults to
     # the test-name.  This will translate to the `unittest_try_name` or
     # `talos_try_name` attribute.
-    Optional('try-name'): basestring,
+    Optional('try-name'): text_type,
 
     # additional tags to mark up this type of test
-    Optional('tags'): {basestring: object},
+    Optional('tags'): {text_type: object},
 
     # the symbol, or group(symbol), under which this task should appear in
     # treeherder.
-    'treeherder-symbol': basestring,
+    'treeherder-symbol': text_type,
 
     # the value to place in task.extra.treeherder.machine.platform; ideally
     # this is the same as build-platform, and that is the default, but in
     # practice it's not always a match.
-    Optional('treeherder-machine-platform'): basestring,
+    Optional('treeherder-machine-platform'): text_type,
 
     # attributes to appear in the resulting task (later transforms will add the
     # common attributes)
-    Optional('attributes'): {basestring: object},
+    Optional('attributes'): {text_type: object},
 
     # relative path (from config.path) to the file task was defined in
-    Optional('job-from'): basestring,
+    Optional('job-from'): text_type,
 
     # The `run_on_projects` attribute, defaulting to "all".  This dictates the
     # projects on which this task should be included in the target task set.
@@ -259,10 +248,23 @@ test_description_schema = Schema({
     # that are built.
     Optional('run-on-projects'): optionally_keyed_by(
         'test-platform',
-        Any([basestring], 'built-projects')),
+        Any([text_type], 'built-projects')),
+
+    # Same as `run-on-projects` except it only applies to Fission tasks. Fission
+    # tasks will ignore `run_on_projects` and non-Fission tasks will ignore
+    # `fission-run-on-projects`.
+    Optional('fission-run-on-projects'): optionally_keyed_by(
+        'test-platform',
+        Any([text_type], 'built-projects')),
 
     # the sheriffing tier for this task (default: set based on test platform)
     Optional('tier'): optionally_keyed_by(
+        'test-platform',
+        Any(int, 'default')),
+
+    # Same as `tier` except it only applies to Fission tasks. Fission tasks
+    # will ignore `tier` and non-Fission tasks will ignore `fission-tier`.
+    Optional('fission-tier'): optionally_keyed_by(
         'test-platform',
         Any(int, 'default')),
 
@@ -275,13 +277,13 @@ test_description_schema = Schema({
 
     # the time (with unit) after which this task is deleted; default depends on
     # the branch (see below)
-    Optional('expires-after'): basestring,
+    Optional('expires-after'): text_type,
 
     # The different configurations that should be run against this task, defined
     # in the TEST_VARIANTS object.
     Optional('variants'): optionally_keyed_by(
         'test-platform', 'project',
-        Any(TEST_VARIANTS.keys())),
+        Any(list(TEST_VARIANTS))),
 
     # Whether to run this task with e10s.  If false, run
     # without e10s; if true, run with e10s; if 'both', run one task with and
@@ -323,11 +325,11 @@ test_description_schema = Schema({
         'test-platform',
         Any(
             # a raw Docker image path (repo/image:tag)
-            basestring,
+            text_type,
             # an in-tree generated docker image (from `taskcluster/docker/<name>`)
-            {'in-tree': basestring},
+            {'in-tree': text_type},
             # an indexed docker image
-            {'indexed': basestring},
+            {'indexed': text_type},
         )
     ),
 
@@ -352,29 +354,29 @@ test_description_schema = Schema({
         # the mozharness script used to run this task
         Required('script'): optionally_keyed_by(
             'test-platform',
-            basestring),
+            text_type),
 
         # the config files required for the task
         Required('config'): optionally_keyed_by(
             'test-platform',
-            [basestring]),
+            [text_type]),
 
         # mochitest flavor for mochitest runs
-        Optional('mochitest-flavor'): basestring,
+        Optional('mochitest-flavor'): text_type,
 
         # any additional actions to pass to the mozharness command
-        Optional('actions'): [basestring],
+        Optional('actions'): [text_type],
 
         # additional command-line options for mozharness, beyond those
         # automatically added
         Required('extra-options'): optionally_keyed_by(
             'test-platform',
-            [basestring]),
+            [text_type]),
 
         # the artifact name (including path) to test on the build task; this is
         # generally set in a per-kind transformation
-        Optional('build-artifact-name'): basestring,
-        Optional('installer-url'): basestring,
+        Optional('build-artifact-name'): text_type,
+        Optional('installer-url'): text_type,
 
         # If not false, tooltool downloads will be enabled via relengAPIProxy
         # for either just public files, or all files.  Not supported on Windows
@@ -408,14 +410,17 @@ test_description_schema = Schema({
             bool),
     },
 
-    # The current chunk; this is filled in by `all_kinds.py`
+    # The set of test manifests to run.
+    Optional('test-manifests'): [text_type],
+
+    # The current chunk (if chunking is enabled).
     Optional('this-chunk'): int,
 
     # os user groups for test task workers; required scopes, will be
     # added automatically
     Optional('os-groups'): optionally_keyed_by(
         'test-platform',
-        [basestring]),
+        [text_type]),
 
     Optional('run-as-administrator'): optionally_keyed_by(
         'test-platform',
@@ -424,30 +429,37 @@ test_description_schema = Schema({
     # -- values supplied by the task-generation infrastructure
 
     # the platform of the build this task is testing
-    'build-platform': basestring,
+    'build-platform': text_type,
 
     # the label of the build task generating the materials to test
-    'build-label': basestring,
+    'build-label': text_type,
 
     # the label of the signing task generating the materials to test.
     # Signed builds are used in xpcshell tests on Windows, for instance.
-    Optional('build-signing-label'): basestring,
+    Optional('build-signing-label'): text_type,
 
     # the build's attributes
-    'build-attributes': {basestring: object},
+    'build-attributes': {text_type: object},
 
     # the platform on which the tests will run
-    'test-platform': basestring,
+    'test-platform': text_type,
+
+    # limit the test-platforms (as defined in test-platforms.yml)
+    # that the test will run on
+    Optional('limit-platforms'): optionally_keyed_by(
+        'app',
+        [text_type]
+    ),
 
     # the name of the test (the key in tests.yml)
-    'test-name': basestring,
+    'test-name': text_type,
 
     # the product name, defaults to firefox
-    Optional('product'): basestring,
+    Optional('product'): text_type,
 
     # conditional files to determine when these tests should be run
     Exclusive(Optional('when'), 'optimization'): {
-        Optional('files-changed'): [basestring],
+        Optional('files-changed'): [text_type],
     },
 
     # Optimization to perform on this task during the optimization phase.
@@ -456,11 +468,11 @@ test_description_schema = Schema({
 
     # The SCHEDULES component for this task; this defaults to the suite
     # (not including the flavor) but can be overridden here.
-    Exclusive(Optional('schedules-component'), 'optimization'): basestring,
+    Exclusive(Optional('schedules-component'), 'optimization'): text_type,
 
     Optional('worker-type'): optionally_keyed_by(
         'test-platform',
-        Any(basestring, None),
+        Any(text_type, None),
     ),
 
     Optional(
@@ -474,12 +486,12 @@ test_description_schema = Schema({
     # or target.zip (Windows).
     Optional('target'): optionally_keyed_by(
         'test-platform',
-        Any(basestring, None, {'index': basestring, 'name': basestring}),
+        Any(text_type, None, {'index': text_type, 'name': text_type}),
     ),
 
     # A list of artifacts to install from 'fetch' tasks.
     Optional('fetches'): {
-        basestring: optionally_keyed_by('test-platform', [basestring])
+        text_type: optionally_keyed_by('test-platform', [text_type])
     },
 }, required=True)
 
@@ -513,9 +525,7 @@ def set_defaults(config, tests):
             # loopback-video is always true for Android, but false for other
             # platform phyla
             test['loopback-video'] = True
-        else:
-            # all non-android tests want to run the bits that require node
-            test['mozharness']['set-moz-node-path'] = True
+        test['mozharness']['set-moz-node-path'] = True
 
         # software-gl-layers is only meaningful on linux unittests, where it defaults to True
         if test['test-platform'].startswith('linux') and test['suite'] not in ['talos', 'raptor']:
@@ -544,8 +554,11 @@ def set_defaults(config, tests):
         test.setdefault('virtualization', 'virtual')
         test.setdefault('loopback-audio', False)
         test.setdefault('loopback-video', False)
-        if config.params['try_task_config'].get('debian-tests'):
-            test.setdefault('docker-image', {'in-tree': 'debian10-test'})
+        test.setdefault('limit-platforms', [])
+        # Bug 1602863 - temporarily in place while ubuntu1604 and ubuntu1804
+        # both exist in the CI.
+        if ('linux1804' in test['test-platform']):
+            test.setdefault('docker-image', {'in-tree': 'ubuntu1804-test'})
         else:
             test.setdefault('docker-image', {'in-tree': 'desktop1604-test'})
         test.setdefault('checkout', False)
@@ -587,6 +600,18 @@ def setup_raptor(config, tests):
             yield t
 
 
+@transforms.add
+def limit_platforms(config, tests):
+    for test in tests:
+        if not test['limit-platforms']:
+            yield test
+            continue
+
+        limited_platforms = {key: key for key in test['limit-platforms']}
+        if keymatch(limited_platforms, test['test-platform']):
+            yield test
+
+
 transforms.add_validate(test_description_schema)
 
 
@@ -595,7 +620,7 @@ def handle_suite_category(config, tests):
     for test in tests:
         test.setdefault('suite', {})
 
-        if isinstance(test['suite'], basestring):
+        if isinstance(test['suite'], text_type):
             test['suite'] = {'name': test['suite']}
 
         suite = test['suite'].setdefault('name', test['test-name'])
@@ -712,7 +737,6 @@ def set_treeherder_machine_platform(config, tests):
     translation = {
         # Linux64 build platforms for asan and pgo are specified differently to
         # treeherder.
-        'linux64-asan/opt': 'linux64/asan',
         'linux64-pgo/opt': 'linux64/pgo',
         'macosx1014-64/debug': 'osx-10-14/debug',
         'macosx1014-64/opt': 'osx-10-14/opt',
@@ -733,6 +757,9 @@ def set_treeherder_machine_platform(config, tests):
         if 'android' in test['test-platform'] and 'pgo/opt' in test['test-platform']:
             platform_new = test['test-platform'].replace('-pgo/opt', '/pgo')
             test['treeherder-machine-platform'] = platform_new
+        elif 'android-em-7.0-x86_64-qr' in test['test-platform']:
+            opt = test['test-platform'].split('/')[1]
+            test['treeherder-machine-platform'] = 'android-em-7-0-x86_64-qr/'+opt
         elif '-qr' in test['test-platform']:
             test['treeherder-machine-platform'] = test['test-platform']
         elif 'android-hw' in test['test-platform']:
@@ -743,6 +770,13 @@ def set_treeherder_machine_platform(config, tests):
         elif 'android-em-7.0-x86' in test['test-platform']:
             opt = test['test-platform'].split('/')[1]
             test['treeherder-machine-platform'] = 'android-em-7-0-x86/'+opt
+        # Bug 1602863 - must separately define linux64/asan and linux1804-64/asan
+        # otherwise causes an exception during taskgraph generation about
+        # duplicate treeherder platform/symbol.
+        elif 'linux64-asan/opt' in test['test-platform']:
+            test['treeherder-machine-platform'] = 'linux64/asan'
+        elif 'linux1804-asan/opt' in test['test-platform']:
+            test['treeherder-machine-platform'] = 'linux1804-64/asan'
         else:
             test['treeherder-machine-platform'] = translation.get(
                 test['build-platform'], test['test-platform'])
@@ -757,53 +791,64 @@ def set_tier(config, tests):
         if 'tier' in test:
             resolve_keyed_by(test, 'tier', item_name=test['test-name'])
 
+        if 'fission-tier' in test:
+            resolve_keyed_by(test, 'fission-tier', item_name=test['test-name'])
+
         # only override if not set for the test
         if 'tier' not in test or test['tier'] == 'default':
-            if test['test-platform'] in ['linux32/opt',
-                                         'linux32/debug',
-                                         'linux32-nightly/opt',
-                                         'linux32-devedition/opt',
-                                         'linux32-shippable/opt',
-                                         'linux64/opt',
-                                         'linux64-nightly/opt',
-                                         'linux64/debug',
-                                         'linux64-pgo/opt',
-                                         'linux64-shippable/opt',
-                                         'linux64-devedition/opt',
-                                         'linux64-asan/opt',
-                                         'linux64-qr/opt',
-                                         'linux64-qr/debug',
-                                         'linux64-pgo-qr/opt',
-                                         'linux64-shippable-qr/opt',
-                                         'windows7-32/debug',
-                                         'windows7-32/opt',
-                                         'windows7-32-pgo/opt',
-                                         'windows7-32-devedition/opt',
-                                         'windows7-32-nightly/opt',
-                                         'windows7-32-shippable/opt',
-                                         'windows10-aarch64/opt',
-                                         'windows10-64/debug',
-                                         'windows10-64/opt',
-                                         'windows10-64-pgo/opt',
-                                         'windows10-64-shippable/opt',
-                                         'windows10-64-devedition/opt',
-                                         'windows10-64-nightly/opt',
-                                         'windows10-64-asan/opt',
-                                         'windows10-64-qr/opt',
-                                         'windows10-64-qr/debug',
-                                         'windows10-64-pgo-qr/opt',
-                                         'windows10-64-shippable-qr/opt',
-                                         'macosx1014-64/opt',
-                                         'macosx1014-64/debug',
-                                         'macosx1014-64-nightly/opt',
-                                         'macosx1014-64-shippable/opt',
-                                         'macosx1014-64-devedition/opt',
-                                         'macosx1014-64-qr/opt',
-                                         'macosx1014-64-shippable-qr/opt',
-                                         'macosx1014-64-qr/debug',
-                                         'android-em-7.0-x86_64/opt',
-                                         'android-em-7.0-x86_64/debug',
-                                         'android-em-7.0-x86/opt']:
+            if test['test-platform'] in [
+                'linux64/opt',
+                'linux64-nightly/opt',
+                'linux64/debug',
+                'linux64-pgo/opt',
+                'linux64-shippable/opt',
+                'linux64-devedition/opt',
+                'linux64-asan/opt',
+                'linux64-tsan/opt',
+                'linux64-qr/opt',
+                'linux64-qr/debug',
+                'linux64-pgo-qr/opt',
+                'linux64-shippable-qr/opt',
+                'linux1804-64/opt',
+                'linux1804-64/debug',
+                'linux1804-64-shippable/opt',
+                'linux1804-64-qr/opt',
+                'linux1804-64-qr/debug',
+                'linux1804-64-shippable-qr/opt',
+                'linux1804-64-asan/opt',
+                'linux1804-64-tsan/opt',
+                'windows7-32/debug',
+                'windows7-32/opt',
+                'windows7-32-pgo/opt',
+                'windows7-32-devedition/opt',
+                'windows7-32-nightly/opt',
+                'windows7-32-shippable/opt',
+                'windows10-aarch64/opt',
+                'windows10-64/debug',
+                'windows10-64/opt',
+                'windows10-64-pgo/opt',
+                'windows10-64-shippable/opt',
+                'windows10-64-devedition/opt',
+                'windows10-64-nightly/opt',
+                'windows10-64-asan/opt',
+                'windows10-64-qr/opt',
+                'windows10-64-qr/debug',
+                'windows10-64-pgo-qr/opt',
+                'windows10-64-shippable-qr/opt',
+                'macosx1014-64/opt',
+                'macosx1014-64/debug',
+                'macosx1014-64-nightly/opt',
+                'macosx1014-64-shippable/opt',
+                'macosx1014-64-devedition/opt',
+                'macosx1014-64-qr/opt',
+                'macosx1014-64-shippable-qr/opt',
+                'macosx1014-64-qr/debug',
+                'android-em-7.0-x86_64/opt',
+                'android-em-7.0-x86_64/debug',
+                'android-em-7.0-x86/opt',
+                'android-em-7.0-x86_64-qr/opt',
+                'android-em-7.0-x86_64-qr/debug'
+            ]:
                 test['tier'] = 1
             else:
                 test['tier'] = 2
@@ -853,6 +898,7 @@ def handle_keyed_by(config, tests):
         'e10s',
         'suite',
         'run-on-projects',
+        'fission-run-on-projects',
         'os-groups',
         'run-as-administrator',
         'workdir',
@@ -908,13 +954,56 @@ def setup_browsertime(config, tests):
         fs = {
             'by-test-platform': {
                 'android.*': ['linux64-chromedriver', 'linux64-ffmpeg-4.1.4'],
-                'linux.*': ['linux64-chromedriver', 'linux64-ffmpeg-4.1.4'],
-                'macosx.*': ['mac64-chromedriver', 'mac64-ffmpeg-4.1.1'],
-                'windows.*aarch64.*': ['win32-chromedriver', 'win64-ffmpeg-4.1.1'],
-                'windows.*-32.*': ['win32-chromedriver', 'win64-ffmpeg-4.1.1'],
-                'windows.*-64.*': ['win32-chromedriver', 'win64-ffmpeg-4.1.1'],
+                'linux.*': [
+                    'linux64-ffmpeg-4.1.4'
+                ],
+                'macosx.*': [
+                    'mac64-ffmpeg-4.1.1'
+                ],
+                'windows.*aarch64.*': [
+                    'win64-ffmpeg-4.1.1'
+                ],
+                'windows.*-32.*': [
+                    'win64-ffmpeg-4.1.1'
+                ],
+                'windows.*-64.*': [
+                    'win64-ffmpeg-4.1.1'
+                ],
             },
         }
+
+        cd_fetches = {
+            'linux.*': [
+                'linux64-chromedriver-78',
+                'linux64-chromedriver-79',
+                'linux64-chromedriver-80'
+            ],
+            'macosx.*': [
+                'mac64-chromedriver-78',
+                'mac64-chromedriver-79',
+                'mac64-chromedriver-80'
+            ],
+            'windows.*aarch64.*': [
+                'win32-chromedriver-78',
+                'win32-chromedriver-79',
+                'win32-chromedriver-80'
+            ],
+            'windows.*-32.*': [
+                'win32-chromedriver-78',
+                'win32-chromedriver-79',
+                'win32-chromedriver-80'
+            ],
+            'windows.*-64.*': [
+                'win32-chromedriver-78',
+                'win32-chromedriver-79',
+                'win32-chromedriver-80'
+            ],
+        }
+
+        if '--app=chrome' in extra_options or '--app=chromium' in extra_options:
+            # Only add the chromedriver fetches when chrome/chromium is running
+            for platform in cd_fetches:
+                fs['by-test-platform'][platform].extend(cd_fetches[platform])
 
         test.setdefault('fetches', {}).setdefault('fetch', []).extend(
             evaluate_keyed_by(fs, 'fetches.fetch', test))
@@ -930,7 +1019,7 @@ def setup_browsertime(config, tests):
                  '--browsertime-geckodriver',
                  '$MOZ_FETCHES_DIR/geckodriver.exe',
                  '--browsertime-chromedriver',
-                 '$MOZ_FETCHES_DIR/chromedriver.exe',
+                 '$MOZ_FETCHES_DIR/{}chromedriver.exe',
                  '--browsertime-ffmpeg',
                  '$MOZ_FETCHES_DIR/ffmpeg-4.1.1-win64-static/bin/ffmpeg.exe',
                  ],
@@ -940,7 +1029,7 @@ def setup_browsertime(config, tests):
                  '--browsertime-geckodriver',
                  '$MOZ_FETCHES_DIR/geckodriver',
                  '--browsertime-chromedriver',
-                 '$MOZ_FETCHES_DIR/chromedriver',
+                 '$MOZ_FETCHES_DIR/{}chromedriver',
                  '--browsertime-ffmpeg',
                  '$MOZ_FETCHES_DIR/ffmpeg-4.1.1-macos64-static/bin/ffmpeg',
                  ],
@@ -950,7 +1039,7 @@ def setup_browsertime(config, tests):
                  '--browsertime-geckodriver',
                  '$MOZ_FETCHES_DIR/geckodriver',
                  '--browsertime-chromedriver',
-                 '$MOZ_FETCHES_DIR/chromedriver',
+                 '$MOZ_FETCHES_DIR/{}chromedriver',
                  '--browsertime-ffmpeg',
                  '$MOZ_FETCHES_DIR/ffmpeg-4.1.4-i686-static/ffmpeg',
                  ],
@@ -1005,10 +1094,11 @@ def enable_code_coverage(config, tests):
     """Enable code coverage for the ccov build-platforms"""
     for test in tests:
         if 'ccov' in test['build-platform']:
-            # Do not run tests on fuzzing or opt build
-            if 'opt' in test['build-platform'] or 'fuzzing' in test['build-platform']:
+            # Do not run tests on fuzzing builds
+            if 'fuzzing' in test['build-platform']:
                 test['run-on-projects'] = []
                 continue
+
             # Skip this transform for android code coverage builds.
             if 'android' in test['build-platform']:
                 test.setdefault('fetches', {}).setdefault('toolchain', []).append('linux64-grcov')
@@ -1049,7 +1139,7 @@ def enable_code_coverage(config, tests):
             if 'talos' in test['test-name']:
                 test['max-run-time'] = 7200
                 if 'linux' in test['build-platform']:
-                    test['docker-image'] = {"in-tree": "desktop1604-test"}
+                    test['docker-image'] = {"in-tree": "ubuntu1804-test"}
                 test['mozharness']['extra-options'].append('--add-option')
                 test['mozharness']['extra-options'].append('--cycles,1')
                 test['mozharness']['extra-options'].append('--add-option')
@@ -1103,45 +1193,25 @@ def split_variants(config, tests):
             testv['treeherder-symbol'] = join_symbol(group, symbol)
 
             testv.update(variant.get('replace', {}))
+
+            if test['suite'] == 'raptor':
+                testv['tier'] = max(testv['tier'], 2)
+
             yield merge(testv, variant.get('merge', {}))
 
 
 @transforms.add
-def enable_fission_on_central(config, tests):
-    """Enable select fission tasks on mozilla-central."""
+def handle_fission_attributes(config, tests):
+    """Handle run_on_projects for fission tasks."""
     for test in tests:
-        if test['attributes'].get('unittest_variant') != 'fission':
-            yield test
-            continue
+        for attr in ('run-on-projects', 'tier'):
+            fission_attr = test.pop('fission-{}'.format(attr), None)
 
-        # Mochitest/wpt only (with exceptions)
-        exceptions = ('gpu', 'remote', 'screenshots')
-        if (test['attributes']['unittest_category'] not in
-                ('mochitest', 'web-platform-tests') or
-                any(s in test['attributes']['unittest_suite'] for s in exceptions)):
-            yield test
-            continue
+            if test['attributes'].get('unittest_variant') != 'fission' or fission_attr is None:
+                continue
 
-        # Linux and Windows (except debug) 64 bit only.
-        platform = test['build-attributes']['build_platform']
-        btype = test['build-attributes']['build_type']
-        if not (platform == 'linux64' or (platform == 'win64' and btype != 'debug')):
-            yield test
-            continue
+            test[attr] = fission_attr
 
-        if not runs_on_central(test):
-            test['run-on-projects'].append('mozilla-central')
-
-        # Promote select fission tests to tier 1 and ensure they run on trunk
-        if (test['attributes']['unittest_category'] == "mochitest" and
-            platform == 'linux64' and btype == 'debug' and (test['webrender'] or
-           'mochitest-browser-chrome' in test['attributes']['unittest_suite'])):
-            test['tier'] = 1
-            test['run-on-projects'] = ['ash', 'try', 'trunk']
-        elif test['attributes']['unittest_category'] == "web-platform-tests":
-            test['tier'] = 3
-            if platform == 'linux64' and btype == 'debug' and test['webrender']:
-                test['run-on-projects'] = ['ash', 'try', 'trunk']
         yield test
 
 
@@ -1189,11 +1259,49 @@ def split_e10s(config, tests):
             yield test
 
 
+CHUNK_SUITES_BLACKLIST = (
+    'awsy',
+    'cppunittest',
+    'crashtest',
+    'firefox-ui-functional-local',
+    'firefox-ui-functional-remote',
+    'geckoview-junit',
+    'gtest',
+    'jittest',
+    'jsreftest',
+    'marionette',
+    'mochitest-browser-chrome-screenshots',
+    'mochitest-browser-chrome-thunderbird',
+    'mochitest-valgrind-plain',
+    'mochitest-webgl1-core',
+    'mochitest-webgl1-ext',
+    'mochitest-webgl2-core',
+    'mochitest-webgl2-ext',
+    'raptor',
+    'reftest',
+    'reftest-gpu',
+    'reftest-no-accel',
+    'talos',
+    'telemetry-tests-client',
+    'test-coverage',
+    'test-coverage-wpt',
+    'test-verify',
+    'test-verify-gpu',
+    'test-verify-wpt',
+    'web-platform-tests',
+    'web-platform-tests-crashtests',
+    'web-platform-tests-reftests',
+    'web-platform-tests-wdspec',
+)
+"""These suites will be chunked at test runtime rather than here in the taskgraph."""
+
+
 @transforms.add
 def split_chunks(config, tests):
     """Based on the 'chunks' key, split tests up into chunks by duplicating
     them and assigning 'this-chunk' appropriately and updating the treeherder
     symbol."""
+
     for test in tests:
         if test['suite'].startswith('test-verify') or \
            test['suite'].startswith('test-coverage'):
@@ -1213,19 +1321,36 @@ def split_chunks(config, tests):
             if test['chunks'] > maximum_number_verify_chunks:
                 test['chunks'] = maximum_number_verify_chunks
 
-        if test['chunks'] <= 1:
-            test['this-chunk'] = 1
-            yield test
-            continue
+        chunked_manifests = None
+        if test['suite'] not in CHUNK_SUITES_BLACKLIST:
+            suite_definition = TEST_SUITES[test['suite']]
+            mozinfo = guess_mozinfo_from_task(test)
+            chunked_manifests = get_chunked_manifests(
+                suite_definition['build_flavor'],
+                suite_definition.get('kwargs', {}).get('subsuite', 'undefined'),
+                test['chunks'],
+                frozenset(mozinfo.items()),
+            )
 
-        for this_chunk in range(1, test['chunks'] + 1):
+        for i in range(test['chunks']):
+            this_chunk = i + 1
+
             # copy the test and update with the chunk number
             chunked = copy.deepcopy(test)
             chunked['this-chunk'] = this_chunk
 
-            # add the chunk number to the TH symbol
-            chunked['treeherder-symbol'] = add_suffix(
-                chunked['treeherder-symbol'], this_chunk)
+            if chunked_manifests is not None:
+                manifests = sorted(chunked_manifests[i])
+                if not manifests:
+                    raise Exception(
+                        'Chunking algorithm yielded no manifests for chunk {} of {} on {}'.format(
+                            this_chunk, test['test-name'], test['test-platform']))
+                chunked['test-manifests'] = manifests
+
+            if test['chunks'] > 1:
+                # add the chunk number to the TH symbol
+                chunked['treeherder-symbol'] = add_suffix(
+                    chunked['treeherder-symbol'], this_chunk)
 
             yield chunked
 
@@ -1318,21 +1443,6 @@ def set_test_type(config, tests):
 
 
 @transforms.add
-def single_stylo_traversal_tests(config, tests):
-    """Enable single traversal for all tests on the sequential Stylo platform."""
-
-    for test in tests:
-        if not test['test-platform'].startswith('linux64-stylo-sequential/'):
-            yield test
-            continue
-
-        # Bug 1356122 - Run Stylo tests in sequential mode
-        test['mozharness'].setdefault('extra-options', [])\
-                          .append('--single-stylo-traversal')
-        yield test
-
-
-@transforms.add
 def set_worker_type(config, tests):
     """Set the worker type based on the test platform."""
     for test in tests:
@@ -1367,15 +1477,11 @@ def set_worker_type(config, tests):
         elif test_platform.startswith('android-hw-g5'):
             if test['suite'] != 'raptor':
                 test['worker-type'] = 't-bitbar-gw-unit-g5'
-            elif '--power-test' in test['mozharness']['extra-options']:
-                test['worker-type'] = 't-bitbar-gw-batt-g5'
             else:
                 test['worker-type'] = 't-bitbar-gw-perf-g5'
         elif test_platform.startswith('android-hw-p2'):
             if test['suite'] != 'raptor':
                 test['worker-type'] = 't-bitbar-gw-unit-p2'
-            elif '--power-test' in test['mozharness']['extra-options']:
-                test['worker-type'] = 't-bitbar-gw-batt-p2'
             else:
                 test['worker-type'] = 't-bitbar-gw-perf-p2'
         elif test_platform.startswith('android-em-7.0-x86'):
@@ -1425,6 +1531,7 @@ def make_job_description(config, tests):
             'build_type': attr_build_type,
             'test_platform': test['test-platform'],
             'test_chunk': str(test['this-chunk']),
+            'test_manifests': test.get('test-manifests'),
             attr_try_name: try_name,
         })
 
@@ -1445,7 +1552,7 @@ def make_job_description(config, tests):
 
         jobdesc['expires-after'] = test['expires-after']
         jobdesc['routes'] = []
-        jobdesc['run-on-projects'] = test['run-on-projects']
+        jobdesc['run-on-projects'] = sorted(test['run-on-projects'])
         jobdesc['scopes'] = []
         jobdesc['tags'] = test.get('tags', {})
         jobdesc['extra'] = {

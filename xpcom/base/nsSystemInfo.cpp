@@ -100,42 +100,59 @@ static void SimpleParseKeyValuePairs(
 }
 #endif
 
+#ifdef XP_WIN
+// Lifted from media/webrtc/trunk/webrtc/base/systeminfo.cc,
+// so keeping the _ instead of switching to camel case for now.
+static void GetProcessorInformation(int* physical_cpus, int* cache_size_L2,
+                                    int* cache_size_L3) {
+  MOZ_ASSERT(physical_cpus && cache_size_L2 && cache_size_L3);
+
+  *physical_cpus = 0;
+  *cache_size_L2 = 0;  // This will be in kbytes
+  *cache_size_L3 = 0;  // This will be in kbytes
+
+  // Determine buffer size, allocate and get processor information.
+  // Size can change between calls (unlikely), so a loop is done.
+  SYSTEM_LOGICAL_PROCESSOR_INFORMATION info_buffer[32];
+  SYSTEM_LOGICAL_PROCESSOR_INFORMATION* infos = &info_buffer[0];
+  DWORD return_length = sizeof(info_buffer);
+  while (!::GetLogicalProcessorInformation(infos, &return_length)) {
+    if (GetLastError() == ERROR_INSUFFICIENT_BUFFER &&
+        infos == &info_buffer[0]) {
+      infos = new SYSTEM_LOGICAL_PROCESSOR_INFORMATION
+          [return_length / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION)];
+    } else {
+      return;
+    }
+  }
+
+  for (size_t i = 0;
+       i < return_length / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION); ++i) {
+    if (infos[i].Relationship == RelationProcessorCore) {
+      ++*physical_cpus;
+    } else if (infos[i].Relationship == RelationCache) {
+      // Only care about L2 and L3 cache
+      switch (infos[i].Cache.Level) {
+        case 2:
+          *cache_size_L2 = static_cast<int>(infos[i].Cache.Size / 1024);
+          break;
+        case 3:
+          *cache_size_L3 = static_cast<int>(infos[i].Cache.Size / 1024);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+  if (infos != &info_buffer[0]) {
+    delete[] infos;
+  }
+  return;
+}
+#endif
+
 #if defined(XP_WIN)
 namespace {
-nsresult CollectProcessInfo(ProcessInfo& info) {
-  // IsWow64Process2 is only available on Windows 10+, so we have to dynamically
-  // check for its existence.
-  typedef BOOL(WINAPI * LPFN_IWP2)(HANDLE, USHORT*, USHORT*);
-  LPFN_IWP2 iwp2 = reinterpret_cast<LPFN_IWP2>(
-      GetProcAddress(GetModuleHandle(L"kernel32"), "IsWow64Process2"));
-  BOOL isWow64 = false;
-  USHORT processMachine = IMAGE_FILE_MACHINE_UNKNOWN;
-  USHORT nativeMachine = IMAGE_FILE_MACHINE_UNKNOWN;
-  BOOL gotWow64Value;
-  if (iwp2) {
-    gotWow64Value = iwp2(GetCurrentProcess(), &processMachine, &nativeMachine);
-    if (gotWow64Value) {
-      info.isWow64 = (processMachine != IMAGE_FILE_MACHINE_UNKNOWN);
-    }
-  } else {
-    gotWow64Value = IsWow64Process(GetCurrentProcess(), &isWow64);
-    // The function only indicates a WOW64 environment if it's 32-bit x86
-    // running on x86-64, so emulate what IsWow64Process2 would have given.
-    if (gotWow64Value && info.isWow64) {
-      processMachine = IMAGE_FILE_MACHINE_I386;
-      nativeMachine = IMAGE_FILE_MACHINE_AMD64;
-    }
-  }
-  NS_WARNING_ASSERTION(gotWow64Value, "IsWow64Process failed");
-  if (gotWow64Value) {
-    // Set this always, even for the x86-on-arm64 case.
-    // Additional information if we're running x86-on-arm64
-    info.isWowARM64 = (processMachine == IMAGE_FILE_MACHINE_I386 &&
-                       nativeMachine == IMAGE_FILE_MACHINE_ARM64);
-  }
-  return NS_OK;
-}
-
 static nsresult GetFolderDiskInfo(nsIFile* file, FolderDiskInfo& info) {
   info.model.Truncate();
   info.revision.Truncate();
@@ -248,22 +265,22 @@ static nsresult CollectDiskInfo(nsIFile* greDir, nsIFile* winDir,
 }
 
 static nsresult CollectOSInfo(OSInfo& info) {
-  HKEY hKey;
+  HKEY installYearHKey;
   LONG status = RegOpenKeyExW(
       HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", 0,
-      KEY_READ | KEY_WOW64_64KEY, &hKey);
+      KEY_READ | KEY_WOW64_64KEY, &installYearHKey);
 
   if (status != ERROR_SUCCESS) {
     return NS_ERROR_UNEXPECTED;
   }
 
-  nsAutoRegKey key(hKey);
+  nsAutoRegKey installYearKey(installYearHKey);
 
   DWORD type = 0;
   time_t raw_time = 0;
   DWORD time_size = sizeof(time_t);
 
-  status = RegQueryValueExW(hKey, L"InstallDate", nullptr, &type,
+  status = RegQueryValueExW(installYearHKey, L"InstallDate", nullptr, &type,
                             (LPBYTE)&raw_time, &time_size);
 
   if (status != ERROR_SUCCESS) {
@@ -280,6 +297,84 @@ static nsresult CollectOSInfo(OSInfo& info) {
   }
 
   info.installYear = 1900UL + time.tm_year;
+
+  nsAutoServiceHandle scm(
+      OpenSCManager(nullptr, SERVICES_ACTIVE_DATABASE, SC_MANAGER_CONNECT));
+
+  if (!scm) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  bool superfetchServiceRunning = false;
+
+  // Superfetch was introduced in Windows Vista as a service with the name
+  // SysMain. The service display name was also renamed to SysMain after Windows
+  // 10 build 1809.
+  nsAutoServiceHandle hService(OpenService(scm, L"SysMain", GENERIC_READ));
+
+  if (hService) {
+    SERVICE_STATUS superfetchStatus;
+    LPSERVICE_STATUS pSuperfetchStatus = &superfetchStatus;
+
+    if (!QueryServiceStatus(hService, pSuperfetchStatus)) {
+      return NS_ERROR_UNEXPECTED;
+    }
+
+    superfetchServiceRunning =
+        superfetchStatus.dwCurrentState == SERVICE_RUNNING;
+  }
+
+  // If the SysMain (Superfetch) service is available, but not configured using
+  // the defaults, then it's disabled for our purposes, since it's not going to
+  // be operating as expected.
+  bool superfetchUsingDefaultParams = true;
+  bool prefetchUsingDefaultParams = true;
+
+  static const WCHAR prefetchParamsKeyName[] =
+      L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory "
+      L"Management\\PrefetchParameters";
+  static const DWORD SUPERFETCH_DEFAULT_PARAM = 3;
+  static const DWORD PREFETCH_DEFAULT_PARAM = 3;
+
+  HKEY prefetchParamsHKey;
+
+  LONG prefetchParamsStatus =
+      RegOpenKeyExW(HKEY_LOCAL_MACHINE, prefetchParamsKeyName, 0,
+                    KEY_READ | KEY_WOW64_64KEY, &prefetchParamsHKey);
+
+  if (prefetchParamsStatus == ERROR_SUCCESS) {
+    DWORD valueSize = sizeof(DWORD);
+    DWORD superfetchValue = 0;
+    nsAutoRegKey prefetchParamsKey(prefetchParamsHKey);
+    LONG superfetchParamStatus = RegQueryValueExW(
+        prefetchParamsHKey, L"EnableSuperfetch", nullptr, &type,
+        reinterpret_cast<LPBYTE>(&superfetchValue), &valueSize);
+
+    // If the EnableSuperfetch registry key doesn't exist, then it's using the
+    // default configuration.
+    if (superfetchParamStatus == ERROR_SUCCESS &&
+        superfetchValue != SUPERFETCH_DEFAULT_PARAM) {
+      superfetchUsingDefaultParams = false;
+    }
+
+    DWORD prefetchValue = 0;
+
+    LONG prefetchParamStatus = RegQueryValueExW(
+        prefetchParamsHKey, L"EnablePrefetcher", nullptr, &type,
+        reinterpret_cast<LPBYTE>(&prefetchValue), &valueSize);
+
+    // If the EnablePrefetcher registry key doesn't exist, then we interpret
+    // that as the Prefetcher being disabled (since Prefetch behaviour when
+    // the key is not available appears to be undefined).
+    if (prefetchParamStatus != ERROR_SUCCESS ||
+        prefetchValue != PREFETCH_DEFAULT_PARAM) {
+      prefetchUsingDefaultParams = false;
+    }
+  }
+
+  info.hasSuperfetch = superfetchServiceRunning && superfetchUsingDefaultParams;
+  info.hasPrefetch = prefetchUsingDefaultParams;
+
   return NS_OK;
 }
 
@@ -431,9 +526,9 @@ static nsresult GetAppleModelId(nsAutoCString& aModelId) {
 
 using namespace mozilla;
 
-nsSystemInfo::nsSystemInfo() {}
+nsSystemInfo::nsSystemInfo() = default;
 
-nsSystemInfo::~nsSystemInfo() {}
+nsSystemInfo::~nsSystemInfo() = default;
 
 // CPU-specific information.
 static const struct PropItems {
@@ -458,102 +553,7 @@ static const struct PropItems {
     {"hasARMv7", mozilla::supports_armv7},
     {"hasNEON", mozilla::supports_neon}};
 
-#ifdef XP_WIN
-// Lifted from media/webrtc/trunk/webrtc/base/systeminfo.cc,
-// so keeping the _ instead of switching to camel case for now.
-typedef BOOL(WINAPI* LPFN_GLPI)(PSYSTEM_LOGICAL_PROCESSOR_INFORMATION, PDWORD);
-static void GetProcessorInformation(int* physical_cpus, int* cache_size_L2,
-                                    int* cache_size_L3) {
-  MOZ_ASSERT(physical_cpus && cache_size_L2 && cache_size_L3);
-
-  *physical_cpus = 0;
-  *cache_size_L2 = 0;  // This will be in kbytes
-  *cache_size_L3 = 0;  // This will be in kbytes
-
-  // GetLogicalProcessorInformation() is available on Windows XP SP3 and beyond.
-  LPFN_GLPI glpi = reinterpret_cast<LPFN_GLPI>(GetProcAddress(
-      GetModuleHandle(L"kernel32"), "GetLogicalProcessorInformation"));
-  if (nullptr == glpi) {
-    return;
-  }
-  // Determine buffer size, allocate and get processor information.
-  // Size can change between calls (unlikely), so a loop is done.
-  SYSTEM_LOGICAL_PROCESSOR_INFORMATION info_buffer[32];
-  SYSTEM_LOGICAL_PROCESSOR_INFORMATION* infos = &info_buffer[0];
-  DWORD return_length = sizeof(info_buffer);
-  while (!glpi(infos, &return_length)) {
-    if (GetLastError() == ERROR_INSUFFICIENT_BUFFER &&
-        infos == &info_buffer[0]) {
-      infos = new SYSTEM_LOGICAL_PROCESSOR_INFORMATION
-          [return_length / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION)];
-    } else {
-      return;
-    }
-  }
-
-  for (size_t i = 0;
-       i < return_length / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION); ++i) {
-    if (infos[i].Relationship == RelationProcessorCore) {
-      ++*physical_cpus;
-    } else if (infos[i].Relationship == RelationCache) {
-      // Only care about L2 and L3 cache
-      switch (infos[i].Cache.Level) {
-        case 2:
-          *cache_size_L2 = static_cast<int>(infos[i].Cache.Size / 1024);
-          break;
-        case 3:
-          *cache_size_L3 = static_cast<int>(infos[i].Cache.Size / 1024);
-          break;
-        default:
-          break;
-      }
-    }
-  }
-  if (infos != &info_buffer[0]) {
-    delete[] infos;
-  }
-  return;
-}
-#endif
-
-nsresult nsSystemInfo::Init() {
-  // check that it is called from the main thread on all platforms.
-  MOZ_ASSERT(NS_IsMainThread());
-
-  nsresult rv;
-
-  static const struct {
-    PRSysInfo cmd;
-    const char* name;
-  } items[] = {{PR_SI_SYSNAME, "name"},
-               {PR_SI_ARCHITECTURE, "arch"},
-               {PR_SI_RELEASE, "version"}};
-
-  for (uint32_t i = 0; i < (sizeof(items) / sizeof(items[0])); i++) {
-    char buf[SYS_INFO_BUFFER_LENGTH];
-    if (PR_GetSystemInfo(items[i].cmd, buf, sizeof(buf)) == PR_SUCCESS) {
-      rv = SetPropertyAsACString(NS_ConvertASCIItoUTF16(items[i].name),
-                                 nsDependentCString(buf));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-    } else {
-      NS_WARNING("PR_GetSystemInfo failed");
-    }
-  }
-
-  rv = SetPropertyAsBool(NS_ConvertASCIItoUTF16("hasWindowsTouchInterface"),
-                         false);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Additional informations not available through PR_GetSystemInfo.
-  SetInt32Property(NS_LITERAL_STRING("pagesize"), PR_GetPageSize());
-  SetInt32Property(NS_LITERAL_STRING("pageshift"), PR_GetPageShift());
-  SetInt32Property(NS_LITERAL_STRING("memmapalign"), PR_GetMemMapAlignment());
-  SetUint64Property(NS_LITERAL_STRING("memsize"), PR_GetPhysicalMemorySize());
-  SetUint32Property(NS_LITERAL_STRING("umask"), nsSystemInfo::gUserUmask);
-
-  uint64_t virtualMem = 0;
+nsresult CollectProcessInfo(ProcessInfo& info) {
   nsAutoCString cpuVendor;
   int cpuSpeed = -1;
   int cpuFamily = -1;
@@ -565,11 +565,36 @@ nsresult nsSystemInfo::Init() {
   int cacheSizeL3 = -1;
 
 #if defined(XP_WIN)
-  // Virtual memory:
-  MEMORYSTATUSEX memStat;
-  memStat.dwLength = sizeof(memStat);
-  if (GlobalMemoryStatusEx(&memStat)) {
-    virtualMem = memStat.ullTotalVirtual;
+  // IsWow64Process2 is only available on Windows 10+, so we have to dynamically
+  // check for its existence.
+  typedef BOOL(WINAPI * LPFN_IWP2)(HANDLE, USHORT*, USHORT*);
+  LPFN_IWP2 iwp2 = reinterpret_cast<LPFN_IWP2>(
+      GetProcAddress(GetModuleHandle(L"kernel32"), "IsWow64Process2"));
+  BOOL isWow64 = FALSE;
+  USHORT processMachine = IMAGE_FILE_MACHINE_UNKNOWN;
+  USHORT nativeMachine = IMAGE_FILE_MACHINE_UNKNOWN;
+  BOOL gotWow64Value;
+  if (iwp2) {
+    gotWow64Value = iwp2(GetCurrentProcess(), &processMachine, &nativeMachine);
+    if (gotWow64Value) {
+      isWow64 = (processMachine != IMAGE_FILE_MACHINE_UNKNOWN);
+    }
+  } else {
+    gotWow64Value = IsWow64Process(GetCurrentProcess(), &isWow64);
+    // The function only indicates a WOW64 environment if it's 32-bit x86
+    // running on x86-64, so emulate what IsWow64Process2 would have given.
+    if (gotWow64Value && isWow64) {
+      processMachine = IMAGE_FILE_MACHINE_I386;
+      nativeMachine = IMAGE_FILE_MACHINE_AMD64;
+    }
+  }
+  NS_WARNING_ASSERTION(gotWow64Value, "IsWow64Process failed");
+  if (gotWow64Value) {
+    // Set this always, even for the x86-on-arm64 case.
+    info.isWow64 = !!isWow64;
+    // Additional information if we're running x86-on-arm64
+    info.isWowARM64 = (processMachine == IMAGE_FILE_MACHINE_I386 &&
+                       nativeMachine == IMAGE_FILE_MACHINE_ARM64);
   }
 
   // CPU speed
@@ -683,7 +708,7 @@ nsresult nsSystemInfo::Init() {
     SimpleParseKeyValuePairs("/proc/cpuinfo", keyValuePairs);
 
     // cpuVendor from "vendor_id"
-    cpuVendor.Assign(keyValuePairs[NS_LITERAL_CSTRING("vendor_id")]);
+    info.cpuVendor.Assign(keyValuePairs[NS_LITERAL_CSTRING("vendor_id")]);
 
     {
       // cpuFamily from "cpu family"
@@ -772,31 +797,95 @@ nsresult nsSystemInfo::Init() {
     }
   }
 
-  SetInt32Property(NS_LITERAL_STRING("cpucount"), PR_GetNumberOfProcessors());
+  info.cpuCount = PR_GetNumberOfProcessors();
 #else
-  SetInt32Property(NS_LITERAL_STRING("cpucount"), PR_GetNumberOfProcessors());
+  info.cpuCount = PR_GetNumberOfProcessors();
 #endif
 
+  if (cpuSpeed >= 0) {
+    info.cpuSpeed = cpuSpeed;
+  } else {
+    info.cpuSpeed = 0;
+  }
+  if (!cpuVendor.IsEmpty()) {
+    info.cpuVendor = cpuVendor;
+  }
+  if (cpuFamily >= 0) {
+    info.cpuFamily = cpuFamily;
+  }
+  if (cpuModel >= 0) {
+    info.cpuModel = cpuModel;
+  }
+  if (cpuStepping >= 0) {
+    info.cpuStepping = cpuStepping;
+  }
+
+  if (logicalCPUs >= 0) {
+    info.cpuCount = logicalCPUs;
+  }
+  if (physicalCPUs >= 0) {
+    info.cpuCores = physicalCPUs;
+  }
+
+  if (cacheSizeL2 >= 0) {
+    info.l2cacheKB = cacheSizeL2;
+  }
+  if (cacheSizeL3 >= 0) {
+    info.l3cacheKB = cacheSizeL3;
+  }
+
+  return NS_OK;
+}
+
+nsresult nsSystemInfo::Init() {
+  // check that it is called from the main thread on all platforms.
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsresult rv;
+
+  static const struct {
+    PRSysInfo cmd;
+    const char* name;
+  } items[] = {{PR_SI_SYSNAME, "name"},
+               {PR_SI_ARCHITECTURE, "arch"},
+               {PR_SI_RELEASE, "version"}};
+
+  for (uint32_t i = 0; i < (sizeof(items) / sizeof(items[0])); i++) {
+    char buf[SYS_INFO_BUFFER_LENGTH];
+    if (PR_GetSystemInfo(items[i].cmd, buf, sizeof(buf)) == PR_SUCCESS) {
+      rv = SetPropertyAsACString(NS_ConvertASCIItoUTF16(items[i].name),
+                                 nsDependentCString(buf));
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+    } else {
+      NS_WARNING("PR_GetSystemInfo failed");
+    }
+  }
+
+  rv = SetPropertyAsBool(NS_ConvertASCIItoUTF16("hasWindowsTouchInterface"),
+                         false);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Additional informations not available through PR_GetSystemInfo.
+  SetInt32Property(NS_LITERAL_STRING("pagesize"), PR_GetPageSize());
+  SetInt32Property(NS_LITERAL_STRING("pageshift"), PR_GetPageShift());
+  SetInt32Property(NS_LITERAL_STRING("memmapalign"), PR_GetMemMapAlignment());
+  SetUint64Property(NS_LITERAL_STRING("memsize"), PR_GetPhysicalMemorySize());
+  SetUint32Property(NS_LITERAL_STRING("umask"), nsSystemInfo::gUserUmask);
+
+  uint64_t virtualMem = 0;
+
+#if defined(XP_WIN)
+  // Virtual memory:
+  MEMORYSTATUSEX memStat;
+  memStat.dwLength = sizeof(memStat);
+  if (GlobalMemoryStatusEx(&memStat)) {
+    virtualMem = memStat.ullTotalVirtual;
+  }
+#endif
   if (virtualMem)
     SetUint64Property(NS_LITERAL_STRING("virtualmemsize"), virtualMem);
-  if (cpuSpeed >= 0) SetInt32Property(NS_LITERAL_STRING("cpuspeed"), cpuSpeed);
-  if (!cpuVendor.IsEmpty())
-    SetPropertyAsACString(NS_LITERAL_STRING("cpuvendor"), cpuVendor);
-  if (cpuFamily >= 0)
-    SetInt32Property(NS_LITERAL_STRING("cpufamily"), cpuFamily);
-  if (cpuModel >= 0) SetInt32Property(NS_LITERAL_STRING("cpumodel"), cpuModel);
-  if (cpuStepping >= 0)
-    SetInt32Property(NS_LITERAL_STRING("cpustepping"), cpuStepping);
-
-  if (logicalCPUs >= 0)
-    SetInt32Property(NS_LITERAL_STRING("cpucount"), logicalCPUs);
-  if (physicalCPUs >= 0)
-    SetInt32Property(NS_LITERAL_STRING("cpucores"), physicalCPUs);
-
-  if (cacheSizeL2 >= 0)
-    SetInt32Property(NS_LITERAL_STRING("cpucachel2"), cacheSizeL2);
-  if (cacheSizeL3 >= 0)
-    SetInt32Property(NS_LITERAL_STRING("cpucachel3"), cacheSizeL3);
 
   for (uint32_t i = 0; i < ArrayLength(cpuPropItems); i++) {
     rv = SetPropertyAsBool(NS_ConvertASCIItoUTF16(cpuPropItems[i].name),
@@ -874,6 +963,10 @@ nsresult nsSystemInfo::Init() {
     secondaryLibrary.Append(nsDependentCSubstring(gtkver, gtkver_len));
   }
 
+#  ifndef MOZ_TSAN
+  // With TSan, avoid loading libpulse here because we cannot unload it
+  // afterwards due to restrictions from TSan about unloading libraries
+  // matched by the suppression list.
   void* libpulse = dlopen("libpulse.so.0", RTLD_LAZY);
   const char* libpulseVersion = "not-available";
   if (libpulse) {
@@ -890,6 +983,7 @@ nsresult nsSystemInfo::Init() {
   if (libpulse) {
     dlclose(libpulse);
   }
+#  endif
 
   rv = SetPropertyAsACString(NS_LITERAL_STRING("secondaryLibrary"),
                              secondaryLibrary);
@@ -1089,6 +1183,14 @@ JSObject* GetJSObjForOSInfo(JSContext* aCx, const OSInfo& info) {
 
   JS::Rooted<JS::Value> valInstallYear(aCx, JS::Int32Value(info.installYear));
   JS_SetProperty(aCx, jsInfo, "installYear", valInstallYear);
+
+  JS::Rooted<JS::Value> valHasSuperfetch(aCx,
+                                         JS::BooleanValue(info.hasSuperfetch));
+  JS_SetProperty(aCx, jsInfo, "hasSuperfetch", valHasSuperfetch);
+
+  JS::Rooted<JS::Value> valHasPrefetch(aCx, JS::BooleanValue(info.hasPrefetch));
+  JS_SetProperty(aCx, jsInfo, "hasPrefetch", valHasPrefetch);
+
   return jsInfo;
 }
 
@@ -1097,20 +1199,52 @@ JSObject* GetJSObjForOSInfo(JSContext* aCx, const OSInfo& info) {
 JSObject* GetJSObjForProcessInfo(JSContext* aCx, const ProcessInfo& info) {
   JS::Rooted<JSObject*> jsInfo(aCx, JS_NewPlainObject(aCx));
 
+#if defined(XP_WIN)
   JS::Rooted<JS::Value> valisWow64(aCx, JS::BooleanValue(info.isWow64));
   JS_SetProperty(aCx, jsInfo, "isWow64", valisWow64);
 
   JS::Rooted<JS::Value> valisWowARM64(aCx, JS::BooleanValue(info.isWowARM64));
   JS_SetProperty(aCx, jsInfo, "isWowARM64", valisWowARM64);
+#endif
+
+  JS::Rooted<JS::Value> valCountInfo(aCx, JS::Int32Value(info.cpuCount));
+  JS_SetProperty(aCx, jsInfo, "count", valCountInfo);
+
+  JS::Rooted<JS::Value> valCoreInfo(aCx, JS::Int32Value(info.cpuCores));
+  JS_SetProperty(aCx, jsInfo, "cores", valCoreInfo);
+
+  JSString* strVendor =
+      JS_NewStringCopyN(aCx, info.cpuVendor.get(), info.cpuVendor.Length());
+  JS::Rooted<JS::Value> valVendor(aCx, JS::StringValue(strVendor));
+  JS_SetProperty(aCx, jsInfo, "vendor", valVendor);
+
+  JS::Rooted<JS::Value> valFamilyInfo(aCx, JS::Int32Value(info.cpuFamily));
+  JS_SetProperty(aCx, jsInfo, "family", valFamilyInfo);
+
+  JS::Rooted<JS::Value> valModelInfo(aCx, JS::Int32Value(info.cpuModel));
+  JS_SetProperty(aCx, jsInfo, "model", valModelInfo);
+
+  JS::Rooted<JS::Value> valSteppingInfo(aCx, JS::Int32Value(info.cpuStepping));
+  JS_SetProperty(aCx, jsInfo, "stepping", valSteppingInfo);
+
+  JS::Rooted<JS::Value> valL2CacheInfo(aCx, JS::Int32Value(info.l2cacheKB));
+  JS_SetProperty(aCx, jsInfo, "l2cacheKB", valL2CacheInfo);
+
+  JS::Rooted<JS::Value> valL3CacheInfo(aCx, JS::Int32Value(info.l3cacheKB));
+  JS_SetProperty(aCx, jsInfo, "l3cacheKB", valL3CacheInfo);
+
+  JS::Rooted<JS::Value> valSpeedInfo(aCx, JS::Int32Value(info.cpuSpeed));
+  JS_SetProperty(aCx, jsInfo, "speedMHz", valSpeedInfo);
+
   return jsInfo;
 }
 
-RefPtr<mozilla::LazyIdleThread> nsSystemInfo::GetHelperThread() {
-  if (!mLazyHelperThread) {
-    mLazyHelperThread =
-        new LazyIdleThread(3000, NS_LITERAL_CSTRING("SystemInfoIdleThread"));
+RefPtr<nsISerialEventTarget> nsSystemInfo::GetBackgroundTarget() {
+  if (!mBackgroundET) {
+    MOZ_ALWAYS_SUCCEEDS(NS_CreateBackgroundTaskQueue(
+        "SystemInfoThread", getter_AddRefs(mBackgroundET)));
   }
-  return mLazyHelperThread;
+  return mBackgroundET;
 }
 
 NS_IMETHODIMP
@@ -1133,9 +1267,9 @@ nsSystemInfo::GetOsInfo(JSContext* aCx, Promise** aResult) {
   }
 
   if (!mOSInfoPromise) {
-    RefPtr<mozilla::LazyIdleThread> lazyIOThread = GetHelperThread();
+    RefPtr<nsISerialEventTarget> backgroundET = GetBackgroundTarget();
 
-    mOSInfoPromise = InvokeAsync(lazyIOThread, __func__, []() {
+    mOSInfoPromise = InvokeAsync(backgroundET, __func__, []() {
       OSInfo info;
       nsresult rv = CollectOSInfo(info);
       if (NS_SUCCEEDED(rv)) {
@@ -1189,7 +1323,7 @@ nsSystemInfo::GetDiskInfo(JSContext* aCx, Promise** aResult) {
   }
 
   if (!mDiskInfoPromise) {
-    RefPtr<mozilla::LazyIdleThread> lazyIOThread = GetHelperThread();
+    RefPtr<nsISerialEventTarget> backgroundET = GetBackgroundTarget();
     nsCOMPtr<nsIFile> greDir;
     nsCOMPtr<nsIFile> winDir;
     nsCOMPtr<nsIFile> profDir;
@@ -1208,7 +1342,7 @@ nsSystemInfo::GetDiskInfo(JSContext* aCx, Promise** aResult) {
     }
 
     mDiskInfoPromise =
-        InvokeAsync(lazyIOThread, __func__, [greDir, winDir, profDir]() {
+        InvokeAsync(backgroundET, __func__, [greDir, winDir, profDir]() {
           DiskInfo info;
           nsresult rv = CollectDiskInfo(greDir, winDir, profDir, info);
           if (NS_SUCCEEDED(rv)) {
@@ -1277,9 +1411,9 @@ nsSystemInfo::GetCountryCode(JSContext* aCx, Promise** aResult) {
   }
 
   if (!mCountryCodePromise) {
-    RefPtr<mozilla::LazyIdleThread> lazyIOThread = GetHelperThread();
+    RefPtr<nsISerialEventTarget> backgroundET = GetBackgroundTarget();
 
-    mCountryCodePromise = InvokeAsync(lazyIOThread, __func__, []() {
+    mCountryCodePromise = InvokeAsync(backgroundET, __func__, []() {
       nsAutoString countryCode;
 #  ifdef XP_MACOSX
       nsresult rv = GetSelectedCityInfo(countryCode);
@@ -1329,7 +1463,7 @@ nsSystemInfo::GetProcessInfo(JSContext* aCx, Promise** aResult) {
   if (!XRE_IsParentProcess()) {
     return NS_ERROR_FAILURE;
   }
-#if defined(XP_WIN)
+
   nsIGlobalObject* global = xpc::CurrentNativeGlobal(aCx);
   if (NS_WARN_IF(!global)) {
     return NS_ERROR_FAILURE;
@@ -1342,9 +1476,9 @@ nsSystemInfo::GetProcessInfo(JSContext* aCx, Promise** aResult) {
   }
 
   if (!mProcessInfoPromise) {
-    RefPtr<mozilla::LazyIdleThread> lazyIOThread = GetHelperThread();
+    RefPtr<nsISerialEventTarget> backgroundET = GetBackgroundTarget();
 
-    mProcessInfoPromise = InvokeAsync(lazyIOThread, __func__, []() {
+    mProcessInfoPromise = InvokeAsync(backgroundET, __func__, []() {
       ProcessInfo info;
       nsresult rv = CollectProcessInfo(info);
       if (NS_SUCCEEDED(rv)) {
@@ -1375,6 +1509,6 @@ nsSystemInfo::GetProcessInfo(JSContext* aCx, Promise** aResult) {
       });
 
   promise.forget(aResult);
-#endif
+
   return NS_OK;
 }

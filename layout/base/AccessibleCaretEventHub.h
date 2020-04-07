@@ -8,6 +8,7 @@
 #define mozilla_AccessibleCaretEventHub_h
 
 #include "mozilla/EventForwards.h"
+#include "mozilla/MouseEvents.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsCOMPtr.h"
@@ -98,6 +99,8 @@ class AccessibleCaretEventHub : public nsIReflowObserver,
   MOZ_CAN_RUN_SCRIPT
   void OnSelectionChange(dom::Document* aDocument, dom::Selection* aSelection,
                          int16_t aReason);
+
+  bool ShouldDisableApz() const;
 
  protected:
   virtual ~AccessibleCaretEventHub() = default;
@@ -196,7 +199,8 @@ class AccessibleCaretEventHub::State {
 
   MOZ_CAN_RUN_SCRIPT
   virtual nsEventStatus OnMove(AccessibleCaretEventHub* aContext,
-                               const nsPoint& aPoint) {
+                               const nsPoint& aPoint,
+                               WidgetMouseEvent::Reason aReason) {
     return nsEventStatus_eIgnore;
   }
 

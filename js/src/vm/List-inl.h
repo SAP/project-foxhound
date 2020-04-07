@@ -19,13 +19,22 @@
 #include "vm/JSContext.h"     // JSContext
 #include "vm/NativeObject.h"  // js::NativeObject
 
-#include "vm/Compartment-inl.h"   // JS::Compartment::wrap
-#include "vm/JSObject-inl.h"      // js::NewObjectWithNullTaggedProto
-#include "vm/NativeObject-inl.h"  // js::NativeObject::*
-#include "vm/Realm-inl.h"         // js::AutoRealm
+#include "vm/Compartment-inl.h"    // JS::Compartment::wrap
+#include "vm/JSObject-inl.h"       // js::NewObjectWithNullTaggedProto
+#include "vm/NativeObject-inl.h"   // js::NativeObject::*
+#include "vm/Realm-inl.h"          // js::AutoRealm
+#include "vm/TypeInference-inl.h"  // js::MarkObjectGroupUnknownProperties
 
 inline /* static */ js::ListObject* js::ListObject::create(JSContext* cx) {
-  return NewObjectWithNullTaggedProto<ListObject>(cx);
+  js::ListObject* obj = NewObjectWithNullTaggedProto<ListObject>(cx);
+  if (!obj) {
+    return nullptr;
+  }
+
+  // Internal object and may contain exotic MagicValues so don't track property
+  // types.
+  MarkObjectGroupUnknownProperties(cx, obj->group());
+  return obj;
 }
 
 inline bool js::ListObject::append(JSContext* cx, JS::Handle<JS::Value> value) {
@@ -35,8 +44,27 @@ inline bool js::ListObject::append(JSContext* cx, JS::Handle<JS::Value> value) {
     return false;
   }
 
+  // Note: we can use setDenseElement instead of setDenseElementWithType because
+  // ListObject::create gave the object unknown properties.
   ensureDenseInitializedLength(cx, len, 1);
-  setDenseElementWithType(cx, len, value);
+  setDenseElement(len, value);
+  return true;
+}
+
+inline bool js::ListObject::appendValueAndSize(JSContext* cx,
+                                               JS::Handle<JS::Value> value,
+                                               double size) {
+  uint32_t len = length();
+
+  if (!ensureElements(cx, len + 2)) {
+    return false;
+  }
+
+  // Note: we can use setDenseElement instead of setDenseElementWithType because
+  // ListObject::create gave the object unknown properties.
+  ensureDenseInitializedLength(cx, len, 2);
+  setDenseElement(len, value);
+  setDenseElement(len + 1, JS::DoubleValue(size));
   return true;
 }
 
@@ -53,6 +81,20 @@ inline JS::Value js::ListObject::popFirst(JSContext* cx) {
 
   MOZ_ASSERT(length() == len - 1);
   return entry;
+}
+
+inline void js::ListObject::popFirstPair(JSContext* cx) {
+  uint32_t len = length();
+  MOZ_ASSERT(len > 0);
+  MOZ_ASSERT((len % 2) == 0);
+
+  if (!tryShiftDenseElements(2)) {
+    moveDenseElements(0, 2, len - 2);
+    setDenseInitializedLength(len - 2);
+    shrinkElements(cx, len - 2);
+  }
+
+  MOZ_ASSERT(length() == len - 2);
 }
 
 template <class T>

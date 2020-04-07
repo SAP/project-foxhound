@@ -265,6 +265,11 @@ OS_LIBS += CONFIG['ICONV_LIBS']
 if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('cocoa', 'uikit'):
     OS_LIBS += CONFIG['TK_LIBS']
 
+if CONFIG['OS_ARCH'] == 'OpenBSD':
+    OS_LIBS += [
+        'sndio',
+    ]
+
 if CONFIG['MOZ_ENABLE_DBUS']:
     OS_LIBS += CONFIG['MOZ_DBUS_GLIB_LIBS']
 
@@ -279,9 +284,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     OS_LIBS += [
         'gthread-2.0',
     ]
-
-if CONFIG['MOZ_ENABLE_STARTUP_NOTIFICATION']:
-    OS_LIBS += CONFIG['MOZ_STARTUP_NOTIFICATION_LIBS']
 
 if CONFIG['MOZ_ENABLE_LIBPROXY']:
     OS_LIBS += CONFIG['MOZ_LIBPROXY_LIBS']
@@ -300,6 +302,13 @@ if CONFIG['OS_ARCH'] == 'FreeBSD':
         'util',
     ]
 
+if CONFIG['OS_ARCH'] == 'Darwin':
+    OS_LIBS += [
+        # Link to Metal as required by the Metal gfx-hal backend
+        '-weak_framework Metal',
+    ]
+
+
 if CONFIG['OS_ARCH'] == 'WINNT':
     OS_LIBS += [
         'shell32',
@@ -312,6 +321,7 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         'netapi32',
         'shlwapi',
         'ws2_32',
+        'dnsapi',
         'dwmapi',
         'iphlpapi',
         'uxtheme',
@@ -327,6 +337,10 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         'sapi',
         'dxguid',
         'dhcpcsvc',
+        # gfx-rs supports D3D11 and D3D12, but we are not linking to them implicitly
+        #"d3d11", # should be explicitly linked by gfx-backend-d3d11
+        #'d3d12', # should be explicitly linked by d3d12-rs
+        'd3dcompiler',
     ]
 
     if CONFIG['CC_TYPE'] == 'clang-cl':
@@ -338,6 +352,9 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         OS_LIBS += [
             'oleacc',
         ]
+
+    # Prevent winapi-rs from statically linking
+    LIBRARY_DEFINES['WINAPI_NO_BUNDLED_LIBRARIES'] = True
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
     OS_LIBS += [

@@ -44,6 +44,7 @@ function makeMockSource(
     isWasm: false,
     extensionName: null,
     isExtension: false,
+    isOriginal: id.includes("originalSource"),
   };
 }
 
@@ -97,6 +98,7 @@ function makeMockWasmSource(): SourceBase {
     isWasm: true,
     extensionName: null,
     isExtension: false,
+    isOriginal: false,
   };
 }
 
@@ -165,7 +167,8 @@ function makeMockFrame(
   source: Source = makeMockSource("url"),
   scope: Scope = makeMockScope(),
   line: number = 4,
-  displayName: string = `display-${id}`
+  displayName: string = `display-${id}`,
+  index: number = 0
 ): Frame {
   const location = { sourceId: source.id, line };
   return {
@@ -177,6 +180,9 @@ function makeMockFrame(
     source,
     scope,
     this: {},
+    index,
+    asyncCause: null,
+    state: "on-stack",
   };
 }
 

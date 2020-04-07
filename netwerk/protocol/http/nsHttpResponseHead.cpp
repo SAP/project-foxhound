@@ -72,7 +72,7 @@ HttpVersion nsHttpResponseHead::Version() {
   return mVersion;
 }
 
-uint16_t nsHttpResponseHead::Status() {
+uint16_t nsHttpResponseHead::Status() const {
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
   return mStatus;
 }
@@ -189,7 +189,7 @@ bool nsHttpResponseHead::HasHeaderValue(nsHttpAtom h, const char* v) {
   return mHeaders.HasHeaderValue(h, v);
 }
 
-bool nsHttpResponseHead::HasHeader(nsHttpAtom h) {
+bool nsHttpResponseHead::HasHeader(nsHttpAtom h) const {
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
   return mHeaders.HasHeader(h);
 }
@@ -223,12 +223,15 @@ void nsHttpResponseHead::Flatten(nsACString& buf, bool pruneTransients) {
   if (mVersion == HttpVersion::v0_9) return;
 
   buf.AppendLiteral("HTTP/");
-  if (mVersion == HttpVersion::v2_0)
-    buf.AppendLiteral("2.0 ");
-  else if (mVersion == HttpVersion::v1_1)
+  if (mVersion == HttpVersion::v3_0) {
+    buf.AppendLiteral("3 ");
+  } else if (mVersion == HttpVersion::v2_0) {
+    buf.AppendLiteral("2 ");
+  } else if (mVersion == HttpVersion::v1_1) {
     buf.AppendLiteral("1.1 ");
-  else
+  } else {
     buf.AppendLiteral("1.0 ");
+  }
 
   buf.Append(nsPrintfCString("%u", unsigned(mStatus)) +
              NS_LITERAL_CSTRING(" ") + mStatusText +
@@ -286,7 +289,7 @@ nsresult nsHttpResponseHead::ParseCachedOriginalHeaders(char* block) {
   }
 
   char* p = block;
-  nsHttpAtom hdr = {nullptr};
+  nsHttpAtom hdr;
   nsAutoCString headerNameOriginal;
   nsAutoCString val;
   nsresult rv;
@@ -524,7 +527,7 @@ nsresult nsHttpResponseHead::ParseHeaderLine(const nsACString& line) {
 
 nsresult nsHttpResponseHead::ParseHeaderLine_locked(
     const nsACString& line, bool originalFromNetHeaders) {
-  nsHttpAtom hdr = {nullptr};
+  nsHttpAtom hdr;
   nsAutoCString headerNameOriginal;
   nsAutoCString val;
 
@@ -838,7 +841,7 @@ bool nsHttpResponseHead::ExpiresInPast_locked() const {
          NS_SUCCEEDED(GetDateValue_locked(&dateVal)) && expiresVal < dateVal;
 }
 
-nsresult nsHttpResponseHead::UpdateHeaders(nsHttpResponseHead* aOther) {
+void nsHttpResponseHead::UpdateHeaders(nsHttpResponseHead* aOther) {
   LOG(("nsHttpResponseHead::UpdateHeaders [this=%p]\n", this));
 
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
@@ -881,8 +884,6 @@ nsresult nsHttpResponseHead::UpdateHeaders(nsHttpResponseHead* aOther) {
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
   }
-
-  return NS_OK;
 }
 
 void nsHttpResponseHead::Reset() {
@@ -1111,14 +1112,17 @@ void nsHttpResponseHead::ParseVersion(const char* str) {
   int major = atoi(str + 1);
   int minor = atoi(p);
 
-  if ((major > 2) || ((major == 2) && (minor >= 0)))
+  if ((major > 3) || ((major == 3) && (minor >= 0))) {
+    mVersion = HttpVersion::v3_0;
+  } else if ((major > 2) || ((major == 2) && (minor >= 0))) {
     mVersion = HttpVersion::v2_0;
-  else if ((major == 1) && (minor >= 1))
+  } else if ((major == 1) && (minor >= 1)) {
     // at least HTTP/1.1
     mVersion = HttpVersion::v1_1;
-  else
+  } else {
     // treat anything else as version 1.0
     mVersion = HttpVersion::v1_0;
+  }
 }
 
 void nsHttpResponseHead::ParseCacheControl(const char* val) {
@@ -1198,6 +1202,32 @@ bool nsHttpResponseHead::HasContentType() {
 bool nsHttpResponseHead::HasContentCharset() {
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
   return !mContentCharset.IsEmpty();
+}
+
+bool nsHttpResponseHead::GetContentTypeOptionsHeader(nsACString& aOutput) {
+  aOutput.Truncate();
+
+  nsAutoCString contentTypeOptionsHeader;
+  Unused << GetHeader(nsHttp::X_Content_Type_Options, contentTypeOptionsHeader);
+  if (contentTypeOptionsHeader.IsEmpty()) {
+    // if there is no XCTO header, then there is nothing to do.
+    return false;
+  }
+
+  // XCTO header might contain multiple values which are comma separated, so:
+  // a) let's skip all subsequent values
+  //     e.g. "   NoSniFF   , foo " will be "   NoSniFF   "
+  int32_t idx = contentTypeOptionsHeader.Find(",");
+  if (idx > 0) {
+    contentTypeOptionsHeader = Substring(contentTypeOptionsHeader, 0, idx);
+  }
+  // b) let's trim all surrounding whitespace
+  //    e.g. "   NoSniFF   " -> "NoSniFF"
+  nsHttp::TrimHTTPWhitespace(contentTypeOptionsHeader,
+                             contentTypeOptionsHeader);
+
+  aOutput.Assign(contentTypeOptionsHeader);
+  return true;
 }
 
 }  // namespace net

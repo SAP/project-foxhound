@@ -9,22 +9,17 @@
 #include <netinet/in.h>
 #include <linux/netlink.h>
 
-#include "nsINetworkLinkService.h"
 #include "nsIRunnable.h"
 #include "nsThreadUtils.h"
 #include "nsCOMPtr.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/TimeStamp.h"
-#include "nsITimer.h"
 #include "nsClassHashtable.h"
 #include "mozilla/SHA1.h"
+#include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 namespace net {
-
-#if defined(NIGHTLY_BUILD) || defined(MOZ_DEV_EDITION) || defined(DEBUG)
-#  define NL_DEBUG_LOG
-#endif
 
 class NetlinkAddress;
 class NetlinkNeighbor;
@@ -35,9 +30,11 @@ class NetlinkMsg;
 class NetlinkServiceListener : public nsISupports {
  public:
   virtual void OnNetworkChanged() = 0;
+  virtual void OnNetworkIDChanged() = 0;
   virtual void OnLinkUp() = 0;
   virtual void OnLinkDown() = 0;
   virtual void OnLinkStatusKnown() = 0;
+  virtual void OnDnsSuffixListUpdated() = 0;
 
  protected:
   virtual ~NetlinkServiceListener() = default;
@@ -55,6 +52,7 @@ class NetlinkService : public nsIRunnable {
   nsresult Shutdown();
   void GetNetworkID(nsACString& aNetworkID);
   void GetIsLinkUp(bool* aIsUp);
+  nsresult GetDnsSuffixList(nsTArray<nsCString>& aDnsSuffixList);
 
  private:
   void EnqueueGenMsg(uint16_t aMsgType, uint8_t aFamily);
@@ -76,6 +74,7 @@ class NetlinkService : public nsIRunnable {
   int GetPollWait();
   bool CalculateIDForFamily(uint8_t aFamily, mozilla::SHA1Sum* aSHA1);
   void CalculateNetworkID();
+  void ComputeDNSSuffixList();
 
   nsCOMPtr<nsIThread> mThread;
 
@@ -84,14 +83,8 @@ class NetlinkService : public nsIRunnable {
   // A pipe to signal shutdown with.
   int mShutdownPipe[2];
 
-  // Is true if preference network.netlink.route.check.IPv4 was successfully
-  // parsed and stored to mRouteCheckIPv4
-  bool mDoRouteCheckIPv4;
+  // IP addresses that are used to check the route for public traffic.
   struct in_addr mRouteCheckIPv4;
-
-  // Is true if preference network.netlink.route.check.IPv6 was successfully
-  // parsed and stored to mRouteCheckIPv6
-  bool mDoRouteCheckIPv6;
   struct in6_addr mRouteCheckIPv6;
 
   pid_t mPid;
@@ -104,31 +97,36 @@ class NetlinkService : public nsIRunnable {
   // messages.
   bool mRecalculateNetworkId;
 
+  // Flag indicating that network change event needs to be sent even if
+  // network ID hasn't changed.
+  bool mSendNetworkChangeEvent;
+
   // Time stamp of setting mRecalculateNetworkId to true
   mozilla::TimeStamp mTriggerTime;
 
   nsCString mNetworkId;
+  nsTArray<nsCString> mDNSSuffixList;
 
   class LinkInfo {
    public:
-    explicit LinkInfo(NetlinkLink* aLink);
+    explicit LinkInfo(UniquePtr<NetlinkLink>&& aLink);
     virtual ~LinkInfo();
 
     // Updates mIsUp according to current mLink and mAddresses. Returns true if
     // the value has changed.
-    bool UpdateLinkStatus();
+    bool UpdateStatus();
 
     // NetlinkLink structure for this link
-    nsAutoPtr<NetlinkLink> mLink;
+    UniquePtr<NetlinkLink> mLink;
 
     // All IPv4/IPv6 addresses on this link
-    nsTArray<nsAutoPtr<NetlinkAddress> > mAddresses;
+    nsTArray<UniquePtr<NetlinkAddress>> mAddresses;
 
     // All neighbors on this link, key is an address
     nsClassHashtable<nsCStringHashKey, NetlinkNeighbor> mNeighbors;
 
     // Default IPv4/IPv6 routes
-    nsTArray<nsAutoPtr<NetlinkRoute> > mDefaultRoutes;
+    nsTArray<UniquePtr<NetlinkRoute>> mDefaultRoutes;
 
     // Link is up when it's running, it's not a loopback and there is
     // a non-local address associated with it.
@@ -138,11 +136,11 @@ class NetlinkService : public nsIRunnable {
   nsClassHashtable<nsUint32HashKey, LinkInfo> mLinks;
 
   // Route for mRouteCheckIPv4 address
-  nsAutoPtr<NetlinkRoute> mIPv4RouteCheckResult;
+  UniquePtr<NetlinkRoute> mIPv4RouteCheckResult;
   // Route for mRouteCheckIPv6 address
-  nsAutoPtr<NetlinkRoute> mIPv6RouteCheckResult;
+  UniquePtr<NetlinkRoute> mIPv6RouteCheckResult;
 
-  nsTArray<nsAutoPtr<NetlinkMsg> > mOutgoingMessages;
+  nsTArray<UniquePtr<NetlinkMsg>> mOutgoingMessages;
 
   RefPtr<NetlinkServiceListener> mListener;
 };

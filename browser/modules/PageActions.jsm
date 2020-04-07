@@ -36,6 +36,11 @@ ChromeUtils.defineModuleGetter(
   "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "SiteSpecificBrowserService",
+  "resource:///modules/SiteSpecificBrowserService.jsm"
+);
 
 const ACTION_ID_BOOKMARK = "bookmark";
 const ACTION_ID_PIN_TAB = "pinTab";
@@ -345,26 +350,6 @@ var PageActions = {
     this._updateIDsPinnedToUrlbarForAction(action);
     for (let bpa of allBrowserPageActions()) {
       bpa.placeActionInUrlbar(action);
-    }
-  },
-
-  logTelemetry(type, action, node = null) {
-    if (type == "used") {
-      type =
-        node && node.closest("#urlbar-container")
-          ? "urlbar_used"
-          : "panel_used";
-    }
-    let histogramID = "FX_PAGE_ACTION_" + type.toUpperCase();
-    try {
-      let histogram = Services.telemetry.getHistogramById(histogramID);
-      if (action._isMozillaAction) {
-        histogram.add(action.labelForHistogram);
-      } else {
-        histogram.add("other");
-      }
-    } catch (ex) {
-      Cu.reportError(ex);
     }
   },
 
@@ -1122,16 +1107,16 @@ Action.prototype = {
   },
 };
 
-this.PageActions.Action = Action;
+PageActions.Action = Action;
 
-this.PageActions.ACTION_ID_BUILT_IN_SEPARATOR = ACTION_ID_BUILT_IN_SEPARATOR;
-this.PageActions.ACTION_ID_TRANSIENT_SEPARATOR = ACTION_ID_TRANSIENT_SEPARATOR;
+PageActions.ACTION_ID_BUILT_IN_SEPARATOR = ACTION_ID_BUILT_IN_SEPARATOR;
+PageActions.ACTION_ID_TRANSIENT_SEPARATOR = ACTION_ID_TRANSIENT_SEPARATOR;
 
 // These are only necessary so that Pocket and the test can use them.
-this.PageActions.ACTION_ID_BOOKMARK = ACTION_ID_BOOKMARK;
-this.PageActions.ACTION_ID_PIN_TAB = ACTION_ID_PIN_TAB;
-this.PageActions.ACTION_ID_BOOKMARK_SEPARATOR = ACTION_ID_BOOKMARK_SEPARATOR;
-this.PageActions.PREF_PERSISTED_ACTIONS = PREF_PERSISTED_ACTIONS;
+PageActions.ACTION_ID_BOOKMARK = ACTION_ID_BOOKMARK;
+PageActions.ACTION_ID_PIN_TAB = ACTION_ID_PIN_TAB;
+PageActions.ACTION_ID_BOOKMARK_SEPARATOR = ACTION_ID_BOOKMARK_SEPARATOR;
+PageActions.PREF_PERSISTED_ACTIONS = PREF_PERSISTED_ACTIONS;
 
 // Sorted in the order in which they should appear in the page action panel.
 // Does not include the page actions of extensions bundled with the browser.
@@ -1145,8 +1130,7 @@ var gBuiltInActions = [
     id: ACTION_ID_BOOKMARK,
     urlbarIDOverride: "star-button-box",
     _urlbarNodeInMarkup: true,
-    // The title is set in browser-pageActions.js by calling
-    // BookmarkingUI.updateBookmarkPageMenuItem().
+    // The title is set by BookmarkingUI.updateBookmarkPageMenuItem().
     title: "",
     pinnedToUrlbar: true,
     onShowingInPanel(buttonNode) {
@@ -1276,6 +1260,20 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
       browserPageActions(panelViewNode).sendToDevice.onShowingSubview(
         panelViewNode
       );
+    },
+  });
+}
+
+if (SiteSpecificBrowserService.isEnabled) {
+  gBuiltInActions.push({
+    id: "launchSSB",
+    // Hardcoded for now. Localization tracked in bug 1602528.
+    title: "Install Website as App",
+    onLocationChange(browserWindow) {
+      browserPageActions(browserWindow).launchSSB.updateState();
+    },
+    onCommand(event, buttonNode) {
+      browserPageActions(buttonNode).launchSSB.onCommand(event, buttonNode);
     },
   });
 }

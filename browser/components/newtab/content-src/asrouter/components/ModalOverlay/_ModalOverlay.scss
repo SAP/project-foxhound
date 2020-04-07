@@ -1,3 +1,6 @@
+// Variable for the about:welcome modal scrollbars
+$modal-scrollbar-z-index: 1100;
+
 .activity-stream {
   &.modal-open {
     overflow: hidden;
@@ -12,18 +15,12 @@
   left: 0;
   width: 100%;
   display: none;
-  z-index: 1100;
+  z-index: $modal-scrollbar-z-index;
+  overflow: auto;
 
   &.active {
-    display: block;
+    display: flex;
   }
-}
-
-.modal-scroll {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  overflow: auto;
 }
 
 .modal-height {
@@ -33,29 +30,24 @@
 }
 
 .modalOverlayInner {
-  width: 960px;
-  position: fixed;
-  top: 15%;
-  left: calc(50% - 480px); // halfway across minus half the width of the modal
+  min-width: min-content;
+  width: 100%;
+  max-width: 960px;
+  position: relative;
+  margin: auto;
   background: var(--newtab-modal-color);
   box-shadow: 0 1px 15px 0 $black-30;
   border-radius: 4px;
   display: none;
-  z-index: 1101;
+  z-index: $modal-scrollbar-z-index;
 
   // modal takes over entire screen
   @media(max-width: 960px) {
-    width: 100%;
     height: 100%;
     top: 0;
     left: 0;
     box-shadow: none;
     border-radius: 0;
-  }
-
-  // if modal is short enough, reduce the top margin
-  @media(max-height: 730px) {
-    top: 5%;
   }
 
   &.active {
@@ -69,6 +61,10 @@
     padding: 20px;
     fill: $white;
     position: absolute;
+
+    &:hover {
+      background-color: $trailhead-purple;
+    }
 
     &:focus {
       border: 1px dotted;

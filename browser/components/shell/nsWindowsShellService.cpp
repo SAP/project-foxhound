@@ -13,14 +13,10 @@
 #include "nsIContent.h"
 #include "nsIImageLoadingContent.h"
 #include "nsIOutputStream.h"
-#include "nsIPrefService.h"
-#include "nsIPrefLocalizedString.h"
-#include "nsIServiceManager.h"
 #include "nsIStringBundle.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
 #include "nsShellService.h"
-#include "nsICategoryManager.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsDirectoryServiceDefs.h"
@@ -33,6 +29,8 @@
 
 #include "windows.h"
 #include "shellapi.h"
+#include <propvarutil.h>
+#include <propkey.h>
 
 #ifdef _WIN32_WINNT
 #  undef _WIN32_WINNT
@@ -61,11 +59,29 @@
 
 #define APP_REG_NAME_BASE L"Firefox-"
 
+#ifdef DEBUG
+#  define NS_ENSURE_HRESULT(hres, ret)                    \
+    do {                                                  \
+      HRESULT result = hres;                              \
+      if (MOZ_UNLIKELY(FAILED(result))) {                 \
+        mozilla::SmprintfPointer msg = mozilla::Smprintf( \
+            "NS_ENSURE_HRESULT(%s, %s) failed with "      \
+            "result 0x%" PRIX32,                          \
+            #hres, #ret, static_cast<uint32_t>(result));  \
+        NS_WARNING(msg.get());                            \
+        return ret;                                       \
+      }                                                   \
+    } while (false)
+#else
+#  define NS_ENSURE_HRESULT(hres, ret) \
+    if (MOZ_UNLIKELY(FAILED(hres))) return ret
+#endif
+
 using mozilla::IsWin8OrLater;
 using namespace mozilla;
 
 NS_IMPL_ISUPPORTS(nsWindowsShellService, nsIToolkitShellService,
-                  nsIShellService)
+                  nsIShellService, nsIWindowsShellService)
 
 static nsresult OpenKeyForReading(HKEY aKeyRoot, const nsAString& aKeyName,
                                   HKEY* aKey) {
@@ -681,6 +697,71 @@ nsWindowsShellService::SetDesktopBackgroundColor(uint32_t aColor) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   return regKey->Close();
+}
+
+NS_IMETHODIMP
+nsWindowsShellService::CreateShortcut(nsIFile* aBinary,
+                                      const nsTArray<nsString>& aArguments,
+                                      const nsAString& aDescription,
+                                      nsIFile* aIconFile,
+                                      const nsAString& aAppUserModelId,
+                                      nsIFile* aTarget) {
+  NS_ENSURE_ARG(aBinary);
+  NS_ENSURE_ARG(aTarget);
+
+  RefPtr<IShellLinkW> link;
+  HRESULT hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_IShellLinkW, getter_AddRefs(link));
+  NS_ENSURE_HRESULT(hr, NS_ERROR_FAILURE);
+
+  nsString path(aBinary->NativePath());
+  link->SetPath(path.get());
+
+  if (!aDescription.IsEmpty()) {
+    link->SetDescription(PromiseFlatString(aDescription).get());
+  }
+
+  // TODO: Properly escape quotes in the string, see bug 1604287.
+  nsString arguments;
+  for (auto& arg : aArguments) {
+    arguments.AppendPrintf("\"%S\" ", arg.get());
+  }
+
+  link->SetArguments(arguments.get());
+
+  if (aIconFile) {
+    nsString icon(aIconFile->NativePath());
+    link->SetIconLocation(icon.get(), 0);
+  }
+
+  if (!aAppUserModelId.IsEmpty()) {
+    RefPtr<IPropertyStore> propStore;
+    hr = link->QueryInterface(IID_IPropertyStore, getter_AddRefs(propStore));
+    NS_ENSURE_HRESULT(hr, NS_ERROR_FAILURE);
+
+    PROPVARIANT pv;
+    if (FAILED(InitPropVariantFromString(
+            PromiseFlatString(aAppUserModelId).get(), &pv))) {
+      return NS_ERROR_FAILURE;
+    }
+
+    hr = propStore->SetValue(PKEY_AppUserModel_ID, pv);
+    PropVariantClear(&pv);
+    NS_ENSURE_HRESULT(hr, NS_ERROR_FAILURE);
+
+    hr = propStore->Commit();
+    NS_ENSURE_HRESULT(hr, NS_ERROR_FAILURE);
+  }
+
+  RefPtr<IPersistFile> persist;
+  hr = link->QueryInterface(IID_IPersistFile, getter_AddRefs(persist));
+  NS_ENSURE_HRESULT(hr, NS_ERROR_FAILURE);
+
+  nsString target(aTarget->NativePath());
+  hr = persist->Save(target.get(), TRUE);
+  NS_ENSURE_HRESULT(hr, NS_ERROR_FAILURE);
+
+  return NS_OK;
 }
 
 nsWindowsShellService::nsWindowsShellService() {}

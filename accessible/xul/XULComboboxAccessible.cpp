@@ -12,9 +12,7 @@
 #include "Role.h"
 #include "States.h"
 
-#include "nsIAutoCompleteInput.h"
 #include "nsIDOMXULMenuListElement.h"
-#include "nsIDOMXULSelectCntrlItemEl.h"
 
 using namespace mozilla::a11y;
 
@@ -28,9 +26,7 @@ XULComboboxAccessible::XULComboboxAccessible(nsIContent* aContent,
   mGenericTypes |= eCombobox;
 }
 
-role XULComboboxAccessible::NativeRole() const {
-  return roles::COMBOBOX;
-}
+role XULComboboxAccessible::NativeRole() const { return roles::COMBOBOX; }
 
 uint64_t XULComboboxAccessible::NativeState() const {
   // As a nsComboboxAccessible we can have the following states:
@@ -62,7 +58,7 @@ void XULComboboxAccessible::Description(nsString& aDescription) {
   nsCOMPtr<nsIDOMXULMenuListElement> menuListElm = Elm()->AsXULMenuList();
   if (!menuListElm) return;
 
-  nsCOMPtr<Element> focusedOptionItem;
+  nsCOMPtr<dom::Element> focusedOptionItem;
   menuListElm->GetSelectedItem(getter_AddRefs(focusedOptionItem));
   if (focusedOptionItem && mDoc) {
     Accessible* focusedOptionAcc = mDoc->GetAccessible(focusedOptionItem);

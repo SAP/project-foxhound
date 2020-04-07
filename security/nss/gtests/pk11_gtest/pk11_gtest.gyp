@@ -20,15 +20,21 @@
         'pk11_cipherop_unittest.cc',
         'pk11_curve25519_unittest.cc',
         'pk11_der_private_key_import_unittest.cc',
+        'pk11_des_unittest.cc',
         'pk11_ecdsa_unittest.cc',
+        'pk11_ecdh_unittest.cc',
         'pk11_encrypt_derive_unittest.cc',
         'pk11_find_certs_unittest.cc',
+        'pk11_hkdf_unittest.cc',
         'pk11_import_unittest.cc',
+        'pk11_kbkdf.cc',
         'pk11_keygen.cc',
         'pk11_key_unittest.cc',
+        'pk11_module_unittest.cc',
         'pk11_pbkdf2_unittest.cc',
         'pk11_prf_unittest.cc',
         'pk11_prng_unittest.cc',
+        'pk11_rsaencrypt_unittest.cc',
         'pk11_rsapkcs1_unittest.cc',
         'pk11_rsapss_unittest.cc',
         'pk11_seed_cbc_unittest.cc',
@@ -63,6 +69,12 @@
       ],
     }
   ],
+  'target_defaults': {
+    'defines': [
+      'DLL_PREFIX=\"<(dll_prefix)\"',
+      'DLL_SUFFIX=\"<(dll_suffix)\"'
+    ]
+  },
   'variables': {
     'module': 'nss'
   }

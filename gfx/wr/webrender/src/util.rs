@@ -116,7 +116,7 @@ impl<T> VecHelper<T> for Vec<T> {
 // scaling is applied first, followed by the translation.
 // TODO(gw): We should try and incorporate F <-> T units here,
 //           but it's a bit tricky to do that now with the
-//           way the current clip-scroll tree works.
+//           way the current spatial tree works.
 #[derive(Debug, Clone, Copy, MallocSizeOf)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 pub struct ScaleOffset {
@@ -243,6 +243,20 @@ impl ScaleOffset {
                 rect.size.width / self.scale.x,
                 rect.size.height / self.scale.y,
             )
+        )
+    }
+
+    pub fn map_vector<F, T>(&self, vector: &Vector2D<f32, F>) -> Vector2D<f32, T> {
+        Vector2D::new(
+            vector.x * self.scale.x + self.offset.x,
+            vector.y * self.scale.y + self.offset.y,
+        )
+    }
+
+    pub fn unmap_vector<F, T>(&self, vector: &Vector2D<f32, F>) -> Vector2D<f32, T> {
+        Vector2D::new(
+            (vector.x - self.offset.x) / self.scale.x,
+            (vector.y - self.offset.y) / self.scale.y,
         )
     }
 

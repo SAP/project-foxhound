@@ -13,6 +13,12 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
+  "setTimeout",
+  "resource://gre/modules/Timer.jsm"
+);
+
+ChromeUtils.defineModuleGetter(
+  this,
   "ReaderMode",
   "resource://gre/modules/ReaderMode.jsm"
 );
@@ -26,10 +32,7 @@ class PrintingChild extends ActorChild {
   // this hackery.
 
   get shouldSavePrintSettings() {
-    return (
-      Services.prefs.getBoolPref("print.use_global_printsettings") &&
-      Services.prefs.getBoolPref("print.save_print_settings")
-    );
+    return Services.prefs.getBoolPref("print.save_print_settings");
   }
 
   handleEvent(event) {
@@ -172,7 +175,7 @@ class PrintingChild extends ActorChild {
               };
               contentWindow.addEventListener("MozAfterPaint", onPaint);
               // This timer need when display list invalidation doesn't invalidate.
-              mm.setTimeout(() => {
+              setTimeout(() => {
                 mm.removeEventListener("MozAfterPaint", onPaint);
                 mm.sendAsyncMessage("Printing:Preview:ReaderModeReady");
               }, 100);
@@ -378,6 +381,9 @@ class PrintingChild extends ActorChild {
 
   print(contentWindow, simplifiedMode, defaultPrinterName) {
     let printSettings = this.getPrintSettings(defaultPrinterName);
+    // Set the title so that the print dialog can pick it up and
+    // use it to generate the filename for save-to-PDF.
+    printSettings.title = contentWindow.document.title;
     let printCancelled = false;
 
     // If we happen to be on simplified mode, we need to set docURL in order
@@ -388,25 +394,9 @@ class PrintingChild extends ActorChild {
     }
 
     try {
-      let print = contentWindow.getInterface(Ci.nsIWebBrowserPrint);
-
-      if (print.doingPrintPreview) {
-        this.logKeyedTelemetry("PRINT_DIALOG_OPENED_COUNT", "FROM_PREVIEW");
-      } else {
-        this.logKeyedTelemetry("PRINT_DIALOG_OPENED_COUNT", "FROM_PAGE");
-      }
-
-      print.print(printSettings, null);
-
-      if (print.doingPrintPreview) {
-        if (simplifiedMode) {
-          this.logKeyedTelemetry("PRINT_COUNT", "SIMPLIFIED");
-        } else {
-          this.logKeyedTelemetry("PRINT_COUNT", "WITH_PREVIEW");
-        }
-      } else {
-        this.logKeyedTelemetry("PRINT_COUNT", "WITHOUT_PREVIEW");
-      }
+      contentWindow
+        .getInterface(Ci.nsIWebBrowserPrint)
+        .print(printSettings, null);
     } catch (e) {
       // Pressing cancel is expressed as an NS_ERROR_ABORT return value,
       // causing an exception to be thrown which we catch here.
@@ -441,11 +431,6 @@ class PrintingChild extends ActorChild {
         printSettings.kInitSavePrinterName
       );
     }
-  }
-
-  logKeyedTelemetry(id, key) {
-    let histogram = Services.telemetry.getKeyedHistogramById(id);
-    histogram.add(key);
   }
 
   updatePageCount() {

@@ -6,6 +6,11 @@
 
 #include "LSSnapshot.h"
 
+#include "ActorsChild.h"
+#include "LocalStorageCommon.h"
+#include "LSDatabase.h"
+#include "LSWriteOptimizer.h"
+#include "mozilla/dom/PBackgroundLSSnapshot.h"
 #include "nsContentUtils.h"
 
 namespace mozilla {
@@ -194,9 +199,9 @@ nsresult LSSnapshot::Init(const nsAString& aKey,
 #endif
 
   if (mHasOtherProcessObservers) {
-    mWriteAndNotifyInfos = new nsTArray<LSWriteAndNotifyInfo>();
+    mWriteAndNotifyInfos = MakeUnique<nsTArray<LSWriteAndNotifyInfo>>();
   } else {
-    mWriteOptimizer = new SnapshotWriteOptimizer();
+    mWriteOptimizer = MakeUnique<SnapshotWriteOptimizer>();
   }
 
   if (!mExplicit) {

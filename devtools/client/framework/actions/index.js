@@ -4,5 +4,6 @@
 "use strict";
 
 module.exports = {
-  ...require("./dom-mutation-breakpoints"),
+  ...require("devtools/client/framework/actions/dom-mutation-breakpoints"),
+  ...require("devtools/client/framework/actions/threads"),
 };

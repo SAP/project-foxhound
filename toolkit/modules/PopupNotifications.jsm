@@ -978,6 +978,9 @@ PopupNotifications.prototype = {
       if ("secondName" in desc && "secondEnd" in desc) {
         popupnotification.setAttribute("secondname", desc.secondName);
         popupnotification.setAttribute("secondendlabel", desc.secondEnd);
+      } else {
+        popupnotification.removeAttribute("secondname");
+        popupnotification.removeAttribute("secondendlabel");
       }
 
       popupnotification.setAttribute("id", popupnotificationID);
@@ -1212,10 +1215,15 @@ PopupNotifications.prototype = {
     if (isNullOrHidden(anchorElement)) {
       anchorElement = this.window.document.getElementById("identity-icon");
 
-      // If the identity icon is not available in this window, or maybe the
-      // entire location bar is hidden for any reason, use the tab as the
-      // anchor. We only ever show notifications for the current browser, so we
-      // can just use the current tab.
+      if (isNullOrHidden(anchorElement)) {
+        anchorElement = this.window.document.getElementById(
+          "urlbar-search-button"
+        );
+      }
+
+      // If the identity and search icons are not available in this window, use
+      // the tab as the anchor. We only ever show notifications for the current
+      // browser, so we can just use the current tab.
       if (isNullOrHidden(anchorElement)) {
         anchorElement = this.tabbrowser.selectedTab;
 
@@ -1439,31 +1447,6 @@ PopupNotifications.prototype = {
   ) {
     for (let anchorElement of anchorElements) {
       anchorElement.setAttribute(ICON_ATTRIBUTE_SHOWING, "true");
-      // Use the anchorID as a class along with the default icon class as a
-      // fallback if anchorID is not defined in CSS. We always use the first
-      // notifications icon, so in the case of multiple notifications we'll
-      // only use the default icon.
-      if (anchorElement.classList.contains("notification-anchor-icon")) {
-        // remove previous icon classes
-        let className = anchorElement.className.replace(
-          /([-\w]+-notification-icon\s?)/g,
-          ""
-        );
-        if (notifications.length) {
-          // Find the first notification this anchor used for.
-          let notification = notifications[0];
-          for (let n of notifications) {
-            if (n.anchorElement == anchorElement) {
-              notification = n;
-              break;
-            }
-          }
-          // With this notification we can better approximate the most fitting
-          // style.
-          className = notification.anchorID + " " + className;
-        }
-        anchorElement.className = className;
-      }
     }
   },
 
@@ -1475,6 +1458,8 @@ PopupNotifications.prototype = {
 
         if (notification.options.extraAttr) {
           anchorElm.setAttribute("extraAttr", notification.options.extraAttr);
+        } else {
+          anchorElm.removeAttribute("extraAttr");
         }
       }
     }

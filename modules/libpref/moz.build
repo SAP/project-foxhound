@@ -34,8 +34,10 @@ pref_groups = [
     'channelclassifier',
     'clipboard',
     'content',
+    'datareporting',
     'device',
     'devtools',
+    'docshell',
     'dom',
     'editor',
     'extensions',
@@ -63,6 +65,7 @@ pref_groups = [
     'page_load',
     'permissions',
     'plain_text',
+    'plugin',
     'plugins',
     'preferences',
     'print',
@@ -132,7 +135,7 @@ XPCOM_MANIFESTS += [
     'components.conf',
 ]
 
-SPHINX_TREES['libpref'] = 'docs'
+SPHINX_TREES['/modules/libpref'] = 'docs'
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

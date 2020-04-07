@@ -10,10 +10,10 @@ from arsenic.services import Geckodriver, free_port, subprocess_based_service
 from condprof.util import (
     BaseEnv,
     latest_nightly,
-    LOG,
+    logger,
     get_version,
-    ERROR,
     get_current_platform,
+    DEFAULT_PREFS,
 )
 
 
@@ -22,9 +22,17 @@ class DesktopGeckodriver(Geckodriver):
     async def start(self):
         port = free_port()
         await self._check_version()
-        LOG("Running Webdriver on port %d" % port)
-        LOG("Running Marionette on port 2828")
-        pargs = [self.binary, "-vv", "--port", str(port), "--marionette-port", "2828"]
+        logger.info("Running Webdriver on port %d" % port)
+        logger.info("Running Marionette on port 2828")
+        pargs = [
+            self.binary,
+            "--log",
+            "trace",
+            "--port",
+            str(port),
+            "--marionette-port",
+            "2828",
+        ]
         return await subprocess_based_service(
             pargs, f"http://localhost:{port}", self.log_file
         )
@@ -50,20 +58,25 @@ class DesktopEnv(BaseEnv):
                 raise IOError(self.firefox)
             yield
 
-    def get_browser_args(self, headless):
-        options = ["-profile", self.profile]
+    def get_browser_args(self, headless, prefs=None):
+        final_prefs = dict(DEFAULT_PREFS)
+        if prefs is not None:
+            final_prefs.update(prefs)
+        options = ["--allow-downgrade", "-profile", self.profile]
         if headless:
             options.append("-headless")
         args = {"moz:firefoxOptions": {"args": options}}
         if self.firefox is not None:
             args["moz:firefoxOptions"]["binary"] = self.firefox
+        args["moz:firefoxOptions"]["prefs"] = final_prefs
+        args["moz:firefoxOptions"]["log"] = {"level": "trace"}
         return args
 
     def get_browser_version(self):
         try:
             return get_version(self.firefox)
-        except Exception as e:
-            ERROR("Could not get Firefox version %s" % str(e))
+        except Exception:
+            logger.error("Could not get Firefox version", exc_info=True)
             return "unknown"
 
     def get_geckodriver(self, log_file):

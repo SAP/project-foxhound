@@ -24,11 +24,13 @@ KNOWN_PROCESS_FLAGS = {
     'all_childs': 'AllChildren',  # Supporting files from before bug 1363725
 }
 
+GECKOVIEW_STREAMING_PRODUCT = 'geckoview_streaming'
+
 SUPPORTED_PRODUCTS = {
     'firefox': 'Firefox',
     'fennec': 'Fennec',
     'geckoview': 'Geckoview',
-    'geckoview_streaming': 'GeckoviewStreaming',
+    GECKOVIEW_STREAMING_PRODUCT: 'GeckoviewStreaming',
     'thunderbird': 'Thunderbird',
 }
 
@@ -82,13 +84,13 @@ class ParserError(Exception):
 
     def handle_now(self):
         ParserError.print_eventuals()
-        print(self.message, file=sys.stderr)
+        print(str(self), file=sys.stderr)
         sys.exit(1)
 
     @classmethod
     def print_eventuals(cls):
         while cls.eventual_errors:
-            print(cls.eventual_errors.pop(0).message, file=sys.stderr)
+            print(str(cls.eventual_errors.pop(0)), file=sys.stderr)
 
     @classmethod
     def exit_func(cls):
@@ -106,6 +108,10 @@ def process_name_to_enum(name):
 
 def is_valid_product(name):
     return (name in SUPPORTED_PRODUCTS)
+
+
+def is_geckoview_streaming_product(name):
+    return (name == GECKOVIEW_STREAMING_PRODUCT)
 
 
 def is_valid_os(name):
@@ -169,7 +175,6 @@ class StringTable:
         :param name: the name of the output array.
         """
         entries = self.table.items()
-        entries.sort(key=lambda x: x[1])
 
         # Avoid null-in-string warnings with GCC and potentially
         # overlong string constants; write everything out the long way.
@@ -186,7 +191,7 @@ class StringTable:
         f.write("#else\n")
         f.write("constexpr char %s[] = {\n" % name)
         f.write("#endif\n")
-        for (string, offset) in entries:
+        for (string, offset) in sorted(entries, key=lambda x: x[1]):
             if "*/" in string:
                 raise ValueError("String in string table contains unexpected sequence '*/': %s" %
                                  string)

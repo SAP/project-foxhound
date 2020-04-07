@@ -62,7 +62,6 @@
  *
  */
 
-var gPrintSettingsAreGlobal = false;
 var gSavePrintSettings = false;
 var gFocusedElement = null;
 
@@ -126,17 +125,38 @@ var PrintUtils = {
   /**
    * Starts the process of printing the contents of a window.
    *
-   * @param aWindowID
-   *        The outer window ID of the nsIDOMWindow to print.
-   * @param aBrowser
-   *        The <xul:browser> that the nsIDOMWindow for aWindowID belongs to.
+   * @param aBrowsingContext
+   *        The BrowsingContext of the window to print.
    */
-  printWindow(aWindowID, aBrowser) {
-    aBrowser.messageManager.sendAsyncMessage("Printing:Print", {
-      windowID: aWindowID,
+  printWindow(aBrowsingContext) {
+    let windowID = aBrowsingContext.currentWindowGlobal.outerWindowId;
+    let topBrowser = aBrowsingContext.top.embedderElement;
+
+    const printPreviewIsOpen = !!document.getElementById(
+      "print-preview-toolbar"
+    );
+
+    if (printPreviewIsOpen) {
+      this._logKeyedTelemetry("PRINT_DIALOG_OPENED_COUNT", "FROM_PREVIEW");
+    } else {
+      this._logKeyedTelemetry("PRINT_DIALOG_OPENED_COUNT", "FROM_PAGE");
+    }
+
+    topBrowser.messageManager.sendAsyncMessage("Printing:Print", {
+      windowID,
       simplifiedMode: this._shouldSimplify,
       defaultPrinterName: this._getDefaultPrinterName(),
     });
+
+    if (printPreviewIsOpen) {
+      if (this._shouldSimplify) {
+        this._logKeyedTelemetry("PRINT_COUNT", "SIMPLIFIED");
+      } else {
+        this._logKeyedTelemetry("PRINT_COUNT", "WITH_PREVIEW");
+      }
+    } else {
+      this._logKeyedTelemetry("PRINT_COUNT", "WITHOUT_PREVIEW");
+    }
   },
 
   /**
@@ -227,7 +247,6 @@ var PrintUtils = {
     try {
       PPROMPTSVC.showPrintProgressDialog(
         window,
-        null,
         printSettings,
         this._obsPP,
         false,
@@ -397,9 +416,6 @@ var PrintUtils = {
   },
 
   getPrintSettings() {
-    gPrintSettingsAreGlobal = Services.prefs.getBoolPref(
-      "print.use_global_printsettings"
-    );
     gSavePrintSettings = Services.prefs.getBoolPref(
       "print.save_print_settings"
     );
@@ -409,12 +425,8 @@ var PrintUtils = {
       var PSSVC = Cc["@mozilla.org/gfx/printsettings-service;1"].getService(
         Ci.nsIPrintSettingsService
       );
-      if (gPrintSettingsAreGlobal) {
-        printSettings = PSSVC.globalPrintSettings;
-        this._setPrinterDefaultsForSelectedPrinter(PSSVC, printSettings);
-      } else {
-        printSettings = PSSVC.newPrintSettings;
-      }
+      printSettings = PSSVC.globalPrintSettings;
+      this._setPrinterDefaultsForSelectedPrinter(PSSVC, printSettings);
     } catch (e) {
       dump("getPrintSettings: " + e + "\n");
     }
@@ -595,6 +607,7 @@ var PrintUtils = {
         is: "printpreview-toolbar",
       });
       printPreviewTB.setAttribute("fullscreentoolbar", true);
+      printPreviewTB.setAttribute("flex", "1");
       printPreviewTB.id = "print-preview-toolbar";
 
       let navToolbox = this._listener.getNavToolbox();
@@ -617,15 +630,15 @@ var PrintUtils = {
       }
 
       // copy the window close handler
-      if (document.documentElement.hasAttribute("onclose")) {
-        this._closeHandlerPP = document.documentElement.getAttribute("onclose");
+      if (window.onclose) {
+        this._closeHandlerPP = window.onclose;
       } else {
         this._closeHandlerPP = null;
       }
-      document.documentElement.setAttribute(
-        "onclose",
-        "PrintUtils.exitPrintPreview(); return false;"
-      );
+      window.onclose = function() {
+        PrintUtils.exitPrintPreview();
+        return false;
+      };
 
       // disable chrome shortcuts...
       window.addEventListener("keydown", this.onKeyDownPP, true);
@@ -652,9 +665,9 @@ var PrintUtils = {
 
     // restore the old close handler
     if (this._closeHandlerPP) {
-      document.documentElement.setAttribute("onclose", this._closeHandlerPP);
+      window.onclose = this._closeHandlerPP;
     } else {
-      document.documentElement.removeAttribute("onclose");
+      window.onclose = null;
     }
     this._closeHandlerPP = null;
 
@@ -680,6 +693,11 @@ var PrintUtils = {
   logTelemetry(ID) {
     let histogram = Services.telemetry.getHistogramById(ID);
     histogram.add(true);
+  },
+
+  _logKeyedTelemetry(id, key) {
+    let histogram = Services.telemetry.getKeyedHistogramById(id);
+    histogram.add(key);
   },
 
   onKeyDownPP(aEvent) {

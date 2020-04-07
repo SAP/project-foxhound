@@ -5,22 +5,28 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/CycleCollectedJSContext.h"
+
 #include <algorithm>
+#include <utility>
+
+#include "js/Debug.h"
+#include "js/GCAPI.h"
+#include "js/Utility.h"
+#include "jsapi.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
-#include "mozilla/Move.h"
+#include "mozilla/DebuggerOnGCRunnable.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/SystemGroup.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimelineConsumers.h"
 #include "mozilla/TimelineMarker.h"
 #include "mozilla/Unused.h"
-#include "mozilla/DebuggerOnGCRunnable.h"
-#include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/ProfileTimelineMarkerBinding.h"
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/PromiseDebugging.h"
@@ -28,10 +34,6 @@
 #include "mozilla/dom/PromiseRejectionEventBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/UserActivation.h"
-#include "jsapi.h"
-#include "js/Debug.h"
-#include "js/GCAPI.h"
-#include "js/Utility.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionNoteRootCallback.h"
 #include "nsCycleCollectionParticipant.h"
@@ -40,11 +42,10 @@
 #include "nsDOMMutationObserver.h"
 #include "nsJSUtils.h"
 #include "nsPIDOMWindow.h"
-#include "nsWrapperCache.h"
 #include "nsStringBuffer.h"
-
 #include "nsThread.h"
 #include "nsThreadUtils.h"
+#include "nsWrapperCache.h"
 #include "xpcpublic.h"
 
 using namespace mozilla;
@@ -53,8 +54,7 @@ using namespace mozilla::dom;
 namespace mozilla {
 
 CycleCollectedJSContext::CycleCollectedJSContext()
-    : mIsPrimaryContext(true),
-      mRuntime(nullptr),
+    : mRuntime(nullptr),
       mJSContext(nullptr),
       mDoingStableStates(false),
       mTargetedMicroTaskRecursionDepth(0),
@@ -79,13 +79,13 @@ CycleCollectedJSContext::~CycleCollectedJSContext() {
     return;
   }
 
+  JS::SetHostCleanupFinalizationGroupCallback(mJSContext, nullptr, nullptr);
+  mFinalizationGroupsToCleanUp.reset();
+
   JS_SetContextPrivate(mJSContext, nullptr);
 
-  mRuntime->RemoveContext(this);
-
-  if (mIsPrimaryContext) {
-    mRuntime->Shutdown(mJSContext);
-  }
+  mRuntime->SetContext(nullptr);
+  mRuntime->Shutdown(mJSContext);
 
   // Last chance to process any events.
   CleanupIDBTransactions(mBaseRecursionDepth);
@@ -109,25 +109,29 @@ CycleCollectedJSContext::~CycleCollectedJSContext() {
   JS_DestroyContext(mJSContext);
   mJSContext = nullptr;
 
-  if (mIsPrimaryContext) {
-    nsCycleCollector_forgetJSContext();
-  } else {
-    nsCycleCollector_forgetNonPrimaryContext();
-  }
+  nsCycleCollector_forgetJSContext();
 
   mozilla::dom::DestroyScriptSettings();
 
   mOwningThread->SetScriptObserver(nullptr);
   NS_RELEASE(mOwningThread);
 
-  if (mIsPrimaryContext) {
-    delete mRuntime;
-  }
+  delete mRuntime;
   mRuntime = nullptr;
 }
 
-void CycleCollectedJSContext::InitializeCommon() {
-  mRuntime->AddContext(this);
+nsresult CycleCollectedJSContext::Initialize(JSRuntime* aParentRuntime,
+                                             uint32_t aMaxBytes) {
+  MOZ_ASSERT(!mJSContext);
+
+  mozilla::dom::InitScriptSettings();
+  mJSContext = JS_NewContext(aMaxBytes, aParentRuntime);
+  if (!mJSContext) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
+  mRuntime = CreateRuntime(mJSContext);
+  mRuntime->SetContext(this);
 
   mOwningThread->SetScriptObserver(this);
   // The main thread has a base recursion depth of 0, workers of 1.
@@ -145,49 +149,14 @@ void CycleCollectedJSContext::InitializeCommon() {
                            JS::GCVector<JSObject*, 0, js::SystemAllocPolicy>(
                                js::SystemAllocPolicy()));
 
+  mFinalizationGroupsToCleanUp.init(mJSContext);
+  JS::SetHostCleanupFinalizationGroupCallback(
+      mJSContext, CleanupFinalizationGroupCallback, this);
+
   // Cast to PerThreadAtomCache for dom::GetAtomCache(JSContext*).
   JS_SetContextPrivate(mJSContext, static_cast<PerThreadAtomCache*>(this));
-}
-
-nsresult CycleCollectedJSContext::Initialize(JSRuntime* aParentRuntime,
-                                             uint32_t aMaxBytes,
-                                             uint32_t aMaxNurseryBytes) {
-  MOZ_ASSERT(!mJSContext);
-
-  mozilla::dom::InitScriptSettings();
-  mJSContext = JS_NewContext(aMaxBytes, aParentRuntime);
-  if (!mJSContext) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  JS_SetGCParameter(mJSContext, JSGC_MAX_NURSERY_BYTES, aMaxNurseryBytes);
-
-  mRuntime = CreateRuntime(mJSContext);
-
-  InitializeCommon();
 
   nsCycleCollector_registerJSContext(this);
-
-  return NS_OK;
-}
-
-nsresult CycleCollectedJSContext::InitializeNonPrimary(
-    CycleCollectedJSContext* aPrimaryContext) {
-  MOZ_ASSERT(!mJSContext);
-
-  mIsPrimaryContext = false;
-
-  mozilla::dom::InitScriptSettings();
-  mJSContext = JS_NewCooperativeContext(aPrimaryContext->mJSContext);
-  if (!mJSContext) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  mRuntime = aPrimaryContext->mRuntime;
-
-  InitializeCommon();
-
-  nsCycleCollector_registerNonPrimaryContext(this);
 
   return NS_OK;
 }
@@ -225,7 +194,7 @@ class PromiseJobRunnable final : public MicroTaskRunnable {
     }
   }
 
-  virtual ~PromiseJobRunnable() {}
+  virtual ~PromiseJobRunnable() = default;
 
  protected:
   MOZ_CAN_RUN_SCRIPT
@@ -358,45 +327,42 @@ void CycleCollectedJSContext::PromiseRejectionTrackerCallback(
 
   if (state == JS::PromiseRejectionHandlingState::Unhandled) {
     PromiseDebugging::AddUncaughtRejection(aPromise);
-    if (mozilla::StaticPrefs::dom_promise_rejection_events_enabled() &&
-        !aMutedErrors) {
+    if (!aMutedErrors) {
       RefPtr<Promise> promise =
           Promise::CreateFromExisting(xpc::NativeGlobal(aPromise), aPromise);
       aboutToBeNotified.AppendElement(promise);
-      unhandled.Put(promiseID, promise);
+      unhandled.Put(promiseID, std::move(promise));
     }
   } else {
     PromiseDebugging::AddConsumedRejection(aPromise);
-    if (mozilla::StaticPrefs::dom_promise_rejection_events_enabled()) {
-      for (size_t i = 0; i < aboutToBeNotified.Length(); i++) {
-        if (aboutToBeNotified[i] &&
-            aboutToBeNotified[i]->PromiseObj() == aPromise) {
-          // To avoid large amounts of memmoves, we don't shrink the vector
-          // here. Instead, we filter out nullptrs when iterating over the
-          // vector later.
-          aboutToBeNotified[i] = nullptr;
-          DebugOnly<bool> isFound = unhandled.Remove(promiseID);
-          MOZ_ASSERT(isFound);
-          return;
-        }
+    for (size_t i = 0; i < aboutToBeNotified.Length(); i++) {
+      if (aboutToBeNotified[i] &&
+          aboutToBeNotified[i]->PromiseObj() == aPromise) {
+        // To avoid large amounts of memmoves, we don't shrink the vector
+        // here. Instead, we filter out nullptrs when iterating over the
+        // vector later.
+        aboutToBeNotified[i] = nullptr;
+        DebugOnly<bool> isFound = unhandled.Remove(promiseID);
+        MOZ_ASSERT(isFound);
+        return;
       }
-      RefPtr<Promise> promise;
-      unhandled.Remove(promiseID, getter_AddRefs(promise));
-      if (!promise && !aMutedErrors) {
-        nsIGlobalObject* global = xpc::NativeGlobal(aPromise);
-        if (nsCOMPtr<EventTarget> owner = do_QueryInterface(global)) {
-          RootedDictionary<PromiseRejectionEventInit> init(aCx);
-          init.mPromise = Promise::CreateFromExisting(global, aPromise);
-          init.mReason = JS::GetPromiseResult(aPromise);
+    }
+    RefPtr<Promise> promise;
+    unhandled.Remove(promiseID, getter_AddRefs(promise));
+    if (!promise && !aMutedErrors) {
+      nsIGlobalObject* global = xpc::NativeGlobal(aPromise);
+      if (nsCOMPtr<EventTarget> owner = do_QueryInterface(global)) {
+        RootedDictionary<PromiseRejectionEventInit> init(aCx);
+        init.mPromise = Promise::CreateFromExisting(global, aPromise);
+        init.mReason = JS::GetPromiseResult(aPromise);
 
-          RefPtr<PromiseRejectionEvent> event =
-              PromiseRejectionEvent::Constructor(
-                  owner, NS_LITERAL_STRING("rejectionhandled"), init);
+        RefPtr<PromiseRejectionEvent> event =
+            PromiseRejectionEvent::Constructor(
+                owner, NS_LITERAL_STRING("rejectionhandled"), init);
 
-          RefPtr<AsyncEventDispatcher> asyncDispatcher =
-              new AsyncEventDispatcher(owner, event);
-          asyncDispatcher->PostDOMEvent();
-        }
+        RefPtr<AsyncEventDispatcher> asyncDispatcher =
+            new AsyncEventDispatcher(owner, event);
+        asyncDispatcher->PostDOMEvent();
       }
     }
   }
@@ -435,7 +401,7 @@ void CycleCollectedJSContext::ProcessStableStateQueue() {
   // When run, one event can add another event to the mStableStateEvents, as
   // such you can't use iterators here.
   for (uint32_t i = 0; i < mStableStateEvents.Length(); ++i) {
-    nsCOMPtr<nsIRunnable> event = mStableStateEvents[i].forget();
+    nsCOMPtr<nsIRunnable> event = std::move(mStableStateEvents[i]);
     event->Run();
   }
 
@@ -451,24 +417,27 @@ void CycleCollectedJSContext::CleanupIDBTransactions(uint32_t aRecursionDepth) {
   nsTArray<PendingIDBTransactionData> localQueue =
       std::move(mPendingIDBTransactions);
 
-  for (uint32_t i = 0; i < localQueue.Length(); ++i) {
-    PendingIDBTransactionData& data = localQueue[i];
-    if (data.mRecursionDepth != aRecursionDepth) {
-      continue;
-    }
+  localQueue.RemoveElementsAt(
+      std::remove_if(localQueue.begin(), localQueue.end(),
+                     [aRecursionDepth](PendingIDBTransactionData& data) {
+                       if (data.mRecursionDepth != aRecursionDepth) {
+                         return false;
+                       }
 
-    {
-      nsCOMPtr<nsIRunnable> transaction = data.mTransaction.forget();
-      transaction->Run();
-    }
+                       {
+                         nsCOMPtr<nsIRunnable> transaction =
+                             std::move(data.mTransaction);
+                         transaction->Run();
+                       }
 
-    localQueue.RemoveElementAt(i--);
-  }
+                       return true;
+                     }),
+      localQueue.end());
 
-  // If the queue has events in it now, they were added from something we
-  // called, so they belong at the end of the queue.
-  localQueue.AppendElements(mPendingIDBTransactions);
-  localQueue.SwapElements(mPendingIDBTransactions);
+  // If mPendingIDBTransactions has events in it now, they were added from
+  // something we called, so they belong at the end of the queue.
+  localQueue.AppendElements(std::move(mPendingIDBTransactions));
+  mPendingIDBTransactions = std::move(localQueue);
   mDoingStableStates = false;
 }
 
@@ -514,6 +483,15 @@ void CycleCollectedJSContext::AfterProcessMicrotasks() {
   // Cleanup Indexed Database transactions:
   // https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint
   CleanupIDBTransactions(RecursionDepth());
+
+  // Clear kept alive objects in JS WeakRef.
+  // https://whatpr.org/html/4571/webappapis.html#perform-a-microtask-checkpoint
+  //
+  // ECMAScript implementations are expected to call ClearKeptObjects when a
+  // synchronous sequence of ECMAScript execution completes.
+  //
+  // https://tc39.es/proposal-weakrefs/#sec-clear-kept-objects
+  JS::ClearKeptObjects(mJSContext);
 }
 
 void CycleCollectedJSContext::IsIdleGCTaskNeeded() const {
@@ -586,7 +564,7 @@ void CycleCollectedJSContext::DispatchToMicroTask(
   MOZ_ASSERT(runnable);
 
   JS::JobQueueMayNotBeEmpty(Context());
-  mPendingMicroTaskRunnables.push(runnable.forget());
+  mPendingMicroTaskRunnables.push(std::move(runnable));
 }
 
 class AsyncMutationHandler final : public mozilla::Runnable {
@@ -619,7 +597,8 @@ bool CycleCollectedJSContext::PerformMicroTaskCheckPoint(bool aForce) {
   }
 
   if (mTargetedMicroTaskRecursionDepth != 0 &&
-      mTargetedMicroTaskRecursionDepth != currentDepth) {
+      mTargetedMicroTaskRecursionDepth + mDebuggerRecursionDepth !=
+          currentDepth) {
     return false;
   }
 
@@ -641,10 +620,10 @@ bool CycleCollectedJSContext::PerformMicroTaskCheckPoint(bool aForce) {
   for (;;) {
     RefPtr<MicroTaskRunnable> runnable;
     if (!mDebuggerMicroTaskQueue.empty()) {
-      runnable = mDebuggerMicroTaskQueue.front().forget();
+      runnable = std::move(mDebuggerMicroTaskQueue.front());
       mDebuggerMicroTaskQueue.pop();
     } else if (!mPendingMicroTaskRunnables.empty()) {
-      runnable = mPendingMicroTaskRunnables.front().forget();
+      runnable = std::move(mPendingMicroTaskRunnables.front());
       mPendingMicroTaskRunnables.pop();
     } else {
       break;
@@ -693,7 +672,7 @@ void CycleCollectedJSContext::PerformDebuggerMicroTaskCheckpoint() {
       break;
     }
 
-    RefPtr<MicroTaskRunnable> runnable = microtaskQueue->front().forget();
+    RefPtr<MicroTaskRunnable> runnable = std::move(microtaskQueue->front());
     MOZ_ASSERT(runnable);
 
     // This function can re-enter, so we remove the element before calling.
@@ -709,8 +688,6 @@ void CycleCollectedJSContext::PerformDebuggerMicroTaskCheckpoint() {
 }
 
 NS_IMETHODIMP CycleCollectedJSContext::NotifyUnhandledRejections::Run() {
-  MOZ_ASSERT(mozilla::StaticPrefs::dom_promise_rejection_events_enabled());
-
   for (size_t i = 0; i < mUnhandledRejections.Length(); ++i) {
     RefPtr<Promise>& promise = mUnhandledRejections[i];
     if (!promise) {
@@ -755,8 +732,6 @@ NS_IMETHODIMP CycleCollectedJSContext::NotifyUnhandledRejections::Run() {
 }
 
 nsresult CycleCollectedJSContext::NotifyUnhandledRejections::Cancel() {
-  MOZ_ASSERT(mozilla::StaticPrefs::dom_promise_rejection_events_enabled());
-
   for (size_t i = 0; i < mUnhandledRejections.Length(); ++i) {
     RefPtr<Promise>& promise = mUnhandledRejections[i];
     if (!promise) {
@@ -768,4 +743,55 @@ nsresult CycleCollectedJSContext::NotifyUnhandledRejections::Cancel() {
   }
   return NS_OK;
 }
+
+class CleanupFinalizationGroupsRunnable : public CancelableRunnable {
+ public:
+  explicit CleanupFinalizationGroupsRunnable(CycleCollectedJSContext* aContext)
+      : CancelableRunnable("CleanupFinalizationGroupsRunnable"),
+        mContext(aContext) {}
+  NS_DECL_NSIRUNNABLE
+ private:
+  CycleCollectedJSContext* mContext;
+};
+
+NS_IMETHODIMP
+CleanupFinalizationGroupsRunnable::Run() {
+  if (mContext->mFinalizationGroupsToCleanUp.empty()) {
+    return NS_OK;
+  }
+
+  JS::RootingContext* cx = mContext->RootingCx();
+
+  JS::Rooted<CycleCollectedJSContext::ObjectVector> groups(cx);
+  std::swap(groups.get(), mContext->mFinalizationGroupsToCleanUp.get());
+
+  JS::Rooted<JSObject*> group(cx);
+  for (const auto& g : groups) {
+    group = g;
+
+    AutoEntryScript aes(group, "cleanupFinalizationGroup");
+    mozilla::Unused << JS::CleanupQueuedFinalizationGroup(aes.cx(), group);
+  }
+
+  return NS_OK;
+}
+
+/* static */
+void CycleCollectedJSContext::CleanupFinalizationGroupCallback(JSObject* aGroup,
+                                                               void* aData) {
+  CycleCollectedJSContext* ccjs = static_cast<CycleCollectedJSContext*>(aData);
+  ccjs->QueueFinalizationGroupForCleanup(aGroup);
+}
+
+void CycleCollectedJSContext::QueueFinalizationGroupForCleanup(
+    JSObject* aGroup) {
+  bool firstGroup = mFinalizationGroupsToCleanUp.empty();
+  MOZ_ALWAYS_TRUE(mFinalizationGroupsToCleanUp.append(aGroup));
+  if (firstGroup) {
+    RefPtr<CleanupFinalizationGroupsRunnable> cleanup =
+        new CleanupFinalizationGroupsRunnable(this);
+    NS_DispatchToCurrentThread(cleanup.forget());
+  }
+}
+
 }  // namespace mozilla

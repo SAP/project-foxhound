@@ -35,12 +35,32 @@ function* testSteps() {
   clear(continueToNextStepSync);
   yield undefined;
 
+  info("Verifying initialization status");
+
+  verifyInitializationStatus(false, false).then(continueToNextStepSync);
+  yield undefined;
+
   info("Getting usage");
 
   getCurrentUsage(grabUsageAndContinueHandler);
   let usage = yield undefined;
 
   ok(usage == 0, "Usage is zero");
+
+  info("Verifying initialization status");
+
+  verifyInitializationStatus(true, false).then(continueToNextStepSync);
+  yield undefined;
+
+  info("Clearing");
+
+  clear(continueToNextStepSync);
+  yield undefined;
+
+  info("Verifying initialization status");
+
+  verifyInitializationStatus(false, false).then(continueToNextStepSync);
+  yield undefined;
 
   info("Installing package");
 
@@ -57,6 +77,11 @@ function* testSteps() {
 
   ok(usage > 0, "Usage is not zero");
 
+  info("Verifying initialization status");
+
+  verifyInitializationStatus(true, false).then(continueToNextStepSync);
+  yield undefined;
+
   info("Clearing");
 
   clear(continueToNextStepSync);
@@ -69,9 +94,14 @@ function* testSteps() {
   let exists = file.exists();
   ok(!exists, "Storage file doesn't exist");
 
+  info("Verifying initialization status");
+
+  verifyInitializationStatus(false, false).then(continueToNextStepSync);
+  yield undefined;
+
   info("Initializing");
 
-  let request = init(continueToNextStepSync);
+  request = init(continueToNextStepSync);
   yield undefined;
 
   ok(request.resultCode == NS_OK, "Initialization succeeded");
@@ -79,9 +109,14 @@ function* testSteps() {
   exists = file.exists();
   ok(exists, "Storage file does exist");
 
+  info("Verifying initialization status");
+
+  verifyInitializationStatus(true, false).then(continueToNextStepSync);
+  yield undefined;
+
   info("Initializing origin");
 
-  request = initChromeOrigin("persistent", continueToNextStepSync);
+  request = initStorageAndChromeOrigin("persistent", continueToNextStepSync);
   yield undefined;
 
   ok(request.resultCode == NS_OK, "Initialization succeeded");
@@ -99,6 +134,12 @@ function* testSteps() {
       ok(!exists, "Metadata file doesn't exist");
     }
   }
+
+  info("Verifying initialization status");
+
+  verifyInitializationStatus(true, false).then(continueToNextStepSync);
+
+  yield undefined;
 
   finishTest();
 }

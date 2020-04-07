@@ -82,6 +82,12 @@ const startupPhases = {
       maxCount: 3,
     },
     {
+      name: "PCompositorWidget::Msg_Initialize",
+      condition: WIN,
+      ignoreIfUnused: true, // Only on Win10 64
+      maxCount: 3,
+    },
+    {
       name: "PGPU::Msg_AddLayerTreeIdMapping",
       condition: WIN,
       ignoreIfUnused: true, // Only on Win10 64
@@ -143,6 +149,12 @@ const startupPhases = {
       maxCount: 1,
     },
     {
+      name: "PCompositorWidget::Msg_Initialize",
+      condition: WIN,
+      ignoreIfUnused: true, // Only on Win10 64
+      maxCount: 1,
+    },
+    {
       name: "PCompositorBridge::Msg_WillClose",
       condition: WIN,
       ignoreIfUnused: true, // Only on Win7 32
@@ -162,13 +174,13 @@ const startupPhases = {
     },
     {
       name: "PAPZInputBridge::Msg_ProcessUnhandledEvent",
-      condition: WIN && WEBRENDER,
+      condition: WIN,
       ignoreIfUnused: true, // intermittently occurs in "before becoming idle"
       maxCount: 1,
     },
     {
       name: "PAPZInputBridge::Msg_ReceiveMouseInputEvent",
-      condition: WIN && WEBRENDER,
+      condition: WIN,
       ignoreIfUnused: true, // intermittently occurs in "before becoming idle"
       maxCount: 1,
     },
@@ -212,6 +224,12 @@ const startupPhases = {
     },
     {
       name: "PCompositorBridge::Msg_Initialize",
+      condition: WIN && WEBRENDER,
+      ignoreIfUnused: true, // Intermittently occurs in "before handling user events"
+      maxCount: 1,
+    },
+    {
+      name: "PCompositorWidget::Msg_Initialize",
       condition: WIN && WEBRENDER,
       ignoreIfUnused: true, // Intermittently occurs in "before handling user events"
       maxCount: 1,
@@ -283,13 +301,14 @@ add_task(async function() {
       let markerData = m[dataCol];
       if (
         !markerData ||
-        markerData.category != "IPC" ||
-        markerData.interval != "start"
+        markerData.type != "IPC" ||
+        !markerData.sync ||
+        markerData.direction != "sending"
       ) {
         continue;
       }
 
-      markersForCurrentPhase.push(markerName);
+      markersForCurrentPhase.push(markerData.messageType);
     }
   }
 

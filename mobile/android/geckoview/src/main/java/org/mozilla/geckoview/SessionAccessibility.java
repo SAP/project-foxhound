@@ -66,6 +66,8 @@ public class SessionAccessibility {
     @WrapForJNI static final int FLAG_SELECTED = 1 << 14;
     @WrapForJNI static final int FLAG_VISIBLE_TO_USER = 1 << 15;
     @WrapForJNI static final int FLAG_SELECTABLE = 1 << 16;
+    @WrapForJNI static final int FLAG_EXPANDABLE = 1 << 17;
+    @WrapForJNI static final int FLAG_EXPANDED = 1 << 18;
 
     static final int CLASSNAME_UNKNOWN = -1;
     @WrapForJNI static final int CLASSNAME_VIEW = 0;
@@ -208,10 +210,12 @@ public class SessionAccessibility {
                             virtualViewId == View.NO_ID ? CLASSNAME_WEBVIEW : CLASSNAME_UNKNOWN, null);
                     return true;
                 case AccessibilityNodeInfo.ACTION_CLICK:
+                case AccessibilityNodeInfo.ACTION_EXPAND:
+                case AccessibilityNodeInfo.ACTION_COLLAPSE:
                     nativeProvider.click(virtualViewId);
                     GeckoBundle nodeInfo = getMostRecentBundle(virtualViewId);
                     if (nodeInfo != null) {
-                        if ((nodeInfo.getInt("flags") & (FLAG_SELECTABLE | FLAG_CHECKABLE)) == 0) {
+                        if ((nodeInfo.getInt("flags") & (FLAG_SELECTABLE | FLAG_CHECKABLE | FLAG_EXPANDABLE)) == 0) {
                             sendEvent(AccessibilityEvent.TYPE_VIEW_CLICKED, virtualViewId, nodeInfo.getInt("className"), null);
                         }
                     }
@@ -223,7 +227,7 @@ public class SessionAccessibility {
                     if (virtualViewId == View.NO_ID) {
                         // Scroll the viewport forwards by approximately 80%.
                         mSession.getPanZoomController().scrollBy(
-                                ScreenLength.zero(), ScreenLength.fromViewportHeight(0.8),
+                                ScreenLength.zero(), ScreenLength.fromVisualViewportHeight(0.8),
                                 PanZoomController.SCROLL_BEHAVIOR_AUTO);
                     } else {
                         // XXX: It looks like we never call scroll on virtual views.
@@ -234,7 +238,7 @@ public class SessionAccessibility {
                     if (virtualViewId == View.NO_ID) {
                         // Scroll the viewport backwards by approximately 80%.
                         mSession.getPanZoomController().scrollBy(
-                                ScreenLength.zero(), ScreenLength.fromViewportHeight(-0.8),
+                                ScreenLength.zero(), ScreenLength.fromVisualViewportHeight(-0.8),
                                 PanZoomController.SCROLL_BEHAVIOR_AUTO);
                     } else {
                         // XXX: It looks like we never call scroll on virtual views.
@@ -246,16 +250,14 @@ public class SessionAccessibility {
                     return true;
                 case AccessibilityNodeInfo.ACTION_NEXT_HTML_ELEMENT:
                     requestViewFocus();
-                    nativeProvider.pivot(virtualViewId, arguments != null ?
+                    return pivot(virtualViewId, arguments != null ?
                             arguments.getString(AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING) : "",
                             true, false);
-                    return true;
                 case AccessibilityNodeInfo.ACTION_PREVIOUS_HTML_ELEMENT:
                     requestViewFocus();
-                    nativeProvider.pivot(virtualViewId, arguments != null ?
+                    return pivot(virtualViewId, arguments != null ?
                             arguments.getString(AccessibilityNodeInfo.ACTION_ARGUMENT_HTML_ELEMENT_STRING) : "",
                             false, false);
-                    return true;
                 case AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY:
                 case AccessibilityNodeInfo.ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY:
                     // XXX: Self brailling gives this action with a bogus argument instead of an actual click action;
@@ -271,7 +273,19 @@ public class SessionAccessibility {
                         nativeProvider.click(virtualViewId);
                     } else if (granularity > 0) {
                         boolean extendSelection = arguments.getBoolean(AccessibilityNodeInfo.ACTION_ARGUMENT_EXTEND_SELECTION_BOOLEAN);
-                        nativeProvider.navigateText(virtualViewId, granularity, mStartOffset, mEndOffset, action == AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY, extendSelection);
+                        boolean next = action == AccessibilityNodeInfo.ACTION_NEXT_AT_MOVEMENT_GRANULARITY;
+                        // We must return false if we're already at the edge.
+                        if (next) {
+                            if (mAtEndOfText) {
+                                return false;
+                            }
+                            if (granularity == AccessibilityNodeInfo.MOVEMENT_GRANULARITY_WORD && mAtLastWord) {
+                                return false;
+                            }
+                        } else if (mAtStartOfText) {
+                            return false;
+                        }
+                        nativeProvider.navigateText(virtualViewId, granularity, mStartOffset, mEndOffset, next, extendSelection);
                     }
                     return true;
                 case AccessibilityNodeInfo.ACTION_SET_SELECTION:
@@ -377,6 +391,10 @@ public class SessionAccessibility {
 
             if (nodeInfo.containsKey("text")) {
                 node.setText(nodeInfo.getString("text"));
+            }
+
+            if (nodeInfo.containsKey("description")) {
+                node.setContentDescription(nodeInfo.getString("description"));
             }
 
             // Add actions
@@ -525,6 +543,19 @@ public class SessionAccessibility {
                 node.setInputType(nodeInfo.getInt("inputType"));
             }
 
+            // SDK 21 and above
+            if (Build.VERSION.SDK_INT >= 21) {
+                if ((flags & FLAG_EXPANDABLE) != 0) {
+                    if ((flags & FLAG_EXPANDED) != 0) {
+                        node.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
+                        node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE);
+                    } else {
+                        node.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE);
+                        node.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
+                    }
+                }
+            }
+
             // SDK 23 and above
             if (Build.VERSION.SDK_INT >= 23) {
                 node.setContextClickable((flags & FLAG_CONTEXT_CLICKABLE) != 0);
@@ -541,10 +572,17 @@ public class SessionAccessibility {
     private boolean mAttached = false;
     // The current node with accessibility focus
     private int mAccessibilityFocusedNode = 0;
+    // The first accessibility focusable node
+    private int mFirstAccessibilityFocusable = 0;
+    // The last accessibility focusable node
+    private int mLastAccessibilityFocusable = 0;
     // The current node with focus
     private int mFocusedNode = 0;
     private int mStartOffset = -1;
     private int mEndOffset = -1;
+    private boolean mAtStartOfText = false;
+    private boolean mAtEndOfText = false;
+    private boolean mAtLastWord = false;
     // Viewport cache
     final SparseArray<GeckoBundle> mViewportCache = new SparseArray<>();
     // Focus cache
@@ -736,13 +774,6 @@ public class SessionAccessibility {
             return;
         }
 
-        if (!Settings.isPlatformEnabled() && !isInTest()) {
-            // Accessibility could be activated in Gecko via xpcom, for example when using a11y
-            // devtools. Here we assure that either Android a11y is *really* enabled, or no
-            // display is attached and we must be in a junit test.
-            return;
-        }
-
         GeckoBundle cachedBundle = getMostRecentBundle(sourceId);
         if (cachedBundle == null && sourceId != View.NO_ID) {
             // Suppress events from non cached nodes.
@@ -775,17 +806,28 @@ public class SessionAccessibility {
             event.setScrollY(eventData.getInt("scrollY", -1));
             event.setMaxScrollX(eventData.getInt("maxScrollX", -1));
             event.setMaxScrollY(eventData.getInt("maxScrollY", -1));
-            event.setChecked(eventData.getInt("checked") != 0);
+            event.setChecked((eventData.getInt("flags") & FLAG_CHECKED) != 0);
         }
 
         // Update cache and stored state from this event.
         switch (eventType) {
             case AccessibilityEvent.TYPE_VIEW_CLICKED:
-                if (cachedBundle != null && eventData != null && eventData.containsKey("checked")) {
-                    if (eventData.getInt("checked") != 0) {
-                        cachedBundle.putInt("flags", cachedBundle.getInt("flags") | FLAG_CHECKED);
-                    } else {
-                        cachedBundle.putInt("flags", cachedBundle.getInt("flags") & ~FLAG_CHECKED);
+                if (cachedBundle != null && eventData != null && eventData.containsKey("flags")) {
+                    final int flags = eventData.getInt("flags");
+                    if ((flags & FLAG_CHECKABLE) != 0) {
+                        if ((flags & FLAG_CHECKED) != 0) {
+                            cachedBundle.putInt("flags", cachedBundle.getInt("flags") | FLAG_CHECKED);
+                        } else {
+                            cachedBundle.putInt("flags", cachedBundle.getInt("flags") & ~FLAG_CHECKED);
+                        }
+                    }
+
+                    if ((flags & FLAG_EXPANDABLE) != 0) {
+                        if ((flags & FLAG_EXPANDED) != 0) {
+                            cachedBundle.putInt("flags", cachedBundle.getInt("flags") | FLAG_EXPANDED);
+                        } else {
+                            cachedBundle.putInt("flags", cachedBundle.getInt("flags") & ~FLAG_EXPANDED);
+                        }
                     }
                 }
                 break;
@@ -806,6 +848,9 @@ public class SessionAccessibility {
             case AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED:
                 mStartOffset = -1;
                 mEndOffset = -1;
+                mAtStartOfText = false;
+                mAtEndOfText = false;
+                mAtLastWord = false;
                 mAccessibilityFocusedNode = sourceId;
                 break;
             case AccessibilityEvent.TYPE_VIEW_FOCUSED:
@@ -818,10 +863,33 @@ public class SessionAccessibility {
             case AccessibilityEvent.TYPE_VIEW_TEXT_TRAVERSED_AT_MOVEMENT_GRANULARITY:
                 mStartOffset = event.getFromIndex();
                 mEndOffset = event.getToIndex();
+                // We must synchronously return false for text navigation
+                // actions if the user attempts to navigate past the edge.
+                // Because we do navigation async, we can't query this
+                // on demand when the action is performed. Therefore, we cache
+                // whether we're at either edge here.
+                mAtStartOfText = mStartOffset == 0;
+                CharSequence text = event.getText().get(0);
+                mAtEndOfText = mEndOffset >= text.length();
+                mAtLastWord = mAtEndOfText;
+                if (!mAtLastWord) {
+                    // Words exclude trailing spaces. To figure out whether
+                    // we're at the last word, we need to get the text after
+                    // our end offset and check if it's just spaces.
+                    CharSequence afterText = text.subSequence(mEndOffset, text.length());
+                    if (TextUtils.getTrimmedLength(afterText) == 0) {
+                        mAtLastWord = true;
+                    }
+                }
                 break;
         }
 
-        ((ViewParent) mView).requestSendAccessibilityEvent(mView, event);
+        try {
+            ((ViewParent) mView).requestSendAccessibilityEvent(mView, event);
+        } catch (IllegalStateException ex) {
+            // Accessibility could be activated in Gecko via xpcom, for example when using a11y
+            // devtools. Events that are forwarded to the platform will throw an exception.
+        }
     }
 
     private synchronized GeckoBundle getMostRecentBundle(final int virtualViewId) {
@@ -834,6 +902,28 @@ public class SessionAccessibility {
         }
 
         return null;
+    }
+
+    private boolean pivot(final int id, final String granularity, final boolean forward, final boolean inclusive) {
+        final int gran = java.util.Arrays.asList(sHtmlGranularities).indexOf(granularity);
+        if (forward && id == mLastAccessibilityFocusable) {
+            return false;
+        }
+
+        if (!forward) {
+            if (id == View.NO_ID) {
+                return false;
+            }
+
+            if (id == mFirstAccessibilityFocusable) {
+                sendEvent(AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED, View.NO_ID, CLASSNAME_WEBVIEW, null);
+                return true;
+            }
+
+        }
+
+        nativeProvider.pivotNative(id, gran, forward, inclusive);
+        return true;
     }
 
     /* package */ final class NativeProvider extends JNIObject {
@@ -856,10 +946,6 @@ public class SessionAccessibility {
 
         @WrapForJNI(dispatchTo = "gecko")
         public native void click(int id);
-
-        public void pivot(final int id, final String granularity, final boolean forward, final boolean inclusive) {
-            pivotNative(id, java.util.Arrays.asList(sHtmlGranularities).indexOf(granularity), forward, inclusive);
-        }
 
         @WrapForJNI(dispatchTo = "gecko", stubName = "Pivot")
         public native void pivotNative(int id, int granularity, boolean forward, boolean inclusive);
@@ -933,6 +1019,14 @@ public class SessionAccessibility {
                     }
                     cachedBundle.putIntArray("bounds", bundle.getIntArray("bounds"));
                 }
+            }
+        }
+
+        @WrapForJNI(calledFrom = "gecko")
+        private void updateAccessibleFocusBoundaries(final int firstNode, final int lastNode) {
+            synchronized (SessionAccessibility.this) {
+                mFirstAccessibilityFocusable = firstNode;
+                mLastAccessibilityFocusable = lastNode;
             }
         }
     }

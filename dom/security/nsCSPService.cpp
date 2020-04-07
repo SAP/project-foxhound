@@ -10,15 +10,12 @@
 #include "nsString.h"
 #include "nsCOMPtr.h"
 #include "nsIURI.h"
-#include "nsIPrincipal.h"
-#include "nsIObserver.h"
 #include "nsIContent.h"
 #include "nsCSPService.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsError.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsAsyncRedirectVerifyHelper.h"
-#include "nsIScriptError.h"
 #include "nsContentUtils.h"
 #include "nsContentPolicyUtils.h"
 #include "nsNetUtil.h"
@@ -27,9 +24,9 @@ using namespace mozilla;
 
 static LazyLogModule gCspPRLog("CSP");
 
-CSPService::CSPService() {}
+CSPService::CSPService() = default;
 
-CSPService::~CSPService() {}
+CSPService::~CSPService() = default;
 
 NS_IMPL_ISUPPORTS(CSPService, nsIContentPolicy, nsIChannelEventSink)
 
@@ -286,8 +283,8 @@ nsresult CSPService::ConsultCSPForRedirect(nsIURI* aOriginalURI,
   if (cspToInherit) {
     bool allowsNavigateTo = false;
     nsresult rv = cspToInherit->GetAllowsNavigateTo(
-        aNewURI, aLoadInfo, true, /* aWasRedirected */
-        false,                    /* aEnforceWhitelist */
+        aNewURI, aLoadInfo->GetIsFormSubmission(), true, /* aWasRedirected */
+        false,                                           /* aEnforceWhitelist */
         &allowsNavigateTo);
     NS_ENSURE_SUCCESS(rv, rv);
 

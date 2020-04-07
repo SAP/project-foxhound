@@ -10,14 +10,12 @@
 #include "ipc/WebrtcTCPSocket.h"
 #include "mozilla/LoadInfo.h"
 
-#include "nsIEventTarget.h"
 #include "nsNetCID.h"
 #include "nsProxyRelease.h"
 
 #include "nr_socket_proxy_config.h"
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 using std::shared_ptr;
 
@@ -123,5 +121,4 @@ void WebrtcTCPSocketWrapper::OnConnected(const nsCString& aProxyType) {
       &WebrtcTCPSocketCallback::OnConnected, aProxyType)));
 }
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

@@ -9,16 +9,12 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/Element.h"
-#if defined(MOZ_PLACES)
-#  include "mozilla/places/History.h"
-#else
-#  include "mozilla/IHistory.h"
-#endif
+#include "mozilla/IHistory.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "nsLayoutUtils.h"
 #include "nsIURL.h"
 #include "nsIURIMutator.h"
 #include "nsISizeOf.h"
-#include "nsIDocShell.h"
-#include "nsIPrefetchService.h"
 #include "nsStyleLinkElement.h"
 
 #include "nsEscape.h"
@@ -33,10 +29,6 @@
 
 namespace mozilla {
 namespace dom {
-
-#if defined(MOZ_PLACES)
-using places::History;
-#endif
 
 Link::Link(Element* aElement)
     : mElement(aElement),
@@ -94,15 +86,21 @@ void Link::CancelDNSPrefetch(nsWrapperCache::FlagsType aDeferredFlag,
   }
 }
 
-void Link::SetLinkState(nsLinkState aState) {
+void Link::VisitedQueryFinished(bool aVisited) {
   MOZ_ASSERT(mRegistered, "Setting the link state of an unregistered Link!");
-  MOZ_ASSERT(mLinkState != aState, "Setting state to the currently set state!");
+  MOZ_ASSERT(mLinkState == eLinkState_Unvisited,
+             "Why would we want to know our visited state otherwise?");
+
+  auto newState = aVisited ? eLinkState_Visited : eLinkState_Unvisited;
 
   // Set our current state as appropriate.
-  mLinkState = aState;
+  mLinkState = newState;
 
-  // Per IHistory interface documentation, we are no longer registered.
-  mRegistered = false;
+  // We will be no longer registered if we're visited, as it'd be pointless, we
+  // never transition from visited -> unvisited.
+  if (aVisited) {
+    mRegistered = false;
+  }
 
   MOZ_ASSERT(LinkState() == NS_EVENT_STATE_VISITED ||
                  LinkState() == NS_EVENT_STATE_UNVISITED,
@@ -110,6 +108,13 @@ void Link::SetLinkState(nsLinkState aState) {
 
   // Tell the element to update its visited state
   mElement->UpdateState(true);
+
+  if (StaticPrefs::layout_css_always_repaint_on_unvisited()) {
+    // Even if the state didn't actually change, we need to repaint in order for
+    // the visited state not to be observable.
+    nsLayoutUtils::PostRestyleEvent(GetElement(), RestyleHint::RestyleSubtree(),
+                                    nsChangeHint_RepaintFrame);
+  }
 }
 
 EventStates Link::LinkState() const {
@@ -136,14 +141,7 @@ EventStates Link::LinkState() const {
     // Make sure the href attribute has a valid link (bug 23209).
     // If we have a good href, register with History if available.
     if (mHistory && hrefURI) {
-#ifdef ANDROID
-      nsCOMPtr<IHistory> history = services::GetHistoryService();
-#elif defined(MOZ_PLACES)
-      History* history = History::GetService();
-#else
-      nsCOMPtr<IHistory> history;
-#endif
-      if (history) {
+      if (nsCOMPtr<IHistory> history = services::GetHistoryService()) {
         nsresult rv = history->RegisterVisitedCallback(hrefURI, self);
         if (NS_SUCCEEDED(rv)) {
           self->mRegistered = true;
@@ -558,20 +556,9 @@ void Link::UnregisterFromHistory() {
 
   // And tell History to stop tracking us.
   if (mHistory && mCachedURI) {
-#ifdef ANDROID
-    nsCOMPtr<IHistory> history = services::GetHistoryService();
-#elif defined(MOZ_PLACES)
-    History* history = History::GetService();
-#else
-    nsCOMPtr<IHistory> history;
-#endif
-    if (history) {
-      nsresult rv = history->UnregisterVisitedCallback(mCachedURI, this);
-      NS_ASSERTION(NS_SUCCEEDED(rv),
-                   "This should only fail if we misuse the API!");
-      if (NS_SUCCEEDED(rv)) {
-        mRegistered = false;
-      }
+    if (nsCOMPtr<IHistory> history = services::GetHistoryService()) {
+      history->UnregisterVisitedCallback(mCachedURI, this);
+      mRegistered = false;
     }
   }
 }

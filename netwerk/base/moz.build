@@ -166,6 +166,7 @@ EXPORTS.mozilla.net += [
     'ChannelDiverterParent.h',
     'Dashboard.h',
     'DashboardTypes.h',
+    'DefaultURI.h',
     'IOActivityMonitor.h',
     'MemoryDownloader.h',
     'NetworkConnectivityService.h',
@@ -177,6 +178,7 @@ EXPORTS.mozilla.net += [
     'SimpleChannelParent.h',
     'SSLTokensCache.h',
     'TCPFastOpen.h',
+    'ThrottleQueue.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -186,6 +188,7 @@ UNIFIED_SOURCES += [
     'ChannelDiverterChild.cpp',
     'ChannelDiverterParent.cpp',
     'Dashboard.cpp',
+    'DefaultURI.cpp',
     'EventTokenBucket.cpp',
     'IOActivityMonitor.cpp',
     'LoadContextInfo.cpp',

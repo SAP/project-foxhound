@@ -14,9 +14,11 @@ use crate::values::specified::SVGPathData;
     Clone,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     Parse,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToComputedValue,
@@ -41,8 +43,10 @@ pub enum RaySize {
     Clone,
     ComputeSquaredDistance,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToComputedValue,
@@ -69,13 +73,16 @@ pub struct RayFunction<Angle> {
 /// The offset-path value.
 ///
 /// https://drafts.fxtf.org/motion-1/#offset-path-property
+/// cbindgen:private-default-tagged-enum-constructor=false
 #[derive(
     Animate,
     Clone,
     ComputeSquaredDistance,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToComputedValue,

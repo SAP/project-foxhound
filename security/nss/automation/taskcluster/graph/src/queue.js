@@ -96,7 +96,8 @@ function convertTask(def) {
 
   let env = merge({
     NSS_HEAD_REPOSITORY: process.env.NSS_HEAD_REPOSITORY,
-    NSS_HEAD_REVISION: process.env.NSS_HEAD_REVISION
+    NSS_HEAD_REVISION: process.env.NSS_HEAD_REVISION,
+    NSS_MAX_MP_PBE_ITERATION_COUNT: "100",
   }, def.env || {});
 
   if (def.parent) {
@@ -219,6 +220,9 @@ export async function submit() {
     maps.forEach(map => { task = map(merge({}, task)) });
 
     let log_id = `${task.name} @ ${task.platform}[${task.collection || "opt"}]`;
+    if (task.group) {
+      log_id = `${task.group}::${log_id}`;
+    }
     console.log(`+ Submitting ${log_id}.`);
 
     // Index that task for each tag specified

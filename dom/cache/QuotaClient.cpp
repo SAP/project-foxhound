@@ -16,7 +16,6 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsIFile.h"
-#include "nsISimpleEnumerator.h"
 #include "nsThreadUtils.h"
 
 namespace {
@@ -31,6 +30,7 @@ using mozilla::dom::cache::Manager;
 using mozilla::dom::cache::QuotaInfo;
 using mozilla::dom::quota::AssertIsOnIOThread;
 using mozilla::dom::quota::Client;
+using mozilla::dom::quota::PERSISTENCE_TYPE_DEFAULT;
 using mozilla::dom::quota::PersistenceType;
 using mozilla::dom::quota::QuotaManager;
 using mozilla::dom::quota::UsageInfo;
@@ -111,10 +111,19 @@ static nsresult LockedGetPaddingSizeFromDB(nsIFile* aDir,
 
   *aPaddingSizeOut = 0;
 
-  nsCOMPtr<mozIStorageConnection> conn;
   QuotaInfo quotaInfo;
   quotaInfo.mGroup = aGroup;
   quotaInfo.mOrigin = aOrigin;
+  // quotaInfo.mDirectoryLockId must be -1 (which is default for new QuotaInfo)
+  // because this method should only be called from QuotaClient::InitOrigin
+  // (via QuotaClient::GetUsageForOriginInternal) when the temporary storage
+  // hasn't been initialized yet. At that time, the in-memory objects (e.g.
+  // OriginInfo) are only being created so it doesn't make sense to tunnel
+  // quota information to TelemetryVFS to get corresponding QuotaObject instance
+  // for the SQLite file).
+  MOZ_DIAGNOSTIC_ASSERT(quotaInfo.mDirectoryLockId == -1);
+
+  nsCOMPtr<mozIStorageConnection> conn;
   nsresult rv = mozilla::dom::cache::OpenDBConnection(quotaInfo, aDir,
                                                       getter_AddRefs(conn));
   if (rv == NS_ERROR_FILE_NOT_FOUND ||
@@ -422,23 +431,44 @@ class CacheQuotaClient final : public Client {
       return rv;
     }
 
+    bool useCachedValue = false;
+
     int64_t paddingSize = 0;
     {
       // If the tempoary file still exists after locking, it means the previous
-      // action fails, so restore the padding file.
+      // action failed, so restore the padding file.
       MutexAutoLock lock(mDirPaddingFileMutex);
 
       if (mozilla::dom::cache::DirectoryPaddingFileExists(
               dir, DirPaddingFile::TMP_FILE) ||
           NS_WARN_IF(NS_FAILED(mozilla::dom::cache::LockedDirectoryPaddingGet(
               dir, &paddingSize)))) {
-        rv = LockedGetPaddingSizeFromDB(dir, aGroup, aOrigin, &paddingSize);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaInternalError,
-                                       Cache_GetPaddingSize);
-          return rv;
+        if (aInitializing) {
+          rv = LockedGetPaddingSizeFromDB(dir, aGroup, aOrigin, &paddingSize);
+          if (NS_WARN_IF(NS_FAILED(rv))) {
+            REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaInternalError,
+                                         Cache_GetPaddingSize);
+            return rv;
+          }
+        } else {
+          // We can't open the database at this point, since it can be already
+          // used by Cache IO thread. Use the cached value instead. (In theory,
+          // we could check if the database is actually used by Cache IO thread
+          // at this moment, but it's probably not worth additional complexity.)
+
+          useCachedValue = true;
         }
       }
+    }
+
+    if (useCachedValue) {
+      uint64_t usage;
+      if (qm->GetUsageForClient(PERSISTENCE_TYPE_DEFAULT, aGroup, aOrigin,
+                                Client::DOMCACHE, usage)) {
+        aUsageInfo->AppendToDatabaseUsage(Some(usage));
+      }
+
+      return NS_OK;
     }
 
     aUsageInfo->AppendToFileUsage(Some(paddingSize));

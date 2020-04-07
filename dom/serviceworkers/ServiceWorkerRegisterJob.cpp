@@ -15,8 +15,8 @@ namespace dom {
 ServiceWorkerRegisterJob::ServiceWorkerRegisterJob(
     nsIPrincipal* aPrincipal, const nsACString& aScope,
     const nsACString& aScriptSpec, ServiceWorkerUpdateViaCache aUpdateViaCache)
-    : ServiceWorkerUpdateJob(Type::Register, aPrincipal, aScope, aScriptSpec,
-                             aUpdateViaCache) {}
+    : ServiceWorkerUpdateJob(Type::Register, aPrincipal, aScope,
+                             nsCString(aScriptSpec), aUpdateViaCache) {}
 
 void ServiceWorkerRegisterJob::AsyncExecute() {
   MOZ_ASSERT(NS_IsMainThread());
@@ -53,7 +53,7 @@ void ServiceWorkerRegisterJob::AsyncExecute() {
   Update();
 }
 
-ServiceWorkerRegisterJob::~ServiceWorkerRegisterJob() {}
+ServiceWorkerRegisterJob::~ServiceWorkerRegisterJob() = default;
 
 }  // namespace dom
 }  // namespace mozilla

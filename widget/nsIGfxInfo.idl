@@ -16,6 +16,7 @@ interface nsIGfxInfo : nsISupports
   readonly attribute boolean D2DEnabled;
   readonly attribute boolean DWriteEnabled;
   readonly attribute boolean usingGPUProcess;
+  readonly attribute boolean hasBattery;
   readonly attribute AString DWriteVersion;
   readonly attribute AString cleartypeParameters;
 
@@ -23,6 +24,7 @@ interface nsIGfxInfo : nsISupports
    * These are non-Android linux-specific
    */
   readonly attribute AString windowProtocol;
+  readonly attribute AString desktopEnvironment;
 
   /*
    * These are valid across all platforms.
@@ -60,8 +62,8 @@ interface nsIGfxInfo : nsISupports
   /**
    * The amount of RAM in MB in the display adapter.
    */
-  readonly attribute AString adapterRAM;
-  readonly attribute AString adapterRAM2;
+  readonly attribute unsigned long adapterRAM;
+  readonly attribute unsigned long adapterRAM2;
 
   readonly attribute AString adapterDriverVendor;
   readonly attribute AString adapterDriverVendor2;
@@ -78,6 +80,8 @@ interface nsIGfxInfo : nsISupports
    * Information about display devices
    */
   readonly attribute Array<AString> displayInfo;
+  readonly attribute Array<unsigned long> displayWidth;
+  readonly attribute Array<unsigned long> displayHeight;
 
   /**
    * Returns an array of objects describing each monitor. Guaranteed properties
@@ -152,8 +156,10 @@ interface nsIGfxInfo : nsISupports
   const long FEATURE_DX_P016 = 27;
   /* Whether OpenGL swizzle configuration of texture units is supported, starting in 70 */
   const long FEATURE_GL_SWIZZLE = 28;
+  /* Whether WebRender native compositor is supported, starting in 73 */
+  const long FEATURE_WEBRENDER_COMPOSITOR = 29;
   /* the maximum feature value. */
-  const long FEATURE_MAX_VALUE = FEATURE_GL_SWIZZLE;
+  const long FEATURE_MAX_VALUE = FEATURE_WEBRENDER_COMPOSITOR;
 
   /*
    * A set of return values from GetFeatureStatus
@@ -175,6 +181,12 @@ interface nsIGfxInfo : nsISupports
   const long FEATURE_BLOCKED_OS_VERSION = 6;
   /* This feature is blocked because of mismatched driver versions. */
   const long FEATURE_BLOCKED_MISMATCHED_VERSION = 7;
+  /* This feature is blocked due to not being on the allowlist. */
+  const long FEATURE_DENIED = 8;
+  /* This feature is safe to be on this device due to the allowlist. */
+  const long FEATURE_ALLOW_ALWAYS = 9;
+  /* This feature is safe to be on this device due to the allowlist, depending on qualified/experiment status. */
+  const long FEATURE_ALLOW_QUALIFIED = 10;
 
   /**
    * Ask about a feature, and return the status of that feature.
@@ -248,6 +260,7 @@ interface nsIGfxInfo : nsISupports
   //       //   "unavailable" - OS version or restriction prevents use.
   //       //   "blocked"     - An internal condition (such as safe mode) prevents use.
   //       //   "blacklisted" - Blocked due to a blacklist restriction.
+  //       //   "denied"      - Blocked due to allowlist restrictions.
   //       //   "disabled"    - User explicitly disabled this default feature.
   //       //   "failed"      - Feature failed to initialize.
   //       //   "available"   - User has this feature available by default.
@@ -279,4 +292,5 @@ interface nsIGfxInfo : nsISupports
   // xpcshell-tests.
   boolean controlGPUProcessForXPCShell(in boolean aEnable);
 };
+
 

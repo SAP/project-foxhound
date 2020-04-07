@@ -9,6 +9,7 @@
 #include "geckoview/streaming/GeckoViewStreamingTelemetry.h"
 #include "ipc/TelemetryComms.h"
 #include "ipc/TelemetryIPCAccumulator.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/PContent.h"
 #include "mozilla/JSONWriter.h"
@@ -36,7 +37,6 @@ using mozilla::Some;
 using mozilla::StaticAutoPtr;
 using mozilla::StaticMutex;
 using mozilla::StaticMutexAutoLock;
-using mozilla::StaticMutexNotRecorded;
 using mozilla::Telemetry::DynamicScalarDefinition;
 using mozilla::Telemetry::KeyedScalarAction;
 using mozilla::Telemetry::ProcessID;
@@ -140,6 +140,7 @@ enum class ScalarResult : uint8_t {
   KeyIsEmpty,
   KeyTooLong,
   TooManyKeys,
+  KeyNotAllowed,
   // String Scalar Errors
   StringTooLong,
   // Unsigned Scalar Errors
@@ -168,11 +169,12 @@ struct DynamicScalarInfo : BaseScalarInfo {
   DynamicScalarInfo(uint32_t aKind, bool aRecordOnRelease, bool aExpired,
                     const nsACString& aName, bool aKeyed, bool aBuiltin,
                     const nsTArray<nsCString>& aStores)
-      : BaseScalarInfo(
-            aKind,
-            aRecordOnRelease ? nsITelemetry::DATASET_ALL_CHANNELS
-                             : nsITelemetry::DATASET_PRERELEASE_CHANNELS,
-            RecordedProcessType::All, aKeyed, GetCurrentProduct(), aBuiltin),
+      : BaseScalarInfo(aKind,
+                       aRecordOnRelease
+                           ? nsITelemetry::DATASET_ALL_CHANNELS
+                           : nsITelemetry::DATASET_PRERELEASE_CHANNELS,
+                       RecordedProcessType::All, aKeyed, 0, 0,
+                       GetCurrentProduct(), aBuiltin),
         mDynamicName(aName),
         mDynamicExpiration(aExpired) {
     store_count = aStores.Length();
@@ -210,7 +212,6 @@ const char* DynamicScalarInfo::expiration() const {
 }
 
 uint32_t DynamicScalarInfo::storeOffset() const { return store_offset; }
-
 uint32_t DynamicScalarInfo::storeCount() const { return store_count; }
 
 typedef nsBaseHashtableET<nsDepCharHashKey, ScalarKey> CharPtrEntryType;
@@ -590,7 +591,7 @@ nsresult ScalarUnsigned::GetValue(const nsACString& aStoreName,
   if (NS_FAILED(rv)) {
     return rv;
   }
-  aResult = outVar.forget();
+  aResult = std::move(outVar);
   if (aClearStore) {
     mStorage[storeIndex] = 0;
     ClearValueInStore(storeIndex);
@@ -710,7 +711,7 @@ nsresult ScalarString::GetValue(const nsACString& aStoreName, bool aClearStore,
   if (aClearStore) {
     ClearValueInStore(storeIndex);
   }
-  aResult = outVar.forget();
+  aResult = std::move(outVar);
   return NS_OK;
 }
 
@@ -804,7 +805,7 @@ nsresult ScalarBoolean::GetValue(const nsACString& aStoreName, bool aClearStore,
   if (NS_FAILED(rv)) {
     return rv;
   }
-  aResult = outVar.forget();
+  aResult = std::move(outVar);
   return NS_OK;
 }
 
@@ -851,7 +852,10 @@ class KeyedScalar {
   // We store the name instead of a reference to the BaseScalarInfo because
   // the BaseScalarInfo can move if it's from a dynamic scalar.
   explicit KeyedScalar(const BaseScalarInfo& info)
-      : mScalarName(info.name()), mMaximumNumberOfKeys(kMaximumNumberOfKeys){};
+      : mScalarName(info.name()),
+        mScalarKeyCount(info.key_count),
+        mScalarKeyOffset(info.key_offset),
+        mMaximumNumberOfKeys(kMaximumNumberOfKeys){};
   ~KeyedScalar() = default;
 
   // Set, Add and SetMaximum functions as described in the Telemetry IDL.
@@ -891,10 +895,14 @@ class KeyedScalar {
 
   const nsCString mScalarName;
   ScalarKeysMapType mScalarKeys;
+  uint32_t mScalarKeyCount;
+  uint32_t mScalarKeyOffset;
   uint32_t mMaximumNumberOfKeys;
 
   ScalarResult GetScalarForKey(const StaticMutexAutoLock& locker,
                                const nsAString& aKey, ScalarBase** aRet);
+
+  bool AllowsKey(const nsAString& aKey) const;
 };
 
 ScalarResult KeyedScalar::SetValue(const StaticMutexAutoLock& locker,
@@ -939,7 +947,7 @@ void KeyedScalar::SetValue(const StaticMutexAutoLock& locker,
   if (sr != ScalarResult::Ok) {
     // Bug 1451813 - We now report which scalars exceed the key limit in
     // telemetry.keyed_scalars_exceed_limit.
-    if (sr != ScalarResult::TooManyKeys) {
+    if (sr == ScalarResult::KeyTooLong) {
       MOZ_ASSERT(false, "Key too long to be recorded in the scalar.");
     }
     return;
@@ -956,7 +964,7 @@ void KeyedScalar::SetValue(const StaticMutexAutoLock& locker,
   if (sr != ScalarResult::Ok) {
     // Bug 1451813 - We now report which scalars exceed the key limit in
     // telemetry.keyed_scalars_exceed_limit.
-    if (sr != ScalarResult::TooManyKeys) {
+    if (sr == ScalarResult::KeyTooLong) {
       MOZ_ASSERT(false, "Key too long to be recorded in the scalar.");
     }
     return;
@@ -973,7 +981,7 @@ void KeyedScalar::AddValue(const StaticMutexAutoLock& locker,
   if (sr != ScalarResult::Ok) {
     // Bug 1451813 - We now report which scalars exceed the key limit in
     // telemetry.keyed_scalars_exceed_limit.
-    if (sr != ScalarResult::TooManyKeys) {
+    if (sr == ScalarResult::KeyTooLong) {
       MOZ_ASSERT(false, "Key too long to be recorded in the scalar.");
     }
     return;
@@ -990,9 +998,10 @@ void KeyedScalar::SetMaximum(const StaticMutexAutoLock& locker,
   if (sr != ScalarResult::Ok) {
     // Bug 1451813 - We now report which scalars exceed the key limit in
     // telemetry.keyed_scalars_exceed_limit.
-    if (sr != ScalarResult::TooManyKeys) {
+    if (sr == ScalarResult::KeyTooLong) {
       MOZ_ASSERT(false, "Key too long to be recorded in the scalar.");
     }
+
     return;
   }
 
@@ -1009,7 +1018,7 @@ void KeyedScalar::SetMaximum(const StaticMutexAutoLock& locker,
 nsresult KeyedScalar::GetValue(const nsACString& aStoreName, bool aClearStorage,
                                nsTArray<KeyValuePair>& aValues) {
   for (auto iter = mScalarKeys.ConstIter(); !iter.Done(); iter.Next()) {
-    ScalarBase* scalar = static_cast<ScalarBase*>(iter.Data());
+    ScalarBase* scalar = iter.UserData();
 
     // Get the scalar value.
     nsCOMPtr<nsIVariant> scalarValue;
@@ -1050,6 +1059,23 @@ ScalarResult KeyedScalar::GetScalarForKey(const StaticMutexAutoLock& locker,
                                           ScalarBase** aRet) {
   if (aKey.IsEmpty()) {
     return ScalarResult::KeyIsEmpty;
+  }
+
+  if (!AllowsKey(aKey)) {
+    KeyedScalar* scalarUnknown = nullptr;
+    ScalarKey scalarUnknownUniqueId{
+        static_cast<uint32_t>(
+            mozilla::Telemetry::ScalarID::TELEMETRY_KEYED_SCALARS_UNKNOWN_KEYS),
+        false};
+    ProcessID process = ProcessID::Parent;
+    nsresult rv = internal_GetKeyedScalarByEnum(locker, scalarUnknownUniqueId,
+                                                process, &scalarUnknown);
+    if (NS_FAILED(rv)) {
+      return ScalarResult::TooManyKeys;
+    }
+    scalarUnknown->AddValue(locker, NS_ConvertUTF8toUTF16(mScalarName), 1);
+
+    return ScalarResult::KeyNotAllowed;
   }
 
   if (aKey.Length() > kMaximumKeyStringLength) {
@@ -1111,10 +1137,26 @@ ScalarResult KeyedScalar::GetScalarForKey(const StaticMutexAutoLock& locker,
 size_t KeyedScalar::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) {
   size_t n = aMallocSizeOf(this);
   for (auto iter = mScalarKeys.Iter(); !iter.Done(); iter.Next()) {
-    ScalarBase* scalar = static_cast<ScalarBase*>(iter.Data());
+    ScalarBase* scalar = iter.UserData();
     n += scalar->SizeOfIncludingThis(aMallocSizeOf);
   }
   return n;
+}
+
+bool KeyedScalar::AllowsKey(const nsAString& aKey) const {
+  // If we didn't specify a list of allowed keys, just return true.
+  if (mScalarKeyCount == 0) {
+    return true;
+  }
+
+  for (uint32_t i = 0; i < mScalarKeyCount; ++i) {
+    uint32_t stringIndex = gScalarKeysTable[mScalarKeyOffset + i];
+    if (aKey.EqualsASCII(&gScalarsStringTable[stringIndex])) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 typedef nsUint32HashKey ScalarIDHashKey;
@@ -1255,6 +1297,11 @@ void internal_LogScalarError(const nsACString& aScalarName, ScalarResult aSr) {
       AppendUTF8toUTF16(
           nsPrintfCString(" - The key length must be limited to %d characters.",
                           kMaximumKeyStringLength),
+          errorMessage);
+      break;
+    case ScalarResult::KeyNotAllowed:
+      AppendUTF8toUTF16(
+          nsPrintfCString(" - The key is not allowed for this scalar."),
           errorMessage);
       break;
     case ScalarResult::TooManyKeys:
@@ -1953,8 +2000,7 @@ nsresult internal_ScalarSnapshotter(const StaticMutexAutoLock& aLock,
   // Iterate the scalars in aProcessStorage. The storage may contain empty or
   // yet to be initialized scalars from all the supported processes.
   for (auto iter = aProcessStorage.Iter(); !iter.Done(); iter.Next()) {
-    ScalarStorageMapType* scalarStorage =
-        static_cast<ScalarStorageMapType*>(iter.Data());
+    ScalarStorageMapType* scalarStorage = iter.UserData();
     ScalarTupleArray& processScalars =
         aScalarsToReflect.GetOrInsert(iter.Key());
 
@@ -1965,7 +2011,7 @@ nsresult internal_ScalarSnapshotter(const StaticMutexAutoLock& aLock,
     // Iterate each available child storage.
     for (auto childIter = scalarStorage->Iter(); !childIter.Done();
          childIter.Next()) {
-      ScalarBase* scalar = static_cast<ScalarBase*>(childIter.Data());
+      ScalarBase* scalar = childIter.UserData();
 
       // Get the informations for this scalar.
       const BaseScalarInfo& info = internal_GetScalarInfo(
@@ -2014,8 +2060,7 @@ nsresult internal_KeyedScalarSnapshotter(
   // Iterate the scalars in aProcessStorage. The storage may contain empty or
   // yet to be initialized scalars from all the supported processes.
   for (auto iter = aProcessStorage.Iter(); !iter.Done(); iter.Next()) {
-    KeyedScalarStorageMapType* scalarStorage =
-        static_cast<KeyedScalarStorageMapType*>(iter.Data());
+    KeyedScalarStorageMapType* scalarStorage = iter.UserData();
     KeyedScalarTupleArray& processScalars =
         aScalarsToReflect.GetOrInsert(iter.Key());
 
@@ -2025,7 +2070,7 @@ nsresult internal_KeyedScalarSnapshotter(
 
     for (auto childIter = scalarStorage->Iter(); !childIter.Done();
          childIter.Next()) {
-      KeyedScalar* scalar = static_cast<KeyedScalar*>(childIter.Data());
+      KeyedScalar* scalar = childIter.UserData();
 
       // Get the informations for this scalar.
       const BaseScalarInfo& info = internal_GetScalarInfo(
@@ -2396,7 +2441,7 @@ void internal_ApplyPendingOperations(const StaticMutexAutoLock& lock) {
 // that, due to the nature of Telemetry, we cannot rely on having a
 // mutex initialized in InitializeGlobalState. Unfortunately, we
 // cannot make sure that no other function is called before this point.
-static StaticMutexNotRecorded gTelemetryScalarsMutex;
+static StaticMutex gTelemetryScalarsMutex;
 
 void TelemetryScalar::InitializeGlobalState(bool aCanRecordBase,
                                             bool aCanRecordExtended) {
@@ -3376,7 +3421,7 @@ nsresult TelemetryScalar::RegisterScalars(const nsACString& aCategoryName,
     if (JS_HasProperty(cx, scalarDef, "stores", &hasProperty) && hasProperty) {
       bool isArray = false;
       if (!JS_GetProperty(cx, scalarDef, "stores", &value) ||
-          !JS_IsArrayObject(cx, value, &isArray) || !isArray) {
+          !JS::IsArrayObject(cx, value, &isArray) || !isArray) {
         JS_ReportErrorASCII(cx, "Invalid 'stores' for scalar %s.",
                             PromiseFlatCString(fullName).get());
         return NS_ERROR_FAILURE;
@@ -3384,7 +3429,7 @@ nsresult TelemetryScalar::RegisterScalars(const nsACString& aCategoryName,
 
       JS::RootedObject arrayObj(cx, &value.toObject());
       uint32_t storesLength = 0;
-      if (!JS_GetArrayLength(cx, arrayObj, &storesLength)) {
+      if (!JS::GetArrayLength(cx, arrayObj, &storesLength)) {
         JS_ReportErrorASCII(cx,
                             "Can't get 'stores' array length for scalar %s.",
                             PromiseFlatCString(fullName).get());

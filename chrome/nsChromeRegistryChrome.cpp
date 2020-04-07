@@ -26,12 +26,9 @@
 
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Unused.h"
-#include "mozilla/intl/LocaleService.h"
 
 #include "nsIAppStartup.h"
 #include "nsIObserverService.h"
-#include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "mozilla/Preferences.h"
 #include "nsIResProtocolHandler.h"
 #include "nsIScriptError.h"
@@ -134,10 +131,10 @@ nsChromeRegistryChrome::IsLocaleRTL(const nsACString& package, bool* aResult) {
   *aResult = false;
 
   nsAutoCString locale;
-  GetSelectedLocale(package, false, locale);
+  GetSelectedLocale(package, locale);
   if (locale.Length() < 2) return NS_OK;
 
-  *aResult = GetDirectionForLocale(locale);
+  *aResult = LocaleService::IsLocaleRTL(locale);
   return NS_OK;
 }
 
@@ -146,14 +143,13 @@ nsChromeRegistryChrome::IsLocaleRTL(const nsACString& package, bool* aResult) {
  * chrome packages.
  *
  * If you want to get the current application's UI locale, please use
- * LocaleService::GetAppLocaleAsLangTag.
+ * LocaleService::GetAppLocaleAsBCP47.
  */
 nsresult nsChromeRegistryChrome::GetSelectedLocale(const nsACString& aPackage,
-                                                   bool aAsBCP47,
                                                    nsACString& aLocale) {
   nsAutoCString reqLocale;
   if (aPackage.EqualsLiteral("global")) {
-    LocaleService::GetInstance()->GetAppLocaleAsLangTag(reqLocale);
+    LocaleService::GetInstance()->GetAppLocaleAsBCP47(reqLocale);
   } else {
     AutoTArray<nsCString, 10> requestedLocales;
     LocaleService::GetInstance()->GetRequestedLocales(requestedLocales);
@@ -168,10 +164,6 @@ nsresult nsChromeRegistryChrome::GetSelectedLocale(const nsACString& aPackage,
 
   aLocale = entry->locales.GetSelected(reqLocale, nsProviderArray::LOCALE);
   if (aLocale.IsEmpty()) return NS_ERROR_FAILURE;
-
-  if (aAsBCP47) {
-    SanitizeForBCP47(aLocale);
-  }
 
   return NS_OK;
 }
@@ -277,7 +269,7 @@ void nsChromeRegistryChrome::SendRegisteredChrome(
   }
 
   nsAutoCString appLocale;
-  LocaleService::GetInstance()->GetAppLocaleAsLangTag(appLocale);
+  LocaleService::GetInstance()->GetAppLocaleAsBCP47(appLocale);
 
   if (aParent) {
     bool success = aParent->SendRegisterChrome(packages, resources, overrides,
@@ -302,7 +294,7 @@ void nsChromeRegistryChrome::ChromePackageFromPackageEntry(
     const nsACString& aPackageName, PackageEntry* aPackage,
     ChromePackage* aChromePackage, const nsCString& aSelectedSkin) {
   nsAutoCString appLocale;
-  LocaleService::GetInstance()->GetAppLocaleAsLangTag(appLocale);
+  LocaleService::GetInstance()->GetAppLocaleAsBCP47(appLocale);
 
   SerializeURI(aPackage->baseURI, aChromePackage->contentBaseURI);
   SerializeURI(aPackage->locales.GetBase(appLocale, nsProviderArray::LOCALE),

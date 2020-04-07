@@ -6,7 +6,6 @@
 
 #include "PerformanceEntry.h"
 #include "MainThreadUtils.h"
-#include "nsIURI.h"
 
 using namespace mozilla::dom;
 
@@ -24,7 +23,7 @@ PerformanceEntry::PerformanceEntry(nsISupports* aParent, const nsAString& aName,
                                    const nsAString& aEntryType)
     : mParent(aParent), mName(aName), mEntryType(aEntryType) {}
 
-PerformanceEntry::~PerformanceEntry() {}
+PerformanceEntry::~PerformanceEntry() = default;
 
 size_t PerformanceEntry::SizeOfExcludingThis(
     mozilla::MallocSizeOf aMallocSizeOf) const {

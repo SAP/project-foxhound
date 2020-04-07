@@ -632,7 +632,7 @@ var DownloadsCommon = {
           function() {
             if (
               subj.document.documentURI ==
-              "chrome://global/content/commonDialog.xul"
+              "chrome://global/content/commonDialog.xhtml"
             ) {
               Services.ww.unregisterNotification(onOpen);
               let dialog = subj.document.getElementById("commonDialog");
@@ -662,10 +662,10 @@ var DownloadsCommon = {
   },
 };
 
-XPCOMUtils.defineLazyGetter(this.DownloadsCommon, "log", () => {
+XPCOMUtils.defineLazyGetter(DownloadsCommon, "log", () => {
   return DownloadsLogger.log.bind(DownloadsLogger);
 });
-XPCOMUtils.defineLazyGetter(this.DownloadsCommon, "error", () => {
+XPCOMUtils.defineLazyGetter(DownloadsCommon, "error", () => {
   return DownloadsLogger.error.bind(DownloadsLogger);
 });
 

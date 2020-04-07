@@ -32,7 +32,7 @@ add_task(async function() {
     "There shouldn't be any selected item in the requests menu."
   );
   is(
-    store.getState().requests.requests.size,
+    store.getState().requests.requests.length,
     1,
     "The requests menu should not be empty after the first request."
   );
@@ -256,20 +256,29 @@ add_task(async function() {
   async function testCookiesTab() {
     const tabpanel = await selectTab(PANELS.COOKIES, 1);
 
-    const cookieTable = tabpanel.querySelector(".treeTable tbody");
+    const cookieAccordion = tabpanel.querySelector(".accordion");
+
     is(
-      cookieTable.querySelectorAll(".tree-section").length,
+      cookieAccordion.querySelectorAll(".accordion-item").length,
       2,
       "There should be 2 cookie scopes displayed in this tabpanel."
     );
     // 2 Cookies in response - 1 httpOnly and 1 value for each cookie - total 6
+
+    const resCookiesTable = cookieAccordion.querySelector(
+      "li[id='responseCookies'] .accordion-content .treeTable"
+    );
     is(
-      cookieTable.querySelectorAll("tr[id^='/Response Cookies/'").length,
+      resCookiesTable.querySelectorAll("tr.treeRow").length,
       6,
       "There should be 6 rows displayed in response cookies table"
     );
+
+    const reqCookiesTable = cookieAccordion.querySelector(
+      "li[id='requestCookies'] .accordion-content .treeTable"
+    );
     is(
-      cookieTable.querySelectorAll("tr[id^='/Request Cookies/'").length,
+      reqCookiesTable.querySelectorAll("tr.treeRow").length,
       2,
       "There should be 2 cookie values displayed in request cookies table."
     );

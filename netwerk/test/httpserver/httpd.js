@@ -861,10 +861,6 @@ nsHttpServer.prototype = {
     if (!this._hasOpenConnections() && this._socketClosed) {
       this._notifyStopped();
     }
-    // Bug 508125: Add a GC here else we'll use gigabytes of memory running
-    // mochitests. We can't rely on xpcshell doing an automated GC, as that
-    // would interfere with testing GC stuff...
-    Cu.forceGC();
   },
 
   /**
@@ -2559,6 +2555,13 @@ ServerHandler.prototype = {
   // see nsIHttpServer.registerPathHandler
   //
   registerPathHandler(path, handler) {
+    if (path.length == 0) {
+      throw Components.Exception(
+        "Handler path cannot be empty",
+        Cr.NS_ERROR_INVALID_ARG
+      );
+    }
+
     // XXX true path validation!
     if (path.charAt(0) != "/" && path != "CONNECT") {
       throw Components.Exception("", Cr.NS_ERROR_INVALID_ARG);

@@ -29,8 +29,6 @@ loader.lazyRequireGetter(
 exports.setIgnoreLayoutChanges = (...args) =>
   this.setIgnoreLayoutChanges(...args);
 
-const ReplayInspector = require("devtools/server/actors/replay/inspector");
-
 /**
  * Returns the `DOMWindowUtils` for the window given.
  *
@@ -433,121 +431,17 @@ function isNodeConnected(node) {
 exports.isNodeConnected = isNodeConnected;
 
 /**
- * Traverse getBindingParent until arriving upon the bound element
- * responsible for the generation of the specified node.
- * See https://developer.mozilla.org/en-US/docs/XBL/XBL_1.0_Reference/DOM_Interfaces#getBindingParent.
- *
- * @param {DOMNode} node
- * @return {DOMNode}
- *         If node is not anonymous, this will return node. Otherwise,
- *         it will return the bound element
- *
- */
-function getRootBindingParent(node) {
-  let parent;
-  const doc = node.ownerDocument;
-  if (!doc) {
-    return node;
-  }
-  while ((parent = doc.getBindingParent(node))) {
-    node = parent;
-  }
-  return node;
-}
-exports.getRootBindingParent = getRootBindingParent;
-
-function getBindingParent(node) {
-  const doc = node.ownerDocument;
-  if (!doc) {
-    return null;
-  }
-
-  // If there is no binding parent then it is not anonymous.
-  const parent = doc.getBindingParent(node);
-  if (!parent) {
-    return null;
-  }
-
-  return parent;
-}
-exports.getBindingParent = getBindingParent;
-
-/**
- * Determine whether a node is anonymous by determining if there
- * is a bindingParent.
+ * Determine whether a node is anonymous.
  *
  * @param {DOMNode} node
  * @return {Boolean}
  *
+ * FIXME(bug 1597411): Remove one of these (or both, as
+ * `node.isNativeAnonymous` is quite clear).
  */
-const isAnonymous = node => getRootBindingParent(node) !== node;
+const isAnonymous = node => node.isNativeAnonymous;
 exports.isAnonymous = isAnonymous;
-
-/**
- * Determine whether a node has a bindingParent.
- *
- * @param {DOMNode} node
- * @return {Boolean}
- *
- */
-const hasBindingParent = node => !!getBindingParent(node);
-
-/**
- * Determine whether a node is native anonymous content (as opposed
- * to XBL anonymous or shadow DOM).
- * Native anonymous content includes elements like internals to form
- * controls and ::before/::after.
- *
- * @param {DOMNode} node
- * @return {Boolean}
- *
- */
-const isNativeAnonymous = node =>
-  hasBindingParent(node) && !(isXBLAnonymous(node) || isShadowAnonymous(node));
-
-exports.isNativeAnonymous = isNativeAnonymous;
-
-/**
- * Determine whether a node is XBL anonymous content (as opposed
- * to native anonymous or shadow DOM).
- * See https://developer.mozilla.org/en-US/docs/XBL/XBL_1.0_Reference/Anonymous_Content.
- *
- * @param {DOMNode} node
- * @return {Boolean}
- *
- */
-function isXBLAnonymous(node) {
-  const parent = getBindingParent(node);
-  if (!parent) {
-    return false;
-  }
-
-  const anonNodes = [...(node.ownerDocument.getAnonymousNodes(parent) || [])];
-  return anonNodes.indexOf(node) > -1;
-}
-exports.isXBLAnonymous = isXBLAnonymous;
-
-/**
- * Determine whether a node is a child of a shadow root.
- * See https://w3c.github.io/webcomponents/spec/shadow/
- *
- * @param {DOMNode} node
- * @return {Boolean}
- */
-function isShadowAnonymous(node) {
-  const parent = getBindingParent(node);
-  if (!parent) {
-    return false;
-  }
-
-  // If there is a shadowRoot and this is part of it then this
-  // is not native anonymous
-  return (
-    parent.openOrClosedShadowRoot &&
-    parent.openOrClosedShadowRoot.contains(node)
-  );
-}
-exports.isShadowAnonymous = isShadowAnonymous;
+exports.isNativeAnonymous = isAnonymous;
 
 /**
  * Determine whether a node is a template element.
@@ -568,10 +462,7 @@ exports.isTemplateElement = isTemplateElement;
  * @param {DOMNode} node
  * @return {Boolean}
  */
-function isShadowRoot(node) {
-  const isFragment = node.nodeType === Node.DOCUMENT_FRAGMENT_NODE;
-  return isFragment && !!node.host;
-}
+const isShadowRoot = node => node.containingShadowRoot == node;
 exports.isShadowRoot = isShadowRoot;
 
 /*
@@ -612,7 +503,7 @@ function isDirectShadowHostChild(node) {
     isMarkerPseudoElement(node) ||
     isBeforePseudoElement(node) ||
     isAfterPseudoElement(node) ||
-    isNativeAnonymous(node)
+    node.isNativeAnonymous
   ) {
     return false;
   }
@@ -752,13 +643,6 @@ exports.getViewportDimensions = getViewportDimensions;
  * @return {DOMWindow}
  */
 function getWindowFor(node) {
-  // Check if we are replaying, as the tests below don't work when inspecting
-  // nodes in another process.
-  if (isReplaying) {
-    // Multiple windows are not supported yet when replaying, so return the
-    // global window.
-    return ReplayInspector.window;
-  }
   if (Node.isInstance(node)) {
     if (node.nodeType === node.DOCUMENT_NODE) {
       return node.defaultView;
@@ -951,16 +835,18 @@ exports.getAbsoluteScrollOffsetsForNode = getAbsoluteScrollOffsetsForNode;
  * - In the context of the content toolbox, a remote frame can be a <iframe> that contains
  * a different origin document.
  *
- * For now, this function only checks the former.
- *
  * @param  {DOMNode} node
  * @return {Boolean}
  */
 function isRemoteFrame(node) {
-  return (
-    node.childNodes.length == 0 &&
-    ChromeUtils.getClassName(node) == "XULFrameElement" &&
-    node.getAttribute("remote") == "true"
-  );
+  if (ChromeUtils.getClassName(node) == "HTMLIFrameElement") {
+    return node.frameLoader && node.frameLoader.isRemoteFrame;
+  }
+
+  if (ChromeUtils.getClassName(node) == "XULFrameElement") {
+    return !node.childNodes.length && node.getAttribute("remote") == "true";
+  }
+
+  return false;
 }
 exports.isRemoteFrame = isRemoteFrame;

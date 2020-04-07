@@ -9,6 +9,7 @@
 #include "mozilla/dom/DOMQuadBinding.h"
 #include "mozilla/dom/DOMPoint.h"
 #include "mozilla/dom/DOMRect.h"
+#include "mozilla/dom/DOMRectBinding.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -29,7 +30,7 @@ DOMQuad::DOMQuad(nsISupports* aParent, CSSPoint aPoints[4]) : mParent(aParent) {
 
 DOMQuad::DOMQuad(nsISupports* aParent) : mParent(aParent) {}
 
-DOMQuad::~DOMQuad() {}
+DOMQuad::~DOMQuad() = default;
 
 JSObject* DOMQuad::WrapObject(JSContext* aCx,
                               JS::Handle<JSObject*> aGivenProto) {

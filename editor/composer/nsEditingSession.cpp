@@ -19,22 +19,19 @@
 #include "nsContentUtils.h"
 #include "nsDebug.h"  // for NS_ENSURE_SUCCESS, etc
 #include "nsEditingSession.h"
-#include "nsError.h"               // for NS_ERROR_FAILURE, NS_OK, etc
-#include "nsIChannel.h"            // for nsIChannel
-#include "nsIContentViewer.h"      // for nsIContentViewer
-#include "nsIControllers.h"        // for nsIControllers
-#include "nsID.h"                  // for NS_GET_IID, etc
-#include "nsHTMLDocument.h"        // for nsHTMLDocument
-#include "nsIDocShell.h"           // for nsIDocShell
-#include "mozilla/dom/Document.h"  // for Document
-#include "nsIDocumentStateListener.h"
+#include "nsError.h"                     // for NS_ERROR_FAILURE, NS_OK, etc
+#include "nsIChannel.h"                  // for nsIChannel
+#include "nsIContentViewer.h"            // for nsIContentViewer
+#include "nsIControllers.h"              // for nsIControllers
+#include "nsID.h"                        // for NS_GET_IID, etc
+#include "nsHTMLDocument.h"              // for nsHTMLDocument
+#include "nsIDocShell.h"                 // for nsIDocShell
+#include "mozilla/dom/Document.h"        // for Document
 #include "nsIEditor.h"                   // for nsIEditor
 #include "nsIInterfaceRequestorUtils.h"  // for do_GetInterface
-#include "nsIPlaintextEditor.h"          // for nsIPlaintextEditor, etc
 #include "nsIRefreshURI.h"               // for nsIRefreshURI
 #include "nsIRequest.h"                  // for nsIRequest
 #include "nsITimer.h"                    // for nsITimer, etc
-#include "nsITransactionManager.h"       // for nsITransactionManager
 #include "nsIWeakReference.h"            // for nsISupportsWeakReference, etc
 #include "nsIWebNavigation.h"            // for nsIWebNavigation
 #include "nsIWebProgress.h"              // for nsIWebProgress, etc
@@ -249,8 +246,7 @@ const char* const gSupportedTextTypes[] = {
     "application/ecmascript",
     "application/x-javascript",  // obsolete type
     "text/xul",                  // obsolete type
-    "application/vnd.mozilla.xul+xml",
-    nullptr  // IMPORTANT! Null must be at end
+    nullptr                      // IMPORTANT! Null must be at end
 };
 
 bool IsSupportedTextType(const char* aMIMEType) {
@@ -305,20 +301,20 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   bool needHTMLController = false;
 
   if (mEditorType.EqualsLiteral("textmail")) {
-    mEditorFlags = nsIPlaintextEditor::eEditorPlaintextMask |
-                   nsIPlaintextEditor::eEditorEnableWrapHackMask |
-                   nsIPlaintextEditor::eEditorMailMask;
+    mEditorFlags = nsIEditor::eEditorPlaintextMask |
+                   nsIEditor::eEditorEnableWrapHackMask |
+                   nsIEditor::eEditorMailMask;
   } else if (mEditorType.EqualsLiteral("text")) {
-    mEditorFlags = nsIPlaintextEditor::eEditorPlaintextMask |
-                   nsIPlaintextEditor::eEditorEnableWrapHackMask;
+    mEditorFlags =
+        nsIEditor::eEditorPlaintextMask | nsIEditor::eEditorEnableWrapHackMask;
   } else if (mEditorType.EqualsLiteral("htmlmail")) {
     if (mimeCType.EqualsLiteral("text/html")) {
       needHTMLController = true;
-      mEditorFlags = nsIPlaintextEditor::eEditorMailMask;
+      mEditorFlags = nsIEditor::eEditorMailMask;
     } else {
       // Set the flags back to textplain.
-      mEditorFlags = nsIPlaintextEditor::eEditorPlaintextMask |
-                     nsIPlaintextEditor::eEditorEnableWrapHackMask;
+      mEditorFlags = nsIEditor::eEditorPlaintextMask |
+                     nsIEditor::eEditorEnableWrapHackMask;
     }
   } else {
     // Defaulted to html
@@ -326,7 +322,7 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   }
 
   if (mInteractive) {
-    mEditorFlags |= nsIPlaintextEditor::eEditorAllowInteraction;
+    mEditorFlags |= nsIEditor::eEditorAllowInteraction;
   }
 
   // make the UI state maintainer
@@ -339,7 +335,7 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
 
   if (mEditorStatus != eEditorCreationInProgress) {
     RefPtr<ComposerCommandsUpdater> updater = mComposerCommandsUpdater;
-    updater->NotifyDocumentCreated();
+    updater->OnHTMLEditorCreated();
 
     // At this point we have made a final decision that we don't support
     // editing the current document.  This is an internal failure state, but
@@ -415,8 +411,7 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
 
   // Set up as a doc state listener
   // Important! We must have this to broadcast the "obs_documentCreated" message
-  rv = htmlEditor->AddDocumentStateListener(mComposerCommandsUpdater);
-  NS_ENSURE_SUCCESS(rv, rv);
+  htmlEditor->SetComposerCommandsUpdater(mComposerCommandsUpdater);
 
   rv = htmlEditor->Init(*doc, nullptr /* root content */, nullptr, mEditorFlags,
                         EmptyString());
@@ -426,8 +421,6 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   if (NS_WARN_IF(!selection)) {
     return NS_ERROR_FAILURE;
   }
-
-  htmlEditor->SetComposerCommandsUpdater(mComposerCommandsUpdater);
 
   // and as a transaction listener
   MOZ_ASSERT(mComposerCommandsUpdater);
@@ -456,7 +449,6 @@ void nsEditingSession::RemoveListenersAndControllers(
 
   // Remove all the listeners
   aHTMLEditor->SetComposerCommandsUpdater(nullptr);
-  aHTMLEditor->RemoveDocumentStateListener(mComposerCommandsUpdater);
   DebugOnly<bool> removedTransactionListener =
       aHTMLEditor->RemoveTransactionListener(*mComposerCommandsUpdater);
   NS_WARNING_ASSERTION(removedTransactionListener,
@@ -737,7 +729,8 @@ nsEditingSession::OnLocationChange(nsIWebProgress* aWebProgress,
   NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
 
   RefPtr<nsCommandManager> commandManager = docShell->GetCommandManager();
-  return commandManager->CommandStatusChanged("obs_documentLocationChanged");
+  commandManager->CommandStatusChanged("obs_documentLocationChanged");
+  return NS_OK;
 }
 
 /*---------------------------------------------------------------------------

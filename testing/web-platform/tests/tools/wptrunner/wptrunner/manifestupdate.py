@@ -3,17 +3,18 @@ import os
 from six.moves.urllib.parse import urljoin, urlsplit
 from collections import namedtuple, defaultdict, deque
 from math import ceil
+from six import integer_types, iterkeys, itervalues, iteritems, string_types, text_type
 
-from wptmanifest import serialize
-from wptmanifest.node import (DataNode, ConditionalNode, BinaryExpressionNode,
+from .wptmanifest import serialize
+from .wptmanifest.node import (DataNode, ConditionalNode, BinaryExpressionNode,
                               BinaryOperatorNode, NumberNode, StringNode, VariableNode,
                               ValueNode, UnaryExpressionNode, UnaryOperatorNode,
                               ListNode)
-from wptmanifest.backends import conditional
-from wptmanifest.backends.conditional import ManifestItem
+from .wptmanifest.backends import conditional
+from .wptmanifest.backends.conditional import ManifestItem
 
-import expected
-import expectedtree
+from . import expected
+from . import expectedtree
 
 """Manifest structure used to update the expected results of a test
 
@@ -75,7 +76,7 @@ class UpdateProperties(object):
         return name in self._classes
 
     def __iter__(self):
-        for name in self._classes.iterkeys():
+        for name in iterkeys(self._classes):
             yield getattr(self, name)
 
 
@@ -312,8 +313,8 @@ def build_conditional_tree(_, run_info_properties, results):
 
 def build_unconditional_tree(_, run_info_properties, results):
     root = expectedtree.Node(None, None)
-    for run_info, values in results.iteritems():
-        for value, count in values.iteritems():
+    for run_info, values in iteritems(results):
+        for value, count in iteritems(values):
             root.result_values[value] += count
         root.run_info.add(run_info)
     return root
@@ -410,7 +411,7 @@ class PropertyUpdate(object):
         for e in errors:
             if disable_intermittent:
                 condition = e.cond.children[0] if e.cond else None
-                msg = disable_intermittent if isinstance(disable_intermittent, (str, unicode)) else "unstable"
+                msg = disable_intermittent if isinstance(disable_intermittent, string_types+(text_type,)) else "unstable"
                 self.node.set("disabled", msg, condition)
                 self.node.new_disabled = True
             else:
@@ -498,7 +499,7 @@ class PropertyUpdate(object):
                           for run_info in node.run_info}
 
         node_by_run_info = {run_info: node
-                            for (run_info, node) in run_info_index.iteritems()
+                            for (run_info, node) in iteritems(run_info_index)
                             if node.result_values}
 
         run_info_by_condition = self.run_info_by_condition(run_info_index,
@@ -511,8 +512,8 @@ class PropertyUpdate(object):
             # using the properties we've specified and not matching any run_info
             top_level_props, dependent_props = self.node.root.run_info_properties
             update_properties = set(top_level_props)
-            for item in dependent_props.itervalues():
-                update_properties |= set(dependent_props)
+            for item in itervalues(dependent_props):
+                update_properties |= set(item)
             for condition in current_conditions:
                 if ((not condition.variables.issubset(update_properties) and
                      not run_info_by_condition[condition])):
@@ -694,7 +695,7 @@ class ExpectedUpdate(PropertyUpdate):
             raise ConditionError
 
         counts = {}
-        for status, count in new.iteritems():
+        for status, count in iteritems(new):
             if isinstance(status, tuple):
                 counts[status[0]] = count
                 counts.update({intermittent: 0 for intermittent in status[1:] if intermittent not in counts})
@@ -708,7 +709,7 @@ class ExpectedUpdate(PropertyUpdate):
         # Counts with 0 are considered intermittent.
         statuses = ["OK", "PASS", "FAIL", "ERROR", "TIMEOUT", "CRASH"]
         status_priority = {value: i for i, value in enumerate(statuses)}
-        sorted_new = sorted(counts.iteritems(), key=lambda x:(-1 * x[1],
+        sorted_new = sorted(iteritems(counts), key=lambda x:(-1 * x[1],
                                                            status_priority.get(x[0],
                                                            len(status_priority))))
         expected = []
@@ -773,7 +774,7 @@ class AppendOnlyListUpdate(PropertyUpdate):
         for item in new:
             if item is None:
                 continue
-            elif isinstance(item, (str, unicode)):
+            elif isinstance(item, text_type):
                 rv.add(item)
             else:
                 rv |= item
@@ -821,7 +822,7 @@ class LeakThresholdUpdate(PropertyUpdate):
         return result
 
     def to_ini_value(self, data):
-        return ["%s:%s" % item for item in sorted(data.iteritems())]
+        return ["%s:%s" % item for item in sorted(iteritems(data))]
 
     def from_ini_value(self, data):
         rv = {}
@@ -896,10 +897,10 @@ def make_expr(prop_set, rhs):
 
 
 def make_node(value):
-    if type(value) in (int, float, long):
+    if isinstance(value, integer_types+(float,)):
         node = NumberNode(value)
-    elif type(value) in (str, unicode):
-        node = StringNode(unicode(value))
+    elif isinstance(value, text_type):
+        node = StringNode(text_type(value))
     elif hasattr(value, "__iter__"):
         node = ListNode()
         for item in value:
@@ -908,10 +909,10 @@ def make_node(value):
 
 
 def make_value_node(value):
-    if type(value) in (int, float, long):
+    if isinstance(value, integer_types+(float,)):
         node = ValueNode(value)
-    elif type(value) in (str, unicode):
-        node = ValueNode(unicode(value))
+    elif isinstance(value, text_type):
+        node = ValueNode(text_type(value))
     elif hasattr(value, "__iter__"):
         node = ListNode()
         for item in value:

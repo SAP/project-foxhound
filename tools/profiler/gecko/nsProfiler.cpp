@@ -6,19 +6,20 @@
 
 #include "nsProfiler.h"
 
-#include "GeckoProfiler.h"
-#include "nsProfilerStartParams.h"
-#include "platform.h"
-#include "ProfilerParent.h"
+#include <sstream>
+#include <string>
+#include <utility>
 
+#include "GeckoProfiler.h"
+#include "ProfilerParent.h"
+#include "js/Array.h"  // JS::NewArrayObject
 #include "js/JSON.h"
 #include "js/Value.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/TypedArray.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/Move.h"
 #include "mozilla/Services.h"
 #include "mozilla/SystemGroup.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/TypedArray.h"
 #include "nsIFileStreams.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -27,13 +28,13 @@
 #include "nsIWebNavigation.h"
 #include "nsLocalFile.h"
 #include "nsMemory.h"
+#include "nsProfilerStartParams.h"
+#include "nsProxyRelease.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
+#include "platform.h"
 #include "shared-libraries.h"
 #include "zlib.h"
-
-#include <string>
-#include <sstream>
 
 using namespace mozilla;
 
@@ -112,7 +113,7 @@ NS_IMETHODIMP
 nsProfiler::StartProfiler(uint32_t aEntries, double aInterval,
                           const nsTArray<nsCString>& aFeatures,
                           const nsTArray<nsCString>& aFilters,
-                          double aDuration) {
+                          uint64_t aActiveBrowsingContextID, double aDuration) {
   if (mLockedForPrivateBrowsing) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -135,7 +136,7 @@ nsProfiler::StartProfiler(uint32_t aEntries, double aInterval,
   }
   profiler_start(PowerOfTwo32(aEntries), aInterval, features,
                  filterStringVector.begin(), filterStringVector.length(),
-                 duration);
+                 aActiveBrowsingContextID, duration);
 
   return NS_OK;
 }
@@ -180,6 +181,83 @@ nsProfiler::AddMarker(const char* aMarker) {
 NS_IMETHODIMP
 nsProfiler::ClearAllPages() {
   profiler_clear_all_pages();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsProfiler::WaitOnePeriodicSampling(JSContext* aCx, Promise** aPromise) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (NS_WARN_IF(!aCx)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsIGlobalObject* globalObject = xpc::CurrentNativeGlobal(aCx);
+  if (NS_WARN_IF(!globalObject)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  ErrorResult result;
+  RefPtr<Promise> promise = Promise::Create(globalObject, result);
+  if (NS_WARN_IF(result.Failed())) {
+    return result.StealNSResult();
+  }
+
+  // The callback cannot officially own the promise RefPtr directly, because
+  // `Promise` doesn't support multi-threading, and the callback could destroy
+  // the promise in the sampler thread.
+  // `nsMainThreadPtrHandle` ensures that the promise can only be destroyed on
+  // the main thread. And the invocation from the Sampler thread immediately
+  // dispatches a task back to the main thread, to resolve/reject the promise.
+  // The lambda needs to be `mutable`, to allow moving-from
+  // `promiseHandleInSampler`.
+  if (!profiler_callback_after_sampling(
+          [promiseHandleInSampler = nsMainThreadPtrHandle<Promise>(
+               new nsMainThreadPtrHolder<Promise>(
+                   "WaitOnePeriodicSampling promise for Sampler", promise))](
+              SamplingState aSamplingState) mutable {
+            SystemGroup::Dispatch(
+                TaskCategory::Other,
+                NS_NewRunnableFunction(
+                    "nsProfiler::WaitOnePeriodicSampling result on main thread",
+                    [promiseHandleInMT = std::move(promiseHandleInSampler),
+                     aSamplingState]() {
+                      AutoJSAPI jsapi;
+                      if (NS_WARN_IF(!jsapi.Init(
+                              promiseHandleInMT->GetGlobalObject()))) {
+                        // We're really hosed if we can't get a JS context for
+                        // some reason.
+                        promiseHandleInMT->MaybeReject(
+                            NS_ERROR_DOM_UNKNOWN_ERR);
+                        return;
+                      }
+
+                      switch (aSamplingState) {
+                        case SamplingState::JustStopped:
+                        case SamplingState::SamplingPaused:
+                          promiseHandleInMT->MaybeReject(NS_ERROR_FAILURE);
+                          break;
+
+                        case SamplingState::NoStackSamplingCompleted:
+                        case SamplingState::SamplingCompleted: {
+                          JS::RootedValue val(jsapi.cx());
+                          promiseHandleInMT->MaybeResolve(val);
+                        } break;
+
+                        default:
+                          MOZ_ASSERT(false, "Unexpected SamplingState value");
+                          promiseHandleInMT->MaybeReject(
+                              NS_ERROR_DOM_UNKNOWN_ERR);
+                          break;
+                      }
+                    }));
+          })) {
+    // Callback was not added (e.g., profiler is not running) and will never be
+    // invoked, so we need to resolve the promise here.
+    promise->MaybeReject(NS_ERROR_DOM_UNKNOWN_ERR);
+  }
+
+  promise.forget(aPromise);
   return NS_OK;
 }
 
@@ -584,7 +662,7 @@ nsProfiler::GetSymbolTable(const nsACString& aDebugPath,
                                             aSymbolTable.mBuffer.Elements()));
 
             if (addrsArray && indexArray && bufferArray) {
-              JS::RootedObject tuple(cx, JS_NewArrayObject(cx, 3));
+              JS::RootedObject tuple(cx, JS::NewArrayObject(cx, 3));
               JS_SetElement(cx, tuple, 0, addrsArray);
               JS_SetElement(cx, tuple, 1, indexArray);
               JS_SetElement(cx, tuple, 2, bufferArray);

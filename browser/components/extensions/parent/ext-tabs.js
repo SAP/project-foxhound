@@ -13,6 +13,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "DownloadPaths",
+  "resource://gre/modules/DownloadPaths.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "ExtensionControlledPopup",
   "resource:///modules/ExtensionControlledPopup.jsm"
 );
@@ -262,7 +267,7 @@ class TabsUpdateFilterEventManager extends EventManager {
         return true;
       }
 
-      let fireForTab = (tab, changed) => {
+      let fireForTab = (tab, changed, nativeTab) => {
         // Tab may be null if private and not_allowed.
         if (!tab || !matchFilters(tab, changed)) {
           return;
@@ -270,11 +275,21 @@ class TabsUpdateFilterEventManager extends EventManager {
 
         let changeInfo = sanitize(extension, changed);
         if (changeInfo) {
-          fire.async(tab.id, changeInfo, tab.convert());
+          tabTracker.maybeWaitForTabOpen(nativeTab).then(() => {
+            if (!nativeTab.parentNode) {
+              // If the tab is already be destroyed, do nothing.
+              return;
+            }
+            fire.async(tab.id, changeInfo, tab.convert());
+          });
         }
       };
 
       let listener = event => {
+        // Ignore any events prior to TabOpen
+        if (event.originalTarget.initializingTab) {
+          return;
+        }
         if (!context.canAccessWindow(event.originalTarget.ownerGlobal)) {
           return;
         }
@@ -337,7 +352,7 @@ class TabsUpdateFilterEventManager extends EventManager {
           changeInfo[prop] = tab[prop];
         }
 
-        fireForTab(tab, changeInfo);
+        fireForTab(tab, changeInfo, event.originalTarget);
       };
 
       let statusListener = ({ browser, status, url }) => {
@@ -353,7 +368,7 @@ class TabsUpdateFilterEventManager extends EventManager {
             changed.url = url;
           }
 
-          fireForTab(tabManager.wrapTab(tabElem), changed);
+          fireForTab(tabManager.wrapTab(tabElem), changed, tabElem);
         }
       };
 
@@ -363,7 +378,7 @@ class TabsUpdateFilterEventManager extends EventManager {
 
         if (nativeTab && context.canAccessWindow(nativeTab.ownerGlobal)) {
           let tab = tabManager.getWrapper(nativeTab);
-          fireForTab(tab, { isArticle: message.data.isArticle });
+          fireForTab(tab, { isArticle: message.data.isArticle }, nativeTab);
         }
       };
 
@@ -1096,20 +1111,10 @@ this.tabs = class extends ExtensionAPI {
 
           return new Promise(resolve => {
             // We need to use SSTabRestoring because any attributes set before
-            // are ignored. SSTabRestored is too late and results in a jump in
-            // the UI. See http://bit.ly/session-store-api for more information.
+            // are ignored.
             newTab.addEventListener(
               "SSTabRestoring",
               function() {
-                // As the tab is restoring, move it to the correct position.
-
-                // Pinned tabs that are duplicated are inserted
-                // after the existing pinned tab and pinned.
-                if (nativeTab.pinned) {
-                  gBrowser.pinTab(newTab);
-                }
-                gBrowser.moveTabTo(newTab, nativeTab._tPos + 1);
-
                 gBrowser.selectedTab = newTab;
                 resolve(tabManager.convert(newTab));
               },
@@ -1139,9 +1144,7 @@ this.tabs = class extends ExtensionAPI {
             FullZoom.setZoom(zoom, nativeTab.linkedBrowser);
           } else {
             return Promise.reject({
-              message: `Zoom value ${zoom} out of range (must be between ${
-                ZoomManager.MIN
-              } and ${ZoomManager.MAX})`,
+              message: `Zoom value ${zoom} out of range (must be between ${ZoomManager.MIN} and ${ZoomManager.MAX})`,
             });
           }
 
@@ -1269,11 +1272,7 @@ this.tabs = class extends ExtensionAPI {
         print() {
           let activeTab = getTabOrActive(null);
           let { PrintUtils } = activeTab.ownerGlobal;
-
-          PrintUtils.printWindow(
-            activeTab.linkedBrowser.outerWindowID,
-            activeTab.linkedBrowser
-          );
+          PrintUtils.printWindow(activeTab.linkedBrowser.browsingContext);
         },
 
         printPreview() {
@@ -1314,10 +1313,29 @@ this.tabs = class extends ExtensionAPI {
             return Promise.reject({ message: "Not supported on Mac OS X" });
           }
 
+          let filename;
+          if (
+            pageSettings.toFileName !== null &&
+            pageSettings.toFileName != ""
+          ) {
+            filename = pageSettings.toFileName;
+          } else if (activeTab.linkedBrowser.contentTitle != "") {
+            filename = activeTab.linkedBrowser.contentTitle;
+          } else {
+            let url = new URL(activeTab.linkedBrowser.currentURI.spec);
+            let path = decodeURIComponent(url.pathname);
+            path = path.replace(/\/$/, "");
+            filename = path.split("/").pop();
+            if (filename == "") {
+              filename = url.hostname;
+            }
+          }
+          filename = DownloadPaths.sanitize(filename);
+
           picker.init(activeTab.ownerGlobal, title, Ci.nsIFilePicker.modeSave);
           picker.appendFilter("PDF", "*.pdf");
           picker.defaultExtension = "pdf";
-          picker.defaultString = activeTab.linkedBrowser.contentTitle + ".pdf";
+          picker.defaultString = filename;
 
           return new Promise(resolve => {
             picker.open(function(retval) {

@@ -79,137 +79,52 @@ function getAddonCard(doc, id) {
 }
 
 function openDetailView(doc, id) {
-  if (doc.ownerGlobal != gManagerWindow) {
-    let card = getAddonCard(doc, id);
-    card.querySelector('[action="expand"]').click();
-  } else {
-    getAddonCard(doc, id).click();
-  }
+  let card = getAddonCard(doc, id);
+  card.querySelector('[action="expand"]').click();
 }
 
 async function enableAndDisable(doc, row) {
-  if (doc.ownerGlobal != gManagerWindow) {
-    let toggleButton = row.querySelector('[action="toggle-disabled"]');
-    let disabled = BrowserTestUtils.waitForEvent(row, "update");
-    toggleButton.click();
-    await disabled;
-    let enabled = BrowserTestUtils.waitForEvent(row, "update");
-    toggleButton.click();
-    await enabled;
-  } else {
-    is(row.getAttribute("active"), "true", "The add-on is enabled");
-    doc.getAnonymousElementByAttribute(row, "anonid", "disable-btn").click();
-    await TestUtils.waitForCondition(
-      () => row.getAttribute("active") == "false",
-      "Wait for disable"
-    );
-    doc.getAnonymousElementByAttribute(row, "anonid", "enable-btn").click();
-    await TestUtils.waitForCondition(
-      () => row.getAttribute("active") == "true",
-      "Wait for enable"
-    );
-  }
+  let toggleButton = row.querySelector('[action="toggle-disabled"]');
+  let disabled = BrowserTestUtils.waitForEvent(row, "update");
+  toggleButton.click();
+  await disabled;
+  let enabled = BrowserTestUtils.waitForEvent(row, "update");
+  toggleButton.click();
+  await enabled;
 }
 
 async function removeAddonAndUndo(doc, row) {
   let isHtml = doc.ownerGlobal != gManagerWindow;
   let id = isHtml ? row.addon.id : row.mAddon.id;
   let started = AddonTestUtils.promiseWebExtensionStartup(id);
-  if (isHtml) {
-    let removed = BrowserTestUtils.waitForEvent(row, "remove");
-    row.querySelector('[action="remove"]').click();
-    await removed;
+  let removed = BrowserTestUtils.waitForEvent(row, "remove");
+  row.querySelector('[action="remove"]').click();
+  await removed;
 
-    let undoBanner = doc.querySelector(
-      `message-bar[addon-id="${row.addon.id}"]`
-    );
-    undoBanner.querySelector('[action="undo"]').click();
-    await TestUtils.waitForCondition(() => getAddonCard(doc, row.addon.id));
-  } else {
-    is(row.getAttribute("status"), "installed", "The add-on is installed");
-    ok(!row.hasAttribute("pending"), "The add-on is not pending");
-    doc.getAnonymousElementByAttribute(row, "anonid", "remove-btn").click();
-    await TestUtils.waitForCondition(
-      () => row.getAttribute("pending") == "uninstall",
-      "Wait for uninstall"
-    );
-
-    doc.getAnonymousElementByAttribute(row, "anonid", "undo-btn").click();
-    await TestUtils.waitForCondition(
-      () => !row.hasAttribute("pending"),
-      "Wait for undo"
-    );
-  }
+  let undoBanner = doc.querySelector(`message-bar[addon-id="${row.addon.id}"]`);
+  undoBanner.querySelector('[action="undo"]').click();
+  await TestUtils.waitForCondition(() => getAddonCard(doc, row.addon.id));
   await started;
 }
 
 async function openPrefs(doc, row) {
-  if (doc.ownerGlobal != gManagerWindow) {
-    row.querySelector('[action="preferences"]').click();
-  } else {
-    let prefsButton;
-    await TestUtils.waitForCondition(() => {
-      prefsButton = doc.getAnonymousElementByAttribute(
-        row,
-        "anonid",
-        "preferences-btn"
-      );
-      return prefsButton;
-    });
-    prefsButton.click();
-  }
+  row.querySelector('[action="preferences"]').click();
 }
 
 function changeAutoUpdates(doc) {
-  if (doc.ownerGlobal != gManagerWindow) {
-    let row = doc.querySelector(".addon-detail-row-updates");
-    let checked = row.querySelector(":checked");
-    is(checked.value, "1", "Use default is selected");
-    row.querySelector('[value="0"]').click();
-    row.querySelector('[action="update-check"]').click();
-    row.querySelector('[value="2"]').click();
-    row.querySelector('[value="1"]').click();
-  } else {
-    let autoUpdate = doc.getElementById("detail-autoUpdate");
-    is(autoUpdate.value, "1", "Use default is selected");
-    // Turn off auto update.
-    autoUpdate.querySelector('[value="0"]').click();
-    // Check for updates.
-    let checkForUpdates = doc.getElementById("detail-findUpdates-btn");
-    is(
-      checkForUpdates.hidden,
-      false,
-      "The check for updates button is visible"
-    );
-    checkForUpdates.click();
-    // Turn on auto update.
-    autoUpdate.querySelector('[value="2"]').click();
-    // Set auto update to default again.
-    autoUpdate.querySelector('[value="1"]').click();
-  }
+  let row = doc.querySelector(".addon-detail-row-updates");
+  let checked = row.querySelector(":checked");
+  is(checked.value, "1", "Use default is selected");
+  row.querySelector('[value="0"]').click();
+  row.querySelector('[action="update-check"]').click();
+  row.querySelector('[value="2"]').click();
+  row.querySelector('[value="1"]').click();
 }
 
 function clickLinks(doc) {
-  if (doc.ownerGlobal != gManagerWindow) {
-    let links = ["author", "homepage", "rating"];
-    for (let linkType of links) {
-      doc.querySelector(`.addon-detail-row-${linkType} a`).click();
-    }
-  } else {
-    // Check links.
-    let creator = doc.getElementById("detail-creator");
-    let label = doc.getAnonymousElementByAttribute(creator, "anonid", "label");
-    let link = doc.getAnonymousElementByAttribute(
-      creator,
-      "anonid",
-      "creator-link"
-    );
-    // Check that clicking the label doesn't trigger a telemetry event.
-    label.click();
-    assertAboutAddonsTelemetryEvents([]);
-    link.click();
-    doc.getElementById("detail-homepage").click();
-    doc.getElementById("detail-reviews").click();
+  let links = ["author", "homepage", "rating"];
+  for (let linkType of links) {
+    doc.querySelector(`.addon-detail-row-${linkType} a`).click();
   }
 }
 
@@ -466,48 +381,58 @@ add_task(async function testExtensionEvents() {
 });
 
 add_task(async function testGeneralActions() {
-  await init("extension");
+  let win = await loadInitialView("extension");
+  info("Loaded");
 
-  let doc = gManagerWindow.document;
-  let menu = doc.getElementById("utils-menu");
-  let checkForUpdates = doc.getElementById("utils-updateNow");
-  let recentUpdates = doc.getElementById("utils-viewUpdates");
-  let debugAddons = doc.getElementById("utils-debugAddons");
-  let updatePolicy = doc.getElementById("utils-autoUpdateDefault");
-  let resetUpdatePolicy = doc.getElementById(
-    "utils-resetAddonUpdatesToAutomatic"
-  );
-  let manageShortcuts = doc.getElementById("manage-shortcuts");
+  let doc = win.document;
+  let pageOptionsButton = doc.querySelector('[action="page-options"]');
+  let menu = doc.querySelector("#page-options panel-list");
+  let checkForUpdates = menu.querySelector('[action="check-for-updates"]');
+  let recentUpdates = menu.querySelector('[action="view-recent-updates"]');
+  let updatePolicy = menu.querySelector('[action="set-update-automatically"]');
+  let resetUpdatePolicy = menu.querySelector('[action="reset-update-states"]');
+  let debugAddons = menu.querySelector('[action="debug-addons"]');
+  let manageShortcuts = menu.querySelector('[action="manage-shortcuts"]');
 
   async function clickInGearMenu(item) {
-    let shown = BrowserTestUtils.waitForEvent(menu, "popupshown");
-    menu.openPopup();
+    info(`Opening menu to click ${item.getAttribute("action")}`);
+    let shown = BrowserTestUtils.waitForEvent(menu, "shown");
+    // This should perform a click on the button to ensure that works. Other
+    // tests might just open the menu directly, or click items when it's closed.
+    EventUtils.synthesizeMouseAtCenter(pageOptionsButton, {}, win);
     await shown;
+    info(`Clicking ${item.getAttribute("action")}`);
     item.click();
-    menu.hidePopup();
   }
 
   await clickInGearMenu(checkForUpdates);
+  let recentUpdatesLoaded = waitForViewLoad(win);
   await clickInGearMenu(recentUpdates);
-  await wait_for_view_load(gManagerWindow);
+  await recentUpdatesLoaded;
   await clickInGearMenu(updatePolicy);
   await clickInGearMenu(updatePolicy);
   await clickInGearMenu(resetUpdatePolicy);
 
   // Check shortcuts view.
+  let shortcutsLoaded = waitForViewLoad(win);
   await clickInGearMenu(manageShortcuts);
-  await wait_for_view_load(gManagerWindow);
+  await shortcutsLoaded;
   await clickInGearMenu(checkForUpdates);
 
   let waitForNewTab = BrowserTestUtils.waitForNewTab(gBrowser);
   await clickInGearMenu(debugAddons);
-  BrowserTestUtils.removeTab(await waitForNewTab);
+  info("Waiting for about:debugging tab");
+  let tab = await waitForNewTab;
+  BrowserTestUtils.removeTab(tab);
 
   waitForNewTab = BrowserTestUtils.waitForNewTab(gBrowser);
-  let searchBox = doc.getElementById("header-search");
+  let searchBox = doc.getElementById("search-addons");
   searchBox.value = "something";
-  searchBox.doCommand();
-  BrowserTestUtils.removeTab(await waitForNewTab);
+  searchBox.focus();
+  EventUtils.synthesizeKey("KEY_Enter", {}, win);
+  info("Waiting for AMO search tab");
+  tab = await waitForNewTab;
+  BrowserTestUtils.removeTab(tab);
 
   assertAboutAddonsTelemetryEvents(
     [
@@ -567,7 +492,7 @@ add_task(async function testGeneralActions() {
     { methods: TELEMETRY_METHODS }
   );
 
-  await close_manager(gManagerWindow);
+  await closeView(win);
 
   assertAboutAddonsTelemetryEvents([]);
 });

@@ -60,10 +60,6 @@ class NeckoChild : public PNeckoChild {
   PUDPSocketChild* AllocPUDPSocketChild(nsIPrincipal* aPrincipal,
                                         const nsCString& aFilter);
   bool DeallocPUDPSocketChild(PUDPSocketChild*);
-  PDNSRequestChild* AllocPDNSRequestChild(
-      const nsCString& aHost, const OriginAttributes& aOriginAttributes,
-      const uint32_t& aFlags);
-  bool DeallocPDNSRequestChild(PDNSRequestChild*);
   PSimpleChannelChild* AllocPSimpleChannelChild(const uint32_t& channelId);
   bool DeallocPSimpleChannelChild(PSimpleChannelChild* child);
   PChannelDiverterChild* AllocPChannelDiverterChild(
@@ -80,9 +76,9 @@ class NeckoChild : public PNeckoChild {
 
   /* Predictor Messsages */
   mozilla::ipc::IPCResult RecvPredOnPredictPrefetch(
-      const URIParams& aURI, const uint32_t& aHttpStatus);
-  mozilla::ipc::IPCResult RecvPredOnPredictPreconnect(const URIParams& aURI);
-  mozilla::ipc::IPCResult RecvPredOnPredictDNS(const URIParams& aURI);
+      nsIURI* aURI, const uint32_t& aHttpStatus);
+  mozilla::ipc::IPCResult RecvPredOnPredictPreconnect(nsIURI* aURI);
+  mozilla::ipc::IPCResult RecvPredOnPredictDNS(nsIURI* aURI);
 
   mozilla::ipc::IPCResult RecvSpeculativeConnectRequest();
   mozilla::ipc::IPCResult RecvNetworkChangeNotification(nsCString const& type);

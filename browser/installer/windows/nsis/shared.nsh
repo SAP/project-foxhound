@@ -163,6 +163,22 @@
   ${ResetLauncherProcessDefaults}
 !endif
 
+; Make sure the scheduled task registration for the default browser agent gets
+; updated, but only if we're not the instance of PostUpdate that was started
+; by the service, because this needs to run as the actual user. Also, don't do
+; that if the installer was told not to register the agent task at all.
+!ifdef MOZ_DEFAULT_BROWSER_AGENT
+${If} $TmpVal == "HKCU"
+  ClearErrors
+  ReadRegDWORD $0 HKCU "Software\Mozilla\${AppName}\Installer\$AppUserModelID" \
+                    "DidRegisterDefaultBrowserAgent"
+  ${If} $0 != 0
+  ${OrIf} ${Errors}
+    Exec '"$INSTDIR\default-browser-agent.exe" update-task $AppUserModelID'
+  ${EndIf}
+${EndIf}
+!endif
+
 !macroend
 !define PostUpdate "!insertmacro PostUpdate"
 
@@ -444,6 +460,7 @@
     WriteRegStr SHCTX "$0\.xhtml" "" "FirefoxHTML$5"
   ${EndIf}
 
+
   ${AddAssociationIfNoneExist} ".pdf" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".oga" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".ogg" "FirefoxHTML$5"
@@ -451,6 +468,7 @@
   ${AddAssociationIfNoneExist} ".pdf" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".webm" "FirefoxHTML$5"
   ${AddAssociationIfNoneExist} ".svg" "FirefoxHTML$5"
+  ${AddAssociationIfNoneExist} ".webp"  "FirefoxHTML$5"
 
   ; An empty string is used for the 5th param because FirefoxHTML is not a
   ; protocol handler
@@ -534,7 +552,8 @@
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".shtml" "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xht"   "FirefoxHTML$2"
   WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".xhtml" "FirefoxHTML$2"
-  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".svg" "FirefoxHTML$2"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".svg"   "FirefoxHTML$2"
+  WriteRegStr ${RegKey} "$0\Capabilities\FileAssociations" ".webp"  "FirefoxHTML$2"
 
   WriteRegStr ${RegKey} "$0\Capabilities\StartMenu" "StartMenuInternet" "$1"
 
@@ -542,8 +561,44 @@
   WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "http"   "FirefoxURL$2"
   WriteRegStr ${RegKey} "$0\Capabilities\URLAssociations" "https"  "FirefoxURL$2"
 
-  ; Registered Application
   WriteRegStr ${RegKey} "Software\RegisteredApplications" "$1" "$0\Capabilities"
+
+  ; This key would be created by the Open With dialog when a user creates an
+  ; association for us with a file type that we haven't registered as a handler
+  ; for. We need to preemptively create it ourselves so that we can control the
+  ; command line that's used to launch us in that situation. If it's too late
+  ; and one already exists, then we need to edit its command line to make sure
+  ; it contains the -osint flag.
+  ReadRegStr $6 ${RegKey} "Software\Classes\Applications\${FileMainEXE}\shell\open\command" ""
+  ${If} $6 != ""
+    ${GetPathFromString} "$6" $6
+    WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\shell\open\command" \
+                "" "$\"$6$\" -osint -url $\"%1$\""
+  ${Else}
+    WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\shell\open\command" \
+                "" "$\"$8$\" -osint -url $\"%1$\""
+    ; Make sure files associated this way use the document icon instead of the
+    ; application icon.
+    WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\DefaultIcon" \
+                "" "$8,1"
+    ; If we're going to create this key at all, we also need to list our supported
+    ; file types in it, because otherwise we'll be shown as a suggestion for every
+    ; single file type, whether we support it in any way or not.
+    WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\SupportedTypes" \
+                ".htm" ""
+    WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\SupportedTypes" \
+                ".html" ""
+    WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\SupportedTypes" \
+                ".shtml" ""
+    WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\SupportedTypes" \
+                ".xht" ""
+    WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\SupportedTypes" \
+                ".xhtml" ""
+    WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\SupportedTypes" \
+                ".svg" ""
+    WriteRegStr ${RegKey} "Software\Classes\Applications\${FileMainEXE}\SupportedTypes" \
+                ".webp" ""
+  ${EndIf}
 !macroend
 !define SetStartMenuInternet "!insertmacro SetStartMenuInternet"
 
@@ -966,6 +1021,11 @@
 
 ; Removes various directories and files for reasons noted below.
 !macro RemoveDeprecatedFiles
+  ; Remove the toplevel chrome.manifest added by bug 1295542.
+  ${If} ${FileExists} "$INSTDIR\chrome.manifest"
+    Delete "$INSTDIR\chrome.manifest"
+  ${EndIf}
+
   ; Remove talkback if it is present (remove after bug 386760 is fixed)
   ${If} ${FileExists} "$INSTDIR\extensions\talkback@mozilla.org"
     RmDir /r /REBOOTOK "$INSTDIR\extensions\talkback@mozilla.org"
@@ -1099,7 +1159,9 @@
     ${If} ${Errors}
       ClearErrors
       WriteIniStr "$0" "TASKBAR" "Migrated" "true"
-      WriteINIStr "$0" "TASKBAR" "Pinned" "true"
+      WriteRegDWORD HKCU \
+        "Software\Mozilla\${AppName}\Installer\$AppUserModelID" \
+        "WasPinnedToTaskbar" 1
       ${If} ${AtLeastWin7}
         ; If we didn't run the stub installer, AddTaskbarSC will be empty.
         ; We determine whether to pin based on whether we're the default
@@ -1129,12 +1191,16 @@
         ; On Windows 10, we may have previously tried to make a taskbar pin
         ; and failed because the API we tried to use was blocked by the OS.
         ; We have an option that works in more cases now, so we're going to try
-        ; again, but also record that we've done so by writing "Pinned" into the
-        ; shortcuts log, so that we don't continue to do this repeatedly.
+        ; again, but also record that we've done so by writing a particular
+        ; registry value, so that we don't continue to do this repeatedly.
         ClearErrors
-        ReadINIStr $1 "$0" "TASKBAR" "Pinned"
+        ReadRegDWORD $2 HKCU \
+            "Software\Mozilla\${AppName}\Installer\$AppUserModelID" \
+            "WasPinnedToTaskbar"
         ${If} ${Errors}
-          WriteINIStr "$0" "TASKBAR" "Pinned" "true"
+          WriteRegDWORD HKCU \
+            "Software\Mozilla\${AppName}\Installer\$AppUserModelID" \
+            "WasPinnedToTaskbar" 1
           ${If} $AddTaskbarSC != "0"
             ${PinToTaskBar}
           ${EndIf}
@@ -1324,6 +1390,7 @@
   Push "mozsqlite3.dll"
   Push "xpcom.dll"
   Push "crashreporter.exe"
+  Push "default-browser-agent.exe"
   Push "minidump-analyzer.exe"
   Push "pingsender.exe"
   Push "updater.exe"
@@ -1354,19 +1421,8 @@
     System::Call 'advapi32::OpenServiceW(i R6, t "MpsSvc", i ${SERVICE_QUERY_CONFIG}) i.R7'
     ${If} $R7 != 0
       System::Call 'advapi32::CloseServiceHandle(i R7) n'
-      ; Open the service with SERVICE_QUERY_CONFIG so its status can be queried.
+      ; Open the service with SERVICE_QUERY_STATUS so its status can be queried.
       System::Call 'advapi32::OpenServiceW(i R6, t "MpsSvc", i ${SERVICE_QUERY_STATUS}) i.R7'
-    ${Else}
-      ; SharedAccess is the Firewall service on Windows XP.
-      ; When opening the service with SERVICE_QUERY_CONFIG the return value will
-      ; be 0 if the service is not installed.
-      System::Call 'advapi32::OpenServiceW(i R6, t "SharedAccess", i ${SERVICE_QUERY_CONFIG}) i.R7'
-      ${If} $R7 != 0
-        System::Call 'advapi32::CloseServiceHandle(i R7) n'
-        ; Open the service with SERVICE_QUERY_CONFIG so its status can be
-        ; queried.
-        System::Call 'advapi32::OpenServiceW(i R6, t "SharedAccess", i ${SERVICE_QUERY_STATUS}) i.R7'
-      ${EndIf}
     ${EndIf}
     ; Did the calls to OpenServiceW succeed?
     ${If} $R7 != 0

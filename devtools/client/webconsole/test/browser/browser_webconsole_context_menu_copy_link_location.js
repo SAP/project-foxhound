@@ -17,13 +17,13 @@ add_task(async function() {
   await pushPref("devtools.webconsole.filter.net", true);
 
   const hud = await openNewTabAndConsole(TEST_URI);
-  hud.ui.clearOutput();
+  await clearOutput(hud);
 
   info("Test Copy URL menu item for text log");
 
   info("Logging a text message in the content window");
   const onLogMessage = waitForMessage(hud, "stringLog");
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.stringLog();
   });
   let message = await onLogMessage;
@@ -48,13 +48,13 @@ add_task(async function() {
   ok(true, "Expected text was copied to the clipboard.");
 
   await hideContextMenu(hud);
-  hud.ui.clearOutput();
+  await clearOutput(hud);
 
   info("Test Copy URL menu item for network log");
 
   info("Reload the content window to produce a network log");
   const onNetworkMessage = waitForMessage(hud, "test-console.html");
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
     content.wrappedJSObject.location.reload();
   });
 
@@ -71,7 +71,7 @@ add_task(async function() {
   ok(true, "Expected text was copied to the clipboard.");
 
   await hideContextMenu(hud);
-  hud.ui.clearOutput();
+  await clearOutput(hud);
 
   info("Test Copy URL menu item from [Learn More] link");
 

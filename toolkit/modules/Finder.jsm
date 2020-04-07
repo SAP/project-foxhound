@@ -170,6 +170,14 @@ Finder.prototype = {
     this.iterator.reset();
   },
 
+  set matchDiacritics(aMatchDiacritics) {
+    if (this._fastFind.matchDiacritics === aMatchDiacritics) {
+      return;
+    }
+    this._fastFind.matchDiacritics = aMatchDiacritics;
+    this.iterator.reset();
+  },
+
   set entireWord(aEntireWord) {
     if (this._fastFind.entireWord === aEntireWord) {
       return;
@@ -283,8 +291,15 @@ Finder.prototype = {
    *  linksOnly Only consider nodes that are links for the search.
    *  drawOutline Puts an outline around matched links.
    *  useSubFrames True to iterate over subframes.
+   *  caseSensitive True for case sensitive searching.
+   *  entireWord True to match entire words.
+   *  matchDiacritics True to match diacritics.
    */
   find(options) {
+    this.caseSensitive = options.caseSensitive;
+    this.entireWord = options.entireWord;
+    this.matchDiacritics = options.matchDiacritics;
+
     this._lastFindResult = this._fastFind.find(
       options.searchString,
       options.linksOnly,
@@ -301,6 +316,7 @@ Finder.prototype = {
       findAgain: options.findAgain,
       drawOutline: options.drawOutline,
       linksOnly: options.linksOnly,
+      entireWord: this._fastFind.entireWord,
       useSubFrames: options.useSubFrames,
     };
     this._setResults(results, options.mode);
@@ -341,6 +357,7 @@ Finder.prototype = {
         caseSensitive: this._fastFind.caseSensitive,
         entireWord: this._fastFind.entireWord,
         linksOnly: aArgs.linksOnly,
+        matchDiacritics: this._fastFind.matchDiacritics,
         word: aArgs.searchString,
         useSubFrames: aArgs.useSubFrames,
       })
@@ -589,6 +606,7 @@ Finder.prototype = {
       caseSensitive: this._fastFind.caseSensitive,
       entireWord: this._fastFind.entireWord,
       linksOnly: aLinksOnly,
+      matchDiacritics: this._fastFind.matchDiacritics,
       word: aWord,
       useSubFrames: aUseSubFrames,
     };

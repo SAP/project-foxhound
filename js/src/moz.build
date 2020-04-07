@@ -123,7 +123,10 @@ EXPORTS += [
 EXPORTS.js += [
     '../public/AllocationRecording.h',
     '../public/AllocPolicy.h',
+    '../public/Array.h',
     '../public/ArrayBuffer.h',
+    '../public/ArrayBufferMaybeShared.h',
+    '../public/BinASTFormat.h',
     '../public/BuildId.h',
     '../public/CallArgs.h',
     '../public/CallNonGenericMethod.h',
@@ -142,6 +145,7 @@ EXPORTS.js += [
     '../public/GCAPI.h',
     '../public/GCHashTable.h',
     '../public/GCPolicyAPI.h',
+    '../public/GCTypeMacros.h',
     '../public/GCVariant.h',
     '../public/GCVector.h',
     '../public/HashTable.h',
@@ -184,7 +188,6 @@ EXPORTS.js += [
     '../public/TraceKind.h',
     '../public/TraceLoggerAPI.h',
     '../public/TracingAPI.h',
-    '../public/TrackedOptimizationInfo.h',
     '../public/Transcoding.h',
     '../public/TypeDecls.h',
     '../public/UbiNode.h',
@@ -197,6 +200,7 @@ EXPORTS.js += [
     '../public/UniquePtr.h',
     '../public/Utility.h',
     '../public/Value.h',
+    '../public/ValueArray.h',
     '../public/Vector.h',
     '../public/Warnings.h',
     '../public/WeakMapPtr.h',
@@ -214,6 +218,7 @@ UNIFIED_SOURCES += [
     'builtin/Boolean.cpp',
     'builtin/DataViewObject.cpp',
     'builtin/Eval.cpp',
+    'builtin/FinalizationGroupObject.cpp',
     'builtin/JSON.cpp',
     'builtin/MapObject.cpp',
     'builtin/ModuleObject.cpp',
@@ -224,10 +229,12 @@ UNIFIED_SOURCES += [
     'builtin/ReflectParse.cpp',
     'builtin/Stream.cpp',
     'builtin/streams/MiscellaneousOperations.cpp',
+    'builtin/streams/PipeToState.cpp',
     'builtin/streams/PullIntoDescriptor.cpp',
     'builtin/streams/QueueingStrategies.cpp',
     'builtin/streams/QueueWithSizes.cpp',
     'builtin/streams/ReadableStream.cpp',
+    'builtin/streams/ReadableStreamBYOBReader.cpp',
     'builtin/streams/ReadableStreamDefaultController.cpp',
     'builtin/streams/ReadableStreamDefaultControllerOperations.cpp',
     'builtin/streams/ReadableStreamDefaultReader.cpp',
@@ -247,6 +254,7 @@ UNIFIED_SOURCES += [
     'builtin/TestingFunctions.cpp',
     'builtin/TypedObject.cpp',
     'builtin/WeakMapObject.cpp',
+    'builtin/WeakRefObject.cpp',
     'builtin/WeakSetObject.cpp',
     'ds/Bitmap.cpp',
     'ds/LifoAlloc.cpp',
@@ -284,8 +292,10 @@ UNIFIED_SOURCES += [
     'util/StructuredSpewer.cpp',
     'util/Text.cpp',
     'util/Unicode.cpp',
+    'vm/Activation.cpp',
     'vm/ArgumentsObject.cpp',
     'vm/ArrayBufferObject.cpp',
+    'vm/ArrayBufferObjectMaybeShared.cpp',
     'vm/ArrayBufferViewObject.cpp',
     'vm/AsyncFunction.cpp',
     'vm/AsyncIteration.cpp',
@@ -305,6 +315,7 @@ UNIFIED_SOURCES += [
     'vm/ErrorObject.cpp',
     'vm/ErrorReporting.cpp',
     'vm/ForOfIterator.cpp',
+    'vm/FrameIter.cpp',
     'vm/GeckoProfiler.cpp',
     'vm/GeneratorObject.cpp',
     'vm/GlobalObject.cpp',
@@ -313,6 +324,7 @@ UNIFIED_SOURCES += [
     'vm/Initialization.cpp',
     'vm/Instrumentation.cpp',
     'vm/Iteration.cpp',
+    'vm/JitActivation.cpp',
     'vm/JSAtom.cpp',
     'vm/JSContext.cpp',
     'vm/JSFunction.cpp',
@@ -325,10 +337,12 @@ UNIFIED_SOURCES += [
     'vm/Modules.cpp',
     'vm/NativeObject.cpp',
     'vm/ObjectGroup.cpp',
+    'vm/OffThreadPromiseRuntimeState.cpp',
     'vm/OffThreadScriptCompilation.cpp',
     'vm/PIC.cpp',
     'vm/Printer.cpp',
     'vm/Probes.cpp',
+    'vm/PromiseLookup.cpp',
     'vm/ProxyObject.cpp',
     'vm/Realm.cpp',
     'vm/ReceiverGuard.cpp',
@@ -347,6 +361,7 @@ UNIFIED_SOURCES += [
     'vm/SymbolType.cpp',
     'vm/TaggedProto.cpp',
     'vm/Time.cpp',
+    'vm/ToSource.cpp',
     'vm/TypedArrayObject.cpp',
     'vm/TypeInference.cpp',
     'vm/UbiNode.cpp',
@@ -361,22 +376,22 @@ UNIFIED_SOURCES += [
 #   win32 test slowdowns
 # jsmath.cpp cannot be built in unified mode because it needs to re-#define the
 #   RtlGenRandom declaration's calling convention in <ntsecapi.h> on Windows.
-# jsutil.cpp cannot be built in unified mode because it is needed for
-#   check-vanilla-allocations.
 # util/DoubleToString.cpp cannot be built in unified mode because we want to
 #   suppress compiler warnings in third-party dtoa.c.
+# util/Utility.cpp cannot be built in unified mode because it is needed for
+#   check-vanilla-allocations.
 # vm/Interpreter.cpp is gigantic and destroys incremental build times for any
 #   files unlucky enough to be unified with it.
 SOURCES += [
     'builtin/RegExp.cpp',
     'jsmath.cpp',
-    'jsutil.cpp',
     'util/DoubleToString.cpp',
+    'util/Utility.cpp',
     'vm/Interpreter.cpp',
     'vm/ProfilingStack.cpp',
 ]
 
-if CONFIG['ENABLE_INTL_API']:
+if CONFIG['JS_HAS_INTL_API']:
     UNIFIED_SOURCES += [
         'builtin/intl/Collator.cpp',
         'builtin/intl/CommonFunctions.cpp',
@@ -432,7 +447,14 @@ if CONFIG['MOZ_VTUNE']:
         'vtune/jitprofiling.c',
         'vtune/VTuneWrapper.cpp',
     ]
-    SOURCES['vtune/ittnotify_static.c'].flags += ['-Wno-varargs', '-Wno-unknown-pragmas']
+    SOURCES['vtune/ittnotify_static.c'].flags += [
+        '-Wno-varargs',
+        '-Wno-unknown-pragmas'
+    ]
+    if CONFIG['CC_TYPE'] == 'gcc':
+        SOURCES['vtune/ittnotify_static.c'].flags += [
+            '-Wno-stringop-overflow'
+        ]
 
 DIRS += [
     'build',
@@ -441,8 +463,10 @@ DIRS += [
     'gc',
     'jit',
     'wasm',
-    'zydis',
-]
+] + (['new-regexp'] if CONFIG['ENABLE_NEW_REGEXP'] else [])
+
+if CONFIG['JS_JITSPEW']:
+    DIRS += ['zydis']
 
 FINAL_LIBRARY = 'js'
 
@@ -487,7 +511,7 @@ selfhosted_inputs = [
     'builtin/intl/NumberFormat.js',
     'builtin/intl/PluralRules.js',
     'builtin/intl/RelativeTimeFormat.js',
-] if CONFIG['ENABLE_INTL_API'] else [])
+] if CONFIG['JS_HAS_INTL_API'] else [])
 
 # Prepare self-hosted JS code for embedding
 GeneratedFile('selfhosted.out.h', 'selfhosted.js',

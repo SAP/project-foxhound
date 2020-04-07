@@ -101,32 +101,17 @@ this.LoginManagerContextMenu = {
     }
   },
 
-  async fillGeneratedPassword(inputElementIdentifier, documentURI, browser) {
-    let password = LoginManagerParent.getGeneratedPassword(
-      inputElementIdentifier.browsingContextId
-    );
-    let origin = LoginHelper.getLoginOrigin(documentURI.spec);
-    log.debug("fillGeneratedPassword into:", inputElementIdentifier, origin);
+  /**
+   * Show the password autocomplete UI with the generation option forced to appear.
+   */
+  async useGeneratedPassword(inputElementIdentifier, documentURI, browser) {
+    let browsingContextId = inputElementIdentifier.browsingContextId;
+    let browsingContext = BrowsingContext.get(browsingContextId);
+    let actor = browsingContext.currentWindowGlobal.getActor("LoginManager");
 
-    let recipes = [];
-    let formHost;
-    try {
-      formHost = documentURI.hostPort;
-      let recipeManager = await LoginManagerParent.recipeParentPromise;
-      recipes = recipeManager.getRecipesForHost(formHost);
-    } catch (ex) {
-      // Some schemes e.g. chrome aren't supported by URL
-      log.debug("Couldnt get recipes for formHost:", formHost, ex);
-    }
-    browser.messageManager.sendAsyncMessage(
-      "PasswordManager:fillGeneratedPassword",
-      {
-        password,
-        origin,
-        inputElementIdentifier,
-        recipes,
-      }
-    );
+    actor.sendAsyncMessage("PasswordManager:useGeneratedPassword", {
+      inputElementIdentifier,
+    });
   },
 
   /**
@@ -211,12 +196,25 @@ this.LoginManagerContextMenu = {
    *        origin when subframes are involved.
    */
   _fillTargetField(login, inputElementIdentifier, browser, formOrigin) {
-    LoginManagerParent.fillForm({
-      browser,
-      inputElementIdentifier,
-      loginFormOrigin: formOrigin,
-      login,
-    }).catch(Cu.reportError);
+    let browsingContextId = inputElementIdentifier.browsingContextId;
+    let browsingContext = BrowsingContext.get(browsingContextId);
+    if (!browsingContext) {
+      return;
+    }
+
+    let actor = browsingContext.currentWindowGlobal.getActor("LoginManager");
+    if (!actor) {
+      return;
+    }
+
+    actor
+      .fillForm({
+        browser,
+        inputElementIdentifier,
+        loginFormOrigin: formOrigin,
+        login,
+      })
+      .catch(Cu.reportError);
   },
 
   /**

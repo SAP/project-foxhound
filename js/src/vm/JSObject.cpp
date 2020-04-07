@@ -16,6 +16,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/TemplateLib.h"
 
+#include <algorithm>
 #include <string.h>
 
 #include "jsapi.h"
@@ -23,7 +24,6 @@
 #include "jsfriendapi.h"
 #include "jsnum.h"
 #include "jstypes.h"
-#include "jsutil.h"
 
 #include "builtin/Array.h"
 #include "builtin/BigInt.h"
@@ -40,9 +40,11 @@
 #include "js/PropertyDescriptor.h"  // JS::FromPropertyDescriptor
 #include "js/PropertySpec.h"        // JSPropertySpec
 #include "js/Proxy.h"
+#include "js/Result.h"
 #include "js/UbiNode.h"
 #include "js/UniquePtr.h"
 #include "js/Wrapper.h"
+#include "util/Memory.h"
 #include "util/Text.h"
 #include "util/Windows.h"
 #include "vm/ArgumentsObject.h"
@@ -534,7 +536,7 @@ bool js::SetIntegrityLevel(JSContext* cx, HandleObject obj,
         return false;
       }
     }
-    Reverse(shapes.begin(), shapes.end());
+    std::reverse(shapes.begin(), shapes.end());
 
     for (Shape* shape : shapes) {
       Rooted<StackShape> child(cx, StackShape(shape));
@@ -1106,6 +1108,8 @@ static inline JSObject* CreateThisForFunctionWithGroup(JSContext* cx,
 JSObject* js::CreateThisForFunctionWithProto(
     JSContext* cx, HandleFunction callee, HandleObject newTarget,
     HandleObject proto, NewObjectKind newKind /* = GenericObject */) {
+  MOZ_ASSERT(!callee->constructorNeedsUninitializedThis());
+
   RootedObject res(cx);
 
   // Ion may call this with a cross-realm callee.
@@ -1117,8 +1121,8 @@ JSObject* js::CreateThisForFunctionWithProto(
 
   if (proto) {
     RootedObjectGroup group(
-        cx, ObjectGroup::defaultNewGroup(cx, nullptr, TaggedProto(proto),
-                                         newTarget));
+        cx, ObjectGroup::defaultNewGroup(cx, &PlainObject::class_,
+                                         TaggedProto(proto), newTarget));
     if (!group) {
       return nullptr;
     }
@@ -1133,8 +1137,8 @@ JSObject* js::CreateThisForFunctionWithProto(
         if (regenerate) {
           // The script was analyzed successfully and may have changed
           // the new type table, so refetch the group.
-          group = ObjectGroup::defaultNewGroup(cx, nullptr, TaggedProto(proto),
-                                               newTarget);
+          group = ObjectGroup::defaultNewGroup(cx, &PlainObject::class_,
+                                               TaggedProto(proto), newTarget);
           AutoSweepObjectGroup sweepNewGroup(group);
           MOZ_ASSERT(group && group->newScript(sweepNewGroup));
         }
@@ -1206,6 +1210,8 @@ bool js::GetPrototypeFromConstructor(JSContext* cx, HandleObject newTarget,
 JSObject* js::CreateThisForFunction(JSContext* cx, HandleFunction callee,
                                     HandleObject newTarget,
                                     NewObjectKind newKind) {
+  MOZ_ASSERT(!callee->constructorNeedsUninitializedThis());
+
   RootedObject proto(cx);
   if (!GetPrototypeFromConstructor(cx, newTarget, JSProto_Object, &proto)) {
     return nullptr;
@@ -1436,7 +1442,7 @@ static bool GetScriptPlainObjectProperties(
   for (size_t i = 0; i < nobj->getDenseInitializedLength(); i++) {
     Value v = nobj->getDenseElement(i);
     if (!v.isMagic(JS_ELEMENTS_HOLE) &&
-        !properties.append(IdValuePair(INT_TO_JSID(i), v))) {
+        !properties.emplaceBack(INT_TO_JSID(i), v)) {
       return false;
     }
   }
@@ -1548,7 +1554,7 @@ static bool InitializePropertiesFromCompatibleNativeObject(
         return false;
       }
     }
-    Reverse(shapes.begin(), shapes.end());
+    std::reverse(shapes.begin(), shapes.end());
 
     for (Shape* shapeToClone : shapes) {
       Rooted<StackShape> child(cx, StackShape(shapeToClone));
@@ -1752,7 +1758,7 @@ void JSObject::fixDictionaryShapeAfterSwap() {
   // Dictionary shapes can point back to their containing objects, so after
   // swapping the guts of those objects fix the pointers up.
   if (isNative() && as<NativeObject>().inDictionaryMode()) {
-    as<NativeObject>().shape()->listp = as<NativeObject>().shapePtr();
+    shape()->dictNext.setObject(this);
   }
 }
 
@@ -2562,9 +2568,14 @@ bool js::LookupOwnPropertyPure(JSContext* cx, JSObject* obj, jsid id,
     }
 
     if (obj->is<TypedArrayObject>()) {
-      uint64_t index;
-      if (IsTypedArrayIndex(id, &index)) {
-        if (index < obj->as<TypedArrayObject>().length()) {
+      JS::Result<mozilla::Maybe<uint64_t>> index = IsTypedArrayIndex(cx, id);
+      if (index.isErr()) {
+        cx->recoverFromOutOfMemory();
+        return false;
+      }
+
+      if (index.inspect()) {
+        if (index.inspect().value() < obj->as<TypedArrayObject>().length()) {
           propp->setDenseOrTypedArrayElement();
         } else {
           propp->setNotFound();
@@ -2634,7 +2645,8 @@ bool js::GetPropertyPure(JSContext* cx, JSObject* obj, jsid id, Value* vp) {
     return true;
   }
 
-  return NativeGetPureInline(&pobj->as<NativeObject>(), id, prop, vp, cx);
+  return pobj->isNative() &&
+         NativeGetPureInline(&pobj->as<NativeObject>(), id, prop, vp, cx);
 }
 
 bool js::GetOwnPropertyPure(JSContext* cx, JSObject* obj, jsid id, Value* vp,
@@ -2944,23 +2956,6 @@ bool js::DefineDataProperty(JSContext* cx, HandleObject obj, HandleId id,
   return NativeDefineProperty(cx, obj.as<NativeObject>(), id, desc, result);
 }
 
-bool js::DefineDataProperty(JSContext* cx, HandleObject obj, PropertyName* name,
-                            HandleValue value, unsigned attrs,
-                            ObjectOpResult& result) {
-  RootedId id(cx, NameToId(name));
-  return DefineDataProperty(cx, obj, id, value, attrs, result);
-}
-
-bool js::DefineDataElement(JSContext* cx, HandleObject obj, uint32_t index,
-                           HandleValue value, unsigned attrs,
-                           ObjectOpResult& result) {
-  RootedId id(cx);
-  if (!IndexToId(cx, index, &id)) {
-    return false;
-  }
-  return DefineDataProperty(cx, obj, id, value, attrs, result);
-}
-
 bool js::DefineAccessorProperty(JSContext* cx, HandleObject obj, HandleId id,
                                 HandleObject getter, HandleObject setter,
                                 unsigned attrs) {
@@ -3058,6 +3053,11 @@ extern bool PropertySpecNameToId(JSContext* cx, JSPropertySpec::Name name,
 // JSPropertySpec list, but omit the definition if the preference is off.
 JS_FRIEND_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
                                                       JSProtoKey key, jsid id) {
+  if (!cx->realm()->creationOptions().getToSourceEnabled()) {
+    return id == NameToId(cx->names().toSource) ||
+           id == NameToId(cx->names().uneval);
+  }
+
   return false;
 }
 
@@ -3335,12 +3335,57 @@ JSObject* js::ToObjectSlow(JSContext* cx, JS::HandleValue val,
   MOZ_ASSERT(!val.isObject());
 
   if (val.isNullOrUndefined()) {
-    if (reportScanStack) {
-      ReportIsNullOrUndefined(cx, JSDVG_SEARCH_STACK, val);
+    ReportIsNullOrUndefinedForPropertyAccess(
+        cx, val, reportScanStack ? JSDVG_SEARCH_STACK : JSDVG_IGNORE_STACK);
+    return nullptr;
+  }
+
+  return PrimitiveToObject(cx, val);
+}
+
+JSObject* js::ToObjectSlowForPropertyAccess(JSContext* cx, JS::HandleValue val,
+                                            int valIndex, HandleId key) {
+  MOZ_ASSERT(!val.isMagic());
+  MOZ_ASSERT(!val.isObject());
+
+  if (val.isNullOrUndefined()) {
+    ReportIsNullOrUndefinedForPropertyAccess(cx, val, valIndex, key);
+    return nullptr;
+  }
+
+  return PrimitiveToObject(cx, val);
+}
+
+JSObject* js::ToObjectSlowForPropertyAccess(JSContext* cx, JS::HandleValue val,
+                                            int valIndex,
+                                            HandlePropertyName key) {
+  MOZ_ASSERT(!val.isMagic());
+  MOZ_ASSERT(!val.isObject());
+
+  if (val.isNullOrUndefined()) {
+    RootedId keyId(cx, NameToId(key));
+    ReportIsNullOrUndefinedForPropertyAccess(cx, val, valIndex, keyId);
+    return nullptr;
+  }
+
+  return PrimitiveToObject(cx, val);
+}
+
+JSObject* js::ToObjectSlowForPropertyAccess(JSContext* cx, JS::HandleValue val,
+                                            int valIndex,
+                                            HandleValue keyValue) {
+  MOZ_ASSERT(!val.isMagic());
+  MOZ_ASSERT(!val.isObject());
+
+  if (val.isNullOrUndefined()) {
+    RootedId key(cx);
+    if (keyValue.isPrimitive()) {
+      if (!ValueToId<CanGC>(cx, keyValue, &key)) {
+        return nullptr;
+      }
+      ReportIsNullOrUndefinedForPropertyAccess(cx, val, valIndex, key);
     } else {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_CANT_CONVERT_TO,
-                                val.isNull() ? "null" : "undefined", "object");
+      ReportIsNullOrUndefinedForPropertyAccess(cx, val, valIndex);
     }
     return nullptr;
   }
@@ -3408,9 +3453,9 @@ void GetObjectSlotNameFunctor::operator()(JS::CallbackTracer* trc, char* buf,
         if (false) {
           ;
         }
-#define TEST_SLOT_MATCHES_PROTOTYPE(name, init, clasp) \
-  else if ((JSProto_##name) == slot) {                 \
-    slotname = js_##name##_str;                        \
+#define TEST_SLOT_MATCHES_PROTOTYPE(name, clasp) \
+  else if ((JSProto_##name) == slot) {           \
+    slotname = js_##name##_str;                  \
   }
         JS_FOR_EACH_PROTOTYPE(TEST_SLOT_MATCHES_PROTOTYPE)
 #undef TEST_SLOT_MATCHES_PROTOTYPE
@@ -3495,8 +3540,8 @@ static void dumpValue(const Value& v, js::GenericPrinter& out) {
         } else {
           out.put("<unnamed function");
         }
-        if (fun->hasScript()) {
-          JSScript* script = fun->nonLazyScript();
+        if (fun->hasBaseScript()) {
+          BaseScript* script = fun->baseScript();
           out.printf(" (%s:%u)", script->filename() ? script->filename() : "",
                      script->lineno());
         }
@@ -3802,7 +3847,7 @@ JS_FRIEND_API void js::DumpInterpreterFrame(JSContext* cx,
 
     if (jsbytecode* pc = i.pc()) {
       out.printf("  pc = %p\n", pc);
-      out.printf("  current op: %s\n", CodeName[*pc]);
+      out.printf("  current op: %s\n", CodeName(JSOp(*pc)));
       MaybeDumpScope(i.script()->lookupScope(pc), out);
     }
     if (i.isFunctionFrame()) {

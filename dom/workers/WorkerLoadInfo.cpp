@@ -56,7 +56,7 @@ class MainThreadReleaseRunnable final : public Runnable {
   }
 
  private:
-  ~MainThreadReleaseRunnable() {}
+  ~MainThreadReleaseRunnable() = default;
 };
 
 // Specialize this if there's some class that has multiple nsISupports bases.
@@ -104,7 +104,7 @@ nsresult WorkerLoadInfo::SetPrincipalsAndCSPOnMainThread(
 
   mPrincipal = aPrincipal;
   mStoragePrincipal = aStoragePrincipal;
-  mPrincipalIsSystem = nsContentUtils::IsSystemPrincipal(aPrincipal);
+  mPrincipalIsSystem = aPrincipal->IsSystemPrincipal();
   mPrincipalIsAddonOrExpandedAddon =
       aPrincipal->GetIsAddonOrExpandedAddonPrincipal();
 
@@ -193,8 +193,8 @@ nsresult WorkerLoadInfo::GetPrincipalsAndLoadGroupFromChannel(
   // mPrincipalIsSystem to true in WorkerPrivate::GetLoadInfo()). Otherwise
   // this channel principal must be same origin with the load principal (we
   // check again here in case redirects changed the location of the script).
-  if (nsContentUtils::IsSystemPrincipal(mLoadingPrincipal)) {
-    if (!nsContentUtils::IsSystemPrincipal(channelPrincipal)) {
+  if (mLoadingPrincipal->IsSystemPrincipal()) {
+    if (!channelPrincipal->IsSystemPrincipal()) {
       nsCOMPtr<nsIURI> finalURI;
       rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(finalURI));
       NS_ENSURE_SUCCESS(rv, rv);
@@ -324,21 +324,24 @@ bool WorkerLoadInfo::PrincipalURIMatchesScriptURL() {
     return true;
   }
 
-  nsCOMPtr<nsIURI> principalURI;
-  rv = mPrincipal->GetURI(getter_AddRefs(principalURI));
-  NS_ENSURE_SUCCESS(rv, false);
-  NS_ENSURE_TRUE(principalURI, false);
+  bool isSameOrigin = false;
+  rv = mPrincipal->IsSameOrigin(mBaseURI, false, &isSameOrigin);
 
-  if (nsScriptSecurityManager::SecurityCompareURIs(mBaseURI, principalURI)) {
+  if (NS_SUCCEEDED(rv) && isSameOrigin) {
     return true;
   }
 
   // If strict file origin policy is in effect, local files will always fail
-  // SecurityCompareURIs unless they are identical. Explicitly check file origin
+  // IsSameOrigin unless they are identical. Explicitly check file origin
   // policy, in that case.
+
+  bool allowsRelaxedOriginPolicy = false;
+  rv = mPrincipal->AllowsRelaxStrictFileOriginPolicy(
+      mBaseURI, &allowsRelaxedOriginPolicy);
+
   if (nsScriptSecurityManager::GetStrictFileOriginPolicy() &&
       NS_URIIsLocalFile(mBaseURI) &&
-      NS_RelaxStrictFileOriginPolicy(mBaseURI, principalURI)) {
+      (NS_SUCCEEDED(rv) && allowsRelaxedOriginPolicy)) {
     return true;
   }
 

@@ -44,7 +44,12 @@ add_task(async function init() {
 async function withSecondSuggestion(testFn) {
   await BrowserTestUtils.withNewTab(gBrowser, async () => {
     let typedValue = "foo";
-    await promiseAutocompleteResultPopup(typedValue, window, true);
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      waitForFocus: SimpleTest.waitForFocus,
+      value: typedValue,
+      fireInputEvent: true,
+    });
     let index = await UrlbarTestUtils.promiseSuggestionsPresent(window);
     assertState(0, -1, typedValue);
 
@@ -72,6 +77,11 @@ add_task(async function test_returnAfterSuggestion() {
     // Alt+Down to select the first one-off.
     EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true });
     assertState(index, 0, "foobar");
+    let heuristicResult = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
+    Assert.ok(
+      !BrowserTestUtils.is_visible(heuristicResult.element.action),
+      "The heuristic action should not be visible"
+    );
 
     let resultsPromise = BrowserTestUtils.browserLoaded(
       gBrowser.selectedBrowser,
@@ -138,7 +148,12 @@ add_task(async function test_clickAfterSuggestion_nonDefault() {
 add_task(async function test_selectOneOffThenSuggestion() {
   await BrowserTestUtils.withNewTab(gBrowser, async () => {
     let typedValue = "foo";
-    await promiseAutocompleteResultPopup(typedValue, window, true);
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      waitForFocus: SimpleTest.waitForFocus,
+      value: typedValue,
+      fireInputEvent: true,
+    });
     let index = await UrlbarTestUtils.promiseSuggestionsPresent(window);
     assertState(0, -1, typedValue);
 
@@ -146,6 +161,12 @@ add_task(async function test_selectOneOffThenSuggestion() {
     EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true });
     EventUtils.synthesizeKey("KEY_ArrowDown", { altKey: true });
     assertState(0, 1, "foo");
+
+    let heuristicResult = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
+    Assert.ok(
+      BrowserTestUtils.is_visible(heuristicResult.element.action),
+      "The heuristic action should be visible because the result is selected"
+    );
 
     // Now click the second suggestion.
     await withHttpServer(serverInfo, async () => {
@@ -171,7 +192,12 @@ add_task(async function overridden_engine_not_reused() {
   );
   await BrowserTestUtils.withNewTab(gBrowser, async () => {
     let typedValue = "foo";
-    await promiseAutocompleteResultPopup(typedValue, window, true);
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      waitForFocus: SimpleTest.waitForFocus,
+      value: typedValue,
+      fireInputEvent: true,
+    });
     let index = await UrlbarTestUtils.promiseSuggestionsPresent(window);
     // Down to select the first search suggestion.
     for (let i = index; i > 0; --i) {
@@ -187,7 +213,12 @@ add_task(async function overridden_engine_not_reused() {
     let label = result.displayed.action;
     // Run again the query, check the label has been replaced.
     await UrlbarTestUtils.promisePopupClose(window);
-    await promiseAutocompleteResultPopup(typedValue, window, true);
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      waitForFocus: SimpleTest.waitForFocus,
+      value: typedValue,
+      fireInputEvent: true,
+    });
     index = await UrlbarTestUtils.promiseSuggestionsPresent(window);
     assertState(0, -1, "foo");
     result = await UrlbarTestUtils.getDetailsOfResultAt(window, index);

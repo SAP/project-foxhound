@@ -28,19 +28,15 @@ using mozilla::DefaultXDisplay;
 #include "nsIStringStream.h"
 #include "nsNetUtil.h"
 #include "mozilla/Preferences.h"
-#include "nsIDocShellTreeItem.h"
-#include "nsIWebBrowserChrome.h"
 #include "nsLayoutUtils.h"
 #include "nsIPluginWidget.h"
 #include "nsViewManager.h"
-#include "nsIDocShellTreeOwner.h"
 #include "nsIAppShell.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsObjectLoadingContent.h"
 #include "nsAttrName.h"
 #include "nsIFocusManager.h"
 #include "nsFocusManager.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIScrollableFrame.h"
 #include "nsIDocShell.h"
 #include "ImageContainer.h"
@@ -3286,7 +3282,7 @@ nsPluginDOMContextMenuListener::nsPluginDOMContextMenuListener(
   aContent->AddEventListener(NS_LITERAL_STRING("contextmenu"), this, true);
 }
 
-nsPluginDOMContextMenuListener::~nsPluginDOMContextMenuListener() {}
+nsPluginDOMContextMenuListener::~nsPluginDOMContextMenuListener() = default;
 
 NS_IMPL_ISUPPORTS(nsPluginDOMContextMenuListener, nsIDOMEventListener)
 

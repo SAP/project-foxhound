@@ -6,9 +6,9 @@
 
 #include "NumericInputTypes.h"
 
+#include "mozilla/TextControlState.h"
 #include "mozilla/dom/HTMLInputElement.h"
-#include "nsNumberControlFrame.h"
-#include "nsTextEditorState.h"
+#include "ICUUtils.h"
 
 bool NumericInputTypeBase::IsRangeOverflow() const {
   mozilla::Decimal maximum = mInputElement->GetMaximum();
@@ -71,9 +71,9 @@ nsresult NumericInputTypeBase::GetRangeOverflowMessage(nsAString& aMessage) {
   maxStr.AssignASCII(buf);
   MOZ_ASSERT(ok, "buf not big enough");
 
-  return nsContentUtils::FormatLocalizedString(
+  return nsContentUtils::FormatMaybeLocalizedString(
       aMessage, nsContentUtils::eDOM_PROPERTIES,
-      "FormValidationNumberRangeOverflow", maxStr);
+      "FormValidationNumberRangeOverflow", mInputElement->OwnerDoc(), maxStr);
 }
 
 nsresult NumericInputTypeBase::GetRangeUnderflowMessage(nsAString& aMessage) {
@@ -87,18 +87,20 @@ nsresult NumericInputTypeBase::GetRangeUnderflowMessage(nsAString& aMessage) {
   minStr.AssignASCII(buf);
   MOZ_ASSERT(ok, "buf not big enough");
 
-  return nsContentUtils::FormatLocalizedString(
+  return nsContentUtils::FormatMaybeLocalizedString(
       aMessage, nsContentUtils::eDOM_PROPERTIES,
-      "FormValidationNumberRangeUnderflow", minStr);
+      "FormValidationNumberRangeUnderflow", mInputElement->OwnerDoc(), minStr);
 }
 
 bool NumericInputTypeBase::ConvertStringToNumber(
     nsAString& aValue, mozilla::Decimal& aResultValue) const {
-  aResultValue = mozilla::dom::HTMLInputElement::StringToDecimal(aValue);
+  ICUUtils::LanguageTagIterForContent langTagIter(mInputElement);
+  aResultValue =
+      mozilla::Decimal::fromDouble(ICUUtils::ParseNumber(aValue, langTagIter));
   if (!aResultValue.isFinite()) {
-    return false;
+    aResultValue = mozilla::dom::HTMLInputElement::StringToDecimal(aValue);
   }
-  return true;
+  return aResultValue.isFinite();
 }
 
 bool NumericInputTypeBase::ConvertNumberToString(
@@ -115,7 +117,7 @@ bool NumericInputTypeBase::ConvertNumberToString(
   return ok;
 }
 
-/* input type=numer */
+/* input type=number */
 
 bool NumberInputType::IsValueMissing() const {
   if (!mInputElement->IsRequired()) {
@@ -132,31 +134,29 @@ bool NumberInputType::IsValueMissing() const {
 bool NumberInputType::HasBadInput() const {
   nsAutoString value;
   GetNonFileValueInternal(value);
-  if (!value.IsEmpty()) {
-    // The input can't be bad, otherwise it would have been sanitized to the
-    // empty string.
-    NS_ASSERTION(!mInputElement->GetValueAsDecimal().isNaN(),
-                 "Should have sanitized");
-    return false;
-  }
-  nsNumberControlFrame* numberControlFrame = do_QueryFrame(GetPrimaryFrame());
-  if (numberControlFrame && !numberControlFrame->AnonTextControlIsEmpty()) {
-    // The input the user entered failed to parse as a number.
-    return true;
-  }
-  return false;
+  return !value.IsEmpty() && mInputElement->GetValueAsDecimal().isNaN();
+}
+
+bool NumberInputType::ConvertNumberToString(
+    Decimal aValue, nsAString& aResultString) const {
+  MOZ_ASSERT(aValue.isFinite(), "aValue must be a valid non-Infinite number.");
+
+  aResultString.Truncate();
+  ICUUtils::LanguageTagIterForContent langTagIter(mInputElement);
+  ICUUtils::LocalizeNumber(aValue.toDouble(), langTagIter, aResultString);
+  return true;
 }
 
 nsresult NumberInputType::GetValueMissingMessage(nsAString& aMessage) {
-  return nsContentUtils::GetLocalizedString(nsContentUtils::eDOM_PROPERTIES,
-                                            "FormValidationBadInputNumber",
-                                            aMessage);
+  return nsContentUtils::GetMaybeLocalizedString(
+      nsContentUtils::eDOM_PROPERTIES, "FormValidationBadInputNumber",
+      mInputElement->OwnerDoc(), aMessage);
 }
 
 nsresult NumberInputType::GetBadInputMessage(nsAString& aMessage) {
-  return nsContentUtils::GetLocalizedString(nsContentUtils::eDOM_PROPERTIES,
-                                            "FormValidationBadInputNumber",
-                                            aMessage);
+  return nsContentUtils::GetMaybeLocalizedString(
+      nsContentUtils::eDOM_PROPERTIES, "FormValidationBadInputNumber",
+      mInputElement->OwnerDoc(), aMessage);
 }
 
 bool NumberInputType::IsMutable() const {
@@ -178,5 +178,5 @@ nsresult RangeInputType::MinMaxStepAttrChanged() {
   // example above were to change from 1 to -1.
   nsAutoString value;
   GetNonFileValueInternal(value);
-  return SetValueInternal(value, nsTextEditorState::eSetValue_Internal);
+  return SetValueInternal(value, mozilla::TextControlState::eSetValue_Internal);
 }

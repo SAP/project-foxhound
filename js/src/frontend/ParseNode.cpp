@@ -12,6 +12,8 @@
 #include "jsnum.h"
 
 #include "frontend/Parser.h"
+#include "vm/BigIntType.h"
+#include "vm/RegExpObject.h"
 
 #include "vm/JSContext-inl.h"
 
@@ -398,14 +400,39 @@ ObjectBox::ObjectBox(JSObject* obj, TraceListNode* traceLink,
                      TraceListNode::NodeType type)
     : TraceListNode(obj, traceLink, type), emitLink(nullptr) {}
 
-bool BigIntLiteral::isZero() {
-  if (data_.is<BigIntBox*>()) {
-    return box()->value()->isZero();
-  }
-  return data_.as<BigIntCreationData>().isZero();
+BigInt* BigIntLiteral::getOrCreate(JSContext* cx) {
+  return compilationInfo_.bigIntData[index_].createBigInt(cx);
 }
 
-BigInt* BigIntLiteral::value() { return box()->value(); }
+bool BigIntLiteral::isZero() {
+  return compilationInfo_.bigIntData[index_].isZero();
+}
+
+JSAtom* BigIntLiteral::toAtom(JSContext* cx) {
+  RootedBigInt bi(cx, getOrCreate(cx));
+  if (!bi) {
+    return nullptr;
+  }
+  return BigIntToAtom<CanGC>(cx, bi);
+}
+
+JSAtom* NumericLiteral::toAtom(JSContext* cx) const {
+  return NumberToAtom(cx, value());
+}
+
+RegExpObject* RegExpCreationData::createRegExp(JSContext* cx) const {
+  MOZ_ASSERT(buf_);
+  return RegExpObject::createSyntaxChecked(cx, buf_.get(), length_, flags_,
+                                           TenuredObject);
+}
+
+RegExpObject* RegExpLiteral::getOrCreate(
+    JSContext* cx, CompilationInfo& compilationInfo) const {
+  if (data_.is<ObjectBox*>()) {
+    return &objbox()->object()->as<RegExpObject>();
+  }
+  return compilationInfo.regExpData[data_.as<RegExpIndex>()].createRegExp(cx);
+}
 
 FunctionBox* ObjectBox::asFunctionBox() {
   MOZ_ASSERT(isFunctionBox());
@@ -429,13 +456,10 @@ void TraceListNode::trace(JSTracer* trc) {
 void FunctionBox::trace(JSTracer* trc) {
   ObjectBox::trace(trc);
   if (enclosingScope_) {
-    TraceRoot(trc, &enclosingScope_, "funbox-enclosingScope");
+    enclosingScope_.trace(trc);
   }
   if (explicitName_) {
     TraceRoot(trc, &explicitName_, "funbox-explicitName");
-  }
-  if (functionCreationData_) {
-    functionCreationData_->trace(trc);
   }
 }
 

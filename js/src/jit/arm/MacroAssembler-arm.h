@@ -20,7 +20,7 @@ namespace jit {
 
 static Register CallReg = ip;
 static const int defaultShift = 3;
-JS_STATIC_ASSERT(1 << defaultShift == sizeof(JS::Value));
+static_assert(1 << defaultShift == sizeof(JS::Value));
 
 // See documentation for ScratchTagScope and ScratchTagScopeRelease in
 // MacroAssembler-x64.h.
@@ -858,6 +858,17 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   void unboxObject(const BaseIndex& src, Register dest) {
     unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
   }
+  void unboxObjectOrNull(const ValueOperand& src, Register dest) {
+    // Due to Spectre mitigation logic (see Value.h), if the value is an Object
+    // then this yields the object; otherwise it yields zero (null), as desired.
+    unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
+  }
+  void unboxObjectOrNull(const Address& src, Register dest) {
+    unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
+  }
+  void unboxObjectOrNull(const BaseIndex& src, Register dest) {
+    unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
+  }
   void unboxDouble(const ValueOperand& src, FloatRegister dest);
   void unboxDouble(const Address& src, FloatRegister dest);
   void unboxDouble(const BaseIndex& src, FloatRegister dest);
@@ -1127,6 +1138,10 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
     load32(LowWord(address), dest.low);
     load32(HighWord(address), dest.high);
   }
+  void load64(const BaseIndex& address, Register64 dest) {
+    load32(LowWord(address), dest.low);
+    load32(HighWord(address), dest.high);
+  }
 
   void loadPtr(const Address& address, Register dest);
   void loadPtr(const BaseIndex& src, Register dest);
@@ -1166,7 +1181,17 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
     store32(src.high, HighWord(address));
   }
 
+  void store64(Register64 src, const BaseIndex& address) {
+    store32(src.low, LowWord(address));
+    store32(src.high, HighWord(address));
+  }
+
   void store64(Imm64 imm, Address address) {
+    store32(imm.low(), LowWord(address));
+    store32(imm.hi(), HighWord(address));
+  }
+
+  void store64(Imm64 imm, const BaseIndex& address) {
     store32(imm.low(), LowWord(address));
     store32(imm.hi(), HighWord(address));
   }

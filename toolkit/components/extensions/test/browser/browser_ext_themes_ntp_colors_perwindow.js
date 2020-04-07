@@ -11,13 +11,15 @@
  */
 function test_ntp_theme(browser, theme, isBrightText) {
   Services.ppmm.sharedData.flush();
-  return ContentTask.spawn(
+  return SpecialPowers.spawn(
     browser,
-    {
-      isBrightText,
-      background: hexToCSS(theme.colors.ntp_background),
-      color: hexToCSS(theme.colors.ntp_text),
-    },
+    [
+      {
+        isBrightText,
+        background: hexToCSS(theme.colors.ntp_background),
+        color: hexToCSS(theme.colors.ntp_text),
+      },
+    ],
     function({ isBrightText, background, color }) {
       let doc = content.document;
       ok(
@@ -53,12 +55,14 @@ function test_ntp_theme(browser, theme, isBrightText) {
  */
 function test_ntp_default_theme(browser) {
   Services.ppmm.sharedData.flush();
-  return ContentTask.spawn(
+  return SpecialPowers.spawn(
     browser,
-    {
-      background: hexToCSS("#F9F9FA"),
-      color: hexToCSS("#0C0C0D"),
-    },
+    [
+      {
+        background: hexToCSS("#F9F9FA"),
+        color: hexToCSS("#0C0C0D"),
+      },
+    ],
     function({ background, color }) {
       let doc = content.document;
       ok(
@@ -144,7 +148,12 @@ add_task(async function test_per_window_ntp_theme() {
       };
 
       let { id: winId } = await browser.windows.getCurrent();
-      let { id: secondWinId } = await browser.windows.create();
+      // We are opening about:blank instead of the default homepage,
+      // because using the default homepage results in intermittent
+      // test failures on debug builds due to browser window leaks.
+      let { id: secondWinId } = await browser.windows.create({
+        url: "about:blank",
+      });
 
       browser.test.log("Test that single window update works");
       await browser.theme.update(winId, darkTextTheme);
@@ -172,6 +181,8 @@ add_task(async function test_per_window_ntp_theme() {
     async ({ theme, isBrightText, winId }) => {
       let win = Services.wm.getOuterWindowWithId(winId);
       win.NewTabPagePreloading.removePreloadedBrowser(win);
+      // These pages were initially chosen because LightweightThemeChild.jsm
+      // treats them specially.
       for (let url of ["about:newtab", "about:home", "about:welcome"]) {
         info("Opening url: " + url);
         await BrowserTestUtils.withNewTab(
@@ -191,7 +202,7 @@ add_task(async function test_per_window_ntp_theme() {
 
   // BrowserTestUtils.withNewTab waits for about:newtab to load
   // so we disable preloading before running the test.
-  SpecialPowers.setBoolPref("browser.newtab.preload", false);
+  await SpecialPowers.setBoolPref("browser.newtab.preload", false);
   registerCleanupFunction(() => {
     SpecialPowers.clearUserPref("browser.newtab.preload");
   });

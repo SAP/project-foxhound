@@ -9,10 +9,10 @@ const {
   REQUEST_WORKERS_SUCCESS,
   SERVICE_WORKER_FETCH_STATES,
   SERVICE_WORKER_STATUSES,
-} = require("../constants");
+} = require("devtools/client/aboutdebugging/src/constants");
 
 /**
- * This middleware converts workers object that get from DebuggerClient.listAllWorkers()
+ * This middleware converts workers object that get from DevToolsClient.listAllWorkers()
  * to data which is used in DebugTargetItem.
  */
 const workerComponentDataMiddleware = store => next => action => {

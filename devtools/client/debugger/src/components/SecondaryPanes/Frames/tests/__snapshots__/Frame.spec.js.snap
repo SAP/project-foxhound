@@ -15,12 +15,14 @@ exports[`Frame getFrameTitle 1`] = `
   <FrameTitle
     frame={
       Object {
+        "asyncCause": null,
         "displayName": "renderFoo",
         "generatedLocation": Object {
           "line": 10,
           "sourceId": "source",
         },
         "id": "1",
+        "index": 0,
         "location": Object {
           "line": 10,
           "sourceId": "source",
@@ -44,11 +46,13 @@ exports[`Frame getFrameTitle 1`] = `
           "introductionUrl": null,
           "isBlackBoxed": false,
           "isExtension": false,
+          "isOriginal": false,
           "isPrettyPrinted": false,
           "isWasm": false,
           "relativeUrl": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com/assets/src/js/foo-view.js",
           "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com/assets/src/js/foo-view.js",
         },
+        "state": "on-stack",
         "this": Object {},
         "thread": "FakeThread",
       }
@@ -68,12 +72,14 @@ exports[`Frame getFrameTitle 1`] = `
     displayFullUrl={false}
     frame={
       Object {
+        "asyncCause": null,
         "displayName": "renderFoo",
         "generatedLocation": Object {
           "line": 10,
           "sourceId": "source",
         },
         "id": "1",
+        "index": 0,
         "location": Object {
           "line": 10,
           "sourceId": "source",
@@ -97,11 +103,13 @@ exports[`Frame getFrameTitle 1`] = `
           "introductionUrl": null,
           "isBlackBoxed": false,
           "isExtension": false,
+          "isOriginal": false,
           "isPrettyPrinted": false,
           "isWasm": false,
           "relativeUrl": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com/assets/src/js/foo-view.js",
           "url": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com/assets/src/js/foo-view.js",
         },
+        "state": "on-stack",
         "this": Object {},
         "thread": "FakeThread",
       }
@@ -127,12 +135,14 @@ exports[`Frame library frame 1`] = `
   <FrameTitle
     frame={
       Object {
+        "asyncCause": null,
         "displayName": "updateEvents",
         "generatedLocation": Object {
           "line": 12,
           "sourceId": "source",
         },
         "id": "3",
+        "index": 0,
         "library": "backbone",
         "location": Object {
           "line": 12,
@@ -157,11 +167,13 @@ exports[`Frame library frame 1`] = `
           "introductionUrl": null,
           "isBlackBoxed": false,
           "isExtension": false,
+          "isOriginal": false,
           "isPrettyPrinted": false,
           "isWasm": false,
           "relativeUrl": "backbone.js",
           "url": "backbone.js",
         },
+        "state": "on-stack",
         "this": Object {},
         "thread": "FakeThread",
       }
@@ -181,12 +193,14 @@ exports[`Frame library frame 1`] = `
     displayFullUrl={false}
     frame={
       Object {
+        "asyncCause": null,
         "displayName": "updateEvents",
         "generatedLocation": Object {
           "line": 12,
           "sourceId": "source",
         },
         "id": "3",
+        "index": 0,
         "library": "backbone",
         "location": Object {
           "line": 12,
@@ -211,11 +225,13 @@ exports[`Frame library frame 1`] = `
           "introductionUrl": null,
           "isBlackBoxed": false,
           "isExtension": false,
+          "isOriginal": false,
           "isPrettyPrinted": false,
           "isWasm": false,
           "relativeUrl": "backbone.js",
           "url": "backbone.js",
         },
+        "state": "on-stack",
         "this": Object {},
         "thread": "FakeThread",
       }
@@ -241,12 +257,14 @@ exports[`Frame user frame (not selected) 1`] = `
   <FrameTitle
     frame={
       Object {
+        "asyncCause": null,
         "displayName": "renderFoo",
         "generatedLocation": Object {
           "line": 10,
           "sourceId": "source",
         },
         "id": "1",
+        "index": 0,
         "location": Object {
           "line": 10,
           "sourceId": "source",
@@ -270,11 +288,13 @@ exports[`Frame user frame (not selected) 1`] = `
           "introductionUrl": null,
           "isBlackBoxed": false,
           "isExtension": false,
+          "isOriginal": false,
           "isPrettyPrinted": false,
           "isWasm": false,
           "relativeUrl": "foo-view.js",
           "url": "foo-view.js",
         },
+        "state": "on-stack",
         "this": Object {},
         "thread": "FakeThread",
       }
@@ -294,12 +314,14 @@ exports[`Frame user frame (not selected) 1`] = `
     displayFullUrl={false}
     frame={
       Object {
+        "asyncCause": null,
         "displayName": "renderFoo",
         "generatedLocation": Object {
           "line": 10,
           "sourceId": "source",
         },
         "id": "1",
+        "index": 0,
         "location": Object {
           "line": 10,
           "sourceId": "source",
@@ -323,11 +345,13 @@ exports[`Frame user frame (not selected) 1`] = `
           "introductionUrl": null,
           "isBlackBoxed": false,
           "isExtension": false,
+          "isOriginal": false,
           "isPrettyPrinted": false,
           "isWasm": false,
           "relativeUrl": "foo-view.js",
           "url": "foo-view.js",
         },
+        "state": "on-stack",
         "this": Object {},
         "thread": "FakeThread",
       }
@@ -353,12 +377,14 @@ exports[`Frame user frame 1`] = `
   <FrameTitle
     frame={
       Object {
+        "asyncCause": null,
         "displayName": "renderFoo",
         "generatedLocation": Object {
           "line": 10,
           "sourceId": "source",
         },
         "id": "1",
+        "index": 0,
         "location": Object {
           "line": 10,
           "sourceId": "source",
@@ -382,11 +408,13 @@ exports[`Frame user frame 1`] = `
           "introductionUrl": null,
           "isBlackBoxed": false,
           "isExtension": false,
+          "isOriginal": false,
           "isPrettyPrinted": false,
           "isWasm": false,
           "relativeUrl": "foo-view.js",
           "url": "foo-view.js",
         },
+        "state": "on-stack",
         "this": Object {},
         "thread": "FakeThread",
       }
@@ -406,12 +434,14 @@ exports[`Frame user frame 1`] = `
     displayFullUrl={false}
     frame={
       Object {
+        "asyncCause": null,
         "displayName": "renderFoo",
         "generatedLocation": Object {
           "line": 10,
           "sourceId": "source",
         },
         "id": "1",
+        "index": 0,
         "location": Object {
           "line": 10,
           "sourceId": "source",
@@ -435,11 +465,13 @@ exports[`Frame user frame 1`] = `
           "introductionUrl": null,
           "isBlackBoxed": false,
           "isExtension": false,
+          "isOriginal": false,
           "isPrettyPrinted": false,
           "isWasm": false,
           "relativeUrl": "foo-view.js",
           "url": "foo-view.js",
         },
+        "state": "on-stack",
         "this": Object {},
         "thread": "FakeThread",
       }

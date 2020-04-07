@@ -246,11 +246,14 @@ function runGenericSensorTests(sensorName,
     assert_true(verificationFunction(expected, sensor2, /*isNull=*/true));
   }, `${sensorName}: sensor reading is correct.`);
 
-  sensor_test(async t => {
+  sensor_test(async (t, sensorProvider) => {
     assert_true(sensorName in self);
     const sensor = new sensorType();
     const sensorWatcher = new EventWatcher(t, sensor, ["reading", "error"]);
     sensor.start();
+
+    const mockSensor = await sensorProvider.getCreatedSensor(sensorName);
+    await mockSensor.setSensorReading(readings);
 
     await sensorWatcher.wait_for("reading");
     const cachedTimeStamp1 = sensor.timestamp;
@@ -392,6 +395,7 @@ function runGenericSensorTests(sensorName,
     fastSensor.start();
 
     const mockSensor = await sensorProvider.getCreatedSensor(sensorName);
+    await mockSensor.setSensorReading(readings);
 
     const fastCounter = await new Promise((resolve, reject) => {
       let fastSensorNotifiedCounter = 0;
@@ -461,12 +465,12 @@ function runGenericSensorTests(sensorName,
 
 //  Re-enable after https://github.com/w3c/sensors/issues/361 is fixed.
 //  test(() => {
-//     assert_throws("NotSupportedError",
+//     assert_throws_dom("NotSupportedError",
 //         () => { new sensorType({invalid: 1}) });
-//     assert_throws("NotSupportedError",
+//     assert_throws_dom("NotSupportedError",
 //         () => { new sensorType({frequency: 60, invalid: 1}) });
 //     if (!expectedRemappedReadings) {
-//       assert_throws("NotSupportedError",
+//       assert_throws_dom("NotSupportedError",
 //           () => { new sensorType({referenceFrame: "screen"}) });
 //     }
 //  }, `${sensorName}: throw 'NotSupportedError' for an unsupported sensor\
@@ -482,9 +486,9 @@ function runGenericSensorTests(sensorName,
       {}
     ];
     invalidFreqs.map(freq => {
-      assert_throws(new TypeError(),
-                    () => { new sensorType({frequency: freq}) },
-                    `when freq is ${freq}`);
+      assert_throws_js(TypeError,
+                       () => { new sensorType({frequency: freq}) },
+                       `when freq is ${freq}`);
     });
   }, `${sensorName}: throw 'TypeError' if frequency is invalid.`);
 
@@ -534,9 +538,9 @@ function runGenericSensorTests(sensorName,
       true
     ];
     invalidRefFrames.map(refFrame => {
-      assert_throws(new TypeError(),
-                    () => { new sensorType({referenceFrame: refFrame}) },
-                    `when refFrame is ${refFrame}`);
+      assert_throws_js(TypeError,
+                       () => { new sensorType({referenceFrame: refFrame}) },
+                       `when refFrame is ${refFrame}`);
     });
   }, `${sensorName}: throw 'TypeError' if referenceFrame is not one of\
  enumeration values.`);

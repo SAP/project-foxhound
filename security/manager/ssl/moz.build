@@ -4,16 +4,22 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+# osclientcerts is currently only implemented for Windows
+# osclientcerts transitively depends on winapi 0.2.8, which doesn't work with
+# AArch64
+if (CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['CPU_ARCH'] != 'aarch64') or CONFIG['OS_ARCH'] == 'Darwin':
+    DIRS += [ 'osclientcerts' ]
+
 TEST_DIRS += [ 'tests' ]
 
 XPIDL_SOURCES += [
     'nsIASN1Object.idl',
     'nsIASN1PrintableItem.idl',
     'nsIASN1Sequence.idl',
-    'nsIBadCertListener2.idl',
     'nsICertificateDialogs.idl',
     'nsICertOverrideService.idl',
     'nsIClientAuthDialogs.idl',
+    'nsIClientAuthRemember.idl',
     'nsIContentSignatureVerifier.idl',
     'nsICryptoHash.idl',
     'nsICryptoHMAC.idl',
@@ -37,7 +43,6 @@ XPIDL_SOURCES += [
     'nsITokenPasswordDialogs.idl',
     'nsIX509Cert.idl',
     'nsIX509CertDB.idl',
-    'nsIX509CertList.idl',
     'nsIX509CertValidity.idl',
 ]
 
@@ -75,6 +80,7 @@ EXPORTS += [
     'RootCertificateTelemetryUtils.h',
     'ScopedNSSTypes.h',
     'SharedCertVerifier.h',
+    'SSLServerCertVerification.h',
     'TransportSecurityInfo.h',
 ]
 
@@ -87,6 +93,8 @@ EXPORTS.mozilla += [
 EXPORTS.mozilla.psm += [
     'PSMContentListener.h',
     'TransportSecurityInfo.h',
+    'VerifySSLServerCertChild.h',
+    'VerifySSLServerCertParent.h',
 ]
 
 EXPORTS.ipc += [
@@ -139,6 +147,8 @@ UNIFIED_SOURCES += [
     'SharedSSLState.cpp',
     'SSLServerCertVerification.cpp',
     'TransportSecurityInfo.cpp',
+    'VerifySSLServerCertChild.cpp',
+    'VerifySSLServerCertParent.cpp',
 ]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
@@ -180,6 +190,8 @@ if CONFIG['OS_ARCH'] == 'WINNT':
 
 IPDL_SOURCES += [
     'PPSMContentDownloader.ipdl',
+    'PSMIPCTypes.ipdlh',
+    'PVerifySSLServerCert.ipdl',
 ]
 
 if CONFIG['MOZ_XUL']:
@@ -222,9 +234,6 @@ LOCAL_INCLUDES += [
 GeneratedFile('nsSTSPreloadList.h',
               script='../../../xpcom/ds/tools/make_dafsa.py',
               inputs=['nsSTSPreloadList.inc'])
-
-if CONFIG['NSS_DISABLE_DBM']:
-    DEFINES['NSS_DISABLE_DBM'] = '1'
 
 DEFINES['SSL_DISABLE_DEPRECATED_CIPHER_SUITE_NAMES'] = 'True'
 DEFINES['NSS_ENABLE_ECC'] = 'True'

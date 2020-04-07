@@ -4,14 +4,41 @@ import android.support.annotation.Nullable;
 
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
+import org.mozilla.geckoview.WebExtension;
 
 import java.util.ArrayList;
 
 public class TabSessionManager {
-    private static ArrayList<TabSession> mTabSessions = new ArrayList<TabSession>();
+    private static ArrayList<TabSession> mTabSessions = new ArrayList<>();
     private int mCurrentSessionIndex = 0;
+    private TabObserver mTabObserver;
+
+    public interface TabObserver {
+        void onCurrentSession(TabSession session);
+    }
 
     public TabSessionManager() {
+    }
+
+    public void unregisterWebExtension() {
+        for (final TabSession session : mTabSessions) {
+            session.action = null;
+        }
+    }
+
+    public void setWebExtensionDelegates(WebExtension extension,
+                                         WebExtension.ActionDelegate actionDelegate,
+                                         WebExtension.SessionTabDelegate tabDelegate) {
+        for (final TabSession session : mTabSessions) {
+            final WebExtension.SessionController sessionController =
+                    session.getWebExtensionController();
+            sessionController.setActionDelegate(extension, actionDelegate);
+            sessionController.setTabDelegate(extension, tabDelegate);
+        }
+    }
+
+    public void setTabObserver(TabObserver observer) {
+        mTabObserver = observer;
     }
 
     public void addSession(TabSession session) {
@@ -41,6 +68,10 @@ public class TabSessionManager {
             index = mTabSessions.size() - 1;
         }
         mCurrentSessionIndex = index;
+
+        if (mTabObserver != null) {
+            mTabObserver.onCurrentSession(session);
+        }
     }
 
     private boolean isCurrentSession(TabSession session) {

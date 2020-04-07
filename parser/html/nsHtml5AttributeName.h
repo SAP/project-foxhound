@@ -280,6 +280,7 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_GRADIENTUNITS;
   static nsHtml5AttributeName* ATTR_HIDDEN;
   static nsHtml5AttributeName* ATTR_HEADERS;
+  static nsHtml5AttributeName* ATTR_LOADING;
   static nsHtml5AttributeName* ATTR_READONLY;
   static nsHtml5AttributeName* ATTR_RENDERING_INTENT;
   static nsHtml5AttributeName* ATTR_SEED;
@@ -571,6 +572,7 @@ class nsHtml5AttributeName {
   static nsHtml5AttributeName* ATTR_ONDRAGLEAVE;
   static nsHtml5AttributeName* ATTR_STARTOFFSET;
   static nsHtml5AttributeName* ATTR_START;
+  static nsHtml5AttributeName* ATTR_AS;
   static nsHtml5AttributeName* ATTR_AXIS;
   static nsHtml5AttributeName* ATTR_BIAS;
   static nsHtml5AttributeName* ATTR_COLSPAN;

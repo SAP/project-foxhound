@@ -11,6 +11,8 @@
 
 #include "mozilla/MemoryReporting.h"
 
+#include "jstypes.h"  // JS_PUBLIC_API
+
 #include "ds/TraceableFifo.h"
 #include "gc/Memory.h"
 #include "js/CharacterEncoding.h"
@@ -22,9 +24,12 @@
 #include "js/Vector.h"
 #include "threading/ProtectedData.h"
 #include "util/StructuredSpewer.h"
+#include "vm/Activation.h"  // js::Activation
 #include "vm/ErrorReporting.h"
 #include "vm/MallocProvider.h"
 #include "vm/Runtime.h"
+
+struct JS_PUBLIC_API JSContext;
 
 struct DtoaState;
 
@@ -35,6 +40,7 @@ class AutoMaybeLeaveAtomsZone;
 class AutoRealm;
 
 namespace jit {
+class JitActivation;
 class JitContext;
 class DebugModeOSRVolatileJitFrameIter;
 }  // namespace jit
@@ -43,8 +49,6 @@ namespace gc {
 class AutoCheckCanAccessAtomsDuringGC;
 class AutoSuppressNurseryCellAlloc;
 }  // namespace gc
-
-typedef HashSet<Shape*> ShapeSet;
 
 /* Detects cycles when traversing an object graph. */
 class MOZ_RAII AutoCycleDetector {
@@ -147,8 +151,8 @@ enum class InterruptReason : uint32_t {
  * A JSContext encapsulates the thread local state used when using the JS
  * runtime.
  */
-struct JSContext : public JS::RootingContext,
-                   public js::MallocProvider<JSContext> {
+struct JS_PUBLIC_API JSContext : public JS::RootingContext,
+                                 public js::MallocProvider<JSContext> {
   JSContext(JSRuntime* runtime, const JS::ContextOptions& options);
   ~JSContext();
 
@@ -183,9 +187,7 @@ struct JSContext : public JS::RootingContext,
 
   // When a helper thread is using a context, it may need to periodically
   // free unused memory.
-  mozilla::Atomic<bool, mozilla::ReleaseAcquire,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      freeUnusedMemory;
+  mozilla::Atomic<bool, mozilla::ReleaseAcquire> freeUnusedMemory;
 
  public:
   // This is used by helper threads to change the runtime their context is
@@ -251,8 +253,8 @@ struct JSContext : public JS::RootingContext,
    * on OOM and retry the allocation.
    */
   template <typename T>
-  T* pod_callocCanGC(size_t numElems, arena_id_t arena = js::MallocArena) {
-    T* p = maybe_pod_calloc<T>(numElems, arena);
+  T* pod_arena_callocCanGC(arena_id_t arena, size_t numElems) {
+    T* p = maybe_pod_arena_calloc<T>(arena, numElems);
     if (MOZ_LIKELY(!!p)) {
       return p;
     }
@@ -298,10 +300,6 @@ struct JSContext : public JS::RootingContext,
   }
   js::PropertyName* emptyString() { return runtime_->emptyString; }
   JSFreeOp* defaultFreeOp() { return &defaultFreeOp_.ref(); }
-  void* stackLimitAddress(JS::StackKind kind) {
-    return &nativeStackLimit[kind];
-  }
-  void* stackLimitAddressForJitCode(JS::StackKind kind);
   uintptr_t stackLimit(JS::StackKind kind) { return nativeStackLimit[kind]; }
   uintptr_t stackLimitForJitCode(JS::StackKind kind);
   size_t gcSystemPageSize() { return js::gc::SystemPageSize(); }
@@ -537,16 +535,33 @@ struct JSContext : public JS::RootingContext,
    */
   js::ContextData<int32_t> suppressGC;
 
-#ifdef DEBUG
-  // Whether this thread is currently sweeping GC things. This thread could be
-  // the main thread or a helper thread while the main thread is running the
-  // mutator. This is used to assert that destruction of GCPtrs only happens
-  // when we are sweeping, among other things.
-  js::ContextData<bool> gcSweeping;
+  // clang-format off
+  enum class GCUse {
+    // This thread is not running in the garbage collector.
+    None,
 
-  // The specific zone currently being swept, if any. Setting this restricts
-  // IsAboutToBeFinalized and IsMarked calls to this zone.
-  js::ContextData<JS::Zone*> gcSweepingZone;
+    // This thread is currently marking GC things. This thread could be the main
+    // thread or a helper thread doing sweep-marking.
+    Marking,
+
+    // This thread is currently sweeping GC things. This thread could be the
+    // main thread or a helper thread while the main thread is running the
+    // mutator.
+    Sweeping,
+
+    // Whether this thread is currently finalizing GC things. This thread could
+    // be the main thread or a helper thread doing finalization while the main
+    // thread is running the mutator.
+    Finalizing
+  };
+  // clang-format on
+
+#ifdef DEBUG
+  // Which part of the garbage collector this context is running at the moment.
+  js::ContextData<GCUse> gcUse;
+
+  // The specific zone currently being swept, if any.
+  js::ContextData<JS::Zone*> gcSweepZone;
 
   // Whether this thread is currently manipulating possibly-gray GC things.
   js::ContextData<size_t> isTouchingGrayThings;
@@ -627,8 +642,7 @@ struct JSContext : public JS::RootingContext,
 
   /* Whether sampling should be enabled or not. */
  private:
-  mozilla::Atomic<bool, mozilla::SequentiallyConsistent,
-                  mozilla::recordreplay::Behavior::DontPreserve>
+  mozilla::Atomic<bool, mozilla::SequentiallyConsistent>
       suppressProfilerSampling;
 
  public:
@@ -812,21 +826,11 @@ struct JSContext : public JS::RootingContext,
    */
   inline bool runningWithTrustedPrincipals();
 
-  JS_FRIEND_API size_t
-  sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
   void trace(JSTracer* trc);
 
   inline js::RuntimeCaches& caches();
-
- private:
-  /*
-   * The allocation code calls the function to indicate either OOM failure
-   * when p is null or that a memory pressure counter has reached some
-   * threshold when p is not null. The function takes the pointer and not
-   * a boolean flag to minimize the amount of code in its inlined callers.
-   */
-  JS_FRIEND_API void checkMallocGCPressure(void* p);
 
  public:
   using InterruptCallbackVector =
@@ -843,9 +847,7 @@ struct JSContext : public JS::RootingContext,
   js::ContextData<bool> interruptCallbackDisabled;
 
   // Bitfield storing InterruptReason values.
-  mozilla::Atomic<uint32_t, mozilla::Relaxed,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      interruptBits_;
+  mozilla::Atomic<uint32_t, mozilla::Relaxed> interruptBits_;
 
   // Any thread can call requestInterrupt() to request that this thread
   // stop running. To stop this thread, requestInterrupt sets two fields:
@@ -920,9 +922,7 @@ struct JSContext : public JS::RootingContext,
     ionReturnOverride_ = v;
   }
 
-  mozilla::Atomic<uintptr_t, mozilla::Relaxed,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      jitStackLimit;
+  mozilla::Atomic<uintptr_t, mozilla::Relaxed> jitStackLimit;
 
   // Like jitStackLimit, but not reset to trigger interrupts.
   js::ContextData<uintptr_t> jitStackLimitNoInterrupt;
@@ -1061,7 +1061,6 @@ enum ErrorArgumentsType {
  * Report an exception, using printf-style APIs to generate the error
  * message.
  */
-#ifdef va_start
 extern bool ReportErrorVA(JSContext* cx, unsigned flags, const char* format,
                           ErrorArgumentsType argumentsType, va_list ap)
     MOZ_FORMAT_PRINTF(3, 0);
@@ -1075,11 +1074,29 @@ extern bool ReportErrorNumberUCArray(JSContext* cx, unsigned flags,
                                      JSErrorCallback callback, void* userRef,
                                      const unsigned errorNumber,
                                      const char16_t** args);
-#endif
+
+extern bool ReportErrorNumberUTF8Array(JSContext* cx, unsigned flags,
+                                       JSErrorCallback callback, void* userRef,
+                                       const unsigned errorNumber,
+                                       const char** args);
 
 extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
                                    void* userRef, const unsigned errorNumber,
                                    const char16_t** messageArgs,
+                                   ErrorArgumentsType argumentsType,
+                                   JSErrorReport* reportp, va_list ap);
+
+extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
+                                   void* userRef, const unsigned errorNumber,
+                                   const char** messageArgs,
+                                   ErrorArgumentsType argumentsType,
+                                   JSErrorReport* reportp, va_list ap);
+
+/*
+ * For cases when we do not have an arguments array.
+ */
+extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
+                                   void* userRef, const unsigned errorNumber,
                                    ErrorArgumentsType argumentsType,
                                    JSErrorReport* reportp, va_list ap);
 
@@ -1110,9 +1127,11 @@ extern void ReportIsNotDefined(JSContext* cx, HandleId id);
 /*
  * Report an attempt to access the property of a null or undefined value (v).
  */
-extern void ReportIsNullOrUndefined(JSContext* cx, int spindex, HandleValue v);
-
-extern void ReportMissingArg(JSContext* cx, js::HandleValue v, unsigned arg);
+extern void ReportIsNullOrUndefinedForPropertyAccess(JSContext* cx,
+                                                     HandleValue v, int vIndex);
+extern void ReportIsNullOrUndefinedForPropertyAccess(JSContext* cx,
+                                                     HandleValue v, int vIndex,
+                                                     HandleId key);
 
 /*
  * Report error using js_DecompileValueGenerator(cx, spindex, v, fallback) as
@@ -1234,8 +1253,8 @@ class MOZ_RAII AutoKeepAtoms {
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
  public:
-  explicit inline AutoKeepAtoms(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
-  inline ~AutoKeepAtoms();
+  explicit AutoKeepAtoms(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM);
+  ~AutoKeepAtoms();
 };
 
 class MOZ_RAII AutoNoteDebuggerEvaluationWithOnNativeCallHook {
@@ -1310,30 +1329,51 @@ class MOZ_RAII AutoSetThreadIsPerformingGC {
   }
 };
 
-// In debug builds, set/reset the GC sweeping flag for the current thread.
-struct MOZ_RAII AutoSetThreadIsSweeping {
+struct MOZ_RAII AutoSetThreadGCUse {
+ protected:
 #ifndef DEBUG
-  explicit AutoSetThreadIsSweeping(Zone* zone = nullptr) {}
+  explicit AutoSetThreadGCUse(JSContext::GCUse use, Zone* sweepZone = nullptr) {
+  }
 #else
-  explicit AutoSetThreadIsSweeping(Zone* zone = nullptr)
-      : cx(TlsContext.get()),
-        prevState(cx->gcSweeping),
-        prevZone(cx->gcSweepingZone) {
-    cx->gcSweeping = true;
-    cx->gcSweepingZone = zone;
+  explicit AutoSetThreadGCUse(JSContext::GCUse use, Zone* sweepZone = nullptr)
+      : cx(TlsContext.get()), prevUse(cx->gcUse), prevZone(cx->gcSweepZone) {
+    MOZ_ASSERT_IF(sweepZone, use == JSContext::GCUse::Sweeping);
+    cx->gcUse = use;
+    cx->gcSweepZone = sweepZone;
   }
 
-  ~AutoSetThreadIsSweeping() {
-    cx->gcSweeping = prevState;
-    cx->gcSweepingZone = prevZone;
-    MOZ_ASSERT_IF(!cx->gcSweeping, !cx->gcSweepingZone);
+  ~AutoSetThreadGCUse() {
+    cx->gcUse = prevUse;
+    cx->gcSweepZone = prevZone;
+    MOZ_ASSERT_IF(cx->gcUse == JSContext::GCUse::None, !cx->gcSweepZone);
   }
 
  private:
   JSContext* cx;
-  bool prevState;
+  JSContext::GCUse prevUse;
   JS::Zone* prevZone;
 #endif
+};
+
+// In debug builds, update the context state to indicate that the current thread
+// is being used for GC marking.
+struct MOZ_RAII AutoSetThreadIsMarking : public AutoSetThreadGCUse {
+  explicit AutoSetThreadIsMarking()
+      : AutoSetThreadGCUse(JSContext::GCUse::Marking) {}
+};
+
+// In debug builds, update the context state to indicate that the current thread
+// is being used for GC sweeping.
+struct MOZ_RAII AutoSetThreadIsSweeping : public AutoSetThreadGCUse {
+  explicit AutoSetThreadIsSweeping(Zone* zone = nullptr)
+      : AutoSetThreadGCUse(JSContext::GCUse::Sweeping, zone) {}
+};
+
+// In debug builds, update the context state to indicate that the current thread
+// is being used for GC finalization.
+struct MOZ_RAII AutoSetThreadIsFinalizing : public AutoSetThreadGCUse {
+  explicit AutoSetThreadIsFinalizing()
+      : AutoSetThreadGCUse(JSContext::GCUse::Finalizing) {}
 };
 
 // Note that this class does not suppress buffer allocation/reallocation in the

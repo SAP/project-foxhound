@@ -19,6 +19,7 @@
 #include "SVGTextFrame.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 using namespace mozilla::image;
 
 NS_QUERYFRAME_HEAD(nsSVGContainerFrame)
@@ -415,7 +416,7 @@ gfxMatrix nsSVGDisplayContainerFrame::GetCanvasTM() {
 
     gfxMatrix tm = content->PrependLocalTransformsTo(parent->GetCanvasTM());
 
-    mCanvasTM = new gfxMatrix(tm);
+    mCanvasTM = MakeUnique<gfxMatrix>(tm);
   }
 
   return *mCanvasTM;

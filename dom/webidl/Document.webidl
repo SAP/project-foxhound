@@ -23,6 +23,7 @@ interface URI;
 interface nsIDocShell;
 interface nsILoadGroup;
 interface nsIReferrerInfo;
+interface nsIPermissionDelegateHandler;
 interface XULCommandDispatcher;
 
 enum VisibilityState { "hidden", "visible" };
@@ -196,7 +197,7 @@ partial interface Document {
    * True if this document is synthetic : stand alone image, video, audio file,
    * etc.
    */
-  [Func="IsChromeOrXBLOrUAWidget"] readonly attribute boolean mozSyntheticDocument;
+  [Func="IsChromeOrUAWidget"] readonly attribute boolean mozSyntheticDocument;
   /**
    * Returns the script element whose script is currently being processed.
    *
@@ -287,24 +288,22 @@ partial interface Document {
 partial interface Document {
   // Note: Per spec the 'S' in these two is lowercase, but the "Moz"
   // versions have it uppercase.
-  [LenientSetter, Unscopable, Func="Document::IsUnprefixedFullscreenEnabled"]
+  [LenientSetter, Unscopable]
   readonly attribute boolean fullscreen;
   [BinaryName="fullscreen"]
   readonly attribute boolean mozFullScreen;
-  [LenientSetter, Func="Document::IsUnprefixedFullscreenEnabled", NeedsCallerType]
+  [LenientSetter, NeedsCallerType]
   readonly attribute boolean fullscreenEnabled;
   [BinaryName="fullscreenEnabled", NeedsCallerType]
   readonly attribute boolean mozFullScreenEnabled;
 
-  [Throws, Func="Document::IsUnprefixedFullscreenEnabled"]
+  [Throws]
   Promise<void> exitFullscreen();
   [Throws, BinaryName="exitFullscreen"]
   Promise<void> mozCancelFullScreen();
 
   // Events handlers
-  [Func="Document::IsUnprefixedFullscreenEnabled"]
   attribute EventHandler onfullscreenchange;
-  [Func="Document::IsUnprefixedFullscreenEnabled"]
   attribute EventHandler onfullscreenerror;
 };
 
@@ -318,12 +317,14 @@ partial interface Document {
   attribute EventHandler onpointerlockerror;
 };
 
+// Mozilla-internal document extensions specific to error pages.
 partial interface Document {
+  [Func="Document::CallerIsTrustedAboutCertError"]
+  Promise<any> addCertException(boolean isTemporary);
+
   [Func="Document::CallerIsTrustedAboutCertError", Throws]
   FailedCertSecurityInfo getFailedCertSecurityInfo();
-};
 
-partial interface Document {
   [Func="Document::CallerIsTrustedAboutNetError", Throws]
   NetErrorInfo getNetErrorInfo();
 };
@@ -367,8 +368,6 @@ partial interface Document {
 partial interface Document {
   [Func="Document::AreWebAnimationsTimelinesEnabled"]
   readonly attribute DocumentTimeline timeline;
-  [Func="Document::IsWebAnimationsGetAnimationsEnabled"]
-  sequence<Animation> getAnimations();
 };
 
 // https://svgwg.org/svg2-draft/struct.html#InterfaceDocumentExtensions
@@ -379,17 +378,8 @@ partial interface Document {
 
 //  Mozilla extensions of various sorts
 partial interface Document {
-  // XBL support.  Wish we could make these [ChromeOnly], but
-  // that would likely break bindings running with the page principal.
-  [Func="IsChromeOrXBL"]
-  NodeList? getAnonymousNodes(Element elt);
-  [Func="IsChromeOrXBL"]
-  Element? getAnonymousElementByAttribute(Element elt, DOMString attrName,
-                                          DOMString attrValue);
-  [Func="IsChromeOrXBL"]
-  Element? getBindingParent(Node node);
   // Creates a new XUL element regardless of the document's default type.
-  [CEReactions, NewObject, Throws, Func="IsChromeOrXBL"]
+  [ChromeOnly, CEReactions, NewObject, Throws]
   Element createXULElement(DOMString localName, optional (ElementCreationOptions or DOMString) options = {});
   // Wether the document was loaded using a nsXULPrototypeDocument.
   [ChromeOnly]
@@ -585,14 +575,6 @@ partial interface Document {
   void setSuppressedEventListener(EventListener? aListener);
 };
 
-// Extension to give chrome and XBL JS the ability to determine whether
-// the document is sandboxed without permission to run scripts
-// and whether inline scripts are blocked by the document's CSP.
-partial interface Document {
-  [Func="IsChromeOrXBL"] readonly attribute boolean hasScriptsBlockedBySandbox;
-  [Func="IsChromeOrXBL"] readonly attribute boolean inlineScriptAllowedByCSP;
-};
-
 // Allows frontend code to query a CSP which needs to be passed for a
 // new load into docshell. Further, allows to query the CSP in JSON
 // format for testing purposes.
@@ -631,20 +613,6 @@ Document includes DocumentOrShadowRoot;
 partial interface Document {
     [SameObject, Pref="dom.security.featurePolicy.webidl.enabled"]
     readonly attribute FeaturePolicy featurePolicy;
-};
-
-/**
- * Document extensions to support devtools.
- */
-partial interface Document {
-  // Is the Document embedded in a Responsive Design Mode pane. This property
-  // is not propegated to descendant Documents upon settting.
-  [ChromeOnly]
-  attribute boolean inRDMPane;
-  // Extension to give chrome JS the ability to set the window screen
-  // orientation while in RDM.
-  [ChromeOnly]
-  void setRDMPaneOrientation(OrientationType type, float rotationAngle);
 };
 
 // Extension to give chrome JS the ability to specify a non-default keypress
@@ -700,4 +668,10 @@ partial interface Document {
 partial interface Document {
   [ChromeOnly, BinaryName="setUserHasInteracted"]
   void userInteractionForTesting();
+};
+
+// Extension for permission delegation.
+partial interface Document {
+  [ChromeOnly, Pure]
+  readonly attribute nsIPermissionDelegateHandler permDelegateHandler;
 };

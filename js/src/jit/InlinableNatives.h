@@ -78,6 +78,7 @@
   _(RegExpSearcher)                                \
   _(RegExpTester)                                  \
   _(IsRegExpObject)                                \
+  _(IsPossiblyWrappedRegExpObject)                 \
   _(RegExpPrototypeOptimizable)                    \
   _(RegExpInstanceOptimizable)                     \
   _(GetFirstDollarIndex)                           \
@@ -152,15 +153,7 @@
   _(IntrinsicTypedArrayLength)                     \
   _(IntrinsicPossiblyWrappedTypedArrayLength)      \
   _(IntrinsicTypedArrayByteOffset)                 \
-  _(IntrinsicTypedArrayElementShift)               \
-                                                   \
-  _(IntrinsicObjectIsTypedObject)                  \
-  _(IntrinsicObjectIsTransparentTypedObject)       \
-  _(IntrinsicObjectIsOpaqueTypedObject)            \
-  _(IntrinsicObjectIsTypeDescr)                    \
-  _(IntrinsicTypeDescrIsSimpleType)                \
-  _(IntrinsicTypeDescrIsArrayType)                 \
-  _(IntrinsicSetTypedObjectOffset)
+  _(IntrinsicTypedArrayElementShift)
 
 struct JSJitInfo;
 

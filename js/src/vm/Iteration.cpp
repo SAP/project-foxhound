@@ -20,7 +20,6 @@
 #include <new>
 
 #include "jstypes.h"
-#include "jsutil.h"
 
 #include "builtin/Array.h"
 #include "builtin/SelfHostingDefines.h"
@@ -29,6 +28,7 @@
 #include "gc/Marking.h"
 #include "js/PropertySpec.h"
 #include "js/Proxy.h"
+#include "util/Poison.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
@@ -53,7 +53,7 @@ using mozilla::DebugOnly;
 using mozilla::Maybe;
 using mozilla::PodCopy;
 
-typedef Rooted<PropertyIteratorObject*> RootedPropertyIteratorObject;
+using RootedPropertyIteratorObject = Rooted<PropertyIteratorObject*>;
 
 static const gc::AllocKind ITERATOR_FINALIZE_KIND =
     gc::AllocKind::OBJECT2_BACKGROUND;
@@ -273,7 +273,7 @@ static bool EnumerateNativeProperties(JSContext* cx, HandleNativeObject pobj,
         return false;
       }
     }
-    ::Reverse(props.begin() + initialLength, props.end());
+    std::reverse(props.begin() + initialLength, props.end());
 
     enumerateSymbols = symbolsFound && (flags & JSITER_SYMBOLS);
   }
@@ -293,7 +293,7 @@ static bool EnumerateNativeProperties(JSContext* cx, HandleNativeObject pobj,
         }
       }
     }
-    ::Reverse(props.begin() + initialLength, props.end());
+    std::reverse(props.begin() + initialLength, props.end());
   }
 
   return true;
@@ -1081,16 +1081,18 @@ void PropertyIteratorObject::finalize(JSFreeOp* fop, JSObject* obj) {
 }
 
 const JSClassOps PropertyIteratorObject::classOps_ = {
-    nullptr,           /* addProperty */
-    nullptr,           /* delProperty */
-    nullptr,           /* enumerate */
-    nullptr,           /* newEnumerate */
-    nullptr,           /* resolve */
-    nullptr,           /* mayResolve */
-    finalize, nullptr, /* call        */
-    nullptr,           /* hasInstance */
-    nullptr,           /* construct   */
-    trace};
+    nullptr,   // addProperty
+    nullptr,   // delProperty
+    nullptr,   // enumerate
+    nullptr,   // newEnumerate
+    nullptr,   // resolve
+    nullptr,   // mayResolve
+    finalize,  // finalize
+    nullptr,   // call
+    nullptr,   // hasInstance
+    nullptr,   // construct
+    trace,     // trace
+};
 
 const JSClass PropertyIteratorObject::class_ = {
     "Iterator", JSCLASS_HAS_PRIVATE | JSCLASS_BACKGROUND_FINALIZE,

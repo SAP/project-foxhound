@@ -12,7 +12,7 @@
 #include "mozilla/FloatingPoint.h"
 
 #include "builtin/intl/CommonFunctions.h"
-#include "builtin/intl/NumberFormat.h"
+#include "builtin/intl/LanguageTag.h"
 #include "builtin/intl/ScopedICUObject.h"
 #include "gc/FreeOp.h"
 #include "js/CharacterEncoding.h"
@@ -36,13 +36,18 @@ using js::intl::IcuLocale;
 /**************** RelativeTimeFormat *****************/
 
 const JSClassOps RelativeTimeFormatObject::classOps_ = {
-    nullptr, /* addProperty */
-    nullptr, /* delProperty */
-    nullptr, /* enumerate */
-    nullptr, /* newEnumerate */
-    nullptr, /* resolve */
-    nullptr, /* mayResolve */
-    RelativeTimeFormatObject::finalize};
+    nullptr,                             // addProperty
+    nullptr,                             // delProperty
+    nullptr,                             // enumerate
+    nullptr,                             // newEnumerate
+    nullptr,                             // resolve
+    nullptr,                             // mayResolve
+    RelativeTimeFormatObject::finalize,  // finalize
+    nullptr,                             // call
+    nullptr,                             // hasInstance
+    nullptr,                             // construct
+    nullptr,                             // trace
+};
 
 const JSClass RelativeTimeFormatObject::class_ = {
     js_Object_str,
@@ -137,6 +142,9 @@ void js::RelativeTimeFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
 
   if (URelativeDateTimeFormatter* rtf =
           obj->as<RelativeTimeFormatObject>().getRelativeDateTimeFormatter()) {
+    intl::RemoveICUCellMemory(fop, obj,
+                              RelativeTimeFormatObject::EstimatedMemoryUse);
+
     ureldatefmt_close(rtf);
   }
 }
@@ -157,7 +165,48 @@ static URelativeDateTimeFormatter* NewURelativeDateTimeFormatter(
   if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
     return nullptr;
   }
-  UniqueChars locale = intl::EncodeLocale(cx, value.toString());
+
+  // ICU expects numberingSystem as a Unicode locale extensions on locale.
+
+  intl::LanguageTag tag(cx);
+  {
+    JSLinearString* locale = value.toString()->ensureLinear(cx);
+    if (!locale) {
+      return nullptr;
+    }
+
+    if (!intl::LanguageTagParser::parse(cx, locale, tag)) {
+      return nullptr;
+    }
+  }
+
+  JS::RootedVector<intl::UnicodeExtensionKeyword> keywords(cx);
+
+  if (!GetProperty(cx, internals, internals, cx->names().numberingSystem,
+                   &value)) {
+    return nullptr;
+  }
+
+  {
+    JSLinearString* numberingSystem = value.toString()->ensureLinear(cx);
+    if (!numberingSystem) {
+      return nullptr;
+    }
+
+    if (!keywords.emplaceBack("nu", numberingSystem)) {
+      return nullptr;
+    }
+  }
+
+  // |ApplyUnicodeExtensionToTag| applies the new keywords to the front of the
+  // Unicode extension subtag. We're then relying on ICU to follow RFC 6067,
+  // which states that any trailing keywords using the same key should be
+  // ignored.
+  if (!intl::ApplyUnicodeExtensionToTag(cx, tag, keywords)) {
+    return nullptr;
+  }
+
+  UniqueChars locale = tag.toStringZ(cx);
   if (!locale) {
     return nullptr;
   }
@@ -289,10 +338,8 @@ static bool intl_FormatToPartsRelativeTime(JSContext* cx,
       MOZ_CRASH("unexpected relative time unit");
   }
 
-  Value tval = DoubleValue(t);
-  return intl::FormattedNumberToParts(cx, formattedValue,
-                                      HandleValue::fromMarkedLocation(&tval),
-                                      unitType, result);
+  return intl::FormattedRelativeTimeToParts(cx, formattedValue, t, unitType,
+                                            result);
 }
 #endif
 
@@ -323,6 +370,9 @@ bool js::intl_FormatRelativeTime(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
     relativeTimeFormat->setRelativeDateTimeFormatter(rtf);
+
+    intl::AddICUCellMemory(relativeTimeFormat,
+                           RelativeTimeFormatObject::EstimatedMemoryUse);
   }
 
   URelativeDateTimeUnit relDateTimeUnit;

@@ -22,8 +22,8 @@ class RenderCompositorEGL : public RenderCompositor {
   explicit RenderCompositorEGL(RefPtr<widget::CompositorWidget> aWidget);
   virtual ~RenderCompositorEGL();
 
-  bool BeginFrame(layers::NativeLayer* aNativeLayer) override;
-  void EndFrame() override;
+  bool BeginFrame() override;
+  RenderedFrameId EndFrame(const nsTArray<DeviceIntRect>& aDirtyRects) final;
   void Pause() override;
   bool Resume() override;
 
@@ -35,12 +35,18 @@ class RenderCompositorEGL : public RenderCompositor {
 
   LayoutDeviceIntSize GetBufferSize() override;
 
+  CompositorCapabilities GetCompositorCapabilities() override;
+
  protected:
   EGLSurface CreateEGLSurface();
 
   void DestroyEGLSurface();
 
   EGLSurface mEGLSurface;
+#ifdef MOZ_WIDGET_ANDROID
+  // On android we must track our own surface size.
+  LayoutDeviceIntSize mEGLSurfaceSize;
+#endif
 };
 
 }  // namespace wr

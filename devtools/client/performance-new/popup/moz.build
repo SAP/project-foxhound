@@ -6,7 +6,8 @@
 DevToolsModules(
     'background.jsm.js',
     'menu-button.jsm.js',
+    'panel.jsm.js',
 )
 
 with Files('**'):
-    BUG_COMPONENT = ('Core', 'Gecko Profiler')
+    BUG_COMPONENT = ('DevTools', 'Performance Tools (Profiler/Timeline)')

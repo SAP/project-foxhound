@@ -85,7 +85,7 @@ manifest-view-header = App Manifest
 
 # Header for the Manifest page when there's no manifest to inspect
 # The link will open https://developer.mozilla.org/en-US/docs/Web/Manifest
-manifest-empty-intro = You need to add a web app Manifest to inspect it here. <a>Learn more</a>
+manifest-empty-intro = You need to add a web app manifest to inspect it here. <a>Learn more</a>
 
 # Header for the Errors and Warnings section of Manifest inspection displayed in the application panel.
 manifest-item-warnings = Errors and Warnings
@@ -105,8 +105,13 @@ manifest-loading = Loading manifest…
 # Text displayed when the manifest has been successfully loaded
 manifest-loaded-ok = Manifest loaded.
 
-# Text displayed when there has been an error while trying to load the manifest
+# Text displayed as a caption when there has been an error while trying to
+# load the manifest
 manifest-loaded-error = There was an error while loading the manifest:
+
+# Text displayed as an error when there has been a Firefox DevTools error while
+# trying to load the manifest
+manifest-loaded-devtools-error = Firefox DevTools error
 
 # Text displayed when the page has no manifest available
 manifest-non-existing = No manifest found to inspect.

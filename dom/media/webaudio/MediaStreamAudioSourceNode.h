@@ -91,7 +91,7 @@ class MediaStreamAudioSourceNode
   // From DOMMediaStream::TrackListener.
   void NotifyTrackAdded(const RefPtr<MediaStreamTrack>& aTrack) override;
   void NotifyTrackRemoved(const RefPtr<MediaStreamTrack>& aTrack) override;
-  void NotifyActive() override;
+  void NotifyAudible() override;
 
   // From PrincipalChangeObserver<MediaStreamTrack>.
   void PrincipalChanged(MediaStreamTrack* aMediaStreamTrack) override;
@@ -111,7 +111,7 @@ class MediaStreamAudioSourceNode
  protected:
   MediaStreamAudioSourceNode(AudioContext* aContext,
                              TrackChangeBehavior aBehavior);
-  void Init(DOMMediaStream* aMediaStream, ErrorResult& aRv);
+  void Init(DOMMediaStream& aMediaStream, ErrorResult& aRv);
   virtual void Destroy();
   virtual ~MediaStreamAudioSourceNode();
 

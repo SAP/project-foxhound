@@ -95,10 +95,10 @@ function do_get_rebuild_backup_file(profile) {
 }
 
 function do_corrupt_db(file) {
-  // Sanity check: the database size should be larger than 450k, since we've
+  // Sanity check: the database size should be larger than 320k, since we've
   // written about 460k of data. If it's not, let's make it obvious now.
   let size = file.fileSize;
-  Assert.ok(size > 450e3);
+  Assert.ok(size > 320e3);
 
   // Corrupt the database by writing bad data to the end of the file. We
   // assume that the important metadata -- table structure etc -- is stored
@@ -113,7 +113,7 @@ function do_corrupt_db(file) {
   );
   ostream.init(file, 2, -1, 0);
   let sstream = ostream.QueryInterface(Ci.nsISeekableStream);
-  let n = size - 450e3 + 20e3;
+  let n = size - 320e3 + 20e3;
   sstream.seek(Ci.nsISeekableStream.NS_SEEK_SET, size - n);
   for (let i = 0; i < n; ++i) {
     ostream.write("a", 1);
@@ -128,35 +128,20 @@ function do_corrupt_db(file) {
 function* run_test_1(generator) {
   // Load the profile and populate it.
   let uri = NetUtil.newURI("http://foo.com/");
-  Services.cookies.setCookieString(uri, null, "oh=hai; max-age=1000", null);
+  Services.cookies.setCookieString(uri, "oh=hai; max-age=1000", null);
 
   // Close the profile.
   do_close_profile(sub_generator);
   yield;
 
   // Open a database connection now, before we load the profile and begin
-  // asynchronous write operations. In order to tell when the async delete
-  // statement has completed, we do something tricky: open a schema 2 connection
-  // and add a cookie with null baseDomain. We can then wait until we see it
-  // deleted in the new database.
-  let db2 = new CookieDatabaseConnection(do_get_cookie_file(profile), 2);
-  db2.db.executeSimpleSQL("INSERT INTO moz_cookies (baseDomain) VALUES (NULL)");
-  db2.close();
-  let db = new CookieDatabaseConnection(do_get_cookie_file(profile), 4);
-  Assert.equal(do_count_cookies_in_db(db.db), 2);
+  // asynchronous write operations.
+  let db = new CookieDatabaseConnection(do_get_cookie_file(profile), 11);
+  Assert.equal(do_count_cookies_in_db(db.db), 1);
 
   // Load the profile, and wait for async read completion...
   do_load_profile(sub_generator);
   yield;
-
-  // ... and the DELETE statement to finish.
-  while (do_count_cookies_in_db(db.db) == 2) {
-    executeSoon(function() {
-      do_run_generator(sub_generator);
-    });
-    yield;
-  }
-  Assert.equal(do_count_cookies_in_db(db.db), 1);
 
   // Insert a row.
   db.insertCookie(cookie);
@@ -229,11 +214,10 @@ function* run_test_1(generator) {
   do_load_profile();
 
   Assert.equal(Services.cookiemgr.countCookiesFromHost("foo.com"), 1);
-  let enumerator = Services.cookiemgr.getCookiesFromHost(cookie.host, {});
-  Assert.ok(enumerator.hasMoreElements());
-  let dbcookie = enumerator.getNext().QueryInterface(Ci.nsICookie);
+  let cookies = Services.cookiemgr.getCookiesFromHost(cookie.host, {});
+  Assert.equal(cookies.length, 1);
+  let dbcookie = cookies[0];
   Assert.equal(dbcookie.value, "hallo");
-  Assert.ok(!enumerator.hasMoreElements());
 
   // Close the profile.
   do_close_profile(sub_generator);
@@ -253,7 +237,7 @@ function* run_test_2(generator) {
   Services.cookies.runInTransaction(_ => {
     for (let i = 0; i < 3000; ++i) {
       let uri = NetUtil.newURI("http://" + i + ".com/");
-      Services.cookies.setCookieString(uri, null, "oh=hai; max-age=1000", null);
+      Services.cookies.setCookieString(uri, "oh=hai; max-age=1000", null);
     }
   });
 
@@ -313,7 +297,6 @@ function* run_test_3(generator) {
       let uri = NetUtil.newURI("http://hither.com/");
       Services.cookies.setCookieString(
         uri,
-        null,
         "oh" + i + "=hai; max-age=1000",
         null
       );
@@ -322,7 +305,6 @@ function* run_test_3(generator) {
       let uri = NetUtil.newURI("http://haithur.com/");
       Services.cookies.setCookieString(
         uri,
-        null,
         "oh" + i + "=hai; max-age=1000",
         null
       );
@@ -395,7 +377,7 @@ function* run_test_4(generator) {
   Services.cookies.runInTransaction(_ => {
     for (let i = 0; i < 3000; ++i) {
       let uri = NetUtil.newURI("http://" + i + ".com/");
-      Services.cookies.setCookieString(uri, null, "oh=hai; max-age=1000", null);
+      Services.cookies.setCookieString(uri, "oh=hai; max-age=1000", null);
     }
   });
 
@@ -419,7 +401,7 @@ function* run_test_4(generator) {
   // Queue up an INSERT for the same base domain. This should also go into
   // memory and be written out during database rebuild.
   let uri = NetUtil.newURI("http://0.com/");
-  Services.cookies.setCookieString(uri, null, "oh2=hai; max-age=1000", null);
+  Services.cookies.setCookieString(uri, "oh2=hai; max-age=1000", null);
 
   // At this point, the cookies should still be in memory.
   Assert.equal(Services.cookiemgr.countCookiesFromHost("0.com"), 1);
@@ -455,15 +437,10 @@ function* run_test_5(generator) {
   do_load_profile();
   Services.cookies.runInTransaction(_ => {
     let uri = NetUtil.newURI("http://bar.com/");
-    Services.cookies.setCookieString(
-      uri,
-      null,
-      "oh=hai; path=/; max-age=1000",
-      null
-    );
+    Services.cookies.setCookieString(uri, "oh=hai; path=/; max-age=1000", null);
     for (let i = 0; i < 3000; ++i) {
       let uri = NetUtil.newURI("http://" + i + ".com/");
-      Services.cookies.setCookieString(uri, null, "oh=hai; max-age=1000", null);
+      Services.cookies.setCookieString(uri, "oh=hai; max-age=1000", null);
     }
   });
 
@@ -491,7 +468,7 @@ function* run_test_5(generator) {
 
   // Open a database connection, and write a row that will trigger a constraint
   // violation.
-  let db = new CookieDatabaseConnection(do_get_cookie_file(profile), 4);
+  let db = new CookieDatabaseConnection(do_get_cookie_file(profile), 11);
   db.insertCookie(cookie);
   Assert.equal(do_count_cookies_in_db(db.db, "bar.com"), 1);
   Assert.equal(do_count_cookies_in_db(db.db), 1);

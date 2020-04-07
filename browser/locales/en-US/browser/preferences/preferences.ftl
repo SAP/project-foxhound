@@ -9,12 +9,11 @@ do-not-track-option-default-content-blocking-known =
 do-not-track-option-always =
     .label = Always
 
-pref-page =
-    .title =
-        { PLATFORM() ->
-            [windows] Options
-           *[other] Preferences
-        }
+pref-page-title =
+    { PLATFORM() ->
+        [windows] Options
+       *[other] Preferences
+    }
 
 # This is used to determine the width of the search field in about:preferences,
 # in order to make the entire placeholder string visible
@@ -246,6 +245,19 @@ colors-settings =
     .label = Colors…
     .accesskey = C
 
+# Zoom is a noun, and the message is used as header for a group of options
+preferences-zoom-header = Zoom
+
+preferences-default-zoom = Default zoom
+    .accesskey = z
+
+preferences-default-zoom-value =
+    .label = { $percentage }%
+
+preferences-zoom-text-only =
+    .label = Zoom text only
+    .accesskey = t
+
 language-header = Language
 
 choose-language-description = Choose your preferred language for displaying pages
@@ -429,10 +441,6 @@ update-application-warning-cross-user-setting = This setting will apply to all W
 update-application-use-service =
     .label = Use a background service to install updates
     .accesskey = b
-
-update-enable-search-update =
-    .label = Automatically update search engines
-    .accesskey = e
 
 update-setting-write-failure-title = Error saving Update preferences
 
@@ -694,11 +702,20 @@ search-keyword-warning-bookmark = You have chosen a keyword that is currently in
 
 ## Containers Section
 
-containers-back-link = « Go Back
+containers-back-button =
+    .aria-label =
+      { PLATFORM() ->
+          [windows] Back to Options
+         *[other] Back to Preferences
+      }
 containers-header = Container Tabs
 containers-add-button =
     .label = Add New Container
     .accesskey = A
+
+containers-new-tab-check =
+    .label = Select a container for each new tab
+    .accesskey = S
 
 containers-preferences-button =
     .label = Preferences
@@ -711,13 +728,9 @@ containers-remove-button =
 sync-signedout-caption = Take Your Web With You
 sync-signedout-description = Synchronize your bookmarks, history, tabs, passwords, add-ons, and preferences across all your devices.
 
-sync-signedout-account-title = Connect with a { -fxaccount-brand-name }
-sync-signedout-account-create = Don’t have an account? Get started
-    .accesskey = c
-
-sync-signedout-account-signin =
-    .label = Sign In…
-    .accesskey = I
+sync-signedout-account-signin2 =
+    .label = Sign in to { -sync-brand-short-name }…
+    .accesskey = i
 
 # This message contains two links and two icon images.
 #   `<img data-l10n-name="android-icon"/>` - Android logo icon
@@ -868,9 +881,11 @@ sync-connect-another-device = Connect another device
 
 privacy-header = Browser Privacy
 
-## Privacy Section - Forms
+## Privacy Section - Logins and Passwords
 
 logins-header = Logins and Passwords
+
+# Checkbox to control whether UI is shown to users to save or fill logins/passwords.
 forms-ask-to-save-logins =
     .label = Ask to save logins and passwords for websites
     .accesskey = r
@@ -884,6 +899,8 @@ forms-breach-alerts =
     .label = Show alerts about passwords for breached websites
     .accesskey = b
 forms-breach-alerts-learn-more-link = Learn more
+
+# Checkbox which controls filling saved logins into fields automatically when they appear, in some cases without user interaction.
 forms-fill-logins-and-passwords =
     .label = Autofill logins and passwords
     .accesskey = i
@@ -1113,6 +1130,11 @@ permissions-location-settings =
     .label = Settings…
     .accesskey = t
 
+permissions-xr = Virtual Reality
+permissions-xr-settings =
+    .label = Settings…
+    .accesskey = t
+
 permissions-camera = Camera
 permissions-camera-settings =
     .label = Settings…
@@ -1167,6 +1189,9 @@ collection-header = { -brand-short-name } Data Collection and Use
 
 collection-description = We strive to provide you with choices and collect only what we need to provide and improve { -brand-short-name } for everyone. We always ask permission before receiving personal information.
 collection-privacy-notice = Privacy Notice
+
+collection-health-report-telemetry-disabled = You’re no longer allowing { -vendor-short-name } to capture technical and interaction data. All past data will be deleted within 30 days. 
+collection-health-report-telemetry-disabled-link = Learn more
 
 collection-health-report =
     .label = Allow { -brand-short-name } to send technical and interaction data to { -vendor-short-name }

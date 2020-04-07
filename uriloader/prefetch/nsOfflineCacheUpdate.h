@@ -17,11 +17,9 @@
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsIApplicationCache.h"
-#include "nsIRequestObserver.h"
 #include "nsIRunnable.h"
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
-#include "nsIWebProgressListener.h"
 #include "nsClassHashtable.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -35,7 +33,7 @@
 namespace mozilla {
 
 namespace net {
-class CookieSettingsArgs;
+class CookieJarSettingsArgs;
 }
 
 }  // namespace mozilla
@@ -223,10 +221,10 @@ class nsOfflineCacheUpdate final : public nsIOfflineCacheUpdate,
 
   virtual nsresult UpdateFinished(nsOfflineCacheUpdate* aUpdate) override;
 
-  nsICookieSettings* CookieSettings() const { return mCookieSettings; }
-  void SetCookieSettings(nsICookieSettings* aCookieSettings);
-  void SetCookieSettingsArgs(
-      const mozilla::net::CookieSettingsArgs& aCookieSettingsArgs);
+  nsICookieJarSettings* CookieJarSettings() const { return mCookieJarSettings; }
+  void SetCookieJarSettings(nsICookieJarSettings* aCookieJarSettings);
+  void SetCookieJarSettingsArgs(
+      const mozilla::net::CookieJarSettingsArgs& aCookieJarSettingsArgs);
 
  protected:
   ~nsOfflineCacheUpdate();
@@ -284,7 +282,7 @@ class nsOfflineCacheUpdate final : public nsIOfflineCacheUpdate,
   nsCOMPtr<nsIURI> mDocumentURI;
   nsCOMPtr<nsIPrincipal> mLoadingPrincipal;
   nsCOMPtr<nsIFile> mCustomProfileDir;
-  nsCOMPtr<nsICookieSettings> mCookieSettings;
+  nsCOMPtr<nsICookieJarSettings> mCookieJarSettings;
 
   nsCOMPtr<nsIObserver> mUpdateAvailableObserver;
 

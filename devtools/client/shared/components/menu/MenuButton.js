@@ -52,11 +52,15 @@ const omit = (obj, fields) => {
 class MenuButton extends PureComponent {
   static get propTypes() {
     return {
-      // The document to be used for rendering the menu popup.
-      doc: PropTypes.object.isRequired,
+      // The toolbox document that will be used for rendering the menu popup.
+      toolboxDoc: PropTypes.object.isRequired,
 
       // A text content for the button.
       label: PropTypes.string,
+
+      // URL of the icon to associate with the MenuButton. (Optional)
+      // e.g. chrome://devtools/skin/image/foo.svg
+      icon: PropTypes.string,
 
       // An optional ID to assign to the menu's container tooltip object.
       menuId: PropTypes.string,
@@ -104,7 +108,7 @@ class MenuButton extends PureComponent {
       expanded: false,
       // In tests, initialize the menu immediately.
       isMenuInitialized: flags.testing || false,
-      win: props.doc.defaultView.top,
+      win: props.toolboxDoc.defaultView.top,
     };
     this.ignoreNextClick = false;
 
@@ -132,9 +136,9 @@ class MenuButton extends PureComponent {
     // If the window changes, we need to regenerate the HTMLTooltip or else the
     // XUL wrapper element will appear above (in terms of z-index) the old
     // window, and not the new.
-    const win = nextProps.doc.defaultView.top;
+    const win = nextProps.toolboxDoc.defaultView.top;
     if (
-      nextProps.doc !== this.props.doc ||
+      nextProps.toolboxDoc !== this.props.toolboxDoc ||
       this.state.win !== win ||
       nextProps.menuId !== this.props.menuId
     ) {
@@ -168,7 +172,7 @@ class MenuButton extends PureComponent {
       tooltipProps.id = this.props.menuId;
     }
 
-    this.tooltip = new HTMLTooltip(this.props.doc, tooltipProps);
+    this.tooltip = new HTMLTooltip(this.props.toolboxDoc, tooltipProps);
     this.tooltip.on("hidden", this.onHidden);
   }
 
@@ -223,7 +227,7 @@ class MenuButton extends PureComponent {
       return;
     }
 
-    this.tooltip.updateContainerBounds(this.buttonRef.current, {
+    this.tooltip.show(this.buttonRef.current, {
       position: this.props.menuPosition,
       y: this.props.menuOffset,
     });
@@ -361,7 +365,8 @@ class MenuButton extends PureComponent {
     }
 
     const isButtonFocussed =
-      this.props.doc && this.props.doc.activeElement === this.buttonRef.current;
+      this.props.toolboxDoc &&
+      this.props.toolboxDoc.activeElement === this.buttonRef.current;
 
     switch (e.key) {
       case "Escape":
@@ -415,6 +420,16 @@ class MenuButton extends PureComponent {
 
     if (this.props.menuId) {
       buttonProps["aria-controls"] = this.props.menuId;
+    }
+
+    if (this.props.icon) {
+      const iconClass = "menu-button--iconic";
+      buttonProps.className = buttonProps.className
+        ? `${buttonProps.className} ${iconClass}`
+        : iconClass;
+      buttonProps.style = {
+        "--menuitem-icon-image": "url(" + this.props.icon + ")",
+      };
     }
 
     if (this.state.isMenuInitialized) {

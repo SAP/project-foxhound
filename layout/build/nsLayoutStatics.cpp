@@ -19,7 +19,6 @@
 #include "nsContentUtils.h"
 #include "nsCSSAnonBoxes.h"
 #include "mozilla/css/ErrorReporter.h"
-#include "nsCSSKeywords.h"
 #include "nsCSSProps.h"
 #include "nsCSSPseudoElements.h"
 #include "nsCSSRendering.h"
@@ -31,17 +30,13 @@
 #include "nsGlobalWindow.h"
 #include "nsGkAtoms.h"
 #include "nsImageFrame.h"
-#include "nsLayoutStylesheetCache.h"
-#include "nsRange.h"
+#include "mozilla/GlobalStyleSheetCache.h"
 #include "nsRegion.h"
 #include "nsRepeatService.h"
 #include "nsFloatManager.h"
 #include "nsSprocketLayout.h"
 #include "nsStackLayout.h"
 #include "nsTextControlFrame.h"
-#ifdef MOZ_XBL
-#  include "nsXBLService.h"
-#endif
 #include "txMozillaXSLTProcessor.h"
 #include "nsTreeSanitizer.h"
 #include "nsCellMap.h"
@@ -72,6 +67,7 @@
 
 #include "AudioChannelService.h"
 #include "mozilla/dom/PromiseDebugging.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
 
 #ifdef MOZ_XUL
 #  include "nsXULPopupManager.h"
@@ -109,11 +105,13 @@
 #include "DecoderDoctorLogger.h"
 #include "MediaDecoder.h"
 #include "mozilla/ClearSiteData.h"
+#include "mozilla/dom/DOMSecurityManager.h"
 #include "mozilla/EditorController.h"
 #include "mozilla/Fuzzyfox.h"
 #include "mozilla/HTMLEditorController.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StaticPresData.h"
+#include "mozilla/dom/AbstractRange.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/IPCBlobInputStreamStorage.h"
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
@@ -152,7 +150,6 @@ nsresult nsLayoutStatics::Initialize() {
 
   ContentParent::StartUp();
 
-  nsCSSKeywords::AddRefTable();
   nsCSSProps::AddRefTable();
   nsColorNames::AddRefTable();
 
@@ -163,14 +160,10 @@ nsresult nsLayoutStatics::Initialize() {
 #endif
 
   StartupJSEnvironment();
-  nsJSContext::EnsureStatics();
 
   nsGlobalWindowInner::Init();
   nsGlobalWindowOuter::Init();
   Navigator::Init();
-#ifdef MOZ_XBL
-  nsXBLService::Init();
-#endif
 
   rv = nsContentUtils::Init();
   if (NS_FAILED(rv)) {
@@ -178,11 +171,7 @@ nsresult nsLayoutStatics::Initialize() {
     return rv;
   }
 
-  rv = nsAttrValue::Init();
-  if (NS_FAILED(rv)) {
-    NS_ERROR("Could not initialize nsAttrValue");
-    return rv;
-  }
+  nsAttrValue::Init();
 
   rv = nsTextFragment::Init();
   if (NS_FAILED(rv)) {
@@ -262,9 +251,6 @@ nsresult nsLayoutStatics::Initialize() {
 
   nsPermissionManager::Startup();
 
-  nsCookieService::AppClearDataObserverInit();
-  nsApplicationCacheService::AppClearDataObserverInit();
-
 #ifdef MOZ_XUL
   nsMenuBarListener::InitializeStatics();
 #endif
@@ -308,6 +294,8 @@ nsresult nsLayoutStatics::Initialize() {
 
   ClearSiteData::Initialize();
 
+  DOMSecurityManager::Initialize();
+
   // Reporting API.
   ReportingHeader::Initialize();
 
@@ -330,6 +318,7 @@ void nsLayoutStatics::Shutdown() {
     URLExtraData::ReleaseDummy();
   }
 
+  mozilla::dom::AbstractRange::Shutdown();
   Document::Shutdown();
   nsMessageManagerScriptExecutor::Shutdown();
   nsFocusManager::Shutdown();
@@ -357,10 +346,8 @@ void nsLayoutStatics::Shutdown() {
   // Release all of our atoms
   nsColorNames::ReleaseTable();
   nsCSSProps::ReleaseTable();
-  nsCSSKeywords::ReleaseTable();
   nsRepeatService::Shutdown();
   nsStackLayout::Shutdown();
-  nsBox::Shutdown();
 
 #ifdef MOZ_XUL
   nsXULContentUtils::Finish();
@@ -380,15 +367,13 @@ void nsLayoutStatics::Shutdown() {
 
   nsAttrValue::Shutdown();
   nsContentUtils::Shutdown();
-  nsLayoutStylesheetCache::Shutdown();
+  nsMixedContentBlocker::Shutdown();
+  GlobalStyleSheetCache::Shutdown();
 
   ShutdownJSEnvironment();
   nsGlobalWindowInner::ShutDown();
   nsGlobalWindowOuter::ShutDown();
   nsListControlFrame::Shutdown();
-#ifdef MOZ_XBL
-  nsXBLService::Shutdown();
-#endif
   FrameLayerBuilder::Shutdown();
 
   CubebUtils::ShutdownLibrary();
@@ -431,6 +416,4 @@ void nsLayoutStatics::Shutdown() {
   css::ImageLoader::Shutdown();
 
   mozilla::net::UrlClassifierFeatureFactory::Shutdown();
-
-  gfxUserFontEntry::Shutdown();
 }

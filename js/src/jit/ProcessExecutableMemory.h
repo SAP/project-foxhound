@@ -9,7 +9,7 @@
 
 #include "mozilla/Attributes.h"
 
-#include "jsutil.h"
+#include "util/Poison.h"
 
 namespace js {
 namespace jit {

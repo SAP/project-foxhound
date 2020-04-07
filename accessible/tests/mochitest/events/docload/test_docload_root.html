@@ -36,9 +36,14 @@
         }
       }
 
-      this.eventSeq = [ new invokerChecker(EVENT_REORDER, gRootAcc) ];
+      this.eventSeq = [
+        new invokerChecker(EVENT_REORDER, gRootAcc),
+        // We use a function here to get the target because gDialog isn't set
+        // yet, but it will be when the function is called.
+        new invokerChecker(EVENT_FOCUS, () => gDialog.document)
+      ];
 
-      this.invoke = () => (gDialog = docShell.rootTreeItem.domWindow.openDialog(aURL));
+      this.invoke = () => (gDialog = window.docShell.rootTreeItem.domWindow.openDialog(aURL));
 
       this.finalCheck = () => {
         const accTree = {
@@ -93,11 +98,6 @@
       let doc = Services.appShell.hiddenDOMWindow.document;
       let hiddenDocAcc = gAccService.getAccessibleFor(doc);
       ok(!hiddenDocAcc, "hiddenDOMWindow should not have an accessible.");
-
-      // Try to create an accessible for the private hidden window's doc.
-      let privateDoc = Services.appShell.hiddenPrivateDOMWindow.document;
-      let hiddenPrivateDoc = gAccService.getAccessibleFor(privateDoc);
-      ok(!hiddenPrivateDoc, "hiddenPrivateDOMWindow should not have an accessible.");
 
       const gQueue = new eventQueue();
       gQueue.push(new openDialogWnd("about:about"));

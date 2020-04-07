@@ -23,6 +23,7 @@ import { syncBreakpoint } from "../breakpoints";
 import { loadSourceText } from "./loadSourceText";
 import { togglePrettyPrint } from "./prettyPrint";
 import { selectLocation, setBreakableLines } from "../sources";
+
 import {
   getRawSourceURL,
   isPrettyURL,
@@ -47,6 +48,7 @@ import { validateNavigateContext, ContextError } from "../../utils/context";
 
 import type {
   Source,
+  SourceActorId,
   Context,
   OriginalSourceData,
   GeneratedSourceData,
@@ -205,6 +207,7 @@ function checkPendingBreakpoints(cx: Context, sourceId: string) {
 
     // load the source text if there is a pending breakpoint for it
     await dispatch(loadSourceText({ cx, source }));
+
     await dispatch(setBreakableLines(cx, source.id));
 
     await Promise.all(
@@ -280,6 +283,7 @@ export function newOriginalSources(sourceInfo: Array<OriginalSourceData>) {
         introductionType: undefined,
         isExtension: false,
         extensionName: null,
+        isOriginal: true,
       });
     }
 
@@ -312,8 +316,8 @@ export function newGeneratedSources(sourceInfo: Array<GeneratedSourceData>) {
     const newSourcesObj = {};
     const newSourceActors: Array<SourceActor> = [];
 
-    for (const { thread, source, id } of sourceInfo) {
-      const newId = id || makeSourceId(source);
+    for (const { thread, isServiceWorker, source, id } of sourceInfo) {
+      const newId = id || makeSourceId(source, isServiceWorker);
 
       if (!getSource(getState(), newId) && !newSourcesObj[newId]) {
         newSourcesObj[newId] = {
@@ -328,6 +332,7 @@ export function newGeneratedSources(sourceInfo: Array<GeneratedSourceData>) {
           isWasm:
             !!supportsWasm(getState()) && source.introductionType === "wasm",
           isExtension: (source.url && isUrlExtension(source.url)) || false,
+          isOriginal: false,
         };
       }
 
@@ -380,8 +385,8 @@ export function newGeneratedSources(sourceInfo: Array<GeneratedSourceData>) {
       // We would like to sync breakpoints after we are done
       // loading source maps as sometimes generated and original
       // files share the same paths.
-      for (const source of newSources) {
-        dispatch(checkPendingBreakpoints(cx, source.id));
+      for (const { source } of newSourceActors) {
+        dispatch(checkPendingBreakpoints(cx, source));
       }
     })();
 
@@ -404,5 +409,17 @@ function checkNewSources(cx, sources: Source[]) {
     dispatch(restoreBlackBoxedSources(cx, sources));
 
     return sources;
+  };
+}
+
+export function ensureSourceActor(thread: string, sourceActor: SourceActorId) {
+  return async function({ dispatch, getState, client }: ThunkArgs) {
+    await sourceQueue.flush();
+    if (hasSourceActor(getState(), sourceActor)) {
+      return Promise.resolve();
+    }
+
+    const sources = await client.fetchThreadSources(thread);
+    await dispatch(newGeneratedSources(sources));
   };
 }

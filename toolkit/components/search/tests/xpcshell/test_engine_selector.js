@@ -14,14 +14,18 @@ const CONFIG_URL =
       {
         engineName: "aol",
         orderHint: 500,
-        webExtensionLocales: ["default"],
+        webExtension: {
+          locales: ["default"],
+        },
         appliesTo: [
           {
             included: { everywhere: true },
           },
           {
             included: { regions: ["us"] },
-            webExtensionLocales: ["$USER_LOCALE"],
+            webExtension: {
+              locales: ["$USER_LOCALE"],
+            },
           },
         ],
       },
@@ -76,24 +80,26 @@ add_task(async function() {
 
   let { engines, privateDefault } = engineSelector.fetchEngineConfiguration(
     "en-US",
-    "us"
+    "us",
+    "default"
   );
   Assert.equal(
-    privateDefault,
+    privateDefault.engineName,
     "altavista",
     "Should set altavista as privateDefault"
   );
   let names = engines.map(obj => obj.engineName);
   Assert.deepEqual(names, ["lycos", "altavista", "aol"], "Correct order");
-  Assert.deepEqual(
-    engines[2].webExtensionLocales,
-    ["en-US"],
+  Assert.equal(
+    engines[2].webExtension.locale,
+    "en-US",
     "Subsequent matches in applies to can override default"
   );
 
   ({ engines, privateDefault } = engineSelector.fetchEngineConfiguration(
     "zh-CN",
-    "kz"
+    "kz",
+    "default"
   ));
   Assert.equal(engines.length, 2, "Correct engines are returns");
   Assert.equal(privateDefault, null, "There should be no privateDefault");
@@ -107,7 +113,8 @@ add_task(async function() {
   Services.prefs.setCharPref("browser.search.cohort", "acohortid");
   ({ engines, privateDefault } = engineSelector.fetchEngineConfiguration(
     "en-US",
-    "us"
+    "us",
+    "default"
   ));
   Assert.deepEqual(
     engines.map(obj => obj.engineName),
@@ -116,7 +123,9 @@ add_task(async function() {
   );
 
   ({ engines, privateDefault } = engineSelector.fetchEngineConfiguration(
-    "en-US"
+    "en-US",
+    "default",
+    "default"
   ));
   Assert.deepEqual(
     engines.map(obj => obj.engineName),
@@ -124,7 +133,7 @@ add_task(async function() {
     "The engines should be in the correct order"
   );
   Assert.equal(
-    privateDefault,
+    privateDefault.engineName,
     "altavista",
     "Should set altavista as privateDefault"
   );

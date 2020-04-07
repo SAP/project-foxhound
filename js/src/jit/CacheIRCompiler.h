@@ -35,6 +35,7 @@ class IonCacheIRCompiler;
   _(GuardIsNumber)                        \
   _(GuardToInt32)                         \
   _(GuardToInt32Index)                    \
+  _(GuardToTypedArrayIndex)               \
   _(GuardToInt32ModUint32)                \
   _(GuardToUint8Clamped)                  \
   _(GuardType)                            \
@@ -50,9 +51,9 @@ class IonCacheIRCompiler;
   _(GuardNotDOMProxy)                     \
   _(GuardSpecificInt32Immediate)          \
   _(GuardMagicValue)                      \
-  _(GuardNoDetachedTypedObjects)          \
   _(GuardNoDenseElements)                 \
   _(GuardAndGetNumberFromString)          \
+  _(GuardAndGetNumberFromBoolean)         \
   _(GuardAndGetIndexFromString)           \
   _(GuardIndexIsNonNegative)              \
   _(GuardIndexGreaterThanDenseCapacity)   \
@@ -98,6 +99,21 @@ class IonCacheIRCompiler;
   _(DoubleIncResult)                      \
   _(DoubleDecResult)                      \
   _(DoubleNegationResult)                 \
+  _(BigIntAddResult)                      \
+  _(BigIntSubResult)                      \
+  _(BigIntMulResult)                      \
+  _(BigIntDivResult)                      \
+  _(BigIntModResult)                      \
+  _(BigIntPowResult)                      \
+  _(BigIntBitOrResult)                    \
+  _(BigIntBitXorResult)                   \
+  _(BigIntBitAndResult)                   \
+  _(BigIntLeftShiftResult)                \
+  _(BigIntRightShiftResult)               \
+  _(BigIntNegationResult)                 \
+  _(BigIntNotResult)                      \
+  _(BigIntIncResult)                      \
+  _(BigIntDecResult)                      \
   _(TruncateDoubleToUInt32)               \
   _(LoadArgumentsObjectLengthResult)      \
   _(LoadFunctionLengthResult)             \
@@ -105,6 +121,7 @@ class IonCacheIRCompiler;
   _(LoadStringCharResult)                 \
   _(LoadArgumentsObjectArgResult)         \
   _(LoadInstanceOfObjectResult)           \
+  _(LoadTypedObjectResult)                \
   _(LoadDenseElementResult)               \
   _(LoadDenseElementHoleResult)           \
   _(LoadDenseElementExistsResult)         \
@@ -117,11 +134,19 @@ class IonCacheIRCompiler;
   _(LoadDoubleTruthyResult)               \
   _(LoadStringTruthyResult)               \
   _(LoadObjectTruthyResult)               \
+  _(LoadBigIntTruthyResult)               \
   _(LoadNewObjectFromTemplateResult)      \
   _(CompareObjectResult)                  \
   _(CompareSymbolResult)                  \
   _(CompareInt32Result)                   \
   _(CompareDoubleResult)                  \
+  _(CompareBigIntResult)                  \
+  _(CompareBigIntInt32Result)             \
+  _(CompareInt32BigIntResult)             \
+  _(CompareBigIntNumberResult)            \
+  _(CompareNumberBigIntResult)            \
+  _(CompareBigIntStringResult)            \
+  _(CompareStringBigIntResult)            \
   _(CompareObjectUndefinedNullResult)     \
   _(ArrayJoinResult)                      \
   _(StoreTypedElement)                    \
@@ -136,6 +161,7 @@ class IonCacheIRCompiler;
   _(CallInt32ToString)                    \
   _(CallNumberToString)                   \
   _(BooleanToString)                      \
+  _(CallStringConcatResult)               \
   _(CallIsSuspendedGeneratorResult)       \
   _(CallNativeGetElementResult)           \
   _(CallProxyHasPropResult)               \
@@ -862,10 +888,6 @@ class MOZ_RAII CacheIRCompiler {
            !allocator.isDeadAfterInstruction(objId);
   }
 
-  void emitLoadTypedObjectResultShared(const Address& fieldAddr,
-                                       Register scratch, uint32_t typeDescr,
-                                       const AutoOutputRegister& output);
-
   void emitStoreTypedObjectReferenceProp(ValueOperand val, ReferenceType type,
                                          const Address& dest, Register scratch);
 
@@ -895,6 +917,17 @@ class MOZ_RAII CacheIRCompiler {
   }
 
   bool emitComparePointerResultShared(bool symbol);
+
+  bool emitCompareBigIntInt32ResultShared(Register bigInt, Register int32,
+                                          Register scratch1, Register scratch2,
+                                          JSOp op,
+                                          const AutoOutputRegister& output);
+
+  template <typename Fn, Fn fn>
+  MOZ_MUST_USE bool emitBigIntBinaryOperationShared();
+
+  template <typename Fn, Fn fn>
+  MOZ_MUST_USE bool emitBigIntUnaryOperationShared();
 
   bool emitDoubleIncDecResult(bool isInc);
 
@@ -1090,17 +1123,18 @@ class MOZ_RAII AutoScratchRegisterMaybeOutput {
 //     - Both use the `callVM` method.
 //
 //   Using AutoCallVM:
-//     - The constructor initializes `AutoOutputRegister` and
-//       `AutoSaveLiveRegisters` variables for CacheIRCompilers with the mode
-//       Ion, and initializes `AutoScratchRegister` and `AutoStubFrame`
-//       variables for CacheIRCompilers with mode Baseline.
+//     - The constructor initializes `AutoOutputRegister` for both compiler
+//       types. Additionally it initializes an `AutoSaveLiveRegisters` for
+//       CacheIRCompilers with the mode Ion, and initializes
+//       `AutoScratchRegisterMaybeOutput` and `AutoStubFrame` variables for
+//       compilers with mode Baseline.
 //     - The `prepare()` method calls the IonCacheIRCompiler method
 //       `prepareVMCall` for IonCacheIRCompilers, calls the `enter()` method of
 //       `AutoStubFrame` for BaselineCacheIRCompilers, and calls the
 //       `discardStack` method of the `Register` class for both compiler types.
-//     - The destructor calls the `masm` method `storeCallResultValue` for
-//       IonCacheIRCompilers, and calls the `leave` method of `AutoStubFrame`
-//       for BaselineCacheIRCompilers.
+//     - The `call()` method invokes `callVM` on the CacheIRCompiler and stores
+//       the call result according to its type. Finally it calls the `leave`
+//       method of `AutoStubFrame` for BaselineCacheIRCompilers.
 //
 //   Expected Usage Example:
 //     See: `CacheIRCompiler::emitCallGetSparseElementResult()`
@@ -1114,14 +1148,19 @@ class MOZ_RAII AutoCallVM {
   MacroAssembler& masm_;
   CacheIRCompiler* compiler_;
   CacheRegisterAllocator& allocator_;
+  mozilla::Maybe<AutoOutputRegister> output_;
 
   // Baseline specific stuff
   mozilla::Maybe<AutoStubFrame> stubFrame_;
-  mozilla::Maybe<AutoScratchRegister> scratch_;
+  mozilla::Maybe<AutoScratchRegisterMaybeOutput> scratch_;
 
   // Ion specific stuff
-  mozilla::Maybe<AutoOutputRegister> output_;
   mozilla::Maybe<AutoSaveLiveRegisters> save_;
+
+  void storeResult(JSValueType returnType);
+
+  template <typename Fn>
+  void storeResult();
 
  public:
   AutoCallVM(MacroAssembler& masm, CacheIRCompiler* compiler,
@@ -1129,7 +1168,11 @@ class MOZ_RAII AutoCallVM {
 
   void prepare();
 
-  ~AutoCallVM();
+  template <typename Fn, Fn fn>
+  void call() {
+    compiler_->callVM<Fn, fn>(masm_);
+    storeResult<Fn>();
+  }
 };
 
 // RAII class to allocate FloatReg0 as a scratch register and release it when

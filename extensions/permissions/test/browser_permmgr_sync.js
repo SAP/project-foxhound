@@ -11,46 +11,21 @@ function addPerm(aOrigin, aName) {
 
 add_task(async function() {
   // Make sure that we get a new process for the tab which we create. This is
-  // important, becuase we wanto to assert information about the initial state
+  // important, because we want to assert information about the initial state
   // of the local permissions cache.
-  //
-  // We use the same approach here as was used in the e10s-multi localStorage
-  // tests (dom/tests/browser/browser_localStorage_e10s.js (bug )). This ensures
-  // that our tab has its own process.
-  //
-  // Bug 1345990 tracks implementing a better tool for ensuring this.
-  let keepAliveCount = 0;
-  try {
-    keepAliveCount = SpecialPowers.getIntPref("dom.ipc.keepProcessesAlive.web");
-  } catch (ex) {
-    // Then zero is correct.
-  }
-  let safeProcessCount = keepAliveCount + 2;
-  info(
-    "dom.ipc.keepProcessesAlive.web is " +
-      keepAliveCount +
-      ", boosting " +
-      "process count temporarily to " +
-      safeProcessCount
-  );
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["dom.ipc.processCount", safeProcessCount],
-      ["dom.ipc.processCount.web", safeProcessCount],
-    ],
-  });
 
   addPerm("http://example.com", "perm1");
   addPerm("http://foo.bar.example.com", "perm2");
   addPerm("about:home", "perm3");
   addPerm("https://example.com", "perm4");
-  // NOTE: This permission is a preload permission, so it should be avaliable in the content process from startup.
-  addPerm("https://somerandomwebsite.com", "document");
+  // NOTE: This permission is a preload permission, so it should be available in
+  // the content process from startup.
+  addPerm("https://somerandomwebsite.com", "cookie");
 
   await BrowserTestUtils.withNewTab(
-    { gBrowser, url: "about:blank" },
+    { gBrowser, url: "about:blank", forceNewProcess: true },
     async function(aBrowser) {
-      await ContentTask.spawn(aBrowser, null, async function() {
+      await SpecialPowers.spawn(aBrowser, [], async function() {
         // Before the load http URIs shouldn't have been sent down yet
         is(
           Services.perms.testPermissionFromPrincipal(
@@ -97,10 +72,10 @@ add_task(async function() {
             Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://somerandomwebsite.com"
             ),
-            "document"
+            "cookie"
           ),
           Services.perms.ALLOW_ACTION,
-          "document-1"
+          "cookie-1"
         );
 
         // Perform a load of example.com
@@ -157,10 +132,10 @@ add_task(async function() {
             Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://somerandomwebsite.com"
             ),
-            "document"
+            "cookie"
           ),
           Services.perms.ALLOW_ACTION,
-          "document-2"
+          "cookie-2"
         );
       });
 
@@ -168,10 +143,10 @@ add_task(async function() {
       addPerm("http://foo.bar.example.com", "newperm2");
       addPerm("about:home", "newperm3");
       addPerm("https://example.com", "newperm4");
-      addPerm("https://someotherrandomwebsite.com", "document");
+      addPerm("https://someotherrandomwebsite.com", "cookie");
 
-      await ContentTask.spawn(aBrowser, null, async function() {
-        // The new permissions should be avaliable, but only for
+      await SpecialPowers.spawn(aBrowser, [], async function() {
+        // The new permissions should be available, but only for
         // http://example.com, and about:home
         is(
           Services.perms.testPermissionFromPrincipal(
@@ -258,20 +233,20 @@ add_task(async function() {
             Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://somerandomwebsite.com"
             ),
-            "document"
+            "cookie"
           ),
           Services.perms.ALLOW_ACTION,
-          "document-3"
+          "cookie-3"
         );
         is(
           Services.perms.testPermissionFromPrincipal(
             Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://someotherrandomwebsite.com"
             ),
-            "document"
+            "cookie"
           ),
           Services.perms.ALLOW_ACTION,
-          "otherdocument-3"
+          "othercookie-3"
         );
 
         // Loading a subdomain now, on https
@@ -283,7 +258,7 @@ add_task(async function() {
         });
 
         // Now that the https subdomain has loaded, we want to make sure that the
-        // permissions are also avaliable for its parent domain, https://example.com!
+        // permissions are also available for its parent domain, https://example.com!
         is(
           Services.perms.testPermissionFromPrincipal(
             Services.scriptSecurityManager.createContentPrincipalFromOrigin(
@@ -369,20 +344,20 @@ add_task(async function() {
             Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://somerandomwebsite.com"
             ),
-            "document"
+            "cookie"
           ),
           Services.perms.ALLOW_ACTION,
-          "document-4"
+          "cookie-4"
         );
         is(
           Services.perms.testPermissionFromPrincipal(
             Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://someotherrandomwebsite.com"
             ),
-            "document"
+            "cookie"
           ),
           Services.perms.ALLOW_ACTION,
-          "otherdocument-4"
+          "othercookie-4"
         );
       });
     }

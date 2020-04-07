@@ -6,7 +6,8 @@
 "use strict";
 
 const mcRoot = `${__dirname}/../../../../../`;
-const getModule = mcPath => `module.exports = require("${mcRoot}${mcPath}");`;
+const getModule = mcPath =>
+  `module.exports = require("${(mcRoot + mcPath).replace(/\\/gi, "/")}");`;
 
 const { pref } = require("devtools-services");
 pref("devtools.debugger.remote-timeout", 10000);
@@ -26,9 +27,11 @@ pref("devtools.webconsole.sidebarToggle", true);
 pref("devtools.webconsole.groupWarningMessages", false);
 pref("devtools.webconsole.input.editor", false);
 pref("devtools.webconsole.input.autocomplete", true);
+pref("devtools.webconsole.input.eagerEvaluation", true);
 pref("devtools.browserconsole.contentMessages", true);
 pref("devtools.webconsole.input.editorWidth", 800);
 pref("devtools.webconsole.input.editorOnboarding", true);
+pref("devtools.webconsole.input.context", false);
 
 global.loader = {
   lazyServiceGetter: () => {},
@@ -102,7 +105,14 @@ requireHacker.global_hook("default", (path, module) => {
     react: () => getModule("devtools/client/shared/vendor/react-dev"),
     "devtools/client/shared/vendor/react": () =>
       getModule("devtools/client/shared/vendor/react-dev"),
-    chrome: () => `module.exports = { Cc: {}, Ci: {}, Cu: {} }`,
+    "chrome://mochitests/content/browser/devtools/client/webconsole/test/browser/stub-generator-helpers": () =>
+      getModule(
+        "devtools/client/webconsole/test/browser/stub-generator-helpers"
+      ),
+
+    chrome: () =>
+      `module.exports = { Cc: {}, Ci: {}, Cu: {}, components: {stack: {caller: ""}} }`,
+    ChromeUtils: () => `module.exports = { import: () => ({}) }`,
     // Some modules depend on Chrome APIs which don't work in mocha. When such a module
     // is required, replace it with a mock version.
     "devtools/shared/l10n": () =>
@@ -112,8 +122,8 @@ requireHacker.global_hook("default", (path, module) => {
     "devtools/shared/plural-form": () =>
       getModule("devtools/client/webconsole/test/node/fixtures/PluralForm"),
     Services: () => `module.exports = require("devtools-services")`,
-    "devtools/shared/client/object-client": () => `() => {}`,
-    "devtools/shared/client/long-string-client": () => `() => {}`,
+    "devtools/server/devtools-server": () =>
+      `module.exports = {DevToolsServer: {}}`,
     "devtools/client/shared/components/SmartTrace": () => "{}",
     "devtools/client/netmonitor/src/components/TabboxPanel": () => "{}",
     "devtools/client/webconsole/utils/context-menu": () => "{}",
@@ -129,6 +139,7 @@ requireHacker.global_hook("default", (path, module) => {
       getModule("devtools/client/webconsole/test/node/fixtures/DevToolsUtils"),
     "devtools/server/actors/reflow": () => "{}",
     "devtools/shared/layout/utils": () => "{getCurrentZoom = () => {}}",
+    "resource://gre/modules/AppConstants.jsm": () => "module.exports = {};",
   };
 
   if (paths.hasOwnProperty(path)) {

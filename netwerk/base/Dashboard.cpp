@@ -14,7 +14,6 @@
 #include "nsIInputStream.h"
 #include "nsINamed.h"
 #include "nsISocketTransport.h"
-#include "nsIThread.h"
 #include "nsProxyRelease.h"
 #include "nsSocketTransportService2.h"
 #include "nsThreadUtils.h"
@@ -432,7 +431,7 @@ nsresult Dashboard::GetHttpConnections(HttpData* aHttpData) {
 
     CopyASCIItoUTF16(httpData->mData[i].host, connection.mHost);
     connection.mPort = httpData->mData[i].port;
-    connection.mSpdy = httpData->mData[i].spdy;
+    CopyASCIItoUTF16(httpData->mData[i].httpVersion, connection.mHttpVersion);
     connection.mSsl = httpData->mData[i].ssl;
 
     connection.mActive.Construct();
@@ -767,7 +766,7 @@ nsresult Dashboard::GetRcwnData(RcwnData* aData) {
   return NS_OK;
 }
 
-void HttpConnInfo::SetHTTP1ProtocolVersion(HttpVersion pv) {
+void HttpConnInfo::SetHTTPProtocolVersion(HttpVersion pv) {
   switch (pv) {
     case HttpVersion::v0_9:
       protocolVersion.AssignLiteral(u"http/0.9");
@@ -779,16 +778,14 @@ void HttpConnInfo::SetHTTP1ProtocolVersion(HttpVersion pv) {
       protocolVersion.AssignLiteral(u"http/1.1");
       break;
     case HttpVersion::v2_0:
-      protocolVersion.AssignLiteral(u"http/2.0");
+      protocolVersion.AssignLiteral(u"http/2");
+      break;
+    case HttpVersion::v3_0:
+      protocolVersion.AssignLiteral(u"http/3");
       break;
     default:
       protocolVersion.AssignLiteral(u"unknown protocol version");
   }
-}
-
-void HttpConnInfo::SetHTTP2ProtocolVersion(SpdyVersion pv) {
-  MOZ_ASSERT(pv == SpdyVersion::HTTP_2);
-  protocolVersion.AssignLiteral(u"h2");
 }
 
 NS_IMETHODIMP

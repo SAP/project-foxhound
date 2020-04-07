@@ -30,22 +30,17 @@ import type {
   ThreadContext,
   Previews,
   SourceLocation,
+  HighlightedCalls,
 } from "../types";
 
-export type Command =
-  | null
-  | "stepOver"
-  | "stepIn"
-  | "stepOut"
-  | "resume"
-  | "rewind"
-  | "reverseStepOver";
+export type Command = null | "stepOver" | "stepIn" | "stepOut" | "resume";
 
 // Pause state associated with an individual thread.
 type ThreadPauseState = {
   why: ?Why,
   isWaitingOnBreak: boolean,
   frames: ?(any[]),
+  framesLoading: boolean,
   frameScopes: {
     generated: {
       [FrameId]: {
@@ -85,6 +80,7 @@ type ThreadPauseState = {
   inlinePreview: {
     [FrameId]: Object,
   },
+  highlightedCalls: ?HighlightedCalls,
 };
 
 // Pause state describing all threads.
@@ -111,6 +107,7 @@ function createPauseState(thread: ThreadId = "UnknownThread") {
       pauseCounter: 0,
     },
     previewLocation: null,
+    highlightedCalls: null,
     threads: {},
     skipPausing: prefs.skipPausing,
     mapScopes: prefs.mapScopes,
@@ -121,6 +118,7 @@ function createPauseState(thread: ThreadId = "UnknownThread") {
 
 const resumedPauseState = {
   frames: null,
+  framesLoading: false,
   frameScopes: {
     generated: {},
     original: {},
@@ -129,6 +127,7 @@ const resumedPauseState = {
   selectedFrameId: null,
   why: null,
   inlinePreview: {},
+  highlightedCalls: null,
 };
 
 const createInitialPauseState = () => ({
@@ -187,7 +186,7 @@ function update(
     }
 
     case "PAUSED": {
-      const { thread, selectedFrameId, frames, why } = action;
+      const { thread, frame, why } = action;
 
       state = {
         ...state,
@@ -201,11 +200,17 @@ function update(
       };
       return updateThreadState({
         isWaitingOnBreak: false,
-        selectedFrameId,
-        frames,
+        selectedFrameId: frame ? frame.id : undefined,
+        frames: frame ? [frame] : undefined,
+        framesLoading: true,
         frameScopes: { ...resumedPauseState.frameScopes },
         why,
       });
+    }
+
+    case "FETCHED_FRAMES": {
+      const { frames } = action;
+      return updateThreadState({ frames, framesLoading: false });
     }
 
     case "PREVIEW_PAUSED_LOCATION": {
@@ -386,6 +391,18 @@ function update(
         },
       });
     }
+
+    case "HIGHLIGHT_CALLS": {
+      const { highlightedCalls } = action;
+      return updateThreadState({ ...threadState(), highlightedCalls });
+    }
+
+    case "UNHIGHLIGHT_CALLS": {
+      return updateThreadState({
+        ...threadState(),
+        highlightedCalls: null,
+      });
+    }
   }
 
   return state;
@@ -468,11 +485,16 @@ export function getShouldPauseOnCaughtExceptions(state: State) {
 }
 
 export function getFrames(state: State, thread: ThreadId) {
-  return getThreadPauseState(state.pause, thread).frames;
+  const { frames, framesLoading } = getThreadPauseState(state.pause, thread);
+  return framesLoading ? null : frames;
 }
 
 export function getCurrentThreadFrames(state: State) {
-  return getThreadPauseState(state.pause, getCurrentThread(state)).frames;
+  const { frames, framesLoading } = getThreadPauseState(
+    state.pause,
+    getCurrentThread(state)
+  );
+  return framesLoading ? null : frames;
 }
 
 function getGeneratedFrameId(frameId: string): string {
@@ -618,6 +640,10 @@ export function getTopFrame(state: State, thread: ThreadId) {
 
 export function getSkipPausing(state: State) {
   return state.pause.skipPausing;
+}
+
+export function getHighlightedCalls(state: State, thread: ThreadId) {
+  return getThreadPauseState(state.pause, thread).highlightedCalls;
 }
 
 export function isMapScopesEnabled(state: State) {

@@ -10,7 +10,6 @@
 #include "MediaTrackConstraints.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/RefPtr.h"
-#include "nsIPrefService.h"
 #include "Tracing.h"
 #include "VideoFrameUtils.h"
 #include "VideoUtils.h"
@@ -156,8 +155,8 @@ void MediaEngineRemoteVideoSource::SetName(nsString aName) {
   }
 
   mFacingMode = facingMode.map([](const auto& aFM) {
-    return NS_ConvertUTF8toUTF16(
-        dom::VideoFacingModeEnumValues::strings[uint32_t(aFM)].value);
+    return NS_ConvertASCIItoUTF16(
+        dom::VideoFacingModeEnumValues::GetString(aFM));
   });
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       "MediaEngineRemoteVideoSource::SetName (facingMode updater)",
@@ -192,8 +191,7 @@ nsString MediaEngineRemoteVideoSource::GetGroupId() const {
 
 nsresult MediaEngineRemoteVideoSource::Allocate(
     const MediaTrackConstraints& aConstraints, const MediaEnginePrefs& aPrefs,
-    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
-    const char** aOutBadConstraint) {
+    uint64_t aWindowID, const char** aOutBadConstraint) {
   LOG("%s", __PRETTY_FUNCTION__);
   AssertIsOnOwningThread();
 
@@ -216,7 +214,7 @@ nsresult MediaEngineRemoteVideoSource::Allocate(
 
   if (camera::GetChildAndCall(&camera::CamerasChild::AllocateCaptureDevice,
                               mCapEngine, mUniqueId.get(), kMaxUniqueIdLength,
-                              mCaptureIndex, aPrincipalInfo)) {
+                              mCaptureIndex, aWindowID)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -532,6 +530,11 @@ int MediaEngineRemoteVideoSource::DeliverFrame(
       break;
     }
   }
+
+  // Ensure width and height are at least two. Smaller frames can lead to
+  // problems with scaling and video encoding.
+  dst_width = std::max(2, dst_width);
+  dst_height = std::max(2, dst_height);
 
   rtc::Callback0<void> callback_unused;
   rtc::scoped_refptr<webrtc::I420BufferInterface> buffer =

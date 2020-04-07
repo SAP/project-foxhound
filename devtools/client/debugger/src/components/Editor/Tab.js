@@ -14,6 +14,7 @@ import { CloseButton } from "../shared/Button";
 import { copyToTheClipboard } from "../../utils/clipboard";
 
 import type { Source, Context } from "../../types";
+import type { TabsSources } from "../../reducers/types";
 
 import actions from "../../actions";
 
@@ -41,12 +42,18 @@ import classnames from "classnames";
 
 type OwnProps = {|
   source: Source,
+  onDragOver: Function,
+  onDragStart: Function,
+  onDragEnd: Function,
 |};
 type Props = {
   cx: Context,
-  tabSources: Source[],
+  tabSources: TabsSources,
   selectedSource: ?Source,
   source: Source,
+  onDragOver: Function,
+  onDragStart: Function,
+  onDragEnd: Function,
   activeSearch: ?ActiveSearchType,
   hasSiblingOfSameName: boolean,
   selectSource: typeof actions.selectSource,
@@ -185,6 +192,9 @@ class Tab extends PureComponent<Props> {
       source,
       tabSources,
       hasSiblingOfSameName,
+      onDragOver,
+      onDragStart,
+      onDragEnd,
     } = this.props;
     const sourceId = source.id;
     const active =
@@ -214,6 +224,10 @@ class Tab extends PureComponent<Props> {
 
     return (
       <div
+        draggable
+        onDragOver={onDragOver}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
         className={className}
         key={sourceId}
         onClick={handleTabClick}
@@ -261,5 +275,9 @@ export default connect<Props, OwnProps, _, _, _, _>(
     togglePrettyPrint: actions.togglePrettyPrint,
     showSource: actions.showSource,
     toggleBlackBox: actions.toggleBlackBox,
+  },
+  null,
+  {
+    withRef: true,
   }
 )(Tab);

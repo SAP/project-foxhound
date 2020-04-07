@@ -16,6 +16,7 @@
 #include "mozilla/Range.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/AnimationHelper.h"
 #include "mozilla/layers/APZSampler.h"
 #include "mozilla/layers/APZUpdater.h"
@@ -57,15 +58,17 @@ bool is_in_render_thread() {
 
 void gecko_profiler_start_marker(const char* name) {
 #ifdef MOZ_GECKO_PROFILER
-  profiler_tracing("WebRender", name, JS::ProfilingCategoryPair::GRAPHICS,
-                   TRACING_INTERVAL_START);
+  profiler_tracing_marker("WebRender", name,
+                          JS::ProfilingCategoryPair::GRAPHICS,
+                          TRACING_INTERVAL_START);
 #endif
 }
 
 void gecko_profiler_end_marker(const char* name) {
 #ifdef MOZ_GECKO_PROFILER
-  profiler_tracing("WebRender", name, JS::ProfilingCategoryPair::GRAPHICS,
-                   TRACING_INTERVAL_END);
+  profiler_tracing_marker("WebRender", name,
+                          JS::ProfilingCategoryPair::GRAPHICS,
+                          TRACING_INTERVAL_END);
 #endif
 }
 
@@ -333,6 +336,9 @@ WebRenderBridgeParent::WebRenderBridgeParent(
       mWrEpoch{0},
       mIdNamespace(aApis[0]->GetNamespace()),
       mRenderRootRectMutex("WebRenderBridgeParent::mRenderRootRectMutex"),
+#if defined(MOZ_WIDGET_ANDROID)
+      mScreenPixelsTarget(nullptr),
+#endif
       mPaused(false),
       mDestroyed(false),
       mReceivedDisplayList(false),
@@ -355,6 +361,9 @@ WebRenderBridgeParent::WebRenderBridgeParent(
     MOZ_ASSERT(api);
     mApis[api->GetRenderRoot()] = api;
   }
+
+  UpdateDebugFlags();
+  UpdateQualitySettings();
 }
 
 WebRenderBridgeParent::WebRenderBridgeParent(const wr::PipelineId& aPipelineId)
@@ -825,7 +834,8 @@ bool WebRenderBridgeParent::PushExternalImageForTexture(
     WebRenderTextureHost* wrTexture = aTexture->AsWebRenderTextureHost();
     if (wrTexture) {
       wrTexture->PushResourceUpdates(aResources, op, keys,
-                                     wrTexture->GetExternalImageKey());
+                                     wrTexture->GetExternalImageKey(),
+                                     /* aPreferCompositorSurface */ false);
       auto it = mTextureHosts.find(wr::AsUint64(aKey));
       MOZ_ASSERT((it == mTextureHosts.end() && !aIsUpdate) ||
                  (it != mTextureHosts.end() && aIsUpdate));
@@ -1027,8 +1037,14 @@ void WebRenderBridgeParent::SetCompositionRecorder(
   Api(wr::RenderRoot::Default)->SetCompositionRecorder(std::move(aRecorder));
 }
 
-void WebRenderBridgeParent::WriteCollectedFrames() {
-  Api(wr::RenderRoot::Default)->WriteCollectedFrames();
+RefPtr<wr::WebRenderAPI::WriteCollectedFramesPromise>
+WebRenderBridgeParent::WriteCollectedFrames() {
+  return Api(wr::RenderRoot::Default)->WriteCollectedFrames();
+}
+
+RefPtr<wr::WebRenderAPI::GetCollectedFramesPromise>
+WebRenderBridgeParent::GetCollectedFrames() {
+  return Api(wr::RenderRoot::Default)->GetCollectedFrames();
 }
 
 CompositorBridgeParent* WebRenderBridgeParent::GetRootCompositorBridgeParent()
@@ -1270,7 +1286,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetDisplayList(
     CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL, aTxnURL);
   }
 
-  AUTO_PROFILER_TRACING("Paint", "SetDisplayList", GRAPHICS);
+  AUTO_PROFILER_TRACING_MARKER("Paint", "SetDisplayList", GRAPHICS);
   UpdateFwdTransactionId(aFwdTransactionId);
 
   // This ensures that destroy operations are always processed. It is not safe
@@ -1476,7 +1492,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvEmptyTransaction(
     CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL, aTxnURL);
   }
 
-  AUTO_PROFILER_TRACING("Paint", "EmptyTransaction", GRAPHICS);
+  AUTO_PROFILER_TRACING_MARKER("Paint", "EmptyTransaction", GRAPHICS);
   UpdateFwdTransactionId(aFwdTransactionId);
 
   // This ensures that destroy operations are always processed. It is not safe
@@ -1624,6 +1640,7 @@ bool WebRenderBridgeParent::ProcessWebRenderParentCommands(
       case WebRenderParentCommand::TOpUpdatedAsyncImagePipeline: {
         const OpUpdatedAsyncImagePipeline& op =
             cmd.get_OpUpdatedAsyncImagePipeline();
+        aTxn.InvalidateRenderedFrame();
         mAsyncImageManager->ApplyAsyncImageForPipeline(
             op.pipelineId(), aTxn, txnForImageBridge,
             RenderRootForExternal(aRenderRoot));
@@ -1716,6 +1733,99 @@ void WebRenderBridgeParent::FlushFramePresentation() {
   // a frame.
   mApis[wr::RenderRoot::Default]->WaitFlushed();
 }
+
+void WebRenderBridgeParent::DisableNativeCompositor() {
+  // Make sure that SceneBuilder thread does not have a task.
+  mApis[wr::RenderRoot::Default]->FlushSceneBuilder();
+  // Disable WebRender's native compositor usage
+  mApis[wr::RenderRoot::Default]->EnableNativeCompositor(false);
+  // Ensure we generate and render a frame immediately.
+  ScheduleForcedGenerateFrame();
+}
+
+void WebRenderBridgeParent::UpdateQualitySettings() {
+  for (auto& api : mApis) {
+    if (!api) {
+      continue;
+    }
+    wr::TransactionBuilder txn;
+    txn.UpdateQualitySettings(gfxVars::AllowSacrificingSubpixelAA());
+    api->SendTransaction(txn);
+  }
+}
+
+void WebRenderBridgeParent::UpdateDebugFlags() {
+  auto flags = gfxVars::WebRenderDebugFlags();
+  for (auto& api : mApis) {
+    if (!api) {
+      continue;
+    }
+    api->UpdateDebugFlags(flags);
+  }
+}
+
+void WebRenderBridgeParent::UpdateMultithreading() {
+  bool multithreading = gfxVars::UseWebRenderMultithreading();
+  for (auto& api : mApis) {
+    if (!api) {
+      continue;
+    }
+    api->EnableMultithreading(multithreading);
+  }
+}
+
+void WebRenderBridgeParent::UpdateBatchingParameters() {
+  uint32_t count = gfxVars::WebRenderBatchingLookback();
+  for (auto& api : mApis) {
+    if (!api) {
+      continue;
+    }
+    api->SetBatchingLookback(count);
+  }
+}
+
+#if defined(MOZ_WIDGET_ANDROID)
+void WebRenderBridgeParent::RequestScreenPixels(
+    UiCompositorControllerParent* aController) {
+  mScreenPixelsTarget = aController;
+}
+
+void WebRenderBridgeParent::MaybeCaptureScreenPixels() {
+  if (!mScreenPixelsTarget) {
+    return;
+  }
+
+  if (mDestroyed) {
+    return;
+  }
+  MOZ_ASSERT(!mPaused);
+
+  // This function should only get called in the root WRBP.
+  MOZ_ASSERT(IsRootWebRenderBridgeParent());
+
+  SurfaceFormat format = SurfaceFormat::R8G8B8A8;  // On android we use RGBA8
+  auto client_size = mWidget->GetClientSize();
+  size_t buffer_size =
+      client_size.width * client_size.height * BytesPerPixel(format);
+
+  ipc::Shmem mem;
+  if (!mScreenPixelsTarget->AllocPixelBuffer(buffer_size, &mem)) {
+    // Failed to alloc shmem, Just bail out.
+    return;
+  }
+
+  IntSize size(client_size.width, client_size.height);
+
+  mApis[wr::RenderRoot::Default]->Readback(
+      TimeStamp::Now(), size, format,
+      Range<uint8_t>(mem.get<uint8_t>(), buffer_size));
+
+  Unused << mScreenPixelsTarget->SendScreenPixels(
+      std::move(mem), ScreenIntSize(client_size.width, client_size.height));
+
+  mScreenPixelsTarget = nullptr;
+}
+#endif
 
 mozilla::ipc::IPCResult WebRenderBridgeParent::RecvGetSnapshot(
     PTextureParent* aTexture) {
@@ -1830,7 +1940,6 @@ void WebRenderBridgeParent::AddPipelineIdForCompositable(
   // transaction.
   mAsyncImageManager->SetEmptyDisplayList(aPipelineId, aTxn,
                                           aTxnForImageBridge);
-  return;
 }
 
 void WebRenderBridgeParent::RemovePipelineIdForCompositable(
@@ -2020,7 +2129,7 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvCapture() {
 }
 
 mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetTransactionLogging(
-  const bool& aValue) {
+    const bool& aValue) {
   if (!mDestroyed) {
     mApis[wr::RenderRoot::Default]->SetTransactionLogging(aValue);
   }
@@ -2170,7 +2279,8 @@ bool WebRenderBridgeParent::AdvanceAnimations() {
 
 bool WebRenderBridgeParent::SampleAnimations(
     wr::RenderRootArray<nsTArray<wr::WrOpacityProperty>>& aOpacityArrays,
-    wr::RenderRootArray<nsTArray<wr::WrTransformProperty>>& aTransformArrays) {
+    wr::RenderRootArray<nsTArray<wr::WrTransformProperty>>& aTransformArrays,
+    wr::RenderRootArray<nsTArray<wr::WrColorProperty>>& aColorArrays) {
   const bool isAnimating = AdvanceAnimations();
 
   // return the animated data if has
@@ -2181,12 +2291,16 @@ bool WebRenderBridgeParent::SampleAnimations(
       wr::RenderRoot renderRoot = mAnimStorage->AnimationRenderRoot(iter.Key());
       auto& transformArray = aTransformArrays[renderRoot];
       auto& opacityArray = aOpacityArrays[renderRoot];
+      auto& colorArray = aColorArrays[renderRoot];
       if (value->Is<AnimationTransform>()) {
         transformArray.AppendElement(wr::ToWrTransformProperty(
             iter.Key(), value->Transform().mTransformInDevSpace));
       } else if (value->Is<float>()) {
         opacityArray.AppendElement(
             wr::ToWrOpacityProperty(iter.Key(), value->Opacity()));
+      } else if (value->Is<nscolor>()) {
+        colorArray.AppendElement(wr::ToWrColorProperty(
+            iter.Key(), gfx::Color::FromABGR(value->Color())));
       }
     }
   }
@@ -2212,7 +2326,7 @@ void WebRenderBridgeParent::CompositeToTarget(VsyncId aId,
   MOZ_ASSERT(aTarget == nullptr);
   MOZ_ASSERT(aRect == nullptr);
 
-  AUTO_PROFILER_TRACING("Paint", "CompositeToTarget", GRAPHICS);
+  AUTO_PROFILER_TRACING_MARKER("Paint", "CompositeToTarget", GRAPHICS);
   if (mPaused || !mReceivedDisplayList) {
     mPreviousFrameTimeStamp = TimeStamp();
     return;
@@ -2316,8 +2430,9 @@ void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
 
   wr::RenderRootArray<nsTArray<wr::WrOpacityProperty>> opacityArrays;
   wr::RenderRootArray<nsTArray<wr::WrTransformProperty>> transformArrays;
+  wr::RenderRootArray<nsTArray<wr::WrColorProperty>> colorArrays;
 
-  if (SampleAnimations(opacityArrays, transformArrays)) {
+  if (SampleAnimations(opacityArrays, transformArrays, colorArrays)) {
     // TODO we should have a better way of assessing whether we need a content
     // or a chrome frame generation.
     ScheduleGenerateFrameAllRenderRoots();
@@ -2330,7 +2445,8 @@ void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
     }
     auto renderRoot = api->GetRenderRoot();
     fastTxns[renderRoot]->UpdateDynamicProperties(opacityArrays[renderRoot],
-                                                  transformArrays[renderRoot]);
+                                                  transformArrays[renderRoot],
+                                                  colorArrays[renderRoot]);
   }
 
   SetAPZSampleTime();
@@ -2356,6 +2472,10 @@ void WebRenderBridgeParent::MaybeGenerateFrame(VsyncId aId,
     }
   }
   wr::WebRenderAPI::SendTransactions(mApis, generateFrameTxns);
+
+#if defined(MOZ_WIDGET_ANDROID)
+  MaybeCaptureScreenPixels();
+#endif
 
   mMostRecentComposite = TimeStamp::Now();
 }
@@ -2405,7 +2525,7 @@ void WebRenderBridgeParent::NotifySceneBuiltForEpoch(
 
 void WebRenderBridgeParent::NotifyDidSceneBuild(
     const nsTArray<wr::RenderRoot>& aRenderRoots,
-    RefPtr<wr::WebRenderPipelineInfo> aInfo) {
+    RefPtr<const wr::WebRenderPipelineInfo> aInfo) {
   MOZ_ASSERT(IsRootWebRenderBridgeParent());
   if (!mCompositorScheduler) {
     return;
@@ -2430,10 +2550,8 @@ void WebRenderBridgeParent::NotifyDidSceneBuild(
 
   // Look through all the pipelines contained within the built scene
   // and check which vsync they initiated from.
-  auto info = aInfo->Raw();
-  for (uintptr_t i = 0; i < info.epochs.length; i++) {
-    auto epoch = info.epochs.data[i];
-
+  const auto& info = aInfo->Raw();
+  for (const auto& epoch : info.epochs) {
     WebRenderBridgeParent* wrBridge = this;
     if (!(epoch.pipeline_id == PipelineId())) {
       wrBridge = mAsyncImageManager->GetWrBridge(epoch.pipeline_id);
@@ -2575,19 +2693,18 @@ void WebRenderBridgeParent::FlushRendering(bool aWaitForPresent) {
 
 void WebRenderBridgeParent::Pause() {
   MOZ_ASSERT(IsRootWebRenderBridgeParent());
-#ifdef MOZ_WIDGET_ANDROID
+
   if (!IsRootWebRenderBridgeParent() || mDestroyed) {
     return;
   }
 
   mApis[wr::RenderRoot::Default]->Pause();
-#endif
   mPaused = true;
 }
 
 bool WebRenderBridgeParent::Resume() {
   MOZ_ASSERT(IsRootWebRenderBridgeParent());
-#ifdef MOZ_WIDGET_ANDROID
+
   if (!IsRootWebRenderBridgeParent() || mDestroyed) {
     return false;
   }
@@ -2595,7 +2712,10 @@ bool WebRenderBridgeParent::Resume() {
   if (!mApis[wr::RenderRoot::Default]->Resume()) {
     return false;
   }
-#endif
+
+  // Ensure we generate and render a frame immediately.
+  ScheduleForcedGenerateFrame();
+
   mPaused = false;
   return true;
 }

@@ -24,13 +24,16 @@
 #include "jsapi.h"
 
 #include "ds/Fifo.h"
-#include "jit/Ion.h"
+#include "jit/JitContext.h"
+#include "js/BinASTFormat.h"  // JS::BinASTFormat
 #include "js/CompileOptions.h"
 #include "js/SourceText.h"
 #include "js/TypeDecls.h"
 #include "threading/ConditionVariable.h"
 #include "vm/JSContext.h"
 #include "vm/MutexIDs.h"
+#include "vm/OffThreadPromiseRuntimeState.h"  // js::OffThreadPromiseTask
+#include "vm/PromiseObject.h"                 // js::PromiseObject
 
 namespace JS {
 class OffThreadToken {};
@@ -45,7 +48,7 @@ struct HelperThread;
 struct ParseTask;
 struct PromiseHelperTask;
 namespace jit {
-class IonBuilder;
+class IonCompileTask;
 }  // namespace jit
 namespace wasm {
 struct Tier2GeneratorTask;
@@ -69,7 +72,7 @@ struct Tier2GeneratorTask : public RunnableTask {
   virtual void cancel() = 0;
 };
 
-typedef UniquePtr<Tier2GeneratorTask> UniqueTier2GeneratorTask;
+using UniqueTier2GeneratorTask = UniquePtr<Tier2GeneratorTask>;
 typedef Vector<Tier2GeneratorTask*, 0, SystemAllocPolicy>
     Tier2GeneratorTaskPtrVector;
 
@@ -92,12 +95,13 @@ class GlobalHelperThreadState {
   // Number of threads to create. May be accessed without locking.
   size_t threadCount;
 
-  typedef Vector<jit::IonBuilder*, 0, SystemAllocPolicy> IonBuilderVector;
+  typedef Vector<jit::IonCompileTask*, 0, SystemAllocPolicy>
+      IonCompileTaskVector;
   typedef Vector<ParseTask*, 0, SystemAllocPolicy> ParseTaskVector;
-  typedef mozilla::LinkedList<ParseTask> ParseTaskList;
+  using ParseTaskList = mozilla::LinkedList<ParseTask>;
   typedef Vector<UniquePtr<SourceCompressionTask>, 0, SystemAllocPolicy>
       SourceCompressionTaskVector;
-  typedef Vector<GCParallelTask*, 0, SystemAllocPolicy> GCParallelTaskVector;
+  using GCParallelTaskList = mozilla::LinkedList<GCParallelTask>;
   typedef Vector<PromiseHelperTask*, 0, SystemAllocPolicy>
       PromiseHelperTaskVector;
   typedef Vector<JSContext*, 0, SystemAllocPolicy> ContextVector;
@@ -114,7 +118,7 @@ class GlobalHelperThreadState {
   // The lists below are all protected by |lock|.
 
   // Ion compilation worklist and finished jobs.
-  IonBuilderVector ionWorklist_, ionFinishedList_, ionFreeList_;
+  IonCompileTaskVector ionWorklist_, ionFinishedList_, ionFreeList_;
 
   // wasm worklists.
   wasm::CompileTaskPtrFifo wasmWorklist_tier1_;
@@ -145,7 +149,7 @@ class GlobalHelperThreadState {
   SourceCompressionTaskVector compressionFinishedList_;
 
   // GC tasks needing to be done in parallel.
-  GCParallelTaskVector gcParallelWorklist_;
+  GCParallelTaskList gcParallelWorklist_;
 
   // Global list of JSContext for GlobalHelperThreadState to use.
   ContextVector helperContexts_;
@@ -208,13 +212,13 @@ class GlobalHelperThreadState {
     vector.popBack();
   }
 
-  IonBuilderVector& ionWorklist(const AutoLockHelperThreadState&) {
+  IonCompileTaskVector& ionWorklist(const AutoLockHelperThreadState&) {
     return ionWorklist_;
   }
-  IonBuilderVector& ionFinishedList(const AutoLockHelperThreadState&) {
+  IonCompileTaskVector& ionFinishedList(const AutoLockHelperThreadState&) {
     return ionFinishedList_;
   }
-  IonBuilderVector& ionFreeList(const AutoLockHelperThreadState&) {
+  IonCompileTaskVector& ionFreeList(const AutoLockHelperThreadState&) {
     return ionFreeList_;
   }
 
@@ -274,7 +278,7 @@ class GlobalHelperThreadState {
     return compressionFinishedList_;
   }
 
-  GCParallelTaskVector& gcParallelWorklist(const AutoLockHelperThreadState&) {
+  GCParallelTaskList& gcParallelWorklist(const AutoLockHelperThreadState&) {
     return gcParallelWorklist_;
   }
 
@@ -294,7 +298,7 @@ class GlobalHelperThreadState {
   // Used by a major GC to signal processing enqueued compression tasks.
   void startHandlingCompressionTasks(const AutoLockHelperThreadState&);
 
-  jit::IonBuilder* highestPriorityPendingIonCompile(
+  jit::IonCompileTask* highestPriorityPendingIonCompile(
       const AutoLockHelperThreadState& lock);
 
  private:
@@ -368,7 +372,7 @@ static inline GlobalHelperThreadState& HelperThreadState() {
   return *gHelperThreadState;
 }
 
-typedef mozilla::Variant<jit::IonBuilder*, wasm::CompileTask*,
+typedef mozilla::Variant<jit::IonCompileTask*, wasm::CompileTask*,
                          wasm::Tier2GeneratorTask*, PromiseHelperTask*,
                          ParseTask*, SourceCompressionTask*, GCParallelTask*>
     HelperTaskUnion;
@@ -389,8 +393,8 @@ struct HelperThread {
   bool idle() const { return currentTask.isNothing(); }
 
   /* Any builder currently being compiled by Ion on this thread. */
-  jit::IonBuilder* ionBuilder() {
-    return maybeCurrentTaskAs<jit::IonBuilder*>();
+  jit::IonCompileTask* ionCompileTask() {
+    return maybeCurrentTaskAs<jit::IonCompileTask*>();
   }
 
   /* Any wasm data currently being optimized on this thread. */
@@ -536,16 +540,15 @@ bool StartOffThreadPromiseHelperTask(JSContext* cx,
 bool StartOffThreadPromiseHelperTask(PromiseHelperTask* task);
 
 /*
- * Schedule an Ion compilation for a script, given a builder which has been
- * generated and read everything needed from the VM state.
+ * Schedule an off-thread Ion compilation for a script, given a task.
  */
-bool StartOffThreadIonCompile(jit::IonBuilder* builder,
+bool StartOffThreadIonCompile(jit::IonCompileTask* task,
                               const AutoLockHelperThreadState& lock);
 
 /*
  * Schedule deletion of Ion compilation data.
  */
-bool StartOffThreadIonFree(jit::IonBuilder* builder,
+bool StartOffThreadIonFree(jit::IonCompileTask* task,
                            const AutoLockHelperThreadState& lock);
 
 struct ZonesInState {
@@ -635,6 +638,7 @@ bool StartOffThreadDecodeScript(JSContext* cx,
 bool StartOffThreadDecodeBinAST(JSContext* cx,
                                 const JS::ReadOnlyCompileOptions& options,
                                 const uint8_t* buf, size_t length,
+                                JS::BinASTFormat format,
                                 JS::OffThreadCompileCallback callback,
                                 void* callbackData);
 
@@ -713,6 +717,13 @@ struct MOZ_RAII AutoSetHelperThreadContext {
   }
 };
 
+struct MOZ_RAII AutoSetContextRuntime {
+  explicit AutoSetContextRuntime(JSRuntime* rt) {
+    TlsContext.get()->setRuntime(rt);
+  }
+  ~AutoSetContextRuntime() { TlsContext.get()->setRuntime(nullptr); }
+};
+
 struct ParseTask : public mozilla::LinkedListElement<ParseTask>,
                    public JS::OffThreadToken,
                    public RunnableTask {
@@ -777,8 +788,10 @@ struct ScriptDecodeTask : public ParseTask {
 
 struct BinASTDecodeTask : public ParseTask {
   mozilla::Range<const uint8_t> data;
+  JS::BinASTFormat format;
 
   BinASTDecodeTask(JSContext* cx, const uint8_t* buf, size_t length,
+                   JS::BinASTFormat format,
                    JS::OffThreadCompileCallback callback, void* callbackData);
   void parse(JSContext* cx) override;
 };

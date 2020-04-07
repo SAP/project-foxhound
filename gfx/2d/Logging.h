@@ -216,11 +216,11 @@ class LogForwarder {
 
 class NoLog {
  public:
-  NoLog() {}
-  ~NoLog() {}
+  NoLog() = default;
+  ~NoLog() = default;
 
   // No-op
-  MOZ_IMPLICIT NoLog(const NoLog&) {}
+  MOZ_IMPLICIT NoLog(const NoLog&) = default;
 
   template <typename T>
   NoLog& operator<<(const T& aLogText) {
@@ -677,11 +677,20 @@ class Log final {
         case SurfaceType::RECORDING:
           mMessage << "SurfaceType::RECORDING";
           break;
+        case SurfaceType::WRAP_AND_RECORD:
+          mMessage << "SurfaceType::WRAP_AND_RECORD";
+          break;
         case SurfaceType::TILED:
           mMessage << "SurfaceType::TILED";
           break;
         case SurfaceType::DATA_SHARED:
           mMessage << "SurfaceType::DATA_SHARED";
+          break;
+        case SurfaceType::DATA_RECYCLING_SHARED:
+          mMessage << "SurfaceType::DATA_RECYCLING_SHARED";
+          break;
+        case SurfaceType::DATA_ALIGNED:
+          mMessage << "SurfaceType::DATA_ALIGNED";
           break;
         default:
           mMessage << "Invalid SurfaceType (" << (int)aType << ")";

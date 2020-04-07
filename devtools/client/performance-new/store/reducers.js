@@ -72,6 +72,8 @@ function interval(state = 1, action) {
   switch (action.type) {
     case "CHANGE_INTERVAL":
       return action.interval;
+    case "CHANGE_PRESET":
+      return action.preset ? action.preset.interval : state;
     case "INITIALIZE_STORE":
       return action.recordingSettingsFromPreferences.interval;
     default:
@@ -87,6 +89,8 @@ function entries(state = 0, action) {
   switch (action.type) {
     case "CHANGE_ENTRIES":
       return action.entries;
+    case "CHANGE_PRESET":
+      return action.preset ? action.preset.entries : state;
     case "INITIALIZE_STORE":
       return action.recordingSettingsFromPreferences.entries;
     default:
@@ -102,6 +106,8 @@ function features(state = [], action) {
   switch (action.type) {
     case "CHANGE_FEATURES":
       return action.features;
+    case "CHANGE_PRESET":
+      return action.preset ? action.preset.features : state;
     case "INITIALIZE_STORE":
       return action.recordingSettingsFromPreferences.features;
     default:
@@ -117,6 +123,8 @@ function threads(state = [], action) {
   switch (action.type) {
     case "CHANGE_THREADS":
       return action.threads;
+    case "CHANGE_PRESET":
+      return action.preset ? action.preset.threads : state;
     case "INITIALIZE_STORE":
       return action.recordingSettingsFromPreferences.threads;
     default:
@@ -140,6 +148,27 @@ function objdirs(state = [], action) {
 }
 
 /**
+ * The current preset name, used to select
+ * @type {Reducer<string>}
+ */
+function presetName(state = "", action) {
+  switch (action.type) {
+    case "INITIALIZE_STORE":
+      return action.recordingSettingsFromPreferences.presetName;
+    case "CHANGE_PRESET":
+      return action.presetName;
+    case "CHANGE_INTERVAL":
+    case "CHANGE_ENTRIES":
+    case "CHANGE_FEATURES":
+    case "CHANGE_THREADS":
+      // When updating any values, switch the preset over to "custom".
+      return "custom";
+    default:
+      return state;
+  }
+}
+
+/**
  * These are all the values used to initialize the profiler. They should never
  * change once added to the store.
  *
@@ -152,9 +181,26 @@ function initializedValues(state = null, action) {
         perfFront: action.perfFront,
         receiveProfile: action.receiveProfile,
         setRecordingPreferences: action.setRecordingPreferences,
-        isPopup: Boolean(action.isPopup),
+        presets: action.presets,
+        pageContext: action.pageContext,
         getSymbolTableGetter: action.getSymbolTableGetter,
+        supportedFeatures: action.supportedFeatures,
       };
+    default:
+      return state;
+  }
+}
+
+/**
+ * Some features may need a browser restart with an environment flag. Request
+ * one here.
+ *
+ * @type {Reducer<string | null>}
+ */
+function promptEnvRestart(state = null, action) {
+  switch (action.type) {
+    case "CHANGE_FEATURES":
+      return action.promptEnvRestart;
     default:
       return state;
   }
@@ -176,5 +222,7 @@ module.exports = combineReducers({
   features,
   threads,
   objdirs,
+  presetName,
   initializedValues,
+  promptEnvRestart,
 });

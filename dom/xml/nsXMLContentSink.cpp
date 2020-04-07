@@ -11,7 +11,6 @@
 #include "nsIContent.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
-#include "nsIDocShell.h"
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsHTMLParts.h"
 #include "nsCRT.h"
@@ -22,28 +21,22 @@
 #include "nsDocElementCreatedNotificationRunner.h"
 #include "nsIScriptContext.h"
 #include "nsNameSpaceManager.h"
-#include "nsIServiceManager.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIContentViewer.h"
 #include "prtime.h"
 #include "mozilla/Logging.h"
 #include "nsRect.h"
-#include "nsIWebNavigation.h"
 #include "nsIScriptElement.h"
 #include "nsStyleLinkElement.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
-#include "nsICookieService.h"
-#include "nsIPrompt.h"
 #include "nsIChannel.h"
-#include "nsIPrincipal.h"
 #include "nsXMLPrettyPrinter.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsIContentPolicy.h"
 #include "nsContentPolicyUtils.h"
 #include "nsError.h"
-#include "nsNodeUtils.h"
 #include "nsIScriptGlobalObject.h"
 #include "mozAutoDocUpdate.h"
 #include "nsMimeTypes.h"
@@ -54,9 +47,11 @@
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLTemplateElement.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/ProcessingInstruction.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/txMozillaXSLTProcessor.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/LoadInfo.h"
 
 using namespace mozilla;
@@ -99,7 +94,7 @@ nsXMLContentSink::nsXMLContentSink()
   PodArrayZero(mText);
 }
 
-nsXMLContentSink::~nsXMLContentSink() {}
+nsXMLContentSink::~nsXMLContentSink() = default;
 
 nsresult nsXMLContentSink::Init(Document* aDoc, nsIURI* aURI,
                                 nsISupports* aContainer, nsIChannel* aChannel) {
@@ -175,6 +170,13 @@ nsresult nsXMLContentSink::MaybePrettyPrint() {
     mPrettyPrintXML = false;
 
     return NS_OK;
+  }
+
+  {
+    // Try to perform a microtask checkpoint; this avoids always breaking
+    // pretty-printing if webextensions insert new content right after the
+    // document loads.
+    nsAutoMicroTask mt;
   }
 
   // stop observing in order to avoid crashing when replacing content
@@ -369,7 +371,7 @@ nsXMLContentSink::OnTransformDone(nsresult aResult, Document* aResultDocument) {
     NS_ASSERTION(mDocument->ComputeIndexOf(rootElement) != -1,
                  "rootElement not in doc?");
     mDocument->BeginUpdate();
-    nsNodeUtils::ContentInserted(mDocument, rootElement);
+    MutationObservers::NotifyContentInserted(mDocument, rootElement);
     mDocument->EndUpdate();
   }
 
@@ -691,8 +693,9 @@ nsresult nsXMLContentSink::MaybeProcessXSLTLink(
 
   // Do security check
   nsIScriptSecurityManager* secMan = nsContentUtils::GetSecurityManager();
-  rv = secMan->CheckLoadURIWithPrincipal(
-      mDocument->NodePrincipal(), url, nsIScriptSecurityManager::ALLOW_CHROME);
+  rv = secMan->CheckLoadURIWithPrincipal(mDocument->NodePrincipal(), url,
+                                         nsIScriptSecurityManager::ALLOW_CHROME,
+                                         mDocument->InnerWindowID());
   NS_ENSURE_SUCCESS(rv, NS_OK);
 
   nsCOMPtr<nsILoadInfo> secCheckLoadInfo =
@@ -852,10 +855,8 @@ bool nsXMLContentSink::SetDocElement(int32_t aNameSpaceID, nsAtom* aTagName,
 
   // check for root elements that needs special handling for
   // prettyprinting
-  if ((aNameSpaceID == kNameSpaceID_XBL && aTagName == nsGkAtoms::bindings) ||
-      (aNameSpaceID == kNameSpaceID_XSLT &&
-       (aTagName == nsGkAtoms::stylesheet ||
-        aTagName == nsGkAtoms::transform))) {
+  if (aNameSpaceID == kNameSpaceID_XSLT &&
+      (aTagName == nsGkAtoms::stylesheet || aTagName == nsGkAtoms::transform)) {
     mPrettyPrintHasSpecialRoot = true;
     if (mPrettyPrintXML) {
       // In this case, disable script execution, stylesheet

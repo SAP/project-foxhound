@@ -64,7 +64,7 @@ class nsStringInputStream final : public nsIStringInputStream,
   void SetTaint(const StringTaint& aTaint) { mData.AssignTaint(aTaint); }
 
  private:
-  ~nsStringInputStream() {}
+  ~nsStringInputStream() = default;
 
   // Segmented read implementation, used by ReadSegment() and
   // TaintedreadSegment()
@@ -442,35 +442,17 @@ nsStringInputStream::Tell(int64_t* aOutWhere) {
 // nsIIPCSerializableInputStream implementation
 /////////
 
-void nsStringInputStream::Serialize(InputStreamParams& aParams,
-                                    FileDescriptorArray& /* aFDs */,
-                                    bool aDelayedStart, uint32_t aMaxSize,
-                                    uint32_t* aSizeUsed,
-                                    mozilla::dom::ContentChild* aManager) {
+void nsStringInputStream::Serialize(
+    InputStreamParams& aParams, FileDescriptorArray& /* aFDs */,
+    bool aDelayedStart, uint32_t aMaxSize, uint32_t* aSizeUsed,
+    mozilla::ipc::ParentToChildStreamActorManager* aManager) {
   SerializeInternal(aParams, aDelayedStart, aMaxSize, aSizeUsed, aManager);
 }
 
-void nsStringInputStream::Serialize(InputStreamParams& aParams,
-                                    FileDescriptorArray& /* aFDs */,
-                                    bool aDelayedStart, uint32_t aMaxSize,
-                                    uint32_t* aSizeUsed,
-                                    PBackgroundChild* aManager) {
-  SerializeInternal(aParams, aDelayedStart, aMaxSize, aSizeUsed, aManager);
-}
-
-void nsStringInputStream::Serialize(InputStreamParams& aParams,
-                                    FileDescriptorArray& /* aFDs */,
-                                    bool aDelayedStart, uint32_t aMaxSize,
-                                    uint32_t* aSizeUsed,
-                                    mozilla::dom::ContentParent* aManager) {
-  SerializeInternal(aParams, aDelayedStart, aMaxSize, aSizeUsed, aManager);
-}
-
-void nsStringInputStream::Serialize(InputStreamParams& aParams,
-                                    FileDescriptorArray& /* aFDs */,
-                                    bool aDelayedStart, uint32_t aMaxSize,
-                                    uint32_t* aSizeUsed,
-                                    PBackgroundParent* aManager) {
+void nsStringInputStream::Serialize(
+    InputStreamParams& aParams, FileDescriptorArray& /* aFDs */,
+    bool aDelayedStart, uint32_t aMaxSize, uint32_t* aSizeUsed,
+    mozilla::ipc::ChildToParentStreamActorManager* aManager) {
   SerializeInternal(aParams, aDelayedStart, aMaxSize, aSizeUsed, aManager);
 }
 

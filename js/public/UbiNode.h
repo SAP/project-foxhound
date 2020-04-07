@@ -13,10 +13,11 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/Variant.h"
+
+#include <utility>
 
 #include "jspubtd.h"
 
@@ -173,6 +174,10 @@ class StackFrame;
 }  // namespace ubi
 }  // namespace JS
 
+namespace js {
+class BaseScript;
+}  // namespace js
+
 namespace JS {
 namespace ubi {
 
@@ -322,9 +327,8 @@ class StackFrame {
 
   template <typename T>
   void construct(T* ptr) {
-    static_assert(
-        mozilla::IsBaseOf<BaseStackFrame, ConcreteStackFrame<T>>::value,
-        "ConcreteStackFrame<T> must inherit from BaseStackFrame");
+    static_assert(std::is_base_of<BaseStackFrame, ConcreteStackFrame<T>>::value,
+                  "ConcreteStackFrame<T> must inherit from BaseStackFrame");
     static_assert(
         sizeof(ConcreteStackFrame<T>) == sizeof(*base()),
         "ubi::ConcreteStackFrame<T> specializations must be the same size as "
@@ -711,7 +715,7 @@ class Node {
     static_assert(
         sizeof(Concrete<T>) == sizeof(*base()),
         "ubi::Base specializations must be the same size as ubi::Base");
-    static_assert(mozilla::IsBaseOf<Base, Concrete<T>>::value,
+    static_assert(std::is_base_of<Base, Concrete<T>>::value,
                   "ubi::Concrete<T> must inherit from ubi::Base");
     Concrete<T>::construct(base(), ptr);
   }
@@ -1107,12 +1111,14 @@ class JS_PUBLIC_API Concrete<JS::BigInt> : TracerConcrete<JS::BigInt> {
 };
 
 template <>
-class JS_PUBLIC_API Concrete<JSScript> : TracerConcreteWithRealm<JSScript> {
+class JS_PUBLIC_API Concrete<js::BaseScript>
+    : TracerConcreteWithRealm<js::BaseScript> {
  protected:
-  explicit Concrete(JSScript* ptr) : TracerConcreteWithRealm<JSScript>(ptr) {}
+  explicit Concrete(js::BaseScript* ptr)
+      : TracerConcreteWithRealm<js::BaseScript>(ptr) {}
 
  public:
-  static void construct(void* storage, JSScript* ptr) {
+  static void construct(void* storage, js::BaseScript* ptr) {
     new (storage) Concrete(ptr);
   }
 

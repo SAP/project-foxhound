@@ -15,7 +15,6 @@ if (!_TEST_FILE[0].includes("toolkit/mozapps/extensions/test/xpcshell/")) {
 const PREF_EM_CHECK_UPDATE_SECURITY = "extensions.checkUpdateSecurity";
 const PREF_EM_STRICT_COMPATIBILITY = "extensions.strictCompatibility";
 const PREF_GETADDONS_BYIDS = "extensions.getAddons.get.url";
-const PREF_COMPAT_OVERRIDES = "extensions.getAddons.compatOverides.url";
 const PREF_XPI_SIGNATURES_REQUIRED = "xpinstall.signatures.required";
 
 const PREF_DISABLE_SECURITY =
@@ -308,9 +307,7 @@ var BootstrapMonitor = {
   checkMatches(method, lastMethod, params, { params: lastParams } = {}) {
     ok(
       lastParams,
-      `Expecting matching ${lastMethod} call for add-on ${
-        params.id
-      } ${method} call`
+      `Expecting matching ${lastMethod} call for add-on ${params.id} ${method} call`
     );
 
     if (method == "update") {
@@ -336,9 +333,7 @@ var BootstrapMonitor = {
 
       ok(
         params.resourceURI.equals(lastParams.resourceURI),
-        `params.resourceURI should match: "${params.resourceURI.spec}" == "${
-          lastParams.resourceURI.spec
-        }"`
+        `params.resourceURI should match: "${params.resourceURI.spec}" == "${lastParams.resourceURI.spec}"`
       );
     }
   },
@@ -784,6 +779,7 @@ class EventChecker {
   constructor(options) {
     this.expectedEvents = options.addonEvents || {};
     this.expectedInstalls = options.installEvents || null;
+    this.ignorePlugins = options.ignorePlugins || false;
 
     this.finished = new Promise(resolve => {
       this.resolveFinished = resolve;
@@ -986,6 +982,15 @@ class EventChecker {
 
   // Install listener events.
   checkInstall(event, install, details = {}) {
+    // Lazy initialization of the plugin host means we can get spurious
+    // install events for plugins. If we're not looking for plugin
+    // installs, ignore them completely. If we *are* looking for plugin
+    // installs, the onus is on the individual test to ensure it waits
+    // for the plugin host to have done its initial work.
+    if (this.ignorePlugins && install.type == "plugin") {
+      info(`Ignoring install event for plugin ${install.id}`);
+      return undefined;
+    }
     info(`Got install event "${event}"`);
 
     let expected = this.expectedInstalls.shift();
@@ -1084,6 +1089,10 @@ class EventChecker {
   }
 
   onExternalInstall(addon, existingAddon, requiresRestart) {
+    if (this.ignorePlugins && addon.type == "plugin") {
+      info(`Ignoring install event for plugin ${addon.id}`);
+      return undefined;
+    }
     let expected = this.expectedInstalls.shift();
     Assert.ok(expected, "Should be expecting install event");
 
@@ -1157,7 +1166,7 @@ Services.prefs.setBoolPref("extensions.strictCompatibility", true);
 // Ensure signature checks are enabled by default
 Services.prefs.setBoolPref(PREF_XPI_SIGNATURES_REQUIRED, true);
 
-Services.prefs.setBoolPref("extensions.legacy.enabled", true);
+Services.prefs.setBoolPref("extensions.experiments.enabled", true);
 
 // Copies blocklistFile (an nsIFile) to gProfD/blocklist.xml.
 function copyBlocklistToProfile(blocklistFile) {
@@ -1243,7 +1252,7 @@ async function saveJSON(aData, aFile) {
     aFile,
     new TextEncoder().encode(JSON.stringify(aData, null, 2))
   );
-  info("Done saving JSON file " + aFile.path);
+  info("Done saving JSON file " + aFile);
 }
 
 XPCOMUtils.defineLazyServiceGetter(

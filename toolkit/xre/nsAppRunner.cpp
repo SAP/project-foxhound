@@ -7,6 +7,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -26,7 +27,6 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/intl/LocaleService.h"
-#include "mozilla/recordreplay/ParentIPC.h"
 #include "mozilla/JSONWriter.h"
 #include "BaseProfiler.h"
 
@@ -58,17 +58,11 @@
 #include "prenv.h"
 #include "prtime.h"
 
-#include "nsIAppShellService.h"
 #include "nsIAppStartup.h"
 #include "nsAppStartupNotifier.h"
 #include "nsIMutableArray.h"
-#include "nsICategoryManager.h"
-#include "nsIChromeRegistry.h"
 #include "nsCommandLine.h"
-#include "nsIComponentManager.h"
 #include "nsIComponentRegistrar.h"
-#include "nsIConsoleService.h"
-#include "nsIContentHandler.h"
 #include "nsIDialogParamBlock.h"
 #include "mozilla/ModuleUtils.h"
 #include "nsIIOService.h"
@@ -82,20 +76,17 @@
 #include "nsIServiceManager.h"
 #include "nsIStringBundle.h"
 #include "nsISupportsPrimitives.h"
-#include "nsIToolkitChromeRegistry.h"
 #include "nsIToolkitProfile.h"
+#include "nsIUUIDGenerator.h"
 #include "nsToolkitProfileService.h"
 #include "nsIURI.h"
 #include "nsIURL.h"
 #include "nsIWindowCreator.h"
-#include "nsIWindowMediator.h"
 #include "nsIWindowWatcher.h"
 #include "nsIXULAppInfo.h"
 #include "nsIXULRuntime.h"
 #include "nsPIDOMWindow.h"
-#include "nsIBaseWindow.h"
 #include "nsIWidget.h"
-#include "nsIDocShell.h"
 #include "nsAppShellCID.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/scache/StartupCache.h"
@@ -117,6 +108,10 @@
 
 #  if defined(MOZ_LAUNCHER_PROCESS)
 #    include "mozilla/LauncherRegistryInfo.h"
+#  endif
+
+#  if defined(MOZ_DEFAULT_BROWSER_AGENT)
+#    include "nsIWindowsRegKey.h"
 #  endif
 
 #  ifndef PROCESS_DEP_ENABLE
@@ -241,6 +236,11 @@
 #include "mozilla/mozalloc_oom.h"
 #include "SafeMode.h"
 
+#ifdef MOZ_THUNDERBIRD
+#  include "nsIPK11TokenDB.h"
+#  include "nsIPK11Token.h"
+#endif
+
 extern uint32_t gRestartMode;
 extern void InstallSignalHandlers(const char* ProgramName);
 
@@ -248,10 +248,15 @@ extern void InstallSignalHandlers(const char* ProgramName);
 #define FILE_INVALIDATE_CACHES NS_LITERAL_CSTRING(".purgecaches")
 #define FILE_STARTUP_INCOMPLETE NS_LITERAL_STRING(".startup-incomplete")
 
-#if defined(MOZ_BLOCK_PROFILE_DOWNGRADE) || defined(MOZ_LAUNCHER_PROCESS)
+#if defined(MOZ_BLOCK_PROFILE_DOWNGRADE) || defined(MOZ_LAUNCHER_PROCESS) || \
+    defined(MOZ_DEFAULT_BROWSER_AGENT)
 static const char kPrefHealthReportUploadEnabled[] =
     "datareporting.healthreport.uploadEnabled";
 #endif  // defined(MOZ_BLOCK_PROFILE_DOWNGRADE) || defined(MOZ_LAUNCHER_PROCESS)
+        // || defined(MOZ_DEFAULT_BROWSER_AGENT)
+#if defined(MOZ_DEFAULT_BROWSER_AGENT)
+static const char kPrefDefaultAgentEnabled[] = "default-browser-agent.enabled";
+#endif  // defined(MOZ_DEFAULT_BROWSER_AGENT)
 
 int gArgc;
 char** gArgv;
@@ -287,7 +292,6 @@ nsString gAbsoluteArgv0Path;
 #  ifdef MOZ_X11
 #    include <gdk/gdkx.h>
 #  endif /* MOZ_X11 */
-#  include "nsGTKToolkit.h"
 #  include <fontconfig/fontconfig.h>
 #endif
 #include "BinaryPath.h"
@@ -346,12 +350,6 @@ static void SaveFileToEnv(const char* name, nsIFile* file) {
   file->GetNativePath(path);
   SaveWordToEnv(name, path);
 #endif
-}
-
-// Save the path of the given file to the specified environment variable
-// provided the environment variable does not have a value.
-static void SaveFileToEnvIfUnset(const char* name, nsIFile* file) {
-  if (!EnvHasValue(name)) SaveFileToEnv(name, file);
 }
 
 static bool gIsExpectedExit = false;
@@ -502,7 +500,13 @@ nsXULAppInfo::GetName(nsACString& aResult) {
     aResult = cc->GetAppInfo().name;
     return NS_OK;
   }
+
+#ifdef MOZ_WIDGET_ANDROID
+  nsCString name = java::GeckoAppShell::GetAppName()->ToCString();
+  aResult.Assign(std::move(name));
+#else
   aResult.Assign(gAppData->name);
+#endif
 
   return NS_OK;
 }
@@ -640,9 +644,10 @@ SYNC_ENUMS(VR, VR)
 SYNC_ENUMS(RDD, RDD)
 SYNC_ENUMS(SOCKET, Socket)
 SYNC_ENUMS(SANDBOX_BROKER, RemoteSandboxBroker)
+SYNC_ENUMS(FORKSERVER, ForkServer)
 
 // .. and ensure that that is all of them:
-static_assert(GeckoProcessType_RemoteSandboxBroker + 1 == GeckoProcessType_End,
+static_assert(GeckoProcessType_ForkServer + 1 == GeckoProcessType_End,
               "Did not find the final GeckoProcessType");
 
 NS_IMETHODIMP
@@ -904,44 +909,31 @@ nsXULAppInfo::GetLauncherProcessState(uint32_t* aResult) {
 }
 
 #ifdef XP_WIN
-// Matches the enum in WinNT.h for the Vista SDK but renamed so that we can
-// safely build with the Vista SDK and without it.
-typedef enum {
-  VistaTokenElevationTypeDefault = 1,
-  VistaTokenElevationTypeFull,
-  VistaTokenElevationTypeLimited
-} VISTA_TOKEN_ELEVATION_TYPE;
-
-// avoid collision with TokeElevationType enum in WinNT.h
-// of the Vista SDK
-#  define VistaTokenElevationType static_cast<TOKEN_INFORMATION_CLASS>(18)
-
 NS_IMETHODIMP
 nsXULAppInfo::GetUserCanElevate(bool* aUserCanElevate) {
-  HANDLE hToken;
-
-  VISTA_TOKEN_ELEVATION_TYPE elevationType;
-  DWORD dwSize;
-
-  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken) ||
-      !GetTokenInformation(hToken, VistaTokenElevationType, &elevationType,
-                           sizeof(elevationType), &dwSize)) {
+  HANDLE rawToken;
+  if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &rawToken)) {
     *aUserCanElevate = false;
-  } else {
-    // The possible values returned for elevationType and their meanings are:
-    //   TokenElevationTypeDefault: The token does not have a linked token
-    //     (e.g. UAC disabled or a standard user, so they can't be elevated)
-    //   TokenElevationTypeFull: The token is linked to an elevated token
-    //     (e.g. UAC is enabled and the user is already elevated so they can't
-    //      be elevated again)
-    //   TokenElevationTypeLimited: The token is linked to a limited token
-    //     (e.g. UAC is enabled and the user is not elevated, so they can be
-    //      elevated)
-    *aUserCanElevate = (elevationType == VistaTokenElevationTypeLimited);
+    return NS_OK;
   }
 
-  if (hToken) CloseHandle(hToken);
+  nsAutoHandle token(rawToken);
+  LauncherResult<TOKEN_ELEVATION_TYPE> elevationType = GetElevationType(token);
+  if (elevationType.isErr()) {
+    *aUserCanElevate = false;
+    return NS_OK;
+  }
 
+  // The possible values returned for elevationType and their meanings are:
+  //   TokenElevationTypeDefault: The token does not have a linked token
+  //     (e.g. UAC disabled or a standard user, so they can't be elevated)
+  //   TokenElevationTypeFull: The token is linked to an elevated token
+  //     (e.g. UAC is enabled and the user is already elevated so they can't
+  //      be elevated again)
+  //   TokenElevationTypeLimited: The token is linked to a limited token
+  //     (e.g. UAC is enabled and the user is not elevated, so they can be
+  //      elevated)
+  *aUserCanElevate = (elevationType.inspect() == TokenElevationTypeLimited);
   return NS_OK;
 }
 #endif
@@ -1164,12 +1156,6 @@ nsXULAppInfo::SaveMemoryReport() {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXULAppInfo::SetTelemetrySessionId(const nsACString& id) {
-  CrashReporter::SetTelemetrySessionId(id);
-  return NS_OK;
-}
-
 // This method is from nsIFInishDumpingCallback.
 NS_IMETHODIMP
 nsXULAppInfo::Callback(nsISupports* aData) {
@@ -1215,7 +1201,7 @@ class ScopedXPCOMStartup {
   ScopedXPCOMStartup() : mServiceManager(nullptr) {}
   ~ScopedXPCOMStartup();
 
-  nsresult Initialize();
+  nsresult Initialize(bool aInitJSContext = true);
   nsresult SetWindowCreator(nsINativeAppSupport* native);
 
  private:
@@ -1272,13 +1258,13 @@ static const mozilla::Module::ContractIDEntry kXREContracts[] = {
 extern const mozilla::Module kXREModule = {mozilla::Module::kVersion, kXRECIDs,
                                            kXREContracts};
 
-nsresult ScopedXPCOMStartup::Initialize() {
+nsresult ScopedXPCOMStartup::Initialize(bool aInitJSContext) {
   NS_ASSERTION(gDirServiceProvider, "Should not get here!");
 
   nsresult rv;
 
   rv = NS_InitXPCOM(&mServiceManager, gDirServiceProvider->GetAppDir(),
-                    gDirServiceProvider);
+                    gDirServiceProvider, aInitJSContext);
   if (NS_FAILED(rv)) {
     NS_ERROR("Couldn't start xpcom!");
     mServiceManager = nullptr;
@@ -1432,10 +1418,6 @@ static void DumpHelp() {
   printf("  --headless         Run without a GUI.\n");
 #endif
 
-  printf(
-      "  --save-recordings  Save recordings for all content processes to a "
-      "directory.\n");
-
   // this works, but only after the components have registered.  so if you drop
   // in a new command line handler, --help won't not until the second run. out
   // of the bug, because we ship a component.reg file, it works correctly.
@@ -1568,13 +1550,62 @@ static void SetupLauncherProcessPref() {
 
 #  endif  // defined(MOZ_LAUNCHER_PROCESS)
 
+#  if defined(MOZ_DEFAULT_BROWSER_AGENT)
+static void OnDefaultAgentTelemetryPrefChanged(const char* aPref, void* aData) {
+  bool prefVal = Preferences::GetBool(aPref, true);
+
+  nsresult rv;
+  nsCOMPtr<nsIWindowsRegKey> regKey =
+      do_CreateInstance("@mozilla.org/windows-registry-key;1", &rv);
+  NS_ENSURE_SUCCESS_VOID(rv);
+
+  nsAutoString keyName;
+  keyName.AppendLiteral("SOFTWARE\\" MOZ_APP_VENDOR "\\" MOZ_APP_NAME
+                        "\\Default Browser Agent");
+
+  nsCOMPtr<nsIFile> binaryPath;
+  rv = XRE_GetBinaryPath(getter_AddRefs(binaryPath));
+  NS_ENSURE_SUCCESS_VOID(rv);
+
+  nsCOMPtr<nsIFile> binaryDir;
+  rv = binaryPath->GetParent(getter_AddRefs(binaryDir));
+  NS_ENSURE_SUCCESS_VOID(rv);
+
+  nsAutoString valueName;
+  rv = binaryDir->GetPath(valueName);
+  NS_ENSURE_SUCCESS_VOID(rv);
+
+  if (strcmp(aPref, kPrefHealthReportUploadEnabled) == 0) {
+    valueName.AppendLiteral("|DisableTelemetry");
+  } else if (strcmp(aPref, kPrefDefaultAgentEnabled) == 0) {
+    valueName.AppendLiteral("|DisableDefaultBrowserAgent");
+  } else {
+    return;
+  }
+
+  rv = regKey->Create(nsIWindowsRegKey::ROOT_KEY_CURRENT_USER, keyName,
+                      nsIWindowsRegKey::ACCESS_WRITE);
+  NS_ENSURE_SUCCESS_VOID(rv);
+
+  // We're recording whether the pref is *disabled*, so invert the value.
+  rv = regKey->WriteIntValue(valueName, prefVal ? 0 : 1);
+  NS_ENSURE_SUCCESS_VOID(rv);
+}
+
+#  endif  // defined(MOZ_DEFAULT_BROWSER_AGENT)
+
 #endif  // XP_WIN
+
+void UnlockProfile() {
+  if (gProfileLock) {
+    gProfileLock->Unlock();
+  }
+}
 
 // If aBlankCommandLine is true, then the application will be launched with a
 // blank command line instead of being launched with the same command line that
 // it was initially started with.
-static nsresult LaunchChild(nsINativeAppSupport* aNative,
-                            bool aBlankCommandLine = false) {
+nsresult LaunchChild(bool aBlankCommandLine) {
   // Restart this process by exec'ing it into the current process
   // if supported by the platform.  Otherwise, use NSPR.
 
@@ -1798,7 +1829,7 @@ static ReturnAbortOnError ProfileLockedDialog(nsIFile* aProfileDir,
         SaveFileToEnv("XRE_PROFILE_PATH", aProfileDir);
         SaveFileToEnv("XRE_PROFILE_LOCAL_PATH", aProfileLocalDir);
 
-        return LaunchChild(aNative);
+        return LaunchChild(false);
       }
     } else {
 #ifdef MOZ_WIDGET_ANDROID
@@ -1817,7 +1848,7 @@ static ReturnAbortOnError ProfileLockedDialog(nsIFile* aProfileDir,
 }
 
 static const char kProfileManagerURL[] =
-    "chrome://mozapps/content/profile/profileSelection.xul";
+    "chrome://mozapps/content/profile/profileSelection.xhtml";
 
 static ReturnAbortOnError ShowProfileManager(
     nsIToolkitProfileService* aProfileSvc, nsINativeAppSupport* aNative) {
@@ -1907,7 +1938,7 @@ static ReturnAbortOnError ShowProfileManager(
     gRestartArgv[gRestartArgc] = nullptr;
   }
 
-  return LaunchChild(aNative);
+  return LaunchChild(false);
 }
 
 static bool gDoMigration = false;
@@ -2205,7 +2236,7 @@ static void SubmitDowngradeTelemetry(const nsCString& aLastVersion,
 }
 
 static const char kProfileDowngradeURL[] =
-    "chrome://mozapps/content/profile/profileDowngrade.xul";
+    "chrome://mozapps/content/profile/profileDowngrade.xhtml";
 
 static ReturnAbortOnError CheckDowngrade(nsIFile* aProfileDir,
                                          nsINativeAppSupport* aNative,
@@ -2307,7 +2338,7 @@ static ReturnAbortOnError CheckDowngrade(nsIFile* aProfileDir,
     SaveFileToEnv("XRE_PROFILE_PATH", profD);
     SaveFileToEnv("XRE_PROFILE_LOCAL_PATH", profLD);
 
-    return LaunchChild(aNative);
+    return LaunchChild(false);
   }
 
   // Cancel
@@ -2648,28 +2679,6 @@ static bool RemoveComponentRegistries(nsIFile* aProfileDir,
          rv == NS_ERROR_FILE_NOT_FOUND;
 }
 
-// To support application initiated restart via nsIAppStartup.quit, we
-// need to save various environment variables, and then restore them
-// before re-launching the application.
-
-static struct SavedVar {
-  const char* name;
-  char* value;
-} gSavedVars[] = {{"XUL_APP_FILE", nullptr}};
-
-static void SaveStateForAppInitiatedRestart() {
-  for (auto& savedVar : gSavedVars) {
-    const char* s = PR_GetEnv(savedVar.name);
-    if (s) savedVar.value = Smprintf("%s=%s", savedVar.name, s).release();
-  }
-}
-
-static void RestoreStateForAppInitiatedRestart() {
-  for (auto& savedVar : gSavedVars) {
-    if (savedVar.value) PR_SetEnv(savedVar.value);
-  }
-}
-
 // When we first initialize the crash reporter we don't have a profile,
 // so we set the minidump path to $TEMP.  Once we have a profile,
 // we set it to $PROFILE/minidumps, creating the directory
@@ -2712,10 +2721,8 @@ static void MOZ_gdk_display_close(GdkDisplay* display) {
     g_free(theme_name);
   }
 
-#    ifdef MOZ_WIDGET_GTK
   // A workaround for https://bugzilla.gnome.org/show_bug.cgi?id=703257
   if (gtk_check_version(3, 9, 8) != NULL) skip_display_close = true;
-#    endif
 
   bool buggyCairoShutdown = cairo_version() < CAIRO_VERSION_ENCODE(1, 4, 0);
 
@@ -3597,46 +3604,6 @@ static void PR_CALLBACK ReadAheadDlls_ThreadStart(void*) {
 }
 #endif
 
-namespace mozilla {
-ShutdownChecksMode gShutdownChecks = SCM_NOTHING;
-}  // namespace mozilla
-
-static void SetShutdownChecks() {
-  // Set default first. On debug builds we crash. On nightly and local
-  // builds we record. Nightlies will then send the info via telemetry,
-  // but it is usefull to have the data in about:telemetry in local builds
-  // too.
-
-#ifdef DEBUG
-#  if defined(MOZ_CODE_COVERAGE)
-  gShutdownChecks = SCM_NOTHING;
-#  else
-  gShutdownChecks = SCM_CRASH;
-#  endif  // MOZ_CODE_COVERAGE
-#else
-  const char* releaseChannel = MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL);
-  if (strcmp(releaseChannel, "nightly") == 0 ||
-      strcmp(releaseChannel, "default") == 0) {
-    gShutdownChecks = SCM_RECORD;
-  } else {
-    gShutdownChecks = SCM_NOTHING;
-  }
-#endif  // DEBUG
-
-  // We let an environment variable override the default so that addons
-  // authors can use it for debugging shutdown with released firefox versions.
-  const char* mozShutdownChecksEnv = PR_GetEnv("MOZ_SHUTDOWN_CHECKS");
-  if (mozShutdownChecksEnv) {
-    if (strcmp(mozShutdownChecksEnv, "crash") == 0) {
-      gShutdownChecks = SCM_CRASH;
-    } else if (strcmp(mozShutdownChecksEnv, "record") == 0) {
-      gShutdownChecks = SCM_RECORD;
-    } else if (strcmp(mozShutdownChecksEnv, "nothing") == 0) {
-      gShutdownChecks = SCM_NOTHING;
-    }
-  }
-}
-
 #if defined(MOZ_WAYLAND)
 bool IsWaylandDisabled() {
   // Enable Wayland on Gtk+ >= 3.22 where we can expect recent enough
@@ -3652,16 +3619,14 @@ bool IsWaylandDisabled() {
 }
 #endif
 
-namespace mozilla {
-namespace startup {
+namespace mozilla::startup {
 Result<nsCOMPtr<nsIFile>, nsresult> GetIncompleteStartupFile(nsIFile* aProfLD) {
   nsCOMPtr<nsIFile> crashFile;
   MOZ_TRY(aProfLD->Clone(getter_AddRefs(crashFile)));
   MOZ_TRY(crashFile->Append(FILE_STARTUP_INCOMPLETE));
   return std::move(crashFile);
 }
-}  // namespace startup
-}  // namespace mozilla
+}  // namespace mozilla::startup
 
 // Check whether the last startup attempt resulted in a crash within the
 // last 6 hours.
@@ -3703,8 +3668,6 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
 
   if (!aExitFlag) return 1;
   *aExitFlag = false;
-
-  SetShutdownChecks();
 
   // Enable Telemetry IO Reporting on DEBUG, nightly and local builds,
   // but disable it on FUZZING builds.
@@ -3874,7 +3837,6 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
 #endif
 #if defined(MOZ_WIDGET_GTK)
   g_set_application_name(mAppData->name);
-  gtk_window_set_auto_startup_notification(false);
 
 #endif /* defined(MOZ_WIDGET_GTK) */
 #ifdef MOZ_X11
@@ -4251,6 +4213,7 @@ nsresult XREMain::XRE_mainRun() {
 
 #if defined(XP_WIN)
   RefPtr<mozilla::DllServices> dllServices(mozilla::DllServices::Get());
+  dllServices->StartUntrustedModulesProcessor();
   auto dllServicesDisable =
       MakeScopeExit([&dllServices]() { dllServices->DisableFull(); });
 #endif  // defined(XP_WIN)
@@ -4357,10 +4320,21 @@ nsresult XREMain::XRE_mainRun() {
     }
   }
 
+  // We'd like to initialize the JSContext *after* reading the user prefs.
+  // Unfortunately that's not possible if we have to do profile migration
+  // because that requires us to execute JS before reading user prefs.
+  // Restarting the browser after profile migration would fix this. See
+  // bug 1592523.
+  bool initializedJSContext = false;
+
   {
     // Profile Migration
     if (mAppData->flags & NS_XRE_ENABLE_PROFILE_MIGRATOR && gDoMigration) {
       gDoMigration = false;
+
+      xpc::InitializeJSContext();
+      initializedJSContext = true;
+
       nsCOMPtr<nsIProfileMigrator> pm(
           do_CreateInstance(NS_PROFILEMIGRATOR_CONTRACTID));
       if (pm) {
@@ -4377,6 +4351,11 @@ nsresult XREMain::XRE_mainRun() {
     }
 
     if (gDoProfileReset) {
+      if (!initializedJSContext) {
+        xpc::InitializeJSContext();
+        initializedJSContext = true;
+      }
+
       nsresult backupCreated =
           ProfileResetCleanup(mProfileSvc, gResetOldProfile);
       if (NS_FAILED(backupCreated)) {
@@ -4402,12 +4381,40 @@ nsresult XREMain::XRE_mainRun() {
   // ready in time for early consumers, such as the component loader.
   mDirProvider.InitializeUserPrefs();
 
+  // Now that all (user) prefs have been loaded we can initialize the main
+  // thread's JSContext.
+  if (!initializedJSContext) {
+    xpc::InitializeJSContext();
+  }
+
+  // Finally, now that JS has been initialized, we can finish pref loading. This
+  // needs to happen after JS and XPConnect initialization because AutoConfig
+  // files require JS execution. Note that this means AutoConfig files can't
+  // override JS engine start-up prefs.
+  mDirProvider.FinishInitializingUserPrefs();
+
   nsAppStartupNotifier::NotifyObservers(APPSTARTUP_CATEGORY);
 
   nsCOMPtr<nsIAppStartup> appStartup(components::AppStartup::Service());
   NS_ENSURE_TRUE(appStartup, NS_ERROR_FAILURE);
 
   mDirProvider.DoStartup();
+
+#ifdef MOZ_THUNDERBIRD
+  if (Preferences::GetBool("security.prompt_for_master_password_on_startup",
+                           false)) {
+    // Prompt for the master password prior to opening application windows,
+    // to avoid the race that triggers multiple prompts (see bug 177175).
+    // We use this code until we have a better solution, possibly as
+    // described in bug 177175 comment 384.
+    nsCOMPtr<nsIPK11TokenDB> db =
+        do_GetService("@mozilla.org/security/pk11tokendb;1");
+    nsCOMPtr<nsIPK11Token> token;
+    if (NS_SUCCEEDED(db->GetInternalKeyToken(getter_AddRefs(token)))) {
+      Unused << token->Login(false);
+    }
+  }
+#endif
 
   // As FilePreferences need the profile directory, we must initialize right
   // here.
@@ -4417,7 +4424,7 @@ nsresult XREMain::XRE_mainRun() {
   OverrideDefaultLocaleIfNeeded();
 
   nsCString userAgentLocale;
-  LocaleService::GetInstance()->GetAppLocaleAsLangTag(userAgentLocale);
+  LocaleService::GetInstance()->GetAppLocaleAsBCP47(userAgentLocale);
   CrashReporter::AnnotateCrashReport(
       CrashReporter::Annotation::useragent_locale, userAgentLocale);
 
@@ -4458,7 +4465,7 @@ nsresult XREMain::XRE_mainRun() {
   }
 #endif
 
-  SaveStateForAppInitiatedRestart();
+  mozilla::AppShutdown::SaveEnvVarsForPotentialRestart();
 
   // clear out any environment variables which may have been set
   // during the relaunch process now that we know we won't be relaunching.
@@ -4488,13 +4495,15 @@ nsresult XREMain::XRE_mainRun() {
 #  if defined(MOZ_LAUNCHER_PROCESS)
     SetupLauncherProcessPref();
 #  endif  // defined(MOZ_LAUNCHER_PROCESS)
+#  if defined(MOZ_DEFAULT_BROWSER_AGENT)
+    Preferences::RegisterCallbackAndCall(&OnDefaultAgentTelemetryPrefChanged,
+                                         kPrefHealthReportUploadEnabled);
+    Preferences::RegisterCallbackAndCall(&OnDefaultAgentTelemetryPrefChanged,
+                                         kPrefDefaultAgentEnabled);
+#  endif  // defined(MOZ_DEFAULT_BROWSER_AGENT)
 #endif
 
 #if defined(HAVE_DESKTOP_STARTUP_ID) && defined(MOZ_WIDGET_GTK)
-    nsGTKToolkit* toolkit = nsGTKToolkit::GetToolkit();
-    if (toolkit && !mDesktopStartupID.IsEmpty()) {
-      toolkit->SetDesktopStartupID(mDesktopStartupID);
-    }
     // Clear the environment variable so it won't be inherited by
     // child processes and confuse things.
     g_unsetenv("DESKTOP_STARTUP_ID");
@@ -4555,6 +4564,12 @@ nsresult XREMain::XRE_mainRun() {
     mozilla::InitEventTracing(logToConsole);
   }
 #endif /* MOZ_INSTRUMENT_EVENT_LOOP */
+
+  // Send Telemetry about Gecko version and buildid
+  Telemetry::ScalarSet(Telemetry::ScalarID::GECKO_VERSION,
+                       NS_ConvertASCIItoUTF16(gAppData->version));
+  Telemetry::ScalarSet(Telemetry::ScalarID::GECKO_BUILD_ID,
+                       NS_ConvertASCIItoUTF16(gAppData->buildID));
 
 #if defined(MOZ_SANDBOX) && defined(XP_LINUX)
   // If we're on Linux, we now have information about the OS capabilities
@@ -4721,13 +4736,13 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   result = XRE_mainStartup(&exit);
   if (result != 0 || exit) return result;
 
-  bool appInitiatedRestart = false;
+  // Start the real application. We use |aInitJSContext = false| because
+  // XRE_mainRun wants to initialize the JSContext after reading user prefs.
 
-  // Start the real application
   mScopedXPCOM = MakeUnique<ScopedXPCOMStartup>();
   if (!mScopedXPCOM) return 1;
 
-  rv = mScopedXPCOM->Initialize();
+  rv = mScopedXPCOM->Initialize(/* aInitJSContext = */ false);
   NS_ENSURE_SUCCESS(rv, 1);
 
   // run!
@@ -4738,16 +4753,6 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
 #endif
 
   gAbsoluteArgv0Path.Truncate();
-
-  // Check for an application initiated restart.  This is one that
-  // corresponds to nsIAppStartup.quit(eRestart)
-  if (rv == NS_SUCCESS_RESTART_APP) {
-    appInitiatedRestart = true;
-
-    // We have an application restart don't do any shutdown checks here
-    // In particular we don't want to poison IO for checking late-writes.
-    gShutdownChecks = SCM_NOTHING;
-  }
 
 #if defined(MOZ_HAS_REMOTE)
   // Shut down the remote service. We must do this before calling LaunchChild
@@ -4769,27 +4774,7 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   mProfileLock->Unlock();
   gProfileLock = nullptr;
 
-  // Restart the app after XPCOM has been shut down cleanly.
-  if (appInitiatedRestart) {
-    RestoreStateForAppInitiatedRestart();
-
-    // Ensure that these environment variables are set:
-    SaveFileToEnvIfUnset("XRE_PROFILE_PATH", mProfD);
-    SaveFileToEnvIfUnset("XRE_PROFILE_LOCAL_PATH", mProfLD);
-
-#ifdef MOZ_WIDGET_GTK
-    if (!gfxPlatform::IsHeadless()) {
-      MOZ_gdk_display_close(mGdkDisplay);
-    }
-#endif
-
-    { rv = LaunchChild(mNativeApp, true); }
-
-    if (mAppData->flags & NS_XRE_ENABLE_CRASH_REPORTER)
-      CrashReporter::UnsetExceptionHandler();
-
-    return rv == NS_ERROR_LAUNCHED_CHILD_PROCESS ? 0 : 1;
-  }
+  mozilla::AppShutdown::MaybeDoRestart();
 
 #ifdef MOZ_WIDGET_GTK
   // gdk_display_close also calls gdk_display_manager_set_default_display
@@ -4851,8 +4836,7 @@ nsresult XRE_InitCommandLine(int aArgc, char* aArgv[]) {
   delete[] canonArgs;
 #endif
 
-  recordreplay::parent::InitializeUIProcess(gArgc, gArgv);
-
+#if defined(MOZ_WIDGET_ANDROID)
   const char* path = nullptr;
   ArgResult ar = CheckArg("greomni", &path);
   if (ar == ARG_BAD) {
@@ -4888,6 +4872,8 @@ nsresult XRE_InitCommandLine(int aArgc, char* aArgv[]) {
   }
 
   mozilla::Omnijar::Init(greOmni, appOmni);
+#endif
+
   return rv;
 }
 
@@ -4901,6 +4887,10 @@ nsresult XRE_DeinitCommandLine() {
 
 GeckoProcessType XRE_GetProcessType() {
   return mozilla::startup::sChildProcessType;
+}
+
+const char* XRE_GetProcessTypeString() {
+  return XRE_GeckoProcessTypeToString(XRE_GetProcessType());
 }
 
 bool XRE_IsE10sParentProcess() {
@@ -5109,12 +5099,6 @@ mozilla::BinPathType XRE_GetChildProcBinPathType(
 // Because rust doesn't handle weak symbols, this function wraps the weak
 // malloc_handle_oom for it.
 extern "C" void GeckoHandleOOM(size_t size) { mozalloc_handle_oom(size); }
-
-// Similarly, this wraps MOZ_Crash
-extern "C" void GeckoCrash(const char* aFilename, int aLine,
-                           const char* aReason) {
-  MOZ_Crash(aFilename, aLine, aReason);
-}
 
 // From toolkit/library/rust/shared/lib.rs
 extern "C" void install_rust_panic_hook();

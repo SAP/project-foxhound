@@ -25,6 +25,12 @@ const sitePermissionsL10n = {
     disableLabel: "permissions-site-location-disable-label",
     disableDescription: "permissions-site-location-disable-desc",
   },
+  xr: {
+    window: "permissions-site-xr-window",
+    description: "permissions-site-xr-desc",
+    disableLabel: "permissions-site-xr-disable-label",
+    disableDescription: "permissions-site-xr-disable-desc",
+  },
   camera: {
     window: "permissions-site-camera-window",
     description: "permissions-site-camera-desc",
@@ -308,7 +314,11 @@ var gSitePermissionsManager = {
     // Ignore unrelated permission types and permissions with unknown states.
     if (
       perm.type !== this._type ||
-      !PERMISSION_STATES.includes(perm.capability)
+      !PERMISSION_STATES.includes(perm.capability) ||
+      // Skip private browsing session permissions
+      (perm.principal.privateBrowsingId !==
+        Services.scriptSecurityManager.DEFAULT_PRIVATE_BROWSING_ID &&
+        perm.expireType === Services.perms.EXPIRE_SESSION)
     ) {
       return;
     }
@@ -330,7 +340,7 @@ var gSitePermissionsManager = {
 
   _loadPermissions() {
     // load permissions into a table.
-    for (let nextPermission of Services.perms.enumerator) {
+    for (let nextPermission of Services.perms.all) {
       this._addPermissionToList(nextPermission);
     }
   },

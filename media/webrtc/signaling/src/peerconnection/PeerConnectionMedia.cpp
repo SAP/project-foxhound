@@ -14,11 +14,8 @@
 #include "signaling/src/jsep/JsepTransport.h"
 
 #include "nsContentUtils.h"
-#include "nsIURI.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsICancelable.h"
+#include "nsIIDNService.h"
 #include "nsILoadInfo.h"
-#include "nsIContentPolicy.h"
 #include "nsIProxyInfo.h"
 #include "nsIPrincipal.h"
 #include "mozilla/LoadInfo.h"
@@ -72,7 +69,7 @@ void PeerConnectionMedia::StunAddrsHandler::OnStunAddrsAvailable(
              (int)addrs.Length());
   if (pcm_) {
     pcm_->mStunAddrs = addrs;
-    pcm_->mLocalAddrsCompleted = true;
+    pcm_->mLocalAddrsRequestState = STUN_ADDR_REQUEST_COMPLETE;
     pcm_->FlushIceCtxOperationQueueIfReady();
     // If parent process returns 0 STUN addresses, change ICE connection
     // state to failed.
@@ -91,11 +88,11 @@ PeerConnectionMedia::PeerConnectionMedia(PeerConnectionImpl* parent)
       mSTSThread(mParent->GetSTSThread()),
       mForceProxy(false),
       mStunAddrsRequest(nullptr),
-      mLocalAddrsCompleted(false),
+      mLocalAddrsRequestState(STUN_ADDR_REQUEST_NONE),
       mTargetForDefaultLocalAddressLookupIsSet(false),
       mDestroyed(false) {
   if (XRE_IsContentProcess()) {
-    nsCOMPtr<nsIEventTarget> target =
+    nsCOMPtr<nsISerialEventTarget> target =
         mParent->GetWindow()
             ? mParent->GetWindow()->EventTargetFor(TaskCategory::Other)
             : nullptr;
@@ -110,10 +107,14 @@ PeerConnectionMedia::~PeerConnectionMedia() {
 }
 
 void PeerConnectionMedia::InitLocalAddrs() {
+  if (mLocalAddrsRequestState == STUN_ADDR_REQUEST_PENDING) {
+    return;
+  }
   if (mStunAddrsRequest) {
+    mLocalAddrsRequestState = STUN_ADDR_REQUEST_PENDING;
     mStunAddrsRequest->SendGetStunAddrs();
   } else {
-    mLocalAddrsCompleted = true;
+    mLocalAddrsRequestState = STUN_ADDR_REQUEST_COMPLETE;
   }
 }
 
@@ -281,6 +282,18 @@ nsresult PeerConnectionMedia::UpdateMediaPipelines() {
 }
 
 void PeerConnectionMedia::StartIceChecks(const JsepSession& aSession) {
+  ASSERT_ON_THREAD(mMainThread);
+
+  if (!mCanRegisterMDNSHostnamesDirectly) {
+    for (auto& pair : mMDNSHostnamesToRegister) {
+      mRegisteredMDNSHostnames.insert(pair.first);
+      mStunAddrsRequest->SendRegisterMDNSHostname(
+          nsCString(pair.first.c_str()), nsCString(pair.second.c_str()));
+    }
+    mMDNSHostnamesToRegister.clear();
+    mCanRegisterMDNSHostnamesDirectly = true;
+  }
+
   std::vector<std::string> attributes;
   if (aSession.RemoteIsIceLite()) {
     attributes.push_back("ice-lite");
@@ -312,6 +325,88 @@ bool PeerConnectionMedia::GetPrefDefaultAddressOnly() const {
   return default_address_only;
 }
 
+static bool HostInDomain(const nsCString& aHost, const nsCString& aPattern) {
+  int32_t patternOffset = 0;
+  int32_t hostOffset = 0;
+
+  // Act on '*.' wildcard in the left-most position in a domain pattern.
+  if (aPattern.Length() > 2 && aPattern[0] == '*' && aPattern[1] == '.') {
+    patternOffset = 2;
+
+    // Ignore the lowest level sub-domain for the hostname.
+    hostOffset = aHost.FindChar('.') + 1;
+
+    if (hostOffset <= 1) {
+      // Reject a match between a wildcard and a TLD or '.foo' form.
+      return false;
+    }
+  }
+
+  nsDependentCString hostRoot(aHost, hostOffset);
+  return hostRoot.EqualsIgnoreCase(aPattern.BeginReading() + patternOffset);
+}
+
+static bool HostInObfuscationWhitelist(nsIURI* docURI) {
+  if (!docURI) {
+    return false;
+  }
+
+  nsCString hostName;
+  docURI->GetAsciiHost(hostName);  // normalize UTF8 to ASCII equivalent
+  nsCString domainWhiteList;
+  nsresult nr = Preferences::GetCString(
+      "media.peerconnection.ice.obfuscate_host_addresses.whitelist",
+      domainWhiteList);
+
+  if (NS_FAILED(nr)) {
+    return false;
+  }
+
+  domainWhiteList.StripWhitespace();
+
+  if (domainWhiteList.IsEmpty() || hostName.IsEmpty()) {
+    return false;
+  }
+
+  // Get UTF8 to ASCII domain name normalization service
+  nsresult rv;
+  nsCOMPtr<nsIIDNService> idnService =
+      do_GetService("@mozilla.org/network/idn-service;1", &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return false;
+  }
+
+  uint32_t begin = 0;
+  uint32_t end = 0;
+  nsCString domainName;
+  /*
+     Test each domain name in the comma separated list
+     after converting from UTF8 to ASCII. Each domain
+     must match exactly or have a single leading '*.' wildcard
+  */
+  do {
+    end = domainWhiteList.FindChar(',', begin);
+    if (end == (uint32_t)-1) {
+      // Last or only domain name in the comma separated list
+      end = domainWhiteList.Length();
+    }
+
+    rv = idnService->ConvertUTF8toACE(
+        Substring(domainWhiteList, begin, end - begin), domainName);
+    if (NS_SUCCEEDED(rv)) {
+      if (HostInDomain(hostName, domainName)) {
+        return true;
+      }
+    } else {
+      NS_WARNING("Failed to convert UTF-8 host to ASCII");
+    }
+
+    begin = end + 1;
+  } while (end < domainWhiteList.Length());
+
+  return false;
+}
+
 bool PeerConnectionMedia::GetPrefObfuscateHostAddresses() const {
   ASSERT_ON_THREAD(mMainThread);  // will crash on STS thread
 
@@ -321,6 +416,10 @@ bool PeerConnectionMedia::GetPrefObfuscateHostAddresses() const {
       "media.peerconnection.ice.obfuscate_host_addresses", false);
   obfuscate_host_addresses &=
       !MediaManager::Get()->IsActivelyCapturingOrHasAPermission(winId);
+  obfuscate_host_addresses &=
+      !HostInObfuscationWhitelist(mParent->GetWindow()->GetDocumentURI());
+  obfuscate_host_addresses &= XRE_IsContentProcess();
+
   return obfuscate_host_addresses;
 }
 
@@ -394,8 +493,8 @@ void PeerConnectionMedia::FlushIceCtxOperationQueueIfReady() {
   ASSERT_ON_THREAD(mMainThread);
 
   if (IsIceCtxReady()) {
-    for (auto& mQueuedIceCtxOperation : mQueuedIceCtxOperations) {
-      mQueuedIceCtxOperation->Run();
+    for (auto& queuedIceCtxOperation : mQueuedIceCtxOperations) {
+      queuedIceCtxOperation->Run();
     }
     mQueuedIceCtxOperations.clear();
   }
@@ -414,6 +513,14 @@ void PeerConnectionMedia::PerformOrEnqueueIceCtxOperation(
 
 void PeerConnectionMedia::GatherIfReady() {
   ASSERT_ON_THREAD(mMainThread);
+
+  // Init local addrs here so that if we re-gather after an ICE restart
+  // resulting from changing WiFi networks, we get new local addrs.
+  // Otherwise, we would reuse the addrs from the original WiFi network
+  // and the ICE restart will fail.
+  if (!mStunAddrs.Length()) {
+    InitLocalAddrs();
+  }
 
   // If we had previously queued gathering or ICE start, unqueue them
   mQueuedIceCtxOperations.clear();
@@ -581,16 +688,16 @@ void PeerConnectionMedia::ShutdownMediaTransport_s() {
 
 nsresult PeerConnectionMedia::AddTransceiver(
     JsepTransceiver* aJsepTransceiver, dom::MediaStreamTrack& aReceiveTrack,
-    dom::MediaStreamTrack* aSendTrack,
+    dom::MediaStreamTrack* aSendTrack, const PrincipalHandle& aPrincipalHandle,
     RefPtr<TransceiverImpl>* aTransceiverImpl) {
   if (!mCall) {
-    mCall = WebRtcCallWrapper::Create();
+    mCall = WebRtcCallWrapper::Create(mParent->GetTimestampMaker());
   }
 
-  RefPtr<TransceiverImpl> transceiver =
-      new TransceiverImpl(mParent->GetHandle(), mTransportHandler,
-                          aJsepTransceiver, mMainThread.get(), mSTSThread.get(),
-                          &aReceiveTrack, aSendTrack, mCall.get());
+  RefPtr<TransceiverImpl> transceiver = new TransceiverImpl(
+      mParent->GetHandle(), mTransportHandler, aJsepTransceiver,
+      mMainThread.get(), mSTSThread.get(), &aReceiveTrack, aSendTrack,
+      mCall.get(), aPrincipalHandle);
 
   if (!transceiver->IsValid()) {
     return NS_ERROR_FAILURE;
@@ -616,7 +723,7 @@ nsresult PeerConnectionMedia::AddTransceiver(
 
 void PeerConnectionMedia::GetTransmitPipelinesMatching(
     const MediaStreamTrack* aTrack,
-    nsTArray<RefPtr<MediaPipeline>>* aPipelines) {
+    nsTArray<RefPtr<MediaPipelineTransmit>>* aPipelines) {
   for (RefPtr<TransceiverImpl>& transceiver : mTransceivers) {
     if (transceiver->HasSendTrack(aTrack)) {
       aPipelines->AppendElement(transceiver->GetSendPipeline());
@@ -626,7 +733,7 @@ void PeerConnectionMedia::GetTransmitPipelinesMatching(
 
 void PeerConnectionMedia::GetReceivePipelinesMatching(
     const MediaStreamTrack* aTrack,
-    nsTArray<RefPtr<MediaPipeline>>* aPipelines) {
+    nsTArray<RefPtr<MediaPipelineReceive>>* aPipelines) {
   for (RefPtr<TransceiverImpl>& transceiver : mTransceivers) {
     if (transceiver->HasReceiveTrack(aTrack)) {
       aPipelines->AppendElement(transceiver->GetReceivePipeline());
@@ -637,7 +744,8 @@ void PeerConnectionMedia::GetReceivePipelinesMatching(
 std::string PeerConnectionMedia::GetTransportIdMatching(
     const dom::MediaStreamTrack& aTrack) const {
   for (const RefPtr<TransceiverImpl>& transceiver : mTransceivers) {
-    if (transceiver->HasReceiveTrack(&aTrack)) {
+    if (transceiver->HasReceiveTrack(&aTrack) ||
+        transceiver->HasSendTrack(&aTrack)) {
       return transceiver->GetTransportId();
     }
   }
@@ -739,15 +847,20 @@ void PeerConnectionMedia::OnCandidateFound_m(
   if (mStunAddrsRequest && !aCandidateInfo.mMDNSAddress.empty()) {
     MOZ_ASSERT(!aCandidateInfo.mActualAddress.empty());
 
-    auto itor = mRegisteredMDNSHostnames.find(aCandidateInfo.mMDNSAddress);
+    if (mCanRegisterMDNSHostnamesDirectly) {
+      auto itor = mRegisteredMDNSHostnames.find(aCandidateInfo.mMDNSAddress);
 
-    // We'll see the address twice if we're generating both UDP and TCP
-    // candidates.
-    if (itor == mRegisteredMDNSHostnames.end()) {
-      mRegisteredMDNSHostnames.insert(aCandidateInfo.mMDNSAddress);
-      mStunAddrsRequest->SendRegisterMDNSHostname(
-          nsCString(aCandidateInfo.mMDNSAddress.c_str()),
-          nsCString(aCandidateInfo.mActualAddress.c_str()));
+      // We'll see the address twice if we're generating both UDP and TCP
+      // candidates.
+      if (itor == mRegisteredMDNSHostnames.end()) {
+        mRegisteredMDNSHostnames.insert(aCandidateInfo.mMDNSAddress);
+        mStunAddrsRequest->SendRegisterMDNSHostname(
+            nsCString(aCandidateInfo.mMDNSAddress.c_str()),
+            nsCString(aCandidateInfo.mActualAddress.c_str()));
+      }
+    } else {
+      mMDNSHostnamesToRegister.emplace(aCandidateInfo.mMDNSAddress,
+                                       aCandidateInfo.mActualAddress);
     }
   }
 
@@ -756,15 +869,18 @@ void PeerConnectionMedia::OnCandidateFound_m(
   }
 }
 
-void PeerConnectionMedia::AlpnNegotiated_s(const std::string& aAlpn) {
+void PeerConnectionMedia::AlpnNegotiated_s(const std::string& aAlpn,
+                                           bool aPrivacyRequested) {
+  MOZ_DIAGNOSTIC_ASSERT((aAlpn == "c-webrtc") == aPrivacyRequested);
   GetMainThread()->Dispatch(
-      WrapRunnable(this, &PeerConnectionMedia::AlpnNegotiated_m, aAlpn),
+      WrapRunnable(this, &PeerConnectionMedia::AlpnNegotiated_m,
+                   aPrivacyRequested),
       NS_DISPATCH_NORMAL);
 }
 
-void PeerConnectionMedia::AlpnNegotiated_m(const std::string& aAlpn) {
+void PeerConnectionMedia::AlpnNegotiated_m(bool aPrivacyRequested) {
   if (mParent) {
-    mParent->OnAlpnNegotiated(aAlpn);
+    mParent->OnAlpnNegotiated(aPrivacyRequested);
   }
 }
 
@@ -787,15 +903,6 @@ bool PeerConnectionMedia::AnyLocalTrackHasPeerIdentity() const {
     }
   }
   return false;
-}
-
-void PeerConnectionMedia::UpdateRemoteStreamPrincipals_m(
-    nsIPrincipal* aPrincipal) {
-  ASSERT_ON_THREAD(mMainThread);
-
-  for (RefPtr<TransceiverImpl>& transceiver : mTransceivers) {
-    transceiver->UpdatePrincipal(aPrincipal);
-  }
 }
 
 void PeerConnectionMedia::UpdateSinkIdentity_m(

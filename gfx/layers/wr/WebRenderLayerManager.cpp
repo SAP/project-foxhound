@@ -36,7 +36,6 @@ namespace layers {
 WebRenderLayerManager::WebRenderLayerManager(nsIWidget* aWidget)
     : mWidget(aWidget),
       mLatestTransactionId{0},
-      mWindowOverlayChanged(false),
       mNeedsComposite(false),
       mIsFirstPaint(false),
       mTarget(nullptr),
@@ -191,13 +190,11 @@ bool WebRenderLayerManager::BeginTransaction(const nsCString& aURL) {
 }
 
 bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
-  if (mWindowOverlayChanged) {
-    // If the window overlay changed then we can't do an empty transaction
-    // because we need to repaint the window overlay which we only currently
-    // support in a full transaction.
-    // XXX If we end up hitting this branch a lot we can probably optimize it
-    // by just sending an updated window overlay image instead of rebuilding
-    // the entire WR display list.
+  // If we haven't sent a display list (since creation or since the last time we
+  // sent ClearDisplayList to the parent) then we can't do an empty transaction
+  // because the parent doesn't have a display list for us and we need to send a
+  // display list first.
+  if (!WrBridge()->GetSentDisplayList()) {
     return false;
   }
 
@@ -293,7 +290,7 @@ void WebRenderLayerManager::EndTransaction(DrawPaintedLayerCallback aCallback,
 void WebRenderLayerManager::EndTransactionWithoutLayer(
     nsDisplayList* aDisplayList, nsDisplayListBuilder* aDisplayListBuilder,
     WrFiltersHolder&& aFilters, WebRenderBackgroundData* aBackground) {
-  AUTO_PROFILER_TRACING("Paint", "RenderLayers", GRAPHICS);
+  AUTO_PROFILER_TRACING_MARKER("Paint", "RenderLayers", GRAPHICS);
 
   // Since we don't do repeat transactions right now, just set the time
   mAnimationReadyTime = TimeStamp::Now();
@@ -337,6 +334,11 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     printf_stderr("-- WebRender display list build --\n");
   }
 
+  if (XRE_IsContentProcess() &&
+      StaticPrefs::gfx_webrender_dl_dump_content_serialized()) {
+    builder.DumpSerializedDisplayList();
+  }
+
   if (aDisplayList) {
     MOZ_ASSERT(aDisplayListBuilder && !aBackground);
     // Record the time spent "layerizing". WR doesn't actually layerize but
@@ -362,7 +364,6 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
 
   mWidget->AddWindowOverlayWebRenderCommands(WrBridge(), builder,
                                              resourceUpdates);
-  mWindowOverlayChanged = false;
   if (dumpEnabled) {
     printf_stderr("(window overlay)\n");
     Unused << builder.Dump(/*indent*/ 1, Some(builderDumpIndex), Nothing());
@@ -437,7 +438,7 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
   GetCompositorBridgeChild()->EndCanvasTransaction();
 
   {
-    AUTO_PROFILER_TRACING("Paint", "ForwardDPTransaction", GRAPHICS);
+    AUTO_PROFILER_TRACING_MARKER("Paint", "ForwardDPTransaction", GRAPHICS);
     nsTArray<RenderRootDisplayListData> renderRootDLs;
     for (auto renderRoot : wr::kRenderRoots) {
       if (builder.GetSendSubBuilderDisplayList(renderRoot)) {
@@ -542,9 +543,17 @@ void WebRenderLayerManager::MakeSnapshotIfRequired(LayoutDeviceIntSize aSize) {
 
   // The data we get from webrender is upside down. So flip and translate up so
   // the image is rightside up. Webrender always does a full screen readback.
-  SurfacePattern pattern(
-      snapshot, ExtendMode::CLAMP,
-      Matrix::Scaling(1.0, -1.0).PostTranslate(0.0, aSize.height));
+#ifdef XP_WIN
+  // ANGLE with WR does not need y flip
+  const bool needsYFlip = !WrBridge()->GetCompositorUseANGLE();
+#else
+  const bool needsYFlip = true;
+#endif
+  Matrix m;
+  if (needsYFlip) {
+    m = Matrix::Scaling(1.0, -1.0).PostTranslate(0.0, aSize.height);
+  }
+  SurfacePattern pattern(snapshot, ExtendMode::CLAMP, m);
   DrawTarget* dt = mTarget->GetDrawTarget();
   MOZ_RELEASE_ASSERT(dt);
   dt->FillRect(dst, pattern);

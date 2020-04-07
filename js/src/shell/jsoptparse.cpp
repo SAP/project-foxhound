@@ -6,9 +6,8 @@
 
 #include "shell/jsoptparse.h"
 
+#include <algorithm>
 #include <stdarg.h>
-
-#include "jsutil.h"
 
 #include "util/Unicode.h"
 
@@ -176,7 +175,7 @@ OptionParser::Result OptionParser::printHelp(const char* progname) {
     size_t fmtChars = sizeof(fmt) - 2;
     size_t lhsLen = 0;
     for (Option* arg : arguments) {
-      lhsLen = Max(lhsLen, strlen(arg->longflag) + fmtChars);
+      lhsLen = std::max(lhsLen, strlen(arg->longflag) + fmtChars);
     }
 
     for (Option* arg : arguments) {
@@ -205,7 +204,7 @@ OptionParser::Result OptionParser::printHelp(const char* progname) {
       if (opt->isValued()) {
         len += strlen(opt->asValued()->metavar);
       }
-      lhsLen = Max(lhsLen, len);
+      lhsLen = std::max(lhsLen, len);
     }
 
     /* Print option help text. */

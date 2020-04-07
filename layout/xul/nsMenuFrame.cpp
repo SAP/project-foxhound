@@ -17,13 +17,8 @@
 #include "nsMenuPopupFrame.h"
 #include "nsMenuBarFrame.h"
 #include "mozilla/dom/Document.h"
-#include "nsIComponentManager.h"
 #include "nsBoxLayoutState.h"
 #include "nsIScrollableFrame.h"
-#ifdef MOZ_XBL
-#  include "nsBindingManager.h"
-#endif
-#include "nsIServiceManager.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
@@ -33,7 +28,6 @@
 #include "nsDisplayList.h"
 #include "nsIReflowCallback.h"
 #include "nsISound.h"
-#include "nsIDOMXULMenuListElement.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Likely.h"
@@ -245,7 +239,7 @@ nsFrameList* nsMenuFrame::GetPopupList() const {
 
 void nsMenuFrame::DestroyPopupList() {
   NS_ASSERTION(HasPopup(), "huh?");
-  nsFrameList* prop = RemoveProperty(PopupListProperty());
+  nsFrameList* prop = TakeProperty(PopupListProperty());
   NS_ASSERTION(prop && prop->IsEmpty(),
                "popup list must exist and be empty when destroying");
   RemoveStateBits(NS_STATE_MENU_HAS_POPUP_LIST);

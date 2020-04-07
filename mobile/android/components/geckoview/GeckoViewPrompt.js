@@ -10,6 +10,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   EventDispatcher: "resource://gre/modules/Messaging.jsm",
   FileUtils: "resource://gre/modules/FileUtils.jsm",
   GeckoViewUtils: "resource://gre/modules/GeckoViewUtils.jsm",
+  GeckoViewLoginStorage: "resource://gre/modules/GeckoViewLoginStorage.jsm",
+  LoginEntry: "resource://gre/modules/GeckoViewLoginStorage.jsm",
   Services: "resource://gre/modules/Services.jsm",
 });
 
@@ -20,9 +22,15 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIUUIDGenerator"
 );
 
+const domBundle = Services.strings.createBundle(
+  "chrome://global/locale/dom/dom.properties"
+);
+
 function PromptFactory() {
   this.wrappedJSObject = this;
 }
+
+const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPrompt"); // eslint-disable-line no-unused-vars
 
 PromptFactory.prototype = {
   classID: Components.ID("{076ac188-23c1-4390-aa08-7ef1f78ca5d9}"),
@@ -32,7 +40,7 @@ PromptFactory.prototype = {
     Ci.nsIPromptService,
   ]),
 
-  handleEvent: function(aEvent) {
+  handleEvent(aEvent) {
     switch (aEvent.type) {
       case "click":
         this._handleClick(aEvent);
@@ -46,10 +54,9 @@ PromptFactory.prototype = {
     }
   },
 
-  _handleClick: function(aEvent) {
+  _handleClick(aEvent) {
     let target = aEvent.composedTarget;
     if (
-      aEvent.defaultPrevented ||
       target.isContentEditable ||
       target.disabled ||
       target.readOnly ||
@@ -79,7 +86,7 @@ PromptFactory.prototype = {
     }
   },
 
-  _handleSelect: function(aElement) {
+  _handleSelect(aElement) {
     let win = aElement.ownerGlobal;
     let id = 0;
     let map = {};
@@ -167,7 +174,7 @@ PromptFactory.prototype = {
     );
   },
 
-  _handleDateTime: function(aElement, aType) {
+  _handleDateTime(aElement, aType) {
     let prompt = new PromptDelegate(aElement.ownerGlobal);
     prompt.asyncShowPrompt(
       {
@@ -193,7 +200,7 @@ PromptFactory.prototype = {
     );
   },
 
-  _dispatchEvents: function(aElement) {
+  _dispatchEvents(aElement) {
     // Fire both "input" and "change" events for <select> and <input> for
     // date/time.
     aElement.dispatchEvent(
@@ -204,7 +211,7 @@ PromptFactory.prototype = {
     );
   },
 
-  _handleContextMenu: function(aEvent) {
+  _handleContextMenu(aEvent) {
     let target = aEvent.composedTarget;
     if (aEvent.defaultPrevented || target.isContentEditable) {
       return;
@@ -229,7 +236,7 @@ PromptFactory.prototype = {
       items: [],
 
       // nsIMenuBuilder
-      openContainer: function(aLabel) {
+      openContainer(aLabel) {
         if (!this._cursor) {
           // Top-level
           this._cursor = this;
@@ -245,7 +252,7 @@ PromptFactory.prototype = {
         this._cursor = newCursor;
       },
 
-      addItemFor: function(aElement, aCanLoadIcon) {
+      addItemFor(aElement, aCanLoadIcon) {
         this._cursor.items.push({
           disabled: aElement.disabled,
           icon:
@@ -259,7 +266,7 @@ PromptFactory.prototype = {
         this._map[this._id++] = aElement;
       },
 
-      addSeparator: function() {
+      addSeparator() {
         this._cursor.items.push({
           disabled: true,
           id: String(this._id++),
@@ -267,14 +274,14 @@ PromptFactory.prototype = {
         });
       },
 
-      undoAddSeparator: function() {
+      undoAddSeparator() {
         let sep = this._cursor.items[this._cursor.items.length - 1];
         if (sep && sep.separator) {
           this._cursor.items.pop();
         }
       },
 
-      closeContainer: function() {
+      closeContainer() {
         let childItems = this._cursor.label === "" ? this._cursor.items : null;
         this._cursor = this._stack.pop();
 
@@ -289,11 +296,11 @@ PromptFactory.prototype = {
         }
       },
 
-      toJSONString: function() {
+      toJSONString() {
         return JSON.stringify(this.items);
       },
 
-      click: function(aId) {
+      click(aId) {
         let item = this._map[aId];
         if (item) {
           item.click();
@@ -324,10 +331,10 @@ PromptFactory.prototype = {
     aEvent.preventDefault();
   },
 
-  _handlePopupBlocked: function(aEvent) {
+  _handlePopupBlocked(aEvent) {
     const dwi = aEvent.requestingWindow;
     const popupWindowURISpec = aEvent.popupWindowURI
-      ? aEvent.popupWindowURI.spec
+      ? aEvent.popupWindowURI.displaySpec
       : "about:blank";
 
     let prompt = new PromptDelegate(aEvent.requestingWindow);
@@ -336,8 +343,8 @@ PromptFactory.prototype = {
         type: "popup",
         targetUri: popupWindowURISpec,
       },
-      allowed => {
-        if (allowed && dwi) {
+      ({ response }) => {
+        if (response && dwi) {
           dwi.open(
             popupWindowURISpec,
             aEvent.popupWindowName,
@@ -349,7 +356,7 @@ PromptFactory.prototype = {
   },
 
   /* ----------  nsIPromptFactory  ---------- */
-  getPrompt: function(aDOMWin, aIID) {
+  getPrompt(aDOMWin, aIID) {
     // Delegated to login manager here, which in turn calls back into us via nsIPromptService.
     if (aIID.equals(Ci.nsIAuthPrompt2) || aIID.equals(Ci.nsIAuthPrompt)) {
       try {
@@ -370,7 +377,7 @@ PromptFactory.prototype = {
   /* ----------  private memebers  ---------- */
 
   // nsIPromptService methods proxy to our Prompt class
-  callProxy: function(aMethod, aArguments) {
+  callProxy(aMethod, aArguments) {
     let prompt = new PromptDelegate(aArguments[0]);
     return prompt[aMethod].apply(
       prompt,
@@ -380,38 +387,38 @@ PromptFactory.prototype = {
 
   /* ----------  nsIPromptService  ---------- */
 
-  alert: function() {
+  alert() {
     return this.callProxy("alert", arguments);
   },
-  alertCheck: function() {
+  alertCheck() {
     return this.callProxy("alertCheck", arguments);
   },
-  confirm: function() {
+  confirm() {
     return this.callProxy("confirm", arguments);
   },
-  confirmCheck: function() {
+  confirmCheck() {
     return this.callProxy("confirmCheck", arguments);
   },
-  confirmEx: function() {
+  confirmEx() {
     return this.callProxy("confirmEx", arguments);
   },
-  prompt: function() {
+  prompt() {
     return this.callProxy("prompt", arguments);
   },
-  promptUsernameAndPassword: function() {
+  promptUsernameAndPassword() {
     return this.callProxy("promptUsernameAndPassword", arguments);
   },
-  promptPassword: function() {
+  promptPassword() {
     return this.callProxy("promptPassword", arguments);
   },
-  select: function() {
+  select() {
     return this.callProxy("select", arguments);
   },
 
-  promptAuth: function() {
+  promptAuth() {
     return this.callProxy("promptAuth", arguments);
   },
-  asyncPromptAuth: function() {
+  asyncPromptAuth() {
     return this.callProxy("asyncPromptAuth", arguments);
   },
 };
@@ -440,7 +447,7 @@ PromptDelegate.prototype = {
 
   /* ---------- internal methods ---------- */
 
-  _changeModalState: function(aEntering) {
+  _changeModalState(aEntering) {
     if (!this._domWin) {
       // Allow not having a DOM window.
       return true;
@@ -474,10 +481,10 @@ PromptDelegate.prototype = {
    * Shows a native prompt, and then spins the event loop for this thread while we wait
    * for a response
    */
-  _showPrompt: function(aMsg) {
+  _showPrompt(aMsg) {
     let result = undefined;
     if (!this._domWin || !this._changeModalState(/* aEntering */ true)) {
-      return;
+      return result;
     }
     try {
       this.asyncShowPrompt(aMsg, res => (result = res));
@@ -492,7 +499,7 @@ PromptDelegate.prototype = {
     return result;
   },
 
-  asyncShowPrompt: function(aMsg, aCallback) {
+  asyncShowPrompt(aMsg, aCallback) {
     let handled = false;
     let onResponse = response => {
       if (handled) {
@@ -523,14 +530,14 @@ PromptDelegate.prototype = {
     });
   },
 
-  _addText: function(aTitle, aText, aMsg) {
+  _addText(aTitle, aText, aMsg) {
     return Object.assign(aMsg, {
       title: aTitle,
       msg: aText,
     });
   },
 
-  _addCheck: function(aCheckMsg, aCheckState, aMsg) {
+  _addCheck(aCheckMsg, aCheckState, aMsg) {
     return Object.assign(aMsg, {
       hasCheck: !!aCheckMsg,
       checkMsg: aCheckMsg,
@@ -540,11 +547,11 @@ PromptDelegate.prototype = {
 
   /* ----------  nsIPrompt  ---------- */
 
-  alert: function(aTitle, aText) {
+  alert(aTitle, aText) {
     this.alertCheck(aTitle, aText);
   },
 
-  alertCheck: function(aTitle, aText, aCheckMsg, aCheckState) {
+  alertCheck(aTitle, aText, aCheckMsg, aCheckState) {
     let result = this._showPrompt(
       this._addText(
         aTitle,
@@ -559,12 +566,12 @@ PromptDelegate.prototype = {
     }
   },
 
-  confirm: function(aTitle, aText) {
+  confirm(aTitle, aText) {
     // Button 0 is OK.
     return this.confirmCheck(aTitle, aText);
   },
 
-  confirmCheck: function(aTitle, aText, aCheckMsg, aCheckState) {
+  confirmCheck(aTitle, aText, aCheckMsg, aCheckState) {
     // Button 0 is OK.
     return (
       this.confirmEx(
@@ -580,7 +587,7 @@ PromptDelegate.prototype = {
     );
   },
 
-  confirmEx: function(
+  confirmEx(
     aTitle,
     aText,
     aButtonFlags,
@@ -641,8 +648,8 @@ PromptDelegate.prototype = {
         aText,
         this._addCheck(aCheckMsg, aCheckState, {
           type: "button",
-          btnTitle: btnTitle,
-          btnCustomTitle: btnCustomTitle,
+          btnTitle,
+          btnCustomTitle,
         })
       )
     );
@@ -652,7 +659,7 @@ PromptDelegate.prototype = {
     return result && result.button in btnMap ? btnMap[result.button] : -1;
   },
 
-  prompt: function(aTitle, aText, aValue, aCheckMsg, aCheckState) {
+  prompt(aTitle, aText, aValue, aCheckMsg, aCheckState) {
     let result = this._showPrompt(
       this._addText(
         aTitle,
@@ -676,7 +683,7 @@ PromptDelegate.prototype = {
     return true;
   },
 
-  promptPassword: function(aTitle, aText, aPassword, aCheckMsg, aCheckState) {
+  promptPassword(aTitle, aText, aPassword, aCheckMsg, aCheckState) {
     return this._promptUsernameAndPassword(
       aTitle,
       aText,
@@ -687,7 +694,7 @@ PromptDelegate.prototype = {
     );
   },
 
-  promptUsernameAndPassword: function(
+  promptUsernameAndPassword(
     aTitle,
     aText,
     aUsername,
@@ -723,7 +730,7 @@ PromptDelegate.prototype = {
     return true;
   },
 
-  select: function(aTitle, aText, aSelectList, aOutSelection) {
+  select(aTitle, aText, aSelectList, aOutSelection) {
     let choices = Array.prototype.map.call(aSelectList, (item, index) => ({
       id: String(index),
       label: item,
@@ -734,7 +741,7 @@ PromptDelegate.prototype = {
       this._addText(aTitle, aText, {
         type: "choice",
         mode: "single",
-        choices: choices,
+        choices,
       })
     );
     // OK: result
@@ -746,7 +753,7 @@ PromptDelegate.prototype = {
     return true;
   },
 
-  _getAuthMsg: function(aChannel, aLevel, aAuthInfo) {
+  _getAuthMsg(aChannel, aLevel, aAuthInfo) {
     let username;
     if (
       aAuthInfo.flags & Ci.nsIAuthInformation.NEED_DOMAIN &&
@@ -769,14 +776,14 @@ PromptDelegate.prototype = {
           flags: aAuthInfo.flags,
           uri: aChannel && aChannel.URI.displaySpec,
           level: aLevel,
-          username: username,
+          username,
           password: aAuthInfo.password,
         },
       }
     );
   },
 
-  _fillAuthInfo: function(aAuthInfo, aCheckState, aResult) {
+  _fillAuthInfo(aAuthInfo, aCheckState, aResult) {
     if (aResult && aCheckState) {
       aCheckState.value = !!aResult.checkValue;
     }
@@ -803,7 +810,7 @@ PromptDelegate.prototype = {
     return true;
   },
 
-  promptAuth: function(aChannel, aLevel, aAuthInfo, aCheckMsg, aCheckState) {
+  promptAuth(aChannel, aLevel, aAuthInfo, aCheckMsg, aCheckState) {
     let result = this._showPrompt(
       this._addCheck(
         aCheckMsg,
@@ -817,7 +824,7 @@ PromptDelegate.prototype = {
     return this._fillAuthInfo(aAuthInfo, aCheckState, result);
   },
 
-  asyncPromptAuth: function(
+  asyncPromptAuth(
     aChannel,
     aCallback,
     aContext,
@@ -851,7 +858,7 @@ PromptDelegate.prototype = {
     );
     return {
       QueryInterface: ChromeUtils.generateQI([Ci.nsICancelable]),
-      cancel: function() {
+      cancel() {
         if (responded) {
           return;
         }
@@ -861,7 +868,7 @@ PromptDelegate.prototype = {
     };
   },
 
-  _getAuthText: function(aChannel, aAuthInfo) {
+  _getAuthText(aChannel, aAuthInfo) {
     let isProxy = aAuthInfo.flags & Ci.nsIAuthInformation.AUTH_PROXY;
     let isPassOnly = aAuthInfo.flags & Ci.nsIAuthInformation.ONLY_PASSWORD;
     let isCrossOrig =
@@ -912,7 +919,7 @@ PromptDelegate.prototype = {
     return text;
   },
 
-  _getAuthTarget: function(aChannel, aAuthInfo) {
+  _getAuthTarget(aChannel, aAuthInfo) {
     // If our proxy is demanding authentication, don't use the
     // channel's actual destination.
     if (aAuthInfo.flags & Ci.nsIAuthInformation.AUTH_PROXY) {
@@ -960,7 +967,7 @@ FilePickerDelegate.prototype = {
   QueryInterface: ChromeUtils.generateQI([Ci.nsIFilePicker]),
 
   /* ----------  nsIFilePicker  ---------- */
-  init: function(aParent, aTitle, aMode) {
+  init(aParent, aTitle, aMode) {
     if (
       aMode === Ci.nsIFilePicker.modeGetFolder ||
       aMode === Ci.nsIFilePicker.modeSave
@@ -982,15 +989,15 @@ FilePickerDelegate.prototype = {
     return this._mode;
   },
 
-  appendRawFilter: function(aFilter) {
+  appendRawFilter(aFilter) {
     this._mimeTypes.push(aFilter);
   },
 
-  show: function() {
+  show() {
     throw Cr.NS_ERROR_NOT_IMPLEMENTED;
   },
 
-  open: function(aFilePickerShownCallback) {
+  open(aFilePickerShownCallback) {
     this._msg.mimeTypes = this._mimeTypes;
     this._msg.capture = this._capture;
     this._prompt.asyncShowPrompt(this._msg, result => {
@@ -999,17 +1006,41 @@ FilePickerDelegate.prototype = {
       if (!result || !result.files || !result.files.length) {
         aFilePickerShownCallback.done(Ci.nsIFilePicker.returnCancel);
       } else {
-        this._files = result.files;
-        aFilePickerShownCallback.done(Ci.nsIFilePicker.returnOK);
+        this._resolveFiles(result.files, aFilePickerShownCallback);
       }
     });
   },
 
+  async _resolveFiles(aFiles, aCallback) {
+    const fileData = [];
+
+    try {
+      for (const file of aFiles) {
+        const domFile = await this._getDOMFile(file);
+        fileData.push({
+          file,
+          domFile,
+        });
+      }
+    } catch (ex) {
+      warn`Error resolving files from file picker: ${ex}`;
+      aCallback.done(Ci.nsIFilePicker.returnCancel);
+      return;
+    }
+
+    this._fileData = fileData;
+    aCallback.done(Ci.nsIFilePicker.returnOK);
+  },
+
   get file() {
-    if (!this._files) {
+    if (!this._fileData) {
       throw Cr.NS_ERROR_NOT_AVAILABLE;
     }
-    return new FileUtils.File(this._files[0]);
+    const fileData = this._fileData[0];
+    if (!fileData) {
+      return null;
+    }
+    return new FileUtils.File(fileData.file);
   },
 
   get fileURL() {
@@ -1017,15 +1048,15 @@ FilePickerDelegate.prototype = {
   },
 
   *_getEnumerator(aDOMFile) {
-    if (!this._files) {
+    if (!this._fileData) {
       throw Cr.NS_ERROR_NOT_AVAILABLE;
     }
 
-    for (let file of this._files) {
+    for (const fileData of this._fileData) {
       if (aDOMFile) {
-        yield this._getDOMFile(file);
+        yield fileData.domFile;
       }
-      yield new FileUtils.File(file);
+      yield new FileUtils.File(fileData.file);
     }
   },
 
@@ -1041,10 +1072,10 @@ FilePickerDelegate.prototype = {
   },
 
   get domFileOrDirectory() {
-    if (!this._files) {
+    if (!this._fileData) {
       throw Cr.NS_ERROR_NOT_AVAILABLE;
     }
-    return this._getDOMFile(this._files[0]);
+    return this._fileData[0] ? this._fileData[0].domFile : null;
   },
 
   get domFileOrDirectoryEnumerator() {
@@ -1109,7 +1140,7 @@ ColorPickerDelegate.prototype = {
 
   QueryInterface: ChromeUtils.generateQI([Ci.nsIColorPicker]),
 
-  init: function(aParent, aTitle, aInitialColor) {
+  init(aParent, aTitle, aInitialColor) {
     this._prompt = new PromptDelegate(aParent);
     this._msg = {
       type: "color",
@@ -1118,7 +1149,7 @@ ColorPickerDelegate.prototype = {
     };
   },
 
-  open: function(aColorPickerShownCallback) {
+  open(aColorPickerShownCallback) {
     this._prompt.asyncShowPrompt(this._msg, result => {
       // OK: result
       // Cancel: !result
@@ -1127,8 +1158,159 @@ ColorPickerDelegate.prototype = {
   },
 };
 
+function ShareDelegate() {}
+
+ShareDelegate.prototype = {
+  classID: Components.ID("{1201d357-8417-4926-a694-e6408fbedcf8}"),
+
+  QueryInterface: ChromeUtils.generateQI([Ci.nsISharePicker]),
+
+  init(aParent) {
+    this._openerWindow = aParent;
+  },
+
+  get openerWindow() {
+    return this._openerWindow;
+  },
+
+  async share(aTitle, aText, aUri) {
+    const ABORT = 2;
+    const FAILURE = 1;
+    const SUCCESS = 0;
+
+    const msg = {
+      type: "share",
+      title: aTitle,
+      text: aText,
+      uri: aUri ? aUri.displaySpec : null,
+    };
+    const prompt = new PromptDelegate(this._openerWindow);
+    const result = await new Promise(resolve => {
+      prompt.asyncShowPrompt(msg, resolve);
+    });
+
+    if (!result) {
+      // A null result is treated as a dismissal in PromptDelegate.
+      throw new DOMException(
+        domBundle.GetStringFromName("WebShareAPI_Aborted"),
+        "AbortError"
+      );
+    }
+
+    const res = result && result.response;
+    switch (res) {
+      case FAILURE:
+        throw new DOMException(
+          domBundle.GetStringFromName("WebShareAPI_Failed"),
+          "DataError"
+        );
+      case ABORT: // Handle aborted attempt and invalid responses the same.
+        throw new DOMException(
+          domBundle.GetStringFromName("WebShareAPI_Aborted"),
+          "AbortError"
+        );
+      case SUCCESS:
+        return;
+      default:
+        throw new DOMException("Unknown error.", "UnknownError");
+    }
+  },
+};
+
+// Sync with  LoginStoragePrompt.Type in GeckoSession.java.
+const LoginStorageType = { SAVE: 1 };
+// Sync with  LoginStoragePrompt.Hint in GeckoSession.java.
+const LoginStorageHint = { NONE: 0 };
+
+class LoginStorageDelegate {
+  get classID() {
+    return Components.ID("{3d765750-1c3d-11ea-aaef-0800200c9a66}");
+  }
+
+  get QueryInterface() {
+    return ChromeUtils.generateQI([Ci.nsILoginManagerPrompter]);
+  }
+
+  _createMessage(aType, aHint, aLogins) {
+    return {
+      // Sync with GeckoSession.handlePromptEvent.
+      type: "loginStorage",
+      lsType: aType,
+      hint: aHint,
+      logins: aLogins,
+    };
+  }
+
+  promptToSavePassword(
+    aBrowser,
+    aLogin,
+    dismissed = false,
+    notifySaved = false
+  ) {
+    const prompt = new PromptDelegate(aBrowser.ownerGlobal);
+    prompt.asyncShowPrompt(
+      this._createMessage(LoginStorageType.SAVE, LoginStorageHint.NONE, [
+        LoginEntry.fromLoginInfo(aLogin),
+      ]),
+      result => {
+        if (!result || result.login === undefined) {
+          return;
+        }
+
+        const loginInfo = LoginEntry.fromBundle(result.login).toLoginInfo();
+        Services.obs.notifyObservers(loginInfo, "passwordmgr-prompt-save");
+
+        GeckoViewLoginStorage.onLoginSave(result.login);
+      }
+    );
+  }
+
+  promptToChangePassword(
+    aBrowser,
+    aOldLogin,
+    aNewLogin,
+    dismissed = false,
+    notifySaved = false,
+    autoSavedLoginGuid = ""
+  ) {
+    const newLogin = LoginEntry.fromLoginInfo(aOldLogin || aNewLogin);
+    const oldGuid = (aOldLogin && newLogin.guid) || null;
+    newLogin.origin = aNewLogin.origin;
+    newLogin.formActionOrigin = aNewLogin.formActionOrigin;
+    newLogin.password = aNewLogin.password;
+    newLogin.username = aNewLogin.username;
+
+    const prompt = new PromptDelegate(aBrowser.ownerGlobal);
+    prompt.asyncShowPrompt(
+      this._createMessage(LoginStorageType.SAVE, LoginStorageHint.NONE, [
+        newLogin,
+      ]),
+      result => {
+        if (!result || result.login === undefined) {
+          return;
+        }
+
+        GeckoViewLoginStorage.onLoginSave(result.login);
+
+        const loginInfo = LoginEntry.fromBundle(result.login).toLoginInfo();
+        Services.obs.notifyObservers(
+          loginInfo,
+          "passwordmgr-prompt-change",
+          oldGuid
+        );
+      }
+    );
+  }
+
+  promptToChangePasswordWithUsernames(aBrowser, aLogins, aNewLogin) {
+    this.promptToChangePassword(aBrowser, null /* oldLogin */, aNewLogin);
+  }
+}
+
 this.NSGetFactory = XPCOMUtils.generateNSGetFactory([
   ColorPickerDelegate,
   FilePickerDelegate,
   PromptFactory,
+  ShareDelegate,
+  LoginStorageDelegate,
 ]);

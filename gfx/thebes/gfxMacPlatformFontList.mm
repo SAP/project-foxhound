@@ -290,52 +290,17 @@ bool MacOSFontEntry::HasVariations() {
 }
 
 void MacOSFontEntry::GetVariationAxes(nsTArray<gfxFontVariationAxis>& aVariationAxes) {
-  MOZ_ASSERT(aVariationAxes.IsEmpty());
-  CTFontRef ctFont = CTFontCreateWithGraphicsFont(mFontRef, 0.0, nullptr, nullptr);
-  CFArrayRef axes = CTFontCopyVariationAxes(ctFont);
-  CFRelease(ctFont);
-  if (axes) {
-    for (CFIndex i = 0; i < CFArrayGetCount(axes); ++i) {
-      gfxFontVariationAxis axis;
-      auto val = (CFDictionaryRef)CFArrayGetValueAtIndex(axes, i);
-      auto num = (CFNumberRef)CFDictionaryGetValue(val, kCTFontVariationAxisIdentifierKey);
-      SInt32 tag = 0;
-      if (num) {
-        CFNumberGetValue(num, kCFNumberSInt32Type, &tag);
-      }
-      Float32 minValue = 0, maxValue = 0, defaultValue = 0;
-      num = (CFNumberRef)CFDictionaryGetValue(val, kCTFontVariationAxisMinimumValueKey);
-      if (num) {
-        CFNumberGetValue(num, kCFNumberFloat32Type, &minValue);
-      }
-      num = (CFNumberRef)CFDictionaryGetValue(val, kCTFontVariationAxisMaximumValueKey);
-      if (num) {
-        CFNumberGetValue(num, kCFNumberFloat32Type, &maxValue);
-      }
-      num = (CFNumberRef)CFDictionaryGetValue(val, kCTFontVariationAxisDefaultValueKey);
-      if (num) {
-        CFNumberGetValue(num, kCFNumberFloat32Type, &defaultValue);
-      }
-      auto name = (CFStringRef)CFDictionaryGetValue(val, kCTFontVariationAxisNameKey);
-      if (name) {
-        CFIndex len = CFStringGetLength(name);
-        nsAutoString nameStr;
-        nameStr.SetLength(len);
-        CFStringGetCharacters(name, CFRangeMake(0, len), (UniChar*)nameStr.BeginWriting());
-        AppendUTF16toUTF8(nameStr, axis.mName);
-      }
-      axis.mTag = (uint32_t)tag;
-      axis.mMinValue = minValue;
-      axis.mMaxValue = maxValue;
-      axis.mDefaultValue = defaultValue;
-      aVariationAxes.AppendElement(axis);
-    }
-    CFRelease(axes);
-  }
+  // We could do this by creating a CTFont and calling CTFontCopyVariationAxes,
+  // but it is expensive to instantiate a CTFont for every face just to set up
+  // the axis information.
+  // Instead we use gfxFontUtils to read the font tables directly.
+  gfxFontUtils::GetVariationData(this, &aVariationAxes, nullptr);
 }
 
 void MacOSFontEntry::GetVariationInstances(nsTArray<gfxFontVariationInstance>& aInstances) {
-  gfxFontUtils::GetVariationInstances(this, aInstances);
+  // Core Text doesn't offer API for this, so we use gfxFontUtils to read the
+  // font tables directly.
+  gfxFontUtils::GetVariationData(this, nullptr, &aInstances);
 }
 
 bool MacOSFontEntry::IsCFF() {
@@ -885,7 +850,7 @@ void gfxMacPlatformFontList::AddFamily(const nsACString& aFamilyName, bool aSyst
   ToLowerCase(aFamilyName, key);
 
   RefPtr<gfxFontFamily> familyEntry = new gfxMacFontFamily(aFamilyName, sizeHint);
-  table.Put(key, familyEntry);
+  table.Put(key, RefPtr{familyEntry});
 
   // check the bad underline blacklist
   if (mBadUnderlineFamilyNames.ContainsSorted(key)) {
@@ -1138,7 +1103,7 @@ void gfxMacPlatformFontList::InitSingleFaceList() {
           fe->Name(), fe->Weight(), true, static_cast<const MacOSFontEntry*>(fe)->mSizeHint);
       familyEntry->AddFontEntry(fontEntry);
       familyEntry->SetHasStyles(true);
-      mFontFamilies.Put(key, familyEntry);
+      mFontFamilies.Put(key, std::move(familyEntry));
       LOG_FONTLIST(
           ("(fontlist-singleface) added new family: %s, key: %s\n", familyName.get(), key.get()));
     }
@@ -1185,16 +1150,6 @@ void gfxMacPlatformFontList::InitSystemFontNames() {
     NSString* displayFamilyName = GetRealFamilyName(displaySys);
     nsCocoaUtils::GetStringForNSString(displayFamilyName, familyName);
     CopyUTF16toUTF8(familyName, mSystemDisplayFontFamilyName);
-
-#if DEBUG
-    // confirm that the optical size switch is at 20.0
-    NS_ASSERTION([textFamilyName compare:displayFamilyName] != NSOrderedSame,
-                 "system text/display fonts are the same!");
-    NSString* fam19 = GetRealFamilyName([NSFont systemFontOfSize:(kTextDisplayCrossover - 1.0)]);
-    NSString* fam20 = GetRealFamilyName([NSFont systemFontOfSize:kTextDisplayCrossover]);
-    NS_ASSERTION(fam19 && fam20 && [fam19 compare:fam20] != NSOrderedSame,
-                 "system text/display font size switch point is not as expected!");
-#endif
   }
 
 #ifdef DEBUG
@@ -1367,6 +1322,10 @@ gfxFontEntry* gfxMacPlatformFontList::LookupLocalFont(const nsACString& aFontNam
                                                       WeightRange aWeightForEntry,
                                                       StretchRange aStretchForEntry,
                                                       SlantStyleRange aStyleForEntry) {
+  if (aFontName.IsEmpty() || aFontName[0] == '.') {
+    return nullptr;
+  }
+
   nsAutoreleasePool localPool;
 
   NSString* faceName = GetNSStringForString(NS_ConvertUTF8toUTF16(aFontName));
@@ -1430,13 +1389,14 @@ bool gfxMacPlatformFontList::FindAndAddFamilies(mozilla::StyleGenericFontFamily 
   // search for special system font name, -apple-system
   if (SharedFontList()) {
     if (aFamily.EqualsLiteral(kSystemFont_system)) {
+      FindFamiliesFlags flags = aFlags | FindFamiliesFlags::eSearchHiddenFamilies;
       if (mUseSizeSensitiveSystemFont && aStyle &&
           (aStyle->size * aDevToCssSize) >= kTextDisplayCrossover) {
         return gfxPlatformFontList::FindAndAddFamilies(aGeneric, mSystemDisplayFontFamilyName,
-                                                       aOutput, aFlags, aStyle, aDevToCssSize);
+                                                       aOutput, flags, aStyle, aDevToCssSize);
       }
       return gfxPlatformFontList::FindAndAddFamilies(aGeneric, mSystemTextFontFamilyName, aOutput,
-                                                     aFlags, aStyle, aDevToCssSize);
+                                                     flags, aStyle, aDevToCssSize);
     }
   } else {
     if (aFamily.EqualsLiteral(kSystemFont_system)) {

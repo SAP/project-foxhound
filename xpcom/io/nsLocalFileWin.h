@@ -12,7 +12,6 @@
 #include "nsString.h"
 #include "nsCRT.h"
 #include "nsIFile.h"
-#include "nsIFactory.h"
 #include "nsILocalFileWin.h"
 #include "nsIClassInfoImpl.h"
 #include "prio.h"
@@ -47,6 +46,8 @@ class nsLocalFile final : public nsILocalFileWin {
   // Removes registry command handler parameters, quotes, and expands
   // environment strings.
   static bool CleanupCmdHandlerPath(nsAString& aCommandHandler);
+  // Called off the main thread to open the window revealing the file
+  static nsresult RevealFile(const nsString& aResolvedPath);
 
  private:
   // CopyMove and CopySingleFile constants for |options| parameter:

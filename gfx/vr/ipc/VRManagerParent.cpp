@@ -19,12 +19,15 @@ namespace mozilla {
 using namespace layers;
 namespace gfx {
 
+// See VRManagerChild.cpp
+void ReleaseVRManagerParentSingleton();
+
 VRManagerParent::VRManagerParent(ProcessId aChildProcessId,
                                  bool aIsContentChild)
     : mHaveEventListener(false),
       mHaveControllerListener(false),
       mIsContentChild(aIsContentChild),
-      mVRActiveStatus(true) {
+      mVRActiveStatus(false) {
   MOZ_COUNT_CTOR(VRManagerParent);
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -124,29 +127,53 @@ bool VRManagerParent::CreateForGPUProcess(
   return true;
 }
 
-void VRManagerParent::DeferredDestroy() {
-  mCompositorThreadHolder = nullptr;
-  mSelfRef = nullptr;
+/*static*/
+void VRManagerParent::Shutdown() {
+  ReleaseVRManagerParentSingleton();
+  CompositorThreadHolder::Loop()->PostTask(NS_NewRunnableFunction(
+      "VRManagerParent::Shutdown",
+      []() -> void { VRManagerParent::ShutdownInternal(); }));
 }
 
-void VRManagerParent::ActorDestroy(ActorDestroyReason why) {
+/*static*/
+void VRManagerParent::ShutdownInternal() {
+  VRManager* vm = VRManager::MaybeGet();
+  if (!vm) {
+    return;
+  }
+  vm->ShutdownVRManagerParents();
+}
+
+void VRManagerParent::ActorDestroy(ActorDestroyReason why) {}
+
+void VRManagerParent::ActorDealloc() {
   UnregisterFromManager();
-  MessageLoop::current()->PostTask(
-      NewRunnableMethod("gfx::VRManagerParent::DeferredDestroy", this,
-                        &VRManagerParent::DeferredDestroy));
+  mCompositorThreadHolder = nullptr;
+  mSelfRef = nullptr;
 }
 
 void VRManagerParent::OnChannelConnected(int32_t aPid) {
   mCompositorThreadHolder = CompositorThreadHolder::GetSingleton();
 }
 
-mozilla::ipc::IPCResult VRManagerParent::RecvRefreshDisplays() {
-  // This is called to refresh the VR Displays for Navigator.GetVRDevices().
-  // We must pass "true" to VRManager::RefreshVRDisplays()
-  // to ensure that the promise returned by Navigator.GetVRDevices
-  // can resolve even if there are no changes to the VR Displays.
+mozilla::ipc::IPCResult VRManagerParent::RecvDetectRuntimes() {
+  // Detect runtime capabilities. This will return the presense of VR and/or AR
+  // runtime software, without enumerating or activating any hardware devices.
+  // UpdateDisplayInfo will be sent to VRManagerChild with the results of the
+  // detection.
   VRManager* vm = VRManager::Get();
-  vm->RefreshVRDisplays(true);
+  vm->DetectRuntimes();
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult VRManagerParent::RecvRefreshDisplays() {
+  // This is called to activate the VR runtimes, detecting the
+  // presence and capabilities of XR hardware.
+  // UpdateDisplayInfo will be sent to VRManagerChild with the results of the
+  // enumerated hardware.
+  VRManager* vm = VRManager::Get();
+  vm->EnumerateDevices();
 
   return IPC_OK();
 }

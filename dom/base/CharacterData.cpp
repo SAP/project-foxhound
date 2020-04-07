@@ -18,20 +18,16 @@
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLSlotElement.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/Document.h"
 #include "nsReadableUtils.h"
 #include "mozilla/InternalMutationEvent.h"
-#include "nsIURI.h"
 #include "nsCOMPtr.h"
 #include "nsDOMString.h"
 #include "nsChangeHint.h"
 #include "nsCOMArray.h"
-#include "nsNodeUtils.h"
 #include "mozilla/dom/DirectionalityUtils.h"
-#ifdef MOZ_XBL
-#  include "nsBindingManager.h"
-#endif
 #include "nsCCUncollectableMarker.h"
 #include "mozAutoDocUpdate.h"
 #include "nsTextNode.h"
@@ -256,7 +252,7 @@ nsresult CharacterData::SetTextInternal(
   if (aNotify) {
     CharacterDataChangeInfo info = {aOffset == textLength, aOffset, endOffset,
                                     aLength, aDetails};
-    nsNodeUtils::CharacterDataWillChange(this, info);
+    MutationObservers::NotifyCharacterDataWillChange(this, info);
   }
 
   Directionality oldDir = eDir_NotSet;
@@ -337,7 +333,7 @@ nsresult CharacterData::SetTextInternal(
   if (aNotify) {
     CharacterDataChangeInfo info = {aOffset == textLength, aOffset, endOffset,
                                     aLength, aDetails};
-    nsNodeUtils::CharacterDataChanged(this, info);
+    MutationObservers::NotifyCharacterDataChanged(this, info);
 
     if (haveMutationListeners) {
       InternalMutationEvent mutation(true, eLegacyCharacterDataModified);
@@ -416,41 +412,16 @@ nsresult CharacterData::BindToTree(BindContext& aContext, nsINode& aParent) {
   // only assert if our parent is _changing_ while we have a parent.
   MOZ_ASSERT(!GetParentNode() || &aParent == GetParentNode(),
              "Already have a parent.  Unbind first!");
-  MOZ_ASSERT(
-      !GetBindingParent() ||
-          aContext.GetBindingParent() == GetBindingParent() ||
-          (!aContext.GetBindingParent() && aParent.IsContent() &&
-           aParent.AsContent()->GetBindingParent() == GetBindingParent()),
-      "Already have a binding parent.  Unbind first!");
-  MOZ_ASSERT(!IsRootOfNativeAnonymousSubtree() ||
-                 aContext.GetBindingParent() == &aParent,
-             "Native anonymous content must have its parent as its "
-             "own binding parent");
-  MOZ_ASSERT(aContext.GetBindingParent() || !aParent.IsContent() ||
-                 aContext.GetBindingParent() ==
-                     aParent.AsContent()->GetBindingParent(),
-             "We should be passed the right binding parent");
-
-  // First set the binding parent
-  if (Element* bindingParent = aContext.GetBindingParent()) {
-    ExtendedContentSlots()->mBindingParent = bindingParent;
-  }
 
   const bool hadParent = !!GetParentNode();
 
-  NS_ASSERTION(!aContext.GetBindingParent() ||
-                   IsRootOfNativeAnonymousSubtree() ||
-                   !HasFlag(NODE_IS_IN_NATIVE_ANONYMOUS_SUBTREE) ||
-                   aParent.IsInNativeAnonymousSubtree(),
-               "Trying to re-bind content from native anonymous subtree to "
-               "non-native anonymous parent!");
   if (aParent.IsInNativeAnonymousSubtree()) {
     SetFlags(NODE_IS_IN_NATIVE_ANONYMOUS_SUBTREE);
   }
   if (aParent.HasFlag(NODE_HAS_BEEN_IN_UA_WIDGET)) {
     SetFlags(NODE_HAS_BEEN_IN_UA_WIDGET);
   }
-  if (HasFlag(NODE_IS_ANONYMOUS_ROOT)) {
+  if (IsRootOfNativeAnonymousSubtree()) {
     aParent.SetMayHaveAnonymousChildren();
   }
 
@@ -495,9 +466,9 @@ nsresult CharacterData::BindToTree(BindContext& aContext, nsINode& aParent) {
     SetSubtreeRootPointer(aParent.SubtreeRoot());
   }
 
-  nsNodeUtils::ParentChainChanged(this);
+  MutationObservers::NotifyParentChainChanged(this);
   if (!hadParent && IsRootOfNativeAnonymousSubtree()) {
-    nsNodeUtils::NativeAnonymousChildListChange(this, false);
+    MutationObservers::NotifyNativeAnonymousChildListChange(this, false);
   }
 
   UpdateEditableState(false);
@@ -511,8 +482,6 @@ nsresult CharacterData::BindToTree(BindContext& aContext, nsINode& aParent) {
   MOZ_ASSERT(IsInComposedDoc() == aContext.InComposedDoc());
   MOZ_ASSERT(IsInUncomposedDoc() == aContext.InUncomposedDoc());
   MOZ_ASSERT(&aParent == GetParentNode(), "Bound to wrong parent node");
-  MOZ_ASSERT(aContext.GetBindingParent() == GetBindingParent(),
-             "Bound to wrong binding parent");
   MOZ_ASSERT(aParent.IsInUncomposedDoc() == IsInUncomposedDoc());
   MOZ_ASSERT(aParent.IsInComposedDoc() == IsInComposedDoc());
   MOZ_ASSERT(aParent.IsInShadowTree() == IsInShadowTree());
@@ -526,13 +495,9 @@ void CharacterData::UnbindFromTree(bool aNullParent) {
 
   HandleShadowDOMRelatedRemovalSteps(aNullParent);
 
-#ifdef MOZ_XBL
-  Document* document = GetComposedDoc();
-#endif
-
   if (aNullParent) {
     if (IsRootOfNativeAnonymousSubtree()) {
-      nsNodeUtils::NativeAnonymousChildListChange(this, true);
+      MutationObservers::NotifyNativeAnonymousChildListChange(this, true);
     }
     if (GetParent()) {
       NS_RELEASE(mParent);
@@ -551,28 +516,13 @@ void CharacterData::UnbindFromTree(bool aNullParent) {
     SetSubtreeRootPointer(aNullParent ? this : mParent->SubtreeRoot());
   }
 
-#ifdef MOZ_XBL
-  if (document && !GetContainingShadow()) {
-    // Notify XBL- & nsIAnonymousContentCreator-generated
-    // anonymous content that the document is changing.
-    // Unlike XBL, bindings for web components shadow DOM
-    // do not get uninstalled.
-    if (HasFlag(NODE_MAY_BE_IN_BINDING_MNGR)) {
-      nsContentUtils::AddScriptRunner(new RemoveFromBindingManagerRunnable(
-          document->BindingManager(), this, document));
-    }
-  }
-#endif
-
-  nsExtendedContentSlots* slots = GetExistingExtendedContentSlots();
-  if (slots) {
-    slots->mBindingParent = nullptr;
+  if (nsExtendedContentSlots* slots = GetExistingExtendedContentSlots()) {
     if (aNullParent || !mParent->IsInShadowTree()) {
       slots->mContainingShadow = nullptr;
     }
   }
 
-  nsNodeUtils::ParentChainChanged(this);
+  MutationObservers::NotifyParentChainChanged(this);
 
 #if defined(ACCESSIBILITY) && defined(DEBUG)
   MOZ_ASSERT(!GetAccService() || !GetAccService()->HasAccessible(this),

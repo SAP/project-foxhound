@@ -310,7 +310,7 @@ bool ClientLayerManager::EndTransactionInternal(
   }
 
   PaintTelemetry::AutoRecord record(PaintTelemetry::Metric::Rasterization);
-  AUTO_PROFILER_TRACING("Paint", "Rasterize", GRAPHICS);
+  AUTO_PROFILER_TRACING_MARKER("Paint", "Rasterize", GRAPHICS);
   PerfStats::AutoMetricRecording<PerfStats::Metric::Rasterizing> autoRecording;
 
   Maybe<TimeStamp> startTime;
@@ -472,7 +472,7 @@ CompositorBridgeChild* ClientLayerManager::GetRemoteRenderer() {
 }
 
 CompositorBridgeChild* ClientLayerManager::GetCompositorBridgeChild() {
-  if (!XRE_IsParentProcess() && !recordreplay::IsRecordingOrReplaying()) {
+  if (!XRE_IsParentProcess()) {
     return CompositorBridgeChild::Get();
   }
   return GetRemoteRenderer();
@@ -495,8 +495,6 @@ void ClientLayerManager::DidComposite(TransactionId aTransactionId,
                                       const TimeStamp& aCompositeStart,
                                       const TimeStamp& aCompositeEnd) {
   if (!mWidget) {
-    // When recording/replaying this manager may have already been destroyed.
-    MOZ_ASSERT(recordreplay::IsRecordingOrReplaying());
     return;
   }
 
@@ -696,7 +694,7 @@ void ClientLayerManager::StopFrameTimeRecording(
 }
 
 void ClientLayerManager::ForwardTransaction(bool aScheduleComposite) {
-  AUTO_PROFILER_TRACING("Paint", "ForwardTransaction", GRAPHICS);
+  AUTO_PROFILER_TRACING_MARKER("Paint", "ForwardTransaction", GRAPHICS);
   TimeStamp start = TimeStamp::Now();
 
   GetCompositorBridgeChild()->EndCanvasTransaction();

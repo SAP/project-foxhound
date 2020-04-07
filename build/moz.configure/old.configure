@@ -22,6 +22,15 @@ def autoconf(mozconfig, autoconf):
                              assignment)
                 if m:
                     mozconfig_autoconf = m.group(1)
+                # Check whether we've exported any known-broken variables.
+                m = re.match('(?:export\s+)?(?:CC|CXX)\s*:?=\s*(?:.+)$',
+                             assignment)
+                if m:
+                    die('Setting the value of CC or CXX with "mk_add_options" '
+                        'can cause the build to fail unexpectedly. Please '
+                        'change your mozconfig to instead use '
+                        '"ac_add_options", e.g. ac_add_options '
+                        'CC=my-custom-cc".')
 
     autoconf = autoconf[0] if autoconf else None
 
@@ -69,7 +78,7 @@ def prepare_mozconfig(mozconfig):
         return items
 
 
-@depends('OLD_CONFIGURE', prepare_mozconfig, autoconf, check_build_environment,
+@depends('OLD_CONFIGURE', 'MOZILLABUILD', prepare_mozconfig, autoconf, check_build_environment,
          shell, old_configure_assignments, build_project)
 @imports(_from='__builtin__', _import='open')
 @imports(_from='__builtin__', _import='print')
@@ -82,10 +91,12 @@ def prepare_mozconfig(mozconfig):
 @imports(_from='os.path', _import='exists')
 @imports(_from='mozbuild.shellutil', _import='quote')
 @imports(_from='tempfile', _import='NamedTemporaryFile')
+@imports(_from='os', _import='environ')
 @imports(_from='os', _import='remove')
 @imports(_from='os', _import='rename')
+@imports(_from='subprocess', _import='CalledProcessError')
 @imports(_from='__builtin__', _import='OSError')
-def prepare_configure(old_configure, mozconfig, autoconf, build_env, shell,
+def prepare_configure(old_configure, mozillabuild, mozconfig, autoconf, build_env, shell,
                       old_configure_assignments, build_project):
     # os.path.abspath in the sandbox will ensure forward slashes on Windows,
     # which is actually necessary because this path actually ends up literally
@@ -115,10 +126,25 @@ def prepare_configure(old_configure, mozconfig, autoconf, build_env, shell,
 
     if refresh:
         log.info('Refreshing %s with %s', old_configure, autoconf)
-        script = subprocess.check_output([
-            shell, autoconf,
-            '--localdir=%s' % os.path.dirname(old_configure),
-            old_configure + '.in'])
+
+        try:
+            script = subprocess.check_output([
+                shell, autoconf,
+                '--localdir=%s' % os.path.dirname(old_configure),
+                old_configure + '.in'])
+        except CalledProcessError as exc:
+            # Autoconf on win32 may break due to a bad $PATH.  Let the user know
+            # their $PATH is suspect.
+            if mozillabuild:
+                mozillabuild_path = normsep(mozillabuild[0])
+                sh_path = normsep(find_program('sh'))
+                if mozillabuild_path not in sh_path:
+                    log.warning("The '{}msys/bin' directory is not first in $PATH. "
+                                "This may cause autoconf to fail. ($PATH is currently "
+                                "set to: {})".format(mozillabuild_path, environ[
+                        'PATH']))
+            die('autoconf exited with return code {}'.format(exc.returncode))
+
         if not script:
             die('Generated old-configure is empty! Check that your autoconf 2.13 program works!')
 
@@ -219,7 +245,6 @@ def old_configure_options(*options):
     '--enable-system-cairo',
     '--enable-system-extension-dirs',
     '--enable-system-pixman',
-    '--enable-system-sqlite',
     '--enable-universalchardet',
     '--enable-updater',
     '--enable-xul',
@@ -300,6 +325,7 @@ def prepare_configure_options(extra_old_configure_args, all_options, *options):
 @imports('types')
 @imports(_from='mozbuild.shellutil', _import='quote')
 @imports(_from='mozbuild.shellutil', _import='split')
+@imports(_from='six', _import='exec_')
 def old_configure(prepare_configure, prepare_configure_options, altered_path):
     cmd = prepare_configure + prepare_configure_options.options
     extra_env = prepare_configure_options.extra_env
@@ -330,7 +356,8 @@ def old_configure(prepare_configure, prepare_configure_options, altered_path):
     if altered_path:
         env['PATH'] = altered_path
 
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            env=env)
     while True:
         line = proc.stdout.readline()
         if not line:
@@ -360,10 +387,7 @@ def old_configure(prepare_configure, prepare_configure_options, altered_path):
     }
     with open('config.data', 'r') as fh:
         code = compile(fh.read(), 'config.data', 'exec')
-        # Every variation of the exec() function I tried led to:
-        # SyntaxError: unqualified exec is not allowed in function 'main' it
-        # contains a nested function with free variables
-        exec code in raw_config # noqa
+        exec_(code, raw_config)
 
     # Ensure all the flags known to old-configure appear in the
     # @old_configure_options above.

@@ -7,6 +7,7 @@
 #![allow(unsafe_code)]
 #![deny(missing_docs)]
 
+use crate::computed_value_flags::ComputedValueFlags;
 use crate::context::{ElementCascadeInputs, QuirksMode, SelectorFlagsMap};
 use crate::context::{SharedStyleContext, StyleContext};
 use crate::data::ElementData;
@@ -137,12 +138,12 @@ trait PrivateMatchMethods: TElement {
             if replacements.contains(RestyleHint::RESTYLE_STYLE_ATTRIBUTE) {
                 let style_attribute = self.style_attribute();
                 result |= replace_rule_node(
-                    CascadeLevel::StyleAttributeNormal,
+                    CascadeLevel::same_tree_author_normal(),
                     style_attribute,
                     primary_rules,
                 );
                 result |= replace_rule_node(
-                    CascadeLevel::StyleAttributeImportant,
+                    CascadeLevel::same_tree_author_important(),
                     style_attribute,
                     primary_rules,
                 );
@@ -705,7 +706,10 @@ pub trait MatchMethods: TElement {
         let new_primary_style = data.styles.primary.as_ref().unwrap();
 
         let mut cascade_requirement = ChildCascadeRequirement::CanSkipCascade;
-        if self.is_root() && !self.is_in_native_anonymous_subtree() {
+        if new_primary_style
+            .flags
+            .contains(ComputedValueFlags::IS_ROOT_ELEMENT_STYLE)
+        {
             let device = context.shared.stylist.device();
             let new_font_size = new_primary_style.get_font().clone_font_size();
 
@@ -715,7 +719,7 @@ pub trait MatchMethods: TElement {
                 .map_or(true, |s| s.get_font().clone_font_size() != new_font_size)
             {
                 debug_assert!(self.owner_doc_matches_for_testing(device));
-                device.set_root_font_size(new_font_size.size());
+                device.set_root_font_size(new_font_size.size().into());
                 // If the root font-size changed since last time, and something
                 // in the document did use rem units, ensure we recascade the
                 // entire tree.

@@ -60,8 +60,9 @@ class OutOfLineRegExpSearcher;
 class OutOfLineRegExpTester;
 class OutOfLineRegExpPrototypeOptimizable;
 class OutOfLineRegExpInstanceOptimizable;
-class OutOfLineLambdaArrow;
 class OutOfLineNaNToZero;
+class OutOfLineZeroIfNaN;
+class OutOfLineTypedArrayIndexToInt32;
 
 class CodeGenerator final : public CodeGeneratorSpecific {
   void generateArgumentsChecks(bool assert = false);
@@ -94,7 +95,7 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   MOZ_MUST_USE bool generate();
   MOZ_MUST_USE bool generateWasm(wasm::FuncTypeIdDesc funcTypeId,
                                  wasm::BytecodeOffset trapOffset,
-                                 const wasm::ValTypeVector& argTys,
+                                 const wasm::ArgTypeVector& argTys,
                                  const MachineState& trapExitLayout,
                                  size_t trapExitLayoutNumWords,
                                  wasm::FuncOffsets* offsets,
@@ -118,8 +119,6 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   void visitOutOfLineRegExpInstanceOptimizable(
       OutOfLineRegExpInstanceOptimizable* ool);
 
-  void visitOutOfLineLambdaArrow(OutOfLineLambdaArrow* ool);
-
   void visitOutOfLineTypeOfV(OutOfLineTypeOfV* ool);
 
   template <SwitchTableType tableType>
@@ -129,6 +128,7 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   void visitOutOfLineIsConstructor(OutOfLineIsConstructor* ool);
 
   void visitOutOfLineNaNToZero(OutOfLineNaNToZero* ool);
+  void visitOutOfLineZeroIfNaN(OutOfLineZeroIfNaN* ool);
 
   void visitCheckOverRecursedFailure(CheckOverRecursedFailure* ool);
 
@@ -144,6 +144,9 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   void visitOutOfLineNewArray(OutOfLineNewArray* ool);
   void visitOutOfLineNewObject(OutOfLineNewObject* ool);
 
+  void visitOutOfLineTypedArrayIndexToInt32(
+      OutOfLineTypedArrayIndexToInt32* ool);
+
  private:
   void emitPostWriteBarrier(const LAllocation* obj);
   void emitPostWriteBarrier(Register objreg);
@@ -157,22 +160,23 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   void emitCallInvokeFunction(LInstruction* call, Register callereg,
                               bool isConstructing, bool ignoresReturnValue,
                               uint32_t argc, uint32_t unusedStack);
-  void emitCallInvokeFunctionShuffleNewTarget(LCallKnown* call,
-                                              Register calleeReg,
-                                              uint32_t numFormals,
-                                              uint32_t unusedStack);
   template <typename T>
   void emitApplyGeneric(T* apply);
   template <typename T>
   void emitCallInvokeFunction(T* apply, Register extraStackSize);
-  void emitAllocateSpaceForApply(Register argcreg, Register extraStackSpace,
-                                 Label* end);
+  void emitAllocateSpaceForApply(Register argcreg, Register extraStackSpace);
+  void emitAllocateSpaceForConstructAndPushNewTarget(
+      Register argcreg, Register newTargetAndExtraStackSpace);
   void emitCopyValuesForApply(Register argvSrcBase, Register argvIndex,
                               Register copyreg, size_t argvSrcOffset,
                               size_t argvDstOffset);
   void emitPopArguments(Register extraStackSize);
+  void emitPushElementsAsArguments(Register tmpArgc, Register elementsAndArgc,
+                                   Register extraStackSpace);
   void emitPushArguments(LApplyArgsGeneric* apply, Register extraStackSpace);
   void emitPushArguments(LApplyArrayGeneric* apply, Register extraStackSpace);
+  void emitPushArguments(LConstructArrayGeneric* construct,
+                         Register extraStackSpace);
 
   void visitNewArrayCallVM(LNewArray* lir);
   void visitNewObjectVMCall(LNewObject* lir);
@@ -220,10 +224,8 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   void loadOutermostJSScript(Register reg);
 
 #ifdef DEBUG
-  void emitAssertResultV(const ValueOperand output,
-                         const TemporaryTypeSet* typeset);
-  void emitAssertGCThingResult(Register input, MIRType type,
-                               const TemporaryTypeSet* typeset);
+  void emitAssertResultV(const ValueOperand output, const MDefinition* mir);
+  void emitAssertGCThingResult(Register input, const MDefinition* mir);
 #endif
 
 #ifdef DEBUG
@@ -262,9 +264,6 @@ class CodeGenerator final : public CodeGeneratorSpecific {
 
   template <class OrderedHashTable>
   void emitLoadIteratorValues(Register result, Register temp, Register front);
-
-  template <size_t Defs>
-  void emitWasmCallBase(LWasmCallBase<Defs>* lir);
 
   template <size_t NumDefs>
   void emitIonToWasmCallBase(LIonToWasmCallBase<NumDefs>* lir);

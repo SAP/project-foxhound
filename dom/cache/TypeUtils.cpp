@@ -19,8 +19,6 @@
 #include "mozilla/ipc/PFileDescriptorSetChild.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "nsCOMPtr.h"
-#include "nsIAsyncInputStream.h"
-#include "nsIAsyncOutputStream.h"
 #include "nsIIPCSerializableInputStream.h"
 #include "nsQueryObject.h"
 #include "nsPromiseFlatString.h"
@@ -127,9 +125,7 @@ void TypeUtils::ToCacheRequest(
   }
   if (!schemeValid) {
     if (aSchemeAction == TypeErrorOnInvalidScheme) {
-      NS_ConvertUTF8toUTF16 urlUTF16(url);
-      aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>(NS_LITERAL_STRING("Request"),
-                                                 urlUTF16);
+      aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>("Request", url);
       return;
     }
   }
@@ -185,7 +181,7 @@ void TypeUtils::ToCacheResponseWithoutBody(CacheResponse& aOut,
   RefPtr<InternalHeaders> headers = aIn.UnfilteredHeaders();
   MOZ_DIAGNOSTIC_ASSERT(headers);
   if (HasVaryStar(headers)) {
-    aRv.ThrowTypeError(u"Invalid Response object with a 'Vary: *' header.");
+    aRv.ThrowTypeError("Invalid Response object with a 'Vary: *' header.");
     return;
   }
   ToHeadersEntryList(aOut.headers(), headers);
@@ -453,7 +449,7 @@ void TypeUtils::CheckAndSetBodyUsed(JSContext* aCx, Request* aRequest,
 already_AddRefed<InternalRequest> TypeUtils::ToInternalRequest(
     const nsAString& aIn, ErrorResult& aRv) {
   RequestOrUSVString requestOrString;
-  requestOrString.SetAsUSVString().Rebind(aIn.Data(), aIn.Length());
+  requestOrString.SetAsUSVString().ShareOrDependUpon(aIn);
 
   // Re-create a GlobalObject stack object so we can use webidl Constructors.
   AutoJSAPI jsapi;

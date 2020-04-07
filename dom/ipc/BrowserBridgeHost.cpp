@@ -58,45 +58,14 @@ void BrowserBridgeHost::DestroyComplete() {
   mBridge = nullptr;
 }
 
-bool BrowserBridgeHost::Show(const ScreenIntSize& aSize, bool aParentIsActive) {
-  nsCOMPtr<nsIWidget> widget = GetWidget();
-  if (!widget) {
-    NS_WARNING("No widget found in BrowserBridgeHost::Show");
-    return false;
-  }
-  nsSizeMode sizeMode = widget ? widget->SizeMode() : nsSizeMode_Normal;
-
-  Unused << mBridge->SendShow(aSize, aParentIsActive, sizeMode);
+bool BrowserBridgeHost::Show(const OwnerShowInfo& aShowInfo) {
+  Unused << mBridge->SendShow(aShowInfo);
   return true;
 }
 
 void BrowserBridgeHost::UpdateDimensions(const nsIntRect& aRect,
                                          const ScreenIntSize& aSize) {
-  nsCOMPtr<nsIWidget> widget = GetWidget();
-  if (!widget) {
-    NS_WARNING("No widget found in BrowserBridgeHost::UpdateDimensions");
-    return;
-  }
-
-  CSSToLayoutDeviceScale widgetScale = widget->GetDefaultScale();
-
-  LayoutDeviceIntRect devicePixelRect = ViewAs<LayoutDevicePixel>(
-      aRect, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
-  LayoutDeviceIntSize devicePixelSize = ViewAs<LayoutDevicePixel>(
-      aSize, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
-
-  // XXX What are clientOffset and chromeOffset used for? Are they meaningful
-  // for nested iframes with transforms?
-  LayoutDeviceIntPoint clientOffset;
-  LayoutDeviceIntPoint chromeOffset;
-
-  CSSRect unscaledRect = devicePixelRect / widgetScale;
-  CSSSize unscaledSize = devicePixelSize / widgetScale;
-  hal::ScreenOrientation orientation = hal::eScreenOrientation_Default;
-  DimensionInfo di(unscaledRect, unscaledSize, orientation, clientOffset,
-                   chromeOffset);
-
-  Unused << mBridge->SendUpdateDimensions(di);
+  Unused << mBridge->SendUpdateDimensions(aRect, aSize);
 }
 
 void BrowserBridgeHost::UpdateEffects(EffectsInfo aEffects) {

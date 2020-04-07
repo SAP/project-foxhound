@@ -68,7 +68,7 @@ void ViewportFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
  * Returns whether we are going to put an element in the top layer for
  * fullscreen. This function should matches the CSS rule in ua.css.
  */
-static bool ShouldInTopLayerForFullscreen(Element* aElement) {
+static bool ShouldInTopLayerForFullscreen(dom::Element* aElement) {
   if (!aElement->GetParent()) {
     return false;
   }
@@ -116,9 +116,9 @@ static void BuildDisplayListForTopLayerFrame(nsDisplayListBuilder* aBuilder,
 
 void ViewportFrame::BuildDisplayListForTopLayer(nsDisplayListBuilder* aBuilder,
                                                 nsDisplayList* aList) {
-  nsTArray<Element*> fullscreenStack =
+  nsTArray<dom::Element*> fullscreenStack =
       PresContext()->Document()->GetFullscreenStack();
-  for (Element* elem : fullscreenStack) {
+  for (dom::Element* elem : fullscreenStack) {
     if (nsIFrame* frame = elem->GetPrimaryFrame()) {
       // There are two cases where an element in fullscreen is not in
       // the top layer:
@@ -129,7 +129,7 @@ void ViewportFrame::BuildDisplayListForTopLayer(nsDisplayListBuilder* aBuilder,
       //    layer for fullscreen. See ShouldInTopLayerForFullscreen().
       // In both cases, we want to skip the frame here and paint it in
       // the normal path.
-      if (frame->StyleDisplay()->mTopLayer == NS_STYLE_TOP_LAYER_NONE) {
+      if (frame->StyleDisplay()->mTopLayer == StyleTopLayer::None) {
         MOZ_ASSERT(!aBuilder->IsForPainting() ||
                    !ShouldInTopLayerForFullscreen(elem));
         continue;
@@ -160,9 +160,9 @@ void ViewportFrame::BuildDisplayListForTopLayer(nsDisplayListBuilder* aBuilder,
   }
 
   if (nsCanvasFrame* canvasFrame = PresShell()->GetCanvasFrame()) {
-    if (Element* container = canvasFrame->GetCustomContentContainer()) {
+    if (dom::Element* container = canvasFrame->GetCustomContentContainer()) {
       if (nsIFrame* frame = container->GetPrimaryFrame()) {
-        MOZ_ASSERT(frame->StyleDisplay()->mTopLayer != NS_STYLE_TOP_LAYER_NONE,
+        MOZ_ASSERT(frame->StyleDisplay()->mTopLayer != StyleTopLayer::None,
                    "ua.css should ensure this");
         MOZ_ASSERT(frame->GetStateBits() & NS_FRAME_OUT_OF_FLOW);
         BuildDisplayListForTopLayerFrame(aBuilder, frame, aList);
@@ -387,9 +387,15 @@ nsSize ViewportFrame::AdjustViewportSizeForFixedPosition(
   // Layout fixed position elements to the visual viewport size if and only if
   // it has been set and it is larger than the computed size, otherwise use the
   // computed size.
-  if (presShell->IsVisualViewportSizeSet() &&
-      result < presShell->GetVisualViewportSize()) {
-    result = presShell->GetVisualViewportSize();
+  if (presShell->IsVisualViewportSizeSet()) {
+    if (presShell->GetDynamicToolbarState() == DynamicToolbarState::Collapsed &&
+        result < presShell->GetVisualViewportSizeUpdatedByDynamicToolbar()) {
+      // We need to use the viewport size updated by the dynamic toolbar in the
+      // case where the dynamic toolbar is completely hidden.
+      result = presShell->GetVisualViewportSizeUpdatedByDynamicToolbar();
+    } else if (result < presShell->GetVisualViewportSize()) {
+      result = presShell->GetVisualViewportSize();
+    }
   }
   // Expand the size to the layout viewport size if necessary.
   const nsSize layoutViewportSize = presShell->GetLayoutViewportSize();

@@ -99,7 +99,6 @@
 #define mozilla_ServoBindingTypes_h
 
 #include "mozilla/RefPtr.h"
-#include "mozilla/ServoComputedData.h"
 #include "mozilla/ServoTypes.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/Types.h"
@@ -117,9 +116,6 @@ class nsCSSPropertyIDSet;
 class nsCSSValue;
 class nsINode;
 class nsPresContext;
-#ifdef MOZ_XBL
-class nsXBLBinding;
-#endif
 struct nsFontFaceRuleContainer;
 struct nsTimingFunction;
 

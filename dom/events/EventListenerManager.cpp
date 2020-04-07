@@ -19,7 +19,6 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs_full_screen_api.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/EventCallbackDebuggerNotification.h"
 #include "mozilla/dom/Element.h"
@@ -44,11 +43,8 @@
 #include "nsIContent.h"
 #include "nsIContentSecurityPolicy.h"
 #include "mozilla/dom/Document.h"
-#include "nsIDOMEventListener.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsISupports.h"
-#include "nsISupportsPrimitives.h"
-#include "nsIXPConnect.h"
 #include "nsJSUtils.h"
 #include "nsNameSpaceManager.h"
 #include "nsPIDOMWindow.h"
@@ -112,7 +108,9 @@ EventListenerManagerBase::EventListenerManagerBase()
       mMayHaveInputOrCompositionEventListener(false),
       mMayHaveSelectionChangeEventListener(false),
       mClearingListeners(false),
-      mIsMainThreadELM(NS_IsMainThread()) {
+      mIsMainThreadELM(NS_IsMainThread()),
+      mHasNonPrivilegedClickListeners(false),
+      mUnknownNonPrivilegedClickListeners(false) {
   static_assert(sizeof(EventListenerManagerBase) == sizeof(uint32_t),
                 "Keep the size of EventListenerManagerBase size compact!");
 }
@@ -406,6 +404,13 @@ void EventListenerManager::AddEventListenerInternal(
     EventListenerService::NotifyAboutMainThreadListenerChange(mTarget,
                                                               aTypeAtom);
   }
+
+  if (!mHasNonPrivilegedClickListeners || mUnknownNonPrivilegedClickListeners) {
+    if (IsNonChromeClickListener(listener)) {
+      mHasNonPrivilegedClickListeners = true;
+      mUnknownNonPrivilegedClickListeners = false;
+    }
+  }
 }
 
 void EventListenerManager::ProcessApzAwareEventListenerAdd() {
@@ -587,6 +592,9 @@ void EventListenerManager::RemoveEventListenerInternal(
     if (EVENT_TYPE_EQUALS(listener, aEventMessage, aUserType, aAllEvents)) {
       if (listener->mListener == aListenerHolder &&
           listener->mFlags.EqualsForRemoval(aFlags)) {
+        if (IsNonChromeClickListener(listener)) {
+          mUnknownNonPrivilegedClickListeners = true;
+        }
         mListeners.RemoveElementAt(i);
         NotifyEventListenerRemoved(aUserType);
         if (!aAllEvents && deviceType) {
@@ -596,6 +604,23 @@ void EventListenerManager::RemoveEventListenerInternal(
       }
     }
   }
+}
+
+bool EventListenerManager::HasNonPrivilegedClickListeners() {
+  if (mUnknownNonPrivilegedClickListeners) {
+    Listener* listener;
+
+    mUnknownNonPrivilegedClickListeners = false;
+    for (uint32_t i = 0; i < mListeners.Length(); ++i) {
+      listener = &mListeners.ElementAt(i);
+      if (IsNonChromeClickListener(listener)) {
+        mHasNonPrivilegedClickListeners = true;
+        return mHasNonPrivilegedClickListeners;
+      }
+    }
+    mHasNonPrivilegedClickListeners = false;
+  }
+  return mHasNonPrivilegedClickListeners;
 }
 
 bool EventListenerManager::ListenerCanHandle(const Listener* aListener,
@@ -621,48 +646,45 @@ bool EventListenerManager::ListenerCanHandle(const Listener* aListener,
   if (aEvent->mMessage == eUnidentifiedEvent) {
     return aListener->mTypeAtom == aEvent->mSpecifiedEventType;
   }
-  if (MOZ_UNLIKELY(!StaticPrefs::full_screen_api_unprefix_enabled() &&
-                   aEvent->IsTrusted() &&
-                   (aEventMessage == eFullscreenChange ||
-                    aEventMessage == eFullscreenError))) {
-    // If unprefixed Fullscreen API is not enabled, don't dispatch it
-    // to the content.
-    if (!aEvent->mFlags.mInSystemGroup && !aListener->mIsChrome) {
-      return false;
-    }
-  }
   MOZ_ASSERT(mIsMainThreadELM);
   return aListener->mEventMessage == aEventMessage;
 }
 
-static bool DefaultToPassiveTouchListeners() {
-  static bool sDefaultToPassiveTouchListeners = false;
-  static bool sIsPrefCached = false;
-
-  if (!sIsPrefCached) {
-    sIsPrefCached = true;
-    Preferences::AddBoolVarCache(
-        &sDefaultToPassiveTouchListeners,
-        "dom.event.default_to_passive_touch_listeners");
+static bool IsDefaultPassiveWhenOnRoot(EventMessage aMessage) {
+  if (aMessage == eTouchStart || aMessage == eTouchMove) {
+    return StaticPrefs::dom_event_default_to_passive_touch_listeners();
   }
+  if (aMessage == eWheel || aMessage == eLegacyMouseLineOrPageScroll ||
+      aMessage == eLegacyMousePixelScroll) {
+    return StaticPrefs::dom_event_default_to_passive_wheel_listeners();
+  }
+  return false;
+}
 
-  return sDefaultToPassiveTouchListeners;
+static bool IsRootEventTaget(EventTarget* aTarget) {
+  if (nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(aTarget)) {
+    return true;
+  }
+  nsCOMPtr<nsINode> node = do_QueryInterface(aTarget);
+  if (!node) {
+    return false;
+  }
+  Document* doc = node->OwnerDoc();
+  return node == doc || node == doc->GetRootElement() || node == doc->GetBody();
 }
 
 void EventListenerManager::MaybeMarkPassive(EventMessage aMessage,
                                             EventListenerFlags& aFlags) {
-  if ((aMessage == eTouchStart || aMessage == eTouchMove) && mIsMainThreadELM &&
-      DefaultToPassiveTouchListeners()) {
-    nsCOMPtr<nsINode> node;
-    nsCOMPtr<nsPIDOMWindowInner> win;
-    if ((win = GetTargetAsInnerWindow()) ||
-        ((node = do_QueryInterface(mTarget)) &&
-         (node == node->OwnerDoc() ||
-          node == node->OwnerDoc()->GetRootElement() ||
-          node == node->OwnerDoc()->GetBody()))) {
-      aFlags.mPassive = true;
-    }
+  if (!mIsMainThreadELM) {
+    return;
   }
+  if (!IsDefaultPassiveWhenOnRoot(aMessage)) {
+    return;
+  }
+  if (!IsRootEventTaget(mTarget)) {
+    return;
+  }
+  aFlags.mPassive = true;
 }
 
 void EventListenerManager::AddEventListenerByType(
@@ -839,12 +861,22 @@ void EventListenerManager::RemoveEventHandler(nsAtom* aName) {
   Listener* listener = FindEventHandler(eventMessage, aName);
 
   if (listener) {
+    if (IsNonChromeClickListener(listener)) {
+      mUnknownNonPrivilegedClickListeners = true;
+    }
     mListeners.RemoveElementAt(uint32_t(listener - &mListeners.ElementAt(0)));
     NotifyEventListenerRemoved(aName);
     if (IsDeviceType(eventMessage)) {
       DisableDevice(eventMessage);
     }
   }
+}
+
+bool EventListenerManager::IsNonChromeClickListener(Listener* aListener) {
+  return !aListener->mFlags.mInSystemGroup && !aListener->mIsChrome &&
+         aListener->mEventMessage == eMouseClick &&
+         (aListener->GetJSEventHandler() ||
+          aListener->mListener.HasWebIDLCallback());
 }
 
 nsresult EventListenerManager::CompileEventHandlerInternal(
@@ -905,6 +937,14 @@ nsresult EventListenerManager::CompileEventHandlerInternal(
       attrName = nsGkAtoms::onrepeat;
     } else if (aListener->mTypeAtom == nsGkAtoms::onendEvent) {
       attrName = nsGkAtoms::onend;
+    } else if (aListener->mTypeAtom == nsGkAtoms::onwebkitAnimationEnd) {
+      attrName = nsGkAtoms::onwebkitanimationend;
+    } else if (aListener->mTypeAtom == nsGkAtoms::onwebkitAnimationIteration) {
+      attrName = nsGkAtoms::onwebkitanimationiteration;
+    } else if (aListener->mTypeAtom == nsGkAtoms::onwebkitAnimationStart) {
+      attrName = nsGkAtoms::onwebkitanimationstart;
+    } else if (aListener->mTypeAtom == nsGkAtoms::onwebkitTransitionEnd) {
+      attrName = nsGkAtoms::onwebkittransitionend;
     }
 
     element->GetAttr(kNameSpaceID_None, attrName, handlerBody);
@@ -1678,7 +1718,8 @@ bool EventListenerManager::HasApzAwareListeners() {
 }
 
 bool EventListenerManager::IsApzAwareListener(Listener* aListener) {
-  return !aListener->mFlags.mPassive && IsApzAwareEvent(aListener->mTypeAtom);
+  return !aListener->mFlags.mPassive && mIsMainThreadELM &&
+         IsApzAwareEvent(aListener->mTypeAtom);
 }
 
 bool EventListenerManager::IsApzAwareEvent(nsAtom* aEvent) {
@@ -1717,29 +1758,25 @@ already_AddRefed<nsIScriptGlobalObject>
 EventListenerManager::GetScriptGlobalAndDocument(Document** aDoc) {
   nsCOMPtr<nsINode> node(do_QueryInterface(mTarget));
   nsCOMPtr<Document> doc;
-  nsCOMPtr<nsIScriptGlobalObject> global;
+  nsCOMPtr<nsPIDOMWindowInner> win;
   if (node) {
     // Try to get context from doc
-    // XXX sXBL/XBL2 issue -- do we really want the owner here?  What
-    // if that's the XBL document?
     doc = node->OwnerDoc();
     if (doc->IsLoadedAsData()) {
       return nullptr;
     }
 
-    // We want to allow compiling an event handler even in an unloaded
-    // document, so use GetScopeObject here, not GetScriptHandlingObject.
-    global = do_QueryInterface(doc->GetScopeObject());
-  } else {
-    if (nsCOMPtr<nsPIDOMWindowInner> win = GetTargetAsInnerWindow()) {
-      doc = win->GetExtantDoc();
-      global = do_QueryInterface(win);
-    } else {
-      global = do_QueryInterface(mTarget);
-    }
+    win = do_QueryInterface(doc->GetScopeObject());
+  } else if ((win = GetTargetAsInnerWindow())) {
+    doc = win->GetExtantDoc();
+  }
+
+  if (!win || !win->IsCurrentInnerWindow()) {
+    return nullptr;
   }
 
   doc.forget(aDoc);
+  nsCOMPtr<nsIScriptGlobalObject> global = do_QueryInterface(win);
   return global.forget();
 }
 

@@ -157,17 +157,25 @@ bool WebrtcMediaDataEncoder::InitEncoder() {
 
 int32_t WebrtcMediaDataEncoder::RegisterEncodeCompleteCallback(
     webrtc::EncodedImageCallback* aCallback) {
-  mCallback = aCallback;
+  OwnerThread()->Dispatch(NS_NewRunnableFunction(
+      "WebrtcMediaDataEncoder::RegisterEncodeCompleteCallback",
+      [self = RefPtr<WebrtcMediaDataEncoder>(this), aCallback]() {
+        self->mCallback = aCallback;
+      }));
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
 int32_t WebrtcMediaDataEncoder::Shutdown() {
   LOG("Release encoder");
-  auto rv = media::Await(do_AddRef(mThreadPool), mEncoder->Shutdown());
-  mEncoder = nullptr;
-  mCallback = nullptr;
-  mError = NS_OK;
-  return rv.IsResolve() ? WEBRTC_VIDEO_CODEC_OK : WEBRTC_VIDEO_CODEC_ERROR;
+  OwnerThread()->Dispatch(NS_NewRunnableFunction(
+      "WebrtcMediaDataEncoder::Shutdown",
+      [self = RefPtr<WebrtcMediaDataEncoder>(this),
+       encoder = RefPtr<MediaDataEncoder>(std::move(mEncoder))]() {
+        self->mCallback = nullptr;
+        self->mError = NS_OK;
+        encoder->Shutdown();
+      }));
+  return WEBRTC_VIDEO_CODEC_OK;
 }
 
 RefPtr<MediaData> WebrtcMediaDataEncoder::CreateVideoDataFromWebrtcVideoFrame(
@@ -197,7 +205,7 @@ RefPtr<MediaData> WebrtcMediaDataEncoder::CreateVideoDataFromWebrtcVideoFrame(
       image->GetSize(), 0, TimeUnit::FromMicroseconds(aFrame.timestamp_us()),
       TimeUnit::FromSeconds(1.0 / mMaxFrameRate), image, aIsKeyFrame,
       TimeUnit::FromMicroseconds(aFrame.timestamp()));
-  return data.forget();
+  return data;
 }
 
 int32_t WebrtcMediaDataEncoder::Encode(
@@ -242,6 +250,10 @@ void WebrtcMediaDataEncoder::ProcessEncode(
           [display, self = RefPtr<WebrtcMediaDataEncoder>(this),
            // capture this for printing address in LOG.
            this](const MediaDataEncoder::EncodedData& aData) {
+            // Callback has been unregistered.
+            if (!mCallback) {
+              return;
+            }
             // The encoder haven't finished encoding yet.
             if (aData.IsEmpty()) {
               return;

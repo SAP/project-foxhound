@@ -4,9 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsComponentManagerUtils.h"
 #include "nsStreamConverterService.h"
 #include "nsIComponentRegistrar.h"
-#include "nsAutoPtr.h"
 #include "nsString.h"
 #include "nsAtom.h"
 #include "nsDeque.h"
@@ -19,6 +19,7 @@
 #include "nsTArray.h"
 #include "nsServiceManagerUtils.h"
 #include "nsISimpleEnumerator.h"
+#include "mozilla/UniquePtr.h"
 
 ///////////////////////////////////////////////////////////////////
 // Breadth-First-Search (BFS) algorithm state classes and types.
@@ -31,7 +32,7 @@ struct BFSTableData {
   nsCString key;
   BFScolors color;
   int32_t distance;
-  nsAutoPtr<nsCString> predecessor;
+  mozilla::UniquePtr<nsCString> predecessor;
 
   explicit BFSTableData(const nsACString& aKey)
       : key(aKey), color(white), distance(-1) {}
@@ -248,7 +249,8 @@ nsresult nsStreamConverterService::FindConverter(
       if (white == curVertexState->color) {
         curVertexState->color = gray;
         curVertexState->distance = headVertexState->distance + 1;
-        curVertexState->predecessor = new nsCString(*currentHead);
+        curVertexState->predecessor =
+            mozilla::MakeUnique<nsCString>(*currentHead);
         grayQ.Push(curVertex);
       } else {
         delete curVertex;  // if this vertex has already been discovered, we
@@ -349,6 +351,25 @@ nsStreamConverterService::CanConvert(const char* aFromType, const char* aToType,
 
   delete converterChain;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsStreamConverterService::ConvertedType(const nsACString& aFromType,
+                                        nsACString& aOutToType) {
+  // first determine whether we can even handle this conversion
+  // build a CONTRACTID
+  nsAutoCString contractID;
+  contractID.AssignLiteral(NS_ISTREAMCONVERTER_KEY "?from=");
+  contractID.Append(aFromType);
+  contractID.AppendLiteral("&to=*/*");
+  const char* cContractID = contractID.get();
+
+  nsresult rv;
+  nsCOMPtr<nsIStreamConverter> converter(do_CreateInstance(cContractID, &rv));
+  if (NS_SUCCEEDED(rv)) {
+    return converter->GetConvertedType(aFromType, aOutToType);
+  }
+  return rv;
 }
 
 NS_IMETHODIMP

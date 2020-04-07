@@ -22,6 +22,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   LoginBreaches: "resource:///modules/LoginBreaches.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -43,8 +44,6 @@ const MONITOR_API_ENDPOINT = "https://monitor.firefox.com/user/breach-stats";
 
 const SECURE_PROXY_ADDON_ID = "secure-proxy@mozilla.com";
 
-// TODO: there will be a monitor-specific scope for FxA access tokens, which we should be
-// using once it's implemented. See: https://github.com/mozilla/blurts-server/issues/1128
 const SCOPE_MONITOR = [
   "profile:uid",
   "https://identity.mozilla.com/apps/monitor",
@@ -177,7 +176,7 @@ var AboutProtectionsHandler = {
     let hasFxa = false;
 
     try {
-      if ((hasFxa = await fxAccounts.accountStatus())) {
+      if ((hasFxa = !!(await fxAccounts.getSignedInUser()))) {
         await fxAccounts.device.refreshDeviceList();
       }
     } catch (e) {
@@ -215,7 +214,7 @@ var AboutProtectionsHandler = {
     let token = await this.getMonitorScopedOAuthToken();
 
     try {
-      if ((await fxAccounts.accountStatus()) && token) {
+      if (token) {
         monitorData = await this.fetchUserBreachStats(token);
 
         // Get the stats for number of potentially breached Lockwise passwords if no master
@@ -342,13 +341,38 @@ var AboutProtectionsHandler = {
         win.openTrustedLinkIn("about:preferences#sync", "tab");
         break;
       case "FetchContentBlockingEvents":
+        let dataToSend = {};
+        let weekdays = Services.intl.getDisplayNames(undefined, {
+          style: "short",
+          keys: [
+            "dates/gregorian/weekdays/sunday",
+            "dates/gregorian/weekdays/monday",
+            "dates/gregorian/weekdays/tuesday",
+            "dates/gregorian/weekdays/wednesday",
+            "dates/gregorian/weekdays/thursday",
+            "dates/gregorian/weekdays/friday",
+            "dates/gregorian/weekdays/saturday",
+            "dates/gregorian/weekdays/sunday",
+          ],
+        });
+        weekdays = Object.values(weekdays.values);
+        dataToSend.weekdays = weekdays;
+
+        if (PrivateBrowsingUtils.isWindowPrivate(win)) {
+          dataToSend.isPrivate = true;
+          this.sendMessage(
+            aMessage.target,
+            "SendContentBlockingRecords",
+            dataToSend
+          );
+          return;
+        }
         let sumEvents = await TrackingDBService.sumAllEvents();
         let earliestDate = await TrackingDBService.getEarliestRecordedDate();
         let eventsByDate = await TrackingDBService.getEventsByDateRange(
           aMessage.data.from,
           aMessage.data.to
         );
-        let dataToSend = {};
         let largest = 0;
 
         for (let result of eventsByDate) {
@@ -367,22 +391,6 @@ var AboutProtectionsHandler = {
         dataToSend.largest = largest;
         dataToSend.earliestDate = earliestDate;
         dataToSend.sumEvents = sumEvents;
-
-        let weekdays = Services.intl.getDisplayNames(undefined, {
-          style: "short",
-          keys: [
-            "dates/gregorian/weekdays/sunday",
-            "dates/gregorian/weekdays/monday",
-            "dates/gregorian/weekdays/tuesday",
-            "dates/gregorian/weekdays/wednesday",
-            "dates/gregorian/weekdays/thursday",
-            "dates/gregorian/weekdays/friday",
-            "dates/gregorian/weekdays/saturday",
-            "dates/gregorian/weekdays/sunday",
-          ],
-        });
-        weekdays = Object.values(weekdays.values);
-        dataToSend.weekdays = weekdays;
 
         this.sendMessage(
           aMessage.target,

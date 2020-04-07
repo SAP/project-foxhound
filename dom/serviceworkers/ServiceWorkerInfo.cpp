@@ -43,7 +43,7 @@ static_assert(nsIServiceWorkerInfo::STATE_REDUNDANT ==
               "ServiceWorkerState enumeration value should match state values "
               "from nsIServiceWorkerInfo.");
 static_assert(nsIServiceWorkerInfo::STATE_UNKNOWN ==
-                  static_cast<uint16_t>(ServiceWorkerState::EndGuard_),
+                  ServiceWorkerStateValues::Count,
               "ServiceWorkerState enumeration value should match state values "
               "from nsIServiceWorkerInfo.");
 
@@ -91,6 +91,11 @@ NS_IMETHODIMP
 ServiceWorkerInfo::GetHandlesFetchEvents(bool* aValue) {
   MOZ_ASSERT(aValue);
   MOZ_ASSERT(NS_IsMainThread());
+
+  if (mHandlesFetch == Unknown) {
+    return NS_ERROR_FAILURE;
+  }
+
   *aValue = HandlesFetch();
   return NS_OK;
 }

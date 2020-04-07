@@ -38,11 +38,16 @@ add_task(async function init() {
 // Keys up and down through the history panel, i.e., the panel that's shown when
 // there's no text in the textbox.
 add_task(async function history() {
+  // If this pref is true, we get the Top Sites view here. It does not show
+  // one-offs.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.openViewOnFocus", false]],
+  });
   gURLBar.focus();
   await UrlbarTestUtils.promisePopupOpen(window, () => {
     EventUtils.synthesizeKey("KEY_ArrowDown");
   });
-  await waitForAutocompleteResultAt(gMaxResults - 1);
+  await UrlbarTestUtils.waitForAutocompleteResultAt(window, gMaxResults - 1);
 
   assertState(-1, -1, "");
 
@@ -62,6 +67,7 @@ add_task(async function history() {
   assertState(-1, -1, "");
 
   await hidePopup();
+  await SpecialPowers.popPrefEnv();
 });
 
 // Keys up and down through the non-history panel, i.e., the panel that's shown
@@ -70,8 +76,14 @@ add_task(async function() {
   // Use a typed value that returns the visits added above but that doesn't
   // trigger autofill since that would complicate the test.
   let typedValue = "browser_urlbarOneOffs";
-  await promiseAutocompleteResultPopup(typedValue, window, true);
-  await waitForAutocompleteResultAt(gMaxResults - 1);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: typedValue,
+    fireInputEvent: true,
+  });
+  await UrlbarTestUtils.waitForAutocompleteResultAt(window, gMaxResults - 1);
+  let heuristicResult = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   assertState(0, -1, typedValue);
 
   // Key down through each result.  The first result is already selected, which
@@ -86,6 +98,10 @@ add_task(async function() {
       -1,
       "example.com/browser_urlbarOneOffs.js/?" + (gMaxResults - i - 1)
     );
+    Assert.ok(
+      !BrowserTestUtils.is_visible(heuristicResult.element.action),
+      "The heuristic action should not be visible"
+    );
   }
 
   // Key down through each one-off.
@@ -93,17 +109,35 @@ add_task(async function() {
   for (let i = 0; i < numButtons; i++) {
     EventUtils.synthesizeKey("KEY_ArrowDown");
     assertState(-1, i, typedValue);
+    Assert.equal(
+      BrowserTestUtils.is_visible(heuristicResult.element.action),
+      !oneOffSearchButtons.selectedButton.classList.contains(
+        "search-setting-button-compact"
+      ),
+      "The heuristic action should be visible when a one-off button is selected"
+    );
   }
 
   // Key down once more.  The selection should wrap around to the first result.
   EventUtils.synthesizeKey("KEY_ArrowDown");
   assertState(0, -1, typedValue);
+  Assert.ok(
+    BrowserTestUtils.is_visible(heuristicResult.element.action),
+    "The heuristic action should be visible"
+  );
 
   // Now key up.  The selection should wrap back around to the one-offs.  Key
   // up through all the one-offs.
   for (let i = numButtons - 1; i >= 0; i--) {
     EventUtils.synthesizeKey("KEY_ArrowUp");
     assertState(-1, i, typedValue);
+    Assert.equal(
+      BrowserTestUtils.is_visible(heuristicResult.element.action),
+      !oneOffSearchButtons.selectedButton.classList.contains(
+        "search-setting-button-compact"
+      ),
+      "The heuristic action should be visible when a one-off button is selected"
+    );
   }
 
   // Key up through each non-heuristic result.
@@ -114,11 +148,19 @@ add_task(async function() {
       -1,
       "example.com/browser_urlbarOneOffs.js/?" + (gMaxResults - i - 1)
     );
+    Assert.ok(
+      !BrowserTestUtils.is_visible(heuristicResult.element.action),
+      "The heuristic action should not be visible"
+    );
   }
 
   // Key up once more.  The heuristic result should be selected.
   EventUtils.synthesizeKey("KEY_ArrowUp");
   assertState(0, -1, typedValue);
+  Assert.ok(
+    BrowserTestUtils.is_visible(heuristicResult.element.action),
+    "The heuristic action should be visible"
+  );
 
   await hidePopup();
 });
@@ -127,7 +169,11 @@ add_task(async function() {
 // with One-Off Engine" when a one-off is selected.
 add_task(async function searchWith() {
   let typedValue = "foo";
-  await promiseAutocompleteResultPopup(typedValue);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: typedValue,
+  });
   let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   assertState(0, -1, typedValue);
 
@@ -165,7 +211,11 @@ add_task(async function oneOffClick() {
   // We are explicitly using something that looks like a url, to make the test
   // stricter. Even if it looks like a url, we should search.
   let typedValue = "foo.bar";
-  await promiseAutocompleteResultPopup(typedValue);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: typedValue,
+  });
   await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   assertState(0, -1, typedValue);
 
@@ -188,7 +238,12 @@ add_task(async function oneOffReturn() {
   // We are explicitly using something that looks like a url, to make the test
   // stricter. Even if it looks like a url, we should search.
   let typedValue = "foo.bar";
-  await promiseAutocompleteResultPopup(typedValue, window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: typedValue,
+    fireInputEvent: true,
+  });
   await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   assertState(0, -1, typedValue);
 
@@ -219,7 +274,12 @@ add_task(async function hiddenOneOffs() {
   });
 
   let typedValue = "foo";
-  await promiseAutocompleteResultPopup(typedValue, window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: typedValue,
+    fireInputEvent: true,
+  });
   await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   assertState(0, -1);
   Assert.equal(
@@ -236,7 +296,12 @@ add_task(async function hiddenOneOffs() {
 // alias.
 add_task(async function hiddenWhenUsingSearchAlias() {
   let typedValue = "@example";
-  await promiseAutocompleteResultPopup(typedValue, window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: typedValue,
+    fireInputEvent: true,
+  });
   await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   Assert.equal(
     UrlbarTestUtils.getOneOffSearchButtonsVisible(window),
@@ -246,7 +311,12 @@ add_task(async function hiddenWhenUsingSearchAlias() {
   await hidePopup();
 
   typedValue = "not an engine alias";
-  await promiseAutocompleteResultPopup(typedValue, window, true);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: typedValue,
+    fireInputEvent: true,
+  });
   await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   Assert.equal(
     UrlbarTestUtils.getOneOffSearchButtonsVisible(window),

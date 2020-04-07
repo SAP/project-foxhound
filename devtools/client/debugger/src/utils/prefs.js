@@ -59,6 +59,7 @@ if (isDevelopment()) {
   pref("devtools.debugger.features.map-scopes", true);
   pref("devtools.debugger.features.remove-command-bar-options", true);
   pref("devtools.debugger.features.code-folding", false);
+  pref("devtools.debugger.features.command-click", false);
   pref("devtools.debugger.features.outline", true);
   pref("devtools.debugger.features.column-breakpoints", true);
   pref("devtools.debugger.features.skip-pausing", true);
@@ -73,7 +74,7 @@ if (isDevelopment()) {
   pref("devtools.debugger.features.log-points", true);
   pref("devtools.debugger.features.inline-preview", true);
   pref("devtools.debugger.features.overlay-step-buttons", true);
-  pref("devtools.debugger.features.watchpoints", false);
+  pref("devtools.debugger.features.watchpoints", true);
 }
 
 export const prefs = new PrefsHelper("devtools", {
@@ -83,7 +84,7 @@ export const prefs = new PrefsHelper("devtools", {
   alphabetizeOutline: ["Bool", "debugger.alphabetize-outline"],
   autoPrettyPrint: ["Bool", "debugger.auto-pretty-print"],
   clientSourceMapsEnabled: ["Bool", "source-map.client-service.enabled"],
-  chromeAndExtenstionsEnabled: ["Bool", "chrome.enabled"],
+  chromeAndExtensionsEnabled: ["Bool", "chrome.enabled"],
   pauseOnExceptions: ["Bool", "debugger.pause-on-exceptions"],
   pauseOnCaughtExceptions: ["Bool", "debugger.pause-on-caught-exceptions"],
   ignoreCaughtExceptions: ["Bool", "debugger.ignore-caught-exceptions"],
@@ -140,9 +141,11 @@ export const features = new PrefsHelper("devtools.debugger.features", {
   eventListenersBreakpoints: ["Bool", "event-listeners-breakpoints"],
   domMutationBreakpoints: ["Bool", "dom-mutation-breakpoints"],
   logPoints: ["Bool", "log-points"],
+  commandClick: ["Bool", "command-click"],
   showOverlay: ["Bool", "overlay"],
   inlinePreview: ["Bool", "inline-preview"],
   watchpoints: ["Bool", "watchpoints"],
+  windowlessServiceWorkers: ["Bool", "windowless-service-workers"],
 });
 
 export const asyncStore = asyncStoreHelper("debugger", {

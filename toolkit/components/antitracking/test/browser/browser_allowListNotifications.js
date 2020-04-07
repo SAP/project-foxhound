@@ -47,13 +47,15 @@ add_task(async function() {
     });
 
   info("Creating a 3rd party content");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    {
-      page: TEST_3RD_PARTY_PAGE,
-      blockingCallback: (async _ => {}).toString(),
-      nonBlockingCallback: (async _ => {}).toString(),
-    },
+    [
+      {
+        page: TEST_3RD_PARTY_PAGE,
+        blockingCallback: (async _ => {}).toString(),
+        nonBlockingCallback: (async _ => {}).toString(),
+      },
+    ],
     async function(obj) {
       await new content.Promise(resolve => {
         let ifr = content.document.createElement("iframe");
@@ -91,7 +93,7 @@ add_task(async function() {
   let expectTrackerFound = item => {
     is(
       item[0],
-      Ci.nsIWebProgressListener.STATE_LOADED_TRACKING_CONTENT,
+      Ci.nsIWebProgressListener.STATE_LOADED_LEVEL_1_TRACKING_CONTENT,
       "Correct blocking type reported"
     );
     is(item[1], true, "Correct blocking status reported");

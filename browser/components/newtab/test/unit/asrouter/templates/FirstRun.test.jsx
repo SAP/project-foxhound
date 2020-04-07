@@ -8,7 +8,7 @@ import { OnboardingMessageProvider } from "lib/OnboardingMessageProvider.jsm";
 import { mount } from "enzyme";
 import React from "react";
 
-const FAKE_TRIPLETS = [
+const FAKE_TRIPLETS_BUNDLE_1 = [
   {
     id: "CARD_1",
     content: {
@@ -26,17 +26,40 @@ const FAKE_TRIPLETS = [
   },
 ];
 
+const FAKE_TRIPLETS_BUNDLE_2 = [
+  {
+    id: "CARD_2",
+    content: {
+      title: { string_id: "onboarding-data-sync-title" },
+      text: { string_id: "onboarding-data-sync-text2" },
+      icon: "icon",
+      primary_button: {
+        label: { string_id: "onboarding-data-sync-button2" },
+        action: {
+          type: "OPEN_URL",
+          data: { args: "https://foo.com/" },
+        },
+      },
+    },
+  },
+];
+
 const FAKE_FLOW_PARAMS = {
   deviceId: "foo",
   flowId: "abc1",
   flowBeginTime: 1234,
 };
 
-async function getTestMessage(id) {
+async function getTestMessage(id, requestNewBundle) {
   const message = (await OnboardingMessageProvider.getUntranslatedMessages()).find(
     msg => msg.id === id
   );
-  return { ...message, bundle: FAKE_TRIPLETS };
+
+  // Simulate dynamic triplets by returning a different bundle
+  if (requestNewBundle) {
+    return { ...message, bundle: FAKE_TRIPLETS_BUNDLE_2 };
+  }
+  return { ...message, bundle: FAKE_TRIPLETS_BUNDLE_1 };
 }
 
 describe("<FirstRun>", () => {
@@ -196,6 +219,38 @@ describe("<FirstRun>", () => {
     assert.lengthOf(fakeDoc.head.querySelectorAll("link"), FLUENT_FILES.length);
   });
 
+  it("should show triplet content only when interrupt is not visible", () => {
+    assert.lengthOf(wrapper.find(Interrupt), 1, "Interrupt shown");
+    assert.propertyVal(wrapper.find(Triplets).props(), "showContent", false);
+    assert.propertyVal(wrapper.find(Triplets).props(), "showCardPanel", true);
+
+    wrapper.setProps({ interruptCleared: true });
+
+    assert.propertyVal(wrapper.find(Triplets).props(), "showContent", true);
+    assert.propertyVal(wrapper.find(Triplets).props(), "showCardPanel", true);
+  });
+
+  it("should update didUserClearInterrupt state to false on close of interrupt", () => {
+    assert.isFalse(wrapper.state().didUserClearInterrupt);
+    // Simulate calling close interrupt
+    wrapper
+      .find(Interrupt)
+      .find(".trailheadStart")
+      .simulate("click");
+
+    assert.isTrue(wrapper.state().didUserClearInterrupt);
+  });
+
+  it("should update didUserClearTriplets state to true on close of triplet", () => {
+    assert.isFalse(wrapper.state().didUserClearTriplets);
+    // Simulate calling close Triplets
+    wrapper
+      .find(Triplets)
+      .find(".icon-dismiss")
+      .simulate("click");
+    assert.isTrue(wrapper.state().didUserClearTriplets);
+  });
+
   it("should hide the interrupt and show the triplets when onNextScene is called", () => {
     // Simulate calling next scene
     wrapper
@@ -238,5 +293,15 @@ describe("<FirstRun>", () => {
     assert.notCalled(onBlockByIdStub);
     clock.tick(500);
     assert.calledWith(onBlockByIdStub, "EXTENDED_TRIPLETS_1");
+  });
+
+  it("should update triplets card when cards in message bundle changes", async () => {
+    let tripletsProps = wrapper.find(Triplets).props();
+    assert.propertyVal(tripletsProps, "cards", FAKE_TRIPLETS_BUNDLE_1);
+
+    const messageWithNewBundle = await getTestMessage("TRAILHEAD_1", true);
+    wrapper.setProps({ message: messageWithNewBundle });
+    tripletsProps = wrapper.find(Triplets).props();
+    assert.propertyVal(tripletsProps, "cards", FAKE_TRIPLETS_BUNDLE_2);
   });
 });

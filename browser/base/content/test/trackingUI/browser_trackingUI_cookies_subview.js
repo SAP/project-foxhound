@@ -65,6 +65,12 @@ async function assertSitesListed(testCase) {
   let categoryItem = document.getElementById(
     "protections-popup-category-cookies"
   );
+
+  // Explicitly waiting for the category item becoming visible.
+  await TestUtils.waitForCondition(() => {
+    return BrowserTestUtils.is_visible(categoryItem);
+  });
+
   ok(BrowserTestUtils.is_visible(categoryItem), "TP category item is visible");
   let cookiesView = document.getElementById("protections-popup-cookiesView");
   let viewShown = BrowserTestUtils.waitForEvent(cookiesView, "ViewShown");
@@ -146,7 +152,7 @@ async function assertSitesListed(testCase) {
   let change = waitForContentBlockingEvent();
   let timeoutPromise = new Promise(resolve => setTimeout(resolve, 1000));
 
-  await ContentTask.spawn(browser, {}, function() {
+  await SpecialPowers.spawn(browser, [], function() {
     content.postMessage("third-party-cookie", "*");
   });
 
@@ -204,7 +210,7 @@ async function assertSitesListed(testCase) {
   change = waitForSecurityChange();
   timeoutPromise = new Promise(resolve => setTimeout(resolve, 1000));
 
-  await ContentTask.spawn(browser, {}, function() {
+  await SpecialPowers.spawn(browser, [], function() {
     content.postMessage("first-party-cookie", "*");
   });
 
@@ -295,6 +301,12 @@ add_task(async function testCookiesSubViewAllowed() {
   let categoryItem = document.getElementById(
     "protections-popup-category-cookies"
   );
+
+  // Explicitly waiting for the category item becoming visible.
+  await TestUtils.waitForCondition(() => {
+    return BrowserTestUtils.is_visible(categoryItem);
+  });
+
   ok(BrowserTestUtils.is_visible(categoryItem), "TP category item is visible");
   let cookiesView = document.getElementById("protections-popup-cookiesView");
   let viewShown = BrowserTestUtils.waitForEvent(cookiesView, "ViewShown");
@@ -379,7 +391,7 @@ add_task(async function testCookiesSubViewAllowedHeuristic() {
     );
   });
 
-  await ContentTask.spawn(browser, {}, function() {
+  await SpecialPowers.spawn(browser, [], function() {
     content.postMessage("window-open", "*");
   });
   await Promise.all([windowCreated, permChanged]);
@@ -392,6 +404,12 @@ add_task(async function testCookiesSubViewAllowedHeuristic() {
   let categoryItem = document.getElementById(
     "protections-popup-category-cookies"
   );
+
+  // Explicitly waiting for the category item becoming visible.
+  await TestUtils.waitForCondition(() => {
+    return BrowserTestUtils.is_visible(categoryItem);
+  });
+
   ok(BrowserTestUtils.is_visible(categoryItem), "TP category item is visible");
   let cookiesView = document.getElementById("protections-popup-cookiesView");
   let viewShown = BrowserTestUtils.waitForEvent(cookiesView, "ViewShown");
@@ -430,7 +448,7 @@ add_task(async function testCookiesSubViewAllowedHeuristic() {
   );
   ok(!listItem.classList.contains("allowed"), "Has removed the allowed class");
 
-  await ContentTask.spawn(browser, {}, function() {
+  await SpecialPowers.spawn(browser, [], function() {
     content.postMessage("window-close", "*");
   });
 
@@ -456,6 +474,12 @@ add_task(async function testCookiesSubViewBlockedDoublyNested() {
   let categoryItem = document.getElementById(
     "protections-popup-category-cookies"
   );
+
+  // Explicitly waiting for the category item becoming visible.
+  await TestUtils.waitForCondition(() => {
+    return BrowserTestUtils.is_visible(categoryItem);
+  });
+
   ok(BrowserTestUtils.is_visible(categoryItem), "TP category item is visible");
   let cookiesView = document.getElementById("protections-popup-cookiesView");
   let viewShown = BrowserTestUtils.waitForEvent(cookiesView, "ViewShown");

@@ -9,16 +9,27 @@ import platform
 from mozboot.base import BaseBootstrapper
 from mozboot.linux_common import (
     ClangStaticAnalysisInstall,
+    FixStacksInstall,
+    LucetcInstall,
     NasmInstall,
     NodeInstall,
     SccacheInstall,
     StyloInstall,
+    WasiSysrootInstall,
 )
 
 
-class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
-                               SccacheInstall, ClangStaticAnalysisInstall,
-                               BaseBootstrapper):
+class CentOSFedoraBootstrapper(
+        ClangStaticAnalysisInstall,
+        FixStacksInstall,
+        LucetcInstall,
+        NasmInstall,
+        NodeInstall,
+        SccacheInstall,
+        StyloInstall,
+        WasiSysrootInstall,
+        BaseBootstrapper):
+
     def __init__(self, distro, version, dist_id, **kwargs):
         BaseBootstrapper.__init__(self, **kwargs)
 
@@ -61,7 +72,7 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
             'wget',
         ]
 
-        if self.distro in ('CentOS', 'CentOS Linux'):
+        if self.distro in ('centos'):
             self.group_packages += [
                 'Development Tools',
             ]
@@ -98,7 +109,7 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
                     'python-dbus',
                 ]
 
-        elif self.distro == 'Fedora':
+        elif self.distro == 'fedora':
             self.group_packages += [
                 'C Development Tools and Libraries',
             ]
@@ -138,7 +149,7 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
         self.dnf_groupinstall(*self.browser_group_packages)
         self.dnf_install(*self.browser_packages)
 
-        if self.distro in ('CentOS', 'CentOS Linux') and self.version == 6:
+        if self.distro in ('centos') and self.version == 6:
             yasm = ('http://dl.fedoraproject.org/pub/epel/6/i386/'
                     'Packages/y/yasm-1.2.0-1.el6.i686.rpm')
             if platform.architecture()[0] == '64bit':
@@ -164,4 +175,7 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
         self.suggest_mobile_android_mozconfig(artifact_mode=True)
 
     def upgrade_mercurial(self, current):
-        self.dnf_update('mercurial')
+        if current is None:
+            self.dnf_install('mercurial')
+        else:
+            self.dnf_update('mercurial')

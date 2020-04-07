@@ -16,12 +16,8 @@
 #include "nsContentList.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLTextAreaElement.h"
-#include "nsIEditor.h"
 #include "nsIFormControl.h"
 #include "nsIPersistentProperties2.h"
-#include "nsISelectionController.h"
-#include "nsIServiceManager.h"
-#include "nsITextControlElement.h"
 #include "nsITextControlFrame.h"
 #include "nsNameSpaceManager.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -373,13 +369,20 @@ void HTMLTextFieldAccessible::ActionNameAt(uint8_t aIndex, nsAString& aName) {
 bool HTMLTextFieldAccessible::DoAction(uint8_t aIndex) const {
   if (aIndex != 0) return false;
 
-  TakeFocus();
+  if (FocusMgr()->IsFocused(this)) {
+    // This already has focus, so TakeFocus()will do nothing. However, the user
+    // might be activating this element because they dismissed a touch keyboard
+    // and want to bring it back.
+    DoCommand();
+  } else {
+    TakeFocus();
+  }
   return true;
 }
 
 already_AddRefed<TextEditor> HTMLTextFieldAccessible::GetEditor() const {
-  nsCOMPtr<nsITextControlElement> textControlElement =
-      do_QueryInterface(mContent);
+  RefPtr<TextControlElement> textControlElement =
+      TextControlElement::FromNodeOrNull(mContent);
   if (!textControlElement) {
     return nullptr;
   }
@@ -463,7 +466,7 @@ Accessible* HTMLFileInputAccessible::CurrentItem() const {
 role HTMLSpinnerAccessible::NativeRole() const { return roles::SPINBUTTON; }
 
 void HTMLSpinnerAccessible::Value(nsString& aValue) const {
-  AccessibleWrap::Value(aValue);
+  HTMLTextFieldAccessible::Value(aValue);
   if (!aValue.IsEmpty()) return;
 
   // Pass NonSystem as the caller type, to be safe.  We don't expect to have a
@@ -472,28 +475,28 @@ void HTMLSpinnerAccessible::Value(nsString& aValue) const {
 }
 
 double HTMLSpinnerAccessible::MaxValue() const {
-  double value = AccessibleWrap::MaxValue();
+  double value = HTMLTextFieldAccessible::MaxValue();
   if (!IsNaN(value)) return value;
 
   return HTMLInputElement::FromNode(mContent)->GetMaximum().toDouble();
 }
 
 double HTMLSpinnerAccessible::MinValue() const {
-  double value = AccessibleWrap::MinValue();
+  double value = HTMLTextFieldAccessible::MinValue();
   if (!IsNaN(value)) return value;
 
   return HTMLInputElement::FromNode(mContent)->GetMinimum().toDouble();
 }
 
 double HTMLSpinnerAccessible::Step() const {
-  double value = AccessibleWrap::Step();
+  double value = HTMLTextFieldAccessible::Step();
   if (!IsNaN(value)) return value;
 
   return HTMLInputElement::FromNode(mContent)->GetStep().toDouble();
 }
 
 double HTMLSpinnerAccessible::CurValue() const {
-  double value = AccessibleWrap::CurValue();
+  double value = HTMLTextFieldAccessible::CurValue();
   if (!IsNaN(value)) return value;
 
   return HTMLInputElement::FromNode(mContent)->GetValueAsDecimal().toDouble();

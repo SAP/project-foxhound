@@ -36,6 +36,7 @@ add_task(async function test_main() {
       setup(win) {
         win.document.addEventListener("wheel", e => e.preventDefault(), {
           once: true,
+          passive: false,
         });
       },
     },
@@ -56,6 +57,10 @@ add_task(async function test_main() {
       },
     ]);
   }
+
+  // ccov builds run slower and need longer, so let's scale up the timeout
+  // by the number of tests we're running.
+  requestLongerTimeout(subtests.length);
 
   let fissionWindow = await BrowserTestUtils.openNewBrowserWindow({
     fission: true,

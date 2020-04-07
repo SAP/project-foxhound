@@ -4,46 +4,36 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// For connections that are not processed on the socket transport thread, we do
-// NOT use the async logic described below. Instead, we authenticate the
-// certificate on the thread that the connection's I/O happens on,
-// synchronously. This allows us to do certificate verification for blocking
-// (not non-blocking) sockets and sockets that have their I/O processed on a
-// thread other than the socket transport service thread. Also, we DO NOT
-// support blocking sockets on the socket transport service thread at all.
+// During certificate authentication, we call CertVerifier::VerifySSLServerCert.
+// This function may make zero or more HTTP requests (e.g. to gather revocation
+// information). Our fetching logic for these requests processes them on the
+// socket transport service thread.
 //
-// During certificate authentication, we call CERT_PKIXVerifyCert or
-// CERT_VerifyCert. These functions may make zero or more HTTP requests
-// for OCSP responses, CRLs, intermediate certificates, etc. Our fetching logic
-// for these requests processes them on the socket transport service thread.
+// Because the connection for which we are verifying the certificate is
+// happening on the socket transport thread, if our cert auth hook were to call
+// VerifySSLServerCert directly, there would be a deadlock: VerifySSLServerCert
+// would cause an event to be asynchronously posted to the socket transport
+// thread, and then it would block the socket transport thread waiting to be
+// notified of the HTTP response. However, the HTTP request would never actually
+// be processed because the socket transport thread would be blocked and so it
+// wouldn't be able process HTTP requests.
 //
-// If the connection for which we are verifying the certificate is happening
-// on the socket transport thread (the usually case, at least for HTTP), then
-// if our cert auth hook were to call the CERT_*Verify* functions directly,
-// there would be a deadlock: The CERT_*Verify* function would cause an event
-// to be asynchronously posted to the socket transport thread, and then it
-// would block the socket transport thread waiting to be notified of the HTTP
-// response. However, the HTTP request would never actually be processed
-// because the socket transport thread would be blocked and so it wouldn't be
-// able process HTTP requests. (i.e. Deadlock.)
-//
-// Consequently, when we are asked to verify a certificate on the socket
-// transport service thread, we must always call the CERT_*Verify* cert
-// functions on another thread. To accomplish this, our auth cert hook
+// Consequently, when we are asked to verify a certificate, we must always call
+// VerifySSLServerCert on another thread. To accomplish this, our auth cert hook
 // dispatches a SSLServerCertVerificationJob to a pool of background threads,
 // and then immediately returns SECWouldBlock to libssl. These jobs are where
-// the CERT_*Verify* functions are actually called.
+// VerifySSLServerCert is actually called.
 //
 // When our auth cert hook returns SECWouldBlock, libssl will carry on the
 // handshake while we validate the certificate. This will free up the socket
-// transport thread so that HTTP requests--in particular, the OCSP/CRL/cert
-// requests needed for cert verification as mentioned above--can be processed.
+// transport thread so that HTTP requests--including the OCSP requests needed
+// for cert verification as mentioned above--can be processed.
 //
-// Once the CERT_*Verify* function returns, the cert verification job
-// dispatches a SSLServerCertVerificationResult to the socket transport thread;
-// the SSLServerCertVerificationResult will notify libssl that the certificate
+// Once VerifySSLServerCert returns, the cert verification job dispatches a
+// SSLServerCertVerificationResult to the socket transport thread; the
+// SSLServerCertVerificationResult will notify libssl that the certificate
 // authentication is complete. Once libssl is notified that the authentication
-// is complete, it will continue the SSL handshake (if it hasn't already
+// is complete, it will continue the TLS handshake (if it hasn't already
 // finished) and it will begin allowing us to send/receive data on the
 // connection.
 //
@@ -54,31 +44,24 @@
 //    * SSLServerCertVerificationJob::Dispatch queues a job
 //      (instance of SSLServerCertVerificationJob) to its background thread
 //      pool and returns.
-//    * One of the background threads calls CERT_*Verify*, which may enqueue
-//      some HTTP request(s) onto the socket transport thread, and then
-//      blocks that background thread waiting for the responses and/or timeouts
-//      or errors for those requests.
+//    * One of the background threads calls CertVerifier::VerifySSLServerCert,
+//      which may enqueue some HTTP request(s) onto the socket transport thread,
+//      and then blocks that background thread waiting for the responses and/or
+//      timeouts or errors for those requests.
 //    * Once those HTTP responses have all come back or failed, the
-//      CERT_*Verify* function returns a result indicating that the validation
-//      succeeded or failed.
+//      CertVerifier::VerifySSLServerCert function returns a result indicating
+//      that the validation succeeded or failed.
 //    * If the validation succeeded, then a SSLServerCertVerificationResult
 //      event is posted to the socket transport thread, and the cert
 //      verification thread becomes free to verify other certificates.
 //    * Otherwise, we do cert override processing to see if the validation
-//      error can be convered by override rules. If yes, a
-//      SSLServerCertVerificationResult event is posted to notify the successful
-//      result of the override processing. If not, a NotifyCertProblemRunnable
-//      is posted to the socket transport thread and then to the main thread
-//      (blocking both, see NotifyCertProblemRunnable) to do bad cert
-//      listener notification. Then it returns, freeing up the main thread.
-//    * At the end of SSLServerCertVerificationJob::Run, we dispatch a
-//      SSLServerCertVerificationResult event to the socket transport
-//      thread to notify it of the error result of the override processing.
+//      error can be convered by override rules. The result of this processing
+//      is similarly dispatched in a SSLServerCertVerificationResult.
 //    * The SSLServerCertVerificationResult event will either wake up the
-//      socket (using SSL_RestartHandshakeAfterServerCert) if validation
-//      succeeded or there was an error override, or it will set an error flag
-//      so that the next I/O operation on the socket will fail, causing the
-//      socket transport thread to close the connection.
+//      socket (using SSL_AuthCertificateComplete) if validation succeeded or
+//      there was an error override, or it will set an error flag so that the
+//      next I/O operation on the socket will fail, causing the socket transport
+//      thread to close the connection.
 //
 // SSLServerCertVerificationResult must be dispatched to the socket transport
 // thread because we must only call SSL_* functions on the socket transport
@@ -87,6 +70,26 @@
 // an SSL handshake) and the PSM NSS I/O layer are not thread-safe, and because
 // we need the event to interrupt the PR_Poll that may waiting for I/O on the
 // socket for which we are validating the cert.
+//
+// When socket process is enabled, libssl is running on socket process. To
+// perform certificate authentication with CertVerifier, we have to send all
+// needed information to parent process and send the result back to socket
+// process via IPC. The workflow is described below.
+// 1. In AuthCertificateHookInternal(), we call RemoteProcessCertVerification()
+//    instead of SSLServerCertVerificationJob::Dispatch when we are on socket
+//    process.
+// 2. In RemoteProcessCertVerification(), PVerifySSLServerCert actors will be
+//    created on IPDL background thread for carrying needed information via IPC.
+// 3. On parent process, VerifySSLServerCertParent is created and it calls
+//    SSLServerCertVerificationJob::Dispatch for doing certificate verification
+//    on one of CertVerificationThreads.
+// 4. When validation is done, OnVerifiedSSLServerCertSuccess IPC message is
+//    sent through the IPDL background thread when
+//    CertVerifier::VerifySSLServerCert returns Success. Otherwise,
+//    OnVerifiedSSLServerCertFailure is sent.
+// 5. After setp 4, PVerifySSLServerCert actors will be released. The
+//    verification result will be dispatched via
+//    SSLServerCertVerificationResult.
 
 #include "SSLServerCertVerification.h"
 
@@ -103,6 +106,7 @@
 #include "SharedCertVerifier.h"
 #include "SharedSSLState.h"
 #include "TransportSecurityInfo.h"  // For RememberCertErrorsTable
+#include "VerifySSLServerCertChild.h"
 #include "cert.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Casting.h"
@@ -113,7 +117,6 @@
 #include "mozilla/net/DNS.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
-#include "nsIBadCertListener2.h"
 #include "nsICertOverrideService.h"
 #include "nsISiteSecurityService.h"
 #include "nsISocketProvider.h"
@@ -129,10 +132,10 @@
 #include "mozpkix/pkix.h"
 #include "mozpkix/pkixnss.h"
 #include "secerr.h"
-#include "secoidt.h"
 #include "secport.h"
 #include "ssl.h"
 #include "sslerr.h"
+#include "sslexp.h"
 
 extern mozilla::LazyLogModule gPIPNSSLog;
 
@@ -187,39 +190,6 @@ void StopSSLServerCertVerificationThreads() {
 }
 
 namespace {
-
-// Dispatched to the STS thread to notify the infoObject of the verification
-// result.
-//
-// This will cause the PR_Poll in the STS thread to return, so things work
-// correctly even if the STS thread is blocked polling (only) on the file
-// descriptor that is waiting for this result.
-class SSLServerCertVerificationResult : public Runnable {
- public:
-  NS_DECL_NSIRUNNABLE
-
-  SSLServerCertVerificationResult(TransportSecurityInfo* infoObject,
-                                  PRErrorCode errorCode);
-
-  void Dispatch();
-
- private:
-  const RefPtr<TransportSecurityInfo> mInfoObject;
-  const PRErrorCode mErrorCode;
-};
-
-class NotifyCertProblemRunnable : public SyncRunnableBase {
- public:
-  NotifyCertProblemRunnable(uint64_t fdForLogging,
-                            TransportSecurityInfo* infoObject)
-      : mFdForLogging(fdForLogging), mInfoObject(infoObject) {}
-
-  virtual void RunOnTargetThread() override;
-
- private:
-  uint64_t mFdForLogging;
-  const RefPtr<TransportSecurityInfo> mInfoObject;
-};
 
 // A probe value of 1 means "no error".
 uint32_t MapOverridableErrorToProbeValue(PRErrorCode errorCode) {
@@ -482,124 +452,76 @@ static nsresult OverrideAllowedForHost(
   return NS_OK;
 }
 
-void NotifyCertProblemRunnable::RunOnTargetThread() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-          ("[0x%" PRIx64 "][%p] NotifyCertProblemRunnable::RunOnTargetThread\n",
-           mFdForLogging, this));
-  // "Use" mFdForLogging in non-PR_LOGGING builds, too, to suppress
-  // clang's -Wunused-private-field build warning for this variable:
-  Unused << mFdForLogging;
-
-  if (!NS_IsMainThread()) {
-    return;
-  }
-
-  nsAutoCString hostWithPortString(mInfoObject->GetHostName());
-  hostWithPortString.Append(':');
-  hostWithPortString.AppendInt(mInfoObject->GetPort());
-
-  // Try to get a nsIBadCertListener2 implementation from the socket consumer.
-  nsCOMPtr<nsISSLSocketControl> sslSocketControl = do_QueryInterface(
-      NS_ISUPPORTS_CAST(nsITransportSecurityInfo*, mInfoObject));
-  if (sslSocketControl) {
-    nsCOMPtr<nsIInterfaceRequestor> cb;
-    sslSocketControl->GetNotificationCallbacks(getter_AddRefs(cb));
-    if (cb) {
-      nsCOMPtr<nsIBadCertListener2> bcl = do_GetInterface(cb);
-      if (bcl) {
-        nsIInterfaceRequestor* csi =
-            static_cast<nsIInterfaceRequestor*>(mInfoObject);
-        bool suppressMessage = false;  // obsolete, ignored
-        Unused << bcl->NotifyCertProblem(csi, mInfoObject, hostWithPortString,
-                                         &suppressMessage);
-      }
-    }
-  }
-}
-
-// When doing async cert processing, we dispatch one of these runnables to the
-// socket transport service thread, which blocks the socket transport
-// service thread while it waits for the inner NotifyCertProblemRunnable to
-// be executed on the main thread.  NotifyCertProblemRunnable::RunOnTargetThread
-// must block events on both of these threads because it calls
-// TransportSecurityInfo::GetInterface(), which may call
-// nsHttpConnection::GetInterface() through TransportSecurityInfo::mCallbacks.
-// nsHttpConnection::GetInterface must always execute on the main thread, with
-// the socket transport service thread blocked.
-class NotifyCertProblemRunnableRunnable : public Runnable {
- public:
-  explicit NotifyCertProblemRunnableRunnable(
-      NotifyCertProblemRunnable* aRunnable)
-      : Runnable("psm::NotifyCertProblemRunnableRunnable"),
-        mNotifyCertProblemRunnable(aRunnable) {}
-
- private:
-  NS_IMETHOD Run() override {
-    return mNotifyCertProblemRunnable->DispatchToMainThreadAndWait();
-  }
-  RefPtr<NotifyCertProblemRunnable> mNotifyCertProblemRunnable;
-};
-
 class SSLServerCertVerificationJob : public Runnable {
  public:
   // Must be called only on the socket transport thread
-  static SECStatus Dispatch(const RefPtr<SharedCertVerifier>& certVerifier,
-                            const void* fdForLogging,
-                            TransportSecurityInfo* infoObject,
+  static SECStatus Dispatch(uint64_t addrForLogging, void* aPinArg,
                             const UniqueCERTCertificate& serverCert,
-                            const UniqueCERTCertList& peerCertChain,
+                            nsTArray<nsTArray<uint8_t>>&& peerCertChain,
+                            const nsACString& aHostName, int32_t aPort,
+                            const OriginAttributes& aOriginAttributes,
                             Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
                             Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
+                            Maybe<DelegatedCredentialInfo>& dcInfo,
                             uint32_t providerFlags, Time time, PRTime prtime,
-                            uint32_t certVerifierFlags);
+                            uint32_t certVerifierFlags,
+                            BaseSSLServerCertVerificationResult* aResultTask);
 
  private:
   NS_DECL_NSIRUNNABLE
 
   // Must be called only on the socket transport thread
-  SSLServerCertVerificationJob(const RefPtr<SharedCertVerifier>& certVerifier,
-                               const void* fdForLogging,
-                               TransportSecurityInfo* infoObject,
-                               const UniqueCERTCertificate& cert,
-                               UniqueCERTCertList peerCertChain,
-                               Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
-                               Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
-                               uint32_t providerFlags, Time time, PRTime prtime,
-                               uint32_t certVerifierFlags);
-  const RefPtr<SharedCertVerifier> mCertVerifier;
-  const void* const mFdForLogging;
-  const RefPtr<TransportSecurityInfo> mInfoObject;
+  SSLServerCertVerificationJob(
+      uint64_t addrForLogging, void* aPinArg, const UniqueCERTCertificate& cert,
+      nsTArray<nsTArray<uint8_t>>&& peerCertChain, const nsACString& aHostName,
+      int32_t aPort, const OriginAttributes& aOriginAttributes,
+      Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
+      Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
+      Maybe<DelegatedCredentialInfo>& dcInfo, uint32_t providerFlags, Time time,
+      PRTime prtime, uint32_t certVerifierFlags,
+      BaseSSLServerCertVerificationResult* aResultTask);
+  uint64_t mAddrForLogging;
+  void* mPinArg;
   const UniqueCERTCertificate mCert;
-  UniqueCERTCertList mPeerCertChain;
+  nsTArray<nsTArray<uint8_t>> mPeerCertChain;
+  nsCString mHostName;
+  int32_t mPort;
+  OriginAttributes mOriginAttributes;
   const uint32_t mProviderFlags;
   const uint32_t mCertVerifierFlags;
   const Time mTime;
   const PRTime mPRTime;
   Maybe<nsTArray<uint8_t>> mStapledOCSPResponse;
   Maybe<nsTArray<uint8_t>> mSCTsFromTLSExtension;
+  Maybe<DelegatedCredentialInfo> mDCInfo;
+  RefPtr<BaseSSLServerCertVerificationResult> mResultTask;
 };
 
 SSLServerCertVerificationJob::SSLServerCertVerificationJob(
-    const RefPtr<SharedCertVerifier>& certVerifier, const void* fdForLogging,
-    TransportSecurityInfo* infoObject, const UniqueCERTCertificate& cert,
-    UniqueCERTCertList peerCertChain,
+    uint64_t addrForLogging, void* aPinArg, const UniqueCERTCertificate& cert,
+    nsTArray<nsTArray<uint8_t>>&& peerCertChain, const nsACString& aHostName,
+    int32_t aPort, const OriginAttributes& aOriginAttributes,
     Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
-    Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension, uint32_t providerFlags,
-    Time time, PRTime prtime, uint32_t certVerifierFlags)
+    Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
+    Maybe<DelegatedCredentialInfo>& dcInfo, uint32_t providerFlags, Time time,
+    PRTime prtime, uint32_t certVerifierFlags,
+    BaseSSLServerCertVerificationResult* aResultTask)
     : Runnable("psm::SSLServerCertVerificationJob"),
-      mCertVerifier(certVerifier),
-      mFdForLogging(fdForLogging),
-      mInfoObject(infoObject),
+      mAddrForLogging(addrForLogging),
+      mPinArg(aPinArg),
       mCert(CERT_DupCertificate(cert.get())),
       mPeerCertChain(std::move(peerCertChain)),
+      mHostName(aHostName),
+      mPort(aPort),
+      mOriginAttributes(aOriginAttributes),
       mProviderFlags(providerFlags),
       mCertVerifierFlags(certVerifierFlags),
       mTime(time),
       mPRTime(prtime),
       mStapledOCSPResponse(std::move(stapledOCSPResponse)),
-      mSCTsFromTLSExtension(std::move(sctsFromTLSExtension)) {}
+      mSCTsFromTLSExtension(std::move(sctsFromTLSExtension)),
+      mDCInfo(std::move(dcInfo)),
+      mResultTask(aResultTask) {}
 
 // This function assumes that we will only use the SPDY connection coalescing
 // feature on connections where we have negotiated SPDY using NPN. If we ever
@@ -795,6 +717,7 @@ void GatherBaselineRequirementsTelemetry(const UniqueCERTCertList& certList) {
       // According to DNS.h, this includes space for the null-terminator
       char buf[net::kNetAddrMaxCStrBufSize] = {0};
       PRNetAddr addr;
+      memset(&addr, 0, sizeof(addr));
       if (currentName->name.other.len == 4) {
         addr.inet.family = PR_AF_INET;
         memcpy(&addr.inet.ip, currentName->name.other.data,
@@ -1099,7 +1022,8 @@ static void CollectCertTelemetry(
     KeySizeStatus aKeySizeStatus, SHA1ModeResult aSha1ModeResult,
     const PinningTelemetryInfo& aPinningTelemetryInfo,
     const UniqueCERTCertList& aBuiltCertChain,
-    const CertificateTransparencyInfo& aCertificateTransparencyInfo) {
+    const CertificateTransparencyInfo& aCertificateTransparencyInfo,
+    const CRLiteTelemetryInfo& aCRLiteTelemetryInfo) {
   uint32_t evStatus = (aCertVerificationResult != Success)
                           ? 0  // 0 = Failure
                           : (aEvOidPolicy == SEC_OID_UNKNOWN) ? 1   // 1 = DV
@@ -1138,13 +1062,59 @@ static void CollectCertTelemetry(
         aBuiltCertChain,
         /*isEV*/ aEvOidPolicy != SEC_OID_UNKNOWN, aCertificateTransparencyInfo);
   }
+
+  switch (aCRLiteTelemetryInfo.mLookupResult) {
+    case CRLiteLookupResult::FilterNotAvailable:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_CRLITE_RESULT::FilterNotAvailable);
+      break;
+    case CRLiteLookupResult::IssuerNotEnrolled:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_CRLITE_RESULT::IssuerNotEnrolled);
+      break;
+    case CRLiteLookupResult::CertificateTooNew:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_CRLITE_RESULT::CertificateTooNew);
+      break;
+    case CRLiteLookupResult::CertificateValid:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_CRLITE_RESULT::CertificateValid);
+      break;
+    case CRLiteLookupResult::CertificateRevoked:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_CRLITE_RESULT::CertificateRevoked);
+      break;
+    case CRLiteLookupResult::LibraryFailure:
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_CRLITE_RESULT::LibraryFailure);
+      break;
+    case CRLiteLookupResult::NeverChecked:
+      break;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unhandled CRLiteLookupResult value?");
+      break;
+  }
+
+  if (aCRLiteTelemetryInfo.mCRLiteFasterThanOCSPMillis.isSome()) {
+    Telemetry::Accumulate(
+        Telemetry::CRLITE_FASTER_THAN_OCSP_MS,
+        static_cast<uint32_t>(
+            *aCRLiteTelemetryInfo.mCRLiteFasterThanOCSPMillis));
+  }
+  if (aCRLiteTelemetryInfo.mOCSPFasterThanCRLiteMillis.isSome()) {
+    Telemetry::Accumulate(
+        Telemetry::OCSP_FASTER_THAN_CRLITE_MS,
+        static_cast<uint32_t>(
+            *aCRLiteTelemetryInfo.mOCSPFasterThanCRLiteMillis));
+  }
 }
 
 static void AuthCertificateSetResults(
-    TransportSecurityInfo* aInfoObject, const UniqueCERTCertificate& aCert,
-    UniqueCERTCertList& aBuiltCertChain, UniqueCERTCertList& aPeerCertChain,
-    const CertificateTransparencyInfo& aCertificateTransparencyInfo,
-    SECOidTag aEvOidPolicy, bool aSucceeded) {
+    TransportSecurityInfo* aInfoObject, nsNSSCertificate* aCert,
+    nsTArray<nsTArray<uint8_t>>&& aBuiltCertChain,
+    nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
+    uint16_t aCertificateTransparencyStatus, EVStatus aEvStatus,
+    bool aSucceeded) {
   MOZ_ASSERT(aInfoObject);
 
   if (aSucceeded) {
@@ -1153,21 +1123,13 @@ static void AuthCertificateSetResults(
     RememberCertErrorsTable::GetInstance().RememberCertHasError(aInfoObject,
                                                                 SECSuccess);
 
-    EVStatus evStatus;
-    if (aEvOidPolicy == SEC_OID_UNKNOWN) {
-      evStatus = EVStatus::NotEV;
-    } else {
-      evStatus = EVStatus::EV;
-    }
-
-    RefPtr<nsNSSCertificate> nsc = nsNSSCertificate::Create(aCert.get());
-    aInfoObject->SetServerCert(nsc, evStatus);
-
+    aInfoObject->SetServerCert(aCert, aEvStatus);
     aInfoObject->SetSucceededCertChain(std::move(aBuiltCertChain));
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("AuthCertificate setting NEW cert %p", nsc.get()));
+            ("AuthCertificate setting NEW cert %p", aCert));
 
-    aInfoObject->SetCertificateTransparencyInfo(aCertificateTransparencyInfo);
+    aInfoObject->SetCertificateTransparencyStatus(
+        aCertificateTransparencyStatus);
   } else {
     // Certificate validation failed; store the peer certificate chain on
     // infoObject so it can be used for error reporting.
@@ -1176,15 +1138,18 @@ static void AuthCertificateSetResults(
 }
 
 // Note: Takes ownership of |peerCertChain| if SECSuccess is not returned.
-Result AuthCertificate(CertVerifier& certVerifier,
-                       TransportSecurityInfo* infoObject,
-                       const UniqueCERTCertificate& cert,
-                       UniqueCERTCertList& peerCertChain,
-                       const Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
-                       const Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
-                       uint32_t providerFlags, Time time,
-                       uint32_t certVerifierFlags) {
-  MOZ_ASSERT(infoObject);
+Result AuthCertificate(
+    CertVerifier& certVerifier, void* aPinArg,
+    const UniqueCERTCertificate& cert,
+    const nsTArray<nsTArray<uint8_t>>& peerCertChain,
+    const nsACString& aHostName, const OriginAttributes& aOriginAttributes,
+    const Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
+    const Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
+    const Maybe<DelegatedCredentialInfo>& dcInfo, uint32_t providerFlags,
+    Time time, uint32_t certVerifierFlags,
+    /*out*/ UniqueCERTCertList& builtCertChain,
+    /*out*/ SECOidTag& evOidPolicy,
+    /*out*/ CertificateTransparencyInfo& certificateTransparencyInfo) {
   MOZ_ASSERT(cert);
 
   // We want to avoid storing any intermediate cert information when browsing
@@ -1192,42 +1157,47 @@ Result AuthCertificate(CertVerifier& certVerifier,
   bool saveIntermediates =
       !(providerFlags & nsISocketProvider::NO_PERMANENT_STORAGE);
 
-  SECOidTag evOidPolicy;
-  UniqueCERTCertList builtCertChain;
   CertVerifier::OCSPStaplingStatus ocspStaplingStatus =
       CertVerifier::OCSP_STAPLING_NEVER_CHECKED;
   KeySizeStatus keySizeStatus = KeySizeStatus::NeverChecked;
   SHA1ModeResult sha1ModeResult = SHA1ModeResult::NeverChecked;
   PinningTelemetryInfo pinningTelemetryInfo;
-  CertificateTransparencyInfo certificateTransparencyInfo;
+  CRLiteTelemetryInfo crliteTelemetryInfo;
+
+  nsTArray<nsTArray<uint8_t>> peerCertsBytes;
+  // Don't include the end-entity certificate.
+  if (!peerCertChain.IsEmpty()) {
+    peerCertsBytes.AppendElements(peerCertChain.Elements() + 1,
+                                  peerCertChain.Length() - 1);
+  }
 
   Result rv = certVerifier.VerifySSLServerCert(
-      cert, stapledOCSPResponse, sctsFromTLSExtension, time, infoObject,
-      infoObject->GetHostName(), builtCertChain, saveIntermediates,
-      certVerifierFlags, infoObject->GetOriginAttributes(), &evOidPolicy,
-      &ocspStaplingStatus, &keySizeStatus, &sha1ModeResult,
-      &pinningTelemetryInfo, &certificateTransparencyInfo);
+      cert, time, aPinArg, aHostName, builtCertChain, certVerifierFlags,
+      Some(peerCertsBytes), stapledOCSPResponse, sctsFromTLSExtension, dcInfo,
+      aOriginAttributes, saveIntermediates, &evOidPolicy, &ocspStaplingStatus,
+      &keySizeStatus, &sha1ModeResult, &pinningTelemetryInfo,
+      &certificateTransparencyInfo, &crliteTelemetryInfo);
 
   CollectCertTelemetry(rv, evOidPolicy, ocspStaplingStatus, keySizeStatus,
                        sha1ModeResult, pinningTelemetryInfo, builtCertChain,
-                       certificateTransparencyInfo);
+                       certificateTransparencyInfo, crliteTelemetryInfo);
 
-  AuthCertificateSetResults(infoObject, cert, builtCertChain, peerCertChain,
-                            certificateTransparencyInfo, evOidPolicy,
-                            rv == Success);
   return rv;
 }
 
 /*static*/
 SECStatus SSLServerCertVerificationJob::Dispatch(
-    const RefPtr<SharedCertVerifier>& certVerifier, const void* fdForLogging,
-    TransportSecurityInfo* infoObject, const UniqueCERTCertificate& serverCert,
-    const UniqueCERTCertList& peerCertChain,
+    uint64_t addrForLogging, void* aPinArg,
+    const UniqueCERTCertificate& serverCert,
+    nsTArray<nsTArray<uint8_t>>&& peerCertChain, const nsACString& aHostName,
+    int32_t aPort, const OriginAttributes& aOriginAttributes,
     Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
-    Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension, uint32_t providerFlags,
-    Time time, PRTime prtime, uint32_t certVerifierFlags) {
+    Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
+    Maybe<DelegatedCredentialInfo>& dcInfo, uint32_t providerFlags, Time time,
+    PRTime prtime, uint32_t certVerifierFlags,
+    BaseSSLServerCertVerificationResult* aResultTask) {
   // Runs on the socket transport thread
-  if (!certVerifier || !infoObject || !serverCert) {
+  if (!aResultTask || !serverCert) {
     NS_ERROR("Invalid parameters for SSL server cert validation");
     PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
     return SECFailure;
@@ -1238,19 +1208,10 @@ SECStatus SSLServerCertVerificationJob::Dispatch(
     return SECFailure;
   }
 
-  // Copy the certificate list so the runnable can take ownership of it in the
-  // constructor.
-  UniqueCERTCertList peerCertChainCopy =
-      nsNSSCertList::DupCertList(peerCertChain);
-  if (!peerCertChainCopy) {
-    PR_SetError(SEC_ERROR_NO_MEMORY, 0);
-    return SECFailure;
-  }
-
   RefPtr<SSLServerCertVerificationJob> job(new SSLServerCertVerificationJob(
-      certVerifier, fdForLogging, infoObject, serverCert,
-      std::move(peerCertChainCopy), stapledOCSPResponse, sctsFromTLSExtension,
-      providerFlags, time, prtime, certVerifierFlags));
+      addrForLogging, aPinArg, serverCert, std::move(peerCertChain), aHostName,
+      aPort, aOriginAttributes, stapledOCSPResponse, sctsFromTLSExtension,
+      dcInfo, providerFlags, time, prtime, certVerifierFlags, aResultTask));
 
   nsresult nrv = gCertVerificationThreadPool->Dispatch(job, NS_DISPATCH_NORMAL);
   if (NS_FAILED(nrv)) {
@@ -1390,25 +1351,43 @@ SSLServerCertVerificationJob::Run() {
   // Runs on a cert verification thread and only on parent process.
   MOZ_ASSERT(XRE_IsParentProcess());
 
-  MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-          ("[%p] SSLServerCertVerificationJob::Run\n", mInfoObject.get()));
+  MOZ_LOG(
+      gPIPNSSLog, LogLevel::Debug,
+      ("[%" PRIx64 "] SSLServerCertVerificationJob::Run\n", mAddrForLogging));
+
+  RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
+  if (!certVerifier) {
+    PR_SetError(SEC_ERROR_NOT_INITIALIZED, 0);
+    return NS_OK;
+  }
 
   TimeStamp jobStartTime = TimeStamp::Now();
+  UniqueCERTCertList builtCertChain;
+  SECOidTag evOidPolicy;
+  CertificateTransparencyInfo certificateTransparencyInfo;
   Result rv = AuthCertificate(
-      *mCertVerifier, mInfoObject, mCert, mPeerCertChain, mStapledOCSPResponse,
-      mSCTsFromTLSExtension, mProviderFlags, mTime, mCertVerifierFlags);
-  MOZ_ASSERT(
-      (mPeerCertChain && rv == Success) || (!mPeerCertChain && rv != Success),
-      "AuthCertificate() should take ownership of chain on failure");
+      *certVerifier, mPinArg, mCert, mPeerCertChain, mHostName,
+      mOriginAttributes, mStapledOCSPResponse, mSCTsFromTLSExtension, mDCInfo,
+      mProviderFlags, mTime, mCertVerifierFlags, builtCertChain, evOidPolicy,
+      certificateTransparencyInfo);
 
+  RefPtr<nsNSSCertificate> nsc = nsNSSCertificate::Create(mCert.get());
+  nsTArray<nsTArray<uint8_t>> certBytesArray;
   if (rv == Success) {
     Telemetry::AccumulateTimeDelta(
         Telemetry::SSL_SUCCESFUL_CERT_VALIDATION_TIME_MOZILLAPKIX, jobStartTime,
         TimeStamp::Now());
     Telemetry::Accumulate(Telemetry::SSL_CERT_ERROR_OVERRIDES, 1);
-    RefPtr<SSLServerCertVerificationResult> runnable(
-        new SSLServerCertVerificationResult(mInfoObject, 0));
-    runnable->Dispatch();
+
+    certBytesArray =
+        TransportSecurityInfo::CreateCertBytesArray(builtCertChain);
+    EVStatus evStatus =
+        evOidPolicy == SEC_OID_UNKNOWN ? EVStatus::NotEV : EVStatus::EV;
+    mResultTask->Dispatch(
+        nsc, std::move(certBytesArray), std::move(mPeerCertChain),
+        TransportSecurityInfo::ConvertCertificateTransparencyInfoToStatus(
+            certificateTransparencyInfo),
+        evStatus, true, 0, 0);
     return NS_OK;
   }
 
@@ -1417,56 +1396,16 @@ SSLServerCertVerificationJob::Run() {
       jobStartTime, TimeStamp::Now());
 
   PRErrorCode error = MapResultToPRErrorCode(rv);
-  uint64_t addr = reinterpret_cast<uintptr_t>(mFdForLogging);
   uint32_t collectedErrors = 0;
   PRErrorCode finalError = AuthCertificateParseResults(
-      addr, mInfoObject->GetHostName(), mInfoObject->GetPort(),
-      mInfoObject->GetOriginAttributes(), mCert, mProviderFlags, mPRTime, error,
-      collectedErrors);
+      mAddrForLogging, mHostName, mPort, mOriginAttributes, mCert,
+      mProviderFlags, mPRTime, error, collectedErrors);
 
-  if (collectedErrors != 0) {
-    RefPtr<nsNSSCertificate> nssCert(nsNSSCertificate::Create(mCert.get()));
-    mInfoObject->SetStatusErrorBits(nssCert, collectedErrors);
-  }
-
-  if (finalError == 0) {
-    RefPtr<SSLServerCertVerificationResult> runnable(
-        new SSLServerCertVerificationResult(mInfoObject, 0));
-    runnable->Dispatch();
-    return NS_OK;
-  }
-
-  // Until bug 1547096 is fixed, we need to notify any nsIBadCertListener2
-  // implementations of the certificate verification error.
-
-  // Accessing nsIBadCertListener2 must happen on the main thread and at the
-  // same the socket thread must be blocked.
-  RefPtr<NotifyCertProblemRunnable> runnable(
-      new NotifyCertProblemRunnable(addr, mInfoObject));
-
-  // We must block the the socket transport service thread while the
-  // main thread executes the NotifyCertProblemRunnable.
-  // The NotifyCertProblemRunnable will dispatch the result asynchronously,
-  // so we don't have to block this thread waiting for it.
-
-  MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-          ("[0x%" PRIx64 "][%p] Before dispatching NotifyCertProblemRunnable\n",
-           addr, runnable.get()));
-
-  nsresult nrv;
-  nsCOMPtr<nsIEventTarget> stsTarget =
-      do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &nrv);
-  if (NS_SUCCEEDED(nrv)) {
-    nrv = stsTarget->Dispatch(new NotifyCertProblemRunnableRunnable(runnable),
-                              NS_DISPATCH_NORMAL);
-  }
-  if (NS_FAILED(nrv)) {
-    finalError = PR_INVALID_STATE_ERROR;
-  }
-
-  RefPtr<SSLServerCertVerificationResult> resultRunnable(
-      new SSLServerCertVerificationResult(mInfoObject, finalError));
-  resultRunnable->Dispatch();
+  // NB: finalError may be 0 here, in which the connection will continue.
+  mResultTask->Dispatch(
+      nsc, std::move(certBytesArray), std::move(mPeerCertChain),
+      nsITransportSecurityInfo::CERTIFICATE_TRANSPARENCY_NOT_APPLICABLE,
+      EVStatus::NotEV, false, finalError, collectedErrors);
   return NS_OK;
 }
 
@@ -1476,16 +1415,12 @@ SSLServerCertVerificationJob::Run() {
 //  checks and calls SSLServerCertVerificationJob::Dispatch.
 SECStatus AuthCertificateHookInternal(
     TransportSecurityInfo* infoObject, const void* aPtrForLogging,
-    const UniqueCERTCertificate& serverCert, UniqueCERTCertList& peerCertChain,
+    const UniqueCERTCertificate& serverCert,
+    nsTArray<nsTArray<uint8_t>>&& peerCertChain,
     Maybe<nsTArray<uint8_t>>& stapledOCSPResponse,
-    Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension, uint32_t providerFlags,
+    Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension,
+    Maybe<DelegatedCredentialInfo>& dcInfo, uint32_t providerFlags,
     uint32_t certVerifierFlags) {
-  RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
-  if (!certVerifier) {
-    PR_SetError(SEC_ERROR_NOT_INITIALIZED, 0);
-    return SECFailure;
-  }
-
   // Runs on the socket transport thread
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
@@ -1517,14 +1452,28 @@ SECStatus AuthCertificateHookInternal(
     return SECFailure;
   }
 
+  uint64_t addr = reinterpret_cast<uintptr_t>(aPtrForLogging);
+  RefPtr<SSLServerCertVerificationResult> resultTask =
+      new SSLServerCertVerificationResult(infoObject);
+
+  if (XRE_IsSocketProcess()) {
+    return RemoteProcessCertVerification(
+        serverCert, std::move(peerCertChain), infoObject->GetHostName(),
+        infoObject->GetPort(), infoObject->GetOriginAttributes(),
+        stapledOCSPResponse, sctsFromTLSExtension, dcInfo, providerFlags,
+        certVerifierFlags, resultTask);
+  }
+
   // We *must* do certificate verification on a background thread because
   // we need the socket transport thread to be free for our OCSP requests,
   // and we *want* to do certificate verification on a background thread
   // because of the performance benefits of doing so.
   return SSLServerCertVerificationJob::Dispatch(
-      certVerifier, aPtrForLogging, infoObject, serverCert, peerCertChain,
-      stapledOCSPResponse, sctsFromTLSExtension, providerFlags, Now(), PR_Now(),
-      certVerifierFlags);
+      addr, infoObject, serverCert, std::move(peerCertChain),
+      infoObject->GetHostName(), infoObject->GetPort(),
+      infoObject->GetOriginAttributes(), stapledOCSPResponse,
+      sctsFromTLSExtension, dcInfo, providerFlags, Now(), PR_Now(),
+      certVerifierFlags, resultTask);
 }
 
 // Extracts whatever information we need out of fd (using SSL_*) and passes it
@@ -1558,12 +1507,14 @@ SECStatus AuthCertificateHook(void* arg, PRFileDesc* fd, PRBool checkSig,
     return SECFailure;
   }
 
-  // Get the peer certificate chain for error reporting
   UniqueCERTCertList peerCertChain(SSL_PeerCertificateChain(fd));
   if (!peerCertChain) {
     PR_SetError(PR_INVALID_STATE_ERROR, 0);
     return SECFailure;
   }
+
+  nsTArray<nsTArray<uint8_t>> peerCertsBytes =
+      TransportSecurityInfo::CreateCertBytesArray(peerCertChain);
 
   // SSL_PeerStapledOCSPResponses will never return a non-empty response if
   // OCSP stapling wasn't enabled because libssl wouldn't have let the server
@@ -1596,50 +1547,25 @@ SECStatus AuthCertificateHook(void* arg, PRFileDesc* fd, PRBool checkSig,
     certVerifierFlags |= CertVerifier::FLAG_TLS_IGNORE_STATUS_REQUEST;
   }
 
+  // Get DC information
+  Maybe<DelegatedCredentialInfo> dcInfo;
+  SSLPreliminaryChannelInfo channelPreInfo;
+  SECStatus rv = SSL_GetPreliminaryChannelInfo(fd, &channelPreInfo,
+                                               sizeof(channelPreInfo));
+  if (rv != SECSuccess) {
+    PR_SetError(PR_INVALID_STATE_ERROR, 0);
+    return SECFailure;
+  }
+  if (channelPreInfo.peerDelegCred) {
+    dcInfo.emplace(DelegatedCredentialInfo(channelPreInfo.signatureScheme,
+                                           channelPreInfo.authKeyBits));
+  }
+
   socketInfo->SetCertVerificationWaiting();
   return AuthCertificateHookInternal(socketInfo, static_cast<const void*>(fd),
-                                     serverCert, peerCertChain,
+                                     serverCert, std::move(peerCertsBytes),
                                      stapledOCSPResponse, sctsFromTLSExtension,
-                                     providerFlags, certVerifierFlags);
-}
-
-// Make a cert chain from an array of ders.
-SECStatus MakeCertChain(nsTArray<nsTArray<uint8_t>>& inPeerCertChain,
-                        UniqueCERTCertificate& outCert,
-                        UniqueCERTCertList& outCertChain) {
-  for (auto& certDer : inPeerCertChain) {
-    if (certDer.Length() > UINT32_MAX) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-              ("MakeCertChain: certDer too long."));
-      return SECFailure;
-    }
-    SECItem der = {SECItemType::siBuffer, certDer.Elements(),
-                   (uint32_t)certDer.Length()};
-
-    if (!outCert) {
-      outCert.reset(CERT_NewTempCertificate(CERT_GetDefaultCertDB(), &der,
-                                            nullptr, false, true));
-      if (!outCert) {
-        MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("MakeCertChain: cert failed"));
-        return SECFailure;
-      }
-    }
-
-    UniqueCERTCertificate tmpCert(CERT_NewTempCertificate(
-        CERT_GetDefaultCertDB(), &der, nullptr, false, true));
-    if (!tmpCert) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("MakeCertChain: cert failed"));
-      return SECFailure;
-    }
-    if (CERT_AddCertToListTail(outCertChain.get(), tmpCert.get()) !=
-        SECSuccess) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-              ("MakeCertChain: getting cert chain failed"));
-      return SECFailure;
-    }
-    Unused << tmpCert.release();
-  }
-  return SECSuccess;
+                                     dcInfo, providerFlags, certVerifierFlags);
 }
 
 // Takes information needed for cert verification, does some consistency
@@ -1647,15 +1573,21 @@ SECStatus MakeCertChain(nsTArray<nsTArray<uint8_t>>& inPeerCertChain,
 // This function is used for Quic.
 SECStatus AuthCertificateHookWithInfo(
     TransportSecurityInfo* infoObject, const void* aPtrForLogging,
-    nsTArray<nsTArray<uint8_t>>& peerCertChain,
+    nsTArray<nsTArray<uint8_t>>&& peerCertChain,
     Maybe<nsTArray<nsTArray<uint8_t>>>& stapledOCSPResponses,
     Maybe<nsTArray<uint8_t>>& sctsFromTLSExtension, uint32_t providerFlags) {
-  UniqueCERTCertificate cert;
-  UniqueCERTCertList certChain(CERT_NewCertList());
-  if (!certChain) {
+  if (peerCertChain.IsEmpty()) {
+    PR_SetError(PR_INVALID_STATE_ERROR, 0);
     return SECFailure;
   }
-  if (MakeCertChain(peerCertChain, cert, certChain) != SECSuccess) {
+
+  SECItem der = {SECItemType::siBuffer, peerCertChain[0].Elements(),
+                 (uint32_t)peerCertChain[0].Length()};
+  UniqueCERTCertificate cert(CERT_NewTempCertificate(
+      CERT_GetDefaultCertDB(), &der, nullptr, false, true));
+  if (!cert) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("AuthCertificateHookWithInfo: cert failed"));
     return SECFailure;
   }
 
@@ -1674,18 +1606,42 @@ SECStatus AuthCertificateHookWithInfo(
     certVerifierFlags |= CertVerifier::FLAG_TLS_IGNORE_STATUS_REQUEST;
   }
 
-  return AuthCertificateHookInternal(
-      infoObject, aPtrForLogging, cert, certChain, stapledOCSPResponse,
-      sctsFromTLSExtension, providerFlags, certVerifierFlags);
+  // Need to update Quic stack to reflect the PreliminaryInfo fields
+  // for Delegated Credentials.
+  Maybe<DelegatedCredentialInfo> dcInfo;
+
+  return AuthCertificateHookInternal(infoObject, aPtrForLogging, cert,
+                                     std::move(peerCertChain),
+                                     stapledOCSPResponse, sctsFromTLSExtension,
+                                     dcInfo, providerFlags, certVerifierFlags);
 }
 
+NS_IMPL_ISUPPORTS_INHERITED0(SSLServerCertVerificationResult, Runnable)
+
 SSLServerCertVerificationResult::SSLServerCertVerificationResult(
-    TransportSecurityInfo* infoObject, PRErrorCode errorCode)
+    TransportSecurityInfo* infoObject)
     : Runnable("psm::SSLServerCertVerificationResult"),
       mInfoObject(infoObject),
-      mErrorCode(errorCode) {}
+      mCertificateTransparencyStatus(0),
+      mEVStatus(EVStatus::NotEV),
+      mSucceeded(false),
+      mFinalError(0),
+      mCollectedErrors(0) {}
 
-void SSLServerCertVerificationResult::Dispatch() {
+void SSLServerCertVerificationResult::Dispatch(
+    nsNSSCertificate* aCert, nsTArray<nsTArray<uint8_t>>&& aBuiltChain,
+    nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
+    uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+    bool aSucceeded, PRErrorCode aFinalError, uint32_t aCollectedErrors) {
+  mCert = aCert;
+  mBuiltChain = std::move(aBuiltChain);
+  mPeerCertChain = std::move(aPeerCertChain);
+  mCertificateTransparencyStatus = aCertificateTransparencyStatus;
+  mEVStatus = aEVStatus;
+  mSucceeded = aSucceeded;
+  mFinalError = aFinalError;
+  mCollectedErrors = aCollectedErrors;
+
   nsresult rv;
   nsCOMPtr<nsIEventTarget> stsTarget =
       do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &rv);
@@ -1697,8 +1653,26 @@ void SSLServerCertVerificationResult::Dispatch() {
 
 NS_IMETHODIMP
 SSLServerCertVerificationResult::Run() {
-  // TODO: Assert that we're on the socket transport thread
-  mInfoObject->SetCertVerificationResult(mErrorCode);
+#ifdef DEBUG
+  bool onSTSThread = false;
+  nsresult nrv;
+  nsCOMPtr<nsIEventTarget> sts =
+      do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &nrv);
+  if (NS_SUCCEEDED(nrv)) {
+    nrv = sts->IsOnCurrentThread(&onSTSThread);
+  }
+
+  MOZ_ASSERT(onSTSThread);
+#endif
+
+  AuthCertificateSetResults(
+      mInfoObject, mCert, std::move(mBuiltChain), std::move(mPeerCertChain),
+      mCertificateTransparencyStatus, mEVStatus, mSucceeded);
+
+  if (!mSucceeded && mCollectedErrors != 0) {
+    mInfoObject->SetStatusErrorBits(mCert, mCollectedErrors);
+  }
+  mInfoObject->SetCertVerificationResult(mFinalError);
   return NS_OK;
 }
 

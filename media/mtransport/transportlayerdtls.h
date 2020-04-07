@@ -12,13 +12,18 @@
 #include <queue>
 #include <set>
 
+#ifdef XP_MACOSX
+// ensure that Apple Security kit enum goes before "sslproto.h"
+#  include <CoreFoundation/CFAvailability.h>
+#  include <Security/CipherSuite.h>
+#endif
+
 #include "sigslot.h"
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
-#include "nsIEventTarget.h"
 #include "nsITimer.h"
 #include "ScopedNSSTypes.h"
 #include "m_cpp_utils.h"

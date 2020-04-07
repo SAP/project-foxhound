@@ -49,23 +49,23 @@ add_task(async function test_hidden_by_prefs() {
 
       await openPasswordContextMenu(browser, passwordInputSelector);
 
-      let loginPopup = document.getElementById("fill-login-popup");
       let generatedPasswordItem = document.getElementById(
         "fill-login-generated-password"
       );
+      let fillLoginItem = document.getElementById("fill-login");
       let generatedPasswordSeparator = document.getElementById(
-        "generated-password-separator"
+        "fill-login-and-generated-password-separator"
       );
 
-      // Check the content of the password manager popup
-      ok(BrowserTestUtils.is_visible(loginPopup), "popup is visible");
       ok(
         !BrowserTestUtils.is_visible(generatedPasswordItem),
         "generated password item is hidden"
       );
-      ok(
-        !BrowserTestUtils.is_visible(generatedPasswordSeparator),
-        "separator is hidden"
+      is(
+        BrowserTestUtils.is_visible(fillLoginItem) ||
+          BrowserTestUtils.is_visible(generatedPasswordItem),
+        BrowserTestUtils.is_visible(generatedPasswordSeparator),
+        "separator should only be visible if one of the login items is visible"
       );
 
       CONTEXT_MENU.hidePopup();
@@ -89,23 +89,23 @@ add_task(async function test_fill_hidden_by_login_saving_disabled() {
 
       await openPasswordContextMenu(browser, passwordInputSelector);
 
-      let loginPopup = document.getElementById("fill-login-popup");
       let generatedPasswordItem = document.getElementById(
         "fill-login-generated-password"
       );
+      let fillLoginItem = document.getElementById("fill-login");
       let generatedPasswordSeparator = document.getElementById(
-        "generated-password-separator"
+        "fill-login-and-generated-password-separator"
       );
 
-      // Check the content of the password manager popup
-      ok(BrowserTestUtils.is_visible(loginPopup), "popup is visible");
       ok(
         !BrowserTestUtils.is_visible(generatedPasswordItem),
         "generated password item is hidden"
       );
-      ok(
-        !BrowserTestUtils.is_visible(generatedPasswordSeparator),
-        "separator is hidden"
+      is(
+        BrowserTestUtils.is_visible(fillLoginItem) ||
+          BrowserTestUtils.is_visible(generatedPasswordItem),
+        BrowserTestUtils.is_visible(generatedPasswordSeparator),
+        "separator should only be visible if one of the login items is visible"
       );
 
       CONTEXT_MENU.hidePopup();
@@ -113,6 +113,52 @@ add_task(async function test_fill_hidden_by_login_saving_disabled() {
   );
 
   Services.logins.setLoginSavingEnabled(TEST_ORIGIN, true);
+});
+
+add_task(async function test_fill_hidden_by_locked_master_password() {
+  // test that the generated password option is not present when the user
+  // didn't unlock the master password.
+  LoginTestUtils.masterPassword.enable();
+
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: TEST_ORIGIN + FORM_PAGE_PATH,
+    },
+    async function(browser) {
+      await SimpleTest.promiseFocus(browser.ownerGlobal);
+
+      await openPasswordContextMenu(
+        browser,
+        passwordInputSelector,
+        () => false
+      );
+
+      let generatedPasswordItem = document.getElementById(
+        "fill-login-generated-password"
+      );
+      let fillLoginItem = document.getElementById("fill-login");
+      let generatedPasswordSeparator = document.getElementById(
+        "fill-login-and-generated-password-separator"
+      );
+
+      ok(
+        BrowserTestUtils.is_visible(generatedPasswordItem),
+        "generated password item is visible"
+      );
+      ok(generatedPasswordItem.disabled, "generated password item is disabled");
+      is(
+        BrowserTestUtils.is_visible(fillLoginItem) ||
+          BrowserTestUtils.is_visible(generatedPasswordItem),
+        BrowserTestUtils.is_visible(generatedPasswordSeparator),
+        "separator should only be visible if one of the login items is visible"
+      );
+
+      CONTEXT_MENU.hidePopup();
+    }
+  );
+
+  LoginTestUtils.masterPassword.disable();
 });
 
 add_task(async function fill_generated_password_empty_field() {
@@ -124,9 +170,9 @@ add_task(async function fill_generated_password_empty_field() {
     },
     async function(browser) {
       await SimpleTest.promiseFocus(browser.ownerGlobal);
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        [passwordInputSelector],
+        [[passwordInputSelector]],
         function checkInitialFieldValue(inputSelector) {
           const input = content.document.querySelector(inputSelector);
           is(input.value.length, 0, "Password field is empty");
@@ -142,9 +188,9 @@ add_task(async function fill_generated_password_empty_field() {
         browser,
         passwordInputSelector
       );
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        [passwordInputSelector],
+        [[passwordInputSelector]],
         function checkFinalFieldValue(inputSelector) {
           let { LoginTestUtils: LTU } = ChromeUtils.import(
             "resource://testing-common/LoginTestUtils.jsm"
@@ -161,8 +207,24 @@ add_task(async function fill_generated_password_empty_field() {
             "Password field should be highlighted"
           );
           LTU.loginField.checkPasswordMasked(input, false, "after fill");
+
+          info("cleaing the field");
+          input.setUserInput("");
         }
       );
+
+      let acPopup = document.getElementById("PopupAutoComplete");
+      await openACPopup(acPopup, browser, passwordInputSelector);
+
+      let pwgenItem = acPopup.querySelector(
+        `[originaltype="generatedPassword"]`
+      );
+      ok(
+        !pwgenItem || EventUtils.isHidden(pwgenItem),
+        "pwgen item should no longer be shown"
+      );
+
+      await closePopup(acPopup);
     }
   );
 });
@@ -176,12 +238,14 @@ add_task(async function fill_generated_password_nonempty_field() {
     },
     async function(browser) {
       await SimpleTest.promiseFocus(browser.ownerGlobal);
-      await ContentTask.spawn(
+      await changeContentFormValues(browser, {
+        [passwordInputSelector]: "aa",
+      });
+      await SpecialPowers.spawn(
         browser,
-        [passwordInputSelector],
+        [[passwordInputSelector]],
         function checkInitialFieldValue(inputSelector) {
           const input = content.document.querySelector(inputSelector);
-          input.setUserInput("aa");
           is(
             content.getComputedStyle(input).filter,
             "none",
@@ -194,9 +258,9 @@ add_task(async function fill_generated_password_nonempty_field() {
         browser,
         passwordInputSelector
       );
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        [passwordInputSelector],
+        [[passwordInputSelector]],
         function checkFinalFieldValue(inputSelector) {
           let { LoginTestUtils: LTU } = ChromeUtils.import(
             "resource://testing-common/LoginTestUtils.jsm"
@@ -217,6 +281,8 @@ add_task(async function fill_generated_password_nonempty_field() {
       );
     }
   );
+  LoginTestUtils.clearData();
+  LoginTestUtils.resetGeneratedPasswordsCache();
 });
 
 add_task(async function fill_generated_password_with_matching_logins() {
@@ -234,6 +300,8 @@ add_task(async function fill_generated_password_with_matching_logins() {
   Services.logins.addLogin(login);
   await storageChangedPromised;
 
+  let formFilled = listenForTestNotification("FormProcessed");
+
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -241,9 +309,10 @@ add_task(async function fill_generated_password_with_matching_logins() {
     },
     async function(browser) {
       await SimpleTest.promiseFocus(browser.ownerGlobal);
-      await ContentTask.spawn(
+      await formFilled;
+      await SpecialPowers.spawn(
         browser,
-        [passwordInputSelector],
+        [[passwordInputSelector]],
         function checkInitialFieldValue(inputSelector) {
           is(
             content.document.querySelector(inputSelector).value,
@@ -257,9 +326,9 @@ add_task(async function fill_generated_password_with_matching_logins() {
         browser,
         passwordInputSelector
       );
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        [passwordInputSelector],
+        [[passwordInputSelector]],
         function checkFinalFieldValue(inputSelector) {
           let { LoginTestUtils: LTU } = ChromeUtils.import(
             "resource://testing-common/LoginTestUtils.jsm"
@@ -312,9 +381,9 @@ add_task(async function fill_generated_password_with_matching_logins() {
         browser
       );
 
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        [passwordInputSelector],
+        [[passwordInputSelector]],
         function checkFieldNotGeneratedPassword(inputSelector) {
           let { LoginTestUtils: LTU } = ChromeUtils.import(
             "resource://testing-common/LoginTestUtils.jsm"
@@ -357,9 +426,9 @@ add_task(async function test_edited_generated_password_in_new_tab() {
     },
     async function(browser) {
       await SimpleTest.promiseFocus(browser.ownerGlobal);
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        [passwordInputSelector],
+        [[passwordInputSelector]],
         function checkInitialFieldValue(inputSelector) {
           const input = content.document.querySelector(inputSelector);
           is(input.value.length, 0, "Password field is empty");
@@ -375,9 +444,9 @@ add_task(async function test_edited_generated_password_in_new_tab() {
         browser,
         passwordInputSelector
       );
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        [passwordInputSelector],
+        [[passwordInputSelector]],
         function checkAndEditFieldValue(inputSelector) {
           let { LoginTestUtils: LTU } = ChromeUtils.import(
             "resource://testing-common/LoginTestUtils.jsm"
@@ -429,9 +498,9 @@ add_task(async function test_edited_generated_password_in_new_tab() {
         passwordInputSelector
       );
 
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        [passwordInputSelector],
+        [[passwordInputSelector]],
         function checkAndEditFieldValue(inputSelector) {
           let { LoginTestUtils: LTU } = ChromeUtils.import(
             "resource://testing-common/LoginTestUtils.jsm"
@@ -448,7 +517,7 @@ add_task(async function test_edited_generated_password_in_new_tab() {
     }
   );
 
-  Services.logins.removeAllLogins();
+  LoginTestUtils.clearData();
   LoginTestUtils.resetGeneratedPasswordsCache();
   await SpecialPowers.popPrefEnv();
 });

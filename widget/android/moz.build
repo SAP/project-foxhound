@@ -40,6 +40,7 @@ EXPORTS.mozilla.widget += [
 
 SOURCES += [
     '!GeneratedJNIWrappers.cpp',
+    'MediaKeysEventSourceFactory.cpp',
 ]
 
 UNIFIED_SOURCES += [
@@ -51,6 +52,7 @@ UNIFIED_SOURCES += [
     'EventDispatcher.cpp',
     'GeckoEditableSupport.cpp',
     'GfxInfo.cpp',
+    'ImageDecoderSupport.cpp',
     'nsAndroidProtocolHandler.cpp',
     'nsAppShell.cpp',
     'nsClipboard.cpp',

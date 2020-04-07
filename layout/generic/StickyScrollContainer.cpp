@@ -13,6 +13,7 @@
 
 #include "mozilla/OverflowChangedTracker.h"
 #include "nsIFrame.h"
+#include "nsIFrameInlines.h"
 #include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 
@@ -184,22 +185,29 @@ void StickyScrollContainer::ComputeStickyLimits(nsIFrame* aFrame,
   // Containing block limits for the position of aFrame relative to its parent.
   // The margin box of the sticky element stays within the content box of the
   // contaning-block element.
-  if (cbFrame != scrolledFrame) {
+  if (cbFrame == scrolledFrame) {
+    // cbFrame is the scrolledFrame, and it won't have continuations. Unlike the
+    // else clause, we consider scrollable overflow rect because and the union
+    // of its in-flow rects doesn't include the scrollable overflow area.
+    *aContain = cbFrame->GetScrollableOverflowRectRelativeToSelf();
+    nsLayoutUtils::TransformRect(cbFrame, aFrame->GetParent(), *aContain);
+  } else {
     *aContain = nsLayoutUtils::GetAllInFlowRectsUnion(
         cbFrame, aFrame->GetParent(), nsLayoutUtils::RECTS_USE_CONTENT_BOX);
-    nsRect marginRect = nsLayoutUtils::GetAllInFlowRectsUnion(
-        aFrame, aFrame->GetParent(), nsLayoutUtils::RECTS_USE_MARGIN_BOX);
-
-    // Deflate aContain by the difference between the union of aFrame's
-    // continuations' margin boxes and the union of their border boxes, so that
-    // by keeping aFrame within aContain, we keep the union of the margin boxes
-    // within the containing block's content box.
-    aContain->Deflate(marginRect - rect);
-
-    // Deflate aContain by the border-box size, to form a constraint on the
-    // upper-left corner of aFrame and continuations.
-    aContain->Deflate(nsMargin(0, rect.width, rect.height, 0));
   }
+
+  nsRect marginRect = nsLayoutUtils::GetAllInFlowRectsUnion(
+      aFrame, aFrame->GetParent(), nsLayoutUtils::RECTS_USE_MARGIN_BOX);
+
+  // Deflate aContain by the difference between the union of aFrame's
+  // continuations' margin boxes and the union of their border boxes, so that
+  // by keeping aFrame within aContain, we keep the union of the margin boxes
+  // within the containing block's content box.
+  aContain->Deflate(marginRect - rect);
+
+  // Deflate aContain by the border-box size, to form a constraint on the
+  // upper-left corner of aFrame and continuations.
+  aContain->Deflate(nsMargin(0, rect.width, rect.height, 0));
 
   nsMargin sfPadding = scrolledFrame->GetUsedPadding();
   nsPoint sfOffset = aFrame->GetParent()->GetOffsetTo(scrolledFrame);
@@ -220,12 +228,12 @@ void StickyScrollContainer::ComputeStickyLimits(nsIFrame* aFrame,
                           computedOffsets->bottom - rect.height - sfOffset.y);
   }
 
-  uint8_t direction = cbFrame->StyleVisibility()->mDirection;
+  StyleDirection direction = cbFrame->StyleVisibility()->mDirection;
 
   // Left
   if (computedOffsets->left != NS_AUTOOFFSET &&
       (computedOffsets->right == NS_AUTOOFFSET ||
-       direction == NS_STYLE_DIRECTION_LTR ||
+       direction == StyleDirection::Ltr ||
        rect.width <= sfSize.width - computedOffsets->LeftRight())) {
     aStick->SetLeftEdge(mScrollPosition.x + sfPadding.left +
                         computedOffsets->left - sfOffset.x);
@@ -234,7 +242,7 @@ void StickyScrollContainer::ComputeStickyLimits(nsIFrame* aFrame,
   // Right
   if (computedOffsets->right != NS_AUTOOFFSET &&
       (computedOffsets->left == NS_AUTOOFFSET ||
-       direction == NS_STYLE_DIRECTION_RTL ||
+       direction == StyleDirection::Rtl ||
        rect.width <= sfSize.width - computedOffsets->LeftRight())) {
     aStick->SetRightEdge(mScrollPosition.x + sfPadding.left + sfSize.width -
                          computedOffsets->right - rect.width - sfOffset.x);

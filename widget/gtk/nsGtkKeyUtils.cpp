@@ -18,6 +18,7 @@
 #  include <gdk/gdkkeysyms-compat.h>
 #endif
 #include <X11/XKBlib.h>
+#include "X11UndefineNone.h"
 #include "IMContextWrapper.h"
 #include "WidgetUtils.h"
 #include "keysym2ucs.h"
@@ -27,6 +28,7 @@
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWindow.h"
+#include "gfxPlatformGtk.h"
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/MouseEvents.h"
@@ -346,7 +348,9 @@ KeymapWrapper::KeymapWrapper()
 
   g_object_ref(mGdkKeymap);
 
-  if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) InitXKBExtension();
+  if (gfxPlatformGtk::GetPlatform()->IsX11Display()) {
+    InitXKBExtension();
+  }
 
   Init();
 }
@@ -363,10 +367,13 @@ void KeymapWrapper::Init() {
   mModifierKeys.Clear();
   memset(mModifierMasks, 0, sizeof(mModifierMasks));
 
-  if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) InitBySystemSettingsX11();
+  if (gfxPlatformGtk::GetPlatform()->IsX11Display()) {
+    InitBySystemSettingsX11();
+  }
 #ifdef MOZ_WAYLAND
-  else
+  else {
     InitBySystemSettingsWayland();
+  }
 #endif
 
   gdk_window_add_filter(nullptr, FilterEvents, this);
@@ -767,7 +774,7 @@ void KeymapWrapper::InitBySystemSettingsWayland() {
 
 KeymapWrapper::~KeymapWrapper() {
   gdk_window_remove_filter(nullptr, FilterEvents, this);
-  if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (gfxPlatformGtk::GetPlatform()->IsX11Display()) {
     g_signal_handlers_disconnect_by_func(mGdkKeymap,
                                          FuncToGpointer(OnKeysChanged), this);
     g_signal_handlers_disconnect_by_func(

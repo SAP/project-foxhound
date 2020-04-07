@@ -15,7 +15,7 @@ add_task(async function() {
   );
   let browser = tab.linkedBrowser;
   await BrowserTestUtils.loadURI(browser, PAGE);
-  await promiseStylesheetsUpdated(browser);
+  await promiseStylesheetsLoaded(tab, 17);
 
   let menupopup = document.getElementById("pageStyleMenu").menupopup;
   gPageStyleMenu.fillPopup(menupopup);
@@ -32,9 +32,9 @@ add_task(async function() {
     checked: el.getAttribute("checked") == "true",
   }));
 
-  let validLinks = await ContentTask.spawn(
+  let validLinks = await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
-    items,
+    [items],
     function(contentItems) {
       let contentValidLinks = 0;
       Array.prototype.forEach.call(

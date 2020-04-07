@@ -51,6 +51,17 @@ bool HashableValue::setValue(JSContext* cx, HandleValue v) {
       // Normalize the sign bit of a NaN.
       value = JS::CanonicalizedDoubleValue(d);
     }
+  } else if (v.isBigInt()) {
+    // NurseryKeysVector currently only supports objects, so we must ensure all
+    // BigInt hash-values are tenured. (bug 1608056)
+    RootedBigInt bi(cx, v.toBigInt());
+    if (IsInsideNursery(bi)) {
+      bi = BigInt::copy(cx, bi, gc::TenuredHeap);
+      if (!bi) {
+        return false;
+      }
+    }
+    value = BigIntValue(bi);
   } else {
     value = v;
   }
@@ -125,16 +136,22 @@ HashableValue HashableValue::trace(JSTracer* trc) const {
 namespace {} /* anonymous namespace */
 
 static const JSClassOps MapIteratorObjectClassOps = {
-    nullptr, /* addProperty */
-    nullptr, /* delProperty */
-    nullptr, /* enumerate */
-    nullptr, /* newEnumerate */
-    nullptr, /* resolve */
-    nullptr, /* mayResolve */
-    MapIteratorObject::finalize};
+    nullptr,                      // addProperty
+    nullptr,                      // delProperty
+    nullptr,                      // enumerate
+    nullptr,                      // newEnumerate
+    nullptr,                      // resolve
+    nullptr,                      // mayResolve
+    MapIteratorObject::finalize,  // finalize
+    nullptr,                      // call
+    nullptr,                      // hasInstance
+    nullptr,                      // construct
+    nullptr,                      // trace
+};
 
 static const ClassExtension MapIteratorObjectClassExtension = {
-    MapIteratorObject::objectMoved};
+    MapIteratorObject::objectMoved,  // objectMovedOp
+};
 
 const JSClass MapIteratorObject::class_ = {
     "Map Iterator",
@@ -219,7 +236,7 @@ MapIteratorObject* MapIteratorObject::create(JSContext* cx, HandleObject obj,
     iterobj->setSlot(RangeSlot, PrivateValue(nullptr));
     iterobj->setSlot(KindSlot, Int32Value(int32_t(kind)));
 
-    const size_t size = JS_ROUNDUP(sizeof(ValueMap::Range), gc::CellAlignBytes);
+    const size_t size = RoundUp(sizeof(ValueMap::Range), gc::CellAlignBytes);
     buffer = nursery.allocateBufferSameLocation(iterobj, size);
     if (buffer) {
       break;
@@ -371,17 +388,19 @@ JSObject* MapIteratorObject::createResultPair(JSContext* cx) {
 
 /*** Map ********************************************************************/
 
-const JSClassOps MapObject::classOps_ = {nullptr,  // addProperty
-                                         nullptr,  // delProperty
-                                         nullptr,  // enumerate
-                                         nullptr,  // newEnumerate
-                                         nullptr,  // resolve
-                                         nullptr,  // mayResolve
-                                         finalize,
-                                         nullptr,  // call
-                                         nullptr,  // hasInstance
-                                         nullptr,  // construct
-                                         trace};
+const JSClassOps MapObject::classOps_ = {
+    nullptr,   // addProperty
+    nullptr,   // delProperty
+    nullptr,   // enumerate
+    nullptr,   // newEnumerate
+    nullptr,   // resolve
+    nullptr,   // mayResolve
+    finalize,  // finalize
+    nullptr,   // call
+    nullptr,   // hasInstance
+    nullptr,   // construct
+    trace,     // trace
+};
 
 const ClassSpec MapObject::classSpec_ = {
     GenericCreateConstructor<MapObject::construct, 0, gc::AllocKind::FUNCTION>,
@@ -442,7 +461,7 @@ void MapObject::trace(JSTracer* trc, JSObject* obj) {
 }
 
 struct js::UnbarrieredHashPolicy {
-  typedef Value Lookup;
+  using Lookup = Value;
   static HashNumber hash(const Lookup& v,
                          const mozilla::HashCodeScrambler& hcs) {
     return HashValue(v, hcs);
@@ -513,6 +532,7 @@ template <typename ObjectT>
 inline static MOZ_MUST_USE bool WriteBarrierPostImpl(ObjectT* obj,
                                                      const Value& keyValue) {
   if (MOZ_LIKELY(!keyValue.isObject())) {
+    MOZ_ASSERT_IF(keyValue.isGCThing(), !IsInsideNursery(keyValue.toGCThing()));
     return true;
   }
 
@@ -907,16 +927,22 @@ bool MapObject::clear(JSContext* cx, HandleObject obj) {
 /*** SetIterator ************************************************************/
 
 static const JSClassOps SetIteratorObjectClassOps = {
-    nullptr, /* addProperty */
-    nullptr, /* delProperty */
-    nullptr, /* enumerate */
-    nullptr, /* newEnumerate */
-    nullptr, /* resolve */
-    nullptr, /* mayResolve */
-    SetIteratorObject::finalize};
+    nullptr,                      // addProperty
+    nullptr,                      // delProperty
+    nullptr,                      // enumerate
+    nullptr,                      // newEnumerate
+    nullptr,                      // resolve
+    nullptr,                      // mayResolve
+    SetIteratorObject::finalize,  // finalize
+    nullptr,                      // call
+    nullptr,                      // hasInstance
+    nullptr,                      // construct
+    nullptr,                      // trace
+};
 
 static const ClassExtension SetIteratorObjectClassExtension = {
-    SetIteratorObject::objectMoved};
+    SetIteratorObject::objectMoved,  // objectMovedOp
+};
 
 const JSClass SetIteratorObject::class_ = {
     "Set Iterator",
@@ -992,7 +1018,7 @@ SetIteratorObject* SetIteratorObject::create(JSContext* cx, HandleObject obj,
     iterobj->setSlot(RangeSlot, PrivateValue(nullptr));
     iterobj->setSlot(KindSlot, Int32Value(int32_t(kind)));
 
-    const size_t size = JS_ROUNDUP(sizeof(ValueSet::Range), gc::CellAlignBytes);
+    const size_t size = RoundUp(sizeof(ValueSet::Range), gc::CellAlignBytes);
     buffer = nursery.allocateBufferSameLocation(iterobj, size);
     if (buffer) {
       break;
@@ -1121,17 +1147,19 @@ JSObject* SetIteratorObject::createResult(JSContext* cx) {
 
 /*** Set ********************************************************************/
 
-const JSClassOps SetObject::classOps_ = {nullptr,  // addProperty
-                                         nullptr,  // delProperty
-                                         nullptr,  // enumerate
-                                         nullptr,  // newEnumerate
-                                         nullptr,  // resolve
-                                         nullptr,  // mayResolve
-                                         finalize,
-                                         nullptr,  // call
-                                         nullptr,  // hasInstance
-                                         nullptr,  // construct
-                                         trace};
+const JSClassOps SetObject::classOps_ = {
+    nullptr,   // addProperty
+    nullptr,   // delProperty
+    nullptr,   // enumerate
+    nullptr,   // newEnumerate
+    nullptr,   // resolve
+    nullptr,   // mayResolve
+    finalize,  // finalize
+    nullptr,   // call
+    nullptr,   // hasInstance
+    nullptr,   // construct
+    trace,     // trace
+};
 
 const ClassSpec SetObject::classSpec_ = {
     GenericCreateConstructor<SetObject::construct, 0, gc::AllocKind::FUNCTION>,
@@ -1304,7 +1332,7 @@ bool SetObject::construct(JSContext* cx, unsigned argc, Value* vp) {
       RootedValue keyVal(cx);
       Rooted<HashableValue> key(cx);
       ValueSet* set = obj->getData();
-      ArrayObject* array = &iterable.toObject().as<ArrayObject>();
+      RootedArrayObject array(cx, &iterable.toObject().as<ArrayObject>());
       for (uint32_t index = 0; index < array->getDenseInitializedLength();
            ++index) {
         keyVal.set(array->getDenseElement(index));
@@ -1313,7 +1341,7 @@ bool SetObject::construct(JSContext* cx, unsigned argc, Value* vp) {
         if (!key.setValue(cx, keyVal)) {
           return false;
         }
-        if (!WriteBarrierPost(obj, keyVal) || !set->put(key)) {
+        if (!WriteBarrierPost(obj, key.value()) || !set->put(key)) {
           ReportOutOfMemory(cx);
           return false;
         }

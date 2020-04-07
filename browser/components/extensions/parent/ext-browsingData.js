@@ -6,35 +6,19 @@
 
 "use strict";
 
-var { PlacesUtils } = ChromeUtils.import(
-  "resource://gre/modules/PlacesUtils.jsm"
+var { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Preferences",
-  "resource://gre/modules/Preferences.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Sanitizer",
-  "resource:///modules/Sanitizer.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "setTimeout",
-  "resource://gre/modules/Timer.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "ServiceWorkerCleanUp",
-  "resource://gre/modules/ServiceWorkerCleanUp.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  LoginHelper: "resource://gre/modules/LoginHelper.jsm",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
+  Preferences: "resource://gre/modules/Preferences.jsm",
+  Sanitizer: "resource:///modules/Sanitizer.jsm",
+  Services: "resource://gre/modules/Services.jsm",
+  setTimeout: "resource://gre/modules/Timer.jsm",
+  ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.jsm",
+});
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -67,7 +51,7 @@ const clearCookies = async function(options) {
 
   if (options.since || options.hostnames) {
     // Iterate through the cookies and delete any created after our cutoff.
-    for (const cookie of cookieMgr.enumerator) {
+    for (const cookie of cookieMgr.cookies) {
       if (
         (!options.since ||
           cookie.creationTime >= PlacesUtils.toPRTime(options.since)) &&
@@ -191,24 +175,34 @@ const clearLocalStorage = async function(options) {
           let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
             item.origin
           );
-          let host = principal.URI.hostPort;
-          if (!options.hostnames || options.hostnames.includes(host)) {
-            promises.push(
-              new Promise((resolve, reject) => {
-                let clearRequest = quotaManagerService.clearStoragesForPrincipal(
-                  principal,
-                  "default",
-                  "ls"
-                );
-                clearRequest.callback = () => {
-                  if (clearRequest.resultCode == Cr.NS_OK) {
-                    resolve();
-                  } else {
-                    reject({ message: "Clear localStorage failed" });
-                  }
-                };
-              })
-            );
+          // Consistently to removeIndexedDB and the API documentation for
+          // removeLocalStorage, we should only clear the data stored by
+          // regular websites, on the contrary we shouldn't clear data stored
+          // by browser components (like about:newtab) or other extensions.
+          if (
+            principal.schemeIs("http") ||
+            principal.schemeIs("https") ||
+            principal.schemeIs("file")
+          ) {
+            let host = principal.URI.hostPort;
+            if (!options.hostnames || options.hostnames.includes(host)) {
+              promises.push(
+                new Promise((resolve, reject) => {
+                  let clearRequest = quotaManagerService.clearStoragesForPrincipal(
+                    principal,
+                    "default",
+                    "ls"
+                  );
+                  clearRequest.callback = () => {
+                    if (clearRequest.resultCode == Cr.NS_OK) {
+                      resolve();
+                    } else {
+                      reject({ message: "Clear localStorage failed" });
+                    }
+                  };
+                })
+              );
+            }
           }
         }
 
@@ -221,24 +215,17 @@ const clearLocalStorage = async function(options) {
 };
 
 const clearPasswords = async function(options) {
-  let loginManager = Services.logins;
   let yieldCounter = 0;
 
-  if (options.since) {
-    // Iterate through the logins and delete any updated after our cutoff.
-    let logins = loginManager.getAllLogins();
-    for (let login of logins) {
-      login.QueryInterface(Ci.nsILoginMetaInfo);
-      if (login.timePasswordChanged >= options.since) {
-        loginManager.removeLogin(login);
-        if (++yieldCounter % YIELD_PERIOD == 0) {
-          await new Promise(resolve => setTimeout(resolve, 0)); // Don't block the main thread too long.
-        }
+  // Iterate through the logins and delete any updated after our cutoff.
+  for (let login of await LoginHelper.getAllUserFacingLogins()) {
+    login.QueryInterface(Ci.nsILoginMetaInfo);
+    if (!options.since || login.timePasswordChanged >= options.since) {
+      Services.logins.removeLogin(login);
+      if (++yieldCounter % YIELD_PERIOD == 0) {
+        await new Promise(resolve => setTimeout(resolve, 0)); // Don't block the main thread too long.
       }
     }
-  } else {
-    // Remove everything.
-    loginManager.removeAllLogins();
   }
 };
 

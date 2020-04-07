@@ -106,7 +106,8 @@ class TransactionBuilder final {
 
   void UpdateDynamicProperties(
       const nsTArray<wr::WrOpacityProperty>& aOpacityArray,
-      const nsTArray<wr::WrTransformProperty>& aTransformArray);
+      const nsTArray<wr::WrTransformProperty>& aTransformArray,
+      const nsTArray<wr::WrColorProperty>& aColorArray);
 
   void SetDocumentView(const LayoutDeviceIntRect& aDocRect);
 
@@ -179,6 +180,8 @@ class TransactionBuilder final {
 
   void DeleteFontInstance(wr::FontInstanceKey aKey);
 
+  void UpdateQualitySettings(bool aAllowSacrificingSubpixelAA);
+
   void Notify(wr::Checkpoint aWhen, UniquePtr<NotificationHandler> aHandler);
 
   void Clear();
@@ -202,7 +205,7 @@ class TransactionWrapper final {
       const layers::ScrollableLayerGuid::ViewID& aScrollId,
       const wr::LayoutPoint& aScrollPosition);
   void UpdatePinchZoom(float aZoom);
-  void UpdateIsTransformPinchZooming(uint64_t aAnimationId, bool aIsZooming);
+  void UpdateIsTransformAsyncZooming(uint64_t aAnimationId, bool aIsZooming);
 
  private:
   Transaction* mTxn;
@@ -232,7 +235,7 @@ class WebRenderAPI final {
 
   bool HitTest(const wr::WorldPoint& aPoint, wr::WrPipelineId& aOutPipelineId,
                layers::ScrollableLayerGuid::ViewID& aOutScrollId,
-               gfx::CompositorHitTestInfo& aOutHitInfo);
+               gfx::CompositorHitTestInfo& aOutHitInfo, SideBits& aOutSideBits);
 
   void SendTransaction(TransactionBuilder& aTxn);
 
@@ -245,6 +248,9 @@ class WebRenderAPI final {
                 const Range<uint8_t>& aBuffer);
 
   void ClearAllCaches();
+  void EnableNativeCompositor(bool aEnable);
+  void EnableMultithreading(bool aEnable);
+  void SetBatchingLookback(uint32_t aCount);
 
   void Pause();
   bool Resume();
@@ -269,12 +275,25 @@ class WebRenderAPI final {
   void SetCompositionRecorder(
       UniquePtr<layers::WebRenderCompositionRecorder> aRecorder);
 
+  typedef MozPromise<bool, nsresult, true> WriteCollectedFramesPromise;
+  typedef MozPromise<layers::CollectedFrames, nsresult, true>
+      GetCollectedFramesPromise;
+
   /**
    * Write the frames collected by the |WebRenderCompositionRecorder| to disk.
    *
    * If there is not currently a recorder, this is a no-op.
    */
-  void WriteCollectedFrames();
+  RefPtr<WriteCollectedFramesPromise> WriteCollectedFrames();
+
+  /**
+   * Return the frames collected by the |WebRenderCompositionRecorder| encoded
+   * as data URIs.
+   *
+   * If there is not currently a recorder, this is a no-op and the promise will
+   * be rejected.
+   */
+  RefPtr<GetCollectedFramesPromise> GetCollectedFrames();
 
  protected:
   WebRenderAPI(wr::DocumentHandle* aHandle, wr::WindowId aId,
@@ -295,7 +314,6 @@ class WebRenderAPI final {
   bool mUseDComp;
   bool mUseTripleBuffering;
   layers::SyncHandle mSyncHandle;
-  wr::DebugFlags mDebugFlags;
   wr::RenderRoot mRenderRoot;
 
   // We maintain alive the root api to know when to shut the render backend
@@ -344,7 +362,7 @@ struct MOZ_STACK_CLASS StackingContextParams : public WrStackingContextParams {
             wr::TransformStyle::Flat,
             wr::WrReferenceFrameKind::Transform,
             nullptr,
-            /* prim_flags = */ wr::PrimitiveFlags_IS_BACKFACE_VISIBLE,
+            /* prim_flags = */ wr::PrimitiveFlags::IS_BACKFACE_VISIBLE,
             /* cache_tiles = */ false,
             wr::MixBlendMode::Normal,
             /* is_backdrop_root = */ false} {}
@@ -385,8 +403,10 @@ class DisplayListBuilder final {
   void Save();
   void Restore();
   void ClearSave();
+
   usize Dump(usize aIndent, const Maybe<usize>& aStart,
              const Maybe<usize>& aEnd);
+  void DumpSerializedDisplayList();
 
   void Finalize(wr::LayoutSize& aOutContentSizes,
                 wr::BuiltDisplayList& aOutDisplayList);
@@ -443,6 +463,10 @@ class DisplayListBuilder final {
 
   void PushRect(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
                 bool aIsBackfaceVisible, const wr::ColorF& aColor);
+  void PushRectWithAnimation(const wr::LayoutRect& aBounds,
+                             const wr::LayoutRect& aClip,
+                             bool aIsBackfaceVisible, const wr::ColorF& aColor,
+                             const WrAnimationProperty* aAnimation);
   void PushRoundedRect(const wr::LayoutRect& aBounds,
                        const wr::LayoutRect& aClip, bool aIsBackfaceVisible,
                        const wr::ColorF& aColor);
@@ -475,6 +499,14 @@ class DisplayListBuilder final {
                           wr::ExtendMode aExtendMode,
                           const wr::LayoutSize aTileSize,
                           const wr::LayoutSize aTileSpacing);
+
+  void PushConicGradient(const wr::LayoutRect& aBounds,
+                         const wr::LayoutRect& aClip, bool aIsBackfaceVisible,
+                         const wr::LayoutPoint& aCenter, const float aAngle,
+                         const nsTArray<wr::GradientStop>& aStops,
+                         wr::ExtendMode aExtendMode,
+                         const wr::LayoutSize aTileSize,
+                         const wr::LayoutSize aTileSpacing);
 
   void PushImage(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
                  bool aIsBackfaceVisible, wr::ImageRendering aFilter,
@@ -540,6 +572,13 @@ class DisplayListBuilder final {
       const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
       const wr::LayoutSideOffsets& aOutset);
 
+  void PushBorderConicGradient(
+      const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+      bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths, bool aFill,
+      const wr::LayoutPoint& aCenter, const float aAngle,
+      const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
+      const wr::LayoutSideOffsets& aOutset);
+
   void PushText(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
                 bool aIsBackfaceVisible, const wr::ColorF& aColor,
                 wr::FontInstanceKey aFontKey,
@@ -563,9 +602,20 @@ class DisplayListBuilder final {
                      const wr::BorderRadius& aBorderRadius,
                      const wr::BoxShadowClipMode& aClipMode);
 
+  void StartCachedItem(wr::ItemKey aKey);
+  bool EndCachedItem(wr::ItemKey aKey);
+  void ReuseItem(wr::ItemKey aKey);
+  void SetDisplayListCacheSize(const size_t aCacheSize);
+
   uint64_t CurrentClipChainId() const {
     return mCurrentSpaceAndClipChain.clip_chain;
   }
+
+  const wr::WrSpaceAndClipChain& CurrentSpaceAndClipChain() const {
+    return mCurrentSpaceAndClipChain;
+  }
+
+  const wr::PipelineId& CurrentPipelineId() const { return mPipelineId; }
 
   // Checks to see if the innermost enclosing fixed pos item has the same
   // ASR. If so, it returns the scroll target for that fixed-pos item.
@@ -573,10 +623,12 @@ class DisplayListBuilder final {
   Maybe<layers::ScrollableLayerGuid::ViewID> GetContainingFixedPosScrollTarget(
       const ActiveScrolledRoot* aAsr);
 
+  Maybe<SideBits> GetContainingFixedPosSideBits(const ActiveScrolledRoot* aAsr);
+
   // Set the hit-test info to be used for all display items until the next call
   // to SetHitTestInfo or ClearHitTestInfo.
   void SetHitTestInfo(const layers::ScrollableLayerGuid::ViewID& aScrollId,
-                      gfx::CompositorHitTestInfo aHitInfo);
+                      gfx::CompositorHitTestInfo aHitInfo, SideBits aSideBits);
   // Clears the hit-test info so that subsequent display items will not have it.
   void ClearHitTestInfo();
 
@@ -593,23 +645,26 @@ class DisplayListBuilder final {
     mClipChainLeaf = aClipRect;
   }
 
-  // A chain of RAII objects, each holding a (ASR, ViewID) tuple of data. The
-  // topmost object is pointed to by the mActiveFixedPosTracker pointer in
-  // the wr::DisplayListBuilder.
+  // A chain of RAII objects, each holding a (ASR, ViewID, SideBits) tuple of
+  // data. The topmost object is pointed to by the mActiveFixedPosTracker
+  // pointer in the wr::DisplayListBuilder.
   class MOZ_RAII FixedPosScrollTargetTracker final {
    public:
     FixedPosScrollTargetTracker(DisplayListBuilder& aBuilder,
                                 const ActiveScrolledRoot* aAsr,
-                                layers::ScrollableLayerGuid::ViewID aScrollId);
+                                layers::ScrollableLayerGuid::ViewID aScrollId,
+                                SideBits aSideBits);
     ~FixedPosScrollTargetTracker();
     Maybe<layers::ScrollableLayerGuid::ViewID> GetScrollTargetForASR(
         const ActiveScrolledRoot* aAsr);
+    Maybe<SideBits> GetSideBitsForASR(const ActiveScrolledRoot* aAsr);
 
    private:
     FixedPosScrollTargetTracker* mParentTracker;
     DisplayListBuilder& mBuilder;
     const ActiveScrolledRoot* mAsr;
     layers::ScrollableLayerGuid::ViewID mScrollId;
+    SideBits mSideBits;
   };
 
  protected:

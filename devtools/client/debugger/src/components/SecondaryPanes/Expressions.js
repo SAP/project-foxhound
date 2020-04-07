@@ -19,7 +19,7 @@ import {
   getThreadContext,
 } from "../../selectors";
 import { getValue } from "../../utils/expressions";
-import { createObjectClient } from "../../client/firefox";
+import { getGrip, getFront } from "../../utils/evaluation-result";
 
 import { CloseButton } from "../shared/Button";
 import { debounce } from "lodash";
@@ -53,7 +53,6 @@ type Props = {
   clearAutocomplete: typeof actions.clearAutocomplete,
   addExpression: typeof actions.addExpression,
   clearExpressionError: typeof actions.clearExpressionError,
-  evaluateExpressions: typeof actions.evaluateExpressions,
   updateExpression: typeof actions.updateExpression,
   deleteExpression: typeof actions.deleteExpression,
   openLink: typeof actions.openLink,
@@ -81,11 +80,7 @@ class Expressions extends Component<Props, State> {
   }
 
   componentDidMount() {
-    const { cx, expressions, evaluateExpressions, showInput } = this.props;
-
-    if (expressions.length > 0) {
-      evaluateExpressions(cx);
-    }
+    const { showInput } = this.props;
 
     // Ensures that the input is focused when the "+"
     // is clicked while the panel is collapsed
@@ -97,7 +92,7 @@ class Expressions extends Component<Props, State> {
   clear = () => {
     this.setState(() => {
       this.props.clearExpressionError();
-      return { editing: false, editIndex: -1, inputValue: "" };
+      return { editing: false, editIndex: -1, inputValue: "", focused: false };
     });
   };
 
@@ -251,30 +246,35 @@ class Expressions extends Component<Props, State> {
       return;
     }
 
-    const { value } = getValue(expression);
+    let value = getValue(expression);
+    let front = null;
+    if (value && value.unavailable !== true) {
+      value = getGrip(value);
+      front = getFront(value);
+    }
 
     const root = {
       name: expression.input,
       path: input,
-      contents: { value },
+      contents: {
+        value,
+        front,
+      },
     };
 
     return (
-      <li
-        className="expression-container"
-        key={input}
-        title={expression.input}
-        onDoubleClick={(items, options) =>
-          this.editExpression(expression, index)
-        }
-      >
+      <li className="expression-container" key={input} title={expression.input}>
         <div className="expression-content">
           <ObjectInspector
             roots={[root]}
             autoExpandDepth={0}
             disableWrap={true}
             openLink={openLink}
-            createObjectClient={grip => createObjectClient(grip)}
+            onDoubleClick={(items, { depth }) => {
+              if (depth === 0) {
+                this.editExpression(expression, index);
+              }
+            }}
             onDOMNodeClick={grip => openElementInInspector(grip)}
             onInspectIconClick={grip => openElementInInspector(grip)}
             onDOMNodeMouseOver={grip => highlightDomElement(grip)}
@@ -331,9 +331,9 @@ class Expressions extends Component<Props, State> {
             onFocus={this.onFocus}
             value={!editing ? inputValue : ""}
             ref={c => (this._input = c)}
-            {...features.autocompleteExpression && {
+            {...(features.autocompleteExpression && {
               list: "autocomplete-matches",
-            }}
+            })}
           />
           {this.renderAutoCompleteMatches()}
           <input type="submit" style={{ display: "none" }} />
@@ -367,9 +367,9 @@ class Expressions extends Component<Props, State> {
             onFocus={this.onFocus}
             value={editing ? inputValue : expression.input}
             ref={c => (this._input = c)}
-            {...features.autocompleteExpression && {
+            {...(features.autocompleteExpression && {
               list: "autocomplete-matches",
-            }}
+            })}
           />
           {this.renderAutoCompleteMatches()}
           <input type="submit" style={{ display: "none" }} />
@@ -404,7 +404,6 @@ export default connect<Props, OwnProps, _, _, _, _>(
     clearAutocomplete: actions.clearAutocomplete,
     addExpression: actions.addExpression,
     clearExpressionError: actions.clearExpressionError,
-    evaluateExpressions: actions.evaluateExpressions,
     updateExpression: actions.updateExpression,
     deleteExpression: actions.deleteExpression,
     openLink: actions.openLink,

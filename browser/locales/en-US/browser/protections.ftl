@@ -20,6 +20,11 @@ graph-total-tracker-summary =
     *[other] <b>{ $count }</b> trackers blocked since { DATETIME($earliestDate, day: "numeric", month: "long", year: "numeric") }
   }
 
+# Text displayed instead of the graph when in Private Mode
+graph-private-window = { -brand-short-name } continues to  block trackers in Private Windows, but does not keep a record of what was blocked.
+# Weekly summary of the graph when the graph is empty in Private Mode
+graph-week-summary-private-window = Trackers { -brand-short-name } blocked this week
+
 # The terminology used to refer to categories of Content Blocking is also used in chrome/browser/browser.properties and should be translated consistently.
 # "Standard" in this case is an adjective, meaning "default" or "normal".
 # The category name in the <b> tag will be bold.
@@ -34,6 +39,8 @@ protection-report-content-title = Privacy Protections
 
 etp-card-title = Enhanced Tracking Protection
 etp-card-content = Trackers follow you around online to collect information about your browsing habits and interests. { -brand-short-name } blocks many of these trackers and other malicious scripts.
+protection-report-etp-card-content-custom-not-blocking = All protections are currently turned off. Choose which trackers to block by managing your { -brand-short-name } protections settings.
+protection-report-manage-protections = Manage Settings
 
 # This string is used to label the X axis of a graph. Other days of the week are generated via Intl.DateTimeFormat,
 # capitalization for this string should match the output for your locale.
@@ -57,13 +64,19 @@ fingerprinter-tab-content = Fingerprinters collect settings from your browser an
 cryptominer-tab-title = Cryptominers
 cryptominer-tab-content = Cryptominers use your system’s computing power to mine digital money. Cryptomining scripts drain your battery, slow down your computer, and can increase your energy bill. <a data-l10n-name="learn-more-link">Learn more</a>
 
+mobile-app-title = Block ad trackers across more devices
+mobile-app-card-content = Use the mobile browser with built-in protection against ad tracking. 
+mobile-app-links = { -brand-product-name } Browser for <a data-l10n-name="android-mobile-inline-link">Android</a> and <a data-l10n-name="ios-mobile-inline-link">iOS</a>
+
 lockwise-title = Never forget a password again
 lockwise-title-logged-in = { -lockwise-brand-name }
 lockwise-header-content = { -lockwise-brand-name } securely stores your passwords in your browser.
 lockwise-header-content-logged-in = Securely store and sync your passwords to all your devices.
 protection-report-view-logins-button = View Logins
   .title = Go to Saved Logins
-lockwise-no-logins-content = Get the <a data-l10n-name="lockwise-inline-link">{ -lockwise-brand-name }</a> app to take your passwords everywhere.
+lockwise-mobile-app-title = Take your passwords everywhere
+lockwise-no-logins-card-content = Use passwords saved in { -brand-short-name } on any device.
+lockwise-app-links = { -lockwise-brand-name } for <a data-l10n-name="lockwise-android-inline-link">Android</a> and <a data-l10n-name="lockwise-ios-inline-link">iOS</a>
 
 # This string is displayed after a large numeral that indicates the total number
 # of email addresses being monitored. Don’t add $count to
@@ -77,16 +90,15 @@ lockwise-passwords-stored =
 turn-on-sync = Turn on { -sync-brand-short-name }…
   .title = Go to sync preferences
 
-manage-devices = Manage devices
+manage-connected-devices = Manage devices…
 
 # Variables:
 #   $count (Number) - Number of devices connected with sync.
-lockwise-sync-status =
+lockwise-connected-device-status =
   { $count ->
-     [one] Syncing to { $count } other device
-    *[other] Syncing to { $count } other devices
+     [one] Connected to { $count } device
+    *[other] Connected to { $count } devices
   }
-lockwise-sync-not-syncing-devices = Not syncing to other devices
 
 monitor-title = Look out for data breaches
 monitor-link = How it works

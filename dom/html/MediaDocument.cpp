@@ -8,11 +8,9 @@
 #include "nsGkAtoms.h"
 #include "nsRect.h"
 #include "nsPresContext.h"
-#include "nsIScrollable.h"
 #include "nsViewManager.h"
 #include "nsITextToSubURI.h"
 #include "nsIURL.h"
-#include "nsIContentViewer.h"
 #include "nsIDocShell.h"
 #include "nsCharsetSource.h"  // kCharsetFrom* macro definition
 #include "nsNodeInfoManager.h"
@@ -115,19 +113,11 @@ const char* const MediaDocument::sFormatNames[4] = {
 
 MediaDocument::MediaDocument()
     : nsHTMLDocument(), mDidInitialDocumentSetup(false) {}
-MediaDocument::~MediaDocument() {}
+MediaDocument::~MediaDocument() = default;
 
 nsresult MediaDocument::Init() {
   nsresult rv = nsHTMLDocument::Init();
   NS_ENSURE_SUCCESS(rv, rv);
-
-  // Create a bundle for the localization
-  nsCOMPtr<nsIStringBundleService> stringService =
-      mozilla::services::GetStringBundleService();
-  if (stringService) {
-    stringService->CreateBundle(NSMEDIADOCUMENT_PROPERTIES_URI,
-                                getter_AddRefs(mStringBundle));
-  }
 
   mIsSyntheticDocument = true;
 
@@ -327,6 +317,37 @@ nsresult MediaDocument::LinkScript(const nsAString& aScript) {
   return head->AppendChildTo(script, false);
 }
 
+void MediaDocument::FormatStringFromName(const char* aName,
+                                         const nsTArray<nsString>& aParams,
+                                         nsAString& aResult) {
+  bool spoofLocale = nsContentUtils::SpoofLocaleEnglish() && !AllowsL10n();
+  if (!spoofLocale) {
+    if (!mStringBundle) {
+      nsCOMPtr<nsIStringBundleService> stringService =
+          mozilla::services::GetStringBundleService();
+      if (stringService) {
+        stringService->CreateBundle(NSMEDIADOCUMENT_PROPERTIES_URI,
+                                    getter_AddRefs(mStringBundle));
+      }
+    }
+    if (mStringBundle) {
+      mStringBundle->FormatStringFromName(aName, aParams, aResult);
+    }
+  } else {
+    if (!mStringBundleEnglish) {
+      nsCOMPtr<nsIStringBundleService> stringService =
+          mozilla::services::GetStringBundleService();
+      if (stringService) {
+        stringService->CreateBundle(NSMEDIADOCUMENT_PROPERTIES_URI_en_US,
+                                    getter_AddRefs(mStringBundleEnglish));
+      }
+    }
+    if (mStringBundleEnglish) {
+      mStringBundleEnglish->FormatStringFromName(aName, aParams, aResult);
+    }
+  }
+}
+
 void MediaDocument::UpdateTitleAndCharset(const nsACString& aTypeStr,
                                           nsIChannel* aChannel,
                                           const char* const* aFormatNames,
@@ -338,35 +359,29 @@ void MediaDocument::UpdateTitleAndCharset(const nsACString& aTypeStr,
   NS_ConvertASCIItoUTF16 typeStr(aTypeStr);
   nsAutoString title;
 
-  if (mStringBundle) {
-    // if we got a valid size (not all media have a size)
-    if (aWidth != 0 && aHeight != 0) {
-      nsAutoString widthStr;
-      nsAutoString heightStr;
-      widthStr.AppendInt(aWidth);
-      heightStr.AppendInt(aHeight);
-      // If we got a filename, display it
-      if (!fileStr.IsEmpty()) {
-        AutoTArray<nsString, 4> formatStrings = {fileStr, typeStr, widthStr,
-                                                 heightStr};
-        mStringBundle->FormatStringFromName(aFormatNames[eWithDimAndFile],
-                                            formatStrings, title);
-      } else {
-        AutoTArray<nsString, 3> formatStrings = {typeStr, widthStr, heightStr};
-        mStringBundle->FormatStringFromName(aFormatNames[eWithDim],
-                                            formatStrings, title);
-      }
+  // if we got a valid size (not all media have a size)
+  if (aWidth != 0 && aHeight != 0) {
+    nsAutoString widthStr;
+    nsAutoString heightStr;
+    widthStr.AppendInt(aWidth);
+    heightStr.AppendInt(aHeight);
+    // If we got a filename, display it
+    if (!fileStr.IsEmpty()) {
+      AutoTArray<nsString, 4> formatStrings = {fileStr, typeStr, widthStr,
+                                               heightStr};
+      FormatStringFromName(aFormatNames[eWithDimAndFile], formatStrings, title);
     } else {
-      // If we got a filename, display it
-      if (!fileStr.IsEmpty()) {
-        AutoTArray<nsString, 2> formatStrings = {fileStr, typeStr};
-        mStringBundle->FormatStringFromName(aFormatNames[eWithFile],
-                                            formatStrings, title);
-      } else {
-        AutoTArray<nsString, 1> formatStrings = {typeStr};
-        mStringBundle->FormatStringFromName(aFormatNames[eWithNoInfo],
-                                            formatStrings, title);
-      }
+      AutoTArray<nsString, 3> formatStrings = {typeStr, widthStr, heightStr};
+      FormatStringFromName(aFormatNames[eWithDim], formatStrings, title);
+    }
+  } else {
+    // If we got a filename, display it
+    if (!fileStr.IsEmpty()) {
+      AutoTArray<nsString, 2> formatStrings = {fileStr, typeStr};
+      FormatStringFromName(aFormatNames[eWithFile], formatStrings, title);
+    } else {
+      AutoTArray<nsString, 1> formatStrings = {typeStr};
+      FormatStringFromName(aFormatNames[eWithNoInfo], formatStrings, title);
     }
   }
 
@@ -379,8 +394,7 @@ void MediaDocument::UpdateTitleAndCharset(const nsACString& aTypeStr,
     AutoTArray<nsString, 2> formatStrings;
     formatStrings.AppendElement(title);
     formatStrings.AppendElement(aStatus);
-    mStringBundle->FormatStringFromName("TitleWithStatus", formatStrings,
-                                        titleWithStatus);
+    FormatStringFromName("TitleWithStatus", formatStrings, titleWithStatus);
     SetTitle(titleWithStatus, IgnoreErrors());
   }
 }

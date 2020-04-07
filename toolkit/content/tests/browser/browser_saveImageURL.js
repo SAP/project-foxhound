@@ -34,7 +34,7 @@ add_task(async function preferred_API() {
       url: IMAGE_PAGE,
     },
     async function(browser) {
-      let url = await ContentTask.spawn(browser, null, async function() {
+      let url = await SpecialPowers.spawn(browser, [], async function() {
         let image = content.document.getElementById("image");
         return image.href;
       });
@@ -48,12 +48,12 @@ add_task(async function preferred_API() {
         false,
         null,
         null,
-        null,
+        "image/jpeg",
         null,
         false,
         gBrowser.contentPrincipal
       );
-      await ContentTask.spawn(gBrowser.selectedBrowser, null, async () => {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
         let channel = docShell.currentDocumentChannel;
         if (channel) {
           todo(
@@ -88,7 +88,7 @@ add_task(async function deprecated_API() {
     async function(browser) {
       await pushPrefs([PREF_UNSAFE_FORBIDDEN, false]);
 
-      let url = await ContentTask.spawn(browser, null, async function() {
+      let url = await SpecialPowers.spawn(browser, [], async function() {
         let image = content.document.getElementById("image");
         return image.href;
       });
@@ -98,7 +98,7 @@ add_task(async function deprecated_API() {
       // pass the XUL document instead to test this interface.
       let doc = document;
 
-      await ContentTask.spawn(gBrowser.selectedBrowser, null, async () => {
+      await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
         let channel = docShell.currentDocumentChannel;
         if (channel) {
           todo(
@@ -114,7 +114,17 @@ add_task(async function deprecated_API() {
         }
       });
       let filePickerPromise = waitForFilePicker();
-      saveImageURL(url, "image.jpg", null, true, false, null, doc, null, null);
+      saveImageURL(
+        url,
+        "image.jpg",
+        null,
+        true,
+        false,
+        null,
+        doc,
+        "image/jpeg",
+        null
+      );
       await filePickerPromise;
     }
   );

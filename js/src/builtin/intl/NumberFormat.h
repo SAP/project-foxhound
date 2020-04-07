@@ -12,13 +12,10 @@
 #include <stdint.h>
 
 #include "builtin/SelfHostingDefines.h"
-#include "gc/Barrier.h"
 #include "js/Class.h"
 #include "vm/NativeObject.h"
-#include "vm/Runtime.h"
 
 struct UFormattedNumber;
-struct UFormattedValue;
 struct UNumberFormatter;
 
 namespace js {
@@ -36,6 +33,9 @@ class NumberFormatObject : public NativeObject {
   static_assert(INTERNALS_SLOT == INTL_INTERNALS_OBJECT_SLOT,
                 "INTERNALS_SLOT must match self-hosting define for internals "
                 "object slot");
+
+  // Estimated memory use for UNumberFormatter and UFormattedNumber.
+  static constexpr size_t EstimatedMemoryUse = 750;
 
   UNumberFormatter* getNumberFormatter() const {
     const auto& slot = getFixedSlot(UNUMBER_FORMATTER_SLOT);
@@ -94,7 +94,8 @@ extern MOZ_MUST_USE bool intl_numberingSystem(JSContext* cx, unsigned argc,
  *
  * Spec: ECMAScript Internationalization API Specification, 11.3.2.
  *
- * Usage: formatted = intl_FormatNumber(numberFormat, x, formatToParts)
+ * Usage: formatted = intl_FormatNumber(numberFormat, x, formatToParts,
+ *                                      unitStyle)
  */
 extern MOZ_MUST_USE bool intl_FormatNumber(JSContext* cx, unsigned argc,
                                            Value* vp);
@@ -269,15 +270,6 @@ class MOZ_STACK_CLASS NumberFormatterSkeleton final {
    */
   MOZ_MUST_USE bool roundingModeHalfUp();
 };
-
-using FieldType = js::ImmutablePropertyNamePtr JSAtomState::*;
-
-#ifndef U_HIDE_DRAFT_API
-MOZ_MUST_USE bool FormattedNumberToParts(JSContext* cx,
-                                         const UFormattedValue* formattedValue,
-                                         HandleValue number, FieldType unitType,
-                                         MutableHandleValue result);
-#endif
 
 }  // namespace intl
 }  // namespace js

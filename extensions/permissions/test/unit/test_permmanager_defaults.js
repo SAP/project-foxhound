@@ -57,9 +57,11 @@ add_task(async function do_test() {
   // This will force the permission-manager to reload the data.
   Services.obs.notifyObservers(null, "testonly-reload-permissions-from-disk");
 
-  let pm = Cc["@mozilla.org/permissionmanager;1"].getService(
-    Ci.nsIPermissionManager
+  let permIsolateUserContext = Services.prefs.getBoolPref(
+    "permissions.isolateBy.userContext"
   );
+
+  let pm = Services.perms;
 
   // test the default permission was applied.
   let principal = Services.scriptSecurityManager.createContentPrincipal(
@@ -156,9 +158,12 @@ add_task(async function do_test() {
     Ci.nsIPermissionManager.ALLOW_ACTION,
     pm.testPermissionFromPrincipal(principal4, TEST_PERMISSION)
   );
-  // make sure principals with userContextId use the same permissions
+  // make sure principals with userContextId use the same / different permissions
+  // depending on pref state
   Assert.equal(
-    Ci.nsIPermissionManager.ALLOW_ACTION,
+    permIsolateUserContext
+      ? Ci.nsIPermissionManager.UNKNOWN_ACTION
+      : Ci.nsIPermissionManager.ALLOW_ACTION,
     pm.testPermissionFromPrincipal(principal6, TEST_PERMISSION)
   );
   // make sure principals with a firstPartyDomain use different permissions
@@ -178,7 +183,8 @@ add_task(async function do_test() {
     Ci.nsIPermissionManager.UNKNOWN_ACTION,
     pm.testPermissionFromPrincipal(principal, TEST_PERMISSION)
   );
-  // make sure principals with userContextId or firstPartyDomain use the same permissions
+  // make sure principals with userContextId use the correct permissions
+  // (Should be unknown with and without OA stripping )
   Assert.equal(
     Ci.nsIPermissionManager.UNKNOWN_ACTION,
     pm.testPermissionFromPrincipal(principal6, TEST_PERMISSION)
@@ -195,9 +201,11 @@ add_task(async function do_test() {
     Ci.nsIPermissionManager.ALLOW_ACTION,
     pm.testPermissionFromPrincipal(principal, TEST_PERMISSION)
   );
-  // make sure principals with userContextId use the same permissions
+  // make sure principals with userContextId share permissions depending on pref state
   Assert.equal(
-    Ci.nsIPermissionManager.ALLOW_ACTION,
+    permIsolateUserContext
+      ? Ci.nsIPermissionManager.UNKNOWN_ACTION
+      : Ci.nsIPermissionManager.ALLOW_ACTION,
     pm.testPermissionFromPrincipal(principal6, TEST_PERMISSION)
   );
   // make sure principals with firstPartyDomain use different permissions
@@ -224,9 +232,11 @@ add_task(async function do_test() {
     Ci.nsIPermissionManager.DENY_ACTION,
     pm.testPermissionFromPrincipal(principal, TEST_PERMISSION)
   );
-  // make sure principals with userContextId use the same permissions
+  // make sure principals with userContextId share permissions depending on pref state
   Assert.equal(
-    Ci.nsIPermissionManager.DENY_ACTION,
+    permIsolateUserContext
+      ? Ci.nsIPermissionManager.UNKNOWN_ACTION
+      : Ci.nsIPermissionManager.DENY_ACTION,
     pm.testPermissionFromPrincipal(principal6, TEST_PERMISSION)
   );
   // make sure principals with firstPartyDomain use different permissions
@@ -254,9 +264,11 @@ add_task(async function do_test() {
     Ci.nsIPermissionManager.PROMPT_ACTION,
     pm.testPermissionFromPrincipal(principal, TEST_PERMISSION)
   );
-  // make sure principals with userContextId use the same permissions
+  // make sure principals with userContextId share permissions depending on pref state
   Assert.equal(
-    Ci.nsIPermissionManager.PROMPT_ACTION,
+    permIsolateUserContext
+      ? Ci.nsIPermissionManager.UNKNOWN_ACTION
+      : Ci.nsIPermissionManager.PROMPT_ACTION,
     pm.testPermissionFromPrincipal(principal6, TEST_PERMISSION)
   );
   // make sure principals with firstPartyDomain use different permissions
@@ -338,7 +350,7 @@ add_task(async function do_test() {
 // be found.
 function findCapabilityViaEnum(origin = TEST_ORIGIN, type = TEST_PERMISSION) {
   let result = undefined;
-  for (let perm of Services.perms.enumerator) {
+  for (let perm of Services.perms.all) {
     if (perm.matchesURI(origin, true) && perm.type == type) {
       if (result !== undefined) {
         // we've already found one previously - that's bad!
@@ -402,11 +414,7 @@ function findCapabilityViaDB(origin = TEST_ORIGIN, type = TEST_PERMISSION) {
   let file = Services.dirsvc.get("ProfD", Ci.nsIFile);
   file.append("permissions.sqlite");
 
-  let storage = Cc["@mozilla.org/storage/service;1"].getService(
-    Ci.mozIStorageService
-  );
-
-  let connection = storage.openDatabase(file);
+  let connection = Services.storage.openDatabase(file);
 
   let query = connection.createStatement(
     "SELECT permission FROM moz_perms WHERE origin = :origin AND type = :type"

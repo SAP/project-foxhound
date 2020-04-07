@@ -11,6 +11,7 @@
 #include "mozilla/HashFunctions.h"       // for HashGeneric
 #include "mozilla/gfx/Logging.h"         // for Log
 #include "mozilla/layers/LayersTypes.h"  // for LayersId
+#include "nsHashKeys.h"                  // for nsPrintfCString
 #include "nsPrintfCString.h"             // for nsPrintfCString
 
 namespace mozilla {
@@ -44,12 +45,9 @@ struct ScrollableLayerGuid {
         mPresShellId(aPresShellId),
         mScrollId(aScrollId) {}
 
-  ScrollableLayerGuid(const ScrollableLayerGuid& other)
-      : mLayersId(other.mLayersId),
-        mPresShellId(other.mPresShellId),
-        mScrollId(other.mScrollId) {}
+  ScrollableLayerGuid(const ScrollableLayerGuid& other) = default;
 
-  ~ScrollableLayerGuid() {}
+  ~ScrollableLayerGuid() = default;
 
   bool operator==(const ScrollableLayerGuid& other) const {
     return mLayersId == other.mLayersId && mPresShellId == other.mPresShellId &&

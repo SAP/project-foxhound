@@ -7,16 +7,13 @@
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "mozilla/dom/Document.h"
-#include "nsIURI.h"
 #include "nsNetUtil.h"
 #include "nsContentUtils.h"
 #include "nsUnicharUtils.h"  // for nsCaseInsensitiveStringComparator()
 #include "nsIScriptContext.h"
 #include "nsIScriptGlobalObject.h"
-#include "nsIXPConnect.h"
 #include "nsServiceManagerUtils.h"
 #include "nsError.h"
-#include "nsIArray.h"
 #include "nsTArray.h"
 #include "nsDOMJSUtils.h"
 #include "nsIScriptError.h"
@@ -41,7 +38,7 @@ HTMLScriptElement::HTMLScriptElement(
   AddMutationObserver(this);
 }
 
-HTMLScriptElement::~HTMLScriptElement() {}
+HTMLScriptElement::~HTMLScriptElement() = default;
 
 NS_IMPL_ISUPPORTS_INHERITED(HTMLScriptElement, nsGenericHTMLElement,
                             nsIScriptLoaderObserver, nsIScriptElement,

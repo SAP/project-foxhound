@@ -14,17 +14,12 @@ Runner Status
 Once per-fetch and execution of recipes, one of the following statuses is
 reported under the key ``normandy/runner``:
 
-.. data:: RUNNER_INVALID_SIGNATURE
+.. data:: RUNNER_SUCCESS
 
-   :Telemetry value: signature_error
+   :Telemetry value: success
 
-   Normandy failed to verify the signature of the fetched recipes.
-
-.. data:: RUNNER_NETWORK_ERROR
-
-   :Telemetry value: network_error
-
-   There was a network-related error while fetching recipes.
+   The operation completed successfully. Individual failures with actions and
+   recipes may have been reported separately.
 
 .. data:: RUNNER_SERVER_ERROR
 
@@ -32,13 +27,6 @@ reported under the key ``normandy/runner``:
 
    The data returned by the server when fetching the recipe is invalid in some
    way.
-
-.. data:: RUNNER_SUCCESS
-
-   :Telemetry value: success
-
-   The operation completed successfully. Individual failures with actions and
-   recipes may have been reported separately.
 
 Action Status
 ^^^^^^^^^^^^^
@@ -127,6 +115,12 @@ reported under the key ``normandy/recipe/<recipe id>``:
 
    The recipe was executed successfully.
 
+.. data:: RECIPE_SIGNATURE_INVALID
+
+   :Telemetry value: signature_error
+
+   Normandy failed to verify the signature of the recipe.
+
 
 Additionally, Normandy reports a `keyed scalar`_ to measure recipe
 freshness. This scalar is called ``normandy.recipe_freshness``, and it
@@ -143,6 +137,23 @@ records that data using `Telemetry Events`_. All data is stored in the
 ``normandy`` category.
 
 .. _Telemetry Events: https://firefox-source-docs.mozilla.org/toolkit/components/telemetry/telemetry/collection/events.html
+
+Enrollment IDs
+^^^^^^^^^^^^^^
+
+Most Normandy telemetry carries an *enrollment ID*. These IDs are generated
+when Normandy enrolls the client in a change, be it a study, rollout, or
+something else. These enrollment IDs are used for the lifetime of that
+change, and are only used for that change (not shared between similar
+changes). Once a change ends (either via unenrollment, graduation, or another
+method) the enrollment ID should not be used again.
+
+When Telemetry upload is disabled, we must clear these enrollment IDs. This
+is done by replacing existing enrollment IDs with a filler value. New changes
+continue to receive a enrollment IDs as normal. The only thing that
+enrollment IDs are used for Telemetry, and so generated them while Telemetry
+is disabled is fine. They don't correlate to anything else, and won't be sent
+anywhere.
 
 Preference Studies
 ^^^^^^^^^^^^^^^^^^

@@ -22,7 +22,6 @@
 #include "DOMSVGNumber.h"
 #include "DOMSVGPoint.h"
 #include "nsFrameSelection.h"
-#include "nsLayoutStylesheetCache.h"
 #include "nsIFrame.h"
 #include "nsISVGSVGFrame.h"
 #include "nsSVGDisplayableFrame.h"
@@ -343,7 +342,10 @@ uint16_t SVGSVGElement::ZoomAndPan() {
 void SVGSVGElement::SetZoomAndPan(uint16_t aZoomAndPan, ErrorResult& rv) {
   if (aZoomAndPan == SVG_ZOOMANDPAN_DISABLE ||
       aZoomAndPan == SVG_ZOOMANDPAN_MAGNIFY) {
-    mEnumAttributes[ZOOMANDPAN].SetBaseValue(aZoomAndPan, this);
+    ErrorResult nestedRv;
+    mEnumAttributes[ZOOMANDPAN].SetBaseValue(aZoomAndPan, this, nestedRv);
+    MOZ_ASSERT(!nestedRv.Failed(),
+               "We already validated our aZoomAndPan value!");
     return;
   }
 
@@ -353,7 +355,7 @@ void SVGSVGElement::SetZoomAndPan(uint16_t aZoomAndPan, ErrorResult& rv) {
 //----------------------------------------------------------------------
 SMILTimeContainer* SVGSVGElement::GetTimedDocumentRoot() {
   if (mTimedDocumentRoot) {
-    return mTimedDocumentRoot;
+    return mTimedDocumentRoot.get();
   }
 
   // We must not be the outermost <svg> element, try to find it
@@ -374,10 +376,10 @@ nsresult SVGSVGElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   if (Document* doc = aContext.GetUncomposedDoc()) {
     if ((smilController = doc->GetAnimationController())) {
       // SMIL is enabled in this document
-      if (WillBeOutermostSVG(aParent, aContext.GetBindingParent())) {
+      if (WillBeOutermostSVG(aParent)) {
         // We'll be the outermost <svg> element.  We'll need a time container.
         if (!mTimedDocumentRoot) {
-          mTimedDocumentRoot = new SMILTimeContainer();
+          mTimedDocumentRoot = MakeUnique<SMILTimeContainer>();
         }
       } else {
         // We're a child of some other <svg> element, so we don't need our own
@@ -414,7 +416,7 @@ void SVGSVGElement::UnbindFromTree(bool aNullParent) {
 SVGAnimatedTransformList* SVGSVGElement::GetAnimatedTransformList(
     uint32_t aFlags) {
   if (!(aFlags & DO_ALLOCATE) && mSVGView && mSVGView->mTransforms) {
-    return mSVGView->mTransforms;
+    return mSVGView->mTransforms.get();
   }
   return SVGGraphicsElement::GetAnimatedTransformList(aFlags);
 }
@@ -484,10 +486,8 @@ void SVGSVGElement::FlushImageTransformInvalidation() {
 //----------------------------------------------------------------------
 // implementation helpers
 
-bool SVGSVGElement::WillBeOutermostSVG(nsINode& aParent,
-                                       Element* aBindingParent) const {
-  nsINode* parent = aBindingParent ? aBindingParent : &aParent;
-
+bool SVGSVGElement::WillBeOutermostSVG(nsINode& aParent) const {
+  nsINode* parent = &aParent;
   while (parent && parent->IsSVGElement()) {
     if (parent->IsSVGElement(nsGkAtoms::foreignObject)) {
       // SVG in a foreignObject must have its own <svg> (nsSVGOuterSVGFrame).
@@ -496,7 +496,7 @@ bool SVGSVGElement::WillBeOutermostSVG(nsINode& aParent,
     if (parent->IsSVGElement(nsGkAtoms::svg)) {
       return false;
     }
-    parent = parent->GetParent();
+    parent = parent->GetParentOrShadowHostNode();
   }
 
   return true;
@@ -580,7 +580,7 @@ const SVGPreserveAspectRatio* SVGSVGElement::GetPreserveAspectRatioProperty()
 }
 
 bool SVGSVGElement::ClearPreserveAspectRatioProperty() {
-  void* valPtr = UnsetProperty(nsGkAtoms::overridePreserveAspectRatio);
+  void* valPtr = TakeProperty(nsGkAtoms::overridePreserveAspectRatio);
   bool didHaveProperty = !!valPtr;
   delete static_cast<SVGPreserveAspectRatio*>(valPtr);
   return didHaveProperty;
@@ -648,8 +648,8 @@ const SVGAnimatedViewBox& SVGSVGElement::GetViewBoxInternal() const {
 }
 
 SVGAnimatedTransformList* SVGSVGElement::GetTransformInternal() const {
-  return (mSVGView && mSVGView->mTransforms) ? mSVGView->mTransforms
-                                             : mTransforms;
+  return (mSVGView && mSVGView->mTransforms) ? mSVGView->mTransforms.get()
+                                             : mTransforms.get();
 }
 
 }  // namespace dom

@@ -17,7 +17,6 @@
 //-----------------------------------------------------------------------------
 
 #include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "nsIHttpAuthenticableChannel.h"
 #include "nsIURI.h"
 #ifdef XP_WIN
@@ -359,7 +358,7 @@ nsHttpNTLMAuth::GenerateCredentials(nsIHttpAuthenticableChannel* authChannel,
     len -= 5;
 
     // strip off any padding (see bug 230351)
-    while (challenge[len - 1] == '=') len--;
+    while (len && challenge[len - 1] == '=') len--;
 
     // decode into the input secbuffer
     rv = Base64Decode(challenge, len, (char**)&inBuf, &inBufLen);

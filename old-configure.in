@@ -47,7 +47,7 @@ dnl Set the version number of the libs included with mozilla
 dnl ========================================================
 MOZPNG=10635
 NSPR_VERSION=4
-NSPR_MINVER=4.23
+NSPR_MINVER=4.25
 NSS_VERSION=3
 
 dnl Set the minimum version of toolkit libs used by mozilla
@@ -61,9 +61,7 @@ GTK2_VERSION=2.18.0
 GTK3_VERSION=3.4.0
 GDK_VERSION_MAX_ALLOWED=GDK_VERSION_3_4
 W32API_VERSION=3.14
-STARTUP_NOTIFICATION_VERSION=0.8
 DBUS_VERSION=0.60
-SQLITE_VERSION=3.29.0
 
 dnl Set various checks
 dnl ========================================================
@@ -139,8 +137,7 @@ case "$target" in
         _WIN32_MSVC=1
 
         # Make sure compilers are valid
-        CFLAGS="$CFLAGS -nologo"
-        CXXFLAGS="$CXXFLAGS -TP -nologo"
+        CXXFLAGS="$CXXFLAGS -TP"
         AC_LANG_SAVE
         AC_LANG_C
         AC_TRY_COMPILE([#include <stdio.h>],
@@ -172,7 +169,7 @@ case "$target" in
           if test ! -d "$WIN_UCRT_REDIST_DIR"; then
             AC_MSG_ERROR([Invalid Windows UCRT Redist directory: ${WIN_UCRT_REDIST_DIR}])
           fi
-          WIN_UCRT_REDIST_DIR=`cd "$WIN_UCRT_REDIST_DIR" && pwd -W`
+          WIN_UCRT_REDIST_DIR=`cd "$WIN_UCRT_REDIST_DIR" && (pwd -W 2>/dev/null || pwd)`
         fi
 
         AC_SUBST(MSVC_C_RUNTIME_DLL)
@@ -184,7 +181,7 @@ case "$target" in
           if test ! -d "$WIN32_REDIST_DIR"; then
             AC_MSG_ERROR([Invalid Win32 Redist directory: ${WIN32_REDIST_DIR}])
           fi
-          WIN32_REDIST_DIR=`cd "$WIN32_REDIST_DIR" && pwd -W`
+          WIN32_REDIST_DIR=`cd "$WIN32_REDIST_DIR" && (pwd -W 2>/dev/null || pwd)`
         fi
 
         # Check linker version, except in lld builds
@@ -206,8 +203,6 @@ case "$target" in
 
         WRAP_STL_INCLUDES=1
         STL_FLAGS="-I${DIST}/stl_wrappers"
-        CFLAGS="$CFLAGS -D_HAS_EXCEPTIONS=0"
-        CXXFLAGS="$CXXFLAGS -D_HAS_EXCEPTIONS=0"
     else
         # Check w32api version
         _W32API_MAJOR_VERSION=`echo $W32API_VERSION | $AWK -F\. '{ print $1 }'`
@@ -228,6 +223,9 @@ case "$target" in
         # causing problems with local implementations with the same name.
         AC_DEFINE(STRSAFE_NO_DEPRECATE)
     fi # !GNU_CC
+
+    CFLAGS="$CFLAGS -D_HAS_EXCEPTIONS=0"
+    CXXFLAGS="$CXXFLAGS -D_HAS_EXCEPTIONS=0"
 
     AC_DEFINE_UNQUOTED(WINVER,0x$WINVER)
     AC_DEFINE_UNQUOTED(_WIN32_WINNT,0x$WINVER)
@@ -308,15 +306,6 @@ if test -n "$COMPILE_ENVIRONMENT"; then
 fi
 
 dnl ========================================================
-dnl Add optional and non-optional hardening flags
-dnl ========================================================
-
-CFLAGS="$CFLAGS $MOZ_HARDENING_CFLAGS"
-CPPFLAGS="$CPPFLAGS $MOZ_HARDENING_CFLAGS"
-CXXFLAGS="$CXXFLAGS $MOZ_HARDENING_CFLAGS"
-LDFLAGS="$LDFLAGS $MOZ_HARDENING_LDFLAGS"
-
-dnl ========================================================
 dnl GNU specific defaults
 dnl ========================================================
 if test "$GNU_CC"; then
@@ -324,7 +313,6 @@ if test "$GNU_CC"; then
     SSE_FLAGS="-msse"
     SSE2_FLAGS="-msse2"
     SSSE3_FLAGS="-mssse3"
-    # FIXME: Let us build with strict aliasing. bug 414641.
     CFLAGS="$CFLAGS -fno-strict-aliasing"
     DSO_CFLAGS=''
 
@@ -464,7 +452,6 @@ if test "$GNU_CC"; then
 fi
 
 if test "$GNU_CXX"; then
-    # FIXME: Let us build with strict aliasing. bug 414641.
     CXXFLAGS="$CXXFLAGS -fno-exceptions -fno-strict-aliasing"
 
     _DEFINES_CXXFLAGS="-DMOZILLA_CLIENT -include $_objdir/mozilla-config.h"
@@ -497,7 +484,7 @@ dnl ========================================================
 case "$host" in
 *mingw*)
     if test -n "$_WIN32_MSVC"; then
-        HOST_CFLAGS="$HOST_CFLAGS -nologo"
+        HOST_CFLAGS="$HOST_CFLAGS"
     else
         HOST_CFLAGS="$HOST_CFLAGS -mwindows"
     fi
@@ -590,7 +577,7 @@ case "$target" in
     ;;
 
 *-android*|*-linuxandroid*)
-    if test "$COMPILE_ENVIRONMENT"; then
+    if test "$COMPILE_ENVIRONMENT" -a -n "$MOZ_MEMORY"; then
         MOZ_LINKER=1
     fi
 
@@ -664,6 +651,7 @@ case "$target" in
 
         # Silence problematic clang warnings
         CXXFLAGS="$CXXFLAGS -Wno-incompatible-ms-struct"
+        LDFLAGS="$LDFLAGS -Wl,--no-insert-timestamp"
     else
         TARGET_COMPILER_ABI=msvc
         RANLIB='echo not_ranlib'
@@ -771,6 +759,10 @@ case "$target" in
             # declare |delete| differently.  Therefore, suppress this
             # warning.
             CXXFLAGS="$CXXFLAGS -Wno-implicit-exception-spec-mismatch"
+            # Macros like STDMETHOD() and IFACEMETHOD() can declare
+            # __attribute__((nothrow)) on their respective method declarations,
+            # while the definitions are left without the matching attribute.
+            CXXFLAGS="$CXXFLAGS -Wno-microsoft-exception-spec"
             # At least one MSVC header and several headers in-tree have
             # unused typedefs, so turn this on.
             CXXFLAGS="$CXXFLAGS -Wno-unused-local-typedef"
@@ -1512,7 +1504,7 @@ MOZ_ARG_WITH_BOOL(system-nss,
     _USE_SYSTEM_NSS=1 )
 
 if test -n "$_USE_SYSTEM_NSS"; then
-    AM_PATH_NSS(3.47.1, [MOZ_SYSTEM_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
+    AM_PATH_NSS(3.51, [MOZ_SYSTEM_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
 fi
 
 NSS_CFLAGS="$NSS_CFLAGS -I${DIST}/include/nss"
@@ -1653,19 +1645,6 @@ else
   AC_MSG_RESULT([no])
 fi
 
-# Allow influencing configure with a defines.sh script.
-. "${srcdir}/build/defines.sh"
-
-# If we're not building a release build, define EARLY_BETA_OR_EARLIER if it is
-# set in defines.sh
-if test "$BUILDING_RELEASE"; then
-  # Override value in defines.sh, if any
-  EARLY_BETA_OR_EARLIER=
-elif test "$EARLY_BETA_OR_EARLIER"; then
-  AC_DEFINE(EARLY_BETA_OR_EARLIER)
-fi
-AC_SUBST(EARLY_BETA_OR_EARLIER)
-
 # Allow someone to change MOZ_APP_NAME and MOZ_APP_BASENAME in mozconfig
 MOZ_ARG_WITH_STRING(app-name,
 [--with-app-name=APPNAME sets MOZ_APP_NAME to APPNAME],
@@ -1684,22 +1663,6 @@ WITH_APP_BASENAME=$withval,
 if test -n "$WITH_APP_BASENAME" ; then
     MOZ_APP_BASENAME="$WITH_APP_BASENAME"
 fi
-
-# Special cases where we need to AC_DEFINE something. Also a holdover for apps
-# that haven't made a confvars.sh yet. Don't add new stuff here, use
-# MOZ_BUILD_APP.
-case "$MOZ_BUILD_APP" in
-browser)
-  AC_DEFINE(MOZ_PHOENIX)
-  ;;
-esac
-
-# Graphene is a desktop runtime for running applications with a HTML UI.
-if test -n "$MOZ_GRAPHENE"; then
-    AC_DEFINE(MOZ_GRAPHENE)
-fi
-
-AC_SUBST(MOZ_PHOENIX)
 
 dnl ========================================================
 dnl Ensure Android SDK and build-tools versions depending on
@@ -1785,40 +1748,6 @@ if test "$COMPILE_ENVIRONMENT"; then
 fi # COMPILE_ENVIRONMENT
 
 AC_SUBST(MOZ_FS_LAYOUT)
-
-dnl ========================================================
-dnl = startup-notification support module
-dnl ========================================================
-
-if test "$MOZ_ENABLE_GTK"
-then
-    MOZ_ENABLE_STARTUP_NOTIFICATION=
-
-    MOZ_ARG_ENABLE_BOOL(startup-notification,
-    [  --enable-startup-notification
-                          Enable startup-notification support (default: disabled) ],
-        MOZ_ENABLE_STARTUP_NOTIFICATION=force,
-        MOZ_ENABLE_STARTUP_NOTIFICATION=)
-    if test "$MOZ_ENABLE_STARTUP_NOTIFICATION"
-    then
-        PKG_CHECK_MODULES(MOZ_STARTUP_NOTIFICATION,
-                          libstartup-notification-1.0 >= $STARTUP_NOTIFICATION_VERSION,
-        [MOZ_ENABLE_STARTUP_NOTIFICATION=1], [
-            if test "$MOZ_ENABLE_STARTUP_NOTIFICATION" = "force"
-            then
-                AC_MSG_ERROR([* * * Could not find startup-notification >= $STARTUP_NOTIFICATION_VERSION])
-            fi
-            MOZ_ENABLE_STARTUP_NOTIFICATION=
-        ])
-    fi
-
-    if test "$MOZ_ENABLE_STARTUP_NOTIFICATION"; then
-        AC_DEFINE(MOZ_ENABLE_STARTUP_NOTIFICATION)
-    fi
-
-    TK_LIBS="$TK_LIBS $MOZ_STARTUP_NOTIFICATION_LIBS"
-fi
-AC_SUBST(MOZ_ENABLE_STARTUP_NOTIFICATION)
 
 AC_SUBST_LIST(TK_CFLAGS)
 AC_SUBST_LIST(TK_LIBS)
@@ -2213,35 +2142,11 @@ dnl =
 dnl ========================================================
 MOZ_ARG_HEADER(Individual module options)
 
-dnl ========================================================
-dnl Check for sqlite
-dnl ========================================================
-
-MOZ_SYSTEM_SQLITE=
-MOZ_ARG_ENABLE_BOOL(system-sqlite,
-[  --enable-system-sqlite  Use system sqlite (located with pkgconfig)],
-MOZ_SYSTEM_SQLITE=1,
-MOZ_SYSTEM_SQLITE= )
-
-if test -n "$MOZ_SYSTEM_SQLITE"
-then
-    dnl ============================
-    dnl === SQLite Version check ===
-    dnl ============================
-    dnl Check to see if the system SQLite package is new enough.
-    PKG_CHECK_MODULES(SQLITE, sqlite3 >= $SQLITE_VERSION)
-else
-    dnl ==============================
-    dnl === SQLite fdatasync check ===
-    dnl ==============================
-    dnl Check to see if fdatasync is available
-    AC_CHECK_FUNC(fdatasync)
-fi
-
-if test -n "$MOZ_SYSTEM_SQLITE"; then
-    AC_DEFINE(MOZ_SYSTEM_SQLITE)
-fi
-AC_SUBST(MOZ_SYSTEM_SQLITE)
+dnl ==============================
+dnl === SQLite fdatasync check ===
+dnl ==============================
+dnl Check to see if fdatasync is available and make use of it
+AC_CHECK_FUNC(fdatasync)
 
 dnl ========================================================
 dnl = Disable zipwriter
@@ -2555,7 +2460,7 @@ dnl ========================================================
 MOZ_ARG_HEADER(Static build options)
 
 if test -z "$MOZ_SYSTEM_ZLIB"; then
-if test -n "$JS_SHARED_LIBRARY" -o -n "$MOZ_LINKER"; then
+if test -n "$JS_SHARED_LIBRARY" -o -n "$MOZ_LINKER" -o "$MOZ_WIDGET_TOOLKIT" = android; then
   ZLIB_IN_MOZGLUE=1
   AC_DEFINE(ZLIB_IN_MOZGLUE)
 fi
@@ -2939,15 +2844,6 @@ AC_SUBST(MOZ_CHILD_PROCESS_BUNDLENAME)
 # "Profile" field, which controls profile location.
 # - MOZ_APP_ID: When set, used for application.ini's "ID" field, and
 # crash reporter server url.
-# - MOZ_APP_ANDROID_VERSION_CODE: On Android, "android:versionCode" for
-# the main application is set to the value of this variable.  If not
-# set, it falls back to a Mozilla-specific value derived from the
-# build ID.
-# - MOZ_ANDROID_SHARED_ID: On Android, "android:sharedUserId" for all Android
-# packages produced.
-# - MOZ_ANDROID_GCM_SENDERID: On Android, the Android GCM Sender ID used.  GCM
-# sender IDs are not sensitive: see, http://stackoverflow.com/a/18216063.
-# - MOZ_MMA_GCM_SENDERID: This GCM Sender ID is used for MMA integration.
 # - MOZ_PROFILE_MIGRATOR: When set, enables profile migrator.
 
 # The following environment variables used to have an effect, but don't anymore:
@@ -2984,14 +2880,6 @@ if test -z "$ANDROID_PACKAGE_NAME" ; then
    fi
 fi
 
-# Mozilla released Firefox for Android {Release,Beta} and {Aurora,Nightly} to
-# the public with specific common shared IDs and we need to keep them
-# consistent forever.  The specific common values are set by per-channel
-# branding; all other channels use a generic sharedID, set below.
-if test -z "$MOZ_ANDROID_SHARED_ID" ; then
-   MOZ_ANDROID_SHARED_ID="${ANDROID_PACKAGE_NAME}.sharedID"
-fi
-
 # For extensions and langpacks, we require a max version that is compatible
 # across security releases. MOZ_APP_MAXVERSION is our method for doing that.
 # 24.0a1 and 24.0a2 aren't affected
@@ -3017,10 +2905,6 @@ AC_SUBST(MOZ_APP_BASENAME)
 AC_SUBST(MOZ_APP_VENDOR)
 AC_SUBST(MOZ_APP_PROFILE)
 AC_SUBST(MOZ_APP_ID)
-AC_SUBST(MOZ_APP_ANDROID_VERSION_CODE)
-AC_SUBST(MOZ_ANDROID_SHARED_ID)
-AC_SUBST(MOZ_ANDROID_GCM_SENDERID)
-AC_SUBST(MOZ_MMA_GCM_SENDERID)
 AC_SUBST(MAR_CHANNEL_ID)
 AC_SUBST(ACCEPTED_MAR_CHANNEL_IDS)
 AC_SUBST(MOZ_PROFILE_MIGRATOR)

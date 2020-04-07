@@ -101,14 +101,9 @@ class TrySelect(MachCommandBase):
         special preset handling. They can all save and load presets the same
         way.
         """
-        from tryselect.preset import migrate_old_presets
         from tryselect.util.dicttools import merge
 
         user_presets = self.presets.handlers[0]
-
-        # TODO: Remove after Jan 1, 2020.
-        migrate_old_presets(user_presets)
-
         if preset_action == 'list':
             self.presets.list()
             sys.exit()
@@ -161,7 +156,7 @@ class TrySelect(MachCommandBase):
     def handle_try_config(self, **kwargs):
         from tryselect.util.dicttools import merge
         kwargs.setdefault('try_config', {})
-        for cls in self.parser.templates.itervalues():
+        for cls in self.parser.task_configs.itervalues():
             try_config = cls.try_config(**kwargs)
             if try_config is not None:
                 kwargs['try_config'] = merge(kwargs['try_config'], try_config)
@@ -175,7 +170,7 @@ class TrySelect(MachCommandBase):
         if 'preset' in self.parser.common_groups:
             kwargs = self.handle_presets(**kwargs)
 
-        if self.parser.templates:
+        if self.parser.task_configs:
             kwargs = self.handle_try_config(**kwargs)
 
         mod = importlib.import_module('tryselect.selectors.{}'.format(self.subcommand))
@@ -303,6 +298,8 @@ class TrySelect(MachCommandBase):
             kwargs_copy['push'] = False
             kwargs_copy['save'] = None
             kwargs['query'] = self.run(save_query=True, **kwargs_copy)
+            if not kwargs['query']:
+                return
 
         if kwargs.get('paths'):
             kwargs['test_paths'] = kwargs['paths']
@@ -424,5 +421,16 @@ class TrySelect(MachCommandBase):
                 parser=get_parser('release'))
     def try_release(self, **kwargs):
         """Push the current tree to try, configured for a staging release.
+        """
+        return self.run(**kwargs)
+
+    @SubCommand('try',
+                'scriptworker',
+                description='Run scriptworker tasks against a recent release.',
+                parser=get_parser('scriptworker'))
+    def try_scriptworker(self, **kwargs):
+        """Run scriptworker tasks against a recent release.
+
+        Requires VPN and shipit access.
         """
         return self.run(**kwargs)

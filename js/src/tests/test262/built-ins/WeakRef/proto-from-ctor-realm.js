@@ -1,4 +1,3 @@
-// |reftest| skip -- WeakRef is not supported
 // Copyright (C) 2019 Leo Balter. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -27,7 +26,7 @@ info: |
     a. Let realm be ? GetFunctionRealm(constructor).
     b. Set proto to realm's intrinsic object named intrinsicDefaultProto.
   5. Return proto.
-features: [WeakRef, cross-realm, Reflect]
+features: [WeakRef, cross-realm, Reflect, Symbol]
 ---*/
 
 var other = $262.createRealm().global;

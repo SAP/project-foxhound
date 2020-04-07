@@ -24,6 +24,7 @@
 #include "nsPrintfCString.h"
 #include "mozilla/AccessibleCaretEventHub.h"
 #include "mozilla/ComputedStyle.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/AnonymousContent.h"
 #include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/layers/RenderRootStateManager.h"
@@ -159,6 +160,9 @@ nsresult nsCanvasFrame::CreateAnonymousContent(
                                    nodeInfo.forget(), dom::NOT_FROM_PARSER);
     NS_ENSURE_SUCCESS(rv, rv);
 
+    mPopupgroupContent->SetProperty(nsGkAtoms::docLevelNativeAnonymousContent,
+                                    reinterpret_cast<void*>(true));
+
     aElements.AppendElement(mPopupgroupContent);
 
     nodeInfo = nodeInfoManager->GetNodeInfo(
@@ -175,9 +179,21 @@ nsresult nsCanvasFrame::CreateAnonymousContent(
     mTooltipContent->SetAttr(kNameSpaceID_None, nsGkAtoms::page,
                              NS_LITERAL_STRING("true"), false);
 
+    mTooltipContent->SetProperty(nsGkAtoms::docLevelNativeAnonymousContent,
+                                 reinterpret_cast<void*>(true));
+
     aElements.AppendElement(mTooltipContent);
   }
 
+#ifdef DEBUG
+  for (auto& element : aElements) {
+    MOZ_ASSERT(element.mContent->GetProperty(
+                   nsGkAtoms::docLevelNativeAnonymousContent),
+               "NAC from the canvas frame needs to be document-level, otherwise"
+               " it (1) inherits from the document which is unexpected, and (2)"
+               " StyleChildrenIterator won't be able to find it properly");
+  }
+#endif
   return NS_OK;
 }
 
@@ -375,14 +391,12 @@ bool nsDisplayCanvasBackgroundColor::CreateWebRenderCommands(
   return true;
 }
 
-#ifdef MOZ_DUMP_PAINTING
 void nsDisplayCanvasBackgroundColor::WriteDebugInfo(
     std::stringstream& aStream) {
   aStream << " (rgba " << (int)NS_GET_R(mColor) << "," << (int)NS_GET_G(mColor)
           << "," << (int)NS_GET_B(mColor) << "," << (int)NS_GET_A(mColor)
           << ")";
 }
-#endif
 
 void nsDisplayCanvasBackgroundImage::Paint(nsDisplayListBuilder* aBuilder,
                                            gfxContext* aCtx) {
@@ -442,7 +456,7 @@ class nsDisplayCanvasFocus : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayCanvasFocus);
   }
-  virtual ~nsDisplayCanvasFocus() { MOZ_COUNT_DTOR(nsDisplayCanvasFocus); }
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayCanvasFocus)
 
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override {
@@ -503,10 +517,20 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     bool needBlendContainer = false;
     nsDisplayListBuilder::AutoContainerASRTracker contASRTracker(aBuilder);
 
+    // In high-contrast-mode, we suppress background-image on the canvas frame
+    // (even when backplating), because users expect site backgrounds to conform
+    // to their HCM background color when a solid color is rendered, and some
+    // websites use solid-color images instead of an overwritable background
+    // color.
+    const bool suppressBackgroundImage =
+        !PresContext()->PrefSheetPrefs().mUseDocumentColors &&
+        StaticPrefs::
+            browser_display_suppress_canvas_background_image_on_forced_colors();
+
     // Create separate items for each background layer.
     const nsStyleImageLayers& layers = bg->StyleBackground()->mImage;
     NS_FOR_VISIBLE_IMAGE_LAYERS_BACK_TO_FRONT(i, layers) {
-      if (layers.mLayers[i].mImage.IsEmpty()) {
+      if (layers.mLayers[i].mImage.IsNone() || suppressBackgroundImage) {
         continue;
       }
       if (layers.mLayers[i].mBlendMode != NS_STYLE_BLEND_NORMAL) {

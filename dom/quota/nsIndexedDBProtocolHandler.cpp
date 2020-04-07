@@ -7,14 +7,13 @@
 
 #include "nsIndexedDBProtocolHandler.h"
 
-#include "nsIURIMutator.h"
 #include "nsStandardURL.h"
 
 using namespace mozilla::net;
 
-nsIndexedDBProtocolHandler::nsIndexedDBProtocolHandler() {}
+nsIndexedDBProtocolHandler::nsIndexedDBProtocolHandler() = default;
 
-nsIndexedDBProtocolHandler::~nsIndexedDBProtocolHandler() {}
+nsIndexedDBProtocolHandler::~nsIndexedDBProtocolHandler() = default;
 
 NS_IMPL_ISUPPORTS(nsIndexedDBProtocolHandler, nsIProtocolHandler,
                   nsISupportsWeakReference)

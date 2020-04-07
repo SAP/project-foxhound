@@ -10,9 +10,11 @@
 #include "mozilla/FunctionTypeTraits.h"
 #include "mozilla/ScopeExit.h"
 
+#include <type_traits>
 #include <utility>
 
 #include "jslibmath.h"
+#include "gc/Allocator.h"
 #include "jit/BaselineCacheIRCompiler.h"
 #include "jit/IonCacheIRCompiler.h"
 #include "jit/IonIC.h"
@@ -20,6 +22,7 @@
 #include "jit/SharedICRegisters.h"
 #include "proxy/Proxy.h"
 #include "vm/ArrayBufferObject.h"
+#include "vm/BigIntType.h"
 #include "vm/GeneratorObject.h"
 
 #include "builtin/Boolean-inl.h"
@@ -27,6 +30,7 @@
 #include "jit/MacroAssembler-inl.h"
 #include "jit/SharedICHelpers-inl.h"
 #include "jit/VMFunctionList-inl.h"
+#include "vm/BytecodeUtil-inl.h"
 #include "vm/Realm-inl.h"
 
 using namespace js;
@@ -281,6 +285,8 @@ Register CacheRegisterAllocator::useRegister(MacroAssembler& masm,
         masm.movePtr(ImmGCPtr(v.toString()), reg);
       } else if (v.isSymbol()) {
         masm.movePtr(ImmGCPtr(v.toSymbol()), reg);
+      } else if (v.isBigInt()) {
+        masm.movePtr(ImmGCPtr(v.toBigInt()), reg);
       } else {
         MOZ_CRASH("Unexpected Value");
       }
@@ -1305,7 +1311,7 @@ bool CacheIRCompiler::addFailurePath(FailurePath** failure) {
 }
 
 bool CacheIRCompiler::emitFailurePath(size_t index) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   FailurePath& failure = failurePaths[index];
 
   allocator.setStackPushed(failure.stackPushed());
@@ -1324,7 +1330,7 @@ bool CacheIRCompiler::emitFailurePath(size_t index) {
 }
 
 bool CacheIRCompiler::emitGuardIsNumber() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   JSValueType knownType = allocator.knownType(inputId);
 
@@ -1344,7 +1350,7 @@ bool CacheIRCompiler::emitGuardIsNumber() {
 }
 
 bool CacheIRCompiler::emitGuardToObject() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   if (allocator.knownType(inputId) == JSVAL_TYPE_OBJECT) {
     return true;
@@ -1360,7 +1366,7 @@ bool CacheIRCompiler::emitGuardToObject() {
 }
 
 bool CacheIRCompiler::emitGuardIsNullOrUndefined() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   JSValueType knownType = allocator.knownType(inputId);
   if (knownType == JSVAL_TYPE_UNDEFINED || knownType == JSVAL_TYPE_NULL) {
@@ -1382,7 +1388,7 @@ bool CacheIRCompiler::emitGuardIsNullOrUndefined() {
 }
 
 bool CacheIRCompiler::emitGuardIsNotNullOrUndefined() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   JSValueType knownType = allocator.knownType(inputId);
   if (knownType == JSVAL_TYPE_UNDEFINED || knownType == JSVAL_TYPE_NULL) {
@@ -1402,7 +1408,7 @@ bool CacheIRCompiler::emitGuardIsNotNullOrUndefined() {
 }
 
 bool CacheIRCompiler::emitGuardIsNull() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   JSValueType knownType = allocator.knownType(inputId);
   if (knownType == JSVAL_TYPE_NULL) {
@@ -1421,7 +1427,7 @@ bool CacheIRCompiler::emitGuardIsNull() {
 }
 
 bool CacheIRCompiler::emitGuardIsUndefined() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   JSValueType knownType = allocator.knownType(inputId);
   if (knownType == JSVAL_TYPE_UNDEFINED) {
@@ -1439,7 +1445,7 @@ bool CacheIRCompiler::emitGuardIsUndefined() {
 }
 
 bool CacheIRCompiler::emitGuardIsObjectOrNull() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   JSValueType knownType = allocator.knownType(inputId);
   if (knownType == JSVAL_TYPE_OBJECT || knownType == JSVAL_TYPE_NULL) {
@@ -1460,7 +1466,7 @@ bool CacheIRCompiler::emitGuardIsObjectOrNull() {
 }
 
 bool CacheIRCompiler::emitGuardToBoolean() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   Register output = allocator.defineRegister(masm, reader.int32OperandId());
 
@@ -1482,7 +1488,7 @@ bool CacheIRCompiler::emitGuardToBoolean() {
 }
 
 bool CacheIRCompiler::emitGuardToString() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   if (allocator.knownType(inputId) == JSVAL_TYPE_STRING) {
     return true;
@@ -1498,7 +1504,7 @@ bool CacheIRCompiler::emitGuardToString() {
 }
 
 bool CacheIRCompiler::emitGuardToSymbol() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   if (allocator.knownType(inputId) == JSVAL_TYPE_SYMBOL) {
     return true;
@@ -1514,7 +1520,7 @@ bool CacheIRCompiler::emitGuardToSymbol() {
 }
 
 bool CacheIRCompiler::emitGuardToBigInt() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   if (allocator.knownType(inputId) == JSVAL_TYPE_BIGINT) {
     return true;
@@ -1530,7 +1536,7 @@ bool CacheIRCompiler::emitGuardToBigInt() {
 }
 
 bool CacheIRCompiler::emitGuardToInt32() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   Register output = allocator.defineRegister(masm, reader.int32OperandId());
 
@@ -1614,7 +1620,7 @@ static void EmitGuardInt32OrDouble(CacheIRCompiler* compiler,
 }
 
 bool CacheIRCompiler::emitGuardToInt32Index() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   Register output = allocator.defineRegister(masm, reader.int32OperandId());
 
@@ -1644,8 +1650,51 @@ bool CacheIRCompiler::emitGuardToInt32Index() {
   return true;
 }
 
+bool CacheIRCompiler::emitGuardToTypedArrayIndex() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  ValOperandId inputId = reader.valOperandId();
+  Register output = allocator.defineRegister(masm, reader.int32OperandId());
+
+  if (allocator.knownType(inputId) == JSVAL_TYPE_INT32) {
+    Register input = allocator.useRegister(masm, Int32OperandId(inputId.id()));
+    masm.move32(input, output);
+    return true;
+  }
+
+  ValueOperand input = allocator.useValueRegister(masm, inputId);
+
+  FailurePath* failure;
+  if (!addFailurePath(&failure)) {
+    return false;
+  }
+
+  EmitGuardInt32OrDouble(
+      this, masm, input, output, failure,
+      []() {
+        // No-op if the value is already an int32.
+      },
+      [&](FloatRegister floatReg) {
+        static_assert(
+            TypedArrayObject::MAX_BYTE_LENGTH <= INT32_MAX,
+            "Double exceeding Int32 range can't be in-bounds array access");
+
+        // ToPropertyKey(-0.0) is "0", so we can truncate -0.0 to 0 here.
+        Label done, fail;
+        masm.convertDoubleToInt32(floatReg, output, &fail, false);
+        masm.jump(&done);
+
+        // Substitute the invalid index with an arbitrary out-of-bounds index.
+        masm.bind(&fail);
+        masm.move32(Imm32(-1), output);
+
+        masm.bind(&done);
+      });
+
+  return true;
+}
+
 bool CacheIRCompiler::emitGuardToInt32ModUint32() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   Register output = allocator.defineRegister(masm, reader.int32OperandId());
 
@@ -1680,7 +1729,7 @@ bool CacheIRCompiler::emitGuardToInt32ModUint32() {
 }
 
 bool CacheIRCompiler::emitGuardToUint8Clamped() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   Register output = allocator.defineRegister(masm, reader.int32OperandId());
 
@@ -1717,7 +1766,7 @@ bool CacheIRCompiler::emitGuardToUint8Clamped() {
 }
 
 bool CacheIRCompiler::emitGuardType() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   ValueType type = reader.valueType();
 
@@ -1767,7 +1816,7 @@ bool CacheIRCompiler::emitGuardType() {
 }
 
 bool CacheIRCompiler::emitGuardClass() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
   Register obj = allocator.useRegister(masm, objId);
   AutoScratchRegister scratch(allocator, masm);
@@ -1809,7 +1858,7 @@ bool CacheIRCompiler::emitGuardClass() {
 }
 
 bool CacheIRCompiler::emitGuardIsExtensible() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -1837,7 +1886,7 @@ bool CacheIRCompiler::emitGuardIsExtensible() {
 }
 
 bool CacheIRCompiler::emitGuardSpecificNativeFunction() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   JSNative nativeFunc = reinterpret_cast<JSNative>(reader.pointer());
   AutoScratchRegister scratch(allocator, masm);
@@ -1860,7 +1909,7 @@ bool CacheIRCompiler::emitGuardSpecificNativeFunction() {
 }
 
 bool CacheIRCompiler::emitGuardFunctionPrototype() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register prototypeObject = allocator.useRegister(masm, reader.objOperandId());
 
@@ -1888,7 +1937,7 @@ bool CacheIRCompiler::emitGuardFunctionPrototype() {
 }
 
 bool CacheIRCompiler::emitGuardIsNativeObject() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -1902,7 +1951,7 @@ bool CacheIRCompiler::emitGuardIsNativeObject() {
 }
 
 bool CacheIRCompiler::emitGuardIsProxy() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -1916,7 +1965,7 @@ bool CacheIRCompiler::emitGuardIsProxy() {
 }
 
 bool CacheIRCompiler::emitGuardNotDOMProxy() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -1932,7 +1981,7 @@ bool CacheIRCompiler::emitGuardNotDOMProxy() {
 }
 
 bool CacheIRCompiler::emitGuardSpecificInt32Immediate() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register reg = allocator.useRegister(masm, reader.int32OperandId());
   int32_t ival = reader.int32Immediate();
   Assembler::Condition cond = (Assembler::Condition)reader.readByte();
@@ -1948,7 +1997,7 @@ bool CacheIRCompiler::emitGuardSpecificInt32Immediate() {
 }
 
 bool CacheIRCompiler::emitGuardMagicValue() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
   JSWhyMagic magic = reader.whyMagic();
 
@@ -1961,24 +2010,8 @@ bool CacheIRCompiler::emitGuardMagicValue() {
   return true;
 }
 
-bool CacheIRCompiler::emitGuardNoDetachedTypedObjects() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
-  FailurePath* failure;
-  if (!addFailurePath(&failure)) {
-    return false;
-  }
-
-  // All stubs manipulating typed objects must check the zone-wide flag
-  // indicating whether their underlying storage might be detached, to bail
-  // out if needed.
-  uint32_t* address = &cx_->zone()->detachedTypedObjects;
-  masm.branch32(Assembler::NotEqual, AbsoluteAddress(address), Imm32(0),
-                failure->label());
-  return true;
-}
-
 bool CacheIRCompiler::emitGuardNoDenseElements() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -1997,7 +2030,7 @@ bool CacheIRCompiler::emitGuardNoDenseElements() {
 }
 
 bool CacheIRCompiler::emitGuardAndGetNumberFromString() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register str = allocator.useRegister(masm, reader.stringOperandId());
   ValueOperand output =
       allocator.defineValueRegister(masm, reader.valOperandId());
@@ -2059,8 +2092,17 @@ bool CacheIRCompiler::emitGuardAndGetNumberFromString() {
   return true;
 }
 
+bool CacheIRCompiler::emitGuardAndGetNumberFromBoolean() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  Register boolean = allocator.useRegister(masm, reader.int32OperandId());
+  ValueOperand output =
+      allocator.defineValueRegister(masm, reader.valOperandId());
+  masm.tagValue(JSVAL_TYPE_INT32, boolean, output);
+  return true;
+}
+
 bool CacheIRCompiler::emitGuardAndGetIndexFromString() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register str = allocator.useRegister(masm, reader.stringOperandId());
   Register output = allocator.defineRegister(masm, reader.int32OperandId());
 
@@ -2097,7 +2139,7 @@ bool CacheIRCompiler::emitGuardAndGetIndexFromString() {
 }
 
 bool CacheIRCompiler::emitLoadProto() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register reg = allocator.defineRegister(masm, reader.objOperandId());
   masm.loadObjProto(obj, reg);
@@ -2105,7 +2147,7 @@ bool CacheIRCompiler::emitLoadProto() {
 }
 
 bool CacheIRCompiler::emitLoadEnclosingEnvironment() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register reg = allocator.defineRegister(masm, reader.objOperandId());
   masm.unboxObject(
@@ -2114,18 +2156,18 @@ bool CacheIRCompiler::emitLoadEnclosingEnvironment() {
 }
 
 bool CacheIRCompiler::emitLoadWrapperTarget() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register reg = allocator.defineRegister(masm, reader.objOperandId());
 
   masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), reg);
   masm.unboxObject(
-      Address(reg, detail::ProxyReservedSlots::offsetOfPrivateSlot()), reg);
+      Address(reg, js::detail::ProxyReservedSlots::offsetOfPrivateSlot()), reg);
   return true;
 }
 
 bool CacheIRCompiler::emitLoadValueTag() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
   Register res = allocator.defineRegister(masm, reader.valueTagOperandId());
 
@@ -2137,20 +2179,20 @@ bool CacheIRCompiler::emitLoadValueTag() {
 }
 
 bool CacheIRCompiler::emitLoadDOMExpandoValue() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   ValueOperand val = allocator.defineValueRegister(masm, reader.valOperandId());
 
   masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()),
                val.scratchReg());
   masm.loadValue(Address(val.scratchReg(),
-                         detail::ProxyReservedSlots::offsetOfPrivateSlot()),
+                         js::detail::ProxyReservedSlots::offsetOfPrivateSlot()),
                  val);
   return true;
 }
 
 bool CacheIRCompiler::emitLoadDOMExpandoValueIgnoreGeneration() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   ValueOperand output =
       allocator.defineValueRegister(masm, reader.valOperandId());
@@ -2159,7 +2201,7 @@ bool CacheIRCompiler::emitLoadDOMExpandoValueIgnoreGeneration() {
   Register scratch = output.scratchReg();
   masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), scratch);
   Address expandoAddr(scratch,
-                      detail::ProxyReservedSlots::offsetOfPrivateSlot());
+                      js::detail::ProxyReservedSlots::offsetOfPrivateSlot());
 
 #ifdef DEBUG
   // Private values are stored as doubles, so assert we have a double.
@@ -2179,7 +2221,7 @@ bool CacheIRCompiler::emitLoadDOMExpandoValueIgnoreGeneration() {
 }
 
 bool CacheIRCompiler::emitLoadUndefinedResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   if (output.hasValue()) {
     masm.moveValue(UndefinedValue(), output.valueReg());
@@ -2201,7 +2243,7 @@ static void EmitStoreBoolean(MacroAssembler& masm, bool b,
 }
 
 bool CacheIRCompiler::emitLoadBooleanResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   bool b = reader.readBool();
   EmitStoreBoolean(masm, b, output);
@@ -2228,7 +2270,7 @@ static void EmitStoreResult(MacroAssembler& masm, Register reg,
 }
 
 bool CacheIRCompiler::emitLoadInt32ArrayLengthResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -2248,7 +2290,7 @@ bool CacheIRCompiler::emitLoadInt32ArrayLengthResult() {
 }
 
 bool CacheIRCompiler::emitDoubleAddResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   // Float register must be preserved. The BinaryArith ICs use
@@ -2263,7 +2305,7 @@ bool CacheIRCompiler::emitDoubleAddResult() {
   return true;
 }
 bool CacheIRCompiler::emitDoubleSubResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   allocator.ensureDoubleRegister(masm, reader.numberOperandId(), FloatReg0);
@@ -2275,7 +2317,7 @@ bool CacheIRCompiler::emitDoubleSubResult() {
   return true;
 }
 bool CacheIRCompiler::emitDoubleMulResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   allocator.ensureDoubleRegister(masm, reader.numberOperandId(), FloatReg0);
@@ -2287,7 +2329,7 @@ bool CacheIRCompiler::emitDoubleMulResult() {
   return true;
 }
 bool CacheIRCompiler::emitDoubleDivResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   allocator.ensureDoubleRegister(masm, reader.numberOperandId(), FloatReg0);
@@ -2299,7 +2341,7 @@ bool CacheIRCompiler::emitDoubleDivResult() {
   return true;
 }
 bool CacheIRCompiler::emitDoubleModResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
 
@@ -2325,7 +2367,7 @@ bool CacheIRCompiler::emitDoubleModResult() {
 }
 
 bool CacheIRCompiler::emitInt32AddResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
 
@@ -2344,7 +2386,7 @@ bool CacheIRCompiler::emitInt32AddResult() {
   return true;
 }
 bool CacheIRCompiler::emitInt32SubResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
   Register lhs = allocator.useRegister(masm, reader.int32OperandId());
@@ -2363,7 +2405,7 @@ bool CacheIRCompiler::emitInt32SubResult() {
 }
 
 bool CacheIRCompiler::emitInt32MulResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register lhs = allocator.useRegister(masm, reader.int32OperandId());
   Register rhs = allocator.useRegister(masm, reader.int32OperandId());
@@ -2393,7 +2435,7 @@ bool CacheIRCompiler::emitInt32MulResult() {
 }
 
 bool CacheIRCompiler::emitInt32DivResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register lhs = allocator.useRegister(masm, reader.int32OperandId());
   Register rhs = allocator.useRegister(masm, reader.int32OperandId());
@@ -2428,7 +2470,7 @@ bool CacheIRCompiler::emitInt32DivResult() {
 }
 
 bool CacheIRCompiler::emitInt32ModResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register lhs = allocator.useRegister(masm, reader.int32OperandId());
   Register rhs = allocator.useRegister(masm, reader.int32OperandId());
@@ -2462,7 +2504,7 @@ bool CacheIRCompiler::emitInt32ModResult() {
 }
 
 bool CacheIRCompiler::emitInt32BitOrResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
 
@@ -2476,7 +2518,7 @@ bool CacheIRCompiler::emitInt32BitOrResult() {
   return true;
 }
 bool CacheIRCompiler::emitInt32BitXorResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
 
@@ -2490,7 +2532,7 @@ bool CacheIRCompiler::emitInt32BitXorResult() {
   return true;
 }
 bool CacheIRCompiler::emitInt32BitAndResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
 
@@ -2504,7 +2546,7 @@ bool CacheIRCompiler::emitInt32BitAndResult() {
   return true;
 }
 bool CacheIRCompiler::emitInt32LeftShiftResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register lhs = allocator.useRegister(masm, reader.int32OperandId());
   Register rhs = allocator.useRegister(masm, reader.int32OperandId());
@@ -2520,7 +2562,7 @@ bool CacheIRCompiler::emitInt32LeftShiftResult() {
 }
 
 bool CacheIRCompiler::emitInt32RightShiftResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register lhs = allocator.useRegister(masm, reader.int32OperandId());
   Register rhs = allocator.useRegister(masm, reader.int32OperandId());
@@ -2536,7 +2578,7 @@ bool CacheIRCompiler::emitInt32RightShiftResult() {
 }
 
 bool CacheIRCompiler::emitInt32URightShiftResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   Register lhs = allocator.useRegister(masm, reader.int32OperandId());
@@ -2574,7 +2616,7 @@ bool CacheIRCompiler::emitInt32URightShiftResult() {
 }
 
 bool CacheIRCompiler::emitInt32NegationResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register val = allocator.useRegister(masm, reader.int32OperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -2628,7 +2670,7 @@ bool CacheIRCompiler::emitInt32DecResult() {
 }
 
 bool CacheIRCompiler::emitInt32NotResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register val = allocator.useRegister(masm, reader.int32OperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -2640,7 +2682,7 @@ bool CacheIRCompiler::emitInt32NotResult() {
 }
 
 bool CacheIRCompiler::emitDoubleNegationResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
 
@@ -2692,8 +2734,126 @@ bool CacheIRCompiler::emitDoubleDecResult() {
   return emitDoubleIncDecResult(false);
 }
 
+template <typename Fn, Fn fn>
+bool CacheIRCompiler::emitBigIntBinaryOperationShared() {
+  AutoCallVM callvm(masm, this, allocator);
+  Register lhs = allocator.useRegister(masm, reader.bigIntOperandId());
+  Register rhs = allocator.useRegister(masm, reader.bigIntOperandId());
+
+  callvm.prepare();
+
+  masm.Push(rhs);
+  masm.Push(lhs);
+
+  callvm.call<Fn, fn>();
+  return true;
+}
+
+bool CacheIRCompiler::emitBigIntAddResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::add>();
+}
+
+bool CacheIRCompiler::emitBigIntSubResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::sub>();
+}
+
+bool CacheIRCompiler::emitBigIntMulResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::mul>();
+}
+
+bool CacheIRCompiler::emitBigIntDivResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::div>();
+}
+
+bool CacheIRCompiler::emitBigIntModResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::mod>();
+}
+
+bool CacheIRCompiler::emitBigIntPowResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::pow>();
+}
+
+bool CacheIRCompiler::emitBigIntBitAndResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::bitAnd>();
+}
+
+bool CacheIRCompiler::emitBigIntBitOrResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::bitOr>();
+}
+
+bool CacheIRCompiler::emitBigIntBitXorResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::bitXor>();
+}
+
+bool CacheIRCompiler::emitBigIntLeftShiftResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::lsh>();
+}
+
+bool CacheIRCompiler::emitBigIntRightShiftResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt, HandleBigInt);
+  return emitBigIntBinaryOperationShared<Fn, BigInt::rsh>();
+}
+
+template <typename Fn, Fn fn>
+bool CacheIRCompiler::emitBigIntUnaryOperationShared() {
+  AutoCallVM callvm(masm, this, allocator);
+  Register val = allocator.useRegister(masm, reader.bigIntOperandId());
+
+  callvm.prepare();
+
+  masm.Push(val);
+
+  callvm.call<Fn, fn>();
+  return true;
+}
+
+bool CacheIRCompiler::emitBigIntNotResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt);
+  return emitBigIntUnaryOperationShared<Fn, BigInt::bitNot>();
+}
+
+bool CacheIRCompiler::emitBigIntNegationResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt);
+  return emitBigIntUnaryOperationShared<Fn, BigInt::neg>();
+}
+
+bool CacheIRCompiler::emitBigIntIncResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt);
+  return emitBigIntUnaryOperationShared<Fn, BigInt::inc>();
+}
+
+bool CacheIRCompiler::emitBigIntDecResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  using Fn = BigInt* (*)(JSContext*, HandleBigInt);
+  return emitBigIntUnaryOperationShared<Fn, BigInt::dec>();
+}
+
 bool CacheIRCompiler::emitTruncateDoubleToUInt32() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
   Register res = allocator.defineRegister(masm, reader.int32OperandId());
 
@@ -2739,7 +2899,7 @@ bool CacheIRCompiler::emitTruncateDoubleToUInt32() {
 }
 
 bool CacheIRCompiler::emitLoadArgumentsObjectLengthResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -2766,7 +2926,7 @@ bool CacheIRCompiler::emitLoadArgumentsObjectLengthResult() {
 }
 
 bool CacheIRCompiler::emitLoadFunctionLengthResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -2779,48 +2939,21 @@ bool CacheIRCompiler::emitLoadFunctionLengthResult() {
   // Get the JSFunction flags.
   masm.load16ZeroExtend(Address(obj, JSFunction::offsetOfFlags()), scratch);
 
-  // Functions with lazy scripts don't store their length.
-  // If the length was resolved before the length property might be shadowed.
+  // Functions with a SelfHostedLazyScript must be compiled with the slow-path
+  // before the function length is known. If the length was previously resolved,
+  // the length property may be shadowed.
   masm.branchTest32(
       Assembler::NonZero, scratch,
-      Imm32(FunctionFlags::INTERPRETED_LAZY | FunctionFlags::RESOLVED_LENGTH),
+      Imm32(FunctionFlags::SELFHOSTLAZY | FunctionFlags::RESOLVED_LENGTH),
       failure->label());
 
-  Label boundFunction;
-  masm.branchTest32(Assembler::NonZero, scratch,
-                    Imm32(FunctionFlags::BOUND_FUN), &boundFunction);
-  Label interpreted;
-  masm.branchTest32(Assembler::NonZero, scratch,
-                    Imm32(FunctionFlags::INTERPRETED), &interpreted);
-
-  // Load the length of the native function.
-  masm.load16ZeroExtend(Address(obj, JSFunction::offsetOfNargs()), scratch);
-  Label done;
-  masm.jump(&done);
-
-  masm.bind(&boundFunction);
-  // Bound functions might have a non-int32 length.
-  Address boundLength(
-      obj, FunctionExtended::offsetOfExtendedSlot(BOUND_FUN_LENGTH_SLOT));
-  masm.branchTestInt32(Assembler::NotEqual, boundLength, failure->label());
-  masm.unboxInt32(boundLength, scratch);
-  masm.jump(&done);
-
-  masm.bind(&interpreted);
-  // Load the length from the function's script.
-  masm.loadPtr(Address(obj, JSFunction::offsetOfScript()), scratch);
-  masm.loadPtr(Address(scratch, JSScript::offsetOfScriptData()), scratch);
-  masm.loadPtr(Address(scratch, RuntimeScriptData::offsetOfISD()), scratch);
-  masm.load16ZeroExtend(
-      Address(scratch, ImmutableScriptData::offsetOfFunLength()), scratch);
-
-  masm.bind(&done);
+  masm.loadFunctionLength(obj, scratch, scratch, failure->label());
   EmitStoreResult(masm, scratch, JSVAL_TYPE_INT32, output);
   return true;
 }
 
 bool CacheIRCompiler::emitLoadStringLengthResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register str = allocator.useRegister(masm, reader.stringOperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -2831,7 +2964,7 @@ bool CacheIRCompiler::emitLoadStringLengthResult() {
 }
 
 bool CacheIRCompiler::emitLoadStringCharResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register str = allocator.useRegister(masm, reader.stringOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
@@ -2867,7 +3000,7 @@ bool CacheIRCompiler::emitLoadStringCharResult() {
 }
 
 bool CacheIRCompiler::emitLoadArgumentsObjectArgResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
@@ -2910,7 +3043,7 @@ bool CacheIRCompiler::emitLoadArgumentsObjectArgResult() {
 }
 
 bool CacheIRCompiler::emitLoadDenseElementResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
@@ -2937,7 +3070,7 @@ bool CacheIRCompiler::emitLoadDenseElementResult() {
 }
 
 bool CacheIRCompiler::emitGuardIndexIsNonNegative() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register index = allocator.useRegister(masm, reader.int32OperandId());
 
   FailurePath* failure;
@@ -2950,7 +3083,7 @@ bool CacheIRCompiler::emitGuardIndexIsNonNegative() {
 }
 
 bool CacheIRCompiler::emitGuardIndexGreaterThanDenseInitLength() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
   AutoScratchRegister scratch(allocator, masm);
@@ -2975,7 +3108,7 @@ bool CacheIRCompiler::emitGuardIndexGreaterThanDenseInitLength() {
 }
 
 bool CacheIRCompiler::emitGuardIndexGreaterThanDenseCapacity() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
   AutoScratchRegister scratch(allocator, masm);
@@ -3000,7 +3133,7 @@ bool CacheIRCompiler::emitGuardIndexGreaterThanDenseCapacity() {
 }
 
 bool CacheIRCompiler::emitGuardIndexGreaterThanArrayLength() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
   AutoScratchRegister scratch(allocator, masm);
@@ -3024,7 +3157,7 @@ bool CacheIRCompiler::emitGuardIndexGreaterThanArrayLength() {
 }
 
 bool CacheIRCompiler::emitGuardIndexIsValidUpdateOrAdd() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
   AutoScratchRegister scratch(allocator, masm);
@@ -3055,7 +3188,7 @@ bool CacheIRCompiler::emitGuardIndexIsValidUpdateOrAdd() {
 }
 
 bool CacheIRCompiler::emitGuardTagNotEqual() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register lhs = allocator.useRegister(masm, reader.valueTagOperandId());
   Register rhs = allocator.useRegister(masm, reader.valueTagOperandId());
 
@@ -3078,7 +3211,7 @@ bool CacheIRCompiler::emitGuardTagNotEqual() {
 }
 
 bool CacheIRCompiler::emitGuardXrayExpandoShapeAndDefaultProto() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   bool hasExpando = reader.readBool();
   StubFieldOffset shapeWrapper(reader.stubOffset(), StubField::Type::JSObject);
@@ -3138,7 +3271,7 @@ bool CacheIRCompiler::emitGuardXrayExpandoShapeAndDefaultProto() {
 }
 
 bool CacheIRCompiler::emitGuardNoAllocationMetadataBuilder() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   FailurePath* failure;
   if (!addFailurePath(&failure)) {
     return false;
@@ -3152,7 +3285,7 @@ bool CacheIRCompiler::emitGuardNoAllocationMetadataBuilder() {
 }
 
 bool CacheIRCompiler::emitGuardObjectGroupNotPretenured() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoScratchRegister scratch(allocator, masm);
 
   FailurePath* failure;
@@ -3181,7 +3314,7 @@ bool CacheIRCompiler::emitGuardFunctionHasJitEntry() {
 }
 
 bool CacheIRCompiler::emitGuardFunctionIsNative() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -3196,7 +3329,7 @@ bool CacheIRCompiler::emitGuardFunctionIsNative() {
 }
 
 bool CacheIRCompiler::emitGuardFunctionIsConstructor() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register funcReg = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegister scratch(allocator, masm);
 
@@ -3226,7 +3359,7 @@ bool CacheIRCompiler::emitGuardNotClassConstructor() {
 }
 
 bool CacheIRCompiler::emitLoadDenseElementHoleResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
@@ -3269,7 +3402,7 @@ bool CacheIRCompiler::emitLoadDenseElementHoleResult() {
 }
 
 bool CacheIRCompiler::emitLoadTypedElementExistsResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
@@ -3292,7 +3425,7 @@ bool CacheIRCompiler::emitLoadTypedElementExistsResult() {
 }
 
 bool CacheIRCompiler::emitLoadDenseElementExistsResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
@@ -3319,7 +3452,7 @@ bool CacheIRCompiler::emitLoadDenseElementExistsResult() {
 }
 
 bool CacheIRCompiler::emitLoadDenseElementHoleExistsResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
@@ -3357,7 +3490,7 @@ bool CacheIRCompiler::emitLoadDenseElementHoleExistsResult() {
 }
 
 bool CacheIRCompiler::emitArrayJoinResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   ObjOperandId objId = reader.objOperandId();
 
   AutoOutputRegister output(*this);
@@ -3405,13 +3538,14 @@ bool CacheIRCompiler::emitArrayJoinResult() {
 }
 
 bool CacheIRCompiler::emitStoreTypedElement() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   TypedThingLayout layout = reader.typedThingLayout();
   Scalar::Type type = reader.scalarType();
   Register index = allocator.useRegister(masm, reader.int32OperandId());
 
   Maybe<Register> valInt32;
+  Maybe<Register> valBigInt;
   switch (type) {
     case Scalar::Int8:
     case Scalar::Uint8:
@@ -3433,6 +3567,9 @@ bool CacheIRCompiler::emitStoreTypedElement() {
 
     case Scalar::BigInt64:
     case Scalar::BigUint64:
+      valBigInt.emplace(allocator.useRegister(masm, reader.bigIntOperandId()));
+      break;
+
     case Scalar::MaxTypedArrayViewType:
     case Scalar::Int64:
       MOZ_CRASH("Unsupported TypedArray type");
@@ -3441,7 +3578,13 @@ bool CacheIRCompiler::emitStoreTypedElement() {
   bool handleOOB = reader.readBool();
 
   AutoScratchRegister scratch1(allocator, masm);
-  AutoSpectreBoundsScratchRegister spectreScratch(allocator, masm);
+  Maybe<AutoScratchRegister> scratch2;
+  Maybe<AutoSpectreBoundsScratchRegister> spectreScratch;
+  if (Scalar::isBigIntType(type)) {
+    scratch2.emplace(allocator, masm);
+  } else {
+    spectreScratch.emplace(allocator, masm);
+  }
 
   FailurePath* failure;
   if (!addFailurePath(&failure)) {
@@ -3450,8 +3593,9 @@ bool CacheIRCompiler::emitStoreTypedElement() {
 
   // Bounds check.
   Label done;
+  Register spectreTemp = scratch2 ? scratch2->get() : spectreScratch->get();
   LoadTypedThingLength(masm, layout, obj, scratch1);
-  masm.spectreBoundsCheck32(index, scratch1, spectreScratch,
+  masm.spectreBoundsCheck32(index, scratch1, spectreTemp,
                             handleOOB ? &done : failure->label());
 
   // Load the elements vector.
@@ -3459,7 +3603,22 @@ bool CacheIRCompiler::emitStoreTypedElement() {
 
   BaseIndex dest(scratch1, index, ScaleFromElemWidth(Scalar::byteSize(type)));
 
-  if (type == Scalar::Float32) {
+  if (Scalar::isBigIntType(type)) {
+#ifdef JS_PUNBOX64
+    Register64 temp(scratch2->get());
+#else
+    // We don't have more registers available on x86, so spill |obj|.
+    masm.push(obj);
+    Register64 temp(scratch2->get(), obj);
+#endif
+
+    masm.loadBigInt64(*valBigInt, temp);
+    masm.storeToTypedBigIntArray(type, temp, dest);
+
+#ifndef JS_PUNBOX64
+    masm.pop(obj);
+#endif
+  } else if (type == Scalar::Float32) {
     ScratchFloat32Scope fpscratch(masm);
     masm.convertDoubleToFloat32(FloatReg0, fpscratch);
     masm.storeToTypedFloatArray(type, fpscratch, dest);
@@ -3473,16 +3632,56 @@ bool CacheIRCompiler::emitStoreTypedElement() {
   return true;
 }
 
+static bool CanNurseryAllocateBigInt(JSContext* cx) {
+  JS::Zone* zone = cx->zone();
+  return zone->runtimeFromAnyThread()->gc.nursery().canAllocateBigInts() &&
+         zone->allocNurseryBigInts;
+}
+
+static void EmitAllocateBigInt(MacroAssembler& masm, Register result,
+                               Register temp, const LiveRegisterSet& liveSet,
+                               Label* fail, bool attemptNursery) {
+  Label fallback, done;
+  masm.newGCBigInt(result, temp, &fallback, attemptNursery);
+  masm.jump(&done);
+  {
+    masm.bind(&fallback);
+    masm.PushRegsInMask(liveSet);
+
+    masm.setupUnalignedABICall(temp);
+    masm.loadJSContext(temp);
+    masm.passABIArg(temp);
+    masm.move32(Imm32(attemptNursery), result);
+    masm.passABIArg(result);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, jit::AllocateBigIntNoGC));
+    masm.storeCallPointerResult(result);
+
+    masm.PopRegsInMask(liveSet);
+    masm.branchPtr(Assembler::Equal, result, ImmWord(0), fail);
+  }
+  masm.bind(&done);
+}
+
 bool CacheIRCompiler::emitLoadTypedElementResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
   TypedThingLayout layout = reader.typedThingLayout();
   Scalar::Type type = reader.scalarType();
+  bool handleOOB = reader.readBool();
 
   AutoScratchRegister scratch1(allocator, masm);
+#ifdef JS_PUNBOX64
+  AutoScratchRegister scratch2(allocator, masm);
+#else
+  // There are too few registers available on x86, so we may need to reuse the
+  // output's scratch register.
   AutoScratchRegisterMaybeOutput scratch2(allocator, masm, output);
+#endif
+
+  // BigInt values are always boxed.
+  MOZ_ASSERT_IF(Scalar::isBigIntType(type), output.hasValue());
 
   if (!output.hasValue()) {
     if (type == Scalar::Float32 || type == Scalar::Float64) {
@@ -3507,17 +3706,56 @@ bool CacheIRCompiler::emitLoadTypedElementResult() {
   }
 
   // Bounds check.
+  Label outOfBounds;
   LoadTypedThingLength(masm, layout, obj, scratch1);
-  masm.spectreBoundsCheck32(index, scratch1, scratch2, failure->label());
+  masm.spectreBoundsCheck32(index, scratch1, scratch2,
+                            handleOOB ? &outOfBounds : failure->label());
+
+  // Allocate BigInt if needed. The code after this should be infallible.
+  Maybe<Register> bigInt;
+  if (Scalar::isBigIntType(type)) {
+    bigInt.emplace(output.valueReg().scratchReg());
+
+    LiveRegisterSet save(GeneralRegisterSet::Volatile(),
+                         liveVolatileFloatRegs());
+    save.takeUnchecked(scratch1);
+    save.takeUnchecked(scratch2);
+    save.takeUnchecked(output);
+
+    bool attemptNursery = CanNurseryAllocateBigInt(cx_);
+    EmitAllocateBigInt(masm, *bigInt, scratch1, save, failure->label(),
+                       attemptNursery);
+  }
 
   // Load the elements vector.
   LoadTypedThingData(masm, layout, obj, scratch1);
 
   // Load the value.
   BaseIndex source(scratch1, index, ScaleFromElemWidth(Scalar::byteSize(type)));
+
   if (output.hasValue()) {
-    masm.loadFromTypedArray(type, source, output.valueReg(),
-                            *allowDoubleResult_, scratch1, failure->label());
+    if (Scalar::isBigIntType(type)) {
+#ifdef JS_PUNBOX64
+      Register64 temp(scratch2);
+#else
+      // We don't have more registers available on x86, so spill |obj| and
+      // additionally use the output's type register.
+      MOZ_ASSERT(output.valueReg().scratchReg() != output.valueReg().typeReg());
+      masm.push(obj);
+      Register64 temp(output.valueReg().typeReg(), obj);
+#endif
+
+      masm.loadFromTypedBigIntArray(type, source, *bigInt, temp);
+
+#ifndef JS_PUNBOX64
+      masm.pop(obj);
+#endif
+
+      masm.tagValue(JSVAL_TYPE_BIGINT, *bigInt, output.valueReg());
+    } else {
+      masm.loadFromTypedArray(type, source, output.valueReg(),
+                              *allowDoubleResult_, scratch1, failure->label());
+    }
   } else {
     bool needGpr = (type == Scalar::Int8 || type == Scalar::Uint8 ||
                     type == Scalar::Int16 || type == Scalar::Uint16 ||
@@ -3532,17 +3770,33 @@ bool CacheIRCompiler::emitLoadTypedElementResult() {
                               failure->label());
     }
   }
+
+  if (handleOOB) {
+    Label done;
+    masm.jump(&done);
+
+    masm.bind(&outOfBounds);
+    if (output.hasValue()) {
+      masm.moveValue(UndefinedValue(), output.valueReg());
+    } else {
+      masm.assumeUnreachable("Should have monitored undefined result");
+    }
+
+    masm.bind(&done);
+  }
+
   return true;
 }
 
 bool CacheIRCompiler::emitStoreTypedObjectScalarProperty() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   StubFieldOffset offset(reader.stubOffset(), StubField::Type::RawWord);
   TypedThingLayout layout = reader.typedThingLayout();
   Scalar::Type type = reader.scalarType();
 
   Maybe<Register> valInt32;
+  Maybe<Register> valBigInt;
   switch (type) {
     case Scalar::Int8:
     case Scalar::Uint8:
@@ -3564,18 +3818,40 @@ bool CacheIRCompiler::emitStoreTypedObjectScalarProperty() {
 
     case Scalar::BigInt64:
     case Scalar::BigUint64:
+      valBigInt.emplace(allocator.useRegister(masm, reader.bigIntOperandId()));
+      break;
+
     case Scalar::MaxTypedArrayViewType:
     case Scalar::Int64:
       MOZ_CRASH("Unsupported TypedArray type");
   }
 
   AutoScratchRegister scratch(allocator, masm);
+  Maybe<AutoScratchRegister> bigIntScratch;
+  if (Scalar::isBigIntType(type)) {
+    bigIntScratch.emplace(allocator, masm);
+  }
 
   // Compute the address being written to.
   LoadTypedThingData(masm, layout, obj, scratch);
   Address dest = emitAddressFromStubField(offset, scratch);
 
-  if (type == Scalar::Float32) {
+  if (Scalar::isBigIntType(type)) {
+#ifdef JS_PUNBOX64
+    Register64 temp(bigIntScratch->get());
+#else
+    // We don't have more registers available on x86, so spill |obj|.
+    masm.push(obj);
+    Register64 temp(bigIntScratch->get(), obj);
+#endif
+
+    masm.loadBigInt64(*valBigInt, temp);
+    masm.storeToTypedBigIntArray(type, temp, dest);
+
+#ifndef JS_PUNBOX64
+    masm.pop(obj);
+#endif
+  } else if (type == Scalar::Float32) {
     ScratchFloat32Scope fpscratch(masm);
     masm.convertDoubleToFloat32(FloatReg0, fpscratch);
     masm.storeToTypedFloatArray(type, fpscratch, dest);
@@ -3587,16 +3863,71 @@ bool CacheIRCompiler::emitStoreTypedObjectScalarProperty() {
   return true;
 }
 
-void CacheIRCompiler::emitLoadTypedObjectResultShared(
-    const Address& fieldAddr, Register scratch, uint32_t typeDescr,
-    const AutoOutputRegister& output) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+bool CacheIRCompiler::emitLoadTypedObjectResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoOutputRegister output(*this);
   MOZ_ASSERT(output.hasValue());
+  Register obj = allocator.useRegister(masm, reader.objOperandId());
+  AutoScratchRegister scratch1(allocator, masm);
+  AutoScratchRegister scratch2(allocator, masm);
+
+  TypedThingLayout layout = reader.typedThingLayout();
+  uint32_t typeDescr = reader.typeDescrKey();
+  StubFieldOffset offset(reader.stubOffset(), StubField::Type::RawWord);
+
+  // Allocate BigInt if needed. The code after this should be infallible.
+  Maybe<Register> bigInt;
+  if (SimpleTypeDescrKeyIsScalar(typeDescr)) {
+    Scalar::Type type = ScalarTypeFromSimpleTypeDescrKey(typeDescr);
+    if (Scalar::isBigIntType(type)) {
+      FailurePath* failure;
+      if (!addFailurePath(&failure)) {
+        return false;
+      }
+
+      bigInt.emplace(output.valueReg().scratchReg());
+
+      LiveRegisterSet save(GeneralRegisterSet::Volatile(),
+                           liveVolatileFloatRegs());
+      save.takeUnchecked(scratch1);
+      save.takeUnchecked(scratch2);
+      save.takeUnchecked(output);
+
+      bool attemptNursery = CanNurseryAllocateBigInt(cx_);
+      EmitAllocateBigInt(masm, *bigInt, scratch1, save, failure->label(),
+                         attemptNursery);
+    }
+  }
+
+  // Get the object's data pointer.
+  LoadTypedThingData(masm, layout, obj, scratch1);
+
+  // Get the address being written to.
+  Address fieldAddr = emitAddressFromStubField(offset, scratch1);
 
   if (SimpleTypeDescrKeyIsScalar(typeDescr)) {
     Scalar::Type type = ScalarTypeFromSimpleTypeDescrKey(typeDescr);
-    masm.loadFromTypedArray(type, fieldAddr, output.valueReg(),
-                            /* allowDouble = */ true, scratch, nullptr);
+
+    if (Scalar::isBigIntType(type)) {
+#ifdef JS_PUNBOX64
+      Register64 temp(scratch2);
+#else
+      // We don't have more registers available on x86, so spill |obj|.
+      masm.push(obj);
+      Register64 temp(scratch2, obj);
+#endif
+
+      masm.loadFromTypedBigIntArray(type, fieldAddr, *bigInt, temp);
+
+#ifndef JS_PUNBOX64
+      masm.pop(obj);
+#endif
+
+      masm.tagValue(JSVAL_TYPE_BIGINT, *bigInt, output.valueReg());
+    } else {
+      masm.loadFromTypedArray(type, fieldAddr, output.valueReg(),
+                              /* allowDouble = */ true, scratch2, nullptr);
+    }
   } else {
     ReferenceType type = ReferenceTypeFromSimpleTypeDescrKey(typeDescr);
     switch (type) {
@@ -3609,29 +3940,30 @@ void CacheIRCompiler::emitLoadTypedObjectResultShared(
         // more complicated.
       case ReferenceType::TYPE_OBJECT: {
         Label notNull, done;
-        masm.loadPtr(fieldAddr, scratch);
-        masm.branchTestPtr(Assembler::NonZero, scratch, scratch, &notNull);
+        masm.loadPtr(fieldAddr, scratch2);
+        masm.branchTestPtr(Assembler::NonZero, scratch2, scratch2, &notNull);
         masm.moveValue(NullValue(), output.valueReg());
         masm.jump(&done);
         masm.bind(&notNull);
-        masm.tagValue(JSVAL_TYPE_OBJECT, scratch, output.valueReg());
+        masm.tagValue(JSVAL_TYPE_OBJECT, scratch2, output.valueReg());
         masm.bind(&done);
         break;
       }
 
       case ReferenceType::TYPE_STRING:
-        masm.loadPtr(fieldAddr, scratch);
-        masm.tagValue(JSVAL_TYPE_STRING, scratch, output.valueReg());
+        masm.loadPtr(fieldAddr, scratch2);
+        masm.tagValue(JSVAL_TYPE_STRING, scratch2, output.valueReg());
         break;
 
       default:
         MOZ_CRASH("Invalid ReferenceTypeDescr");
     }
   }
+  return true;
 }
 
 bool CacheIRCompiler::emitLoadObjectResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
 
@@ -3645,7 +3977,7 @@ bool CacheIRCompiler::emitLoadObjectResult() {
 }
 
 bool CacheIRCompiler::emitLoadTypeOfObjectResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -3691,7 +4023,7 @@ bool CacheIRCompiler::emitLoadTypeOfObjectResult() {
 }
 
 bool CacheIRCompiler::emitLoadInt32TruthyResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
 
@@ -3708,7 +4040,7 @@ bool CacheIRCompiler::emitLoadInt32TruthyResult() {
 }
 
 bool CacheIRCompiler::emitLoadStringTruthyResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register str = allocator.useRegister(masm, reader.stringOperandId());
 
@@ -3726,7 +4058,7 @@ bool CacheIRCompiler::emitLoadStringTruthyResult() {
 }
 
 bool CacheIRCompiler::emitLoadDoubleTruthyResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
 
@@ -3748,7 +4080,7 @@ bool CacheIRCompiler::emitLoadDoubleTruthyResult() {
 }
 
 bool CacheIRCompiler::emitLoadObjectTruthyResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -3775,8 +4107,27 @@ bool CacheIRCompiler::emitLoadObjectTruthyResult() {
   return true;
 }
 
+bool CacheIRCompiler::emitLoadBigIntTruthyResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoOutputRegister output(*this);
+  Register bigInt = allocator.useRegister(masm, reader.bigIntOperandId());
+
+  Label ifFalse, done;
+  masm.branch32(Assembler::Equal,
+                Address(bigInt, BigInt::offsetOfDigitLength()), Imm32(0),
+                &ifFalse);
+  masm.moveValue(BooleanValue(true), output.valueReg());
+  masm.jump(&done);
+
+  masm.bind(&ifFalse);
+  masm.moveValue(BooleanValue(false), output.valueReg());
+
+  masm.bind(&done);
+  return true;
+}
+
 bool CacheIRCompiler::emitLoadNewObjectFromTemplateResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegister obj(allocator, masm);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
@@ -3799,7 +4150,7 @@ bool CacheIRCompiler::emitLoadNewObjectFromTemplateResult() {
 }
 
 bool CacheIRCompiler::emitComparePointerResultShared(bool symbol) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   Register left = symbol ? allocator.useRegister(masm, reader.symbolOperandId())
@@ -3825,17 +4176,17 @@ bool CacheIRCompiler::emitComparePointerResultShared(bool symbol) {
 }
 
 bool CacheIRCompiler::emitCompareObjectResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   return emitComparePointerResultShared(false);
 }
 
 bool CacheIRCompiler::emitCompareSymbolResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   return emitComparePointerResultShared(true);
 }
 
 bool CacheIRCompiler::emitCompareInt32Result() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   Register left = allocator.useRegister(masm, reader.int32OperandId());
   Register right = allocator.useRegister(masm, reader.int32OperandId());
@@ -3854,7 +4205,7 @@ bool CacheIRCompiler::emitCompareInt32Result() {
 }
 
 bool CacheIRCompiler::emitCompareDoubleResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   FailurePath* failure;
@@ -3862,6 +4213,8 @@ bool CacheIRCompiler::emitCompareDoubleResult() {
     return false;
   }
 
+  // Float register must be preserved. The Compare ICs use the fact that
+  // baseline has them available, as well as fixed temps on LBinaryBoolCache.
   allocator.ensureDoubleRegister(masm, reader.numberOperandId(), FloatReg0);
   allocator.ensureDoubleRegister(masm, reader.numberOperandId(), FloatReg1);
   JSOp op = reader.jsop();
@@ -3877,8 +4230,484 @@ bool CacheIRCompiler::emitCompareDoubleResult() {
   return true;
 }
 
+bool CacheIRCompiler::emitCompareBigIntResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoOutputRegister output(*this);
+
+  Register lhs = allocator.useRegister(masm, reader.bigIntOperandId());
+  Register rhs = allocator.useRegister(masm, reader.bigIntOperandId());
+  JSOp op = reader.jsop();
+
+  AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
+
+  LiveRegisterSet save(GeneralRegisterSet::Volatile(), liveVolatileFloatRegs());
+  masm.PushRegsInMask(save);
+
+  masm.setupUnalignedABICall(scratch);
+
+  // Push the operands in reverse order for JSOp::Le and JSOp::Gt:
+  // - |left <= right| is implemented as |right >= left|.
+  // - |left > right| is implemented as |right < left|.
+  if (op == JSOp::Le || op == JSOp::Gt) {
+    masm.passABIArg(rhs);
+    masm.passABIArg(lhs);
+  } else {
+    masm.passABIArg(lhs);
+    masm.passABIArg(rhs);
+  }
+
+  using Fn = bool (*)(BigInt*, BigInt*);
+  Fn fn;
+  if (op == JSOp::Eq || op == JSOp::StrictEq) {
+    fn = jit::BigIntEqual<EqualityKind::Equal>;
+  } else if (op == JSOp::Ne || op == JSOp::StrictNe) {
+    fn = jit::BigIntEqual<EqualityKind::NotEqual>;
+  } else if (op == JSOp::Lt || op == JSOp::Gt) {
+    fn = jit::BigIntCompare<ComparisonKind::LessThan>;
+  } else {
+    MOZ_ASSERT(op == JSOp::Le || op == JSOp::Ge);
+    fn = jit::BigIntCompare<ComparisonKind::GreaterThanOrEqual>;
+  }
+
+  masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, fn));
+  masm.storeCallBoolResult(scratch);
+
+  LiveRegisterSet ignore;
+  ignore.add(scratch);
+  masm.PopRegsInMaskIgnore(save, ignore);
+
+  EmitStoreResult(masm, scratch, JSVAL_TYPE_BOOLEAN, output);
+  return true;
+}
+
+bool CacheIRCompiler::emitCompareBigIntInt32ResultShared(
+    Register bigInt, Register int32, Register scratch1, Register scratch2,
+    JSOp op, const AutoOutputRegister& output) {
+  MOZ_ASSERT(IsLooseEqualityOp(op) || IsRelationalOp(op));
+
+  static_assert(std::is_same<BigInt::Digit, uintptr_t>::value,
+                "BigInt digit can be loaded in a pointer-sized register");
+  static_assert(sizeof(BigInt::Digit) >= sizeof(uint32_t),
+                "BigInt digit stores at least an uint32");
+
+  // Test for too large numbers.
+  //
+  // If the absolute value of the BigInt can't be expressed in an uint32/uint64,
+  // the result of the comparison is a constant.
+  Label ifTrue, ifFalse;
+  if (op == JSOp::Eq || op == JSOp::Ne) {
+    Label* tooLarge = op == JSOp::Eq ? &ifFalse : &ifTrue;
+    masm.branch32(Assembler::GreaterThan,
+                  Address(bigInt, BigInt::offsetOfDigitLength()), Imm32(1),
+                  tooLarge);
+  } else {
+    Label doCompare;
+    masm.branch32(Assembler::LessThanOrEqual,
+                  Address(bigInt, BigInt::offsetOfDigitLength()), Imm32(1),
+                  &doCompare);
+
+    // Still need to take the sign-bit into account for relational operations.
+    if (op == JSOp::Lt || op == JSOp::Le) {
+      masm.branchIfNegativeBigInt(bigInt, &ifTrue);
+      masm.jump(&ifFalse);
+    } else {
+      masm.branchIfNegativeBigInt(bigInt, &ifFalse);
+      masm.jump(&ifTrue);
+    }
+
+    masm.bind(&doCompare);
+  }
+
+  // Test for mismatched signs and, if the signs are equal, load |abs(x)| in
+  // |scratch1| and |abs(y)| in |scratch2| and then compare the absolute numbers
+  // against each other.
+  {
+    // Jump to |ifTrue| resp. |ifFalse| if the BigInt is strictly less than
+    // resp. strictly greater than the int32 value, depending on the comparison
+    // operator.
+    Label* greaterThan;
+    Label* lessThan;
+    if (op == JSOp::Eq) {
+      greaterThan = &ifFalse;
+      lessThan = &ifFalse;
+    } else if (op == JSOp::Ne) {
+      greaterThan = &ifTrue;
+      lessThan = &ifTrue;
+    } else if (op == JSOp::Lt || op == JSOp::Le) {
+      greaterThan = &ifFalse;
+      lessThan = &ifTrue;
+    } else {
+      MOZ_ASSERT(op == JSOp::Gt || op == JSOp::Ge);
+      greaterThan = &ifTrue;
+      lessThan = &ifFalse;
+    }
+
+    // BigInt digits are always stored as an absolute number.
+    masm.loadFirstBigIntDigitOrZero(bigInt, scratch1);
+
+    // Load the int32 into |scratch2| and negate it for negative numbers.
+    masm.move32(int32, scratch2);
+
+    Label isNegative, doCompare;
+    masm.branchIfNegativeBigInt(bigInt, &isNegative);
+    masm.branch32(Assembler::LessThan, int32, Imm32(0), greaterThan);
+    masm.jump(&doCompare);
+
+    // We rely on |neg32(INT32_MIN)| staying INT32_MIN, because we're using an
+    // unsigned comparison below.
+    masm.bind(&isNegative);
+    masm.branch32(Assembler::GreaterThanOrEqual, int32, Imm32(0), lessThan);
+    masm.neg32(scratch2);
+
+    // Not all supported platforms (e.g. MIPS64) zero-extend 32-bit operations,
+    // so we need to explicitly clear any high 32-bits.
+    masm.move32ZeroExtendToPtr(scratch2, scratch2);
+
+    // Reverse the relational comparator for negative numbers.
+    // |-x < -y| <=> |+x > +y|.
+    // |-x ≤ -y| <=> |+x ≥ +y|.
+    // |-x > -y| <=> |+x < +y|.
+    // |-x ≥ -y| <=> |+x ≤ +y|.
+    JSOp reversed = ReverseCompareOp(op);
+    if (reversed != op) {
+      masm.branchPtr(JSOpToCondition(reversed, /* signed = */ false), scratch1,
+                     scratch2, &ifTrue);
+      masm.jump(&ifFalse);
+    }
+
+    masm.bind(&doCompare);
+    masm.branchPtr(JSOpToCondition(op, /* signed = */ false), scratch1,
+                   scratch2, &ifTrue);
+  }
+
+  Label done;
+  masm.bind(&ifFalse);
+  EmitStoreBoolean(masm, false, output);
+  masm.jump(&done);
+
+  masm.bind(&ifTrue);
+  EmitStoreBoolean(masm, true, output);
+
+  masm.bind(&done);
+  return true;
+}
+
+bool CacheIRCompiler::emitCompareBigIntInt32Result() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoOutputRegister output(*this);
+  Register left = allocator.useRegister(masm, reader.bigIntOperandId());
+  Register right = allocator.useRegister(masm, reader.int32OperandId());
+  JSOp op = reader.jsop();
+
+  AutoScratchRegisterMaybeOutput scratch1(allocator, masm, output);
+  AutoScratchRegister scratch2(allocator, masm);
+
+  return emitCompareBigIntInt32ResultShared(left, right, scratch1, scratch2, op,
+                                            output);
+}
+
+bool CacheIRCompiler::emitCompareInt32BigIntResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoOutputRegister output(*this);
+  Register left = allocator.useRegister(masm, reader.int32OperandId());
+  Register right = allocator.useRegister(masm, reader.bigIntOperandId());
+  JSOp op = reader.jsop();
+
+  AutoScratchRegisterMaybeOutput scratch1(allocator, masm, output);
+  AutoScratchRegister scratch2(allocator, masm);
+
+  return emitCompareBigIntInt32ResultShared(right, left, scratch1, scratch2,
+                                            ReverseCompareOp(op), output);
+}
+
+bool CacheIRCompiler::emitCompareBigIntNumberResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoOutputRegister output(*this);
+
+  // Float register must be preserved. The Compare ICs use the fact that
+  // baseline has them available, as well as fixed temps on LBinaryBoolCache.
+  Register lhs = allocator.useRegister(masm, reader.bigIntOperandId());
+  allocator.ensureDoubleRegister(masm, reader.numberOperandId(), FloatReg0);
+  JSOp op = reader.jsop();
+
+  AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
+
+  LiveRegisterSet save(GeneralRegisterSet::Volatile(), liveVolatileFloatRegs());
+  masm.PushRegsInMask(save);
+
+  masm.setupUnalignedABICall(scratch);
+
+  // Push the operands in reverse order for JSOp::Le and JSOp::Gt:
+  // - |left <= right| is implemented as |right >= left|.
+  // - |left > right| is implemented as |right < left|.
+  if (op == JSOp::Le || op == JSOp::Gt) {
+    masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
+    masm.passABIArg(lhs);
+  } else {
+    masm.passABIArg(lhs);
+    masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
+  }
+
+  using FnBigIntNumber = bool (*)(BigInt*, double);
+  using FnNumberBigInt = bool (*)(double, BigInt*);
+  void* fun;
+  switch (op) {
+    case JSOp::Eq: {
+      FnBigIntNumber fn = jit::BigIntNumberEqual<EqualityKind::Equal>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    case JSOp::Ne: {
+      FnBigIntNumber fn = jit::BigIntNumberEqual<EqualityKind::NotEqual>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    case JSOp::Lt: {
+      FnBigIntNumber fn = jit::BigIntNumberCompare<ComparisonKind::LessThan>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    case JSOp::Gt: {
+      FnNumberBigInt fn = jit::NumberBigIntCompare<ComparisonKind::LessThan>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    case JSOp::Le: {
+      FnNumberBigInt fn =
+          jit::NumberBigIntCompare<ComparisonKind::GreaterThanOrEqual>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    case JSOp::Ge: {
+      FnBigIntNumber fn =
+          jit::BigIntNumberCompare<ComparisonKind::GreaterThanOrEqual>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    default:
+      MOZ_CRASH("unhandled op");
+  }
+
+  masm.callWithABI(fun);
+  masm.storeCallBoolResult(scratch);
+
+  LiveRegisterSet ignore;
+  ignore.add(scratch);
+  masm.PopRegsInMaskIgnore(save, ignore);
+
+  EmitStoreResult(masm, scratch, JSVAL_TYPE_BOOLEAN, output);
+  return true;
+}
+
+bool CacheIRCompiler::emitCompareNumberBigIntResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoOutputRegister output(*this);
+
+  // Float register must be preserved. The Compare ICs use the fact that
+  // baseline has them available, as well as fixed temps on LBinaryBoolCache.
+  allocator.ensureDoubleRegister(masm, reader.numberOperandId(), FloatReg0);
+  Register rhs = allocator.useRegister(masm, reader.bigIntOperandId());
+  JSOp op = reader.jsop();
+
+  AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
+
+  LiveRegisterSet save(GeneralRegisterSet::Volatile(), liveVolatileFloatRegs());
+  masm.PushRegsInMask(save);
+
+  masm.setupUnalignedABICall(scratch);
+
+  // Push the operands in reverse order for JSOp::Le and JSOp::Gt:
+  // - |left <= right| is implemented as |right >= left|.
+  // - |left > right| is implemented as |right < left|.
+  // Also push the operands in reverse order for JSOp::Eq and JSOp::Ne.
+  if (op == JSOp::Lt || op == JSOp::Ge) {
+    masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
+    masm.passABIArg(rhs);
+  } else {
+    masm.passABIArg(rhs);
+    masm.passABIArg(FloatReg0, MoveOp::DOUBLE);
+  }
+
+  using FnBigIntNumber = bool (*)(BigInt*, double);
+  using FnNumberBigInt = bool (*)(double, BigInt*);
+  void* fun;
+  switch (op) {
+    case JSOp::Eq: {
+      FnBigIntNumber fn = jit::BigIntNumberEqual<EqualityKind::Equal>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    case JSOp::Ne: {
+      FnBigIntNumber fn = jit::BigIntNumberEqual<EqualityKind::NotEqual>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    case JSOp::Lt: {
+      FnNumberBigInt fn = jit::NumberBigIntCompare<ComparisonKind::LessThan>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    case JSOp::Gt: {
+      FnBigIntNumber fn = jit::BigIntNumberCompare<ComparisonKind::LessThan>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    case JSOp::Le: {
+      FnBigIntNumber fn =
+          jit::BigIntNumberCompare<ComparisonKind::GreaterThanOrEqual>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    case JSOp::Ge: {
+      FnNumberBigInt fn =
+          jit::NumberBigIntCompare<ComparisonKind::GreaterThanOrEqual>;
+      fun = JS_FUNC_TO_DATA_PTR(void*, fn);
+      break;
+    }
+    default:
+      MOZ_CRASH("unhandled op");
+  }
+
+  masm.callWithABI(fun);
+  masm.storeCallBoolResult(scratch);
+
+  LiveRegisterSet ignore;
+  ignore.add(scratch);
+  masm.PopRegsInMaskIgnore(save, ignore);
+
+  EmitStoreResult(masm, scratch, JSVAL_TYPE_BOOLEAN, output);
+  return true;
+}
+
+bool CacheIRCompiler::emitCompareBigIntStringResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoCallVM callvm(masm, this, allocator);
+
+  Register lhs = allocator.useRegister(masm, reader.bigIntOperandId());
+  Register rhs = allocator.useRegister(masm, reader.stringOperandId());
+  JSOp op = reader.jsop();
+
+  callvm.prepare();
+
+  // Push the operands in reverse order for JSOp::Le and JSOp::Gt:
+  // - |left <= right| is implemented as |right >= left|.
+  // - |left > right| is implemented as |right < left|.
+  if (op == JSOp::Le || op == JSOp::Gt) {
+    masm.Push(lhs);
+    masm.Push(rhs);
+  } else {
+    masm.Push(rhs);
+    masm.Push(lhs);
+  }
+
+  using FnBigIntString =
+      bool (*)(JSContext*, HandleBigInt, HandleString, bool*);
+  using FnStringBigInt =
+      bool (*)(JSContext*, HandleString, HandleBigInt, bool*);
+
+  switch (op) {
+    case JSOp::Eq: {
+      constexpr auto Equal = EqualityKind::Equal;
+      callvm.call<FnBigIntString, BigIntStringEqual<Equal>>();
+      break;
+    }
+    case JSOp::Ne: {
+      constexpr auto NotEqual = EqualityKind::NotEqual;
+      callvm.call<FnBigIntString, BigIntStringEqual<NotEqual>>();
+      break;
+    }
+    case JSOp::Lt: {
+      constexpr auto LessThan = ComparisonKind::LessThan;
+      callvm.call<FnBigIntString, BigIntStringCompare<LessThan>>();
+      break;
+    }
+    case JSOp::Gt: {
+      constexpr auto LessThan = ComparisonKind::LessThan;
+      callvm.call<FnStringBigInt, StringBigIntCompare<LessThan>>();
+      break;
+    }
+    case JSOp::Le: {
+      constexpr auto GreaterThanOrEqual = ComparisonKind::GreaterThanOrEqual;
+      callvm.call<FnStringBigInt, StringBigIntCompare<GreaterThanOrEqual>>();
+      break;
+    }
+    case JSOp::Ge: {
+      constexpr auto GreaterThanOrEqual = ComparisonKind::GreaterThanOrEqual;
+      callvm.call<FnBigIntString, BigIntStringCompare<GreaterThanOrEqual>>();
+      break;
+    }
+    default:
+      MOZ_CRASH("unhandled op");
+  }
+  return true;
+}
+
+bool CacheIRCompiler::emitCompareStringBigIntResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoCallVM callvm(masm, this, allocator);
+
+  Register lhs = allocator.useRegister(masm, reader.stringOperandId());
+  Register rhs = allocator.useRegister(masm, reader.bigIntOperandId());
+  JSOp op = reader.jsop();
+
+  callvm.prepare();
+
+  // Push the operands in reverse order for JSOp::Le and JSOp::Gt:
+  // - |left <= right| is implemented as |right >= left|.
+  // - |left > right| is implemented as |right < left|.
+  // Also push the operands in reverse order for JSOp::Eq and JSOp::Ne.
+  if (op == JSOp::Lt || op == JSOp::Ge) {
+    masm.Push(rhs);
+    masm.Push(lhs);
+  } else {
+    masm.Push(lhs);
+    masm.Push(rhs);
+  }
+
+  using FnBigIntString =
+      bool (*)(JSContext*, HandleBigInt, HandleString, bool*);
+  using FnStringBigInt =
+      bool (*)(JSContext*, HandleString, HandleBigInt, bool*);
+
+  switch (op) {
+    case JSOp::Eq: {
+      constexpr auto Equal = EqualityKind::Equal;
+      callvm.call<FnBigIntString, BigIntStringEqual<Equal>>();
+      break;
+    }
+    case JSOp::Ne: {
+      constexpr auto NotEqual = EqualityKind::NotEqual;
+      callvm.call<FnBigIntString, BigIntStringEqual<NotEqual>>();
+      break;
+    }
+    case JSOp::Lt: {
+      constexpr auto LessThan = ComparisonKind::LessThan;
+      callvm.call<FnStringBigInt, StringBigIntCompare<LessThan>>();
+      break;
+    }
+    case JSOp::Gt: {
+      constexpr auto LessThan = ComparisonKind::LessThan;
+      callvm.call<FnBigIntString, BigIntStringCompare<LessThan>>();
+      break;
+    }
+    case JSOp::Le: {
+      constexpr auto GreaterThanOrEqual = ComparisonKind::GreaterThanOrEqual;
+      callvm.call<FnBigIntString, BigIntStringCompare<GreaterThanOrEqual>>();
+      break;
+    }
+    case JSOp::Ge: {
+      constexpr auto GreaterThanOrEqual = ComparisonKind::GreaterThanOrEqual;
+      callvm.call<FnStringBigInt, StringBigIntCompare<GreaterThanOrEqual>>();
+      break;
+    }
+    default:
+      MOZ_CRASH("unhandled op");
+  }
+  return true;
+}
+
 bool CacheIRCompiler::emitCompareObjectUndefinedNullResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   Register obj = allocator.useRegister(masm, reader.objOperandId());
@@ -3889,33 +4718,33 @@ bool CacheIRCompiler::emitCompareObjectUndefinedNullResult() {
     return false;
   }
 
-  if (op == JSOP_STRICTEQ || op == JSOP_STRICTNE) {
+  if (op == JSOp::StrictEq || op == JSOp::StrictNe) {
     // obj !== undefined/null for all objects.
-    EmitStoreBoolean(masm, op == JSOP_STRICTNE, output);
+    EmitStoreBoolean(masm, op == JSOp::StrictNe, output);
   } else {
-    MOZ_ASSERT(op == JSOP_EQ || op == JSOP_NE);
+    MOZ_ASSERT(op == JSOp::Eq || op == JSOp::Ne);
     AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
     Label done, emulatesUndefined;
     masm.branchIfObjectEmulatesUndefined(obj, scratch, failure->label(),
                                          &emulatesUndefined);
-    EmitStoreBoolean(masm, op == JSOP_NE, output);
+    EmitStoreBoolean(masm, op == JSOp::Ne, output);
     masm.jump(&done);
     masm.bind(&emulatesUndefined);
-    EmitStoreBoolean(masm, op == JSOP_EQ, output);
+    EmitStoreBoolean(masm, op == JSOp::Eq, output);
     masm.bind(&done);
   }
   return true;
 }
 
 bool CacheIRCompiler::emitCallPrintString() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   const char* str = reinterpret_cast<char*>(reader.pointer());
   masm.printf(str);
   return true;
 }
 
 bool CacheIRCompiler::emitBreakpoint() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   masm.breakpoint();
   return true;
 }
@@ -3924,7 +4753,7 @@ void CacheIRCompiler::emitStoreTypedObjectReferenceProp(ValueOperand val,
                                                         ReferenceType type,
                                                         const Address& dest,
                                                         Register scratch) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   // Callers will post-barrier this store.
 
   switch (type) {
@@ -3959,7 +4788,7 @@ void CacheIRCompiler::emitStoreTypedObjectReferenceProp(ValueOperand val,
 
 void CacheIRCompiler::emitRegisterEnumerator(Register enumeratorsList,
                                              Register iter, Register scratch) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   // iter->next = list
   masm.storePtr(enumeratorsList, Address(iter, NativeIterator::offsetOfNext()));
 
@@ -3979,12 +4808,7 @@ void CacheIRCompiler::emitPostBarrierShared(Register obj,
                                             const ConstantOrRegister& val,
                                             Register scratch,
                                             Register maybeIndex) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
-
-  // Generational GC is disabled for WebReplay.
-  if (mozilla::recordreplay::IsRecordingOrReplaying()) {
-    return;
-  }
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
 
   if (val.constant()) {
     MOZ_ASSERT_IF(val.value().isGCThing(),
@@ -3994,7 +4818,8 @@ void CacheIRCompiler::emitPostBarrierShared(Register obj,
 
   TypedOrValueRegister reg = val.reg();
   if (reg.hasTyped()) {
-    if (reg.type() != MIRType::Object && reg.type() != MIRType::String) {
+    if (reg.type() != MIRType::Object && reg.type() != MIRType::String &&
+        reg.type() != MIRType::BigInt) {
       return;
     }
   }
@@ -4033,7 +4858,7 @@ void CacheIRCompiler::emitPostBarrierShared(Register obj,
 }
 
 bool CacheIRCompiler::emitWrapResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegister scratch(allocator, masm);
 
@@ -4074,7 +4899,7 @@ bool CacheIRCompiler::emitWrapResult() {
 }
 
 bool CacheIRCompiler::emitMegamorphicLoadSlotByValueResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   Register obj = allocator.useRegister(masm, reader.objOperandId());
@@ -4136,7 +4961,7 @@ bool CacheIRCompiler::emitMegamorphicLoadSlotByValueResult() {
 }
 
 bool CacheIRCompiler::emitMegamorphicHasPropResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   Register obj = allocator.useRegister(masm, reader.objOperandId());
@@ -4192,7 +5017,7 @@ bool CacheIRCompiler::emitMegamorphicHasPropResult() {
 }
 
 bool CacheIRCompiler::emitCallObjectHasSparseElementResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   Register obj = allocator.useRegister(masm, reader.objOperandId());
@@ -4243,7 +5068,7 @@ bool CacheIRCompiler::emitCallObjectHasSparseElementResult() {
  */
 void CacheIRCompiler::emitLoadStubFieldConstant(StubFieldOffset val,
                                                 Register dest) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   MOZ_ASSERT(mode_ == Mode::Ion);
   switch (val.getStubFieldType()) {
     case StubField::Type::Shape:
@@ -4275,7 +5100,7 @@ void CacheIRCompiler::emitLoadStubFieldConstant(StubFieldOffset val,
  * constants in the IC.
  */
 void CacheIRCompiler::emitLoadStubField(StubFieldOffset val, Register dest) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   if (stubFieldPolicy_ == StubFieldPolicy::Constant) {
     emitLoadStubFieldConstant(val, dest);
   } else {
@@ -4286,7 +5111,7 @@ void CacheIRCompiler::emitLoadStubField(StubFieldOffset val, Register dest) {
 
 Address CacheIRCompiler::emitAddressFromStubField(StubFieldOffset val,
                                                   Register base) {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   MOZ_ASSERT(val.getStubFieldType() == StubField::Type::RawWord);
 
   if (stubFieldPolicy_ == StubFieldPolicy::Constant) {
@@ -4300,7 +5125,7 @@ Address CacheIRCompiler::emitAddressFromStubField(StubFieldOffset val,
 }
 
 bool CacheIRCompiler::emitLoadInstanceOfObjectResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   ValueOperand lhs = allocator.useValueRegister(masm, reader.valOperandId());
   Register proto = allocator.useRegister(masm, reader.objOperandId());
@@ -4346,7 +5171,7 @@ bool CacheIRCompiler::emitLoadInstanceOfObjectResult() {
 }
 
 bool CacheIRCompiler::emitMegamorphicLoadSlotResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
 
   Register obj = allocator.useRegister(masm, reader.objOperandId());
@@ -4404,7 +5229,7 @@ bool CacheIRCompiler::emitMegamorphicLoadSlotResult() {
 }
 
 bool CacheIRCompiler::emitMegamorphicStoreSlot() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   StubFieldOffset name(reader.stubOffset(), StubField::Type::String);
   ValueOperand val = allocator.useValueRegister(masm, reader.valOperandId());
@@ -4453,7 +5278,7 @@ bool CacheIRCompiler::emitMegamorphicStoreSlot() {
 }
 
 bool CacheIRCompiler::emitGuardGroupHasUnanalyzedNewScript() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   StubFieldOffset group(reader.stubOffset(), StubField::Type::ObjectGroup);
   AutoScratchRegister scratch1(allocator, masm);
   AutoScratchRegister scratch2(allocator, masm);
@@ -4469,7 +5294,7 @@ bool CacheIRCompiler::emitGuardGroupHasUnanalyzedNewScript() {
 }
 
 bool CacheIRCompiler::emitLoadObject() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register reg = allocator.defineRegister(masm, reader.objOperandId());
   StubFieldOffset obj(reader.stubOffset(), StubField::Type::JSObject);
   emitLoadStubField(obj, reg);
@@ -4477,7 +5302,7 @@ bool CacheIRCompiler::emitLoadObject() {
 }
 
 bool CacheIRCompiler::emitCallInt32ToString() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register input = allocator.useRegister(masm, reader.int32OperandId());
   Register result = allocator.defineRegister(masm, reader.stringOperandId());
 
@@ -4505,7 +5330,7 @@ bool CacheIRCompiler::emitCallInt32ToString() {
 }
 
 bool CacheIRCompiler::emitCallNumberToString() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   // Float register must be preserved. The BinaryArith ICs use
   // the fact that baseline has them available, as well as fixed temps on
   // LBinaryCache.
@@ -4537,7 +5362,7 @@ bool CacheIRCompiler::emitCallNumberToString() {
 }
 
 bool CacheIRCompiler::emitBooleanToString() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register boolean = allocator.useRegister(masm, reader.int32OperandId());
   Register result = allocator.defineRegister(masm, reader.stringOperandId());
   const JSAtomState& names = cx_->names();
@@ -4591,8 +5416,26 @@ void js::jit::LoadTypedThingLength(MacroAssembler& masm,
   }
 }
 
+bool CacheIRCompiler::emitCallStringConcatResult() {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoCallVM callvm(masm, this, allocator);
+
+  Register lhs = allocator.useRegister(masm, reader.stringOperandId());
+  Register rhs = allocator.useRegister(masm, reader.stringOperandId());
+
+  callvm.prepare();
+
+  masm.Push(rhs);
+  masm.Push(lhs);
+
+  using Fn = JSString* (*)(JSContext*, HandleString, HandleString);
+  callvm.call<Fn, ConcatStrings<CanGC>>();
+
+  return true;
+}
+
 bool CacheIRCompiler::emitCallIsSuspendedGeneratorResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoOutputRegister output(*this);
   AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
   AutoScratchRegister scratch2(allocator, masm);
@@ -4637,13 +5480,11 @@ bool CacheIRCompiler::emitMetaTwoByte() {
 }
 
 bool CacheIRCompiler::emitCallNativeGetElementResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoCallVM callvm(masm, this, allocator);
 
   Register obj = allocator.useRegister(masm, reader.objOperandId());
   Register index = allocator.useRegister(masm, reader.int32OperandId());
-
-  allocator.discardStack(masm);
 
   callvm.prepare();
 
@@ -4653,13 +5494,13 @@ bool CacheIRCompiler::emitCallNativeGetElementResult() {
 
   using Fn = bool (*)(JSContext*, HandleNativeObject, HandleValue, int32_t,
                       MutableHandleValue);
-  callVM<Fn, NativeGetElement>(masm);
+  callvm.call<Fn, NativeGetElement>();
 
   return true;
 }
 
 bool CacheIRCompiler::emitCallProxyHasPropResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoCallVM callvm(masm, this, allocator);
 
   Register obj = allocator.useRegister(masm, reader.objOperandId());
@@ -4671,18 +5512,17 @@ bool CacheIRCompiler::emitCallProxyHasPropResult() {
   masm.Push(idVal);
   masm.Push(obj);
 
-  using Fn =
-      bool (*)(JSContext*, HandleObject, HandleValue, MutableHandleValue);
+  using Fn = bool (*)(JSContext*, HandleObject, HandleValue, bool*);
   if (hasOwn) {
-    callVM<Fn, ProxyHasOwn>(masm);
+    callvm.call<Fn, ProxyHasOwn>();
   } else {
-    callVM<Fn, ProxyHas>(masm);
+    callvm.call<Fn, ProxyHas>();
   }
   return true;
 }
 
 bool CacheIRCompiler::emitCallProxyGetByValueResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   AutoCallVM callvm(masm, this, allocator);
 
   Register obj = allocator.useRegister(masm, reader.objOperandId());
@@ -4694,12 +5534,12 @@ bool CacheIRCompiler::emitCallProxyGetByValueResult() {
 
   using Fn =
       bool (*)(JSContext*, HandleObject, HandleValue, MutableHandleValue);
-  callVM<Fn, ProxyGetPropertyByValue>(masm);
+  callvm.call<Fn, ProxyGetPropertyByValue>();
   return true;
 }
 
 bool CacheIRCompiler::emitCallGetSparseElementResult() {
-  JitSpew(JitSpew_Codegen, __FUNCTION__);
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
 
   AutoCallVM callvm(masm, this, allocator);
 
@@ -4712,7 +5552,7 @@ bool CacheIRCompiler::emitCallGetSparseElementResult() {
 
   using Fn = bool (*)(JSContext * cx, HandleArrayObject obj, int32_t int_id,
                       MutableHandleValue result);
-  callVM<Fn, GetSparseElementHelper>(masm);
+  callvm.call<Fn, GetSparseElementHelper>();
   return true;
 }
 
@@ -4770,22 +5610,20 @@ IonCacheIRCompiler* CacheIRCompiler::asIon() {
 AutoCallVM::AutoCallVM(MacroAssembler& masm, CacheIRCompiler* compiler,
                        CacheRegisterAllocator& allocator)
     : masm_(masm), compiler_(compiler), allocator_(allocator) {
-  // Ion needs to `prepareVMCall` before it can callVM
-  // Ion also needs to initialize AutoOutputRegister and AutoSaveLiveRegisters
-  // values
+  // Ion needs to `prepareVMCall` before it can callVM and it also needs to
+  // initialize AutoSaveLiveRegisters.
   if (compiler_->mode_ == CacheIRCompiler::Mode::Ion) {
     // Will need to use a downcast here as well, in order to pass the
     // stub to AutoSaveLiveRegisters
-    IonCacheIRCompiler* ionCompiler = compiler_->asIon();
-
-    save_.emplace(*ionCompiler);
-    output_.emplace(*ionCompiler);
-    return;
+    save_.emplace(*compiler_->asIon());
   }
-  MOZ_ASSERT(compiler_->mode_ == CacheIRCompiler::Mode::Baseline);
 
-  stubFrame_.emplace(*compiler_->asBaseline());
-  scratch_.emplace(allocator_, masm_);
+  output_.emplace(*compiler);
+
+  if (compiler_->mode_ == CacheIRCompiler::Mode::Baseline) {
+    stubFrame_.emplace(*compiler_->asBaseline());
+    scratch_.emplace(allocator_, masm_, output_.ref());
+  }
 }
 
 void AutoCallVM::prepare() {
@@ -4799,15 +5637,64 @@ void AutoCallVM::prepare() {
   stubFrame_->enter(masm_, scratch_.ref());
 }
 
-AutoCallVM::~AutoCallVM() {
-  if (compiler_->mode_ == CacheIRCompiler::Mode::Ion) {
-    if (output_.isSome()) {
-      masm_.storeCallResultValue(output_.ref());
+void AutoCallVM::storeResult(JSValueType returnType) {
+  MOZ_ASSERT(returnType != JSVAL_TYPE_DOUBLE);
+
+  if (returnType == JSVAL_TYPE_UNKNOWN) {
+    masm_.storeCallResultValue(output_.ref());
+  } else {
+    if (output_->hasValue()) {
+      masm_.tagValue(returnType, ReturnReg, output_->valueReg());
+    } else {
+      Register out = output_->typedReg().gpr();
+      if (out != ReturnReg) {
+        masm_.mov(ReturnReg, out);
+      }
     }
-    return;
   }
-  MOZ_ASSERT(compiler_->mode_ == CacheIRCompiler::Mode::Baseline);
-  stubFrame_->leave(masm_);
+
+  if (compiler_->mode_ == CacheIRCompiler::Mode::Baseline) {
+    stubFrame_->leave(masm_);
+  }
+}
+
+template <typename...>
+struct VMFunctionReturnType;
+
+template <class R, typename... Args>
+struct VMFunctionReturnType<R (*)(JSContext*, Args...)> {
+  using LastArgument = typename LastArg<Args...>::Type;
+
+  // By convention VMFunctions returning `bool` use an output parameter.
+  using ReturnType =
+      std::conditional_t<std::is_same<R, bool>::value, LastArgument, R>;
+};
+
+template <class>
+struct ReturnTypeToJSValueType;
+
+// Definitions for the currently used return types.
+template <>
+struct ReturnTypeToJSValueType<MutableHandleValue> {
+  static constexpr JSValueType result = JSVAL_TYPE_UNKNOWN;
+};
+template <>
+struct ReturnTypeToJSValueType<bool*> {
+  static constexpr JSValueType result = JSVAL_TYPE_BOOLEAN;
+};
+template <>
+struct ReturnTypeToJSValueType<JSString*> {
+  static constexpr JSValueType result = JSVAL_TYPE_STRING;
+};
+template <>
+struct ReturnTypeToJSValueType<BigInt*> {
+  static constexpr JSValueType result = JSVAL_TYPE_BIGINT;
+};
+
+template <typename Fn>
+void AutoCallVM::storeResult() {
+  using ReturnType = typename VMFunctionReturnType<Fn>::ReturnType;
+  storeResult(ReturnTypeToJSValueType<ReturnType>::result);
 }
 
 AutoScratchFloatRegister::AutoScratchFloatRegister(CacheIRCompiler* compiler,

@@ -72,7 +72,7 @@ struct FontFace {
 pub struct FontContext {
     fonts: FastHashMap<FontKey, FontFace>,
     variations: FastHashMap<(FontKey, dwrote::DWRITE_FONT_SIMULATIONS, Vec<FontVariation>), dwrote::FontFace>,
-    gamma_luts: FastHashMap<(u16, u16), GammaLut>,
+    gamma_luts: FastHashMap<(u16, u8), GammaLut>,
 }
 
 // DirectWrite is safe to use on multiple threads and non-shareable resources are
@@ -253,7 +253,7 @@ impl FontContext {
                 let b = pixel[2];
                 print!("({}, {}, {}) ", r, g, b,);
             }
-            println!("");
+            println!();
         }
     }
 
@@ -375,36 +375,7 @@ impl FontContext {
         font: &FontInstance,
         key: &GlyphKey,
     ) -> Option<GlyphDimensions> {
-        let size = font.size.to_f32_px();
-        let bitmaps = is_bitmap_font(font);
-        let transform = if font.synthetic_italics.is_enabled() ||
-                           font.flags.intersects(FontInstanceFlags::TRANSPOSE |
-                                                 FontInstanceFlags::FLIP_X |
-                                                 FontInstanceFlags::FLIP_Y) {
-            let mut shape = FontTransform::identity();
-            if font.flags.contains(FontInstanceFlags::FLIP_X) {
-                shape = shape.flip_x();
-            }
-            if font.flags.contains(FontInstanceFlags::FLIP_Y) {
-                shape = shape.flip_y();
-            }
-            if font.flags.contains(FontInstanceFlags::TRANSPOSE) {
-                shape = shape.swap_xy();
-            }
-            if font.synthetic_italics.is_enabled() {
-                shape = shape.synthesize_italics(font.synthetic_italics);
-            }
-            Some(dwrote::DWRITE_MATRIX {
-                m11: shape.scale_x,
-                m12: shape.skew_y,
-                m21: shape.skew_x,
-                m22: shape.scale_y,
-                dx: 0.0,
-                dy: 0.0,
-            })
-        } else {
-            None
-        };
+        let (size, _, bitmaps, transform) = Self::get_glyph_parameters(font, key);
         let (_, _, bounds) = self.create_glyph_analysis(font, key, size, transform, bitmaps).ok()?;
 
         let width = (bounds.right - bounds.left) as i32;
@@ -504,12 +475,11 @@ impl FontContext {
         }
     }
 
-    pub fn rasterize_glyph(&mut self, font: &FontInstance, key: &GlyphKey) -> GlyphRasterResult {
-        let (x_scale, y_scale) = font.transform.compute_scale().unwrap_or((1.0, 1.0));
-        let scale = font.oversized_scale_factor(x_scale, y_scale);
-        let size = (font.size.to_f64_px() * y_scale / scale) as f32;
+    fn get_glyph_parameters(font: &FontInstance, key: &GlyphKey) -> (f32, f64, bool, Option<dwrote::DWRITE_MATRIX>) {
+        let (_, y_scale) = font.transform.compute_scale().unwrap_or((1.0, 1.0));
+        let scaled_size = font.size.to_f64_px() * y_scale;
         let bitmaps = is_bitmap_font(font);
-        let (mut shape, (x_offset, y_offset)) = if bitmaps {
+        let (mut shape, (mut x_offset, mut y_offset)) = if bitmaps {
             (FontTransform::identity(), (0.0, 0.0))
         } else {
             (font.transform.invert_scale(y_scale, y_scale), font.get_subpx_offset(key))
@@ -523,22 +493,32 @@ impl FontContext {
         if font.flags.contains(FontInstanceFlags::TRANSPOSE) {
             shape = shape.swap_xy();
         }
+        let (mut tx, mut ty) = (0.0, 0.0);
         if font.synthetic_italics.is_enabled() {
-            shape = shape.synthesize_italics(font.synthetic_italics);
-        }
+            let (shape_, (tx_, ty_)) = font.synthesize_italics(shape, scaled_size);
+            shape = shape_;
+            tx = tx_;
+            ty = ty_;
+        };
+        x_offset += tx;
+        y_offset += ty;
         let transform = if !shape.is_identity() || (x_offset, y_offset) != (0.0, 0.0) {
             Some(dwrote::DWRITE_MATRIX {
                 m11: shape.scale_x,
                 m12: shape.skew_y,
                 m21: shape.skew_x,
                 m22: shape.scale_y,
-                dx: (x_offset / scale) as f32,
-                dy: (y_offset / scale) as f32,
+                dx: x_offset as f32,
+                dy: y_offset as f32,
             })
         } else {
             None
         };
+        (scaled_size as f32, y_scale, bitmaps, transform)
+    }
 
+    pub fn rasterize_glyph(&mut self, font: &FontInstance, key: &GlyphKey) -> GlyphRasterResult {
+        let (size, y_scale, bitmaps, transform) = Self::get_glyph_parameters(font, key);
         let (analysis, texture_type, bounds) = self.create_glyph_analysis(font, key, size, transform, bitmaps)
                                                    .or(Err(GlyphRasterError::LoadFailed))?;
         let width = (bounds.right - bounds.left) as i32;
@@ -553,7 +533,8 @@ impl FontContext {
         let mut bgra_pixels = self.convert_to_bgra(&pixels, texture_type, font.render_mode, bitmaps,
                                                    font.flags.contains(FontInstanceFlags::SUBPIXEL_BGR));
 
-        let FontInstancePlatformOptions { gamma, contrast, .. } = font.platform_options.unwrap_or_default();
+        let FontInstancePlatformOptions { gamma, contrast, cleartype_level, .. } =
+            font.platform_options.unwrap_or_default();
         let gamma_lut = self.gamma_luts
             .entry((gamma, contrast))
             .or_insert_with(||
@@ -562,7 +543,12 @@ impl FontContext {
                     gamma as f32 / 100.0,
                     gamma as f32 / 100.0,
                 ));
-        gamma_lut.preblend(&mut bgra_pixels, font.color);
+        if bitmaps || texture_type == dwrote::DWRITE_TEXTURE_ALIASED_1x1 ||
+           font.render_mode != FontRenderMode::Subpixel {
+            gamma_lut.preblend(&mut bgra_pixels, font.color);
+        } else {
+            gamma_lut.preblend_scaled(&mut bgra_pixels, font.color, cleartype_level);
+        }
 
         let format = if bitmaps {
             GlyphFormat::Bitmap
@@ -577,7 +563,7 @@ impl FontContext {
             top: -bounds.top as f32,
             width,
             height,
-            scale: (if bitmaps { scale / y_scale } else { scale }) as f32,
+            scale: (if bitmaps { y_scale.recip() } else { 1.0 }) as f32,
             format,
             bytes: bgra_pixels,
         })

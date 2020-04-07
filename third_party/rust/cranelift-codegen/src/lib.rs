@@ -18,13 +18,12 @@
                 clippy::assign_op_pattern,
                 clippy::empty_line_after_outer_attr,
 // Hard to avoid in generated code:
-                clippy::cyclomatic_complexity,
+                clippy::cognitive_complexity,
                 clippy::too_many_arguments,
 // Code generator doesn't have a way to collapse identical arms:
                 clippy::match_same_arms,
 // These are relatively minor style issues, but would be easy to fix:
                 clippy::new_without_default,
-                clippy::new_without_default_derive,
                 clippy::should_implement_trait,
                 clippy::len_without_is_empty))]
 #![cfg_attr(
@@ -35,22 +34,22 @@
         clippy::nonminimal_bool,
         clippy::option_map_unwrap_or,
         clippy::option_map_unwrap_or_else,
-        clippy::print_stdout,
         clippy::unicode_not_nfc,
         clippy::use_self
     )
 )]
 #![no_std]
 
-#[cfg(not(feature = "std"))]
+#[allow(unused_imports)] // #[macro_use] is required for no_std
 #[macro_use]
-extern crate alloc as std;
+extern crate alloc;
+
 #[cfg(feature = "std")]
 #[macro_use]
 extern crate std;
 
 #[cfg(not(feature = "std"))]
-use hashmap_core::{map as hash_map, HashMap, HashSet};
+use hashbrown::{hash_map, HashMap, HashSet};
 #[cfg(feature = "std")]
 use std::collections::{hash_map, HashMap, HashSet};
 

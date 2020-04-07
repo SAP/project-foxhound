@@ -37,8 +37,6 @@ already_AddRefed<InternalRequest> InternalRequest::GetRequestConstructorCopy(
   // The "client" is not stored in our implementation. Fetch API users should
   // use the appropriate window/document/principal and other Gecko security
   // mechanisms as appropriate.
-  copy->mSameOriginDataURL = true;
-  copy->mPreserveContentCodings = true;
   copy->mReferrer = mReferrer;
   copy->mReferrerPolicy = mReferrerPolicy;
   copy->mEnvironmentReferrerPolicy = mEnvironmentReferrerPolicy;
@@ -52,7 +50,6 @@ already_AddRefed<InternalRequest> InternalRequest::GetRequestConstructorCopy(
   copy->mCredentialsMode = mCredentialsMode;
   copy->mCacheMode = mCacheMode;
   copy->mRedirectMode = mRedirectMode;
-  copy->mCreatedByFetchEvent = mCreatedByFetchEvent;
   copy->mContentPolicyTypeOverridden = mContentPolicyTypeOverridden;
 
   copy->mPreferredAlternativeDataType = mPreferredAlternativeDataType;
@@ -92,21 +89,8 @@ InternalRequest::InternalRequest(const nsACString& aURL,
       mEnvironmentReferrerPolicy(ReferrerPolicy::_empty),
       mMode(RequestMode::No_cors),
       mCredentialsMode(RequestCredentials::Omit),
-      mResponseTainting(LoadTainting::Basic),
       mCacheMode(RequestCache::Default),
-      mRedirectMode(RequestRedirect::Follow),
-      mAuthenticationFlag(false),
-      mPreserveContentCodings(false)
-      // FIXME(nsm): This should be false by default, but will lead to the
-      // algorithm never loading data: URLs right now. See Bug 1018872 about
-      // how certain contexts will override it to set it to true. Fetch
-      // specification does not handle this yet.
-      ,
-      mSameOriginDataURL(true),
-      mSkipServiceWorker(false),
-      mSynchronous(false),
-      mUnsafeRequest(false),
-      mUseURLCredentials(false) {
+      mRedirectMode(RequestRedirect::Follow) {
   MOZ_ASSERT(!aURL.IsEmpty());
   AddURL(aURL, aFragment);
 }
@@ -126,19 +110,9 @@ InternalRequest::InternalRequest(
       mEnvironmentReferrerPolicy(ReferrerPolicy::_empty),
       mMode(aMode),
       mCredentialsMode(aRequestCredentials),
-      mResponseTainting(LoadTainting::Basic),
       mCacheMode(aCacheMode),
       mRedirectMode(aRequestRedirect),
-      mIntegrity(aIntegrity),
-      mAuthenticationFlag(false),
-      mPreserveContentCodings(false)
-      // FIXME See the above comment in the default constructor.
-      ,
-      mSameOriginDataURL(true),
-      mSkipServiceWorker(false),
-      mSynchronous(false),
-      mUnsafeRequest(false),
-      mUseURLCredentials(false) {
+      mIntegrity(aIntegrity) {
   MOZ_ASSERT(!aURL.IsEmpty());
   AddURL(aURL, aFragment);
 }
@@ -159,14 +133,10 @@ InternalRequest::InternalRequest(const InternalRequest& aOther)
       mIntegrity(aOther.mIntegrity),
       mMozErrors(aOther.mMozErrors),
       mFragment(aOther.mFragment),
-      mAuthenticationFlag(aOther.mAuthenticationFlag),
-      mPreserveContentCodings(aOther.mPreserveContentCodings),
-      mSameOriginDataURL(aOther.mSameOriginDataURL),
       mSkipServiceWorker(aOther.mSkipServiceWorker),
       mSynchronous(aOther.mSynchronous),
       mUnsafeRequest(aOther.mUnsafeRequest),
       mUseURLCredentials(aOther.mUseURLCredentials),
-      mCreatedByFetchEvent(aOther.mCreatedByFetchEvent),
       mContentPolicyTypeOverridden(aOther.mContentPolicyTypeOverridden) {
   // NOTE: does not copy body stream... use the fallible Clone() for that
 }
@@ -188,15 +158,14 @@ InternalRequest::InternalRequest(const IPCInternalRequest& aIPCRequest)
       mCacheMode(aIPCRequest.cacheMode()),
       mRedirectMode(aIPCRequest.requestRedirect()),
       mIntegrity(aIPCRequest.integrity()),
-      mFragment(aIPCRequest.fragment()),
-      mCreatedByFetchEvent(aIPCRequest.createdByFetchEvent()) {
+      mFragment(aIPCRequest.fragment()) {
   if (aIPCRequest.principalInfo()) {
     mPrincipalInfo = MakeUnique<mozilla::ipc::PrincipalInfo>(
         aIPCRequest.principalInfo().ref());
   }
 }
 
-InternalRequest::~InternalRequest() {}
+InternalRequest::~InternalRequest() = default;
 
 template void InternalRequest::ToIPC<mozilla::ipc::PBackgroundChild>(
     IPCInternalRequest* aIPCRequest, mozilla::ipc::PBackgroundChild* aManager,
@@ -231,7 +200,6 @@ void InternalRequest::ToIPC(
   aIPCRequest->requestRedirect() = mRedirectMode;
   aIPCRequest->integrity() = mIntegrity;
   aIPCRequest->fragment() = mFragment;
-  aIPCRequest->createdByFetchEvent() = mCreatedByFetchEvent;
 
   if (mPrincipalInfo) {
     aIPCRequest->principalInfo().emplace(*mPrincipalInfo);

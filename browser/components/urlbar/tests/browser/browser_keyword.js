@@ -8,7 +8,11 @@
  */
 
 async function promise_first_result(inputText) {
-  await promiseAutocompleteResultPopup(inputText);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: inputText,
+  });
 
   return UrlbarTestUtils.getDetailsOfResultAt(window, 0);
 }
@@ -187,9 +191,9 @@ add_task(async function test_keyword_using_post() {
     "Tab should have loaded from clicking on result"
   );
 
-  let postData = await ContentTask.spawn(
+  let postData = await SpecialPowers.spawn(
     tab.linkedBrowser,
-    null,
+    [],
     async function() {
       return content.document.body.textContent;
     }

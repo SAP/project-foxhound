@@ -16,6 +16,7 @@
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/MediaSource.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Preferences.h"
@@ -89,25 +90,14 @@ static DataInfo* GetDataInfo(const nsACString& aUri,
     return nullptr;
   }
 
+  // Let's remove any fragment from this URI.
+  int32_t fragmentPos = aUri.FindChar('#');
+
   DataInfo* res;
-
-  // Let's remove any fragment and query from this URI.
-  int32_t hasFragmentPos = aUri.FindChar('#');
-  int32_t hasQueryPos = aUri.FindChar('?');
-
-  int32_t pos = -1;
-  if (hasFragmentPos >= 0 && hasQueryPos >= 0) {
-    pos = std::min(hasFragmentPos, hasQueryPos);
-  } else if (hasFragmentPos >= 0) {
-    pos = hasFragmentPos;
+  if (fragmentPos < 0) {
+    res = gDataTable->Get(aUri);
   } else {
-    pos = hasQueryPos;
-  }
-
-  if (pos < 0) {
-    gDataTable->Get(aUri, &res);
-  } else {
-    gDataTable->Get(StringHead(aUri, pos), &res);
+    res = gDataTable->Get(StringHead(aUri, fragmentPos));
   }
 
   if (!aAlsoIfRevoked && res && res->mRevoked) {
@@ -156,16 +146,18 @@ void BroadcastBlobURLRegistration(const nsACString& aURI, BlobImpl* aBlobImpl,
       nsCString(aURI), ipcBlob, IPC::Principal(aPrincipal)));
 }
 
-void BroadcastBlobURLUnregistration(const nsCString& aURI) {
+void BroadcastBlobURLUnregistration(const nsCString& aURI,
+                                    nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (XRE_IsParentProcess()) {
-    dom::ContentParent::BroadcastBlobURLUnregistration(aURI);
+    dom::ContentParent::BroadcastBlobURLUnregistration(aURI, aPrincipal);
     return;
   }
 
   dom::ContentChild* cc = dom::ContentChild::GetSingleton();
-  Unused << NS_WARN_IF(!cc->SendUnstoreAndBroadcastBlobURLUnregistration(aURI));
+  Unused << NS_WARN_IF(!cc->SendUnstoreAndBroadcastBlobURLUnregistration(
+      aURI, IPC::Principal(aPrincipal)));
 }
 
 class BlobURLsReporter final : public nsIMemoryReporter {
@@ -300,11 +292,8 @@ class BlobURLsReporter final : public nsIMemoryReporter {
     nsCOMPtr<nsIStackFrame> frame = dom::GetCurrentJSStack(maxFrames);
 
     nsAutoCString origin;
-    nsCOMPtr<nsIURI> principalURI;
-    if (NS_SUCCEEDED(aInfo->mPrincipal->GetURI(getter_AddRefs(principalURI))) &&
-        principalURI) {
-      principalURI->GetPrePath(origin);
-    }
+
+    aInfo->mPrincipal->GetPrepath(origin);
 
     // If we got a frame, we better have a current JSContext.  This is cheating
     // a bit; ideally we'd have our caller pass in a JSContext, or have
@@ -347,15 +336,13 @@ class BlobURLsReporter final : public nsIMemoryReporter {
   }
 
  private:
-  ~BlobURLsReporter() {}
+  ~BlobURLsReporter() = default;
 
   static void BuildPath(nsAutoCString& path, nsCStringHashKey::KeyType aKey,
                         DataInfo* aInfo, bool anonymize) {
-    nsCOMPtr<nsIURI> principalURI;
     nsAutoCString url, owner;
-    if (NS_SUCCEEDED(aInfo->mPrincipal->GetURI(getter_AddRefs(principalURI))) &&
-        principalURI != nullptr && NS_SUCCEEDED(principalURI->GetSpec(owner)) &&
-        !owner.IsEmpty()) {
+    aInfo->mPrincipal->GetAsciiSpec(owner);
+    if (!owner.IsEmpty()) {
       owner.ReplaceChar('/', '\\');
       path += "owner(";
       if (anonymize) {
@@ -462,7 +449,7 @@ class ReleasingTimerHolder final : public Runnable,
   explicit ReleasingTimerHolder(const nsACString& aURI)
       : Runnable("ReleasingTimerHolder"), mURI(aURI) {}
 
-  ~ReleasingTimerHolder() {}
+  ~ReleasingTimerHolder() = default;
 
   void RevokeURI() {
     // Remove the shutting down blocker
@@ -518,8 +505,8 @@ NS_IMPL_ISUPPORTS_INHERITED(ReleasingTimerHolder, Runnable, nsITimerCallback,
                             nsIAsyncShutdownBlocker)
 
 template <typename T>
-static nsresult AddDataEntryInternal(const nsACString& aURI, T aObject,
-                                     nsIPrincipal* aPrincipal) {
+static void AddDataEntryInternal(const nsACString& aURI, T aObject,
+                                 nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(NS_IsMainThread(), "changing gDataTable is main-thread only");
   StaticMutexAutoLock lock(sMutex);
   if (!gDataTable) {
@@ -530,7 +517,6 @@ static nsresult AddDataEntryInternal(const nsACString& aURI, T aObject,
   BlobURLsReporter::GetJSStackForBlob(info);
 
   gDataTable->Put(aURI, info);
-  return NS_OK;
 }
 
 void BlobURLProtocolHandler::Init(void) {
@@ -558,8 +544,7 @@ nsresult BlobURLProtocolHandler::AddDataEntry(BlobImpl* aBlobImpl,
   nsresult rv = GenerateURIString(aPrincipal, aUri);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = AddDataEntryInternal(aUri, aBlobImpl, aPrincipal);
-  NS_ENSURE_SUCCESS(rv, rv);
+  AddDataEntryInternal(aUri, aBlobImpl, aPrincipal);
 
   BroadcastBlobURLRegistration(aUri, aBlobImpl, aPrincipal);
   return NS_OK;
@@ -577,31 +562,27 @@ nsresult BlobURLProtocolHandler::AddDataEntry(MediaSource* aMediaSource,
   nsresult rv = GenerateURIString(aPrincipal, aUri);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = AddDataEntryInternal(aUri, aMediaSource, aPrincipal);
-  NS_ENSURE_SUCCESS(rv, rv);
-
+  AddDataEntryInternal(aUri, aMediaSource, aPrincipal);
   return NS_OK;
 }
 
 /* static */
-nsresult BlobURLProtocolHandler::AddDataEntry(const nsACString& aURI,
-                                              nsIPrincipal* aPrincipal,
-                                              BlobImpl* aBlobImpl) {
+void BlobURLProtocolHandler::AddDataEntry(const nsACString& aURI,
+                                          nsIPrincipal* aPrincipal,
+                                          BlobImpl* aBlobImpl) {
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aBlobImpl);
-
-  return AddDataEntryInternal(aURI, aBlobImpl, aPrincipal);
+  AddDataEntryInternal(aURI, aBlobImpl, aPrincipal);
 }
 
 /* static */
-bool BlobURLProtocolHandler::GetAllBlobURLEntries(
-    nsTArray<BlobURLRegistrationData>& aRegistrations, ContentParent* aCP) {
-  MOZ_ASSERT(aCP);
-  MOZ_ASSERT(NS_IsMainThread(),
-             "without locking gDataTable is main-thread only");
+bool BlobURLProtocolHandler::ForEachBlobURL(
+    std::function<bool(BlobImpl*, nsIPrincipal*, const nsACString&,
+                       bool aRevoked)>&& aCb) {
+  MOZ_ASSERT(NS_IsMainThread());
 
   if (!gDataTable) {
-    return true;
+    return false;
   }
 
   for (auto iter = gDataTable->ConstIter(); !iter.Done(); iter.Next()) {
@@ -613,16 +594,9 @@ bool BlobURLProtocolHandler::GetAllBlobURLEntries(
     }
 
     MOZ_ASSERT(info->mBlobImpl);
-
-    IPCBlob ipcBlob;
-    nsresult rv = IPCBlobUtils::Serialize(info->mBlobImpl, aCP, ipcBlob);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
+    if (!aCb(info->mBlobImpl, info->mPrincipal, iter.Key(), info->mRevoked)) {
       return false;
     }
-
-    aRegistrations.AppendElement(BlobURLRegistrationData(
-        nsCString(iter.Key()), ipcBlob, IPC::Principal(info->mPrincipal),
-        info->mRevoked));
   }
 
   return true;
@@ -646,7 +620,7 @@ void BlobURLProtocolHandler::RemoveDataEntry(const nsACString& aUri,
   }
 
   if (aBroadcastToOtherProcesses && info->mObjectType == DataInfo::eBlobImpl) {
-    BroadcastBlobURLUnregistration(nsCString(aUri));
+    BroadcastBlobURLUnregistration(nsCString(aUri), info->mPrincipal);
   }
 
   // The timer will take care of removing the entry for real after
@@ -837,7 +811,8 @@ BlobURLProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
   // principal and which is never mutated to have a non-zero mPrivateBrowsingId
   // or container.
   if (aLoadInfo &&
-      !nsContentUtils::IsSystemPrincipal(aLoadInfo->LoadingPrincipal()) &&
+      (!aLoadInfo->LoadingPrincipal() ||
+       !aLoadInfo->LoadingPrincipal()->IsSystemPrincipal()) &&
       !ChromeUtils::IsOriginAttributesEqualIgnoringFPD(
           aLoadInfo->GetOriginAttributes(),
           BasePrincipal::Cast(info->mPrincipal)->OriginAttributesRef())) {

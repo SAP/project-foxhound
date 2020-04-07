@@ -4,7 +4,10 @@
 
 "use strict";
 
-const { RESET_CHANGES, TRACK_CHANGE } = require("../actions/index");
+const {
+  RESET_CHANGES,
+  TRACK_CHANGE,
+} = require("devtools/client/inspector/changes/actions/index");
 
 /**
  * Return a deep clone of the given state object.
@@ -198,7 +201,7 @@ const reducers = {
    * - when changes cancel each other out leaving the rule unchanged, the rule is removed
    *   from the store. Its parent rule is removed as well if it too ends up unchanged.
    */
-  /* eslint-disable complexity */
+  // eslint-disable-next-line complexity
   [TRACK_CHANGE](state, { change }) {
     const defaults = {
       selector: null,
@@ -363,7 +366,6 @@ const reducers = {
 
     return state;
   },
-  /* eslint-enable complexity */
 
   [RESET_CHANGES](state) {
     return INITIAL_STATE;

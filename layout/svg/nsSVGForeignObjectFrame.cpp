@@ -102,6 +102,8 @@ nsresult nsSVGForeignObjectFrame::AttributeChanged(int32_t aNameSpaceID,
 
 void nsSVGForeignObjectFrame::DidSetComputedStyle(
     ComputedStyle* aOldComputedStyle) {
+  nsContainerFrame::DidSetComputedStyle(aOldComputedStyle);
+
   if (aOldComputedStyle) {
     if (StyleSVGReset()->mX != aOldComputedStyle->StyleSVGReset()->mX ||
         StyleSVGReset()->mY != aOldComputedStyle->StyleSVGReset()->mY) {
@@ -466,7 +468,7 @@ gfxMatrix nsSVGForeignObjectFrame::GetCanvasTM() {
 
     gfxMatrix tm = content->PrependLocalTransformsTo(parent->GetCanvasTM());
 
-    mCanvasTM = new gfxMatrix(tm);
+    mCanvasTM = MakeUnique<gfxMatrix>(tm);
   }
   return *mCanvasTM;
 }

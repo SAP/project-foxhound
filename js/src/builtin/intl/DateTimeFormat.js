@@ -19,9 +19,11 @@ function resolveDateTimeFormatInternals(lazyDateTimeFormatData) {
     //       {
     //         localeMatcher: "lookup" / "best fit",
     //
-    //         hour12: true / false,  // optional
+    //         ca: string matching a Unicode extension type, // optional
     //
-    //         hourCycle: "h11" / "h12" / "h23" / "h24", // optional
+    //         nu: string matching a Unicode extension type, // optional
+    //
+    //         hc: "h11" / "h12" / "h23" / "h24", // optional
     //       }
     //
     //     timeZone: IANA time zone name,
@@ -30,6 +32,8 @@ function resolveDateTimeFormatInternals(lazyDateTimeFormatData) {
     //       {
     //         // all the properties/values listed in Table 3
     //         // (weekday, era, year, month, day, &c.)
+    //
+    //         hour12: true / false,  // optional
     //       }
     //
     //     formatMatcher: "basic" / "best fit",
@@ -76,10 +80,8 @@ function resolveDateTimeFormatInternals(lazyDateTimeFormatData) {
     // Step 16.
     var dataLocale = r.dataLocale;
 
-#ifdef NIGHTLY_BUILD
     // Allow the calendar field to modify the pattern selection choice.
     dataLocale = addUnicodeExtension(dataLocale, "-u-ca-" + r.ca);
-#endif
 
     // Step 20.
     internalProps.timeZone = lazyDateTimeFormatData.timeZone;
@@ -308,6 +310,12 @@ function InitializeDateTimeFormat(dateTimeFormat, thisValue, locales, options, m
     //     localeOpt: // *first* opt computed in InitializeDateTimeFormat
     //       {
     //         localeMatcher: "lookup" / "best fit",
+    //
+    //         ca: string matching a Unicode extension type, // optional
+    //
+    //         nu: string matching a Unicode extension type, // optional
+    //
+    //         hc: "h11" / "h12" / "h23" / "h24", // optional
     //       }
     //
     //     timeZone: IANA time zone name,
@@ -318,7 +326,6 @@ function InitializeDateTimeFormat(dateTimeFormat, thisValue, locales, options, m
     //         // (weekday, era, year, month, day, &c.)
     //
     //         hour12: true / false,  // optional
-    //         hourCycle: "h11" / "h12" / "h23" / "h24", // optional
     //       }
     //
     //     formatMatcher: "basic" / "best fit",
@@ -346,6 +353,27 @@ function InitializeDateTimeFormat(dateTimeFormat, thisValue, locales, options, m
         GetOption(options, "localeMatcher", "string", ["lookup", "best fit"],
                   "best fit");
     localeOpt.localeMatcher = localeMatcher;
+
+    // https://github.com/tc39/ecma402/pull/175
+#ifdef NIGHTLY_BUILD
+    var calendar = GetOption(options, "calendar", "string", undefined, undefined);
+
+    if (calendar !== undefined) {
+        calendar = intl_ValidateAndCanonicalizeUnicodeExtensionType(calendar, "calendar", "ca");
+    }
+
+    localeOpt.ca = calendar;
+
+    var numberingSystem = GetOption(options, "numberingSystem", "string", undefined, undefined);
+
+    if (numberingSystem !== undefined) {
+        numberingSystem = intl_ValidateAndCanonicalizeUnicodeExtensionType(numberingSystem,
+                                                                           "numberingSystem",
+                                                                           "nu");
+    }
+
+    localeOpt.nu = numberingSystem;
+#endif
 
     // Step 6.
     var hr12  = GetOption(options, "hour12", "boolean", undefined, undefined);

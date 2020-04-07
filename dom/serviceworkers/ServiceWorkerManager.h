@@ -10,10 +10,12 @@
 #include "nsIServiceWorkerManager.h"
 #include "nsCOMPtr.h"
 
+#include "ServiceWorkerShutdownState.h"
 #include "ipc/IPCMessageUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/ConsoleReportCollector.h"
+#include "mozilla/HashTable.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Preferences.h"
@@ -55,7 +57,7 @@ class ServiceWorkerShutdownBlocker;
 
 class ServiceWorkerUpdateFinishCallback {
  protected:
-  virtual ~ServiceWorkerUpdateFinishCallback() {}
+  virtual ~ServiceWorkerUpdateFinishCallback() = default;
 
  public:
   NS_INLINE_DECL_REFCOUNTING(ServiceWorkerUpdateFinishCallback)
@@ -76,6 +78,28 @@ class ServiceWorkerUpdateFinishCallback {
  * The ServiceWorkerManager is a per-process global that deals with the
  * installation, querying and event dispatch of ServiceWorkers for all the
  * origins in the process.
+ *
+ * NOTE: the following documentation is a WIP and only applies with
+ * dom.serviceWorkers.parent_intercept=true:
+ *
+ * The ServiceWorkerManager (SWM) is a main-thread, parent-process singleton
+ * that encapsulates the browser-global state of service workers. This state
+ * includes, but is not limited to, all service worker registrations and all
+ * controlled service worker clients. The SWM also provides methods to read and
+ * mutate this state and to dispatch operations (e.g. DOM events such as a
+ * FetchEvent) to service workers.
+ *
+ * Example usage:
+ *
+ * MOZ_ASSERT(NS_IsMainThread(), "SWM is main-thread only");
+ *
+ * RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
+ *
+ * // Nullness must be checked by code that possibly executes during browser
+ * // shutdown, which is when the SWM is destroyed.
+ * if (swm) {
+ *   // Do something with the SWM.
+ * }
  */
 class ServiceWorkerManager final : public nsIServiceWorkerManager,
                                    public nsIObserver {
@@ -115,9 +139,11 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   void DispatchFetchEvent(nsIInterceptedChannel* aChannel, ErrorResult& aRv);
 
   void Update(nsIPrincipal* aPrincipal, const nsACString& aScope,
+              nsCString aNewestWorkerScriptUrl,
               ServiceWorkerUpdateFinishCallback* aCallback);
 
   void UpdateInternal(nsIPrincipal* aPrincipal, const nsACString& aScope,
+                      nsCString&& aNewestWorkerScriptUrl,
                       ServiceWorkerUpdateFinishCallback* aCallback);
 
   void SoftUpdate(const OriginAttributes& aOriginAttributes,
@@ -212,11 +238,11 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
                    const nsString& aLine, uint32_t aLineNumber,
                    uint32_t aColumnNumber, uint32_t aFlags, JSExnType aExnType);
 
-  MOZ_MUST_USE RefPtr<GenericPromise> MaybeClaimClient(
+  MOZ_MUST_USE RefPtr<GenericErrorResultPromise> MaybeClaimClient(
       const ClientInfo& aClientInfo,
       ServiceWorkerRegistrationInfo* aWorkerRegistration);
 
-  MOZ_MUST_USE RefPtr<GenericPromise> MaybeClaimClient(
+  MOZ_MUST_USE RefPtr<GenericErrorResultPromise> MaybeClaimClient(
       const ClientInfo& aClientInfo,
       const ServiceWorkerDescriptor& aServiceWorker);
 
@@ -250,15 +276,20 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   void NoteInheritedController(const ClientInfo& aClientInfo,
                                const ServiceWorkerDescriptor& aController);
 
-  void BlockShutdownOn(GenericNonExclusivePromise* aPromise);
+  void BlockShutdownOn(GenericNonExclusivePromise* aPromise,
+                       uint32_t aShutdownStateId);
 
   nsresult GetClientRegistration(
       const ClientInfo& aClientInfo,
       ServiceWorkerRegistrationInfo** aRegistrationInfo);
 
-  void UpdateControlledClient(const ClientInfo& aOldClientInfo,
-                              const ClientInfo& aNewClientInfo,
-                              const ServiceWorkerDescriptor& aServiceWorker);
+  // Returns the shutdown state ID (may be an invalid ID if an
+  // nsIAsyncShutdownBlocker is not used).
+  uint32_t MaybeInitServiceWorkerShutdownProgress() const;
+
+  void ReportServiceWorkerShutdownProgress(
+      uint32_t aShutdownStateId,
+      ServiceWorkerShutdownState::Progress aProgress) const;
 
  private:
   struct RegistrationDataPerPrincipal;
@@ -273,7 +304,7 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
 
   void Init(ServiceWorkerRegistrar* aRegistrar);
 
-  RefPtr<GenericPromise> StartControllingClient(
+  RefPtr<GenericErrorResultPromise> StartControllingClient(
       const ClientInfo& aClientInfo,
       ServiceWorkerRegistrationInfo* aRegistrationInfo,
       bool aControlClientHandle = true);
@@ -281,6 +312,8 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   void StopControllingClient(const ClientInfo& aClientInfo);
 
   void MaybeStartShutdown();
+
+  void MaybeFinishShutdown();
 
   already_AddRefed<ServiceWorkerJobQueue> GetOrCreateJobQueue(
       const nsACString& aOriginSuffix, const nsACString& aScope);
@@ -368,6 +401,18 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   // MUST ONLY BE CALLED FROM UnregisterIfMatchesHost!
   void ForceUnregister(RegistrationDataPerPrincipal* aRegistrationData,
                        ServiceWorkerRegistrationInfo* aRegistration);
+
+  // An "orphaned" registration is one that is unregistered and not controlling
+  // clients. The ServiceWorkerManager must know about all orphaned
+  // registrations to forcefully shutdown all Service Workers during browser
+  // shutdown.
+  void AddOrphanedRegistration(ServiceWorkerRegistrationInfo* aRegistration);
+
+  void RemoveOrphanedRegistration(ServiceWorkerRegistrationInfo* aRegistration);
+
+  HashSet<RefPtr<ServiceWorkerRegistrationInfo>,
+          PointerHasher<ServiceWorkerRegistrationInfo*>>
+      mOrphanedRegistrations;
 
   RefPtr<ServiceWorkerShutdownBlocker> mShutdownBlocker;
 

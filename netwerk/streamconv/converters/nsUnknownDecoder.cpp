@@ -8,7 +8,6 @@
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
 #include "nsMimeTypes.h"
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 
 #include "nsCRT.h"
@@ -142,6 +141,12 @@ nsUnknownDecoder::AsyncConvertData(const char* aFromType, const char* aToType,
   MutexAutoLock lock(mMutex);
   mNextListener = aListener;
   return (aListener) ? NS_OK : NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
+nsUnknownDecoder::GetConvertedType(const nsACString& aFromType,
+                                   nsACString& aToType) {
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 // ----
@@ -282,6 +287,29 @@ nsUnknownDecoder::OnStopRequest(nsIRequest* request, nsresult aStatus) {
   //
   if (contentTypeEmpty) {
     DetermineContentType(request);
+
+    /*
+     * In Case we did Sniff Unknown Content with XTCO: nosniff enabled,
+     * add an Telemetry-Entry whether the sniffed content is able to
+     * execute Script.
+     */
+    nsCOMPtr<nsIChannel> channel = do_QueryInterface(request);
+    if (channel) {
+      nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+      if (loadInfo->GetSkipContentSniffing()) {
+        if (mContentType.EqualsLiteral("text/html") ||
+            mContentType.EqualsLiteral("text/xml") ||
+            mContentType.EqualsLiteral("aplication/pdf")) {
+          Telemetry::AccumulateCategorical(
+              mozilla::Telemetry::LABELS_XCTO_NOSNIFF_TOPLEVEL_NAV_EXCEPTIONS::
+                  ExceptionScriptable);
+        } else {
+          Telemetry::AccumulateCategorical(
+              mozilla::Telemetry::LABELS_XCTO_NOSNIFF_TOPLEVEL_NAV_EXCEPTIONS::
+                  Exception);
+        }
+      }
+    }
 
     // Make sure channel listeners see channel as pending while we call
     // OnStartRequest/OnDataAvailable, even though the underlying channel
@@ -656,7 +684,9 @@ bool nsUnknownDecoder::LastDitchSniff(nsIRequest* aRequest) {
   uint32_t testDataLen;
   if (mDecodedData.IsEmpty()) {
     testData = mBuffer;
-    testDataLen = mBufferLen;
+    // Since some legacy text files end with 0x1A, reading the entire buffer
+    // will lead misdetection.
+    testDataLen = std::min<uint32_t>(mBufferLen, MAX_BUFFER_SIZE);
   } else {
     testData = mDecodedData.get();
     testDataLen = std::min(mDecodedData.Length(), MAX_BUFFER_SIZE);

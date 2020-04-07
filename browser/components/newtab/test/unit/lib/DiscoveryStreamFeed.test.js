@@ -5,7 +5,8 @@ import {
 } from "common/Actions.jsm";
 import { combineReducers, createStore } from "redux";
 import { GlobalOverrider } from "test/unit/utils";
-import injector from "inject!lib/DiscoveryStreamFeed.jsm";
+import { DiscoveryStreamFeed } from "lib/DiscoveryStreamFeed.jsm";
+import { RecommendationProviderSwitcher } from "lib/RecommendationProviderSwitcher.jsm";
 import { reducers } from "common/Reducers.jsm";
 
 const CONFIG_PREF_NAME = "discoverystream.config";
@@ -20,8 +21,9 @@ const FAKE_UUID = "{foo-123-foo}";
 
 // eslint-disable-next-line max-statements
 describe("DiscoveryStreamFeed", () => {
-  let DiscoveryStreamFeed;
   let feed;
+  let feeds;
+  let recommendationProviderSwitcher;
   let sandbox;
   let fetchStub;
   let clock;
@@ -43,38 +45,11 @@ describe("DiscoveryStreamFeed", () => {
   beforeEach(() => {
     sandbox = sinon.createSandbox();
 
-    class FakeUserDomainAffinityProvider {
-      constructor(
-        timeSegments,
-        parameterSets,
-        maxHistoryQueryResults,
-        version,
-        scores
-      ) {
-        this.timeSegments = timeSegments;
-        this.parameterSets = parameterSets;
-        this.maxHistoryQueryResults = maxHistoryQueryResults;
-        this.version = version;
-        this.scores = scores;
-      }
-
-      getAffinities() {
-        return {};
-      }
-    }
-
     // Fetch
     fetchStub = sandbox.stub(global, "fetch");
 
     // Time
     clock = sinon.useFakeTimers();
-
-    // Injector
-    ({ DiscoveryStreamFeed } = injector({
-      "lib/UserDomainAffinityProvider.jsm": {
-        UserDomainAffinityProvider: FakeUserDomainAffinityProvider,
-      },
-    }));
 
     globals = new GlobalOverrider();
     globals.set("gUUIDGenerator", { generateUUID: () => FAKE_UUID });
@@ -83,6 +58,15 @@ describe("DiscoveryStreamFeed", () => {
       .stub(global.Services.prefs, "getBoolPref")
       .withArgs("browser.newtabpage.activity-stream.discoverystream.enabled")
       .returns(true);
+
+    recommendationProviderSwitcher = new RecommendationProviderSwitcher();
+    recommendationProviderSwitcher.store = createStore(
+      combineReducers(reducers),
+      {}
+    );
+    feeds = {
+      "feeds.recommendationproviderswitcher": recommendationProviderSwitcher,
+    };
 
     // Feed
     feed = new DiscoveryStreamFeed();
@@ -96,9 +80,13 @@ describe("DiscoveryStreamFeed", () => {
           }),
           [ENDPOINTS_PREF_NAME]: DUMMY_ENDPOINT,
           "discoverystream.enabled": true,
+          "feeds.section.topstories": true,
         },
       },
     });
+    feed.store.feeds = {
+      get: name => feeds[name],
+    };
     global.fetch.resetHistory();
 
     sandbox.stub(feed, "_maybeUpdateCachedData").resolves();
@@ -183,6 +171,18 @@ describe("DiscoveryStreamFeed", () => {
       assert.calledWithMatch(
         fetchStub,
         "https://getpocket.cdn.mozilla.net/dummy?consumer_key=replaced",
+        { credentials: "omit" }
+      );
+    });
+    it("should replace locales with $locale", async () => {
+      feed.locale = "replaced";
+      await feed.fetchFromEndpoint(
+        "https://getpocket.cdn.mozilla.net/dummy?locale_lang=$locale"
+      );
+
+      assert.calledWithMatch(
+        fetchStub,
+        "https://getpocket.cdn.mozilla.net/dummy?locale_lang=replaced",
         { credentials: "omit" }
       );
     });
@@ -313,7 +313,53 @@ describe("DiscoveryStreamFeed", () => {
         "https://spocs.getpocket.com/spocs"
       );
       const { layout } = feed.store.getState().DiscoveryStream;
-      assert.equal(layout[0].components[2].properties.items, 3);
+      assert.equal(layout[0].components[3].properties.items, 3);
+    });
+    it("should use 1 row layout if specified", async () => {
+      feed.config.hardcoded_layout = true;
+      feed.store = createStore(combineReducers(reducers), {
+        Prefs: {
+          values: {
+            [CONFIG_PREF_NAME]: JSON.stringify({
+              enabled: true,
+              show_spocs: false,
+              layout_endpoint: DUMMY_ENDPOINT,
+            }),
+            [ENDPOINTS_PREF_NAME]: DUMMY_ENDPOINT,
+            "discoverystream.enabled": true,
+            "discoverystream.region-basic-layout": true,
+          },
+        },
+      });
+      sandbox.stub(feed, "fetchLayout").returns(Promise.resolve(""));
+
+      await feed.loadLayout(feed.store.dispatch);
+
+      const { layout } = feed.store.getState().DiscoveryStream;
+      assert.equal(layout[0].components[3].properties.items, 3);
+    });
+    it("should use 7 row layout if specified", async () => {
+      feed.config.hardcoded_layout = true;
+      feed.store = createStore(combineReducers(reducers), {
+        Prefs: {
+          values: {
+            [CONFIG_PREF_NAME]: JSON.stringify({
+              enabled: true,
+              show_spocs: false,
+              layout_endpoint: DUMMY_ENDPOINT,
+            }),
+            [ENDPOINTS_PREF_NAME]: DUMMY_ENDPOINT,
+            "discoverystream.enabled": true,
+            "discoverystream.region-basic-layout": false,
+          },
+        },
+      });
+      sandbox.stub(feed, "fetchLayout").returns(Promise.resolve(""));
+
+      await feed.loadLayout(feed.store.dispatch);
+
+      const { layout } = feed.store.getState().DiscoveryStream;
+      assert.equal(layout[0].components[3].properties.items, 21);
     });
     it("should use new spocs endpoint if in the config", async () => {
       feed.config.spocs_endpoint = "https://spocs.getpocket.com/spocs2";
@@ -352,7 +398,7 @@ describe("DiscoveryStreamFeed", () => {
         "https://spocs.getpocket.com/spocs"
       );
       const { layout } = feed.store.getState().DiscoveryStream;
-      assert.equal(layout[0].components[2].properties.items, 3);
+      assert.equal(layout[0].components[3].properties.items, 3);
     });
     it("should use new spocs endpoint if in a FF pref", async () => {
       feed.store = createStore(combineReducers(reducers), {
@@ -785,20 +831,128 @@ describe("DiscoveryStreamFeed", () => {
       sandbox.stub(feed.cache, "get").returns(Promise.resolve());
       sandbox
         .stub(feed, "fetchFromEndpoint")
-        .resolves({ spocs: [{ id: "data" }] });
+        .resolves({ spocs: { items: [{ id: "data" }] } });
       sandbox.stub(feed.cache, "set").returns(Promise.resolve());
 
       await feed.loadSpocs(feed.store.dispatch);
 
       assert.calledWith(feed.cache.set, "spocs", {
-        spocs: { spocs: [{ id: "data", min_score: 0, score: 1 }] },
+        spocs: {
+          spocs: {
+            context: "",
+            title: "",
+            items: [{ id: "data", min_score: 0, score: 1 }],
+          },
+        },
         lastUpdated: 0,
       });
 
       assert.deepEqual(
-        feed.store.getState().DiscoveryStream.spocs.data.spocs[0],
+        feed.store.getState().DiscoveryStream.spocs.data.spocs.items[0],
         { id: "data", min_score: 0, score: 1 }
       );
+    });
+    it("should normalizeSpocsItems for older spoc data", async () => {
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve());
+      sandbox
+        .stub(feed, "fetchFromEndpoint")
+        .resolves({ spocs: [{ id: "data" }] });
+      sandbox.stub(feed.cache, "set").returns(Promise.resolve());
+
+      await feed.loadSpocs(feed.store.dispatch);
+
+      assert.deepEqual(
+        feed.store.getState().DiscoveryStream.spocs.data.spocs.items[0],
+        { id: "data", min_score: 0, score: 1 }
+      );
+    });
+    it("should return expected data if normalizeSpocsItems returns no spoc data", async () => {
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve());
+      sandbox
+        .stub(feed, "fetchFromEndpoint")
+        .resolves({ placement1: [{ id: "data" }], placement2: [] });
+      sandbox.stub(feed.cache, "set").returns(Promise.resolve());
+
+      const fakeComponents = {
+        components: [
+          { placement: { name: "placement1" } },
+          { placement: { name: "placement2" } },
+        ],
+      };
+      feed.updatePlacements(feed.store.dispatch, [fakeComponents]);
+
+      await feed.loadSpocs(feed.store.dispatch);
+
+      assert.deepEqual(feed.store.getState().DiscoveryStream.spocs.data, {
+        placement1: {
+          title: "",
+          context: "",
+          items: [{ id: "data", score: 1, min_score: 0 }],
+        },
+        placement2: {
+          title: "",
+          context: "",
+          items: [],
+        },
+      });
+    });
+    it("should use title and context on spoc data", async () => {
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve());
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        placement1: {
+          title: "title",
+          context: "context",
+          items: [{ id: "data" }],
+        },
+      });
+      sandbox.stub(feed.cache, "set").returns(Promise.resolve());
+
+      const fakeComponents = {
+        components: [{ placement: { name: "placement1" } }],
+      };
+      feed.updatePlacements(feed.store.dispatch, [fakeComponents]);
+
+      await feed.loadSpocs(feed.store.dispatch);
+
+      assert.deepEqual(feed.store.getState().DiscoveryStream.spocs.data, {
+        placement1: {
+          title: "title",
+          context: "context",
+          items: [{ id: "data", score: 1, min_score: 0 }],
+        },
+      });
+    });
+  });
+
+  describe("#normalizeSpocsItems", () => {
+    it("should return correct data if new data passed in", async () => {
+      const spocs = {
+        title: "title",
+        context: "context",
+        items: [{ id: "id" }],
+      };
+      const result = feed.normalizeSpocsItems(spocs);
+      assert.deepEqual(result, spocs);
+    });
+    it("should return normalized data if new data passed in without title or context", async () => {
+      const spocs = {
+        items: [{ id: "id" }],
+      };
+      const result = feed.normalizeSpocsItems(spocs);
+      assert.deepEqual(result, {
+        title: "",
+        context: "",
+        items: [{ id: "id" }],
+      });
+    });
+    it("should return normalized data if old data passed in", async () => {
+      const spocs = [{ id: "id" }];
+      const result = feed.normalizeSpocsItems(spocs);
+      assert.deepEqual(result, {
+        title: "",
+        context: "",
+        items: [{ id: "id" }],
+      });
     });
   });
 
@@ -910,8 +1064,30 @@ describe("DiscoveryStreamFeed", () => {
     });
   });
 
+  describe("#reset", () => {
+    it("should fire all teardown based functions", async () => {
+      sandbox.stub(global.Services.obs, "removeObserver").returns();
+
+      sandbox.stub(feed, "resetDataPrefs").returns();
+      sandbox.stub(feed, "resetCache").returns(Promise.resolve());
+      sandbox.stub(feed, "resetState").returns();
+
+      feed.affinityProvider = {
+        teardown: sandbox.stub().returns(),
+      };
+      feed.loaded = true;
+
+      await feed.reset();
+
+      assert.calledOnce(feed.resetDataPrefs);
+      assert.calledOnce(feed.resetCache);
+      assert.calledOnce(feed.resetState);
+      assert.calledOnce(global.Services.obs.removeObserver);
+    });
+  });
+
   describe("#resetCache", () => {
-    it("should set .layout, .feeds .spocs and .affinities to {", async () => {
+    it("should set .layout, .feeds .spocs and .affinities to {}", async () => {
       sandbox.stub(feed.cache, "set").returns(Promise.resolve());
 
       await feed.resetCache();
@@ -936,61 +1112,61 @@ describe("DiscoveryStreamFeed", () => {
     });
     it("should sort based on item_score", () => {
       const { data: result } = feed.transform([
-        { id: 2, campaign_id: 2, item_score: 0.8, min_score: 0.1 },
-        { id: 3, campaign_id: 3, item_score: 0.7, min_score: 0.1 },
-        { id: 1, campaign_id: 1, item_score: 0.9, min_score: 0.1 },
+        { id: 2, flight_id: 2, item_score: 0.8, min_score: 0.1 },
+        { id: 3, flight_id: 3, item_score: 0.7, min_score: 0.1 },
+        { id: 1, flight_id: 1, item_score: 0.9, min_score: 0.1 },
       ]);
 
       assert.deepEqual(result, [
-        { id: 1, campaign_id: 1, item_score: 0.9, score: 0.9, min_score: 0.1 },
-        { id: 2, campaign_id: 2, item_score: 0.8, score: 0.8, min_score: 0.1 },
-        { id: 3, campaign_id: 3, item_score: 0.7, score: 0.7, min_score: 0.1 },
+        { id: 1, flight_id: 1, item_score: 0.9, score: 0.9, min_score: 0.1 },
+        { id: 2, flight_id: 2, item_score: 0.8, score: 0.8, min_score: 0.1 },
+        { id: 3, flight_id: 3, item_score: 0.7, score: 0.7, min_score: 0.1 },
       ]);
     });
     it("should remove items with scores lower than min_score", () => {
       const { data: result, filtered } = feed.transform([
-        { id: 2, campaign_id: 2, item_score: 0.8, min_score: 0.9 },
-        { id: 3, campaign_id: 3, item_score: 0.7, min_score: 0.7 },
-        { id: 1, campaign_id: 1, item_score: 0.9, min_score: 0.8 },
+        { id: 2, flight_id: 2, item_score: 0.8, min_score: 0.9 },
+        { id: 3, flight_id: 3, item_score: 0.7, min_score: 0.7 },
+        { id: 1, flight_id: 1, item_score: 0.9, min_score: 0.8 },
       ]);
 
       assert.deepEqual(result, [
-        { id: 1, campaign_id: 1, item_score: 0.9, score: 0.9, min_score: 0.8 },
-        { id: 3, campaign_id: 3, item_score: 0.7, score: 0.7, min_score: 0.7 },
+        { id: 1, flight_id: 1, item_score: 0.9, score: 0.9, min_score: 0.8 },
+        { id: 3, flight_id: 3, item_score: 0.7, score: 0.7, min_score: 0.7 },
       ]);
 
       assert.deepEqual(filtered.below_min_score, [
-        { id: 2, campaign_id: 2, item_score: 0.8, min_score: 0.9, score: 0.8 },
+        { id: 2, flight_id: 2, item_score: 0.8, min_score: 0.9, score: 0.8 },
       ]);
     });
     it("should add a score prop to spocs", () => {
       const { data: result } = feed.transform([
-        { campaign_id: 1, item_score: 0.9, min_score: 0.1 },
+        { flight_id: 1, item_score: 0.9, min_score: 0.1 },
       ]);
 
       assert.equal(result[0].score, 0.9);
     });
-    it("should filter out duplicate campigns", () => {
+    it("should filter out duplicate flights", () => {
       const { data: result, filtered } = feed.transform([
-        { id: 1, campaign_id: 2, item_score: 0.8, min_score: 0.1 },
-        { id: 2, campaign_id: 3, item_score: 0.6, min_score: 0.1 },
-        { id: 3, campaign_id: 1, item_score: 0.9, min_score: 0.1 },
-        { id: 4, campaign_id: 3, item_score: 0.7, min_score: 0.1 },
-        { id: 5, campaign_id: 1, item_score: 0.9, min_score: 0.1 },
+        { id: 1, flight_id: 2, item_score: 0.8, min_score: 0.1 },
+        { id: 2, flight_id: 3, item_score: 0.6, min_score: 0.1 },
+        { id: 3, flight_id: 1, item_score: 0.9, min_score: 0.1 },
+        { id: 4, flight_id: 3, item_score: 0.7, min_score: 0.1 },
+        { id: 5, flight_id: 1, item_score: 0.9, min_score: 0.1 },
       ]);
 
       assert.deepEqual(result, [
-        { id: 3, campaign_id: 1, item_score: 0.9, score: 0.9, min_score: 0.1 },
-        { id: 1, campaign_id: 2, item_score: 0.8, score: 0.8, min_score: 0.1 },
-        { id: 4, campaign_id: 3, item_score: 0.7, score: 0.7, min_score: 0.1 },
+        { id: 3, flight_id: 1, item_score: 0.9, score: 0.9, min_score: 0.1 },
+        { id: 1, flight_id: 2, item_score: 0.8, score: 0.8, min_score: 0.1 },
+        { id: 4, flight_id: 3, item_score: 0.7, score: 0.7, min_score: 0.1 },
       ]);
 
-      assert.deepEqual(filtered.campaign_duplicate, [
-        { id: 5, campaign_id: 1, item_score: 0.9, min_score: 0.1, score: 0.9 },
-        { id: 2, campaign_id: 3, item_score: 0.6, min_score: 0.1, score: 0.6 },
+      assert.deepEqual(filtered.flight_duplicate, [
+        { id: 5, flight_id: 1, item_score: 0.9, min_score: 0.1, score: 0.9 },
+        { id: 2, flight_id: 3, item_score: 0.6, min_score: 0.1, score: 0.6 },
       ]);
     });
-    it("should filter out duplicate campigns while using spocs_per_domain", () => {
+    it("should filter out duplicate flight while using spocs_per_domain", () => {
       sandbox.stub(feed.store, "getState").returns({
         DiscoveryStream: {
           spocs: { spocs_per_domain: 2 },
@@ -998,32 +1174,32 @@ describe("DiscoveryStreamFeed", () => {
       });
 
       const { data: result, filtered } = feed.transform([
-        { id: 1, campaign_id: 2, item_score: 0.8, min_score: 0.1 },
-        { id: 2, campaign_id: 3, item_score: 0.6, min_score: 0.1 },
-        { id: 3, campaign_id: 1, item_score: 0.6, min_score: 0.1 },
-        { id: 4, campaign_id: 3, item_score: 0.7, min_score: 0.1 },
-        { id: 5, campaign_id: 1, item_score: 0.9, min_score: 0.1 },
-        { id: 6, campaign_id: 2, item_score: 0.6, min_score: 0.1 },
-        { id: 7, campaign_id: 3, item_score: 0.7, min_score: 0.1 },
-        { id: 8, campaign_id: 1, item_score: 0.8, min_score: 0.1 },
-        { id: 9, campaign_id: 3, item_score: 0.7, min_score: 0.1 },
-        { id: 10, campaign_id: 1, item_score: 0.8, min_score: 0.1 },
+        { id: 1, flight_id: 2, item_score: 0.8, min_score: 0.1 },
+        { id: 2, flight_id: 3, item_score: 0.6, min_score: 0.1 },
+        { id: 3, flight_id: 1, item_score: 0.6, min_score: 0.1 },
+        { id: 4, flight_id: 3, item_score: 0.7, min_score: 0.1 },
+        { id: 5, flight_id: 1, item_score: 0.9, min_score: 0.1 },
+        { id: 6, flight_id: 2, item_score: 0.6, min_score: 0.1 },
+        { id: 7, flight_id: 3, item_score: 0.7, min_score: 0.1 },
+        { id: 8, flight_id: 1, item_score: 0.8, min_score: 0.1 },
+        { id: 9, flight_id: 3, item_score: 0.7, min_score: 0.1 },
+        { id: 10, flight_id: 1, item_score: 0.8, min_score: 0.1 },
       ]);
 
       assert.deepEqual(result, [
-        { id: 5, campaign_id: 1, item_score: 0.9, score: 0.9, min_score: 0.1 },
-        { id: 1, campaign_id: 2, item_score: 0.8, score: 0.8, min_score: 0.1 },
-        { id: 8, campaign_id: 1, item_score: 0.8, score: 0.8, min_score: 0.1 },
-        { id: 4, campaign_id: 3, item_score: 0.7, score: 0.7, min_score: 0.1 },
-        { id: 7, campaign_id: 3, item_score: 0.7, score: 0.7, min_score: 0.1 },
-        { id: 6, campaign_id: 2, item_score: 0.6, score: 0.6, min_score: 0.1 },
+        { id: 5, flight_id: 1, item_score: 0.9, score: 0.9, min_score: 0.1 },
+        { id: 1, flight_id: 2, item_score: 0.8, score: 0.8, min_score: 0.1 },
+        { id: 8, flight_id: 1, item_score: 0.8, score: 0.8, min_score: 0.1 },
+        { id: 4, flight_id: 3, item_score: 0.7, score: 0.7, min_score: 0.1 },
+        { id: 7, flight_id: 3, item_score: 0.7, score: 0.7, min_score: 0.1 },
+        { id: 6, flight_id: 2, item_score: 0.6, score: 0.6, min_score: 0.1 },
       ]);
 
-      assert.deepEqual(filtered.campaign_duplicate, [
-        { id: 10, campaign_id: 1, item_score: 0.8, min_score: 0.1, score: 0.8 },
-        { id: 9, campaign_id: 3, item_score: 0.7, min_score: 0.1, score: 0.7 },
-        { id: 2, campaign_id: 3, item_score: 0.6, min_score: 0.1, score: 0.6 },
-        { id: 3, campaign_id: 1, item_score: 0.6, min_score: 0.1, score: 0.6 },
+      assert.deepEqual(filtered.flight_duplicate, [
+        { id: 10, flight_id: 1, item_score: 0.8, min_score: 0.1, score: 0.8 },
+        { id: 9, flight_id: 3, item_score: 0.7, min_score: 0.1, score: 0.7 },
+        { id: 2, flight_id: 3, item_score: 0.6, min_score: 0.1, score: 0.6 },
+        { id: 3, flight_id: 1, item_score: 0.6, min_score: 0.1, score: 0.6 },
       ]);
     });
   });
@@ -1090,10 +1266,10 @@ describe("DiscoveryStreamFeed", () => {
       const fakeSpocs = [
         {
           id: 1,
-          campaign_id: "seen",
+          flight_id: "seen",
           caps: {
             lifetime: 3,
-            campaign: {
+            flight: {
               count: 1,
               period: 1,
             },
@@ -1101,10 +1277,10 @@ describe("DiscoveryStreamFeed", () => {
         },
         {
           id: 2,
-          campaign_id: "not-seen",
+          flight_id: "not-seen",
           caps: {
             lifetime: 3,
-            campaign: {
+            flight: {
               count: 1,
               period: 1,
             },
@@ -1119,7 +1295,7 @@ describe("DiscoveryStreamFeed", () => {
       const { data: result, filtered } = feed.frequencyCapSpocs(fakeSpocs);
 
       assert.equal(result.length, 1);
-      assert.equal(result[0].campaign_id, "not-seen");
+      assert.equal(result[0].flight_id, "not-seen");
       assert.deepEqual(filtered, [fakeSpocs[0]]);
     });
     it("should return simple structure and do nothing with no spocs", () => {
@@ -1130,16 +1306,63 @@ describe("DiscoveryStreamFeed", () => {
     });
   });
 
+  describe("#migrateFlightId", () => {
+    it("should migrate campaign to flight if no flight exists", () => {
+      const fakeSpocs = [
+        {
+          id: 1,
+          campaign_id: "campaign",
+          caps: {
+            lifetime: 3,
+            campaign: {
+              count: 1,
+              period: 1,
+            },
+          },
+        },
+      ];
+      const { data: result } = feed.migrateFlightId(fakeSpocs);
+
+      assert.deepEqual(result[0], {
+        id: 1,
+        flight_id: "campaign",
+        campaign_id: "campaign",
+        caps: {
+          lifetime: 3,
+          flight: {
+            count: 1,
+            period: 1,
+          },
+          campaign: {
+            count: 1,
+            period: 1,
+          },
+        },
+      });
+    });
+    it("should not migrate campaign to flight if caps or id don't exist", () => {
+      const fakeSpocs = [{ id: 1 }];
+      const { data: result } = feed.migrateFlightId(fakeSpocs);
+
+      assert.deepEqual(result[0], { id: 1 });
+    });
+    it("should return simple structure and do nothing with no spocs", () => {
+      const { data: result } = feed.migrateFlightId([]);
+
+      assert.equal(result.length, 0);
+    });
+  });
+
   describe("#isBelowFrequencyCap", () => {
-    it("should return true if there are no campaign impressions", () => {
+    it("should return true if there are no flight impressions", () => {
       const fakeImpressions = {
         seen: [Date.now() - 1],
       };
       const fakeSpoc = {
-        campaign_id: "not-seen",
+        flight_id: "not-seen",
         caps: {
           lifetime: 3,
-          campaign: {
+          flight: {
             count: 1,
             period: 1,
           },
@@ -1150,12 +1373,12 @@ describe("DiscoveryStreamFeed", () => {
 
       assert.isTrue(result);
     });
-    it("should return true if there are no campaign caps", () => {
+    it("should return true if there are no flight caps", () => {
       const fakeImpressions = {
         seen: [Date.now() - 1],
       };
       const fakeSpoc = {
-        campaign_id: "seen",
+        flight_id: "seen",
         caps: {
           lifetime: 3,
         },
@@ -1171,10 +1394,10 @@ describe("DiscoveryStreamFeed", () => {
         seen: [Date.now() - 1],
       };
       const fakeSpoc = {
-        campaign_id: "seen",
+        flight_id: "seen",
         caps: {
           lifetime: 1,
-          campaign: {
+          flight: {
             count: 3,
             period: 1,
           },
@@ -1191,10 +1414,10 @@ describe("DiscoveryStreamFeed", () => {
         seen: [Date.now() - 1],
       };
       const fakeSpoc = {
-        campaign_id: "seen",
+        flight_id: "seen",
         caps: {
           lifetime: 3,
-          campaign: {
+          flight: {
             count: 1,
             period: 1,
           },
@@ -1229,12 +1452,12 @@ describe("DiscoveryStreamFeed", () => {
     });
   });
 
-  describe("#recordCampaignImpression", () => {
+  describe("#recordFlightImpression", () => {
     it("should return false if time based cap is hit", () => {
       sandbox.stub(feed, "readDataPref").returns({});
       sandbox.stub(feed, "writeDataPref").returns();
 
-      feed.recordCampaignImpression("seen");
+      feed.recordFlightImpression("seen");
 
       assert.calledWith(feed.writeDataPref, SPOC_IMPRESSION_TRACKING_PREF, {
         seen: [0],
@@ -1242,59 +1465,75 @@ describe("DiscoveryStreamFeed", () => {
     });
   });
 
-  describe("#recordBlockCampaignId", () => {
-    it("should call writeDataPref with new campaign id added", () => {
+  describe("#recordBlockFlightId", () => {
+    it("should call writeDataPref with new flight id added", () => {
       sandbox.stub(feed, "readDataPref").returns({ "1234": 1 });
       sandbox.stub(feed, "writeDataPref").returns();
 
-      feed.recordBlockCampaignId("5678");
+      feed.recordBlockFlightId("5678");
 
       assert.calledOnce(feed.readDataPref);
-      assert.calledWith(feed.writeDataPref, "discoverystream.campaign.blocks", {
+      assert.calledWith(feed.writeDataPref, "discoverystream.flight.blocks", {
         "1234": 1,
         "5678": 1,
       });
     });
   });
 
-  describe("#cleanUpCampaignImpressionPref", () => {
-    it("should remove campaign-3 because it is no longer being used", async () => {
+  describe("#cleanUpFlightImpressionPref", () => {
+    it("should remove flight-3 because it is no longer being used", async () => {
       const fakeSpocs = {
-        spocs: [
-          {
-            campaign_id: "campaign-1",
-            caps: {
-              lifetime: 3,
-              campaign: {
-                count: 1,
-                period: 1,
+        spocs: {
+          items: [
+            {
+              flight_id: "flight-1",
+              caps: {
+                lifetime: 3,
+                flight: {
+                  count: 1,
+                  period: 1,
+                },
               },
             },
-          },
-          {
-            campaign_id: "campaign-2",
-            caps: {
-              lifetime: 3,
-              campaign: {
-                count: 1,
-                period: 1,
+            {
+              flight_id: "flight-2",
+              caps: {
+                lifetime: 3,
+                flight: {
+                  count: 1,
+                  period: 1,
+                },
               },
             },
-          },
-        ],
+          ],
+        },
       };
       const fakeImpressions = {
-        "campaign-2": [Date.now() - 1],
-        "campaign-3": [Date.now() - 1],
+        "flight-2": [Date.now() - 1],
+        "flight-3": [Date.now() - 1],
       };
       sandbox.stub(feed, "readDataPref").returns(fakeImpressions);
       sandbox.stub(feed, "writeDataPref").returns();
 
-      feed.cleanUpCampaignImpressionPref(fakeSpocs);
+      feed.cleanUpFlightImpressionPref(fakeSpocs);
 
       assert.calledWith(feed.writeDataPref, SPOC_IMPRESSION_TRACKING_PREF, {
-        "campaign-2": [-1],
+        "flight-2": [-1],
       });
+    });
+    it("should use old spocs data strucutre", async () => {
+      const fakeSpocs = {
+        spocs: [
+          {
+            flight_id: "flight-2",
+          },
+        ],
+      };
+      sandbox.stub(feed, "cleanUpImpressionPref").returns();
+
+      feed.cleanUpFlightImpressionPref(fakeSpocs);
+
+      assert.calledOnce(feed.cleanUpImpressionPref);
     });
   });
 
@@ -1413,30 +1652,32 @@ describe("DiscoveryStreamFeed", () => {
   describe("#onAction: DISCOVERY_STREAM_SPOC_IMPRESSION", () => {
     beforeEach(() => {
       const data = {
-        spocs: [
-          {
-            id: 1,
-            campaign_id: "seen",
-            caps: {
-              lifetime: 3,
-              campaign: {
-                count: 1,
-                period: 1,
+        spocs: {
+          items: [
+            {
+              id: 1,
+              flight_id: "seen",
+              caps: {
+                lifetime: 3,
+                flight: {
+                  count: 1,
+                  period: 1,
+                },
               },
             },
-          },
-          {
-            id: 2,
-            campaign_id: "not-seen",
-            caps: {
-              lifetime: 3,
-              campaign: {
-                count: 1,
-                period: 1,
+            {
+              id: 2,
+              flight_id: "not-seen",
+              caps: {
+                lifetime: 3,
+                flight: {
+                  count: 1,
+                  period: 1,
+                },
               },
             },
-          },
-        ],
+          ],
+        },
       };
       sandbox.stub(feed.store, "getState").returns({
         DiscoveryStream: {
@@ -1454,19 +1695,21 @@ describe("DiscoveryStreamFeed", () => {
         seen: [Date.now() - 1],
       };
       const result = {
-        spocs: [
-          {
-            id: 2,
-            campaign_id: "not-seen",
-            caps: {
-              lifetime: 3,
-              campaign: {
-                count: 1,
-                period: 1,
+        spocs: {
+          items: [
+            {
+              id: 2,
+              flight_id: "not-seen",
+              caps: {
+                lifetime: 3,
+                flight: {
+                  count: 1,
+                  period: 1,
+                },
               },
             },
-          },
-        ],
+          ],
+        },
       };
       const spocFillResult = [
         {
@@ -1477,13 +1720,13 @@ describe("DiscoveryStreamFeed", () => {
         },
       ];
 
-      sandbox.stub(feed, "recordCampaignImpression").returns();
+      sandbox.stub(feed, "recordFlightImpression").returns();
       sandbox.stub(feed, "readDataPref").returns(fakeImpressions);
       sandbox.spy(feed.store, "dispatch");
 
       await feed.onAction({
         type: at.DISCOVERY_STREAM_SPOC_IMPRESSION,
-        data: { campaign_id: "seen" },
+        data: { flightId: "seen" },
       });
 
       assert.deepEqual(
@@ -1498,13 +1741,13 @@ describe("DiscoveryStreamFeed", () => {
     it("should not call dispatch to ac.AlsoToPreloaded if spocs were not changed by frequency capping", async () => {
       Object.defineProperty(feed, "showSpocs", { get: () => true });
       const fakeImpressions = {};
-      sandbox.stub(feed, "recordCampaignImpression").returns();
+      sandbox.stub(feed, "recordFlightImpression").returns();
       sandbox.stub(feed, "readDataPref").returns(fakeImpressions);
       sandbox.spy(feed.store, "dispatch");
 
       await feed.onAction({
         type: at.DISCOVERY_STREAM_SPOC_IMPRESSION,
-        data: { campaign_id: "seen" },
+        data: { flight_id: "seen" },
       });
 
       assert.notCalled(feed.store.dispatch);
@@ -1513,25 +1756,27 @@ describe("DiscoveryStreamFeed", () => {
       sandbox.restore();
       Object.defineProperty(feed, "showSpocs", { get: () => true });
       const fakeImpressions = {};
-      sandbox.stub(feed, "recordCampaignImpression").returns();
+      sandbox.stub(feed, "recordFlightImpression").returns();
       sandbox.stub(feed, "readDataPref").returns(fakeImpressions);
       sandbox.spy(feed.store, "dispatch");
       sandbox.spy(feed, "frequencyCapSpocs");
 
       const data = {
-        spocs: [
-          {
-            id: 2,
-            campaign_id: "seen-2",
-            caps: {
-              lifetime: 3,
-              campaign: {
-                count: 1,
-                period: 1,
+        spocs: {
+          items: [
+            {
+              id: 2,
+              flight_id: "seen-2",
+              caps: {
+                lifetime: 3,
+                flight: {
+                  count: 1,
+                  period: 1,
+                },
               },
             },
-          },
-        ],
+          ],
+        },
       };
       sandbox.stub(feed.store, "getState").returns({
         DiscoveryStream: {
@@ -1545,29 +1790,31 @@ describe("DiscoveryStreamFeed", () => {
 
       await feed.onAction({
         type: at.DISCOVERY_STREAM_SPOC_IMPRESSION,
-        data: { campaign_id: "doesn't matter" },
+        data: { flight_id: "doesn't matter" },
       });
 
       assert.calledOnce(feed.frequencyCapSpocs);
-      assert.calledWith(feed.frequencyCapSpocs, data.spocs);
+      assert.calledWith(feed.frequencyCapSpocs, data.spocs.items);
     });
   });
 
   describe("#onAction: PLACES_LINK_BLOCKED", () => {
     beforeEach(() => {
       const data = {
-        spocs: [
-          {
-            id: 1,
-            campaign_id: "foo",
-            url: "foo.com",
-          },
-          {
-            id: 2,
-            campaign_id: "bar",
-            url: "bar.com",
-          },
-        ],
+        spocs: {
+          items: [
+            {
+              id: 1,
+              flight_id: "foo",
+              url: "foo.com",
+            },
+            {
+              id: 2,
+              flight_id: "bar",
+              url: "bar.com",
+            },
+          ],
+        },
       };
       sandbox.stub(feed.store, "getState").returns({
         DiscoveryStream: {
@@ -1638,17 +1885,19 @@ describe("DiscoveryStreamFeed", () => {
   });
 
   describe("#onAction: BLOCK_URL", () => {
-    it("should call recordBlockCampaignId whith BLOCK_URL", async () => {
-      sandbox.stub(feed, "recordBlockCampaignId").returns();
+    it("should call recordBlockFlightId whith BLOCK_URL", async () => {
+      sandbox.stub(feed, "recordBlockFlightId").returns();
 
       await feed.onAction({
         type: at.BLOCK_URL,
-        data: {
-          campaign_id: "1234",
-        },
+        data: [
+          {
+            flight_id: "1234",
+          },
+        ],
       });
 
-      assert.calledWith(feed.recordBlockCampaignId, "1234");
+      assert.calledWith(feed.recordBlockFlightId, "1234");
     });
   });
 
@@ -1693,6 +1942,16 @@ describe("DiscoveryStreamFeed", () => {
         },
         type: at.SET_PREF,
       });
+    });
+  });
+
+  describe("#onAction: DISCOVERY_STREAM_CONFIG_RESET", async () => {
+    it("should call configReset", async () => {
+      sandbox.spy(feed, "configReset");
+      feed.onAction({
+        type: at.DISCOVERY_STREAM_CONFIG_RESET,
+      });
+      assert.calledOnce(feed.configReset);
     });
   });
 
@@ -1842,6 +2101,20 @@ describe("DiscoveryStreamFeed", () => {
 
       assert.calledOnce(feed.clearSpocs);
     });
+    it("should re enable stories when top stories is turned on", async () => {
+      sandbox.stub(feed, "refreshAll").returns(Promise.resolve());
+      feed.loaded = true;
+      setPref(CONFIG_PREF_NAME, {
+        enabled: true,
+      });
+
+      await feed.onAction({
+        type: at.PREF_CHANGED,
+        data: { name: "feeds.section.topstories", value: true },
+      });
+
+      assert.calledOnce(feed.refreshAll);
+    });
   });
 
   describe("#onAction: SYSTEM_TICK", () => {
@@ -1907,6 +2180,55 @@ describe("DiscoveryStreamFeed", () => {
       const [dispatchFn] = feed.loadSpocs.firstCall.args;
       dispatchFn({});
       assert.calledWith(feed.store.dispatch, ac.BroadcastToContent({}));
+    });
+  });
+
+  describe("#onAction: DISCOVERY_STREAM_DEV_IDLE_DAILY", () => {
+    it("should trigger idle-daily observer", async () => {
+      sandbox.stub(global.Services.obs, "notifyObservers").returns();
+      await feed.onAction({
+        type: at.DISCOVERY_STREAM_DEV_IDLE_DAILY,
+      });
+      assert.calledWith(
+        global.Services.obs.notifyObservers,
+        null,
+        "idle-daily"
+      );
+    });
+  });
+
+  describe("#onAction: DISCOVERY_STREAM_DEV_SYNC_RS", () => {
+    it("should fire remote settings pollChanges", async () => {
+      sandbox.stub(global.RemoteSettings, "pollChanges").returns();
+      await feed.onAction({
+        type: at.DISCOVERY_STREAM_DEV_SYNC_RS,
+      });
+      assert.calledOnce(global.RemoteSettings.pollChanges);
+    });
+  });
+
+  describe("#onAction: DISCOVERY_STREAM_DEV_SYSTEM_TICK", () => {
+    it("should refresh if DiscoveryStream has been loaded at least once and a cache has expired", async () => {
+      sandbox.stub(feed.cache, "set").resolves();
+      setPref(CONFIG_PREF_NAME, { enabled: true });
+
+      await feed.onAction({ type: at.INIT });
+
+      sandbox.stub(feed, "checkIfAnyCacheExpired").resolves(true);
+      sandbox.stub(feed, "refreshAll").resolves();
+
+      await feed.onAction({ type: at.DISCOVERY_STREAM_DEV_SYSTEM_TICK });
+      assert.calledOnce(feed.refreshAll);
+    });
+  });
+
+  describe("#onAction: DISCOVERY_STREAM_DEV_EXPIRE_CACHE", () => {
+    it("should fire resetCache", async () => {
+      sandbox.stub(feed, "resetContentCache").returns();
+      await feed.onAction({
+        type: at.DISCOVERY_STREAM_DEV_EXPIRE_CACHE,
+      });
+      assert.calledOnce(feed.resetContentCache);
     });
   });
 
@@ -2136,7 +2458,16 @@ describe("DiscoveryStreamFeed", () => {
 
         const fakeComponents = { components: [{ feed: { url: "foo.com" } }] };
         const fakeLayout = [fakeComponents];
-        const fakeDiscoveryStream = { DiscoveryStream: { layout: fakeLayout } };
+        const fakeDiscoveryStream = {
+          DiscoveryStream: {
+            layout: fakeLayout,
+          },
+          Prefs: {
+            values: {
+              "feeds.section.topstories": true,
+            },
+          },
+        };
         sandbox.stub(feed.store, "getState").returns(fakeDiscoveryStream);
         sandbox.stub(feed, "rotate").callsFake(val => val);
         sandbox
@@ -2166,6 +2497,273 @@ describe("DiscoveryStreamFeed", () => {
           at.DISCOVERY_STREAM_FEEDS_UPDATE
         );
       });
+    });
+  });
+
+  describe("#scoreFeeds", () => {
+    it("should score feeds and set cache, and dispatch", async () => {
+      sandbox.stub(feed.cache, "set").resolves();
+      sandbox.spy(feed.store, "dispatch");
+      const recsExpireTime = 5600;
+      const fakeImpressions = {
+        first: Date.now() - recsExpireTime * 1000,
+        third: Date.now(),
+      };
+      sandbox.stub(feed, "readDataPref").returns(fakeImpressions);
+      const fakeFeeds = {
+        data: {
+          "https://foo.com": {
+            data: {
+              recommendations: [
+                {
+                  id: "first",
+                  min_score: 0.5,
+                  item_score: 0.7,
+                },
+                {
+                  id: "second",
+                  min_score: 0.5,
+                  item_score: 0.6,
+                },
+              ],
+              settings: {
+                recsExpireTime,
+              },
+            },
+          },
+          "https://bar.com": {
+            data: {
+              recommendations: [
+                {
+                  id: "third",
+                  min_score: 0.5,
+                  item_score: 0.4,
+                },
+                {
+                  id: "fourth",
+                  min_score: 0.5,
+                  item_score: 0.6,
+                },
+                {
+                  id: "fifth",
+                  min_score: 0.5,
+                  item_score: 0.8,
+                },
+              ],
+              settings: {
+                recsExpireTime,
+              },
+            },
+          },
+        },
+      };
+      const feedsTestResult = {
+        "https://foo.com": {
+          data: {
+            recommendations: [
+              {
+                id: "second",
+                min_score: 0.5,
+                item_score: 0.6,
+                score: 0.6,
+              },
+              {
+                id: "first",
+                min_score: 0.5,
+                item_score: 0.7,
+                score: 0.7,
+              },
+            ],
+            settings: {
+              recsExpireTime,
+            },
+          },
+        },
+        "https://bar.com": {
+          data: {
+            recommendations: [
+              {
+                id: "fifth",
+                min_score: 0.5,
+                item_score: 0.8,
+                score: 0.8,
+              },
+              {
+                id: "fourth",
+                min_score: 0.5,
+                item_score: 0.6,
+                score: 0.6,
+              },
+            ],
+            settings: {
+              recsExpireTime,
+            },
+          },
+        },
+      };
+
+      await feed.scoreFeeds(fakeFeeds);
+
+      assert.calledWith(feed.cache.set, "feeds", feedsTestResult);
+      assert.equal(
+        feed.store.dispatch.firstCall.args[0].type,
+        at.DISCOVERY_STREAM_FEED_UPDATE
+      );
+      assert.deepEqual(feed.store.dispatch.firstCall.args[0].data, {
+        url: "https://foo.com",
+        feed: feedsTestResult["https://foo.com"],
+      });
+      assert.equal(
+        feed.store.dispatch.secondCall.args[0].type,
+        at.DISCOVERY_STREAM_FEED_UPDATE
+      );
+      assert.deepEqual(feed.store.dispatch.secondCall.args[0].data, {
+        url: "https://bar.com",
+        feed: feedsTestResult["https://bar.com"],
+      });
+    });
+  });
+
+  describe("#scoreSpocs", () => {
+    it("should score spocs and set cache, dispatch, and spocsFill", async () => {
+      sandbox.stub(feed.cache, "set").resolves();
+      sandbox.spy(feed.store, "dispatch");
+      sandbox.stub(feed, "_sendSpocsFill").returns();
+      const fakeDiscoveryStream = {
+        DiscoveryStream: {
+          spocs: {
+            placements: [
+              { name: "placement1" },
+              { name: "placement2" },
+              { name: "placement3" },
+            ],
+          },
+        },
+      };
+      sandbox.stub(feed.store, "getState").returns(fakeDiscoveryStream);
+      const fakeSpocs = {
+        lastUpdated: 1234,
+        data: {
+          placement1: {
+            items: [
+              {
+                min_score: 0.5,
+                item_score: 0.6,
+              },
+              {
+                min_score: 0.5,
+                item_score: 0.4,
+              },
+              {
+                min_score: 0.5,
+                item_score: 0.8,
+              },
+            ],
+          },
+          placement2: {
+            items: [
+              {
+                min_score: 0.5,
+                item_score: 0.6,
+              },
+              {
+                min_score: 0.5,
+                item_score: 0.8,
+              },
+            ],
+          },
+          placement3: { items: [] },
+        },
+      };
+
+      await feed.scoreSpocs(fakeSpocs);
+
+      const spocsTestResult = {
+        lastUpdated: 1234,
+        spocs: {
+          placement1: {
+            items: [
+              {
+                min_score: 0.5,
+                score: 0.8,
+                item_score: 0.8,
+              },
+              {
+                min_score: 0.5,
+                score: 0.6,
+                item_score: 0.6,
+              },
+            ],
+          },
+          placement2: {
+            items: [
+              {
+                min_score: 0.5,
+                score: 0.8,
+                item_score: 0.8,
+              },
+              {
+                min_score: 0.5,
+                score: 0.6,
+                item_score: 0.6,
+              },
+            ],
+          },
+          placement3: { items: [] },
+        },
+      };
+      assert.calledWith(feed.cache.set, "spocs", spocsTestResult);
+      assert.equal(
+        feed.store.dispatch.firstCall.args[0].type,
+        at.DISCOVERY_STREAM_SPOCS_UPDATE
+      );
+      assert.deepEqual(
+        feed.store.dispatch.firstCall.args[0].data,
+        spocsTestResult
+      );
+      assert.calledWith(
+        feed._sendSpocsFill,
+        {
+          below_min_score: [{ item_score: 0.4, min_score: 0.5, score: 0.4 }],
+        },
+        false
+      );
+    });
+  });
+
+  describe("#scoreContent", () => {
+    it("should call scoreFeeds and scoreSpocs if loaded", async () => {
+      const fakeDiscoveryStream = {
+        DiscoveryStream: {
+          feeds: { loaded: false },
+          spocs: { loaded: false },
+        },
+      };
+      sandbox.stub(feed, "scoreFeeds").resolves();
+      sandbox.stub(feed, "scoreSpocs").resolves();
+      sandbox.stub(feed, "refreshContent").resolves();
+      sandbox.stub(feed, "loadAffinityScoresCache").resolves();
+      sandbox.stub(feed.store, "getState").returns(fakeDiscoveryStream);
+      sandbox.stub(feed, "_checkExpirationPerComponent").resolves({
+        feeds: true,
+        spocs: true,
+      });
+      feed._prefCache.config = {
+        personalized: true,
+      };
+
+      await feed.refreshAll();
+
+      assert.notCalled(feed.scoreFeeds);
+      assert.notCalled(feed.scoreSpocs);
+
+      fakeDiscoveryStream.DiscoveryStream.feeds.loaded = true;
+      fakeDiscoveryStream.DiscoveryStream.spocs.loaded = true;
+
+      await feed.refreshAll();
+
+      assert.calledOnce(feed.scoreFeeds);
+      assert.calledOnce(feed.scoreSpocs);
     });
   });
 
@@ -2262,29 +2860,41 @@ describe("DiscoveryStreamFeed", () => {
   });
 
   describe("#updateDomainAffinityScores", () => {
-    it("should update affinity provider on idle daily", async () => {
+    it("should call updateDomainAffinityScores on idle daily", async () => {
+      sandbox.stub(feed, "updateDomainAffinityScores").returns();
+      feed.observe(null, "idle-daily");
+      assert.calledOnce(feed.updateDomainAffinityScores);
+    });
+    it("should update affinity provider on updateDomainAffinityScores", async () => {
       feed._prefCache.config = {
         personalized: true,
       };
+      const DEFAULT_TIME_SEGMENTS = [
+        { id: "hour", startTime: 3600, endTime: 0, weightPosition: 1 },
+        { id: "day", startTime: 86400, endTime: 3600, weightPosition: 0.75 },
+        { id: "week", startTime: 604800, endTime: 86400, weightPosition: 0.5 },
+        { id: "weekPlus", startTime: 0, endTime: 604800, weightPosition: 0.25 },
+        { id: "alltime", startTime: 0, endTime: 0, weightPosition: 0.25 },
+      ];
       feed.affinities = {
         parameterSets: {
           default: {},
         },
         maxHistoryQueryResults: 1000,
-        timeSegments: [],
+        timeSegments: DEFAULT_TIME_SEGMENTS,
         version: "123",
       };
 
-      feed.observe(null, "idle-daily");
+      await feed.updateDomainAffinityScores();
 
-      assert.equal(feed.affinityProvider.version, "123");
+      assert.equal(feed.providerSwitcher.affinityProvider.version, "123");
     });
-    it("should not update affinity provider on idle daily", async () => {
+    it("should not update affinity provider on updateDomainAffinityScores", async () => {
       feed._prefCache.config = {
         personalized: false,
       };
 
-      feed.observe(null, "idle-daily");
+      await feed.updateDomainAffinityScores();
 
       assert.isTrue(!feed.affinityProvider);
     });
@@ -2306,19 +2916,29 @@ describe("DiscoveryStreamFeed", () => {
         { item_score: 0.5, min_score: 0.6, score: 0.5 },
       ]);
     });
-  });
+    it("should fire dispatchRelevanceScoreDuration if available", () => {
+      feed.providerSwitcher.dispatchRelevanceScoreDuration = sandbox
+        .stub()
+        .returns();
+      feed._prefCache.config = {
+        personalized: true,
+      };
+      feed.scoreItems([]);
 
+      assert.calledOnce(feed.providerSwitcher.dispatchRelevanceScoreDuration);
+    });
+  });
   describe("#scoreItem", () => {
-    it("should use personalized score with affinity provider", () => {
+    it("should call calculateItemRelevanceScore with affinity provider", () => {
       const item = {};
       feed._prefCache.config = {
         personalized: true,
       };
-      feed.affinityProvider = {
-        calculateItemRelevanceScore: () => 0.5,
-      };
-      const result = feed.scoreItem(item);
-      assert.equal(result.score, 0.5);
+      feed.providerSwitcher.calculateItemRelevanceScore = sandbox
+        .stub()
+        .returns();
+      feed.scoreItem(item);
+      assert.calledOnce(feed.providerSwitcher.calculateItemRelevanceScore);
     });
     it("should use item_score score without affinity provider score", () => {
       const item = {
@@ -2354,19 +2974,16 @@ describe("DiscoveryStreamFeed", () => {
         { id: 2, reason: "frequency_cap", displayed: 0, full_recalc: 1 },
         { id: 3, reason: "blocked_by_user", displayed: 0, full_recalc: 1 },
         { id: 4, reason: "blocked_by_user", displayed: 0, full_recalc: 1 },
-        { id: 5, reason: "campaign_duplicate", displayed: 0, full_recalc: 1 },
-        { id: 6, reason: "campaign_duplicate", displayed: 0, full_recalc: 1 },
+        { id: 5, reason: "flight_duplicate", displayed: 0, full_recalc: 1 },
+        { id: 6, reason: "flight_duplicate", displayed: 0, full_recalc: 1 },
         { id: 7, reason: "below_min_score", displayed: 0, full_recalc: 1 },
         { id: 8, reason: "below_min_score", displayed: 0, full_recalc: 1 },
       ];
       const filtered = {
-        frequency_cap: [{ id: 1, campaign_id: 1 }, { id: 2, campaign_id: 2 }],
-        blocked_by_user: [{ id: 3, campaign_id: 3 }, { id: 4, campaign_id: 4 }],
-        campaign_duplicate: [
-          { id: 5, campaign_id: 5 },
-          { id: 6, campaign_id: 6 },
-        ],
-        below_min_score: [{ id: 7, campaign_id: 7 }, { id: 8, campaign_id: 8 }],
+        frequency_cap: [{ id: 1, flight_id: 1 }, { id: 2, flight_id: 2 }],
+        blocked_by_user: [{ id: 3, flight_id: 3 }, { id: 4, flight_id: 4 }],
+        flight_duplicate: [{ id: 5, flight_id: 5 }, { id: 6, flight_id: 6 }],
+        below_min_score: [{ id: 7, flight_id: 7 }, { id: 8, flight_id: 8 }],
       };
       feed._sendSpocsFill(filtered, true);
 
@@ -2382,7 +2999,7 @@ describe("DiscoveryStreamFeed", () => {
         { id: 2, reason: "frequency_cap", displayed: 0, full_recalc: 0 },
       ];
       const filtered = {
-        frequency_cap: [{ id: 1, campaign_id: 1 }, { id: 2, campaign_id: 2 }],
+        frequency_cap: [{ id: 1, flight_id: 1 }, { id: 2, flight_id: 2 }],
       };
       feed._sendSpocsFill(filtered, false);
 
@@ -2396,14 +3013,14 @@ describe("DiscoveryStreamFeed", () => {
       const expected = [
         { id: 1, reason: "frequency_cap", displayed: 0, full_recalc: 1 },
         { id: 3, reason: "blocked_by_user", displayed: 0, full_recalc: 1 },
-        { id: 5, reason: "campaign_duplicate", displayed: 0, full_recalc: 1 },
+        { id: 5, reason: "flight_duplicate", displayed: 0, full_recalc: 1 },
         { id: 7, reason: "below_min_score", displayed: 0, full_recalc: 1 },
       ];
       const filtered = {
-        frequency_cap: [{ id: 1, campaign_id: 1 }, { id: 2 }],
-        blocked_by_user: [{ id: 3, campaign_id: 3 }, { id: 4 }],
-        campaign_duplicate: [{ id: 5, campaign_id: 5 }, { id: 6 }],
-        below_min_score: [{ id: 7, campaign_id: 7 }, { id: 8 }],
+        frequency_cap: [{ id: 1, flight_id: 1 }, { id: 2 }],
+        blocked_by_user: [{ id: 3, flight_id: 3 }, { id: 4 }],
+        flight_duplicate: [{ id: 5, flight_id: 5 }, { id: 6 }],
+        below_min_score: [{ id: 7, flight_id: 7 }, { id: 8 }],
       };
       feed._sendSpocsFill(filtered, true);
 

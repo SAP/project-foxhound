@@ -18,6 +18,11 @@ class ContentChild;
 class ContentParent;
 }  // namespace dom
 
+namespace net {
+class SocketProcessParent;
+class SocketProcessChild;
+}  // namespace net
+
 namespace ipc {
 
 class PBackgroundChild;
@@ -120,7 +125,7 @@ already_AddRefed<nsIInputStream> DeserializeIPCStream(
 //       with complex ipdl structures.  For example, you may want to create an
 //       array of RAII AutoIPCStream objects or build your own wrapping
 //       RAII object to handle other actors that need to be cleaned up.
-class AutoIPCStream final {
+class AutoIPCStream {
  public:
   // Implicitly create an Maybe<IPCStream> value.  Either
   // TakeValue() or TakeOptionalValue() can be used.
@@ -153,6 +158,11 @@ class AutoIPCStream final {
   // be called on the main thread or Worker threads.
   bool Serialize(nsIInputStream* aStream, PBackgroundChild* aManager);
 
+  // Serialize the input stream or create a SendStream actor using the
+  // SocketProcess manager.  If neither of these succeed, then crash.  This
+  // should only be used on the main thread.
+  bool Serialize(nsIInputStream* aStream, net::SocketProcessChild* aManager);
+
   // Serialize the input stream.
   MOZ_MUST_USE bool Serialize(nsIInputStream* aStream,
                               dom::ContentParent* aManager);
@@ -160,6 +170,10 @@ class AutoIPCStream final {
   // Serialize the input stream.
   MOZ_MUST_USE bool Serialize(nsIInputStream* aStream,
                               PBackgroundParent* aManager);
+
+  // Serialize the input stream.
+  MOZ_MUST_USE bool Serialize(nsIInputStream* aStream,
+                              net::SocketProcessParent* aManager);
 
   // Get the IPCStream as a non-optional value.  This will
   // assert if a stream has not been serialized or if it has already been taken.
@@ -180,6 +194,14 @@ class AutoIPCStream final {
   Maybe<IPCStream>* const mOptionalValue = nullptr;
   bool mTaken = false;
   const bool mDelayedStart;
+};
+
+class HoldIPCStream final : public AutoIPCStream {
+ public:
+  NS_INLINE_DECL_REFCOUNTING(HoldIPCStream)
+
+ private:
+  ~HoldIPCStream() = default;
 };
 
 template <>

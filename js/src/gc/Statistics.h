@@ -60,6 +60,13 @@ enum Stat {
   // being tenured.
   STAT_NURSERY_STRING_REALMS_DISABLED,
 
+  // Number of BigInts tenured.
+  STAT_BIGINTS_TENURED,
+
+  // Number of realms that had nursery BigInts disabled due to large numbers
+  // being tenured.
+  STAT_NURSERY_BIGINT_REALMS_DISABLED,
+
   STAT_LIMIT
 };
 
@@ -342,10 +349,8 @@ struct Statistics {
   PhaseTimeTable parallelTimes;
 
   /* Number of events of this type for this GC. */
-  EnumeratedArray<
-      Count, COUNT_LIMIT,
-      mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire,
-                      mozilla::recordreplay::Behavior::DontPreserve>>
+  EnumeratedArray<Count, COUNT_LIMIT,
+                  mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire>>
       counts;
 
   /* Other GC statistics. */

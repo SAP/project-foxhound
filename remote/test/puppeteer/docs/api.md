@@ -1,19 +1,19 @@
 
 # Puppeteer API <!-- GEN:version -->Tip-Of-Tree<!-- GEN:stop-->
-<!-- GEN:empty-if-release -->
-#### Next Release: `June 20, 2019`
-<!-- GEN:stop -->
+<!-- GEN:empty-if-release --><!-- GEN:stop -->
 
 - Interactive Documentation: https://pptr.dev
 - API Translations: [中文|Chinese](https://zhaoqize.github.io/puppeteer-api-zh_CN/#/)
-- Troubleshooting: [troubleshooting.md](https://github.com/GoogleChrome/puppeteer/blob/master/docs/troubleshooting.md)
+- Troubleshooting: [troubleshooting.md](https://github.com/puppeteer/puppeteer/blob/master/docs/troubleshooting.md)
 - Releases per Chromium Version:
-  * Chromium 76.0.3803.0 - [Puppeteer v1.17.0](https://github.com/GoogleChrome/puppeteer/blob/v1.17.0/docs/api.md)
-  * Chromium 75.0.3765.0 - [Puppeteer v1.15.0](https://github.com/GoogleChrome/puppeteer/blob/v1.15.0/docs/api.md)
-  * Chromium 74.0.3723.0 - [Puppeteer v1.13.0](https://github.com/GoogleChrome/puppeteer/blob/v1.13.0/docs/api.md)
-  * Chromium 73.0.3679.0 - [Puppeteer v1.12.2](https://github.com/GoogleChrome/puppeteer/blob/v1.12.2/docs/api.md)
-  * Chromium 72.0.3582.0 - [Puppeteer v1.11.0](https://github.com/GoogleChrome/puppeteer/blob/v1.11.0/docs/api.md)
-  * [All releases](https://github.com/GoogleChrome/puppeteer/releases)
+  * Chromium 79.0.3942.0 - [Puppeteer v2.0.0](https://github.com/puppeteer/puppeteer/blob/v2.0.0/docs/api.md)
+  * Chromium 78.0.3882.0 - [Puppeteer v1.20.0](https://github.com/puppeteer/puppeteer/blob/v1.20.0/docs/api.md)
+  * Chromium 77.0.3803.0 - [Puppeteer v1.19.0](https://github.com/puppeteer/puppeteer/blob/v1.19.0/docs/api.md)
+  * Chromium 76.0.3803.0 - [Puppeteer v1.17.0](https://github.com/puppeteer/puppeteer/blob/v1.17.0/docs/api.md)
+  * Chromium 75.0.3765.0 - [Puppeteer v1.15.0](https://github.com/puppeteer/puppeteer/blob/v1.15.0/docs/api.md)
+  * Chromium 74.0.3723.0 - [Puppeteer v1.13.0](https://github.com/puppeteer/puppeteer/blob/v1.13.0/docs/api.md)
+  * Chromium 73.0.3679.0 - [Puppeteer v1.12.2](https://github.com/puppeteer/puppeteer/blob/v1.12.2/docs/api.md)
+  * [All releases](https://github.com/puppeteer/puppeteer/releases)
 
 
 ##### Table of Contents
@@ -31,6 +31,7 @@
   * [puppeteer.errors](#puppeteererrors)
   * [puppeteer.executablePath()](#puppeteerexecutablepath)
   * [puppeteer.launch([options])](#puppeteerlaunchoptions)
+  * [puppeteer.product](#puppeteerproduct)
 - [class: BrowserFetcher](#class-browserfetcher)
   * [browserFetcher.canDownload(revision)](#browserfetchercandownloadrevision)
   * [browserFetcher.download(revision[, progressCallback])](#browserfetcherdownloadrevision-progresscallback)
@@ -109,7 +110,10 @@
   * [page.coverage](#pagecoverage)
   * [page.deleteCookie(...cookies)](#pagedeletecookiecookies)
   * [page.emulate(options)](#pageemulateoptions)
-  * [page.emulateMedia(mediaType)](#pageemulatemediamediatype)
+  * [page.emulateMedia(type)](#pageemulatemediatype)
+  * [page.emulateMediaFeatures(features)](#pageemulatemediafeaturesfeatures)
+  * [page.emulateMediaType(type)](#pageemulatemediatypetype)
+  * [page.emulateTimezone(timezoneId)](#pageemulatetimezonetimezoneid)
   * [page.evaluate(pageFunction[, ...args])](#pageevaluatepagefunction-args)
   * [page.evaluateHandle(pageFunction[, ...args])](#pageevaluatehandlepagefunction-args)
   * [page.evaluateOnNewDocument(pageFunction[, ...args])](#pageevaluateonnewdocumentpagefunction-args)
@@ -152,6 +156,7 @@
   * [page.url()](#pageurl)
   * [page.viewport()](#pageviewport)
   * [page.waitFor(selectorOrFunctionOrTimeout[, options[, ...args]])](#pagewaitforselectororfunctionortimeout-options-args)
+  * [page.waitForFileChooser([options])](#pagewaitforfilechooseroptions)
   * [page.waitForFunction(pageFunction[, options[, ...args]])](#pagewaitforfunctionpagefunction-options-args)
   * [page.waitForNavigation([options])](#pagewaitfornavigationoptions)
   * [page.waitForRequest(urlOrPredicate[, options])](#pagewaitforrequesturlorpredicate-options)
@@ -182,6 +187,10 @@
 - [class: Tracing](#class-tracing)
   * [tracing.start([options])](#tracingstartoptions)
   * [tracing.stop()](#tracingstop)
+- [class: FileChooser](#class-filechooser)
+  * [fileChooser.accept(filePaths)](#filechooseracceptfilepaths)
+  * [fileChooser.cancel()](#filechoosercancel)
+  * [fileChooser.isMultiple()](#filechooserismultiple)
 - [class: Dialog](#class-dialog)
   * [dialog.accept([promptText])](#dialogacceptprompttext)
   * [dialog.defaultValue()](#dialogdefaultvalue)
@@ -232,6 +241,8 @@
 - [class: JSHandle](#class-jshandle)
   * [jsHandle.asElement()](#jshandleaselement)
   * [jsHandle.dispose()](#jshandledispose)
+  * [jsHandle.evaluate(pageFunction[, ...args])](#jshandleevaluatepagefunction-args)
+  * [jsHandle.evaluateHandle(pageFunction[, ...args])](#jshandleevaluatehandlepagefunction-args)
   * [jsHandle.executionContext()](#jshandleexecutioncontext)
   * [jsHandle.getProperties()](#jshandlegetproperties)
   * [jsHandle.getProperty(propertyName)](#jshandlegetpropertypropertyname)
@@ -248,6 +259,8 @@
   * [elementHandle.click([options])](#elementhandleclickoptions)
   * [elementHandle.contentFrame()](#elementhandlecontentframe)
   * [elementHandle.dispose()](#elementhandledispose)
+  * [elementHandle.evaluate(pageFunction[, ...args])](#elementhandleevaluatepagefunction-args)
+  * [elementHandle.evaluateHandle(pageFunction[, ...args])](#elementhandleevaluatehandlepagefunction-args)
   * [elementHandle.executionContext()](#elementhandleexecutioncontext)
   * [elementHandle.focus()](#elementhandlefocus)
   * [elementHandle.getProperties()](#elementhandlegetproperties)
@@ -257,6 +270,7 @@
   * [elementHandle.jsonValue()](#elementhandlejsonvalue)
   * [elementHandle.press(key[, options])](#elementhandlepresskey-options)
   * [elementHandle.screenshot([options])](#elementhandlescreenshotoptions)
+  * [elementHandle.select(...values)](#elementhandleselectvalues)
   * [elementHandle.tap()](#elementhandletap)
   * [elementHandle.toString()](#elementhandletostring)
   * [elementHandle.type(text[, options])](#elementhandletypetext-options)
@@ -373,8 +387,9 @@ If Puppeteer doesn't find them in the environment during the installation step, 
 - `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` - defines HTTP proxy settings that are used to download and run Chromium.
 - `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD` - do not download bundled Chromium during installation step.
 - `PUPPETEER_DOWNLOAD_HOST` - overwrite URL prefix that is used to download Chromium. Note: this includes protocol and might even include path prefix. Defaults to `https://storage.googleapis.com`.
-- `PUPPETEER_CHROMIUM_REVISION` - specify a certain version of Chromium you'd like Puppeteer to use. See [puppeteer.launch([options])](#puppeteerlaunchoptions) on how executable path is inferred. **BEWARE**: Puppeteer is only [guaranteed to work](https://github.com/GoogleChrome/puppeteer/#q-why-doesnt-puppeteer-vxxx-work-with-chromium-vyyy) with the bundled Chromium, use at your own risk.
-- `PUPPETEER_EXECUTABLE_PATH` - specify an executable path to be used in `puppeteer.launch`. See [puppeteer.launch([options])](#puppeteerlaunchoptions) on how the executable path is inferred. **BEWARE**: Puppeteer is only [guaranteed to work](https://github.com/GoogleChrome/puppeteer/#q-why-doesnt-puppeteer-vxxx-work-with-chromium-vyyy) with the bundled Chromium, use at your own risk.
+- `PUPPETEER_CHROMIUM_REVISION` - specify a certain version of Chromium you'd like Puppeteer to use. See [puppeteer.launch([options])](#puppeteerlaunchoptions) on how executable path is inferred. **BEWARE**: Puppeteer is only [guaranteed to work](https://github.com/puppeteer/puppeteer/#q-why-doesnt-puppeteer-vxxx-work-with-chromium-vyyy) with the bundled Chromium, use at your own risk.
+- `PUPPETEER_EXECUTABLE_PATH` - specify an executable path to be used in `puppeteer.launch`. See [puppeteer.launch([options])](#puppeteerlaunchoptions) on how the executable path is inferred. **BEWARE**: Puppeteer is only [guaranteed to work](https://github.com/puppeteer/puppeteer/#q-why-doesnt-puppeteer-vxxx-work-with-chromium-vyyy) with the bundled Chromium, use at your own risk.
+- `PUPPETEER_PRODUCT` - specify which browser you'd like Puppeteer to use. Must be one of `chrome` or `firefox`. Setting `product` programmatically in [puppeteer.launch([options])](#puppeteerlaunchoptions) supercedes this environment variable. The product is exposed in [`puppeteer.product`](#puppeteerproduct)
 
 > **NOTE** PUPPETEER_* env variables are not accounted for in the [`puppeteer-core`](https://www.npmjs.com/package/puppeteer-core) package.
 
@@ -415,12 +430,13 @@ The following is a typical example of using Puppeteer to drive automation:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.goto('https://www.google.com');
   // other actions...
   await browser.close();
-});
+})();
 ```
 
 #### puppeteer.connect(options)
@@ -462,19 +478,20 @@ The default flags that Chromium will be launched with.
 - returns: <[Object]>
 
 Returns a list of devices to be used with [`page.emulate(options)`](#pageemulateoptions). Actual list of
-devices can be found in [lib/DeviceDescriptors.js](https://github.com/GoogleChrome/puppeteer/blob/master/lib/DeviceDescriptors.js).
+devices can be found in [lib/DeviceDescriptors.js](https://github.com/puppeteer/puppeteer/blob/master/lib/DeviceDescriptors.js).
 
 ```js
 const puppeteer = require('puppeteer');
 const iPhone = puppeteer.devices['iPhone 6'];
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.emulate(iPhone);
   await page.goto('https://www.google.com');
   // other actions...
   await browser.close();
-});
+})();
 ```
 
 > **NOTE** The old way (Puppeteer versions <= v1.14.0) devices can be obtained with `require('puppeteer/DeviceDescriptors')`.
@@ -483,7 +500,7 @@ puppeteer.launch().then(async browser => {
 - returns: <[Object]>
   - `TimeoutError` <[function]> A class of [TimeoutError].
 
-Puppeteer methods might throw errors if they are unable to fufill a request. For example, [page.waitForSelector(selector[, options])](#pagewaitforselectorselector-options)
+Puppeteer methods might throw errors if they are unable to fulfill a request. For example, [page.waitForSelector(selector[, options])](#pagewaitforselectorselector-options)
 might fail if the selector doesn't match any nodes during the given timeframe.
 
 For certain types of errors Puppeteer uses specific error classes.
@@ -510,9 +527,10 @@ try {
 
 #### puppeteer.launch([options])
 - `options` <[Object]>  Set of configurable options to set on the browser. Can have the following fields:
+  - `product` <[string]> Which browser to launch. At this time, this is either `chrome` or `firefox`. See also `PUPPETEER_PRODUCT`.
   - `ignoreHTTPSErrors` <[boolean]> Whether to ignore HTTPS errors during navigation. Defaults to `false`.
   - `headless` <[boolean]> Whether to run browser in [headless mode](https://developers.google.com/web/updates/2017/04/headless-chrome). Defaults to `true` unless the `devtools` option is `true`.
-  - `executablePath` <[string]> Path to a Chromium or Chrome executable to run instead of the bundled Chromium. If `executablePath` is a relative path, then it is resolved relative to [current working directory](https://nodejs.org/api/process.html#process_process_cwd). **BEWARE**: Puppeteer is only [guaranteed to work](https://github.com/GoogleChrome/puppeteer/#q-why-doesnt-puppeteer-vxxx-work-with-chromium-vyyy) with the bundled Chromium, use at your own risk.
+  - `executablePath` <[string]> Path to a browser executable to run instead of the bundled Chromium. If `executablePath` is a relative path, then it is resolved relative to [current working directory](https://nodejs.org/api/process.html#process_process_cwd). **BEWARE**: Puppeteer is only [guaranteed to work](https://github.compuppeteer/puppeteer/#q-why-doesnt-puppeteer-vxxx-work-with-chromium-vyyy) with the bundled Chromium, use at your own risk.
   - `slowMo` <[number]> Slows down Puppeteer operations by the specified amount of milliseconds. Useful so that you can see what is going on.
   - `defaultViewport` <?[Object]> Sets a consistent viewport for each page. Defaults to an 800x600 viewport. `null` disables the default viewport.
     - `width` <[number]> page width in pixels.
@@ -521,8 +539,8 @@ try {
     - `isMobile` <[boolean]> Whether the `meta viewport` tag is taken into account. Defaults to `false`.
     - `hasTouch`<[boolean]> Specifies if viewport supports touch events. Defaults to `false`
     - `isLandscape` <[boolean]> Specifies if viewport is in landscape mode. Defaults to `false`.
-  - `args` <[Array]<[string]>> Additional arguments to pass to the browser instance. The list of Chromium flags can be found [here](http://peter.sh/experiments/chromium-command-line-switches/).
-  - `ignoreDefaultArgs` <[boolean]|[Array]<[string]>> If `true`, then do not use [`puppeteer.defaultArgs()`](#puppeteerdefaultargs-options). If an array is given, then filter out the given default arguments. Dangerous option; use with care. Defaults to `false`.
+  - `args` <[Array]<[string]>> Additional arguments to pass to the browser instance. The list of Chromium flags can be found [here](http://peter.sh/experiments/chromium-command-line-switches/), and here is the list of [Firefox flags](https://developer.mozilla.org/en-US/docs/Mozilla/Command_Line_Options).
+  - `ignoreDefaultArgs` <[boolean]|[Array]<[string]>> If `true`, then do not use [`puppeteer.defaultArgs()`](#puppeteerdefaultargsoptions). If an array is given, then filter out the given default arguments. Dangerous option; use with care. Defaults to `false`.
   - `handleSIGINT` <[boolean]> Close the browser process on Ctrl-C. Defaults to `true`.
   - `handleSIGTERM` <[boolean]> Close the browser process on SIGTERM. Defaults to `true`.
   - `handleSIGHUP` <[boolean]> Close the browser process on SIGHUP. Defaults to `true`.
@@ -532,6 +550,7 @@ try {
   - `env` <[Object]> Specify environment variables that will be visible to the browser. Defaults to `process.env`.
   - `devtools` <[boolean]> Whether to auto-open a DevTools panel for each tab. If this option is `true`, the `headless` option will be set `false`.
   - `pipe` <[boolean]> Connects to the browser over a pipe instead of a WebSocket. Defaults to `false`.
+  - `extraPrefsFirefox` <[Object]> Additional [preferences](https://developer.mozilla.org/en-US/docs/Mozilla/Preferences/Preference_reference) that can be passed to Firefox (see `PUPPETEER_PRODUCT`)
 - returns: <[Promise]<[Browser]>> Promise which resolves to browser instance.
 
 
@@ -549,6 +568,12 @@ const browser = await puppeteer.launch({
 > In [puppeteer.launch([options])](#puppeteerlaunchoptions) above, any mention of Chromium also applies to Chrome.
 >
 > See [`this article`](https://www.howtogeek.com/202825/what%E2%80%99s-the-difference-between-chromium-and-chrome/) for a description of the differences between Chromium and Chrome. [`This article`](https://chromium.googlesource.com/chromium/src/+/lkgr/docs/chromium_browser_vs_google_chrome.md) describes some differences for Linux users.
+
+#### puppeteer.product
+- returns: <[string]> returns the name of the browser that is under automation ("chrome" or "firefox")
+
+The product is set by the `PUPPETEER_PRODUCT` environment variable or the `product` option in [puppeteer.launch([options])](#puppeteerlaunchoptions) and defaults to `chrome`. Firefox support is experimental.
+
 
 ### class: BrowserFetcher
 
@@ -617,18 +642,20 @@ An example of using a [Browser] to create a [Page]:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.goto('https://example.com');
   await browser.close();
-});
+})();
 ```
 
 An example of disconnecting from and reconnecting to a [Browser]:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   // Store the endpoint to be able to reconnect to Chromium
   const browserWSEndpoint = browser.wsEndpoint();
   // Disconnect puppeteer from Chromium
@@ -638,7 +665,7 @@ puppeteer.launch().then(async browser => {
   const browser2 = await puppeteer.connect({browserWSEndpoint});
   // Close Chromium
   await browser2.close();
-});
+})();
 ```
 #### event: 'disconnected'
 Emitted when Puppeteer gets disconnected from the Chromium instance. This might happen because of one of the following:
@@ -684,13 +711,15 @@ Closes Chromium and all of its pages (if any were opened). The [Browser] object 
 Creates a new incognito browser context. This won't share cookies/cache with other browser contexts.
 
 ```js
-const browser = await puppeteer.launch();
-// Create a new incognito browser context.
-const context = await browser.createIncognitoBrowserContext();
-// Create a new page in a pristine context.
-const page = await context.newPage();
-// Do stuff
-await page.goto('https://example.com');
+(async () => {
+  const browser = await puppeteer.launch();
+  // Create a new incognito browser context.
+  const context = await browser.createIncognitoBrowserContext();
+  // Create a new page in a pristine context.
+  const page = await context.newPage();
+  // Do stuff
+  await page.goto('https://example.com');
+})();
 ```
 
 #### browser.defaultBrowserContext()
@@ -905,12 +934,13 @@ This example creates a page, navigates it to a URL, and then saves a screenshot:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.goto('https://example.com');
   await page.screenshot({path: 'screenshot.png'});
   await browser.close();
-});
+})();
 ```
 
 The Page class emits various events (described below) which can be handled using any of Node's native [`EventEmitter`](https://nodejs.org/api/events.html#events_class_eventemitter) methods, such as `on`, `once` or `removeListener`.
@@ -1029,6 +1059,8 @@ In order to intercept and mutate requests, see `page.setRequestInterception`.
 - <[Request]>
 
 Emitted when a request fails, for example by timing out.
+
+> **NOTE** HTTP Error responses, such as 404 or 503, are still successful responses from HTTP standpoint, so request will complete with [`'requestfinished'`](#event-requestfinished) event and not with [`'requestfailed'`](#event-requestfailed).
 
 #### event: 'requestfinished'
 - <[Request]>
@@ -1247,25 +1279,93 @@ Emulates given device metrics and user agent. This method is a shortcut for call
 - [page.setViewport(viewport)](#pagesetviewportviewport)
 
 To aid emulation, puppeteer provides a list of device descriptors which can be obtained via the [`puppeteer.devices`](#puppeteerdevices).
-Below is an example of emulating an iPhone 6 in puppeteer:
+
+`page.emulate` will resize the page. A lot of websites don't expect phones to change size, so you should emulate before navigating to the page.
 
 ```js
 const puppeteer = require('puppeteer');
 const iPhone = puppeteer.devices['iPhone 6'];
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.emulate(iPhone);
   await page.goto('https://www.google.com');
   // other actions...
   await browser.close();
-});
+})();
 ```
 
-List of all available devices is available in the source code: [DeviceDescriptors.js](https://github.com/GoogleChrome/puppeteer/blob/master/lib/DeviceDescriptors.js).
+List of all available devices is available in the source code: [DeviceDescriptors.js](https://github.com/puppeteer/puppeteer/blob/master/lib/DeviceDescriptors.js).
 
-#### page.emulateMedia(mediaType)
-- `mediaType` <?[string]> Changes the CSS media type of the page. The only allowed values are `'screen'`, `'print'` and `null`. Passing `null` disables media emulation.
+#### page.emulateMedia(type)
+- `type` <?[string]> Changes the CSS media type of the page. The only allowed values are `'screen'`, `'print'` and `null`. Passing `null` disables CSS media emulation.
+- returns: <[Promise]>
+
+**Note:** This method is deprecated, and only kept around as an alias for backwards compatibility. Use [`page.emulateMediaType(type)`](#pageemulatemediatypetype) instead.
+
+#### page.emulateMediaFeatures(features)
+- `features` <?[Array]<[Object]>> Given an array of media feature objects, emulates CSS media features on the page. Each media feature object must have the following properties:
+  - `name` <[string]> The CSS media feature name. Supported names are `'prefers-colors-scheme'` and `'prefers-reduced-motion'`.
+  - `value` <[string]> The value for the given CSS media feature.
+- returns: <[Promise]>
+
+```js
+await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
+await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches));
+// → true
+await page.evaluate(() => matchMedia('(prefers-color-scheme: light)').matches));
+// → false
+await page.evaluate(() => matchMedia('(prefers-color-scheme: no-preference)').matches));
+// → false
+
+await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches));
+// → true
+await page.evaluate(() => matchMedia('(prefers-color-scheme: no-preference)').matches));
+// → false
+
+await page.emulateMediaFeatures([
+  { name: 'prefers-color-scheme', value: 'dark' },
+  { name: 'prefers-reduced-motion', value: 'reduce' },
+]);
+await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches));
+// → true
+await page.evaluate(() => matchMedia('(prefers-color-scheme: light)').matches));
+// → false
+await page.evaluate(() => matchMedia('(prefers-color-scheme: no-preference)').matches));
+// → false
+await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches));
+// → true
+await page.evaluate(() => matchMedia('(prefers-color-scheme: no-preference)').matches));
+// → false
+```
+
+#### page.emulateMediaType(type)
+- `type` <?[string]> Changes the CSS media type of the page. The only allowed values are `'screen'`, `'print'` and `null`. Passing `null` disables CSS media emulation.
+- returns: <[Promise]>
+
+```js
+await page.evaluate(() => matchMedia('screen').matches));
+// → true
+await page.evaluate(() => matchMedia('print').matches));
+// → true
+
+await page.emulateMediaType('print');
+await page.evaluate(() => matchMedia('screen').matches));
+// → false
+await page.evaluate(() => matchMedia('print').matches));
+// → true
+
+await page.emulateMediaType(null);
+await page.evaluate(() => matchMedia('screen').matches));
+// → true
+await page.evaluate(() => matchMedia('print').matches));
+// → true
+```
+
+#### page.emulateTimezone(timezoneId)
+- `timezoneId` <?[string]> Changes the timezone of the page. See [ICU’s `metaZones.txt`](https://cs.chromium.org/chromium/src/third_party/icu/source/data/misc/metaZones.txt?rcl=faee8bc70570192d82d2978a71e2a615788597d1) for a list of supported timezone IDs. Passing `null` disables timezone emulation.
 - returns: <[Promise]>
 
 #### page.evaluate(pageFunction[, ...args])
@@ -1370,7 +1470,8 @@ An example of adding an `md5` function into the page:
 const puppeteer = require('puppeteer');
 const crypto = require('crypto');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   page.on('console', msg => console.log(msg.text()));
   await page.exposeFunction('md5', text =>
@@ -1383,7 +1484,7 @@ puppeteer.launch().then(async browser => {
     console.log(`md5 of ${myString} is ${myHash}`);
   });
   await browser.close();
-});
+})();
 ```
 
 An example of adding a `window.readfile` function into the page:
@@ -1392,7 +1493,8 @@ An example of adding a `window.readfile` function into the page:
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   page.on('console', msg => console.log(msg.text()));
   await page.exposeFunction('readfile', async filePath => {
@@ -1411,8 +1513,7 @@ puppeteer.launch().then(async browser => {
     console.log(content);
   });
   await browser.close();
-});
-
+})();
 ```
 
 #### page.focus(selector)
@@ -1465,13 +1566,16 @@ Navigate to the next page in history.
   - `referer` <[string]> Referer header value. If provided it will take preference over the referer header value set by [page.setExtraHTTPHeaders()](#pagesetextrahttpheadersheaders).
 - returns: <[Promise]<?[Response]>> Promise which resolves to the main resource response. In case of multiple redirects, the navigation will resolve with the response of the last redirect.
 
-The `page.goto` will throw an error if:
+`page.goto` will throw an error if:
 - there's an SSL error (e.g. in case of self-signed certificates).
 - target URL is invalid.
 - the `timeout` is exceeded during navigation.
+- the remote server does not respond or is unreachable.
 - the main resource failed to load.
 
-> **NOTE** `page.goto` either throw or return a main resource response. The only exceptions are navigation to `about:blank` or navigation to the same URL with a different hash, which would succeed and return `null`.
+`page.goto` will not throw an error when any valid HTTP status code is returned by the remote server, including 404 "Not Found" and 500 "Internal Server Error".  The status code for such responses can be retrieved by calling [response.status()](#responsestatus).
+
+> **NOTE** `page.goto` either throws an error or returns a main resource response. The only exceptions are navigation to `about:blank` or navigation to the same URL with a different hash, which would succeed and return `null`.
 
 > **NOTE** Headless mode doesn't support navigation to a PDF document. See the [upstream issue](https://bugs.chromium.org/p/chromium/issues/detail?id=761295).
 
@@ -1581,8 +1685,8 @@ The `format` options are:
 - `Ledger`: 17in x 11in
 - `A0`: 33.1in x 46.8in
 - `A1`: 23.4in x 33.1in
-- `A2`: 16.5in x 23.4in
-- `A3`: 11.7in x 16.5in
+- `A2`: 16.54in x 23.4in
+- `A3`: 11.7in x 16.54in
 - `A4`: 8.27in x 11.7in
 - `A5`: 5.83in x 8.27in
 - `A6`: 4.13in x 5.83in
@@ -1721,6 +1825,7 @@ This setting will change the default maximum time for the following methods and 
 - [page.reload([options])](#pagereloadoptions)
 - [page.setContent(html[, options])](#pagesetcontenthtml-options)
 - [page.waitFor(selectorOrFunctionOrTimeout[, options[, ...args]])](#pagewaitforselectororfunctionortimeout-options-args)
+- [page.waitForFileChooser([options])](#pagewaitforfilechooseroptions)
 - [page.waitForFunction(pageFunction[, options[, ...args]])](#pagewaitforfunctionpagefunction-options-args)
 - [page.waitForNavigation([options])](#pagewaitfornavigationoptions)
 - [page.waitForRequest(urlOrPredicate[, options])](#pagewaitforrequesturlorpredicate-options)
@@ -1776,7 +1881,8 @@ An example of a naïve request interceptor that aborts all image requests:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.setRequestInterception(true);
   page.on('request', interceptedRequest => {
@@ -1787,7 +1893,7 @@ puppeteer.launch().then(async browser => {
   });
   await page.goto('https://example.com');
   await browser.close();
-});
+})();
 ```
 
 > **NOTE** Enabling request interception disables page caching.
@@ -1809,6 +1915,18 @@ puppeteer.launch().then(async browser => {
 > **NOTE** in certain cases, setting viewport will reload the page in order to set the `isMobile` or `hasTouch` properties.
 
 In the case of multiple pages in a single browser, each page can have its own viewport size.
+
+`page.setViewport` will resize the page. A lot of websites don't expect phones to change size, so you should set the viewport before navigating to the page.
+
+```js
+const page = await browser.newPage();
+await page.setViewport({
+  width: 640,
+  height: 480,
+  deviceScaleFactor: 1,
+});
+await page.goto('https://example.com');
+```
 
 #### page.tap(selector)
 - `selector` <[string]> A [selector] to search for element to tap. If there are multiple elements satisfying the selector, the first will be tapped.
@@ -1845,8 +1963,8 @@ Sends a `keydown`, `keypress`/`input`, and `keyup` event for each character in t
 To press a special key, like `Control` or `ArrowDown`, use [`keyboard.press`](#keyboardpresskey-options).
 
 ```js
-page.type('#mytextarea', 'Hello'); // Types instantly
-page.type('#mytextarea', 'World', {delay: 100}); // Types slower, like a user
+await page.type('#mytextarea', 'Hello'); // Types instantly
+await page.type('#mytextarea', 'World', {delay: 100}); // Types slower, like a user
 ```
 
 Shortcut for [page.mainFrame().type(selector, text[, options])](#frametypeselector-text-options).
@@ -1868,6 +1986,12 @@ This is a shortcut for [page.mainFrame().url()](#frameurl)
 #### page.waitFor(selectorOrFunctionOrTimeout[, options[, ...args]])
 - `selectorOrFunctionOrTimeout` <[string]|[number]|[function]> A [selector], predicate or timeout to wait for
 - `options` <[Object]> Optional waiting parameters
+  - `visible` <[boolean]> wait for element to be present in DOM and to be visible. Defaults to `false`.
+  - `timeout` <[number]> maximum time to wait for in milliseconds. Defaults to `30000` (30 seconds). Pass `0` to disable timeout. The default value can be changed by using the [page.setDefaultTimeout(timeout)](#pagesetdefaulttimeouttimeout) method.
+  - `hidden` <[boolean]> wait for element to not be found in the DOM or to be hidden. Defaults to `false`.
+  - `polling` <[string]|[number]> An interval at which the `pageFunction` is executed, defaults to `raf`. If `polling` is a number, then it is treated as an interval in milliseconds at which the function would be executed. If `polling` is a string, then it can be one of the following values:
+    - `raf` - to constantly execute `pageFunction` in `requestAnimationFrame` callback. This is the tightest polling mode which is suitable to observe styling changes.
+    - `mutation` - to execute `pageFunction` on every DOM mutation.
 - `...args` <...[Serializable]|[JSHandle]> Arguments to pass to  `pageFunction`
 - returns: <[Promise]<[JSHandle]>> Promise which resolves to a JSHandle of the success value
 
@@ -1896,6 +2020,28 @@ await page.waitFor(selector => !!document.querySelector(selector), {}, selector)
 
 Shortcut for [page.mainFrame().waitFor(selectorOrFunctionOrTimeout[, options[, ...args]])](#framewaitforselectororfunctionortimeout-options-args).
 
+#### page.waitForFileChooser([options])
+- `options` <[Object]> Optional waiting parameters
+  - `timeout` <[number]> Maximum wait time in milliseconds, defaults to 30 seconds, pass `0` to disable the timeout. The default value can be changed by using the [page.setDefaultTimeout(timeout)](#pagesetdefaulttimeouttimeout) method.
+- returns: <[Promise]<[FileChooser]>> A promise that resolves after a page requests a file picker.
+
+> **NOTE** In non-headless Chromium, this method results in the native file picker dialog **not showing up** for the user.
+
+This method is typically coupled with an action that triggers file choosing.
+The following example clicks a button that issues a file chooser, and then
+responds with `/tmp/myfile.pdf` as if a user has selected this file.
+
+```js
+const [fileChooser] = await Promise.all([
+  page.waitForFileChooser(),
+  page.click('#upload-file-button'), // some button that triggers file selection
+]);
+await fileChooser.accept(['/tmp/myfile.pdf']);
+```
+
+> **NOTE** This must be called *before* the file chooser is launched. It will not return a currently active file chooser.
+
+
 #### page.waitForFunction(pageFunction[, options[, ...args]])
 - `pageFunction` <[function]|[string]> Function to be evaluated in browser context
 - `options` <[Object]> Optional waiting parameters
@@ -1910,13 +2056,14 @@ The `waitForFunction` can be used to observe viewport size change:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   const watchDog = page.waitForFunction('window.innerWidth < 100');
   await page.setViewport({width: 50, height: 50});
   await watchDog;
   await browser.close();
-});
+})();
 ```
 
 To pass arguments from node.js to the predicate of `page.waitForFunction` function:
@@ -1992,16 +2139,18 @@ This method works across navigations:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   let currentURL;
   page
     .waitForSelector('img')
     .then(() => console.log('First URL with image: ' + currentURL));
-  for (currentURL of ['https://example.com', 'https://google.com', 'https://bbc.com'])
+  for (currentURL of ['https://example.com', 'https://google.com', 'https://bbc.com']) {
     await page.goto(currentURL);
+  }
   await browser.close();
-});
+})();
 ```
 Shortcut for [page.mainFrame().waitForSelector(selector[, options])](#framewaitforselectorselector-options).
 
@@ -2021,16 +2170,18 @@ This method works across navigations:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   let currentURL;
   page
     .waitForXPath('//img')
     .then(() => console.log('First URL with image: ' + currentURL));
-  for (currentURL of ['https://example.com', 'https://google.com', 'https://bbc.com'])
+  for (currentURL of ['https://example.com', 'https://google.com', 'https://bbc.com']) {
     await page.goto(currentURL);
+  }
   await browser.close();
-});
+})();
 ```
 Shortcut for [page.mainFrame().waitForXPath(xpath[, options])](#framewaitforxpathxpath-options).
 
@@ -2088,7 +2239,7 @@ The Accessibility class provides methods for inspecting Chromium's accessibility
 
 Accessibility is a very platform-specific thing. On different platforms, there are different screen readers that might have wildly different output.
 
-Blink - Chrome's rendering engine - has a concept of "accessibility tree", which is than translated into different platform-specific APIs. Accessibility namespace gives users
+Blink - Chrome's rendering engine - has a concept of "accessibility tree", which is then translated into different platform-specific APIs. Accessibility namespace gives users
 access to the Blink Accessibility Tree.
 
 Most of the accessibility tree gets filtered out when converting from Blink AX Tree to Platform-specific AX-Tree or by assistive technologies themselves. By default, Puppeteer tries to approximate this filtering, exposing only the "interesting" nodes of the tree.
@@ -2183,7 +2334,7 @@ await page.keyboard.press('KeyA');
 await page.keyboard.up('Shift');
 ```
 
-> **NOTE** On MacOS, keyboard shortcuts like `⌘ A` -> Select All do not work. See [#1313](https://github.com/GoogleChrome/puppeteer/issues/1313)
+> **NOTE** On MacOS, keyboard shortcuts like `⌘ A` -> Select All do not work. See [#1313](https://github.com/puppeteer/puppeteer/issues/1313)
 
 #### keyboard.down(key[, options])
 - `key` <[string]> Name of key to press, such as `ArrowLeft`. See [USKeyboardLayout] for a list of all key names.
@@ -2237,8 +2388,8 @@ Sends a `keydown`, `keypress`/`input`, and `keyup` event for each character in t
 To press a special key, like `Control` or `ArrowDown`, use [`keyboard.press`](#keyboardpresskey-options).
 
 ```js
-page.keyboard.type('Hello'); // Types instantly
-page.keyboard.type('World', {delay: 100}); // Types slower, like a user
+await page.keyboard.type('Hello'); // Types instantly
+await page.keyboard.type('World', {delay: 100}); // Types slower, like a user
 ```
 
 > **NOTE** Modifier keys DO NOT effect `keyboard.type`. Holding down `Shift` will not type the text in upper case.
@@ -2333,6 +2484,37 @@ Only one trace can be active at a time per browser.
 #### tracing.stop()
 - returns: <[Promise]<[Buffer]>> Promise which resolves to buffer with trace data.
 
+### class: FileChooser
+
+[FileChooser] objects are returned via the ['page.waitForFileChooser'](#pagewaitforfilechooseroptions) method.
+
+File choosers let you react to the page requesting for a file.
+
+An example of using [FileChooser]:
+
+```js
+const [fileChooser] = await Promise.all([
+  page.waitForFileChooser(),
+  page.click('#upload-file-button'), // some button that triggers file selection
+]);
+await fileChooser.accept(['/tmp/myfile.pdf']);
+```
+
+> **NOTE** In browsers, only one file chooser can be opened at a time.
+> All file choosers must be accepted or canceled. Not doing so will prevent subsequent file choosers from appearing.
+
+#### fileChooser.accept(filePaths)
+- `filePaths` <[Array]<[string]>> Accept the file chooser request with given paths. If some of the  `filePaths` are relative paths, then they are resolved relative to the [current working directory](https://nodejs.org/api/process.html#process_process_cwd).
+- returns: <[Promise]>
+
+#### fileChooser.cancel()
+- returns: <[Promise]>
+
+Closes the file chooser without selecting any files.
+
+#### fileChooser.isMultiple()
+- returns: <[boolean]> Whether file chooser allow for [multiple](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/file#attr-multiple) file selection.
+
 ### class: Dialog
 
 [Dialog] objects are dispatched by page via the ['dialog'](#event-dialog) event.
@@ -2341,7 +2523,8 @@ An example of using `Dialog` class:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   page.on('dialog', async dialog => {
     console.log(dialog.message());
@@ -2349,7 +2532,7 @@ puppeteer.launch().then(async browser => {
     await browser.close();
   });
   page.evaluate(() => alert('1'));
-});
+})();
 ```
 
 #### dialog.accept([promptText])
@@ -2403,7 +2586,8 @@ An example of dumping frame tree:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.goto('https://www.google.com/chrome/browser/canary.html');
   dumpFrameTree(page.mainFrame(), '');
@@ -2411,10 +2595,11 @@ puppeteer.launch().then(async browser => {
 
   function dumpFrameTree(frame, indent) {
     console.log(indent + frame.url());
-    for (let child of frame.childFrames())
+    for (const child of frame.childFrames()) {
       dumpFrameTree(child, indent + '  ');
+    }
   }
-});
+})();
 ```
 
 An example of getting text from an iframe element:
@@ -2604,13 +2789,16 @@ If there's no element matching `selector`, the method throws an error.
   - `referer` <[string]> Referer header value. If provided it will take preference over the referer header value set by [page.setExtraHTTPHeaders()](#pagesetextrahttpheadersheaders).
 - returns: <[Promise]<?[Response]>> Promise which resolves to the main resource response. In case of multiple redirects, the navigation will resolve with the response of the last redirect.
 
-The `frame.goto` will throw an error if:
+`frame.goto` will throw an error if:
 - there's an SSL error (e.g. in case of self-signed certificates).
 - target URL is invalid.
 - the `timeout` is exceeded during navigation.
+- the remote server does not respond or is unreachable.
 - the main resource failed to load.
 
-> **NOTE** `frame.goto` either throw or return a main resource response. The only exceptions are navigation to `about:blank` or navigation to the same URL with a different hash, which would succeed and return `null`.
+`frame.goto` will not throw an error when any valid HTTP status code is returned by the remote server, including 404 "Not Found" and 500 "Internal Server Error".  The status code for such responses can be retrieved by calling [response.status()](#responsestatus).
+
+> **NOTE** `frame.goto` either throws an error or returns a main resource response. The only exceptions are navigation to `about:blank` or navigation to the same URL with a different hash, which would succeed and return `null`.
 
 > **NOTE** Headless mode doesn't support navigation to a PDF document. See the [upstream issue](https://bugs.chromium.org/p/chromium/issues/detail?id=761295).
 
@@ -2685,8 +2873,8 @@ Sends a `keydown`, `keypress`/`input`, and `keyup` event for each character in t
 To press a special key, like `Control` or `ArrowDown`, use [`keyboard.press`](#keyboardpresskey-options).
 
 ```js
-frame.type('#mytextarea', 'Hello'); // Types instantly
-frame.type('#mytextarea', 'World', {delay: 100}); // Types slower, like a user
+await frame.type('#mytextarea', 'Hello'); // Types instantly
+await frame.type('#mytextarea', 'World', {delay: 100}); // Types slower, like a user
 ```
 
 #### frame.url()
@@ -2737,13 +2925,14 @@ The `waitForFunction` can be used to observe viewport size change:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   const watchDog = page.mainFrame().waitForFunction('window.innerWidth < 100');
   page.setViewport({width: 50, height: 50});
   await watchDog;
   await browser.close();
-});
+})();
 ```
 
 To pass arguments from node.js to the predicate of `page.waitForFunction` function:
@@ -2792,16 +2981,18 @@ This method works across navigations:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   let currentURL;
   page.mainFrame()
     .waitForSelector('img')
     .then(() => console.log('First URL with image: ' + currentURL));
-  for (currentURL of ['https://example.com', 'https://google.com', 'https://bbc.com'])
+  for (currentURL of ['https://example.com', 'https://google.com', 'https://bbc.com']) {
     await page.goto(currentURL);
+  }
   await browser.close();
-});
+})();
 ```
 
 #### frame.waitForXPath(xpath[, options])
@@ -2820,16 +3011,18 @@ This method works across navigations:
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   let currentURL;
   page.mainFrame()
     .waitForXPath('//img')
     .then(() => console.log('First URL with image: ' + currentURL));
-  for (currentURL of ['https://example.com', 'https://google.com', 'https://bbc.com'])
+  for (currentURL of ['https://example.com', 'https://google.com', 'https://bbc.com']) {
     await page.goto(currentURL);
+  }
   await browser.close();
-});
+})();
 ```
 
 ### class: ExecutionContext
@@ -2950,6 +3143,34 @@ Returns either `null` or the object handle itself, if the object handle is an in
 
 The `jsHandle.dispose` method stops referencing the element handle.
 
+#### jsHandle.evaluate(pageFunction[, ...args])
+- `pageFunction` <[function]\([Object]\)> Function to be evaluated in browser context
+- `...args` <...[Serializable]|[JSHandle]> Arguments to pass to `pageFunction`
+- returns: <[Promise]<[Serializable]>> Promise which resolves to the return value of `pageFunction`
+
+This method passes this handle as the first argument to `pageFunction`.
+
+If `pageFunction` returns a [Promise], then `handle.evaluate` would wait for the promise to resolve and return its value.
+
+Examples:
+```js
+const tweetHandle = await page.$('.tweet .retweets');
+expect(await tweetHandle.evaluate(node => node.innerText)).toBe('10');
+```
+
+#### jsHandle.evaluateHandle(pageFunction[, ...args])
+- `pageFunction` <[function]|[string]> Function to be evaluated
+- `...args` <...[Serializable]|[JSHandle]> Arguments to pass to `pageFunction`
+- returns: <[Promise]<[JSHandle]>> Promise which resolves to the return value of `pageFunction` as in-page object (JSHandle)
+
+This method passes this handle as the first argument to `pageFunction`.
+
+The only difference between `jsHandle.evaluate` and `jsHandle.evaluateHandle` is that `executionContext.evaluateHandle` returns in-page object (JSHandle).
+
+If the function passed to the `jsHandle.evaluateHandle` returns a [Promise], then `jsHandle.evaluateHandle` would wait for the promise to resolve and return its value.
+
+See [Page.evaluateHandle](#pageevaluatehandlepagefunction-args) for more details.
+
 #### jsHandle.executionContext()
 - returns: <[ExecutionContext]>
 
@@ -2991,13 +3212,14 @@ ElementHandle represents an in-page DOM element. ElementHandles can be created w
 ```js
 const puppeteer = require('puppeteer');
 
-puppeteer.launch().then(async browser => {
+(async () => {
+  const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.goto('https://example.com');
   const hrefElement = await page.$('a');
   await hrefElement.click();
   // ...
-});
+})();
 ```
 
 ElementHandle prevents DOM element from garbage collection unless the handle is [disposed](#elementhandledispose). ElementHandles are auto-disposed when their origin frame gets navigated.
@@ -3110,6 +3332,34 @@ If the element is detached from DOM, the method throws an error.
 
 The `elementHandle.dispose` method stops referencing the element handle.
 
+#### elementHandle.evaluate(pageFunction[, ...args])
+- `pageFunction` <[function]\([Object]\)> Function to be evaluated in browser context
+- `...args` <...[Serializable]|[JSHandle]> Arguments to pass to `pageFunction`
+- returns: <[Promise]<[Serializable]>> Promise which resolves to the return value of `pageFunction`
+
+This method passes this handle as the first argument to `pageFunction`.
+
+If `pageFunction` returns a [Promise], then `handle.evaluate` would wait for the promise to resolve and return its value.
+
+Examples:
+```js
+const tweetHandle = await page.$('.tweet .retweets');
+expect(await tweetHandle.evaluate(node => node.innerText)).toBe('10');
+```
+
+#### elementHandle.evaluateHandle(pageFunction[, ...args])
+- `pageFunction` <[function]|[string]> Function to be evaluated
+- `...args` <...[Serializable]|[JSHandle]> Arguments to pass to `pageFunction`
+- returns: <[Promise]<[JSHandle]>> Promise which resolves to the return value of `pageFunction` as in-page object (JSHandle)
+
+This method passes this handle as the first argument to `pageFunction`.
+
+The only difference between `evaluateHandle.evaluate` and `evaluateHandle.evaluateHandle` is that `executionContext.evaluateHandle` returns in-page object (JSHandle).
+
+If the function passed to the `evaluateHandle.evaluateHandle` returns a [Promise], then `evaluateHandle.evaluateHandle` would wait for the promise to resolve and return its value.
+
+See [Page.evaluateHandle](#pageevaluatehandlepagefunction-args) for more details.
+
 #### elementHandle.executionContext()
 - returns: <[ExecutionContext]>
 
@@ -3177,6 +3427,18 @@ If `key` is a single character and no modifier keys besides `Shift` are being he
 This method scrolls element into view if needed, and then uses [page.screenshot](#pagescreenshotoptions) to take a screenshot of the element.
 If the element is detached from DOM, the method throws an error.
 
+#### elementHandle.select(...values)
+- `...values` <...[string]> Values of options to select. If the `<select>` has the `multiple` attribute, all values are considered, otherwise only the first one is taken into account.
+- returns: <[Promise]<[Array]<[string]>>> An array of option values that have been successfully selected.
+
+Triggers a `change` and `input` event once all the provided options have been selected.
+If there's no `<select>` element matching `selector`, the method throws an error.
+
+```js
+handle.select('blue'); // single selection
+handle.select('red', 'green', 'blue'); // multiple selections
+```
+
 #### elementHandle.tap()
 - returns: <[Promise]> Promise which resolves when the element is successfully tapped. Promise gets rejected if the element is detached from DOM.
 
@@ -3197,8 +3459,8 @@ Focuses the element, and then sends a `keydown`, `keypress`/`input`, and `keyup`
 To press a special key, like `Control` or `ArrowDown`, use [`elementHandle.press`](#elementhandlepresskey-options).
 
 ```js
-elementHandle.type('Hello'); // Types instantly
-elementHandle.type('World', {delay: 100}); // Types slower, like a user
+await elementHandle.type('Hello'); // Types instantly
+await elementHandle.type('World', {delay: 100}); // Types slower, like a user
 ```
 
 An example of typing into a text field and then submitting the form:
@@ -3209,7 +3471,7 @@ await elementHandle.press('Enter');
 ```
 
 #### elementHandle.uploadFile(...filePaths)
-- `...filePaths` <...[string]> Sets the value of the file input these paths. If some of the  `filePaths` are relative paths, then they are resolved relative to [current working directory](https://nodejs.org/api/process.html#process_process_cwd).
+- `...filePaths` <...[string]> Sets the value of the file input to these paths. If some of the  `filePaths` are relative paths, then they are resolved relative to the [current working directory](https://nodejs.org/api/process.html#process_process_cwd).
 - returns: <[Promise]>
 
 This method expects `elementHandle` to point to an [input element](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input).
@@ -3217,11 +3479,13 @@ This method expects `elementHandle` to point to an [input element](https://devel
 ### class: Request
 
 Whenever the page sends a request, such as for a network resource, the following events are emitted by puppeteer's page:
-- ['request'](#event-request) emitted when the request is issued by the page.
-- ['response'](#event-response) emitted when/if the response is received for the request.
-- ['requestfinished'](#event-requestfinished) emitted when the response body is downloaded and the request is complete.
+- [`'request'`](#event-request) emitted when the request is issued by the page.
+- [`'response'`](#event-response) emitted when/if the response is received for the request.
+- [`'requestfinished'`](#event-requestfinished) emitted when the response body is downloaded and the request is complete.
 
-If request fails at some point, then instead of 'requestfinished' event (and possibly instead of 'response' event), the  ['requestfailed'](#event-requestfailed) event is emitted.
+If request fails at some point, then instead of `'requestfinished'` event (and possibly instead of 'response' event), the  [`'requestfailed'`](#event-requestfailed) event is emitted.
+
+> **NOTE** HTTP Error responses, such as 404 or 503, are still successful responses from HTTP standpoint, so request will complete with `'requestfinished'` event.
 
 If request gets a 'redirect' response, the request is successfully finished with the 'requestfinished' event, and a new request is  issued to a redirected url.
 
@@ -3603,50 +3867,51 @@ TimeoutError is emitted whenever certain operations are terminated due to timeou
 
 
 
+[AXNode]: #accessibilitysnapshotoptions "AXNode"
+[Accessibility]: #class-accessibility "Accessibility"
 [Array]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array "Array"
-[boolean]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#Boolean_type "Boolean"
+[Body]: #class-body  "Body"
+[BrowserContext]: #class-browsercontext  "BrowserContext"
+[BrowserFetcher]: #class-browserfetcher  "BrowserFetcher"
+[Browser]: #class-browser  "Browser"
 [Buffer]: https://nodejs.org/api/buffer.html#buffer_class_buffer "Buffer"
-[function]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function "Function"
-[number]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#Number_type "Number"
+[CDPSession]: #class-cdpsession  "CDPSession"
+[ChildProcess]: https://nodejs.org/api/child_process.html "ChildProcess"
+[ConnectionTransport]: ../lib/WebSocketTransport.js "ConnectionTransport"
+[ConsoleMessage]: #class-consolemessage "ConsoleMessage"
+[Coverage]: #class-coverage "Coverage"
+[Dialog]: #class-dialog "Dialog"
+[ElementHandle]: #class-elementhandle "ElementHandle"
+[Element]: https://developer.mozilla.org/en-US/docs/Web/API/element "Element"
+[Error]: https://nodejs.org/api/errors.html#errors_class_error "Error"
+[ExecutionContext]: #class-executioncontext "ExecutionContext"
+[FileChooser]: #class-filechooser "FileChooser"
+[Frame]: #class-frame "Frame"
+[JSHandle]: #class-jshandle "JSHandle"
+[Keyboard]: #class-keyboard "Keyboard"
+[Map]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map "Map"
+[Mouse]: #class-mouse "Mouse"
 [Object]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object "Object"
-[origin]: https://developer.mozilla.org/en-US/docs/Glossary/Origin "Origin"
 [Page]: #class-page "Page"
 [Promise]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise "Promise"
-[string]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#String_type "String"
-[stream.Readable]: https://nodejs.org/api/stream.html#stream_class_stream_readable "stream.Readable"
-[CDPSession]: #class-cdpsession  "CDPSession"
-[BrowserFetcher]: #class-browserfetcher  "BrowserFetcher"
-[BrowserContext]: #class-browsercontext  "BrowserContext"
-[Error]: https://nodejs.org/api/errors.html#errors_class_error "Error"
-[Frame]: #class-frame "Frame"
-[ConsoleMessage]: #class-consolemessage "ConsoleMessage"
-[ChildProcess]: https://nodejs.org/api/child_process.html "ChildProcess"
-[Coverage]: #class-coverage "Coverage"
-[iterator]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Iteration_protocols "Iterator"
-[Response]: #class-response  "Response"
 [Request]: #class-request  "Request"
-[Browser]: #class-browser  "Browser"
-[TimeoutError]: #class-timeouterror "TimeoutError"
-[Body]: #class-body  "Body"
-[Element]: https://developer.mozilla.org/en-US/docs/Web/API/element "Element"
-[Keyboard]: #class-keyboard "Keyboard"
-[Dialog]: #class-dialog  "Dialog"
-[JSHandle]: #class-jshandle "JSHandle"
-[ExecutionContext]: #class-executioncontext "ExecutionContext"
-[Mouse]: #class-mouse "Mouse"
-[Map]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map "Map"
-[selector]: https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors "selector"
-[Tracing]: #class-tracing "Tracing"
-[ElementHandle]: #class-elementhandle "ElementHandle"
-[UIEvent.detail]: https://developer.mozilla.org/en-US/docs/Web/API/UIEvent/detail "UIEvent.detail"
-[Serializable]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify#Description "Serializable"
-[Touchscreen]: #class-touchscreen "Touchscreen"
-[Target]: #class-target "Target"
-[USKeyboardLayout]: ../lib/USKeyboardLayout.js "USKeyboardLayout"
-[xpath]: https://developer.mozilla.org/en-US/docs/Web/XPath "xpath"
-[UnixTime]: https://en.wikipedia.org/wiki/Unix_time "Unix Time"
+[Response]: #class-response  "Response"
 [SecurityDetails]: #class-securitydetails "SecurityDetails"
+[Serializable]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify#Description "Serializable"
+[Target]: #class-target "Target"
+[TimeoutError]: #class-timeouterror "TimeoutError"
+[Touchscreen]: #class-touchscreen "Touchscreen"
+[Tracing]: #class-tracing "Tracing"
+[UIEvent.detail]: https://developer.mozilla.org/en-US/docs/Web/API/UIEvent/detail "UIEvent.detail"
+[USKeyboardLayout]: ../lib/USKeyboardLayout.js "USKeyboardLayout"
+[UnixTime]: https://en.wikipedia.org/wiki/Unix_time "Unix Time"
 [Worker]: #class-worker "Worker"
-[Accessibility]: #class-accessibility "Accessibility"
-[AXNode]: #accessibilitysnapshotoptions "AXNode"
-[ConnectionTransport]: ../lib/WebSocketTransport.js "ConnectionTransport"
+[boolean]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#Boolean_type "Boolean"
+[function]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function "Function"
+[iterator]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Iteration_protocols "Iterator"
+[number]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#Number_type "Number"
+[origin]: https://developer.mozilla.org/en-US/docs/Glossary/Origin "Origin"
+[selector]: https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors "selector"
+[stream.Readable]: https://nodejs.org/api/stream.html#stream_class_stream_readable "stream.Readable"
+[string]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#String_type "String"
+[xpath]: https://developer.mozilla.org/en-US/docs/Web/XPath "xpath"

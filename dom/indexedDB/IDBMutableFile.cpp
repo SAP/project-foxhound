@@ -26,8 +26,6 @@
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsError.h"
-#include "nsIInputStream.h"
-#include "nsIPrincipal.h"
 #include "ReportInternalError.h"
 
 namespace mozilla {
@@ -117,7 +115,7 @@ void IDBMutableFile::AbortFileHandles() {
   class MOZ_STACK_CLASS Helper final {
    public:
     static void AbortFileHandles(
-        nsTHashtable<nsPtrHashKey<IDBFileHandle>>& aTable) {
+        const nsTHashtable<nsPtrHashKey<IDBFileHandle>>& aTable) {
       if (!aTable.Count()) {
         return;
       }
@@ -125,8 +123,8 @@ void IDBMutableFile::AbortFileHandles() {
       nsTArray<RefPtr<IDBFileHandle>> fileHandlesToAbort;
       fileHandlesToAbort.SetCapacity(aTable.Count());
 
-      for (auto iter = aTable.Iter(); !iter.Done(); iter.Next()) {
-        IDBFileHandle* fileHandle = iter.Get()->GetKey();
+      for (auto iter = aTable.ConstIter(); !iter.Done(); iter.Next()) {
+        IDBFileHandle* const fileHandle = iter.Get()->GetKey();
         MOZ_ASSERT(fileHandle);
 
         fileHandle->AssertIsOnOwningThread();
@@ -141,7 +139,7 @@ void IDBMutableFile::AbortFileHandles() {
         return;
       }
 
-      for (RefPtr<IDBFileHandle>& fileHandle : fileHandlesToAbort) {
+      for (const auto& fileHandle : fileHandlesToAbort) {
         MOZ_ASSERT(fileHandle);
 
         fileHandle->Abort();
@@ -158,8 +156,8 @@ IDBDatabase* IDBMutableFile::Database() const {
   return mDatabase;
 }
 
-already_AddRefed<IDBFileHandle> IDBMutableFile::Open(FileMode aMode,
-                                                     ErrorResult& aError) {
+RefPtr<IDBFileHandle> IDBMutableFile::Open(FileMode aMode,
+                                           ErrorResult& aError) {
   AssertIsOnOwningThread();
 
   if (QuotaManager::IsShuttingDown() || mDatabase->IsClosed() || !GetOwner()) {
@@ -167,7 +165,7 @@ already_AddRefed<IDBFileHandle> IDBMutableFile::Open(FileMode aMode,
     return nullptr;
   }
 
-  RefPtr<IDBFileHandle> fileHandle = IDBFileHandle::Create(this, aMode);
+  auto fileHandle = IDBFileHandle::Create(this, aMode);
   if (NS_WARN_IF(!fileHandle)) {
     aError.Throw(NS_ERROR_DOM_FILEHANDLE_UNKNOWN_ERR);
     return nullptr;
@@ -180,23 +178,7 @@ already_AddRefed<IDBFileHandle> IDBMutableFile::Open(FileMode aMode,
 
   fileHandle->SetBackgroundActor(actor);
 
-  return fileHandle.forget();
-}
-
-already_AddRefed<DOMRequest> IDBMutableFile::GetFile(ErrorResult& aError) {
-  RefPtr<IDBFileHandle> fileHandle = Open(FileMode::Readonly, aError);
-  if (NS_WARN_IF(aError.Failed())) {
-    return nullptr;
-  }
-
-  FileRequestGetFileParams params;
-
-  RefPtr<IDBFileRequest> request =
-      IDBFileRequest::Create(fileHandle, /* aWrapAsDOMRequest */ true);
-
-  fileHandle->StartRequest(request, params);
-
-  return request.forget();
+  return fileHandle;
 }
 
 NS_IMPL_ADDREF_INHERITED(IDBMutableFile, DOMEventTargetHelper)

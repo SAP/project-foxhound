@@ -15,8 +15,8 @@ from mozboot.util import get_state_dir
 from mozfile import which
 from six import PY3
 
-NODE_MIN_VERSION = StrictVersion("8.11.0")
-NPM_MIN_VERSION = StrictVersion("5.6.0")
+NODE_MIN_VERSION = StrictVersion("10.19.0")
+NPM_MIN_VERSION = StrictVersion("6.13.4")
 
 
 def find_node_paths():

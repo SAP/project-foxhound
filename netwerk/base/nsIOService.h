@@ -19,6 +19,7 @@
 #include "nsDataHashtable.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Mutex.h"
 #include "prtime.h"
 #include "nsICaptivePortalService.h"
 
@@ -117,7 +118,9 @@ class nsIOService final : public nsIIOService,
   void OnProcessLaunchComplete(SocketProcessHost* aHost, bool aSucceeded);
   void OnProcessUnexpectedShutdown(SocketProcessHost* aHost);
   bool SocketProcessReady();
+  static void NotifySocketProcessPrefsChanged(const char* aName, void* aSelf);
   void NotifySocketProcessPrefsChanged(const char* aName);
+  static bool UseSocketProcess();
 
   bool IsSocketProcessLaunchComplete();
 
@@ -131,6 +134,8 @@ class nsIOService final : public nsIIOService,
 
   friend SocketProcessMemoryReporter;
   RefPtr<MemoryReportingProcess> GetSocketProcessMemoryReporter();
+
+  static void OnTLSPrefChange(const char* aPref, void* aSelf);
 
  private:
   // These shouldn't be called directly:
@@ -151,6 +156,7 @@ class nsIOService final : public nsIIOService,
   nsresult RecheckCaptivePortalIfLocalRedirect(nsIChannel* newChan);
 
   // Prefs wrangling
+  static void PrefsChanged(const char* pref, void* self);
   void PrefsChanged(const char* pref = nullptr);
   void ParsePortList(const char* pref, bool remove);
 
@@ -169,7 +175,7 @@ class nsIOService final : public nsIIOService,
       const mozilla::Maybe<mozilla::dom::ClientInfo>& aLoadingClientInfo,
       const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
       uint32_t aSecurityFlags, uint32_t aContentPolicyType,
-      nsIChannel** result);
+      uint32_t aSandboxFlags, nsIChannel** result);
 
   nsresult NewChannelFromURIWithProxyFlagsInternal(nsIURI* aURI,
                                                    nsIURI* aProxyURI,
@@ -214,6 +220,7 @@ class nsIOService final : public nsIIOService,
   // cached categories
   nsCategoryCache<nsIChannelEventSink> mChannelEventSinks;
 
+  Mutex mMutex;
   nsTArray<int32_t> mRestrictedPortList;
 
   static bool sIsDataURIUniqueOpaqueOrigin;

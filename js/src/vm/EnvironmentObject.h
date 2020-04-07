@@ -13,6 +13,7 @@
 #include "gc/WeakMap.h"
 #include "js/GCHashTable.h"
 #include "vm/ArgumentsObject.h"
+#include "vm/GeneratorObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
@@ -22,7 +23,7 @@
 namespace js {
 
 class ModuleObject;
-typedef Handle<ModuleObject*> HandleModuleObject;
+using HandleModuleObject = Handle<ModuleObject*>;
 
 /*
  * Return a shape representing the static scope containing the variable
@@ -252,6 +253,8 @@ extern PropertyName* EnvironmentCoordinateNameSlow(JSScript* script,
  */
 // clang-format on
 
+enum class IsSingletonEnv { Yes, No };
+
 class EnvironmentObject : public NativeObject {
  protected:
   // The enclosing environment. Either another EnvironmentObject, a
@@ -442,10 +445,10 @@ class ModuleEnvironmentObject : public EnvironmentObject {
                            bool enumerableOnly);
 };
 
-typedef Rooted<ModuleEnvironmentObject*> RootedModuleEnvironmentObject;
-typedef Handle<ModuleEnvironmentObject*> HandleModuleEnvironmentObject;
-typedef MutableHandle<ModuleEnvironmentObject*>
-    MutableHandleModuleEnvironmentObject;
+using RootedModuleEnvironmentObject = Rooted<ModuleEnvironmentObject*>;
+using HandleModuleEnvironmentObject = Handle<ModuleEnvironmentObject*>;
+using MutableHandleModuleEnvironmentObject =
+    MutableHandle<ModuleEnvironmentObject*>;
 
 class WasmInstanceEnvironmentObject : public EnvironmentObject {
   // Currently WasmInstanceScopes do not use their scopes in a
@@ -502,10 +505,9 @@ class LexicalEnvironmentObject : public EnvironmentObject {
   static const JSClass class_;
 
  private:
-  static LexicalEnvironmentObject* createTemplateObject(JSContext* cx,
-                                                        HandleShape shape,
-                                                        HandleObject enclosing,
-                                                        gc::InitialHeap heap);
+  static LexicalEnvironmentObject* createTemplateObject(
+      JSContext* cx, HandleShape shape, HandleObject enclosing,
+      gc::InitialHeap heap, IsSingletonEnv isSingleton);
 
   void initThisValue(JSObject* obj) {
     MOZ_ASSERT(isGlobal() || !isSyntactic());
@@ -660,7 +662,7 @@ class WithEnvironmentObject : public EnvironmentObject {
   static inline size_t thisSlot() { return THIS_SLOT; }
 };
 
-// Internal scope object used by JSOP_BINDNAME upon encountering an
+// Internal scope object used by JSOp::BindName upon encountering an
 // uninitialized lexical slot or an assignment to a 'const' binding.
 //
 // ES6 lexical bindings cannot be accessed in any way (throwing
@@ -669,7 +671,7 @@ class WithEnvironmentObject : public EnvironmentObject {
 // looking up names, this can be done without slowing down normal operations
 // on the return value. When setting names, however, we do not want to pollute
 // all set-property paths with uninitialized lexical checks. For setting names
-// (i.e. JSOP_SETNAME), we emit an accompanying, preceding JSOP_BINDNAME which
+// (i.e. JSOp::SetName), we emit an accompanying, preceding JSOp::BindName which
 // finds the right scope on which to set the name. Moreover, when the name on
 // the scope is an uninitialized lexical, we cannot throw eagerly, as the spec
 // demands that the error be thrown after evaluating the RHS of
@@ -821,7 +823,7 @@ class MissingEnvironmentKey {
   void updateFrame(AbstractFramePtr frame) { frame_ = frame; }
 
   // For use as hash policy.
-  typedef MissingEnvironmentKey Lookup;
+  using Lookup = MissingEnvironmentKey;
   static HashNumber hash(MissingEnvironmentKey sk);
   static bool match(MissingEnvironmentKey sk1, MissingEnvironmentKey sk2);
   bool operator!=(const MissingEnvironmentKey& other) const {
@@ -862,7 +864,7 @@ class LiveEnvironmentVal {
  *
  * The debugger effectively turns every opcode into a potential direct eval.
  * Naively, this would require creating a EnvironmentObject for every
- * call/block scope and using JSOP_GETALIASEDVAR for every access. To optimize
+ * call/block scope and using JSOp::GetAliasedVar for every access. To optimize
  * this, the engine assumes there is no debugger and optimizes scope access
  * and creation accordingly. When the debugger wants to perform an unexpected
  * eval-in-frame (or other, similar environment-requiring operations),
@@ -884,6 +886,9 @@ class LiveEnvironmentVal {
 
 extern JSObject* GetDebugEnvironmentForFunction(JSContext* cx,
                                                 HandleFunction fun);
+
+extern JSObject* GetDebugEnvironmentForSuspendedGenerator(
+    JSContext* cx, JSScript* script, AbstractGeneratorObject& genObj);
 
 extern JSObject* GetDebugEnvironmentForFrame(JSContext* cx,
                                              AbstractFramePtr frame,
@@ -1027,7 +1032,6 @@ class DebugEnvironments {
   // have stack-allocated locals.
   static void onPopCall(JSContext* cx, AbstractFramePtr frame);
   static void onPopVar(JSContext* cx, const EnvironmentIter& ei);
-  static void onPopVar(JSContext* cx, AbstractFramePtr frame, jsbytecode* pc);
   static void onPopLexical(JSContext* cx, const EnvironmentIter& ei);
   static void onPopLexical(JSContext* cx, AbstractFramePtr frame,
                            jsbytecode* pc);
@@ -1149,8 +1153,11 @@ ModuleObject* GetModuleObjectForScript(JSScript* script);
 
 ModuleEnvironmentObject* GetModuleEnvironmentForScript(JSScript* script);
 
-MOZ_MUST_USE bool GetThisValueForDebuggerMaybeOptimizedOut(
+MOZ_MUST_USE bool GetThisValueForDebuggerFrameMaybeOptimizedOut(
     JSContext* cx, AbstractFramePtr frame, jsbytecode* pc,
+    MutableHandleValue res);
+MOZ_MUST_USE bool GetThisValueForDebuggerSuspendedGeneratorMaybeOptimizedOut(
+    JSContext* cx, AbstractGeneratorObject& genObj, JSScript* script,
     MutableHandleValue res);
 
 MOZ_MUST_USE bool CheckVarNameConflict(
@@ -1183,6 +1190,11 @@ MOZ_MUST_USE bool PushVarEnvironmentObject(JSContext* cx, HandleScope scope,
 MOZ_MUST_USE bool GetFrameEnvironmentAndScope(JSContext* cx,
                                               AbstractFramePtr frame,
                                               jsbytecode* pc,
+                                              MutableHandleObject env,
+                                              MutableHandleScope scope);
+
+void GetSuspendedGeneratorEnvironmentAndScope(AbstractGeneratorObject& genObj,
+                                              JSScript* script,
                                               MutableHandleObject env,
                                               MutableHandleScope scope);
 

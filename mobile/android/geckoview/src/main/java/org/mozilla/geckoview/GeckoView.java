@@ -9,6 +9,7 @@ package org.mozilla.geckoview;
 import org.mozilla.gecko.AndroidGamepadManager;
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.InputMethods;
+import org.mozilla.gecko.SurfaceViewWrapper;
 import org.mozilla.gecko.util.ActivityUtils;
 import org.mozilla.gecko.util.ThreadUtils;
 
@@ -29,19 +30,21 @@ import android.os.Handler;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.support.annotation.AnyThread;
+import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.annotation.UiThread;
 import android.support.v4.view.ViewCompat;
-import android.text.InputType;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.SparseArray;
 import android.util.TypedValue;
+import android.view.DisplayCutout;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.view.SurfaceHolder;
+import android.view.Surface;
 import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewStructure;
@@ -52,6 +55,9 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+
 @UiThread
 public class GeckoView extends FrameLayout {
     private static final String LOGTAG = "GeckoView";
@@ -61,14 +67,14 @@ public class GeckoView extends FrameLayout {
     protected @Nullable GeckoSession mSession;
     private boolean mStateSaved;
 
-    protected @Nullable SurfaceView mSurfaceView;
+    private @Nullable SurfaceViewWrapper mSurfaceWrapper;
 
     private boolean mIsResettingFocus;
 
     private boolean mAutofillEnabled = true;
 
     private GeckoSession.SelectionActionDelegate mSelectionActionDelegate;
-    private GeckoSession.AutofillDelegate mAutofillDelegate;
+    private Autofill.Delegate mAutofillDelegate;
 
     private static class SavedState extends BaseSavedState {
         public final GeckoSession session;
@@ -102,13 +108,14 @@ public class GeckoView extends FrameLayout {
         };
     }
 
-    private class Display implements SurfaceHolder.Callback {
+    private class Display implements SurfaceViewWrapper.Listener {
         private final int[] mOrigin = new int[2];
 
         private GeckoDisplay mDisplay;
         private boolean mValid;
 
         private int mClippingHeight;
+        private int mDynamicToolbarMaxHeight;
 
         public void acquire(final GeckoDisplay display) {
             mDisplay = display;
@@ -121,10 +128,11 @@ public class GeckoView extends FrameLayout {
 
             // Tell display there is already a surface.
             onGlobalLayout();
-            if (GeckoView.this.mSurfaceView != null) {
-                final SurfaceHolder holder = GeckoView.this.mSurfaceView.getHolder();
-                final Rect frame = holder.getSurfaceFrame();
-                mDisplay.surfaceChanged(holder.getSurface(), frame.right, frame.bottom);
+            if (GeckoView.this.mSurfaceWrapper != null) {
+                final SurfaceViewWrapper wrapper = GeckoView.this.mSurfaceWrapper;
+                mDisplay.surfaceChanged(wrapper.getSurface(),
+                        wrapper.getWidth(), wrapper.getHeight());
+                mDisplay.setDynamicToolbarMaxHeight(mDynamicToolbarMaxHeight);
                 GeckoView.this.setActive(true);
             }
         }
@@ -142,15 +150,12 @@ public class GeckoView extends FrameLayout {
             return display;
         }
 
-        @Override // SurfaceHolder.Callback
-        public void surfaceCreated(final SurfaceHolder holder) {
-        }
-
-        @Override // SurfaceHolder.Callback
-        public void surfaceChanged(final SurfaceHolder holder, final int format,
+        @Override // SurfaceListener
+        public void onSurfaceChanged(final Surface surface,
                                    final int width, final int height) {
             if (mDisplay != null) {
-                mDisplay.surfaceChanged(holder.getSurface(), width, height);
+                mDisplay.surfaceChanged(surface, width, height);
+                mDisplay.setDynamicToolbarMaxHeight(mDynamicToolbarMaxHeight);
                 if (!mValid) {
                     GeckoView.this.setActive(true);
                 }
@@ -158,8 +163,8 @@ public class GeckoView extends FrameLayout {
             mValid = true;
         }
 
-        @Override // SurfaceHolder.Callback
-        public void surfaceDestroyed(final SurfaceHolder holder) {
+        @Override // SurfaceListener
+        public void onSurfaceDestroyed() {
             if (mDisplay != null) {
                 mDisplay.surfaceDestroyed();
                 GeckoView.this.setActive(false);
@@ -171,9 +176,16 @@ public class GeckoView extends FrameLayout {
             if (mDisplay == null) {
                 return;
             }
-            if (GeckoView.this.mSurfaceView != null) {
-                GeckoView.this.mSurfaceView.getLocationOnScreen(mOrigin);
+            if (GeckoView.this.mSurfaceWrapper != null) {
+                GeckoView.this.mSurfaceWrapper.getView().getLocationOnScreen(mOrigin);
                 mDisplay.screenOriginChanged(mOrigin[0], mOrigin[1]);
+                // cutout support
+                if (Build.VERSION.SDK_INT >= 28) {
+                    final DisplayCutout cutout = GeckoView.this.mSurfaceWrapper.getView().getRootWindowInsets().getDisplayCutout();
+                    if (cutout != null) {
+                        mDisplay.safeAreaInsetsChanged(cutout.getSafeInsetTop(), cutout.getSafeInsetRight(), cutout.getSafeInsetBottom(), cutout.getSafeInsetLeft());
+                    }
+                }
             }
         }
 
@@ -186,6 +198,13 @@ public class GeckoView extends FrameLayout {
 
             if (mDisplay != null) {
                 mDisplay.setVerticalClipping(clippingHeight);
+            }
+        }
+
+        public void setDynamicToolbarMaxHeight(final int height) {
+            mDynamicToolbarMaxHeight = height;
+            if (mDisplay != null) {
+                mDisplay.setDynamicToolbarMaxHeight(height);
             }
         }
 
@@ -230,13 +249,13 @@ public class GeckoView extends FrameLayout {
         // transparent).
         setWillNotCacheDrawing(false);
 
-        mSurfaceView = new SurfaceView(getContext());
-        mSurfaceView.setBackgroundColor(Color.WHITE);
-        addView(mSurfaceView,
+        mSurfaceWrapper = new SurfaceViewWrapper(getContext());
+        mSurfaceWrapper.setBackgroundColor(Color.WHITE);
+        addView(mSurfaceWrapper.getView(),
                 new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                                            ViewGroup.LayoutParams.MATCH_PARENT));
 
-        mSurfaceView.getHolder().addCallback(mDisplay);
+        mSurfaceWrapper.setListener(mDisplay);
 
         final Activity activity = ActivityUtils.getActivityFromContext(getContext());
         if (activity != null) {
@@ -256,9 +275,47 @@ public class GeckoView extends FrameLayout {
     public void coverUntilFirstPaint(final int color) {
         ThreadUtils.assertOnUiThread();
 
-        if (mSurfaceView != null) {
-            mSurfaceView.setBackgroundColor(color);
+        if (mSurfaceWrapper != null) {
+            mSurfaceWrapper.setBackgroundColor(color);
         }
+    }
+
+    /**
+     * This GeckoView instance will be backed by a {@link SurfaceView}.
+     *
+     * This option offers the best performance at the price of not being
+     * able to animate GeckoView.
+     */
+    public static final int BACKEND_SURFACE_VIEW = 1;
+    /**
+     * This GeckoView instance will be backed by a {@link TextureView}.
+     *
+     * This option offers worse performance compared to {@link #BACKEND_SURFACE_VIEW}
+     * but allows you to animate GeckoView or to paint a GeckoView on top of another GeckoView.
+     */
+    public static final int BACKEND_TEXTURE_VIEW = 2;
+
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef({BACKEND_SURFACE_VIEW, BACKEND_TEXTURE_VIEW})
+    /* protected */ @interface ViewBackend {}
+
+    /**
+     * Set which view should be used by this GeckoView instance to display content.
+     *
+     * By default, GeckoView will use a {@link SurfaceView}.
+     *
+     * @param backend Any of {@link #BACKEND_SURFACE_VIEW BACKEND_*}.
+     */
+    public void setViewBackend(final @ViewBackend int backend) {
+        removeView(mSurfaceWrapper.getView());
+
+        if (backend == BACKEND_SURFACE_VIEW) {
+            mSurfaceWrapper.useSurfaceView(getContext());
+        } else if (backend == BACKEND_TEXTURE_VIEW) {
+            mSurfaceWrapper.useTextureView(getContext());
+        }
+
+        addView(mSurfaceWrapper.getView());
     }
 
     /**
@@ -289,6 +346,18 @@ public class GeckoView extends FrameLayout {
         ThreadUtils.assertOnUiThread();
 
         mDisplay.setVerticalClipping(clippingHeight);
+    }
+
+    /**
+     * Set the maximum height of the dynamic toolbar(s).
+     *
+     * If there are two or more dynamic toolbars, the height value should be the total amount of
+     * the height of each dynamic toolbar.
+     *
+     * @param height The the maximum height of the dynamic toolbar(s).
+     */
+    public void setDynamicToolbarMaxHeight(final int height) {
+        mDisplay.setDynamicToolbarMaxHeight(height);
     }
 
     /* package */ void setActive(final boolean active) {
@@ -489,7 +558,7 @@ public class GeckoView extends FrameLayout {
         // For detecting changes in SurfaceView layout, we take a shortcut here and
         // override gatherTransparentRegion, instead of registering a layout listener,
         // which is more expensive.
-        if (mSurfaceView != null) {
+        if (mSurfaceWrapper != null) {
             mDisplay.onGlobalLayout();
         }
         return super.gatherTransparentRegion(region);
@@ -671,7 +740,8 @@ public class GeckoView extends FrameLayout {
     @SuppressLint("ClickableViewAccessibility")
     @Override
     public boolean onTouchEvent(final MotionEvent event) {
-        return onTouchEventForResult(event) != PanZoomController.INPUT_RESULT_UNHANDLED;
+        onTouchEventForResult(event);
+        return true;
     }
 
     /**
@@ -698,7 +768,8 @@ public class GeckoView extends FrameLayout {
 
     @Override
     public boolean onGenericMotionEvent(final MotionEvent event) {
-        return onGenericMotionEventForResult(event) != PanZoomController.INPUT_RESULT_HANDLED;
+        onGenericMotionEventForResult(event);
+        return true;
     }
 
     /**
@@ -734,96 +805,8 @@ public class GeckoView extends FrameLayout {
             return;
         }
 
-        final AutofillElement root = mSession.getAutofillElements();
-        fillViewStructure(root, structure, flags);
-    }
-
-    @TargetApi(23)
-    private void fillViewStructure(final AutofillElement element, final ViewStructure structure, final int flags) {
-        if (Build.VERSION.SDK_INT >= 26) {
-            structure.setAutofillId(getAutofillId(), element.id);
-            structure.setWebDomain(element.domain);
-        }
-
-        structure.setId(element.id, null, null, null);
-        structure.setDimens(0, 0, 0, 0, element.dimensions.width(), element.dimensions.height());
-
-        if (Build.VERSION.SDK_INT >= 26) {
-            final ViewStructure.HtmlInfo.Builder htmlBuilder = structure.newHtmlInfoBuilder(element.tag);
-            for (final String key : element.attributes.keySet()) {
-                htmlBuilder.addAttribute(key, String.valueOf(element.attributes.get(key)));
-            }
-
-            structure.setHtmlInfo(htmlBuilder.build());
-        }
-
-        structure.setChildCount(element.children.size());
-        int childCount = 0;
-
-        for (final AutofillElement child : element.children) {
-            final ViewStructure childStructure = structure.newChild(childCount);
-            fillViewStructure(child, childStructure, flags);
-            childCount++;
-        }
-
-        switch (element.tag) {
-            case "input":
-            case "textarea":
-                structure.setClassName("android.widget.EditText");
-                structure.setEnabled(element.enabled);
-                structure.setFocusable(element.focusable);
-                structure.setFocused(element.focused);
-                structure.setVisibility(View.VISIBLE);
-
-                if (Build.VERSION.SDK_INT >= 26) {
-                    structure.setAutofillType(View.AUTOFILL_TYPE_TEXT);
-                }
-                break;
-            default:
-                if (childCount > 0) {
-                    structure.setClassName("android.view.ViewGroup");
-                } else {
-                    structure.setClassName("android.view.View");
-                }
-                break;
-        }
-
-        if (Build.VERSION.SDK_INT >= 26 && "input".equals(element.tag)) {
-            // LastPass will fill password to the field that setAutofillHints is unset and setInputType is set.
-            switch (element.hint) {
-                case AutofillElement.HINT_EMAIL_ADDRESS:
-                    structure.setAutofillHints(new String[] { View.AUTOFILL_HINT_EMAIL_ADDRESS });
-                    structure.setInputType(InputType.TYPE_CLASS_TEXT |
-                            InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-                    break;
-                case AutofillElement.HINT_PASSWORD:
-                    structure.setAutofillHints(new String[] { View.AUTOFILL_HINT_PASSWORD });
-                    structure.setInputType(InputType.TYPE_CLASS_TEXT |
-                            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD);
-                    break;
-                case AutofillElement.HINT_URL:
-                    structure.setInputType(InputType.TYPE_CLASS_TEXT |
-                            InputType.TYPE_TEXT_VARIATION_URI);
-                    break;
-                case AutofillElement.HINT_USERNAME:
-                    structure.setAutofillHints(new String[] { View.AUTOFILL_HINT_USERNAME });
-                    structure.setInputType(InputType.TYPE_CLASS_TEXT |
-                            InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT);
-                    break;
-            }
-
-            switch (element.inputType) {
-                case AutofillElement.INPUT_TYPE_NUMBER:
-                    structure.setInputType(InputType.TYPE_CLASS_NUMBER);
-                    break;
-                case AutofillElement.INPUT_TYPE_PHONE:
-                    structure.setAutofillHints(new String[] { View.AUTOFILL_HINT_PHONE });
-                    structure.setInputType(InputType.TYPE_CLASS_PHONE);
-                    break;
-                default:
-                    break;
-            }
-        }
+        final Autofill.Session autofillSession = mSession.getAutofillSession();
+        autofillSession.fillViewStructure(this, structure, flags);
     }
 
     @Override
@@ -862,7 +845,7 @@ public class GeckoView extends FrameLayout {
     /**
      * Sets whether or not this View participates in Android autofill.
      *
-     * When enabled, this will set an {@link GeckoSession.AutofillDelegate} on the
+     * When enabled, this will set an {@link Autofill.Delegate} on the
      * {@link GeckoSession} for this instance.
      *
      * @param enabled Whether or not Android autofill is enabled for this view.
@@ -888,35 +871,16 @@ public class GeckoView extends FrameLayout {
         return mAutofillEnabled;
     }
 
-    private class AndroidAutofillDelegate implements GeckoSession.AutofillDelegate {
-
-        private AutofillElement findElementWithId(final AutofillElement root, final int id) {
-            if (root.id == id) {
-                return root;
-            }
-
-            for (AutofillElement child : root.children) {
-                final AutofillElement found = findElementWithId(child, id);
-                if (found != null) {
-                    return found;
-                }
-            }
-
-            return null;
-        }
+    private class AndroidAutofillDelegate implements Autofill.Delegate {
 
         private Rect displayRectForId(@NonNull final GeckoSession session,
-                                      @NonNull final int virtualId,
-                                      @Nullable final View view) {
-            final AutofillElement structure = session.getAutofillElements();
-            final AutofillElement element = findElementWithId(structure, virtualId);
-
-            if (element == null) {
+                                      @NonNull final Autofill.Node node) {
+            if (node == null) {
                 return new Rect(0, 0, 0, 0);
             }
 
             final Matrix matrix = new Matrix();
-            final RectF rectF = new RectF(element.dimensions);
+            final RectF rectF = new RectF(node.getDimensions());
             session.getPageToScreenMatrix(matrix);
             matrix.mapRect(rectF);
 
@@ -927,8 +891,8 @@ public class GeckoView extends FrameLayout {
 
         @Override
         public void onAutofill(@NonNull final GeckoSession session,
-                               @GeckoSession.AutofillNotification final int notification,
-                               final int virtualId) {
+                               final int notification,
+                               final Autofill.Node node) {
             ThreadUtils.assertOnUiThread();
             if (Build.VERSION.SDK_INT < 26) {
                 return;
@@ -941,21 +905,27 @@ public class GeckoView extends FrameLayout {
             }
 
             switch (notification) {
-                case AUTOFILL_NOTIFY_STARTED:
+                case Autofill.Notify.SESSION_STARTED:
                     // This line seems necessary for auto-fill to work on the initial page.
+                case Autofill.Notify.SESSION_CANCELED:
                     manager.cancel();
                     break;
-                case AUTOFILL_NOTIFY_COMMITTED:
+                case Autofill.Notify.SESSION_COMMITTED:
                     manager.commit();
                     break;
-                case AUTOFILL_NOTIFY_CANCELED:
-                    manager.cancel();
+                case Autofill.Notify.NODE_FOCUSED:
+                    manager.notifyViewEntered(
+                        GeckoView.this, node.getId(),
+                        displayRectForId(session, node));
                     break;
-                case AUTOFILL_NOTIFY_VIEW_ENTERED:
-                    manager.notifyViewEntered(GeckoView.this, virtualId, displayRectForId(session, virtualId, GeckoView.this));
+                case Autofill.Notify.NODE_BLURRED:
+                    manager.notifyViewExited(GeckoView.this, node.getId());
                     break;
-                case AUTOFILL_NOTIFY_VIEW_EXITED:
-                    manager.notifyViewExited(GeckoView.this, virtualId);
+                case Autofill.Notify.NODE_UPDATED:
+                    manager.notifyValueChanged(
+                            GeckoView.this,
+                            node.getId(),
+                            AutofillValue.forText(node.getValue()));
                     break;
             }
         }

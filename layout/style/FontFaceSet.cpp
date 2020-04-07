@@ -19,6 +19,7 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
@@ -31,14 +32,13 @@
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/LoadInfo.h"
-#include "nsAutoPtr.h"
 #include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
 #include "nsDeviceContext.h"
 #include "nsFontFaceLoader.h"
 #include "nsIClassOfService.h"
 #include "nsIConsoleService.h"
 #include "nsIContentPolicy.h"
-#include "nsIContentSecurityPolicy.h"
 #include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
 #include "nsILoadContext.h"
@@ -47,7 +47,6 @@
 #include "nsISupportsPriority.h"
 #include "nsIWebNavigation.h"
 #include "nsNetUtil.h"
-#include "nsIProtocolHandler.h"
 #include "nsIInputStream.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
@@ -212,7 +211,7 @@ void FontFaceSet::ParseFontShorthandForMatching(
   RefPtr<URLExtraData> url = ServoCSSParser::GetURLExtraData(mDocument);
   if (!ServoCSSParser::ParseFontShorthandForMatching(aFont, url, aFamilyList,
                                                      style, stretch, weight)) {
-    aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
+    aRv.ThrowSyntaxError("Invalid font shorthand");
     return;
   }
 
@@ -416,16 +415,6 @@ bool FontFaceSet::HasRuleFontFace(FontFace* aFontFace) {
 }
 #endif
 
-static bool IsPdfJs(nsIPrincipal* aPrincipal) {
-  if (!aPrincipal) {
-    return false;
-  }
-  nsCOMPtr<nsIURI> uri;
-  aPrincipal->GetURI(getter_AddRefs(uri));
-  return uri && uri->GetSpecOrDefault().EqualsLiteral(
-                    "resource://pdf.js/web/viewer.html");
-}
-
 void FontFaceSet::Add(FontFace& aFontFace, ErrorResult& aRv) {
   FlushUserFontSet();
 
@@ -434,7 +423,8 @@ void FontFaceSet::Add(FontFace& aFontFace, ErrorResult& aRv) {
   }
 
   if (aFontFace.HasRule()) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_MODIFICATION_ERR);
+    aRv.ThrowInvalidModificationError(
+        "Can't add face to FontFaceSet that comes from an @font-face rule");
     return;
   }
 
@@ -462,7 +452,7 @@ void FontFaceSet::Add(FontFace& aFontFace, ErrorResult& aRv) {
   if (clonedDoc) {
     // The document is printing, copy the font to the static clone as well.
     nsCOMPtr<nsIPrincipal> principal = mDocument->GetPrincipal();
-    if (principal->IsSystemPrincipal() || IsPdfJs(principal)) {
+    if (principal->IsSystemPrincipal() || nsContentUtils::IsPDFJS(principal)) {
       ErrorResult rv;
       clonedDoc->Fonts()->Add(aFontFace, rv);
       MOZ_ASSERT(!rv.Failed());
@@ -655,9 +645,8 @@ nsresult FontFaceSet::StartLoad(gfxUserFontEntry* aUserFontEntry,
   rv = NS_NewStreamLoader(getter_AddRefs(streamLoader), fontLoader, fontLoader);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mozilla::net::PredictorLearn(
-      aFontFaceSrc->mURI->get(), mDocument->GetDocumentURI(),
-      nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE, loadGroup);
+  net::PredictorLearn(aFontFaceSrc->mURI->get(), mDocument->GetDocumentURI(),
+                      nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE, loadGroup);
 
   rv = channel->AsyncOpen(streamLoader);
   if (NS_FAILED(rv)) {
@@ -1270,7 +1259,7 @@ nsresult FontFaceSet::LogMessage(gfxUserFontEntry* aUserFontEntry,
       href.AssignLiteral("unknown");
     }
 #endif
-    href.AssignLiteral("unknown");
+    // Leave href empty if we don't know how to get the correct sheet.
   }
 
   nsresult rv;

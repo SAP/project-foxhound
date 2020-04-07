@@ -4,14 +4,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-HAS_MISC_RULE = True
-
 FINAL_TARGET = '_tests/xpcshell/toolkit/mozapps/update/tests/data'
 
 if not CONFIG['MOZ_SUITE']:
     BROWSER_CHROME_MANIFESTS += ['browser/browser.ini']
+    BROWSER_CHROME_MANIFESTS += ['browser/browser.legacy.ini']
     if CONFIG['MOZ_BITS_DOWNLOAD']:
         BROWSER_CHROME_MANIFESTS += ['browser/browser.bits.ini']
+        BROWSER_CHROME_MANIFESTS += ['browser/browser.legacy.bits.ini']
 
 XPCSHELL_TESTS_MANIFESTS += [
     'unit_aus_update/xpcshell.ini',

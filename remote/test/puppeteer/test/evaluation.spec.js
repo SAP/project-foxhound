@@ -16,17 +16,10 @@
 
 const utils = require('./utils');
 
-let asyncawait = true;
-try {
-  new Function('async function foo() {await 1}');
-} catch (e) {
-  asyncawait = false;
-}
-
 const bigint = typeof BigInt !== 'undefined';
 
 module.exports.addTests = function({testRunner, expect}) {
-  const {describe, xdescribe, fdescribe} = testRunner;
+  const {describe, xdescribe, fdescribe, describe_fails_ffox} = testRunner;
   const {it, fit, xit, it_fails_ffox} = testRunner;
   const {beforeAll, beforeEach, afterAll, afterEach} = testRunner;
 
@@ -71,17 +64,15 @@ module.exports.addTests = function({testRunner, expect}) {
       await page.goto(server.PREFIX + '/global-var.html');
       expect(await page.evaluate('globalVar')).toBe(123);
     });
-    it_fails_ffox('should return undefined for objects with symbols', async({page, server}) => {
+    it('should return undefined for objects with symbols', async({page, server}) => {
       expect(await page.evaluate(() => [Symbol('foo4')])).toBe(undefined);
     });
-    (asyncawait ? it : xit)('should work with function shorthands', async({page, server}) => {
-      // trick node6 transpiler to not touch our object.
-      // TODO(lushnikov): remove eval once Node6 is dropped.
-      const a = eval(`({
+    it('should work with function shorthands', async({page, server}) => {
+      const a = {
         sum(a, b) { return a + b; },
 
         async mult(a, b) { return a * b; }
-      })`);
+      };
       expect(await page.evaluate(a.sum, 1, 2)).toBe(3);
       expect(await page.evaluate(a.mult, 2, 4)).toBe(8);
     });
@@ -89,7 +80,7 @@ module.exports.addTests = function({testRunner, expect}) {
       const result = await page.evaluate(a => a['中文字符'], {'中文字符': 42});
       expect(result).toBe(42);
     });
-    it('should throw when evaluation triggers reload', async({page, server}) => {
+    it_fails_ffox('should throw when evaluation triggers reload', async({page, server}) => {
       let error = null;
       await page.evaluate(() => {
         location.reload();
@@ -109,7 +100,7 @@ module.exports.addTests = function({testRunner, expect}) {
       await page.goto(server.EMPTY_PAGE);
       expect(await frameEvaluation).toBe(42);
     });
-    it('should work from-inside an exposed function', async({page, server}) => {
+    it_fails_ffox('should work from-inside an exposed function', async({page, server}) => {
       // Setup inpage callback, which calls Page.evaluate
       await page.exposeFunction('callController', async function(a, b) {
         return await page.evaluate((a, b) => a * b, a, b);
@@ -121,9 +112,9 @@ module.exports.addTests = function({testRunner, expect}) {
     });
     it('should reject promise with exception', async({page, server}) => {
       let error = null;
-      await page.evaluate(() => not.existing.object.property).catch(e => error = e);
+      await page.evaluate(() => not_existing_object.property).catch(e => error = e);
       expect(error).toBeTruthy();
-      expect(error.message).toContain('not is not defined');
+      expect(error.message).toContain('not_existing_object');
     });
     it('should support thrown strings as error messages', async({page, server}) => {
       let error = null;
@@ -170,10 +161,10 @@ module.exports.addTests = function({testRunner, expect}) {
     it('should properly serialize null fields', async({page}) => {
       expect(await page.evaluate(() => ({a: undefined}))).toEqual({});
     });
-    it('should return undefined for non-serializable objects', async({page, server}) => {
+    it_fails_ffox('should return undefined for non-serializable objects', async({page, server}) => {
       expect(await page.evaluate(() => window)).toBe(undefined);
     });
-    it('should fail for circular object', async({page, server}) => {
+    it_fails_ffox('should fail for circular object', async({page, server}) => {
       const result = await page.evaluate(() => {
         const a = {};
         const b = {a};
@@ -181,6 +172,14 @@ module.exports.addTests = function({testRunner, expect}) {
         return a;
       });
       expect(result).toBe(undefined);
+    });
+    it('should be able to throw a tricky error', async({page, server}) => {
+      const windowHandle = await page.evaluateHandle(() => window);
+      const errorText = await windowHandle.jsonValue().catch(e => e.message);
+      const error = await page.evaluate(errorText => {
+        throw new Error(errorText);
+      }, errorText).catch(e => e);
+      expect(error.message).toContain(errorText);
     });
     it('should accept a string', async({page, server}) => {
       const result = await page.evaluate('1 + 2');
@@ -218,10 +217,14 @@ module.exports.addTests = function({testRunner, expect}) {
       expect(error.message).toContain('JSHandles can be evaluated only in the context they were created');
     });
     it('should simulate a user gesture', async({page, server}) => {
-      const result = await page.evaluate(() => document.execCommand('copy'));
+      const result = await page.evaluate(() => {
+        document.body.appendChild(document.createTextNode('test'));
+        document.execCommand('selectAll');
+        return document.execCommand('copy');
+      });
       expect(result).toBe(true);
     });
-    it('should throw a nice error after a navigation', async({page, server}) => {
+    it_fails_ffox('should throw a nice error after a navigation', async({page, server}) => {
       const executionContext = await page.mainFrame().executionContext();
 
       await Promise.all([
@@ -230,6 +233,25 @@ module.exports.addTests = function({testRunner, expect}) {
       ]);
       const error = await executionContext.evaluate(() => null).catch(e => e);
       expect(error.message).toContain('navigation');
+    });
+    it('should not throw an error when evaluation does a navigation', async({page, server}) => {
+      await page.goto(server.PREFIX + '/one-style.html');
+      const result = await page.evaluate(() => {
+        window.location = '/empty.html';
+        return [42];
+      });
+      expect(result).toEqual([42]);
+    });
+    it('should transfer 100Mb of data from page to node.js', async({page, server}) => {
+      const a = await page.evaluate(() => Array(100 * 1024 * 1024 + 1).join('a'));
+      expect(a.length).toBe(100 * 1024 * 1024);
+    });
+    it('should throw error with detailed information on exception inside promise ', async({page, server}) => {
+      let error = null;
+      await page.evaluate(() => new Promise(() => {
+        throw new Error('Error in promise');
+      })).catch(e => error = e);
+      expect(error.message).toContain('Error in promise');
     });
   });
 

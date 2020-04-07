@@ -47,6 +47,8 @@ body {
     * |  |        JSTerm        |  ↔                 |
     * |  |                      |  ↔                 |
     * |  +----------------------+  ↔                 |
+    * |  |  [EagerEvaluation]   |  ↔                 |
+    * |  +----------------------+  ↔                 |
     * |                            ↔                 |
     * +----------------------------↔                 |
     * |  [Reverse search input]    ↔                 |
@@ -57,6 +59,10 @@ body {
      *   rows/columns to "auto" to make them collapse when the element
      *   they contain is hidden.
     */
+  grid-template-areas: "filter-toolbar           sidebar"
+                       "filter-toolbar-secondary sidebar"
+                       "output-input             sidebar"
+                       "reverse-search           sidebar";
   grid-template-rows: var(--primary-toolbar-height) auto 1fr auto;
   grid-template-columns: minmax(200px, 1fr) minmax(0, auto);
   max-height: 100vh !important;
@@ -68,25 +74,24 @@ body {
 }
 
 .webconsole-filteringbar-wrapper {
-  grid-column: 1 / 2;
-  grid-row: 1 / 3;
+  grid-column: filter-toolbar;
+  grid-row: filter-toolbar / filter-toolbar-secondary;
   grid-template-rows: subgrid;
 }
 
 .webconsole-filterbar-primary {
-  grid-row: 1 / 2;
+  grid-row: filter-toolbar;
 }
 
 /* Only put the filter buttons toolbar on its own row in narrow filterbar layout  */
 .narrow .devtools-toolbar.webconsole-filterbar-secondary {
-  grid-row: 2 / 3;
+  grid-row: filter-toolbar-secondary;
 }
 
 .flexible-output-input {
   display: flex;
   flex-direction: column;
-  grid-column: 1 / 2;
-  grid-row: 3 / 4;
+  grid-area: output-input;
   /* Don't take more height than the grid allows to */
   max-height: 100%;
   overflow: hidden;
@@ -98,7 +103,7 @@ body {
 }
 
 .flexible-output-input > .webconsole-output:not(:empty) {
-  min-height: 19px;
+  min-height: var(--console-row-height);
 }
 
 /* webconsole.css | chrome://devtools/skin/webconsole.css */
@@ -116,43 +121,89 @@ body {
 }
 
 .webconsole-app .jsterm-input-container {
-  min-height: 28px;
-  padding-block-start: 2px;
   overflow-y: auto;
   overflow-x: hidden;
-  flex-grow: 1;
   /* We display the open editor button at the end of the input */
   display: grid;
   grid-template-columns: 1fr auto;
   /* This allows us to not define a column for the CodeMirror container */
   grid-auto-flow: column;
+  /* This element has tabindex="-1" and can briefly show a focus outline when
+   * clicked, before we move the focus to CodeMirror. */
+  outline: none;
 }
 
-.webconsole-app .webconsole-output:empty ~ .jsterm-input-container {
-  border-top: none;
+.webconsole-app:not(.jsterm-editor) .jsterm-input-container {
+  direction: ltr;
+  /* Define the border width and padding as variables so that we can keep
+   * border-top-width, padding and min-height in sync. */
+  --jsterm-border-width: 0;
+  --jsterm-padding-top: 0;
+  --jsterm-padding-bottom: 0;
+  min-height: calc(
+    var(--console-row-height) +
+    var(--jsterm-border-width) +
+    var(--jsterm-padding-top) +
+    var(--jsterm-padding-bottom)
+  );
+  padding-top: var(--jsterm-padding-top);
+  padding-bottom: var(--jsterm-padding-bottom);
+  border-top-color: var(--theme-splitter-color);
+  border-top-width: var(--jsterm-border-width);
+  border-top-style: solid;
+}
+
+.webconsole-app .webconsole-output:not(:empty) ~ .jsterm-input-container {
+  --jsterm-border-width: 1px;
+}
+
+.webconsole-app:not(.jsterm-editor):not(.eager-evaluation) .jsterm-input-container {
+  /* The input should be full-height when eager evaluation is disabled. */
+  flex-grow: 1;
+  --jsterm-padding-top: var(--console-input-extra-padding);
+  --jsterm-padding-bottom: var(--console-input-extra-padding);
+}
+
+.webconsole-app:not(.jsterm-editor).eager-evaluation .jsterm-input-container {
+  --jsterm-padding-top: var(--console-input-extra-padding);
 }
 
 .webconsole-input-openEditorButton {
-  grid-column: -1 / -2;
-  height: 24px;
+  height: var(--console-row-height);
   margin: 0;
+  padding-block: 0;
+}
+
+.webconsole-input-buttons {
+  grid-column: -1 / -2;
+  display: flex;
+}
+
+:root:dir(rtl) .webconsole-input-openEditorButton {
+  transform: scaleX(-1);
 }
 
 .webconsole-input-openEditorButton::before {
   background-image: url("chrome://devtools/skin/images/webconsole/editor.svg");
 }
 
-.reverse-search {
-  grid-column: 1 / 2;
-  grid-row: -1 / -2;
+.webconsole-app .reverse-search {
+  grid-area: reverse-search;
+  /* Those 2 next lines make it so the element isn't impacting the grid column size, but
+     will still take the whole available space. */
+  width: 0;
+  min-width: 100%;
+  /* Let the reverse search buttons wrap to the next line */
+  flex-wrap: wrap;
+  justify-content: end;
   border-top: 1px solid var(--theme-splitter-color);
   border-inline-end: 1px solid var(--theme-splitter-color);
 }
 
+
 .sidebar {
   display: grid;
-  grid-row: 1 / -1;
-  grid-column: -1 / -2;
+  grid-area: sidebar;
   grid-template-rows: subgrid;
   border-inline-start: 1px solid var(--theme-splitter-color);
   background-color: var(--theme-sidebar-background);
@@ -211,6 +262,8 @@ body {
      * |                          ↔                          ↔                 |
      * |                          ↔                          ↔                 |
      * +--------------------------↔                          ↔                 |
+     * |    [Eager evaluation]    ↔                          ↔                 |
+     * +--------------------------↔                          ↔                 |
      * |  [Reverse search input]  ↔                          ↔                 |
      * +-----------------------------------------------------+-----------------+
      *
@@ -219,11 +272,18 @@ body {
      *   rows/columns to "auto" to make them collapse when the element
      *   they contain is hidden.
      */
+  grid-template-areas: "notification      notification               notification"
+                       "editor-toolbar    filter-toolbar             sidebar"
+                       "editor            filter-toolbar-secondary   sidebar"
+                       "editor            output                     sidebar"
+                       "eager-evaluation  output                     sidebar"
+                       "reverse-search    output                     sidebar";
   grid-template-rows:
     auto
     var(--primary-toolbar-height)
     auto
     1fr
+    auto
     auto;
   grid-template-columns: minmax(150px, auto) minmax(200px, 1fr) minmax(0, auto);
 }
@@ -233,34 +293,25 @@ body {
   display: contents;
 }
 
-.jsterm-editor .webconsole-filteringbar-wrapper {
-  grid-row: 2 / 4;
-  grid-column: 2 / 3;
-}
-
-.jsterm-editor .webconsole-filterbar-primary {
-  grid-row: 1 / 2;
-}
-
 .jsterm-editor .webconsole-editor-toolbar {
-  grid-column: 1 / 2;
-  grid-row: 2 / 3;
+  grid-area: editor-toolbar;
   border-inline-end: 1px solid var(--theme-splitter-color);
   display: grid;
   align-items: center;
   /*
      * The following elements are going to be present in the toolbar:
      *   - The run button
+     *   - The evaluation selector button
      *   - The history nav
      *   - A separator
      *   - The close button
      *
      * +-------------------------------------------+
-     * | ▶︎ Run                          ˄ ˅ 🔍 | ✕ |
+     * | ▶︎ Run  Top↕                    ˄ ˅ 🔍 | ✕ |
      * +-------------------------------------------+
      *
      */
-  grid-template-columns: auto 1fr auto auto auto auto auto;
+  grid-template-columns: auto auto 1fr auto auto auto auto auto;
   height: unset;
 }
 
@@ -272,6 +323,7 @@ body {
   align-items: center;
 }
 
+
 .jsterm-editor .webconsole-editor-toolbar .webconsole-editor-toolbar-executeButton::before {
   content: url("chrome://devtools/skin/images/webconsole/run.svg");
   height: 16px;
@@ -281,8 +333,12 @@ body {
   margin-inline-end: 2px;
 }
 
-[dir="rtl"] .jsterm-editor .webconsole-editor-toolbar .webconsole-editor-toolbar-executeButton::before {
-  transform: rotate(180deg);
+.jsterm-editor .webconsole-editor-toolbar .webconsole-evaluation-selector-button {
+  height: 20px;
+  margin-inline-start: 5px;
+  padding-inline: 8px 16px !important;
+  background-position-x: calc(100% - 5px) !important;
+  background-position-y: calc(50% + 1px) !important;
 }
 
 .jsterm-editor .webconsole-editor-toolbar .webconsole-editor-toolbar-history-prevExpressionButton {
@@ -329,13 +385,11 @@ body {
 }
 
 .jsterm-editor .webconsole-output {
-  grid-column: 2 / 3;
-  grid-row: 4 / -1;
+  grid-area: output;
 }
 
 .jsterm-editor .jsterm-input-container {
-  grid-column: 1 / 2;
-  grid-row: 3 / 5;
+  grid-area: editor;
   width: 30vw;
   /* Don't allow the input to be narrower than the grid-column it's in  */
   min-width: 100%;
@@ -345,33 +399,33 @@ body {
   /* Needed as we might have the onboarding UI displayed */
   display: flex;
   flex-direction: column;
+  background-color: var(--theme-sidebar-background);
 }
 
 .jsterm-editor #webconsole-notificationbox {
-  grid-column: -1 / 1;
-  grid-row: 1 / 2;
+  grid-area: notification;
 }
 
 .jsterm-editor .jsterm-input-container > .CodeMirror {
   flex: 1;
   padding-inline-start: 0;
+  font-size: var(--theme-code-font-size);
+  line-height: var(--theme-code-line-height);
   background-image: none;
 }
 
-.jsterm-editor .sidebar {
-  grid-row: 2 / -1;
+.jsterm-editor .eager-evaluation-result {
+  grid-area: eager-evaluation;
+  /* The next 2 lines make it so the element isn't impacting the grid column size, but
+    will still take the whole available space. */
+  min-width: 100%;
+  width: 0;
 }
 
 .jsterm-editor .editor-resizer {
-  grid-column: 1 / 2;
+  grid-column: editor;
   /* We want the splitter to cover the whole column (minus self-xss message) */
-  grid-row: 2 / -1;
-}
-
-.jsterm-editor .sidebar-resizer {
-  grid-column: -1 / -2;
-  /* We want the splitter to cover the whole column (minus self-xss message) */
-  grid-row: 2 / -1;
+  grid-row: editor / reverse-search;
 }
 
 .editor-onboarding {

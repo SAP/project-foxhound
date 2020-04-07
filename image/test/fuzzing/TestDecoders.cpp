@@ -14,7 +14,6 @@
 #include "nsCOMPtr.h"
 #include "nsIInputStream.h"
 #include "nsIRunnable.h"
-#include "nsIStringStream.h"
 #include "nsIThread.h"
 #include "mozilla/RefPtr.h"
 #include "nsString.h"
@@ -56,8 +55,8 @@ class DecodeToSurfaceRunnableFuzzing : public Runnable {
     if (!mSurface) return;
 
     if (mSurface->GetType() == SurfaceType::DATA) {
-      if (mSurface->GetFormat() == SurfaceFormat::B8G8R8X8 ||
-          mSurface->GetFormat() == SurfaceFormat::B8G8R8A8) {
+      if (mSurface->GetFormat() == SurfaceFormat::OS_RGBX ||
+          mSurface->GetFormat() == SurfaceFormat::OS_RGBA) {
         DUMMY_IF(IntSize(1, 1) == mSurface->GetSize());
         DUMMY_IF(IsSolidColor(mSurface, BGRAColor::Green(), 1));
       }
@@ -79,7 +78,8 @@ static int RunDecodeToSurfaceFuzzing(nsCOMPtr<nsIInputStream> inputStream,
   }
 
   nsCOMPtr<nsIThread> thread;
-  nsresult rv = NS_NewThread(getter_AddRefs(thread), nullptr);
+  nsresult rv =
+      NS_NewNamedThread("Decoder Test", getter_AddRefs(thread), nullptr);
   MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
 
   // We run the DecodeToSurface tests off-main-thread to ensure that

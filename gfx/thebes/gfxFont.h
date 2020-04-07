@@ -37,6 +37,7 @@
 #include "nsFontMetrics.h"
 #include "mozilla/ServoUtils.h"
 #include "TextDrawTarget.h"
+#include "ThebesRLBoxTypes.h"
 
 typedef struct _cairo cairo_t;
 typedef struct _cairo_scaled_font cairo_scaled_font_t;
@@ -346,7 +347,7 @@ class gfxFontCache final : private gfxFontCacheExpirationTracker {
 
  protected:
   class MemoryReporter final : public nsIMemoryReporter {
-    ~MemoryReporter() {}
+    ~MemoryReporter() = default;
 
    public:
     NS_DECL_ISUPPORTS
@@ -355,7 +356,7 @@ class gfxFontCache final : private gfxFontCacheExpirationTracker {
 
   // Observer for notifications that the font cache cares about
   class Observer final : public nsIObserver {
-    ~Observer() {}
+    ~Observer() = default;
 
    public:
     NS_DECL_ISUPPORTS
@@ -398,7 +399,7 @@ class gfxFontCache final : private gfxFontCacheExpirationTracker {
     // blank. The caller of Put() will fill this in.
     explicit HashEntry(KeyTypePointer aStr) : mFont(nullptr) {}
     HashEntry(const HashEntry& toCopy) : mFont(toCopy.mFont) {}
-    ~HashEntry() {}
+    ~HashEntry() = default;
 
     bool KeyEquals(const KeyTypePointer aKey) const;
     static KeyTypePointer KeyToPointer(KeyType aKey) { return &aKey; }
@@ -1070,7 +1071,7 @@ class gfxShapedText {
   // starting at the given index.
   class DetailedGlyphStore {
    public:
-    DetailedGlyphStore() : mLastUsed(0) {}
+    DetailedGlyphStore() = default;
 
     // This is optimized for the most common calling patterns:
     // we rarely need random access to the records, access is most commonly
@@ -1168,7 +1169,7 @@ class gfxShapedText {
     // Records the most recently used index into mOffsetToIndex, so that
     // we can support sequential access more quickly than just doing
     // a binary search each time.
-    nsTArray<DGRec>::index_type mLastUsed;
+    nsTArray<DGRec>::index_type mLastUsed = 0;
   };
 
   mozilla::UniquePtr<DetailedGlyphStore> mDetailedGlyphs;
@@ -1681,7 +1682,7 @@ class gfxFont {
   nsExpirationState* GetExpirationState() { return &mExpirationState; }
 
   // Get the glyphID of a space
-  virtual uint32_t GetSpaceGlyph() = 0;
+  uint16_t GetSpaceGlyph() { return mSpaceGlyph; }
 
   gfxGlyphExtents* GetOrCreateGlyphExtents(int32_t aAppUnitsPerDevUnit);
 
@@ -1886,7 +1887,7 @@ class gfxFont {
   // directly to the destination (found from the buffer's parameters).
   template <FontComplexityT FC>
   void DrawOneGlyph(uint32_t aGlyphID, const mozilla::gfx::Point& aPt,
-                    GlyphBufferAzure& aBuffer, bool* aEmittedGlyphs) const;
+                    GlyphBufferAzure& aBuffer, bool* aEmittedGlyphs);
 
   // Helper for DrawOneGlyph to handle missing glyphs, rendering either
   // nothing (for default-ignorables) or a missing-glyph hexbox.
@@ -1930,7 +1931,10 @@ class gfxFont {
   bool HasSubstitutionRulesWithSpaceLookups(Script aRunScript);
 
   // do spaces participate in shaping rules? if so, can't used word cache
-  bool SpaceMayParticipateInShaping(Script aRunScript);
+  // Note that this function uses HasGraphiteSpaceContextuals, so it can only
+  // return a "hint" to the correct answer. The  calling code must ensure it
+  // performs safe actions independent of the value returned.
+  tainted_boolean_hint SpaceMayParticipateInShaping(Script aRunScript);
 
   // For 8-bit text, expand to 16-bit and then call the following method.
   bool ShapeText(DrawTarget* aContext, const uint8_t* aText,
@@ -2052,7 +2056,7 @@ class gfxFont {
     CacheHashEntry(const CacheHashEntry& toCopy) {
       NS_ERROR("Should not be called");
     }
-    ~CacheHashEntry() {}
+    ~CacheHashEntry() = default;
 
     bool KeyEquals(const KeyTypePointer aKey) const;
 
@@ -2111,6 +2115,9 @@ class gfxFont {
   float mFUnitsConvFactor;
 
   nsExpirationState mExpirationState;
+
+  // Glyph ID of the font's <space> glyph, zero if missing
+  uint16_t mSpaceGlyph = 0;
 
   // the AA setting requested for this font - may affect glyph bounds
   AntialiasOption mAntialiasOption;

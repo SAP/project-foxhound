@@ -25,8 +25,6 @@ class WaylandDMABUFTextureHostOGL : public TextureHost {
                               const SurfaceDescriptor& aDesc);
   virtual ~WaylandDMABUFTextureHostOGL();
 
-  void DeallocateDeviceData() override;
-
   void SetTextureSourceProvider(TextureSourceProvider* aProvider) override;
 
   bool Lock() override;
@@ -51,6 +49,10 @@ class WaylandDMABUFTextureHostOGL : public TextureHost {
 #ifdef MOZ_LAYERS_HAVE_LOG
   const char* Name() override { return "WaylandDMABUFTextureHostOGL"; }
 #endif
+  uint32_t NumSubTextures() override;
+
+  gfx::YUVColorSpace GetYUVColorSpace() const override;
+  gfx::ColorRange GetColorRange() const override;
 
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
@@ -58,15 +60,19 @@ class WaylandDMABUFTextureHostOGL : public TextureHost {
   void PushResourceUpdates(wr::TransactionBuilder& aResources,
                            ResourceUpdateOp aOp,
                            const Range<wr::ImageKey>& aImageKeys,
-                           const wr::ExternalImageId& aExtID) override;
+                           const wr::ExternalImageId& aExtID,
+                           const bool aPreferCompositorSurface) override;
 
   void PushDisplayItems(wr::DisplayListBuilder& aBuilder,
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys) override;
 
+ private:
+  GLTextureSource* CreateTextureSourceForPlane(size_t aPlane);
+
  protected:
-  RefPtr<EGLImageTextureSource> mTextureSource;
+  RefPtr<GLTextureSource> mTextureSource;
   RefPtr<WaylandDMABufSurface> mSurface;
 };
 

@@ -29,13 +29,16 @@
 #  define MOZ_GL_DEBUG 1
 #endif
 
-#include "../../mfbt/RefPtr.h"
-#include "../../mfbt/UniquePtr.h"
-#include "../../mfbt/ThreadLocal.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/ThreadLocal.h"
 
+#include "nsTArray.h"
 #include "GLDefs.h"
 #include "GLLibraryLoader.h"
 #include "nsISupportsImpl.h"
+#include "nsRegionFwd.h"
+#include "nsString.h"
 #include "plstr.h"
 #include "GLContextTypes.h"
 #include "SurfaceTypes.h"
@@ -723,11 +726,11 @@ class GLContext : public GenericAtomicRefCounted,
 
   // Do whatever tear-down is necessary after drawing to our offscreen FBO,
   // if it's bound.
-  void AfterGLDrawCall();
+  void AfterGLDrawCall() { mHeavyGLCallsSinceLastFlush = true; }
 
   // Do whatever setup is necessary to read from our offscreen FBO, if it's
   // bound.
-  void BeforeGLReadCall();
+  void BeforeGLReadCall() {}
 
   // Do whatever tear-down is necessary after reading from our offscreen FBO,
   // if it's bound.
@@ -3352,6 +3355,16 @@ class GLContext : public GenericAtomicRefCounted,
   virtual bool SwapBuffers() { return false; }
 
   /**
+   * Stores a damage region (in origin bottom left coordinates), which
+   * makes the next SwapBuffers call do eglSwapBuffersWithDamage if supported.
+   *
+   * Note that even if only part of the context is damaged, the entire buffer
+   * needs to be filled with up-to-date contents. This region is only a hint
+   * telling the system compositor which parts of the buffer were updated.
+   */
+  virtual void SetDamage(const nsIntRegion& aDamageRegion) {}
+
+  /**
    * Defines a two-dimensional texture image for context target surface
    */
   virtual bool BindTexImage() { return false; }
@@ -3434,9 +3447,13 @@ class GLContext : public GenericAtomicRefCounted,
   virtual GLenum GetPreferredARGB32Format() const { return LOCAL_GL_RGBA; }
 
   virtual GLenum GetPreferredEGLImageTextureTarget() const {
+#ifdef MOZ_WAYLAND
+    return LOCAL_GL_TEXTURE_2D;
+#else
     return IsExtensionSupported(OES_EGL_image_external)
                ? LOCAL_GL_TEXTURE_EXTERNAL
                : LOCAL_GL_TEXTURE_2D;
+#endif
   }
 
   virtual bool RenewSurface(widget::CompositorWidget* aWidget) { return false; }
@@ -3550,8 +3567,6 @@ class GLContext : public GenericAtomicRefCounted,
   GLScreenBuffer* Screen() const { return mScreen.get(); }
 
   bool WorkAroundDriverBugs() const { return mWorkAroundDriverBugs; }
-
-  bool IsDrawingToDefaultFramebuffer();
 
   bool IsOffscreenSizeAllowed(const gfx::IntSize& aSize) const;
 

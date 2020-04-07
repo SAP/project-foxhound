@@ -16,8 +16,6 @@ user_pref("browser.contentHandlers.types.5.uri", "http://127.0.0.1/rss?url=%s");
 user_pref("browser.link.open_newwindow", 2);
 user_pref("browser.newtabpage.activity-stream.default.sites", "");
 user_pref("browser.newtabpage.activity-stream.telemetry", false);
-user_pref("browser.ping-centre.production.endpoint", "https://127.0.0.1/pingcentre/dummy/");
-user_pref("browser.ping-centre.staging.endpoint", "https://127.0.0.1/pingcentre/dummy/");
 user_pref("browser.reader.detectedFirstArticle", true);
 user_pref("browser.safebrowsing.blockedURIs.enabled", false);
 user_pref("browser.safebrowsing.downloads.enabled", false);
@@ -31,12 +29,8 @@ user_pref("browser.safebrowsing.provider.google4.gethashURL", "http://127.0.0.1/
 user_pref("browser.safebrowsing.provider.google4.updateURL", "http://127.0.0.1/safebrowsing4-dummy/update");
 user_pref("browser.safebrowsing.provider.mozilla.gethashURL", "http://127.0.0.1/safebrowsing-dummy/gethash");
 user_pref("browser.safebrowsing.provider.mozilla.updateURL", "http://127.0.0.1/safebrowsing-dummy/update");
-user_pref("browser.search.geoip.url", "");
 user_pref("browser.shell.checkDefaultBrowser", false);
 user_pref("browser.tabs.remote.autostart", true);
-// Turn off the location bar search suggestions opt-in.  It interferes with
-// tests that don't expect it to be there.
-user_pref("browser.urlbar.userMadeSearchSuggestionsChoice", true);
 user_pref("browser.warnOnQuit", false);
 user_pref("datareporting.healthreport.documentServerURI", "http://127.0.0.1/healthreport/");
 user_pref("devtools.chrome.enabled", false);
@@ -53,7 +47,6 @@ user_pref("extensions.blocklist.enabled", false);
 user_pref("extensions.blocklist.url", "http://127.0.0.1/extensions-dummy/blocklistURL");
 user_pref("extensions.checkCompatibility", false);
 user_pref("extensions.getAddons.get.url", "http://127.0.0.1/extensions-dummy/repositoryGetURL");
-user_pref("extensions.getAddons.compatOverides.url", "http://127.0.0.1/extensions-dummy/repositoryCompatOverridesURL");
 user_pref("extensions.getAddons.search.browseURL", "http://127.0.0.1/extensions-dummy/repositoryBrowseURL");
 user_pref("extensions.hotfix.url", "http://127.0.0.1/extensions-dummy/hotfixURL");
 user_pref("extensions.systemAddon.update.url", "http://127.0.0.1/dummy-system-addons.xml");

@@ -42,11 +42,6 @@
 #include "mozilla/Preferences.h"
 #include <algorithm>
 
-#ifdef MOZ_XUL
-#  include "nsIAutoCompleteInput.h"
-#  include "nsIAutoCompletePopup.h"
-#endif
-
 using namespace mozilla;
 using namespace mozilla::places;
 
@@ -59,6 +54,7 @@ using namespace mozilla::places;
 
 // preference ID strings
 #define PREF_HISTORY_ENABLED "places.history.enabled"
+#define PREF_MATCH_DIACRITICS "places.search.matchDiacritics"
 
 #define PREF_FREC_NUM_VISITS "places.frecency.numVisits"
 #define PREF_FREC_NUM_VISITS_DEF 10
@@ -135,22 +131,17 @@ using namespace mozilla::places;
 // Max number of containers, used to initialize the params hash.
 #define HISTORY_DATE_CONT_LENGTH 8
 
-// Initial length of the embed visits cache.
-#define EMBED_VISITS_INITIAL_CACHE_LENGTH 64
-
 // Initial length of the recent events cache.
 #define RECENT_EVENTS_INITIAL_CACHE_LENGTH 64
 
 // Observed topics.
-#ifdef MOZ_XUL
-#  define TOPIC_AUTOCOMPLETE_FEEDBACK_INCOMING "autocomplete-will-enter-text"
-#endif
 #define TOPIC_IDLE_DAILY "idle-daily"
 #define TOPIC_PREF_CHANGED "nsPref:changed"
 #define TOPIC_PROFILE_TEARDOWN "profile-change-teardown"
 #define TOPIC_PROFILE_CHANGE "profile-before-change"
 
 static const char* kObservedPrefs[] = {PREF_HISTORY_ENABLED,
+                                       PREF_MATCH_DIACRITICS,
                                        PREF_FREC_NUM_VISITS,
                                        PREF_FREC_FIRST_BUCKET_CUTOFF,
                                        PREF_FREC_SECOND_BUCKET_CUTOFF,
@@ -385,8 +376,8 @@ nsNavHistory::nsNavHistory()
       mRecentTyped(RECENT_EVENTS_INITIAL_CACHE_LENGTH),
       mRecentLink(RECENT_EVENTS_INITIAL_CACHE_LENGTH),
       mRecentBookmark(RECENT_EVENTS_INITIAL_CACHE_LENGTH),
-      mEmbedVisits(EMBED_VISITS_INITIAL_CACHE_LENGTH),
       mHistoryEnabled(true),
+      mMatchDiacritics(false),
       mNumVisitsForFrecency(10),
       mDecayFrecencyPendingCount(0),
       mTagsFolder(-1),
@@ -450,9 +441,6 @@ nsresult nsNavHistory::Init() {
   if (obsSvc) {
     (void)obsSvc->AddObserver(this, TOPIC_PLACES_CONNECTION_CLOSED, true);
     (void)obsSvc->AddObserver(this, TOPIC_IDLE_DAILY, true);
-#ifdef MOZ_XUL
-    (void)obsSvc->AddObserver(this, TOPIC_AUTOCOMPLETE_FEEDBACK_INCOMING, true);
-#endif
   }
 
   // Don't add code that can fail here! Do it up above, before we add our
@@ -575,6 +563,7 @@ nsresult nsNavHistory::GetOrCreateIdForPage(nsIURI* aURI, int64_t* _pageId,
 void nsNavHistory::LoadPrefs() {
   // History preferences.
   mHistoryEnabled = Preferences::GetBool(PREF_HISTORY_ENABLED, true);
+  mMatchDiacritics = Preferences::GetBool(PREF_MATCH_DIACRITICS, false);
 
   // Frecency preferences.
 #define FRECENCY_PREF(_prop, _pref) \
@@ -2251,51 +2240,7 @@ nsNavHistory::Observe(nsISupports* aSubject, const char* aTopic,
     mCanNotify = false;
     mObservers.Clear();
   }
-#ifdef MOZ_XUL
-  else if (strcmp(aTopic, TOPIC_AUTOCOMPLETE_FEEDBACK_INCOMING) == 0) {
-    nsCOMPtr<nsIAutoCompleteInput> input = do_QueryInterface(aSubject);
-    if (!input) return NS_OK;
 
-    // If the source is a private window, don't add any input history.
-    bool isPrivate;
-    nsresult rv = input->GetInPrivateContext(&isPrivate);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (isPrivate) return NS_OK;
-
-    nsCOMPtr<nsIAutoCompletePopup> popup;
-    input->GetPopup(getter_AddRefs(popup));
-    if (!popup) {
-      nsCOMPtr<Element> popupEl;
-      input->GetPopupElement(getter_AddRefs(popupEl));
-      if (!popupEl) {
-        return NS_OK;
-      }
-      popup = popupEl->AsAutoCompletePopup();
-      if (!popup) {
-        return NS_OK;
-      }
-    }
-
-    nsCOMPtr<nsIAutoCompleteController> controller;
-    input->GetController(getter_AddRefs(controller));
-    if (!controller) return NS_OK;
-
-    // Don't bother if the popup is closed
-    bool open;
-    rv = popup->GetPopupOpen(&open);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (!open) return NS_OK;
-
-    // Ignore if nothing selected from the popup
-    int32_t selectedIndex;
-    rv = popup->GetSelectedIndex(&selectedIndex);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (selectedIndex == -1) return NS_OK;
-
-    rv = AutoCompleteFeedback(selectedIndex, controller);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-#endif
   else if (strcmp(aTopic, TOPIC_PREF_CHANGED) == 0) {
     LoadPrefs();
   }
@@ -2811,29 +2756,6 @@ nsresult nsNavHistory::FilterResultSet(
       break;
   }
 
-  return NS_OK;
-}
-
-void nsNavHistory::registerEmbedVisit(nsIURI* aURI, int64_t aTime) {
-  NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
-
-  VisitHashKey* visit = mEmbedVisits.PutEntry(aURI);
-  if (!visit) {
-    NS_WARNING("Unable to register a EMBED visit.");
-    return;
-  }
-  visit->visitTime = aTime;
-}
-
-bool nsNavHistory::hasEmbedVisit(nsIURI* aURI) {
-  NS_ASSERTION(NS_IsMainThread(), "This can only be called on the main thread");
-
-  return !!mEmbedVisits.GetEntry(aURI);
-}
-
-NS_IMETHODIMP
-nsNavHistory::ClearEmbedVisits() {
-  mEmbedVisits.Clear();
   return NS_OK;
 }
 
@@ -3441,8 +3363,8 @@ nsresult nsNavHistory::UpdateFrecency(int64_t aPlaceId) {
   }
 
   nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
-      updateFrecencyStmt.forget(),
-      updateHiddenStmt.forget(),
+      ToRefPtr(std::move(updateFrecencyStmt)),
+      ToRefPtr(std::move(updateHiddenStmt)),
   };
   nsCOMPtr<mozIStoragePendingStatement> ps;
   rv = conn->ExecuteAsync(stmts, nullptr, getter_AddRefs(ps));
@@ -3457,46 +3379,6 @@ nsresult nsNavHistory::UpdateFrecency(int64_t aPlaceId) {
 
   return NS_OK;
 }
-
-#ifdef MOZ_XUL
-
-nsresult nsNavHistory::AutoCompleteFeedback(
-    int32_t aIndex, nsIAutoCompleteController* aController) {
-  nsCOMPtr<mozIStorageAsyncStatement> stmt = mDB->GetAsyncStatement(
-      "INSERT OR REPLACE INTO moz_inputhistory "
-      // use_count will asymptotically approach the max of 10.
-      "SELECT h.id, IFNULL(i.input, :input_text), IFNULL(i.use_count, 0) * .9 "
-      "+ 1 "
-      "FROM moz_places h "
-      "LEFT JOIN moz_inputhistory i ON i.place_id = h.id AND i.input = "
-      ":input_text "
-      "WHERE url_hash = hash(:page_url) AND url = :page_url ");
-  NS_ENSURE_STATE(stmt);
-
-  nsAutoString input;
-  nsresult rv = aController->GetSearchString(input);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->BindStringByName(NS_LITERAL_CSTRING("input_text"), input);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsAutoString url;
-  rv = aController->GetValueAt(aIndex, url);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = URIBinder::Bind(stmt, NS_LITERAL_CSTRING("page_url"),
-                       NS_ConvertUTF16toUTF8(url));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // We do the update asynchronously and we do not care about failures.
-  RefPtr<AsyncStatementCallbackNotifier> callback =
-      new AsyncStatementCallbackNotifier(TOPIC_AUTOCOMPLETE_FEEDBACK_UPDATED);
-  nsCOMPtr<mozIStoragePendingStatement> canceler;
-  rv = stmt->ExecuteAsync(callback, getter_AddRefs(canceler));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
-}
-
-#endif
 
 nsICollation* nsNavHistory::GetCollation() {
   if (mCollation) return mCollation;

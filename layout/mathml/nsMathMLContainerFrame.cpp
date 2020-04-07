@@ -74,9 +74,7 @@ class nsDisplayMathMLError : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayMathMLError);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayMathMLError() { MOZ_COUNT_DTOR(nsDisplayMathMLError); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLError)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLError", TYPE_MATHML_ERROR)
@@ -158,7 +156,7 @@ void nsMathMLContainerFrame::GetReflowAndBoundingMetricsFor(
 void nsMathMLContainerFrame::ClearSavedChildMetrics() {
   nsIFrame* childFrame = mFrames.FirstChild();
   while (childFrame) {
-    childFrame->DeleteProperty(HTMLReflowOutputProperty());
+    childFrame->RemoveProperty(HTMLReflowOutputProperty());
     childFrame = childFrame->GetNextSibling();
   }
 }
@@ -398,8 +396,9 @@ nsMathMLContainerFrame::Stretch(DrawTarget* aDrawTarget,
           aDesiredStretchSize.Width() = mBoundingMetrics.width;
           aDesiredStretchSize.mBoundingMetrics.width = mBoundingMetrics.width;
 
-          nscoord dx = (StyleVisibility()->mDirection ? coreData.trailingSpace
-                                                      : coreData.leadingSpace);
+          nscoord dx = StyleVisibility()->mDirection == StyleDirection::Rtl
+                           ? coreData.trailingSpace
+                           : coreData.leadingSpace;
           if (dx != 0) {
             mBoundingMetrics.leftBearing += dx;
             mBoundingMetrics.rightBearing += dx;
@@ -1114,7 +1113,8 @@ class nsMathMLContainerFrame::RowChildFrameIterator {
         mChildFrameType(eMathMLFrameType_UNKNOWN),
         mCarrySpace(0),
         mFromFrameType(eMathMLFrameType_UNKNOWN),
-        mRTL(aParentFrame->StyleVisibility()->mDirection) {
+        mRTL(aParentFrame->StyleVisibility()->mDirection ==
+             StyleDirection::Rtl) {
     if (!mRTL) {
       mChildFrame = aParentFrame->mFrames.FirstChild();
     } else {

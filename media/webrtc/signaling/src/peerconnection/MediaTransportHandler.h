@@ -12,10 +12,10 @@
 #include "dtlsidentity.h"    // For DtlsDigest
 #include "mozilla/dom/RTCPeerConnectionBinding.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
-#include "nricectx.h"               // Need some enums
-#include "nsDOMNavigationTiming.h"  // DOMHighResTimeStamp
+#include "nricectx.h"  // Need some enums
 #include "signaling/src/common/CandidateInfo.h"
 #include "nr_socket_proxy_config.h"
+#include "RTCStatsReport.h"
 
 #include "nsString.h"
 
@@ -115,21 +115,17 @@ class MediaTransportHandler {
 
   virtual void UpdateNetworkState(bool aOnline) = 0;
 
-  // dom::RTCStatsReportInternal doesn't have move semantics.
-  typedef MozPromise<std::unique_ptr<dom::RTCStatsReportInternal>, nsresult,
-                     true>
-      StatsPromise;
-  virtual RefPtr<StatsPromise> GetIceStats(
-      const std::string& aTransportId, DOMHighResTimeStamp aNow,
-      std::unique_ptr<dom::RTCStatsReportInternal>&& aReport) = 0;
+  virtual RefPtr<dom::RTCStatsPromise> GetIceStats(
+      const std::string& aTransportId, DOMHighResTimeStamp aNow) = 0;
 
   sigslot::signal2<const std::string&, const CandidateInfo&> SignalCandidate;
-  sigslot::signal1<const std::string&> SignalAlpnNegotiated;
+  sigslot::signal2<const std::string&, bool> SignalAlpnNegotiated;
   sigslot::signal1<dom::RTCIceGatheringState> SignalGatheringStateChange;
   sigslot::signal1<dom::RTCIceConnectionState> SignalConnectionStateChange;
 
-  sigslot::signal2<const std::string&, MediaPacket&> SignalPacketReceived;
-  sigslot::signal2<const std::string&, MediaPacket&> SignalEncryptedSending;
+  sigslot::signal2<const std::string&, const MediaPacket&> SignalPacketReceived;
+  sigslot::signal2<const std::string&, const MediaPacket&>
+      SignalEncryptedSending;
   sigslot::signal2<const std::string&, TransportLayer::State> SignalStateChange;
   sigslot::signal2<const std::string&, TransportLayer::State>
       SignalRtcpStateChange;
@@ -144,9 +140,10 @@ class MediaTransportHandler {
   void OnAlpnNegotiated(const std::string& aAlpn);
   void OnGatheringStateChange(dom::RTCIceGatheringState aState);
   void OnConnectionStateChange(dom::RTCIceConnectionState aState);
-  void OnPacketReceived(const std::string& aTransportId, MediaPacket& aPacket);
+  void OnPacketReceived(const std::string& aTransportId,
+                        const MediaPacket& aPacket);
   void OnEncryptedSending(const std::string& aTransportId,
-                          MediaPacket& aPacket);
+                          const MediaPacket& aPacket);
   void OnStateChange(const std::string& aTransportId,
                      TransportLayer::State aState);
   void OnRtcpStateChange(const std::string& aTransportId,

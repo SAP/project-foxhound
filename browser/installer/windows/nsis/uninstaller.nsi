@@ -99,6 +99,7 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro GetInstallerRegistryPref
 
 !insertmacro un.ChangeMUIHeaderImage
+!insertmacro un.ChangeMUISidebarImage
 !insertmacro un.CheckForFilesInUse
 !insertmacro un.CleanUpdateDirectories
 !insertmacro un.CleanVirtualStore
@@ -333,12 +334,13 @@ Section "Uninstall"
   ${un.RegCleanFileHandler}  ".shtml" "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".xht"   "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".xhtml" "FirefoxHTML-$AppUserModelID"
-  ${un.RegCleanFileHandler}  ".oga"  "FirefoxHTML-$AppUserModelID"
-  ${un.RegCleanFileHandler}  ".ogg"  "FirefoxHTML-$AppUserModelID"
-  ${un.RegCleanFileHandler}  ".ogv"  "FirefoxHTML-$AppUserModelID"
-  ${un.RegCleanFileHandler}  ".pdf"  "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".oga"   "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".ogg"   "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".ogv"   "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".pdf"   "FirefoxHTML-$AppUserModelID"
   ${un.RegCleanFileHandler}  ".webm"  "FirefoxHTML-$AppUserModelID"
-  ${un.RegCleanFileHandler} ".svg" "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".svg"   "FirefoxHTML-$AppUserModelID"
+  ${un.RegCleanFileHandler}  ".webp"  "FirefoxHTML-$AppUserModelID"
 
   SetShellVarContext all  ; Set SHCTX to HKLM
   ${un.GetSecondInstallPath} "Software\Mozilla" $R9
@@ -400,6 +402,18 @@ Section "Uninstall"
     ${EndIf}
   ${EndIf}
 
+  ; Remove our HKCR/Applications key, if it's for this installation.
+  ReadRegStr $0 HKLM "Software\Classes\Applications\${FileMainEXE}\DefaultIcon" ""
+  StrCpy $0 $0 -2
+  ${If} $0 == "$INSTDIR\${FileMainEXE}"
+    DeleteRegKey HKLM "Software\Classes\Applications\${FileMainEXE}"
+  ${EndIf}
+  ReadRegStr $0 HKCU "Software\Classes\Applications\${FileMainEXE}\DefaultIcon" ""
+  StrCpy $0 $0 -2
+  ${If} $0 == "$INSTDIR\${FileMainEXE}"
+    DeleteRegKey HKCU "Software\Classes\Applications\${FileMainEXE}"
+  ${EndIf}
+
   ; Remove directories and files we always control before parsing the uninstall
   ; log so empty directories can be removed.
   ${If} ${FileExists} "$INSTDIR\updates"
@@ -437,6 +451,10 @@ Section "Uninstall"
   DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Image"
   DeleteRegValue HKCU ${MOZ_LAUNCHER_SUBKEY} "$INSTDIR\${FileMainEXE}|Telemetry"
 !endif
+
+  ; Uninstall the default browser agent scheduled task.
+  ; This also removes the registry entries it creates.
+  Exec '"$INSTDIR\default-browser-agent.exe" unregister-task $AppUserModelID'
 
   ${un.RemovePrecompleteEntries} "false"
 
@@ -567,15 +585,19 @@ Function un.ShowWelcome
 
   ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 3" "HWND"
   SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
+  ; We need to overwrite the sidebar image so that we get it drawn with proper
+  ; scaling if the display is scaled at anything above 100%.
+  ${un.ChangeMUISidebarImage} "$PLUGINSDIR\modern-wizard.bmp"
 FunctionEnd
 
 Function un.leaveWelcome
   ${If} ${FileExists} "$INSTDIR\${FileMainEXE}"
     Banner::show /NOUNLOAD "$(BANNER_CHECK_EXISTING)"
 
-    ; If the message window has been found previously give the app an additional
-    ; five seconds to close.
-    ${If} "$TmpVal" == "FoundMessageWindow"
+    ; If we already found a window once and we're checking again, wait for an
+    ; additional five seconds for the app to close.
+    ${If} "$TmpVal" == "FoundAppWindow"
       Sleep 5000
     ${EndIf}
 
@@ -587,10 +609,11 @@ Function un.leaveWelcome
 
     ; If there are files in use $TmpVal will be "true"
     ${If} "$TmpVal" == "true"
-      ; If the message window is found the call to ManualCloseAppPrompt will
-      ; abort leaving the value of $TmpVal set to "FoundMessageWindow".
-      StrCpy $TmpVal "FoundMessageWindow"
-      ${un.ManualCloseAppPrompt} "${WindowClass}" "$(WARN_MANUALLY_CLOSE_APP_UNINSTALL)"
+      ; If it finds a window of the right class, then ManualCloseAppPrompt will
+      ; abort leaving the value of $TmpVal set to "FoundAppWindow".
+      StrCpy $TmpVal "FoundAppWindow"
+      ${un.ManualCloseAppPrompt} "${MainWindowClass}" "$(WARN_MANUALLY_CLOSE_APP_UNINSTALL)"
+      ${un.ManualCloseAppPrompt} "${DialogWindowClass}" "$(WARN_MANUALLY_CLOSE_APP_UNINSTALL)"
       ; If the message window is not found set $TmpVal to "true" so the restart
       ; required message is displayed.
       StrCpy $TmpVal "true"
@@ -611,11 +634,10 @@ Function un.preConfirm
   SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
 
   ${If} ${FileExists} "$INSTDIR\distribution\modern-header.bmp"
-  ${AndIf} $hHeaderBitmap == ""
     Delete "$PLUGINSDIR\modern-header.bmp"
     CopyFiles /SILENT "$INSTDIR\distribution\modern-header.bmp" "$PLUGINSDIR\modern-header.bmp"
-    ${un.ChangeMUIHeaderImage} "$PLUGINSDIR\modern-header.bmp"
   ${EndIf}
+  ${un.ChangeMUIHeaderImage} "$PLUGINSDIR\modern-header.bmp"
 
   ; Setup the unconfirm.ini file for the Custom Uninstall Confirm Page
   WriteINIStr "$PLUGINSDIR\unconfirm.ini" "Settings" NumFields "3"
@@ -690,6 +712,10 @@ Function un.ShowFinish
 
   ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 3" "HWND"
   SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
+  ; We need to overwrite the sidebar image so that we get it drawn with proper
+  ; scaling if the display is scaled at anything above 100%.
+  ${un.ChangeMUISidebarImage} "$PLUGINSDIR\modern-wizard.bmp"
 
   ; Either Fields 4 and 5 are the reboot option radio buttons, or Field 4 is
   ; the survey checkbox and Field 5 doesn't exist. Either way, we need to

@@ -49,6 +49,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 
+use cranelift_codegen_shared::constant_hash::generate_table;
 use cranelift_entity::EntityRef;
 
 use crate::error;
@@ -66,7 +67,6 @@ use crate::cdsl::xform::TransformGroupIndex;
 
 use crate::shared::Definitions as SharedDefinitions;
 
-use crate::constant_hash::generate_table;
 use crate::default_map::MapWithDefault;
 use crate::unique_table::UniqueSeqTable;
 
@@ -76,9 +76,9 @@ use crate::unique_table::UniqueSeqTable;
 /// The generated code is an `if let` pattern match that falls through if the instruction has an
 /// unexpected format. This should lead to a panic.
 fn emit_instp(instp: &InstructionPredicate, has_func: bool, fmt: &mut Formatter) {
-    if instp.is_type_predicate() {
+    if let Some(type_predicate) = instp.type_predicate("func") {
         fmt.line("let args = inst.arguments(&func.dfg.value_lists);");
-        fmt.line(instp.rust_predicate());
+        fmt.line(type_predicate);
         return;
     }
 
@@ -127,7 +127,7 @@ fn emit_instp(instp: &InstructionPredicate, has_func: bool, fmt: &mut Formatter)
             // Silence dead argument.
             fmt.line("let _ = func;");
         }
-        fmtln!(fmt, "return {};", instp.rust_predicate());
+        fmtln!(fmt, "return {};", instp.rust_predicate("func").unwrap());
     });
     fmtln!(fmt, "}");
 
@@ -158,8 +158,8 @@ fn emit_recipe_predicates(isa: &TargetIsa, fmt: &mut Formatter) {
             fmt,
             "fn {}({}: crate::settings::PredicateView, {}: &ir::InstructionData) -> bool {{",
             func_name,
-            if let Some(_) = isap { "isap" } else { "_" },
-            if let Some(_) = instp { "inst" } else { "_" }
+            if isap.is_some() { "isap" } else { "_" },
+            if instp.is_some() { "inst" } else { "_" }
         );
         fmt.indent(|fmt| {
             match (isap, instp) {
@@ -263,13 +263,13 @@ fn emit_recipe_names(isa: &TargetIsa, fmt: &mut Formatter) {
 }
 
 /// Returns a set of all the registers involved in fixed register constraints.
-fn get_fixed_registers(operands_in: &Vec<OperandConstraint>) -> HashSet<Register> {
+fn get_fixed_registers(operands_in: &[OperandConstraint]) -> HashSet<Register> {
     HashSet::from_iter(
         operands_in
             .iter()
             .map(|constraint| {
                 if let OperandConstraint::FixedReg(reg) = &constraint {
-                    Some(reg.clone())
+                    Some(*reg)
                 } else {
                     None
                 }
@@ -286,13 +286,13 @@ fn get_fixed_registers(operands_in: &Vec<OperandConstraint>) -> HashSet<Register
 fn emit_operand_constraints(
     registers: &IsaRegs,
     recipe: &EncodingRecipe,
-    constraints: &Vec<OperandConstraint>,
+    constraints: &[OperandConstraint],
     field_name: &'static str,
     tied_operands: &HashMap<usize, usize>,
     fixed_registers: &HashSet<Register>,
     fmt: &mut Formatter,
 ) {
-    if constraints.len() == 0 {
+    if constraints.is_empty() {
         fmtln!(fmt, "{}: &[],", field_name);
         return;
     }

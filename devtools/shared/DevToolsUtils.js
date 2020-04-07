@@ -10,7 +10,7 @@
 
 var { Ci, Cc, Cu, components } = require("chrome");
 var Services = require("Services");
-var flags = require("./flags");
+var flags = require("devtools/shared/flags");
 var {
   getStack,
   callFunctionWithAsyncStack,
@@ -28,7 +28,7 @@ loader.lazyRequireGetter(
 var DevToolsUtils = exports;
 
 // Re-export the thread-safe utils.
-const ThreadSafeDevToolsUtils = require("./ThreadSafeDevToolsUtils.js");
+const ThreadSafeDevToolsUtils = require("devtools/shared/ThreadSafeDevToolsUtils.js");
 for (const key of Object.keys(ThreadSafeDevToolsUtils)) {
   exports[key] = ThreadSafeDevToolsUtils[key];
 }
@@ -562,7 +562,7 @@ function mainThreadFetch(
       ).loadGroup;
     }
 
-    /* eslint-disable complexity */
+    // eslint-disable-next-line complexity
     const onResponse = (stream, status, request) => {
       if (!components.isSuccessCode(status)) {
         reject(new Error(`Failed to fetch ${url}. Code ${status}.`));
@@ -804,11 +804,24 @@ exports.openFileStream = function(filePath) {
  *        The data to write to the file.
  * @param {String} fileName
  *        The suggested filename.
+ * @param {Array} filters
+ *        An array of object of the following shape:
+ *          - pattern: A pattern for accepted files (example: "*.js")
+ *          - label: The label that will be displayed in the save file dialog.
  */
-exports.saveAs = async function(parentWindow, dataArray, fileName = "") {
+exports.saveAs = async function(
+  parentWindow,
+  dataArray,
+  fileName = "",
+  filters = []
+) {
   let returnFile;
   try {
-    returnFile = await exports.showSaveFileDialog(parentWindow, fileName);
+    returnFile = await exports.showSaveFileDialog(
+      parentWindow,
+      fileName,
+      filters
+    );
   } catch (ex) {
     return;
   }
@@ -821,16 +834,23 @@ exports.saveAs = async function(parentWindow, dataArray, fileName = "") {
 /**
  * Show file picker and return the file user selected.
  *
- * @param nsIWindow parentWindow
+ * @param {nsIWindow} parentWindow
  *        Optional parent window. If null the parent window of the file picker
  *        will be the window of the attached input element.
- * @param AString suggestedFilename
- *        The suggested filename when toSave is true.
- *
- * @return Promise
+ * @param {String} suggestedFilename
+ *        The suggested filename.
+ * @param {Array} filters
+ *        An array of object of the following shape:
+ *          - pattern: A pattern for accepted files (example: "*.js")
+ *          - label: The label that will be displayed in the save file dialog.
+ * @return {Promise}
  *         A promise that is resolved after the file is selected by the file picker
  */
-exports.showSaveFileDialog = function(parentWindow, suggestedFilename) {
+exports.showSaveFileDialog = function(
+  parentWindow,
+  suggestedFilename,
+  filters = []
+) {
   const fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
 
   if (suggestedFilename) {
@@ -838,7 +858,13 @@ exports.showSaveFileDialog = function(parentWindow, suggestedFilename) {
   }
 
   fp.init(parentWindow, null, fp.modeSave);
-  fp.appendFilters(fp.filterAll);
+  if (Array.isArray(filters) && filters.length > 0) {
+    for (const { pattern, label } of filters) {
+      fp.appendFilter(label, pattern);
+    }
+  } else {
+    fp.appendFilters(fp.filterAll);
+  }
 
   return new Promise((resolve, reject) => {
     fp.open(result => {
@@ -887,12 +913,6 @@ errorOnFlag(exports, "wantVerbose");
 // where unsafeDereference will return an opaque security wrapper to the
 // referent.
 function callPropertyOnObject(object, name, ...args) {
-  // When replaying, the result of the call may already be known, which avoids
-  // having to communicate with the replaying process.
-  if (isReplaying && args.length == 0 && object.replayHasCallResult(name)) {
-    return object.replayCallResult(name);
-  }
-
   // Find the property.
   let descriptor;
   let proto = object;

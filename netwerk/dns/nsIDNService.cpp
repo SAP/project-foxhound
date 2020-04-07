@@ -11,9 +11,6 @@
 #include "nsUnicodeProperties.h"
 #include "nsUnicodeScriptCodes.h"
 #include "harfbuzz/hb.h"
-#include "nsIServiceManager.h"
-#include "nsIObserverService.h"
-#include "nsISupportsPrimitives.h"
 #include "punycode.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
@@ -493,8 +490,7 @@ static nsresult utf16ToUcs4(const nsAString& in, uint32_t* out,
 
     curChar = *start++;
 
-    if (start != end && NS_IS_HIGH_SURROGATE(curChar) &&
-        NS_IS_LOW_SURROGATE(*start)) {
+    if (start != end && NS_IS_SURROGATE_PAIR(curChar, *start)) {
       out[i] = SURROGATE_TO_UCS4(curChar, *start);
       ++start;
     } else
@@ -727,8 +723,7 @@ bool nsIDNService::isLabelSafe(const nsAString& label) {
   while (current != end) {
     uint32_t ch = *current++;
 
-    if (NS_IS_HIGH_SURROGATE(ch) && current != end &&
-        NS_IS_LOW_SURROGATE(*current)) {
+    if (current != end && NS_IS_SURROGATE_PAIR(ch, *current)) {
       ch = SURROGATE_TO_UCS4(ch, *current++);
     }
 

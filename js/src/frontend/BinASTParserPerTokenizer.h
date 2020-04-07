@@ -65,10 +65,10 @@ class BinASTParserPerTokenizer : public BinASTParserBase,
   using VariableDeclarationKind = binast::VariableDeclarationKind;
 
  public:
-  BinASTParserPerTokenizer(JSContext* cx, ParseInfo& parseInfo,
+  BinASTParserPerTokenizer(JSContext* cx, CompilationInfo& compilationInfo,
                            const JS::ReadOnlyCompileOptions& options,
                            HandleScriptSourceObject sourceObject,
-                           Handle<LazyScript*> lazyScript = nullptr);
+                           Handle<BaseScript*> lazyScript = nullptr);
   ~BinASTParserPerTokenizer() {}
 
   /**
@@ -295,7 +295,7 @@ class BinASTParserPerTokenizer : public BinASTParserBase,
   }
 
  protected:
-  Rooted<LazyScript*> lazyScript_;
+  Rooted<BaseScript*> lazyScript_;
   FullParseHandler handler_;
 
   mozilla::Maybe<Tokenizer> tokenizer_;
@@ -376,7 +376,7 @@ class BinASTParseContext : public ParseContext {
   template <typename Tok>
   BinASTParseContext(JSContext* cx, BinASTParserPerTokenizer<Tok>* parser,
                      SharedContext* sc, Directives* newDirectives)
-      : ParseContext(cx, parser->pc_, sc, *parser, parser->getParseInfo(),
+      : ParseContext(cx, parser->pc_, sc, *parser, parser->getCompilationInfo(),
                      newDirectives, /* isFull = */ true) {}
 };
 

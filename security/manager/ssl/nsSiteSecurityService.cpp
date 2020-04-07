@@ -24,6 +24,7 @@
 #include "nsITransportSecurityInfo.h"
 #include "nsIURI.h"
 #include "nsIX509Cert.h"
+#include "nsNSSCertificateDB.h"
 #include "nsNSSComponent.h"
 #include "nsNetUtil.h"
 #include "nsPromiseFlatString.h"
@@ -455,6 +456,7 @@ nsSiteSecurityService::nsSiteSecurityService()
     : mMaxMaxAge(kSixtyDaysInSeconds),
       mUsePreloadList(true),
       mPreloadListTimeOffset(0),
+      mHPKPEnabled(false),
       mProcessPKPHeadersFromNonBuiltInRoots(false),
       mDafsa(kDafsa) {}
 
@@ -477,6 +479,10 @@ nsresult nsSiteSecurityService::Init() {
       "network.stricttransportsecurity.preloadlist", true);
   mozilla::Preferences::AddStrongObserver(
       this, "network.stricttransportsecurity.preloadlist");
+  mHPKPEnabled = mozilla::Preferences::GetBool(
+      "security.cert_pinning.hpkp.enabled", false);
+  mozilla::Preferences::AddStrongObserver(this,
+                                          "security.cert_pinning.hpkp.enabled");
   mProcessPKPHeadersFromNonBuiltInRoots = mozilla::Preferences::GetBool(
       "security.cert_pinning.process_headers_from_non_builtin_roots", false);
   mozilla::Preferences::AddStrongObserver(
@@ -994,6 +1000,17 @@ nsresult nsSiteSecurityService::ProcessPKPHeader(
   if (aFailureResult) {
     *aFailureResult = nsISiteSecurityService::ERROR_UNKNOWN;
   }
+  if (!mHPKPEnabled) {
+    SSSLOG(("SSS: HPKP disabled: not processing header '%s'", aHeader.get()));
+    if (aMaxAge) {
+      *aMaxAge = 0;
+    }
+    if (aIncludeSubdomains) {
+      *aIncludeSubdomains = false;
+    }
+    return NS_OK;
+  }
+
   SSSLOG(("SSS: processing HPKP header '%s'", aHeader.get()));
   NS_ENSURE_ARG(aSecInfo);
 
@@ -1051,29 +1068,26 @@ nsresult nsSiteSecurityService::ProcessPKPHeader(
   // anyway).
   CertVerifier::Flags flags = CertVerifier::FLAG_LOCAL_ONLY |
                               CertVerifier::FLAG_TLS_IGNORE_STATUS_REQUEST;
-  if (certVerifier->VerifySSLServerCert(
-          nssCert,
-          Maybe<nsTArray<uint8_t>>(),  // stapledOCSPResponse
-          Maybe<nsTArray<uint8_t>>(),  // sctsFromTLSExtension
-          now, nullptr,                // pinarg
-          host,                        // hostname
-          certList,
-          false,  // don't store intermediates
-          flags, aOriginAttributes) != mozilla::pkix::Success) {
+  if (certVerifier->VerifySSLServerCert(nssCert, now, nullptr,  // pinarg
+                                        host, certList, flags,
+                                        Nothing(),  // extraCertificates
+                                        Nothing(),  // stapledOCSPResponse
+                                        Nothing(),  // sctsFromTLSExtension
+                                        Nothing(),  // dcInfo
+                                        aOriginAttributes,
+                                        false  // don't store intermediates
+                                        ) != mozilla::pkix::Success) {
     return NS_ERROR_FAILURE;
   }
 
-  // This copy to produce an nsNSSCertList should also be removed in Bug
-  // #1406854
-  nsCOMPtr<nsIX509CertList> x509CertList =
-      new nsNSSCertList(std::move(certList));
-  if (!x509CertList) {
+  nsTArray<RefPtr<nsIX509Cert>> nssCertList;
+  rv = nsNSSCertificateDB::ConstructCertArrayFromUniqueCertList(certList,
+                                                                nssCertList);
+  if (NS_FAILED(rv)) {
     return rv;
   }
-
-  RefPtr<nsNSSCertList> nssCertList = x509CertList->GetCertList();
   nsCOMPtr<nsIX509Cert> rootCert;
-  rv = nssCertList->GetRootCertificate(rootCert);
+  rv = nsNSSCertificate::GetRootCertificate(nssCertList, rootCert);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -1590,7 +1604,7 @@ nsSiteSecurityService::GetKeyPinsForHostname(
     const OriginAttributes& aOriginAttributes,
     /*out*/ nsTArray<nsCString>& pinArray,
     /*out*/ bool* aIncludeSubdomains,
-    /*out*/ bool* afound) {
+    /*out*/ bool* aFound) {
   // Child processes are not allowed direct access to this.
   if (!XRE_IsParentProcess()) {
     MOZ_CRASH(
@@ -1598,11 +1612,18 @@ nsSiteSecurityService::GetKeyPinsForHostname(
         "nsISiteSecurityService::GetKeyPinsForHostname");
   }
 
-  NS_ENSURE_ARG(afound);
+  NS_ENSURE_ARG(aFound);
 
   const nsCString& flatHostname = PromiseFlatCString(aHostname);
+  if (!mHPKPEnabled) {
+    SSSLOG(("HPKP disabled - returning 'pins not found' for %s",
+            flatHostname.get()));
+    *aFound = false;
+    return NS_OK;
+  }
+
   SSSLOG(("Top of GetKeyPinsForHostname for %s", flatHostname.get()));
-  *afound = false;
+  *aFound = false;
   *aIncludeSubdomains = false;
   pinArray.Clear();
 
@@ -1643,7 +1664,7 @@ nsSiteSecurityService::GetKeyPinsForHostname(
   }
   pinArray = foundEntry->mSHA256keys;
   *aIncludeSubdomains = foundEntry->mIncludeSubdomains;
-  *afound = true;
+  *aFound = true;
   return NS_OK;
 }
 
@@ -1663,6 +1684,13 @@ nsSiteSecurityService::SetKeyPins(const nsACString& aHost,
   }
 
   NS_ENSURE_ARG_POINTER(aResult);
+
+  if (!mHPKPEnabled) {
+    SSSLOG(("SSS: HPKP disabled: not setting pins"));
+    *aResult = false;
+    return NS_OK;
+  }
+
   OriginAttributes originAttributes;
   if (aArgc > 1) {
     // OriginAttributes were passed in.
@@ -1818,6 +1846,8 @@ nsSiteSecurityService::Observe(nsISupports* /*subject*/, const char* topic,
         "network.stricttransportsecurity.preloadlist", true);
     mPreloadListTimeOffset =
         mozilla::Preferences::GetInt("test.currentTimeOffsetSeconds", 0);
+    mHPKPEnabled = mozilla::Preferences::GetBool(
+        "security.cert_pinning.hpkp.enabled", false);
     mProcessPKPHeadersFromNonBuiltInRoots = mozilla::Preferences::GetBool(
         "security.cert_pinning.process_headers_from_non_builtin_roots", false);
     mMaxMaxAge = mozilla::Preferences::GetInt(

@@ -10,6 +10,7 @@
 #include "js/Debug.h"
 
 #include "mozilla/Atomics.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/Preferences.h"
@@ -46,17 +47,13 @@
 namespace mozilla {
 namespace dom {
 
-namespace {
-// Generator used by Promise::GetID.
-Atomic<uintptr_t> gIDGenerator(0);
-}  // namespace
-
 // Promise
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(Promise)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Promise)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
   tmp->mPromiseObj = nullptr;
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -94,7 +91,7 @@ already_AddRefed<Promise> Promise::Create(
     return nullptr;
   }
   RefPtr<Promise> p = new Promise(aGlobal);
-  p->CreateWrapper(nullptr, aRv, aPropagateUserInteraction);
+  p->CreateWrapper(aRv, aPropagateUserInteraction);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -273,15 +270,14 @@ Result<RefPtr<Promise>, nsresult> Promise::ThenWithoutCycleCollection(
 }
 
 void Promise::CreateWrapper(
-    JS::Handle<JSObject*> aDesiredProto, ErrorResult& aRv,
-    PropagateUserInteraction aPropagateUserInteraction) {
+    ErrorResult& aRv, PropagateUserInteraction aPropagateUserInteraction) {
   AutoJSAPI jsapi;
   if (!jsapi.Init(mGlobal)) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return;
   }
   JSContext* cx = jsapi.cx();
-  mPromiseObj = JS::NewPromiseObject(cx, nullptr, aDesiredProto);
+  mPromiseObj = JS::NewPromiseObject(cx, nullptr);
   if (!mPromiseObj) {
     JS_ClearPendingException(cx);
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
@@ -383,14 +379,14 @@ class PromiseNativeHandlerShim final : public PromiseNativeHandler {
 
   MOZ_CAN_RUN_SCRIPT
   void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
-    RefPtr<PromiseNativeHandler> inner = mInner.forget();
+    RefPtr<PromiseNativeHandler> inner = std::move(mInner);
     inner->ResolvedCallback(aCx, aValue);
     MOZ_ASSERT(!mInner);
   }
 
   MOZ_CAN_RUN_SCRIPT
   void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
-    RefPtr<PromiseNativeHandler> inner = mInner.forget();
+    RefPtr<PromiseNativeHandler> inner = std::move(mInner);
     inner->RejectedCallback(aCx, aValue);
     MOZ_ASSERT(!mInner);
   }
@@ -518,9 +514,10 @@ void Promise::ReportRejectedPromise(JSContext* aCx, JS::HandleObject aPromise) {
 
   RefPtr<xpc::ErrorReport> xpcReport = new xpc::ErrorReport();
   bool isMainThread = MOZ_LIKELY(NS_IsMainThread());
-  bool isChrome = isMainThread ? nsContentUtils::IsSystemPrincipal(
-                                     nsContentUtils::ObjectPrincipal(aPromise))
-                               : IsCurrentThreadRunningChromeWorker();
+  bool isChrome =
+      isMainThread
+          ? nsContentUtils::ObjectPrincipal(aPromise)->IsSystemPrincipal()
+          : IsCurrentThreadRunningChromeWorker();
   nsGlobalWindowInner* win =
       isMainThread ? xpc::WindowGlobalOrNull(aPromise) : nullptr;
 
@@ -776,7 +773,8 @@ void PromiseWorkerProxy::CleanUp() {
 }
 
 JSObject* PromiseWorkerProxy::CustomReadHandler(
-    JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
+    JSContext* aCx, JSStructuredCloneReader* aReader,
+    const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag,
     uint32_t aIndex) {
   if (NS_WARN_IF(!mCallbacks)) {
     return nullptr;
@@ -787,7 +785,8 @@ JSObject* PromiseWorkerProxy::CustomReadHandler(
 
 bool PromiseWorkerProxy::CustomWriteHandler(JSContext* aCx,
                                             JSStructuredCloneWriter* aWriter,
-                                            JS::Handle<JSObject*> aObj) {
+                                            JS::Handle<JSObject*> aObj,
+                                            bool* aSameProcessScopeRequired) {
   if (NS_WARN_IF(!mCallbacks)) {
     return false;
   }

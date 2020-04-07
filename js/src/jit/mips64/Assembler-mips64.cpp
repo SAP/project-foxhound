@@ -22,7 +22,8 @@ ABIArg ABIArgGenerator::next(MIRType type) {
     case MIRType::Int32:
     case MIRType::Int64:
     case MIRType::Pointer:
-    case MIRType::RefOrNull: {
+    case MIRType::RefOrNull:
+    case MIRType::StackResults: {
       Register destReg;
       if (GetIntArgReg(usedArgSlots_, &destReg)) {
         current_ = ABIArg(destReg);
@@ -207,7 +208,8 @@ void Assembler::bind(InstImm* inst, uintptr_t branch, uintptr_t target) {
     Assembler::WriteLoad64Instructions(inst, ScratchRegister,
                                        LabelBase::INVALID_OFFSET);
 #ifdef MIPSR6
-    inst[4] = InstReg(op_special, ScratchRegister, zero, zero, ff_jalr).encode();
+    inst[4] =
+        InstReg(op_special, ScratchRegister, zero, zero, ff_jalr).encode();
 #else
     inst[4] = InstReg(op_special, ScratchRegister, zero, zero, ff_jr).encode();
 #endif
@@ -220,7 +222,8 @@ void Assembler::bind(InstImm* inst, uintptr_t branch, uintptr_t target) {
     Assembler::WriteLoad64Instructions(&inst[1], ScratchRegister,
                                        LabelBase::INVALID_OFFSET);
 #ifdef MIPSR6
-    inst[5] = InstReg(op_special, ScratchRegister, zero, zero, ff_jalr).encode();
+    inst[5] =
+        InstReg(op_special, ScratchRegister, zero, zero, ff_jalr).encode();
 #else
     inst[5] = InstReg(op_special, ScratchRegister, zero, zero, ff_jr).encode();
 #endif

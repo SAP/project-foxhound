@@ -145,18 +145,10 @@ extern void ArrayShiftMoveElements(NativeObject* obj);
 
 extern bool array_shift(JSContext* cx, unsigned argc, js::Value* vp);
 
-extern bool array_unshift(JSContext* cx, unsigned argc, js::Value* vp);
-
 extern bool array_slice(JSContext* cx, unsigned argc, js::Value* vp);
 
 extern JSObject* ArraySliceDense(JSContext* cx, HandleObject obj, int32_t begin,
                                  int32_t end, HandleObject result);
-
-extern bool array_reverse(JSContext* cx, unsigned argc, js::Value* vp);
-
-extern bool array_splice(JSContext* cx, unsigned argc, js::Value* vp);
-
-extern const JSJitInfo array_splice_info;
 
 /*
  * Append the given (non-hole) value to the end of an array.  The array must be
@@ -180,6 +172,8 @@ extern bool ArrayConstructor(JSContext* cx, unsigned argc, Value* vp);
 
 // Like Array constructor, but doesn't perform GetPrototypeFromConstructor.
 extern bool array_construct(JSContext* cx, unsigned argc, Value* vp);
+
+extern JSString* ArrayToSource(JSContext* cx, HandleObject obj);
 
 extern bool IsCrossRealmArrayConstructor(JSContext* cx, const Value& v,
                                          bool* result);

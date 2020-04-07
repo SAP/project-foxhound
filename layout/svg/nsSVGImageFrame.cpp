@@ -506,29 +506,29 @@ uint16_t nsSVGImageFrame::GetHitTestFlags() {
   uint16_t flags = 0;
 
   switch (StyleUI()->mPointerEvents) {
-    case NS_STYLE_POINTER_EVENTS_NONE:
+    case StylePointerEvents::None:
       break;
-    case NS_STYLE_POINTER_EVENTS_VISIBLEPAINTED:
-    case NS_STYLE_POINTER_EVENTS_AUTO:
+    case StylePointerEvents::Visiblepainted:
+    case StylePointerEvents::Auto:
       if (StyleVisibility()->IsVisible()) {
         /* XXX: should check pixel transparency */
         flags |= SVG_HIT_TEST_FILL;
       }
       break;
-    case NS_STYLE_POINTER_EVENTS_VISIBLEFILL:
-    case NS_STYLE_POINTER_EVENTS_VISIBLESTROKE:
-    case NS_STYLE_POINTER_EVENTS_VISIBLE:
+    case StylePointerEvents::Visiblefill:
+    case StylePointerEvents::Visiblestroke:
+    case StylePointerEvents::Visible:
       if (StyleVisibility()->IsVisible()) {
         flags |= SVG_HIT_TEST_FILL;
       }
       break;
-    case NS_STYLE_POINTER_EVENTS_PAINTED:
+    case StylePointerEvents::Painted:
       /* XXX: should check pixel transparency */
       flags |= SVG_HIT_TEST_FILL;
       break;
-    case NS_STYLE_POINTER_EVENTS_FILL:
-    case NS_STYLE_POINTER_EVENTS_STROKE:
-    case NS_STYLE_POINTER_EVENTS_ALL:
+    case StylePointerEvents::Fill:
+    case StylePointerEvents::Stroke:
+    case StylePointerEvents::All:
       flags |= SVG_HIT_TEST_FILL;
       break;
     default:
@@ -577,7 +577,7 @@ nsSVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
     aRequest->GetImage(getter_AddRefs(image));
     if (image) {
       image->SetAnimationMode(mFrame->PresContext()->ImageAnimationMode());
-      mFrame->mImageContainer = image.forget();
+      mFrame->mImageContainer = std::move(image);
     }
     mFrame->InvalidateFrame();
     nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),

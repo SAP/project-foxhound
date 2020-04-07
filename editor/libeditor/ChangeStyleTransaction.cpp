@@ -63,8 +63,6 @@ NS_INTERFACE_MAP_END_INHERITING(EditTransactionBase)
 NS_IMPL_ADDREF_INHERITED(ChangeStyleTransaction, EditTransactionBase)
 NS_IMPL_RELEASE_INHERITED(ChangeStyleTransaction, EditTransactionBase)
 
-ChangeStyleTransaction::~ChangeStyleTransaction() {}
-
 // Answers true if aValue is in the string list of white-space separated values
 // aValueList.
 bool ChangeStyleTransaction::ValueIncludes(const nsAString& aValueList,
@@ -149,8 +147,10 @@ ChangeStyleTransaction::DoTransaction() {
 
   nsCOMPtr<nsICSSDeclaration> cssDecl = inlineStyles->Style();
 
-  nsAutoString propertyNameString;
-  mProperty->ToString(propertyNameString);
+  // FIXME(bug 1606994): Using atoms forces a string copy here which is not
+  // great.
+  nsAutoCString propertyNameString;
+  mProperty->ToUTF8String(propertyNameString);
 
   mUndoAttributeWasSet = mElement->HasAttr(kNameSpaceID_None, nsGkAtoms::style);
 
@@ -169,17 +169,27 @@ ChangeStyleTransaction::DoTransaction() {
       RemoveValueFromListOfValues(values, NS_LITERAL_STRING("none"));
       RemoveValueFromListOfValues(values, mValue);
       if (values.IsEmpty()) {
-        rv = cssDecl->RemoveProperty(propertyNameString, returnString);
-        NS_ENSURE_SUCCESS(rv, rv);
+        ErrorResult res;
+        cssDecl->RemoveProperty(propertyNameString, returnString, res);
+        if (NS_WARN_IF(res.Failed())) {
+          return res.StealNSResult();
+        }
       } else {
+        ErrorResult res;
         nsAutoString priority;
         cssDecl->GetPropertyPriority(propertyNameString, priority);
-        rv = cssDecl->SetProperty(propertyNameString, values, priority);
-        NS_ENSURE_SUCCESS(rv, rv);
+        cssDecl->SetProperty(propertyNameString, NS_ConvertUTF16toUTF8(values),
+                             priority, res);
+        if (NS_WARN_IF(res.Failed())) {
+          return res.StealNSResult();
+        }
       }
     } else {
-      rv = cssDecl->RemoveProperty(propertyNameString, returnString);
-      NS_ENSURE_SUCCESS(rv, rv);
+      ErrorResult res;
+      cssDecl->RemoveProperty(propertyNameString, returnString, res);
+      if (NS_WARN_IF(res.Failed())) {
+        return res.StealNSResult();
+      }
     }
   } else {
     nsAutoString priority;
@@ -190,8 +200,12 @@ ChangeStyleTransaction::DoTransaction() {
     } else {
       values.Assign(mValue);
     }
-    rv = cssDecl->SetProperty(propertyNameString, values, priority);
-    NS_ENSURE_SUCCESS(rv, rv);
+    ErrorResult res;
+    cssDecl->SetProperty(propertyNameString, NS_ConvertUTF16toUTF8(values),
+                         priority, res);
+    if (NS_WARN_IF(res.Failed())) {
+      return res.StealNSResult();
+    }
   }
 
   // Let's be sure we don't keep an empty style attribute
@@ -210,22 +224,28 @@ nsresult ChangeStyleTransaction::SetStyle(bool aAttributeWasSet,
                                           nsAString& aValue) {
   if (aAttributeWasSet) {
     // The style attribute was not empty, let's recreate the declaration
-    nsAutoString propertyNameString;
-    mProperty->ToString(propertyNameString);
+    nsAutoCString propertyNameString;
+    mProperty->ToUTF8String(propertyNameString);
 
     nsCOMPtr<nsStyledElement> inlineStyles = do_QueryInterface(mElement);
     NS_ENSURE_TRUE(inlineStyles, NS_ERROR_NULL_POINTER);
     nsCOMPtr<nsICSSDeclaration> cssDecl = inlineStyles->Style();
 
+    ErrorResult rv;
     if (aValue.IsEmpty()) {
       // An empty value means we have to remove the property
       nsAutoString returnString;
-      return cssDecl->RemoveProperty(propertyNameString, returnString);
+      cssDecl->RemoveProperty(propertyNameString, returnString, rv);
+      if (NS_WARN_IF(rv.Failed())) {
+        return rv.StealNSResult();
+      }
     }
     // Let's recreate the declaration as it was
     nsAutoString priority;
     cssDecl->GetPropertyPriority(propertyNameString, priority);
-    return cssDecl->SetProperty(propertyNameString, aValue, priority);
+    cssDecl->SetProperty(propertyNameString, NS_ConvertUTF16toUTF8(aValue),
+                         priority, rv);
+    return rv.StealNSResult();
   }
   return mElement->UnsetAttr(kNameSpaceID_None, nsGkAtoms::style, true);
 }

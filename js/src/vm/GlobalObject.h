@@ -7,23 +7,52 @@
 #ifndef vm_GlobalObject_h
 #define vm_GlobalObject_h
 
-#include "jsexn.h"
-#include "jsnum.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/DebugOnly.h"
 
-#include "builtin/Array.h"
-#include "builtin/Boolean.h"
-#include "js/Vector.h"
-#include "vm/ArrayBufferObject.h"
-#include "vm/ErrorObject.h"
+#include <stdint.h>
+#include <type_traits>
+
+#include "jsapi.h"
+#include "jsexn.h"
+#include "jsfriendapi.h"
+#include "jspubtd.h"
+#include "jstypes.h"
+#include "NamespaceImports.h"
+
+#include "gc/AllocKind.h"
+#include "gc/Rooting.h"
+#include "js/CallArgs.h"
+#include "js/Class.h"
+#include "js/ErrorReport.h"
+#include "js/PropertyDescriptor.h"
+#include "js/RootingAPI.h"
+#include "js/TypeDecls.h"
+#include "js/Value.h"
+#include "vm/JSContext.h"
 #include "vm/JSFunction.h"
+#include "vm/JSObject.h"
+#include "vm/NativeObject.h"
 #include "vm/Realm.h"
 #include "vm/Runtime.h"
+#include "vm/Shape.h"
+#include "vm/StringType.h"
+
+struct JSFunctionSpec;
+struct JSPrincipals;
+struct JSPropertySpec;
+
+namespace JS {
+class JS_PUBLIC_API RealmOptions;
+};
 
 namespace js {
 
-class TypedObjectModuleObject;
+class GlobalScope;
 class LexicalEnvironmentObject;
 class RegExpStatics;
+class TypeDescr;
+class TypedObjectModuleObject;
 
 enum class ReferenceType;
 
@@ -85,6 +114,7 @@ class GlobalObject : public NativeObject {
     IMPORT_ENTRY_PROTO,
     EXPORT_ENTRY_PROTO,
     REQUESTED_MODULE_PROTO,
+    FINALIZATION_ITERATOR_PROTO,
     REGEXP_STATICS,
     RUNTIME_CODEGEN_ENABLED,
     INTRINSICS,
@@ -454,9 +484,7 @@ class GlobalObject : public NativeObject {
 
   static JSObject* getOrCreateTypedObjectModule(JSContext* cx,
                                                 Handle<GlobalObject*> global) {
-    return getOrCreateObject(cx, global,
-                             APPLICATION_SLOTS + JSProto_TypedObject,
-                             initTypedObjectModule);
+    return getOrCreateConstructor(cx, JSProto_TypedObject);
   }
 
   static TypeDescr* getOrCreateScalarTypeDescr(JSContext* cx,
@@ -513,8 +541,14 @@ class GlobalObject : public NativeObject {
     return &global->getPrototype(JSProto_TypedArray).toObject();
   }
 
+  static JSObject* getOrCreateFinalizationIteratorPrototype(
+      JSContext* cx, Handle<GlobalObject*> global) {
+    return getOrCreateObject(cx, global, FINALIZATION_ITERATOR_PROTO,
+                             initFinalizationIteratorProto);
+  }
+
  private:
-  typedef bool (*ObjectInitOp)(JSContext* cx, Handle<GlobalObject*> global);
+  using ObjectInitOp = bool (*)(JSContext*, Handle<GlobalObject*>);
 
   static JSObject* getOrCreateObject(JSContext* cx,
                                      Handle<GlobalObject*> global,
@@ -766,15 +800,13 @@ class GlobalObject : public NativeObject {
                                     HandleAtom name, unsigned nargs,
                                     MutableHandleValue funVal);
 
-  bool hasRegExpStatics() const;
   static RegExpStatics* getRegExpStatics(JSContext* cx,
                                          Handle<GlobalObject*> global);
-  RegExpStatics* getAlreadyCreatedRegExpStatics() const;
 
   static JSObject* getOrCreateThrowTypeError(JSContext* cx,
                                              Handle<GlobalObject*> global);
 
-  static bool isRuntimeCodeGenEnabled(JSContext* cx, HandleValue code,
+  static bool isRuntimeCodeGenEnabled(JSContext* cx, HandleString code,
                                       Handle<GlobalObject*> global);
 
   static bool getOrCreateEval(JSContext* cx, Handle<GlobalObject*> global,
@@ -813,6 +845,10 @@ class GlobalObject : public NativeObject {
   // Implemented in builtin/TypedObject.cpp
   static bool initTypedObjectModule(JSContext* cx,
                                     Handle<GlobalObject*> global);
+
+  // Implemented in builtin/FinalizationGroup.cpp
+  static bool initFinalizationIteratorProto(JSContext* cx,
+                                            Handle<GlobalObject*> global);
 
   static bool initStandardClasses(JSContext* cx, Handle<GlobalObject*> global);
   static bool initSelfHostingBuiltins(JSContext* cx,
@@ -907,9 +943,6 @@ extern bool LinkConstructorAndPrototype(
 extern bool DefinePropertiesAndFunctions(JSContext* cx, HandleObject obj,
                                          const JSPropertySpec* ps,
                                          const JSFunctionSpec* fs);
-
-typedef HashSet<GlobalObject*, DefaultHasher<GlobalObject*>, SystemAllocPolicy>
-    GlobalObjectSet;
 
 extern bool DefineToStringTag(JSContext* cx, HandleObject obj, JSAtom* tag);
 

@@ -23,15 +23,29 @@
 
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"); /* set default namespace to XUL */
 @namespace html url("http://www.w3.org/1999/xhtml"); /* namespace for HTML elements */
-@namespace xbl url("http://www.mozilla.org/xbl"); /* namespace for XBL elements */
+
+/* TODO: investigate unifying these two root selectors
+ * https://bugzilla.mozilla.org/show_bug.cgi?id=1592344
+ */
+*|*:root {
+  --animation-easing-function: cubic-bezier(.07, .95, 0, 1);
+}
 
 :root {
   text-rendering: optimizeLegibility;
   -moz-control-character-visibility: visible;
-  --animation-easing-function: cubic-bezier(.07, .95, 0, 1);
 }
 
 :root:-moz-locale-dir(rtl) {
+  direction: rtl;
+}
+
+/*
+ * Native anonymous popups and tooltips in html are document-level, which means
+ * that they don't inherit from the root, so this is needed.
+ */
+popupgroup:-moz-native-anonymous:-moz-locale-dir(rtl),
+tooltip:-moz-native-anonymous:-moz-locale-dir(rtl) {
   direction: rtl;
 }
 
@@ -40,13 +54,13 @@
    :: kinds of windows (not JUST browser windows) with toolbars
    ::::: */
 
-window[chromehidden~="menubar"] .chromeclass-menubar,
-window[chromehidden~="directories"] .chromeclass-directories,
-window[chromehidden~="status"] .chromeclass-status,
-window[chromehidden~="extrachrome"] .chromeclass-extrachrome,
-window[chromehidden~="location"] .chromeclass-location,
-window[chromehidden~="location"][chromehidden~="toolbar"] .chromeclass-toolbar,
-window[chromehidden~="toolbar"] .chromeclass-toolbar-additional {
+*|*:root[chromehidden~="menubar"] .chromeclass-menubar,
+*|*:root[chromehidden~="directories"] .chromeclass-directories,
+*|*:root[chromehidden~="status"] .chromeclass-status,
+*|*:root[chromehidden~="extrachrome"] .chromeclass-extrachrome,
+*|*:root[chromehidden~="location"] .chromeclass-location,
+*|*:root[chromehidden~="location"][chromehidden~="toolbar"] .chromeclass-toolbar,
+*|*:root[chromehidden~="toolbar"] .chromeclass-toolbar-additional {
   display: none;
 }
 
@@ -61,18 +75,11 @@ window[chromehidden~="toolbar"] .chromeclass-toolbar-additional {
 
 /****** elements that have no visual representation ******/
 
-script, data,
-commands, commandset, command,
+script, data, commandset, command,
 broadcasterset, broadcaster, observes,
-keyset, key, toolbarpalette, toolbarset,
-template, rule, conditions, action,
-bindings, binding, content, member, triple,
+keyset, key, toolbarpalette, template,
 treeitem, treeseparator, treerow, treecell {
   display: none;
-}
-
-xbl|children {
-  display: none !important;
 }
 
 /********** focus rules **********/
@@ -112,17 +119,13 @@ label html|span.accesskey {
 
 /********** toolbarbutton **********/
 
-.toolbarbutton-badge:not([value]),
-.toolbarbutton-badge[value=""] {
-  display: none;
-}
-
 toolbarbutton:not([type="menu"]) > .toolbarbutton-menu-dropmarker,
 toolbar[mode="icons"] .toolbarbutton-text,
 toolbar[mode="icons"] .toolbarbutton-multiline-text,
 toolbar[mode="text"] .toolbarbutton-icon,
 .toolbarbutton-multiline-text:not([wrap="true"]),
-.toolbarbutton-text[wrap="true"] {
+.toolbarbutton-text[wrap="true"],
+html|label.toolbarbutton-badge:empty {
   display: none;
 }
 
@@ -186,22 +189,14 @@ menulist {
   -moz-window-dragging: no-drag;
 }
 
+titlebar {
+  pointer-events: auto !important;
+}
+
 /******* toolbar *******/
 
 toolbox {
   -moz-box-orient: vertical;
-}
-
-toolbar[customizing="true"][collapsed="true"] {
-  /* Some apps, e.g. Firefox, use 'collapsed' to hide toolbars.
-     Override it while customizing. */
-  visibility: visible;
-}
-
-toolbar[customizing="true"][hidden="true"] {
-  /* Some apps, e.g. SeaMonkey, use 'hidden' to hide toolbars.
-     Override it while customizing. */
-  display: -moz-box;
 }
 
 %ifdef XP_MACOSX
@@ -227,10 +222,7 @@ menubar > menu:empty {
 
 /********* menupopup, panel, & tooltip ***********/
 
-menupopup {
-  -moz-box-orient: vertical;
-}
-
+menupopup,
 panel {
   -moz-box-orient: vertical;
 }
@@ -335,10 +327,7 @@ column {
   display: -moz-grid-line;
 }
 
-rows {
-  -moz-box-orient: vertical;
-}
-
+rows,
 column {
   -moz-box-orient: vertical;
 }
@@ -390,6 +379,26 @@ deck {
 }
 
 stack {
+  display: grid;
+  position: relative;
+}
+
+/* We shouldn't style native anonymous children like scrollbars or what not */
+stack > *|*:not(:-moz-native-anonymous) {
+  grid-area: 1 / 1;
+  z-index: 0;
+
+  /*
+    The default `min-height: auto` value makes grid items refuse to be smaller
+    than their content. This doesn't match the traditional behavior of XUL stack,
+    which often shoehorns tall content into a smaller stack and allows the content
+    to decide how to handle overflow (e.g. by scaling down if it's an image, or
+    by adding scrollbars if it's scrollable).
+  */
+  min-height: 0;
+}
+
+legacy-stack {
   display: -moz-stack;
 }
 
@@ -457,10 +466,6 @@ search-textbox {
 
 /* SeaMonkey uses its own autocomplete and the toolkit's autocomplete widget */
 %ifndef MOZ_SUITE
-
-panel[type="autocomplete-richlistbox"] {
-  -moz-binding: none;
-}
 
 .autocomplete-richlistbox {
   -moz-user-focus: ignore;
@@ -535,15 +540,15 @@ stringbundleset {
 
 /********** dialog **********/
 
-dialog,
-dialog:root /* override :root from above */ {
+dialog {
+  -moz-box-flex: 1;
   -moz-box-orient: vertical;
 }
 
 /********** wizard **********/
 
-wizard,
-wizard:root /* override :root from above */ {
+wizard {
+  -moz-box-flex: 1;
   -moz-box-orient: vertical;
   width: 40em;
   height: 30em;
@@ -572,6 +577,11 @@ tabmodalprompt {
   text-shadow: none;
 }
 
+/* Some elements that in HTML blocks should be inline-level by default */
+label, button, image {
+  display: -moz-inline-box;
+}
+
 .menulist-highlightable-label:not([highlightable="true"]),
 .menulist-label[highlightable="true"],
 .menu-iconic-highlightable-text:not([highlightable="true"]),
@@ -579,28 +589,24 @@ tabmodalprompt {
   display: none;
 }
 
+[orient="vertical"] { -moz-box-orient: vertical !important; }
+[orient="horizontal"] { -moz-box-orient: horizontal !important; }
+
+[align="start"] { -moz-box-align: start !important; }
+[align="center"] { -moz-box-align: center !important; }
+[align="end"] { -moz-box-align: end !important; }
+[align="baseline"] { -moz-box-align: baseline !important; }
+[align="stretch"] { -moz-box-align: stretch !important; }
+
+[pack="start"] { -moz-box-pack: start !important; }
+[pack="center"] { -moz-box-pack: center !important; }
+[pack="end"] { -moz-box-pack: end !important; }
+
 @supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
-  /* Support common XUL attributes in the emulated flex mode so we can
-     test the browser in this configuration without mass-changing existing
-     markup and CSS. */
-  [orient="vertical"] { -moz-box-orient: vertical; }
-  [orient="horizontal"] { -moz-box-orient: horizontal; }
-
-  [dir="reverse"] { -moz-box-direction: reverse; }
-
-  [align="start"] { -moz-box-align: start; }
-  [align="center"] { -moz-box-align: center; }
-  [align="end"] { -moz-box-align: end; }
-  [align="baseline"] { -moz-box-align: baseline; }
-  [align="stretch"] { -moz-box-align: stretch; }
-
-  [pack="start"] { -moz-box-pack: start; }
-  [pack="center"] { -moz-box-pack: center; }
-  [pack="end"] { -moz-box-pack: end; }
-
   /* This isn't a real solution for [flex] and [ordinal], but it covers enough
-     cases to render the browser chrome. If we get attr() in Bug 435426 this could
-     work for all cases. */
+     cases to render the browser chrome for us to test emulated flex mode without
+     mass-changing existing markup and CSS.
+     If we get attr() in Bug 435426 this could  work for all cases. */
   [flex="1"] { -moz-box-flex: 1; }
   [flex="2"] { -moz-box-flex: 2; }
   [flex="3"] { -moz-box-flex: 3; }
@@ -614,19 +620,4 @@ tabmodalprompt {
   [flex="400"] { -moz-box-flex: 400; }
   [flex="1000"] { -moz-box-flex: 1000; }
   [flex="10000"] { -moz-box-flex: 10000; }
-
-  [ordinal="1"] { -moz-box-ordinal-group: 1; }
-  [ordinal="2"] { -moz-box-ordinal-group: 2; }
-  [ordinal="3"] { -moz-box-ordinal-group: 3; }
-  [ordinal="4"] { -moz-box-ordinal-group: 4; }
-  [ordinal="5"] { -moz-box-ordinal-group: 5; }
-  [ordinal="6"] { -moz-box-ordinal-group: 6; }
-  [ordinal="7"] { -moz-box-ordinal-group: 7; }
-  [ordinal="8"] { -moz-box-ordinal-group: 8; }
-  [ordinal="9"] { -moz-box-ordinal-group: 9; }
-  [ordinal="1000"] { -moz-box-ordinal-group: 1000; }
 }
-
-%ifndef MOZ_XBL
-* { -moz-binding: none !important }
-%endif

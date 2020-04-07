@@ -142,8 +142,6 @@ class AndroidEmulatorTest(TestingMixin, BaseScript, MozbaseMixin, CodeCoverageMi
         self.test_packages_url = c.get('test_packages_url')
         self.test_manifest = c.get('test_manifest')
         suite = c.get('test_suite')
-        if suite and '-chunked' in suite:
-            suite = suite[:suite.index('-chunked')]
         self.test_suite = suite
         self.this_chunk = c.get('this_chunk')
         self.total_chunks = c.get('total_chunks')
@@ -413,6 +411,8 @@ class AndroidEmulatorTest(TestingMixin, BaseScript, MozbaseMixin, CodeCoverageMi
             env['MOZ_UPLOAD_DIR'] = self.query_abs_dirs()['abs_blob_upload_dir']
             env['MINIDUMP_SAVE_PATH'] = self.query_abs_dirs()['abs_blob_upload_dir']
             env['RUST_BACKTRACE'] = 'full'
+            if self.config['nodejs_path']:
+                env['MOZ_NODE_PATH'] = self.config['nodejs_path']
 
             summary = {}
             for per_test_args in self.query_args(per_test_suite):

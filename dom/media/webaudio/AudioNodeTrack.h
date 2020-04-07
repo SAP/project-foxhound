@@ -8,7 +8,6 @@
 
 #include "MediaTrackGraph.h"
 #include "mozilla/dom/AudioNodeBinding.h"
-#include "nsAutoPtr.h"
 #include "AlignedTArray.h"
 #include "AudioBlock.h"
 #include "AudioSegment.h"
@@ -115,6 +114,8 @@ class AudioNodeTrack : public ProcessedMediaTrack {
     MOZ_ASSERT(!mAudioParamTrack, "Can only do this once");
     mAudioParamTrack = true;
   }
+  // The value for channelCount on an AudioNode, but on the audio thread side.
+  uint32_t NumberOfChannels() const;
 
   /*
    * Resume track after updating its concept of current time by aAdvance.
@@ -150,7 +151,7 @@ class AudioNodeTrack : public ProcessedMediaTrack {
   }
 
   // Any thread
-  AudioNodeEngine* Engine() { return mEngine; }
+  AudioNodeEngine* Engine() { return mEngine.get(); }
 
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
@@ -204,7 +205,7 @@ class AudioNodeTrack : public ProcessedMediaTrack {
   void DecrementActiveInputCount();
 
   // The engine that will generate output for this node.
-  const nsAutoPtr<AudioNodeEngine> mEngine;
+  const UniquePtr<AudioNodeEngine> mEngine;
   // The mixed input blocks are kept from iteration to iteration to avoid
   // reallocating channel data arrays and any buffers for mixing.
   OutputChunks mInputChunks;

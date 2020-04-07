@@ -54,18 +54,18 @@ add_task(async function setup() {
   );
 
   async function assertNumberOfAnimationActors(expected, message) {
-    const actors = await ContentTask.spawn(
+    const actors = await SpecialPowers.spawn(
       gBrowser.selectedBrowser,
-      [animations.actorID],
+      [[animations.actorID]],
       function(actorID) {
         const { require } = ChromeUtils.import(
           "resource://devtools/shared/Loader.jsm"
         );
-        const { DebuggerServer } = require("devtools/server/debugger-server");
+        const { DevToolsServer } = require("devtools/server/devtools-server");
         // Convert actorID to current compartment string otherwise
         // searchAllConnectionsForActor is confused and won't find the actor.
         actorID = String(actorID);
-        const animationActors = DebuggerServer.searchAllConnectionsForActor(
+        const animationActors = DevToolsServer.searchAllConnectionsForActor(
           actorID
         );
         if (!animationActors) {

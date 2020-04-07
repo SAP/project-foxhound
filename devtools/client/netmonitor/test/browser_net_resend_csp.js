@@ -31,6 +31,8 @@ add_task(async function() {
   EventUtils.sendMouseEvent({ type: "contextmenu" }, imgRequest);
   getContextMenuItem(monitor, "request-list-context-resend-only").click();
 
+  await performRequests(monitor, tab, 1);
+
   // Selects request that was resent
   const selReq = getSelectedRequest(store.getState());
 
@@ -41,7 +43,7 @@ add_task(async function() {
   ok(selReq.cause.type === "img", "Correct type of selected");
   ok(origReq.cause.type === selReq.cause.type, "Orig and Sel type match");
 
-  const cspOBJ = await ContentTask.spawn(tab.linkedBrowser, {}, async () => {
+  const cspOBJ = await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
     return JSON.parse(content.document.cspJSON);
   });
 

@@ -91,9 +91,9 @@ function promiseTestHighlighterOutput(
   expectedResult,
   extraTest = () => {}
 ) {
-  return ContentTask.spawn(
+  return SpecialPowers.spawn(
     browser,
-    { word, expectedResult, extraTest: extraTest.toSource() },
+    [{ word, expectedResult, extraTest: extraTest.toSource() }],
     async function({ word, expectedResult, extraTest }) {
       return new Promise((resolve, reject) => {
         let stubbed = {};
@@ -153,9 +153,7 @@ function promiseTestHighlighterOutput(
           if (!lastMaskNode && expectedResult.rectCount !== 0) {
             Assert.ok(
               false,
-              `No mask node found, but expected ${
-                expectedResult.rectCount
-              } rects.`
+              `No mask node found, but expected ${expectedResult.rectCount} rects.`
             );
           }
 

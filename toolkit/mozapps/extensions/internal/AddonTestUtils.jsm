@@ -48,7 +48,7 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "UninstallObserver",
+  "ExtensionAddonObserver",
   "resource://gre/modules/Extension.jsm"
 );
 
@@ -147,9 +147,7 @@ class MockBarrier {
         } catch (e) {
           Cu.reportError(e);
           dump(
-            `Shutdown blocker '${name}' for ${this.name} threw error: ${e} :: ${
-              e.stack
-            }\n`
+            `Shutdown blocker '${name}' for ${this.name} threw error: ${e} :: ${e.stack}\n`
           );
         }
       })
@@ -637,13 +635,29 @@ var AddonTestUtils = {
   },
 
   cleanupTempXPIs() {
+    let didGC = false;
+
     for (let file of this.tempXPIs.splice(0)) {
       if (file.exists()) {
         try {
           Services.obs.notifyObservers(file, "flush-cache-entry");
           file.remove(false);
         } catch (e) {
-          Cu.reportError(e);
+          if (didGC) {
+            Cu.reportError(`Failed to remove ${file.path}: ${e}`);
+          } else {
+            // Bug 1606684 - Sometimes XPI files are still in use by a process
+            // after the test has been finished. Force a GC once and try again.
+            this.info(`Force a GC`);
+            Cu.forceGC();
+            didGC = true;
+
+            try {
+              file.remove(false);
+            } catch (e) {
+              Cu.reportError(`Failed to remove ${file.path} after GC: ${e}`);
+            }
+          }
         }
       }
     }
@@ -956,7 +970,7 @@ var AddonTestUtils = {
     // AddonListeners are removed when the addonManager is shutdown,
     // ensure the Extension observer is added.  We call uninit in
     // promiseShutdown to allow re-initialization.
-    UninstallObserver.init();
+    ExtensionAddonObserver.init();
 
     let XPIScope = ChromeUtils.import(
       "resource://gre/modules/addons/XPIProvider.jsm",
@@ -1055,7 +1069,7 @@ var AddonTestUtils = {
       "resource://gre/modules/Extension.jsm",
       null
     );
-    UninstallObserver.uninit();
+    ExtensionAddonObserver.uninit();
     ChromeUtils.defineModuleGetter(
       ExtensionScope,
       "XPIProvider",
@@ -1791,6 +1805,36 @@ var AddonTestUtils = {
         false,
         `Did not get expected console message: ${uneval(pat)}`
       );
+    }
+  },
+
+  /**
+   * Asserts that the expected installTelemetryInfo properties are available
+   * on the AddonWrapper or AddonInstall objects.
+   *
+   * @param {AddonWrapper|AddonInstall} addonOrInstall
+   *        The addon or addonInstall object to check.
+   * @param {Object} expectedInstallInfo
+   *        The expected installTelemetryInfo properties
+   *        (every property can be a primitive value or a regular expression).
+   */
+  checkInstallInfo(addonOrInstall, expectedInstallInfo) {
+    const installInfo = addonOrInstall.installTelemetryInfo;
+    const { Assert } = this.testScope;
+
+    for (const key of Object.keys(expectedInstallInfo)) {
+      const actual = installInfo[key];
+      let expected = expectedInstallInfo[key];
+
+      // Assert the property value using a regular expression.
+      if (expected && typeof expected.test == "function") {
+        Assert.ok(
+          expected.test(actual),
+          `${key} value "${actual}" has the value expected: "${expected}"`
+        );
+      } else {
+        Assert.deepEqual(actual, expected, `Got the expected value for ${key}`);
+      }
     }
   },
 

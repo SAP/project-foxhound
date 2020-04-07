@@ -30,12 +30,13 @@ add_task(async function() {
     const requestsListStatus = requestItem.querySelector(".status-code");
     EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
     await waitUntil(() => requestsListStatus.title);
+    await waitForDOMIfNeeded(requestItem, ".requests-list-timings-total");
   }
 
   verifyRequestItemTarget(
     document,
     getDisplayedRequests(store.getState()),
-    getSortedRequests(store.getState()).get(0),
+    getSortedRequests(store.getState())[0],
     "GET",
     CONTENT_TYPE_SJS + "?fmt=jsonp&jsonp=$_0123Fun",
     {
@@ -50,7 +51,7 @@ add_task(async function() {
   verifyRequestItemTarget(
     document,
     getDisplayedRequests(store.getState()),
-    getSortedRequests(store.getState()).get(1),
+    getSortedRequests(store.getState())[1],
     "GET",
     CONTENT_TYPE_SJS + "?fmt=jsonp2&jsonp=$_4567Sad",
     {
@@ -72,7 +73,7 @@ add_task(async function() {
   );
   await wait;
 
-  testResponseTab("$_0123Fun", "Hello JSONP!");
+  testResponseTab("$_0123Fun", `"Hello JSONP!"`);
 
   info("Testing second request");
   wait = waitForDOM(document, "#response-panel .CodeMirror-code");
@@ -83,7 +84,7 @@ add_task(async function() {
   );
   await wait;
 
-  testResponseTab("$_4567Sad", "Hello weird JSONP!");
+  testResponseTab("$_4567Sad", `"Hello weird JSONP!"`);
 
   await teardown(monitor);
 

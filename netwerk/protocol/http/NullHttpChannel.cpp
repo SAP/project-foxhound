@@ -95,6 +95,11 @@ NullHttpChannel::GetTransferSize(uint64_t* aTransferSize) {
 }
 
 NS_IMETHODIMP
+NullHttpChannel::GetRequestSize(uint64_t* aRequestSize) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 NullHttpChannel::GetDecodedBodySize(uint64_t* aDecodedBodySize) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -424,6 +429,11 @@ NS_IMETHODIMP
 NullHttpChannel::Cancel(nsresult aStatus) { return NS_ERROR_NOT_IMPLEMENTED; }
 
 NS_IMETHODIMP
+NullHttpChannel::GetCanceled(bool* aCanceled) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 NullHttpChannel::Suspend() { return NS_ERROR_NOT_IMPLEMENTED; }
 
 NS_IMETHODIMP
@@ -441,6 +451,16 @@ NullHttpChannel::SetLoadGroup(nsILoadGroup* aLoadGroup) {
 
 NS_IMETHODIMP
 NullHttpChannel::GetLoadFlags(nsLoadFlags* aLoadFlags) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+NullHttpChannel::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

@@ -66,8 +66,26 @@ MockFxaStorageManager.prototype = {
     return Promise.resolve();
   },
 
-  getAccountData() {
-    return Promise.resolve(this.accountData);
+  getAccountData(fields = null) {
+    let result;
+    if (!this.accountData) {
+      result = null;
+    } else if (fields == null) {
+      // can't use cloneInto as the keys get upset...
+      result = {};
+      for (let field of Object.keys(this.accountData)) {
+        result[field] = this.accountData[field];
+      }
+    } else {
+      if (!Array.isArray(fields)) {
+        fields = [fields];
+      }
+      result = {};
+      for (let field of fields) {
+        result[field] = this.accountData[field];
+      }
+    }
+    return Promise.resolve(result);
   },
 
   updateAccountData(updatedFields) {
@@ -159,6 +177,9 @@ var makeIdentityConfig = function(overrides) {
       // TODO: allow just some attributes to be specified
       result.fxaccount = overrides.fxaccount;
     }
+    if (overrides.node_type) {
+      result.fxaccount.token.node_type = overrides.node_type;
+    }
   }
   return result;
 };
@@ -178,6 +199,11 @@ var makeFxAccountsInternalMock = function(config) {
     },
     _getAssertion(audience) {
       return Promise.resolve(config.fxaccount.user.assertion);
+    },
+    profile: {
+      getProfile() {
+        return null;
+      },
     },
   };
 };

@@ -8,7 +8,9 @@ const {
   checkVersionCompatibility,
 } = require("devtools/client/shared/remote-debugging/version-checker");
 
-const { RUNTIME_PREFERENCE } = require("../constants");
+const {
+  RUNTIME_PREFERENCE,
+} = require("devtools/client/aboutdebugging/src/constants");
 const { WorkersListener } = require("devtools/client/shared/workers-listener");
 
 const PREF_TYPES = {
@@ -67,10 +69,6 @@ class ClientWrapper {
 
   async getFront(typeName) {
     return this.client.mainRoot.getFront(typeName);
-  }
-
-  onFront(typeName, listener) {
-    this.client.mainRoot.onFront(typeName, listener);
   }
 
   async getDeviceDescription() {

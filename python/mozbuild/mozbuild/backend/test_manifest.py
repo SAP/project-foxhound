@@ -4,8 +4,9 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import cPickle as pickle
+import six.moves.cPickle as pickle
 from collections import defaultdict
+import six
 
 import mozpack.path as mozpath
 
@@ -73,12 +74,15 @@ class TestManifestBackend(PartialBackend):
         t['flavor'] = flavor
 
         path = mozpath.normpath(t['path'])
+        manifest = mozpath.normpath(t['manifest'])
         assert mozpath.basedir(path, [topsrcdir])
+        assert mozpath.basedir(manifest, [topsrcdir])
 
         key = path[len(topsrcdir)+1:]
         t['file_relpath'] = key
         t['dir_relpath'] = mozpath.dirname(key)
         t['srcdir_relpath'] = key
+        t['manifest_relpath'] = manifest[len(topsrcdir)+1:]
 
         self.tests_by_path[key].append(t)
 
@@ -89,7 +93,7 @@ class TestManifestBackend(PartialBackend):
             self.manifest_defaults[sub_manifest] = defaults
 
     def add_installs(self, obj, topsrcdir):
-        for src, (dest, _) in obj.installs.iteritems():
+        for src, (dest, _) in six.iteritems(obj.installs):
             key = src[len(topsrcdir)+1:]
             self.installs_by_path[key].append((src, dest))
         for src, pat, dest in obj.pattern_installs:

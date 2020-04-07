@@ -50,12 +50,15 @@ add_task(function losslessDecode() {
 add_task(async function actionURILosslessDecode() {
   let urlNoScheme = "example.com/\u30a2\u30a4\u30a6\u30a8\u30aa";
   let url = "http://" + urlNoScheme;
-  await promiseAutocompleteResultPopup(url);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: url,
+  });
 
   // At this point the heuristic result is selected but the urlbar's value is
   // simply `url`.  Key down and back around until the heuristic result is
-  // selected again, and at that point the urlbar's value should be a visiturl
-  // moz-action.
+  // selected again.
   do {
     EventUtils.synthesizeKey("KEY_ArrowDown");
   } while (UrlbarTestUtils.getSelectedRowIndex(window) != 0);
@@ -84,18 +87,28 @@ add_task(async function test_resultsDisplayDecoded() {
 
   await PlacesTestUtils.addVisits("http://example.com/%E9%A1%B5");
 
-  await promiseAutocompleteResultPopup("example");
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: "example",
+  });
 
   let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   Assert.equal(
     result.displayed.url,
-    "example.com/\u9875",
+    UrlbarPrefs.get("update1.view.stripHttps")
+      ? "http://example.com/\u9875"
+      : "example.com/\u9875",
     "Should be displayed the correctly unescaped URL"
   );
 });
 
 async function checkInput(inputStr) {
-  await promiseAutocompleteResultPopup(inputStr);
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    waitForFocus: SimpleTest.waitForFocus,
+    value: inputStr,
+  });
 
   let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
 

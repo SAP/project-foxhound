@@ -13,15 +13,20 @@
 namespace mozilla {
 namespace layers {
 
+enum class VideoBridgeSource : uint8_t;
 class CompositorThreadHolder;
 
 class VideoBridgeParent final : public PVideoBridgeParent,
                                 public HostIPCAllocator,
-                                public ShmemAllocator {
+                                public mozilla::ipc::IShmemAllocator {
  public:
   ~VideoBridgeParent();
 
-  static VideoBridgeParent* GetSingleton();
+  static VideoBridgeParent* GetSingleton(Maybe<VideoBridgeSource>& aSource);
+
+  static void Open(Endpoint<PVideoBridgeParent>&& aEndpoint,
+                   VideoBridgeSource aSource);
+
   TextureHost* LookupTexture(uint64_t aSerial);
 
   // PVideoBridgeParent
@@ -41,30 +46,29 @@ class VideoBridgeParent final : public PVideoBridgeParent,
       const nsTArray<AsyncParentMessageData>& aMessage) override;
 
   // ISurfaceAllocator
-  ShmemAllocator* AsShmemAllocator() override { return this; }
+  IShmemAllocator* AsShmemAllocator() override { return this; }
   bool IsSameProcess() const override;
   bool IPCOpen() const override { return !mClosed; }
 
-  // ShmemAllocator
+  // IShmemAllocator
   bool AllocShmem(size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
                   ipc::Shmem* aShmem) override;
 
   bool AllocUnsafeShmem(size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
                         ipc::Shmem* aShmem) override;
 
-  void DeallocShmem(ipc::Shmem& aShmem) override;
-
-  static void Open(Endpoint<PVideoBridgeParent>&& aEndpoint);
+  bool DeallocShmem(ipc::Shmem& aShmem) override;
 
  private:
-  VideoBridgeParent();
+  explicit VideoBridgeParent(VideoBridgeSource aSource);
+  void Bind(Endpoint<PVideoBridgeParent>&& aEndpoint);
 
   void ActorDealloc() override;
 
   // This keeps us alive until ActorDestroy(), at which point we do a
   // deferred destruction of ourselves.
   RefPtr<VideoBridgeParent> mSelfRef;
-  RefPtr<CompositorThreadHolder> mCompositorThreadRef;
+  RefPtr<CompositorThreadHolder> mCompositorThreadHolder;
 
   std::map<uint64_t, PTextureParent*> mTextureMap;
 

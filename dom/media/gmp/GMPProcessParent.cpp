@@ -50,16 +50,11 @@ void GMPProcessParent::InitStaticMainThread() {
   // The GMPProcessParent constructor is called off the
   // main thread. Do main thread initialization here.
   MOZ_ASSERT(NS_IsMainThread());
-  sLaunchWithMacSandbox =
-      Preferences::GetBool("security.sandbox.gmp.mac.earlyinit", true) &&
-      (getenv("MOZ_DISABLE_GMP_SANDBOX") == nullptr);
   sMacSandboxGMPLogging =
       Preferences::GetBool("security.sandbox.logging.enabled") ||
       PR_GetEnv("MOZ_SANDBOX_GMP_LOGGING") || PR_GetEnv("MOZ_SANDBOX_LOGGING");
-  GMP_LOG_DEBUG(
-      "GMPProcessParent::InitStaticMainThread: earlyinit=%s, logging=%s",
-      sLaunchWithMacSandbox ? "true" : "false",
-      sMacSandboxGMPLogging ? "true" : "false");
+  GMP_LOG_DEBUG("GMPProcessParent::InitStaticMainThread: sandbox logging=%s",
+                sMacSandboxGMPLogging ? "true" : "false");
 #  if defined(DEBUG)
   sIsMainThreadInitDone = true;
 #  endif
@@ -77,6 +72,7 @@ GMPProcessParent::GMPProcessParent(const std::string& aGMPPath)
   MOZ_COUNT_CTOR(GMPProcessParent);
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
   MOZ_ASSERT(sIsMainThreadInitDone == true);
+  mDisableOSActivityMode = sLaunchWithMacSandbox;
 #endif
 }
 

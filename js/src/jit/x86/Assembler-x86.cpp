@@ -7,6 +7,7 @@
 #include "jit/x86/Assembler-x86.h"
 
 #include "gc/Marking.h"
+#include "util/Memory.h"
 
 using namespace js;
 using namespace js::jit;
@@ -19,6 +20,7 @@ ABIArg ABIArgGenerator::next(MIRType type) {
     case MIRType::Float32:
     case MIRType::Pointer:
     case MIRType::RefOrNull:
+    case MIRType::StackResults:
       current_ = ABIArg(stackOffset_);
       stackOffset_ += sizeof(uint32_t);
       break;

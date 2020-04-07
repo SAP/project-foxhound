@@ -17,18 +17,14 @@
 // Interfaces Needed
 #include "gfxContext.h"
 #include "nsReadableUtils.h"
-#include "nsIComponentManager.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWebProgress.h"
 #include "nsIWebProgressListener.h"
-#include "nsIURIContentListener.h"
-#include "nsISHistoryListener.h"
 #include "nsIURI.h"
 #include "nsIWebBrowserPersist.h"
-#include "nsIServiceManager.h"
 #include "nsFocusManager.h"
 #include "Layers.h"
 #include "nsILoadContext.h"
@@ -41,6 +37,7 @@
 
 // for painting the background window
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/ServoStyleConsts.h"
 
 // Printing Includes
 #ifdef NS_PRINTING
@@ -212,16 +209,14 @@ nsWebBrowser::InternalDestroy() {
 NS_IMPL_CYCLE_COLLECTING_ADDREF(nsWebBrowser)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsWebBrowser)
 
-NS_IMPL_CYCLE_COLLECTION(nsWebBrowser, mDocShell, mDocShellAsReq,
-                         mDocShellAsWin, mDocShellAsNav, mDocShellAsScrollable,
-                         mWebProgress)
+NS_IMPL_CYCLE_COLLECTION_WEAK(nsWebBrowser, mDocShell, mDocShellAsReq,
+                              mDocShellAsWin, mDocShellAsNav, mWebProgress)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsWebBrowser)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIWebBrowser)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowser)
   NS_INTERFACE_MAP_ENTRY(nsIWebNavigation)
   NS_INTERFACE_MAP_ENTRY(nsIBaseWindow)
-  NS_INTERFACE_MAP_ENTRY(nsIScrollable)
   NS_INTERFACE_MAP_ENTRY(nsIDocShellTreeItem)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserPersist)
@@ -404,20 +399,6 @@ nsWebBrowser::GetInProcessSameTypeRootTreeItem(
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsWebBrowser::FindItemWithName(const nsAString& aName,
-                               nsIDocShellTreeItem* aRequestor,
-                               nsIDocShellTreeItem* aOriginalRequestor,
-                               bool aSkipTabGroup,
-                               nsIDocShellTreeItem** aResult) {
-  NS_ENSURE_STATE(mDocShell);
-  NS_ASSERTION(mDocShellTreeOwner,
-               "This should always be set when in this situation");
-
-  return mDocShell->FindItemWithName(aName, aRequestor, aOriginalRequestor,
-                                     aSkipTabGroup, aResult);
-}
-
 dom::Document* nsWebBrowser::GetDocument() {
   return mDocShell ? mDocShell->GetDocument() : nullptr;
 }
@@ -488,17 +469,6 @@ NS_IMETHODIMP
 nsWebBrowser::GetInProcessChildAt(int32_t aIndex,
                                   nsIDocShellTreeItem** aChild) {
   return NS_ERROR_UNEXPECTED;
-}
-
-NS_IMETHODIMP
-nsWebBrowser::FindChildWithName(const nsAString& aName, bool aRecurse,
-                                bool aSameType, nsIDocShellTreeItem* aRequestor,
-                                nsIDocShellTreeItem* aOriginalRequestor,
-                                nsIDocShellTreeItem** aResult) {
-  NS_ENSURE_ARG_POINTER(aResult);
-
-  *aResult = nullptr;
-  return NS_OK;
 }
 
 //*****************************************************************************
@@ -764,10 +734,13 @@ NS_IMETHODIMP
 nsWebBrowser::SaveURI(nsIURI* aURI, nsIPrincipal* aPrincipal,
                       uint32_t aCacheKey, nsIReferrerInfo* aReferrerInfo,
                       nsIInputStream* aPostData, const char* aExtraHeaders,
-                      nsISupports* aFile, nsILoadContext* aPrivacyContext) {
+                      nsISupports* aFile,
+                      nsContentPolicyType aContentPolicyType,
+                      nsILoadContext* aPrivacyContext) {
   return SavePrivacyAwareURI(
       aURI, aPrincipal, aCacheKey, aReferrerInfo, aPostData, aExtraHeaders,
-      aFile, aPrivacyContext && aPrivacyContext->UsePrivateBrowsing());
+      aFile, aContentPolicyType,
+      aPrivacyContext && aPrivacyContext->UsePrivateBrowsing());
 }
 
 NS_IMETHODIMP
@@ -776,6 +749,7 @@ nsWebBrowser::SavePrivacyAwareURI(nsIURI* aURI, nsIPrincipal* aPrincipal,
                                   nsIReferrerInfo* aReferrerInfo,
                                   nsIInputStream* aPostData,
                                   const char* aExtraHeaders, nsISupports* aFile,
+                                  nsContentPolicyType aContentPolicyType,
                                   bool aIsPrivate) {
   if (mPersist) {
     uint32_t currentState;
@@ -808,7 +782,7 @@ nsWebBrowser::SavePrivacyAwareURI(nsIURI* aURI, nsIPrincipal* aPrincipal,
 
   rv = mPersist->SavePrivacyAwareURI(uri, aPrincipal, aCacheKey, aReferrerInfo,
                                      aPostData, aExtraHeaders, aFile,
-                                     aIsPrivate);
+                                     aContentPolicyType, aIsPrivate);
   if (NS_FAILED(rv)) {
     mPersist = nullptr;
   }
@@ -1093,7 +1067,7 @@ nsWebBrowser::SetParentNativeWindow(nativeWindow aParentNativeWindow) {
 
 NS_IMETHODIMP
 nsWebBrowser::GetNativeHandle(nsAString& aNativeHandle) {
-  // the nativeHandle should be accessed from nsIXULWindow
+  // the nativeHandle should be accessed from nsIAppWindow
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -1184,37 +1158,6 @@ nsWebBrowser::SetTitle(const nsAString& aTitle) {
 }
 
 //*****************************************************************************
-// nsWebBrowser::nsIScrollable
-//*****************************************************************************
-
-NS_IMETHODIMP
-nsWebBrowser::GetDefaultScrollbarPreferences(int32_t aScrollOrientation,
-                                             int32_t* aScrollbarPref) {
-  NS_ENSURE_STATE(mDocShell);
-
-  return mDocShellAsScrollable->GetDefaultScrollbarPreferences(
-      aScrollOrientation, aScrollbarPref);
-}
-
-NS_IMETHODIMP
-nsWebBrowser::SetDefaultScrollbarPreferences(int32_t aScrollOrientation,
-                                             int32_t aScrollbarPref) {
-  NS_ENSURE_STATE(mDocShell);
-
-  return mDocShellAsScrollable->SetDefaultScrollbarPreferences(
-      aScrollOrientation, aScrollbarPref);
-}
-
-NS_IMETHODIMP
-nsWebBrowser::GetScrollbarVisibility(bool* aVerticalVisible,
-                                     bool* aHorizontalVisible) {
-  NS_ENSURE_STATE(mDocShell);
-
-  return mDocShellAsScrollable->GetScrollbarVisibility(aVerticalVisible,
-                                                       aHorizontalVisible);
-}
-
-//*****************************************************************************
 // nsWebBrowser: Listener Helpers
 //*****************************************************************************
 
@@ -1231,16 +1174,13 @@ nsWebBrowser::SetDocShell(nsIDocShell* aDocShell) {
     nsCOMPtr<nsIInterfaceRequestor> req(do_QueryInterface(aDocShell));
     nsCOMPtr<nsIBaseWindow> baseWin(do_QueryInterface(aDocShell));
     nsCOMPtr<nsIWebNavigation> nav(do_QueryInterface(aDocShell));
-    nsCOMPtr<nsIScrollable> scrollable(do_QueryInterface(aDocShell));
     nsCOMPtr<nsIWebProgress> progress(do_GetInterface(aDocShell));
-    NS_ENSURE_TRUE(req && baseWin && nav && scrollable && progress,
-                   NS_ERROR_FAILURE);
+    NS_ENSURE_TRUE(req && baseWin && nav && progress, NS_ERROR_FAILURE);
 
     mDocShell = aDocShell;
     mDocShellAsReq = req;
     mDocShellAsWin = baseWin;
     mDocShellAsNav = nav;
-    mDocShellAsScrollable = scrollable;
     mWebProgress = progress;
 
     // By default, do not allow DNS prefetch, so we don't break our frozen
@@ -1258,7 +1198,6 @@ nsWebBrowser::SetDocShell(nsIDocShell* aDocShell) {
     mDocShellAsReq = nullptr;
     mDocShellAsWin = nullptr;
     mDocShellAsNav = nullptr;
-    mDocShellAsScrollable = nullptr;
     mWebProgress = nullptr;
   }
 

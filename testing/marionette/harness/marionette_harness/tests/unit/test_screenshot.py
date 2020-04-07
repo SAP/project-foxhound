@@ -8,10 +8,11 @@ import base64
 import hashlib
 import imghdr
 import struct
-import sys
 import tempfile
 import unittest
 import urllib
+
+import mozinfo
 
 from marionette_driver import By
 from marionette_driver.errors import NoSuchWindowException
@@ -136,7 +137,7 @@ class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
             """))
 
     def open_dialog(self):
-        return self.open_chrome_window("chrome://marionette/content/test_dialog.xul")
+        return self.open_chrome_window("chrome://marionette/content/test_dialog.xhtml")
 
     def test_capture_different_context(self):
         """Check that screenshots in content and chrome are different."""
@@ -217,7 +218,10 @@ class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
     @property
     def scroll_dimensions(self):
         return tuple(self.marionette.execute_script("""
-            return [document.body.scrollWidth, document.body.scrollHeight]
+            return [
+              document.documentElement.scrollWidth,
+              document.documentElement.scrollHeight
+            ];
             """))
 
     def test_capture_tab_already_closed(self):
@@ -228,8 +232,22 @@ class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
         self.assertRaises(NoSuchWindowException, self.marionette.screenshot)
         self.marionette.switch_to_window(self.start_tab)
 
+    @unittest.skipIf(mozinfo.info["bits"] == 32, "Bug 1582973 - Risk for OOM on 32bit")
     def test_capture_vertical_bounds(self):
         self.marionette.navigate(inline("<body style='margin-top: 32768px'>foo"))
+        screenshot = self.marionette.screenshot()
+        self.assert_png(screenshot)
+
+    @unittest.skipIf(mozinfo.info["bits"] == 32, "Bug 1582973 - Risk for OOM on 32bit")
+    def test_capture_horizontal_bounds(self):
+        self.marionette.navigate(inline("<body style='margin-left: 32768px'>foo"))
+        screenshot = self.marionette.screenshot()
+        self.assert_png(screenshot)
+
+    @unittest.skipIf(mozinfo.info["bits"] == 32, "Bug 1582973 - Risk for OOM on 32bit")
+    def test_capture_area_bounds(self):
+        self.marionette.navigate(
+            inline("<body style='margin-right: 21747px; margin-top: 21747px'>foo"))
         screenshot = self.marionette.screenshot()
         self.assert_png(screenshot)
 
@@ -251,18 +269,18 @@ class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
                          self.get_image_dimensions(screenshot))
         self.assertGreater(self.page_y_offset, 0)
 
-    def test_capture_html_document_element(self):
+    def test_capture_full_html_document_element(self):
         self.marionette.navigate(long)
         screenshot = self.marionette.screenshot()
         self.assert_png(screenshot)
         self.assertEqual(self.scale(self.scroll_dimensions),
                          self.get_image_dimensions(screenshot))
 
-    def test_capture_svg_document_element(self):
+    def test_capture_full_svg_document_element(self):
         self.marionette.navigate(svg)
         screenshot = self.marionette.screenshot()
         self.assert_png(screenshot)
-        self.assertEqual(self.scale(self.get_element_dimensions(self.document_element)),
+        self.assertEqual(self.scale(self.scroll_dimensions),
                          self.get_image_dimensions(screenshot))
 
     def test_capture_viewport(self):

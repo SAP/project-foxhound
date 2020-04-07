@@ -18,13 +18,6 @@ const path = require('path');
 const utils = require('./utils');
 const {waitEvent} = utils;
 
-let asyncawait = true;
-try {
-  new Function('async function foo() {await 1}');
-} catch (e) {
-  asyncawait = false;
-}
-
 module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHROME}) {
   const {describe, xdescribe, fdescribe, describe_fails_ffox} = testRunner;
   const {it, fit, xit, it_fails_ffox} = testRunner;
@@ -46,7 +39,7 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
       await newPage.close();
       expect(await browser.pages()).not.toContain(newPage);
     });
-    it('should run beforeunload if asked for', async({context, server}) => {
+    it_fails_ffox('should run beforeunload if asked for', async({context, server}) => {
       const newPage = await context.newPage();
       await newPage.goto(server.PREFIX + '/beforeunload.html');
       // We have to interact with a page so that 'beforeunload' handlers
@@ -77,6 +70,19 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
       await newPage.close();
       expect(newPage.isClosed()).toBe(true);
     });
+    it_fails_ffox('should terminate network waiters', async({context, server}) => {
+      const newPage = await context.newPage();
+      const results = await Promise.all([
+        newPage.waitForRequest(server.EMPTY_PAGE).catch(e => e),
+        newPage.waitForResponse(server.EMPTY_PAGE).catch(e => e),
+        newPage.close()
+      ]);
+      for (let i = 0; i < 2; i++) {
+        const message = results[i].message;
+        expect(message).toContain('Target closed');
+        expect(message).not.toContain('Timeout');
+      }
+    });
   });
 
   describe('Page.Events.Load', function() {
@@ -88,8 +94,8 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
     });
   });
 
-  (asyncawait ? describe : xdescribe)('Async stacks', () => {
-    it('should work', async({page, server}) => {
+  describe('Async stacks', () => {
+    it_fails_ffox('should work', async({page, server}) => {
       server.setRoute('/empty.html', (req, res) => {
         res.statusCode = 204;
         res.end();
@@ -371,7 +377,7 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
       else
         expect(message.type()).toEqual('warn');
     });
-    it_fails_ffox('should have location when fetch fails', async({page, server}) => {
+    it('should have location when fetch fails', async({page, server}) => {
       // The point of this test is to make sure that we report console messages from
       // Log domain: https://vanilla.aslushnikov.com/?Log.entryAdded
       await page.goto(server.EMPTY_PAGE);
@@ -400,8 +406,8 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
         columnNumber: CHROME ? 14 : 6, // console.|log vs |console.log
       });
     });
-    // @see https://github.com/GoogleChrome/puppeteer/issues/3865
-    it_fails_ffox('should not throw when there are console messages in detached iframes', async({browser, page, server}) => {
+    // @see https://github.com/puppeteer/puppeteer/issues/3865
+    it('should not throw when there are console messages in detached iframes', async({browser, page, server}) => {
       await page.goto(server.EMPTY_PAGE);
       await page.evaluate(async() => {
         // 1. Create a popup that Puppeteer is not connected to.
@@ -724,7 +730,7 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
       const result = await page.content();
       expect(result).toBe(`${doctype}${expectedOutput}`);
     });
-    it_fails_ffox('should respect timeout', async({page, server}) => {
+    it('should respect timeout', async({page, server}) => {
       const imgPath = '/img.png';
       // stall for image
       server.setRoute(imgPath, (req, res) => {});
@@ -732,7 +738,7 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
       await page.setContent(`<img src="${server.PREFIX + imgPath}"></img>`, {timeout: 1}).catch(e => error = e);
       expect(error).toBeInstanceOf(puppeteer.errors.TimeoutError);
     });
-    it_fails_ffox('should respect default navigation timeout', async({page, server}) => {
+    it('should respect default navigation timeout', async({page, server}) => {
       page.setDefaultNavigationTimeout(1);
       const imgPath = '/img.png';
       // stall for image
@@ -741,7 +747,7 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
       await page.setContent(`<img src="${server.PREFIX + imgPath}"></img>`).catch(e => error = e);
       expect(error).toBeInstanceOf(puppeteer.errors.TimeoutError);
     });
-    it_fails_ffox('should await resources to load', async({page, server}) => {
+    it('should await resources to load', async({page, server}) => {
       const imgPath = '/img.png';
       let imgResponse = null;
       server.setRoute(imgPath, (req, res) => imgResponse = res);
@@ -903,7 +909,8 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
       expect(await page.evaluate(() => __injected)).toBe(35);
     });
 
-    it_fails_ffox('should throw when added with content to the CSP page', async({page, server}) => {
+    // @see https://github.com/puppeteer/puppeteer/issues/4840
+    xit('should throw when added with content to the CSP page', async({page, server}) => {
       await page.goto(server.PREFIX + '/csp.html');
       let error = null;
       await page.addScriptTag({ content: 'window.__injected = 35;' }).catch(e => error = e);
@@ -1067,6 +1074,15 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
       expect(await page.evaluate(() => result.onInput)).toEqual(['blue']);
       expect(await page.evaluate(() => result.onChange)).toEqual(['blue']);
     });
+    it('should not throw when select causes navigation', async({page, server}) => {
+      await page.goto(server.PREFIX + '/input/select.html');
+      await page.$eval('select', select => select.addEventListener('input', () => window.location = '/empty.html'));
+      await Promise.all([
+        page.select('select', 'blue'),
+        page.waitForNavigation(),
+      ]);
+      expect(page.url()).toContain('empty.html');
+    });
     it('should select multiple options', async({page, server}) => {
       await page.goto(server.PREFIX + '/input/select.html');
       await page.evaluate(() => makeMultiple());
@@ -1130,8 +1146,8 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
       }
       expect(error.message).toContain('Values must be strings');
     });
-    // @see https://github.com/GoogleChrome/puppeteer/issues/3327
-    it_fails_ffox('should work when re-defining top-level Event class', async({page, server}) => {
+    // @see https://github.com/puppeteer/puppeteer/issues/3327
+    it('should work when re-defining top-level Event class', async({page, server}) => {
       await page.goto(server.PREFIX + '/input/select.html');
       await page.evaluate(() => window.Event = null);
       await page.select('select', 'blue');
@@ -1141,7 +1157,7 @@ module.exports.addTests = function({testRunner, expect, headless, puppeteer, CHR
   });
 
   describe('Page.Events.Close', function() {
-    it('should work with window.close', async function({ page, context, server }) {
+    it_fails_ffox('should work with window.close', async function({ page, context, server }) {
       const newPagePromise = new Promise(fulfill => context.once('targetcreated', target => fulfill(target.page())));
       await page.evaluate(() => window['newPage'] = window.open('about:blank'));
       const newPage = await newPagePromise;

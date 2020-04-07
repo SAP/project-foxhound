@@ -707,8 +707,7 @@ class PluginChild extends JSWindowActorChild {
   }
 
   onOverlayClick(event) {
-    let document = event.target.ownerDocument;
-    let plugin = document.getBindingParent(event.target);
+    let plugin = event.target.containingShadowRoot.host;
     let overlay = this.getPluginUI(plugin, "main");
     // Have to check that the target is not the link to update the plugin
     if (
@@ -951,8 +950,6 @@ class PluginChild extends JSWindowActorChild {
   }
 
   setCrashedNPAPIPluginState({ pluginElement, state, pluginName }) {
-    // Force a layout flush so the binding is attached.
-    pluginElement.clientTop;
     let overlay = this.getPluginUI(pluginElement, "main");
     let statusDiv = this.getPluginUI(pluginElement, "submitStatus");
     let optInCB = this.getPluginUI(pluginElement, "submitURLOptIn");

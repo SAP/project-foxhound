@@ -43,8 +43,8 @@ struct ScriptedCaller {
 // Describes all the parameters that control wasm compilation.
 
 struct CompileArgs;
-typedef RefPtr<CompileArgs> MutableCompileArgs;
-typedef RefPtr<const CompileArgs> SharedCompileArgs;
+using MutableCompileArgs = RefPtr<CompileArgs>;
+using SharedCompileArgs = RefPtr<const CompileArgs>;
 
 struct CompileArgs : ShareableBase<CompileArgs> {
   ScriptedCaller scriptedCaller;
@@ -58,6 +58,7 @@ struct CompileArgs : ShareableBase<CompileArgs> {
   bool forceTiering;
   bool gcEnabled;
   bool hugeMemory;
+  bool bigIntEnabled;
 
   // CompileArgs has two constructors:
   //
@@ -80,7 +81,8 @@ struct CompileArgs : ShareableBase<CompileArgs> {
         sharedMemoryEnabled(false),
         forceTiering(false),
         gcEnabled(false),
-        hugeMemory(false) {}
+        hugeMemory(false),
+        bigIntEnabled(false) {}
 };
 
 // Return the estimated compiled (machine) code size for the given bytecode size
@@ -122,7 +124,7 @@ void CompileTier2(const CompileArgs& args, const Bytes& bytecode,
 // cancellation is set, both ExclusiveWaitableData will be notified and so every
 // wait() loop must check cancelled.
 
-typedef ExclusiveWaitableData<const uint8_t*> ExclusiveBytesPtr;
+using ExclusiveBytesPtr = ExclusiveWaitableData<const uint8_t*>;
 
 struct StreamEndData {
   bool reached;
@@ -131,7 +133,7 @@ struct StreamEndData {
 
   StreamEndData() : reached(false) {}
 };
-typedef ExclusiveWaitableData<StreamEndData> ExclusiveStreamEndData;
+using ExclusiveStreamEndData = ExclusiveWaitableData<StreamEndData>;
 
 SharedModule CompileStreaming(const CompileArgs& args, const Bytes& envBytes,
                               const Bytes& codeBytes,

@@ -53,13 +53,8 @@ loader.lazyRequireGetter(
 
 loader.lazyImporter(
   this,
-  "BrowserToolboxProcess",
-  "resource://devtools/client/framework/ToolboxProcess.jsm"
-);
-loader.lazyImporter(
-  this,
-  "ScratchpadManager",
-  "resource://devtools/client/scratchpad/scratchpad-manager.jsm"
+  "BrowserToolboxLauncher",
+  "resource://devtools/client/framework/browser-toolbox/Launcher.jsm"
 );
 loader.lazyImporter(
   this,
@@ -70,6 +65,11 @@ loader.lazyRequireGetter(
   this,
   "ResponsiveUIManager",
   "devtools/client/responsive/manager"
+);
+loader.lazyRequireGetter(
+  this,
+  "PICKER_TYPES",
+  "devtools/shared/picker-constants"
 );
 
 exports.menuitems = [
@@ -100,7 +100,7 @@ exports.menuitems = [
     id: "menu_browserToolbox",
     l10nKey: "browserToolboxMenu",
     oncommand() {
-      BrowserToolboxProcess.init();
+      BrowserToolboxLauncher.init();
     },
     keyId: "browserToolbox",
   },
@@ -155,32 +155,33 @@ exports.menuitems = [
       // If RDM is active, disable touch simulation events if they're enabled.
       // Similarly, enable them when the color picker is done picking.
       if (
-        ResponsiveUIManager.isActiveForTab(target.tab) &&
-        target.actorHasMethod("emulation", "setElementPickerState")
+        ResponsiveUIManager.isActiveForTab(target.localTab) &&
+        target.actorHasMethod("responsive", "setElementPickerState")
       ) {
-        const ui = ResponsiveUIManager.getResponsiveUIForTab(target.tab);
-        await ui.emulationFront.setElementPickerState(true);
+        const ui = ResponsiveUIManager.getResponsiveUIForTab(target.localTab);
+        await ui.responsiveFront.setElementPickerState(
+          true,
+          PICKER_TYPES.EYEDROPPER
+        );
 
         inspectorFront.once("color-picked", async () => {
-          await ui.emulationFront.setElementPickerState(false);
+          await ui.responsiveFront.setElementPickerState(
+            false,
+            PICKER_TYPES.EYEDROPPER
+          );
         });
 
         inspectorFront.once("color-pick-canceled", async () => {
-          await ui.emulationFront.setElementPickerState(false);
+          await ui.responsiveFront.setElementPickerState(
+            false,
+            PICKER_TYPES.EYEDROPPER
+          );
         });
       }
 
       inspectorFront.pickColorFromPage({ copyOnSelect: true, fromMenu: true });
     },
     checkbox: true,
-  },
-  {
-    id: "menu_scratchpad",
-    l10nKey: "scratchpad",
-    oncommand() {
-      ScratchpadManager.openScratchpad();
-    },
-    keyId: "scratchpad",
   },
   { separator: true, id: "devToolsEndSeparator" },
   {

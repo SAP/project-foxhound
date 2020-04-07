@@ -89,10 +89,26 @@ function String_matchAll(regexp) {
 
     // Step 2.
     if (regexp !== undefined && regexp !== null) {
-        // Step 2.a.
+        // Steps 2.a-b.
+        if (IsRegExp(regexp)) {
+            // Step 2.b.i.
+            var flags = regexp.flags;
+
+            // Step 2.b.ii.
+            if (flags === undefined || flags === null) {
+                ThrowTypeError(JSMSG_FLAGS_UNDEFINED_OR_NULL);
+            }
+
+            // Step 2.b.iii.
+            if (!callFunction(std_String_includes, ToString(flags), "g")) {
+                ThrowTypeError(JSMSG_REQUIRES_GLOBAL_REGEXP, "matchAll");
+            }
+        }
+
+        // Step 2.c.
         var matcher = GetMethod(regexp, std_matchAll);
 
-        // Step 2.b.
+        // Step 2.d.
         if (matcher !== undefined)
             return callContentFunction(matcher, regexp, this);
     }
@@ -265,6 +281,112 @@ function String_replace(searchValue, replaceValue) {
     return newString;
 }
 
+// String.prototype.replaceAll (Stage 3 proposal)
+// https://tc39.es/proposal-string-replaceall/
+//
+// String.prototype.replaceAll ( searchValue, replaceValue )
+function String_replaceAll(searchValue, replaceValue) {
+    // Step 1.
+    RequireObjectCoercible(this);
+
+    // Step 2.
+    if (searchValue !== undefined && searchValue !== null) {
+        // Steps 2.a-b.
+        if (IsRegExp(searchValue)) {
+            // Step 2.b.i.
+            var flags = searchValue.flags;
+
+            // Step 2.b.ii.
+            if (flags === undefined || flags === null) {
+                ThrowTypeError(JSMSG_FLAGS_UNDEFINED_OR_NULL);
+            }
+
+            // Step 2.b.iii.
+            if (!callFunction(std_String_includes, ToString(flags), "g")) {
+                ThrowTypeError(JSMSG_REQUIRES_GLOBAL_REGEXP, "replaceAll");
+            }
+        }
+
+        // Step 2.c.
+        var replacer = GetMethod(searchValue, std_replace);
+
+        // Step 2.b.
+        if (replacer !== undefined) {
+            return callContentFunction(replacer, searchValue, this, replaceValue);
+        }
+    }
+
+    // Step 3.
+    var string = ToString(this);
+
+    // Step 4.
+    var searchString = ToString(searchValue);
+
+    // Steps 5-6.
+    if (!IsCallable(replaceValue)) {
+        // Steps 7-16.
+        return StringReplaceAllString(string, searchString, ToString(replaceValue));
+    }
+
+    // Step 7.
+    var searchLength = searchString.length;
+
+    // Step 8.
+    var advanceBy = std_Math_max(1, searchLength);
+
+    // Step 9 (not needed in this implementation).
+
+    // Step 12.
+    var endOfLastMatch = 0;
+
+    // Step 13.
+    var result = "";
+
+    // Steps 10-11, 14.
+    var position = 0;
+    while (true) {
+        // Steps 10-11.
+        //
+        // StringIndexOf doesn't clamp the |position| argument to the input
+        // string length, i.e. |StringIndexOf("abc", "", 4)| returns -1,
+        // whereas |"abc".indexOf("", 4)| returns 3. That means we need to
+        // exit the loop when |nextPosition| is smaller than |position| and
+        // not just when |nextPosition| is -1.
+        var nextPosition = callFunction(std_String_indexOf, string, searchString, position);
+        if (nextPosition < position) {
+            break;
+        }
+        position = nextPosition;
+
+        // Step 14.a.
+        var replacement = ToString(callContentFunction(replaceValue, undefined, searchString,
+                                                       position, string));
+
+        // Step 14.b (not applicable).
+
+        // Step 14.c.
+        var stringSlice = Substring(string, endOfLastMatch, position - endOfLastMatch);
+
+        // Step 14.d.
+        result += stringSlice + replacement;
+
+        // Step 14.e.
+        endOfLastMatch = position + searchLength;
+
+        // Step 11.b.
+        position += advanceBy;
+    }
+
+    // Step 15.
+    if (endOfLastMatch < string.length) {
+        // Step 15.a.
+        result += Substring(string, endOfLastMatch, string.length - endOfLastMatch);
+    }
+
+    // Step 16.
+    return result;
+}
+
 function StringProtoHasNoSearch() {
     var ObjectProto = GetBuiltinPrototype("Object");
     var StringProto = GetBuiltinPrototype("String");
@@ -389,28 +511,29 @@ function String_split(separator, limit) {
     return StringSplitString(S, R);
 }
 
-/* ES6 Draft Oct 14, 2014 21.1.3.19 */
+// ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9
+// 21.1.3.22 String.prototype.substring ( start, end )
 function String_substring(start, end) {
-    // Steps 1-3.
+    // Steps 1-2.
     RequireObjectCoercible(this);
     var str = ToString(this);
 
-    // Step 4.
+    // Step 3.
     var len = str.length;
 
-    // Step 5.
+    // Step 4.
     var intStart = ToInteger(start);
 
-    // Step 6.
+    // Step 5.
     var intEnd = (end === undefined) ? len : ToInteger(end);
 
-    // Step 7.
+    // Step 6.
     var finalStart = std_Math_min(std_Math_max(intStart, 0), len);
 
-    // Step 8.
+    // Step 7.
     var finalEnd = std_Math_min(std_Math_max(intEnd, 0), len);
 
-    // Steps 9-10.
+    // Steps 8-9.
     var from, to;
     if (finalStart < finalEnd) {
         from = finalStart;
@@ -420,7 +543,7 @@ function String_substring(start, end) {
         to = finalStart;
     }
 
-    // Step 11.
+    // Step 10.
     // While |from| and |to - from| are bounded to the length of |str| and this
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
@@ -429,33 +552,34 @@ function String_substring(start, end) {
     return ret;
 }
 
-/* ES6 Draft Oct 14, 2014 B.2.3.1 */
+// ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9
+// B.2.3.1 String.prototype.substr ( start, length )
 function String_substr(start, length) {
     // Steps 1-2.
     RequireObjectCoercible(this);
     var str = ToString(this);
 
-    // Steps 3-4.
+    // Step 3.
     var intStart = ToInteger(start);
 
-    // Steps 5-7.
+    // Steps 4-5.
     var size = str.length;
     // Use |size| instead of +Infinity to avoid performing calculations with
     // doubles. (The result is the same either way.)
     var end = (length === undefined) ? size : ToInteger(length);
 
-    // Step 8.
+    // Step 6.
     if (intStart < 0)
         intStart = std_Math_max(intStart + size, 0);
 
-    // Step 9.
+    // Step 7.
     var resultLength = std_Math_min(std_Math_max(end, 0), size - intStart);
 
-    // Step 10.
+    // Step 8.
     if (resultLength <= 0)
         return "";
 
-    // Step 11.
+    // Step 9.
     // While |intStart| and |resultLength| are bounded to the length of |str|
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
@@ -464,31 +588,32 @@ function String_substr(start, length) {
     return ret;
 }
 
-/* ES6 Draft Oct 14, 2014 21.1.3.16 */
+// ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9
+// 21.1.3.19 String.prototype.slice ( start, end )
 function String_slice(start, end) {
-    // Steps 1-3.
+    // Steps 1-2.
     RequireObjectCoercible(this);
     var str = ToString(this);
 
-    // Step 4.
+    // Step 3.
     var len = str.length;
 
-    // Step 5.
+    // Step 4.
     var intStart = ToInteger(start);
 
-    // Step 6.
+    // Step 5.
     var intEnd = (end === undefined) ? len : ToInteger(end);
 
-    // Step 7.
+    // Step 6.
     var from = (intStart < 0) ? std_Math_max(len + intStart, 0) : std_Math_min(intStart, len);
 
-    // Step 8.
+    // Step 7.
     var to = (intEnd < 0) ? std_Math_max(len + intEnd, 0) : std_Math_min(intEnd, len);
 
-    // Step 9.
+    // Step 8.
     var span = std_Math_max(to - from, 0);
 
-    // Step 10.
+    // Step 9.
     // While |from| and |span| are bounded to the length of |str|
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
@@ -497,50 +622,53 @@ function String_slice(start, end) {
     return ret;
 }
 
-/* ES6 Draft September 5, 2013 21.1.3.3 */
+// ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9
+// 21.1.3.3 String.prototype.codePointAt ( pos )
 function String_codePointAt(pos) {
-    // Steps 1-3.
+    // Steps 1-2.
     RequireObjectCoercible(this);
     var S = ToString(this);
 
-    // Steps 4-5.
+    // Step 3.
     var position = ToInteger(pos);
 
-    // Step 6.
+    // Step 4.
     var size = S.length;
 
-    // Step 7.
+    // Step 5.
     if (position < 0 || position >= size)
         return undefined;
 
-    // Steps 8-9.
+    // Steps 6-7.
     var first = callFunction(std_String_charCodeAt, S, position);
     if (first < 0xD800 || first > 0xDBFF || position + 1 === size)
         return first;
 
-    // Steps 10-11.
+    // Steps 8-9.
     var second = callFunction(std_String_charCodeAt, S, position + 1);
     if (second < 0xDC00 || second > 0xDFFF)
         return first;
 
-    // Step 12.
+    // Step 10.
     return (first - 0xD800) * 0x400 + (second - 0xDC00) + 0x10000;
 }
 
-/* ES6 20121122 draft 15.5.4.21. */
+// ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9
+// 21.1.3.16 String.prototype.repeat ( count )
 function String_repeat(count) {
-    // Steps 1-3.
+    // Steps 1-2.
     RequireObjectCoercible(this);
     // TaintFox: prevent tainting when repeat count = 1
     var S = CopyString(ToString(this));
 
-    // Steps 4-5.
+    // Step 3.
     var n = ToInteger(count);
 
-    // Steps 6-7.
+    // Step 4.
     if (n < 0)
         ThrowRangeError(JSMSG_NEGATIVE_REPETITION_COUNT);
 
+    // Step 5.
     // Inverted condition to handle |Infinity * 0 = NaN| correctly.
     if (!(n * S.length <= MAX_STRING_LENGTH))
         ThrowRangeError(JSMSG_RESULTING_STRING_TOO_LARGE);
@@ -554,7 +682,7 @@ function String_repeat(count) {
            "MAX_STRING_LENGTH + 1 can be used as a bitmask");
     n = n & (MAX_STRING_LENGTH + 1);
 
-    // Steps 8-9.
+    // Steps 6-7.
     var T = "";
     for (;;) {
         if (n & 1)
@@ -618,7 +746,7 @@ function StringIteratorNext() {
     return result;
 }
 
-#if ENABLE_INTL_API
+#if JS_HAS_INTL_API
 var collatorCache = new Record();
 
 /**
@@ -736,7 +864,7 @@ function String_toLocaleUpperCase() {
     // Steps 7-16.
     return intl_toLocaleUpperCase(string, requestedLocale);
 }
-#endif  // ENABLE_INTL_API
+#endif  // JS_HAS_INTL_API
 
 // ES2018 draft rev 8fadde42cf6a9879b4ab0cb6142b31c4ee501667
 // 21.1.2.4 String.raw ( template, ...substitutions )

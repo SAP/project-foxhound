@@ -10,14 +10,11 @@
 #include "mozilla/gfx/Logging.h"
 #include "ScopedGLHelpers.h"
 
-namespace mozilla {
-namespace wr {
+namespace mozilla::wr {
 
 RenderWaylandDMABUFTextureHostOGL::RenderWaylandDMABUFTextureHostOGL(
     WaylandDMABufSurface* aSurface)
-    : mSurface(aSurface),
-      mTextureTarget(LOCAL_GL_TEXTURE_2D),
-      mTextureHandle(0) {
+    : mSurface(aSurface) {
   MOZ_COUNT_CTOR_INHERITED(RenderWaylandDMABUFTextureHostOGL,
                            RenderTextureHostOGL);
 }
@@ -30,22 +27,17 @@ RenderWaylandDMABUFTextureHostOGL::~RenderWaylandDMABUFTextureHostOGL() {
 
 GLuint RenderWaylandDMABUFTextureHostOGL::GetGLHandle(
     uint8_t aChannelIndex) const {
-  MOZ_ASSERT(mSurface);
-  return mTextureHandle;
+  return mSurface->GetTexture(aChannelIndex);
 }
 
 gfx::IntSize RenderWaylandDMABUFTextureHostOGL::GetSize(
     uint8_t aChannelIndex) const {
-  if (!mSurface) {
-    return gfx::IntSize();
-  }
-  return gfx::IntSize(mSurface->GetWidth(), mSurface->GetHeight());
+  return gfx::IntSize(mSurface->GetWidth(aChannelIndex),
+                      mSurface->GetHeight(aChannelIndex));
 }
 
 wr::WrExternalImage RenderWaylandDMABUFTextureHostOGL::Lock(
     uint8_t aChannelIndex, gl::GLContext* aGL, wr::ImageRendering aRendering) {
-  MOZ_ASSERT(aChannelIndex == 0);
-
   if (mGL.get() != aGL) {
     if (mGL) {
       // This should not happen. EGLImage is created only in
@@ -60,42 +52,32 @@ wr::WrExternalImage RenderWaylandDMABUFTextureHostOGL::Lock(
     return InvalidToWrExternalImage();
   }
 
-  if (!mTextureHandle) {
-    if (!mSurface->CreateEGLImage(mGL)) {
+  bool bindTexture = IsFilterUpdateNecessary(aRendering);
+
+  if (!mSurface->GetTexture(aChannelIndex)) {
+    if (!mSurface->CreateTexture(mGL, aChannelIndex)) {
       return InvalidToWrExternalImage();
     }
-
-    mTextureTarget = mGL->GetPreferredEGLImageTextureTarget();
-    MOZ_ASSERT(mTextureTarget == LOCAL_GL_TEXTURE_2D ||
-               mTextureTarget == LOCAL_GL_TEXTURE_EXTERNAL);
-
-    mGL->fGenTextures(1, &mTextureHandle);
-    // Cache rendering filter.
-    mCachedRendering = aRendering;
-    ActivateBindAndTexParameteri(mGL, LOCAL_GL_TEXTURE0, mTextureTarget,
-                                 mTextureHandle, aRendering);
-    mGL->fEGLImageTargetTexture2D(mTextureTarget, mSurface->GetEGLImage());
-  } else if (IsFilterUpdateNecessary(aRendering)) {
-    // Cache new rendering filter.
-    mCachedRendering = aRendering;
-    ActivateBindAndTexParameteri(mGL, LOCAL_GL_TEXTURE0, mTextureTarget,
-                                 mTextureHandle, aRendering);
+    bindTexture = true;
   }
 
-  return NativeTextureToWrExternalImage(
-      mTextureHandle, 0, 0, mSurface->GetWidth(), mSurface->GetHeight());
+  if (bindTexture) {
+    // Cache new rendering filter.
+    mCachedRendering = aRendering;
+    ActivateBindAndTexParameteri(mGL, LOCAL_GL_TEXTURE0, LOCAL_GL_TEXTURE_2D,
+                                 mSurface->GetTexture(aChannelIndex),
+                                 aRendering);
+  }
+
+  return NativeTextureToWrExternalImage(mSurface->GetTexture(aChannelIndex), 0,
+                                        0, mSurface->GetWidth(aChannelIndex),
+                                        mSurface->GetHeight(aChannelIndex));
 }
 
 void RenderWaylandDMABUFTextureHostOGL::Unlock() {}
 
 void RenderWaylandDMABUFTextureHostOGL::DeleteTextureHandle() {
-  if (mTextureHandle) {
-    // XXX recycle gl texture, since SharedSurface_EGLImage and
-    // RenderEGLImageTextureHost is not recycled.
-    mGL->fDeleteTextures(1, &mTextureHandle);
-    mTextureHandle = 0;
-  }
+  mSurface->ReleaseTextures();
 }
 
-}  // namespace wr
-}  // namespace mozilla
+}  // namespace mozilla::wr

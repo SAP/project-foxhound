@@ -184,6 +184,11 @@ static bool PatternIsCompatible(const Pattern& aPattern) {
           static_cast<const RadialGradientPattern&>(aPattern);
       return pattern.mStops->GetBackendType() == BackendType::CAIRO;
     }
+    case PatternType::CONIC_GRADIENT: {
+      const ConicGradientPattern& pattern =
+          static_cast<const ConicGradientPattern&>(aPattern);
+      return pattern.mStops->GetBackendType() == BackendType::CAIRO;
+    }
     default:
       return true;
   }
@@ -518,6 +523,12 @@ static cairo_pattern_t* GfxPatternToCairoPattern(const Pattern& aPattern,
       for (size_t i = 0; i < stops.size(); ++i) {
         CairoPatternAddGradientStop(pat, stops[i]);
       }
+
+      break;
+    }
+    case PatternType::CONIC_GRADIENT: {
+      // XXX(ntim): Bug 1617039 - Implement conic-gradient for Cairo
+      pat = cairo_pattern_create_rgba(0.0, 0.0, 0.0, 0.0);
 
       break;
     }
@@ -1871,6 +1882,7 @@ already_AddRefed<DrawTarget> DrawTargetCairo::CreateShadowDrawTarget(
   return nullptr;
 }
 
+#ifndef USE_SKIA
 static inline pixman_format_code_t GfxFormatToPixmanFormat(
     SurfaceFormat aFormat) {
   switch (aFormat) {
@@ -1892,6 +1904,7 @@ static inline pixman_format_code_t GfxFormatToPixmanFormat(
       return (pixman_format_code_t)0;
   }
 }
+#endif
 
 static inline bool GfxMatrixToPixmanTransform(const Matrix4x4& aMatrix,
                                               pixman_transform* aResult) {

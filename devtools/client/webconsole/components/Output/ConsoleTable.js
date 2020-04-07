@@ -8,8 +8,11 @@ const {
   createFactory,
 } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
-const actions = require("devtools/client/webconsole/actions/messages");
-const { l10n } = require("devtools/client/webconsole/utils/messages");
+const {
+  l10n,
+  getArrayTypeNames,
+  getDescriptorValue,
+} = require("devtools/client/webconsole/utils/messages");
 loader.lazyGetter(this, "MODE", function() {
   return require("devtools/client/shared/components/reps/reps").MODE;
 });
@@ -25,7 +28,8 @@ loader.lazyRequireGetter(
 );
 
 const TABLE_ROW_MAX_ITEMS = 1000;
-const TABLE_COLUMN_MAX_ITEMS = 10;
+// Match Chrome max column number.
+const TABLE_COLUMN_MAX_ITEMS = 21;
 
 class ConsoleTable extends Component {
   static get propTypes() {
@@ -34,7 +38,6 @@ class ConsoleTable extends Component {
       parameters: PropTypes.array.isRequired,
       serviceContainer: PropTypes.object.isRequired,
       id: PropTypes.string.isRequired,
-      tableData: PropTypes.object,
     };
   }
 
@@ -42,23 +45,6 @@ class ConsoleTable extends Component {
     super(props);
     this.getHeaders = this.getHeaders.bind(this);
     this.getRows = this.getRows.bind(this);
-  }
-
-  componentWillMount() {
-    const { id, dispatch, parameters, tableData } = this.props;
-
-    if (!Array.isArray(parameters) || parameters.length === 0 || tableData) {
-      return;
-    }
-
-    // Get all the object properties.
-    dispatch(
-      actions.messageGetTableData(
-        id,
-        parameters[0],
-        getParametersDataType(parameters)
-      )
-    );
   }
 
   getHeaders(columns) {
@@ -70,6 +56,7 @@ class ConsoleTable extends Component {
             className: "new-consoletable-header",
             role: "columnheader",
             key,
+            title: value,
           },
           value
         )
@@ -83,21 +70,29 @@ class ConsoleTable extends Component {
 
     return items.map((item, index) => {
       const cells = [];
+      const className = index % 2 ? "odd" : "even";
+
       columns.forEach((value, key) => {
+        const cellValue = item[key];
+        const cellContent =
+          typeof cellValue === "undefined"
+            ? ""
+            : GripMessageBody({
+                grip: cellValue,
+                mode: MODE.SHORT,
+                useQuotes: false,
+                serviceContainer,
+                dispatch,
+              });
+
         cells.push(
           dom.div(
             {
               role: "gridcell",
-              className: index % 2 ? "odd" : "even",
+              className,
               key,
             },
-            GripMessageBody({
-              grip: item[key],
-              mode: MODE.SHORT,
-              useQuotes: false,
-              serviceContainer,
-              dispatch,
-            })
+            cellContent
           )
         );
       });
@@ -106,28 +101,28 @@ class ConsoleTable extends Component {
   }
 
   render() {
-    const { parameters, tableData } = this.props;
-    const headersGrip = parameters[1];
+    const { parameters } = this.props;
+    const { valueGrip, headersGrip } = getValueAndHeadersGrip(parameters);
+
     const headers =
       headersGrip && headersGrip.preview ? headersGrip.preview.items : null;
 
-    // if tableData is nullable, we don't show anything.
-    if (!tableData) {
+    const data = valueGrip && valueGrip.ownProperties;
+
+    // if we don't have any data, don't show anything.
+    if (!data) {
       return null;
     }
 
-    const { columns, items } = getTableItems(
-      tableData,
-      getParametersDataType(parameters),
-      headers
-    );
+    const dataType = getParametersDataType(parameters);
+    const { columns, items } = getTableItems(data, dataType, headers);
 
     return dom.div(
       {
         className: "new-consoletable",
         role: "grid",
         style: {
-          gridTemplateColumns: `repeat(${columns.size}, auto)`,
+          gridTemplateColumns: `repeat(${columns.size}, calc(100% / ${columns.size}))`,
         },
       },
       this.getHeaders(columns),
@@ -136,23 +131,58 @@ class ConsoleTable extends Component {
   }
 }
 
+function getValueAndHeadersGrip(parameters) {
+  const [valueFront, headersFront] = parameters;
+
+  const headersGrip =
+    headersFront && headersFront.getGrip
+      ? headersFront.getGrip()
+      : headersFront;
+
+  const valueGrip =
+    valueFront && valueFront.getGrip ? valueFront.getGrip() : valueFront;
+
+  return { valueGrip, headersGrip };
+}
+
 function getParametersDataType(parameters = null) {
   if (!Array.isArray(parameters) || parameters.length === 0) {
     return null;
   }
-  return parameters[0].class;
+  const [firstParam] = parameters;
+  if (!firstParam || !firstParam.getGrip) {
+    return null;
+  }
+  const grip = firstParam.getGrip();
+  return grip.class;
 }
 
-function getTableItems(data = {}, type, headers = null) {
-  const INDEX_NAME = "_index";
-  const VALUE_NAME = "_value";
-  const namedIndexes = {
-    [INDEX_NAME]: ["Object", "Array"].includes(type)
+const INDEX_NAME = "_index";
+const VALUE_NAME = "_value";
+
+function getNamedIndexes(type) {
+  return {
+    [INDEX_NAME]: getArrayTypeNames()
+      .concat("Object")
+      .includes(type)
       ? l10n.getStr("table.index")
       : l10n.getStr("table.iterationIndex"),
     [VALUE_NAME]: l10n.getStr("table.value"),
     key: l10n.getStr("table.key"),
   };
+}
+
+function hasValidCustomHeaders(headers) {
+  return (
+    Array.isArray(headers) &&
+    headers.every(
+      header => typeof header === "string" || Number.isInteger(Number(header))
+    )
+  );
+}
+
+function getTableItems(data = {}, type, headers = null) {
+  const namedIndexes = getNamedIndexes(type);
 
   let columns = new Map();
   const items = [];
@@ -162,11 +192,7 @@ function getTableItems(data = {}, type, headers = null) {
     Object.keys(item).forEach(key => addColumn(key));
   };
 
-  const hasValidCustomHeaders =
-    Array.isArray(headers) &&
-    headers.every(
-      header => typeof header === "string" || Number.isInteger(Number(header))
-    );
+  const validCustomHeaders = hasValidCustomHeaders(headers);
 
   const addColumn = function(columnIndex) {
     const columnExists = columns.has(columnIndex);
@@ -175,7 +201,7 @@ function getTableItems(data = {}, type, headers = null) {
     if (
       !columnExists &&
       !hasMaxColumns &&
-      (!hasValidCustomHeaders ||
+      (!validCustomHeaders ||
         headers.includes(columnIndex) ||
         columnIndex === INDEX_NAME)
     ) {
@@ -183,7 +209,7 @@ function getTableItems(data = {}, type, headers = null) {
     }
   };
 
-  for (let index of Object.keys(data)) {
+  for (let [index, property] of Object.entries(data)) {
     if (type !== "Object" && index == parseInt(index, 10)) {
       index = parseInt(index, 10);
     }
@@ -192,32 +218,26 @@ function getTableItems(data = {}, type, headers = null) {
       [INDEX_NAME]: index,
     };
 
-    const property = data[index] ? data[index].value : undefined;
+    const propertyValue = getDescriptorValue(property);
+    const propertyValueGrip =
+      propertyValue && propertyValue.getGrip
+        ? propertyValue.getGrip()
+        : propertyValue;
 
-    if (property && property.preview) {
-      const { preview } = property;
-      const entries = preview.ownProperties || preview.items;
-      if (entries) {
-        for (const [key, entry] of Object.entries(entries)) {
-          item[key] =
-            entry && Object.prototype.hasOwnProperty.call(entry, "value")
-              ? entry.value
-              : entry;
-        }
-      } else {
-        if (preview.key) {
-          item.key = preview.key;
-        }
-
-        item[VALUE_NAME] = Object.prototype.hasOwnProperty.call(
-          preview,
-          "value"
-        )
-          ? preview.value
-          : property;
+    if (propertyValueGrip && propertyValueGrip.ownProperties) {
+      const entries = propertyValueGrip.ownProperties;
+      for (const [key, entry] of Object.entries(entries)) {
+        item[key] = getDescriptorValue(entry);
       }
+    } else if (
+      propertyValueGrip &&
+      propertyValueGrip.preview &&
+      (type === "Map" || type === "WeakMap")
+    ) {
+      item.key = propertyValueGrip.preview.key;
+      item[VALUE_NAME] = propertyValueGrip.preview.value;
     } else {
-      item[VALUE_NAME] = property;
+      item[VALUE_NAME] = propertyValue;
     }
 
     addItem(item);
@@ -229,7 +249,7 @@ function getTableItems(data = {}, type, headers = null) {
 
   // Some headers might not be present in the items, so we make sure to
   // return all the headers set by the user.
-  if (hasValidCustomHeaders) {
+  if (validCustomHeaders) {
     headers.forEach(header => addColumn(header));
   }
 

@@ -9,6 +9,7 @@ const {
 } = require("devtools/client/shared/vendor/react");
 const ReactDOM = require("devtools/client/shared/vendor/react-dom");
 const { Provider } = require("devtools/client/shared/vendor/react-redux");
+const ToolboxProvider = require("devtools/client/framework/store-provider");
 
 const actions = require("devtools/client/webconsole/actions/index");
 const { configureStore } = require("devtools/client/webconsole/store");
@@ -25,7 +26,6 @@ const Telemetry = require("devtools/client/shared/telemetry");
 const EventEmitter = require("devtools/shared/event-emitter");
 const App = createFactory(require("devtools/client/webconsole/components/App"));
 const DataProvider = require("devtools/client/netmonitor/src/connector/firefox-data-provider");
-const ConsoleCommands = require("devtools/client/webconsole/commands.js");
 
 const {
   setupServiceContainer,
@@ -36,6 +36,19 @@ loader.lazyRequireGetter(
   "Constants",
   "devtools/client/webconsole/constants"
 );
+
+function renderApp({ app, store, toolbox, root }) {
+  return ReactDOM.render(
+    createElement(
+      Provider,
+      { store },
+      toolbox
+        ? createElement(ToolboxProvider, { store: toolbox.store }, app)
+        : app
+    ),
+    root
+  );
+}
 
 let store = null;
 
@@ -69,7 +82,6 @@ class WebConsoleWrapper {
 
   async init() {
     const { webConsoleUI } = this;
-    const debuggerClient = this.hud.currentTarget.client;
 
     const webConsoleFront = await this.hud.currentTarget.getFront("console");
 
@@ -81,21 +93,14 @@ class WebConsoleWrapper {
     });
 
     return new Promise(resolve => {
-      const commands = new ConsoleCommands({
-        debuggerClient,
-        proxy: webConsoleUI.getProxy(),
-        threadFront: this.toolbox && this.toolbox.threadFront,
-        currentTarget: this.hud.currentTarget,
-      });
-
       store = configureStore(this.webConsoleUI, {
         // We may not have access to the toolbox (e.g. in the browser console).
-        sessionId: (this.toolbox && this.toolbox.sessionId) || -1,
         telemetry: this.telemetry,
         thunkArgs: {
           webConsoleUI,
           hud: this.hud,
-          client: commands,
+          toolbox: this.toolbox,
+          client: this.webConsoleUI._commands,
         },
       });
 
@@ -111,15 +116,11 @@ class WebConsoleWrapper {
         this.toolbox.threadFront.on("progress", this.dispatchProgress);
       }
 
-      const { prefs } = store.getState();
-      const autocomplete = prefs.autocomplete;
-
       const app = App({
         serviceContainer,
         webConsoleUI,
         onFirstMeaningfulPaint: resolve,
         closeSplitConsole: this.closeSplitConsole.bind(this),
-        autocomplete,
         hidePersistLogsCheckbox:
           webConsoleUI.isBrowserConsole || webConsoleUI.isBrowserToolboxConsole,
         hideShowContentMessagesCheckbox:
@@ -129,8 +130,12 @@ class WebConsoleWrapper {
 
       // Render the root Application component.
       if (this.parentNode) {
-        const provider = createElement(Provider, { store }, app);
-        this.body = ReactDOM.render(provider, this.parentNode);
+        this.body = renderApp({
+          app,
+          store,
+          root: this.parentNode,
+          toolbox: this.toolbox,
+        });
       } else {
         // If there's no parentNode, we are in a test. So we can resolve immediately.
         resolve();
@@ -138,38 +143,8 @@ class WebConsoleWrapper {
     });
   }
 
-  dispatchMessageAdd(packet, waitForResponse) {
-    // Wait for the message to render to resolve with the DOM node.
-    // This is just for backwards compatibility with old tests, and should
-    // be removed once it's not needed anymore.
-    // Can only wait for response if the action contains a valid message.
-    let promise;
-    // Also, do not expect any update while the panel is in background.
-    if (waitForResponse && document.visibilityState === "visible") {
-      const timeStampToMatch = packet.message
-        ? packet.message.timeStamp
-        : packet.timestamp;
-
-      promise = new Promise(resolve => {
-        this.webConsoleUI.on(
-          "new-messages",
-          function onThisMessage(messages) {
-            for (const m of messages) {
-              if (m.timeStamp === timeStampToMatch) {
-                resolve(m.node);
-                this.webConsoleUI.off("new-messages", onThisMessage);
-                return;
-              }
-            }
-          }.bind(this)
-        );
-      });
-    } else {
-      promise = Promise.resolve();
-    }
-
-    this.batchedMessageAdd(packet);
-    return promise;
+  dispatchMessageAdd(packet) {
+    this.batchedMessagesAdd([packet]);
   }
 
   dispatchMessagesAdd(messages) {
@@ -184,7 +159,7 @@ class WebConsoleWrapper {
     this.queuedMessageUpdates = [];
     this.queuedRequestUpdates = [];
     store.dispatch(actions.messagesClear());
-    this.webConsoleUI.emit("messages-cleared");
+    this.webConsoleUI.emitForTests("messages-cleared");
   }
 
   dispatchPrivateMessagesClear() {
@@ -314,11 +289,6 @@ class WebConsoleWrapper {
     return this.setTimeoutIfNeeded();
   }
 
-  batchedMessageAdd(message) {
-    this.queuedMessageAdds.push(message);
-    this.setTimeoutIfNeeded();
-  }
-
   batchedMessagesAdd(messages) {
     this.queuedMessageAdds = this.queuedMessageAdds.concat(messages);
     this.setTimeoutIfNeeded();
@@ -393,7 +363,7 @@ class WebConsoleWrapper {
             await store.dispatch(
               actions.networkMessageUpdate(message, null, res)
             );
-            this.webConsoleUI.emit("network-message-updated", res);
+            this.webConsoleUI.emitForTests("network-message-updated", res);
           }
           this.queuedMessageUpdates = [];
         }
@@ -410,7 +380,7 @@ class WebConsoleWrapper {
           // (netmonitor/src/connector/firefox-data-provider).
           // This event might be utilized in tests to find the right
           // time when to finish.
-          this.webConsoleUI.emit("network-request-payload-ready");
+          this.webConsoleUI.emitForTests("network-request-payload-ready");
         }
         done();
       }, 50);

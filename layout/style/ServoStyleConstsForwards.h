@@ -26,6 +26,7 @@
 #  include "mozilla/MemoryReporting.h"
 #  include "mozilla/ServoTypes.h"
 #  include "mozilla/ServoBindingTypes.h"
+#  include "mozilla/Vector.h"
 #  include "nsCSSPropertyID.h"
 #  include "nsCompatibility.h"
 #  include "nsIURI.h"
@@ -50,7 +51,7 @@ struct gfxFontFeature;
 namespace mozilla {
 namespace gfx {
 struct FontVariation;
-}
+}  // namespace gfx
 }  // namespace mozilla
 typedef mozilla::gfx::FontVariation gfxFontVariation;
 
@@ -71,6 +72,11 @@ class ComputedStyle;
 using Matrix4x4Components = float[16];
 using StyleMatrix4x4Components = Matrix4x4Components;
 
+// This is sound because std::num::NonZeroUsize is repr(transparent).
+//
+// It is just the case that cbindgen doesn't understand it natively.
+using StyleNonZeroUsize = uintptr_t;
+
 struct Keyframe;
 struct PropertyStyleAnimationValuePair;
 
@@ -82,7 +88,6 @@ class SharedFontList;
 class StyleSheet;
 class WritingMode;
 class ServoElementSnapshotTable;
-enum class StyleContentType : uint8_t;
 
 template <typename T>
 struct StyleForgottenArcSlicePtr;
@@ -110,7 +115,13 @@ enum class CallerType : uint32_t;
 
 class Element;
 class Document;
+class ImageTracker;
+
 }  // namespace dom
+
+namespace ipc {
+class ByteBuf;
+}  // namespace ipc
 
 // Replacement for a Rust Box<T> for a non-dynamically-sized-type.
 //
@@ -122,10 +133,17 @@ struct StyleBox {
     MOZ_DIAGNOSTIC_ASSERT(mRaw);
   }
 
-  StyleBox(const StyleBox& aOther) : StyleBox(MakeUnique<T>(*aOther)) {}
   ~StyleBox() {
     MOZ_DIAGNOSTIC_ASSERT(mRaw);
     delete mRaw;
+  }
+
+  StyleBox(const StyleBox& aOther) : StyleBox(MakeUnique<T>(*aOther)) {}
+
+  StyleBox& operator=(const StyleBox& aOther) const {
+    delete mRaw;
+    mRaw = MakeUnique<T>(*aOther).release();
+    return *this;
   }
 
   const T* operator->() const {
@@ -138,11 +156,19 @@ struct StyleBox {
     return *mRaw;
   }
 
-  bool operator==(const StyleBox<T>& aOther) const {
-    return *(*this) == *aOther;
+  T* operator->() {
+    MOZ_DIAGNOSTIC_ASSERT(mRaw);
+    return mRaw;
   }
 
-  bool operator!=(const StyleBox<T>& aOther) const { return *this != *aOther; }
+  T& operator*() {
+    MOZ_DIAGNOSTIC_ASSERT(mRaw);
+    return *mRaw;
+  }
+
+  bool operator==(const StyleBox& aOther) const { return *(*this) == *aOther; }
+
+  bool operator!=(const StyleBox& aOther) const { return *(*this) != *aOther; }
 
  private:
   T* mRaw;
@@ -151,6 +177,7 @@ struct StyleBox {
 // Work-around weird cbindgen renaming / avoiding moving stuff outside its
 // namespace.
 
+using StyleImageTracker = dom::ImageTracker;
 using StyleLoader = css::Loader;
 using StyleLoaderReusableStyleSheets = css::LoaderReusableStyleSheets;
 using StyleCallerType = dom::CallerType;
@@ -180,5 +207,11 @@ using StyleMatrixTransformOperator =
 using StyleAtomicUsize = std::atomic<size_t>;
 
 }  // namespace mozilla
+
+#  ifndef HAVE_64BIT_BUILD
+static_assert(sizeof(void*) == 4, "");
+#    define SERVO_32_BITS 1
+#  endif
+#  define CBINDGEN_IS_GECKO
 
 #endif

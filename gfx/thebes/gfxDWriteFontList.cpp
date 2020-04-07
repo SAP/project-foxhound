@@ -19,11 +19,8 @@
 #include "nsDirectoryServiceUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsAppDirectoryServiceDefs.h"
-#include "nsISimpleEnumerator.h"
 
 #include "gfxGDIFontList.h"
-
-#include "nsIWindowsRegKey.h"
 
 #include "harfbuzz/hb.h"
 
@@ -620,7 +617,7 @@ void gfxDWriteFontEntry::GetVariationAxes(
 
 void gfxDWriteFontEntry::GetVariationInstances(
     nsTArray<gfxFontVariationInstance>& aInstances) {
-  gfxFontUtils::GetVariationInstances(this, aInstances);
+  gfxFontUtils::GetVariationData(this, nullptr, &aInstances);
 }
 
 gfxFont* gfxDWriteFontEntry::CreateFontInstance(
@@ -940,12 +937,15 @@ gfxFontEntry* gfxDWriteFontList::CreateFontEntry(
       mSystemFonts;
 #endif
   RefPtr<IDWriteFontFamily> family;
-  HRESULT hr = collection->GetFontFamily(aFamily->Index(), getter_AddRefs(family));
-  // Check that the family name is what we expected; if not, fall back to search by name.
-  // It's sad we have to do this, but it is possible for Windows to have given different versions
-  // of the system font collection to the parent and child processes.
+  HRESULT hr =
+      collection->GetFontFamily(aFamily->Index(), getter_AddRefs(family));
+  // Check that the family name is what we expected; if not, fall back to search
+  // by name. It's sad we have to do this, but it is possible for Windows to
+  // have given different versions of the system font collection to the parent
+  // and child processes.
   bool foundFamily = false;
-  const nsCString& familyName = aFamily->DisplayName().AsString(SharedFontList());
+  const nsCString& familyName =
+      aFamily->DisplayName().AsString(SharedFontList());
   if (SUCCEEDED(hr) && family) {
     RefPtr<IDWriteLocalizedStrings> names;
     hr = family->GetFamilyNames(getter_AddRefs(names));
@@ -957,11 +957,13 @@ gfxFontEntry* gfxDWriteFontList::CreateFontEntry(
     }
   }
   if (!foundFamily) {
-    // Try to get family by name instead of index (to deal with the case of collection mismatch).
+    // Try to get family by name instead of index (to deal with the case of
+    // collection mismatch).
     UINT32 index;
     BOOL exists;
     NS_ConvertUTF8toUTF16 name16(familyName);
-    hr = collection->FindFamilyName(reinterpret_cast<const WCHAR*>(name16.BeginReading()), &index, &exists);
+    hr = collection->FindFamilyName(
+        reinterpret_cast<const WCHAR*>(name16.BeginReading()), &index, &exists);
     if (SUCCEEDED(hr) && exists && index != UINT_MAX) {
       hr = collection->GetFontFamily(index, getter_AddRefs(family));
       if (FAILED(hr) || !family) {
@@ -1510,7 +1512,7 @@ void gfxDWriteFontList::GetFontsFromCollection(
     if (mBadUnderlineFamilyNames.ContainsSorted(name)) {
       fam->SetBadUnderlineFamily();
     }
-    mFontFamilies.Put(name, fam);
+    mFontFamilies.Put(name, RefPtr{fam});
 
     // now add other family name localizations, if present
     uint32_t nameCount = names->GetCount();
@@ -1618,7 +1620,7 @@ nsresult gfxDWriteFontList::GetFontSubstitutes() {
       gfxFontFamily* ff;
       if (!actualFontName.IsEmpty() &&
           (ff = mFontFamilies.GetWeak(actualFontName))) {
-        mFontSubstitutes.Put(substituteName, ff);
+        mFontSubstitutes.Put(substituteName, RefPtr{ff});
       } else {
         mNonExistingFonts.AppendElement(substituteName);
       }
@@ -1666,7 +1668,7 @@ void gfxDWriteFontList::GetDirectWriteSubstitutes() {
       BuildKeyNameFromFontName(actualFontName);
       gfxFontFamily* ff;
       if (nullptr != (ff = mFontFamilies.GetWeak(actualFontName))) {
-        mFontSubstitutes.Put(substituteName, ff);
+        mFontSubstitutes.Put(substituteName, RefPtr{ff});
       } else {
         mNonExistingFonts.AppendElement(substituteName);
       }

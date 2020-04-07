@@ -22,6 +22,8 @@
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/widget/WidgetMessageUtils.h"
+#include "mozilla/Telemetry.h"
+#include "mozilla/TelemetryScalarEnums.h"
 
 #include "gfxPlatform.h"
 
@@ -146,6 +148,8 @@ const char nsXPLookAndFeel::sColorPrefs[][41] = {
     "ui.buttonshadow",
     "ui.buttontext",
     "ui.captiontext",
+    "ui.-moz-field",
+    "ui.-moz-fieldtext",
     "ui.graytext",
     "ui.highlight",
     "ui.highlighttext",
@@ -166,8 +170,8 @@ const char nsXPLookAndFeel::sColorPrefs[][41] = {
     "ui.windowframe",
     "ui.windowtext",
     "ui.-moz-buttondefault",
-    "ui.-moz-field",
-    "ui.-moz-fieldtext",
+    "ui.-moz-default-color",
+    "ui.-moz-default-background-color",
     "ui.-moz-dialog",
     "ui.-moz-dialogtext",
     "ui.-moz-dragtargetzone",
@@ -211,6 +215,9 @@ const char nsXPLookAndFeel::sColorPrefs[][41] = {
     "ui.-moz-win-mediatext",
     "ui.-moz-win-communicationstext",
     "ui.-moz-nativehyperlinktext",
+    "ui.-moz-hyperlinktext",
+    "ui.-moz-activehyperlinktext",
+    "ui.-moz-visitedhyperlinktext",
     "ui.-moz-comboboxtext",
     "ui.-moz-combobox",
     "ui.-moz-gtk-info-bar-text"};
@@ -219,8 +226,6 @@ int32_t nsXPLookAndFeel::sCachedColors[size_t(LookAndFeel::ColorID::End)] = {0};
 int32_t nsXPLookAndFeel::sCachedColorBits[COLOR_CACHE_SIZE] = {0};
 
 bool nsXPLookAndFeel::sInitialized = false;
-bool nsXPLookAndFeel::sIsInPrefersReducedMotionForTest = false;
-bool nsXPLookAndFeel::sPrefersReducedMotionForTest = false;
 
 nsXPLookAndFeel* nsXPLookAndFeel::sInstance = nullptr;
 bool nsXPLookAndFeel::sShutdown = false;
@@ -250,9 +255,6 @@ void nsXPLookAndFeel::Shutdown() {
   delete sInstance;
   sInstance = nullptr;
 }
-
-nsXPLookAndFeel::nsXPLookAndFeel()
-    : LookAndFeel(), mShouldRetainCacheForTest(false) {}
 
 // static
 void nsXPLookAndFeel::IntPrefChanged(nsLookAndFeelIntPref* data) {
@@ -629,10 +631,10 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID) {
     case ColorID::MozButtondefault:
       result = NS_RGB(0x69, 0x69, 0x69);
       break;
-    case ColorID::MozField:
+    case ColorID::Field:
       result = NS_RGB(0xFF, 0xFF, 0xFF);
       break;
-    case ColorID::MozFieldtext:
+    case ColorID::Fieldtext:
       result = NS_RGB(0x00, 0x00, 0x00);
       break;
     case ColorID::MozDialog:
@@ -837,8 +839,8 @@ nsresult nsXPLookAndFeel::GetColorImpl(ColorID aID,
         // from the CSS3 working draft (not yet finalized)
         // http://www.w3.org/tr/2000/wd-css3-userint-20000216.html#color
 
-      case ColorID::MozField:
-      case ColorID::MozFieldtext:
+      case ColorID::Field:
+      case ColorID::Fieldtext:
         aResult = NS_RGB(0xff, 0x00, 0xff);
         break;
 
@@ -999,6 +1001,21 @@ nsTArray<LookAndFeelInt> nsXPLookAndFeel::GetIntCacheImpl() {
   return nsTArray<LookAndFeelInt>();
 }
 
+static bool sRecordedLookAndFeelTelemetry = false;
+
+void nsXPLookAndFeel::RecordTelemetry() {
+  if (sRecordedLookAndFeelTelemetry) {
+    return;
+  }
+
+  sRecordedLookAndFeelTelemetry = true;
+
+  int32_t i;
+  Telemetry::ScalarSet(
+      Telemetry::ScalarID::WIDGET_DARK_MODE,
+      NS_SUCCEEDED(GetIntImpl(eIntID_SystemUsesDarkTheme, i)) && i != 0);
+}
+
 namespace mozilla {
 
 // static
@@ -1069,6 +1086,28 @@ void LookAndFeel::SetIntCache(
 // static
 void LookAndFeel::SetShouldRetainCacheForTest(bool aValue) {
   nsLookAndFeel::GetInstance()->SetShouldRetainCacheImplForTest(aValue);
+}
+
+// static
+void LookAndFeel::SetPrefersReducedMotionOverrideForTest(bool aValue) {
+  // Tell that the cache value we are going to set isn't cleared via
+  // nsPresContext::ThemeChangedInternal which is called right before
+  // we queue the media feature value change for this prefers-reduced-motion
+  // change.
+  SetShouldRetainCacheForTest(true);
+
+  int32_t value = aValue ? 1 : 0;
+
+  AutoTArray<LookAndFeelInt, 1> lookAndFeelCache;
+  lookAndFeelCache.AppendElement(
+      LookAndFeelInt{.id = eIntID_PrefersReducedMotion, .value = value});
+
+  SetIntCache(lookAndFeelCache);
+}
+
+// static
+void LookAndFeel::ResetPrefersReducedMotionOverrideForTest() {
+  SetShouldRetainCacheForTest(false);
 }
 
 }  // namespace mozilla

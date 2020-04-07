@@ -23,7 +23,6 @@
 #include "nsCURILoader.h"
 #include "nsCertOverrideService.h"
 #include "nsCryptoHash.h"
-#include "nsICategoryManager.h"
 #include "nsKeyModule.h"
 #include "nsNSSCertificate.h"
 #include "nsNSSCertificateDB.h"
@@ -134,7 +133,6 @@ IMPL(nsPK11TokenDB, nullptr)
 IMPL(PKCS11ModuleDB, nullptr)
 IMPL(nsNSSCertificate, nullptr, ProcessRestriction::AnyProcess)
 IMPL(nsNSSCertificateDB, nullptr)
-IMPL(nsNSSCertList, nullptr, ProcessRestriction::AnyProcess)
 #ifdef MOZ_XUL
 IMPL(nsCertTree, nullptr)
 #endif

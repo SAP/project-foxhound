@@ -14,25 +14,22 @@
 #include "nsJSUtils.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/BinASTFormat.h"  // JS::BinASTFormat
 #include "js/CompilationAndEvaluation.h"
+#include "js/Date.h"
 #include "js/Modules.h"  // JS::CompileModule{,DontInflate}, JS::GetModuleScript, JS::Module{Instantiate,Evaluate}
 #include "js/OffThreadScriptCompilation.h"
 #include "js/SourceText.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptElement.h"
 #include "nsIScriptGlobalObject.h"
-#include "nsIXPConnect.h"
 #include "nsCOMPtr.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsPIDOMWindow.h"
 #include "GeckoProfiler.h"
 #include "nsJSPrincipals.h"
 #include "xpcpublic.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
-#ifdef MOZ_XBL
-#  include "nsXBLPrototypeBinding.h"
-#endif
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/BindingUtils.h"
@@ -375,7 +372,8 @@ nsresult nsJSUtils::ExecutionContext::DecodeBinAST(
   mWantsReturnValue = !aCompileOptions.noScriptRval;
 #  endif
 
-  mScript.set(JS::DecodeBinAST(mCx, aCompileOptions, aBuf, aLength));
+  mScript.set(JS::DecodeBinAST(mCx, aCompileOptions, aBuf, aLength,
+                               JS::BinASTFormat::Multipart));
 
   if (!mScript) {
     mSkip = true;
@@ -621,31 +619,6 @@ bool nsJSUtils::GetScopeChainForElement(
   return true;
 }
 
-#ifdef MOZ_XBL
-/* static */
-bool nsJSUtils::GetScopeChainForXBL(
-    JSContext* aCx, Element* aElement,
-    const nsXBLPrototypeBinding& aProtoBinding,
-    JS::MutableHandleVector<JSObject*> aScopeChain) {
-  if (!aElement) {
-    return true;
-  }
-
-  if (!aProtoBinding.SimpleScopeChain()) {
-    return GetScopeChainForElement(aCx, aElement, aScopeChain);
-  }
-
-  if (!AddScopeChainItem(aCx, aElement, aScopeChain)) {
-    return false;
-  }
-
-  if (!AddScopeChainItem(aCx, aElement->OwnerDoc(), aScopeChain)) {
-    return false;
-  }
-  return true;
-}
-#endif
-
 /* static */
 void nsJSUtils::ResetTimeZone() { JS::ResetTimeZone(); }
 
@@ -662,7 +635,8 @@ bool nsJSUtils::DumpEnabled() {
 // nsDOMJSUtils.h
 //
 
-bool nsAutoJSString::init(const JS::Value& v) {
+template <typename T>
+bool nsTAutoJSString<T>::init(const JS::Value& v) {
   // Note: it's okay to use danger::GetJSContext here instead of AutoJSAPI,
   // because the init() call below is careful not to run script (for instance,
   // it only calls JS::ToString for non-object values).
@@ -671,10 +645,10 @@ bool nsAutoJSString::init(const JS::Value& v) {
     JS_ClearPendingException(cx);
     return false;
   }
-
   return true;
 }
 
+<<<<<<< HEAD
 LazyLogModule gTaintLog("Taint");
 
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name)
@@ -915,3 +889,7 @@ nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char
 
   return NS_OK;
 }
+=======
+template bool nsTAutoJSString<char16_t>::init(const JS::Value&);
+template bool nsTAutoJSString<char>::init(const JS::Value&);
+>>>>>>> firefox-release

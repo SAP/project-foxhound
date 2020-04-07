@@ -715,7 +715,7 @@ class ADBDevice(ADBCommand):
                 self._ls += " -1A"
             except ADBError as e:
                 self._logger.info("detect ls -1A: {}".format(e))
-                if 'No such file or directory' not in e.message:
+                if 'No such file or directory' not in str(e):
                     boot_completed = True
                     self._ls += " -a"
             if not boot_completed:
@@ -733,10 +733,10 @@ class ADBDevice(ADBCommand):
                 boot_completed = True
                 self._have_cp = True
             except ADBError as e:
-                if 'not found' in e.message:
+                if 'not found' in str(e):
                     self._have_cp = False
                     boot_completed = True
-                elif 'known option' in e.message:
+                elif 'known option' in str(e):
                     self._have_cp = True
                     boot_completed = True
             if not boot_completed:
@@ -755,7 +755,7 @@ class ADBDevice(ADBCommand):
                 self._chmod_R = True
         except ADBError as e:
             self._logger.debug("Check chmod -R: {}".format(e))
-            match = re_recurse.search(e.message)
+            match = re_recurse.search(str(e))
             if match:
                 self._chmod_R = True
         self._logger.info("Native chmod -R support: {}".format(self._chmod_R))
@@ -793,10 +793,10 @@ class ADBDevice(ADBCommand):
                     boot_completed = True
                     self._have_pidof = True
                 except ADBError as e:
-                    if 'not found' in e.message:
+                    if 'not found' in str(e):
                         self._have_pidof = False
                         boot_completed = True
-                    elif 'known option' in e.message:
+                    elif 'known option' in str(e):
                         self._have_pidof = True
                         boot_completed = True
                 if not boot_completed:
@@ -2486,7 +2486,7 @@ class ADBDevice(ADBCommand):
             if self.exists(path, timeout=timeout, root=root):
                 raise ADBError('rm("%s") failed to remove path.' % path)
         except ADBError as e:
-            if not force and 'No such file or directory' in e.message:
+            if not force and 'No such file or directory' in str(e):
                 raise
 
     def rmdir(self, path, timeout=None, root=False):
@@ -2607,7 +2607,7 @@ class ADBDevice(ADBCommand):
             try:
                 self.shell_output(' '.join(args), timeout=timeout, root=root)
             except ADBError as e:
-                if 'No such process' not in e.message:
+                if 'No such process' not in str(e):
                     raise
             pid_set = set(pid_list)
             current_pid_set = set([str(proc[0]) for proc in
@@ -2765,7 +2765,7 @@ class ADBDevice(ADBCommand):
             # Do not create parent directories since cp does not.
             self.mkdir(destination_dir, timeout=timeout, root=root)
         except ADBError as e:
-            if 'File exists' not in e.message:
+            if 'File exists' not in str(e):
                 raise
 
         for i in self.list_files(source, timeout=timeout, root=root):
@@ -2990,13 +2990,21 @@ class ADBDevice(ADBCommand):
         :raises: * ADBTimeoutError
                  * ADBError
         """
+        if self.version < version_codes.Q:
+            return self._get_top_activity_P(timeout=timeout)
+        return self._get_top_activity_Q(timeout=timeout)
+
+    def _get_top_activity_P(self, timeout=None):
+        """Returns the name of the top activity (focused app) reported by dumpsys
+        for Android 9 and earlier.
+        """
         package = None
         data = None
         cmd = "dumpsys window windows"
         try:
             data = self.shell_output(cmd, timeout=timeout)
         except Exception:
-            # dumpsys intermittently fails on some platforms (4.3 arm emulator)
+            # dumpsys intermittently fails on some platforms.
             return package
         m = re.search('mFocusedApp(.+)/', data)
         if not m:
@@ -3006,6 +3014,30 @@ class ADBDevice(ADBCommand):
             line = m.group(0)
             # Extract package name: string of non-whitespace ending in forward slash
             m = re.search('(\S+)/$', line)
+            if m:
+                package = m.group(1)
+        if self._verbose:
+            self._logger.debug('get_top_activity: %s' % str(package))
+        return package
+
+    def _get_top_activity_Q(self, timeout=None):
+        """Returns the name of the top activity (focused app) reported by dumpsys
+        for Android 10 and later.
+        """
+        package = None
+        data = None
+        cmd = "dumpsys window"
+        try:
+            data = self.shell_output(cmd, timeout=timeout)
+        except Exception:
+            # dumpsys intermittently fails on some platforms (4.3 arm emulator)
+            return package
+        m = re.search('mFocusedApp=AppWindowToken{\w+ token=Token{'
+                      '\w+ ActivityRecord{\w+ w+ (\w+)/w+ \w+}}}', data)
+        if m:
+            line = m.group(1)
+            # Extract package name: string of non-whitespace ending in forward slash
+            m = re.search('(\S+)/', line)
             if m:
                 package = m.group(1)
         if self._verbose:
@@ -3067,7 +3099,7 @@ class ADBDevice(ADBCommand):
                             break
             except ADBError as e:
                 success = False
-                failure = e.message
+                failure = str(e)
 
             if not success:
                 self._logger.debug('Attempt %s of %s device not ready: %s' % (
@@ -3097,7 +3129,7 @@ class ADBDevice(ADBCommand):
         except ADBError as e:
             # Executing this via adb shell errors, but not interactively.
             # Any other exitcode is a real error.
-            if 'exitcode: 137' not in e.message:
+            if 'exitcode: 137' not in str(e):
                 raise
             self._logger.warning('Unable to set power stayon true: %s' % e)
 
@@ -3110,22 +3142,22 @@ class ADBDevice(ADBCommand):
 
         :param str: app_name: Name of application (e.g. `org.mozilla.fennec`)
         """
-        try:
-            if self.version >= version_codes.M:
-                permissions = [
-                    'android.permission.WRITE_EXTERNAL_STORAGE',
-                    'android.permission.READ_EXTERNAL_STORAGE',
-                    'android.permission.ACCESS_COARSE_LOCATION',
-                    'android.permission.ACCESS_FINE_LOCATION',
-                    'android.permission.CAMERA',
-                    'android.permission.RECORD_AUDIO',
-                ]
-                self._logger.info("Granting important runtime permissions to %s" % app_name)
-                for permission in permissions:
+        if self.version >= version_codes.M:
+            permissions = [
+                'android.permission.WRITE_EXTERNAL_STORAGE',
+                'android.permission.READ_EXTERNAL_STORAGE',
+                'android.permission.ACCESS_COARSE_LOCATION',
+                'android.permission.ACCESS_FINE_LOCATION',
+                'android.permission.CAMERA',
+                'android.permission.RECORD_AUDIO',
+            ]
+            self._logger.info("Granting important runtime permissions to %s" % app_name)
+            for permission in permissions:
+                try:
                     self.shell_output('pm grant %s %s' % (app_name, permission))
-        except ADBError as e:
-            self._logger.warning("Unable to grant runtime permissions to %s due to %s" %
-                                 (app_name, e))
+                except ADBError as e:
+                    self._logger.warning("Unable to grant runtime permission %s to %s due to %s" %
+                                         (permission, app_name, e))
 
     def install_app(self, apk_path, replace=False, timeout=None):
         """Installs an app on the device.

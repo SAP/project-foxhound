@@ -10,7 +10,6 @@ use dwrote;
 #[cfg(all(unix, not(target_os = "android")))]
 use font_loader::system_fonts;
 use winit::EventsLoopProxy;
-use crate::json_frame_writer::JsonFrameWriter;
 use crate::ron_frame_writer::RonFrameWriter;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -41,7 +40,6 @@ pub enum FontDescriptor {
 
 pub enum SaveType {
     Yaml,
-    Json,
     Ron,
     Binary,
 }
@@ -191,8 +189,6 @@ impl Wrench {
             SaveType::Yaml => Box::new(
                 YamlFrameWriterReceiver::new(&PathBuf::from("yaml_frames")),
             ) as Box<dyn webrender::ApiRecordingReceiver>,
-            SaveType::Json => Box::new(JsonFrameWriter::new(&PathBuf::from("json_frames"))) as
-                Box<dyn webrender::ApiRecordingReceiver>,
             SaveType::Ron => Box::new(RonFrameWriter::new(&PathBuf::from("ron_frames"))) as
                 Box<dyn webrender::ApiRecordingReceiver>,
             SaveType::Binary => Box::new(webrender::BinaryRecorder::new(
@@ -284,6 +280,12 @@ impl Wrench {
         wrench.api.send_transaction(wrench.document_id, txn);
 
         wrench
+    }
+
+    pub fn set_quality_settings(&mut self, settings: QualitySettings) {
+        let mut txn = Transaction::new();
+        txn.set_quality_settings(settings);
+        self.api.send_transaction(self.document_id, txn);
     }
 
     pub fn get_page_zoom(&self) -> ZoomFactor {
@@ -603,6 +605,7 @@ impl Wrench {
         ];
 
         let color_and_offset = [(ColorF::BLACK, 2.0), (ColorF::WHITE, 0.0)];
+        self.renderer.device.begin_frame(); // next line might compile shaders:
         let dr = self.renderer.debug_renderer().unwrap();
 
         for ref co in &color_and_offset {
@@ -613,6 +616,7 @@ impl Wrench {
                 y += self.device_pixel_ratio * dr.line_height();
             }
         }
+        self.renderer.device.end_frame();
     }
 
     pub fn shut_down(self, rx: Receiver<NotifierEvent>) {

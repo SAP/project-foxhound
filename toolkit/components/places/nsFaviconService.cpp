@@ -30,6 +30,7 @@
 #include "mozilla/Preferences.h"
 #include "nsILoadInfo.h"
 #include "nsIContentPolicy.h"
+#include "nsIScriptError.h"
 #include "nsContentUtils.h"
 #include "imgICache.h"
 
@@ -178,10 +179,10 @@ nsFaviconService::ExpireAllFavicons() {
       mDB->GetAsyncStatement("DELETE FROM moz_icons_to_pages");
   NS_ENSURE_STATE(unlinkIconsStmt);
 
-  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {removePagesStmt.forget(),
-
-                                                      removeIconsStmt.forget(),
-                                                      unlinkIconsStmt.forget()};
+  nsTArray<RefPtr<mozIStorageBaseStatement>> stmts = {
+      ToRefPtr(std::move(removePagesStmt)),
+      ToRefPtr(std::move(removeIconsStmt)),
+      ToRefPtr(std::move(unlinkIconsStmt))};
   nsCOMPtr<mozIStorageConnection> conn = mDB->MainConn();
   if (!conn) {
     return NS_ERROR_UNEXPECTED;

@@ -31,6 +31,8 @@ interface mixin GlobalEventHandlers {
            attribute EventHandler onfocus;
            //(Not implemented)attribute EventHandler oncancel;
            attribute EventHandler onauxclick;
+           [Pref="dom.input_events.beforeinput.enabled"]
+           attribute EventHandler onbeforeinput;
            attribute EventHandler oncanplay;
            attribute EventHandler oncanplaythrough;
            attribute EventHandler onchange;
@@ -136,9 +138,13 @@ interface mixin GlobalEventHandlers {
 
            // CSS-Animation and CSS-Transition legacy handlers.
            // This handler isn't standard.
+           [BinaryName="onwebkitAnimationEnd"]
            attribute EventHandler onwebkitanimationend;
+           [BinaryName="onwebkitAnimationIteration"]
            attribute EventHandler onwebkitanimationiteration;
+           [BinaryName="onwebkitAnimationStart"]
            attribute EventHandler onwebkitanimationstart;
+           [BinaryName="onwebkitTransitionEnd"]
            attribute EventHandler onwebkittransitionend;
 };
 
@@ -155,10 +161,8 @@ interface mixin WindowEventHandlers {
            attribute EventHandler onpagehide;
            attribute EventHandler onpageshow;
            attribute EventHandler onpopstate;
-           [Pref="dom.promise_rejection_events.enabled"]
            attribute EventHandler onrejectionhandled;
            attribute EventHandler onstorage;
-           [Pref="dom.promise_rejection_events.enabled"]
            attribute EventHandler onunhandledrejection;
            attribute EventHandler onunload;
 };

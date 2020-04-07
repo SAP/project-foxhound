@@ -20,20 +20,12 @@
 
       this.attachShadow({ mode: "open" });
 
-      this.addEventListener(
+      document.addEventListener(
         "keypress",
         event => {
           if (event.keyCode == KeyEvent.DOM_VK_RETURN) {
             this._hitEnter(event);
-          }
-        },
-        { mozSystemGroup: true }
-      );
-
-      this.addEventListener(
-        "keypress",
-        event => {
-          if (
+          } else if (
             event.keyCode == KeyEvent.DOM_VK_ESCAPE &&
             !event.defaultPrevented
           ) {
@@ -44,7 +36,7 @@
       );
 
       if (AppConstants.platform == "macosx") {
-        this.addEventListener(
+        document.addEventListener(
           "keypress",
           event => {
             if (event.key == "." && event.metaKey) {
@@ -60,7 +52,7 @@
 
       // listen for when window is closed via native close buttons
       window.addEventListener("close", event => {
-        if (!document.documentElement.cancelDialog()) {
+        if (!this.cancelDialog()) {
           event.preventDefault();
         }
       });
@@ -129,10 +121,10 @@
       let key =
         AppConstants.platform == "macosx"
           ? `<key phase="capturing"
-            oncommand="document.documentElement.openHelp(event)"
+            oncommand="document.querySelector('dialog').openHelp(event)"
             key="&openHelpMac.commandkey;" modifiers="accel"/>`
           : `<key phase="capturing"
-            oncommand="document.documentElement.openHelp(event)"
+            oncommand="document.querySelector('dialog').openHelp(event)"
             keycode="&openHelp.commandkey;"/>`;
 
       return `
@@ -163,6 +155,8 @@
       if (this.delayConnectedCallback()) {
         return;
       }
+
+      document.documentElement.setAttribute("role", "dialog");
 
       this.shadowRoot.textContent = "";
       this.shadowRoot.appendChild(
@@ -279,14 +273,13 @@
     }
 
     postLoadInit(aEvent) {
-      function focusInit() {
-        const dialog = document.documentElement;
-        const defaultButton = dialog.getButton(dialog.defaultButton);
+      let focusInit = () => {
+        const defaultButton = this.getButton(this.defaultButton);
 
         // give focus to the first focusable element in the dialog
         let focusedElt = document.commandDispatcher.focusedElement;
         if (!focusedElt) {
-          document.commandDispatcher.advanceFocusIntoSubtree(dialog);
+          document.commandDispatcher.advanceFocusIntoSubtree(this);
 
           focusedElt = document.commandDispatcher.focusedElement;
           if (focusedElt) {
@@ -328,7 +321,7 @@
             window.notifyDefaultButtonLoaded(defaultButton);
           }
         } catch (e) {}
-      }
+      };
 
       // Give focus after onload completes, see bug 103197.
       setTimeout(focusInit, 0);
@@ -341,7 +334,7 @@
     }
 
     openHelp(event) {
-      var helpButton = document.documentElement.getButton("help");
+      var helpButton = this.getButton("help");
       if (helpButton.disabled || helpButton.hidden) {
         return;
       }
@@ -378,7 +371,11 @@
       // add the label and oncommand handler to each button
       for (dlgtype in buttons) {
         var button = buttons[dlgtype];
-        button.addEventListener("command", this._handleButtonCommand, true);
+        button.addEventListener(
+          "command",
+          this._handleButtonCommand.bind(this),
+          true
+        );
 
         // don't override custom labels with pre-defined labels on explicit buttons
         if (!button.hasAttribute("label")) {
@@ -445,6 +442,7 @@
       }
 
       // ensure that hitting enter triggers the default button command
+      // eslint-disable-next-line no-self-assign
       this.defaultButton = this.defaultButton;
 
       // if there is a special button configuration, use it
@@ -501,9 +499,7 @@
     }
 
     _handleButtonCommand(aEvent) {
-      return document.documentElement._doButtonCommand(
-        aEvent.target.getAttribute("dlgtype")
-      );
+      return this._doButtonCommand(aEvent.target.getAttribute("dlgtype"));
     }
 
     _doButtonCommand(aDlgType) {

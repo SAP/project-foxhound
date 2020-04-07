@@ -7,20 +7,21 @@
 #ifndef mozilla_dom_Promise_h
 #define mozilla_dom_Promise_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/Move.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/TypeTraits.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "nsCycleCollectionParticipant.h"
-#include "mozilla/dom/PromiseBinding.h"
-#include "mozilla/dom/ToJSValue.h"
-#include "mozilla/WeakPtr.h"
-#include "nsWrapperCache.h"
-#include "nsAutoPtr.h"
+#include <utility>
+
 #include "js/TypeDecls.h"
 #include "jspubtd.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/TypeTraits.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/PromiseBinding.h"
+#include "mozilla/dom/ToJSValue.h"
+#include "nsAutoPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsWrapperCache.h"
 
 class nsIGlobalObject;
 
@@ -89,14 +90,23 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
   void MaybeReject(JS::Handle<JS::Value> aValue) {
     MaybeSomething(aValue, &Promise::MaybeReject);
   }
+
+  // This method is deprecated.  Consumers should MaybeRejectWithDOMException if
+  // they are rejecting with a DOMException, or use one of the other
+  // MaybeReject* methods otherwise.  If they have a random nsresult which may
+  // or may not correspond to a DOMException type, they should consider using an
+  // appropriate DOMException-type nsresult with an informative message and
+  // calling MaybeRejectWithDOMException.
   inline void MaybeReject(nsresult aArg) {
     MOZ_ASSERT(NS_FAILED(aArg));
     MaybeSomething(aArg, &Promise::MaybeReject);
   }
 
-  inline void MaybeReject(ErrorResult& aArg) {
+  inline void MaybeReject(ErrorResult&& aArg) {
     MOZ_ASSERT(aArg.Failed());
-    MaybeSomething(aArg, &Promise::MaybeReject);
+    MaybeSomething(std::move(aArg), &Promise::MaybeReject);
+    // That should have consumed aArg.
+    MOZ_ASSERT(!aArg.Failed());
   }
 
   void MaybeReject(const RefPtr<MediaStreamError>& aArg);
@@ -107,51 +117,55 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
   void MaybeRejectWithClone(JSContext* aCx, JS::Handle<JS::Value> aValue);
 
   // Facilities for rejecting with various spec-defined exception values.
-  inline void MaybeRejectWithDOMException(nsresult rv,
-                                          const nsACString& aMessage) {
-    ErrorResult res;
-    res.ThrowDOMException(rv, aMessage);
-    MaybeReject(res);
+#define DOMEXCEPTION(name, err)                                   \
+  inline void MaybeRejectWith##name(const nsACString& aMessage) { \
+    ErrorResult res;                                              \
+    res.Throw##name(aMessage);                                    \
+    MaybeReject(std::move(res));                                  \
+  }                                                               \
+  template <int N>                                                \
+  void MaybeRejectWith##name(const char(&aMessage)[N]) {          \
+    MaybeRejectWith##name(nsLiteralCString(aMessage));            \
   }
-  template <int N>
-  void MaybeRejectWithDOMException(nsresult rv, const char (&aMessage)[N]) {
-    MaybeRejectWithDOMException(rv, nsLiteralCString(aMessage));
-  }
+
+#include "mozilla/dom/DOMExceptionNames.h"
+
+#undef DOMEXCEPTION
 
   template <ErrNum errorNumber, typename... Ts>
   void MaybeRejectWithTypeError(Ts&&... aMessageArgs) {
     ErrorResult res;
     res.ThrowTypeError<errorNumber>(std::forward<Ts>(aMessageArgs)...);
-    MaybeReject(res);
+    MaybeReject(std::move(res));
   }
 
-  inline void MaybeRejectWithTypeError(const nsAString& aMessage) {
+  inline void MaybeRejectWithTypeError(const nsACString& aMessage) {
     ErrorResult res;
     res.ThrowTypeError(aMessage);
-    MaybeReject(res);
+    MaybeReject(std::move(res));
   }
 
   template <int N>
-  void MaybeRejectWithTypeError(const char16_t (&aMessage)[N]) {
-    MaybeRejectWithTypeError(nsLiteralString(aMessage));
+  void MaybeRejectWithTypeError(const char (&aMessage)[N]) {
+    MaybeRejectWithTypeError(nsLiteralCString(aMessage));
   }
 
   template <ErrNum errorNumber, typename... Ts>
   void MaybeRejectWithRangeError(Ts&&... aMessageArgs) {
     ErrorResult res;
     res.ThrowRangeError<errorNumber>(std::forward<Ts>(aMessageArgs)...);
-    MaybeReject(res);
+    MaybeReject(std::move(res));
   }
 
-  inline void MaybeRejectWithRangeError(const nsAString& aMessage) {
+  inline void MaybeRejectWithRangeError(const nsACString& aMessage) {
     ErrorResult res;
     res.ThrowRangeError(aMessage);
-    MaybeReject(res);
+    MaybeReject(std::move(res));
   }
 
   template <int N>
-  void MaybeRejectWithRangeError(const char16_t (&aMessage)[N]) {
-    MaybeRejectWithRangeError(nsLiteralString(aMessage));
+  void MaybeRejectWithRangeError(const char (&aMessage)[N]) {
+    MaybeRejectWithRangeError(nsLiteralCString(aMessage));
   }
 
   // DO NOT USE MaybeRejectBrokenly with in new code.  Promises should be
@@ -265,6 +279,16 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
   PromiseState State() const;
 
  protected:
+  // Legacy method for throwing DOMExceptions.  Only used by media code at this
+  // point, via DetailedPromise.  Do NOT add new uses!  When this is removed,
+  // remove the friend declaration in ErrorResult.h.
+  inline void MaybeRejectWithDOMException(nsresult rv,
+                                          const nsACString& aMessage) {
+    ErrorResult res;
+    res.ThrowDOMException(rv, aMessage);
+    MaybeReject(std::move(res));
+  }
+
   struct PromiseCapability;
 
   // Do NOT call this unless you're Promise::Create or
@@ -274,12 +298,11 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
 
   virtual ~Promise();
 
-  // Do JS-wrapping after Promise creation.  Passing null for aDesiredProto will
-  // use the default prototype for the sort of Promise we have.
+  // Do JS-wrapping after Promise creation.
   // Pass ePropagateUserInteraction for aPropagateUserInteraction if you want
   // the promise resolve handler to be called as if we were handling user
   // input events in case we are currently handling user input events.
-  void CreateWrapper(JS::Handle<JSObject*> aDesiredProto, ErrorResult& aRv,
+  void CreateWrapper(ErrorResult& aRv,
                      PropagateUserInteraction aPropagateUserInteraction =
                          eDontPropagateUserInteraction);
 

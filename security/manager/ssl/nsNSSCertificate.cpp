@@ -13,19 +13,20 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
-#include "mozilla/ipc/TransportSecurityInfoUtils.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/Span.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Unused.h"
+#include "mozilla/ipc/TransportSecurityInfoUtils.h"
+#include "mozilla/net/DNS.h"
+#include "mozpkix/Result.h"
+#include "mozpkix/pkixnss.h"
+#include "mozpkix/pkixtypes.h"
 #include "nsArray.h"
 #include "nsCOMPtr.h"
-#include "nsICertificateDialogs.h"
 #include "nsIClassInfoImpl.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
-#include "nsISupportsPrimitives.h"
-#include "nsIURI.h"
 #include "nsIX509Cert.h"
 #include "nsNSSASN1Object.h"
 #include "nsNSSCertHelper.h"
@@ -39,9 +40,6 @@
 #include "nsThreadUtils.h"
 #include "nsUnicharUtils.h"
 #include "nspr.h"
-#include "mozpkix/pkixnss.h"
-#include "mozpkix/pkixtypes.h"
-#include "mozpkix/Result.h"
 #include "prerror.h"
 #include "secasn1.h"
 #include "secder.h"
@@ -56,25 +54,6 @@ using namespace mozilla;
 using namespace mozilla::psm;
 
 extern LazyLogModule gPIPNSSLog;
-
-class nsNSSCertListEnumerator : public nsSimpleEnumerator {
- public:
-  NS_DECL_NSISIMPLEENUMERATOR
-
-  const nsID& DefaultInterface() override { return NS_GET_IID(nsIX509Cert); }
-
-  explicit nsNSSCertListEnumerator(
-      const std::vector<UniqueCERTCertificate>& certs);
-
-  nsNSSCertListEnumerator(const nsNSSCertListEnumerator&) = delete;
-  void operator=(const nsNSSCertListEnumerator&) = delete;
-
- private:
-  virtual ~nsNSSCertListEnumerator() = default;
-
-  std::vector<UniqueCERTCertificate> mCerts;
-  std::vector<UniqueCERTCertificate>::const_iterator mPosition;
-};
 
 // This is being stored in an uint32_t that can otherwise
 // only take values from nsIX509Cert's list of cert types.
@@ -564,8 +543,10 @@ void nsNSSCertificate::GetSubjectAltNames() {
       } break;
 
       case certIPAddress: {
-        char buf[INET6_ADDRSTRLEN];
+        // According to DNS.h, this includes space for the null-terminator
+        char buf[net::kNetAddrMaxCStrBufSize] = {0};
         PRNetAddr addr;
+        memset(&addr, 0, sizeof(addr));
         if (current->name.other.len == 4) {
           addr.inet.family = PR_AF_INET;
           memcpy(&addr.inet.ip, current->name.other.data,
@@ -592,8 +573,6 @@ void nsNSSCertificate::GetSubjectAltNames() {
     }
     current = CERT_GetNextGeneralName(current);
   } while (current != sanNameList);  // double linked
-
-  return;
 }
 
 NS_IMETHODIMP
@@ -796,305 +775,30 @@ SECStatus ConstructCERTCertListFromReversedDERArray(
 
 }  // namespace mozilla
 
-NS_IMPL_CLASSINFO(nsNSSCertList, nullptr,
-                  // inferred from nsIX509Cert
-                  nsIClassInfo::THREADSAFE, NS_X509CERTLIST_CID)
-
-NS_IMPL_ISUPPORTS_CI(nsNSSCertList, nsIX509CertList, nsISerializable)
-
-nsNSSCertList::nsNSSCertList(UniqueCERTCertList certList) {
-  // Commonly we'll store only 3 certificates. If this is a verified certificate
-  // chain, it may be as many as 8 certificates. If this is a list of all known
-  // certificates, it may be a few hundred. We'll optimize for the common case
-  // (i.e. a verified certificate chain).
-  mCerts.reserve(8);
-  if (certList.get()) {
-    for (CERTCertListNode* node = CERT_LIST_HEAD(certList.get());
-         !CERT_LIST_END(node, certList.get()); node = CERT_LIST_NEXT(node)) {
-      UniqueCERTCertificate cert(CERT_DupCertificate(node->cert));
-      mCerts.push_back(std::move(cert));
-    }
-  }
-}
-
-nsNSSCertList::nsNSSCertList() {
-  // Commonly we'll store only 3 certificates. If this is a verified certificate
-  // chain, it may be as many as 8 certificates. If this is a list of all known
-  // certificates, it may be a few hundred. We'll optimize for the common case
-  // (i.e. a verified certificate chain).
-  mCerts.reserve(8);
-}
-
-// This is the implementation of nsIX509CertList.getCertList().
-nsNSSCertList* nsNSSCertList::GetCertList() { return this; }
-
-NS_IMETHODIMP
-nsNSSCertList::AddCert(nsIX509Cert* aCert) {
-  if (!aCert) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  // We need an owning handle when calling nsIX509Cert::GetCert().
-  UniqueCERTCertificate cert(aCert->GetCert());
-  if (!cert) {
-    NS_ERROR("Somehow got nullptr for mCertificate in nsNSSCertificate.");
-    return NS_ERROR_FAILURE;
-  }
-  mCerts.push_back(std::move(cert));
-  return NS_OK;
-}
-
-UniqueCERTCertList nsNSSCertList::DupCertList(
-    const UniqueCERTCertList& certList) {
-  if (!certList) {
-    return nullptr;
-  }
-
-  UniqueCERTCertList newList(CERT_NewCertList());
-  if (!newList) {
-    return nullptr;
-  }
-
-  for (CERTCertListNode* node = CERT_LIST_HEAD(certList);
-       !CERT_LIST_END(node, certList); node = CERT_LIST_NEXT(node)) {
-    UniqueCERTCertificate cert(CERT_DupCertificate(node->cert));
-    if (!cert) {
-      return nullptr;
-    }
-
-    if (CERT_AddCertToListTail(newList.get(), cert.get()) != SECSuccess) {
-      return nullptr;
-    }
-
-    Unused << cert.release();  // Ownership transferred to the cert list.
-  }
-  return newList;
-}
-
-// NB: Any updates (except disk-only fields) must be kept in sync with
-//     |SerializeToIPC|.
-NS_IMETHODIMP
-nsNSSCertList::Write(nsIObjectOutputStream* aStream) {
-  // Write the length of the list
-  nsresult rv = aStream->Write32(mCerts.size());
-
-  // Serialize each certificate
-  for (const auto& certRef : mCerts) {
-    nsCOMPtr<nsIX509Cert> cert = nsNSSCertificate::Create(certRef.get());
-    if (!cert) {
-      rv = NS_ERROR_OUT_OF_MEMORY;
-      break;
-    }
-
-    nsCOMPtr<nsISerializable> serializableCert = do_QueryInterface(cert);
-    rv = aStream->WriteCompoundObject(serializableCert, NS_GET_IID(nsIX509Cert),
-                                      true);
-    if (NS_FAILED(rv)) {
-      break;
-    }
-  }
-
-  return rv;
-}
-
-// NB: Any updates (except disk-only fields) must be kept in sync with
-//     |DeserializeFromIPC|.
-NS_IMETHODIMP
-nsNSSCertList::Read(nsIObjectInputStream* aStream) {
-  uint32_t certListLen;
-  nsresult rv = aStream->Read32(&certListLen);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  for (uint32_t i = 0; i < certListLen; ++i) {
-    nsCOMPtr<nsISupports> certSupports;
-    rv = aStream->ReadObject(true, getter_AddRefs(certSupports));
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-    nsCOMPtr<nsIX509Cert> cert = do_QueryInterface(certSupports);
-    if (!cert) {
-      return NS_ERROR_UNEXPECTED;
-    }
-    rv = AddCert(cert);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-  }
-
-  return NS_OK;
-}
-
-void nsNSSCertList::SerializeToIPC(IPC::Message* aMsg) {
-  const size_t certCount = static_cast<size_t>(mCerts.size());
-  WriteParam(aMsg, certCount);
-
-  for (const auto& certRef : mCerts) {
-    RefPtr<nsIX509Cert> cert = nsNSSCertificate::Create(certRef.get());
-    MOZ_RELEASE_ASSERT(cert);
-
-    WriteParam(aMsg, cert);
-  }
-}
-
-bool nsNSSCertList::DeserializeFromIPC(const IPC::Message* aMsg,
-                                       PickleIterator* aIter) {
-  size_t count = 0;
-  if (!ReadParam(aMsg, aIter, &count)) {
-    return false;
-  }
-
-  for (size_t i = 0; i < count; i++) {
-    RefPtr<nsIX509Cert> cert;
-    if (!ReadParam(aMsg, aIter, &cert) || !cert || NS_FAILED(AddCert(cert))) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-NS_IMETHODIMP
-nsNSSCertList::GetEnumerator(nsISimpleEnumerator** _retval) {
-  nsCOMPtr<nsISimpleEnumerator> enumerator(new nsNSSCertListEnumerator(mCerts));
-  enumerator.forget(_retval);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSCertList::Equals(nsIX509CertList* other, bool* result) {
-  NS_ENSURE_ARG(result);
-  *result = true;
-
-  nsresult rv;
-
-  nsCOMPtr<nsISimpleEnumerator> selfEnumerator;
-  rv = GetEnumerator(getter_AddRefs(selfEnumerator));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsISimpleEnumerator> otherEnumerator;
-  rv = other->GetEnumerator(getter_AddRefs(otherEnumerator));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  nsCOMPtr<nsISupports> selfSupports;
-  nsCOMPtr<nsISupports> otherSupports;
-  while (NS_SUCCEEDED(selfEnumerator->GetNext(getter_AddRefs(selfSupports)))) {
-    if (NS_SUCCEEDED(otherEnumerator->GetNext(getter_AddRefs(otherSupports)))) {
-      nsCOMPtr<nsIX509Cert> selfCert = do_QueryInterface(selfSupports);
-      nsCOMPtr<nsIX509Cert> otherCert = do_QueryInterface(otherSupports);
-
-      bool certsEqual = false;
-      rv = selfCert->Equals(otherCert, &certsEqual);
-      if (NS_FAILED(rv)) {
-        return rv;
-      }
-      if (!certsEqual) {
-        *result = false;
-        break;
-      }
-    } else {
-      // other is shorter than self
-      *result = false;
-      break;
-    }
-  }
-
-  // Make sure self is the same length as other
-  bool otherHasMore = false;
-  rv = otherEnumerator->HasMoreElements(&otherHasMore);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-  if (otherHasMore) {
-    *result = false;
-  }
-
-  return NS_OK;
-}
-
-nsresult nsNSSCertList::ForEachCertificateInChain(
-    ForEachCertOperation& aOperation) {
-  nsCOMPtr<nsISimpleEnumerator> chainElt;
-  nsresult rv = GetEnumerator(getter_AddRefs(chainElt));
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  // Each chain may have multiple certificates.
-  bool hasMore = false;
-  rv = chainElt->HasMoreElements(&hasMore);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  if (!hasMore) {
-    return NS_OK;  // Empty lists are fine
-  }
-
-  do {
-    nsCOMPtr<nsISupports> certSupports;
-    rv = chainElt->GetNext(getter_AddRefs(certSupports));
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    nsCOMPtr<nsIX509Cert> cert = do_QueryInterface(certSupports, &rv);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    rv = chainElt->HasMoreElements(&hasMore);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    bool continueLoop = true;
-    rv = aOperation(cert, hasMore, continueLoop);
-    if (NS_FAILED(rv) || !continueLoop) {
-      return rv;
-    }
-  } while (hasMore);
-
-  return NS_OK;
-}
-
-nsresult nsNSSCertList::SegmentCertificateChain(
+nsresult nsNSSCertificate::SegmentCertificateChain(
+    /* in */ const nsTArray<RefPtr<nsIX509Cert>>& aCertList,
     /* out */ nsCOMPtr<nsIX509Cert>& aRoot,
-    /* out */ nsCOMPtr<nsIX509CertList>& aIntermediates,
+    /* out */ nsTArray<RefPtr<nsIX509Cert>>& aIntermediates,
     /* out */ nsCOMPtr<nsIX509Cert>& aEndEntity) {
-  if (aRoot || aIntermediates || aEndEntity) {
+  if (aRoot || aEndEntity) {
     // All passed-in nsCOMPtrs should be empty for the state machine to work
     return NS_ERROR_UNEXPECTED;
   }
 
-  aIntermediates = new nsNSSCertList();
+  if (!aIntermediates.IsEmpty()) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
-  nsresult rv = ForEachCertificateInChain(
-      [&aRoot, &aIntermediates, &aEndEntity](nsCOMPtr<nsIX509Cert> aCert,
-                                             bool hasMore, bool& aContinue) {
-        if (!aEndEntity) {
-          // This is the end entity
-          aEndEntity = aCert;
-        } else if (!hasMore) {
-          // This is the root
-          aRoot = aCert;
-        } else {
-          // One of (potentially many) intermediates
-          if (NS_FAILED(aIntermediates->AddCert(aCert))) {
-            return NS_ERROR_OUT_OF_MEMORY;
-          }
-        }
-
-        return NS_OK;
-      });
-
-  if (NS_FAILED(rv)) {
-    return rv;
+  for (size_t i = 0; i < aCertList.Length(); ++i) {
+    const auto& cert = aCertList[i];
+    if (!aEndEntity) {
+      aEndEntity = cert;
+    } else if (i == aCertList.Length() - 1) {
+      aRoot = cert;
+    } else {
+      // One of (potentially many) intermediates
+      aIntermediates.AppendElement(cert);
+    }
   }
 
   if (!aRoot || !aEndEntity) {
@@ -1105,58 +809,22 @@ nsresult nsNSSCertList::SegmentCertificateChain(
   return NS_OK;
 }
 
-nsresult nsNSSCertList::GetRootCertificate(
+nsresult nsNSSCertificate::GetRootCertificate(
+    /* in */ const nsTArray<RefPtr<nsIX509Cert>>& aCertList,
     /* out */ nsCOMPtr<nsIX509Cert>& aRoot) {
   if (aRoot) {
     return NS_ERROR_UNEXPECTED;
   }
   // If the list is empty, leave aRoot empty.
-  if (mCerts.size() < 1) {
-    return NS_OK;
+  if (aCertList.IsEmpty()) {
+    return NS_ERROR_FAILURE;
   }
-  const UniqueCERTCertificate& cert = mCerts.back();
-  // This increases the refcount on the underlying CERTCertificate, which aRoot
-  // will own.
-  aRoot = nsNSSCertificate::Create(cert.get());
+
+  nsCOMPtr<nsIX509Cert> cert(aCertList.LastElement());
+  aRoot = cert;
   if (!aRoot) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  return NS_OK;
-}
-
-nsNSSCertListEnumerator::nsNSSCertListEnumerator(
-    const std::vector<UniqueCERTCertificate>& certs) {
-  mCerts.reserve(certs.size());
-  // Unfortunately we can't just clone the vector because we have to ensure the
-  // reference counts on the CERTCertificates are accurate.
-  for (const auto& certRef : certs) {
-    UniqueCERTCertificate cert(CERT_DupCertificate(certRef.get()));
-    mCerts.push_back(std::move(cert));
-  }
-  mPosition = mCerts.cbegin();
-}
-
-NS_IMETHODIMP
-nsNSSCertListEnumerator::HasMoreElements(bool* _retval) {
-  *_retval = mPosition != mCerts.cend();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSCertListEnumerator::GetNext(nsISupports** _retval) {
-  *_retval = nullptr;
-  if (mPosition == mCerts.cend()) {
-    return NS_ERROR_UNEXPECTED;
-  }
-  const UniqueCERTCertificate& certRef = *mPosition;
-  // nsNSSCertificate::Create calls nsNSSCertificate::nsNSSCertificate, which
-  // increases the reference count on the underlying CERTCertificate itself.
-  nsCOMPtr<nsIX509Cert> nssCert = nsNSSCertificate::Create(certRef.get());
-  if (!nssCert) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-  nssCert.forget(_retval);
-  mPosition++;
   return NS_OK;
 }
 

@@ -5,7 +5,7 @@
 
 // Tests for inspecting a node on a XUL document, spanning a tab reload.
 
-const TEST_URI = URL_ROOT + "doc_inspector_reload_xul.xul";
+const TEST_URI = URL_ROOT + "doc_inspector_reload_xul.xhtml";
 
 add_task(async function() {
   await pushPref("dom.allow_XUL_XBL_for_file", false);
@@ -20,7 +20,7 @@ async function testToolboxInitialization(tab, inspector, toolbox) {
   ok(true, "Inspector started, and notification received.");
   ok(inspector, "Inspector instance is accessible.");
   ok(inspector.isReady, "Inspector instance is ready.");
-  is(inspector.currentTarget.tab, tab, "Valid target.");
+  is(inspector.currentTarget.localTab, tab, "Valid target.");
 
   await selectNode("#p", inspector);
   await testMarkupView("#p", inspector);
@@ -41,7 +41,7 @@ async function testToolboxInitialization(tab, inspector, toolbox) {
   info("Destroying toolbox.");
   await toolbox.destroy();
 
-  ok("true", "'destroyed' notification received.");
+  ok(true, "'destroyed' notification received.");
   ok(!gDevTools.getToolbox(target), "Toolbox destroyed.");
 }
 

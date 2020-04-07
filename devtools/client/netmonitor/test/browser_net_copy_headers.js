@@ -25,7 +25,7 @@ add_task(async function() {
     document.querySelectorAll(".request-list-item")[0]
   );
 
-  const requestItem = getSortedRequests(store.getState()).get(0);
+  const requestItem = getSortedRequests(store.getState())[0];
   const { method, httpVersion, status, statusText } = requestItem;
 
   EventUtils.sendMouseEvent(
@@ -40,7 +40,7 @@ add_task(async function() {
     `${method} ${SIMPLE_URL} ${httpVersion}`,
     "Host: example.com",
     "User-Agent: " + navigator.userAgent + "",
-    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language: " + navigator.languages.join(",") + ";q=0.5",
     "Accept-Encoding: gzip, deflate",
     "Connection: keep-alive",

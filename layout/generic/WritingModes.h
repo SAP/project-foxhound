@@ -7,8 +7,11 @@
 #ifndef WritingModes_h_
 #define WritingModes_h_
 
+#include <ostream>
+
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ComputedStyleInlines.h"
+#include "mozilla/EnumeratedRange.h"
 
 #include "nsRect.h"
 #include "nsBidiUtils.h"
@@ -27,8 +30,8 @@
 // (In some cases, there are internal (private) methods that don't do this;
 // such methods should only be used by other methods that have already checked
 // the writing modes.)
-// The check ignores the StyleWritingMode_VERTICAL_SIDEWAYS and
-// StyleWritingMode_TEXT_SIDEWAYS bit of writing mode, because
+// The check ignores the StyleWritingMode::VERTICAL_SIDEWAYS and
+// StyleWritingMode::TEXT_SIDEWAYS bit of writing mode, because
 // this does not affect the interpretation of logical coordinates.
 
 #define CHECK_WRITING_MODE(param)                                           \
@@ -40,6 +43,27 @@ namespace mozilla {
 namespace widget {
 struct IMENotification;
 }  // namespace widget
+
+// Logical axis, edge, side and corner constants for use in various places.
+enum LogicalAxis { eLogicalAxisBlock = 0x0, eLogicalAxisInline = 0x1 };
+enum LogicalEdge { eLogicalEdgeStart = 0x0, eLogicalEdgeEnd = 0x1 };
+enum LogicalSide : uint8_t {
+  eLogicalSideBStart = (eLogicalAxisBlock << 1) | eLogicalEdgeStart,   // 0x0
+  eLogicalSideBEnd = (eLogicalAxisBlock << 1) | eLogicalEdgeEnd,       // 0x1
+  eLogicalSideIStart = (eLogicalAxisInline << 1) | eLogicalEdgeStart,  // 0x2
+  eLogicalSideIEnd = (eLogicalAxisInline << 1) | eLogicalEdgeEnd       // 0x3
+};
+constexpr auto AllLogicalSides() {
+  return mozilla::MakeInclusiveEnumeratedRange(eLogicalSideBStart,
+                                               eLogicalSideIEnd);
+}
+
+enum LogicalCorner {
+  eLogicalCornerBStartIStart = 0,
+  eLogicalCornerBStartIEnd = 1,
+  eLogicalCornerBEndIEnd = 2,
+  eLogicalCornerBEndIStart = 3
+};
 
 // Physical axis constants.
 enum PhysicalAxis { eAxisVertical = 0x0, eAxisHorizontal = 0x1 };
@@ -194,7 +218,7 @@ class WritingMode {
    * Return the line-relative inline flow direction as a BidiDir
    */
   BidiDir GetBidiDir() const {
-    return BidiDir((mWritingMode & StyleWritingMode_RTL).bits);
+    return BidiDir((mWritingMode & StyleWritingMode::RTL).bits);
   }
 
   /**
@@ -204,13 +228,32 @@ class WritingMode {
    * if both of those are true).
    */
   bool IsInlineReversed() const {
-    return !!(mWritingMode & StyleWritingMode_INLINE_REVERSED);
+    return !!(mWritingMode & StyleWritingMode::INLINE_REVERSED);
   }
 
   /**
    * Return true if bidi direction is LTR. (Convenience method)
    */
   bool IsBidiLTR() const { return eBidiLTR == GetBidiDir(); }
+
+  /**
+   * Return true if bidi direction is RTL. (Convenience method)
+   */
+  bool IsBidiRTL() const { return eBidiRTL == GetBidiDir(); }
+
+  /**
+   * True if it is vertical and vertical-lr, or is horizontal and bidi LTR.
+   */
+  bool IsPhysicalLTR() const {
+    return IsVertical() ? IsVerticalLR() : IsBidiLTR();
+  }
+
+  /**
+   * True if it is vertical and vertical-rl, or is horizontal and bidi RTL.
+   */
+  bool IsPhysicalRTL() const {
+    return IsVertical() ? IsVerticalRL() : IsBidiRTL();
+  }
 
   /**
    * True if vertical-mode block direction is LR (convenience method).
@@ -227,7 +270,7 @@ class WritingMode {
    * writing-mode: vertical-lr | vertical-rl.
    */
   bool IsVertical() const {
-    return !!(mWritingMode & StyleWritingMode_VERTICAL);
+    return !!(mWritingMode & StyleWritingMode::VERTICAL);
   }
 
   /**
@@ -235,7 +278,7 @@ class WritingMode {
    * This is true only when writing-mode is vertical-lr.
    */
   bool IsLineInverted() const {
-    return !!(mWritingMode & StyleWritingMode_LINE_INVERTED);
+    return !!(mWritingMode & StyleWritingMode::LINE_INVERTED);
   }
 
   /**
@@ -253,7 +296,7 @@ class WritingMode {
    * writing-mode: sideways-lr | sideways-rl.
    */
   bool IsVerticalSideways() const {
-    return !!(mWritingMode & StyleWritingMode_VERTICAL_SIDEWAYS);
+    return !!(mWritingMode & StyleWritingMode::VERTICAL_SIDEWAYS);
   }
 
   /**
@@ -276,17 +319,18 @@ class WritingMode {
    * baseline remains centered.
    */
   bool IsSideways() const {
-    return !!(mWritingMode & (StyleWritingMode_VERTICAL_SIDEWAYS |
-                              StyleWritingMode_TEXT_SIDEWAYS));
+    return !!(mWritingMode & (StyleWritingMode::VERTICAL_SIDEWAYS |
+                              StyleWritingMode::TEXT_SIDEWAYS));
   }
 
 #ifdef DEBUG
   // Used by CHECK_WRITING_MODE to compare modes without regard for the
-  // StyleWritingMode_VERTICAL_SIDEWAYS or StyleWritingMode_TEXT_SIDEWAYS flags.
+  // StyleWritingMode::VERTICAL_SIDEWAYS or StyleWritingMode::TEXT_SIDEWAYS
+  // flags.
   WritingMode IgnoreSideways() const {
     return WritingMode(
         mWritingMode.bits &
-        ~(StyleWritingMode_VERTICAL_SIDEWAYS | StyleWritingMode_TEXT_SIDEWAYS)
+        ~(StyleWritingMode::VERTICAL_SIDEWAYS | StyleWritingMode::TEXT_SIDEWAYS)
              .bits);
   }
 #endif
@@ -324,7 +368,7 @@ class WritingMode {
     // and hypothetical) values.  But this is fine; we only need to
     // distinguish between vertical and horizontal in
     // PhysicalAxisForLogicalAxis.
-    const auto wm = (mWritingMode & StyleWritingMode_VERTICAL).bits;
+    const auto wm = (mWritingMode & StyleWritingMode::VERTICAL).bits;
     return PhysicalAxisForLogicalAxis(wm, aAxis);
   }
 
@@ -332,8 +376,8 @@ class WritingMode {
                                                 LogicalEdge aEdge) {
     // indexes are NS_STYLE_WRITING_MODE_* values, which are the same as these
     // two-bit values:
-    //   bit 0 = the StyleWritingMode_VERTICAL value
-    //   bit 1 = the StyleWritingMode_VERTICAL_LR value
+    //   bit 0 = the StyleWritingMode::VERTICAL value
+    //   bit 1 = the StyleWritingMode::VERTICAL_LR value
     static const mozilla::Side kLogicalBlockSides[][2] = {
         {eSideTop, eSideBottom},  // horizontal-tb
         {eSideRight, eSideLeft},  // vertical-rl
@@ -353,10 +397,10 @@ class WritingMode {
 
   mozilla::Side PhysicalSideForInlineAxis(LogicalEdge aEdge) const {
     // indexes are four-bit values:
-    //   bit 0 = the StyleWritingMode_VERTICAL value
-    //   bit 1 = the StyleWritingMode_INLINE_REVERSED value
-    //   bit 2 = the StyleWritingMode_VERTICAL_LR value
-    //   bit 3 = the StyleWritingMode_LINE_INVERTED value
+    //   bit 0 = the StyleWritingMode::VERTICAL value
+    //   bit 1 = the StyleWritingMode::INLINE_REVERSED value
+    //   bit 2 = the StyleWritingMode::VERTICAL_LR value
+    //   bit 3 = the StyleWritingMode::LINE_INVERTED value
     // Not all of these combinations can actually be specified via CSS: there
     // is no horizontal-bt writing-mode, and no text-orientation value that
     // produces "inverted" text. (The former 'sideways-left' value, no longer
@@ -381,14 +425,14 @@ class WritingMode {
     };
 
     // Inline axis sides depend on all three of writing-mode, text-orientation
-    // and direction, which are encoded in the StyleWritingMode_VERTICAL,
-    // StyleWritingMode_INLINE_REVERSED, StyleWritingMode_VERTICAL_LR and
-    // StyleWritingMode_LINE_INVERTED bits.  Use these four bits to index into
+    // and direction, which are encoded in the StyleWritingMode::VERTICAL,
+    // StyleWritingMode::INLINE_REVERSED, StyleWritingMode::VERTICAL_LR and
+    // StyleWritingMode::LINE_INVERTED bits.  Use these four bits to index into
     // kLogicalInlineSides.
-    MOZ_ASSERT(StyleWritingMode_VERTICAL.bits == 0x01 &&
-                   StyleWritingMode_INLINE_REVERSED.bits == 0x02 &&
-                   StyleWritingMode_VERTICAL_LR.bits == 0x04 &&
-                   StyleWritingMode_LINE_INVERTED.bits == 0x08,
+    MOZ_ASSERT(StyleWritingMode::VERTICAL.bits == 0x01 &&
+                   StyleWritingMode::INLINE_REVERSED.bits == 0x02 &&
+                   StyleWritingMode::VERTICAL_LR.bits == 0x04 &&
+                   StyleWritingMode::LINE_INVERTED.bits == 0x08,
                "unexpected mask values");
     int index = mWritingMode.bits & 0x0F;
     return kLogicalInlineSides[index][aEdge];
@@ -400,12 +444,12 @@ class WritingMode {
    */
   mozilla::Side PhysicalSide(LogicalSide aSide) const {
     if (IsBlock(aSide)) {
-      MOZ_ASSERT(StyleWritingMode_VERTICAL.bits == 0x01 &&
-                     StyleWritingMode_VERTICAL_LR.bits == 0x04,
+      MOZ_ASSERT(StyleWritingMode::VERTICAL.bits == 0x01 &&
+                     StyleWritingMode::VERTICAL_LR.bits == 0x04,
                  "unexpected mask values");
-      const auto wm = static_cast<uint8_t>(
-          ((mWritingMode & StyleWritingMode_VERTICAL_LR).bits >> 1) |
-          (mWritingMode & StyleWritingMode_VERTICAL).bits);
+      const uint8_t wm =
+          ((mWritingMode & StyleWritingMode::VERTICAL_LR).bits >> 1) |
+          (mWritingMode & StyleWritingMode::VERTICAL).bits;
       return PhysicalSideForBlockAxis(wm, GetEdge(aSide));
     }
 
@@ -420,10 +464,10 @@ class WritingMode {
   LogicalSide LogicalSideForPhysicalSide(mozilla::Side aSide) const {
     // clang-format off
     // indexes are four-bit values:
-    //   bit 0 = the StyleWritingMode_VERTICAL value
-    //   bit 1 = the StyleWritingMode_INLINE_REVERSED value
-    //   bit 2 = the StyleWritingMode_VERTICAL_LR value
-    //   bit 3 = the StyleWritingMode_LINE_INVERTED value
+    //   bit 0 = the StyleWritingMode::VERTICAL value
+    //   bit 1 = the StyleWritingMode::INLINE_REVERSED value
+    //   bit 2 = the StyleWritingMode::VERTICAL_LR value
+    //   bit 3 = the StyleWritingMode::LINE_INVERTED value
     static const LogicalSide kPhysicalToLogicalSides[][4] = {
       // top                right
       // bottom             left
@@ -462,10 +506,10 @@ class WritingMode {
     };
     // clang-format on
 
-    MOZ_ASSERT(StyleWritingMode_VERTICAL.bits == 0x01 &&
-                   StyleWritingMode_INLINE_REVERSED.bits == 0x02 &&
-                   StyleWritingMode_VERTICAL_LR.bits == 0x04 &&
-                   StyleWritingMode_LINE_INVERTED.bits == 0x08,
+    MOZ_ASSERT(StyleWritingMode::VERTICAL.bits == 0x01 &&
+                   StyleWritingMode::INLINE_REVERSED.bits == 0x02 &&
+                   StyleWritingMode::VERTICAL_LR.bits == 0x04 &&
+                   StyleWritingMode::LINE_INVERTED.bits == 0x08,
                "unexpected mask values");
     int index = mWritingMode.bits & 0x0F;
     return kPhysicalToLogicalSides[index][aSide];
@@ -518,7 +562,7 @@ class WritingMode {
    */
   void SetDirectionFromBidiLevel(uint8_t level) {
     if (IS_LEVEL_RTL(level) == IsBidiLTR()) {
-      mWritingMode ^= StyleWritingMode_RTL | StyleWritingMode_INLINE_REVERSED;
+      mWritingMode ^= StyleWritingMode::RTL | StyleWritingMode::INLINE_REVERSED;
     }
   }
 
@@ -569,16 +613,6 @@ class WritingMode {
 
   uint8_t GetBits() const { return mWritingMode.bits; }
 
-  const char* DebugString() const {
-    return IsVertical()
-               ? IsVerticalLR()
-                     ? IsBidiLTR() ? IsSideways() ? "sw-lr-ltr" : "v-lr-ltr"
-                                   : IsSideways() ? "sw-lr-rtl" : "v-lr-rtl"
-                     : IsBidiLTR() ? IsSideways() ? "sw-rl-ltr" : "v-rl-ltr"
-                                   : IsSideways() ? "sw-rl-rtl" : "v-rl-rtl"
-               : IsBidiLTR() ? "h-ltr" : "h-rtl";
-  }
-
  private:
   friend class LogicalPoint;
   friend class LogicalSize;
@@ -612,6 +646,19 @@ class WritingMode {
     eBlockMask = 0x05,   // VERTICAL | VERTICAL_LR
   };
 };
+
+inline std::ostream& operator<<(std::ostream& aStream, const WritingMode& aWM) {
+  return aStream
+         << (aWM.IsVertical()
+                 ? aWM.IsVerticalLR()
+                       ? aWM.IsBidiLTR()
+                             ? aWM.IsSideways() ? "sw-lr-ltr" : "v-lr-ltr"
+                             : aWM.IsSideways() ? "sw-lr-rtl" : "v-lr-rtl"
+                       : aWM.IsBidiLTR()
+                             ? aWM.IsSideways() ? "sw-rl-ltr" : "v-rl-ltr"
+                             : aWM.IsSideways() ? "sw-rl-rtl" : "v-rl-rtl"
+                 : aWM.IsBidiLTR() ? "h-ltr" : "h-rtl");
+}
 
 /**
  * Logical-coordinate classes:
@@ -804,6 +851,11 @@ class LogicalPoint {
     I() -= aOther.I();
     B() -= aOther.B();
     return *this;
+  }
+
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const LogicalPoint& aPoint) {
+    return aStream << aPoint.mPoint;
   }
 
  private:
@@ -1017,6 +1069,11 @@ class LogicalSize {
     return *this;
   }
 
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const LogicalSize& aSize) {
+    return aStream << aSize.mSize;
+  }
+
  private:
   friend class LogicalRect;
 
@@ -1175,6 +1232,37 @@ class LogicalMargin {
     return aAxis == eLogicalAxisInline ? IStartEnd(aWM) : BStartEnd(aWM);
   }
 
+  nscoord Side(LogicalSide aSide, WritingMode aWM) const {
+    switch (aSide) {
+      case eLogicalSideBStart:
+        return BStart(aWM);
+      case eLogicalSideBEnd:
+        return BEnd(aWM);
+      case eLogicalSideIStart:
+        return IStart(aWM);
+      case eLogicalSideIEnd:
+        return IEnd(aWM);
+    }
+
+    MOZ_ASSERT_UNREACHABLE("We should handle all sides!");
+    return BStart(aWM);
+  }
+  nscoord& Side(LogicalSide aSide, WritingMode aWM) {
+    switch (aSide) {
+      case eLogicalSideBStart:
+        return BStart(aWM);
+      case eLogicalSideBEnd:
+        return BEnd(aWM);
+      case eLogicalSideIStart:
+        return IStart(aWM);
+      case eLogicalSideIEnd:
+        return IEnd(aWM);
+    }
+
+    MOZ_ASSERT_UNREACHABLE("We should handle all sides!");
+    return BStart(aWM);
+  }
+
   /*
    * Return margin values for line-relative sides, as defined in
    * http://www.w3.org/TR/css-writing-modes-3/#line-directions:
@@ -1318,6 +1406,11 @@ class LogicalMargin {
     return LogicalMargin(GetWritingMode(), BStart() - aMargin.BStart(),
                          IEnd() - aMargin.IEnd(), BEnd() - aMargin.BEnd(),
                          IStart() - aMargin.IStart());
+  }
+
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const LogicalMargin& aMargin) {
+    return aStream << aMargin.mMargin;
   }
 
  private:
@@ -1801,6 +1894,12 @@ class LogicalRect {
     return mISize > 0 && mBSize > 0;
   }
 
+  friend std::ostream& operator<<(std::ostream& aStream,
+                                  const LogicalRect& aRect) {
+    return aStream << '(' << aRect.IStart() << ',' << aRect.BStart() << ','
+                   << aRect.ISize() << ',' << aRect.BSize() << ')';
+  }
+
  private:
   LogicalRect() = delete;
 
@@ -1864,29 +1963,53 @@ class LogicalRect {
 };
 
 template <typename T>
-const T& StyleRect<T>::Get(mozilla::WritingMode aWM,
-                           mozilla::LogicalSide aSide) const {
+const T& StyleRect<T>::Get(WritingMode aWM, LogicalSide aSide) const {
   return Get(aWM.PhysicalSide(aSide));
 }
 
 template <typename T>
-const T& StyleRect<T>::GetIStart(mozilla::WritingMode aWM) const {
-  return Get(aWM, mozilla::eLogicalSideIStart);
+const T& StyleRect<T>::GetIStart(WritingMode aWM) const {
+  return Get(aWM, eLogicalSideIStart);
 }
 
 template <typename T>
-const T& StyleRect<T>::GetBStart(mozilla::WritingMode aWM) const {
-  return Get(aWM, mozilla::eLogicalSideBStart);
+const T& StyleRect<T>::GetBStart(WritingMode aWM) const {
+  return Get(aWM, eLogicalSideBStart);
 }
 
 template <typename T>
-const T& StyleRect<T>::GetIEnd(mozilla::WritingMode aWM) const {
-  return Get(aWM, mozilla::eLogicalSideIEnd);
+const T& StyleRect<T>::GetIEnd(WritingMode aWM) const {
+  return Get(aWM, eLogicalSideIEnd);
 }
 
 template <typename T>
-const T& StyleRect<T>::GetBEnd(mozilla::WritingMode aWM) const {
-  return Get(aWM, mozilla::eLogicalSideBEnd);
+const T& StyleRect<T>::GetBEnd(WritingMode aWM) const {
+  return Get(aWM, eLogicalSideBEnd);
+}
+
+template <typename T>
+T& StyleRect<T>::Get(WritingMode aWM, LogicalSide aSide) {
+  return Get(aWM.PhysicalSide(aSide));
+}
+
+template <typename T>
+T& StyleRect<T>::GetIStart(WritingMode aWM) {
+  return Get(aWM, eLogicalSideIStart);
+}
+
+template <typename T>
+T& StyleRect<T>::GetBStart(WritingMode aWM) {
+  return Get(aWM, eLogicalSideBStart);
+}
+
+template <typename T>
+T& StyleRect<T>::GetIEnd(WritingMode aWM) {
+  return Get(aWM, eLogicalSideIEnd);
+}
+
+template <typename T>
+T& StyleRect<T>::GetBEnd(WritingMode aWM) {
+  return Get(aWM, eLogicalSideBEnd);
 }
 
 }  // namespace mozilla

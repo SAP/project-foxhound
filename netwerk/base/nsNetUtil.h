@@ -33,7 +33,7 @@ class nsIAuthPrompt;
 class nsIAuthPrompt2;
 class nsIChannel;
 class nsIChannelPolicy;
-class nsICookieSettings;
+class nsICookieJarSettings;
 class nsIDownloadObserver;
 class nsIEventTarget;
 class nsIFileProtocolHandler;
@@ -159,12 +159,12 @@ nsresult NS_NewChannelInternal(
     const mozilla::Maybe<mozilla::dom::ClientInfo>& aLoadingClientInfo,
     const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
-    nsICookieSettings* aCookieSettings = nullptr,
+    nsICookieJarSettings* aCookieJarSettings = nullptr,
     mozilla::dom::PerformanceStorage* aPerformanceStorage = nullptr,
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
-    nsIIOService* aIoService = nullptr);
+    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0);
 
 // See NS_NewChannelInternal for usage and argument description
 nsresult NS_NewChannelInternal(
@@ -192,7 +192,7 @@ nsresult NS_NewChannelWithTriggeringPrincipal(
     nsIChannel** outChannel, nsIURI* aUri, nsIPrincipal* aLoadingPrincipal,
     nsIPrincipal* aTriggeringPrincipal, nsSecurityFlags aSecurityFlags,
     nsContentPolicyType aContentPolicyType,
-    nsICookieSettings* aCookieSettings = nullptr,
+    nsICookieJarSettings* aCookieJarSettings = nullptr,
     mozilla::dom::PerformanceStorage* aPerformanceStorage = nullptr,
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
@@ -206,7 +206,7 @@ nsresult NS_NewChannelWithTriggeringPrincipal(
     const mozilla::dom::ClientInfo& aLoadingClientInfo,
     const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
-    nsICookieSettings* aCookieSettings = nullptr,
+    nsICookieJarSettings* aCookieJarSettings = nullptr,
     mozilla::dom::PerformanceStorage* aPerformanceStorage = nullptr,
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
@@ -221,18 +221,18 @@ nsresult NS_NewChannel(
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
-    nsIIOService* aIoService = nullptr);
+    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0);
 
 // See NS_NewChannelInternal for usage and argument description
 nsresult NS_NewChannel(
     nsIChannel** outChannel, nsIURI* aUri, nsIPrincipal* aLoadingPrincipal,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
-    nsICookieSettings* aCookieSettings = nullptr,
+    nsICookieJarSettings* aCookieJarSettings = nullptr,
     mozilla::dom::PerformanceStorage* aPerformanceStorage = nullptr,
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
-    nsIIOService* aIoService = nullptr);
+    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0);
 
 // See NS_NewChannelInternal for usage and argument description
 nsresult NS_NewChannel(
@@ -240,12 +240,12 @@ nsresult NS_NewChannel(
     const mozilla::dom::ClientInfo& aLoadingClientInfo,
     const mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
-    nsICookieSettings* aCookieSettings = nullptr,
+    nsICookieJarSettings* aCookieJarSettings = nullptr,
     mozilla::dom::PerformanceStorage* aPerformanceStorage = nullptr,
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
-    nsIIOService* aIoService = nullptr);
+    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0);
 
 nsresult NS_GetIsDocumentChannel(nsIChannel* aChannel, bool* aIsDocument);
 
@@ -603,6 +603,11 @@ bool NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport = false);
 bool NS_IsSafeTopLevelNav(nsIChannel* aChannel);
 
 /**
+ * Returns true if the channel has a safe method.
+ */
+bool NS_IsSafeMethodNav(nsIChannel* aChannel);
+
+/**
  * Returns true if the channel is a foreign with respect to the host-uri.
  * For loads of TYPE_DOCUMENT, this function returns true if it's a
  * cross origin navigation.
@@ -935,6 +940,16 @@ bool InScriptableRange(uint64_t val);
  */
 nsresult GetParameterHTTP(const nsACString& aHeaderVal, const char* aParamName,
                           nsAString& aResult);
+
+/**
+ * Helper function that determines if channel is an HTTP POST.
+ *
+ * @param aChannel
+ *        The channel to test
+ *
+ * @return True if channel is an HTTP post.
+ */
+bool ChannelIsPost(nsIChannel* aChannel);
 
 /**
  * Convenience functions for verifying nsIURI schemes. These functions simply

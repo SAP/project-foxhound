@@ -4,29 +4,22 @@
 
 // @flow
 
-import {
-  getSource,
-  getSourceContent,
-  getTopFrame,
-  getSelectedFrame,
-  getThreadContext,
-} from "../../selectors";
+import { getSelectedFrame, getThreadContext } from "../../selectors";
 import { PROMISE } from "../utils/middleware/promise";
-import { addHiddenBreakpoint } from "../breakpoints";
 import { evaluateExpressions } from "../expressions";
 import { selectLocation } from "../sources";
 import { fetchScopes } from "./fetchScopes";
-import { features } from "../../utils/prefs";
+import { fetchFrames } from "./fetchFrames";
 import { recordEvent } from "../../utils/telemetry";
 import assert from "../../utils/assert";
-import { isFulfilled, type AsyncValue } from "../../utils/async-value";
 
 import type {
-  SourceContent,
   ThreadId,
   Context,
   ThreadContext,
+  ExecutionPoint,
 } from "../../types";
+
 import type { ThunkArgs } from "../types";
 import type { Command } from "../../reducers/types";
 
@@ -44,6 +37,7 @@ export function selectThread(cx: Context, thread: ThreadId) {
     const frame = getSelectedFrame(getState(), thread);
     if (frame) {
       serverRequests.push(dispatch(selectLocation(threadcx, frame.location)));
+      serverRequests.push(dispatch(fetchFrames(threadcx)));
       serverRequests.push(dispatch(fetchScopes(threadcx)));
     }
     await Promise.all(serverRequests);
@@ -71,6 +65,19 @@ export function command(cx: ThreadContext, type: Command) {
   };
 }
 
+export function seekToPosition(position: ExecutionPoint) {
+  return ({ dispatch, getState, client }: ThunkArgs) => {
+    const cx = getThreadContext(getState());
+    client.timeWarp(position);
+    dispatch({
+      type: "COMMAND",
+      command: "timeWarp",
+      status: "start",
+      thread: cx.thread,
+    });
+  };
+}
+
 /**
  * StepIn
  * @memberof actions/pause
@@ -94,7 +101,7 @@ export function stepIn(cx: ThreadContext) {
 export function stepOver(cx: ThreadContext) {
   return ({ dispatch, getState }: ThunkArgs) => {
     if (cx.isPaused) {
-      return dispatch(astCommand(cx, "stepOver"));
+      return dispatch(command(cx, "stepOver"));
     }
   };
 }
@@ -125,89 +132,5 @@ export function resume(cx: ThreadContext) {
       recordEvent("continue");
       return dispatch(command(cx, "resume"));
     }
-  };
-}
-
-/**
- * rewind
- * @memberof actions/pause
- * @static
- * @returns {Function} {@link command}
- */
-export function rewind(cx: ThreadContext) {
-  return ({ dispatch, getState }: ThunkArgs) => {
-    if (cx.isPaused) {
-      return dispatch(command(cx, "rewind"));
-    }
-  };
-}
-
-/**
- * reverseStepOver
- * @memberof actions/pause
- * @static
- * @returns {Function} {@link command}
- */
-export function reverseStepOver(cx: ThreadContext) {
-  return ({ dispatch, getState }: ThunkArgs) => {
-    if (cx.isPaused) {
-      return dispatch(astCommand(cx, "reverseStepOver"));
-    }
-  };
-}
-
-/*
- * Checks for await or yield calls on the paused line
- * This avoids potentially expensive parser calls when we are likely
- * not at an async expression.
- */
-function hasAwait(content: AsyncValue<SourceContent> | null, pauseLocation) {
-  const { line, column } = pauseLocation;
-  if (!content || !isFulfilled(content) || content.value.type !== "text") {
-    return false;
-  }
-
-  const lineText = content.value.value.split("\n")[line - 1];
-
-  if (!lineText) {
-    return false;
-  }
-
-  const snippet = lineText.slice(column - 50, column + 50);
-
-  return !!snippet.match(/(yield|await)/);
-}
-
-/**
- * @memberOf actions/pause
- * @static
- * @param stepType
- * @returns {function(ThunkArgs)}
- */
-export function astCommand(cx: ThreadContext, stepType: Command) {
-  return async ({ dispatch, getState, sourceMaps, parser }: ThunkArgs) => {
-    if (!features.asyncStepping) {
-      return dispatch(command(cx, stepType));
-    }
-
-    if (stepType == "stepOver") {
-      // This type definition is ambiguous:
-      const frame: any = getTopFrame(getState(), cx.thread);
-      const source = getSource(getState(), frame.location.sourceId);
-      const content = source ? getSourceContent(getState(), source.id) : null;
-
-      if (source && hasAwait(content, frame.location)) {
-        const nextLocation = await parser.getNextStep(
-          source.id,
-          frame.location
-        );
-        if (nextLocation) {
-          await dispatch(addHiddenBreakpoint(cx, nextLocation));
-          return dispatch(command(cx, "resume"));
-        }
-      }
-    }
-
-    return dispatch(command(cx, stepType));
   };
 }

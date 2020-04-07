@@ -34,6 +34,7 @@
 
 #include "gc/FreeOp.h"
 #include "gc/Marking.h"
+#include "gc/PublicIterators.h"
 #include "jit/Ion.h"
 #include "jit/PcScriptCache.h"
 #include "js/CharacterEncoding.h"
@@ -45,10 +46,12 @@
 #ifdef JS_SIMULATOR_ARM
 #  include "jit/arm/Simulator-arm.h"
 #endif
+#include "util/DiagnosticAssertions.h"
 #include "util/DoubleToString.h"
 #include "util/NativeStack.h"
 #include "util/Windows.h"
-#include "vm/BytecodeUtil.h"
+#include "vm/BytecodeUtil.h"  // JSDVG_IGNORE_STACK
+#include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
 #include "vm/HelperThreads.h"
 #include "vm/Iteration.h"
@@ -58,6 +61,8 @@
 #include "vm/JSScript.h"
 #include "vm/Realm.h"
 #include "vm/Shape.h"
+#include "vm/StringType.h"  // StringToNewUTF8CharsZ
+#include "vm/ToSource.h"    // js::ValueToSource
 
 #include "vm/Compartment-inl.h"
 #include "vm/JSObject-inl.h"
@@ -288,7 +293,6 @@ JS_FRIEND_API void js::ReportOutOfMemory(JSContext* cx) {
    */
   fprintf(stderr, "ReportOutOfMemory called\n");
 #endif
-  mozilla::recordreplay::InvalidateRecording("OutOfMemory exception thrown");
 
   if (cx->isHelperThreadContext()) {
     return cx->addPendingOutOfMemory();
@@ -300,6 +304,12 @@ JS_FRIEND_API void js::ReportOutOfMemory(JSContext* cx) {
   /* Report the oom. */
   if (JS::OutOfMemoryCallback oomCallback = cx->runtime()->oomCallback) {
     oomCallback(cx, cx->runtime()->oomCallbackData);
+  }
+
+  // If we OOM early in process startup, this may be unavailable so just return
+  // instead of crashing unexpectedly.
+  if (MOZ_UNLIKELY(!cx->runtime()->hasInitializedSelfHosting())) {
+    return;
   }
 
   RootedValue oomMessage(cx, StringValue(cx->names().outOfMemory));
@@ -323,7 +333,6 @@ void js::ReportOverRecursed(JSContext* maybecx, unsigned errorNumber) {
    */
   fprintf(stderr, "ReportOverRecursed called\n");
 #endif
-  mozilla::recordreplay::InvalidateRecording("OverRecursed exception thrown");
   if (maybecx) {
     if (!maybecx->isHelperThreadContext()) {
       JS_ReportErrorNumberASCII(maybecx, GetErrorMessage, nullptr, errorNumber);
@@ -604,8 +613,15 @@ class MOZ_RAII AutoMessageArgs {
 
   uint16_t count() const { return count_; }
 
-  /* Gather the arguments into an array, and accumulate their sizes. */
-  bool init(JSContext* cx, const char16_t** argsArg, uint16_t countArg,
+  /* Gather the arguments into an array, and accumulate their sizes.
+   *
+   * We could template on the type of argsArg, but we're already trusting people
+   * to do the right thing with varargs, so might as well trust them on this
+   * part too.  Upstream consumers do assert that it's the right thing.  Also,
+   * if argsArg were strongly typed we'd still need casting below for this to
+   * compile, because typeArg is not known at compile-time here.
+   */
+  bool init(JSContext* cx, void* argsArg, uint16_t countArg,
             ErrorArgumentsType typeArg, va_list ap) {
     MOZ_ASSERT(countArg > 0);
 
@@ -615,8 +631,9 @@ class MOZ_RAII AutoMessageArgs {
       switch (typeArg) {
         case ArgumentsAreASCII:
         case ArgumentsAreUTF8: {
-          MOZ_ASSERT(!argsArg);
-          args_[i] = va_arg(ap, char*);
+          const char* c = argsArg ? static_cast<const char**>(argsArg)[i]
+                                  : va_arg(ap, const char*);
+          args_[i] = c;
           MOZ_ASSERT_IF(typeArg == ArgumentsAreASCII,
                         JS::StringIsASCII(args_[i]));
           lengths_[i] = strlen(args_[i]);
@@ -638,7 +655,9 @@ class MOZ_RAII AutoMessageArgs {
           break;
         }
         case ArgumentsAreUnicode: {
-          const char16_t* uc = argsArg ? argsArg[i] : va_arg(ap, char16_t*);
+          const char16_t* uc = argsArg
+                                   ? static_cast<const char16_t**>(argsArg)[i]
+                                   : va_arg(ap, const char16_t*);
           size_t len = js_strlen(uc);
           mozilla::Range<const char16_t> range(uc, len);
           char* utf8 = JS::CharsToNewUTF8CharsZ(cx, range).c_str();
@@ -676,13 +695,18 @@ static void SetExnType(JSErrorNotes::Note* notep, int16_t exnType) {
  * message is placed into reportp->message_.
  *
  * Returns true if the expansion succeeds (can fail if out of memory).
+ *
+ * messageArgs is a `const char**` or a `const char16_t**` but templating on
+ * that is not worth it here because AutoMessageArgs takes a void* anyway, and
+ * using void* here simplifies our callers a bit.
  */
 template <typename T>
-bool ExpandErrorArgumentsHelper(JSContext* cx, JSErrorCallback callback,
-                                void* userRef, const unsigned errorNumber,
-                                const char16_t** messageArgs,
-                                ErrorArgumentsType argumentsType, T* reportp,
-                                va_list ap) {
+static bool ExpandErrorArgumentsHelper(JSContext* cx, JSErrorCallback callback,
+                                       void* userRef,
+                                       const unsigned errorNumber,
+                                       void* messageArgs,
+                                       ErrorArgumentsType argumentsType,
+                                       T* reportp, va_list ap) {
   const JSErrorFormatString* efs;
 
   if (!callback) {
@@ -787,8 +811,27 @@ bool js::ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
                                 const char16_t** messageArgs,
                                 ErrorArgumentsType argumentsType,
                                 JSErrorReport* reportp, va_list ap) {
+  MOZ_ASSERT(argumentsType == ArgumentsAreUnicode);
   return ExpandErrorArgumentsHelper(cx, callback, userRef, errorNumber,
                                     messageArgs, argumentsType, reportp, ap);
+}
+
+bool js::ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
+                                void* userRef, const unsigned errorNumber,
+                                const char** messageArgs,
+                                ErrorArgumentsType argumentsType,
+                                JSErrorReport* reportp, va_list ap) {
+  MOZ_ASSERT(argumentsType != ArgumentsAreUnicode);
+  return ExpandErrorArgumentsHelper(cx, callback, userRef, errorNumber,
+                                    messageArgs, argumentsType, reportp, ap);
+}
+
+bool js::ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
+                                void* userRef, const unsigned errorNumber,
+                                ErrorArgumentsType argumentsType,
+                                JSErrorReport* reportp, va_list ap) {
+  return ExpandErrorArgumentsHelper(cx, callback, userRef, errorNumber, nullptr,
+                                    argumentsType, reportp, ap);
 }
 
 bool js::ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
@@ -816,8 +859,8 @@ bool js::ReportErrorNumberVA(JSContext* cx, unsigned flags,
   report.errorNumber = errorNumber;
   PopulateReportBlame(cx, &report);
 
-  if (!ExpandErrorArgumentsVA(cx, callback, userRef, errorNumber, nullptr,
-                              argumentsType, &report, ap)) {
+  if (!ExpandErrorArgumentsVA(cx, callback, userRef, errorNumber, argumentsType,
+                              &report, ap)) {
     return false;
   }
 
@@ -826,9 +869,10 @@ bool js::ReportErrorNumberVA(JSContext* cx, unsigned flags,
   return warning;
 }
 
+template <typename CharT>
 static bool ExpandErrorArguments(JSContext* cx, JSErrorCallback callback,
                                  void* userRef, const unsigned errorNumber,
-                                 const char16_t** messageArgs,
+                                 const CharT** messageArgs,
                                  ErrorArgumentsType argumentsType,
                                  JSErrorReport* reportp, ...) {
   va_list ap;
@@ -840,10 +884,16 @@ static bool ExpandErrorArguments(JSContext* cx, JSErrorCallback callback,
   return expanded;
 }
 
-bool js::ReportErrorNumberUCArray(JSContext* cx, unsigned flags,
-                                  JSErrorCallback callback, void* userRef,
-                                  const unsigned errorNumber,
-                                  const char16_t** args) {
+template <ErrorArgumentsType argType, typename CharT>
+static bool ReportErrorNumberArray(JSContext* cx, unsigned flags,
+                                   JSErrorCallback callback, void* userRef,
+                                   const unsigned errorNumber,
+                                   const CharT** args) {
+  static_assert(
+      (argType == ArgumentsAreUnicode && std::is_same_v<CharT, char16_t>) ||
+          (argType != ArgumentsAreUnicode && std::is_same_v<CharT, char>),
+      "Mismatch between character type and argument type");
+
   if (checkReportFlags(cx, &flags)) {
     return true;
   }
@@ -854,14 +904,30 @@ bool js::ReportErrorNumberUCArray(JSContext* cx, unsigned flags,
   report.errorNumber = errorNumber;
   PopulateReportBlame(cx, &report);
 
-  if (!ExpandErrorArguments(cx, callback, userRef, errorNumber, args,
-                            ArgumentsAreUnicode, &report)) {
+  if (!ExpandErrorArguments(cx, callback, userRef, errorNumber, args, argType,
+                            &report)) {
     return false;
   }
 
   ReportError(cx, &report, callback, userRef);
 
   return warning;
+}
+
+bool js::ReportErrorNumberUCArray(JSContext* cx, unsigned flags,
+                                  JSErrorCallback callback, void* userRef,
+                                  const unsigned errorNumber,
+                                  const char16_t** args) {
+  return ReportErrorNumberArray<ArgumentsAreUnicode>(
+      cx, flags, callback, userRef, errorNumber, args);
+}
+
+bool js::ReportErrorNumberUTF8Array(JSContext* cx, unsigned flags,
+                                    JSErrorCallback callback, void* userRef,
+                                    const unsigned errorNumber,
+                                    const char** args) {
+  return ReportErrorNumberArray<ArgumentsAreUTF8>(cx, flags, callback, userRef,
+                                                  errorNumber, args);
 }
 
 void js::ReportIsNotDefined(JSContext* cx, HandleId id) {
@@ -877,10 +943,23 @@ void js::ReportIsNotDefined(JSContext* cx, HandlePropertyName name) {
   ReportIsNotDefined(cx, id);
 }
 
-void js::ReportIsNullOrUndefined(JSContext* cx, int spindex, HandleValue v) {
+const char* NullOrUndefinedToCharZ(HandleValue v) {
+  MOZ_ASSERT(v.isNullOrUndefined());
+  return v.isNull() ? js_null_str : js_undefined_str;
+}
+
+void js::ReportIsNullOrUndefinedForPropertyAccess(JSContext* cx, HandleValue v,
+                                                  int vIndex) {
   MOZ_ASSERT(v.isNullOrUndefined());
 
-  UniqueChars bytes = DecompileValueGenerator(cx, spindex, v, nullptr);
+  if (vIndex == JSDVG_IGNORE_STACK) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_CANT_CONVERT_TO, NullOrUndefinedToCharZ(v),
+                              "object");
+    return;
+  }
+
+  UniqueChars bytes = DecompileValueGenerator(cx, vIndex, v, nullptr);
   if (!bytes) {
     return;
   }
@@ -889,31 +968,54 @@ void js::ReportIsNullOrUndefined(JSContext* cx, int spindex, HandleValue v) {
       strcmp(bytes.get(), js_null_str) == 0) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr, JSMSG_NO_PROPERTIES,
                              bytes.get());
-  } else if (v.isUndefined()) {
+  } else {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                              JSMSG_UNEXPECTED_TYPE, bytes.get(),
-                             js_undefined_str);
-  } else {
-    MOZ_ASSERT(v.isNull());
-    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                             JSMSG_UNEXPECTED_TYPE, bytes.get(), js_null_str);
+                             NullOrUndefinedToCharZ(v));
   }
 }
 
-void js::ReportMissingArg(JSContext* cx, HandleValue v, unsigned arg) {
-  char argbuf[11];
-  UniqueChars bytes;
+void js::ReportIsNullOrUndefinedForPropertyAccess(JSContext* cx, HandleValue v,
+                                                  int vIndex, HandleId key) {
+  MOZ_ASSERT(v.isNullOrUndefined());
 
-  SprintfLiteral(argbuf, "%u", arg);
-  if (IsFunctionObject(v)) {
-    RootedAtom name(cx, v.toObject().as<JSFunction>().explicitName());
-    bytes = DecompileValueGenerator(cx, JSDVG_SEARCH_STACK, v, name);
-    if (!bytes) {
-      return;
-    }
+  if (!cx->realm()->creationOptions().getPropertyErrorMessageFixEnabled()) {
+    ReportIsNullOrUndefinedForPropertyAccess(cx, v, vIndex);
+    return;
   }
-  JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr, JSMSG_MISSING_FUN_ARG,
-                           argbuf, bytes ? bytes.get() : "");
+
+  RootedValue idVal(cx, IdToValue(key));
+  RootedString idStr(cx, ValueToSource(cx, idVal));
+  if (!idStr) {
+    return;
+  }
+
+  UniqueChars keyStr = StringToNewUTF8CharsZ(cx, *idStr);
+  if (!keyStr) {
+    return;
+  }
+
+  if (vIndex == JSDVG_IGNORE_STACK) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr, JSMSG_PROPERTY_FAIL,
+                             keyStr.get(), NullOrUndefinedToCharZ(v));
+    return;
+  }
+
+  UniqueChars bytes = DecompileValueGenerator(cx, vIndex, v, nullptr);
+  if (!bytes) {
+    return;
+  }
+
+  if (strcmp(bytes.get(), js_undefined_str) == 0 ||
+      strcmp(bytes.get(), js_null_str) == 0) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr, JSMSG_PROPERTY_FAIL,
+                             keyStr.get(), bytes.get());
+    return;
+  }
+
+  JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                           JSMSG_PROPERTY_FAIL_EXPR, keyStr.get(), bytes.get(),
+                           NullOrUndefinedToCharZ(v));
 }
 
 bool js::ReportValueErrorFlags(JSContext* cx, unsigned flags,
@@ -1048,6 +1150,7 @@ JS_FRIEND_API void js::StopDrainingJobQueue(JSContext* cx) {
 JS_FRIEND_API void js::RunJobs(JSContext* cx) {
   MOZ_ASSERT(cx->jobQueue);
   cx->jobQueue->runJobs(cx);
+  JS::ClearKeptObjects(cx);
 }
 
 JSObject* InternalJobQueue::getIncumbentGlobal(JSContext* cx) {
@@ -1246,8 +1349,8 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       dtoaState(this, nullptr),
       suppressGC(this, 0),
 #ifdef DEBUG
-      gcSweeping(this, false),
-      gcSweepingZone(this, nullptr),
+      gcUse(this, GCUse::None),
+      gcSweepZone(this, nullptr),
       isTouchingGrayThings(this, false),
       noNurseryAllocationCheck(this, 0),
       disableStrictProxyCheckingCount(this, 0),
@@ -1397,16 +1500,11 @@ void JSContext::setPendingException(HandleValue v, HandleSavedFrame stack) {
   this->throwing = true;
   this->unwrappedException() = v;
   this->unwrappedExceptionStack() = stack;
-  check(v);
 }
-
-static const size_t MAX_REPORTED_STACK_DEPTH = 1u << 7;
 
 void JSContext::setPendingExceptionAndCaptureStack(HandleValue value) {
   RootedObject stack(this);
-  if (!CaptureCurrentStack(
-          this, &stack,
-          JS::StackCapture(JS::MaxFrames(MAX_REPORTED_STACK_DEPTH)))) {
+  if (!CaptureStack(this, &stack)) {
     clearPendingException();
   }
 
@@ -1473,14 +1571,6 @@ void JSContext::trace(JSTracer* trc) {
   geckoProfiler().trace(trc);
 }
 
-void* JSContext::stackLimitAddressForJitCode(JS::StackKind kind) {
-#ifdef JS_SIMULATOR
-  return addressOfSimulatorStackLimit();
-#else
-  return stackLimitAddress(kind);
-#endif
-}
-
 uintptr_t JSContext::stackLimitForJitCode(JS::StackKind kind) {
 #ifdef JS_SIMULATOR
   return simulator()->stackLimit();
@@ -1515,12 +1605,18 @@ void AutoEnterOOMUnsafeRegion::crash(const char* reason) {
   char msgbuf[1024];
   js::NoteIntentionalCrash();
   SprintfLiteral(msgbuf, "[unhandlable oom] %s", reason);
-  MOZ_ReportAssertionFailure(msgbuf, __FILE__, __LINE__);
-  MOZ_CRASH();
+#ifndef DEBUG
+  // In non-DEBUG builds MOZ_CRASH normally doesn't print to stderr so we have
+  // to do this explicitly (the jit-test allow-unhandlable-oom annotation and
+  // fuzzers depend on it).
+  MOZ_ReportCrash(msgbuf, __FILE__, __LINE__);
+#endif
+  MOZ_CRASH_UNSAFE(msgbuf);
 }
 
-AutoEnterOOMUnsafeRegion::AnnotateOOMAllocationSizeCallback
-    AutoEnterOOMUnsafeRegion::annotateOOMSizeCallback = nullptr;
+mozilla::Atomic<AutoEnterOOMUnsafeRegion::AnnotateOOMAllocationSizeCallback,
+                mozilla::Relaxed>
+    AutoEnterOOMUnsafeRegion::annotateOOMSizeCallback(nullptr);
 
 void AutoEnterOOMUnsafeRegion::crash(size_t size, const char* reason) {
   {
@@ -1531,6 +1627,15 @@ void AutoEnterOOMUnsafeRegion::crash(size_t size, const char* reason) {
   }
   crash(reason);
 }
+
+AutoKeepAtoms::AutoKeepAtoms(
+    JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_IN_IMPL)
+    : cx(cx) {
+  MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  cx->zone()->keepAtoms();
+}
+
+AutoKeepAtoms::~AutoKeepAtoms() { cx->zone()->releaseAtoms(); };
 
 #ifdef DEBUG
 AutoUnsafeCallWithABI::AutoUnsafeCallWithABI(UnsafeABIStrictness strictness)

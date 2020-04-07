@@ -26,7 +26,6 @@
 #include "mozilla/dom/PGamepadTestChannelParent.h"
 #include "mozilla/dom/MediaTransportParent.h"
 #include "mozilla/dom/MessagePortParent.h"
-#include "mozilla/dom/PendingIPCBlobParent.h"
 #include "mozilla/dom/ServiceWorkerActors.h"
 #include "mozilla/dom/ServiceWorkerManagerParent.h"
 #include "mozilla/dom/ServiceWorkerRegistrar.h"
@@ -61,9 +60,9 @@
 #include "mozilla/dom/network/UDPSocketParent.h"
 #include "mozilla/dom/WebAuthnTransactionParent.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/psm/VerifySSLServerCertParent.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "nsNetUtil.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsProxyRelease.h"
 #include "mozilla/RefPtr.h"
 #include "nsThreadUtils.h"
@@ -103,7 +102,7 @@ namespace {
 class TestParent final : public mozilla::ipc::PBackgroundTestParent {
   friend class mozilla::ipc::BackgroundParentImpl;
 
-  TestParent() { MOZ_COUNT_CTOR(TestParent); }
+  MOZ_COUNTED_DEFAULT_CTOR(TestParent)
 
  protected:
   ~TestParent() override { MOZ_COUNT_DTOR(TestParent); }
@@ -114,8 +113,7 @@ class TestParent final : public mozilla::ipc::PBackgroundTestParent {
 
 }  // namespace
 
-namespace mozilla {
-namespace ipc {
+namespace mozilla::ipc {
 
 using mozilla::dom::BroadcastChannelParent;
 using mozilla::dom::ContentParent;
@@ -236,23 +234,26 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvFlushPendingFileDeletions() {
 
 BackgroundParentImpl::PBackgroundSDBConnectionParent*
 BackgroundParentImpl::AllocPBackgroundSDBConnectionParent(
+    const PersistenceType& aPersistenceType,
     const PrincipalInfo& aPrincipalInfo) {
   AssertIsInMainOrSocketProcess();
   AssertIsOnBackgroundThread();
 
-  return mozilla::dom::AllocPBackgroundSDBConnectionParent(aPrincipalInfo);
+  return mozilla::dom::AllocPBackgroundSDBConnectionParent(aPersistenceType,
+                                                           aPrincipalInfo);
 }
 
 mozilla::ipc::IPCResult
 BackgroundParentImpl::RecvPBackgroundSDBConnectionConstructor(
     PBackgroundSDBConnectionParent* aActor,
+    const PersistenceType& aPersistenceType,
     const PrincipalInfo& aPrincipalInfo) {
   AssertIsInMainOrSocketProcess();
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aActor);
 
-  if (!mozilla::dom::RecvPBackgroundSDBConnectionConstructor(aActor,
-                                                             aPrincipalInfo)) {
+  if (!mozilla::dom::RecvPBackgroundSDBConnectionConstructor(
+          aActor, aPersistenceType, aPrincipalInfo)) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();
@@ -476,21 +477,6 @@ BackgroundParentImpl::AllocPIdleSchedulerParent() {
   AssertIsOnBackgroundThread();
   RefPtr<IdleSchedulerParent> actor = new IdleSchedulerParent();
   return actor.forget();
-}
-
-mozilla::dom::PPendingIPCBlobParent*
-BackgroundParentImpl::AllocPPendingIPCBlobParent(const IPCBlob& aBlob) {
-  MOZ_CRASH("PPendingIPCBlobParent actors should be manually constructed!");
-}
-
-bool BackgroundParentImpl::DeallocPPendingIPCBlobParent(
-    mozilla::dom::PPendingIPCBlobParent* aActor) {
-  AssertIsInMainOrSocketProcess();
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aActor);
-
-  delete aActor;
-  return true;
 }
 
 mozilla::dom::PRemoteWorkerParent*
@@ -779,8 +765,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvPUDPSocketConstructor(
     return IPC_FAIL_NO_REASON(this);
   }
 
-  IPC::Principal principal;
-  if (!static_cast<UDPSocketParent*>(aActor)->Init(principal, aFilter)) {
+  if (!static_cast<UDPSocketParent*>(aActor)->Init(nullptr, aFilter)) {
     MOZ_CRASH("UDPSocketCallback - failed init");
   }
 
@@ -791,6 +776,40 @@ bool BackgroundParentImpl::DeallocPUDPSocketParent(PUDPSocketParent* actor) {
   UDPSocketParent* p = static_cast<UDPSocketParent*>(actor);
   p->Release();
   return true;
+}
+
+already_AddRefed<mozilla::psm::PVerifySSLServerCertParent>
+BackgroundParentImpl::AllocPVerifySSLServerCertParent(
+    const ByteArray& aServerCert, const nsTArray<ByteArray>& aPeerCertChain,
+    const nsCString& aHostName, const int32_t& aPort,
+    const OriginAttributes& aOriginAttributes,
+    const Maybe<ByteArray>& aStapledOCSPResponse,
+    const Maybe<ByteArray>& aSctsFromTLSExtension,
+    const Maybe<DelegatedCredentialInfoArg>& aDcInfo,
+    const uint32_t& aProviderFlags, const uint32_t& aCertVerifierFlags) {
+  RefPtr<mozilla::psm::VerifySSLServerCertParent> parent =
+      new mozilla::psm::VerifySSLServerCertParent();
+  return parent.forget();
+}
+
+mozilla::ipc::IPCResult
+BackgroundParentImpl::RecvPVerifySSLServerCertConstructor(
+    PVerifySSLServerCertParent* aActor, const ByteArray& aServerCert,
+    nsTArray<ByteArray>&& aPeerCertChain, const nsCString& aHostName,
+    const int32_t& aPort, const OriginAttributes& aOriginAttributes,
+    const Maybe<ByteArray>& aStapledOCSPResponse,
+    const Maybe<ByteArray>& aSctsFromTLSExtension,
+    const Maybe<DelegatedCredentialInfoArg>& aDcInfo,
+    const uint32_t& aProviderFlags, const uint32_t& aCertVerifierFlags) {
+  mozilla::psm::VerifySSLServerCertParent* authCert =
+      static_cast<mozilla::psm::VerifySSLServerCertParent*>(aActor);
+  if (!authCert->Dispatch(aServerCert, std::move(aPeerCertChain), aHostName,
+                          aPort, aOriginAttributes, aStapledOCSPResponse,
+                          aSctsFromTLSExtension, aDcInfo, aProviderFlags,
+                          aCertVerifierFlags)) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
 }
 
 mozilla::dom::PBroadcastChannelParent*
@@ -1310,8 +1329,19 @@ bool BackgroundParentImpl::DeallocPMediaTransportParent(
   return true;
 }
 
-}  // namespace ipc
-}  // namespace mozilla
+PParentToChildStreamParent*
+BackgroundParentImpl::SendPParentToChildStreamConstructor(
+    PParentToChildStreamParent* aActor) {
+  return PBackgroundParent::SendPParentToChildStreamConstructor(aActor);
+}
+
+PFileDescriptorSetParent*
+BackgroundParentImpl::SendPFileDescriptorSetConstructor(
+    const FileDescriptor& aFD) {
+  return PBackgroundParent::SendPFileDescriptorSetConstructor(aFD);
+}
+
+}  // namespace mozilla::ipc
 
 void TestParent::ActorDestroy(ActorDestroyReason aWhy) {
   mozilla::ipc::AssertIsInMainOrSocketProcess();

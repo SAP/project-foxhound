@@ -7,10 +7,7 @@
 #include "InProcessBrowserChildMessageManager.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIComponentManager.h"
-#include "nsIServiceManager.h"
 #include "nsComponentManagerUtils.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
@@ -153,6 +150,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mMessageManager)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocShell)
   tmp->nsMessageManagerScriptExecutor::Unlink();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(InProcessBrowserChildMessageManager)

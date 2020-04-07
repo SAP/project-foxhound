@@ -215,6 +215,7 @@ NetworkResponseListener.prototype = {
    * @param nsISupports context
    */
   onStartRequest: function(request) {
+    request = request.QueryInterface(Ci.nsIChannel);
     // Converter will call this again, we should just ignore that.
     if (this.request) {
       return;
@@ -330,9 +331,14 @@ NetworkResponseListener.prototype = {
     const info = NetworkHelper.parseSecurityInfo(secinfo, this.httpActivity);
 
     let isRacing = false;
-    const channel = this.httpActivity.channel;
-    if (channel instanceof Ci.nsICacheInfoChannel) {
-      isRacing = channel.isRacing();
+    try {
+      const channel = this.httpActivity.channel;
+      if (channel instanceof Ci.nsICacheInfoChannel) {
+        isRacing = channel.isRacing();
+      }
+    } catch (err) {
+      // See the following bug for more details:
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=1582589
     }
 
     this.httpActivity.owner.addSecurityInfo(info, isRacing);

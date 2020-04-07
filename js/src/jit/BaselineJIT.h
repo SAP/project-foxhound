@@ -80,7 +80,7 @@ static constexpr uint32_t BaselineMaxScriptSlots = 0xffffu;
 // * callVM
 // * IC
 // * DebugTrap (trampoline call)
-// * JSOP_RESUME (because this is like a scripted call)
+// * JSOp::Resume (because this is like a scripted call)
 //
 // Note: see also BaselineFrame::HAS_OVERRIDE_PC.
 class RetAddrEntry {
@@ -110,6 +110,9 @@ class RetAddrEntry {
     // A callVM for the over-recursion check on function entry.
     StackCheck,
 
+    // A callVM for an interrupt check.
+    InterruptCheck,
+
     // DebugTrapHandler (for debugger breakpoints/stepping).
     DebugTrap,
 
@@ -136,7 +139,7 @@ class RetAddrEntry {
     // The pc offset must fit in at least 28 bits, since we shave off 4 for
     // the Kind enum.
     MOZ_ASSERT(pcOffset_ == pcOffset);
-    JS_STATIC_ASSERT(BaselineMaxScriptLength <= (1u << 28) - 1);
+    static_assert(BaselineMaxScriptLength <= (1u << 28) - 1);
     MOZ_ASSERT(pcOffset <= BaselineMaxScriptLength);
 
     MOZ_ASSERT(kind < Kind::Invalid);
@@ -212,7 +215,7 @@ struct BaselineScript final {
   };
 
   // Native code offset for OSR from Baseline Interpreter into Baseline JIT at
-  // JSOP_LOOPENTRY ops.
+  // JSOp::LoopHead ops.
   class OSREntry : public BasePCToNativeEntry {
    public:
     using BasePCToNativeEntry::BasePCToNativeEntry;
@@ -229,7 +232,7 @@ struct BaselineScript final {
   uint8_t flags_ = 0;
 
   // An ion compilation that is ready, but isn't linked yet.
-  IonBuilder* pendingBuilder_ = nullptr;
+  IonCompileTask* pendingIonCompileTask_ = nullptr;
 
   // Use BaselineScript::New to create new instances. It will properly
   // allocate trailing objects.
@@ -370,15 +373,15 @@ struct BaselineScript final {
 
   static void writeBarrierPre(Zone* zone, BaselineScript* script);
 
-  bool hasPendingIonBuilder() const { return !!pendingBuilder_; }
+  bool hasPendingIonCompileTask() const { return !!pendingIonCompileTask_; }
 
-  js::jit::IonBuilder* pendingIonBuilder() {
-    MOZ_ASSERT(hasPendingIonBuilder());
-    return pendingBuilder_;
+  js::jit::IonCompileTask* pendingIonCompileTask() {
+    MOZ_ASSERT(hasPendingIonCompileTask());
+    return pendingIonCompileTask_;
   }
-  void setPendingIonBuilder(JSRuntime* rt, JSScript* script,
-                            js::jit::IonBuilder* builder);
-  void removePendingIonBuilder(JSRuntime* rt, JSScript* script);
+  void setPendingIonCompileTask(JSRuntime* rt, JSScript* script,
+                                js::jit::IonCompileTask* task);
+  void removePendingIonCompileTask(JSRuntime* rt, JSScript* script);
 
   size_t allocBytes() const { return allocBytes_; }
 };
@@ -500,10 +503,6 @@ class BaselineInterpreter {
   // construction and environment initialization.
   uint32_t bailoutPrologueOffset_ = 0;
 
-  // Offset of the GeneratorThrowOrReturn callVM. See also
-  // emitGeneratorThrowOrReturnCallVM.
-  uint32_t generatorThrowOrReturnCallOffset_ = 0;
-
   // The offsets for the toggledJump instructions for profiler instrumentation.
   uint32_t profilerEnterToggleOffset_ = 0;
   uint32_t profilerExitToggleOffset_ = 0;
@@ -543,9 +542,7 @@ class BaselineInterpreter {
 
   void init(JitCode* code, uint32_t interpretOpOffset,
             uint32_t interpretOpNoDebugTrapOffset,
-            uint32_t bailoutPrologueOffset,
-            uint32_t generatorThrowOrReturnCallOffset,
-            uint32_t profilerEnterToggleOffset,
+            uint32_t bailoutPrologueOffset, uint32_t profilerEnterToggleOffset,
             uint32_t profilerExitToggleOffset, uint32_t debugTrapHandlerOffset,
             CodeOffsetVector&& debugInstrumentationOffsets,
             CodeOffsetVector&& debugTrapOffsets,
@@ -576,9 +573,6 @@ class BaselineInterpreter {
   TrampolinePtr interpretOpNoDebugTrapAddr() const {
     return TrampolinePtr(codeAtOffset(interpretOpNoDebugTrapOffset_));
   }
-  TrampolinePtr generatorThrowOrReturnCallAddr() const {
-    return TrampolinePtr(codeAtOffset(generatorThrowOrReturnCallOffset_));
-  }
 
   void toggleProfilerInstrumentation(bool enable);
   void toggleDebuggerInstrumentation(bool enable);
@@ -589,6 +583,21 @@ class BaselineInterpreter {
 
 MOZ_MUST_USE bool GenerateBaselineInterpreter(JSContext* cx,
                                               BaselineInterpreter& interpreter);
+
+inline bool IsBaselineJitEnabled(JSContext* cx) {
+  if (MOZ_UNLIKELY(!IsBaselineInterpreterEnabled())) {
+    return false;
+  }
+  if (MOZ_LIKELY(JitOptions.baselineJit)) {
+    return true;
+  }
+  if (JitOptions.jitForTrustedPrincipals) {
+    JS::Realm* realm = js::GetContextRealm(cx);
+    return realm && JS::GetRealmPrincipals(realm) &&
+           JS::GetRealmPrincipals(realm)->isSystemOrAddonPrincipal();
+  }
+  return false;
+}
 
 }  // namespace jit
 }  // namespace js

@@ -6,7 +6,8 @@
 #ifndef MOZILLA_MEDIATRACKGRAPH_H_
 #define MOZILLA_MEDIATRACKGRAPH_H_
 
-#include "AudioStream.h"
+#include "AudioSampleFormat.h"
+#include "CubebUtils.h"
 #include "MainThreadUtils.h"
 #include "MediaSegment.h"
 #include "mozilla/LinkedList.h"
@@ -14,7 +15,6 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/StateWatching.h"
 #include "mozilla/TaskQueue.h"
-#include "nsAutoPtr.h"
 #include "nsAutoRef.h"
 #include "nsIRunnable.h"
 #include "nsTArray.h"
@@ -47,23 +47,8 @@ extern LazyLogModule gMediaTrackGraphLog;
 namespace dom {
 enum class AudioContextOperation;
 enum class AudioContextOperationFlags;
+enum class AudioContextState : uint8_t;
 }  // namespace dom
-
-inline TrackTicks RateConvertTicksRoundDown(TrackRate aOutRate,
-                                            TrackRate aInRate,
-                                            TrackTicks aTicks) {
-  MOZ_ASSERT(0 < aOutRate && aOutRate <= TRACK_RATE_MAX, "Bad out rate");
-  MOZ_ASSERT(0 < aInRate && aInRate <= TRACK_RATE_MAX, "Bad in rate");
-  MOZ_ASSERT(0 <= aTicks && aTicks <= TRACK_TICKS_MAX, "Bad ticks");
-  return (aTicks * aOutRate) / aInRate;
-}
-inline TrackTicks RateConvertTicksRoundUp(TrackRate aOutRate, TrackRate aInRate,
-                                          TrackTicks aTicks) {
-  MOZ_ASSERT(0 < aOutRate && aOutRate <= TRACK_RATE_MAX, "Bad out rate");
-  MOZ_ASSERT(0 < aInRate && aInRate <= TRACK_RATE_MAX, "Bad in rate");
-  MOZ_ASSERT(0 <= aTicks && aTicks <= TRACK_TICKS_MAX, "Bad ticks");
-  return (aTicks * aOutRate + aInRate - 1) / aInRate;
-}
 
 /*
  * MediaTrackGraph is a framework for synchronized audio/video processing
@@ -124,6 +109,11 @@ class AudioDataListenerInterface {
   virtual void NotifyOutputData(MediaTrackGraphImpl* aGraph,
                                 AudioDataValue* aBuffer, size_t aFrames,
                                 TrackRate aRate, uint32_t aChannels) = 0;
+  /**
+   * An AudioCallbackDriver signaling that it has started and may notify of data
+   * soon.
+   */
+  virtual void NotifyStarted(MediaTrackGraphImpl* aGraph) = 0;
   /**
    * Input data from a microphone (or other audio source.  This is not
    * guaranteed to be in any particular size chunks.
@@ -303,12 +293,6 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
   void SetGraphImpl(MediaTrackGraph* aGraph);
 
   // Control API.
-  // Since a track can be played multiple ways, we need to combine independent
-  // volume settings. The aKey parameter is used to keep volume settings
-  // separate. Since the track is always playing the same contents, only
-  // a single audio output track is used; the volumes are combined.
-  // Currently only the first enabled audio track is played.
-  // XXX change this so all enabled audio tracks are mixed and played.
   virtual void AddAudioOutput(void* aKey);
   virtual void SetAudioOutputVolume(void* aKey, float aVolume);
   virtual void RemoveAudioOutput(void* aKey);
@@ -321,7 +305,7 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
   virtual void Resume();
   // Events will be dispatched by calling methods of aListener.
   virtual void AddListener(MediaTrackListener* aListener);
-  virtual void RemoveListener(MediaTrackListener* aListener);
+  virtual RefPtr<GenericPromise> RemoveListener(MediaTrackListener* aListener);
 
   /**
    * Adds aListener to the source track of this track.
@@ -557,12 +541,6 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
   bool mNotifiedEnded;
 
   // Client-set volume of this track
-  struct AudioOutput {
-    explicit AudioOutput(void* aKey) : mKey(aKey), mVolume(1.0f) {}
-    void* mKey;
-    float mVolume;
-  };
-  nsTArray<AudioOutput> mAudioOutputs;
   nsTArray<RefPtr<MediaTrackListener>> mTrackListeners;
   nsTArray<MainThreadMediaTrackListener*> mMainThreadListeners;
   // This track's associated disabled mode. It can either by disabled by frames
@@ -577,20 +555,6 @@ class MediaTrack : public mozilla::LinkedListElement<MediaTrack> {
 
   // MediaInputPorts to which this is connected
   nsTArray<MediaInputPort*> mConsumers;
-
-  // Where audio output is going. There is one AudioOutputStream per
-  // Type::AUDIO MediaTrack.
-  struct AudioOutputStream {
-    // When we started audio playback for this track.
-    // Add mTrack->GetPosition() to find the current audio playback position.
-    GraphTime mAudioPlaybackStartTime;
-    // Amount of time that we've wanted to play silence because of the track
-    // blocking.
-    MediaTime mBlockedAudioTime;
-    // Last tick written to the audio output.
-    TrackTime mLastTickWritten;
-  };
-  UniquePtr<AudioOutputStream> mAudioOutputStream;
 
   /**
    * Number of outstanding suspend operations on this track. Track is
@@ -678,8 +642,15 @@ class SourceMediaTrack : public MediaTrack {
    * because the stream has ended. Returns the duration of the appended data in
    * the graph's track rate otherwise.
    */
-  virtual TrackTime AppendData(MediaSegment* aSegment,
-                               MediaSegment* aRawSegment = nullptr);
+  TrackTime AppendData(MediaSegment* aSegment,
+                       MediaSegment* aRawSegment = nullptr);
+
+  /**
+   * Clear any data appended with AppendData() that hasn't entered the graph
+   * yet. Returns the duration of the cleared data in the graph's track rate.
+   */
+  TrackTime ClearFutureData();
+
   /**
    * Indicate that this track has ended. Do not do any more API calls affecting
    * this track.
@@ -700,6 +671,11 @@ class SourceMediaTrack : public MediaTrack {
 
   void RemoveAllDirectListenersImpl() override;
 
+  // The value set here is applied in MoveToSegment so we can avoid the
+  // buffering delay in applying the change. See Bug 1443511.
+  void SetVolume(float aVolume);
+  float GetVolumeLocked();
+
   friend class MediaTrackGraphImpl;
 
  protected:
@@ -716,7 +692,7 @@ class SourceMediaTrack : public MediaTrack {
     // Resampler if the rate of the input track does not match the
     // MediaTrackGraph's.
     nsAutoRef<SpeexResamplerState> mResampler;
-    int mResamplerChannelCount;
+    uint32_t mResamplerChannelCount;
     // Each time the track updates are flushed to the media graph thread,
     // the segment buffer is emptied.
     UniquePtr<MediaSegment> mData;
@@ -755,6 +731,7 @@ class SourceMediaTrack : public MediaTrack {
   // held together.
   Mutex mMutex;
   // protected by mMutex
+  float mVolume = 1.0;
   UniquePtr<TrackData> mUpdateTrack;
   nsTArray<RefPtr<DirectMediaTrackListener>> mDirectTrackListeners;
 };
@@ -810,7 +787,7 @@ class MediaInputPort final {
   }
 
   // Private destructor, to discourage deletion outside of Release():
-  ~MediaInputPort() { MOZ_COUNT_DTOR(MediaInputPort); }
+  MOZ_COUNTED_DTOR(MediaInputPort)
 
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MediaInputPort)
@@ -925,7 +902,7 @@ class ProcessedMediaTrack : public MediaTrack {
    * (including if there is no input track), this track automatically
    * enters the ended state.
    */
-  void QueueSetAutoend(bool aAutoend);
+  virtual void QueueSetAutoend(bool aAutoend);
 
   ProcessedMediaTrack* AsProcessedTrack() override { return this; }
 
@@ -1052,6 +1029,7 @@ class MediaTrackGraph {
                                   AudioDataListener* aListener) = 0;
   virtual void CloseAudioInput(Maybe<CubebUtils::AudioDeviceID>& aID,
                                AudioDataListener* aListener) = 0;
+
   // Control API.
   /**
    * Create a track that a media decoder (or some other source of
@@ -1080,9 +1058,13 @@ class MediaTrackGraph {
    */
   void AddTrack(MediaTrack* aTrack);
 
-  /* From the main thread, ask the MTG to send back an event when the graph
-   * thread is running, and audio is being processed. */
-  void NotifyWhenGraphStarted(AudioNodeTrack* aNodeTrack);
+  /* From the main thread, ask the MTG to tell us when the graph
+   * thread is running, and audio is being processed, by resolving the returned
+   * promise. The promise is rejected with NS_ERROR_NOT_AVAILABLE if aNodeTrack
+   * is destroyed, or NS_ERROR_ILLEGAL_DURING_SHUTDOWN if the graph is shut
+   * down, before the promise could be resolved. */
+  using GraphStartedPromise = GenericPromise;
+  RefPtr<GraphStartedPromise> NotifyWhenGraphStarted(AudioNodeTrack* aTrack);
   /* From the main thread, suspend, resume or close an AudioContext.
    * aTracks are the tracks of all the AudioNodes of the AudioContext that
    * need to be suspended or resumed. This can be empty if this is a second
@@ -1091,13 +1073,13 @@ class MediaTrackGraph {
    * This can possibly pause the graph thread, releasing system resources, if
    * all tracks have been suspended/closed.
    *
-   * When the operation is complete, aPromise is resolved.
+   * When the operation is complete, the returned promise is resolved.
    */
-  void ApplyAudioContextOperation(MediaTrack* aDestinationTrack,
-                                  const nsTArray<MediaTrack*>& aTracks,
-                                  dom::AudioContextOperation aState,
-                                  void* aPromise,
-                                  dom::AudioContextOperationFlags aFlags);
+  using AudioContextOperationPromise =
+      MozPromise<dom::AudioContextState, bool, true>;
+  RefPtr<AudioContextOperationPromise> ApplyAudioContextOperation(
+      MediaTrack* aDestinationTrack, const nsTArray<MediaTrack*>& aTracks,
+      dom::AudioContextOperation aOperation);
 
   bool IsNonRealtime() const;
   /**
@@ -1141,11 +1123,17 @@ class MediaTrackGraph {
    */
   virtual Watchable<GraphTime>& CurrentTime() = 0;
 
+  /**
+   * Graph thread function to return the time at which all processing has been
+   * completed.  Some tracks may have performed processing beyond this time.
+   */
+  GraphTime ProcessedTime() const;
+
  protected:
   explicit MediaTrackGraph(TrackRate aSampleRate) : mSampleRate(aSampleRate) {
     MOZ_COUNT_CTOR(MediaTrackGraph);
   }
-  virtual ~MediaTrackGraph() { MOZ_COUNT_DTOR(MediaTrackGraph); }
+  MOZ_COUNTED_DTOR_VIRTUAL(MediaTrackGraph)
 
   // Intended only for assertions, either on graph thread or not running (in
   // which case we must be on the main thread).

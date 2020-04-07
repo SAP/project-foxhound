@@ -21,7 +21,6 @@
 #include "nsFrameManager.h"
 #include "mozilla/dom/Document.h"
 #include "nsRect.h"
-#include "nsIComponentManager.h"
 #include "nsBoxLayoutState.h"
 #include "nsIScrollableFrame.h"
 #include "nsIPopupContainer.h"
@@ -33,19 +32,17 @@
 #include "nsCSSFrameConstructor.h"
 #include "nsPIWindowRoot.h"
 #include "nsIReflowCallback.h"
-#ifdef MOZ_XBL
-#  include "nsBindingManager.h"
-#endif
 #include "nsIDocShellTreeOwner.h"
 #include "nsIBaseWindow.h"
 #include "nsISound.h"
 #include "nsIScreenManager.h"
-#include "nsIServiceManager.h"
 #include "nsStyleConsts.h"
+#include "nsStyleStructInlines.h"
 #include "nsTransitionManager.h"
 #include "nsDisplayList.h"
-#include "nsIDOMXULSelectCntrlItemEl.h"
+#include "nsIDOMXULSelectCntrlEl.h"
 #include "mozilla/AnimationUtils.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
@@ -64,6 +61,8 @@
 #  include <gdk/gdkx.h>
 #  include <gdk/gdkwayland.h>
 #endif /* MOZ_WAYLAND */
+
+#include "X11UndefineNone.h"
 
 using namespace mozilla;
 using mozilla::dom::Document;
@@ -165,8 +164,7 @@ void nsMenuPopupFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     mPopupType = ePopupTypeTooltip;
   }
 
-  nsCOMPtr<nsIDocShellTreeItem> dsti = PresContext()->GetDocShell();
-  if (dsti && dsti->ItemType() == nsIDocShellTreeItem::typeChrome) {
+  if (PresContext()->IsChrome()) {
     mInContentShell = false;
   }
 
@@ -284,9 +282,10 @@ nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
       widgetData.mIsDragPopup = true;
     }
 
-    // If mousethrough="always" is set directly on the popup, then the widget
-    // should ignore mouse events, passing them through to the content behind.
-    mMouseTransparent = GetStateBits() & NS_FRAME_MOUSE_THROUGH_ALWAYS;
+    // If pointer-events: none; is set on the popup, then the widget should
+    // ignore mouse events, passing them through to the content behind.
+    mMouseTransparent =
+        StyleUI()->GetEffectivePointerEvents(this) == StylePointerEvents::None;
     widgetData.mMouseTransparent = mMouseTransparent;
   }
 
@@ -357,17 +356,17 @@ nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
   return NS_OK;
 }
 
-uint8_t nsMenuPopupFrame::GetShadowStyle() {
-  uint8_t shadow = StyleUIReset()->mWindowShadow;
-  if (shadow != NS_STYLE_WINDOW_SHADOW_DEFAULT) return shadow;
+StyleWindowShadow nsMenuPopupFrame::GetShadowStyle() {
+  StyleWindowShadow shadow = StyleUIReset()->mWindowShadow;
+  if (shadow != StyleWindowShadow::Default) return shadow;
 
   switch (StyleDisplay()->mAppearance) {
     case StyleAppearance::Tooltip:
-      return NS_STYLE_WINDOW_SHADOW_TOOLTIP;
+      return StyleWindowShadow::Tooltip;
     case StyleAppearance::Menupopup:
-      return NS_STYLE_WINDOW_SHADOW_MENU;
+      return StyleWindowShadow::Menu;
     default:
-      return NS_STYLE_WINDOW_SHADOW_DEFAULT;
+      return StyleWindowShadow::Default;
   }
 }
 
@@ -456,10 +455,37 @@ bool nsMenuPopupFrame::IsLeafDynamic() const {
                                                nsGkAtoms::sizetopopup));
 }
 
-void nsMenuPopupFrame::UpdateWidgetProperties() {
-  if (nsIWidget* widget = GetWidget()) {
-    widget->SetWindowOpacity(StyleUIReset()->mWindowOpacity);
-    widget->SetWindowTransform(ComputeWidgetTransform());
+void nsMenuPopupFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
+  nsBoxFrame::DidSetComputedStyle(aOldStyle);
+
+  if (!aOldStyle) {
+    return;
+  }
+
+  auto& newUI = *StyleUIReset();
+  auto& oldUI = *aOldStyle->StyleUIReset();
+  if (newUI.mWindowOpacity != oldUI.mWindowOpacity) {
+    if (nsIWidget* widget = GetWidget()) {
+      widget->SetWindowOpacity(newUI.mWindowOpacity);
+    }
+  }
+
+  if (newUI.mMozWindowTransform != oldUI.mMozWindowTransform) {
+    if (nsIWidget* widget = GetWidget()) {
+      widget->SetWindowTransform(ComputeWidgetTransform());
+    }
+  }
+
+  bool newMouseTransparent =
+      StyleUI()->GetEffectivePointerEvents(this) == StylePointerEvents::None;
+  bool oldMouseTransparent = aOldStyle->StyleUI()->GetEffectivePointerEvents(
+                                 this) == StylePointerEvents::None;
+
+  if (newMouseTransparent != oldMouseTransparent) {
+    if (nsIWidget* widget = GetWidget()) {
+      widget->SetWindowMouseTransparent(newMouseTransparent);
+      mMouseTransparent = newMouseTransparent;
+    }
   }
 }
 
@@ -963,37 +989,7 @@ void nsMenuPopupFrame::HidePopup(bool aDeselectMenu, nsPopupState aNewState) {
 }
 
 nsIFrame::ReflowChildFlags nsMenuPopupFrame::GetXULLayoutFlags() {
-  return ReflowChildFlags::NoSizeView | ReflowChildFlags::NoMoveView |
-         ReflowChildFlags::NoVisibility;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// GetRootViewForPopup
-//   Retrieves the view for the popup widget that contains the given frame.
-//   If the given frame is not contained by a popup widget, return the
-//   root view of the root viewmanager.
-nsView* nsMenuPopupFrame::GetRootViewForPopup(nsIFrame* aStartFrame) {
-  nsView* view = aStartFrame->GetClosestView();
-  NS_ASSERTION(view, "frame must have a closest view!");
-  while (view) {
-    // Walk up the view hierarchy looking for a view whose widget has a
-    // window type of eWindowType_popup - in other words a popup window
-    // widget. If we find one, this is the view we want.
-    nsIWidget* widget = view->GetWidget();
-    if (widget && widget->WindowType() == eWindowType_popup) {
-      return view;
-    }
-
-    nsView* temp = view->GetParent();
-    if (!temp) {
-      // Otherwise, we've walked all the way up to the root view and not
-      // found a view for a popup window widget. Just return the root view.
-      return view;
-    }
-    view = temp;
-  }
-
-  return nullptr;
+  return ReflowChildFlags::NoSizeView | ReflowChildFlags::NoMoveView;
 }
 
 nsPoint nsMenuPopupFrame::AdjustPositionForAnchorAlign(nsRect& anchorRect,
@@ -2171,10 +2167,9 @@ void nsMenuPopupFrame::LockMenuUntilClosed(bool aLock) {
 }
 
 nsIWidget* nsMenuPopupFrame::GetWidget() {
-  nsView* view = GetRootViewForPopup(this);
-  if (!view) return nullptr;
+  if (!mView) return nullptr;
 
-  return view->GetWidget();
+  return mView->GetWidget();
 }
 
 // helpers /////////////////////////////////////////////////////////////

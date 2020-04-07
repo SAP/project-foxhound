@@ -92,10 +92,13 @@ class Rule : public nsISupports, public nsWrapperCache {
   // Whether this a rule in a read only style sheet.
   bool IsReadOnly() const;
 
+  // Whether this rule is an @import rule that hasn't loaded yet (and thus
+  // doesn't affect the style of the page).
+  bool IsIncompleteImportRule() const;
+
   // This is pure virtual because all of Rule's data members are non-owning and
   // thus measured elsewhere.
-  virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
-      MOZ_MUST_OVERRIDE = 0;
+  virtual size_t SizeOfIncludingThis(MallocSizeOf) const MOZ_MUST_OVERRIDE = 0;
 
   // WebIDL interface
   virtual uint16_t Type() const = 0;

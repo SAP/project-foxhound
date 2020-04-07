@@ -101,27 +101,39 @@ class BasePrincipal : public nsJSPrincipals {
                 DocumentDomainConsideration aConsideration);
 
   NS_IMETHOD GetOrigin(nsACString& aOrigin) final;
+  NS_IMETHOD GetAsciiOrigin(nsACString& aOrigin) override;
   NS_IMETHOD GetOriginNoSuffix(nsACString& aOrigin) final;
   NS_IMETHOD Equals(nsIPrincipal* other, bool* _retval) final;
   NS_IMETHOD EqualsConsideringDomain(nsIPrincipal* other, bool* _retval) final;
+  NS_IMETHOD EqualsURI(nsIURI* aOtherURI, bool* _retval) override;
   NS_IMETHOD Subsumes(nsIPrincipal* other, bool* _retval) final;
   NS_IMETHOD SubsumesConsideringDomain(nsIPrincipal* other,
                                        bool* _retval) final;
   NS_IMETHOD SubsumesConsideringDomainIgnoringFPD(nsIPrincipal* other,
                                                   bool* _retval) final;
-  NS_IMETHOD CheckMayLoad(nsIURI* uri, bool report,
-                          bool allowIfInheritsPrincipal) final;
+  NS_IMETHOD CheckMayLoad(nsIURI* uri, bool allowIfInheritsPrincipal) final;
+  NS_IMETHOD CheckMayLoadWithReporting(nsIURI* uri,
+                                       bool allowIfInheritsPrincipal,
+                                       uint64_t innerWindowID) final;
   NS_IMETHOD GetAddonPolicy(nsISupports** aResult) final;
   NS_IMETHOD GetIsNullPrincipal(bool* aResult) override;
   NS_IMETHOD GetIsContentPrincipal(bool* aResult) override;
   NS_IMETHOD GetIsExpandedPrincipal(bool* aResult) override;
   NS_IMETHOD GetIsSystemPrincipal(bool* aResult) override;
   NS_IMETHOD SchemeIs(const char* aScheme, bool* aResult) override;
+  NS_IMETHOD IsURIInPrefList(const char* aPref, bool* aResult) override;
   NS_IMETHOD GetAboutModuleFlags(uint32_t* flags) override;
   NS_IMETHOD GetIsAddonOrExpandedAddonPrincipal(bool* aResult) override;
   NS_IMETHOD GetOriginAttributes(JSContext* aCx,
                                  JS::MutableHandle<JS::Value> aVal) final;
+  NS_IMETHOD GetAsciiSpec(nsACString& aSpec) override;
+  NS_IMETHOD GetExposablePrePath(nsACString& aResult) override;
+  NS_IMETHOD GetHostPort(nsACString& aRes) override;
+  NS_IMETHOD GetHost(nsACString& aRes) override;
+  NS_IMETHOD GetPrepath(nsACString& aResult) override;
   NS_IMETHOD GetOriginSuffix(nsACString& aOriginSuffix) final;
+  NS_IMETHOD GetIsIpAddress(bool* aIsIpAddress) override;
+  NS_IMETHOD GetIsOnion(bool* aIsOnion) override;
   NS_IMETHOD GetIsInIsolatedMozBrowserElement(
       bool* aIsInIsolatedMozBrowserElement) final;
   NS_IMETHOD GetUserContextId(uint32_t* aUserContextId) final;
@@ -129,7 +141,17 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD GetSiteOrigin(nsACString& aOrigin) override;
   NS_IMETHOD IsThirdPartyURI(nsIURI* uri, bool* aRes) override;
   NS_IMETHOD IsThirdPartyPrincipal(nsIPrincipal* uri, bool* aRes) override;
-
+  NS_IMETHOD GetIsOriginPotentiallyTrustworthy(bool* aResult) override;
+  NS_IMETHOD IsSameOrigin(nsIURI* aURI, bool aIsPrivateWin,
+                          bool* aRes) override;
+  NS_IMETHOD GetPrefLightCacheKey(nsIURI* aURI, bool aWithCredentials,
+                                  nsACString& _retval) override;
+  NS_IMETHOD GetAsciiHost(nsACString& aAsciiHost) override;
+  NS_IMETHOD GetLocalStorageQuotaKey(nsACString& aRes) override;
+  NS_IMETHOD AllowsRelaxStrictFileOriginPolicy(nsIURI* aURI,
+                                               bool* aRes) override;
+  NS_IMETHOD CreateReferrerInfo(mozilla::dom::ReferrerPolicy aReferrerPolicy,
+                                  nsIReferrerInfo** _retval) override;
   nsresult ToJSON(nsACString& aJSON);
   static already_AddRefed<BasePrincipal> FromJSON(const nsACString& aJSON);
   // Method populates a passed Json::Value with serializable fields
@@ -144,8 +166,16 @@ class BasePrincipal : public nsJSPrincipals {
     return static_cast<BasePrincipal*>(aPrin);
   }
 
+  static BasePrincipal& Cast(nsIPrincipal& aPrin) {
+    return *static_cast<BasePrincipal*>(&aPrin);
+  }
+
   static const BasePrincipal* Cast(const nsIPrincipal* aPrin) {
     return static_cast<const BasePrincipal*>(aPrin);
+  }
+
+  static const BasePrincipal& Cast(const nsIPrincipal& aPrin) {
+    return *static_cast<const BasePrincipal*>(&aPrin);
   }
 
   static already_AddRefed<BasePrincipal> CreateContentPrincipal(
@@ -242,6 +272,10 @@ class BasePrincipal : public nsJSPrincipals {
   virtual bool MayLoadInternal(nsIURI* aURI) = 0;
   friend class ::ExpandedPrincipal;
 
+  // Helper for implementing CheckMayLoad and CheckMayLoadWithReporting.
+  nsresult CheckMayLoadHelper(nsIURI* aURI, bool aAllowIfInheritsPrincipal,
+                              bool aReport, uint64_t aInnerWindowID);
+
   void SetHasExplicitDomain() { mHasExplicitDomain = true; }
 
   // Either of these functions should be called as the last step of the
@@ -251,6 +285,17 @@ class BasePrincipal : public nsJSPrincipals {
                   const OriginAttributes& aOriginAttributes);
   void FinishInit(BasePrincipal* aOther,
                   const OriginAttributes& aOriginAttributes);
+
+  // KeyValT holds a principal subtype-specific key value and the associated
+  // parsed value after JSON parsing.
+  template <typename SerializedKey>
+  struct KeyValT {
+    static_assert(sizeof(SerializedKey) == 1,
+                  "SerializedKey should be a uint8_t");
+    SerializedKey key;
+    bool valueWasSerialized;
+    nsCString value;
+  };
 
  private:
   static already_AddRefed<BasePrincipal> CreateContentPrincipal(

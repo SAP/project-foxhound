@@ -11,6 +11,7 @@ bitflags! {
     /// anonymous boxes, see StyleBuilder::for_inheritance and its callsites.
     /// If we ever want to add some flags that shouldn't inherit for them,
     /// we might want to add a function to handle this.
+    #[repr(C)]
     pub struct ComputedValueFlags: u16 {
         /// Whether the style or any of the ancestors has a text-decoration-line
         /// property that should get propagated to descendants.
@@ -63,6 +64,12 @@ bitflags! {
         ///
         /// Only used in Servo.
         const CAN_BE_FRAGMENTED = 1 << 10;
+
+        /// Whether this style is the style of the document element.
+        const IS_ROOT_ELEMENT_STYLE = 1 << 11;
+
+        /// Whether this element is inside an `opacity: 0` subtree.
+        const IS_IN_OPACITY_ZERO_SUBTREE = 1 << 12;
     }
 }
 
@@ -70,10 +77,11 @@ impl ComputedValueFlags {
     /// Flags that are unconditionally propagated to descendants.
     #[inline]
     fn inherited_flags() -> Self {
-        ComputedValueFlags::IS_RELEVANT_LINK_VISITED |
-        ComputedValueFlags::CAN_BE_FRAGMENTED |
-        ComputedValueFlags::IS_IN_PSEUDO_ELEMENT_SUBTREE |
-        ComputedValueFlags::HAS_TEXT_DECORATION_LINES
+        Self::IS_RELEVANT_LINK_VISITED |
+            Self::CAN_BE_FRAGMENTED |
+            Self::IS_IN_PSEUDO_ELEMENT_SUBTREE |
+            Self::HAS_TEXT_DECORATION_LINES |
+            Self::IS_IN_OPACITY_ZERO_SUBTREE
     }
 
     /// Flags that may be propagated to descendants.
@@ -96,23 +104,4 @@ impl ComputedValueFlags {
     pub fn maybe_inherited(self) -> Self {
         self & Self::maybe_inherited_flags()
     }
-}
-
-/// Asserts that the relevant servo and Gecko representations match.
-#[cfg(feature = "gecko")]
-#[inline]
-pub fn assert_match() {
-    use crate::gecko_bindings::structs;
-    macro_rules! assert_bit {
-        ($rust:ident, $cpp:ident) => {
-            debug_assert_eq!(ComputedValueFlags::$rust.bits, structs::$cpp);
-        }
-    }
-
-    assert_bit!(HAS_TEXT_DECORATION_LINES, ComputedStyleBit_HasTextDecorationLines);
-    assert_bit!(IS_IN_PSEUDO_ELEMENT_SUBTREE, ComputedStyleBit_HasPseudoElementData);
-    assert_bit!(SHOULD_SUPPRESS_LINEBREAK, ComputedStyleBit_SuppressLineBreak);
-    assert_bit!(IS_TEXT_COMBINED, ComputedStyleBit_IsTextCombined);
-    assert_bit!(IS_RELEVANT_LINK_VISITED, ComputedStyleBit_RelevantLinkVisited);
-    assert_bit!(DEPENDS_ON_FONT_METRICS, ComputedStyleBit_DependsOnFontMetrics);
 }

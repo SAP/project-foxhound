@@ -96,7 +96,7 @@ class ImageBitmapShutdownObserver final : public nsIObserver {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOBSERVER
  private:
-  ~ImageBitmapShutdownObserver() {}
+  ~ImageBitmapShutdownObserver() = default;
 
   class SendShutdownToWorkerThread : public MainThreadWorkerControlRunnable {
    public:
@@ -615,6 +615,12 @@ UniquePtr<ImageBitmapCloneData> ImageBitmap::ToCloneData() const {
   result->mPictureRect = mPictureRect;
   result->mAlphaType = mAlphaType;
   RefPtr<SourceSurface> surface = mData->GetAsSourceSurface();
+  if (!surface) {
+    // It might just not be possible to get/map the surface. (e.g. from another
+    // process)
+    return nullptr;
+  }
+
   result->mSurface = surface->GetDataSurface();
   MOZ_ASSERT(result->mSurface);
   result->mWriteOnly = mWriteOnly;
@@ -866,7 +872,7 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
   DebugOnly<bool> inited = array.Init(aImageData.GetDataObject());
   MOZ_ASSERT(inited);
 
-  array.ComputeLengthAndData();
+  array.ComputeState();
   const SurfaceFormat FORMAT = SurfaceFormat::R8G8B8A8;
   // ImageData's underlying data is not alpha-premultiplied.
   const auto alphaType = gfxAlphaType::NonPremult;
@@ -1083,11 +1089,11 @@ class CreateImageBitmapFromBlob final : public CancelableRunnable,
         mCropRect(aCropRect),
         mOriginalCropRect(aCropRect),
         mMainThreadEventTarget(aMainThreadEventTarget),
-        mThread(GetCurrentVirtualThread()) {}
+        mThread(PR_GetCurrentThread()) {}
 
-  virtual ~CreateImageBitmapFromBlob() {}
+  virtual ~CreateImageBitmapFromBlob() = default;
 
-  bool IsCurrentThread() const { return mThread == GetCurrentVirtualThread(); }
+  bool IsCurrentThread() const { return mThread == PR_GetCurrentThread(); }
 
   // Called on the owning thread.
   nsresult StartMimeTypeAndDecodeAndCropBlob();
@@ -1199,13 +1205,13 @@ already_AddRefed<Promise> ImageBitmap::Create(
   if (aCropRect.isSome()) {
     if (aCropRect->Width() == 0) {
       aRv.ThrowRangeError(
-          u"The crop rect width passed to createImageBitmap must be nonzero");
+          "The crop rect width passed to createImageBitmap must be nonzero");
       return promise.forget();
     }
 
     if (aCropRect->Height() == 0) {
       aRv.ThrowRangeError(
-          u"The crop rect height passed to createImageBitmap must be nonzero");
+          "The crop rect height passed to createImageBitmap must be nonzero");
       return promise.forget();
     }
   }
@@ -1541,7 +1547,12 @@ nsresult CreateImageBitmapFromBlob::GetMimeTypeAsync() {
 NS_IMETHODIMP
 CreateImageBitmapFromBlob::OnInputStreamReady(nsIAsyncInputStream* aStream) {
   // The stream should have data now. Let's start from scratch again.
-  return MimeTypeAndDecodeAndCropBlob();
+  nsresult rv = MimeTypeAndDecodeAndCropBlob();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    MimeTypeAndDecodeAndCropBlobCompletedMainThread(nullptr, rv);
+  }
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1669,7 +1680,7 @@ void CreateImageBitmapFromBlob::
     imageBitmap->SetPictureRect(mCropRect.ref(), rv);
 
     if (rv.Failed()) {
-      mPromise->MaybeReject(rv);
+      mPromise->MaybeReject(std::move(rv));
       return;
     }
   }

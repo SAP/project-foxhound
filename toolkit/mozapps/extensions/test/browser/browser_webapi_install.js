@@ -1,3 +1,13 @@
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/
+ */
+
+"use strict";
+
+const { AddonTestUtils } = ChromeUtils.import(
+  "resource://testing-common/AddonTestUtils.jsm"
+);
+
 const TESTPAGE = `${SECURE_TESTROOT}webapi_checkavailable.html`;
 const XPI_URL = `${SECURE_TESTROOT}../xpinstall/amosigned.xpi`;
 const XPI_ADDON_ID = "amosigned-xpi@tests.mozilla.org";
@@ -8,6 +18,8 @@ const XPI_SHA =
 const ID = "amosigned-xpi@tests.mozilla.org";
 // eh, would be good to just stat the real file instead of this...
 const XPI_LEN = 4287;
+
+AddonTestUtils.initMochitest(this);
 
 function waitForClear() {
   const MSG = "WebAPICleanup";
@@ -44,9 +56,9 @@ add_task(async function setup() {
 // with properties that the AddonInstall object is expected to have when
 // that event is triggered.
 async function testInstall(browser, args, steps, description) {
-  let success = await ContentTask.spawn(
+  let success = await SpecialPowers.spawn(
     browser,
-    { args, steps },
+    [{ args, steps }],
     async function(opts) {
       let { args, steps } = opts;
       let install = await content.navigator.mozAddonManager.createInstall(args);
@@ -127,9 +139,7 @@ async function testInstall(browser, args, steps, description) {
               for (let key of Object.keys(props)) {
                 if (received[key] != props[key]) {
                   throw new Error(
-                    `AddonInstall property ${key} was ${
-                      received[key]
-                    } but expected ${props[key]}`
+                    `AddonInstall property ${key} was ${received[key]} but expected ${props[key]}`
                   );
                 }
               }
@@ -245,11 +255,11 @@ function makeRegularTest(options, what) {
     isnot(addon, null, "Found the addon");
 
     // Check that the expected installTelemetryInfo has been stored in the addon details.
-    Assert.deepEqual(
-      addon.installTelemetryInfo,
-      { source: "test-host", method: "amWebAPI" },
-      "Got the expected addon.installTelemetryInfo"
-    );
+    AddonTestUtils.checkInstallInfo(addon, {
+      method: "amWebAPI",
+      source: "test-host",
+      sourceURL: /https:\/\/example.com\/.*\/webapi_checkavailable.html/,
+    });
 
     await addon.uninstall();
 
@@ -382,31 +392,33 @@ add_task(
 add_task(async function test_permissions() {
   function testBadUrl(url, pattern, successMessage) {
     return BrowserTestUtils.withNewTab(TESTPAGE, async function(browser) {
-      let result = await ContentTask.spawn(browser, { url, pattern }, function(
-        opts
-      ) {
-        return new Promise(resolve => {
-          content.navigator.mozAddonManager
-            .createInstall({ url: opts.url })
-            .then(
-              () => {
-                resolve({
-                  success: false,
-                  message: "createInstall should not have succeeded",
-                });
-              },
-              err => {
-                if (err.message.match(new RegExp(opts.pattern))) {
-                  resolve({ success: true });
+      let result = await SpecialPowers.spawn(
+        browser,
+        [{ url, pattern }],
+        function(opts) {
+          return new Promise(resolve => {
+            content.navigator.mozAddonManager
+              .createInstall({ url: opts.url })
+              .then(
+                () => {
+                  resolve({
+                    success: false,
+                    message: "createInstall should not have succeeded",
+                  });
+                },
+                err => {
+                  if (err.message.match(new RegExp(opts.pattern))) {
+                    resolve({ success: true });
+                  }
+                  resolve({
+                    success: false,
+                    message: `Wrong error message: ${err.message}`,
+                  });
                 }
-                resolve({
-                  success: false,
-                  message: `Wrong error message: ${err.message}`,
-                });
-              }
-            );
-        });
-      });
+              );
+          });
+        }
+      );
       is(result.success, true, result.message || successMessage);
     });
   }

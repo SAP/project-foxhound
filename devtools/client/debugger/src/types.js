@@ -5,9 +5,10 @@
 // @flow
 
 import type { SettledValue, FulfilledValue } from "./utils/async-value";
-import type { SourcePayload } from "./client/firefox/types";
+import type { SourcePayload, LongStringFront } from "./client/firefox/types";
 import type { SourceActorId, SourceActor } from "./reducers/source-actors";
 import type { SourceBase } from "./reducers/sources";
+import type { CallDeclaration } from "./workers/parser/getSymbols";
 
 export type { SourceActorId, SourceActor, SourceBase };
 
@@ -66,6 +67,7 @@ export type OriginalSourceData = {|
 export type GeneratedSourceData = {
   thread: ThreadId,
   source: SourcePayload,
+  isServiceWorker: boolean,
 
   // Many of our tests rely on being able to set a specific ID for the Source
   // object. We may want to consider avoiding that eventually.
@@ -113,6 +115,20 @@ export type PendingLocation = {
   +line: number,
   +column?: number,
   +sourceUrl?: string,
+};
+
+export type ExecutionPoint = {
+  +checkpoint: number,
+  +location: PendingLocation,
+  +position: ExecutionPointPosition,
+  +progress: number,
+};
+
+export type ExecutionPointPosition = {
+  +frameIndex: number,
+  +kind: string,
+  +offset: number,
+  +script: number,
 };
 
 // Type of location used when setting breakpoints in the server. Exactly one of
@@ -235,7 +251,7 @@ export type Frame = {
   location: SourceLocation,
   generatedLocation: SourceLocation,
   source: ?Source,
-  scope: Scope,
+  scope?: Scope,
   // FIXME Define this type more clearly
   this: Object,
   framework?: string,
@@ -243,6 +259,9 @@ export type Frame = {
   originalDisplayName?: string,
   originalVariables?: XScopeVariables,
   library?: string,
+  index: number,
+  asyncCause: null | string,
+  state: "on-stack" | "suspended" | "dead",
 };
 
 export type ChromeFrame = {
@@ -345,8 +364,8 @@ export type Expression = {
   value: Object,
   from: string,
   updating: boolean,
-  exception?: string,
-  error?: string,
+  exception?: string | LongStringFront,
+  error?: string | LongStringFront,
 };
 
 /**
@@ -415,6 +434,7 @@ export type Source = {
   +extensionName: ?string,
   +isExtension: boolean,
   +isWasm: boolean,
+  +isOriginal: boolean,
 };
 
 /**
@@ -472,6 +492,7 @@ export type Thread = {
   +url: string,
   +type: ThreadType,
   +name: string,
+  serviceWorkerStatus?: string,
 };
 
 export type Worker = Thread;
@@ -500,6 +521,9 @@ export type { Context, ThreadContext } from "./utils/context";
 export type Previews = {
   line: Array<Preview>,
 };
+
+export type HighlightedCall = CallDeclaration & { clear: Object };
+export type HighlightedCalls = Array<HighlightedCall>;
 
 export type Preview = {
   name: string,

@@ -65,7 +65,7 @@ LayerTransactionParent::LayerTransactionParent(
   MOZ_ASSERT(mId.IsValid());
 }
 
-LayerTransactionParent::~LayerTransactionParent() {}
+LayerTransactionParent::~LayerTransactionParent() = default;
 
 void LayerTransactionParent::SetLayerManager(
     HostLayerManager* aLayerManager, CompositorAnimationStorage* aAnimStorage) {
@@ -147,13 +147,7 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvPaintTime(
 
 mozilla::ipc::IPCResult LayerTransactionParent::RecvUpdate(
     const TransactionInfo& aInfo) {
-  auto guard = MakeScopeExit([&] {
-    if (recordreplay::IsRecordingOrReplaying()) {
-      recordreplay::child::NotifyPaintComplete();
-    }
-  });
-
-  AUTO_PROFILER_TRACING("Paint", "LayerTransaction", GRAPHICS);
+  AUTO_PROFILER_TRACING_MARKER("Paint", "LayerTransaction", GRAPHICS);
   AUTO_PROFILER_LABEL("LayerTransactionParent::RecvUpdate", GRAPHICS);
   PerfStats::AutoMetricRecording<PerfStats::Metric::LayerTransactions>
       autoRecording;
@@ -261,10 +255,6 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvUpdate(
       case Edit::TOpSetDiagnosticTypes: {
         mLayerManager->SetDiagnosticTypes(
             edit.get_OpSetDiagnosticTypes().diagnostics());
-        break;
-      }
-      case Edit::TOpWindowOverlayChanged: {
-        mLayerManager->SetWindowOverlayChanged();
         break;
       }
       // Tree ops
@@ -502,11 +492,6 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvUpdate(
         (TimeStamp::Now() - updateStart).ToMilliseconds());
   }
 
-  // Compose after every update when recording/replaying.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    mCompositorBridge->ForceComposeToTarget(nullptr);
-  }
-
   return IPC_OK();
 }
 
@@ -632,8 +617,8 @@ bool LayerTransactionParent::SetLayerAttributes(
       refLayer->SetReferentId(specific.get_RefLayerAttributes().id());
       refLayer->SetEventRegionsOverride(
           specific.get_RefLayerAttributes().eventRegionsOverride());
-      refLayer->SetRemoteDocumentRect(
-          specific.get_RefLayerAttributes().remoteDocumentRect());
+      refLayer->SetRemoteDocumentSize(
+          specific.get_RefLayerAttributes().remoteDocumentSize());
       UpdateHitTestingTree(layer, "ref layer attributes changed");
       break;
     }
@@ -733,18 +718,15 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvGetTransform(
   float scale = 1;
   Point3D scaledOrigin;
   Point3D transformOrigin;
-  for (const PropertyAnimationGroup& group :
-       layer->GetPropertyAnimationGroups()) {
-    if (group.mAnimationData.isNothing()) {
-      continue;
-    }
-    const TransformData& data = group.mAnimationData.ref();
+  const auto* meta = layer->GetTransformLikeMetaData();
+  MOZ_ASSERT(!meta || meta->mTransform);
+  if (meta && meta->mTransform) {
+    const TransformData& data = *meta->mTransform;
     scale = data.appUnitsPerDevPixel();
     scaledOrigin = Point3D(
         NS_round(NSAppUnitsToFloatPixels(data.origin().x, scale)),
         NS_round(NSAppUnitsToFloatPixels(data.origin().y, scale)), 0.0f);
     transformOrigin = data.transformOrigin();
-    break;
   }
 
   // If our parent isn't a perspective layer, then the offset into reference
@@ -889,11 +871,11 @@ bool LayerTransactionParent::AllocUnsafeShmem(
   return PLayerTransactionParent::AllocUnsafeShmem(aSize, aType, aShmem);
 }
 
-void LayerTransactionParent::DeallocShmem(ipc::Shmem& aShmem) {
+bool LayerTransactionParent::DeallocShmem(ipc::Shmem& aShmem) {
   if (!mIPCOpen || mDestroyed) {
-    return;
+    return false;
   }
-  PLayerTransactionParent::DeallocShmem(aShmem);
+  return PLayerTransactionParent::DeallocShmem(aShmem);
 }
 
 bool LayerTransactionParent::IsSameProcess() const {

@@ -6,18 +6,6 @@
 
 const EventEmitter = require("devtools/shared/event-emitter");
 
-/**
- * This object represents replacement for ToolSidebar
- * implemented in devtools/client/framework/sidebar.js module
- *
- * This new component is part of devtools.html aimed at
- * removing XUL and use HTML for entire DevTools UI.
- * There are currently two implementation of the side bar since
- * the `sidebar.js` module (mentioned above) is still used by
- * other panels.
- * As soon as all panels are using this HTML based
- * implementation it can be removed.
- */
 function ToolSidebar(tabbox, panel, uid, options = {}) {
   EventEmitter.decorate(this);
 
@@ -165,7 +153,7 @@ ToolSidebar.prototype = {
    * @param {String} tabPanelId Optional. If provided, this ID will be used
    * instead of the tabId to retrieve and remove the corresponding <tabpanel>
    */
-  async removeTab(tabId, tabPanelId) {
+  removeTab(tabId, tabPanelId) {
     this._tabbar.removeTab(tabId);
 
     this.emit("tab-unregistered", tabId);

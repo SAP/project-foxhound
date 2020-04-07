@@ -24,7 +24,6 @@
 #include "nsHTMLParts.h"
 #include "mozilla/ComputedStyle.h"
 #include "nsBoxLayoutState.h"
-#include "nsIServiceManager.h"
 #include "nsContainerFrame.h"
 #include "nsContentCID.h"
 #include "nsLayoutUtils.h"
@@ -36,12 +35,10 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/UniquePtr.h"
-#ifdef MOZ_XBL
-#  include "nsBindingManager.h"
-#endif
 
 using namespace mozilla;
 
+using mozilla::dom::Element;
 using mozilla::dom::Event;
 
 class nsSplitterInfo {
@@ -426,7 +423,7 @@ void nsSplitterFrameInner::MouseDrag(nsPresContext* aPresContext,
     bool supportsAfter = SupportsCollapseDirection(After);
 
     const bool isRTL =
-        mOuter->StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+        mOuter->StyleVisibility()->mDirection == StyleDirection::Rtl;
     bool pastEnd = oldPos > 0 && oldPos > pos;
     bool pastBegin = oldPos < 0 && oldPos < pos;
     if (isRTL) {
@@ -646,8 +643,8 @@ nsresult nsSplitterFrameInner::MouseDown(Event* aMouseEvent) {
     Reverse(mChildInfosAfter, mChildInfosAfterCount);
 
     // Now swap the two arrays.
-    Swap(mChildInfosBeforeCount, mChildInfosAfterCount);
-    Swap(mChildInfosBefore, mChildInfosAfter);
+    std::swap(mChildInfosBeforeCount, mChildInfosAfterCount);
+    std::swap(mChildInfosBefore, mChildInfosAfter);
   }
 
   // if resizebefore is not Farthest, reverse the list because the first child

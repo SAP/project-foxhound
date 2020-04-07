@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use std::ptr;
 use std::os::raw::c_char;
 use std::convert::TryInto;
@@ -176,7 +180,7 @@ pub unsafe extern "C" fn sdp_media_add_codec(sdp_media: *mut SdpMedia, pt: u8,
                      codec_name: match codec_name.try_into() {
                          Ok(x) => x,
                          Err(boxed_error) => {
-                             println!("Error while pasing string, description: {:?}", (*boxed_error).description());
+                             println!("Error while parsing string, description: {}", boxed_error);
                              return NS_ERROR_INVALID_ARG;
                          }
                      },

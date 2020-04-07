@@ -1,11 +1,5 @@
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "Services",
-  "resource://gre/modules/Services.jsm"
-);
-
 // This function is pretty tightly tied to Extension.jsm.
 // Its job is to fill in the |tab| property of the sender.
 const getSender = (extension, target, sender) => {
@@ -40,11 +34,15 @@ extensions.on("page-shutdown", (type, context) => {
       // WebExtension as an embedded inline options page.
       return;
     }
-    let { BrowserApp } = context.xulBrowser.ownerGlobal;
+    const window = context.xulBrowser.ownerGlobal;
+    let { BrowserApp } = window;
     if (BrowserApp) {
       let nativeTab = BrowserApp.getTabForBrowser(context.xulBrowser);
       if (nativeTab) {
-        BrowserApp.closeTab(nativeTab);
+        GeckoViewTabBridge.closeTab({
+          window,
+          extensionId: context.extension.id,
+        });
       }
     }
   }
@@ -74,21 +72,14 @@ global.openOptionsPage = extension => {
 extensions.registerModules({
   browserAction: {
     url: "chrome://geckoview/content/ext-browserAction.js",
-    schema: "chrome://geckoview/content/schemas/browser_action.json",
+    schema: "chrome://extensions/content/schemas/browser_action.json",
     scopes: ["addon_parent"],
     manifest: ["browser_action"],
     paths: [["browserAction"]],
   },
-  browsingData: {
-    url: "chrome://geckoview/content/ext-browsingData.js",
-    schema: "chrome://geckoview/content/schemas/browsing_data.json",
-    scopes: ["addon_parent"],
-    manifest: ["browsing_data"],
-    paths: [["browsingData"]],
-  },
   pageAction: {
     url: "chrome://geckoview/content/ext-pageAction.js",
-    schema: "chrome://geckoview/content/schemas/page_action.json",
+    schema: "chrome://extensions/content/schemas/page_action.json",
     scopes: ["addon_parent"],
     manifest: ["page_action"],
     paths: [["pageAction"]],
@@ -99,12 +90,7 @@ extensions.registerModules({
     scopes: ["addon_parent"],
     paths: [["tabs"]],
   },
+  geckoViewAddons: {
+    schema: "chrome://geckoview/content/schemas/gecko_view_addons.json",
+  },
 });
-
-if (!Services.androidBridge.isFennec) {
-  extensions.registerModules({
-    geckoViewAddons: {
-      schema: "chrome://geckoview/content/schemas/gecko_view_addons.json",
-    },
-  });
-}

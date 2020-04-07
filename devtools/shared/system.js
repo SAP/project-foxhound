@@ -8,8 +8,8 @@ const { Cc, Ci } = require("chrome");
 loader.lazyRequireGetter(this, "Services");
 loader.lazyRequireGetter(
   this,
-  "DebuggerServer",
-  "devtools/server/debugger-server",
+  "DevToolsServer",
+  "devtools/server/devtools-server",
   true
 );
 loader.lazyRequireGetter(
@@ -50,7 +50,7 @@ function getSystemInfo() {
   }
 
   const appInfo = Services.appinfo;
-  const win = Services.wm.getMostRecentWindow(DebuggerServer.chromeWindowType);
+  const win = Services.wm.getMostRecentWindow(DevToolsServer.chromeWindowType);
   const [processor, compiler] = appInfo.XPCOMABI.split("-");
   let dpi, useragent, width, height, physicalWidth, physicalHeight, brandName;
   const appid = appInfo.ID;
@@ -118,7 +118,7 @@ function getSystemInfo() {
     geckoversion: geckoVersion,
 
     // Locale used in this build
-    locale: Services.locale.appLocaleAsLangTag,
+    locale: Services.locale.appLocaleAsBCP47,
 
     /**
      * Information regarding the operating system.

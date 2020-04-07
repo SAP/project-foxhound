@@ -14,7 +14,7 @@ use crate::ir::{
     immediates,
     instructions::{Opcode, ValueList},
     types::{I16, I32, I64, I8},
-    DataFlowGraph, Ebb, Function, Inst, InstBuilder, InstructionData, Type, Value,
+    Block, DataFlowGraph, Function, Inst, InstBuilder, InstructionData, Type, Value,
 };
 use crate::isa::TargetIsa;
 use crate::timing;
@@ -508,7 +508,7 @@ fn try_fold_extended_move(
             }
 
             let imm_bits: i64 = imm.into();
-            let ireduce_ty = match dest_ty.lane_bits() as i64 - imm_bits {
+            let ireduce_ty = match (dest_ty.lane_bits() as i64).wrapping_sub(imm_bits) {
                 8 => I8,
                 16 => I16,
                 32 => I32,
@@ -597,15 +597,14 @@ fn simplify(pos: &mut FuncCursor, inst: Inst, native_word_width: u32) {
             }
         }
 
-        InstructionData::Unary { opcode, arg } => match opcode {
-            Opcode::AdjustSpDown => {
+        InstructionData::Unary { opcode, arg } => {
+            if let Opcode::AdjustSpDown = opcode {
                 if let Some(imm) = resolve_imm64_value(&pos.func.dfg, arg) {
                     // Note this works for both positive and negative immediate values.
                     pos.func.dfg.replace(inst).adjust_sp_down_imm(imm);
                 }
             }
-            _ => {}
-        },
+        }
 
         InstructionData::BinaryImm { opcode, arg, imm } => {
             let ty = pos.func.dfg.ctrl_typevar(inst);
@@ -626,27 +625,25 @@ fn simplify(pos: &mut FuncCursor, inst: Inst, native_word_width: u32) {
                             imm: prev_imm,
                         } = &pos.func.dfg[arg_inst]
                         {
-                            if opcode == *prev_opcode {
-                                if ty == pos.func.dfg.ctrl_typevar(arg_inst) {
-                                    let lhs: i64 = imm.into();
-                                    let rhs: i64 = (*prev_imm).into();
-                                    let new_imm = match opcode {
-                                        Opcode::BorImm => lhs | rhs,
-                                        Opcode::BandImm => lhs & rhs,
-                                        Opcode::BxorImm => lhs ^ rhs,
-                                        Opcode::IaddImm => lhs.wrapping_add(rhs),
-                                        Opcode::ImulImm => lhs.wrapping_mul(rhs),
-                                        _ => panic!("can't happen"),
-                                    };
-                                    let new_imm = immediates::Imm64::from(new_imm);
-                                    let new_arg = *prev_arg;
-                                    pos.func
-                                        .dfg
-                                        .replace(inst)
-                                        .BinaryImm(opcode, ty, new_imm, new_arg);
-                                    imm = new_imm;
-                                    arg = new_arg;
-                                }
+                            if opcode == *prev_opcode && ty == pos.func.dfg.ctrl_typevar(arg_inst) {
+                                let lhs: i64 = imm.into();
+                                let rhs: i64 = (*prev_imm).into();
+                                let new_imm = match opcode {
+                                    Opcode::BorImm => lhs | rhs,
+                                    Opcode::BandImm => lhs & rhs,
+                                    Opcode::BxorImm => lhs ^ rhs,
+                                    Opcode::IaddImm => lhs.wrapping_add(rhs),
+                                    Opcode::ImulImm => lhs.wrapping_mul(rhs),
+                                    _ => panic!("can't happen"),
+                                };
+                                let new_imm = immediates::Imm64::from(new_imm);
+                                let new_arg = *prev_arg;
+                                pos.func
+                                    .dfg
+                                    .replace(inst)
+                                    .BinaryImm(opcode, ty, new_imm, new_arg);
+                                imm = new_imm;
+                                arg = new_arg;
                             }
                         }
                     }
@@ -679,17 +676,14 @@ fn simplify(pos: &mut FuncCursor, inst: Inst, native_word_width: u32) {
                 | (Opcode::SshrImm, 0) => {
                     // Alias the result value with the original argument.
                     replace_single_result_with_alias(&mut pos.func.dfg, inst, arg);
-                    return;
                 }
                 (Opcode::ImulImm, 0) | (Opcode::BandImm, 0) => {
                     // Replace by zero.
                     pos.func.dfg.replace(inst).iconst(ty, 0);
-                    return;
                 }
                 (Opcode::BorImm, -1) => {
                     // Replace by minus one.
                     pos.func.dfg.replace(inst).iconst(ty, -1);
-                    return;
                 }
                 _ => {}
             }
@@ -789,9 +783,9 @@ fn branch_opt(pos: &mut FuncCursor, inst: Inst) {
 
             BranchOptInfo {
                 br_inst: inst,
-                cmp_arg: cmp_arg,
+                cmp_arg,
                 args: br_args.clone(),
-                new_opcode: new_opcode,
+                new_opcode,
             }
         } else {
             return;
@@ -816,10 +810,10 @@ enum BranchOrderKind {
 
 /// Reorder branches to encourage fallthroughs.
 ///
-/// When an ebb ends with a conditional branch followed by an unconditional
-/// branch, this will reorder them if one of them is branching to the next Ebb
+/// When an block ends with a conditional branch followed by an unconditional
+/// branch, this will reorder them if one of them is branching to the next Block
 /// layout-wise. The unconditional jump can then become a fallthrough.
-fn branch_order(pos: &mut FuncCursor, cfg: &mut ControlFlowGraph, ebb: Ebb, inst: Inst) {
+fn branch_order(pos: &mut FuncCursor, cfg: &mut ControlFlowGraph, block: Block, inst: Inst) {
     let (term_inst, term_inst_args, term_dest, cond_inst, cond_inst_args, cond_dest, kind) =
         match pos.func.dfg[inst] {
             InstructionData::Jump {
@@ -827,13 +821,13 @@ fn branch_order(pos: &mut FuncCursor, cfg: &mut ControlFlowGraph, ebb: Ebb, inst
                 destination,
                 ref args,
             } => {
-                let next_ebb = if let Some(next_ebb) = pos.func.layout.next_ebb(ebb) {
-                    next_ebb
+                let next_block = if let Some(next_block) = pos.func.layout.next_block(block) {
+                    next_block
                 } else {
                     return;
                 };
 
-                if destination == next_ebb {
+                if destination == next_block {
                     return;
                 }
 
@@ -846,7 +840,7 @@ fn branch_order(pos: &mut FuncCursor, cfg: &mut ControlFlowGraph, ebb: Ebb, inst
                 let prev_inst_data = &pos.func.dfg[prev_inst];
 
                 if let Some(prev_dest) = prev_inst_data.branch_destination() {
-                    if prev_dest != next_ebb {
+                    if prev_dest != next_block {
                         return;
                     }
                 } else {
@@ -947,7 +941,7 @@ fn branch_order(pos: &mut FuncCursor, cfg: &mut ControlFlowGraph, ebb: Ebb, inst
         }
     }
 
-    cfg.recompute_ebb(pos.func, ebb);
+    cfg.recompute_block(pos.func, block);
 }
 
 /// The main pre-opt pass.
@@ -955,7 +949,7 @@ pub fn do_preopt(func: &mut Function, cfg: &mut ControlFlowGraph, isa: &dyn Targ
     let _tt = timing::preopt();
     let mut pos = FuncCursor::new(func);
     let native_word_width = isa.pointer_bytes();
-    while let Some(ebb) = pos.next_ebb() {
+    while let Some(block) = pos.next_block() {
         while let Some(inst) = pos.next_inst() {
             // Apply basic simplifications.
             simplify(&mut pos, inst, native_word_width as u32);
@@ -967,7 +961,7 @@ pub fn do_preopt(func: &mut Function, cfg: &mut ControlFlowGraph, isa: &dyn Targ
             }
 
             branch_opt(&mut pos, inst);
-            branch_order(&mut pos, cfg, ebb, inst);
+            branch_order(&mut pos, cfg, block, inst);
         }
     }
 }

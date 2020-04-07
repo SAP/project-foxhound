@@ -52,6 +52,7 @@ ExtensionPreferencesManager.addSetting("proxy.settings", {
     "network.proxy.no_proxies_on",
     "network.proxy.autoconfig_url",
     "signon.autologin.proxy",
+    "network.http.proxy.respect-be-conservative",
   ],
 
   setCallback(value) {
@@ -63,6 +64,7 @@ ExtensionPreferencesManager.addSetting("proxy.settings", {
       "network.proxy.share_proxy_settings": value.httpProxyAll,
       "network.proxy.socks_version": value.socksVersion,
       "network.proxy.no_proxies_on": value.passthrough,
+      "network.http.proxy.respect-be-conservative": value.respectBeConservative,
     };
 
     for (let prop of ["http", "ftp", "ssl", "socks"]) {
@@ -171,10 +173,10 @@ this.proxy = class extends ExtensionAPI {
         }).api(),
 
         settings: Object.assign(
-          getSettingsAPI(
-            extension.id,
-            "proxy.settings",
-            () => {
+          getSettingsAPI({
+            context,
+            name: "proxy.settings",
+            callback() {
               let prefValue = Services.prefs.getIntPref("network.proxy.type");
               let proxyConfig = {
                 proxyType: Array.from(PROXY_TYPES_MAP.entries()).find(
@@ -198,6 +200,12 @@ this.proxy = class extends ExtensionAPI {
                 ),
               };
 
+              if (extension.isPrivileged) {
+                proxyConfig.respectBeConservative = Services.prefs.getBoolPref(
+                  "network.http.proxy.respect-be-conservative"
+                );
+              }
+
               for (let prop of ["http", "ftp", "ssl", "socks"]) {
                 let host = Services.prefs.getCharPref(`network.proxy.${prop}`);
                 let port = Services.prefs.getIntPref(
@@ -209,16 +217,14 @@ this.proxy = class extends ExtensionAPI {
               return proxyConfig;
             },
             // proxy.settings is unsupported on android.
-            undefined,
-            false,
-            () => {
+            validate() {
               if (AppConstants.platform == "android") {
                 throw new ExtensionError(
                   `proxy.settings is not supported on android.`
                 );
               }
-            }
-          ),
+            },
+          }),
           {
             set: details => {
               if (AppConstants.platform === "android") {
@@ -256,7 +262,7 @@ this.proxy = class extends ExtensionAPI {
                 // Match what about:preferences does with proxy settings
                 // since the proxy service does not check the value
                 // of share_proxy_settings.
-                for (let prop of ["ftp", "ssl", "socks"]) {
+                for (let prop of ["ftp", "ssl"]) {
                   value[prop] = value.http;
                 }
               }
@@ -285,9 +291,7 @@ this.proxy = class extends ExtensionAPI {
                   new URL(value.autoConfigUrl);
                 } catch (e) {
                   throw new ExtensionError(
-                    `${
-                      value.autoConfigUrl
-                    } is not a valid value for autoConfigUrl.`
+                    `${value.autoConfigUrl} is not a valid value for autoConfigUrl.`
                   );
                 }
               }
@@ -299,11 +303,21 @@ this.proxy = class extends ExtensionAPI {
                   value.socksVersion > 5
                 ) {
                   throw new ExtensionError(
-                    `${
-                      value.socksVersion
-                    } is not a valid value for socksVersion.`
+                    `${value.socksVersion} is not a valid value for socksVersion.`
                   );
                 }
+              }
+
+              if (
+                value.respectBeConservative !== undefined &&
+                !extension.isPrivileged &&
+                Services.prefs.getBoolPref(
+                  "network.http.proxy.respect-be-conservative"
+                ) != value.respectBeConservative
+              ) {
+                throw new ExtensionError(
+                  `respectBeConservative can be set by privileged extensions only.`
+                );
               }
 
               return ExtensionPreferencesManager.setSetting(

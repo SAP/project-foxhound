@@ -9,17 +9,18 @@
 #  include "apz/src/APZCTreeManager.h"
 #  include "mozilla/layers/AsyncCompositionManager.h"
 #endif
+#include <utility>
+
+#include "FrameMetrics.h"
+#include "SynchronousTask.h"
+#include "mozilla/Unused.h"
+#include "mozilla/gfx/Types.h"
 #include "mozilla/layers/Compositor.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/LayerManagerComposite.h"
 #include "mozilla/layers/UiCompositorControllerMessageTypes.h"
-#include "mozilla/gfx/Types.h"
-#include "mozilla/Move.h"
-#include "mozilla/Unused.h"
-
-#include "FrameMetrics.h"
-#include "SynchronousTask.h"
+#include "mozilla/layers/WebRenderBridgeParent.h"
 
 namespace mozilla {
 namespace layers {
@@ -175,6 +176,9 @@ UiCompositorControllerParent::RecvRequestScreenPixels() {
     state->mLayerManager->RequestScreenPixels(this);
     state->mParent->Invalidate();
     state->mParent->ScheduleComposition();
+  } else if (state && state->mWrBridge) {
+    state->mWrBridge->RequestScreenPixels(this);
+    state->mWrBridge->ScheduleForcedGenerateFrame();
   }
 #endif  // defined(MOZ_WIDGET_ANDROID)
 

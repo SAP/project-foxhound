@@ -326,7 +326,6 @@ TabSources.prototype = {
       // There are a few special URLs that we know are JavaScript:
       // inline `javascript:` and code coming from the console
       if (
-        url.indexOf("Scratchpad/") === 0 ||
         url.indexOf("javascript:") === 0 ||
         url === "debugger eval code" ||
         url === "sandbox eval code"
@@ -343,7 +342,7 @@ TabSources.prototype = {
             // `source.element` property, so do a blunt check here if
             // it's an xml page.
             spec.isInlineSource = true;
-          } else if (extension === "js") {
+          } else if (extension === "js" || extension == "sjs") {
             spec.contentType = "text/javascript";
           }
         } catch (e) {
@@ -586,6 +585,25 @@ TabSources.prototype = {
     } catch (error) {
       this._reportLoadSourceError(error);
       throw error;
+    }
+
+    // When we fetch the contents, there is a risk that the contents we get
+    // do not match up with the actual text of the sources these contents will
+    // be associated with. We want to always show contents that include that
+    // actual text (otherwise it will be very confusing or unusable for users),
+    // so replace the contents with the actual text if there is a mismatch.
+    const actors = [...this._sourceActors.values()].filter(
+      actor => actor.url == url
+    );
+    if (!actors.every(actor => actor.contentMatches(result))) {
+      if (actors.length > 1) {
+        // When there are multiple actors we won't be able to show the source
+        // for all of them. Ask the user to reload so that we don't have to do
+        // any fetching.
+        result.content = "Error: Incorrect contents fetched, please reload.";
+      } else {
+        result.content = actors[0].actualText();
+      }
     }
 
     this._urlContents.set(url, { ...result, complete: true });

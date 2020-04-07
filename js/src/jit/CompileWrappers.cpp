@@ -76,12 +76,6 @@ const void* CompileRuntime::addressOfZone() {
   return runtime()->mainContextFromAnyThread()->addressOfZone();
 }
 
-#ifdef DEBUG
-bool CompileRuntime::isInsideNursery(gc::Cell* cell) {
-  return UninlinedIsInsideNursery(cell);
-}
-#endif
-
 const DOMCallbacks* CompileRuntime::DOMcallbacks() {
   return runtime()->DOMcallbacks;
 }
@@ -124,6 +118,11 @@ void* CompileZone::addressOfStringNurseryPosition() {
   return zone()->runtimeFromAnyThread()->gc.addressOfNurseryPosition();
 }
 
+void* CompileZone::addressOfBigIntNurseryPosition() {
+  // Objects and BigInts share a nursery, for now at least.
+  return zone()->runtimeFromAnyThread()->gc.addressOfNurseryPosition();
+}
+
 const void* CompileZone::addressOfNurseryCurrentEnd() {
   return zone()->runtimeFromAnyThread()->gc.addressOfNurseryCurrentEnd();
 }
@@ -138,6 +137,12 @@ const void* CompileZone::addressOfStringNurseryCurrentEnd() {
   return zone()->runtimeFromAnyThread()->gc.addressOfStringNurseryCurrentEnd();
 }
 
+const void* CompileZone::addressOfBigIntNurseryCurrentEnd() {
+  // Similar to Strings, BigInts also share the nursery with other nursery
+  // allocatable things.
+  return zone()->runtimeFromAnyThread()->gc.addressOfBigIntNurseryCurrentEnd();
+}
+
 uint32_t* CompileZone::addressOfNurseryAllocCount() {
   return zone()->runtimeFromAnyThread()->gc.addressOfNurseryAllocCount();
 }
@@ -145,6 +150,11 @@ uint32_t* CompileZone::addressOfNurseryAllocCount() {
 bool CompileZone::canNurseryAllocateStrings() {
   return zone()->runtimeFromAnyThread()->gc.nursery().canAllocateStrings() &&
          zone()->allocNurseryStrings;
+}
+
+bool CompileZone::canNurseryAllocateBigInts() {
+  return zone()->runtimeFromAnyThread()->gc.nursery().canAllocateBigInts() &&
+         zone()->allocNurseryBigInts;
 }
 
 void CompileZone::setMinorGCShouldCancelIonCompilations() {

@@ -24,6 +24,7 @@
 #include "mozilla/dom/RTCRtpSenderBinding.h"
 #include "mozilla/dom/RTCRtpTransceiverBinding.h"
 #include "mozilla/dom/TransceiverImplBinding.h"
+#include "mozilla/Preferences.h"
 
 namespace mozilla {
 
@@ -33,9 +34,10 @@ using LocalDirection = MediaSessionConduitLocalDirection;
 
 TransceiverImpl::TransceiverImpl(
     const std::string& aPCHandle, MediaTransportHandler* aTransportHandler,
-    JsepTransceiver* aJsepTransceiver, nsIEventTarget* aMainThread,
-    nsIEventTarget* aStsThread, dom::MediaStreamTrack* aReceiveTrack,
-    dom::MediaStreamTrack* aSendTrack, WebRtcCallWrapper* aCallWrapper)
+    JsepTransceiver* aJsepTransceiver, nsISerialEventTarget* aMainThread,
+    nsISerialEventTarget* aStsThread, dom::MediaStreamTrack* aReceiveTrack,
+    dom::MediaStreamTrack* aSendTrack, WebRtcCallWrapper* aCallWrapper,
+    const PrincipalHandle& aPrincipalHandle)
     : mPCHandle(aPCHandle),
       mTransportHandler(aTransportHandler),
       mJsepTransceiver(aJsepTransceiver),
@@ -47,9 +49,9 @@ TransceiverImpl::TransceiverImpl(
       mSendTrack(aSendTrack),
       mCallWrapper(aCallWrapper) {
   if (IsVideo()) {
-    InitVideo();
+    InitVideo(aPrincipalHandle);
   } else {
-    InitAudio();
+    InitAudio(aPrincipalHandle);
   }
 
   if (!IsValid()) {
@@ -57,6 +59,13 @@ TransceiverImpl::TransceiverImpl(
   }
 
   mConduit->SetPCHandle(mPCHandle);
+
+  // Until Bug 1232234 is fixed, we'll get extra RTCP BYES during renegotiation,
+  // so we'll disable muting on RTCP BYE and timeout for now.
+  if (Preferences::GetBool("media.peerconnection.mute_on_bye_or_timeout",
+                           false)) {
+    mConduit->SetRtcpEventObserver(this);
+  }
 
   mTransmitPipeline =
       new MediaPipelineTransmit(mPCHandle, mTransportHandler, mMainThread.get(),
@@ -69,7 +78,7 @@ TransceiverImpl::~TransceiverImpl() = default;
 
 NS_IMPL_ISUPPORTS0(TransceiverImpl)
 
-void TransceiverImpl::InitAudio() {
+void TransceiverImpl::InitAudio(const PrincipalHandle& aPrincipalHandle) {
   mConduit = AudioSessionConduit::Create(mCallWrapper, mStsThread);
 
   if (!mConduit) {
@@ -82,10 +91,11 @@ void TransceiverImpl::InitAudio() {
 
   mReceivePipeline = new MediaPipelineReceiveAudio(
       mPCHandle, mTransportHandler, mMainThread.get(), mStsThread.get(),
-      static_cast<AudioSessionConduit*>(mConduit.get()), mReceiveTrack);
+      static_cast<AudioSessionConduit*>(mConduit.get()), mReceiveTrack,
+      aPrincipalHandle);
 }
 
-void TransceiverImpl::InitVideo() {
+void TransceiverImpl::InitVideo(const PrincipalHandle& aPrincipalHandle) {
   mConduit = VideoSessionConduit::Create(mCallWrapper, mStsThread);
 
   if (!mConduit) {
@@ -98,7 +108,8 @@ void TransceiverImpl::InitVideo() {
 
   mReceivePipeline = new MediaPipelineReceiveVideo(
       mPCHandle, mTransportHandler, mMainThread.get(), mStsThread.get(),
-      static_cast<VideoSessionConduit*>(mConduit.get()), mReceiveTrack);
+      static_cast<VideoSessionConduit*>(mConduit.get()), mReceiveTrack,
+      aPrincipalHandle);
 }
 
 nsresult TransceiverImpl::UpdateSinkIdentity(
@@ -113,17 +124,12 @@ nsresult TransceiverImpl::UpdateSinkIdentity(
 }
 
 void TransceiverImpl::Shutdown_m() {
-  mReceivePipeline->Shutdown_m();
-  mTransmitPipeline->Shutdown_m();
+  Stop();
   mReceivePipeline = nullptr;
   mTransmitPipeline = nullptr;
   mTransportHandler = nullptr;
   mReceiveTrack = nullptr;
   mSendTrack = nullptr;
-  if (mConduit) {
-    mConduit->DeleteStreams();
-  }
-  mConduit = nullptr;
 }
 
 nsresult TransceiverImpl::UpdateSendTrack(dom::MediaStreamTrack* aSendTrack) {
@@ -149,11 +155,11 @@ nsresult TransceiverImpl::UpdateTransport() {
   }
 
   ASSERT_ON_THREAD(mMainThread);
-  nsAutoPtr<MediaPipelineFilter> filter;
+  UniquePtr<MediaPipelineFilter> filter;
 
   if (mJsepTransceiver->HasBundleLevel() &&
       mJsepTransceiver->mRecvTrack.GetNegotiatedDetails()) {
-    filter = new MediaPipelineFilter;
+    filter = MakeUnique<MediaPipelineFilter>();
 
     // Add remote SSRCs so we can distinguish which RTP packets actually
     // belong to this pipeline (also RTCP sender reports).
@@ -172,9 +178,9 @@ nsresult TransceiverImpl::UpdateTransport() {
   }
 
   mReceivePipeline->UpdateTransport_m(mJsepTransceiver->mTransport.mTransportId,
-                                      filter);
+                                      std::move(filter));
   mTransmitPipeline->UpdateTransport_m(
-      mJsepTransceiver->mTransport.mTransportId, filter);
+      mJsepTransceiver->mTransport.mTransportId, nullptr);
   return NS_OK;
 }
 
@@ -247,23 +253,10 @@ void TransceiverImpl::SetReceiveTrackMuted(bool aMuted) {
     return;
   }
 
+  MOZ_MTLOG(ML_DEBUG, mPCHandle << "[" << mMid << "]: " << __FUNCTION__
+                                << " aMuted=" << aMuted);
   // This sets the muted state for mReceiveTrack and all its clones.
   static_cast<RemoteTrackSource&>(mReceiveTrack->GetSource()).SetMuted(aMuted);
-}
-
-nsresult TransceiverImpl::UpdatePrincipal(nsIPrincipal* aPrincipal) {
-  if (mJsepTransceiver->IsStopped()) {
-    return NS_OK;
-  }
-
-  // This blasts away the existing principal.
-  // We only do this when we become certain that all tracks are safe to make
-  // accessible to the script principal.
-  static_cast<RemoteTrackSource&>(mReceiveTrack->GetSource())
-      .SetPrincipal(aPrincipal);
-
-  mReceivePipeline->SetPrincipalHandle_m(MakePrincipalHandle(aPrincipal));
-  return NS_OK;
 }
 
 void TransceiverImpl::ResetSync() {
@@ -458,6 +451,13 @@ void TransceiverImpl::SyncWithJS(dom::RTCRtpTransceiver& aJsTransceiver,
     }
   }
 
+  // If a SRD has unset the receive bit, stop the receive pipeline so incoming
+  // RTP does not unmute the receive track.
+  if (!mJsepTransceiver->mRecvTrack.GetRemoteSetSendBit() ||
+      !mJsepTransceiver->mRecvTrack.GetActive()) {
+    mReceivePipeline->Stop();
+  }
+
   // mid from JSEP
   if (mJsepTransceiver->IsAssociated()) {
     aJsTransceiver.SetMid(
@@ -567,11 +567,11 @@ already_AddRefed<dom::MediaStreamTrack> TransceiverImpl::GetReceiveTrack() {
   return do_AddRef(mReceiveTrack);
 }
 
-RefPtr<MediaPipeline> TransceiverImpl::GetSendPipeline() {
+RefPtr<MediaPipelineTransmit> TransceiverImpl::GetSendPipeline() {
   return mTransmitPipeline;
 }
 
-RefPtr<MediaPipeline> TransceiverImpl::GetReceivePipeline() {
+RefPtr<MediaPipelineReceive> TransceiverImpl::GetReceivePipeline() {
   return mReceivePipeline;
 }
 
@@ -954,11 +954,8 @@ void TransceiverImpl::UpdateConduitRtpExtmap(
         extmaps.emplace_back(extmap.extensionname, extmap.entry);
       });
 
-  RefPtr<VideoSessionConduit> conduit =
-      static_cast<VideoSessionConduit*>(mConduit.get());
-
   if (!extmaps.empty()) {
-    conduit->SetLocalRTPExtensions(aDirection, extmaps);
+    mConduit->SetLocalRTPExtensions(aDirection, extmaps);
   }
 }
 
@@ -971,6 +968,7 @@ void TransceiverImpl::Stop() {
 
   if (mConduit) {
     mConduit->DeleteStreams();
+    mConduit->SetRtcpEventObserver(nullptr);
   }
   mConduit = nullptr;
 }
@@ -991,17 +989,26 @@ void TransceiverImpl::GetRtpSources(
   audio_conduit->GetRtpSources(aTimeNow, outSources);
 }
 
-void TransceiverImpl::InsertAudioLevelForContributingSource(uint32_t aSource,
-                                                            int64_t aTimestamp,
-                                                            bool aHasLevel,
-                                                            uint8_t aLevel) {
+void TransceiverImpl::OnRtcpBye() {
+  MOZ_MTLOG(ML_DEBUG, mPCHandle << "[" << mMid << "]: " << __FUNCTION__);
+  SetReceiveTrackMuted(true);
+}
+
+void TransceiverImpl::OnRtcpTimeout() {
+  MOZ_MTLOG(ML_DEBUG, mPCHandle << "[" << mMid << "]: " << __FUNCTION__);
+  SetReceiveTrackMuted(true);
+}
+
+void TransceiverImpl::InsertAudioLevelForContributingSource(
+    const uint32_t aSource, const int64_t aTimestamp,
+    const uint32_t aRtpTimestamp, const bool aHasLevel, const uint8_t aLevel) {
   if (!IsValid() || IsVideo()) {
     return;
   }
   WebrtcAudioConduit* audio_conduit =
       static_cast<WebrtcAudioConduit*>(mConduit.get());
-  audio_conduit->InsertAudioLevelForContributingSource(aSource, aTimestamp,
-                                                       aHasLevel, aLevel);
+  audio_conduit->InsertAudioLevelForContributingSource(
+      aSource, aTimestamp, aRtpTimestamp, aHasLevel, aLevel);
 }
 
 }  // namespace mozilla

@@ -12,6 +12,7 @@
 
 #include "NamespaceImports.h"
 
+#include "js/BinASTFormat.h"  // JS::BinASTFormat
 #include "js/CompileOptions.h"
 #include "js/SourceText.h"
 #include "vm/Scope.h"
@@ -98,7 +99,6 @@ class JSLinearString;
 
 namespace js {
 
-class LazyScript;
 class ModuleObject;
 class ScriptSourceObject;
 
@@ -112,11 +112,11 @@ class ParseNode;
 
 JSScript* CompileGlobalBinASTScript(
     JSContext* cx, const JS::ReadOnlyCompileOptions& options,
-    const uint8_t* src, size_t len,
+    const uint8_t* src, size_t len, JS::BinASTFormat format,
     ScriptSourceObject** sourceObjectOut = nullptr);
 
 MOZ_MUST_USE bool CompileLazyBinASTFunction(JSContext* cx,
-                                            Handle<LazyScript*> lazy,
+                                            Handle<BaseScript*> lazy,
                                             const uint8_t* buf, size_t length);
 
 #endif  // JS_BUILD_BINAST
@@ -174,8 +174,7 @@ MOZ_MUST_USE bool CompileStandaloneAsyncGenerator(
     const mozilla::Maybe<uint32_t>& parameterListEnd);
 
 ScriptSourceObject* CreateScriptSourceObject(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
-    const mozilla::Maybe<uint32_t>& parameterListEnd = mozilla::Nothing());
+    JSContext* cx, const JS::ReadOnlyCompileOptions& options);
 
 /*
  * True if str consists of an IdentifierStart character, followed by one or

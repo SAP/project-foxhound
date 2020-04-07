@@ -263,7 +263,7 @@ async function whenNewTabLoaded(aWindow, aCallback) {
   let expectedURL = aboutNewTabService.newTabURL;
   let browser = aWindow.gBrowser.selectedBrowser;
   let loadPromise = BrowserTestUtils.browserLoaded(browser, false, expectedURL);
-  let alreadyLoaded = await ContentTask.spawn(browser, expectedURL, url => {
+  let alreadyLoaded = await SpecialPowers.spawn(browser, [expectedURL], url => {
     let doc = content.document;
     return doc && doc.readyState === "complete" && doc.location.href == url;
   });
@@ -523,25 +523,27 @@ async function loadBadCertPage(url) {
   await BrowserTestUtils.loadURI(gBrowser.selectedBrowser, url);
   await loaded;
 
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
     content.document.getElementById("exceptionDialogButton").click();
   });
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 }
 
 /**
- * Waits for the message from content to update the Page Style menu.
+ * Waits for the stylesheets to be loaded into the browser menu.
  *
- * @param browser
- *        The <xul:browser> to wait for.
+ * @param tab
+ *        The tab that contains the webpage we're testing.
+ * @param styleSheetCount
+ *        How many stylesheets we expect to be loaded.
  * @return Promise
  */
-async function promiseStylesheetsUpdated(browser) {
-  await BrowserTestUtils.waitForMessage(
-    browser.messageManager,
-    "PageStyle:StyleSheets"
-  );
-  // Resolve on the next tick of the event loop to give the Page Style
-  // menu code an opportunity to update.
-  await new Promise(resolve => Services.tm.dispatchToMainThread(resolve));
+async function promiseStylesheetsLoaded(tab, styleSheetCount) {
+  let styleMenu = tab.ownerGlobal.gPageStyleMenu;
+  let permanentKey = tab.permanentKey;
+
+  await TestUtils.waitForCondition(() => {
+    let menu = styleMenu._pageStyleSheets.get(permanentKey);
+    return menu && menu.filteredStyleSheets.length >= styleSheetCount;
+  }, "waiting for style sheets to load");
 }

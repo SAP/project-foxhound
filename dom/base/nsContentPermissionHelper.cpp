@@ -14,11 +14,9 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/PContentPermission.h"
-#include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/PContentPermissionRequestParent.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/UserActivation.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
@@ -35,7 +33,7 @@
 using mozilla::Unused;  // <snicker>
 using namespace mozilla::dom;
 using namespace mozilla;
-
+using DelegateInfo = PermissionDelegateHandler::PermissionDelegateInfo;
 #define kVisibilityChange "visibilitychange"
 
 class VisibilityChangeListener final : public nsIDOMEventListener {
@@ -50,7 +48,7 @@ class VisibilityChangeListener final : public nsIDOMEventListener {
   already_AddRefed<nsIContentPermissionRequestCallback> GetCallback();
 
  private:
-  virtual ~VisibilityChangeListener() {}
+  virtual ~VisibilityChangeListener() = default;
 
   nsWeakPtr mWindow;
   nsCOMPtr<nsIContentPermissionRequestCallback> mCallback;
@@ -120,12 +118,11 @@ namespace dom {
 
 class ContentPermissionRequestParent : public PContentPermissionRequestParent {
  public:
-  ContentPermissionRequestParent(
-      const nsTArray<PermissionRequest>& aRequests, Element* aElement,
-      nsIPrincipal* aPrincipal, nsIPrincipal* aTopLevelPrincipal,
-      const bool aIsHandlingUserInput,
-      const bool aUserHadInteractedWithDocument,
-      const DOMTimeStamp aDocumentDOMContentLoadedTimestamp);
+  ContentPermissionRequestParent(const nsTArray<PermissionRequest>& aRequests,
+                                 Element* aElement, nsIPrincipal* aPrincipal,
+                                 nsIPrincipal* aTopLevelPrincipal,
+                                 const bool aIsHandlingUserInput,
+                                 const bool aMaybeUnsafePermissionDelegate);
   virtual ~ContentPermissionRequestParent();
 
   bool IsBeingDestroyed();
@@ -134,8 +131,7 @@ class ContentPermissionRequestParent : public PContentPermissionRequestParent {
   nsCOMPtr<nsIPrincipal> mTopLevelPrincipal;
   nsCOMPtr<Element> mElement;
   bool mIsHandlingUserInput;
-  bool mUserHadInteractedWithDocument;
-  DOMTimeStamp mDocumentDOMContentLoadedTimestamp;
+  bool mMaybeUnsafePermissionDelegate;
   RefPtr<nsContentPermissionRequestProxy> mProxy;
   nsTArray<PermissionRequest> mRequests;
 
@@ -152,8 +148,8 @@ class ContentPermissionRequestParent : public PContentPermissionRequestParent {
 ContentPermissionRequestParent::ContentPermissionRequestParent(
     const nsTArray<PermissionRequest>& aRequests, Element* aElement,
     nsIPrincipal* aPrincipal, nsIPrincipal* aTopLevelPrincipal,
-    const bool aIsHandlingUserInput, const bool aUserHadInteractedWithDocument,
-    const DOMTimeStamp aDocumentDOMContentLoadedTimestamp) {
+    const bool aIsHandlingUserInput,
+    const bool aMaybeUnsafePermissionDelegate) {
   MOZ_COUNT_CTOR(ContentPermissionRequestParent);
 
   mPrincipal = aPrincipal;
@@ -161,8 +157,7 @@ ContentPermissionRequestParent::ContentPermissionRequestParent(
   mElement = aElement;
   mRequests = aRequests;
   mIsHandlingUserInput = aIsHandlingUserInput;
-  mUserHadInteractedWithDocument = aUserHadInteractedWithDocument;
-  mDocumentDOMContentLoadedTimestamp = aDocumentDOMContentLoadedTimestamp;
+  mMaybeUnsafePermissionDelegate = aMaybeUnsafePermissionDelegate;
 }
 
 ContentPermissionRequestParent::~ContentPermissionRequestParent() {
@@ -213,7 +208,7 @@ ContentPermissionType::ContentPermissionType(
   mOptions = aOptions;
 }
 
-ContentPermissionType::~ContentPermissionType() {}
+ContentPermissionType::~ContentPermissionType() = default;
 
 NS_IMETHODIMP
 ContentPermissionType::GetType(nsACString& aType) {
@@ -329,12 +324,11 @@ PContentPermissionRequestParent*
 nsContentPermissionUtils::CreateContentPermissionRequestParent(
     const nsTArray<PermissionRequest>& aRequests, Element* aElement,
     nsIPrincipal* aPrincipal, nsIPrincipal* aTopLevelPrincipal,
-    const bool aIsHandlingUserInput, const bool aUserHadInteractedWithDocument,
-    const DOMTimeStamp aDocumentDOMContentLoadedTimestamp,
+    const bool aIsHandlingUserInput, const bool aMaybeUnsafePermissionDelegate,
     const TabId& aTabId) {
   PContentPermissionRequestParent* parent = new ContentPermissionRequestParent(
       aRequests, aElement, aPrincipal, aTopLevelPrincipal, aIsHandlingUserInput,
-      aUserHadInteractedWithDocument, aDocumentDOMContentLoadedTimestamp);
+      aMaybeUnsafePermissionDelegate);
   ContentPermissionRequestParentMap()[parent] = aTabId;
 
   return parent;
@@ -374,14 +368,9 @@ nsresult nsContentPermissionUtils::AskPermission(
     rv = aRequest->GetIsHandlingUserInput(&isHandlingUserInput);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    bool userHadInteractedWithDocument;
-    rv = aRequest->GetUserHadInteractedWithDocument(
-        &userHadInteractedWithDocument);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    DOMTimeStamp documentDOMContentLoadedTimestamp;
-    rv = aRequest->GetDocumentDOMContentLoadedTimestamp(
-        &documentDOMContentLoadedTimestamp);
+    bool maybeUnsafePermissionDelegate;
+    rv = aRequest->GetMaybeUnsafePermissionDelegate(
+        &maybeUnsafePermissionDelegate);
     NS_ENSURE_SUCCESS(rv, rv);
 
     ContentChild::GetSingleton()->SetEventTargetForActor(
@@ -391,8 +380,7 @@ nsresult nsContentPermissionUtils::AskPermission(
     ContentChild::GetSingleton()->SendPContentPermissionRequestConstructor(
         req, permArray, IPC::Principal(principal),
         IPC::Principal(topLevelPrincipal), isHandlingUserInput,
-        userHadInteractedWithDocument, documentDOMContentLoadedTimestamp,
-        child->GetTabId());
+        maybeUnsafePermissionDelegate, child->GetTabId());
     ContentPermissionRequestChildMap()[req.get()] = child->GetTabId();
 
     req->Sendprompt();
@@ -551,9 +539,8 @@ ContentPermissionRequestBase::ContentPermissionRequestBase(
       mRequester(aWindow ? new nsContentPermissionRequester(aWindow) : nullptr),
       mPrefName(aPrefName),
       mType(aType),
-      mIsHandlingUserInput(UserActivation::IsHandlingUserInput()),
-      mUserHadInteractedWithDocument(false),
-      mDocumentDOMContentLoadedTimestamp(0) {
+      mIsHandlingUserInput(false),
+      mMaybeUnsafePermissionDelegate(false) {
   if (!aWindow) {
     return;
   }
@@ -563,12 +550,14 @@ ContentPermissionRequestBase::ContentPermissionRequestBase(
     return;
   }
 
-  mUserHadInteractedWithDocument = doc->UserHasInteracted();
+  mIsHandlingUserInput = doc->HasValidTransientUserGestureActivation();
 
-  nsDOMNavigationTiming* navTiming = doc->GetNavigationTiming();
-  if (navTiming) {
-    mDocumentDOMContentLoadedTimestamp =
-        navTiming->GetDomContentLoadedEventEnd();
+  mPermissionHandler = doc->GetPermissionDelegateHandler();
+  if (mPermissionHandler) {
+    nsTArray<nsCString> types;
+    types.AppendElement(mType);
+    mPermissionHandler->MaybeUnsafePermissionDelegate(
+        types, &mMaybeUnsafePermissionDelegate);
   }
 }
 
@@ -580,8 +569,27 @@ ContentPermissionRequestBase::GetPrincipal(
 }
 
 NS_IMETHODIMP
+ContentPermissionRequestBase::GetDelegatePrincipal(
+    const nsACString& aType, nsIPrincipal** aRequestingPrincipal) {
+  return PermissionDelegateHandler::GetDelegatePrincipal(aType, this,
+                                                         aRequestingPrincipal);
+}
+
+NS_IMETHODIMP
+ContentPermissionRequestBase::GetMaybeUnsafePermissionDelegate(
+    bool* aMaybeUnsafePermissionDelegate) {
+  *aMaybeUnsafePermissionDelegate = mMaybeUnsafePermissionDelegate;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 ContentPermissionRequestBase::GetTopLevelPrincipal(
     nsIPrincipal** aRequestingPrincipal) {
+  if (!mTopLevelPrincipal) {
+    *aRequestingPrincipal = nullptr;
+    return NS_OK;
+  }
+
   NS_IF_ADDREF(*aRequestingPrincipal = mTopLevelPrincipal);
   return NS_OK;
 }
@@ -603,20 +611,6 @@ NS_IMETHODIMP
 ContentPermissionRequestBase::GetIsHandlingUserInput(
     bool* aIsHandlingUserInput) {
   *aIsHandlingUserInput = mIsHandlingUserInput;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ContentPermissionRequestBase::GetUserHadInteractedWithDocument(
-    bool* aUserHadInteractedWithDocument) {
-  *aUserHadInteractedWithDocument = mUserHadInteractedWithDocument;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ContentPermissionRequestBase::GetDocumentDOMContentLoadedTimestamp(
-    DOMTimeStamp* aDocumentDOMContentLoadedTimestamp) {
-  *aDocumentDOMContentLoadedTimestamp = mDocumentDOMContentLoadedTimestamp;
   return NS_OK;
 }
 
@@ -655,8 +649,25 @@ ContentPermissionRequestBase::CheckPromptPrefs() {
   return PromptResult::Pending;
 }
 
+bool ContentPermissionRequestBase::CheckPermissionDelegate() {
+  // There is case that ContentPermissionRequestBase is constructed without
+  // window, then mPermissionHandler will be null. So we only check permission
+  // delegate if we have non-null mPermissionHandler
+  if (mPermissionHandler &&
+      !mPermissionHandler->HasPermissionDelegated(mType)) {
+    return false;
+  }
+
+  return true;
+}
+
 nsresult ContentPermissionRequestBase::ShowPrompt(
     ContentPermissionRequestBase::PromptResult& aResult) {
+  if (!CheckPermissionDelegate()) {
+    aResult = PromptResult::Denied;
+    return NS_OK;
+  }
+
   aResult = CheckPromptPrefs();
 
   if (aResult != PromptResult::Pending) {
@@ -892,8 +903,25 @@ nsContentPermissionRequestProxy::GetTopLevelPrincipal(
     return NS_ERROR_FAILURE;
   }
 
+  if (!mParent->mTopLevelPrincipal) {
+    *aRequestingPrincipal = nullptr;
+    return NS_OK;
+  }
+
   NS_ADDREF(*aRequestingPrincipal = mParent->mTopLevelPrincipal);
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsContentPermissionRequestProxy::GetDelegatePrincipal(
+    const nsACString& aType, nsIPrincipal** aRequestingPrincipal) {
+  NS_ENSURE_ARG_POINTER(aRequestingPrincipal);
+  if (mParent == nullptr) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return PermissionDelegateHandler::GetDelegatePrincipal(aType, this,
+                                                         aRequestingPrincipal);
 }
 
 NS_IMETHODIMP
@@ -920,25 +948,13 @@ nsContentPermissionRequestProxy::GetIsHandlingUserInput(
 }
 
 NS_IMETHODIMP
-nsContentPermissionRequestProxy::GetUserHadInteractedWithDocument(
-    bool* aUserHadInteractedWithDocument) {
-  NS_ENSURE_ARG_POINTER(aUserHadInteractedWithDocument);
+nsContentPermissionRequestProxy::GetMaybeUnsafePermissionDelegate(
+    bool* aMaybeUnsafePermissionDelegate) {
+  NS_ENSURE_ARG_POINTER(aMaybeUnsafePermissionDelegate);
   if (mParent == nullptr) {
     return NS_ERROR_FAILURE;
   }
-  *aUserHadInteractedWithDocument = mParent->mUserHadInteractedWithDocument;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsContentPermissionRequestProxy::GetDocumentDOMContentLoadedTimestamp(
-    DOMTimeStamp* aDocumentDOMContentLoadedTimestamp) {
-  NS_ENSURE_ARG_POINTER(aDocumentDOMContentLoadedTimestamp);
-  if (mParent == nullptr) {
-    return NS_ERROR_FAILURE;
-  }
-  *aDocumentDOMContentLoadedTimestamp =
-      mParent->mDocumentDOMContentLoadedTimestamp;
+  *aMaybeUnsafePermissionDelegate = mParent->mMaybeUnsafePermissionDelegate;
   return NS_OK;
 }
 

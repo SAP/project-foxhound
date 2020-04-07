@@ -17,7 +17,7 @@ const trace = {
  */
 function HarCollector(options) {
   this.webConsoleFront = options.webConsoleFront;
-  this.debuggerClient = options.debuggerClient;
+  this.devToolsClient = options.devToolsClient;
 
   this.onNetworkEvent = this.onNetworkEvent.bind(this);
   this.onNetworkEventUpdate = this.onNetworkEventUpdate.bind(this);
@@ -36,13 +36,13 @@ HarCollector.prototype = {
   // Connection
 
   start: function() {
-    this.debuggerClient.on("serverNetworkEvent", this.onNetworkEvent);
-    this.debuggerClient.on("networkEventUpdate", this.onNetworkEventUpdate);
+    this.webConsoleFront.on("networkEvent", this.onNetworkEvent);
+    this.devToolsClient.on("networkEventUpdate", this.onNetworkEventUpdate);
   },
 
   stop: function() {
-    this.debuggerClient.off("serverNetworkEvent", this.onNetworkEvent);
-    this.debuggerClient.off("networkEventUpdate", this.onNetworkEventUpdate);
+    this.webConsoleFront.off("networkEvent", this.onNetworkEvent);
+    this.devToolsClient.off("networkEventUpdate", this.onNetworkEventUpdate);
   },
 
   clear: function() {
@@ -157,14 +157,14 @@ HarCollector.prototype = {
   // Event Handlers
 
   onNetworkEvent: function(packet) {
-    // Skip events from different console actors.
-    if (packet.from != this.webConsoleFront.actor) {
-      return;
-    }
+    trace.log("HarCollector.onNetworkEvent; ", packet);
 
-    trace.log("HarCollector.onNetworkEvent; " + packet.type, packet);
-
-    const { actor, startedDateTime, method, url, isXHR } = packet.eventActor;
+    const {
+      actor,
+      startedDateTime,
+      request: { method, url },
+      isXHR,
+    } = packet;
     const startTime = Date.parse(startedDateTime);
 
     if (this.firstRequestStart == -1) {
@@ -184,6 +184,7 @@ HarCollector.prototype = {
     }
 
     file = {
+      id: actor,
       startedDeltaMs: startTime - this.firstRequestStart,
       startedMs: startTime,
       method: method,
@@ -203,7 +204,7 @@ HarCollector.prototype = {
     // Skip events from unknown actors (not in the list).
     // It can happen when there are zombie requests received after
     // the target is closed or multiple tabs are attached through
-    // one connection (one DebuggerClient object).
+    // one connection (one DevToolsClient object).
     const file = this.getFile(packet.from);
     if (!file) {
       return;

@@ -13,7 +13,6 @@
 #include "mozilla/LoadTainting.h"
 #include "mozilla/UniquePtr.h"
 
-#include "nsIContentPolicy.h"
 #include "nsIInputStream.h"
 #include "nsISupportsImpl.h"
 #ifdef DEBUG
@@ -272,10 +271,6 @@ class InternalRequest final {
     mHeaders = aHeaders;
   }
 
-  bool SameOriginDataURL() const { return mSameOriginDataURL; }
-
-  void UnsetSameOriginDataURL() { mSameOriginDataURL = false; }
-
   void SetBody(nsIInputStream* aStream, int64_t aBodyLength) {
     // A request's body may not be reset once set.
     MOZ_ASSERT_IF(aStream, !mBodyStream);
@@ -307,12 +302,6 @@ class InternalRequest final {
   // The global is used as the client for the new object.
   already_AddRefed<InternalRequest> GetRequestConstructorCopy(
       nsIGlobalObject* aGlobal, ErrorResult& aRv) const;
-
-  bool WasCreatedByFetchEvent() const { return mCreatedByFetchEvent; }
-
-  void SetCreatedByFetchEvent() { mCreatedByFetchEvent = true; }
-
-  void ClearCreatedByFetchEvent() { mCreatedByFetchEvent = false; }
 
   bool IsNavigationRequest() const;
 
@@ -402,23 +391,16 @@ class InternalRequest final {
   ReferrerPolicy mEnvironmentReferrerPolicy;
   RequestMode mMode;
   RequestCredentials mCredentialsMode;
-  MOZ_INIT_OUTSIDE_CTOR LoadTainting mResponseTainting;
+  LoadTainting mResponseTainting = LoadTainting::Basic;
   RequestCache mCacheMode;
   RequestRedirect mRedirectMode;
   nsString mIntegrity;
   bool mMozErrors = false;
   nsCString mFragment;
-  MOZ_INIT_OUTSIDE_CTOR bool mAuthenticationFlag;
-  MOZ_INIT_OUTSIDE_CTOR bool mPreserveContentCodings;
-  MOZ_INIT_OUTSIDE_CTOR bool mSameOriginDataURL;
-  MOZ_INIT_OUTSIDE_CTOR bool mSkipServiceWorker;
-  MOZ_INIT_OUTSIDE_CTOR bool mSynchronous;
-  MOZ_INIT_OUTSIDE_CTOR bool mUnsafeRequest;
-  MOZ_INIT_OUTSIDE_CTOR bool mUseURLCredentials;
-  // This is only set when a Request object is created by a fetch event.  We
-  // use it to check if Service Workers are simply fetching intercepted Request
-  // objects without modifying them.
-  bool mCreatedByFetchEvent = false;
+  bool mSkipServiceWorker = false;
+  bool mSynchronous = false;
+  bool mUnsafeRequest = false;
+  bool mUseURLCredentials = false;
   // This is only set when Request.overrideContentPolicyType() has been set.
   // It is illegal to pass such a Request object to a fetch() method unless
   // if the caller has chrome privileges.

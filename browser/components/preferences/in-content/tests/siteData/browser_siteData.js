@@ -164,21 +164,25 @@ add_task(async function() {
   await openSiteDataSettingsDialog();
   let acceptRemovePromise = BrowserTestUtils.promiseAlertDialogOpen("accept");
   let updatePromise = promiseSiteDataManagerSitesUpdated();
-  ContentTask.spawn(gBrowser.selectedBrowser, { TEST_OFFLINE_HOST }, args => {
-    let host = args.TEST_OFFLINE_HOST;
-    let frameDoc = content.gSubDialog._topDialog._frame.contentDocument;
-    let sitesList = frameDoc.getElementById("sitesList");
-    let site = sitesList.querySelector(`richlistitem[host="${host}"]`);
-    if (site) {
-      let removeBtn = frameDoc.getElementById("removeSelected");
-      let saveBtn = frameDoc.getElementById("save");
-      site.click();
-      removeBtn.doCommand();
-      saveBtn.doCommand();
-    } else {
-      ok(false, `Should have one site of ${host}`);
+  SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [{ TEST_OFFLINE_HOST }],
+    args => {
+      let host = args.TEST_OFFLINE_HOST;
+      let frameDoc = content.gSubDialog._topDialog._frame.contentDocument;
+      let sitesList = frameDoc.getElementById("sitesList");
+      let site = sitesList.querySelector(`richlistitem[host="${host}"]`);
+      if (site) {
+        let removeBtn = frameDoc.getElementById("removeSelected");
+        let saveBtn = frameDoc.getElementById("save");
+        site.click();
+        removeBtn.doCommand();
+        saveBtn.doCommand();
+      } else {
+        ok(false, `Should have one site of ${host}`);
+      }
     }
-  });
+  );
   await acceptRemovePromise;
   await updatePromise;
   await promiseServiceWorkersCleared();
@@ -244,12 +248,11 @@ add_task(async function() {
 
   // Get the exact creation date from the cookies (to avoid intermittents
   // from minimal time differences, since we round up to minutes).
-  let cookiesEnum1 = Services.cookies.getCookiesFromHost(uri.host, {});
+  let cookies1 = Services.cookies.getCookiesFromHost(uri.host, {});
+  let cookies2 = Services.cookies.getCookiesFromHost(uri2.host, {});
   // We made two valid cookies for example.com.
-  cookiesEnum1.getNext();
-  let cookiesEnum2 = Services.cookies.getCookiesFromHost(uri2.host, {});
-  let cookie1 = cookiesEnum1.getNext().QueryInterface(Ci.nsICookie);
-  let cookie2 = cookiesEnum2.getNext().QueryInterface(Ci.nsICookie);
+  let cookie1 = cookies1[1];
+  let cookie2 = cookies2[0];
 
   let fullFormatter = new Services.intl.DateTimeFormat(undefined, {
     dateStyle: "short",
@@ -268,12 +271,14 @@ add_task(async function() {
     "accept",
     REMOVE_DIALOG_URL
   );
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
-    {
-      creationDate1Formatted,
-      creationDate2Formatted,
-    },
+    [
+      {
+        creationDate1Formatted,
+        creationDate2Formatted,
+      },
+    ],
     function(args) {
       let frameDoc = content.gSubDialog._topDialog._frame.contentDocument;
 
@@ -337,9 +342,9 @@ add_task(async function() {
   // Open the site data manager and remove another site.
   await openSiteDataSettingsDialog();
   let acceptRemovePromise = BrowserTestUtils.promiseAlertDialogOpen("accept");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     gBrowser.selectedBrowser,
-    { creationDate1Formatted },
+    [{ creationDate1Formatted }],
     function(args) {
       let frameDoc = content.gSubDialog._topDialog._frame.contentDocument;
 
@@ -380,7 +385,7 @@ add_task(async function() {
 
   await openSiteDataSettingsDialog();
 
-  ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], function() {
     let frameDoc = content.gSubDialog._topDialog._frame.contentDocument;
 
     let siteItems = frameDoc.getElementsByTagName("richlistitem");

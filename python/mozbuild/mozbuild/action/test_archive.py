@@ -126,21 +126,18 @@ ARCHIVE_FILES = {
             'patterns': [
                 'client/**',
                 'harness/**',
-                'puppeteer/**',
                 'mach_test_package_commands.py',
             ],
             'dest': 'marionette',
             'ignore': [
                 'client/docs',
                 'harness/marionette_harness/tests',
-                'puppeteer/firefox/docs',
             ],
         },
         {
             'source': buildconfig.topsrcdir,
             'base': '',
             'manifests': [
-                'dom/media/test/marionette/manifest.ini',
                 'testing/marionette/harness/marionette_harness/tests/unit-tests.ini',
                 'gfx/tests/marionette/manifest.ini'
             ],
@@ -250,6 +247,12 @@ ARCHIVE_FILES = {
             'dest': 'tools/six',
         },
         {
+            'source': buildconfig.topsrcdir,
+            'base': 'third_party/python/distro',
+            'pattern': '**',
+            'dest': 'tools/distro',
+        },
+        {
             'source': buildconfig.topobjdir,
             'base': '',
             'pattern': 'mozinfo.json',
@@ -292,6 +295,7 @@ ARCHIVE_FILES = {
             'base': 'dist/bin',
             'patterns': [
                 'dmd.py',
+                'fix_stacks.py',
                 'fix_linux_stack.py',
                 'fix_macosx_stack.py',
                 'fix_stack_using_bpsyms.py',
@@ -436,6 +440,12 @@ ARCHIVE_FILES = {
             'pattern': 'six.py',
             'dest': 'mozharness',
         },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'third_party/python/distro',
+            'pattern': 'distro.py',
+            'dest': 'mozharness',
+        },
     ],
     'reftest': [
         {
@@ -513,6 +523,12 @@ ARCHIVE_FILES = {
             'base': 'testing/mozbase/mozdevice',
             'pattern': '**',
             'dest': 'condprofile/mozdevice',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing/mozbase/mozlog',
+            'pattern': '**',
+            'dest': 'condprofile/mozlog',
         },
         {
             'source': buildconfig.topsrcdir,

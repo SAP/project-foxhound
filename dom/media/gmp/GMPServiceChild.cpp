@@ -9,7 +9,6 @@
 #include "GMPLog.h"
 #include "GMPParent.h"
 #include "GMPContentParent.h"
-#include "mozIGeckoMediaPluginService.h"
 #include "mozIGeckoMediaPluginChromeService.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/ContentChild.h"
@@ -423,9 +422,9 @@ void GeckoMediaPluginServiceChild::RemoveGMPContentParent(
   }
 }
 
-GMPServiceChild::GMPServiceChild() {}
+GMPServiceChild::GMPServiceChild() = default;
 
-GMPServiceChild::~GMPServiceChild() {}
+GMPServiceChild::~GMPServiceChild() = default;
 
 already_AddRefed<GMPContentParent> GMPServiceChild::GetBridgedGMPContentParent(
     ProcessId aOtherPid, ipc::Endpoint<PGMPContentParent>&& endpoint) {
@@ -443,7 +442,7 @@ already_AddRefed<GMPContentParent> GMPServiceChild::GetBridgedGMPContentParent(
   DebugOnly<bool> ok = endpoint.Bind(parent);
   MOZ_ASSERT(ok);
 
-  mContentParents.Put(aOtherPid, parent);
+  mContentParents.Put(aOtherPid, RefPtr{parent});
 
   return parent.forget();
 }

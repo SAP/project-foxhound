@@ -3,17 +3,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "Common.h"
 #include "Classifier.h"
-#include "gtest/gtest.h"
 #include "HashStore.h"
 #include "mozilla/Components.h"
 #include "mozilla/Unused.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIFile.h"
-#include "nsIThread.h"
 #include "nsThreadUtils.h"
 #include "string.h"
+
+#include "Common.h"
 
 #define GTEST_SAFEBROWSING_DIR NS_LITERAL_CSTRING("safebrowsing")
 #define GTEST_TABLE NS_LITERAL_CSTRING("gtest-malware-proto")
@@ -116,7 +115,7 @@ static void GenerateUpdateData(bool fullUpdate, PrefixStringMap& add,
   tableUpdate->SetFullUpdate(fullUpdate);
 
   for (auto iter = add.ConstIter(); !iter.Done(); iter.Next()) {
-    nsCString* pstring = iter.Data();
+    nsCString* pstring = iter.UserData();
     tableUpdate->NewPrefixes(iter.Key(), *pstring);
   }
 
@@ -152,7 +151,7 @@ static void VerifyPrefixSet(PrefixStringMap& expected) {
   lookup->GetPrefixes(prefixesInFile);
 
   for (auto iter = expected.ConstIter(); !iter.Done(); iter.Next()) {
-    nsCString* expectedPrefix = iter.Data();
+    nsCString* expectedPrefix = iter.UserData();
     nsCString* resultPrefix = prefixesInFile.Get(iter.Key());
 
     ASSERT_TRUE(*resultPrefix == *expectedPrefix);
@@ -169,30 +168,18 @@ static void Clear() {
 }
 
 static void testUpdateFail(TableUpdateArray& tableUpdates) {
-  nsCOMPtr<nsIFile> file;
-  NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
-
-  RefPtr<Classifier> classifier = new Classifier();
-  classifier->Open(*file);
-
-  nsresult rv = SyncApplyUpdates(classifier, tableUpdates);
+  nsresult rv = SyncApplyUpdates(tableUpdates);
   ASSERT_TRUE(NS_FAILED(rv));
 }
 
 static void testUpdate(TableUpdateArray& tableUpdates,
                        PrefixStringMap& expected) {
-  nsCOMPtr<nsIFile> file;
-  NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(file));
-
   // Force nsUrlClassifierUtils loading on main thread
   // because nsIUrlClassifierDBService will not run in advance
   // in gtest.
   nsUrlClassifierUtils::GetInstance();
 
-  RefPtr<Classifier> classifier = new Classifier();
-  classifier->Open(*file);
-
-  nsresult rv = SyncApplyUpdates(classifier, tableUpdates);
+  nsresult rv = SyncApplyUpdates(tableUpdates);
   ASSERT_TRUE(rv == NS_OK);
   VerifyPrefixSet(expected);
 }

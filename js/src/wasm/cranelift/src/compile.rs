@@ -22,19 +22,19 @@ use std::fmt;
 use std::mem;
 
 use cranelift_codegen::binemit::{
-    Addend, CodeInfo, CodeOffset, NullStackmapSink, NullTrapSink, Reloc, RelocSink,
+    Addend, CodeInfo, CodeOffset, NullStackmapSink, NullTrapSink, Reloc, RelocSink, Stackmap,
 };
 use cranelift_codegen::entity::EntityRef;
 use cranelift_codegen::ir::{self, constant::ConstantOffset, stackslot::StackSize};
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_codegen::CodegenResult;
 use cranelift_codegen::Context;
-use cranelift_wasm::{FuncIndex, FuncTranslator, WasmResult};
+use cranelift_wasm::{FuncIndex, FuncTranslator, ModuleTranslationState, WasmResult};
 
 use crate::bindings;
 use crate::isa::make_isa;
 use crate::utils::DashResult;
-use crate::wasm2clif::{init_sig, native_pointer_size, TransEnv};
+use crate::wasm2clif::{init_sig, TransEnv, POINTER_SIZE, TRAP_THROW_REPORTED};
 
 // Namespace for user-defined functions.
 const USER_FUNCTION_NAMESPACE: u32 = 0;
@@ -89,6 +89,7 @@ pub struct BatchCompiler<'a, 'b> {
     environ: bindings::ModuleEnvironment<'b>,
     isa: Box<dyn TargetIsa>,
     context: Context,
+    dummy_module_state: ModuleTranslationState,
     trans: FuncTranslator,
     pub current_func: CompiledFunc,
 }
@@ -104,15 +105,17 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
             environ,
             isa: make_isa(static_environ)?,
             context: Context::new(),
+            // TODO for Cranelift to support multi-value, feed it the real type section here.
+            dummy_module_state: ModuleTranslationState::new(),
             trans: FuncTranslator::new(),
             current_func: CompiledFunc::new(),
         })
     }
 
-    pub fn compile(&mut self) -> CodegenResult<()> {
+    pub fn compile(&mut self, stackmaps: bindings::Stackmaps) -> CodegenResult<()> {
         let info = self.context.compile(&*self.isa)?;
         debug!("Optimized wasm function IR: {}", self);
-        self.binemit(info)
+        self.binemit(info, stackmaps)
     }
 
     /// Translate the WebAssembly code to Cranelift IR.
@@ -130,6 +133,7 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
         self.context.func.name = wasm_function_name(index);
 
         self.trans.translate(
+            &self.dummy_module_state,
             func.bytecode(),
             func.offset_in_module as usize,
             &mut self.context.func,
@@ -142,7 +146,7 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
     }
 
     /// Emit binary machine code to `emitter`.
-    fn binemit(&mut self, info: CodeInfo) -> CodegenResult<()> {
+    fn binemit(&mut self, info: CodeInfo, stackmaps: bindings::Stackmaps) -> CodegenResult<()> {
         let total_size = info.total_size as usize;
         let frame_pushed = self.frame_pushed();
         let contains_calls = self.contains_calls();
@@ -157,7 +161,7 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
         // Generate metadata about function calls and traps now that the emitter knows where the
         // Cranelift code is going to end up.
         let mut metadata = mem::replace(&mut self.current_func.metadata, vec![]);
-        self.emit_metadata(&mut metadata);
+        self.emit_metadata(&mut metadata, stackmaps);
         mem::swap(&mut metadata, &mut self.current_func.metadata);
 
         // TODO: If we can get a pointer into `size` pre-allocated bytes of memory, we wouldn't
@@ -181,9 +185,6 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
             );
             let mut trap_sink = NullTrapSink {};
 
-            // TODO (bug 1574865) Support reference types and stackmaps in Baldrdash.
-            let mut stackmap_sink = NullStackmapSink {};
-
             unsafe {
                 let code_buffer = &mut self.current_func.code_buffer;
                 self.context.emit_to_memory(
@@ -191,7 +192,7 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
                     code_buffer.as_mut_ptr(),
                     emit_env,
                     &mut trap_sink,
-                    &mut stackmap_sink,
+                    &mut NullStackmapSink {},
                 )
             };
         }
@@ -209,7 +210,13 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
     fn frame_pushed(&self) -> StackSize {
         // Cranelift computes the total stack frame size including the pushed return address,
         // standard SM prologue pushes, and its own stack slots.
-        let total = self.context.func.stack_slots.frame_size.expect("No frame");
+        let total = self
+            .context
+            .func
+            .stack_slots
+            .layout_info
+            .expect("No frame")
+            .frame_size;
         let sm_pushed = StackSize::from(self.isa.flags().baldrdash_prologue_words())
             * mem::size_of::<usize>() as StackSize;
         total
@@ -244,11 +251,20 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
     ///
     /// We don't get enough callbacks through the `RelocSink` trait to generate all the metadata we
     /// need.
-    fn emit_metadata(&self, metadata: &mut Vec<bindings::MetadataEntry>) {
+    fn emit_metadata(
+        &self,
+        metadata: &mut Vec<bindings::MetadataEntry>,
+        mut stackmaps: bindings::Stackmaps,
+    ) {
         let encinfo = self.isa.encoding_info();
         let func = &self.context.func;
-        for ebb in func.layout.ebbs() {
-            for (offset, inst, inst_size) in func.inst_offsets(ebb, &encinfo) {
+        let stack_slots = &func.stack_slots;
+        for block in func.layout.blocks() {
+            let mut pending_safepoint = None;
+            for (offset, inst, inst_size) in func.inst_offsets(block, &encinfo) {
+                if let Some(stackmap) = pending_safepoint.take() {
+                    stackmaps.add_stackmap(stack_slots, offset + inst_size, stackmap);
+                }
                 let opcode = func.dfg[inst].opcode();
                 match opcode {
                     ir::Opcode::Call => self.call_metadata(metadata, inst, offset + inst_size),
@@ -257,6 +273,11 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
                     }
                     ir::Opcode::Trap | ir::Opcode::Trapif | ir::Opcode::Trapff => {
                         self.trap_metadata(metadata, inst, offset)
+                    }
+                    ir::Opcode::Safepoint => {
+                        let args = func.dfg.inst_args(inst);
+                        let stackmap = Stackmap::from_values(&args, func, &*self.isa);
+                        pending_safepoint = Some(stackmap);
                     }
                     ir::Opcode::Load
                     | ir::Opcode::LoadComplex
@@ -310,6 +331,8 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
                     }
                 }
             }
+
+            assert!(pending_safepoint.is_none());
         }
     }
 
@@ -409,6 +432,7 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
             ir::TrapCode::BadConversionToInteger => bindings::Trap::InvalidConversionToInteger,
             ir::TrapCode::Interrupt => bindings::Trap::CheckInterrupt,
             ir::TrapCode::UnreachableCodeReached => bindings::Trap::Unreachable,
+            ir::TrapCode::User(x) if x == TRAP_THROW_REPORTED => bindings::Trap::ThrowReported,
             ir::TrapCode::User(_) => panic!("Uncovered trap code {}", code),
         };
 
@@ -489,7 +513,7 @@ impl<'a> EmitEnv<'a> {
 }
 
 impl<'a> RelocSink for EmitEnv<'a> {
-    fn reloc_ebb(&mut self, _offset: CodeOffset, _reloc: Reloc, _ebb_offset: CodeOffset) {
+    fn reloc_block(&mut self, _offset: CodeOffset, _reloc: Reloc, _block_offset: CodeOffset) {
         unimplemented!();
     }
 
@@ -517,7 +541,7 @@ impl<'a> RelocSink for EmitEnv<'a> {
                 let sym = index.into();
 
                 // The symbolic access patch address points *after* the stored pointer.
-                let offset = offset + native_pointer_size() as u32;
+                let offset = offset + POINTER_SIZE as u32;
                 self.metadata
                     .push(bindings::MetadataEntry::symbolic_access(offset, sym));
             }
@@ -538,7 +562,7 @@ impl<'a> RelocSink for EmitEnv<'a> {
                 };
 
                 // The symbolic access patch address points *after* the stored pointer.
-                let offset = offset + native_pointer_size() as u32;
+                let offset = offset + POINTER_SIZE as u32;
                 self.metadata
                     .push(bindings::MetadataEntry::symbolic_access(offset, sym));
             }

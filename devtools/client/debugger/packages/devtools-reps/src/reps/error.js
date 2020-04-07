@@ -3,15 +3,15 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // ReactJS
-const PropTypes = require("prop-types");
+const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+const { span } = require("devtools/client/shared/vendor/react-dom-factories");
+
 // Utils
 const { getGripType, isGrip, wrapRender } = require("./rep-utils");
 const { cleanFunctionName } = require("./function");
 const { isLongString } = require("./string");
 const { MODE } = require("./constants");
 
-const dom = require("react-dom-factories");
-const { span } = dom;
 const IGNORED_SOURCE_URLS = ["debugger eval code"];
 
 /**
@@ -31,7 +31,12 @@ function ErrorRep(props) {
   const mode = props.mode;
 
   let name;
-  if (preview && preview.name && preview.kind) {
+  if (
+    preview &&
+    preview.name &&
+    typeof preview.name === "string" &&
+    preview.kind
+  ) {
     switch (preview.kind) {
       case "Error":
         name = preview.name;
@@ -48,7 +53,7 @@ function ErrorRep(props) {
 
   const content = [];
 
-  if (mode === MODE.TINY) {
+  if (mode === MODE.TINY || typeof preview.message !== "string") {
     content.push(name);
   } else {
     content.push(`${name}: "${preview.message}"`);

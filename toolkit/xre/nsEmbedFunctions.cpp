@@ -17,15 +17,14 @@
 
 #include "nsIAppShell.h"
 #include "nsAppStartupNotifier.h"
-#include "nsIDirectoryService.h"
 #include "nsIFile.h"
-#include "nsIToolkitChromeRegistry.h"
 #include "nsIToolkitProfile.h"
 
 #ifdef XP_WIN
 #  include <process.h>
 #  include <shobjidl.h>
 #  include "mozilla/ipc/WindowsMessageLoop.h"
+#  include "mozilla/WinDllServices.h"
 #endif
 
 #include "nsAppDirectoryServiceDefs.h"
@@ -64,13 +63,12 @@
 #include "mozilla/AbstractThread.h"
 #include "mozilla/FilePreferences.h"
 #include "mozilla/RDDProcessImpl.h"
+#include "mozilla/UniquePtr.h"
 
 #include "mozilla/ipc/BrowserProcessSubThread.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/ipc/IOThreadChild.h"
 #include "mozilla/ipc/ProcessChild.h"
-#include "mozilla/recordreplay/ChildIPC.h"
-#include "mozilla/recordreplay/ParentIPC.h"
 #include "ScopedXREEmbed.h"
 
 #include "mozilla/plugins/PluginProcessChild.h"
@@ -131,6 +129,10 @@ using mozilla::_ipdltest::IPDLUnitTestProcessChild;
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
 #  include "mozilla/sandboxing/SandboxInitialization.h"
 #  include "mozilla/sandboxing/sandboxLogging.h"
+#endif
+
+#if defined(MOZ_ENABLE_FORKSERVER)
+#  include "mozilla/ipc/ForkServer.h"
 #endif
 
 #include "VRProcessChild.h"
@@ -224,7 +226,7 @@ void XRE_TermEmbedding() {
   delete gDirServiceProvider;
 }
 
-const char* XRE_ChildProcessTypeToString(GeckoProcessType aProcessType) {
+const char* XRE_GeckoProcessTypeToString(GeckoProcessType aProcessType) {
   return (aProcessType < GeckoProcessType_End)
              ? kGeckoProcessTypeString[aProcessType]
              : "invalid";
@@ -241,15 +243,13 @@ const char* XRE_ChildProcessTypeToAnnotation(GeckoProcessType aProcessType) {
     case GeckoProcessType_Content:
       return "content";
     default:
-      return XRE_ChildProcessTypeToString(aProcessType);
+      return XRE_GeckoProcessTypeToString(aProcessType);
   }
 }
 
-namespace mozilla {
-namespace startup {
+namespace mozilla::startup {
 GeckoProcessType sChildProcessType = GeckoProcessType_Default;
-}  // namespace startup
-}  // namespace mozilla
+}  // namespace mozilla::startup
 
 #if defined(MOZ_WIDGET_ANDROID)
 void XRE_SetAndroidChildFds(JNIEnv* env, const XRE_AndroidChildFds& fds) {
@@ -264,7 +264,7 @@ void XRE_SetAndroidChildFds(JNIEnv* env, const XRE_AndroidChildFds& fds) {
 
 void XRE_SetProcessType(const char* aProcessTypeString) {
   static bool called = false;
-  if (called) {
+  if (called && sChildProcessType != GeckoProcessType_ForkServer) {
     MOZ_CRASH();
   }
   called = true;
@@ -286,7 +286,6 @@ XRE_SetRemoteExceptionHandler(const char* aPipe /*= 0*/,
 XRE_SetRemoteExceptionHandler(const char* aPipe /*= 0*/)
 #endif
 {
-  recordreplay::AutoPassThroughThreadEvents pt;
 #if defined(XP_WIN)
   return CrashReporter::SetRemoteExceptionHandler(nsDependentCString(aPipe),
                                                   aCrashTimeAnnotationFile);
@@ -346,8 +345,6 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   NS_ENSURE_ARG_POINTER(aArgv);
   NS_ENSURE_ARG_POINTER(aArgv[0]);
   MOZ_ASSERT(aChildData);
-
-  recordreplay::Initialize(aArgc, aArgv);
 
   NS_SetCurrentThreadName("MainThread");
 
@@ -431,9 +428,6 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
 
   const char* const mach_port_name = aArgv[--aArgc];
 
-  Maybe<recordreplay::AutoPassThroughThreadEvents> pt;
-  pt.emplace();
-
   const int kTimeoutMs = 1000;
 
   MachSendMessage child_message(0);
@@ -513,7 +507,6 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   }
 #  endif /* MOZ_SANDBOX */
 
-  pt.reset();
 #endif /* XP_MACOSX */
 
   SetupErrorHandling(aArgv[0]);
@@ -582,8 +575,7 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
 #  endif
     printf_stderr(
         "\n\nCHILDCHILDCHILDCHILD (process type %s)\n  debug me @ %d\n\n",
-        XRE_ChildProcessTypeToString(XRE_GetProcessType()),
-        base::GetCurrentProcId());
+        XRE_GetProcessTypeString(), base::GetCurrentProcId());
     sleep(GetDebugChildPauseTime());
   }
 #elif defined(OS_WIN)
@@ -594,8 +586,7 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   } else if (PR_GetEnv("MOZ_DEBUG_CHILD_PAUSE")) {
     printf_stderr(
         "\n\nCHILDCHILDCHILDCHILD (process type %s)\n  debug me @ %d\n\n",
-        XRE_ChildProcessTypeToString(XRE_GetProcessType()),
-        base::GetCurrentProcId());
+        XRE_GetProcessTypeString(), base::GetCurrentProcId());
     ::Sleep(GetDebugChildPauseTime());
   }
 #endif
@@ -609,9 +600,6 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   char* end = 0;
   base::ProcessId parentPID = strtol(parentPIDString, &end, 10);
   MOZ_ASSERT(!*end, "invalid parent PID");
-
-  // While replaying, use the parent PID that existed while recording.
-  parentPID = recordreplay::RecordReplayValue(parentPID);
 
 #ifdef XP_MACOSX
   mozilla::ipc::SharedMemoryBasic::SetupMachMemory(
@@ -670,12 +658,6 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   }
 #endif
 
-  // If we are recording or replaying, initialize state and update arguments
-  // according to those which were captured by the MiddlemanProcessChild in the
-  // middleman process. No argument manipulation should happen between this
-  // call and the point where the process child is initialized.
-  recordreplay::child::InitRecordingOrReplayingProcess(&aArgc, &aArgv);
-
   {
     // This is a lexical scope for the MessageLoop below.  We want it
     // to go out of scope before NS_LogTerm() so that we don't get
@@ -685,51 +667,57 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
     // Associate this thread with a UI MessageLoop
     MessageLoop uiMessageLoop(uiLoopType);
     {
-      nsAutoPtr<ProcessChild> process;
+      UniquePtr<ProcessChild> process;
       switch (XRE_GetProcessType()) {
         case GeckoProcessType_Default:
           MOZ_CRASH("This makes no sense");
           break;
 
         case GeckoProcessType_Plugin:
-          process = new PluginProcessChild(parentPID);
+          process = MakeUnique<PluginProcessChild>(parentPID);
           break;
 
         case GeckoProcessType_Content:
-          process = new ContentProcess(parentPID);
+          process = MakeUnique<ContentProcess>(parentPID);
           break;
 
         case GeckoProcessType_IPDLUnitTest:
 #ifdef MOZ_IPDL_TESTS
-          process = new IPDLUnitTestProcessChild(parentPID);
+          process = MakeUnique<IPDLUnitTestProcessChild>(parentPID);
 #else
           MOZ_CRASH("rebuild with --enable-ipdl-tests");
 #endif
           break;
 
         case GeckoProcessType_GMPlugin:
-          process = new gmp::GMPProcessChild(parentPID);
+          process = MakeUnique<gmp::GMPProcessChild>(parentPID);
           break;
 
         case GeckoProcessType_GPU:
-          process = new gfx::GPUProcessImpl(parentPID);
+          process = MakeUnique<gfx::GPUProcessImpl>(parentPID);
           break;
 
         case GeckoProcessType_VR:
-          process = new gfx::VRProcessChild(parentPID);
+          process = MakeUnique<gfx::VRProcessChild>(parentPID);
           break;
 
         case GeckoProcessType_RDD:
-          process = new RDDProcessImpl(parentPID);
+          process = MakeUnique<RDDProcessImpl>(parentPID);
           break;
 
         case GeckoProcessType_Socket:
-          process = new net::SocketProcessImpl(parentPID);
+          process = MakeUnique<net::SocketProcessImpl>(parentPID);
           break;
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
         case GeckoProcessType_RemoteSandboxBroker:
-          process = new RemoteSandboxBrokerProcessChild(parentPID);
+          process = MakeUnique<RemoteSandboxBrokerProcessChild>(parentPID);
+          break;
+#endif
+
+#if defined(MOZ_ENABLE_FORKSERVER)
+        case GeckoProcessType_ForkServer:
+          MOZ_CRASH("Fork server should not go here");
           break;
 #endif
         default:
@@ -745,6 +733,10 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
       // chrome process is killed in cases where the user shuts the system
       // down or logs off.
       ::SetProcessShutdownParameters(0x280 - 1, SHUTDOWN_NORETRY);
+
+      RefPtr<DllServices> dllSvc(DllServices::Get());
+      auto dllSvcDisable =
+          MakeScopeExit([&dllSvc]() { dllSvc->DisableFull(); });
 #endif
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
@@ -1025,5 +1017,11 @@ void XRE_InstallX11ErrorHandler() {
 #  else
   InstallX11ErrorHandler();
 #  endif
+}
+#endif
+
+#ifdef MOZ_ENABLE_FORKSERVER
+int XRE_ForkServer(int* aArgc, char*** aArgv) {
+  return mozilla::ipc::ForkServer::RunForkServer(aArgc, aArgv) ? 1 : 0;
 }
 #endif

@@ -12,9 +12,12 @@
   vertical-align: middle;
 }
 
+.permission-icon {
+  margin-inline-end: 0.2em;
+}
+
 .content-blocking-checkbox .checkbox-icon {
-  margin-inline-end: 8px;
-  margin-inline-start: 4px;
+  margin-inline: 4px 8px;
   width: 16px;
 }
 
@@ -68,6 +71,10 @@
 
 .geo-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/geo.svg);
+}
+
+.xr-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/xr.svg);
 }
 
 .camera-icon {
@@ -171,20 +178,33 @@
   display: none;
 }
 
-.content-blocking-warning.reload-tabs description {
-  width: 318px;
+.content-blocking-warning.reload-tabs:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  /* Match .indent's horizontal padding: */
+  padding-inline: 28px;
+}
+
+.content-blocking-reload-desc-container {
+  /* 345px is enough for (almost) twice the size of the default English
+   * string at default font sizes. If this and the button do not fit
+   * on one line, the button will get wrapped to the next line and this
+   * item will stretch to fill all available space. */
+  flex: 1 1 345px;
+  display: flex;
+}
+
+.content-blocking-reload-description {
+  line-height: 1.8em;
   margin-inline-end: 5px;
 }
 
-.content-blocking-warning.reload-tabs .indent {
-  min-height: 30px;
-}
-
-.content-blocking-warning.reload-tabs .content-blocking-info-image {
+.content-blocking-reload-desc-container > .content-blocking-info-image {
   list-style-image: url(chrome://browser/skin/identity-icon.svg);
-  margin-top: 5px;
-  margin-inline-end: 8px;
-  margin-inline-start: 4px;
+  margin-inline-end: 12px;
+  margin-top: 0.4em;
+  flex-shrink: 0;
+  align-self: start;
 }
 
 .reload-tabs-button {
@@ -193,6 +213,7 @@
   padding: 0 20px;
   list-style-image: url("chrome://browser/skin/reload.svg");
   background-color: var(--blue-50);
+  align-self: center;
 }
 
 .reload-tabs-button:not([disabled="true"]):hover {
@@ -221,7 +242,7 @@
 }
 
 .content-blocking-category.selected {
-	border: 1px solid #45A1FF;
+  border: 1px solid #45A1FF;
   background-color: rgba(69, 161, 255, 0.2);
 }
 
@@ -238,9 +259,19 @@
   margin-top: 18px;
 }
 
+/* Apply display: block to the containers of all the category information, as
+ * without this the flex-wrapped blocks inside don't stretch vertically to
+ * enclose their content. */
+.content-blocking-category > .indent {
+  display: block;
+}
+
 .content-blocking-category.expanded .content-blocking-extra-information,
 .content-blocking-category.selected .content-blocking-extra-information {
   visibility: visible;
+  display: flex;
+  flex-direction: column;
+  align-content: stretch;
 }
 
 .content-blocking-extra-information > .indent {
@@ -289,8 +320,7 @@
 
 .content-blocking-warning-image {
   list-style-image: url("chrome://global/skin/icons/warning.svg");
-  margin-inline-end: 8px;
-  margin-inline-start: 4px;
+  margin-inline: 4px 8px;
 }
 
 #blockCookiesMenu,
@@ -300,6 +330,20 @@
 
 #changeBlockListLink {
   margin-inline-start: 56px;
+}
+
+#telemetry-container {
+  border-radius: 4px;
+  background-color: rgba(12,12,13,0.2);
+  font-size: 85%;
+  padding: 3px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  width: 100%;
+}
+
+#dataDescriptionBox {
+  line-height: 1.3;
 }
 
 .content-blocking-category-description {
@@ -328,4 +372,8 @@
 #deleteOnCloseNote {
   margin-bottom: 0 !important; /* Overrides .info-panel margin-bottom. */
   margin-inline-end: 32px;
+}
+
+#submitHealthReportBox {
+  display: -moz-inline-box;
 }

@@ -39,6 +39,7 @@ Var InstallOptionalExtensions
 Var ExtensionRecommender
 Var PageName
 Var PreventRebootRequired
+Var RegisterDefaultAgent
 
 ; Telemetry ping fields
 Var SetAsDefault
@@ -93,6 +94,7 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 
 !insertmacro AddDisabledDDEHandlerValues
 !insertmacro ChangeMUIHeaderImage
+!insertmacro ChangeMUISidebarImage
 !insertmacro CheckForFilesInUse
 !insertmacro CleanUpdateDirectories
 !insertmacro CopyFilesFromDir
@@ -692,6 +694,20 @@ Section "-Application" APP_IDX
     ${AddMaintCertKeys}
   ${EndIf}
 !endif
+
+!ifdef MOZ_DEFAULT_BROWSER_AGENT
+  ${If} $RegisterDefaultAgent != "0"
+    Exec '"$INSTDIR\default-browser-agent.exe" register-task $AppUserModelID'
+    ${If} $RegisterDefaultAgent == ""
+      ; If the variable was unset, force it to a good value.
+      StrCpy $RegisterDefaultAgent 1
+    ${EndIf}
+  ${EndIf}
+  ; Remember whether we were told to skip registering the agent, so that updates
+  ; won't try to create a registration when they don't find an existing one.
+  WriteRegDWORD HKCU "Software\Mozilla\${AppName}\Installer\$AppUserModelID" \
+                     "DidRegisterDefaultBrowserAgent" $RegisterDefaultAgent
+!endif
 SectionEnd
 
 ; Cleanup operations to perform at the end of the installation.
@@ -912,7 +928,7 @@ Function CheckExistingInstall
 
     Banner::show /NOUNLOAD "$(BANNER_CHECK_EXISTING)"
 
-    ${If} "$TmpVal" == "FoundMessageWindow"
+    ${If} "$TmpVal" == "FoundAppWindow"
       Sleep 5000
     ${EndIf}
 
@@ -932,19 +948,19 @@ Function CheckExistingInstall
     GetDlgItem $0 $HWNDPARENT 3 ; Back button
     EnableWindow $0 1
 
+    ; If there are files in use $TmpVal will be "true"
     ${If} "$TmpVal" == "true"
-      StrCpy $TmpVal "FoundMessageWindow"
-      ${ManualCloseAppPrompt} "${WindowClass}" "$(WARN_MANUALLY_CLOSE_APP_INSTALL)"
+      ; If it finds a window of the right class, then ManualCloseAppPrompt will
+      ; abort leaving the value of $TmpVal set to "FoundAppWindow".
+      StrCpy $TmpVal "FoundAppWindow"
+      ${ManualCloseAppPrompt} "${MainWindowClass}" "$(WARN_MANUALLY_CLOSE_APP_INSTALL)"
+      ${ManualCloseAppPrompt} "${DialogWindowClass}" "$(WARN_MANUALLY_CLOSE_APP_INSTALL)"
       StrCpy $TmpVal "true"
     ${EndIf}
   ${EndIf}
 FunctionEnd
 
 Function LaunchApp
-!ifndef DEV_EDITION
-  ${ManualCloseAppPrompt} "${WindowClass}" "$(WARN_MANUALLY_CLOSE_APP_LAUNCH)"
-!endif
-
   ClearErrors
   ${GetParameters} $0
   ${GetOptions} "$0" "/UAC:" $1
@@ -1124,6 +1140,12 @@ Function SendPing
     nsJSON::Set /tree ping "Data" "succeeded" /value true
   ${EndIf}
 
+  ${If} ${Silent}
+    nsJSON::Set /tree ping "Data" "silent" /value true
+  ${Else}
+    nsJSON::Set /tree ping "Data" "silent" /value false
+  ${EndIf}
+
   ; Send the ping request. This call will block until a response is received,
   ; but we shouldn't have any windows still open, so we won't jank anything.
   nsJSON::Set /http ping
@@ -1173,6 +1195,10 @@ Function showWelcome
   SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
   ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 3" "HWND"
   SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
+  ; We need to overwrite the sidebar image so that we get it drawn with proper
+  ; scaling if the display is scaled at anything above 100%.
+  ${ChangeMUISidebarImage} "$PLUGINSDIR\modern-wizard.bmp"
 FunctionEnd
 
 Function leaveWelcome
@@ -1194,11 +1220,10 @@ Function preOptions
 
   StrCpy $PageName "Options"
   ${If} ${FileExists} "$EXEDIR\core\distribution\modern-header.bmp"
-  ${AndIf} $hHeaderBitmap == ""
     Delete "$PLUGINSDIR\modern-header.bmp"
     CopyFiles /SILENT "$EXEDIR\core\distribution\modern-header.bmp" "$PLUGINSDIR\modern-header.bmp"
-    ${ChangeMUIHeaderImage} "$PLUGINSDIR\modern-header.bmp"
   ${EndIf}
+  ${ChangeMUIHeaderImage} "$PLUGINSDIR\modern-header.bmp"
   !insertmacro MUI_HEADER_TEXT "$(OPTIONS_PAGE_TITLE)" "$(OPTIONS_PAGE_SUBTITLE)"
   !insertmacro MUI_INSTALLOPTIONS_DISPLAY "options.ini"
 FunctionEnd
@@ -1530,7 +1555,8 @@ Function leaveSummary
   ClearErrors
   ${DeleteFile} "$INSTDIR\${FileMainEXE}"
   ${If} ${Errors}
-    ${ManualCloseAppPrompt} "${WindowClass}" "$(WARN_MANUALLY_CLOSE_APP_INSTALL)"
+    ${ManualCloseAppPrompt} "${MainWindowClass}" "$(WARN_MANUALLY_CLOSE_APP_INSTALL)"
+    ${ManualCloseAppPrompt} "${DialogWindowClass}" "$(WARN_MANUALLY_CLOSE_APP_INSTALL)"
   ${EndIf}
 FunctionEnd
 
@@ -1555,6 +1581,10 @@ Function showFinish
 
   ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 3" "HWND"
   SetCtlColors $0 SYSCLR:WINDOWTEXT SYSCLR:WINDOW
+
+  ; We need to overwrite the sidebar image so that we get it drawn with proper
+  ; scaling if the display is scaled at anything above 100%.
+  ${ChangeMUISidebarImage} "$PLUGINSDIR\modern-wizard.bmp"
 
   ; Field 4 is the launch checkbox. Since it's a checkbox, we need to
   ; clear the theme from it before we can set its background color.

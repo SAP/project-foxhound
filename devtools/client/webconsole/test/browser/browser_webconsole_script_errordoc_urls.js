@@ -43,7 +43,7 @@ async function testScriptError(hud, testData) {
     expectUncaughtException();
   }
 
-  await loadDocument(makeURIData(testData.script));
+  await navigateTo(makeURIData(testData.script));
 
   const msg = "the expected error message was displayed";
   info(`waiting for ${msg} to be displayed`);
@@ -67,5 +67,5 @@ async function testScriptError(hud, testData) {
 
   ok(hrefs.has(url), `Expected a link to ${url}.`);
 
-  hud.ui.clearOutput();
+  await clearOutput(hud);
 }

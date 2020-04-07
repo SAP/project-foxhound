@@ -70,6 +70,18 @@
   list-style-image: url(chrome://browser/skin/notification-icons/geo-detailed.svg);
 }
 
+.xr-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/xr.svg);
+}
+
+.xr-icon.blocked-permission-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/xr-blocked.svg);
+}
+
+.popup-notification-icon[popupid="xr"] {
+  list-style-image: url(chrome://browser/skin/notification-icons/xr.svg);
+}
+
 .autoplay-media-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/autoplay-media.svg);
 }
@@ -178,12 +190,16 @@
 }
 
 #webRTC-preview:not([hidden]) {
-  display: -moz-stack;
+  display: grid;
   border-radius: 4px;
   border: 1px solid var(--panel-separator-color);
   overflow: hidden;
   min-width: 300px;
   min-height: 10em;
+}
+
+#webRTC-preview > *|* {
+  grid-area: 1 / 1;
 }
 
 html|*#webRTC-previewVideo {
@@ -302,12 +318,14 @@ html|*#webRTC-previewVideo {
 
 #plugin-icon-badge {
   list-style-image: url(chrome://browser/skin/notification-icons/plugin-badge.svg);
+  width: 16px;
+  height: 16px;
   opacity: 0;
   transition: opacity 1.5s;
 }
 
-#plugins-notification-icon[extraAttr="inactive"] > .plugin-icon {
-  fill: #bfbfbf;
+#plugins-notification-icon:not(.plugin-blocked)[extraAttr="inactive"] > .plugin-icon {
+  fill-opacity: 0.25;
 }
 
 #plugins-notification-icon[extraAttr="inactive"] > #plugin-icon-badge {

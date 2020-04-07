@@ -61,17 +61,17 @@ impl YuvImageProvider {
     }
 }
 
-impl webrender::ExternalImageHandler for YuvImageProvider {
+impl ExternalImageHandler for YuvImageProvider {
     fn lock(
         &mut self,
         key: ExternalImageId,
         _channel_index: u8,
         _rendering: ImageRendering
-    ) -> webrender::ExternalImage {
+    ) -> ExternalImage {
         let id = self.texture_ids[key.0 as usize];
-        webrender::ExternalImage {
+        ExternalImage {
             uv: TexelRect::new(0.0, 0.0, 1.0, 1.0),
-            source: webrender::ExternalImageSource::NativeTexture(id),
+            source: ExternalImageSource::NativeTexture(id),
         }
     }
     fn unlock(&mut self, _key: ExternalImageId, _channel_index: u8) {
@@ -108,7 +108,7 @@ impl Example for App {
         let yuv_chanel3 = api.generate_image_key();
         txn.add_image(
             yuv_chanel1,
-            ImageDescriptor::new(100, 100, ImageFormat::R8, true, false),
+            ImageDescriptor::new(100, 100, ImageFormat::R8, ImageDescriptorFlags::IS_OPAQUE),
             ImageData::External(ExternalImageData {
                 id: ExternalImageId(0),
                 channel_index: 0,
@@ -120,7 +120,7 @@ impl Example for App {
         );
         txn.add_image(
             yuv_chanel2,
-            ImageDescriptor::new(100, 100, ImageFormat::RG8, true, false),
+            ImageDescriptor::new(100, 100, ImageFormat::RG8, ImageDescriptorFlags::IS_OPAQUE),
             ImageData::External(ExternalImageData {
                 id: ExternalImageId(1),
                 channel_index: 0,
@@ -132,7 +132,7 @@ impl Example for App {
         );
         txn.add_image(
             yuv_chanel2_1,
-            ImageDescriptor::new(100, 100, ImageFormat::R8, true, false),
+            ImageDescriptor::new(100, 100, ImageFormat::R8, ImageDescriptorFlags::IS_OPAQUE),
             ImageData::External(ExternalImageData {
                 id: ExternalImageId(2),
                 channel_index: 0,
@@ -144,7 +144,7 @@ impl Example for App {
         );
         txn.add_image(
             yuv_chanel3,
-            ImageDescriptor::new(100, 100, ImageFormat::R8, true, false),
+            ImageDescriptor::new(100, 100, ImageFormat::R8, ImageDescriptorFlags::IS_OPAQUE),
             ImageData::External(ExternalImageData {
                 id: ExternalImageId(3),
                 channel_index: 0,
@@ -198,8 +198,8 @@ impl Example for App {
     fn get_image_handlers(
         &mut self,
         gl: &dyn gl::Gl,
-    ) -> (Option<Box<dyn webrender::ExternalImageHandler>>,
-          Option<Box<dyn webrender::OutputImageHandler>>) {
+    ) -> (Option<Box<dyn ExternalImageHandler>>,
+          Option<Box<dyn OutputImageHandler>>) {
         let provider = YuvImageProvider::new(gl);
         self.texture_id = provider.texture_ids[0];
         (Some(Box::new(provider)), None)

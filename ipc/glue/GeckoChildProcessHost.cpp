@@ -42,7 +42,6 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Omnijar.h"
-#include "mozilla/RecordReplay.h"
 #include "mozilla/RDDProcessHost.h"
 #include "mozilla/Scoped.h"
 #include "mozilla/Services.h"
@@ -102,6 +101,10 @@ using mozilla::ScopedPRFileDesc;
 #  include "mozilla/jni/Utils.h"
 #endif
 
+#ifdef MOZ_ENABLE_FORKSERVER
+#  include "mozilla/ipc/ForkServiceChild.h"
+#endif
+
 static bool ShouldHaveDirectoryService() {
   return GeckoProcessType_Default == XRE_GetProcessType();
 }
@@ -131,19 +134,17 @@ class BaseProcessLauncher {
         mIsFileContent(aHost->mIsFileContent),
         mEnableSandboxLogging(aHost->mEnableSandboxLogging),
 #endif
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+        mDisableOSActivityMode(aHost->mDisableOSActivityMode),
+#endif
         mTmpDirName(aHost->mTmpDirName),
         mChildId(++gChildCounter) {
     SprintfLiteral(mPidString, "%d", base::GetCurrentProcId());
 
     // Compute the serial event target we'll use for launching.
-    if (mozilla::recordreplay::IsMiddleman()) {
-      // During Web Replay, the middleman process launches the actual content
-      // processes, and doesn't initialize enough of XPCOM to use thread pools.
-      mLaunchThread = IOThread();
-    } else {
-      nsCOMPtr<nsIEventTarget> threadOrPool = GetIPCLauncher();
-      mLaunchThread = new TaskQueue(threadOrPool.forget());
-    }
+    nsCOMPtr<nsIEventTarget> threadOrPool = GetIPCLauncher();
+    mLaunchThread = new TaskQueue(threadOrPool.forget());
+
     if (ShouldHaveDirectoryService()) {
       // "Current process directory" means the app dir, not the current
       // working dir or similar.
@@ -176,10 +177,8 @@ class BaseProcessLauncher {
   void GetChildLogName(const char* origLogName, nsACString& buffer);
 
   const char* ChildProcessType() {
-    return XRE_ChildProcessTypeToString(mProcessType);
+    return XRE_GeckoProcessTypeToString(mProcessType);
   }
-
-  nsCOMPtr<nsIEventTarget> GetIPCLauncher();
 
   nsCOMPtr<nsISerialEventTarget> mLaunchThread;
   GeckoProcessType mProcessType;
@@ -193,6 +192,11 @@ class BaseProcessLauncher {
   int32_t mSandboxLevel;
   bool mIsFileContent;
   bool mEnableSandboxLogging;
+#endif
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+  // Controls whether or not the process will be launched with
+  // environment variable OS_ACTIVITY_MODE set to "disabled".
+  bool mDisableOSActivityMode;
 #endif
   nsCString mTmpDirName;
   LaunchResults mResults = LaunchResults();
@@ -279,7 +283,7 @@ class AndroidProcessLauncher : public PosixProcessLauncher {
  protected:
   virtual RefPtr<ProcessHandlePromise> DoLaunch() override;
   RefPtr<ProcessHandlePromise> LaunchAndroidService(
-      const char* type, const std::vector<std::string>& argv,
+      const GeckoProcessType aType, const std::vector<std::string>& argv,
       const base::file_handle_mapping_vector& fds_to_remap);
 };
 typedef AndroidProcessLauncher ProcessLauncher;
@@ -330,6 +334,9 @@ GeckoChildProcessHost::GeckoChildProcessHost(GeckoProcessType aProcessType,
 #if defined(MOZ_WIDGET_COCOA)
       mChildTask(MACH_PORT_NULL),
 #endif
+#if defined(MOZ_SANDBOX) && defined(XP_MACOSX)
+      mDisableOSActivityMode(false),
+#endif
       mDestroying(false) {
   MOZ_COUNT_CTOR(GeckoChildProcessHost);
   StaticMutexAutoLock lock(sMutex);
@@ -346,6 +353,11 @@ GeckoChildProcessHost::GeckoChildProcessHost(GeckoProcessType aProcessType,
     if (NS_SUCCEEDED(rv)) {
       contentTempDir->GetNativePath(mTmpDirName);
     }
+  }
+#endif
+#if defined(MOZ_ENABLE_FORKSERVER)
+  if (aProcessType == GeckoProcessType_Content && ForkServiceChild::Get()) {
+    mLaunchOptions->use_forkserver = true;
   }
 #endif
 }
@@ -671,10 +683,10 @@ bool GeckoChildProcessHost::AsyncLaunch(std::vector<std::string> aExtraOpts) {
             // If something failed let's set the error state and notify.
             CHROMIUM_LOG(ERROR)
                 << "Failed to launch "
-                << XRE_ChildProcessTypeToString(mProcessType) << " subprocess";
+                << XRE_GeckoProcessTypeToString(mProcessType) << " subprocess";
             Telemetry::Accumulate(
                 Telemetry::SUBPROCESS_LAUNCH_FAILURE,
-                nsDependentCString(XRE_ChildProcessTypeToString(mProcessType)));
+                nsDependentCString(XRE_GeckoProcessTypeToString(mProcessType)));
             {
               MonitorAutoLock lock(mMonitor);
               mProcessState = PROCESS_ERROR;
@@ -721,12 +733,7 @@ bool GeckoChildProcessHost::WaitUntilConnected(int32_t aTimeoutMs) {
   return mProcessState == PROCESS_CONNECTED;
 }
 
-bool GeckoChildProcessHost::LaunchAndWaitForProcessHandle(
-    StringVector aExtraOpts) {
-  if (!AsyncLaunch(std::move(aExtraOpts))) {
-    return false;
-  }
-
+bool GeckoChildProcessHost::WaitForProcessHandle() {
   MonitorAutoLock lock(mMonitor);
   while (mProcessState < PROCESS_CREATED) {
     lock.Wait();
@@ -734,6 +741,14 @@ bool GeckoChildProcessHost::LaunchAndWaitForProcessHandle(
   MOZ_ASSERT(mProcessState == PROCESS_ERROR || mChildProcessHandle);
 
   return mProcessState < PROCESS_ERROR;
+}
+
+bool GeckoChildProcessHost::LaunchAndWaitForProcessHandle(
+    StringVector aExtraOpts) {
+  if (!AsyncLaunch(std::move(aExtraOpts))) {
+    return false;
+  }
+  return WaitForProcessHandle();
 }
 
 void GeckoChildProcessHost::InitializeChannel() {
@@ -810,7 +825,11 @@ void BaseProcessLauncher::GetChildLogName(const char* origLogName,
 //
 // Android also needs a single dedicated thread to simplify thread
 // safety in java.
-#if defined(XP_WIN) || defined(MOZ_WIDGET_ANDROID)
+//
+// Fork server needs a dedicated thread for accessing
+// |ForkServiceChild|.
+#if defined(XP_WIN) || defined(MOZ_WIDGET_ANDROID) || \
+    defined(MOZ_ENABLE_FORKSERVER)
 
 static mozilla::StaticMutex gIPCLaunchThreadMutex;
 static mozilla::StaticRefPtr<nsIThread> gIPCLaunchThread;
@@ -840,7 +859,7 @@ IPCLaunchThreadObserver::Observe(nsISupports* aSubject, const char* aTopic,
   return rv;
 }
 
-nsCOMPtr<nsIEventTarget> BaseProcessLauncher::GetIPCLauncher() {
+nsCOMPtr<nsIEventTarget> GetIPCLauncher() {
   StaticMutexAutoLock lock(gIPCLaunchThreadMutex);
   if (!gIPCLaunchThread) {
     nsCOMPtr<nsIThread> thread;
@@ -863,18 +882,19 @@ nsCOMPtr<nsIEventTarget> BaseProcessLauncher::GetIPCLauncher() {
   return thread;
 }
 
-#else  // defined(XP_WIN) || defined(MOZ_WIDGET_ANDROID)
+#else  // defined(XP_WIN) || defined(MOZ_WIDGET_ANDROID) ||
+       // defined(MOZ_ENABLE_FORKSERVER)
 
 // Other platforms use an on-demand thread pool.
 
-nsCOMPtr<nsIEventTarget> BaseProcessLauncher::GetIPCLauncher() {
+nsCOMPtr<nsIEventTarget> GetIPCLauncher() {
   nsCOMPtr<nsIEventTarget> pool =
       mozilla::SharedThreadPool::Get(NS_LITERAL_CSTRING("IPC Launch"));
   MOZ_DIAGNOSTIC_ASSERT(pool);
   return pool;
 }
 
-#endif  // XP_WIN
+#endif  // XP_WIN || MOZ_WIDGET_ANDROID || MOZ_ENABLE_FORKSERVER
 
 void
 #if defined(XP_WIN)
@@ -1067,7 +1087,16 @@ bool PosixProcessLauncher::DoSetup() {
     interpose.Append(path.get());
     interpose.AppendLiteral("/libplugin_child_interpose.dylib");
     mLaunchOptions->env_map["DYLD_INSERT_LIBRARIES"] = interpose.get();
-#  endif           // defined(OS_LINUX) || defined(OS_BSD)
+
+    // Prevent connection attempts to diagnosticd(8) to save cycles. Log
+    // messages can trigger these connection attempts, but access to
+    // diagnosticd is blocked in sandboxed child processes.
+#    ifdef MOZ_SANDBOX
+    if (mDisableOSActivityMode) {
+      mLaunchOptions->env_map["OS_ACTIVITY_MODE"] = "disable";
+    }
+#    endif  // defined(MOZ_SANDBOX)
+#  endif    // defined(OS_LINUX) || defined(OS_BSD)
   }
 
   FilePath exePath;
@@ -1092,6 +1121,7 @@ bool PosixProcessLauncher::DoSetup() {
   mChildArgv.insert(mChildArgv.end(), mExtraOpts.begin(), mExtraOpts.end());
 
   if (mProcessType != GeckoProcessType_GMPlugin) {
+#  if defined(MOZ_WIDGET_ANDROID)
     if (Omnijar::IsInitialized()) {
       // Make sure that child processes can find the omnijar
       // See XRE_InitCommandLine in nsAppRunner.cpp
@@ -1107,6 +1137,7 @@ bool PosixProcessLauncher::DoSetup() {
         mChildArgv.push_back(path.get());
       }
     }
+#  endif
     // Add the application directory path (-appdir path)
 #  ifdef XP_MACOSX
     AddAppDirToCommandLine(mChildArgv, mAppDir, mProfileDir);
@@ -1150,14 +1181,13 @@ bool PosixProcessLauncher::DoSetup() {
 #  endif  // MOZ_WIDGET_COCOA
 
   mChildArgv.push_back(ChildProcessType());
-
   return true;
 }
 #endif  // OS_POSIX
 
 #if defined(MOZ_WIDGET_ANDROID)
 RefPtr<ProcessHandlePromise> AndroidProcessLauncher::DoLaunch() {
-  return LaunchAndroidService(ChildProcessType(), mChildArgv,
+  return LaunchAndroidService(mProcessType, mChildArgv,
                               mLaunchOptions->fds_to_remap);
 }
 #endif  // MOZ_WIDGET_ANDROID
@@ -1187,6 +1217,10 @@ bool PosixProcessLauncher::DoFinishLaunch() {
 
 #ifdef XP_MACOSX
 bool MacProcessLauncher::DoFinishLaunch() {
+  if (!PosixProcessLauncher::DoFinishLaunch()) {
+    return false;
+  }
+
   // Wait for the child process to send us its 'task_t' data.
   const int kTimeoutMs = 10000;
 
@@ -1308,6 +1342,7 @@ bool WindowsProcessLauncher::DoSetup() {
     mCmdLine->AppendLooseValue(UTF8ToWide(*it));
   }
 
+#  if defined(MOZ_WIDGET_ANDROID)
   if (Omnijar::IsInitialized()) {
     // Make sure the child process can find the omnijar
     // See XRE_InitCommandLine in nsAppRunner.cpp
@@ -1323,6 +1358,7 @@ bool WindowsProcessLauncher::DoSetup() {
       mCmdLine->AppendLooseValue(path.get());
     }
   }
+#  endif
 
 #  if defined(MOZ_SANDBOX)
 #    if defined(_ARM64_)
@@ -1396,7 +1432,12 @@ bool WindowsProcessLauncher::DoSetup() {
       }
       break;
     case GeckoProcessType_Socket:
-      // TODO - setup sandboxing for the socket process.
+      if (!PR_GetEnv("MOZ_DISABLE_SOCKET_PROCESS_SANDBOX")) {
+        if (!mResults.mSandboxBroker->SetSecurityLevelForSocketProcess()) {
+          return false;
+        }
+        mUseSandbox = true;
+      }
       break;
     case GeckoProcessType_RemoteSandboxBroker:
       // We don't sandbox the sandbox launcher...
@@ -1571,7 +1612,7 @@ void GeckoChildProcessHost::GetQueuedMessages(std::queue<IPC::Message>& queue) {
 
 #ifdef MOZ_WIDGET_ANDROID
 RefPtr<ProcessHandlePromise> AndroidProcessLauncher::LaunchAndroidService(
-    const char* type, const std::vector<std::string>& argv,
+    const GeckoProcessType aType, const std::vector<std::string>& argv,
     const base::file_handle_mapping_vector& fds_to_remap) {
   MOZ_RELEASE_ASSERT((2 <= fds_to_remap.size()) && (fds_to_remap.size() <= 5));
   JNIEnv* const env = mozilla::jni::GetEnvForThread();
@@ -1602,6 +1643,7 @@ RefPtr<ProcessHandlePromise> AndroidProcessLauncher::LaunchAndroidService(
     crashAnnotationFd = fds_to_remap[4].first;
   }
 
+  auto type = java::GeckoProcessType::FromInt(aType);
   auto genericResult = java::GeckoProcessManager::Start(
       type, jargs, prefsFd, prefMapFd, ipcFd, crashFd, crashAnnotationFd);
   auto typedResult = java::GeckoResult::LocalRef(std::move(genericResult));
@@ -1636,6 +1678,10 @@ bool GeckoChildProcessHost::StaticFillMacSandboxInfo(MacSandboxInfo& aInfo) {
 
 bool GeckoChildProcessHost::FillMacSandboxInfo(MacSandboxInfo& aInfo) {
   return GeckoChildProcessHost::StaticFillMacSandboxInfo(aInfo);
+}
+
+void GeckoChildProcessHost::DisableOSActivityMode() {
+  mDisableOSActivityMode = true;
 }
 
 //

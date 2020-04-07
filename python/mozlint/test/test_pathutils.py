@@ -65,6 +65,12 @@ TEST_CASES = (
         'expected': ['subdir1'],
         'expected_exclude': ['subdir1/subdir3'],
     },
+    {
+        'paths': ['docshell'],
+        'include': ['docs'],
+        'exclude': [],
+        'expected': [],
+    }
 )
 
 
@@ -86,6 +92,7 @@ def test_filterpaths(test):
     (['subdir1/b.py', 'subdir1/subdir3'], ['subdir1/b.py', 'subdir1/subdir3']),
     (['subdir1/b.py', 'subdir1/b.js'], ['subdir1/b.py', 'subdir1/b.js']),
     (['subdir1/subdir3'], ['subdir1/subdir3']),
+    (['foo', 'foobar', ], ['foo', 'foobar']),
 ])
 def test_collapse(paths, expected):
     os.chdir(root)

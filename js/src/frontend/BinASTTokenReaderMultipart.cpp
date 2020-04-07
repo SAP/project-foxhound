@@ -20,8 +20,7 @@
 
 #include "js/Result.h"
 
-namespace js {
-namespace frontend {
+namespace js::frontend {
 
 // The magic header, at the start of every binjs file.
 const char MAGIC_HEADER[] = "BINJS";
@@ -69,7 +68,7 @@ BinASTSourceMetadata* BinASTTokenReaderMultipart::takeMetadata() {
 
 JS::Result<Ok> BinASTTokenReaderMultipart::initFromScriptSource(
     ScriptSource* scriptSource) {
-  metadata_ = scriptSource->binASTSourceMetadata();
+  metadata_ = scriptSource->binASTSourceMetadata()->asMultipart();
   metadataOwned_ = MetadataOwnership::Unowned;
 
   return Ok();
@@ -155,8 +154,9 @@ JS::Result<Ok> BinASTTokenReaderMultipart::readHeader() {
     return raiseError("Too many entries in strings table");
   }
 
-  BinASTSourceMetadata* metadata =
-      BinASTSourceMetadata::Create(grammarTable_, stringsNumberOfEntries);
+  BinASTSourceMetadataMultipart* metadata =
+      BinASTSourceMetadataMultipart::create(grammarTable_,
+                                            stringsNumberOfEntries);
   if (!metadata) {
     return raiseOOM();
   }
@@ -473,6 +473,4 @@ JS::Result<Ok> BinASTTokenReaderMultipart::AutoTaggedTuple::done() {
   return Ok();
 }
 
-}  // namespace frontend
-
-}  // namespace js
+}  // namespace js::frontend

@@ -23,7 +23,7 @@ const { getVerificationHash } = ChromeUtils.import(
 var cacheTemplate, appPluginsPath, profPlugins;
 
 const enginesCache = {
-  version: 1,
+  version: SearchUtils.CACHE_VERSION,
   buildID: "TBD",
   appVersion: "TBD",
   locale: "en-US",
@@ -34,6 +34,17 @@ const enginesCache = {
     "engine-chromeicon",
     "engine-resourceicon",
     "engine-reordered",
+  ],
+  builtInEngineList: [
+    { id: "engine@search.mozilla.org", locale: "default" },
+    { id: "engine-pref@search.mozilla.org", locale: "default" },
+    {
+      id: "engine-rel-searchform-purpose@search.mozilla.org",
+      locale: "default",
+    },
+    { id: "engine-chromeicon@search.mozilla.org", locale: "default" },
+    { id: "engine-resourceicon@search.mozilla.org", locale: "default" },
+    { id: "engine-reordered@search.mozilla.org", locale: "default" },
   ],
   metaData: {
     searchDefault: "Test search engine",
@@ -82,7 +93,13 @@ const enginesCache = {
 add_task(async function setup() {
   await AddonTestUtils.promiseStartupManager();
 
-  useTestEngineConfig();
+  // Allow telemetry probes which may otherwise be disabled for some applications (e.g. Thunderbird)
+  Services.prefs.setBoolPref(
+    "toolkit.telemetry.testing.overrideProductsCheck",
+    true
+  );
+
+  await useTestEngines();
   Services.prefs.setCharPref(SearchUtils.BROWSER_SEARCH_PREF + "region", "US");
   Services.locale.availableLocales = ["en-US"];
   Services.locale.requestedLocales = ["en-US"];
@@ -140,20 +157,35 @@ add_task(async function test_cached_engine_properties() {
 
   const engines = await Services.search.getEngines();
 
+  // Modern config has a slightly different expected order.
+  const expectedEngines = gModernConfig
+    ? [
+        // Default engines
+        "Test search engine",
+        // Rest of engines in order
+        "engine-resourceicon",
+        "engine-chromeicon",
+        "engine-pref",
+        "engine-rel-searchform-purpose",
+        "Test search engine (Reordered)",
+        "A second test engine",
+      ]
+    : [
+        // Default engine
+        "Test search engine",
+        // Two engines listed in searchOrder.
+        "engine-resourceicon",
+        "engine-chromeicon",
+        "A second test engine",
+        // Rest of the engines in order.
+        "engine-pref",
+        "engine-rel-searchform-purpose",
+        "Test search engine (Reordered)",
+      ];
+
   Assert.deepEqual(
     engines.map(e => e.name),
-    [
-      // Default engine
-      "Test search engine",
-      // Two engines listed in searchOrder.
-      "engine-resourceicon",
-      "engine-chromeicon",
-      "A second test engine",
-      // Rest of the engines in order.
-      "engine-pref",
-      "engine-rel-searchform-purpose",
-      "Test search engine (Reordered)",
-    ],
+    expectedEngines,
     "Should have the expected default engines"
   );
 });

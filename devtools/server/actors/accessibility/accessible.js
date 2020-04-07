@@ -154,7 +154,7 @@ function getSnapshot(acc, a11yService) {
  */
 const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
   initialize(walker, rawAccessible) {
-    Actor.prototype.initialize.call(this, walker.conn);
+    Actor.prototype.initialize.call(this, null);
     this.walker = walker;
     this.rawAccessible = rawAccessible;
 
@@ -179,10 +179,11 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
   },
 
   /**
-   * Items returned by this actor should belong to the parent walker.
+   * Instead of storing a connection object, the NodeActor gets its connection
+   * from its associated walker.
    */
-  marshallPool() {
-    return this.walker;
+  get conn() {
+    return this.walker.conn;
   },
 
   destroy() {
@@ -192,7 +193,7 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
   },
 
   get isDestroyed() {
-    return this.actorID == null;
+    return this.walker == null || this.actorID == null;
   },
 
   get role() {
@@ -368,6 +369,10 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
     }
 
     const doc = await this.walker.getDocument();
+    if (this.isDestroyed) {
+      // This accessible actor is destroyed.
+      return relationObjects;
+    }
     relations.forEach(relation => {
       if (RELATIONS_TO_IGNORE.has(relation.relationType)) {
         return;
@@ -474,6 +479,10 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
       appliedColorMatrix: this.walker.colorMatrix,
     });
 
+    if (this.isDestroyed) {
+      // This accessible actor is destroyed.
+      return null;
+    }
     walker.restoreStyles(win);
 
     return contrastRatio;

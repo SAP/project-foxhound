@@ -31,7 +31,7 @@ pref("toolkit.browser.cacheRatioHeight", 3000);
 // expires.
 pref("toolkit.browser.contentViewExpire", 3000);
 
-pref("toolkit.defaultChromeURI", "chrome://geckoview/content/geckoview.xul");
+pref("toolkit.defaultChromeURI", "chrome://geckoview/content/geckoview.xhtml");
 pref("browser.chromeURL", "chrome://browser/content/");
 
 // If a tab has not been active for this long (seconds), then it may be
@@ -98,6 +98,9 @@ pref("network.http.max-persistent-connections-per-proxy", 20);
 pref("network.http.spdy.push-allowance", 32768);
 pref("network.http.spdy.default-hpack-buffer", 4096); // 4k
 
+// http3
+pref("network.http.http3.default-qpack-table-size", 4096); // 4k
+
 // See bug 545869 for details on why these are set the way they are
 pref("network.buffer.cache.count", 24);
 pref("network.buffer.cache.size",  16384);
@@ -125,14 +128,12 @@ pref("browser.sessionstore.backupInterval", 120000); // milliseconds -> 2 minute
 pref("browser.sessionstore.max_tabs_undo", 10);
 pref("browser.sessionstore.max_resumed_crashes", 2);
 pref("browser.sessionstore.privacy_level", 0); // saving data: 0 = all, 1 = unencrypted sites, 2 = never
-pref("browser.sessionstore.debug_logging", false);
 
 // Download protection lists are not available on Fennec.
 pref("urlclassifier.downloadAllowTable", "");
 pref("urlclassifier.downloadBlockTable", "");
 
 /* these should help performance */
-pref("layout.reflow.synthMouseMove", false); // Keep false until bug 1582363 is fixed
 pref("layout.css.report_errors", false);
 
 /* download manager (don't show the window or alert) */
@@ -166,7 +167,6 @@ pref("layout.spellcheckDefault", 0);
 pref("dom.forms.datetime.others", true);
 
 /* extension manager and xpinstall */
-pref("xpinstall.whitelist.directRequest", false);
 pref("xpinstall.whitelist.fileRequest", false);
 pref("xpinstall.whitelist.add", "https://addons.mozilla.org");
 
@@ -198,7 +198,6 @@ pref("extensions.getAddons.cache.enabled", true);
 pref("extensions.getAddons.search.browseURL", "https://addons.mozilla.org/%LOCALE%/android/search?q=%TERMS%&platform=%OS%&appver=%VERSION%");
 pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/android/collections/4757633/mob/?page=1&collection_sort=-popularity");
 pref("extensions.getAddons.get.url", "https://services.addons.mozilla.org/api/v3/addons/search/?guid=%IDS%&lang=%LOCALE%");
-pref("extensions.getAddons.compatOverides.url", "https://services.addons.mozilla.org/api/v3/addons/compat-override/?guid=%IDS%&lang=%LOCALE%");
 pref("extensions.getAddons.langpacks.url", "https://services.addons.mozilla.org/api/v3/addons/language-tools/?app=android&type=language&appversion=%VERSION%");
 
 /* preference for the locale picker */
@@ -217,7 +216,7 @@ pref("extensions.webextensions.default-content-security-policy", "script-src 'se
 
 pref("extensions.webextensions.background-delayed-startup", true);
 
-pref("extensions.legacy.enabled", false);
+pref("extensions.experiments.enabled", false);
 
 /* block popups by default, and notify the user about blocked popups */
 pref("dom.disable_open_during_load", true);
@@ -236,6 +235,7 @@ pref("accessibility.typeaheadfind.flashBar", 1);
 pref("accessibility.typeaheadfind.linksonly", false);
 pref("accessibility.typeaheadfind.casesensitive", 0);
 pref("accessibility.browsewithcaret_shortcut.enabled", false);
+pref("findbar.matchdiacritics", 0);
 
 // Whether the character encoding menu is under the main Firefox button. This
 // preference is a string so that localizers can alter it.
@@ -342,9 +342,12 @@ pref("devtools.debugger.unix-domain-socket", "@ANDROID_PACKAGE_NAME@/firefox-deb
 pref("devtools.remote.usb.enabled", false);
 pref("devtools.remote.wifi.enabled", false);
 
-// With the typical screen sizes on mobile devices, we want to wrap page sources by default.
-pref("view_source.wrap_long_lines", true);
-
+// Preference for the new performance panel.
+// Profiler feature set. See tools/profiler/core/platform.cpp for features and
+// explanations. Android additionally has "java" feature but other features must
+// be the same. If you intend to change the default value of this pref, please
+// don't forget to change the all.js accordingly.
+pref("devtools.performance.recording.features", "[\"js\",\"leaf\",\"stackwalk\",\"java\"]");
 
 pref("ui.touch.radius.enabled", false);
 pref("ui.touch.radius.leftmm", 3);
@@ -353,7 +356,7 @@ pref("ui.touch.radius.rightmm", 3);
 pref("ui.touch.radius.bottommm", 2);
 pref("ui.touch.radius.visitedWeight", 120);
 
-pref("ui.mouse.radius.enabled", false);
+pref("ui.mouse.radius.enabled", true);
 pref("ui.mouse.radius.leftmm", 3);
 pref("ui.mouse.radius.topmm", 5);
 pref("ui.mouse.radius.rightmm", 3);
@@ -738,14 +741,7 @@ pref("dom.serviceWorkers.enabled", true);
 pref("dom.serviceWorkers.disable_open_click_delay", 5000);
 
 pref("dom.push.debug", false);
-// The upstream autopush endpoint must have the Google API key corresponding to
-// the App's sender ID; we bake this assumption directly into the URL.
-pref("dom.push.serverURL", "https://updates.push.services.mozilla.com/v1/gcm/@MOZ_ANDROID_GCM_SENDERID@");
 pref("dom.push.maxRecentMessageIDsPerSubscription", 0);
-
-#ifdef MOZ_ANDROID_GCM
-  pref("dom.push.enabled", true);
-#endif
 
 // The remote content URL where FxAccountsWebChannel messages originate.  Must use HTTPS.
 pref("identity.fxaccounts.remote.webchannel.uri", "https://accounts.firefox.com");
@@ -758,13 +754,6 @@ pref("identity.fxaccounts.remote.oauth.uri", "https://oauth.accounts.firefox.com
 
 // Token server used by Firefox Account-authenticated Sync.
 pref("identity.sync.tokenserver.uri", "https://token.services.mozilla.com/1.0/sync/1.5");
-
-#ifdef NIGHTLY_BUILD
-// Use new audio focus management, "media.audioFocus.management".
-pref("dom.audiochannel.audioCompeting", false);
-#else
-pref("dom.audiochannel.audioCompeting", true);
-#endif
 
 pref("dom.audiochannel.mediaControl", true);
 

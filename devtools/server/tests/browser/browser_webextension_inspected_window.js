@@ -28,7 +28,7 @@ async function setup(pageUrl) {
   await target.attach();
 
   const { client } = target;
-  const webConsoleFront = target.activeConsole;
+  const webConsoleFront = await target.getFront("console");
   const inspectedWindowFront = await target.getFront(
     "webExtensionInspectedWindow"
   );
@@ -45,7 +45,7 @@ async function setup(pageUrl) {
 
 async function teardown({ client, extension }) {
   await client.close();
-  DebuggerServer.destroy();
+  DevToolsServer.destroy();
   gBrowser.removeCurrentTab();
   await extension.unload();
 }
@@ -304,9 +304,7 @@ add_task(async function test_exception_inspectedWindowEval_result() {
     "Got the expected exception message"
   );
 
-  const expectedCallerInfo = `called from ${fakeExtCallerInfo.url}:${
-    fakeExtCallerInfo.lineNumber
-  }`;
+  const expectedCallerInfo = `called from ${fakeExtCallerInfo.url}:${fakeExtCallerInfo.lineNumber}`;
   ok(
     result.exceptionInfo.value.includes(expectedCallerInfo),
     "Got the expected caller info in the exception message"
@@ -345,7 +343,7 @@ add_task(async function test_exception_inspectedWindowReload() {
 
   await waitForNoBypassCacheReload;
 
-  const noBypassCacheEval = await webConsoleFront.evaluateJS(
+  const noBypassCacheEval = await webConsoleFront.evaluateJSAsync(
     "document.body.textContent"
   );
 
@@ -362,7 +360,7 @@ add_task(async function test_exception_inspectedWindowReload() {
 
   await waitForForceBypassCacheReload;
 
-  const forceBypassCacheEval = await webConsoleFront.evaluateJS(
+  const forceBypassCacheEval = await webConsoleFront.evaluateJSAsync(
     "document.body.textContent"
   );
 
@@ -394,7 +392,7 @@ add_task(async function test_exception_inspectedWindowReload_customUserAgent() {
 
   await waitForCustomUserAgentReload;
 
-  const customUserAgentEval = await webConsoleFront.evaluateJS(
+  const customUserAgentEval = await webConsoleFront.evaluateJSAsync(
     "document.body.textContent"
   );
 
@@ -411,7 +409,7 @@ add_task(async function test_exception_inspectedWindowReload_customUserAgent() {
 
   await waitForNoCustomUserAgentReload;
 
-  const noCustomUserAgentEval = await webConsoleFront.evaluateJS(
+  const noCustomUserAgentEval = await webConsoleFront.evaluateJSAsync(
     "document.body.textContent"
   );
 
@@ -442,7 +440,7 @@ add_task(async function test_exception_inspectedWindowReload_injectedScript() {
   });
   await waitForInjectedScriptReload;
 
-  const injectedScriptEval = await webConsoleFront.evaluateJS(
+  const injectedScriptEval = await webConsoleFront.evaluateJSAsync(
     `(${collectEvalResults})()`
   );
 
@@ -460,7 +458,7 @@ add_task(async function test_exception_inspectedWindowReload_injectedScript() {
   await inspectedWindowFront.reload(fakeExtCallerInfo, {});
   await waitForNoInjectedScriptReload;
 
-  const noInjectedScriptEval = await webConsoleFront.evaluateJS(
+  const noInjectedScriptEval = await webConsoleFront.evaluateJSAsync(
     `(${collectEvalResults})()`
   );
 
@@ -499,7 +497,7 @@ add_task(async function test_exception_inspectedWindowReload_multiple_calls() {
 
   await waitForCustomUserAgentReload;
 
-  const customUserAgentEval = await webConsoleFront.evaluateJS(
+  const customUserAgentEval = await webConsoleFront.evaluateJSAsync(
     "document.body.textContent"
   );
 
@@ -516,7 +514,7 @@ add_task(async function test_exception_inspectedWindowReload_multiple_calls() {
 
   await waitForNoCustomUserAgentReload;
 
-  const noCustomUserAgentEval = await webConsoleFront.evaluateJS(
+  const noCustomUserAgentEval = await webConsoleFront.evaluateJSAsync(
     "document.body.textContent"
   );
 
@@ -557,7 +555,7 @@ add_task(async function test_exception_inspectedWindowReload_stopped() {
   });
   await waitForInjectedScriptReload;
 
-  const injectedScriptEval = await webConsoleFront.evaluateJS(
+  const injectedScriptEval = await webConsoleFront.evaluateJSAsync(
     `(${collectEvalResults})()`
   );
 
@@ -578,7 +576,7 @@ add_task(async function test_exception_inspectedWindowReload_stopped() {
   await inspectedWindowFront.reload(fakeExtCallerInfo, {});
   await waitForNoInjectedScriptReload;
 
-  const noInjectedScriptEval = await webConsoleFront.evaluateJS(
+  const noInjectedScriptEval = await webConsoleFront.evaluateJSAsync(
     `(${collectEvalResults})()`
   );
 

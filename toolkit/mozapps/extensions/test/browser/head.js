@@ -330,8 +330,12 @@ function check_all_in_list(aManager, aIds, aIgnoreExtras) {
 }
 
 function get_addon_element(aManager, aId) {
-  const doc = aManager.getHtmlBrowser().contentDocument;
-  return doc.querySelector(`addon-card[addon-id="${aId}"]`);
+  const win = aManager.getHtmlBrowser().contentWindow;
+  return getAddonCard(win, aId);
+}
+
+function getAddonCard(win, id) {
+  return win.document.querySelector(`addon-card[addon-id="${id}"]`);
 }
 
 function wait_for_view_load(
@@ -1633,7 +1637,7 @@ function assertAboutAddonsTelemetryEvents(events, filters = {}) {
 }
 
 /* HTML view helpers */
-async function loadInitialView(type) {
+async function loadInitialView(type, opts) {
   // Force the first page load to be the view we want.
   let viewId = type == "discover" ? "discover/" : `list/${type}`;
   Services.prefs.setCharPref(PREF_UI_LASTCATEGORY, `addons://${viewId}`);
@@ -1642,6 +1646,9 @@ async function loadInitialView(type) {
 
   let browser = managerWindow.document.getElementById("html-view-browser");
   let win = browser.contentWindow;
+  if (!opts || !opts.withAnimations) {
+    win.document.body.setAttribute("skip-animations", "");
+  }
   win.managerWindow = managerWindow;
   return win;
 }
@@ -1656,6 +1663,10 @@ function closeView(win) {
 
 function switchView(win, type) {
   return new CategoryUtilities(win.managerWindow).openType(type);
+}
+
+function isCategoryVisible(win, type) {
+  return new CategoryUtilities(win.managerWindow).isTypeVisible(type);
 }
 
 function mockPromptService() {

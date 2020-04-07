@@ -219,6 +219,7 @@ this.LoginRecipesContent = {
   _recipeCache: new WeakMap(),
 
   _clearRecipeCache() {
+    log.debug("_clearRecipeCache");
     this._recipeCache = new WeakMap();
   },
 
@@ -245,11 +246,12 @@ this.LoginRecipesContent = {
    * Tries to fetch recipes for a given host, using a local cache if possible.
    * Otherwise, the recipes are cached for later use.
    *
+   * @param {JSWindowActor} aActor - actor making request
    * @param {String} aHost (e.g. example.com:8080 [non-default port] or sub.example.com)
    * @param {Object} win - the window of the host
    * @return {Set} of recipes that apply to the host
    */
-  getRecipes(aHost, win) {
+  getRecipes(aActor, aHost, win) {
     let recipes;
     let recipeMap = this._recipeCache.get(win);
 
@@ -261,10 +263,8 @@ this.LoginRecipesContent = {
       }
     }
 
-    let mm = win.docShell.messageManager;
-
     log.warn("getRecipes: falling back to a synchronous message for:", aHost);
-    recipes = mm.sendSyncMessage("PasswordManager:findRecipes", {
+    recipes = Services.cpmm.sendSyncMessage("PasswordManager:findRecipes", {
       formOrigin: aHost,
     })[0];
     this.cacheRecipes(aHost, win, recipes);
@@ -310,7 +310,7 @@ this.LoginRecipesContent = {
    */
   getFieldOverrides(aRecipes, aForm) {
     let recipes = this._filterRecipesForForm(aRecipes, aForm);
-    log.debug("getFieldOverrides: filtered recipes:", recipes);
+    log.debug("getFieldOverrides: filtered recipes:", recipes.size, recipes);
     if (!recipes.size) {
       return null;
     }

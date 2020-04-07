@@ -26,6 +26,7 @@ import android.support.annotation.AnyThread;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.annotation.UiThread;
+import android.support.v4.util.ArrayMap;
 import android.util.Log;
 
 import org.mozilla.gecko.EventDispatcher;
@@ -47,6 +48,8 @@ import org.yaml.snakeyaml.error.YAMLException;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.net.URI;
+import java.util.List;
+import java.util.Map;
 
 public final class GeckoRuntime implements Parcelable {
     private static final String LOGTAG = "GeckoRuntime";
@@ -164,16 +167,17 @@ public final class GeckoRuntime implements Parcelable {
     private ServiceWorkerDelegate mServiceWorkerDelegate;
     private WebNotificationDelegate mNotificationDelegate;
     private RuntimeTelemetry mTelemetry;
-    private final WebExtensionEventDispatcher mWebExtensionDispatcher;
     private StorageController mStorageController;
     private final WebExtensionController mWebExtensionController;
     private WebPushController mPushController;
     private final ContentBlockingController mContentBlockingController;
+    private final LoginStorage.Proxy mLoginStorageProxy;
 
     private GeckoRuntime() {
-        mWebExtensionDispatcher = new WebExtensionEventDispatcher();
-        mWebExtensionController = new WebExtensionController(this, mWebExtensionDispatcher);
+        mWebExtensionController = new WebExtensionController(this);
         mContentBlockingController = new ContentBlockingController();
+        mLoginStorageProxy = new LoginStorage.Proxy();
+
         if (sRuntime != null) {
             throw new IllegalStateException("Only one GeckoRuntime instance is allowed");
         }
@@ -268,8 +272,14 @@ public final class GeckoRuntime implements Parcelable {
     };
 
     private static String getProcessName(final Context context) {
-        final ActivityManager manager = (ActivityManager)context.getSystemService(Context.ACTIVITY_SERVICE);
-        for (final ActivityManager.RunningAppProcessInfo info : manager.getRunningAppProcesses()) {
+        final ActivityManager manager =
+                (ActivityManager)context.getSystemService(Context.ACTIVITY_SERVICE);
+        final List<ActivityManager.RunningAppProcessInfo> infos =
+                manager.getRunningAppProcesses();
+        if (infos == null) {
+            return null;
+        }
+        for (final ActivityManager.RunningAppProcessInfo info : infos) {
             if (info.pid == Process.myPid()) {
                 return info.processName;
             }
@@ -283,7 +293,7 @@ public final class GeckoRuntime implements Parcelable {
             Log.d(LOGTAG, "init");
         }
         int flags = 0;
-        if (settings.getUseContentProcessHint()) {
+        if (settings.getUseMultiprocess()) {
             flags |= GeckoThread.FLAG_PRELOAD_CHILD;
         }
 
@@ -294,16 +304,22 @@ public final class GeckoRuntime implements Parcelable {
         final Class<?> crashHandler = settings.getCrashHandler();
         if (crashHandler != null) {
             try {
-                final ServiceInfo info = context.getPackageManager().getServiceInfo(new ComponentName(context, crashHandler), 0);
+                final ServiceInfo info =
+                        context.getPackageManager()
+                        .getServiceInfo(
+                                new ComponentName(context, crashHandler), 0);
                 if (info.processName.equals(getProcessName(context))) {
-                    throw new IllegalArgumentException("Crash handler service must run in a separate process");
+                    throw new IllegalArgumentException(
+                            "Crash handler service must run in a separate process");
                 }
 
-                EventDispatcher.getInstance().registerUiThreadListener(mEventListener, "GeckoView:ContentCrashReport");
+                EventDispatcher.getInstance().registerUiThreadListener(
+                        mEventListener, "GeckoView:ContentCrashReport");
 
                 flags |= GeckoThread.FLAG_ENABLE_NATIVE_CRASHREPORTER;
             } catch (PackageManager.NameNotFoundException e) {
-                throw new IllegalArgumentException("Crash handler must be registered as a service");
+                throw new IllegalArgumentException(
+                        "Crash handler must be registered as a service");
             }
         }
 
@@ -318,7 +334,18 @@ public final class GeckoRuntime implements Parcelable {
         info.args = settings.getArguments();
         info.extras = settings.getExtras();
         info.flags = flags;
-        info.prefs = settings.getPrefsMap();
+
+        // Bug 1605454: Temporary change for Fenix experiment that disables webrender
+        // Once the experiment ends or experimenter gets implemented in Gecko, this should be removed
+        // and replaced by :
+        // info.prefs = settings.getPrefsMap();
+        final Map<String, Object> prefMap = new ArrayMap<String, Object>();
+        prefMap.putAll(settings.getPrefsMap());
+        if (info.extras.getInt("forcedisablewebrender") == 1) {
+            prefMap.put("gfx.webrender.force-disabled", true);
+        }
+        info.prefs = prefMap;
+        // End of Bug 1605454 hack
 
         String configFilePath = settings.getConfigFilePath();
         if (configFilePath == null) {
@@ -455,7 +482,7 @@ public final class GeckoRuntime implements Parcelable {
         bundle.putBoolean("allowContentMessaging",
                 (webExtension.flags & WebExtension.Flags.ALLOW_CONTENT_MESSAGING) > 0);
 
-        mWebExtensionDispatcher.registerWebExtension(webExtension);
+        mWebExtensionController.registerWebExtension(webExtension);
 
         EventDispatcher.getInstance().dispatch("GeckoView:RegisterWebExtension",
                 bundle, result);
@@ -485,15 +512,12 @@ public final class GeckoRuntime implements Parcelable {
         final GeckoBundle bundle = new GeckoBundle(1);
         bundle.putString("id", webExtension.id);
 
-        mWebExtensionDispatcher.unregisterWebExtension(webExtension);
-
         EventDispatcher.getInstance().dispatch("GeckoView:UnregisterWebExtension", bundle, result);
 
-        return result;
-    }
-
-    /* protected */ @NonNull WebExtensionEventDispatcher getWebExtensionDispatcher() {
-        return mWebExtensionDispatcher;
+        return result.then(success -> {
+            mWebExtensionController.unregisterWebExtension(webExtension);
+            return GeckoResult.fromValue(success);
+        });
     }
 
     /**
@@ -567,6 +591,31 @@ public final class GeckoRuntime implements Parcelable {
     @UiThread
     public @Nullable Delegate getDelegate() {
         return mDelegate;
+    }
+
+    /**
+     * Set the {@link LoginStorage.Delegate} instance on this runtime.
+     * This delegate is required for handling login storage requests.
+     *
+     * @param delegate The {@link LoginStorage.Delegate} handling login storage
+     *                 requests.
+     */
+    @UiThread
+    public void setLoginStorageDelegate(
+            final @Nullable LoginStorage.Delegate delegate) {
+        ThreadUtils.assertOnUiThread();
+        mLoginStorageProxy.setDelegate(delegate);
+    }
+
+    /**
+     * Get the {@link LoginStorage.Delegate} instance set on this runtime.
+     *
+     * @return The {@link LoginStorage.Delegate} set on this runtime.
+     */
+    @UiThread
+    public @Nullable LoginStorage.Delegate getLoginStorageDelegate() {
+        ThreadUtils.assertOnUiThread();
+        return mLoginStorageProxy.getDelegate();
     }
 
     @UiThread

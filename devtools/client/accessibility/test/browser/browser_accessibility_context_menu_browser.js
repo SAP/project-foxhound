@@ -75,7 +75,7 @@ addA11YPanelTask(
       headerSelector,
       toolbox.getPanel("inspector")
     );
-    const expectedSelected = await panel.walker.getAccessibleFor(
+    const expectedSelected = await panel.accessibilityProxy.accessibleWalkerFront.getAccessibleFor(
       expectedSelectedNode
     );
     is(
@@ -84,5 +84,13 @@ addA11YPanelTask(
       "Accessibility panel is currently selected"
     );
     is(selected, expectedSelected, "Accessible front selected correctly");
+
+    const doc = panel.panelWin.document;
+    const propertiesTree = doc.querySelector(".tree");
+    is(doc.activeElement, propertiesTree, "Properties list must be focused.");
+    ok(
+      isVisible(doc.querySelector(".treeTable .treeRow.selected")),
+      "Selected row is visible."
+    );
   }
 );

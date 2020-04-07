@@ -7,13 +7,9 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsArrayUtils.h"
 #include "nsCRT.h"
-#include "nsIDirectoryService.h"
-#include "nsIKeyModule.h"
 #include "nsIObserverService.h"
 #include "nsIPermissionManager.h"
 #include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
-#include "nsIProperties.h"
 #include "nsIXULRuntime.h"
 #include "nsToolkitCompsCID.h"
 #include "nsUrlClassifierDBService.h"
@@ -28,6 +24,7 @@
 #include "nsProxyRelease.h"
 #include "nsString.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/ErrorNames.h"
@@ -43,6 +40,7 @@
 #include "ProtocolParser.h"
 #include "mozilla/Attributes.h"
 #include "nsIPrincipal.h"
+#include "nsIUrlListManager.h"
 #include "Classifier.h"
 #include "ProtocolParser.h"
 #include "nsContentUtils.h"
@@ -59,7 +57,6 @@
 #include "nsStringStream.h"
 #include "nsNetUtil.h"
 #include "nsToolkitCompsCID.h"
-#include "nsIClassifiedChannel.h"
 
 namespace mozilla {
 namespace safebrowsing {
@@ -281,7 +278,7 @@ nsIThread* nsUrlClassifierDBService::gDbBackgroundThread = nullptr;
 
 // Once we've committed to shutting down, don't do work in the background
 // thread.
-static bool gShuttingDownThread = false;
+static Atomic<bool> gShuttingDownThread(false);
 
 static uint32_t sGethashNoise = GETHASH_NOISE_DEFAULT;
 
@@ -1622,15 +1619,6 @@ nsresult nsUrlClassifierDBService::ReadDisallowCompletionsTablesFromPrefs() {
 
 nsresult nsUrlClassifierDBService::Init() {
   MOZ_ASSERT(NS_IsMainThread(), "Must initialize DB service on main thread");
-  nsCOMPtr<nsIXULRuntime> appInfo =
-      do_GetService("@mozilla.org/xre/app-info;1");
-  if (appInfo) {
-    bool inSafeMode = false;
-    appInfo->GetInSafeMode(&inSafeMode);
-    if (inSafeMode) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
-  }
 
   switch (XRE_GetProcessType()) {
     case GeckoProcessType_Default:
@@ -1715,7 +1703,7 @@ nsUrlClassifierDBService::Classify(nsIPrincipal* aPrincipal,
   NS_ENSURE_ARG(aPrincipal);
   NS_ENSURE_ARG(aResult);
 
-  if (nsContentUtils::IsSystemPrincipal(aPrincipal)) {
+  if (aPrincipal->IsSystemPrincipal()) {
     *aResult = false;
     return NS_OK;
   }
@@ -1993,7 +1981,7 @@ nsUrlClassifierDBService::SendThreatHitReport(nsIChannel* aChannel,
                      nsContentUtils::GetSystemPrincipal(),
                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                      nsIContentPolicy::TYPE_OTHER,
-                     nullptr,  // nsICookieSettings
+                     nullptr,  // nsICookieJarSettings
                      nullptr,  // aPerformanceStorage
                      nullptr,  // aLoadGroup
                      nullptr, loadFlags);
@@ -2031,17 +2019,16 @@ nsUrlClassifierDBService::SendThreatHitReport(nsIChannel* aChannel,
 
 NS_IMETHODIMP
 nsUrlClassifierDBService::Lookup(nsIPrincipal* aPrincipal,
-                                 const nsACString& tables,
-                                 nsIUrlClassifierCallback* c) {
+                                 const nsACString& aTables,
+                                 nsIUrlClassifierCallback* aCallback) {
+  // We don't expect someone with SystemPrincipal calls this API(See Bug
+  // 813897).
+  MOZ_ASSERT(!aPrincipal->IsSystemPrincipal());
+
   NS_ENSURE_TRUE(gDbBackgroundThread, NS_ERROR_NOT_INITIALIZED);
 
-  if (nsContentUtils::IsSystemPrincipal(aPrincipal)) {
-    // FIXME: we don't call 'c' here!
-    return NS_OK;
-  }
-
   nsTArray<nsCString> tableArray;
-  Classifier::SplitTables(tables, tableArray);
+  Classifier::SplitTables(aTables, tableArray);
 
   nsCOMPtr<nsIUrlClassifierFeature> feature;
   nsresult rv =
@@ -2077,7 +2064,7 @@ nsUrlClassifierDBService::Lookup(nsIPrincipal* aPrincipal,
   rv = utilsService->GetKeyForURI(uri, key);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return LookupURI(key, holder, c);
+  return LookupURI(key, holder, aCallback);
 }
 
 nsresult nsUrlClassifierDBService::LookupURI(
@@ -2380,7 +2367,7 @@ nsresult nsUrlClassifierDBService::Shutdown() {
   //    will cause the pending events on the joining thread to
   //    be processed.
   nsIThread* backgroundThread = nullptr;
-  Swap(backgroundThread, gDbBackgroundThread);
+  std::swap(backgroundThread, gDbBackgroundThread);
 
   // 4. Wait until the worker thread is down.
   if (backgroundThread) {
@@ -2403,11 +2390,14 @@ bool nsUrlClassifierDBService::ShutdownHasStarted() {
 
 // static
 nsUrlClassifierDBServiceWorker* nsUrlClassifierDBService::GetWorker() {
-  if (!sUrlClassifierDBService) {
+  nsresult rv;
+  RefPtr<nsUrlClassifierDBService> service =
+      nsUrlClassifierDBService::GetInstance(&rv);
+  if (!service) {
     return nullptr;
   }
 
-  return sUrlClassifierDBService->mWorker;
+  return service->mWorker;
 }
 
 NS_IMETHODIMP

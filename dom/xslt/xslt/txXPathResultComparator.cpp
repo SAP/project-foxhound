@@ -9,7 +9,8 @@
 #include "txExpr.h"
 #include "txCore.h"
 #include "nsCollationCID.h"
-#include "nsIServiceManager.h"
+
+using namespace mozilla;
 
 #define kAscending (1 << 0)
 #define kUpperFirst (1 << 1)
@@ -53,8 +54,8 @@ nsresult txResultStringComparator::createSortableValue(Expr* aExpr,
 
   if (!mCollation) return NS_ERROR_FAILURE;
 
-  val->mCaseKey = new nsString;
-  nsString& nsCaseKey = *(nsString*)val->mCaseKey;
+  val->mCaseKeyString = MakeUnique<nsString>();
+  nsString& nsCaseKey = *val->mCaseKeyString;
   nsresult rv = aExpr->evaluateToString(aContext, nsCaseKey);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -65,7 +66,7 @@ nsresult txResultStringComparator::createSortableValue(Expr* aExpr,
   }
 
   rv = mCollation->AllocateRawSortKey(nsICollation::kCollationCaseInSensitive,
-                                      nsCaseKey, &val->mKey, &val->mLength);
+                                      nsCaseKey, val->mKey);
   NS_ENSURE_SUCCESS(rv, rv);
 
   aResult = val.forget();
@@ -79,17 +80,16 @@ int txResultStringComparator::compareValues(txObject* aVal1, txObject* aVal2) {
 
   if (!mCollation) return -1;
 
-  if (strval1->mLength == 0) {
-    if (strval2->mLength == 0) return 0;
+  if (strval1->mKey.Length() == 0) {
+    if (strval2->mKey.Length() == 0) return 0;
     return ((mSorting & kAscending) ? -1 : 1);
   }
 
-  if (strval2->mLength == 0) return ((mSorting & kAscending) ? 1 : -1);
+  if (strval2->mKey.Length() == 0) return ((mSorting & kAscending) ? 1 : -1);
 
   nsresult rv;
   int32_t result = -1;
-  rv = mCollation->CompareRawSortKey(strval1->mKey, strval1->mLength,
-                                     strval2->mKey, strval2->mLength, &result);
+  rv = mCollation->CompareRawSortKey(strval1->mKey, strval2->mKey, &result);
   if (NS_FAILED(rv)) {
     // XXX ErrorReport
     return -1;
@@ -97,35 +97,22 @@ int txResultStringComparator::compareValues(txObject* aVal1, txObject* aVal2) {
 
   if (result != 0) return ((mSorting & kAscending) ? 1 : -1) * result;
 
-  if ((strval1->mCaseLength == 0) && (strval1->mLength != 0)) {
-    nsString* caseString = (nsString*)strval1->mCaseKey;
-    rv = mCollation->AllocateRawSortKey(
-        nsICollation::kCollationCaseSensitive, *caseString,
-        (uint8_t**)&strval1->mCaseKey, &strval1->mCaseLength);
+  if (strval1->mCaseKeyString && strval1->mKey.Length() != 0) {
+    rv = strval1->initCaseKey(mCollation);
     if (NS_FAILED(rv)) {
       // XXX ErrorReport
-      strval1->mCaseKey = caseString;
-      strval1->mCaseLength = 0;
       return -1;
     }
-    delete caseString;
   }
-  if ((strval2->mCaseLength == 0) && (strval2->mLength != 0)) {
-    nsString* caseString = (nsString*)strval2->mCaseKey;
-    rv = mCollation->AllocateRawSortKey(
-        nsICollation::kCollationCaseSensitive, *caseString,
-        (uint8_t**)&strval2->mCaseKey, &strval2->mCaseLength);
+  if (strval2->mCaseKeyString && strval2->mKey.Length() != 0) {
+    rv = strval2->initCaseKey(mCollation);
     if (NS_FAILED(rv)) {
       // XXX ErrorReport
-      strval2->mCaseKey = caseString;
-      strval2->mCaseLength = 0;
       return -1;
     }
-    delete caseString;
   }
-  rv = mCollation->CompareRawSortKey(
-      (uint8_t*)strval1->mCaseKey, strval1->mCaseLength,
-      (uint8_t*)strval2->mCaseKey, strval2->mCaseLength, &result);
+  rv = mCollation->CompareRawSortKey(strval1->mCaseKey, strval2->mCaseKey,
+                                     &result);
   if (NS_FAILED(rv)) {
     // XXX ErrorReport
     return -1;
@@ -135,15 +122,21 @@ int txResultStringComparator::compareValues(txObject* aVal1, txObject* aVal2) {
          ((mSorting & kUpperFirst) ? -1 : 1) * result;
 }
 
-txResultStringComparator::StringValue::StringValue()
-    : mKey(0), mCaseKey(0), mLength(0), mCaseLength(0) {}
+txResultStringComparator::StringValue::StringValue() = default;
 
-txResultStringComparator::StringValue::~StringValue() {
-  free(mKey);
-  if (mCaseLength > 0)
-    free(mCaseKey);
-  else
-    delete (nsString*)mCaseKey;
+txResultStringComparator::StringValue::~StringValue() = default;
+
+nsresult txResultStringComparator::StringValue::initCaseKey(
+    nsICollation* aCollation) {
+  nsresult rv = aCollation->AllocateRawSortKey(
+      nsICollation::kCollationCaseSensitive, *mCaseKeyString, mCaseKey);
+  if (NS_FAILED(rv)) {
+    mCaseKey.SetLength(0);
+    return rv;
+  }
+
+  mCaseKeyString = nullptr;
+  return NS_OK;
 }
 
 txResultNumberComparator::txResultNumberComparator(bool aAscending) {

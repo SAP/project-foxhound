@@ -15,6 +15,7 @@ import os
 import re
 import time
 from copy import deepcopy
+import six
 from six import text_type
 
 import attr
@@ -38,7 +39,6 @@ from taskgraph.util.partners import get_partners_to_be_published
 from taskgraph.util.scriptworker import (
     BALROG_ACTIONS,
     get_release_config,
-    add_scope_prefix,
 )
 from taskgraph.util.signed_artifacts import get_signed_artifacts
 from taskgraph.util.workertypes import worker_type_implementation
@@ -69,56 +69,56 @@ def _compute_geckoview_version(app_version, moz_build_date):
 # A task description is a general description of a TaskCluster task
 task_description_schema = Schema({
     # the label for this task
-    Required('label'): basestring,
+    Required('label'): text_type,
 
     # description of the task (for metadata)
-    Required('description'): basestring,
+    Required('description'): text_type,
 
     # attributes for this task
-    Optional('attributes'): {basestring: object},
+    Optional('attributes'): {text_type: object},
 
     # relative path (from config.path) to the file task was defined in
-    Optional('job-from'): basestring,
+    Optional('job-from'): text_type,
 
     # dependencies of this task, keyed by name; these are passed through
     # verbatim and subject to the interpretation of the Task's get_dependencies
     # method.
-    Optional('dependencies'): {basestring: object},
+    Optional('dependencies'): {text_type: object},
 
     # Soft dependencies of this task, as a list of tasks labels
-    Optional('soft-dependencies'): [basestring],
+    Optional('soft-dependencies'): [text_type],
 
     Optional('requires'): Any('all-completed', 'all-resolved'),
 
     # expiration and deadline times, relative to task creation, with units
     # (e.g., "14 days").  Defaults are set based on the project.
-    Optional('expires-after'): basestring,
-    Optional('deadline-after'): basestring,
+    Optional('expires-after'): text_type,
+    Optional('deadline-after'): text_type,
 
     # custom routes for this task; the default treeherder routes will be added
     # automatically
-    Optional('routes'): [basestring],
+    Optional('routes'): [text_type],
 
     # custom scopes for this task; any scopes required for the worker will be
     # added automatically. The following parameters will be substituted in each
     # scope:
     #  {level} -- the scm level of this push
     #  {project} -- the project of this push
-    Optional('scopes'): [basestring],
+    Optional('scopes'): [text_type],
 
     # Tags
-    Optional('tags'): {basestring: basestring},
+    Optional('tags'): {text_type: text_type},
 
     # custom "task.extra" content
-    Optional('extra'): {basestring: object},
+    Optional('extra'): {text_type: object},
 
     # treeherder-related information; see
-    # https://schemas.taskcluster.net/taskcluster-treeherder/v1/task-treeherder-config.json
+    # https://firefox-ci-tc.services.mozilla.com/schemas/taskcluster-treeherder/v1/task-treeherder-config.json
     # If not specified, no treeherder extra information or routes will be
     # added to the task
     Optional('treeherder'): {
         # either a bare symbol, or "grp(sym)".
-        'symbol': basestring,
+        'symbol': text_type,
 
         # the job kind
         'kind': Any('build', 'test', 'other'),
@@ -136,10 +136,10 @@ task_description_schema = Schema({
     # if omitted, the build will not be indexed.
     Optional('index'): {
         # the name of the product this build produces
-        'product': basestring,
+        'product': text_type,
 
         # the names to use for this job in the TaskCluster index
-        'job-name': basestring,
+        'job-name': text_type,
 
         # Type of gecko v2 index to use
         'type': Any('generic', 'nightly', 'l10n', 'nightly-with-multi-l10n',
@@ -170,10 +170,10 @@ task_description_schema = Schema({
     # The `run_on_projects` attribute, defaulting to "all".  This dictates the
     # projects on which this task should be included in the target task set.
     # See the attributes documentation for details.
-    Optional('run-on-projects'): optionally_keyed_by('build-platform', [basestring]),
+    Optional('run-on-projects'): optionally_keyed_by('build-platform', [text_type]),
 
     # Like `run_on_projects`, `run-on-hg-branches` defaults to "all".
-    Optional('run-on-hg-branches'): optionally_keyed_by('project', [basestring]),
+    Optional('run-on-hg-branches'): optionally_keyed_by('project', [text_type]),
 
     # The `shipping_phase` attribute, defaulting to None. This specifies the
     # release promotion phase that this task belongs to.
@@ -189,29 +189,8 @@ task_description_schema = Schema({
     # release promotion product that this task belongs to.
     Required('shipping-product'): Any(
         None,
-        basestring
+        text_type
     ),
-
-    # Coalescing provides the facility for tasks to be superseded by the same
-    # task in a subsequent commit, if the current task backlog reaches an
-    # explicit threshold. Both age and size thresholds need to be met in order
-    # for coalescing to be triggered.
-    Optional('coalesce'): {
-        # A unique identifier per job (typically a hash of the job label) in
-        # order to partition tasks into appropriate sets for coalescing. This
-        # is combined with the project in order to generate a unique coalescing
-        # key for the coalescing service.
-        'job-identifier': basestring,
-
-        # The minimum amount of time in seconds between two pending tasks with
-        # the same coalescing key, before the coalescing service will return
-        # tasks.
-        'age': int,
-
-        # The minimum number of backlogged tasks with the same coalescing key,
-        # before the coalescing service will return tasks.
-        'size': int,
-    },
 
     # The `always-target` attribute will cause the task to be included in the
     # target_task_graph regardless of filtering. Tasks included in this manner
@@ -227,22 +206,22 @@ task_description_schema = Schema({
     # the provisioner-id/worker-type for the task.  The following parameters will
     # be substituted in this string:
     #  {level} -- the scm level of this push
-    'worker-type': basestring,
+    'worker-type': text_type,
 
     # Whether the job should use sccache compiler caching.
     Required('needs-sccache'): bool,
 
     # Set of artifacts relevant to release tasks
-    Optional('release-artifacts'): [basestring],
+    Optional('release-artifacts'): [text_type],
 
     # information specific to the worker implementation that will run this task
     Optional('worker'): {
-        Required('implementation'): basestring,
+        Required('implementation'): text_type,
         Extra: object,
     },
 
     # Override the default priority for the project
-    Optional('priority'): basestring,
+    Optional('priority'): text_type,
 })
 
 TC_TREEHERDER_SCHEMA_URL = 'https://github.com/taskcluster/taskcluster-treeherder/' \
@@ -321,10 +300,6 @@ def get_branch_repo(config):
     )]
 
 
-COALESCE_KEY = '{project}.{job-identifier}'
-SUPERSEDER_URL = 'https://coalesce.mozilla-releng.net/v1/list/{age}/{size}/{key}'
-
-
 @memoize
 def get_default_priority(graph_config, project):
     return evaluate_keyed_by(
@@ -364,24 +339,6 @@ def index_builder(name):
     return wrap
 
 
-def coalesce_key(config, task):
-    return COALESCE_KEY.format(**{
-               'project': config.params['project'],
-               'job-identifier': task['coalesce']['job-identifier'],
-           })
-
-
-def superseder_url(config, task):
-    key = coalesce_key(config, task)
-    age = task['coalesce']['age']
-    size = task['coalesce']['size']
-    return SUPERSEDER_URL.format(
-        age=age,
-        size=size,
-        key=key
-    )
-
-
 UNSUPPORTED_INDEX_PRODUCT_ERROR = """\
 The gecko-v2 product {product} is not in the list of configured products in
 `taskcluster/ci/config.yml'.
@@ -403,11 +360,11 @@ def verify_index(config, index):
     # generally `desktop-test`, or an image that acts an awful lot like it.
     Required('docker-image'): Any(
         # a raw Docker image path (repo/image:tag)
-        basestring,
+        text_type,
         # an in-tree generated docker image (from `taskcluster/docker/<name>`)
-        {'in-tree': basestring},
+        {'in-tree': text_type},
         # an indexed docker image
-        {'indexed': basestring},
+        {'indexed': text_type},
     ),
 
     # worker features that should be enabled
@@ -429,7 +386,15 @@ def verify_index(config, index):
     # Caches are often mounted to the same path as Docker volumes. In this
     # case, they take precedence over a Docker volume. But a volume still
     # needs to be declared for the path.
-    Optional('volumes'): [basestring],
+    Optional('volumes'): [text_type],
+    Optional(
+        "required-volumes",
+        description=(
+            "Paths that are required to be volumes for performance reasons. "
+            "For in-tree images, these paths will be checked to verify that they "
+            "are defined as volumes."
+        ),
+    ): [text_type],
 
     # caches to set up for the task
     Optional('caches'): [{
@@ -438,10 +403,10 @@ def verify_index(config, index):
 
         # name of the cache, allowing re-use by subsequent tasks naming the
         # same cache
-        'name': basestring,
+        'name': text_type,
 
         # location in the task image where the cache will be mounted
-        'mount-point': basestring,
+        'mount-point': text_type,
 
         # Whether the cache is not used in untrusted environments
         # (like the Try repo).
@@ -454,15 +419,15 @@ def verify_index(config, index):
         'type': Any('file', 'directory'),
 
         # task image path from which to read artifact
-        'path': basestring,
+        'path': text_type,
 
         # name of the produced artifact (root of the names for
         # type=directory)
-        'name': basestring,
+        'name': text_type,
     }],
 
     # environment variables
-    Required('env'): {basestring: taskref_or_string},
+    Required('env'): {text_type: taskref_or_string},
 
     # the command to run; if not given, docker-worker will default to the
     # command in the docker image
@@ -540,11 +505,6 @@ def build_docker_worker_payload(config, task, task_def):
                 trust_domain=config.graph_config['trust-domain'],
                 level=config.params['level'])
         )
-        task_def['scopes'].append(
-            'auth:gcp:access-token:{project}/tc-l{level}*'.format(
-                project=SCCACHE_GCS_PROJECT,
-                level=config.params['level'])
-        )
         worker['env']['USE_SCCACHE'] = '1'
         worker['env']['SCCACHE_GCS_PROJECT'] = SCCACHE_GCS_PROJECT
         # Disable sccache idle shutdown.
@@ -602,7 +562,7 @@ def build_docker_worker_payload(config, task, task_def):
             }
         payload['artifacts'] = artifacts
 
-    if isinstance(worker.get('docker-image'), basestring):
+    if isinstance(worker.get('docker-image'), text_type):
         out_of_tree_image = worker['docker-image']
         run_task = run_task or out_of_tree_image.startswith(
             'taskcluster/image_builder')
@@ -645,7 +605,8 @@ def build_docker_worker_payload(config, task, task_def):
             suffix = '{}-{}'.format(cache_version, _run_task_suffix())
 
             if out_of_tree_image:
-                name_hash = hashlib.sha256(out_of_tree_image).hexdigest()
+                name_hash = hashlib.sha256(
+                    six.ensure_binary(out_of_tree_image)).hexdigest()
                 suffix += name_hash[0:12]
 
         else:
@@ -679,7 +640,7 @@ def build_docker_worker_payload(config, task, task_def):
     # And send down volumes information to run-task as well.
     if run_task and worker.get('volumes'):
         payload['env']['TASKCLUSTER_VOLUMES'] = ';'.join(
-            sorted(worker['volumes']))
+            [six.ensure_text(s) for s in sorted(worker['volumes'])])
 
     if payload.get('cache') and skip_untrusted:
         payload['env']['TASKCLUSTER_UNTRUSTED_CACHES'] = '1'
@@ -689,11 +650,8 @@ def build_docker_worker_payload(config, task, task_def):
     if capabilities:
         payload['capabilities'] = capabilities
 
-    # coalesce / superseding
-    if 'coalesce' in task:
-        payload['supersederUrl'] = superseder_url(config, task)
-
     check_caches_are_volumes(task)
+    check_required_volumes(task)
 
 
 @payload_builder('generic-worker', schema={
@@ -716,10 +674,10 @@ def build_docker_worker_payload(config, task, task_def):
         'type': Any('file', 'directory'),
 
         # filesystem path from which to read artifact
-        'path': basestring,
+        'path': text_type,
 
         # if not specified, path is used for artifact name
-        Optional('name'): basestring
+        Optional('name'): text_type
     }],
 
     # Directories and/or files to be mounted.
@@ -729,7 +687,7 @@ def build_docker_worker_payload(config, task, task_def):
     Optional('mounts'): [{
         # A unique name for the cache volume, implies writable cache directory
         # (otherwise mount is a read-only file or directory).
-        Optional('cache-name'): basestring,
+        Optional('cache-name'): text_type,
         # Optional content for pre-loading cache, or mandatory content for
         # read-only file or directory. Pre-loaded content can come from either
         # a task artifact or from a URL.
@@ -738,12 +696,12 @@ def build_docker_worker_payload(config, task, task_def):
             # *** Either (artifact and task-id) or url must be specified. ***
 
             # Artifact name that contains the content.
-            Optional('artifact'): basestring,
+            Optional('artifact'): text_type,
             # Task ID that has the artifact that contains the content.
             Optional('task-id'): taskref_or_string,
             # URL that supplies the content in response to an unauthenticated
             # GET request.
-            Optional('url'): basestring
+            Optional('url'): text_type
         },
 
         # *** Either file or directory must be specified. ***
@@ -751,10 +709,10 @@ def build_docker_worker_payload(config, task, task_def):
         # If mounting a cache or read-only directory, the filesystem location of
         # the directory should be specified as a relative path to the task
         # directory here.
-        Optional('directory'): basestring,
+        Optional('directory'): text_type,
         # If mounting a file, specify the relative path within the task
         # directory to mount the file (the file will be read only).
-        Optional('file'): basestring,
+        Optional('file'): text_type,
         # Required if and only if `content` is specified and mounting a
         # directory (not a file). This should be the archive format of the
         # content (either pre-loaded cache or read-only directory).
@@ -762,13 +720,13 @@ def build_docker_worker_payload(config, task, task_def):
     }],
 
     # environment variables
-    Required('env'): {basestring: taskref_or_string},
+    Required('env'): {text_type: taskref_or_string},
 
     # the maximum time to run, in seconds
     Required('max-run-time'): int,
 
     # os user groups for test task workers
-    Optional('os-groups'): [basestring],
+    Optional('os-groups'): [text_type],
 
     # feature for test task to run as administarotr
     Optional('run-as-administrator'): bool,
@@ -804,6 +762,11 @@ def build_generic_worker_payload(config, task, task_def):
     if 'retry-exit-status' in worker:
         task_def['payload'].setdefault(
             'onExitStatus', {}).setdefault('retry', []).extend(worker['retry-exit-status'])
+    if worker['os'] == 'linux-bitbar':
+        task_def['payload'].setdefault('onExitStatus', {}).setdefault('retry', [])
+        # exit code 4 is used to indicate an intermittent android device error
+        if 4 not in task_def['payload']['onExitStatus']['retry']:
+            task_def['payload']['onExitStatus']['retry'].extend([4])
 
     env = worker.get('env', {})
 
@@ -885,10 +848,6 @@ def build_generic_worker_payload(config, task, task_def):
     if features:
         task_def['payload']['features'] = features
 
-    # coalesce / superseding
-    if 'coalesce' in task:
-        task_def['payload']['supersederUrl'] = superseder_url(config, task)
-
 
 @payload_builder('scriptworker-signing', schema={
     # the maximum time to run, in seconds
@@ -900,20 +859,21 @@ def build_generic_worker_payload(config, task, task_def):
         Required('taskId'): taskref_or_string,
 
         # type of signing task (for CoT)
-        Required('taskType'): basestring,
+        Required('taskType'): text_type,
 
         # Paths to the artifacts to sign
-        Required('paths'): [basestring],
+        Required('paths'): [text_type],
 
         # Signing formats to use on each of the paths
-        Required('formats'): [basestring],
+        Required('formats'): [text_type],
     }],
 
     # behavior for mac iscript
     Optional('mac-behavior'): Any(
-        "mac_notarize", "mac_sign", "mac_sign_and_pkg", "mac_geckodriver",
+        "mac_notarize_part_1", "mac_notarize_part_3", "mac_sign_and_pkg",
+        "mac_geckodriver",
     ),
-    Optional('entitlements-url'): basestring,
+    Optional('entitlements-url'): text_type,
 })
 def build_scriptworker_signing_payload(config, task, task_def):
     worker = task['worker']
@@ -937,22 +897,32 @@ def build_scriptworker_signing_payload(config, task, task_def):
     task['release-artifacts'] = list(artifacts)
 
 
+@payload_builder('notarization-poller', schema={
+    Required('uuid-manifest'): taskref_or_string,
+})
+def notarization_poller_payload(config, task, task_def):
+    worker = task['worker']
+    task_def['payload'] = {
+        'uuid_manifest':  worker['uuid-manifest']
+    }
+
+
 @payload_builder('beetmover', schema={
     # the maximum time to run, in seconds
     Required('max-run-time', default=600): int,
 
     # locale key, if this is a locale beetmover job
-    Optional('locale'): basestring,
+    Optional('locale'): text_type,
 
     Optional('partner-public'): bool,
 
     Required('release-properties'): {
-        'app-name': basestring,
-        'app-version': basestring,
-        'branch': basestring,
-        'build-id': basestring,
-        'hash-type': basestring,
-        'platform': basestring,
+        'app-name': text_type,
+        'app-version': text_type,
+        'branch': text_type,
+        'build-id': text_type,
+        'hash-type': text_type,
+        'platform': text_type,
     },
 
     # list of artifact URLs for the artifacts that should be beetmoved
@@ -961,13 +931,13 @@ def build_scriptworker_signing_payload(config, task, task_def):
         Required('taskId'): taskref_or_string,
 
         # type of signing task (for CoT)
-        Required('taskType'): basestring,
+        Required('taskType'): text_type,
 
         # Paths to the artifacts to sign
-        Required('paths'): [basestring],
+        Required('paths'): [text_type],
 
         # locale is used to map upload path and allow for duplicate simple names
-        Required('locale'): basestring,
+        Required('locale'): text_type,
     }],
     Optional('artifact-map'): object,
 })
@@ -1002,7 +972,7 @@ def build_beetmover_payload(config, task, task_def):
 @payload_builder('beetmover-push-to-release', schema={
     # the maximum time to run, in seconds
     Required('max-run-time'): int,
-    Required('product'): basestring,
+    Required('product'): text_type,
 })
 def build_beetmover_push_to_release_payload(config, task, task_def):
     worker = task['worker']
@@ -1021,19 +991,19 @@ def build_beetmover_push_to_release_payload(config, task, task_def):
 @payload_builder('beetmover-maven', schema={
     Required('max-run-time', default=600): int,
     Required('release-properties'): {
-        'app-name': basestring,
-        'app-version': basestring,
-        'branch': basestring,
-        'build-id': basestring,
-        'artifact-id': basestring,
-        'hash-type': basestring,
-        'platform': basestring,
+        'app-name': text_type,
+        'app-version': text_type,
+        'branch': text_type,
+        'build-id': text_type,
+        'artifact-id': text_type,
+        'hash-type': text_type,
+        'platform': text_type,
     },
 
     Required('upstream-artifacts'): [{
         Required('taskId'): taskref_or_string,
-        Required('taskType'): basestring,
-        Required('paths'): [basestring],
+        Required('taskType'): text_type,
+        Required('paths'): [text_type],
         Required('zipExtract', default=False): bool,
     }],
     Optional('artifact-map'): object,
@@ -1051,21 +1021,25 @@ def build_beetmover_maven_payload(config, task, task_def):
 
 @payload_builder('balrog', schema={
     Required('balrog-action'): Any(*BALROG_ACTIONS),
-    Optional('product'): basestring,
-    Optional('platforms'): [basestring],
-    Optional('release-eta'): basestring,
-    Optional('channel-names'): optionally_keyed_by('release-type', [basestring]),
+    Optional('product'): text_type,
+    Optional('platforms'): [text_type],
+    Optional('release-eta'): text_type,
+    Optional('channel-names'): optionally_keyed_by('release-type', [text_type]),
     Optional('require-mirrors'): bool,
     Optional('publish-rules'): optionally_keyed_by('release-type', 'release-level', [int]),
     Optional('rules-to-update'): optionally_keyed_by(
-        'release-type', 'release-level', [basestring]),
-    Optional('archive-domain'): optionally_keyed_by('release-level', basestring),
-    Optional('download-domain'): optionally_keyed_by('release-level', basestring),
-    Optional('blob-suffix'): basestring,
-    Optional('complete-mar-filename-pattern'): basestring,
-    Optional('complete-mar-bouncer-product-pattern'): basestring,
+        'release-type', 'release-level', [text_type]),
+    Optional('archive-domain'): optionally_keyed_by('release-level', text_type),
+    Optional('download-domain'): optionally_keyed_by('release-level', text_type),
+    Optional('blob-suffix'): text_type,
+    Optional('complete-mar-filename-pattern'): text_type,
+    Optional('complete-mar-bouncer-product-pattern'): text_type,
     Optional('update-line'): object,
-    Optional('suffixes'): [basestring],
+    Optional('suffixes'): [text_type],
+    Optional('background-rate'): optionally_keyed_by(
+        'release-type', 'beta-number', Any(int, None)),
+    Optional('force-fallback-mapping-update'): optionally_keyed_by(
+        'release-type', 'beta-number', bool),
 
 
     # list of artifact URLs for the artifacts that should be beetmoved
@@ -1074,15 +1048,18 @@ def build_beetmover_maven_payload(config, task, task_def):
         Required('taskId'): taskref_or_string,
 
         # type of signing task (for CoT)
-        Required('taskType'): basestring,
+        Required('taskType'): text_type,
 
         # Paths to the artifacts to sign
-        Required('paths'): [basestring],
+        Required('paths'): [text_type],
     }],
 })
 def build_balrog_payload(config, task, task_def):
     worker = task['worker']
     release_config = get_release_config(config)
+    beta_number = None
+    if 'b' in release_config['version']:
+        beta_number = release_config['version'].split('b')[-1]
 
     if worker['balrog-action'] == 'submit-locale':
         task_def['payload'] = {
@@ -1091,13 +1068,15 @@ def build_balrog_payload(config, task, task_def):
         }
     else:
         for prop in ('archive-domain', 'channel-names', 'download-domain',
-                     'publish-rules', 'rules-to-update'):
+                     'publish-rules', 'rules-to-update', 'background-rate',
+                     'force-fallback-mapping-update'):
             if prop in worker:
                 resolve_keyed_by(
                     worker, prop, task['description'],
                     **{
                         'release-type': config.params['release_type'],
                         'release-level': config.params.release_level(),
+                        'beta-number': beta_number,
                     }
                 )
         task_def['payload'] = {
@@ -1126,6 +1105,11 @@ def build_balrog_payload(config, task, task_def):
                 'publish_rules': worker['publish-rules'],
                 'release_eta': worker.get('release-eta', config.params.get('release_eta')) or '',
             })
+            if worker.get('force-fallback-mapping-update'):
+                task_def['payload']['force_fallback_mapping_update'] = \
+                    worker['force-fallback-mapping-update']
+            if worker.get('background-rate'):
+                task_def['payload']['background_rate'] = worker['background-rate']
 
 
 @payload_builder('bouncer-aliases', schema={
@@ -1141,7 +1125,7 @@ def build_bouncer_aliases_payload(config, task, task_def):
 
 @payload_builder('bouncer-locations', schema={
     Required('implementation'): 'bouncer-locations',
-    Required('bouncer-products'): [basestring],
+    Required('bouncer-products'): [text_type],
 })
 def build_bouncer_locations_payload(config, task, task_def):
     worker = task['worker']
@@ -1155,7 +1139,7 @@ def build_bouncer_locations_payload(config, task, task_def):
 
 
 @payload_builder('bouncer-submission', schema={
-    Required('locales'): [basestring],
+    Required('locales'): [text_type],
     Required('entries'): object,
 })
 def build_bouncer_submission_payload(config, task, task_def):
@@ -1170,8 +1154,8 @@ def build_bouncer_submission_payload(config, task, task_def):
 @payload_builder('push-apk', schema={
     Required('upstream-artifacts'): [{
         Required('taskId'): taskref_or_string,
-        Required('taskType'): basestring,
-        Required('paths'): [basestring],
+        Required('taskType'): text_type,
+        Required('paths'): [text_type],
         Optional('optional', default=False): bool,
     }],
 
@@ -1194,11 +1178,11 @@ def build_push_apk_payload(config, task, task_def):
 
 
 @payload_builder('push-snap', schema={
-    Required('channel'): basestring,
+    Required('channel'): text_type,
     Required('upstream-artifacts'): [{
         Required('taskId'): taskref_or_string,
-        Required('taskType'): basestring,
-        Required('paths'): [basestring],
+        Required('taskType'): text_type,
+        Required('paths'): [text_type],
     }],
 })
 def build_push_snap_payload(config, task, task_def):
@@ -1210,8 +1194,25 @@ def build_push_snap_payload(config, task, task_def):
     }
 
 
+@payload_builder('push-flatpak', schema={
+    Required('channel'): text_type,
+    Required('upstream-artifacts'): [{
+        Required('taskId'): taskref_or_string,
+        Required('taskType'): text_type,
+        Required('paths'): [text_type],
+    }],
+})
+def build_push_flatpak_payload(config, task, task_def):
+    worker = task['worker']
+
+    task_def['payload'] = {
+        'channel': worker['channel'],
+        'upstreamArtifacts':  worker['upstream-artifacts'],
+    }
+
+
 @payload_builder('shipit-shipped', schema={
-    Required('release-name'): basestring,
+    Required('release-name'): text_type,
 })
 def build_ship_it_shipped_payload(config, task, task_def):
     worker = task['worker']
@@ -1221,12 +1222,30 @@ def build_ship_it_shipped_payload(config, task, task_def):
     }
 
 
+@payload_builder('shipit-maybe-release', schema={
+    Required('phase'): text_type,
+})
+def build_ship_it_maybe_release_payload(config, task, task_def):
+    # expect branch name, including path
+    branch = config.params['head_repository'][len('https://hg.mozilla.org/'):]
+    # 'version' is e.g. '71.0b13' (app_version doesn't have beta number)
+    version = config.params['version']
+
+    task_def['payload'] = {
+        'product': task['shipping-product'],
+        'branch': branch,
+        'phase': task['worker']['phase'],
+        'version': version,
+        'cron_revision': config.params['head_rev'],
+    }
+
+
 @payload_builder('push-addons', schema={
     Required('channel'): Any('listed', 'unlisted'),
     Required('upstream-artifacts'): [{
         Required('taskId'): taskref_or_string,
-        Required('taskType'): basestring,
-        Required('paths'): [basestring],
+        Required('taskType'): text_type,
+        Required('paths'): [text_type],
     }],
 })
 def build_push_addons_payload(config, task, task_def):
@@ -1241,18 +1260,34 @@ def build_push_addons_payload(config, task, task_def):
 @payload_builder('treescript', schema={
     Required('tags'): [Any('buildN', 'release', None)],
     Required('bump'): bool,
-    Optional('bump-files'): [basestring],
-    Optional('repo-param-prefix'): basestring,
+    Optional('bump-files'): [text_type],
+    Optional('repo-param-prefix'): text_type,
     Optional('dontbuild'): bool,
+    Optional('ignore-closed-tree'): bool,
     Required('force-dry-run', default=True): bool,
-    Required('push', default=False): bool
+    Required('push', default=False): bool,
+    Optional('source-repo'): text_type,
+    Optional('ssh-user'): text_type,
+    Optional('l10n-bump-info'): {
+        Required('name'): text_type,
+        Required('path'): text_type,
+        Required('version-path'): text_type,
+        Optional('revision-url'): text_type,
+        Optional('ignore-config'): object,
+        Required('platform-configs'): [{
+            Required('platforms'): [text_type],
+            Required('path'): text_type,
+            Optional('format'): text_type,
+        }],
+    },
+    Optional('merge-info'): object,
 })
 def build_treescript_payload(config, task, task_def):
     worker = task['worker']
     release_config = get_release_config(config)
 
-    task_def['payload'] = {}
-    task_def.setdefault('scopes', [])
+    task_def['payload'] = {'actions': []}
+    actions = task_def['payload']['actions']
     if worker['tags']:
         tag_names = []
         product = task['shipping-product'].upper()
@@ -1271,7 +1306,7 @@ def build_treescript_payload(config, task, task_def):
             'revision': config.params['{}head_rev'.format(worker.get('repo-param-prefix', ''))],
         }
         task_def['payload']['tag_info'] = tag_info
-        task_def['scopes'].append(add_scope_prefix(config, 'treescript:action:tagging'))
+        actions.append('tag')
 
     if worker['bump']:
         if not worker['bump-files']:
@@ -1281,16 +1316,39 @@ def build_treescript_payload(config, task, task_def):
         bump_info['next_version'] = release_config['next_version']
         bump_info['files'] = worker['bump-files']
         task_def['payload']['version_bump_info'] = bump_info
-        task_def['scopes'].append(add_scope_prefix(config, 'treescript:action:version_bump'))
+        actions.append('version_bump')
+
+    if worker.get('l10n-bump-info'):
+        l10n_bump_info = {}
+        for k, v in worker['l10n-bump-info'].items():
+            l10n_bump_info[k.replace('-', '_')] = worker['l10n-bump-info'][k]
+        task_def['payload']['l10n_bump_info'] = [l10n_bump_info]
+        actions.append('l10n_bump')
+
+    if worker.get('merge-info'):
+        merge_info = {}
+        for k, v in worker['merge-info'].items():
+            merge_info[k.replace('-', '_')] = worker['merge-info'][k]
+        task_def['payload']['merge_info'] = merge_info
+        actions.append('merge_day')
 
     if worker['push']:
-        task_def['scopes'].append(add_scope_prefix(config, 'treescript:action:push'))
+        actions.append('push')
 
     if worker.get('force-dry-run'):
         task_def['payload']['dry_run'] = True
 
     if worker.get('dontbuild'):
         task_def['payload']['dontbuild'] = True
+
+    if worker.get('ignore-closed-tree') is not None:
+        task_def['payload']['ignore_closed_tree'] = worker['ignore-closed-tree']
+
+    if worker.get('source-repo'):
+        task_def['payload']['source_repo'] = worker['source-repo']
+
+    if worker.get('ssh-user'):
+        task_def['payload']['ssh_user'] = worker['ssh-user']
 
 
 @payload_builder('invalid', schema={
@@ -1315,7 +1373,7 @@ def build_dummy_payload(config, task, task_def):
     Required('os'): Any('macosx', 'linux'),
 
     # A link for an executable to download
-    Optional('context'): basestring,
+    Optional('context'): text_type,
 
     # Tells the worker whether machine should reboot
     # after the task is finished.
@@ -1326,7 +1384,7 @@ def build_dummy_payload(config, task, task_def):
     Optional('command'): [taskref_or_string],
 
     # environment variables
-    Optional('env'): {basestring: taskref_or_string},
+    Optional('env'): {text_type: taskref_or_string},
 
     # artifacts to extract from the task image after completion
     Optional('artifacts'): [{
@@ -1334,11 +1392,11 @@ def build_dummy_payload(config, task, task_def):
         Required('type'): Any('file', 'directory'),
 
         # task image path from which to read artifact
-        Required('path'): basestring,
+        Required('path'): text_type,
 
         # name of the produced artifact (root of the names for
         # type=directory)
-        Required('name'): basestring,
+        Required('name'): text_type,
     }],
 })
 def build_script_engine_autophone_payload(config, task, task_def):
@@ -1750,15 +1808,45 @@ def add_index_routes(config, tasks):
 
 
 @transforms.add
+def try_task_config_env(config, tasks):
+    """Set environment variables in the task."""
+    env = config.params['try_task_config'].get('env')
+    # Find all implementations that have an 'env' key.
+    implementations = {name for name, builder in payload_builders.items()
+                       if 'env' in builder.schema.schema}
+    for task in tasks:
+        if env and task['worker']['implementation'] in implementations:
+            task['worker']['env'].update(env)
+        yield task
+
+
+@transforms.add
+def try_task_config_chemspill_prio(config, tasks):
+    """Increase the priority from lowest and very-low -> low, but leave others unchanged."""
+    chemspill_prio = config.params['try_task_config'].get('chemspill-prio')
+    for task in tasks:
+        if chemspill_prio and task['priority'] in ('lowest', 'very-low'):
+            task['priority'] = 'low'
+        yield task
+
+
+@transforms.add
 def build_task(config, tasks):
     for task in tasks:
         level = str(config.params['level'])
 
-        provisioner_id, worker_type = get_worker_type(
-            config.graph_config,
-            task['worker-type'],
-            level,
-        )
+        if task['worker-type'] in config.params['try_task_config'].get('worker-overrides', {}):
+            worker_pool = (
+                config.params['try_task_config']['worker-overrides'][task['worker-type']]
+            )
+            provisioner_id, worker_type = worker_pool.split('/', 1)
+        else:
+            provisioner_id, worker_type = get_worker_type(
+                config.graph_config,
+                task['worker-type'],
+                level=level,
+                release_level=config.params.release_level(),
+            )
         task['worker-type'] = '/'.join([provisioner_id, worker_type])
         project = config.params['project']
 
@@ -1809,10 +1897,6 @@ def build_task(config, tasks):
 
         if 'deadline-after' not in task:
             task['deadline-after'] = '1 day'
-
-        if 'coalesce' in task:
-            key = coalesce_key(config, task)
-            routes.append('coalesce.v1.' + key)
 
         if 'priority' not in task:
             task['priority'] = get_default_priority(config.graph_config, config.params['project'])
@@ -1867,7 +1951,7 @@ def build_task(config, tasks):
         attributes['always_target'] = task['always-target']
         # This logic is here since downstream tasks don't always match their
         # upstream dependency's shipping_phase.
-        # A basestring task['shipping-phase'] takes precedence, then
+        # A text_type task['shipping-phase'] takes precedence, then
         # an existing attributes['shipping_phase'], then fall back to None.
         if task.get('shipping-phase') is not None:
             attributes['shipping_phase'] = task['shipping-phase']
@@ -1962,8 +2046,9 @@ def check_caches_are_volumes(task):
     to be declared as Docker volumes. This check won't catch all offenders.
     But it is better than nothing.
     """
-    volumes = set(task['worker']['volumes'])
-    paths = set(c['mount-point'] for c in task['worker'].get('caches', []))
+    volumes = set(six.ensure_text(s) for s in task['worker']['volumes'])
+    paths = set(six.ensure_text(c['mount-point'])
+                for c in task['worker'].get('caches', []))
     missing = paths - volumes
 
     if not missing:
@@ -1971,6 +2056,28 @@ def check_caches_are_volumes(task):
 
     raise Exception('task %s (image %s) has caches that are not declared as '
                     'Docker volumes: %s '
+                    '(have you added them as VOLUMEs in the Dockerfile?)'
+                    % (task['label'], task['worker']['docker-image'],
+                       ', '.join(sorted(missing))))
+
+
+def check_required_volumes(task):
+    """
+    Ensures that all paths that are required to be volumes are defined as volumes.
+
+    Performance of writing to files in poor in directories not marked as
+    volumes, in docker. Ensure that paths that are often written to are marked
+    as volumes.
+    """
+    volumes = set(task['worker']['volumes'])
+    paths = set(task['worker'].get('required-volumes', []))
+    missing = paths - volumes
+
+    if not missing:
+        return
+
+    raise Exception('task %s (image %s) has paths that should be volumes for peformance '
+                    'that are not declared as Docker volumes: %s '
                     '(have you added them as VOLUMEs in the Dockerfile?)'
                     % (task['label'], task['worker']['docker-image'],
                        ', '.join(sorted(missing))))
@@ -2005,7 +2112,7 @@ def check_run_task_caches(config, tasks):
         payload = task['task'].get('payload', {})
         command = payload.get('command') or ['']
 
-        main_command = command[0] if isinstance(command[0], basestring) else ''
+        main_command = command[0] if isinstance(command[0], text_type) else ''
         run_task = main_command.endswith('run-task')
 
         require_sparse_cache = False
@@ -2013,7 +2120,7 @@ def check_run_task_caches(config, tasks):
 
         if run_task:
             for arg in command[1:]:
-                if not isinstance(arg, basestring):
+                if not isinstance(arg, text_type):
                     continue
 
                 if arg == '--':

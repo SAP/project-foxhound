@@ -17,8 +17,7 @@
 
 using JS::AutoStableStringChars;
 
-namespace js {
-namespace ctypes {
+namespace js::ctypes {
 
 /*******************************************************************************
 ** JSAPI function prototypes
@@ -36,7 +35,18 @@ static bool Declare(JSContext* cx, unsigned argc, Value* vp);
 *******************************************************************************/
 
 static const JSClassOps sLibraryClassOps = {
-    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, Library::Finalize};
+    nullptr,            // addProperty
+    nullptr,            // delProperty
+    nullptr,            // enumerate
+    nullptr,            // newEnumerate
+    nullptr,            // resolve
+    nullptr,            // mayResolve
+    Library::Finalize,  // finalize
+    nullptr,            // call
+    nullptr,            // hasInstance
+    nullptr,            // construct
+    nullptr,            // trace
+};
 
 static const JSClass sLibraryClass = {
     "Library",
@@ -392,5 +402,4 @@ bool Library::Declare(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-}  // namespace ctypes
-}  // namespace js
+}  // namespace js::ctypes

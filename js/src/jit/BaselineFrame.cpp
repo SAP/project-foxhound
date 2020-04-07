@@ -6,6 +6,8 @@
 
 #include "jit/BaselineFrame-inl.h"
 
+#include <algorithm>
+
 #include "debugger/DebugAPI.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
@@ -33,7 +35,7 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
   if (isFunctionFrame()) {
     TraceRoot(trc, &thisArgument(), "baseline-this");
 
-    unsigned numArgs = js::Max(numActualArgs(), numFormalArgs());
+    unsigned numArgs = std::max(numActualArgs(), numFormalArgs());
     TraceRootRange(trc, numArgs + isConstructing(), argv(), "baseline-args");
   }
 
@@ -96,11 +98,6 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
   if (auto* debugEnvs = script->realm()->debugEnvs()) {
     debugEnvs->traceLiveFrame(trc, this);
   }
-}
-
-bool BaselineFrame::isNonGlobalEvalFrame() const {
-  return isEvalFrame() &&
-         script()->enclosingScope()->as<EvalScope>().isNonGlobal();
 }
 
 bool BaselineFrame::initFunctionEnvironmentObjects(JSContext* cx) {

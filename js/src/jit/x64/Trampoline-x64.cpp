@@ -13,7 +13,10 @@
 #endif
 #include "jit/VMFunctions.h"
 #include "jit/x64/SharedICHelpers-x64.h"
-#include "vtune/VTuneWrapper.h"
+#ifdef MOZ_VTUNE
+#  include "vtune/VTuneWrapper.h"
+#endif
+#include "vm/JitActivation.h"  // js::jit::JitActivation
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -40,7 +43,7 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
   const Register reg_code = IntArgReg0;
   const Register reg_argc = IntArgReg1;
   const Register reg_argv = IntArgReg2;
-  MOZ_ASSERT(OsrFrameReg == IntArgReg3);
+  static_assert(OsrFrameReg == IntArgReg3);
 
 #if defined(_WIN64)
   const Address token = Address(rbp, 16 + ShadowStackSpace);
@@ -777,7 +780,7 @@ uint32_t JitRuntime::generatePreBarrier(JSContext* cx, MacroAssembler& masm,
                                         MIRType type) {
   uint32_t offset = startTrampolineCode(masm);
 
-  MOZ_ASSERT(PreBarrierReg == rdx);
+  static_assert(PreBarrierReg == rdx);
   Register temp1 = rax;
   Register temp2 = rbx;
   Register temp3 = rcx;

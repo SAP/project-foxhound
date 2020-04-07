@@ -35,10 +35,9 @@ function wakeLockObserved(observeTopic, checkFn) {
 
 function getWakeLockState(topic, needLock, isTabInForeground) {
   const tabState = isTabInForeground ? "foreground" : "background";
-  const promise = wakeLockObserved(
-    topic,
-    state => state == `locked-${tabState}`
-  );
+  const promise = needLock
+    ? wakeLockObserved(topic, state => state == `locked-${tabState}`)
+    : null;
   return {
     check: async () => {
       if (needLock) {
@@ -87,7 +86,7 @@ async function test_media_wakelock({
   let videoWakeLock = getWakeLockState("video-playing", lockVideo, true);
 
   info(`- wait for media starting playing -`);
-  await ContentTask.spawn(browser, videoAttsParams, waitUntilVideoStarted);
+  await SpecialPowers.spawn(browser, [videoAttsParams], waitUntilVideoStarted);
   await audioWakeLock.check();
   await videoWakeLock.check();
 

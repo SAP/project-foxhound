@@ -1,7 +1,10 @@
+//! Encoding recipes for x86/x86_64.
 use std::rc::Rc;
 
+use cranelift_codegen_shared::isa::x86::EncodingBits;
+
 use crate::cdsl::ast::Literal;
-use crate::cdsl::formats::{FormatRegistry, InstructionFormat};
+use crate::cdsl::formats::InstructionFormat;
 use crate::cdsl::instructions::InstructionPredicate;
 use crate::cdsl::recipes::{
     EncodingRecipe, EncodingRecipeBuilder, OperandConstraint, Register, Stack,
@@ -16,9 +19,6 @@ use crate::isa::x86::opcodes;
 /// It contains all the recipes and recipe templates that might be used in the encodings crate of
 /// this same directory.
 pub(crate) struct RecipeGroup<'builder> {
-    /// Memoized format pointer, to pass it to builders later.
-    formats: &'builder FormatRegistry,
-
     /// Memoized registers description, to pass it to builders later.
     regs: &'builder IsaRegs,
 
@@ -31,19 +31,18 @@ pub(crate) struct RecipeGroup<'builder> {
 }
 
 impl<'builder> RecipeGroup<'builder> {
-    fn new(formats: &'builder FormatRegistry, regs: &'builder IsaRegs) -> Self {
+    fn new(regs: &'builder IsaRegs) -> Self {
         Self {
-            formats,
             regs,
             recipes: Vec::new(),
             templates: Vec::new(),
         }
     }
     fn add_recipe(&mut self, recipe: EncodingRecipeBuilder) {
-        self.recipes.push(recipe.build(self.formats));
+        self.recipes.push(recipe.build());
     }
     fn add_template_recipe(&mut self, recipe: EncodingRecipeBuilder) -> Rc<Template<'builder>> {
-        let template = Rc::new(Template::new(recipe, self.formats, self.regs));
+        let template = Rc::new(Template::new(recipe, self.regs));
         self.templates.push(template.clone());
         template
     }
@@ -55,14 +54,14 @@ impl<'builder> RecipeGroup<'builder> {
     pub fn recipe(&self, name: &str) -> &EncodingRecipe {
         self.recipes
             .iter()
-            .find(|recipe| &recipe.name == name)
-            .expect(&format!("unknown recipe name: {}. Try template?", name))
+            .find(|recipe| recipe.name == name)
+            .unwrap_or_else(|| panic!("unknown recipe name: {}. Try template?", name))
     }
     pub fn template(&self, name: &str) -> &Template {
         self.templates
             .iter()
             .find(|recipe| recipe.name() == name)
-            .expect(&format!("unknown tail recipe name: {}. Try recipe?", name))
+            .unwrap_or_else(|| panic!("unknown template name: {}. Try recipe?", name))
     }
 }
 
@@ -100,33 +99,8 @@ impl<'builder> RecipeGroup<'builder> {
 
 /// Given a sequence of opcode bytes, compute the recipe name prefix and encoding bits.
 fn decode_opcodes(op_bytes: &[u8], rrr: u16, w: u16) -> (&'static str, u16) {
-    assert!(op_bytes.len() >= 1, "at least one opcode byte");
-
-    let prefix_bytes = &op_bytes[..op_bytes.len() - 1];
-    let (name, mmpp) = match prefix_bytes {
-        [] => ("Op1", 0b000),
-        [0x66] => ("Mp1", 0b0001),
-        [0xf3] => ("Mp1", 0b0010),
-        [0xf2] => ("Mp1", 0b0011),
-        [0x0f] => ("Op2", 0b0100),
-        [0x66, 0x0f] => ("Mp2", 0b0101),
-        [0xf3, 0x0f] => ("Mp2", 0b0110),
-        [0xf2, 0x0f] => ("Mp2", 0b0111),
-        [0x0f, 0x38] => ("Op3", 0b1000),
-        [0x66, 0x0f, 0x38] => ("Mp3", 0b1001),
-        [0xf3, 0x0f, 0x38] => ("Mp3", 0b1010),
-        [0xf2, 0x0f, 0x38] => ("Mp3", 0b1011),
-        [0x0f, 0x3a] => ("Op3", 0b1100),
-        [0x66, 0x0f, 0x3a] => ("Mp3", 0b1101),
-        [0xf3, 0x0f, 0x3a] => ("Mp3", 0b1110),
-        [0xf2, 0x0f, 0x3a] => ("Mp3", 0b1111),
-        _ => {
-            panic!("unexpected opcode sequence: {:?}", op_bytes);
-        }
-    };
-
-    let opcode_byte = op_bytes[op_bytes.len() - 1] as u16;
-    (name, opcode_byte | (mmpp << 8) | (rrr << 12) | w << 15)
+    let enc = EncodingBits::new(op_bytes, rrr, w);
+    (enc.prefix().recipe_name_prefix(), enc.bits())
 }
 
 /// Given a snippet of Rust code (or None), replace the `PUT_OP` macro with the
@@ -158,32 +132,57 @@ fn replace_nonrex_constraints(
         .collect()
 }
 
+/// Specifies how the REX prefix is emitted by a Recipe.
+#[derive(Copy, Clone, PartialEq)]
+pub enum RexRecipeKind {
+    /// The REX emission behavior is not hardcoded for the Recipe
+    /// and may be overridden when using the Template.
+    Unspecified,
+
+    /// The Recipe must hardcode the non-emission of the REX prefix.
+    NeverEmitRex,
+
+    /// The Recipe must hardcode the emission of the REX prefix.
+    AlwaysEmitRex,
+
+    /// The Recipe should infer the emission of the REX.RXB bits from registers,
+    /// and the REX.W bit from the EncodingBits.
+    ///
+    /// Because such a Recipe has a non-constant instruction size, it must have
+    /// a special `compute_size` handler for the inferrable-REX case.
+    InferRex,
+}
+
+impl Default for RexRecipeKind {
+    fn default() -> Self {
+        Self::Unspecified
+    }
+}
+
 /// Previously called a TailRecipe in the Python meta language, this allows to create multiple
 /// variants of a single base EncodingRecipe (rex prefix, specialized w/rrr bits, different
 /// opcodes). It serves as a prototype of an EncodingRecipe, which is then used when actually creating
 /// Encodings, in encodings.rs. This is an idiosyncrasy of the x86 meta-language, and could be
 /// reconsidered later.
 #[derive(Clone)]
-pub struct Template<'builder> {
-    /// Mapping of format indexes to format data, used in the build() method.
-    formats: &'builder FormatRegistry,
-
+pub(crate) struct Template<'builder> {
     /// Description of registers, used in the build() method.
     regs: &'builder IsaRegs,
 
     /// The recipe template, which is to be specialized (by copy).
     recipe: EncodingRecipeBuilder,
 
-    /// Does this recipe requires a REX prefix?
-    requires_prefix: bool,
+    /// How is the REX prefix emitted?
+    rex_kind: RexRecipeKind,
+
+    /// Function for `compute_size()` when REX is inferrable.
+    inferred_rex_compute_size: Option<&'static str>,
 
     /// Other recipe to use when REX-prefixed.
     when_prefixed: Option<Rc<Template<'builder>>>,
 
-    // Specialized parameters.
-    /// Should we include the REX prefix?
-    rex: bool,
-    /// Value of the W bit (0 or 1).
+    // Parameters passed in the EncodingBits.
+    /// Value of the W bit (0 or 1), stored in the EncodingBits.
     w_bit: u16,
     /// Value of the RRR bits (between 0 and 0b111).
     rrr_bits: u16,
@@ -192,18 +191,13 @@ pub struct Template<'builder> {
 }
 
 impl<'builder> Template<'builder> {
-    fn new(
-        recipe: EncodingRecipeBuilder,
-        formats: &'builder FormatRegistry,
-        regs: &'builder IsaRegs,
-    ) -> Self {
+    fn new(recipe: EncodingRecipeBuilder, regs: &'builder IsaRegs) -> Self {
         Self {
-            formats,
             regs,
             recipe,
-            requires_prefix: false,
+            rex_kind: RexRecipeKind::default(),
+            inferred_rex_compute_size: None,
             when_prefixed: None,
-            rex: false,
             w_bit: 0,
             rrr_bits: 0,
             op_bytes: &opcodes::EMPTY,
@@ -213,9 +207,15 @@ impl<'builder> Template<'builder> {
     fn name(&self) -> &str {
         &self.recipe.name
     }
-    fn requires_prefix(self, value: bool) -> Self {
+    fn rex_kind(self, kind: RexRecipeKind) -> Self {
         Self {
-            requires_prefix: value,
+            rex_kind: kind,
+            ..self
+        }
+    }
+    fn inferred_rex_compute_size(self, function: &'static str) -> Self {
+        Self {
+            inferred_rex_compute_size: Some(function),
             ..self
         }
     }
@@ -246,54 +246,86 @@ impl<'builder> Template<'builder> {
         copy
     }
     pub fn nonrex(&self) -> Self {
-        assert!(!self.requires_prefix, "Tail recipe requires REX prefix.");
+        assert!(
+            self.rex_kind != RexRecipeKind::AlwaysEmitRex,
+            "Template requires REX prefix."
+        );
         let mut copy = self.clone();
-        copy.rex = false;
+        copy.rex_kind = RexRecipeKind::NeverEmitRex;
         copy
     }
     pub fn rex(&self) -> Self {
+        assert!(
+            self.rex_kind != RexRecipeKind::NeverEmitRex,
+            "Template requires no REX prefix."
+        );
         if let Some(prefixed) = &self.when_prefixed {
             let mut ret = prefixed.rex();
             // Forward specialized parameters.
-            ret.op_bytes = self.op_bytes.clone();
+            ret.op_bytes = self.op_bytes;
             ret.w_bit = self.w_bit;
             ret.rrr_bits = self.rrr_bits;
             return ret;
         }
         let mut copy = self.clone();
-        copy.rex = true;
+        copy.rex_kind = RexRecipeKind::AlwaysEmitRex;
+        copy
+    }
+    pub fn infer_rex(&self) -> Self {
+        assert!(
+            self.rex_kind != RexRecipeKind::NeverEmitRex,
+            "Template requires no REX prefix."
+        );
+        assert!(
+            self.when_prefixed.is_none(),
+            "infer_rex used with when_prefixed()."
+        );
+        let mut copy = self.clone();
+        copy.rex_kind = RexRecipeKind::InferRex;
         copy
     }
 
     pub fn build(mut self) -> (EncodingRecipe, u16) {
-        let (name, bits) = decode_opcodes(&self.op_bytes, self.rrr_bits, self.w_bit);
+        let (opcode, bits) = decode_opcodes(&self.op_bytes, self.rrr_bits, self.w_bit);
 
-        let (name, rex_prefix_size) = if self.rex {
-            ("Rex".to_string() + name, 1)
-        } else {
-            (name.into(), 0)
+        let (recipe_name, rex_prefix_size) = match self.rex_kind {
+            RexRecipeKind::Unspecified | RexRecipeKind::NeverEmitRex => {
+                // Ensure the operands are limited to non-REX constraints.
+                let operands_in = self.recipe.operands_in.unwrap_or_default();
+                self.recipe.operands_in = Some(replace_nonrex_constraints(self.regs, operands_in));
+                let operands_out = self.recipe.operands_out.unwrap_or_default();
+                self.recipe.operands_out =
+                    Some(replace_nonrex_constraints(self.regs, operands_out));
+
+                (opcode.into(), 0)
+            }
+            RexRecipeKind::AlwaysEmitRex => ("Rex".to_string() + opcode, 1),
+            RexRecipeKind::InferRex => {
+                // Hook up the right function for inferred compute_size().
+                assert!(
+                    self.inferred_rex_compute_size.is_some(),
+                    "InferRex recipe '{}' needs an inferred_rex_compute_size function.",
+                    &self.recipe.name
+                );
+                self.recipe.compute_size = self.inferred_rex_compute_size;
+
+                ("DynRex".to_string() + opcode, 0)
+            }
         };
 
         let size_addendum = self.op_bytes.len() as u64 + rex_prefix_size;
         self.recipe.base_size += size_addendum;
 
         // Branch ranges are relative to the end of the instruction.
-        self.recipe
-            .branch_range
-            .as_mut()
-            .map(|range| range.inst_size += size_addendum);
-
-        self.recipe.emit = replace_put_op(self.recipe.emit, &name);
-        self.recipe.name = name + &self.recipe.name;
-
-        if !self.rex {
-            let operands_in = self.recipe.operands_in.unwrap_or(Vec::new());
-            self.recipe.operands_in = Some(replace_nonrex_constraints(self.regs, operands_in));
-            let operands_out = self.recipe.operands_out.unwrap_or(Vec::new());
-            self.recipe.operands_out = Some(replace_nonrex_constraints(self.regs, operands_out));
+        // For InferRex, the range should be the minimum, assuming no REX.
+        if let Some(range) = self.recipe.branch_range.as_mut() {
+            range.inst_size += size_addendum;
         }
 
-        (self.recipe.build(self.formats), bits)
+        self.recipe.emit = replace_put_op(self.recipe.emit, &recipe_name);
+        self.recipe.name = recipe_name + &self.recipe.name;
+
+        (self.recipe.build(), bits)
     }
 }
 
@@ -340,8 +372,6 @@ pub(crate) fn define<'shared>(
         .map(|name| Literal::enumerator_for(floatcc, name))
         .collect();
 
-    let formats = &shared_defs.format_registry;
-
     // Register classes shorthands.
     let abcd = regs.class_by_name("ABCD");
     let gpr = regs.class_by_name("GPR");
@@ -359,86 +389,43 @@ pub(crate) fn define<'shared>(
     let stack_gpr32 = Stack::new(gpr);
     let stack_fpr32 = Stack::new(fpr);
 
-    // Format shorthands, prefixed with f_.
-    let f_binary = formats.by_name("Binary");
-    let f_binary_imm = formats.by_name("BinaryImm");
-    let f_branch = formats.by_name("Branch");
-    let f_branch_float = formats.by_name("BranchFloat");
-    let f_branch_int = formats.by_name("BranchInt");
-    let f_branch_table_entry = formats.by_name("BranchTableEntry");
-    let f_branch_table_base = formats.by_name("BranchTableBase");
-    let f_call = formats.by_name("Call");
-    let f_call_indirect = formats.by_name("CallIndirect");
-    let f_copy_special = formats.by_name("CopySpecial");
-    let f_copy_to_ssa = formats.by_name("CopyToSsa");
-    let f_extract_lane = formats.by_name("ExtractLane"); // TODO this would preferably retrieve a BinaryImm8 format but because formats are compared structurally and ExtractLane has the same structure this is impossible--if we rename ExtractLane, it may even impact parsing
-    let f_float_compare = formats.by_name("FloatCompare");
-    let f_float_cond = formats.by_name("FloatCond");
-    let f_float_cond_trap = formats.by_name("FloatCondTrap");
-    let f_func_addr = formats.by_name("FuncAddr");
-    let f_indirect_jump = formats.by_name("IndirectJump");
-    let f_insert_lane = formats.by_name("InsertLane");
-    let f_int_compare = formats.by_name("IntCompare");
-    let f_int_compare_imm = formats.by_name("IntCompareImm");
-    let f_int_cond = formats.by_name("IntCond");
-    let f_int_cond_trap = formats.by_name("IntCondTrap");
-    let f_int_select = formats.by_name("IntSelect");
-    let f_jump = formats.by_name("Jump");
-    let f_load = formats.by_name("Load");
-    let f_load_complex = formats.by_name("LoadComplex");
-    let f_multiary = formats.by_name("MultiAry");
-    let f_nullary = formats.by_name("NullAry");
-    let f_reg_fill = formats.by_name("RegFill");
-    let f_reg_move = formats.by_name("RegMove");
-    let f_reg_spill = formats.by_name("RegSpill");
-    let f_stack_load = formats.by_name("StackLoad");
-    let f_store = formats.by_name("Store");
-    let f_store_complex = formats.by_name("StoreComplex");
-    let f_ternary = formats.by_name("Ternary");
-    let f_trap = formats.by_name("Trap");
-    let f_unary = formats.by_name("Unary");
-    let f_unary_bool = formats.by_name("UnaryBool");
-    let f_unary_const = formats.by_name("UnaryConst");
-    let f_unary_global_value = formats.by_name("UnaryGlobalValue");
-    let f_unary_ieee32 = formats.by_name("UnaryIeee32");
-    let f_unary_ieee64 = formats.by_name("UnaryIeee64");
-    let f_unary_imm = formats.by_name("UnaryImm");
+    let formats = &shared_defs.formats;
 
     // Predicates shorthands.
     let use_sse41 = settings.predicate_by_name("use_sse41");
 
     // Definitions.
-    let mut recipes = RecipeGroup::new(formats, regs);
+    let mut recipes = RecipeGroup::new(regs);
 
     // A null unary instruction that takes a GPR register. Can be used for identity copies and
     // no-op conversions.
     recipes.add_recipe(
-        EncodingRecipeBuilder::new("null", f_unary, 0)
+        EncodingRecipeBuilder::new("null", &formats.unary, 0)
             .operands_in(vec![gpr])
             .operands_out(vec![0])
             .emit(""),
     );
     recipes.add_recipe(
-        EncodingRecipeBuilder::new("null_fpr", f_unary, 0)
+        EncodingRecipeBuilder::new("null_fpr", &formats.unary, 0)
             .operands_in(vec![fpr])
             .operands_out(vec![0])
             .emit(""),
     );
     recipes.add_recipe(
-        EncodingRecipeBuilder::new("stacknull", f_unary, 0)
+        EncodingRecipeBuilder::new("stacknull", &formats.unary, 0)
             .operands_in(vec![stack_gpr32])
             .operands_out(vec![stack_gpr32])
             .emit(""),
     );
 
     recipes.add_recipe(
-        EncodingRecipeBuilder::new("get_pinned_reg", f_nullary, 0)
+        EncodingRecipeBuilder::new("get_pinned_reg", &formats.nullary, 0)
             .operands_out(vec![reg_r15])
             .emit(""),
     );
     // umr with a fixed register output that's r15.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("set_pinned_reg", f_unary, 1)
+        EncodingRecipeBuilder::new("set_pinned_reg", &formats.unary, 1)
             .operands_in(vec![gpr])
             .clobbers_flags(false)
             .emit(
@@ -452,25 +439,26 @@ pub(crate) fn define<'shared>(
 
     // No-op fills, created by late-stage redundant-fill removal.
     recipes.add_recipe(
-        EncodingRecipeBuilder::new("fillnull", f_unary, 0)
+        EncodingRecipeBuilder::new("fillnull", &formats.unary, 0)
             .operands_in(vec![stack_gpr32])
             .operands_out(vec![gpr])
             .clobbers_flags(false)
             .emit(""),
     );
     recipes.add_recipe(
-        EncodingRecipeBuilder::new("ffillnull", f_unary, 0)
+        EncodingRecipeBuilder::new("ffillnull", &formats.unary, 0)
             .operands_in(vec![stack_gpr32])
             .operands_out(vec![fpr])
             .clobbers_flags(false)
             .emit(""),
     );
 
-    recipes
-        .add_recipe(EncodingRecipeBuilder::new("debugtrap", f_nullary, 1).emit("sink.put1(0xcc);"));
+    recipes.add_recipe(
+        EncodingRecipeBuilder::new("debugtrap", &formats.nullary, 1).emit("sink.put1(0xcc);"),
+    );
 
     // XX opcode, no ModR/M.
-    recipes.add_template_recipe(EncodingRecipeBuilder::new("trap", f_trap, 0).emit(
+    recipes.add_template_recipe(EncodingRecipeBuilder::new("trap", &formats.trap, 0).emit(
         r#"
             sink.trap(code, func.srclocs[inst]);
             {{PUT_OP}}(bits, BASE_REX, sink);
@@ -479,7 +467,7 @@ pub(crate) fn define<'shared>(
 
     // Macro: conditional jump over a ud2.
     recipes.add_recipe(
-        EncodingRecipeBuilder::new("trapif", f_int_cond_trap, 4)
+        EncodingRecipeBuilder::new("trapif", &formats.int_cond_trap, 4)
             .operands_in(vec![reg_rflags])
             .clobbers_flags(false)
             .emit(
@@ -496,12 +484,12 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_recipe(
-        EncodingRecipeBuilder::new("trapff", f_float_cond_trap, 4)
+        EncodingRecipeBuilder::new("trapff", &formats.float_cond_trap, 4)
             .operands_in(vec![reg_rflags])
             .clobbers_flags(false)
             .inst_predicate(supported_floatccs_predicate(
                 &supported_floatccs,
-                formats.get(f_float_cond_trap),
+                &*formats.float_cond_trap,
             ))
             .emit(
                 r#"
@@ -517,34 +505,42 @@ pub(crate) fn define<'shared>(
     );
 
     // XX /r
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rr", f_binary, 1)
-            .operands_in(vec![gpr, gpr])
-            .operands_out(vec![0])
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
-                    modrm_rr(in_reg0, in_reg1, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("rr", &formats.binary, 1)
+                .operands_in(vec![gpr, gpr])
+                .operands_out(vec![0])
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
+                        modrm_rr(in_reg0, in_reg1, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0_inreg1"),
     );
 
     // XX /r with operands swapped. (RM form).
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rrx", f_binary, 1)
-            .operands_in(vec![gpr, gpr])
-            .operands_out(vec![0])
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex2(in_reg1, in_reg0), sink);
-                    modrm_rr(in_reg1, in_reg0, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("rrx", &formats.binary, 1)
+                .operands_in(vec![gpr, gpr])
+                .operands_out(vec![0])
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex2(in_reg1, in_reg0), sink);
+                        modrm_rr(in_reg1, in_reg0, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0_inreg1"),
     );
 
     // XX /r with FPR ins and outs. A form.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("fa", f_binary, 1)
+        EncodingRecipeBuilder::new("fa", &formats.binary, 1)
             .operands_in(vec![fpr, fpr])
             .operands_out(vec![0])
             .emit(
@@ -557,7 +553,7 @@ pub(crate) fn define<'shared>(
 
     // XX /r with FPR ins and outs. A form with input operands swapped.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("fax", f_binary, 1)
+        EncodingRecipeBuilder::new("fax", &formats.binary, 1)
             .operands_in(vec![fpr, fpr])
             .operands_out(vec![1])
             .emit(
@@ -570,13 +566,15 @@ pub(crate) fn define<'shared>(
 
     // XX /r with FPR ins and outs. A form with a byte immediate.
     {
-        let format = formats.get(f_insert_lane);
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fa_ib", f_insert_lane, 2)
+            EncodingRecipeBuilder::new("fa_ib", &formats.insert_lane, 2)
                 .operands_in(vec![fpr, fpr])
                 .operands_out(vec![0])
                 .inst_predicate(InstructionPredicate::new_is_unsigned_int(
-                    format, "lane", 8, 0,
+                    &*formats.insert_lane,
+                    "lane",
+                    8,
+                    0,
                 ))
                 .emit(
                     r#"
@@ -590,36 +588,44 @@ pub(crate) fn define<'shared>(
     }
 
     // XX /n for a unary operation with extension bits.
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("ur", f_unary, 1)
-            .operands_in(vec![gpr])
-            .operands_out(vec![0])
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex1(in_reg0), sink);
-                    modrm_r_bits(in_reg0, bits, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("ur", &formats.unary, 1)
+                .operands_in(vec![gpr])
+                .operands_out(vec![0])
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex1(in_reg0), sink);
+                        modrm_r_bits(in_reg0, bits, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0"),
     );
 
     // XX /r, but for a unary operator with separate input/output register, like
     // copies. MR form, preserving flags.
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("umr", f_unary, 1)
-            .operands_in(vec![gpr])
-            .operands_out(vec![gpr])
-            .clobbers_flags(false)
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex2(out_reg0, in_reg0), sink);
-                    modrm_rr(out_reg0, in_reg0, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("umr", &formats.unary, 1)
+                .operands_in(vec![gpr])
+                .operands_out(vec![gpr])
+                .clobbers_flags(false)
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex2(out_reg0, in_reg0), sink);
+                        modrm_rr(out_reg0, in_reg0, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0_outreg0"),
     );
 
     // Same as umr, but with FPR -> GPR registers.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rfumr", f_unary, 1)
+        EncodingRecipeBuilder::new("rfumr", &formats.unary, 1)
             .operands_in(vec![fpr])
             .operands_out(vec![gpr])
             .clobbers_flags(false)
@@ -633,7 +639,7 @@ pub(crate) fn define<'shared>(
 
     // Same as umr, but with the source register specified directly.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("umr_reg_to_ssa", f_copy_to_ssa, 1)
+        EncodingRecipeBuilder::new("umr_reg_to_ssa", &formats.copy_to_ssa, 1)
             // No operands_in to mention, because a source register is specified directly.
             .operands_out(vec![gpr])
             .clobbers_flags(false)
@@ -648,7 +654,7 @@ pub(crate) fn define<'shared>(
     // XX /r, but for a unary operator with separate input/output register.
     // RM form. Clobbers FLAGS.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("urm", f_unary, 1)
+        EncodingRecipeBuilder::new("urm", &formats.unary, 1)
             .operands_in(vec![gpr])
             .operands_out(vec![gpr])
             .emit(
@@ -661,7 +667,7 @@ pub(crate) fn define<'shared>(
 
     // XX /r. Same as urm, but doesn't clobber FLAGS.
     let urm_noflags = recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("urm_noflags", f_unary, 1)
+        EncodingRecipeBuilder::new("urm_noflags", &formats.unary, 1)
             .operands_in(vec![gpr])
             .operands_out(vec![gpr])
             .clobbers_flags(false)
@@ -676,7 +682,7 @@ pub(crate) fn define<'shared>(
     // XX /r. Same as urm_noflags, but input limited to ABCD.
     recipes.add_template(
         Template::new(
-            EncodingRecipeBuilder::new("urm_noflags_abcd", f_unary, 1)
+            EncodingRecipeBuilder::new("urm_noflags_abcd", &formats.unary, 1)
                 .operands_in(vec![abcd])
                 .operands_out(vec![gpr])
                 .clobbers_flags(false)
@@ -686,7 +692,6 @@ pub(crate) fn define<'shared>(
                     modrm_rr(in_reg0, out_reg0, sink);
                 "#,
                 ),
-            formats,
             regs,
         )
         .when_prefixed(urm_noflags),
@@ -694,7 +699,7 @@ pub(crate) fn define<'shared>(
 
     // XX /r, RM form, FPR -> FPR.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("furm", f_unary, 1)
+        EncodingRecipeBuilder::new("furm", &formats.unary, 1)
             .operands_in(vec![fpr])
             .operands_out(vec![fpr])
             .clobbers_flags(false)
@@ -708,7 +713,7 @@ pub(crate) fn define<'shared>(
 
     // Same as furm, but with the source register specified directly.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("furm_reg_to_ssa", f_copy_to_ssa, 1)
+        EncodingRecipeBuilder::new("furm_reg_to_ssa", &formats.copy_to_ssa, 1)
             // No operands_in to mention, because a source register is specified directly.
             .operands_out(vec![fpr])
             .clobbers_flags(false)
@@ -721,22 +726,26 @@ pub(crate) fn define<'shared>(
     );
 
     // XX /r, RM form, GPR -> FPR.
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("frurm", f_unary, 1)
-            .operands_in(vec![gpr])
-            .operands_out(vec![fpr])
-            .clobbers_flags(false)
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex2(in_reg0, out_reg0), sink);
-                    modrm_rr(in_reg0, out_reg0, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("frurm", &formats.unary, 1)
+                .operands_in(vec![gpr])
+                .operands_out(vec![fpr])
+                .clobbers_flags(false)
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex2(in_reg0, out_reg0), sink);
+                        modrm_rr(in_reg0, out_reg0, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0_outreg0"),
     );
 
     // XX /r, RM form, FPR -> GPR.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rfurm", f_unary, 1)
+        EncodingRecipeBuilder::new("rfurm", &formats.unary, 1)
             .operands_in(vec![fpr])
             .operands_out(vec![gpr])
             .clobbers_flags(false)
@@ -750,7 +759,7 @@ pub(crate) fn define<'shared>(
 
     // XX /r, RMI form for one of the roundXX SSE 4.1 instructions.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("furmi_rnd", f_unary, 2)
+        EncodingRecipeBuilder::new("furmi_rnd", &formats.unary, 2)
             .operands_in(vec![fpr])
             .operands_out(vec![fpr])
             .isa_predicate(use_sse41)
@@ -771,7 +780,7 @@ pub(crate) fn define<'shared>(
 
     // XX /r, for regmove instructions.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rmov", f_reg_move, 1)
+        EncodingRecipeBuilder::new("rmov", &formats.reg_move, 1)
             .operands_in(vec![gpr])
             .clobbers_flags(false)
             .emit(
@@ -784,7 +793,7 @@ pub(crate) fn define<'shared>(
 
     // XX /r, for regmove instructions (FPR version, RM encoded).
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("frmov", f_reg_move, 1)
+        EncodingRecipeBuilder::new("frmov", &formats.reg_move, 1)
             .operands_in(vec![fpr])
             .clobbers_flags(false)
             .emit(
@@ -797,7 +806,7 @@ pub(crate) fn define<'shared>(
 
     // XX /n with one arg in %rcx, for shifts.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rc", f_binary, 1)
+        EncodingRecipeBuilder::new("rc", &formats.binary, 1)
             .operands_in(vec![
                 OperandConstraint::RegClass(gpr),
                 OperandConstraint::FixedReg(reg_rcx),
@@ -812,50 +821,86 @@ pub(crate) fn define<'shared>(
     );
 
     // XX /n for division: inputs in %rax, %rdx, r. Outputs in %rax, %rdx.
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("div", f_ternary, 1)
-            .operands_in(vec![
-                OperandConstraint::FixedReg(reg_rax),
-                OperandConstraint::FixedReg(reg_rdx),
-                OperandConstraint::RegClass(gpr),
-            ])
-            .operands_out(vec![reg_rax, reg_rdx])
-            .emit(
-                r#"
-                    sink.trap(TrapCode::IntegerDivisionByZero, func.srclocs[inst]);
-                    {{PUT_OP}}(bits, rex1(in_reg2), sink);
-                    modrm_r_bits(in_reg2, bits, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("div", &formats.ternary, 1)
+                .operands_in(vec![
+                    OperandConstraint::FixedReg(reg_rax),
+                    OperandConstraint::FixedReg(reg_rdx),
+                    OperandConstraint::RegClass(gpr),
+                ])
+                .operands_out(vec![reg_rax, reg_rdx])
+                .emit(
+                    r#"
+                        sink.trap(TrapCode::IntegerDivisionByZero, func.srclocs[inst]);
+                        {{PUT_OP}}(bits, rex1(in_reg2), sink);
+                        modrm_r_bits(in_reg2, bits, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg2"),
     );
 
     // XX /n for {s,u}mulx: inputs in %rax, r. Outputs in %rdx(hi):%rax(lo)
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("mulx", f_binary, 1)
-            .operands_in(vec![
-                OperandConstraint::FixedReg(reg_rax),
-                OperandConstraint::RegClass(gpr),
-            ])
-            .operands_out(vec![
-                OperandConstraint::FixedReg(reg_rax),
-                OperandConstraint::FixedReg(reg_rdx),
-            ])
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex1(in_reg1), sink);
-                    modrm_r_bits(in_reg1, bits, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("mulx", &formats.binary, 1)
+                .operands_in(vec![
+                    OperandConstraint::FixedReg(reg_rax),
+                    OperandConstraint::RegClass(gpr),
+                ])
+                .operands_out(vec![
+                    OperandConstraint::FixedReg(reg_rax),
+                    OperandConstraint::FixedReg(reg_rdx),
+                ])
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex1(in_reg1), sink);
+                        modrm_r_bits(in_reg1, bits, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg1"),
     );
 
     // XX /n ib with 8-bit immediate sign-extended.
     {
-        let format = formats.get(f_binary_imm);
+        recipes.add_template(
+            Template::new(
+                EncodingRecipeBuilder::new("r_ib", &formats.binary_imm, 2)
+                    .operands_in(vec![gpr])
+                    .operands_out(vec![0])
+                    .inst_predicate(InstructionPredicate::new_is_signed_int(
+                        &*formats.binary_imm,
+                        "imm",
+                        8,
+                        0,
+                    ))
+                    .emit(
+                        r#"
+                            {{PUT_OP}}(bits, rex1(in_reg0), sink);
+                            modrm_r_bits(in_reg0, bits, sink);
+                            let imm: i64 = imm.into();
+                            sink.put1(imm as u8);
+                        "#,
+                    ),
+                regs,
+            )
+            .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0"),
+        );
+
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("r_ib", f_binary_imm, 2)
-                .operands_in(vec![gpr])
+            EncodingRecipeBuilder::new("f_ib", &formats.binary_imm, 2)
+                .operands_in(vec![fpr])
                 .operands_out(vec![0])
-                .inst_predicate(InstructionPredicate::new_is_signed_int(format, "imm", 8, 0))
+                .inst_predicate(InstructionPredicate::new_is_signed_int(
+                    &*formats.binary_imm,
+                    "imm",
+                    8,
+                    0,
+                ))
                 .emit(
                     r#"
                         {{PUT_OP}}(bits, rex1(in_reg0), sink);
@@ -867,33 +912,42 @@ pub(crate) fn define<'shared>(
         );
 
         // XX /n id with 32-bit immediate sign-extended.
-        recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("r_id", f_binary_imm, 5)
-                .operands_in(vec![gpr])
-                .operands_out(vec![0])
-                .inst_predicate(InstructionPredicate::new_is_signed_int(
-                    format, "imm", 32, 0,
-                ))
-                .emit(
-                    r#"
-                        {{PUT_OP}}(bits, rex1(in_reg0), sink);
-                        modrm_r_bits(in_reg0, bits, sink);
-                        let imm: i64 = imm.into();
-                        sink.put4(imm as u32);
-                    "#,
-                ),
+        recipes.add_template(
+            Template::new(
+                EncodingRecipeBuilder::new("r_id", &formats.binary_imm, 5)
+                    .operands_in(vec![gpr])
+                    .operands_out(vec![0])
+                    .inst_predicate(InstructionPredicate::new_is_signed_int(
+                        &*formats.binary_imm,
+                        "imm",
+                        32,
+                        0,
+                    ))
+                    .emit(
+                        r#"
+                            {{PUT_OP}}(bits, rex1(in_reg0), sink);
+                            modrm_r_bits(in_reg0, bits, sink);
+                            let imm: i64 = imm.into();
+                            sink.put4(imm as u32);
+                        "#,
+                    ),
+                regs,
+            )
+            .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0"),
         );
     }
 
     // XX /r ib with 8-bit unsigned immediate (e.g. for pshufd)
     {
-        let format = formats.get(f_extract_lane);
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("r_ib_unsigned_fpr", f_extract_lane, 2)
+            EncodingRecipeBuilder::new("r_ib_unsigned_fpr", &formats.extract_lane, 2)
                 .operands_in(vec![fpr])
                 .operands_out(vec![fpr])
                 .inst_predicate(InstructionPredicate::new_is_unsigned_int(
-                    format, "lane", 8, 0,
+                    &*formats.extract_lane,
+                    "lane",
+                    8,
+                    0,
                 )) // TODO if the format name is changed then "lane" should be renamed to something more appropriate--ordering mask? broadcast immediate?
                 .emit(
                     r#"
@@ -908,13 +962,12 @@ pub(crate) fn define<'shared>(
 
     // XX /r ib with 8-bit unsigned immediate (e.g. for extractlane)
     {
-        let format = formats.get(f_extract_lane);
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("r_ib_unsigned_gpr", f_extract_lane, 2)
+            EncodingRecipeBuilder::new("r_ib_unsigned_gpr", &formats.extract_lane, 2)
                 .operands_in(vec![fpr])
                 .operands_out(vec![gpr])
                 .inst_predicate(InstructionPredicate::new_is_unsigned_int(
-                    format, "lane", 8, 0,
+                    &*formats.extract_lane, "lane", 8, 0,
                 ))
                 .emit(
                     r#"
@@ -929,13 +982,15 @@ pub(crate) fn define<'shared>(
 
     // XX /r ib with 8-bit unsigned immediate (e.g. for insertlane)
     {
-        let format = formats.get(f_insert_lane);
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("r_ib_unsigned_r", f_insert_lane, 2)
+            EncodingRecipeBuilder::new("r_ib_unsigned_r", &formats.insert_lane, 2)
                 .operands_in(vec![fpr, gpr])
                 .operands_out(vec![0])
                 .inst_predicate(InstructionPredicate::new_is_unsigned_int(
-                    format, "lane", 8, 0,
+                    &*formats.insert_lane,
+                    "lane",
+                    8,
+                    0,
                 ))
                 .emit(
                     r#"
@@ -950,12 +1005,14 @@ pub(crate) fn define<'shared>(
 
     {
         // XX /n id with 32-bit immediate sign-extended. UnaryImm version.
-        let format = formats.get(f_unary_imm);
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("u_id", f_unary_imm, 5)
+            EncodingRecipeBuilder::new("u_id", &formats.unary_imm, 5)
                 .operands_out(vec![gpr])
                 .inst_predicate(InstructionPredicate::new_is_signed_int(
-                    format, "imm", 32, 0,
+                    &*formats.unary_imm,
+                    "imm",
+                    32,
+                    0,
                 ))
                 .emit(
                     r#"
@@ -970,7 +1027,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd id unary with 32-bit immediate. Note no recipe predicate.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("pu_id", f_unary_imm, 4)
+        EncodingRecipeBuilder::new("pu_id", &formats.unary_imm, 4)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -985,7 +1042,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd id unary with bool immediate. Note no recipe predicate.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("pu_id_bool", f_unary_bool, 4)
+        EncodingRecipeBuilder::new("pu_id_bool", &formats.unary_bool, 4)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1000,7 +1057,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd id nullary with 0 as 32-bit immediate. Note no recipe predicate.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("pu_id_ref", f_nullary, 4)
+        EncodingRecipeBuilder::new("pu_id_ref", &formats.nullary, 4)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1014,7 +1071,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd iq unary with 64-bit immediate.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("pu_iq", f_unary_imm, 8)
+        EncodingRecipeBuilder::new("pu_iq", &formats.unary_imm, 8)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1027,7 +1084,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd id unary with zero immediate.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("u_id_z", f_unary_imm, 1)
+        EncodingRecipeBuilder::new("u_id_z", &formats.unary_imm, 1)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1039,11 +1096,13 @@ pub(crate) fn define<'shared>(
 
     // XX /n Unary with floating point 32-bit immediate equal to zero.
     {
-        let format = formats.get(f_unary_ieee32);
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("f32imm_z", f_unary_ieee32, 1)
+            EncodingRecipeBuilder::new("f32imm_z", &formats.unary_ieee32, 1)
                 .operands_out(vec![fpr])
-                .inst_predicate(InstructionPredicate::new_is_zero_32bit_float(format, "imm"))
+                .inst_predicate(InstructionPredicate::new_is_zero_32bit_float(
+                    &*formats.unary_ieee32,
+                    "imm",
+                ))
                 .emit(
                     r#"
                         {{PUT_OP}}(bits, rex2(out_reg0, out_reg0), sink);
@@ -1055,11 +1114,13 @@ pub(crate) fn define<'shared>(
 
     // XX /n Unary with floating point 64-bit immediate equal to zero.
     {
-        let format = formats.get(f_unary_ieee64);
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("f64imm_z", f_unary_ieee64, 1)
+            EncodingRecipeBuilder::new("f64imm_z", &formats.unary_ieee64, 1)
                 .operands_out(vec![fpr])
-                .inst_predicate(InstructionPredicate::new_is_zero_64bit_float(format, "imm"))
+                .inst_predicate(InstructionPredicate::new_is_zero_64bit_float(
+                    &*formats.unary_ieee64,
+                    "imm",
+                ))
                 .emit(
                     r#"
                         {{PUT_OP}}(bits, rex2(out_reg0, out_reg0), sink);
@@ -1070,7 +1131,7 @@ pub(crate) fn define<'shared>(
     }
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("pushq", f_unary, 0)
+        EncodingRecipeBuilder::new("pushq", &formats.unary, 0)
             .operands_in(vec![gpr])
             .emit(
                 r#"
@@ -1081,7 +1142,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("popq", f_nullary, 0)
+        EncodingRecipeBuilder::new("popq", &formats.nullary, 0)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1092,7 +1153,7 @@ pub(crate) fn define<'shared>(
 
     // XX /r, for regmove instructions.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("copysp", f_copy_special, 1)
+        EncodingRecipeBuilder::new("copysp", &formats.copy_special, 1)
             .clobbers_flags(false)
             .emit(
                 r#"
@@ -1103,7 +1164,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("adjustsp", f_unary, 1)
+        EncodingRecipeBuilder::new("adjustsp", &formats.unary, 1)
             .operands_in(vec![gpr])
             .emit(
                 r#"
@@ -1114,10 +1175,14 @@ pub(crate) fn define<'shared>(
     );
 
     {
-        let format = formats.get(f_unary_imm);
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("adjustsp_ib", f_unary_imm, 2)
-                .inst_predicate(InstructionPredicate::new_is_signed_int(format, "imm", 8, 0))
+            EncodingRecipeBuilder::new("adjustsp_ib", &formats.unary_imm, 2)
+                .inst_predicate(InstructionPredicate::new_is_signed_int(
+                    &*formats.unary_imm,
+                    "imm",
+                    8,
+                    0,
+                ))
                 .emit(
                     r#"
                         {{PUT_OP}}(bits, rex1(RU::rsp.into()), sink);
@@ -1129,9 +1194,12 @@ pub(crate) fn define<'shared>(
         );
 
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("adjustsp_id", f_unary_imm, 5)
+            EncodingRecipeBuilder::new("adjustsp_id", &formats.unary_imm, 5)
                 .inst_predicate(InstructionPredicate::new_is_signed_int(
-                    format, "imm", 32, 0,
+                    &*formats.unary_imm,
+                    "imm",
+                    32,
+                    0,
                 ))
                 .emit(
                     r#"
@@ -1146,7 +1214,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd id with Abs4 function relocation.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("fnaddr4", f_func_addr, 4)
+        EncodingRecipeBuilder::new("fnaddr4", &formats.func_addr, 4)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1161,7 +1229,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd iq with Abs8 function relocation.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("fnaddr8", f_func_addr, 8)
+        EncodingRecipeBuilder::new("fnaddr8", &formats.func_addr, 8)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1176,7 +1244,7 @@ pub(crate) fn define<'shared>(
 
     // Similar to fnaddr4, but writes !0 (this is used by BaldrMonkey).
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("allones_fnaddr4", f_func_addr, 4)
+        EncodingRecipeBuilder::new("allones_fnaddr4", &formats.func_addr, 4)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1192,7 +1260,7 @@ pub(crate) fn define<'shared>(
 
     // Similar to fnaddr8, but writes !0 (this is used by BaldrMonkey).
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("allones_fnaddr8", f_func_addr, 8)
+        EncodingRecipeBuilder::new("allones_fnaddr8", &formats.func_addr, 8)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1207,7 +1275,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("pcrel_fnaddr8", f_func_addr, 5)
+        EncodingRecipeBuilder::new("pcrel_fnaddr8", &formats.func_addr, 5)
             .operands_out(vec![gpr])
             // rex2 gets passed 0 for r/m register because the upper bit of
             // r/m doesn't get decoded when in rip-relative addressing mode.
@@ -1226,7 +1294,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("got_fnaddr8", f_func_addr, 5)
+        EncodingRecipeBuilder::new("got_fnaddr8", &formats.func_addr, 5)
             .operands_out(vec![gpr])
             // rex2 gets passed 0 for r/m register because the upper bit of
             // r/m doesn't get decoded when in rip-relative addressing mode.
@@ -1246,7 +1314,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd id with Abs4 globalsym relocation.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("gvaddr4", f_unary_global_value, 4)
+        EncodingRecipeBuilder::new("gvaddr4", &formats.unary_global_value, 4)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1261,7 +1329,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd iq with Abs8 globalsym relocation.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("gvaddr8", f_unary_global_value, 8)
+        EncodingRecipeBuilder::new("gvaddr8", &formats.unary_global_value, 8)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1276,7 +1344,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd iq with PCRel4 globalsym relocation.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("pcrel_gvaddr8", f_unary_global_value, 5)
+        EncodingRecipeBuilder::new("pcrel_gvaddr8", &formats.unary_global_value, 5)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1294,7 +1362,7 @@ pub(crate) fn define<'shared>(
 
     // XX+rd iq with Abs8 globalsym relocation.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("got_gvaddr8", f_unary_global_value, 5)
+        EncodingRecipeBuilder::new("got_gvaddr8", &formats.unary_global_value, 5)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1315,7 +1383,7 @@ pub(crate) fn define<'shared>(
     // TODO Alternative forms for 8-bit immediates, when applicable.
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("spaddr4_id", f_stack_load, 6)
+        EncodingRecipeBuilder::new("spaddr4_id", &formats.stack_load, 6)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1331,7 +1399,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("spaddr8_id", f_stack_load, 6)
+        EncodingRecipeBuilder::new("spaddr8_id", &formats.stack_load, 6)
             .operands_out(vec![gpr])
             .emit(
                 r#"
@@ -1350,18 +1418,18 @@ pub(crate) fn define<'shared>(
 
     {
         // Simple stores.
-        let format = formats.get(f_store);
 
         // A predicate asking if the offset is zero.
-        let has_no_offset = InstructionPredicate::new_is_field_equal(format, "offset", "0".into());
+        let has_no_offset =
+            InstructionPredicate::new_is_field_equal(&*formats.store, "offset", "0".into());
 
         // XX /r register-indirect store with no offset.
         let st = recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("st", f_store, 1)
+            EncodingRecipeBuilder::new("st", &formats.store, 1)
                 .operands_in(vec![gpr, gpr])
                 .inst_predicate(has_no_offset.clone())
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_or_offset_for_in_reg_1")
+                .compute_size("size_plus_maybe_sib_or_offset_for_inreg_1")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1385,11 +1453,11 @@ pub(crate) fn define<'shared>(
         // Only ABCD allowed for stored value. This is for byte stores with no REX.
         recipes.add_template(
             Template::new(
-                EncodingRecipeBuilder::new("st_abcd", f_store, 1)
+                EncodingRecipeBuilder::new("st_abcd", &formats.store, 1)
                     .operands_in(vec![abcd, gpr])
                     .inst_predicate(has_no_offset.clone())
                     .clobbers_flags(false)
-                    .compute_size("size_plus_maybe_sib_or_offset_for_in_reg_1")
+                    .compute_size("size_plus_maybe_sib_or_offset_for_inreg_1")
                     .emit(
                         r#"
                         if !flags.notrap() {
@@ -1407,7 +1475,6 @@ pub(crate) fn define<'shared>(
                         }
                     "#,
                     ),
-                formats,
                 regs,
             )
             .when_prefixed(st),
@@ -1415,11 +1482,11 @@ pub(crate) fn define<'shared>(
 
         // XX /r register-indirect store of FPR with no offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fst", f_store, 1)
+            EncodingRecipeBuilder::new("fst", &formats.store, 1)
                 .operands_in(vec![fpr, gpr])
-                .inst_predicate(has_no_offset.clone())
+                .inst_predicate(has_no_offset)
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_or_offset_for_in_reg_1")
+                .compute_size("size_plus_maybe_sib_or_offset_for_inreg_1")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1439,15 +1506,16 @@ pub(crate) fn define<'shared>(
                 ),
         );
 
-        let has_small_offset = InstructionPredicate::new_is_signed_int(format, "offset", 8, 0);
+        let has_small_offset =
+            InstructionPredicate::new_is_signed_int(&*formats.store, "offset", 8, 0);
 
         // XX /r register-indirect store with 8-bit offset.
         let st_disp8 = recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("stDisp8", f_store, 2)
+            EncodingRecipeBuilder::new("stDisp8", &formats.store, 2)
                 .operands_in(vec![gpr, gpr])
                 .inst_predicate(has_small_offset.clone())
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_for_in_reg_1")
+                .compute_size("size_plus_maybe_sib_for_inreg_1")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1470,11 +1538,11 @@ pub(crate) fn define<'shared>(
         // Only ABCD allowed for stored value. This is for byte stores with no REX.
         recipes.add_template(
             Template::new(
-                EncodingRecipeBuilder::new("stDisp8_abcd", f_store, 2)
+                EncodingRecipeBuilder::new("stDisp8_abcd", &formats.store, 2)
                     .operands_in(vec![abcd, gpr])
                     .inst_predicate(has_small_offset.clone())
                     .clobbers_flags(false)
-                    .compute_size("size_plus_maybe_sib_for_in_reg_1")
+                    .compute_size("size_plus_maybe_sib_for_inreg_1")
                     .emit(
                         r#"
                         if !flags.notrap() {
@@ -1491,7 +1559,6 @@ pub(crate) fn define<'shared>(
                         sink.put1(offset as u8);
                     "#,
                     ),
-                formats,
                 regs,
             )
             .when_prefixed(st_disp8),
@@ -1499,11 +1566,11 @@ pub(crate) fn define<'shared>(
 
         // XX /r register-indirect store with 8-bit offset of FPR.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fstDisp8", f_store, 2)
+            EncodingRecipeBuilder::new("fstDisp8", &formats.store, 2)
                 .operands_in(vec![fpr, gpr])
-                .inst_predicate(has_small_offset.clone())
+                .inst_predicate(has_small_offset)
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_for_in_reg_1")
+                .compute_size("size_plus_maybe_sib_for_inreg_1")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1524,10 +1591,10 @@ pub(crate) fn define<'shared>(
 
         // XX /r register-indirect store with 32-bit offset.
         let st_disp32 = recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("stDisp32", f_store, 5)
+            EncodingRecipeBuilder::new("stDisp32", &formats.store, 5)
                 .operands_in(vec![gpr, gpr])
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_for_in_reg_1")
+                .compute_size("size_plus_maybe_sib_for_inreg_1")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1550,10 +1617,10 @@ pub(crate) fn define<'shared>(
         // Only ABCD allowed for stored value. This is for byte stores with no REX.
         recipes.add_template(
             Template::new(
-                EncodingRecipeBuilder::new("stDisp32_abcd", f_store, 5)
+                EncodingRecipeBuilder::new("stDisp32_abcd", &formats.store, 5)
                     .operands_in(vec![abcd, gpr])
                     .clobbers_flags(false)
-                    .compute_size("size_plus_maybe_sib_for_in_reg_1")
+                    .compute_size("size_plus_maybe_sib_for_inreg_1")
                     .emit(
                         r#"
                         if !flags.notrap() {
@@ -1570,7 +1637,6 @@ pub(crate) fn define<'shared>(
                         sink.put4(offset as u32);
                     "#,
                     ),
-                formats,
                 regs,
             )
             .when_prefixed(st_disp32),
@@ -1578,10 +1644,10 @@ pub(crate) fn define<'shared>(
 
         // XX /r register-indirect store with 32-bit offset of FPR.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fstDisp32", f_store, 5)
+            EncodingRecipeBuilder::new("fstDisp32", &formats.store, 5)
                 .operands_in(vec![fpr, gpr])
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_for_in_reg_1")
+                .compute_size("size_plus_maybe_sib_for_inreg_1")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1603,18 +1669,18 @@ pub(crate) fn define<'shared>(
 
     {
         // Complex stores.
-        let format = formats.get(f_store_complex);
 
         // A predicate asking if the offset is zero.
-        let has_no_offset = InstructionPredicate::new_is_field_equal(format, "offset", "0".into());
+        let has_no_offset =
+            InstructionPredicate::new_is_field_equal(&*formats.store_complex, "offset", "0".into());
 
         // XX /r register-indirect store with index and no offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("stWithIndex", f_store_complex, 2)
+            EncodingRecipeBuilder::new("stWithIndex", &formats.store_complex, 2)
                 .operands_in(vec![gpr, gpr, gpr])
                 .inst_predicate(has_no_offset.clone())
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_offset_for_in_reg_1")
+                .compute_size("size_plus_maybe_offset_for_inreg_1")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1637,11 +1703,11 @@ pub(crate) fn define<'shared>(
         // XX /r register-indirect store with index and no offset.
         // Only ABCD allowed for stored value. This is for byte stores with no REX.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("stWithIndex_abcd", f_store_complex, 2)
+            EncodingRecipeBuilder::new("stWithIndex_abcd", &formats.store_complex, 2)
                 .operands_in(vec![abcd, gpr, gpr])
                 .inst_predicate(has_no_offset.clone())
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_offset_for_in_reg_1")
+                .compute_size("size_plus_maybe_offset_for_inreg_1")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1663,11 +1729,11 @@ pub(crate) fn define<'shared>(
 
         // XX /r register-indirect store with index and no offset of FPR.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fstWithIndex", f_store_complex, 2)
+            EncodingRecipeBuilder::new("fstWithIndex", &formats.store_complex, 2)
                 .operands_in(vec![fpr, gpr, gpr])
-                .inst_predicate(has_no_offset.clone())
+                .inst_predicate(has_no_offset)
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_offset_for_in_reg_1")
+                .compute_size("size_plus_maybe_offset_for_inreg_1")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1687,11 +1753,12 @@ pub(crate) fn define<'shared>(
                 ),
         );
 
-        let has_small_offset = InstructionPredicate::new_is_signed_int(format, "offset", 8, 0);
+        let has_small_offset =
+            InstructionPredicate::new_is_signed_int(&*formats.store_complex, "offset", 8, 0);
 
         // XX /r register-indirect store with index and 8-bit offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("stWithIndexDisp8", f_store_complex, 3)
+            EncodingRecipeBuilder::new("stWithIndexDisp8", &formats.store_complex, 3)
                 .operands_in(vec![gpr, gpr, gpr])
                 .inst_predicate(has_small_offset.clone())
                 .clobbers_flags(false)
@@ -1712,7 +1779,7 @@ pub(crate) fn define<'shared>(
         // XX /r register-indirect store with index and 8-bit offset.
         // Only ABCD allowed for stored value. This is for byte stores with no REX.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("stWithIndexDisp8_abcd", f_store_complex, 3)
+            EncodingRecipeBuilder::new("stWithIndexDisp8_abcd", &formats.store_complex, 3)
                 .operands_in(vec![abcd, gpr, gpr])
                 .inst_predicate(has_small_offset.clone())
                 .clobbers_flags(false)
@@ -1732,9 +1799,9 @@ pub(crate) fn define<'shared>(
 
         // XX /r register-indirect store with index and 8-bit offset of FPR.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fstWithIndexDisp8", f_store_complex, 3)
+            EncodingRecipeBuilder::new("fstWithIndexDisp8", &formats.store_complex, 3)
                 .operands_in(vec![fpr, gpr, gpr])
-                .inst_predicate(has_small_offset.clone())
+                .inst_predicate(has_small_offset)
                 .clobbers_flags(false)
                 .emit(
                     r#"
@@ -1750,11 +1817,12 @@ pub(crate) fn define<'shared>(
                 ),
         );
 
-        let has_big_offset = InstructionPredicate::new_is_signed_int(format, "offset", 32, 0);
+        let has_big_offset =
+            InstructionPredicate::new_is_signed_int(&*formats.store_complex, "offset", 32, 0);
 
         // XX /r register-indirect store with index and 32-bit offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("stWithIndexDisp32", f_store_complex, 6)
+            EncodingRecipeBuilder::new("stWithIndexDisp32", &formats.store_complex, 6)
                 .operands_in(vec![gpr, gpr, gpr])
                 .inst_predicate(has_big_offset.clone())
                 .clobbers_flags(false)
@@ -1775,7 +1843,7 @@ pub(crate) fn define<'shared>(
         // XX /r register-indirect store with index and 32-bit offset.
         // Only ABCD allowed for stored value. This is for byte stores with no REX.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("stWithIndexDisp32_abcd", f_store_complex, 6)
+            EncodingRecipeBuilder::new("stWithIndexDisp32_abcd", &formats.store_complex, 6)
                 .operands_in(vec![abcd, gpr, gpr])
                 .inst_predicate(has_big_offset.clone())
                 .clobbers_flags(false)
@@ -1795,9 +1863,9 @@ pub(crate) fn define<'shared>(
 
         // XX /r register-indirect store with index and 32-bit offset of FPR.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fstWithIndexDisp32", f_store_complex, 6)
+            EncodingRecipeBuilder::new("fstWithIndexDisp32", &formats.store_complex, 6)
                 .operands_in(vec![fpr, gpr, gpr])
-                .inst_predicate(has_big_offset.clone())
+                .inst_predicate(has_big_offset)
                 .clobbers_flags(false)
                 .emit(
                     r#"
@@ -1816,7 +1884,7 @@ pub(crate) fn define<'shared>(
 
     // Unary spill with SIB and 32-bit displacement.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("spillSib32", f_unary, 6)
+        EncodingRecipeBuilder::new("spillSib32", &formats.unary, 6)
             .operands_in(vec![gpr])
             .operands_out(vec![stack_gpr32])
             .clobbers_flags(false)
@@ -1834,7 +1902,7 @@ pub(crate) fn define<'shared>(
 
     // Like spillSib32, but targeting an FPR rather than a GPR.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("fspillSib32", f_unary, 6)
+        EncodingRecipeBuilder::new("fspillSib32", &formats.unary, 6)
             .operands_in(vec![fpr])
             .operands_out(vec![stack_fpr32])
             .clobbers_flags(false)
@@ -1852,7 +1920,7 @@ pub(crate) fn define<'shared>(
 
     // Regspill using RSP-relative addressing.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("regspill32", f_reg_spill, 6)
+        EncodingRecipeBuilder::new("regspill32", &formats.reg_spill, 6)
             .operands_in(vec![gpr])
             .clobbers_flags(false)
             .emit(
@@ -1870,7 +1938,7 @@ pub(crate) fn define<'shared>(
 
     // Like regspill32, but targeting an FPR rather than a GPR.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("fregspill32", f_reg_spill, 6)
+        EncodingRecipeBuilder::new("fregspill32", &formats.reg_spill, 6)
             .operands_in(vec![fpr])
             .clobbers_flags(false)
             .emit(
@@ -1890,19 +1958,19 @@ pub(crate) fn define<'shared>(
 
     {
         // Simple loads.
-        let format = formats.get(f_load);
 
         // A predicate asking if the offset is zero.
-        let has_no_offset = InstructionPredicate::new_is_field_equal(format, "offset", "0".into());
+        let has_no_offset =
+            InstructionPredicate::new_is_field_equal(&*formats.load, "offset", "0".into());
 
         // XX /r load with no offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("ld", f_load, 1)
+            EncodingRecipeBuilder::new("ld", &formats.load, 1)
                 .operands_in(vec![gpr])
                 .operands_out(vec![gpr])
                 .inst_predicate(has_no_offset.clone())
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_or_offset_for_in_reg_0")
+                .compute_size("size_plus_maybe_sib_or_offset_for_inreg_0")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1924,12 +1992,12 @@ pub(crate) fn define<'shared>(
 
         // XX /r float load with no offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fld", f_load, 1)
+            EncodingRecipeBuilder::new("fld", &formats.load, 1)
                 .operands_in(vec![gpr])
                 .operands_out(vec![fpr])
-                .inst_predicate(has_no_offset.clone())
+                .inst_predicate(has_no_offset)
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_or_offset_for_in_reg_0")
+                .compute_size("size_plus_maybe_sib_or_offset_for_inreg_0")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1949,16 +2017,17 @@ pub(crate) fn define<'shared>(
                 ),
         );
 
-        let has_small_offset = InstructionPredicate::new_is_signed_int(format, "offset", 8, 0);
+        let has_small_offset =
+            InstructionPredicate::new_is_signed_int(&*formats.load, "offset", 8, 0);
 
         // XX /r load with 8-bit offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("ldDisp8", f_load, 2)
+            EncodingRecipeBuilder::new("ldDisp8", &formats.load, 2)
                 .operands_in(vec![gpr])
                 .operands_out(vec![gpr])
                 .inst_predicate(has_small_offset.clone())
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_for_in_reg_0")
+                .compute_size("size_plus_maybe_sib_for_inreg_0")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -1979,12 +2048,12 @@ pub(crate) fn define<'shared>(
 
         // XX /r float load with 8-bit offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fldDisp8", f_load, 2)
+            EncodingRecipeBuilder::new("fldDisp8", &formats.load, 2)
                 .operands_in(vec![gpr])
                 .operands_out(vec![fpr])
-                .inst_predicate(has_small_offset.clone())
+                .inst_predicate(has_small_offset)
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_for_in_reg_0")
+                .compute_size("size_plus_maybe_sib_for_inreg_0")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -2003,16 +2072,17 @@ pub(crate) fn define<'shared>(
                 ),
         );
 
-        let has_big_offset = InstructionPredicate::new_is_signed_int(format, "offset", 32, 0);
+        let has_big_offset =
+            InstructionPredicate::new_is_signed_int(&*formats.load, "offset", 32, 0);
 
         // XX /r load with 32-bit offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("ldDisp32", f_load, 5)
+            EncodingRecipeBuilder::new("ldDisp32", &formats.load, 5)
                 .operands_in(vec![gpr])
                 .operands_out(vec![gpr])
                 .inst_predicate(has_big_offset.clone())
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_for_in_reg_0")
+                .compute_size("size_plus_maybe_sib_for_inreg_0")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -2033,12 +2103,12 @@ pub(crate) fn define<'shared>(
 
         // XX /r float load with 32-bit offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fldDisp32", f_load, 5)
+            EncodingRecipeBuilder::new("fldDisp32", &formats.load, 5)
                 .operands_in(vec![gpr])
                 .operands_out(vec![fpr])
-                .inst_predicate(has_big_offset.clone())
+                .inst_predicate(has_big_offset)
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_sib_for_in_reg_0")
+                .compute_size("size_plus_maybe_sib_for_inreg_0")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -2060,19 +2130,19 @@ pub(crate) fn define<'shared>(
 
     {
         // Complex loads.
-        let format = formats.get(f_load_complex);
 
         // A predicate asking if the offset is zero.
-        let has_no_offset = InstructionPredicate::new_is_field_equal(format, "offset", "0".into());
+        let has_no_offset =
+            InstructionPredicate::new_is_field_equal(&*formats.load_complex, "offset", "0".into());
 
         // XX /r load with index and no offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("ldWithIndex", f_load_complex, 2)
+            EncodingRecipeBuilder::new("ldWithIndex", &formats.load_complex, 2)
                 .operands_in(vec![gpr, gpr])
                 .operands_out(vec![gpr])
                 .inst_predicate(has_no_offset.clone())
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_offset_for_in_reg_0")
+                .compute_size("size_plus_maybe_offset_for_inreg_0")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -2094,12 +2164,12 @@ pub(crate) fn define<'shared>(
 
         // XX /r float load with index and no offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fldWithIndex", f_load_complex, 2)
+            EncodingRecipeBuilder::new("fldWithIndex", &formats.load_complex, 2)
                 .operands_in(vec![gpr, gpr])
                 .operands_out(vec![fpr])
-                .inst_predicate(has_no_offset.clone())
+                .inst_predicate(has_no_offset)
                 .clobbers_flags(false)
-                .compute_size("size_plus_maybe_offset_for_in_reg_0")
+                .compute_size("size_plus_maybe_offset_for_inreg_0")
                 .emit(
                     r#"
                         if !flags.notrap() {
@@ -2119,11 +2189,12 @@ pub(crate) fn define<'shared>(
                 ),
         );
 
-        let has_small_offset = InstructionPredicate::new_is_signed_int(format, "offset", 8, 0);
+        let has_small_offset =
+            InstructionPredicate::new_is_signed_int(&*formats.load_complex, "offset", 8, 0);
 
         // XX /r load with index and 8-bit offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("ldWithIndexDisp8", f_load_complex, 3)
+            EncodingRecipeBuilder::new("ldWithIndexDisp8", &formats.load_complex, 3)
                 .operands_in(vec![gpr, gpr])
                 .operands_out(vec![gpr])
                 .inst_predicate(has_small_offset.clone())
@@ -2144,10 +2215,10 @@ pub(crate) fn define<'shared>(
 
         // XX /r float load with 8-bit offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fldWithIndexDisp8", f_load_complex, 3)
+            EncodingRecipeBuilder::new("fldWithIndexDisp8", &formats.load_complex, 3)
                 .operands_in(vec![gpr, gpr])
                 .operands_out(vec![fpr])
-                .inst_predicate(has_small_offset.clone())
+                .inst_predicate(has_small_offset)
                 .clobbers_flags(false)
                 .emit(
                     r#"
@@ -2163,11 +2234,12 @@ pub(crate) fn define<'shared>(
                 ),
         );
 
-        let has_big_offset = InstructionPredicate::new_is_signed_int(format, "offset", 32, 0);
+        let has_big_offset =
+            InstructionPredicate::new_is_signed_int(&*formats.load_complex, "offset", 32, 0);
 
         // XX /r load with index and 32-bit offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("ldWithIndexDisp32", f_load_complex, 6)
+            EncodingRecipeBuilder::new("ldWithIndexDisp32", &formats.load_complex, 6)
                 .operands_in(vec![gpr, gpr])
                 .operands_out(vec![gpr])
                 .inst_predicate(has_big_offset.clone())
@@ -2188,10 +2260,10 @@ pub(crate) fn define<'shared>(
 
         // XX /r float load with index and 32-bit offset.
         recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("fldWithIndexDisp32", f_load_complex, 6)
+            EncodingRecipeBuilder::new("fldWithIndexDisp32", &formats.load_complex, 6)
                 .operands_in(vec![gpr, gpr])
                 .operands_out(vec![fpr])
-                .inst_predicate(has_big_offset.clone())
+                .inst_predicate(has_big_offset)
                 .clobbers_flags(false)
                 .emit(
                     r#"
@@ -2210,7 +2282,7 @@ pub(crate) fn define<'shared>(
 
     // Unary fill with SIB and 32-bit displacement.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("fillSib32", f_unary, 6)
+        EncodingRecipeBuilder::new("fillSib32", &formats.unary, 6)
             .operands_in(vec![stack_gpr32])
             .operands_out(vec![gpr])
             .clobbers_flags(false)
@@ -2227,7 +2299,7 @@ pub(crate) fn define<'shared>(
 
     // Like fillSib32, but targeting an FPR rather than a GPR.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("ffillSib32", f_unary, 6)
+        EncodingRecipeBuilder::new("ffillSib32", &formats.unary, 6)
             .operands_in(vec![stack_fpr32])
             .operands_out(vec![fpr])
             .clobbers_flags(false)
@@ -2244,7 +2316,7 @@ pub(crate) fn define<'shared>(
 
     // Regfill with RSP-relative 32-bit displacement.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("regfill32", f_reg_fill, 6)
+        EncodingRecipeBuilder::new("regfill32", &formats.reg_fill, 6)
             .operands_in(vec![stack_gpr32])
             .clobbers_flags(false)
             .emit(
@@ -2261,7 +2333,7 @@ pub(crate) fn define<'shared>(
 
     // Like regfill32, but targeting an FPR rather than a GPR.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("fregfill32", f_reg_fill, 6)
+        EncodingRecipeBuilder::new("fregfill32", &formats.reg_fill, 6)
             .operands_in(vec![stack_fpr32])
             .clobbers_flags(false)
             .emit(
@@ -2278,8 +2350,9 @@ pub(crate) fn define<'shared>(
 
     // Call/return.
 
-    recipes.add_template_recipe(EncodingRecipeBuilder::new("call_id", f_call, 4).emit(
-        r#"
+    recipes.add_template_recipe(
+        EncodingRecipeBuilder::new("call_id", &formats.call, 4).emit(
+            r#"
             sink.trap(TrapCode::StackOverflow, func.srclocs[inst]);
             {{PUT_OP}}(bits, BASE_REX, sink);
             // The addend adjusts for the difference between the end of the
@@ -2289,10 +2362,12 @@ pub(crate) fn define<'shared>(
                                 -4);
             sink.put4(0);
         "#,
-    ));
+        ),
+    );
 
-    recipes.add_template_recipe(EncodingRecipeBuilder::new("call_plt_id", f_call, 4).emit(
-        r#"
+    recipes.add_template_recipe(
+        EncodingRecipeBuilder::new("call_plt_id", &formats.call, 4).emit(
+            r#"
             sink.trap(TrapCode::StackOverflow, func.srclocs[inst]);
             {{PUT_OP}}(bits, BASE_REX, sink);
             sink.reloc_external(Reloc::X86CallPLTRel4,
@@ -2300,10 +2375,11 @@ pub(crate) fn define<'shared>(
                                 -4);
             sink.put4(0);
         "#,
-    ));
+        ),
+    );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("call_r", f_call_indirect, 1)
+        EncodingRecipeBuilder::new("call_r", &formats.call_indirect, 1)
             .operands_in(vec![gpr])
             .emit(
                 r#"
@@ -2315,13 +2391,14 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("ret", f_multiary, 0).emit("{{PUT_OP}}(bits, BASE_REX, sink);"),
+        EncodingRecipeBuilder::new("ret", &formats.multiary, 0)
+            .emit("{{PUT_OP}}(bits, BASE_REX, sink);"),
     );
 
     // Branches.
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("jmpb", f_jump, 1)
+        EncodingRecipeBuilder::new("jmpb", &formats.jump, 1)
             .branch_range((1, 8))
             .clobbers_flags(false)
             .emit(
@@ -2333,7 +2410,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("jmpd", f_jump, 4)
+        EncodingRecipeBuilder::new("jmpd", &formats.jump, 4)
             .branch_range((4, 32))
             .clobbers_flags(false)
             .emit(
@@ -2345,7 +2422,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("brib", f_branch_int, 1)
+        EncodingRecipeBuilder::new("brib", &formats.branch_int, 1)
             .operands_in(vec![reg_rflags])
             .branch_range((1, 8))
             .clobbers_flags(false)
@@ -2358,7 +2435,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("brid", f_branch_int, 4)
+        EncodingRecipeBuilder::new("brid", &formats.branch_int, 4)
             .operands_in(vec![reg_rflags])
             .branch_range((4, 32))
             .clobbers_flags(false)
@@ -2371,13 +2448,13 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("brfb", f_branch_float, 1)
+        EncodingRecipeBuilder::new("brfb", &formats.branch_float, 1)
             .operands_in(vec![reg_rflags])
             .branch_range((1, 8))
             .clobbers_flags(false)
             .inst_predicate(supported_floatccs_predicate(
                 &supported_floatccs,
-                formats.get(f_branch_float),
+                &*formats.branch_float,
             ))
             .emit(
                 r#"
@@ -2388,13 +2465,13 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("brfd", f_branch_float, 4)
+        EncodingRecipeBuilder::new("brfd", &formats.branch_float, 4)
             .operands_in(vec![reg_rflags])
             .branch_range((4, 32))
             .clobbers_flags(false)
             .inst_predicate(supported_floatccs_predicate(
                 &supported_floatccs,
-                formats.get(f_branch_float),
+                &*formats.branch_float,
             ))
             .emit(
                 r#"
@@ -2405,7 +2482,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("indirect_jmp", f_indirect_jump, 1)
+        EncodingRecipeBuilder::new("indirect_jmp", &formats.indirect_jump, 1)
             .operands_in(vec![gpr])
             .clobbers_flags(false)
             .emit(
@@ -2417,12 +2494,12 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("jt_entry", f_branch_table_entry, 2)
+        EncodingRecipeBuilder::new("jt_entry", &formats.branch_table_entry, 2)
             .operands_in(vec![gpr, gpr])
             .operands_out(vec![gpr])
             .clobbers_flags(false)
-            .inst_predicate(valid_scale(formats.get(f_branch_table_entry)))
-            .compute_size("size_plus_maybe_offset_for_in_reg_1")
+            .inst_predicate(valid_scale(&*formats.branch_table_entry))
+            .compute_size("size_plus_maybe_offset_for_inreg_1")
             .emit(
                 r#"
                     {{PUT_OP}}(bits, rex3(in_reg1, out_reg0, in_reg0), sink);
@@ -2439,7 +2516,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("vconst", f_unary_const, 5)
+        EncodingRecipeBuilder::new("vconst", &formats.unary_const, 5)
             .operands_out(vec![fpr])
             .clobbers_flags(false)
             .emit(
@@ -2452,7 +2529,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("vconst_optimized", f_unary_const, 1)
+        EncodingRecipeBuilder::new("vconst_optimized", &formats.unary_const, 1)
             .operands_out(vec![fpr])
             .clobbers_flags(false)
             .emit(
@@ -2464,7 +2541,7 @@ pub(crate) fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("jt_base", f_branch_table_base, 5)
+        EncodingRecipeBuilder::new("jt_base", &formats.branch_table_base, 5)
             .operands_out(vec![gpr])
             .clobbers_flags(false)
             .emit(
@@ -2489,7 +2566,7 @@ pub(crate) fn define<'shared>(
 
     let seti = recipes.add_template(
         Template::new(
-            EncodingRecipeBuilder::new("seti", f_int_cond, 1)
+            EncodingRecipeBuilder::new("seti", &formats.int_cond, 1)
                 .operands_in(vec![reg_rflags])
                 .operands_out(vec![gpr])
                 .clobbers_flags(false)
@@ -2499,15 +2576,14 @@ pub(crate) fn define<'shared>(
                     modrm_r_bits(out_reg0, bits, sink);
                 "#,
                 ),
-            formats,
             regs,
         )
-        .requires_prefix(true),
+        .rex_kind(RexRecipeKind::AlwaysEmitRex),
     );
 
     recipes.add_template(
         Template::new(
-            EncodingRecipeBuilder::new("seti_abcd", f_int_cond, 1)
+            EncodingRecipeBuilder::new("seti_abcd", &formats.int_cond, 1)
                 .operands_in(vec![reg_rflags])
                 .operands_out(vec![abcd])
                 .clobbers_flags(false)
@@ -2517,7 +2593,6 @@ pub(crate) fn define<'shared>(
                     modrm_r_bits(out_reg0, bits, sink);
                 "#,
                 ),
-            formats,
             regs,
         )
         .when_prefixed(seti),
@@ -2525,7 +2600,7 @@ pub(crate) fn define<'shared>(
 
     let setf = recipes.add_template(
         Template::new(
-            EncodingRecipeBuilder::new("setf", f_float_cond, 1)
+            EncodingRecipeBuilder::new("setf", &formats.float_cond, 1)
                 .operands_in(vec![reg_rflags])
                 .operands_out(vec![gpr])
                 .clobbers_flags(false)
@@ -2535,15 +2610,14 @@ pub(crate) fn define<'shared>(
                     modrm_r_bits(out_reg0, bits, sink);
                 "#,
                 ),
-            formats,
             regs,
         )
-        .requires_prefix(true),
+        .rex_kind(RexRecipeKind::AlwaysEmitRex),
     );
 
     recipes.add_template(
         Template::new(
-            EncodingRecipeBuilder::new("setf_abcd", f_float_cond, 1)
+            EncodingRecipeBuilder::new("setf_abcd", &formats.float_cond, 1)
                 .operands_in(vec![reg_rflags])
                 .operands_out(vec![abcd])
                 .clobbers_flags(false)
@@ -2553,7 +2627,6 @@ pub(crate) fn define<'shared>(
                     modrm_r_bits(out_reg0, bits, sink);
                 "#,
                 ),
-            formats,
             regs,
         )
         .when_prefixed(setf),
@@ -2562,115 +2635,139 @@ pub(crate) fn define<'shared>(
     // Conditional move (a.k.a integer select)
     // (maybe-REX.W) 0F 4x modrm(r,r)
     // 1 byte, modrm(r,r), is after the opcode
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("cmov", f_int_select, 1)
-            .operands_in(vec![
-                OperandConstraint::FixedReg(reg_rflags),
-                OperandConstraint::RegClass(gpr),
-                OperandConstraint::RegClass(gpr),
-            ])
-            .operands_out(vec![2])
-            .clobbers_flags(false)
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits | icc2opc(cond), rex2(in_reg1, in_reg2), sink);
-                    modrm_rr(in_reg1, in_reg2, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("cmov", &formats.int_select, 1)
+                .operands_in(vec![
+                    OperandConstraint::FixedReg(reg_rflags),
+                    OperandConstraint::RegClass(gpr),
+                    OperandConstraint::RegClass(gpr),
+                ])
+                .operands_out(vec![2])
+                .clobbers_flags(false)
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits | icc2opc(cond), rex2(in_reg1, in_reg2), sink);
+                        modrm_rr(in_reg1, in_reg2, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_cmov"),
     );
 
     // Bit scan forwards and reverse
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("bsf_and_bsr", f_unary, 1)
-            .operands_in(vec![gpr])
-            .operands_out(vec![
-                OperandConstraint::RegClass(gpr),
-                OperandConstraint::FixedReg(reg_rflags),
-            ])
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex2(in_reg0, out_reg0), sink);
-                    modrm_rr(in_reg0, out_reg0, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("bsf_and_bsr", &formats.unary, 1)
+                .operands_in(vec![gpr])
+                .operands_out(vec![
+                    OperandConstraint::RegClass(gpr),
+                    OperandConstraint::FixedReg(reg_rflags),
+                ])
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex2(in_reg0, out_reg0), sink);
+                        modrm_rr(in_reg0, out_reg0, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0_outreg0"),
     );
 
     // Arithematic with flag I/O.
 
     // XX /r, MR form. Add two GPR registers and set carry flag.
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rout", f_binary, 1)
-            .operands_in(vec![gpr, gpr])
-            .operands_out(vec![
-                OperandConstraint::TiedInput(0),
-                OperandConstraint::FixedReg(reg_rflags),
-            ])
-            .clobbers_flags(true)
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
-                    modrm_rr(in_reg0, in_reg1, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("rout", &formats.binary, 1)
+                .operands_in(vec![gpr, gpr])
+                .operands_out(vec![
+                    OperandConstraint::TiedInput(0),
+                    OperandConstraint::FixedReg(reg_rflags),
+                ])
+                .clobbers_flags(true)
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
+                        modrm_rr(in_reg0, in_reg1, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0_inreg1"),
     );
 
     // XX /r, MR form. Add two GPR registers and get carry flag.
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rin", f_ternary, 1)
-            .operands_in(vec![
-                OperandConstraint::RegClass(gpr),
-                OperandConstraint::RegClass(gpr),
-                OperandConstraint::FixedReg(reg_rflags),
-            ])
-            .operands_out(vec![0])
-            .clobbers_flags(true)
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
-                    modrm_rr(in_reg0, in_reg1, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("rin", &formats.ternary, 1)
+                .operands_in(vec![
+                    OperandConstraint::RegClass(gpr),
+                    OperandConstraint::RegClass(gpr),
+                    OperandConstraint::FixedReg(reg_rflags),
+                ])
+                .operands_out(vec![0])
+                .clobbers_flags(true)
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
+                        modrm_rr(in_reg0, in_reg1, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0_inreg1"),
     );
 
     // XX /r, MR form. Add two GPR registers with carry flag.
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rio", f_ternary, 1)
-            .operands_in(vec![
-                OperandConstraint::RegClass(gpr),
-                OperandConstraint::RegClass(gpr),
-                OperandConstraint::FixedReg(reg_rflags),
-            ])
-            .operands_out(vec![
-                OperandConstraint::TiedInput(0),
-                OperandConstraint::FixedReg(reg_rflags),
-            ])
-            .clobbers_flags(true)
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
-                    modrm_rr(in_reg0, in_reg1, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("rio", &formats.ternary, 1)
+                .operands_in(vec![
+                    OperandConstraint::RegClass(gpr),
+                    OperandConstraint::RegClass(gpr),
+                    OperandConstraint::FixedReg(reg_rflags),
+                ])
+                .operands_out(vec![
+                    OperandConstraint::TiedInput(0),
+                    OperandConstraint::FixedReg(reg_rflags),
+                ])
+                .clobbers_flags(true)
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
+                        modrm_rr(in_reg0, in_reg1, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0_inreg1"),
     );
 
     // Compare and set flags.
 
     // XX /r, MR form. Compare two GPR registers and set flags.
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rcmp", f_binary, 1)
-            .operands_in(vec![gpr, gpr])
-            .operands_out(vec![reg_rflags])
-            .emit(
-                r#"
-                    {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
-                    modrm_rr(in_reg0, in_reg1, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("rcmp", &formats.binary, 1)
+                .operands_in(vec![gpr, gpr])
+                .operands_out(vec![reg_rflags])
+                .emit(
+                    r#"
+                        {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
+                        modrm_rr(in_reg0, in_reg1, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0_inreg1"),
     );
 
     // Same as rcmp, but second operand is the stack pointer.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("rcmp_sp", f_unary, 1)
+        EncodingRecipeBuilder::new("rcmp_sp", &formats.unary, 1)
             .operands_in(vec![gpr])
             .operands_out(vec![reg_rflags])
             .emit(
@@ -2683,7 +2780,7 @@ pub(crate) fn define<'shared>(
 
     // XX /r, RM form. Compare two FPR registers and set flags.
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("fcmp", f_binary, 1)
+        EncodingRecipeBuilder::new("fcmp", &formats.binary, 1)
             .operands_in(vec![fpr, fpr])
             .operands_out(vec![reg_rflags])
             .emit(
@@ -2695,42 +2792,50 @@ pub(crate) fn define<'shared>(
     );
 
     {
-        let format = formats.get(f_binary_imm);
-
-        let has_small_offset = InstructionPredicate::new_is_signed_int(format, "imm", 8, 0);
+        let has_small_offset =
+            InstructionPredicate::new_is_signed_int(&*formats.binary_imm, "imm", 8, 0);
 
         // XX /n, MI form with imm8.
-        recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("rcmp_ib", f_binary_imm, 2)
-                .operands_in(vec![gpr])
-                .operands_out(vec![reg_rflags])
-                .inst_predicate(has_small_offset)
-                .emit(
-                    r#"
-                        {{PUT_OP}}(bits, rex1(in_reg0), sink);
-                        modrm_r_bits(in_reg0, bits, sink);
-                        let imm: i64 = imm.into();
-                        sink.put1(imm as u8);
-                    "#,
-                ),
+        recipes.add_template(
+            Template::new(
+                EncodingRecipeBuilder::new("rcmp_ib", &formats.binary_imm, 2)
+                    .operands_in(vec![gpr])
+                    .operands_out(vec![reg_rflags])
+                    .inst_predicate(has_small_offset)
+                    .emit(
+                        r#"
+                            {{PUT_OP}}(bits, rex1(in_reg0), sink);
+                            modrm_r_bits(in_reg0, bits, sink);
+                            let imm: i64 = imm.into();
+                            sink.put1(imm as u8);
+                        "#,
+                    ),
+                regs,
+            )
+            .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0"),
         );
 
-        let has_big_offset = InstructionPredicate::new_is_signed_int(format, "imm", 32, 0);
+        let has_big_offset =
+            InstructionPredicate::new_is_signed_int(&*formats.binary_imm, "imm", 32, 0);
 
         // XX /n, MI form with imm32.
-        recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("rcmp_id", f_binary_imm, 5)
-                .operands_in(vec![gpr])
-                .operands_out(vec![reg_rflags])
-                .inst_predicate(has_big_offset)
-                .emit(
-                    r#"
-                        {{PUT_OP}}(bits, rex1(in_reg0), sink);
-                        modrm_r_bits(in_reg0, bits, sink);
-                        let imm: i64 = imm.into();
-                        sink.put4(imm as u32);
-                    "#,
-                ),
+        recipes.add_template(
+            Template::new(
+                EncodingRecipeBuilder::new("rcmp_id", &formats.binary_imm, 5)
+                    .operands_in(vec![gpr])
+                    .operands_out(vec![reg_rflags])
+                    .inst_predicate(has_big_offset)
+                    .emit(
+                        r#"
+                            {{PUT_OP}}(bits, rex1(in_reg0), sink);
+                            modrm_r_bits(in_reg0, bits, sink);
+                            let imm: i64 = imm.into();
+                            sink.put4(imm as u32);
+                        "#,
+                    ),
+                regs,
+            )
+            .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0"),
         );
     }
 
@@ -2748,44 +2853,52 @@ pub(crate) fn define<'shared>(
     // Bits 0-7 are the Jcc opcode.
     // Bits 8-15 control the test instruction which always has opcode byte 0x85.
 
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("tjccb", f_branch, 1 + 2)
-            .operands_in(vec![gpr])
-            .branch_range((3, 8))
-            .emit(
-                r#"
-                    // test r, r.
-                    {{PUT_OP}}((bits & 0xff00) | 0x85, rex2(in_reg0, in_reg0), sink);
-                    modrm_rr(in_reg0, in_reg0, sink);
-                    // Jcc instruction.
-                    sink.put1(bits as u8);
-                    disp1(destination, func, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("tjccb", &formats.branch, 1 + 2)
+                .operands_in(vec![gpr])
+                .branch_range((3, 8))
+                .emit(
+                    r#"
+                        // test r, r.
+                        {{PUT_OP}}((bits & 0xff00) | 0x85, rex2(in_reg0, in_reg0), sink);
+                        modrm_rr(in_reg0, in_reg0, sink);
+                        // Jcc instruction.
+                        sink.put1(bits as u8);
+                        disp1(destination, func, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0"),
     );
 
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("tjccd", f_branch, 1 + 6)
-            .operands_in(vec![gpr])
-            .branch_range((7, 32))
-            .emit(
-                r#"
-                    // test r, r.
-                    {{PUT_OP}}((bits & 0xff00) | 0x85, rex2(in_reg0, in_reg0), sink);
-                    modrm_rr(in_reg0, in_reg0, sink);
-                    // Jcc instruction.
-                    sink.put1(0x0f);
-                    sink.put1(bits as u8);
-                    disp4(destination, func, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("tjccd", &formats.branch, 1 + 6)
+                .operands_in(vec![gpr])
+                .branch_range((7, 32))
+                .emit(
+                    r#"
+                        // test r, r.
+                        {{PUT_OP}}((bits & 0xff00) | 0x85, rex2(in_reg0, in_reg0), sink);
+                        modrm_rr(in_reg0, in_reg0, sink);
+                        // Jcc instruction.
+                        sink.put1(0x0f);
+                        sink.put1(bits as u8);
+                        disp4(destination, func, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0"),
     );
 
     // 8-bit test-and-branch.
 
     let t8jccb = recipes.add_template(
         Template::new(
-            EncodingRecipeBuilder::new("t8jccb", f_branch, 1 + 2)
+            EncodingRecipeBuilder::new("t8jccb", &formats.branch, 1 + 2)
                 .operands_in(vec![gpr])
                 .branch_range((3, 8))
                 .emit(
@@ -2798,15 +2911,14 @@ pub(crate) fn define<'shared>(
                     disp1(destination, func, sink);
                 "#,
                 ),
-            formats,
             regs,
         )
-        .requires_prefix(true),
+        .rex_kind(RexRecipeKind::AlwaysEmitRex),
     );
 
     recipes.add_template(
         Template::new(
-            EncodingRecipeBuilder::new("t8jccb_abcd", f_branch, 1 + 2)
+            EncodingRecipeBuilder::new("t8jccb_abcd", &formats.branch, 1 + 2)
                 .operands_in(vec![abcd])
                 .branch_range((3, 8))
                 .emit(
@@ -2819,7 +2931,6 @@ pub(crate) fn define<'shared>(
                     disp1(destination, func, sink);
                 "#,
                 ),
-            formats,
             regs,
         )
         .when_prefixed(t8jccb),
@@ -2827,7 +2938,7 @@ pub(crate) fn define<'shared>(
 
     let t8jccd = recipes.add_template(
         Template::new(
-            EncodingRecipeBuilder::new("t8jccd", f_branch, 1 + 6)
+            EncodingRecipeBuilder::new("t8jccd", &formats.branch, 1 + 6)
                 .operands_in(vec![gpr])
                 .branch_range((7, 32))
                 .emit(
@@ -2841,15 +2952,14 @@ pub(crate) fn define<'shared>(
                     disp4(destination, func, sink);
                 "#,
                 ),
-            formats,
             regs,
         )
-        .requires_prefix(true),
+        .rex_kind(RexRecipeKind::AlwaysEmitRex),
     );
 
     recipes.add_template(
         Template::new(
-            EncodingRecipeBuilder::new("t8jccd_abcd", f_branch, 1 + 6)
+            EncodingRecipeBuilder::new("t8jccd_abcd", &formats.branch, 1 + 6)
                 .operands_in(vec![abcd])
                 .branch_range((7, 32))
                 .emit(
@@ -2863,7 +2973,6 @@ pub(crate) fn define<'shared>(
                     disp4(destination, func, sink);
                 "#,
                 ),
-            formats,
             regs,
         )
         .when_prefixed(t8jccd),
@@ -2876,7 +2985,7 @@ pub(crate) fn define<'shared>(
     // a 0xff immediate.
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("t8jccd_long", f_branch, 5 + 6)
+        EncodingRecipeBuilder::new("t8jccd_long", &formats.branch, 5 + 6)
             .operands_in(vec![gpr])
             .branch_range((11, 32))
             .emit(
@@ -2912,26 +3021,30 @@ pub(crate) fn define<'shared>(
     // instruction, so it is limited to the `ABCD` register class for booleans.
     // The omission of a `when_prefixed` alternative is deliberate here.
 
-    recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("icscc", f_int_compare, 1 + 3)
-            .operands_in(vec![gpr, gpr])
-            .operands_out(vec![abcd])
-            .emit(
-                r#"
-                    // Comparison instruction.
-                    {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
-                    modrm_rr(in_reg0, in_reg1, sink);
-                    // `setCC` instruction, no REX.
-                    let setcc = 0x90 | icc2opc(cond);
-                    sink.put1(0x0f);
-                    sink.put1(setcc as u8);
-                    modrm_rr(out_reg0, 0, sink);
-                "#,
-            ),
+    recipes.add_template(
+        Template::new(
+            EncodingRecipeBuilder::new("icscc", &formats.int_compare, 1 + 3)
+                .operands_in(vec![gpr, gpr])
+                .operands_out(vec![abcd])
+                .emit(
+                    r#"
+                        // Comparison instruction.
+                        {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
+                        modrm_rr(in_reg0, in_reg1, sink);
+                        // `setCC` instruction, no REX.
+                        let setcc = 0x90 | icc2opc(cond);
+                        sink.put1(0x0f);
+                        sink.put1(setcc as u8);
+                        modrm_rr(out_reg0, 0, sink);
+                    "#,
+                ),
+            regs,
+        )
+        .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0_inreg1"),
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("icscc_fpr", f_int_compare, 1)
+        EncodingRecipeBuilder::new("icscc_fpr", &formats.int_compare, 1)
             .operands_in(vec![fpr, fpr])
             .operands_out(vec![0])
             .emit(
@@ -2944,52 +3057,60 @@ pub(crate) fn define<'shared>(
     );
 
     {
-        let format = formats.get(f_int_compare_imm);
+        let is_small_imm =
+            InstructionPredicate::new_is_signed_int(&*formats.int_compare_imm, "imm", 8, 0);
 
-        let is_small_imm = InstructionPredicate::new_is_signed_int(format, "imm", 8, 0);
-
-        recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("icscc_ib", f_int_compare_imm, 2 + 3)
-                .operands_in(vec![gpr])
-                .operands_out(vec![abcd])
-                .inst_predicate(is_small_imm)
-                .emit(
-                    r#"
-                        // Comparison instruction.
-                        {{PUT_OP}}(bits, rex1(in_reg0), sink);
-                        modrm_r_bits(in_reg0, bits, sink);
-                        let imm: i64 = imm.into();
-                        sink.put1(imm as u8);
-                        // `setCC` instruction, no REX.
-                        let setcc = 0x90 | icc2opc(cond);
-                        sink.put1(0x0f);
-                        sink.put1(setcc as u8);
-                        modrm_rr(out_reg0, 0, sink);
-                    "#,
-                ),
+        recipes.add_template(
+            Template::new(
+                EncodingRecipeBuilder::new("icscc_ib", &formats.int_compare_imm, 2 + 3)
+                    .operands_in(vec![gpr])
+                    .operands_out(vec![abcd])
+                    .inst_predicate(is_small_imm)
+                    .emit(
+                        r#"
+                            // Comparison instruction.
+                            {{PUT_OP}}(bits, rex1(in_reg0), sink);
+                            modrm_r_bits(in_reg0, bits, sink);
+                            let imm: i64 = imm.into();
+                            sink.put1(imm as u8);
+                            // `setCC` instruction, no REX.
+                            let setcc = 0x90 | icc2opc(cond);
+                            sink.put1(0x0f);
+                            sink.put1(setcc as u8);
+                            modrm_rr(out_reg0, 0, sink);
+                        "#,
+                    ),
+                regs,
+            )
+            .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0"),
         );
 
-        let is_big_imm = InstructionPredicate::new_is_signed_int(format, "imm", 32, 0);
+        let is_big_imm =
+            InstructionPredicate::new_is_signed_int(&*formats.int_compare_imm, "imm", 32, 0);
 
-        recipes.add_template_recipe(
-            EncodingRecipeBuilder::new("icscc_id", f_int_compare_imm, 5 + 3)
-                .operands_in(vec![gpr])
-                .operands_out(vec![abcd])
-                .inst_predicate(is_big_imm)
-                .emit(
-                    r#"
-                        // Comparison instruction.
-                        {{PUT_OP}}(bits, rex1(in_reg0), sink);
-                        modrm_r_bits(in_reg0, bits, sink);
-                        let imm: i64 = imm.into();
-                        sink.put4(imm as u32);
-                        // `setCC` instruction, no REX.
-                        let setcc = 0x90 | icc2opc(cond);
-                        sink.put1(0x0f);
-                        sink.put1(setcc as u8);
-                        modrm_rr(out_reg0, 0, sink);
-                    "#,
-                ),
+        recipes.add_template(
+            Template::new(
+                EncodingRecipeBuilder::new("icscc_id", &formats.int_compare_imm, 5 + 3)
+                    .operands_in(vec![gpr])
+                    .operands_out(vec![abcd])
+                    .inst_predicate(is_big_imm)
+                    .emit(
+                        r#"
+                            // Comparison instruction.
+                            {{PUT_OP}}(bits, rex1(in_reg0), sink);
+                            modrm_r_bits(in_reg0, bits, sink);
+                            let imm: i64 = imm.into();
+                            sink.put4(imm as u32);
+                            // `setCC` instruction, no REX.
+                            let setcc = 0x90 | icc2opc(cond);
+                            sink.put1(0x0f);
+                            sink.put1(setcc as u8);
+                            modrm_rr(out_reg0, 0, sink);
+                        "#,
+                    ),
+                regs,
+            )
+            .inferred_rex_compute_size("size_with_inferred_rex_for_inreg0"),
         );
     }
 
@@ -3009,12 +3130,12 @@ pub(crate) fn define<'shared>(
     // The omission of a `when_prefixed` alternative is deliberate here.
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("fcscc", f_float_compare, 1 + 3)
+        EncodingRecipeBuilder::new("fcscc", &formats.float_compare, 1 + 3)
             .operands_in(vec![fpr, fpr])
             .operands_out(vec![abcd])
             .inst_predicate(supported_floatccs_predicate(
                 &supported_floatccs,
-                formats.get(f_float_compare),
+                &*formats.float_compare,
             ))
             .emit(
                 r#"
@@ -3047,8 +3168,45 @@ pub(crate) fn define<'shared>(
             ),
     );
 
+    {
+        let supported_floatccs: Vec<Literal> = ["eq", "lt", "le", "uno", "ne", "uge", "ugt", "ord"]
+            .iter()
+            .map(|name| Literal::enumerator_for(floatcc, name))
+            .collect();
+        recipes.add_template_recipe(
+            EncodingRecipeBuilder::new("pfcmp", &formats.float_compare, 2)
+                .operands_in(vec![fpr, fpr])
+                .operands_out(vec![0])
+                .inst_predicate(supported_floatccs_predicate(
+                    &supported_floatccs[..],
+                    &*formats.float_compare,
+                ))
+                .emit(
+                    r#"
+                    // Comparison instruction.
+                    {{PUT_OP}}(bits, rex2(in_reg1, in_reg0), sink);
+                    modrm_rr(in_reg1, in_reg0, sink);
+                    // Add immediate byte indicating what type of comparison.
+                    use crate::ir::condcodes::FloatCC::*;
+                    let imm = match cond {
+                        Equal                      => 0x00,
+                        LessThan                   => 0x01,
+                        LessThanOrEqual            => 0x02,
+                        Unordered                  => 0x03,
+                        NotEqual                   => 0x04,
+                        UnorderedOrGreaterThanOrEqual => 0x05,
+                        UnorderedOrGreaterThan => 0x06,
+                        Ordered                    => 0x07,
+                        _ => panic!("{} not supported by pfcmp", cond),
+                    };
+                    sink.put1(imm);
+                "#,
+                ),
+        );
+    }
+
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("is_zero", f_unary, 2 + 2)
+        EncodingRecipeBuilder::new("is_zero", &formats.unary, 2 + 2)
             .operands_in(vec![gpr])
             .operands_out(vec![abcd])
             .emit(
@@ -3064,11 +3222,33 @@ pub(crate) fn define<'shared>(
             ),
     );
 
-    recipes.add_recipe(EncodingRecipeBuilder::new("safepoint", f_multiary, 0).emit(
-        r#"
+    recipes.add_template_recipe(
+        EncodingRecipeBuilder::new("is_invalid", &formats.unary, 2 + 3)
+            .operands_in(vec![gpr])
+            .operands_out(vec![abcd])
+            .emit(
+                r#"
+                    // Comparison instruction.
+                    {{PUT_OP}}(bits, rex1(in_reg0), sink);
+                    modrm_r_bits(in_reg0, bits, sink);
+                    sink.put1(0xff);
+                    // `setCC` instruction, no REX.
+                    use crate::ir::condcodes::IntCC::*;
+                    let setcc = 0x90 | icc2opc(Equal);
+                    sink.put1(0x0f);
+                    sink.put1(setcc as u8);
+                    modrm_rr(out_reg0, 0, sink);
+                "#,
+            ),
+    );
+
+    recipes.add_recipe(
+        EncodingRecipeBuilder::new("safepoint", &formats.multiary, 0).emit(
+            r#"
             sink.add_stackmap(args, func, isa);
         "#,
-    ));
+        ),
+    );
 
     recipes
 }

@@ -4,7 +4,12 @@
 
 "use strict";
 
-/* globals module */
+/* globals module, require */
+
+// This is a hack for the tests.
+if (typeof InterventionHelpers === "undefined") {
+  var InterventionHelpers = require("../lib/intervention_helpers");
+}
 
 /**
  * For detailed information on our policies, and a documention on this format
@@ -77,38 +82,6 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1472081",
-    platform: "desktop",
-    domain: "election.gov.np",
-    bug: "1472081",
-    contentScripts: {
-      matches: ["http://202.166.205.141/bbvrs/*"],
-      allFrames: true,
-      js: [
-        {
-          file:
-            "injections/js/bug1472081-election.gov.np-window.sidebar-shim.js",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1482066",
-    platform: "desktop",
-    domain: "portalminasnet.com",
-    bug: "1482066",
-    contentScripts: {
-      matches: ["*://portalminasnet.com/*"],
-      allFrames: true,
-      js: [
-        {
-          file:
-            "injections/js/bug1482066-portalminasnet.com-window.sidebar-shim.js",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1570856",
     platform: "android",
     domain: "medium.com",
@@ -139,24 +112,37 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1577245",
+    id: "bug1623375",
     platform: "android",
-    domain: "help.pandora.com",
-    bug: "1577245",
+    domain: "Salesforce communities",
+    bug: "1623375",
     contentScripts: {
-      matches: [
-        "https://faq.usps.com/*",
-        "https://help.duo.com/*",
-        "https://help.hulu.com/*",
-        "https://help.pandora.com/*",
-        "https://my211.force.com/*",
-        "https://support.paypay.ne.jp/*",
-        "https://usps.force.com/*",
-      ],
+      matches: [].concat(
+        [
+          "https://faq.usps.com/*",
+          "https://help.duo.com/*",
+          "https://my211.force.com/*",
+          "https://support.paypay.ne.jp/*",
+          "https://usps.force.com/*",
+          "https://help.twitch.tv/*",
+          "https://support.sonos.com/*",
+          "https://us.community.sony.com/*",
+          "https://help.shopee.ph/*",
+          "https://exclusions.ustr.gov/*",
+          "https://help.doordash.com/*",
+          "https://community.snowflake.com/*",
+          "https://tivoidp.tivo.com/*",
+        ],
+        InterventionHelpers.matchPatternsForTLDs(
+          "*://support.ancestry.",
+          "/*",
+          ["ca", "co.uk", "com", "com.au", "de", "fr", "it", "mx", "se"]
+        )
+      ),
       js: [
         {
           file:
-            "injections/js/bug1577245-salesforce-communities-hide-unsupported.js",
+            "injections/js/bug1623375-salesforce-communities-hide-unsupported.js",
         },
       ],
     },
@@ -171,20 +157,6 @@ const AVAILABLE_INJECTIONS = [
       css: [
         {
           file: "injections/css/bug1526977-sreedharscce.in-login-fix.css",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1518781",
-    platform: "desktop",
-    domain: "twitch.tv",
-    bug: "1518781",
-    contentScripts: {
-      matches: ["*://*.twitch.tv/*"],
-      css: [
-        {
-          file: "injections/css/bug1518781-twitch.tv-webkit-scrollbar.css",
         },
       ],
     },
@@ -207,7 +179,6 @@ const AVAILABLE_INJECTIONS = [
     bug: "1577870",
     data: {
       urls: [
-        "https://*.linkedin.com/tscp-serving/dtag*",
         "https://ads-us.rd.linksynergy.com/as.php*",
         "https://www.office.com/logout?sid*",
       ],
@@ -217,36 +188,6 @@ const AVAILABLE_INJECTIONS = [
       },
     },
     customFunc: "noSniffFix",
-  },
-  {
-    id: "bug1305028",
-    platform: "desktop",
-    domain: "gaming.youtube.com",
-    bug: "1305028",
-    contentScripts: {
-      matches: ["*://gaming.youtube.com/*"],
-      css: [
-        {
-          file:
-            "injections/css/bug1305028-gaming.youtube.com-webkit-scrollbar.css",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1432935-discord",
-    platform: "desktop",
-    domain: "discordapp.com",
-    bug: "1432935",
-    contentScripts: {
-      matches: ["*://discordapp.com/*"],
-      css: [
-        {
-          file:
-            "injections/css/bug1432935-discordapp.com-webkit-scorllbar-white-line.css",
-        },
-      ],
-    },
   },
   {
     id: "bug1561371",
@@ -380,20 +321,6 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1575017",
-    platform: "desktop",
-    domain: "dunkindonuts.com",
-    bug: "1575017",
-    contentScripts: {
-      matches: ["*://*.dunkindonuts.com/en/sign-in*"],
-      css: [
-        {
-          file: "injections/css/bug1575017-dunkindonuts.com-flex-basis.css",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1577270",
     platform: "android",
     domain: "binance.com",
@@ -420,6 +347,96 @@ const AVAILABLE_INJECTIONS = [
         },
       ],
     },
+  },
+  {
+    id: "bug1605611",
+    platform: "android",
+    domain: "maps.google.com",
+    bug: "1605611",
+    contentScripts: {
+      matches: InterventionHelpers.matchPatternsForGoogle(
+        "*://www.google.",
+        "/maps*"
+      ),
+      css: [
+        {
+          file: "injections/css/bug1605611-maps.google.com-directions-time.css",
+        },
+      ],
+      js: [
+        {
+          file: "injections/js/bug1605611-maps.google.com-directions-time.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1609991",
+    platform: "android",
+    domain: "www.cracked.com",
+    bug: "1609991",
+    contentScripts: {
+      matches: ["https://www.cracked.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1609991-cracked.com-flex-basis-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1610016",
+    platform: "android",
+    domain: "gaana.com",
+    bug: "1610016",
+    contentScripts: {
+      matches: ["https://gaana.com/*"],
+      css: [
+        {
+          file: "injections/css/bug1610016-gaana.com-input-position-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1610358",
+    platform: "android",
+    domain: "pcloud.com",
+    bug: "1610358",
+    contentScripts: {
+      matches: ["https://www.pcloud.com/*"],
+      js: [
+        {
+          file: "injections/js/bug1610358-pcloud.com-appVersion-change.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1610344",
+    platform: "android",
+    domain: "directv.com.co",
+    bug: "1610344",
+    contentScripts: {
+      matches: ["https://*.directv.com.co/*"],
+      css: [
+        {
+          file:
+            "injections/css/bug1610344-directv.com.co-hide-unsupported-message.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1622062",
+    platform: "android",
+    domain: "$.detectSwipe fix",
+    bug: "1622062",
+    data: {
+      urls: ["https://eu.stemwijzer.nl/public/js/votematch.vendors.js"],
+      types: ["script"],
+    },
+    customFunc: "detectSwipeFix",
   },
 ];
 

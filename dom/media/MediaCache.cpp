@@ -25,7 +25,6 @@
 #include "nsContentUtils.h"
 #include "nsINetworkLinkService.h"
 #include "nsIObserverService.h"
-#include "nsIPrincipal.h"
 #include "nsPrintfCString.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
@@ -94,8 +93,8 @@ class MediaCacheFlusher final : public nsIObserver,
   static void UnregisterMediaCache(MediaCache* aMediaCache);
 
  private:
-  MediaCacheFlusher() {}
-  ~MediaCacheFlusher() {}
+  MediaCacheFlusher() = default;
+  ~MediaCacheFlusher() = default;
 
   // Singleton instance created when a first MediaCache is registered, and
   // released when the last MediaCache is unregistered.
@@ -159,9 +158,12 @@ class MediaCache {
   // If the length is known and considered small enough, a discrete MediaCache
   // with memory backing will be given. Otherwise the one MediaCache with
   // file backing will be provided.
-  static RefPtr<MediaCache> GetMediaCache(int64_t aContentLength);
+  // If aIsPrivateBrowsing is true, only initialization of a memory backed
+  // MediaCache will be attempted, returning nullptr if that fails.
+  static RefPtr<MediaCache> GetMediaCache(int64_t aContentLength,
+                                          bool aIsPrivateBrowsing);
 
-  nsIEventTarget* OwnerThread() const { return sThread; }
+  nsISerialEventTarget* OwnerThread() const { return sThread; }
 
   // Brutally flush the cache contents. Main thread only.
   void Flush();
@@ -376,7 +378,7 @@ class MediaCache {
   };
 
   struct BlockOwner {
-    constexpr BlockOwner() {}
+    constexpr BlockOwner() = default;
 
     // The stream that owns this block, or null if the block is free.
     MediaCacheStream* mStream = nullptr;
@@ -730,9 +732,14 @@ void MediaCache::FlushInternal(AutoLock& aLock) {
 void MediaCache::Flush() {
   MOZ_ASSERT(NS_IsMainThread());
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
-      "MediaCache::Flush", [self = RefPtr<MediaCache>(this)]() {
+      "MediaCache::Flush", [self = RefPtr<MediaCache>(this)]() mutable {
         AutoLock lock(self->mMonitor);
         self->FlushInternal(lock);
+        // Ensure MediaCache is deleted on the main thread.
+        NS_ProxyRelease(
+            "MediaCache::Flush",
+            SystemGroup::EventTargetFor(mozilla::TaskCategory::Other),
+            self.forget());
       });
   sThread->Dispatch(r.forget());
 }
@@ -741,7 +748,7 @@ void MediaCache::CloseStreamsForPrivateBrowsing() {
   MOZ_ASSERT(NS_IsMainThread());
   sThread->Dispatch(NS_NewRunnableFunction(
       "MediaCache::CloseStreamsForPrivateBrowsing",
-      [self = RefPtr<MediaCache>(this)]() {
+      [self = RefPtr<MediaCache>(this)]() mutable {
         AutoLock lock(self->mMonitor);
         // Copy mStreams since CloseInternal() will change the array.
         nsTArray<MediaCacheStream*> streams(self->mStreams);
@@ -750,11 +757,17 @@ void MediaCache::CloseStreamsForPrivateBrowsing() {
             s->CloseInternal(lock);
           }
         }
+        // Ensure MediaCache is deleted on the main thread.
+        NS_ProxyRelease(
+            "MediaCache::CloseStreamsForPrivateBrowsing",
+            SystemGroup::EventTargetFor(mozilla::TaskCategory::Other),
+            self.forget());
       }));
 }
 
 /* static */
-RefPtr<MediaCache> MediaCache::GetMediaCache(int64_t aContentLength) {
+RefPtr<MediaCache> MediaCache::GetMediaCache(int64_t aContentLength,
+                                             bool aIsPrivateBrowsing) {
   NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
 
   if (!sThreadInit) {
@@ -765,7 +778,7 @@ RefPtr<MediaCache> MediaCache::GetMediaCache(int64_t aContentLength) {
       NS_WARNING("Failed to create a thread for MediaCache.");
       return nullptr;
     }
-    sThread = thread.forget();
+    sThread = ToRefPtr(std::move(thread));
 
     static struct ClearThread {
       // Called during shutdown to clear sThread.
@@ -782,11 +795,41 @@ RefPtr<MediaCache> MediaCache::GetMediaCache(int64_t aContentLength) {
     return nullptr;
   }
 
-  if (aContentLength > 0 &&
-      aContentLength <=
-          int64_t(StaticPrefs::media_memory_cache_max_size()) * 1024) {
-    // Small-enough resource, use a new memory-backed MediaCache.
-    RefPtr<MediaBlockCacheBase> bc = new MemoryBlockCache(aContentLength);
+  const int64_t mediaMemoryCacheMaxSize =
+      static_cast<int64_t>(StaticPrefs::media_memory_cache_max_size()) * 1024;
+
+  // Force usage of in-memory cache if we are in private browsing mode
+  // and the forceMediaMemoryCache pref is set
+  // We will not attempt to create an on-disk cache if this is the case
+  const bool forceMediaMemoryCache =
+      aIsPrivateBrowsing &&
+      StaticPrefs::browser_privatebrowsing_forceMediaMemoryCache();
+
+  // Alternatively, use an in-memory cache if the media will fit entirely
+  // in memory
+  // aContentLength < 0 indicates we do not know content's actual size
+  const bool contentFitsInMediaMemoryCache =
+      (aContentLength > 0) && (aContentLength <= mediaMemoryCacheMaxSize);
+
+  // Try to allocate a memory cache for our content
+  if (contentFitsInMediaMemoryCache || forceMediaMemoryCache) {
+    // Figure out how large our cache should be
+    int64_t cacheSize = 0;
+    if (contentFitsInMediaMemoryCache) {
+      cacheSize = aContentLength;
+    } else if (forceMediaMemoryCache) {
+      // Unknown content length, we'll give the maximum allowed cache size
+      // just to be sure.
+      if (aContentLength < 0) {
+        cacheSize = mediaMemoryCacheMaxSize;
+      } else {
+        // If the content length is less than the maximum allowed cache size,
+        // use that, otherwise we cap it to max size.
+        cacheSize = std::min(aContentLength, mediaMemoryCacheMaxSize);
+      }
+    }
+
+    RefPtr<MediaBlockCacheBase> bc = new MemoryBlockCache(cacheSize);
     nsresult rv = bc->Init();
     if (NS_SUCCEEDED(rv)) {
       RefPtr<MediaCache> mc = new MediaCache(bc);
@@ -794,8 +837,13 @@ RefPtr<MediaCache> MediaCache::GetMediaCache(int64_t aContentLength) {
           mc.get());
       return mc;
     }
-    // MemoryBlockCache initialization failed, clean up and try for a
-    // file-backed MediaCache below.
+
+    // MemoryBlockCache initialization failed.
+    // If we require use of a memory media cache, we will bail here.
+    // Otherwise use a file-backed MediaCache below.
+    if (forceMediaMemoryCache) {
+      return nullptr;
+    }
   }
 
   if (gMediaCache) {
@@ -2196,17 +2244,18 @@ bool MediaCacheStream::AreAllStreamsForResourceSuspended(AutoLock& aLock) {
   return true;
 }
 
-void MediaCacheStream::Close() {
+RefPtr<GenericPromise> MediaCacheStream::Close() {
   MOZ_ASSERT(NS_IsMainThread());
   if (!mMediaCache) {
-    return;
+    return GenericPromise::CreateAndResolve(true, __func__);
   }
-  OwnerThread()->Dispatch(NS_NewRunnableFunction(
-      "MediaCacheStream::Close",
-      [this, client = RefPtr<ChannelMediaResource>(mClient)]() {
-        AutoLock lock(mMediaCache->Monitor());
-        CloseInternal(lock);
-      }));
+
+  return InvokeAsync(OwnerThread(), "MediaCacheStream::Close",
+                     [this, client = RefPtr<ChannelMediaResource>(mClient)] {
+                       AutoLock lock(mMediaCache->Monitor());
+                       CloseInternal(lock);
+                       return GenericPromise::CreateAndResolve(true, __func__);
+                     });
 }
 
 void MediaCacheStream::CloseInternal(AutoLock& aLock) {
@@ -2558,7 +2607,6 @@ nsresult MediaCacheStream::Read(AutoLock& aLock, char* aBuffer, uint32_t aCount,
 
     // No data to read, so block
     aLock.Wait();
-    continue;
   }
 
   uint32_t count = buffer.Elements() - aBuffer;
@@ -2649,7 +2697,7 @@ nsresult MediaCacheStream::Init(int64_t aContentLength) {
     mStreamLength = aContentLength;
   }
 
-  mMediaCache = MediaCache::GetMediaCache(aContentLength);
+  mMediaCache = MediaCache::GetMediaCache(aContentLength, mIsPrivateBrowsing);
   if (!mMediaCache) {
     return NS_ERROR_FAILURE;
   }
@@ -2734,7 +2782,7 @@ void MediaCacheStream::InitAsCloneInternal(MediaCacheStream* aOriginal) {
   lock.NotifyAll();
 }
 
-nsIEventTarget* MediaCacheStream::OwnerThread() const {
+nsISerialEventTarget* MediaCacheStream::OwnerThread() const {
   return mMediaCache->OwnerThread();
 }
 

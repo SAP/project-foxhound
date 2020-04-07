@@ -8,8 +8,8 @@ const RELATIVE_DIR = "toolkit/mozapps/extensions/test/xpinstall/";
 
 const TESTROOT = "http://example.com/browser/" + RELATIVE_DIR;
 const TESTROOT2 = "http://example.org/browser/" + RELATIVE_DIR;
-const PROMPT_URL = "chrome://global/content/commonDialog.xul";
-const ADDONS_URL = "chrome://mozapps/content/extensions/extensions.xul";
+const PROMPT_URL = "chrome://global/content/commonDialog.xhtml";
+const ADDONS_URL = "chrome://mozapps/content/extensions/extensions.xhtml";
 const PREF_LOGGING_ENABLED = "extensions.logging.enabled";
 const PREF_INSTALL_REQUIREBUILTINCERTS =
   "extensions.install.requireBuiltInCerts";
@@ -105,7 +105,7 @@ var Harness = {
       Services.prefs.setBoolPref(PREF_INSTALL_REQUIRESECUREORIGIN, false);
       Services.prefs.setBoolPref(PREF_LOGGING_ENABLED, true);
       Services.prefs.setBoolPref(
-        "network.cookieSettings.unblocked_for_testing",
+        "network.cookieJarSettings.unblocked_for_testing",
         true
       );
 
@@ -131,7 +131,7 @@ var Harness = {
         Services.prefs.clearUserPref(PREF_LOGGING_ENABLED);
         Services.prefs.clearUserPref(PREF_INSTALL_REQUIRESECUREORIGIN);
         Services.prefs.clearUserPref(
-          "network.cookieSettings.unblocked_for_testing"
+          "network.cookieJarSettings.unblocked_for_testing"
         );
 
         Services.obs.removeObserver(self, "addon-install-started");
@@ -219,13 +219,14 @@ var Harness = {
   windowReady(window) {
     if (window.document.location.href == PROMPT_URL) {
       var promptType = window.args.promptType;
+      let dialog = window.document.getElementById("commonDialog");
       switch (promptType) {
         case "alert":
         case "alertCheck":
         case "confirmCheck":
         case "confirm":
         case "confirmEx":
-          window.document.documentElement.acceptDialog();
+          dialog.acceptDialog();
           break;
         case "promptUserAndPass":
           // This is a login dialog, hopefully an authentication prompt
@@ -236,12 +237,12 @@ var Harness = {
               window.document.getElementById("loginTextbox").value = auth[0];
               window.document.getElementById("password1Textbox").value =
                 auth[1];
-              window.document.documentElement.acceptDialog();
+              dialog.acceptDialog();
             } else {
-              window.document.documentElement.cancelDialog();
+              dialog.cancelDialog();
             }
           } else {
-            window.document.documentElement.cancelDialog();
+            dialog.cancelDialog();
           }
           break;
         default:
@@ -368,22 +369,19 @@ var Harness = {
     if (this.finalContentEvent && !this.waitingForEvent) {
       this.waitingForEvent = true;
       info("Waiting for " + this.finalContentEvent);
-      let mm = this._boundWin.get().gBrowser.selectedBrowser.messageManager;
-      mm.loadFrameScript(
-        `data:,content.addEventListener("${
-          this.finalContentEvent
-        }", () => { sendAsyncMessage("Test:GotNewInstallEvent"); });`,
-        false
-      );
-      let listener = () => {
-        info("Saw " + this.finalContentEvent);
-        mm.removeMessageListener("Test:GotNewInstallEvent", listener);
+      BrowserTestUtils.waitForContentEvent(
+        this._boundWin.get().gBrowser.selectedBrowser,
+        this.finalContentEvent,
+        true,
+        null,
+        true
+      ).then(() => {
+        info("Saw " + this.finalContentEvent + "," + this.waitingForEvent);
         this.waitingForEvent = false;
         if (this.pendingCount == 0) {
           this.endTest();
         }
-      };
-      mm.addMessageListener("Test:GotNewInstallEvent", listener);
+      });
     }
   },
 

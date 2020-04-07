@@ -489,7 +489,11 @@ function waitForBreakpointRemoved(dbg, url, line) {
  * @static
  */
 async function waitForPaused(dbg, url) {
-  const { getSelectedScope, getCurrentThread } = dbg.selectors;
+  const {
+    getSelectedScope,
+    getCurrentThread,
+    getCurrentThreadFrames,
+  } = dbg.selectors;
 
   await waitForState(
     dbg,
@@ -497,12 +501,13 @@ async function waitForPaused(dbg, url) {
     "paused"
   );
 
+  await waitForState(dbg, getCurrentThreadFrames, "fetched frames");
   await waitForLoadedScopes(dbg);
   await waitForSelectedSource(dbg, url);
 }
 
 function waitForInlinePreviews(dbg) {
-  return waitForState(dbg, () => dbg.selectors.getSelectedInlinePreviews())
+  return waitForState(dbg, () => dbg.selectors.getSelectedInlinePreviews());
 }
 
 function waitForCondition(dbg, condition) {
@@ -564,7 +569,6 @@ function isSelectedFrameSelected(dbg, state) {
 async function clearDebuggerPreferences(prefs = []) {
   resetSchemaVersion();
   asyncStorage.clear();
-  Services.prefs.clearUserPref("devtools.recordreplay.enabled");
   Services.prefs.clearUserPref("devtools.debugger.alphabetize-outline");
   Services.prefs.clearUserPref("devtools.debugger.pause-on-exceptions");
   Services.prefs.clearUserPref("devtools.debugger.pause-on-caught-exceptions");
@@ -591,8 +595,12 @@ async function clearDebuggerPreferences(prefs = []) {
  */
 
 async function initDebugger(url, ...sources) {
+  return initDebuggerWithAbsoluteURL(EXAMPLE_URL + url, ...sources);
+}
+
+async function initDebuggerWithAbsoluteURL(url, ...sources) {
   await clearDebuggerPreferences();
-  const toolbox = await openNewTabAndToolbox(EXAMPLE_URL + url, "jsdebugger");
+  const toolbox = await openNewTabAndToolbox(url, "jsdebugger");
   const dbg = createDebuggerContext(toolbox);
 
   await waitForSources(dbg, ...sources);
@@ -1077,22 +1085,23 @@ function waitForActive(dbg) {
  */
 function invokeInTab(fnc, ...args) {
   info(`Invoking in tab: ${fnc}(${args.map(uneval).join(",")})`);
-  return ContentTask.spawn(gBrowser.selectedBrowser, { fnc, args }, function*({
-    fnc,
-    args,
-  }) {
-    return content.wrappedJSObject[fnc](...args);
-  });
+  return ContentTask.spawn(
+    gBrowser.selectedBrowser,
+    { fnc, args },
+    ({ fnc, args }) => content.wrappedJSObject[fnc](...args)
+  );
 }
 
 function clickElementInTab(selector) {
   info(`click element ${selector} in tab`);
 
-  return ContentTask.spawn(gBrowser.selectedBrowser, { selector }, function*({
-    selector,
-  }) {
-    content.wrappedJSObject.document.querySelector(selector).click();
-  });
+  return SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [{ selector }],
+    function({ selector }) {
+      content.wrappedJSObject.document.querySelector(selector).click();
+    }
+  );
 }
 
 const isLinux = Services.appinfo.OS === "Linux";
@@ -1118,6 +1127,8 @@ const startKey = isMac
 
 const keyMappings = {
   close: { code: "w", modifiers: cmdOrCtrl },
+  commandKeyDown: {code: "VK_META", modifiers: {type: "keydown"}},
+  commandKeyUp: {code: "VK_META", modifiers: {type: "keyup"}},
   debugger: { code: "s", modifiers: shiftOrAlt },
   // test conditional panel shortcut
   toggleCondPanel: { code: "b", modifiers: cmdShift },
@@ -1266,6 +1277,7 @@ const selectors = {
   expressionInput: ".expressions-list  input.input-expression",
   expressionNodes: ".expressions-list .tree-node",
   expressionPlus: ".watch-expressions-pane button.plus",
+  expressionRefresh: ".watch-expressions-pane button.refresh",
   scopesHeader: ".scopes-pane ._header",
   breakpointItem: i => `.breakpoints-list div:nth-of-type(${i})`,
   breakpointLabel: i => `${selectors.breakpointItem(i)} .breakpoint-label`,
@@ -1287,6 +1299,7 @@ const selectors = {
   },
   columnBreakpoints: ".column-breakpoint",
   scopes: ".scopes-list",
+  scopeNodes: ".scopes-list .object-label",
   scopeNode: i => `.scopes-list .tree-node:nth-child(${i}) .object-label`,
   scopeValue: i =>
     `.scopes-list .tree-node:nth-child(${i}) .object-delimiter + *`,
@@ -1319,6 +1332,7 @@ const selectors = {
   replayNext: ".replay-next.active",
   toggleBreakpoints: ".breakpoints-toggle",
   prettyPrintButton: ".source-footer .prettyPrint",
+  prettyPrintLoader: ".source-footer .spin",
   sourceMapLink: ".source-footer .mapped-source",
   sourcesFooter: ".sources-panel .source-footer",
   editorFooter: ".editor-pane .source-footer",
@@ -1331,6 +1345,8 @@ const selectors = {
     `${selectors.threadSourceTree(i)} .tree-node:nth-child(${j}) .node`,
   sourceDirectoryLabel: i => `.sources-list .tree-node:nth-child(${i}) .label`,
   resultItems: ".result-list .result-item",
+  resultItemName: (name, i) =>
+    `${selectors.resultItems}:nth-child(${i})[title$="${name}"]`,
   fileMatch: ".project-text-search .line-value",
   popup: ".popover",
   tooltip: ".tooltip",
@@ -1360,6 +1376,9 @@ const selectors = {
   addSetWatchpoint: "#node-menu-add-set-watchpoint",
   removeWatchpoint: "#node-menu-remove-watchpoint",
   logEventsCheckbox: ".events-header input",
+  previewPopupInvokeGetterButton: ".preview-popup .invoke-getter",
+  previewPopupObjectNumber: ".preview-popup .objectBox-number",
+  previewPopupObjectObject: ".preview-popup .objectBox-object",
 };
 
 function getSelector(elementName, ...args) {
@@ -1666,6 +1685,21 @@ async function hoverAtPos(dbg, pos) {
   InspectorUtils.addPseudoClassLock(tokenEl, ":hover");
 }
 
+async function closePreviewAtPos(dbg, line, column) {
+  const pos = { line, ch: column - 1 };
+  const tokenEl = await getTokenFromPosition(dbg, pos);
+
+  if (!tokenEl) {
+    return false;
+  }
+
+  InspectorUtils.removePseudoClassLock(tokenEl, ":hover");
+
+  const gutterEl = await getEditorLineGutter(dbg, line);
+  EventUtils.synthesizeMouseAtCenter(gutterEl, { type: "mousemove" }, dbg.win);
+  await waitUntil(() => findElement(dbg, "previewPopup") == null);
+}
+
 // tryHovering will hover at a position every second until we
 // see a preview element (popup, tooltip) appear. Once it appears,
 // it considers it a success.
@@ -1705,7 +1739,7 @@ async function assertPreviewTooltip(dbg, line, column, { result, expression }) {
   is(previewEl.innerText, result, "Preview text shown to user");
 
   const preview = dbg.selectors.getPreview();
-  is(`${preview.result}`, result, "Preview.result");
+  is(`${preview.resultGrip}`, result, "Preview.result");
   is(preview.expression, expression, "Preview.expression");
 }
 
@@ -1715,8 +1749,9 @@ async function hoverOnToken(dbg, line, column, selector) {
 }
 
 function getPreviewProperty(preview, field) {
+  const { resultGrip } = preview;
   const properties =
-    preview.result.preview.ownProperties || preview.result.preview.items;
+    resultGrip.preview.ownProperties || resultGrip.preview.items;
   const property = properties[field];
   return property.value || property;
 }
@@ -1866,8 +1901,8 @@ async function evaluateInTopFrame(dbg, text) {
   const consoleFront = await dbg.toolbox.target.getFront("console");
   const { frames } = await threadFront.getFrames(0, 1);
   ok(frames.length == 1, "Got one frame");
-  const options = { thread: threadFront.actor, frameActor: frames[0].actor };
-  const response = await consoleFront.evaluateJS(text, options);
+  const options = { thread: threadFront.actor, frameActor: frames[0].actorID };
+  const response = await consoleFront.evaluateJSAsync(text, options);
   return response.result.type == "undefined" ? undefined : response.result;
 }
 
@@ -1921,6 +1956,30 @@ function waitForInspectorPanelChange(dbg) {
   return dbg.toolbox.getPanelWhenReady("inspector");
 }
 
+function getEagerEvaluationElement(hud) {
+  return hud.ui.outputNode.querySelector(".eager-evaluation-result");
+}
+
+async function waitForEagerEvaluationResult(hud, text) {
+  await waitUntil(() => {
+    const elem = getEagerEvaluationElement(hud);
+    if (elem) {
+      if (text instanceof RegExp) {
+        return text.test(elem.innerText);
+      }
+      return elem.innerText == text;
+    }
+    return false;
+  });
+  ok(true, `Got eager evaluation result ${text}`);
+}
+
+function setInputValue(hud, value) {
+  const onValueSet = hud.jsterm.once("set-input-value");
+  hud.jsterm._setValue(value);
+  return onValueSet;
+}
+
 const { PromiseTestUtils } = ChromeUtils.import(
   "resource://testing-common/PromiseTestUtils.jsm"
 );
@@ -1933,3 +1992,4 @@ PromiseTestUtils.whitelistRejectionsGlobally(/Current thread has changed/);
 PromiseTestUtils.whitelistRejectionsGlobally(
   /Current thread has paused or resumed/
 );
+PromiseTestUtils.whitelistRejectionsGlobally(/Connection closed/);

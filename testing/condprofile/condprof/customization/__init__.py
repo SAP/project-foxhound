@@ -12,8 +12,21 @@ def get_customizations():
         yield os.path.join(HERE, f)
 
 
-def get_customization(path):
-    if not os.path.exists(path):
-        raise IOError("Can't find the customization file %r" % path)
+def find_customization(path_or_name):
+    if not path_or_name.endswith(".json"):
+        path_or_name += ".json"
+    if not os.path.exists(path_or_name):
+        # trying relative
+        rpath = os.path.join(HERE, path_or_name)
+        if not os.path.exists(rpath):
+            return None
+        path_or_name = rpath
+    return path_or_name
+
+
+def get_customization(path_or_name):
+    path = find_customization(path_or_name)
+    if path is None:
+        raise IOError("Can't find the customization file %r" % path_or_name)
     with open(path) as f:
         return json.loads(f.read())

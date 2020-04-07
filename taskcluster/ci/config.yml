@@ -28,27 +28,28 @@ treeherder:
         'Btime-fennec': 'Browsertime performance tests on Fennec'
         'Btime-fennec-1proc': 'Browsertime performance tests on Fennec without e10s'
         'Btime-refbrow': 'Browsertime performance tests on the reference browser'
+        'Btime-Prof-fenix': 'Browsertime performance tests on Fenix with Gecko Profiling'
+        'Btime-Prof-fennec': 'Browsertime performance tests on Fennec with Gecko Profiling'
+        'Btime-Prof-fennec-1proc': 'Browsertime performance tests on Fennec without e10s with Gecko Profiling'
+        'Btime-Prof-refbrow': 'Browsertime performance tests on the reference browser with Gecko Profiling'
         'Fetch': 'Fetch and store content'
         'Fxfn-l': 'Firefox functional tests (local)'
         'Fxfn-l-1proc': 'Firefox functional tests (local) without e10s'
         'Fxfn-r': 'Firefox functional tests (remote)'
         'Fxfn-r-1proc': 'Firefox functional tests (remote) without e10s'
         'iris': 'Iris testing suite'
+        'l10n-bump': 'L10n Bumper'
         'M': 'Mochitests'
         'M-1proc': 'Mochitests without e10s'
         'M-fis': 'Mochitests with fission enabled'
         'M-spi': 'Mochitests with socket process'
         'M-spi-1proc': 'Mochitests with socket process without e10s'
-        'M-sw': 'Mochitests with serviceworker redesign'
-        'M-sw-1proc': 'Mochitests with serviceworker redesign without e10s'
         'M-V-1proc': 'Mochitests on Valgrind without e10s'
         'MSI': 'Repack installers into MSIs'
         'MSIs': 'Signing of Repacked installers of MSIs'
         'R': 'Reftests'
         'R-1proc': 'Reftests without e10s'
         'R-fis': 'Reftests with fission enabled'
-        'R-sw': 'Reftests with serviceworker redesign'
-        'R-sw-1proc': 'Reftests with serviceworker redesign enabled without e10s'
         'Rap': 'Raptor performance tests on Firefox'
         'Rap-1proc': 'Raptor performance tests on Firefox without e10s'
         'Rap-fis': 'Raptor performance tests on Firefox with fission enabled'
@@ -66,27 +67,23 @@ treeherder:
         'T': 'Talos performance tests'
         'T-1proc': 'Talos performance tests without e10s'
         'T-fis': 'Talos performance tests with fission enabled'
-        'Tsd': 'Talos performance tests, Stylo disabled'
-        'Tsd-1proc': 'Talos performance tests with Stylo disabled without e10s'
+        'T-Prof': 'Talos performance tests on Firefox with Gecko Profiling'
+        'T-Prof-1proc': 'Talos performance tests on Firefox with Gecko Profiling and without e10s'
+        'T-Prof-fis': 'Talos performance tests on Firefox with fission and Gecko Profiling'
         'Tss': 'Talos performance tests, Stylo sequential'
         'Tss-fis': 'Talos performance tests, Stylo sequential with fission enabled'
         'Tss-1proc': 'Talos performance tests with Stylo sequential without e10s'
         'tt': 'Telemetry tests'
         'tt-1proc': 'Telemetry tests without e10s'
         'SY': 'Are we slim yet tests by TaskCluster'
-        'SYsd': 'Are we slim yet tests by TaskCluster, Stylo disabled'
-        'SYss': 'Are we slim yet tests by TaskCluster, Stylo sequential'
+        'SY-fis': 'Are we slim yet tests by TaskCluster, fission enabled'
         'VP': 'VideoPuppeteer tests'
         'W': 'Web platform tests'
         'W-1proc': 'Web platform tests without e10s'
         'W-fis': 'Web platform tests with fission enabled'
-        'W-sw': 'Web platform tests with serviceworker redesign'
-        'W-sw-1proc': 'Web platform tests with serviceworker redesign, without e10s'
         'X': 'Xpcshell tests'
         'X-1proc': 'Xpcshell tests, without e10s'
         'X-fis': 'Xpcshell tests with fission enabled'
-        'X-sw': 'Xpcshell tests with serviceworker redesign'
-        'X-sw-1proc': 'Xpcshell tests with serviceworker redesign, without e10s'
         'L10n': 'Localised Repacks'
         'L10n-Rpk': 'Localized Repackaged Repacks'
         'BM': 'Beetmover'
@@ -122,11 +119,13 @@ treeherder:
         'ms-stage': 'Autograph-stage MAR signing test'
         'Rel': 'Release promotion'
         'Snap': 'Snap image generation'
+        'Flatpak': 'Flatpak image generation'
         'langpack': 'Langpack sigatures and uploads'
         'TPS': 'Sync tests'
         'UV': 'Update verify'
-        'pipfu': 'pipfile update'
+        'pydep': 'python dependency update'
         'WR': 'WebRender standalone'
+        'Wgpu': 'WebGPU standalone'
         'Gd': 'Geckodriver'
         'cpp': 'C/C++ checks'
         'pedantic': 'pedantic checks'
@@ -135,11 +134,14 @@ treeherder:
         'js': 'JavaScript checks'
         'py': 'Python checks'
         'java': 'Java checks'
+        'rust': 'Rust checks'
         'Static-Analysis': 'Full tree static-analysis'
         'SS': 'Shadow scheduler'
         'test-info': 'Test manifest skip/fail information'
-        'vismet': 'Visual Metrics Analsyis'
+        'vismet': 'Visual Metrics Analysis'
         'condprof': 'Conditioned Profile Builder'
+        'doc': 'Documentation'
+        'GhS': 'GitHub Synchronization'
 
 index:
     products:
@@ -149,6 +151,7 @@ index:
         - 'static-analysis'
         - 'devedition'
         - 'source'
+        - 'system-symbols'
 
 try:
     # We have a few platforms for which we want to do some "extra" builds, or at
@@ -241,32 +244,85 @@ release-promotion:
             target-tasks-method: ship_desktop
             partial-updates: true
 
+
+merge-automation:
+    flavors:
+        central-to-beta:
+            version-files:
+                - browser/config/version.txt
+                - config/milestone.txt
+            version-files-suffix:
+                - browser/config/version_display.txt
+            version-suffix: b1
+            copy-files: []
+            replacements:
+                - - browser/config/mozconfigs/linux32/l10n-mozconfig
+                  - ac_add_options --with-branding=browser/branding/nightly
+                  - ac_add_options --enable-official-branding
+                - - browser/config/mozconfigs/linux64/l10n-mozconfig
+                  - ac_add_options --with-branding=browser/branding/nightly
+                  - ac_add_options --enable-official-branding
+                - - browser/config/mozconfigs/win32/l10n-mozconfig
+                  - ac_add_options --with-branding=browser/branding/nightly
+                  - ac_add_options --enable-official-branding
+                - - browser/config/mozconfigs/win64/l10n-mozconfig
+                  - ac_add_options --with-branding=browser/branding/nightly
+                  - ac_add_options --enable-official-branding
+                - - browser/config/mozconfigs/win64-aarch64/l10n-mozconfig
+                  - ac_add_options --with-branding=browser/branding/nightly
+                  - ac_add_options --enable-official-branding
+                - - browser/config/mozconfigs/macosx64/l10n-mozconfig
+                  - ac_add_options --with-branding=browser/branding/nightly
+                  - ac_add_options --enable-official-branding
+                - - build/mozconfig.common
+                  - 'MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-0}'
+                  - 'MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-1}'
+                - - build/mozconfig.common
+                  - '# Disable enforcing that add-ons are signed by the trusted root'
+                  - '# Enable enforcing that add-ons are signed by the trusted root'
+            merge-old-head: true
+            base-tag: 'FIREFOX_BETA_{major_version}_BASE'
+            end-tag: 'FIREFOX_BETA_{major_version}_END'
+            from-repo: 'https://hg.mozilla.org/mozilla-central'
+            from-branch: 'central'
+            to-repo: 'https://hg.mozilla.org/releases/mozilla-beta'
+            to-branch: 'beta'
+        beta-to-release:
+            version-files: []
+            version-files-suffix: []
+            version-suffix: ''
+            copy-files:
+                - - "browser/config/version.txt"
+                  - "browser/config/version_display.txt"
+            replacements: []
+            merge-old-head: true
+            base-tag: 'FIREFOX_RELEASE_{major_version}_BASE'
+            end-tag: 'FIREFOX_RELEASE_{major_version}_END'
+            from-repo: 'https://hg.mozilla.org/releases/mozilla-beta'
+            from-branch: 'beta'
+            to-repo: 'https://hg.mozilla.org/releases/mozilla-release'
+            to-branch: 'release'
+        release-to-esr:
+            version-files: []
+            version-files-suffix:
+                - browser/config/version_display.txt
+            version-suffix: "esr"
+            copy-files: []
+            replacements:
+                - - "build/mozconfig.common"
+                  - "# Enable enforcing that add-ons are signed by the trusted root"
+                  - "# Disable enforcing that add-ons are signed by the trusted root"
+            merge-old-head: false
+            base-tag: "FIREFOX_ESR_{major_version}_BASE"
+            from-repo: 'https://hg.mozilla.org/releases/mozilla-release'
+            from-branch: 'release'
+            to-repo: 'https://hg.mozilla.org/releases/mozilla-esr68'
+            to-branch: 'esr68'
+
+
 scriptworker:
     # See additional configuration in taskcluster/taskgraph/util/scriptworker.py
     scope-prefix: 'project:releng'
-    worker-types:
-        'linux-signing':
-            - 'project:releng:signing:cert:release-signing'
-            - 'project:releng:signing:cert:nightly-signing'
-        'linux-depsigning':
-            - 'project:releng:signing:cert:dep-signing'
-        'scriptworker-k8s/gecko-3-beetmover':
-            - 'project:releng:beetmover:bucket:release'
-            - 'project:releng:beetmover:bucket:nightly'
-            - 'project:releng:beetmover:bucket:partner'
-            - 'project:releng:beetmover:bucket:maven-production'
-        'scriptworker-k8s/gecko-1-beetmover':
-            - 'project:releng:beetmover:bucket:dep'
-            - 'project:releng:beetmover:bucket:dep-partner'
-            - 'project:releng:beetmover:bucket:maven-staging'
-        'scriptworker-k8s/gecko-3-balrog':
-            - 'project:releng:balrog:server:nightly'
-            - 'project:releng:balrog:server:aurora'
-            - 'project:releng:balrog:server:beta'
-            - 'project:releng:balrog:server:release'
-            - 'project:releng:balrog:server:esr'
-        'scriptworker-k8s/gecko-1-balrog':
-            - 'project:releng:balrog:server:dep'
 
 partner-urls:
     release-partner-repack:
@@ -305,6 +361,8 @@ task-priority:
         'mozilla-inbound': 'low'
         'default': 'very-low'
 
+taskgraph: {}
+
 workers:
     aliases:
         b-linux.*:
@@ -322,6 +380,32 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: '{alias}'
+        balrog:
+            provisioner: scriptworker-k8s
+            implementation: balrog
+            os: scriptworker
+            worker-type:
+                by-release-level:
+                    production: gecko-3-balrog
+                    staging: gecko-1-balrog
+        bouncer:
+            provisioner: scriptworker-k8s
+            # Note that this implementation doesn't correspond with an
+            # payload_builder, there are several `bouncer-*` implemenations.
+            implementation: bouncer
+            os: scriptworker
+            worker-type:
+                by-release-level:
+                    production: gecko-3-bouncer
+                    staging: gecko-1-bouncer
+        beetmover:
+            provisioner: scriptworker-k8s
+            implementation: beetmover
+            os: scriptworker
+            worker-type:
+                by-release-level:
+                    production: gecko-3-beetmover
+                    staging: gecko-1-beetmover
         linux-depsigning:
             provisioner: scriptworker-k8s
             implementation: scriptworker-signing
@@ -331,17 +415,41 @@ workers:
             provisioner: scriptworker-k8s
             implementation: scriptworker-signing
             os: linux
-            worker-type: gecko-3-signing
+            worker-type:
+                by-release-level:
+                    production: gecko-3-signing
+                    staging: gecko-t-signing
         mac-depsigning:
             provisioner: scriptworker-prov-v1
-            implementation: scriptworker-iscript
+            implementation: scriptworker-signing
             os: macosx
             worker-type: depsigning-mac-v1
+        mac-notarization-poller:
+            provisioner: scriptworker-prov-v1
+            implementation: notarization-poller
+            os: macosx
+            worker-type: mac-notarization-poller
         mac-signing:
             provisioner: scriptworker-prov-v1
-            implementation: scriptworker-iscript
+            implementation: scriptworker-signing
             os: macosx
-            worker-type: signing-mac-v1
+            worker-type:
+                by-release-level:
+                    production: signing-mac-v1
+                    staging: depsigning-mac-v1
+        tree:
+            provisioner: scriptworker-k8s
+            implementation: treescript
+            os: scriptworker
+            worker-type:
+                by-release-level:
+                    production: gecko-3-tree
+                    staging: gecko-1-tree
+        tree-dev:
+            provisioner: scriptworker-k8s
+            implementation: treescript
+            os: scriptworker
+            worker-type: gecko-1-tree-dev
         t-ap.*:
             provisioner: proj-autophone
             implementation: script-engine-autophone
@@ -426,14 +534,20 @@ workers:
             implementation: succeed
             os: none
             worker-type: succeed
+        misc:
+            provisioner: gecko-t
+            implementation: docker-worker
+            os: linux
+            worker-type: misc
+
 
 mac-notarization:
     mac-behavior:
-        by-release-type:
-            nightly.*: mac_notarize
-            beta.*: mac_notarize
-            esr.*: mac_notarize
-            release.*: mac_notarize
+        by-project:
+            mozilla-(central|beta|release|esr.*):
+                by-shippable:
+                    "true": mac_notarize
+                    default: mac_sign_and_pkg
             default: mac_sign_and_pkg
     mac-entitlements:
         by-platform:
@@ -442,4 +556,3 @@ mac-notarization:
                     production: security/mac/hardenedruntime/production.entitlements.xml
                     default: security/mac/hardenedruntime/developer.entitlements.xml
             default: ''
-

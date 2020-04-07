@@ -4,10 +4,33 @@
 
 "use strict";
 
-const { PureComponent } = require("devtools/client/shared/vendor/react");
+const Services = require("Services");
+const {
+  createFactory,
+  PureComponent,
+} = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 
-const Types = require("../types");
+loader.lazyRequireGetter(
+  this,
+  "openDocLink",
+  "devtools/client/shared/link",
+  true
+);
+
+const UnsupportedBrowserList = createFactory(
+  require("devtools/client/inspector/compatibility/components/UnsupportedBrowserList")
+);
+
+const Types = require("devtools/client/inspector/compatibility/types");
+
+// For test
+loader.lazyRequireGetter(
+  this,
+  "toSnakeCase",
+  "devtools/client/inspector/compatibility/utils/cases",
+  true
+);
 
 class IssueItem extends PureComponent {
   static get propTypes() {
@@ -16,23 +39,101 @@ class IssueItem extends PureComponent {
     };
   }
 
+  constructor(props) {
+    super(props);
+    this._onLinkClicked = this._onLinkClicked.bind(this);
+  }
+
+  _onLinkClicked(e) {
+    const { url } = this.props;
+
+    e.preventDefault();
+    e.stopPropagation();
+    openDocLink(url);
+  }
+
+  _getTestDataAttributes() {
+    const testDataSet = {};
+
+    if (Services.prefs.getBoolPref("devtools.testing", false)) {
+      for (const [key, value] of Object.entries(this.props)) {
+        const datasetKey = `data-qa-${toSnakeCase(key)}`;
+        testDataSet[datasetKey] = JSON.stringify(value);
+      }
+    }
+
+    return testDataSet;
+  }
+
+  _renderCauses() {
+    const { deprecated, experimental } = this.props;
+
+    const causes = [];
+
+    if (deprecated) {
+      causes.push("deprecated");
+    }
+
+    if (experimental) {
+      causes.push("experimental");
+    }
+
+    return causes.length
+      ? dom.span(
+          { className: "compatibility-issue-item__causes" },
+          `(${causes.join(",")})`
+        )
+      : null;
+  }
+
+  _renderUnsupportedBrowserList() {
+    const { unsupportedBrowsers } = this.props;
+
+    return unsupportedBrowsers.length
+      ? UnsupportedBrowserList({ browsers: unsupportedBrowsers })
+      : null;
+  }
+
   render() {
-    const { property, type } = this.props;
+    const {
+      deprecated,
+      experimental,
+      property,
+      unsupportedBrowsers,
+      url,
+    } = this.props;
+
+    const classes = ["compatibility-issue-item"];
+
+    if (deprecated) {
+      classes.push("compatibility-issue-item--deprecated");
+    }
+
+    if (experimental) {
+      classes.push("compatibility-issue-item--experimental");
+    }
+
+    if (unsupportedBrowsers.length) {
+      classes.push("compatibility-issue-item--unsupported");
+    }
+
     return dom.li(
       {
-        key: `${property}:${type}`,
-        "data-qa-property": property,
+        className: classes.join(" "),
+        key: property,
+        ...this._getTestDataAttributes(),
       },
-      Object.entries(this.props).map(([key, value]) =>
-        dom.div(
-          {
-            key,
-            "data-qa-key": key,
-            "data-qa-value": `${value}`,
-          },
-          `${key}:${value}`
-        )
-      )
+      dom.a(
+        {
+          className: "compatibility-issue-item__mdn-link devtools-monospace",
+          href: url,
+          title: url,
+          onClick: e => this._onLinkClicked(e),
+        },
+        property
+      ),
+      this._renderCauses(),
+      this._renderUnsupportedBrowserList()
     );
   }
 }

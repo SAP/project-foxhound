@@ -21,9 +21,10 @@
 #include "debugger/Debugger.h"  // for ResumeMode, Handler, Debugger
 #include "gc/Barrier.h"         // for HeapPtr
 #include "gc/Rooting.h"         // for HandleDebuggerFrame, HandleNativeObject
+#include "vm/FrameIter.h"       // for FrameIter
 #include "vm/JSObject.h"        // for JSObject
 #include "vm/NativeObject.h"    // for NativeObject
-#include "vm/Stack.h"           // for FrameIter, AbstractFramePtr
+#include "vm/Stack.h"           // for AbstractFramePtr
 
 namespace js {
 
@@ -57,7 +58,7 @@ class ScriptedOnStepHandler final : public OnStepHandler {
                       ResumeMode& resumeMode, MutableHandleValue vp) override;
 
  private:
-  HeapPtr<JSObject*> object_;
+  const HeapPtr<JSObject*> object_;
 };
 
 /*
@@ -91,7 +92,7 @@ class ScriptedOnPopHandler final : public OnPopHandler {
                      MutableHandleValue vp) override;
 
  private:
-  HeapPtr<JSObject*> object_;
+  const HeapPtr<JSObject*> object_;
 };
 
 enum class DebuggerFrameType { Eval, Global, Call, Module, WasmCall };
@@ -125,6 +126,8 @@ class DebuggerFrame : public NativeObject {
     ONSTEP_HANDLER_SLOT,
     ONPOP_HANDLER_SLOT,
 
+    HAS_INCREMENTED_STEPPER_SLOT,
+
     // If this is a frame for a generator call, and the generator object has
     // been created (which doesn't happen until after default argument
     // evaluation and destructuring), then this is a PrivateValue pointing to a
@@ -146,8 +149,9 @@ class DebuggerFrame : public NativeObject {
   static NativeObject* initClass(JSContext* cx, Handle<GlobalObject*> global,
                                  HandleObject dbgCtor);
   static DebuggerFrame* create(JSContext* cx, HandleObject proto,
-                               const FrameIter& iter,
-                               HandleNativeObject debugger);
+                               HandleNativeObject debugger,
+                               const FrameIter* maybeIter,
+                               Handle<AbstractGeneratorObject*> maybeGenerator);
 
   static MOZ_MUST_USE bool getArguments(JSContext* cx,
                                         HandleDebuggerFrame frame,
@@ -160,11 +164,16 @@ class DebuggerFrame : public NativeObject {
   static MOZ_MUST_USE bool getEnvironment(
       JSContext* cx, HandleDebuggerFrame frame,
       MutableHandleDebuggerEnvironment result);
-  static bool getIsGenerator(HandleDebuggerFrame frame);
   static MOZ_MUST_USE bool getOffset(JSContext* cx, HandleDebuggerFrame frame,
                                      size_t& result);
   static MOZ_MUST_USE bool getOlder(JSContext* cx, HandleDebuggerFrame frame,
                                     MutableHandleDebuggerFrame result);
+  static MOZ_MUST_USE bool getAsyncPromise(JSContext* cx,
+                                           HandleDebuggerFrame frame,
+                                           MutableHandleDebuggerObject result);
+  static MOZ_MUST_USE bool getOlderSavedFrame(JSContext* cx,
+                                              HandleDebuggerFrame frame,
+                                              MutableHandleSavedFrame result);
   static MOZ_MUST_USE bool getThis(JSContext* cx, HandleDebuggerFrame frame,
                                    MutableHandleValue result);
   static DebuggerFrameType getType(HandleDebuggerFrame frame);
@@ -179,11 +188,13 @@ class DebuggerFrame : public NativeObject {
       mozilla::Range<const char16_t> chars, HandleObject bindings,
       const EvalOptions& options);
 
-  MOZ_MUST_USE bool requireLive(JSContext* cx);
-  static MOZ_MUST_USE DebuggerFrame* check(JSContext* cx, HandleValue thisv,
-                                           bool checkLive);
+  static MOZ_MUST_USE DebuggerFrame* check(JSContext* cx, HandleValue thisv);
 
-  bool isLive() const;
+  bool isOnStack() const;
+
+  // Like isOnStack, but works even in the midst of a relocating GC.
+  bool isOnStackMaybeForwarded() const;
+
   OnStepHandler* onStepHandler() const;
   OnPopHandler* onPopHandler() const;
   void setOnPopHandler(JSContext* cx, OnPopHandler* handler);
@@ -244,7 +255,7 @@ class DebuggerFrame : public NativeObject {
    */
   bool resume(const FrameIter& iter);
 
-  bool hasAnyLiveHooks() const;
+  bool hasAnyHooks() const;
 
  private:
   static const JSClassOps classOps_;
@@ -267,12 +278,20 @@ class DebuggerFrame : public NativeObject {
 
   Debugger* owner() const;
 
+  bool hasIncrementedStepper() const;
+  void setHasIncrementedStepper(bool incremented);
+
+  MOZ_MUST_USE bool maybeIncrementStepperCounter(JSContext* cx,
+                                                 AbstractFramePtr referent);
+  MOZ_MUST_USE bool maybeIncrementStepperCounter(JSContext* cx,
+                                                 JSScript* script);
+  void maybeDecrementStepperCounter(JSFreeOp* fop, JSScript* script);
+
  public:
   FrameIter::Data* frameIterData() const;
   void setFrameIterData(FrameIter::Data*);
   void freeFrameIterData(JSFreeOp* fop);
-  void maybeDecrementFrameScriptStepperCount(JSFreeOp* fop,
-                                             AbstractFramePtr frame);
+  void maybeDecrementStepperCounter(JSFreeOp* fop, AbstractFramePtr referent);
 
   class GeneratorInfo;
   inline GeneratorInfo* generatorInfo() const;

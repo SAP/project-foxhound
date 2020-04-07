@@ -54,7 +54,7 @@
     "babel-plugin-transform-imports": "^1.5.0",
     "codemirror": "^5.28.0",
     "devtools-environment": "^0.0.6",
-    "devtools-launchpad": "^0.0.158",
+    "devtools-launchpad": "^0.0.161",
     "devtools-linters": "^0.0.4",
     "devtools-reps": "0.23.0",
     "devtools-source-map": "0.16.0",
@@ -76,7 +76,7 @@
     "react-transition-group": "^2.2.1",
     "reselect": "^4.0.0",
     "svg-inline-react": "^3.0.0",
-    "wasmparser": "^0.7.0",
+    "wasmparser": "^0.10.0",
     "whatwg-url": "^7.0.0"
   },
   "private": true,

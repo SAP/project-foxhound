@@ -53,7 +53,7 @@ class AltSvcMapping {
                 bool isolated, uint32_t expiresAt,
                 const nsACString& alternateHost, int32_t alternatePort,
                 const nsACString& npnToken,
-                const OriginAttributes& originAttributes);
+                const OriginAttributes& originAttributes, bool aIsHttp3);
 
  public:
   AltSvcMapping(DataStorage* storage, int32_t storageEpoch,
@@ -103,6 +103,9 @@ class AltSvcMapping {
                           const nsACString& topWindowOrigin,
                           const OriginAttributes& originAttributes);
 
+  bool IsHttp3() { return mIsHttp3; }
+  const nsCString& NPNToken() const { return mNPNToken; }
+
  private:
   virtual ~AltSvcMapping() = default;
   void SyncString(const nsCString& val);
@@ -136,6 +139,7 @@ class AltSvcMapping {
   OriginAttributes mOriginAttributes;
 
   bool mSyncOnlyOnSuccess;
+  bool mIsHttp3;
 };
 
 class AltSvcOverride : public nsIInterfaceRequestor,
@@ -160,7 +164,7 @@ class TransactionObserver final : public nsIStreamListener {
   NS_DECL_NSIREQUESTOBSERVER
 
   TransactionObserver(nsHttpChannel* channel, WellKnownChecker* checker);
-  void Complete(nsHttpTransaction*, nsresult);
+  void Complete(bool versionOK, bool authOK, nsresult reason);
 
  private:
   friend class WellKnownChecker;
@@ -172,9 +176,10 @@ class TransactionObserver final : public nsIStreamListener {
   nsCString mWKResponse;
 
   bool mRanOnce;
-  bool mAuthOK;     // confirmed no TLS failure
-  bool mVersionOK;  // connection h2
-  bool mStatusOK;   // HTTP Status 200
+  bool mStatusOK;  // HTTP Status 200
+  // These two values could be accessed on sts thread.
+  Atomic<bool> mAuthOK;     // confirmed no TLS failure
+  Atomic<bool> mVersionOK;  // connection h2
 };
 
 class AltSvcCache {
@@ -199,6 +204,7 @@ class AltSvcCache {
   nsresult GetAltSvcCacheKeys(nsTArray<nsCString>& value);
 
  private:
+  void EnsureStorageInited();
   already_AddRefed<AltSvcMapping> LookupMapping(const nsCString& key,
                                                 bool privateBrowsing);
   RefPtr<DataStorage> mStorage;

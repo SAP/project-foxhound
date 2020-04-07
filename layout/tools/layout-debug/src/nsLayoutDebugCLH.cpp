@@ -8,12 +8,13 @@
 #include "nsArray.h"
 #include "nsString.h"
 #include "plstr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
 #include "nsIWindowWatcher.h"
-#include "nsIServiceManager.h"
 #include "nsISupportsPrimitives.h"
 #include "nsICommandLine.h"
 #include "nsIURI.h"
+#include "nsServiceManagerUtils.h"
 
 nsLayoutDebugCLH::nsLayoutDebugCLH() {}
 
@@ -100,6 +101,7 @@ nsLayoutDebugCLH::Handle(nsICommandLine* aCmdLine) {
   double delay = 0.0;
   bool captureProfile = false;
   nsString profileFilename;
+  bool paged = false;
 
   rv = HandleFlagWithOptionalArgument(
       aCmdLine, NS_LITERAL_STRING("layoutdebug"),
@@ -117,6 +119,9 @@ nsLayoutDebugCLH::Handle(nsICommandLine* aCmdLine) {
   rv = HandleFlagWithOptionalArgument(
       aCmdLine, NS_LITERAL_STRING("capture-profile"),
       NS_LITERAL_STRING("profile.json"), profileFilename, captureProfile);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = aCmdLine->HandleFlag(NS_LITERAL_STRING("paged"), false, &paged);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIMutableArray> argsArray = nsArray::Create();
@@ -150,13 +155,19 @@ nsLayoutDebugCLH::Handle(nsICommandLine* aCmdLine) {
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
+  if (paged) {
+    rv = AppendArg(argsArray, NS_LITERAL_STRING("paged"));
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
   nsCOMPtr<nsIWindowWatcher> wwatch =
       do_GetService(NS_WINDOWWATCHER_CONTRACTID);
   NS_ENSURE_TRUE(wwatch, NS_ERROR_FAILURE);
 
   nsCOMPtr<mozIDOMWindowProxy> opened;
-  wwatch->OpenWindow(nullptr, "chrome://layoutdebug/content/", "_blank",
-                     "chrome,dialog=no,all", argsArray, getter_AddRefs(opened));
+  wwatch->OpenWindow(nullptr, "chrome://layoutdebug/content/layoutdebug.xhtml",
+                     "_blank", "chrome,dialog=no,all", argsArray,
+                     getter_AddRefs(opened));
   aCmdLine->SetPreventDefault(true);
   return NS_OK;
 }
@@ -171,6 +182,7 @@ nsLayoutDebugCLH::GetHelpInfo(nsACString& aResult) {
       "  --capture-profile [<filename>] Capture a profile of the Layout\n"
       "                     Debugger using the Gecko Profiler, and save the\n"
       "                     profile to the specified file (which defaults to\n"
-      "                     profile.json).\n");
+      "                     profile.json).\n"
+      "  --paged Layout the page in paginated mode.\n");
   return NS_OK;
 }

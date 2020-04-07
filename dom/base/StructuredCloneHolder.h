@@ -7,10 +7,11 @@
 #ifndef mozilla_dom_StructuredCloneHolder_h
 #define mozilla_dom_StructuredCloneHolder_h
 
-#include "jsapi.h"
+#include <utility>
+
 #include "js/StructuredClone.h"
+#include "jsapi.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsTArray.h"
@@ -38,8 +39,8 @@ class StructuredCloneHolderBase {
  public:
   typedef JS::StructuredCloneScope StructuredCloneScope;
 
-  StructuredCloneHolderBase(StructuredCloneScope aScope =
-                                StructuredCloneScope::SameProcessSameThread);
+  StructuredCloneHolderBase(
+      StructuredCloneScope aScope = StructuredCloneScope::SameProcess);
   virtual ~StructuredCloneHolderBase();
 
   // Note, it is unsafe to std::move() a StructuredCloneHolderBase since a raw
@@ -50,13 +51,15 @@ class StructuredCloneHolderBase {
   // These methods should be implemented in order to clone data.
   // Read more documentation in js/public/StructuredClone.h.
 
-  virtual JSObject* CustomReadHandler(JSContext* aCx,
-                                      JSStructuredCloneReader* aReader,
-                                      uint32_t aTag, uint32_t aIndex) = 0;
+  virtual JSObject* CustomReadHandler(
+      JSContext* aCx, JSStructuredCloneReader* aReader,
+      const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag,
+      uint32_t aIndex) = 0;
 
   virtual bool CustomWriteHandler(JSContext* aCx,
                                   JSStructuredCloneWriter* aWriter,
-                                  JS::Handle<JSObject*> aObj) = 0;
+                                  JS::Handle<JSObject*> aObj,
+                                  bool* aSameProcessScopeRequired) = 0;
 
   // This method has to be called when this object is not needed anymore.
   // It will free memory and the buffer. This has to be called because
@@ -86,7 +89,8 @@ class StructuredCloneHolderBase {
                                          void* aContent, uint64_t aExtraData);
 
   virtual bool CustomCanTransferHandler(JSContext* aCx,
-                                        JS::Handle<JSObject*> aObj);
+                                        JS::Handle<JSObject*> aObj,
+                                        bool* aSameProcessScopeRequired);
 
   // These methods are what you should use to read/write data.
 
@@ -98,11 +102,15 @@ class StructuredCloneHolderBase {
   // of cloning policy.
   bool Write(JSContext* aCx, JS::Handle<JS::Value> aValue,
              JS::Handle<JS::Value> aTransfer,
-             JS::CloneDataPolicy cloneDataPolicy);
+             const JS::CloneDataPolicy& aCloneDataPolicy);
 
   // If Write() has been called, this method retrieves data and stores it into
   // aValue.
   bool Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue);
+
+  // Like Read() but it supports handling of clone policy.
+  bool Read(JSContext* aCx, JS::MutableHandle<JS::Value> aValue,
+            const JS::CloneDataPolicy& aCloneDataPolicy);
 
   bool HasData() const { return !!mBuffer; }
 
@@ -119,10 +127,19 @@ class StructuredCloneHolderBase {
     return size;
   }
 
+  void SetErrorMessage(const char* aErrorMessage) {
+    mErrorMessage.Assign(aErrorMessage);
+  }
+
  protected:
   UniquePtr<JSAutoStructuredCloneBuffer> mBuffer;
 
   StructuredCloneScope mStructuredCloneScope;
+
+  // Error message when a data clone error is about to throw. It's held while
+  // the error callback is fired and it will be throw with a data clone error
+  // later.
+  nsCString mErrorMessage;
 
 #ifdef DEBUG
   bool mClearCalled;
@@ -156,14 +173,20 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
 
   // Normally you should just use Write() and Read().
 
-  void Write(JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv);
+  virtual void Write(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                     ErrorResult& aRv);
 
-  void Write(JSContext* aCx, JS::Handle<JS::Value> aValue,
-             JS::Handle<JS::Value> aTransfer,
-             JS::CloneDataPolicy cloneDataPolicy, ErrorResult& aRv);
+  virtual void Write(JSContext* aCx, JS::Handle<JS::Value> aValue,
+                     JS::Handle<JS::Value> aTransfer,
+                     const JS::CloneDataPolicy& aCloneDataPolicy,
+                     ErrorResult& aRv);
 
   void Read(nsIGlobalObject* aGlobal, JSContext* aCx,
             JS::MutableHandle<JS::Value> aValue, ErrorResult& aRv);
+
+  void Read(nsIGlobalObject* aGlobal, JSContext* aCx,
+            JS::MutableHandle<JS::Value> aValue,
+            const JS::CloneDataPolicy& aCloneDataPolicy, ErrorResult& aRv);
 
   // Call this method to know if this object is keeping some DOM object alive.
   bool HasClonedDOMObjects() const {
@@ -189,7 +212,14 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
     return mInputStreamArray;
   }
 
-  StructuredCloneScope CloneScope() const { return mStructuredCloneScope; }
+  // This method returns the final scope. If the final scope is unknown,
+  // DifferentProcess is returned because it's the most restrictive one.
+  StructuredCloneScope CloneScope() const {
+    if (mStructuredCloneScope == StructuredCloneScope::UnknownDestination) {
+      return StructuredCloneScope::DifferentProcess;
+    }
+    return mStructuredCloneScope;
+  }
 
   // The global object is set internally just during the Read(). This method
   // can be used by read functions to retrieve it.
@@ -220,13 +250,15 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   // Implementations of the virtual methods to allow cloning of objects which
   // JS engine itself doesn't clone.
 
-  virtual JSObject* CustomReadHandler(JSContext* aCx,
-                                      JSStructuredCloneReader* aReader,
-                                      uint32_t aTag, uint32_t aIndex) override;
+  virtual JSObject* CustomReadHandler(
+      JSContext* aCx, JSStructuredCloneReader* aReader,
+      const JS::CloneDataPolicy& aCloneDataPolicy, uint32_t aTag,
+      uint32_t aIndex) override;
 
   virtual bool CustomWriteHandler(JSContext* aCx,
                                   JSStructuredCloneWriter* aWriter,
-                                  JS::Handle<JSObject*> aObj) override;
+                                  JS::Handle<JSObject*> aObj,
+                                  bool* aSameProcessScopeRequired) override;
 
   virtual bool CustomReadTransferHandler(
       JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag,
@@ -245,8 +277,9 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
                                          void* aContent,
                                          uint64_t aExtraData) override;
 
-  virtual bool CustomCanTransferHandler(JSContext* aCx,
-                                        JS::Handle<JSObject*> aObj) override;
+  virtual bool CustomCanTransferHandler(
+      JSContext* aCx, JS::Handle<JSObject*> aObj,
+      bool* aSameProcessScopeRequired) override;
 
   // These 2 static methods are useful to read/write fully serializable objects.
   // They can be used by custom StructuredCloneHolderBase classes to
@@ -272,12 +305,18 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   // and/or the PortIdentifiers.
   void ReadFromBuffer(nsIGlobalObject* aGlobal, JSContext* aCx,
                       JSStructuredCloneData& aBuffer,
-                      JS::MutableHandle<JS::Value> aValue, ErrorResult& aRv);
+                      JS::MutableHandle<JS::Value> aValue,
+                      const JS::CloneDataPolicy& aCloneDataPolicy,
+                      ErrorResult& aRv);
 
   void ReadFromBuffer(nsIGlobalObject* aGlobal, JSContext* aCx,
                       JSStructuredCloneData& aBuffer,
                       uint32_t aAlgorithmVersion,
-                      JS::MutableHandle<JS::Value> aValue, ErrorResult& aRv);
+                      JS::MutableHandle<JS::Value> aValue,
+                      const JS::CloneDataPolicy& aCloneDataPolicy,
+                      ErrorResult& aRv);
+
+  void SameProcessScopeRequired(bool* aSameProcessScopeRequired);
 
   bool mSupportsCloning;
   bool mSupportsTransferring;

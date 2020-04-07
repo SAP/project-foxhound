@@ -115,6 +115,11 @@ interface nsIDOMWindowUtils : nsISupports {
                        out double aMinZoom, out double aMaxZoom,
                        out uint32_t aWidth, out uint32_t aHeight,
                        out boolean aAutoSize);
+  /*
+   * Information retrieved from the viewport-fit value of <meta name="viewport">
+   * element.
+   */
+  AString getViewportFitInfo();
 
   /**
    * Information about the window size in device pixels.
@@ -867,6 +872,12 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   void getVisualViewportOffset(out long aOffsetX, out long aOffsetY);
 
+  /**
+   * Sets the maximum height of the dynamic toolbar in Screen pixel units.
+   */
+  [can_run_script]
+  void setDynamicToolbarMaxHeight(in uint32_t aHeightInScreen);
+
   const long FLUSH_NONE = -1;
   const long FLUSH_STYLE = 0;
   const long FLUSH_LAYOUT = 1;
@@ -933,8 +944,23 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * Get the number of screen pixels per CSS pixel.
+   *
+   * This is the same as window.devicePixelRatio, except it bypasses
+   * the fingerprinting resistance efforts that window.devicePixelRatio
+   * does (which is fine as this is only exposed to browser internals).
    */
   readonly attribute float screenPixelsPerCSSPixel;
+
+  /**
+   * Get the number of screen pixels per CSS pixel,
+   * not taking into account any override of the device pixel scale
+   * that's imposed by Responsive Design Mode.
+   *
+   * This is needed to e.g. correctly translate "window.mozInnerScreenX/Y"
+   * into device pixels even when "window" is the window of a document
+   * inside an RDM pane.
+   */
+  readonly attribute float screenPixelsPerCSSPixelNoOverride;
 
   /**
    * Get the current zoom factor.
@@ -945,8 +971,8 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute float fullZoom;
 
   /**
-   * Dispatches aEvent as a trusted event via the PresShell object of the
-   * window's document.
+   * Dispatches aEvent as a synthesized trusted event for tests via the
+   * PresShell object of the window's document.
    * The event is dispatched to aTarget, which should be an object
    * which implements nsIContent interface (#element, #text, etc).
    *
@@ -958,8 +984,8 @@ interface nsIDOMWindowUtils : nsISupports {
    *       Also, aEvent should not be reused.
    */
   [can_run_script]
-  boolean dispatchDOMEventViaPresShell(in Node aTarget,
-                                       in Event aEvent);
+  boolean dispatchDOMEventViaPresShellForTesting(in Node aTarget,
+                                                 in Event aEvent);
 
   /**
    * Sets WidgetEvent::mFlags::mOnlyChromeDispatch to true to ensure that
@@ -1747,12 +1773,6 @@ interface nsIDOMWindowUtils : nsISupports {
   void postRestyleSelfEvent(in Element aElement);
 
   /**
-   * Used to pause or resume all media in this window. Use-cases are audio
-   * competing, remote media control and to prevent auto-playing media.
-   */
-  attribute uint32_t mediaSuspend;
-
-  /**
    * This method doesn't do anything useful.  It was solely added for the
    * purpose of the test for bug 503926.
    */
@@ -1914,8 +1934,31 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * Toggle recording of composition on and off.
+   *
+   * This is equivalent to calling |startCompositionRecorder()| or
+   * |stopCompositionRecorder(true)|.
    */
-  void setCompositionRecording(in boolean aValue);
+  Promise setCompositionRecording(in boolean aValue);
+
+  /**
+   * Start the composition recorder.
+   *
+   * @return A promise that is resolved to true if the composion recorder was
+   *         started successfully.
+   */
+  Promise startCompositionRecording();
+
+  /**
+   * Stop the composition recorder.
+   *
+   * @param aWriteToDisk Whether or not the frames should be written to disk.
+   *                     If false, they will be returned in the promise.
+   * @return A promise that resolves when the frames have been collected.
+   *         When |aWriteToDisk| is true, the promise will resolve to |undefined|.
+   *         Otherwise, the promise will resolve to a |DOMCollectedFrames| dictionary,
+   *         which contains the timestamps and contents of the captured frames.
+   */
+  Promise stopCompositionRecording(in boolean aWriteToDisk);
 
   /**
    * Toggle transaction logging on and off.
@@ -1935,12 +1978,19 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   attribute ACString systemFont;
 
+  /**
+   * Returns the number of times this document for this window has
+   * been painted to the screen.
+   *
+   * Use this instead of window.mozPaintCount
+   */
+  readonly attribute unsigned long long paintCount;
 
   /**
    * Simulate the system setting corresponding to 'prefers-reduced-motion'
    * media queries feature is changed to 'on' or 'off'.
    *
-   * Currently this function is available only on MacOSX.
+   * This function doesn't work on Windows.
    */
   void setPrefersReducedMotionOverrideForTest(in boolean aValue);
   /**

@@ -6,6 +6,8 @@ const TEST_PAGE_URI = "data:text/html;charset=utf-8,The letter s.";
 // it does not allow 'data:' URI to be loaded in the parent process.
 const E10S_PARENT_TEST_PAGE_URI =
   getRootDirectory(gTestPath) + "file_empty.html";
+const TEST_PAGE_URI_WITHIFRAME =
+  "https://example.com/browser/toolkit/content/tests/browser/file_findinframe.html";
 
 /**
  * Makes sure that the findbar hotkeys (' and /) event listeners
@@ -37,16 +39,15 @@ add_task(async function test_hotkey_event_propagation() {
   }
 
   // Stop propagation for all keyboard events.
-  let frameScript = () => {
-    const stopPropagation = e => e.stopImmediatePropagation();
+  await SpecialPowers.spawn(browser, [], () => {
+    const stopPropagation = e => {
+      e.stopImmediatePropagation();
+    };
     let window = content.document.defaultView;
-    window.removeEventListener("keydown", stopPropagation);
-    window.removeEventListener("keypress", stopPropagation);
-    window.removeEventListener("keyup", stopPropagation);
-  };
-
-  let mm = browser.messageManager;
-  mm.loadFrameScript("data:,(" + frameScript.toString() + ")();", false);
+    window.addEventListener("keydown", stopPropagation);
+    window.addEventListener("keypress", stopPropagation);
+    window.addEventListener("keyup", stopPropagation);
+  });
 
   // Checking if findbar still appears when any hotkey is pressed.
   for (let key of HOTKEYS) {
@@ -221,7 +222,7 @@ add_task(async function e10sLostKeys() {
   let initialValue = findBar._findField.value;
 
   await EventUtils.synthesizeAndWaitKey(
-    "f",
+    "F",
     { accelKey: true },
     window,
     null,
@@ -298,6 +299,152 @@ add_task(async function test_open_and_close_keys() {
   BrowserTestUtils.removeTab(tab);
 });
 
+// This test loads an editable area within an iframe and then
+// performs a search. Focusing the editable area should still
+// allow keyboard events to be received.
+add_task(async function test_hotkey_insubframe() {
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    TEST_PAGE_URI_WITHIFRAME
+  );
+
+  await gFindBarPromise;
+  let findBar = gFindBar;
+
+  // Focus the editable area within the frame.
+  let browser = gBrowser.selectedBrowser;
+  let frameBC = browser.browsingContext.children[0];
+  await SpecialPowers.spawn(frameBC, [], async () => {
+    content.document.body.focus();
+    content.document.defaultView.focus();
+  });
+
+  // Start a find and wait for the findbar to open.
+  let findBarOpenPromise = BrowserTestUtils.waitForEvent(
+    gBrowser,
+    "findbaropen"
+  );
+  EventUtils.synthesizeKey("f", { accelKey: true });
+  await findBarOpenPromise;
+
+  // Opening the findbar would have focused the find textbox.
+  // Focus the editable area again.
+  let cursorPos = await SpecialPowers.spawn(frameBC, [], async () => {
+    content.document.body.focus();
+    content.document.defaultView.focus();
+    return content.getSelection().anchorOffset;
+  });
+  is(cursorPos, 0, "initial cursor position");
+
+  // Try moving the caret.
+  await BrowserTestUtils.synthesizeKey("KEY_ArrowRight", {}, frameBC);
+
+  cursorPos = await SpecialPowers.spawn(frameBC, [], async () => {
+    return content.getSelection().anchorOffset;
+  });
+  is(cursorPos, 1, "cursor moved");
+
+  await closeFindbarAndWait(findBar);
+  gBrowser.removeTab(tab);
+});
+
+/**
+ * Reloading a page should use the same match case / whole word
+ * state for the search.
+ */
+add_task(async function test_preservestate_on_reload() {
+  for (let stateChange of ["case-sensitive", "entire-word"]) {
+    let tab = await BrowserTestUtils.openNewForegroundTab(
+      gBrowser,
+      "data:text/html,<p>There is a cat named Theo in the kitchen with another cat named Catherine. The two of them are thirsty."
+    );
+
+    // Start a find and wait for the findbar to open.
+    let findBarOpenPromise = BrowserTestUtils.waitForEvent(
+      gBrowser,
+      "findbaropen"
+    );
+    EventUtils.synthesizeKey("f", { accelKey: true });
+    await findBarOpenPromise;
+
+    let isEntireWord = stateChange == "entire-word";
+
+    let findbar = await gBrowser.getFindBar();
+
+    // Find some text.
+    let promiseMatches = promiseGetMatchCount(findbar);
+    await promiseFindFinished("The", true);
+
+    let matches = await promiseMatches;
+    is(matches.current, 1, "Correct match position " + stateChange);
+    is(matches.total, 7, "Correct number of matches " + stateChange);
+
+    // Turn on the case sensitive or entire word option.
+    findbar.getElement("find-" + stateChange).click();
+
+    promiseMatches = promiseGetMatchCount(findbar);
+    gFindBar.onFindAgainCommand();
+    matches = await promiseMatches;
+    is(
+      matches.current,
+      2,
+      "Correct match position after state change matches " + stateChange
+    );
+    is(
+      matches.total,
+      isEntireWord ? 2 : 3,
+      "Correct number after state change matches " + stateChange
+    );
+
+    // Reload the page.
+    let loadedPromise = BrowserTestUtils.browserLoaded(
+      gBrowser.selectedBrowser,
+      true
+    );
+    gBrowser.reload();
+    await loadedPromise;
+
+    // Perform a find again. The state should be preserved.
+    promiseMatches = promiseGetMatchCount(findbar);
+    gFindBar.onFindAgainCommand();
+    matches = await promiseMatches;
+    is(
+      matches.current,
+      1,
+      "Correct match position after reload and find again " + stateChange
+    );
+    is(
+      matches.total,
+      isEntireWord ? 2 : 3,
+      "Correct number of matches after reload and find again " + stateChange
+    );
+
+    // Turn off the case sensitive or entire word option and find again.
+    findbar.getElement("find-" + stateChange).click();
+
+    promiseMatches = promiseGetMatchCount(findbar);
+    gFindBar.onFindAgainCommand();
+    matches = await promiseMatches;
+
+    is(
+      matches.current,
+      isEntireWord ? 4 : 2,
+      "Correct match position after reload and find again reset " + stateChange
+    );
+    is(
+      matches.total,
+      7,
+      "Correct number of matches after reload and find again reset " +
+        stateChange
+    );
+
+    findbar.clear();
+    await closeFindbarAndWait(findbar);
+
+    gBrowser.removeTab(tab);
+  }
+});
+
 async function promiseFindFinished(searchText, highlightOn) {
   let findbar = await gBrowser.getFindBar();
   findbar.startFind(findbar.FIND_NORMAL);
@@ -338,6 +485,23 @@ async function promiseFindFinished(searchText, highlightOn) {
       findbar.browser.finder.addResultListener(resultListener);
       findbar._find();
     });
+  });
+}
+
+function promiseGetMatchCount(findbar) {
+  return new Promise(resolve => {
+    let resultListener = {
+      onFindResult() {},
+      onCurrentSelection() {},
+      onHighlightFinished() {},
+      onMatchesCountResult(response) {
+        if (response.total > 0) {
+          findbar.browser.finder.removeResultListener(resultListener);
+          resolve(response);
+        }
+      },
+    };
+    findbar.browser.finder.addResultListener(resultListener);
   });
 }
 

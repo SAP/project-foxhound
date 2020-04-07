@@ -7,11 +7,11 @@ const SEARCH_SERVICE_TOPIC = "browser-search-service";
 
 add_task(async function setup() {
   await AddonTestUtils.promiseStartupManager();
+  await useTestEngines("data", "geolookup-extensions");
+  Services.prefs.setBoolPref("browser.search.geoSpecificDefaults", true);
 });
 
 add_task(async function test_maybereloadengine_update() {
-  useTestEngines("geolookup-extensions");
-
   let reloadObserved = false;
   let obs = (subject, topic, data) => {
     if (data == "engines-reloaded") {
@@ -20,7 +20,7 @@ add_task(async function test_maybereloadengine_update() {
   };
   Services.obs.addObserver(obs, SEARCH_SERVICE_TOPIC);
 
-  let initPromise = Services.search.init(true);
+  let initPromise = Services.search.init(false);
 
   async function cont(requests) {
     await Promise.all([

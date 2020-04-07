@@ -41,6 +41,7 @@ class VRManagerEventObserver {
   virtual void NotifyPresentationGenerationChanged(uint32_t aDisplayID) = 0;
   virtual bool GetStopActivityStatus() const = 0;
   virtual void NotifyEnumerationCompleted() = 0;
+  virtual void NotifyDetectRuntimesCompleted() = 0;
 
  protected:
   virtual ~VRManagerEventObserver() = default;
@@ -60,19 +61,22 @@ class VRManagerChild : public PVRManagerChild {
   void RemoveListener(VRManagerEventObserver* aObserver);
   void StartActivity();
   void StopActivity();
+  bool RuntimeSupportsVR() const;
+  bool RuntimeSupportsAR() const;
 
   void GetVRDisplays(nsTArray<RefPtr<VRDisplayClient>>& aDisplays);
   bool RefreshVRDisplaysWithCallback(uint64_t aWindowId);
   bool EnumerateVRDisplays();
+  void DetectRuntimes();
   void AddPromise(const uint32_t& aID, dom::Promise* aPromise);
 
   static void InitSameProcess();
   static void InitWithGPUProcess(Endpoint<PVRManagerChild>&& aEndpoint);
   static bool InitForContent(Endpoint<PVRManagerChild>&& aEndpoint);
-  static bool ReinitForContent(Endpoint<PVRManagerChild>&& aEndpoint);
   static void ShutDown();
 
   static bool IsCreated();
+  static bool IsPresenting();
 
   PVRLayerChild* CreateVRLayer(uint32_t aDisplayID, nsIEventTarget* aTarget,
                                uint32_t aGroup);
@@ -90,7 +94,7 @@ class VRManagerChild : public PVRManagerChild {
   void NotifyPresentationGenerationChanged(uint32_t aDisplayID);
 
   MOZ_CAN_RUN_SCRIPT
-  void UpdateDisplayInfo(nsTArray<VRDisplayInfo>& aDisplayUpdates);
+  void UpdateDisplayInfo(const VRDisplayInfo& aDisplayInfo);
   void FireDOMVRDisplayMountedEvent(uint32_t aDisplayID);
   void FireDOMVRDisplayUnmountedEvent(uint32_t aDisplayID);
   void FireDOMVRDisplayConnectEvent(uint32_t aDisplayID);
@@ -98,7 +102,8 @@ class VRManagerChild : public PVRManagerChild {
   void FireDOMVRDisplayPresentChangeEvent(uint32_t aDisplayID);
   void FireDOMVRDisplayConnectEventsForLoad(VRManagerEventObserver* aObserver);
 
-  virtual void HandleFatalError(const char* aMsg) const override;
+  void HandleFatalError(const char* aMsg) const override;
+  void ActorDestroy(ActorDestroyReason aReason) override;
 
   void RunPuppet(const nsTArray<uint64_t>& aBuffer, dom::Promise* aPromise,
                  ErrorResult& aRv);
@@ -107,18 +112,20 @@ class VRManagerChild : public PVRManagerChild {
  protected:
   explicit VRManagerChild();
   ~VRManagerChild();
-  void Destroy();
-  static void DeferredDestroy(RefPtr<VRManagerChild> aVRManagerChild);
 
   PVRLayerChild* AllocPVRLayerChild(const uint32_t& aDisplayID,
                                     const uint32_t& aGroup);
   bool DeallocPVRLayerChild(PVRLayerChild* actor);
 
+  void ActorDealloc() override;
+
   // MOZ_CAN_RUN_SCRIPT_BOUNDARY until we can mark ipdl-generated things as
   // MOZ_CAN_RUN_SCRIPT.
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvUpdateDisplayInfo(
-      nsTArray<VRDisplayInfo>&& aDisplayUpdates);
+      const VRDisplayInfo& aDisplayInfo);
+  mozilla::ipc::IPCResult RecvUpdateRuntimeCapabilities(
+      const VRDisplayCapabilityFlags& aCapabilities);
   mozilla::ipc::IPCResult RecvReplyGamepadVibrateHaptic(
       const uint32_t& aPromiseID);
 
@@ -139,8 +146,10 @@ class VRManagerChild : public PVRManagerChild {
       uint32_t aDisplayID, VRManagerEventObserver* aObserver);
   void NotifyPresentationGenerationChangedInternal(uint32_t aDisplayID);
   void NotifyEnumerationCompletedInternal();
+  void NotifyRuntimeCapabilitiesUpdatedInternal();
 
   nsTArray<RefPtr<VRDisplayClient>> mDisplays;
+  VRDisplayCapabilityFlags mRuntimeCapabilities;
   bool mDisplaysInitialized;
   nsTArray<uint64_t> mNavigatorCallbacks;
 

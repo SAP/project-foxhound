@@ -35,7 +35,7 @@ linux64-llvm-dsymutil:
         fetch:
             - llvm-for-dsymutil
         toolchain:
-            - linux64-gcc-6
+            - linux64-gcc-7
 
 linux64-binutils:
     description: "Binutils toolchain build"
@@ -116,7 +116,7 @@ linux64-tup:
         fetch:
             - tup
         toolchain:
-            - linux64-gcc-6
+            - linux64-gcc-7
 
 linux64-upx:
     description: "UPX build"
@@ -153,10 +153,26 @@ browsertime:
         resources:
             - 'tools/browsertime/package.json'
             - 'tools/browsertime/mach_commands.py'
-        toolchain-artifact: public/build/browsertime.zip
+        toolchain-artifact: public/build/browsertime.tar.bz2
     fetches:
         toolchain:
             - linux64-node
+
+wasi-sysroot:
+    description: "wasi sysroot build process"
+    treeherder:
+        symbol: TL(wasi-sysroot)
+    run:
+        script: build-wasi-sysroot.sh
+        sparse-profile: null
+        toolchain-artifact: public/build/wasi-sysroot.tar.xz
+    fetches:
+        fetch:
+            - clang-9
+            - wasi-sdk
+        toolchain:
+            - linux64-binutils
+            - linux64-gcc-7
 
 wrench-deps:
     description: "Downloads all the crates needed for building wrench"
@@ -166,7 +182,7 @@ wrench-deps:
         docker-image: {in-tree: webrender}
     run:
         script: wrench-deps-vendoring.sh
-        sparse-profile: null  # need all of gfx/wr checked out for this script
+        sparse-profile: null
         resources:
             - 'gfx/wr/Cargo.lock'
         toolchain-artifact: public/build/wrench-deps.tar.bz2
@@ -174,4 +190,66 @@ wrench-deps:
         fetch:
             - android-rs-glue
         toolchain:
-            - linux64-rust-1.37  # whatever m-c is built with
+            - linux64-rust-1.41  # whatever m-c is built with
+
+wgpu-deps:
+    description: "Downloads all the crates needed for testing wgpu"
+    treeherder:
+        symbol: Wgpu(deps)
+    worker:
+        docker-image: {in-tree: wgpu}
+    run:
+        script: wgpu-deps-vendoring.sh
+        sparse-profile: null
+        resources:
+            - 'gfx/wgpu/Cargo.lock'
+        toolchain-artifact: public/build/wgpu-deps.tar.bz2
+    fetches:
+        fetch:
+            - android-rs-glue
+        toolchain:
+            - linux64-rust-1.41  # whatever m-c is built with
+
+linux64-lucetc:
+    description: "lucetc build process"
+    treeherder:
+        symbol: TL(lucetc)
+    run:
+        script: build-lucetc.sh
+        toolchain-artifact: public/build/lucetc.tar.xz
+    fetches:
+        fetch:
+            - cmake
+            - lucetc-source
+        toolchain:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+
+linux64-liblowercase:
+    description: "liblowercase"
+    treeherder:
+        symbol: TL(lc)
+    run:
+        script: build-liblowercase.sh
+        sparse-profile: liblowercase
+        toolchain-artifact: public/build/liblowercase.tar.xz
+        resources:
+            - build/liblowercase/
+    fetches:
+        toolchain:
+            - linux64-rust-1.41
+
+linux64-wine:
+    description: "Wine build for Windows Cross Compile"
+    treeherder:
+        symbol: TL(wine)
+        tier: 1
+    worker:
+        max-run-time: 10800
+    run:
+        script: build-wine.sh
+        toolchain-artifact: public/build/wine.tar.xz
+    fetches:
+        fetch:
+            - wine-3.0.3

@@ -47,8 +47,8 @@ namespace gfx {
 // and mapped files if we have both release and nightlies
 // running at the same time? Or...what if we have multiple
 // release builds running on same machine? (Bug 1563232)
-#define SHMEM_VERSION "0.0.3"
-static const int32_t kVRExternalVersion = 10;
+#define SHMEM_VERSION "0.0.7"
+static const int32_t kVRExternalVersion = 14;
 
 // We assign VR presentations to groups with a bitmask.
 // Currently, we will only display either content or chrome.
@@ -63,6 +63,7 @@ static const uint32_t kVRGroupAll = 0xffffffff;
 
 static const int kVRDisplayNameMaxLen = 256;
 static const int kVRControllerNameMaxLen = 256;
+static const int kProfileNameListMaxLen = 256;
 static const int kVRControllerMaxCount = 16;
 static const int kVRControllerMaxButtons = 64;
 static const int kVRControllerMaxAxis = 16;
@@ -119,12 +120,20 @@ enum class ControllerCapabilityFlags : uint16_t {
    */
   Cap_LinearAcceleration = 1 << 4,
   /**
+   * Cap_GripSpacePosition is set if the Gamepad has a grip space position.
+   */
+  Cap_GripSpacePosition = 1 << 5,
+  /**
    * Cap_All used for validity checking during IPC serialization
    */
-  Cap_All = (1 << 5) - 1
+  Cap_All = (1 << 6) - 1
 };
 
 #endif  // ifndef MOZILLA_INTERNAL_API
+
+enum class TargetRayMode : uint8_t { Gaze, TrackedPointer, Screen };
+
+enum class GamepadMappingType : uint8_t { _empty, Standard, XRStandard };
 
 enum class VRDisplayBlendMode : uint8_t { Opaque, Additive, AlphaBlend };
 
@@ -332,6 +341,37 @@ struct VRControllerState {
 #else
   ControllerHand hand;
 #endif
+  // https://immersive-web.github.io/webxr/#enumdef-xrtargetraymode
+  TargetRayMode targetRayMode;
+
+  // Space-delimited list of input profile names, in decending order
+  // of specificity.
+  // https://immersive-web.github.io/webxr/#dom-xrinputsource-profiles
+  char profiles[kProfileNameListMaxLen];
+
+  // https://immersive-web.github.io/webxr-gamepads-module/#enumdef-gamepadmappingtype
+  GamepadMappingType mappingType;
+
+  // Start frame ID of the most recent primary select
+  // action, or 0 if the select action has never occurred.
+  uint64_t selectActionStartFrameId;
+  // End frame Id of the most recent primary select
+  // action, or 0 if action never occurred.
+  // If selectActionStopFrameId is less than
+  // selectActionStartFrameId, then the select
+  // action has not ended yet.
+  uint64_t selectActionStopFrameId;
+
+  // start frame Id of the most recent primary squeeze
+  // action, or 0 if the squeeze action has never occurred.
+  uint64_t squeezeActionStartFrameId;
+  // End frame Id of the most recent primary squeeze
+  // action, or 0 if action never occurred.
+  // If squeezeActionStopFrameId is less than
+  // squeezeActionStartFrameId, then the squeeze
+  // action has not ended yet.
+  uint64_t squeezeActionStopFrameId;
+
   uint32_t numButtons;
   uint32_t numAxes;
   uint32_t numHaptics;
@@ -347,9 +387,20 @@ struct VRControllerState {
 #else
   ControllerCapabilityFlags flags;
 #endif
+
+  // When Cap_Position is set in flags, pose corresponds
+  // to the controllers' pose in target ray space:
+  // https://immersive-web.github.io/webxr/#dom-xrinputsource-targetrayspace
   VRPose pose;
+
+  // When Cap_GripSpacePosition is set in flags, gripPose corresponds
+  // to the controllers' pose in grip space:
+  // https://immersive-web.github.io/webxr/#dom-xrinputsource-gripspace
+  VRPose gripPose;
+
   bool isPositionValid;
   bool isOrientationValid;
+
 #ifdef MOZILLA_INTERNAL_API
   void Clear() { memset(this, 0, sizeof(VRControllerState)); }
 #endif
@@ -421,6 +472,23 @@ struct VRBrowserState {
 #if defined(__ANDROID__)
   bool shutdown;
 #endif  // defined(__ANDROID__)
+  /**
+   * In order to support WebXR's navigator.xr.IsSessionSupported call without
+   * displaying any permission dialogue, it is necessary to have a safe way to
+   * detect the capability of running a VR or AR session without activating XR
+   * runtimes or powering on hardware.
+   *
+   * API's such as OpenVR make no guarantee that hardware and software won't be
+   * left activated after enumerating devices, so each backend in gfx/vr/service
+   * must allow for more granular detection of capabilities.
+   *
+   * When detectRuntimesOnly is true, the initialization exits early after
+   * reporting the presence of XR runtime software.
+   *
+   * The result of the runtime detection is reported with the Cap_ImmersiveVR
+   * and Cap_ImmersiveAR bits in VRDisplayState.flags.
+   */
+  bool detectRuntimesOnly;
   bool presentationActive;
   bool navigationTransitionActive;
   VRLayerState layerState[kVRLayerMaxCount];
@@ -439,13 +507,21 @@ struct VRSystemState {
 };
 
 enum class VRFxEventType : uint8_t {
-  FxEvent_NONE = 0,
-  FxEvent_IME,
-  FxEvent_SHUTDOWN,
-  FxEvent_TOTAL
+  NONE = 0,
+  IME,
+  SHUTDOWN,
+  FULLSCREEN,
+  TOTAL
 };
 
-enum class VRFxIMEState : uint8_t { Blur, Focus };
+enum class VRFxEventState : uint8_t {
+  NONE = 0,
+  BLUR,
+  FOCUS,
+  FULLSCREEN_ENTER,
+  FULLSCREEN_EXIT,
+  TOTAL
+};
 
 // Data shared via shmem for running Firefox in a VR windowed environment
 struct VRWindowState {
@@ -456,7 +532,7 @@ struct VRWindowState {
   VRLayerTextureHandle textureFx;
   uint32_t windowID;
   VRFxEventType eventType;
-  VRFxIMEState imeState;
+  VRFxEventState eventState;
 
   // State from VRHost
   uint32_t dxgiAdapterHost;
@@ -465,6 +541,41 @@ struct VRWindowState {
 
   // Name of synchronization primitive to signal change to this struct
   char signalName[32];
+};
+
+enum class VRTelemetryId : uint8_t {
+  NONE = 0,
+  INSTALLED_FROM = 1,
+  ENTRY_METHOD = 2,
+  FIRST_RUN = 3,
+  TOTAL = 4,
+};
+
+enum class VRTelemetryInstallFrom : uint8_t {
+  User = 0,
+  FxR = 1,
+  HTC = 2,
+  Valve = 3,
+  TOTAL = 4,
+};
+
+enum class VRTelemetryEntryMethod : uint8_t {
+  SystemBtn = 0,
+  Library = 1,
+  Gaze = 2,
+  TOTAL = 3,
+};
+
+struct VRTelemetryState {
+  uint32_t uid;
+
+  bool installedFrom : 1;
+  bool entryMethod : 1;
+  bool firstRun : 1;
+
+  uint8_t installedFromValue : 3;
+  uint8_t entryMethodValue : 3;
+  bool firstRunValue : 1;
 };
 
 struct VRExternalShmem {
@@ -494,6 +605,7 @@ struct VRExternalShmem {
 #endif  // !defined(__ANDROID__)
 #if defined(XP_WIN)
   VRWindowState windowState;
+  VRTelemetryState telemetryState;
 #endif
 #ifdef MOZILLA_INTERNAL_API
   void Clear() volatile {

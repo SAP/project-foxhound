@@ -16,7 +16,7 @@ namespace mozilla {
 
 class OriginAttributes : public dom::OriginAttributesDictionary {
  public:
-  OriginAttributes() {}
+  OriginAttributes() = default;
 
   explicit OriginAttributes(bool aInIsolatedMozBrowser) {
     mInIsolatedMozBrowser = aInIsolatedMozBrowser;
@@ -29,10 +29,13 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
                            bool aForced = false);
   void SetFirstPartyDomain(const bool aIsTopLevelDocument,
                            const nsACString& aDomain);
+  void SetFirstPartyDomain(const bool aIsTopLevelDocument,
+                           const nsAString& aDomain);
 
   enum {
     STRIP_FIRST_PARTY_DOMAIN = 0x01,
     STRIP_USER_CONTEXT_ID = 0x02,
+    STRIP_PRIVATE_BROWSING_ID = 0x04,
   };
 
   inline void StripAttributes(uint32_t aFlags) {
@@ -42,6 +45,11 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
 
     if (aFlags & STRIP_USER_CONTEXT_ID) {
       mUserContextId = nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID;
+    }
+
+    if (aFlags & STRIP_PRIVATE_BROWSING_ID) {
+      mPrivateBrowsingId =
+          nsIScriptSecurityManager::DEFAULT_PRIVATE_BROWSING_ID;
     }
   }
 
@@ -118,7 +126,7 @@ class OriginAttributesPattern : public dom::OriginAttributesPatternDictionary {
   // if (!pattern.Init(aJSONString)) {
   //   ... // handle failure.
   // }
-  OriginAttributesPattern() {}
+  OriginAttributesPattern() = default;
 
   explicit OriginAttributesPattern(
       const OriginAttributesPatternDictionary& aOther)

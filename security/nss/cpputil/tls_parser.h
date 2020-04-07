@@ -31,6 +31,7 @@ const uint8_t kTlsHandshakeCertificateRequest = 13;
 const uint8_t kTlsHandshakeCertificateVerify = 15;
 const uint8_t kTlsHandshakeClientKeyExchange = 16;
 const uint8_t kTlsHandshakeFinished = 20;
+const uint8_t kTlsHandshakeKeyUpdate = 24;
 
 const uint8_t kTlsAlertWarning = 1;
 const uint8_t kTlsAlertFatal = 2;
@@ -72,6 +73,11 @@ const uint8_t kTlsFakeChangeCipherSpec[] = {
     0x01,  // Length
     0x01   // Value
 };
+
+const uint8_t kCtDtlsCiphertext = 0x20;
+const uint8_t kCtDtlsCiphertextMask = 0xE0;
+const uint8_t kCtDtlsCiphertext16bSeqno = 0x08;
+const uint8_t kCtDtlsCiphertextLengthPresent = 0x04;
 
 static const uint8_t kTls13PskKe = 0;
 static const uint8_t kTls13PskDhKe = 1;

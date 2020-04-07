@@ -41,8 +41,7 @@ static void SetupCapitalization(const char16_t* aWord, uint32_t aLength,
   for (uint32_t i = 0; i < aLength; ++i) {
     uint32_t ch = aWord[i];
     if (capitalizeNextChar) {
-      if (NS_IS_HIGH_SURROGATE(ch) && i + 1 < aLength &&
-          NS_IS_LOW_SURROGATE(aWord[i + 1])) {
+      if (i + 1 < aLength && NS_IS_SURROGATE_PAIR(ch, aWord[i + 1])) {
         ch = SURROGATE_TO_UCS4(ch, aWord[i + 1]);
       }
       if (nsContentUtils::IsAlphanumeric(ch)) {
@@ -468,9 +467,9 @@ void nsLineBreaker::UpdateCurrentWordLanguage(nsAtom* aHyphenationLanguage) {
     if (aHyphenationLanguage && !mCurrentWordLanguage) {
       Locale loc = Locale(nsAtomCString(aHyphenationLanguage));
       if (loc.GetScript().IsEmpty()) {
-        loc.AddLikelySubtags();
+        loc.Maximize();
       }
-      const nsCString& script = loc.GetScript();
+      const nsDependentCSubstring& script = loc.GetScript();
       mScriptIsChineseOrJapanese =
           script.EqualsLiteral("Hans") || script.EqualsLiteral("Hant") ||
           script.EqualsLiteral("Jpan") || script.EqualsLiteral("Hrkt");

@@ -9,10 +9,10 @@
 #include "nsCoord.h"
 #include "nsCSSPropertyID.h"
 #include "nsTArrayForwardDeclare.h"
-#include "gfxFontFamilyList.h"
 #include "nsStringFwd.h"
-#include "nsStyleStruct.h"
 #include "nsCRT.h"
+#include "nsColor.h"
+#include "nsGkAtoms.h"
 
 class nsCSSValue;
 class nsIContent;
@@ -21,6 +21,7 @@ class nsIURI;
 struct gfxFontFeature;
 struct nsCSSKTableEntry;
 struct nsCSSValueList;
+struct nsStylePosition;
 
 namespace mozilla {
 class FontSlantStyle;
@@ -58,11 +59,6 @@ class nsStyleUtil {
                                    nsAString& aResult);
 
  public:
-  // Append a bitmask-valued property's value(s) (space-separated) to aResult.
-  static void AppendBitmaskCSSValue(const nsCSSKTableEntry aTable[],
-                                    int32_t aMaskedValue, int32_t aFirstMask,
-                                    int32_t aLastMask, nsAString& aResult);
-
   static void AppendCSSNumber(float aNumber, nsAString& aResult) {
     aResult.AppendFloat(aNumber);
   }

@@ -6,7 +6,8 @@
 
 /**
  * @typedef {import("../@types/perf").PerformancePref} PerformancePref
- * */
+ */
+
 /**
  * This file controls the enabling and disabling of the menu button for the profiler.
  * Care should be taken to keep it minimal as it can be run with browser initialization.
@@ -32,18 +33,28 @@ function requireLazy(callback) {
   };
 }
 
+// Provide an exports object for the JSM to be properly read by TypeScript.
+/** @type {any} */ (this).exports = {};
+
 const lazyServices = requireLazy(() =>
   /** @type {import("resource://gre/modules/Services.jsm")} */
   (ChromeUtils.import("resource://gre/modules/Services.jsm"))
 );
 const lazyCustomizableUI = requireLazy(() =>
   /** @type {import("resource:///modules/CustomizableUI.jsm")} */
-  ChromeUtils.import("resource:///modules/CustomizableUI.jsm")
+  (ChromeUtils.import("resource:///modules/CustomizableUI.jsm"))
 );
 const lazyCustomizableWidgets = requireLazy(() =>
   /** @type {import("resource:///modules/CustomizableWidgets.jsm")} */
-  ChromeUtils.import("resource:///modules/CustomizableWidgets.jsm")
+  (ChromeUtils.import("resource:///modules/CustomizableWidgets.jsm"))
 );
+const lazyPopupPanel = requireLazy(() =>
+  /** @type {import("devtools/client/performance-new/popup/panel.jsm.js")} */
+  (ChromeUtils.import(
+    "resource://devtools/client/performance-new/popup/panel.jsm.js"
+  ))
+);
+
 /** @type {PerformancePref["PopupEnabled"]} */
 const BUTTON_ENABLED_PREF = "devtools.performance.popup.enabled";
 const WIDGET_ID = "profiler-button";
@@ -72,7 +83,7 @@ function setMenuItemChecked(document, isChecked) {
 /**
  * Toggle the menu button, and initialize the widget if needed.
  *
- * @param {object} document - The browser's document.
+ * @param {ChromeDocument} document - The browser's document.
  * @return {void}
  */
 function toggle(document) {
@@ -92,7 +103,7 @@ function toggle(document) {
     // The widgets are not being properly destroyed. This is a workaround
     // until Bug 1552565 lands.
     const element = document.getElementById("PanelUI-profiler");
-    delete element._addedEventListeners;
+    delete /** @type {any} */ (element)._addedEventListeners;
   }
 }
 
@@ -129,15 +140,24 @@ function initialize() {
     return;
   }
 
-  /** @typedef {() => void} Observer */
-
-  /** @type {null | Observer} */
+  /** @type {null | (() => void)} */
   let observer = null;
+  const viewId = "PanelUI-profiler";
+
+  /**
+   * This is mutable state that will be shared between panel displays.
+   *
+   * @type {import("devtools/client/performance-new/popup/panel.jsm.js").State}
+   */
+  const panelState = {
+    cleanup: [],
+    isInfoCollapsed: true,
+  };
 
   const item = {
     id: WIDGET_ID,
     type: "view",
-    viewId: "PanelUI-profiler",
+    viewId,
     tooltiptext: "profiler-button.tooltiptext",
 
     onViewShowing:
@@ -150,69 +170,55 @@ function initialize() {
        * }) => void}
        */
       event => {
-        const panelview = event.target;
-        const document = panelview.ownerDocument;
-        if (!document) {
-          throw new Error(
-            "Expected to find a document on the panelview element."
-          );
+        try {
+          // The popup logic is stored in a separate script so it doesn't have
+          // to be parsed at browser startup, and will only be lazily loaded
+          // when the popup is viewed.
+          const {
+            selectElementsInPanelview,
+            createViewControllers,
+            addPopupEventHandlers,
+            initializePopup,
+          } = lazyPopupPanel();
+
+          const panelElements = selectElementsInPanelview(event.target);
+          const panelView = createViewControllers(panelState, panelElements);
+          addPopupEventHandlers(panelState, panelElements, panelView);
+          initializePopup(panelState, panelElements, panelView);
+        } catch (error) {
+          // Surface any errors better in the console.
+          console.error(error);
         }
-
-        // Create an iframe and append it to the panelview.
-        const iframe = document.createXULElement("iframe");
-        iframe.id = "PanelUI-profilerIframe";
-        iframe.className = "PanelUI-developer-iframe";
-        iframe.src =
-          "chrome://devtools/content/performance-new/popup/popup.xhtml";
-
-        panelview.appendChild(iframe);
-        /** @type {any} - Cast to an any since we're assigning values to the window object. */
-        const contentWindow = iframe.contentWindow;
-
-        // Provide a mechanism for the iframe to close the popup.
-        contentWindow.gClosePopup = () => {
-          CustomizableUI.hidePanelForNode(iframe);
-        };
-
-        // Provide a mechanism for the iframe to resize the popup.
-        /** @type {(height: number) => void} */
-        contentWindow.gResizePopup = height => {
-          iframe.style.height = `${Math.min(600, height)}px`;
-        };
-
-        // The popup has an annoying rendering "blip" when first rendering the react
-        // components. This adds a blocker until the content is ready to show.
-        event.detail.addBlocker(
-          new Promise(resolve => {
-            contentWindow.gReportReady = () => {
-              // Delete the function gReportReady so we don't leave any dangling
-              // references between windows.
-              delete contentWindow.gReportReady;
-              // Now resolve this promise to open the window.
-              resolve();
-            };
-          })
-        );
       },
 
     /**
      * @type {(event: { target: ChromeHTMLElement | XULElement }) => void}
      */
     onViewHiding(event) {
-      const document = event.target.ownerDocument;
-
-      // Create the iframe, and append it.
-      const iframe = document.getElementById("PanelUI-profilerIframe");
-      if (!iframe) {
-        throw new Error("Unable to select the PanelUI-profilerIframe.");
+      // Clean-up the view. This removes all of the event listeners.
+      for (const fn of panelState.cleanup) {
+        fn();
       }
-
-      // Remove the iframe so it doesn't leak.
-      iframe.remove();
+      panelState.cleanup = [];
     },
 
     /** @type {(document: HTMLDocument) => void} */
     onBeforeCreated: document => {
+      /** @type {PerformancePref["PopupIntroDisplayed"]} */
+      const popupIntroDisplayedPref =
+        "devtools.performance.popup.intro-displayed";
+
+      // Determine the state of the popup's info being collapsed BEFORE the view
+      // is shown, and update the collapsed state. This way the transition animation
+      // isn't run.
+      panelState.isInfoCollapsed = Services.prefs.getBoolPref(
+        popupIntroDisplayedPref
+      );
+      if (!panelState.isInfoCollapsed) {
+        // We have displayed the intro, don't show it again by default.
+        Services.prefs.setBoolPref(popupIntroDisplayedPref, true);
+      }
+
       setMenuItemChecked(document, true);
     },
 
@@ -242,4 +248,8 @@ function initialize() {
 
 const ProfilerMenuButton = { toggle, initialize, isEnabled };
 
-var EXPORTED_SYMBOLS = ["ProfilerMenuButton"];
+exports.ProfilerMenuButton = ProfilerMenuButton;
+
+// Object.keys() confuses the linting which expects a static array expression.
+// eslint-disable-next-line
+var EXPORTED_SYMBOLS = Object.keys(exports);

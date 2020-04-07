@@ -149,7 +149,7 @@ function getTestPluginEnabledState(pluginName) {
 // Returns a promise for nsIObjectLoadingContent props data.
 function promiseForPluginInfo(aId, aBrowser) {
   let browser = aBrowser || gTestBrowser;
-  return ContentTask.spawn(browser, aId, async function(contentId) {
+  return SpecialPowers.spawn(browser, [aId], async function(contentId) {
     let plugin = content.document.getElementById(contentId);
     if (!(plugin instanceof Ci.nsIObjectLoadingContent)) {
       throw new Error("no plugin found");
@@ -166,14 +166,14 @@ function promiseForPluginInfo(aId, aBrowser) {
 // Return a promise and call the plugin's playPlugin() method.
 function promisePlayObject(aId, aBrowser) {
   let browser = aBrowser || gTestBrowser;
-  return ContentTask.spawn(browser, aId, async function(contentId) {
+  return SpecialPowers.spawn(browser, [aId], async function(contentId) {
     content.document.getElementById(contentId).playPlugin();
   });
 }
 
 function promiseCrashObject(aId, aBrowser) {
   let browser = aBrowser || gTestBrowser;
-  return ContentTask.spawn(browser, aId, async function(contentId) {
+  return SpecialPowers.spawn(browser, [aId], async function(contentId) {
     let plugin = content.document.getElementById(contentId);
     Cu.waiveXrays(plugin).crash();
   });
@@ -182,7 +182,7 @@ function promiseCrashObject(aId, aBrowser) {
 // Return a promise and call the plugin's getObjectValue() method.
 function promiseObjectValueResult(aId, aBrowser) {
   let browser = aBrowser || gTestBrowser;
-  return ContentTask.spawn(browser, aId, async function(contentId) {
+  return SpecialPowers.spawn(browser, [aId], async function(contentId) {
     let plugin = content.document.getElementById(contentId);
     return Cu.waiveXrays(plugin).getObjectValue();
   });
@@ -191,7 +191,7 @@ function promiseObjectValueResult(aId, aBrowser) {
 // Return a promise and reload the target plugin in the page
 function promiseReloadPlugin(aId, aBrowser) {
   let browser = aBrowser || gTestBrowser;
-  return ContentTask.spawn(browser, aId, async function(contentId) {
+  return SpecialPowers.spawn(browser, [aId], async function(contentId) {
     let plugin = content.document.getElementById(contentId);
     // eslint-disable-next-line no-self-assign
     plugin.src = plugin.src;
@@ -201,9 +201,7 @@ function promiseReloadPlugin(aId, aBrowser) {
 // after a test is done using the plugin doorhanger, we should just clear
 // any permissions that may have crept in
 function clearAllPluginPermissions() {
-  let perms = Services.perms.enumerator;
-  while (perms.hasMoreElements()) {
-    let perm = perms.getNext();
+  for (let perm of Services.perms.all) {
     if (perm.type.startsWith("plugin")) {
       info(
         "removing permission:" + perm.principal.origin + " " + perm.type + "\n"
@@ -334,7 +332,7 @@ async function asyncSetAndUpdateBlocklist(aURL, aBrowser) {
   if (doTestRemote) {
     info("*** waiting on remote load");
     // Ensure content has been updated with the blocklist
-    await ContentTask.spawn(aBrowser, null, () => {});
+    await SpecialPowers.spawn(aBrowser, [], () => {});
   }
   info("*** blocklist loaded.");
 }
@@ -465,7 +463,7 @@ function promiseForNotificationShown(notification) {
  * @return Promise
  */
 function promiseUpdatePluginBindings(browser) {
-  return ContentTask.spawn(browser, {}, async function() {
+  return SpecialPowers.spawn(browser, [], async function() {
     let doc = content.document;
     let elems = doc.getElementsByTagName("embed");
     if (!elems || elems.length < 1) {

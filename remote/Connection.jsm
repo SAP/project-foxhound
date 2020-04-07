@@ -6,9 +6,14 @@
 
 var EXPORTED_SYMBOLS = ["Connection"];
 
-const { Log } = ChromeUtils.import("chrome://remote/content/Log.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
+);
+
+const { truncate } = ChromeUtils.import("chrome://remote/content/Format.jsm");
+const { Log } = ChromeUtils.import("chrome://remote/content/Log.jsm");
+const { UnknownMethodError } = ChromeUtils.import(
+  "chrome://remote/content/Error.jsm"
 );
 
 XPCOMUtils.defineLazyGetter(this, "log", Log.get);
@@ -57,9 +62,10 @@ class Connection {
     this.sessions.set(session.id, session);
   }
 
-  send(message) {
-    log.trace(`<-(connection ${this.id}) ${JSON.stringify(message)}`);
-    this.transport.send(message);
+  send(body) {
+    const payload = JSON.stringify(body, null, Log.verbose ? "\t" : null);
+    log.trace(truncate`<-(connection ${this.id}) ${payload}`);
+    this.transport.send(JSON.parse(payload));
   }
 
   /**
@@ -102,16 +108,18 @@ class Connection {
     // session. `Target.attachToTarget` creates the secondary session and
     // returns the session ID.
     if (sessionId) {
-      this.sendEvent("Target.receivedMessageFromTarget", {
-        sessionId,
-        // receivedMessageFromTarget is expected to send a raw CDP packet
-        // in the `message` property and it to be already serialized to a
-        // string
-        message: JSON.stringify({
-          id,
-          result,
-        }),
-      });
+      // Temporarily disabled due to spamming of the console (bug 1598468).
+      // Event should only be sent on protocol messages (eg. attachedToTarget)
+      // this.sendEvent("Target.receivedMessageFromTarget", {
+      //   sessionId,
+      //   // receivedMessageFromTarget is expected to send a raw CDP packet
+      //   // in the `message` property and it to be already serialized to a
+      //   // string
+      //   message: JSON.stringify({
+      //     id,
+      //     result,
+      //   }),
+      // });
     }
   }
 
@@ -146,13 +154,15 @@ class Connection {
     // session. `Target.attachToTarget` creates the secondary session and
     // returns the session ID.
     if (sessionId) {
-      this.sendEvent("Target.receivedMessageFromTarget", {
-        sessionId,
-        message: JSON.stringify({
-          method,
-          params,
-        }),
-      });
+      // Temporarily disabled due to spamming of the console (bug 1598468).
+      // Event should only be sent on protocol messages (eg. attachedToTarget)
+      // this.sendEvent("Target.receivedMessageFromTarget", {
+      //   sessionId,
+      //   message: JSON.stringify({
+      //     method,
+      //     params,
+      //   }),
+      // });
     }
   }
 
@@ -206,11 +216,15 @@ class Connection {
         }
       }
 
+      // Bug 1600317 - Workaround to deny internal methods to be called
+      if (command.startsWith("_")) {
+        throw new UnknownMethodError(command);
+      }
+
       // Finally, instruct the targeted session to execute the command
       const result = await session.execute(id, domain, command, params);
       this.onResult(id, result, sessionId);
     } catch (e) {
-      log.warn(e);
       this.onError(packet.id, e, packet.sessionId);
     }
   }

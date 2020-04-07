@@ -25,6 +25,7 @@
 #include "vm/SharedMem.h"
 #include "wasm/WasmCode.h"
 #include "wasm/WasmDebug.h"
+#include "wasm/WasmFrameIter.h"  // js::wasm::WasmFrameIter
 #include "wasm/WasmProcess.h"
 #include "wasm/WasmTable.h"
 
@@ -50,14 +51,12 @@ class Instance {
   void* preBarrierCode_;
   const SharedCode code_;
   const UniqueTlsData tlsData_;
-  GCPtrWasmMemoryObject memory_;
+  const GCPtrWasmMemoryObject memory_;
   const SharedTableVector tables_;
   DataSegmentVector passiveDataSegments_;
   ElemSegmentVector passiveElemSegments_;
   const UniqueDebugState maybeDebug_;
   StructTypeDescrVector structTypeDescrs_;
-
-  friend void Zone::sweepBreakpoints(JSFreeOp*);
 
   // Internal helpers:
   const void** addressOfFuncTypeId(const FuncTypeIdDesc& funcTypeId) const;
@@ -190,6 +189,7 @@ class Instance {
   static int32_t callImport_i64(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_f64(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_anyref(Instance*, int32_t, int32_t, uint64_t*);
+  static int32_t callImport_nullref(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_funcref(Instance*, int32_t, int32_t, uint64_t*);
   static uint32_t memoryGrow_i32(Instance* instance, uint32_t delta);
   static uint32_t memorySize_i32(Instance* instance);
@@ -199,10 +199,16 @@ class Instance {
                           int64_t value, int64_t timeout);
   static int32_t wake(Instance* instance, uint32_t byteOffset, int32_t count);
   static int32_t memCopy(Instance* instance, uint32_t destByteOffset,
-                         uint32_t srcByteOffset, uint32_t len);
+                         uint32_t srcByteOffset, uint32_t len,
+                         uint8_t* memBase);
+  static int32_t memCopyShared(Instance* instance, uint32_t destByteOffset,
+                               uint32_t srcByteOffset, uint32_t len,
+                               uint8_t* memBase);
   static int32_t dataDrop(Instance* instance, uint32_t segIndex);
   static int32_t memFill(Instance* instance, uint32_t byteOffset,
-                         uint32_t value, uint32_t len);
+                         uint32_t value, uint32_t len, uint8_t* memBase);
+  static int32_t memFillShared(Instance* instance, uint32_t byteOffset,
+                               uint32_t value, uint32_t len, uint8_t* memBase);
   static int32_t memInit(Instance* instance, uint32_t dstOffset,
                          uint32_t srcOffset, uint32_t len, uint32_t segIndex);
   static int32_t tableCopy(Instance* instance, uint32_t dstOffset,
@@ -222,6 +228,7 @@ class Instance {
                            uint32_t srcOffset, uint32_t len, uint32_t segIndex,
                            uint32_t tableIndex);
   static void* funcRef(Instance* instance, uint32_t funcIndex);
+  static void preBarrierFiltering(Instance* instance, gc::Cell** location);
   static void postBarrier(Instance* instance, gc::Cell** location);
   static void postBarrierFiltering(Instance* instance, gc::Cell** location);
   static void* structNew(Instance* instance, uint32_t typeIndex);
@@ -229,7 +236,7 @@ class Instance {
                             uint32_t outputTypeIndex, void* maybeNullPtr);
 };
 
-typedef UniquePtr<Instance> UniqueInstance;
+using UniqueInstance = UniquePtr<Instance>;
 
 }  // namespace wasm
 }  // namespace js

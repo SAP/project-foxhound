@@ -18,12 +18,8 @@
 #include "mozilla/UniquePtr.h"
 #include "nsCycleCollectionParticipant.h"  // NS_DECL_CYCLE_*
 #include "nsIContent.h"                    // base class
-#include "nsNodeUtils.h"  // class member nsNodeUtils::CloneNodeImpl
 #include "nsIHTMLCollection.h"
 #include "nsDataHashtable.h"
-#ifdef MOZ_XBL
-#  include "nsXBLBinding.h"
-#endif
 
 class ContentUnbinder;
 class nsContentList;
@@ -60,7 +56,7 @@ class nsNodeSupportsWeakRefTearoff final : public nsISupportsWeakReference {
   NS_DECL_CYCLE_COLLECTION_CLASS(nsNodeSupportsWeakRefTearoff)
 
  private:
-  ~nsNodeSupportsWeakRefTearoff() {}
+  ~nsNodeSupportsWeakRefTearoff() = default;
 
   nsCOMPtr<nsINode> mNode;
 };
@@ -102,9 +98,6 @@ class FragmentOrElement : public nsIContent {
   virtual uint32_t TextLength() const override;
   virtual bool TextIsOnlyWhitespace() override;
   virtual bool ThreadSafeTextIsOnlyWhitespace() const override;
-#ifdef MOZ_XBL
-  virtual nsXBLBinding* DoGetXBLBinding() const override;
-#endif
   virtual bool IsLink(nsIURI** aURI) const override;
 
   virtual void DestroyContent() override;
@@ -196,13 +189,6 @@ class FragmentOrElement : public nsIContent {
      * ShadowRoot bound to the element.
      */
     RefPtr<ShadowRoot> mShadowRoot;
-
-#ifdef MOZ_XBL
-    /**
-     * XBL binding installed on the element.
-     */
-    RefPtr<nsXBLBinding> mXBLBinding;
-#endif
 
     /**
      * Web components custom element data.

@@ -19,7 +19,9 @@
 #include "js/Modules.h"
 #include "js/SourceText.h"
 #include "nsIInputStreamPump.h"
+#include "nsIStreamLoader.h"
 #include "nsIThreadRetargetableRequest.h"
+#include "nsIInputStreamPump.h"
 #include "nsNetUtil.h"
 #include "xpcprivate.h"
 
@@ -120,7 +122,7 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
     }
 
     RequestOrUSVString request;
-    request.SetAsUSVString().Rebind(aModuleURL.Data(), aModuleURL.Length());
+    request.SetAsUSVString().ShareOrDependUpon(aModuleURL);
 
     RequestInit init;
     init.mCredentials.Construct(aOptions.mCredentials);
@@ -128,8 +130,9 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
     RefPtr<Promise> fetchPromise =
         FetchRequest(global, request, init, aCallerType, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
-      promise->MaybeReject(aRv);
-      return promise.forget();
+      // OK to just return null, since caller will ignore return value
+      // anyway if aRv is a failure.
+      return nullptr;
     }
 
     RefPtr<WorkletFetchHandler> handler =
@@ -366,7 +369,9 @@ bool ExecutionRunnable::ParseAndLinkModule(
 }
 
 void ExecutionRunnable::RunOnWorkletThread() {
-  WorkletThread::EnsureCycleCollectedJSContext(mParentRuntime);
+  WorkletThread* workletThread =
+      static_cast<WorkletThread*>(NS_GetCurrentThread());
+  workletThread->EnsureCycleCollectedJSContext(mParentRuntime);
 
   WorkletGlobalScope* globalScope = mWorkletImpl->GetGlobalScope();
   MOZ_ASSERT(globalScope);
@@ -468,7 +473,7 @@ void Worklet::AddImportFetchHandler(const nsACString& aURI,
   MOZ_ASSERT(!mImportHandlers.GetWeak(aURI));
   MOZ_ASSERT(NS_IsMainThread());
 
-  mImportHandlers.Put(aURI, aHandler);
+  mImportHandlers.Put(aURI, RefPtr{aHandler});
 }
 
 }  // namespace dom

@@ -9,6 +9,8 @@
 
 #include "DisplayListChecker.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "nsIFrame.h"
+#include "nsIFrameInlines.h"
 #include "nsPlaceholderFrame.h"
 #include "nsSubDocumentFrame.h"
 #include "nsViewManager.h"
@@ -344,7 +346,7 @@ static void UpdateASR(nsDisplayItem* aItem,
 
   if (aItem->HasHitTestInfo()) {
     const HitTestInfo& info =
-        static_cast<nsDisplayHitTestInfoItem*>(aItem)->GetHitTestInfo();
+        static_cast<nsDisplayHitTestInfoBase*>(aItem)->GetHitTestInfo();
     asr = SelectContainerASR(info.mClipChain, info.mASR, aContainerASR);
   } else {
     asr = aContainerASR;
@@ -371,7 +373,7 @@ static void CopyASR(nsDisplayItem* aOld, nsDisplayItem* aNew) {
   if (aOld->HasHitTestInfo()) {
     MOZ_ASSERT(aNew->HasHitTestInfo());
     const HitTestInfo& info =
-        static_cast<nsDisplayHitTestInfoItem*>(aOld)->GetHitTestInfo();
+        static_cast<nsDisplayHitTestInfoBase*>(aOld)->GetHitTestInfo();
     hitTest = info.mASR;
   }
 
@@ -380,7 +382,7 @@ static void CopyASR(nsDisplayItem* aOld, nsDisplayItem* aNew) {
   // SetActiveScrolledRoot for most items will also set the hit-test info item's
   // asr, so we need to manually set that again to what we saved earlier.
   if (aOld->HasHitTestInfo()) {
-    static_cast<nsDisplayHitTestInfoItem*>(aNew)
+    static_cast<nsDisplayHitTestInfoBase*>(aNew)
         ->UpdateHitTestInfoActiveScrolledRoot(hitTest);
   }
 }
@@ -866,7 +868,7 @@ static void TakeAndAddModifiedAndFramesWithPropsFromRootFrame(
     }
 
     if (flags & RetainedDisplayListData::FrameFlags::HadWillChange) {
-      aBuilder->RemoveFromWillChangeBudget(frame);
+      aBuilder->RemoveFromWillChangeBudgets(frame);
     }
   }
 
@@ -880,12 +882,12 @@ struct CbData {
 };
 
 static nsIFrame* GetRootFrameForPainting(nsDisplayListBuilder* aBuilder,
-                                         Document* aDocument) {
+                                         Document& aDocument) {
   // Although this is the actual subdocument, it might not be
   // what painting uses. Walk up to the nsSubDocumentFrame owning
   // us, and then ask that which subdoc it's going to paint.
 
-  PresShell* presShell = aDocument->GetPresShell();
+  PresShell* presShell = aDocument.GetPresShell();
   if (!presShell) {
     return nullptr;
   }
@@ -920,23 +922,20 @@ static nsIFrame* GetRootFrameForPainting(nsDisplayListBuilder* aBuilder,
   return presShell ? presShell->GetRootFrame() : nullptr;
 }
 
-static bool SubDocEnumCb(Document* aDocument, void* aData) {
-  MOZ_ASSERT(aDocument);
+static CallState SubDocEnumCb(Document& aDocument, void* aData) {
   MOZ_ASSERT(aData);
 
-  CbData* data = static_cast<CbData*>(aData);
+  auto* data = static_cast<CbData*>(aData);
 
-  nsIFrame* rootFrame = GetRootFrameForPainting(data->builder, aDocument);
-  if (rootFrame) {
+  if (nsIFrame* rootFrame = GetRootFrameForPainting(data->builder, aDocument)) {
     TakeAndAddModifiedAndFramesWithPropsFromRootFrame(
         data->builder, data->modifiedFrames, data->framesWithProps, rootFrame);
 
-    Document* innerDoc = rootFrame->PresShell()->GetDocument();
-    if (innerDoc) {
+    if (Document* innerDoc = rootFrame->PresShell()->GetDocument()) {
       innerDoc->EnumerateSubDocuments(SubDocEnumCb, aData);
     }
   }
-  return true;
+  return CallState::Continue;
 }
 
 static void GetModifiedAndFramesWithProps(
@@ -949,11 +948,8 @@ static void GetModifiedAndFramesWithProps(
       aBuilder, aOutModifiedFrames, aOutFramesWithProps, rootFrame);
 
   Document* rootdoc = rootFrame->PresContext()->Document();
-  if (rootdoc) {
-    CbData data = {aBuilder, aOutModifiedFrames, aOutFramesWithProps};
-
-    rootdoc->EnumerateSubDocuments(SubDocEnumCb, &data);
-  }
+  CbData data = {aBuilder, aOutModifiedFrames, aOutFramesWithProps};
+  rootdoc->EnumerateSubDocuments(SubDocEnumCb, &data);
 }
 
 // ComputeRebuildRegion  debugging
@@ -1394,8 +1390,8 @@ static void ClearFrameProps(nsTArray<nsIFrame*>& aFrames) {
   for (nsIFrame* f : aFrames) {
     if (f->HasOverrideDirtyRegion()) {
       f->SetHasOverrideDirtyRegion(false);
-      f->DeleteProperty(nsDisplayListBuilder::DisplayListBuildingRect());
-      f->DeleteProperty(
+      f->RemoveProperty(nsDisplayListBuilder::DisplayListBuildingRect());
+      f->RemoveProperty(
           nsDisplayListBuilder::DisplayListBuildingDisplayPortRect());
     }
 
@@ -1453,6 +1449,7 @@ PartialUpdateResult RetainedDisplayListBuilder::AttemptPartialUpdate(
       !ComputeRebuildRegion(modifiedFrames.Frames(), &modifiedDirty,
                             &modifiedAGR, framesWithProps.Frames()) ||
       !PreProcessDisplayList(&mList, modifiedAGR, result)) {
+    mBuilder.SetPartialBuildFailed(true);
     mBuilder.LeavePresShell(mBuilder.RootReferenceFrame(), nullptr);
     mList.DeleteAll(&mBuilder);
     return PartialUpdateResult::Failed;
@@ -1477,6 +1474,7 @@ PartialUpdateResult RetainedDisplayListBuilder::AttemptPartialUpdate(
 
   mBuilder.SetDirtyRect(modifiedDirty);
   mBuilder.SetPartialUpdate(true);
+  mBuilder.SetPartialBuildFailed(false);
 
   nsDisplayList modifiedDL;
   mBuilder.RootReferenceFrame()->BuildDisplayListForStackingContext(
@@ -1491,7 +1489,6 @@ PartialUpdateResult RetainedDisplayListBuilder::AttemptPartialUpdate(
   mBuilder.SetPartialUpdate(false);
 
   if (mBuilder.PartialBuildFailed()) {
-    mBuilder.SetPartialBuildFailed(false);
     mBuilder.LeavePresShell(mBuilder.RootReferenceFrame(), nullptr);
     mList.DeleteAll(&mBuilder);
     modifiedDL.DeleteAll(&mBuilder);

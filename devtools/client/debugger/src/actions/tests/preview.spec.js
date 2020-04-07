@@ -27,6 +27,7 @@ function mockThreadFront(overrides) {
   return {
     evaluateInFrame: async () => ({ result: {} }),
     getFrameScopes: async () => {},
+    getFrames: async () => [],
     sourceContents: async () => ({
       source: "",
       contentType: "text/javascript",
@@ -55,19 +56,23 @@ function dispatchSetPreview(dispatch, context, expression, target) {
   );
 }
 
-async function pause({ dispatch, cx }) {
+async function pause(store, client) {
+  const { dispatch, cx } = store;
   const base = await dispatch(
     actions.newGeneratedSource(makeSource("base.js"))
   );
 
   await dispatch(actions.selectSource(cx, base.id));
-  const frames = [makeFrame({ id: "frame1", sourceId: base.id })];
+  await waitForState(store, state => selectors.hasSymbols(state, base));
+
+  const thread = cx.thread;
+  const frames = [makeFrame({ id: "frame1", sourceId: base.id, thread })];
+  client.getFrames = async () => frames;
 
   await dispatch(
     actions.paused({
-      thread: "FakeThread",
+      thread,
       frame: frames[0],
-      frames,
       loadedObjects: [],
       why: { type: "debuggerStatement" },
     })
@@ -83,11 +88,12 @@ describe("preview", () => {
     );
 
     await dispatch(actions.selectSource(cx, base.id));
+    await waitForState(store, state => selectors.hasSymbols(state, base));
     const frames = [makeFrame({ id: "f1", sourceId: base.id })];
 
     await dispatch(
       actions.paused({
-        thread: "FakeThread",
+        thread: store.cx.thread,
         frame: frames[0],
         frames,
         loadedObjects: [],
@@ -111,14 +117,13 @@ describe("preview", () => {
     const secondSetPreview = defer();
     const promises = [firstSetPreview, secondSetPreview];
 
-    const store = createStore(
-      mockThreadFront({
-        loadObjectProperties: () => promises.shift().promise,
-      })
-    );
+    const client = mockThreadFront({
+      loadObjectProperties: () => promises.shift().promise,
+    });
+    const store = createStore(client);
 
     const { dispatch, getState } = store;
-    await pause(store);
+    await pause(store, client);
 
     const newCx = selectors.getContext(getState());
     const firstTarget = document.createElement("div");
@@ -155,26 +160,25 @@ describe("preview", () => {
     const secondSetPreview = defer();
     const promises = [firstSetPreview, secondSetPreview];
 
-    const store = createStore(
-      mockThreadFront({
-        loadObjectProperties: () => promises.shift().promise,
-      })
-    );
+    const client = mockThreadFront({
+      loadObjectProperties: () => promises.shift().promise,
+    });
+    const store = createStore(client);
 
     const { dispatch, getState } = store;
-    await pause(store);
+    await pause(store, client);
 
-    const newCx = selectors.getContext(getState());
+    const cx = selectors.getThreadContext(getState());
     const firstTarget = document.createElement("div");
     const secondTarget = document.createElement("div");
 
     // Start the dispatch of the first setPreview. At this point, it will not
     // finish execution until we resolve the firstSetPreview
-    dispatchSetPreview(dispatch, newCx, "firstSetPreview", firstTarget);
+    dispatchSetPreview(dispatch, cx, "firstSetPreview", firstTarget);
 
     // Start the dispatch of the second setPreview. At this point, it will not
     // finish execution until we resolve the secondSetPreview
-    dispatchSetPreview(dispatch, newCx, "secondSetPreview", secondTarget);
+    dispatchSetPreview(dispatch, cx, "secondSetPreview", secondTarget);
 
     let fail = false;
 

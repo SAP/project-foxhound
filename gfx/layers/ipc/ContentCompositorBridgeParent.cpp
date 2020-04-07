@@ -16,13 +16,14 @@
 #include "gfxUtils.h"
 #ifdef XP_WIN
 #  include "mozilla/gfx/DeviceManagerDx.h"  // for DeviceManagerDx
+#  include "mozilla/layers/ImageDataSerializer.h"
 #endif
+#include "mozilla/dom/WebGLParent.h"
 #include "mozilla/ipc/Transport.h"           // for Transport
 #include "mozilla/layers/AnimationHelper.h"  // for CompositorAnimationStorage
 #include "mozilla/layers/APZCTreeManagerParent.h"  // for APZCTreeManagerParent
 #include "mozilla/layers/APZUpdater.h"             // for APZUpdater
 #include "mozilla/layers/AsyncCompositionManager.h"
-#include "mozilla/layers/CanvasParent.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/LayerManagerComposite.h"
@@ -31,6 +32,7 @@
 #include "mozilla/layers/RemoteContentController.h"
 #include "mozilla/layers/WebRenderBridgeParent.h"
 #include "mozilla/layers/AsyncImagePipelineManager.h"
+#include "mozilla/webgpu/WebGPUParent.h"
 #include "mozilla/mozalloc.h"  // for operator new, etc
 #include "nsDebug.h"           // for NS_ASSERTION, etc
 #include "nsTArray.h"          // for nsTArray
@@ -267,6 +269,19 @@ bool ContentCompositorBridgeParent::DeallocPWebRenderBridgeParent(
     PWebRenderBridgeParent* aActor) {
   WebRenderBridgeParent* parent = static_cast<WebRenderBridgeParent*>(aActor);
   EraseLayerState(wr::AsLayersId(parent->PipelineId()));
+  parent->Release();  // IPDL reference
+  return true;
+}
+
+webgpu::PWebGPUParent* ContentCompositorBridgeParent::AllocPWebGPUParent() {
+  webgpu::WebGPUParent* parent = new webgpu::WebGPUParent();
+  parent->AddRef();  // IPDL reference
+  return parent;
+}
+
+bool ContentCompositorBridgeParent::DeallocPWebGPUParent(
+    webgpu::PWebGPUParent* aActor) {
+  webgpu::WebGPUParent* parent = static_cast<webgpu::WebGPUParent*>(aActor);
   parent->Release();  // IPDL reference
   return true;
 }
@@ -626,25 +641,27 @@ bool ContentCompositorBridgeParent::DeallocPTextureParent(
 
 mozilla::ipc::IPCResult ContentCompositorBridgeParent::RecvInitPCanvasParent(
     Endpoint<PCanvasParent>&& aEndpoint) {
-  MOZ_RELEASE_ASSERT(!mCanvasParent,
-                     "Canvas Parent must be released before recreating.");
+  MOZ_RELEASE_ASSERT(!mCanvasTranslator,
+                     "mCanvasTranslator must be released before recreating.");
 
-  mCanvasParent = CanvasParent::Create(std::move(aEndpoint));
+  mCanvasTranslator = CanvasTranslator::Create(std::move(aEndpoint));
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult
 ContentCompositorBridgeParent::RecvReleasePCanvasParent() {
-  MOZ_RELEASE_ASSERT(mCanvasParent, "Canvas Parent hasn't been created.");
+  MOZ_RELEASE_ASSERT(mCanvasTranslator,
+                     "mCanvasTranslator hasn't been created.");
 
-  mCanvasParent = nullptr;
+  mCanvasTranslator = nullptr;
   return IPC_OK();
 }
 
 UniquePtr<SurfaceDescriptor>
 ContentCompositorBridgeParent::LookupSurfaceDescriptorForClientDrawTarget(
     const uintptr_t aDrawTarget) {
-  return mCanvasParent->LookupSurfaceDescriptorForClientDrawTarget(aDrawTarget);
+  return mCanvasTranslator->WaitForSurfaceDescriptor(
+      reinterpret_cast<void*>(aDrawTarget));
 }
 
 bool ContentCompositorBridgeParent::IsSameProcess() const {
@@ -691,6 +708,71 @@ void ContentCompositorBridgeParent::ObserveLayersUpdate(
   }
 
   Unused << state->mParent->SendObserveLayersUpdate(aLayersId, aEpoch, aActive);
+}
+
+static inline bool AllowDirectDXGISurfaceDrawing() {
+  if (!StaticPrefs::dom_ipc_plugins_asyncdrawing_enabled()) {
+    return false;
+  }
+#if defined(XP_WIN)
+  gfx::DeviceManagerDx* dm = gfx::DeviceManagerDx::Get();
+  MOZ_ASSERT(dm);
+  if (!dm || !dm->GetCompositorDevice() || !dm->TextureSharingWorks()) {
+    return false;
+  }
+  return true;
+#else
+  return false;
+#endif
+}
+
+mozilla::ipc::IPCResult
+ContentCompositorBridgeParent::RecvSupportsAsyncDXGISurface(bool* value) {
+  *value = AllowDirectDXGISurfaceDrawing();
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult ContentCompositorBridgeParent::RecvPreferredDXGIAdapter(
+    DxgiAdapterDesc* aOutDesc) {
+  PodZero(aOutDesc);
+#ifdef XP_WIN
+  if (!AllowDirectDXGISurfaceDrawing()) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
+  RefPtr<ID3D11Device> device =
+      gfx::DeviceManagerDx::Get()->GetCompositorDevice();
+  if (!device) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
+  RefPtr<IDXGIDevice> dxgi;
+  if (FAILED(device->QueryInterface(__uuidof(IDXGIDevice),
+                                    getter_AddRefs(dxgi))) ||
+      !dxgi) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  RefPtr<IDXGIAdapter> adapter;
+  if (FAILED(dxgi->GetAdapter(getter_AddRefs(adapter))) || !adapter) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
+  DXGI_ADAPTER_DESC desc;
+  if (FAILED(adapter->GetDesc(&desc))) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+
+  *aOutDesc = DxgiAdapterDesc::From(desc);
+#endif
+  return IPC_OK();
+}
+
+already_AddRefed<dom::PWebGLParent>
+ContentCompositorBridgeParent::AllocPWebGLParent(
+    const webgl::InitContextDesc& aInitDesc,
+    webgl::InitContextResult* const out) {
+  RefPtr<dom::PWebGLParent> ret = dom::WebGLParent::Create(aInitDesc, out);
+  return ret.forget();
 }
 
 }  // namespace layers

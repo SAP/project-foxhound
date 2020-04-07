@@ -266,9 +266,10 @@ interface HTMLQuoteElement : HTMLElement {
   [CEReactions] attribute USVString cite;
 };
 
-[Exposed=Window,
- HTMLConstructor]
+[Exposed=Window]
 interface HTMLOListElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions] attribute boolean reversed;
   [CEReactions] attribute long start;
   [CEReactions] attribute DOMString type;
@@ -283,16 +284,17 @@ interface HTMLUListElement : HTMLElement {
   // also has obsolete members
 };
 
-[Exposed=Window,
- HTMLConstructor]
+[Exposed=Window]
 interface HTMLMenuElement : HTMLElement {
+  [HTMLConstructor] constructor();
 
   // also has obsolete members
 };
 
-[Exposed=Window,
- HTMLConstructor]
+[Exposed=Window]
 interface HTMLLIElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions] attribute long value;
 
   // also has obsolete members
@@ -339,9 +341,10 @@ interface HTMLDataElement : HTMLElement {
   [CEReactions] attribute DOMString value;
 };
 
-[Exposed=Window,
- HTMLConstructor]
+[Exposed=Window]
 interface HTMLTimeElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions] attribute DOMString dateTime;
 };
 
@@ -396,9 +399,10 @@ interface HTMLSourceElement : HTMLElement {
 };
 
 [Exposed=Window,
- HTMLConstructor,
  NamedConstructor=Image(optional unsigned long width, optional unsigned long height)]
 interface HTMLImageElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions] attribute DOMString alt;
   [CEReactions] attribute USVString src;
   [CEReactions] attribute USVString srcset;
@@ -414,6 +418,7 @@ interface HTMLImageElement : HTMLElement {
   readonly attribute USVString currentSrc;
   [CEReactions] attribute DOMString referrerPolicy;
   [CEReactions] attribute DOMString decoding;
+  [CEReactions] attribute DOMString loading;
 
   Promise<void> decode();
 
@@ -489,9 +494,10 @@ interface HTMLParamElement : HTMLElement {
   // also has obsolete members
 };
 
-[Exposed=Window,
- HTMLConstructor]
+[Exposed=Window]
 interface HTMLVideoElement : HTMLMediaElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions] attribute unsigned long width;
   [CEReactions] attribute unsigned long height;
   readonly attribute unsigned long videoWidth;
@@ -501,9 +507,10 @@ interface HTMLVideoElement : HTMLMediaElement {
 };
 
 [Exposed=Window,
- HTMLConstructor,
  NamedConstructor=Audio(optional DOMString src)]
-interface HTMLAudioElement : HTMLMediaElement {};
+interface HTMLAudioElement : HTMLMediaElement {
+  [HTMLConstructor] constructor();
+};
 
 [Exposed=Window]
 interface HTMLTrackElement : HTMLElement {
@@ -818,9 +825,10 @@ interface HTMLTableCellElement : HTMLElement {
 
 [Exposed=Window,
  OverrideBuiltins,
- LegacyUnenumerableNamedProperties,
- HTMLConstructor]
+ LegacyUnenumerableNamedProperties]
 interface HTMLFormElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions] attribute DOMString acceptCharset;
   [CEReactions] attribute USVString action;
   [CEReactions] attribute DOMString autocomplete;
@@ -839,7 +847,7 @@ interface HTMLFormElement : HTMLElement {
   getter (RadioNodeList or Element) (DOMString name);
 
   void submit();
-  void requestSubmit(optional HTMLElement submitter);
+  void requestSubmit(optional HTMLElement? submitter = null);
   [CEReactions] void reset();
   boolean checkValidity();
   boolean reportValidity();
@@ -996,9 +1004,10 @@ interface HTMLOptGroupElement : HTMLElement {
 };
 
 [Exposed=Window,
- HTMLConstructor,
  NamedConstructor=Option(optional DOMString text = "", optional DOMString value, optional boolean defaultSelected = false, optional boolean selected = false)]
 interface HTMLOptionElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions] attribute boolean disabled;
   readonly attribute HTMLFormElement? form;
   [CEReactions] attribute DOMString label;
@@ -1147,9 +1156,21 @@ interface ValidityState {
   readonly attribute boolean valid;
 };
 
-[Exposed=Window,
- Constructor(DOMString type, optional FormDataEventInit eventInitDict = {})]
+[Exposed=Window]
+interface SubmitEvent : Event {
+  constructor(DOMString type, optional SubmitEventInit eventInitDict = {});
+
+  readonly attribute HTMLElement? submitter;
+};
+
+dictionary SubmitEventInit : EventInit {
+  HTMLElement? submitter = null;
+};
+
+[Exposed=Window]
 interface FormDataEvent : Event {
+  constructor(DOMString type, FormDataEventInit eventInitDict);
+
   readonly attribute FormData formData;
 };
 
@@ -1214,9 +1235,10 @@ dictionary AssignedNodesOptions {
 
 typedef (CanvasRenderingContext2D or ImageBitmapRenderingContext or WebGLRenderingContext or WebGL2RenderingContext) RenderingContext;
 
-[Exposed=Window,
- HTMLConstructor]
+[Exposed=Window]
 interface HTMLCanvasElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions] attribute unsigned long width;
   [CEReactions] attribute unsigned long height;
 
@@ -1883,7 +1905,6 @@ interface mixin GlobalEventHandlers {
   attribute EventHandler onmouseout;
   attribute EventHandler onmouseover;
   attribute EventHandler onmouseup;
-  attribute EventHandler onwheel;
   attribute EventHandler onpause;
   attribute EventHandler onplay;
   attribute EventHandler onplaying;
@@ -1904,6 +1925,11 @@ interface mixin GlobalEventHandlers {
   attribute EventHandler ontoggle;
   attribute EventHandler onvolumechange;
   attribute EventHandler onwaiting;
+  attribute EventHandler onwebkitanimationend;
+  attribute EventHandler onwebkitanimationiteration;
+  attribute EventHandler onwebkitanimationstart;
+  attribute EventHandler onwebkittransitionend;
+  attribute EventHandler onwheel;
 };
 
 interface mixin WindowEventHandlers {
@@ -1957,6 +1983,21 @@ Window includes WindowOrWorkerGlobalScope;
 WorkerGlobalScope includes WindowOrWorkerGlobalScope;
 
 [Exposed=Window]
+interface DOMParser {
+  constructor();
+
+  [NewObject] Document parseFromString(DOMString string, DOMParserSupportedType type);
+};
+
+enum DOMParserSupportedType {
+  "text/html",
+  "text/xml",
+  "application/xml",
+  "application/xhtml+xml",
+  "image/svg+xml"
+};
+
+[Exposed=Window]
 interface Navigator {
   // objects implementing this interface also implement the interfaces given below
 };
@@ -1991,8 +2032,8 @@ interface mixin NavigatorLanguage {
 };
 
 interface mixin NavigatorContentUtils {
-  void registerProtocolHandler(DOMString scheme, USVString url, DOMString title);
-  void unregisterProtocolHandler(DOMString scheme, USVString url);
+  [SecureContext] void registerProtocolHandler(DOMString scheme, USVString url, DOMString title);
+  [SecureContext] void unregisterProtocolHandler(DOMString scheme, USVString url);
 };
 
 interface mixin NavigatorCookies {

@@ -16,6 +16,7 @@
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/UniquePtr.h"
+#include "util/Memory.h"
 #include "vm/ArrayObject.h"
 #include "vm/JSAtom.h"
 #include "vm/JSObject.h"
@@ -65,7 +66,7 @@ struct EvalCacheLookup {
 };
 
 struct EvalCacheHashPolicy {
-  typedef EvalCacheLookup Lookup;
+  using Lookup = EvalCacheLookup;
 
   static HashNumber hash(const Lookup& l);
   static bool match(const EvalCacheEntry& entry, const EvalCacheLookup& l);
@@ -84,9 +85,9 @@ class NewObjectCache {
   static const unsigned MAX_OBJ_SIZE = 4 * sizeof(void*) + 16 * sizeof(Value);
 
   static void staticAsserts() {
-    JS_STATIC_ASSERT(NewObjectCache::MAX_OBJ_SIZE == sizeof(JSObject_Slots16));
-    JS_STATIC_ASSERT(gc::AllocKind::OBJECT_LAST ==
-                     gc::AllocKind::OBJECT16_BACKGROUND);
+    static_assert(NewObjectCache::MAX_OBJ_SIZE == sizeof(JSObject_Slots16));
+    static_assert(gc::AllocKind::OBJECT_LAST ==
+                  gc::AllocKind::OBJECT16_BACKGROUND);
   }
 
   struct Entry {

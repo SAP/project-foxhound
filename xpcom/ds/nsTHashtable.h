@@ -10,18 +10,18 @@
 #ifndef nsTHashtable_h__
 #define nsTHashtable_h__
 
+#include <new>
+#include <utility>
+
 #include "PLDHashTable.h"
-#include "nsPointerHashKeys.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/fallible.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Move.h"
 #include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/TypeTraits.h"
-
-#include <new>
+#include "mozilla/fallible.h"
+#include "nsPointerHashKeys.h"
 
 /**
  * a base class for templated hashtables.
@@ -92,7 +92,7 @@ class MOZ_NEEDS_NO_VTABLE_TYPE nsTHashtable {
   /**
    * destructor, cleans up and deallocates
    */
-  ~nsTHashtable();
+  ~nsTHashtable() = default;
 
   nsTHashtable(nsTHashtable<EntryType>&& aOther);
   nsTHashtable<EntryType>& operator=(nsTHashtable<EntryType>&& aOther);
@@ -236,7 +236,7 @@ class MOZ_NEEDS_NO_VTABLE_TYPE nsTHashtable {
 
     explicit Iterator(nsTHashtable* aTable) : Base(&aTable->mTable) {}
     Iterator(Iterator&& aOther) : Base(aOther.mTable) {}
-    ~Iterator() {}
+    ~Iterator() = default;
 
     EntryType* Get() const { return static_cast<EntryType*>(Base::Get()); }
 
@@ -306,10 +306,9 @@ class MOZ_NEEDS_NO_VTABLE_TYPE nsTHashtable {
   void SwapElements(nsTHashtable<EntryType>& aOther) {
     MOZ_ASSERT_IF(this->mTable.Ops() && aOther.mTable.Ops(),
                   this->mTable.Ops() == aOther.mTable.Ops());
-    mozilla::Swap(this->mTable, aOther.mTable);
+    std::swap(this->mTable, aOther.mTable);
   }
 
-#ifdef DEBUG
   /**
    * Mark the table as constant after initialization.
    *
@@ -317,7 +316,6 @@ class MOZ_NEEDS_NO_VTABLE_TYPE nsTHashtable {
    * threads without synchronization.
    */
   void MarkImmutable() { mTable.MarkImmutable(); }
-#endif
 
  protected:
   PLDHashTable mTable;
@@ -379,9 +377,6 @@ nsTHashtable<EntryType>& nsTHashtable<EntryType>::operator=(
   mTable = std::move(aOther.mTable);
   return *this;
 }
-
-template <class EntryType>
-nsTHashtable<EntryType>::~nsTHashtable() {}
 
 template <class EntryType>
 /* static */ const PLDHashTableOps* nsTHashtable<EntryType>::Ops() {
@@ -513,12 +508,9 @@ class nsTHashtable<nsPtrHashKey<T>>
   using Base::GetGeneration;
   using Base::IsEmpty;
 
+  using Base::MarkImmutable;
   using Base::ShallowSizeOfExcludingThis;
   using Base::ShallowSizeOfIncludingThis;
-
-#ifdef DEBUG
-  using Base::MarkImmutable;
-#endif
 
   /* Wrapper functions */
   EntryType* GetEntry(T* aKey) const {

@@ -5,9 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "QuicSocketControl.h"
+
+#include "Http3Session.h"
 #include "SharedCertVerifier.h"
+#include "nsIWebProgressListener.h"
 #include "nsNSSComponent.h"
 #include "nsWeakReference.h"
+#include "nsSocketTransportService2.h"
+#include "nsThreadUtils.h"
 #include "sslt.h"
 #include "ssl.h"
 
@@ -43,20 +48,17 @@ QuicSocketControl::GetSSLVersionOffered(int16_t* aSSLVersionOffered) {
 }
 
 void QuicSocketControl::CallAuthenticated() {
-  //  // Will be added when Http3 lands
-  /*  if (mHttp3Session) {
+  if (mHttp3Session) {
     RefPtr<Http3Session> http3Session = do_QueryReferent(mHttp3Session);
     http3Session->Authenticated(GetErrorCode());
   }
-  mHttp3Session = nullptr;*/
+  mHttp3Session = nullptr;
 }
 
-// Will be added when Http3 lands
-// void QuicSocketControl::SetAuthenticationCallback(Http3Session
-// *aHttp3Session) {
-//  mHttp3Session = do_GetWeakReference(
-//      static_cast<nsISupportsWeakReference*>(aHttp3Session));
-//}
+void QuicSocketControl::SetAuthenticationCallback(Http3Session* aHttp3Session) {
+  mHttp3Session = do_GetWeakReference(
+      static_cast<nsISupportsWeakReference*>(aHttp3Session));
+}
 
 void QuicSocketControl::HandshakeCompleted() {
   psm::RememberCertErrorsTable::GetInstance().LookupCertErrorBits(this);
@@ -64,16 +66,11 @@ void QuicSocketControl::HandshakeCompleted() {
   uint32_t state = nsIWebProgressListener::STATE_IS_SECURE;
 
   bool distrustImminent;
-  nsCOMPtr<nsIX509CertList> succeededCertChain;
-  nsresult rv = TransportSecurityInfo::ConvertCertArrayToCertList(
-      mSucceededCertChain, getter_AddRefs(succeededCertChain));
 
-  nsresult srv;
-  if (NS_SUCCEEDED(rv)) {
-    srv = IsCertificateDistrustImminent(succeededCertChain, distrustImminent);
-  }
+  nsresult rv =
+      IsCertificateDistrustImminent(mSucceededCertChain, distrustImminent);
 
-  if (NS_SUCCEEDED(rv) && NS_SUCCEEDED(srv) && distrustImminent) {
+  if (NS_SUCCEEDED(rv) && distrustImminent) {
     state |= nsIWebProgressListener::STATE_CERT_DISTRUST_IMMINENT;
   }
 

@@ -8,6 +8,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import json
 import logging
+import six
 
 import requests
 from requests.exceptions import HTTPError
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
         'properties': {
             'depth': {
                 'type': 'integer',
-                'default': 5,
+                'default': 9,
                 'minimum': 1,
                 'maximum': 25,
                 'title': 'Depth',
@@ -77,7 +78,7 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id):
     label = task['metadata']['name']
     pushes = []
     inclusive_tweak = 1 if input.get('inclusive') else 0
-    depth = input.get('depth', 5) + inclusive_tweak
+    depth = input.get('depth', 9) + inclusive_tweak
     end_id = int(parameters['pushlog_id']) - (1 - inclusive_tweak)
 
     while True:
@@ -144,9 +145,10 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id):
                         verify_args.append('--gpu-required')
 
                     if 'testPath' in input:
-                        task.task['payload']['env']['MOZHARNESS_TEST_PATHS'] = json.dumps({
-                            task.task['extra']['suite']['flavor']: [input['testPath']]
-                        })
+                        task.task['payload']['env']['MOZHARNESS_TEST_PATHS'] = six.ensure_text(
+                            json.dumps({
+                                task.task['extra']['suite']['flavor']: [input['testPath']]
+                            }))
 
                     cmd_parts = task.task['payload']['command']
                     keep_args = ['--installer-url', '--download-symbols', '--test-packages-url']
@@ -183,7 +185,7 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id):
                 return task
 
             times = input.get('times', 1)
-            for i in xrange(times):
+            for i in range(times):
                 create_tasks(graph_config, [label], full_task_graph, label_to_taskid,
                              push_params, push_decision_task_id, push, modifier=modifier)
             backfill_pushes.append(push)

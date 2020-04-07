@@ -9,12 +9,10 @@
 #include "StorageDBThread.h"
 #include "StorageUtils.h"
 
-#include "nsIScriptSecurityManager.h"
 #include "nsIEffectiveTLDService.h"
 
 #include "nsNetUtil.h"
 #include "nsNetCID.h"
-#include "nsIURL.h"
 #include "nsPrintfCString.h"
 #include "nsXULAppAPI.h"
 #include "nsThreadUtils.h"
@@ -72,42 +70,6 @@ LocalStorageManager::~LocalStorageManager() {
   sSelf = nullptr;
 }
 
-namespace {
-
-nsresult CreateQuotaDBKey(nsIPrincipal* aPrincipal, nsACString& aKey) {
-  nsresult rv;
-
-  nsCOMPtr<nsIEffectiveTLDService> eTLDService(
-      do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID, &rv));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIURI> uri;
-  rv = aPrincipal->GetURI(getter_AddRefs(uri));
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(uri, NS_ERROR_UNEXPECTED);
-
-  nsAutoCString eTLDplusOne;
-  rv = eTLDService->GetBaseDomain(uri, 0, eTLDplusOne);
-  if (NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS == rv) {
-    // XXX bug 357323 - what to do for localhost/file exactly?
-    rv = uri->GetAsciiHost(eTLDplusOne);
-  }
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  aKey.Truncate();
-  aPrincipal->OriginAttributesRef().CreateSuffix(aKey);
-
-  nsAutoCString subdomainsDBKey;
-  CreateReversedDomain(eTLDplusOne, subdomainsDBKey);
-
-  aKey.Append(':');
-  aKey.Append(subdomainsDBKey);
-
-  return NS_OK;
-}
-
-}  // namespace
-
 // static
 nsAutoCString LocalStorageManager::CreateOrigin(
     const nsACString& aOriginSuffix, const nsACString& aOriginNoSuffix) {
@@ -160,7 +122,7 @@ already_AddRefed<LocalStorageCache> LocalStorageManager::PutCache(
   RefPtr<LocalStorageCache> cache = entry->cache();
 
   nsAutoCString quotaOrigin;
-  CreateQuotaDBKey(aPrincipal, quotaOrigin);
+  aPrincipal->GetLocalStorageQuotaKey(quotaOrigin);
 
   // Lifetime handled by the cache, do persist
   cache->Init(this, true, aPrincipal, quotaOrigin);
@@ -352,7 +314,7 @@ void LocalStorageManager::ClearCaches(uint32_t aUnloadFlags,
       continue;
     }
 
-    CacheOriginHashtable* table = iter1.Data();
+    CacheOriginHashtable* table = iter1.UserData();
 
     for (auto iter2 = table->Iter(); !iter2.Done(); iter2.Next()) {
       LocalStorageCache* cache = iter2.Get()->cache();

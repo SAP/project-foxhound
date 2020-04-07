@@ -28,6 +28,8 @@ NS_INTERFACE_MAP_BEGIN(nsViewSourceChannel)
   NS_INTERFACE_MAP_ENTRY(nsIViewSourceChannel)
   NS_INTERFACE_MAP_ENTRY(nsIStreamListener)
   NS_INTERFACE_MAP_ENTRY(nsIRequestObserver)
+  NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
+  NS_INTERFACE_MAP_ENTRY(nsIChannelEventSink)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIHttpChannel, mHttpChannel)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIIdentChannel, mHttpChannel)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIHttpChannelInternal,
@@ -38,6 +40,7 @@ NS_INTERFACE_MAP_BEGIN(nsViewSourceChannel)
                                      mApplicationCacheChannel)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIUploadChannel, mUploadChannel)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIFormPOSTActionChannel, mPostChannel)
+  NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIChildChannel, mChildChannel)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsIRequest, nsIViewSourceChannel)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsIChannel, nsIViewSourceChannel)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIViewSourceChannel)
@@ -81,6 +84,7 @@ nsresult nsViewSourceChannel::Init(nsIURI* uri, nsILoadInfo* aLoadInfo) {
   mApplicationCacheChannel = do_QueryInterface(mChannel);
   mUploadChannel = do_QueryInterface(mChannel);
   mPostChannel = do_QueryInterface(mChannel);
+  mChildChannel = do_QueryInterface(mChannel);
 
   return NS_OK;
 }
@@ -113,6 +117,7 @@ nsresult nsViewSourceChannel::InitSrcdoc(nsIURI* aURI, nsIURI* aBaseURI,
   mCacheInfoChannel = do_QueryInterface(mChannel);
   mApplicationCacheChannel = do_QueryInterface(mChannel);
   mUploadChannel = do_QueryInterface(mChannel);
+  mChildChannel = do_QueryInterface(mChannel);
 
   rv = UpdateLoadInfoResultPrincipalURI();
   NS_ENSURE_SUCCESS(rv, rv);
@@ -191,11 +196,21 @@ nsresult nsViewSourceChannel::BuildViewSourceURI(nsIURI* aURI,
 
 NS_IMETHODIMP
 nsViewSourceChannel::GetName(nsACString& result) {
+  nsCOMPtr<nsIURI> uri;
+  GetURI(getter_AddRefs(uri));
+  if (uri) {
+    return uri->GetSpec(result);
+  }
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
 nsViewSourceChannel::GetTransferSize(uint64_t* aTransferSize) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetRequestSize(uint64_t* aRequestSize) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -228,6 +243,13 @@ nsViewSourceChannel::Cancel(nsresult status) {
   NS_ENSURE_TRUE(mChannel, NS_ERROR_FAILURE);
 
   return mChannel->Cancel(status);
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetCanceled(bool* aCanceled) {
+  NS_ENSURE_TRUE(mChannel, NS_ERROR_FAILURE);
+
+  return mChannel->GetCanceled(aCanceled);
 }
 
 NS_IMETHODIMP
@@ -308,6 +330,13 @@ nsViewSourceChannel::AsyncOpen(nsIStreamListener* aListener) {
                              rv);
 
   if (NS_SUCCEEDED(rv)) {
+    // We do this here to make sure all notification callbacks changes have been
+    // made first before we inject this view-source channel.
+    mChannel->GetNotificationCallbacks(getter_AddRefs(mCallbacks));
+    mChannel->SetNotificationCallbacks(this);
+
+    MOZ_ASSERT(mCallbacks != this, "We have a cycle");
+
     mOpened = true;
   }
 
@@ -370,6 +399,16 @@ nsViewSourceChannel::SetLoadFlags(uint32_t aLoadFlags) {
   }
 
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return nsIViewSourceChannel::GetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return nsIViewSourceChannel::SetTRRModeImpl(aTRRMode);
 }
 
 NS_IMETHODIMP
@@ -607,6 +646,18 @@ nsViewSourceChannel::GetProtocolVersion(nsACString& aProtocolVersion) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP
+nsViewSourceChannel::GetReplaceRequest(bool* aReplaceRequest) {
+  *aReplaceRequest = mReplaceRequest;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::SetReplaceRequest(bool aReplaceRequest) {
+  mReplaceRequest = aReplaceRequest;
+  return NS_OK;
+}
+
 // nsIRequestObserver methods
 NS_IMETHODIMP
 nsViewSourceChannel::OnStartRequest(nsIRequest* aRequest) {
@@ -623,7 +674,10 @@ nsViewSourceChannel::OnStartRequest(nsIRequest* aRequest) {
     Cancel(rv);
   }
 
-  return mListener->OnStartRequest(static_cast<nsIViewSourceChannel*>(this));
+  if (mReplaceRequest) {
+    return mListener->OnStartRequest(static_cast<nsIViewSourceChannel*>(this));
+  }
+  return mListener->OnStartRequest(aRequest);
 }
 
 NS_IMETHODIMP
@@ -637,8 +691,11 @@ nsViewSourceChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
                                nullptr, aStatus);
     }
   }
-  return mListener->OnStopRequest(static_cast<nsIViewSourceChannel*>(this),
-                                  aStatus);
+  if (mReplaceRequest) {
+    return mListener->OnStopRequest(static_cast<nsIViewSourceChannel*>(this),
+                                    aStatus);
+  }
+  return mListener->OnStopRequest(aRequest, aStatus);
 }
 
 // nsIStreamListener methods
@@ -647,8 +704,12 @@ nsViewSourceChannel::OnDataAvailable(nsIRequest* aRequest,
                                      nsIInputStream* aInputStream,
                                      uint64_t aSourceOffset, uint32_t aLength) {
   NS_ENSURE_TRUE(mListener, NS_ERROR_FAILURE);
-  return mListener->OnDataAvailable(static_cast<nsIViewSourceChannel*>(this),
-                                    aInputStream, aSourceOffset, aLength);
+  if (mReplaceRequest) {
+    return mListener->OnDataAvailable(static_cast<nsIViewSourceChannel*>(this),
+                                      aInputStream, aSourceOffset, aLength);
+  }
+  return mListener->OnDataAvailable(aRequest, aInputStream, aSourceOffset,
+                                    aLength);
 }
 
 // nsIHttpChannel methods
@@ -1003,4 +1064,99 @@ void nsViewSourceChannel::SetHasNonEmptySandboxingFlag(
     mHttpChannelInternal->SetHasNonEmptySandboxingFlag(
         aHasNonEmptySandboxingFlag);
   }
+}
+
+// nsIChildChannel methods
+
+NS_IMETHODIMP
+nsViewSourceChannel::ConnectParent(uint32_t aRegistarId) {
+  NS_ENSURE_TRUE(mChildChannel, NS_ERROR_NULL_POINTER);
+
+  return mChildChannel->ConnectParent(aRegistarId);
+}
+
+NS_IMETHODIMP
+nsViewSourceChannel::CompleteRedirectSetup(nsIStreamListener* aListener,
+                                           nsISupports* aContext) {
+  NS_ENSURE_TRUE(mChildChannel, NS_ERROR_NULL_POINTER);
+
+  mListener = aListener;
+
+  /*
+   * We want to add ourselves to the loadgroup before opening
+   * mChannel, since we want to make sure we're in the loadgroup
+   * when mChannel finishes and fires OnStopRequest()
+   */
+
+  nsCOMPtr<nsILoadGroup> loadGroup;
+  mChannel->GetLoadGroup(getter_AddRefs(loadGroup));
+  if (loadGroup) {
+    loadGroup->AddRequest(static_cast<nsIViewSourceChannel*>(this), nullptr);
+  }
+
+  nsresult rv = NS_OK;
+  rv = mChildChannel->CompleteRedirectSetup(this, aContext);
+
+  if (NS_FAILED(rv) && loadGroup) {
+    loadGroup->RemoveRequest(static_cast<nsIViewSourceChannel*>(this), nullptr,
+                             rv);
+  }
+
+  if (NS_SUCCEEDED(rv)) {
+    mOpened = true;
+  }
+
+  return rv;
+}
+
+// nsIChannelEventSink
+
+NS_IMETHODIMP
+nsViewSourceChannel::AsyncOnChannelRedirect(
+    nsIChannel* oldChannel, nsIChannel* newChannel, uint32_t flags,
+    nsIAsyncVerifyRedirectCallback* callback) {
+  nsresult rv;
+
+  // We want consumers of the new inner channel be able to recognize it's
+  // actually used for view-source.  Hence we modify its original URI here.
+  // This will not affect security checks because those have already been
+  // synchronously done before our event sink is called.  Note that result
+  // principal URI is still modified at the OnStartRequest notification.
+  nsCOMPtr<nsIURI> newChannelOrigURI;
+  rv = newChannel->GetOriginalURI(getter_AddRefs(newChannelOrigURI));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIURI> newChannelUpdatedOrigURI;
+  rv = BuildViewSourceURI(newChannelOrigURI,
+                          getter_AddRefs(newChannelUpdatedOrigURI));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = newChannel->SetOriginalURI(newChannelUpdatedOrigURI);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  nsCOMPtr<nsIChannelEventSink> sink(do_QueryInterface(mCallbacks));
+  if (sink) {
+    return sink->AsyncOnChannelRedirect(oldChannel, newChannel, flags,
+                                        callback);
+  }
+
+  callback->OnRedirectVerifyCallback(NS_OK);
+  return NS_OK;
+}
+
+// nsIInterfaceRequestor
+
+NS_IMETHODIMP
+nsViewSourceChannel::GetInterface(const nsIID& aIID, void** aResult) {
+  if (aIID.Equals(NS_GET_IID(nsIChannelEventSink))) {
+    nsCOMPtr<nsIChannelEventSink> self(this);
+    self.forget(aResult);
+    return NS_OK;
+  }
+
+  if (mCallbacks) {
+    return mCallbacks->GetInterface(aIID, aResult);
+  }
+
+  return NS_ERROR_NO_INTERFACE;
 }

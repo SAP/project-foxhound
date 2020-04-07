@@ -39,6 +39,9 @@ const JSTerm = createFactory(
 const ConfirmDialog = createFactory(
   require("devtools/client/webconsole/components/Input/ConfirmDialog")
 );
+const EagerEvaluation = createFactory(
+  require("devtools/client/webconsole/components/Input/EagerEvaluation")
+);
 
 // And lazy load the ones that may not be used.
 loader.lazyGetter(this, "SideBar", () =>
@@ -108,9 +111,11 @@ class App extends Component {
       hidePersistLogsCheckbox: PropTypes.bool,
       hideShowContentMessagesCheckbox: PropTypes.bool,
       sidebarVisible: PropTypes.bool.isRequired,
+      eagerEvaluationEnabled: PropTypes.bool.isRequired,
       filterBarDisplayMode: PropTypes.oneOf([
         ...Object.values(FILTERBAR_DISPLAY_MODES),
       ]).isRequired,
+      showEvaluationSelector: PropTypes.bool,
     };
   }
 
@@ -288,6 +293,7 @@ class App extends Component {
       reverseSearchInputVisible,
       serviceContainer,
       webConsoleUI,
+      showEvaluationSelector,
     } = this.props;
 
     return editorMode
@@ -297,6 +303,7 @@ class App extends Component {
           dispatch,
           reverseSearchInputVisible,
           serviceContainer,
+          showEvaluationSelector,
           webConsoleUI,
         })
       : null;
@@ -330,6 +337,15 @@ class App extends Component {
       editorMode,
       editorWidth,
     });
+  }
+
+  renderEagerEvaluation() {
+    const { eagerEvaluationEnabled, serviceContainer } = this.props;
+    if (!eagerEvaluationEnabled) {
+      return null;
+    }
+
+    return EagerEvaluation({ serviceContainer });
   }
 
   renderReverseSearch() {
@@ -380,14 +396,21 @@ class App extends Component {
   }
 
   renderRootElement(children) {
-    const { editorMode, serviceContainer } = this.props;
+    const { editorMode, serviceContainer, sidebarVisible } = this.props;
 
     const classNames = ["webconsole-app"];
+    if (sidebarVisible) {
+      classNames.push("sidebar-visible");
+    }
     if (editorMode) {
       classNames.push("jsterm-editor");
     }
     if (serviceContainer.canRewind()) {
       classNames.push("can-rewind");
+    }
+
+    if (this.props.eagerEvaluationEnabled) {
+      classNames.push("eager-evaluation");
     }
 
     return div(
@@ -411,6 +434,7 @@ class App extends Component {
     const consoleOutput = this.renderConsoleOutput();
     const notificationBox = this.renderNotificationBox();
     const jsterm = this.renderJsTerm();
+    const eager = this.renderEagerEvaluation();
     const reverseSearch = this.renderReverseSearch();
     const sidebar = this.renderSideBar();
     const confirmDialog = this.renderConfirmDialog();
@@ -422,7 +446,8 @@ class App extends Component {
         { className: "flexible-output-input", key: "in-out-container" },
         consoleOutput,
         notificationBox,
-        jsterm
+        jsterm,
+        eager
       ),
       editorMode
         ? GridElementWidthResizer({
@@ -449,6 +474,9 @@ const mapStateToProps = state => ({
   editorWidth: state.ui.editorWidth,
   sidebarVisible: state.ui.sidebarVisible,
   filterBarDisplayMode: state.ui.filterBarDisplayMode,
+  eagerEvaluationEnabled: state.prefs.eagerEvaluation,
+  autocomplete: state.prefs.autocomplete,
+  showEvaluationSelector: state.ui.showEvaluationSelector,
 });
 
 const mapDispatchToProps = dispatch => ({

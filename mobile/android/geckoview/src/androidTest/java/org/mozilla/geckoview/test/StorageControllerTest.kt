@@ -7,8 +7,8 @@ package org.mozilla.geckoview.test
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.StorageController
 
-import android.support.test.filters.MediumTest
-import android.support.test.runner.AndroidJUnit4
+import androidx.test.filters.MediumTest
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.hamcrest.Matchers.*
 import org.json.JSONObject
 import org.junit.Test
@@ -98,9 +98,18 @@ class StorageControllerTest : BaseSessionTest() {
             document.cookie || 'null'
         """) as String
 
-        assertThat("Local storage value should match",
-                   localStorage,
-                   equalTo("test"))
+        // With LSNG disabled, storage is also cleared when cookies are,
+        // see bug 1592752.
+        if (sessionRule.getPrefs("dom.storage.next_gen")[0] as Boolean == true) {
+          assertThat("Local storage value should match",
+                     localStorage,
+                     equalTo("test"))
+        } else {
+          assertThat("Local storage value should match",
+                     localStorage,
+                     equalTo("null"))
+        }
+
         assertThat("Cookie value should match",
                    cookie,
                    equalTo("null"))

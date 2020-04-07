@@ -44,6 +44,16 @@
   line-height: var(--theme-toolbar-height);
 }
 
+#ruleview-toolbar {
+  flex-wrap: wrap;
+  height: auto;
+}
+
+#ruleview-toolbar .devtools-searchbox {
+  flex-basis: 7em;
+  height: var(--theme-toolbar-height);
+}
+
 #ruleview-command-toolbar {
   display: flex;
 }
@@ -240,7 +250,12 @@
 }
 
 .ruleview-expandable-header:hover {
-  background-color: var(--theme-toolbar-background-hover);
+  background-color: var(--theme-accordion-header-hover);
+}
+
+.ruleview-expandable-header .theme-twisty {
+  margin-inline-start: 0;
+  margin-inline-end: 2px;
 }
 
 .ruleview-rule-pseudo-element {
@@ -345,11 +360,58 @@
 
 .ruleview-enableproperty {
   position: relative;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+:root[platform="mac"] .ruleview-enableproperty {
+  left: -29px;
+  box-sizing: border-box;
+  margin-inline-start: 3px;
+  margin-inline-end: 9px;
+  width: 12px;
+  height: 12px;
+}
+
+/* The SVG checkbox on Windows and Linux */
+:root[platform="win"] .ruleview-enableproperty,
+:root[platform="linux"] .ruleview-enableproperty {
+  -moz-appearance: none;
   float: left;
-  left: -38px;
+  left: -27px;
   box-sizing: content-box;
-  border-left: 10px solid transparent;
-  background-clip: content-box;
+  margin-inline-start: 0;
+  margin-inline-end: 10px;
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 0;
+  padding: 0;
+  outline: none;
+  background: url("chrome://devtools/skin/images/checkbox.svg") center no-repeat content-box;
+  /* Using fill to paint the border, and stroke for the tick */
+  -moz-context-properties: fill, stroke;
+  fill: rgba(0,0,0,.3);
+  stroke: transparent;
+}
+
+:root[platform="win"].theme-dark .ruleview-enableproperty,
+:root[platform="linux"].theme-dark .ruleview-enableproperty {
+  fill: rgba(255,255,255,.4);
+}
+
+:root[platform="win"] .ruleview-enableproperty:checked,
+:root[platform="linux"] .ruleview-enableproperty:checked {
+  stroke: rgba(0,0,0,.6);
+}
+
+:root[platform="win"].theme-dark .ruleview-enableproperty:checked,
+:root[platform="linux"].theme-dark .ruleview-enableproperty:checked {
+  stroke: rgba(255,255,255,.8);
+}
+
+:root[platform="mac"] .ruleview-enableproperty {
+  -moz-appearance: checkbox;
 }
 
 .ruleview-warning,
@@ -378,8 +440,10 @@
   stroke: var(--theme-icon-color);
 }
 
-.ruleview-rule:not(:hover) .ruleview-enableproperty {
-  visibility: hidden;
+.ruleview-rule:not(:hover) .ruleview-enableproperty:not(:focus) {
+  /* Use opacity to hide the checkbox instead of visibility:hidden,
+     so that it's possible to focus it with the keyboard. */
+  opacity: 0;
 }
 
 .ruleview-expander {
@@ -690,6 +754,28 @@
 
 #print-simulation-toggle::before {
   background-image: url("chrome://devtools/skin/images/rules-view-print-simulation.svg");
+}
+
+#color-scheme-simulation-toggle::before {
+  -moz-context-properties: fill, fill-opacity;
+  background-image: url("chrome://mozapps/skin/extensions/category-themes.svg");
+  background-size: 12px;
+}
+
+#color-scheme-simulation-toggle[state="dark"] {
+  background-color: #333;
+}
+
+#color-scheme-simulation-toggle[state="dark"]::before {
+  fill: white;
+}
+
+#color-scheme-simulation-toggle[state="light"]::before {
+  fill: #bbb;
+}
+
+#color-scheme-simulation-toggle[state="no-preference"]::before {
+  fill-opacity: 0.5;
 }
 
 .flash-out {

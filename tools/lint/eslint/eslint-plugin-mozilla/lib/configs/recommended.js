@@ -51,14 +51,6 @@ module.exports = {
 
   overrides: [
     {
-      // Turn off use-services for xml files. XBL bindings are going away, and
-      // working out the valid globals for those is difficult.
-      files: "**/*.xml",
-      rules: {
-        "mozilla/use-services": "off",
-      },
-    },
-    {
       // We don't have the general browser environment for jsm files, but we do
       // have our own special environments for them.
       env: {
@@ -135,6 +127,7 @@ module.exports = {
     "mozilla/no-useless-parameters": "error",
     "mozilla/no-useless-removeEventListener": "error",
     "mozilla/prefer-boolean-length-check": "error",
+    "mozilla/reject-chromeutils-import-null": "error",
     "mozilla/reject-importGlobalProperties": ["error", "allownonwebidl"],
     "mozilla/rejects-requires-await": "error",
     "mozilla/use-cc-etc": "error",

@@ -14,6 +14,7 @@
 #include "mozilla/Sprintf.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Utf8.h"
+#include "mozilla/net/DNS.h"
 #include "nsCOMPtr.h"
 #include "nsIStringBundle.h"
 #include "nsNSSASN1Object.h"
@@ -157,7 +158,7 @@ static nsresult ProcessSerialNumberDER(
     return rv;
   }
 
-  retItem = printableItem.forget();
+  retItem = std::move(printableItem);
   return NS_OK;
 }
 
@@ -918,8 +919,9 @@ static nsresult ProcessGeneralName(const UniquePLArenaPool& arena,
       break;
     }
     case certIPAddress: {
-      char buf[INET6_ADDRSTRLEN];
       PRStatus status = PR_FAILURE;
+      // According to DNS.h, this includes space for the null-terminator
+      char buf[net::kNetAddrMaxCStrBufSize] = {0};
       PRNetAddr addr;
       memset(&addr, 0, sizeof(addr));
       GetPIPNSSBundleString("CertDumpIPAddress", key);

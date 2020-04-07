@@ -44,11 +44,12 @@ import pickle
 import re
 import requests
 import shutil
+import six
 import stat
 import subprocess
 import tarfile
 import tempfile
-import urlparse
+import six.moves.urllib_parse as urlparse
 import zipfile
 
 import pylru
@@ -102,7 +103,6 @@ class ArtifactJob(object):
     candidate_trees = [
         'mozilla-central',
         'integration/autoland',
-        'integration/mozilla-inbound',
         'releases/mozilla-beta',
         'releases/mozilla-release',
     ]
@@ -221,7 +221,7 @@ class ArtifactJob(object):
 
         with JarWriter(file=processed_filename, compress_level=5) as writer:
             reader = JarReader(filename)
-            for filename, entry in reader.entries.iteritems():
+            for filename, entry in six.iteritems(reader.entries):
                 for pattern, (src_prefix, dest_prefix) in self.test_artifact_patterns:
                     if not mozpath.match(filename, pattern):
                         continue
@@ -330,6 +330,20 @@ class ArtifactJob(object):
             destpath = mozpath.join('host/bin', orig_basename)
             writer.add(destpath.encode('utf-8'), open(filename, 'rb'))
 
+    @staticmethod
+    def transform_job(job, tree):
+        # PGO builds are now known as "shippable" for all platforms but Android.
+        # For macOS and linux32 shippable builds are equivalent to opt builds and
+        # replace them on some trees. Additionally, we no longer produce win64
+        # opt builds on integration branches.
+        if job.endswith('-pgo') or job in ('macosx64-opt', 'linux-opt',
+                                           'win64-opt'):
+            tree += '.shippable'
+        if job.endswith('-pgo'):
+            job = job.replace('-pgo', '-opt')
+
+        return job, tree
+
 
 class AndroidArtifactJob(ArtifactJob):
     package_re = r'public/build/geckoview_example\.apk'
@@ -390,6 +404,10 @@ class AndroidArtifactJob(ArtifactJob):
                 writer.add(destpath.encode('utf-8'),
                            gzip.GzipFile(fileobj=reader[filename].uncompressed_data))
 
+    @staticmethod
+    def transform_job(job, tree):
+        return job, tree
+
 
 class LinuxArtifactJob(ArtifactJob):
     package_re = r'public/build/target\.tar\.bz2'
@@ -448,18 +466,20 @@ class MacArtifactJob(ArtifactJob):
         '{product}',
         '{product}-bin',
         'libfreebl3.dylib',
+        'libgraphitewasm.dylib',
         'liblgpllibs.dylib',
         # 'liblogalloc.dylib',
         'libmozglue.dylib',
         'libnss3.dylib',
         'libnssckbi.dylib',
-        'libnssdbm3.dylib',
         'libplugin_child_interpose.dylib',
         # 'libreplace_jemalloc.dylib',
         # 'libreplace_malloc.dylib',
         'libmozavutil.dylib',
         'libmozavcodec.dylib',
+        'libosclientcerts.dylib',
         'libsoftokn3.dylib',
+        'minidump-analyzer',
         'pingsender',
         'plugin-container.app/Contents/MacOS/plugin-container',
         'updater.app/Contents/MacOS/org.mozilla.updater',
@@ -504,9 +524,6 @@ class MacArtifactJob(ArtifactJob):
 
             # These get copied into dist/bin with the path, so "root/a/b/c" -> "dist/bin/a/b/c".
             paths_keep_path = [
-                ('Contents/MacOS', [
-                    'crashreporter.app/Contents/MacOS/minidump-analyzer',
-                ]),
                 ('Contents/Resources', [
                     'browser/components/libbrowsercomps.dylib',
                     'dependentlibs.list',
@@ -615,6 +632,10 @@ class ThunderbirdMixin(object):
         'comm-central',
     ]
     try_tree = 'try-comm-central'
+
+    @staticmethod
+    def transform_job(job, tree):
+        return job, tree
 
 
 class LinuxThunderbirdArtifactJob(ThunderbirdMixin, LinuxArtifactJob):
@@ -794,20 +815,11 @@ class TaskCache(CacheManager):
     @cachedmethod(operator.attrgetter('_cache'))
     def artifacts(self, tree, job, artifact_job_class, rev):
         # Grab the second part of the repo name, which is generally how things
-        # are indexed. Eg: 'integration/mozilla-inbound' is indexed as
-        # 'mozilla-inbound'
+        # are indexed. Eg: 'integration/autoland' is indexed as
+        # 'autoland'
         tree = tree.split('/')[1] if '/' in tree else tree
 
-        # PGO builds are now known as "shippable" for all platforms but Android.
-        # For macOS and linux32 shippable builds are equivalent to opt builds and
-        # replace them on some trees. Additionally, we no longer produce win64
-        # opt builds on integration branches.
-        if not job.startswith('android-'):
-            if job.endswith('-pgo') or job in ('macosx64-opt', 'linux-opt',
-                                               'win64-opt'):
-                tree += '.shippable'
-            if job.endswith('-pgo'):
-                job = job.replace('-pgo', '-opt')
+        job, tree = artifact_job_class.transform_job(job, tree)
 
         namespace = '{trust_domain}.v2.{tree}.revision.{rev}.{product}.{job}'.format(
             trust_domain=artifact_job_class.trust_domain,
@@ -947,7 +959,7 @@ class Artifacts(object):
 
             candidate_pushheads = collections.defaultdict(list)
 
-            for tree, pushid in found_pushids.iteritems():
+            for tree, pushid in six.iteritems(found_pushids):
                 end = pushid
                 start = pushid - NUM_PUSHHEADS_TO_QUERY_PER_PARENT
 
@@ -1014,7 +1026,7 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
             rev, node = line.split(':', 1)
             return (int(rev), node)
 
-        pairs = map(to_pair, last_revs)
+        pairs = [to_pair(r) for r in last_revs]
 
         # Python's tuple sort orders by first component: here, the (local)
         # revision number.
@@ -1241,7 +1253,7 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
         """
         if source and os.path.isfile(source):
             return self.install_from_file(source, distdir)
-        elif source and urlparse.urlparse(source).scheme:
+        elif source and urlparse(source).scheme:
             return self.install_from_url(source, distdir)
         else:
             if source is None and 'MOZ_ARTIFACT_REVISION' in os.environ:

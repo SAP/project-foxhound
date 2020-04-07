@@ -10,9 +10,7 @@
 #define nsChangeHint_h___
 
 #include "mozilla/Types.h"
-#include "nsDebug.h"
-#include "nsTArray.h"
-#include "mozilla/ServoStyleConsts.h"
+#include "mozilla/Assertions.h"
 
 // Defines for various style related constants
 
@@ -225,16 +223,10 @@ enum nsChangeHint : uint32_t {
   nsChangeHint_ScrollbarChange = 1 << 26,
 
   /**
-   * Indicates that nsIFrame::UpdateWidgetProperties needs to be called.
-   * This is used for -moz-window-* properties.
-   */
-  nsChangeHint_UpdateWidgetProperties = 1 << 27,
-
-  /**
    *  Indicates that there has been a colspan or rowspan attribute change
    *  on the cells of a table.
    */
-  nsChangeHint_UpdateTableCellSpans = 1 << 28,
+  nsChangeHint_UpdateTableCellSpans = 1 << 27,
 
   /**
    * Indicates that the visiblity property changed.
@@ -242,7 +234,7 @@ enum nsChangeHint : uint32_t {
    * visibility:hidden elements in the case where the elements have no visible
    * descendants.
    */
-  nsChangeHint_VisibilityChange = 1u << 29,
+  nsChangeHint_VisibilityChange = 1u << 28,
 
   // IMPORTANT NOTE: When adding a new hint, you will need to add it to
   // one of:
@@ -259,7 +251,7 @@ enum nsChangeHint : uint32_t {
   /**
    * Dummy hint value for all hints. It exists for compile time check.
    */
-  nsChangeHint_AllHints = uint32_t((1ull << 30) - 1),
+  nsChangeHint_AllHints = uint32_t((1ull << 29) - 1),
 };
 
 // Redefine these operators to return nothing. This will catch any use
@@ -340,8 +332,7 @@ inline nsChangeHint operator^=(nsChangeHint& aLeft, nsChangeHint aRight) {
    nsChangeHint_UpdateOverflow | nsChangeHint_UpdateParentOverflow |          \
    nsChangeHint_UpdatePostTransformOverflow |                                 \
    nsChangeHint_UpdateTableCellSpans | nsChangeHint_UpdateTransformLayer |    \
-   nsChangeHint_UpdateUsesOpacity | nsChangeHint_AddOrRemoveTransform |       \
-   nsChangeHint_UpdateWidgetProperties)
+   nsChangeHint_UpdateUsesOpacity | nsChangeHint_AddOrRemoveTransform)
 
 // The change hints that are sometimes considered to be handled for descendants.
 #define nsChangeHint_Hints_SometimesHandledForDescendants           \
@@ -405,6 +396,20 @@ static_assert(!(nsChangeHint_Hints_AlwaysHandledForDescendants &
       (nsChangeHint_AllReflowHints | nsChangeHint_UpdateComputedBSize) & \
       ~(nsChangeHint_ClearDescendantIntrinsics |                         \
         nsChangeHint_NeedDirtyReflow))
+
+// For a change in whether a scrollframe displays or not scrollbars.
+//
+// When requesting this reflow, we send the exact same change hints that "width"
+// and "height" would send (since conceptually, adding/removing scrollbars is
+// like changing the available space).
+//
+// FIXME(emilio): Seems we could be a bit more efficient here, as adding or
+// removing scrollbars doesn't change the size of the element itself, so maybe
+// ClearAncestorIntrinsics or ReflowChangesSizeOrPosition are not needed... I
+// think this ideally should be just nsChangehint_NeedReflow.
+#define nsChangeHint_ReflowHintsForScrollbarChange      \
+  nsChangeHint(nsChangeHint_ReflowHintsForBSizeChange | \
+               nsChangeHint_ReflowHintsForISizeChange)
 
 // * For changes to the float area of an already-floated element, we need all
 // reflow hints, but not the ones that apply to descendants.
@@ -509,22 +514,9 @@ inline nsChangeHint NS_RemoveSubsumedHints(nsChangeHint aOurChange,
 
 namespace mozilla {
 
+struct StyleRestyleHint;
+
 using RestyleHint = StyleRestyleHint;
-
-inline RestyleHint RestyleHint::RestyleSubtree() {
-  return StyleRestyleHint_RESTYLE_SELF | StyleRestyleHint_RESTYLE_DESCENDANTS;
-}
-
-inline RestyleHint RestyleHint::RecascadeSubtree() {
-  return StyleRestyleHint_RECASCADE_SELF |
-         StyleRestyleHint_RECASCADE_DESCENDANTS;
-}
-
-inline RestyleHint RestyleHint::ForAnimations() {
-  return StyleRestyleHint_RESTYLE_CSS_TRANSITIONS |
-         StyleRestyleHint_RESTYLE_CSS_ANIMATIONS |
-         StyleRestyleHint_RESTYLE_SMIL;
-}
 
 }  // namespace mozilla
 

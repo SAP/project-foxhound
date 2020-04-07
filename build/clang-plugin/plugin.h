@@ -39,42 +39,13 @@ typedef ASTConsumer *ASTConsumerPtr;
 #define getEndLoc getLocEnd
 #endif
 
-#ifndef HAVE_NEW_ASTMATCHER_NAMES
-// In clang 3.8, a number of AST matchers were renamed to better match the
-// respective AST node.  We use the new names, and #define them to the old
-// ones for compatibility with older versions.
-#define cxxConstructExpr constructExpr
-#define cxxConstructorDecl constructorDecl
-#define cxxMethodDecl methodDecl
-#define cxxNewExpr newExpr
-#define cxxRecordDecl recordDecl
-#endif
-
-#ifndef HAS_ACCEPTS_IGNORINGPARENIMPCASTS
-#define hasIgnoringParenImpCasts(x) has(x)
-#else
-// Before clang 3.9 "has" would behave like has(ignoringParenImpCasts(x)),
-// however doing that explicitly would not compile.
-#define hasIgnoringParenImpCasts(x) has(ignoringParenImpCasts(x))
-#endif
-
 // In order to support running our checks using clang-tidy, we implement a
 // source compatible base check class called BaseCheck, and we use the
 // preprocessor to decide which base class to pick.
 #ifdef CLANG_TIDY
 #include "../ClangTidy.h"
-typedef clang::tidy::ClangTidyCheck UpstreamBaseCheck;
+typedef clang::tidy::ClangTidyCheck BaseCheck;
 typedef clang::tidy::ClangTidyContext ContextType;
-
-class BaseCheck : public UpstreamBaseCheck {
-public:
-  BaseCheck(StringRef CheckName, ContextType *Context = nullptr)
-      : UpstreamBaseCheck(CheckName, Context) {}
-
-  // Additional functionality needed by Mozilla code
-  virtual void registerCompilerInstance(CompilerInstance &CI) {}
-};
-
 #else
 #include "BaseCheck.h"
 #endif

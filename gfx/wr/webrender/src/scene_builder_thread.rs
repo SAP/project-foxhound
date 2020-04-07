@@ -17,7 +17,7 @@ use crate::internal_types::{FastHashMap, FastHashSet};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use crate::prim_store::backdrop::Backdrop;
 use crate::prim_store::borders::{ImageBorder, NormalBorderPrim};
-use crate::prim_store::gradient::{LinearGradient, RadialGradient};
+use crate::prim_store::gradient::{LinearGradient, RadialGradient, ConicGradient};
 use crate::prim_store::image::{Image, YuvImage};
 use crate::prim_store::line_dec::LineDecoration;
 use crate::prim_store::picture::Picture;
@@ -33,6 +33,11 @@ use time::precise_time_ns;
 use crate::util::drain_filter;
 use std::thread;
 use std::time::Duration;
+
+#[cfg(feature = "debugger")]
+use crate::debug_server;
+#[cfg(feature = "debugger")]
+use api::{BuiltDisplayListIter, DisplayItem};
 
 
 /// Represents the work associated to a transaction before scene building.
@@ -139,11 +144,12 @@ pub enum SceneBuilderRequest {
     SimulateLongSceneBuild(u32),
     SimulateLongLowPrioritySceneBuild(u32),
     Stop,
-    ReportMemory(MemoryReport, MsgSender<MemoryReport>),
+    ReportMemory(Box<MemoryReport>, MsgSender<Box<MemoryReport>>),
     #[cfg(feature = "capture")]
     SaveScene(CaptureConfig),
     #[cfg(feature = "replay")]
     LoadScenes(Vec<LoadScene>),
+    DocumentsForDebugger
 }
 
 // Message from scene builder to render backend.
@@ -153,6 +159,7 @@ pub enum SceneBuilderResult {
     FlushComplete(MsgSender<()>),
     ClearNamespace(IdNamespace),
     Stopped,
+    DocumentsForDebugger(String)
 }
 
 // Message from render backend to scene builder to indicate the
@@ -245,34 +252,56 @@ pub struct SceneBuilderThread {
     tx: Sender<SceneBuilderResult>,
     api_tx: MsgSender<ApiMsg>,
     config: FrameBuilderConfig,
+    size_of_ops: Option<MallocSizeOfOps>,
     hooks: Option<Box<dyn SceneBuilderHooks + Send>>,
     simulate_slow_ms: u32,
-    size_of_ops: Option<MallocSizeOfOps>,
+    removed_pipelines: FastHashSet<PipelineId>
+}
+
+pub struct SceneBuilderThreadChannels {
+    rx: Receiver<SceneBuilderRequest>,
+    tx: Sender<SceneBuilderResult>,
+    api_tx: MsgSender<ApiMsg>,
+}
+
+impl SceneBuilderThreadChannels {
+    pub fn new(
+        api_tx: MsgSender<ApiMsg>
+    ) -> (Self, Sender<SceneBuilderRequest>, Receiver<SceneBuilderResult>) {
+        let (in_tx, in_rx) = channel();
+        let (out_tx, out_rx) = channel();
+        (
+            Self {
+                rx: in_rx,
+                tx: out_tx,
+                api_tx,
+            },
+            in_tx,
+            out_rx,
+        )
+    }
 }
 
 impl SceneBuilderThread {
     pub fn new(
         config: FrameBuilderConfig,
-        api_tx: MsgSender<ApiMsg>,
-        hooks: Option<Box<dyn SceneBuilderHooks + Send>>,
         size_of_ops: Option<MallocSizeOfOps>,
-    ) -> (Self, Sender<SceneBuilderRequest>, Receiver<SceneBuilderResult>) {
-        let (in_tx, in_rx) = channel();
-        let (out_tx, out_rx) = channel();
-        (
-            SceneBuilderThread {
-                documents: FastHashMap::default(),
-                rx: in_rx,
-                tx: out_tx,
-                api_tx,
-                config,
-                hooks,
-                size_of_ops,
-                simulate_slow_ms: 0,
-            },
-            in_tx,
-            out_rx,
-        )
+        hooks: Option<Box<dyn SceneBuilderHooks + Send>>,
+        channels: SceneBuilderThreadChannels,
+    ) -> Self {
+        let SceneBuilderThreadChannels { rx, tx, api_tx } = channels;
+
+        Self {
+            documents: Default::default(),
+            rx,
+            tx,
+            api_tx,
+            config,
+            size_of_ops,
+            hooks,
+            simulate_slow_ms: 0,
+            removed_pipelines: FastHashSet::default(),
+        }
     }
 
     /// Send a message to the render backend thread.
@@ -320,6 +349,11 @@ impl SceneBuilderThread {
                 Ok(SceneBuilderRequest::SaveScene(config)) => {
                     self.save_scene(config);
                 }
+                Ok(SceneBuilderRequest::DocumentsForDebugger) => {
+                    let json = self.get_docs_for_debugger();
+                    self.send(SceneBuilderResult::DocumentsForDebugger(json));
+                }
+
                 Ok(SceneBuilderRequest::ExternalEvent(evt)) => {
                     self.send(SceneBuilderResult::ExternalEvent(evt));
                 }
@@ -330,7 +364,7 @@ impl SceneBuilderThread {
                     break;
                 }
                 Ok(SceneBuilderRequest::ReportMemory(mut report, tx)) => {
-                    report += self.report_memory();
+                    (*report) += self.report_memory();
                     tx.send(report).unwrap();
                 }
                 Ok(SceneBuilderRequest::SimulateLongSceneBuild(time_ms)) => {
@@ -357,6 +391,11 @@ impl SceneBuilderThread {
         for (id, doc) in &self.documents {
             let interners_name = format!("interners-{}-{}", id.namespace_id.0, id.id);
             config.serialize(&doc.interners, interners_name);
+
+            if config.bits.contains(api::CaptureBits::SCENE) {
+                let file_name = format!("scene-{}-{}", id.namespace_id.0, id.id);
+                config.serialize(&doc.scene, file_name);
+            }
         }
     }
 
@@ -415,9 +454,73 @@ impl SceneBuilderThread {
         }
     }
 
+    #[cfg(feature = "debugger")]
+    fn traverse_items<'a>(
+        &self,
+        traversal: &mut BuiltDisplayListIter<'a>,
+        node: &mut debug_server::TreeNode,
+    ) {
+        loop {
+            let subtraversal = {
+                let item = match traversal.next() {
+                    Some(item) => item,
+                    None => break,
+                };
+
+                match *item.item() {
+                    display_item @ DisplayItem::PushStackingContext(..) => {
+                        let mut subtraversal = item.sub_iter();
+                        let mut child_node =
+                            debug_server::TreeNode::new(&display_item.debug_name().to_string());
+                        self.traverse_items(&mut subtraversal, &mut child_node);
+                        node.add_child(child_node);
+                        Some(subtraversal)
+                    }
+                    DisplayItem::PopStackingContext => {
+                        return;
+                    }
+                    display_item => {
+                        node.add_item(&display_item.debug_name().to_string());
+                        None
+                    }
+                }
+            };
+
+            // If flatten_item created a sub-traversal, we need `traversal` to have the
+            // same state as the completed subtraversal, so we reinitialize it here.
+            if let Some(subtraversal) = subtraversal {
+                *traversal = subtraversal;
+            }
+        }
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    fn get_docs_for_debugger(&self) -> String {
+        String::new()
+    }
+
+    #[cfg(feature = "debugger")]
+    fn get_docs_for_debugger(&self) -> String {
+        let mut docs = debug_server::DocumentList::new();
+
+        for (_, doc) in &self.documents {
+            let mut debug_doc = debug_server::TreeNode::new("document");
+
+            for (_, pipeline) in &doc.scene.pipelines {
+                let mut debug_dl = debug_server::TreeNode::new("display-list");
+                self.traverse_items(&mut pipeline.display_list.iter(), &mut debug_dl);
+                debug_doc.add_child(debug_dl);
+            }
+
+            docs.add(debug_doc);
+        }
+
+        serde_json::to_string(&docs).unwrap()
+    }
+
     /// Do the bulk of the work of the scene builder thread.
     fn process_transaction(&mut self, txn: &mut Transaction) -> Box<BuiltTransaction> {
-        if let &Some(ref hooks) = &self.hooks {
+        if let Some(ref hooks) = self.hooks {
             hooks.pre_scene_build();
         }
 
@@ -428,7 +531,24 @@ impl SceneBuilderThread {
                       .or_insert_with(|| Document::new(Scene::new()));
         let scene = &mut doc.scene;
 
+        for &(pipeline_id, epoch) in &txn.epoch_updates {
+            scene.update_epoch(pipeline_id, epoch);
+        }
+
+        if let Some(id) = txn.set_root_pipeline {
+            scene.set_root_pipeline_id(id);
+        }
+
+        for &(pipeline_id, _) in &txn.removed_pipelines {
+            scene.remove_pipeline(pipeline_id);
+            self.removed_pipelines.insert(pipeline_id);
+        }
+
         for update in txn.display_list_updates.drain(..) {
+            if self.removed_pipelines.contains(&update.pipeline_id) {
+                continue;
+            }
+
             scene.set_display_list(
                 update.pipeline_id,
                 update.epoch,
@@ -439,17 +559,7 @@ impl SceneBuilderThread {
             );
         }
 
-        for &(pipeline_id, epoch) in &txn.epoch_updates {
-            scene.update_epoch(pipeline_id, epoch);
-        }
-
-        if let Some(id) = txn.set_root_pipeline {
-            scene.set_root_pipeline_id(id);
-        }
-
-        for &(pipeline_id, _) in &txn.removed_pipelines {
-            scene.remove_pipeline(pipeline_id)
-        }
+        self.removed_pipelines.clear();
 
         let mut built_scene = None;
         let mut interner_updates = None;
@@ -477,6 +587,8 @@ impl SceneBuilderThread {
             }
         }
 
+        let scene_build_end_time = precise_time_ns();
+
         let is_low_priority = false;
         txn.rasterize_blobs(is_low_priority);
 
@@ -503,21 +615,21 @@ impl SceneBuilderThread {
             notifications: replace(&mut txn.notifications, Vec::new()),
             interner_updates,
             scene_build_start_time,
-            scene_build_end_time: precise_time_ns(),
+            scene_build_end_time,
         })
     }
 
     /// Send the results of process_transaction back to the render backend.
     fn forward_built_transactions(&mut self, txns: Vec<Box<BuiltTransaction>>) {
-        let (pipeline_info, result_tx, result_rx) = match &self.hooks {
-            &Some(ref hooks) => {
+        let (pipeline_info, result_tx, result_rx) = match self.hooks {
+            Some(ref hooks) => {
                 if txns.iter().any(|txn| txn.built_scene.is_some()) {
                     let info = PipelineInfo {
                         epochs: txns.iter()
                             .filter(|txn| txn.built_scene.is_some())
                             .map(|txn| {
                                 txn.built_scene.as_ref().unwrap()
-                                    .src.pipeline_epochs.iter()
+                                    .pipeline_epochs.iter()
                                     .zip(iter::repeat(txn.document_id))
                                     .map(|((&pipeline_id, &epoch), document_id)| ((pipeline_id, document_id), epoch))
                             }).flatten().collect(),
@@ -543,7 +655,7 @@ impl SceneBuilderThread {
         let have_resources_updates : Vec<DocumentId> = if pipeline_info.is_none() {
             txns.iter()
                 .filter(|txn| !txn.resource_updates.is_empty() || txn.invalidate_rendered_frame)
-                .map(|txn| txn.document_id.clone())
+                .map(|txn| txn.document_id)
                 .collect()
         } else {
             Vec::new()
@@ -560,20 +672,15 @@ impl SceneBuilderThread {
             self.hooks.as_ref().unwrap().post_scene_swap(&document_ids,
                                                          pipeline_info, scene_swap_time);
             // Once the hook is done, allow the RB thread to resume
-            match swap_result {
-                Ok(SceneSwapResult::Complete(resume_tx)) => {
-                    resume_tx.send(()).ok();
-                },
-                _ => (),
-            };
+            if let Ok(SceneSwapResult::Complete(resume_tx)) = swap_result {
+                resume_tx.send(()).ok();
+            }
         } else if !have_resources_updates.is_empty() {
-            if let &Some(ref hooks) = &self.hooks {
+            if let Some(ref hooks) = self.hooks {
                 hooks.post_resource_update(&have_resources_updates);
             }
-        } else {
-            if let &Some(ref hooks) = &self.hooks {
-                hooks.post_empty_scene_build();
-            }
+        } else if let Some(ref hooks) = self.hooks {
+            hooks.post_empty_scene_build();
         }
     }
 

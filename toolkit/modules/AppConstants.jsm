@@ -1,5 +1,6 @@
 #filter substitution
 #include @TOPOBJDIR@/source-repo.h
+#include @TOPOBJDIR@/buildid.h
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -151,8 +152,8 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-# NOTE! XP_LINUX has to go after MOZ_WIDGET_ANDROID otherwise Android
-# builds will be misidentified as linux.
+// NOTE! XP_LINUX has to go after MOZ_WIDGET_ANDROID otherwise Android
+// builds will be misidentified as linux.
   platform:
 #ifdef MOZ_WIDGET_GTK
   "linux",
@@ -166,6 +167,23 @@ this.AppConstants = Object.freeze({
   "linux",
 #else
   "other",
+#endif
+
+// Most of our frontend code assumes that any desktop Unix platform
+// is "linux". Add the distinction for code that needs it.
+  unixstyle:
+#ifdef XP_LINUX
+    "linux",
+#elif XP_OPENBSD
+    "openbsd",
+#elif XP_NETBSD
+    "netbsd",
+#elif XP_FREEBSD
+    "freebsd",
+#elif XP_SOLARIS
+    "solaris",
+#else
+    "other",
 #endif
 
   isPlatformAndVersionAtLeast(platform, version) {
@@ -229,20 +247,6 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_GRAPHENE:
-#ifdef MOZ_GRAPHENE
-  true,
-#else
-  false,
-#endif
-
-  MOZ_XBL:
-#ifdef MOZ_XBL
-  true,
-#else
-  false,
-#endif
-
   MOZ_SYSTEM_NSS:
 #ifdef MOZ_SYSTEM_NSS
   true,
@@ -274,6 +278,13 @@ this.AppConstants = Object.freeze({
 #endif
     return result;
   },
+
+  MOZ_ALLOW_ADDON_SIDELOAD:
+#ifdef MOZ_ALLOW_ADDON_SIDELOAD
+  true,
+#else
+  false,
+#endif
 
   MOZ_ALLOW_LEGACY_EXTENSIONS:
 #ifdef MOZ_ALLOW_LEGACY_EXTENSIONS
@@ -309,6 +320,7 @@ this.AppConstants = Object.freeze({
   MOZ_APP_NAME: "@MOZ_APP_NAME@",
   MOZ_APP_VERSION: "@MOZ_APP_VERSION@",
   MOZ_APP_VERSION_DISPLAY: "@MOZ_APP_VERSION_DISPLAY@",
+  MOZ_BUILDID: "@MOZ_BUILDID@",
   MOZ_BUILD_APP: "@MOZ_BUILD_APP@",
   MOZ_MACBUNDLE_NAME: "@MOZ_MACBUNDLE_NAME@",
   MOZ_UPDATE_CHANNEL: "@MOZ_UPDATE_CHANNEL@",
@@ -374,6 +386,13 @@ this.AppConstants = Object.freeze({
 
   MOZ_NEW_CERT_STORAGE:
 #ifdef MOZ_NEW_CERT_STORAGE
+    true,
+#else
+    false,
+#endif
+
+  ENABLE_REMOTE_AGENT:
+#ifdef ENABLE_REMOTE_AGENT
     true,
 #else
     false,

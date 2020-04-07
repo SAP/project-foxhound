@@ -8,6 +8,7 @@
 #include "nsExceptionHandlerUtils.h"
 
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryService.h"
 #include "nsDataHashtable.h"
@@ -26,6 +27,7 @@
 #include "mozilla/ipc/CrashReporterClient.h"
 
 #include "nsThreadUtils.h"
+#include "nsThread.h"
 #include "jsfriendapi.h"
 #include "ThreadAnnotation.h"
 #include "private/pprio.h"
@@ -59,6 +61,8 @@
 #  include <crt_externs.h>
 #  include <fcntl.h>
 #  include <mach/mach.h>
+#  include <mach/vm_statistics.h>
+#  include <sys/sysctl.h>
 #  include <sys/types.h>
 #  include <spawn.h>
 #  include <unistd.h>
@@ -73,6 +77,7 @@
 #  include "common/linux/eintr_wrapper.h"
 #  include <fcntl.h>
 #  include <sys/types.h>
+#  include "sys/sysinfo.h"
 #  include <sys/wait.h>
 #  include <unistd.h>
 #else
@@ -97,7 +102,6 @@ using mozilla::InjectCrashRunnable;
 
 #include "mozilla/IOInterposer.h"
 #include "mozilla/mozalloc_oom.h"
-#include "mozilla/recordreplay/ParentIPC.h"
 
 #if defined(XP_MACOSX)
 CFStringRef reporterClientAppID = CFSTR("org.mozilla.crashreporter");
@@ -129,6 +133,7 @@ typedef std::wstring xpstring;
 #  define CONVERT_XP_CHAR_TO_UTF16(x) x
 #  define XP_STRLEN(x) wcslen(x)
 #  define my_strlen strlen
+#  define my_memchr memchr
 #  define CRASH_REPORTER_FILENAME "crashreporter.exe"
 #  define XP_PATH_SEPARATOR L"\\"
 #  define XP_PATH_SEPARATOR_CHAR L'\\'
@@ -159,6 +164,7 @@ typedef std::string xpstring;
 #    define XP_TTOA(time, buffer) sprintf(buffer, "%ld", time)
 #    define XP_STOA(size, buffer) sprintf(buffer, "%zu", (size_t)size)
 #    define my_strlen strlen
+#    define my_memchr memchr
 #    define sys_close close
 #    define sys_fork fork
 #    define sys_open open
@@ -181,7 +187,7 @@ static const XP_CHAR extraFileExtension[] = XP_TEXT(".extra");
 static const XP_CHAR memoryReportExtension[] = XP_TEXT(".memory.json.gz");
 static xpstring* defaultMemoryReportPath = nullptr;
 
-static const char kCrashMainID[] = "crash.main.2\n";
+static const char kCrashMainID[] = "crash.main.3\n";
 
 static google_breakpad::ExceptionHandler* gExceptionHandler = nullptr;
 
@@ -194,9 +200,6 @@ static XP_CHAR* libraryPath;  // Path where the NSS library is
 
 // Where crash events should go.
 static XP_CHAR* eventsDirectory;
-
-// The current telemetry session ID to write to the event file
-static char* currentSessionId = nullptr;
 
 // If this is false, we don't launch the crash reporter
 static bool doReport = true;
@@ -312,7 +315,7 @@ class ReportInjectedCrash : public Runnable {
 // If annotations are attempted before the crash reporter is enabled,
 // they queue up here.
 class DelayedNote;
-nsTArray<nsAutoPtr<DelayedNote> >* gDelayedAnnotations;
+nsTArray<UniquePtr<DelayedNote> >* gDelayedAnnotations;
 
 #if defined(XP_WIN)
 // the following are used to prevent other DLLs reverting the last chance
@@ -527,128 +530,133 @@ bool copy_file(const char* from, const char* to) {
 /**
  * The PlatformWriter class provides a tool to create and write to a file that
  * is safe to call from within an exception handler. To use it this way the
- * file path needs to be provided as a bare C string. If the writer is created
- * using an nsIFile instance it will *not* be safe to use from a crashed
- * context.
+ * file path needs to be provided as a bare C string.
  */
+class PlatformWriter {
+ public:
 #ifdef XP_WIN
-
-class PlatformWriter {
- public:
-  PlatformWriter() : mHandle(INVALID_HANDLE_VALUE) {}
-
-  explicit PlatformWriter(const wchar_t* path) : PlatformWriter() {
-    Open(path);
-  }
-
-  explicit PlatformWriter(nsIFile* file) : PlatformWriter() {
-    nsAutoString path;
-    if (NS_SUCCEEDED(file->GetPath(path))) {
-      Open(path.get());
-    }
-  }
-
-  ~PlatformWriter() {
-    if (Valid()) {
-      CloseHandle(mHandle);
-    }
-  }
-
-  void Open(const wchar_t* path) {
-    mHandle = CreateFile(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                         FILE_ATTRIBUTE_NORMAL, nullptr);
-  }
-
-  void OpenHandle(HANDLE aHandle) { mHandle = aHandle; }
-
-  bool Valid() { return mHandle != INVALID_HANDLE_VALUE; }
-
-  void WriteBuffer(const char* buffer, size_t len) {
-    if (!Valid()) {
-      return;
-    }
-    DWORD nBytes;
-    WriteFile(mHandle, buffer, len, &nBytes, nullptr);
-  }
-
-  HANDLE Handle() { return mHandle; }
-
- private:
-  HANDLE mHandle;
-};
-
+  typedef HANDLE NativeFileDesc;
+  typedef wchar_t NativeChar;
 #elif defined(XP_UNIX)
-
-class PlatformWriter {
- public:
-  PlatformWriter() : mFD(-1) {}
-
-  explicit PlatformWriter(const char* path) : PlatformWriter() { Open(path); }
-
-  explicit PlatformWriter(nsIFile* file) : PlatformWriter() {
-    nsAutoCString path;
-    if (NS_SUCCEEDED(file->GetNativePath(path))) {
-      Open(path.get());
-    }
-  }
-
-  ~PlatformWriter() {
-    if (Valid()) {
-      sys_close(mFD);
-    }
-  }
-
-  void Open(const char* path) {
-    mFD = sys_open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-  }
-
-  void OpenHandle(int aFd) { mFD = aFd; }
-
-  bool Valid() { return mFD != -1; }
-
-  void WriteBuffer(const char* buffer, size_t len) {
-    if (!Valid()) {
-      return;
-    }
-    Unused << sys_write(mFD, buffer, len);
-  }
-
- private:
-  int mFD;
-};
-
+  typedef int NativeFileDesc;
+  typedef char NativeChar;
 #else
-#  error "Need implementation of PlatformWrite for this platform"
+#  error "Need implementation of PlatformWriter for this platform"
 #endif
 
-template <int N>
-static void WriteLiteral(PlatformWriter& pw, const char (&str)[N]) {
-  pw.WriteBuffer(str, N - 1);
-}
+  const NativeFileDesc kInvalidFileDesc =
+#ifdef XP_WIN
+      INVALID_HANDLE_VALUE;
+#elif defined(XP_UNIX)
+      -1;
+#endif
 
-static void WriteString(PlatformWriter& pw, const char* str) {
-  pw.WriteBuffer(str, my_strlen(str));
-}
+  PlatformWriter() : mFD(kInvalidFileDesc) {}
+  explicit PlatformWriter(const NativeChar* aPath) : PlatformWriter() {
+    Open(aPath);
+  }
 
-class AnnotationWriter {
- public:
-  virtual void Write(Annotation aAnnotation, const char* aValue) = 0;
+  ~PlatformWriter() {
+    if (Valid()) {
+#ifdef XP_WIN
+      CloseHandle(mFD);
+#elif defined(XP_UNIX)
+      sys_close(mFD);
+#endif
+    }
+  }
+
+  void Open(const NativeChar* aPath) {
+#ifdef XP_WIN
+    mFD = CreateFile(aPath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                     FILE_ATTRIBUTE_NORMAL, nullptr);
+#elif defined(XP_UNIX)
+    mFD = sys_open(aPath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+#endif
+  }
+
+  void OpenHandle(NativeFileDesc aFD) { mFD = aFD; }
+  bool Valid() { return mFD != kInvalidFileDesc; }
+
+  void WriteBuffer(const char* aBuffer, size_t aLen) {
+    if (!Valid()) {
+      return;
+    }
+#ifdef XP_WIN
+    DWORD nBytes;
+    WriteFile(mFD, aBuffer, aLen, &nBytes, nullptr);
+#elif defined(XP_UNIX)
+    mozilla::Unused << sys_write(mFD, aBuffer, aLen);
+#endif
+  }
+
+  void WriteString(const char* aStr) { WriteBuffer(aStr, my_strlen(aStr)); }
+
+  template <int N>
+  void WriteLiteral(const char (&aStr)[N]) {
+    WriteBuffer(aStr, N - 1);
+  }
+
+  NativeFileDesc FileDesc() { return mFD; }
+
+ private:
+  NativeFileDesc mFD;
 };
 
-class INIAnnotationWriter : public AnnotationWriter {
+class JSONAnnotationWriter : public AnnotationWriter {
  public:
-  explicit INIAnnotationWriter(PlatformWriter& aPlatformWriter)
-      : mPlatformWriter(aPlatformWriter) {}
+  explicit JSONAnnotationWriter(PlatformWriter& aPlatformWriter)
+      : mWriter(aPlatformWriter), mEmpty(true) {
+    mWriter.WriteBuffer("{", 1);
+  }
 
-  void Write(Annotation aAnnotation, const char* aValue) override {
-    WriteString(mPlatformWriter, AnnotationToString(aAnnotation));
-    WriteLiteral(mPlatformWriter, "=");
-    WriteString(mPlatformWriter, aValue);
-    WriteLiteral(mPlatformWriter, "\n");
+  ~JSONAnnotationWriter() { mWriter.WriteBuffer("}", 1); }
+
+  void Write(Annotation aAnnotation, const char* aValue,
+             size_t aLen = 0) override {
+    size_t len = aLen ? aLen : my_strlen(aValue);
+    const char* annotationStr = AnnotationToString(aAnnotation);
+
+    WritePrefix();
+    mWriter.WriteBuffer(annotationStr, my_strlen(annotationStr));
+    WriteSeparator();
+    WriteEscapedString(aValue, len);
+    WriteSuffix();
   };
 
  private:
-  PlatformWriter& mPlatformWriter;
+  void WritePrefix() {
+    if (mEmpty) {
+      mWriter.WriteBuffer("\"", 1);
+      mEmpty = false;
+    } else {
+      mWriter.WriteBuffer(",\"", 2);
+    }
+  }
+
+  void WriteSeparator() { mWriter.WriteBuffer("\":\"", 3); }
+  void WriteSuffix() { mWriter.WriteBuffer("\"", 1); }
+  void WriteEscapedString(const char* aStr, size_t aLen) {
+    for (size_t i = 0; i < aLen; i++) {
+      uint8_t c = aStr[i];
+      if (c <= 0x1f || c == '\\' || c == '\"') {
+        mWriter.WriteBuffer("\\u00", 4);
+        WriteHexDigitAsAsciiChar((c & 0x00f0) >> 4);
+        WriteHexDigitAsAsciiChar(c & 0x000f);
+      } else {
+        mWriter.WriteBuffer(aStr + i, 1);
+      }
+    }
+  }
+
+  void WriteHexDigitAsAsciiChar(uint8_t u) {
+    char buf[1];
+    buf[0] = static_cast<unsigned>((u < 10) ? '0' + u : 'a' + (u - 10));
+    mWriter.WriteBuffer(buf, 1);
+  }
+
+  PlatformWriter& mWriter;
+  bool mEmpty;
 };
 
 class BinaryAnnotationWriter : public AnnotationWriter {
@@ -656,8 +664,9 @@ class BinaryAnnotationWriter : public AnnotationWriter {
   explicit BinaryAnnotationWriter(PlatformWriter& aPlatformWriter)
       : mPlatformWriter(aPlatformWriter) {}
 
-  void Write(Annotation aAnnotation, const char* aValue) override {
-    uint64_t len = my_strlen(aValue);
+  void Write(Annotation aAnnotation, const char* aValue,
+             size_t aLen = 0) override {
+    uint64_t len = aLen ? aLen : my_strlen(aValue);
     mPlatformWriter.WriteBuffer((const char*)&aAnnotation, sizeof(aAnnotation));
     mPlatformWriter.WriteBuffer((const char*)&len, sizeof(len));
     mPlatformWriter.WriteBuffer(aValue, len);
@@ -761,43 +770,392 @@ static void OpenAPIData(PlatformWriter& aWriter, const XP_CHAR* dump_path,
   aWriter.Open(extraDataPath);
 }
 
-#ifdef XP_WIN
-static void WriteMemoryAnnotation(AnnotationWriter& aWriter,
-                                  Annotation aAnnotation, uint64_t aValue) {
-  char buffer[128];
-  if (!_ui64toa_s(aValue, buffer, sizeof(buffer), 10)) {
-    aWriter.Write(aAnnotation, buffer);
-  }
-}
-#endif  // XP_WIN
+#if defined(XP_WIN) || defined(XP_MACOSX) || defined(XP_LINUX)
 
-static void WriteMemoryStatus(AnnotationWriter& aWriter) {
+static void WriteMemoryAnnotation(AnnotationTable& aTable,
+                                  Annotation aAnnotation, uint64_t aValue) {
+  // This function is used to write values of 64 bits, which can safely be
+  // assumed to fit within 20 decimal digits, so we need neither allocation nor
+  // overflow checking.
+  char buffer[128];
+#  ifdef XP_LINUX
+  // Under Linux, we cannot call into libc from the exception handler,
+  // so we need to call `my_inttostring`.
+  intmax_t value = intmax_t(aValue);
+  if (uint64_t(value) != aValue) {
+    // Our uint64_t doesn't cast properly to intmax_t. In this (unlikely) case,
+    // report the maximal value that can be represented with intmax_t.
+    value = intmax_t(-1);
+  }
+  my_inttostring(value, buffer, sizeof(buffer));
+  aTable[aAnnotation] = nsDependentCString(buffer);
+#  else
+  if (SprintfLiteral(buffer, "%llu", aValue) > 0) {
+    aTable[aAnnotation] = nsDependentCString(buffer);
+  }
+#  endif  // XP_LINUX || else
+}
+
+#endif  // XP_WIN || XP_MACOSX || XP_LINUX
+
 #ifdef XP_WIN
+static void AnnotateMemoryStatus(AnnotationTable& aTable) {
   MEMORYSTATUSEX statex;
   statex.dwLength = sizeof(statex);
   if (GlobalMemoryStatusEx(&statex)) {
-    WriteMemoryAnnotation(aWriter, Annotation::SystemMemoryUsePercentage,
+    WriteMemoryAnnotation(aTable, Annotation::SystemMemoryUsePercentage,
                           statex.dwMemoryLoad);
-    WriteMemoryAnnotation(aWriter, Annotation::TotalVirtualMemory,
+    WriteMemoryAnnotation(aTable, Annotation::TotalVirtualMemory,
                           statex.ullTotalVirtual);
-    WriteMemoryAnnotation(aWriter, Annotation::AvailableVirtualMemory,
+    WriteMemoryAnnotation(aTable, Annotation::AvailableVirtualMemory,
                           statex.ullAvailVirtual);
-    WriteMemoryAnnotation(aWriter, Annotation::TotalPhysicalMemory,
+    WriteMemoryAnnotation(aTable, Annotation::TotalPhysicalMemory,
                           statex.ullTotalPhys);
-    WriteMemoryAnnotation(aWriter, Annotation::AvailablePhysicalMemory,
+    WriteMemoryAnnotation(aTable, Annotation::AvailablePhysicalMemory,
                           statex.ullAvailPhys);
   }
 
   PERFORMANCE_INFORMATION info;
   if (K32GetPerformanceInfo(&info, sizeof(info))) {
-    WriteMemoryAnnotation(aWriter, Annotation::TotalPageFile,
+    WriteMemoryAnnotation(aTable, Annotation::TotalPageFile,
                           info.CommitLimit * info.PageSize);
     WriteMemoryAnnotation(
-        aWriter, Annotation::AvailablePageFile,
+        aTable, Annotation::AvailablePageFile,
         (info.CommitLimit - info.CommitTotal) * info.PageSize);
   }
-#endif  // XP_WIN
 }
+#elif XP_MACOSX
+// Extract the total physical memory of the system.
+static void WritePhysicalMemoryStatus(AnnotationTable& aTable) {
+  uint64_t physicalMemoryByteSize = 0;
+  const size_t NAME_LEN = 2;
+  int name[NAME_LEN] = {/* Hardware */ CTL_HW,
+                        /* 64-bit physical memory size */ HW_MEMSIZE};
+  size_t infoByteSize = sizeof(physicalMemoryByteSize);
+  if (sysctl(name, NAME_LEN, &physicalMemoryByteSize, &infoByteSize,
+             /* We do not replace data */ nullptr,
+             /* We do not replace data */ 0) != -1) {
+    WriteMemoryAnnotation(aTable, Annotation::TotalPhysicalMemory,
+                          physicalMemoryByteSize);
+  }
+}
+
+// Extract available and purgeable physical memory.
+static void WriteAvailableMemoryStatus(AnnotationTable& aTable) {
+  auto host = mach_host_self();
+  vm_statistics64_data_t stats;
+  unsigned int count = HOST_VM_INFO64_COUNT;
+  if (host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&stats, &count) ==
+      KERN_SUCCESS) {
+    WriteMemoryAnnotation(aTable, Annotation::AvailablePhysicalMemory,
+                          stats.free_count * vm_page_size);
+    WriteMemoryAnnotation(aTable, Annotation::PurgeablePhysicalMemory,
+                          stats.purgeable_count * vm_page_size);
+  }
+}
+
+// Extract the status of the swap.
+static void WriteSwapFileStatus(AnnotationTable& aTable) {
+  const size_t NAME_LEN = 2;
+  int name[] = {/* Hardware */ CTL_VM,
+                /* 64-bit physical memory size */ VM_SWAPUSAGE};
+  struct xsw_usage swapUsage;
+  size_t infoByteSize = sizeof(swapUsage);
+  if (sysctl(name, NAME_LEN, &swapUsage, &infoByteSize,
+             /* We do not replace data */ nullptr,
+             /* We do not replace data */ 0) != -1) {
+    WriteMemoryAnnotation(aTable, Annotation::AvailableSwapMemory,
+                          swapUsage.xsu_avail);
+  }
+}
+static void AnnotateMemoryStatus(AnnotationTable& aTable) {
+  WritePhysicalMemoryStatus(aTable);
+  WriteAvailableMemoryStatus(aTable);
+  WriteSwapFileStatus(aTable);
+}
+
+#elif XP_LINUX
+
+static void AnnotateMemoryStatus(AnnotationTable& aTable) {
+  // We can't simply call `sysinfo` as this requires libc.
+  // So we need to parse /proc/meminfo.
+
+  // We read the entire file to memory prior to parsing
+  // as it makes the parser code a little bit simpler.
+  // As /proc/meminfo is synchronized via `proc_create_single`,
+  // there's no risk of race condition regardless of how we
+  // read it.
+
+  // The buffer in which we're going to load the entire file.
+  // A typical size for /proc/meminfo is 1kb, so 10kB should
+  // be large enough until further notice.
+  const size_t BUFFER_SIZE_BYTES = 10000;
+  char buffer[BUFFER_SIZE_BYTES];
+  ssize_t bufferLen = 0;
+
+  {
+    // Read and load into memory.
+    int fd = sys_open("/proc/meminfo", O_RDONLY, /* chmod */ 0);
+    if (fd == -1) {
+      // No /proc/meminfo? Well, fail silently.
+      return;
+    }
+    auto Guard = MakeScopeExit([fd]() { mozilla::Unused << sys_close(fd); });
+
+    if ((bufferLen = sys_read(fd, buffer, BUFFER_SIZE_BYTES)) <= 0) {
+      // Cannot read for some reason. Let's give up.
+      return;
+    }
+  }
+
+  // Each line of /proc/meminfo looks like
+  // SomeLabel:       number unit
+  // The last line is empty.
+  // Let's write a parser.
+  // Note that we don't care about writing a normative parser, so
+  // we happily skip whitespaces without checking that it's necessary.
+
+  // A stack-allocated structure containing a 0-terminated string.
+  // We could avoid the memory copies and make it a slice at the cost
+  // of a slightly more complicated parser. Since we're not in a
+  // performance-critical section, we didn't.
+  struct DataBuffer {
+    DataBuffer() : data{0}, pos(0) {}
+    // Clear the buffer.
+    void reset() {
+      pos = 0;
+      data[0] = 0;
+    }
+    // Append a character.
+    //
+    // In case of error (if c is '\0' or the buffer is full), does nothing.
+    void append(char c) {
+      if (c == 0 || pos >= sizeof(data) - 1) {
+        return;
+      }
+      data[pos++] = c;
+      data[pos] = 0;
+    }
+    // Compare the buffer against a nul-terminated string.
+    bool operator==(const char* s) const {
+      for (size_t i = 0; i < pos; ++i) {
+        if (s[i] != data[i]) {
+          // Note: Since `data` never contains a '0' in positions [0,pos)
+          // this will bailout once we have reached the end of `s`.
+          return false;
+        }
+      }
+      return true;
+    }
+
+    // A NUL-terminated string of `pos + 1` chars (the +1 is for the 0).
+    char data[256];
+
+    // Invariant: < 256.
+    size_t pos;
+  };
+
+  // A DataBuffer holding the string representation of a non-negative number.
+  struct NumberBuffer : DataBuffer {
+    // If possible, convert the string into a number.
+    // Returns `true` in case of success, `false` in case of failure.
+    bool asNumber(size_t* number) {
+      int result;
+      if (!my_strtoui(&result, data)) {
+        return false;
+      }
+      *number = result;
+      return true;
+    }
+  };
+
+  // A DataBuffer holding the string representation of a unit. As of this
+  // writing, we only support unit `kB`, which seems to be the only unit used in
+  // `/proc/meminfo`.
+  struct UnitBuffer : DataBuffer {
+    // If possible, convert the string into a multiplier, e.g. `kB => 1024`.
+    // Return `true` in case of success, `false` in case of failure.
+    bool asMultiplier(size_t* multiplier) {
+      if (*this == "kB") {
+        *multiplier = 1024;
+        return true;
+      }
+      // Other units don't seem to be specified/used.
+      return false;
+    }
+  };
+
+  // The state of the mini-parser.
+  enum class State {
+    // Reading the label, including the trailing ':'.
+    Label,
+    // Reading the number, ignoring any whitespace.
+    Number,
+    // Reading the unit, ignoring any whitespace.
+    Unit,
+  };
+
+  // A single measure being read from /proc/meminfo, e.g.
+  // the total physical memory available on the system.
+  struct Measure {
+    Measure() : state(State::Label) {}
+    // Reset the measure for a new read.
+    void reset() {
+      state = State::Label;
+      label.reset();
+      number.reset();
+      unit.reset();
+    }
+    // Attempt to convert the measure into a number.
+    // Return `true` if both the number and the multiplier could be
+    // converted, `false` otherwise.
+    // In case of overflow, produces the maximal possible `size_t`.
+    bool asValue(size_t* result) {
+      size_t numberAsSize = 0;
+      if (!number.asNumber(&numberAsSize)) {
+        return false;
+      }
+      size_t unitAsMultiplier = 0;
+      if (!unit.asMultiplier(&unitAsMultiplier)) {
+        return false;
+      }
+      if (numberAsSize * unitAsMultiplier >= numberAsSize) {
+        *result = numberAsSize * unitAsMultiplier;
+      } else {
+        // Overflow. Unlikely, but just in case, let's return
+        // the maximal possible value.
+        *result = size_t(-1);
+      }
+      return true;
+    }
+
+    // The label being read, e.g. `MemFree`. Does not include the trailing ':'.
+    DataBuffer label;
+
+    // The number being read, e.g. "1024".
+    NumberBuffer number;
+
+    // The unit being read, e.g. "kB".
+    UnitBuffer unit;
+
+    // What we're reading at the moment.
+    State state;
+  };
+
+  // A value we wish to store for later processing.
+  // e.g. to compute `AvailablePageFile`, we need to
+  // store `CommitLimit` and `Committed_AS`.
+  struct ValueStore {
+    ValueStore() : value(0), found(false) {}
+    size_t value;
+    bool found;
+  };
+  ValueStore commitLimit;
+  ValueStore committedAS;
+  ValueStore memTotal;
+  ValueStore swapTotal;
+
+  // The current measure.
+  Measure measure;
+
+  for (size_t pos = 0; pos < size_t(bufferLen); ++pos) {
+    const char c = buffer[pos];
+    switch (measure.state) {
+      case State::Label:
+        if (c == ':') {
+          // We have finished reading the label.
+          measure.state = State::Number;
+        } else {
+          measure.label.append(c);
+        }
+        break;
+      case State::Number:
+        if (c == ' ') {
+          // Ignore whitespace
+        } else if ('0' <= c && c <= '9') {
+          // Accumulate numbers.
+          measure.number.append(c);
+        } else {
+          // We have jumped to the unit.
+          measure.unit.append(c);
+          measure.state = State::Unit;
+        }
+        break;
+      case State::Unit:
+        if (c == ' ') {
+          // Ignore whitespace
+        } else if (c == '\n') {
+          // Flush line.
+          // - If this one of the measures we're interested in, write it.
+          // - Once we're done, reset the parser.
+          auto Guard = MakeScopeExit([&measure]() { measure.reset(); });
+
+          struct PointOfInterest {
+            // The label we're looking for, e.g. "MemTotal".
+            const char* label;
+            // If non-nullptr, store the value at this address.
+            ValueStore* dest;
+            // If other than Annotation::Count, write the value for this
+            // annotation.
+            Annotation annotation;
+          };
+          const PointOfInterest POINTS_OF_INTEREST[] = {
+              {"MemTotal", &memTotal, Annotation::TotalPhysicalMemory},
+              {"MemFree", nullptr, Annotation::AvailablePhysicalMemory},
+              {"MemAvailable", nullptr, Annotation::AvailableVirtualMemory},
+              {"SwapFree", nullptr, Annotation::AvailableSwapMemory},
+              {"SwapTotal", &swapTotal, Annotation::Count},
+              {"CommitLimit", &commitLimit, Annotation::Count},
+              {"Committed_AS", &committedAS, Annotation::Count},
+          };
+          for (const auto& pointOfInterest : POINTS_OF_INTEREST) {
+            if (measure.label == pointOfInterest.label) {
+              size_t value;
+              if (measure.asValue(&value)) {
+                if (pointOfInterest.dest != nullptr) {
+                  pointOfInterest.dest->found = true;
+                  pointOfInterest.dest->value = value;
+                }
+                if (pointOfInterest.annotation != Annotation::Count) {
+                  WriteMemoryAnnotation(aTable, pointOfInterest.annotation,
+                                        value);
+                }
+              }
+              break;
+            }
+          }
+          // Otherwise, ignore.
+        } else {
+          measure.unit.append(c);
+        }
+        break;
+    }
+  }
+
+  if (commitLimit.found && committedAS.found) {
+    // If available, attempt to determine the available virtual memory.
+    // As `commitLimit` is not guaranteed to be larger than `committedAS`,
+    // we return `0` in case the commit limit has already been exceeded.
+    uint64_t availablePageFile = (committedAS.value <= commitLimit.value)
+                                     ? (commitLimit.value - committedAS.value)
+                                     : 0;
+    WriteMemoryAnnotation(aTable, Annotation::AvailablePageFile,
+                          availablePageFile);
+  }
+  if (memTotal.found && swapTotal.found) {
+    // If available, attempt to determine the available virtual memory.
+    WriteMemoryAnnotation(aTable, Annotation::TotalPageFile,
+                          memTotal.value + swapTotal.value);
+  }
+}
+
+#else
+
+static void AnnotateMemoryStatus(AnnotationTable&) {
+  // No memory data for other platforms yet.
+}
+
+#endif  // XP_WIN || XP_MACOSX || XP_LINUX || else
 
 #if !defined(MOZ_WIDGET_ANDROID)
 
@@ -917,30 +1275,26 @@ static bool LaunchCrashHandlerService(XP_CHAR* aProgramPath,
 
 #endif
 
-static void WriteEscapedMozCrashReason(PlatformWriter& aWriter) {
-  if (gMozCrashReason == nullptr) {
-    return;  // No crash reason, bail out
+static void WriteMainThreadRunnableName(AnnotationWriter& aWriter) {
+#ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY
+  // Only try to collect this information if the main thread is crashing.
+  if (!NS_IsMainThread()) {
+    return;
   }
 
-  const char* reason = gMozCrashReason;
-  size_t len = my_strlen(gMozCrashReason);
-
-  WriteString(aWriter, AnnotationToString(Annotation::MozCrashReason));
-  WriteLiteral(aWriter, "=");
-
-  // The crash reason might not be escaped so escape it one character at a time
-  // and write out the resulting string.
-  for (size_t i = 0; i < len; i++) {
-    if (reason[i] == '\\') {
-      WriteLiteral(aWriter, "\\\\");
-    } else if (reason[i] == '\n') {
-      WriteLiteral(aWriter, "\\n");
-    } else {
-      aWriter.WriteBuffer(reason + i, 1);
-    }
+  // NOTE: Use `my_memchr` over `strlen` to ensure we don't run off the end of
+  // the buffer if it contains no null bytes. This is used instead of `strnlen`,
+  // as breakpad's linux support library doesn't export a `my_strnlen` function.
+  const char* buf = nsThread::sMainThreadRunnableName.begin();
+  size_t len = nsThread::kRunnableNameBufSize;
+  if (const void* end = my_memchr(buf, '\0', len)) {
+    len = static_cast<const char*>(end) - buf;
   }
 
-  WriteLiteral(aWriter, "\n");
+  if (len > 0) {
+    aWriter.Write(Annotation::MainThreadRunnableName, buf, len);
+  }
+#endif
 }
 
 static void WriteMozCrashReason(AnnotationWriter& aWriter) {
@@ -952,16 +1306,12 @@ static void WriteMozCrashReason(AnnotationWriter& aWriter) {
 static void WriteAnnotationsForMainProcessCrash(PlatformWriter& pw,
                                                 const phc::AddrInfo* addrInfo,
                                                 time_t crashTime) {
-  INIAnnotationWriter writer(pw);
+  JSONAnnotationWriter writer(pw);
   for (auto key : MakeEnumeratedRange(Annotation::Count)) {
     const nsCString& value = crashReporterAPIData_Table[key];
     if (!value.IsEmpty()) {
-      writer.Write(key, value.get());
+      writer.Write(key, value.get(), value.Length());
     }
-  }
-
-  if (currentSessionId) {
-    writer.Write(Annotation::TelemetrySessionId, currentSessionId);
   }
 
   char crashTimeString[32];
@@ -1004,12 +1354,14 @@ static void WriteAnnotationsForMainProcessCrash(PlatformWriter& pw,
   }
 
 #  ifdef HAS_DLL_BLOCKLIST
-  DllBlocklist_WriteNotes(pw.Handle());
+  // HACK: The DLL blocklist code will manually write its annotations as JSON
+  DllBlocklist_WriteNotes(writer);
 #  endif
 #endif  // XP_WIN
 
-  WriteMemoryStatus(writer);
-  WriteEscapedMozCrashReason(pw);
+  WriteMozCrashReason(writer);
+
+  WriteMainThreadRunnableName(writer);
 
   char oomAllocationSizeBuffer[32] = "";
   if (gOOMAllocationSize) {
@@ -1079,11 +1431,11 @@ static void WriteCrashEventFile(time_t crashTime, const char* crashTimeString,
 #endif
 
     eventFile.Open(crashEventPath);
-    WriteLiteral(eventFile, kCrashMainID);
-    WriteString(eventFile, crashTimeString);
-    WriteLiteral(eventFile, "\n");
-    WriteString(eventFile, id_ascii);
-    WriteLiteral(eventFile, "\n");
+    eventFile.WriteLiteral(kCrashMainID);
+    eventFile.WriteString(crashTimeString);
+    eventFile.WriteLiteral("\n");
+    eventFile.WriteString(id_ascii);
+    eventFile.WriteLiteral("\n");
     WriteAnnotationsForMainProcessCrash(eventFile, addrInfo, crashTime);
   }
 }
@@ -1154,7 +1506,7 @@ bool MinidumpCallback(
   // write crash time to file
   if (lastCrashTimeFilename[0] != 0) {
     PlatformWriter lastCrashFile(lastCrashTimeFilename);
-    WriteString(lastCrashFile, crashTimeString);
+    lastCrashFile.WriteString(crashTimeString);
   }
 
   WriteCrashEventFile(crashTime, crashTimeString, addrInfo,
@@ -1304,10 +1656,6 @@ static void PrepareChildExceptionTimeAnnotations(
   apiData.OpenHandle(f);
   BinaryAnnotationWriter writer(apiData);
 
-  // ...and write out any annotations. These must be escaped if necessary
-  // (but don't call EscapeAnnotation here, because it touches the heap).
-  WriteMemoryStatus(writer);
-
   char oomAllocationSizeBuffer[32] = "";
   if (gOOMAllocationSize) {
     XP_STOA(gOOMAllocationSize, oomAllocationSizeBuffer);
@@ -1315,6 +1663,8 @@ static void PrepareChildExceptionTimeAnnotations(
   }
 
   WriteMozCrashReason(writer);
+
+  WriteMainThreadRunnableName(writer);
 
 #ifdef MOZ_PHC
   WritePHCAddrInfo(writer, addrInfo);
@@ -1968,11 +2318,6 @@ nsresult UnsetExceptionHandler() {
     eventsDirectory = nullptr;
   }
 
-  if (currentSessionId) {
-    free(currentSessionId);
-    currentSessionId = nullptr;
-  }
-
   if (memoryReportPath) {
     free(memoryReportPath);
     memoryReportPath = nullptr;
@@ -1991,40 +2336,6 @@ nsresult UnsetExceptionHandler() {
 
   std::set_terminate(oldTerminateHandler);
 
-  return NS_OK;
-}
-
-static void ReplaceChar(nsCString& str, const nsACString& character,
-                        const nsACString& replacement) {
-  nsCString::const_iterator iter, end;
-
-  str.BeginReading(iter);
-  str.EndReading(end);
-
-  while (FindInReadable(character, iter, end)) {
-    nsCString::const_iterator start;
-    str.BeginReading(start);
-    int32_t pos = end - start;
-    str.Replace(pos - 1, 1, replacement);
-
-    str.BeginReading(iter);
-    iter.advance(pos + replacement.Length() - 1);
-    str.EndReading(end);
-  }
-}
-
-static nsresult EscapeAnnotation(const nsACString& data,
-                                 nsCString& escapedData) {
-  if (FindInReadable(NS_LITERAL_CSTRING("\0"), data))
-    return NS_ERROR_INVALID_ARG;
-
-  escapedData = data;
-
-  // escape backslashes
-  ReplaceChar(escapedData, NS_LITERAL_CSTRING("\\"),
-              NS_LITERAL_CSTRING("\\\\"));
-  // escape newlines
-  ReplaceChar(escapedData, NS_LITERAL_CSTRING("\n"), NS_LITERAL_CSTRING("\\n"));
   return NS_OK;
 }
 
@@ -2052,14 +2363,14 @@ class DelayedNote {
 
 static void EnqueueDelayedNote(DelayedNote* aNote) {
   if (!gDelayedAnnotations) {
-    gDelayedAnnotations = new nsTArray<nsAutoPtr<DelayedNote> >();
+    gDelayedAnnotations = new nsTArray<UniquePtr<DelayedNote> >();
   }
-  gDelayedAnnotations->AppendElement(aNote);
+  gDelayedAnnotations->AppendElement(WrapUnique(aNote));
 }
 
 void NotifyCrashReporterClientCreated() {
   if (gDelayedAnnotations) {
-    for (nsAutoPtr<DelayedNote>& note : *gDelayedAnnotations) {
+    for (const auto& note : *gDelayedAnnotations) {
       note->Run();
     }
     delete gDelayedAnnotations;
@@ -2089,15 +2400,11 @@ nsresult AnnotateCrashReport(Annotation key, unsigned int data) {
 nsresult AnnotateCrashReport(Annotation key, const nsACString& data) {
   if (!GetEnabled()) return NS_ERROR_NOT_INITIALIZED;
 
-  nsCString escapedData;
-  nsresult rv = EscapeAnnotation(data, escapedData);
-  if (NS_FAILED(rv)) return rv;
-
   if (!XRE_IsParentProcess()) {
     // The newer CrashReporterClient can be used from any thread.
     if (RefPtr<CrashReporterClient> client =
             CrashReporterClient::GetSingleton()) {
-      client->AnnotateCrashReport(key, escapedData);
+      client->AnnotateCrashReport(key, data);
       return NS_OK;
     }
 
@@ -2109,8 +2416,7 @@ nsresult AnnotateCrashReport(Annotation key, const nsACString& data) {
   }
 
   MutexAutoLock lock(*crashReporterAPILock);
-
-  crashReporterAPIData_Table[key] = escapedData;
+  crashReporterAPIData_Table[key] = data;
 
   return NS_OK;
 }
@@ -2144,6 +2450,8 @@ static void MergeContentCrashAnnotations(AnnotationTable& aDst,
 
 // Adds crash time, uptime and memory report annotations
 static void AddCommonAnnotations(AnnotationTable& aAnnotations) {
+  AnnotateMemoryStatus(aAnnotations);
+
   nsAutoCString crashTime;
   crashTime.AppendInt((uint64_t)time(nullptr));
   aAnnotations[Annotation::CrashTime] = crashTime;
@@ -2177,20 +2485,10 @@ void SetMinidumpAnalysisAllThreads() {
 nsresult AppendAppNotesToCrashReport(const nsACString& data) {
   if (!GetEnabled()) return NS_ERROR_NOT_INITIALIZED;
 
-  if (FindInReadable(NS_LITERAL_CSTRING("\0"), data))
-    return NS_ERROR_INVALID_ARG;
-
   if (!XRE_IsParentProcess()) {
-    // Since we don't go through AnnotateCrashReport in the parent process,
-    // we must ensure that the data is escaped and valid before the parent
-    // sees it.
-    nsCString escapedData;
-    nsresult rv = EscapeAnnotation(data, escapedData);
-    if (NS_FAILED(rv)) return rv;
-
     if (RefPtr<CrashReporterClient> client =
             CrashReporterClient::GetSingleton()) {
-      client->AppendAppNotes(escapedData);
+      client->AppendAppNotes(data);
       return NS_OK;
     }
 
@@ -2681,16 +2979,6 @@ nsresult GetDefaultMemoryReportFile(nsIFile** aFile) {
   return NS_OK;
 }
 
-void SetTelemetrySessionId(const nsACString& id) {
-  if (!gExceptionHandler) {
-    return;
-  }
-  if (currentSessionId) {
-    free(currentSessionId);
-  }
-  currentSessionId = ToNewCString(id);
-}
-
 static void FindPendingDir() {
   if (pendingDirectory) return;
 
@@ -2856,12 +3144,8 @@ static void ReadAndValidateExceptionTimeAnnotations(
       value.Append(c);
     } while (len > 0);
 
-    nsAutoCString escapedValue;
-    nsresult rv = EscapeAnnotation(value, escapedValue);
-    NS_ENSURE_SUCCESS_VOID(rv);
-
     // Looks good, save the (annotation, value) pair
-    aAnnotations[static_cast<Annotation>(rawAnnotation)] = escapedValue;
+    aAnnotations[static_cast<Annotation>(rawAnnotation)] = value;
   } while (res > 0);
 }
 
@@ -2871,11 +3155,11 @@ static bool WriteExtraFile(PlatformWriter pw,
     return false;
   }
 
-  INIAnnotationWriter writer(pw);
+  JSONAnnotationWriter writer(pw);
   for (auto key : MakeEnumeratedRange(Annotation::Count)) {
     const nsCString& value = aAnnotations[key];
     if (!value.IsEmpty()) {
-      writer.Write(key, value.get());
+      writer.Write(key, value.get(), value.Length());
     }
   }
 
@@ -2889,8 +3173,15 @@ bool WriteExtraFile(const nsAString& id, const AnnotationTable& annotations) {
   }
 
   extra->Append(id + NS_LITERAL_STRING(".extra"));
+#ifdef XP_WIN
+  nsAutoString path;
+  NS_ENSURE_SUCCESS(extra->GetPath(path), false);
+#elif defined(XP_UNIX)
+  nsAutoCString path;
+  NS_ENSURE_SUCCESS(extra->GetNativePath(path), false);
+#endif
 
-  return WriteExtraFile(PlatformWriter(extra), annotations);
+  return WriteExtraFile(PlatformWriter(path.get()), annotations);
 }
 
 static void ReadExceptionTimeAnnotations(AnnotationTable& aAnnotations,
@@ -2913,12 +3204,6 @@ static void PopulateContentProcessAnnotations(AnnotationTable& aAnnotations,
     MutexAutoLock lock(*crashReporterAPILock);
     MergeContentCrashAnnotations(aAnnotations, crashReporterAPIData_Table);
   }
-
-  if (currentSessionId) {
-    aAnnotations[Annotation::TelemetrySessionId] =
-        nsDependentCString(currentSessionId);
-  }
-
   AddCommonAnnotations(aAnnotations);
   ReadExceptionTimeAnnotations(aAnnotations, aPid);
 }
@@ -3004,24 +3289,6 @@ static void OnChildProcessDumpRequested(void* aContext,
   }
 }
 
-#ifdef XP_MACOSX
-
-// Middleman processes do not have their own crash generation server.
-// Any crashes in the middleman's children are forwarded to the UI process.
-static bool MaybeForwardCrashesIfMiddleman() {
-  if (recordreplay::IsMiddleman()) {
-    childCrashNotifyPipe =
-        mozilla::Smprintf(
-            "gecko-crash-server-pipe.%i",
-            static_cast<int>(recordreplay::parent::ParentProcessId()))
-            .release();
-    return true;
-  }
-  return false;
-}
-
-#endif  // XP_MACOSX
-
 static bool OOPInitialized() { return pidToMinidump != nullptr; }
 
 void OOPInit() {
@@ -3083,10 +3350,6 @@ void OOPInit() {
       true, &dumpPath);
 
 #elif defined(XP_MACOSX)
-  if (MaybeForwardCrashesIfMiddleman()) {
-    return;
-  }
-
   childCrashNotifyPipe = mozilla::Smprintf("gecko-crash-server-pipe.%i",
                                            static_cast<int>(getpid()))
                              .release();
@@ -3320,6 +3583,22 @@ bool SetRemoteExceptionHandler(const nsACString& crashPipe) {
 }
 #endif  // XP_WIN
 
+void GetAnnotation(uint32_t childPid, Annotation annotation,
+                   nsACString& outStr) {
+  if (!GetEnabled()) {
+    return;
+  }
+
+  MutexAutoLock lock(*dumpMapLock);
+
+  ChildProcessData* pd = pidToMinidump->GetEntry(childPid);
+  if (!pd) {
+    return;
+  }
+
+  outStr = (*pd->annotations)[annotation];
+}
+
 bool TakeMinidumpForChild(uint32_t childPid, nsIFile** dump,
                           AnnotationTable& aAnnotations, uint32_t* aSequence) {
   if (!GetEnabled()) return false;
@@ -3344,7 +3623,8 @@ bool TakeMinidumpForChild(uint32_t childPid, nsIFile** dump,
   return !!*dump;
 }
 
-bool FinalizeOrphanedMinidump(uint32_t aChildPid, GeckoProcessType aType) {
+bool FinalizeOrphanedMinidump(uint32_t aChildPid, GeckoProcessType aType,
+                              nsString* aDumpId) {
   AnnotationTable annotations;
   nsCOMPtr<nsIFile> minidump;
 
@@ -3355,6 +3635,10 @@ bool FinalizeOrphanedMinidump(uint32_t aChildPid, GeckoProcessType aType) {
   nsAutoString id;
   if (!GetIDFromMinidump(minidump, id)) {
     return false;
+  }
+
+  if (aDumpId) {
+    *aDumpId = id;
   }
 
   annotations[Annotation::ProcessType] =

@@ -7,7 +7,6 @@
 #include "GPUProcessHost.h"
 #include "chrome/common/process_watcher.h"
 #include "mozilla/gfx/Logging.h"
-#include "nsITimer.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_layers.h"
 #include "VRGPUChild.h"
@@ -137,8 +136,8 @@ void GPUProcessHost::InitAfterConnect(bool aSucceeded) {
   if (aSucceeded) {
     mProcessToken = ++sProcessTokenCounter;
     mGPUChild = MakeUnique<GPUChild>(this);
-    DebugOnly<bool> rv =
-        mGPUChild->Open(GetChannel(), base::GetProcId(GetChildProcessHandle()));
+    DebugOnly<bool> rv = mGPUChild->Open(
+        TakeChannel(), base::GetProcId(GetChildProcessHandle()));
     MOZ_ASSERT(rv);
 
     mGPUChild->Init();

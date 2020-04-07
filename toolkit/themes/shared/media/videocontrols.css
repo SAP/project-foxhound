@@ -32,6 +32,7 @@
   --pip-toggle-text-and-icon-color: rgb(255, 255, 255);
   --pip-toggle-padding: 5px;
   --pip-toggle-icon-width-height: 16px;
+  --pip-toggle-translate-x: calc(100% - var(--pip-toggle-icon-width-height) - 2 * var(--pip-toggle-padding));
 }
 .controlsContainer.touch {
   --clickToPlay-size: 64px;
@@ -332,17 +333,26 @@
   background-color: #00b6f0;
 }
 
-.textTrackList {
+.textTrackListContainer {
   position: absolute;
   right: 5px;
   bottom: 45px;
+  top: 5px;
   max-width: 80%;
+  display: flex;
+  flex-direction: column;
+  justify-content: end;
+}
+
+.textTrackList {
+  flex: 0 1 auto;
   border: 1px solid #000000;
   border-radius: 2.5px;
   padding: 5px 0;
   vertical-align: middle;
   background-color: #000000;
   opacity: 0.7;
+  overflow-y: auto;
 }
 
 .touch .textTrackList {
@@ -449,11 +459,33 @@
   padding: var(--pip-toggle-padding);
   right: 0;
   top: 50%;
-  transform: translateY(-50%) translateX(calc(100% - var(--pip-toggle-icon-width-height) - 2 * var(--pip-toggle-padding)));
-  transition: opacity 160ms linear, transform 160ms linear;
+  translate: var(--pip-toggle-translate-x) -50%;
+  transition: opacity 160ms linear, translate 160ms linear;
   min-width: max-content;
   pointer-events: auto;
   opacity: 0;
+}
+
+.pictureInPictureToggleButton[policy="hidden"] {
+  display: none;
+}
+
+.pictureInPictureToggleButton[policy="top"] {
+  top: 0%;
+  translate: var(--pip-toggle-translate-x);
+}
+
+.pictureInPictureToggleButton[policy="one-quarter"] {
+  top: 25%;
+}
+
+.pictureInPictureToggleButton[policy="three-quarters"] {
+  top: 75%;
+}
+
+.pictureInPictureToggleButton[policy="bottom"] {
+  top: 100%;
+  translate: var(--pip-toggle-translate-x) -100%;
 }
 
 .pictureInPictureToggleIcon {
@@ -467,6 +499,11 @@
   width: var(--pip-toggle-icon-width-height);
   height: var(--pip-toggle-icon-width-height);
   min-width: max-content;
+}
+
+.statusIcon[type="pictureInPicture"]:dir(rtl),
+.pictureInPictureToggleIcon:dir(rtl) {
+  transform: scaleX(-1);
 }
 
 .pictureInPictureToggleLabel {
@@ -491,7 +528,15 @@
 
 .controlsOverlay.hovering > .pictureInPictureToggleButton.hovering {
   opacity: 1;
-  transform: translateY(-50%) translateX(0);
+  translate: 0 -50%;
+}
+
+.controlsOverlay.hovering > .pictureInPictureToggleButton.hovering[policy="top"] {
+  translate: 0;
+}
+
+.controlsOverlay.hovering > .pictureInPictureToggleButton.hovering[policy="bottom"] {
+  translate: 0 -100%
 }
 
 @supports -moz-bool-pref("media.videocontrols.picture-in-picture.video-toggle.testing") {

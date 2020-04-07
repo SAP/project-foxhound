@@ -38,7 +38,6 @@ const {
   nodeHasFullText,
   nodeHasGetter,
   getNonPrototypeParentGripValue,
-  getParentGripValue,
 } = Utils.node;
 
 type Props = {
@@ -77,12 +76,15 @@ type Props = {
       setExpanded: (Node, boolean) => any,
     }
   ) => any,
+  onContextMenu: (event: any, item: Node) => null,
+  renderItemActions: (item: Node) => ?ReactElement,
 };
 
 class ObjectInspectorItem extends Component<Props> {
   static get defaultProps() {
     return {
       onContextMenu: () => {},
+      renderItemActions: () => null,
     };
   }
 
@@ -174,17 +176,11 @@ class ObjectInspectorItem extends Component<Props> {
       }
 
       if (nodeHasGetter(item)) {
-        const targetGrip = getParentGripValue(item);
         const receiverGrip = getNonPrototypeParentGripValue(item);
-        if (targetGrip && receiverGrip) {
+        if (receiverGrip) {
           Object.assign(repProps, {
             onInvokeGetterButtonClick: () =>
-              this.props.invokeGetter(
-                item,
-                targetGrip,
-                receiverGrip.actor,
-                item.propertyName || item.name
-              ),
+              this.props.invokeGetter(item, receiverGrip.actor),
           });
         }
       }
@@ -303,23 +299,8 @@ class ObjectInspectorItem extends Component<Props> {
     );
   }
 
-  renderWatchpointButton() {
-    const { item, removeWatchpoint } = this.props;
-
-    if (!item || !item.contents || !item.contents.watchpoint) {
-      return;
-    }
-
-    const watchpoint = item.contents.watchpoint;
-    return dom.button({
-      className: `remove-${watchpoint}-watchpoint`,
-      title: L10N.getStr("watchpoints.removeWatchpointTooltip"),
-      onClick: () => removeWatchpoint(item),
-    });
-  }
-
   render() {
-    const { arrow } = this.props;
+    const { arrow, renderItemActions, item } = this.props;
 
     const { label, value } = this.getLabelAndValue();
     const labelElement = this.renderLabel(label);
@@ -334,7 +315,7 @@ class ObjectInspectorItem extends Component<Props> {
       labelElement,
       delimiter,
       value,
-      this.renderWatchpointButton()
+      renderItemActions(item)
     );
   }
 }

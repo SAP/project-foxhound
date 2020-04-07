@@ -1,11 +1,13 @@
 use crate::cdsl::ast::{var, ExprBuilder, Literal};
-use crate::cdsl::instructions::{Instruction, InstructionGroup};
+use crate::cdsl::instructions::{Bindable, Instruction, InstructionGroup};
 use crate::cdsl::xform::{TransformGroupBuilder, TransformGroups};
 
 use crate::shared::immediates::Immediates;
 use crate::shared::types::Float::{F32, F64};
 use crate::shared::types::Int::{I128, I16, I32, I64, I8};
+use cranelift_codegen_shared::condcodes::{CondCode, IntCC};
 
+#[allow(clippy::many_single_char_names, clippy::cognitive_complexity)]
 pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGroups {
     let mut narrow = TransformGroupBuilder::new(
         "narrow",
@@ -114,6 +116,7 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
     let uextend = insts.by_name("uextend");
     let uload8 = insts.by_name("uload8");
     let uload16 = insts.by_name("uload16");
+    let umulhi = insts.by_name("umulhi");
     let ushr = insts.by_name("ushr");
     let ushr_imm = insts.by_name("ushr_imm");
     let urem = insts.by_name("urem");
@@ -136,6 +139,7 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
     expand.custom_legalize(trapnz, "expand_cond_trap");
     expand.custom_legalize(br_table, "expand_br_table");
     expand.custom_legalize(select, "expand_select");
+    widen.custom_legalize(select, "expand_select"); // small ints
 
     // Custom expansions for floating point constants.
     // These expansions require bit-casting or creating constant pool entries.
@@ -145,6 +149,10 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
     // Custom expansions for stack memory accesses.
     expand.custom_legalize(insts.by_name("stack_load"), "expand_stack_load");
     expand.custom_legalize(insts.by_name("stack_store"), "expand_stack_store");
+
+    // Custom expansions for small stack memory acccess.
+    widen.custom_legalize(insts.by_name("stack_load"), "expand_stack_load");
+    widen.custom_legalize(insts.by_name("stack_store"), "expand_stack_store");
 
     // List of variables to reuse in patterns.
     let x = var("x");
@@ -189,9 +197,9 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
     let al = var("al");
     let ah = var("ah");
     let cc = var("cc");
-    let ebb = var("ebb");
-    let ebb1 = var("ebb1");
-    let ebb2 = var("ebb2");
+    let block = var("block");
+    let block1 = var("block1");
+    let block2 = var("block2");
     let ptr = var("ptr");
     let flags = var("flags");
     let offset = var("off");
@@ -203,6 +211,28 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
     // iconst.i64 can't be legalized in the meta langage (because integer literals can't be
     // embedded as part of arguments), so use a custom legalization for now.
     narrow.custom_legalize(iconst, "narrow_iconst");
+
+    {
+        let inst = uextend.bind(I128).bind(I64);
+        narrow.legalize(
+            def!(a = inst(x)),
+            vec![
+                def!(ah = iconst(Literal::constant(&imm.imm64, 0))),
+                def!(a = iconcat(x, ah)),
+            ],
+        );
+    }
+
+    {
+        let inst = sextend.bind(I128).bind(I64);
+        narrow.legalize(
+            def!(a = inst(x)),
+            vec![
+                def!(ah = sshr_imm(x, Literal::constant(&imm.imm64, 63))), // splat sign bit to whole number
+                def!(a = iconcat(x, ah)),
+            ],
+        );
+    }
 
     for &bin_op in &[band, bor, bxor, band_not, bor_not, bxor_not] {
         narrow.legalize(
@@ -239,7 +269,7 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
     );
 
     narrow.legalize(
-        def!(brz.I128(x, ebb, vararg)),
+        def!(brz.I128(x, block, vararg)),
         vec![
             def!((xl, xh) = isplit(x)),
             def!(
@@ -257,20 +287,113 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
                 )
             ),
             def!(c = band(a, b)),
-            def!(brz(c, ebb, vararg)),
+            def!(brnz(c, block, vararg)),
         ],
     );
 
     narrow.legalize(
-        def!(brnz.I128(x, ebb1, vararg)),
+        def!(brnz.I128(x, block1, vararg)),
         vec![
             def!((xl, xh) = isplit(x)),
-            def!(brnz(xl, ebb1, vararg)),
-            def!(jump(ebb2, Literal::empty_vararg())),
-            ebb!(ebb2),
-            def!(brnz(xh, ebb1, vararg)),
+            def!(brnz(xl, block1, vararg)),
+            def!(jump(block2, Literal::empty_vararg())),
+            block!(block2),
+            def!(brnz(xh, block1, vararg)),
         ],
     );
+
+    narrow.legalize(
+        def!(a = popcnt.I128(x)),
+        vec![
+            def!((xl, xh) = isplit(x)),
+            def!(e1 = popcnt(xl)),
+            def!(e2 = popcnt(xh)),
+            def!(e3 = iadd(e1, e2)),
+            def!(a = uextend(e3)),
+        ],
+    );
+
+    // TODO(ryzokuken): benchmark this and decide if branching is a faster
+    // approach than evaluating boolean expressions.
+
+    narrow.custom_legalize(icmp_imm, "narrow_icmp_imm");
+
+    let intcc_eq = Literal::enumerator_for(&imm.intcc, "eq");
+    let intcc_ne = Literal::enumerator_for(&imm.intcc, "ne");
+    for &(int_ty, int_ty_half) in &[(I64, I32), (I128, I64)] {
+        narrow.legalize(
+            def!(b = icmp.int_ty(intcc_eq, x, y)),
+            vec![
+                def!((xl, xh) = isplit(x)),
+                def!((yl, yh) = isplit(y)),
+                def!(b1 = icmp.int_ty_half(intcc_eq, xl, yl)),
+                def!(b2 = icmp.int_ty_half(intcc_eq, xh, yh)),
+                def!(b = band(b1, b2)),
+            ],
+        );
+
+        narrow.legalize(
+            def!(b = icmp.int_ty(intcc_ne, x, y)),
+            vec![
+                def!((xl, xh) = isplit(x)),
+                def!((yl, yh) = isplit(y)),
+                def!(b1 = icmp.int_ty_half(intcc_ne, xl, yl)),
+                def!(b2 = icmp.int_ty_half(intcc_ne, xh, yh)),
+                def!(b = bor(b1, b2)),
+            ],
+        );
+
+        use IntCC::*;
+        for cc in &[
+            SignedGreaterThan,
+            SignedGreaterThanOrEqual,
+            SignedLessThan,
+            SignedLessThanOrEqual,
+            UnsignedGreaterThan,
+            UnsignedGreaterThanOrEqual,
+            UnsignedLessThan,
+            UnsignedLessThanOrEqual,
+        ] {
+            let intcc_cc = Literal::enumerator_for(&imm.intcc, cc.to_static_str());
+            let cc1 = Literal::enumerator_for(&imm.intcc, cc.without_equal().to_static_str());
+            let cc2 =
+                Literal::enumerator_for(&imm.intcc, cc.inverse().without_equal().to_static_str());
+            let cc3 = Literal::enumerator_for(&imm.intcc, cc.unsigned().to_static_str());
+            narrow.legalize(
+                def!(b = icmp.int_ty(intcc_cc, x, y)),
+                vec![
+                    def!((xl, xh) = isplit(x)),
+                    def!((yl, yh) = isplit(y)),
+                    // X = cc1 || (!cc2 && cc3)
+                    def!(b1 = icmp.int_ty_half(cc1, xh, yh)),
+                    def!(b2 = icmp.int_ty_half(cc2, xh, yh)),
+                    def!(b3 = icmp.int_ty_half(cc3, xl, yl)),
+                    def!(c1 = bnot(b2)),
+                    def!(c2 = band(c1, b3)),
+                    def!(b = bor(b1, c2)),
+                ],
+            );
+        }
+    }
+
+    // TODO(ryzokuken): explore the perf diff w/ x86_umulx and consider have a
+    // separate legalization for x86.
+    for &ty in &[I64, I128] {
+        narrow.legalize(
+            def!(a = imul.ty(x, y)),
+            vec![
+                def!((xl, xh) = isplit(x)),
+                def!((yl, yh) = isplit(y)),
+                def!(a1 = imul(xh, yl)),
+                def!(a2 = imul(xl, yh)),
+                def!(a3 = iadd(a1, a2)),
+                def!(a4 = umulhi(xl, yl)),
+                def!(ah = iadd(a3, a4)),
+                def!(al = imul(xl, yl)),
+                def!(a = iconcat(al, ah)),
+            ],
+        );
+    }
 
     // Widen instructions with one input operand.
     for &op in &[bnot, popcnt] {
@@ -494,6 +617,18 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
         }
     }
 
+    for &ty in &[I8, I16] {
+        widen.legalize(
+            def!(brz.ty(x, block, vararg)),
+            vec![def!(a = uextend.I32(x)), def!(brz(a, block, vararg))],
+        );
+
+        widen.legalize(
+            def!(brnz.ty(x, block, vararg)),
+            vec![def!(a = uextend.I32(x)), def!(brnz(a, block, vararg))],
+        );
+    }
+
     // Expand integer operations with carry for RISC architectures that don't have
     // the flags.
     let intcc_ult = Literal::enumerator_for(&imm.intcc, "ult");
@@ -682,24 +817,24 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
     expand.legalize(
         def!(a = bitrev.I32(x)),
         vec![
-            def!(a1 = band_imm(x, Literal::constant(&imm.imm64, 0xaaaaaaaa))),
+            def!(a1 = band_imm(x, Literal::constant(&imm.imm64, 0xaaaa_aaaa))),
             def!(a2 = ushr_imm(a1, imm64_1)),
-            def!(a3 = band_imm(x, Literal::constant(&imm.imm64, 0x55555555))),
+            def!(a3 = band_imm(x, Literal::constant(&imm.imm64, 0x5555_5555))),
             def!(a4 = ishl_imm(a3, imm64_1)),
             def!(b = bor(a2, a4)),
-            def!(b1 = band_imm(b, Literal::constant(&imm.imm64, 0xcccccccc))),
+            def!(b1 = band_imm(b, Literal::constant(&imm.imm64, 0xcccc_cccc))),
             def!(b2 = ushr_imm(b1, imm64_2)),
-            def!(b3 = band_imm(b, Literal::constant(&imm.imm64, 0x33333333))),
+            def!(b3 = band_imm(b, Literal::constant(&imm.imm64, 0x3333_3333))),
             def!(b4 = ishl_imm(b3, imm64_2)),
             def!(c = bor(b2, b4)),
-            def!(c1 = band_imm(c, Literal::constant(&imm.imm64, 0xf0f0f0f0))),
+            def!(c1 = band_imm(c, Literal::constant(&imm.imm64, 0xf0f0_f0f0))),
             def!(c2 = ushr_imm(c1, imm64_4)),
-            def!(c3 = band_imm(c, Literal::constant(&imm.imm64, 0x0f0f0f0f))),
+            def!(c3 = band_imm(c, Literal::constant(&imm.imm64, 0x0f0f_0f0f))),
             def!(c4 = ishl_imm(c3, imm64_4)),
             def!(d = bor(c2, c4)),
-            def!(d1 = band_imm(d, Literal::constant(&imm.imm64, 0xff00ff00))),
+            def!(d1 = band_imm(d, Literal::constant(&imm.imm64, 0xff00_ff00))),
             def!(d2 = ushr_imm(d1, imm64_8)),
-            def!(d3 = band_imm(d, Literal::constant(&imm.imm64, 0x00ff00ff))),
+            def!(d3 = band_imm(d, Literal::constant(&imm.imm64, 0x00ff_00ff))),
             def!(d4 = ishl_imm(d3, imm64_8)),
             def!(e = bor(d2, d4)),
             def!(e1 = ushr_imm(e, imm64_16)),
@@ -709,20 +844,20 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
     );
 
     #[allow(overflowing_literals)]
-    let imm64_0xaaaaaaaaaaaaaaaa = Literal::constant(&imm.imm64, 0xaaaaaaaaaaaaaaaa);
-    let imm64_0x5555555555555555 = Literal::constant(&imm.imm64, 0x5555555555555555);
+    let imm64_0xaaaaaaaaaaaaaaaa = Literal::constant(&imm.imm64, 0xaaaa_aaaa_aaaa_aaaa);
+    let imm64_0x5555555555555555 = Literal::constant(&imm.imm64, 0x5555_5555_5555_5555);
     #[allow(overflowing_literals)]
-    let imm64_0xcccccccccccccccc = Literal::constant(&imm.imm64, 0xcccccccccccccccc);
-    let imm64_0x3333333333333333 = Literal::constant(&imm.imm64, 0x3333333333333333);
+    let imm64_0xcccccccccccccccc = Literal::constant(&imm.imm64, 0xcccc_cccc_cccc_cccc);
+    let imm64_0x3333333333333333 = Literal::constant(&imm.imm64, 0x3333_3333_3333_3333);
     #[allow(overflowing_literals)]
-    let imm64_0xf0f0f0f0f0f0f0f0 = Literal::constant(&imm.imm64, 0xf0f0f0f0f0f0f0f0);
-    let imm64_0x0f0f0f0f0f0f0f0f = Literal::constant(&imm.imm64, 0x0f0f0f0f0f0f0f0f);
+    let imm64_0xf0f0f0f0f0f0f0f0 = Literal::constant(&imm.imm64, 0xf0f0_f0f0_f0f0_f0f0);
+    let imm64_0x0f0f0f0f0f0f0f0f = Literal::constant(&imm.imm64, 0x0f0f_0f0f_0f0f_0f0f);
     #[allow(overflowing_literals)]
-    let imm64_0xff00ff00ff00ff00 = Literal::constant(&imm.imm64, 0xff00ff00ff00ff00);
-    let imm64_0x00ff00ff00ff00ff = Literal::constant(&imm.imm64, 0x00ff00ff00ff00ff);
+    let imm64_0xff00ff00ff00ff00 = Literal::constant(&imm.imm64, 0xff00_ff00_ff00_ff00);
+    let imm64_0x00ff00ff00ff00ff = Literal::constant(&imm.imm64, 0x00ff_00ff_00ff_00ff);
     #[allow(overflowing_literals)]
-    let imm64_0xffff0000ffff0000 = Literal::constant(&imm.imm64, 0xffff0000ffff0000);
-    let imm64_0x0000ffff0000ffff = Literal::constant(&imm.imm64, 0x0000ffff0000ffff);
+    let imm64_0xffff0000ffff0000 = Literal::constant(&imm.imm64, 0xffff_0000_ffff_0000);
+    let imm64_0x0000ffff0000ffff = Literal::constant(&imm.imm64, 0x0000_ffff_0000_ffff);
     let imm64_32 = Literal::constant(&imm.imm64, 32);
 
     expand.legalize(
@@ -759,13 +894,23 @@ pub(crate) fn define(insts: &InstructionGroup, imm: &Immediates) -> TransformGro
         ],
     );
 
+    narrow.legalize(
+        def!(a = bitrev.I128(x)),
+        vec![
+            def!((xl, xh) = isplit(x)),
+            def!(yh = bitrev(xl)),
+            def!(yl = bitrev(xh)),
+            def!(a = iconcat(yl, yh)),
+        ],
+    );
+
     // Floating-point sign manipulations.
     for &(ty, const_inst, minus_zero) in &[
-        (F32, f32const, &Literal::bits(&imm.ieee32, 0x80000000)),
+        (F32, f32const, &Literal::bits(&imm.ieee32, 0x8000_0000)),
         (
             F64,
             f64const,
-            &Literal::bits(&imm.ieee64, 0x8000000000000000),
+            &Literal::bits(&imm.ieee64, 0x8000_0000_0000_0000),
         ),
     ] {
         expand.legalize(

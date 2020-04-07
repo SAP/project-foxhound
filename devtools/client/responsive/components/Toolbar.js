@@ -14,20 +14,30 @@ const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 
-const DevicePixelRatioMenu = createFactory(require("./DevicePixelRatioMenu"));
-const DeviceSelector = createFactory(require("./DeviceSelector"));
+const DevicePixelRatioMenu = createFactory(
+  require("devtools/client/responsive/components/DevicePixelRatioMenu")
+);
+const DeviceSelector = createFactory(
+  require("devtools/client/responsive/components/DeviceSelector")
+);
 const NetworkThrottlingMenu = createFactory(
   require("devtools/client/shared/components/throttling/NetworkThrottlingMenu")
 );
-const SettingsMenu = createFactory(require("./SettingsMenu"));
-const ViewportDimension = createFactory(require("./ViewportDimension"));
+const SettingsMenu = createFactory(
+  require("devtools/client/responsive/components/SettingsMenu")
+);
+const ViewportDimension = createFactory(
+  require("devtools/client/responsive/components/ViewportDimension")
+);
 
 loader.lazyGetter(this, "UserAgentInput", function() {
-  return createFactory(require("./UserAgentInput"));
+  return createFactory(
+    require("devtools/client/responsive/components/UserAgentInput")
+  );
 });
 
-const { getStr } = require("../utils/l10n");
-const Types = require("../types");
+const { getStr } = require("devtools/client/responsive/utils/l10n");
+const Types = require("devtools/client/responsive/types");
 
 class Toolbar extends PureComponent {
   static get propTypes() {
@@ -51,6 +61,7 @@ class Toolbar extends PureComponent {
       onToggleReloadOnUserAgent: PropTypes.func.isRequired,
       onToggleUserAgentInput: PropTypes.func.isRequired,
       onUpdateDeviceModal: PropTypes.func.isRequired,
+      onUpdateDeviceSelectorMenu: PropTypes.func.isRequired,
       screenshot: PropTypes.shape(Types.screenshot).isRequired,
       selectedDevice: PropTypes.string.isRequired,
       selectedPixelRatio: PropTypes.number.isRequired,
@@ -97,6 +108,7 @@ class Toolbar extends PureComponent {
       onToggleReloadOnUserAgent,
       onToggleUserAgentInput,
       onUpdateDeviceModal,
+      onUpdateDeviceSelectorMenu,
       screenshot,
       selectedDevice,
       selectedPixelRatio,
@@ -120,8 +132,8 @@ class Toolbar extends PureComponent {
         DeviceSelector({
           devices,
           onChangeDevice,
-          doResizeViewport,
           onUpdateDeviceModal,
+          onUpdateDeviceSelectorMenu,
           selectedDevice,
           viewportId: viewport.id,
         }),

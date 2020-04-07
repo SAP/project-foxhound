@@ -16,6 +16,11 @@ const { BookmarksPolicies } = ChromeUtils.import(
 
 let CURRENT_POLICY;
 
+const basePath = getRootDirectory(gTestPath).replace(
+  "chrome://mochitests/content",
+  "http://mochi.test:8888"
+);
+
 const BASE_POLICY = {
   policies: {
     DisplayBookmarksToolbar: true,
@@ -28,21 +33,26 @@ const BASE_POLICY = {
       {
         Title: "Bookmark 2",
         URL: "https://bookmark2.example.com/",
-        Folder: "Folder 1",
+        Favicon: `${basePath}/404.sjs`,
       },
       {
         Title: "Bookmark 3",
         URL: "https://bookmark3.example.com/",
-        Placement: "menu",
+        Folder: "Folder 1",
       },
       {
         Title: "Bookmark 4",
         URL: "https://bookmark4.example.com/",
-        Folder: "Folder 1",
+        Placement: "menu",
       },
       {
         Title: "Bookmark 5",
         URL: "https://bookmark5.example.com/",
+        Folder: "Folder 1",
+      },
+      {
+        Title: "Bookmark 6",
+        URL: "https://bookmark6.example.com/",
         Placement: "menu",
         Folder: "Folder 2",
       },
@@ -74,23 +84,32 @@ async function promiseAllChangesMade({ itemsToAdd, itemsToRemove }) {
   return new Promise(resolve => {
     let listener = events => {
       is(events.length, 1, "Should only have 1 event.");
-      itemsToAdd--;
-      if (itemsToAdd == 0 && itemsToRemove == 0) {
-        PlacesUtils.bookmarks.removeObserver(bmObserver);
-        PlacesUtils.observers.removeListener(["bookmark-added"], listener);
-        resolve();
+      switch (events[0].type) {
+        case "bookmark-added":
+          itemsToAdd--;
+          if (itemsToAdd == 0 && itemsToRemove == 0) {
+            PlacesUtils.bookmarks.removeObserver(bmObserver);
+            PlacesUtils.observers.removeListener(
+              ["bookmark-added", "bookmark-removed"],
+              listener
+            );
+            resolve();
+          }
+          break;
+        case "bookmark-removed":
+          itemsToRemove--;
+          if (itemsToAdd == 0 && itemsToRemove == 0) {
+            PlacesUtils.bookmarks.removeObserver(bmObserver);
+            PlacesUtils.observers.removeListener(
+              ["bookmark-added", "bookmark-removed"],
+              listener
+            );
+            resolve();
+          }
+          break;
       }
     };
     let bmObserver = {
-      onItemRemoved() {
-        itemsToRemove--;
-        if (itemsToAdd == 0 && itemsToRemove == 0) {
-          PlacesUtils.bookmarks.removeObserver(bmObserver);
-          PlacesUtils.observers.removeListener(["bookmark-added"], listener);
-          resolve();
-        }
-      },
-
       onBeginUpdateBatch() {},
       onEndUpdateBatch() {},
       onItemChanged() {},
@@ -98,7 +117,10 @@ async function promiseAllChangesMade({ itemsToAdd, itemsToRemove }) {
       onItemMoved() {},
     };
     PlacesUtils.bookmarks.addObserver(bmObserver);
-    PlacesUtils.observers.addListener(["bookmark-added"], listener);
+    PlacesUtils.observers.addListener(
+      ["bookmark-added", "bookmark-removed"],
+      listener
+    );
   });
 }
 
@@ -199,7 +221,7 @@ add_task(async function test_initial_bookmarks() {
 
   await Promise.all([
     promiseAllChangesMade({
-      itemsToAdd: 7, // 5 bookmarks + 2 folders
+      itemsToAdd: 8, // 6 bookmarks + 2 folders
       itemsToRemove: 0,
     }),
     setupPolicyEngineWithJson(CURRENT_POLICY),
@@ -240,7 +262,7 @@ add_task(async function test_remove_Bookmark_2() {
   //
   // Remove the 2nd bookmark. It is inside "Folder 1", but that
   // folder won't be empty, so it must not be removed.
-  CURRENT_POLICY.policies.Bookmarks.splice(2, 1);
+  CURRENT_POLICY.policies.Bookmarks.splice(3, 1);
 
   await Promise.all([
     promiseAllChangesMade({
@@ -298,7 +320,7 @@ add_task(async function test_empty_all_bookmarks() {
   await Promise.all([
     promiseAllChangesMade({
       itemsToAdd: 0,
-      itemsToRemove: 7, // 5 bookmarks and 2 folders
+      itemsToRemove: 8, // 6 bookmarks and 2 folders
     }),
     setupPolicyEngineWithJson(CURRENT_POLICY),
   ]);

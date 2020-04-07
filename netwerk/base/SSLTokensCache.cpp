@@ -5,7 +5,9 @@
 #include "SSLTokensCache.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Logging.h"
+#include "nsIOService.h"
 #include "nsNSSIOLayer.h"
+#include "TransportSecurityInfo.h"
 #include "ssl.h"
 #include "sslexp.h"
 
@@ -65,7 +67,11 @@ NS_IMPL_ISUPPORTS(SSLTokensCache, nsIMemoryReporter)
 nsresult SSLTokensCache::Init() {
   StaticMutexAutoLock lock(sLock);
 
-  if (XRE_GetProcessType() != GeckoProcessType_Default) {
+  if (nsIOService::UseSocketProcess()) {
+    if (!XRE_IsSocketProcess()) {
+      return NS_OK;
+    }
+  } else if (!XRE_IsParentProcess()) {
     return NS_OK;
   }
 
@@ -142,24 +148,21 @@ nsresult SSLTokensCache::Put(const nsACString& aKey, const uint8_t* aToken,
   }
 
   Maybe<nsTArray<nsTArray<uint8_t>>> succeededCertChainBytes;
-  nsCOMPtr<nsIX509CertList> succeededCertChain;
-  Unused << aSecInfo->GetSucceededCertChain(getter_AddRefs(succeededCertChain));
-  if (succeededCertChain) {
-    succeededCertChainBytes.emplace();
-    rv = succeededCertChain->GetCertList()->ForEachCertificateInChain(
-        [&succeededCertChainBytes](nsCOMPtr<nsIX509Cert> aCert, bool /*unused*/,
-                                   /*out*/ bool& /*unused*/) {
-          nsTArray<uint8_t> cert;
-          nsresult rv = aCert->GetRawDER(cert);
-          if (NS_FAILED(rv)) {
-            return rv;
-          }
+  nsTArray<RefPtr<nsIX509Cert>> succeededCertArray;
+  rv = aSecInfo->GetSucceededCertChain(succeededCertArray);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
-          succeededCertChainBytes->AppendElement(std::move(cert));
-          return NS_OK;
-        });
-    if (NS_FAILED(rv)) {
-      return rv;
+  if (!succeededCertArray.IsEmpty()) {
+    succeededCertChainBytes.emplace();
+    for (const auto& cert : succeededCertArray) {
+      nsTArray<uint8_t> rawCert;
+      nsresult rv = cert->GetRawDER(rawCert);
+      if (NS_FAILED(rv)) {
+        return rv;
+      }
+      succeededCertChainBytes->AppendElement(std::move(rawCert));
     }
   }
 
@@ -282,7 +285,7 @@ nsresult SSLTokensCache::RemoveLocked(const nsACString& aKey) {
   LOG(("SSLTokensCache::RemoveLocked [key=%s]",
        PromiseFlatCString(aKey).get()));
 
-  nsAutoPtr<TokenCacheRecord> rec;
+  UniquePtr<TokenCacheRecord> rec;
 
   if (!mTokenCacheRecords.Remove(aKey, &rec)) {
     LOG(("  token not found"));
@@ -291,7 +294,7 @@ nsresult SSLTokensCache::RemoveLocked(const nsACString& aKey) {
 
   mCacheSize -= rec->Size();
 
-  if (!mExpirationArray.RemoveElement(rec)) {
+  if (!mExpirationArray.RemoveElement(rec.get())) {
     MOZ_ASSERT(false, "token not found in mExpirationArray");
   }
 
@@ -360,6 +363,24 @@ SSLTokensCache::CollectReports(nsIHandleReportCallback* aHandleReport,
                      "Memory used for the SSL tokens cache.");
 
   return NS_OK;
+}
+
+// static
+void SSLTokensCache::Clear() {
+  LOG(("SSLTokensCache::Clear"));
+  if (!sEnabled) {
+    return;
+  }
+
+  StaticMutexAutoLock lock(sLock);
+  if (!gInstance) {
+    LOG(("  service not initialized"));
+    return;
+  }
+
+  gInstance->mExpirationArray.Clear();
+  gInstance->mTokenCacheRecords.Clear();
+  gInstance->mCacheSize = 0;
 }
 
 }  // namespace net

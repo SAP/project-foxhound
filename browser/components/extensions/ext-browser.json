@@ -9,7 +9,7 @@
   },
   "browserAction": {
     "url": "chrome://browser/content/parent/ext-browserAction.js",
-    "schema": "chrome://browser/content/schemas/browser_action.json",
+    "schema": "chrome://extensions/content/schemas/browser_action.json",
     "scopes": ["addon_parent"],
     "manifest": ["browser_action"],
     "paths": [
@@ -35,8 +35,9 @@
   "chrome_settings_overrides": {
     "url": "chrome://browser/content/parent/ext-chrome-settings-overrides.js",
     "scopes": [],
-    "events": ["update", "uninstall", "disable"],
+    "events": ["update", "uninstall", "disable", "enabling"],
     "schema": "chrome://browser/content/schemas/chrome_settings_overrides.json",
+    "settings": true,
     "manifest": ["chrome_settings_overrides"]
   },
   "commands": {
@@ -140,7 +141,7 @@
   },
   "pageAction": {
     "url": "chrome://browser/content/parent/ext-pageAction.js",
-    "schema": "chrome://browser/content/schemas/page_action.json",
+    "schema": "chrome://extensions/content/schemas/page_action.json",
     "scopes": ["addon_parent"],
     "manifest": ["page_action"],
     "paths": [
@@ -210,16 +211,16 @@
     "url": "chrome://browser/content/parent/ext-urlbar.js",
     "schema": "chrome://browser/content/schemas/urlbar.json",
     "scopes": ["addon_parent"],
+    "settings": true,
     "paths": [
-      ["urlbar"],
-      ["urlbar", "contextualTip"]
+      ["urlbar"]
     ]
   },
   "urlOverrides": {
     "url": "chrome://browser/content/parent/ext-url-overrides.js",
     "schema": "chrome://browser/content/schemas/url_overrides.json",
     "scopes": ["addon_parent"],
-    "events": ["update", "uninstall", "disable"],
+    "events": ["update", "uninstall", "disable", "enabling"],
     "manifest": ["chrome_url_overrides"],
     "paths": [
       ["urlOverrides"]

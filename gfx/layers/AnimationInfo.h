@@ -7,22 +7,27 @@
 #ifndef GFX_ANIMATIONINFO_H
 #define GFX_ANIMATIONINFO_H
 
-#include "nsAutoPtr.h"
 #include "nsCSSPropertyIDSet.h"
 #include "nsDisplayItemTypes.h"
 #include "mozilla/Array.h"
+#include "mozilla/UniquePtr.h"
 
 struct RawServoAnimationValue;
 class nsIContent;
 class nsIFrame;
 
 namespace mozilla {
+namespace gfx {
+class Path;
+}  // namespace gfx
+
 namespace layers {
 
 class Animation;
 class CompositorAnimations;
 class Layer;
 class LayerManager;
+struct CompositorAnimationData;
 struct PropertyAnimationGroup;
 
 class AnimationInfo final {
@@ -69,8 +74,13 @@ class AnimationInfo final {
   nsTArray<PropertyAnimationGroup>& GetPropertyAnimationGroups() {
     return mPropertyAnimationGroups;
   }
+  const CompositorAnimationData* GetTransformLikeMetaData() const {
+    return mTransformLikeMetaData.get();
+  }
   bool ApplyPendingUpdatesForThisTransaction();
   bool HasTransformAnimation() const;
+
+  gfx::Path* CachedMotionPath() { return mCachedMotionPath; }
 
   // In case of continuation, |aFrame| must be the first or the last
   // continuation frame, otherwise this function might return Nothing().
@@ -100,7 +110,7 @@ class AnimationInfo final {
   // readily use for sampling and then store it in mPropertyAnimationGroups
   // (below) or CompositorAnimationStorage.mAnimations for WebRender.
   AnimationArray mAnimations;
-  nsAutoPtr<AnimationArray> mPendingAnimations;
+  UniquePtr<AnimationArray> mPendingAnimations;
 
   uint64_t mCompositorAnimationsId;
   // The extracted data produced by AnimationHelper::ExtractAnimations().
@@ -108,7 +118,13 @@ class AnimationInfo final {
   // Each entry in the array represents an animation list for one property.  For
   // transform-like properties (e.g. transform, rotate etc.), there may be
   // multiple entries depending on how many transform-like properties we have.
+  // Note: we don't use AnimationStorageData here becuase including
+  // AnimationHelper.h causes build errors (because other modules may include
+  // this file but cannot see LayersMessages.h).
   nsTArray<PropertyAnimationGroup> mPropertyAnimationGroups;
+  UniquePtr<CompositorAnimationData> mTransformLikeMetaData;
+  // For motion path. We cached the gfx path for optimization.
+  RefPtr<gfx::Path> mCachedMotionPath;
   // If this layer is used for OMTA, then this counter is used to ensure we
   // stay in sync with the animation manager
   Maybe<uint64_t> mAnimationGeneration;

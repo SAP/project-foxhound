@@ -87,7 +87,7 @@ ROLE(ALERT,
      ROLE_SYSTEM_ALERT,
      ROLE_SYSTEM_ALERT,
      java::SessionAccessibility::CLASSNAME_VIEW,
-     eNoNameRule)
+     eNameFromSubtreeIfReqRule)
 
 ROLE(WINDOW,
      "window",
@@ -204,7 +204,7 @@ ROLE(GROUPING,
      ROLE_SYSTEM_GROUPING,
      ROLE_SYSTEM_GROUPING,
      java::SessionAccessibility::CLASSNAME_VIEW,
-     eNoNameRule)
+     eNameFromSubtreeIfReqRule)
 
 ROLE(SEPARATOR,
      "separator",
@@ -492,7 +492,7 @@ ROLE(SPINBUTTON,
      NSAccessibilityIncrementorRole,  //Subroles: Increment/Decrement.
      ROLE_SYSTEM_SPINBUTTON,
      ROLE_SYSTEM_SPINBUTTON,
-     java::SessionAccessibility::CLASSNAME_VIEW, // A composite widget
+     java::SessionAccessibility::CLASSNAME_EDITTEXT,
      eNameFromValueRule)
 
 ROLE(DIAGRAM,
@@ -1628,6 +1628,33 @@ ROLE(FORM_LANDMARK,
      NSAccessibilityGroupRole,
      USE_ROLE_STRING,
      IA2_ROLE_FORM,
+     java::SessionAccessibility::CLASSNAME_VIEW,
+     eNoNameRule)
+
+ROLE(MARK,
+     "mark",
+     ATK_ROLE_MARK,
+     NSAccessibilityGroupRole,
+     USE_ROLE_STRING,
+     IA2_ROLE_MARK,
+     java::SessionAccessibility::CLASSNAME_VIEW,
+     eNameFromSubtreeIfReqRule)
+
+ROLE(SUGGESTION,
+     "suggestion",
+     ATK_ROLE_SUGGESTION,
+     NSAccessibilityGroupRole,
+     USE_ROLE_STRING,
+     IA2_ROLE_SUGGESTION,
+     java::SessionAccessibility::CLASSNAME_VIEW,
+     eNoNameRule)
+
+ROLE(COMMENT,
+     "comment",
+     ATK_ROLE_COMMENT,
+     NSAccessibilityGroupRole,
+     USE_ROLE_STRING,
+     IA2_ROLE_COMMENT,
      java::SessionAccessibility::CLASSNAME_VIEW,
      eNoNameRule)
 // clang-format on

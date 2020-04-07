@@ -74,15 +74,36 @@ registerCleanupFunction(() => {
 });
 
 add_task(async function test_chrome() {
-  test_url_for_process_types(CHROME, true, false, false, false, false);
+  test_url_for_process_types({
+    url: CHROME,
+    chromeResult: true,
+    webContentResult: false,
+    privilegedAboutContentResult: false,
+    privilegedMozillaContentResult: false,
+    extensionProcessResult: false,
+  });
 });
 
 add_task(async function test_any() {
-  test_url_for_process_types(CANREMOTE, true, true, false, false, false);
+  test_url_for_process_types({
+    url: CANREMOTE,
+    chromeResult: true,
+    webContentResult: true,
+    privilegedAboutContentResult: false,
+    privilegedMozillaContentResult: false,
+    extensionProcessResult: false,
+  });
 });
 
 add_task(async function test_remote() {
-  test_url_for_process_types(MUSTREMOTE, false, true, false, false, false);
+  test_url_for_process_types({
+    url: MUSTREMOTE,
+    chromeResult: false,
+    webContentResult: true,
+    privilegedAboutContentResult: false,
+    privilegedMozillaContentResult: false,
+    extensionProcessResult: false,
+  });
 });
 
 // The set of page transitions
@@ -109,7 +130,7 @@ var TRANSITIONS = [
   function clickLink(browser, uri) {
     info("Clicking link");
 
-    ContentTask.spawn(browser, uri, function frame_script(frameUri) {
+    SpecialPowers.spawn(browser, [uri], function frame_script(frameUri) {
       let link = content.document.querySelector("a[href='" + frameUri + "']");
       link.click();
     });

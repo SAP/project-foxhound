@@ -23,8 +23,10 @@ use style_traits::{CssWriter, ToCss};
     Clone,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
@@ -51,8 +53,10 @@ pub use self::GenericMatrix as Matrix;
     Clone,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
@@ -141,8 +145,10 @@ fn is_same<N: PartialEq>(x: &N, y: &N) -> bool {
 #[derive(
     Clone,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
@@ -267,8 +273,10 @@ pub use self::GenericTransformOperation as TransformOperation;
 #[derive(
     Clone,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
@@ -347,7 +355,7 @@ impl ToAbsoluteLength for SpecifiedLengthPercentage {
         match *self {
             Length(len) => len.to_computed_pixel_length_without_context(),
             Calc(ref calc) => calc.to_computed_pixel_length_without_context(),
-            _ => Err(()),
+            Percentage(..) => Err(()),
         }
     }
 }
@@ -369,7 +377,7 @@ impl ToAbsoluteLength for ComputedLengthPercentage {
             // distance without any layout info.
             //
             // FIXME(emilio): This looks wrong.
-            None => Ok(self.length_component().px()),
+            None => Ok(self.resolve(Zero::zero()).px()),
         }
     }
 }
@@ -611,8 +619,10 @@ pub fn get_normalized_vector_and_angle<T: Zero>(
     Clone,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToComputedValue,
@@ -623,6 +633,7 @@ pub fn get_normalized_vector_and_angle<T: Zero>(
 /// A value of the `Rotate` property
 ///
 /// <https://drafts.csswg.org/css-transforms-2/#individual-transforms>
+/// cbindgen:private-default-tagged-enum-constructor=false
 pub enum GenericRotate<Number, Angle> {
     /// 'none'
     None,
@@ -685,8 +696,10 @@ where
     Clone,
     Copy,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToComputedValue,
@@ -697,48 +710,63 @@ where
 /// A value of the `Scale` property
 ///
 /// <https://drafts.csswg.org/css-transforms-2/#individual-transforms>
+/// cbindgen:private-default-tagged-enum-constructor=false
 pub enum GenericScale<Number> {
     /// 'none'
     None,
-    /// '<number>{1,2}'
-    Scale(Number, Number),
-    /// '<number>{3}'
-    Scale3D(Number, Number, Number),
+    /// '<number>{1,3}'
+    Scale(Number, Number, Number),
 }
 
 pub use self::GenericScale as Scale;
 
-impl<Number: ToCss + PartialEq> ToCss for Scale<Number> {
+impl<Number> ToCss for Scale<Number>
+where
+    Number: ToCss + PartialEq + Copy,
+    f32: From<Number>,
+{
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: fmt::Write,
+        f32: From<Number>,
     {
         match *self {
             Scale::None => dest.write_str("none"),
-            Scale::Scale(ref x, ref y) => {
+            Scale::Scale(ref x, ref y, ref z) => {
                 x.to_css(dest)?;
-                if x != y {
+
+                let is_3d = f32::from(*z) != 1.0;
+                if is_3d || x != y {
                     dest.write_char(' ')?;
                     y.to_css(dest)?;
                 }
+
+                if is_3d {
+                    dest.write_char(' ')?;
+                    z.to_css(dest)?;
+                }
                 Ok(())
-            },
-            Scale::Scale3D(ref x, ref y, ref z) => {
-                x.to_css(dest)?;
-                dest.write_char(' ')?;
-                y.to_css(dest)?;
-                dest.write_char(' ')?;
-                z.to_css(dest)
             },
         }
     }
 }
 
+#[inline]
+fn y_axis_and_z_axis_are_zero<LengthPercentage: Zero, Length: Zero>(
+    _: &LengthPercentage,
+    y: &LengthPercentage,
+    z: &Length,
+) -> bool {
+    y.is_zero() && z.is_zero()
+}
+
 #[derive(
     Clone,
     Debug,
+    Deserialize,
     MallocSizeOf,
     PartialEq,
+    Serialize,
     SpecifiedValueInfo,
     ToAnimatedZero,
     ToComputedValue,
@@ -755,25 +783,25 @@ impl<Number: ToCss + PartialEq> ToCss for Scale<Number> {
 /// or two values (per usual, if the second value is 0px, the default, it must
 /// be omitted when serializing).
 ///
-/// If a 3d translation is specified, all three values must be serialized.
-///
-/// We don't omit the 3rd component even if it is 0px for now, and the
-/// related spec issue is https://github.com/w3c/csswg-drafts/issues/3305
+/// If a 3d translation is specified and the value can be expressed as 2d, we treat as 2d and
+/// serialize accoringly. Otherwise, we serialize all three values.
+/// https://github.com/w3c/csswg-drafts/issues/3305
 ///
 /// <https://drafts.csswg.org/css-transforms-2/#individual-transforms>
+/// cbindgen:private-default-tagged-enum-constructor=false
 pub enum GenericTranslate<LengthPercentage, Length>
 where
     LengthPercentage: Zero,
+    Length: Zero,
 {
     /// 'none'
     None,
-    /// '<length-percentage>' or '<length-percentage> <length-percentage>'
+    /// <length-percentage> [ <length-percentage> <length>? ]?
     Translate(
         LengthPercentage,
-        #[css(skip_if = "Zero::is_zero")] LengthPercentage,
+        #[css(contextual_skip_if = "y_axis_and_z_axis_are_zero")] LengthPercentage,
+        #[css(skip_if = "Zero::is_zero")] Length,
     ),
-    /// '<length-percentage> <length-percentage> <length>'
-    Translate3D(LengthPercentage, LengthPercentage, Length),
 }
 
 pub use self::GenericTranslate as Translate;
@@ -792,9 +820,8 @@ pub use self::GenericTranslate as Translate;
     ToResolvedValue,
     ToShmem,
 )]
+#[repr(u8)]
 pub enum TransformStyle {
-    #[cfg(feature = "servo")]
-    Auto,
     Flat,
     #[css(keyword = "preserve-3d")]
     Preserve3d,

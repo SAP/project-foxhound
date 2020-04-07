@@ -31,17 +31,36 @@ All arguments are passed through to browsertime.
 from __future__ import absolute_import, print_function, unicode_literals
 
 import argparse
+import collections
+import json
 import logging
 import os
+import stat
 import sys
+import re
+import contextlib
 
+from six import StringIO
 from mach.decorators import CommandArgument, CommandProvider, Command
 from mozbuild.base import MachCommandBase
 from mozbuild.util import mkdir
 import mozpack.path as mozpath
 
 
+AUTOMATION = "MOZ_AUTOMATION" in os.environ
 BROWSERTIME_ROOT = os.path.dirname(__file__)
+PILLOW_VERSION = "6.0.0"
+PYSSIM_VERSION = "0.4"
+
+
+@contextlib.contextmanager
+def silence():
+    oldout, olderr = sys.stdout, sys.stderr
+    try:
+        sys.stdout, sys.stderr = StringIO(), StringIO()
+        yield
+    finally:
+        sys.stdout, sys.stderr = oldout, olderr
 
 
 def node_path():
@@ -78,7 +97,7 @@ def visualmetrics_path():
     '''The path to the `visualmetrics.py` script.'''
     return mozpath.join(
         package_path(),
-        'vendor',
+        'browsertime',
         'visualmetrics.py')
 
 
@@ -105,15 +124,6 @@ host_fetches = {
             'url': 'https://github.com/ncalexan/geckodriver/releases/download/v0.24.0-android/ffmpeg-4.1.1-macos64-static.zip',  # noqa
             # An extension to `fetch` syntax.
             'path': 'ffmpeg-4.1.1-macos64-static',
-        },
-        'ImageMagick': {
-            'type': 'static-url',
-            # It's sad that the macOS URLs don't include version numbers.  If
-            # ImageMagick is released frequently, we'll need to be more
-            # accommodating of multiple versions here.
-            'url': 'https://imagemagick.org/download/binaries/ImageMagick-x86_64-apple-darwin17.7.0.tar.gz',  # noqa
-            # An extension to `fetch` syntax.
-            'path': 'ImageMagick-7.0.8',
         },
     },
     'linux64': {
@@ -161,17 +171,13 @@ class MachBrowsertime(MachCommandBase):
         # The convention is $MOZBUILD_STATE_PATH/$FEATURE.
         return mozpath.join(self._mach_context.state_dir, 'browsertime')
 
-    def setup(self, should_clobber=False):
-        r'''Install browsertime and visualmetrics.py requirements.'''
-
-        automation = bool(os.environ.get('MOZ_AUTOMATION'))
+    def setup_prerequisites(self):
+        r'''Install browsertime and visualmetrics.py prerequisites.'''
 
         from mozbuild.action.tooltool import unpack_file
         from mozbuild.artifact_cache import ArtifactCache
-        sys.path.append(mozpath.join(self.topsrcdir, 'tools', 'lint', 'eslint'))
-        import setup_helper
 
-        if not os.environ.get('MOZ_AUTOMATION') and host_platform().startswith('linux'):
+        if not AUTOMATION and host_platform().startswith('linux'):
             # On Linux ImageMagick needs to be installed manually, and `mach bootstrap` doesn't
             # do that (yet).  Provide some guidance.
             try:
@@ -209,18 +215,85 @@ class MachBrowsertime(MachCommandBase):
                         'browsertime',
                         {'path': archive},
                         'Unpacking temporary location {path}')
-                    unpack_file(archive)
+
+                    if 'win64' in host_platform() and 'imagemagick' in tool.lower():
+                        # Windows archive does not contain a subfolder
+                        # so we make one for it here
+                        mkdir(fetch.get('path'))
+                        os.chdir(os.path.join(self.state_path, fetch.get('path')))
+                        unpack_file(archive)
+                        os.chdir(self.state_path)
+                    else:
+                        unpack_file(archive)
+
+                    # Make sure the expected path exists after extraction
+                    path = os.path.join(self.state_path, fetch.get('path'))
+                    if not os.path.exists(path):
+                        raise Exception("Cannot find an extracted directory: %s" % path)
+
+                    try:
+                        # Some archives provide binaries that don't have the
+                        # executable bit set so we need to set it here
+                        for root, dirs, files in os.walk(path):
+                            for edir in dirs:
+                                loc_to_change = os.path.join(root, edir)
+                                st = os.stat(loc_to_change)
+                                os.chmod(loc_to_change, st.st_mode | stat.S_IEXEC)
+                            for efile in files:
+                                loc_to_change = os.path.join(root, efile)
+                                st = os.stat(loc_to_change)
+                                os.chmod(loc_to_change, st.st_mode | stat.S_IEXEC)
+                    except Exception as e:
+                        raise Exception(
+                            "Could not set executable bit in %s, error: %s" % (path, str(e))
+                        )
                 finally:
                     os.chdir(cwd)
+
+    def setup(self, should_clobber=False, new_upstream_url=''):
+        r'''Install browsertime and visualmetrics.py prerequisites and the Node.js package.'''
+
+        sys.path.append(mozpath.join(self.topsrcdir, 'tools', 'lint', 'eslint'))
+        import setup_helper
+
+        if not new_upstream_url:
+            self.setup_prerequisites()
+
+        if new_upstream_url:
+            package_json_path = os.path.join(BROWSERTIME_ROOT, 'package.json')
+
+            self.log(
+                logging.INFO,
+                'browsertime',
+                {'new_upstream_url': new_upstream_url, 'package_json_path': package_json_path},
+                'Updating browsertime node module version in {package_json_path} '
+                'to {new_upstream_url}')
+
+            if not re.search('/tarball/[a-f0-9]{40}$', new_upstream_url):
+                raise ValueError("New upstream URL does not end with /tarball/[a-f0-9]{40}: '{}'"
+                                 .format(new_upstream_url))
+
+            with open(package_json_path) as f:
+                existing_body = json.loads(f.read(), object_pairs_hook=collections.OrderedDict)
+
+            existing_body['devDependencies']['browsertime'] = new_upstream_url
+
+            updated_body = json.dumps(existing_body)
+
+            with open(package_json_path, 'w') as f:
+                f.write(updated_body)
 
         # Install the browsertime Node.js requirements.
         if not setup_helper.check_node_executables_valid():
             return 1
 
-        if 'GECKODRIVER_BASE_URL' not in os.environ:
-            # Use custom `geckodriver` with pre-release Android support.
-            url = 'https://github.com/ncalexan/geckodriver/releases/download/v0.24.0-android/'
-            os.environ['GECKODRIVER_BASE_URL'] = url
+        # To use a custom `geckodriver`, set
+        # os.environ[b"GECKODRIVER_BASE_URL"] = bytes(url)
+        # to an endpoint with binaries named like
+        # https://github.com/sitespeedio/geckodriver/blob/master/install.js#L31.
+        if AUTOMATION:
+            os.environ[b"CHROMEDRIVER_SKIP_DOWNLOAD"] = b"true"
+            os.environ[b"GECKODRIVER_SKIP_DOWNLOAD"] = b"true"
 
         self.log(
             logging.INFO,
@@ -230,13 +303,14 @@ class MachBrowsertime(MachCommandBase):
         status = setup_helper.package_setup(
             BROWSERTIME_ROOT,
             'browsertime',
+            should_update=new_upstream_url != '',
             should_clobber=should_clobber,
-            no_optional=automation)
+            no_optional=new_upstream_url or AUTOMATION)
 
         if status:
             return status
 
-        if automation:
+        if new_upstream_url or AUTOMATION:
             return 0
 
         return self.check()
@@ -281,6 +355,29 @@ class MachBrowsertime(MachCommandBase):
         node_dir = os.path.dirname(node_path())
         path = [node_dir] + path
 
+        # On windows, we need to add the ImageMagick directory to the path
+        # otherwise compare won't be found, and the built-in OS convert
+        # method will be used instead of the ImageMagick one.
+        if 'win64' in host_platform() and path_to_imagemagick:
+            # Bug 1596237 - In the windows ImageMagick distribution, the ffmpeg
+            # binary is directly located in the root directory, so here we
+            # insert in the 3rd position to avoid taking precedence over ffmpeg
+            path.insert(2, path_to_imagemagick)
+
+        # On macOs, we can't install our own ImageMagick because the
+        # System Integrity Protection (SIP) won't let us set DYLD_LIBRARY_PATH
+        # unless we deactivate SIP with "csrutil disable".
+        # So we're asking the user to install it.
+        #
+        # if ImageMagick was installed via brew, we want to make sure we
+        # include the PATH
+        if host_platform() == "darwin":
+            for p in os.environ["PATH"].split(os.pathsep):
+                p = p.strip()
+                if not p or p in path:
+                    continue
+                path.append(p)
+
         append_env = {
             'PATH': os.pathsep.join(path),
 
@@ -306,19 +403,25 @@ class MachBrowsertime(MachCommandBase):
         return append_env
 
     def _activate_virtualenv(self, *args, **kwargs):
+        r'''Activates virtualenv.
+
+        This function will also install Pillow and pyssim if needed.
+        It will raise an error in case the install failed.
+        '''
         MachCommandBase._activate_virtualenv(self, *args, **kwargs)
-
+        # installing Python deps on the fly
         try:
-            self.virtualenv_manager.install_pip_package('Pillow==6.0.0')
-        except Exception:
-            print('Could not install Pillow from pip.')
-            return 1
-
+            import PIL
+            if PIL.__version__ != PILLOW_VERSION:
+                raise ImportError("Wrong version %s" % PIL.__version__)
+        except ImportError:
+            self.virtualenv_manager.install_pip_package('Pillow==%s' % PILLOW_VERSION)
         try:
-            self.virtualenv_manager.install_pip_package('pyssim==0.4')
-        except Exception:
-            print('Could not install pyssim from pip.')
-            return 1
+            # No __version__ in that package.
+            # We make the assumption it's fine.
+            import ssim  # noqa
+        except ImportError:
+            self.virtualenv_manager.install_pip_package('pyssim==%s' % PYSSIM_VERSION)
 
     def check(self):
         r'''Run `visualmetrics.py --check`.'''
@@ -355,6 +458,15 @@ class MachBrowsertime(MachCommandBase):
         # loose about arguments; repeat arguments are generally accepted but then produce
         # difficult to interpret type errors.
 
+        def extract_browser_name(args):
+            'Extracts the browser name if any'
+            # These are BT arguments, it's BT job to check them
+            # here we just want to extract the browser name
+            res = re.findall("(--browser|-b)[= ]([\w]+)", ' '.join(args))
+            if res == []:
+                return None
+            return res[0][-1]
+
         def matches(args, *flags):
             'Return True if any argument matches any of the given flags (maybe with an argument).'
             for flag in flags:
@@ -374,6 +486,25 @@ class MachBrowsertime(MachCommandBase):
         if not specifies_har:
             extra_args.append('--skipHar')
 
+        if not matches(args, "--android"):
+            # If --firefox.binaryPath is not specified, default to the objdir binary
+            # Note: --firefox.release is not a real browsertime option, but it will
+            #       silently ignore it instead and default to a release installation.
+            specifies_binaryPath = matches(args, '--firefox.binaryPath',
+                                           '--firefox.release', '--firefox.nightly',
+                                           '--firefox.beta', '--firefox.developer')
+
+            if not specifies_binaryPath:
+                specifies_binaryPath = extract_browser_name(args) == 'chrome'
+
+            if not specifies_binaryPath:
+                try:
+                    extra_args.extend(('--firefox.binaryPath', self.get_binary_path()))
+                except Exception:
+                    print('Please run |./mach build| '
+                          'or specify a Firefox binary with --firefox.binaryPath.')
+                    return 1
+
         if extra_args:
             self.log(
                 logging.DEBUG,
@@ -383,11 +514,31 @@ class MachBrowsertime(MachCommandBase):
 
         return extra_args
 
+    def _verify_node_install(self):
+        # check if Node is installed
+        sys.path.append(mozpath.join(self.topsrcdir, 'tools', 'lint', 'eslint'))
+        import setup_helper
+        with silence():
+            node_valid = setup_helper.check_node_executables_valid()
+        if not node_valid:
+            print("Can't find Node. did you run ./mach bootstrap ?")
+            return False
+
+        # check if the browsertime package has been deployed correctly
+        # for this we just check for the browsertime directory presence
+        if not os.path.exists(browsertime_path()):
+            print("Could not find browsertime.js, try ./mach browsertime --setup")
+            print("If that still fails, try ./mach browsertime --setup --clobber")
+            return False
+
+        return True
+
     @Command('browsertime', category='testing',
              description='Run [browsertime](https://github.com/sitespeedio/browsertime) '
                          'performance tests.')
     @CommandArgument('--verbose', action='store_true',
                      help='Verbose output for what commands the build is running.')
+    @CommandArgument('--update-upstream-url', default='')
     @CommandArgument('--setup', default=False, action='store_true')
     @CommandArgument('--clobber', default=False, action='store_true')
     @CommandArgument('--skip-cache', action='store_true',
@@ -396,19 +547,26 @@ class MachBrowsertime(MachCommandBase):
     @CommandArgument('--check', default=False, action='store_true')
     @CommandArgument('args', nargs=argparse.REMAINDER)
     def browsertime(self, args, verbose=False,
-                    setup=False, clobber=False, skip_cache=False,
-                    check=False):
+                    update_upstream_url='', setup=False, clobber=False,
+                    skip_cache=False, check=False):
         self._set_log_level(verbose)
 
-        if setup:
+        if update_upstream_url:
+            return self.setup(new_upstream_url=update_upstream_url)
+        elif setup:
             return self.setup(should_clobber=clobber)
+        else:
+            if not self._verify_node_install():
+                return 1
 
         if check:
             return self.check()
 
         self._activate_virtualenv()
-
-        return self.node([browsertime_path()] + self.extra_default_args(args) + args)
+        default_args = self.extra_default_args(args)
+        if default_args == 1:
+            return 1
+        return self.node([browsertime_path()] + default_args + args)
 
     @Command('visualmetrics', category='testing',
              description='Run visualmetrics.py')

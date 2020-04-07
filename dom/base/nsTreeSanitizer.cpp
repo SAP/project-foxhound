@@ -951,7 +951,9 @@ nsTreeSanitizer::nsTreeSanitizer(uint32_t aFlags)
       mCidEmbedsOnly(aFlags & nsIParserUtils::SanitizerCidEmbedsOnly),
       mDropMedia(aFlags & nsIParserUtils::SanitizerDropMedia),
       mFullDocument(false),
-      mLogRemovals(aFlags & nsIParserUtils::SanitizerLogRemovals) {
+      mLogRemovals(aFlags & nsIParserUtils::SanitizerLogRemovals),
+      mOnlyConditionalCSS(aFlags &
+                          nsIParserUtils::SanitizerRemoveOnlyConditionalCSS) {
   if (mCidEmbedsOnly) {
     // Sanitizing styles for external references is not supported.
     mAllowStyles = false;
@@ -961,6 +963,12 @@ nsTreeSanitizer::nsTreeSanitizer(uint32_t aFlags)
     // doesn't paste HTML or load feeds.
     InitializeStatics();
   }
+  /* Ensure SanitizerRemoveOnlyConditionalCSS isn't combined with any
+   * flags, except SanitizerLogRemovals. */
+  MOZ_ASSERT(!mOnlyConditionalCSS ||
+             0 ==
+                 (aFlags & ~(nsIParserUtils::SanitizerRemoveOnlyConditionalCSS |
+                             nsIParserUtils::SanitizerLogRemovals)));
 }
 
 bool nsTreeSanitizer::MustFlatten(int32_t aNamespace, nsAtom* aLocal) {
@@ -1062,83 +1070,35 @@ bool nsTreeSanitizer::MustPrune(int32_t aNamespace, nsAtom* aLocal,
   return false;
 }
 
-bool nsTreeSanitizer::SanitizeStyleDeclaration(DeclarationBlock* aDeclaration) {
-  return aDeclaration->RemovePropertyByID(eCSSProperty__moz_binding);
-}
-
-bool nsTreeSanitizer::SanitizeStyleSheet(const nsAString& aOriginal,
+void nsTreeSanitizer::SanitizeStyleSheet(const nsAString& aOriginal,
                                          nsAString& aSanitized,
                                          Document* aDocument,
                                          nsIURI* aBaseURI) {
-  nsresult rv = NS_OK;
   aSanitized.Truncate();
-  // aSanitized will hold the permitted CSS text.
-  // -moz-binding is blacklisted.
-  bool didSanitize = false;
-  // Create a sheet to hold the parsed CSS
-  RefPtr<StyleSheet> sheet = new StyleSheet(mozilla::css::eAuthorSheetFeatures,
-                                            CORS_NONE, SRIMetadata());
-  sheet->SetURIs(aDocument->GetDocumentURI(), nullptr, aBaseURI);
-  sheet->SetPrincipal(aDocument->NodePrincipal());
-  sheet->ParseSheetSync(aDocument->CSSLoader(),
-                        NS_ConvertUTF16toUTF8(aOriginal),
-                        /* aLoadData = */ nullptr,
-                        /* aLineNumber = */ 0);
-  NS_ENSURE_SUCCESS(rv, true);
-  // Mark the sheet as complete.
-  MOZ_ASSERT(!sheet->HasForcedUniqueInner(),
-             "should not get a forced unique inner during parsing");
 
-  // This should be an inline stylesheet
-  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+  NS_ConvertUTF16toUTF8 style(aOriginal);
+  RefPtr<nsIReferrerInfo> referrer =
       ReferrerInfo::CreateForInternalCSSResources(aDocument);
-  sheet->SetReferrerInfo(referrerInfo);
-  sheet->SetComplete();
-  // Loop through all the rules found in the CSS text
-  ErrorResult err;
-  RefPtr<dom::CSSRuleList> rules =
-      sheet->GetCssRules(*nsContentUtils::GetSystemPrincipal(), err);
-  err.SuppressException();
-  if (!rules) {
-    return true;
-  }
-  uint32_t ruleCount = rules->Length();
-  for (uint32_t i = 0; i < ruleCount; ++i) {
-    mozilla::css::Rule* rule = rules->Item(i);
-    if (!rule) continue;
-    switch (rule->Type()) {
-      default:
-        didSanitize = true;
-        // Ignore these rule types.
-        break;
-      case CSSRule_Binding::NAMESPACE_RULE:
-      case CSSRule_Binding::FONT_FACE_RULE: {
-        // Append @namespace and @font-face rules verbatim.
-        nsAutoString cssText;
-        rule->GetCssText(cssText);
-        aSanitized.Append(cssText);
-        break;
-      }
-      case CSSRule_Binding::STYLE_RULE: {
-        // For style rules, we will just look for and remove the
-        // -moz-binding properties.
-        auto styleRule = static_cast<BindingStyleRule*>(rule);
-        DeclarationBlock* styleDecl = styleRule->GetDeclarationBlock();
-        MOZ_ASSERT(styleDecl);
-        if (SanitizeStyleDeclaration(styleDecl)) {
-          didSanitize = true;
-        }
-        nsAutoString decl;
-        styleRule->GetCssText(decl);
-        aSanitized.Append(decl);
-      }
-    }
-  }
-  if (didSanitize && mLogRemovals) {
+  auto extraData =
+      MakeRefPtr<URLExtraData>(aBaseURI, referrer, aDocument->NodePrincipal());
+  auto sanitizationKind = mOnlyConditionalCSS
+                              ? StyleSanitizationKind::NoConditionalRules
+                              : StyleSanitizationKind::Standard;
+  RefPtr<RawServoStyleSheetContents> contents =
+      Servo_StyleSheet_FromUTF8Bytes(
+          /* loader = */ nullptr,
+          /* stylesheet = */ nullptr,
+          /* load_data = */ nullptr, &style,
+          css::SheetParsingMode::eAuthorSheetFeatures, extraData.get(),
+          /* line_number_offset = */ 0, aDocument->GetCompatibilityMode(),
+          /* reusable_sheets = */ nullptr,
+          /* use_counters = */ nullptr, sanitizationKind, &aSanitized)
+          .Consume();
+
+  if (mLogRemovals && aSanitized.Length() != aOriginal.Length()) {
     LogMessage("Removed some rules and/or properties from stylesheet.",
                aDocument);
   }
-  return didSanitize;
 }
 
 template <size_t Len>
@@ -1169,26 +1129,6 @@ void nsTreeSanitizer::SanitizeAttributes(mozilla::dom::Element* aElement,
 
     if (kNameSpaceID_None == attrNs) {
       if (aAllowed.mStyle && nsGkAtoms::style == attrLocal) {
-        nsAutoString value;
-        aElement->GetAttr(attrNs, attrLocal, value);
-        Document* document = aElement->OwnerDoc();
-        RefPtr<URLExtraData> urlExtra(aElement->GetURLDataForStyleAttr());
-        RefPtr<DeclarationBlock> decl = DeclarationBlock::FromCssText(
-            value, urlExtra, document->GetCompatibilityMode(),
-            document->CSSLoader());
-        if (decl) {
-          if (SanitizeStyleDeclaration(decl)) {
-            nsAutoString cleanValue;
-            decl->ToString(cleanValue);
-            aElement->SetAttr(kNameSpaceID_None, nsGkAtoms::style, cleanValue,
-                              false);
-            if (mLogRemovals) {
-              LogMessage(
-                  "Removed -moz-binding styling from element style attribute.",
-                  aElement->OwnerDoc(), aElement);
-            }
-          }
-        }
         continue;
       }
       if (aAllowed.mDangerousSrc && nsGkAtoms::src == attrLocal) {
@@ -1311,10 +1251,11 @@ bool nsTreeSanitizer::SanitizeURL(mozilla::dom::Element* aElement,
         // in case someone goofs with these in the future, let's drop them.
         rv = NS_ERROR_FAILURE;
       } else {
-        rv = secMan->CheckLoadURIWithPrincipal(sNullPrincipal, attrURI, flags);
+        rv = secMan->CheckLoadURIWithPrincipal(sNullPrincipal, attrURI, flags,
+                                               0);
       }
     } else {
-      rv = secMan->CheckLoadURIWithPrincipal(sNullPrincipal, attrURI, flags);
+      rv = secMan->CheckLoadURIWithPrincipal(sNullPrincipal, attrURI, flags, 0);
     }
   }
   if (NS_FAILED(rv)) {
@@ -1361,7 +1302,7 @@ void nsTreeSanitizer::SanitizeChildren(nsINode* aRoot) {
       nsAtom* localName = nodeInfo->NameAtom();
       int32_t ns = nodeInfo->NamespaceID();
 
-      if (MustPrune(ns, localName, elt)) {
+      if (!mOnlyConditionalCSS && MustPrune(ns, localName, elt)) {
         if (mLogRemovals) {
           LogMessage("Removing unsafe node.", elt->OwnerDoc(), elt);
         }
@@ -1378,42 +1319,39 @@ void nsTreeSanitizer::SanitizeChildren(nsINode* aRoot) {
         continue;
       }
       if (nsGkAtoms::style == localName) {
+        // If !mOnlyConditionalCSS check the following condition:
         // If styles aren't allowed, style elements got pruned above. Even
         // if styles are allowed, non-HTML, non-SVG style elements got pruned
         // above.
-        NS_ASSERTION(ns == kNameSpaceID_XHTML || ns == kNameSpaceID_SVG,
+        NS_ASSERTION((ns == kNameSpaceID_XHTML || ns == kNameSpaceID_SVG) ||
+                         mOnlyConditionalCSS,
                      "Should have only HTML or SVG here!");
         nsAutoString styleText;
         nsContentUtils::GetNodeTextContent(node, false, styleText);
 
         nsAutoString sanitizedStyle;
-        if (SanitizeStyleSheet(styleText, sanitizedStyle, aRoot->OwnerDoc(),
-                               node->GetBaseURI())) {
-          nsContentUtils::SetNodeTextContent(node, sanitizedStyle, true);
-        } else {
-          // If the node had non-text child nodes, this operation zaps those.
-          // XXXgijs: if we're logging, we should theoretically report about
-          // this, but this way of removing those items doesn't allow for that
-          // to happen. Seems less likely to be a problem for actual chrome
-          // consumers though.
-          nsContentUtils::SetNodeTextContent(node, styleText, true);
-        }
-        AllowedAttributes allowed;
-        allowed.mStyle = mAllowStyles;
-        if (ns == kNameSpaceID_XHTML) {
-          allowed.mNames = sAttributesHTML;
-          allowed.mURLs = kURLAttributesHTML;
-          SanitizeAttributes(elt, allowed);
-        } else {
-          allowed.mNames = sAttributesSVG;
-          allowed.mURLs = kURLAttributesSVG;
-          allowed.mXLink = true;
-          SanitizeAttributes(elt, allowed);
+        SanitizeStyleSheet(styleText, sanitizedStyle, aRoot->OwnerDoc(),
+                           node->GetBaseURI());
+        nsContentUtils::SetNodeTextContent(node, sanitizedStyle, true);
+
+        if (!mOnlyConditionalCSS) {
+          AllowedAttributes allowed;
+          allowed.mStyle = mAllowStyles;
+          if (ns == kNameSpaceID_XHTML) {
+            allowed.mNames = sAttributesHTML;
+            allowed.mURLs = kURLAttributesHTML;
+            SanitizeAttributes(elt, allowed);
+          } else {
+            allowed.mNames = sAttributesSVG;
+            allowed.mURLs = kURLAttributesSVG;
+            allowed.mXLink = true;
+            SanitizeAttributes(elt, allowed);
+          }
         }
         node = node->GetNextNonChildNode(aRoot);
         continue;
       }
-      if (MustFlatten(ns, localName)) {
+      if (!mOnlyConditionalCSS && MustFlatten(ns, localName)) {
         if (mLogRemovals) {
           LogMessage("Flattening unsafe node (descendants are preserved).",
                      elt->OwnerDoc(), elt);
@@ -1434,34 +1372,37 @@ void nsTreeSanitizer::SanitizeChildren(nsINode* aRoot) {
         node = next;
         continue;
       }
-      NS_ASSERTION(ns == kNameSpaceID_XHTML || ns == kNameSpaceID_SVG ||
-                       ns == kNameSpaceID_MathML,
-                   "Should have only HTML, MathML or SVG here!");
-      AllowedAttributes allowed;
-      if (ns == kNameSpaceID_XHTML) {
-        allowed.mNames = sAttributesHTML;
-        allowed.mURLs = kURLAttributesHTML;
-        allowed.mStyle = mAllowStyles;
-        allowed.mDangerousSrc = nsGkAtoms::img == localName && !mCidEmbedsOnly;
-        SanitizeAttributes(elt, allowed);
-      } else if (ns == kNameSpaceID_SVG) {
-        allowed.mNames = sAttributesSVG;
-        allowed.mURLs = kURLAttributesSVG;
-        allowed.mXLink = true;
-        allowed.mStyle = mAllowStyles;
-        SanitizeAttributes(elt, allowed);
-      } else {
-        allowed.mNames = sAttributesMathML;
-        allowed.mURLs = kURLAttributesMathML;
-        allowed.mXLink = true;
-        SanitizeAttributes(elt, allowed);
+      if (!mOnlyConditionalCSS) {
+        NS_ASSERTION(ns == kNameSpaceID_XHTML || ns == kNameSpaceID_SVG ||
+                         ns == kNameSpaceID_MathML,
+                     "Should have only HTML, MathML or SVG here!");
+        AllowedAttributes allowed;
+        if (ns == kNameSpaceID_XHTML) {
+          allowed.mNames = sAttributesHTML;
+          allowed.mURLs = kURLAttributesHTML;
+          allowed.mStyle = mAllowStyles;
+          allowed.mDangerousSrc =
+              nsGkAtoms::img == localName && !mCidEmbedsOnly;
+          SanitizeAttributes(elt, allowed);
+        } else if (ns == kNameSpaceID_SVG) {
+          allowed.mNames = sAttributesSVG;
+          allowed.mURLs = kURLAttributesSVG;
+          allowed.mXLink = true;
+          allowed.mStyle = mAllowStyles;
+          SanitizeAttributes(elt, allowed);
+        } else {
+          allowed.mNames = sAttributesMathML;
+          allowed.mURLs = kURLAttributesMathML;
+          allowed.mXLink = true;
+          SanitizeAttributes(elt, allowed);
+        }
       }
       node = node->GetNextNode(aRoot);
       continue;
     }
     NS_ASSERTION(!node->GetFirstChild(), "How come non-element node had kids?");
     nsIContent* next = node->GetNextNonChildNode(aRoot);
-    if (!mAllowComments && node->IsComment()) {
+    if (!mOnlyConditionalCSS && (!mAllowComments && node->IsComment())) {
       node->RemoveFromParent();
     }
     node = next;

@@ -66,6 +66,10 @@ void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
   Sxtw(ARMRegister(dest.reg, 64), ARMRegister(src, 32));
 }
 
+void MacroAssembler::move32ZeroExtendToPtr(Register src, Register dest) {
+  Mov(ARMRegister(dest, 32), ARMRegister(src, 32));
+}
+
 // ===============================================================
 // Load instructions
 
@@ -485,6 +489,8 @@ void MacroAssembler::inc64(AbsoluteAddress dest) {
 void MacroAssembler::neg32(Register reg) {
   Negs(ARMRegister(reg, 32), Operand(ARMRegister(reg, 32)));
 }
+
+void MacroAssembler::neg64(Register64 reg) { negPtr(reg.reg); }
 
 void MacroAssembler::negPtr(Register reg) {
   Negs(ARMRegister(reg, 64), Operand(ARMRegister(reg, 64)));
@@ -1059,7 +1065,7 @@ void MacroAssembler::branchTruncateFloat32MaybeModUint32(FloatRegister src,
 
 void MacroAssembler::branchTruncateFloat32ToInt32(FloatRegister src,
                                                   Register dest, Label* fail) {
-  convertFloat32ToInt32(src, dest, fail);
+  convertFloat32ToInt32(src, dest, fail, false);
 }
 
 void MacroAssembler::branchDouble(DoubleCondition cond, FloatRegister lhs,
@@ -1104,7 +1110,7 @@ void MacroAssembler::branchTruncateDoubleMaybeModUint32(FloatRegister src,
 
 void MacroAssembler::branchTruncateDoubleToInt32(FloatRegister src,
                                                  Register dest, Label* fail) {
-  convertDoubleToInt32(src, dest, fail);
+  convertDoubleToInt32(src, dest, fail, false);
 }
 
 template <typename T>
@@ -1425,6 +1431,11 @@ void MacroAssembler::branchTestBigInt(Condition cond, Register tag,
   branchTestBigIntImpl(cond, tag, label);
 }
 
+void MacroAssembler::branchTestBigInt(Condition cond, const Address& address,
+                                      Label* label) {
+  branchTestBigIntImpl(cond, address, label);
+}
+
 void MacroAssembler::branchTestBigInt(Condition cond, const BaseIndex& address,
                                       Label* label) {
   branchTestBigIntImpl(cond, address, label);
@@ -1610,6 +1621,19 @@ void MacroAssembler::cmp32MovePtr(Condition cond, Register lhs, Imm32 rhs,
   cmp32(lhs, rhs);
   Csel(ARMRegister(dest, 64), ARMRegister(src, 64), ARMRegister(dest, 64),
        cond);
+}
+
+void MacroAssembler::cmp32LoadPtr(Condition cond, const Address& lhs, Imm32 rhs,
+                                  const Address& src, Register dest) {
+  // ARM64 does not support conditional loads, so we use a branch with a CSel
+  // (to prevent Spectre attacks).
+  vixl::UseScratchRegisterScope temps(this);
+  const ARMRegister scratch64 = temps.AcquireX();
+  Label done;
+  branch32(Assembler::InvertCondition(cond), lhs, rhs, &done);
+  loadPtr(src, scratch64.asUnsized());
+  Csel(ARMRegister(dest, 64), scratch64, ARMRegister(dest, 64), cond);
+  bind(&done);
 }
 
 void MacroAssembler::test32LoadPtr(Condition cond, const Address& addr,

@@ -53,7 +53,7 @@ class NewRenderer : public RendererEvent {
     MOZ_COUNT_CTOR(NewRenderer);
   }
 
-  ~NewRenderer() { MOZ_COUNT_DTOR(NewRenderer); }
+  MOZ_COUNTED_DTOR(NewRenderer)
 
   void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
     layers::AutoCompleteTask complete(mTask);
@@ -70,31 +70,51 @@ class NewRenderer : public RendererEvent {
     *mUseDComp = compositor->UseDComp();
     *mUseTripleBuffering = compositor->UseTripleBuffering();
 
+    // Only allow the panic on GL error functionality in nightly builds,
+    // since it (deliberately) crashes the GPU process if any GL call
+    // returns an error code.
+    bool panic_on_gl_error = false;
+#ifdef NIGHTLY_BUILD
+    panic_on_gl_error =
+        StaticPrefs::gfx_webrender_panic_on_gl_error_AtStartup();
+#endif
+
     bool allow_texture_swizzling = gfx::gfxVars::UseGLSwizzle();
     bool isMainWindow = true;  // TODO!
     bool supportLowPriorityTransactions = isMainWindow;
+    bool supportLowPriorityThreadpool =
+        supportLowPriorityTransactions &&
+        StaticPrefs::gfx_webrender_enable_low_priority_pool();
     bool supportPictureCaching = isMainWindow;
     wr::Renderer* wrRenderer = nullptr;
-    if (!wr_window_new(aWindowId, mSize.width, mSize.height,
-                       supportLowPriorityTransactions, allow_texture_swizzling,
-                       StaticPrefs::gfx_webrender_picture_caching() &&
-                           supportPictureCaching,
+    if (!wr_window_new(
+            aWindowId, mSize.width, mSize.height,
+            supportLowPriorityTransactions, supportLowPriorityThreadpool,
+            allow_texture_swizzling,
+            StaticPrefs::gfx_webrender_picture_caching() &&
+                supportPictureCaching,
 #ifdef NIGHTLY_BUILD
-                       StaticPrefs::gfx_webrender_start_debug_server(),
+            StaticPrefs::gfx_webrender_start_debug_server(),
 #else
-                       false,
+            false,
 #endif
-                       compositor->gl(),
-                       aRenderThread.GetProgramCache()
-                           ? aRenderThread.GetProgramCache()->Raw()
-                           : nullptr,
-                       aRenderThread.GetShaders()
-                           ? aRenderThread.GetShaders()->RawShaders()
-                           : nullptr,
-                       aRenderThread.ThreadPool().Raw(), &WebRenderMallocSizeOf,
-                       &WebRenderMallocEnclosingSizeOf,
-                       (uint32_t)wr::RenderRoot::Default, mDocHandle,
-                       &wrRenderer, mMaxTextureSize)) {
+            compositor->gl(), compositor->SurfaceOriginIsTopLeft(),
+            aRenderThread.GetProgramCache()
+                ? aRenderThread.GetProgramCache()->Raw()
+                : nullptr,
+            aRenderThread.GetShaders()
+                ? aRenderThread.GetShaders()->RawShaders()
+                : nullptr,
+            aRenderThread.ThreadPool().Raw(),
+            aRenderThread.ThreadPoolLP().Raw(), &WebRenderMallocSizeOf,
+            &WebRenderMallocEnclosingSizeOf, (uint32_t)wr::RenderRoot::Default,
+            compositor->ShouldUseNativeCompositor() ? compositor.get()
+                                                    : nullptr,
+            compositor->GetMaxUpdateRects(),
+            compositor->GetMaxPartialPresentRects(), mDocHandle, &wrRenderer,
+            mMaxTextureSize,
+            StaticPrefs::gfx_webrender_enable_gpu_markers_AtStartup(),
+            panic_on_gl_error)) {
       // wr_window_new puts a message into gfxCriticalNote if it returns false
       return;
     }
@@ -138,7 +158,7 @@ class RemoveRenderer : public RendererEvent {
     MOZ_COUNT_CTOR(RemoveRenderer);
   }
 
-  virtual ~RemoveRenderer() { MOZ_COUNT_DTOR(RemoveRenderer); }
+  MOZ_COUNTED_DTOR_OVERRIDE(RemoveRenderer)
 
   void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
     aRenderThread.RemoveRenderer(aWindowId);
@@ -196,12 +216,15 @@ void TransactionBuilder::InvalidateRenderedFrame() {
 
 void TransactionBuilder::UpdateDynamicProperties(
     const nsTArray<wr::WrOpacityProperty>& aOpacityArray,
-    const nsTArray<wr::WrTransformProperty>& aTransformArray) {
+    const nsTArray<wr::WrTransformProperty>& aTransformArray,
+    const nsTArray<wr::WrColorProperty>& aColorArray) {
   wr_transaction_update_dynamic_properties(
       mTxn, aOpacityArray.IsEmpty() ? nullptr : aOpacityArray.Elements(),
       aOpacityArray.Length(),
       aTransformArray.IsEmpty() ? nullptr : aTransformArray.Elements(),
-      aTransformArray.Length());
+      aTransformArray.Length(),
+      aColorArray.IsEmpty() ? nullptr : aColorArray.Elements(),
+      aColorArray.Length());
 }
 
 bool TransactionBuilder::IsEmpty() const {
@@ -253,9 +276,9 @@ void TransactionWrapper::UpdatePinchZoom(float aZoom) {
   wr_transaction_pinch_zoom(mTxn, aZoom);
 }
 
-void TransactionWrapper::UpdateIsTransformPinchZooming(uint64_t aAnimationId,
+void TransactionWrapper::UpdateIsTransformAsyncZooming(uint64_t aAnimationId,
                                                        bool aIsZooming) {
-  wr_transaction_set_is_transform_pinch_zooming(mTxn, aAnimationId, aIsZooming);
+  wr_transaction_set_is_transform_async_zooming(mTxn, aAnimationId, aIsZooming);
 }
 
 /*static*/
@@ -343,7 +366,6 @@ WebRenderAPI::WebRenderAPI(wr::DocumentHandle* aHandle, wr::WindowId aId,
       mUseDComp(aUseDComp),
       mUseTripleBuffering(aUseTripleBuffering),
       mSyncHandle(aSyncHandle),
-      mDebugFlags({0}),
       mRenderRoot(aRenderRoot) {}
 
 WebRenderAPI::~WebRenderAPI() {
@@ -366,14 +388,10 @@ WebRenderAPI::~WebRenderAPI() {
 }
 
 void WebRenderAPI::UpdateDebugFlags(uint32_t aFlags) {
-  if (mDebugFlags.bits != aFlags) {
-    mDebugFlags.bits = aFlags;
-    wr_api_set_debug_flags(mDocHandle, mDebugFlags);
-  }
+  wr_api_set_debug_flags(mDocHandle, wr::DebugFlags{aFlags});
 }
 
 void WebRenderAPI::SendTransaction(TransactionBuilder& aTxn) {
-  UpdateDebugFlags(gfx::gfxVars::WebRenderDebugFlags());
   wr_api_send_transaction(mDocHandle, aTxn.Raw(), aTxn.UseSceneBuilderThread());
 }
 
@@ -385,8 +403,6 @@ void WebRenderAPI::SendTransactions(
     return;
   }
 
-  aApis[RenderRoot::Default]->UpdateDebugFlags(
-      gfx::gfxVars::WebRenderDebugFlags());
   AutoTArray<DocumentHandle*, kRenderRootCount> documentHandles;
   AutoTArray<Transaction*, kRenderRootCount> txns;
   Maybe<bool> useSceneBuilderThread;
@@ -411,19 +427,47 @@ void WebRenderAPI::SendTransactions(
   }
 }
 
+enum SideBitsPacked {
+  eSideBitsPackedTop = 0x1000,
+  eSideBitsPackedRight = 0x2000,
+  eSideBitsPackedBottom = 0x4000,
+  eSideBitsPackedLeft = 0x8000
+};
+
+SideBits ExtractSideBitsFromHitInfoBits(uint16_t& aHitInfoBits) {
+  SideBits sideBits = SideBits::eNone;
+  if (aHitInfoBits & eSideBitsPackedTop) {
+    sideBits |= SideBits::eTop;
+  }
+  if (aHitInfoBits & eSideBitsPackedRight) {
+    sideBits |= SideBits::eRight;
+  }
+  if (aHitInfoBits & eSideBitsPackedBottom) {
+    sideBits |= SideBits::eBottom;
+  }
+  if (aHitInfoBits & eSideBitsPackedLeft) {
+    sideBits |= SideBits::eLeft;
+  }
+
+  aHitInfoBits &= 0x0fff;
+  return sideBits;
+}
+
 bool WebRenderAPI::HitTest(const wr::WorldPoint& aPoint,
                            wr::WrPipelineId& aOutPipelineId,
                            layers::ScrollableLayerGuid::ViewID& aOutScrollId,
-                           gfx::CompositorHitTestInfo& aOutHitInfo) {
-  static_assert(DoesCompositorHitTestInfoFitIntoBits<16>(),
+                           gfx::CompositorHitTestInfo& aOutHitInfo,
+                           SideBits& aOutSideBits) {
+  static_assert(DoesCompositorHitTestInfoFitIntoBits<12>(),
                 "CompositorHitTestFlags MAX value has to be less than number "
-                "of bits in uint16_t");
+                "of bits in uint16_t minus 4 for SideBitsPacked");
 
   uint16_t serialized = static_cast<uint16_t>(aOutHitInfo.serialize());
   const bool result = wr_api_hit_test(mDocHandle, aPoint, &aOutPipelineId,
                                       &aOutScrollId, &serialized);
 
   if (result) {
+    aOutSideBits = ExtractSideBitsFromHitInfoBits(serialized);
     aOutHitInfo.deserialize(serialized);
   }
   return result;
@@ -445,7 +489,7 @@ void WebRenderAPI::Readback(const TimeStamp& aStartTime, gfx::IntSize size,
       MOZ_COUNT_CTOR(Readback);
     }
 
-    virtual ~Readback() { MOZ_COUNT_DTOR(Readback); }
+    MOZ_COUNTED_DTOR_OVERRIDE(Readback)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
       aRenderThread.UpdateAndRender(aWindowId, VsyncId(), mStartTime,
@@ -480,6 +524,18 @@ void WebRenderAPI::Readback(const TimeStamp& aStartTime, gfx::IntSize size,
 
 void WebRenderAPI::ClearAllCaches() { wr_api_clear_all_caches(mDocHandle); }
 
+void WebRenderAPI::EnableNativeCompositor(bool aEnable) {
+  wr_api_enable_native_compositor(mDocHandle, aEnable);
+}
+
+void WebRenderAPI::EnableMultithreading(bool aEnable) {
+  wr_api_enable_multithreading(mDocHandle, aEnable);
+}
+
+void WebRenderAPI::SetBatchingLookback(uint32_t aCount) {
+  wr_api_set_batching_lookback(mDocHandle, aCount);
+}
+
 void WebRenderAPI::Pause() {
   class PauseEvent : public RendererEvent {
    public:
@@ -487,7 +543,7 @@ void WebRenderAPI::Pause() {
       MOZ_COUNT_CTOR(PauseEvent);
     }
 
-    virtual ~PauseEvent() { MOZ_COUNT_DTOR(PauseEvent); }
+    MOZ_COUNTED_DTOR_OVERRIDE(PauseEvent)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
       aRenderThread.Pause(aWindowId);
@@ -515,7 +571,7 @@ bool WebRenderAPI::Resume() {
       MOZ_COUNT_CTOR(ResumeEvent);
     }
 
-    virtual ~ResumeEvent() { MOZ_COUNT_DTOR(ResumeEvent); }
+    MOZ_COUNTED_DTOR_OVERRIDE(ResumeEvent)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
       *mResult = aRenderThread.Resume(aWindowId);
@@ -559,7 +615,7 @@ void WebRenderAPI::WaitFlushed() {
       MOZ_COUNT_CTOR(WaitFlushedEvent);
     }
 
-    virtual ~WaitFlushedEvent() { MOZ_COUNT_DTOR(WaitFlushedEvent); }
+    MOZ_COUNTED_DTOR_OVERRIDE(WaitFlushedEvent)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
       layers::AutoCompleteTask complete(mTask);
@@ -579,7 +635,9 @@ void WebRenderAPI::WaitFlushed() {
 }
 
 void WebRenderAPI::Capture() {
-  uint8_t bits = 3;                 // TODO: get from JavaScript
+  // see CaptureBits
+  // SCENE | FRAME | TILE_CACHE
+  uint8_t bits = 7;                 // TODO: get from JavaScript
   const char* path = "wr-capture";  // TODO: get from JavaScript
   wr_api_capture(mDocHandle, path, bits);
 }
@@ -617,22 +675,70 @@ void WebRenderAPI::SetCompositionRecorder(
   RunOnRenderThread(std::move(event));
 }
 
-void WebRenderAPI::WriteCollectedFrames() {
+RefPtr<WebRenderAPI::WriteCollectedFramesPromise>
+WebRenderAPI::WriteCollectedFrames() {
   class WriteCollectedFramesEvent final : public RendererEvent {
    public:
     explicit WriteCollectedFramesEvent() {
       MOZ_COUNT_CTOR(WriteCollectedFramesEvent);
     }
 
-    ~WriteCollectedFramesEvent() { MOZ_COUNT_DTOR(WriteCollectedFramesEvent); }
+    MOZ_COUNTED_DTOR(WriteCollectedFramesEvent)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
       aRenderThread.WriteCollectedFramesForWindow(aWindowId);
+      mPromise.Resolve(true, __func__);
     }
+
+    RefPtr<WebRenderAPI::WriteCollectedFramesPromise> GetPromise() {
+      return mPromise.Ensure(__func__);
+    }
+
+   private:
+    MozPromiseHolder<WebRenderAPI::WriteCollectedFramesPromise> mPromise;
   };
 
   auto event = MakeUnique<WriteCollectedFramesEvent>();
+  auto promise = event->GetPromise();
+
   RunOnRenderThread(std::move(event));
+  return promise;
+}
+
+RefPtr<WebRenderAPI::GetCollectedFramesPromise>
+WebRenderAPI::GetCollectedFrames() {
+  class GetCollectedFramesEvent final : public RendererEvent {
+   public:
+    explicit GetCollectedFramesEvent() {
+      MOZ_COUNT_CTOR(GetCollectedFramesEvent);
+    }
+
+    MOZ_COUNTED_DTOR(GetCollectedFramesEvent);
+
+    void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
+      Maybe<layers::CollectedFrames> frames =
+          aRenderThread.GetCollectedFramesForWindow(aWindowId);
+
+      if (frames) {
+        mPromise.Resolve(std::move(*frames), __func__);
+      } else {
+        mPromise.Reject(NS_ERROR_UNEXPECTED, __func__);
+      }
+    }
+
+    RefPtr<WebRenderAPI::GetCollectedFramesPromise> GetPromise() {
+      return mPromise.Ensure(__func__);
+    }
+
+   private:
+    MozPromiseHolder<WebRenderAPI::GetCollectedFramesPromise> mPromise;
+  };
+
+  auto event = MakeUnique<GetCollectedFramesEvent>();
+  auto promise = event->GetPromise();
+
+  RunOnRenderThread(std::move(event));
+  return promise;
 }
 
 void TransactionBuilder::Clear() { wr_resource_updates_clear(mTxn); }
@@ -748,13 +854,18 @@ void TransactionBuilder::DeleteFontInstance(wr::FontInstanceKey aKey) {
   wr_resource_updates_delete_font_instance(mTxn, aKey);
 }
 
+void TransactionBuilder::UpdateQualitySettings(
+    bool aAllowSacrificingSubpixelAA) {
+  wr_transaction_set_quality_settings(mTxn, aAllowSacrificingSubpixelAA);
+}
+
 class FrameStartTime : public RendererEvent {
  public:
   explicit FrameStartTime(const TimeStamp& aTime) : mTime(aTime) {
     MOZ_COUNT_CTOR(FrameStartTime);
   }
 
-  virtual ~FrameStartTime() { MOZ_COUNT_DTOR(FrameStartTime); }
+  MOZ_COUNTED_DTOR_OVERRIDE(FrameStartTime)
 
   void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
     auto renderer = aRenderThread.GetRenderer(aWindowId);
@@ -828,6 +939,10 @@ usize DisplayListBuilder::Dump(usize aIndent, const Maybe<usize>& aStart,
                                const Maybe<usize>& aEnd) {
   return wr_dump_display_list(mWrState, aIndent, aStart.ptrOr(nullptr),
                               aEnd.ptrOr(nullptr));
+}
+
+void DisplayListBuilder::DumpSerializedDisplayList() {
+  wr_dump_serialized_display_list(mWrState);
 }
 
 void DisplayListBuilder::Finalize(wr::LayoutSize& aOutContentSize,
@@ -1027,6 +1142,20 @@ void DisplayListBuilder::PushHitTest(const wr::LayoutRect& aBounds,
                       &mCurrentSpaceAndClipChain);
 }
 
+void DisplayListBuilder::PushRectWithAnimation(
+    const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+    bool aIsBackfaceVisible, const wr::ColorF& aColor,
+    const WrAnimationProperty* aAnimation) {
+  wr::LayoutRect clip = MergeClipLeaf(aClip);
+  WRDL_LOG("PushRectWithAnimation b=%s cl=%s c=%s\n", mWrState,
+           Stringify(aBounds).c_str(), Stringify(clip).c_str(),
+           Stringify(aColor).c_str());
+
+  wr_dp_push_rect_with_animation(mWrState, aBounds, clip, aIsBackfaceVisible,
+                                 &mCurrentSpaceAndClipChain, aColor,
+                                 aAnimation);
+}
+
 void DisplayListBuilder::PushClearRect(const wr::LayoutRect& aBounds) {
   wr::LayoutRect clip = MergeClipLeaf(aBounds);
   WRDL_LOG("PushClearRect b=%s c=%s\n", mWrState, Stringify(aBounds).c_str(),
@@ -1089,6 +1218,17 @@ void DisplayListBuilder::PushRadialGradient(
       mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
       &mCurrentSpaceAndClipChain, aCenter, aRadius, aStops.Elements(),
       aStops.Length(), aExtendMode, aTileSize, aTileSpacing);
+}
+
+void DisplayListBuilder::PushConicGradient(
+    const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+    bool aIsBackfaceVisible, const wr::LayoutPoint& aCenter, const float aAngle,
+    const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
+    const wr::LayoutSize aTileSize, const wr::LayoutSize aTileSpacing) {
+  wr_dp_push_conic_gradient(mWrState, aBounds, MergeClipLeaf(aClip),
+                            aIsBackfaceVisible, &mCurrentSpaceAndClipChain,
+                            aCenter, aAngle, aStops.Elements(), aStops.Length(),
+                            aExtendMode, aTileSize, aTileSpacing);
 }
 
 void DisplayListBuilder::PushImage(
@@ -1213,6 +1353,18 @@ void DisplayListBuilder::PushBorderRadialGradient(
       aStops.Elements(), aStops.Length(), aExtendMode, aOutset);
 }
 
+void DisplayListBuilder::PushBorderConicGradient(
+    const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+    bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths, bool aFill,
+    const wr::LayoutPoint& aCenter, const float aAngle,
+    const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
+    const wr::LayoutSideOffsets& aOutset) {
+  wr_dp_push_border_conic_gradient(
+      mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
+      &mCurrentSpaceAndClipChain, aWidths, aFill, aCenter, aAngle,
+      aStops.Elements(), aStops.Length(), aExtendMode, aOutset);
+}
+
 void DisplayListBuilder::PushText(const wr::LayoutRect& aBounds,
                                   const wr::LayoutRect& aClip,
                                   bool aIsBackfaceVisible,
@@ -1295,6 +1447,22 @@ void DisplayListBuilder::PushBoxShadow(
                         aBorderRadius, aClipMode);
 }
 
+void DisplayListBuilder::ReuseItem(wr::ItemKey aKey) {
+  wr_dp_push_reuse_item(mWrState, aKey);
+}
+
+void DisplayListBuilder::StartCachedItem(wr::ItemKey aKey) {
+  wr_dp_start_cached_item(mWrState, aKey);
+}
+
+bool DisplayListBuilder::EndCachedItem(wr::ItemKey aKey) {
+  return wr_dp_end_cached_item(mWrState, aKey);
+}
+
+void DisplayListBuilder::SetDisplayListCacheSize(const size_t aCacheSize) {
+  wr_dp_set_cache_size(mWrState, aCacheSize);
+}
+
 Maybe<layers::ScrollableLayerGuid::ViewID>
 DisplayListBuilder::GetContainingFixedPosScrollTarget(
     const ActiveScrolledRoot* aAsr) {
@@ -1303,26 +1471,53 @@ DisplayListBuilder::GetContainingFixedPosScrollTarget(
              : Nothing();
 }
 
+Maybe<SideBits> DisplayListBuilder::GetContainingFixedPosSideBits(
+    const ActiveScrolledRoot* aAsr) {
+  return mActiveFixedPosTracker
+             ? mActiveFixedPosTracker->GetSideBitsForASR(aAsr)
+             : Nothing();
+}
+
+uint16_t SideBitsToHitInfoBits(SideBits aSideBits) {
+  uint16_t ret = 0;
+  if (aSideBits & SideBits::eTop) {
+    ret |= eSideBitsPackedTop;
+  }
+  if (aSideBits & SideBits::eRight) {
+    ret |= eSideBitsPackedRight;
+  }
+  if (aSideBits & SideBits::eBottom) {
+    ret |= eSideBitsPackedBottom;
+  }
+  if (aSideBits & SideBits::eLeft) {
+    ret |= eSideBitsPackedLeft;
+  }
+  return ret;
+}
+
 void DisplayListBuilder::SetHitTestInfo(
     const layers::ScrollableLayerGuid::ViewID& aScrollId,
-    gfx::CompositorHitTestInfo aHitInfo) {
-  static_assert(DoesCompositorHitTestInfoFitIntoBits<16>(),
+    gfx::CompositorHitTestInfo aHitInfo, SideBits aSideBits) {
+  static_assert(DoesCompositorHitTestInfoFitIntoBits<12>(),
                 "CompositorHitTestFlags MAX value has to be less than number "
-                "of bits in uint16_t");
+                "of bits in uint16_t minus 4 for SideBitsPacked");
 
-  wr_set_item_tag(mWrState, aScrollId,
-                  static_cast<uint16_t>(aHitInfo.serialize()));
+  uint16_t hitInfoBits = static_cast<uint16_t>(aHitInfo.serialize()) |
+                         SideBitsToHitInfoBits(aSideBits);
+
+  wr_set_item_tag(mWrState, aScrollId, hitInfoBits);
 }
 
 void DisplayListBuilder::ClearHitTestInfo() { wr_clear_item_tag(mWrState); }
 
 DisplayListBuilder::FixedPosScrollTargetTracker::FixedPosScrollTargetTracker(
     DisplayListBuilder& aBuilder, const ActiveScrolledRoot* aAsr,
-    layers::ScrollableLayerGuid::ViewID aScrollId)
+    layers::ScrollableLayerGuid::ViewID aScrollId, SideBits aSideBits)
     : mParentTracker(aBuilder.mActiveFixedPosTracker),
       mBuilder(aBuilder),
       mAsr(aAsr),
-      mScrollId(aScrollId) {
+      mScrollId(aScrollId),
+      mSideBits(aSideBits) {
   aBuilder.mActiveFixedPosTracker = this;
 }
 
@@ -1335,6 +1530,12 @@ Maybe<layers::ScrollableLayerGuid::ViewID>
 DisplayListBuilder::FixedPosScrollTargetTracker::GetScrollTargetForASR(
     const ActiveScrolledRoot* aAsr) {
   return aAsr == mAsr ? Some(mScrollId) : Nothing();
+}
+
+Maybe<SideBits>
+DisplayListBuilder::FixedPosScrollTargetTracker::GetSideBitsForASR(
+    const ActiveScrolledRoot* aAsr) {
+  return aAsr == mAsr ? Some(mSideBits) : Nothing();
 }
 
 already_AddRefed<gfxContext> DisplayListBuilder::GetTextContext(

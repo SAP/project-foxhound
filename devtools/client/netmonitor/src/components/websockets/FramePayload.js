@@ -11,10 +11,16 @@ const {
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const { div } = dom;
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+
+const {
+  connect,
+} = require("devtools/client/shared/redux/visibility-handler-connect");
+
 const Services = require("Services");
 const { L10N } = require("devtools/client/netmonitor/src/utils/l10n.js");
 const {
   getFramePayload,
+  getResponseHeader,
   isJSON,
 } = require("devtools/client/netmonitor/src/utils/request-utils.js");
 const {
@@ -26,17 +32,29 @@ const MESSAGE_DATA_LIMIT = Services.prefs.getIntPref(
 const MESSAGE_DATA_TRUNCATED = L10N.getStr("messageDataTruncated");
 const SocketIODecoder = require("devtools/client/netmonitor/src/components/websockets/parsers/socket-io/index.js");
 const {
+  JsonHubProtocol,
+  HandshakeProtocol,
+} = require("devtools/client/netmonitor/src/components/websockets/parsers/signalr/index.js");
+const {
   parseSockJS,
 } = require("devtools/client/netmonitor/src/components/websockets/parsers/sockjs/index.js");
+const {
+  wampSerializers,
+} = require("devtools/client/netmonitor/src/components/websockets/parsers/wamp/serializers.js");
+const {
+  getRequestByChannelId,
+} = require("devtools/client/netmonitor/src/selectors/index");
 
 // Components
 const Accordion = createFactory(
   require("devtools/client/shared/components/Accordion")
 );
-const RawData = createFactory(require("./RawData"));
-loader.lazyGetter(this, "JSONPreview", function() {
+const RawData = createFactory(
+  require("devtools/client/netmonitor/src/components/websockets/RawData")
+);
+loader.lazyGetter(this, "PropertiesView", function() {
   return createFactory(
-    require("devtools/client/netmonitor/src/components/JSONPreview")
+    require("devtools/client/netmonitor/src/components/request-details/PropertiesView")
   );
 });
 
@@ -49,6 +67,7 @@ class FramePayload extends Component {
     return {
       connector: PropTypes.object.isRequired,
       selectedFrame: PropTypes.object,
+      request: PropTypes.object.isRequired,
     };
   }
 
@@ -76,8 +95,8 @@ class FramePayload extends Component {
   updateFramePayload() {
     const { selectedFrame, connector } = this.props;
     getFramePayload(selectedFrame.payload, connector.getLongString).then(
-      payload => {
-        const { formattedData, formattedDataTitle } = this.parsePayload(
+      async payload => {
+        const { formattedData, formattedDataTitle } = await this.parsePayload(
           payload
         );
         this.setState({
@@ -90,9 +109,34 @@ class FramePayload extends Component {
     );
   }
 
-  parsePayload(payload) {
+  async parsePayload(payload) {
+    const { connector, request } = this.props;
+
+    // Make sure that request headers are fetched from the backend before
+    // looking for `Sec-WebSocket-Protocol` header.
+    const responseHeaders = await connector.requestData(
+      request.id,
+      "responseHeaders"
+    );
+
+    const wsProtocol = getResponseHeader(
+      { responseHeaders },
+      "Sec-WebSocket-Protocol"
+    );
+
+    const wampSerializer = wampSerializers[wsProtocol];
+    if (wampSerializer) {
+      const wampPayload = wampSerializer.deserializeMessage(payload);
+
+      return {
+        formattedData: wampPayload,
+        formattedDataTitle: wampSerializer.description,
+      };
+    }
+
     // socket.io payload
     const socketIOPayload = this.parseSocketIOPayload(payload);
+
     if (socketIOPayload) {
       return {
         formattedData: socketIOPayload,
@@ -107,6 +151,15 @@ class FramePayload extends Component {
         formattedDataTitle: "SockJS",
       };
     }
+    // signalr payload
+    const signalRPayload = this.parseSignalR(payload);
+    if (signalRPayload) {
+      return {
+        formattedData: signalRPayload,
+        formattedDataTitle: "SignalR",
+      };
+    }
+
     // json payload
     const { json } = isJSON(payload);
     if (json) {
@@ -143,6 +196,47 @@ class FramePayload extends Component {
     return null;
   }
 
+  parseSignalR(payload) {
+    // attempt to parse as HandshakeResponseMessage
+    let decoder;
+    try {
+      decoder = new HandshakeProtocol();
+      const [remainingData, responseMessage] = decoder.parseHandshakeResponse(
+        payload
+      );
+
+      if (responseMessage) {
+        return {
+          handshakeResponse: responseMessage,
+          remainingData: this.parseSignalR(remainingData),
+        };
+      }
+    } catch (err) {
+      // ignore errors;
+    }
+
+    // attempt to parse as JsonHubProtocolMessage
+    try {
+      decoder = new JsonHubProtocol();
+      const msgs = decoder.parseMessages(payload, null);
+      if (msgs && msgs.length) {
+        return msgs;
+      }
+    } catch (err) {
+      // ignore errors;
+    }
+
+    // MVP Signalr
+    if (payload.endsWith("\u001e")) {
+      const { json } = isJSON(payload.slice(0, -1));
+      if (json) {
+        return json;
+      }
+    }
+
+    return null;
+  }
+
   render() {
     let payload = this.state.payload;
     let isTruncated = false;
@@ -154,14 +248,13 @@ class FramePayload extends Component {
     const items = [
       {
         className: "rawData",
-        component: RawData({
-          payload,
-        }),
+        component: RawData,
+        componentProps: { payload },
         header: L10N.getFormatStrWithNumbers(
           "netmonitor.ws.rawData.header",
           getFormattedSize(this.state.payload.length)
         ),
-        labelledby: "ws-frame-rawData-header",
+        id: "ws-frame-rawData",
         opened: true,
       },
     ];
@@ -173,19 +266,12 @@ class FramePayload extends Component {
        */
       items.unshift({
         className: "formattedData",
-        component: JSONPreview({
+        component: PropertiesView,
+        componentProps: {
           object: this.state.formattedData,
-          columns: [
-            {
-              id: "value",
-              width: "100%",
-            },
-          ],
-        }),
-        header: `${this.state.formattedDataTitle} (${getFormattedSize(
-          this.state.payload.length
-        )})`,
-        labelledby: "ws-frame-formattedData-header",
+        },
+        header: this.state.formattedDataTitle,
+        id: "ws-frame-formattedData",
         opened: true,
       });
     }
@@ -208,4 +294,6 @@ class FramePayload extends Component {
   }
 }
 
-module.exports = FramePayload;
+module.exports = connect(state => ({
+  request: getRequestByChannelId(state, state.webSockets.currentChannelId),
+}))(FramePayload);

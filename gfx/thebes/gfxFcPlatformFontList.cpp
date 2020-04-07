@@ -475,12 +475,6 @@ hb_blob_t* gfxFontconfigFontEntry::GetFontTable(uint32_t aTableTag) {
   return gfxFontEntry::GetFontTable(aTableTag);
 }
 
-void gfxFontconfigFontEntry::ForgetHBFace() { gfxFontEntry::ForgetHBFace(); }
-
-void gfxFontconfigFontEntry::ReleaseGrFace(gr_face* aFace) {
-  gfxFontEntry::ReleaseGrFace(aFace);
-}
-
 double gfxFontconfigFontEntry::GetAspect() {
   if (mAspect != 0.0) {
     return mAspect;
@@ -1245,7 +1239,7 @@ gfxFontconfigFont::gfxFontconfigFont(
   InitMetrics();
 }
 
-gfxFontconfigFont::~gfxFontconfigFont() {}
+gfxFontconfigFont::~gfxFontconfigFont() = default;
 
 already_AddRefed<ScaledFont> gfxFontconfigFont::GetScaledFont(
     mozilla::gfx::DrawTarget* aTarget) {
@@ -1365,7 +1359,7 @@ void gfxFcPlatformFontList::AddPatternToFontList(
         static_cast<gfxFontconfigFontFamily*>(mFontFamilies.GetWeak(keyName));
     if (!aFontFamily) {
       aFontFamily = new gfxFontconfigFontFamily(aFamilyName);
-      mFontFamilies.Put(keyName, aFontFamily);
+      mFontFamilies.Put(keyName, RefPtr{aFontFamily});
     }
     // Record if the family contains fonts from the app font set
     // (in which case we won't rely on fontconfig's charmap, due to

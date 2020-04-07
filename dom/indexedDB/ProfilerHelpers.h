@@ -12,7 +12,7 @@
 
 #include "BackgroundChildImpl.h"
 #include "GeckoProfiler.h"
-#include "IDBCursor.h"
+#include "IDBCursorType.h"
 #include "IDBDatabase.h"
 #include "IDBIndex.h"
 #include "IDBKeyRange.h"
@@ -47,7 +47,7 @@ class MOZ_STACK_CLASS LoggingIdString final
       const BackgroundChildImpl::ThreadLocal* threadLocal =
           BackgroundChildImpl::GetThreadLocalForCurrentThread();
       if (threadLocal) {
-        const ThreadLocal* idbThreadLocal = threadLocal->mIndexedDBThreadLocal;
+        const auto& idbThreadLocal = threadLocal->mIndexedDBThreadLocal;
         if (idbThreadLocal) {
           Assign(idbThreadLocal->IdString());
         }
@@ -110,19 +110,19 @@ class MOZ_STACK_CLASS LoggingString final : public nsAutoCString {
     Append(kCommaSpace);
 
     switch (aTransaction->GetMode()) {
-      case IDBTransaction::READ_ONLY:
+      case IDBTransaction::Mode::ReadOnly:
         AppendLiteral("\"readonly\"");
         break;
-      case IDBTransaction::READ_WRITE:
+      case IDBTransaction::Mode::ReadWrite:
         AppendLiteral("\"readwrite\"");
         break;
-      case IDBTransaction::READ_WRITE_FLUSH:
+      case IDBTransaction::Mode::ReadWriteFlush:
         AppendLiteral("\"readwriteflush\"");
         break;
-      case IDBTransaction::CLEANUP:
+      case IDBTransaction::Mode::Cleanup:
         AppendLiteral("\"cleanup\"");
         break;
-      case IDBTransaction::VERSION_CHANGE:
+      case IDBTransaction::Mode::VersionChange:
         AppendLiteral("\"versionchange\"");
         break;
       default:
@@ -189,18 +189,18 @@ class MOZ_STACK_CLASS LoggingString final : public nsAutoCString {
     }
   }
 
-  explicit LoggingString(const IDBCursor::Direction aDirection) {
+  explicit LoggingString(const IDBCursorDirection aDirection) {
     switch (aDirection) {
-      case IDBCursor::NEXT:
+      case IDBCursorDirection::Next:
         AssignLiteral("\"next\"");
         break;
-      case IDBCursor::NEXT_UNIQUE:
+      case IDBCursorDirection::Nextunique:
         AssignLiteral("\"nextunique\"");
         break;
-      case IDBCursor::PREV:
+      case IDBCursorDirection::Prev:
         AssignLiteral("\"prev\"");
         break;
-      case IDBCursor::PREV_UNIQUE:
+      case IDBCursorDirection::Prevunique:
         AssignLiteral("\"prevunique\"");
         break;
       default:

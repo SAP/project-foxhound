@@ -131,8 +131,6 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
         self.test_packages_url = c.get('test_packages_url')
         self.test_manifest = c.get('test_manifest')
         suite = c.get('test_suite')
-        if suite and '-chunked' in suite:
-            suite = suite[:suite.index('-chunked')]
         self.test_suite = suite
         self.this_chunk = c.get('this_chunk')
         self.total_chunks = c.get('total_chunks')
@@ -348,6 +346,7 @@ class AndroidHardwareTest(TestingMixin, BaseScript, MozbaseMixin,
             return
         assert self.installer_path is not None, \
             "Either add installer_path to the config or use --installer-path."
+        self.uninstall_apk()
         self.install_apk(self.installer_path)
         self.info("Finished installing apps for %s" % self.device_name)
 

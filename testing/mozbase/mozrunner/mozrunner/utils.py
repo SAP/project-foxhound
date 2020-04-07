@@ -141,6 +141,9 @@ def test_environment(xrePath, env=None, crashreporter=True, debugger=False,
     env.setdefault('R_LOG_DESTINATION', 'stderr')
     env.setdefault('R_LOG_VERBOSE', '1')
 
+    # Ask NSS to use lower-security password encryption. See Bug 1594559
+    env.setdefault('NSS_MAX_MP_PBE_ITERATION_COUNT', '10')
+
     # ASan specific environment stuff
     asan = bool(mozinfo.info.get("asan"))
     if asan:
@@ -234,6 +237,9 @@ def get_stack_fixer_function(utilityPath, symbolsPath):
         return None
 
     if os.getenv('MOZ_DISABLE_STACK_FIX', 0):
+        return None
+
+    if mozinfo.isMac and not mozinfo.automation:
         return None
 
     def import_stack_fixer_module(module_name):

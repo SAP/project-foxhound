@@ -19,10 +19,7 @@
 #include "mozilla/Unused.h"
 #include "FontFaceSet.h"
 #include "nsPresContext.h"
-#include "nsIPrincipal.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIHttpChannel.h"
-#include "nsIContentPolicy.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsContentPolicyUtils.h"
 #include "nsNetCID.h"
@@ -346,7 +343,7 @@ void nsFontFaceLoader::Cancel() {
     mLoadTimer->Cancel();
     mLoadTimer = nullptr;
   }
-  if (nsCOMPtr<nsIChannel> channel = mChannel.forget()) {
+  if (nsCOMPtr<nsIChannel> channel = std::move(mChannel)) {
     channel->Cancel(NS_BINDING_ABORTED);
   }
 }

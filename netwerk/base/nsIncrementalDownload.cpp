@@ -220,7 +220,7 @@ nsresult nsIncrementalDownload::ProcessTimeout() {
                               nsContentUtils::GetSystemPrincipal(),
                               nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
                               nsIContentPolicy::TYPE_OTHER,
-                              nullptr,  // nsICookieSettings
+                              nullptr,  // nsICookieJarSettings
                               nullptr,  // PerformanceStorage
                               nullptr,  // loadGroup
                               this,     // aCallbacks
@@ -369,6 +369,16 @@ NS_IMETHODIMP
 nsIncrementalDownload::SetLoadFlags(nsLoadFlags loadFlags) {
   mLoadFlags = loadFlags;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsIncrementalDownload::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return GetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
+nsIncrementalDownload::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return SetTRRModeImpl(aTRRMode);
 }
 
 NS_IMETHODIMP

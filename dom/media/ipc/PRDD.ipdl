@@ -12,6 +12,9 @@ include protocol PRemoteDecoderManager;
 include protocol PVideoBridge;
 
 using mozilla::dom::NativeThreadId from "mozilla/dom/TabMessageUtils.h";
+using moveonly mozilla::UntrustedModulesData from "mozilla/UntrustedModulesData.h";
+using moveonly mozilla::ModulePaths from "mozilla/UntrustedModulesData.h";
+using moveonly mozilla::ModulesMapResult from "mozilla/UntrustedModulesData.h";
 
 namespace mozilla {
 
@@ -23,9 +26,8 @@ protocol PRDD
 {
 parent:
 
-  async Init(GfxVarUpdate[] vars,
-             FileDescriptor? sandboxBroker,
-             bool startMacSandbox);
+  async Init(GfxVarUpdate[] vars, FileDescriptor? sandboxBroker,
+             bool canRecordReleaseTelemetry);
 
   async InitProfiler(Endpoint<PProfilerChild> endpoint);
 
@@ -41,17 +43,19 @@ parent:
 
   async UpdateVar(GfxVarUpdate var);
 
-  async CreateVideoBridgeToParentProcess(Endpoint<PVideoBridgeChild> endpoint);
+  async InitVideoBridge(Endpoint<PVideoBridgeChild> endpoint);
+
+  async GetUntrustedModulesData() returns (UntrustedModulesData? data);
 
 child:
-  // args TBD, sent when init complete. Occurs once, after Init().
-  async InitComplete();
 
   async InitCrashReporter(Shmem shmem, NativeThreadId threadId);
 
   async AddMemoryReport(MemoryReport aReport);
   async FinishMemoryReport(uint32_t aGeneration);
 
+  async GetModulesTrust(ModulePaths aModPaths, bool aRunAtNormalPriority)
+      returns (ModulesMapResult? modMapResult);
 };
 
 } // namespace mozilla

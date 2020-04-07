@@ -9,6 +9,7 @@ add_task(async function setup() {
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
       ["browser.contentblocking.report.proxy.enabled", false],
+      ["browser.contentblocking.cfr-milestone.update-interval", 0],
     ],
   });
 });
@@ -29,6 +30,7 @@ add_task(async function doTest() {
   );
 
   for (let milestone of milestones) {
+    Services.telemetry.clearEvents();
     // Trigger the milestone feature.
     Services.prefs.setIntPref(
       "browser.contentblocking.cfr-milestone.milestone-achieved",
@@ -85,6 +87,8 @@ add_task(async function doTest() {
       ),
       "Milestones section should no longer be visible in the panel."
     );
+
+    checkClickTelemetry("milestone_message");
 
     await closeProtectionsPanel();
   }

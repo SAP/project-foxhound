@@ -11,14 +11,12 @@
 #include "nsIObserver.h"
 #include "nsWeakReference.h"
 
-#include "nsINativeAppSupport.h"
 #include "nsIAppShell.h"
 #include "mozilla/Attributes.h"
 
 #if defined(XP_WIN)
 // XPerf-backed probes
 #  include "mozilla/perfprobe.h"
-#  include "nsAutoPtr.h"
 #endif  // defined(XP_WIN)
 
 // {7DD4D320-C84B-4624-8D45-7BB9B2356977}
@@ -56,7 +54,6 @@ class nsAppStartup final : public nsIAppStartup,
   bool mShuttingDown;            // Quit method reentrancy check
   bool mStartingUp;              // Have we passed final-ui-startup?
   bool mAttemptingQuit;          // Quit(eAttemptQuit) still trying
-  bool mRestart;                 // Quit(eRestart)
   bool mInterrupted;  // Was startup interrupted by an interactive prompt?
   bool mIsSafeModeNecessary;        // Whether safe mode is necessary
   bool mStartupCrashTrackingEnded;  // Whether startup crash tracking has

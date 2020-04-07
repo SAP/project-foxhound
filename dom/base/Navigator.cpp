@@ -16,17 +16,13 @@
 #include "mozilla/dom/BodyExtractor.h"
 #include "mozilla/dom/FetchBinding.h"
 #include "mozilla/dom/File.h"
-#include "nsGeolocation.h"
+#include "Geolocation.h"
 #include "nsIClassOfService.h"
 #include "nsIHttpProtocolHandler.h"
 #include "nsIContentPolicy.h"
-#include "nsIContentSecurityPolicy.h"
 #include "nsContentPolicyUtils.h"
 #include "nsISupportsPriority.h"
-#include "nsICachingChannel.h"
 #include "nsIWebProtocolHandlerRegistrar.h"
-#include "nsICookiePermission.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentUtils.h"
 #include "nsUnicharUtils.h"
@@ -69,14 +65,12 @@
 #include "nsStringStream.h"
 #include "nsComponentManagerUtils.h"
 #include "nsICookieService.h"
-#include "nsIStringStream.h"
 #include "nsIHttpChannel.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsStreamUtils.h"
 #include "WidgetUtils.h"
-#include "nsIPresentationService.h"
 #include "nsIScriptError.h"
 #include "ReferrerInfo.h"
+#include "PermissionDelegateHandler.h"
 
 #include "nsIExternalProtocolHandler.h"
 #include "BrowserChild.h"
@@ -85,7 +79,6 @@
 #include "mozilla/dom/MediaDevices.h"
 #include "MediaManager.h"
 
-#include "nsIDOMGlobalPropertyInitializer.h"
 #include "nsJSUtils.h"
 
 #include "mozilla/dom/NavigatorBinding.h"
@@ -100,6 +93,10 @@
 
 #if defined(XP_LINUX)
 #  include "mozilla/Hal.h"
+#endif
+
+#if defined(XP_WIN)
+#  include "mozilla/WindowsVersion.h"
 #endif
 
 #include "mozilla/EMEUtils.h"
@@ -235,7 +232,11 @@ void Navigator::Invalidate() {
   }
 
   mMediaCapabilities = nullptr;
-  mMediaSession = nullptr;
+
+  if (mMediaSession) {
+    mMediaSession->Shutdown();
+    mMediaSession = nullptr;
+  }
 
   mAddonManager = nullptr;
 
@@ -253,7 +254,7 @@ void Navigator::GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,
     nsIDocShell* docshell = window->GetDocShell();
     nsString customUserAgent;
     if (docshell) {
-      docshell->GetCustomUserAgent(customUserAgent);
+      docshell->GetBrowsingContext()->GetCustomUserAgent(customUserAgent);
 
       if (!customUserAgent.IsEmpty()) {
         aUserAgent = customUserAgent;
@@ -646,7 +647,7 @@ class VibrateWindowListener : public nsIDOMEventListener {
   NS_DECL_NSIDOMEVENTLISTENER
 
  private:
-  virtual ~VibrateWindowListener() {}
+  virtual ~VibrateWindowListener() = default;
 
   nsWeakPtr mWindow;
   nsWeakPtr mDocument;
@@ -771,15 +772,23 @@ bool Navigator::Vibrate(const nsTArray<uint32_t>& aPattern) {
   }
 
   mRequestedVibrationPattern.SwapElements(pattern);
-  nsCOMPtr<nsIPermissionManager> permMgr = services::GetPermissionManager();
-  if (!permMgr) {
+
+  PermissionDelegateHandler* permissionHandler =
+      doc->GetPermissionDelegateHandler();
+  if (NS_WARN_IF(!permissionHandler)) {
     return false;
   }
 
   uint32_t permission = nsIPermissionManager::UNKNOWN_ACTION;
 
-  permMgr->TestPermissionFromPrincipal(doc->NodePrincipal(),
-                                       kVibrationPermissionType, &permission);
+  permissionHandler->GetPermission(kVibrationPermissionType, &permission,
+                                   false);
+
+  if (permission == nsIPermissionManager::DENY_ACTION) {
+    // Abort without observer service or on denied session permission.
+    SetVibrationPermission(false /* permitted */, false /* persistent */);
+    return false;
+  }
 
   if (permission == nsIPermissionManager::ALLOW_ACTION ||
       mRequestedVibrationPattern.IsEmpty() ||
@@ -790,14 +799,12 @@ bool Navigator::Vibrate(const nsTArray<uint32_t>& aPattern) {
     return true;
   }
 
+  // Request user permission.
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-  if (!obs || permission == nsIPermissionManager::DENY_ACTION) {
-    // Abort without observer service or on denied session permission.
-    SetVibrationPermission(false /* permitted */, false /* persistent */);
+  if (!obs) {
     return true;
   }
 
-  // Request user permission.
   obs->NotifyObservers(ToSupports(this), "Vibration:Request", nullptr);
 
   return true;
@@ -848,14 +855,14 @@ void Navigator::CheckProtocolHandlerAllowed(const nsAString& aScheme,
     aHandlerURI->GetSpec(spec);
     nsPrintfCString message("Permission denied to add %s as a protocol handler",
                             spec.get());
-    aRv.ThrowDOMException(NS_ERROR_DOM_SECURITY_ERR, message);
+    aRv.ThrowSecurityError(message);
   };
 
   auto raisePermissionDeniedScheme = [&] {
     nsPrintfCString message(
         "Permission denied to add a protocol handler for %s",
         NS_ConvertUTF16toUTF8(aScheme).get());
-    aRv.ThrowDOMException(NS_ERROR_DOM_SECURITY_ERR, message);
+    aRv.ThrowSecurityError(message);
   };
 
   if (!aDocumentURI || !aHandlerURI) {
@@ -868,8 +875,7 @@ void Navigator::CheckProtocolHandlerAllowed(const nsAString& aScheme,
   // If the uri doesn't contain '%s', it won't be a good handler - the %s
   // gets replaced with the handled URI.
   if (!FindInReadable(NS_LITERAL_CSTRING("%s"), spec)) {
-    aRv.ThrowDOMException(NS_ERROR_DOM_SYNTAX_ERR,
-                          "Handler URI does not contain \"%s\".");
+    aRv.ThrowSyntaxError("Handler URI does not contain \"%s\".");
     return;
   }
 
@@ -1027,7 +1033,7 @@ Geolocation* Navigator::GetGeolocation(ErrorResult& aRv) {
 }
 
 class BeaconStreamListener final : public nsIStreamListener {
-  ~BeaconStreamListener() {}
+  ~BeaconStreamListener() = default;
 
  public:
   BeaconStreamListener() : mLoadGroup(nullptr) {}
@@ -1049,8 +1055,7 @@ BeaconStreamListener::OnStartRequest(nsIRequest* aRequest) {
   // release the loadgroup first
   mLoadGroup = nullptr;
 
-  aRequest->Cancel(NS_ERROR_NET_INTERRUPT);
-  return NS_BINDING_ABORTED;
+  return NS_ERROR_ABORT;
 }
 
 NS_IMETHODIMP
@@ -1133,14 +1138,14 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
   nsresult rv = nsContentUtils::NewURIWithDocumentCharset(
       getter_AddRefs(uri), aUrl, doc, doc->GetDocBaseURI());
   if (NS_FAILED(rv)) {
-    aRv.ThrowTypeError<MSG_INVALID_URL>(aUrl);
+    aRv.ThrowTypeError<MSG_INVALID_URL>(NS_ConvertUTF16toUTF8(aUrl));
     return false;
   }
 
   // Spec disallows any schemes save for HTTP/HTTPs
   if (!uri->SchemeIs("http") && !uri->SchemeIs("https")) {
-    aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>(NS_LITERAL_STRING("Beacon"),
-                                               aUrl);
+    aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>("Beacon",
+                                               uri->GetSpecOrDefault());
     return false;
   }
 
@@ -1362,10 +1367,8 @@ Promise* Navigator::Share(const ShareData& aData, ErrorResult& aRv) {
   bool someMemberPassed = aData.mTitle.WasPassed() || aData.mText.WasPassed() ||
                           aData.mUrl.WasPassed();
   if (!someMemberPassed) {
-    nsAutoString message;
-    nsContentUtils::GetLocalizedString(nsContentUtils::eDOM_PROPERTIES,
-                                       "WebShareAPI_NeedOneMember", message);
-    aRv.ThrowTypeError<MSG_MISSING_REQUIRED_DICTIONARY_MEMBER>(message);
+    aRv.ThrowTypeError(
+        "Must have a title, text, or url in the ShareData dictionary");
     return nullptr;
   }
 
@@ -1377,7 +1380,8 @@ Promise* Navigator::Share(const ShareData& aData, ErrorResult& aRv) {
   if (aData.mUrl.WasPassed()) {
     auto result = doc->ResolveWithBaseURI(aData.mUrl.Value());
     if (NS_WARN_IF(result.isErr())) {
-      aRv.ThrowTypeError<MSG_INVALID_URL>(aData.mUrl.Value());
+      aRv.ThrowTypeError<MSG_INVALID_URL>(
+          NS_ConvertUTF16toUTF8(aData.mUrl.Value()));
       return nullptr;
     }
     url = result.unwrap();
@@ -1402,7 +1406,8 @@ Promise* Navigator::Share(const ShareData& aData, ErrorResult& aRv) {
   // The spec does the "triggered by user activation" after the data checks.
   // Unfortunately, both Chrome and Safari behave this way, so interop wins.
   // https://github.com/w3c/web-share/pull/118
-  if (!UserActivation::IsHandlingUserInput()) {
+  if (StaticPrefs::dom_webshare_requireinteraction() &&
+      !UserActivation::IsHandlingUserInput()) {
     NS_WARNING("Attempt to share not triggered by user activation");
     aRv.Throw(NS_ERROR_DOM_NOT_ALLOWED_ERR);
     return nullptr;
@@ -1480,23 +1485,80 @@ already_AddRefed<Promise> Navigator::GetVRDisplays(ErrorResult& aRv) {
     return nullptr;
   }
 
-  nsGlobalWindowInner* win = nsGlobalWindowInner::Cast(mWindow);
-  win->NotifyVREventListenerAdded();
-
   RefPtr<Promise> p = Promise::Create(mWindow->AsGlobal(), aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
 
-  // We pass mWindow's id to RefreshVRDisplays, so NotifyVRDisplaysUpdated will
-  // be called asynchronously, resolving the promises in mVRGetDisplaysPromises.
-  if (!VRDisplay::RefreshVRDisplays(win->WindowID())) {
-    p->MaybeReject(NS_ERROR_FAILURE);
-    return p.forget();
+  RefPtr<BrowserChild> browser(BrowserChild::GetFrom(mWindow));
+  if (!browser) {
+    MOZ_ASSERT(XRE_IsParentProcess());
+    FinishGetVRDisplays(true, p);
+  } else {
+    RefPtr<Navigator> self(this);
+    int browserID = browser->ChromeOuterWindowID();
+
+    browser->SendIsWindowSupportingWebVR(browserID)->Then(
+        GetCurrentThreadSerialEventTarget(), __func__,
+        [self, p](bool isSupported) {
+          self->FinishGetVRDisplays(isSupported, p);
+        },
+        [](const mozilla::ipc::ResponseRejectReason) {
+          MOZ_CRASH("Failed to make IPC call to IsWindowSupportingWebVR");
+        });
+  }
+
+  return p.forget();
+}
+
+void Navigator::FinishGetVRDisplays(bool isWebVRSupportedInwindow, Promise* p) {
+  if (!isWebVRSupportedInwindow) {
+    // WebVR in this window is not supported, so resolve the promise
+    // with no displays available
+    nsTArray<RefPtr<VRDisplay>> vrDisplaysEmpty;
+    p->MaybeResolve(vrDisplaysEmpty);
+    return;
+  }
+
+  // Since FinishGetVRDisplays can be called asynchronously after an IPC
+  // response, it's possible that the Window can be torn down before this
+  // call. In that case, the Window's cyclic references to VR objects are
+  // also torn down and should not be recreated via
+  // NotifyHasXRSession.
+  nsGlobalWindowInner* win = nsGlobalWindowInner::Cast(mWindow);
+  if (win->IsDying()) {
+    // The Window has been torn down, so there is no further work that can
+    // be done.
+    p->MaybeRejectWithTypeError(
+        "Unable to return VRDisplays for a closed window.");
+    return;
   }
 
   mVRGetDisplaysPromises.AppendElement(p);
-  return p.forget();
+  win->RequestXRPermission();
+}
+
+void Navigator::OnXRPermissionRequestAllow() {
+  nsGlobalWindowInner* win = nsGlobalWindowInner::Cast(mWindow);
+
+  // We pass mWindow's id to RefreshVRDisplays, so NotifyVRDisplaysUpdated will
+  // be called asynchronously, resolving the promises in mVRGetDisplaysPromises.
+  if (!VRDisplay::RefreshVRDisplays(win->WindowID())) {
+    for (auto& p : mVRGetDisplaysPromises) {
+      // Failed to refresh, reject the promise now
+      p->MaybeRejectWithTypeError("Failed to find attached VR displays.");
+    }
+  }
+}
+
+void Navigator::OnXRPermissionRequestCancel() {
+  nsTArray<RefPtr<VRDisplay>> vrDisplays;
+  for (auto& p : mVRGetDisplaysPromises) {
+    // Resolve the promise with no vr displays when
+    // the user blocks access.
+    p->MaybeResolve(vrDisplays);
+  }
+  mVRGetDisplaysPromises.Clear();
 }
 
 void Navigator::GetActiveVRDisplays(
@@ -1506,7 +1568,7 @@ void Navigator::GetActiveVRDisplays(
    * GetActiveVRDisplays should only enumerate displays that
    * are already active without causing any other hardware to be
    * activated.
-   * We must not call nsGlobalWindow::NotifyVREventListenerAdded here,
+   * We must not call nsGlobalWindow::NotifyHasXRSession here,
    * as that would cause enumeration and activation of other VR hardware.
    * Activating VR hardware is intrusive to the end user, as it may
    * involve physically powering on devices that the user did not
@@ -1551,7 +1613,7 @@ void Navigator::NotifyActiveVRDisplaysChanged() {
 VRServiceTest* Navigator::RequestVRServiceTest() {
   // Ensure that the Mock VR devices are not released prematurely
   nsGlobalWindowInner* win = nsGlobalWindowInner::Cast(mWindow);
-  win->NotifyVREventListenerAdded();
+  win->NotifyHasXRSession();
 
   if (!mVRServiceTest) {
     mVRServiceTest = VRServiceTest::CreateTestService(mWindow);
@@ -1650,6 +1712,19 @@ bool Navigator::HasUserMediaSupport(JSContext* cx, JSObject* obj) {
           StaticPrefs::media_peerconnection_enabled()) &&
          (IsSecureContextOrObjectIsFromSecureContext(cx, obj) ||
           StaticPrefs::media_devices_insecure_enabled());
+}
+
+/* static */
+bool Navigator::HasShareSupport(JSContext* cx, JSObject* obj) {
+  if (!Preferences::GetBool("dom.webshare.enabled")) {
+    return false;
+  }
+#if defined(XP_WIN) && !defined(__MINGW32__)
+  // The first public build that supports ShareCanceled API
+  return IsWindows10BuildOrLater(18956);
+#else
+  return true;
+#endif
 }
 
 /* static */
@@ -1946,6 +2021,10 @@ dom::MediaSession* Navigator::MediaSession() {
     mMediaSession = new dom::MediaSession(GetWindow());
   }
   return mMediaSession;
+}
+
+bool Navigator::HasCreatedMediaSession() const {
+  return mMediaSession != nullptr;
 }
 
 Clipboard* Navigator::Clipboard() {

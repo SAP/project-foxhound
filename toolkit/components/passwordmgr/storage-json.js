@@ -37,17 +37,24 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIUUIDGenerator"
 );
 
-this.LoginManagerStorage_json = function() {};
+class LoginManagerStorage_json {
+  constructor() {
+    this.__crypto = null; // nsILoginManagerCrypto service
+    this.__decryptedPotentiallyVulnerablePasswords = null;
+  }
 
-this.LoginManagerStorage_json.prototype = {
-  classID: Components.ID("{c00c432d-a0c9-46d7-bef6-9c45b4d07341}"),
-  QueryInterface: ChromeUtils.generateQI([Ci.nsILoginManagerStorage]),
+  get classID() {
+    return Components.ID("{c00c432d-a0c9-46d7-bef6-9c45b4d07341}");
+  }
 
-  _xpcom_factory: XPCOMUtils.generateSingletonFactory(
-    this.LoginManagerStorage_json
-  ),
+  get QueryInterface() {
+    return ChromeUtils.generateQI([Ci.nsILoginManagerStorage]);
+  }
 
-  __crypto: null, // nsILoginManagerCrypto service
+  get _xpcom_factory() {
+    return XPCOMUtils.generateSingletonFactory(this.LoginManagerStorage_json);
+  }
+
   get _crypto() {
     if (!this.__crypto) {
       this.__crypto = Cc["@mozilla.org/login-manager/crypto/SDR;1"].getService(
@@ -55,9 +62,8 @@ this.LoginManagerStorage_json.prototype = {
       );
     }
     return this.__crypto;
-  },
+  }
 
-  __decryptedPotentiallyVulnerablePasswords: null,
   get _decryptedPotentiallyVulnerablePasswords() {
     if (!this.__decryptedPotentiallyVulnerablePasswords) {
       this._store.ensureDataReady();
@@ -73,7 +79,7 @@ this.LoginManagerStorage_json.prototype = {
       }
     }
     return this.__decryptedPotentiallyVulnerablePasswords;
-  },
+  }
 
   initialize() {
     try {
@@ -124,7 +130,7 @@ this.LoginManagerStorage_json.prototype = {
       this.log("Initialization failed:", e);
       throw new Error("Initialization failed");
     }
-  },
+  }
 
   /**
    * Internal method used by regression tests only.  It is called before
@@ -133,7 +139,7 @@ this.LoginManagerStorage_json.prototype = {
   terminate() {
     this._store._saver.disarm();
     return this._store._save();
-  },
+  }
 
   addLogin(
     login,
@@ -225,7 +231,7 @@ this.LoginManagerStorage_json.prototype = {
     // Send a notification that a login was added.
     LoginHelper.notifyStorageChanged("addLogin", loginClone);
     return loginClone;
-  },
+  }
 
   removeLogin(login) {
     this._store.ensureDataReady();
@@ -242,7 +248,7 @@ this.LoginManagerStorage_json.prototype = {
     }
 
     LoginHelper.notifyStorageChanged("removeLogin", storedLogin);
-  },
+  }
 
   modifyLogin(oldLogin, newLoginData) {
     this._store.ensureDataReady();
@@ -300,7 +306,17 @@ this.LoginManagerStorage_json.prototype = {
     }
 
     LoginHelper.notifyStorageChanged("modifyLogin", [oldStoredLogin, newLogin]);
-  },
+  }
+
+  recordPasswordUse(login) {
+    // Update the lastUsed timestamp and increment the use count.
+    let propBag = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
+      Ci.nsIWritablePropertyBag
+    );
+    propBag.setProperty("timeLastUsed", Date.now());
+    propBag.setProperty("timesUsedIncrement", 1);
+    this.modifyLogin(login, propBag);
+  }
 
   async recordBreachAlertDismissal(loginGUID) {
     this._store.ensureDataReady();
@@ -312,17 +328,19 @@ this.LoginManagerStorage_json.prototype = {
     };
 
     return this._store.saveSoon();
-  },
+  }
 
   getBreachAlertDismissalsByLoginGUID() {
     this._store.ensureDataReady();
     return this._store._data.dismissedBreachAlertsByLoginGUID;
-  },
+  }
 
   /**
    * @return {nsILoginInfo[]}
    */
   getAllLogins() {
+    this._store.ensureDataReady();
+
     let [logins, ids] = this._searchLogins({});
 
     // decrypt entries for caller.
@@ -330,7 +348,7 @@ this.LoginManagerStorage_json.prototype = {
 
     this.log("getAllLogins: returning", logins.length, "logins.");
     return logins;
-  },
+  }
 
   /**
    * Returns an array of nsILoginInfo. If decryption of a login
@@ -340,6 +358,8 @@ this.LoginManagerStorage_json.prototype = {
    * @resolve {nsILoginInfo[]}
    */
   async getAllLoginsAsync() {
+    this._store.ensureDataReady();
+
     let [logins, ids] = this._searchLogins({});
     if (!logins.length) {
       return [];
@@ -382,7 +402,14 @@ this.LoginManagerStorage_json.prototype = {
     }
 
     return result;
-  },
+  }
+
+  async searchLoginsAsync(matchData) {
+    this.log("searchLoginsAsync:", matchData);
+    let result = this.searchLogins(LoginHelper.newPropertyBag(matchData));
+    // Emulate being async:
+    return Promise.resolve(result);
+  }
 
   /**
    * Public wrapper around _searchLogins to convert the nsIPropertyBag to a
@@ -391,20 +418,32 @@ this.LoginManagerStorage_json.prototype = {
    * @return {nsILoginInfo[]} which are decrypted.
    */
   searchLogins(matchData) {
+    this._store.ensureDataReady();
+
     let realMatchData = {};
     let options = {};
-    // Convert nsIPropertyBag to normal JS object
-    for (let prop of matchData.enumerator) {
-      switch (prop.name) {
-        // Some property names aren't field names but are special options to affect the search.
-        case "acceptDifferentSubdomains":
-        case "schemeUpgrades": {
-          options[prop.name] = prop.value;
-          break;
-        }
-        default: {
-          realMatchData[prop.name] = prop.value;
-          break;
+
+    matchData.QueryInterface(Ci.nsIPropertyBag2);
+    if (matchData.hasKey("guid")) {
+      // Enforce GUID-based filtering when available, since the origin of the
+      // login may not match the origin of the form in the case of scheme
+      // upgrades.
+      realMatchData = { guid: matchData.getProperty("guid") };
+    } else {
+      // Convert nsIPropertyBag to normal JS object.
+      for (let prop of matchData.enumerator) {
+        switch (prop.name) {
+          // Some property names aren't field names but are special options to
+          // affect the search.
+          case "acceptDifferentSubdomains":
+          case "schemeUpgrades": {
+            options[prop.name] = prop.value;
+            break;
+          }
+          default: {
+            realMatchData[prop.name] = prop.value;
+            break;
+          }
         }
       }
     }
@@ -415,7 +454,7 @@ this.LoginManagerStorage_json.prototype = {
     logins = this._decryptLogins(logins);
 
     return logins;
-  },
+  }
 
   /**
    * Private method to perform arbitrary searches on any field. Decryption is
@@ -430,10 +469,9 @@ this.LoginManagerStorage_json.prototype = {
     aOptions = {
       schemeUpgrades: false,
       acceptDifferentSubdomains: false,
-    }
+    },
+    candidateLogins = this._store.data.logins
   ) {
-    this._store.ensureDataReady();
-
     if (
       "formActionOrigin" in matchData &&
       matchData.formActionOrigin === "" &&
@@ -526,7 +564,7 @@ this.LoginManagerStorage_json.prototype = {
 
     let foundLogins = [],
       foundIds = [];
-    for (let loginItem of this._store.data.logins) {
+    for (let loginItem of candidateLogins) {
       if (match(loginItem)) {
         // Create the new nsLoginInfo object, push to array
         let login = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(
@@ -562,7 +600,7 @@ this.LoginManagerStorage_json.prototype = {
       aOptions
     );
     return [foundLogins, foundIds];
-  },
+  }
 
   /**
    * Removes all logins from storage.
@@ -578,9 +616,11 @@ this.LoginManagerStorage_json.prototype = {
     this._store.saveSoon();
 
     LoginHelper.notifyStorageChanged("removeAllLogins", null);
-  },
+  }
 
   findLogins(origin, formActionOrigin, httpRealm) {
+    this._store.ensureDataReady();
+
     let loginData = {
       origin,
       formActionOrigin,
@@ -599,9 +639,11 @@ this.LoginManagerStorage_json.prototype = {
 
     this.log("_findLogins: returning", logins.length, "logins");
     return logins;
-  },
+  }
 
   countLogins(origin, formActionOrigin, httpRealm) {
+    this._store.ensureDataReady();
+
     let loginData = {
       origin,
       formActionOrigin,
@@ -617,7 +659,7 @@ this.LoginManagerStorage_json.prototype = {
 
     this.log("_countLogins: counted logins:", logins.length);
     return logins.length;
-  },
+  }
 
   addPotentiallyVulnerablePassword(login) {
     this._store.ensureDataReady();
@@ -631,13 +673,13 @@ this.LoginManagerStorage_json.prototype = {
       encryptedPassword: this._crypto.encrypt(login.password),
     });
     this._store.saveSoon();
-  },
+  }
 
   isPotentiallyVulnerablePassword(login) {
     return this._decryptedPotentiallyVulnerablePasswords.includes(
       login.password
     );
-  },
+  }
 
   clearAllPotentiallyVulnerablePasswords() {
     this._store.ensureDataReady();
@@ -648,15 +690,15 @@ this.LoginManagerStorage_json.prototype = {
     this._store.data.potentiallyVulnerablePasswords = [];
     this._store.saveSoon();
     this.__decryptedPotentiallyVulnerablePasswords = null;
-  },
+  }
 
   get uiBusy() {
     return this._crypto.uiBusy;
-  },
+  }
 
   get isLoggedIn() {
     return this._crypto.isLoggedIn;
-  },
+  }
 
   /**
    * Returns an array with two items: [id, login]. If the login was not
@@ -664,6 +706,8 @@ this.LoginManagerStorage_json.prototype = {
    * stored login (useful for looking at the actual nsILoginMetaInfo values).
    */
   _getIdForLogin(login) {
+    this._store.ensureDataReady();
+
     let matchData = {};
     for (let field of ["origin", "formActionOrigin", "httpRealm"]) {
       if (login[field] != "") {
@@ -693,7 +737,7 @@ this.LoginManagerStorage_json.prototype = {
     }
 
     return [id, foundLogin];
-  },
+  }
 
   /**
    * Checks to see if the specified GUID already exists.
@@ -702,7 +746,7 @@ this.LoginManagerStorage_json.prototype = {
     this._store.ensureDataReady();
 
     return this._store.data.logins.every(l => l.guid != guid);
-  },
+  }
 
   /**
    * Returns the encrypted username, password, and encrypton type for the specified
@@ -714,7 +758,7 @@ this.LoginManagerStorage_json.prototype = {
     let encType = this._crypto.defaultEncType;
 
     return [encUsername, encPassword, encType];
-  },
+  }
 
   /**
    * Decrypts username and password fields in the provided array of
@@ -746,16 +790,12 @@ this.LoginManagerStorage_json.prototype = {
     }
 
     return result;
-  },
-};
-
-XPCOMUtils.defineLazyGetter(
-  this.LoginManagerStorage_json.prototype,
-  "log",
-  () => {
-    let logger = LoginHelper.createLogger("Login storage");
-    return logger.log.bind(logger);
   }
-);
+}
+
+XPCOMUtils.defineLazyGetter(LoginManagerStorage_json.prototype, "log", () => {
+  let logger = LoginHelper.createLogger("Login storage");
+  return logger.log.bind(logger);
+});
 
 const EXPORTED_SYMBOLS = ["LoginManagerStorage_json"];

@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
-if (Services.prefs.getBoolPref("fission.autostart")) {
+if (SpecialPowers.useRemoteSubframes) {
   requestLongerTimeout(2);
 }
 
@@ -56,18 +56,14 @@ function checkPrefGetters(stats, max, whitelist = {}) {
         Assert.lessOrEqual(
           whitelistItem.min,
           count,
-          `Whitelist item ${pref} should be accessed at least ${
-            whitelistItem.min
-          } times.`
+          `Whitelist item ${pref} should be accessed at least ${whitelistItem.min} times.`
         );
       }
       if (whitelistItem.max) {
         Assert.lessOrEqual(
           count,
           whitelistItem.max,
-          `Whitelist item ${pref} should be accessed at most ${
-            whitelistItem.max
-          } times.`
+          `Whitelist item ${pref} should be accessed at most ${whitelistItem.max} times.`
         );
       }
       delete whitelist[pref];
@@ -127,15 +123,7 @@ add_task(async function startup() {
       min: 0,
       max: 50,
     },
-    "csp.skip_about_page_has_csp_assert": {
-      // This is accessed in debug only.
-    },
   };
-
-  if (SpecialPowers.useRemoteSubframes) {
-    // Bug 1585732 - Number of accesses with Fission enabled is higher than without.
-    max = 50;
-  }
 
   let startupRecorder = Cc["@mozilla.org/test/startuprecorder;1"].getService()
     .wrappedJSObject;
@@ -216,26 +204,38 @@ add_task(async function navigate_around() {
   };
 
   if (SpecialPowers.useRemoteSubframes) {
-    // Bug 1585732 - Number of accesses with Fission enabled is higher than without.
-    max = 50;
-
-    whitelist = Object.assign(
-      {
-        "fission.rebuild_frameloaders_on_remoteness_change": {
-          min: 1,
-          max: 100,
-        },
-        "media.cubeb.sandbox": {
-          min: 1,
-          max: 200,
-        },
-        "security.sandbox.content.level": {
-          min: 1,
-          max: 200,
-        },
-      },
-      whitelist
-    );
+    // We access this when considering starting a new content process.
+    // Because there is no complete list of content process types,
+    // caching this is not trivial. Opening 50 different content
+    // processes and throwing them away immediately is a bit artificial;
+    // we're more likely to keep some around so this shouldn't be quite
+    // this bad in practice. Fixing this is
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1600266
+    whitelist["dom.ipc.processCount.webIsolated"] = {
+      min: 50,
+      max: 51,
+    };
+    // This pref is only accessed in automation to speed up tests.
+    whitelist["dom.ipc.keepProcessesAlive.webIsolated.perOrigin"] = {
+      min: 50,
+      max: 51,
+    };
+    if (AppConstants.platform == "linux") {
+      // The following 3 sandbox prefs are covered by
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=1600189
+      whitelist["security.sandbox.content.write_path_whitelist"] = {
+        min: 50,
+        max: 51,
+      };
+      whitelist["security.sandbox.content.read_path_whitelist"] = {
+        min: 50,
+        max: 51,
+      };
+      whitelist["security.sandbox.content.force-namespace"] = {
+        min: 50,
+        max: 51,
+      };
+    }
   }
 
   Services.prefs.resetStats();
@@ -248,17 +248,17 @@ add_task(async function navigate_around() {
   );
 
   let urls = [
-    "http://example.com",
-    "https://example.com",
-    "http://example.org",
-    "https://example.org",
+    "http://example.com/",
+    "https://example.com/",
+    "http://example.org/",
+    "https://example.org/",
   ];
 
   for (let i = 0; i < 50; i++) {
     let url = urls[i % urls.length];
     info(`Navigating to ${url}...`);
     await BrowserTestUtils.loadURI(tab.linkedBrowser, url);
-    await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, url);
     info(`Loaded ${url}.`);
   }
 

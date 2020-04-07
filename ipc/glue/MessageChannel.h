@@ -11,7 +11,6 @@
 #include "base/basictypes.h"
 #include "base/message_loop.h"
 
-#include "nsIMemoryReporter.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Monitor.h"
@@ -47,7 +46,12 @@ class RefCountedMonitor : public Monitor {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefCountedMonitor)
 
  private:
-  ~RefCountedMonitor() {}
+  ~RefCountedMonitor() = default;
+};
+
+enum class MessageDirection {
+  eSending,
+  eReceiving,
 };
 
 enum class SyncSendError {
@@ -109,7 +113,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
     UntypedCallbackHolder(ActorIdType aActorId, RejectCallback&& aReject)
         : mActorId(aActorId), mReject(std::move(aReject)) {}
 
-    virtual ~UntypedCallbackHolder() {}
+    virtual ~UntypedCallbackHolder() = default;
 
     void Reject(ResponseRejectReason&& aReason) { mReject(std::move(aReason)); }
 
@@ -150,7 +154,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
   //
   // Returns true if the transport layer was successfully connected,
   // i.e., mChannelState == ChannelConnected.
-  bool Open(Transport* aTransport, MessageLoop* aIOLoop = 0,
+  bool Open(UniquePtr<Transport> aTransport, MessageLoop* aIOLoop = 0,
             Side aSide = UnknownSide);
 
   // "Open" a connection to another thread in the same process.
@@ -318,10 +322,6 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
    */
   bool IsCrossProcess() const { return mIsCrossProcess; }
 
-  // Return whether a message definitely originated from a middleman process,
-  // due to its sequence number.
-  static bool MessageOriginatesFromMiddleman(const Message& aMessage);
-
 #ifdef OS_WIN
   struct MOZ_STACK_CLASS SyncStackFrame {
     SyncStackFrame(MessageChannel* channel, bool interrupt);
@@ -463,6 +463,9 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
   // debugger with all threads paused.
   void DumpInterruptStack(const char* const pfx = "") const;
 
+  void AddProfilerMarker(const IPC::Message* aMessage,
+                         MessageDirection aDirection);
+
  private:
   // Called from both threads
   size_t InterruptStackDepth() const {
@@ -544,7 +547,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
   // Can be run on either thread
   void AssertWorkerThread() const {
     MOZ_ASSERT(mWorkerThread, "Channel hasn't been opened yet");
-    MOZ_RELEASE_ASSERT(mWorkerThread == GetCurrentVirtualThread(),
+    MOZ_RELEASE_ASSERT(mWorkerThread == PR_GetCurrentThread(),
                        "not on worker thread!");
   }
 
@@ -562,7 +565,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
     // If we aren't a same-thread channel, our "link" thread is _not_ our
     // worker thread!
     MOZ_ASSERT(mWorkerThread, "Channel hasn't been opened yet");
-    MOZ_RELEASE_ASSERT(mWorkerThread != GetCurrentVirtualThread(),
+    MOZ_RELEASE_ASSERT(mWorkerThread != PR_GetCurrentThread(),
                        "on worker thread but should not be!");
   }
 
@@ -591,7 +594,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
    private:
     MessageTask() = delete;
     MessageTask(const MessageTask&) = delete;
-    ~MessageTask() {}
+    ~MessageTask() = default;
 
     MessageChannel* mChannel;
     Message mMessage;

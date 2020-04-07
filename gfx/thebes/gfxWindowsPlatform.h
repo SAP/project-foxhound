@@ -209,7 +209,6 @@ class gfxWindowsPlatform : public gfxPlatform {
   static mozilla::Atomic<size_t> sD3D9SharedTextures;
 
   bool SupportsPluginDirectBitmapDrawing() override { return true; }
-  bool SupportsPluginDirectDXGIDrawing();
 
   static void RecordContentDeviceFailure(
       mozilla::gfx::TelemetryDeviceCode aDevice);
@@ -218,7 +217,7 @@ class gfxWindowsPlatform : public gfxPlatform {
   bool AccelerateLayersByDefault() override { return true; }
   void GetAcceleratedCompositorBackends(
       nsTArray<mozilla::layers::LayersBackend>& aBackends) override;
-  void GetPlatformCMSOutputProfile(void*& mem, size_t& size) override;
+  nsTArray<uint8_t> GetPlatformCMSOutputProfileData() override;
 
   void ImportGPUDeviceData(const mozilla::gfx::GPUDeviceData& aData) override;
   void ImportContentDeviceData(
@@ -233,8 +232,6 @@ class gfxWindowsPlatform : public gfxPlatform {
   RenderMode mRenderMode;
 
  private:
-  bool HasBattery() override;
-
   void Init();
   void InitAcceleration() override;
   void InitWebRenderConfig() override;

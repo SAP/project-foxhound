@@ -9,9 +9,9 @@
  * @module utils/source
  */
 
-import { isOriginalId, isGeneratedId } from "devtools-source-map";
 import { getUnicodeUrl } from "devtools-modules";
 
+import { isOriginalSource } from "../utils/source-maps";
 import { endTruncateStr } from "./utils";
 import { truncateMiddleText } from "../utils/text";
 import { parse as parseURL } from "../utils/url";
@@ -28,9 +28,11 @@ import type {
   SourceActor,
   SourceContent,
   SourceLocation,
+  ThreadId,
 } from "../types";
+
 import { isFulfilled, type AsyncValue } from "./async-value";
-import type { Symbols } from "../reducers/types";
+import type { Symbols, TabsSources } from "../reducers/types";
 
 type transformUrlCallback = string => string;
 
@@ -70,7 +72,7 @@ export function shouldBlackbox(source: ?Source) {
     return false;
   }
 
-  if (!features.originalBlackbox && isOriginalId(source.id)) {
+  if (!features.originalBlackbox && isOriginalSource(source)) {
     return false;
   }
 
@@ -198,7 +200,10 @@ export function getTruncatedFileName(
  * @static
  */
 
-export function getDisplayPath(mySource: Source, sources: Source[]) {
+export function getDisplayPath(
+  mySource: Source,
+  sources: Source[] | TabsSources
+) {
   const rawSourceURL = getRawSourceURL(mySource.url);
   const filename = getFilename(mySource, rawSourceURL);
 
@@ -483,18 +488,34 @@ export function getRelativeUrl(source: Source, root: string) {
   return url.slice(url.indexOf(root) + root.length + 1);
 }
 
-export function underRoot(source: Source, root: string) {
+export function underRoot(
+  source: Source,
+  root: string,
+  threadActors: Array<ThreadId>
+) {
+  // source.url doesn't include thread actor ID, so remove the thread actor ID from the root
+  threadActors.forEach(threadActor => {
+    if (root.includes(threadActor)) {
+      root = root.slice(threadActor.length + 1);
+    }
+  });
+
+  if (source.url && source.url.includes("chrome://")) {
+    const { group, path } = getURL(source);
+    return (group + path).includes(root);
+  }
+
   return source.url && source.url.includes(root);
 }
 
 export function isOriginal(source: Source) {
   // Pretty-printed sources are given original IDs, so no need
   // for any additional check
-  return isOriginalId(source.id);
+  return isOriginalSource(source);
 }
 
 export function isGenerated(source: Source) {
-  return isGeneratedId(source.id);
+  return !isOriginal(source);
 }
 
 export function getSourceQueryString(source: ?Source) {
@@ -507,6 +528,17 @@ export function getSourceQueryString(source: ?Source) {
 
 export function isUrlExtension(url: string) {
   return url.includes("moz-extension:") || url.includes("chrome-extension");
+}
+
+export function isExtensionDirectoryPath(url: string) {
+  if (isUrlExtension(url)) {
+    const urlArr = url.replace(/\/+/g, "/").split("/");
+    let extensionIndex = urlArr.indexOf("moz-extension:");
+    if (extensionIndex === -1) {
+      extensionIndex = urlArr.indexOf("chrome-extension:");
+    }
+    return !urlArr[extensionIndex + 2];
+  }
 }
 
 export function getPlainUrl(url: string): string {

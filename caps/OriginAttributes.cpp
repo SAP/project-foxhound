@@ -13,6 +13,9 @@
 #include "nsIURI.h"
 #include "nsURLHelper.h"
 
+static const char kSourceChar = ':';
+static const char kSanitizedChar = '+';
+
 namespace mozilla {
 
 using dom::URLParams;
@@ -101,6 +104,11 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
 
 void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
                                            const nsACString& aDomain) {
+  SetFirstPartyDomain(aIsTopLevelDocument, NS_ConvertUTF8toUTF16(aDomain));
+}
+
+void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
+                                           const nsAString& aDomain) {
   bool isFirstPartyEnabled = IsFirstPartyEnabled();
 
   // If the pref is off or this is not a top level load, bail out.
@@ -108,7 +116,7 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
     return;
   }
 
-  mFirstPartyDomain = NS_ConvertUTF8toUTF16(aDomain);
+  mFirstPartyDomain = aDomain;
 }
 
 void OriginAttributes::CreateSuffix(nsACString& aStr) const {
@@ -140,8 +148,7 @@ void OriginAttributes::CreateSuffix(nsACString& aStr) const {
 
   if (!mFirstPartyDomain.IsEmpty()) {
     nsAutoString sanitizedFirstPartyDomain(mFirstPartyDomain);
-    sanitizedFirstPartyDomain.ReplaceChar(
-        dom::quota::QuotaManager::kReplaceChars, '+');
+    sanitizedFirstPartyDomain.ReplaceChar(kSourceChar, kSanitizedChar);
 
     params.Set(NS_LITERAL_STRING("firstPartyDomain"),
                sanitizedFirstPartyDomain);
@@ -150,7 +157,7 @@ void OriginAttributes::CreateSuffix(nsACString& aStr) const {
   if (!mGeckoViewSessionContextId.IsEmpty()) {
     nsAutoString sanitizedGeckoViewUserContextId(mGeckoViewSessionContextId);
     sanitizedGeckoViewUserContextId.ReplaceChar(
-        dom::quota::QuotaManager::kReplaceChars, '+');
+        dom::quota::QuotaManager::kReplaceChars, kSanitizedChar);
 
     params.Set(NS_LITERAL_STRING("geckoViewUserContextId"),
                sanitizedGeckoViewUserContextId);
@@ -192,10 +199,11 @@ class MOZ_STACK_CLASS PopulateFromSuffixIterator final
   explicit PopulateFromSuffixIterator(OriginAttributes* aOriginAttributes)
       : mOriginAttributes(aOriginAttributes) {
     MOZ_ASSERT(aOriginAttributes);
-    // If mPrivateBrowsingId is passed in as >0 and is not present in the
-    // suffix, then it will remain >0 when it should be 0 according to the
-    // suffix. Set to 0 before iterating to fix this.
-    mOriginAttributes->mPrivateBrowsingId = 0;
+    // If a non-default mPrivateBrowsingId is passed and is not present in the
+    // suffix, then it will retain the id when it should be default according
+    // to the suffix. Set to default before iterating to fix this.
+    mOriginAttributes->mPrivateBrowsingId =
+        nsIScriptSecurityManager::DEFAULT_PRIVATE_BROWSING_ID;
   }
 
   bool URLParamsIterator(const nsAString& aName,
@@ -237,7 +245,9 @@ class MOZ_STACK_CLASS PopulateFromSuffixIterator final
 
     if (aName.EqualsLiteral("firstPartyDomain")) {
       MOZ_RELEASE_ASSERT(mOriginAttributes->mFirstPartyDomain.IsEmpty());
-      mOriginAttributes->mFirstPartyDomain.Assign(aValue);
+      nsAutoString firstPartyDomain(aValue);
+      firstPartyDomain.ReplaceChar(kSanitizedChar, kSourceChar);
+      mOriginAttributes->mFirstPartyDomain.Assign(firstPartyDomain);
       return true;
     }
 

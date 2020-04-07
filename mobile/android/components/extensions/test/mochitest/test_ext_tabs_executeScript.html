@@ -22,10 +22,6 @@ add_task(async function testExecuteScript() {
   async function background() {
     try {
       let [tab] = await browser.tabs.query({active: true, currentWindow: true});
-      // TODO bug 1565536: tab.active is broken in GeckoView.
-      browser.test.assertEq(undefined, tab, "currentWindow's tab is not active (bug 1565536)");
-      [tab] = await browser.tabs.query({currentWindow: true});
-
       let frames = await browser.webNavigation.getAllFrames({tabId: tab.id});
 
       browser.test.log(`FRAMES: ${frames[1].frameId} ${JSON.stringify(frames)}\n`);
@@ -220,9 +216,15 @@ add_task(async function testExecuteScript() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "permissions": ["http://mochi.test/", "http://example.com/", "webNavigation"],
+      applications: {
+        gecko: {
+          id: "test_execute_script@tests.mozilla.org",
+        },
+      },
     },
 
     background,
+    useAddonManager: "permanent",
 
     files: {
       "script.js": function() {

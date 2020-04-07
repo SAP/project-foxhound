@@ -11,7 +11,7 @@ var EXPORTED_SYMBOLS = [
   "ExtensionData",
   "Langpack",
   "Management",
-  "UninstallObserver",
+  "ExtensionAddonObserver",
 ];
 
 /* exported Extension, ExtensionData */
@@ -50,7 +50,10 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
+  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.jsm",
+  ExtensionPreferencesManager:
+    "resource://gre/modules/ExtensionPreferencesManager.jsm",
   ExtensionProcessScript: "resource://gre/modules/ExtensionProcessScript.jsm",
   ExtensionStorage: "resource://gre/modules/ExtensionStorage.jsm",
   ExtensionStorageIDB: "resource://gre/modules/ExtensionStorageIDB.jsm",
@@ -58,6 +61,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   FileSource: "resource://gre/modules/L10nRegistry.jsm",
   L10nRegistry: "resource://gre/modules/L10nRegistry.jsm",
   LightweightThemeManager: "resource://gre/modules/LightweightThemeManager.jsm",
+  Localization: "resource://gre/modules/Localization.jsm",
   Log: "resource://gre/modules/Log.jsm",
   MessageChannel: "resource://gre/modules/MessageChannel.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
@@ -258,9 +262,11 @@ var UUIDMap = {
   },
 };
 
-// For extensions that have called setUninstallURL(), send an event
-// so the browser can display the URL.
-var UninstallObserver = {
+/**
+ * Observer AddonManager events and translate them into extension events,
+ * as well as handle any last cleanup after uninstalling an extension.
+ */
+var ExtensionAddonObserver = {
   initialized: false,
 
   init() {
@@ -275,6 +281,27 @@ var UninstallObserver = {
     if (this.initialized) {
       AddonManager.removeAddonListener(this);
       this.initialized = false;
+    }
+  },
+
+  onEnabling(addon) {
+    if (addon.type !== "extension") {
+      return;
+    }
+    Management._callHandlers([addon.id], "enabling", "onEnabling");
+  },
+
+  onDisabled(addon) {
+    if (addon.type !== "extension") {
+      return;
+    }
+    if (Services.appinfo.inSafeMode) {
+      // Ensure ExtensionPreferencesManager updates its data and
+      // modules can run any disable logic they need to.  We only
+      // handle safeMode here because there is a bunch of additional
+      // logic that happens in Extension.shutdown when running in
+      // normal mode.
+      Management._callHandlers([addon.id], "disable", "onDisable");
     }
   },
 
@@ -353,7 +380,7 @@ var UninstallObserver = {
   },
 };
 
-UninstallObserver.init();
+ExtensionAddonObserver.init();
 
 const manifestTypes = new Map([
   ["theme", "manifest.ThemeManifest"],
@@ -382,6 +409,7 @@ class ExtensionData {
     this.id = null;
     this.uuid = null;
     this.localeData = null;
+    this.fluentL10n = null;
     this._promiseLocales = null;
 
     this.apiNames = new Set();
@@ -557,6 +585,31 @@ class ExtensionData {
   }
 
   /**
+   * Given an array of host and permissions, generate a structured permissions object
+   * that contains seperate host origins and permissions arrays.
+   *
+   * @param {Array} permissionsArray
+   * @returns {Object} permissions object
+   */
+  permissionsObject(permissionsArray) {
+    let permissions = new Set();
+    let origins = new Set();
+    let { restrictSchemes, isPrivileged } = this;
+    for (let perm of permissionsArray || []) {
+      let type = classifyPermission(perm, restrictSchemes, isPrivileged);
+      if (type.origin) {
+        origins.add(perm);
+      } else if (type.permission) {
+        permissions.add(perm);
+      }
+    }
+    return {
+      permissions,
+      origins,
+    };
+  }
+
+  /**
    * Returns an object representing any capabilities that the extension
    * has access to based on fixed properties in the manifest.  The result
    * includes the contents of the "permissions" property as well as other
@@ -568,17 +621,9 @@ class ExtensionData {
       return null;
     }
 
-    let permissions = new Set();
-    let origins = new Set();
-    let { restrictSchemes, isPrivileged } = this;
-    for (let perm of this.manifest.permissions || []) {
-      let type = classifyPermission(perm, restrictSchemes, isPrivileged);
-      if (type.origin) {
-        origins.add(perm);
-      } else if (type.permission) {
-        permissions.add(perm);
-      }
-    }
+    let { permissions, origins } = this.permissionsObject(
+      this.manifest.permissions
+    );
 
     if (this.manifest.devtools_page) {
       permissions.add("devtools");
@@ -590,6 +635,16 @@ class ExtensionData {
       }
     }
 
+    return {
+      permissions: Array.from(permissions),
+      origins: Array.from(origins),
+    };
+  }
+
+  get manifestOptionalPermissions() {
+    let { permissions, origins } = this.permissionsObject(
+      this.manifest.optional_permissions
+    );
     return {
       permissions: Array.from(permissions),
       origins: Array.from(origins),
@@ -640,6 +695,74 @@ class ExtensionData {
         perm => !oldPermissions.permissions.includes(perm)
       ),
     };
+  }
+
+  // Return those permissions in oldPermissions that also exist in newPermissions.
+  static intersectPermissions(oldPermissions, newPermissions) {
+    let matcher = new MatchPatternSet(newPermissions.origins, {
+      restrictSchemes: false,
+    });
+
+    return {
+      origins: oldPermissions.origins.filter(perm =>
+        matcher.subsumesDomain(
+          new MatchPattern(perm, { restrictSchemes: false })
+        )
+      ),
+      permissions: oldPermissions.permissions.filter(perm =>
+        newPermissions.permissions.includes(perm)
+      ),
+    };
+  }
+
+  /**
+   * When updating the addon, find and migrate permissions that have moved from required
+   * to optional.  This also handles any updates required for permission removal.
+   *
+   * @param {string} id The id of the addon being updated
+   * @param {Object} oldPermissions
+   * @param {Object} oldOptionalPermissions
+   * @param {Object} newPermissions
+   * @param {Object} newOptionalPermissions
+   */
+  static async migratePermissions(
+    id,
+    oldPermissions,
+    oldOptionalPermissions,
+    newPermissions,
+    newOptionalPermissions
+  ) {
+    let migrated = ExtensionData.intersectPermissions(
+      oldPermissions,
+      newOptionalPermissions
+    );
+    // If a permission is optional in this version and was mandatory in the previous
+    // version, it was already accepted by the user at install time so add it to the
+    // list of granted optional permissions now.
+    await ExtensionPermissions.add(id, migrated);
+
+    // Now we need to update ExtensionPreferencesManager, removing any settings
+    // for old permissions that no longer exist.
+    let permSet = new Set(
+      newPermissions.permissions.concat(newOptionalPermissions.permissions)
+    );
+    let oldPerms = oldPermissions.permissions.concat(
+      oldOptionalPermissions.permissions
+    );
+
+    let removed = oldPerms.filter(x => !permSet.has(x));
+    if (removed.length) {
+      await Management.asyncLoadSettingsModules();
+      for (let name of removed) {
+        await ExtensionPreferencesManager.removeSettingsForPermission(id, name);
+      }
+    }
+
+    // Remove any optional permissions that have been removed from the manifest.
+    await ExtensionPermissions.remove(id, {
+      permissions: removed,
+      origins: [],
+    });
   }
 
   canUseExperiment(manifest) {
@@ -696,7 +819,7 @@ class ExtensionData {
       preprocessors: {},
     };
 
-    if (this.localeData) {
+    if (this.fluentL10n || this.localeData) {
       context.preprocessors.localize = (value, context) =>
         this.localize(value, locale);
     }
@@ -726,6 +849,19 @@ class ExtensionData {
 
     if (manifest && manifest.default_locale) {
       await this.initLocale();
+    }
+
+    // When parsing the manifest from an ExtensionData instance, we don't
+    // have isPrivileged, so ignore fluent localization in that pass.
+    // This means that fluent cannot be used to localize manifest properties
+    // read from the add-on manager (e.g., author, homepage, etc.)
+    if (manifest && manifest.l10n_resources && "isPrivileged" in this) {
+      if (this.isPrivileged) {
+        this.fluentL10n = new Localization(manifest.l10n_resources, true);
+      } else {
+        // Warn but don't make this fatal.
+        Cu.reportError("Ignoring l10n_resources in unprivileged extension");
+      }
     }
 
     if (this.manifest.theme) {
@@ -1110,8 +1246,23 @@ class ExtensionData {
     return this.localeData.localizeMessage(...args);
   }
 
-  localize(...args) {
-    return this.localeData.localize(...args);
+  localize(str, locale) {
+    // If the extension declares fluent resources in the manifest, try
+    // first to localize with fluent.  Also use the original webextension
+    // method (_locales/xx.json) so extensions can migrate bit by bit.
+    // Note also that fluent keys typically use hyphense, so hyphens are
+    // allowed in the __MSG_foo__ keys used by fluent, though they are
+    // not allowed in the keys used for json translations.
+    if (this.fluentL10n) {
+      str = str.replace(/__MSG_([-A-Za-z0-9@_]+?)__/g, (matched, message) => {
+        let translation = this.fluentL10n.formatValueSync(message);
+        return translation !== undefined ? translation : matched;
+      });
+    }
+    if (this.localeData) {
+      str = this.localeData.localize(str, locale);
+    }
+    return str;
   }
 
   // If a "default_locale" is specified in that manifest, returns it
@@ -1487,7 +1638,16 @@ class BootstrapScope {
     return null;
   }
 
-  update(data, reason) {
+  async update(data, reason) {
+    // Retain any previously granted permissions that may have migrated into the optional list.
+    await ExtensionData.migratePermissions(
+      data.id,
+      data.oldPermissions,
+      data.oldOptionalPermissions,
+      data.userPermissions,
+      data.optionalPermissions
+    );
+
     return Management.emit("update", {
       id: data.id,
       resourceURI: data.resourceURI,
@@ -1606,6 +1766,7 @@ class Extension extends ExtensionData {
     }
 
     this.remote = !WebExtensionPolicy.isExtensionProcess;
+    this.remoteType = this.remote ? E10SUtils.EXTENSION_REMOTE_TYPE : null;
 
     if (this.remote && processCount !== 1) {
       throw new Error(
@@ -1666,6 +1827,7 @@ class Extension extends ExtensionData {
       this.policy.allowedOrigins = this.whiteListedHosts;
 
       this.cachePermissions();
+      this.updatePermissions();
     });
 
     this.on("remove-permissions", (ignoreEvent, permissions) => {
@@ -1687,6 +1849,7 @@ class Extension extends ExtensionData {
       this.policy.allowedOrigins = this.whiteListedHosts;
 
       this.cachePermissions();
+      this.updatePermissions();
     });
     /* eslint-enable mozilla/balanced-listeners */
   }
@@ -1813,7 +1976,7 @@ class Extension extends ExtensionData {
   }
 
   get manifestCacheKey() {
-    return [this.id, this.version, Services.locale.appLocaleAsLangTag];
+    return [this.id, this.version, Services.locale.appLocaleAsBCP47];
   }
 
   get isPrivileged() {
@@ -1821,13 +1984,12 @@ class Extension extends ExtensionData {
       this.addonData.signedState === AddonManager.SIGNEDSTATE_PRIVILEGED ||
       this.addonData.signedState === AddonManager.SIGNEDSTATE_SYSTEM ||
       this.addonData.builtIn ||
-      (AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS &&
-        this.addonData.temporarilyInstalled)
+      (AddonSettings.EXPERIMENTS_ENABLED && this.addonData.temporarilyInstalled)
     );
   }
 
   get experimentsAllowed() {
-    return AddonSettings.ALLOW_LEGACY_EXTENSIONS || this.isPrivileged;
+    return AddonSettings.EXPERIMENTS_ENABLED || this.isPrivileged;
   }
 
   saveStartupData() {
@@ -1863,8 +2025,28 @@ class Extension extends ExtensionData {
     return manifest;
   }
 
-  get contentSecurityPolicy() {
-    return this.manifest.content_security_policy;
+  get extensionPageCSP() {
+    const { content_security_policy } = this.manifest;
+    if (
+      content_security_policy &&
+      typeof content_security_policy === "object"
+    ) {
+      return content_security_policy.extension_pages;
+    }
+    return content_security_policy;
+  }
+
+  get contentScriptCSP() {
+    let { content_security_policy } = this.manifest;
+    if (
+      content_security_policy &&
+      typeof content_security_policy === "object"
+    ) {
+      return (
+        content_security_policy.content_scripts ||
+        content_security_policy.isolated_world
+      );
+    }
   }
 
   get backgroundScripts() {
@@ -1891,7 +2073,8 @@ class Extension extends ExtensionData {
       id: this.id,
       uuid: this.uuid,
       name: this.name,
-      contentSecurityPolicy: this.contentSecurityPolicy,
+      extensionPageCSP: this.extensionPageCSP,
+      contentScriptCSP: this.contentScriptCSP,
       instanceId: this.instanceId,
       resourceURL: this.resourceURL,
       contentScripts: this.contentScripts,
@@ -2027,7 +2210,7 @@ class Extension extends ExtensionData {
       let locales = await this.promiseLocales();
 
       let matches = Services.locale.negotiateLanguages(
-        Services.locale.appLocalesAsLangTags,
+        Services.locale.appLocalesAsBCP47,
         Array.from(locales.keys()),
         this.defaultLocale
       );
@@ -2038,6 +2221,13 @@ class Extension extends ExtensionData {
     return super.initLocale(locale);
   }
 
+  /**
+   * Update site permissions as necessary.
+   *
+   * @param {string|undefined} reason
+   *        If provided, this is a BOOTSTRAP_REASON string.  If reason is undefined,
+   *        addon permissions are being added or removed that may effect the site permissions.
+   */
   updatePermissions(reason) {
     const { principal } = this;
 
@@ -2337,9 +2527,7 @@ class Extension extends ExtensionData {
         await ExtensionStorageIDB.selectedBackendPromises.get(this);
       } catch (err) {
         Cu.reportError(
-          `Error while waiting for extension data migration on shutdown: ${
-            this.policy.debugName
-          } - ${err.message}::${err.stack}`
+          `Error while waiting for extension data migration on shutdown: ${this.policy.debugName} - ${err.message}::${err.stack}`
         );
       }
       this.state = "Shutdown: Storage complete";
@@ -2398,9 +2586,7 @@ class Extension extends ExtensionData {
     this.state = `Shutdown: Emitted shutdown: ${result === TIMED_OUT}`;
     if (result === TIMED_OUT) {
       Cu.reportError(
-        `Timeout while waiting for extension child to shutdown: ${
-          this.policy.debugName
-        }`
+        `Timeout while waiting for extension child to shutdown: ${this.policy.debugName}`
       );
     }
 

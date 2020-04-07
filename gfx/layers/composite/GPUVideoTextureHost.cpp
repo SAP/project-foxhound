@@ -7,6 +7,7 @@
 #include "GPUVideoTextureHost.h"
 #include "mozilla/RemoteDecoderManagerParent.h"
 #include "ImageContainer.h"
+#include "mozilla/layers/ImageBridgeParent.h"
 #include "mozilla/layers/VideoBridgeParent.h"
 
 namespace mozilla {
@@ -36,8 +37,14 @@ TextureHost* GPUVideoTextureHost::EnsureWrappedTextureHost() {
   // then there might be two VideoBridgeParents (one within the GPU process,
   // one from RDD). We'll need to flag which one to use to lookup our
   // descriptor, or just try both.
+  auto& sd = static_cast<SurfaceDescriptorRemoteDecoder&>(mDescriptor);
   mWrappedTextureHost =
-      VideoBridgeParent::GetSingleton()->LookupTexture(mDescriptor.handle());
+      VideoBridgeParent::GetSingleton(sd.source())->LookupTexture(sd.handle());
+
+  if (mWrappedTextureHost && mExternalImageId.isSome()) {
+    mWrappedTextureHost->CreateRenderTexture(mExternalImageId.ref());
+  }
+
   return mWrappedTextureHost;
 }
 
@@ -117,12 +124,20 @@ bool GPUVideoTextureHost::HasIntermediateBuffer() const {
 
 void GPUVideoTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
-  MOZ_ASSERT(EnsureWrappedTextureHost());
-  if (!EnsureWrappedTextureHost()) {
+  MOZ_ASSERT(mExternalImageId.isNothing());
+
+  mExternalImageId = Some(aExternalImageId);
+
+  // When mWrappedTextureHost already exist, call CreateRenderTexture() here.
+  // In other cases, EnsureWrappedTextureHost() handles CreateRenderTexture().
+
+  if (mWrappedTextureHost) {
+    mWrappedTextureHost->CreateRenderTexture(aExternalImageId);
     return;
   }
 
-  EnsureWrappedTextureHost()->CreateRenderTexture(aExternalImageId);
+  MOZ_ASSERT(EnsureWrappedTextureHost());
+  EnsureWrappedTextureHost();
 }
 
 uint32_t GPUVideoTextureHost::NumSubTextures() {
@@ -135,13 +150,14 @@ uint32_t GPUVideoTextureHost::NumSubTextures() {
 
 void GPUVideoTextureHost::PushResourceUpdates(
     wr::TransactionBuilder& aResources, ResourceUpdateOp aOp,
-    const Range<wr::ImageKey>& aImageKeys, const wr::ExternalImageId& aExtID) {
+    const Range<wr::ImageKey>& aImageKeys, const wr::ExternalImageId& aExtID,
+    const bool aPreferCompositorSurface) {
   MOZ_ASSERT(EnsureWrappedTextureHost());
   if (!EnsureWrappedTextureHost()) {
     return;
   }
-  EnsureWrappedTextureHost()->PushResourceUpdates(aResources, aOp, aImageKeys,
-                                                  aExtID);
+  EnsureWrappedTextureHost()->PushResourceUpdates(
+      aResources, aOp, aImageKeys, aExtID, aPreferCompositorSurface);
 }
 
 void GPUVideoTextureHost::PushDisplayItems(

@@ -8,7 +8,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsPIDOMWindow.h"
-#include "nsIEditor.h"
 #include "nsEditingSession.h"
 #include "nsIDocShell.h"
 
@@ -27,7 +26,7 @@ nsDocShellEditorData::~nsDocShellEditorData() { TearDownEditor(); }
 
 void nsDocShellEditorData::TearDownEditor() {
   if (mHTMLEditor) {
-    RefPtr<HTMLEditor> htmlEditor = mHTMLEditor.forget();
+    RefPtr<HTMLEditor> htmlEditor = std::move(mHTMLEditor);
     htmlEditor->PreDestroy(false);
   }
   mEditingSession = nullptr;
@@ -44,7 +43,7 @@ nsresult nsDocShellEditorData::MakeEditable(bool aInWaitForUriLoad) {
   if (mHTMLEditor) {
     NS_WARNING("Destroying existing editor on frame");
 
-    RefPtr<HTMLEditor> htmlEditor = mHTMLEditor.forget();
+    RefPtr<HTMLEditor> htmlEditor = std::move(mHTMLEditor);
     htmlEditor->PreDestroy(false);
   }
 
@@ -73,7 +72,7 @@ nsresult nsDocShellEditorData::SetHTMLEditor(HTMLEditor* aHTMLEditor) {
   }
 
   if (mHTMLEditor) {
-    RefPtr<HTMLEditor> htmlEditor = mHTMLEditor.forget();
+    RefPtr<HTMLEditor> htmlEditor = std::move(mHTMLEditor);
     htmlEditor->PreDestroy(false);
     MOZ_ASSERT(!mHTMLEditor,
                "Nested call of nsDocShellEditorData::SetHTMLEditor() detected");

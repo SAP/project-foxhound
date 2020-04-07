@@ -25,16 +25,11 @@
 #include "nsIAutoCompleteSimpleResult.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
-#include "nsIServiceManager.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIDocShellTreeItem.h"
 #include "nsPIDOMWindow.h"
-#include "nsIWebNavigation.h"
-#include "nsIContentViewer.h"
 #include "nsIContent.h"
 #include "nsRect.h"
-#include "nsILoginAutoCompleteSearch.h"
 #include "nsToolkitCompsCID.h"
 #include "nsEmbedCID.h"
 #include "nsContentUtils.h"
@@ -67,8 +62,8 @@ static nsIFormAutoComplete* GetFormAutoComplete() {
 }
 
 NS_IMPL_CYCLE_COLLECTION(nsFormFillController, mController, mLoginManagerAC,
-                         mLoginReputationService, mFocusedPopup,
-                         mPopups, mLastListener, mLastFormAutoComplete)
+                         mLoginReputationService, mFocusedPopup, mPopups,
+                         mLastListener, mLastFormAutoComplete)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsFormFillController)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIFormFillController)
@@ -87,7 +82,7 @@ nsFormFillController::nsFormFillController()
       mListNode(nullptr),
       // The amount of time a context menu event supresses showing a
       // popup from a focus event in ms. This matches the threshold in
-      // toolkit/components/passwordmgr/LoginManagerContent.jsm.
+      // toolkit/components/passwordmgr/LoginManagerChild.jsm.
       mFocusAfterRightClickThreshold(400),
       mTimeout(50),
       mMinResultsForPopup(1),
@@ -211,15 +206,21 @@ void nsFormFillController::MaybeRemoveMutationObserver(nsINode* aNode) {
 NS_IMETHODIMP
 nsFormFillController::AttachToDocument(Document* aDocument,
                                        nsIAutoCompletePopup* aPopup) {
-  MOZ_LOG(sLogger, LogLevel::Debug,
-          ("AttachToDocument for document %p with popup %p", aDocument, aPopup));
+  MOZ_LOG(
+      sLogger, LogLevel::Debug,
+      ("AttachToDocument for document %p with popup %p", aDocument, aPopup));
   NS_ENSURE_TRUE(aDocument && aPopup, NS_ERROR_ILLEGAL_VALUE);
 
   mPopups.Put(aDocument, aPopup);
 
+  // If the focus is within the newly attached document (and not in a frame),
+  // perform any necessary focusing steps that open autocomplete popups.
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (fm) {
     nsCOMPtr<nsIContent> focusedContent = fm->GetFocusedElement();
+    if (!focusedContent || focusedContent->GetComposedDoc() != aDocument)
+      return NS_OK;
+
     HandleFocus(
         MOZ_KnownLive(HTMLInputElement::FromNodeOrNull(focusedContent)));
   }
@@ -559,14 +560,15 @@ nsFormFillController::GetSelectionEnd(int32_t* aSelectionEnd) {
   return rv.StealNSResult();
 }
 
-NS_IMETHODIMP
+MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP
 nsFormFillController::SelectTextRange(int32_t aStartIndex, int32_t aEndIndex) {
   if (!mFocusedInput) {
     return NS_ERROR_UNEXPECTED;
   }
+  RefPtr<HTMLInputElement> focusedInput(mFocusedInput);
   ErrorResult rv;
-  mFocusedInput->SetSelectionRange(aStartIndex, aEndIndex,
-                                   Optional<nsAString>(), rv);
+  focusedInput->SetSelectionRange(aStartIndex, aEndIndex, Optional<nsAString>(),
+                                  rv);
   return rv.StealNSResult();
 }
 
@@ -1092,7 +1094,7 @@ nsresult nsFormFillController::KeyPress(Event* aEvent) {
         break;
       }
     }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case KeyboardEvent_Binding::DOM_VK_UP:
     case KeyboardEvent_Binding::DOM_VK_DOWN:
     case KeyboardEvent_Binding::DOM_VK_LEFT:

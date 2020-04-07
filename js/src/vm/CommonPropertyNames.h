@@ -67,13 +67,12 @@
   MACRO(callee, callee, "callee")                                              \
   MACRO(caller, caller, "caller")                                              \
   MACRO(callFunction, callFunction, "callFunction")                            \
-  MACRO(CallRegExpMethodIfWrapped, CallRegExpMethodIfWrapped,                  \
-        "CallRegExpMethodIfWrapped")                                           \
   MACRO(cancel, cancel, "cancel")                                              \
   MACRO(case, case_, "case")                                                   \
   MACRO(caseFirst, caseFirst, "caseFirst")                                     \
   MACRO(catch, catch_, "catch")                                                \
   MACRO(class, class_, "class")                                                \
+  MACRO(cleanupSome, cleanupSome, "cleanupSome")                               \
   MACRO(close, close, "close")                                                 \
   MACRO(collation, collation, "collation")                                     \
   MACRO(collections, collections, "collections")                               \
@@ -125,6 +124,8 @@
   MACRO(dotThis, dotThis, ".this")                                             \
   MACRO(dotInitializers, dotInitializers, ".initializers")                     \
   MACRO(dotFieldKeys, dotFieldKeys, ".fieldKeys")                              \
+  MACRO(dotStaticInitializers, dotStaticInitializers, ".staticInitializers")   \
+  MACRO(dotStaticFieldKeys, dotStaticFieldKeys, ".staticFieldKeys")            \
   MACRO(each, each, "each")                                                    \
   MACRO(element, element, "element")                                           \
   MACRO(elementType, elementType, "elementType")                               \
@@ -184,6 +185,7 @@
   MACRO(GeneratorReturn, GeneratorReturn, "GeneratorReturn")                   \
   MACRO(GeneratorThrow, GeneratorThrow, "GeneratorThrow")                      \
   MACRO(get, get, "get")                                                       \
+  MACRO(GetAggregateError, GetAggregateError, "GetAggregateError")             \
   MACRO(GetInternalError, GetInternalError, "GetInternalError")                \
   MACRO(getBigInt64, getBigInt64, "getBigInt64")                               \
   MACRO(getBigUint64, getBigUint64, "getBigUint64")                            \
@@ -340,9 +342,13 @@
   MACRO(pattern, pattern, "pattern")                                           \
   MACRO(pending, pending, "pending")                                           \
   MACRO(percentSign, percentSign, "percentSign")                               \
+  MACRO(pipeTo, pipeTo, "pipeTo")                                              \
   MACRO(plusSign, plusSign, "plusSign")                                        \
   MACRO(public, public_, "public")                                             \
   MACRO(pull, pull, "pull")                                                    \
+  MACRO(preventAbort, preventAbort, "preventAbort")                            \
+  MACRO(preventClose, preventClose, "preventClose")                            \
+  MACRO(preventCancel, preventCancel, "preventCancel")                         \
   MACRO(preventExtensions, preventExtensions, "preventExtensions")             \
   MACRO(private, private_, "private")                                          \
   MACRO(promise, promise, "promise")                                           \
@@ -354,14 +360,11 @@
   MACRO(quarter, quarter, "quarter")                                           \
   MACRO(raw, raw, "raw")                                                       \
   MACRO(reason, reason, "reason")                                              \
-  MACRO(RegExpBuiltinExec, RegExpBuiltinExec, "RegExpBuiltinExec")             \
   MACRO(RegExpFlagsGetter, RegExpFlagsGetter, "$RegExpFlagsGetter")            \
-  MACRO(RegExpMatcher, RegExpMatcher, "RegExpMatcher")                         \
-  MACRO(RegExpSearcher, RegExpSearcher, "RegExpSearcher")                      \
   MACRO(RegExpStringIterator, RegExpStringIterator, "RegExp String Iterator")  \
-  MACRO(RegExpTester, RegExpTester, "RegExpTester")                            \
-  MACRO(RegExp_prototype_Exec, RegExp_prototype_Exec, "RegExp_prototype_Exec") \
+  MACRO(RegExpToString, RegExpToString, "$RegExpToString")                     \
   MACRO(region, region, "region")                                              \
+  MACRO(register, register_, "register")                                       \
   MACRO(Reify, Reify, "Reify")                                                 \
   MACRO(reject, reject, "reject")                                              \
   MACRO(rejected, rejected, "rejected")                                        \
@@ -371,6 +374,7 @@
   MACRO(RequireObjectCoercible, RequireObjectCoercible,                        \
         "RequireObjectCoercible")                                              \
   MACRO(resolve, resolve, "resolve")                                           \
+  MACRO(result, result, "result")                                              \
   MACRO(resumeGenerator, resumeGenerator, "resumeGenerator")                   \
   MACRO(return, return_, "return")                                             \
   MACRO(revoke, revoke, "revoke")                                              \
@@ -388,6 +392,7 @@
   MACRO(setPrefix, setPrefix, "set ")                                          \
   MACRO(setPrototypeOf, setPrototypeOf, "setPrototypeOf")                      \
   MACRO(shape, shape, "shape")                                                 \
+  MACRO(signal, signal, "signal")                                              \
   MACRO(signDisplay, signDisplay, "signDisplay")                               \
   MACRO(size, size, "size")                                                    \
   MACRO(source, source, "source")                                              \
@@ -446,10 +451,9 @@
   MACRO(unitDisplay, unitDisplay, "unitDisplay")                               \
   MACRO(uninitialized, uninitialized, "uninitialized")                         \
   MACRO(unknown, unknown, "unknown")                                           \
+  MACRO(unregister, unregister, "unregister")                                  \
   MACRO(unsized, unsized, "unsized")                                           \
   MACRO(unwatch, unwatch, "unwatch")                                           \
-  MACRO(UnwrapAndCallRegExpBuiltinExec, UnwrapAndCallRegExpBuiltinExec,        \
-        "UnwrapAndCallRegExpBuiltinExec")                                      \
   MACRO(url, url, "url")                                                       \
   MACRO(usage, usage, "usage")                                                 \
   MACRO(useAsm, useAsm, "use asm")                                             \

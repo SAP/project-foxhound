@@ -19,6 +19,7 @@ from functools import wraps
 from mozbuild.configure.options import (
     CommandLineHelper,
     ConflictingOptionError,
+    HELP_OPTIONS_CATEGORY,
     InvalidOptionError,
     Option,
     OptionValue,
@@ -343,6 +344,9 @@ class ConfigureSandbox(dict):
         assert isinstance(config, dict)
         self._config = config
 
+        # Tracks how many templates "deep" we are in the stack.
+        self._template_depth = 0
+
         logging.addLevelName(TRACE, 'TRACE')
         if logger is None:
             logger = moz_logger = logging.getLogger('moz.configure')
@@ -369,13 +373,11 @@ class ConfigureSandbox(dict):
 
         def wrapped_log_method(logger, key):
             method = getattr(logger, key)
-            if not encoding:
-                return method
 
             def wrapped(*args, **kwargs):
                 out_args = [
-                    arg.decode(encoding) if isinstance(arg, six.binary_type) else arg
-                    for arg in args
+                    six.ensure_text(arg, encoding=encoding or 'utf-8')
+                    if isinstance(arg, six.binary_type) else arg for arg in args
                 ]
                 return method(*out_args, **kwargs)
             return wrapped
@@ -388,8 +390,8 @@ class ConfigureSandbox(dict):
         self.log_impl = ReadOnlyNamespace(**log_namespace)
 
         self._help = None
-        self._help_option = self.option_impl('--help',
-                                             help='print this message')
+        self._help_option = self.option_impl(
+            '--help', help='print this message', category=HELP_OPTIONS_CATEGORY)
         self._seen.add(self._help_option)
 
         self._always = DependsFunction(self, lambda: True, [])
@@ -399,7 +401,8 @@ class ConfigureSandbox(dict):
             self._help = HelpFormatter(argv[0])
             self._help.add(self._help_option)
         elif moz_logger:
-            handler = logging.FileHandler('config.log', mode='w', delay=True)
+            handler = logging.FileHandler('config.log', mode='w', delay=True,
+                                          encoding='utf-8')
             handler.setFormatter(formatter)
             logger.addHandler(handler)
 
@@ -676,6 +679,12 @@ class ConfigureSandbox(dict):
         args = [self._resolve(arg) for arg in args]
         kwargs = {k: self._resolve(v) for k, v in six.iteritems(kwargs)
                   if k != 'when'}
+        # The Option constructor needs to look up the stack to infer a category
+        # for the Option, since the category is based on the filename where the
+        # Option is defined. However, if the Option is defined in a template, we
+        # want the category to reference the caller of the template rather than
+        # the caller of the option() function.
+        kwargs['define_depth'] = self._template_depth * 3
         option = Option(*args, **kwargs)
         if when:
             self._conditions[option] = when
@@ -798,7 +807,9 @@ class ConfigureSandbox(dict):
                 args = [maybe_prepare_function(arg) for arg in args]
                 kwargs = {k: maybe_prepare_function(v)
                           for k, v in kwargs.items()}
+                self._template_depth += 1
                 ret = template(*args, **kwargs)
+                self._template_depth -= 1
                 if isfunction(ret):
                     # We can't expect the sandboxed code to think about all the
                     # details of implementing decorators, so do some of the
@@ -904,7 +915,10 @@ class ConfigureSandbox(dict):
         # fails with "IOError: file() constructor not accessible in
         # restricted mode". We also make open() look more like python 3's,
         # decoding to unicode strings unless the mode says otherwise.
-        if what == '__builtin__.open':
+        if what == '__builtin__.open' or what == 'builtins.open':
+            if six.PY3:
+                return open
+
             def wrapped_open(name, mode=None, buffering=None):
                 args = (name,)
                 kwargs = {}
@@ -937,6 +951,8 @@ class ConfigureSandbox(dict):
             if _from == '__builtin__' or _from.startswith('__builtin__.'):
                 _from = _from.replace('__builtin__', 'six.moves.builtins')
             import_line += 'from %s ' % _from
+        if what == '__builtin__':
+            what = 'six.moves.builtins'
         import_line += 'import %s as imported' % what
         glob = {}
         exec_(import_line, {}, glob)

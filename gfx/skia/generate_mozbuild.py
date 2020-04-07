@@ -39,31 +39,8 @@ AllowCompilerWarnings()
 
 FINAL_LIBRARY = 'gkmedias'
 LOCAL_INCLUDES += [
-    'skia/include/c',
-    'skia/include/codec',
-    'skia/include/config',
-    'skia/include/core',
-    'skia/include/docs',
-    'skia/include/effects',
-    'skia/include/encode',
-    'skia/include/gpu',
-    'skia/include/pathops',
-    'skia/include/ports',
-    'skia/include/private',
-    'skia/include/utils',
-    'skia/include/utils/mac',
-    'skia/src/codec',
-    'skia/src/core',
-    'skia/src/image',
-    'skia/src/lazy',
-    'skia/src/opts',
-    'skia/src/sfnt',
-    'skia/src/shaders',
-    'skia/src/shaders/gradients',
-    'skia/src/sksl',
-    'skia/src/utils',
-    'skia/src/utils/mac',
-    'skia/src/utils/win',
+    'skia',
+    'skia/include/third_party/skcms',
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
@@ -94,6 +71,10 @@ if CONFIG['MOZ_ENABLE_SKIA_PDF_SFNTLY']:
 
 if CONFIG['MOZ_TREE_FREETYPE']:
     DEFINES['SK_CAN_USE_DLOPEN'] = 0
+
+# Reduce strength of synthetic-emboldening used in the freetype backend
+# (see bug 1600470).
+DEFINES['SK_OUTLINE_EMBOLDEN_DIVISOR'] = 48
 
 # Suppress warnings in third-party code.
 CXXFLAGS += [
@@ -159,7 +140,7 @@ def generate_opt_sources():
 def generate_platform_sources():
   sources = {}
   platform_args = {
-    'win' : 'win_vc="C:/" win_sdk_version="00.0.00000.0"'
+    'win' : 'win_vc="C:/" win_sdk_version="00.0.00000.0" win_toolchain_version="00.00.00000"'
   }
   for plat in platforms:
     args = platform_args.get(plat, '')
@@ -206,7 +187,7 @@ def generate_separated_sources(platform_sources):
     'SkCanvasStateUtils',
     'SkFrontBufferedStream',
     'SkInterpolator',
-    'SkJSON',
+    'JSON',
     'SkMultiPictureDocument',
     'SkNullCanvas',
     'SkNWayCanvas',
@@ -230,6 +211,7 @@ def generate_separated_sources(platform_sources):
     'common': {
       'skia/src/codec/SkMasks.cpp',
       'skia/src/effects/imagefilters/SkBlurImageFilter.cpp',
+      'skia/src/effects/imagefilters/SkComposeImageFilter.cpp',
       'skia/src/effects/SkDashPathEffect.cpp',
       'skia/src/ports/SkDiscardableMemory_none.cpp',
       'skia/src/ports/SkGlobalInitialization_default.cpp',
@@ -329,6 +311,8 @@ unified_blacklist = [
   'SkScan_DAAPath.cpp',
   'SkParse.cpp',
   'SkPDFFont.cpp',
+  'SkPDFDevice.cpp',
+  'SkPDFType1Font.cpp',
   'SkPictureData.cpp',
   'SkColorSpace',
   'SkPathOpsDebug.cpp',

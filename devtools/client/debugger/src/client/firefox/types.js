@@ -16,16 +16,12 @@ import type {
   FrameId,
   ActorId,
   Script,
-  Pause,
   PendingLocation,
-  Frame,
   SourceId,
-  QueuedSourceData,
   Range,
 } from "../../types";
 
 import type { EventListenerCategoryList } from "../../actions/types";
-import actions from "../../actions";
 
 type URL = string;
 
@@ -66,21 +62,34 @@ type URL = string;
  * @static
  */
 
+export type FramePacket = {|
+  +actor: ActorId,
+  +arguments: any[],
+  +displayName: string,
+  +this: any,
+  +depth?: number,
+  +oldest?: boolean,
+  +type: "pause" | "call",
+  +where: ServerLocation,
+|};
+
+type ServerLocation = {| actor: string, line: number, column: number |};
+
 /**
  * Frame Packet
  * @memberof firefox/packets
  * @static
  */
-export type FramePacket = {
-  actor: ActorId,
-  arguments: any[],
+export type FrameFront = {
+  +typeName: "frame",
+  +data: FramePacket,
+  +getEnvironment: () => Promise<*>,
+  +where: ServerLocation,
+  actorID: string,
   displayName: string,
-  environment: any,
   this: any,
-  depth?: number,
-  oldest?: boolean,
-  type: "pause" | "call",
-  where: {| actor: string, line: number, column: number |},
+  asyncCause: null | string,
+  state: "on-stack" | "suspended" | "dead",
 };
 
 /**
@@ -131,7 +140,7 @@ export type PausedPacket = {
   actor: ActorId,
   from: ActorId,
   type: string,
-  frame: FramePacket,
+  frame: FrameFront,
   why: {
     actors: ActorId[],
     type: string,
@@ -144,18 +153,14 @@ export type PausedPacket = {
  * @memberof firefox
  * @static
  */
-export type FramesResponse = {
-  frames: FramePacket[],
-  from: ActorId,
-};
 
 export type TabPayload = {
   actor: ActorId,
   animationsActor: ActorId,
   consoleActor: ActorId,
+  contentViewerActor: ActorId,
   cssPropertiesActor: ActorId,
   directorManagerActor: ActorId,
-  emulationActor: ActorId,
   eventLoopLagActor: ActorId,
   framerateActor: ActorId,
   inspectorActor: ActorId,
@@ -166,6 +171,7 @@ export type TabPayload = {
   performanceEntriesActor: ActorId,
   profilerActor: ActorId,
   reflowActor: ActorId,
+  responsiveActor: ActorId,
   storageActor: ActorId,
   styleEditorActor: ActorId,
   styleSheetsActor: ActorId,
@@ -176,29 +182,42 @@ export type TabPayload = {
 };
 
 /**
- * Actions
+ * Tab Target gives access to the browser tabs
  * @memberof firefox
  * @static
  */
-export type Actions = {
-  paused: Pause => void,
-  resumed: ActorId => void,
-  newQueuedSources: (QueuedSourceData[]) => void,
-  fetchEventListeners: () => void,
-  updateThreads: typeof actions.updateThreads,
+export type Target = {
+  off: (string, Function) => void,
+  on: (string, Function) => void,
+  emit: (string, any) => void,
+  getFront: string => Promise<ConsoleFront>,
+  form: { consoleActor: any },
+  root: any,
+  navigateTo: ({ url: string }) => Promise<*>,
+  listWorkers: () => Promise<*>,
+  reload: () => Promise<*>,
+  destroy: () => void,
+  threadFront: ThreadFront,
+  name: string,
+  isBrowsingContext: boolean,
+  isContentProcess: boolean,
+  isWorkerTarget: boolean,
+  traits: Object,
+  chrome: Boolean,
+  url: string,
+  isParentProcess: Boolean,
+  isServiceWorker: boolean,
+
+  // Property installed by the debugger itself.
+  debuggerServiceWorkerStatus: string,
 };
 
-type ConsoleClient = {
-  evaluateJS: (
-    script: Script,
-    func: Function,
-    params?: { frameActor: ?FrameId }
-  ) => void,
+type ConsoleFront = {
   evaluateJSAsync: (
     script: Script,
     func: Function,
     params?: { frameActor: ?FrameId }
-  ) => Promise<{ result: Grip | null }>,
+  ) => Promise<{ result: ExpressionResult }>,
   autocomplete: (
     input: string,
     cursor: number,
@@ -209,44 +228,17 @@ type ConsoleClient = {
 };
 
 /**
- * Tab Target gives access to the browser tabs
- * @memberof firefox
- * @static
- */
-export type Target = {
-  on: (string, Function) => void,
-  emit: (string, any) => void,
-  form: { consoleActor: any },
-  root: any,
-  navigateTo: ({ url: string }) => Promise<*>,
-  listWorkers: () => Promise<*>,
-  reload: () => Promise<*>,
-  destroy: () => void,
-  threadFront: ThreadFront,
-  activeConsole: ConsoleClient,
-
-  name: string,
-  isBrowsingContext: boolean,
-  isContentProcess: boolean,
-  isWorkerTarget: boolean,
-  traits: Object,
-  chrome: boolean,
-  url: string,
-  isAddon: boolean,
-};
-
-/**
  * Clients for accessing the Firefox debug server and browser
  * @memberof firefox/clients
  * @static
  */
 
 /**
- * DebuggerClient
+ * DevToolsClient
  * @memberof firefox
  * @static
  */
-export type DebuggerClient = {
+export type DevToolsClient = {
   _activeRequests: {
     get: any => any,
     delete: any => void,
@@ -254,13 +246,16 @@ export type DebuggerClient = {
   mainRoot: {
     traits: any,
     getFront: string => Promise<*>,
-    listProcesses: () => Promise<{ processes: ProcessDescriptor }>,
+    listProcesses: () => Promise<Array<ProcessDescriptor>>,
+    listAllWorkerTargets: () => Promise<*>,
+    listServiceWorkerRegistrations: () => Promise<*>,
+    getWorker: any => Promise<*>,
     on: (string, Function) => void,
   },
   connect: () => Promise<*>,
   request: (packet: Object) => Promise<*>,
   attachConsole: (actor: String, listeners: Array<*>) => Promise<*>,
-  createObjectClient: (grip: Grip) => ObjectClient,
+  createObjectFront: (grip: Grip, thread: ThreadFront) => ObjectFront,
   release: (actor: String) => {},
   getFrontByID: (actor: String) => { release: () => Promise<*> },
 };
@@ -282,8 +277,8 @@ type ProcessDescriptor = Object;
  * @memberof firefox
  * @static
  */
-export type Grip = {
-  actor: string,
+export type Grip = {|
+  actor?: string,
   class: string,
   displayClass: string,
   displayName?: string,
@@ -302,7 +297,7 @@ export type Grip = {
   sealed: boolean,
   optimizedOut: boolean,
   type: string,
-};
+|};
 
 export type FunctionGrip = {|
   class: "Function",
@@ -333,19 +328,37 @@ export type SourceClient = {
 };
 
 /**
- * ObjectClient
+ * ObjectFront
  * @memberof firefox
  * @static
  */
-export type ObjectClient = {
+export type ObjectFront = {
+  actorID: string,
+  getGrip: () => Grip,
   getPrototypeAndProperties: () => any,
+  getProperty: string => { descriptor: any },
   addWatchpoint: (
     property: string,
     label: string,
     watchpointType: string
   ) => {},
   removeWatchpoint: (property: string) => {},
+  release: () => Promise<*>,
 };
+
+export type LongStringFront = {
+  actorID: string,
+  getGrip: () => Grip,
+  release: () => Promise<*>,
+};
+
+export type ExpressionResult =
+  | ObjectFront
+  | LongStringFront
+  | Grip
+  | string
+  | number
+  | null;
 
 /**
  * ThreadFront
@@ -353,16 +366,17 @@ export type ObjectClient = {
  * @static
  */
 export type ThreadFront = {
+  actorID: string,
+  parentFront: Target,
+  getFrames: (number, number) => Promise<{| frames: FrameFront[] |}>,
   resume: Function => Promise<*>,
   stepIn: Function => Promise<*>,
   stepOver: Function => Promise<*>,
   stepOut: Function => Promise<*>,
-  rewind: Function => Promise<*>,
-  reverseStepOver: Function => Promise<*>,
   breakOnNext: () => Promise<*>,
   // FIXME: unclear if SourceId or ActorId here
   source: ({ actor: SourceId }) => SourceClient,
-  pauseGrip: (Grip | Function) => ObjectClient,
+  pauseGrip: (Grip | Function) => ObjectFront,
   pauseOnExceptions: (boolean, boolean) => Promise<*>,
   setBreakpoint: (BreakpointLocation, BreakpointOptions) => Promise<*>,
   removeBreakpoint: PendingLocation => Promise<*>,
@@ -370,9 +384,8 @@ export type ThreadFront = {
   removeXHRBreakpoint: (path: string, method: string) => Promise<boolean>,
   interrupt: () => Promise<*>,
   eventListeners: () => Promise<*>,
-  getFrames: (number, number) => FramesResponse,
-  getEnvironment: (frame: Frame) => Promise<*>,
   on: (string, Function) => void,
+  off: (string, Function) => void,
   getSources: () => Promise<SourcesPacket>,
   reconfigure: ({ observeAsmJS: boolean }) => Promise<*>,
   getLastPausePacket: () => ?PausedPacket,
@@ -385,6 +398,9 @@ export type ThreadFront = {
   getAvailableEventBreakpoints: () => Promise<EventListenerCategoryList>,
   skipBreakpoints: boolean => Promise<{| skip: boolean |}>,
   detach: () => Promise<void>,
+  timeWarp: Function => Promise<*>,
+  fetchAncestorFramePositions: Function => Promise<*>,
+  get: string => FrameFront,
 };
 
 export type Panel = {|

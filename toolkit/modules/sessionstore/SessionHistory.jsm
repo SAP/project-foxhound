@@ -259,11 +259,12 @@ var SessionHistoryInternal = {
       entry.csp = E10SUtils.serializeCSP(shEntry.csp);
     }
 
-    entry.docIdentifier = shEntry.BFCacheEntry.ID;
+    entry.docIdentifier = shEntry.bfcacheID;
 
     if (shEntry.stateData != null) {
-      entry.structuredCloneState = shEntry.stateData.getDataAsBase64();
-      entry.structuredCloneVersion = shEntry.stateData.formatVersion;
+      let stateData = shEntry.stateData;
+      entry.structuredCloneState = stateData.getDataAsBase64();
+      entry.structuredCloneVersion = stateData.formatVersion;
     }
 
     if (shEntry.childCount > 0 && !shEntry.hasDynamicallyAddedChild()) {
@@ -350,7 +351,7 @@ var SessionHistoryInternal = {
       }
       let persist = "persist" in entry ? entry.persist : true;
       history.addEntry(
-        this.deserializeEntry(entry, idMap, docIdentMap),
+        this.deserializeEntry(entry, idMap, docIdentMap, history),
         persist
       );
     }
@@ -374,10 +375,8 @@ var SessionHistoryInternal = {
    *        Hash to ensure reuse of BFCache entries
    * @returns nsISHEntry
    */
-  deserializeEntry(entry, idMap, docIdentMap) {
-    var shEntry = Cc[
-      "@mozilla.org/browser/session-history-entry;1"
-    ].createInstance(Ci.nsISHEntry);
+  deserializeEntry(entry, idMap, docIdentMap, shistory) {
+    var shEntry = shistory.createEntry();
 
     shEntry.URI = Services.io.newURI(entry.url);
     shEntry.title = entry.title || entry.url;
@@ -467,14 +466,15 @@ var SessionHistoryInternal = {
     }
 
     if (entry.structuredCloneState && entry.structuredCloneVersion) {
-      shEntry.stateData = Cc[
+      var stateData = Cc[
         "@mozilla.org/docshell/structured-clone-container;1"
       ].createInstance(Ci.nsIStructuredCloneContainer);
 
-      shEntry.stateData.initFromBase64(
+      stateData.initFromBase64(
         entry.structuredCloneState,
         entry.structuredCloneVersion
       );
+      shEntry.stateData = stateData;
     }
 
     if (entry.scrollRestorationIsManual) {
@@ -511,19 +511,23 @@ var SessionHistoryInternal = {
       }
     }
 
-    if (entry.triggeringPrincipal_base64) {
-      shEntry.triggeringPrincipal = E10SUtils.deserializePrincipal(
-        entry.triggeringPrincipal_base64,
-        () => {
-          // Ensure that we have a null principal if we couldn't deserialize it.
-          // This won't always work however is safe to use.
-          debug(
-            "Couldn't deserialize the triggeringPrincipal, falling back to NullPrincipal"
-          );
-          return Services.scriptSecurityManager.createNullPrincipal({});
-        }
-      );
-    }
+    // Every load must have a triggeringPrincipal to load otherwise we prevent it,
+    // this code *must* always return a valid principal:
+    shEntry.triggeringPrincipal = E10SUtils.deserializePrincipal(
+      entry.triggeringPrincipal_base64,
+      () => {
+        // This callback fires when we failed to deserialize the principal (or we don't have one)
+        // and this ensures we always have a principal returned from this function.
+        // We must always have a triggering principal for a load to work.
+        // A null principal won't always work however is safe to use.
+        debug(
+          "Couldn't deserialize the triggeringPrincipal, falling back to NullPrincipal"
+        );
+        return Services.scriptSecurityManager.createNullPrincipal({});
+      }
+    );
+    // As both storagePrincipal and principalToInherit are both not required to load
+    // it's ok to keep these undefined when we don't have a previously defined principal.
     if (entry.storagePrincipalToInherit_base64) {
       shEntry.storagePrincipalToInherit = E10SUtils.deserializePrincipal(
         entry.storagePrincipalToInherit_base64
@@ -561,7 +565,12 @@ var SessionHistoryInternal = {
         // they have the same parent or their parents have the same document.
 
         shEntry.AddChild(
-          this.deserializeEntry(entry.children[i], idMap, childDocIdents),
+          this.deserializeEntry(
+            entry.children[i],
+            idMap,
+            childDocIdents,
+            shEntry.shistory
+          ),
           i
         );
       }

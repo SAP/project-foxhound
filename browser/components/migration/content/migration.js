@@ -29,7 +29,7 @@ var MigrationWizard = {
     os.addObserver(this, "Migration:ItemError");
     os.addObserver(this, "Migration:Ended");
 
-    this._wiz = document.documentElement;
+    this._wiz = document.querySelector("wizard");
 
     let args = window.arguments;
     let entryPointId = args[0] || MigrationUtils.MIGRATION_ENTRYPOINT_UNKNOWN;
@@ -203,7 +203,6 @@ var MigrationWizard = {
 
       this._wiz.canAdvance = false;
 
-      document.getElementById("importBookmarks").hidden = true;
       document.getElementById("importAll").hidden = true;
     }
 
@@ -225,7 +224,7 @@ var MigrationWizard = {
       Services.telemetry
         .getHistogramById("FX_MIGRATION_SOURCE_BROWSER")
         .add(MigrationUtils.getSourceIdForTelemetry("nothing"));
-      document.documentElement.cancel();
+      this._wiz.cancel();
       event.preventDefault();
     }
 

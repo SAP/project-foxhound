@@ -17,9 +17,7 @@
 #include "mozilla/dom/Document.h"
 #include "nsIDocumentObserver.h"
 #include "nsIObserver.h"
-#include "nsIScrollPositionListener.h"
 #include "nsITimer.h"
-#include "nsIWeakReference.h"
 
 class nsAccessiblePivot;
 
@@ -46,7 +44,6 @@ class TNotification;
 class DocAccessible : public HyperTextAccessibleWrap,
                       public nsIDocumentObserver,
                       public nsIObserver,
-                      public nsIScrollPositionListener,
                       public nsSupportsWeakReference,
                       public nsIAccessiblePivotObserver {
   NS_DECL_ISUPPORTS_INHERITED
@@ -60,10 +57,6 @@ class DocAccessible : public HyperTextAccessibleWrap,
 
  public:
   DocAccessible(Document* aDocument, PresShell* aPresShell);
-
-  // nsIScrollPositionListener
-  virtual void ScrollPositionWillChange(nscoord aX, nscoord aY) override {}
-  virtual void ScrollPositionDidChange(nscoord aX, nscoord aY) override;
 
   // nsIDocumentObserver
   NS_DECL_NSIDOCUMENTOBSERVER
@@ -385,6 +378,13 @@ class DocAccessible : public HyperTextAccessibleWrap,
    */
   DocAccessibleChild* IPCDoc() const { return mIPCDoc; }
 
+  /**
+   * Notify the document that a DOM node has been scrolled. document will
+   * dispatch throttled accessibility events for scrolling, and a scroll-end
+   * event.
+   */
+  void HandleScroll(nsINode* aTarget);
+
  protected:
   virtual ~DocAccessible();
 
@@ -418,12 +418,6 @@ class DocAccessible : public HyperTextAccessibleWrap,
    * events if applicable.
    */
   void ProcessLoad();
-
-  /**
-   * Add/remove scroll listeners, @see nsIScrollPositionListener interface.
-   */
-  void AddScrollListener();
-  void RemoveScrollListener();
 
   /**
    * Append the given document accessible to this document's child document
@@ -578,7 +572,7 @@ class DocAccessible : public HyperTextAccessibleWrap,
    */
   static void ScrollTimerCallback(nsITimer* aTimer, void* aClosure);
 
-  void DispatchScrollingEvent(uint32_t aEventType);
+  void DispatchScrollingEvent(nsINode* aTarget, uint32_t aEventType);
 
   /**
    * Check if an id attribute change affects aria-activedescendant and handle
@@ -608,11 +602,8 @@ class DocAccessible : public HyperTextAccessibleWrap,
    * State and property flags, kept by mDocFlags.
    */
   enum {
-    // Whether scroll listeners were added.
-    eScrollInitialized = 1 << 0,
-
     // Whether the document is a tab document.
-    eTabDocument = 1 << 1
+    eTabDocument = 1 << 0
   };
 
   /**
@@ -624,8 +615,7 @@ class DocAccessible : public HyperTextAccessibleWrap,
 
   Document* mDocumentNode;
   nsCOMPtr<nsITimer> mScrollWatchTimer;
-  uint16_t mScrollPositionChangedTicks;  // Used for tracking scroll events
-  TimeStamp mLastScrollingDispatch;
+  nsDataHashtable<nsPtrHashKey<nsINode>, TimeStamp> mLastScrollingDispatch;
 
   /**
    * Bit mask of document load states (@see LoadState).
@@ -729,6 +719,8 @@ class DocAccessible : public HyperTextAccessibleWrap,
   friend class NotificationController;
 
  private:
+  void SetRoleMapEntryForDoc(dom::Element* aElement);
+
   PresShell* mPresShell;
 
   // Exclusively owned by IPDL so don't manually delete it!

@@ -11,7 +11,7 @@ add_task(async function test_checkForErrorSection() {
     gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, validCert);
   });
 
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
     let infoGroups;
     let downloadLinkContainers = [];
 
@@ -45,9 +45,7 @@ add_task(async function test_checkForErrorSection() {
     let certChain = [];
     for (let i = 0; i < certs.length; i++) {
       certChain.push(
-        `-----BEGIN CERTIFICATE-----\r\n${
-          certs[i]
-        }\r\n-----END CERTIFICATE-----\r\n`
+        `-----BEGIN CERTIFICATE-----\r\n${certs[i]}\r\n-----END CERTIFICATE-----\r\n`
       );
     }
     certChain = certChain.join("").replace(/(\r\n|\n|\r)/gm, "");

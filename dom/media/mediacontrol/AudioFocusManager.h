@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_audiofocusmanager_h__
-#define mozilla_dom_audiofocusmanager_h__
+#ifndef DOM_MEDIA_MEDIACONTROL_AUDIOFOCUSMANAGER_H_
+#define DOM_MEDIA_MEDIACONTROL_AUDIOFOCUSMANAGER_H_
 
 #include "base/basictypes.h"
 #include "nsTArray.h"
@@ -11,6 +11,7 @@
 namespace mozilla {
 namespace dom {
 
+class MediaController;
 class MediaControlService;
 
 /**
@@ -24,24 +25,22 @@ class MediaControlService;
  */
 class AudioFocusManager {
  public:
-  void RequestAudioFocus(uint64_t aId);
-  void RevokeAudioFocus(uint64_t aId);
+  void RequestAudioFocus(MediaController* aController);
+  void RevokeAudioFocus(MediaController* aController);
 
-  explicit AudioFocusManager(MediaControlService* aService);
+  explicit AudioFocusManager() = default;
   ~AudioFocusManager() = default;
 
   uint32_t GetAudioFocusNums() const;
 
  private:
   friend class MediaControlService;
-  void Shutdown();
-  void HandleAudioCompetition(uint64_t aId);
+  void ClearFocusControllersIfNeeded();
 
-  RefPtr<MediaControlService> mService;
-  nsTArray<uint64_t> mOwningFocusControllers;
+  nsTArray<RefPtr<MediaController>> mOwningFocusControllers;
 };
 
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  //  mozilla_dom_audiofocusmanager_h__
+#endif  //  DOM_MEDIA_MEDIACONTROL_AUDIOFOCUSMANAGER_H_

@@ -35,6 +35,8 @@ import mozpack.path as mozpath
 
 from mozversioncontrol import get_repository_object
 
+from mozbuild.controller.clobber import Clobberer
+
 
 # Function used to run clang-format on a batch of files. It is a helper function
 # in order to integrate into the futures ecosystem clang-format.
@@ -45,19 +47,26 @@ def run_one_clang_format_batch(args):
         return e
 
 
-def map_file_to_source(abs_path, source):
-    # We have as an input an absolute path for whom we verify if it's a symlink,
-    # if so, we follow that symlink and we match it with elements from source,
-    # If the match is done we return abs_path, otherwise None.
-    assert isinstance(source, (list, tuple))
+def build_repo_relative_path(abs_path, repo_path):
+    '''Build path relative to repository root'''
 
     if os.path.islink(abs_path):
         abs_path = mozpath.realpath(abs_path)
 
-    # Look for abs_path in source
-    if abs_path in source:
-        return abs_path
-    return None
+    return mozpath.relpath(abs_path, repo_path)
+
+
+def prompt_bool(prompt, limit=5):
+    ''' Prompts the user with prompt and requires a boolean value. '''
+    from distutils.util import strtobool
+
+    for _ in range(limit):
+        try:
+            return strtobool(raw_input(prompt + "[Y/N]\n"))
+        except ValueError:
+            print("ERROR! Please enter a valid option! Please use any of the following:"
+                  " Y, N, True, False, 1, 0")
+    return False
 
 
 class StaticAnalysisSubCommand(SubCommand):
@@ -84,7 +93,7 @@ class StaticAnalysisMonitor(object):
         for item in self._clang_tidy_config:
             if item['name'] == '-*':
                 continue
-            item['name'].replace('*', '.*')
+            item['name'] = item['name'].replace('*', '.*')
 
         from mozbuild.compilation.warnings import (
             WarningsCollector,
@@ -95,9 +104,8 @@ class StaticAnalysisMonitor(object):
 
         def on_warning(warning):
 
-            # Output paths relative to repository root
-            warning['filename'] = mozpath.relpath(
-                map_file_to_source(warning['filename']), self._srcdir)
+            # Output paths relative to repository root if the paths are under repo tree
+            warning['filename'] = build_repo_relative_path(warning['filename'], self._srcdir)
 
             self._warnings_database.insert(warning)
 
@@ -130,7 +138,7 @@ class StaticAnalysisMonitor(object):
         if line.find('clang-tidy') != -1:
             filename = line.split(' ')[-1]
             if os.path.isfile(filename):
-                self._current = mozpath.relpath(map_file_to_source(filename), self._srcdir)
+                self._current = build_repo_relative_path(filename, self._srcdir)
             else:
                 self._current = None
             self._processed = self._processed + 1
@@ -225,7 +233,7 @@ class StaticAnalysis(MachCommandBase):
 
         if self._is_version_eligible() is False:
             self.log(logging.ERROR, 'static-analysis', {},
-                     "You're using an old version of clang-format binary."
+                     "ERROR: You're using an old version of clang-format binary."
                      " Please update to a more recent one by running: './mach bootstrap'")
             return 1
 
@@ -265,16 +273,28 @@ class StaticAnalysis(MachCommandBase):
         self._compilation_commands_path = self.topobjdir
         if self._clang_tidy_config is None:
             self._clang_tidy_config = self._get_clang_tidy_config()
-        args = self._get_clang_tidy_command(
-            checks=checks, header_filter=header_filter, sources=source, jobs=jobs, fix=fix)
 
         monitor = StaticAnalysisMonitor(
             self.topsrcdir, self.topobjdir, self._clang_tidy_config, total)
 
         footer = StaticAnalysisFooter(self.log_manager.terminal, monitor)
+
         with StaticAnalysisOutputManager(self.log_manager, monitor, footer) as output_manager:
-            rc = self.run_process(args=args, ensure_exit_code=False,
-                                  line_handler=output_manager.on_line, cwd=cwd)
+            import math
+            import multiprocessing
+            batch_size = int(math.ceil(float(len(source)) / multiprocessing.cpu_count()))
+            for i in range(0, len(source), batch_size):
+                args = self._get_clang_tidy_command(
+                    checks=checks,
+                    header_filter=header_filter,
+                    sources=source[i:(i + batch_size)],
+                    jobs=jobs,
+                    fix=fix)
+                rc = self.run_process(
+                    args=args,
+                    ensure_exit_code=False,
+                    line_handler=output_manager.on_line,
+                    cwd=cwd)
 
             self.log(logging.WARNING, 'warning_summary',
                      {'count': len(monitor.warnings_db)},
@@ -333,7 +353,7 @@ class StaticAnalysis(MachCommandBase):
         # Verify that we have source files or we are dealing with a full-build
         if len(source) == 0 and not full_build:
             self.log(logging.ERROR, 'static-analysis', {},
-                     'There are no files that coverity can use to scan.')
+                     'ERROR: There are no files that coverity can use to scan.')
             return 0
 
         # Load the configuration file for coverity static-analysis
@@ -349,7 +369,10 @@ class StaticAnalysis(MachCommandBase):
         # We need this in both cases, per patch analysis or full tree build
         cmd = [self.cov_run_desktop, '--setup']
         if self.run_cov_command(cmd, self.cov_path):
-            return 1
+            # Avoiding a bug in Coverity where snapshot is not identified
+            # as beeing built with the current analysis binary.
+            if not full_build:
+                return 1
 
         # Run cov-configure for clang, javascript and python
         langs = ["clang", "javascript", "python"]
@@ -447,8 +470,14 @@ class StaticAnalysis(MachCommandBase):
 
         # For each element in commands_list run `cov-translate`
         for element in commands_list:
+
+            def transform_cmd(cmd):
+                # Coverity Analysis has a problem translating definitions passed as:
+                # '-DSOME_DEF="ValueOfAString"', please see Bug 1588283.
+                return [re.sub(r'\'-D(.*)="(.*)"\'', r'-D\1="\2"', arg) for arg in cmd]
+
             cmd = [self.cov_translate, '--dir', self.cov_idir_path] + \
-                element['command'].split(' ')
+                transform_cmd(element['command'].split(' '))
 
             if self.run_cov_command(cmd, element['directory']):
                 return 1
@@ -478,7 +507,8 @@ class StaticAnalysis(MachCommandBase):
         rc = self.run_process(args=cmd, cwd=path, pass_thru=True)
 
         if rc != 0:
-            self.log(logging.ERROR, 'static-analysis', {}, 'Running ' + ' '.join(cmd) + ' failed!')
+            self.log(logging.ERROR, 'static-analysis', {},
+                     'ERROR: Running ' + ' '.join(cmd) + ' failed!')
             return rc
         return 0
 
@@ -511,12 +541,6 @@ class StaticAnalysis(MachCommandBase):
     def dump_cov_artifact(self, cov_results, source, output):
         # Parse Coverity json into structured issues
 
-        def relpath(path):
-            '''Build path relative to repository root'''
-            if path.startswith(self.topsrcdir):
-                return os.path.relpath(path, self.topsrcdir)
-            return path
-
         with open(cov_results) as f:
             result = json.load(f)
 
@@ -548,7 +572,8 @@ class StaticAnalysis(MachCommandBase):
                 # Embed all events into extra message
                 for event in issue['events']:
                     dict_issue['extra']['stack'].append(
-                        {'file_path': relpath(event['strippedFilePathname']),
+                        {'file_path': build_repo_relative_path(event['strippedFilePathname'],
+                                                               self.topsrcdir),
                          'line_number': event['lineNumber'],
                          'path_type': event['eventTag'],
                          'description': event['eventDescription']})
@@ -556,7 +581,8 @@ class StaticAnalysis(MachCommandBase):
                 return dict_issue
 
             for issue in result['issues']:
-                path = map_file_to_source(issue['strippedMainEventFilePathname'], source)
+                path = build_repo_relative_path(issue['strippedMainEventFilePathname'],
+                                                self.topsrcdir)
                 if path is None:
                     # Since we skip a result we should log it
                     self.log(logging.INFO, 'static-analysis', {},
@@ -566,7 +592,6 @@ class StaticAnalysis(MachCommandBase):
                                 issue['strippedMainEventFilePathname'])
                              )
                     continue
-                path = relpath(path)
                 if path in files_list:
                     files_list[path]['warnings'].append(build_element(issue))
                 else:
@@ -585,14 +610,16 @@ class StaticAnalysis(MachCommandBase):
                  'Using symbol upload token from the secrets service: "{}"'.format(secrets_url))
 
         import requests
+        self.log_manager.enable_unstructured()
         res = requests.get(secrets_url)
+        self.log_manager.disable_unstructured()
         res.raise_for_status()
         secret = res.json()
         cov_config = secret['secret'] if 'secret' in secret else None
 
         if cov_config is None:
             self.log(logging.ERROR, 'static-analysis', {},
-                     'Ill formatted secret for Coverity. Aborting analysis.')
+                     'ERROR: Ill formatted secret for Coverity. Aborting analysis.')
             return 1
 
         self.cov_analysis_url = cov_config.get('package_url')
@@ -615,7 +642,8 @@ class StaticAnalysis(MachCommandBase):
         if self.cov_url is None or self.cov_port is None or \
                 self.cov_analysis_url is None or \
                 self.cov_auth is None:
-            self.log(logging.ERROR, 'static-analysis', {}, 'Missing Coverity secret on try job!')
+            self.log(logging.ERROR, 'static-analysis', {},
+                     'ERROR: Missing Coverity secret on try job!')
             return 1
 
         COVERITY_CONFIG = '''
@@ -645,7 +673,9 @@ class StaticAnalysis(MachCommandBase):
 
         def download(artifact_url, target):
             import requests
+            self.log_manager.enable_unstructured()
             resp = requests.get(artifact_url, verify=False, stream=True)
+            self.log_manager.disable_unstructured()
             resp.raise_for_status()
 
             # Extract archive into destination
@@ -697,7 +727,7 @@ class StaticAnalysis(MachCommandBase):
 
         if not os.path.exists(self.cov_path):
             self.log(logging.ERROR, 'static-analysis', {},
-                     'Missing Coverity in {}'.format(self.cov_path))
+                     'ERROR: Missing Coverity in {}'.format(self.cov_path))
             return 1
 
         return 0
@@ -793,11 +823,8 @@ class StaticAnalysis(MachCommandBase):
             return rc
         # which checkers to use, and which folders to exclude
         all_checkers, third_party_path, generated_path = self._get_infer_config()
-        checkers, excludes = self._get_infer_args(
-            checks=checks or all_checkers,
-            third_party_path=third_party_path,
-            generated_path=generated_path
-        )
+        checkers, excludes = self._get_infer_args(checks or all_checkers, third_party_path,
+                                                  generated_path)
         rc = rc or self._gradle(['clean'])  # clean so that we can recompile
         # infer capture command
         capture_cmd = [self._infer_path, 'capture'] + excludes + ['--']
@@ -884,7 +911,7 @@ class StaticAnalysis(MachCommandBase):
             config = yaml.safe_load(file_handler)
         except Exception:
             self.log(logging.ERROR, 'static-analysis', {},
-                     'Looks like config.yaml is not valid, we are going to use default'
+                     'ERROR: Looks like config.yaml is not valid, we are going to use default'
                      ' values for the rest of the analysis for clang-tidy.')
             return None
         return config
@@ -895,7 +922,7 @@ class StaticAnalysis(MachCommandBase):
             config = yaml.safe_load(file_handler)
         except Exception:
             self.log(logging.ERROR, 'static-analysis', {},
-                     'Looks like config.yaml is not valid, we are going to use default'
+                     'ERROR: Looks like config.yaml is not valid, we are going to use default'
                      ' values for the rest of the analysis for coverity.')
             return None
         return config
@@ -910,7 +937,7 @@ class StaticAnalysis(MachCommandBase):
             version = self._clang_tidy_config['package_version']
         else:
             self.log(logging.ERROR, 'static-analysis', {},
-                     "Unable to find 'package_version' in the config.yml")
+                     "ERROR: Unable to find 'package_version' in the config.yml")
             return False
 
         # Because the fact that we ship together clang-tidy and clang-format
@@ -925,9 +952,8 @@ class StaticAnalysis(MachCommandBase):
                 return True
         except subprocess.CalledProcessError as e:
             self.log(logging.ERROR, 'static-analysis', {},
-                     "Error determining the version clang-tidy/format binary, please see the "
-                     "attached exception: \n{}".format(e.output))
-
+                     "ERROR: Error determining the version clang-tidy/format binary, "
+                     "please see the attached exception: \n{}".format(e.output))
         return False
 
     def _get_clang_tidy_command(self, checks, header_filter, sources, jobs, fix):
@@ -938,7 +964,7 @@ class StaticAnalysis(MachCommandBase):
         common_args = ['-clang-tidy-binary', self._clang_tidy_path,
                        '-clang-apply-replacements-binary', self._clang_apply_replacements,
                        '-checks=%s' % checks,
-                       '-extra-arg=-DMOZ_CLANG_PLUGIN']
+                       '-extra-arg=-std=c++17', '-extra-arg=-DMOZ_CLANG_PLUGIN']
 
         # Flag header-filter is passed in order to limit the diagnostic messages only
         # to the specified header files. When no value is specified the default value
@@ -1010,7 +1036,8 @@ class StaticAnalysis(MachCommandBase):
                      help='Generate the baseline for the regression test. Based on'
                      ' this baseline we will test future results.')
     @CommandArgument('--intree-tool', '-i', default=False, action='store_true',
-                     help='Use a pre-aquired in-tree clang-tidy package.')
+                     help='Use a pre-aquired in-tree clang-tidy package from the automation env.'
+                     ' This option is only valid on automation environments.')
     @CommandArgument('checker_names', nargs='*', default=[],
                      help='Checkers that are going to be auto-tested.')
     def autotest(self, verbose=False, dump_results=False, intree_tool=False, checker_names=[]):
@@ -1037,6 +1064,15 @@ class StaticAnalysis(MachCommandBase):
 
         # Configure the tree or download clang-tidy package, depending on the option that we choose
         if intree_tool:
+            if 'MOZ_AUTOMATION' not in os.environ:
+                self.log(logging.INFO, 'static-analysis', {},
+                         'The `autotest` with `--intree-tool` can only be ran in automation.')
+                return 1
+            if 'MOZ_FETCHES_DIR' not in os.environ:
+                self.log(logging.INFO, 'static-analysis', {},
+                         '`MOZ_FETCHES_DIR` is missing from the environment variables.')
+                return 1
+
             _, config, _ = self._get_config_environment()
             clang_tools_path = os.environ['MOZ_FETCHES_DIR']
             self._clang_tidy_path = mozpath.join(
@@ -1060,7 +1096,7 @@ class StaticAnalysis(MachCommandBase):
 
         if rc != 0:
             self.log(logging.ERROR, 'ERROR: static-analysis', {},
-                     'clang-tidy unable to locate package.')
+                     'ERROR: clang-tidy unable to locate package.')
             return self.TOOLS_FAILED_DOWNLOAD
 
         self._clang_tidy_base_path = mozpath.join(self.topsrcdir, "tools", "clang-tidy")
@@ -1072,7 +1108,7 @@ class StaticAnalysis(MachCommandBase):
         if platform not in self._clang_tidy_config['platforms']:
             self.log(
                 logging.ERROR, 'static-analysis', {},
-                "RUNNING: clang-tidy autotest for platform {} not supported.".format(
+                "ERROR: RUNNING: clang-tidy autotest for platform {} not supported.".format(
                     platform)
                 )
             return self.TOOLS_UNSUPORTED_PLATFORM
@@ -1235,7 +1271,8 @@ class StaticAnalysis(MachCommandBase):
 
         if len(failed_checks) > 0:
             self.log(logging.ERROR, 'static-analysis', {},
-                     'The following check(s) failed for bulk analysis: ' + ' '.join(failed_checks))
+                     'ERROR: The following check(s) failed for bulk analysis: ' +
+                     ' '.join(failed_checks))
 
             for failed_check, baseline_issue in zip(failed_checks, failed_checks_baseline):
                 print('\tChecker {0} expect following results: \n\t\t{1}'.format(
@@ -1277,7 +1314,7 @@ class StaticAnalysis(MachCommandBase):
             rc = self._get_infer(force=force_download, verbose=verbose, intree_tool=intree_tool)
             if rc != 0:
                 self.log(logging.ERROR, 'ERROR: static-analysis', {},
-                         'infer unable to locate package.')
+                         'ERROR: infer unable to locate package.')
                 return self.TOOLS_FAILED_DOWNLOAD
             self.__infer_tool = mozpath.join(self.topsrcdir, 'tools', 'infer')
             self.__infer_test_folder = mozpath.join(self.__infer_tool, 'test')
@@ -1552,7 +1589,7 @@ class StaticAnalysis(MachCommandBase):
 
         if self._is_version_eligible() is False:
             self.log(logging.ERROR, 'static-analysis', {},
-                     "You're using an old version of clang-format binary."
+                     "ERROR: You're using an old version of clang-format binary."
                      " Please update to a more recent one by running: './mach bootstrap'")
             return 1
 
@@ -1722,7 +1759,22 @@ class StaticAnalysis(MachCommandBase):
         try:
             config = self.config_environment
         except Exception:
-            print('Looks like configure has not run yet, running it now...')
+            self.log(logging.WARNING, 'static-analysis', {},
+                     "Looks like configure has not run yet, running it now...")
+
+            clobber = Clobberer(self.topsrcdir, self.topobjdir)
+
+            if clobber.clobber_needed():
+                choice = prompt_bool(
+                    "Configuration has changed and Clobber is needed. "
+                    "Do you want to proceed?"
+                )
+                if not choice:
+                    self.log(logging.ERROR, 'static-analysis', {},
+                             "ERROR: Without Clobber we cannot continue execution!")
+                    return (1, None, None)
+                os.environ["AUTOCLOBBER"] = "1"
+
             rc = builder.configure()
             if rc != 0:
                 return (rc, config, ran_configure)

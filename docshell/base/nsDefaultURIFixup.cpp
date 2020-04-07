@@ -23,7 +23,6 @@
 #include "mozilla/TextUtils.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/Unused.h"
-#include "nsIObserverService.h"
 #include "nsXULAppAPI.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_keyword.h"
@@ -414,7 +413,7 @@ nsDefaultURIFixup::KeywordToURI(const nsACString& aKeyword,
     }
 
     RefPtr<nsIInputStream> postData;
-    Maybe<ipc::URIParams> uri;
+    Maybe<mozilla::ipc::URIParams> uri;
     nsAutoString providerName;
     if (!contentChild->SendKeywordToURI(keyword, aIsPrivateContext,
                                         &providerName, &postData, &uri)) {
@@ -429,7 +428,7 @@ nsDefaultURIFixup::KeywordToURI(const nsACString& aKeyword,
     }
 
     nsCOMPtr<nsIURI> temp = DeserializeURI(uri);
-    info->mPreferredURI = temp.forget();
+    info->mPreferredURI = std::move(temp);
     return NS_OK;
   }
 
@@ -748,13 +747,13 @@ bool nsDefaultURIFixup::PossiblyHostPortUrl(const nsACString& aUrl) {
   ++iter;
 
   // Count the number of digits after the colon and before the
-  // next forward slash (or end of string)
+  // next forward slash, question mark, hash sign, or end of string.
 
   uint32_t digitCount = 0;
   while (iter != iterEnd && digitCount <= 5) {
     if (IsAsciiDigit(*iter)) {
       digitCount++;
-    } else if (*iter == '/') {
+    } else if (*iter == '/' || *iter == '?' || *iter == '#') {
       break;
     } else {
       // Whatever it is, it ain't a port!

@@ -16,7 +16,7 @@ const {
   span,
 } = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-const { L10N } = require("../utils/l10n");
+const { L10N } = require("devtools/client/accessibility/utils/l10n");
 
 loader.lazyGetter(this, "MenuButton", function() {
   return createFactory(
@@ -34,10 +34,10 @@ loader.lazyGetter(this, "MenuList", function() {
   );
 });
 
-const actions = require("../actions/audit");
+const actions = require("devtools/client/accessibility/actions/audit");
 
 const { connect } = require("devtools/client/shared/vendor/react-redux");
-const { FILTERS } = require("../constants");
+const { FILTERS } = require("devtools/client/accessibility/constants");
 
 const TELEMETRY_AUDIT_ACTIVATED = "devtools.accessibility.audit_activated";
 const FILTER_LABELS = {
@@ -54,13 +54,14 @@ class AccessibilityTreeFilter extends Component {
       auditing: PropTypes.array.isRequired,
       filters: PropTypes.object.isRequired,
       dispatch: PropTypes.func.isRequired,
-      accessibilityWalker: PropTypes.object.isRequired,
       describedby: PropTypes.string,
+      toolboxDoc: PropTypes.object.isRequired,
+      audit: PropTypes.func.isRequired,
     };
   }
 
   async toggleFilter(filterKey) {
-    const { dispatch, filters, accessibilityWalker } = this.props;
+    const { audit: auditFunc, dispatch, filters } = this.props;
 
     if (filterKey !== FILTERS.NONE && !filters[filterKey]) {
       if (gTelemetry) {
@@ -68,7 +69,7 @@ class AccessibilityTreeFilter extends Component {
       }
 
       dispatch(actions.auditing(filterKey));
-      await dispatch(actions.audit(accessibilityWalker, filterKey));
+      await dispatch(actions.audit(auditFunc, filterKey));
     }
 
     // We wait to dispatch filter toggle until the tree is ready to be filtered
@@ -82,7 +83,7 @@ class AccessibilityTreeFilter extends Component {
   }
 
   render() {
-    const { auditing, filters, describedby } = this.props;
+    const { auditing, filters, describedby, toolboxDoc } = this.props;
     const toolbarLabelID = "accessibility-tree-filters-label";
     const filterNoneChecked = !Object.values(filters).includes(true);
     const items = [
@@ -146,7 +147,7 @@ class AccessibilityTreeFilter extends Component {
       MenuButton(
         {
           menuId: "accessibility-tree-filters-menu",
-          doc: document,
+          toolboxDoc,
           className: `devtools-button badge toolbar-menu-button filters`,
           label,
         },

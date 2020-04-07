@@ -7,6 +7,7 @@
 #define mozilla_net_SocketProcessChild_h
 
 #include "mozilla/net/PSocketProcessChild.h"
+#include "mozilla/ipc/InputStreamUtils.h"
 #include "nsRefPtrHashtable.h"
 
 namespace mozilla {
@@ -20,15 +21,18 @@ class SocketProcessBridgeParent;
 
 // The IPC actor implements PSocketProcessChild in child process.
 // This is allocated and kept alive by SocketProcessImpl.
-class SocketProcessChild final : public PSocketProcessChild {
+class SocketProcessChild final
+    : public PSocketProcessChild,
+      public mozilla::ipc::ChildToParentStreamActorManager {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SocketProcessChild)
+
   SocketProcessChild();
-  ~SocketProcessChild();
 
   static SocketProcessChild* GetSingleton();
 
   bool Init(base::ProcessId aParentPid, const char* aParentBuildID,
-            MessageLoop* aIOLoop, IPC::Channel* aChannel);
+            MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -47,13 +51,39 @@ class SocketProcessChild final : public PSocketProcessChild {
 
   PWebrtcTCPSocketChild* AllocPWebrtcTCPSocketChild(const Maybe<TabId>& tabId);
   bool DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor);
-  PDNSRequestChild* AllocPDNSRequestChild(
-      const nsCString& aHost, const OriginAttributes& aOriginAttributes,
-      const uint32_t& aFlags);
-  bool DeallocPDNSRequestChild(PDNSRequestChild*);
+
+  already_AddRefed<PHttpTransactionChild> AllocPHttpTransactionChild();
+
+  PFileDescriptorSetChild* AllocPFileDescriptorSetChild(
+      const FileDescriptor& fd);
+  bool DeallocPFileDescriptorSetChild(PFileDescriptorSetChild* aActor);
+
+  PChildToParentStreamChild* AllocPChildToParentStreamChild();
+  bool DeallocPChildToParentStreamChild(PChildToParentStreamChild* aActor);
+  PParentToChildStreamChild* AllocPParentToChildStreamChild();
+  bool DeallocPParentToChildStreamChild(PParentToChildStreamChild* aActor);
 
   void CleanUp();
   void DestroySocketProcessBridgeParent(ProcessId aId);
+
+  PChildToParentStreamChild* SendPChildToParentStreamConstructor(
+      PChildToParentStreamChild* aActor) override;
+  PFileDescriptorSetChild* SendPFileDescriptorSetConstructor(
+      const FileDescriptor& aFD) override;
+  already_AddRefed<PHttpConnectionMgrChild> AllocPHttpConnectionMgrChild();
+
+  mozilla::ipc::IPCResult RecvOnHttpActivityDistributorActivated(
+      const bool& aIsActivated);
+
+  already_AddRefed<PInputChannelThrottleQueueChild>
+  AllocPInputChannelThrottleQueueChild(const uint32_t& aMeanBytesPerSecond,
+                                       const uint32_t& aMaxBytesPerSecond);
+
+  bool IsShuttingDown() { return mShuttingDown; }
+
+ protected:
+  friend class SocketProcessImpl;
+  ~SocketProcessChild();
 
  private:
   // Mapping of content process id and the SocketProcessBridgeParent.
@@ -64,6 +94,8 @@ class SocketProcessChild final : public PSocketProcessChild {
 #ifdef MOZ_GECKO_PROFILER
   RefPtr<ChildProfilerController> mProfilerController;
 #endif
+
+  bool mShuttingDown;
 };
 
 }  // namespace net

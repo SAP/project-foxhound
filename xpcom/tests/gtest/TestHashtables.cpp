@@ -9,6 +9,7 @@
 #include "nsDataHashtable.h"
 #include "nsInterfaceHashtable.h"
 #include "nsClassHashtable.h"
+#include "nsRefPtrHashtable.h"
 
 #include "nsCOMPtr.h"
 #include "nsISupports.h"
@@ -19,6 +20,8 @@
 #include "gtest/gtest.h"
 
 #include <numeric>
+
+using mozilla::UniquePtr;
 
 namespace TestHashtables {
 
@@ -32,6 +35,25 @@ class TestUniChar  // for nsClassHashtable
   uint32_t GetChar() const { return mWord; }
 
  private:
+  uint32_t mWord;
+};
+
+class TestUniCharDerived : public TestUniChar {
+  using TestUniChar::TestUniChar;
+};
+
+class TestUniCharRefCounted  // for nsRefPtrHashtable
+{
+ public:
+  NS_INLINE_DECL_REFCOUNTING(TestUniCharRefCounted);
+
+  explicit TestUniCharRefCounted(uint32_t aWord) { mWord = aWord; }
+
+  uint32_t GetChar() const { return mWord; }
+
+ private:
+  ~TestUniCharRefCounted() = default;
+
   uint32_t mWord;
 };
 
@@ -359,14 +381,29 @@ TEST(Hashtables, DataHashtable_STLIterators)
   }
 }
 
+TEST(Hashtables, DataHashtable_RemoveIf)
+{
+  // check a data-hashtable
+  nsDataHashtable<nsUint32HashKey, const char*> UniToEntity(ENTITY_COUNT);
+
+  for (auto& entity : gEntities) {
+    UniToEntity.Put(entity.mUnicode, entity.mStr);
+  }
+
+  UniToEntity.RemoveIf([](const auto& iter) { return iter.Key() >= 170; });
+
+  ASSERT_EQ(10u, UniToEntity.Count());
+}
+
 TEST(Hashtables, ClassHashtable)
 {
   // check a class-hashtable
   nsClassHashtable<nsCStringHashKey, TestUniChar> EntToUniClass(ENTITY_COUNT);
 
   for (auto& entity : gEntities) {
-    auto* temp = new TestUniChar(entity.mUnicode);
-    EntToUniClass.Put(nsDependentCString(entity.mStr), temp);
+    // Insert a sub-class of TestUniChar to test if this is accepted by Put.
+    EntToUniClass.Put(nsDependentCString(entity.mStr),
+                      mozilla::MakeUnique<TestUniCharDerived>(entity.mUnicode));
   }
 
   TestUniChar* myChar;
@@ -425,7 +462,7 @@ TEST(Hashtables, ClassHashtable_RangeBasedFor)
       ASSERT_EQ(1u,
                 entities.erase(EntityNode{str, entity.GetData()->GetChar()}));
 
-      entity.SetData(nsAutoPtr<TestUniChar>{});
+      entity.SetData(UniquePtr<TestUniChar>{});
       ASSERT_EQ(nullptr, entity.GetData());
     }
     ASSERT_TRUE(entities.empty());
@@ -594,7 +631,7 @@ TEST(Hashtables, ClassHashtable_LookupForAdd)
 
   for (auto& entity : gEntities) {
     auto entry = EntToUniClass.LookupForAdd(nsDependentCString(entity.mStr));
-    const TestUniChar* val = entry.OrInsert([]() { return nullptr; });
+    const TestUniChar* val = entry.OrInsert([]() { return nullptr; }).get();
     ASSERT_FALSE(entry);
     ASSERT_TRUE(val == nullptr);
     ASSERT_TRUE(entry.Data() == nullptr);
@@ -644,7 +681,7 @@ TEST(Hashtables, ClassHashtable_LookupForAdd)
   // Remove existing entries via OrRemove.
   for (auto& entity : gEntities) {
     auto entry = EntToUniClass.LookupForAdd(nsDependentCString(entity.mStr));
-    const TestUniChar* val = entry.OrInsert([]() { return nullptr; });
+    const TestUniChar* val = entry.OrInsert([]() { return nullptr; }).get();
     ASSERT_FALSE(entry);
     ASSERT_TRUE(val == nullptr);
     ASSERT_TRUE(entry.Data() == nullptr);
@@ -654,4 +691,39 @@ TEST(Hashtables, ClassHashtable_LookupForAdd)
     entry2.OrRemove();
   }
   ASSERT_TRUE(0 == EntToUniClass.Count());
+}
+
+TEST(Hashtables, RefPtrHashtable)
+{
+  // check a RefPtr-hashtable
+  nsRefPtrHashtable<nsCStringHashKey, TestUniCharRefCounted> EntToUniClass(
+      ENTITY_COUNT);
+
+  for (auto& entity : gEntities) {
+    EntToUniClass.Put(
+        nsDependentCString(entity.mStr),
+        mozilla::MakeRefPtr<TestUniCharRefCounted>(entity.mUnicode));
+  }
+
+  TestUniCharRefCounted* myChar;
+
+  for (auto& entity : gEntities) {
+    ASSERT_TRUE(EntToUniClass.Get(nsDependentCString(entity.mStr), &myChar));
+  }
+
+  ASSERT_FALSE(EntToUniClass.Get(NS_LITERAL_CSTRING("xxxx"), &myChar));
+
+  uint32_t count = 0;
+  for (auto iter = EntToUniClass.Iter(); !iter.Done(); iter.Next()) {
+    count++;
+  }
+  ASSERT_EQ(count, ENTITY_COUNT);
+
+  EntToUniClass.Clear();
+
+  count = 0;
+  for (auto iter = EntToUniClass.Iter(); !iter.Done(); iter.Next()) {
+    count++;
+  }
+  ASSERT_EQ(count, uint32_t(0));
 }

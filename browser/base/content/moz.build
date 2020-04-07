@@ -40,6 +40,9 @@ with Files("test/historySwipeAnimation/**"):
 with Files("test/keyboard/**"):
     BUG_COMPONENT = ("Firefox", "Keyboard Navigation")
 
+with Files("test/outOfProcess/**"):
+    BUG_COMPONENT = ("Firefox", "General")
+
 with Files("test/pageActions/**"):
     BUG_COMPONENT = ("Firefox", "Toolbars and Customization")
 
@@ -65,7 +68,7 @@ with Files("test/popups/**"):
     BUG_COMPONENT = ("Firefox", "Site Permissions")
 
 with Files("test/referrer/**"):
-    BUG_COMPONENT = ("Core", "Document Navigation")
+    BUG_COMPONENT = ("Core", "DOM: Navigation")
 
 with Files("test/sanitize/**"):
     BUG_COMPONENT = ("Toolkit", "Data Sanitization")
@@ -106,6 +109,9 @@ with Files("test/webextensions/**"):
 with Files("test/webrtc/**"):
     BUG_COMPONENT = ("Core", "WebRTC")
 
+with Files("test/zoom/**"):
+    BUG_COMPONENT = ("Firefox", "General")
+
 with Files("aboutNetError.xhtml"):
     BUG_COMPONENT = ("Firefox", "Security")
 
@@ -125,7 +131,7 @@ with Files("browser-customization.js"):
     BUG_COMPONENT = ("Firefox", "Toolbars and Customization")
 
 with Files("browser-fullZoom.js"):
-    BUG_COMPONENT = ("Firefox", "Tabbed Browsing")
+    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
 
 with Files("browser-gestureSupport.js"):
     BUG_COMPONENT = ("Core", "Widget: Cocoa")
@@ -151,7 +157,7 @@ with Files("contentSearch*"):
 with Files("hiddenWindowMac.xhtml"):
     BUG_COMPONENT = ("Firefox", "Site Permissions")
 
-with Files("macWindow.inc.xul"):
+with Files("macWindow.inc.xhtml"):
     BUG_COMPONENT = ("Firefox", "Shell Integration")
 
 with Files("tabbrowser*"):

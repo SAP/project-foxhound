@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 /* Menu panel and palette styles */
 
 #appMenu-new-window-button {
@@ -168,4 +172,10 @@ toolbarpaletteitem[place="palette"] > #bookmarks-menu-button,
 
 #appMenu-library-downloads-show-button {
   list-style-image: url("chrome://browser/skin/folder.svg");
+}
+
+.panel-subview-body .ssb-uninstall > .toolbarbutton-icon {
+  list-style-image: url("chrome://global/skin/icons/close.svg");
+  -moz-context-properties: fill, fill-opacity;
+  fill-opacity: 0;
 }

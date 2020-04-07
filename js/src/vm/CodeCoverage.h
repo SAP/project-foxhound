@@ -36,15 +36,11 @@ class LCovSource {
 
   // Iterate over the bytecode and collect the lcov output based on the
   // ScriptCounts counters.
-  void writeScript(JSScript* script);
+  void writeScript(JSScript* script, const char* scriptName);
 
   // Write the Lcov output in a buffer, such as the one associated with
   // the runtime code coverage trace file.
   void exportInto(GenericPrinter& out);
-
- private:
-  // Write the script name in out.
-  bool writeScriptName(LSprinter& out, JSScript* script);
 
  private:
   // Name of the source file.
@@ -81,9 +77,6 @@ class LCovRealm {
   explicit LCovRealm(JS::Realm* realm);
   ~LCovRealm();
 
-  // Collect code coverage information for the given source.
-  void collectCodeCoverageInfo(JSScript* script, const char* name);
-
   // Write the Lcov output in a buffer, such as the one associated with
   // the runtime code coverage trace file.
   void exportInto(GenericPrinter& out, bool* isEmpty) const;
@@ -96,6 +89,10 @@ class LCovRealm {
 
   // Return the LCovSource entry which matches the given ScriptSourceObject.
   LCovSource* lookupOrAdd(const char* name);
+
+  // Generate escaped form of script atom and allocate inside our LifoAlloc if
+  // necessary.
+  const char* getScriptName(JSScript* script);
 
  private:
   typedef mozilla::Vector<LCovSource*, 16, LifoAllocPolicy<Fallible>>
@@ -171,9 +168,8 @@ inline bool IsLCovEnabled() {
 // Initialize coverage info to track code coverage for a JSScript.
 bool InitScriptCoverage(JSContext* cx, JSScript* script);
 
-// Collect the code-coverage data from a script into relevant LCovSource. This
-// operations is infalible as it is typically called from JSScript finalizer.
-void CollectScriptCoverage(JSScript* script);
+// Collect the code-coverage data from a script into relevant LCovSource.
+bool CollectScriptCoverage(JSScript* script, bool finalizing);
 
 }  // namespace coverage
 }  // namespace js

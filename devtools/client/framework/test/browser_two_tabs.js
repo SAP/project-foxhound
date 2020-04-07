@@ -5,21 +5,21 @@
  * Check regression when opening two tabs
  */
 
-var { DebuggerServer } = require("devtools/server/debugger-server");
-var { DebuggerClient } = require("devtools/shared/client/debugger-client");
+var { DevToolsServer } = require("devtools/server/devtools-server");
+var { DevToolsClient } = require("devtools/shared/client/devtools-client");
 
 const TAB_URL_1 = "data:text/html;charset=utf-8,foo";
 const TAB_URL_2 = "data:text/html;charset=utf-8,bar";
 
 add_task(async () => {
-  DebuggerServer.init();
-  DebuggerServer.registerAllActors();
+  DevToolsServer.init();
+  DevToolsServer.registerAllActors();
 
   const tab1 = await addTab(TAB_URL_1);
   const tab2 = await addTab(TAB_URL_2);
 
-  // Connect to debugger server to fetch the two target actors for each tab
-  const client = new DebuggerClient(DebuggerServer.connectPipe());
+  // Connect to devtools server to fetch the two target actors for each tab
+  const client = new DevToolsClient(DevToolsServer.connectPipe());
   await client.connect();
 
   const tabs = await client.mainRoot.listTabs();
@@ -64,7 +64,10 @@ async function checkGetTabFailures(client) {
     await client.mainRoot.getTab({ tabId: -999 });
     ok(false, "getTab unexpectedly succeed with a wrong tabId");
   } catch (error) {
-    is(error, "Protocol error (noTab): Unable to find tab with tabId '-999'");
+    is(
+      error.message,
+      "Protocol error (noTab): Unable to find tab with tabId '-999'"
+    );
   }
 
   try {
@@ -72,7 +75,7 @@ async function checkGetTabFailures(client) {
     ok(false, "getTab unexpectedly succeed with a wrong outerWindowID");
   } catch (error) {
     is(
-      error,
+      error.message,
       "Protocol error (noTab): Unable to find tab with outerWindowID '-999'"
     );
   }
@@ -81,7 +84,8 @@ async function checkGetTabFailures(client) {
 async function checkSelectedTargetActor(targetFront2) {
   // Send a naive request to the second target actor to check if it works
   await targetFront2.attach();
-  const response = await targetFront2.activeConsole.startListeners([]);
+  const consoleFront = await targetFront2.getFront("console");
+  const response = await consoleFront.startListeners([]);
   ok(
     "startedListeners" in response,
     "Actor from the selected tab should respond to the request."
@@ -91,7 +95,8 @@ async function checkSelectedTargetActor(targetFront2) {
 async function checkFirstTargetActor(targetFront1) {
   // then send a request to the first target actor to check if it still works
   await targetFront1.attach();
-  const response = await targetFront1.activeConsole.startListeners([]);
+  const consoleFront = await targetFront1.getFront("console");
+  const response = await consoleFront.startListeners([]);
   ok(
     "startedListeners" in response,
     "Actor from the first tab should still respond."

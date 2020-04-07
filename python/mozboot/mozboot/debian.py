@@ -7,10 +7,13 @@ from __future__ import absolute_import, print_function, unicode_literals
 from mozboot.base import BaseBootstrapper
 from mozboot.linux_common import (
     ClangStaticAnalysisInstall,
+    FixStacksInstall,
+    LucetcInstall,
     NasmInstall,
     NodeInstall,
     SccacheInstall,
     StyloInstall,
+    WasiSysrootInstall,
 )
 
 
@@ -31,8 +34,17 @@ How would you like to continue?
 Your choice: '''
 
 
-class DebianBootstrapper(NasmInstall, NodeInstall, StyloInstall, ClangStaticAnalysisInstall,
-                         SccacheInstall, BaseBootstrapper):
+class DebianBootstrapper(
+        ClangStaticAnalysisInstall,
+        FixStacksInstall,
+        LucetcInstall,
+        NasmInstall,
+        NodeInstall,
+        SccacheInstall,
+        StyloInstall,
+        WasiSysrootInstall,
+        BaseBootstrapper):
+
     # These are common packages for all Debian-derived distros (such as
     # Ubuntu).
     COMMON_PACKAGES = [
@@ -94,7 +106,7 @@ class DebianBootstrapper(NasmInstall, NodeInstall, StyloInstall, ClangStaticAnal
         self.dist_id = dist_id
 
         self.packages = self.COMMON_PACKAGES + self.DISTRO_PACKAGES
-        if self.distro == 'Debian' or self.distro == 'debian':
+        if self.distro == 'debian':
             self.packages += self.DEBIAN_PACKAGES
         self.browser_packages = self.BROWSER_COMMON_PACKAGES + self.BROWSER_DISTRO_PACKAGES
         self.mobile_android_packages = self.MOBILE_ANDROID_COMMON_PACKAGES + \

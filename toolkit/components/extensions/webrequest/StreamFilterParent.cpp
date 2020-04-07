@@ -12,13 +12,13 @@
 #include "mozilla/net/ChannelEventQueue.h"
 #include "nsHttpChannel.h"
 #include "nsIChannel.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsIInputStream.h"
 #include "nsITraceableChannel.h"
 #include "nsProxyRelease.h"
 #include "nsQueryObject.h"
 #include "nsSocketTransportService2.h"
 #include "nsStringStream.h"
+#include "mozilla/net/DocumentChannelChild.h"
 
 namespace mozilla {
 namespace extensions {
@@ -446,6 +446,16 @@ StreamFilterParent::SetLoadFlags(nsLoadFlags aLoadFlags) {
   return mChannel->SetLoadFlags(aLoadFlags);
 }
 
+NS_IMETHODIMP
+StreamFilterParent::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return GetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
+StreamFilterParent::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return SetTRRModeImpl(aTRRMode);
+}
+
 /*****************************************************************************
  * nsIStreamListener
  *****************************************************************************/
@@ -454,16 +464,33 @@ NS_IMETHODIMP
 StreamFilterParent::OnStartRequest(nsIRequest* aRequest) {
   AssertIsMainThread();
 
+  // If a StreamFilter's request results in an external redirect, that
+  // StreamFilter should not monitor the redirected request's response (although
+  // an identical StreamFilter may be created for it). A StreamFilter should,
+  // however, monitor the response of an "internal" redirect (i.e. a
+  // browser-initiated rather than server-initiated redirect); in this case,
+  // mChannel must be replaced.
   if (aRequest != mChannel) {
-    mDisconnected = true;
+    nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
+    nsCOMPtr<nsILoadInfo> loadInfo = channel ? channel->LoadInfo() : nullptr;
 
-    RefPtr<StreamFilterParent> self(this);
-    RunOnActorThread(FUNC, [=] {
-      if (self->IPCActive()) {
-        self->mState = State::Disconnected;
-        CheckResult(self->SendError(NS_LITERAL_CSTRING("Channel redirected")));
-      }
-    });
+    if (loadInfo && loadInfo->RedirectChain().IsEmpty()) {
+      MOZ_DIAGNOSTIC_ASSERT(
+          !loadInfo->RedirectChainIncludingInternalRedirects().IsEmpty(),
+          "We should be performing an internal redirect.");
+      mChannel = channel;
+    } else {
+      mDisconnected = true;
+
+      RefPtr<StreamFilterParent> self(this);
+      RunOnActorThread(FUNC, [=] {
+        if (self->IPCActive()) {
+          self->mState = State::Disconnected;
+          CheckResult(
+              self->SendError(NS_LITERAL_CSTRING("Channel redirected")));
+        }
+      });
+    }
   }
 
   if (!mDisconnected) {

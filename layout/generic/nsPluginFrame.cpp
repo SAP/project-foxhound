@@ -28,7 +28,6 @@
 #include "nsViewManager.h"
 #include "nsString.h"
 #include "nsGkAtoms.h"
-#include "nsIPluginInstanceOwner.h"
 #include "nsNPAPIPluginInstance.h"
 #include "npapi.h"
 #include "nsIObjectLoadingContent.h"
@@ -1481,13 +1480,13 @@ nsresult nsPluginFrame::HandleEvent(nsPresContext* aPresContext,
   if (anEvent->mMessage == ePluginActivate) {
     nsIFocusManager* fm = nsFocusManager::GetFocusManager();
     if (fm) {
-      RefPtr<Element> elem = GetContent()->AsElement();
+      RefPtr<dom::Element> elem = GetContent()->AsElement();
       return fm->SetFocus(elem, 0);
     }
   } else if (anEvent->mMessage == ePluginFocus) {
     nsIFocusManager* fm = nsFocusManager::GetFocusManager();
     if (fm) {
-      RefPtr<Element> elem = GetContent()->AsElement();
+      RefPtr<dom::Element> elem = GetContent()->AsElement();
       return fm->FocusPlugin(elem);
     }
   }

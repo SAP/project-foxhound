@@ -30,7 +30,7 @@ add_task(async function testTempPermissionOnReload() {
     });
 
     // Reload through the page (should not remove the temp permission).
-    await ContentTask.spawn(browser, {}, () =>
+    await SpecialPowers.spawn(browser, [], () =>
       content.document.location.reload()
     );
 
@@ -86,6 +86,30 @@ add_task(async function testTempPermissionOnReload() {
 
     // Reload as a user through the context menu (should remove the temp permission).
     EventUtils.synthesizeMouseAtCenter(reloadMenuItem, {});
+
+    await reloaded;
+
+    Assert.deepEqual(SitePermissions.getForPrincipal(principal, id, browser), {
+      state: SitePermissions.UNKNOWN,
+      scope: SitePermissions.SCOPE_PERSISTENT,
+    });
+
+    // Set the permission again.
+    SitePermissions.setForPrincipal(
+      principal,
+      id,
+      SitePermissions.BLOCK,
+      SitePermissions.SCOPE_TEMPORARY,
+      browser
+    );
+
+    // Reload as user via return key in urlbar (should remove the temp permission)
+    let urlBarInput = document.getElementById("urlbar-input");
+    await EventUtils.synthesizeMouseAtCenter(urlBarInput, {});
+
+    reloaded = BrowserTestUtils.browserLoaded(browser, false, origin);
+
+    EventUtils.synthesizeAndWaitKey("VK_RETURN", {});
 
     await reloaded;
 
@@ -181,9 +205,9 @@ add_task(async function testTempPermissionOnNavigation() {
     );
 
     // Navigate to another domain.
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       browser,
-      {},
+      [],
       () => (content.document.location = "https://example.org/")
     );
 
@@ -201,9 +225,9 @@ add_task(async function testTempPermissionOnNavigation() {
     loaded = BrowserTestUtils.browserLoaded(browser, false, origin);
 
     // Navigate to the original domain.
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       browser,
-      {},
+      [],
       () => (content.document.location = "https://example.com/")
     );
 

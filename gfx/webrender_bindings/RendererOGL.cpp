@@ -12,6 +12,7 @@
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/LayersTypes.h"
+#include "mozilla/layers/ProfilerScreenshots.h"
 #include "mozilla/webrender/RenderCompositor.h"
 #include "mozilla/webrender/RenderTextureHost.h"
 #include "mozilla/widget/CompositorWidget.h"
@@ -26,8 +27,8 @@ wr::WrExternalImage wr_renderer_lock_external_image(
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
   MOZ_ASSERT(texture);
   if (!texture) {
-    gfxCriticalNote << "Failed to lock ExternalImage for extId:"
-                    << AsUint64(aId);
+    gfxCriticalNoteOnce << "Failed to lock ExternalImage for extId:"
+                        << AsUint64(aId);
     return InvalidToWrExternalImage();
   }
   return texture->Lock(aChannelIndex, renderer->gl(), aRendering);
@@ -52,18 +53,13 @@ RendererOGL::RendererOGL(RefPtr<RenderThread>&& aThread,
       mCompositor(std::move(aCompositor)),
       mRenderer(aRenderer),
       mBridge(aBridge),
-      mWindowId(aWindowId) {
+      mWindowId(aWindowId),
+      mDisableNativeCompositor(false) {
   MOZ_ASSERT(mThread);
   MOZ_ASSERT(mCompositor);
   MOZ_ASSERT(mRenderer);
   MOZ_ASSERT(mBridge);
   MOZ_COUNT_CTOR(RendererOGL);
-
-  mNativeLayerRoot = mCompositor->GetWidget()->GetNativeLayerRoot();
-  if (mNativeLayerRoot) {
-    mNativeLayerForEntireWindow = mNativeLayerRoot->CreateLayer();
-    mNativeLayerRoot->AppendLayer(mNativeLayerForEntireWindow);
-  }
 }
 
 RendererOGL::~RendererOGL() {
@@ -73,11 +69,6 @@ RendererOGL::~RendererOGL() {
         << "Failed to make render context current during destroying.";
     // Leak resources!
     return;
-  }
-  if (mNativeLayerRoot) {
-    mNativeLayerRoot->RemoveLayer(mNativeLayerForEntireWindow);
-    mNativeLayerForEntireWindow = nullptr;
-    mNativeLayerRoot = nullptr;
   }
   wr_renderer_delete(mRenderer);
 }
@@ -100,67 +91,75 @@ static void DoNotifyWebRenderContextPurge(
   aBridge->NotifyWebRenderContextPurge();
 }
 
-bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
-                                  const Maybe<wr::ImageFormat>& aReadbackFormat,
-                                  const Maybe<Range<uint8_t>>& aReadbackBuffer,
-                                  bool aHadSlowFrame,
-                                  RendererStats* aOutStats) {
+static void DoWebRenderDisableNativeCompositor(
+    layers::CompositorBridgeParent* aBridge) {
+  aBridge->NotifyWebRenderDisableNativeCompositor();
+}
+
+RenderedFrameId RendererOGL::UpdateAndRender(
+    const Maybe<gfx::IntSize>& aReadbackSize,
+    const Maybe<wr::ImageFormat>& aReadbackFormat,
+    const Maybe<Range<uint8_t>>& aReadbackBuffer, bool aHadSlowFrame,
+    RendererStats* aOutStats) {
   mozilla::widget::WidgetRenderingContext widgetContext;
 
 #if defined(XP_MACOSX)
   widgetContext.mGL = mCompositor->gl();
-// TODO: we don't have a notion of compositor here.
-//#elif defined(MOZ_WIDGET_ANDROID)
-//  widgetContext.mCompositor = mCompositor;
 #endif
 
   if (!mCompositor->GetWidget()->PreRender(&widgetContext)) {
     // XXX This could cause oom in webrender since pending_texture_updates is
     // not handled. It needs to be addressed.
-    return false;
+    return RenderedFrameId();
+    ;
   }
   // XXX set clear color if MOZ_WIDGET_ANDROID is defined.
 
-  if (mNativeLayerForEntireWindow) {
-    gfx::IntRect bounds({}, mCompositor->GetBufferSize().ToUnknownSize());
-    mNativeLayerForEntireWindow->SetRect(bounds);
-#ifdef XP_MACOSX
-    mNativeLayerForEntireWindow->SetOpaqueRegion(
-        mCompositor->GetWidget()->GetOpaqueWidgetRegion().ToUnknownRegion());
-#endif
-  }
-
-  if (!mCompositor->BeginFrame(mNativeLayerForEntireWindow)) {
+  if (!mCompositor->BeginFrame()) {
     if (mCompositor->IsContextLost()) {
       RenderThread::Get()->HandleDeviceReset("BeginFrame", /* aNotify */ true);
     }
     mCompositor->GetWidget()->PostRender(&widgetContext);
-    return false;
+    return RenderedFrameId();
   }
 
   wr_renderer_update(mRenderer);
 
+  bool fullRender = mCompositor->RequestFullRender();
+  // When we're rendering to an external target, we want to render everything.
+  if (mCompositor->UsePartialPresent() &&
+      (aReadbackBuffer.isSome() || layers::ProfilerScreenshots::IsEnabled())) {
+    fullRender = true;
+  }
+  if (fullRender) {
+    wr_renderer_force_redraw(mRenderer);
+  }
+
   auto size = mCompositor->GetBufferSize();
 
+  nsTArray<DeviceIntRect> dirtyRects;
   if (!wr_renderer_render(mRenderer, size.width, size.height, aHadSlowFrame,
-                          aOutStats)) {
+                          aOutStats, &dirtyRects)) {
     RenderThread::Get()->HandleWebRenderError(WebRenderError::RENDER);
     mCompositor->GetWidget()->PostRender(&widgetContext);
-    return false;
+    return RenderedFrameId();
   }
 
   if (aReadbackBuffer.isSome()) {
     MOZ_ASSERT(aReadbackSize.isSome());
     MOZ_ASSERT(aReadbackFormat.isSome());
-    wr_renderer_readback(mRenderer, aReadbackSize.ref().width,
-                         aReadbackSize.ref().height, aReadbackFormat.ref(),
-                         &aReadbackBuffer.ref()[0],
-                         aReadbackBuffer.ref().length());
+    if (!mCompositor->MaybeReadback(aReadbackSize.ref(), aReadbackFormat.ref(),
+                                    aReadbackBuffer.ref())) {
+      wr_renderer_readback(mRenderer, aReadbackSize.ref().width,
+                           aReadbackSize.ref().height, aReadbackFormat.ref(),
+                           &aReadbackBuffer.ref()[0],
+                           aReadbackBuffer.ref().length());
+    }
   }
 
-  mScreenshotGrabber.MaybeGrabScreenshot(mRenderer, size.ToUnknownSize());
+  mScreenshotGrabber.MaybeGrabScreenshot(this, size.ToUnknownSize());
 
-  mCompositor->EndFrame();
+  RenderedFrameId frameId = mCompositor->EndFrame(dirtyRects);
 
   mCompositor->GetWidget()->PostRender(&widgetContext);
 
@@ -174,12 +173,27 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
   mFrameStartTime = TimeStamp();
 #endif
 
-  mScreenshotGrabber.MaybeProcessQueue(mRenderer);
+  mScreenshotGrabber.MaybeProcessQueue(this);
 
   // TODO: Flush pending actions such as texture deletions/unlocks and
   //       textureHosts recycling.
 
-  return true;
+  return frameId;
+}
+
+bool RendererOGL::EnsureAsyncScreenshot() {
+  if (mCompositor->SupportAsyncScreenshot()) {
+    return true;
+  }
+  if (!mDisableNativeCompositor) {
+    layers::CompositorThreadHolder::Loop()->PostTask(
+        NewRunnableFunction("DoWebRenderDisableNativeCompositorRunnable",
+                            &DoWebRenderDisableNativeCompositor, mBridge));
+
+    mDisableNativeCompositor = true;
+    gfxCriticalNote << "Disable native compositor for async screenshot";
+  }
+  return false;
 }
 
 void RendererOGL::CheckGraphicsResetStatus() {
@@ -206,6 +220,14 @@ void RendererOGL::WaitForGPU() {
   }
 }
 
+RenderedFrameId RendererOGL::GetLastCompletedFrameId() {
+  return mCompositor->GetLastCompletedFrameId();
+}
+
+RenderedFrameId RendererOGL::UpdateFrameId() {
+  return mCompositor->UpdateFrameId();
+}
+
 void RendererOGL::Pause() { mCompositor->Pause(); }
 
 bool RendererOGL::Resume() { return mCompositor->Resume(); }
@@ -226,8 +248,9 @@ void RendererOGL::SetFrameStartTime(const TimeStamp& aTime) {
 }
 
 RefPtr<WebRenderPipelineInfo> RendererOGL::FlushPipelineInfo() {
-  auto info = wr_renderer_flush_pipeline_info(mRenderer);
-  return new WebRenderPipelineInfo(info);
+  RefPtr<WebRenderPipelineInfo> info = new WebRenderPipelineInfo();
+  wr_renderer_flush_pipeline_info(mRenderer, &info->Raw());
+  return info;
 }
 
 RenderTextureHost* RendererOGL::GetRenderTexture(

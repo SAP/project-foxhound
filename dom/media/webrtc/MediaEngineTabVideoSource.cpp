@@ -21,10 +21,8 @@
 #include "ImageContainer.h"
 #include "Layers.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsITabSource.h"
 #include "VideoUtils.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIPrefService.h"
 #include "MediaTrackConstraints.h"
 #include "Tracing.h"
 
@@ -127,8 +125,7 @@ nsString MediaEngineTabVideoSource::GetGroupId() const {
 
 nsresult MediaEngineTabVideoSource::Allocate(
     const dom::MediaTrackConstraints& aConstraints,
-    const MediaEnginePrefs& aPrefs,
-    const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
+    const MediaEnginePrefs& aPrefs, uint64_t aWindowID,
     const char** aOutBadConstraint) {
   AssertIsOnOwningThread();
 
@@ -243,8 +240,7 @@ nsresult MediaEngineTabVideoSource::Start() {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mState == kAllocated);
 
-  NS_DispatchToMainThread(
-      new StartRunnable(this, mTrack, mPrincipalHandle));
+  NS_DispatchToMainThread(new StartRunnable(this, mTrack, mPrincipalHandle));
   mState = kStarted;
 
   return NS_OK;
@@ -257,9 +253,9 @@ void MediaEngineTabVideoSource::Draw() {
     return;
   }
 
-  if (mTrackMain->IsDestroyed()) {
-    // The track was already destroyed by MediaManager. This can happen because
-    // stopping the draw timer is async.
+  if (!mTrackMain || mTrackMain->IsDestroyed()) {
+    // The track is already gone or destroyed by MediaManager. This can happen
+    // because stopping the draw timer is async.
     return;
   }
 

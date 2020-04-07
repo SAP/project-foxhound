@@ -6,7 +6,6 @@
 
 BROWSER_CHROME_MANIFESTS += [
     'test/allocations/browser_allocations_target.ini',
-    'test/browser-rtl.ini',
     'test/browser-telemetry-startup.ini',
     'test/browser.ini',
     'test/metrics/browser_metrics_debugger.ini',
@@ -14,11 +13,12 @@ BROWSER_CHROME_MANIFESTS += [
     'test/metrics/browser_metrics_netmonitor.ini',
     'test/metrics/browser_metrics_webconsole.ini',
 ]
-XPCSHELL_TESTS_MANIFESTS += ['test/unit/xpcshell.ini']
+XPCSHELL_TESTS_MANIFESTS += ['test/xpcshell/xpcshell.ini']
 
 DIRS += [
-    'components',
     'actions',
+    'browser-toolbox',
+    'components',
     'reducers',
 ]
 
@@ -29,7 +29,6 @@ DevToolsModules(
     'menu-item.js',
     'menu.js',
     'selection.js',
-    'sidebar.js',
     'source-map-url-service.js',
     'store-provider.js',
     'store.js',
@@ -41,7 +40,6 @@ DevToolsModules(
     'toolbox-options.js',
     'toolbox-tabs-order-manager.js',
     'toolbox.js',
-    'ToolboxProcess.jsm',
 )
 
 with Files('**'):

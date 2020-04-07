@@ -1,4 +1,16 @@
+/* Any copyright is dedicated to the Public Domain.
+ * http://creativecommons.org/publicdomain/zero/1.0/
+ */
+
+"use strict";
+
+const { AddonTestUtils } = ChromeUtils.import(
+  "resource://testing-common/AddonTestUtils.jsm"
+);
+
 let gDidSeeChannel = false;
+
+AddonTestUtils.initMochitest(this);
 
 function check_channel(subject) {
   if (!(subject instanceof Ci.nsIHttpChannel)) {
@@ -31,11 +43,12 @@ async function test() {
   gPrivateWin = await BrowserTestUtils.openNewBrowserWindow({ private: true });
   Harness.setup(gPrivateWin);
 
-  PermissionTestUtils.add(
-    "http://example.com/",
-    "install",
-    Services.perms.ALLOW_ACTION
+  let principal = Services.scriptSecurityManager.createContentPrincipal(
+    Services.io.newURI("http://example.com/"),
+    { privateBrowsingId: 1 }
   );
+
+  PermissionTestUtils.add(principal, "install", Services.perms.ALLOW_ACTION);
 
   var triggers = encodeURIComponent(
     JSON.stringify({
@@ -64,11 +77,11 @@ function confirm_install(panel) {
 }
 
 function install_ended(install, addon) {
-  Assert.deepEqual(
-    install.installTelemetryInfo,
-    { source: "test-host", method: "installTrigger" },
-    "Got the expected install.installTelemetryInfo"
-  );
+  AddonTestUtils.checkInstallInfo(install, {
+    method: "installTrigger",
+    source: "test-host",
+    sourceURL: /http:\/\/example.com\/.*\/installtrigger.html/,
+  });
   install.cancel();
 }
 
@@ -83,9 +96,9 @@ const finish_test = async function(count) {
 
   PermissionTestUtils.remove("http://example.com", "install");
 
-  const results = await ContentTask.spawn(
+  const results = await SpecialPowers.spawn(
     gPrivateWin.gBrowser.selectedBrowser,
-    null,
+    [],
     () => {
       return {
         return: content.document.getElementById("return").textContent,

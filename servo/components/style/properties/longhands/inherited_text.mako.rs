@@ -21,7 +21,6 @@ ${helpers.predefined_type(
     "LineHeight",
     "computed::LineHeight::normal()",
     engines="gecko servo-2013 servo-2020",
-    servo_2020_pref="layout.2020.unimplemented",
     animation_value_type="LineHeight",
     spec="https://drafts.csswg.org/css2/visudet.html#propdef-line-height",
     servo_restyle_damage="reflow"
@@ -54,7 +53,7 @@ ${helpers.single_keyword(
     "-moz-text-size-adjust",
     "auto none",
     engines="gecko",
-    gecko_constant_prefix="NS_STYLE_TEXT_SIZE_ADJUST",
+    gecko_enum_prefix="StyleTextSizeAdjust",
     gecko_ffi_name="mTextSizeAdjust",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-size-adjust/#adjustment-control",
@@ -142,11 +141,12 @@ ${helpers.predefined_type(
     % endif
 </%helpers:single_keyword>
 
-${helpers.single_keyword(
+${helpers.predefined_type(
     "text-align-last",
-    "auto start end left right center justify",
+    "TextAlignLast",
+    "computed::text::TextAlignLast::Auto",
+    needs_context=False,
     engines="gecko",
-    gecko_constant_prefix="NS_STYLE_TEXT_ALIGN",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text/#propdef-text-align-last",
 )}
@@ -157,7 +157,6 @@ ${helpers.predefined_type(
     "TextAlign",
     "computed::TextAlign::Start",
     engines="gecko servo-2013 servo-2020",
-    servo_2020_pref="layout.2020.unimplemented",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-text/#propdef-text-align",
     servo_restyle_damage = "reflow",
@@ -167,7 +166,7 @@ ${helpers.predefined_type(
     "letter-spacing",
     "LetterSpacing",
     "computed::LetterSpacing::normal()",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     animation_value_type="ComputedValue",
     spec="https://drafts.csswg.org/css-text/#propdef-letter-spacing",
     servo_restyle_damage="rebuild_and_reflow",
@@ -177,7 +176,7 @@ ${helpers.predefined_type(
     "word-spacing",
     "WordSpacing",
     "computed::WordSpacing::zero()",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     animation_value_type="ComputedValue",
     spec="https://drafts.csswg.org/css-text/#propdef-word-spacing",
     servo_restyle_damage="rebuild_and_reflow",
@@ -334,6 +333,7 @@ ${helpers.single_keyword(
     "space-around start center space-between",
     engines="gecko",
     animation_value_type="discrete",
+    gecko_enum_prefix="StyleRubyAlign",
     spec="https://drafts.csswg.org/css-ruby/#ruby-align-property",
 )}
 
@@ -343,6 +343,7 @@ ${helpers.single_keyword(
     engines="gecko",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-ruby/#ruby-position-property",
+    gecko_enum_prefix="StyleRubyPosition",
 )}
 
 // CSS Writing Modes Module Level 3
@@ -360,7 +361,7 @@ ${helpers.single_keyword(
 ${helpers.single_keyword(
     "text-rendering",
     "auto optimizespeed optimizelegibility geometricprecision",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     gecko_enum_prefix="StyleTextRendering",
     animation_value_type="discrete",
     spec="https://www.w3.org/TR/SVG11/painting.html#TextRenderingProperty",
@@ -382,13 +383,25 @@ ${helpers.single_keyword(
 // text underline offset
 ${helpers.predefined_type(
     "text-underline-offset",
-    "TextDecorationLength",
-    "generics::text::GenericTextDecorationLength::Auto",
+    "LengthPercentageOrAuto",
+    "computed::LengthPercentageOrAuto::auto()",
     engines="gecko",
     animation_value_type="ComputedValue",
     gecko_pref="layout.css.text-underline-offset.enabled",
     has_effect_on_gecko_scrollbars=False,
     spec="https://drafts.csswg.org/css-text-decor-4/#underline-offset",
+)}
+
+// text underline position
+${helpers.predefined_type(
+    "text-underline-position",
+    "TextUnderlinePosition",
+    "computed::TextUnderlinePosition::AUTO",
+    engines="gecko",
+    animation_value_type="discrete",
+    gecko_pref="layout.css.text-underline-position.enabled",
+    has_effect_on_gecko_scrollbars=False,
+    spec="https://drafts.csswg.org/css-text-decor-3/#text-underline-position-property",
 )}
 
 // text decoration skip ink

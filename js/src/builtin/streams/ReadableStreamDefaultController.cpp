@@ -12,10 +12,9 @@
 #include "jsapi.h"        // JS_ReportErrorNumberASCII
 #include "jsfriendapi.h"  // js::GetErrorMessage, JSMSG_*, js::AssertSameCompartment
 
-#include "builtin/Promise.h"                 // js::PromiseObject
-#include "builtin/streams/ClassSpecMacro.h"  // JS_STREAMS_CLASS_SPEC
-#include "builtin/streams/MiscellaneousOperations.h"  // js::IsMaybeWrapped, js::PromiseCall
-#include "builtin/streams/PullIntoDescriptor.h"  // js::PullIntoDescriptor
+#include "builtin/streams/ClassSpecMacro.h"           // JS_STREAMS_CLASS_SPEC
+#include "builtin/streams/MiscellaneousOperations.h"  // js::IsMaybeWrapped
+#include "builtin/streams/PullIntoDescriptor.h"       // js::PullIntoDescriptor
 #include "builtin/streams/QueueWithSizes.h"  // js::{DequeueValue,ResetQueue}
 #include "builtin/streams/ReadableStream.h"  // js::ReadableStream, js::SetUpExternalReadableByteStreamController
 #include "builtin/streams/ReadableStreamController.h"  // js::ReadableStream{,Default}Controller, js::ReadableByteStreamController, js::CheckReadableStreamControllerCanCloseOrEnqueue, js::ReadableStreamControllerCancelSteps, js::ReadableStreamDefaultControllerPullSteps, js::ReadableStreamControllerStart{,Failed}Handler
@@ -25,15 +24,16 @@
 #include "builtin/streams/ReadableStreamReader.h"  // js::ReadableStream{,Default}Reader
 #include "builtin/streams/StreamController.h"  // js::StreamController
 #include "builtin/streams/TeeState.h"          // js::TeeState
-#include "gc/Heap.h"
-#include "js/ArrayBuffer.h"  // JS::NewArrayBuffer
-#include "js/Class.h"        // js::ClassSpec
+#include "js/ArrayBuffer.h"                    // JS::NewArrayBuffer
+#include "js/Class.h"                          // js::ClassSpec
 #include "js/PropertySpec.h"
 #include "vm/Interpreter.h"
 #include "vm/JSContext.h"
+#include "vm/PromiseObject.h"  // js::PromiseObject
 #include "vm/SelfHosting.h"
 
-#include "builtin/streams/HandlerFunction-inl.h"       // js::TargetFromHandler
+#include "builtin/streams/HandlerFunction-inl.h"  // js::TargetFromHandler
+#include "builtin/streams/MiscellaneousOperations-inl.h"  // js::PromiseCall
 #include "builtin/streams/ReadableStreamReader-inl.h"  // js::UnwrapReaderFromStream
 #include "vm/Compartment-inl.h"  // JS::Compartment::wrap, js::UnwrapAnd{DowncastObject,TypeCheckThis}
 #include "vm/JSContext-inl.h"  // JSContext::check
@@ -337,8 +337,8 @@ MOZ_MUST_USE JSObject* js::ReadableStreamControllerCancelSteps(
     }
   }
 
-  Rooted<Value> unwrappedUnderlyingSource(cx);
-  unwrappedUnderlyingSource = unwrappedController->underlyingSource();
+  Rooted<Value> unwrappedUnderlyingSource(
+      cx, unwrappedController->underlyingSource());
 
   // Step 1 of 3.9.5.1, step 2 of 3.11.5.1: Perform ! ResetQueue(this).
   if (!ResetQueue(cx, unwrappedController)) {
@@ -393,15 +393,18 @@ MOZ_MUST_USE JSObject* js::ReadableStreamControllerCancelSteps(
                                         unwrappedController->cancelMethod());
     if (unwrappedCancelMethod.isUndefined()) {
       // CreateAlgorithmFromUnderlyingMethod step 7.
-      result = PromiseObject::unforgeableResolve(cx, UndefinedHandleValue);
+      result = PromiseObject::unforgeableResolveWithNonPromise(
+          cx, UndefinedHandleValue);
     } else {
       // CreateAlgorithmFromUnderlyingMethod steps 6.c.i-ii.
       {
-        AutoRealm ar(cx, &unwrappedCancelMethod.toObject());
-        Rooted<Value> underlyingSource(cx, unwrappedUnderlyingSource);
-        if (!cx->compartment()->wrap(cx, &underlyingSource)) {
-          return nullptr;
-        }
+        AutoRealm ar(cx, unwrappedController);
+
+        // |unwrappedCancelMethod| and |unwrappedUnderlyingSource| come directly
+        // from |unwrappedController| slots so must be same-compartment with it.
+        cx->check(unwrappedCancelMethod);
+        cx->check(unwrappedUnderlyingSource);
+
         Rooted<Value> wrappedReason(cx, reason);
         if (!cx->compartment()->wrap(cx, &wrappedReason)) {
           return nullptr;
@@ -409,8 +412,8 @@ MOZ_MUST_USE JSObject* js::ReadableStreamControllerCancelSteps(
 
         // If PromiseCall fails, don't bail out until after the
         // ReadableStreamControllerClearAlgorithms call below.
-        result = PromiseCall(cx, unwrappedCancelMethod, underlyingSource,
-                             wrappedReason);
+        result = PromiseCall(cx, unwrappedCancelMethod,
+                             unwrappedUnderlyingSource, wrappedReason);
       }
       if (!cx->compartment()->wrap(cx, &result)) {
         result = nullptr;
@@ -492,7 +495,7 @@ JSObject* js::ReadableStreamDefaultControllerPullSteps(
 
   // Step 3: Let pendingPromise be
   //         ! ReadableStreamAddReadRequest(stream, forAuthorCode).
-  Rooted<JSObject*> pendingPromise(
+  Rooted<PromiseObject*> pendingPromise(
       cx, ReadableStreamAddReadOrReadIntoRequest(cx, unwrappedStream));
   if (!pendingPromise) {
     return nullptr;

@@ -7,6 +7,7 @@
 // HttpLog.h should generally be included first
 #include "HttpLog.h"
 
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Preferences.h"
 #include "nsHttpChannelAuthProvider.h"
 #include "nsNetUtil.h"
@@ -30,15 +31,13 @@
 #include "nsHttpNegotiateAuth.h"
 #include "nsHttpNTLMAuth.h"
 #include "nsServiceManagerUtils.h"
-#include "nsILoadContext.h"
 #include "nsIURL.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
 #include "nsIProxiedChannel.h"
 #include "nsIProxyInfo.h"
 
-namespace mozilla {
-namespace net {
+namespace mozilla::net {
 
 #define SUBRESOURCE_AUTH_DIALOG_DISALLOW_ALL 0
 #define SUBRESOURCE_AUTH_DIALOG_DISALLOW_CROSS_ORIGIN 1
@@ -919,7 +918,7 @@ bool nsHttpChannelAuthProvider::BlockPrompt(bool proxyAuth) {
 
   if (!topDoc) {
     nsCOMPtr<nsIPrincipal> triggeringPrinc = loadInfo->TriggeringPrincipal();
-    if (nsContentUtils::IsSystemPrincipal(triggeringPrinc)) {
+    if (triggeringPrinc->IsSystemPrincipal()) {
       nonWebContent = true;
     }
   }
@@ -1664,5 +1663,4 @@ NS_IMPL_ISUPPORTS(nsHttpChannelAuthProvider, nsICancelable,
                   nsIHttpChannelAuthProvider, nsIAuthPromptCallback,
                   nsIHttpAuthenticatorCallback)
 
-}  // namespace net
-}  // namespace mozilla
+}  // namespace mozilla::net

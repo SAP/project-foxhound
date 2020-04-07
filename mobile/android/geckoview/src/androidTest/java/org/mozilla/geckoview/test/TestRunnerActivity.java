@@ -27,8 +27,10 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.view.Surface;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 
 public class TestRunnerActivity extends Activity {
     private static final String LOGTAG = "TestRunnerActivity";
@@ -37,11 +39,45 @@ public class TestRunnerActivity extends Activity {
 
     static GeckoRuntime sRuntime;
 
+    private GeckoSession mActiveSession;
     private GeckoSession mSession;
     private GeckoView mView;
     private boolean mKillProcessOnDestroy;
 
-    private HashMap<GeckoSession, GeckoDisplay> mDisplays = new HashMap<>();
+    private HashMap<GeckoSession, Display> mDisplays = new HashMap<>();
+    private List<WebExtension> mExtensions = new ArrayList<>();
+
+    private static class Display {
+        public final SurfaceTexture texture;
+        public final Surface surface;
+
+        private final int width;
+        private final int height;
+        private GeckoDisplay sessionDisplay;
+
+        public Display(final int width, final int height) {
+            this.width = width;
+            this.height = height;
+            texture = new SurfaceTexture(0);
+            texture.setDefaultBufferSize(width, height);
+            surface = new Surface(texture);
+        }
+
+        public void attach(final GeckoSession session) {
+            sessionDisplay = session.acquireDisplay();
+            sessionDisplay.surfaceChanged(surface, width, height);
+        }
+
+        public void release(final GeckoSession session) {
+            sessionDisplay.surfaceDestroyed();
+            session.releaseDisplay(sessionDisplay);
+        }
+    }
+
+    private static WebExtensionController webExtensionController() {
+        return sRuntime.getWebExtensionController();
+    }
+
     private HashSet<GeckoSession> mOwnedSessions = new HashSet<>();
 
     private GeckoSession.PermissionDelegate mPermissionDelegate = new GeckoSession.PermissionDelegate() {
@@ -81,7 +117,10 @@ public class TestRunnerActivity extends Activity {
 
         @Override
         public GeckoResult<GeckoSession> onNewSession(GeckoSession session, String uri) {
-            return GeckoResult.fromValue(createBackgroundSession(session.getSettings()));
+            webExtensionController().setTabActive(mActiveSession, false);
+            mActiveSession = createBackgroundSession(session.getSettings());
+            webExtensionController().setTabActive(mActiveSession, true);
+            return GeckoResult.fromValue(mActiveSession);
         }
 
         @Override
@@ -92,6 +131,12 @@ public class TestRunnerActivity extends Activity {
     };
 
     private GeckoSession.ContentDelegate mContentDelegate = new GeckoSession.ContentDelegate() {
+        private void onContentProcessGone() {
+            if (System.getenv("MOZ_CRASHREPORTER_SHUTDOWN") != null) {
+                sRuntime.shutdown();
+            }
+        }
+
         @Override
         public void onTitleChange(GeckoSession session, String title) {
 
@@ -124,9 +169,12 @@ public class TestRunnerActivity extends Activity {
 
         @Override
         public void onCrash(GeckoSession session) {
-            if (System.getenv("MOZ_CRASHREPORTER_SHUTDOWN") != null) {
-                sRuntime.shutdown();
-            }
+            onContentProcessGone();
+        }
+
+        @Override
+        public void onKill(GeckoSession session) {
+            onContentProcessGone();
         }
 
         @Override
@@ -142,6 +190,24 @@ public class TestRunnerActivity extends Activity {
         return createSession(null);
     }
 
+    private WebExtension.SessionTabDelegate mSessionTabDelegate = new WebExtension.SessionTabDelegate() {
+        @NonNull
+        @Override
+        public GeckoResult<AllowOrDeny> onCloseTab(@Nullable WebExtension source,
+                                                   @NonNull GeckoSession session) {
+            closeSession(session);
+            return GeckoResult.fromValue(AllowOrDeny.ALLOW);
+        }
+        @Override
+        public GeckoResult<AllowOrDeny> onUpdateTab(@NonNull WebExtension source,
+                                                    @NonNull GeckoSession session,
+                                                    @NonNull WebExtension.UpdateTabDetails updateDetails) {
+            webExtensionController().setTabActive(mActiveSession, false);
+            mActiveSession = session;
+            return GeckoResult.fromValue(AllowOrDeny.ALLOW);
+        }
+    };
+
     private GeckoSession createSession(GeckoSessionSettings settings) {
         if (settings == null) {
             settings = new GeckoSessionSettings();
@@ -151,6 +217,13 @@ public class TestRunnerActivity extends Activity {
         session.setNavigationDelegate(mNavigationDelegate);
         session.setContentDelegate(mContentDelegate);
         session.setPermissionDelegate(mPermissionDelegate);
+
+        final WebExtension.SessionController sessionController =
+                session.getWebExtensionController();
+        for (final WebExtension extension : mExtensions) {
+            sessionController.setTabDelegate(extension, mSessionTabDelegate);
+        }
+
         mOwnedSessions.add(session);
         return session;
     }
@@ -158,25 +231,30 @@ public class TestRunnerActivity extends Activity {
     private GeckoSession createBackgroundSession(final GeckoSessionSettings settings) {
         final GeckoSession session = createSession(settings);
 
-        final SurfaceTexture texture  = new SurfaceTexture(0);
-        final Surface surface = new Surface(texture);
+        final Display display = new Display(mView.getWidth(), mView.getHeight());
+        display.attach(session);
 
-        final GeckoDisplay display = session.acquireDisplay();
-        display.surfaceChanged(surface, mView.getWidth(), mView.getHeight());
         mDisplays.put(session, display);
 
         return session;
     }
 
     private void closeSession(GeckoSession session) {
+        if (session == mActiveSession) {
+            webExtensionController().setTabActive(mActiveSession, false);
+            mActiveSession = null;
+        }
         if (mDisplays.containsKey(session)) {
-            final GeckoDisplay display = mDisplays.remove(session);
-            display.surfaceDestroyed();
-
-            session.releaseDisplay(display);
+            final Display display = mDisplays.remove(session);
+            display.release(session);
         }
         mOwnedSessions.remove(session);
         session.close();
+        if (!mOwnedSessions.isEmpty()) {
+            // Pick a random session to set as active
+            mActiveSession = mOwnedSessions.iterator().next();
+            webExtensionController().setTabActive(mActiveSession, true);
+        }
     }
 
     @Override
@@ -195,8 +273,7 @@ public class TestRunnerActivity extends Activity {
                     .arguments(new String[] { "-purgecaches" })
                     .displayDpiOverride(160)
                     .displayDensityOverride(1.0f)
-                    .remoteDebuggingEnabled(true)
-                    .autoplayDefault(GeckoRuntimeSettings.AUTOPLAY_DEFAULT_ALLOWED);
+                    .remoteDebuggingEnabled(true);
 
             final Bundle extras = intent.getExtras();
             if (extras != null) {
@@ -209,17 +286,13 @@ public class TestRunnerActivity extends Activity {
 
             sRuntime = GeckoRuntime.create(this, runtimeSettingsBuilder.build());
 
-            sRuntime.getWebExtensionController().setTabDelegate(new WebExtensionController.TabDelegate() {
+            webExtensionController().setDebuggerDelegate(new WebExtensionController.DebuggerDelegate() {
                 @Override
-                public GeckoResult<GeckoSession> onNewTab(WebExtension source, String uri) {
-                    return GeckoResult.fromValue(createSession());
-                }
-                @Override
-                public GeckoResult<AllowOrDeny> onCloseTab(WebExtension source, GeckoSession session) {
-                   closeSession(session);
-                   return GeckoResult.fromValue(AllowOrDeny.ALLOW);
+                public void onExtensionListUpdated() {
+                    refreshExtensionList();
                 }
             });
+
             sRuntime.setDelegate(() -> {
                 mKillProcessOnDestroy = true;
                 finish();
@@ -227,6 +300,8 @@ public class TestRunnerActivity extends Activity {
         }
 
         mSession = createSession();
+        mActiveSession = mSession;
+        webExtensionController().setTabActive(mActiveSession, true);
         mSession.open(sRuntime);
 
         // If we were passed a URI in the Intent, open it
@@ -238,6 +313,31 @@ public class TestRunnerActivity extends Activity {
         mView = new GeckoView(this);
         mView.setSession(mSession);
         setContentView(mView);
+    }
+
+    private void refreshExtensionList() {
+        webExtensionController().list().accept(extensions -> {
+            mExtensions = extensions;
+            for (WebExtension extension : mExtensions) {
+                extension.setTabDelegate(new WebExtension.TabDelegate() {
+                    @Override
+                    public GeckoResult<GeckoSession> onNewTab(WebExtension source,
+                                                              WebExtension.CreateTabDetails details) {
+                        GeckoSession newSession = createSession();
+                        if (details.active == Boolean.TRUE) {
+                            webExtensionController().setTabActive(mActiveSession, false);
+                            mActiveSession = newSession;
+                        }
+                        return GeckoResult.fromValue(newSession);
+                    }
+                });
+
+                for (final GeckoSession session : mOwnedSessions) {
+                    session.getWebExtensionController()
+                            .setTabDelegate(extension, mSessionTabDelegate);
+                }
+            }
+        });
     }
 
     @Override

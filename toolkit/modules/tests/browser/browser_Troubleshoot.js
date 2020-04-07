@@ -285,7 +285,12 @@ const SNAPSHOT_SCHEMA = {
     lockedPreferences: {
       required: true,
       type: "object",
-      properties: {},
+      properties: {
+        "fission.autostart": {
+          required: false,
+          type: "boolean",
+        },
+      },
     },
     graphics: {
       required: true,
@@ -334,7 +339,7 @@ const SNAPSHOT_SCHEMA = {
           type: "string",
         },
         adapterRAM: {
-          type: "string",
+          type: "number",
         },
         adapterDrivers: {
           type: "string",
@@ -361,7 +366,7 @@ const SNAPSHOT_SCHEMA = {
           type: "string",
         },
         adapterRAM2: {
-          type: "string",
+          type: "number",
         },
         adapterDrivers2: {
           type: "string",
@@ -477,6 +482,9 @@ const SNAPSHOT_SCHEMA = {
           type: "number",
         },
         windowProtocol: {
+          type: "string",
+        },
+        desktopEnvironment: {
           type: "string",
         },
       },
@@ -860,6 +868,19 @@ const SNAPSHOT_SCHEMA = {
               type: "array",
             },
           },
+        },
+      },
+    },
+    remoteAgent: {
+      type: "object",
+      properties: {
+        listening: {
+          required: true,
+          type: "boolean",
+        },
+        url: {
+          required: true,
+          type: "string",
         },
       },
     },

@@ -11,20 +11,14 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Compiler.h"
-#include "mozilla/Move.h"
 #include "mozilla/TemplateLib.h"
 #include "mozilla/UniquePtr.h"
 
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef JS_OOM_DO_BACKTRACES
-#  include <execinfo.h>
-#  include <stdio.h>
-#endif
+#include <utility>
 
 #include "jstypes.h"
-
 #include "mozmemory.h"
 
 /* The public JS engine namespace. */
@@ -35,10 +29,6 @@ namespace mozilla {}
 
 /* The private JS engine namespace. */
 namespace js {}
-
-#define JS_STATIC_ASSERT(cond) static_assert(cond, "JS_STATIC_ASSERT")
-#define JS_STATIC_ASSERT_IF(cond, expr) \
-  MOZ_STATIC_ASSERT_IF(cond, expr, "JS_STATIC_ASSERT_IF")
 
 extern MOZ_NORETURN MOZ_COLD JS_PUBLIC_API void JS_Assert(const char* s,
                                                           const char* file,
@@ -95,7 +85,7 @@ namespace oom {
  * off-thread script parsing without causing an OOM in the active thread first.
  *
  * Getter/Setter functions to encapsulate mozilla::ThreadLocal, implementation
- * is in jsutil.cpp.
+ * is in util/Utility.cpp.
  */
 #  if defined(DEBUG) || defined(JS_OOM_BREAKPOINT)
 
@@ -337,7 +327,8 @@ struct MOZ_RAII JS_PUBLIC_DATA AutoEnterOOMUnsafeRegion {
   MOZ_NORETURN MOZ_COLD void crash(size_t size, const char* reason);
 
   using AnnotateOOMAllocationSizeCallback = void (*)(size_t);
-  static AnnotateOOMAllocationSizeCallback annotateOOMSizeCallback;
+  static mozilla::Atomic<AnnotateOOMAllocationSizeCallback, mozilla::Relaxed>
+      annotateOOMSizeCallback;
   static void setAnnotateOOMAllocationSizeCallback(
       AnnotateOOMAllocationSizeCallback callback) {
     annotateOOMSizeCallback = callback;
@@ -380,9 +371,8 @@ extern JS_PUBLIC_DATA arena_id_t StringBufferArena;
 extern void InitMallocAllocator();
 extern void ShutDownMallocAllocator();
 
-#  ifdef MOZ_DEBUG
+// This is a no-op if built without MOZ_MEMORY and MOZ_DEBUG.
 extern void AssertJSStringBufferInCorrectArena(const void* ptr);
-#  endif
 
 } /* namespace js */
 

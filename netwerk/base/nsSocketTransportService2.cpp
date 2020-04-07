@@ -13,8 +13,6 @@
 #include "nsError.h"
 #include "prnetdb.h"
 #include "prerror.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIObserverService.h"
 #include "mozilla/Atomics.h"
@@ -23,6 +21,7 @@
 #include "mozilla/PublicSSL.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/ReverseIterator.h"
 #include "mozilla/Telemetry.h"
 #include "nsThreadUtils.h"
 #include "nsIFile.h"
@@ -167,6 +166,116 @@ nsSocketTransportService::nsSocketTransportService()
 
   NS_ASSERTION(!gSocketTransportService, "must not instantiate twice");
   gSocketTransportService = this;
+}
+
+void nsSocketTransportService::ApplyPortRemap(uint16_t* aPort) {
+  MOZ_ASSERT(IsOnCurrentThreadInfallible());
+
+  if (!mPortRemapping) {
+    return;
+  }
+
+  // Reverse the array to make later rules override earlier rules.
+  for (auto const& portMapping : Reversed(*mPortRemapping)) {
+    if (*aPort < Get<0>(portMapping)) {
+      continue;
+    }
+    if (*aPort > Get<1>(portMapping)) {
+      continue;
+    }
+
+    *aPort = Get<2>(portMapping);
+    return;
+  }
+}
+
+bool nsSocketTransportService::UpdatePortRemapPreference(
+    nsACString const& aPortMappingPref) {
+  TPortRemapping portRemapping;
+
+  auto consumePreference = [&]() -> bool {
+    Tokenizer tokenizer(aPortMappingPref);
+
+    tokenizer.SkipWhites();
+    if (tokenizer.CheckEOF()) {
+      return true;
+    }
+
+    nsTArray<Tuple<uint16_t, uint16_t>> ranges(2);
+    while (true) {
+      uint16_t loPort;
+      tokenizer.SkipWhites();
+      if (!tokenizer.ReadInteger(&loPort)) {
+        break;
+      }
+
+      uint16_t hiPort;
+      tokenizer.SkipWhites();
+      if (tokenizer.CheckChar('-')) {
+        tokenizer.SkipWhites();
+        if (!tokenizer.ReadInteger(&hiPort)) {
+          break;
+        }
+      } else {
+        hiPort = loPort;
+      }
+
+      ranges.AppendElement(MakeTuple(loPort, hiPort));
+
+      tokenizer.SkipWhites();
+      if (tokenizer.CheckChar(',')) {
+        continue;  // another port or port range is expected
+      }
+
+      if (tokenizer.CheckChar('=')) {
+        uint16_t targetPort;
+        tokenizer.SkipWhites();
+        if (!tokenizer.ReadInteger(&targetPort)) {
+          break;
+        }
+
+        // Storing reversed, because the most common cases (like 443) will very
+        // likely be listed as first, less common cases will be added to the end
+        // of the list mapping to the same port. As we iterate the whole
+        // remapping array from the end, this may have a small perf win by
+        // hitting the most common cases earlier.
+        for (auto const& range : Reversed(ranges)) {
+          portRemapping.AppendElement(
+              MakeTuple(Get<0>(range), Get<1>(range), targetPort));
+        }
+        ranges.Clear();
+
+        tokenizer.SkipWhites();
+        if (tokenizer.CheckChar(';')) {
+          continue;  // more mappings (or EOF) expected
+        }
+        if (tokenizer.CheckEOF()) {
+          return true;
+        }
+      }
+
+      // Anything else is unexpected.
+      break;
+    }
+
+    // 'break' from the parsing loop means ill-formed preference
+    portRemapping.Clear();
+    return false;
+  };
+
+  bool rv = consumePreference();
+
+  if (!IsOnCurrentThreadInfallible() && mThread) {
+    mThread->Dispatch(
+        NewRunnableMethod<TPortRemapping>(
+            "net::ApplyPortRemapping", this,
+            &nsSocketTransportService::ApplyPortRemapPreference, portRemapping),
+        NS_DISPATCH_NORMAL);
+  } else {
+    ApplyPortRemapPreference(portRemapping);
+  }
+
+  return rv;
 }
 
 nsSocketTransportService::~nsSocketTransportService() {
@@ -475,6 +584,16 @@ bool nsSocketTransportService::GrowIdleList() {
   return true;
 }
 
+void nsSocketTransportService::ApplyPortRemapPreference(
+    TPortRemapping const& portRemapping) {
+  MOZ_ASSERT(IsOnCurrentThreadInfallible());
+
+  mPortRemapping.reset();
+  if (!portRemapping.IsEmpty()) {
+    mPortRemapping.emplace(portRemapping);
+  }
+}
+
 PRIntervalTime nsSocketTransportService::PollTimeout(PRIntervalTime now) {
   if (mActiveCount == 0) {
     return NS_SOCKET_POLL_TIMEOUT;
@@ -583,13 +702,13 @@ static const char* gCallbackPrefs[] = {
     POLLABLE_EVENT_TIMEOUT,
     ESNI_ENABLED,
     ESNI_DISABLED_MITM,
+    "network.socket.forcePort",
     nullptr,
 };
 
 /* static */
-void nsSocketTransportService::PrefCallback(const char* aPref,
-                                            nsSocketTransportService* aSelf) {
-  aSelf->UpdatePrefs();
+void nsSocketTransportService::UpdatePrefs(const char* aPref, void* aSelf) {
+  static_cast<nsSocketTransportService*>(aSelf)->UpdatePrefs();
 }
 
 // called from main thread only
@@ -615,7 +734,7 @@ nsSocketTransportService::Init() {
     thread.swap(mThread);
   }
 
-  Preferences::RegisterCallbacks(PrefCallback, gCallbackPrefs, this);
+  Preferences::RegisterCallbacks(UpdatePrefs, gCallbackPrefs, this);
   UpdatePrefs();
 
   nsCOMPtr<nsIObserverService> obsSvc = services::GetObserverService();
@@ -677,7 +796,7 @@ nsresult nsSocketTransportService::ShutdownThread() {
     mThread = nullptr;
   }
 
-  Preferences::UnregisterCallbacks(PrefCallback, gCallbackPrefs, this);
+  Preferences::UnregisterCallbacks(UpdatePrefs, gCallbackPrefs, this);
 
   nsCOMPtr<nsIObserverService> obsSvc = services::GetObserverService();
   if (obsSvc) {
@@ -962,6 +1081,11 @@ nsSocketTransportService::Run() {
       startOfNextIteration = TimeStamp::NowLoRes();
     }
     pollDuration = nullptr;
+    // We pop out to this loop when there are no pending events.
+    // If we don't reset these, we may not re-enter ProcessNextEvent()
+    // until we have events to process, and it may seem like we have
+    // an event running for a very long time.
+    mRawThread->SetRunningEventDelay(TimeDuration(), TimeStamp());
 
     do {
       if (Telemetry::CanRecordPrereleaseData()) {
@@ -1352,6 +1476,17 @@ nsresult nsSocketTransportService::UpdatePrefs() {
   rv = Preferences::GetBool(ESNI_DISABLED_MITM, &esniMitmPref);
   if (NS_SUCCEEDED(rv)) {
     mTrustedMitmDetected = esniMitmPref;
+  }
+
+  nsAutoCString portMappingPref;
+  rv = Preferences::GetCString("network.socket.forcePort", portMappingPref);
+  if (NS_SUCCEEDED(rv)) {
+    bool rv = UpdatePortRemapPreference(portMappingPref);
+    if (!rv) {
+      NS_ERROR(
+          "network.socket.forcePort preference is ill-formed, this will likely "
+          "make everything unexpectedly fail!");
+    }
   }
 
   return NS_OK;

@@ -5,12 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "VariableLengthPrefixSet.h"
+#include "nsIInputStream.h"
 #include "nsUrlClassifierPrefixSet.h"
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include <algorithm>
 
@@ -22,8 +24,7 @@ static mozilla::LazyLogModule gUrlClassifierPrefixSetLog(
 #define LOG_ENABLED() \
   MOZ_LOG_TEST(gUrlClassifierPrefixSetLog, mozilla::LogLevel::Debug)
 
-namespace mozilla {
-namespace safebrowsing {
+namespace mozilla::safebrowsing {
 
 #define PREFIX_SIZE_FIXED 4
 
@@ -31,20 +32,9 @@ namespace safebrowsing {
 namespace {
 
 template <class T>
-static void EnsureSorted(T* aArray) {
-  typename T::elem_type* start = aArray->Elements();
-  typename T::elem_type* end = aArray->Elements() + aArray->Length();
-  typename T::elem_type* iter = start;
-  typename T::elem_type* previous = start;
-
-  while (iter != end) {
-    previous = iter;
-    ++iter;
-    if (iter != end) {
-      MOZ_ASSERT(*previous <= *iter);
-    }
-  }
-  return;
+void EnsureSorted(T* aArray) {
+  MOZ_ASSERT(std::is_sorted(aArray->Elements(),
+                            aArray->Elements() + aArray->Length()));
 }
 
 }  // namespace
@@ -119,13 +109,13 @@ nsresult VariableLengthPrefixSet::SetPrefixes(AddPrefixArray& aAddPrefixes,
   }
   completions.Sort();
 
-  nsCString* completionStr = new nsCString;
+  UniquePtr<nsCString> completionStr(new nsCString);
   completionStr->SetCapacity(completions.Length() * COMPLETE_SIZE);
   for (size_t i = 0; i < completions.Length(); i++) {
     const char* buf = reinterpret_cast<const char*>(completions[i].buf);
     completionStr->Append(buf, COMPLETE_SIZE);
   }
-  mVLPrefixSet.Put(COMPLETE_SIZE, completionStr);
+  mVLPrefixSet.Put(COMPLETE_SIZE, completionStr.release());
 
   return NS_OK;
 }
@@ -159,7 +149,7 @@ nsresult VariableLengthPrefixSet::SetPrefixes(PrefixStringMap& aPrefixMap) {
     // Prefixes are lexicographically-sorted, so the interger array
     // passed to nsUrlClassifierPrefixSet should also follow the same order.
     // Reverse byte order in-place in Little-Endian platform.
-#if MOZ_LITTLE_ENDIAN
+#if MOZ_LITTLE_ENDIAN()
     char* begin = prefixes->BeginWriting();
     char* end = prefixes->EndWriting();
 
@@ -201,7 +191,7 @@ nsresult VariableLengthPrefixSet::GetPrefixes(PrefixStringMap& aPrefixMap) {
 
   size_t count = array.Length();
   if (count) {
-    nsCString* prefixes = new nsCString();
+    UniquePtr<nsCString> prefixes(new nsCString());
     if (!prefixes->SetLength(PREFIX_SIZE_FIXED * count, fallible)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -212,7 +202,7 @@ nsresult VariableLengthPrefixSet::GetPrefixes(PrefixStringMap& aPrefixMap) {
       begin[i] = NativeEndian::swapToBigEndian(array[i]);
     }
 
-    aPrefixMap.Put(PREFIX_SIZE_FIXED, prefixes);
+    aPrefixMap.Put(PREFIX_SIZE_FIXED, prefixes.release());
   }
 
   // Copy variable-length prefix set
@@ -349,7 +339,7 @@ nsresult VariableLengthPrefixSet::LoadPrefixes(nsCOMPtr<nsIInputStream>& in) {
     NS_ENSURE_TRUE(stringLength % prefixSize == 0, NS_ERROR_FILE_CORRUPTED);
     uint32_t prefixCount = stringLength / prefixSize;
 
-    nsCString* vlPrefixes = new nsCString();
+    UniquePtr<nsCString> vlPrefixes(new nsCString());
     if (!vlPrefixes->SetLength(stringLength, fallible)) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
@@ -359,7 +349,7 @@ nsresult VariableLengthPrefixSet::LoadPrefixes(nsCOMPtr<nsIInputStream>& in) {
     NS_ENSURE_SUCCESS(rv, rv);
     NS_ENSURE_TRUE(read == stringLength, NS_ERROR_FAILURE);
 
-    mVLPrefixSet.Put(prefixSize, vlPrefixes);
+    mVLPrefixSet.Put(prefixSize, vlPrefixes.release());
     totalPrefixes += prefixCount;
     LOG(("[%s] Loaded %u %u-byte prefixes", mName.get(), prefixCount,
          prefixSize));
@@ -490,5 +480,4 @@ size_t VariableLengthPrefixSet::SizeOfIncludingThis(
   return n;
 }
 
-}  // namespace safebrowsing
-}  // namespace mozilla
+}  // namespace mozilla::safebrowsing

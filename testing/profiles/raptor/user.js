@@ -18,3 +18,13 @@ user_pref("devtools.console.stdout.content", true);
 
 // prevent pages from opening after a crash
 user_pref("browser.sessionstore.resume_from_crash", false);
+
+// disable the background hang monitor
+user_pref("toolkit.content-background-hang-monitor.disabled", true);
+
+// disable async stacks to match release builds
+// https://developer.mozilla.org/en-US/docs/Mozilla/Benchmarking#Async_Stacks
+user_pref('javascript.options.asyncstack', false);
+
+// enable marionette trace logging
+user_pref('marionette.log.level', 'Trace');

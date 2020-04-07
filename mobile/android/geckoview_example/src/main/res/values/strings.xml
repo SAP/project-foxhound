@@ -11,6 +11,8 @@
     <string name="request_video">Share video with "%1$s"</string>
     <string name="request_audio">Share audio with "%1$s"</string>
     <string name="request_media">Share video and audio with "%1$s"</string>
+    <string name="request_xr">Share WebXR displays with "%1$s"?</string>
+    <string name="request_autoplay">Allow video to autoplay on "%1$s"?</string>
     <string name="media_back_camera">Back camera</string>
     <string name="media_front_camera">Front camera</string>
     <string name="media_microphone">Microphone</string>
@@ -19,7 +21,6 @@
     <string name="crash_native">Native</string>
     <string name="crash_java">Java</string>
     <string name="crash_content_native">Content (Native)</string>
-    <string name="multiprocess">Multiprocess</string>
     <string name="tracking_protection">Tracking Protection</string>
     <string name="tracking_protection_ex">Disable TP</string>
     <string name="tracking_protection_ex2">Reenable TP</string>
@@ -34,9 +35,14 @@
     <string name="device_sharing_camera">Camera is on</string>
     <string name="device_sharing_camera_and_mic">Camera and microphone are on</string>
     <string name="new_tab">New tab</string>
+    <string name="install_addon">Install Add-on...</string>
+    <string name="install_addon_hint">Add-on URL: https://addons.mozilla.org/...</string>
     <string name="close_tab">Close tab</string>
     <string name="desktop_mode">Desktop site</string>
     <string name="slow_script">A script on this page is causing your web browser to run slowly</string>
     <string name="wait">Wait</string>
     <string name="stop">Stop</string>
+    <string name="install">Install</string>
+    <string name="cancel">Cancel</string>
+    <string name="addon_uri">WebExtension xpi URL</string>
 </resources>

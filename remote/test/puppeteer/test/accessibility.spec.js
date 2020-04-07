@@ -19,7 +19,7 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
   const {it, fit, xit} = testRunner;
   const {beforeAll, beforeEach, afterAll, afterEach} = testRunner;
 
-  describe('Accessibility', function() {
+  describe_fails_ffox('Accessibility', function() {
     it('should work', async function({page}) {
       await page.setContent(`
       <head>
@@ -42,6 +42,7 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
         </select>
       </body>`);
 
+      await page.focus('[placeholder="Empty input"]');
       const golden = FFOX ? {
         role: 'document',
         name: 'Accessibility Test',
@@ -80,7 +81,8 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
       expect(await page.accessibility.snapshot()).toEqual(golden);
     });
     it('should report uninteresting nodes', async function({page}) {
-      await page.setContent(`<textarea autofocus>hi</textarea>`);
+      await page.setContent(`<textarea>hi</textarea>`);
+      await page.focus('textarea');
       const golden = FFOX ? {
         role: 'entry',
         name: '',
@@ -98,7 +100,7 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
         focused: true,
         multiline: true,
         children: [{
-          role: 'GenericContainer',
+          role: 'generic',
           name: '',
           children: [{
             role: 'text', name: 'hi'
@@ -180,7 +182,7 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
             name: 'my fake image'
           }]
         } : {
-          role: 'GenericContainer',
+          role: 'generic',
           name: '',
           value: 'Edit this image: ',
           children: [{
@@ -239,7 +241,7 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
           <div contenteditable="plaintext-only">Edit this image:<img src="fakeimage.png" alt="my fake image"></div>`);
           const snapshot = await page.accessibility.snapshot();
           expect(snapshot.children[0]).toEqual({
-            role: 'GenericContainer',
+            role: 'generic',
             name: ''
           });
         });
@@ -248,7 +250,7 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
           <div contenteditable="plaintext-only" tabIndex=0>Edit this image:<img src="fakeimage.png" alt="my fake image"></div>`);
           const snapshot = await page.accessibility.snapshot();
           expect(snapshot.children[0]).toEqual({
-            role: 'GenericContainer',
+            role: 'generic',
             name: ''
           });
         });
@@ -308,7 +310,7 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
         expect(snapshot.children[0]).toEqual(golden);
       });
 
-      describe_fails_ffox('root option', function() {
+      describe('root option', function() {
         it('should work a button', async({page}) => {
           await page.setContent(`<button>My Button</button>`);
 
@@ -358,10 +360,18 @@ module.exports.addTests = function({testRunner, expect, FFOX}) {
           const div = await page.$('div');
           expect(await page.accessibility.snapshot({root: div})).toEqual(null);
           expect(await page.accessibility.snapshot({root: div, interestingOnly: false})).toEqual({
-            role: 'GenericContainer',
+            role: 'generic',
             name: '',
-            children: [ { role: 'button', name: 'My Button' } ] }
-          );
+            children: [
+              {
+                role: 'button',
+                name: 'My Button',
+                children: [
+                  { role: 'text', name: 'My Button' },
+                ],
+              },
+            ],
+          });
         });
       });
     });

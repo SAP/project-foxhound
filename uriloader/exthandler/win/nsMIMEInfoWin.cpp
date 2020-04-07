@@ -17,10 +17,10 @@
 #include "shlobj.h"
 #include "windows.h"
 #include "nsIWindowsRegKey.h"
-#include "nsIProcess.h"
 #include "nsUnicharUtils.h"
 #include "nsITextToSubURI.h"
 #include "nsVariant.h"
+#include "mozilla/AssembleCmdLine.h"
 #include "mozilla/ShellHeaderOnlyUtils.h"
 #include "mozilla/UrlmonHeaderOnlyUtils.h"
 #include "mozilla/UniquePtrExtensions.h"
@@ -40,9 +40,8 @@ nsresult nsMIMEInfoWin::LaunchDefaultWithFile(nsIFile* aFile) {
   return aFile->Launch();
 }
 
-// Helper routine to call mozilla::ShellExecuteByExplorer
-static nsresult ShellExecuteWithIFile(const nsCOMPtr<nsIFile>& aExecutable,
-                                      const _variant_t& aArgs) {
+nsresult nsMIMEInfoWin::ShellExecuteWithIFile(nsIFile* aExecutable,
+                                              const nsString& aArgs) {
   nsresult rv;
 
   nsAutoString execPath;
@@ -52,6 +51,11 @@ static nsresult ShellExecuteWithIFile(const nsCOMPtr<nsIFile>& aExecutable,
   }
   if (NS_FAILED(rv)) {
     return rv;
+  }
+
+  auto assembledArgs = mozilla::assembleSingleArgument(aArgs);
+  if (!assembledArgs) {
+    return NS_ERROR_FILE_EXECUTION_FAILED;
   }
 
   _bstr_t execPathBStr(execPath.get());
@@ -64,10 +68,15 @@ static nsresult ShellExecuteWithIFile(const nsCOMPtr<nsIFile>& aExecutable,
   // Ask Explorer to ShellExecute on our behalf, as some applications such as
   // Skype for Business do not start correctly when inheriting our process's
   // migitation policies.
+  // It does not work in a special environment such as Citrix.  In such a case
+  // we fall back to launching an application as a child process.  We need to
+  // find a way to handle the combination of these interop issues.
   mozilla::LauncherVoidResult shellExecuteOk = mozilla::ShellExecuteByExplorer(
-      execPathBStr, aArgs, verbDefault, workingDir, showCmd);
+      execPathBStr, assembledArgs.get(), verbDefault, workingDir, showCmd);
   if (shellExecuteOk.isErr()) {
-    return NS_ERROR_FILE_EXECUTION_FAILED;
+    // No need to pass assembledArgs to LaunchWithIProcess.  aArgs will be
+    // processed in nsProcess::RunProcess.
+    return LaunchWithIProcess(aExecutable, aArgs);
   }
 
   return NS_OK;
@@ -96,9 +105,6 @@ nsMIMEInfoWin::LaunchWithFile(nsIFile* aFile) {
     nsCOMPtr<nsIFile> executable;
     rv = localHandler->GetExecutable(getter_AddRefs(executable));
     NS_ENSURE_SUCCESS(rv, rv);
-
-    nsAutoString path;
-    aFile->GetPath(path);
 
     // Deal with local dll based handlers
     nsCString filename;
@@ -163,7 +169,9 @@ nsMIMEInfoWin::LaunchWithFile(nsIFile* aFile) {
         return NS_ERROR_FILE_EXECUTION_FAILED;
       }
     }
-    return ShellExecuteWithIFile(executable, _variant_t(path.get()));
+    nsAutoString path;
+    aFile->GetPath(path);
+    return ShellExecuteWithIFile(executable, path);
   }
 
   return NS_ERROR_INVALID_ARG;
@@ -275,10 +283,19 @@ nsresult nsMIMEInfoWin::LoadUriInternal(nsIURI* aURL) {
     // Ask Explorer to ShellExecute on our behalf, as some URL handlers do not
     // start correctly when inheriting our process's process migitations.
     mozilla::LauncherVoidResult shellExecuteOk =
-        mozilla::ShellExecuteByExplorer(validatedUri.unwrap(), args, verb,
+        mozilla::ShellExecuteByExplorer(validatedUri.inspect(), args, verb,
                                         workingDir, showCmd);
     if (shellExecuteOk.isErr()) {
-      return NS_ERROR_FAILURE;
+      SHELLEXECUTEINFOW sinfo = {sizeof(sinfo)};
+      sinfo.fMask = SEE_MASK_NOASYNC;
+      sinfo.lpVerb = V_BSTR(&verb);
+      sinfo.nShow = showCmd;
+      sinfo.lpFile = validatedUri.inspect();
+
+      BOOL result = ShellExecuteExW(&sinfo);
+      if (!result || reinterpret_cast<LONG_PTR>(sinfo.hInstApp) < 32) {
+        rv = NS_ERROR_FAILURE;
+      }
     }
   }
 

@@ -3,22 +3,20 @@
 
 "use strict";
 
-const { prepareMessage } = require("devtools/client/webconsole/utils/messages");
-
-const STUBS_FOLDER = "/devtools/client/webconsole/test/node/fixtures/stubs/";
-const STUBS_UPDATE_ENV = "WEBCONSOLE_STUBS_UPDATE";
+const ChromeUtils = require("ChromeUtils");
+const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 const {
-  stubPackets,
-} = require("devtools/client/webconsole/test/node/fixtures/stubs/index.js");
+  getAdHocFrontOrPrimitiveGrip,
+} = require("devtools/shared/fronts/object");
 
-const cachedPackets = {};
+const CHROME_PREFIX = "chrome://mochitests/content/browser/";
+const STUBS_FOLDER = "devtools/client/webconsole/test/node/fixtures/stubs/";
+const STUBS_UPDATE_ENV = "WEBCONSOLE_STUBS_UPDATE";
 
-/* eslint-disable complexity */
+// eslint-disable-next-line complexity
 function getCleanedPacket(key, packet) {
-  if (Object.keys(cachedPackets).includes(key)) {
-    return cachedPackets[key];
-  }
+  const { stubPackets } = require(CHROME_PREFIX + STUBS_FOLDER + "index");
 
   // Strip escaped characters.
   const safeKey = key
@@ -62,6 +60,10 @@ function getCleanedPacket(key, packet) {
       res.channelId = existingPacket.channelId;
     }
 
+    if (res.resultID) {
+      res.resultID = existingPacket.resultID;
+    }
+
     if (res.message) {
       // Clean timeStamp on the message prop.
       res.message.timeStamp = existingPacket.message.timeStamp;
@@ -85,17 +87,15 @@ function getCleanedPacket(key, packet) {
           const newArgument = Object.assign({}, argument);
           const existingArgument = existingPacket.message.arguments[i];
 
-          if (existingArgument) {
+          if (existingArgument && newArgument._grip) {
             // Clean actor ids on each message.arguments item.
-            if (newArgument.actor) {
-              newArgument.actor = existingArgument.actor;
-            }
+            copyExistingActor(newArgument, existingArgument);
 
             // `window`'s properties count can vary from OS to OS, so we
             // clean the `ownPropertyLength` property from the grip.
-            if (newArgument.class === "Window") {
-              newArgument.ownPropertyLength =
-                existingArgument.ownPropertyLength;
+            if (newArgument._grip.class === "Window") {
+              newArgument._grip.ownPropertyLength =
+                existingArgument._grip.ownPropertyLength;
             }
           }
           return newArgument;
@@ -117,45 +117,58 @@ function getCleanedPacket(key, packet) {
       }
     }
 
-    if (res.result && existingPacket.result) {
+    if (res.result && res.result._grip && existingPacket.result) {
       // Clean actor ids on evaluation result messages.
-      res.result.actor = existingPacket.result.actor;
-      if (res.result.preview) {
-        if (res.result.preview.timestamp) {
+      copyExistingActor(res.result, existingPacket.result);
+
+      if (res.result._grip.preview) {
+        if (res.result._grip.preview.timestamp) {
           // Clean timestamp there too.
-          res.result.preview.timestamp =
-            existingPacket.result.preview.timestamp;
+          res.result._grip.preview.timestamp =
+            existingPacket.result._grip.preview.timestamp;
         }
       }
     }
 
     if (res.exception && existingPacket.exception) {
       // Clean actor ids on exception messages.
-      if (existingPacket.exception.actor) {
-        res.exception.actor = existingPacket.exception.actor;
-      }
+      copyExistingActor(res.exception, existingPacket.exception);
 
-      if (res.exception.preview) {
-        if (res.exception.preview.timestamp) {
+      if (
+        res.exception._grip &&
+        res.exception._grip.preview &&
+        existingPacket.exception._grip &&
+        existingPacket.exception._grip.preview
+      ) {
+        if (res.exception._grip.preview.timestamp) {
           // Clean timestamp there too.
-          res.exception.preview.timestamp =
-            existingPacket.exception.preview.timestamp;
+          res.exception._grip.preview.timestamp =
+            existingPacket.exception._grip.preview.timestamp;
         }
 
         if (
-          typeof res.exception.preview.message === "object" &&
-          res.exception.preview.message.type === "longString"
+          typeof res.exception._grip.preview.message === "object" &&
+          res.exception._grip.preview.message._grip.type === "longString" &&
+          typeof existingPacket.exception._grip.preview.message === "object" &&
+          existingPacket.exception._grip.preview.message._grip.type ===
+            "longString"
         ) {
-          res.exception.preview.message.actor =
-            existingPacket.exception.preview.message.actor;
+          copyExistingActor(
+            res.exception._grip.preview.message,
+            existingPacket.exception._grip.preview.message
+          );
         }
       }
 
       if (
         typeof res.exceptionMessage === "object" &&
-        res.exceptionMessage.type === "longString"
+        res.exceptionMessage._grip &&
+        res.exceptionMessage._grip.type === "longString"
       ) {
-        res.exceptionMessage.actor = existingPacket.exceptionMessage.actor;
+        copyExistingActor(
+          res.exceptionMessage,
+          existingPacket.exceptionMessage
+        );
       }
     }
 
@@ -174,10 +187,13 @@ function getCleanedPacket(key, packet) {
 
       if (
         typeof res.pageError.errorMessage === "object" &&
-        res.pageError.errorMessage.type === "longString"
+        res.pageError.errorMessage._grip &&
+        res.pageError.errorMessage._grip.type === "longString"
       ) {
-        res.pageError.errorMessage.actor =
-          existingPacket.pageError.errorMessage.actor;
+        copyExistingActor(
+          res.pageError.errorMessage,
+          existingPacket.pageError.errorMessage
+        );
       }
 
       if (res.pageError.sourceId) {
@@ -266,54 +282,62 @@ function getCleanedPacket(key, packet) {
       }
     }
 
+    if (res.updates && Array.isArray(res.updates)) {
+      res.updates.sort();
+    }
+
     if (res.helperResult) {
-      if (res.helperResult.object) {
-        res.helperResult.object.actor =
-          existingPacket.helperResult.object.actor;
-      }
+      copyExistingActor(
+        res.helperResult.object,
+        existingPacket.helperResult.object
+      );
     }
   } else {
     res = packet;
   }
 
-  cachedPackets[key] = res;
   return res;
 }
-/* eslint-enable complexity */
 
-function formatPacket(key, packet) {
-  const stringifiedPacket = JSON.stringify(
-    getCleanedPacket(key, packet),
-    null,
-    2
+function copyExistingActor(front1, front2) {
+  if (!front1 || !front2) {
+    return;
+  }
+
+  if (front1.actorID && front2.actorID) {
+    front1.actorID = front2.actorID;
+  }
+
+  if (
+    front1._grip &&
+    front2._grip &&
+    front1._grip.actor &&
+    front2._grip.actor
+  ) {
+    front1._grip.actor = front2._grip.actor;
+  }
+}
+
+/**
+ * Write stubs to a given file
+ *
+ * @param {Object} env
+ * @param {String} fileName: The file to write the stubs in.
+ * @param {Map} packets: A Map of the packets.
+ * @param {Boolean} isNetworkMessage: Is the packets are networkMessage packets
+ */
+async function writeStubsToFile(env, fileName, packets, isNetworkMessage) {
+  const mozRepo = env.get("MOZ_DEVELOPER_REPO_DIR");
+  const filePath = `${mozRepo}/${STUBS_FOLDER + fileName}`;
+
+  const serializedPackets = Array.from(packets.entries()).map(
+    ([key, packet]) => {
+      const stringifiedPacket = getSerializedPacket(packet);
+      return `rawPackets.set(\`${key}\`, ${stringifiedPacket});`;
+    }
   );
-  return `stubPackets.set(\`${key}\`, ${stringifiedPacket});`;
-}
 
-function formatStub(key, packet) {
-  const prepared = prepareMessage(getCleanedPacket(key, packet), {
-    getNextId: () => "1",
-  });
-  const stringifiedMessage = JSON.stringify(prepared, null, 2);
-  return `stubPreparedMessages.set(\`${key}\`, new ConsoleMessage(${stringifiedMessage}));`;
-}
-
-function formatNetworkEventStub(key, packet) {
-  const cleanedPacket = getCleanedPacket(key, packet);
-  const networkInfo = cleanedPacket.networkInfo
-    ? cleanedPacket.networkInfo
-    : cleanedPacket;
-
-  const prepared = prepareMessage(networkInfo, { getNextId: () => "1" });
-  const stringifiedMessage = JSON.stringify(prepared, null, 2);
-  return (
-    `stubPreparedMessages.set("${key}", ` +
-    `new NetworkEventMessage(${stringifiedMessage}));`
-  );
-}
-
-function formatFile(stubs, type) {
-  return `/* Any copyright is dedicated to the Public Domain.
+  const fileContent = `/* Any copyright is dedicated to the Public Domain.
   http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint-disable max-len */
 
@@ -323,32 +347,110 @@ function formatFile(stubs, type) {
  * THIS FILE IS AUTOGENERATED. DO NOT MODIFY BY HAND. RUN TESTS IN FIXTURES/ TO UPDATE.
  */
 
-const { ${type} } =
-  require("devtools/client/webconsole/types");
+const {
+  parsePacketsWithFronts,
+} = require("chrome://mochitests/content/browser/devtools/client/webconsole/test/browser/stub-generator-helpers");
+const { prepareMessage } = require("devtools/client/webconsole/utils/messages");
+const {
+  ConsoleMessage,
+  NetworkEventMessage,
+} = require("devtools/client/webconsole/types");
+
+const rawPackets = new Map();
+${serializedPackets.join("\n\n")}
+
+
+const stubPackets = parsePacketsWithFronts(rawPackets);
 
 const stubPreparedMessages = new Map();
-const stubPackets = new Map();
-${stubs.preparedMessages.join("\n\n")}
-
-${stubs.packets.join("\n\n")}
+for (const [key, packet] of Array.from(stubPackets.entries())) {
+  const transformedPacket = prepareMessage(${
+    isNetworkMessage ? "packet.networkInfo || packet" : "packet"
+  }, {
+    getNextId: () => "1",
+  });
+  const message = ${
+    isNetworkMessage
+      ? "NetworkEventMessage(transformedPacket);"
+      : "ConsoleMessage(transformedPacket);"
+  }
+  stubPreparedMessages.set(key, message);
+}
 
 module.exports = {
+  rawPackets,
   stubPreparedMessages,
   stubPackets,
 };
 `;
+
+  await OS.File.writeAtomic(filePath, fileContent);
 }
 
-function getStubFilePath(fileName, env) {
-  return env.get("MOZ_DEVELOPER_REPO_DIR") + STUBS_FOLDER + fileName;
+function getStubFile(fileName) {
+  return require(CHROME_PREFIX + STUBS_FOLDER + fileName);
+}
+
+function getSerializedPacket(packet) {
+  return JSON.stringify(
+    packet,
+    function(_, value) {
+      // The message can have fronts that we need to serialize
+      if (value && value._grip) {
+        return { _grip: value._grip, actorID: value.actorID };
+      }
+
+      return value;
+    },
+    2
+  );
+}
+
+/**
+ *
+ * @param {Map} rawPackets
+ */
+function parsePacketsWithFronts(rawPackets) {
+  const packets = new Map();
+  for (const [key, packet] of rawPackets.entries()) {
+    const newPacket = parsePacketAndCreateFronts(packet);
+    packets.set(key, newPacket);
+  }
+  return packets;
+}
+
+function parsePacketAndCreateFronts(packet) {
+  if (!packet) {
+    return packet;
+  }
+  if (Array.isArray(packet)) {
+    packet.forEach(parsePacketAndCreateFronts);
+  }
+  if (typeof packet === "object") {
+    for (const [key, value] of Object.entries(packet)) {
+      if (value && value._grip) {
+        packet[key] = getAdHocFrontOrPrimitiveGrip(value._grip, {
+          conn: {
+            poolFor: () => {},
+            addActorPool: () => {},
+            getFrontByID: () => {},
+          },
+          manage: () => {},
+        });
+      } else {
+        packet[key] = parsePacketAndCreateFronts(value);
+      }
+    }
+  }
+
+  return packet;
 }
 
 module.exports = {
-  STUBS_FOLDER,
   STUBS_UPDATE_ENV,
-  formatFile,
-  formatNetworkEventStub,
-  formatPacket,
-  formatStub,
-  getStubFilePath,
+  getStubFile,
+  getCleanedPacket,
+  getSerializedPacket,
+  parsePacketsWithFronts,
+  writeStubsToFile,
 };

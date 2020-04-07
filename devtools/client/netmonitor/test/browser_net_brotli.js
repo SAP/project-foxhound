@@ -28,14 +28,16 @@ add_task(async function() {
   await performRequests(monitor, tab, BROTLI_REQUESTS);
 
   const requestItem = document.querySelector(".request-list-item");
+  // Status code title is generated on hover
   const requestsListStatus = requestItem.querySelector(".status-code");
   EventUtils.sendMouseEvent({ type: "mouseover" }, requestsListStatus);
   await waitUntil(() => requestsListStatus.title);
+  await waitForDOMIfNeeded(requestItem, ".requests-list-timings-total");
 
   verifyRequestItemTarget(
     document,
     getDisplayedRequests(store.getState()),
-    getSortedRequests(store.getState()).get(0),
+    getSortedRequests(store.getState())[0],
     "GET",
     HTTPS_CONTENT_TYPE_SJS + "?fmt=br",
     {

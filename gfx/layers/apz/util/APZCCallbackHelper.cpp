@@ -34,12 +34,8 @@
 #include "nsView.h"
 #include "Layers.h"
 
-// #define APZCCH_LOGGING 1
-#ifdef APZCCH_LOGGING
-#  define APZCCH_LOG(...) printf_stderr("APZCCH: " __VA_ARGS__)
-#else
-#  define APZCCH_LOG(...)
-#endif
+static mozilla::LazyLogModule sApzHlpLog("apz.helper");
+#define APZCCH_LOG(...) MOZ_LOG(sApzHlpLog, LogLevel::Debug, (__VA_ARGS__))
 
 namespace mozilla {
 namespace layers {
@@ -288,7 +284,7 @@ void APZCCallbackHelper::NotifyLayerTransforms(
           ViewAs<LayoutDeviceToLayoutDeviceMatrix4x4>(
               msg.GetMatrix(),
               PixelCastJustification::ContentProcessIsLayerInUiProcess),
-          msg.GetRemoteDocumentRect());
+          msg.GetTopLevelViewportVisibleRectInBrowserCoords());
     }
   }
 }
@@ -661,7 +657,10 @@ using FrameForPointOption = nsLayoutUtils::FrameForPointOption;
 
 // Determine the scrollable target frame for the given point and add it to
 // the target list. If the frame doesn't have a displayport, set one.
-// Return whether or not a displayport was set.
+// Return whether or not the frame had a displayport that has already been
+// painted (in this case, the caller can send the SetTargetAPZC notification
+// right away, rather than waiting for a transaction to propagate the
+// displayport to APZ first).
 static bool PrepareForSetTargetAPZCNotification(
     nsIWidget* aWidget, const LayersId& aLayersId, nsIFrame* aRootFrame,
     const LayoutDeviceIntPoint& aRefPoint,
@@ -697,23 +696,29 @@ static bool PrepareForSetTargetAPZCNotification(
         target ? target : aRootFrame);
   }
 
-#ifdef APZCCH_LOGGING
-  nsAutoString dpElementDesc;
-  if (dpElement) {
-    dpElement->Describe(dpElementDesc);
+  if (MOZ_LOG_TEST(sApzHlpLog, LogLevel::Debug)) {
+    nsAutoString dpElementDesc;
+    if (dpElement) {
+      dpElement->Describe(dpElementDesc);
+    }
+    APZCCH_LOG("For event at %s found scrollable element %p (%s)\n",
+               Stringify(aRefPoint).c_str(), dpElement.get(),
+               NS_LossyConvertUTF16toASCII(dpElementDesc).get());
   }
-  APZCCH_LOG("For event at %s found scrollable element %p (%s)\n",
-             Stringify(aRefPoint).c_str(), dpElement.get(),
-             NS_LossyConvertUTF16toASCII(dpElementDesc).get());
-#endif
 
   bool guidIsValid = APZCCallbackHelper::GetOrCreateScrollIdentifiers(
       dpElement, &(guid.mScrollableLayerGuid.mPresShellId),
       &(guid.mScrollableLayerGuid.mScrollId));
   aTargets->AppendElement(guid);
 
-  if (!guidIsValid || nsLayoutUtils::HasDisplayPort(dpElement)) {
+  if (!guidIsValid) {
     return false;
+  }
+  if (nsLayoutUtils::HasDisplayPort(dpElement)) {
+    // If the element has a displayport but it hasn't been painted yet,
+    // we want the caller to wait for the paint to happen, but we don't
+    // need to set the displayport here since it's already been set.
+    return !nsLayoutUtils::HasPaintedDisplayPort(dpElement);
   }
 
   if (!scrollAncestor) {
@@ -778,7 +783,7 @@ DisplayportSetListener::DisplayportSetListener(
       mInputBlockId(aInputBlockId),
       mTargets(aTargets) {}
 
-DisplayportSetListener::~DisplayportSetListener() {}
+DisplayportSetListener::~DisplayportSetListener() = default;
 
 bool DisplayportSetListener::Register() {
   if (mPresShell->AddPostRefreshObserver(this)) {

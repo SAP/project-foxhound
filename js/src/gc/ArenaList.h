@@ -12,6 +12,8 @@
 #define gc_ArenaList_h
 
 #include "gc/AllocKind.h"
+#include "js/GCAPI.h"
+#include "js/HeapAPI.h"
 #include "js/SliceBudget.h"
 #include "js/TypeDecls.h"
 #include "threading/ProtectedData.h"
@@ -260,8 +262,7 @@ class ArenaLists {
   };
 
   using ConcurrentUseState =
-      mozilla::Atomic<ConcurrentUse, mozilla::SequentiallyConsistent,
-                      mozilla::recordreplay::Behavior::DontPreserve>;
+      mozilla::Atomic<ConcurrentUse, mozilla::SequentiallyConsistent>;
 
   // Whether this structure can be accessed by other threads.
   UnprotectedData<AllAllocKindArray<ConcurrentUseState>> concurrentUseState_;

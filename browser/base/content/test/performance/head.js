@@ -265,21 +265,26 @@ async function prepareSettledWindow() {
 // Use this function to avoid catching a reflow related to calling focus on the
 // urlbar and changed rects for its dropmarker when opening new tabs.
 async function ensureFocusedUrlbar() {
-  // The switchingtabs attribute prevents the historydropmarker opacity
-  // transition, so if we expect a transitionend event when this attribute
-  // is set, we wait forever. (it's removed off a MozAfterPaint event listener)
-  await BrowserTestUtils.waitForCondition(
-    () => !gURLBar.hasAttribute("switchingtabs")
-  );
+  let opacityPromise;
+  if (!gURLBar.dropmarker.hidden) {
+    // The switchingtabs attribute prevents the historydropmarker opacity
+    // transition, so if we expect a transitionend event when this attribute
+    // is set, we wait forever. (it's removed off a MozAfterPaint event listener)
+    await BrowserTestUtils.waitForCondition(
+      () => !gURLBar.hasAttribute("switchingtabs")
+    );
 
-  let opacityPromise = BrowserTestUtils.waitForEvent(
-    gURLBar.dropmarker,
-    "transitionend",
-    false,
-    e => e.propertyName === "opacity"
-  );
+    opacityPromise = BrowserTestUtils.waitForEvent(
+      gURLBar.dropmarker,
+      "transitionend",
+      false,
+      e => e.propertyName === "opacity"
+    );
+  }
   gURLBar.focus();
-  await opacityPromise;
+  if (opacityPromise) {
+    await opacityPromise;
+  }
 }
 
 /**
@@ -770,12 +775,14 @@ async function runUrlbarTest(
         // So we just whitelist the whole urlbar. We don't check the bottom of
         // the rect because the result view height varies depending on the
         // results.
+        // We use floor/ceil because the Urlbar dimensions aren't always
+        // integers.
         return rects.filter(
           r =>
             !(
-              r.x1 >= urlbarRect.left - SHADOW_SIZE &&
-              r.x2 <= urlbarRect.right + SHADOW_SIZE &&
-              r.y1 >= urlbarRect.top - SHADOW_SIZE
+              r.x1 >= Math.floor(urlbarRect.left) - SHADOW_SIZE &&
+              r.x2 <= Math.ceil(urlbarRect.right) + SHADOW_SIZE &&
+              r.y1 >= Math.floor(urlbarRect.top) - SHADOW_SIZE
             )
         );
       },
@@ -795,16 +802,16 @@ async function runUrlbarTest(
           r =>
             !// We put text into the urlbar so expect its textbox to change.
             (
-              (r.x1 >= textBoxRect.left &&
-                r.x2 <= textBoxRect.right &&
-                r.y1 >= textBoxRect.top &&
-                r.y2 <= textBoxRect.bottom) ||
+              (r.x1 >= Math.floor(textBoxRect.left) &&
+                r.x2 <= Math.ceil(textBoxRect.right) &&
+                r.y1 >= Math.floor(textBoxRect.top) &&
+                r.y2 <= Math.ceil(textBoxRect.bottom)) ||
               // The dropmarker is displayed as active during some of the test.
-              // dropmarkerRect.left isn't always an integer, hence the - 1 and + 1
-              (r.x1 >= dropmarkerRect.left - 1 &&
-                r.x2 <= dropmarkerRect.right + 1 &&
-                r.y1 >= dropmarkerRect.top &&
-                r.y2 <= dropmarkerRect.bottom)
+              // dropmarkerRect.left isn't always an integer.
+              (r.x1 >= Math.floor(dropmarkerRect.left) &&
+                r.x2 <= Math.ceil(dropmarkerRect.right) &&
+                r.y1 >= Math.floor(dropmarkerRect.top) &&
+                r.y2 <= Math.ceil(dropmarkerRect.bottom))
             )
         ),
     };

@@ -114,7 +114,8 @@ bool RemoteSandboxBroker::LaunchApp(const wchar_t* aPath,
   return true;
 }
 
-bool RemoteSandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel) {
+bool RemoteSandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel,
+                                                      bool aIsRemoteLaunch) {
   mParameters.sandboxLevel() = uint32_t(aLevel);
   return true;
 }
@@ -142,6 +143,11 @@ void RemoteSandboxBroker::SetSecurityLevelForGPUProcess(int32_t aSandboxLevel) {
 bool RemoteSandboxBroker::SetSecurityLevelForRDDProcess() {
   MOZ_CRASH(
       "RemoteSandboxBroker::SetSecurityLevelForRDDProcess not Implemented");
+}
+
+bool RemoteSandboxBroker::SetSecurityLevelForSocketProcess() {
+  MOZ_CRASH(
+      "RemoteSandboxBroker::SetSecurityLevelForSocketProcess not Implemented");
 }
 
 bool RemoteSandboxBroker::SetSecurityLevelForPluginProcess(

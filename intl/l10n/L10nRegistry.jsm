@@ -134,10 +134,11 @@ class L10nRegistryService {
    * @returns {AsyncIterator<FluentBundle>}
    */
   async* generateBundles(requestedLangs, resourceIds) {
+    const resourceIdsDedup = Array.from(new Set(resourceIds));
     const sourcesOrder = Array.from(this.sources.keys()).reverse();
     const pseudoNameFromPref = Services.prefs.getStringPref("intl.l10n.pseudo", "");
     for (const locale of requestedLangs) {
-      for await (const dataSets of generateResourceSetsForLocale(locale, sourcesOrder, resourceIds)) {
+      for await (const dataSets of generateResourceSetsForLocale(locale, sourcesOrder, resourceIdsDedup)) {
         const bundle = new FluentBundle(locale, {
           ...MSG_CONTEXT_OPTIONS,
           transform: PSEUDO_STRATEGIES[pseudoNameFromPref],
@@ -166,10 +167,11 @@ class L10nRegistryService {
    * @returns {Iterator<FluentBundle>}
    */
   * generateBundlesSync(requestedLangs, resourceIds) {
+    const resourceIdsDedup = Array.from(new Set(resourceIds));
     const sourcesOrder = Array.from(this.sources.keys()).reverse();
     const pseudoNameFromPref = Services.prefs.getStringPref("intl.l10n.pseudo", "");
     for (const locale of requestedLangs) {
-      for (const dataSets of generateResourceSetsForLocaleSync(locale, sourcesOrder, resourceIds)) {
+      for (const dataSets of generateResourceSetsForLocaleSync(locale, sourcesOrder, resourceIdsDedup)) {
         const bundle = new FluentBundle(locale, {
           ...MSG_CONTEXT_OPTIONS,
           transform: PSEUDO_STRATEGIES[pseudoNameFromPref],
@@ -732,7 +734,7 @@ this.L10nRegistry = new L10nRegistryService();
  *
  * @returns {Promise<string>}
  */
-this.L10nRegistry.load = function(url) {
+L10nRegistry.load = function(url) {
   return fetch(url).then(response => {
     if (!response.ok) {
       return Promise.reject(response.statusText);
@@ -753,7 +755,7 @@ this.L10nRegistry.load = function(url) {
  *
  * @returns {string}
  */
-this.L10nRegistry.loadSync = function(uri) {
+L10nRegistry.loadSync = function(uri) {
   try {
     let url = Services.io.newURI(uri);
     let data = Cu.readUTF8URI(url);
@@ -777,7 +779,7 @@ this.L10nRegistry.loadSync = function(uri) {
       } catch (e) {
         Cu.reportError(e);
       }
-    } else {
+    } else if (e.result != Cr.NS_ERROR_FILE_NOT_FOUND) {
       Cu.reportError(e);
     }
   }

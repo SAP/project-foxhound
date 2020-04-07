@@ -573,8 +573,7 @@ nsresult HTMLEditor::StartResizing(Element* aHandle) {
   // the way we change the position/size of the shadow depends on
   // the handle
   nsAutoString locationStr;
-  mActivatedHandle->GetAttribute(NS_LITERAL_STRING("anonlocation"),
-                                 locationStr);
+  mActivatedHandle->GetAttr(nsGkAtoms::anonlocation, locationStr);
   if (locationStr.Equals(kTopLeft)) {
     SetResizeIncrements(1, 1, -1, -1, preserveRatio);
   } else if (locationStr.Equals(kTop)) {
@@ -620,10 +619,11 @@ nsresult HTMLEditor::OnMouseDown(int32_t aClientX, int32_t aClientY,
   NS_ENSURE_ARG_POINTER(aTarget);
 
   nsAutoString anonclass;
-  aTarget->GetAttribute(NS_LITERAL_STRING("_moz_anonclass"), anonclass);
+  aTarget->GetAttr(nsGkAtoms::_moz_anonclass, anonclass);
 
   if (anonclass.EqualsLiteral("mozResizer")) {
-    AutoEditActionDataSetter editActionData(*this, EditAction::eResizeElement);
+    AutoEditActionDataSetter editActionData(*this,
+                                            EditAction::eResizingElement);
     if (NS_WARN_IF(!editActionData.CanHandle())) {
       return NS_ERROR_NOT_INITIALIZED;
     }
@@ -641,7 +641,7 @@ nsresult HTMLEditor::OnMouseDown(int32_t aClientX, int32_t aClientY,
   }
 
   if (anonclass.EqualsLiteral("mozGrabber")) {
-    AutoEditActionDataSetter editActionData(*this, EditAction::eMoveElement);
+    AutoEditActionDataSetter editActionData(*this, EditAction::eMovingElement);
     if (NS_WARN_IF(!editActionData.CanHandle())) {
       return NS_ERROR_NOT_INITIALIZED;
     }
@@ -672,22 +672,36 @@ nsresult HTMLEditor::OnMouseUp(int32_t aClientX, int32_t aClientY,
     // end the resizing process
     mIsResizing = false;
     HideShadowAndInfo();
+
+    nsresult rv = editActionData.MaybeDispatchBeforeInputEvent();
+    if (rv == NS_ERROR_EDITOR_ACTION_CANCELED || NS_WARN_IF(NS_FAILED(rv))) {
+      return EditorBase::ToGenericNSResult(rv);
+    }
+
     SetFinalSize(aClientX, aClientY);
-  } else if (mIsMoving || mGrabberClicked) {
+    return NS_OK;
+  }
+
+  if (mIsMoving || mGrabberClicked) {
     AutoEditActionDataSetter editActionData(*this, EditAction::eMoveElement);
-    if (NS_WARN_IF(!editActionData.CanHandle())) {
-      return NS_ERROR_NOT_INITIALIZED;
+    nsresult rv = editActionData.CanHandleAndMaybeDispatchBeforeInputEvent();
+    if (rv != NS_ERROR_EDITOR_ACTION_CANCELED && NS_WARN_IF(NS_FAILED(rv))) {
+      return EditorBase::ToGenericNSResult(rv);
     }
 
     if (mIsMoving) {
       mPositioningShadow->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
                                   NS_LITERAL_STRING("hidden"), true);
-      SetFinalPosition(aClientX, aClientY);
+      if (rv != NS_ERROR_EDITOR_ACTION_CANCELED) {
+        SetFinalPosition(aClientX, aClientY);
+      }
     }
     if (mGrabberClicked) {
       EndMoving();
     }
+    return EditorBase::ToGenericNSResult(rv);
   }
+
   return NS_OK;
 }
 
@@ -884,7 +898,8 @@ nsresult HTMLEditor::OnMouseMove(MouseEvent* aMouseEvent) {
   MOZ_ASSERT(aMouseEvent);
 
   if (mIsResizing) {
-    AutoEditActionDataSetter editActionData(*this, EditAction::eResizeElement);
+    AutoEditActionDataSetter editActionData(*this,
+                                            EditAction::eResizingElement);
     if (NS_WARN_IF(!editActionData.CanHandle())) {
       return NS_ERROR_NOT_INITIALIZED;
     }
@@ -911,7 +926,7 @@ nsresult HTMLEditor::OnMouseMove(MouseEvent* aMouseEvent) {
     return SetResizingInfoPosition(newX, newY, newWidth, newHeight);
   }
 
-  AutoEditActionDataSetter editActionData(*this, EditAction::eMoveElement);
+  AutoEditActionDataSetter editActionData(*this, EditAction::eMovingElement);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }

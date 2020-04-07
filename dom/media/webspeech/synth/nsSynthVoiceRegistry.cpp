@@ -72,7 +72,7 @@ namespace dom {
 class VoiceData final {
  private:
   // Private destructor, to discourage deletion outside of Release():
-  ~VoiceData() {}
+  ~VoiceData() = default;
 
  public:
   VoiceData(nsISpeechService* aService, const nsAString& aUri,
@@ -105,7 +105,7 @@ class VoiceData final {
 class GlobalQueueItem final {
  private:
   // Private destructor, to discourage deletion outside of Release():
-  ~GlobalQueueItem() {}
+  ~GlobalQueueItem() = default;
 
  public:
   GlobalQueueItem(VoiceData* aVoice, nsSpeechTask* aTask,
@@ -486,7 +486,7 @@ nsresult nsSynthVoiceRegistry::AddVoiceImpl(
                                           aLocalService, aQueuesUtterances);
 
   mVoices.AppendElement(voice);
-  mUriVoiceMap.Put(aUri, voice);
+  mUriVoiceMap.Put(aUri, std::move(voice));
   mUseGlobalQueue |= aQueuesUtterances;
 
   nsTArray<SpeechSynthesisParent*> ssplist;
@@ -571,7 +571,7 @@ VoiceData* nsSynthVoiceRegistry::FindBestMatch(const nsAString& aUri,
 
   // Try UI language.
   nsAutoCString uiLang;
-  LocaleService::GetInstance()->GetAppLocaleAsLangTag(uiLang);
+  LocaleService::GetInstance()->GetAppLocaleAsBCP47(uiLang);
 
   if (FindVoiceByLang(NS_ConvertASCIItoUTF16(uiLang), &retval)) {
     LOG(LogLevel::Debug,

@@ -26,6 +26,14 @@ namespace mozilla {
 namespace dom {
 namespace quota {
 
+struct StorageInitializedParams
+{
+};
+
+struct TemporaryStorageInitializedParams
+{
+};
+
 struct InitParams
 {
 };
@@ -34,10 +42,12 @@ struct InitTemporaryStorageParams
 {
 };
 
-struct InitOriginParams
+struct InitStorageAndOriginParams
 {
   PrincipalInfo principalInfo;
   PersistenceType persistenceType;
+  Type clientType;
+  bool clientTypeIsExplicit;
 };
 
 struct AllUsageParams
@@ -111,9 +121,11 @@ struct ListOriginsParams
 
 union RequestParams
 {
+  StorageInitializedParams;
+  TemporaryStorageInitializedParams;
   InitParams;
   InitTemporaryStorageParams;
-  InitOriginParams;
+  InitStorageAndOriginParams;
   ClearOriginParams;
   ResetOriginParams;
   ClearDataParams;

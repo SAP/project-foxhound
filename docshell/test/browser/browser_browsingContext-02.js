@@ -28,9 +28,9 @@ add_task(async function() {
         true,
         true
       );
-      await ContentTask.spawn(
+      await SpecialPowers.spawn(
         browser,
-        { base1: BASE1, base2: BASE2 },
+        [{ base1: BASE1, base2: BASE2 }],
         async function({ base1, base2 }) {
           let top = content;
           top.name = "top";
@@ -110,11 +110,12 @@ add_task(async function() {
           // docShell.
           function findWithName(bc, name) {
             return content.SpecialPowers.spawn(bc, [bc, name], (bc, name) => {
-              return bc.findWithName(name, bc);
+              return bc.findWithName(name);
             });
           }
 
           async function reachable(start, target) {
+            info(start.name, target.name);
             is(
               await findWithName(start, target.name),
               target,

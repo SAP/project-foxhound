@@ -5,11 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDOMOfflineResourceList.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsError.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/DOMStringList.h"
-#include "nsIPrefetchService.h"
 #include "nsMemory.h"
 #include "nsNetUtil.h"
 #include "nsNetCID.h"
@@ -56,9 +54,9 @@ static const char kMaxEntriesPref[] = "offline.max_site_resources";
 // nsDOMOfflineResourceList
 //
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(nsDOMOfflineResourceList,
-                                   DOMEventTargetHelper, mCacheUpdate,
-                                   mPendingEvents)
+NS_IMPL_CYCLE_COLLECTION_WEAK_INHERITED(nsDOMOfflineResourceList,
+                                        DOMEventTargetHelper, mCacheUpdate,
+                                        mPendingEvents)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDOMOfflineResourceList)
   NS_INTERFACE_MAP_ENTRY(nsIOfflineCacheUpdateObserver)
@@ -131,7 +129,6 @@ nsresult nsDOMOfflineResourceList::Init() {
       NS_ENSURE_SUCCESS(rv, rv);
 
       UpdateAdded(cacheUpdate);
-      NS_ENSURE_SUCCESS(rv, rv);
     }
   }
 
@@ -375,10 +372,10 @@ void nsDOMOfflineResourceList::MozAdd(const nsAString& aURI, ErrorResult& aRv) {
   }
 
   RefPtr<Document> doc = GetOwner()->GetExtantDoc();
-  nsCOMPtr<nsICookieSettings> cs = doc ? doc->CookieSettings() : nullptr;
+  nsCOMPtr<nsICookieJarSettings> cjs = doc ? doc->CookieJarSettings() : nullptr;
 
   rv = update->InitPartial(mManifestURI, clientID, mDocumentURI,
-                           mLoadingPrincipal, cs);
+                           mLoadingPrincipal, cjs);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return;
@@ -576,14 +573,14 @@ void nsDOMOfflineResourceList::FirePendingEvents() {
   mPendingEvents.Clear();
 }
 
-nsresult nsDOMOfflineResourceList::SendEvent(const nsAString& aEventName) {
+void nsDOMOfflineResourceList::SendEvent(const nsAString& aEventName) {
   // Don't send events to closed windows
   if (!GetOwner()) {
-    return NS_OK;
+    return;
   }
 
   if (!GetOwner()->GetDocShell()) {
-    return NS_OK;
+    return;
   }
 
   RefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
@@ -596,12 +593,10 @@ nsresult nsDOMOfflineResourceList::SendEvent(const nsAString& aEventName) {
   // queued while frozen, save the event for later.
   if (GetOwner()->IsFrozen() || mPendingEvents.Count() > 0) {
     mPendingEvents.AppendObject(event);
-    return NS_OK;
+    return;
   }
 
   DispatchEvent(*event);
-
-  return NS_OK;
 }
 
 //
@@ -711,30 +706,31 @@ nsresult nsDOMOfflineResourceList::GetCacheKey(const nsAString& aURI,
   return GetCacheKey(requestedURI, aKey);
 }
 
-nsresult nsDOMOfflineResourceList::UpdateAdded(nsIOfflineCacheUpdate* aUpdate) {
+void nsDOMOfflineResourceList::UpdateAdded(nsIOfflineCacheUpdate* aUpdate) {
   // Ignore partial updates.
   bool partial;
   nsresult rv = aUpdate->GetPartial(&partial);
-  NS_ENSURE_SUCCESS(rv, rv);
-
+  NS_ENSURE_SUCCESS_VOID(rv);
   if (partial) {
-    return NS_OK;
+    return;
   }
 
   nsCOMPtr<nsIURI> updateURI;
   rv = aUpdate->GetManifestURI(getter_AddRefs(updateURI));
-  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_SUCCESS_VOID(rv);
 
   bool equals;
   rv = updateURI->Equals(mManifestURI, &equals);
-  NS_ENSURE_SUCCESS(rv, rv);
+  NS_ENSURE_SUCCESS_VOID(rv);
 
   if (!equals) {
     // This update doesn't belong to us
-    return NS_OK;
+    return;
   }
 
-  NS_ENSURE_TRUE(!mCacheUpdate, NS_ERROR_FAILURE);
+  if (mCacheUpdate) {
+    return;
+  }
 
   // We don't need to emit signals here.  Updates are either added
   // when they are scheduled (in which case they are always IDLE) or
@@ -743,8 +739,6 @@ nsresult nsDOMOfflineResourceList::UpdateAdded(nsIOfflineCacheUpdate* aUpdate) {
 
   mCacheUpdate = aUpdate;
   mCacheUpdate->AddObserver(this, true);
-
-  return NS_OK;
 }
 
 already_AddRefed<nsIApplicationCacheContainer>
@@ -773,11 +767,10 @@ nsDOMOfflineResourceList::GetDocumentAppCache() {
   return nullptr;
 }
 
-nsresult nsDOMOfflineResourceList::UpdateCompleted(
-    nsIOfflineCacheUpdate* aUpdate) {
+void nsDOMOfflineResourceList::UpdateCompleted(nsIOfflineCacheUpdate* aUpdate) {
   if (aUpdate != mCacheUpdate) {
     // This isn't the update we're watching.
-    return NS_OK;
+    return;
   }
 
   bool partial;
@@ -799,8 +792,6 @@ nsresult nsDOMOfflineResourceList::UpdateCompleted(
       SendEvent(NS_LITERAL_STRING(CACHED_STR));
     }
   }
-
-  return NS_OK;
 }
 
 nsresult nsDOMOfflineResourceList::GetCacheKey(nsIURI* aURI, nsCString& aKey) {

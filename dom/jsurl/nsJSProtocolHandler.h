@@ -9,7 +9,6 @@
 #include "mozilla/Attributes.h"
 #include "nsIProtocolHandler.h"
 #include "nsIURI.h"
-#include "nsIMutable.h"
 #include "nsISerializable.h"
 #include "nsIClassInfo.h"
 #include "nsSimpleURI.h"
@@ -48,10 +47,6 @@ class nsJSProtocolHandler : public nsIProtocolHandler {
 
   // nsJSProtocolHandler methods:
   nsJSProtocolHandler();
-
-  static nsresult Create(nsISupports* aOuter, REFNSIID aIID, void** aResult);
-
-  nsresult Init();
 
   static nsresult CreateNewURI(const nsACString& aSpec, const char* aCharset,
                                nsIURI* aBaseURI, nsIURI** result);

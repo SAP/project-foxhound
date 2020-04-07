@@ -23,16 +23,25 @@ const {
 const ReactDOM = require("devtools/client/shared/vendor/react-dom");
 const { Provider } = require("devtools/client/shared/vendor/react-redux");
 
-const message = require("./utils/message");
-const App = createFactory(require("./components/App"));
-const Store = require("./store");
-const { loadDevices, restoreDeviceState } = require("./actions/devices");
+const message = require("devtools/client/responsive/utils/message");
+const App = createFactory(require("devtools/client/responsive/components/App"));
+const Store = require("devtools/client/responsive/store");
+const {
+  loadDevices,
+  restoreDeviceState,
+} = require("devtools/client/responsive/actions/devices");
 const {
   addViewport,
+  changePixelRatio,
+  removeDeviceAssociation,
   resizeViewport,
   zoomViewport,
-} = require("./actions/viewports");
-const { changeDisplayPixelRatio } = require("./actions/ui");
+} = require("devtools/client/responsive/actions/viewports");
+const {
+  changeDisplayPixelRatio,
+  changeUserAgent,
+  toggleTouchSimulation,
+} = require("devtools/client/responsive/actions/ui");
 
 // Exposed for use by tests
 window.require = require;
@@ -143,6 +152,15 @@ window.addInitialViewport = ({ userContextId }) => {
   }
 };
 
+window.getAssociatedDevice = () => {
+  const { viewports } = bootstrap.store.getState();
+  if (!viewports.length) {
+    return null;
+  }
+
+  return viewports[0].device;
+};
+
 /**
  * Called by manager.js when tests want to check the viewport size.
  */
@@ -167,6 +185,17 @@ window.setViewportSize = ({ width, height }) => {
   }
 };
 
+window.clearDeviceAssociation = () => {
+  try {
+    bootstrap.dispatch(removeDeviceAssociation(0));
+    bootstrap.dispatch(toggleTouchSimulation(false));
+    bootstrap.dispatch(changePixelRatio(0, 0));
+    bootstrap.dispatch(changeUserAgent(""));
+  } catch (e) {
+    console.error(e);
+  }
+};
+
 /**
  * Called by manager.js to access the viewport's browser, either for testing
  * purposes or to reload it when touch simulation is enabled.
@@ -175,7 +204,7 @@ window.setViewportSize = ({ width, height }) => {
  */
 window.getViewportBrowser = () => {
   const browser = document.querySelector("iframe.browser");
-  if (!browser.messageManager) {
+  if (browser && !browser.messageManager) {
     Object.defineProperty(browser, "messageManager", {
       get() {
         return this.frameLoader.messageManager;

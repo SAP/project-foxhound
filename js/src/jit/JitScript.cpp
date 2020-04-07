@@ -8,14 +8,17 @@
 
 #include "mozilla/BinarySearch.h"
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/Move.h"
 #include "mozilla/ScopeExit.h"
+
+#include <utility>
 
 #include "jit/BaselineIC.h"
 #include "jit/BytecodeAnalysis.h"
+#include "util/Memory.h"
 #include "vm/BytecodeIterator.h"
 #include "vm/BytecodeLocation.h"
 #include "vm/BytecodeUtil.h"
+#include "vm/FrameIter.h"  // js::OnlyJSJitFrameIter
 #include "vm/JSScript.h"
 #include "vm/Stack.h"
 #include "vm/TypeInference.h"
@@ -39,8 +42,12 @@ size_t JitScript::NumTypeSets(JSScript* script) {
   static_assert(JSFunction::NArgsBits == 16,
                 "JSFunction nargs should have safe range to avoid overflow");
 
+  if (!IsTypeInferenceEnabled()) {
+    return 0;
+  }
+
   size_t num = script->numBytecodeTypeSets() + 1 /* this */;
-  if (JSFunction* fun = script->functionNonDelazifying()) {
+  if (JSFunction* fun = script->function()) {
     num += fun->nargs();
   }
 
@@ -56,8 +63,11 @@ JitScript::JitScript(JSScript* script, uint32_t typeSetOffset,
       allocBytes_(allocBytes) {
   setTypesGeneration(script->zone()->types.generation);
 
-  uint8_t* base = reinterpret_cast<uint8_t*>(this);
-  DefaultInitializeElements<StackTypeSet>(base + typeSetOffset, numTypeSets());
+  if (IsTypeInferenceEnabled()) {
+    uint8_t* base = reinterpret_cast<uint8_t*>(this);
+    DefaultInitializeElements<StackTypeSet>(base + typeSetOffset,
+                                            numTypeSets());
+  }
 
   // Initialize the warm-up count from the count stored in the script.
   warmUpCount_ = script->getWarmUpCount();
@@ -115,8 +125,10 @@ bool JSScript::createJitScript(JSContext* cx) {
   // Calculate allocation size.
   CheckedInt<uint32_t> allocSize = sizeof(JitScript);
   allocSize += CheckedInt<uint32_t>(numICEntries()) * sizeof(ICEntry);
-  allocSize += CheckedInt<uint32_t>(numTypeSets) * sizeof(StackTypeSet);
-  allocSize += CheckedInt<uint32_t>(numBytecodeTypeSets()) * sizeof(uint32_t);
+  if (IsTypeInferenceEnabled()) {
+    allocSize += CheckedInt<uint32_t>(numTypeSets) * sizeof(StackTypeSet);
+    allocSize += CheckedInt<uint32_t>(numBytecodeTypeSets()) * sizeof(uint32_t);
+  }
   if (!allocSize.isValid()) {
     ReportAllocationOverflow(cx);
     return false;
@@ -137,7 +149,8 @@ bool JSScript::createJitScript(JSContext* cx) {
 
   // Sanity check the length computations.
   MOZ_ASSERT(jitScript->numICEntries() == numICEntries());
-  MOZ_ASSERT(jitScript->numTypeSets() == numTypeSets);
+  MOZ_ASSERT_IF(IsTypeInferenceEnabled(),
+                jitScript->numTypeSets() == numTypeSets);
 
   // We need to call prepareForDestruction on JitScript before we |delete| it.
   auto prepareForDestruction = mozilla::MakeScopeExit(
@@ -147,9 +160,8 @@ bool JSScript::createJitScript(JSContext* cx) {
     return false;
   }
 
-  MOZ_ASSERT(!hasJitScript());
   prepareForDestruction.release();
-  warmUpData_.setJitScript(jitScript.release());
+  warmUpData_.initJitScript(jitScript.release());
   AddCellMemory(this, allocSize.value(), MemoryUse::JitScript);
 
   // We have a JitScript so we can set the script's jitCodeRaw_ pointer to the
@@ -157,22 +169,23 @@ bool JSScript::createJitScript(JSContext* cx) {
   updateJitCodeRaw(cx->runtime());
 
 #ifdef DEBUG
-  AutoSweepJitScript sweep(this);
-  StackTypeSet* typeArray = this->jitScript()->typeArrayDontCheckGeneration();
-  for (unsigned i = 0; i < numBytecodeTypeSets(); i++) {
-    InferSpew(ISpewOps, "typeSet: %sT%p%s bytecode%u %p",
-              InferSpewColor(&typeArray[i]), &typeArray[i],
-              InferSpewColorReset(), i, this);
-  }
-  StackTypeSet* thisTypes = this->jitScript()->thisTypes(sweep, this);
-  InferSpew(ISpewOps, "typeSet: %sT%p%s this %p", InferSpewColor(thisTypes),
-            thisTypes, InferSpewColorReset(), this);
-  unsigned nargs =
-      functionNonDelazifying() ? functionNonDelazifying()->nargs() : 0;
-  for (unsigned i = 0; i < nargs; i++) {
-    StackTypeSet* types = this->jitScript()->argTypes(sweep, this, i);
-    InferSpew(ISpewOps, "typeSet: %sT%p%s arg%u %p", InferSpewColor(types),
-              types, InferSpewColorReset(), i, this);
+  if (IsTypeInferenceEnabled()) {
+    AutoSweepJitScript sweep(this);
+    StackTypeSet* typeArray = this->jitScript()->typeArrayDontCheckGeneration();
+    for (unsigned i = 0; i < numBytecodeTypeSets(); i++) {
+      InferSpew(ISpewOps, "typeSet: %sT%p%s bytecode%u %p",
+                InferSpewColor(&typeArray[i]), &typeArray[i],
+                InferSpewColorReset(), i, this);
+    }
+    StackTypeSet* thisTypes = this->jitScript()->thisTypes(sweep, this);
+    InferSpew(ISpewOps, "typeSet: %sT%p%s this %p", InferSpewColor(thisTypes),
+              thisTypes, InferSpewColorReset(), this);
+    unsigned nargs = function() ? function()->nargs() : 0;
+    for (unsigned i = 0; i < nargs; i++) {
+      StackTypeSet* types = this->jitScript()->argTypes(sweep, this, i);
+      InferSpew(ISpewOps, "typeSet: %sT%p%s arg%u %p", InferSpewColor(types),
+                types, InferSpewColorReset(), i, this);
+    }
   }
 #endif
 
@@ -264,7 +277,7 @@ void JitScript::printTypes(JSContext* cx, HandleScript script) {
   AutoEnterAnalysis enter(nullptr, script->zone());
   Fprinter out(stderr);
 
-  if (script->functionNonDelazifying()) {
+  if (script->function()) {
     fprintf(stderr, "Function");
   } else if (script->isForEval()) {
     fprintf(stderr, "Eval");
@@ -274,8 +287,8 @@ void JitScript::printTypes(JSContext* cx, HandleScript script) {
   fprintf(stderr, " %#" PRIxPTR " %s:%u ", uintptr_t(script.get()),
           script->filename(), script->lineno());
 
-  if (script->functionNonDelazifying()) {
-    if (JSAtom* name = script->functionNonDelazifying()->explicitName()) {
+  if (script->function()) {
+    if (JSAtom* name = script->function()->explicitName()) {
       name->dumpCharsNoNewline(out);
     }
   }
@@ -283,8 +296,7 @@ void JitScript::printTypes(JSContext* cx, HandleScript script) {
   fprintf(stderr, "\n    this:");
   thisTypes(sweep, script)->print();
 
-  for (uint32_t i = 0; script->functionNonDelazifying() &&
-                       i < script->functionNonDelazifying()->nargs();
+  for (uint32_t i = 0; script->function() && i < script->function()->nargs();
        i++) {
     fprintf(stderr, "\n    arg%u:", i);
     argTypes(sweep, script, i)->print();
@@ -565,8 +577,8 @@ bool JitScript::ensureHasCachedIonData(JSContext* cx, HandleScript script) {
   }
 
   Rooted<EnvironmentObject*> templateEnv(cx);
-  if (script->functionNonDelazifying()) {
-    RootedFunction fun(cx, script->functionNonDelazifying());
+  if (script->function()) {
+    RootedFunction fun(cx, script->function());
 
     if (fun->needsNamedLambdaEnvironment()) {
       templateEnv =
@@ -632,7 +644,7 @@ void JitScript::setIonScriptImpl(JSScript* script, IonScript* ionScript) {
 void JitScript::setIonScriptImpl(JSFreeOp* fop, JSScript* script,
                                  IonScript* ionScript) {
   MOZ_ASSERT_IF(ionScript != IonDisabledScriptPtr,
-                !baselineScript()->hasPendingIonBuilder());
+                !baselineScript()->hasPendingIonCompileTask());
 
   if (hasIonScript()) {
     IonScript::writeBarrierPre(script->zone(), ionScript_);
@@ -703,7 +715,7 @@ void jit::JitSpewBaselineICStats(JSScript* script, const char* dumpReason) {
     unsigned int line = PCToLineNumber(script, pc, &column);
 
     spew->beginObject();
-    spew->property("op", CodeName[*pc]);
+    spew->property("op", CodeName(JSOp(*pc)));
     spew->property("pc", pcOffset);
     spew->property("line", line);
     spew->property("column", column);

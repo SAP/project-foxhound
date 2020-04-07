@@ -10,7 +10,11 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
   BrowserTestUtils: "resource://testing-common/BrowserTestUtils.jsm",
+  setTimeout: "resource://gre/modules/Timer.jsm",
+  UrlbarController: "resource:///modules/UrlbarController.jsm",
+  UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
@@ -33,7 +37,7 @@ var UrlbarTestUtils = {
    * @param {function} options.waitForFocus The SimpleTest function
    * @param {boolean} [options.fireInputEvent] whether an input event should be
    *        used when starting the query (simulates the user's typing, sets
-   *        userTypedValued, etc.)
+   *        userTypedValued, triggers engagement event telemetry, etc.)
    * @param {number} [options.selectionStart] The input's selectionStart
    * @param {number} [options.selectionEnd] The input's selectionEnd
    */
@@ -130,6 +134,7 @@ var UrlbarTestUtils = {
     details.url = url;
     details.postData = postData;
     details.type = result.type;
+    details.source = result.source;
     details.heuristic = result.heuristic;
     details.autofill = !!result.autofill;
     details.image = element.getElementsByClassName("urlbarView-favicon")[0].src;
@@ -138,6 +143,7 @@ var UrlbarTestUtils = {
     let actions = element.getElementsByClassName("urlbarView-action");
     let urls = element.getElementsByClassName("urlbarView-url");
     let typeIcon = element.querySelector(".urlbarView-type-icon");
+    await win.document.l10n.translateFragment(element);
     details.displayed = {
       title: element.getElementsByClassName("urlbarView-title")[0].textContent,
       action: actions.length ? actions[0].textContent : null,
@@ -224,10 +230,6 @@ var UrlbarTestUtils = {
    */
   getResultCount(win) {
     return win.gURLBar.view._rows.children.length;
-  },
-
-  getDropMarker(win) {
-    return win.gURLBar.dropmarker;
   },
 
   /**
@@ -350,4 +352,105 @@ var UrlbarTestUtils = {
     });
     win.gURLBar.inputField.dispatchEvent(event);
   },
+
+  /**
+   * Returns a new mock controller.  This is useful for xpcshell tests.
+   * @param {object} options Additional options to pass to the UrlbarController
+   *        constructor.
+   * @returns {UrlbarController} A new controller.
+   */
+  newMockController(options = {}) {
+    return new UrlbarController(
+      Object.assign(
+        {
+          input: {
+            isPrivate: false,
+            window: {
+              location: {
+                href: AppConstants.BROWSER_CHROME_URL,
+              },
+            },
+          },
+        },
+        options
+      )
+    );
+  },
 };
+
+/**
+ * A test provider.  If you need a test provider whose behavior is different
+ * from this, then consider modifying the implementation below if you think the
+ * new behavior would be useful for other tests.  Otherwise, you can create a
+ * new TestProvider instance and then override its methods.
+ */
+class TestProvider extends UrlbarProvider {
+  /**
+   * Constructor.
+   *
+   * @param {array} results
+   *   An array of UrlbarResult objects that will be the provider's results.
+   * @param {string} [name]
+   *   The provider's name.  Provider names should be unique.
+   * @param {UrlbarUtils.PROVIDER_TYPE} [type]
+   *   The provider's type.
+   * @param {number} [priority]
+   *   The provider's priority.  Built-in providers have a priority of zero.
+   * @param {number} [addTimeout]
+   *   If non-zero, each result will be added on this timeout.  If zero, all
+   *   results will be added immediately and synchronously.
+   * @param {function} [onCancel]
+   *   If given, a function that will be called when the provider's cancelQuery
+   *   method is called.
+   */
+  constructor({
+    results,
+    name = "TestProvider" + Math.floor(Math.random() * 100000),
+    type = UrlbarUtils.PROVIDER_TYPE.PROFILE,
+    priority = 0,
+    addTimeout = 0,
+    onCancel = null,
+  } = {}) {
+    super();
+    this._results = results;
+    this._name = name;
+    this._type = type;
+    this._priority = priority;
+    this._addTimeout = addTimeout;
+    this._onCancel = onCancel;
+  }
+  get name() {
+    return this._name;
+  }
+  get type() {
+    return this._type;
+  }
+  getPriority(context) {
+    return this._priority;
+  }
+  isActive(context) {
+    return true;
+  }
+  async startQuery(context, addCallback) {
+    for (let result of this._results) {
+      if (!this._addTimeout) {
+        addCallback(this, result);
+      } else {
+        await new Promise(resolve => {
+          setTimeout(() => {
+            addCallback(this, result);
+            resolve();
+          }, this._addTimeout);
+        });
+      }
+    }
+  }
+  cancelQuery(context) {
+    if (this._onCancel) {
+      this._onCancel();
+    }
+  }
+  pickResult(result) {}
+}
+
+UrlbarTestUtils.TestProvider = TestProvider;

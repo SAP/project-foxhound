@@ -19,7 +19,6 @@
 #include "nsIClassInfoImpl.h"
 #include "nsNetCID.h"
 #include "nsError.h"
-#include "nsIScriptSecurityManager.h"
 #include "ContentPrincipal.h"
 #include "nsScriptSecurityManager.h"
 #include "pratom.h"
@@ -54,8 +53,7 @@ already_AddRefed<NullPrincipal> NullPrincipal::CreateWithInheritedAttributes(
 already_AddRefed<NullPrincipal> NullPrincipal::CreateWithInheritedAttributes(
     const OriginAttributes& aOriginAttributes, bool aIsFirstParty) {
   RefPtr<NullPrincipal> nullPrin = new NullPrincipal();
-  nsresult rv = nullPrin->Init(aOriginAttributes, aIsFirstParty);
-  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
+  nullPrin->Init(aOriginAttributes, aIsFirstParty);
   return nullPrin.forget();
 }
 
@@ -86,8 +84,7 @@ nsresult NullPrincipal::Init(const OriginAttributes& aOriginAttributes,
 
     mURI = aURI;
   } else {
-    mURI = NullPrincipalURI::Create();
-    NS_ENSURE_TRUE(mURI, NS_ERROR_NOT_AVAILABLE);
+    mURI = new NullPrincipalURI();
   }
 
   nsAutoCString originNoSuffix;
@@ -99,10 +96,9 @@ nsresult NullPrincipal::Init(const OriginAttributes& aOriginAttributes,
   return NS_OK;
 }
 
-nsresult NullPrincipal::Init(const OriginAttributes& aOriginAttributes,
-                             bool aIsFirstParty) {
-  mURI = NullPrincipalURI::Create();
-  NS_ENSURE_TRUE(mURI, NS_ERROR_NOT_AVAILABLE);
+void NullPrincipal::Init(const OriginAttributes& aOriginAttributes,
+                         bool aIsFirstParty) {
+  mURI = new NullPrincipalURI();
 
   nsAutoCString originNoSuffix;
   DebugOnly<nsresult> rv = mURI->GetSpec(originNoSuffix);
@@ -121,8 +117,6 @@ nsresult NullPrincipal::Init(const OriginAttributes& aOriginAttributes,
   }
 
   FinishInit(originNoSuffix, attrs);
-
-  return NS_OK;
 }
 
 nsresult NullPrincipal::GetScriptLocation(nsACString& aStr) {
@@ -139,6 +133,11 @@ NS_IMETHODIMP
 NullPrincipal::GetURI(nsIURI** aURI) {
   nsCOMPtr<nsIURI> uri = mURI;
   uri.forget(aURI);
+  return NS_OK;
+}
+NS_IMETHODIMP
+NullPrincipal::GetIsOriginPotentiallyTrustworthy(bool* aResult) {
+  *aResult = false;
   return NS_OK;
 }
 

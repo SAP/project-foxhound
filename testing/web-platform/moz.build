@@ -55,13 +55,13 @@ with Files("mozilla/tests/dom/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
 with Files("mozilla/tests/editor/**"):
-    BUG_COMPONENT = ("Core", "Editor")
+    BUG_COMPONENT = ("Core", "DOM: Editor")
 
 with Files("mozilla/tests/fetch/**"):
     BUG_COMPONENT = ("Core", "DOM: Networking")
 
 with Files("mozilla/tests/focus/**"):
-    BUG_COMPONENT = ("Core", "Editor")
+    BUG_COMPONENT = ("Core", "DOM: Editor")
 
 with Files("mozilla/tests/html/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
@@ -76,7 +76,7 @@ with Files("mozilla/tests/placeholder"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
 
 with Files("mozilla/tests/wasm/**"):
-    BUG_COMPONENT = ("Core", "Javascript: Web Assembly")
+    BUG_COMPONENT = ("Core", "Javascript: WebAssembly")
 
 with Files("update/**"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
@@ -95,9 +95,6 @@ with Files("tests/**"):
     SCHEDULES.inclusive += ['test-verify-wpt']
 
 with Files("tests/LICENSE"):
-    BUG_COMPONENT = ("Testing", "web-platform-tests")
-
-with Files("tests/check_stability.ini"):
     BUG_COMPONENT = ("Testing", "web-platform-tests")
 
 with Files("tests/lint.whitelist"):
@@ -123,7 +120,7 @@ with Files("tests/FileAPI/**"):
     BUG_COMPONENT = ("Core", "DOM: File")
 
 with Files("tests/IndexedDB/**"):
-    BUG_COMPONENT = ("Core", "DOM: IndexedDB")
+    BUG_COMPONENT = ("Core", "Storage: IndexedDB")
 
 with Files("tests/WebCryptoAPI/**"):
     BUG_COMPONENT = ("Core", "DOM: Security")
@@ -204,17 +201,65 @@ with Files("tests/credential-management/**"):
 with Files("tests/css/**"):
     BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
 
+with Files("tests/css/compositing/**"):
+    BUG_COMPONENT = ("Core", "Web Painting")
+
+with Files("tests/css/css-align/**"):
+    BUG_COMPONENT = ("Core", "Layout: Block and Inline")
+
 with Files("tests/css/css-animations/**"):
     BUG_COMPONENT = ("Core", "CSS Transitions and Animations")
 
 with Files("tests/css/css-backgrounds/**"):
+    BUG_COMPONENT = ("Core", "Layout: Images, Video, and HTML Frames")
+
+with Files("tests/css/css-box/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-break/**"):
     BUG_COMPONENT = ("Core", "Layout")
 
 with Files("tests/css/css-cascade/**"):
     BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
 
+with Files("tests/css/css-color/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-color-adjust/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-conditional/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-contain/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-content/**"):
+    BUG_COMPONENT = ("Core", "Layout: Generated Content, Lists, and Counters")
+
+with Files("tests/css/css-counter-styles/**"):
+    BUG_COMPONENT = ("Core", "Layout: Generated Content, Lists, and Counters")
+
+with Files("tests/css/css-device-adapt/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-display/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
 with Files("tests/css/css-easing/**"):
     BUG_COMPONENT = ("Core", "DOM: Animation")
+
+with Files("tests/css/css-env/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-exclusions/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-fill-stroke/**"):
+    BUG_COMPONENT = ("Core", "SVG")
+
+with Files("tests/css/css-flexbox/**"):
+    BUG_COMPONENT = ("Core", "Layout: Flexbox")
 
 with Files("tests/css/css-font-loading/**"):
     BUG_COMPONENT = ("Core", "Layout: Text and Fonts")
@@ -222,11 +267,113 @@ with Files("tests/css/css-font-loading/**"):
 with Files("tests/css/css-fonts/**"):
     BUG_COMPONENT = ("Core", "Layout: Text and Fonts")
 
+with Files("tests/css/css-forced-color-adjust/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-gcpm/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-grid/**"):
+    BUG_COMPONENT = ("Core", "Layout: Grid")
+
+with Files("tests/css/css-images/**"):
+    BUG_COMPONENT = ("Core", "Layout: Images, Video, and HTML Frames")
+
+with Files("tests/css/css-inline/**"):
+    BUG_COMPONENT = ("Core", "Layout: Block and Inline")
+
+with Files("tests/css/css-layout-api/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-lists/**"):
+    BUG_COMPONENT = ("Core", "Layout: Generated Content, Lists, and Counters")
+
+with Files("tests/css/css-logical/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-masking/**"):
+    BUG_COMPONENT = ("Core", "Web Painting")
+
+with Files("tests/css/css-multicol/**"):
+    BUG_COMPONENT = ("Core", "Layout: Columns")
+
+with Files("tests/css/css-namespaces/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-overflow/**"):
+    BUG_COMPONENT = ("Core", "Layout: Scrolling and Overflow")
+
+with Files("tests/css/css-overscroll-behavior/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-page/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
 with Files("tests/css/css-paint-api/**"):
     BUG_COMPONENT = ("Core", "Web Painting")
 
+with Files("tests/css/css-parser-api/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-position/**"):
+    BUG_COMPONENT = ("Core", "Layout: Positioned")
+
+with Files("tests/css/css-properties-values-api/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-pseudo/**"):
+    BUG_COMPONENT = ("Core", "Layout: Generated Content, Lists, and Counters")
+
+with Files("tests/css/css-round-display/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-ruby/**"):
+    BUG_COMPONENT = ("Core", "Layout: Ruby")
+
 with Files("tests/css/css-scoping/**"):
     BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-scroll-anchoring/**"):
+    BUG_COMPONENT = ("Core", "Layout: Scrolling and Overflow")
+
+with Files("tests/css/css-scroll-snap/**"):
+    BUG_COMPONENT = ("Core", "Layout: Scrolling and Overflow")
+
+with Files("tests/css/css-scrollbars/**"):
+    BUG_COMPONENT = ("Core", "Layout: Scrolling and Overflow")
+
+with Files("tests/css/css-shadow-parts/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-shapes/**"):
+    BUG_COMPONENT = ("Core", "Layout: Floats")
+
+with Files("tests/css/css-size-adjust/**"):
+    BUG_COMPONENT = ("Core", "Layout: Text and Fonts")
+
+with Files("tests/css/css-sizing/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-speech/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-style-attr/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-syntax/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-tables/**"):
+    BUG_COMPONENT = ("Core", "Layout: Tables")
+
+with Files("tests/css/css-text/**"):
+    BUG_COMPONENT = ("Core", "Layout: Text and Fonts")
+
+with Files("tests/css/css-text-decor/**"):
+    BUG_COMPONENT = ("Core", "Layout: Text and Fonts")
+
+with Files("tests/css/css-transforms/**"):
+    BUG_COMPONENT = ("Core", "Web Painting")
 
 with Files("tests/css/css-transitions/**"):
     BUG_COMPONENT = ("Core", "CSS Transitions and Animations")
@@ -234,11 +381,38 @@ with Files("tests/css/css-transitions/**"):
 with Files("tests/css/css-typed-om/**"):
     BUG_COMPONENT = ("Core", "DOM: CSS Object Model")
 
+with Files("tests/css/css-ui/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-values/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-variables/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/css-will-change/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
+with Files("tests/css/css-writing-modes/**"):
+    BUG_COMPONENT = ("Core", "Layout")
+
 with Files("tests/css/cssom/**"):
     BUG_COMPONENT = ("Core", "DOM: CSS Object Model")
 
 with Files("tests/css/cssom-view/**"):
     BUG_COMPONENT = ("Core", "DOM: CSS Object Model")
+
+with Files("tests/css/filter-effects/**"):
+    BUG_COMPONENT = ("Core", "Web Painting")
+
+with Files("tests/css/geometry/**"):
+    BUG_COMPONENT = ("Core", "DOM: CSS Object Model")
+
+with Files("tests/css/mediaqueries/**"):
+    BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
+
+with Files("tests/css/motion/**"):
+    BUG_COMPONENT = ("Core", "SVG")
 
 with Files("tests/css/selectors/**"):
     BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
@@ -265,7 +439,7 @@ with Files("tests/dpub-aria/**"):
     BUG_COMPONENT = ("Core", "Disability Access APIs")
 
 with Files("tests/editing/**"):
-    BUG_COMPONENT = ("Core", "Editor")
+    BUG_COMPONENT = ("Core", "DOM: Editor")
 
 with Files("tests/element-timing/**"):
     BUG_COMPONENT = ("Core", "Performance")
@@ -301,7 +475,7 @@ with Files("tests/gamepad/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
 
 with Files("tests/geolocation-API/**"):
-    BUG_COMPONENT = ("Core", "Geolocation")
+    BUG_COMPONENT = ("Core", "DOM: Geolocation")
 
 with Files("tests/gyroscope/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
@@ -399,10 +573,10 @@ with Files("tests/old-tests/submission/Microsoft/foreigncontent/**"):
     BUG_COMPONENT = ("Core", "SVG")
 
 with Files("tests/old-tests/submission/Microsoft/history/**"):
-    BUG_COMPONENT = ("Core", "Document Navigation")
+    BUG_COMPONENT = ("Core", "DOM: Navigation")
 
 with Files("tests/old-tests/submission/Microsoft/selection/**"):
-    BUG_COMPONENT = ("Core", "Selection")
+    BUG_COMPONENT = ("Core", "DOM: Selection")
 
 with Files("tests/orientation-event/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
@@ -444,7 +618,7 @@ with Files("tests/pointerlock/**"):
     BUG_COMPONENT = ("Core", "DOM: Events")
 
 with Files("tests/preload/**"):
-    BUG_COMPONENT = ("Core", "DOM: Core & Html")
+    BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
 with Files("tests/presentation-api/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
@@ -484,7 +658,7 @@ with Files("tests/secure-contexts/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
 with Files("tests/selection/**"):
-    BUG_COMPONENT = ("Core", "Selection")
+    BUG_COMPONENT = ("Core", "DOM: Selection")
 
 with Files("tests/server-timing/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
@@ -499,10 +673,10 @@ with Files("tests/speech-api/**"):
     BUG_COMPONENT = ("Core", "Web Speech")
 
 with Files("tests/storage/**"):
-    BUG_COMPONENT = ("Core", "DOM: Quota Manager")
+    BUG_COMPONENT = ("Core", "Storage: Quota Manager")
 
 with Files("tests/streams/**"):
-    BUG_COMPONENT = ("Core", "Javascript Engine")
+    BUG_COMPONENT = ("Core", "JavaScript Engine")
 
 with Files("tests/subresource-integrity/**"):
     BUG_COMPONENT = ("Core", "DOM: Security")
@@ -544,7 +718,7 @@ with Files("tests/wai-aria/**"):
     BUG_COMPONENT = ("Core", "Disability Access APIs")
 
 with Files("tests/wasm/**"):
-    BUG_COMPONENT = ("Core", "Javascript: Web Assembly")
+    BUG_COMPONENT = ("Core", "Javascript: WebAssembly")
 
 with Files("tests/web-animations/**"):
     BUG_COMPONENT = ("Core", "DOM: Animation")
@@ -577,16 +751,16 @@ with Files("tests/websockets/**"):
     BUG_COMPONENT = ("Core", "Networking: WebSockets")
 
 with Files("tests/webstorage/**"):
-    BUG_COMPONENT = ("Core", "DOM: Web Storage")
+    BUG_COMPONENT = ("Core", "Storage: localStorage & sessionStorage")
 
 with Files("tests/webusb/**"):
     BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
 
 with Files("tests/webvr/**"):
-    BUG_COMPONENT = ("Core", "DOM: WebVR")
+    BUG_COMPONENT = ("Core", "WebVR")
 
 with Files("tests/webxr/**"):
-    BUG_COMPONENT = ("Core", "DOM: WebVR")
+    BUG_COMPONENT = ("Core", "WebVR")
 
 with Files("tests/webvtt/**"):
     BUG_COMPONENT = ("Core", "Audio/Video: Playback")
@@ -600,3 +774,5 @@ with Files("tests/worklets/**"):
 
 with Files("tests/x-frame-options/**"):
     BUG_COMPONENT = ("Core", "DOM: Security")
+
+SPHINX_TREES["/web-platform"] = "tests/docs"

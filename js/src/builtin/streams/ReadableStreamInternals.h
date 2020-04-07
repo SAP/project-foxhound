@@ -11,17 +11,19 @@
 
 #include "mozilla/Attributes.h"  // MOZ_MUST_USE
 
+#include "jstypes.h"                               // JS_PUBLIC_API
 #include "builtin/streams/ReadableStreamReader.h"  // js::ForAuthorCodeBool
 #include "js/RootingAPI.h"                         // JS::Handle
 #include "js/Value.h"                              // JS::Value
 
-struct JSContext;
+struct JS_PUBLIC_API JSContext;
 
 namespace js {
 
+class PromiseObject;
 class ReadableStream;
 
-extern MOZ_MUST_USE JSObject* ReadableStreamAddReadOrReadIntoRequest(
+extern MOZ_MUST_USE PromiseObject* ReadableStreamAddReadOrReadIntoRequest(
     JSContext* cx, JS::Handle<ReadableStream*> unwrappedStream);
 
 extern MOZ_MUST_USE JSObject* ReadableStreamCancel(

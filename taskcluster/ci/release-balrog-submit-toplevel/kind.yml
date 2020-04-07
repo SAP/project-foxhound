@@ -14,6 +14,7 @@ transforms:
 job-defaults:
     run-on-projects: []  # to make sure this never runs in CI
     shipping-phase: promote
+    worker-type: balrog
     worker:
         implementation: balrog
         balrog-action: submit-toplevel
@@ -46,34 +47,11 @@ jobs:
                     beta: ["firefox-beta-cdntest", "firefox-beta-localtest"]
                     release(-rc)?: ["firefox-release-cdntest", "firefox-release-localtest"]
                     esr68: ["firefox-esr68-cdntest", "firefox-esr68-localtest"]
-                    esr60: ["firefox-esr60-cdntest", "firefox-esr60-localtest"]
                     default: []
             platforms: ["linux", "linux64", "macosx64", "win32", "win64", "win64-aarch64"]
         treeherder:
             platform: firefox-release/opt
             symbol: Rel(BPFx)
-            tier: 1
-            kind: build
-
-    firefox-bz2:
-        name: submit-toplevel-firefox-release-to-balrog-bz2
-        description: Submit toplevel Firefox release to balrog
-        shipping-product: firefox
-        run-on-releases: [esr60, esr68]
-        worker:
-            product: firefox
-            channel-names: ["esr", "esr-localtest", "esr-cdntest", "esr-localtest-next", "esr-cdntest-next"]
-            rules-to-update:
-                by-release-type:
-                    esr68: ["esr52-cdntest-next", "esr52-localtest-next"]
-                    esr60: ["esr52-cdntest", "esr52-localtest"]
-            platforms: ["linux", "linux64", "macosx64", "win32", "win64"]
-            blob-suffix: -bz2
-            complete-mar-filename-pattern: '%s-%s.bz2.complete.mar'
-            complete-mar-bouncer-product-pattern: '%s-%s-complete-bz2'
-        treeherder:
-            platform: firefox-release/opt
-            symbol: Rel(BPFx-bz2)
             tier: 1
             kind: build
 

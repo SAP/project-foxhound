@@ -27,7 +27,7 @@ RefPtr<GenericPromise> RemoteSandboxBrokerParent::Launch(
   // Note: we rely on the caller to keep this instance alive while we launch
   // the process, so that these closures point to valid memory.
   auto resolve = [this](base::ProcessHandle handle) {
-    mOpened = Open(mProcess->GetChannel(), base::GetProcId(handle));
+    mOpened = Open(mProcess->TakeChannel(), base::GetProcId(handle));
     if (!mOpened) {
       mProcess->Destroy();
       mProcess = nullptr;
@@ -60,7 +60,7 @@ bool RemoteSandboxBrokerParent::DuplicateFromLauncher(HANDLE aLauncherHandle,
 void RemoteSandboxBrokerParent::ActorDestroy(ActorDestroyReason aWhy) {
   if (AbnormalShutdown == aWhy) {
     Telemetry::Accumulate(Telemetry::SUBPROCESS_ABNORMAL_ABORT,
-                          nsDependentCString(XRE_ChildProcessTypeToString(
+                          nsDependentCString(XRE_GeckoProcessTypeToString(
                               GeckoProcessType_RemoteSandboxBroker)),
                           1);
     GenerateCrashReport(OtherPid());

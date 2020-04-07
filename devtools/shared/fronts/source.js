@@ -14,8 +14,8 @@ const { ArrayBufferFront } = require("devtools/shared/fronts/array-buffer");
 /**
  * A SourceFront provides a way to access the source text of a script.
  *
- * @param client DebuggerClient
- *        The Debugger Client instance.
+ * @param client DevToolsClient
+ *        The DevTools Client instance.
  * @param form Object
  *        The form sent across the remote debugging protocol.
  */
@@ -27,7 +27,6 @@ class SourceFront extends FrontClassWithSpec(sourceSpec) {
       // this is here for the time being, until the source front is managed
       // via protocol.js marshalling
       this.actorID = form.actor;
-      this.manage(this);
     }
   }
 

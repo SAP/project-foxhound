@@ -26,7 +26,7 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     return;
   }
 
-  const test = { withStoragePrincipalEnabled, prefValue };
+  const test = { withStoragePrincipalEnabled, dynamicFPITest, prefValue };
 
   // For dynamic FPI tests, we want to test the conditions as if
   // storage principal was enabled, so from now on we set this variable to
@@ -94,11 +94,13 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     await BrowserTestUtils.browserLoaded(trackerBrowser);
 
     info("The non-tracker page opens a tracker iframe");
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       normalBrowser,
-      {
-        page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
-      },
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+        },
+      ],
       async obj => {
         let ifr = content.document.createElement("iframe");
         ifr.setAttribute("id", "ifr");
@@ -133,13 +135,13 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     );
 
     info("The tracker page should not have received events");
-    await ContentTask.spawn(trackerBrowser, null, async _ => {
+    await SpecialPowers.spawn(trackerBrowser, [], async _ => {
       is(content.localStorage.foo, undefined, "Undefined value!");
       content.localStorage.foo = "normal-" + Math.random();
     });
 
     info("Let's see if non-tracker page has received events");
-    await ContentTask.spawn(normalBrowser, null, async _ => {
+    await SpecialPowers.spawn(normalBrowser, [], async _ => {
       let ifr = content.document.getElementById("ifr");
 
       info("Getting the value...");
@@ -180,8 +182,8 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     UrlClassifierTestUtils.cleanupTestTrackers();
   });
 
-  // Two ePartitionOrDeny iframes in the same tab in the same origin don't see
-  // the same localStorage values and no storage events are received from each
+  // Two ePartitionOrDeny iframes in the same tab in the same origin see
+  // the same localStorage values but no storage events are received from each
   // other.
   add_task(async _ => {
     log(test);
@@ -212,12 +214,15 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     await BrowserTestUtils.browserLoaded(normalBrowser);
 
     info("The non-tracker page opens a tracker iframe");
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       normalBrowser,
-      {
-        page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
-        withStoragePrincipalEnabled,
-      },
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+          withStoragePrincipalEnabled: test.withStoragePrincipalEnabled,
+          dynamicFPITest: test.dynamicFPITest,
+        },
+      ],
       async obj => {
         let ifr1 = content.document.createElement("iframe");
         ifr1.setAttribute("id", "ifr1");
@@ -268,7 +273,7 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
           ifr2.contentWindow.postMessage("getValue", "*");
         });
 
-        if (obj.withStoragePrincipalEnabled) {
+        if (obj.withStoragePrincipalEnabled || obj.dynamicFPITest) {
           ok(
             value.startsWith("tracker-"),
             "The value is correctly set in ifr2"
@@ -289,11 +294,7 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
           ifr2.contentWindow.postMessage("getEvents", "*");
         });
 
-        if (obj.withStoragePrincipalEnabled) {
-          is(events, 1, "1 event received");
-        } else {
-          is(events, 0, "No events");
-        }
+        is(events, 0, "No events");
       }
     );
 
@@ -334,11 +335,13 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     await BrowserTestUtils.browserLoaded(normalBrowser);
 
     info("The non-tracker page opens a tracker iframe");
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       normalBrowser,
-      {
-        page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
-      },
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+        },
+      ],
       async obj => {
         let ifr1 = content.document.createElement("iframe");
         ifr1.setAttribute("id", "ifr1");
@@ -443,12 +446,15 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     await BrowserTestUtils.browserLoaded(normalBrowser);
 
     info("The non-tracker page opens a tracker iframe");
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       normalBrowser,
-      {
-        page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
-        withStoragePrincipalEnabled,
-      },
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+          withStoragePrincipalEnabled: test.withStoragePrincipalEnabled,
+          dynamicFPITest: test.dynamicFPITest,
+        },
+      ],
       async obj => {
         let ifr = content.document.createElement("iframe");
         ifr.setAttribute("id", "ifr");
@@ -495,7 +501,7 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
           ifr.contentWindow.postMessage("getValue", "*");
         });
 
-        if (obj.withStoragePrincipalEnabled) {
+        if (obj.withStoragePrincipalEnabled || obj.dynamicFPITest) {
           is(value, value2, "The value is received");
         } else {
           is(value2, null, "The value is undefined");
@@ -538,11 +544,13 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     await BrowserTestUtils.browserLoaded(normalBrowser);
 
     info("The non-tracker page opens a tracker iframe");
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       normalBrowser,
-      {
-        page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
-      },
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+        },
+      ],
       async obj => {
         let ifr = content.document.createElement("iframe");
         ifr.setAttribute("id", "ifr");
@@ -630,12 +638,15 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     await BrowserTestUtils.browserLoaded(normalBrowser);
 
     info("The non-tracker page opens a tracker iframe");
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       normalBrowser,
-      {
-        page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
-        withStoragePrincipalEnabled,
-      },
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+          withStoragePrincipalEnabled: test.withStoragePrincipalEnabled,
+          dynamicFPITest: test.dynamicFPITest,
+        },
+      ],
       async obj => {
         let ifr = content.document.createElement("iframe");
         ifr.setAttribute("id", "ifr");
@@ -682,7 +693,7 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
           ifr.contentWindow.postMessage("getValue", "*");
         });
 
-        if (obj.withStoragePrincipalEnabled) {
+        if (obj.withStoragePrincipalEnabled || obj.dynamicFPITest) {
           is(value, value2, "The value is equal");
         } else {
           is(value2, null, "The value is undefined");
@@ -725,11 +736,13 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     await BrowserTestUtils.browserLoaded(normalBrowser);
 
     info("The non-tracker page opens a tracker iframe");
-    await ContentTask.spawn(
+    await SpecialPowers.spawn(
       normalBrowser,
-      {
-        page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
-      },
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+        },
+      ],
       async obj => {
         let ifr = content.document.createElement("iframe");
         ifr.setAttribute("id", "ifr");
@@ -781,6 +794,240 @@ function runAllTests(withStoragePrincipalEnabled, prefValue) {
     );
 
     BrowserTestUtils.removeTab(normalTab);
+
+    UrlClassifierTestUtils.cleanupTestTrackers();
+  });
+
+  // An ePartitionOrDeny iframe on different top-level domain tabs
+  add_task(async _ => {
+    log(test);
+
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["dom.ipc.processCount", 1],
+        ["network.cookie.cookieBehavior", prefValue],
+        ["privacy.firstparty.isolate", false],
+        ["privacy.trackingprotection.enabled", false],
+        ["privacy.trackingprotection.pbmode.enabled", false],
+        ["privacy.trackingprotection.annotate_channels", true],
+        [
+          "privacy.restrict3rdpartystorage.partitionedHosts",
+          "tracking.example.org,not-tracking.example.com",
+        ],
+        [
+          "privacy.storagePrincipal.enabledForTrackers",
+          storagePrincipalPrefValue,
+        ],
+      ],
+    });
+
+    await UrlClassifierTestUtils.addTestTrackers();
+
+    info("Creating a non-tracker top-level context");
+    let normalTab = BrowserTestUtils.addTab(gBrowser, TEST_TOP_PAGE);
+    let normalBrowser = gBrowser.getBrowserForTab(normalTab);
+    await BrowserTestUtils.browserLoaded(normalBrowser);
+
+    info("The non-tracker page opens a tracker iframe");
+    let result1 = await SpecialPowers.spawn(
+      normalBrowser,
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+        },
+      ],
+      async obj => {
+        let ifr = content.document.createElement("iframe");
+        ifr.setAttribute("id", "ifr");
+        ifr.setAttribute("src", obj.page);
+
+        info("Iframe loading...");
+        await new content.Promise(resolve => {
+          ifr.onload = resolve;
+          content.document.body.appendChild(ifr);
+        });
+
+        info("Setting localStorage value in ifr...");
+        ifr.contentWindow.postMessage("setValue", "*");
+
+        info("Getting the value from ifr...");
+        let value = await new Promise(resolve => {
+          content.addEventListener(
+            "message",
+            e => {
+              resolve(e.data);
+            },
+            { once: true }
+          );
+          ifr.contentWindow.postMessage("getValue", "*");
+        });
+
+        ok(value.startsWith("tracker-"), "The value is correctly set in ifr");
+        return value;
+      }
+    );
+    ok(result1.startsWith("tracker-"), "The value is correctly set in tab1");
+
+    info("Creating a non-tracker top-level context");
+    let normalTab2 = BrowserTestUtils.addTab(gBrowser, TEST_TOP_PAGE_2);
+    let normalBrowser2 = gBrowser.getBrowserForTab(normalTab2);
+    await BrowserTestUtils.browserLoaded(normalBrowser2);
+
+    info("The non-tracker page opens a tracker iframe");
+    let result2 = await SpecialPowers.spawn(
+      normalBrowser2,
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+        },
+      ],
+      async obj => {
+        let ifr = content.document.createElement("iframe");
+        ifr.setAttribute("id", "ifr");
+        ifr.setAttribute("src", obj.page);
+
+        info("Iframe loading...");
+        await new content.Promise(resolve => {
+          ifr.onload = resolve;
+          content.document.body.appendChild(ifr);
+        });
+
+        info("Getting the value from ifr...");
+        let value = await new Promise(resolve => {
+          content.addEventListener(
+            "message",
+            e => {
+              resolve(e.data);
+            },
+            { once: true }
+          );
+          ifr.contentWindow.postMessage("getValue", "*");
+        });
+        return value;
+      }
+    );
+
+    is(result2, null, "The value is equal");
+
+    BrowserTestUtils.removeTab(normalTab);
+    BrowserTestUtils.removeTab(normalTab2);
+
+    UrlClassifierTestUtils.cleanupTestTrackers();
+  });
+
+  // Like the previous test, but accepting trackers
+  add_task(async _ => {
+    log(test);
+
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["dom.ipc.processCount", 1],
+        ["network.cookie.cookieBehavior", Ci.nsICookieService.BEHAVIOR_ACCEPT],
+        ["privacy.firstparty.isolate", false],
+        ["privacy.trackingprotection.enabled", false],
+        ["privacy.trackingprotection.pbmode.enabled", false],
+        ["privacy.trackingprotection.annotate_channels", true],
+        [
+          "privacy.restrict3rdpartystorage.partitionedHosts",
+          "tracking.example.org,not-tracking.example.com",
+        ],
+        [
+          "privacy.storagePrincipal.enabledForTrackers",
+          storagePrincipalPrefValue,
+        ],
+      ],
+    });
+
+    await UrlClassifierTestUtils.addTestTrackers();
+
+    info("Creating a non-tracker top-level context");
+    let normalTab = BrowserTestUtils.addTab(gBrowser, TEST_TOP_PAGE);
+    let normalBrowser = gBrowser.getBrowserForTab(normalTab);
+    await BrowserTestUtils.browserLoaded(normalBrowser);
+
+    info("The non-tracker page opens a tracker iframe");
+    let result1 = await SpecialPowers.spawn(
+      normalBrowser,
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+        },
+      ],
+      async obj => {
+        let ifr = content.document.createElement("iframe");
+        ifr.setAttribute("id", "ifr");
+        ifr.setAttribute("src", obj.page);
+
+        info("Iframe loading...");
+        await new content.Promise(resolve => {
+          ifr.onload = resolve;
+          content.document.body.appendChild(ifr);
+        });
+
+        info("Setting localStorage value in ifr...");
+        ifr.contentWindow.postMessage("setValue", "*");
+
+        info("Getting the value from ifr...");
+        let value = await new Promise(resolve => {
+          content.addEventListener(
+            "message",
+            e => {
+              resolve(e.data);
+            },
+            { once: true }
+          );
+          ifr.contentWindow.postMessage("getValue", "*");
+        });
+
+        ok(value.startsWith("tracker-"), "The value is correctly set in ifr");
+        return value;
+      }
+    );
+    ok(result1.startsWith("tracker-"), "The value is correctly set in tab1");
+
+    info("Creating a non-tracker top-level context");
+    let normalTab2 = BrowserTestUtils.addTab(gBrowser, TEST_TOP_PAGE_2);
+    let normalBrowser2 = gBrowser.getBrowserForTab(normalTab2);
+    await BrowserTestUtils.browserLoaded(normalBrowser2);
+
+    info("The non-tracker page opens a tracker iframe");
+    let result2 = await SpecialPowers.spawn(
+      normalBrowser2,
+      [
+        {
+          page: thirdPartyDomain + TEST_PATH + "localStorageEvents.html",
+        },
+      ],
+      async obj => {
+        let ifr = content.document.createElement("iframe");
+        ifr.setAttribute("id", "ifr");
+        ifr.setAttribute("src", obj.page);
+
+        info("Iframe loading...");
+        await new content.Promise(resolve => {
+          ifr.onload = resolve;
+          content.document.body.appendChild(ifr);
+        });
+
+        info("Getting the value from ifr...");
+        let value = await new Promise(resolve => {
+          content.addEventListener(
+            "message",
+            e => {
+              resolve(e.data);
+            },
+            { once: true }
+          );
+          ifr.contentWindow.postMessage("getValue", "*");
+        });
+        return value;
+      }
+    );
+
+    is(result1, result2, "The value is undefined");
+
+    BrowserTestUtils.removeTab(normalTab);
+    BrowserTestUtils.removeTab(normalTab2);
 
     UrlClassifierTestUtils.cleanupTestTrackers();
   });

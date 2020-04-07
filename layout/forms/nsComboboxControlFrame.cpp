@@ -50,7 +50,6 @@
 #include "mozilla/Unused.h"
 #include "gfx2DGlue.h"
 #include "mozilla/widget/nsAutoRollup.h"
-#include "nsILayoutHistoryState.h"
 
 #ifdef XP_WIN
 #  define COMBOBOX_ROLLUP_CONSUME_EVENT 0
@@ -440,7 +439,6 @@ void nsComboboxControlFrame::ReflowDropdown(nsPresContext* aPresContext,
   // dropped down
   ReflowChildFlags flags = mDroppedDown ? ReflowChildFlags::Default
                                         : ReflowChildFlags::NoMoveFrame |
-                                              ReflowChildFlags::NoVisibility |
                                               ReflowChildFlags::NoSizeView;
 
   // XXX Can this be different from the dropdown's writing mode?
@@ -700,9 +698,11 @@ static void printSize(char* aDesc, nscoord aSize) {
 
 bool nsComboboxControlFrame::HasDropDownButton() const {
   const nsStyleDisplay* disp = StyleDisplay();
+  // FIXME(emilio): Blink also shows this for menulist-button and such... Seems
+  // more similar to our mac / linux implementation.
   return disp->mAppearance == StyleAppearance::Menulist &&
          (!IsThemed(disp) ||
-          PresContext()->GetTheme()->ThemeNeedsComboboxDropmarker());
+          PresContext()->Theme()->ThemeNeedsComboboxDropmarker());
 }
 
 nscoord nsComboboxControlFrame::GetIntrinsicISize(
@@ -721,10 +721,8 @@ nscoord nsComboboxControlFrame::GetIntrinsicISize(
   nscoord displayISize = 0;
   if (MOZ_LIKELY(mDisplayFrame)) {
     if (isContainSize) {
-      // Note: the "h" in "hPadding" here really means "inline-axis".
-      // Its struct uses "h" prefixes for historical reasons, but they're all
-      // for the inline-axis, not (necessarily) the horizontal axis.
-      displayISize = mDisplayFrame->IntrinsicISizeOffsets().hPadding;
+      // Get padding from the inline-axis
+      displayISize = mDisplayFrame->IntrinsicISizeOffsets().padding;
     } else {
       displayISize = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
                                                           mDisplayFrame, aType);
@@ -1471,9 +1469,7 @@ class nsDisplayComboboxFocus : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayComboboxFocus);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayComboboxFocus() { MOZ_COUNT_DTOR(nsDisplayComboboxFocus); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayComboboxFocus)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("ComboboxFocus", TYPE_COMBOBOX_FOCUS)
@@ -1503,9 +1499,8 @@ void nsComboboxControlFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     if (window && window->ShouldShowFocusRing()) {
       nsPresContext* presContext = PresContext();
       const nsStyleDisplay* disp = StyleDisplay();
-      if ((!IsThemed(disp) ||
-           !presContext->GetTheme()->ThemeDrawsFocusForWidget(
-               disp->mAppearance)) &&
+      if ((!IsThemed(disp) || !presContext->Theme()->ThemeDrawsFocusForWidget(
+                                  disp->mAppearance)) &&
           mDisplayFrame && IsVisibleForPainting()) {
         aLists.Content()->AppendNewToTop<nsDisplayComboboxFocus>(aBuilder,
                                                                  this);

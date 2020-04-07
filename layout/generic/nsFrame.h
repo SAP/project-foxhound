@@ -20,7 +20,7 @@
 #include "nsISelectionDisplay.h"
 
 namespace mozilla {
-enum class TableSelection : uint32_t;
+enum class TableSelectionMode : uint32_t;
 class PresShell;
 }  // namespace mozilla
 
@@ -271,7 +271,7 @@ class nsFrame : public nsBox {
                          InlineMinISizeData* aData) override;
   void AddInlinePrefISize(gfxContext* aRenderingContext,
                           InlinePrefISizeData* aData) override;
-  IntrinsicISizeOffsetData IntrinsicISizeOffsets(
+  IntrinsicSizeOffsetData IntrinsicISizeOffsets(
       nscoord aPercentageBasis = NS_UNCONSTRAINEDSIZE) override;
   mozilla::IntrinsicSize GetIntrinsicSize() override;
   mozilla::AspectRatio GetIntrinsicRatio() override;
@@ -615,6 +615,7 @@ class nsFrame : public nsBox {
    */
   static bool ShouldApplyOverflowClipping(const nsIFrame* aFrame,
                                           const nsStyleDisplay* aDisp) {
+    MOZ_ASSERT(aDisp == aFrame->StyleDisplay(), "Wong display struct");
     // clip overflow:-moz-hidden-unscrollable, except for nsListControlFrame,
     // which is an nsHTMLScrollFrame.
     if (MOZ_UNLIKELY(aDisp->mOverflowX ==
@@ -628,7 +629,8 @@ class nsFrame : public nsBox {
     // clipping, because the scrollable frame will already clip overflowing
     // content, and because contain:paint should prevent all means of escaping
     // that clipping (e.g. because it forms a fixed-pos containing block).
-    if (aDisp->IsContainPaint() && !aFrame->IsScrollFrame()) {
+    if (aDisp->IsContainPaint() && !aFrame->IsScrollFrame() &&
+        aFrame->IsFrameOfType(eSupportsContainLayoutAndPaint)) {
       return true;
     }
 
@@ -680,7 +682,7 @@ class nsFrame : public nsBox {
                                     mozilla::WidgetMouseEvent* aMouseEvent,
                                     nsIContent** aParentContent,
                                     int32_t* aContentOffset,
-                                    mozilla::TableSelection* aTarget);
+                                    mozilla::TableSelectionMode* aTarget);
 
   NS_IMETHOD DoXULLayout(nsBoxLayoutState& aBoxLayoutState) override;
 

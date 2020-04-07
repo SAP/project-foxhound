@@ -263,7 +263,8 @@ const Preferences = (window.Preferences = (function() {
     },
 
     onDialogAccept(event) {
-      if (!this._fireEvent("beforeaccept", document.documentElement)) {
+      let dialog = document.querySelector("dialog");
+      if (!this._fireEvent("beforeaccept", dialog)) {
         event.preventDefault();
         return false;
       }
@@ -385,9 +386,7 @@ const Preferences = (window.Preferences = (function() {
     }
 
     _reportUnknownType() {
-      const msg = `Preference with id=${this.id} has unknown type ${
-        this.type
-      }.`;
+      const msg = `Preference with id=${this.id} has unknown type ${this.type}.`;
       Services.console.logStringMessage(msg);
     }
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -110,6 +110,7 @@ OUTDIR = os.path.join(OBJDIR, "out")
 POBJDIR = posixpath.join(PDIR.source, args.objdir)
 MAKE = env.get('MAKE', 'make')
 MAKEFLAGS = env.get('MAKEFLAGS', '-j6' + ('' if AUTOMATION else ' -s'))
+PYTHON = sys.executable
 
 for d in ('scripts', 'js_src', 'source', 'tooltool', 'fetches'):
     info("DIR.{name} = {dir}".format(name=d, dir=getattr(DIR, d)))
@@ -129,7 +130,7 @@ def set_vars_from_script(script, vars):
         script_text += '; echo VAR SETTINGS:; '
         script_text += '; '.join('echo $' + var for var in vars)
         parse_state = 'scanning'
-    stdout = subprocess.check_output(['sh', '-x', '-c', script_text])
+    stdout = subprocess.check_output(['sh', '-x', '-c', script_text]).decode()
     tograb = vars[:]
     for line in stdout.splitlines():
         if parse_state == 'scanning':
@@ -189,9 +190,6 @@ if opt is not None:
     CONFIGURE_ARGS += (" --enable-optimize" if opt else " --disable-optimize")
 
 opt = args.debug
-if opt is None and args.platform:
-    # Override variant['debug'].
-    opt = ('-debug' in args.platform)
 if opt is None:
     opt = variant.get('debug')
 if opt is not None:
@@ -225,6 +223,19 @@ elif platform.system() == 'Windows':
     compiler = 'cl'
 else:
     compiler = 'gcc'
+
+# Need a platform name to use as a key in variant files.
+if args.platform:
+    variant_platform = args.platform.split("-")[0]
+elif platform.system() == 'Windows':
+    variant_platform = 'win64' if word_bits == 64 else 'win32'
+elif platform.system() == 'Linux':
+    variant_platform = 'linux64' if word_bits == 64 else 'linux'
+elif platform.system() == 'Darwin':
+    variant_platform = 'macosx64'
+else:
+    variant_platform = 'other'
+
 
 info("using compiler '{}'".format(compiler))
 
@@ -296,6 +307,12 @@ else:
 if platform.system() == 'Linux' and AUTOMATION:
     CONFIGURE_ARGS = '--enable-stdcxx-compat --disable-gold ' + CONFIGURE_ARGS
 
+# Override environment variant settings conditionally.
+CONFIGURE_ARGS = "{} {}".format(
+    variant.get('conditional-configure-args', {}).get(variant_platform, ''),
+    CONFIGURE_ARGS
+)
+
 # Timeouts.
 ACTIVE_PROCESSES = set()
 
@@ -348,7 +365,7 @@ REPLACEMENTS = {
 # Add in environment variable settings for this variant. Normally used to
 # modify the flags passed to the shell or to set the GC zeal mode.
 for k, v in variant.get('env', {}).items():
-    env[k.encode('ascii')] = v.encode('ascii').format(**REPLACEMENTS)
+    env[k] = v.format(**REPLACEMENTS)
 
 if AUTOMATION:
     # Currently only supported on linux64.
@@ -437,30 +454,22 @@ def run_test_command(command, **kwargs):
     return status
 
 
-test_suites = set(['jstests', 'jittest', 'jsapitests', 'checks'])
+default_test_suites = frozenset(['jstests', 'jittest', 'jsapitests', 'checks'])
+nondefault_test_suites = frozenset(['gdb'])
+all_test_suites = default_test_suites | nondefault_test_suites
+
+test_suites = set(default_test_suites)
 
 
 def normalize_tests(tests):
     if 'all' in tests:
-        return test_suites
+        return default_test_suites
     return tests
 
 
-# Need a platform name to use as a key in variant files.
-if args.platform:
-    variant_platform = args.platform.split("-")[0]
-elif platform.system() == 'Windows':
-    variant_platform = 'win64' if word_bits == 64 else 'win32'
-elif platform.system() == 'Linux':
-    variant_platform = 'linux64' if word_bits == 64 else 'linux'
-elif platform.system() == 'Darwin':
-    variant_platform = 'macosx64'
-else:
-    variant_platform = 'other'
-
 # Override environment variant settings conditionally.
 for k, v in variant.get('conditional-env', {}).get(variant_platform, {}).items():
-    env[k.encode('ascii')] = v.encode('ascii').format(**REPLACEMENTS)
+    env[k] = v.format(**REPLACEMENTS)
 
 # Skip any tests that are not run on this platform (or the 'all' platform).
 test_suites -= set(normalize_tests(variant.get('skip-tests', {}).get(variant_platform, [])))
@@ -512,6 +521,11 @@ if 'jsapitests' in test_suites:
     results.append(st)
 if 'jstests' in test_suites:
     results.append(run_test_command([MAKE, 'check-jstests']))
+if 'gdb' in test_suites:
+    test_script = os.path.join(DIR.js_src, "gdb", "run-tests.py")
+    auto_args = ["-s", "-o", "--no-progress"] if AUTOMATION else []
+    extra_args = env.get('GDBTEST_EXTRA_ARGS', '').split(' ')
+    results.append(run_test_command([PYTHON, test_script, *auto_args, *extra_args, OBJDIR]))
 
 # FIXME bug 1291449: This would be unnecessary if we could run msan with -mllvm
 # -msan-keep-going, but in clang 3.8 it causes a hang during compilation.

@@ -12,9 +12,11 @@ const {
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 
-const Types = require("../types");
+const Types = require("devtools/client/inspector/compatibility/types");
 
-const IssueList = createFactory(require("./IssueList"));
+const IssueList = createFactory(
+  require("devtools/client/inspector/compatibility/components/IssueList")
+);
 
 class CompatibilityApp extends PureComponent {
   static get propTypes() {
@@ -24,16 +26,23 @@ class CompatibilityApp extends PureComponent {
     };
   }
 
+  _renderNoIssues() {
+    return dom.div(
+      { className: "devtools-sidepanel-no-result" },
+      "No compatibility issues found."
+    );
+  }
+
   render() {
     const { selectedNodeIssues } = this.props;
 
     return dom.div(
       {
-        className: "theme-sidebar inspector-tabpanel",
+        className: "compatibility-app theme-sidebar inspector-tabpanel",
       },
       selectedNodeIssues.length
         ? IssueList({ issues: selectedNodeIssues })
-        : null
+        : this._renderNoIssues()
     );
   }
 }

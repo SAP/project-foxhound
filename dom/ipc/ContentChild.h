@@ -16,6 +16,7 @@
 #include "mozilla/dom/RemoteBrowser.h"
 #include "mozilla/dom/CPOWManagerGetter.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/Shmem.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "nsAutoPtr.h"
@@ -74,12 +75,14 @@ class ClonedMessageData;
 class BrowserChild;
 class GetFilesHelperChild;
 class TabContext;
-enum class MediaControlActions : uint32_t;
+enum class MediaControlKeysEvent : uint32_t;
 
-class ContentChild final : public PContentChild,
-                           public nsIWindowProvider,
-                           public CPOWManagerGetter,
-                           public mozilla::ipc::IShmemAllocator {
+class ContentChild final
+    : public PContentChild,
+      public nsIWindowProvider,
+      public CPOWManagerGetter,
+      public mozilla::ipc::IShmemAllocator,
+      public mozilla::ipc::ChildToParentStreamActorManager {
   typedef mozilla::dom::ClonedMessageData ClonedMessageData;
   typedef mozilla::ipc::FileDescriptor FileDescriptor;
   typedef mozilla::ipc::PFileDescriptorSetChild PFileDescriptorSetChild;
@@ -117,7 +120,7 @@ class ContentChild final : public PContentChild,
                                bool* aWindowIsNew, BrowsingContext** aReturn);
 
   bool Init(MessageLoop* aIOLoop, base::ProcessId aParentPid,
-            const char* aParentBuildID, IPC::Channel* aChannel,
+            const char* aParentBuildID, UniquePtr<IPC::Channel> aChannel,
             uint64_t aChildID, bool aIsForBrowser);
 
   void InitXPCOM(const XPCOMInitData& aXPCOMInit,
@@ -158,10 +161,6 @@ class ContentChild final : public PContentChild,
   static void AppendProcessId(nsACString& aName);
 
   static void UpdateCookieStatus(nsIChannel* aChannel);
-
-  static already_AddRefed<RemoteBrowser> CreateBrowser(
-      nsFrameLoader* aFrameLoader, const TabContext& aContext,
-      const nsString& aRemoteType, BrowsingContext* aBrowsingContext);
 
   mozilla::ipc::IPCResult RecvInitGMPService(
       Endpoint<PGMPServiceChild>&& aGMPService);
@@ -255,9 +254,6 @@ class ContentChild final : public PContentChild,
 
   bool DeallocPPrintingChild(PPrintingChild*);
 
-  PChildToParentStreamChild* SendPChildToParentStreamConstructor(
-      PChildToParentStreamChild*);
-
   PChildToParentStreamChild* AllocPChildToParentStreamChild();
   bool DeallocPChildToParentStreamChild(PChildToParentStreamChild*);
 
@@ -290,9 +286,10 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvNotifyEmptyHTTPCache();
 
+#ifdef MOZ_WEBSPEECH
   PSpeechSynthesisChild* AllocPSpeechSynthesisChild();
-
   bool DeallocPSpeechSynthesisChild(PSpeechSynthesisChild* aActor);
+#endif
 
   mozilla::ipc::IPCResult RecvRegisterChrome(
       nsTArray<ChromePackage>&& packages,
@@ -321,7 +318,7 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvBidiKeyboardNotify(const bool& isLangRTL,
                                                  const bool& haveBidiKeyboards);
 
-  mozilla::ipc::IPCResult RecvNotifyVisited(nsTArray<URIParams>&& aURIs);
+  mozilla::ipc::IPCResult RecvNotifyVisited(nsTArray<VisitedQueryResult>&&);
 
   // auto remove when alertfinished is received.
   nsresult AddRemoteAlertObserver(const nsString& aData,
@@ -501,9 +498,6 @@ class ContentChild final : public PContentChild,
 
   bool IsForBrowser() const { return mIsForBrowser; }
 
-  PFileDescriptorSetChild* SendPFileDescriptorSetConstructor(
-      const FileDescriptor&);
-
   PFileDescriptorSetChild* AllocPFileDescriptorSetChild(const FileDescriptor&);
 
   bool DeallocPFileDescriptorSetChild(PFileDescriptorSetChild*);
@@ -530,8 +524,8 @@ class ContentChild final : public PContentChild,
       const nsTArray<PermissionRequest>& aRequests,
       const IPC::Principal& aPrincipal,
       const IPC::Principal& aTopLevelPrincipal,
-      const bool& aIsHandlingUserInput, const bool& aDocumentHasUserInput,
-      const DOMTimeStamp aPageLoadTimestamp, const TabId& aTabId);
+      const bool& aIsHandlingUserInput,
+      const bool& aMaybeUnsafePermissionDelegate, const TabId& aTabId);
   bool DeallocPContentPermissionRequestChild(
       PContentPermissionRequestChild* actor);
 
@@ -560,6 +554,9 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvRequestMemoryReport(
       const uint32_t& generation, const bool& anonymize,
       const bool& minimizeMemoryUsage, const Maybe<FileDescriptor>& DMDFile);
+
+  mozilla::ipc::IPCResult RecvGetUntrustedModulesData(
+      GetUntrustedModulesDataResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvSetXPCOMProcessAttributes(
       const XPCOMInitData& aXPCOMInit, const StructuredCloneData& aInitialData,
@@ -624,6 +621,15 @@ class ContentChild final : public PContentChild,
   bool DeallocPSessionStorageObserverChild(
       PSessionStorageObserverChild* aActor);
 
+  PSHEntryChild* AllocPSHEntryChild(PSHistoryChild* aSHistory,
+                                    const PSHEntryOrSharedID& aEntryOrSharedID);
+  void DeallocPSHEntryChild(PSHEntryChild*);
+
+  PSHistoryChild* AllocPSHistoryChild(
+      const MaybeDiscarded<BrowsingContext>& aContext);
+
+  void DeallocPSHistoryChild(PSHistoryChild* aActor);
+
   nsTArray<LookAndFeelInt>& LookAndFeelCache() { return mLookAndFeelCache; }
 
   /**
@@ -658,17 +664,15 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvSaveRecording(const FileDescriptor& aFile);
 
   mozilla::ipc::IPCResult RecvCrossProcessRedirect(
-      const uint32_t& aRegistrarId, nsIURI* aURI,
-      const ReplacementChannelConfigInit& aConfig,
-      const Maybe<LoadInfoArgs>& aLoadInfoForwarder, const uint64_t& aChannelId,
-      nsIURI* aOriginalURI, const uint64_t& aIdentifier,
-      const uint32_t& aRedirectMode, CrossProcessRedirectResolver&& aResolve);
+      RedirectToRealChannelArgs&& aArgs,
+      CrossProcessRedirectResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvStartDelayedAutoplayMediaComponents(
-      BrowsingContext* aContext);
+      const MaybeDiscarded<BrowsingContext>& aContext);
 
-  mozilla::ipc::IPCResult RecvUpdateMediaAction(BrowsingContext* aContext,
-                                                MediaControlActions aAction);
+  mozilla::ipc::IPCResult RecvUpdateMediaControlKeysEvent(
+      const MaybeDiscarded<BrowsingContext>& aContext,
+      MediaControlKeysEvent aEvent);
 
   void HoldBrowsingContextGroup(BrowsingContextGroup* aBCG);
   void ReleaseBrowsingContextGroup(BrowsingContextGroup* aBCG);
@@ -682,6 +686,16 @@ class ContentChild final : public PContentChild,
     return mBrowsingContextFieldEpoch;
   }
 
+  mozilla::ipc::IPCResult RecvDestroySHEntrySharedState(const uint64_t& aID);
+
+  mozilla::ipc::IPCResult RecvEvictContentViewers(
+      nsTArray<uint64_t>&& aToEvictSharedStateIDs);
+
+  mozilla::ipc::IPCResult RecvSessionStorageData(
+      uint64_t aTopContextId, const nsACString& aOriginAttrs,
+      const nsACString& aOriginKey, const nsTArray<KeyValuePair>& aDefaultData,
+      const nsTArray<KeyValuePair>& aSessionData);
+
 #ifdef NIGHTLY_BUILD
   // Fetch the current number of pending input events.
   //
@@ -694,6 +708,11 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvInitSandboxTesting(
       Endpoint<PSandboxTestingChild>&& aEndpoint);
 #endif
+
+  PChildToParentStreamChild* SendPChildToParentStreamConstructor(
+      PChildToParentStreamChild* aActor) override;
+  PFileDescriptorSetChild* SendPFileDescriptorSetConstructor(
+      const FileDescriptor& aFD) override;
 
  private:
   static void ForceKillTimerCallback(nsITimer* aTimer, void* aClosure);
@@ -720,25 +739,59 @@ class ContentChild final : public PContentChild,
       uint64_t aContextId, DetachBrowsingContextResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvCacheBrowsingContextChildren(
-      BrowsingContext* aContext);
+      const MaybeDiscarded<BrowsingContext>& aContext);
 
   mozilla::ipc::IPCResult RecvRestoreBrowsingContextChildren(
-      BrowsingContext* aContext, BrowsingContext::Children&& aChildren);
+      const MaybeDiscarded<BrowsingContext>& aContext,
+      const nsTArray<MaybeDiscarded<BrowsingContext>>& aChildren);
 
   mozilla::ipc::IPCResult RecvRegisterBrowsingContextGroup(
-      nsTArray<BrowsingContext::IPCInitializer>&& aInits);
+      nsTArray<BrowsingContext::IPCInitializer>&& aInits,
+      nsTArray<WindowContext::IPCInitializer>&& aWindowInits);
 
-  mozilla::ipc::IPCResult RecvWindowClose(BrowsingContext* aContext,
-                                          bool aTrustedCaller);
-  mozilla::ipc::IPCResult RecvWindowFocus(BrowsingContext* aContext);
-  mozilla::ipc::IPCResult RecvWindowBlur(BrowsingContext* aContext);
+  mozilla::ipc::IPCResult RecvWindowClose(
+      const MaybeDiscarded<BrowsingContext>& aContext, bool aTrustedCaller);
+  mozilla::ipc::IPCResult RecvWindowFocus(
+      const MaybeDiscarded<BrowsingContext>& aContext, CallerType aCallerType);
+  mozilla::ipc::IPCResult RecvWindowBlur(
+      const MaybeDiscarded<BrowsingContext>& aContext);
+  mozilla::ipc::IPCResult RecvRaiseWindow(
+      const MaybeDiscarded<BrowsingContext>& aContext, CallerType aCallerType);
+  mozilla::ipc::IPCResult RecvClearFocus(
+      const MaybeDiscarded<BrowsingContext>& aContext);
+  mozilla::ipc::IPCResult RecvSetFocusedBrowsingContext(
+      const MaybeDiscarded<BrowsingContext>& aContext);
+  mozilla::ipc::IPCResult RecvSetActiveBrowsingContext(
+      const MaybeDiscarded<BrowsingContext>& aContext);
+  mozilla::ipc::IPCResult RecvUnsetActiveBrowsingContext(
+      const MaybeDiscarded<BrowsingContext>& aContext);
+  mozilla::ipc::IPCResult RecvSetFocusedElement(
+      const MaybeDiscarded<BrowsingContext>& aContext, bool aNeedsFocus);
+  mozilla::ipc::IPCResult RecvBlurToChild(
+      const MaybeDiscarded<BrowsingContext>& aFocusedBrowsingContext,
+      const MaybeDiscarded<BrowsingContext>& aBrowsingContextToClear,
+      const MaybeDiscarded<BrowsingContext>& aAncestorBrowsingContextToFocus,
+      bool aIsLeavingDocument, bool aAdjustWidget);
+  mozilla::ipc::IPCResult RecvSetupFocusedAndActive(
+      const MaybeDiscarded<BrowsingContext>& aFocusedBrowsingContext,
+      const MaybeDiscarded<BrowsingContext>& aActiveBrowsingContext);
+
   mozilla::ipc::IPCResult RecvWindowPostMessage(
-      BrowsingContext* aContext, const ClonedMessageData& aMessage,
-      const PostMessageData& aData);
+      const MaybeDiscarded<BrowsingContext>& aContext,
+      const ClonedMessageData& aMessage, const PostMessageData& aData);
 
   mozilla::ipc::IPCResult RecvCommitBrowsingContextTransaction(
-      BrowsingContext* aContext, BrowsingContext::Transaction&& aTransaction,
-      uint64_t aEpoch);
+      const MaybeDiscarded<BrowsingContext>& aContext,
+      BrowsingContext::BaseTransaction&& aTransaction, uint64_t aEpoch);
+
+  mozilla::ipc::IPCResult RecvCommitWindowContextTransaction(
+      const MaybeDiscarded<WindowContext>& aContext,
+      WindowContext::BaseTransaction&& aTransaction, uint64_t aEpoch);
+
+  mozilla::ipc::IPCResult RecvCreateWindowContext(
+      WindowContext::IPCInitializer&& aInit);
+  mozilla::ipc::IPCResult RecvDiscardWindowContext(
+      uint64_t aContextId, DiscardWindowContextResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvScriptError(
       const nsString& aMessage, const nsString& aSourceName,
@@ -746,6 +799,17 @@ class ContentChild final : public PContentChild,
       const uint32_t& aColNumber, const uint32_t& aFlags,
       const nsCString& aCategory, const bool& aFromPrivateWindow,
       const uint64_t& aInnerWindowId, const bool& aFromChromeContext);
+
+  mozilla::ipc::IPCResult RecvLoadURI(
+      const MaybeDiscarded<BrowsingContext>& aContext,
+      nsDocShellLoadState* aLoadState, bool aSetNavigating);
+
+  mozilla::ipc::IPCResult RecvInternalLoad(
+      const MaybeDiscarded<BrowsingContext>& aContext,
+      nsDocShellLoadState* aLoadState, bool aTakeFocus);
+
+  mozilla::ipc::IPCResult RecvDisplayLoadError(
+      const MaybeDiscarded<BrowsingContext>& aContext, const nsAString& aURI);
 
 #ifdef NIGHTLY_BUILD
   virtual PContentChild::Result OnMessageReceived(const Message& aMsg) override;
@@ -790,7 +854,7 @@ class ContentChild final : public PContentChild,
    * generated by the chrome process.
    */
   uint32_t mMsaaID;
-#endif
+#endif  // defined(XP_WIN) && defined(ACCESSIBILITY)
 
   AppInfo mAppInfo;
 

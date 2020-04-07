@@ -4,7 +4,21 @@
 
 @namespace html url("http://www.w3.org/1999/xhtml");
 
+:root,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: -moz-hidden-unscrollable;
+}
+
 :root {
+  text-rendering: optimizeLegibility;
+  min-height: 95px;
+  min-width: 95px;
+
+  /* variables */
   --panelui-subview-transition-duration: 150ms;
   --lwt-additional-images: none;
   --lwt-background-alignment: right top;
@@ -13,6 +27,10 @@
   --toolbar-bgcolor: var(--toolbar-non-lwt-bgcolor);
   --toolbar-bgimage: var(--toolbar-non-lwt-bgimage);
   --toolbar-color: var(--toolbar-non-lwt-textcolor);
+}
+
+:root:-moz-locale-dir(rtl) {
+  direction: rtl;
 }
 
 :root:-moz-lwtheme {
@@ -34,6 +52,26 @@
   background-color: var(--lwt-accent-color-inactive, var(--lwt-accent-color));
 }
 
+:root:not([chromehidden~="toolbar"]) {
+  min-width: 450px;
+}
+
+:root[customizing] {
+  min-width: -moz-fit-content;
+}
+
+/* Prevent shrinking the page content to 0 height and width */
+.browserStack > browser {
+  min-height: 25px;
+  min-width: 25px;
+}
+
+body {
+  display: -moz-box;
+  -moz-box-orient: vertical;
+  -moz-box-flex: 1;
+}
+
 /* Set additional backgrounds alignment relative to toolbox */
 
 #navigator-toolbox:-moz-lwtheme {
@@ -42,27 +80,9 @@
   background-repeat: var(--lwt-background-tiling);
 }
 
-:root:not([chromehidden~="toolbar"]) {
-%ifdef XP_MACOSX
-  min-width: 335px;
-%else
-  min-width: 300px;
-%endif
-}
-
-:root[customize-entered] {
-  min-width: -moz-fit-content;
-}
-
 .search-one-offs[compact=true] .search-setting-button,
 .search-one-offs:not([compact=true]) .search-setting-button-compact {
   display: none;
-}
-
-/* Prevent shrinking the page content to 0 height and width */
-.browserStack > browser {
-  min-height: 25px;
-  min-width: 25px;
 }
 
 %ifdef MENUBAR_CAN_AUTOHIDE
@@ -117,7 +137,6 @@ panelview[mainview] > .panel-header {
 
 .panel-viewcontainer.offscreen {
   display: block;
-  position: absolute;
 }
 
 .panel-viewstack {
@@ -136,17 +155,22 @@ panelview[mainview] > .panel-header {
   }
 }
 
+@supports not -moz-bool-pref("browser.tabs.tabmanager.enabled") {
+  #tabbrowser-tabs:not([overflow="true"]):not([hashiddentabs]) ~ #alltabs-button {
+    display: none;
+  }
+  #tabbrowser-tabs:not([overflow="true"])[using-closing-tabs-spacer] ~ #alltabs-button {
+    /* temporary space to keep a tab's close button under the cursor */
+    display: -moz-box;
+    visibility: hidden;
+  }
+}
 
-#tabbrowser-tabs:not([overflow="true"]):not([hashiddentabs]) ~ #alltabs-button,
 #tabbrowser-tabs[hasadjacentnewtabbutton]:not([overflow="true"]) ~ #new-tab-button,
 #tabbrowser-tabs[overflow="true"] > .tabbrowser-arrowscrollbox > #tabs-newtab-button,
 #tabbrowser-tabs:not([hasadjacentnewtabbutton]) > .tabbrowser-arrowscrollbox > #tabs-newtab-button,
 #TabsToolbar[customizing="true"] #tabs-newtab-button {
-  visibility: collapse;
-}
-
-#tabbrowser-tabs:not([overflow="true"])[using-closing-tabs-spacer] ~ #alltabs-button {
-  visibility: hidden; /* temporary space to keep a tab's close button under the cursor */
+  display: none;
 }
 
 .tabbrowser-tab:not([pinned]) {
@@ -211,8 +235,7 @@ panelview[mainview] > .panel-header {
 }
 
 .tabbrowser-tab[tab-grouping],
-.tabbrowser-tab[tabdrop-samewindow],
-#tabbrowser-tabs[movingtab] > .tabbrowser-tab[fadein]:not([selected]):not([multiselected]) {
+.tabbrowser-tab[tabdrop-samewindow] {
   transition: transform 200ms var(--animation-easing-function);
 }
 
@@ -238,8 +261,15 @@ panelview[mainview] > .panel-header {
   pointer-events: auto;
 }
 
+/* The address bar needs to be able to render outside of the toolbar, but as
+ * long as it's within the toolbar's bounds we can clip the toolbar so that the
+ * rendering pipeline doesn't reserve an enormous texture for it. */
+#nav-bar:not([urlbar-exceeds-toolbar-bounds]),
+/* When customizing, overflowable toolbars move automatically moved items back
+ * from the overflow menu, but we still don't want to render them outside of
+ * the customization target. */
 toolbar[overflowable][customizing] > .customization-target {
-  overflow: hidden;
+  overflow: -moz-hidden-unscrollable;
 }
 
 toolbar:not([overflowing]) > .overflow-button,
@@ -251,7 +281,7 @@ toolbar[customizing] #whats-new-menu-button {
   display: none;
 }
 
-window:not([chromehidden~="toolbar"]) #nav-bar[nonemptyoverflow] > .overflow-button,
+:root:not([chromehidden~="toolbar"]) #nav-bar[nonemptyoverflow] > .overflow-button,
 #nav-bar[customizing] > .overflow-button {
   display: -moz-box;
 }
@@ -363,42 +393,6 @@ toolbarpaletteitem {
 
 #navigator-toolbox[fullscreenShouldAnimate] {
   transition: 0.8s margin-top ease-out;
-}
-
-/* Rule for hiding urlbar's contextual tip and its children */
-
-#urlbar-contextual-tip.hidden,
-#urlbar-contextual-tip-button.hidden,
-#urlbar-contextual-tip-link.hidden {
-  display: none;
-}
-
-/* Rules for the urlbar's contextual tip's icon. */
-
-#urlbar-contextual-tip-icon {
-  background-image: var(--webextension-contextual-tip-icon);
-}
-
-:root[lwt-popup-brighttext] #urlbar-contextual-tip-icon {
-  background-image: var(--webextension-contextual-tip-icon-light);
-}
-
-:root[lwt-popup-darktext] #urlbar-contextual-tip-icon {
-  background-image: var(--webextension-contextual-tip-icon-dark);
-}
-
-@media (min-resolution: 1.1dppx) {
-  #urlbar-contextual-tip-icon {
-    background-image: var(--webextension-contextual-tip-icon-2x);
-  }
-
-  :root[lwt-popup-brighttext] #urlbar-contextual-tip-icon {
-    background-image: var(--webextension-contextual-tip-icon-2x-light);
-  }
-
-  :root[lwt-popup-darktext] #urlbar-contextual-tip-icon {
-    background-image: var(--webextension-contextual-tip-icon-2x-dark);
-  }
 }
 
 /* Rules to help integrate WebExtension buttons */
@@ -556,13 +550,6 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 
 /* ::::: location bar & search bar ::::: */
 
-/* url bar min-width is defined further down, together with the maximum size
- * of the identity icon block, for different window sizes.
- */
-#search-container {
-  min-width: 25ch;
-}
-
 #urlbar,
 #searchbar {
   /* Setting a width and min-width to let the location & search bars maintain
@@ -571,21 +558,24 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   min-width: 1px;
 }
 
-/* Display URLs left-to-right but right aligned in RTL mode. */
+/* Align URLs to the right in RTL mode. */
 #urlbar-input:-moz-locale-dir(rtl) {
-  direction: ltr !important;
   text-align: right !important;
 }
 
-/* Make sure that the location bar's alignment in RTL mode changes according
+/* Make sure that the location bar's alignment changes according
    to the input box direction if the user switches the text direction using
    cmd_switchTextDirection (which applies a dir attribute to the <input>). */
 #urlbar-input[dir=ltr]:-moz-locale-dir(rtl) {
   text-align: left !important;
 }
 
+#urlbar-input[dir=rtl]:-moz-locale-dir(ltr) {
+  text-align: right !important;
+}
+
 /*
- * Display visual cue that browser is under remote control by Marionette.
+ * Display visual cue that browser is under remote control.
  * This is to help users visually distinguish a user agent session that
  * is under remote control from those used for normal browsing sessions.
  *
@@ -618,23 +608,29 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 
 /* Visible if the urlbar is not focused and it overflows at the start.
    Uses the required-valid trick to check if it contains a value */
-#urlbar[textoverflow="start"][hasrtldomain]:not([focused]) > #urlbar-input-container > .urlbar-input-box > #urlbar-scheme:valid {
+#urlbar[textoverflow="left"][hasrtldomain]:not([focused]) > #urlbar-input-container > .urlbar-input-box > #urlbar-scheme:valid {
   visibility: visible;
 }
 
 /* Fade out URL on overflow
    This mask may be overriden when a Contextual Feature Recommendation is shown,
    see browser/themes/shared/urlbar-searchbar.inc.css for details */
-#urlbar[textoverflow="end"]:not([focused]) > #urlbar-input-container > .urlbar-input-box > #urlbar-input {
+#urlbar[textoverflow="right"]:not([focused]) > #urlbar-input-container > .urlbar-input-box > #urlbar-input {
   mask-image: linear-gradient(to left, transparent, black 3ch);
 }
 
-#urlbar[textoverflow="start"][hasrtldomain]:not([focused]) > #urlbar-input-container > .urlbar-input-box > #urlbar-input {
+#urlbar[textoverflow="left"][rtltext]:not([focused]) > #urlbar-input-container > .urlbar-input-box > #urlbar-input {
+  mask-image: linear-gradient(to right, transparent, black 3ch);
+}
+
+#urlbar[textoverflow="left"][hasrtldomain]:not([focused]) > #urlbar-input-container > .urlbar-input-box > #urlbar-input {
   mask-image: linear-gradient(to right, transparent var(--urlbar-scheme-size), black calc(var(--urlbar-scheme-size) + 3ch));
 }
 
 #urlbar-input {
   mask-repeat: no-repeat;
+  unicode-bidi: plaintext;
+  text-align: match-parent;
 }
 
 /* Apply crisp rendering for favicons at exactly 2dppx resolution */
@@ -672,7 +668,7 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 }
 
 #PopupAutoComplete[resultstyles~="generatedPassword"] {
-  min-width: 21em;
+  min-width: 22em;
 }
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"] {
@@ -696,6 +692,7 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 
 #urlbar-input-container[pageproxystate=invalid] > #page-action-buttons > .urlbar-page-action,
 #identity-box.chromeUI ~ #page-action-buttons > .urlbar-page-action:not(#star-button-box),
+#urlbar[usertyping] > #urlbar-input-container > #page-action-buttons > #urlbar-zoom-button,
 #urlbar[usertyping] > #urlbar-input-container > .urlbar-history-dropmarker,
 #urlbar:not([usertyping]) > #urlbar-input-container > #urlbar-go-button,
 #urlbar:not([focused]) > #urlbar-input-container > #urlbar-go-button {
@@ -707,54 +704,72 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   -moz-user-focus: normal;
 }
 
-/* We leave 34ch plus whatever space the download button will need when it
+/* We leave 350px plus whatever space the download button will need when it
  * appears. Normally this should be 16px for the icon, plus 2 * 2px padding
  * plus the toolbarbutton-inner-padding. We're adding 4px to ensure things
  * like rounding on hidpi don't accidentally result in the button going
  * into overflow.
  */
-#urlbar-container {
-  min-width: calc(34ch + 24px + 2 * var(--toolbarbutton-inner-padding));
+ #urlbar-container {
+  min-width: calc(350px + 24px + 2 * var(--toolbarbutton-inner-padding));
 }
 
 #nav-bar[downloadsbuttonshown] #urlbar-container {
-  min-width: 34ch;
+  min-width: 350px;
+}
+
+/* Customize mode is difficult to use at moderate window width if the Urlbar
+   remains 350px wide. */
+:root[customizing] #urlbar-container {
+  min-width: 280px;
 }
 
 #identity-icon-labels {
   max-width: 10em;
 }
-@media (max-width: 600px) {
+
+@media (max-width: 770px) {
   #urlbar-container {
-    min-width: calc(29ch + 24px + 2 * var(--toolbarbutton-inner-padding));
+    min-width: calc(280px + 24px + 2 * var(--toolbarbutton-inner-padding));
   }
   #nav-bar[downloadsbuttonshown] #urlbar-container {
-    min-width: 29ch;
+    min-width: 280px;
+  }
+  :root[customizing] #urlbar-container {
+    min-width: 245px;
   }
   #identity-icon-labels {
     max-width: 50px;
   }
+  /* Contenxtual identity labels are user-customizable and can be very long,
+     so we only show the colored icon when the window gets small. */
+  #userContext-label {
+    display: none;
+  }
 }
-@media (max-width: 500px) {
+/* 680px is just below half of popular 1366px wide screens, so when putting two
+   browser windows next to each other on such a screen, they'll be above this
+   threshold. */
+@media (max-width: 680px) {
+  /* Page action buttons are duplicated in the page action menu so we can
+     safely hide them in small windows. */
+  #pageActionSeparator,
+  #pageActionButton ~ .urlbar-page-action {
+    display: none;
+  }
+}
+@media (max-width: 550px) {
   #urlbar-container {
-    min-width: calc(22ch + 24px + 2 * var(--toolbarbutton-inner-padding));
+    min-width: calc(225px + 24px + 2 * var(--toolbarbutton-inner-padding));
   }
   #nav-bar[downloadsbuttonshown] #urlbar-container {
-    min-width: 22ch;
+    min-width: 225px;
   }
   #identity-icon-labels {
     max-width: 40px;
   }
-}
-@media (max-width: 400px) {
-  #urlbar-container {
-    min-width: calc(10ch + 24px + 2 * var(--toolbarbutton-inner-padding));
-  }
-  #nav-bar[downloadsbuttonshown] #urlbar-container {
-    min-width: 10ch;
-  }
-  #identity-icon-labels {
-    max-width: 30px;
+  #urlbar-zoom-button {
+    display: none;
   }
 }
 
@@ -766,7 +781,7 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
   margin-inline-end: 0.25em !important;
 }
 
-/* Flexible spacer sizing (matching url bar) */
+/* Flexible spacer sizing (gets overridden in the navbar) */
 toolbarpaletteitem[place=toolbar][id^=wrapper-customizableui-special-spring],
 toolbarspring {
   -moz-box-flex: 1;
@@ -777,6 +792,14 @@ toolbarspring {
 #nav-bar toolbarpaletteitem[id^=wrapper-customizableui-special-spring],
 #nav-bar toolbarspring {
   -moz-box-flex: 80;
+  /* We shrink the flexible spacers, but not to nothing so they can be
+   * manipulated in customize mode; the next rule shrinks them further
+   * outside customize mode. */
+  min-width: 10px;
+}
+
+#nav-bar:not([customizing]) toolbarspring {
+  min-width: 1px;
 }
 
 #widget-overflow-list > toolbarspring {
@@ -811,8 +834,7 @@ menupopup[emptyplacesresult="true"] > .hide-if-empty-places-result {
 }
 
 /* Hide extension toolbars that neglected to set the proper class */
-window[chromehidden~="location"][chromehidden~="toolbar"] toolbar:not(.chromeclass-menubar),
-window[chromehidden~="toolbar"] toolbar:not(#nav-bar):not(#TabsToolbar):not(#print-preview-toolbar):not(.chromeclass-menubar) {
+:root[chromehidden~="location"][chromehidden~="toolbar"] toolbar:not(.chromeclass-menubar) {
   display: none;
 }
 
@@ -915,7 +937,7 @@ window[chromehidden~="toolbar"] toolbar:not(#nav-bar):not(#TabsToolbar):not(#pri
   /* should occupy space but not be visible */
   opacity: 0;
   pointer-events: none;
-  -moz-stack-sizing: ignore;
+  position: absolute;
 }
 
 browser[tabmodalPromptShowing] {
@@ -952,7 +974,7 @@ browser[tabmodalPromptShowing] {
 }
 
 #statuspanel[type=overLink] {
-  transition: opacity 120ms ease-out;
+  transition: opacity 120ms ease-out, visibility 120ms;
 }
 
 #statuspanel[type=overLink] > #statuspanel-inner {
@@ -962,10 +984,11 @@ browser[tabmodalPromptShowing] {
 #statuspanel[inactive] {
   transition: none;
   opacity: 0;
+  visibility: hidden;
 }
 
 #statuspanel[inactive][previoustype=overLink] {
-  transition: opacity 200ms ease-out;
+  transition: opacity 200ms ease-out, visibility 200ms;
 }
 
 #statuspanel-inner {
@@ -1081,7 +1104,7 @@ toolbarpaletteitem[place="palette"] > #downloads-button[indicator] > .toolbarbut
 
 /* Apply crisp rendering for favicons at exactly 2dppx resolution */
 @media (resolution: 2dppx) {
-  #PanelUI-remotetabs-tabslist > toolbarbutton > .toolbarbutton-icon,
+  .PanelUI-remotetabs-clientcontainer > toolbarbutton > .toolbarbutton-icon,
   #PanelUI-recentlyClosedWindows > toolbarbutton > .toolbarbutton-icon,
   #PanelUI-recentlyClosedTabs > toolbarbutton > .toolbarbutton-icon,
   #PanelUI-historyItems > toolbarbutton > .toolbarbutton-icon {

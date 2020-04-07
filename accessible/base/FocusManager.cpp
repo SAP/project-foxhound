@@ -172,21 +172,15 @@ void FocusManager::ActiveItemChanged(Accessible* aItem, bool aCheckIfActive) {
   }
   mActiveItem = aItem;
 
-  // If mActiveItem is null we may need to shift a11y focus back to a tab
+  // If mActiveItem is null we may need to shift a11y focus back to a remote
   // document. For example, when combobox popup is closed, then
   // the focus should be moved back to the combobox.
   if (!mActiveItem && XRE_IsParentProcess()) {
-    nsFocusManager* domfm = nsFocusManager::GetFocusManager();
-    if (domfm) {
-      nsIContent* focusedElm = domfm->GetFocusedElement();
-      if (EventStateManager::IsRemoteTarget(focusedElm)) {
-        dom::BrowserParent* tab = dom::BrowserParent::GetFrom(focusedElm);
-        if (tab) {
-          a11y::DocAccessibleParent* dap = tab->GetTopLevelDocAccessible();
-          if (dap) {
-            Unused << dap->SendRestoreFocus();
-          }
-        }
+    dom::BrowserParent* browser = dom::BrowserParent::GetFocused();
+    if (browser) {
+      a11y::DocAccessibleParent* dap = browser->GetTopLevelDocAccessible();
+      if (dap) {
+        Unused << dap->SendRestoreFocus();
       }
     }
   }
@@ -220,6 +214,7 @@ void FocusManager::DispatchFocusEvent(DocAccessible* aDocument,
         new AccEvent(nsIAccessibleEvent::EVENT_FOCUS, aTarget, eAutoDetect,
                      AccEvent::eCoalesceOfSameType);
     aDocument->FireDelayedEvent(event);
+    mLastFocus = aTarget;
 
 #ifdef A11Y_LOG
     if (logging::IsEnabled(logging::eFocus)) logging::FocusDispatched(aTarget);
@@ -240,6 +235,19 @@ void FocusManager::ProcessDOMFocus(nsINode* aTarget) {
   Accessible* target =
       document->GetAccessibleEvenIfNotInMapOrContainer(aTarget);
   if (target) {
+    if (target->IsOuterDoc()) {
+      // An OuterDoc shouldn't get accessibility focus itself. Focus should
+      // always go to something inside it. However, OOP iframes will get DOM
+      // focus because their content isn't in this process. We suppress the
+      // focus in this case. The OOP browser will fire focus for the correct
+      // Accessible inside the embedded document. If we don't suppress the
+      // OuterDoc focus, the two focus events will race and the OuterDoc focus
+      // may override the correct embedded focus for accessibility clients. Even
+      // if they fired in the correct order, clients may report extraneous focus
+      // information to the user before reporting the correct focus.
+      return;
+    }
+
     // Check if still focused. Otherwise we can end up with storing the active
     // item for control that isn't focused anymore.
     nsINode* focusedNode = FocusedDOMNode();
@@ -346,7 +354,6 @@ void FocusManager::ProcessFocusEvent(AccEvent* aEvent) {
   RefPtr<AccEvent> focusEvent = new AccEvent(nsIAccessibleEvent::EVENT_FOCUS,
                                              target, aEvent->FromUserInput());
   nsEventShell::FireEvent(focusEvent);
-  mLastFocus = target;
 
   if (NS_WARN_IF(target->IsDefunct())) {
     // target died during nsEventShell::FireEvent.

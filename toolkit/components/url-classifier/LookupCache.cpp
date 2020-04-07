@@ -5,6 +5,7 @@
 
 #include "LookupCache.h"
 #include "HashStore.h"
+#include "nsIFileStreams.h"
 #include "nsISeekableStream.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Telemetry.h"
@@ -320,7 +321,7 @@ void LookupCache::InvalidateExpiredCacheEntries() {
   int64_t nowSec = PR_Now() / PR_USEC_PER_SEC;
 
   for (auto iter = mFullHashCache.Iter(); !iter.Done(); iter.Next()) {
-    CachedFullHashResponse* response = iter.Data();
+    CachedFullHashResponse* response = iter.UserData();
     if (response->negativeCacheExpirySec < nowSec) {
       iter.Remove();
     }
@@ -371,7 +372,7 @@ void LookupCache::GetCacheInfo(nsIUrlClassifierCacheInfo** aCache) const {
     CStringToHexString(prefix, entry->prefix);
 
     // Set expiry of the cache entry.
-    CachedFullHashResponse* response = iter.Data();
+    CachedFullHashResponse* response = iter.UserData();
     entry->expirySec = response->negativeCacheExpirySec;
 
     // Set positive cache.
@@ -590,7 +591,9 @@ nsresult LookupCache::GetLookupFragments(const nsACString& aSpec,
     paths.AppendElement(path);
   }
   // Check an empty path (for whole-domain blacklist entries)
-  paths.AppendElement(EmptyCString());
+  if (!paths.Contains(EmptyCString())) {
+    paths.AppendElement(EmptyCString());
+  }
 
   for (uint32_t hostIndex = 0; hostIndex < hosts.Length(); hostIndex++) {
     for (uint32_t pathIndex = 0; pathIndex < paths.Length(); pathIndex++) {
@@ -657,7 +660,7 @@ void LookupCache::DumpCache() const {
   }
 
   for (auto iter = mFullHashCache.ConstIter(); !iter.Done(); iter.Next()) {
-    CachedFullHashResponse* response = iter.Data();
+    CachedFullHashResponse* response = iter.UserData();
 
     nsAutoCString prefix;
     CStringToHexString(

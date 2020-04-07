@@ -116,64 +116,54 @@ nsWindowMemoryReporter* nsWindowMemoryReporter::Get() {
   return sWindowReporter;
 }
 
-static already_AddRefed<nsIURI> GetWindowURI(nsGlobalWindowInner* aWindow) {
-  NS_ENSURE_TRUE(aWindow, nullptr);
+static nsCString GetWindowURISpec(nsGlobalWindowInner* aWindow) {
+  NS_ENSURE_TRUE(aWindow, NS_LITERAL_CSTRING(""));
 
   nsCOMPtr<Document> doc = aWindow->GetExtantDoc();
-  nsCOMPtr<nsIURI> uri;
-
   if (doc) {
+    nsCOMPtr<nsIURI> uri;
     uri = doc->GetDocumentURI();
+    return uri->GetSpecOrDefault();
   }
+  nsCOMPtr<nsIScriptObjectPrincipal> scriptObjPrincipal =
+      do_QueryObject(aWindow);
+  NS_ENSURE_TRUE(scriptObjPrincipal, NS_LITERAL_CSTRING(""));
 
-  if (!uri) {
-    nsCOMPtr<nsIScriptObjectPrincipal> scriptObjPrincipal =
-        do_QueryObject(aWindow);
-    NS_ENSURE_TRUE(scriptObjPrincipal, nullptr);
-
-    // GetPrincipal() will print a warning if the window does not have an outer
-    // window, so check here for an outer window first.  This code is
-    // functionally correct if we leave out the GetOuterWindow() check, but we
-    // end up printing a lot of warnings during debug mochitests.
-    if (aWindow->GetOuterWindow()) {
-      nsIPrincipal* principal = scriptObjPrincipal->GetPrincipal();
-      if (principal) {
-        principal->GetURI(getter_AddRefs(uri));
-      }
-    }
+  // GetPrincipal() will print a warning if the window does not have an outer
+  // window, so check here for an outer window first.  This code is
+  // functionally correct if we leave out the GetOuterWindow() check, but we
+  // end up printing a lot of warnings during debug mochitests.
+  if (!aWindow->GetOuterWindow()) {
+    return NS_LITERAL_CSTRING("");
   }
-
-  return uri.forget();
-}
-
-// Forward to the inner window if we need to when getting the window's URI.
-static already_AddRefed<nsIURI> GetWindowURI(nsGlobalWindowOuter* aWindow) {
-  NS_ENSURE_TRUE(aWindow, nullptr);
-  return GetWindowURI(aWindow->GetCurrentInnerWindowInternal());
+  nsIPrincipal* principal = scriptObjPrincipal->GetPrincipal();
+  if (!principal) {
+    return NS_LITERAL_CSTRING("");
+  }
+  nsCString spec;
+  principal->GetAsciiSpec(spec);
+  return spec;
 }
 
 static void AppendWindowURI(nsGlobalWindowInner* aWindow, nsACString& aStr,
                             bool aAnonymize) {
-  nsCOMPtr<nsIURI> uri = GetWindowURI(aWindow);
+  nsCString spec = GetWindowURISpec(aWindow);
 
-  if (uri) {
-    if (aAnonymize && !aWindow->IsChromeWindow()) {
-      aStr.AppendPrintf("<anonymized-%" PRIu64 ">", aWindow->WindowID());
-    } else {
-      nsCString spec = uri->GetSpecOrDefault();
-
-      // A hack: replace forward slashes with '\\' so they aren't
-      // treated as path separators.  Users of the reporters
-      // (such as about:memory) have to undo this change.
-      spec.ReplaceChar('/', '\\');
-
-      aStr += spec;
-    }
-  } else {
+  if (spec.IsEmpty()) {
     // If we're unable to find a URI, we're dealing with a chrome window with
     // no document in it (or somesuch), so we call this a "system window".
     aStr += NS_LITERAL_CSTRING("[system]");
+    return;
   }
+  if (aAnonymize && !aWindow->IsChromeWindow()) {
+    aStr.AppendPrintf("<anonymized-%" PRIu64 ">", aWindow->WindowID());
+    return;
+  }
+  // A hack: replace forward slashes with '\\' so they aren't
+  // treated as path separators.  Users of the reporters
+  // (such as about:memory) have to undo this change.
+  spec.ReplaceChar('/', '\\');
+  aStr += spec;
 }
 
 MOZ_DEFINE_MALLOC_SIZE_OF(WindowsMallocSizeOf)
@@ -227,18 +217,11 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   // Avoid calling aWindow->GetInProcessTop() if there's no outer window.  It
   // will work just fine, but will spew a lot of warnings.
   nsGlobalWindowOuter* top = nullptr;
-  nsCOMPtr<nsIURI> location;
   if (aWindow->GetOuterWindow()) {
     // Our window should have a null top iff it has a null docshell.
     MOZ_ASSERT(!!aWindow->GetInProcessTopInternal() ==
                !!aWindow->GetDocShell());
     top = aWindow->GetInProcessTopInternal();
-    if (top) {
-      location = GetWindowURI(top);
-    }
-  }
-  if (!location) {
-    location = GetWindowURI(aWindow);
   }
 
   windowPath += NS_LITERAL_CSTRING("window-objects/");
@@ -323,6 +306,9 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   REPORT_SIZE("/dom/media-query-lists", mDOMMediaQueryLists,
               "Memory used by MediaQueryList objects for the window's "
               "document.");
+
+  REPORT_SIZE("/dom/resize-observers", mDOMResizeObserverControllerSize,
+              "Memory used for resize observers.");
 
   REPORT_SIZE("/dom/other", mDOMOtherSize,
               "Memory used by a window's DOM that isn't measured by the "
@@ -551,7 +537,7 @@ nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
     "ghost-windows", KIND_OTHER, UNITS_COUNT, ghostWindows.Count(),
 "The number of ghost windows present (the number of nodes underneath "
 "explicit/window-objects/top(none)/ghost, modulo race conditions).  A ghost "
-"window is not shown in any tab, is not in a tab group with any "
+"window is not shown in any tab, is not in a browsing context group with any "
 "non-detached windows, and has met these criteria for at least "
 "memory.ghost_window_timeout_seconds, or has survived a round of "
 "about:memory's minimize memory usage button.\n\n"
@@ -813,19 +799,23 @@ void nsWindowMemoryReporter::CheckForGhostWindows(
   mLastCheckForGhostWindows = TimeStamp::NowLoRes();
   KillCheckTimer();
 
-  nsTHashtable<nsPtrHashKey<TabGroup>> nonDetachedTabGroups;
+  nsTHashtable<nsPtrHashKey<BrowsingContextGroup>>
+      nonDetachedBrowsingContextGroups;
 
-  // Populate nonDetachedTabGroups.
+  // Populate nonDetachedBrowsingContextGroups.
   for (auto iter = windowsById->Iter(); !iter.Done(); iter.Next()) {
     // Null outer window implies null top, but calling GetInProcessTop() when
     // there's no outer window causes us to spew debug warnings.
     nsGlobalWindowInner* window = iter.UserData();
-    if (!window->GetOuterWindow() || !window->GetInProcessTopInternal()) {
-      // This window is detached, so we don't care about its tab group.
+    if (!window->GetOuterWindow() || !window->GetInProcessTopInternal() ||
+        !window->GetBrowsingContextGroup()) {
+      // This window is detached, so we don't care about its browsing
+      // context group.
       continue;
     }
 
-    nonDetachedTabGroups.PutEntry(window->TabGroup());
+    nonDetachedBrowsingContextGroups.PutEntry(
+        window->GetBrowsingContextGroup());
   }
 
   // Update mDetachedWindows and write the ghost window IDs into aOutGhostIDs,
@@ -860,13 +850,15 @@ void nsWindowMemoryReporter::CheckForGhostWindows(
     }
 
     TimeStamp& timeStamp = iter.Data();
-
-    if (nonDetachedTabGroups.GetEntry(window->TabGroup())) {
-      // This window is in the same tab group as a non-detached
+    BrowsingContextGroup* browsingContextGroup =
+        window->GetBrowsingContextGroup();
+    if (browsingContextGroup &&
+        nonDetachedBrowsingContextGroups.GetEntry(browsingContextGroup)) {
+      // This window is in the same browsing context group as a non-detached
       // window, so reset its clock.
       timeStamp = TimeStamp();
     } else {
-      // This window is not in the same tab group as a non-detached
+      // This window is not in the same browsing context group as a non-detached
       // window, so it meets ghost criterion (2).
       if (timeStamp.IsNull()) {
         // This may become a ghost window later; start its clock.

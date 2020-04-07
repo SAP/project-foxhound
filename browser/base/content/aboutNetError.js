@@ -6,6 +6,11 @@
 
 const formatter = new Intl.DateTimeFormat("default");
 
+// Values for telemetry bins: see TLS_ERROR_REPORT_UI in Histograms.json
+const TLS_ERROR_REPORT_TELEMETRY_AUTO_CHECKED = 2;
+const TLS_ERROR_REPORT_TELEMETRY_AUTO_UNCHECKED = 3;
+const TLS_ERROR_REPORT_TELEMETRY_UI_SHOWN = 0;
+
 // The following parameters are parsed from the error URL:
 //   e - the error code
 //   s - custom CSS class to allow alternate styling/favicons
@@ -65,11 +70,8 @@ function showPrefChangeContainer() {
   document.getElementById("netErrorButtonContainer").style.display = "none";
   document
     .getElementById("prefResetButton")
-    .addEventListener("click", function resetPreferences(e) {
-      const event = new CustomEvent("AboutNetErrorResetPreferences", {
-        bubbles: true,
-      });
-      document.dispatchEvent(event);
+    .addEventListener("click", function resetPreferences() {
+      RPMSendAsyncMessage("Browser:ResetSSLPreferences");
     });
   addAutofocus("#prefResetButton", "beforeend");
 }
@@ -223,15 +225,20 @@ function initPage() {
       sd.textContent = getDescription();
     }
   }
-  if (showCaptivePortalUI) {
-    initPageCaptivePortal();
-    return;
-  }
+
   if (gIsCertError) {
-    initPageCertError();
-    updateContainerPosition();
+    if (showCaptivePortalUI) {
+      initPageCaptivePortal();
+    } else {
+      initPageCertError();
+      updateContainerPosition();
+    }
+
+    initCertErrorPageActions();
+    setTechnicalDetailsOnCertError();
     return;
   }
+
   addAutofocus("#netErrorButtonContainer > .try-again");
 
   document.body.classList.add("neterror");
@@ -257,15 +264,11 @@ function initPage() {
     document.getElementById("netErrorButtonContainer").style.display = "none";
   }
 
-  if (err == "cspBlocked") {
-    // Remove the "Try again" button for CSP violations, since it's
-    // almost certainly useless. (Bug 553180)
+  if (err == "cspBlocked" || err == "xfoBlocked") {
+    // Remove the "Try again" button for XFO and CSP violations,
+    // since it's almost certainly useless. (Bug 553180)
     document.getElementById("netErrorButtonContainer").style.display = "none";
   }
-
-  // Dispatch this event only for tests.
-  let event = new CustomEvent("AboutNetErrorLoad", { bubbles: true });
-  document.dispatchEvent(event);
 
   setNetErrorMessageFromCode();
   let learnMoreLink = document.getElementById("learnMoreLink");
@@ -277,20 +280,37 @@ function initPage() {
     setupErrorUI();
 
     const errorCode = document.getNetErrorInfo().errorCodeString;
-    const isTlsVersionError = errorCode == "SSL_ERROR_UNSUPPORTED_VERSION";
+    const isTlsVersionError =
+      errorCode == "SSL_ERROR_UNSUPPORTED_VERSION" ||
+      errorCode == "SSL_ERROR_PROTOCOL_VERSION_ALERT";
     const tls10OverrideEnabled = RPMGetBoolPref(
       "security.tls.version.enable-deprecated"
     );
 
-    if (isTlsVersionError && !tls10OverrideEnabled) {
+    if (
+      isTlsVersionError &&
+      !tls10OverrideEnabled &&
+      !RPMPrefIsLocked("security.tls.version.min")
+    ) {
+      // security.tls.* prefs may be reset by the user when they
+      // encounter an error, so it's important that this has a
+      // different pref branch.
+      const showOverride = RPMGetBoolPref(
+        "security.certerrors.tls.version.show-override",
+        true
+      );
+
       // This is probably a TLS 1.0 server; offer to re-enable.
-      showTls10Container();
+      if (showOverride) {
+        showTls10Container();
+      }
     } else {
       const hasPrefStyleError = [
         "interrupted", // This happens with subresources that are above the max tls
         "SSL_ERROR_NO_CIPHERS_SUPPORTED",
         "SSL_ERROR_NO_CYPHER_OVERLAP",
         "SSL_ERROR_PROTOCOL_VERSION_ALERT",
+        "SSL_ERROR_SSL_DISABLED",
         "SSL_ERROR_UNSUPPORTED_VERSION",
       ].some(substring => {
         return substring == errorCode;
@@ -330,12 +350,7 @@ function setupErrorUI() {
 
   let checkbox = document.getElementById("automaticallyReportInFuture");
   checkbox.addEventListener("change", function({ target: { checked } }) {
-    document.dispatchEvent(
-      new CustomEvent("AboutNetErrorSetAutomatic", {
-        detail: checked,
-        bubbles: true,
-      })
-    );
+    onSetAutomatic(checked);
   });
 
   let errorReportingEnabled = RPMGetBoolPref(
@@ -343,17 +358,32 @@ function setupErrorUI() {
   );
   if (errorReportingEnabled) {
     showCertificateErrorReporting();
+    RPMAddToHistogram(
+      "TLS_ERROR_REPORT_UI",
+      TLS_ERROR_REPORT_TELEMETRY_UI_SHOWN
+    );
     let errorReportingAutomatic = RPMGetBoolPref(
       "security.ssl.errorReporting.automatic"
     );
     checkbox.checked = !!errorReportingAutomatic;
   }
+}
 
-  // Values for telemtery bins: see TLS_ERROR_REPORT_UI in Histograms.json
-  const TLS_ERROR_REPORT_TELEMETRY_UI_SHOWN = 0;
-  RPMSendAsyncMessage("Browser:SSLErrorReportTelemetry", {
-    reportStatus: TLS_ERROR_REPORT_TELEMETRY_UI_SHOWN,
-  });
+function onSetAutomatic(checked) {
+  let bin = TLS_ERROR_REPORT_TELEMETRY_AUTO_UNCHECKED;
+  if (checked) {
+    bin = TLS_ERROR_REPORT_TELEMETRY_AUTO_CHECKED;
+  }
+  RPMAddToHistogram("TLS_ERROR_REPORT_UI", bin);
+
+  RPMSetBoolPref("security.ssl.errorReporting.automatic", checked);
+  // If we're enabling reports, send a report for this failure.
+  if (checked) {
+    RPMSendAsyncMessage("ReportTLSError", {
+      host: document.location.host,
+      port: parseInt(document.location.port) || -1,
+    });
+  }
 }
 
 async function setNetErrorMessageFromCode() {
@@ -460,6 +490,10 @@ function initPageCertError() {
     document.querySelector(".exceptionDialogButtonContainer").hidden = true;
   }
 
+  setCertErrorDetails();
+}
+
+function initCertErrorPageActions() {
   document
     .getElementById("returnButton")
     .addEventListener("click", onReturnButtonClick);
@@ -472,13 +506,21 @@ function initPageCertError() {
   document
     .getElementById("copyToClipboardBottom")
     .addEventListener("click", copyPEMToClipboard);
+  document
+    .getElementById("exceptionDialogButton")
+    .addEventListener("click", addCertException);
+}
 
-  setCertErrorDetails();
-  setTechnicalDetailsOnCertError();
-
-  // Dispatch this event only for tests.
-  let event = new CustomEvent("AboutNetErrorLoad", { bubbles: true });
-  document.dispatchEvent(event);
+function addCertException() {
+  const isPermanent =
+    !RPMIsWindowPrivate() &&
+    RPMGetBoolPref("security.certerrors.permanentOverride");
+  document.addCertException(!isPermanent).then(
+    () => {
+      location.reload();
+    },
+    err => {}
+  );
 }
 
 function onReturnButtonClick(e) {
@@ -531,7 +573,7 @@ async function getFailedCertificatesAsPEMString() {
   return details;
 }
 
-async function setCertErrorDetails(event) {
+function setCertErrorDetails(event) {
   // Check if the connection is being man-in-the-middled. When the parent
   // detects an intercepted connection, the page may be reloaded with a new
   // error code (MOZILLA_PKIX_ERROR_MITM_DETECTED).
@@ -548,8 +590,6 @@ async function setCertErrorDetails(event) {
     RPMSendAsyncMessage("Browser:PrimeMitm");
   }
 
-  let div = document.getElementById("certificateErrorText");
-  div.textContent = await getFailedCertificatesAsPEMString();
   let learnMoreLink = document.getElementById("learnMoreLink");
   let baseURL = RPMGetFormatURLPref("app.support.baseURL");
   learnMoreLink.setAttribute("href", baseURL + "connection-not-secure");
@@ -794,14 +834,14 @@ async function setCertErrorDetails(event) {
     // Also don't bother if it's just the user's clock being off...
     !clockSkew &&
     // Symantec distrust is likely harmless as well.
-    failedCertInfo.erroCodeString !=
+    failedCertInfo.errorCodeString !=
       "MOZILLA_PKIX_ERROR_ADDITIONAL_POLICY_CONSTRAINT_FAILED"
   ) {
     document.body.classList.add("caution");
   }
 }
 
-function setTechnicalDetailsOnCertError() {
+async function setTechnicalDetailsOnCertError() {
   let technicalInfo = document.getElementById("badCertTechnicalInfo");
 
   function setL10NLabel(l10nId, args = {}, attrs = {}, rewrite = true) {
@@ -1004,6 +1044,9 @@ function setTechnicalDetailsOnCertError() {
     // to fluent DOM overlays.
     technicalInfo.addEventListener("click", handleErrorCodeClick);
   }
+
+  let div = document.getElementById("certificateErrorText");
+  div.textContent = await getFailedCertificatesAsPEMString();
 }
 
 function handleErrorCodeClick(event) {
@@ -1042,3 +1085,6 @@ for (let button of document.querySelectorAll(".try-again")) {
 // an onload handler. This is because error pages are loaded as
 // LOAD_BACKGROUND, which means that onload handlers will not be executed.
 initPage();
+// Dispatch this event so tests can detect that we finished loading the error page.
+let event = new CustomEvent("AboutNetErrorLoad", { bubbles: true });
+document.dispatchEvent(event);

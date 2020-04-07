@@ -15,6 +15,9 @@ ChromeUtils.defineModuleGetter(
   "resource://testing-common/ContentTaskUtils.jsm"
 );
 
+const ACCORDION_LABEL_SELECTOR = ".accordion-header-label";
+const ACCORDION_CONTENT_SELECTOR = ".accordion-content";
+
 // Retrieve the array of all the objectValueGrip actors from the
 // inspector extension sidebars state
 // (used in browser_ext_devtools_panels_elements_sidebar.js).
@@ -55,7 +58,7 @@ function waitForObjectInspector(panelDoc, waitForNodeWithType = "object") {
   const selector = `.object-inspector .objectBox-${waitForNodeWithType}`;
   return ContentTaskUtils.waitForCondition(() => {
     return panelDoc.querySelectorAll(selector).length > 0;
-  });
+  }, `Wait for objectInspector's node type "${waitForNodeWithType}" to be loaded`);
 }
 
 // Helper function used inside the sidebar.setExtensionPage test case.
@@ -97,10 +100,9 @@ async function testSetExpressionSidebarPanel(panel, expected) {
   );
   const [objectInspector] = objectInspectors;
 
-  // Wait the objectInspector to have been fully rendered.
   await ContentTaskUtils.waitForCondition(() => {
     return objectInspector.querySelectorAll(".node").length >= nodesLength;
-  });
+  }, "Wait the objectInspector to have been fully rendered");
 
   const oiNodes = objectInspector.querySelectorAll(".node");
 
@@ -126,13 +128,13 @@ async function testSetExpressionSidebarPanel(panel, expected) {
     ok(accordion, "Got an Accordion component as expected");
 
     is(
-      accordion.querySelector("._content").firstChild,
+      accordion.querySelector(ACCORDION_CONTENT_SELECTOR).firstChild,
       objectInspector,
       "The ObjectInspector should be inside the Accordion content"
     );
 
     is(
-      accordion.querySelector("._header").textContent.trim(),
+      accordion.querySelector(ACCORDION_LABEL_SELECTOR).textContent,
       rootTitle,
       "The Accordion has the expected label"
     );

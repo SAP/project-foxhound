@@ -51,9 +51,18 @@ export default class LoginItem extends HTMLElement {
     );
     this._form = this.shadowRoot.querySelector("form");
     this._originInput = this.shadowRoot.querySelector("input[name='origin']");
+    this._originDisplayInput = this.shadowRoot.querySelector(
+      "a[name='origin']"
+    );
     this._usernameInput = this.shadowRoot.querySelector(
       "input[name='username']"
     );
+    // type=password field for display which only ever contains spaces the correct
+    // length of the password.
+    this._passwordDisplayInput = this.shadowRoot.querySelector(
+      "input.password-display"
+    );
+    // type=text field for editing the password with the actual password value.
     this._passwordInput = this.shadowRoot.querySelector(
       "input[name='password']"
     );
@@ -92,7 +101,9 @@ export default class LoginItem extends HTMLElement {
     this._form.addEventListener("submit", this);
     this._originInput.addEventListener("blur", this);
     this._originInput.addEventListener("click", this);
+    this._originInput.addEventListener("mousedown", this, true);
     this._originInput.addEventListener("auxclick", this);
+    this._originDisplayInput.addEventListener("click", this);
     this._revealCheckbox.addEventListener("click", this);
     window.addEventListener("AboutLoginsInitialLoginSelected", this);
     window.addEventListener("AboutLoginsLoadInitialFavicon", this);
@@ -162,6 +173,11 @@ export default class LoginItem extends HTMLElement {
     this._title.textContent = this._login.title;
     this._title.title = this._login.title;
     this._originInput.defaultValue = this._login.origin || "";
+    if (this._login.origin) {
+      // Creates anchor element with origin URL
+      this._originDisplayInput.href = this._login.origin || "";
+      this._originDisplayInput.innerText = this._login.origin || "";
+    }
     this._usernameInput.defaultValue = this._login.username || "";
     if (this._login.password) {
       // We use .value instead of .defaultValue since the latter updates the
@@ -170,7 +186,15 @@ export default class LoginItem extends HTMLElement {
       // the password is non-empty since setting the field to an empty value
       // would mark the field as 'dirty' for form validation and thus trigger
       // the error styling since the password field is 'required'.
+      // This element is only in the document while unmasked or editing.
       this._passwordInput.value = this._login.password;
+
+      // In masked non-edit mode we use a different "display" element to render
+      // the masked password so that one cannot simply remove/change
+      // @type=password to reveal the real password.
+      this._passwordDisplayInput.value = " ".repeat(
+        this._login.password.length
+      );
     }
 
     if (this.dataset.editing) {
@@ -190,6 +214,7 @@ export default class LoginItem extends HTMLElement {
         : "login-item-save-changes-button"
     );
     this._updatePasswordRevealState();
+    this._updateOriginDisplayState();
   }
 
   setBreaches(breachesByLoginGUID) {
@@ -263,7 +288,8 @@ export default class LoginItem extends HTMLElement {
       case "click": {
         let classList = event.currentTarget.classList;
         if (classList.contains("reveal-password-checkbox")) {
-          if (this._revealCheckbox.checked && !this.dataset.isNewLogin) {
+          // We prompt for the master password when entering edit mode already.
+          if (this._revealCheckbox.checked && !this.dataset.editing) {
             let masterPasswordAuth = await new Promise(resolve => {
               window.AboutLoginsUtils.promptForMasterPassword(resolve);
             });
@@ -369,6 +395,13 @@ export default class LoginItem extends HTMLElement {
           return;
         }
         if (classList.contains("edit-button")) {
+          let masterPasswordAuth = await new Promise(resolve => {
+            window.AboutLoginsUtils.promptForMasterPassword(resolve);
+          });
+          if (!masterPasswordAuth) {
+            return;
+          }
+
           this._toggleEditing();
           this.render();
 
@@ -438,6 +471,14 @@ export default class LoginItem extends HTMLElement {
 
           this._recordTelemetryEvent({ object: "new_login", method: "save" });
         }
+        break;
+      }
+      case "mousedown": {
+        // No AutoScroll when middle clicking on origin input.
+        if (event.currentTarget == this._originInput && event.button == 1) {
+          event.preventDefault();
+        }
+        break;
       }
     }
   }
@@ -478,9 +519,10 @@ export default class LoginItem extends HTMLElement {
     switch (type) {
       case "delete": {
         options = {
-          title: "confirm-delete-dialog-title",
+          title: "about-logins-confirm-remove-dialog-title",
           message: "confirm-delete-dialog-message",
-          confirmButtonLabel: "confirm-delete-dialog-confirm-button",
+          confirmButtonLabel:
+            "about-logins-confirm-remove-dialog-confirm-button",
         };
         break;
       }
@@ -520,6 +562,24 @@ export default class LoginItem extends HTMLElement {
     return this.dataset.editing && valuesChanged;
   }
 
+  resetForm() {
+    // If the password input (which uses HTML form validation) wasn't connected,
+    // append it to the form so it gets included in the reset, specifically for
+    // .value and the dirty state for validation.
+    let wasConnected = this._passwordInput.isConnected;
+    if (!wasConnected) {
+      this._revealCheckbox.insertAdjacentElement(
+        "beforebegin",
+        this._passwordInput
+      );
+    }
+
+    this._form.reset();
+    if (!wasConnected) {
+      this._passwordInput.remove();
+    }
+  }
+
   /**
    * @param {login} login The login that should be displayed. The login object is
    *                      a plain JS object representation of nsILoginInfo/nsILoginMetaInfo.
@@ -531,7 +591,7 @@ export default class LoginItem extends HTMLElement {
     this._login = login;
     this._error = null;
 
-    this._form.reset();
+    this.resetForm();
 
     if (login.guid) {
       delete this.dataset.isNewLogin;
@@ -630,13 +690,6 @@ export default class LoginItem extends HTMLElement {
   }
 
   _handleOriginClick() {
-    document.dispatchEvent(
-      new CustomEvent("AboutLoginsOpenSite", {
-        bubbles: true,
-        detail: this._login,
-      })
-    );
-
     this._recordTelemetryEvent({
       object: "existing_login",
       method: "open_site",
@@ -699,18 +752,22 @@ export default class LoginItem extends HTMLElement {
       delete this.dataset.isNewLogin;
     }
 
+    // Reset cursor to the start of the input for long text names.
+    this._usernameInput.scrollLeft = 0;
+
     if (shouldEdit) {
       this._passwordInput.style.removeProperty("width");
+      this._passwordDisplayInput.style.removeProperty("width");
     } else {
       // Need to set a shorter width than -moz-available so the reveal checkbox
       // will still appear next to the password.
-      this._passwordInput.style.width =
+      this._passwordDisplayInput.style.width = this._passwordInput.style.width =
         (this._login.password || "").length + "ch";
     }
 
     this._deleteButton.disabled = this.dataset.isNewLogin;
     this._editButton.disabled = shouldEdit;
-    let inputTabIndex = !shouldEdit ? -1 : 0;
+    let inputTabIndex = shouldEdit ? 0 : -1;
     this._originInput.readOnly = !this.dataset.isNewLogin;
     this._originInput.tabIndex = inputTabIndex;
     this._usernameInput.readOnly = !shouldEdit;
@@ -719,7 +776,6 @@ export default class LoginItem extends HTMLElement {
     this._passwordInput.tabIndex = inputTabIndex;
     if (shouldEdit) {
       this.dataset.editing = true;
-      this._originInput.focus();
     } else {
       delete this.dataset.editing;
       // Only reset the reveal checkbox when exiting 'edit' mode
@@ -736,14 +792,29 @@ export default class LoginItem extends HTMLElement {
       return;
     }
 
-    let titleId = this._revealCheckbox.checked
-      ? "login-item-password-reveal-checkbox-hide"
-      : "login-item-password-reveal-checkbox-show";
-    document.l10n.setAttributes(this._revealCheckbox, titleId);
-
     let { checked } = this._revealCheckbox;
     let inputType = checked ? "text" : "password";
     this._passwordInput.type = inputType;
+
+    // Swap which <input> is in the document depending on whether we need the
+    // real .value (which means that the master password was already entered,
+    // if applicable)
+    if (checked || this.dataset.editing) {
+      this._passwordDisplayInput.replaceWith(this._passwordInput);
+    } else {
+      this._passwordInput.replaceWith(this._passwordDisplayInput);
+    }
+  }
+
+  _updateOriginDisplayState() {
+    // Switches between the origin input and anchor tag depending
+    // if a new login is being created.
+    if (this.dataset.isNewLogin) {
+      this._originDisplayInput.replaceWith(this._originInput);
+      this._originInput.focus();
+    } else {
+      this._originInput.replaceWith(this._originDisplayInput);
+    }
   }
 }
 customElements.define("login-item", LoginItem);

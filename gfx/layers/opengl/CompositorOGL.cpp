@@ -287,6 +287,11 @@ void CompositorOGL::Destroy() {
 void CompositorOGL::CleanupResources() {
   if (!mGLContext) return;
 
+  if (mSurfacePoolHandle) {
+    mSurfacePoolHandle->Pool()->DestroyGLResourcesForContext(mGLContext);
+    mSurfacePoolHandle = nullptr;
+  }
+
   RefPtr<GLContext> ctx = mGLContext->GetSharedContext();
   if (!ctx) {
     ctx = mGLContext;
@@ -589,15 +594,9 @@ void CompositorOGL::PrepareViewport(CompositingRenderTargetOGL* aRenderTarget) {
     // Matrix to transform (0, 0, aWidth, aHeight) to viewport space (-1.0, 1.0,
     // 2, 2) and flip the contents.
     Matrix viewMatrix;
-    if (mGLContext->IsOffscreen() && !gIsGtest) {
-      // In case of rendering via GL Offscreen context, disable Y-Flipping
-      viewMatrix.PreTranslate(-1.0, -1.0);
-      viewMatrix.PreScale(2.0f / float(size.width), 2.0f / float(size.height));
-    } else {
-      viewMatrix.PreTranslate(-1.0, 1.0);
-      viewMatrix.PreScale(2.0f / float(size.width), 2.0f / float(size.height));
-      viewMatrix.PreScale(1.0f, -1.0f);
-    }
+    viewMatrix.PreTranslate(-1.0, 1.0);
+    viewMatrix.PreScale(2.0f / float(size.width), 2.0f / float(size.height));
+    viewMatrix.PreScale(1.0f, -1.0f);
 
     MOZ_ASSERT(mCurrentRenderTarget, "No destination");
     // If we're drawing directly to the window then we want to offset
@@ -758,25 +757,21 @@ void CompositorOGL::ClearRect(const gfx::Rect& aRect) {
 
 already_AddRefed<CompositingRenderTargetOGL>
 CompositorOGL::RenderTargetForNativeLayer(NativeLayer* aNativeLayer,
-                                          IntRegion& aInvalidRegion) {
+                                          const IntRegion& aInvalidRegion) {
   if (aInvalidRegion.IsEmpty()) {
     return nullptr;
   }
 
   aNativeLayer->SetSurfaceIsFlipped(true);
-  aNativeLayer->SetGLContext(mGLContext);
 
   IntRect layerRect = aNativeLayer->GetRect();
   IntRegion invalidRelativeToLayer =
       aInvalidRegion.MovedBy(-layerRect.TopLeft());
-  aNativeLayer->InvalidateRegionThroughoutSwapchain(invalidRelativeToLayer);
-  Maybe<GLuint> fbo = aNativeLayer->NextSurfaceAsFramebuffer(false);
+  Maybe<GLuint> fbo =
+      aNativeLayer->NextSurfaceAsFramebuffer(invalidRelativeToLayer, false);
   if (!fbo) {
     return nullptr;
   }
-
-  invalidRelativeToLayer = aNativeLayer->CurrentSurfaceInvalidRegion();
-  aInvalidRegion = invalidRelativeToLayer.MovedBy(layerRect.TopLeft());
 
   RefPtr<CompositingRenderTargetOGL> rt =
       CompositingRenderTargetOGL::CreateForExternallyOwnedFBO(
@@ -1050,6 +1045,12 @@ Maybe<IntRect> CompositorOGL::BeginFrame(const nsIntRegion& aInvalidRegion,
 #endif  // defined(MOZ_WIDGET_ANDROID)
   mGLContext->fClear(LOCAL_GL_COLOR_BUFFER_BIT | LOCAL_GL_DEPTH_BUFFER_BIT);
 
+  for (auto iter = aInvalidRegion.RectIter(); !iter.Done(); iter.Next()) {
+    const IntRect& r = iter.Get();
+    mCurrentFrameInvalidRegion.OrWith(
+        IntRect(r.X(), FlipY(r.YMost()), r.Width(), r.Height()));
+  }
+
   return Some(rect);
 }
 
@@ -1239,7 +1240,11 @@ ShaderConfigOGL CompositorOGL::GetShaderConfigFor(Effect* aEffect,
     }
     case EffectTypes::NV12:
       config.SetNV12(true);
-      config.SetTextureTarget(LOCAL_GL_TEXTURE_RECTANGLE_ARB);
+      if (gl()->IsExtensionSupported(gl::GLContext::ARB_texture_rectangle)) {
+        config.SetTextureTarget(LOCAL_GL_TEXTURE_RECTANGLE_ARB);
+      } else {
+        config.SetTextureTarget(LOCAL_GL_TEXTURE_2D);
+      }
       break;
     case EffectTypes::COMPONENT_ALPHA: {
       config.SetComponentAlpha(true);
@@ -2038,6 +2043,7 @@ void CompositorOGL::EndFrame() {
 
   InsertFrameDoneSync();
 
+  mGLContext->SetDamage(mCurrentFrameInvalidRegion);
   mGLContext->SwapBuffers();
   mGLContext->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, 0);
 
@@ -2050,6 +2056,8 @@ void CompositorOGL::EndFrame() {
     }
   }
 
+  mCurrentFrameInvalidRegion.SetEmpty();
+
   Compositor::EndFrame();
 }
 
@@ -2057,13 +2065,11 @@ void CompositorOGL::InsertFrameDoneSync() {
 #ifdef XP_MACOSX
   // Only do this on macOS.
   // On other platforms, SwapBuffers automatically applies back-pressure.
-  if (StaticPrefs::gfx_core_animation_enabled_AtStartup()) {
-    if (mThisFrameDoneSync) {
-      mGLContext->fDeleteSync(mThisFrameDoneSync);
-    }
-    mThisFrameDoneSync =
-        mGLContext->fFenceSync(LOCAL_GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+  if (mThisFrameDoneSync) {
+    mGLContext->fDeleteSync(mThisFrameDoneSync);
   }
+  mThisFrameDoneSync =
+      mGLContext->fFenceSync(LOCAL_GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 #endif
 }
 
@@ -2077,6 +2083,15 @@ void CompositorOGL::WaitForGPU() {
   }
   mPreviousFrameDoneSync = mThisFrameDoneSync;
   mThisFrameDoneSync = nullptr;
+}
+
+RefPtr<SurfacePoolHandle> CompositorOGL::GetSurfacePoolHandle() {
+#ifdef XP_MACOSX
+  if (!mSurfacePoolHandle) {
+    mSurfacePoolHandle = SurfacePool::Create(0)->GetHandleForGL(mGLContext);
+  }
+#endif
+  return mSurfacePoolHandle;
 }
 
 bool CompositorOGL::NeedToRecreateFullWindowRenderTarget() const {
@@ -2146,11 +2161,15 @@ void CompositorOGL::Pause() {
   java::GeckoSurfaceTexture::DetachAllFromGLContext((int64_t)mGLContext.get());
   // ReleaseSurface internally calls MakeCurrent
   gl()->ReleaseSurface();
+#elif defined(MOZ_WAYLAND)
+  // ReleaseSurface internally calls MakeCurrent
+  gl()->ReleaseSurface();
 #endif
 }
 
 bool CompositorOGL::Resume() {
-#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_UIKIT)
+#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_UIKIT) || \
+    defined(MOZ_WAYLAND)
   if (!gl() || gl()->IsDestroyed()) return false;
 
   // RenewSurface internally calls MakeCurrent.

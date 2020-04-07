@@ -7156,7 +7156,7 @@ function parseVueScript(code) {
 function parseConsoleScript(text, opts) {
   try {
     return _parse(text, {
-      plugins: ["objectRestSpread", "dynamicImport"],
+      plugins: ["objectRestSpread", "dynamicImport", "nullishCoalescingOperator", "optionalChaining"],
       ...opts,
       allowAwaitOutsideFunction: true
     });
@@ -15571,8 +15571,7 @@ function getUniqueIdentifiers(identifiers) {
   }
 
   return newIdentifiers;
-}
-/* eslint-disable complexity */
+} // eslint-disable-next-line complexity
 
 
 function extractSymbol(path, symbols, state) {
@@ -15782,8 +15781,6 @@ function extractSymbol(path, symbols, state) {
     symbols.identifiers.push(...(0, _helpers.getPatternIdentifiers)(nodeId));
   }
 }
-/* eslint-enable complexity */
-
 
 function extractSymbols(sourceId) {
   const symbols = {

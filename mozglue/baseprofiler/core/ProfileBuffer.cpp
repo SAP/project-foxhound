@@ -42,7 +42,7 @@ ProfileBuffer::~ProfileBuffer() {
 }
 
 /* static */
-BlocksRingBuffer::BlockIndex ProfileBuffer::AddEntry(
+ProfileBufferBlockIndex ProfileBuffer::AddEntry(
     BlocksRingBuffer& aBlocksRingBuffer, const ProfileBufferEntry& aEntry) {
   switch (aEntry.GetKind()) {
 #  define SWITCH_KIND(KIND, TYPE, SIZE)                      \
@@ -56,28 +56,29 @@ BlocksRingBuffer::BlockIndex ProfileBuffer::AddEntry(
 #  undef SWITCH_KIND
     default:
       MOZ_ASSERT(false, "Unhandled baseprofiler::ProfilerBuffer entry KIND");
-      return BlockIndex{};
+      return ProfileBufferBlockIndex{};
   }
 }
 
 // Called from signal, call only reentrant functions
 uint64_t ProfileBuffer::AddEntry(const ProfileBufferEntry& aEntry) {
-  return AddEntry(mEntries, aEntry).ConvertToU64();
+  return AddEntry(mEntries, aEntry).ConvertToProfileBufferIndex();
 }
 
 /* static */
-BlocksRingBuffer::BlockIndex ProfileBuffer::AddThreadIdEntry(
+ProfileBufferBlockIndex ProfileBuffer::AddThreadIdEntry(
     BlocksRingBuffer& aBlocksRingBuffer, int aThreadId) {
   return AddEntry(aBlocksRingBuffer, ProfileBufferEntry::ThreadId(aThreadId));
 }
 
 uint64_t ProfileBuffer::AddThreadIdEntry(int aThreadId) {
-  return AddThreadIdEntry(mEntries, aThreadId).ConvertToU64();
+  return AddThreadIdEntry(mEntries, aThreadId).ConvertToProfileBufferIndex();
 }
 
 void ProfileBuffer::CollectCodeLocation(
     const char* aLabel, const char* aStr, uint32_t aFrameFlags,
-    const Maybe<uint32_t>& aLineNumber, const Maybe<uint32_t>& aColumnNumber,
+    uint64_t aInnerWindowID, const Maybe<uint32_t>& aLineNumber,
+    const Maybe<uint32_t>& aColumnNumber,
     const Maybe<ProfilingCategoryPair>& aCategoryPair) {
   AddEntry(ProfileBufferEntry::Label(aLabel));
   AddEntry(ProfileBufferEntry::FrameFlags(uint64_t(aFrameFlags)));
@@ -97,6 +98,10 @@ void ProfileBuffer::CollectCodeLocation(
 
       AddEntry(ProfileBufferEntry::DynamicStringFragment(chars));
     }
+  }
+
+  if (aInnerWindowID) {
+    AddEntry(ProfileBufferEntry::InnerWindowID(aInnerWindowID));
   }
 
   if (aLineNumber) {
@@ -205,7 +210,8 @@ void ProfileBufferCollector::CollectProfilingStackFrame(
     }
   }
 
-  mBuf.CollectCodeLocation(label, dynamicString, aFrame.flags(), line, column,
+  mBuf.CollectCodeLocation(label, dynamicString, aFrame.flags(),
+                           aFrame.realmID(), line, column,
                            Some(aFrame.categoryPair()));
 }
 

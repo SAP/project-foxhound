@@ -21,6 +21,7 @@
 #include "nsString.h"
 #include "nsArray.h"
 #include "nsCOMPtr.h"
+#include "mozilla/StaticPrefs_extensions.h"
 
 #include "windows.h"
 #include "WinUtils.h"
@@ -65,6 +66,14 @@ nsFxrCommandLineHandler::Handle(nsICommandLine* aCmdLine) {
   nsresult result =
       aCmdLine->HandleFlag(NS_LITERAL_STRING("fxr"), false, &handleFlagRetVal);
   if (result == NS_OK && handleFlagRetVal) {
+    if (XRE_IsParentProcess() && !XRE_IsE10sParentProcess()) {
+      MOZ_CRASH("--fxr not supported without e10s");
+    }
+
+    MOZ_ASSERT(mozilla::StaticPrefs::extensions_webextensions_remote(),
+               "Remote extensions are the only supported configuration on "
+               "desktop platforms");
+
     aCmdLine->SetPreventDefault(true);
 
     nsCOMPtr<nsIWindowWatcher> wwatch =
@@ -75,7 +84,8 @@ nsFxrCommandLineHandler::Handle(nsICommandLine* aCmdLine) {
     result = wwatch->OpenWindow(nullptr,                            // aParent
                                 "chrome://fxr/content/fxrui.html",  // aUrl
                                 "_blank",                           // aName
-                                "chrome,dialog=no,all",             // aFeatures
+                                "chrome,dialog=no,all,private"      // aFeatures
+                                ",alwaysontop",
                                 nullptr,  // aArguments
                                 getter_AddRefs(newWindow));
 

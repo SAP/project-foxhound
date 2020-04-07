@@ -78,6 +78,10 @@ void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
   ma_asr(Imm32(31), dest.low, dest.high);
 }
 
+void MacroAssembler::move32ZeroExtendToPtr(Register src, Register dest) {
+  move32(src, dest);
+}
+
 // ===============================================================
 // Load instructions
 
@@ -1710,6 +1714,11 @@ void MacroAssembler::branchTestBigInt(Condition cond, Register tag,
   branchTestBigIntImpl(cond, tag, label);
 }
 
+void MacroAssembler::branchTestBigInt(Condition cond, const Address& address,
+                                      Label* label) {
+  branchTestBigIntImpl(cond, address, label);
+}
+
 void MacroAssembler::branchTestBigInt(Condition cond, const BaseIndex& address,
                                       Label* label) {
   branchTestBigIntImpl(cond, address, label);
@@ -1914,6 +1923,13 @@ void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Register rhs,
                                  const Address& src, Register dest) {
   // This is never used, but must be present to facilitate linking on arm.
   MOZ_CRASH("No known use cases");
+}
+
+void MacroAssembler::cmp32LoadPtr(Condition cond, const Address& lhs, Imm32 rhs,
+                                  const Address& src, Register dest) {
+  cmp32(lhs, rhs);
+  ScratchRegisterScope scratch(*this);
+  ma_ldr(src, dest, scratch, Offset, cond);
 }
 
 void MacroAssembler::test32LoadPtr(Condition cond, const Address& addr,

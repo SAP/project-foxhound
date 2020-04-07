@@ -27,15 +27,12 @@
 #include "mozilla/SystemGroup.h"
 #include "mozilla/Unused.h"
 #include "nsAppDirectoryServiceDefs.h"
-#include "nsAutoPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsHashKeys.h"
-#include "nsIConsoleService.h"
 #include "nsIFile.h"
 #include "nsIObserverService.h"
-#include "nsISimpleEnumerator.h"
 #include "nsIXULRuntime.h"
 #include "nsNativeCharsetUtils.h"
 #include "nsXPCOMPrivate.h"
@@ -83,10 +80,10 @@ GeckoMediaPluginServiceParent::GeckoMediaPluginServiceParent()
       mScannedPluginOnDisk(false),
       mWaitingForPluginsSyncShutdown(false),
       mInitPromiseMonitor("GeckoMediaPluginServiceParent::mInitPromiseMonitor"),
+      mInitPromise(&mInitPromiseMonitor),
       mLoadPluginsFromDiskComplete(false),
       mMainThread(SystemGroup::AbstractMainThreadFor(TaskCategory::Other)) {
   MOZ_ASSERT(NS_IsMainThread());
-  mInitPromise.SetMonitor(&mInitPromiseMonitor);
 }
 
 GeckoMediaPluginServiceParent::~GeckoMediaPluginServiceParent() {
@@ -431,7 +428,7 @@ void GeckoMediaPluginServiceParent::UnloadPlugins() {
     MutexAutoLock lock(mMutex);
     // Move all plugins references to a local array. This way mMutex won't be
     // locked when calling CloseActive (to avoid inter-locking).
-    Swap(plugins, mPlugins);
+    std::swap(plugins, mPlugins);
 
     for (GMPServiceParent* parent : mServiceParents) {
       Unused << parent->SendBeginShutdown();
@@ -530,7 +527,7 @@ class NotifyObserversTask final : public mozilla::Runnable {
   }
 
  private:
-  ~NotifyObserversTask() {}
+  ~NotifyObserversTask() = default;
   const char* mTopic;
   const nsString mData;
 };
@@ -785,13 +782,12 @@ already_AddRefed<GMPParent> GeckoMediaPluginServiceParent::ClonePlugin(
   MOZ_ASSERT(aOriginal);
 
   RefPtr<GMPParent> gmp = CreateGMPParent(mMainThread);
-  nsresult rv = gmp ? gmp->CloneFrom(aOriginal) : NS_ERROR_NOT_AVAILABLE;
-
-  if (NS_FAILED(rv)) {
+  if (!gmp) {
     NS_WARNING("Can't Create GMPParent");
     return nullptr;
   }
 
+  gmp->CloneFrom(aOriginal);
   return gmp.forget();
 }
 
@@ -920,7 +916,7 @@ void GeckoMediaPluginServiceParent::RemoveOnGMPThread(
 }
 
 // May remove when Bug 1043671 is fixed
-static void Dummy(RefPtr<GMPParent>& aOnDeathsDoor) {
+static void Dummy(RefPtr<GMPParent> aOnDeathsDoor) {
   // exists solely to do nothing and let the Runnable kill the GMPParent
   // when done.
 }
@@ -1049,7 +1045,7 @@ already_AddRefed<GMPStorage> GeckoMediaPluginServiceParent::GetMemoryStorageFor(
   RefPtr<GMPStorage> s;
   if (!mTempGMPStorage.Get(aNodeId, getter_AddRefs(s))) {
     s = CreateGMPMemoryStorage();
-    mTempGMPStorage.Put(aNodeId, s);
+    mTempGMPStorage.Put(aNodeId, RefPtr{s});
   }
   return s.forget();
 }
@@ -1512,7 +1508,7 @@ static nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier() {
 
   MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
   MOZ_RELEASE_ASSERT(barrier);
-  return barrier.forget();
+  return barrier;
 }
 
 NS_IMETHODIMP
@@ -1695,45 +1691,12 @@ mozilla::ipc::IPCResult GMPServiceParent::RecvGetGMPNodeId(
   return IPC_OK();
 }
 
-void GMPServiceParent::CloseTransport(Monitor* aSyncMonitor, bool* aCompleted) {
-  MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
-
-  MonitorAutoLock lock(*aSyncMonitor);
-
-  // This deletes the transport.
-  SetTransport(nullptr);
-
-  *aCompleted = true;
-  lock.NotifyAll();
-}
-
-void GMPServiceParent::ActorDestroy(ActorDestroyReason aWhy) {
-  Monitor monitor("DeleteGMPServiceParent");
-  bool completed = false;
-
-  // Make sure the IPC channel is closed before destroying mToDelete.
-  MonitorAutoLock lock(monitor);
-  RefPtr<Runnable> task = NewNonOwningRunnableMethod<Monitor*, bool*>(
-      "gmp::GMPServiceParent::CloseTransport", this,
-      &GMPServiceParent::CloseTransport, &monitor, &completed);
-  XRE_GetIOMessageLoop()->PostTask(task.forget());
-
-  while (!completed) {
-    lock.Wait();
-  }
-
-  // Dispatch a task to the current thread to ensure we don't delete the
-  // GMPServiceParent until the current calling context is finished with
-  // the object.
-  GMPServiceParent* self = this;
-  NS_DispatchToCurrentThread(
-      NS_NewRunnableFunction("gmp::GMPServiceParent::ActorDestroy", [self]() {
-        // The GMPServiceParent must be destroyed on the main thread.
-        self->mService->mMainThread->Dispatch(
-            NS_NewRunnableFunction("gmp::GMPServiceParent::ActorDestroy",
-                                   [self]() { delete self; }),
-            NS_DISPATCH_NORMAL);
-      }));
+void GMPServiceParent::ActorDealloc() {
+  // The GMPServiceParent must be destroyed on the main thread.
+  mService->mMainThread->Dispatch(
+      NS_NewRunnableFunction("gmp::GMPServiceParent::ActorDealloc",
+                             [this]() { delete this; }),
+      NS_DISPATCH_NORMAL);
 }
 
 class OpenPGMPServiceParent : public mozilla::Runnable {
@@ -1771,11 +1734,12 @@ bool GMPServiceParent::Create(Endpoint<PGMPServiceParent>&& aGMPService) {
   nsresult rv = gmp->GetThread(getter_AddRefs(gmpThread));
   NS_ENSURE_SUCCESS(rv, false);
 
-  nsAutoPtr<GMPServiceParent> serviceParent(new GMPServiceParent(gmp));
+  UniquePtr<GMPServiceParent> serviceParent(new GMPServiceParent(gmp));
   bool ok;
-  rv = gmpThread->Dispatch(
-      new OpenPGMPServiceParent(serviceParent, std::move(aGMPService), &ok),
-      NS_DISPATCH_SYNC);
+  rv =
+      gmpThread->Dispatch(new OpenPGMPServiceParent(
+                              serviceParent.get(), std::move(aGMPService), &ok),
+                          NS_DISPATCH_SYNC);
 
   if (NS_WARN_IF(NS_FAILED(rv) || !ok)) {
     return false;
@@ -1783,7 +1747,7 @@ bool GMPServiceParent::Create(Endpoint<PGMPServiceParent>&& aGMPService) {
 
   // Now that the service parent is set up, it will be destroyed by
   // ActorDestroy.
-  Unused << serviceParent.forget();
+  Unused << serviceParent.release();
 
   return true;
 }

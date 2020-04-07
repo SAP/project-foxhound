@@ -117,7 +117,7 @@ class ChannelMediaResource
 
   // Main thread
   nsresult Open(nsIStreamListener** aStreamListener) override;
-  nsresult Close() override;
+  RefPtr<GenericPromise> Close() override;
   void Suspend(bool aCloseImmediately) override;
   void Resume() override;
   already_AddRefed<nsIPrincipal> GetCurrentPrincipal() override;
@@ -166,7 +166,7 @@ class ChannelMediaResource
                          public nsIInterfaceRequestor,
                          public nsIChannelEventSink,
                          public nsIThreadRetargetableStreamListener {
-    ~Listener() {}
+    ~Listener() = default;
 
    public:
     Listener(ChannelMediaResource* aResource, int64_t aOffset, uint32_t aLoadID)

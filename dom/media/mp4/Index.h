@@ -14,9 +14,6 @@
 #include "nsISupportsImpl.h"
 #include "TimeUnits.h"
 
-template <class T>
-class nsAutoPtr;
-
 namespace mozilla {
 class IndiceWrapper;
 struct Sample;
@@ -113,7 +110,7 @@ class Index {
   mozilla::media::TimeIntervals ConvertByteRangesToTimeRanges(
       const mozilla::MediaByteRangeSet& aByteRanges);
   uint64_t GetEvictionOffset(Microseconds aTime);
-  bool IsFragmented() { return mMoofParser; }
+  bool IsFragmented() { return !!mMoofParser; }
 
   friend class SampleIterator;
 
@@ -125,7 +122,7 @@ class Index {
   ByteStream* mSource;
   FallibleTArray<Sample> mIndex;
   FallibleTArray<MP4DataOffset> mDataOffset;
-  nsAutoPtr<MoofParser> mMoofParser;
+  UniquePtr<MoofParser> mMoofParser;
   nsTArray<SampleIterator*> mIterators;
 
   // ConvertByteRangesToTimeRanges cache

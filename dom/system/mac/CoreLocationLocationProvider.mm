@@ -6,7 +6,7 @@
 
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
-#include "nsGeoPosition.h"
+#include "GeolocationPosition.h"
 #include "nsIConsoleService.h"
 #include "nsServiceManagerUtils.h"
 #include "CoreLocationLocationProvider.h"
@@ -14,7 +14,7 @@
 #include "prtime.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/dom/PositionErrorBinding.h"
+#include "mozilla/dom/GeolocationPositionErrorBinding.h"
 #include "MLSFallback.h"
 
 #include <CoreLocation/CLError.h>
@@ -62,7 +62,7 @@ static const CLLocationAccuracy kDEFAULT_ACCURACY = kCLLocationAccuracyNearestTe
   console->LogStringMessage(NS_ConvertUTF8toUTF16([message UTF8String]).get());
 
   if ([aError code] == kCLErrorDenied) {
-    mProvider->NotifyError(dom::PositionError_Binding::PERMISSION_DENIED);
+    mProvider->NotifyError(dom::GeolocationPositionError_Binding::PERMISSION_DENIED);
     return;
   }
 

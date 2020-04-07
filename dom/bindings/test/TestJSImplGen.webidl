@@ -260,6 +260,7 @@ interface TestJSImplInterface {
 
   sequence<DOMString> receiveStringSequence();
   sequence<ByteString> receiveByteStringSequence();
+  sequence<UTF8String> receiveUTF8StringSequence();
   // Callback interface problem.  See bug 843261.
   //void passStringSequence(sequence<DOMString> arg);
   sequence<any> receiveAnySequence();
@@ -293,6 +294,7 @@ interface TestJSImplInterface {
   void passNullableExternalInterfaceRecord(record<DOMString, TestExternalInterface?> arg);
   void passStringRecord(record<DOMString, DOMString> arg);
   void passByteStringRecord(record<DOMString, ByteString> arg);
+  void passUTF8StringRecord(record<DOMString, UTF8String> arg);
   void passRecordOfRecords(record<DOMString, record<DOMString, long>> arg);
   record<DOMString, long> receiveRecord();
   record<DOMString, long>? receiveNullableRecord();
@@ -347,6 +349,18 @@ interface TestJSImplInterface {
   void passUnionByteString((ByteString or long) arg);
   void passOptionalUnionByteString(optional (ByteString or long) arg);
   void passOptionalUnionByteStringWithDefaultValue(optional (ByteString or long) arg = "abc");
+
+  // UTF8String types
+  void passUTF8String(UTF8String arg);
+  void passNullableUTF8String(UTF8String? arg);
+  void passOptionalUTF8String(optional UTF8String arg);
+  void passOptionalUTF8StringWithDefaultValue(optional UTF8String arg = "abc");
+  void passOptionalNullableUTF8String(optional UTF8String? arg);
+  void passOptionalNullableUTF8StringWithDefaultValue(optional UTF8String? arg = null);
+  void passVariadicUTF8String(UTF8String... arg);
+  void passUnionUTF8String((UTF8String or long) arg);
+  void passOptionalUnionUTF8String(optional (UTF8String or long) arg);
+  void passOptionalUnionUTF8StringWithDefaultValue(optional (UTF8String or long) arg = "abc");
 
   // USVString types
   void passSVS(USVString arg);
@@ -480,6 +494,7 @@ interface TestJSImplInterface {
   void passUnion28(optional (EventInit or sequence<DOMString>) arg = {});
   void passUnionWithCallback((EventHandler or long) arg);
   void passUnionWithByteString((ByteString or long) arg);
+  void passUnionWithUTF8String((UTF8String or long) arg);
   void passUnionWithRecord((record<DOMString, DOMString> or DOMString) arg);
   void passUnionWithRecordAndSequence((record<DOMString, DOMString> or sequence<DOMString>) arg);
   void passUnionWithSequenceAndRecord((sequence<DOMString> or record<DOMString, DOMString>) arg);
@@ -529,6 +544,9 @@ interface TestJSImplInterface {
   void passUnionWithDefaultValue20(optional (double or USVString) arg = "abc");
   void passUnionWithDefaultValue21(optional (double or USVString) arg = 1);
   void passUnionWithDefaultValue22(optional (double or USVString) arg = 1.5);
+  void passUnionWithDefaultValue23(optional (double or UTF8String) arg = "");
+  void passUnionWithDefaultValue24(optional (double or UTF8String) arg = 1);
+  void passUnionWithDefaultValue25(optional (double or UTF8String) arg = 1.5);
 
   void passNullableUnionWithDefaultValue1(optional (double or DOMString)? arg = "");
   void passNullableUnionWithDefaultValue2(optional (double or DOMString)? arg = 1);
@@ -554,6 +572,10 @@ interface TestJSImplInterface {
   void passNullableUnionWithDefaultValue22(optional (double or USVString)? arg = 1);
   void passNullableUnionWithDefaultValue23(optional (double or USVString)? arg = 1.5);
   void passNullableUnionWithDefaultValue24(optional (double or USVString)? arg = null);
+  void passNullableUnionWithDefaultValue25(optional (double or UTF8String)? arg = "");
+  void passNullableUnionWithDefaultValue26(optional (double or UTF8String)? arg = 1);
+  void passNullableUnionWithDefaultValue27(optional (double or UTF8String)? arg = 1.5);
+  void passNullableUnionWithDefaultValue28(optional (double or UTF8String)? arg = null);
 
   void passSequenceOfUnions(sequence<(CanvasPattern or CanvasGradient)> arg);
   void passSequenceOfUnions2(sequence<(object or long)> arg);
@@ -574,18 +596,6 @@ interface TestJSImplInterface {
   attribute (CanvasPattern or CanvasGradient) writableUnion;
   attribute (CanvasPattern? or CanvasGradient) writableUnionContainingNull;
   attribute (CanvasPattern or CanvasGradient)? writableNullableUnion;
-
-  // Date types
-  void passDate(Date arg);
-  void passNullableDate(Date? arg);
-  void passOptionalDate(optional Date arg);
-  void passOptionalNullableDate(optional Date? arg);
-  void passOptionalNullableDateWithDefaultValue(optional Date? arg = null);
-  void passDateSequence(sequence<Date> arg);
-  void passNullableDateSequence(sequence<Date?> arg);
-  void passDateRecord(record<DOMString, Date> arg);
-  Date receiveDate();
-  Date? receiveNullableDate();
 
   // Promise types
   void passPromise(Promise<any> arg);
@@ -637,9 +647,13 @@ interface TestJSImplInterface {
   // EnforceRange/Clamp tests
   void dontEnforceRangeOrClamp(byte arg);
   void doEnforceRange([EnforceRange] byte arg);
+  void doEnforceRangeNullable([EnforceRange] byte? arg);
   void doClamp([Clamp] byte arg);
+  void doClampNullable([Clamp] byte? arg);
   attribute [EnforceRange] byte enforcedByte;
+  attribute [EnforceRange] byte? enforcedByteNullable;
   attribute [Clamp] byte clampedByte;
+  attribute [Clamp] byte? clampedByteNullable;
 
   // Typedefs
   const myLong myLongConstant = 5;
@@ -648,11 +662,11 @@ interface TestJSImplInterface {
   void exerciseTypedefInterfaces3(YetAnotherNameForTestJSImplInterface arg);
 
   // Deprecated methods and attributes
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   attribute byte deprecatedAttribute;
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   byte deprecatedMethod();
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   void deprecatedMethodWithContext(any arg);
 
   // Static methods and attributes
@@ -663,11 +677,11 @@ interface TestJSImplInterface {
   static void staticMethodWithContext(any arg);
 
   // Deprecated static methods and attributes
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   static attribute byte staticDeprecatedAttribute;
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   static byte staticDeprecatedMethod();
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   static byte staticDeprecatedMethodWithContext();
   */
 
@@ -679,7 +693,6 @@ interface TestJSImplInterface {
   void overload2(optional Dict arg = {});
   void overload2(boolean arg);
   void overload2(DOMString arg);
-  void overload2(Date arg);
   void overload3(TestJSImplInterface arg);
   void overload3(MyTestCallback arg);
   void overload3(boolean arg);
@@ -838,6 +851,21 @@ interface TestJSImplInterface {
   // [NeedsWindowsUndef] test generation
   [NeedsWindowsUndef]
   const unsigned long NO_ERROR = 0xffffffff;
+
+  // [AllowShared] tests
+  attribute [AllowShared] ArrayBufferViewTypedef allowSharedArrayBufferViewTypedef;
+  attribute [AllowShared] ArrayBufferView allowSharedArrayBufferView;
+  attribute [AllowShared] ArrayBufferView? allowSharedNullableArrayBufferView;
+  attribute [AllowShared] ArrayBuffer allowSharedArrayBuffer;
+  attribute [AllowShared] ArrayBuffer? allowSharedNullableArrayBuffer;
+
+  void passAllowSharedArrayBufferViewTypedef(AllowSharedArrayBufferViewTypedef foo);
+  void passAllowSharedArrayBufferView([AllowShared] ArrayBufferView foo);
+  void passAllowSharedNullableArrayBufferView([AllowShared] ArrayBufferView? foo);
+  void passAllowSharedArrayBuffer([AllowShared] ArrayBuffer foo);
+  void passAllowSharedNullableArrayBuffer([AllowShared] ArrayBuffer? foo);
+  void passUnionArrayBuffer((DOMString or ArrayBuffer) foo);
+  void passUnionAllowSharedArrayBuffer((DOMString or [AllowShared] ArrayBuffer) foo);
 
   // If you add things here, add them to TestCodeGen as well
 };

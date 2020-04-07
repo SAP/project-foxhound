@@ -590,7 +590,7 @@ static void InitKeyEvent(WidgetKeyboardEvent& aEvent, int32_t aAction,
 
   aEvent.mIsRepeat =
       (aEvent.mMessage == eKeyDown || aEvent.mMessage == eKeyPress) &&
-      ((aFlags & sdk::KeyEvent::FLAG_LONG_PRESS) || aRepeatCount);
+      ((aFlags & java::sdk::KeyEvent::FLAG_LONG_PRESS) || aRepeatCount);
 
   aEvent.mKeyNameIndex = ConvertAndroidKeyCodeToKeyNameIndex(
       aKeyCode, aAction, aDomPrintableKeyValue);
@@ -616,15 +616,16 @@ static jni::ObjectArray::LocalRef ConvertRectArrayToJavaRectFArray(
     const nsTArray<LayoutDeviceIntRect>& aRects,
     const CSSToLayoutDeviceScale aScale) {
   const size_t length = aRects.Length();
-  auto rects = jni::ObjectArray::New<sdk::RectF>(length);
+  auto rects = jni::ObjectArray::New<java::sdk::RectF>(length);
 
   for (size_t i = 0; i < length; i++) {
     const LayoutDeviceIntRect& tmp = aRects[i];
 
     // Character bounds in CSS units.
-    auto rect = sdk::RectF::New(tmp.x / aScale.scale, tmp.y / aScale.scale,
-                                (tmp.x + tmp.width) / aScale.scale,
-                                (tmp.y + tmp.height) / aScale.scale);
+    auto rect =
+        java::sdk::RectF::New(tmp.x / aScale.scale, tmp.y / aScale.scale,
+                              (tmp.x + tmp.width) / aScale.scale,
+                              (tmp.y + tmp.height) / aScale.scale);
     rects->SetElement(i, rect);
   }
   return rects;
@@ -675,11 +676,11 @@ void GeckoEditableSupport::OnKeyEvent(int32_t aAction, int32_t aKeyCode,
   }
 
   EventMessage msg;
-  if (aAction == sdk::KeyEvent::ACTION_DOWN) {
+  if (aAction == java::sdk::KeyEvent::ACTION_DOWN) {
     msg = eKeyDown;
-  } else if (aAction == sdk::KeyEvent::ACTION_UP) {
+  } else if (aAction == java::sdk::KeyEvent::ACTION_UP) {
     msg = eKeyUp;
-  } else if (aAction == sdk::KeyEvent::ACTION_MULTIPLE) {
+  } else if (aAction == java::sdk::KeyEvent::ACTION_MULTIPLE) {
     // Keys with multiple action are handled in Java,
     // and we should never see one here
     MOZ_CRASH("Cannot handle key with multiple action");
@@ -1070,6 +1071,7 @@ bool GeckoEditableSupport::DoReplaceText(int32_t aStart, int32_t aEnd,
   const bool composing = !mIMERanges->IsEmpty();
   nsEventStatus status = nsEventStatus_eIgnore;
   bool textChanged = composing;
+  bool performDeletion = true;
 
   if (!mIMEKeyEvents.IsEmpty() || !composition || !mDispatcher->IsComposing() ||
       uint32_t(aStart) != composition->NativeOffsetOfStartComposition() ||
@@ -1097,28 +1099,28 @@ bool GeckoEditableSupport::DoReplaceText(int32_t aStart, int32_t aEnd,
         // widget for duplicated events is initially nullptr.
         event->mWidget = widget;
 
+        status = nsEventStatus_eIgnore;
         if (event->mMessage != eKeyPress) {
           mDispatcher->DispatchKeyboardEvent(event->mMessage, *event, status);
         } else {
           mDispatcher->MaybeDispatchKeypressEvents(*event, status);
+          if (status == nsEventStatus_eConsumeNoDefault) {
+            textChanged = true;
+          }
         }
         if (!mDispatcher || widget->Destroyed()) {
+          // Don't wait for any text change event.
+          textChanged = false;
           break;
         }
       }
       mIMEKeyEvents.Clear();
-      return false;
+      return textChanged;
     }
 
     if (aStart != aEnd) {
       // Perform a deletion first.
-      WidgetContentCommandEvent event(true, eContentCommandDelete, widget);
-      event.mTime = PR_Now() / 1000;
-      widget->DispatchEvent(&event, status);
-      if (!mDispatcher || widget->Destroyed()) {
-        return false;
-      }
-      textChanged = true;
+      performDeletion = true;
     }
   } else if (composition->String().Equals(string)) {
     /* If the new text is the same as the existing composition text,
@@ -1141,6 +1143,16 @@ bool GeckoEditableSupport::DoReplaceText(int32_t aStart, int32_t aEnd,
     if (!mDispatcher || widget->Destroyed()) {
       return false;
     }
+  }
+
+  if (performDeletion) {
+    WidgetContentCommandEvent event(true, eContentCommandDelete, widget);
+    event.mTime = PR_Now() / 1000;
+    widget->DispatchEvent(&event, status);
+    if (!mDispatcher || widget->Destroyed()) {
+      return false;
+    }
+    textChanged = true;
   }
 
   if (composing) {
@@ -1181,7 +1193,7 @@ void GeckoEditableSupport::OnImeAddCompositionRange(
   range.mEndOffset = aEnd;
   range.mRangeType = ToTextRangeType(aRangeType);
   range.mRangeStyle.mDefinedStyles = aRangeStyle;
-  range.mRangeStyle.mLineStyle = aRangeLineStyle;
+  range.mRangeStyle.mLineStyle = TextRangeStyle::ToLineStyle(aRangeLineStyle);
   range.mRangeStyle.mIsBoldLine = aRangeBoldLine;
   range.mRangeStyle.mForegroundColor =
       ConvertAndroidColor(uint32_t(aRangeForeColor));
@@ -1406,7 +1418,8 @@ nsresult GeckoEditableSupport::NotifyIME(
     }
 
     case NOTIFY_IME_OF_SELECTION_CHANGE: {
-      ALOGIME("IME: NOTIFY_IME_OF_SELECTION_CHANGE");
+      ALOGIME("IME: NOTIFY_IME_OF_SELECTION_CHANGE: SelectionChangeData=%s",
+              ToString(aNotification.mSelectionChangeData).c_str());
 
       PostFlushIMEChanges();
       mIMESelectionChanged = true;
@@ -1414,10 +1427,8 @@ nsresult GeckoEditableSupport::NotifyIME(
     }
 
     case NOTIFY_IME_OF_TEXT_CHANGE: {
-      ALOGIME("IME: NotifyIMEOfTextChange: s=%d, oe=%d, ne=%d",
-              aNotification.mTextChangeData.mStartOffset,
-              aNotification.mTextChangeData.mRemovedEndOffset,
-              aNotification.mTextChangeData.mAddedEndOffset);
+      ALOGIME("IME: NOTIFY_IME_OF_TEXT_CHANGE: TextChangeData=%s",
+              ToString(aNotification.mTextChangeData).c_str());
 
       /* Make sure Java's selection is up-to-date */
       PostFlushIMEChanges();
@@ -1556,6 +1567,8 @@ void GeckoEditableSupport::TransferParent(jni::Object::Param aEditableParent) {
     mEditable->NotifyIME(EditableListener::NOTIFY_IME_OF_TOKEN);
     NotifyIMEContext(mInputContext, InputContextAction());
     mEditable->NotifyIME(EditableListener::NOTIFY_IME_OF_FOCUS);
+    // We have focus, so don't destroy editable child.
+    return;
   }
 
   if (mIsRemote && !mDispatcher) {

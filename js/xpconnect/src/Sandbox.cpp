@@ -10,6 +10,7 @@
 
 #include "AccessCheck.h"
 #include "jsfriendapi.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/PropertySpec.h"
@@ -30,25 +31,32 @@
 #include "xpc_make_class.h"
 #include "XPCWrapper.h"
 #include "Crypto.h"
+#include "mozilla/dom/BindingCallContext.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/cache/CacheStorage.h"
 #include "mozilla/dom/CSSBinding.h"
 #include "mozilla/dom/CSSRuleBinding.h"
 #include "mozilla/dom/DirectoryBinding.h"
+#include "mozilla/dom/DocumentBinding.h"
+#include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/DOMParserBinding.h"
+#include "mozilla/dom/DOMTokenListBinding.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/EventBinding.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/FileBinding.h"
+#include "mozilla/dom/HeadersBinding.h"
 #include "mozilla/dom/InspectorUtilsBinding.h"
 #include "mozilla/dom/MessageChannelBinding.h"
 #include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/dom/NodeBinding.h"
 #include "mozilla/dom/NodeFilterBinding.h"
+#include "mozilla/dom/PerformanceBinding.h"
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/PromiseDebuggingBinding.h"
+#include "mozilla/dom/RangeBinding.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/ResponseBinding.h"
 #ifdef MOZ_WEBRTC
@@ -56,6 +64,7 @@
 #endif
 #include "mozilla/dom/FileReaderBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/SelectionBinding.h"
 #include "mozilla/dom/TextDecoderBinding.h"
 #include "mozilla/dom/TextEncoderBinding.h"
 #include "mozilla/dom/UnionConversions.h"
@@ -64,9 +73,13 @@
 #include "mozilla/dom/XMLHttpRequest.h"
 #include "mozilla/dom/XMLSerializerBinding.h"
 #include "mozilla/dom/FormDataBinding.h"
+#include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/DeferredFinalize.h"
+#include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/ResultExtensions.h"
+#include "mozilla/StaticPrefs_extensions.h"
 
 using namespace mozilla;
 using namespace JS;
@@ -79,6 +92,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(SandboxPrivate)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(SandboxPrivate)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
   tmp->UnlinkHostObjectURIs();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -292,8 +306,9 @@ static bool SandboxFetch(JSContext* cx, JS::HandleObject scope,
     return false;
   }
   RootedDictionary<dom::RequestInit> options(cx);
+  BindingCallContext callCx(cx, "fetch");
   if (!options.Init(cx, args.hasDefined(1) ? args[1] : JS::NullHandleValue,
-                    "Argument 2 of fetch", false)) {
+                    "Argument 2", false)) {
     return false;
   }
   nsCOMPtr<nsIGlobalObject> global = xpc::NativeGlobal(scope);
@@ -441,21 +456,21 @@ static size_t sandbox_moved(JSObject* obj, JSObject* old) {
   (XPCONNECT_GLOBAL_EXTRA_SLOT_OFFSET)
 
 static const JSClassOps SandboxClassOps = {
-    nullptr,
-    nullptr,
-    nullptr,
-    JS_NewEnumerateStandardClasses,
-    JS_ResolveStandardClass,
-    JS_MayResolveStandardClass,
-    sandbox_finalize,
-    nullptr,
-    nullptr,
-    nullptr,
-    JS_GlobalObjectTraceHook,
+    nullptr,                         // addProperty
+    nullptr,                         // delProperty
+    nullptr,                         // enumerate
+    JS_NewEnumerateStandardClasses,  // newEnumerate
+    JS_ResolveStandardClass,         // resolve
+    JS_MayResolveStandardClass,      // mayResolve
+    sandbox_finalize,                // finalize
+    nullptr,                         // call
+    nullptr,                         // hasInstance
+    nullptr,                         // construct
+    JS_GlobalObjectTraceHook,        // trace
 };
 
 static const js::ClassExtension SandboxClassExtension = {
-    sandbox_moved /* objectMovedOp */
+    sandbox_moved,  // objectMovedOp
 };
 
 static const JSClass SandboxClass = {
@@ -806,7 +821,7 @@ bool SandboxProxyHandler::enumerate(JSContext* cx, JS::Handle<JSObject*> proxy,
 
 bool xpc::GlobalProperties::Parse(JSContext* cx, JS::HandleObject obj) {
   uint32_t length;
-  bool ok = JS_GetArrayLength(cx, obj, &length);
+  bool ok = JS::GetArrayLength(cx, obj, &length);
   NS_ENSURE_TRUE(ok, false);
   for (uint32_t i = 0; i < length; i++) {
     RootedValue nameValue(cx);
@@ -828,10 +843,16 @@ bool xpc::GlobalProperties::Parse(JSContext* cx, JS::HandleObject obj) {
       CSS = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "CSSRule")) {
       CSSRule = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Document")) {
+      Document = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "Directory")) {
       Directory = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "DOMException")) {
+      DOMException = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "DOMParser")) {
       DOMParser = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "DOMTokenList")) {
+      DOMTokenList = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "Element")) {
       Element = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "Event")) {
@@ -842,6 +863,8 @@ bool xpc::GlobalProperties::Parse(JSContext* cx, JS::HandleObject obj) {
       FileReader = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "FormData")) {
       FormData = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Headers")) {
+      Headers = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "InspectorUtils")) {
       InspectorUtils = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "MessageChannel")) {
@@ -850,8 +873,14 @@ bool xpc::GlobalProperties::Parse(JSContext* cx, JS::HandleObject obj) {
       Node = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "NodeFilter")) {
       NodeFilter = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Performance")) {
+      Performance = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "PromiseDebugging")) {
       PromiseDebugging = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Range")) {
+      Range = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Selection")) {
+      Selection = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "TextDecoder")) {
       TextDecoder = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "TextEncoder")) {
@@ -876,6 +905,8 @@ bool xpc::GlobalProperties::Parse(JSContext* cx, JS::HandleObject obj) {
       fetch = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "indexedDB")) {
       indexedDB = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "isSecureContext")) {
+      isSecureContext = true;
 #ifdef MOZ_WEBRTC
     } else if (JS_LinearStringEqualsLiteral(nameStr, "rtcIdentityProvider")) {
       rtcIdentityProvider = true;
@@ -918,8 +949,21 @@ bool xpc::GlobalProperties::Define(JSContext* cx, JS::HandleObject obj) {
   if (Directory && !dom::Directory_Binding::GetConstructorObject(cx))
     return false;
 
-  if (DOMParser && !dom::DOMParser_Binding::GetConstructorObject(cx))
+  if (Document && !dom::Document_Binding::GetConstructorObject(cx)) {
     return false;
+  }
+
+  if (DOMException && !dom::DOMException_Binding::GetConstructorObject(cx)) {
+    return false;
+  }
+
+  if (DOMParser && !dom::DOMParser_Binding::GetConstructorObject(cx)) {
+    return false;
+  }
+
+  if (DOMTokenList && !dom::DOMTokenList_Binding::GetConstructorObject(cx)) {
+    return false;
+  }
 
   if (Element && !dom::Element_Binding::GetConstructorObject(cx)) return false;
 
@@ -933,6 +977,10 @@ bool xpc::GlobalProperties::Define(JSContext* cx, JS::HandleObject obj) {
 
   if (FormData && !dom::FormData_Binding::GetConstructorObject(cx))
     return false;
+
+  if (Headers && !dom::Headers_Binding::GetConstructorObject(cx)) {
+    return false;
+  }
 
   if (InspectorUtils && !dom::InspectorUtils_Binding::GetConstructorObject(cx))
     return false;
@@ -950,8 +998,20 @@ bool xpc::GlobalProperties::Define(JSContext* cx, JS::HandleObject obj) {
     return false;
   }
 
+  if (Performance && !dom::Performance_Binding::GetConstructorObject(cx)) {
+    return false;
+  }
+
   if (PromiseDebugging &&
       !dom::PromiseDebugging_Binding::GetConstructorObject(cx)) {
+    return false;
+  }
+
+  if (Range && !dom::Range_Binding::GetConstructorObject(cx)) {
+    return false;
+  }
+
+  if (Selection && !dom::Selection_Binding::GetConstructorObject(cx)) {
     return false;
   }
 
@@ -989,6 +1049,15 @@ bool xpc::GlobalProperties::Define(JSContext* cx, JS::HandleObject obj) {
     return false;
   }
 
+  // Note that isSecureContext here doesn't mean the context is actually secure
+  // - just that the caller wants the property defined
+  if (isSecureContext) {
+    bool hasSecureContext = IsSecureContextOrObjectIsFromSecureContext(cx, obj);
+    JS::Rooted<JS::Value> secureJsValue(cx, JS::BooleanValue(hasSecureContext));
+    return JS_DefineProperty(cx, obj, "isSecureContext", secureJsValue,
+                             JSPROP_ENUMERATE);
+  }
+
 #ifdef MOZ_WEBRTC
   if (rtcIdentityProvider && !SandboxCreateRTCIdentityProvider(cx, obj)) {
     return false;
@@ -1018,11 +1087,89 @@ bool xpc::GlobalProperties::DefineInSandbox(JSContext* cx,
   return Define(cx, obj);
 }
 
+/**
+ * If enabled, apply the extension base CSP, then apply the
+ * content script CSP which will either be a default or one
+ * provided by the extension in its manifest.
+ */
+nsresult ApplyAddonContentScriptCSP(nsISupports* prinOrSop) {
+  if (!StaticPrefs::extensions_content_script_csp_enabled()) {
+    return NS_OK;
+  }
+  nsCOMPtr<nsIPrincipal> principal = do_QueryInterface(prinOrSop);
+  if (!principal) {
+    return NS_OK;
+  }
+
+  auto* basePrin = BasePrincipal::Cast(principal);
+  // We only get an addonPolicy if the principal is an
+  // expanded principal with an extension principal in it.
+  auto* addonPolicy = basePrin->ContentScriptAddonPolicy();
+  if (!addonPolicy) {
+    return NS_OK;
+  }
+
+  nsString url;
+  MOZ_TRY_VAR(url, addonPolicy->GetURL(NS_LITERAL_STRING("")));
+
+  nsCOMPtr<nsIURI> selfURI;
+  MOZ_TRY(NS_NewURI(getter_AddRefs(selfURI), url));
+
+  nsAutoString baseCSP;
+  MOZ_ALWAYS_SUCCEEDS(
+      ExtensionPolicyService::GetSingleton().GetBaseCSP(baseCSP));
+
+  // If we got here, we're definitly an expanded principal.
+  auto expanded = basePrin->As<ExpandedPrincipal>();
+  nsCOMPtr<nsIContentSecurityPolicy> csp;
+
+#ifdef MOZ_DEBUG
+  // Bug 1548468: Move CSP off ExpandedPrincipal
+  expanded->GetCsp(getter_AddRefs(csp));
+  if (csp) {
+    uint32_t count = 0;
+    csp->GetPolicyCount(&count);
+    if (count > 0) {
+      // Ensure that the policy was not already added.
+      nsAutoString parsedPolicyStr;
+      for (uint32_t i = 0; i < count; i++) {
+        csp->GetPolicyString(i, parsedPolicyStr);
+        MOZ_ASSERT(!parsedPolicyStr.Equals(baseCSP));
+      }
+    }
+  }
+#endif
+
+  csp = new nsCSPContext();
+  MOZ_TRY(
+      csp->SetRequestContextWithPrincipal(expanded, selfURI, EmptyString(), 0));
+
+  bool reportOnly = StaticPrefs::extensions_content_script_csp_report_only();
+
+  MOZ_TRY(csp->AppendPolicy(baseCSP, reportOnly, false));
+
+  // Set default or extension provided csp.
+  const nsAString& contentScriptCSP = addonPolicy->ContentScriptCSP();
+  MOZ_TRY(csp->AppendPolicy(contentScriptCSP, reportOnly, false));
+
+  expanded->SetCsp(csp);
+  return NS_OK;
+}
+
 nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
                                   nsISupports* prinOrSop,
                                   SandboxOptions& options) {
   // Create the sandbox global object
   nsCOMPtr<nsIPrincipal> principal = do_QueryInterface(prinOrSop);
+  nsCOMPtr<nsIGlobalObject> obj = do_QueryInterface(prinOrSop);
+  if (obj) {
+    nsGlobalWindowInner* window =
+        WindowOrNull(js::UncheckedUnwrap(obj->GetGlobalJSObject(), false));
+    // If we have a secure context window inherit from it's parent
+    if (window && window->IsSecureContext()) {
+      options.forceSecureContext = true;
+    }
+  }
   if (!principal) {
     nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(prinOrSop);
     if (sop) {
@@ -1039,11 +1186,16 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
 
   auto& creationOptions = realmOptions.creationOptions();
 
-  // XXXjwatt: Consider whether/when sandboxes should be able to see
-  // [SecureContext] API (bug 1273687).  In that case we'd call
-  // creationOptions.setSecureContext(true).
-
   bool isSystemPrincipal = principal->IsSystemPrincipal();
+
+  if (isSystemPrincipal) {
+    options.forceSecureContext = true;
+  }
+
+  // If we are able to see [SecureContext] API code
+  if (options.forceSecureContext) {
+    creationOptions.setSecureContext(true);
+  }
 
   xpc::SetPrefableRealmOptions(realmOptions);
   if (options.sameZoneAs) {
@@ -1100,8 +1252,6 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
     MOZ_RELEASE_ASSERT(priv->allowWaivers == options.allowWaivers);
     MOZ_RELEASE_ASSERT(priv->isWebExtensionContentScript ==
                        options.isWebExtensionContentScript);
-    MOZ_RELEASE_ASSERT(priv->isContentXBLCompartment ==
-                       options.isContentXBLScope);
     MOZ_RELEASE_ASSERT(priv->isUAWidgetCompartment == options.isUAWidgetScope);
     MOZ_RELEASE_ASSERT(priv->hasExclusiveExpandos == hasExclusiveExpandos);
     MOZ_RELEASE_ASSERT(priv->wantXrays == wantXrays);
@@ -1109,7 +1259,6 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
     CompartmentPrivate* priv = CompartmentPrivate::Get(sandbox);
     priv->allowWaivers = options.allowWaivers;
     priv->isWebExtensionContentScript = options.isWebExtensionContentScript;
-    priv->isContentXBLCompartment = options.isContentXBLScope;
     priv->isUAWidgetCompartment = options.isUAWidgetScope;
     priv->hasExclusiveExpandos = hasExclusiveExpandos;
     priv->wantXrays = wantXrays;
@@ -1301,7 +1450,7 @@ static bool GetExpandedPrincipal(JSContext* cx, HandleObject arrayObj,
   MOZ_ASSERT(out);
   uint32_t length;
 
-  if (!JS_GetArrayLength(cx, arrayObj, &length)) {
+  if (!JS::GetArrayLength(cx, arrayObj, &length)) {
     return false;
   }
   if (!length) {
@@ -1632,7 +1781,7 @@ bool SandboxOptions::ParseGlobalProperties() {
 
   RootedObject ctors(mCx, &value.toObject());
   bool isArray;
-  if (!JS_IsArrayObject(mCx, ctors, &isArray)) {
+  if (!JS::IsArrayObject(mCx, ctors, &isArray)) {
     return false;
   }
   if (!isArray) {
@@ -1657,6 +1806,7 @@ bool SandboxOptions::Parse() {
             ParseBoolean("wantExportHelpers", &wantExportHelpers) &&
             ParseBoolean("isWebExtensionContentScript",
                          &isWebExtensionContentScript) &&
+            ParseBoolean("forceSecureContext", &forceSecureContext) &&
             ParseString("sandboxName", sandboxName) &&
             ParseObject("sameZoneAs", &sameZoneAs) &&
             ParseBoolean("freshCompartment", &freshCompartment) &&
@@ -1759,7 +1909,7 @@ nsresult nsXPCComponents_utils_Sandbox::CallOrConstruct(
   } else if (args[0].isObject()) {
     RootedObject obj(cx, &args[0].toObject());
     bool isArray;
-    if (!JS_IsArrayObject(cx, obj, &isArray)) {
+    if (!JS::IsArrayObject(cx, obj, &isArray)) {
       ok = false;
     } else if (isArray) {
       if (options.userContextId != 0) {
@@ -1768,6 +1918,8 @@ nsresult nsXPCComponents_utils_Sandbox::CallOrConstruct(
       } else {
         ok = GetExpandedPrincipal(cx, obj, options, getter_AddRefs(expanded));
         prinOrSop = expanded;
+        // If this is an addon content script we need to apply the csp.
+        MOZ_TRY(ApplyAddonContentScriptCSP(prinOrSop));
       }
     } else {
       ok = GetPrincipalOrSOP(cx, obj, getter_AddRefs(prinOrSop));
@@ -1809,7 +1961,8 @@ nsresult nsXPCComponents_utils_Sandbox::CallOrConstruct(
 
 nsresult xpc::EvalInSandbox(JSContext* cx, HandleObject sandboxArg,
                             const nsAString& source, const nsACString& filename,
-                            int32_t lineNo, MutableHandleValue rval) {
+                            int32_t lineNo, bool enforceFilenameRestrictions,
+                            MutableHandleValue rval) {
   JS_AbortIfWrongThread(cx);
   rval.set(UndefinedValue());
 
@@ -1851,6 +2004,7 @@ nsresult xpc::EvalInSandbox(JSContext* cx, HandleObject sandboxArg,
 
     JS::CompileOptions options(sandcx);
     options.setFileAndLine(filenameBuf.get(), lineNo);
+    options.setSkipFilenameValidation(!enforceFilenameRestrictions);
     MOZ_ASSERT(JS_IsGlobalObject(sandbox));
 
     const nsPromiseFlatString& flat = PromiseFlatString(source);

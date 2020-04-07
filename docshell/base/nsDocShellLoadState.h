@@ -7,6 +7,8 @@
 #ifndef nsDocShellLoadState_h__
 #define nsDocShellLoadState_h__
 
+#include "mozilla/dom/BrowsingContext.h"
+
 // Helper Classes
 #include "nsCOMPtr.h"
 #include "nsString.h"
@@ -17,7 +19,7 @@ class nsIInputStream;
 class nsISHEntry;
 class nsIURI;
 class nsIDocShell;
-class nsIChildChannel;
+class nsIChannel;
 class nsIReferrerInfo;
 class OriginAttibutes;
 namespace mozilla {
@@ -38,7 +40,7 @@ class nsDocShellLoadState final {
   explicit nsDocShellLoadState(
       const mozilla::dom::DocShellLoadStateInit& aLoadState);
 
-  static nsresult CreateFromPendingChannel(nsIChildChannel* aPendingChannel,
+  static nsresult CreateFromPendingChannel(nsIChannel* aPendingChannel,
                                            nsDocShellLoadState** aResult);
 
   static nsresult CreateFromLoadURIOptions(
@@ -75,6 +77,10 @@ class nsDocShellLoadState final {
   nsIPrincipal* PrincipalToInherit() const;
 
   void SetPrincipalToInherit(nsIPrincipal* aPrincipalToInherit);
+
+  nsIPrincipal* StoragePrincipalToInherit() const;
+
+  void SetStoragePrincipalToInherit(nsIPrincipal* aStoragePrincipalToInherit);
 
   bool LoadReplace() const;
 
@@ -179,7 +185,8 @@ class nsDocShellLoadState final {
   // else if the principal should be set up later in the process (after loads).
   // See comments in function for more info on principal selection algorithm
   nsresult SetupInheritingPrincipal(
-      uint32_t aItemType, const mozilla::OriginAttributes& aOriginAttributes);
+      mozilla::dom::BrowsingContext::Type aType,
+      const mozilla::OriginAttributes& aOriginAttributes);
 
   // If no triggering principal exists at the moment, create one using referrer
   // information and origin attributes.
@@ -193,7 +200,7 @@ class nsDocShellLoadState final {
     return mIsFromProcessingFrameAttributes;
   }
 
-  nsIChildChannel* GetPendingRedirectedChannel() {
+  nsIChannel* GetPendingRedirectedChannel() {
     return mPendingRedirectedChannel;
   }
 
@@ -293,6 +300,8 @@ class nsDocShellLoadState final {
 
   nsCOMPtr<nsIPrincipal> mPrincipalToInherit;
 
+  nsCOMPtr<nsIPrincipal> mStoragePrincipalToInherit;
+
   // If this attribute is true, then a top-level navigation
   // to a data URI will be allowed.
   bool mForceAllowDataURI;
@@ -356,7 +365,7 @@ class nsDocShellLoadState final {
 
   // If set, a pending cross-process redirected channel should be used to
   // perform the load. The channel will be stored in this value.
-  nsCOMPtr<nsIChildChannel> mPendingRedirectedChannel;
+  nsCOMPtr<nsIChannel> mPendingRedirectedChannel;
 
   // An optional string representation of mURI, before any
   // fixups were applied, so that we can send it to a search

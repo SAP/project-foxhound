@@ -130,9 +130,13 @@ function checkFieldValue(elem, expectedValue) {
   is(elem.value, String(expectedValue), "Checking " + elem.id + " field");
 }
 
-function triggerAutofillAndCheckProfile(profile) {
+async function triggerAutofillAndCheckProfile(profile) {
   const adaptedProfile = _getAdaptedProfile(profile);
   const promises = [];
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.input_events.beforeinput.enabled", true]],
+  });
 
   for (const [fieldName, value] of Object.entries(adaptedProfile)) {
     info(`triggerAutofillAndCheckProfile: ${fieldName}`);
@@ -140,16 +144,65 @@ function triggerAutofillAndCheckProfile(profile) {
     const expectingEvent =
       document.activeElement == element ? "input" : "change";
     const checkFieldAutofilled = Promise.all([
-      new Promise(resolve =>
+      new Promise(resolve => {
+        let beforeInputFired = false;
+        let hadEditor = SpecialPowers.wrap(element).hasEditor;
+        element.addEventListener(
+          "beforeinput",
+          event => {
+            beforeInputFired = true;
+            is(
+              event.inputType,
+              "insertReplacementText",
+              'inputType value should be "insertReplacementText"'
+            );
+            is(
+              event.data,
+              String(value),
+              `data value of "beforeinput" should be "${value}"`
+            );
+            is(
+              event.dataTransfer,
+              null,
+              'dataTransfer of "beforeinput" should be null'
+            );
+            is(
+              event.getTargetRanges().length,
+              0,
+              'getTargetRanges() of "beforeinput" should return empty array'
+            );
+            is(
+              event.cancelable,
+              true,
+              `"beforeinput" event should be cancelable on ${element.tagName}`
+            );
+            is(
+              event.bubbles,
+              true,
+              `"beforeinput" event should always bubble on ${element.tagName}`
+            );
+            resolve();
+          },
+          { once: true }
+        );
         element.addEventListener(
           "input",
           event => {
             if (element.tagName == "INPUT" && element.type == "text") {
+              if (hadEditor) {
+                ok(
+                  beforeInputFired,
+                  `"beforeinput" event should've been fired before "input" event on ${element.tagName}`
+                );
+              } else {
+                ok(
+                  beforeInputFired,
+                  `"beforeinput" event should've been fired before "input" event on ${element.tagName}`
+                );
+              }
               ok(
                 event instanceof InputEvent,
-                `"input" event should be dispatched with InputEvent interface on ${
-                  element.tagName
-                }`
+                `"input" event should be dispatched with InputEvent interface on ${element.tagName}`
               );
               is(
                 event.inputType,
@@ -158,12 +211,19 @@ function triggerAutofillAndCheckProfile(profile) {
               );
               is(event.data, String(value), `data value should be "${value}"`);
               is(event.dataTransfer, null, "dataTransfer should be null");
+              is(
+                event.getTargetRanges().length,
+                0,
+                "getTargetRanges() should return empty array"
+              );
             } else {
               ok(
+                !beforeInputFired,
+                `"beforeinput" event shouldn't be fired on ${element.tagName}`
+              );
+              ok(
                 event instanceof Event && !(event instanceof UIEvent),
-                `"input" event should be dispatched with Event interface on ${
-                  element.tagName
-                }`
+                `"input" event should be dispatched with Event interface on ${element.tagName}`
               );
             }
             is(
@@ -179,8 +239,8 @@ function triggerAutofillAndCheckProfile(profile) {
             resolve();
           },
           { once: true }
-        )
-      ),
+        );
+      }),
       new Promise(resolve =>
         element.addEventListener(expectingEvent, resolve, { once: true })
       ),

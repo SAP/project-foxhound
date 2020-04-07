@@ -11,7 +11,6 @@
 #include "mozilla/Casting.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "jspubtd.h"
 
@@ -21,7 +20,6 @@
 #include "js/Class.h"
 #include "js/ErrorReport.h"
 #include "js/HeapAPI.h"
-#include "js/StableStringChars.h"
 #include "js/TypeDecls.h"
 #include "js/Utility.h"
 
@@ -178,8 +176,7 @@ enum {
   JS_TELEMETRY_END
 };
 
-typedef void (*JSAccumulateTelemetryDataCallback)(int id, uint32_t sample,
-                                                  const char* key);
+using JSAccumulateTelemetryDataCallback = void (*)(int, uint32_t, const char*);
 
 extern JS_FRIEND_API void JS_SetAccumulateTelemetryCallback(
     JSContext* cx, JSAccumulateTelemetryDataCallback callback);
@@ -193,14 +190,10 @@ extern JS_FRIEND_API void JS_SetAccumulateTelemetryCallback(
 
 enum class JSUseCounter { ASMJS, WASM };
 
-typedef void (*JSSetUseCounterCallback)(JSObject* obj, JSUseCounter counter);
+using JSSetUseCounterCallback = void (*)(JSObject*, JSUseCounter);
 
 extern JS_FRIEND_API void JS_SetSetUseCounterCallback(
     JSContext* cx, JSSetUseCounterCallback callback);
-
-extern JS_FRIEND_API void JS_ReportFirstCompileTime(
-    JS::HandleScript script, mozilla::TimeDuration& parse,
-    mozilla::TimeDuration& emit);
 
 extern JS_FRIEND_API JSPrincipals* JS_GetScriptPrincipals(JSScript* script);
 
@@ -253,13 +246,13 @@ JS_FRIEND_API void RemoveRawValueRoot(JSContext* cx, JS::Value* vp);
 
 JS_FRIEND_API JSAtom* GetPropertyNameFromPC(JSScript* script, jsbytecode* pc);
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
-
 /*
  * Routines to print out values during debugging. These are FRIEND_API to help
  * the debugger find them and to support temporarily hacking js::Dump* calls
  * into other code. Note that there are overloads that do not require the FILE*
  * parameter, which will default to stderr.
+ *
+ * These functions are no-ops unless built with DEBUG or JS_JITSPEW.
  */
 
 extern JS_FRIEND_API void DumpString(JSString* str, FILE* fp);
@@ -295,7 +288,8 @@ extern JS_FRIEND_API void DumpInterpreterFrame(
 extern JS_FRIEND_API bool DumpPC(JSContext* cx);
 extern JS_FRIEND_API bool DumpScript(JSContext* cx, JSScript* scriptArg);
 
-#endif
+// DumpBacktrace(), unlike the other dump functions, always dumps a backtrace --
+// regardless of DEBUG or JS_JITSPEW.
 
 extern JS_FRIEND_API void DumpBacktrace(JSContext* cx, FILE* fp);
 
@@ -427,7 +421,7 @@ extern JS_FRIEND_API void RunJobs(JSContext* cx);
 
 extern JS_FRIEND_API JS::Zone* GetRealmZone(JS::Realm* realm);
 
-typedef bool (*PreserveWrapperCallback)(JSContext* cx, JS::HandleObject obj);
+using PreserveWrapperCallback = bool (*)(JSContext*, JS::HandleObject);
 
 typedef enum {
   CollectNurseryBeforeDump,
@@ -441,13 +435,6 @@ typedef enum {
 extern JS_FRIEND_API void DumpHeap(
     JSContext* cx, FILE* fp, DumpHeapNurseryBehaviour nurseryBehaviour,
     mozilla::MallocSizeOf mallocSizeOf = nullptr);
-
-#ifdef JS_OLD_GETTER_SETTER_METHODS
-JS_FRIEND_API bool obj_defineGetter(JSContext* cx, unsigned argc,
-                                    JS::Value* vp);
-JS_FRIEND_API bool obj_defineSetter(JSContext* cx, unsigned argc,
-                                    JS::Value* vp);
-#endif
 
 extern JS_FRIEND_API bool IsSystemRealm(JS::Realm* realm);
 
@@ -481,7 +468,7 @@ extern JS_FRIEND_API bool ZoneGlobalsAreAllGray(JS::Zone* zone);
 extern JS_FRIEND_API bool IsCompartmentZoneSweepingOrCompacting(
     JS::Compartment* comp);
 
-typedef void (*GCThingCallback)(void* closure, JS::GCCellPtr thing);
+using GCThingCallback = void (*)(void*, JS::GCCellPtr);
 
 extern JS_FRIEND_API void VisitGrayWrapperTargets(JS::Zone* zone,
                                                   GCThingCallback callback,
@@ -821,9 +808,9 @@ MOZ_ALWAYS_INLINE const char16_t* GetTwoByteAtomChars(
   return GetTwoByteLinearStringChars(nogc, AtomToLinearString(atom));
 }
 
-MOZ_ALWAYS_INLINE bool IsExternalString(JSString* str,
-                                        const JSStringFinalizer** fin,
-                                        const char16_t** chars) {
+MOZ_ALWAYS_INLINE bool IsExternalString(
+    JSString* str, const JSExternalStringCallbacks** callbacks,
+    const char16_t** chars) {
   using JS::shadow::String;
   String* s = reinterpret_cast<String*>(str);
 
@@ -832,7 +819,7 @@ MOZ_ALWAYS_INLINE bool IsExternalString(JSString* str,
   }
 
   MOZ_ASSERT(JS_IsExternalString(str));
-  *fin = s->externalFinalizer;
+  *callbacks = s->externalCallbacks;
   *chars = s->nonInlineCharsTwoByte;
   return true;
 }
@@ -1107,13 +1094,12 @@ JS_FRIEND_API JS::UniqueChars GetCodeCoverageSummary(JSContext* cx,
 JS_FRIEND_API JS::UniqueChars GetCodeCoverageSummaryAll(JSContext* cx,
                                                         size_t* length);
 
-typedef bool (*DOMInstanceClassHasProtoAtDepth)(const JSClass* instanceClass,
-                                                uint32_t protoID,
-                                                uint32_t depth);
+using DOMInstanceClassHasProtoAtDepth = bool (*)(const JSClass*, uint32_t,
+                                                 uint32_t);
 struct JSDOMCallbacks {
   DOMInstanceClassHasProtoAtDepth instanceClassMatchesProto;
 };
-typedef struct JSDOMCallbacks DOMCallbacks;
+using DOMCallbacks = struct JSDOMCallbacks;
 
 extern JS_FRIEND_API void SetDOMCallbacks(JSContext* cx,
                                           const DOMCallbacks* callbacks);
@@ -1235,9 +1221,9 @@ typedef enum DOMProxyShadowsResult {
   ShadowsViaDirectExpando,
   ShadowsViaIndirectExpando
 } DOMProxyShadowsResult;
-typedef DOMProxyShadowsResult (*DOMProxyShadowsCheck)(JSContext* cx,
-                                                      JS::HandleObject object,
-                                                      JS::HandleId id);
+using DOMProxyShadowsCheck = DOMProxyShadowsResult (*)(JSContext*,
+                                                       JS::HandleObject,
+                                                       JS::HandleId);
 JS_FRIEND_API void SetDOMProxyInformation(
     const void* domProxyHandlerFamily,
     DOMProxyShadowsCheck domProxyShadowsCheck,
@@ -1751,9 +1737,6 @@ extern JS_FRIEND_API JSObject* JS_GetObjectAsArrayBufferView(
  */
 extern JS_FRIEND_API js::Scalar::Type JS_GetArrayBufferViewType(JSObject* obj);
 
-extern JS_FRIEND_API js::Scalar::Type JS_GetSharedArrayBufferViewType(
-    JSObject* obj);
-
 /**
  * Return the number of elements in a typed array.
  *
@@ -1781,13 +1764,6 @@ extern JS_FRIEND_API uint32_t JS_GetTypedArrayByteOffset(JSObject* obj);
  * a typed array, and the unwrapping will succeed.
  */
 extern JS_FRIEND_API uint32_t JS_GetTypedArrayByteLength(JSObject* obj);
-
-/**
- * Check whether obj supports JS_ArrayBufferView* APIs. Note that this may
- * return false if a security wrapper is encountered that denies the
- * unwrapping.
- */
-extern JS_FRIEND_API bool JS_IsArrayBufferViewObject(JSObject* obj);
 
 /**
  * More generic name for JS_GetTypedArrayByteLength to cover DataViews as well
@@ -1915,7 +1891,7 @@ struct JSJitMethodCallArgsTraits;
 class JSJitMethodCallArgs
     : protected JS::detail::CallArgsBase<JS::detail::NoUsedRval> {
  private:
-  typedef JS::detail::CallArgsBase<JS::detail::NoUsedRval> Base;
+  using Base = JS::detail::CallArgsBase<JS::detail::NoUsedRval>;
   friend struct JSJitMethodCallArgsTraits;
 
  public:
@@ -1955,13 +1931,12 @@ struct JSJitMethodCallArgsTraits {
   static const size_t offsetOfArgc = offsetof(JSJitMethodCallArgs, argc_);
 };
 
-typedef bool (*JSJitGetterOp)(JSContext* cx, JS::HandleObject thisObj,
-                              void* specializedThis, JSJitGetterCallArgs args);
-typedef bool (*JSJitSetterOp)(JSContext* cx, JS::HandleObject thisObj,
-                              void* specializedThis, JSJitSetterCallArgs args);
-typedef bool (*JSJitMethodOp)(JSContext* cx, JS::HandleObject thisObj,
-                              void* specializedThis,
-                              const JSJitMethodCallArgs& args);
+using JSJitGetterOp = bool (*)(JSContext*, JS::HandleObject, void*,
+                               JSJitGetterCallArgs);
+using JSJitSetterOp = bool (*)(JSContext*, JS::HandleObject, void*,
+                               JSJitSetterCallArgs);
+using JSJitMethodOp = bool (*)(JSContext*, JS::HandleObject, void*,
+                               const JSJitMethodCallArgs&);
 
 /**
  * This struct contains metadata passed from the DOM to the JS Engine for JIT
@@ -2187,7 +2162,7 @@ static MOZ_ALWAYS_INLINE shadow::Function* FunctionObjectToShadowFunction(
 }
 
 /* Statically asserted in JSFunction.h. */
-static const unsigned JS_FUNCTION_INTERPRETED_BITS = 0x0201;
+static const unsigned JS_FUNCTION_INTERPRETED_BITS = 0x0060;
 
 // Return whether the given function object is native.
 static MOZ_ALWAYS_INLINE bool FunctionObjectIsNative(JSObject* fun) {
@@ -2282,7 +2257,7 @@ static MOZ_ALWAYS_INLINE JSAtom* JSID_TO_ATOM(jsid id) {
   return (JSAtom*)JSID_TO_STRING(id);
 }
 
-JS_STATIC_ASSERT(sizeof(jsid) == sizeof(void*));
+static_assert(sizeof(jsid) == sizeof(void*));
 
 namespace js {
 
@@ -2334,7 +2309,7 @@ enum CTypesActivityType {
   CTYPES_CALLBACK_END
 };
 
-typedef void (*CTypesActivityCallback)(JSContext* cx, CTypesActivityType type);
+using CTypesActivityCallback = void (*)(JSContext*, CTypesActivityType);
 
 /**
  * Sets a callback that is run whenever js-ctypes is about to be used when
@@ -2491,8 +2466,10 @@ extern JS_FRIEND_API JSObject* GetJSMEnvironmentOfScriptedCaller(JSContext* cx);
 // other embedding such as a Gecko FrameScript. Caller can check compartment.
 extern JS_FRIEND_API bool IsJSMEnvironment(JSObject* obj);
 
+extern JS_FRIEND_API bool IsSavedFrame(JSObject* obj);
+
 // Matches the condition in js/src/jit/ProcessExecutableMemory.cpp
-#if defined(XP_WIN) && defined(HAVE_64BIT_BUILD)
+#if defined(XP_WIN)
 // Parameters use void* types to avoid #including windows.h. The return value of
 // this function is returned from the exception handler.
 typedef long (*JitExceptionHandler)(void* exceptionRecord,  // PEXECTION_RECORD
@@ -2598,9 +2575,10 @@ MOZ_ALWAYS_INLINE JSObject* ToWindowProxyIfWindow(JSObject* obj) {
  */
 extern JS_FRIEND_API JSObject* ToWindowIfWindowProxy(JSObject* obj);
 
-#if ENABLE_INTL_API
 // Create and add the Intl.MozDateTimeFormat constructor function to the
 // provided object.
+// If JS was built without JS_HAS_INTL_API, this function will throw an
+// exception.
 //
 // This custom date/time formatter constructor gives users the ability
 // to specify a custom format pattern. This pattern is passed *directly*
@@ -2614,13 +2592,11 @@ extern JS_FRIEND_API JSObject* ToWindowIfWindowProxy(JSObject* obj);
 extern bool AddMozDateTimeFormatConstructor(JSContext* cx,
                                             JS::Handle<JSObject*> intl);
 
-// Create and add the Intl.Locale constructor function to the provided object.
-extern bool AddLocaleConstructor(JSContext* cx, JS::Handle<JSObject*> intl);
-
 // Create and add the Intl.ListFormat constructor function to the provided
 // object.
+// If JS was built without JS_HAS_INTL_API, this function will throw an
+// exception.
 extern bool AddListFormatConstructor(JSContext* cx, JS::Handle<JSObject*> intl);
-#endif  // ENABLE_INTL_API
 
 class MOZ_STACK_CLASS JS_FRIEND_API AutoAssertNoContentJS {
  public:
@@ -2650,7 +2626,7 @@ extern JS_FRIEND_API void SetRealmValidAccessPtr(JSContext* cx,
 // contexts are using it now).
 extern JS_FRIEND_API bool SystemZoneAvailable(JSContext* cx);
 
-typedef void (*LogCtorDtor)(void* self, const char* type, uint32_t sz);
+using LogCtorDtor = void (*)(void*, const char*, uint32_t);
 
 /**
  * Set global function used to monitor a few internal classes to highlight
@@ -2694,6 +2670,20 @@ class JS_FRIEND_API CompartmentTransplantCallback {
 extern JS_FRIEND_API void RemapRemoteWindowProxies(
     JSContext* cx, CompartmentTransplantCallback* callback,
     JS::MutableHandleObject newTarget);
+
+namespace gc {
+
+// API to let the DOM tell us whether we're currently in pageload, so we can
+// change the GC triggers to discourage collection of the atoms zone.
+//
+// This is a temporary measure; bug 1544117 will make this unnecessary.
+
+enum class PerformanceHint { Normal, InPageLoad };
+
+extern JS_FRIEND_API void SetPerformanceHint(JSContext* cx,
+                                             PerformanceHint hint);
+
+} /* namespace gc */
 
 } /* namespace js */
 

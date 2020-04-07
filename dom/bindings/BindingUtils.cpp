@@ -14,6 +14,7 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include "mozilla/UseCounter.h"
 
@@ -26,10 +27,8 @@
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
 #include "nsHTMLTags.h"
-#include "nsIDocShell.h"
 #include "nsIDOMGlobalPropertyInitializer.h"
 #include "nsINode.h"
-#include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
 #include "nsIURIFixup.h"
 #include "nsIXPConnect.h"
@@ -41,7 +40,6 @@
 #include "XrayWrapper.h"
 #include "nsPrintfCString.h"
 #include "mozilla/Sprintf.h"
-#include "nsGlobalWindow.h"
 #include "nsReadableUtils.h"
 
 #include "mozilla/dom/ScriptSettings.h"
@@ -102,21 +100,22 @@ static const constructorGetterCallback sConstructorGetterCallback[] = {
 #undef HTML_OTHER
 };
 
-const JSErrorFormatString ErrorFormatString[] = {
-#define MSG_DEF(_name, _argc, _exn, _str) {#_name, _str, _argc, _exn},
+static const JSErrorFormatString ErrorFormatString[] = {
+#define MSG_DEF(_name, _argc, _has_context, _exn, _str) \
+  {#_name, _str, _argc, _exn},
 #include "mozilla/dom/Errors.msg"
 #undef MSG_DEF
 };
 
-#define MSG_DEF(_name, _argc, _exn, _str)      \
-  static_assert(                               \
-      _argc < JS::MaxNumErrorArguments, #_name \
+#define MSG_DEF(_name, _argc, _has_context, _exn, _str) \
+  static_assert(                                        \
+      (_argc) < JS::MaxNumErrorArguments, #_name        \
       " must only have as many error arguments as the JS engine can support");
 #include "mozilla/dom/Errors.msg"
 #undef MSG_DEF
 
-const JSErrorFormatString* GetErrorMessage(void* aUserRef,
-                                           const unsigned aErrorNumber) {
+static const JSErrorFormatString* GetErrorMessage(void* aUserRef,
+                                                  const unsigned aErrorNumber) {
   MOZ_ASSERT(aErrorNumber < ArrayLength(ErrorFormatString));
   return &ErrorFormatString[aErrorNumber];
 }
@@ -125,11 +124,52 @@ uint16_t GetErrorArgCount(const ErrNum aErrorNumber) {
   return GetErrorMessage(nullptr, aErrorNumber)->argCount;
 }
 
+// aErrorNumber needs to be unsigned, not an ErrNum, because the latter makes
+// va_start have undefined behavior, and we do not want undefined behavior.
 void binding_detail::ThrowErrorMessage(JSContext* aCx,
                                        const unsigned aErrorNumber, ...) {
   va_list ap;
   va_start(ap, aErrorNumber);
-  JS_ReportErrorNumberUTF8VA(aCx, GetErrorMessage, nullptr, aErrorNumber, ap);
+
+  if (!ErrorFormatHasContext[aErrorNumber]) {
+    JS_ReportErrorNumberUTF8VA(aCx, GetErrorMessage, nullptr, aErrorNumber, ap);
+    va_end(ap);
+    return;
+  }
+
+  // Our first arg is the context arg.  We want to replace nullptr with empty
+  // string, leave empty string alone, and for anything else append ": " to the
+  // end.  See also the behavior of
+  // TErrorResult::SetPendingExceptionWithMessage, which this is mirroring for
+  // exceptions that are thrown directly, not via an ErrorResult.
+  //
+  // XXXbz Once bug 1619087 is fixed, we can avoid the conversions to UTF-16
+  // here.
+  const char16_t* args[JS::MaxNumErrorArguments + 1];
+  size_t argCount = GetErrorArgCount(static_cast<ErrNum>(aErrorNumber));
+  MOZ_ASSERT(argCount > 0, "We have a context arg!");
+  // We statically assert that all these arg counts are smaller than
+  // JS::MaxNumErrorArguments already.
+  nsTArray<nsString> argHolders(argCount);
+
+  for (size_t i = 0; i < argCount; ++i) {
+    const char* arg = va_arg(ap, const char*);
+    if (i == 0) {
+      if (!arg || !*arg) {
+        // Append an empty string
+        argHolders.AppendElement();
+      } else {
+        argHolders.AppendElement(NS_ConvertUTF8toUTF16(arg));
+        argHolders[0].AppendLiteral(": ");
+      }
+    } else {
+      argHolders.AppendElement(NS_ConvertUTF8toUTF16(arg));
+    }
+    args[i] = argHolders[i].get();
+  }
+
+  JS_ReportErrorNumberUCArray(aCx, GetErrorMessage, nullptr, aErrorNumber,
+                              args);
   va_end(ap);
 }
 
@@ -162,8 +202,8 @@ static bool ThrowInvalidThis(JSContext* aCx, const JS::CallArgs& aArgs,
   return false;
 }
 
-static bool ThrowInvalidThis(JSContext* aCx, const JS::CallArgs& aArgs,
-                             bool aSecurityError, prototypes::ID aProtoId) {
+bool ThrowInvalidThis(JSContext* aCx, const JS::CallArgs& aArgs,
+                      bool aSecurityError, prototypes::ID aProtoId) {
   return ThrowInvalidThis(aCx, aArgs, aSecurityError,
                           NamesOfInterfacesWithProtos(aProtoId));
 }
@@ -186,7 +226,8 @@ struct TErrorResult<CleanupPolicy>::Message {
   }
   ~Message() { MOZ_COUNT_DTOR(TErrorResult::Message); }
 
-  nsTArray<nsString> mArgs;
+  // UTF-8 strings (probably ASCII in most cases) in mArgs.
+  nsTArray<nsCString> mArgs;
   dom::ErrNum mErrorNumber;
 
   bool HasCorrectNumberOfArguments() {
@@ -199,7 +240,7 @@ struct TErrorResult<CleanupPolicy>::Message {
 };
 
 template <typename CleanupPolicy>
-nsTArray<nsString>& TErrorResult<CleanupPolicy>::CreateErrorMessageHelper(
+nsTArray<nsCString>& TErrorResult<CleanupPolicy>::CreateErrorMessageHelper(
     const dom::ErrNum errorNumber, nsresult errorType) {
   AssertInOwningThread();
   mResult = errorType;
@@ -224,7 +265,7 @@ bool TErrorResult<CleanupPolicy>::DeserializeMessage(const IPC::Message* aMsg,
                                                      PickleIterator* aIter) {
   using namespace IPC;
   AssertInOwningThread();
-  nsAutoPtr<Message> readMessage(new Message());
+  auto readMessage = MakeUnique<Message>();
   if (!ReadParam(aMsg, aIter, &readMessage->mArgs) ||
       !ReadParam(aMsg, aIter, &readMessage->mErrorNumber)) {
     return false;
@@ -234,7 +275,7 @@ bool TErrorResult<CleanupPolicy>::DeserializeMessage(const IPC::Message* aMsg,
   }
 
   MOZ_ASSERT(mUnionState == HasNothing);
-  InitMessage(readMessage.forget());
+  InitMessage(readMessage.release());
 #ifdef DEBUG
   mUnionState = HasMessage;
 #endif  // DEBUG
@@ -243,7 +284,7 @@ bool TErrorResult<CleanupPolicy>::DeserializeMessage(const IPC::Message* aMsg,
 
 template <typename CleanupPolicy>
 void TErrorResult<CleanupPolicy>::SetPendingExceptionWithMessage(
-    JSContext* aCx) {
+    JSContext* aCx, const char* context) {
   AssertInOwningThread();
   MOZ_ASSERT(mUnionState == HasMessage);
   MOZ_ASSERT(mExtra.mMessage,
@@ -251,16 +292,25 @@ void TErrorResult<CleanupPolicy>::SetPendingExceptionWithMessage(
 
   Message* message = mExtra.mMessage;
   MOZ_RELEASE_ASSERT(message->HasCorrectNumberOfArguments());
+  if (dom::ErrorFormatHasContext[message->mErrorNumber]) {
+    MOZ_ASSERT(!message->mArgs.IsEmpty(), "How could we have no args here?");
+    MOZ_ASSERT(message->mArgs[0].IsEmpty(), "Context should not be set yet!");
+    if (context) {
+      // Prepend our context and ": "; see API documentation.
+      message->mArgs[0].AssignASCII(context);
+      message->mArgs[0].AppendLiteral(": ");
+    }
+  }
   const uint32_t argCount = message->mArgs.Length();
-  const char16_t* args[JS::MaxNumErrorArguments + 1];
+  const char* args[JS::MaxNumErrorArguments + 1];
   for (uint32_t i = 0; i < argCount; ++i) {
     args[i] = message->mArgs.ElementAt(i).get();
   }
   args[argCount] = nullptr;
 
-  JS_ReportErrorNumberUCArray(aCx, dom::GetErrorMessage, nullptr,
-                              static_cast<unsigned>(message->mErrorNumber),
-                              argCount > 0 ? args : nullptr);
+  JS_ReportErrorNumberUTF8Array(aCx, dom::GetErrorMessage, nullptr,
+                                static_cast<unsigned>(message->mErrorNumber),
+                                argCount > 0 ? args : nullptr);
 
   ClearMessage();
   mResult = NS_OK;
@@ -385,11 +435,19 @@ void TErrorResult<CleanupPolicy>::ThrowDOMException(nsresult rv,
 }
 
 template <typename CleanupPolicy>
-void TErrorResult<CleanupPolicy>::SetPendingDOMException(JSContext* cx) {
+void TErrorResult<CleanupPolicy>::SetPendingDOMException(JSContext* cx,
+                                                         const char* context) {
   AssertInOwningThread();
   MOZ_ASSERT(mUnionState == HasDOMExceptionInfo);
   MOZ_ASSERT(mExtra.mDOMExceptionInfo,
              "SetPendingDOMException() can be called only once");
+
+  if (context && !mExtra.mDOMExceptionInfo->mMessage.IsEmpty()) {
+    // Prepend our context and ": "; see API documentation.
+    nsAutoCString prefix(context);
+    prefix.AppendLiteral(": ");
+    mExtra.mDOMExceptionInfo->mMessage.Insert(prefix, 0);
+  }
 
   dom::Throw(cx, mExtra.mDOMExceptionInfo->mRv,
              mExtra.mDOMExceptionInfo->mMessage);
@@ -555,7 +613,8 @@ void TErrorResult<CleanupPolicy>::SuppressException() {
 }
 
 template <typename CleanupPolicy>
-void TErrorResult<CleanupPolicy>::SetPendingException(JSContext* cx) {
+void TErrorResult<CleanupPolicy>::SetPendingException(JSContext* cx,
+                                                      const char* context) {
   AssertInOwningThread();
   if (IsUncatchableException()) {
     // Nuke any existing exception on cx, to make sure we're uncatchable.
@@ -572,7 +631,7 @@ void TErrorResult<CleanupPolicy>::SetPendingException(JSContext* cx) {
     return;
   }
   if (IsErrorWithMessage()) {
-    SetPendingExceptionWithMessage(cx);
+    SetPendingExceptionWithMessage(cx, context);
     return;
   }
   if (IsJSException()) {
@@ -580,7 +639,7 @@ void TErrorResult<CleanupPolicy>::SetPendingException(JSContext* cx) {
     return;
   }
   if (IsDOMException()) {
-    SetPendingDOMException(cx);
+    SetPendingDOMException(cx, context);
     return;
   }
   SetPendingGenericErrorException(cx);
@@ -1260,11 +1319,11 @@ void GetInterfaceImpl(JSContext* aCx, nsIInterfaceRequestor* aRequestor,
 }
 
 bool ThrowingConstructor(JSContext* cx, unsigned argc, JS::Value* vp) {
-  return ThrowErrorMessage(cx, MSG_ILLEGAL_CONSTRUCTOR);
+  return ThrowErrorMessage<MSG_ILLEGAL_CONSTRUCTOR>(cx, nullptr);
 }
 
 bool ThrowConstructorWithoutNew(JSContext* cx, const char* name) {
-  return ThrowErrorMessage(cx, MSG_CONSTRUCTOR_WITHOUT_NEW, name);
+  return ThrowErrorMessage<MSG_CONSTRUCTOR_WITHOUT_NEW>(cx, name);
 }
 
 inline const NativePropertyHooks* GetNativePropertyHooksFromConstructorFunction(
@@ -1560,39 +1619,6 @@ static bool ResolvePrototypeOrConstructor(
   return JS_WrapPropertyDescriptor(cx, desc);
 }
 
-#ifdef DEBUG
-
-static void DEBUG_CheckXBLCallable(JSContext* cx, JSObject* obj) {
-  // In general, we shouldn't have cross-compartment wrappers here, because
-  // we should be running in an XBL scope, and the content prototype should
-  // contain wrappers to functions defined in the XBL scope. But if the node
-  // has been adopted into another compartment, those prototypes will now point
-  // to a different XBL scope (which is ok).
-  MOZ_ASSERT_IF(js::IsCrossCompartmentWrapper(obj),
-                xpc::IsInContentXBLScope(js::UncheckedUnwrap(obj)));
-  MOZ_ASSERT(JS::IsCallable(obj));
-}
-
-static void DEBUG_CheckXBLLookup(JSContext* cx, JS::PropertyDescriptor* desc) {
-  if (!desc->obj) return;
-  if (!desc->value.isUndefined()) {
-    MOZ_ASSERT(desc->value.isObject());
-    DEBUG_CheckXBLCallable(cx, &desc->value.toObject());
-  }
-  if (desc->getter) {
-    MOZ_ASSERT(desc->attrs & JSPROP_GETTER);
-    DEBUG_CheckXBLCallable(cx, JS_FUNC_TO_DATA_PTR(JSObject*, desc->getter));
-  }
-  if (desc->setter) {
-    MOZ_ASSERT(desc->attrs & JSPROP_SETTER);
-    DEBUG_CheckXBLCallable(cx, JS_FUNC_TO_DATA_PTR(JSObject*, desc->setter));
-  }
-}
-#else
-#  define DEBUG_CheckXBLLookup(a, b) \
-    {}
-#endif
-
 /* static */ bool XrayResolveOwnProperty(
     JSContext* cx, JS::Handle<JSObject*> wrapper, JS::Handle<JSObject*> obj,
     JS::Handle<jsid> id, JS::MutableHandle<JS::PropertyDescriptor> desc,
@@ -1646,37 +1672,6 @@ static void DEBUG_CheckXBLLookup(JSContext* cx, JS::PropertyDescriptor* desc) {
 
       if (desc.object()) {
         // None of these should be cached on the holder, since they're dynamic.
-        return true;
-      }
-    }
-
-    // If we're a special scope for in-content XBL, our script expects to see
-    // the bound XBL methods and attributes when accessing content. However,
-    // these members are implemented in content via custom-spliced prototypes,
-    // and thus aren't visible through Xray wrappers unless we handle them
-    // explicitly. So we check if we're running in such a scope, and if so,
-    // whether the wrappee is a bound element. If it is, we do a lookup via
-    // specialized XBL machinery.
-    //
-    // While we have to do some sketchy walking through content land, we should
-    // be protected by read-only/non-configurable properties, and any functions
-    // we end up with should _always_ be living in our own scope (the XBL
-    // scope). Make sure to assert that.
-    JS::Rooted<JSObject*> maybeElement(cx, obj);
-    Element* element;
-    if (xpc::IsInContentXBLScope(wrapper) &&
-        NS_SUCCEEDED(UNWRAP_OBJECT(Element, &maybeElement, element))) {
-      if (!nsContentUtils::LookupBindingMember(cx, element, id, desc)) {
-        return false;
-      }
-
-      DEBUG_CheckXBLLookup(cx, desc.address());
-
-      if (desc.object()) {
-        // XBL properties shouldn't be cached on the holder, as they might be
-        // shadowed by own properties returned from mResolveOwnProperty.
-        desc.object().set(wrapper);
-
         return true;
       }
     }
@@ -2499,7 +2494,7 @@ bool ReportLenientThisUnwrappingFailure(JSContext* cx, JSObject* obj) {
   return true;
 }
 
-bool GetContentGlobalForJSImplementedObject(JSContext* cx,
+bool GetContentGlobalForJSImplementedObject(BindingCallContext& cx,
                                             JS::Handle<JSObject*> obj,
                                             nsIGlobalObject** globalObj) {
   // Be very careful to not get tricked here.
@@ -2515,7 +2510,7 @@ bool GetContentGlobalForJSImplementedObject(JSContext* cx,
   }
 
   if (!domImplVal.isObject()) {
-    ThrowErrorMessage(cx, MSG_NOT_OBJECT, "Value");
+    cx.ThrowErrorMessage<MSG_NOT_OBJECT>("Value");
     return false;
   }
 
@@ -2597,8 +2592,9 @@ bool NonVoidByteStringToJsval(JSContext* cx, const nsACString& str,
                               JS::MutableHandle<JS::Value> rval) {
   // ByteStrings are not UTF-8 encoded.
   JSString* jsStr = JS_NewStringCopyN(cx, str.Data(), str.Length());
-
-  if (!jsStr) return false;
+  if (!jsStr) {
+    return false;
+  }
 
   // Taintfox: propagate taint
   JS_SetStringTaint(cx, jsStr, str.Taint());
@@ -2608,14 +2604,35 @@ bool NonVoidByteStringToJsval(JSContext* cx, const nsACString& str,
   return true;
 }
 
-void NormalizeUSVString(nsAString& aString) { EnsureUTF16Validity(aString); }
-
-void NormalizeUSVString(binding_detail::FakeString& aString) {
-  EnsureUtf16ValiditySpan(aString);
+bool NormalizeUSVString(nsAString& aString) {
+  return EnsureUTF16Validity(aString);
 }
 
-bool ConvertJSValueToByteString(JSContext* cx, JS::Handle<JS::Value> v,
-                                bool nullable, nsACString& result) {
+bool NormalizeUSVString(binding_detail::FakeString<char16_t>& aString) {
+  uint32_t upTo = Utf16ValidUpTo(aString);
+  uint32_t len = aString.Length();
+  if (upTo == len) {
+    return true;
+  }
+  // This is the part that's different from EnsureUTF16Validity with an
+  // nsAString& argument, because we don't want to ensure mutability in our
+  // BeginWriting() in the common case and nsAString's EnsureMutable is not
+  // public.  This is a little annoying; I wish we could just share the more or
+  // less identical code!
+  if (!aString.EnsureMutable()) {
+    return false;
+  }
+
+  char16_t* ptr = aString.BeginWriting();
+  auto span = MakeSpan(ptr, len);
+  span[upTo] = 0xFFFD;
+  EnsureUtf16ValiditySpan(span.From(upTo + 1));
+  return true;
+}
+
+bool ConvertJSValueToByteString(BindingCallContext& cx, JS::Handle<JS::Value> v,
+                                bool nullable, const char* sourceDescription,
+                                nsACString& result) {
   JS::Rooted<JSString*> s(cx);
   if (v.isString()) {
     s = v.toString();
@@ -2672,7 +2689,8 @@ bool ConvertJSValueToByteString(JSContext* cx, JS::Handle<JS::Value> v,
       char badCharArray[6];
       static_assert(sizeof(char16_t) <= 2, "badCharArray too small");
       SprintfLiteral(badCharArray, "%d", badChar);
-      ThrowErrorMessage(cx, MSG_INVALID_BYTESTRING, index, badCharArray);
+      cx.ThrowErrorMessage<MSG_INVALID_BYTESTRING>(sourceDescription, index,
+                                                   badCharArray);
       return false;
     }
   } else {
@@ -3293,6 +3311,16 @@ bool CreateGlobalOptionsWithXPConnect::PostCreateGlobal(
   return true;
 }
 
+uint64_t GetWindowID(void* aGlobal) { return 0; }
+
+uint64_t GetWindowID(nsGlobalWindowInner* aGlobal) {
+  return aGlobal->WindowID();
+}
+
+uint64_t GetWindowID(DedicatedWorkerGlobalScope* aGlobal) {
+  return aGlobal->WindowID();
+}
+
 #ifdef DEBUG
 void AssertReturnTypeMatchesJitinfo(const JSJitInfo* aJitInfo,
                                     JS::Handle<JS::Value> aValue) {
@@ -3394,7 +3422,7 @@ nsresult UnwrapWindowProxyArg(JSContext* cx, JS::Handle<JSObject*> src,
 
   nsCOMPtr<nsPIDOMWindowOuter> outer = inner->GetOuterWindow();
   RefPtr<BrowsingContext> bc = outer ? outer->GetBrowsingContext() : nullptr;
-  ppArg = bc.forget();
+  ppArg = std::move(bc);
   return NS_OK;
 }
 
@@ -3656,13 +3684,18 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   // Now we start the [HTMLConstructor] algorithm steps from
   // https://html.spec.whatwg.org/multipage/dom.html#htmlconstructor
 
+  ErrorResult rv;
+  auto scopeExit =
+      MakeScopeExit([&]() { Unused << rv.MaybeSetPendingException(aCx); });
+
   // Step 1.
   nsCOMPtr<nsPIDOMWindowInner> window =
       do_QueryInterface(global.GetAsSupports());
   if (!window) {
     // This means we ended up with an HTML Element interface object defined in
     // a non-Window scope.  That's ... pretty unexpected.
-    return Throw(aCx, NS_ERROR_UNEXPECTED);
+    rv.Throw(NS_ERROR_UNEXPECTED);
+    return false;
   }
   RefPtr<mozilla::dom::CustomElementRegistry> registry(
       window->CustomElements());
@@ -3672,7 +3705,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   // going to need a document to create an element.
   Document* doc = window->GetExtantDoc();
   if (!doc) {
-    return Throw(aCx, NS_ERROR_UNEXPECTED);
+    rv.Throw(NS_ERROR_UNEXPECTED);
+    return false;
   }
 
   // Step 2.
@@ -3687,7 +3721,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   JS::Rooted<JSObject*> newTarget(
       aCx, js::CheckedUnwrapStatic(&args.newTarget().toObject()));
   if (!newTarget) {
-    return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+    rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+    return false;
   }
 
   // Enter the compartment of our underlying newTarget object, so we end
@@ -3705,7 +3740,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
       return false;
     }
     if (newTarget == constructor) {
-      return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+      rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+      return false;
     }
   }
 
@@ -3713,7 +3749,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   CustomElementDefinition* definition =
       registry->LookupCustomElementDefinition(aCx, newTarget);
   if (!definition) {
-    return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+    rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+    return false;
   }
 
   // Steps 4, 5, 6 do some sanity checks on our callee.  We add to those a
@@ -3763,7 +3800,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
     // CheckedUnwrapStatic is OK here, since our callee is callable, hence not a
     // cross-origin object.
     if (constructor != js::CheckedUnwrapStatic(callee)) {
-      return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+      rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+      return false;
     }
   } else {
     if (ns == kNameSpaceID_XHTML) {
@@ -3773,7 +3811,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
       // interface.
       tag = nsHTMLTags::CaseSensitiveAtomTagToId(definition->mLocalName);
       if (tag == eHTMLTag_userdefined) {
-        return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+        rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+        return false;
       }
 
       MOZ_ASSERT(tag <= NS_HTML_TAG_MAX, "tag is out of bounds");
@@ -3784,7 +3823,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
     }
 
     if (!cb) {
-      return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+      rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+      return false;
     }
 
     // We want to get the constructor from our global's realm, not the
@@ -3798,7 +3838,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
     // CheckedUnwrapStatic is OK here, since our callee is callable, hence not a
     // cross-origin object.
     if (constructor != js::CheckedUnwrapStatic(callee)) {
-      return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+      rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+      return false;
     }
   }
 
@@ -3851,7 +3892,10 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
 
     // Step 10.
     if (element == ALREADY_CONSTRUCTED_MARKER) {
-      return Throw(aCx, NS_ERROR_DOM_INVALID_STATE_ERR);
+      rv.ThrowTypeError(
+          "Cannot instantiate a custom element inside its own constructor "
+          "during upgrades");
+      return false;
     }
 
     // Step 11.
@@ -3922,6 +3966,14 @@ void SetUseCounter(JSObject* aObject, UseCounter aUseCounter) {
   }
 }
 
+void SetUseCounter(UseCounterWorker aUseCounter) {
+  // If this is called from Worklet thread, workerPrivate will be null.
+  WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+  if (workerPrivate) {
+    workerPrivate->SetUseCounter(aUseCounter);
+  }
+}
+
 namespace {
 
 #define DEPRECATED_OPERATION(_op) #_op,
@@ -3973,8 +4025,8 @@ void ReportDeprecation(nsPIDOMWindowInner* aWindow, nsIURI* aURI,
   }
 
   RefPtr<DeprecationReportBody> body =
-      new DeprecationReportBody(aWindow, type, Nullable<Date>(), msg, aFileName,
-                                aLineNumber, aColumnNumber);
+      new DeprecationReportBody(aWindow, type, nullptr /* date */, msg,
+                                aFileName, aLineNumber, aColumnNumber);
 
   ReportingUtils::Report(aWindow, nsGkAtoms::deprecation,
                          NS_LITERAL_STRING("default"),
@@ -4052,13 +4104,6 @@ void DeprecationWarning(JSContext* aCx, JSObject* aObject,
 void DeprecationWarning(const GlobalObject& aGlobal,
                         Document::DeprecatedOperations aOperation) {
   if (NS_IsMainThread()) {
-    // After diverging from the recording, a replaying process is not able to
-    // report warnings and will be forced to rewind. Avoid reporting warnings
-    // in this case so that the debugger can access deprecated properties.
-    if (recordreplay::HasDivergedFromRecording()) {
-      return;
-    }
-
     nsCOMPtr<nsPIDOMWindowInner> window =
         do_QueryInterface(aGlobal.GetAsSupports());
     if (window && window->GetExtantDoc()) {

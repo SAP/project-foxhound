@@ -7,6 +7,7 @@
 #include "nsNSSIOLayer.h"
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "NSSCertDBTrustDomain.h"
@@ -20,9 +21,11 @@
 #include "mozilla/Casting.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Move.h"
+#include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
+#include "mozpkix/pkixnss.h"
+#include "mozpkix/pkixtypes.h"
 #include "nsArray.h"
 #include "nsArrayUtils.h"
 #include "nsCRT.h"
@@ -30,8 +33,6 @@
 #include "nsClientAuthRemember.h"
 #include "nsContentUtils.h"
 #include "nsIClientAuthDialogs.h"
-#include "nsIConsoleService.h"
-#include "nsIPrefService.h"
 #include "nsISocketProvider.h"
 #include "nsIWebProgressListener.h"
 #include "nsNSSCertHelper.h"
@@ -39,16 +40,14 @@
 #include "nsNSSHelper.h"
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
-#include "mozpkix/pkixnss.h"
-#include "mozpkix/pkixtypes.h"
 #include "prmem.h"
 #include "prnetdb.h"
 #include "secder.h"
 #include "secerr.h"
 #include "ssl.h"
 #include "sslerr.h"
-#include "sslproto.h"
 #include "sslexp.h"
+#include "sslproto.h"
 
 using namespace mozilla;
 using namespace mozilla::psm;
@@ -203,6 +202,17 @@ void nsNSSSocketInfo::NoteTimeUntilReady() {
   }
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("[%p] nsNSSSocketInfo::NoteTimeUntilReady\n", mFd));
+}
+
+void nsNSSSocketInfo::NoteSessionResumptionTime(bool aUsingExternalCache) {
+  // This will include TCP and proxy tunnel wait time
+  Telemetry::AccumulateTimeDelta(
+      aUsingExternalCache
+          ? Telemetry::
+                SESSION_RESUMPTION_WITH_EXTERNAL_CACHE_TIME_UNTIL_READY_MS
+          : Telemetry::
+                SESSION_RESUMPTION_WITH_INTERNAL_CACHE_TIME_UNTIL_READY_MS,
+      mSocketCreationTimestamp, TimeStamp::Now());
 }
 
 void nsNSSSocketInfo::SetHandshakeCompleted() {
@@ -374,7 +384,7 @@ nsresult nsNSSSocketInfo::ActivateSSL() {
 
   mHandshakePending = true;
 
-  return NS_OK;
+  return SetResumptionTokenFromExternalCache();
 }
 
 nsresult nsNSSSocketInfo::GetFileDescPtr(PRFileDesc** aFilePtr) {
@@ -744,6 +754,63 @@ nsNSSSocketInfo::GetPeerId(nsACString& aResult) {
   mPeerId.Append(suffix);
 
   aResult.Assign(mPeerId);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNSSSocketInfo::SetResumptionTokenFromExternalCache() {
+  if (!mozilla::net::SSLTokensCache::IsEnabled()) {
+    return NS_OK;
+  }
+
+  if (!mFd) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // If SSL_NO_CACHE option was set, we must not use the cache
+  PRIntn val;
+  if (SSL_OptionGet(mFd, SSL_NO_CACHE, &val) != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (val != 0) {
+    return NS_OK;
+  }
+
+  nsTArray<uint8_t> token;
+  nsAutoCString peerId;
+  nsresult rv = GetPeerId(peerId);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  rv = mozilla::net::SSLTokensCache::Get(peerId, token);
+  if (NS_FAILED(rv)) {
+    if (rv == NS_ERROR_NOT_AVAILABLE) {
+      // It's ok if we can't find the token.
+      return NS_OK;
+    }
+
+    return rv;
+  }
+
+  SECStatus srv = SSL_SetResumptionToken(mFd, token.Elements(), token.Length());
+  if (srv == SECFailure) {
+    PRErrorCode error = PR_GetError();
+    mozilla::net::SSLTokensCache::Remove(peerId);
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("Setting token failed with NSS error %d [id=%s]", error,
+             PromiseFlatCString(peerId).get()));
+    // We don't consider SSL_ERROR_BAD_RESUMPTION_TOKEN_ERROR as a hard error,
+    // since this error means this token is just expired or can't be decoded
+    // correctly.
+    if (error == SSL_ERROR_BAD_RESUMPTION_TOKEN_ERROR) {
+      return NS_OK;
+    }
+
+    return NS_ERROR_FAILURE;
+  }
+
   return NS_OK;
 }
 
@@ -1455,7 +1522,7 @@ nsresult nsSSLIOLayerHelpers::Init() {
 }
 
 void nsSSLIOLayerHelpers::loadVersionFallbackLimit() {
-  // see nsNSSComponent::setEnabledTLSVersions for pref handling rules
+  // see nsNSSComponent::SetEnabledTLSVersions for pref handling rules
   uint32_t limit = 3;  // TLS 1.2
 
   if (NS_IsMainThread()) {
@@ -1829,7 +1896,7 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
     return;
   }
 
-  UniqueCERTCertList certList(FindNonCACertificatesWithPrivateKeys());
+  UniqueCERTCertList certList(FindClientCertificatesWithPrivateKeys());
   if (!certList) {
     return;
   }
@@ -1839,10 +1906,6 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
   mRV = CERT_FilterCertListByCANames(
       certList.get(), caNamesStringPointers.Length(),
       caNamesStringPointers.Elements(), certUsageSSLClient);
-  if (mRV != SECSuccess) {
-    return;
-  }
-  mRV = CERT_FilterCertListByUsage(certList.get(), certUsageSSLClient, false);
   if (mRV != SECSuccess) {
     return;
   }
@@ -1892,8 +1955,11 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
 
     const nsACString& hostname = mSocketInfo->GetHostName();
 
-    RefPtr<nsClientAuthRememberService> cars =
-        mSocketInfo->SharedState().GetClientAuthRememberService();
+    nsCOMPtr<nsIClientAuthRemember> cars = nullptr;
+
+    if (mSocketInfo->GetProviderTlsFlags() == 0) {
+      cars = do_GetService(NS_CLIENTAUTHREMEMBER_CONTRACTID);
+    }
 
     bool hasRemembered = false;
     nsCString rememberedDBKey;
@@ -1987,8 +2053,10 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
       }
 
       if (cars && wantRemember) {
-        cars->RememberDecision(hostname, mSocketInfo->GetOriginAttributes(),
-                               mServerCert, certChosen ? cert.get() : nullptr);
+        rv = cars->RememberDecision(
+            hostname, mSocketInfo->GetOriginAttributes(), mServerCert,
+            certChosen ? cert.get() : nullptr);
+        Unused << NS_WARN_IF(NS_FAILED(rv));
       }
     }
 

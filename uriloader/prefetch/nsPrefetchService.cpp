@@ -15,15 +15,11 @@
 #include "mozilla/Preferences.h"
 #include "ReferrerInfo.h"
 
-#include "nsICacheEntry.h"
-#include "nsIServiceManager.h"
-#include "nsICategoryManager.h"
 #include "nsIObserverService.h"
 #include "nsIWebProgress.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIURL.h"
-#include "nsISimpleEnumerator.h"
 #include "nsISupportsPriority.h"
 #include "nsNetUtil.h"
 #include "nsString.h"
@@ -122,7 +118,7 @@ nsresult nsPrefetchNode::OpenChannel() {
       getter_AddRefs(mChannel), mURI, source, source->NodePrincipal(),
       nullptr,  // aTriggeringPrincipal
       Maybe<ClientInfo>(), Maybe<ServiceWorkerDescriptor>(), securityFlags,
-      mPolicyType, source->OwnerDoc()->CookieSettings(),
+      mPolicyType, source->OwnerDoc()->CookieJarSettings(),
       nullptr,    // aPerformanceStorage
       loadGroup,  // aLoadGroup
       this,       // aCallbacks
@@ -401,7 +397,7 @@ void nsPrefetchService::ProcessNextPrefetchURI() {
     if (mPrefetchQueue.empty()) {
       break;
     }
-    RefPtr<nsPrefetchNode> node = mPrefetchQueue.front().forget();
+    RefPtr<nsPrefetchNode> node = std::move(mPrefetchQueue.front());
     mPrefetchQueue.pop_front();
 
     if (LOG_ENABLED()) {

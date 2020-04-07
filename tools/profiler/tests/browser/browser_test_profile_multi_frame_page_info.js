@@ -2,7 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+if (SpecialPowers.useRemoteSubframes) {
+  // Bug 1586105: these tests could time out in some extremely slow conditions,
+  // when fission is enabled.
+  // Requesting a longer timeout should make it pass.
+  requestLongerTimeout(2);
+}
+
 add_task(async function test_profile_multi_frame_page_info() {
+  // Requesting the complete log to be able to debug Bug 1586105.
+  SimpleTest.requestCompleteLog();
   if (!AppConstants.MOZ_GECKO_PROFILER) {
     return;
   }
@@ -19,7 +28,7 @@ add_task(async function test_profile_multi_frame_page_info() {
   // multi_frame.html embeds single_frame.html inside an iframe.
   const url = BASE_URL + "multi_frame.html";
   await BrowserTestUtils.withNewTab(url, async function(contentBrowser) {
-    const contentPid = await ContentTask.spawn(contentBrowser, null, () => {
+    const contentPid = await SpecialPowers.spawn(contentBrowser, [], () => {
       return Services.appinfo.processID;
     });
 

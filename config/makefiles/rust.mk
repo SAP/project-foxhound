@@ -37,8 +37,20 @@ endif
 # of cargo when running via `mach`.
 ifdef MACH_STDOUT_ISATTY
 ifeq (,$(findstring --color,$(cargo_build_flags)))
+ifeq (WINNT,$(HOST_OS_ARCH))
+# Bug 1417003: color codes are non-trivial on Windows.  For now,
+# prefer black and white to broken color codes.
+cargo_build_flags += --color=never
+else
 cargo_build_flags += --color=always
 endif
+endif
+endif
+
+# Without -j > 1, make will not pass jobserver info down to cargo. Force
+# one job when requested as a special case.
+ifeq (1,$(MOZ_PARALLEL_BUILD))
+cargo_build_flags += -j1
 endif
 
 # These flags are passed via `cargo rustc` and only apply to the final rustc
@@ -67,6 +79,7 @@ endif
 
 rustflags_sancov =
 ifdef FUZZING_INTERFACES
+ifndef MOZ_TSAN
 # These options should match what is implicitly enabled for `clang -fsanitize=fuzzer`
 #   here: https://github.com/llvm/llvm-project/blob/release/8.x/clang/lib/Driver/SanitizerArgs.cpp#L354
 #
@@ -74,19 +87,29 @@ ifdef FUZZING_INTERFACES
 #  -sanitizer-coverage-level=4                   Enable coverage for all blocks, critical edges, and indirect calls.
 #  -sanitizer-coverage-trace-compares            Tracing of CMP and similar instructions.
 #  -sanitizer-coverage-pc-table                  Create a static PC table.
+#
+# In TSan builds, we must not pass any of these, because sanitizer coverage is incompatible with TSan.
 rustflags_sancov += -Cpasses=sancov -Cllvm-args=-sanitizer-coverage-inline-8bit-counters -Cllvm-args=-sanitizer-coverage-level=4 -Cllvm-args=-sanitizer-coverage-trace-compares -Cllvm-args=-sanitizer-coverage-pc-table
+endif
 endif
 
 rustflags_override = $(MOZ_RUST_DEFAULT_FLAGS) $(rustflags_neon)
+
+ifdef DEVELOPER_OPTIONS
+# By default the Rust compiler will perform a limited kind of ThinLTO on each
+# crate. For local builds this additional optimization is not worth the
+# increase in compile time so we opt out of it.
+rustflags_override += -Clto=off
+endif
 
 ifdef MOZ_USING_SCCACHE
 export RUSTC_WRAPPER=$(CCACHE)
 endif
 
-ifdef MOZ_CODE_COVERAGE
-ifeq (gcc,$(CC_TYPE))
-CODE_COVERAGE_GCC=1
-endif
+ifneq (,$(MOZ_ASAN)$(MOZ_TSAN)$(MOZ_UBSAN))
+ifndef CROSS_COMPILE
+NATIVE_SANITIZERS=1
+endif # CROSS_COMPILE
 endif
 
 # We start with host variables because the rust host and the rust target might be the same,
@@ -106,7 +129,7 @@ rust_cc_env_name := $(subst -,_,$(RUST_TARGET))
 export CC_$(rust_cc_env_name)=$(CC)
 export CXX_$(rust_cc_env_name)=$(CXX)
 export AR_$(rust_cc_env_name)=$(AR)
-ifeq (,$(MOZ_ASAN)$(MOZ_TSAN)$(MOZ_UBSAN)$(CODE_COVERAGE_GCC)$(FUZZING_INTERFACES))
+ifeq (,$(NATIVE_SANITIZERS)$(MOZ_CODE_COVERAGE))
 # -DMOZILLA_CONFIG_H is added to prevent mozilla-config.h from injecting anything
 # in C/C++ compiles from rust. That's not needed in the other branch because the
 # base flags don't force-include mozilla-config.h.
@@ -119,10 +142,9 @@ else
 # scripts/procedural macros vs. those happening for the rust target,
 # we can't blindly pass all our flags down for cc-rs to use them, because of the
 # side effects they can have on what otherwise should be host builds.
-# So for sanitizer, fuzzing and coverage builds, we only pass the base compiler
-# flags.
-# This means C code built by rust is not going to be covered by sanitizer,
-# fuzzing and coverage. But at least we control what compiler is being used,
+# So for sanitizer and coverage builds, we only pass the base compiler flags.
+# This means C code built by rust is not going to be covered by sanitizer
+# and coverage. But at least we control what compiler is being used,
 # rather than relying on cc-rs guesses, which, sometimes fail us.
 export CFLAGS_$(rust_host_cc_env_name)=$(HOST_CC_BASE_FLAGS)
 export CXXFLAGS_$(rust_host_cc_env_name)=$(HOST_CXX_BASE_FLAGS)
@@ -130,6 +152,9 @@ export CFLAGS_$(rust_cc_env_name)=$(CC_BASE_FLAGS)
 export CXXFLAGS_$(rust_cc_env_name)=$(CXX_BASE_FLAGS)
 endif
 
+# Force the target down to all bindgen callers, even those that may not
+# read BINDGEN_SYSTEM_FLAGS some way or another.
+export BINDGEN_EXTRA_CLANG_ARGS:=$(filter --target=%,$(BINDGEN_SYSTEM_FLAGS))
 export CARGO_TARGET_DIR
 export RUSTFLAGS
 export RUSTC
@@ -143,6 +168,13 @@ export PKG_CONFIG
 export PKG_CONFIG_ALLOW_CROSS=1
 export RUST_BACKTRACE=full
 export MOZ_TOPOBJDIR=$(topobjdir)
+
+# Set COREAUDIO_SDK_PATH for third_party/rust/coreaudio-sys/build.rs
+ifeq ($(OS_ARCH), Darwin)
+ifdef MACOS_SDK_DIR
+export COREAUDIO_SDK_PATH=$(MACOS_SDK_DIR)
+endif
+endif
 
 target_rust_ltoable := force-cargo-library-build
 target_rust_nonltoable := force-cargo-test-run force-cargo-library-check $(foreach b,build check,force-cargo-program-$(b))
@@ -190,10 +222,8 @@ cargo_linker_env_var := CARGO_TARGET_$(call cargo_env,$(RUST_TARGET))_LINKER
 
 # Defining all of this for ASan/TSan builds results in crashes while running
 # some crates's build scripts (!), so disable it for now.
-ifndef MOZ_ASAN
-ifndef MOZ_TSAN
-ifndef MOZ_UBSAN
-ifndef FUZZING_INTERFACES
+# See https://github.com/rust-lang/cargo/issues/5754
+ifndef NATIVE_SANITIZERS
 # Cargo needs the same linker flags as the C/C++ compiler,
 # but not the final libraries. Filter those out because they
 # cause problems on macOS 10.7; see bug 1365993 for details.
@@ -239,10 +269,7 @@ $(HOST_RECIPES): MOZ_CARGO_WRAP_LD:=$(HOST_LINKER)
 $(TARGET_RECIPES) $(HOST_RECIPES): MOZ_CARGO_WRAP_HOST_LD:=$(HOST_LINKER)
 endif
 
-endif # FUZZING_INTERFACES
-endif # MOZ_UBSAN
-endif # MOZ_TSAN
-endif # MOZ_ASAN
+endif # NATIVE_SANITIZERS
 
 ifdef RUST_LIBRARY_FILE
 
@@ -264,12 +291,14 @@ $(RUST_LIBRARY_FILE): force-cargo-library-build
 # that we are not importing any networking-related functions in rust code. This reduces
 # the chance of proxy bypasses originating from rust code.
 # The check only works when rust code is built with -Clto.
-# Enabling sancov also causes this to fail.
+# Enabling sancov or TSan also causes this to fail.
 ifndef MOZ_PROFILE_GENERATE
+ifndef MOZ_TSAN
 ifeq ($(OS_ARCH), Linux)
 ifeq (,$(rustflags_sancov))
 ifneq (,$(filter -Clto,$(cargo_rustc_flags)))
 	$(call py_action,check_binary,--target --networking $@)
+endif
 endif
 endif
 endif

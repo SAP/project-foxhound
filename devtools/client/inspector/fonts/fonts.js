@@ -14,15 +14,21 @@ const { Provider } = require("devtools/client/shared/vendor/react-redux");
 const { debounce } = require("devtools/shared/debounce");
 const { ELEMENT_STYLE } = require("devtools/shared/specs/styles");
 
-const FontsApp = createFactory(require("./components/FontsApp"));
+const FontsApp = createFactory(
+  require("devtools/client/inspector/fonts/components/FontsApp")
+);
 
 const { LocalizationHelper } = require("devtools/shared/l10n");
 const INSPECTOR_L10N = new LocalizationHelper(
   "devtools/client/locales/inspector.properties"
 );
 
-const { parseFontVariationAxes } = require("./utils/font-utils");
-const { updateFonts } = require("./actions/fonts");
+const {
+  parseFontVariationAxes,
+} = require("devtools/client/inspector/fonts/utils/font-utils");
+const {
+  updateFonts,
+} = require("devtools/client/inspector/fonts/actions/fonts");
 const {
   applyInstance,
   resetFontEditor,
@@ -30,8 +36,10 @@ const {
   updateAxis,
   updateFontEditor,
   updateFontProperty,
-} = require("./actions/font-editor");
-const { updatePreviewText } = require("./actions/font-options");
+} = require("devtools/client/inspector/fonts/actions/font-editor");
+const {
+  updatePreviewText,
+} = require("devtools/client/inspector/fonts/actions/font-options");
 
 const FONT_PROPERTIES = [
   "font-family",
@@ -287,7 +295,6 @@ class FontInspector {
     // Round pixel values.
     return Math.round(out);
   }
-  /* eslint-enable complexity */
 
   /**
    * Destruction function called when the inspector is destroyed. Removes event listeners
@@ -373,7 +380,7 @@ class FontInspector {
       return [];
     }
 
-    const inspectorFronts = await this.inspector.inspectorFront.getAllInspectorFronts();
+    const inspectorFronts = await this.inspector.getAllInspectorFronts();
 
     let allFonts = [];
     for (const { pageStyle } of inspectorFronts) {
@@ -567,6 +574,9 @@ class FontInspector {
 
         case "slnt":
           // font-style in CSS Fonts Level 4 accepts an angle value.
+          // We have to invert the sign of the angle because CSS and OpenType measure
+          // in opposite directions.
+          value = -value;
           value = `oblique ${value}deg`;
           // Whether the page supports values of font-style from CSS Fonts Level 4.
           condition = this.pageStyle.supportsFontStyleLevel4;

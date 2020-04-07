@@ -6,15 +6,46 @@
 #include "mozilla/dom/WebGPUBinding.h"
 #include "Adapter.h"
 
+#include "Device.h"
 #include "Instance.h"
+#include "ipc/WebGPUChild.h"
+#include "mozilla/dom/Promise.h"
 
 namespace mozilla {
 namespace webgpu {
 
-GPU_IMPL_CYCLE_COLLECTION(Adapter, mParent)
+GPU_IMPL_CYCLE_COLLECTION(Adapter, mParent, mBridge)
 GPU_IMPL_JS_WRAP(Adapter)
 
-Adapter::~Adapter() = default;
+Adapter::Adapter(Instance* const aParent, RawId aId)
+    : ChildOf(aParent), mBridge(aParent->mBridge), mId(aId) {}
+
+Adapter::~Adapter() { Cleanup(); }
+
+void Adapter::Cleanup() {
+  if (mValid && mBridge && mBridge->IsOpen()) {
+    mValid = false;
+    mBridge->DestroyAdapter(mId);
+  }
+}
+
+already_AddRefed<dom::Promise> Adapter::RequestDevice(
+    const dom::GPUDeviceDescriptor& aDesc, ErrorResult& aRv) {
+  RefPtr<dom::Promise> promise = dom::Promise::Create(GetParentObject(), aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
+
+  Maybe<RawId> id = mBridge->AdapterRequestDevice(mId, aDesc);
+  if (id.isSome()) {
+    RefPtr<Device> device = new Device(this, id.value());
+    promise->MaybeResolve(device);
+  } else {
+    promise->MaybeRejectWithNotSupportedError("Unable to instanciate a Device");
+  }
+
+  return promise.forget();
+}
 
 }  // namespace webgpu
 }  // namespace mozilla

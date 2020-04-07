@@ -14,6 +14,7 @@
 #include "mozilla/dom/ClientState.h"
 #include "mozilla/dom/Console.h"
 #include "mozilla/dom/CSPEvalChecker.h"
+#include "mozilla/dom/DOMMozPromiseRequestHolder.h"
 #include "mozilla/dom/DebuggerNotification.h"
 #include "mozilla/dom/DedicatedWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/Fetch.h"
@@ -40,7 +41,6 @@
 #include "nsServiceManagerUtils.h"
 
 #include "mozilla/dom/Document.h"
-#include "nsIServiceWorkerManager.h"
 #include "nsIScriptError.h"
 
 #ifdef ANDROID
@@ -79,7 +79,7 @@ class WorkerScriptTimeoutHandler final : public ScriptTimeoutHandler {
   MOZ_CAN_RUN_SCRIPT virtual bool Call(const char* aExecutionReason) override;
 
  private:
-  virtual ~WorkerScriptTimeoutHandler() {}
+  virtual ~WorkerScriptTimeoutHandler() = default;
 };
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(WorkerScriptTimeoutHandler,
@@ -160,6 +160,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(WorkerGlobalScope,
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDebuggerNotificationManager)
   tmp->UnlinkHostObjectURIs();
   tmp->mWorkerPrivate->UnlinkTimeouts();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(WorkerGlobalScope,
@@ -386,6 +387,10 @@ void WorkerGlobalScope::GetOrigin(nsAString& aOrigin) const {
   aOrigin = mWorkerPrivate->Origin();
 }
 
+bool WorkerGlobalScope::CrossOriginIsolated() const {
+  return mWorkerPrivate->CrossOriginIsolated();
+}
+
 void WorkerGlobalScope::Atob(const nsAString& aAtob, nsAString& aOutput,
                              ErrorResult& aRv) const {
   mWorkerPrivate->AssertIsOnWorkerThread();
@@ -467,7 +472,8 @@ already_AddRefed<IDBFactory> WorkerGlobalScope::GetIndexedDB(
     }
 
     if (ShouldPartitionStorage(access) &&
-        !StoragePartitioningEnabled(access, mWorkerPrivate->CookieSettings())) {
+        !StoragePartitioningEnabled(access,
+                                    mWorkerPrivate->CookieJarSettings())) {
       NS_WARNING("IndexedDB is not allowed in this worker!");
       aErrorResult = NS_ERROR_DOM_SECURITY_ERR;
       return nullptr;
@@ -532,6 +538,10 @@ WorkerGlobalScope::GetExistingDebuggerNotificationManager() {
   return mDebuggerNotificationManager;
 }
 
+bool WorkerGlobalScope::IsSharedMemoryAllowed() const {
+  return mWorkerPrivate->IsSharedMemoryAllowed();
+}
+
 Maybe<ClientInfo> WorkerGlobalScope::GetClientInfo() const {
   return mWorkerPrivate->GetClientInfo();
 }
@@ -557,10 +567,10 @@ WorkerGlobalScope::GetServiceWorkerRegistration(
       return;
     }
 
-    ref = swr.forget();
+    ref = std::move(swr);
     *aDoneOut = true;
   });
-  return ref.forget();
+  return ref;
 }
 
 RefPtr<ServiceWorkerRegistration>
@@ -573,7 +583,11 @@ WorkerGlobalScope::GetOrCreateServiceWorkerRegistration(
     ref = ServiceWorkerRegistration::CreateForWorker(mWorkerPrivate, this,
                                                      aDescriptor);
   }
-  return ref.forget();
+  return ref;
+}
+
+uint64_t WorkerGlobalScope::WindowID() const {
+  return mWorkerPrivate->WindowID();
 }
 
 void WorkerGlobalScope::FirstPartyStorageAccessGranted() {
@@ -685,7 +699,7 @@ ServiceWorkerGlobalScope::ServiceWorkerGlobalScope(
       mRegistration(
           GetOrCreateServiceWorkerRegistration(aRegistrationDescriptor)) {}
 
-ServiceWorkerGlobalScope::~ServiceWorkerGlobalScope() {}
+ServiceWorkerGlobalScope::~ServiceWorkerGlobalScope() = default;
 
 bool ServiceWorkerGlobalScope::WrapGlobalObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aReflector) {
@@ -869,16 +883,17 @@ already_AddRefed<Promise> ServiceWorkerGlobalScope::SkipWaiting(
   }
 
   if (ServiceWorkerParentInterceptEnabled()) {
-    mWorkerPrivate->SetServiceWorkerSkipWaitingFlag()->Then(
-        GetCurrentThreadSerialEventTarget(), __func__,
-        [promise](bool aOk) {
-          Unused << NS_WARN_IF(!aOk);
-          promise->MaybeResolveWithUndefined();
-        },
-        [promise](nsresult aRv) {
-          MOZ_ASSERT(NS_FAILED(aRv));
-          promise->MaybeResolveWithUndefined();
-        });
+    using MozPromiseType = decltype(
+        mWorkerPrivate->SetServiceWorkerSkipWaitingFlag())::element_type;
+    auto holder = MakeRefPtr<DOMMozPromiseRequestHolder<MozPromiseType>>(this);
+
+    mWorkerPrivate->SetServiceWorkerSkipWaitingFlag()
+        ->Then(GetCurrentThreadSerialEventTarget(), __func__,
+               [holder, promise](const MozPromiseType::ResolveOrRejectValue&) {
+                 holder->Complete();
+                 promise->MaybeResolveWithUndefined();
+               })
+        ->Track(*holder);
 
     return promise.forget();
   }

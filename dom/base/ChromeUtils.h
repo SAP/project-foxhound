@@ -24,6 +24,7 @@ class ArrayBufferViewOrArrayBuffer;
 class BrowsingContext;
 class IdleRequestCallback;
 struct IdleRequestOptions;
+struct MediaMetadataInit;
 class MozQueryInterface;
 class PrecompiledScript;
 class Promise;
@@ -38,6 +39,9 @@ class ChromeUtils {
                                      ErrorResult& rv);
 
  public:
+  // Implemented in devtools/shared/heapsnapshot/HeapSnapshot.cpp
+  static uint64_t GetObjectNodeId(GlobalObject& global, JS::HandleObject aVal);
+
   // Implemented in devtools/shared/heapsnapshot/HeapSnapshot.cpp
   static void SaveHeapSnapshot(GlobalObject& global,
                                const HeapSnapshotBoundaries& boundaries,
@@ -195,6 +199,13 @@ class ChromeUtils {
 
   static void PrivateNoteIntentionalCrash(const GlobalObject& aGlobal,
                                           ErrorResult& aError);
+
+  static void GenerateMediaControlKeysTestEvent(
+      const GlobalObject& aGlobal, MediaControlKeysTestEvent aEvent);
+
+  // This function would only be used for testing.
+  static void GetCurrentActiveMediaMetadata(const GlobalObject& aGlobal,
+                                            MediaMetadataInit& aMetadata);
 };
 
 }  // namespace dom

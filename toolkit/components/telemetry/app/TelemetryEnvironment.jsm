@@ -182,10 +182,19 @@ var TelemetryEnvironment = {
   },
 
   // Policy to use when saving preferences. Exported for using them in tests.
-  RECORD_PREF_STATE: 1, // Don't record the preference value
-  RECORD_PREF_VALUE: 2, // We only record user-set prefs.
-  RECORD_DEFAULTPREF_VALUE: 3, // We only record default pref if set
-  RECORD_DEFAULTPREF_STATE: 4, // We only record if the pref exists
+  // Reports "<user-set>" if there is a value set on the user branch
+  RECORD_PREF_STATE: 1,
+
+  // Reports the value set on the user branch, if one is set
+  RECORD_PREF_VALUE: 2,
+
+  // Reports the active value (set on either the user or default branch)
+  // for this pref, if one is set
+  RECORD_DEFAULTPREF_VALUE: 3,
+
+  // Reports "<set>" if a value for this pref is defined on either the user
+  // or default branch
+  RECORD_DEFAULTPREF_STATE: 4,
 
   // Testing method
   async testWatchPreferences(prefMap) {
@@ -243,11 +252,8 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["browser.startup.homepage", { what: RECORD_PREF_STATE }],
   ["browser.startup.page", { what: RECORD_PREF_VALUE }],
   ["toolkit.cosmeticAnimations.enabled", { what: RECORD_PREF_VALUE }],
+  ["browser.urlbar.openViewOnFocus", { what: RECORD_PREF_VALUE }],
   ["browser.urlbar.suggest.searches", { what: RECORD_PREF_VALUE }],
-  [
-    "browser.urlbar.userMadeSearchSuggestionsChoice",
-    { what: RECORD_PREF_VALUE },
-  ],
   ["devtools.chrome.enabled", { what: RECORD_PREF_VALUE }],
   ["devtools.debugger.enabled", { what: RECORD_PREF_VALUE }],
   ["devtools.debugger.remote-enabled", { what: RECORD_PREF_VALUE }],
@@ -261,8 +267,6 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["extensions.blocklist.url", { what: RECORD_PREF_VALUE }],
   ["extensions.formautofill.addresses.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.formautofill.creditCards.enabled", { what: RECORD_PREF_VALUE }],
-  ["extensions.htmlaboutaddons.enabled", { what: RECORD_PREF_VALUE }],
-  ["extensions.legacy.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.strictCompatibility", { what: RECORD_PREF_VALUE }],
   ["extensions.update.enabled", { what: RECORD_PREF_VALUE }],
   ["extensions.update.url", { what: RECORD_PREF_VALUE }],
@@ -307,6 +311,11 @@ const DEFAULT_ENVIRONMENT_PREFS = new Map([
   ["security.pki.mitm_detected", { what: RECORD_PREF_VALUE }],
   ["security.mixed_content.block_active_content", { what: RECORD_PREF_VALUE }],
   ["security.mixed_content.block_display_content", { what: RECORD_PREF_VALUE }],
+  ["security.tls.version.enable-deprecated", { what: RECORD_PREF_VALUE }],
+  ["signon.management.page.breach-alerts.enabled", { what: RECORD_PREF_VALUE }],
+  ["signon.autofillForms", { what: RECORD_PREF_VALUE }],
+  ["signon.generation.enabled", { what: RECORD_PREF_VALUE }],
+  ["signon.rememberSignons", { what: RECORD_PREF_VALUE }],
   ["xpinstall.signatures.required", { what: RECORD_PREF_VALUE }],
 ]);
 
@@ -353,7 +362,7 @@ function enforceBoolean(aValue) {
  */
 function getBrowserLocale() {
   try {
-    return Services.locale.appLocaleAsLangTag;
+    return Services.locale.appLocaleAsBCP47;
   } catch (e) {
     return null;
   }
@@ -1105,11 +1114,28 @@ EnvironmentCache.prototype = {
    * This gets called when the delayed init completes.
    */
   async delayedInit() {
+    this._processData = await Services.sysinfo.processInfo;
+    let processData = await Services.sysinfo.processInfo;
+    // Remove isWow64 and isWowARM64 from processData
+    // to strip it down to just CPU info
+    delete processData.isWow64;
+    delete processData.isWowARM64;
+
+    let oldEnv = null;
+    if (!this._initTask) {
+      oldEnv = this.currentEnvironment;
+    }
+
+    this._cpuData = this._getCPUData();
+    // Augment the return value from the promises with cached values
+    this._cpuData = { ...processData, ...this._cpuData };
+
+    this._currentEnvironment.system.cpu = this._getCPUData();
+
     if (AppConstants.platform == "win") {
       this._hddData = await Services.sysinfo.diskInfo;
-      this._processData = await Services.sysinfo.processInfo;
       let osData = await Services.sysinfo.osInfo;
-      let oldEnv = null;
+
       if (!this._initTask) {
         // We've finished creating the initial env, so notify for the update
         // This is all a bit awkward because `currentEnvironment` clones
@@ -1127,12 +1153,14 @@ EnvironmentCache.prototype = {
 
       this._currentEnvironment.system.os = this._getOSData();
       this._currentEnvironment.system.hdd = this._getHDDData();
+
+      // Windows only values stored in processData
       this._currentEnvironment.system.isWow64 = this._getProcessData().isWow64;
       this._currentEnvironment.system.isWowARM64 = this._getProcessData().isWowARM64;
+    }
 
-      if (!this._initTask) {
-        this._onEnvironmentChange("system-info", oldEnv);
-      }
+    if (!this._initTask) {
+      this._onEnvironmentChange("system-info", oldEnv);
     }
   },
 
@@ -1854,17 +1882,7 @@ EnvironmentCache.prototype = {
       return this._cpuData;
     }
 
-    this._cpuData = {
-      count: getSysinfoProperty("cpucount", null),
-      cores: getSysinfoProperty("cpucores", null),
-      vendor: getSysinfoProperty("cpuvendor", null),
-      family: getSysinfoProperty("cpufamily", null),
-      model: getSysinfoProperty("cpumodel", null),
-      stepping: getSysinfoProperty("cpustepping", null),
-      l2cacheKB: getSysinfoProperty("cpucachel2", null),
-      l3cacheKB: getSysinfoProperty("cpucachel3", null),
-      speedMHz: getSysinfoProperty("cpuspeed", null),
-    };
+    this._cpuData = {};
 
     const CPU_EXTENSIONS = [
       "hasMMX",

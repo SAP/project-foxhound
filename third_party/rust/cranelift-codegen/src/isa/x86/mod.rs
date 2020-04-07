@@ -3,13 +3,19 @@
 mod abi;
 mod binemit;
 mod enc_tables;
+#[cfg(feature = "unwind")]
+mod fde;
 mod registers;
 pub mod settings;
+#[cfg(feature = "unwind")]
+mod unwind;
 
 use super::super::settings as shared_settings;
 #[cfg(feature = "testing_hooks")]
 use crate::binemit::CodeSink;
 use crate::binemit::{emit_function, MemoryCodeSink};
+#[cfg(feature = "unwind")]
+use crate::binemit::{FrameUnwindKind, FrameUnwindSink};
 use crate::ir;
 use crate::isa::enc_tables::{self as shared_enc_tables, lookup_enclist, Encodings};
 use crate::isa::Builder as IsaBuilder;
@@ -17,8 +23,9 @@ use crate::isa::{EncInfo, RegClass, RegInfo, TargetIsa};
 use crate::regalloc;
 use crate::result::CodegenResult;
 use crate::timing;
+use alloc::borrow::Cow;
+use alloc::boxed::Box;
 use core::fmt;
-use std::boxed::Box;
 use target_lexicon::{PointerWidth, Triple};
 
 #[allow(dead_code)]
@@ -105,7 +112,7 @@ impl TargetIsa for Isa {
         )
     }
 
-    fn legalize_signature(&self, sig: &mut ir::Signature, current: bool) {
+    fn legalize_signature(&self, sig: &mut Cow<ir::Signature>, current: bool) {
         abi::legalize_signature(
             sig,
             &self.triple,
@@ -149,6 +156,19 @@ impl TargetIsa for Isa {
 
     fn unsigned_sub_overflow_condition(&self) -> ir::condcodes::IntCC {
         ir::condcodes::IntCC::UnsignedLessThan
+    }
+
+    /// Emit unwind information for the given function.
+    ///
+    /// Only some calling conventions (e.g. Windows fastcall) will have unwind information.
+    #[cfg(feature = "unwind")]
+    fn emit_unwind_info(
+        &self,
+        func: &ir::Function,
+        kind: FrameUnwindKind,
+        sink: &mut dyn FrameUnwindSink,
+    ) {
+        abi::emit_unwind_info(func, self, kind, sink);
     }
 }
 

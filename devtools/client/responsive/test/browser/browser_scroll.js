@@ -10,34 +10,36 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 const TEST_URL =
   "data:text/html;charset=utf-8," +
+  '<head><meta name="viewport" content="width=100, height=100"/></head>' +
   '<div style="background:blue; width:200px; height:200px"></div>';
 
-addRDMTask(TEST_URL, async function({ ui, manager }) {
-  await setViewportSize(ui, manager, 100, 100);
-  const browser = ui.getViewportBrowser();
+addRDMTask(
+  TEST_URL,
+  async function({ ui, manager }) {
+    await setViewportSize(ui, manager, 50, 50);
+    const browser = ui.getViewportBrowser();
 
-  info("Setting focus on the browser.");
-  browser.focus();
+    for (const mv in [true, false]) {
+      const reloadNeeded = await ui.updateTouchSimulation(mv);
+      if (reloadNeeded) {
+        info("Reload is needed -- waiting for it.");
+        const reload = waitForViewportLoad(ui);
+        browser.reload();
+        await reload;
+      }
+      info("Setting focus on the browser.");
+      browser.focus();
 
-  info("Testing scroll behavior with touch simulation OFF.");
-  await testScrollingOfContent(ui);
+      await SpecialPowers.spawn(browser, [], () => {
+        content.scrollTo(0, 0);
+      });
 
-  // Run the tests again with touch simulation on.
-  const reloadNeeded = await ui.updateTouchSimulation(true);
-  if (reloadNeeded) {
-    info("Reload is needed -- waiting for it.");
-    const reload = waitForViewportLoad(ui);
-    browser.reload();
-    await reload;
-
-    await ContentTask.spawn(browser, null, () => {
-      content.scrollTo(0, 0);
-    });
-  }
-
-  info("Testing scroll behavior with touch simulation ON.");
-  await testScrollingOfContent(ui);
-});
+      info("Testing scroll behavior with touch simulation " + mv + ".");
+      await testScrollingOfContent(ui);
+    }
+  },
+  { usingBrowserUI: true }
+);
 
 async function testScrollingOfContent(ui) {
   let scroll;
@@ -60,11 +62,13 @@ async function testScrollingOfContent(ui) {
    * scrolling, then no event will be fired and the test will time out.
    */
   scroll = waitForViewportScroll(ui);
+  info("Synthesizing an arrow key down.");
   EventUtils.synthesizeKey("KEY_ArrowDown");
   await scroll;
   info("Scroll event was fired after arrow key down.");
 
   scroll = waitForViewportScroll(ui);
+  info("Synthesizing an arrow key right.");
   EventUtils.synthesizeKey("KEY_ArrowRight");
   await scroll;
   info("Scroll event was fired after arrow key right.");

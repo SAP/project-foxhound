@@ -231,9 +231,9 @@ void AudioNodeTrack::SetReverb(WebCore::Reverb* aReverb,
           mImpulseChanelCount(aImpulseChannelCount) {}
     void Run() override {
       static_cast<AudioNodeTrack*>(mTrack)->Engine()->SetReverb(
-          mReverb.forget(), mImpulseChanelCount);
+          mReverb.release(), mImpulseChanelCount);
     }
-    nsAutoPtr<WebCore::Reverb> mReverb;
+    UniquePtr<WebCore::Reverb> mReverb;
     uint32_t mImpulseChanelCount;
   };
 
@@ -332,6 +332,12 @@ uint32_t AudioNodeTrack::ComputedNumberOfChannels(uint32_t aInputChannelCount) {
       // Nothing to do here, just shut up the compiler warning.
       return aInputChannelCount;
   }
+}
+
+uint32_t AudioNodeTrack::NumberOfChannels() const {
+  MOZ_ASSERT(GraphImpl()->OnGraphThread());
+
+  return mNumberOfInputChannels;
 }
 
 class AudioNodeTrack::AdvanceAndResumeMessage final : public ControlMessage {
@@ -516,8 +522,10 @@ void AudioNodeTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
         mEngine->ProcessBlock(this, aFrom, mInputChunks[0], &mLastChunks[0],
                               &finished);
       } else {
-        mEngine->ProcessBlocksOnPorts(this, mInputChunks, mLastChunks,
-                                      &finished);
+        mEngine->ProcessBlocksOnPorts(
+            this, MakeSpan(mInputChunks.Elements(), mEngine->InputCount()),
+            MakeSpan(mLastChunks.Elements(), mEngine->OutputCount()),
+            &finished);
       }
     }
     for (uint16_t i = 0; i < outputCount; ++i) {

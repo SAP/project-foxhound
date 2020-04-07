@@ -8,6 +8,7 @@
 
 #include "nsHttp.h"
 #include "nsAHttpTransaction.h"
+#include "HttpTransactionShell.h"
 #include "nsAHttpConnection.h"
 #include "EventTokenBucket.h"
 #include "nsCOMPtr.h"
@@ -17,8 +18,8 @@
 #include "TimingStruct.h"
 #include "Http2Push.h"
 #include "mozilla/net/DNS.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "ARefBase.h"
-#include "AlternateServices.h"
 
 //-----------------------------------------------------------------------------
 
@@ -44,6 +45,7 @@ class SpdyConnectTransaction;
 //-----------------------------------------------------------------------------
 
 class nsHttpTransaction final : public nsAHttpTransaction,
+                                public HttpTransactionShell,
                                 public ATokenBucketEvent,
                                 public nsIInputStreamCallback,
                                 public nsIOutputStreamCallback,
@@ -51,43 +53,11 @@ class nsHttpTransaction final : public nsAHttpTransaction,
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSAHTTPTRANSACTION
+  NS_DECL_HTTPTRANSACTIONSHELL
   NS_DECL_NSIINPUTSTREAMCALLBACK
   NS_DECL_NSIOUTPUTSTREAMCALLBACK
 
   nsHttpTransaction();
-
-  //
-  // called to initialize the transaction
-  //
-  // @param caps
-  //        the transaction capabilities (see nsHttp.h)
-  // @param connInfo
-  //        the connection type for this transaction.
-  // @param reqHeaders
-  //        the request header struct
-  // @param reqBody
-  //        the request body (POST or PUT data stream)
-  // @param reqBodyIncludesHeaders
-  //        fun stuff to support NPAPI plugins.
-  // @param target
-  //        the dispatch target were notifications should be sent.
-  // @param callbacks
-  //        the notification callbacks to be given to PSM.
-  // @param topLevelOuterContentWindowId
-  //        indicate the top level outer content window in which
-  //        this transaction is being loaded.
-  // @param responseBody
-  //        the input stream that will contain the response data.  async
-  //        wait on this input stream for data.  on first notification,
-  //        headers should be available (check transaction status).
-  //
-  MOZ_MUST_USE nsresult
-  Init(uint32_t caps, nsHttpConnectionInfo* connInfo,
-       nsHttpRequestHead* reqHeaders, nsIInputStream* reqBody,
-       uint64_t reqContentLength, bool reqBodyIncludesHeaders,
-       nsIEventTarget* consumerTarget, nsIInterfaceRequestor* callbacks,
-       nsITransportEventSink* eventsink, uint64_t topLevelOuterContentWindowId,
-       HttpTrafficCategory trafficCategory, nsIAsyncInputStream** responseBody);
 
   void OnActivated() override;
 
@@ -95,28 +65,11 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   nsHttpResponseHead* ResponseHead() {
     return mHaveAllHeaders ? mResponseHead : nullptr;
   }
-  nsISupports* SecurityInfo() { return mSecurityInfo; }
 
   nsIEventTarget* ConsumerTarget() { return mConsumerTarget; }
-  nsISupports* HttpChannel() { return mChannel; }
-
-  void SetSecurityCallbacks(nsIInterfaceRequestor* aCallbacks);
-
-  // Called to take ownership of the response headers; the transaction
-  // will drop any reference to the response headers after this call.
-  nsHttpResponseHead* TakeResponseHead();
-
-  // Called to take ownership of the trailer headers.
-  // Returning null if there is no trailer.
-  nsHttpHeaderArray* TakeResponseTrailers();
-
-  void SetH2WSConnRefTaken();
 
   // Called to set/find out if the transaction generated a complete response.
-  bool ResponseIsComplete() { return mResponseIsComplete; }
   void SetResponseIsComplete() { mResponseIsComplete = true; }
-
-  bool ProxyConnectFailed() { return mProxyConnectFailed; }
 
   void EnableKeepAlive() { mCaps |= NS_HTTP_ALLOW_KEEPALIVE; }
   void MakeSticky() { mCaps |= NS_HTTP_STICKY_CONNECTION; }
@@ -137,7 +90,6 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   // overload of nsAHttpTransaction::RequestContext()
   nsIRequestContext* RequestContext() override { return mRequestContext.get(); }
-  void SetRequestContext(nsIRequestContext* aRequestContext);
   void DispatchedAsBlocking();
   void RemoveDispatchedAsBlocking();
 
@@ -152,35 +104,16 @@ class nsHttpTransaction final : public nsAHttpTransaction,
     return mPushedStream.forget();
   }
 
-  void SetPushedStream(Http2PushedStreamWrapper* push) { mPushedStream = push; }
   uint32_t InitialRwin() const { return mInitialRwin; };
   bool ChannelPipeFull() { return mWaitingOnPipeOut; }
 
   // Locked methods to get and set timing info
-  const TimingStruct Timings();
   void BootstrapTimings(TimingStruct times);
-  void SetDomainLookupStart(mozilla::TimeStamp timeStamp,
-                            bool onlyIfNull = false);
-  void SetDomainLookupEnd(mozilla::TimeStamp timeStamp,
-                          bool onlyIfNull = false);
   void SetConnectStart(mozilla::TimeStamp timeStamp, bool onlyIfNull = false);
   void SetConnectEnd(mozilla::TimeStamp timeStamp, bool onlyIfNull = false);
   void SetRequestStart(mozilla::TimeStamp timeStamp, bool onlyIfNull = false);
   void SetResponseStart(mozilla::TimeStamp timeStamp, bool onlyIfNull = false);
   void SetResponseEnd(mozilla::TimeStamp timeStamp, bool onlyIfNull = false);
-
-  mozilla::TimeStamp GetDomainLookupStart();
-  mozilla::TimeStamp GetDomainLookupEnd();
-  mozilla::TimeStamp GetConnectStart();
-  mozilla::TimeStamp GetTcpConnectEnd();
-  mozilla::TimeStamp GetSecureConnectionStart();
-
-  mozilla::TimeStamp GetConnectEnd();
-  mozilla::TimeStamp GetRequestStart();
-  mozilla::TimeStamp GetResponseStart();
-  mozilla::TimeStamp GetResponseEnd();
-
-  int64_t GetTransferSize() { return mTransferSize; }
 
   MOZ_MUST_USE bool Do0RTT() override;
   MOZ_MUST_USE nsresult Finish0RTT(bool aRestart,
@@ -203,6 +136,13 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   bool IsWebsocketUpgrade();
   void SetH2WSTransaction(SpdyConnectTransaction*);
+
+  void OnProxyConnectComplete(int32_t aResponseCode) override;
+
+  // This is only called by Http2PushedStream::TryOnPush when a new pushed
+  // stream is available. The newly added stream will be taken by another
+  // transaction.
+  void OnPush(Http2PushedStreamWrapper* aStream);
 
  private:
   friend class DeleteHttpTransaction;
@@ -248,6 +188,11 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // WOULD_BLOCK.
   bool ShouldThrottle();
 
+  void NotifyTransactionObserver(nsresult reason);
+
+  already_AddRefed<Http2PushedStreamWrapper> TakePushedStreamById(
+      uint32_t aStreamId);
+
  private:
   class UpdateSecurityCallbacks : public Runnable {
    public:
@@ -280,7 +225,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   nsCOMPtr<nsIAsyncOutputStream> mPipeOut;
   nsCOMPtr<nsIRequestContext> mRequestContext;
 
-  nsCOMPtr<nsISupports> mChannel;
+  uint64_t mChannelId;
   nsCOMPtr<nsIHttpActivityObserver> mActivityDistributor;
 
   nsCString mReqHeaderBuf;  // flattened request headers
@@ -382,6 +327,8 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   bool mDeferredSendProgress;
   bool mWaitingOnPipeOut;
 
+  bool mDoNotRemoveAltSvc;
+
   // mClosed           := transaction has been explicitly closed
   // mTransactionDone  := transaction ran to completion or was interrupted
   // mResponseComplete := transaction ran to completion
@@ -392,7 +339,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   // protected by nsHttp::GetLock()
   bool mResponseHeadTaken;
-  nsAutoPtr<nsHttpHeaderArray> mForTakeResponseTrailers;
+  UniquePtr<nsHttpHeaderArray> mForTakeResponseTrailers;
   bool mResponseTrailersTaken;
 
   // The time when the transaction was submitted to the Connection Manager
@@ -428,8 +375,6 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // class has been set while Leader, Unblocked, DontThrottle has not.
   bool EligibleForThrottling() const;
 
-  void DontReuseConnection();
-
  private:
   bool mSubmittedRatePacing;
   bool mPassedRatePacing;
@@ -437,7 +382,6 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   nsCOMPtr<nsICancelable> mTokenBucketCancel;
 
  public:
-  void SetClassOfService(uint32_t cos);
   uint32_t ClassOfService() { return mClassOfService; }
 
  private:
@@ -457,20 +401,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
  private:
   RefPtr<ASpdySession> mTunnelProvider;
-
- public:
-  void SetTransactionObserver(TransactionObserver* arg) {
-    mTransactionObserver = arg;
-  }
-
- private:
-  RefPtr<TransactionObserver> mTransactionObserver;
-
- public:
-  void GetNetworkAddresses(NetAddr& self, NetAddr& peer);
-  bool ResolvedByTRR() { return mResolvedByTRR; }
-
- private:
+  TransactionObserverFunc mTransactionObserver;
   NetAddr mSelfAddr;
   NetAddr mPeerAddr;
   bool mResolvedByTRR;
@@ -491,6 +422,11 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   HttpTrafficCategory mTrafficCategory;
   bool mThroughCaptivePortal;
+  int32_t mProxyConnectResponseCode;
+
+  OnPushCallback mOnPushCallback;
+  nsDataHashtable<nsUint32HashKey, RefPtr<Http2PushedStreamWrapper>>
+      mIDToStreamMap;
 };
 
 }  // namespace net

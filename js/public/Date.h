@@ -36,8 +36,8 @@
 #include "js/RootingAPI.h"   // JS::Handle
 #include "js/Value.h"        // JS::CanonicalizeNaN, JS::DoubleValue, JS::Value
 
-struct JSContext;
-class JSObject;
+struct JS_PUBLIC_API JSContext;
+class JS_PUBLIC_API JSObject;
 
 namespace JS {
 
@@ -108,7 +108,7 @@ inline ClippedTime TimeClip(double time) {
   }
 
   // Step 3.
-  return ClippedTime(ToInteger(time) + (+0.0));
+  return ClippedTime(ToInteger(time));
 }
 
 // Produce a double Value from the given time.  Because times may be NaN,

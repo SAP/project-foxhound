@@ -8,7 +8,6 @@
 
 #include "plstr.h"
 #include "nsXULPrototypeDocument.h"
-#include "nsIServiceManager.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 
@@ -17,7 +16,6 @@
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsIObserverService.h"
-#include "nsIStringStream.h"
 #include "nsIStorageStream.h"
 
 #include "nsAppDirectoryServiceDefs.h"
@@ -70,7 +68,7 @@ static void DisableXULCacheChangedCallback(const char* aPref, void* aClosure) {
 
 nsXULPrototypeCache* nsXULPrototypeCache::sInstance = nullptr;
 
-nsXULPrototypeCache::nsXULPrototypeCache() {}
+nsXULPrototypeCache::nsXULPrototypeCache() = default;
 
 nsXULPrototypeCache::~nsXULPrototypeCache() { FlushScripts(); }
 
@@ -158,8 +156,8 @@ nsresult nsXULPrototypeCache::PutPrototype(nsXULPrototypeDocument* aDocument) {
   nsCOMPtr<nsIURI> uri;
   NS_GetURIWithoutRef(aDocument->GetURI(), getter_AddRefs(uri));
 
-  // Put() releases any old value and addrefs the new one
-  mPrototypeTable.Put(uri, aDocument);
+  // Put() releases any old value
+  mPrototypeTable.Put(uri, RefPtr{aDocument});
 
   return NS_OK;
 }
@@ -170,7 +168,7 @@ mozilla::StyleSheet* nsXULPrototypeCache::GetStyleSheet(nsIURI* aURI) {
 
 nsresult nsXULPrototypeCache::PutStyleSheet(StyleSheet* aStyleSheet) {
   nsIURI* uri = aStyleSheet->GetSheetURI();
-  mStyleSheetTable.Put(uri, aStyleSheet);
+  mStyleSheetTable.Put(uri, RefPtr{aStyleSheet});
   return NS_OK;
 }
 
@@ -198,31 +196,12 @@ nsresult nsXULPrototypeCache::PutScript(nsIURI* aURI,
   return NS_OK;
 }
 
-#ifdef MOZ_XBL
-nsXBLDocumentInfo* nsXULPrototypeCache::GetXBLDocumentInfo(nsIURI* aURL) {
-  return mXBLDocTable.GetWeak(aURL);
-}
-
-nsresult nsXULPrototypeCache::PutXBLDocumentInfo(
-    nsXBLDocumentInfo* aDocumentInfo) {
-  nsIURI* uri = aDocumentInfo->DocumentURI();
-  nsXBLDocumentInfo* info = mXBLDocTable.GetWeak(uri);
-  if (!info) {
-    mXBLDocTable.Put(uri, aDocumentInfo);
-  }
-  return NS_OK;
-}
-#endif
-
 void nsXULPrototypeCache::FlushScripts() { mScriptTable.Clear(); }
 
 void nsXULPrototypeCache::Flush() {
   mPrototypeTable.Clear();
   mScriptTable.Clear();
   mStyleSheetTable.Clear();
-#ifdef MOZ_XBL
-  mXBLDocTable.Clear();
-#endif
 }
 
 bool nsXULPrototypeCache::IsEnabled() { return !gDisableXULCache; }
@@ -362,9 +341,7 @@ nsresult nsXULPrototypeCache::HasData(nsIURI* uri, bool* exists) {
     *exists = sc->HasEntry(spec.get());
   } else {
     *exists = false;
-    return NS_OK;
   }
-  *exists = NS_SUCCEEDED(rv);
   return NS_OK;
 }
 
@@ -398,7 +375,7 @@ nsresult nsXULPrototypeCache::BeginCaching(nsIURI* aURI) {
   rv = aURI->GetHost(package);
   if (NS_FAILED(rv)) return rv;
   nsAutoCString locale;
-  LocaleService::GetInstance()->GetAppLocaleAsLangTag(locale);
+  LocaleService::GetInstance()->GetAppLocaleAsBCP47(locale);
 
   nsAutoCString fileChromePath, fileLocale;
 
@@ -485,11 +462,6 @@ nsresult nsXULPrototypeCache::BeginCaching(nsIURI* aURI) {
 }
 
 void nsXULPrototypeCache::MarkInCCGeneration(uint32_t aGeneration) {
-#ifdef MOZ_XBL
-  for (auto iter = mXBLDocTable.Iter(); !iter.Done(); iter.Next()) {
-    iter.Data()->MarkInCCGeneration(aGeneration);
-  }
-#endif
   for (auto iter = mPrototypeTable.Iter(); !iter.Done(); iter.Next()) {
     iter.Data()->MarkInCCGeneration(aGeneration);
   }
@@ -515,17 +487,6 @@ static void ReportSize(const nsCString& aPath, size_t aAmount,
                           aData);
 }
 
-#ifdef MOZ_XBL
-static void AppendURIForMemoryReport(nsIURI* aUri, nsACString& aOutput) {
-  nsCString spec = aUri->GetSpecOrDefault();
-  // A hack: replace forward slashes with '\\' so they aren't
-  // treated as path separators.  Users of the reporters
-  // (such as about:memory) have to undo this change.
-  spec.ReplaceChar('/', '\\');
-  aOutput += spec;
-}
-#endif
-
 /* static */
 void nsXULPrototypeCache::CollectMemoryReports(
     nsIHandleReportCallback* aHandleReport, nsISupports* aData) {
@@ -547,19 +508,6 @@ void nsXULPrototypeCache::CollectMemoryReports(
 
   other += sInstance->mScriptTable.ShallowSizeOfExcludingThis(mallocSizeOf);
   // TODO Report content inside mScriptTable?
-
-#ifdef MOZ_XBL
-  other += sInstance->mXBLDocTable.ShallowSizeOfExcludingThis(mallocSizeOf);
-  for (auto iter = sInstance->mXBLDocTable.ConstIter(); !iter.Done();
-       iter.Next()) {
-    nsAutoCString path;
-    path += "xbl-docs/(";
-    AppendURIForMemoryReport(iter.Key(), path);
-    path += ")";
-    size_t size = iter.UserData()->SizeOfIncludingThis(mallocSizeOf);
-    REPORT_SIZE(path, size, "Memory used by this XBL document.");
-  }
-#endif
 
   other +=
       sInstance->mStartupCacheURITable.ShallowSizeOfExcludingThis(mallocSizeOf);

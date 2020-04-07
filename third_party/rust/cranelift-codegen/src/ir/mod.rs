@@ -6,6 +6,7 @@ pub mod dfg;
 pub mod entities;
 mod extfunc;
 mod extname;
+mod framelayout;
 pub mod function;
 mod globalvalue;
 mod heap;
@@ -13,7 +14,7 @@ pub mod immediates;
 pub mod instructions;
 pub mod jumptable;
 pub mod layout;
-mod libcall;
+pub(crate) mod libcall;
 mod memflags;
 mod progpoint;
 mod sourceloc;
@@ -26,17 +27,20 @@ mod valueloc;
 #[cfg(feature = "enable-serde")]
 use serde::{Deserialize, Serialize};
 
-pub use crate::ir::builder::{InsertBuilder, InstBuilder, InstBuilderBase, InstInserterBase};
+pub use crate::ir::builder::{
+    InsertBuilder, InstBuilder, InstBuilderBase, InstInserterBase, ReplaceBuilder,
+};
 pub use crate::ir::constant::{ConstantData, ConstantOffset, ConstantPool};
 pub use crate::ir::dfg::{DataFlowGraph, ValueDef};
 pub use crate::ir::entities::{
-    Constant, Ebb, FuncRef, GlobalValue, Heap, Immediate, Inst, JumpTable, SigRef, StackSlot,
+    Block, Constant, FuncRef, GlobalValue, Heap, Immediate, Inst, JumpTable, SigRef, StackSlot,
     Table, Value,
 };
 pub use crate::ir::extfunc::{
     AbiParam, ArgumentExtension, ArgumentPurpose, ExtFuncData, Signature,
 };
 pub use crate::ir::extname::ExternalName;
+pub use crate::ir::framelayout::{FrameLayout, FrameLayoutChange, FrameLayoutChanges};
 pub use crate::ir::function::{DisplayFunctionAnnotations, Function};
 pub use crate::ir::globalvalue::GlobalValueData;
 pub use crate::ir::heap::{HeapData, HeapStyle};
@@ -45,11 +49,11 @@ pub use crate::ir::instructions::{
 };
 pub use crate::ir::jumptable::JumpTableData;
 pub use crate::ir::layout::Layout;
-pub use crate::ir::libcall::{get_libcall_funcref, get_probestack_funcref, LibCall};
+pub use crate::ir::libcall::{get_probestack_funcref, LibCall};
 pub use crate::ir::memflags::MemFlags;
 pub use crate::ir::progpoint::{ExpandedProgramPoint, ProgramOrder, ProgramPoint};
 pub use crate::ir::sourceloc::SourceLoc;
-pub use crate::ir::stackslot::{StackSlotData, StackSlotKind, StackSlots};
+pub use crate::ir::stackslot::{StackLayoutInfo, StackSlotData, StackSlotKind, StackSlots};
 pub use crate::ir::table::TableData;
 pub use crate::ir::trapcode::TrapCode;
 pub use crate::ir::types::Type;
@@ -69,8 +73,8 @@ pub type JumpTables = PrimaryMap<JumpTable, JumpTableData>;
 /// Map of instruction encodings.
 pub type InstEncodings = SecondaryMap<Inst, isa::Encoding>;
 
-/// Code offsets for EBBs.
-pub type EbbOffsets = SecondaryMap<Ebb, binemit::CodeOffset>;
+/// Code offsets for blocks.
+pub type BlockOffsets = SecondaryMap<Block, binemit::CodeOffset>;
 
 /// Code offsets for Jump Tables.
 pub type JumpTableOffsets = SecondaryMap<JumpTable, binemit::CodeOffset>;
@@ -98,7 +102,7 @@ pub struct ValueLabelStart {
 #[derive(Debug, Clone)]
 pub enum ValueLabelAssignments {
     /// Original value labels assigned at transform.
-    Starts(std::vec::Vec<ValueLabelStart>),
+    Starts(alloc::vec::Vec<ValueLabelStart>),
 
     /// A value alias to original value.
     Alias {

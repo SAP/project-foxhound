@@ -16,6 +16,18 @@ interface nsIQuotaUsageRequest;
 interface nsIQuotaManagerService : nsISupports
 {
   /**
+   * Check if storage is initialized.
+   */
+  [must_use] nsIQuotaRequest
+  storageInitialized();
+
+  /**
+   * Check if temporary storage is initialized.
+   */
+  [must_use] nsIQuotaRequest
+  temporaryStorageInitialized();
+
+  /**
    * Initializes storage directory. This can be used in tests to verify
    * upgrade methods.
    *
@@ -36,21 +48,26 @@ interface nsIQuotaManagerService : nsISupports
   initTemporaryStorage();
 
   /**
-   * Initializes storages for the given principal. This can be used in tests to
-   * verify origin initialization.
+   * Initializes storage directory, temporary storage (if persistence type is
+   * default or temporary) and directory for the given origin. This can be used
+   * in tests to verify origin initialization.
    *
    * If the dom.quotaManager.testing preference is not true the call will be
    * a no-op.
    *
    * @param aPrincipal
-   *        A principal for the origin whose storages are to be initialized.
+   *        A principal for the origin whose directory is to be initialized.
    * @param aPersistenceType
-   *        A string that tells what persistence type of storages will be
+   *        A string that tells what persistence type of origin will be
+   *        initialized.
+   * @param aClientType
+   *        An optional string that tells what client type of origin will be
    *        initialized.
    */
   [must_use] nsIQuotaRequest
-  initStoragesForPrincipal(in nsIPrincipal aPrincipal,
-                           in ACString aPersistenceType);
+  initStorageAndOrigin(in nsIPrincipal aPrincipal,
+                       in ACString aPersistenceType,
+                       [optional] in AString aClientType);
 
   /**
    * Schedules an asynchronous callback that will inspect all origins and
@@ -89,14 +106,10 @@ interface nsIQuotaManagerService : nsISupports
                        [optional] in boolean aFromMemory);
 
   /**
-   * Schedules an asynchronous callback that will inspect all origins and
-   * just returns the origin strings of origins.
-   *
-   * @param aCallback
-   *        The callback that will be called when the origin is collected.
+   * Asynchronously lists all origins and returns them as plain strings.
    */
   [must_use] nsIQuotaRequest
-  listOrigins(in nsIQuotaCallback aCallback);
+  listOrigins();
 
   /**
    * Removes all storages. The files may not be deleted immediately depending

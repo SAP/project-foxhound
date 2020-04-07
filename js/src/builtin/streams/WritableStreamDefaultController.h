@@ -32,7 +32,21 @@ class WritableStreamDefaultController : public StreamController {
    * exists, but WritableByteStreamController does not.)
    */
   enum Slots {
+    /**
+     * The stream that this controller controls.  Stream and controller are
+     * initialized at the same time underneath the |WritableStream| constructor,
+     * so they are same-compartment with each other.
+     */
     Slot_Stream = StreamController::SlotCount,
+
+    /**
+     * The underlying sink object that this controller and its associated stream
+     * write to.
+     *
+     * This is a user-provided value, the first argument passed to
+     * |new WritableStream|, so it may be a cross-compartment wrapper around an
+     * object from another realm.
+     */
     Slot_UnderlyingSink,
 
     /** Number stored as DoubleValue. */
@@ -44,6 +58,22 @@ class WritableStreamDefaultController : public StreamController {
      * MakeSizeAlgorithmFromSizeFunction.
      */
     Slot_StrategySize,
+
+    /**
+     * Slots containing the core of each of the write/close/abort algorithms the
+     * spec creates from the underlying sink passed in when creating a
+     * |WritableStream|.  ("core", as in the value produced by
+     * |CreateAlgorithmFromUnderlyingMethod| after validating the user-provided
+     * input.)
+     *
+     * These slots are initialized underneath the |WritableStream| constructor,
+     * so they are same-compartment with both stream and controller.  (They
+     * could be wrappers around arbitrary callable objects from other
+     * compartments, tho.)
+     */
+    Slot_WriteMethod,
+    Slot_CloseMethod,
+    Slot_AbortMethod,
 
     /** Bit field stored as Int32Value. */
     Slot_Flags,
@@ -92,11 +122,23 @@ class WritableStreamDefaultController : public StreamController {
     controller->setUnderlyingSink(JS::UndefinedHandleValue);
   }
 
-  void setWriteMethod(const JS::Value& writeMethod) {}
+  JS::Value writeMethod() const { return getFixedSlot(Slot_WriteMethod); }
+  void setWriteMethod(const JS::Value& writeMethod) {
+    setFixedSlot(Slot_WriteMethod, writeMethod);
+  }
+  void clearWriteMethod() { setWriteMethod(JS::UndefinedValue()); }
 
-  void setCloseMethod(const JS::Value& closeMethod) {}
+  JS::Value closeMethod() const { return getFixedSlot(Slot_CloseMethod); }
+  void setCloseMethod(const JS::Value& closeMethod) {
+    setFixedSlot(Slot_CloseMethod, closeMethod);
+  }
+  void clearCloseMethod() { setCloseMethod(JS::UndefinedValue()); }
 
-  void setAbortMethod(const JS::Value& abortMethod) {}
+  JS::Value abortMethod() const { return getFixedSlot(Slot_AbortMethod); }
+  void setAbortMethod(const JS::Value& abortMethod) {
+    setFixedSlot(Slot_AbortMethod, abortMethod);
+  }
+  void clearAbortMethod() { setAbortMethod(JS::UndefinedValue()); }
 
   double strategyHWM() const {
     return getFixedSlot(Slot_StrategyHWM).toDouble();
@@ -105,7 +147,11 @@ class WritableStreamDefaultController : public StreamController {
     setFixedSlot(Slot_StrategyHWM, DoubleValue(highWaterMark));
   }
 
-  void setStrategySize(const JS::Value& size) {}
+  JS::Value strategySize() const { return getFixedSlot(Slot_StrategySize); }
+  void setStrategySize(const JS::Value& size) {
+    setFixedSlot(Slot_StrategySize, size);
+  }
+  void clearStrategySize() { setStrategySize(JS::UndefinedValue()); }
 
   uint32_t flags() const { return getFixedSlot(Slot_Flags).toInt32(); }
   void setFlags(uint32_t flags) { setFixedSlot(Slot_Flags, Int32Value(flags)); }

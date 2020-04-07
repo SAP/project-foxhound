@@ -7,6 +7,8 @@
 #include "mozilla/dom/AbstractRange.h"
 #include "mozilla/dom/AbstractRangeBinding.h"
 
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/RangeUtils.h"
 #include "mozilla/dom/StaticRange.h"
 #include "nsContentUtils.h"
@@ -14,6 +16,7 @@
 #include "nsGkAtoms.h"
 #include "nsINode.h"
 #include "nsRange.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 namespace dom {
@@ -42,6 +45,10 @@ template nsresult AbstractRange::SetStartAndEndInternal(
 template nsresult AbstractRange::SetStartAndEndInternal(
     const RawRangeBoundary& aStartBoundary,
     const RawRangeBoundary& aEndBoundary, StaticRange* aRange);
+template bool AbstractRange::MaybeCacheToReuse(nsRange& aInstance);
+template bool AbstractRange::MaybeCacheToReuse(StaticRange& aInstance);
+
+bool AbstractRange::sHasShutDown = false;
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(AbstractRange)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(AbstractRange)
@@ -68,15 +75,59 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(AbstractRange)
 
+// NOTE: If you need to change default value of members of AbstractRange,
+//       update nsRange::Create(nsINode* aNode) and ClearForReuse() too.
 AbstractRange::AbstractRange(nsINode* aNode)
     : mIsPositioned(false), mIsGenerated(false), mCalledByJS(false) {
+  Init(aNode);
+}
+
+void AbstractRange::Init(nsINode* aNode) {
   MOZ_ASSERT(aNode, "range isn't in a document!");
   mOwner = aNode->OwnerDoc();
 }
 
-nsINode* AbstractRange::GetCommonAncestor() const {
-  return mIsPositioned ? nsContentUtils::GetCommonAncestor(mStart.Container(),
-                                                           mEnd.Container())
+// static
+void AbstractRange::Shutdown() {
+  sHasShutDown = true;
+  if (nsTArray<RefPtr<nsRange>>* cachedRanges = nsRange::sCachedRanges) {
+    nsRange::sCachedRanges = nullptr;
+    cachedRanges->Clear();
+    delete cachedRanges;
+  }
+  if (nsTArray<RefPtr<StaticRange>>* cachedRanges =
+          StaticRange::sCachedRanges) {
+    StaticRange::sCachedRanges = nullptr;
+    cachedRanges->Clear();
+    delete cachedRanges;
+  }
+}
+
+// static
+template <class RangeType>
+bool AbstractRange::MaybeCacheToReuse(RangeType& aInstance) {
+  static const size_t kMaxRangeCache = 64;
+
+  // If the instance is not used by JS and the cache is not yet full, we
+  // should reuse it.  Otherwise, delete it.
+  if (sHasShutDown || aInstance.GetWrapperMaybeDead() || aInstance.GetFlags() ||
+      (RangeType::sCachedRanges &&
+       RangeType::sCachedRanges->Length() == kMaxRangeCache)) {
+    return false;
+  }
+
+  aInstance.ClearForReuse();
+
+  if (!RangeType::sCachedRanges) {
+    RangeType::sCachedRanges = new nsTArray<RefPtr<RangeType>>(16);
+  }
+  RangeType::sCachedRanges->AppendElement(&aInstance);
+  return true;
+}
+
+nsINode* AbstractRange::GetClosestCommonInclusiveAncestor() const {
+  return mIsPositioned ? nsContentUtils::GetClosestCommonInclusiveAncestor(
+                             mStart.Container(), mEnd.Container())
                        : nullptr;
 }
 
@@ -107,7 +158,10 @@ nsresult AbstractRange::SetStartAndEndInternal(
     // XXX: Offsets - handle this more efficiently.
     // If the end offset is less than the start offset, this should be
     // collapsed at the end offset.
-    if (aStartBoundary.Offset() > aEndBoundary.Offset()) {
+    if (*aStartBoundary.Offset(
+            RangeBoundaryBase<SPT, SRT>::OffsetFilter::kValidOffsets) >
+        *aEndBoundary.Offset(
+            RangeBoundaryBase<EPT, ERT>::OffsetFilter::kValidOffsets)) {
       aRange->DoSetRange(aEndBoundary, aEndBoundary, newStartRoot);
     } else {
       aRange->DoSetRange(aStartBoundary, aEndBoundary, newStartRoot);
@@ -129,9 +183,17 @@ nsresult AbstractRange::SetStartAndEndInternal(
     return NS_OK;
   }
 
+  const Maybe<int32_t> pointOrder =
+      nsContentUtils::ComparePoints(aStartBoundary, aEndBoundary);
+  if (!pointOrder) {
+    // Safely return a value but also detected this in debug builds.
+    MOZ_ASSERT_UNREACHABLE();
+    return NS_ERROR_INVALID_ARG;
+  }
+
   // If the end point is before the start point, this should be collapsed at
   // the end point.
-  if (nsContentUtils::ComparePoints(aStartBoundary, aEndBoundary) == 1) {
+  if (*pointOrder == 1) {
     aRange->DoSetRange(aEndBoundary, aEndBoundary, newEndRoot);
     return NS_OK;
   }

@@ -8,7 +8,6 @@
 
 #include "nsError.h"
 #include "nsTArray.h"
-#include "nsAutoPtr.h"
 #include "nsClassHashtable.h"
 #include "nsCOMPtr.h"
 #include "nsHashKeys.h"
@@ -114,7 +113,8 @@ class nsHttpAuthEntry {
 
   friend class nsHttpAuthNode;
   friend class nsHttpAuthCache;
-  friend class nsAutoPtr<nsHttpAuthEntry>;  // needs to call the destructor
+  friend class mozilla::DefaultDelete<nsHttpAuthEntry>;  // needs to call the
+                                                         // destructor
 };
 
 //-----------------------------------------------------------------------------
@@ -123,6 +123,8 @@ class nsHttpAuthEntry {
 
 class nsHttpAuthNode {
  private:
+  using EntryList = nsTArray<UniquePtr<nsHttpAuthEntry>>;
+
   nsHttpAuthNode();
   ~nsHttpAuthNode();
 
@@ -132,6 +134,7 @@ class nsHttpAuthNode {
 
   // realm must not be null
   nsHttpAuthEntry* LookupEntryByRealm(const char* realm);
+  EntryList::const_iterator LookupEntryItrByRealm(const char* realm) const;
 
   // if a matching entry is found, then credentials will be changed.
   MOZ_MUST_USE nsresult SetAuthEntry(const char* path, const char* realm,
@@ -145,10 +148,11 @@ class nsHttpAuthNode {
   uint32_t EntryCount() { return mList.Length(); }
 
  private:
-  nsTArray<nsAutoPtr<nsHttpAuthEntry> > mList;
+  EntryList mList;
 
   friend class nsHttpAuthCache;
-  friend class nsAutoPtr<nsHttpAuthNode>;  // needs to call the destructor
+  friend class mozilla::DefaultDelete<nsHttpAuthNode>;  // needs to call the
+                                                        // destructor
 };
 
 //-----------------------------------------------------------------------------
@@ -196,7 +200,7 @@ class nsHttpAuthCache {
                       const char* realm, nsACString const& originSuffix);
 
   // expire all existing auth list entries including proxy auths.
-  MOZ_MUST_USE nsresult ClearAll();
+  void ClearAll();
 
  private:
   nsHttpAuthNode* LookupAuthNode(const char* scheme, const char* host,

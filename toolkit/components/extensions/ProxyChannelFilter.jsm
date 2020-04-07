@@ -286,6 +286,7 @@ class ProxyChannelFilter {
       type: channel.type,
       fromCache: !!channel.fromCache,
       incognito: originAttributes && originAttributes.privateBrowsingId > 0,
+      thirdParty: channel.thirdParty,
 
       originUrl: channel.originURL || undefined,
       documentUrl: channel.documentURL || undefined,
@@ -307,7 +308,7 @@ class ProxyChannelFilter {
     if (this.extraInfoSpec.includes("requestHeaders")) {
       data.requestHeaders = channel.getRequestHeaders();
     }
-    if (this.extension.isPrivileged) {
+    if (channel.urlClassification) {
       data.urlClassification = {
         firstParty: channel.urlClassification.firstParty.filter(
           c => !c.startsWith("socialtracking")

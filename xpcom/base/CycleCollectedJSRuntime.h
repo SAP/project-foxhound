@@ -112,7 +112,7 @@ class CycleCollectedJSRuntime {
   virtual void CustomGCCallback(JSGCStatus aStatus) {}
   virtual void CustomOutOfMemoryCallback() {}
 
-  LinkedList<CycleCollectedJSContext>& Contexts() { return mContexts; }
+  CycleCollectedJSContext* GetContext() { return mContext; }
 
  private:
   void DescribeGCThing(bool aIsMarked, JS::GCCellPtr aThing,
@@ -148,18 +148,14 @@ class CycleCollectedJSRuntime {
 
   static void TraceBlackJS(JSTracer* aTracer, void* aData);
   static void TraceGrayJS(JSTracer* aTracer, void* aData);
-  static void GCCallback(JSContext* aContext, JSGCStatus aStatus, void* aData);
+  static void GCCallback(JSContext* aContext, JSGCStatus aStatus,
+                         JS::GCReason aReason, void* aData);
   static void GCSliceCallback(JSContext* aContext, JS::GCProgress aProgress,
                               const JS::GCDescription& aDesc);
   static void GCNurseryCollectionCallback(JSContext* aContext,
                                           JS::GCNurseryProgress aProgress,
                                           JS::GCReason aReason);
   static void OutOfMemoryCallback(JSContext* aContext, void* aData);
-  /**
-   * Callback for reporting external string memory.
-   */
-  static size_t SizeofExternalStringCallback(
-      JSString* aStr, mozilla::MallocSizeOf aMallocSizeOf);
 
   static bool ContextCallback(JSContext* aCx, unsigned aOperation, void* aData);
 
@@ -213,7 +209,7 @@ class CycleCollectedJSRuntime {
   void SetLargeAllocationFailure(OOMState aNewState);
 
   void AnnotateAndSetOutOfMemory(OOMState* aStatePtr, OOMState aNewState);
-  void OnGC(JSContext* aContext, JSGCStatus aStatus);
+  void OnGC(JSContext* aContext, JSGCStatus aStatus, JS::GCReason aReason);
   void OnOutOfMemory();
   void OnLargeAllocationFailure();
 
@@ -291,8 +287,7 @@ class CycleCollectedJSRuntime {
   // isn't one.
   static CycleCollectedJSRuntime* Get();
 
-  void AddContext(CycleCollectedJSContext* aContext);
-  void RemoveContext(CycleCollectedJSContext* aContext);
+  void SetContext(CycleCollectedJSContext* aContext);
 
 #ifdef NIGHTLY_BUILD
   bool GetRecentDevError(JSContext* aContext,
@@ -301,7 +296,7 @@ class CycleCollectedJSRuntime {
 #endif  // defined(NIGHTLY_BUILD)
 
  private:
-  LinkedList<CycleCollectedJSContext> mContexts;
+  CycleCollectedJSContext* mContext;
 
   JSGCThingParticipant mGCThingCycleCollectorGlobal;
 

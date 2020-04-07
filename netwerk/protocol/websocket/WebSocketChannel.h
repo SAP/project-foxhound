@@ -19,7 +19,6 @@
 #include "nsIProtocolProxyCallback.h"
 #include "nsIChannelEventSink.h"
 #include "nsIHttpChannelInternal.h"
-#include "nsIStringStream.h"
 #include "BaseWebSocketChannel.h"
 
 #include "nsCOMPtr.h"
@@ -291,7 +290,7 @@ class WebSocketChannel : public BaseWebSocketChannel,
   uint32_t mHdrOutToSend;
   uint8_t* mHdrOut;
   uint8_t mOutHeader[kCopyBreak + 16];
-  nsAutoPtr<PMCECompression> mPMCECompressor;
+  UniquePtr<PMCECompression> mPMCECompressor;
   uint32_t mDynamicOutputSize;
   uint8_t* mDynamicOutput;
   bool mPrivateBrowsing;
