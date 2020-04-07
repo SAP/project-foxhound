@@ -88,7 +88,7 @@ JSLinearString* StringBuffer::finishStringInternal(JSContext* cx) {
 
   if (JSInlineString::lengthFits<CharT>(len)) {
     mozilla::Range<const CharT> range(begin<CharT>(), len);
-    JSFlatString* str = NewInlineString<CanGC>(cx, range);
+    JSLinearString* str = NewInlineString<CanGC>(cx, range);
 
     // TaintFox: Propagate taint to newly created string.
     str->setTaint(cx, taint);

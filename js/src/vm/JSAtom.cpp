@@ -1056,7 +1056,7 @@ js::AtomizeCharsIfUntainted(JSContext* cx, const CharT* chars, size_t length,
     if (!taint.hasTaint())
         return AtomizeChars(cx, chars, length, pin);
 
-    JSFlatString* flat = NewStringCopyN<NoGC>(cx, chars, length);
+    JSLinearString* flat = NewStringCopyN<NoGC>(cx, chars, length);
     if (!flat) {
         ReportOutOfMemory(cx);
         return nullptr;

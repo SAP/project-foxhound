@@ -33,7 +33,6 @@
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/Date.h"
 #include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -648,7 +647,9 @@ bool nsTAutoJSString<T>::init(const JS::Value& v) {
   return true;
 }
 
-<<<<<<< HEAD
+template bool nsTAutoJSString<char16_t>::init(const JS::Value&);
+template bool nsTAutoJSString<char>::init(const JS::Value&);
+
 LazyLogModule gTaintLog("Taint");
 
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name)
@@ -889,7 +890,3 @@ nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char
 
   return NS_OK;
 }
-=======
-template bool nsTAutoJSString<char16_t>::init(const JS::Value&);
-template bool nsTAutoJSString<char>::init(const JS::Value&);
->>>>>>> firefox-release

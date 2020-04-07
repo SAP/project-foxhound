@@ -911,7 +911,7 @@ JSString* js::ConcatStrings(
     if (str->length() > 0) {
         StringTaint newTaint = left->taint();
         newTaint.concat(right->taint(), left->length());
-        newTaint.extend(js::TaintOperationFromContext(cx, "concat"));
+        newTaint.extend(JS::TaintOperationFromContext(cx, "concat"));
         str->setTaint(cx, newTaint);
     }
     return str;
@@ -921,7 +921,7 @@ JSString* js::ConcatStrings(
   JSString* rope = JSRope::new_<allowGC>(cx, left, right, wholeLength);
   // TaintFox: add concat operation to taint flow.
   if (rope) {
-    rope->taint().extend(js::TaintOperationFromContext(cx, "concat"));
+    rope->taint().extend(JS::TaintOperationFromContext(cx, "concat"));
   }
   return rope;
 }
@@ -1452,55 +1452,6 @@ bool AutoStableStringChars::copyTwoByteChars(JSContext* cx,
   twoByteChars_ = chars;
   s_ = linearString;
   return true;
-}
-
-JSFlatString* JSString::ensureFlat(JSContext* cx) {
-  if (isFlat()) {
-    return &asFlat();
-  }
-  if (isDependent()) {
-    return asDependent().undepend(cx);
-  }
-  if (isRope()) {
-    return asRope().flatten(cx);
-  }
-  return asExternal().ensureFlat(cx);
-}
-
-JSFlatString* JSExternalString::ensureFlat(JSContext* cx) {
-  MOZ_ASSERT(hasTwoByteChars());
-
-  size_t n = length();
-  // Taintfox: propagate taint
-  StringTaint taint = this->taint();
-
-  auto s = cx->make_pod_array<char16_t>(n + 1, js::StringBufferArena);
-  if (!s) {
-    return nullptr;
-  }
-
-  // Copy the chars before finalizing the string.
-  {
-    AutoCheckCannotGC nogc;
-    FillAndTerminate(s.get(), nonInlineChars<char16_t>(nogc), n);
-  }
-
-  // Release the external chars.
-  // Taintfox: this will also remove any taint information
-  finalize(cx->runtime()->defaultFreeOp());
-
-  MOZ_ASSERT(isTenured());
-  AddCellMemory(this, (n + 1) * sizeof(char16_t), MemoryUse::StringContents);
-
-  // Transform the string into a non-external, flat string. Note that the
-  // resulting string will still be in an AllocKind::EXTERNAL_STRING arena,
-  // but will no longer be an external string.
-  setLengthAndFlags(n, INIT_FLAT_FLAGS);
-  setNonInlineChars<char16_t>(s.release());
-  // Taintfox: set taint
-  this->setTaint(cx, taint);
-
-  return &this->asFlat();
 }
 
 #if defined(DEBUG) || defined(JS_JITSPEW)

@@ -992,12 +992,11 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
 
  GeneralParser(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
                 const Unit* units, size_t length, bool foldConstants,
-                ParseInfo& parserInfo, SyntaxParser* syntaxParser,
-                LazyScript* lazyOuterFunction, ScriptSourceObject* sourceObject,
-                ParseGoal parseGoal) :
+                CompilationInfo& compilationInfo, SyntaxParser* syntaxParser,
+                BaseScript* lazyOuterFunction, ScriptSourceObject* sourceObject) :
    GeneralParser(cx, options, units, length, EmptyTaint, foldConstants,
-                 parserInfo, syntaxParser, lazyOuterFunction,
-                 sourceObject, parseGoal) {}
+                 compilationInfo, syntaxParser, lazyOuterFunction,
+                 sourceObject) {}
 
   inline void setAwaitHandling(AwaitHandling awaitHandling);
   inline void setInParametersOfAsyncFunction(bool inParameters);

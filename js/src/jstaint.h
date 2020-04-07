@@ -14,7 +14,7 @@
 // Taint related helper functions.
 //
 
-namespace js {
+namespace JS {
 
 // Converts a raw char pointer into the argument type for a taint operation.
 std::u16string taintarg(JSContext* cx, const char16_t* str);

@@ -37,8 +37,8 @@ struct FakeString {
   FakeString()
       : mDataFlags(DataFlags::TERMINATED),
         mClassFlags(ClassFlags::INLINE),
-        mInlineCapacity(kInlineCapacity - 1),
-        mTaint() {}
+        mTaint(),
+        mInlineCapacity(kInlineCapacity - 1) {}
 
   ~FakeString() {
     if (mDataFlags & DataFlags::REFCOUNTED) {

@@ -8,8 +8,14 @@
 #include <utility>
 
 #include "jsapi.h"
+#include "js/Array.h"
+#include "js/UniquePtr.h"
+#include "vm/FrameIter.h"
+#include "vm/JSContext.h"
+#include "vm/JSFunction.h"
+#include "vm/StringType.h"
 
-using namespace js;
+using namespace JS;
 
 static std::u16string ascii2utf16(const std::string& str) {
     std::u16string res;
@@ -18,28 +24,28 @@ static std::u16string ascii2utf16(const std::string& str) {
     return res;
 }
 
-std::u16string js::taintarg(JSContext* cx, const char16_t* str)
+std::u16string JS::taintarg(JSContext* cx, const char16_t* str)
 {
     return std::u16string(str);
 }
 
-std::u16string js::taintarg(JSContext* cx, HandleString str)
+std::u16string JS::taintarg(JSContext* cx, HandleString str)
 {
-    if (!str)
+    if (!str) {
         return std::u16string();
-
+    }
     JSLinearString* linear = str->ensureLinear(cx);
     if (!linear)
         return std::u16string();
 
     js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
     
-    CopyChars(buf.get(), *linear);
+    js::CopyChars(buf.get(), *linear);
     std::u16string result(buf.get(), linear->length());
     return result;
 }
 
-std::u16string js::taintarg(JSContext* cx, HandleObject obj)
+std::u16string JS::taintarg(JSContext* cx, HandleObject obj)
 {
     RootedValue val(cx, ObjectValue(*obj));
     RootedString str(cx, ToString(cx, val));
@@ -48,7 +54,7 @@ std::u16string js::taintarg(JSContext* cx, HandleObject obj)
     return taintarg(cx, str);
 }
 
-std::u16string js::taintarg(JSContext* cx, HandleValue val)
+std::u16string JS::taintarg(JSContext* cx, HandleValue val)
 {
     RootedString str(cx, ToString(cx, val));
     if (!str)
@@ -56,25 +62,25 @@ std::u16string js::taintarg(JSContext* cx, HandleValue val)
     return taintarg(cx, str);
 }
 
-std::u16string js::taintarg(JSContext* cx, int32_t num)
+std::u16string JS::taintarg(JSContext* cx, int32_t num)
 {
     RootedValue val(cx, Int32Value(num));
     return taintarg(cx, val);
 }
 
-std::vector<std::u16string> js::taintargs(JSContext* cx, HandleValue val)
+std::vector<std::u16string> JS::taintargs(JSContext* cx, HandleValue val)
 {
     std::vector<std::u16string> args;
     bool isArray;
 
-    if (!JS_IsArrayObject(cx, val, &isArray)) {
+    if (!IsArrayObject(cx, val, &isArray)) {
       return args;
     }
 
     if (isArray) {
       RootedObject array(cx, &val.toObject());
       uint32_t length;
-      if (!JS_GetArrayLength(cx, array, &length)) {
+      if (!GetArrayLength(cx, array, &length)) {
         return args;
       }
       for (uint32_t i = 0; i < length; ++i) {
@@ -90,12 +96,12 @@ std::vector<std::u16string> js::taintargs(JSContext* cx, HandleValue val)
     return args;
 }
 
-TaintLocation js::TaintLocationFromContext(JSContext* cx)
+TaintLocation JS::TaintLocationFromContext(JSContext* cx)
 {
     if (!cx)
 	return TaintLocation();
 
-    AllFramesIter i(cx);
+    js::AllFramesIter i(cx);
 
     if (i.done()) {
 	return TaintLocation();
@@ -121,15 +127,15 @@ TaintLocation js::TaintLocationFromContext(JSContext* cx)
     return TaintLocation(ascii2utf16(std::string(filename)), line, pos, taintarg(cx, function));
 }
 
-TaintOperation js::TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleValue args) {
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleValue args) {
     return TaintOperation(name, TaintLocationFromContext(cx), taintargs(cx, args));
 }
 
-TaintOperation js::TaintOperationFromContext(JSContext* cx, const char* name) {
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name) {
     return TaintOperation(name, TaintLocationFromContext(cx));
 }
 
-void js::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const CallArgs& args)
+void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const CallArgs& args)
 {
     if (!function)
         return;
@@ -139,11 +145,11 @@ void js::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
         name = StringValue(function->displayAtom());
 
     std::u16string sourceinfo(u"unknown");
-    if (function->isInterpreted() && function->hasScript()) {
+    if (function->isInterpreted() && function->hasBaseScript()) {
         RootedScript script(cx, function->existingScript());
         if (script) {
             int lineno = script->lineno();
-            ScriptSource* source = script->scriptSource();
+            js::ScriptSource* source = script->scriptSource();
             if (source && source->filename()) {
                 std::string filename(source->filename());
                 sourceinfo = ascii2utf16(filename) + u":" + ascii2utf16(std::to_string(lineno));
@@ -162,7 +168,7 @@ void js::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
 }
 
 // Print a message to stdout.
-void js::TaintFoxReport(JSContext* cx, const char* msg)
+void JS::TaintFoxReport(JSContext* cx, const char* msg)
 {
   JS_ReportWarningUTF8(cx, "%s", msg);
 }

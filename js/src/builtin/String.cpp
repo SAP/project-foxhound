@@ -32,6 +32,7 @@
 #endif
 #include "builtin/RegExp.h"
 #include "jit/InlinableNatives.h"
+#include "js/Array.h"
 #include "js/Conversions.h"
 #if !JS_HAS_INTL_API
 #  include "js/LocaleSensitive.h"
@@ -264,11 +265,11 @@ construct_taint_flow(JSContext* cx, HandleObject flow_object, TaintNode** flow)
     return false;
 
   bool is_array;
-  if (!JS_IsArrayObject(cx, flow_object, &is_array) || !is_array)
+  if (!JS::IsArrayObject(cx, flow_object, &is_array) || !is_array)
     return false;
 
   uint32_t length;
-  if (!JS_GetArrayLength(cx, flow_object, &length))
+  if (!JS::GetArrayLength(cx, flow_object, &length))
     return false;
 
   RootedValue v(cx);
@@ -309,11 +310,11 @@ str_taint_setter(JSContext* cx, unsigned argc, Value* vp)
     return false;
 
   bool is_array;
-  if (!JS_IsArrayObject(cx, array, &is_array) || !is_array)
+  if (!JS::IsArrayObject(cx, array, &is_array) || !is_array)
     return false;
 
   uint32_t length;
-  if (!JS_GetArrayLength(cx, array, &length))
+  if (!JS::GetArrayLength(cx, array, &length))
     return false;
 
   RootedValue v(cx);
