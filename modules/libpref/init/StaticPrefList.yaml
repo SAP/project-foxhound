@@ -7914,12 +7914,12 @@
 
 - name: security.csp.enable
   type: bool
-  value: true
+  value: false
   mirror: always
 
 - name: security.csp.enableStrictDynamic
   type: bool
-  value: true
+  value: false
   mirror: always
 
 - name: security.csp.reporting.script-sample.max-length
