@@ -31,3 +31,4 @@ ac_add_options --disable-updater
 #
 mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
 ac_add_options --disable-tests
+ac_add_options --enable-cdp
