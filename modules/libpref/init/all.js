@@ -4907,7 +4907,7 @@ pref("marionette.contentListener", false);
 
   // Limits remote agent to listen on loopback devices,
   // e.g. 127.0.0.1, localhost, and ::1.
-  pref("remote.force-local", true);
+  pref("remote.force-local", false);
 #endif
 
 // Defines the verbosity of the internal logger.
