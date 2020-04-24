@@ -6,7 +6,7 @@ See Taint.h for a detailed description of the internal taint classes and their u
 
 ### Sources
 
-    git grep TaintFox | grep -i source
+    grep -ir --exclude-dir=obj-* MarkTaintSource
 
 In dom/base/nsLocation.cpp
 * location.hash
@@ -22,15 +22,19 @@ In dom/base/nsLocation.cpp
 In dom/base/nsINode.cpp
 * document.baseURI
 
-In dom/base/nsHTMLDocument.cpp
-* document.cookie
-
 In dom/base/nsDocument.cpp
 * document.referrer
 * document.documentURI
+* document.cookie
+
+In dom/base/nsINode.cpp
+* document.baseURI
 
 In dom/base/nsGlobalWindow.cpp
 * window.name
+
+In dom/html/HTMLScriptElement.cpp
+* script.innerHTML
 
 #### Partial taint flows
 The following sinks are partial taint flows, which although not exploitable alone,
@@ -38,7 +42,7 @@ could be combined with other vulnerabilities. For example, the XHR response can
 be exploited as part of a stored XSS attack.
 
 In dom/xhr/XMLHttpRequestMainThread.cpp
-* XMLHttpRequest.response(Text)
+* XMLHttpRequest.response
 
 In dom/websocket/WebSocket.cpp
 * WebSocket.MessageEvent.data (for a String payload)
@@ -46,18 +50,31 @@ In dom/websocket/WebSocket.cpp
 In dom/base/PostMessageEvent.cpp
 * window.postMessage
 
-#### Input Elements
+#### DOM Elements
 HTML Input elements are a user-controlled input and could be used to inject
 code into the DOM. Not sure if this can be exploited remotely though.
 
 In dom/html/HTMLInputElement.cpp
 * input.value for input elements (e.g. text box)
 
-#### Local Storage
-The window.localStorage.getItem can be vulnerable to stored DOM XSS attacks.
-The implementation is in three different places depending on which type of
-storage is being used:
+In dom/html/nsGenericHTMLElement.cpp
+* element.getAttribute
 
+In dom/base/Element.h
+* element.getAttribute
+
+In dom/base/Element.cpp
+* element.getAttribute
+* element.getAttributeNS
+* element.innerHTML
+* element.outerHTML
+
+#### Local and Sesssion Storage
+The window.localStorage.getItem and window.sesssionStorage.getItem can be
+vulnerable to stored DOM XSS attacks. The implementation is in three different
+places depending on which type of storage is being used:
+
+* dom/storage/SessionStorage.cpp
 * dom/storage/LocalStorage.cpp
 * dom/storage/PartitionedLocalStorage.cpp
 * localstorage/LSObject.cpp
@@ -71,25 +88,25 @@ as well (e.g. via JSON?)
 
 ### Sinks
 
-    git grep TaintFox | grep -i sink
+    grep -ir --exclude-dir=obj-* ReportTaintSink
 
 In dom/base/Element.cpp
 * Event handler
-* .outerHTML
+* outerHTML
 
 In dom/base/FragmentOrElement.cpp
-* .innerHTML
+* innerHTML
 
-In dom/base/nsLocation.cpp
+In dom/base/Location.cpp
 * location.hash
+* location.host
 * location.hostname
 * location.href
 * location.pathname
 * location.port
 * location.protocol
-* location.username
-* location.password
 * location.search
+* location.assign
 
 In dom/html/nsHTMLDocument.cpp
 * document.cookie
@@ -99,19 +116,33 @@ In dom/base/nsGlobalWindow.cpp
 * setInterval
 * setTimeout
 
+In dom/html/HTMLScriptElement.cpp
+* script.innerHTML
+* script.text
+* script.src
+
+In dom/html/HTMLImageElement.h
+* img.src
+* img.srcset
+
 In js/src/builtin/Eval.cpp
-* eval()
+* eval
 
 In js/src/jsfun.cpp
-* new Function
+* Function.ctr
 
 #### Partial taint flows
 The following sinks are partial taint flows, which although not exploitable alone,
 could be combined with other vulnerabilities.
 
 In dom/xhr/XMLHttpRequestMainThread.cpp
-* XMLHttpRequest.open
+* XMLHttpRequest.open(url)
+* XMLHttpRequest.open(username)
+* XMLHttpRequest.open(password)
 * XMLHttpRequest.send
+* XMLHttpRequest.setRequestHeader(value)
+* XMLHttpRequest.setRequestHeader(name)
+
 
 In dom/websocket/WebSocket.cpp
 * WebSocket.send (for a String payload)
@@ -119,7 +150,7 @@ In dom/websocket/WebSocket.cpp
 In dom/events/MessageEvent.cpp
 * window.MessageEvent
 
-#### Local Storage
+#### Local and Session Storage
 The window.localStorage.setItem is a potential sink. As with sources,
 the implementation is in three different places depending on which type of
 storage is being used:
@@ -127,6 +158,7 @@ storage is being used:
 * dom/storage/LocalStorage.cpp
 * dom/storage/PartitionedLocalStorage.cpp
 * localstorage/LSObject.cpp
+* dom/storage/SessionStorage.cpp
 
 ## Modified string classes
 

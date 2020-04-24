@@ -517,6 +517,9 @@ void Location::SetProtocol(const nsAString& aProtocol,
     return;
   }
 
+  // TaintFox: location.protocol sink.
+  ReportTaintSink(aProtocol, "location.protocol");
+
   SetURI(uri, aSubjectPrincipal, aRv);
 }
 
