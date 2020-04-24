@@ -15,8 +15,6 @@ In dom/base/nsLocation.cpp
 * location.href
 * location.origin
 * location.pathname
-* location.username
-* location.password
 * location.search
 
 In dom/base/nsINode.cpp
@@ -26,9 +24,6 @@ In dom/base/nsDocument.cpp
 * document.referrer
 * document.documentURI
 * document.cookie
-
-In dom/base/nsINode.cpp
-* document.baseURI
 
 In dom/base/nsGlobalWindow.cpp
 * window.name
