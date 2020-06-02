@@ -509,7 +509,7 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Taintfox: set new taint
-  newtaint.extend(TaintOperationFromContext(cx, "escape"));
+  newtaint.extend(TaintOperationFromContext(cx, "escape", str));
   res->setTaint(cx, newtaint);
 
   args.rval().setString(res);
@@ -673,7 +673,7 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: add taint operation.
-  newtaint.extend(TaintOperationFromContext(cx, "unescape"));
+  newtaint.extend(TaintOperationFromContext(cx, "unescape", str));
   result->setTaint(cx, newtaint);
 
   args.rval().setString(result);
@@ -1150,7 +1150,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
     // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
     // allocate a new string here.
     if (i == length) {
-      str->taint().extend(TaintOperationFromContext(cx, "toLowerCase"));
+      str->taint().extend(TaintOperationFromContextJSString(cx, "toLowerCase", str));
       return str;
     }
 
@@ -1186,7 +1186,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   if (!res)
     return nullptr;
   // TaintFox: Add taint operation to all taint ranges of the input string.
-  res->setTaint(cx, StringTaint::extend(taint, TaintOperationFromContext(cx, "toLowerCase")));
+  res->setTaint(cx, StringTaint::extend(taint, TaintOperationFromContextJSString(cx, "toLowerCase", str)));
 
   return res;
 }
@@ -1337,7 +1337,7 @@ static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleLowerCase")));
+    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleLowerCase", str)));
 
     args.rval().set(result);
     return true;
@@ -1577,7 +1577,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
     // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
     // allocate a new string here.
     if (i == length) {
-      str->taint().extend(TaintOperationFromContext(cx, "toUpperCase"));
+      str->taint().extend(TaintOperationFromContextJSString(cx, "toUpperCase", str));
       return str;
     }
 
@@ -1636,7 +1636,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
                 : newChars.ref<TwoByteBuffer>().toStringDontDeflate(cx, resultLength);
 
   // TaintFox: Add taint operation to all taint ranges of the input string.
-  res->setTaint(cx, StringTaint::extend(taint, TaintOperationFromContext(cx, "toUpperCase")));
+  res->setTaint(cx, StringTaint::extend(taint, TaintOperationFromContextJSString(cx, "toUpperCase", str)));
 
   return res;
 }
@@ -1761,7 +1761,7 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleUpperCase")));
+    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleUpperCase", str)));
 
     args.rval().set(result);
     return true;
@@ -1960,7 +1960,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: Add taint operation.
-  ns->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "normalize")));
+  ns->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "normalize", str)));
 
   // Step 7.
   args.rval().setString(ns);
@@ -2953,13 +2953,13 @@ static bool TrimString(JSContext* cx, const CallArgs& args, bool trimStart,
   // the acutal trimming of taint ranges has been done in
   // NewDependentString (StringType-inl.h, JSDependentString::init)
   if (trimStart && trimEnd)
-    result->taint().extend(TaintOperationFromContext(cx, "trim"));
+    result->taint().extend(TaintOperationFromContextJSString(cx, "trim", str));
   else if (trimStart)
-    result->taint().extend(TaintOperationFromContext(cx, "trimLeft"));
+    result->taint().extend(TaintOperationFromContextJSString(cx, "trimLeft", str));
   else if (trimEnd)
-    result->taint().extend(TaintOperationFromContext(cx, "trimRight"));
+    result->taint().extend(TaintOperationFromContextJSString(cx, "trimRight", str));
   else
-    result->taint().extend(TaintOperationFromContext(cx, "trim"));
+    result->taint().extend(TaintOperationFromContextJSString(cx, "trim", str));
 
   args.rval().setString(result);
   return true;
@@ -3966,10 +3966,6 @@ static bool str_concat(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // TaintFox
-  std::vector<std::u16string> arguments;
-  arguments.push_back(taintarg(cx, RootedString(cx, str)));
-
   for (unsigned i = 0; i < args.length(); i++) {
     JSString* argStr = ToString<NoGC>(cx, args[i]);
     if (!argStr) {
@@ -3980,8 +3976,6 @@ static bool str_concat(JSContext* cx, unsigned argc, Value* vp) {
       }
       str = strRoot;
     }
-    // TaintFox: add string arguments
-    arguments.push_back(taintarg(cx, RootedString(cx, argStr)));
 
     JSString* next = ConcatStrings<NoGC>(cx, str, argStr);
     if (next) {
@@ -4630,10 +4624,11 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, HandleLinearString str,
   }
 
   // TaintFox: Add encode operation to output taint.
-  if (unescapedSet == js_isUriReservedPlusPound)
-    sb.taint().extend(TaintOperationFromContext(cx, "encodeURI"));
-  else
-    sb.taint().extend(TaintOperationFromContext(cx, "encodeURIComponent"));
+  if (unescapedSet == js_isUriReservedPlusPound) {
+    sb.taint().extend(TaintOperationFromContext(cx, "encodeURI", str));
+  } else {
+    sb.taint().extend(TaintOperationFromContext(cx, "encodeURIComponent", str));
+  }
 
   MOZ_ASSERT(res == Encode_Success);
   return TransferBufferToString(sb, str, rval);
@@ -4794,10 +4789,11 @@ static bool Decode(JSContext* cx, HandleLinearString str,
   }
 
   // TaintFox: Add decode operation to output taint.
-  if(reservedSet == js_isUriReservedPlusPound)
-    sb.taint().extend(TaintOperationFromContext(cx, "decodeURI"));
-  else
-    sb.taint().extend(TaintOperationFromContext(cx, "decodeURIComponent"));
+  if(reservedSet == js_isUriReservedPlusPound) {
+    sb.taint().extend(TaintOperationFromContext(cx, "decodeURI", str));
+  } else {
+    sb.taint().extend(TaintOperationFromContext(cx, "decodeURIComponent", str));
+  }
 
   MOZ_ASSERT(res == Decode_Success);
   return TransferBufferToString(sb, str, rval);

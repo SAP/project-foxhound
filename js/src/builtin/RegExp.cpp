@@ -42,6 +42,7 @@ using JS::RegExpFlags;
  */
 bool js::CreateRegExpMatchResult(JSContext* cx, HandleString input,
                                  const MatchPairs& matches,
+                                 const RegExpObject* regexp, // Needed for taintfox
                                  MutableHandleValue rval) {
   MOZ_ASSERT(input);
 
@@ -90,7 +91,13 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleString input,
       }
       // Taintfox: taint propagated by NewDependentString, just need
       // to add the operation here
-      str->taint().extend(TaintOperationFromContext(cx, "RegExp.prototype.exec"));
+      if (str->taint().hasTaint()) {
+        if (regexp) {
+          RootedAtom src(cx, regexp->getSource());
+          JSString* srcStr = EscapeRegExpPattern(cx, src);
+          str->taint().extend(TaintOperationFromContextJSString(cx, "RegExp.prototype.exec", srcStr));
+        }
+      }
       arr->setDenseInitializedLength(i + 1);
       arr->initDenseElement(i, StringValue(str));
     }
@@ -191,7 +198,7 @@ bool js::ExecuteRegExpLegacy(JSContext* cx, RegExpStatics* res,
     return true;
   }
 
-  return CreateRegExpMatchResult(cx, input, matches, rval);
+  return CreateRegExpMatchResult(cx, input, matches, reobj, rval);
 }
 
 static bool CheckPatternSyntaxSlow(JSContext* cx, HandleAtom pattern,
@@ -1020,7 +1027,8 @@ static bool RegExpMatcherImpl(JSContext* cx, HandleObject regexp,
   }
 
   /* Steps 16-25 */
-  return CreateRegExpMatchResult(cx, string, matches, rval);
+  RegExpObject* reObj = regexp.as<RegExpObject>();
+  return CreateRegExpMatchResult(cx, string, matches, reObj, rval);
 }
 
 /*
@@ -1054,7 +1062,8 @@ bool js::RegExpMatcherRaw(JSContext* cx, HandleObject regexp,
   // The MatchPairs will always be passed in, but RegExp execution was
   // successful only if the pairs have actually been filled in.
   if (maybeMatches && maybeMatches->pairsRaw()[0] > MatchPair::NoMatch) {
-    return CreateRegExpMatchResult(cx, input, *maybeMatches, output);
+    RegExpObject* reObj = regexp.as<RegExpObject>();
+    return CreateRegExpMatchResult(cx, input, *maybeMatches, reObj, output);
   }
 
   // |maybeLastIndex| only contains a valid value when the RegExp execution

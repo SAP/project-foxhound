@@ -39,7 +39,23 @@ std::u16string JS::taintarg(JSContext* cx, HandleString str)
         return std::u16string();
 
     js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
-    
+
+    js::CopyChars(buf.get(), *linear);
+    std::u16string result(buf.get(), linear->length());
+    return result;
+}
+
+std::u16string JS::taintarg_jsstring(JSContext* cx, JSString* const& str)
+{
+    if (!str) {
+        return std::u16string();
+    }
+    JSLinearString* linear = str->ensureLinear(cx);
+    if (!linear)
+        return std::u16string();
+
+    js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
+
     js::CopyChars(buf.get(), *linear);
     std::u16string result(buf.get(), linear->length());
     return result;
@@ -96,6 +112,36 @@ std::vector<std::u16string> JS::taintargs(JSContext* cx, HandleValue val)
     return args;
 }
 
+std::vector<std::u16string> JS::taintargs(JSContext* cx, HandleString str1, HandleString str2)
+{
+    std::vector<std::u16string> args;
+    args.push_back(taintarg(cx, str1));
+    args.push_back(taintarg(cx, str2));
+    return args;
+}
+
+std::vector<std::u16string> JS::taintargs(JSContext* cx, HandleString arg)
+{
+    std::vector<std::u16string> args;
+    args.push_back(taintarg(cx, arg));
+    return args;
+}
+
+std::vector<std::u16string> JS::taintargs_jsstring(JSContext* cx, JSString* const& arg) 
+{
+    std::vector<std::u16string> args;
+    args.push_back(taintarg_jsstring(cx, arg));
+    return args;
+}
+
+std::vector<std::u16string> JS::taintargs_jsstring(JSContext* cx, JSString* const& str1, JSString* const& str2)
+{
+    std::vector<std::u16string> args;
+    args.push_back(taintarg_jsstring(cx, str1));
+    args.push_back(taintarg_jsstring(cx, str2));
+    return args;
+}
+
 TaintLocation JS::TaintLocationFromContext(JSContext* cx)
 {
     if (!cx)
@@ -129,6 +175,24 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleValue args) {
     return TaintOperation(name, TaintLocationFromContext(cx), taintargs(cx, args));
+}
+
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleString arg ) {
+    return TaintOperation(name, TaintLocationFromContext(cx), taintargs(cx, arg));
+}
+
+TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx, const char* name, JSString* const& arg ) {
+    return TaintOperation(name, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg));
+}
+
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name,
+                                             JS::HandleString arg1, JS::HandleString arg2) {
+    return TaintOperation(name, TaintLocationFromContext(cx), taintargs(cx, arg1, arg2));
+}
+
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name,
+                                             JSString* const& arg1, JSString* const & arg2) {
+    return TaintOperation(name, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg1, arg2));
 }
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name) {
