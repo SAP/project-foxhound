@@ -4468,15 +4468,22 @@ static const bool js_isUriUnescaped[] = {
 
 #undef ____
 
-static inline bool TransferBufferToString(JSStringBuilder& sb, JSString* str,
+static inline bool TransferBufferToString(JSContext* cx, JSStringBuilder& sb, JSString* str,
+                                          const StringTaint& taint,
                                           MutableHandleValue rval) {
   if (!sb.empty()) {
     str = sb.finishString();
     if (!str) {
       return false;
     }
+  } else if (str->isTainted()) {
+    str = NewDependentString(cx, str, 0, str->length());
+    if (!str)
+      return false;
   }
+  str->setTaint(cx, taint);
   rval.setString(str);
+
   return true;
 }
 
@@ -4624,14 +4631,15 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, HandleLinearString str,
   }
 
   // TaintFox: Add encode operation to output taint.
+  StringTaint taint = sb.empty() ? str->taint() : sb.taint();
   if (unescapedSet == js_isUriReservedPlusPound) {
-    sb.taint().extend(TaintOperationFromContext(cx, "encodeURI", str));
+    taint.extend(TaintOperationFromContext(cx, "encodeURI", str));
   } else {
-    sb.taint().extend(TaintOperationFromContext(cx, "encodeURIComponent", str));
+    taint.extend(TaintOperationFromContext(cx, "encodeURIComponent", str));
   }
 
   MOZ_ASSERT(res == Encode_Success);
-  return TransferBufferToString(sb, str, rval);
+  return TransferBufferToString(cx, sb, str, taint, rval);
 }
 
 enum DecodeResult { Decode_Failure, Decode_BadUri, Decode_Success };
@@ -4789,14 +4797,15 @@ static bool Decode(JSContext* cx, HandleLinearString str,
   }
 
   // TaintFox: Add decode operation to output taint.
+  StringTaint taint = sb.empty() ? str->taint() : sb.taint();
   if(reservedSet == js_isUriReservedPlusPound) {
-    sb.taint().extend(TaintOperationFromContext(cx, "decodeURI", str));
+    taint.extend(TaintOperationFromContext(cx, "decodeURI", str));
   } else {
-    sb.taint().extend(TaintOperationFromContext(cx, "decodeURIComponent", str));
+    taint.extend(TaintOperationFromContext(cx, "decodeURIComponent", str));
   }
 
   MOZ_ASSERT(res == Decode_Success);
-  return TransferBufferToString(sb, str, rval);
+  return TransferBufferToString(cx, sb, str, taint, rval);
 }
 
 static bool str_decodeURI(JSContext* cx, unsigned argc, Value* vp) {
