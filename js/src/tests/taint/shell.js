@@ -218,7 +218,8 @@ if (typeof assertLastTaintOperationEquals === 'undefined') {
 
             // Quirk: ignore "function call arguments" nodes for now...
             var index = 0;
-            while (index < range.flow.length && range.flow[index].operation === "function call argument")
+            while (index < range.flow.length &&
+		   range.flow[index].operation.startsWith("assert"))
                 index++;
 
             var node = range.flow[index];
@@ -241,7 +242,7 @@ if (typeof runTaintTest === 'undefined') {
             }
         }
 
-        doTest();         // Will be interpreted
+        doTest(); // Will be interpreted
         runJITTest(doTest);
     }
 }
