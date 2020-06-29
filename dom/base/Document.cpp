@@ -7330,9 +7330,9 @@ void Document::EndLoad() {
 
 #if defined(DEBUG)
   // only assert if nothing stopped the load on purpose
-  if (!mParserAborted) {
-    nsContentSecurityUtils::AssertAboutPageHasCSP(this);
-  }
+  // if (!mParserAborted) {
+  //   nsContentSecurityUtils::AssertAboutPageHasCSP(this);
+  // }
 #endif
 
   // EndLoad may have been called without a matching call to BeginLoad, in the

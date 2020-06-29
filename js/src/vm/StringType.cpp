@@ -871,6 +871,13 @@ JSString* js::ConcatStrings(
                           ? JSInlineString::lengthFits<Latin1Char>(wholeLength)
                           : JSInlineString::lengthFits<char16_t>(wholeLength);
   if (canUseInline) {
+    // Taintfox: compute the taint here
+    StringTaint newTaint = left->taint();
+    newTaint.concat(right->taint(), left->length());
+    if (newTaint.hasTaint()) {
+      newTaint.extend(JS::TaintOperationFromContext(cx, "concat", left, right));
+    }
+
     Latin1Char* latin1Buf = nullptr;  // initialize to silence GCC warning
     char16_t* twoByteBuf = nullptr;   // initialize to silence GCC warning
     JSInlineString* str =
@@ -909,9 +916,6 @@ JSString* js::ConcatStrings(
     }
     // Taintfox
     if (str->length() > 0) {
-        StringTaint newTaint = left->taint();
-        newTaint.concat(right->taint(), left->length());
-        newTaint.extend(JS::TaintOperationFromContext(cx, "concat", left, right));
         str->setTaint(cx, newTaint);
     }
     return str;
@@ -920,7 +924,7 @@ JSString* js::ConcatStrings(
   // TaintFox: JSRope handles taint propagation itself.
   JSString* rope = JSRope::new_<allowGC>(cx, left, right, wholeLength);
   // TaintFox: add concat operation to taint flow.
-  if (rope) {
+  if ((rope) && (rope->taint().hasTaint())) {
     rope->taint().extend(JS::TaintOperationFromContext(cx, "concat", left, right));
   }
   return rope;

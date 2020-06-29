@@ -1330,8 +1330,6 @@ static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // Taintfox: compute taint
-  StringTaint taint = StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleLowerCase", str));
   /*
    * Forcefully ignore the first (or any) argument and return toLowerCase(),
    * ECMA has reserved that argument, presumably for defining the locale.
@@ -1345,7 +1343,7 @@ static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(cx, taint);
+    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleLowerCase", str)));
 
     args.rval().set(result);
     return true;
@@ -1759,7 +1757,6 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  StringTaint taint = StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleUpperCase", str));
   /*
    * Forcefully ignore the first (or any) argument and return toUpperCase(),
    * ECMA has reserved that argument, presumably for defining the locale.
@@ -1773,7 +1770,7 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(cx, taint);
+    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleUpperCase", str)));
 
     args.rval().set(result);
     return true;
@@ -1856,9 +1853,6 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  StringTaint taint = StringTaint::extend(
-    str->taint(), TaintOperationFromContext(cx, "normalize", str));
-
   enum NormalizationForm { NFC, NFD, NFKC, NFKD };
 
   NormalizationForm form;
@@ -1890,7 +1884,9 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
 
   // Latin-1 strings are already in Normalization Form C.
   if (form == NFC && str->hasLatin1Chars()) {
-    str->setTaint(cx, taint);
+    if (str->taint().hasTaint()) {
+      str->taint().extend(TaintOperationFromContext(cx, "normalize", str));
+    }
     // Step 7.
     args.rval().setString(str);
     return true;
@@ -1936,7 +1932,9 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
 
   // Return if the input string is already normalized.
   if (spanLength == srcChars.length()) {
-    str->setTaint(cx, taint);
+    if (str->taint().hasTaint()) {
+      str->taint().extend(TaintOperationFromContext(cx, "normalize", str));
+    }
     // Step 7.
     args.rval().setString(str);
     return true;
@@ -1977,7 +1975,9 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: Add taint operation.
-  ns->setTaint(cx, taint);
+  if (str->taint().hasTaint()) {
+    ns->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "normalize", str)));
+  }
 
   // Step 7.
   args.rval().setString(ns);
@@ -2945,22 +2945,6 @@ static bool TrimString(JSContext* cx, const CallArgs& args, bool trimStart,
     return false;
   }
 
-  // TaintFox: Add trim operation to current taint flow.
-  // the acutal trimming of taint ranges has been done in
-  // NewDependentString (StringType-inl.h, JSDependentString::init)
-  StringTaint taint = str->taint();
-  if (taint.hasTaint()) {
-    if (trimStart && trimEnd) {
-      taint.extend(TaintOperationFromContextJSString(cx, "trim", str));
-    } else if (trimStart) {
-      taint.extend(TaintOperationFromContextJSString(cx, "trimLeft", str));
-    } else if (trimEnd) {
-      taint.extend(TaintOperationFromContextJSString(cx, "trimRight", str));
-    } else {
-      taint.extend(TaintOperationFromContextJSString(cx, "trim", str));
-    }
-  }
-
   JSLinearString* linear = str->ensureLinear(cx);
   if (!linear) {
     return false;
@@ -2984,7 +2968,19 @@ static bool TrimString(JSContext* cx, const CallArgs& args, bool trimStart,
   }
 
   // TaintFox: Add trim operation to current taint flow.
-  result->setTaint(cx, taint);
+  // the acutal trimming of taint ranges has been done in
+  // NewDependentString (StringType-inl.h, JSDependentString::init)
+  if (result->taint().hasTaint()) {
+    if (trimStart && trimEnd) {
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trim", str));
+    } else if (trimStart) {
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trimLeft", str));
+    } else if (trimEnd) {
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trimRight", str));
+    } else {
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trim", str));
+    }
+  }
 
   args.rval().setString(result);
   return true;
