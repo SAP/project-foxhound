@@ -709,11 +709,13 @@ static const unsigned STRING_ELEMENT_ATTRS =
 
 static bool str_enumerate(JSContext* cx, HandleObject obj) {
   RootedString str(cx, obj->as<StringObject>().unbox());
-  js::StaticStrings& staticStrings = cx->staticStrings();
+  // Taintfox: avoid creating static strings
+  // js::StaticStrings& staticStrings = cx->staticStrings();
 
   RootedValue value(cx);
   for (size_t i = 0, length = str->length(); i < length; i++) {
-    JSString* str1 = staticStrings.getUnitStringForElement(cx, str, i);
+    // JSString* str1 = staticStrings.getUnitStringForElement(cx, str, i);
+    JSString* str1 = NewDependentString(cx, str, i, 1);
     if (!str1) {
       return false;
     }
@@ -2013,12 +2015,13 @@ static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: avoid atoms here if the base string is tainted. TODO(samuel)
+  str = NewDependentString(cx, str, i, 1);
   if (str->isTainted()) {
-    str = NewDependentString(cx, str, i, 1);
     str->taint().extend(TaintOperation("charAt", TaintLocationFromContext(cx), { taintarg(cx, i) }));
-  } else {
-    str = cx->staticStrings().getUnitStringForElement(cx, str, i);
   }
+  // Taintfox: avoid creating atoms
+  //str = cx->staticStrings().getUnitStringForElement(cx, str, i);
+
 
   if (!str) {
     return false;
@@ -2945,17 +2948,18 @@ static bool TrimString(JSContext* cx, const CallArgs& args, bool trimStart,
   // TaintFox: Add trim operation to current taint flow.
   // the acutal trimming of taint ranges has been done in
   // NewDependentString (StringType-inl.h, JSDependentString::init)
-  char *opName = NULL;
-  if (trimStart && trimEnd) {
-    opName = "trim";
-  } else if (trimStart) {
-    opName = "trimLeft";
-  } else if (trimEnd) {
-    opName = "trimRight";
-  } else {
-    opName = "trim";
+  StringTaint taint = str->taint();
+  if (taint.hasTaint()) {
+    if (trimStart && trimEnd) {
+      taint.extend(TaintOperationFromContextJSString(cx, "trim", str));
+    } else if (trimStart) {
+      taint.extend(TaintOperationFromContextJSString(cx, "trimLeft", str));
+    } else if (trimEnd) {
+      taint.extend(TaintOperationFromContextJSString(cx, "trimRight", str));
+    } else {
+      taint.extend(TaintOperationFromContextJSString(cx, "trim", str));
+    }
   }
-  TaintOperation op = TaintOperationFromContextJSString(cx, opName, str);
 
   JSLinearString* linear = str->ensureLinear(cx);
   if (!linear) {
@@ -2980,7 +2984,7 @@ static bool TrimString(JSContext* cx, const CallArgs& args, bool trimStart,
   }
 
   // TaintFox: Add trim operation to current taint flow.
-  result->taint().extend(op);
+  result->setTaint(cx, taint);
 
   args.rval().setString(result);
   return true;
