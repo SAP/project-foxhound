@@ -1527,7 +1527,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
   mozilla::MaybeOneOf<Latin1Buffer, TwoByteBuffer> newChars;
   StringTaint taint = str->taint();
   if (taint.hasTaint()) {
-    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", str));
+    taint.extend(TaintOperationFromContextJSString(cx, "toUpperCase", str));
   }
   const size_t length = str->length();
   size_t resultLength;
