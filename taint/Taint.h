@@ -127,6 +127,8 @@ class TaintOperation
     bool isSource() const { return source_ != 0; }
     void setSource() { source_ = 1; }
 
+    static void dump(const TaintOperation& op);
+    
   private:
     // The operation name is owned by this instance. It will be copied from the
     // argument string during construction.
@@ -160,10 +162,16 @@ class TaintNode
   public:
     // Constructing a taint node sets the initial reference count to 1.
     // Constructs an intermediate node.
-    TaintNode(TaintNode* parent, TaintOperation operation);
+    TaintNode(TaintNode* parent, const TaintOperation& operation);
     // Constructs a root node.
-    TaintNode(TaintOperation operation);
+    TaintNode(const TaintOperation& operation);
 
+    // Constructing a taint node sets the initial reference count to 1.
+    // Constructs an intermediate node.
+    TaintNode(TaintNode* parent, TaintOperation&& operation);
+    // Constructs a root node.
+    TaintNode(TaintOperation&& operation);
+    
     // Increments the reference count of this object by one.
     void addref();
 
@@ -269,7 +277,7 @@ class TaintFlow
     explicit TaintFlow(TaintNode* head);
 
     // Construct a new taint flow from the provided taint source.
-    TaintFlow(TaintOperation source);
+    TaintFlow(const TaintOperation& source);
 
     // Copying taint flows is an O(1) operation since it only requires
     // incrementing the reference count on the head node of the flow.
@@ -290,7 +298,11 @@ class TaintFlow
 
     // Constructs a new taint node as child of the current head node and sets
     // the newly constructed node as head of this taint flow.
-    TaintFlow& extend(TaintOperation operation);
+    TaintFlow& extend(const TaintOperation& operation);
+
+    // Constructs a new taint node as child of the current head node and sets
+    // the newly constructed node as head of this taint flow.
+    TaintFlow& extend(TaintOperation&& operation);
 
     // Iterator support
     //
@@ -303,7 +315,7 @@ class TaintFlow
 
     // Constructs a new taint node as child of the head node in this flow and
     // returns a new taint flow starting at that node.
-    static TaintFlow extend(const TaintFlow& flow, TaintOperation operation);
+    static TaintFlow extend(const TaintFlow& flow, const TaintOperation& operation);
 
     // Two TaintFlows are equal if they point to the same taint node.
     bool operator==(const TaintFlow& other) const { return head_ == other.head_; }
@@ -404,7 +416,7 @@ class StringTaint
 
     // As above, but also constructs the taint range.
     // TODO make StringTaint(operaton, length) instead.
-    StringTaint(uint32_t begin, uint32_t end, TaintOperation operation);
+    StringTaint(uint32_t begin, uint32_t end, const TaintOperation& operation);
 
     // Construct taint information for a uniformly tainted string.
     explicit StringTaint(TaintFlow taint, uint32_t length);
@@ -493,10 +505,14 @@ class StringTaint
     StringTaint subtaint(uint32_t begin, uint32_t end) const;
 
     // Adds a taint operation to the taint flows of all ranges in this instance.
-    StringTaint& extend(TaintOperation operation);
+    StringTaint& extend(const TaintOperation& operation);
 
     // Adds a taint operation to the taint flows of all ranges in this instance.
-    StringTaint& overlay(uint32_t begin, uint32_t end, TaintOperation operation);
+    // from a taint operation constructor
+    StringTaint& extend(TaintOperation&& operation);
+
+    // Adds a taint operation to the taint flows of all ranges in this instance.
+    StringTaint& overlay(uint32_t begin, uint32_t end, const TaintOperation& operation);
 
     // Appends a taint range.
     //

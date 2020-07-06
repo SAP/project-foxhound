@@ -6,8 +6,11 @@
 
 #include "Taint.h"
 
+#include <locale>   // wstring_convert
+#include <codecvt>  // codecvt_utf8
+#include <iostream> // cout
+#include <string>   // stoi and u32string
 #include <algorithm>
-#include <iostream>
 
 #define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
 
@@ -65,13 +68,48 @@ TaintOperation& TaintOperation::operator=(TaintOperation&& other)
     return *this;
 }
 
-TaintNode::TaintNode(TaintNode* parent, TaintOperation operation) : parent_(parent), refcount_(1), operation_(operation)
+void TaintOperation::dump(const TaintOperation& op) {
+    std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> convert;
+    static int n = 0;
+    static int totlen = 0;
+    static int totsize = 0;
+    static int biggest = 0;
+    int len = 0;
+
+    std::cout << "************************************************" << std::endl;
+    std::cout << "Taint Operation: " << n++ << std::endl;
+    std::cout << "************************************************" << std::endl;
+    std::cout << "Location: " << convert.to_bytes(op.location().filename()) << ":" << op.location().line() << ":" << op.location().pos() << std::endl;
+    std::cout << "Function: " << convert.to_bytes(op.location().function()) << std::endl;
+    std::cout << "Args:" << std::endl;
+    for (const auto& arg : op.arguments()) {
+        len += arg.length();
+        std::cout << "  * " << convert.to_bytes(arg) << "(" << arg.length() << ")" << std::endl;
+    }
+    totlen += len;
+    biggest = std::max(biggest, len);
+    totsize += sizeof(op);
+    std::cout << "************************************************" << std::endl;
+    std::cout << "Args len: " << len << " total: " << totlen << " biggest: " << biggest << std::endl;
+    std::cout << "Size: " << sizeof(op) << " total: " << totsize << std::endl;
+    std::cout << "************************************************" << std::endl;
+}
+
+TaintNode::TaintNode(TaintNode* parent, const TaintOperation& operation) : parent_(parent), refcount_(1), operation_(operation)
 {
     if (parent_)
         parent_->addref();
 }
 
-TaintNode::TaintNode(TaintOperation operation) : parent_(nullptr), refcount_(1), operation_(operation) { }
+TaintNode::TaintNode(TaintNode* parent, TaintOperation&& operation) : parent_(parent), refcount_(1), operation_(operation)
+{
+    if (parent_)
+        parent_->addref();
+}
+
+TaintNode::TaintNode(const TaintOperation& operation) : parent_(nullptr), refcount_(1), operation_(operation) { }
+
+TaintNode::TaintNode(TaintOperation&& operation) : parent_(nullptr), refcount_(1), operation_(operation) { }
 
 void TaintNode::addref()
 {
@@ -126,7 +164,7 @@ TaintFlow::TaintFlow() : head_(nullptr) { }
 
 TaintFlow::TaintFlow(TaintNode* head) : head_(head) { }
 
-TaintFlow::TaintFlow(TaintOperation source) : head_(new TaintNode(source)) { }
+TaintFlow::TaintFlow(const TaintOperation& source) : head_(new TaintNode(source)) { }
 
 TaintFlow::TaintFlow(const TaintFlow& other) : head_(other.head_)
 {
@@ -167,7 +205,15 @@ const TaintOperation& TaintFlow::source() const
     return source->operation();
 }
 
-TaintFlow& TaintFlow::extend(TaintOperation operation)
+TaintFlow& TaintFlow::extend(const TaintOperation& operation)
+{
+    TaintNode* newhead = new TaintNode(head_, operation);
+    head_->release();
+    head_ = newhead;
+    return *this;
+}
+
+TaintFlow& TaintFlow::extend(TaintOperation&& operation)
 {
     TaintNode* newhead = new TaintNode(head_, operation);
     head_->release();
@@ -185,7 +231,7 @@ TaintFlow::Iterator TaintFlow::end() const
     return Iterator();
 }
 
-TaintFlow TaintFlow::extend(const TaintFlow& flow, TaintOperation operation)
+TaintFlow TaintFlow::extend(const TaintFlow& flow, const TaintOperation& operation)
 {
     return TaintFlow(new TaintNode(flow.head_, operation));
 }
@@ -298,7 +344,7 @@ StringTaint::StringTaint(TaintRange range)
     CHECK_RANGES(ranges_);
 }
 
-StringTaint::StringTaint(uint32_t begin, uint32_t end, TaintOperation operation)
+StringTaint::StringTaint(uint32_t begin, uint32_t end, const TaintOperation& operation)
 {
     ranges_ = new std::vector<TaintRange>;
     TaintRange range(begin, end, TaintFlow(new TaintNode(operation)));
@@ -485,7 +531,7 @@ StringTaint StringTaint::subtaint(uint32_t begin, uint32_t end) const
     return newtaint;
 }
 
-StringTaint& StringTaint::extend(TaintOperation operation)
+StringTaint& StringTaint::extend(const TaintOperation& operation)
 {
     for (auto& range : *this)
         range.flow().extend(operation);
@@ -493,7 +539,15 @@ StringTaint& StringTaint::extend(TaintOperation operation)
     return *this;
 }
 
-StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, TaintOperation operation)
+StringTaint& StringTaint::extend(TaintOperation&& operation)
+{
+    for (auto& range : *this)
+        range.flow().extend(operation);
+
+    return *this;
+}
+
+StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, const TaintOperation& operation)
 {
     MOZ_ASSERT(begin <= end);
     CHECK_RANGES(ranges_);
