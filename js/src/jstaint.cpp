@@ -19,6 +19,8 @@
 
 using namespace JS;
 
+const unsigned long max_length = 128;
+
 static std::u16string ascii2utf16(const std::string& str) {
   std::u16string res;
   for (auto c : str)
@@ -41,9 +43,8 @@ std::u16string JS::taintarg(JSContext* cx, HandleString str)
     return std::u16string();
 
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
-
   js::CopyChars(buf.get(), *linear);
-  std::u16string result(buf.get(), linear->length());
+  std::u16string result(buf.get(), std::min(linear->length(), max_length));
   return result;
 }
 
@@ -57,9 +58,9 @@ std::u16string JS::taintarg_jsstring(JSContext* cx, JSString* const& str)
     return std::u16string();
 
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
-
   js::CopyChars(buf.get(), *linear);
-  std::u16string result(buf.get(), linear->length());
+  std::u16string result(buf.get(), std::min(linear->length(), max_length));
+
   return result;
 }
 
