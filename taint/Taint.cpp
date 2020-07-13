@@ -36,27 +36,46 @@ TaintLocation& TaintLocation::operator=(TaintLocation&& other)
 }
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location, std::initializer_list<std::u16string> args)
-    : name_(name), arguments_(args), source_(0), location_(location) {}
+    : name_(name), arguments_(args), source_(0), is_native_(false), location_(location) {}
+
+TaintOperation::TaintOperation(const char* name, bool is_native, TaintLocation location, std::initializer_list<std::u16string> args)
+    : name_(name), arguments_(args), source_(0), is_native_(is_native), location_(location) {}
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location, std::vector<std::u16string> args)
-    : name_(name), arguments_(args), source_(0), location_(location) {}
+    : name_(name), arguments_(args), source_(0), is_native_(false), location_(location) {}
+
+TaintOperation::TaintOperation(const char* name, bool is_native, TaintLocation location, std::vector<std::u16string> args)
+    : name_(name), arguments_(args), source_(0), is_native_(is_native), location_(location) {}
 
 TaintOperation::TaintOperation(const char* name, std::initializer_list<std::u16string> args)
-    : name_(name), arguments_(args), source_(0), location_() {}
+    : name_(name), arguments_(args), source_(0), is_native_(false), location_() {}
+
+TaintOperation::TaintOperation(const char* name, bool is_native, std::initializer_list<std::u16string> args)
+    : name_(name), arguments_(args), source_(0), is_native_(is_native), location_() {}
 
 TaintOperation::TaintOperation(const char* name, std::vector<std::u16string> args)
-    : name_(name), arguments_(args), source_(0), location_() {}
+    : name_(name), arguments_(args), source_(0), is_native_(false), location_() {}
+
+TaintOperation::TaintOperation(const char* name, bool is_native, std::vector<std::u16string> args)
+    : name_(name), arguments_(args), source_(0), is_native_(is_native), location_() {}
 
 TaintOperation::TaintOperation(const char* name)
-    : name_(name), arguments_(), source_(0), location_() {}
+    : name_(name), arguments_(), source_(0), is_native_(false), location_() {}
+
+TaintOperation::TaintOperation(const char* name, bool is_native)
+    : name_(name), arguments_(), source_(0), is_native_(is_native), location_() {}
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location)
-    : name_(name), arguments_(), source_(0), location_(location) {}
+    : name_(name), arguments_(), source_(0), is_native_(false), location_(location) {}
+
+TaintOperation::TaintOperation(const char* name, bool is_native, TaintLocation location)
+    : name_(name), arguments_(), source_(0), is_native_(is_native), location_(location) {}
 
 TaintOperation::TaintOperation(TaintOperation&& other)
     : name_(std::move(other.name_)),
       arguments_(std::move(other.arguments_)),
       source_(other.source_),
+      is_native_(other.is_native_),
       location_(std::move(other.location_)) {}
 
 TaintOperation& TaintOperation::operator=(TaintOperation&& other)
@@ -64,6 +83,7 @@ TaintOperation& TaintOperation::operator=(TaintOperation&& other)
     name_ = std::move(other.name_);
     arguments_ = std::move(other.arguments_);
     source_ = other.source_;
+    is_native_ = other.is_native_;
     location_ = std::move(other.location_);
     return *this;
 }
@@ -80,7 +100,7 @@ void TaintOperation::dump(const TaintOperation& op) {
     std::cout << "Taint Operation: " << n++ << std::endl;
     std::cout << "************************************************" << std::endl;
     std::cout << "Location: " << convert.to_bytes(op.location().filename()) << ":" << op.location().line() << ":" << op.location().pos() << std::endl;
-    std::cout << "Function: " << convert.to_bytes(op.location().function()) << std::endl;
+    std::cout << "Function: " << convert.to_bytes(op.location().function()) << " native[" << op.is_native() << "]" << std::endl;
     std::cout << "Args:" << std::endl;
     for (const auto& arg : op.arguments()) {
         len += arg.length();
