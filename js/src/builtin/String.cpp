@@ -195,6 +195,12 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
       if (!JS_DefineProperty(cx, node, "operation", operation, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
         return false;
 
+      RootedValue isBuiltIn(cx);
+      isBuiltIn.setBoolean(taint_node.operation().is_native());
+
+      if (!JS_DefineProperty(cx, node, "builtin", isBuiltIn, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+        return false;
+
       RootedValue isSource(cx);
       isSource.setBoolean(taint_node.operation().isSource());
 
