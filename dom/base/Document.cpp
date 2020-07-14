@@ -9093,8 +9093,8 @@ void Document::WriteCommon(const nsAString& aText, bool aNewlineTerminate,
     }
   }
 
-  // TaintFox: document.write sink.
-  ReportTaintSink(aText, "document.write");
+  // TaintFox: document.write and document.writeln sink.
+  ReportTaintSink(aText, aNewlineTerminate ? "document.writeln" : "document.write");
 
   static NS_NAMED_LITERAL_STRING(new_line, "\n");
 
