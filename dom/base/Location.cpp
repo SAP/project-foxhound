@@ -401,6 +401,8 @@ void Location::GetPort(nsAString& aPort, nsIPrincipal& aSubjectPrincipal,
     nsAutoString portStr;
     portStr.AppendInt(port);
     aPort.Append(portStr);
+    // TaintFox: location.port source.
+    MarkTaintSource(aPort, "location.port");
   }
 }
 
@@ -465,6 +467,9 @@ void Location::GetProtocol(nsAString& aProtocol,
 
   CopyASCIItoUTF16(protocol, aProtocol);
   aProtocol.Append(char16_t(':'));
+
+  // TaintFox: location.protocol source.
+  MarkTaintSource(aProtocol, "location.protocol");
 }
 
 void Location::SetProtocol(const nsAString& aProtocol,
