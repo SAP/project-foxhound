@@ -32,6 +32,19 @@ function addTaintToArray(array, name, arg) {
     }
 }
 
+function addTaintToArrayNative(array, name, arg) {
+    if (array === null || typeof(array) !== "object" || typeof(array.length) !== "number") {
+        return;
+    }
+
+    for (var i = 0; i < array.length; i++) {
+        if (typeof(array[i]) !== "string") {
+            continue;
+        }
+        AddTaintOperationNative(array[i], name, arg);
+    }
+}
+
 // ES 2016 draft Mar 25, 2016 21.1.3.11.
 function String_match(regexp) {
     // Step 1.
@@ -46,7 +59,7 @@ function String_match(regexp) {
         // Step 2.b.
         if (matcher !== undefined) {
             var ret = callContentFunction(matcher, regexp, this);
-            addTaintToArray(ret, "match", regexp);
+            addTaintToArrayNative(ret, "match", regexp);
             return ret;
         }
     }
@@ -58,7 +71,7 @@ function String_match(regexp) {
         var flatResult = FlatStringMatch(S, regexp);
         if (flatResult !== undefined) {
             var ret = flatResult;
-            addTaintToArray(ret, "match", regexp);
+            addTaintToArrayNative(ret, "match", regexp);
             return ret;
         }
     }
@@ -69,13 +82,13 @@ function String_match(regexp) {
     // Step 5 (optimized case).
     if (IsStringMatchOptimizable()) {
         var ret = RegExpMatcher(rx, S, 0);
-        addTaintToArray(ret, "match", regexp);
+        addTaintToArrayNative(ret, "match", regexp);
         return ret;
     }
 
     // Step 5.
     var ret = callContentFunction(GetMethod(rx, std_match), rx, S);
-    addTaintToArray(ret, "match", regexp);
+    addTaintToArrayNative(ret, "match", regexp);
     return ret;
 }
 
@@ -174,7 +187,7 @@ function String_pad_start(maxLength, fillString = " ") {
     var ret = callFunction(String_pad, this, maxLength, fillString, false);
     // Taintfox: generate new string and add taint
     var ret2 = CopyString(ret);
-    AddTaintOperation(ret2, "padStart", maxLength, fillString);
+    AddTaintOperationNative(ret2, "padStart", maxLength, fillString);
     return ret2;
 }
 
@@ -182,7 +195,7 @@ function String_pad_end(maxLength, fillString = " ") {
     var ret = callFunction(String_pad, this, maxLength, fillString, true);
     // Taintfox: generate new string and add taint
     var ret2 = CopyString(ret);
-    AddTaintOperation(ret2, "padEnd", maxLength, fillString);
+    AddTaintOperationNative(ret2, "padEnd", maxLength, fillString);
     return ret2;
 }
 
@@ -221,7 +234,7 @@ function String_replace(searchValue, replaceValue) {
             var ret = callContentFunction(replacer, searchValue, this, replaceValue);
             // Taintfox: ret could be a function, only taint strings.
             if(typeof(ret) === "string") {
-                AddTaintOperation(ret, "replace", searchValue, replaceValue);
+                AddTaintOperationNative(ret, "replace", searchValue, replaceValue);
             }
             return ret;
         }
@@ -236,7 +249,7 @@ function String_replace(searchValue, replaceValue) {
     if (typeof replaceValue === "string") {
         // Steps 6-12: Optimized for string case.
         var ret = StringReplaceString(string, searchString, replaceValue);
-        AddTaintOperation(ret, "replace", searchValue, replaceValue);
+        AddTaintOperationNative(ret, "replace", searchValue, replaceValue);
         return ret;
     }
 
@@ -244,7 +257,7 @@ function String_replace(searchValue, replaceValue) {
     if (!IsCallable(replaceValue)) {
         // Steps 6-12.
         var ret = StringReplaceString(string, searchString, ToString(replaceValue));
-        AddTaintOperation(ret, "replace", searchValue, replaceValue);
+        AddTaintOperationNative(ret, "replace", searchValue, replaceValue);
         return ret;
     }
 
@@ -253,7 +266,7 @@ function String_replace(searchValue, replaceValue) {
     if (pos === -1) {
         // Taintfox: TODO new string
         var ret = CopyString(string);
-        AddTaintOperation(ret, "replace", searchValue, replaceValue);
+        AddTaintOperationNative(ret, "replace", searchValue, replaceValue);
         return ret;
     }
 
@@ -275,7 +288,7 @@ function String_replace(searchValue, replaceValue) {
     if (tailPos < stringLength)
         newString += Substring(string, tailPos, stringLength - tailPos);
 
-    AddTaintOperation(newString, "replace", searchValue, replaceValue);
+    AddTaintOperationNative(newString, "replace", searchValue, replaceValue);
 
     // Step 12.
     return newString;
@@ -548,7 +561,7 @@ function String_substring(start, end) {
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
     var ret = SubstringKernel(str, from | 0, (to - from) | 0);
-    AddTaintOperation(ret, "substring", start, end);
+    AddTaintOperationNative(ret, "substring", start, end);
     return ret;
 }
 
@@ -584,7 +597,7 @@ function String_substr(start, length) {
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
     var ret = SubstringKernel(str, intStart | 0, resultLength | 0);
-    AddTaintOperation(ret, "substr", start, length);
+    AddTaintOperationNative(ret, "substr", start, length);
     return ret;
 }
 
@@ -618,7 +631,7 @@ function String_slice(start, end) {
     // and thus definitely in the int32 range, they can still be typed as
     // double. Eagerly truncate since SubstringKernel only accepts int32.
     var ret = SubstringKernel(str, from | 0, span | 0);
-    AddTaintOperation(ret, "slice", start, end);
+    AddTaintOperationNative(ret, "slice", start, end);
     return ret;
 }
 
@@ -694,7 +707,7 @@ function String_repeat(count) {
             break;
     }
 
-    AddTaintOperation(T, "repeat", count);
+    AddTaintOperationNative(T, "repeat", count);
     return T;
 }
 

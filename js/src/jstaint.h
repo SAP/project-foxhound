@@ -61,6 +61,20 @@ TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
 
 TaintOperation TaintOperationFromContext(JSContext* cx, const char* name);
 
+TaintOperation TaintOperationFromContextNative(JSContext* cx, const char* name, JS::HandleValue args);
+
+TaintOperation TaintOperationFromContextNative(JSContext* cx, const char* name, JS::HandleString arg);
+
+TaintOperation TaintOperationFromContextJSStringNative(JSContext* cx, const char* name, JSString* const& str);
+
+TaintOperation TaintOperationFromContextNative(JSContext* cx, const char* name,
+                                         JS::HandleString str1, JS::HandleString str2);
+
+TaintOperation TaintOperationFromContextNative(JSContext* cx, const char* name,
+                                         JSString* const& str1, JSString* const& str2);
+
+TaintOperation TaintOperationFromContextNative(JSContext* cx, const char* name);
+
 // Mark all tainted arguments of a function call.
 // This is mainly useful for tracing tainted arguments through the code.
 void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS::CallArgs& args);
