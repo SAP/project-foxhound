@@ -95,6 +95,9 @@ class HTMLSourceElement final : public nsGenericHTMLElement {
                              JS::Handle<JSObject*> aGivenProto) override;
 
  protected:
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue) override;
+
   virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                 const nsAttrValue* aValue,
                                 const nsAttrValue* aOldValue,

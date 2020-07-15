@@ -167,6 +167,9 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
   virtual JSObject* WrapNode(JSContext* aCx,
                              JS::Handle<JSObject*> aGivenProto) override;
 
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue) override;
+
   virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                 const nsAttrValue* aValue,
                                 const nsAttrValue* aOldValue,

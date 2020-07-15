@@ -52,17 +52,20 @@ code into the DOM. Not sure if this can be exploited remotely though.
 In dom/html/HTMLInputElement.cpp
 * input.value for input elements (e.g. text box)
 
+##### NB: the below elements have been disabled for now. They are only potentially dangerous
+if an attacker has controlled the DOM.
+
 In dom/html/nsGenericHTMLElement.cpp
-* element.getAttribute
+* ~~element.getAttribute~~
 
 In dom/base/Element.h
-* element.getAttribute
+* ~~element.getAttribute~~
 
 In dom/base/Element.cpp
-* element.getAttribute
-* element.getAttributeNS
-* element.innerHTML
-* element.outerHTML
+* ~~element.getAttribute~~
+* ~~element.getAttributeNS~~
+* ~~element.innerHTML~~
+* ~~element.outerHTML~~
 
 #### Local and Sesssion Storage
 The window.localStorage.getItem and window.sesssionStorage.getItem can be
@@ -116,9 +119,27 @@ In dom/html/HTMLScriptElement.cpp
 * script.text
 * script.src
 
-In dom/html/HTMLImageElement.h
+In dom/html/HTMLImageElement.cpp
 * img.src
 * img.srcset
+
+In dom/html/HTMLIFrameElement.cpp
+* iframe.src
+
+In dom/html/HTMLEmbedElement.cpp
+* embed.src
+
+In dom/html/HTMLAreaElement.cpp
+* area.href
+
+In dom/html/HTMLObjectElement.cpp
+* object.data
+
+In dom/html/HTMLTrackElement.cpp
+* track.src
+
+In dom/html/HTMLAnchorElement.cpp
+* a.href
 
 In js/src/builtin/Eval.cpp
 * eval

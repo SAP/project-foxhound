@@ -89,6 +89,9 @@ class HTMLTrackElement final : public nsGenericHTMLElement {
   virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
   virtual void UnbindFromTree(bool aNullParent) override;
 
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue) override;
+
   virtual nsresult AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                 const nsAttrValue* aValue,
                                 const nsAttrValue* aOldValue,

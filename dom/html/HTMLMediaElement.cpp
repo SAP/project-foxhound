@@ -84,6 +84,7 @@
 #include "mozilla/dom/power/PowerManagerService.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "nsAttrValueInlines.h"
+#include "nsAttrValueOrString.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
@@ -4518,6 +4519,17 @@ bool HTMLMediaElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
 
 int32_t HTMLMediaElement::TabIndexDefault() { return 0; }
 
+nsresult HTMLMediaElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                  const nsAString& aValue) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, "media.src", id);
+  }
+
+  return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+}
+  
 nsresult HTMLMediaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                         const nsAttrValue* aValue,
                                         const nsAttrValue* aOldValue,

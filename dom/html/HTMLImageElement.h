@@ -119,22 +119,11 @@ class HTMLImageElement final : public nsGenericHTMLElement,
   }
   void GetSrc(nsAString& aSrc) { GetURIAttr(nsGkAtoms::src, nullptr, aSrc); }
   void SetSrc(const nsAString& aSrc, ErrorResult& aError) {
-    
     SetHTMLAttr(nsGkAtoms::src, aSrc, aError);
-
-    // Taintfox: img.src sink
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aSrc, "img.src", id);    
   }
   void SetSrc(const nsAString& aSrc, nsIPrincipal* aTriggeringPrincipal,
               ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::src, aSrc, aTriggeringPrincipal, aError);
-
-    // Taintfox: img.src sink
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aSrc, "img.src", id);    
   }
   void GetSrcset(nsAString& aSrcset) {
     GetHTMLAttr(nsGkAtoms::srcset, aSrcset);
@@ -142,11 +131,6 @@ class HTMLImageElement final : public nsGenericHTMLElement,
   void SetSrcset(const nsAString& aSrcset, nsIPrincipal* aTriggeringPrincipal,
                  ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::srcset, aSrcset, aTriggeringPrincipal, aError);
-
-    // Taintfox: img.src sink
-    nsAutoString id;
-    this->GetId(id);
-    ReportTaintSink(aSrcset, "img.srcset", id);    
   }
   void GetCrossOrigin(nsAString& aResult) {
     // Null for both missing and invalid defaults is ok, since we
@@ -350,6 +334,9 @@ class HTMLImageElement final : public nsGenericHTMLElement,
   virtual JSObject* WrapNode(JSContext* aCx,
                              JS::Handle<JSObject*> aGivenProto) override;
   void UpdateFormOwner();
+
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue) override;
 
   virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                  const nsAttrValueOrString* aValue,

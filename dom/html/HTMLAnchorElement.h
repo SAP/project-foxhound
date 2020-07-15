@@ -55,6 +55,9 @@ class HTMLAnchorElement final : public nsGenericHTMLElement, public Link {
   virtual void GetLinkTarget(nsAString& aTarget) override;
   virtual already_AddRefed<nsIURI> GetHrefURI() const override;
 
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue) override;
+
   virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                  const nsAttrValueOrString* aValue,
                                  bool aNotify) override;

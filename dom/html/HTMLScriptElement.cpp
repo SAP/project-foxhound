@@ -7,6 +7,7 @@
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "mozilla/dom/Document.h"
+#include "nsAttrValueOrString.h"
 #include "nsNetUtil.h"
 #include "nsContentUtils.h"
 #include "nsUnicharUtils.h"  // for nsCaseInsensitiveStringComparator()
@@ -95,6 +96,17 @@ nsresult HTMLScriptElement::Clone(dom::NodeInfo* aNodeInfo,
   kungFuDeathGrip.swap(*aResult);
 
   return NS_OK;
+}
+
+nsresult HTMLScriptElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                  const nsAString& aValue) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, "script.src", id);
+  }
+
+  return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
 
 nsresult HTMLScriptElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,

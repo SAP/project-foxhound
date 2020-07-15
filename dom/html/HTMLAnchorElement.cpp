@@ -227,6 +227,17 @@ already_AddRefed<nsIURI> HTMLAnchorElement::GetHrefURI() const {
   return GetHrefURIForAnchors();
 }
 
+nsresult HTMLAnchorElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                  const nsAString& aValue) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::href) {
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, "a.href", id);
+  }
+
+  return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+}
+
 nsresult HTMLAnchorElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                           const nsAttrValueOrString* aValue,
                                           bool aNotify) {

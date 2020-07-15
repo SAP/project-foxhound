@@ -13,6 +13,7 @@
 #include "mozilla/dom/HTMLTrackElementBinding.h"
 #include "mozilla/dom/HTMLUnknownElement.h"
 #include "nsAttrValueInlines.h"
+#include "nsAttrValueOrString.h"
 #include "nsCOMPtr.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
@@ -481,6 +482,17 @@ void HTMLTrackElement::CancelChannelAndListener() {
     mListener->Cancel();
     mListener = nullptr;
   }
+}
+
+nsresult HTMLTrackElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                  const nsAString& aValue) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, "track.src", id);
+  }
+
+  return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
 
 nsresult HTMLTrackElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,

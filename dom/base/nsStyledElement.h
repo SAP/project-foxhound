@@ -86,6 +86,9 @@ class nsStyledElement : public nsStyledElementBase {
    */
   nsresult ReparseStyleAttribute(bool aForceInDataDoc);
 
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue) override;
+
   virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                  const nsAttrValueOrString* aValue,
                                  bool aNotify) override;

@@ -1219,7 +1219,7 @@ void Element::GetAttribute(const nsAString& aName, DOMString& aReturn) {
   if (val) {
     val->ToString(aReturn);
     // Taintfox: getAttribute source
-    MarkTaintSourceAttribute(aReturn, "element.getAttribute", this, aName);
+    // MarkTaintSourceAttribute(aReturn, "element.getAttribute", this, aName);
   } else {
     if (IsXULElement()) {
       // XXX should be SetDOMStringToNull(aReturn);
@@ -1350,7 +1350,7 @@ void Element::GetAttributeNS(const nsAString& aNamespaceURI,
     SetDOMStringToNull(aReturn);
   } else {
     // Taintfox: getAttributeNS source
-    MarkTaintSourceAttribute(aReturn, "element.getAttributeNS", this, aLocalName);
+    // MarkTaintSourceAttribute(aReturn, "element.getAttributeNS", this, aLocalName);
   }
 }
 
@@ -2200,6 +2200,10 @@ nsresult Element::SetAttr(int32_t aNamespaceID, nsAtom* aName, nsAtom* aPrefix,
   nsAttrValue oldValue;
   bool oldValueSet;
 
+  // Taintfox: the script blocker below will prevent us from executing taint notifications!
+  // So add our own callback to check the taint, even if value is not changing
+  CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+
   if (OnlyNotifySameValueSet(aNamespaceID, aName, aPrefix, value, aNotify,
                              oldValue, &modType, &hasListeners, &oldValueSet)) {
     return OnAttrSetButNotChanged(aNamespaceID, aName, value, aNotify);
@@ -2453,6 +2457,11 @@ bool Element::SetAndSwapMappedAttribute(nsAtom* aName, nsAttrValue& aValue,
                                         bool* aValueWasSet, nsresult* aRetval) {
   *aRetval = NS_OK;
   return false;
+}
+
+nsresult Element::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                        const nsAString& aValue) {
+  return NS_OK;
 }
 
 nsresult Element::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
@@ -3393,7 +3402,7 @@ void Element::GetAnimationsUnsorted(Element* aElement,
 
 void Element::GetInnerHTML(nsAString& aInnerHTML, OOMReporter& aError) {
   GetMarkup(false, aInnerHTML);
-  MarkTaintSourceElement(aInnerHTML, "element.innerHTML", this);
+  // MarkTaintSourceElement(aInnerHTML, "element.innerHTML", this);
 }
 
 void Element::SetInnerHTML(const nsAString& aInnerHTML,
@@ -3410,7 +3419,7 @@ void Element::SetInnerHTML(const nsAString& aInnerHTML,
 
 void Element::GetOuterHTML(nsAString& aOuterHTML) {
   GetMarkup(true, aOuterHTML);
-  MarkTaintSourceElement(aOuterHTML, "element.outerHTML", this);
+  // MarkTaintSourceElement(aOuterHTML, "element.outerHTML", this);
 }
 
 void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {

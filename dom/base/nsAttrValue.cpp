@@ -1821,6 +1821,9 @@ already_AddRefed<nsStringBuffer> nsAttrValue::GetStringBuffer(
 
   RefPtr<nsStringBuffer> buf = nsStringBuffer::FromString(aValue);
   if (buf && (buf->StorageSize() / sizeof(char16_t) - 1) == len) {
+    // TaintFox: propagate taint.
+    if (aValue.isTainted())
+      buf->AssignTaint(aValue.Taint());
     return buf.forget();
   }
 

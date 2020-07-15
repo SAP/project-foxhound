@@ -68,6 +68,20 @@ void HTMLSourceElement::UpdateMediaList(const nsAttrValue* aValue) {
   mMediaList = MediaList::Create(mediaStr);
 }
 
+nsresult HTMLSourceElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                 const nsAString& aValue) {
+  if (aNamespaceID == kNameSpaceID_None &&
+      (aName == nsGkAtoms::src || aName == nsGkAtoms::srcset)) {
+    // Taintfox: img.src / img.srcset sink
+    const char* sink = (aName == nsGkAtoms::src) ? "source.src" : "source.srcset";
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, sink, id);
+  }
+
+  return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+}
+
 nsresult HTMLSourceElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                          const nsAttrValue* aValue,
                                          const nsAttrValue* aOldValue,

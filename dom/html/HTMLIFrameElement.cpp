@@ -154,6 +154,17 @@ nsMapRuleToAttributesFunc HTMLIFrameElement::GetAttributeMappingFunction()
   return &MapAttributesIntoRule;
 }
 
+nsresult HTMLIFrameElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                  const nsAString& aValue) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, "iframe.src", id);
+  }
+
+  return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+}
+
 nsresult HTMLIFrameElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                          const nsAttrValue* aValue,
                                          const nsAttrValue* aOldValue,

@@ -86,6 +86,17 @@ void HTMLAreaElement::UnbindFromTree(bool aNullParent) {
   nsGenericHTMLElement::UnbindFromTree(aNullParent);
 }
 
+nsresult HTMLAreaElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                  const nsAString& aValue) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::href) {
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, "area.href", id);
+  }
+
+  return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+}
+
 nsresult HTMLAreaElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                        const nsAttrValue* aValue,
                                        const nsAttrValue* aOldValue,

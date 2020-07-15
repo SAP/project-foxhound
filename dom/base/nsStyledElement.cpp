@@ -8,6 +8,7 @@
 #include "mozAutoDocUpdate.h"
 #include "nsGkAtoms.h"
 #include "nsAttrValue.h"
+#include "nsAttrValueOrString.h"
 #include "nsAttrValueInlines.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "mozilla/dom/MutationEventBinding.h"
@@ -47,6 +48,17 @@ bool nsStyledElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 
   return nsStyledElementBase::ParseAttribute(aNamespaceID, aAttribute, aValue,
                                              aMaybeScriptedPrincipal, aResult);
+}
+
+nsresult nsStyledElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                  const nsAString& aValue) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::style) {
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, "element.style", id);
+  }
+
+  return nsStyledElementBase::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
 
 nsresult nsStyledElement::BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,

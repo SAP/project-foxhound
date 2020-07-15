@@ -285,6 +285,20 @@ nsMapRuleToAttributesFunc HTMLImageElement::GetAttributeMappingFunction()
   return &MapAttributesIntoRule;
 }
 
+nsresult HTMLImageElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                 const nsAString& aValue) {
+  if (aNamespaceID == kNameSpaceID_None &&
+      (aName == nsGkAtoms::src || aName == nsGkAtoms::srcset)) {
+    // Taintfox: img.src / img.srcset sink
+    const char* sink = (aName == nsGkAtoms::src) ? "img.src" : "img.srcset";
+    nsAutoString id;
+    this->GetId(id);
+    ReportTaintSink(aValue, sink, id);
+  }
+
+  return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+}
+
 nsresult HTMLImageElement::BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                          const nsAttrValueOrString* aValue,
                                          bool aNotify) {

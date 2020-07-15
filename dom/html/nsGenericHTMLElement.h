@@ -684,6 +684,9 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   void RegUnRegAccessKey(bool aDoReg);
 
  protected:
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue) override;
+
   virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                  const nsAttrValueOrString* aValue,
                                  bool aNotify) override;
@@ -1023,6 +1026,9 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement,
  protected:
   virtual ~nsGenericHTMLFormElement();
 
+  virtual nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                         const nsAString& aValue) override;
+  
   virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                  const nsAttrValueOrString* aValue,
                                  bool aNotify) override;

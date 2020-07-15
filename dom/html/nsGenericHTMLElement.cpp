@@ -541,6 +541,11 @@ already_AddRefed<nsIURI> nsGenericHTMLElement::GetHrefURIForAnchors() const {
   return uri.forget();
 }
 
+nsresult nsGenericHTMLElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                         const nsAString& aValue) {
+  return nsGenericHTMLElementBase::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
+}
+
 nsresult nsGenericHTMLElement::BeforeSetAttr(int32_t aNamespaceID,
                                              nsAtom* aName,
                                              const nsAttrValueOrString* aValue,
@@ -1737,6 +1742,11 @@ void nsGenericHTMLFormElement::UnbindFromTree(bool aNullParent) {
 
   // The element might not have a fieldset anymore.
   UpdateFieldSet(false);
+}
+
+nsresult nsGenericHTMLFormElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
+                                                         const nsAString& aValue) {
+  return nsGenericHTMLElement::CheckTaintSinkSetAttr(aNamespaceID, aName, aValue);
 }
 
 nsresult nsGenericHTMLFormElement::BeforeSetAttr(
