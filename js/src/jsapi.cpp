@@ -6039,7 +6039,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   JS_ReportWarningUTF8(cx, "Tainted flow from %s into %s!", firstRange.flow().source().name(), sink);
 
   // Extend the taint flow to include the sink function
-  str->taint().extend(TaintOperationFromContext(cx, sink, arg));
+  str->taint().extend(TaintOperationFromContextNative(cx, sink, arg));
 
   // Trigger a custom event that can be caught by an extension.
   // To simplify things, this part is implemented in JavaScript. Since we don't want to recompile
