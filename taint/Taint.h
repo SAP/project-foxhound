@@ -135,6 +135,7 @@ class TaintOperation
     bool isSource() const { return source_ != 0; }
     void setSource() { source_ = 1; }
     bool is_native() const { return is_native_; }
+    void set_native() { is_native_ = 1; }
 
     static void dump(const TaintOperation& op);
     

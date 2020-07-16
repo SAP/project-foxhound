@@ -744,12 +744,14 @@ nsresult MarkTaintOperation(nsAString &str, const char* name)
 
 static nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {
   operation.setSource();
+  operation.set_native();
   str.Taint().overlay(0, str.Length(), operation);
   return NS_OK;
 }
 
 static nsresult MarkTaintSource(mozilla::dom::DOMString &str, TaintOperation operation) {
   operation.setSource();
+  operation.set_native();
   str.Taint().overlay(0, str.Length(), operation);
   return NS_OK;
 }
@@ -758,6 +760,7 @@ nsresult MarkTaintSource(JSContext* cx, JSString* str, const char* name)
 {
   TaintOperation op = GetTaintOperation(cx, name);
   op.setSource();
+  op.set_native();
   JS_MarkTaintSource(cx, str, op);
   return NS_OK;
 }
@@ -766,6 +769,7 @@ nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, con
 {
   TaintOperation op = GetTaintOperation(cx, name);
   op.setSource();
+  op.set_native();
   JS_MarkTaintSource(cx, aValue, op);
   return NS_OK;
 }
