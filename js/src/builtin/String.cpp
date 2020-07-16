@@ -1939,7 +1939,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   // Return if the input string is already normalized.
   if (spanLength == srcChars.length()) {
     if (str->taint().hasTaint()) {
-      str->taint().extend(TaintOperationFromContext(cx, "normalize", str));
+      str->taint().extend(TaintOperationFromContextNative(cx, "normalize", str));
     }
     // Step 7.
     args.rval().setString(str);
