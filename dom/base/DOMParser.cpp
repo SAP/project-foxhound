@@ -16,6 +16,7 @@
 #include "nsStreamUtils.h"
 #include "nsContentUtils.h"
 #include "nsDOMJSUtils.h"
+#include "nsJSUtils.h"
 #include "nsError.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/BasePrincipal.h"
@@ -24,6 +25,7 @@
 #include "NullPrincipalURI.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/ToJSValue.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -56,6 +58,11 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMParser)
 already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
                                                       SupportedType aType,
                                                       ErrorResult& aRv) {
+  nsTDependentSubstring strCopy(aStr, 0);
+  auto op = GetTaintOperation(nsContentUtils::GetCurrentJSContext(), "DOMParser.ParseFromString", aStr);
+  op.set_native();
+  strCopy.Taint().extend(op);
+
 #if (DEBUG_E2E_TAINTING)
     puts("++++ ParseFromString ++++");
 #endif
@@ -74,7 +81,7 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
       document->ForceSkipDTDSecurityChecks();
     }
 
-    nsresult rv = nsContentUtils::ParseDocumentHTML(aStr, document, false);
+    nsresult rv = nsContentUtils::ParseDocumentHTML(strCopy, document, false);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       aRv.Throw(rv);
       return nullptr;
@@ -85,7 +92,7 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
 
   nsAutoCString utf8str;
   // Convert from UTF16 to UTF8 using fallible allocations
-  if (!AppendUTF16toUTF8(aStr, utf8str, mozilla::fallible)) {
+  if (!AppendUTF16toUTF8(strCopy, utf8str, mozilla::fallible)) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
@@ -93,7 +100,7 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
   // The new stream holds a reference to the buffer
   nsCOMPtr<nsIInputStream> stream;
   nsresult rv = NS_NewByteInputStream(getter_AddRefs(stream), utf8str,
-                                      NS_ASSIGNMENT_DEPEND, aStr.Taint());
+                                      NS_ASSIGNMENT_DEPEND, strCopy.Taint());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return nullptr;
