@@ -58,6 +58,7 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(DOMParser)
 already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
                                                       SupportedType aType,
                                                       ErrorResult& aRv) {
+  // TaintFox: Copy String so the TaintOperation shows up in the function trace
   nsTDependentSubstring strCopy(aStr, 0);
   auto op = GetTaintOperation(nsContentUtils::GetCurrentJSContext(), "DOMParser.ParseFromString", aStr);
   op.set_native();
