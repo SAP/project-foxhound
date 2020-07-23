@@ -515,7 +515,7 @@ static bool str_escape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Taintfox: set new taint
-  newtaint.extend(TaintOperationFromContextNative(cx, "escape", str));
+  newtaint.extend(TaintOperationFromContext(cx, "escape", true, str));
   res->setTaint(cx, newtaint);
 
   args.rval().setString(res);
@@ -679,7 +679,7 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: add taint operation.
-  newtaint.extend(TaintOperationFromContextNative(cx, "unescape", str));
+  newtaint.extend(TaintOperationFromContext(cx, "unescape", true, str));
   result->setTaint(cx, newtaint);
 
   args.rval().setString(result);
@@ -1106,7 +1106,7 @@ static JSString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   // Taintfox: cache the taint up here to prevent GC issues
   StringTaint taint = str->taint();
   if (taint.hasTaint()) {
-    taint.extend(TaintOperationFromContextJSStringNative(cx, "toLowerCase", str));
+    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", true, str));
   }
   const size_t length = str->length();
   size_t resultLength;
@@ -1349,7 +1349,7 @@ static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContextNative(cx, "toLocaleLowerCase", str)));
+    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleLowerCase", true, str)));
 
     args.rval().set(result);
     return true;
@@ -1533,7 +1533,7 @@ static JSString* ToUpperCase(JSContext* cx, JSLinearString* str) {
   mozilla::MaybeOneOf<Latin1Buffer, TwoByteBuffer> newChars;
   StringTaint taint = str->taint();
   if (taint.hasTaint()) {
-    taint.extend(TaintOperationFromContextJSStringNative(cx, "toUpperCase", str));
+    taint.extend(TaintOperationFromContextJSString(cx, "toUpperCase", true, str));
   }
   const size_t length = str->length();
   size_t resultLength;
@@ -1776,7 +1776,7 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 
     // TaintFox: propagate taint and add operation
     MOZ_ASSERT(result.isString());
-    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContextNative(cx, "toLocaleUpperCase", str)));
+    result.toString()->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "toLocaleUpperCase", true, str)));
 
     args.rval().set(result);
     return true;
@@ -1891,7 +1891,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   // Latin-1 strings are already in Normalization Form C.
   if (form == NFC && str->hasLatin1Chars()) {
     if (str->taint().hasTaint()) {
-      str->taint().extend(TaintOperationFromContextNative(cx, "normalize", str));
+      str->taint().extend(TaintOperationFromContext(cx, "normalize", true, str));
     }
     // Step 7.
     args.rval().setString(str);
@@ -1939,7 +1939,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   // Return if the input string is already normalized.
   if (spanLength == srcChars.length()) {
     if (str->taint().hasTaint()) {
-      str->taint().extend(TaintOperationFromContextNative(cx, "normalize", str));
+      str->taint().extend(TaintOperationFromContext(cx, "normalize", true, str));
     }
     // Step 7.
     args.rval().setString(str);
@@ -1982,7 +1982,7 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
 
   // TaintFox: Add taint operation.
   if (str->taint().hasTaint()) {
-    ns->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContextNative(cx, "normalize", str)));
+    ns->setTaint(cx, StringTaint::extend(str->taint(), TaintOperationFromContext(cx, "normalize", true, str)));
   }
 
   // Step 7.
@@ -2978,13 +2978,13 @@ static bool TrimString(JSContext* cx, const CallArgs& args, bool trimStart,
   // NewDependentString (StringType-inl.h, JSDependentString::init)
   if (result->taint().hasTaint()) {
     if (trimStart && trimEnd) {
-      result->taint().extend(TaintOperationFromContextJSStringNative(cx, "trim", str));
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trim", true, str));
     } else if (trimStart) {
-      result->taint().extend(TaintOperationFromContextJSStringNative(cx, "trimLeft", str));
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trimLeft", true, str));
     } else if (trimEnd) {
-      result->taint().extend(TaintOperationFromContextJSStringNative(cx, "trimRight", str));
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trimRight", true, str));
     } else {
-      result->taint().extend(TaintOperationFromContextJSStringNative(cx, "trim", str));
+      result->taint().extend(TaintOperationFromContextJSString(cx, "trim", true, str));
     }
   }
 
@@ -4660,9 +4660,9 @@ static MOZ_ALWAYS_INLINE bool Encode(JSContext* cx, HandleLinearString str,
   // TaintFox: Add encode operation to output taint.
   StringTaint taint = sb.empty() ? str->taint() : sb.taint();
   if (unescapedSet == js_isUriReservedPlusPound) {
-    taint.extend(TaintOperationFromContextNative(cx, "encodeURI", str));
+    taint.extend(TaintOperationFromContext(cx, "encodeURI", true, str));
   } else {
-    taint.extend(TaintOperationFromContextNative(cx, "encodeURIComponent", str));
+    taint.extend(TaintOperationFromContext(cx, "encodeURIComponent", true, str));
   }
 
   MOZ_ASSERT(res == Encode_Success);
@@ -4826,9 +4826,9 @@ static bool Decode(JSContext* cx, HandleLinearString str,
   // TaintFox: Add decode operation to output taint.
   StringTaint taint = sb.empty() ? str->taint() : sb.taint();
   if(reservedSet == js_isUriReservedPlusPound) {
-    taint.extend(TaintOperationFromContextNative(cx, "decodeURI", str));
+    taint.extend(TaintOperationFromContext(cx, "decodeURI", true, str));
   } else {
-    taint.extend(TaintOperationFromContextNative(cx, "decodeURIComponent", str));
+    taint.extend(TaintOperationFromContext(cx, "decodeURIComponent", true, str));
   }
 
   MOZ_ASSERT(res == Decode_Success);

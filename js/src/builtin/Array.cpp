@@ -1512,7 +1512,7 @@ bool js::array_join(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // TaintFox: add taint operation.
-  str->taint().extend(TaintOperationFromContextNative(cx, "Array.join"));
+  str->taint().extend(TaintOperationFromContext(cx, "Array.join", true));
 
   args.rval().setString(str);
   return true;

@@ -5981,13 +5981,13 @@ JS_MarkTaintSource(JSContext* cx, JS::MutableHandleValue value, const TaintOpera
 JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* sink, JS::HandleValue arg)
 {
-  return TaintOperationFromContext(cx, sink, arg);
+  return TaintOperationFromContext(cx, sink, false, arg);
 }
 
 JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* sink)
 {
-  return TaintOperationFromContext(cx, sink);
+  return TaintOperationFromContext(cx, sink, false);
 }
 
 JS_PUBLIC_API void
@@ -6039,7 +6039,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   JS_ReportWarningUTF8(cx, "Tainted flow from %s into %s!", firstRange.flow().source().name(), sink);
 
   // Extend the taint flow to include the sink function
-  str->taint().extend(TaintOperationFromContextNative(cx, sink, arg));
+  str->taint().extend(TaintOperationFromContext(cx, sink, true, arg));
 
   // Trigger a custom event that can be caught by an extension.
   // To simplify things, this part is implemented in JavaScript. Since we don't want to recompile

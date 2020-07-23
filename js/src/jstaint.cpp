@@ -184,57 +184,32 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
   return TaintLocation(ascii2utf16(std::string(filename)), line, pos, taintarg(cx, function));
 }
 
-TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleValue args) {
-  return TaintOperation(name, TaintLocationFromContext(cx), taintargs(cx, args));
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args) {
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs(cx, args));
 }
 
-TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleString arg ) {
-  return TaintOperation(name, TaintLocationFromContext(cx), taintargs(cx, arg));
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleString arg ) {
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs(cx, arg));
 }
 
-TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx, const char* name, JSString* const& arg ) {
-  return TaintOperation(name, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg));
+TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native, JSString* const& arg ) {
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg));
 }
 
-TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name,
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native,
                                              JS::HandleString arg1, JS::HandleString arg2) {
-  return TaintOperation(name, TaintLocationFromContext(cx), taintargs(cx, arg1, arg2));
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs(cx, arg1, arg2));
 }
 
-TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name,
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native,
                                              JSString* const& arg1, JSString* const & arg2) {
-  return TaintOperation(name, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg1, arg2));
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg1, arg2));
 }
 
-TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name) {
-  return TaintOperation(name, TaintLocationFromContext(cx));
+TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native) {
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx));
 }
 
-TaintOperation JS::TaintOperationFromContextNative(JSContext* cx, const char* name, JS::HandleValue args) {
-  return TaintOperation(name, true, TaintLocationFromContext(cx), taintargs(cx, args));
-}
-
-TaintOperation JS::TaintOperationFromContextNative(JSContext* cx, const char* name, JS::HandleString arg) {
-  return TaintOperation(name, true, TaintLocationFromContext(cx), taintargs(cx, arg));
-}
-
-TaintOperation JS::TaintOperationFromContextJSStringNative(JSContext* cx, const char* name, JSString* const& arg) {
-  return TaintOperation(name, true, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg));
-}
-
-TaintOperation JS::TaintOperationFromContextNative(JSContext* cx, const char* name,
-                                             JS::HandleString arg1, JS::HandleString arg2) {
-  return TaintOperation(name, true, TaintLocationFromContext(cx), taintargs(cx, arg1, arg2));
-}
-
-TaintOperation JS::TaintOperationFromContextNative(JSContext* cx, const char* name,
-                                             JSString* const& arg1, JSString* const & arg2) {
-  return TaintOperation(name, true, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg1, arg2));
-}
-
-TaintOperation JS::TaintOperationFromContextNative(JSContext* cx, const char* name) {
-  return TaintOperation(name, true, TaintLocationFromContext(cx));
-}
 
 void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const CallArgs& args)
 {

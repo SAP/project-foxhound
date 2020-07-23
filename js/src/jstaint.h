@@ -47,33 +47,19 @@ std::vector<std::u16string> taintargs_jsstring(JSContext* cx, JSString* const& s
 // Extracts the current filename, linenumber and function from the JSContext
 TaintLocation TaintLocationFromContext(JSContext* cx);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleValue args);
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, JS::HandleString arg);
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleString arg);
 
-TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, JSString* const& str);
+TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native, JSString* const& str);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native,
                                          JS::HandleString str1, JS::HandleString str2);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native,
                                          JSString* const& str1, JSString* const& str2);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name);
-
-TaintOperation TaintOperationFromContextNative(JSContext* cx, const char* name, JS::HandleValue args);
-
-TaintOperation TaintOperationFromContextNative(JSContext* cx, const char* name, JS::HandleString arg);
-
-TaintOperation TaintOperationFromContextJSStringNative(JSContext* cx, const char* name, JSString* const& str);
-
-TaintOperation TaintOperationFromContextNative(JSContext* cx, const char* name,
-                                         JS::HandleString str1, JS::HandleString str2);
-
-TaintOperation TaintOperationFromContextNative(JSContext* cx, const char* name,
-                                         JSString* const& str1, JSString* const& str2);
-
-TaintOperation TaintOperationFromContextNative(JSContext* cx, const char* name);
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native);
 
 // Mark all tainted arguments of a function call.
 // This is mainly useful for tracing tainted arguments through the code.

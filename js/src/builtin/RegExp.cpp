@@ -95,7 +95,7 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleString input,
         if (regexp) {
           RootedAtom src(cx, regexp->getSource());
           JSString* srcStr = EscapeRegExpPattern(cx, src);
-          str->taint().extend(TaintOperationFromContextJSStringNative(cx, "RegExp.prototype.exec", srcStr));
+          str->taint().extend(TaintOperationFromContextJSString(cx, "RegExp.prototype.exec", true, srcStr));
         }
       }
       arr->setDenseInitializedLength(i + 1);

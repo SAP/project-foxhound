@@ -875,7 +875,7 @@ JSString* js::ConcatStrings(
     StringTaint newTaint = left->taint();
     newTaint.concat(right->taint(), left->length());
     if (newTaint.hasTaint()) {
-      newTaint.extend(JS::TaintOperationFromContextNative(cx, "concat", left, right));
+      newTaint.extend(JS::TaintOperationFromContext(cx, "concat", true, left, right));
     }
 
     Latin1Char* latin1Buf = nullptr;  // initialize to silence GCC warning
@@ -925,7 +925,7 @@ JSString* js::ConcatStrings(
   JSString* rope = JSRope::new_<allowGC>(cx, left, right, wholeLength);
   // TaintFox: add concat operation to taint flow.
   if ((rope) && (rope->taint().hasTaint())) {
-    rope->taint().extend(JS::TaintOperationFromContextNative(cx, "concat", left, right));
+    rope->taint().extend(JS::TaintOperationFromContext(cx, "concat", true, left, right));
   }
   return rope;
 }
