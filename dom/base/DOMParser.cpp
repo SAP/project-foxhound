@@ -25,7 +25,6 @@
 #include "NullPrincipalURI.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/ToJSValue.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
