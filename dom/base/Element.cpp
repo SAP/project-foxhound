@@ -1219,7 +1219,7 @@ void Element::GetAttribute(const nsAString& aName, DOMString& aReturn) {
   if (val) {
     val->ToString(aReturn);
     // Taintfox: getAttribute source
-    // MarkTaintSourceAttribute(aReturn, "element.getAttribute", this, aName);
+    SetTaintSourceGetAttr(aName, aReturn);
   } else {
     if (IsXULElement()) {
       // XXX should be SetDOMStringToNull(aReturn);
@@ -2457,6 +2457,15 @@ bool Element::SetAndSwapMappedAttribute(nsAtom* aName, nsAttrValue& aValue,
                                         bool* aValueWasSet, nsresult* aRetval) {
   *aRetval = NS_OK;
   return false;
+}
+
+void Element::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
+  return;
+}
+
+void Element::SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
+                                            DOMString& aResult) const {
+  return;
 }
 
 nsresult Element::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,

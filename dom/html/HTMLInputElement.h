@@ -954,6 +954,14 @@ class HTMLInputElement final : public TextControlElement,
   void SetIndeterminateInternal(bool aValue, bool aShouldInvalidate);
 
   /**
+   * Called to mark certain elements
+   */
+  virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const override;
+
+  virtual void SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
+                                     DOMString& aResult) const override;
+
+  /**
    * Called when an attribute is about to be changed
    */
   virtual nsresult BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,

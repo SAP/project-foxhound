@@ -973,6 +973,7 @@ class Element : public FragmentOrElement {
                                       uint32_t aMapCount);
 
  protected:
+
   inline bool GetAttr(int32_t aNameSpaceID, const nsAtom* aName,
                       DOMString& aResult) const {
     NS_ASSERTION(nullptr != aName, "must have attribute name");
@@ -982,6 +983,8 @@ class Element : public FragmentOrElement {
     const nsAttrValue* val = mAttrs.GetAttr(aName, aNameSpaceID);
     if (val) {
       val->ToString(aResult);
+      // Taintfox element.getAttr source
+      SetTaintSourceGetAttr(aNameSpaceID, aName, aResult); 
       return true;
     }
     // else DOMString comes pre-emptied.
@@ -997,9 +1000,7 @@ class Element : public FragmentOrElement {
     if (val) {
       val->ToString(aResult);
       // Taintfox element.getAttr source
-      // This is a catch all for GetAttr, could be reset in child
-      // classes to get a more specific location
-      // MarkTaintSourceAttribute(aResult, "element.getAttribute", this, aName);
+      SetTaintSourceGetAttr(aName, aResult);
       return true;
     }
     // else DOMString comes pre-emptied.
@@ -1703,6 +1704,15 @@ class Element : public FragmentOrElement {
    */
   virtual bool SetAndSwapMappedAttribute(nsAtom* aName, nsAttrValue& aValue,
                                          bool* aValueWasSet, nsresult* aRetval);
+
+  /**
+   *  Taintfox: this method can be overriden by child classes to mark
+   * certain attributes as taint sources.
+   */
+  virtual void SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const;
+
+  virtual void SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
+                                     DOMString& aResult) const;
 
   /**
    * Hook that is called by Element::SetAttr to allow subclasses to check

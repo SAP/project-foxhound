@@ -1119,6 +1119,35 @@ nsresult HTMLInputElement::Clone(dom::NodeInfo* aNodeInfo,
   return NS_OK;
 }
 
+void HTMLInputElement::SetTaintSourceGetAttr(const nsAString& aName, DOMString& aResult) const {
+
+  if (nsGkAtoms::value->Equals(aName)) {
+    // TaintFox: input.value source
+    //
+    // This will taint *all* input types, including those where the actual values
+    // could be limited. Still, these inputs should still not change the syntax
+    // of any sink calls
+    MarkTaintSourceElement(aResult, "input.value", this);
+  }
+
+  return;
+}
+
+void HTMLInputElement::SetTaintSourceGetAttr(int32_t aNameSpaceID, const nsAtom* aName,
+                                   DOMString& aResult) const {
+
+  if ((aNameSpaceID == kNameSpaceID_None) && (aName == nsGkAtoms::value)) {
+    // TaintFox: input.value source
+    //
+    // This will taint *all* input types, including those where the actual values
+    // could be limited. Still, these inputs should still not change the syntax
+    // of any sink calls
+    MarkTaintSourceElement(aResult, "input.value", this);
+  }
+
+  return;
+}
+
 nsresult HTMLInputElement::BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                          const nsAttrValueOrString* aValue,
                                          bool aNotify) {
@@ -1435,13 +1464,6 @@ bool HTMLInputElement::SanitizesOnValueGetter() const {
 
 void HTMLInputElement::GetValue(nsAString& aValue, CallerType aCallerType) {
   GetValueInternal(aValue, aCallerType);
-
-  // TaintFox: input.value source
-  //
-  // This will taint *all* input types, including those where the actual values
-  // could be limited. Still, these inputs should still not change the syntax
-  // of any sink calls
-  MarkTaintSourceElement(aValue, "input.value", this);
 
   if (SanitizesOnValueGetter()) {
     SanitizeValue(aValue, ForValueGetter::Yes);
