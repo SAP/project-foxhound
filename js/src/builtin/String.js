@@ -28,19 +28,6 @@ function addTaintToArray(array, name, arg) {
         if (typeof(array[i]) !== "string") {
             continue;
         }
-        AddTaintOperation(array[i], name, arg);
-    }
-}
-
-function addTaintToArrayNative(array, name, arg) {
-    if (array === null || typeof(array) !== "object" || typeof(array.length) !== "number") {
-        return;
-    }
-
-    for (var i = 0; i < array.length; i++) {
-        if (typeof(array[i]) !== "string") {
-            continue;
-        }
         AddTaintOperationNative(array[i], name, arg);
     }
 }
@@ -59,7 +46,7 @@ function String_match(regexp) {
         // Step 2.b.
         if (matcher !== undefined) {
             var ret = callContentFunction(matcher, regexp, this);
-            addTaintToArrayNative(ret, "match", regexp);
+            addTaintToArray(ret, "match", regexp);
             return ret;
         }
     }
@@ -71,7 +58,7 @@ function String_match(regexp) {
         var flatResult = FlatStringMatch(S, regexp);
         if (flatResult !== undefined) {
             var ret = flatResult;
-            addTaintToArrayNative(ret, "match", regexp);
+            addTaintToArray(ret, "match", regexp);
             return ret;
         }
     }
@@ -82,13 +69,13 @@ function String_match(regexp) {
     // Step 5 (optimized case).
     if (IsStringMatchOptimizable()) {
         var ret = RegExpMatcher(rx, S, 0);
-        addTaintToArrayNative(ret, "match", regexp);
+        addTaintToArray(ret, "match", regexp);
         return ret;
     }
 
     // Step 5.
     var ret = callContentFunction(GetMethod(rx, std_match), rx, S);
-    addTaintToArrayNative(ret, "match", regexp);
+    addTaintToArray(ret, "match", regexp);
     return ret;
 }
 
