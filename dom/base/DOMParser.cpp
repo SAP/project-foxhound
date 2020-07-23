@@ -60,7 +60,13 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
                                                       ErrorResult& aRv) {
   // TaintFox: Copy String so the TaintOperation shows up in the function trace
   nsTDependentSubstring strCopy(aStr, 0);
-  auto op = GetTaintOperation(nsContentUtils::GetCurrentJSContext(), "DOMParser.ParseFromString", aStr);
+  // TODO(david): Is this sound?
+  nsTArray<nsString> args;
+  args.AppendElement(aStr);
+  NS_ConvertUTF8toUTF16 typeCopy(SupportedTypeValues::GetString(aType).data());
+  args.AppendElement(typeCopy);
+
+  auto op = GetTaintOperation(nsContentUtils::GetCurrentJSContext(), "DOMParser.ParseFromString", args);
   op.set_native();
   strCopy.Taint().extend(op);
 

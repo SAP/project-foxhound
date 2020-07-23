@@ -391,7 +391,7 @@ using nsAutoJSString = nsTAutoJSString<char16_t>;
 // Note that this is guaranteed to be UTF-8.
 using nsAutoJSCString = nsTAutoJSString<char>;
 
-TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsAString& arg);
+TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsTArray<nsString> &args);
 
 // Extend the taintflow
 nsresult MarkTaintOperation(nsAString &str, const char* name);

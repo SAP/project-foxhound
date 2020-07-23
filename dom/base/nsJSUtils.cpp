@@ -661,7 +661,7 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name)
   return TaintOperation(name);
 }
 
-TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsAString& arg)
+static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsAString& arg)
 {
   if (cx && JS::CurrentGlobalOrNull(cx)) {
     JS::RootedValue argval(cx);
@@ -673,7 +673,7 @@ TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsAStrin
   return TaintOperation(name);
 }
 
-static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsTArray<nsString> &args)
+TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsTArray<nsString> &args)
 {
   if (cx && JS::CurrentGlobalOrNull(cx)) {
     JS::RootedValue argval(cx);
