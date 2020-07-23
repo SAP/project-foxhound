@@ -66,9 +66,7 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
   NS_ConvertUTF8toUTF16 typeCopy(SupportedTypeValues::GetString(aType).data());
   args.AppendElement(typeCopy);
 
-  auto op = GetTaintOperation(nsContentUtils::GetCurrentJSContext(), "DOMParser.ParseFromString", args);
-  op.set_native();
-  strCopy.Taint().extend(op);
+  MarkTaintOperation(strCopy, "DOMParser.ParseFromString", args);
 
 #if (DEBUG_E2E_TAINTING)
     puts("++++ ParseFromString ++++");
