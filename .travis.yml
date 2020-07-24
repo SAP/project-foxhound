@@ -7,6 +7,9 @@ git:
 install:
 - cp taintfox_mozconfig_spidermonkey .mozconfig
 - ./mach bootstrap --application-choice=browser --no-interactive
+# Workaround - rust 1.45 has defaults which break the build (see https://bugzilla.mozilla.org/show_bug.cgi?id=1640982)
+-  ${HOME}/.cargo/bin/rustup install 1.44.0
+-  ${HOME}/.cargo/bin/rustup override set 1.44.0
 - sudo pip install six
 
 script:

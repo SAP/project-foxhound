@@ -20,6 +20,10 @@ RUN GIT_SSL_NO_VERIFY=true git clone --depth=1 https://github.wdf.sap.corp/WebSe
 
 RUN apt-get remove -y nasm
 
+# Workaround - rust 1.45 has defaults which break the build (see https://bugzilla.mozilla.org/show_bug.cgi?id=1640982)
+RUN /root/.cargo/bin/rustup install 1.44.0 && \
+    /root/.cargo/bin/rustup override set 1.44.0
+
 WORKDIR /usr/local/src/taintfox
 
 CMD ./mach build
