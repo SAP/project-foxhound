@@ -112,6 +112,8 @@ class MOZ_STACK_CLASS DOMString {
     if (mState == State::OwnedStringBuffer) {
       // Just hand that ref over.
       mState = State::UnownedStringBuffer;
+      // Also store the taint
+      mTaint = mStringBuffer->Taint().subtaint(0, mLength);
     } else {
       // Caller should end up holding a ref.
       mStringBuffer->AddRef();
@@ -163,6 +165,8 @@ class MOZ_STACK_CLASS DOMString {
     if (aLength != 0) {
       SetStringBufferInternal(aStringBuffer, aLength);
       mState = State::UnownedStringBuffer;
+      // Create a copy of the taint information
+      mTaint = aStringBuffer->Taint().subtaint(0, aLength);
     }
     // else nothing to do
   }
@@ -174,6 +178,8 @@ class MOZ_STACK_CLASS DOMString {
       SetStringBufferInternal(aStringBuffer, aLength);
       aStringBuffer->AddRef();
       mState = State::OwnedStringBuffer;
+      // In this case, use taint information from the StringBuffer directly,
+      // which is propagated automatically
     }
     // else nothing to do
   }
@@ -190,6 +196,7 @@ class MOZ_STACK_CLASS DOMString {
         SetKnownLiveStringBuffer(buf, aString.Length());
       } else if (aString.IsLiteral()) {
         SetLiteralInternal(aString.BeginReading(), aString.Length());
+        mTaint = aString.Taint();
       } else {
         AsAString() = aString;
       }
@@ -254,33 +261,31 @@ class MOZ_STACK_CLASS DOMString {
       auto chars = static_cast<char16_t*>(buf->Data());
       if (chars[len] == '\0') {
         // Safe to share the buffer.
-        // Taintfox: ToString already propagates taint
         buf->ToString(len, aString);
       } else {
         // We need to copy, unfortunately.
         aString.Assign(chars, len);
-        // Taintfox: propagate taint by hand here
-        aString.AssignTaint(buf->taint());
       }
     } else if (HasLiteral()) {
       aString.AssignLiteral(Literal(), LiteralLength());
-      aString.AssignTaint(mTaint);
     } else if (HasAtom()) {
       mAtom->ToString(aString);
-      aString.AssignTaint(mTaint);
     } else {
-      // Taintfox: AsAString already propagates taint
       aString = AsAString();
     }
+    // Taintfox: propagate taint by hand here
+    aString.AssignTaint(Taint());
   }
 
   // TaintFox: convenience method to assign taint information to a DOMString
   void AssignTaint(const StringTaint& aTaint) {
     if (IsNull() || IsEmpty()) {
       return;
-    } else if (HasStringBuffer()) {
-      mStringBuffer->AssignTaint(aTaint);
     } else if (HasLiteral() || HasAtom()) {
+      mTaint = aTaint;
+    } else if (mState == State::OwnedStringBuffer) {
+      mStringBuffer->AssignTaint(aTaint);
+    } else if (mState == State::UnownedStringBuffer) {
       mTaint = aTaint;
     } else {
       AsAString().AssignTaint(aTaint);
@@ -291,9 +296,11 @@ class MOZ_STACK_CLASS DOMString {
   StringTaint& Taint() {
     if (IsNull() || IsEmpty()) {
       return mTaint;
-    } else if (HasStringBuffer()) {
-      return mStringBuffer->Taint();
     } else if (HasLiteral() || HasAtom()) {
+      return mTaint;
+    } else if (mState == State::OwnedStringBuffer) {
+      return mStringBuffer->Taint();
+    } else if (mState == State::UnownedStringBuffer) {
       return mTaint;
     } else {
       return AsAString().Taint();
@@ -379,7 +386,7 @@ class MOZ_STACK_CLASS DOMString {
 
   State mState;
 
-  // Taint for the literal and atom cases
+  // Taint for the stringbuffer, literal and atom cases
   StringTaint mTaint;
 
 };
