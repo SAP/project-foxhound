@@ -10,6 +10,7 @@
 #include "mozilla/Encoding.h"
 #include "nsDOMString.h"
 #include "nsIInputStream.h"
+#include "nsReadableUtils.h"
 #include "nsStringStream.h"
 
 namespace mozilla {
@@ -50,6 +51,8 @@ void URLParams::Append(const nsAString& aName, const nsAString& aValue) {
   Param* param = mParams.AppendElement();
   param->mKey = aName;
   param->mValue = aValue;
+  MarkTaintOperation(param->mKey, "URLParams(key)");
+  MarkTaintOperation(param->mValue, "URLParams(value)");
 }
 
 void URLParams::Set(const nsAString& aName, const nsAString& aValue) {
@@ -99,7 +102,7 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
   nsACString::const_iterator start, end;
   aInput.BeginReading(start);
   aInput.EndReading(end);
-
+  nsACString::const_iterator stringstart(start);
   nsCString unescaped;
 
   while (start != end) {
@@ -129,22 +132,30 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
 
       if (first != end && second != end && ASCII_HEX_DIGIT(*first) &&
           ASCII_HEX_DIGIT(*second)) {
+        // Taintfox: append taint
+        unescaped.Taint().concat(
+          aInput.Taint().subtaint(Distance(stringstart, start), Distance(stringstart, second)),
+          unescaped.Length());
         unescaped.Append(HEX_DIGIT(first) * 16 + HEX_DIGIT(second));
         start = ++second;
         continue;
-
       } else {
         unescaped.Append('%');
+        // Taintfox: no taint
         ++start;
         continue;
       }
     }
-
+    // Taintfox: append single char taint
+    unescaped.Taint().concat(
+      aInput.Taint().subtaint(Distance(stringstart, start), Distance(stringstart, start) + 1),
+      unescaped.Length());
     unescaped.Append(*start);
     ++start;
   }
 
   ConvertString(unescaped, aOutput);
+  aOutput.AssignTaint(unescaped.Taint());
 }
 
 /* static */
@@ -153,15 +164,23 @@ bool URLParams::Parse(const nsACString& aInput, ForEachIterator& aIterator) {
   aInput.BeginReading(start);
   aInput.EndReading(end);
   nsACString::const_iterator iter(start);
+  // Taintfox: fix at start of string to compute subtaint indices
+  nsACString::const_iterator stringstart(start);
 
   while (start != end) {
     nsAutoCString string;
 
     if (FindCharInReadable('&', iter, end)) {
       string.Assign(Substring(start, iter));
+      // Taintfox: propagate taint
+      string.AssignTaint(aInput.Taint().subtaint(Distance(stringstart, start),
+                                                 Distance(stringstart, iter)));
       start = ++iter;
     } else {
       string.Assign(Substring(start, end));
+      // Taintfox: propagate taint
+      string.AssignTaint(aInput.Taint().subtaint(Distance(stringstart, start),
+                                                 Distance(stringstart, end)));
       start = end;
     }
 
@@ -179,10 +198,16 @@ bool URLParams::Parse(const nsACString& aInput, ForEachIterator& aIterator) {
 
     if (FindCharInReadable('=', eqIter, eqEnd)) {
       name.Assign(Substring(eqStart, eqIter));
-
+      // Taintfox: propagate taint
+      name.AssignTaint(string.Taint().subtaint(Distance(eqStart, eqStart),
+                                               Distance(eqStart, eqIter)));
       ++eqIter;
       value.Assign(Substring(eqIter, eqEnd));
+      // Taintfox: propagate taint
+      value.AssignTaint(string.Taint().subtaint(Distance(eqStart, eqIter),
+                                                Distance(eqStart, eqEnd)));
     } else {
+      // Taintfox: taint should be propagated here
       name.Assign(string);
     }
 

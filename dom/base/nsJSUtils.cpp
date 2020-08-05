@@ -732,7 +732,9 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const m
 static nsresult MarkTaintOperation(JSContext *cx, nsAString &str, const char* name)
 {
   if (str.isTainted()) {
-    str.Taint().extend(GetTaintOperation(cx, name));
+    auto op = GetTaintOperation(cx, name);
+    op.set_native();
+    str.Taint().extend(op);
   }
   return NS_OK;
 }
