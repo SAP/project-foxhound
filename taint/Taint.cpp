@@ -88,7 +88,9 @@ TaintOperation& TaintOperation::operator=(TaintOperation&& other)
     return *this;
 }
 
+#ifdef DEBUG
 void TaintOperation::dump(const TaintOperation& op) {
+    // NB - this will not compile under windows due to a bug in VS
     std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> convert;
     static int n = 0;
     static int totlen = 0;
@@ -114,6 +116,9 @@ void TaintOperation::dump(const TaintOperation& op) {
     std::cout << "Size: " << sizeof(op) << " total: " << totsize << std::endl;
     std::cout << "************************************************" << std::endl;
 }
+#else
+void TaintOperation::dump(const TaintOperation& op) {}
+#endif
 
 TaintNode::TaintNode(TaintNode* parent, const TaintOperation& operation) : parent_(parent), refcount_(1), operation_(operation)
 {
