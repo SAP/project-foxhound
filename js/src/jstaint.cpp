@@ -3,6 +3,7 @@
  */
 #include "jstaint.h"
 
+#include <algorithm>
 #include <codecvt>
 #include <iostream>
 #include <locale>
