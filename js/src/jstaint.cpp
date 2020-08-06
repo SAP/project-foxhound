@@ -4,7 +4,6 @@
 #include "jstaint.h"
 
 #include <algorithm>
-#include <codecvt>
 #include <iostream>
 #include <locale>
 #include <string>
@@ -20,7 +19,7 @@
 
 using namespace JS;
 
-const unsigned int max_length = 128;
+const size_t max_length = 128;
 
 static std::u16string ascii2utf16(const std::string& str) {
   std::u16string res;
@@ -240,12 +239,9 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
     if (args[i].isString()) {
       RootedString arg(cx, args[i].toString());
       if (arg->isTainted()) {
-        // Is there a more Mozilla way to do this?
-        std::wstring_convert<std::codecvt_utf8<char16_t>,char16_t> convert;
-        std::string fname_u8 = convert.to_bytes(taintarg(cx, name));
         arg->taint().extend(
-          TaintOperation(fname_u8.c_str(), location,
-                         { taintarg(cx, name), sourceinfo, taintarg(cx, i) } ));
+          TaintOperation("function", location,
+                         { taintarg(cx, name), sourceinfo, taintarg(cx, i), taintarg(cx, args.length()) } ));
       }
     }
   }
