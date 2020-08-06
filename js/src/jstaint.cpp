@@ -20,7 +20,7 @@
 
 using namespace JS;
 
-const unsigned long max_length = 128;
+const unsigned int max_length = 128;
 
 static std::u16string ascii2utf16(const std::string& str) {
   std::u16string res;
