@@ -4829,7 +4829,7 @@ JS_PUBLIC_API bool JS_ReportWarningASCII(JSContext* cx, const char* format,
 
   AssertHeapIsIdle();
   va_start(ap, format);
-  ok = ReportErrorVA(cx, JSREPORT_WARNING, format, ArgumentsAreASCII, ap);
+  ok = ReportErrorVA(cx, IsWarning::Yes, format, ArgumentsAreASCII, ap);
   va_end(ap);
   return ok;
 }
@@ -4841,7 +4841,7 @@ JS_PUBLIC_API bool JS_ReportWarningLatin1(JSContext* cx, const char* format,
 
   AssertHeapIsIdle();
   va_start(ap, format);
-  ok = ReportErrorVA(cx, JSREPORT_WARNING, format, ArgumentsAreLatin1, ap);
+  ok = ReportErrorVA(cx, IsWarning::Yes, format, ArgumentsAreLatin1, ap);
   va_end(ap);
   return ok;
 }
@@ -4853,65 +4853,7 @@ JS_PUBLIC_API bool JS_ReportWarningUTF8(JSContext* cx, const char* format,
 
   AssertHeapIsIdle();
   va_start(ap, format);
-  ok = ReportErrorVA(cx, JSREPORT_WARNING, format, ArgumentsAreUTF8, ap);
-  va_end(ap);
-  return ok;
-}
-
-JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberASCII(
-    JSContext* cx, unsigned flags, JSErrorCallback errorCallback, void* userRef,
-    const unsigned errorNumber, ...) {
-  va_list ap;
-  bool ok;
-
-  AssertHeapIsIdle();
-  va_start(ap, errorNumber);
-  ok = ReportErrorNumberVA(cx, flags, errorCallback, userRef, errorNumber,
-                           ArgumentsAreASCII, ap);
-  va_end(ap);
-  return ok;
-}
-
-JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberLatin1(
-    JSContext* cx, unsigned flags, JSErrorCallback errorCallback, void* userRef,
-    const unsigned errorNumber, ...) {
-  va_list ap;
-  bool ok;
-
-  AssertHeapIsIdle();
-  va_start(ap, errorNumber);
-  ok = ReportErrorNumberVA(cx, flags, errorCallback, userRef, errorNumber,
-                           ArgumentsAreLatin1, ap);
-  va_end(ap);
-  return ok;
-}
-
-JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberUTF8(
-    JSContext* cx, unsigned flags, JSErrorCallback errorCallback, void* userRef,
-    const unsigned errorNumber, ...) {
-  va_list ap;
-  bool ok;
-
-  AssertHeapIsIdle();
-  va_start(ap, errorNumber);
-  ok = ReportErrorNumberVA(cx, flags, errorCallback, userRef, errorNumber,
-                           ArgumentsAreUTF8, ap);
-  va_end(ap);
-  return ok;
-}
-
-JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberUC(JSContext* cx, unsigned flags,
-                                                  JSErrorCallback errorCallback,
-                                                  void* userRef,
-                                                  const unsigned errorNumber,
-                                                  ...) {
-  va_list ap;
-  bool ok;
-
-  AssertHeapIsIdle();
-  va_start(ap, errorNumber);
-  ok = ReportErrorNumberVA(cx, flags, errorCallback, userRef, errorNumber,
-                           ArgumentsAreUnicode, ap);
+  ok = ReportErrorVA(cx, IsWarning::Yes, format, ArgumentsAreUTF8, ap);
   va_end(ap);
   return ok;
 }
@@ -6038,7 +5980,7 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
     return;
   }
 
-  JS::AutoValueArray<3> arguments(cx);
+  JS::RootedValueArray<3> arguments(cx);
   arguments[0].setString(str);
   arguments[1].setString(NewStringCopyZ<CanGC>(cx, sink));
   if (stack) {

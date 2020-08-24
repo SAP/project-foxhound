@@ -250,7 +250,7 @@ static bool CheckPatternSyntaxSlow(JSContext* cx, HandleAtom pattern,
                                    RegExpFlags flags) {
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
   CompileOptions options(cx);
-  frontend::TokenStream dummyTokenStream(cx, options, nullptr, 0, EmptyTaint, nullptr);
+  frontend::DummyTokenStream dummyTokenStream(cx, options);
   return irregexp::CheckPatternSyntax(cx, dummyTokenStream, pattern, flags);
 }
 

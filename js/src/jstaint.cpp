@@ -221,9 +221,11 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
     name = StringValue(function->displayAtom());
   }
 
+  RootedFunction fun(cx, function);
+
   std::u16string sourceinfo(u"unknown");
-  if (function->isInterpreted() && function->hasBaseScript()) {
-    RootedScript script(cx, function->existingScript());
+  if (fun->isInterpreted() && fun->hasBaseScript()) {
+    RootedScript script(cx, JSFunction::getOrCreateScript(cx, fun));
     if (script) {
       int lineno = script->lineno();
       js::ScriptSource* source = script->scriptSource();

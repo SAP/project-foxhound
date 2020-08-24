@@ -2450,22 +2450,6 @@ extern JS_PUBLIC_API bool JS_ReportWarningUTF8(JSContext* cx,
                                                const char* format, ...)
     MOZ_FORMAT_PRINTF(2, 3);
 
-extern JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberASCII(
-    JSContext* cx, unsigned flags, JSErrorCallback errorCallback, void* userRef,
-    const unsigned errorNumber, ...);
-
-extern JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberLatin1(
-    JSContext* cx, unsigned flags, JSErrorCallback errorCallback, void* userRef,
-    const unsigned errorNumber, ...);
-
-extern JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberUTF8(
-    JSContext* cx, unsigned flags, JSErrorCallback errorCallback, void* userRef,
-    const unsigned errorNumber, ...);
-
-extern JS_PUBLIC_API bool JS_ReportErrorFlagsAndNumberUC(
-    JSContext* cx, unsigned flags, JSErrorCallback errorCallback, void* userRef,
-    const unsigned errorNumber, ...);
-
 /**
  * Complain when out of memory.
  */

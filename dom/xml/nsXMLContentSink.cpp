@@ -1098,7 +1098,8 @@ nsXMLContentSink::HandleCDataSection(const char16_t* aData, uint32_t aLength) {
 
   FlushText();
 
-  RefPtr<CDATASection> cdata = new CDATASection(mNodeInfoManager);
+  RefPtr<CDATASection> cdata =
+    new (mNodeInfoManager) CDATASection(mNodeInfoManager);
   // TaintFox: here and above, no taint available..
   cdata->SetText(aData, aLength, false, EmptyTaint);
   nsresult rv = AddContentAsLeaf(cdata);

@@ -540,14 +540,9 @@ nsStringInputStream::Clone(nsIInputStream** aCloneOut) {
 }
 
 nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
-<<<<<<< HEAD
-                               Span<const char> aStringToRead,
+                               mozilla::Span<const char> aStringToRead,
                                nsAssignmentType aAssignment,
                                const StringTaint& aTaint) {
-=======
-                               mozilla::Span<const char> aStringToRead,
-                               nsAssignmentType aAssignment) {
->>>>>>> firefox-release
   MOZ_ASSERT(aStreamResult, "null out ptr");
 
   RefPtr<nsStringInputStream> stream = new nsStringInputStream();

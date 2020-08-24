@@ -427,9 +427,6 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   // and its derived classes.
   void initTaint() { new (&d.taint_) StringTaint(); }
 
-  MOZ_ALWAYS_INLINE
-  uint32_t flags() const { return flagsField(); }
-
   template <typename CharT>
   static MOZ_ALWAYS_INLINE void checkStringCharsArena(const CharT* chars) {
 #ifdef MOZ_DEBUG
@@ -620,10 +617,6 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   static size_t offsetOfTaint() {
     return offsetof(JSString, d.taint_);
   }
-
-  // Make offset accessors public.
-  using Base::offsetOfFlags;
-  using Base::offsetOfLength;
 
  private:
   // To help avoid writing Spectre-unsafe code, we only allow MacroAssembler

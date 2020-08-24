@@ -767,7 +767,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
     // These next ones *always* add their leading character even if length is 0
     // Handles items like "http://#"
     // ?query
-    if (mQuery.mLen >= 0)
+    if (mQuery.mLen >= 0) {
       approxLen += 1 + queryEncoder.EncodeSegmentCount(spec, taint, mQuery, esc_Query,
                                                        encQuery, useEncQuery);
     }
