@@ -307,12 +307,6 @@ interface nsIHttpChannelInternal : nsISupports
     [must_use] readonly attribute nsIURI topWindowURI;
 
     /**
-     * The content blocking allow list principal belonging to the document
-     * loaded in the top-level window that's associated with this channel.
-     */
-    [must_use, noscript] readonly attribute nsIPrincipal contentBlockingAllowListPrincipal;
-
-    /**
      * Set top-level window URI to this channel only when the topWindowURI
      * is null and there is no window associated to this channel.
      * Note that the current usage of this method is only for xpcshell test.
@@ -330,10 +324,18 @@ interface nsIHttpChannelInternal : nsISupports
      * the CORS preflight parameters.
      */
     [noscript, notxpcom, nostdcall]
-    void setCorsPreflightParameters(in CStringArrayRef unsafeHeaders);
+    void setCorsPreflightParameters(in CStringArrayRef unsafeHeaders,
+                                    in boolean shouldStripRequestBodyHeader);
 
     [noscript, notxpcom, nostdcall]
     void setAltDataForChild(in boolean aIsForChild);
+
+    /**
+     * Prevent the use of alt-data cache for this request.  Use by the
+     * extension StreamFilter class to force use of the regular cache.
+     */
+    [noscript, notxpcom, nostdcall]
+    void disableAltDataCache();
 
     /**
      * When set to true, the channel will not pop any authentication prompts up
@@ -400,5 +402,14 @@ interface nsIHttpChannelInternal : nsISupports
     nsILoadInfo_CrossOriginOpenerPolicy computeCrossOriginOpenerPolicy(
         in nsILoadInfo_CrossOriginOpenerPolicy aInitiatorPolicy);
 
+    [noscript]
+    bool hasCrossOriginOpenerPolicyMismatch(); 
+
+    [noscript]
+    nsILoadInfo_CrossOriginEmbedderPolicy getResponseEmbedderPolicy();
+
     [notxpcom, nostdcall] attribute boolean hasNonEmptySandboxingFlag;
+
+    [noscript, notxpcom, nostdcall]
+    void DoDiagnosticAssertWhenOnStopNotCalledOnDestroy();
 };

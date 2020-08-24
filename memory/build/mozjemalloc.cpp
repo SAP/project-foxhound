@@ -1184,6 +1184,7 @@ static bool opt_zero = false;
 static const bool opt_junk = false;
 static const bool opt_zero = false;
 #endif
+static bool opt_randomize_small = true;
 
 // ***************************************************************************
 // Begin forward declarations.
@@ -2840,6 +2841,7 @@ void* arena_t::MallocSmall(size_t aSize, bool aZero) {
           prngState1.valueOr(0), prngState2.valueOr(0));
       mRandomizeSmallAllocations = true;
     }
+    MOZ_ASSERT(!mRandomizeSmallAllocations || mPRNG);
 
     MutexAutoLock lock(mLock);
     run = bin->mCurrentRun;
@@ -3523,12 +3525,24 @@ arena_t::arena_t(arena_params_t* aParams) {
 #endif
   mSpare = nullptr;
 
-  mNumDirty = 0;
-
-  mRandomizeSmallAllocations =
-      aParams && aParams->mFlags & ARENA_FLAG_RANDOMIZE_SMALL;
+  mRandomizeSmallAllocations = opt_randomize_small;
+  if (aParams) {
+    uint32_t flags = aParams->mFlags & ARENA_FLAG_RANDOMIZE_SMALL_MASK;
+    switch (flags) {
+      case ARENA_FLAG_RANDOMIZE_SMALL_ENABLED:
+        mRandomizeSmallAllocations = true;
+        break;
+      case ARENA_FLAG_RANDOMIZE_SMALL_DISABLED:
+        mRandomizeSmallAllocations = false;
+        break;
+      case ARENA_FLAG_RANDOMIZE_SMALL_DEFAULT:
+      default:
+        break;
+    }
+  }
   mPRNG = nullptr;
 
+  mNumDirty = 0;
   // The default maximum amount of dirty pages allowed on arenas is a fraction
   // of opt_dirty_max.
   mMaxDirty = (aParams && aParams->mMaxDirty) ? aParams->mMaxDirty
@@ -3930,6 +3944,12 @@ static bool malloc_init_hard() {
             opt_zero = true;
             break;
 #endif
+          case 'r':
+            opt_randomize_small = false;
+            break;
+          case 'R':
+            opt_randomize_small = true;
+            break;
           default: {
             char cbuf[2];
 
@@ -4831,7 +4851,7 @@ MOZ_EXPORT void* (*__memalign_hook)(size_t, size_t) = memalign_impl;
 #endif
 
 #ifdef XP_WIN
-void* _recalloc(void* aPtr, size_t aCount, size_t aSize) {
+MOZ_EXPORT void* _recalloc(void* aPtr, size_t aCount, size_t aSize) {
   size_t oldsize = aPtr ? AllocInfo::Get(aPtr).Size() : 0;
   CheckedInt<size_t> checkedSize = CheckedInt<size_t>(aCount) * aSize;
 
@@ -4856,7 +4876,7 @@ void* _recalloc(void* aPtr, size_t aCount, size_t aSize) {
 
 // This impl of _expand doesn't ever actually expand or shrink blocks: it
 // simply replies that you may continue using a shrunk block.
-void* _expand(void* aPtr, size_t newsize) {
+MOZ_EXPORT void* _expand(void* aPtr, size_t newsize) {
   if (AllocInfo::Get(aPtr).Size() >= newsize) {
     return aPtr;
   }
@@ -4864,5 +4884,7 @@ void* _expand(void* aPtr, size_t newsize) {
   return nullptr;
 }
 
-size_t _msize(void* aPtr) { return DefaultMalloc::malloc_usable_size(aPtr); }
+MOZ_EXPORT size_t _msize(void* aPtr) {
+  return DefaultMalloc::malloc_usable_size(aPtr);
+}
 #endif

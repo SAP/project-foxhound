@@ -79,10 +79,10 @@ class ScreenDeviceInfoImpl : public VideoCaptureModule::DeviceInfo {
   std::unique_ptr<DesktopDeviceInfo> desktop_device_info_;
 };
 
-class AppDeviceInfoImpl : public VideoCaptureModule::DeviceInfo {
+class WindowDeviceInfoImpl : public VideoCaptureModule::DeviceInfo {
  public:
-  AppDeviceInfoImpl(const int32_t id);
-  virtual ~AppDeviceInfoImpl(void);
+  WindowDeviceInfoImpl(const int32_t id) : _id(id){};
+  virtual ~WindowDeviceInfoImpl(void){};
 
   int32_t Init();
   int32_t Refresh();
@@ -114,10 +114,10 @@ class AppDeviceInfoImpl : public VideoCaptureModule::DeviceInfo {
   std::unique_ptr<DesktopDeviceInfo> desktop_device_info_;
 };
 
-class WindowDeviceInfoImpl : public VideoCaptureModule::DeviceInfo {
+class BrowserDeviceInfoImpl : public VideoCaptureModule::DeviceInfo {
  public:
-  WindowDeviceInfoImpl(const int32_t id) : _id(id){};
-  virtual ~WindowDeviceInfoImpl(void){};
+  BrowserDeviceInfoImpl(const int32_t id) : _id(id){};
+  virtual ~BrowserDeviceInfoImpl(void){};
 
   int32_t Init();
   int32_t Refresh();
@@ -242,7 +242,7 @@ class DesktopCaptureImpl : public DesktopCapturer::Callback,
   // This is created on the main thread and accessed on both the main thread
   // and the capturer thread. It is created prior to the capturer thread
   // starting and is destroyed after it is stopped.
-  std::unique_ptr<DesktopAndCursorComposer> desktop_capturer_cursor_composer_;
+  std::unique_ptr<DesktopCapturer> desktop_capturer_cursor_composer_;
 
   std::unique_ptr<EventWrapper> time_event_;
 #if defined(_WIN32)

@@ -20,45 +20,57 @@ using namespace mozilla::widget;
 namespace mozilla {
 namespace widget {
 
-static const Color sBackgroundColor(Color(1.0f, 1.0f, 1.0f));
-static const Color sBackgroundActiveColor(Color(0.88f, 0.88f, 0.9f));
-static const Color sBackgroundActiveColorDisabled(Color(0.88f, 0.88f, 0.9f,
-                                                        0.4f));
-static const Color sBorderColor(Color(0.62f, 0.62f, 0.68f));
-static const Color sBorderColorDisabled(Color(0.44f, 0.44f, 0.44f, 0.4f));
-static const Color sBorderHoverColor(Color(0.5f, 0.5f, 0.56f));
-static const Color sBorderHoverColorDisabled(Color(0.5f, 0.5f, 0.56f, 0.4f));
-static const Color sBorderFocusColor(Color(0.04f, 0.52f, 1.0f));
-static const Color sCheckBackgroundColor(Color(0.18f, 0.39f, 0.89f));
-static const Color sCheckBackgroundColorDisabled(Color(0.18f, 0.39f, 0.89f,
-                                                       0.4f));
-static const Color sCheckBackgroundHoverColor(Color(0.02f, 0.24f, 0.58f));
-static const Color sCheckBackgroundHoverColorDisabled(Color(0.02f, 0.24f, 0.58f,
-                                                            0.4f));
-static const Color sCheckBackgroundActiveColor(Color(0.03f, 0.19f, 0.45f));
-static const Color sCheckBackgroundActiveColorDisabled(Color(0.03f, 0.19f,
-                                                             0.45f, 0.4f));
-static const Color sDisabledColor(Color(0.89f, 0.89f, 0.89f));
-static const Color sActiveColor(Color(0.47f, 0.47f, 0.48f));
-static const Color sInputHoverColor(Color(0.05f, 0.05f, 0.05f, 0.5f));
-static const Color sRangeInputBackgroundColor(Color(0.89f, 0.89f, 0.89f));
-static const Color sScrollbarColor(Color(0.94f, 0.94f, 0.94f));
-static const Color sScrollbarBorderColor(Color(1.0f, 1.0f, 1.0f));
-static const Color sScrollbarThumbColor(Color(0.8f, 0.8f, 0.8f));
-static const Color sScrollbarThumbColorActive(Color(0.375f, 0.375f, 0.375f));
-static const Color sScrollbarThumbColorHover(Color(0.65f, 0.65f, 0.65f));
-static const Color sScrollbarArrowColor(Color(0.375f, 0.375f, 0.375f));
-static const Color sScrollbarArrowColorActive(Color(1.0f, 1.0f, 1.0f));
-static const Color sScrollbarArrowColorHover(Color(0.0f, 0.0f, 0.0f));
-static const Color sScrollbarButtonColor(sScrollbarColor);
-static const Color sScrollbarButtonActiveColor(Color(0.375f, 0.375f, 0.375f));
-static const Color sScrollbarButtonHoverColor(Color(0.86f, 0.86f, 0.86f));
-static const Color sButtonColor(Color(0.98f, 0.98f, 0.98f));
-static const Color sButtonHoverColor(Color(0.94f, 0.94f, 0.96f));
-static const Color sButtonActiveColor(Color(0.88f, 0.88f, 0.90f));
-static const Color sWhiteColor(Color(1.0f, 1.0f, 1.0f, 0.0f));
+static const sRGBColor sBackgroundColor(sRGBColor(1.0f, 1.0f, 1.0f));
+static const sRGBColor sBackgroundActiveColor(sRGBColor(0.88f, 0.88f, 0.9f));
+static const sRGBColor sBackgroundActiveColorDisabled(sRGBColor(0.88f, 0.88f,
+                                                                0.9f, 0.4f));
+static const sRGBColor sBorderColor(sRGBColor(0.62f, 0.62f, 0.68f));
+static const sRGBColor sBorderColorDisabled(sRGBColor(0.44f, 0.44f, 0.44f,
+                                                      0.4f));
+static const sRGBColor sBorderHoverColor(sRGBColor(0.5f, 0.5f, 0.56f));
+static const sRGBColor sBorderHoverColorDisabled(sRGBColor(0.5f, 0.5f, 0.56f,
+                                                           0.4f));
+static const sRGBColor sBorderFocusColor(sRGBColor(0.04f, 0.52f, 1.0f));
+static const sRGBColor sCheckBackgroundColor(sRGBColor(0.18f, 0.39f, 0.89f));
+static const sRGBColor sCheckBackgroundColorDisabled(sRGBColor(0.18f, 0.39f,
+                                                               0.89f, 0.4f));
+static const sRGBColor sCheckBackgroundHoverColor(sRGBColor(0.02f, 0.24f,
+                                                            0.58f));
+static const sRGBColor sCheckBackgroundHoverColorDisabled(
+    sRGBColor(0.02f, 0.24f, 0.58f, 0.4f));
+static const sRGBColor sCheckBackgroundActiveColor(sRGBColor(0.03f, 0.19f,
+                                                             0.45f));
+static const sRGBColor sCheckBackgroundActiveColorDisabled(
+    sRGBColor(0.03f, 0.19f, 0.45f, 0.4f));
+static const sRGBColor sDisabledColor(sRGBColor(0.89f, 0.89f, 0.89f));
+static const sRGBColor sActiveColor(sRGBColor(0.47f, 0.47f, 0.48f));
+static const sRGBColor sInputHoverColor(sRGBColor(0.05f, 0.05f, 0.05f, 0.5f));
+static const sRGBColor sRangeInputBackgroundColor(sRGBColor(0.89f, 0.89f,
+                                                            0.89f));
+static const sRGBColor sScrollbarColor(sRGBColor(0.94f, 0.94f, 0.94f));
+static const sRGBColor sScrollbarBorderColor(sRGBColor(1.0f, 1.0f, 1.0f));
+static const sRGBColor sScrollbarThumbColor(sRGBColor(0.8f, 0.8f, 0.8f));
+static const sRGBColor sScrollbarThumbColorActive(sRGBColor(0.375f, 0.375f,
+                                                            0.375f));
+static const sRGBColor sScrollbarThumbColorHover(sRGBColor(0.65f, 0.65f,
+                                                           0.65f));
+static const sRGBColor sScrollbarArrowColor(sRGBColor(0.375f, 0.375f, 0.375f));
+static const sRGBColor sScrollbarArrowColorActive(sRGBColor(1.0f, 1.0f, 1.0f));
+static const sRGBColor sScrollbarArrowColorHover(sRGBColor(0.0f, 0.0f, 0.0f));
+static const sRGBColor sScrollbarButtonColor(sScrollbarColor);
+static const sRGBColor sScrollbarButtonActiveColor(sRGBColor(0.375f, 0.375f,
+                                                             0.375f));
+static const sRGBColor sScrollbarButtonHoverColor(sRGBColor(0.86f, 0.86f,
+                                                            0.86f));
+static const sRGBColor sButtonColor(sRGBColor(0.98f, 0.98f, 0.98f));
+static const sRGBColor sButtonHoverColor(sRGBColor(0.94f, 0.94f, 0.96f));
+static const sRGBColor sButtonActiveColor(sRGBColor(0.88f, 0.88f, 0.90f));
+static const sRGBColor sWhiteColor(sRGBColor(1.0f, 1.0f, 1.0f, 0.0f));
 
 static const CSSIntCoord kMinimumWidgetSize = 17;
+static const CSSCoord kButtonBorderWidth = 1.0f;
+static const CSSCoord kMenulistBorderWidth = 1.0f;
+static const CSSCoord kTextFieldBorderWidth = 1.0f;
 
 }  // namespace widget
 }  // namespace mozilla
@@ -89,15 +101,17 @@ static bool IsDateTimeTextField(nsIFrame* aFrame) {
 }
 
 static void ComputeCheckColors(const EventStates& aState,
-                               Color& aBackgroundColor, Color& aBorderColor) {
+                               sRGBColor& aBackgroundColor,
+                               sRGBColor& aBorderColor) {
   bool isDisabled = aState.HasState(NS_EVENT_STATE_DISABLED);
   bool isPressed = !isDisabled && aState.HasAllStates(NS_EVENT_STATE_HOVER |
                                                       NS_EVENT_STATE_ACTIVE);
   bool isHovered = !isDisabled && aState.HasState(NS_EVENT_STATE_HOVER);
+  bool isFocused = aState.HasState(NS_EVENT_STATE_FOCUS);
   bool isChecked = aState.HasState(NS_EVENT_STATE_CHECKED);
 
-  Color fillColor = sBackgroundColor;
-  Color borderColor = sBorderColor;
+  sRGBColor fillColor = sBackgroundColor;
+  sRGBColor borderColor = sBorderColor;
   if (isDisabled) {
     if (isChecked) {
       fillColor = borderColor = sCheckBackgroundColorDisabled;
@@ -117,6 +131,9 @@ static void ComputeCheckColors(const EventStates& aState,
     } else if (isPressed) {
       fillColor = sBackgroundActiveColor;
       borderColor = sBorderHoverColor;
+    } else if (isFocused) {
+      fillColor = sBackgroundActiveColor;
+      borderColor = sBorderFocusColor;
     } else if (isHovered) {
       fillColor = sBackgroundColor;
       borderColor = sBorderHoverColor;
@@ -170,8 +187,8 @@ struct MOZ_RAII AutoClipRect {
 
 static void PaintRoundedRectWithBorder(DrawTarget* aDrawTarget,
                                        const Rect& aRect,
-                                       const Color& aBackgroundColor,
-                                       const Color& aBorderColor,
+                                       const sRGBColor& aBackgroundColor,
+                                       const sRGBColor& aBorderColor,
                                        CSSCoord aBorderWidth, CSSCoord aRadius,
                                        uint32_t aDpi) {
   const LayoutDeviceCoord borderWidth(aBorderWidth * aDpi);
@@ -195,8 +212,8 @@ static void PaintCheckboxControl(DrawTarget* aDrawTarget, const Rect& aRect,
   const CSSCoord kBorderWidth = 2.0f;
   const CSSCoord kRadius = 4.0f;
 
-  Color backgroundColor;
-  Color borderColor;
+  sRGBColor backgroundColor;
+  sRGBColor borderColor;
   ComputeCheckColors(aState, backgroundColor, borderColor);
   PaintRoundedRectWithBorder(aDrawTarget, aRect, backgroundColor, borderColor,
                              kBorderWidth, kRadius, aDpi);
@@ -242,10 +259,9 @@ static void PaintIndeterminateMark(DrawTarget* aDrawTarget, const Rect& aRect,
 }
 
 static void PaintStrokedEllipse(DrawTarget* aDrawTarget, const Rect& aRect,
-                                const Color& aBackgroundColor,
-                                const Color& aBorderColor,
-                                const CSSCoord aBorderWidth,
-                                uint32_t aDpi) {
+                                const sRGBColor& aBackgroundColor,
+                                const sRGBColor& aBorderColor,
+                                const CSSCoord aBorderWidth, uint32_t aDpi) {
   const LayoutDeviceCoord borderWidth(aBorderWidth * aDpi);
   RefPtr<PathBuilder> builder = aDrawTarget->CreatePathBuilder();
 
@@ -264,8 +280,8 @@ static void PaintRadioControl(DrawTarget* aDrawTarget, const Rect& aRect,
                               const EventStates& aState, uint32_t aDpi) {
   const CSSCoord kBorderWidth = 2.0f;
 
-  Color backgroundColor;
-  Color borderColor;
+  sRGBColor backgroundColor;
+  sRGBColor borderColor;
   ComputeCheckColors(aState, backgroundColor, borderColor);
 
   PaintStrokedEllipse(aDrawTarget, aRect, backgroundColor, borderColor,
@@ -286,30 +302,40 @@ static void PaintCheckedRadioButton(DrawTarget* aDrawTarget, const Rect& aRect,
   aDrawTarget->Fill(ellipse, ColorPattern(ToDeviceColor(sBackgroundColor)));
 }
 
+static sRGBColor ComputeBorderColor(const EventStates& aState) {
+  bool isDisabled = aState.HasState(NS_EVENT_STATE_DISABLED);
+  bool isHovered = !isDisabled && aState.HasState(NS_EVENT_STATE_HOVER);
+  bool isFocused = aState.HasState(NS_EVENT_STATE_FOCUS);
+  if (isFocused) {
+    return sBorderFocusColor;
+  }
+  if (isHovered) {
+    return sBorderHoverColor;
+  }
+  return sBorderColor;
+}
+
 static void PaintTextField(DrawTarget* aDrawTarget, const Rect& aRect,
                            const EventStates& aState, uint32_t aDpi) {
   bool isDisabled = aState.HasState(NS_EVENT_STATE_DISABLED);
-  bool isHovered = !isDisabled && aState.HasState(NS_EVENT_STATE_HOVER);
+  const sRGBColor& backgroundColor =
+      isDisabled ? sDisabledColor : sBackgroundColor;
+  const sRGBColor borderColor = ComputeBorderColor(aState);
 
-  const Color& backgroundColor = isDisabled ? sDisabledColor : sBackgroundColor;
-  const Color& borderColor = isHovered ? sBorderHoverColor : sBorderColor;
-
-  const CSSCoord kBorderWidth = 1.0f;
   const CSSCoord kRadius = 4.0f;
 
   PaintRoundedRectWithBorder(aDrawTarget, aRect, backgroundColor, borderColor,
-                             kBorderWidth, kRadius, aDpi);
+                             kTextFieldBorderWidth, kRadius, aDpi);
 }
 
-std::pair<Color, Color> ComputeButtonColors(
-    const EventStates& aState,
-    bool aIsDatetimeResetButton = false) {
+std::pair<sRGBColor, sRGBColor> ComputeButtonColors(
+    const EventStates& aState, bool aIsDatetimeResetButton = false) {
   bool isActive =
       aState.HasAllStates(NS_EVENT_STATE_HOVER | NS_EVENT_STATE_ACTIVE);
   bool isDisabled = aState.HasState(NS_EVENT_STATE_DISABLED);
   bool isHovered = !isDisabled && aState.HasState(NS_EVENT_STATE_HOVER);
 
-  const Color& backgroundColor = [&] {
+  const sRGBColor& backgroundColor = [&] {
     if (isDisabled) {
       return sDisabledColor;
     }
@@ -325,28 +351,27 @@ std::pair<Color, Color> ComputeButtonColors(
     return sButtonColor;
   }();
 
-  const Color& borderColor = isHovered ? sBorderHoverColor : sBorderColor;
+  const sRGBColor borderColor = ComputeBorderColor(aState);
 
   return std::make_pair(backgroundColor, borderColor);
 }
 
 static void PaintMenulist(DrawTarget* aDrawTarget, const Rect& aRect,
                           const EventStates& aState, uint32_t aDpi) {
-  const CSSCoord kBorderWidth = 1.0f;
   const CSSCoord kRadius = 4.0f;
 
-  Color backgroundColor, borderColor;
+  sRGBColor backgroundColor, borderColor;
   std::tie(backgroundColor, borderColor) = ComputeButtonColors(aState);
 
   PaintRoundedRectWithBorder(aDrawTarget, aRect, backgroundColor, borderColor,
-                             kBorderWidth, kRadius, aDpi);
+                             kMenulistBorderWidth, kRadius, aDpi);
 }
 
 static void PaintArrow(DrawTarget* aDrawTarget, const Rect& aRect,
                        const int32_t aArrowPolygonX[],
                        const int32_t aArrowPolygonY[],
                        const int32_t aArrowNumPoints, const int32_t aArrowSize,
-                       const Color aFillColor, uint32_t aDpi) {
+                       const sRGBColor aFillColor, uint32_t aDpi) {
   nscoord paintScale = std::min(aRect.width, aRect.height) / aArrowSize;
   RefPtr<PathBuilder> builder = aDrawTarget->CreatePathBuilder();
   Point p = aRect.Center() + Point(aArrowPolygonX[0] * paintScale,
@@ -417,8 +442,7 @@ static void PaintSpinnerButton(DrawTarget* aDrawTarget, const Rect& aRect,
 
 static void PaintRangeInputBackground(DrawTarget* aDrawTarget,
                                       const Rect& aRect,
-                                      const EventStates& aState,
-                                      uint32_t aDpi,
+                                      const EventStates& aState, uint32_t aDpi,
                                       bool aHorizontal) {
   Rect rect(aRect);
   const LayoutDeviceCoord kVerticalSize = kMinimumWidgetSize * 0.25f * aDpi;
@@ -440,7 +464,7 @@ static void PaintRangeInputBackground(DrawTarget* aDrawTarget,
 static void PaintScrollbarthumbHorizontal(DrawTarget* aDrawTarget,
                                           const Rect& aRect,
                                           const EventStates& aState) {
-  Color thumbColor = sScrollbarThumbColor;
+  sRGBColor thumbColor = sScrollbarThumbColor;
   if (aState.HasAllStates(NS_EVENT_STATE_HOVER | NS_EVENT_STATE_ACTIVE)) {
     thumbColor = sScrollbarThumbColorActive;
   } else if (aState.HasState(NS_EVENT_STATE_HOVER)) {
@@ -452,7 +476,7 @@ static void PaintScrollbarthumbHorizontal(DrawTarget* aDrawTarget,
 static void PaintScrollbarthumbVertical(DrawTarget* aDrawTarget,
                                         const Rect& aRect,
                                         const EventStates& aState) {
-  Color thumbColor = sScrollbarThumbColor;
+  sRGBColor thumbColor = sScrollbarThumbColor;
   if (aState.HasAllStates(NS_EVENT_STATE_HOVER | NS_EVENT_STATE_ACTIVE)) {
     thumbColor = sScrollbarThumbColorActive;
   } else if (aState.HasState(NS_EVENT_STATE_HOVER)) {
@@ -551,25 +575,22 @@ static void PaintScrollbarbutton(DrawTarget* aDrawTarget,
 static void PaintButton(nsIFrame* aFrame, DrawTarget* aDrawTarget,
                         const Rect& aRect, const EventStates& aState,
                         uint32_t aDpi) {
-  const CSSCoord kBorderWidth = 1.0f;
   const CSSCoord kRadius = 4.0f;
 
   // FIXME: The DateTimeResetButton bit feels like a bit of a hack.
-  Color backgroundColor, borderColor;
+  sRGBColor backgroundColor, borderColor;
   std::tie(backgroundColor, borderColor) =
       ComputeButtonColors(aState, IsDateTimeResetButton(aFrame));
 
   PaintRoundedRectWithBorder(aDrawTarget, aRect, backgroundColor, borderColor,
-                             kBorderWidth, kRadius, aDpi);
+                             kButtonBorderWidth, kRadius, aDpi);
 }
 
-static void PaintRangeThumb(DrawTarget* aDrawTarget,
-                            const Rect& aRect,
-                            const EventStates& aState,
-                            uint32_t aDpi) {
+static void PaintRangeThumb(DrawTarget* aDrawTarget, const Rect& aRect,
+                            const EventStates& aState, uint32_t aDpi) {
   const CSSCoord kBorderWidth = 2.0f;
 
-  Color backgroundColor, borderColor;
+  sRGBColor backgroundColor, borderColor;
   std::tie(backgroundColor, borderColor) = ComputeButtonColors(aState);
 
   PaintStrokedEllipse(aDrawTarget, aRect, backgroundColor, borderColor,
@@ -630,7 +651,6 @@ nsNativeBasicTheme::DrawWidgetBackground(gfxContext* aContext, nsIFrame* aFrame,
     case StyleAppearance::Listbox:
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
-    case StyleAppearance::MenulistTextfield:
       PaintMenulist(dt, devPxRect, eventState, dpi);
       break;
     case StyleAppearance::MozMenulistArrowButton:
@@ -641,7 +661,8 @@ nsNativeBasicTheme::DrawWidgetBackground(gfxContext* aContext, nsIFrame* aFrame,
       PaintSpinnerButton(dt, devPxRect, eventState, aAppearance, dpi);
       break;
     case StyleAppearance::Range:
-      PaintRangeInputBackground(dt, devPxRect, eventState, dpi, IsRangeHorizontal(aFrame));
+      PaintRangeInputBackground(dt, devPxRect, eventState, dpi,
+                                IsRangeHorizontal(aFrame));
       break;
     case StyleAppearance::RangeThumb:
       // TODO(emilio): Do we want to enforce it being a circle using
@@ -690,27 +711,33 @@ aManager, nsIFrame* aFrame, StyleAppearance aAppearance, const nsRect& aRect) {
 
 LayoutDeviceIntMargin nsNativeBasicTheme::GetWidgetBorder(
     nsDeviceContext* aContext, nsIFrame* aFrame, StyleAppearance aAppearance) {
-  return LayoutDeviceIntMargin();
+  uint32_t dpi = GetDPIRatio(aFrame);
+  switch (aAppearance) {
+    case StyleAppearance::Textfield:
+    case StyleAppearance::Textarea:
+    case StyleAppearance::NumberInput: {
+      const LayoutDeviceIntCoord w = kTextFieldBorderWidth * dpi;
+      return LayoutDeviceIntMargin(w, w, w, w);
+    }
+    case StyleAppearance::Listbox:
+    case StyleAppearance::Menulist:
+    case StyleAppearance::MenulistButton: {
+      const LayoutDeviceIntCoord w = kMenulistBorderWidth * dpi;
+      return LayoutDeviceIntMargin(w, w, w, w);
+    }
+    case StyleAppearance::Button: {
+      const LayoutDeviceIntCoord w = kButtonBorderWidth * dpi;
+      return LayoutDeviceIntMargin(w, w, w, w);
+    }
+    default:
+      return LayoutDeviceIntMargin();
+  }
 }
 
 bool nsNativeBasicTheme::GetWidgetPadding(nsDeviceContext* aContext,
                                           nsIFrame* aFrame,
                                           StyleAppearance aAppearance,
                                           LayoutDeviceIntMargin* aResult) {
-  if (aAppearance == StyleAppearance::Menulist ||
-      aAppearance == StyleAppearance::MenulistTextfield ||
-      aAppearance == StyleAppearance::NumberInput ||
-      aAppearance == StyleAppearance::Textarea ||
-      aAppearance == StyleAppearance::Textfield) {
-    // If we have author-specified padding for these elements, don't do the
-    // fixups below.
-    if (aFrame->PresContext()->HasAuthorSpecifiedRules(
-            aFrame, NS_AUTHOR_SPECIFIED_PADDING)) {
-      return false;
-    }
-  }
-
-  uint32_t dpi = GetDPIRatio(aFrame);
   switch (aAppearance) {
     // Radios and checkboxes return a fixed size in GetMinimumWidgetSize
     // and have a meaningful baseline, so they can't have
@@ -720,29 +747,41 @@ bool nsNativeBasicTheme::GetWidgetPadding(nsDeviceContext* aContext,
     case StyleAppearance::MozMenulistArrowButton:
       aResult->SizeTo(0, 0, 0, 0);
       return true;
-    case StyleAppearance::Textarea:
-    case StyleAppearance::Listbox:
-    case StyleAppearance::Menulist:
-    case StyleAppearance::MenulistButton:
-    case StyleAppearance::MenulistTextfield:
-    case StyleAppearance::NumberInput:
-      aResult->SizeTo(7 * dpi, 8 * dpi, 7 * dpi, 8 * dpi);
-      return true;
-    case StyleAppearance::Button:
-      aResult->SizeTo(7 * dpi, 22 * dpi, 7 * dpi, 22 * dpi);
-      return true;
-    case StyleAppearance::Textfield:
-      if (IsDateTimeTextField(aFrame)) {
-        aResult->SizeTo(8 * dpi, 8 * dpi, 6 * dpi, 8 * dpi);
-        return true;
-      }
-      aResult->SizeTo(7 * dpi, 8 * dpi, 7 * dpi, 8 * dpi);
-      return true;
     default:
       break;
   }
 
-  return false;
+  // Respect author padding.
+  //
+  // TODO(emilio): Consider just unconditionally returning false, so that the
+  // default size of all elements matches other platforms and the UA stylesheet.
+  if (aFrame->PresContext()->HasAuthorSpecifiedRules(
+          aFrame, NS_AUTHOR_SPECIFIED_PADDING)) {
+    return false;
+  }
+
+  uint32_t dpi = GetDPIRatio(aFrame);
+  switch (aAppearance) {
+    case StyleAppearance::Textarea:
+    case StyleAppearance::Listbox:
+    case StyleAppearance::Menulist:
+    case StyleAppearance::MenulistButton:
+    case StyleAppearance::NumberInput:
+      aResult->SizeTo(6 * dpi, 7 * dpi, 6 * dpi, 7 * dpi);
+      return true;
+    case StyleAppearance::Button:
+      aResult->SizeTo(6 * dpi, 21 * dpi, 6 * dpi, 21 * dpi);
+      return true;
+    case StyleAppearance::Textfield:
+      if (IsDateTimeTextField(aFrame)) {
+        aResult->SizeTo(7 * dpi, 7 * dpi, 5 * dpi, 7 * dpi);
+        return true;
+      }
+      aResult->SizeTo(6 * dpi, 7 * dpi, 6 * dpi, 7 * dpi);
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool nsNativeBasicTheme::GetWidgetOverflow(nsDeviceContext* aContext,
@@ -838,13 +877,13 @@ bool nsNativeBasicTheme::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::ScrollbarthumbHorizontal:
     case StyleAppearance::ScrollbarthumbVertical:
     case StyleAppearance::ScrollbarHorizontal:
+    case StyleAppearance::ScrollbarNonDisappearing:
     case StyleAppearance::ScrollbarVertical:
     case StyleAppearance::Scrollcorner:
     case StyleAppearance::Button:
     case StyleAppearance::Listbox:
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
-    case StyleAppearance::MenulistTextfield:
     case StyleAppearance::NumberInput:
     case StyleAppearance::MozMenulistArrowButton:
     case StyleAppearance::SpinnerUpbutton:
@@ -867,7 +906,16 @@ bool nsNativeBasicTheme::WidgetIsContainer(StyleAppearance aAppearance) {
 }
 
 bool nsNativeBasicTheme::ThemeDrawsFocusForWidget(StyleAppearance aAppearance) {
-  return true;
+  switch (aAppearance) {
+    case StyleAppearance::Range:
+    // TODO(emilio): Checkbox / Radio don't have focus indicators when checked.
+    // If they did, we could just return true here unconditionally.
+    case StyleAppearance::Checkbox:
+    case StyleAppearance::Radio:
+      return false;
+    default:
+      return true;
+  }
 }
 
 bool nsNativeBasicTheme::ThemeNeedsComboboxDropmarker() { return true; }
@@ -880,3 +928,10 @@ already_AddRefed<nsITheme> do_GetBasicNativeThemeDoNotUseDirectly() {
   }
   return do_AddRef(gInstance);
 }
+
+// On Android there's no native theme.
+#ifdef ANDROID
+already_AddRefed<nsITheme> do_GetNativeThemeDoNotUseDirectly() {
+  return do_GetBasicNativeThemeDoNotUseDirectly();
+}
+#endif

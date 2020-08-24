@@ -9,8 +9,9 @@
 
 #include "mozilla/EndianUtils.h"
 #include "mozilla/MaybeOneOf.h"
-#include "mozilla/TypeTraits.h"
 #include "mozilla/Utf8.h"
+
+#include <type_traits>
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -125,8 +126,8 @@ class XDRIncrementalEncoder;
 // XDRIncrementalEncoder.
 //
 // Its primary goal is to identify functions, such that we can first encode them
-// as LazyScript, and later replaced by them by their corresponding bytecode
-// once delazified.
+// as a lazy BaseScript, and later replaced by them by their corresponding
+// bytecode once delazified.
 //
 // As a convenience, this is also used to identify the top-level of the content
 // encoded by an XDRIncrementalEncoder.
@@ -223,7 +224,7 @@ class XDRState : public XDRCoderBase {
   XDRState(const XDRState&) = delete;
   XDRState& operator=(const XDRState&) = delete;
 
-  virtual ~XDRState(){};
+  virtual ~XDRState() = default;
 
   JSContext* cx() const { return mainBuf.cx(); }
 
@@ -344,9 +345,7 @@ class XDRState : public XDRCoderBase {
    * as C++ will extract the parameterized from the argument list.
    */
   template <typename T>
-  XDRResult codeEnum32(
-      T* val,
-      typename mozilla::EnableIf<mozilla::IsEnum<T>::value, T>::Type* = NULL) {
+  XDRResult codeEnum32(T* val, std::enable_if_t<std::is_enum_v<T>>* = nullptr) {
     // Mix the enumeration value with a random magic number, such that a
     // corruption with a low-ranged value (like 0) is less likely to cause a
     // miss-interpretation of the XDR content and instead cause a failure.
@@ -569,7 +568,7 @@ class XDRIncrementalEncoder : public XDREncoder {
         headerBuf_(cx, header_, 0),
         oom_(false) {}
 
-  virtual ~XDRIncrementalEncoder() {}
+  virtual ~XDRIncrementalEncoder() = default;
 
   bool hasAtomMap() const override { return true; }
   XDRAtomMap& atomMap() override { return atomMap_; }

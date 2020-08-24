@@ -24,7 +24,7 @@ struct App {
 impl Example for App {
     fn render(
         &mut self,
-        _api: &RenderApi,
+        _api: &mut RenderApi,
         builder: &mut DisplayListBuilder,
         _txn: &mut Transaction,
         _device_size: DeviceIntSize,
@@ -43,6 +43,7 @@ impl Example for App {
         for _ in 0 .. self.rect_count {
             builder.push_rect(
                 &CommonItemProperties::new(bounds, space_and_clip),
+                bounds,
                 ColorF::new(1.0, 1.0, 1.0, 0.05)
             );
         }
@@ -53,7 +54,7 @@ impl Example for App {
     fn on_event(
         &mut self,
         event: winit::WindowEvent,
-        _api: &RenderApi,
+        _api: &mut RenderApi,
         _document_id: DocumentId
     ) -> bool {
         match event {

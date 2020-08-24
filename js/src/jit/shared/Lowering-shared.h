@@ -155,12 +155,16 @@ class LIRGeneratorShared {
       LDefinition::Policy policy = LDefinition::REGISTER);
   inline LDefinition tempFloat32();
   inline LDefinition tempDouble();
+#ifdef ENABLE_WASM_SIMD
+  inline LDefinition tempSimd128();
+#endif
   inline LDefinition tempCopy(MDefinition* input, uint32_t reusedInput);
 
   // Note that the fixed register has a GENERAL type,
   // unless the arg is of FloatRegister type
   inline LDefinition tempFixed(Register reg);
   inline LDefinition tempFixed(FloatRegister reg);
+  inline LInt64Definition tempInt64Fixed(Register64 reg);
 
   template <size_t Ops, size_t Temps>
   inline void defineFixed(LInstructionHelper<1, Ops, Temps>* lir,
@@ -312,7 +316,7 @@ class LIRGeneratorShared {
   // function may build a snapshot that captures the result of its own
   // instruction, and as such, should generally be called after define*().
   void assignSafepoint(LInstruction* ins, MInstruction* mir,
-                       BailoutKind kind = Bailout_DuringVMCall);
+                       BailoutKind kind = BailoutKind::DuringVMCall);
 
   // Marks this instruction as needing a wasm safepoint.
   void assignWasmSafepoint(LInstruction* ins, MInstruction* mir);

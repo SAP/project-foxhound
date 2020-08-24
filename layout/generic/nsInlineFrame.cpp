@@ -14,6 +14,8 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ServoStyleSet.h"
+#include "mozilla/SVGTextFrame.h"
+#include "mozilla/SVGUtils.h"
 #include "nsLineLayout.h"
 #include "nsBlockFrame.h"
 #include "nsPlaceholderFrame.h"
@@ -22,7 +24,6 @@
 #include "nsPresContextInlines.h"
 #include "nsCSSAnonBoxes.h"
 #include "nsDisplayList.h"
-#include "SVGTextFrame.h"
 #include "nsStyleChangeList.h"
 
 #ifdef DEBUG
@@ -48,13 +49,13 @@ NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsInlineFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("Inline"), aResult);
+  return MakeFrameName(u"Inline"_ns, aResult);
 }
 #endif
 
 void nsInlineFrame::InvalidateFrame(uint32_t aDisplayItemKey,
                                     bool aRebuildDisplayItems) {
-  if (nsSVGUtils::IsInSVGTextSubtree(this)) {
+  if (SVGUtils::IsInSVGTextSubtree(this)) {
     nsIFrame* svgTextFrame = nsLayoutUtils::GetClosestFrameOfType(
         GetParent(), LayoutFrameType::SVGText);
     svgTextFrame->InvalidateFrame();
@@ -66,7 +67,7 @@ void nsInlineFrame::InvalidateFrame(uint32_t aDisplayItemKey,
 void nsInlineFrame::InvalidateFrameWithRect(const nsRect& aRect,
                                             uint32_t aDisplayItemKey,
                                             bool aRebuildDisplayItems) {
-  if (nsSVGUtils::IsInSVGTextSubtree(this)) {
+  if (SVGUtils::IsInSVGTextSubtree(this)) {
     nsIFrame* svgTextFrame = nsLayoutUtils::GetClosestFrameOfType(
         GetParent(), LayoutFrameType::SVGText);
     svgTextFrame->InvalidateFrame();
@@ -117,7 +118,7 @@ bool nsInlineFrame::IsSelfEmpty() {
   if (haveStart || haveEnd) {
     // We skip this block and return false for box-decoration-break:clone since
     // in that case all the continuations will have the border/padding/margin.
-    if ((GetStateBits() & NS_FRAME_PART_OF_IBSPLIT) &&
+    if (HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT) &&
         StyleBorder()->mBoxDecorationBreak == StyleBoxDecorationBreak::Slice) {
       // When direction=rtl, we need to consider logical rather than visual
       // start and end, so swap the flags.
@@ -254,7 +255,7 @@ LogicalSize nsInlineFrame::ComputeSize(
 nsRect nsInlineFrame::ComputeTightBounds(DrawTarget* aDrawTarget) const {
   // be conservative
   if (Style()->HasTextDecorationLines()) {
-    return GetVisualOverflowRect();
+    return InkOverflowRect();
   }
   return ComputeSimpleTightBounds(aDrawTarget);
 }
@@ -305,7 +306,7 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
       // first time, nothing (e.g. bidi resolution) has already given
       // us children, and there's no next-in-flow, so all our frames
       // will be taken from prevOverflowFrames.
-      if ((GetStateBits() & NS_FRAME_FIRST_REFLOW) && mFrames.IsEmpty() &&
+      if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW) && mFrames.IsEmpty() &&
           !GetNextInFlow()) {
         // If our child list is empty, just put the new frames into it.
         // Note that we don't set the parent pointer for the new frames. Instead
@@ -333,7 +334,7 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
 
   // It's also possible that we have an overflow list for ourselves
 #ifdef DEBUG
-  if (GetStateBits() & NS_FRAME_FIRST_REFLOW) {
+  if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     // If it's our initial reflow, then we should not have an overflow list.
     // However, add an assertion in case we get reflowed more than once with
     // the initial reflow reason
@@ -342,7 +343,7 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
                  "overflow list is not empty for initial reflow");
   }
 #endif
-  if (!(GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+  if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     DrainSelfOverflowListInternal(aReflowInput.mLineLayout->GetInFirstLine());
   }
 
@@ -379,7 +380,7 @@ nsresult nsInlineFrame::AttributeChanged(int32_t aNameSpaceID,
     return rv;
   }
 
-  if (nsSVGUtils::IsInSVGTextSubtree(this)) {
+  if (SVGUtils::IsInSVGTextSubtree(this)) {
     SVGTextFrame* f = static_cast<SVGTextFrame*>(
         nsLayoutUtils::GetClosestFrameOfType(this, LayoutFrameType::SVGText));
     f->HandleAttributeChangeInDescendant(mContent->AsElement(), aNameSpaceID,
@@ -794,15 +795,15 @@ void nsInlineFrame::PushFrames(nsPresContext* aPresContext,
 
 nsIFrame::LogicalSides nsInlineFrame::GetLogicalSkipSides(
     const ReflowInput* aReflowInput) const {
+  LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {
-    return LogicalSides();
+    return skip;
   }
 
-  LogicalSides skip;
   if (!IsFirst()) {
     nsInlineFrame* prev = (nsInlineFrame*)GetPrevContinuation();
-    if ((GetStateBits() & NS_INLINE_FRAME_BIDI_VISUAL_STATE_IS_SET) ||
+    if (HasAnyStateBits(NS_INLINE_FRAME_BIDI_VISUAL_STATE_IS_SET) ||
         (prev && (prev->mRect.height || prev->mRect.width))) {
       // Prev continuation is not empty therefore we don't render our start
       // border edge.
@@ -814,7 +815,7 @@ nsIFrame::LogicalSides nsInlineFrame::GetLogicalSkipSides(
   }
   if (!IsLast()) {
     nsInlineFrame* next = (nsInlineFrame*)GetNextContinuation();
-    if ((GetStateBits() & NS_INLINE_FRAME_BIDI_VISUAL_STATE_IS_SET) ||
+    if (HasAnyStateBits(NS_INLINE_FRAME_BIDI_VISUAL_STATE_IS_SET) ||
         (next && (next->mRect.height || next->mRect.width))) {
       // Next continuation is not empty therefore we don't render our end
       // border edge.
@@ -825,13 +826,13 @@ nsIFrame::LogicalSides nsInlineFrame::GetLogicalSkipSides(
     }
   }
 
-  if (GetStateBits() & NS_FRAME_PART_OF_IBSPLIT) {
+  if (HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT)) {
     // All but the last part of an {ib} split should skip the "end" side (as
     // determined by this frame's direction) and all but the first part of such
     // a split should skip the "start" side.  But figuring out which part of
     // the split we are involves getting our first continuation, which might be
     // expensive.  So don't bother if we already have the relevant bits set.
-    if (skip != LogicalSides(eLogicalSideBitsIBoth)) {
+    if (skip != LogicalSides(mWritingMode, eLogicalSideBitsIBoth)) {
       // We're missing one of the skip bits, so check whether we need to set it.
       // Only get the first continuation once, as an optimization.
       nsIFrame* firstContinuation = FirstContinuation();
@@ -866,9 +867,9 @@ a11y::AccType nsInlineFrame::AccessibleType() {
 
 void nsInlineFrame::UpdateStyleOfOwnedAnonBoxesForIBSplit(
     ServoRestyleState& aRestyleState) {
-  MOZ_ASSERT(GetStateBits() & NS_FRAME_OWNS_ANON_BOXES,
+  MOZ_ASSERT(HasAnyStateBits(NS_FRAME_OWNS_ANON_BOXES),
              "Why did we get called?");
-  MOZ_ASSERT(GetStateBits() & NS_FRAME_PART_OF_IBSPLIT,
+  MOZ_ASSERT(HasAnyStateBits(NS_FRAME_PART_OF_IBSPLIT),
              "Why did we have the NS_FRAME_OWNS_ANON_BOXES bit set?");
   // Note: this assert _looks_ expensive, but it's cheap in all the cases when
   // it passes!
@@ -969,7 +970,7 @@ void nsFirstLineFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsFirstLineFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("Line"), aResult);
+  return MakeFrameName(u"Line"_ns, aResult);
 }
 #endif
 

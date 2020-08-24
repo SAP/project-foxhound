@@ -85,6 +85,12 @@ loader.lazyRequireGetter(
   "devtools/shared/constants",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "isRemoteFrame",
+  "devtools/shared/layout/utils",
+  true
+);
 
 const kStateHover = 0x00000004; // NS_EVENT_STATE_HOVER
 
@@ -233,6 +239,7 @@ class AuditProgress {
       progress: {
         total: this.size,
         percentage: this.percentage,
+        completed: this.completed,
       },
     });
   }
@@ -467,7 +474,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
     }
 
     const doc = this.getRawAccessibleFor(this.rootDoc);
-    if (isStale(doc)) {
+    if (!doc || isStale(doc)) {
       return this.once("document-ready").then(docAcc => this.addRef(docAcc));
     }
 
@@ -484,9 +491,17 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
    */
   getAccessibleFor(domNode) {
     // We need to make sure that the document is loaded processed by a11y first.
-    return this.getDocument().then(() =>
-      this.addRef(this.getRawAccessibleFor(domNode.rawNode))
-    );
+    return this.getDocument().then(() => {
+      const rawAccessible = this.getRawAccessibleFor(domNode.rawNode);
+      // Not all DOM nodes have corresponding accessible objects. It's usually
+      // the case where there is no semantics or relevance to the accessibility
+      // client.
+      if (!rawAccessible) {
+        return null;
+      }
+
+      return this.addRef(rawAccessible);
+    });
   },
 
   /**
@@ -873,7 +888,26 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
     );
   },
 
+  /**
+   * Check if the DOM event received when picking shold be ignored.
+   * @param {Event} event
+   */
+  _ignoreEventWhenPicking(event) {
+    return (
+      !this._isPicking ||
+      // If the DOM event is about a remote frame, only the WalkerActor for that
+      // remote frame target should emit RDP events (hovered/picked/...). And
+      // all other WalkerActor for intermediate iframe and top level document
+      // targets should stay silent.
+      isRemoteFrame(event.originalTarget || event.target)
+    );
+  },
+
   _preventContentEvent(event) {
+    if (this._ignoreEventWhenPicking(event)) {
+      return;
+    }
+
     event.stopPropagation();
     event.preventDefault();
 
@@ -903,7 +937,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
    *         Current click event.
    */
   onPick(event) {
-    if (!this._isPicking) {
+    if (this._ignoreEventWhenPicking(event)) {
       return;
     }
 
@@ -937,7 +971,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
    *         Current hover event.
    */
   async onHovered(event) {
-    if (!this._isPicking) {
+    if (this._ignoreEventWhenPicking(event)) {
       return;
     }
 
@@ -968,7 +1002,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
    *         Current keyboard event.
    */
   onKey(event) {
-    if (!this._currentAccessible || !this._isPicking) {
+    if (!this._currentAccessible || this._ignoreEventWhenPicking(event)) {
       return;
     }
 
@@ -985,7 +1019,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
     switch (event.keyCode) {
       // Select the element.
       case event.DOM_VK_RETURN:
-        this._onPick(event);
+        this.onPick(event);
         break;
       // Cancel pick mode.
       case event.DOM_VK_ESCAPE:
@@ -1086,7 +1120,7 @@ const AccessibleWalkerActor = ActorClassWithSpec(accessibleWalkerSpec, {
     const docAcc = this.getRawAccessibleFor(this.rootDoc);
     const win = target.ownerGlobal;
     const scale = this.pixelRatio / getCurrentZoom(win);
-    const rawAccessible = docAcc.getDeepestChildAtPoint(
+    const rawAccessible = docAcc.getDeepestChildAtPointInProcess(
       event.screenX * scale,
       event.screenY * scale
     );

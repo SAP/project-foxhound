@@ -21,6 +21,7 @@
 #include "mozilla/PendingAnimationTracker.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/SVGObserverUtils.h"  // for SVGRenderingObserver
 #include "mozilla/Tuple.h"
 #include "nsIStreamListener.h"
 #include "nsMimeTypes.h"
@@ -28,7 +29,6 @@
 #include "nsRect.h"
 #include "nsString.h"
 #include "nsStubDocumentObserver.h"
-#include "SVGObserverUtils.h"  // for SVGRenderingObserver
 #include "nsWindowSizes.h"
 #include "ImageRegion.h"
 #include "ISurfaceProvider.h"
@@ -175,12 +175,10 @@ class SVGLoadEventListener final : public nsIDOMEventListener {
     MOZ_ASSERT(mDocument, "Need an SVG document");
     MOZ_ASSERT(mImage, "Need an image");
 
-    mDocument->AddEventListener(NS_LITERAL_STRING("MozSVGAsImageDocumentLoad"),
-                                this, true, false);
-    mDocument->AddEventListener(NS_LITERAL_STRING("SVGAbort"), this, true,
+    mDocument->AddEventListener(u"MozSVGAsImageDocumentLoad"_ns, this, true,
                                 false);
-    mDocument->AddEventListener(NS_LITERAL_STRING("SVGError"), this, true,
-                                false);
+    mDocument->AddEventListener(u"SVGAbort"_ns, this, true, false);
+    mDocument->AddEventListener(u"SVGError"_ns, this, true, false);
   }
 
  private:
@@ -220,10 +218,10 @@ class SVGLoadEventListener final : public nsIDOMEventListener {
   void Cancel() {
     MOZ_ASSERT(mDocument, "Duplicate call to Cancel");
     if (mDocument) {
-      mDocument->RemoveEventListener(
-          NS_LITERAL_STRING("MozSVGAsImageDocumentLoad"), this, true);
-      mDocument->RemoveEventListener(NS_LITERAL_STRING("SVGAbort"), this, true);
-      mDocument->RemoveEventListener(NS_LITERAL_STRING("SVGError"), this, true);
+      mDocument->RemoveEventListener(u"MozSVGAsImageDocumentLoad"_ns, this,
+                                     true);
+      mDocument->RemoveEventListener(u"SVGAbort"_ns, this, true);
+      mDocument->RemoveEventListener(u"SVGError"_ns, this, true);
       mDocument = nullptr;
     }
   }
@@ -256,7 +254,7 @@ class SVGDrawingCallback : public gfxDrawingCallback {
   uint32_t mImageFlags;
 };
 
-// Based loosely on nsSVGIntegrationUtils' PaintFrameCallback::operator()
+// Based loosely on SVGIntegrationUtils' PaintFrameCallback::operator()
 bool SVGDrawingCallback::operator()(gfxContext* aContext,
                                     const gfxRect& aFillRect,
                                     const SamplingFilter aSamplingFilter,
@@ -302,6 +300,9 @@ bool SVGDrawingCallback::operator()(gfxContext* aContext,
       RenderDocumentFlags::IgnoreViewportScrolling;
   if (!(mImageFlags & imgIContainer::FLAG_SYNC_DECODE)) {
     renderDocFlags |= RenderDocumentFlags::AsyncDecodeImages;
+  }
+  if (mImageFlags & imgIContainer::FLAG_HIGH_QUALITY_SCALING) {
+    renderDocFlags |= RenderDocumentFlags::UseHighQualityScaling;
   }
 
   presShell->RenderDocument(svgRect, renderDocFlags,
@@ -650,6 +651,9 @@ Maybe<AspectRatio> VectorImage::GetIntrinsicRatio() {
 
 NS_IMETHODIMP_(Orientation)
 VectorImage::GetOrientation() { return Orientation(); }
+
+NS_IMETHODIMP_(bool)
+VectorImage::HandledOrientation() { return false; }
 
 //******************************************************************************
 NS_IMETHODIMP
@@ -1215,10 +1219,19 @@ bool VectorImage::StartDecodingWithResult(uint32_t aFlags,
   return mIsFullyLoaded;
 }
 
-bool VectorImage::RequestDecodeWithResult(uint32_t aFlags,
-                                          uint32_t aWhichFrame) {
-  // SVG images are ready to draw when they are loaded
-  return mIsFullyLoaded;
+imgIContainer::DecodeResult VectorImage::RequestDecodeWithResult(
+    uint32_t aFlags, uint32_t aWhichFrame) {
+  // SVG images are ready to draw when they are loaded and don't have an error.
+
+  if (mError) {
+    return imgIContainer::DECODE_REQUEST_FAILED;
+  }
+
+  if (!mIsFullyLoaded) {
+    return imgIContainer::DECODE_REQUESTED;
+  }
+
+  return imgIContainer::DECODE_SURFACE_AVAILABLE;
 }
 
 NS_IMETHODIMP
@@ -1558,6 +1571,14 @@ void VectorImage::MediaFeatureValuesChangedAllDocuments(
       SendInvalidationNotifications();
     }
   }
+}
+
+nsresult VectorImage::GetHotspotX(int32_t* aX) {
+  return Image::GetHotspotX(aX);
+}
+
+nsresult VectorImage::GetHotspotY(int32_t* aY) {
+  return Image::GetHotspotY(aY);
 }
 
 }  // namespace image

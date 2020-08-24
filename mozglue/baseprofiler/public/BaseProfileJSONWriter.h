@@ -8,8 +8,8 @@
 
 #include "BaseProfiler.h"
 
-#ifndef MOZ_BASE_PROFILER
-#  error Do not #include this header when MOZ_BASE_PROFILER is not #defined.
+#ifndef MOZ_GECKO_PROFILER
+#  error Do not #include this header when MOZ_GECKO_PROFILER is not #defined.
 #endif
 
 #include "mozilla/JSONWriter.h"
@@ -44,6 +44,7 @@ class ChunkedJSONWriteFunc : public JSONWriteFunc {
   }
 
   void Write(const char* aStr) override;
+  void Write(const char* aStr, size_t aLen) override;
   void CopyDataIntoLazilyAllocatedBuffer(
       const std::function<char*(size_t)>& aAllocator) const;
   UniquePtr<char[]> CopyData() const;
@@ -81,6 +82,7 @@ struct OStreamJSONWriteFunc : public JSONWriteFunc {
   explicit OStreamJSONWriteFunc(std::ostream& aStream) : mStream(aStream) {}
 
   void Write(const char* aStr) override { mStream << aStr; }
+  void Write(const char* aStr, size_t aLen) override { mStream << aStr; }
 
   std::ostream& mStream;
 };

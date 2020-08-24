@@ -6,6 +6,7 @@
 
 #include "nsPrintData.h"
 
+#include "nsIPrintProgressParams.h"
 #include "nsIStringBundle.h"
 #include "nsIWidget.h"
 #include "nsPrintObject.h"
@@ -27,7 +28,6 @@ static mozilla::LazyLogModule gPrintingLog("printing");
 nsPrintData::nsPrintData(ePrintDataType aType)
     : mType(aType),
       mPrintDocList(0),
-      mIsIFrameSelected(false),
       mIsParentAFrameSet(false),
       mOnStartSent(false),
       mIsAborted(false),

@@ -50,6 +50,10 @@ interface HTMLElement : Element {
   //         attribute HTMLMenuElement? contextMenu;
   [CEReactions, SetterThrows, Pure]
            attribute boolean spellcheck;
+  [CEReactions, Pure, SetterThrows, Pref="dom.forms.inputmode"]
+           attribute DOMString inputMode;
+  [CEReactions, Pure, SetterThrows, Pref="dom.forms.enterkeyhint"]
+           attribute DOMString enterKeyHint;
 
   attribute DOMString nonce;
 

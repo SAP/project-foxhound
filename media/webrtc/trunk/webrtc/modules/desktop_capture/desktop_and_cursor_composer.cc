@@ -130,7 +130,7 @@ DesktopFrameWithCursor::~DesktopFrameWithCursor() {
 DesktopAndCursorComposer::DesktopAndCursorComposer(
     DesktopCapturer* desktop_capturer,
     MouseCursorMonitor* mouse_monitor)
-    : DesktopAndCursorComposer(desktop_capturer, mouse_monitor, false) {}
+    : DesktopAndCursorComposer(desktop_capturer, mouse_monitor, true) {}
 
 DesktopAndCursorComposer::DesktopAndCursorComposer(
     std::unique_ptr<DesktopCapturer> desktop_capturer,
@@ -206,6 +206,15 @@ void DesktopAndCursorComposer::OnCaptureResult(
 
 void DesktopAndCursorComposer::OnMouseCursor(MouseCursor* cursor) {
   cursor_.reset(cursor);
+}
+
+void DesktopAndCursorComposer::OnMouseCursorPosition(
+    MouseCursorMonitor::CursorState state,
+    const DesktopVector& position) {
+  if (!use_desktop_relative_cursor_position_) {
+    cursor_state_ = state;
+    cursor_position_ = position;
+  }
 }
 
 void DesktopAndCursorComposer::OnMouseCursorPosition(

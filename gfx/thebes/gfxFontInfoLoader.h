@@ -20,19 +20,10 @@
 // data retrieved for a given face
 
 struct FontFaceData {
-  FontFaceData() : mUVSOffset(0) {}
-
-  FontFaceData(const FontFaceData& aFontFaceData) {
-    mFullName = aFontFaceData.mFullName;
-    mPostscriptName = aFontFaceData.mPostscriptName;
-    mCharacterMap = aFontFaceData.mCharacterMap;
-    mUVSOffset = aFontFaceData.mUVSOffset;
-  }
-
   nsCString mFullName;
   nsCString mPostscriptName;
   RefPtr<gfxCharacterMap> mCharacterMap;
-  uint32_t mUVSOffset;
+  uint32_t mUVSOffset = 0;
 };
 
 // base class used to contain cached system-wide font info.
@@ -93,9 +84,9 @@ class FontInfoData {
   }
 
   // fetches localized family name data from cached font data
-  virtual bool GetOtherFamilyNames(const nsACString& aFamilyName,
-                                   nsTArray<nsCString>& aOtherFamilyNames) {
-    return mOtherFamilyNames.Get(aFamilyName, &aOtherFamilyNames);
+  const nsTArray<nsCString>* GetOtherFamilyNames(
+      const nsACString& aFamilyName) {
+    return mOtherFamilyNames.GetValue(aFamilyName);
   }
 
   nsTArray<nsCString> mFontFamiliesToLoad;
@@ -125,7 +116,8 @@ class FontInfoData {
   nsDataHashtable<nsCStringHashKey, FontFaceData> mFontFaceData;
 
   // canonical family name ==> array of localized family names
-  nsDataHashtable<nsCStringHashKey, nsTArray<nsCString> > mOtherFamilyNames;
+  nsDataHashtable<nsCStringHashKey, CopyableTArray<nsCString> >
+      mOtherFamilyNames;
 };
 
 // gfxFontInfoLoader - helper class for loading font info on async thread

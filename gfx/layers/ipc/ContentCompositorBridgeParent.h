@@ -142,18 +142,18 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   void LeaveTestMode(const LayersId& aId) override;
   void ApplyAsyncProperties(LayerTransactionParent* aLayerTree,
                             TransformsToSkip aSkip) override;
-  void SetTestAsyncScrollOffset(const WRRootId& aLayersId,
+  void SetTestAsyncScrollOffset(const LayersId& aLayersId,
                                 const ScrollableLayerGuid::ViewID& aScrollId,
                                 const CSSPoint& aPoint) override;
-  void SetTestAsyncZoom(const WRRootId& aLayersId,
+  void SetTestAsyncZoom(const LayersId& aLayersId,
                         const ScrollableLayerGuid::ViewID& aScrollId,
                         const LayerToParentLayerScale& aZoom) override;
-  void FlushApzRepaints(const WRRootId& aLayersId) override;
-  void GetAPZTestData(const WRRootId& aLayersId,
+  void FlushApzRepaints(const LayersId& aLayersId) override;
+  void GetAPZTestData(const LayersId& aLayersId,
                       APZTestData* aOutData) override;
   void SetConfirmedTargetAPZC(
       const LayersId& aLayersId, const uint64_t& aInputBlockId,
-      const nsTArray<SLGuidAndRenderRoot>& aTargets) override;
+      const nsTArray<ScrollableLayerGuid>& aTargets) override;
 
   AsyncCompositionManager* GetCompositionManager(
       LayerTransactionParent* aParent) override;
@@ -161,8 +161,7 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
     return IPC_FAIL_NO_REASON(this);
   }
 
-  already_AddRefed<dom::PWebGLParent> AllocPWebGLParent(
-      const webgl::InitContextDesc&, webgl::InitContextResult* out) override;
+  already_AddRefed<dom::PWebGLParent> AllocPWebGLParent() override;
 
   // Use DidCompositeLocked if you already hold a lock on
   // sIndirectLayerTreesLock; Otherwise use DidComposite, which would request

@@ -9,7 +9,7 @@
 
 #include "mozilla/ArrayUtils.h"
 
-#include "jit/IonCode.h"
+#include "jit/JitCode.h"
 #include "jit/JitRealm.h"
 #include "jit/shared/Assembler-shared.h"
 
@@ -108,7 +108,8 @@ static constexpr FloatRegister ScratchFloat32Reg =
     FloatRegister(X86Encoding::xmm15, FloatRegisters::Single);
 static constexpr FloatRegister ScratchDoubleReg =
     FloatRegister(X86Encoding::xmm15, FloatRegisters::Double);
-static constexpr FloatRegister ScratchSimd128Reg = xmm15;
+static constexpr FloatRegister ScratchSimd128Reg =
+    FloatRegister(X86Encoding::xmm15, FloatRegisters::Simd128);
 
 // Avoid rbp, which is the FramePointer, which is unavailable in some modes.
 static constexpr Register CallTempReg0 = rax;
@@ -249,11 +250,6 @@ static_assert(JitStackAlignment % sizeof(Value) == 0 &&
                   JitStackValueAlignment >= 1,
               "Stack alignment should be a non-zero multiple of sizeof(Value)");
 
-// This boolean indicates whether we support SIMD instructions flavoured for
-// this architecture or not. Rather than a method in the LIRGenerator, it is
-// here such that it is accessible from the entire codebase. Once full support
-// for SIMD is reached on all tier-1 platforms, this constant can be deleted.
-static constexpr bool SupportsSimd = false;
 static constexpr uint32_t SimdMemoryAlignment = 16;
 
 static_assert(CodeAlignment % SimdMemoryAlignment == 0,
@@ -271,6 +267,11 @@ static_assert(JitStackAlignment % SimdMemoryAlignment == 0,
 
 static constexpr uint32_t WasmStackAlignment = SimdMemoryAlignment;
 static constexpr uint32_t WasmTrapInstructionLength = 2;
+
+// The offsets are dynamically asserted during
+// code generation in the prologue/epilogue.
+static constexpr uint32_t WasmCheckedCallEntryOffset = 0u;
+static constexpr uint32_t WasmCheckedTailEntryOffset = 16u;
 
 static constexpr Scale ScalePointer = TimesEight;
 
@@ -891,6 +892,7 @@ class Assembler : public AssemblerX86Shared {
   void bsfq(const Register& src, const Register& dest) {
     masm.bsfq_rr(src.encoding(), dest.encoding());
   }
+  void bswapq(const Register& reg) { masm.bswapq_r(reg.encoding()); }
   void popcntq(const Register& src, const Register& dest) {
     masm.popcntq_rr(src.encoding(), dest.encoding());
   }
@@ -920,6 +922,17 @@ class Assembler : public AssemblerX86Shared {
 
   void vcvtsi2sdq(Register src, FloatRegister dest) {
     masm.vcvtsi2sdq_rr(src.encoding(), dest.encoding());
+  }
+
+  void vpextrq(unsigned lane, FloatRegister src, Register dest) {
+    MOZ_ASSERT(HasSSE41());
+    masm.vpextrq_irr(lane, src.encoding(), dest.encoding());
+  }
+
+  void vpinsrq(unsigned lane, Register src1, FloatRegister src0,
+               FloatRegister dest) {
+    MOZ_ASSERT(HasSSE41());
+    masm.vpinsrq_irr(lane, src1.encoding(), src0.encoding(), dest.encoding());
   }
 
   void negq(Register reg) { masm.negq_r(reg.encoding()); }

@@ -2,6 +2,11 @@ ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
 
 ChromeUtils.defineModuleGetter(
   this,
+  "AboutNewTab",
+  "resource:///modules/AboutNewTab.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm"
 );
@@ -198,36 +203,6 @@ function popPrefs() {
   return SpecialPowers.popPrefEnv();
 }
 
-function updateBlocklist(aCallback) {
-  var blocklistNotifier = Cc["@mozilla.org/extensions/blocklist;1"].getService(
-    Ci.nsITimerCallback
-  );
-  var observer = function() {
-    Services.obs.removeObserver(observer, "blocklist-updated");
-    SimpleTest.executeSoon(aCallback);
-  };
-  Services.obs.addObserver(observer, "blocklist-updated");
-  blocklistNotifier.notify(null);
-}
-
-var _originalTestBlocklistURL = null;
-function setAndUpdateBlocklist(aURL, aCallback) {
-  if (!_originalTestBlocklistURL) {
-    _originalTestBlocklistURL = Services.prefs.getCharPref(
-      "extensions.blocklist.url"
-    );
-  }
-  Services.prefs.setCharPref("extensions.blocklist.url", aURL);
-  updateBlocklist(aCallback);
-}
-
-function resetBlocklist() {
-  Services.prefs.setCharPref(
-    "extensions.blocklist.url",
-    _originalTestBlocklistURL
-  );
-}
-
 function promiseWindowClosed(win) {
   let promise = BrowserTestUtils.domWindowClosed(win);
   win.close();
@@ -260,7 +235,7 @@ function promiseOpenAndLoadWindow(aOptions, aWaitForDelayedStartup = false) {
 async function whenNewTabLoaded(aWindow, aCallback) {
   aWindow.BrowserOpenTab();
 
-  let expectedURL = aboutNewTabService.newTabURL;
+  let expectedURL = AboutNewTab.newTabURL;
   let browser = aWindow.gBrowser.selectedBrowser;
   let loadPromise = BrowserTestUtils.browserLoaded(browser, false, expectedURL);
   let alreadyLoaded = await SpecialPowers.spawn(browser, [expectedURL], url => {

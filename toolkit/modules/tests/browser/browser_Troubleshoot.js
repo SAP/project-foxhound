@@ -13,6 +13,10 @@ const { Troubleshoot } = ChromeUtils.import(
   "resource://gre/modules/Troubleshoot.jsm"
 );
 
+const { FeatureGate } = ChromeUtils.import(
+  "resource://featuregates/FeatureGate.jsm"
+);
+
 function test() {
   waitForExplicitFinish();
   function doNextTest() {
@@ -32,6 +36,25 @@ registerCleanupFunction(function() {
 });
 
 var tests = [
+  function setup(done) {
+    SpecialPowers.pushPrefEnv(
+      {
+        set: [
+          ["devtools.inspector.compatibility.enabled", false],
+          ["devtools.webconsole.input.context", false],
+          ["dom.media.mediasession.enabled", false],
+          ["dom.forms.inputmode", false],
+          ["layout.css.focus-visible.enabled", false],
+          ["network.cookie.sameSite.laxByDefault", false],
+          ["network.cookie.sameSite.noneRequiresSecure", false],
+          ["network.cookie.sameSite.schemeful", false],
+          ["network.preload", false],
+        ],
+      },
+      done
+    );
+  },
+
   function snapshotSchema(done) {
     Troubleshoot.snapshot(function(snapshot) {
       try {
@@ -39,6 +62,39 @@ var tests = [
         ok(true, "The snapshot should conform to the schema.");
       } catch (err) {
         ok(false, "Schema mismatch, " + err);
+      }
+      done();
+    });
+  },
+
+  async function experimentalFeatures(done) {
+    let featureGates = await FeatureGate.all();
+    ok(featureGates.length, "Should be at least one FeatureGate");
+    for (let gate of featureGates) {
+      ok(
+        !Services.prefs.getBoolPref(gate.preference),
+        `Feature ${gate.preference} should be disabled by default`
+      );
+    }
+
+    Troubleshoot.snapshot(snapshot => {
+      for (let i = 0; i < snapshot.experimentalFeatures.length; i++) {
+        let experimentalFeature = snapshot.experimentalFeatures[i];
+        is(
+          experimentalFeature[0],
+          featureGates[i].title,
+          "The first item in the array should be the title's l10n-id of the FeatureGate"
+        );
+        is(
+          experimentalFeature[1],
+          featureGates[i].preference,
+          "The second item in the array should be the preference name for the FeatureGate"
+        );
+        is(
+          experimentalFeature[2],
+          Services.prefs.getBoolPref(featureGates[i].preference),
+          "The third item in the array should be the preference value of the FeatureGate"
+        );
       }
       done();
     });
@@ -116,6 +172,10 @@ const SNAPSHOT_SCHEMA = {
           type: "string",
         },
         buildID: {
+          required: true,
+          type: "string",
+        },
+        distributionID: {
           required: true,
           type: "string",
         },
@@ -200,13 +260,17 @@ const SNAPSHOT_SCHEMA = {
         },
       },
     },
-    extensions: {
+    addons: {
       required: true,
       type: "array",
       items: {
         type: "object",
         properties: {
           name: {
+            required: true,
+            type: "string",
+          },
+          type: {
             required: true,
             type: "string",
           },
@@ -278,6 +342,10 @@ const SNAPSHOT_SCHEMA = {
         },
       },
     },
+    experimentalFeatures: {
+      required: true,
+      type: "array",
+    },
     modifiedPreferences: {
       required: true,
       type: "object",
@@ -289,6 +357,10 @@ const SNAPSHOT_SCHEMA = {
         "fission.autostart": {
           required: false,
           type: "boolean",
+        },
+        "dom.ipc.processCount.webIsolated": {
+          required: false,
+          type: "number",
         },
       },
     },
@@ -637,15 +709,6 @@ const SNAPSHOT_SCHEMA = {
         },
       },
     },
-    javaScript: {
-      required: true,
-      type: "object",
-      properties: {
-        incrementalGCEnabled: {
-          type: "boolean",
-        },
-      },
-    },
     accessibility: {
       required: true,
       type: "object",
@@ -822,6 +885,28 @@ const SNAPSHOT_SCHEMA = {
               },
             },
           },
+        },
+      },
+    },
+    startupCache: {
+      required: false,
+      type: "object",
+      properties: {
+        DiskCachePath: {
+          required: true,
+          type: "string",
+        },
+        IgnoreDiskCache: {
+          required: true,
+          type: "boolean",
+        },
+        FoundDiskCacheOnInit: {
+          required: true,
+          type: "boolean",
+        },
+        WroteToDiskCache: {
+          required: true,
+          type: "boolean",
         },
       },
     },

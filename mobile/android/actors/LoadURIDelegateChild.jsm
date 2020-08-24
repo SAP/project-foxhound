@@ -8,6 +8,14 @@ const { GeckoViewActorChild } = ChromeUtils.import(
 const { LoadURIDelegate } = ChromeUtils.import(
   "resource://gre/modules/LoadURIDelegate.jsm"
 );
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
+});
 
 var EXPORTED_SYMBOLS = ["LoadURIDelegateChild"];
 
@@ -54,6 +62,21 @@ class LoadURIDelegateChild extends GeckoViewActorChild {
       return false;
     }
 
+    // Ignore any load going to the extension process
+    // TODO: Remove workaround after Bug 1619798
+    if (
+      WebExtensionPolicy.useRemoteWebExtensions &&
+      E10SUtils.getRemoteTypeForURIObject(
+        aUri,
+        /* aMultiProcess */ true,
+        /* aRemoteSubframes */ false,
+        Services.appinfo.remoteType
+      ) == E10SUtils.EXTENSION_REMOTE_TYPE
+    ) {
+      debug`Bypassing load delegate in the Extension process.`;
+      return false;
+    }
+
     return LoadURIDelegate.load(
       this.contentWindow,
       this.eventDispatcher,
@@ -96,7 +119,7 @@ class LoadURIDelegateChild extends GeckoViewActorChild {
 }
 
 LoadURIDelegateChild.prototype.QueryInterface = ChromeUtils.generateQI([
-  Ci.nsILoadURIDelegate,
+  "nsILoadURIDelegate",
 ]);
 
 const { debug, warn } = LoadURIDelegateChild.initLogging("LoadURIDelegate"); // eslint-disable-line no-unused-vars

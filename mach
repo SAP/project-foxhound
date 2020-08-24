@@ -11,85 +11,36 @@
 # shell because `''':'`, `':'` and `:` are all equivalent, and `:` is a no-op.
 ''':'
 py2commands="
-    analyze
     android
-    android-emulator
-    artifact
     awsy-test
-    browsertime
-    build
-    build-backend
-    buildsymbols
-    cargo
     check-spidermonkey
-    clang-format
-    compileflags
-    configure
-    cppunittest
     cramtest
     crashtest
     devtools-css-db
-    doctor
-    empty-makefiles
-    file-info
     firefox-ui-functional
     geckodriver
     geckodriver-test
-    geckoview-junit
-    gradle
-    gtest
     hazards
-    ide
-    import-pr
-    install
     jsapi-tests
     jsshell-bench
+    marionette-test
     jstestbrowser
     jstests
-    marionette-test
     mochitest
-    mozbuild-reference
     mozharness
-    mozregression
-    package
-    package-multi-locale
-    pastebin
-    power
     prettier-format
-    puppeteer-test
-    python
     python-test
     raptor
     raptor-test
     reftest
-    release
-    release-history
-    remote
-    repackage
-    resource-usage
-    robocop
-    run
-    rusttests
-    show-log
-    static-analysis
     talos-test
-    taskcluster-build-image
     taskcluster-load-image
-    taskgraph
     telemetry-tests-client
     test
-    test-info
     tps-build
-    try
-    valgrind-test
     visualmetrics
-    warnings-list
-    watch
     web-platform-tests
     web-platform-tests-update
-    webidl-example
-    webidl-parser-test
-    webrtc-gtest
     wpt
     wpt-manifest-update
     wpt-metadata-merge
@@ -98,7 +49,6 @@ py2commands="
     wpt-test-paths
     wpt-unittest
     wpt-update
-    xpcshell-test
 "
 
 run_py() {

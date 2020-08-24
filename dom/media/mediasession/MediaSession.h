@@ -13,6 +13,7 @@
 #include "mozilla/dom/MediaMetadata.h"
 #include "mozilla/dom/MediaSessionBinding.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/EnumeratedArray.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
@@ -20,6 +21,19 @@ class nsPIDOMWindowInner;
 
 namespace mozilla {
 namespace dom {
+
+// https://w3c.github.io/mediasession/#position-state
+struct PositionState {
+  PositionState() = default;
+  PositionState(double aDuration, double aPlaybackRate,
+                double aLastReportedTime)
+      : mDuration(aDuration),
+        mPlaybackRate(aPlaybackRate),
+        mLastReportedPlaybackPosition(aLastReportedTime) {}
+  double mDuration;
+  double mPlaybackRate;
+  double mLastReportedPlaybackPosition;
+};
 
 class MediaSession final : public nsISupports, public nsWrapperCache {
  public:
@@ -39,14 +53,19 @@ class MediaSession final : public nsISupports, public nsWrapperCache {
 
   void SetMetadata(MediaMetadata* aMetadata);
 
+  void SetPlaybackState(const MediaSessionPlaybackState& aPlaybackState);
+
+  MediaSessionPlaybackState PlaybackState() const;
+
   void SetActionHandler(MediaSessionAction aAction,
                         MediaSessionActionHandler* aHandler);
 
+  void SetPositionState(const MediaPositionState& aState, ErrorResult& aRv);
+
   bool IsSupportedAction(MediaSessionAction aAction) const;
 
-  // Use these methods to trigger media session action handler asynchronously.
+  // Use this method to trigger media session action handler asynchronously.
   void NotifyHandler(const MediaSessionActionDetails& aDetails);
-  void NotifyHandler(MediaSessionAction aAction);
 
   void Shutdown();
 
@@ -57,9 +76,14 @@ class MediaSession final : public nsISupports, public nsWrapperCache {
     eDestroyed = false,
     eCreated = true,
   };
-  void NotifyMediaSessionStatus(SessionStatus aState);
 
+  // These methods are used to propagate media session's status to the chrome
+  // process.
+  void NotifyMediaSessionStatus(SessionStatus aState);
   void NotifyMetadataUpdated();
+  void NotifyEnableSupportedAction(MediaSessionAction aAction);
+  void NotifyDisableSupportedAction(MediaSessionAction aAction);
+  void NotifyPositionStateChanged();
 
   void DispatchNotifyHandler(const MediaSessionActionDetails& aDetails);
 
@@ -70,8 +94,18 @@ class MediaSession final : public nsISupports, public nsWrapperCache {
   nsCOMPtr<nsPIDOMWindowInner> mParent;
 
   RefPtr<MediaMetadata> mMediaMetadata;
-  static const size_t ACTIONS = MediaSessionActionValues::Count;
-  RefPtr<MediaSessionActionHandler> mActionHandlers[ACTIONS] = {nullptr};
+
+  EnumeratedArray<MediaSessionAction, MediaSessionAction::EndGuard_,
+                  RefPtr<MediaSessionActionHandler>>
+      mActionHandlers;
+
+  // This is used as is a hint for the user agent to determine whether the
+  // browsing context is playing or paused.
+  // https://w3c.github.io/mediasession/#declared-playback-state
+  MediaSessionPlaybackState mDeclaredPlaybackState =
+      MediaSessionPlaybackState::None;
+
+  Maybe<PositionState> mPositionState;
 };
 
 }  // namespace dom

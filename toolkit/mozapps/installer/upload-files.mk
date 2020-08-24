@@ -162,7 +162,7 @@ ifeq ($(MOZ_PKG_FORMAT),RPM)
 
   RPM_CMD = \
     echo Creating RPM && \
-    $(PYTHON) -m mozbuild.action.preprocessor \
+    $(PYTHON3) -m mozbuild.action.preprocessor \
       -DMOZ_APP_NAME=$(MOZ_APP_NAME) \
       -DMOZ_APP_DISPLAYNAME='$(MOZ_APP_DISPLAYNAME)' \
       -DMOZ_APP_REMOTINGNAME='$(MOZ_APP_REMOTINGNAME)' \
@@ -387,7 +387,7 @@ UPLOAD_FILES= \
   $(call QUOTED_WILDCARD,$(topobjdir)/config.status) \
   $(if $(UPLOAD_EXTRA_FILES), $(foreach f, $(UPLOAD_EXTRA_FILES), $(wildcard $(DIST)/$(f))))
 
-ifneq ($(filter-out en-US x-test,$(AB_CD)),)
+ifneq ($(filter-out en-US,$(AB_CD)),)
   UPLOAD_FILES += \
     $(call QUOTED_WILDCARD,$(topobjdir)/$(MOZ_BUILD_APP)/installer/windows/l10ngen/setup.exe) \
     $(call QUOTED_WILDCARD,$(topobjdir)/$(MOZ_BUILD_APP)/installer/windows/l10ngen/setup-stub.exe)
@@ -429,6 +429,10 @@ endif
 SRC_TAR_PREFIX = $(MOZ_APP_NAME)-$(MOZ_PKG_VERSION)
 SRC_TAR_EXCLUDE_PATHS += \
   --exclude='.hg*' \
+  --exclude='.git' \
+  --exclude='.gitattributes' \
+  --exclude='.gitkeep' \
+  --exclude='.gitmodules' \
   --exclude='CVS' \
   --exclude='.cvs*' \
   --exclude='.mozconfig*' \

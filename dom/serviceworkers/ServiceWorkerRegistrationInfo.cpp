@@ -10,6 +10,8 @@
 #include "ServiceWorkerPrivate.h"
 #include "ServiceWorkerRegistrationListener.h"
 
+#include "mozilla/SchedulerGroup.h"
+
 namespace mozilla {
 namespace dom {
 
@@ -266,6 +268,13 @@ ServiceWorkerRegistrationInfo::RemoveListener(
   return NS_OK;
 }
 
+NS_IMETHODIMP
+ServiceWorkerRegistrationInfo::ForceShutdown() {
+  ClearInstalling();
+  ShutdownWorkers();
+  return NS_OK;
+}
+
 already_AddRefed<ServiceWorkerInfo>
 ServiceWorkerRegistrationInfo::GetServiceWorkerInfoById(uint64_t aId) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -338,8 +347,7 @@ void ServiceWorkerRegistrationInfo::Activate() {
 
   ServiceWorkerPrivate* workerPrivate = mActiveWorker->WorkerPrivate();
   MOZ_ASSERT(workerPrivate);
-  nsresult rv = workerPrivate->SendLifeCycleEvent(NS_LITERAL_STRING("activate"),
-                                                  callback);
+  nsresult rv = workerPrivate->SendLifeCycleEvent(u"activate"_ns, callback);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     nsCOMPtr<nsIRunnable> failRunnable = NewRunnableMethod<bool>(
         "dom::ServiceWorkerRegistrationInfo::FinishActivate", this,
@@ -432,17 +440,15 @@ void ServiceWorkerRegistrationInfo::UpdateRegistrationState(
 
   mDescriptor.SetUpdateViaCache(aUpdateViaCache);
 
-  nsTObserverArray<ServiceWorkerRegistrationListener*>::ForwardIterator it(
-      mInstanceList);
-  while (it.HasMore()) {
-    RefPtr<ServiceWorkerRegistrationListener> target = it.GetNext();
-    target->UpdateState(mDescriptor);
+  for (RefPtr<ServiceWorkerRegistrationListener> pinnedTarget :
+       mInstanceList.ForwardRange()) {
+    pinnedTarget->UpdateState(mDescriptor);
   }
 }
 
 void ServiceWorkerRegistrationInfo::NotifyChromeRegistrationListeners() {
   nsTArray<nsCOMPtr<nsIServiceWorkerRegistrationInfoListener>> listeners(
-      mListeners);
+      mListeners.Clone());
   for (size_t index = 0; index < listeners.Length(); ++index) {
     listeners[index]->OnChange();
   }
@@ -664,7 +670,8 @@ void ServiceWorkerRegistrationInfo::TransitionWaitingToActive() {
           swm->CheckPendingReadyPromises();
         }
       });
-  MOZ_ALWAYS_SUCCEEDS(SystemGroup::Dispatch(TaskCategory::Other, r.forget()));
+  MOZ_ALWAYS_SUCCEEDS(
+      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
 
   UpdateRegistrationState();
   NotifyChromeRegistrationListeners();
@@ -731,20 +738,16 @@ uint32_t ServiceWorkerRegistrationInfo::GetUpdateDelay(
 }
 
 void ServiceWorkerRegistrationInfo::FireUpdateFound() {
-  nsTObserverArray<ServiceWorkerRegistrationListener*>::ForwardIterator it(
-      mInstanceList);
-  while (it.HasMore()) {
-    RefPtr<ServiceWorkerRegistrationListener> target = it.GetNext();
-    target->FireUpdateFound();
+  for (RefPtr<ServiceWorkerRegistrationListener> pinnedTarget :
+       mInstanceList.ForwardRange()) {
+    pinnedTarget->FireUpdateFound();
   }
 }
 
 void ServiceWorkerRegistrationInfo::NotifyCleared() {
-  nsTObserverArray<ServiceWorkerRegistrationListener*>::ForwardIterator it(
-      mInstanceList);
-  while (it.HasMore()) {
-    RefPtr<ServiceWorkerRegistrationListener> target = it.GetNext();
-    target->RegistrationCleared();
+  for (RefPtr<ServiceWorkerRegistrationListener> pinnedTarget :
+       mInstanceList.ForwardRange()) {
+    pinnedTarget->RegistrationCleared();
   }
 }
 
@@ -776,7 +779,7 @@ void ServiceWorkerRegistrationInfo::ClearWhenIdle() {
    * Registration".
    */
   GetActive()->WorkerPrivate()->GetIdlePromise()->Then(
-      GetCurrentThreadSerialEventTarget(), __func__,
+      GetCurrentSerialEventTarget(), __func__,
       [self = RefPtr<ServiceWorkerRegistrationInfo>(this)](
           const GenericPromise::ResolveOrRejectValue& aResult) {
         MOZ_ASSERT(aResult.IsResolve());

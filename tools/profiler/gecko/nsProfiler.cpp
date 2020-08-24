@@ -16,8 +16,8 @@
 #include "js/JSON.h"
 #include "js/Value.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
-#include "mozilla/SystemGroup.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsIFileStreams.h"
@@ -59,6 +59,7 @@ nsProfiler::~nsProfiler() {
   if (mSymbolTableThread) {
     mSymbolTableThread->Shutdown();
   }
+  ResetGathering();
 }
 
 nsresult nsProfiler::Init() {
@@ -143,10 +144,6 @@ nsProfiler::StartProfiler(uint32_t aEntries, double aInterval,
 
 NS_IMETHODIMP
 nsProfiler::StopProfiler() {
-  // If we have a Promise in flight, we should reject it.
-  if (mPromiseHolder.isSome()) {
-    mPromiseHolder->RejectIfExists(NS_ERROR_DOM_ABORT_ERR, __func__);
-  }
   ResetGathering();
 
   profiler_stop();
@@ -161,14 +158,32 @@ nsProfiler::IsPaused(bool* aIsPaused) {
 }
 
 NS_IMETHODIMP
-nsProfiler::PauseSampling() {
+nsProfiler::Pause() {
   profiler_pause();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsProfiler::ResumeSampling() {
+nsProfiler::Resume() {
   profiler_resume();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsProfiler::IsSamplingPaused(bool* aIsSamplingPaused) {
+  *aIsSamplingPaused = profiler_is_sampling_paused();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsProfiler::PauseSampling() {
+  profiler_pause_sampling();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsProfiler::ResumeSampling() {
+  profiler_resume_sampling();
   return NS_OK;
 }
 
@@ -216,7 +231,7 @@ nsProfiler::WaitOnePeriodicSampling(JSContext* aCx, Promise** aPromise) {
                new nsMainThreadPtrHolder<Promise>(
                    "WaitOnePeriodicSampling promise for Sampler", promise))](
               SamplingState aSamplingState) mutable {
-            SystemGroup::Dispatch(
+            SchedulerGroup::Dispatch(
                 TaskCategory::Other,
                 NS_NewRunnableFunction(
                     "nsProfiler::WaitOnePeriodicSampling result on main thread",
@@ -275,6 +290,10 @@ struct StringWriteFunc : public JSONWriteFunc {
 
   void Write(const char* aStr) override {
     mBuffer.Append(NS_ConvertUTF8toUTF16(aStr));
+  }
+
+  void Write(const char* aStr, size_t aLen) override {
+    mBuffer.Append(NS_ConvertUTF8toUTF16(aStr, aLen));
   }
 };
 }  // namespace
@@ -617,7 +636,7 @@ nsProfiler::DumpProfileToFileAsync(const nsACString& aFilename,
 NS_IMETHODIMP
 nsProfiler::GetSymbolTable(const nsACString& aDebugPath,
                            const nsACString& aBreakpadID, JSContext* aCx,
-                           nsISupports** aPromise) {
+                           Promise** aPromise) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (NS_WARN_IF(!aCx)) {
@@ -747,6 +766,35 @@ nsProfiler::GetBufferInfo(uint32_t* aCurrentPosition, uint32_t* aTotalSize,
   return NS_OK;
 }
 
+/* static */ void nsProfiler::GatheringTimerCallback(nsITimer* aTimer,
+                                                     void* aClosure) {
+  MOZ_RELEASE_ASSERT(NS_IsMainThread());
+  nsCOMPtr<nsIProfiler> profiler(
+      do_GetService("@mozilla.org/tools/profiler;1"));
+  if (!profiler) {
+    // No (more) profiler service.
+    return;
+  }
+  nsProfiler* self = static_cast<nsProfiler*>(profiler.get());
+  if (self != aClosure) {
+    // Different service object!?
+    return;
+  }
+  if (aTimer != self->mGatheringTimer) {
+    // This timer was cancelled after this callback was queued.
+    return;
+  }
+  self->mGatheringTimer = nullptr;
+  if (!profiler_is_active() || !self->mGathering) {
+    // Not gathering anymore.
+    return;
+  }
+  NS_WARNING("Profiler failed to gather profiles from all sub-processes");
+  // We have really reached a timeout while gathering, finish now.
+  // TODO: Add information about missing processes.
+  self->FinishGathering();
+}
+
 void nsProfiler::GatheredOOPProfile(const nsACString& aProfile) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
@@ -775,6 +823,21 @@ void nsProfiler::GatheredOOPProfile(const nsACString& aProfile) {
     // finish off the profile and resolve the Promise.
     FinishGathering();
   }
+
+  // Not finished yet, restart the timer to let any remaining child enough time
+  // to do their profile-streaming.
+  if (mGatheringTimer) {
+    uint32_t delayMs = 0;
+    const nsresult r = mGatheringTimer->GetDelay(&delayMs);
+    mGatheringTimer->Cancel();
+    mGatheringTimer = nullptr;
+    if (NS_SUCCEEDED(r) && delayMs != 0) {
+      Unused << NS_NewTimerWithFuncCallback(
+          getter_AddRefs(mGatheringTimer), GatheringTimerCallback, this,
+          delayMs, nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "",
+          GetMainThreadSerialEventTarget());
+    }
+  }
 }
 
 void nsProfiler::ReceiveShutdownProfile(const nsCString& aProfile) {
@@ -794,6 +857,11 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
 
   mGathering = true;
 
+  if (mGatheringTimer) {
+    mGatheringTimer->Cancel();
+    mGatheringTimer = nullptr;
+  }
+
   // Request profiles from the other processes. This will trigger asynchronous
   // calls to ProfileGatherer::GatheredOOPProfile as the profiles arrive.
   //
@@ -804,6 +872,8 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
       ProfilerParent::GatherProfiles();
 
   mWriter.emplace();
+
+  TimeStamp streamingStart = TimeStamp::NowUnfuzzed();
 
   UniquePtr<ProfilerCodeAddressService> service =
       profiler_code_address_service_for_presymbolication();
@@ -839,20 +909,37 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
   // FinishGathering() will close the array and the root object.
 
   mPendingProfiles = profiles.Length();
-  RefPtr<nsProfiler> self = this;
-  for (auto profile : profiles) {
-    profile->Then(
-        GetMainThreadSerialEventTarget(), __func__,
-        [self](mozilla::ipc::Shmem&& aResult) {
-          const nsDependentCSubstring profileString(aResult.get<char>(),
-                                                    aResult.Size<char>() - 1);
-          self->GatheredOOPProfile(profileString);
-        },
-        [self](ipc::ResponseRejectReason&& aReason) {
-          self->GatheredOOPProfile(NS_LITERAL_CSTRING(""));
-        });
-  }
-  if (!mPendingProfiles) {
+  if (mPendingProfiles != 0) {
+    // There *are* pending profiles, let's add handlers for their promises.
+
+    // We know how long it took this parent process to stream its profile, give
+    // the slowest child twice as long, plus a bit more. (The timer will be
+    // restarted after each response.)
+    const uint32_t streamingTimeoutMs =
+        static_cast<uint32_t>(
+            (TimeStamp::NowUnfuzzed() - streamingStart).ToMilliseconds()) *
+            2 +
+        1000;
+    Unused << NS_NewTimerWithFuncCallback(
+        getter_AddRefs(mGatheringTimer), GatheringTimerCallback, this,
+        streamingTimeoutMs, nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY, "",
+        GetMainThreadSerialEventTarget());
+
+    for (auto profile : profiles) {
+      profile->Then(
+          GetMainThreadSerialEventTarget(), __func__,
+          [self = RefPtr<nsProfiler>(this)](mozilla::ipc::Shmem&& aResult) {
+            const nsDependentCSubstring profileString(aResult.get<char>(),
+                                                      aResult.Size<char>() - 1);
+            self->GatheredOOPProfile(profileString);
+          },
+          [self =
+               RefPtr<nsProfiler>(this)](ipc::ResponseRejectReason&& aReason) {
+            self->GatheredOOPProfile(""_ns);
+          });
+    }
+  } else {
+    // There are no pending profiles, we're already done.
     FinishGathering();
   }
 
@@ -873,7 +960,7 @@ RefPtr<nsProfiler::SymbolTablePromise> nsProfiler::GetSymbolTableMozPromise(
     }
   }
 
-  mSymbolTableThread->Dispatch(NS_NewRunnableFunction(
+  nsresult rv = mSymbolTableThread->Dispatch(NS_NewRunnableFunction(
       "nsProfiler::GetSymbolTableMozPromise runnable on ProfSymbolTable thread",
       [promiseHolder = std::move(promiseHolder),
        debugPath = nsCString(aDebugPath),
@@ -883,19 +970,18 @@ RefPtr<nsProfiler::SymbolTablePromise> nsProfiler::GetSymbolTableMozPromise(
         SymbolTable symbolTable;
         bool succeeded = profiler_get_symbol_table(
             debugPath.get(), breakpadID.get(), &symbolTable);
-        SystemGroup::Dispatch(
-            TaskCategory::Other,
-            NS_NewRunnableFunction(
-                "nsProfiler::GetSymbolTableMozPromise result on main thread",
-                [promiseHolder = std::move(promiseHolder),
-                 symbolTable = std::move(symbolTable), succeeded]() mutable {
-                  if (succeeded) {
-                    promiseHolder.Resolve(std::move(symbolTable), __func__);
-                  } else {
-                    promiseHolder.Reject(NS_ERROR_FAILURE, __func__);
-                  }
-                }));
+        if (succeeded) {
+          promiseHolder.Resolve(std::move(symbolTable), __func__);
+        } else {
+          promiseHolder.Reject(NS_ERROR_FAILURE, __func__);
+        }
       }));
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    // Get-symbol task was not dispatched and therefore won't fulfill the
+    // promise, we must reject the promise now.
+    promiseHolder.Reject(NS_ERROR_FAILURE, __func__);
+  }
 
   return promise;
 }
@@ -921,8 +1007,17 @@ void nsProfiler::FinishGathering() {
 }
 
 void nsProfiler::ResetGathering() {
-  mPromiseHolder.reset();
+  // If we have an unfulfilled Promise in flight, we should reject it before
+  // destroying the promise holder.
+  if (mPromiseHolder.isSome()) {
+    mPromiseHolder->RejectIfExists(NS_ERROR_DOM_ABORT_ERR, __func__);
+    mPromiseHolder.reset();
+  }
   mPendingProfiles = 0;
   mGathering = false;
+  if (mGatheringTimer) {
+    mGatheringTimer->Cancel();
+    mGatheringTimer = nullptr;
+  }
   mWriter.reset();
 }

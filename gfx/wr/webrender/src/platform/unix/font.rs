@@ -335,9 +335,9 @@ impl FontContext {
             })
         } else {
             // TODO(gw): Provide detailed error values.
-            Err(ResourceCacheError::new(
-                format!("Failed to initialize FreeType - {}", result)
-            ))
+            // Once this panic has been here for a while with no issues we should get rid of
+            // ResourceCacheError as this was the only place that could fail previously.
+            panic!("Failed to initialize FreeType - {}", result)
         }
     }
 
@@ -551,8 +551,8 @@ impl FontContext {
         let format = unsafe { (*slot).format };
         match format {
             FT_Glyph_Format::FT_GLYPH_FORMAT_BITMAP => {
-                let y_size = unsafe { (*(*(*slot).face).size).metrics.y_ppem };
-                Some((slot, req_size as f32 / y_size as f32))
+                let bitmap_size = unsafe { (*(*(*slot).face).size).metrics.y_ppem };
+                Some((slot, req_size as f32 / bitmap_size as f32))
             }
             FT_Glyph_Format::FT_GLYPH_FORMAT_OUTLINE => Some((slot, 1.0)),
             _ => {
@@ -868,14 +868,23 @@ impl FontContext {
             }
             _ => panic!("Unsupported mode"),
         };
-        let mut final_buffer = vec![0u8; actual_width * actual_height * 4];
+
+        // If we need padding, we will need to expand the buffer size.
+        let (buffer_width, buffer_height, padding) = if font.use_texture_padding() {
+            (actual_width + 2, actual_height + 2, 1)
+        } else {
+            (actual_width, actual_height, 0)
+        };
+
+        let mut final_buffer = vec![0u8; buffer_width * buffer_height * 4];
 
         // Extract the final glyph from FT format into BGRA8 format, which is
         // what WR expects.
         let subpixel_bgr = font.flags.contains(FontInstanceFlags::SUBPIXEL_BGR);
         let mut src_row = bitmap.buffer;
-        let mut dest: usize = 0;
-        while dest < final_buffer.len() {
+        let mut dest = 4 * padding * (padding + buffer_width);
+        let actual_end = final_buffer.len() - 4 * padding * (buffer_width + 1);
+        while dest < actual_end {
             let mut src = src_row;
             let row_end = dest + actual_width * 4;
             match pixel_mode {
@@ -947,7 +956,14 @@ impl FontContext {
                 _ => panic!("Unsupported mode"),
             }
             src_row = unsafe { src_row.offset(bitmap.pitch as isize) };
-            dest = row_end;
+            dest = row_end + 8 * padding;
+        }
+
+        if font.use_texture_padding() {
+            left -= padding as i32;
+            top += padding as i32;
+            actual_width = buffer_width;
+            actual_height = buffer_height;
         }
 
         match format {

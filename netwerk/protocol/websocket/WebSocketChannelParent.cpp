@@ -47,18 +47,18 @@ mozilla::ipc::IPCResult WebSocketChannelParent::RecvDeleteSelf() {
 }
 
 mozilla::ipc::IPCResult WebSocketChannelParent::RecvAsyncOpen(
-    const Maybe<URIParams>& aURI, const nsCString& aOrigin,
-    const uint64_t& aInnerWindowID, const nsCString& aProtocol,
-    const bool& aSecure, const uint32_t& aPingInterval,
-    const bool& aClientSetPingInterval, const uint32_t& aPingTimeout,
-    const bool& aClientSetPingTimeout, const Maybe<LoadInfoArgs>& aLoadInfoArgs,
+    nsIURI* aURI, const nsCString& aOrigin, const uint64_t& aInnerWindowID,
+    const nsCString& aProtocol, const bool& aSecure,
+    const uint32_t& aPingInterval, const bool& aClientSetPingInterval,
+    const uint32_t& aPingTimeout, const bool& aClientSetPingTimeout,
+    const Maybe<LoadInfoArgs>& aLoadInfoArgs,
     const Maybe<PTransportProviderParent*>& aTransportProvider,
     const nsCString& aNegotiatedExtensions) {
   LOG(("WebSocketChannelParent::RecvAsyncOpen() %p\n", this));
 
   nsresult rv;
-  nsCOMPtr<nsIURI> uri;
   nsCOMPtr<nsILoadInfo> loadInfo;
+  nsCOMPtr<nsIURI> uri;
 
   rv = LoadInfoArgsToLoadInfo(aLoadInfoArgs, getter_AddRefs(loadInfo));
   if (NS_FAILED(rv)) {
@@ -98,7 +98,7 @@ mozilla::ipc::IPCResult WebSocketChannelParent::RecvAsyncOpen(
       goto fail;
     }
   } else {
-    uri = DeserializeURI(aURI);
+    uri = aURI;
     if (!uri) {
       rv = NS_ERROR_FAILURE;
       goto fail;
@@ -263,7 +263,7 @@ void WebSocketChannelParent::ActorDestroy(ActorDestroyReason why) {
   // through a clean shutdown.
   if (mChannel) {
     Unused << mChannel->Close(nsIWebSocketChannel::CLOSE_GOING_AWAY,
-                              NS_LITERAL_CSTRING("Child was killed"));
+                              "Child was killed"_ns);
   }
 }
 
@@ -274,9 +274,14 @@ void WebSocketChannelParent::ActorDestroy(ActorDestroyReason why) {
 NS_IMETHODIMP
 WebSocketChannelParent::GetInterface(const nsIID& iid, void** result) {
   LOG(("WebSocketChannelParent::GetInterface() %p\n", this));
-  if (mAuthProvider && iid.Equals(NS_GET_IID(nsIAuthPromptProvider)))
-    return mAuthProvider->GetAuthPrompt(nsIAuthPromptProvider::PROMPT_NORMAL,
-                                        iid, result);
+  if (mAuthProvider && iid.Equals(NS_GET_IID(nsIAuthPromptProvider))) {
+    nsresult rv = mAuthProvider->GetAuthPrompt(
+        nsIAuthPromptProvider::PROMPT_NORMAL, iid, result);
+    if (NS_FAILED(rv)) {
+      return NS_ERROR_NO_INTERFACE;
+    }
+    return NS_OK;
+  }
 
   // Only support nsILoadContext if child channel's callbacks did too
   if (iid.Equals(NS_GET_IID(nsILoadContext)) && mLoadContext) {

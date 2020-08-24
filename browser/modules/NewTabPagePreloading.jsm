@@ -15,16 +15,10 @@ const { XPCOMUtils } = ChromeUtils.import(
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
+  AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
-});
-
-XPCOMUtils.defineLazyServiceGetters(this, {
-  gAboutNewTabService: [
-    "@mozilla.org/browser/aboutnewtab-service;1",
-    "nsIAboutNewTabService",
-  ],
 });
 
 let NewTabPagePreloading = {
@@ -42,7 +36,7 @@ let NewTabPagePreloading = {
 
   get enabled() {
     return (
-      this.prefEnabled && this.newTabEnabled && !gAboutNewTabService.overridden
+      this.prefEnabled && this.newTabEnabled && !AboutNewTab.newTabURLOverridden
     );
   },
 
@@ -98,20 +92,8 @@ let NewTabPagePreloading = {
 
     let newBrowser = this._createBrowser(window);
 
-    oldWin.gBrowser._outerWindowIDBrowserMap.delete(oldBrowser.outerWindowID);
-    window.gBrowser._outerWindowIDBrowserMap.delete(newBrowser.outerWindowID);
-
     oldBrowser.swapBrowsers(newBrowser);
 
-    // Switch outerWindowIDs for remote browsers.
-    if (newBrowser.isRemoteBrowser) {
-      newBrowser._outerWindowID = oldBrowser._outerWindowID;
-    }
-
-    window.gBrowser._outerWindowIDBrowserMap.set(
-      newBrowser.outerWindowID,
-      newBrowser
-    );
     newBrowser.permanentKey = oldBrowser.permanentKey;
 
     oldWin.gBrowser.getPanel(oldBrowser).remove();

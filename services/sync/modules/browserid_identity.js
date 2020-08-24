@@ -62,6 +62,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "services.sync.debug.ignoreCachedAuthCredentials"
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "USE_OAUTH_FOR_SYNC_TOKEN",
+  "identity.sync.useOAuthForSyncToken"
+);
+
 // FxAccountsCommon.js doesn't use a "namespace", so create one here.
 var fxAccountsCommon = {};
 ChromeUtils.import(
@@ -124,19 +130,20 @@ this.BrowserIDManager.prototype = {
   _userUid: null,
 
   hashedUID() {
-    if (!this._hashedUID) {
+    const id = this._fxaService.telemetry.getSanitizedUID();
+    if (!id) {
       throw new Error("hashedUID: Don't seem to have previously seen a token");
     }
-    return this._hashedUID;
+    return id;
   },
 
   // Return a hashed version of a deviceID, suitable for telemetry.
   hashedDeviceID(deviceID) {
-    let uid = this.hashedUID();
-    // Combine the raw device id with the metrics uid to create a stable
-    // unique identifier that can't be mapped back to the user's FxA
-    // identity without knowing the metrics HMAC key.
-    return Utils.sha256(deviceID + uid);
+    const id = this._fxaService.telemetry.sanitizeDeviceId(deviceID);
+    if (!id) {
+      throw new Error("hashedUID: Don't seem to have previously seen a token");
+    }
+    return id;
   },
 
   // The "node type" reported to telemetry or null if not specified.
@@ -276,7 +283,6 @@ this.BrowserIDManager.prototype = {
   resetCredentials() {
     this._syncKeyBundle = null;
     this._token = null;
-    this._hashedUID = null;
     // The cluster URL comes from the token, so resetting it to empty will
     // force Sync to not accidentally use a value from an earlier token.
     Weave.Service.clusterURL = null;
@@ -396,16 +402,22 @@ this.BrowserIDManager.prototype = {
     // Do the assertion/certificate/token dance, with a retry.
     let getToken = async keys => {
       this._log.info("Getting an assertion from", this._tokenServerUrl);
-      const audience = Services.io.newURI(this._tokenServerUrl).prePath;
-      const assertion = await fxa._internal.getAssertion(audience);
+      let token;
 
-      this._log.debug("Getting a token");
-      const headers = { "X-Client-State": keys.kXCS };
-      const token = await this._tokenServerClient.getTokenFromBrowserIDAssertion(
-        this._tokenServerUrl,
-        assertion,
-        headers
-      );
+      if (USE_OAUTH_FOR_SYNC_TOKEN) {
+        token = await this._fetchTokenUsingOAuth();
+      } else {
+        const audience = Services.io.newURI(this._tokenServerUrl).prePath;
+        const assertion = await fxa._internal.getAssertion(audience);
+        this._log.debug("Getting a token using an Assertion");
+        const headers = { "X-Client-State": keys.kXCS };
+        token = await this._tokenServerClient.getTokenFromBrowserIDAssertion(
+          this._tokenServerUrl,
+          assertion,
+          headers
+        );
+      }
+
       this._log.trace("Successfully got a token");
       return token;
     };
@@ -473,6 +485,38 @@ this.BrowserIDManager.prototype = {
     }
   },
 
+  /**
+   * Fetches an OAuth token using the OLD_SYNC scope and later exchanges it
+   * for a TokenServer token.
+   *
+   * @returns {Promise}
+   * @private
+   */
+  async _fetchTokenUsingOAuth() {
+    this._log.debug("Getting a token using OAuth");
+    const fxa = this._fxaService;
+    const scope = fxAccountsCommon.SCOPE_OLD_SYNC;
+    const ttl = fxAccountsCommon.OAUTH_TOKEN_FOR_SYNC_LIFETIME_SECONDS;
+    const { token, key } = await fxa.getAccessToken(scope, ttl);
+    const headers = {
+      "X-KeyId": key.kid,
+    };
+
+    return this._tokenServerClient
+      .getTokenFromOAuthToken(this._tokenServerUrl, token, headers)
+      .catch(async err => {
+        if (err.response || err.response.status === 401) {
+          // remove the cached token if we cannot authorize with it.
+          // we have to do this here because we know which `token` to remove
+          // from cache.
+          await fxa.removeCachedOAuthToken({ token });
+        }
+
+        // continue the error chain, so other handlers can deal with the error.
+        throw err;
+      });
+  },
+
   // Returns a promise that is resolved with a valid token for the current
   // user, or rejects if one can't be obtained.
   // NOTE: This does all the authentication for Sync - it both sets the
@@ -512,10 +556,11 @@ this.BrowserIDManager.prototype = {
     try {
       let token = await this._fetchTokenForUser();
       this._token = token;
-      // we store the hashed UID from the token so that if we see a transient
-      // error fetching a new token we still know the "most recent" hashed
-      // UID for telemetry.
-      this._hashedUID = token.hashed_fxa_uid;
+      // This is a little bit of a hack. The tokenserver tells us a HMACed version
+      // of the FxA uid which we can use for metrics purposes without revealing the
+      // user's true uid. It conceptually belongs to FxA but we get it from tokenserver
+      // for legacy reasons. Hand it back to the FxA client code to deal with.
+      this._fxaService.telemetry._setHashedUID(token.hashed_fxa_uid);
       return token;
     } finally {
       Services.obs.notifyObservers(null, "weave:service:login:change");

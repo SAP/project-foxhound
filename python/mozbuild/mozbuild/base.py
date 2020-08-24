@@ -16,6 +16,7 @@ import sys
 import errno
 
 from mach.mixin.process import ProcessExecutionMixin
+from mozboot.mozconfig import MozconfigFindException
 from mozfile import which
 from mozversioncontrol import (
     get_repository_from_build_config,
@@ -33,7 +34,6 @@ from .backend.configenvironment import (
 from .configure import ConfigureSandbox
 from .controller.clobber import Clobberer
 from .mozconfig import (
-    MozconfigFindException,
     MozconfigLoadException,
     MozconfigLoader,
 )
@@ -42,7 +42,6 @@ from .util import (
     memoize,
     memoized_property,
 )
-from .virtualenv import VirtualenvManager
 
 
 def ancestors(path):
@@ -82,6 +81,19 @@ class ObjdirMismatchException(BadEnvironmentException):
 
     def __str__(self):
         return "Objdir mismatch: %s != %s" % (self.objdir1, self.objdir2)
+
+
+class BinaryNotFoundException(Exception):
+    """Raised when the binary is not found in the expected location."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def __str__(self):
+        return 'Binary expected at {} does not exist.'.format(self.path)
+
+    def help(self):
+        return 'It looks like your program isn\'t built. You can run |./mach build| to build it.'
 
 
 class MozbuildObject(ProcessExecutionMixin):
@@ -141,7 +153,7 @@ class MozbuildObject(ProcessExecutionMixin):
         default.
         """
 
-        cwd = cwd or os.getcwd()
+        cwd = os.path.realpath(cwd or os.getcwd())
         topsrcdir = None
         topobjdir = None
         mozconfig = MozconfigLoader.AUTODETECT
@@ -260,6 +272,8 @@ class MozbuildObject(ProcessExecutionMixin):
 
     @property
     def virtualenv_manager(self):
+        from .virtualenv import VirtualenvManager
+
         if self._virtualenv_manager is None:
             name = "init"
             if six.PY3:
@@ -541,12 +555,9 @@ class MozbuildObject(ProcessExecutionMixin):
         if where == 'staged-package':
             stem = os.path.join(stem, substs['MOZ_APP_NAME'])
 
-        if substs['OS_ARCH'] == 'Darwin':
-            if substs['MOZ_BUILD_APP'] == 'xulrunner':
-                stem = os.path.join(stem, 'XUL.framework')
-            else:
-                stem = os.path.join(stem, substs['MOZ_MACBUNDLE_NAME'], 'Contents',
-                                    'MacOS')
+        if substs['OS_ARCH'] == 'Darwin' and 'MOZ_MACBUNDLE_NAME' in substs:
+            stem = os.path.join(stem, substs['MOZ_MACBUNDLE_NAME'], 'Contents',
+                                'MacOS')
         elif where == 'default':
             stem = os.path.join(stem, 'bin')
 
@@ -556,7 +567,7 @@ class MozbuildObject(ProcessExecutionMixin):
         path = os.path.join(stem, leaf)
 
         if validate_exists and not os.path.exists(path):
-            raise Exception('Binary expected at %s does not exist.' % path)
+            raise BinaryNotFoundException(path)
 
         return path
 
@@ -583,8 +594,8 @@ class MozbuildObject(ProcessExecutionMixin):
                                   'Mozilla Build System', '-group', 'mozbuild',
                                   '-message', msg], ensure_exit_code=False)
             elif sys.platform.startswith('win'):
-                from ctypes import Structure, windll, POINTER, sizeof
-                from ctypes.wintypes import DWORD, HANDLE, WINFUNCTYPE, BOOL, UINT
+                from ctypes import Structure, windll, POINTER, sizeof, WINFUNCTYPE
+                from ctypes.wintypes import DWORD, HANDLE, BOOL, UINT
 
                 class FLASHWINDOW(Structure):
                     _fields_ = [("cbSize", UINT),
@@ -848,6 +859,13 @@ class MozbuildObject(ProcessExecutionMixin):
         self.ensure_pipenv()
         self.virtualenv_manager.activate_pipenv(pipfile, populate, python)
 
+    def _ensure_zstd(self):
+        try:
+            import zstandard  # noqa: F401
+        except (ImportError, AttributeError):
+            self._activate_virtualenv()
+            self.virtualenv_manager.install_pip_package('zstandard>=0.9.0,<=0.13.0')
+
 
 class MachCommandBase(MozbuildObject):
     """Base class for mach command providers that wish to be MozbuildObjects.
@@ -930,6 +948,10 @@ class MachCommandBase(MozbuildObject):
                 self.log(logging.WARNING, 'mach', {'error': str(e)},
                          'Log will not be kept for this command: {error}.')
 
+    def _sub_mach(self, argv):
+        return subprocess.call([
+            sys.executable, os.path.join(self.topsrcdir, 'mach')] + argv)
+
 
 class MachCommandConditions(object):
     """A series of commonly used condition functions which can be applied to
@@ -955,6 +977,11 @@ class MachCommandConditions(object):
         if hasattr(cls, 'substs'):
             return cls.substs.get('MOZ_BUILD_APP') == 'comm/mail'
         return False
+
+    @staticmethod
+    def is_firefox_or_thunderbird(cls):
+        """Must have a Firefox or Thunderbird build."""
+        return MachCommandConditions.is_firefox(cls) or MachCommandConditions.is_thunderbird(cls)
 
     @staticmethod
     def is_android(cls):
@@ -1015,6 +1042,15 @@ class MachCommandConditions(object):
         """Must not be an artifact build."""
         if hasattr(cls, 'substs'):
             return not MachCommandConditions.is_artifact_build(cls)
+        return False
+
+    @staticmethod
+    def is_buildapp_in(cls, apps):
+        """Must have a build for one of the given app"""
+        for app in apps:
+            attr = getattr(MachCommandConditions, 'is_{}'.format(app), None)
+            if attr and attr(cls):
+                return True
         return False
 
 

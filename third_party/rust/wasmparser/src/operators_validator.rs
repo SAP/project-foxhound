@@ -14,34 +14,27 @@
  */
 
 use std::cmp::min;
-use std::result;
-use std::str;
 
 use crate::primitives::{MemoryImmediate, Operator, SIMDLaneIndex, Type, TypeOrFuncType};
 use crate::{
-    wasm_func_type_inputs, wasm_func_type_outputs, WasmFuncType, WasmGlobalType, WasmMemoryType,
-    WasmModuleResources, WasmTableType, WasmType,
+    wasm_func_type_inputs, wasm_func_type_outputs, BinaryReaderError, WasmFuncType, WasmGlobalType,
+    WasmModuleResources, WasmTableType, WasmType, WasmTypeDef,
 };
-
-/// Test if `subtype` is a subtype of `supertype`.
-pub(crate) fn is_subtype_supertype(subtype: Type, supertype: Type) -> bool {
-    match supertype {
-        Type::AnyRef => {
-            subtype == Type::AnyRef || subtype == Type::AnyFunc || subtype == Type::NullRef
-        }
-        Type::AnyFunc => subtype == Type::AnyFunc || subtype == Type::NullRef,
-        _ => subtype == supertype,
-    }
-}
 
 #[derive(Debug)]
 struct BlockState {
     start_types: Vec<Type>,
     return_types: Vec<Type>,
+    // Position in `FuncState::stack_types` array where block values
+    // start.
     stack_starts_at: usize,
+    // True for loop.
     jump_to_top: bool,
     is_else_allowed: bool,
     is_dead_code: bool,
+    // Amount of the required polymorphic values at the stack_starts_at
+    // position in `FuncState::stack_types` array. These values are
+    // fictitious and are not actually present in the stack_types.
     polymorphic_values: Option<usize>,
 }
 
@@ -67,18 +60,21 @@ impl FuncState {
     fn last_block(&self) -> &BlockState {
         self.blocks.last().unwrap()
     }
-    fn assert_stack_type_at(&self, index: usize, expected: Type) -> bool {
+    fn stack_type_at(&self, index: usize) -> Option<Type> {
         let stack_starts_at = self.last_block().stack_starts_at;
         if self.last_block().is_stack_polymorphic()
             && stack_starts_at + index >= self.stack_types.len()
         {
-            return true;
+            return None;
         }
         assert!(stack_starts_at + index < self.stack_types.len());
-        is_subtype_supertype(
-            self.stack_types[self.stack_types.len() - 1 - index],
-            expected,
-        )
+        Some(self.stack_types[self.stack_types.len() - 1 - index])
+    }
+    fn assert_stack_type_at(&self, index: usize, expected: Type) -> bool {
+        match self.stack_type_at(index) {
+            Some(ty) => ty == expected,
+            None => true,
+        }
     }
     fn assert_block_stack_len(&self, depth: usize, minimal_len: usize) -> bool {
         assert!(depth < self.blocks.len());
@@ -110,7 +106,7 @@ impl FuncState {
             let len = self.stack_types.len();
             let remove_non_polymorphic = len
                 .checked_sub(last_block.stack_starts_at)
-                .ok_or("invalid block signature")?
+                .ok_or_else(|| OperatorValidatorError::new("invalid block signature"))?
                 .min(remove_count);
             self.stack_types.truncate(len - remove_non_polymorphic);
             let polymorphic_values = last_block.polymorphic_values.unwrap();
@@ -123,28 +119,17 @@ impl FuncState {
         }
         Ok(())
     }
-    fn push_block<F: WasmFuncType, T: WasmTableType, M: WasmMemoryType, G: WasmGlobalType>(
+    fn push_block(
         &mut self,
         ty: TypeOrFuncType,
         block_type: BlockType,
-        resources: &dyn WasmModuleResources<
-            FuncType = F,
-            TableType = T,
-            MemoryType = M,
-            GlobalType = G,
-        >,
+        resources: impl WasmModuleResources,
     ) -> OperatorValidatorResult<()> {
         let (start_types, return_types) = match ty {
             TypeOrFuncType::Type(Type::EmptyBlockType) => (vec![], vec![]),
             TypeOrFuncType::Type(ty) => (vec![], vec![ty]),
             TypeOrFuncType::FuncType(idx) => {
-                let ty = resources
-                    .type_at(idx)
-                    // Note: This was an out-of-bounds memory access before
-                    //       the change to return `Option` at `type_at`. So
-                    //       I assumed that invalid indices at this point are
-                    //       bugs.
-                    .expect("function type index is out of bounds");
+                let ty = func_type_at(&resources, idx)?;
                 (
                     wasm_func_type_inputs(ty)
                         .map(WasmType::to_parser_type)
@@ -156,6 +141,7 @@ impl FuncState {
             }
         };
         if block_type == BlockType::If {
+            // Collect conditional value from the stack_types.
             let last_block = self.blocks.last().unwrap();
             if !last_block.is_stack_polymorphic()
                 || self.stack_types.len() > last_block.stack_starts_at
@@ -166,10 +152,23 @@ impl FuncState {
         }
         for (i, ty) in start_types.iter().rev().enumerate() {
             if !self.assert_stack_type_at(i, *ty) {
-                return Err("stack operand type mismatch");
+                return Err(OperatorValidatorError::new("stack operand type mismatch"));
             }
         }
-        let stack_starts_at = self.stack_types.len() - start_types.len();
+        let (stack_starts_at, polymorphic_values) = {
+            // When stack for last block is polymorphic, ensure that
+            // the polymorphic_values matches, and next block is informed about that.
+            let last_block = self.blocks.last_mut().unwrap();
+            if !last_block.is_stack_polymorphic()
+                || last_block.stack_starts_at + start_types.len() <= self.stack_types.len()
+            {
+                (self.stack_types.len() - start_types.len(), None)
+            } else {
+                let unknown_stack_types_len =
+                    last_block.stack_starts_at + start_types.len() - self.stack_types.len();
+                (last_block.stack_starts_at, Some(unknown_stack_types_len))
+            }
+        };
         self.blocks.push(BlockState {
             start_types,
             return_types,
@@ -177,7 +176,7 @@ impl FuncState {
             jump_to_top: block_type == BlockType::Loop,
             is_else_allowed: block_type == BlockType::If,
             is_dead_code: false,
-            polymorphic_values: None,
+            polymorphic_values,
         });
         Ok(())
     }
@@ -277,7 +276,44 @@ pub enum FunctionEnd {
     Yes,
 }
 
-type OperatorValidatorResult<T> = result::Result<T, &'static str>;
+/// A wrapper around a `BinaryReaderError` where the inner error's offset is a
+/// temporary placeholder value. This can be converted into a proper
+/// `BinaryReaderError` via the `set_offset` method, which replaces the
+/// placeholder offset with an actual offset.
+pub(crate) struct OperatorValidatorError(pub(crate) BinaryReaderError);
+
+/// Create an `OperatorValidatorError` with a format string.
+macro_rules! format_op_err {
+    ( $( $arg:expr ),* $(,)* ) => {
+        OperatorValidatorError::new(format!( $( $arg ),* ))
+    }
+}
+
+/// Early return an `Err(OperatorValidatorError)` with a format string.
+macro_rules! bail_op_err {
+    ( $( $arg:expr ),* $(,)* ) => {
+        return Err(format_op_err!( $( $arg ),* ));
+    }
+}
+
+impl OperatorValidatorError {
+    /// Create a new `OperatorValidatorError` with a placeholder offset.
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        let offset = std::usize::MAX;
+        let e = BinaryReaderError::new(message, offset);
+        OperatorValidatorError(e)
+    }
+
+    /// Convert this `OperatorValidatorError` into a `BinaryReaderError` by
+    /// supplying an actual offset to replace the internal placeholder offset.
+    pub(crate) fn set_offset(mut self, offset: usize) -> BinaryReaderError {
+        debug_assert_eq!(self.0.inner.offset, std::usize::MAX);
+        self.0.inner.offset = offset;
+        self.0
+    }
+}
+
+type OperatorValidatorResult<T> = std::result::Result<T, OperatorValidatorError>;
 
 #[derive(Copy, Clone, Debug)]
 pub struct OperatorValidatorConfig {
@@ -286,6 +322,8 @@ pub struct OperatorValidatorConfig {
     pub enable_simd: bool,
     pub enable_bulk_memory: bool,
     pub enable_multi_value: bool,
+    pub enable_tail_call: bool,
+    pub enable_module_linking: bool,
 
     #[cfg(feature = "deterministic")]
     pub deterministic_only: bool,
@@ -297,11 +335,37 @@ pub(crate) const DEFAULT_OPERATOR_VALIDATOR_CONFIG: OperatorValidatorConfig =
         enable_reference_types: false,
         enable_simd: false,
         enable_bulk_memory: false,
-        enable_multi_value: false,
+        enable_multi_value: true,
+        enable_tail_call: false,
+        enable_module_linking: false,
 
         #[cfg(feature = "deterministic")]
         deterministic_only: true,
     };
+
+pub(crate) fn check_value_type(
+    ty: Type,
+    operator_config: &OperatorValidatorConfig,
+) -> OperatorValidatorResult<()> {
+    match ty {
+        Type::I32 | Type::I64 | Type::F32 | Type::F64 => Ok(()),
+        Type::FuncRef | Type::ExternRef => {
+            if !operator_config.enable_reference_types {
+                return Err(OperatorValidatorError::new(
+                    "reference types support is not enabled",
+                ));
+            }
+            Ok(())
+        }
+        Type::V128 => {
+            if !operator_config.enable_simd {
+                return Err(OperatorValidatorError::new("SIMD support is not enabled"));
+            }
+            Ok(())
+        }
+        _ => Err(OperatorValidatorError::new("invalid value type")),
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct OperatorValidator {
@@ -314,7 +378,7 @@ impl OperatorValidator {
         func_type: &F,
         locals: &[(u32, Type)],
         config: OperatorValidatorConfig,
-    ) -> OperatorValidator
+    ) -> OperatorValidatorResult<OperatorValidator>
     where
         F: WasmFuncType<Type = T>,
         T: WasmType,
@@ -324,6 +388,7 @@ impl OperatorValidator {
                 .map(WasmType::to_parser_type)
                 .collect::<Vec<_>>();
             for local in locals {
+                check_value_type(local.1, &config)?;
                 for _ in 0..local.0 {
                     local_types.push(local.1);
                 }
@@ -344,7 +409,7 @@ impl OperatorValidator {
             polymorphic_values: None,
         });
 
-        OperatorValidator {
+        Ok(OperatorValidator {
             func_state: FuncState {
                 local_types,
                 blocks,
@@ -352,16 +417,14 @@ impl OperatorValidator {
                 end_function: false,
             },
             config,
-        }
-    }
-
-    pub fn is_dead_code(&self) -> bool {
-        self.func_state.last_block().is_dead_code
+        })
     }
 
     fn check_frame_size(&self, require_count: usize) -> OperatorValidatorResult<()> {
         if !self.func_state.assert_block_stack_len(0, require_count) {
-            Err("not enough operands")
+            Err(OperatorValidatorError::new(
+                "type mismatch: not enough operands",
+            ))
         } else {
             Ok(())
         }
@@ -370,7 +433,7 @@ impl OperatorValidator {
     fn check_operands_1(&self, operand: Type) -> OperatorValidatorResult<()> {
         self.check_frame_size(1)?;
         if !self.func_state.assert_stack_type_at(0, operand) {
-            return Err("stack operand type mismatch");
+            return Err(OperatorValidatorError::new("stack operand type mismatch"));
         }
         Ok(())
     }
@@ -378,10 +441,10 @@ impl OperatorValidator {
     fn check_operands_2(&self, operand1: Type, operand2: Type) -> OperatorValidatorResult<()> {
         self.check_frame_size(2)?;
         if !self.func_state.assert_stack_type_at(1, operand1) {
-            return Err("stack operand type mismatch");
+            return Err(OperatorValidatorError::new("stack operand type mismatch"));
         }
         if !self.func_state.assert_stack_type_at(0, operand2) {
-            return Err("stack operand type mismatch");
+            return Err(OperatorValidatorError::new("stack operand type mismatch"));
         }
         Ok(())
     }
@@ -394,13 +457,13 @@ impl OperatorValidator {
     ) -> OperatorValidatorResult<()> {
         self.check_frame_size(3)?;
         if !self.func_state.assert_stack_type_at(2, operand1) {
-            return Err("stack operand type mismatch");
+            return Err(OperatorValidatorError::new("stack operand type mismatch"));
         }
         if !self.func_state.assert_stack_type_at(1, operand2) {
-            return Err("stack operand type mismatch");
+            return Err(OperatorValidatorError::new("stack operand type mismatch"));
         }
         if !self.func_state.assert_stack_type_at(0, operand3) {
-            return Err("stack operand type mismatch");
+            return Err(OperatorValidatorError::new("stack operand type mismatch"));
         }
         Ok(())
     }
@@ -416,7 +479,7 @@ impl OperatorValidator {
                 .func_state
                 .assert_stack_type_at(len - 1 - i, expected_type)
             {
-                return Err("stack operand type mismatch");
+                return Err(OperatorValidatorError::new("stack operand type mismatch"));
             }
         }
         Ok(())
@@ -428,8 +491,10 @@ impl OperatorValidator {
         reserve_items: usize,
     ) -> OperatorValidatorResult<()> {
         if !self.config.enable_multi_value && block.return_types.len() > 1 {
-            return Err("blocks, loops, and ifs may only return at most one \
-                        value when multi-value is not enabled");
+            return Err(OperatorValidatorError::new(
+                "blocks, loops, and ifs may only return at most one \
+                 value when multi-value is not enabled",
+            ));
         }
         let len = block.return_types.len();
         for i in 0..len {
@@ -437,7 +502,9 @@ impl OperatorValidator {
                 .func_state
                 .assert_stack_type_at(len - 1 - i + reserve_items, block.return_types[i])
             {
-                return Err("stack item type does not match block item type");
+                return Err(OperatorValidatorError::new(
+                    "type mismatch: stack item type does not match block item type",
+                ));
             }
         }
         Ok(())
@@ -446,9 +513,66 @@ impl OperatorValidator {
     fn check_block_return(&self) -> OperatorValidatorResult<()> {
         let len = self.func_state.last_block().return_types.len();
         if !self.func_state.assert_last_block_stack_len_exact(len) {
-            return Err("stack size does not match block type");
+            return Err(OperatorValidatorError::new(
+                "type mismatch: stack size does not match block type",
+            ));
         }
         self.check_block_return_types(self.func_state.last_block(), 0)
+    }
+
+    fn check_call(
+        &mut self,
+        function_index: u32,
+        resources: impl WasmModuleResources,
+    ) -> OperatorValidatorResult<()> {
+        let ty = match resources.func_type_at(function_index) {
+            Some(i) => i,
+            None => {
+                bail_op_err!(
+                    "unknown function {}: function index out of bounds",
+                    function_index
+                );
+            }
+        };
+        self.check_operands(wasm_func_type_inputs(ty).map(WasmType::to_parser_type))?;
+        self.func_state.change_frame_with_types(
+            ty.len_inputs(),
+            wasm_func_type_outputs(ty).map(WasmType::to_parser_type),
+        )?;
+        Ok(())
+    }
+
+    fn check_call_indirect(
+        &mut self,
+        index: u32,
+        table_index: u32,
+        resources: impl WasmModuleResources,
+    ) -> OperatorValidatorResult<()> {
+        if resources.table_at(table_index).is_none() {
+            return Err(OperatorValidatorError::new(
+                "unknown table: table index out of bounds",
+            ));
+        }
+        let ty = func_type_at(&resources, index)?;
+        let types = {
+            let mut types = Vec::with_capacity(ty.len_inputs() + 1);
+            types.extend(wasm_func_type_inputs(ty).map(WasmType::to_parser_type));
+            types.push(Type::I32);
+            types
+        };
+        self.check_operands(types.into_iter())?;
+        self.func_state.change_frame_with_types(
+            ty.len_inputs() + 1,
+            wasm_func_type_outputs(ty).map(WasmType::to_parser_type),
+        )?;
+        Ok(())
+    }
+
+    fn check_return(&mut self) -> OperatorValidatorResult<()> {
+        let depth = (self.func_state.blocks.len() - 1) as u32;
+        self.check_jump_from_block(depth, 0)?;
+        self.func_state.start_dead_code();
+        Ok(())
     }
 
     fn check_jump_from_block(
@@ -457,12 +581,30 @@ impl OperatorValidator {
         reserve_items: usize,
     ) -> OperatorValidatorResult<()> {
         if relative_depth as usize >= self.func_state.blocks.len() {
-            return Err("invalid block depth");
+            return Err(OperatorValidatorError::new(
+                "unknown label: invalid block depth",
+            ));
         }
         let block = self.func_state.block_at(relative_depth as usize);
         if block.jump_to_top {
-            if !self.func_state.assert_block_stack_len(0, reserve_items) {
-                return Err("stack size does not match target loop type");
+            let len = block.start_types.len();
+            if !self
+                .func_state
+                .assert_block_stack_len(0, reserve_items + len)
+            {
+                return Err(OperatorValidatorError::new(
+                    "type mismatch: stack size does not match target loop type",
+                ));
+            }
+            for i in 0..len {
+                if !self
+                    .func_state
+                    .assert_stack_type_at(len - 1 - i + reserve_items, block.start_types[i])
+                {
+                    return Err(OperatorValidatorError::new(
+                        "type mismatch: stack item type does not match block param type",
+                    ));
+                }
             }
             return Ok(());
         }
@@ -472,17 +614,23 @@ impl OperatorValidator {
             .func_state
             .assert_block_stack_len(0, len + reserve_items)
         {
-            return Err("stack size does not match target block type");
+            return Err(OperatorValidatorError::new(
+                "type mismatch: stack size does not match target block type",
+            ));
         }
         self.check_block_return_types(block, reserve_items)
     }
 
     fn match_block_return(&self, depth1: u32, depth2: u32) -> OperatorValidatorResult<()> {
         if depth1 as usize >= self.func_state.blocks.len() {
-            return Err("invalid block depth");
+            return Err(OperatorValidatorError::new(
+                "unknown label: invalid block depth",
+            ));
         }
         if depth2 as usize >= self.func_state.blocks.len() {
-            return Err("invalid block depth");
+            return Err(OperatorValidatorError::new(
+                "unknown label: invalid block depth",
+            ));
         }
         let block1 = self.func_state.block_at(depth1 as usize);
         let block2 = self.func_state.block_at(depth2 as usize);
@@ -491,77 +639,46 @@ impl OperatorValidator {
         if block1.jump_to_top || block2.jump_to_top {
             if block1.jump_to_top {
                 if !block2.jump_to_top && !return_types2.is_empty() {
-                    return Err("block types do not match");
+                    return Err(OperatorValidatorError::new(
+                        "type mismatch: block types do not match",
+                    ));
                 }
             } else if !return_types1.is_empty() {
-                return Err("block types do not match");
+                return Err(OperatorValidatorError::new(
+                    "type mismatch: block types do not match",
+                ));
             }
         } else if *return_types1 != *return_types2 {
-            return Err("block types do not match");
+            return Err(OperatorValidatorError::new(
+                "type mismatch: block types do not match",
+            ));
         }
         Ok(())
     }
 
-    fn check_memory_index<
-        F: WasmFuncType,
-        T: WasmTableType,
-        M: WasmMemoryType,
-        G: WasmGlobalType,
-    >(
+    fn check_memory_index(
         &self,
         memory_index: u32,
-        resources: &dyn WasmModuleResources<
-            FuncType = F,
-            TableType = T,
-            MemoryType = M,
-            GlobalType = G,
-        >,
+        resources: impl WasmModuleResources,
     ) -> OperatorValidatorResult<()> {
         if resources.memory_at(memory_index).is_none() {
-            return Err("no linear memories are present");
+            bail_op_err!("unknown memory {}", memory_index);
         }
         Ok(())
     }
 
-    fn check_shared_memory_index<
-        F: WasmFuncType,
-        T: WasmTableType,
-        M: WasmMemoryType,
-        G: WasmGlobalType,
-    >(
-        &self,
-        memory_index: u32,
-        resources: &dyn WasmModuleResources<
-            FuncType = F,
-            TableType = T,
-            MemoryType = M,
-            GlobalType = G,
-        >,
-    ) -> OperatorValidatorResult<()> {
-        match resources.memory_at(memory_index) {
-            Some(memory) if !memory.is_shared() => {
-                return Err("atomic accesses require shared memory")
-            }
-            None => return Err("no linear memories are present"),
-            _ => Ok(()),
-        }
-    }
-
-    fn check_memarg<F: WasmFuncType, T: WasmTableType, M: WasmMemoryType, G: WasmGlobalType>(
+    fn check_memarg(
         &self,
         memarg: MemoryImmediate,
         max_align: u32,
-        resources: &dyn WasmModuleResources<
-            FuncType = F,
-            TableType = T,
-            MemoryType = M,
-            GlobalType = G,
-        >,
+        resources: impl WasmModuleResources,
     ) -> OperatorValidatorResult<()> {
         self.check_memory_index(0, resources)?;
         let align = memarg.flags;
         if align > max_align {
-            return Err("alignment must not be larger than natural");
+            return Err(OperatorValidatorError::new(
+                "alignment must not be larger than natural",
+            ));
         }
         Ok(())
     }
@@ -569,7 +686,9 @@ impl OperatorValidator {
     #[cfg(feature = "deterministic")]
     fn check_non_deterministic_enabled(&self) -> OperatorValidatorResult<()> {
         if !self.config.deterministic_only {
-            return Err("deterministic_only support is not enabled");
+            return Err(OperatorValidatorError::new(
+                "deterministic_only support is not enabled",
+            ));
         }
         Ok(())
     }
@@ -582,67 +701,58 @@ impl OperatorValidator {
 
     fn check_threads_enabled(&self) -> OperatorValidatorResult<()> {
         if !self.config.enable_threads {
-            return Err("threads support is not enabled");
+            return Err(OperatorValidatorError::new(
+                "threads support is not enabled",
+            ));
         }
         Ok(())
     }
 
     fn check_reference_types_enabled(&self) -> OperatorValidatorResult<()> {
         if !self.config.enable_reference_types {
-            return Err("reference types support is not enabled");
+            return Err(OperatorValidatorError::new(
+                "reference types support is not enabled",
+            ));
         }
         Ok(())
     }
 
     fn check_simd_enabled(&self) -> OperatorValidatorResult<()> {
         if !self.config.enable_simd {
-            return Err("SIMD support is not enabled");
+            return Err(OperatorValidatorError::new("SIMD support is not enabled"));
         }
         Ok(())
     }
 
     fn check_bulk_memory_enabled(&self) -> OperatorValidatorResult<()> {
         if !self.config.enable_bulk_memory {
-            return Err("bulk memory support is not enabled");
+            return Err(OperatorValidatorError::new(
+                "bulk memory support is not enabled",
+            ));
         }
         Ok(())
     }
 
-    fn check_shared_memarg_wo_align<
-        F: WasmFuncType,
-        T: WasmTableType,
-        M: WasmMemoryType,
-        G: WasmGlobalType,
-    >(
+    fn check_shared_memarg_wo_align(
         &self,
         _: MemoryImmediate,
-        resources: &dyn WasmModuleResources<
-            FuncType = F,
-            TableType = T,
-            MemoryType = M,
-            GlobalType = G,
-        >,
+        resources: impl WasmModuleResources,
     ) -> OperatorValidatorResult<()> {
-        self.check_shared_memory_index(0, resources)?;
+        self.check_memory_index(0, resources)?;
         Ok(())
     }
 
     fn check_simd_lane_index(&self, index: SIMDLaneIndex, max: u8) -> OperatorValidatorResult<()> {
         if index >= max {
-            return Err("SIMD index out of bounds");
+            return Err(OperatorValidatorError::new("SIMD index out of bounds"));
         }
         Ok(())
     }
 
-    fn check_block_type<F: WasmFuncType, T: WasmTableType, M: WasmMemoryType, G: WasmGlobalType>(
+    fn check_block_type(
         &self,
         ty: TypeOrFuncType,
-        resources: &dyn WasmModuleResources<
-            FuncType = F,
-            TableType = T,
-            MemoryType = M,
-            GlobalType = G,
-        >,
+        resources: impl WasmModuleResources,
     ) -> OperatorValidatorResult<()> {
         match ty {
             TypeOrFuncType::Type(Type::EmptyBlockType)
@@ -650,53 +760,40 @@ impl OperatorValidator {
             | TypeOrFuncType::Type(Type::I64)
             | TypeOrFuncType::Type(Type::F32)
             | TypeOrFuncType::Type(Type::F64) => Ok(()),
-            TypeOrFuncType::Type(Type::AnyRef) | TypeOrFuncType::Type(Type::AnyFunc) => {
+            TypeOrFuncType::Type(Type::ExternRef) | TypeOrFuncType::Type(Type::FuncRef) => {
                 self.check_reference_types_enabled()
             }
             TypeOrFuncType::Type(Type::V128) => self.check_simd_enabled(),
-            TypeOrFuncType::FuncType(idx) => match resources.type_at(idx) {
-                None => Err("type index out of bounds"),
-                Some(ty) if !self.config.enable_multi_value => {
+            TypeOrFuncType::FuncType(idx) => {
+                let ty = func_type_at(&resources, idx)?;
+                if !self.config.enable_multi_value {
                     if ty.len_outputs() > 1 {
-                        return Err("blocks, loops, and ifs may only return at most one \
-                                    value when multi-value is not enabled");
+                        return Err(OperatorValidatorError::new(
+                            "blocks, loops, and ifs may only return at most one \
+                             value when multi-value is not enabled",
+                        ));
                     }
                     if ty.len_inputs() > 0 {
-                        return Err("blocks, loops, and ifs accept no parameters \
-                                    when multi-value is not enabled");
+                        return Err(OperatorValidatorError::new(
+                            "blocks, loops, and ifs accept no parameters \
+                             when multi-value is not enabled",
+                        ));
                     }
-                    Ok(())
                 }
-                Some(_) => Ok(()),
-            },
-            _ => Err("invalid block return type"),
+                Ok(())
+            }
+            _ => Err(OperatorValidatorError::new("invalid block return type")),
         }
     }
 
-    fn check_block_params<
-        F: WasmFuncType,
-        T: WasmTableType,
-        M: WasmMemoryType,
-        G: WasmGlobalType,
-    >(
+    fn check_block_params(
         &self,
         ty: TypeOrFuncType,
-        resources: &dyn WasmModuleResources<
-            FuncType = F,
-            TableType = T,
-            MemoryType = M,
-            GlobalType = G,
-        >,
+        resources: impl WasmModuleResources,
         skip: usize,
     ) -> OperatorValidatorResult<()> {
         if let TypeOrFuncType::FuncType(idx) = ty {
-            let func_ty = resources
-                .type_at(idx)
-                // Note: This was an out-of-bounds memory access before
-                //       the change to return `Option` at `type_at`. So
-                //       I assumed that invalid indices at this point are
-                //       bugs.
-                .expect("function type index is out of bounds");
+            let func_ty = func_type_at(&resources, idx)?;
             let len = func_ty.len_inputs();
             self.check_frame_size(len + skip)?;
             for (i, ty) in wasm_func_type_inputs(func_ty).enumerate() {
@@ -704,14 +801,16 @@ impl OperatorValidator {
                     .func_state
                     .assert_stack_type_at(len - 1 - i + skip, ty.to_parser_type())
                 {
-                    return Err("stack operand type mismatch for block");
+                    return Err(OperatorValidatorError::new(
+                        "stack operand type mismatch for block",
+                    ));
                 }
             }
         }
         Ok(())
     }
 
-    fn check_select(&self) -> OperatorValidatorResult<Option<Type>> {
+    fn check_select(&self, expected_ty: Option<Type>) -> OperatorValidatorResult<Option<Type>> {
         self.check_frame_size(3)?;
         let func_state = &self.func_state;
         let last_block = func_state.last_block();
@@ -728,41 +827,29 @@ impl OperatorValidator {
                     func_state.stack_types[func_state.stack_types.len() - 2]
                 }
                 _ => {
-                    let ty = func_state.stack_types[func_state.stack_types.len() - 3];
+                    let ty = expected_ty
+                        .unwrap_or(func_state.stack_types[func_state.stack_types.len() - 3]);
                     self.check_operands_2(ty, Type::I32)?;
                     ty
                 }
             }
         } else {
-            let ty = func_state.stack_types[func_state.stack_types.len() - 3];
+            let ty =
+                expected_ty.unwrap_or(func_state.stack_types[func_state.stack_types.len() - 3]);
             self.check_operands_2(ty, Type::I32)?;
             ty
         };
 
-        if !ty.is_valid_for_old_select() {
-            return Err("invalid type for select");
-        }
-
         Ok(Some(ty))
     }
 
-    pub(crate) fn process_operator<
-        F: WasmFuncType,
-        T: WasmTableType,
-        M: WasmMemoryType,
-        G: WasmGlobalType,
-    >(
+    pub(crate) fn process_operator(
         &mut self,
         operator: &Operator,
-        resources: &dyn WasmModuleResources<
-            FuncType = F,
-            TableType = T,
-            MemoryType = M,
-            GlobalType = G,
-        >,
+        resources: &impl WasmModuleResources,
     ) -> OperatorValidatorResult<FunctionEnd> {
         if self.func_state.end_function {
-            return Err("unexpected operator");
+            return Err(OperatorValidatorError::new("unexpected operator"));
         }
         match *operator {
             Operator::Unreachable => self.func_state.start_dead_code(),
@@ -786,7 +873,9 @@ impl OperatorValidator {
             }
             Operator::Else => {
                 if !self.func_state.last_block().is_else_allowed {
-                    return Err("unexpected else: if block is not started");
+                    return Err(OperatorValidatorError::new(
+                        "unexpected else: if block is not started",
+                    ));
                 }
                 self.check_block_return()?;
                 self.func_state.reset_block()
@@ -800,7 +889,7 @@ impl OperatorValidator {
 
                 let last_block = &self.func_state.last_block();
                 if last_block.is_else_allowed && last_block.start_types != last_block.return_types {
-                    return Err("else is expected: if block has a type that can't be implemented with a no-op");
+                    return Err(OperatorValidatorError::new("type mismatch: else is expected: if block has a type that can't be implemented with a no-op"));
                 }
                 self.func_state.pop_block()
             }
@@ -831,71 +920,58 @@ impl OperatorValidator {
                 }
                 self.func_state.start_dead_code()
             }
-            Operator::Return => {
-                let depth = (self.func_state.blocks.len() - 1) as u32;
-                self.check_jump_from_block(depth, 0)?;
-                self.func_state.start_dead_code()
+            Operator::Return => self.check_return()?,
+            Operator::Call { function_index } => self.check_call(function_index, resources)?,
+            Operator::ReturnCall { function_index } => {
+                if !self.config.enable_tail_call {
+                    return Err(OperatorValidatorError::new(
+                        "tail calls support is not enabled",
+                    ));
+                }
+                self.check_call(function_index, resources)?;
+                self.check_return()?;
             }
-            Operator::Call { function_index } => match resources.func_type_id_at(function_index) {
-                Some(type_index) => {
-                    let ty = resources
-                        .type_at(type_index)
-                        // Note: This was an out-of-bounds memory access before
-                        //       the change to return `Option` at `type_at`. So
-                        //       I assumed that invalid indices at this point are
-                        //       bugs.
-                        .expect("function type index is out of bounds");
-                    self.check_operands(wasm_func_type_inputs(ty).map(WasmType::to_parser_type))?;
-                    self.func_state.change_frame_with_types(
-                        ty.len_inputs(),
-                        wasm_func_type_outputs(ty).map(WasmType::to_parser_type),
-                    )?;
-                }
-                None => return Err("function index out of bounds"),
-            },
             Operator::CallIndirect { index, table_index } => {
-                if resources.table_at(table_index).is_none() {
-                    return Err("table index out of bounds");
+                self.check_call_indirect(index, table_index, resources)?
+            }
+            Operator::ReturnCallIndirect { index, table_index } => {
+                if !self.config.enable_tail_call {
+                    return Err(OperatorValidatorError::new(
+                        "tail calls support is not enabled",
+                    ));
                 }
-                match resources.type_at(index) {
-                    None => return Err("type index out of bounds"),
-                    Some(ty) => {
-                        let types = {
-                            let mut types = Vec::with_capacity(ty.len_inputs() + 1);
-                            types.extend(wasm_func_type_inputs(ty).map(WasmType::to_parser_type));
-                            types.push(Type::I32);
-                            types
-                        };
-                        self.check_operands(types.into_iter())?;
-                        self.func_state.change_frame_with_types(
-                            ty.len_inputs() + 1,
-                            wasm_func_type_outputs(ty).map(WasmType::to_parser_type),
-                        )?;
-                    }
-                }
+                self.check_call_indirect(index, table_index, resources)?;
+                self.check_return()?;
             }
             Operator::Drop => {
                 self.check_frame_size(1)?;
                 self.func_state.change_frame(1)?;
             }
             Operator::Select => {
-                let ty = self.check_select()?;
+                let ty = self.check_select(None)?;
+                match ty {
+                    Some(Type::I32) | Some(Type::I64) | Some(Type::F32) | Some(Type::F64) => {}
+                    Some(_) => {
+                        bail_op_err!("type mismatch: only integer types allowed with bare `select`")
+                    }
+                    None => {}
+                }
                 self.func_state.change_frame_after_select(ty)?;
             }
             Operator::TypedSelect { ty } => {
-                self.check_operands_3(Type::I32, ty, ty)?;
+                self.check_select(Some(ty))?;
                 self.func_state.change_frame_after_select(Some(ty))?;
             }
             Operator::LocalGet { local_index } => {
                 if local_index as usize >= self.func_state.local_types.len() {
-                    return Err("local index out of bounds");
+                    bail_op_err!("unknown local {}: local index out of bounds", local_index);
                 }
                 let local_type = self.func_state.local_types[local_index as usize];
                 self.func_state.change_frame_with_type(0, local_type)?;
             }
             Operator::LocalSet { local_index } => {
                 if local_index as usize >= self.func_state.local_types.len() {
-                    return Err("local index out of bounds");
+                    bail_op_err!("unknown local {}: local index out of bounds", local_index);
                 }
                 let local_type = self.func_state.local_types[local_index as usize];
                 self.check_operands_1(local_type)?;
@@ -903,7 +979,7 @@ impl OperatorValidator {
             }
             Operator::LocalTee { local_index } => {
                 if local_index as usize >= self.func_state.local_types.len() {
-                    return Err("local index out of bounds");
+                    bail_op_err!("unknown local {}: local index out of bounds", local_index);
                 }
                 let local_type = self.func_state.local_types[local_index as usize];
                 self.check_operands_1(local_type)?;
@@ -914,18 +990,24 @@ impl OperatorValidator {
                     self.func_state
                         .change_frame_with_type(0, ty.content_type().to_parser_type())?;
                 } else {
-                    return Err("global index out of bounds");
+                    return Err(OperatorValidatorError::new(
+                        "unknown global: global index out of bounds",
+                    ));
                 };
             }
             Operator::GlobalSet { global_index } => {
                 if let Some(ty) = resources.global_at(global_index) {
                     if !ty.is_mutable() {
-                        return Err("global expected to be mutable");
+                        return Err(OperatorValidatorError::new(
+                            "global is immutable: cannot modify it with `global.set`",
+                        ));
                     }
                     self.check_operands_1(ty.content_type().to_parser_type())?;
                     self.func_state.change_frame(1)?;
                 } else {
-                    return Err("global index out of bounds");
+                    return Err(OperatorValidatorError::new(
+                        "unknown global: global index out of bounds",
+                    ));
                 };
             }
             Operator::I32Load { memarg } => {
@@ -1444,24 +1526,47 @@ impl OperatorValidator {
             Operator::AtomicFence { ref flags } => {
                 self.check_threads_enabled()?;
                 if *flags != 0 {
-                    return Err("non-zero flags for fence not supported yet");
+                    return Err(OperatorValidatorError::new(
+                        "non-zero flags for fence not supported yet",
+                    ));
                 }
             }
-            Operator::RefNull => {
+            Operator::RefNull { ty } => {
                 self.check_reference_types_enabled()?;
-                self.func_state.change_frame_with_type(0, Type::NullRef)?;
+                match ty {
+                    Type::FuncRef | Type::ExternRef => {}
+                    _ => {
+                        return Err(OperatorValidatorError::new(
+                            "invalid reference type in ref.null",
+                        ))
+                    }
+                }
+                self.func_state.change_frame_with_type(0, ty)?;
             }
             Operator::RefIsNull => {
                 self.check_reference_types_enabled()?;
-                self.check_operands_1(Type::AnyRef)?;
+                self.check_frame_size(1)?;
+                match self.func_state.stack_type_at(0) {
+                    None | Some(Type::FuncRef) | Some(Type::ExternRef) => {}
+                    _ => {
+                        return Err(OperatorValidatorError::new(
+                            "type mismatch: invalid reference type in ref.is_null",
+                        ))
+                    }
+                }
                 self.func_state.change_frame_with_type(1, Type::I32)?;
             }
             Operator::RefFunc { function_index } => {
                 self.check_reference_types_enabled()?;
-                if resources.func_type_id_at(function_index).is_none() {
-                    return Err("function index out of bounds");
+                if resources.func_type_at(function_index).is_none() {
+                    return Err(OperatorValidatorError::new(
+                        "unknown function: function index out of bounds",
+                    ));
                 }
-                self.func_state.change_frame_with_type(0, Type::AnyFunc)?;
+                if !resources.is_function_referenced(function_index) {
+                    return Err(OperatorValidatorError::new("undeclared function reference"));
+                }
+                self.func_state.change_frame_with_type(0, Type::FuncRef)?;
             }
             Operator::V128Load { memarg } => {
                 self.check_simd_enabled()?;
@@ -1646,7 +1751,10 @@ impl OperatorValidator {
             | Operator::I8x16Sub
             | Operator::I8x16SubSaturateS
             | Operator::I8x16SubSaturateU
-            | Operator::I8x16Mul
+            | Operator::I8x16MinS
+            | Operator::I8x16MinU
+            | Operator::I8x16MaxS
+            | Operator::I8x16MaxU
             | Operator::I16x8Add
             | Operator::I16x8AddSaturateS
             | Operator::I16x8AddSaturateU
@@ -1654,9 +1762,17 @@ impl OperatorValidator {
             | Operator::I16x8SubSaturateS
             | Operator::I16x8SubSaturateU
             | Operator::I16x8Mul
+            | Operator::I16x8MinS
+            | Operator::I16x8MinU
+            | Operator::I16x8MaxS
+            | Operator::I16x8MaxU
             | Operator::I32x4Add
             | Operator::I32x4Sub
             | Operator::I32x4Mul
+            | Operator::I32x4MinS
+            | Operator::I32x4MinU
+            | Operator::I32x4MaxS
+            | Operator::I32x4MaxU
             | Operator::I64x2Add
             | Operator::I64x2Sub
             | Operator::I64x2Mul
@@ -1677,23 +1793,22 @@ impl OperatorValidator {
             | Operator::F64x2Neg
             | Operator::F64x2Sqrt
             | Operator::F32x4ConvertI32x4S
-            | Operator::F32x4ConvertI32x4U
-            | Operator::F64x2ConvertI64x2S
-            | Operator::F64x2ConvertI64x2U => {
+            | Operator::F32x4ConvertI32x4U => {
                 self.check_non_deterministic_enabled()?;
                 self.check_simd_enabled()?;
                 self.check_operands_1(Type::V128)?;
                 self.func_state.change_frame_with_type(1, Type::V128)?;
             }
             Operator::V128Not
+            | Operator::I8x16Abs
             | Operator::I8x16Neg
+            | Operator::I16x8Abs
             | Operator::I16x8Neg
+            | Operator::I32x4Abs
             | Operator::I32x4Neg
             | Operator::I64x2Neg
             | Operator::I32x4TruncSatF32x4S
             | Operator::I32x4TruncSatF32x4U
-            | Operator::I64x2TruncSatF64x2S
-            | Operator::I64x2TruncSatF64x2U
             | Operator::I16x8WidenLowI8x16S
             | Operator::I16x8WidenHighI8x16S
             | Operator::I16x8WidenLowI8x16U
@@ -1713,12 +1828,13 @@ impl OperatorValidator {
             }
             Operator::I8x16AnyTrue
             | Operator::I8x16AllTrue
+            | Operator::I8x16Bitmask
             | Operator::I16x8AnyTrue
             | Operator::I16x8AllTrue
+            | Operator::I16x8Bitmask
             | Operator::I32x4AnyTrue
             | Operator::I32x4AllTrue
-            | Operator::I64x2AnyTrue
-            | Operator::I64x2AllTrue => {
+            | Operator::I32x4Bitmask => {
                 self.check_simd_enabled()?;
                 self.check_operands_1(Type::V128)?;
                 self.func_state.change_frame_with_type(1, Type::I32)?;
@@ -1785,17 +1901,17 @@ impl OperatorValidator {
 
             Operator::MemoryInit { segment } => {
                 self.check_bulk_memory_enabled()?;
-                if segment >= resources.data_count() {
-                    return Err("segment index out of bounds");
-                }
                 self.check_memory_index(0, resources)?;
+                if segment >= resources.data_count() {
+                    bail_op_err!("unknown data segment {}", segment);
+                }
                 self.check_operands_3(Type::I32, Type::I32, Type::I32)?;
                 self.func_state.change_frame(3)?;
             }
             Operator::DataDrop { segment } => {
                 self.check_bulk_memory_enabled()?;
                 if segment >= resources.data_count() {
-                    return Err("segment index out of bounds");
+                    bail_op_err!("unknown data segment {}", segment);
                 }
             }
             Operator::MemoryCopy | Operator::MemoryFill => {
@@ -1806,14 +1922,22 @@ impl OperatorValidator {
             }
             Operator::TableInit { segment, table } => {
                 self.check_bulk_memory_enabled()?;
-                if segment >= resources.element_count() {
-                    return Err("segment index out of bounds");
-                }
                 if table > 0 {
                     self.check_reference_types_enabled()?;
                 }
-                if resources.table_at(table).is_none() {
-                    return Err("table index out of bounds");
+                let table = match resources.table_at(table) {
+                    Some(table) => table,
+                    None => bail_op_err!("unknown table {}: table index out of bounds", table),
+                };
+                let segment_ty = match resources.element_type_at(segment) {
+                    Some(ty) => ty,
+                    None => bail_op_err!(
+                        "unknown elem segment {}: segment index out of bounds",
+                        segment
+                    ),
+                };
+                if segment_ty != table.element_type().to_parser_type() {
+                    return Err(OperatorValidatorError::new("type mismatch"));
                 }
                 self.check_operands_3(Type::I32, Type::I32, Type::I32)?;
                 self.func_state.change_frame(3)?;
@@ -1821,7 +1945,10 @@ impl OperatorValidator {
             Operator::ElemDrop { segment } => {
                 self.check_bulk_memory_enabled()?;
                 if segment >= resources.element_count() {
-                    return Err("segment index out of bounds");
+                    bail_op_err!(
+                        "unknown elem segment {}: segment index out of bounds",
+                        segment
+                    );
                 }
             }
             Operator::TableCopy {
@@ -1832,10 +1959,13 @@ impl OperatorValidator {
                 if src_table > 0 || dst_table > 0 {
                     self.check_reference_types_enabled()?;
                 }
-                if resources.table_at(src_table).is_none()
-                    || resources.table_at(dst_table).is_none()
-                {
-                    return Err("table index out of bounds");
+                let (src, dst) =
+                    match (resources.table_at(src_table), resources.table_at(dst_table)) {
+                        (Some(a), Some(b)) => (a, b),
+                        _ => return Err(OperatorValidatorError::new("table index out of bounds")),
+                    };
+                if src.element_type().to_parser_type() != dst.element_type().to_parser_type() {
+                    return Err(OperatorValidatorError::new("type mismatch"));
                 }
                 self.check_operands_3(Type::I32, Type::I32, Type::I32)?;
                 self.func_state.change_frame(3)?;
@@ -1844,7 +1974,7 @@ impl OperatorValidator {
                 self.check_reference_types_enabled()?;
                 let ty = match resources.table_at(table) {
                     Some(ty) => ty.element_type().to_parser_type(),
-                    None => return Err("table index out of bounds"),
+                    None => return Err(OperatorValidatorError::new("table index out of bounds")),
                 };
                 self.check_operands_1(Type::I32)?;
                 self.func_state.change_frame_with_type(1, ty)?;
@@ -1853,7 +1983,7 @@ impl OperatorValidator {
                 self.check_reference_types_enabled()?;
                 let ty = match resources.table_at(table) {
                     Some(ty) => ty.element_type().to_parser_type(),
-                    None => return Err("table index out of bounds"),
+                    None => return Err(OperatorValidatorError::new("table index out of bounds")),
                 };
                 self.check_operands_2(Type::I32, ty)?;
                 self.func_state.change_frame(2)?;
@@ -1862,7 +1992,7 @@ impl OperatorValidator {
                 self.check_reference_types_enabled()?;
                 let ty = match resources.table_at(table) {
                     Some(ty) => ty.element_type().to_parser_type(),
-                    None => return Err("table index out of bounds"),
+                    None => return Err(OperatorValidatorError::new("table index out of bounds")),
                 };
                 self.check_operands_2(ty, Type::I32)?;
                 self.func_state.change_frame_with_type(2, Type::I32)?;
@@ -1870,7 +2000,7 @@ impl OperatorValidator {
             Operator::TableSize { table } => {
                 self.check_reference_types_enabled()?;
                 if resources.table_at(table).is_none() {
-                    return Err("table index out of bounds");
+                    return Err(OperatorValidatorError::new("table index out of bounds"));
                 }
                 self.func_state.change_frame_with_type(0, Type::I32)?;
             }
@@ -1878,7 +2008,7 @@ impl OperatorValidator {
                 self.check_bulk_memory_enabled()?;
                 let ty = match resources.table_at(table) {
                     Some(ty) => ty.element_type().to_parser_type(),
-                    None => return Err("table index out of bounds"),
+                    None => return Err(OperatorValidatorError::new("table index out of bounds")),
                 };
                 self.check_operands_3(Type::I32, ty, Type::I32)?;
                 self.func_state.change_frame(3)?;
@@ -1886,11 +2016,20 @@ impl OperatorValidator {
         }
         Ok(FunctionEnd::No)
     }
+}
 
-    pub(crate) fn process_end_function(&self) -> OperatorValidatorResult<()> {
-        if !self.func_state.end_function {
-            return Err("expected end of function");
+fn func_type_at<T: WasmModuleResources>(
+    resources: &T,
+    at: u32,
+) -> OperatorValidatorResult<&<T::TypeDef as WasmTypeDef>::FuncType> {
+    let ty = match resources.type_at(at) {
+        Some(ty) => ty,
+        None => {
+            return Err(OperatorValidatorError::new(
+                "unknown type: type index out of bounds",
+            ))
         }
-        Ok(())
-    }
+    };
+    ty.as_func()
+        .ok_or_else(|| OperatorValidatorError::new("type index not a function type"))
 }

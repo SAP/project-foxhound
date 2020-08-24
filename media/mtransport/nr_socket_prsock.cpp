@@ -109,7 +109,6 @@ nrappkit copyright:
 #include "runnable_utils.h"
 #include "mozilla/SyncRunnable.h"
 #include "nsTArray.h"
-#include "mozilla/SystemGroup.h"
 #include "nsISocketFilter.h"
 #include "nsDebug.h"
 #include "nsNetUtil.h"
@@ -251,7 +250,7 @@ static nsIThread* GetIOThreadAndAddUse_s() {
 #if defined(MOZILLA_INTERNAL_API)
   // We need to safely release this on shutdown to avoid leaks
   if (!sThread) {
-    sThread = new SingletonThreadHolder(NS_LITERAL_CSTRING("mtransport"));
+    sThread = new SingletonThreadHolder("mtransport"_ns);
     NS_DispatchToMainThread(mozilla::WrapRunnableNM(&ClearSingletonOnShutdown));
   }
   // Mark that we're using the shared thread and need it to stick around
@@ -844,6 +843,8 @@ int NrSocket::getaddr(nr_transport_addr* addrp) {
 void NrSocket::close() {
   ASSERT_ON_THREAD(ststhread_);
   mCondition = NS_BASE_STREAM_CLOSED;
+  cancel(NR_ASYNC_WAIT_READ);
+  cancel(NR_ASYNC_WAIT_WRITE);
 }
 
 int NrSocket::connect(nr_transport_addr* addr) {

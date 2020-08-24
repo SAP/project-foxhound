@@ -8,8 +8,8 @@
 #define DOM_MEDIA_MEDIACONTROL_MEDIACONTROLUTILS_H_
 
 #include "MediaController.h"
-#include "MediaControlKeysEvent.h"
 #include "mozilla/dom/ChromeUtilsBinding.h"
+#include "mozilla/dom/MediaControllerBinding.h"
 #include "mozilla/Logging.h"
 
 extern mozilla::LazyLogModule gMediaControlLog;
@@ -17,23 +17,29 @@ extern mozilla::LazyLogModule gMediaControlLog;
 namespace mozilla {
 namespace dom {
 
-inline const char* ToMediaControlKeysEventStr(MediaControlKeysEvent aKeyEvent) {
-  switch (aKeyEvent) {
-    case MediaControlKeysEvent::ePause:
+inline const char* ToMediaControlKeyStr(MediaControlKey aKey) {
+  switch (aKey) {
+    case MediaControlKey::Focus:
+      return "Focus";
+    case MediaControlKey::Pause:
       return "Pause";
-    case MediaControlKeysEvent::ePlay:
+    case MediaControlKey::Play:
       return "Play";
-    case MediaControlKeysEvent::ePlayPause:
+    case MediaControlKey::Playpause:
       return "Play & pause";
-    case MediaControlKeysEvent::ePrevTrack:
+    case MediaControlKey::Previoustrack:
       return "Previous track";
-    case MediaControlKeysEvent::eNextTrack:
+    case MediaControlKey::Nexttrack:
       return "Next track";
-    case MediaControlKeysEvent::eSeekBackward:
+    case MediaControlKey::Seekbackward:
       return "Seek backward";
-    case MediaControlKeysEvent::eSeekForward:
+    case MediaControlKey::Seekforward:
       return "Seek forward";
-    case MediaControlKeysEvent::eStop:
+    case MediaControlKey::Skipad:
+      return "Skip Ad";
+    case MediaControlKey::Seekto:
+      return "Seek to";
+    case MediaControlKey::Stop:
       return "Stop";
     default:
       MOZ_ASSERT_UNREACHABLE("Invalid action.");
@@ -41,56 +47,112 @@ inline const char* ToMediaControlKeysEventStr(MediaControlKeysEvent aKeyEvent) {
   }
 }
 
-inline MediaControlKeysEvent
-ConvertMediaControlKeysTestEventToMediaControlKeysEvent(
-    MediaControlKeysTestEvent aEvent) {
-  switch (aEvent) {
-    case MediaControlKeysTestEvent::Play:
-      return MediaControlKeysEvent::ePlay;
-    case MediaControlKeysTestEvent::Pause:
-      return MediaControlKeysEvent::ePause;
-    case MediaControlKeysTestEvent::PlayPause:
-      return MediaControlKeysEvent::ePlayPause;
-    case MediaControlKeysTestEvent::Previoustrack:
-      return MediaControlKeysEvent::ePrevTrack;
-    case MediaControlKeysTestEvent::Nexttrack:
-      return MediaControlKeysEvent::eNextTrack;
-    case MediaControlKeysTestEvent::Seekbackward:
-      return MediaControlKeysEvent::eSeekBackward;
-    case MediaControlKeysTestEvent::Seekforward:
-      return MediaControlKeysEvent::eSeekForward;
+inline const char* ToMediaSessionActionStr(MediaSessionAction aAction) {
+  switch (aAction) {
+    case MediaSessionAction::Play:
+      return "play";
+    case MediaSessionAction::Pause:
+      return "pause";
+    case MediaSessionAction::Seekbackward:
+      return "seek backward";
+    case MediaSessionAction::Seekforward:
+      return "seek forward";
+    case MediaSessionAction::Previoustrack:
+      return "previous track";
+    case MediaSessionAction::Nexttrack:
+      return "next track";
+    case MediaSessionAction::Skipad:
+      return "skip ad";
+    case MediaSessionAction::Seekto:
+      return "Seek to";
     default:
-      MOZ_ASSERT(aEvent == MediaControlKeysTestEvent::Stop);
-      return MediaControlKeysEvent::eStop;
+      MOZ_ASSERT(aAction == MediaSessionAction::Stop);
+      return "stop";
   }
 }
 
-inline const char* ToPlaybackStateEventStr(PlaybackState aState) {
-  switch (aState) {
-    case PlaybackState::ePlaying:
-      return "Playing";
-    case PlaybackState::ePaused:
-      return "Paused";
-    case PlaybackState::eStopped:
-      return "Stopped";
+inline MediaControlKey ConvertMediaSessionActionToControlKey(
+    MediaSessionAction aAction) {
+  switch (aAction) {
+    case MediaSessionAction::Play:
+      return MediaControlKey::Play;
+    case MediaSessionAction::Pause:
+      return MediaControlKey::Pause;
+    case MediaSessionAction::Seekbackward:
+      return MediaControlKey::Seekbackward;
+    case MediaSessionAction::Seekforward:
+      return MediaControlKey::Seekforward;
+    case MediaSessionAction::Previoustrack:
+      return MediaControlKey::Previoustrack;
+    case MediaSessionAction::Nexttrack:
+      return MediaControlKey::Nexttrack;
+    case MediaSessionAction::Skipad:
+      return MediaControlKey::Skipad;
+    case MediaSessionAction::Seekto:
+      return MediaControlKey::Seekto;
     default:
-      MOZ_ASSERT_UNREACHABLE("Invalid playback state.");
+      MOZ_ASSERT(aAction == MediaSessionAction::Stop);
+      return MediaControlKey::Stop;
+  }
+}
+
+inline MediaSessionPlaybackTestState ConvertToMediaSessionPlaybackTestState(
+    MediaSessionPlaybackState aState) {
+  switch (aState) {
+    case MediaSessionPlaybackState::Playing:
+      return MediaSessionPlaybackTestState::Playing;
+    case MediaSessionPlaybackState::Paused:
+      return MediaSessionPlaybackTestState::Paused;
+    default:
+      MOZ_ASSERT(aState == MediaSessionPlaybackState::None);
+      return MediaSessionPlaybackTestState::Stopped;
+  }
+}
+
+inline MediaSessionAction ConvertToMediaSessionAction(uint8_t aActionValue) {
+  MOZ_DIAGNOSTIC_ASSERT(aActionValue < uint8_t(MediaSessionAction::EndGuard_));
+  return static_cast<MediaSessionAction>(aActionValue);
+}
+
+inline const char* ToMediaPlaybackStateStr(MediaPlaybackState aState) {
+  switch (aState) {
+    case MediaPlaybackState::eStarted:
+      return "started";
+    case MediaPlaybackState::ePlayed:
+      return "played";
+    case MediaPlaybackState::ePaused:
+      return "paused";
+    case MediaPlaybackState::eStopped:
+      return "stopped";
+    default:
+      MOZ_ASSERT_UNREACHABLE("Invalid media state.");
       return "Unknown";
   }
 }
 
-inline const char* ToControlledMediaStateStr(ControlledMediaState aState) {
+inline const char* ToMediaAudibleStateStr(MediaAudibleState aState) {
   switch (aState) {
-    case ControlledMediaState::eStarted:
-      return "started";
-    case ControlledMediaState::ePlayed:
-      return "played";
-    case ControlledMediaState::ePaused:
-      return "paused";
-    case ControlledMediaState::eStopped:
-      return "stopped";
+    case MediaAudibleState::eInaudible:
+      return "inaudible";
+    case MediaAudibleState::eAudible:
+      return "audible";
     default:
-      MOZ_ASSERT_UNREACHABLE("Invalid media state.");
+      MOZ_ASSERT_UNREACHABLE("Invalid audible state.");
+      return "Unknown";
+  }
+}
+
+inline const char* ToMediaSessionPlaybackStateStr(
+    const MediaSessionPlaybackState& aState) {
+  switch (aState) {
+    case MediaSessionPlaybackState::None:
+      return "none";
+    case MediaSessionPlaybackState::Paused:
+      return "paused";
+    case MediaSessionPlaybackState::Playing:
+      return "playing";
+    default:
+      MOZ_ASSERT_UNREACHABLE("Invalid MediaSessionPlaybackState.");
       return "Unknown";
   }
 }

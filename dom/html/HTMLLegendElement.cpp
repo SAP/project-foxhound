@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLLegendElement.h"
+#include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/HTMLLegendElementBinding.h"
 #include "nsFocusManager.h"
 #include "nsIFrame.h"
@@ -91,7 +92,6 @@ void HTMLLegendElement::Focus(const FocusOptions& aOptions,
   aError = fm->MoveFocus(
       nullptr, this, nsIFocusManager::MOVEFOCUS_FORWARD,
       nsIFocusManager::FLAG_NOPARENTFRAME |
-          nsIFocusManager::FLAG_BYELEMENTFOCUS |
           nsFocusManager::FocusOptionsToFocusManagerFlags(aOptions),
       getter_AddRefs(result));
 }

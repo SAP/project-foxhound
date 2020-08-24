@@ -81,7 +81,7 @@ def support_vcs_checkout(config, job, taskdesc, sparse=False):
     worker = job['worker']
     is_mac = worker['os'] == 'macosx'
     is_win = worker['os'] == 'windows'
-    is_linux = worker['os'] == 'linux'
+    is_linux = worker['os'] == 'linux' or 'linux-bitbar'
     assert is_mac or is_win or is_linux
 
     if is_win:
@@ -198,8 +198,7 @@ def add_tooltool(config, job, taskdesc, internal=False):
     """
 
     if job['worker']['implementation'] in ('docker-worker',):
-        level = config.params['level']
-        add_cache(job, taskdesc, 'tooltool-cache'.format(level),
+        add_cache(job, taskdesc, 'tooltool-cache',
                   '{workdir}/tooltool-cache'.format(**job['run']))
 
         taskdesc['worker'].setdefault('env', {}).update({

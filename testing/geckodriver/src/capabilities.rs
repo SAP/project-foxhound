@@ -9,7 +9,6 @@ use regex::bytes::Regex;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::default::Default;
-use std::error::Error;
 use std::fs;
 use std::io;
 use std::io::BufWriter;
@@ -50,11 +49,11 @@ impl<'a> FirefoxCapabilities<'a> {
             .and_then(|x| x.as_str())
             .map(PathBuf::from)
             .or_else(|| self.fallback_binary.cloned())
-            .or_else(firefox_default_path)
+            .or_else(firefox_default_path);
     }
 
-    fn version(&mut self) -> Option<String> {
-        if let Some(ref binary) = self.chosen_binary {
+    fn version(&mut self, binary: Option<&Path>) -> Option<String> {
+        if let Some(binary) = binary {
             if let Some(value) = self.version_cache.get(binary) {
                 return Some((*value).clone());
             }
@@ -68,7 +67,8 @@ impl<'a> FirefoxCapabilities<'a> {
                 });
             if let Some(ref version) = rv {
                 debug!("Found version {}", version);
-                self.version_cache.insert(binary.clone(), version.clone());
+                self.version_cache
+                    .insert(binary.to_path_buf(), version.clone());
             } else {
                 debug!("Failed to get binary version");
             }
@@ -78,11 +78,11 @@ impl<'a> FirefoxCapabilities<'a> {
         }
     }
 
-    fn version_from_binary(&self, binary: &PathBuf) -> Option<String> {
-        let version_regexp =
-            Regex::new(r#"\d+\.\d+(?:[a-z]\d+)?"#).expect("Error parsing version regexp");
+    fn version_from_binary(&self, binary: &Path) -> Option<String> {
+        let version_regexp = Regex::new(r#"Mozilla Firefox [0-9]+\.[0-9]+(?:[a-z][0-9]+)?"#)
+            .expect("Error parsing version regexp");
         let output = Command::new(binary)
-            .args(&["-version"])
+            .args(&["--version"])
             .stdout(Stdio::piped())
             .spawn()
             .and_then(|child| child.wait_with_output())
@@ -102,10 +102,7 @@ impl<'a> FirefoxCapabilities<'a> {
 
 // TODO: put this in webdriver-rust
 fn convert_version_error(err: mozversion::Error) -> WebDriverError {
-    WebDriverError::new(
-        ErrorStatus::SessionNotCreated,
-        err.description().to_string(),
-    )
+    WebDriverError::new(ErrorStatus::SessionNotCreated, err.to_string())
 }
 
 impl<'a> BrowserCapabilities for FirefoxCapabilities<'a> {
@@ -118,7 +115,8 @@ impl<'a> BrowserCapabilities for FirefoxCapabilities<'a> {
     }
 
     fn browser_version(&mut self, _: &Capabilities) -> WebDriverResult<Option<String>> {
-        Ok(self.version())
+        let binary = self.chosen_binary.clone();
+        Ok(self.version(binary.as_ref().map(|x| x.as_ref())))
     }
 
     fn platform_name(&mut self, _: &Capabilities) -> WebDriverResult<Option<String>> {
@@ -134,7 +132,8 @@ impl<'a> BrowserCapabilities for FirefoxCapabilities<'a> {
     }
 
     fn accept_insecure_certs(&mut self, _: &Capabilities) -> WebDriverResult<bool> {
-        let version_str = self.version();
+        let binary = self.chosen_binary.clone();
+        let version_str = self.version(binary.as_ref().map(|x| x.as_ref()));
         if let Some(x) = version_str {
             Ok(Version::from_str(&*x)
                 .or_else(|x| Err(convert_version_error(x)))?
@@ -168,7 +167,7 @@ impl<'a> BrowserCapabilities for FirefoxCapabilities<'a> {
         Ok(true)
     }
 
-    fn validate_custom(&self, name: &str, value: &Value) -> WebDriverResult<()> {
+    fn validate_custom(&mut self, name: &str, value: &Value) -> WebDriverResult<()> {
         if !name.starts_with("moz:") {
             return Ok(());
         }
@@ -184,7 +183,6 @@ impl<'a> BrowserCapabilities for FirefoxCapabilities<'a> {
                         "androidActivity"
                         | "androidDeviceSerial"
                         | "androidPackage"
-                        | "binary"
                         | "profile" => {
                             if !value.is_string() {
                                 return Err(WebDriverError::new(
@@ -205,6 +203,23 @@ impl<'a> BrowserCapabilities for FirefoxCapabilities<'a> {
                                 return Err(WebDriverError::new(
                                     ErrorStatus::InvalidArgument,
                                     format!("{} entry is not a string", &**key),
+                                ));
+                            }
+                        }
+                        "binary" => {
+                            if let Some(binary) = value.as_str() {
+                                if !data.contains_key("androidPackage")
+                                    && self.version(Some(Path::new(binary))).is_none()
+                                {
+                                    return Err(WebDriverError::new(
+                                        ErrorStatus::InvalidArgument,
+                                        format!("{} is not a Firefox executable", &**key),
+                                    ));
+                                }
+                            } else {
+                                return Err(WebDriverError::new(
+                                    ErrorStatus::InvalidArgument,
+                                    format!("{} is not a string", &**key),
                                 ));
                             }
                         }
@@ -500,24 +515,44 @@ impl FirefoxOptions {
                 .ok_or_else(|| {
                     WebDriverError::new(
                         ErrorStatus::InvalidArgument,
-                        "androidPackage was not a string",
+                        "androidPackage is not a string",
                     )
                 })?
                 .to_owned();
 
+            // https://developer.android.com/studio/build/application-id
+            let package_regexp =
+                Regex::new(r#"^([a-zA-Z][a-zA-Z0-9_]*\.){1,}([a-zA-Z][a-zA-Z0-9_]*)$"#).unwrap();
+            if !package_regexp.is_match(package.as_bytes()) {
+                return Err(WebDriverError::new(
+                    ErrorStatus::InvalidArgument,
+                    "Not a valid androidPackage name",
+                ));
+            }
+
             let mut android = AndroidOptions::new(package);
 
             android.activity = match options.get("androidActivity") {
-                Some(json) => Some(
-                    json.as_str()
+                Some(json) => {
+                    let activity = json
+                        .as_str()
                         .ok_or_else(|| {
                             WebDriverError::new(
                                 ErrorStatus::InvalidArgument,
-                                "androidActivity was not a string",
+                                "androidActivity is not a string",
                             )
                         })?
-                        .to_owned(),
-                ),
+                        .to_owned();
+
+                    if activity.contains("/") {
+                        return Err(WebDriverError::new(
+                            ErrorStatus::InvalidArgument,
+                            "androidActivity should not contain '/",
+                        ));
+                    }
+
+                    Some(activity)
+                }
                 None => None,
             };
 
@@ -527,7 +562,7 @@ impl FirefoxOptions {
                         .ok_or_else(|| {
                             WebDriverError::new(
                                 ErrorStatus::InvalidArgument,
-                                "androidDeviceSerial was not a string",
+                                "androidDeviceSerial is not a string",
                             )
                         })?
                         .to_owned(),
@@ -540,7 +575,7 @@ impl FirefoxOptions {
                     let args_array = json.as_array().ok_or_else(|| {
                         WebDriverError::new(
                             ErrorStatus::InvalidArgument,
-                            "androidIntentArguments were not an array",
+                            "androidIntentArguments is not an array",
                         )
                     })?;
                     let args = args_array
@@ -550,7 +585,7 @@ impl FirefoxOptions {
                         .ok_or_else(|| {
                             WebDriverError::new(
                                 ErrorStatus::InvalidArgument,
-                                "androidIntentArguments entries were not all strings",
+                                "androidIntentArguments entries are not all strings",
                             )
                         })?;
 
@@ -720,16 +755,18 @@ mod tests {
     }
 
     #[test]
-    fn fx_options_android_package_name() {
-        let mut firefox_opts = Capabilities::new();
-        firefox_opts.insert("androidPackage".into(), json!("foo"));
+    fn fx_options_android_package_valid_value() {
+        for value in ["foo.bar", "foo.bar.cheese.is.good", "Foo.Bar_9"].iter() {
+            let mut firefox_opts = Capabilities::new();
+            firefox_opts.insert("androidPackage".into(), json!(value));
 
-        let opts = make_options(firefox_opts).expect("valid firefox options");
-        assert_eq!(opts.android, Some(AndroidOptions::new("foo".to_owned())));
+            let opts = make_options(firefox_opts).expect("valid firefox options");
+            assert_eq!(opts.android, Some(AndroidOptions::new(value.to_string())));
+        }
     }
 
     #[test]
-    fn fx_options_android_package_name_invalid() {
+    fn fx_options_android_package_invalid_type() {
         let mut firefox_opts = Capabilities::new();
         firefox_opts.insert("androidPackage".into(), json!(42));
 
@@ -737,25 +774,45 @@ mod tests {
     }
 
     #[test]
-    fn fx_options_android_activity() {
-        let mut firefox_opts = Capabilities::new();
-        firefox_opts.insert("androidPackage".into(), json!("foo"));
-        firefox_opts.insert("androidActivity".into(), json!("bar"));
-
-        let opts = make_options(firefox_opts).expect("valid firefox options");
-        let android_opts = AndroidOptions {
-            package: "foo".to_owned(),
-            activity: Some("bar".to_owned()),
-            ..Default::default()
-        };
-        assert_eq!(opts.android, Some(android_opts));
+    fn fx_options_android_package_invalid_value() {
+        for value in ["../foo", "\\foo\n", "foo", "_foo", "0foo"].iter() {
+            let mut firefox_opts = Capabilities::new();
+            firefox_opts.insert("androidPackage".into(), json!(value));
+            make_options(firefox_opts).expect_err("invalid firefox options");
+        }
     }
 
     #[test]
-    fn fx_options_android_activity_invalid() {
+    fn fx_options_android_activity_valid_value() {
+        for value in ["cheese", "Cheese_9"].iter() {
+            let mut firefox_opts = Capabilities::new();
+            firefox_opts.insert("androidPackage".into(), json!("foo.bar"));
+            firefox_opts.insert("androidActivity".into(), json!(value));
+
+            let opts = make_options(firefox_opts).expect("valid firefox options");
+            let android_opts = AndroidOptions {
+                package: "foo.bar".to_owned(),
+                activity: Some(value.to_string()),
+                ..Default::default()
+            };
+            assert_eq!(opts.android, Some(android_opts));
+        }
+    }
+
+    #[test]
+    fn fx_options_android_activity_invalid_type() {
         let mut firefox_opts = Capabilities::new();
-        firefox_opts.insert("androidPackage".into(), json!("foo"));
+        firefox_opts.insert("androidPackage".into(), json!("foo.bar"));
         firefox_opts.insert("androidActivity".into(), json!(42));
+
+        make_options(firefox_opts).expect_err("invalid firefox options");
+    }
+
+    #[test]
+    fn fx_options_android_activity_invalid_value() {
+        let mut firefox_opts = Capabilities::new();
+        firefox_opts.insert("androidPackage".into(), json!("foo.bar"));
+        firefox_opts.insert("androidActivity".into(), json!("foo.bar/cheese"));
 
         make_options(firefox_opts).expect_err("invalid firefox options");
     }
@@ -763,13 +820,13 @@ mod tests {
     #[test]
     fn fx_options_android_device_serial() {
         let mut firefox_opts = Capabilities::new();
-        firefox_opts.insert("androidPackage".into(), json!("foo"));
-        firefox_opts.insert("androidDeviceSerial".into(), json!("bar"));
+        firefox_opts.insert("androidPackage".into(), json!("foo.bar"));
+        firefox_opts.insert("androidDeviceSerial".into(), json!("cheese"));
 
         let opts = make_options(firefox_opts).expect("valid firefox options");
         let android_opts = AndroidOptions {
-            package: "foo".to_owned(),
-            device_serial: Some("bar".to_owned()),
+            package: "foo.bar".to_owned(),
+            device_serial: Some("cheese".to_owned()),
             ..Default::default()
         };
         assert_eq!(opts.android, Some(android_opts));
@@ -778,7 +835,7 @@ mod tests {
     #[test]
     fn fx_options_android_serial_invalid() {
         let mut firefox_opts = Capabilities::new();
-        firefox_opts.insert("androidPackage".into(), json!("foo"));
+        firefox_opts.insert("androidPackage".into(), json!("foo.bar"));
         firefox_opts.insert("androidDeviceSerial".into(), json!(42));
 
         make_options(firefox_opts).expect_err("invalid firefox options");
@@ -787,12 +844,12 @@ mod tests {
     #[test]
     fn fx_options_android_intent_arguments() {
         let mut firefox_opts = Capabilities::new();
-        firefox_opts.insert("androidPackage".into(), json!("foo"));
+        firefox_opts.insert("androidPackage".into(), json!("foo.bar"));
         firefox_opts.insert("androidIntentArguments".into(), json!(["lorem", "ipsum"]));
 
         let opts = make_options(firefox_opts).expect("valid firefox options");
         let android_opts = AndroidOptions {
-            package: "foo".to_owned(),
+            package: "foo.bar".to_owned(),
             intent_arguments: Some(vec!["lorem".to_owned(), "ipsum".to_owned()]),
             ..Default::default()
         };
@@ -802,7 +859,7 @@ mod tests {
     #[test]
     fn fx_options_android_intent_arguments_no_array() {
         let mut firefox_opts = Capabilities::new();
-        firefox_opts.insert("androidPackage".into(), json!("foo"));
+        firefox_opts.insert("androidPackage".into(), json!("foo.bar"));
         firefox_opts.insert("androidIntentArguments".into(), json!(42));
 
         make_options(firefox_opts).expect_err("invalid firefox options");
@@ -811,7 +868,7 @@ mod tests {
     #[test]
     fn fx_options_android_intent_arguments_invalid_value() {
         let mut firefox_opts = Capabilities::new();
-        firefox_opts.insert("androidPackage".into(), json!("foo"));
+        firefox_opts.insert("androidPackage".into(), json!("foo.bar"));
         firefox_opts.insert("androidIntentArguments".into(), json!(["lorem", 42]));
 
         make_options(firefox_opts).expect_err("invalid firefox options");

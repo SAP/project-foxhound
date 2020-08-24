@@ -2,46 +2,48 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+## The main browser window's title
 
-# This is the default window title in case there is no content
-# title to be displayed.
+# These are the default window titles everywhere except macOS. The first two
+# attributes are used when the web content opened has no title:
 #
-# Depending on the $mode, the string will look like this (in en-US):
+# default - "Mozilla Firefox"
+# private - "Mozilla Firefox (Private Browsing)"
+#
+# The last two are for use when there *is* a content title.
+# Variables:
+#  $content-title (String): the title of the web content.
+browser-main-window =
+  .data-title-default = { -brand-full-name }
+  .data-title-private = { -brand-full-name } (Private Browsing)
+  .data-content-title-default = { $content-title } - { -brand-full-name }
+  .data-content-title-private = { $content-title } - { -brand-full-name } (Private Browsing)
+
+# These are the default window titles on macOS. The first two are for use when
+# there is no content title:
 #
 # "default" - "Mozilla Firefox"
-# "private" - "Mozilla Firefox (Private Browsing)"
+# "private" - "Mozilla Firefox - (Private Browsing)"
 #
-# Variables
-#   $mode (String) - "private" in case of a private browsing mode, "default" otherwise.
-browser-main-window-title = { $mode ->
-        [private] { -brand-full-name } (Private Browsing)
-       *[default] { -brand-full-name }
-    }
+# The last two are for use when there *is* a content title.
+# Do not use the brand name in the last two attributes, as we do on non-macOS.
+#
+# Also note the other subtle difference here: we use a `-` to separate the
+# brand name from `(Private Browsing)`, which does not happen on other OSes.
+#
+# Variables:
+#  $content-title (String): the title of the web content.
+browser-main-window-mac =
+  .data-title-default = { -brand-full-name }
+  .data-title-private = { -brand-full-name } - (Private Browsing)
+  .data-content-title-default = { $content-title }
+  .data-content-title-private = { $content-title } - (Private Browsing)
 
-## This is the default window title in case there is content
-## title to be displayed.
-##
-## On macOS the title doesn't include the brand name, on all other
-## platforms it does.
-##
-## For example, in private mode on Windows, the title will be:
-## "Example Title - Mozilla Firefox (Private Browsing)"
-##
-## while on macOS in default mode it will be:
-## "Example Title"
-##
-## Variables
-##   $title (String) - Content title string.
-
-browser-main-window-content-title-default = { PLATFORM() ->
-    [macos] { $title }
-   *[other] { $title } - { -brand-full-name }
-}
-
-browser-main-window-content-title-private = { PLATFORM() ->
-    [macos] { $title } - (Private Browsing)
-   *[other] { $title } - { -brand-full-name } (Private Browsing)
-}
+# This gets set as the initial title, and is overridden as soon as we start
+# updating the titlebar based on loaded tabs or private browsing state.
+# This should match the `data-title-default` attribute in both
+# `browser-main-window` and `browser-main-window-mac`.
+browser-main-window-title = { -brand-full-name }
 
 ##
 
@@ -153,6 +155,8 @@ page-action-manage-extension =
     .label = Manage Extension…
 page-action-remove-from-urlbar =
     .label = Remove from Address Bar
+page-action-remove-extension =
+    .label = Remove Extension
 
 ## Auto-hide Context Menu
 
@@ -247,3 +251,73 @@ identity-enable-mixed-content-blocking =
     .accesskey = E
 identity-more-info-link-text =
     .label = More Information
+
+## Window controls
+
+browser-window-minimize-button =
+    .tooltiptext = Minimize
+browser-window-maximize-button =
+    .tooltiptext = Maximize
+browser-window-restore-down-button =
+    .tooltiptext = Restore Down
+browser-window-close-button =
+    .tooltiptext = Close
+
+## WebRTC Pop-up notifications
+
+popup-select-camera =
+    .value = Camera to share:
+    .accesskey = C
+popup-select-microphone =
+    .value = Microphone to share:
+    .accesskey = M
+popup-all-windows-shared = All visible windows on your screen will be shared.
+
+popup-screen-sharing-not-now =
+  .label = Not Now
+  .accesskey = w
+
+popup-screen-sharing-never =
+  .label = Never Allow
+  .accesskey = N
+
+popup-silence-notifications-checkbox = Disable notifications from { -brand-short-name } while sharing
+popup-silence-notifications-checkbox-warning = { -brand-short-name } will not display notifications while you are sharing.
+
+## WebRTC window or screen share tab switch warning
+
+sharing-warning-window = You are sharing { -brand-short-name }. Other people can see when you switch to a new tab.
+sharing-warning-screen = You are sharing your entire screen. Other people can see when you switch to a new tab.
+sharing-warning-proceed-to-tab =
+  .label = Proceed to Tab
+sharing-warning-disable-for-session =
+  .label = Disable sharing protection for this session
+
+## DevTools F12 popup
+
+enable-devtools-popup-description = To use the F12 shortcut, first open DevTools via the Web Developer menu.
+
+
+## URL Bar
+
+urlbar-default-placeholder =
+  .defaultPlaceholder = Search or enter address
+urlbar-placeholder =
+  .placeholder = Search or enter address
+urlbar-remote-control-notification-anchor =
+  .tooltiptext = Browser is under remote control
+urlbar-permissions-granted =
+  .tooltiptext = You have granted this website additional permissions.
+urlbar-switch-to-tab =
+  .value = Switch to tab:
+
+# Used to indicate that a selected autocomplete entry is provided by an extension.
+urlbar-extension =
+  .value = Extension:
+
+urlbar-go-button =
+  .tooltiptext = Go to the address in the Location Bar
+urlbar-page-action-button =
+  .tooltiptext = Page actions
+urlbar-pocket-button =
+  .tooltiptext = Save to { -pocket-brand-name }

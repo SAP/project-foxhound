@@ -49,6 +49,7 @@ add_task(async function startup() {
     false
   );
   await AddonTestUtils.promiseStartupManager();
+  await UrlbarTestUtils.initXPCShellDependencies();
 
   // Add a test engine and make it default so that when we do searches below,
   // Firefox doesn't try to include search suggestions from the actual default
@@ -187,7 +188,7 @@ add_task(async function test_registerProvider() {
 });
 
 // Adds a single active provider that returns many kinds of results.  This also
-// checks that the heuristic result from the built-in UnifiedComplete provider
+// checks that the heuristic result from the built-in HeuristicFallback provider
 // is included.
 add_task(async function test_onProviderResultsRequested() {
   let ext = ExtensionTestUtils.loadExtension({
@@ -212,6 +213,7 @@ add_task(async function test_onProviderResultsRequested() {
             payload: {
               title: "Test remote_tab-tabs result",
               url: "http://example.com/remote_tab-tabs",
+              device: "device",
             },
           },
           {
@@ -274,8 +276,7 @@ add_task(async function test_onProviderResultsRequested() {
 
   // Check the results.
   let expectedResults = [
-    // The first result should be a search result returned by the
-    // UnifiedComplete provider.
+    // The first result should be a search result returned by HeuristicFallback.
     {
       type: UrlbarUtils.RESULT_TYPE.SEARCH,
       source: UrlbarUtils.RESULT_SOURCE.SEARCH,
@@ -285,7 +286,11 @@ add_task(async function test_onProviderResultsRequested() {
         query: "test",
         engine: "Test engine",
         suggestion: undefined,
+        tailPrefix: undefined,
+        tail: undefined,
+        tailOffsetIndex: -1,
         keyword: undefined,
+        isSearchHistory: false,
         icon: "",
         keywordOffer: false,
       },
@@ -312,9 +317,8 @@ add_task(async function test_onProviderResultsRequested() {
       payload: {
         title: "Test remote_tab-tabs result",
         url: "http://example.com/remote_tab-tabs",
-        displayUrl:
-          (UrlbarPrefs.get("update1.view.stripHttps") ? "http://" : "") +
-          "example.com/remote_tab-tabs",
+        displayUrl: "http://example.com/remote_tab-tabs",
+        device: "device",
       },
     },
     {
@@ -325,9 +329,7 @@ add_task(async function test_onProviderResultsRequested() {
       payload: {
         title: "Test tab-tabs result",
         url: "http://example.com/tab-tabs",
-        displayUrl:
-          (UrlbarPrefs.get("update1.view.stripHttps") ? "http://" : "") +
-          "example.com/tab-tabs",
+        displayUrl: "http://example.com/tab-tabs",
       },
     },
     {
@@ -340,6 +342,7 @@ add_task(async function test_onProviderResultsRequested() {
         buttonText: "Test tip-local result button text",
         buttonUrl: "http://example.com/tip-button",
         helpUrl: "http://example.com/tip-help",
+        type: "extension",
       },
     },
     {
@@ -350,9 +353,7 @@ add_task(async function test_onProviderResultsRequested() {
       payload: {
         title: "Test url-history result",
         url: "http://example.com/url-history",
-        displayUrl:
-          (UrlbarPrefs.get("update1.view.stripHttps") ? "http://" : "") +
-          "example.com/url-history",
+        displayUrl: "http://example.com/url-history",
       },
     },
   ];
@@ -1355,14 +1356,8 @@ add_task(async function test_privateBrowsing_allowed_onQueryCanceled() {
   controller.cancelQuery();
   await startPromise;
 
-  // Check isActive and priority.
-  Assert.ok(provider.isActive(context));
-  Assert.equal(provider.getPriority(context), 0);
-
-  // The events should have been fired.
-  await Promise.all(
-    ["onBehaviorRequested", "onQueryCanceled"].map(msg => ext.awaitMessage(msg))
-  );
+  // onQueryCanceled should have been fired.
+  await ext.awaitMessage("onQueryCanceled");
 
   await ext.unload();
 });

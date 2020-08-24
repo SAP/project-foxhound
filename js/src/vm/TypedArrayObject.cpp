@@ -37,6 +37,7 @@
 #include "util/Text.h"
 #include "util/Windows.h"
 #include "vm/ArrayBufferObject.h"
+#include "vm/FunctionFlags.h"  // js::FunctionFlags
 #include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
 #include "vm/JSContext.h"
@@ -90,6 +91,7 @@ bool TypedArrayObject::convertForSideEffect(JSContext* cx,
     }
     case Scalar::MaxTypedArrayViewType:
     case Scalar::Int64:
+    case Scalar::Simd128:
       MOZ_CRASH("Unsupported TypedArray type");
   }
   MOZ_ASSERT_UNREACHABLE("Invalid scalar type");
@@ -206,7 +208,7 @@ size_t TypedArrayObject::objectMoved(JSObject* obj, JSObject* old) {
 
   Nursery& nursery = obj->runtimeFromMainThread()->gc.nursery();
   if (!nursery.isInside(buf)) {
-    nursery.removeMallocedBuffer(buf);
+    nursery.removeMallocedBufferDuringMinorGC(buf);
     size_t nbytes = RoundUp(newObj->byteLength(), sizeof(Value));
     AddCellMemory(newObj, nbytes, MemoryUse::TypedArrayElements);
     return 0;
@@ -267,7 +269,7 @@ bool TypedArrayObject::hasInlineElements() const {
 }
 
 void TypedArrayObject::setInlineElements() {
-  char* dataSlot = reinterpret_cast<char*>(this) + this->dataOffset();
+  char* dataSlot = reinterpret_cast<char*>(this) + dataOffset();
   *reinterpret_cast<void**>(dataSlot) =
       this->fixedData(TypedArrayObject::FIXED_DATA_START);
 }
@@ -525,7 +527,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
       InitObjectPrivate(tarray, buf, nbytes, MemoryUse::TypedArrayElements);
     } else {
 #ifdef DEBUG
-      constexpr size_t dataOffset = TypedArrayObject::dataOffset();
+      constexpr size_t dataOffset = ArrayBufferViewObject::dataOffset();
       constexpr size_t offset = dataOffset + sizeof(HeapSlot);
       MOZ_ASSERT(offset + nbytes <= GetGCKindBytes(allocKind));
 #endif
@@ -2072,6 +2074,7 @@ bool TypedArrayObject::getElement<CanGC>(JSContext* cx, uint32_t index,
 #undef GET_ELEMENT
     case Scalar::MaxTypedArrayViewType:
     case Scalar::Int64:
+    case Scalar::Simd128:
       break;
   }
 
@@ -2096,6 +2099,7 @@ bool TypedArrayObject::getElementPure(uint32_t index, Value* vp) {
 #undef GET_ELEMENT
     case Scalar::MaxTypedArrayViewType:
     case Scalar::Int64:
+    case Scalar::Simd128:
       break;
   }
 
@@ -2123,6 +2127,7 @@ bool TypedArrayObject::getElements(JSContext* cx,
 #undef GET_ELEMENTS
     case Scalar::MaxTypedArrayViewType:
     case Scalar::Int64:
+    case Scalar::Simd128:
       break;
   }
 
@@ -2210,8 +2215,8 @@ const JSClass TypedArrayObject::classes[Scalar::MaxTypedArrayViewType] = {
 // above), but it's what we've always done, so keep doing it till we
 // implement @@toStringTag or ES6 changes.
 const JSClass TypedArrayObject::protoClasses[Scalar::MaxTypedArrayViewType] = {
-#define IMPL_TYPED_ARRAY_PROTO_CLASS(NativeType, Name)                      \
-  {#Name "ArrayPrototype", JSCLASS_HAS_CACHED_PROTO(JSProto_##Name##Array), \
+#define IMPL_TYPED_ARRAY_PROTO_CLASS(NativeType, Name)                       \
+  {#Name "Array.prototype", JSCLASS_HAS_CACHED_PROTO(JSProto_##Name##Array), \
    JS_NULL_CLASS_OPS, &TypedArrayObjectClassSpecs[Scalar::Type::Name]},
 
     JS_FOR_EACH_TYPED_ARRAY(IMPL_TYPED_ARRAY_PROTO_CLASS)
@@ -2495,6 +2500,7 @@ bool js::SetTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
 #undef SET_TYPED_ARRAY_ELEMENT
     case Scalar::MaxTypedArrayViewType:
     case Scalar::Int64:
+    case Scalar::Simd128:
       break;
   }
 
@@ -2554,6 +2560,7 @@ bool js::DefineTypedArrayElement(JSContext* cx, HandleObject obj,
 #undef DEFINE_TYPED_ARRAY_ELEMENT
       case Scalar::MaxTypedArrayViewType:
       case Scalar::Int64:
+      case Scalar::Simd128:
         break;
     }
 

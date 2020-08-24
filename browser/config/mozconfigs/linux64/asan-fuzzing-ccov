@@ -1,4 +1,3 @@
-MOZ_AUTOMATION_L10N_CHECK=0
 # We still need to build with debug symbols
 ac_add_options --disable-debug
 ac_add_options --enable-optimize="-O2 -gline-tables-only"
@@ -14,6 +13,8 @@ ac_add_options --enable-valgrind
 
 . $topsrcdir/build/unix/mozconfig.asan
 ac_add_options --disable-elf-hack
+
+export DUMP_SYMS="${MOZ_FETCHES_DIR}/dump_syms/dump_syms"
 
 ac_add_options --disable-sandbox
 ac_add_options --disable-profiling

@@ -308,7 +308,7 @@ var FullScreen = {
         Services.prefs.getBoolPref("full-screen-api.macos-native-full-screen");
       if (
         (alwaysUsesNativeFullscreen || !document.fullscreenElement) &&
-        this.useLionFullScreen
+        AppConstants.platform == "macosx"
       ) {
         document.documentElement.setAttribute("OSXLionFullscreen", true);
       }
@@ -340,12 +340,14 @@ var FullScreen = {
     }
 
     if (enterFS && !document.fullscreenElement) {
-      Services.telemetry.getHistogramById("FX_BROWSER_FULLSCREEN_USED").add(1);
+      Services.telemetry.scalarAdd("fullscreen.used", 1);
     }
   },
 
   exitDomFullScreen() {
-    document.exitFullscreen();
+    if (document.fullscreen) {
+      document.exitFullscreen();
+    }
   },
 
   handleEvent(event) {
@@ -508,8 +510,15 @@ var FullScreen = {
 
   /**
    * Search for the first ancestor of aActor that lives in a different process.
-   * If found, that ancestor is sent the message. Otherwise, the recipient should
-   * be the actor of the request origin.
+   * If found, that ancestor is sent the message and return false.
+   * Otherwise, the recipient should be the actor of the request origin and return true
+   * from this function.
+   *
+   * The method will be called again as a result of targeted child process doing
+   * "FullScreen.enterDomFullscreen()" or "FullScreen.cleanupDomFullscreen()".
+   * The return value is used to postpone entering or exiting Full Screen in the parent
+   * until there is no ancestor anymore.
+   *
    *
    * @param {JSWindowActorParent} aActor
    *        The actor that called this function.
@@ -517,6 +526,10 @@ var FullScreen = {
    *        Message to be sent.
    *
    * @return {boolean}
+   *         The return value is used to postpone entering or exiting Full Screen in the
+   *         parent until there is no ancestor anymore.
+   *         Return false if the message is send to the first ancestor of aActor that
+   *         lives in a different process
    *         Return true if the message is sent to the request source
    *         or false otherwise.
    */
@@ -530,6 +543,9 @@ var FullScreen = {
     let parentBC = childBC.parent;
 
     while (parentBC) {
+      if (!childBC.currentWindowGlobal || !parentBC.currentWindowGlobal) {
+        break;
+      }
       let childPid = childBC.currentWindowGlobal.osPid;
       let parentPid = parentBC.currentWindowGlobal.osPid;
 
@@ -541,7 +557,7 @@ var FullScreen = {
       }
     }
 
-    if (parentBC) {
+    if (parentBC && parentBC.currentWindowGlobal) {
       let parentActor = parentBC.currentWindowGlobal.getActor("DOMFullscreen");
       parentActor.sendAsyncMessage(aMessage, {
         remoteFrameBC: childBC,
@@ -554,8 +570,10 @@ var FullScreen = {
     // have entered or exited fullscreen at this point.
     // So let's notify the process where the original request
     // comes from.
-    aActor.requestOrigin.sendAsyncMessage(aMessage, {});
-    aActor.requestOrigin = null;
+    if (!aActor.requestOrigin.hasBeenDestroyed()) {
+      aActor.requestOrigin.sendAsyncMessage(aMessage, {});
+      aActor.requestOrigin = null;
+    }
     return true;
   },
 
@@ -596,19 +614,17 @@ var FullScreen = {
     // Otherwise, they would not affect chrome and the user would expect the chrome to go away.
     // e.g. we wouldn't want the autoscroll icon firing this event, so when the user
     // toggles chrome when moving mouse to the top, it doesn't go away again.
+    let target = aEvent.originalTarget;
+    if (target.localName == "tooltip") {
+      return;
+    }
     if (
       aEvent.type == "popupshown" &&
       !FullScreen._isChromeCollapsed &&
-      aEvent.target.localName != "tooltip" &&
-      aEvent.target.localName != "window" &&
-      aEvent.target.getAttribute("nopreventnavboxhide") != "true"
+      target.getAttribute("nopreventnavboxhide") != "true"
     ) {
       FullScreen._isPopupOpen = true;
-    } else if (
-      aEvent.type == "popuphidden" &&
-      aEvent.target.localName != "tooltip" &&
-      aEvent.target.localName != "window"
-    ) {
+    } else if (aEvent.type == "popuphidden") {
       FullScreen._isPopupOpen = false;
       // Try again to hide toolbar when we close the popup.
       FullScreen.hideNavToolbox(true);
@@ -661,7 +677,7 @@ var FullScreen = {
     }
 
     // Track whether mouse is near the toolbox
-    if (trackMouse && !this.useLionFullScreen) {
+    if (trackMouse && AppConstants.platform != "macosx") {
       let rect = gBrowser.tabpanels.getBoundingClientRect();
       this._mouseTargetRect = {
         top: rect.top + 50,
@@ -687,8 +703,8 @@ var FullScreen = {
     if (this._isPopupOpen) {
       return;
     }
-    // On OS X Lion we don't want to hide toolbars.
-    if (this.useLionFullScreen) {
+    // On macOS we don't want to hide toolbars.
+    if (AppConstants.platform == "macosx") {
       return;
     }
 
@@ -726,11 +742,13 @@ var FullScreen = {
       return;
     }
 
-    this._fullScrToggler.hidden = false;
+    if (!BrowserHandler.kiosk) {
+      this._fullScrToggler.hidden = false;
+    }
 
     if (
       aAnimate &&
-      Services.prefs.getBoolPref("toolkit.cosmeticAnimations.enabled") &&
+      window.matchMedia("(prefers-reduced-motion: no-preference)").matches &&
       !BrowserHandler.kiosk
     ) {
       gNavToolbox.setAttribute("fullscreenShouldAnimate", true);
@@ -781,11 +799,11 @@ var FullScreen = {
 
     ToolbarIconColor.inferFromText("fullscreen", aEnterFS);
 
-    // For Lion fullscreen, all fullscreen controls are hidden, don't
-    // bother to touch them. If we don't stop here, the following code
-    // could cause the native fullscreen button be shown unexpectedly.
-    // See bug 1165570.
-    if (this.useLionFullScreen) {
+    // For macOS, we use native full screen, all full screen controls
+    // are hidden, don't bother to touch them. If we don't stop here,
+    // the following code could cause the native full screen button be
+    // shown unexpectedly. See bug 1165570.
+    if (AppConstants.platform == "macosx") {
       return;
     }
 
@@ -814,16 +832,5 @@ XPCOMUtils.defineLazyGetter(FullScreen, "_permissionNotificationIDs", () => {
       .map(value => value.prototype.notificationID)
       // Additionally include webRTC permission prompt which does not use PermissionUI
       .concat(["webRTC-shareDevices"])
-  );
-});
-
-XPCOMUtils.defineLazyGetter(FullScreen, "useLionFullScreen", () => {
-  // We'll only use OS X Lion full screen if we're
-  // * on OS X
-  // * on Lion or higher (Darwin 11+)
-  // * have fullscreenbutton="true"
-  return (
-    AppConstants.isPlatformAndVersionAtLeast("macosx", 11) &&
-    document.documentElement.getAttribute("fullscreenbutton") == "true"
   );
 });

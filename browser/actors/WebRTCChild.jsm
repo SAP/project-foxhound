@@ -23,6 +23,18 @@ XPCOMUtils.defineLazyServiceGetter(
 const kBrowserURL = AppConstants.BROWSER_CHROME_URL;
 
 class WebRTCChild extends JSWindowActorChild {
+  actorCreated() {
+    // The user might request that DOM notifications be silenced
+    // when sharing the screen. There doesn't seem to be a great
+    // way of storing that state in any of the objects going into
+    // the WebRTC API or coming out via the observer notification
+    // service, so we store it here on the actor.
+    //
+    // If the user chooses to silence notifications during screen
+    // share, this will get set to true.
+    this.suppressNotifications = false;
+  }
+
   // Called only for 'unload' to remove pending gUM prompts in reloaded frames.
   static handleEvent(aEvent) {
     let contentWindow = aEvent.target.defaultView;
@@ -37,7 +49,7 @@ class WebRTCChild extends JSWindowActorChild {
     }
   }
 
-  // This observer is registered in ContentObservers.js to avoid
+  // This observer is called from BrowserProcessChild to avoid
   // loading this .jsm when WebRTC is not in use.
   static observe(aSubject, aTopic, aData) {
     switch (aTopic) {
@@ -95,6 +107,9 @@ class WebRTCChild extends JSWindowActorChild {
           "getUserMedia:response:allow",
           callID
         );
+
+        this.suppressNotifications = !!aMessage.data.suppressNotifications;
+
         break;
       }
       case "webrtc:Deny":
@@ -402,6 +417,17 @@ function updateIndicators(aSubject, aTopic, aData) {
     let tabState = getTabStateForContentWindow(contentWindow, false);
     tabState.windowId = getInnerWindowIDForWindow(contentWindow);
 
+    // If we were silencing DOM notifications before, but we've updated
+    // state such that we're no longer sharing one of our displays, then
+    // reset the silencing state.
+    if (actor.suppressNotifications) {
+      if (!tabState.screen && !tabState.window && !tabState.browser) {
+        actor.suppressNotifications = false;
+      }
+    }
+
+    tabState.suppressNotifications = actor.suppressNotifications;
+
     actor.sendAsyncMessage("webrtc:UpdateIndicators", tabState);
   }
 }
@@ -428,7 +454,8 @@ function getTabStateForContentWindow(aContentWindow, aForRemove = false) {
     microphone = {},
     screen = {},
     window = {},
-    browser = {};
+    browser = {},
+    devices = {};
   MediaManagerService.mediaCaptureWindowState(
     aContentWindow,
     camera,
@@ -436,6 +463,7 @@ function getTabStateForContentWindow(aContentWindow, aForRemove = false) {
     screen,
     window,
     browser,
+    devices,
     false
   );
 
@@ -446,11 +474,23 @@ function getTabStateForContentWindow(aContentWindow, aForRemove = false) {
     window.value == MediaManagerService.STATE_NOCAPTURE &&
     browser.value == MediaManagerService.STATE_NOCAPTURE
   ) {
-    return {};
+    return { remove: true };
   }
 
   if (aForRemove) {
-    return {};
+    return { remove: true };
+  }
+
+  let serializedDevices = [];
+  if (Array.isArray(devices.value)) {
+    serializedDevices = devices.value.map(device => {
+      return {
+        type: device.type,
+        mediaSource: device.mediaSource,
+        rawId: device.rawId,
+        scary: device.scary,
+      };
+    });
   }
 
   return {
@@ -459,7 +499,7 @@ function getTabStateForContentWindow(aContentWindow, aForRemove = false) {
     screen: screen.value,
     window: window.value,
     browser: browser.value,
-    documentURI: aContentWindow.document.documentURI,
+    devices: serializedDevices,
   };
 }
 

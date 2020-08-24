@@ -242,6 +242,15 @@ class Window(object):
     def __init__(self, session):
         self.session = session
 
+    @command
+    def close(self):
+        handles = self.session.send_session_command("DELETE", "window")
+        if handles is not None and len(handles) == 0:
+            # With no more open top-level browsing contexts, the session is closed.
+            self.session.session_id = None
+
+        return handles
+
     @property
     @command
     def rect(self):
@@ -444,7 +453,7 @@ class Session(object):
         finally:
             self.session_id = None
 
-    def send_command(self, method, url, body=None):
+    def send_command(self, method, url, body=None, timeout=None):
         """
         Send a command to the remote end and validate its success.
 
@@ -462,10 +471,11 @@ class Session(object):
         :raises ValueError: If the response body does not contain a
             `value` key.
         """
+
         response = self.transport.send(
             method, url, body,
             encoder=protocol.Encoder, decoder=protocol.Decoder,
-            session=self)
+            session=self, timeout=timeout)
 
         if response.status != 200:
             err = error.from_response(response)
@@ -493,7 +503,7 @@ class Session(object):
 
         return value
 
-    def send_session_command(self, method, uri, body=None):
+    def send_session_command(self, method, uri, body=None, timeout=None):
         """
         Send a command to an established session and validate its success.
 
@@ -510,7 +520,7 @@ class Session(object):
             an error.
         """
         url = urlparse.urljoin("session/%s/" % self.session_id, uri)
-        return self.send_command(method, url, body)
+        return self.send_command(method, url, body, timeout)
 
     @property
     @command
@@ -547,6 +557,13 @@ class Session(object):
     def source(self):
         return self.send_session_command("GET", "source")
 
+    @command
+    def new_window(self, type_hint=None):
+        body = {"type": type_hint}
+        value = self.send_session_command("POST", "window/new", body)
+
+        return value["handle"]
+
     @property
     @command
     def window_handle(self):
@@ -567,15 +584,6 @@ class Session(object):
             body = {"id": frame}
 
         return self.send_session_command("POST", url, body)
-
-    @command
-    def close(self):
-        handles = self.send_session_command("DELETE", "window")
-        if handles is not None and len(handles) == 0:
-            # With no more open top-level browsing contexts, the session is closed.
-            self.session_id = None
-
-        return handles
 
     @property
     @command

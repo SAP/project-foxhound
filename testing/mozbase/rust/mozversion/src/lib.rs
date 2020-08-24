@@ -116,7 +116,7 @@ impl FromStr for Version {
 
     fn from_str(version_string: &str) -> Result<Version, Error> {
         let mut version: Version = Default::default();
-        let version_re = Regex::new(r"^(?P<major>\d+)\.(?P<minor>\d+)(?:\.(?P<patch>\d+))?(?:(?P<pre0>[a-z]+)(?P<pre1>\d*))?$").unwrap();
+        let version_re = Regex::new(r"^(?P<major>[[:digit:]]+)\.(?P<minor>[[:digit:]]+)(?:\.(?P<patch>[[:digit:]]+))?(?:(?P<pre0>[a-z]+)(?P<pre1>[[:digit:]]*))?$").unwrap();
         if let Some(captures) = version_re.captures(version_string) {
             match captures
                 .name("major")
@@ -199,7 +199,7 @@ pub fn firefox_version(binary: &Path) -> Result<AppVersion, Error> {
             }
         }
 
-        let mut platform_ini = dir.clone();
+        let mut platform_ini = dir;
         platform_ini.push("platform.ini");
 
         if Path::exists(&platform_ini) {
@@ -257,14 +257,6 @@ impl From<semver::ReqParseError> for Error {
 }
 
 impl error::Error for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::VersionError(ref x) => &*x,
-            Error::MetadataError(ref x) => &*x,
-            Error::SemVerError(ref e) => e.description(),
-        }
-    }
-
     fn cause(&self) -> Option<&dyn error::Error> {
         match *self {
             Error::SemVerError(ref e) => Some(e),

@@ -5,6 +5,7 @@
 #ifndef _JSEPSESSION_H_
 #define _JSEPSESSION_H_
 
+#include <map>
 #include <string>
 #include <vector>
 #include "mozilla/Attributes.h"
@@ -106,7 +107,8 @@ class JsepSession {
   template <class UnaryFunction>
   void ForEachCodec(UnaryFunction& function) {
     std::for_each(Codecs().begin(), Codecs().end(), function);
-    for (auto& transceiver : GetTransceivers()) {
+    for (auto& [id, transceiver] : GetTransceivers()) {
+      (void)id;  // Lame, but no better way to do this right now.
       transceiver->mSendTrack.ForEachCodec(function);
       transceiver->mRecvTrack.ForEachCodec(function);
     }
@@ -115,15 +117,16 @@ class JsepSession {
   template <class BinaryPredicate>
   void SortCodecs(BinaryPredicate& sorter) {
     std::stable_sort(Codecs().begin(), Codecs().end(), sorter);
-    for (auto& transceiver : GetTransceivers()) {
+    for (auto& [id, transceiver] : GetTransceivers()) {
+      (void)id;  // Lame, but no better way to do this right now.
       transceiver->mSendTrack.SortCodecs(sorter);
       transceiver->mRecvTrack.SortCodecs(sorter);
     }
   }
 
-  virtual const std::vector<RefPtr<JsepTransceiver>>& GetTransceivers()
+  virtual const std::map<size_t, RefPtr<JsepTransceiver>>& GetTransceivers()
       const = 0;
-  virtual std::vector<RefPtr<JsepTransceiver>>& GetTransceivers() = 0;
+  virtual std::map<size_t, RefPtr<JsepTransceiver>>& GetTransceivers() = 0;
   virtual nsresult AddTransceiver(RefPtr<JsepTransceiver> transceiver) = 0;
 
   class Result {
@@ -171,6 +174,9 @@ class JsepSession {
 
   virtual const std::string GetLastError() const { return "Error"; }
 
+  virtual const std::vector<std::pair<size_t, std::string>>&
+  GetLastSdpParsingErrors() const = 0;
+
   static const char* GetStateStr(JsepSignalingState state) {
     static const char* states[] = {"stable",
                                    "have-local-offer",
@@ -190,7 +196,8 @@ class JsepSession {
     memset(receiving, 0, sizeof(receiving));
     memset(sending, 0, sizeof(sending));
 
-    for (const auto& transceiver : GetTransceivers()) {
+    for (const auto& [id, transceiver] : GetTransceivers()) {
+      (void)id;  // Lame, but no better way to do this right now.
       if (transceiver->mRecvTrack.GetActive() ||
           transceiver->GetMediaType() == SdpMediaSection::kApplication) {
         receiving[transceiver->mRecvTrack.GetMediaType()]++;
@@ -203,10 +210,16 @@ class JsepSession {
     }
   }
 
+  // See Bug 1642419, this can be removed when all sites are working with RTX.
+  void SetRtxIsAllowed(bool aRtxIsAllowed) { mRtxIsAllowed = aRtxIsAllowed; }
+
  protected:
   const std::string mName;
   JsepSignalingState mState;
   uint32_t mNegotiations;
+
+  // See Bug 1642419, this can be removed when all sites are working with RTX.
+  bool mRtxIsAllowed = true;
 };
 
 }  // namespace mozilla

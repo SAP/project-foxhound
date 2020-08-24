@@ -30,14 +30,14 @@ import AccessibleImage from "./shared/AccessibleImage";
 import type { List } from "immutable";
 import type { ActiveSearchType } from "../reducers/types";
 import type { StatusType } from "../reducers/project-text-search";
-import type { Context } from "../types";
+import type { Context, SourceId } from "../types";
 import { PluralForm } from "devtools-modules";
 
 import "./ProjectSearch.css";
 
 export type Match = {
   type: "MATCH",
-  sourceId: string,
+  sourceId: SourceId,
   line: number,
   column: number,
   matchIndex: number,
@@ -50,7 +50,7 @@ type Result = {
   type: "RESULT",
   filepath: string,
   matches: Array<Match>,
-  sourceId: string,
+  sourceId: SourceId,
 };
 
 type Item = Result | Match;
@@ -343,14 +343,11 @@ const mapStateToProps = state => ({
   status: getTextSearchStatus(state),
 });
 
-export default connect<Props, OwnProps, _, _, _, _>(
-  mapStateToProps,
-  {
-    closeProjectSearch: actions.closeProjectSearch,
-    searchSources: actions.searchSources,
-    clearSearch: actions.clearSearch,
-    selectSpecificLocation: actions.selectSpecificLocation,
-    setActiveSearch: actions.setActiveSearch,
-    doSearchForHighlight: actions.doSearchForHighlight,
-  }
-)(ProjectSearch);
+export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
+  closeProjectSearch: actions.closeProjectSearch,
+  searchSources: actions.searchSources,
+  clearSearch: actions.clearSearch,
+  selectSpecificLocation: actions.selectSpecificLocation,
+  setActiveSearch: actions.setActiveSearch,
+  doSearchForHighlight: actions.doSearchForHighlight,
+})(ProjectSearch);

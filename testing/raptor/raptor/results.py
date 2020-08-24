@@ -14,6 +14,7 @@ from logger.logger import RaptorLogger
 from output import RaptorOutput, BrowsertimeOutput
 
 LOG = RaptorLogger(component="perftest-results-handler")
+KNOWN_TEST_MODIFIERS = ["nocondprof", "fission", "live", "gecko_profile", "cold", "webrender"]
 
 
 class PerftestResultsHandler(object):
@@ -27,14 +28,19 @@ class PerftestResultsHandler(object):
         power_test=False,
         cpu_test=False,
         memory_test=False,
+        live_sites=False,
         app=None,
         no_conditioned_profile=False,
+        cold=False,
+        enable_webrender=False,
+        chimera=False,
         **kwargs
     ):
         self.gecko_profile = gecko_profile
         self.power_test = power_test
         self.cpu_test = cpu_test
         self.memory_test = memory_test
+        self.live_sites = live_sites
         self.app = app
         self.results = []
         self.page_timeout_list = []
@@ -43,13 +49,48 @@ class PerftestResultsHandler(object):
         self.fission_enabled = kwargs.get("extra_prefs", {}).get(
             "fission.autostart", False
         )
+        self.webrender_enabled = enable_webrender
         self.browser_version = None
         self.browser_name = None
         self.no_conditioned_profile = no_conditioned_profile
+        self.cold = cold
+        self.chimera = chimera
 
     @abstractmethod
     def add(self, new_result_json):
         raise NotImplementedError()
+
+    def build_extra_options(self, modifiers=None):
+        extra_options = []
+
+        # If fields is not None, then we default to
+        # checking all known fields. Otherwise, we only check
+        # the fields that were given to us.
+        if modifiers is None:
+            if self.no_conditioned_profile:
+                extra_options.append("nocondprof")
+            if self.fission_enabled:
+                extra_options.append("fission")
+            if self.live_sites:
+                extra_options.append("live")
+            if self.gecko_profile:
+                extra_options.append("gecko_profile")
+            if self.cold:
+                extra_options.append("cold")
+            if self.webrender_enabled:
+                extra_options.append("webrender")
+        else:
+            for modifier, name in modifiers:
+                if not modifier:
+                    continue
+                if name in KNOWN_TEST_MODIFIERS:
+                    extra_options.append(name)
+                else:
+                    raise Exception(
+                        "Unknown test modifier %s was provided as an extra option" % name
+                    )
+
+        return extra_options
 
     def add_browser_meta(self, browser_name, browser_version):
         # sets the browser metadata for the perfherder data
@@ -63,8 +104,12 @@ class PerftestResultsHandler(object):
             {"screenshot": screenshot, "test_name": test_name, "page_cycle": page_cycle}
         )
 
-    def add_page_timeout(self, test_name, page_url, pending_metrics):
-        timeout_details = {"test_name": test_name, "url": page_url}
+    def add_page_timeout(self, test_name, page_url, page_cycle, pending_metrics):
+        timeout_details = {
+            "test_name": test_name,
+            "url": page_url,
+            "page_cycle": page_cycle,
+        }
         if pending_metrics:
             pending_metrics = [key for key, value in pending_metrics.items() if value]
             timeout_details["pending_metrics"] = ", ".join(pending_metrics)
@@ -125,6 +170,11 @@ class PerftestResultsHandler(object):
             return None
 
         expected_perfherder = 1
+
+        if output.mozproxy_data:
+            # Check if we have mozproxy data available.
+            expected_perfherder += 1
+
         if is_resource_test():
             # when resource tests are run, no perfherder data is output
             # for the regular raptor tests (i.e. speedometer) so we
@@ -185,14 +235,12 @@ class RaptorResultsHandler(PerftestResultsHandler):
     """Process Raptor results"""
 
     def add(self, new_result_json):
-        # add to results
-        if new_result_json.get("extra_options") is None:
-            new_result_json["extra_options"] = []
         LOG.info("received results in RaptorResultsHandler.add")
-        if self.no_conditioned_profile:
-            new_result_json["extra_options"].append("nocondprof")
-        if self.fission_enabled:
-            new_result_json["extra_options"].append("fission")
+        new_result_json.setdefault("extra_options", []).extend(self.build_extra_options([
+            (self.no_conditioned_profile, "nocondprof"),
+            (self.fission_enabled, "fission"),
+            (self.webrender_enabled, "webrender"),
+        ]))
         self.results.append(new_result_json)
 
     def summarize_and_output(self, test_config, tests, test_names):
@@ -484,7 +532,9 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
 
         return results
 
-    def _extract_vmetrics(self, test_name, browsertime_json):
+    def _extract_vmetrics(
+        self, test_name, browsertime_json, json_name="browsertime.json", extra_options=[]
+    ):
         # The visual metrics task expects posix paths.
         def _normalized_join(*args):
             path = os.path.join(*args)
@@ -494,8 +544,9 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
         reldir = _normalized_join("browsertime-results", name)
 
         return {
-            "browsertime_json_path": _normalized_join(reldir, "browsertime.json"),
+            "browsertime_json_path": _normalized_join(reldir, json_name),
             "test_name": test_name,
+            "extra_options": extra_options
         }
 
     def summarize_and_output(self, test_config, tests, test_names):
@@ -549,8 +600,55 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 LOG.error("Exception: %s %s" % (type(e).__name__, str(e)))
                 raise
 
+            # Split the chimera videos here for local testing
+            cold_path = None
+            warm_path = None
+            if self.chimera:
+                # First result is cold, second is warm
+                cold_data = raw_btresults[0]
+                warm_data = raw_btresults[1]
+
+                dirpath = os.path.dirname(os.path.abspath(bt_res_json))
+                cold_path = os.path.join(dirpath, "cold-browsertime.json")
+                warm_path = os.path.join(dirpath, "warm-browsertime.json")
+
+                with open(cold_path, "w") as f:
+                    json.dump([cold_data], f)
+                with open(warm_path, "w") as f:
+                    json.dump([warm_data], f)
+
             if not run_local:
-                video_jobs.append(self._extract_vmetrics(test_name, bt_res_json))
+                extra_options = self.build_extra_options()
+
+                if self.chimera:
+                    if cold_path is None or warm_path is None:
+                        raise Exception("Cold and warm paths were not created")
+
+                    video_jobs.append(
+                        self._extract_vmetrics(
+                            test_name,
+                            cold_path,
+                            json_name="cold-browsertime.json",
+                            extra_options=list(extra_options)
+                        )
+                    )
+
+                    extra_options.remove("cold")
+                    extra_options.append("warm")
+                    video_jobs.append(
+                        self._extract_vmetrics(
+                            test_name,
+                            warm_path,
+                            json_name="warm-browsertime.json",
+                            extra_options=list(extra_options)
+                        )
+                    )
+                else:
+                    video_jobs.append(self._extract_vmetrics(
+                        test_name,
+                        bt_res_json,
+                        extra_options=list(extra_options)
+                    ))
 
             for new_result in self.parse_browsertime_json(
                 raw_btresults,
@@ -573,29 +671,19 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
 
                     # Differentiate Raptor `pageload` tests from `browsertime-pageload`
                     # tests while we compare and contrast.
-                    new_result["type"] = "browsertime-pageload"
+                    new_result["type"] = "pageload"
 
                     # All Browsertime measurements are elapsed times in milliseconds.
                     new_result["subtest_lower_is_better"] = True
                     new_result["subtest_unit"] = "ms"
                     LOG.info("parsed new result: %s" % str(new_result))
 
-                    # `extra_options` will be populated with Gecko profiling flags in
-                    # the future.
-                    new_result["extra_options"] = []
-                    if self.no_conditioned_profile:
-                        new_result["extra_options"].append("nocondprof")
-                    if self.fission_enabled:
-                        new_result["extra_options"].append("fission")
+                    new_result["extra_options"] = self.build_extra_options()
 
-                    # TODO: Once Bug 1593198 is fixed remove this part
-                    # Currently perfherder doesn't split data / recognize 'application` and for
-                    # browsertime tests we don't use the browser name in the test name as we use
-                    # simplified test INIs; therefore in order to differentiate in perfherder
-                    # between browsers/apps, until Bug 1593198 is fixed, we must add the app name
-                    # to the perfherder data extraOptions fields
-                    if self.app != "firefox":
-                        new_result["extra_options"].append(self.app)
+                    # Split the chimera
+                    if self.chimera and "run=2" in new_result["url"][0]:
+                        new_result["extra_options"].remove("cold")
+                        new_result["extra_options"].append("warm")
 
                     return new_result
 
@@ -612,7 +700,7 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
 
                     # Differentiate Raptor `pageload` tests from other `browsertime`
                     # tests while we compare and contrast.
-                    new_result["type"] = "browsertime-%s" % test["type"]
+                    new_result["type"] = "benchmark"
 
                     # Try to get subtest values or use the defaults
                     # If values not available use the defaults
@@ -622,9 +710,10 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                     new_result["subtest_unit"] = test.get("subtest_unit", "ms")
                     LOG.info("parsed new result: %s" % str(new_result))
 
-                    # `extra_options` will be populated with Gecko profiling flags in
-                    # the future.
-                    new_result["extra_options"] = []
+                    new_result["extra_options"] = self.build_extra_options()
+                    if self.app != "firefox":
+                        new_result["extra_options"].append(self.app)
+
                     return new_result
 
                 if test["type"] == "pageload":
@@ -656,7 +745,11 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
         if len(video_jobs) > 0:
             # The video list and application metadata (browser name and
             # optionally version) that will be used in the visual metrics task.
-            jobs_json = {"jobs": video_jobs, "application": {"name": self.browser_name}}
+            jobs_json = {
+                "jobs": video_jobs,
+                "application": {"name": self.browser_name},
+                "extra_options": output.summarized_results["suites"][0]["extraOptions"]
+            }
 
             if self.browser_version is not None:
                 jobs_json["application"]["version"] = self.browser_version

@@ -4,7 +4,8 @@
   background-size: $icon-size;
   -moz-context-properties: fill;
   display: inline-block;
-  fill: var(--newtab-icon-primary-color);
+  color: var(--newtab-icon-primary-color);
+  fill: currentColor;
   height: $icon-size;
   vertical-align: middle;
   width: $icon-size;
@@ -57,6 +58,10 @@
     width: $larger-icon-size;
   }
 
+  &.icon-mail {
+    background-image: url('#{$image-path}glyph-mail-16.svg');
+  }
+
   &.icon-dismiss {
     background-image: url('#{$image-path}glyph-dismiss-16.svg');
   }
@@ -75,7 +80,7 @@
   }
 
   &.icon-settings {
-    background-image: url('chrome://browser/skin/settings.svg');
+    background-image: url('chrome://global/skin/icons/settings.svg');
   }
 
   &.icon-pin {

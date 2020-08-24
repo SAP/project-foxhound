@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.h"
+#include "mozilla/Components.h"
 #include "mozilla/ModuleUtils.h"
 #include "mozilla/WidgetUtils.h"
 
@@ -27,7 +28,7 @@
 #include "nsLookAndFeel.h"
 
 #include "nsSound.h"
-#include "nsIdleServiceX.h"
+#include "nsUserIdleServiceX.h"
 #include "NativeKeyBindings.h"
 #include "OSXNotificationCenter.h"
 
@@ -42,21 +43,15 @@
 using namespace mozilla;
 using namespace mozilla::widget;
 
-static nsresult nsClipboardConstructor(nsISupports* aOuter, REFNSIID aIID, void** aResult) {
+NS_IMPL_COMPONENT_FACTORY(nsIClipboard) {
   nsCOMPtr<nsIClipboard> inst;
-
-  *aResult = nullptr;
-  if (aOuter != nullptr) {
-    return NS_ERROR_NO_AGGREGATION;
-  }
-
   if (gfxPlatform::IsHeadless()) {
     inst = new HeadlessClipboard();
   } else {
     inst = new nsClipboard();
   }
 
-  return inst->QueryInterface(aIID, aResult);
+  return inst.forget();
 }
 
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsFilePicker)
@@ -67,10 +62,11 @@ NS_GENERIC_FACTORY_CONSTRUCTOR(nsHTMLFormatConverter)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsClipboardHelper)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDragService)
 NS_GENERIC_FACTORY_CONSTRUCTOR(nsDeviceContextSpecX)
+NS_GENERIC_FACTORY_CONSTRUCTOR(nsPrinterListX)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsPrintSettingsServiceX, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsPrintDialogServiceX, Init)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(nsPrintSession, Init)
-NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsIdleServiceX, nsIdleServiceX::GetInstance)
+NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(nsUserIdleServiceX, nsUserIdleServiceX::GetInstance)
 NS_GENERIC_FACTORY_SINGLETON_CONSTRUCTOR(ScreenManager, ScreenManager::GetAddRefedSingleton)
 NS_GENERIC_FACTORY_CONSTRUCTOR_INIT(OSXNotificationCenter, Init)
 
@@ -112,11 +108,11 @@ NS_DEFINE_NAMED_CID(NS_APPSHELL_CID);
 NS_DEFINE_NAMED_CID(NS_SOUND_CID);
 NS_DEFINE_NAMED_CID(NS_TRANSFERABLE_CID);
 NS_DEFINE_NAMED_CID(NS_HTMLFORMATCONVERTER_CID);
-NS_DEFINE_NAMED_CID(NS_CLIPBOARD_CID);
 NS_DEFINE_NAMED_CID(NS_CLIPBOARDHELPER_CID);
 NS_DEFINE_NAMED_CID(NS_DRAGSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_SCREENMANAGER_CID);
 NS_DEFINE_NAMED_CID(NS_DEVICE_CONTEXT_SPEC_CID);
+NS_DEFINE_NAMED_CID(NS_PRINTER_LIST_CID);
 NS_DEFINE_NAMED_CID(NS_PRINTSESSION_CID);
 NS_DEFINE_NAMED_CID(NS_PRINTSETTINGSSERVICE_CID);
 NS_DEFINE_NAMED_CID(NS_PRINTDIALOGSERVICE_CID);
@@ -141,17 +137,18 @@ static const mozilla::Module::CIDEntry kWidgetCIDs[] = {
     {&kNS_SOUND_CID, false, NULL, nsSoundConstructor, mozilla::Module::MAIN_PROCESS_ONLY},
     {&kNS_TRANSFERABLE_CID, false, NULL, nsTransferableConstructor},
     {&kNS_HTMLFORMATCONVERTER_CID, false, NULL, nsHTMLFormatConverterConstructor},
-    {&kNS_CLIPBOARD_CID, false, NULL, nsClipboardConstructor, mozilla::Module::MAIN_PROCESS_ONLY},
     {&kNS_CLIPBOARDHELPER_CID, false, NULL, nsClipboardHelperConstructor},
     {&kNS_DRAGSERVICE_CID, false, NULL, nsDragServiceConstructor,
      mozilla::Module::MAIN_PROCESS_ONLY},
     {&kNS_SCREENMANAGER_CID, false, NULL, ScreenManagerConstructor,
      mozilla::Module::MAIN_PROCESS_ONLY},
     {&kNS_DEVICE_CONTEXT_SPEC_CID, false, NULL, nsDeviceContextSpecXConstructor},
+    {&kNS_PRINTER_LIST_CID, false, NULL, nsPrinterListXConstructor,
+     mozilla::Module::MAIN_PROCESS_ONLY},
     {&kNS_PRINTSESSION_CID, false, NULL, nsPrintSessionConstructor},
     {&kNS_PRINTSETTINGSSERVICE_CID, false, NULL, nsPrintSettingsServiceXConstructor},
     {&kNS_PRINTDIALOGSERVICE_CID, false, NULL, nsPrintDialogServiceXConstructor},
-    {&kNS_IDLE_SERVICE_CID, false, NULL, nsIdleServiceXConstructor},
+    {&kNS_IDLE_SERVICE_CID, false, NULL, nsUserIdleServiceXConstructor},
     {&kNS_SYSTEMALERTSSERVICE_CID, false, NULL, OSXNotificationCenterConstructor},
     {&kNS_NATIVEMENUSERVICE_CID, false, NULL, nsNativeMenuServiceXConstructor},
     {&kNS_MACDOCKSUPPORT_CID, false, NULL, nsMacDockSupportConstructor},
@@ -172,16 +169,16 @@ static const mozilla::Module::ContractIDEntry kWidgetContracts[] = {
     {"@mozilla.org/sound;1", &kNS_SOUND_CID, mozilla::Module::MAIN_PROCESS_ONLY},
     {"@mozilla.org/widget/transferable;1", &kNS_TRANSFERABLE_CID},
     {"@mozilla.org/widget/htmlformatconverter;1", &kNS_HTMLFORMATCONVERTER_CID},
-    {"@mozilla.org/widget/clipboard;1", &kNS_CLIPBOARD_CID, mozilla::Module::MAIN_PROCESS_ONLY},
     {"@mozilla.org/widget/clipboardhelper;1", &kNS_CLIPBOARDHELPER_CID},
     {"@mozilla.org/widget/dragservice;1", &kNS_DRAGSERVICE_CID, mozilla::Module::MAIN_PROCESS_ONLY},
     {"@mozilla.org/gfx/screenmanager;1", &kNS_SCREENMANAGER_CID,
      mozilla::Module::MAIN_PROCESS_ONLY},
     {"@mozilla.org/gfx/devicecontextspec;1", &kNS_DEVICE_CONTEXT_SPEC_CID},
+    {"@mozilla.org/gfx/printerlist;1", &kNS_PRINTER_LIST_CID, mozilla::Module::MAIN_PROCESS_ONLY},
     {"@mozilla.org/gfx/printsession;1", &kNS_PRINTSESSION_CID},
     {"@mozilla.org/gfx/printsettings-service;1", &kNS_PRINTSETTINGSSERVICE_CID},
     {NS_PRINTDIALOGSERVICE_CONTRACTID, &kNS_PRINTDIALOGSERVICE_CID},
-    {"@mozilla.org/widget/idleservice;1", &kNS_IDLE_SERVICE_CID},
+    {"@mozilla.org/widget/useridleservice;1", &kNS_IDLE_SERVICE_CID},
     {"@mozilla.org/system-alerts-service;1", &kNS_SYSTEMALERTSSERVICE_CID},
     {"@mozilla.org/widget/nativemenuservice;1", &kNS_NATIVEMENUSERVICE_CID},
     {"@mozilla.org/widget/macdocksupport;1", &kNS_MACDOCKSUPPORT_CID},

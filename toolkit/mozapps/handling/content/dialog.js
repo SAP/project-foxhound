@@ -25,7 +25,9 @@
  * window.arguments[8]:
  *   This is the nsIURI that we are being brought up for in the first place.
  * window.arguments[9]:
- *   The nsIInterfaceRequestor of the parent window; may be null
+ *   This is the nsIPrincipal that has triggered the dialog; may be null.
+ * window.arguments[10]:
+ *   The browsingContext from which the request originates; may be null.
  */
 
 const { EnableDelayHelper } = ChromeUtils.import(
@@ -37,19 +39,21 @@ const { PrivateBrowsingUtils } = ChromeUtils.import(
 );
 
 class MozHandler extends window.MozElements.MozRichlistitem {
+  static get markup() {
+    return `
+    <vbox pack="center">
+      <image height="32" width="32"/>
+    </vbox>
+    <vbox flex="1">
+      <label class="name"/>
+      <label class="description"/>
+    </vbox>
+    `;
+  }
+
   connectedCallback() {
     this.textContent = "";
-    this.appendChild(
-      window.MozXULElement.parseXULToFragment(`
-      <vbox pack="center">
-        <image height="32" width="32"/>
-      </vbox>
-      <vbox flex="1">
-        <label class="name"/>
-        <label class="description"/>
-      </vbox>
-    `)
-    );
+    this.appendChild(this.constructor.fragment);
     this.initializeAttributeInheritance();
   }
 
@@ -77,7 +81,7 @@ var dialog = {
   _URI: null,
   _itemChoose: null,
   _okButton: null,
-  _windowCtxt: null,
+  _browsingContext: null,
   _buttonDisabled: true,
 
   // Methods
@@ -88,25 +92,11 @@ var dialog = {
   initialize: function initialize() {
     this._handlerInfo = window.arguments[7].QueryInterface(Ci.nsIHandlerInfo);
     this._URI = window.arguments[8].QueryInterface(Ci.nsIURI);
-    this._windowCtxt = window.arguments[9];
+    let principal = window.arguments[9]?.QueryInterface(Ci.nsIPrincipal);
+    this._browsingContext = window.arguments[10];
     let usePrivateBrowsing = false;
-    if (this._windowCtxt) {
-      // The context should be nsIRemoteWindowContext in OOP, or nsIDOMWindow otherwise.
-      try {
-        usePrivateBrowsing = this._windowCtxt.getInterface(
-          Ci.nsIRemoteWindowContext
-        ).usePrivateBrowsing;
-      } catch (e) {
-        try {
-          let opener = this._windowCtxt.getInterface(Ci.nsIDOMWindow);
-          usePrivateBrowsing = PrivateBrowsingUtils.isContentWindowPrivate(
-            opener
-          );
-        } catch (e) {
-          Cu.reportError(`No interface to determine privateness: ${e}`);
-        }
-      }
-      this._windowCtxt.QueryInterface(Ci.nsIInterfaceRequestor);
+    if (this._browsingContext) {
+      usePrivateBrowsing = this._browsingContext.usePrivateBrowsing;
     }
 
     this.isPrivate =
@@ -134,6 +124,20 @@ var dialog = {
     checkbox.desc.label = window.arguments[4];
     checkbox.desc.accessKey = window.arguments[5];
     checkbox.text.textContent = window.arguments[6];
+
+    if (principal && principal.isContentPrincipal) {
+      let hostContainer = document.getElementById("originating-host");
+      document.l10n.pauseObserving();
+      document.l10n.setAttributes(hostContainer, "handler-dialog-host", {
+        host: principal.exposablePrePath,
+        scheme: this._URI.scheme,
+      });
+      document.l10n
+        .translateElements([hostContainer])
+        .then(() => window.sizeToContent());
+      document.l10n.resumeObserving();
+      hostContainer.parentNode.removeAttribute("hidden");
+    }
 
     // Hide stuff that needs to be hidden
     if (!checkbox.desc.label) {
@@ -346,7 +350,7 @@ var dialog = {
     );
     hs.store(this._handlerInfo);
 
-    this._handlerInfo.launchWithURI(this._URI, this._windowCtxt);
+    this._handlerInfo.launchWithURI(this._URI, this._browsingContext);
     window.close();
   },
 

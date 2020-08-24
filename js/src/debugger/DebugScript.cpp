@@ -34,6 +34,7 @@
 #include "gc/FreeOp-inl.h"     // for JSFreeOp::free_
 #include "gc/GC-inl.h"         // for ZoneCellIter
 #include "gc/Marking-inl.h"    // for CheckGCThingAfterMovingGC
+#include "gc/WeakMap-inl.h"    // for WeakMap::remove
 #include "vm/JSContext-inl.h"  // for JSContext::check
 #include "vm/JSScript-inl.h"   // for JSScript::hasBaselineScript
 #include "vm/Realm-inl.h"      // for AutoRealm::AutoRealm
@@ -161,12 +162,9 @@ void DebugScript::clearBreakpointsIn(JSFreeOp* fop, Realm* realm, Debugger* dbg,
                                      JSObject* handler) {
   for (auto base = realm->zone()->cellIter<BaseScript>(); !base.done();
        base.next()) {
-    if (base->isLazyScript()) {
-      continue;
-    }
-    JSScript* script = base->asJSScript();
-    if (script->realm() == realm && script->hasDebugScript()) {
-      clearBreakpointsIn(fop, script, dbg, handler);
+    MOZ_ASSERT_IF(base->hasDebugScript(), base->hasBytecode());
+    if (base->realm() == realm && base->hasDebugScript()) {
+      clearBreakpointsIn(fop, base->asJSScript(), dbg, handler);
     }
   }
 }

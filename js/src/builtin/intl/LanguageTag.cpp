@@ -666,7 +666,7 @@ static bool LanguageTagToString(JSContext* cx, const LanguageTag& tag,
                                 Buffer& sb) {
   auto appendSubtag = [&sb](const auto& subtag) {
     auto span = subtag.span();
-    MOZ_ASSERT(span.size() > 0);
+    MOZ_ASSERT(!span.empty());
     return sb.append(span.data(), span.size());
   };
 
@@ -768,8 +768,7 @@ bool LanguageTag::canonicalizeTransformExtension(
   };
 
   // All tfields are sorted by alphabetical order of their keys.
-  size_t fieldsLength = fields.length();
-  if (fieldsLength > 1) {
+  if (size_t fieldsLength = fields.length(); fieldsLength > 1) {
     if (!fields.growByUninitialized(fieldsLength)) {
       return false;
     }
@@ -921,7 +920,7 @@ static bool CreateLocaleForLikelySubtags(const LanguageTag& tag,
 
   auto appendSubtag = [&locale](const auto& subtag) {
     auto span = subtag.span();
-    MOZ_ASSERT(span.size() > 0);
+    MOZ_ASSERT(!span.empty());
     return locale.append(span.data(), span.size());
   };
 
@@ -1417,6 +1416,20 @@ bool LanguageTagParser::parseBaseName(JSContext* cx,
                               JSMSG_INVALID_LANGUAGE_TAG, localeChars.get());
   }
   return false;
+}
+
+JS::Result<bool> LanguageTagParser::tryParseBaseName(JSContext* cx,
+                                                     JSLinearString* locale,
+                                                     LanguageTag& tag) {
+  JS::AutoCheckCannotGC nogc;
+  LocaleChars localeChars = StringChars(locale, nogc);
+  LanguageTagParser ts(localeChars, locale->length());
+  Token tok = ts.nextToken();
+
+  // Return true if the complete input was successfully parsed.
+  bool ok;
+  MOZ_TRY_VAR(ok, parseBaseName(cx, ts, tag, tok));
+  return ok && tok.isNone();
 }
 
 // Parse |extension|, which must be a valid `transformed_extensions` subtag, and

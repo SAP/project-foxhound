@@ -53,6 +53,13 @@ pane-sync-title2 = { -sync-brand-short-name }
 category-sync2 =
     .tooltiptext = { pane-sync-title2 }
 
+pane-experimental-title = { -brand-short-name } Experiments
+category-experimental =
+    .tooltiptext = { -brand-short-name } Experiments
+pane-experimental-subtitle = Proceed with Caution
+pane-experimental-search-results-header = { -brand-short-name } Experiments: Proceed with Caution
+pane-experimental-description = Changing advanced configuration preferences can impact { -brand-short-name } performance or security.
+
 help-button-label = { -brand-short-name } Support
 addons-button-label = Extensions & Themes
 
@@ -285,6 +292,11 @@ translate-exceptions =
     .label = Exceptions…
     .accesskey = x
 
+# Variables:
+#    $localeName (string) - Localized name of the locale to be used.
+use-system-locale =
+   .label = Use your operating system settings for “{ $localeName }” to format dates, times, numbers, and measurements.
+
 check-user-spelling =
     .label = Check your spelling as you type
     .accesskey = t
@@ -346,6 +358,14 @@ applications-use-app =
 applications-use-app-default =
     .label = Use { $app-name } (default)
 
+applications-use-os-default =
+    .label =
+        { PLATFORM() ->
+            [macos] Use macOS default application
+            [windows] Use Windows default application
+           *[other] Use system default application
+        }
+
 applications-use-other =
     .label = Use other…
 applications-select-helper = Select Helper Application
@@ -374,8 +394,8 @@ applications-file-ending-with-type = { applications-file-ending } ({ $type })
 #   $plugin-name (String) - Name of a plugin (e.g Adobe Flash)
 applications-use-plugin-in =
     .label = Use { $plugin-name } (in { -brand-short-name })
-applications-preview-inapp =
-    .label = Preview in { -brand-short-name }
+applications-open-inapp =
+    .label = Open in { -brand-short-name }
 
 ## The strings in this group are used to populate
 ## selected label element based on the string from
@@ -390,8 +410,8 @@ applications-action-save-label =
 applications-use-app-label =
     .value = { applications-use-app.label }
 
-applications-preview-inapp-label =
-    .value = { applications-preview-inapp.label }
+applications-open-inapp-label =
+    .value = { applications-open-inapp.label }
 
 applications-always-ask-label =
     .value = { applications-always-ask.label }
@@ -401,6 +421,9 @@ applications-use-app-default-label =
 
 applications-use-other-label =
     .value = { applications-use-other.label }
+
+applications-use-os-default-label =
+    .value = { applications-use-os-default.label }
 
 ##
 
@@ -597,11 +620,14 @@ home-prefs-topsites-header =
     .label = Top Sites
 home-prefs-topsites-description = The sites you visit most
 
-# Variables:
-#  $provider (String): Name of the corresponding content provider, e.g "Pocket".
+## Variables:
+##  $provider (String): Name of the corresponding content provider, e.g "Pocket".
+
 home-prefs-recommended-by-header =
     .label = Recommended by { $provider }
-home-prefs-recommended-by-description = Great content from around the web, personalized for you
+home-prefs-recommended-by-description-update = Exceptional content from across the web, curated by { $provider }
+##
+
 home-prefs-recommended-by-learn-more = How it works
 home-prefs-recommended-by-option-sponsored-stories =
     .label = Sponsored Stories
@@ -669,7 +695,7 @@ search-show-suggestions-above-history-option =
 search-show-suggestions-private-windows =
     .label = Show search suggestions in Private Windows
 
-suggestions-addressbar-settings = Change preferences for browsing history, bookmarks, and tab suggestions
+suggestions-addressbar-settings-generic = Change preferences for other address bar suggestions
 
 search-suggestions-cant-show = Search suggestions will not be shown in location bar results because you have configured { -brand-short-name } to never remember history.
 
@@ -883,7 +909,9 @@ privacy-header = Browser Privacy
 
 ## Privacy Section - Logins and Passwords
 
-logins-header = Logins and Passwords
+# The search keyword isn't shown to users but is used to find relevant settings in about:preferences.
+pane-privacy-logins-and-passwords-header = Logins and Passwords
+    .searchkeywords = { -lockwise-brand-short-name }
 
 # Checkbox to control whether UI is shown to users to save or fill logins/passwords.
 forms-ask-to-save-logins =
@@ -907,15 +935,38 @@ forms-fill-logins-and-passwords =
 forms-saved-logins =
     .label = Saved Logins…
     .accesskey = L
-forms-master-pw-use =
-    .label = Use a master password
+forms-primary-pw-use =
+    .label = Use a Primary Password
     .accesskey = U
+forms-primary-pw-learn-more-link = Learn more
+# This string uses the former name of the Primary Password feature
+# ("Master Password" in English) so that the preferences can be found
+# when searching for the old name. The accesskey is unused.
 forms-master-pw-change =
     .label = Change Master Password…
     .accesskey = M
+forms-primary-pw-change =
+    .label = Change Primary Password…
+    .accesskey = P
+# Leave this message empty if the translation for "Primary Password" matches
+# "Master Password" in your language. If you're editing the FTL file directly,
+# use { "" } as the value.
+forms-primary-pw-former-name = Formerly known as Master Password
 
-forms-master-pw-fips-title = You are currently in FIPS mode. FIPS requires a non-empty Master Password.
+forms-primary-pw-fips-title = You are currently in FIPS mode. FIPS requires a non-empty Primary Password.
 forms-master-pw-fips-desc = Password Change Failed
+
+## OS Authentication dialog
+
+# This message can be seen by trying to add a Primary Password.
+primary-password-os-auth-dialog-message-win = To create a Primary Password, enter your Windows login credentials. This helps protect the security of your accounts.
+
+# This message can be seen by trying to add a Primary Password.
+# The macOS strings are preceded by the operating system with "Firefox is trying to "
+# and includes subtitle of "Enter password for the user "xxx" to allow this." These
+# notes are only valid for English. Please test in your locale.
+primary-password-os-auth-dialog-message-macosx = create a Primary Password
+master-password-os-auth-dialog-caption = { -brand-full-name }
 
 ## Privacy Section - History
 
@@ -1003,6 +1054,8 @@ sitedata-option-block-cross-site-trackers =
     .label = Cross-site trackers
 sitedata-option-block-cross-site-and-social-media-trackers =
     .label = Cross-site and social media trackers
+sitedata-option-block-cross-site-and-social-media-trackers-plus-isolate =
+    .label = Cross-site and social media trackers, and isolate remaining cookies
 sitedata-option-block-unvisited =
     .label = Cookies from unvisited websites
 sitedata-option-block-all-third-party =
@@ -1018,9 +1071,9 @@ sitedata-settings =
     .label = Manage Data…
     .accesskey = M
 
-sitedata-cookies-permissions =
-    .label = Manage Permissions…
-    .accesskey = P
+sitedata-cookies-exceptions =
+    .label = Manage Exceptions…
+    .accesskey = x
 
 ## Privacy Section - Address Bar
 
@@ -1037,6 +1090,9 @@ addressbar-locbar-bookmarks-option =
 addressbar-locbar-openpage-option =
     .label = Open tabs
     .accesskey = O
+addressbar-locbar-topsites-option =
+    .label = Top sites
+    .accesskey = T
 
 addressbar-suggestions-settings = Change preferences for search engine suggestions
 
@@ -1069,6 +1125,7 @@ content-blocking-etp-custom-desc = Choose which trackers and scripts to block.
 
 content-blocking-private-windows = Tracking content in Private Windows
 content-blocking-cross-site-tracking-cookies = Cross-site tracking cookies
+content-blocking-cross-site-tracking-cookies-plus-isolate = Cross-site tracking cookies, and isolate remaining cookies
 content-blocking-social-media-trackers = Social media trackers
 content-blocking-all-cookies = All cookies
 content-blocking-unvisited-cookies = Cookies from unvisited sites
@@ -1078,7 +1135,7 @@ content-blocking-cryptominers = Cryptominers
 content-blocking-fingerprinters = Fingerprinters
 
 content-blocking-warning-title = Heads up!
-content-blocking-etp-warning-description = Blocking trackers could impact the functionality of some sites. Reload a page with trackers to load all content.
+content-blocking-and-isolating-etp-warning-description = Blocking trackers and isolating cookies could impact the functionality of some sites. Reload a page with trackers to load all content.
 content-blocking-warning-learn-how = Learn how
 
 content-blocking-reload-description = You will need to reload your tabs to apply these changes.
@@ -1190,7 +1247,7 @@ collection-header = { -brand-short-name } Data Collection and Use
 collection-description = We strive to provide you with choices and collect only what we need to provide and improve { -brand-short-name } for everyone. We always ask permission before receiving personal information.
 collection-privacy-notice = Privacy Notice
 
-collection-health-report-telemetry-disabled = You’re no longer allowing { -vendor-short-name } to capture technical and interaction data. All past data will be deleted within 30 days. 
+collection-health-report-telemetry-disabled = You’re no longer allowing { -vendor-short-name } to capture technical and interaction data. All past data will be deleted within 30 days.
 collection-health-report-telemetry-disabled-link = Learn more
 
 collection-health-report =
@@ -1290,6 +1347,23 @@ space-alert-under-5gb-ok-button =
     .accesskey = K
 
 space-alert-under-5gb-message = { -brand-short-name } is running out of disk space. Website contents may not display properly. Visit “Learn More” to optimize your disk usage for better browsing experience.
+
+## Privacy Section - HTTPS-Only
+
+httpsonly-header = HTTPS-Only Mode
+
+httpsonly-description = HTTPS provides a secure, encrypted connection between { -brand-short-name } and the websites you visit. Most websites support HTTPS, and if HTTPS-Only Mode is enabled, then { -brand-short-name } will upgrade all connections to HTTPS.
+
+httpsonly-learn-more = Learn more
+
+httpsonly-radio-enabled =
+    .label = Enable HTTPS-Only Mode in all windows
+
+httpsonly-radio-enabled-pbm =
+    .label = Enable HTTPS-Only Mode in private windows only
+
+httpsonly-radio-disabled =
+    .label = Don’t enable HTTPS-Only Mode
 
 ## The following strings are used in the Download section of settings
 desktop-folder-name = Desktop

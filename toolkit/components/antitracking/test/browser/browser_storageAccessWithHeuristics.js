@@ -1,5 +1,22 @@
 /* import-globals-from antitracking_head.js */
 
+function waitStoragePermission() {
+  return new Promise(resolve => {
+    let id = setInterval(async _ => {
+      if (
+        await SpecialPowers.testPermission(
+          `3rdPartyStorage^${TEST_3RD_PARTY_DOMAIN.slice(0, -1)}`,
+          SpecialPowers.Services.perms.ALLOW_ACTION,
+          TEST_DOMAIN
+        )
+      ) {
+        clearInterval(id);
+        resolve();
+      }
+    }, 0);
+  });
+}
+
 add_task(async function() {
   info("Starting subResources test");
 
@@ -240,24 +257,33 @@ add_task(async function testUserInteractionHeuristic() {
         ifr.contentWindow.postMessage({ callback: msg.blockingCallback }, "*");
       });
 
-      let windowClosed = new content.Promise(resolve => {
-        Services.ww.registerNotification(function notification(
-          aSubject,
-          aTopic,
-          aData
-        ) {
-          if (aTopic == "domwindowclosed") {
-            Services.ww.unregisterNotification(notification);
-            resolve();
-          }
-        });
-      });
-
       info("Opening a window from the iframe.");
-      ifr.contentWindow.open(obj.popup);
+      await SpecialPowers.spawn(ifr, [obj.popup], async popup => {
+        let windowClosed = new content.Promise(resolve => {
+          Services.ww.registerNotification(function notification(
+            aSubject,
+            aTopic,
+            aData
+          ) {
+            // We need to check the document URI for Fission. It's because the
+            // 'domwindowclosed' would be triggered twice, one for the
+            // 'about:blank' page and another for the tracker page.
+            if (
+              aTopic == "domwindowclosed" &&
+              aSubject.document.documentURI ==
+                "https://tracking.example.org/browser/toolkit/components/antitracking/test/browser/3rdPartyOpenUI.html"
+            ) {
+              Services.ww.unregisterNotification(notification);
+              resolve();
+            }
+          });
+        });
 
-      info("Let's wait for the window to be closed");
-      await windowClosed;
+        content.open(popup);
+
+        info("Let's wait for the window to be closed");
+        await windowClosed;
+      });
 
       info("The 3rd party content should have access to first party storage.");
       await new content.Promise(resolve => {
@@ -343,24 +369,32 @@ add_task(async function testUserInteractionHeuristic() {
         ifr.contentWindow.postMessage({ callback: msg.blockingCallback }, "*");
       });
 
-      let windowClosed = new content.Promise(resolve => {
-        Services.ww.registerNotification(function notification(
-          aSubject,
-          aTopic,
-          aData
-        ) {
-          if (aTopic == "domwindowclosed") {
-            Services.ww.unregisterNotification(notification);
-            resolve();
-          }
-        });
-      });
-
       info("Opening a window from the iframe.");
-      ifr.contentWindow.open(obj.popup);
+      await SpecialPowers.spawn(ifr, [obj.popup], async popup => {
+        let windowClosed = new content.Promise(resolve => {
+          Services.ww.registerNotification(function notification(
+            aSubject,
+            aTopic,
+            aData
+          ) {
+            // We need to check the document URI here as well for the same
+            // reason above.
+            if (
+              aTopic == "domwindowclosed" &&
+              aSubject.document.documentURI ==
+                "https://tracking.example.org/browser/toolkit/components/antitracking/test/browser/3rdPartyOpenUI.html"
+            ) {
+              Services.ww.unregisterNotification(notification);
+              resolve();
+            }
+          });
+        });
 
-      info("Let's wait for the window to be closed");
-      await windowClosed;
+        content.open(popup);
+
+        info("Let's wait for the window to be closed");
+        await windowClosed;
+      });
 
       info("The 3rd party content should have access to first party storage.");
       await new content.Promise(resolve => {
@@ -396,6 +430,9 @@ add_task(async function testUserInteractionHeuristic() {
 });
 
 add_task(async function() {
+  info("Wait until the storage permission is ready before cleaning up.");
+  await waitStoragePermission();
+
   info("Cleaning up.");
   await new Promise(resolve => {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
@@ -638,6 +675,9 @@ add_task(async function testDoublyNestedUserInteractionHeuristic() {
 });
 
 add_task(async function() {
+  info("Wait until the storage permission is ready before cleaning up.");
+  await waitStoragePermission();
+
   info("Cleaning up.");
   await new Promise(resolve => {
     Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>

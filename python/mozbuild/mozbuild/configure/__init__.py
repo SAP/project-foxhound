@@ -360,6 +360,7 @@ class ConfigureSandbox(dict):
         else:
             assert isinstance(logger, logging.Logger)
             moz_logger = None
+
             @contextmanager
             def queue_debug():
                 yield
@@ -555,11 +556,16 @@ class ConfigureSandbox(dict):
     @memoize
     def _value_for_option(self, option):
         implied = {}
-        for implied_option in self._implied_options[:]:
-            if implied_option.name not in (option.name, option.env):
-                continue
-            self._implied_options.remove(implied_option)
+        matching_implied_options = [
+            o for o in self._implied_options if o.name in (option.name, option.env)
+        ]
+        # Update self._implied_options before going into the loop with the non-matching
+        # options.
+        self._implied_options = [
+            o for o in self._implied_options if o.name not in (option.name, option.env)
+        ]
 
+        for implied_option in matching_implied_options:
             if (implied_option.when and
                 not self._value_for(implied_option.when)):
                 continue
@@ -1149,6 +1155,7 @@ class ConfigureSandbox(dict):
             func.__defaults__,
             closure
         ))
+
         @self.wraps(new_func)
         def wrapped(*args, **kwargs):
             if func in self._imports:

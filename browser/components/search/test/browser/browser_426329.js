@@ -99,7 +99,6 @@ function promiseSetEngine() {
           searchBar = BrowserSearch.searchBar;
           searchButton = searchBar.querySelector(".search-go-button");
           ok(searchButton, "got search-go-button");
-          searchBar.value = "test";
 
           Services.obs.removeObserver(
             observer,
@@ -111,10 +110,9 @@ function promiseSetEngine() {
     }
 
     Services.obs.addObserver(observer, "browser-search-engine-modified");
-    ss.addEngine(
+    ss.addOpenSearchEngine(
       "http://mochi.test:8888/browser/browser/components/search/test/browser/426329.xml",
-      "data:image/x-icon,%00",
-      false
+      "data:image/x-icon,%00"
     );
   });
 }
@@ -166,6 +164,7 @@ add_task(async function testSetup() {
 
 add_task(async function testSetupEngine() {
   await promiseSetEngine();
+  searchBar.value = "test";
 });
 
 add_task(async function testReturn() {

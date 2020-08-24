@@ -13,6 +13,11 @@ XPCOMUtils.defineLazyScriptGetter(
 XPCOMUtils.defineLazyModuleGetters(this, {
   BookmarkPanelHub: "resource://activity-stream/lib/BookmarkPanelHub.jsm",
 });
+ChromeUtils.defineModuleGetter(
+  this,
+  "PanelMultiView",
+  "resource:///modules/PanelMultiView.jsm"
+);
 
 var StarUI = {
   _itemGuids: null,
@@ -42,6 +47,7 @@ var StarUI = {
   // Edit-bookmark panel
   get panel() {
     delete this.panel;
+    this._createPanelIfNeeded();
     var element = this._element("editBookmarkPanel");
     // initially the panel is hidden
     // to avoid impacting startup / new window performance
@@ -297,6 +303,16 @@ var StarUI = {
     });
 
     this.panel.openPopup(this._anchorElement, "bottomcenter topright");
+  },
+
+  _createPanelIfNeeded() {
+    // Lazy load the editBookmarkPanel the first time we need to display it.
+    if (!this._element("editBookmarkPanel")) {
+      MozXULElement.insertFTLIfNeeded("browser/editBookmarkOverlay.ftl");
+      let template = this._element("editBookmarkPanelTemplate");
+      let clone = template.content.cloneNode(true);
+      template.replaceWith(clone);
+    }
   },
 
   _setIconAndPreviewImage() {
@@ -572,27 +588,6 @@ var PlacesCommandHook = {
    */
   get uniqueSelectedPages() {
     return this.getUniquePages(gBrowser.selectedTabs);
-  },
-
-  /**
-   * Adds a folder with bookmarks to URIList given in param.
-   */
-  bookmarkPages(URIList) {
-    if (!URIList.length) {
-      return;
-    }
-
-    let bookmarkDialogInfo = { action: "add" };
-    if (URIList.length > 1) {
-      bookmarkDialogInfo.type = "folder";
-      bookmarkDialogInfo.URIList = URIList;
-    } else {
-      bookmarkDialogInfo.type = "bookmark";
-      bookmarkDialogInfo.title = URIList[0].title;
-      bookmarkDialogInfo.uri = URIList[0].uri;
-    }
-
-    PlacesUIUtils.showBookmarkDialog(bookmarkDialogInfo, window);
   },
 
   /**
@@ -1238,15 +1233,6 @@ var LibraryUI = {
    * @returns true if the animation could be triggered, false otherwise.
    */
   triggerLibraryAnimation(animation) {
-    if (!this.hasOwnProperty("COSMETIC_ANIMATIONS_ENABLED")) {
-      XPCOMUtils.defineLazyPreferenceGetter(
-        this,
-        "COSMETIC_ANIMATIONS_ENABLED",
-        "toolkit.cosmeticAnimations.enabled",
-        true
-      );
-    }
-
     let libraryButton = document.getElementById("library-button");
     if (
       !libraryButton ||
@@ -1254,7 +1240,7 @@ var LibraryUI = {
       libraryButton.getAttribute("overflowedItem") == "true" ||
       !libraryButton.closest("#nav-bar") ||
       !window.toolbar.visible ||
-      !this.COSMETIC_ANIMATIONS_ENABLED
+      gReduceMotion
     ) {
       return false;
     }
@@ -1443,17 +1429,22 @@ var BookmarkingUI = {
   },
 
   selectLabel(elementId, visible) {
-    let element = document.getElementById(elementId);
+    let element = PanelMultiView.getViewNode(document, elementId);
     element.setAttribute(
       "label",
       element.getAttribute(visible ? "label-hide" : "label-show")
     );
   },
 
-  toggleBookmarksToolbar() {
+  toggleBookmarksToolbar(reason) {
     CustomizableUI.setToolbarVisibility(
       "PersonalToolbar",
       document.getElementById("PersonalToolbar").collapsed
+    );
+    BrowserUsageTelemetry.recordToolbarVisibility(
+      "PersonalToolbar",
+      document.getElementById("PersonalToolbar").collapsed,
+      reason
     );
   },
 
@@ -1559,11 +1550,7 @@ var BookmarkingUI = {
   init() {
     CustomizableUI.addListener(this);
 
-    if (Services.prefs.getBoolPref("toolkit.cosmeticAnimations.enabled")) {
-      let starButtonBox = document.getElementById("star-button-box");
-      starButtonBox.setAttribute("animationsenabled", "true");
-      this.star.addEventListener("mouseover", this, { once: true });
-    }
+    this.star.addEventListener("mouseover", this, { once: true });
   },
 
   _hasBookmarksObserver: false,
@@ -1655,7 +1642,7 @@ var BookmarkingUI = {
     for (let element of [
       this.star,
       document.getElementById("context-bookmarkpage"),
-      document.getElementById("panelMenuBookmarkThisPage"),
+      PanelMultiView.getViewNode(document, "panelMenuBookmarkThisPage"),
       document.getElementById("pageAction-panel-bookmark"),
     ]) {
       if (!element) {
@@ -1718,7 +1705,8 @@ var BookmarkingUI = {
       document.l10n.setAttributes(menuItem, menuItemL10nId);
     }
 
-    let panelMenuToolbarButton = document.getElementById(
+    let panelMenuToolbarButton = PanelMultiView.getViewNode(
+      document,
       "panelMenuBookmarkThisPage"
     );
     if (panelMenuToolbarButton) {
@@ -1788,7 +1776,7 @@ var BookmarkingUI = {
     event,
     anchor = document.getElementById(this.BOOKMARK_BUTTON_ID)
   ) {
-    let view = document.getElementById("PanelUI-bookmarks");
+    let view = PanelMultiView.getViewNode(document, "PanelUI-bookmarks");
     view.addEventListener("ViewShowing", this);
     view.addEventListener("ViewHiding", this);
     anchor.setAttribute("closemenu", "none");
@@ -1947,9 +1935,19 @@ var BookmarkingUI = {
       }
 
       CustomizableUI.addWidgetToArea(this.BOOKMARK_BUTTON_ID, area, pos);
+      BrowserUsageTelemetry.recordWidgetChange(
+        this.BOOKMARK_BUTTON_ID,
+        area,
+        "bookmark-tools"
+      );
     } else {
       // Move it back to the palette.
       CustomizableUI.removeWidgetFromArea(this.BOOKMARK_BUTTON_ID);
+      BrowserUsageTelemetry.recordWidgetChange(
+        this.BOOKMARK_BUTTON_ID,
+        null,
+        "bookmark-tools"
+      );
     }
     triggerNode.setAttribute("checked", !placement);
     updateToggleControlLabel(triggerNode);
@@ -2031,7 +2029,7 @@ var BookmarkingUI = {
     this._uninitView();
   },
 
-  QueryInterface: ChromeUtils.generateQI([Ci.nsINavBookmarkObserver]),
+  QueryInterface: ChromeUtils.generateQI(["nsINavBookmarkObserver"]),
 };
 
 var AutoShowBookmarksToolbar = {

@@ -200,6 +200,18 @@ var makeFxAccountsInternalMock = function(config) {
     _getAssertion(audience) {
       return Promise.resolve(config.fxaccount.user.assertion);
     },
+    getOAuthToken: () => Promise.resolve("some-access-token"),
+    keys: {
+      getScopedKeys: () =>
+        Promise.resolve({
+          "https://identity.mozilla.com/apps/oldsync": {
+            identifier: "https://identity.mozilla.com/apps/oldsync",
+            keyRotationSecret:
+              "0000000000000000000000000000000000000000000000000000000000000000",
+            keyRotationTimestamp: 1510726317123,
+          },
+        }),
+    },
     profile: {
       getProfile() {
         return null;
@@ -241,6 +253,15 @@ var configureFxAccountIdentity = function(
         Services.prefs.getStringPref("identity.sync.tokenserver.uri")
       );
       Assert.equal(assertion, config.fxaccount.user.assertion);
+      config.fxaccount.token.uid = config.username;
+      return config.fxaccount.token;
+    },
+    async getTokenFromOAuthToken(url, oauthToken) {
+      Assert.equal(
+        url,
+        Services.prefs.getStringPref("identity.sync.tokenserver.uri")
+      );
+      Assert.ok(oauthToken, "oauth token present");
       config.fxaccount.token.uid = config.username;
       return config.fxaccount.token;
     },

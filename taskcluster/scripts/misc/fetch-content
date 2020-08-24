@@ -501,10 +501,13 @@ def git_checkout_archive(dest_path: pathlib.Path, repo: str, commit: str,
         # to initiate a clone. Since the commit-ish may not refer to a ref, we
         # simply perform a full clone followed by a checkout.
         print('cloning %s to %s' % (repo, git_dir))
-        subprocess.run(['git', 'clone', '--recurse-submodules', repo, str(git_dir)],
+        subprocess.run(['git', 'clone', '-n', repo, str(git_dir)],
                        check=True)
 
-        subprocess.run(['git', 'checkout', '--recurse-submodules', commit],
+        subprocess.run(['git', 'checkout', commit],
+                       cwd=str(git_dir), check=True)
+
+        subprocess.run(['git', 'submodule', 'update', '--init'],
                        cwd=str(git_dir), check=True)
 
         print('creating archive %s of commit %s' % (dest_path, commit))
@@ -590,7 +593,8 @@ def command_task_artifacts(args):
     for fetch in fetches:
         extdir = pathlib.Path(args.dest)
         if 'dest' in fetch:
-            extdir = extdir.joinpath(fetch['dest'])
+            # Note: normpath doesn't like pathlib.Path in python 3.5
+            extdir = pathlib.Path(os.path.normpath(str(extdir.joinpath(fetch['dest']))))
         extdir.mkdir(parents=True, exist_ok=True)
         root_url = os.environ['TASKCLUSTER_ROOT_URL']
         if fetch['artifact'].startswith('public/'):

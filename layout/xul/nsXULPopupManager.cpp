@@ -159,11 +159,9 @@ nsXULPopupManager::Observe(nsISupports* aSubject, const char* aTopic,
                            const char16_t* aData) {
   if (!nsCRT::strcmp(aTopic, "xpcom-shutdown")) {
     if (mKeyListener) {
-      mKeyListener->RemoveEventListener(NS_LITERAL_STRING("keypress"), this,
-                                        true);
-      mKeyListener->RemoveEventListener(NS_LITERAL_STRING("keydown"), this,
-                                        true);
-      mKeyListener->RemoveEventListener(NS_LITERAL_STRING("keyup"), this, true);
+      mKeyListener->RemoveEventListener(u"keypress"_ns, this, true);
+      mKeyListener->RemoveEventListener(u"keydown"_ns, this, true);
+      mKeyListener->RemoveEventListener(u"keyup"_ns, this, true);
       mKeyListener = nullptr;
     }
     mRangeParentContent = nullptr;
@@ -350,7 +348,7 @@ bool nsXULPopupManager::ShouldRollupOnMouseWheelEvent() {
 
   nsAutoString value;
   element->GetAttr(kNameSpaceID_None, nsGkAtoms::type, value);
-  return StringBeginsWith(value, NS_LITERAL_STRING("autocomplete"));
+  return StringBeginsWith(value, u"autocomplete"_ns);
 }
 
 bool nsXULPopupManager::ShouldConsumeOnMouseWheelEvent() {
@@ -616,7 +614,7 @@ void nsXULPopupManager::InitTriggerEvent(Event* aEvent, nsIContent* aPopup,
                 thisDocToRootDocOffset.y);
           } else if (rootDocumentRootFrame) {
             nsPoint pnt = nsLayoutUtils::GetEventCoordinatesRelativeTo(
-                event, rootDocumentRootFrame);
+                event, RelativeTo{rootDocumentRootFrame});
             mCachedMousePoint = LayoutDeviceIntPoint(
                 rootDocPresContext->AppUnitsToDevPixels(pnt.x),
                 rootDocPresContext->AppUnitsToDevPixels(pnt.y));
@@ -973,7 +971,7 @@ void nsXULPopupManager::HidePopup(nsIContent* aPopup, bool aHideChain,
 // This is used to hide the popup after a transition finishes.
 class TransitionEnder final : public nsIDOMEventListener {
  protected:
-  virtual ~TransitionEnder() {}
+  virtual ~TransitionEnder() = default;
 
  public:
   nsCOMPtr<nsIContent> mContent;
@@ -986,8 +984,7 @@ class TransitionEnder final : public nsIDOMEventListener {
       : mContent(aContent), mDeselectMenu(aDeselectMenu) {}
 
   NS_IMETHOD HandleEvent(Event* aEvent) override {
-    mContent->RemoveSystemEventListener(NS_LITERAL_STRING("transitionend"),
-                                        this, false);
+    mContent->RemoveSystemEventListener(u"transitionend"_ns, this, false);
 
     nsMenuPopupFrame* popupFrame = do_QueryFrame(mContent->GetPrimaryFrame());
 
@@ -1097,7 +1094,7 @@ void nsXULPopupManager::HidePopupAfterDelay(nsMenuPopupFrame* aPopup) {
   KillMenuTimer();
 
   int32_t menuDelay =
-      LookAndFeel::GetInt(LookAndFeel::eIntID_SubmenuDelay, 300);  // ms
+      LookAndFeel::GetInt(LookAndFeel::IntID::SubmenuDelay, 300);  // ms
 
   // Kick off the timer.
   nsIEventTarget* target = nullptr;
@@ -1355,6 +1352,8 @@ void nsXULPopupManager::FirePopupShowingEvent(nsIContent* aPopup,
   mRangeParentContent = nullptr;
   mRangeOffset = 0;
 
+  aPopup->OwnerDoc()->FlushPendingNotifications(FlushType::Frames);
+
   // get the frame again in case it went away
   popupFrame = do_QueryFrame(aPopup->GetPrimaryFrame());
   if (popupFrame) {
@@ -1384,6 +1383,7 @@ void nsXULPopupManager::FirePopupHidingEvent(
     nsIContent* aPopup, nsIContent* aNextPopup, nsIContent* aLastPopup,
     nsPresContext* aPresContext, nsPopupType aPopupType, bool aDeselectMenu,
     bool aIsCancel) {
+  nsCOMPtr<nsIContent> popup = aPopup;
   RefPtr<PresShell> presShell = aPresContext->PresShell();
   mozilla::Unused << presShell;  // This presShell may be keeping things alive
                                  // on non GTK platforms
@@ -1410,6 +1410,8 @@ void nsXULPopupManager::FirePopupHidingEvent(
       }
     }
   }
+
+  aPopup->OwnerDoc()->FlushPendingNotifications(FlushType::Frames);
 
   // get frame again in case it went away
   nsMenuPopupFrame* popupFrame = do_QueryFrame(aPopup->GetPrimaryFrame());
@@ -1453,8 +1455,8 @@ void nsXULPopupManager::FirePopupHidingEvent(
                   aPopup->AsElement(), PseudoStyleType::NotPseudo)) {
             RefPtr<TransitionEnder> ender =
                 new TransitionEnder(aPopup, aDeselectMenu);
-            aPopup->AddSystemEventListener(NS_LITERAL_STRING("transitionend"),
-                                           ender, false, false);
+            aPopup->AddSystemEventListener(u"transitionend"_ns, ender, false,
+                                           false);
             return;
           }
         }
@@ -1772,19 +1774,17 @@ void nsXULPopupManager::UpdateKeyboardListeners() {
 
   if (mKeyListener != newTarget) {
     if (mKeyListener) {
-      mKeyListener->RemoveEventListener(NS_LITERAL_STRING("keypress"), this,
-                                        true);
-      mKeyListener->RemoveEventListener(NS_LITERAL_STRING("keydown"), this,
-                                        true);
-      mKeyListener->RemoveEventListener(NS_LITERAL_STRING("keyup"), this, true);
+      mKeyListener->RemoveEventListener(u"keypress"_ns, this, true);
+      mKeyListener->RemoveEventListener(u"keydown"_ns, this, true);
+      mKeyListener->RemoveEventListener(u"keyup"_ns, this, true);
       mKeyListener = nullptr;
       nsContentUtils::NotifyInstalledMenuKeyboardListener(false);
     }
 
     if (newTarget) {
-      newTarget->AddEventListener(NS_LITERAL_STRING("keypress"), this, true);
-      newTarget->AddEventListener(NS_LITERAL_STRING("keydown"), this, true);
-      newTarget->AddEventListener(NS_LITERAL_STRING("keyup"), this, true);
+      newTarget->AddEventListener(u"keypress"_ns, this, true);
+      newTarget->AddEventListener(u"keydown"_ns, this, true);
+      newTarget->AddEventListener(u"keyup"_ns, this, true);
       nsContentUtils::NotifyInstalledMenuKeyboardListener(isForMenu);
       mKeyListener = newTarget;
     }
@@ -1979,11 +1979,15 @@ bool nsXULPopupManager::HandleShortcutNavigation(KeyboardEvent* aKeyEvent,
 }
 
 bool nsXULPopupManager::HandleKeyboardNavigation(uint32_t aKeyCode) {
+  if (nsMenuChainItem* nextitem = GetTopVisibleMenu()) {
+    nextitem->Content()->OwnerDoc()->FlushPendingNotifications(
+        FlushType::Frames);
+  }
+
   // navigate up through the open menus, looking for the topmost one
   // in the same hierarchy
   nsMenuChainItem* item = nullptr;
   nsMenuChainItem* nextitem = GetTopVisibleMenu();
-
   while (nextitem) {
     item = nextitem;
     nextitem = item->GetParent();
@@ -2410,7 +2414,7 @@ bool nsXULPopupManager::IsValidMenuItem(nsIContent* aContent, bool aOnPopup) {
   bool skipNavigatingDisabledMenuItem = true;
   if (aOnPopup && (!menuFrame || !menuFrame->IsParentMenuList())) {
     skipNavigatingDisabledMenuItem =
-        LookAndFeel::GetInt(LookAndFeel::eIntID_SkipNavigatingDisabledMenuItem,
+        LookAndFeel::GetInt(LookAndFeel::IntID::SkipNavigatingDisabledMenuItem,
                             0) != 0;
   }
 
@@ -2666,8 +2670,7 @@ nsXULMenuCommandEvent::Run() {
     if (menuFrame->IsChecked()) {
       mMenu->UnsetAttr(kNameSpaceID_None, nsGkAtoms::checked, true);
     } else {
-      mMenu->SetAttr(kNameSpaceID_None, nsGkAtoms::checked,
-                     NS_LITERAL_STRING("true"), true);
+      mMenu->SetAttr(kNameSpaceID_None, nsGkAtoms::checked, u"true"_ns, true);
     }
   }
 

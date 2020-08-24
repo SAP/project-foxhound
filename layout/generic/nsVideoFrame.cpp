@@ -76,7 +76,7 @@ nsVideoFrame::nsVideoFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
   EnableVisibilityTracking();
 }
 
-nsVideoFrame::~nsVideoFrame() {}
+nsVideoFrame::~nsVideoFrame() = default;
 
 NS_QUERYFRAME_HEAD(nsVideoFrame)
   NS_QUERYFRAME_ENTRY(nsVideoFrame)
@@ -113,7 +113,9 @@ nsresult nsVideoFrame::CreateAnonymousContent(
 
     UpdatePosterSource(false);
 
-    if (!aElements.AppendElement(mPosterImage)) return NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    aElements.AppendElement(mPosterImage);
 
     // Set up the caption overlay div for showing any TextTrack data
     nodeInfo = nodeInfoManager->GetNodeInfo(
@@ -123,9 +125,11 @@ nsresult nsVideoFrame::CreateAnonymousContent(
     NS_ENSURE_TRUE(mCaptionDiv, NS_ERROR_OUT_OF_MEMORY);
     nsGenericHTMLElement* div =
         static_cast<nsGenericHTMLElement*>(mCaptionDiv.get());
-    div->SetClassName(NS_LITERAL_STRING("caption-box"));
+    div->SetClassName(u"caption-box"_ns);
 
-    if (!aElements.AppendElement(mCaptionDiv)) return NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    aElements.AppendElement(mCaptionDiv);
     UpdateTextTrack();
   }
 
@@ -360,8 +364,8 @@ void nsVideoFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
 
       if (child->GetSize() != oldChildSize) {
         const nsString name = child->GetContent() == videoControlsDiv
-                                  ? NS_LITERAL_STRING("resizevideocontrols")
-                                  : NS_LITERAL_STRING("resizecaption");
+                                  ? u"resizevideocontrols"_ns
+                                  : u"resizecaption"_ns;
         RefPtr<Runnable> event =
             new DispatchResizeEvent(child->GetContent(), name);
         nsContentUtils::AddScriptRunner(event);
@@ -567,7 +571,7 @@ a11y::AccType nsVideoFrame::AccessibleType() { return a11y::eHTMLMediaType; }
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsVideoFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("HTMLVideo"), aResult);
+  return MakeFrameName(u"HTMLVideo"_ns, aResult);
 }
 #endif
 

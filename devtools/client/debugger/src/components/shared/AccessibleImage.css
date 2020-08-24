@@ -33,7 +33,7 @@
   transition: transform 180ms var(--animation-curve);
 }
 
-html[dir="rtl"] .img.arrow {
+.img.arrow:dir(rtl) {
   transform: rotate(90deg);
 }
 
@@ -69,6 +69,11 @@ html[dir="rtl"] .img.arrow {
 
 .img.disable-pausing {
   mask-image: url(resource://devtools/client/debugger/images/disable-pausing.svg);
+}
+
+.img.enable-pausing {
+  mask-image: url(resource://devtools/client/debugger/images/enable-pausing.svg);
+  background-color: var(--theme-icon-checked-color);
 }
 
 .img.globe {

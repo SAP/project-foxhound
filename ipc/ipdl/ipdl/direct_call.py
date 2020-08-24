@@ -53,13 +53,6 @@ DIRECT_CALL_OVERRIDES = {
         "PresentationRequestParent", "mozilla/dom/PresentationParent.h"
     ),
 
-    ("PPSMContentDownloader", "child"): (
-        "PSMContentDownloaderChild", "mozilla/psm/PSMContentListener.h"
-    ),
-    ("PPSMContentDownloader", "parent"): (
-        "PSMContentDownloaderParent", "mozilla/psm/PSMContentListener.h"
-    ),
-
     ("PRemoteSpellcheckEngine", "child"): (
         "RemoteSpellcheckEngineChild", "mozilla/RemoteSpellCheckEngineChild.h"
     ),
@@ -445,8 +438,6 @@ DIRECT_CALL_OVERRIDES = {
 # set() of (Protocol, side)
 VIRTUAL_CALL_CLASSES = set([
     # Defined as a strange template
-    ("PJavaScript", "child"),
-    ("PJavaScript", "parent"),
     ("PMedia", "parent"),
     ("PTexture", "parent"),
 

@@ -29,7 +29,7 @@ const NetworkMonitorActor = ActorClassWithSpec(networkMonitorSpec, {
    * parent process.
    *
    * @param object filters
-   *        Contains an `outerWindowID` attribute when this is used across processes.
+   *        Contains an `browsingContextID` attribute when this is used across processes.
    *        Or a `window` attribute when instanciated in the same process.
    * @param number parentID (optional)
    *        To be removed, specify the ID of the Web console actor.
@@ -66,6 +66,7 @@ const NetworkMonitorActor = ActorClassWithSpec(networkMonitorSpec, {
     this.onBlockRequest = this.onBlockRequest.bind(this);
     this.onUnblockRequest = this.onUnblockRequest.bind(this);
     this.onSetBlockedUrls = this.onSetBlockedUrls.bind(this);
+    this.onGetBlockedUrls = this.onGetBlockedUrls.bind(this);
     this.onGetNetworkEventActor = this.onGetNetworkEventActor.bind(this);
     this.onDestroyMessage = this.onDestroyMessage.bind(this);
 
@@ -104,6 +105,10 @@ const NetworkMonitorActor = ActorClassWithSpec(networkMonitorSpec, {
       this.onSetBlockedUrls
     );
     this.messageManager.addMessageListener(
+      "debug:get-blocked-urls",
+      this.onGetBlockedUrls
+    );
+    this.messageManager.addMessageListener(
       "debug:get-network-event-actor:request",
       this.onGetNetworkEventActor
     );
@@ -137,6 +142,10 @@ const NetworkMonitorActor = ActorClassWithSpec(networkMonitorSpec, {
     this.messageManager.removeMessageListener(
       "debug:set-blocked-urls",
       this.onSetBlockedUrls
+    );
+    this.messageManager.removeMessageListener(
+      "debug:get-blocked-urls",
+      this.onGetBlockedUrls
     );
     this.messageManager.removeMessageListener(
       "debug:get-network-event-actor:request",
@@ -258,6 +267,14 @@ const NetworkMonitorActor = ActorClassWithSpec(networkMonitorSpec, {
     const { urls } = data;
     this.observer.setBlockedUrls(urls);
     this.messageManager.sendAsyncMessage("debug:set-blocked-urls:response");
+  },
+
+  onGetBlockedUrls() {
+    const urls = this.observer.getBlockedUrls();
+    this.messageManager.sendAsyncMessage(
+      "debug:get-blocked-urls:response",
+      urls
+    );
   },
 
   onGetNetworkEventActor({ data }) {

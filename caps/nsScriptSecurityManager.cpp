@@ -55,6 +55,8 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/NullPrincipal.h"
 #include <stdint.h>
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -170,7 +172,7 @@ static nsresult GetOriginFromURI(nsIURI* aURI, nsACString& aOrigin) {
     nsAutoCString scheme;
     rv = uri->GetScheme(scheme);
     NS_ENSURE_SUCCESS(rv, rv);
-    aOrigin = scheme + NS_LITERAL_CSTRING("://") + hostPort;
+    aOrigin = scheme + "://"_ns + hostPort;
   } else {
     // Some URIs (e.g., nsSimpleURI) don't support host. Just
     // get the full spec.
@@ -249,13 +251,14 @@ nsScriptSecurityManager::GetChannelResultStoragePrincipal(
     return rv;
   }
 
-  return StoragePrincipalHelper::Create(aChannel, principal, aPrincipal);
+  return StoragePrincipalHelper::Create(
+      aChannel, principal, /* aForceIsolation */ false, aPrincipal);
 }
 
 NS_IMETHODIMP
 nsScriptSecurityManager::GetChannelResultPrincipals(
     nsIChannel* aChannel, nsIPrincipal** aPrincipal,
-    nsIPrincipal** aStoragePrincipal) {
+    nsIPrincipal** aPartitionedPrincipal) {
   nsresult rv = GetChannelResultPrincipal(aChannel, aPrincipal,
                                           /*aIgnoreSandboxing*/ false);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -267,12 +270,12 @@ nsScriptSecurityManager::GetChannelResultPrincipals(
     // principal for the storage principal too, since attempting to create a
     // storage principal would fail anyway.
     nsCOMPtr<nsIPrincipal> copy = *aPrincipal;
-    copy.forget(aStoragePrincipal);
+    copy.forget(aPartitionedPrincipal);
     return NS_OK;
   }
 
-  return StoragePrincipalHelper::Create(aChannel, *aPrincipal,
-                                        aStoragePrincipal);
+  return StoragePrincipalHelper::Create(
+      aChannel, *aPrincipal, /* aForceIsolation */ true, aPartitionedPrincipal);
 }
 
 nsresult nsScriptSecurityManager::GetChannelResultPrincipal(
@@ -325,9 +328,11 @@ nsresult nsScriptSecurityManager::GetChannelResultPrincipal(
   // The data: inheritance flags should only apply to the initial load,
   // not to loads that it might have redirected to.
   if (loadInfo->RedirectChain().IsEmpty() &&
-      (securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS ||
-       securityMode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS ||
-       securityMode == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS)) {
+      (securityMode ==
+           nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT ||
+       securityMode ==
+           nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT ||
+       securityMode == nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT)) {
     nsCOMPtr<nsIURI> uri;
     nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -613,9 +618,9 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
   }
 
   nsCOMPtr<nsIURI> sourceURI;
-  aPrincipal->GetURI(getter_AddRefs(sourceURI));
+  auto* basePrin = BasePrincipal::Cast(aPrincipal);
+  basePrin->GetURI(getter_AddRefs(sourceURI));
   if (!sourceURI) {
-    auto* basePrin = BasePrincipal::Cast(aPrincipal);
     if (basePrin->Is<ExpandedPrincipal>()) {
       auto expanded = basePrin->As<ExpandedPrincipal>();
       for (auto& prin : expanded->AllowList()) {
@@ -661,12 +666,13 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
   }
 
   // Check for uris that are only loadable by principals that subsume them
-  bool hasFlags;
-  rv = NS_URIChainHasFlags(
-      targetBaseURI, nsIProtocolHandler::URI_LOADABLE_BY_SUBSUMERS, &hasFlags);
+  bool targetURIIsLoadableBySubsumers = false;
+  rv = NS_URIChainHasFlags(targetBaseURI,
+                           nsIProtocolHandler::URI_LOADABLE_BY_SUBSUMERS,
+                           &targetURIIsLoadableBySubsumers);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (hasFlags) {
+  if (targetURIIsLoadableBySubsumers) {
     // check nothing else in the URI chain has flags that prevent
     // access:
     rv = CheckLoadURIFlags(
@@ -708,17 +714,19 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
   }
 
   // Check for webextension
-  rv = NS_URIChainHasFlags(
-      aTargetURI, nsIProtocolHandler::URI_LOADABLE_BY_EXTENSIONS, &hasFlags);
+  bool targetURIIsLoadableByExtensions = false;
+  rv = NS_URIChainHasFlags(aTargetURI,
+                           nsIProtocolHandler::URI_LOADABLE_BY_EXTENSIONS,
+                           &targetURIIsLoadableByExtensions);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (hasFlags && BasePrincipal::Cast(aPrincipal)->AddonPolicy()) {
+  if (targetURIIsLoadableByExtensions &&
+      BasePrincipal::Cast(aPrincipal)->AddonPolicy()) {
     return NS_OK;
   }
 
   // If we get here, check all the schemes can link to each other, from the top
   // down:
-  nsCaseInsensitiveCStringComparator stringComparator;
   nsCOMPtr<nsIURI> currentURI = sourceURI;
   nsCOMPtr<nsIURI> currentOtherURI = aTargetURI;
 
@@ -733,7 +741,8 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipal(nsIPrincipal* aPrincipal,
     currentURI->GetScheme(scheme);
     currentOtherURI->GetScheme(otherScheme);
 
-    bool schemesMatch = scheme.Equals(otherScheme, stringComparator);
+    bool schemesMatch =
+        scheme.Equals(otherScheme, nsCaseInsensitiveCStringComparator);
     bool isSamePage = false;
     // about: URIs are special snowflakes.
     if (scheme.EqualsLiteral("about") && schemesMatch) {
@@ -869,11 +878,11 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
   }
 
   // Check for chrome target URI
-  bool hasFlags = false;
+  bool targetURIIsUIResource = false;
   rv = NS_URIChainHasFlags(aTargetURI, nsIProtocolHandler::URI_IS_UI_RESOURCE,
-                           &hasFlags);
+                           &targetURIIsUIResource);
   NS_ENSURE_SUCCESS(rv, rv);
-  if (hasFlags) {
+  if (targetURIIsUIResource) {
     if (aFlags & nsIScriptSecurityManager::ALLOW_CHROME) {
       // Allow a URI_IS_UI_RESOURCE source to link to a URI_IS_UI_RESOURCE
       // target if ALLOW_CHROME is set.
@@ -925,6 +934,15 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
             return NS_OK;
           }
         }
+      } else if (targetScheme.EqualsLiteral("moz-page-thumb")) {
+        if (XRE_IsParentProcess()) {
+          return NS_OK;
+        }
+
+        auto& remoteType = dom::ContentChild::GetSingleton()->GetRemoteType();
+        if (remoteType == PRIVILEGEDABOUT_REMOTE_TYPE) {
+          return NS_OK;
+        }
       }
     }
 
@@ -936,10 +954,11 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
   }
 
   // Check for target URI pointing to a file
+  bool targetURIIsLocalFile = false;
   rv = NS_URIChainHasFlags(aTargetURI, nsIProtocolHandler::URI_IS_LOCAL_FILE,
-                           &hasFlags);
+                           &targetURIIsLocalFile);
   NS_ENSURE_SUCCESS(rv, rv);
-  if (hasFlags) {
+  if (targetURIIsLocalFile) {
     // Allow domains that were allowlisted in the prefs. In 99.9% of cases,
     // this array is empty.
     bool isAllowlisted;
@@ -961,38 +980,22 @@ nsresult nsScriptSecurityManager::CheckLoadURIFlags(
     return NS_ERROR_DOM_BAD_URI;
   }
 
-  // OK, everyone is allowed to load this, since unflagged handlers are
-  // deprecated but treated as URI_LOADABLE_BY_ANYONE.  But check whether we
-  // need to warn.  At some point we'll want to make this warning into an
-  // error and treat unflagged handlers as URI_DANGEROUS_TO_LOAD.
-  rv = NS_URIChainHasFlags(
-      aTargetBaseURI, nsIProtocolHandler::URI_LOADABLE_BY_ANYONE, &hasFlags);
-  NS_ENSURE_SUCCESS(rv, rv);
-  // NB: we also get here if the base URI is URI_LOADABLE_BY_SUBSUMERS,
-  // and none of the rest of the nested chain of URIs for aTargetURI
-  // prohibits the load, so avoid warning in that case:
-  bool hasSubsumersFlag = false;
-  rv = NS_URIChainHasFlags(aTargetBaseURI,
-                           nsIProtocolHandler::URI_LOADABLE_BY_SUBSUMERS,
-                           &hasSubsumersFlag);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (!hasFlags && !hasSubsumersFlag) {
-    nsCOMPtr<nsIStringBundle> bundle = BundleHelper::GetOrCreate();
-    if (bundle) {
-      nsAutoString message;
-      AutoTArray<nsString, 1> formatStrings;
-      CopyASCIItoUTF16(targetScheme, *formatStrings.AppendElement());
-      rv = bundle->FormatStringFromName("ProtocolFlagError", formatStrings,
-                                        message);
-      if (NS_SUCCEEDED(rv)) {
-        nsCOMPtr<nsIConsoleService> console(
-            do_GetService("@mozilla.org/consoleservice;1"));
-        NS_ENSURE_TRUE(console, NS_ERROR_FAILURE);
-
-        console->LogStringMessage(message.get());
-      }
-    }
+#ifdef DEBUG
+  {
+    // Everyone is allowed to load this. The case URI_LOADABLE_BY_SUBSUMERS
+    // is handled by the caller which is just delegating to us as a helper.
+    bool hasSubsumersFlag = false;
+    NS_URIChainHasFlags(aTargetBaseURI,
+                        nsIProtocolHandler::URI_LOADABLE_BY_SUBSUMERS,
+                        &hasSubsumersFlag);
+    bool hasLoadableByAnyone = false;
+    NS_URIChainHasFlags(aTargetBaseURI,
+                        nsIProtocolHandler::URI_LOADABLE_BY_ANYONE,
+                        &hasLoadableByAnyone);
+    MOZ_ASSERT(hasLoadableByAnyone || hasSubsumersFlag,
+               "why do we get here and do not have any of the two flags set?");
   }
+#endif
 
   return NS_OK;
 }
@@ -1028,10 +1031,9 @@ nsresult nsScriptSecurityManager::ReportError(const char* aMessageTag,
 
   // using category of "SOP" so we can link to MDN
   if (aInnerWindowID != 0) {
-    rv = error->InitWithWindowID(message, EmptyString(), EmptyString(), 0, 0,
-                                 nsIScriptError::errorFlag,
-                                 NS_LITERAL_CSTRING("SOP"), aInnerWindowID,
-                                 true /* From chrome context */);
+    rv = error->InitWithWindowID(
+        message, EmptyString(), EmptyString(), 0, 0, nsIScriptError::errorFlag,
+        "SOP"_ns, aInnerWindowID, true /* From chrome context */);
   } else {
     rv = error->Init(message, EmptyString(), EmptyString(), 0, 0,
                      nsIScriptError::errorFlag, "SOP", aFromPrivateWindow,
@@ -1087,13 +1089,12 @@ nsScriptSecurityManager::CheckLoadURIStrWithPrincipal(
     return rv;
   }
 
+  // URIFixup's keyword and alternate flags can only fixup to http/https, so we
+  // can skip testing them. This simplifies our life because this code can be
+  // invoked from the content process where the search service would not be
+  // available.
   uint32_t flags[] = {nsIURIFixup::FIXUP_FLAG_NONE,
-                      nsIURIFixup::FIXUP_FLAG_FIX_SCHEME_TYPOS,
-                      nsIURIFixup::FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP,
-                      nsIURIFixup::FIXUP_FLAGS_MAKE_ALTERNATE_URI,
-                      nsIURIFixup::FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP |
-                          nsIURIFixup::FIXUP_FLAGS_MAKE_ALTERNATE_URI};
-
+                      nsIURIFixup::FIXUP_FLAG_FIX_SCHEME_TYPOS};
   for (uint32_t i = 0; i < ArrayLength(flags); ++i) {
     uint32_t fixupFlags = flags[i];
     if (aPrincipal->OriginAttributesRef().mPrivateBrowsingId > 0) {
@@ -1157,12 +1158,12 @@ nsScriptSecurityManager::CreateContentPrincipal(
 NS_IMETHODIMP
 nsScriptSecurityManager::CreateContentPrincipalFromOrigin(
     const nsACString& aOrigin, nsIPrincipal** aPrincipal) {
-  if (StringBeginsWith(aOrigin, NS_LITERAL_CSTRING("["))) {
+  if (StringBeginsWith(aOrigin, "["_ns)) {
     return NS_ERROR_INVALID_ARG;
   }
 
   if (StringBeginsWith(aOrigin,
-                       NS_LITERAL_CSTRING(NS_NULLPRINCIPAL_SCHEME ":"))) {
+                       nsLiteralCString(NS_NULLPRINCIPAL_SCHEME ":"))) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -1506,8 +1507,8 @@ void nsScriptSecurityManager::AddSitesToFileURIAllowlist(
     // Check if the URI is schemeless. If so, add both http and https.
     nsAutoCString unused;
     if (NS_FAILED(sIOService->ExtractScheme(site, unused))) {
-      AddSitesToFileURIAllowlist(NS_LITERAL_CSTRING("http://") + site);
-      AddSitesToFileURIAllowlist(NS_LITERAL_CSTRING("https://") + site);
+      AddSitesToFileURIAllowlist("http://"_ns + site);
+      AddSitesToFileURIAllowlist("https://"_ns + site);
       continue;
     }
 
@@ -1521,8 +1522,7 @@ void nsScriptSecurityManager::AddSitesToFileURIAllowlist(
           do_GetService("@mozilla.org/consoleservice;1"));
       if (console) {
         nsAutoString msg =
-            NS_LITERAL_STRING(
-                "Unable to to add site to file:// URI allowlist: ") +
+            u"Unable to to add site to file:// URI allowlist: "_ns +
             NS_ConvertASCIItoUTF16(site);
         console->LogStringMessage(msg.get());
       }
@@ -1655,8 +1655,7 @@ nsScriptSecurityManager::EnsureFileURIAllowlist() {
     // Figure out if this policy allows loading file:// URIs. If not, we can
     // skip it.
     nsCString checkLoadURIPrefName =
-        NS_LITERAL_CSTRING("capability.policy.") + policyName +
-        NS_LITERAL_CSTRING(".checkloaduri.enabled");
+        "capability.policy."_ns + policyName + ".checkloaduri.enabled"_ns;
     nsAutoString value;
     nsresult rv = Preferences::GetString(checkLoadURIPrefName.get(), value);
     if (NS_FAILED(rv) || !value.LowerCaseEqualsLiteral("allaccess")) {
@@ -1664,8 +1663,8 @@ nsScriptSecurityManager::EnsureFileURIAllowlist() {
     }
 
     // Grab the list of domains associated with this policy.
-    nsCString domainPrefName = NS_LITERAL_CSTRING("capability.policy.") +
-                               policyName + NS_LITERAL_CSTRING(".sites");
+    nsCString domainPrefName =
+        "capability.policy."_ns + policyName + ".sites"_ns;
     nsAutoCString siteList;
     Preferences::GetCString(domainPrefName.get(), siteList);
     AddSitesToFileURIAllowlist(siteList);

@@ -31,13 +31,19 @@ interface DOMLocalization : Localization {
    *    - aResourceids       - a list of localization resource URIs
    *                           which will provide messages for this
    *                           Localization instance.
-   *    - aGenerateMessages  - a callback function which will be
-   *                           used to generate an iterator
-   *                           over FluentBundle instances.
+   *    - aSync              - Specifies if the initial state of the DOMLocalization
+   *                           and the underlying Localization API is synchronous.
+   *                           This enables a number of synchronous methods on the
+   *                           Localization API and uses it for `TranslateElements`
+   *                           making the method return a synchronusly resolved promise.
+   *    - aBundleGenerator   - an object with two methods - `generateBundles` and
+   *                           `generateBundlesSync` allowing consumers to overload the
+   *                           default generators provided by Gecko.
    */
   [Throws]
-  constructor(optional sequence<DOMString> aResourceIds,
-              optional GenerateMessages aGenerateMessages);
+  constructor(sequence<DOMString> aResourceIds,
+              optional boolean aSync = false,
+              optional BundleGenerator aBundleGenerator = {});
 
   /**
    * Adds a node to nodes observed for localization
@@ -86,7 +92,7 @@ interface DOMLocalization : Localization {
    *    let l10nAttrs = document.l10n.getAttributes(h1);
    *    assert.deepEqual(l10nAttrs, {id: "key1", args: { emailCount: 5});
    */
-  [Throws] L10nKey getAttributes(Element aElement);
+  [Throws] L10nIdArgs getAttributes(Element aElement);
 
   /**
    * Triggers translation of a subtree rooted at aNode.

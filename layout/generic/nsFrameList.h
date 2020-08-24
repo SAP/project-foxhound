@@ -14,7 +14,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/ReverseIterator.h"
 
-#if defined(DEBUG) || defined(MOZ_DUMP_PAINTING)
+#if defined(DEBUG) || defined(MOZ_DUMP_PAINTING) || defined(MOZ_LAYOUT_DEBUGGER)
 // DEBUG_FRAME_DUMP enables nsIFrame::List and related methods.
 // You can also define this in a non-DEBUG build if you need frame dumps.
 #  define DEBUG_FRAME_DUMP 1
@@ -80,8 +80,7 @@ class nsFrameList {
     VerifyList();
   }
 
-  nsFrameList(const nsFrameList& aOther)
-      : mFirstChild(aOther.mFirstChild), mLastChild(aOther.mLastChild) {}
+  nsFrameList(const nsFrameList& aOther) = default;
 
   /**
    * Infallibly allocate a nsFrameList from the shell arena.
@@ -359,14 +358,7 @@ class nsFrameList {
           mEnd(aEnd) {
     }
 
-    Slice(const Slice& aOther)
-        :
-#ifdef DEBUG
-          mList(aOther.mList),
-#endif
-          mStart(aOther.mStart),
-          mEnd(aOther.mEnd) {
-    }
+    Slice(const Slice& aOther) = default;
 
    private:
 #ifdef DEBUG
@@ -388,14 +380,7 @@ class nsFrameList {
           mEnd(aSlice.mEnd) {
     }
 
-    Enumerator(const Enumerator& aOther)
-        :
-#ifdef DEBUG
-          mSlice(aOther.mSlice),
-#endif
-          mFrame(aOther.mFrame),
-          mEnd(aOther.mEnd) {
-    }
+    Enumerator(const Enumerator& aOther) = default;
 
     bool AtEnd() const {
       // Can't just check mEnd, because some table code goes and destroys the
@@ -466,8 +451,7 @@ class nsFrameList {
     explicit FrameLinkEnumerator(const nsFrameList& aList)
         : Enumerator(aList), mPrev(nullptr) {}
 
-    FrameLinkEnumerator(const FrameLinkEnumerator& aOther)
-        : Enumerator(aOther), mPrev(aOther.mPrev) {}
+    FrameLinkEnumerator(const FrameLinkEnumerator& aOther) = default;
 
     /* This constructor needs to know about nsIFrame, and nsIFrame will need to
        know about nsFrameList methods, so in order to inline this put
@@ -506,11 +490,22 @@ class nsFrameList {
 
   class Iterator {
    public:
+    // It is disputable whether these type definitions are correct, since
+    // operator* doesn't return a reference at all. Also, the iterator_category
+    // can be at most std::input_iterator_tag (rather than
+    // std::bidrectional_iterator_tag, as it might seem), because it is a
+    // stashing iterator. See also, e.g.,
+    // https://stackoverflow.com/questions/50909701/what-should-be-iterator-category-for-a-stashing-iterator
+    using value_type = nsIFrame* const;
+    using pointer = value_type*;
+    using reference = value_type&;
+    using difference_type = ptrdiff_t;
+    using iterator_category = std::input_iterator_tag;
+
     Iterator(const nsFrameList& aList, nsIFrame* aCurrent)
         : mList(aList), mCurrent(aCurrent) {}
 
-    Iterator(const Iterator& aOther)
-        : mList(aOther.mList), mCurrent(aOther.mCurrent) {}
+    Iterator(const Iterator& aOther) = default;
 
     nsIFrame* operator*() const { return mCurrent; }
 
@@ -589,14 +584,13 @@ inline bool operator!=(const nsFrameList::Iterator& aIter1,
 }
 
 namespace mozilla {
-namespace layout {
 
 /**
  * Simple "auto_ptr" for nsFrameLists allocated from the shell arena.
  * The frame list given to the constructor will be deallocated (if non-null)
  * in the destructor.  The frame list must then be empty.
  */
-class AutoFrameListPtr {
+class MOZ_RAII AutoFrameListPtr final {
  public:
   AutoFrameListPtr(nsPresContext* aPresContext, nsFrameList* aFrameList)
       : mPresContext(aPresContext), mFrameList(aFrameList) {}
@@ -609,15 +603,14 @@ class AutoFrameListPtr {
   nsFrameList* mFrameList;
 };
 
-namespace detail {
+namespace layout::detail {
 union AlignedFrameListBytes {
   void* ptr;
   char bytes[sizeof(nsFrameList)];
 };
 extern const AlignedFrameListBytes gEmptyFrameListBytes;
-}  // namespace detail
+}  // namespace layout::detail
 
-}  // namespace layout
 }  // namespace mozilla
 
 /* static */ inline const nsFrameList& nsFrameList::EmptyList() {

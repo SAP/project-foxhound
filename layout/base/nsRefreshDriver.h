@@ -333,7 +333,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   /**
    * Return the prescontext we were initialized with
    */
-  nsPresContext* GetPresContext() const { return mPresContext; }
+  nsPresContext* GetPresContext() const;
 
   /**
    * PBackgroundChild actor is created asynchronously in content process.
@@ -454,7 +454,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   typedef nsTArray<RefPtr<VVPScrollEvent>> VisualViewportScrollEventArray;
   typedef nsTHashtable<nsISupportsHashKey> RequestTable;
   struct ImageStartData {
-    ImageStartData() {}
+    ImageStartData() = default;
 
     mozilla::Maybe<mozilla::TimeStamp> mStartTime;
     RequestTable mEntries;

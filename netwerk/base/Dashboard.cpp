@@ -7,6 +7,7 @@
 #include "mozilla/ErrorNames.h"
 #include "mozilla/net/Dashboard.h"
 #include "mozilla/net/HttpInfo.h"
+#include "mozilla/net/SocketProcessParent.h"
 #include "nsHttp.h"
 #include "nsICancelable.h"
 #include "nsIDNSService.h"
@@ -267,13 +268,6 @@ LookupHelper::OnLookupComplete(nsICancelable* aRequest, nsIDNSRecord* aRecord,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-LookupHelper::OnLookupByTypeComplete(nsICancelable* aRequest,
-                                     nsIDNSByTypeRecord* aRes,
-                                     nsresult aStatus) {
-  return NS_OK;
-}
-
 nsresult LookupHelper::ConstructAnswer(LookupArgument* aArgument) {
   nsIDNSRecord* aRecord = aArgument->mRecord;
   AutoSafeJSContext cx;
@@ -322,7 +316,31 @@ Dashboard::RequestSockets(nsINetDashboardCallback* aCallback) {
   RefPtr<SocketData> socketData = new SocketData();
   socketData->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  socketData->mEventTarget = GetCurrentThreadEventTarget();
+  socketData->mEventTarget = GetCurrentEventTarget();
+
+  if (nsIOService::UseSocketProcess()) {
+    if (!gIOService->SocketProcessReady()) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
+    RefPtr<Dashboard> self(this);
+    SocketProcessParent::GetSingleton()->SendGetSocketData()->Then(
+        GetMainThreadSerialEventTarget(), __func__,
+        [self{std::move(self)},
+         socketData{std::move(socketData)}](SocketDataArgs&& args) {
+          socketData->mData.Assign(args.info());
+          socketData->mTotalSent = args.totalSent();
+          socketData->mTotalRecv = args.totalRecv();
+          socketData->mEventTarget->Dispatch(
+              NewRunnableMethod<RefPtr<SocketData>>(
+                  "net::Dashboard::GetSockets", self, &Dashboard::GetSockets,
+                  socketData),
+              NS_DISPATCH_NORMAL);
+        },
+        [self](const mozilla::ipc::ResponseRejectReason) {});
+    return NS_OK;
+  }
+
   gSocketTransportService->Dispatch(
       NewRunnableMethod<RefPtr<SocketData>>(
           "net::Dashboard::GetSocketsDispatch", this,
@@ -388,7 +406,28 @@ Dashboard::RequestHttpConnections(nsINetDashboardCallback* aCallback) {
   RefPtr<HttpData> httpData = new HttpData();
   httpData->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  httpData->mEventTarget = GetCurrentThreadEventTarget();
+  httpData->mEventTarget = GetCurrentEventTarget();
+
+  if (nsIOService::UseSocketProcess()) {
+    if (!gIOService->SocketProcessReady()) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
+    RefPtr<Dashboard> self(this);
+    SocketProcessParent::GetSingleton()->SendGetHttpConnectionData()->Then(
+        GetMainThreadSerialEventTarget(), __func__,
+        [self{std::move(self)}, httpData](nsTArray<HttpRetParams>&& params) {
+          httpData->mData.Assign(std::move(params));
+          self->GetHttpConnections(httpData);
+          httpData->mEventTarget->Dispatch(
+              NewRunnableMethod<RefPtr<HttpData>>(
+                  "net::Dashboard::GetHttpConnections", self,
+                  &Dashboard::GetHttpConnections, httpData),
+              NS_DISPATCH_NORMAL);
+        },
+        [self](const mozilla::ipc::ResponseRejectReason) {});
+    return NS_OK;
+  }
 
   gSocketTransportService->Dispatch(NewRunnableMethod<RefPtr<HttpData>>(
                                         "net::Dashboard::GetHttpDispatch", this,
@@ -500,9 +539,9 @@ Dashboard::AddHost(const nsACString& aHost, uint32_t aSerial, bool aEncrypted) {
     if (mWs.data.Contains(mData)) {
       return NS_OK;
     }
-    if (!mWs.data.AppendElement(mData)) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    mWs.data.AppendElement(mData);
     return NS_OK;
   }
   return NS_ERROR_FAILURE;
@@ -553,7 +592,7 @@ Dashboard::RequestWebsocketConnections(nsINetDashboardCallback* aCallback) {
   RefPtr<WebSocketRequest> wsRequest = new WebSocketRequest();
   wsRequest->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  wsRequest->mEventTarget = GetCurrentThreadEventTarget();
+  wsRequest->mEventTarget = GetCurrentEventTarget();
 
   wsRequest->mEventTarget->Dispatch(
       NewRunnableMethod<RefPtr<WebSocketRequest>>(
@@ -606,13 +645,34 @@ Dashboard::RequestDNSInfo(nsINetDashboardCallback* aCallback) {
 
   nsresult rv;
   dnsData->mData.Clear();
-  dnsData->mEventTarget = GetCurrentThreadEventTarget();
+  dnsData->mEventTarget = GetCurrentEventTarget();
 
   if (!mDnsService) {
     mDnsService = do_GetService("@mozilla.org/network/dns-service;1", &rv);
     if (NS_FAILED(rv)) {
       return rv;
     }
+  }
+
+  if (nsIOService::UseSocketProcess()) {
+    if (!gIOService->SocketProcessReady()) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
+    RefPtr<Dashboard> self(this);
+    SocketProcessParent::GetSingleton()->SendGetDNSCacheEntries()->Then(
+        GetMainThreadSerialEventTarget(), __func__,
+        [self{std::move(self)},
+         dnsData{std::move(dnsData)}](nsTArray<DNSCacheEntries>&& entries) {
+          dnsData->mData.Assign(std::move(entries));
+          dnsData->mEventTarget->Dispatch(
+              NewRunnableMethod<RefPtr<DnsData>>(
+                  "net::Dashboard::GetDNSCacheEntries", self,
+                  &Dashboard::GetDNSCacheEntries, dnsData),
+              NS_DISPATCH_NORMAL);
+        },
+        [self](const mozilla::ipc::ResponseRejectReason) {});
+    return NS_OK;
   }
 
   gSocketTransportService->Dispatch(
@@ -677,6 +737,9 @@ nsresult Dashboard::GetDNSCacheEntries(DnsData* dnsData) {
     } else {
       entry.mFamily.AssignLiteral(u"ipv4");
     }
+
+    entry.mOriginAttributesSuffix =
+        NS_ConvertUTF8toUTF16(dnsData->mData[i].originAttributesSuffix);
   }
 
   JS::RootedValue val(cx);
@@ -703,7 +766,7 @@ Dashboard::RequestDNSLookup(const nsACString& aHost,
   RefPtr<LookupHelper> helper = new LookupHelper();
   helper->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
-  helper->mEventTarget = GetCurrentThreadEventTarget();
+  helper->mEventTarget = GetCurrentEventTarget();
   OriginAttributes attrs;
   rv = mDnsService->AsyncResolveNative(aHost, 0, helper.get(),
                                        NS_GetCurrentThread(), attrs,
@@ -714,7 +777,7 @@ Dashboard::RequestDNSLookup(const nsACString& aHost,
 NS_IMETHODIMP
 Dashboard::RequestRcwnStats(nsINetDashboardCallback* aCallback) {
   RefPtr<RcwnData> rcwnData = new RcwnData();
-  rcwnData->mEventTarget = GetCurrentThreadEventTarget();
+  rcwnData->mEventTarget = GetCurrentEventTarget();
   rcwnData->mCallback = new nsMainThreadPtrHolder<nsINetDashboardCallback>(
       "nsINetDashboardCallback", aCallback, true);
 
@@ -810,7 +873,7 @@ Dashboard::RequestConnection(const nsACString& aHost, uint32_t aPort,
   connectionData->mCallback =
       new nsMainThreadPtrHolder<nsINetDashboardCallback>(
           "nsINetDashboardCallback", aCallback, true);
-  connectionData->mEventTarget = GetCurrentThreadEventTarget();
+  connectionData->mEventTarget = GetCurrentEventTarget();
 
   rv = TestNewConnection(connectionData);
   if (NS_FAILED(rv)) {
@@ -865,7 +928,7 @@ nsresult Dashboard::TestNewConnection(ConnectionData* aConnectionData) {
   }
 
   rv = connectionData->mSocket->SetEventSink(connectionData,
-                                             GetCurrentThreadEventTarget());
+                                             GetCurrentEventTarget());
   if (NS_FAILED(rv)) {
     return rv;
   }

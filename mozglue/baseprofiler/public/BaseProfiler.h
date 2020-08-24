@@ -16,34 +16,17 @@
 #ifndef BaseProfiler_h
 #define BaseProfiler_h
 
-// Everything in here is also safe to include unconditionally, and only defines
-// empty macros if MOZ_GECKO_PROFILER or MOZ_BASE_PROFILER is unset.
-
-// MOZ_BASE_PROFILER is #defined (or not) in this header, so it should be
-// #included wherever Base Profiler may be used.
-
-#ifdef MOZ_GECKO_PROFILER
-// Enable Base Profiler on Windows, Mac and Non-Android Linux, which are
-// supported.
-// (Android not implemented yet, mingw not supported.)
-#  if defined(XP_MACOSX) || (defined(XP_LINUX) && !defined(ANDROID)) || \
-      (defined(XP_WIN) && !defined(__MINGW32__))
-#    define MOZ_BASE_PROFILER
-#  else
-// Other platforms are currently not supported. But you may uncomment the
-// following line to enable Base Profiler in your build.
-//#    define MOZ_BASE_PROFILER
-#  endif
-#endif  // MOZ_GECKO_PROFILER
+// This file is safe to include unconditionally, and only defines
+// empty macros if MOZ_GECKO_PROFILER is not set.
 
 // BaseProfilerCounts.h is also safe to include unconditionally, with empty
-// macros if MOZ_BASE_PROFILER is unset.
+// macros if MOZ_GECKO_PROFILER is not set.
 #include "mozilla/BaseProfilerCounts.h"
 
-#ifndef MOZ_BASE_PROFILER
+#ifndef MOZ_GECKO_PROFILER
 
 // This file can be #included unconditionally. However, everything within this
-// file must be guarded by a #ifdef MOZ_BASE_PROFILER, *except* for the
+// file must be guarded by a #ifdef MOZ_GECKO_PROFILER, *except* for the
 // following macros, which encapsulate the most common operations and thus
 // avoid the need for many #ifdefs.
 
@@ -77,7 +60,7 @@
 
 #  define AUTO_PROFILER_STATS(name)
 
-#else  // !MOZ_BASE_PROFILER
+#else  // !MOZ_GECKO_PROFILER
 
 #  include "BaseProfilingStack.h"
 
@@ -131,34 +114,52 @@ class SpliceableJSONWriter;
     /* The DevTools profiler doesn't want the native addresses. */             \
     MACRO(2, "leaf", Leaf, "Include the C++ leaf node if not stackwalking")    \
                                                                                \
-    MACRO(3, "mainthreadio", MainThreadIO,                                     \
-          "Add main thread I/O to the profile")                                \
+    MACRO(3, "mainthreadio", MainThreadIO, "Add main thread file I/O")         \
                                                                                \
-    MACRO(4, "privacy", Privacy,                                               \
-          "Do not include user-identifiable information")                      \
+    MACRO(4, "fileio", FileIO,                                                 \
+          "Add file I/O from all profiled threads, implies mainthreadio")      \
                                                                                \
-    MACRO(5, "screenshots", Screenshots,                                       \
+    MACRO(5, "fileioall", FileIOAll,                                           \
+          "Add file I/O from all threads, implies fileio")                     \
+                                                                               \
+    MACRO(6, "noiostacks", NoIOStacks,                                         \
+          "File I/O markers do not capture stacks, to reduce overhead")        \
+                                                                               \
+    MACRO(7, "screenshots", Screenshots,                                       \
           "Take a snapshot of the window on every composition")                \
                                                                                \
-    MACRO(6, "seqstyle", SequentialStyle,                                      \
+    MACRO(8, "seqstyle", SequentialStyle,                                      \
           "Disable parallel traversal in styling")                             \
                                                                                \
-    MACRO(7, "stackwalk", StackWalk,                                           \
+    MACRO(9, "stackwalk", StackWalk,                                           \
           "Walk the C++ stack, not available on all platforms")                \
                                                                                \
-    MACRO(8, "tasktracer", TaskTracer,                                         \
+    MACRO(10, "tasktracer", TaskTracer,                                        \
           "Start profiling with feature TaskTracer")                           \
                                                                                \
-    MACRO(9, "threads", Threads, "Profile the registered secondary threads")   \
+    MACRO(11, "threads", Threads, "Profile the registered secondary threads")  \
                                                                                \
-    MACRO(10, "trackopts", TrackOptimizations,                                 \
-          "Have the JavaScript engine track JIT optimizations")                \
+    MACRO(12, "jstracer", JSTracer, "Enable tracing of the JavaScript engine") \
                                                                                \
-    MACRO(11, "jstracer", JSTracer, "Enable tracing of the JavaScript engine") \
+    MACRO(13, "jsallocations", JSAllocations,                                  \
+          "Have the JavaScript engine track allocations")                      \
                                                                                \
     MACRO(14, "nostacksampling", NoStackSampling,                              \
           "Disable all stack sampling: Cancels \"js\", \"leaf\", "             \
-          "\"stackwalk\" and labels")
+          "\"stackwalk\" and labels")                                          \
+                                                                               \
+    MACRO(15, "preferencereads", PreferenceReads,                              \
+          "Track when preferences are read")                                   \
+                                                                               \
+    MACRO(16, "nativeallocations", NativeAllocations,                          \
+          "Collect the stacks from a smaller subset of all native "            \
+          "allocations, biasing towards collecting larger allocations")        \
+                                                                               \
+    MACRO(17, "ipcmessages", IPCMessages,                                      \
+          "Have the IPC layer track cross-process messages")                   \
+                                                                               \
+    MACRO(18, "audiocallbacktracing", AudioCallbackTracing,                    \
+          "Audio callback tracing")
 
 struct ProfilerFeature {
 #  define DECLARE(n_, str_, Name_, desc_)                     \
@@ -199,21 +200,31 @@ class RacyFeatures {
 
   MFBT_API static void SetUnpaused();
 
+  MFBT_API static void SetSamplingPaused();
+
+  MFBT_API static void SetSamplingUnpaused();
+
   MFBT_API static bool IsActive();
 
   MFBT_API static bool IsActiveWithFeature(uint32_t aFeature);
 
-  MFBT_API static bool IsActiveWithoutPrivacy();
+  // True if profiler is active, and not fully paused.
+  // Note that periodic sampling *could* be paused!
+  MFBT_API static bool IsActiveAndUnpaused();
 
-  MFBT_API static bool IsActiveAndUnpausedWithoutPrivacy();
+  // True if profiler is active, and sampling is not paused (though generic
+  // `SetPaused()` or specific `SetSamplingPaused()`).
+  MFBT_API static bool IsActiveAndSamplingUnpaused();
 
  private:
   static constexpr uint32_t Active = 1u << 31;
   static constexpr uint32_t Paused = 1u << 30;
+  static constexpr uint32_t SamplingPaused = 1u << 29;
 
 // Ensure Active/Paused don't overlap with any of the feature bits.
-#  define NO_OVERLAP(n_, str_, Name_, desc_) \
-    static_assert(ProfilerFeature::Name_ != Paused, "bad feature value");
+#  define NO_OVERLAP(n_, str_, Name_, desc_)                \
+    static_assert(ProfilerFeature::Name_ != SamplingPaused, \
+                  "bad feature value");
 
   BASE_PROFILER_FOR_EACH_FEATURE(NO_OVERLAP);
 
@@ -234,26 +245,26 @@ MFBT_API bool IsThreadBeingProfiled();
 //---------------------------------------------------------------------------
 
 static constexpr PowerOfTwo32 BASE_PROFILER_DEFAULT_ENTRIES =
-#  if !defined(ARCH_ARMV6)
-    MakePowerOfTwo32<1u << 20>();  // 1'048'576 entries = 8MB
+#  if !defined(GP_PLAT_arm_android)
+    MakePowerOfTwo32<1024 * 1024>();  // 1M entries = 8MB
 #  else
-    MakePowerOfTwo32<1u << 17>();  // 131'072 entries = 1MB
+    MakePowerOfTwo32<128 * 1024>();  // 128k entries = 1MB
 #  endif
 
 // Startup profiling usually need to capture more data, especially on slow
 // systems.
 static constexpr PowerOfTwo32 BASE_PROFILER_DEFAULT_STARTUP_ENTRIES =
-#  if !defined(ARCH_ARMV6)
-    MakePowerOfTwo32<1u << 22>();  // 4'194'304 entries = 32MB
+#  if !defined(GP_PLAT_arm_android)
+    MakePowerOfTwo32<4 * 1024 * 1024>();  // 4M entries = 32MB
 #  else
-    MakePowerOfTwo32<1u << 17>();  // 131'072 = 1MB
+    MakePowerOfTwo32<256 * 1024>();  // 256k entries = 2MB
 #  endif
 
 #  define BASE_PROFILER_DEFAULT_DURATION 20
 #  define BASE_PROFILER_DEFAULT_INTERVAL 1
 
-// Initialize the profiler. If MOZ_BASE_PROFILER_STARTUP is set the profiler
-// will also be started. This call must happen before any other profiler calls
+// Initialize the profiler. If MOZ_PROFILER_STARTUP is set the profiler will
+// also be started. This call must happen before any other profiler calls
 // (except profiler_start(), which will call profiler_init() if it hasn't
 // already run).
 MFBT_API void profiler_init(void* stackTop);
@@ -361,11 +372,15 @@ MFBT_API void profiler_remove_sampled_counter(BaseProfilerCount* aCounter);
 // Pause and resume the profiler. No-ops if the profiler is inactive. While
 // paused the profile will not take any samples and will not record any data
 // into its buffers. The profiler remains fully initialized in this state.
-// Timeline markers will still be stored. This feature will keep JavaScript
-// profiling enabled, thus allowing toggling the profiler without invalidating
-// the JIT.
+// This feature will keep JavaScript profiling enabled, thus allowing toggling
+// the profiler without invalidating the JIT.
 MFBT_API void profiler_pause();
 MFBT_API void profiler_resume();
+
+// Only pause and resume the periodic sampling loop, including stack sampling,
+// counters, and profiling overheads.
+MFBT_API void profiler_pause_sampling();
+MFBT_API void profiler_resume_sampling();
 
 // These functions tell the profiler that a thread went to sleep so that we can
 // avoid sampling it while it's sleeping. Calling profiler_thread_sleep()
@@ -413,8 +428,7 @@ inline bool profiler_is_active() {
 //     BASE_PROFILER_ADD_MARKER_WITH_PAYLOAD(name, OTHER, expensivePayload);
 //   }
 inline bool profiler_can_accept_markers() {
-  return baseprofiler::detail::RacyFeatures::
-      IsActiveAndUnpausedWithoutPrivacy();
+  return baseprofiler::detail::RacyFeatures::IsActiveAndUnpaused();
 }
 
 // Is the profiler active, and is the current thread being profiled?
@@ -425,6 +439,10 @@ inline bool profiler_thread_is_being_profiled() {
 
 // Is the profiler active and paused? Returns false if the profiler is inactive.
 MFBT_API bool profiler_is_paused();
+
+// Is the profiler active and sampling is paused? Returns false if the profiler
+// is inactive.
+MFBT_API bool profiler_is_sampling_paused();
 
 // Is the current thread sleeping?
 MFBT_API bool profiler_thread_is_sleeping();
@@ -486,7 +504,7 @@ class ProfilerStackCollector {
 // This method suspends the thread identified by aThreadId, samples its
 // profiling stack, JS stack, and (optionally) native stack, passing the
 // collected frames into aCollector. aFeatures dictates which compiler features
-// are used. |Privacy| and |Leaf| are the only relevant ones.
+// are used. |Leaf| is the only relevant one.
 MFBT_API void profiler_suspend_and_sample_thread(
     int aThreadId, uint32_t aFeatures, ProfilerStackCollector& aCollector,
     bool aSampleNative = true);
@@ -499,7 +517,7 @@ using UniqueProfilerBacktrace =
     UniquePtr<ProfilerBacktrace, ProfilerBacktraceDestructor>;
 
 // Immediately capture the current thread's call stack and return it. A no-op
-// if the profiler is inactive or in privacy mode.
+// if the profiler is inactive.
 MFBT_API UniqueProfilerBacktrace profiler_get_backtrace();
 
 struct ProfilerStats {
@@ -553,25 +571,62 @@ MFBT_API Maybe<ProfilerBufferInfo> profiler_get_buffer_info();
 // #  define PROFILER_RUNTIME_STATS
 
 #  ifdef PROFILER_RUNTIME_STATS
-struct StaticBaseProfilerStats {
+// This class gathers durations and displays some basic stats when destroyed.
+// It is intended to be used as a static variable (see `AUTO_PROFILER_STATS`
+// below), to display stats at the end of the program.
+class StaticBaseProfilerStats {
+ public:
   explicit StaticBaseProfilerStats(const char* aName) : mName(aName) {}
+
   ~StaticBaseProfilerStats() {
-    long long n = static_cast<long long>(mNumberDurations);
+    // Using unsigned long long for computations and printfs.
+    using ULL = unsigned long long;
+    ULL n = static_cast<ULL>(mNumberDurations);
     if (n != 0) {
-      long long sumNs = static_cast<long long>(mSumDurationsNs);
-      printf("Profiler stats `%s`: %lld ns / %lld = %lld ns\n", mName, sumNs, n,
-             sumNs / n);
+      ULL sumNs = static_cast<ULL>(mSumDurationsNs);
+      printf(
+          "[%d] Profiler stats `%s`: %llu ns / %llu = %llu ns, max %llu ns\n",
+          profiler_current_process_id(), mName, sumNs, n, sumNs / n,
+          static_cast<ULL>(mLongestDurationNs));
     } else {
-      printf("Profiler stats `%s`: (nothing)\n", mName);
+      printf("[%d] Profiler stats `%s`: (nothing)\n",
+             profiler_current_process_id(), mName);
     }
   }
-  Atomic<long long> mSumDurationsNs{0};
-  Atomic<long long> mNumberDurations{0};
+
+  void AddDurationFrom(TimeStamp aStart) {
+    DurationNs duration = static_cast<DurationNs>(
+        (TimeStamp::NowUnfuzzed() - aStart).ToMicroseconds() * 1000 + 0.5);
+    mSumDurationsNs += duration;
+    ++mNumberDurations;
+    // Update mLongestDurationNs if this one is longer.
+    for (;;) {
+      DurationNs longest = mLongestDurationNs;
+      if (MOZ_LIKELY(longest >= duration)) {
+        // This duration is not the longest, nothing to do.
+        break;
+      }
+      if (MOZ_LIKELY(mLongestDurationNs.compareExchange(longest, duration))) {
+        // Successfully updated `mLongestDurationNs` with the new value.
+        break;
+      }
+      // Otherwise someone else just updated `mLongestDurationNs`, we need to
+      // try again by looping.
+    }
+  }
 
  private:
+  using DurationNs = uint64_t;
+  using Count = uint32_t;
+
+  Atomic<DurationNs> mSumDurationsNs{0};
+  Atomic<DurationNs> mLongestDurationNs{0};
+  Atomic<Count> mNumberDurations{0};
   const char* mName;
 };
 
+// RAII object that measure its scoped lifetime duration and reports it to a
+// `StaticBaseProfilerStats`.
 class MOZ_RAII AutoProfilerStats {
  public:
   explicit AutoProfilerStats(
@@ -580,11 +635,7 @@ class MOZ_RAII AutoProfilerStats {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
-  ~AutoProfilerStats() {
-    mStats.mSumDurationsNs += int64_t(
-        (TimeStamp::NowUnfuzzed() - mStart).ToMicroseconds() * 1000 + 0.5);
-    ++mStats.mNumberDurations;
-  }
+  ~AutoProfilerStats() { mStats.AddDurationFrom(mStart); }
 
  private:
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
@@ -593,6 +644,12 @@ class MOZ_RAII AutoProfilerStats {
   TimeStamp mStart;
 };
 
+// Macro that should be used to collect basic statistics from measurements of
+// block durations, from where this macro is, until the end of its enclosing
+// scope. The name is used in the static variable name and when displaying stats
+// at the end of the program; Another location could use the same name but their
+// stats will not be combined, so use different name if these locations should
+// be distinguished.
 #    define AUTO_PROFILER_STATS(name)                                      \
       static ::mozilla::baseprofiler::StaticBaseProfilerStats sStat##name( \
           #name);                                                          \
@@ -701,8 +758,7 @@ class MOZ_RAII AutoProfilerStats {
 // recorded in the profile buffer if a sample is collected while the label is
 // on the label stack, markers will always be recorded in the profile buffer.
 // aMarkerName is copied, so the caller does not need to ensure it lives for a
-// certain length of time. A no-op if the profiler is inactive or in privacy
-// mode.
+// certain length of time. A no-op if the profiler is inactive.
 
 #  define BASE_PROFILER_ADD_MARKER(markerName, categoryPair)             \
     do {                                                                 \
@@ -735,10 +791,22 @@ MFBT_API void profiler_add_marker(const char* aMarkerName,
 
 MFBT_API void profiler_add_js_marker(const char* aMarkerName);
 
+// Returns true if the profiler lock is currently held *on the current thread*.
+// This may be used by re-entrant code that may call profiler functions while
+// the profiler already has the lock (which would deadlock).
+bool profiler_is_locked_on_current_thread();
+
 // Insert a marker in the profile timeline for a specified thread.
 MFBT_API void profiler_add_marker_for_thread(
     int aThreadId, ProfilingCategoryPair aCategoryPair, const char* aMarkerName,
-    UniquePtr<ProfilerMarkerPayload> aPayload);
+    const ProfilerMarkerPayload& aPayload);
+
+// Insert a marker in the profile timeline for the main thread.
+// This may be used to gather some markers from any thread, that should be
+// displayed in the main thread track.
+MFBT_API void profiler_add_marker_for_mainthread(
+    ProfilingCategoryPair aCategoryPair, const char* aMarkerName,
+    const ProfilerMarkerPayload& aPayload);
 
 enum TracingKind {
   TRACING_EVENT,
@@ -746,8 +814,7 @@ enum TracingKind {
   TRACING_INTERVAL_END,
 };
 
-// Adds a tracing marker to the profile. A no-op if the profiler is inactive or
-// in privacy mode.
+// Adds a tracing marker to the profile. A no-op if the profiler is inactive.
 
 #  define BASE_PROFILER_TRACING_MARKER(categoryString, markerName, \
                                        categoryPair, kind)         \
@@ -830,7 +897,8 @@ class MOZ_RAII AutoProfilerTextMarker {
 //---------------------------------------------------------------------------
 
 // Set a user-friendly process name, used in JSON stream.
-MFBT_API void profiler_set_process_name(const std::string& aProcessName);
+MFBT_API void profiler_set_process_name(const std::string& aProcessName,
+                                        const std::string* aETLDplus1);
 
 // Get the profile encoded as a JSON string. A no-op (returning nullptr) if the
 // profiler is inactive.
@@ -1016,7 +1084,7 @@ class MOZ_RAII AutoProfilerTracing {
   const Maybe<uint64_t> mInnerWindowID;
 };
 
-// Get the MOZ_BASE_PROFILER_STARTUP* environment variables that should be
+// Get the MOZ_PROFILER_STARTUP* environment variables that should be
 // supplied to a child process that is about to be launched, in order
 // to make that child process start with the same profiler settings as
 // in the current process.  The given function is invoked once for
@@ -1027,6 +1095,6 @@ MFBT_API void GetProfilerEnvVarsForChildProcess(
 }  // namespace baseprofiler
 }  // namespace mozilla
 
-#endif  // !MOZ_BASE_PROFILER
+#endif  // !MOZ_GECKO_PROFILER
 
 #endif  // BaseProfiler_h

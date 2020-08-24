@@ -37,15 +37,12 @@
 # keep this file list in sync with l10n.toml and filter.py
 relativesrcdir toolkit/locales:
   locale/@AB_CD@/browser/overrides/aboutReader.properties          (%chrome/global/aboutReader.properties)
-  locale/@AB_CD@/browser/overrides/charsetMenu.properties          (%chrome/global/charsetMenu.properties)
   locale/@AB_CD@/browser/overrides/commonDialogs.properties        (%chrome/global/commonDialogs.properties)
   locale/@AB_CD@/browser/overrides/intl.properties                 (%chrome/global/intl.properties)
   locale/@AB_CD@/browser/overrides/intl.css                        (%chrome/global/intl.css)
   locale/@AB_CD@/browser/overrides/search/search.properties        (%chrome/search/search.properties)
 # plugins
   locale/@AB_CD@/browser/overrides/plugins/pluginproblem.dtd       (%chrome/pluginproblem/pluginproblem.dtd)
-#about:mozilla
-  locale/@AB_CD@/browser/overrides/global/mozilla.dtd                (%chrome/global/mozilla.dtd)
 #about:webrtc
   locale/@AB_CD@/browser/overrides/global/aboutWebrtc.properties  (%chrome/global/aboutWebrtc.properties)
 
@@ -74,6 +71,8 @@ relativesrcdir toolkit/locales:
   crashreporter                                    (%crashreporter/**/*.ftl)
 #about:about
   toolkit/about                                    (%toolkit/about/*About.ftl)
+#about:mozilla
+  toolkit/about                                    (%toolkit/about/*Mozilla.ftl)
 #about:support
   toolkit/about                                    (%toolkit/about/*Support.ftl)
 #about:rights

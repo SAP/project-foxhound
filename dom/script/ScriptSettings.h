@@ -14,9 +14,11 @@
 #include "nsIPrincipal.h"
 #include "xpcpublic.h"
 
+#include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/Maybe.h"
 
 #include "jsapi.h"
+#include "js/Exception.h"
 #include "js/Debug.h"
 #include "js/Warnings.h"  // JS::WarningReporter
 
@@ -266,11 +268,9 @@ class MOZ_STACK_CLASS AutoJSAPI : protected ScriptSettingsStackEntry {
   // into the current compartment.
   MOZ_MUST_USE bool StealException(JS::MutableHandle<JS::Value> aVal);
 
-  // As for StealException(), but put the saved frames for any stack trace
-  // associated with the point the exception was thrown into aStack.
-  // aVal will be in the current compartment, but aStack might not be.
-  MOZ_MUST_USE bool StealExceptionAndStack(JS::MutableHandle<JS::Value> aVal,
-                                           JS::MutableHandle<JSObject*> aStack);
+  // As for StealException(), but uses the JS::ExceptionStack class to also
+  // include the exception's stack, represented by SavedFrames.
+  MOZ_MUST_USE bool StealExceptionAndStack(JS::ExceptionStack* aExnStack);
 
   // Peek the current exception from the JS engine, without stealing it.
   // Callers must ensure that HasException() is true, and that cx() is in a
@@ -383,6 +383,7 @@ class MOZ_STACK_CLASS AutoEntryScript : public AutoJSAPI {
 #ifdef MOZ_GECKO_PROFILER
   AutoProfilerLabel mAutoProfilerLabel;
 #endif
+  AutoRequestJSThreadExecution mJSThreadExecution;
 };
 
 /*
@@ -422,6 +423,8 @@ class AutoNoJSAPI : protected ScriptSettingsStackEntry,
   // fix JSAutoNullableRealm to not hold on to a JSContext either, or
   // something.
   JSContext* mCx;
+
+  AutoYieldJSThreadExecution mExecutionYield;
 };
 
 }  // namespace dom

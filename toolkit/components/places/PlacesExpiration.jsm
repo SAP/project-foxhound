@@ -470,8 +470,8 @@ function nsPlacesExpiration() {
   XPCOMUtils.defineLazyServiceGetter(
     this,
     "_idle",
-    "@mozilla.org/widget/idleservice;1",
-    "nsIIdleService"
+    "@mozilla.org/widget/useridleservice;1",
+    "nsIUserIdleService"
   );
 
   this._prefBranch = Services.prefs.getBranch(PREF_BRANCH);
@@ -838,10 +838,12 @@ nsPlacesExpiration.prototype = {
       try {
         db = await PlacesUtils.promiseDBConnection();
         if (db) {
-          let row = (await db.execute(`SELECT * FROM pragma_page_size(),
+          let row = (
+            await db.execute(`SELECT * FROM pragma_page_size(),
                                                 pragma_page_count(),
                                                 pragma_freelist_count(),
-                                                (SELECT count(*) FROM moz_places)`))[0];
+                                                (SELECT count(*) FROM moz_places)`)
+          )[0];
           let pageSize = row.getResultByIndex(0);
           let pageCount = row.getResultByIndex(1);
           let freelistCount = row.getResultByIndex(2);
@@ -1092,11 +1094,11 @@ nsPlacesExpiration.prototype = {
   classID: Components.ID("705a423f-2f69-42f3-b9fe-1517e0dee56f"),
 
   QueryInterface: ChromeUtils.generateQI([
-    Ci.nsIObserver,
-    Ci.nsINavHistoryObserver,
-    Ci.nsITimerCallback,
-    Ci.mozIStorageStatementCallback,
-    Ci.nsISupportsWeakReference,
+    "nsIObserver",
+    "nsINavHistoryObserver",
+    "nsITimerCallback",
+    "mozIStorageStatementCallback",
+    "nsISupportsWeakReference",
   ]),
 };
 

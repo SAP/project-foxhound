@@ -29,7 +29,8 @@
 
 class nsIDOMWindow;
 class nsIPrompt;
-class SmartCardThreadList;
+class nsISerialEventTarget;
+class nsITimer;
 
 namespace mozilla {
 namespace psm {
@@ -79,7 +80,13 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
 
   static nsresult SetEnabledTLSVersions();
 
+  // This function should be only called on parent process.
+  // When socket process is enabled, this function sends an IPC to clear the
+  // SSLTokensCache in socket process. If not,
+  // DoClearSSLExternalAndInternalSessionCache() will be called.
   static void ClearSSLExternalAndInternalSessionCacheNative();
+  // This function does the actual work of clearing the session cache.
+  static void DoClearSSLExternalAndInternalSessionCache();
 
  protected:
   virtual ~nsNSSComponent();
@@ -100,6 +107,8 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
       nsTArray<nsTArray<uint8_t>>& enterpriseCerts, bool getRoots);
 
   bool ShouldEnableEnterpriseRootsForFamilySafety(uint32_t familySafetyMode);
+
+  nsresult MaybeEnableIntermediatePreloadingHealer();
 
   // mLoadableCertsLoadedMonitor protects mLoadableCertsLoaded.
   mozilla::Monitor mLoadableCertsLoadedMonitor;
@@ -130,6 +139,13 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
   // to complete (because it will never complete) so we use this boolean to keep
   // track of if we should wait.
   bool mLoadLoadableCertsTaskDispatched;
+  // If the intermediate preloading healer is enabled, the following timer
+  // periodically dispatches events to the background task queue. Each of these
+  // events scans the NSS certdb for preloaded intermediates that are in
+  // cert_storage and thus can be removed. By default, the interval is 5
+  // minutes.
+  nsCOMPtr<nsITimer> mIntermediatePreloadingHealerTimer;
+  nsCOMPtr<nsISerialEventTarget> mBackgroundTaskQueue;
 };
 
 inline nsresult BlockUntilLoadableCertsLoaded() {

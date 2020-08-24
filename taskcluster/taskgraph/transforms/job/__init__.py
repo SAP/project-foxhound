@@ -67,7 +67,7 @@ job_description_schema = Schema({
     Optional('shipping-product'): task_description_schema['shipping-product'],
     Optional('always-target'): task_description_schema['always-target'],
     Exclusive('optimization', 'optimization'): task_description_schema['optimization'],
-    Optional('needs-sccache'): task_description_schema['needs-sccache'],
+    Optional('use-sccache'): task_description_schema['use-sccache'],
     Optional('release-artifacts'): task_description_schema['release-artifacts'],
     Optional('priority'): task_description_schema['priority'],
 
@@ -187,7 +187,7 @@ def use_fetches(config, jobs):
             if value:
                 aliases['{}-{}'.format(config.kind, value)] = label
 
-    for task in config.kind_dependencies_tasks:
+    for task in config.kind_dependencies_tasks.values():
         if task.kind in ('fetch', 'toolchain'):
             get_attribute(
                 artifact_names, task.label, task.attributes,
@@ -211,6 +211,7 @@ def use_fetches(config, jobs):
         dependencies = job.setdefault('dependencies', {})
         worker = job.setdefault('worker', {})
         prefix = get_artifact_prefix(job)
+        has_sccache = False
         for kind, artifacts in fetches.items():
             if kind in ('fetch', 'toolchain'):
                 for fetch_name in artifacts:
@@ -230,7 +231,7 @@ def use_fetches(config, jobs):
                     })
 
                     if kind == 'toolchain' and fetch_name.endswith('-sccache'):
-                        job['needs-sccache'] = True
+                        has_sccache = True
             else:
                 if kind not in dependencies:
                     raise Exception("{name} can't fetch {kind} artifacts because "
@@ -239,25 +240,17 @@ def use_fetches(config, jobs):
                 if dep_label in artifact_prefixes:
                     prefix = artifact_prefixes[dep_label]
                 else:
-                    dep_tasks = [
-                        task
-                        for task in config.kind_dependencies_tasks
-                        if task.label == dep_label
-                    ]
-                    if len(dep_tasks) != 1:
+                    if dep_label not in config.kind_dependencies_tasks:
                         raise Exception(
                             "{name} can't fetch {kind} artifacts because "
-                            "there are {tasks} with label {label} in kind dependencies!".format(
+                            "there are no tasks with label {label} in kind dependencies!".format(
                                 name=name,
                                 kind=kind,
                                 label=dependencies[kind],
-                                tasks="no tasks"
-                                if len(dep_tasks) == 0
-                                else "multiple tasks",
                             )
                         )
 
-                    prefix = get_artifact_prefix(dep_tasks[0])
+                    prefix = get_artifact_prefix(config.kind_dependencies_tasks[dep_label])
 
                 for artifact in artifacts:
                     if isinstance(artifact, text_type):
@@ -279,6 +272,9 @@ def use_fetches(config, jobs):
                         fetch['dest'] = dest
                     job_fetches.append(fetch)
 
+        if job.get('use-sccache') and not has_sccache:
+            raise Exception("Must provide an sccache toolchain if using sccache.")
+
         job_artifact_prefixes = {
             mozpath.dirname(fetch["artifact"])
             for fetch in job_fetches
@@ -295,8 +291,10 @@ def use_fetches(config, jobs):
 
         env = worker.setdefault('env', {})
         env['MOZ_FETCHES'] = {
-            'task-reference': six.ensure_text(json.dumps(job_fetches,
-                                                         sort_keys=True))
+            'task-reference': six.ensure_text(
+                json.dumps(sorted(job_fetches,
+                                  key=lambda x: sorted(x.items())),
+                           sort_keys=True))
         }
         # The path is normalized to an absolute path in run-task
         env.setdefault('MOZ_FETCHES_DIR', 'fetches')

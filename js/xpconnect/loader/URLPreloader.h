@@ -47,7 +47,7 @@ class ScriptPreloader;
 class URLPreloader final : public nsIObserver, public nsIMemoryReporter {
   MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
 
-  URLPreloader();
+  URLPreloader() = default;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -265,6 +265,8 @@ class URLPreloader final : public nsIObserver, public nsIMemoryReporter {
 
   // Resolves the given URI to a CacheKey, if the URI is cacheable.
   Result<CacheKey, nsresult> ResolveURI(nsIURI* uri);
+
+  static already_AddRefed<URLPreloader> Create(bool* aInitialized);
 
   Result<Ok, nsresult> InitInternal();
 

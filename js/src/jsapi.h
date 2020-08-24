@@ -28,7 +28,6 @@
 #include "Taint.h"
 
 #include "js/AllocPolicy.h"
-#include "js/BinASTFormat.h"  // JS::BinASTFormat
 #include "js/CallArgs.h"
 #include "js/CharacterEncoding.h"
 #include "js/Class.h"
@@ -78,14 +77,14 @@ class MOZ_RAII JS_PUBLIC_API CustomAutoRooter : private AutoGCRooter {
  public:
   template <typename CX>
   explicit CustomAutoRooter(const CX& cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : AutoGCRooter(cx, AutoGCRooter::Tag::Custom) {
+      : AutoGCRooter(cx, AutoGCRooter::Kind::Custom) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
   friend void AutoGCRooter::trace(JSTracer* trc);
 
  protected:
-  virtual ~CustomAutoRooter() {}
+  virtual ~CustomAutoRooter() = default;
 
   /** Supplied by derived class to trace roots. */
   virtual void trace(JSTracer* trc) = 0;
@@ -99,6 +98,8 @@ class MOZ_RAII JS_PUBLIC_API CustomAutoRooter : private AutoGCRooter {
 /* Callbacks and their arguments. */
 
 /************************************************************************/
+using JSGetElementCallback = JSObject* (*)(JSContext* aCx,
+                                           JS::HandleValue privateValue);
 
 using JSInterruptCallback = bool (*)(JSContext*);
 
@@ -312,7 +313,7 @@ JS_PUBLIC_API void SetFilenameValidationCallback(FilenameValidationCallback cb);
  * Set callback to send tasks to XPCOM thread pools
  */
 JS_PUBLIC_API void SetHelperThreadTaskCallback(
-    void (*callback)(js::RunnableTask*));
+    bool (*callback)(js::UniquePtr<js::RunnableTask>));
 
 extern JS_PUBLIC_API const char* JS_GetImplementationVersion(void);
 
@@ -452,8 +453,8 @@ extern JS_PUBLIC_API JS::Realm* EnterRealm(JSContext* cx, JSObject* target);
 
 extern JS_PUBLIC_API void LeaveRealm(JSContext* cx, JS::Realm* oldRealm);
 
-using IterateRealmCallback = void (*)(JSContext* cx, void* data,
-                                      Handle<Realm*> realm);
+using IterateRealmCallback = void (*)(JSContext* cx, void* data, Realm* realm,
+                                      const AutoRequireNoGC& nogc);
 
 /**
  * This function calls |realmCallback| on every realm. Beware that there is no
@@ -768,15 +769,6 @@ extern JS_PUBLIC_API bool GetFirstArgumentAsTypeHint(JSContext* cx,
                                                      JSType* result);
 
 } /* namespace JS */
-
-template <typename T>
-struct JSConstScalarSpec {
-  const char* name;
-  T val;
-};
-
-using JSConstDoubleSpec = JSConstScalarSpec<double>;
-using JSConstIntegerSpec = JSConstScalarSpec<int32_t>;
 
 extern JS_PUBLIC_API JSObject* JS_InitClass(
     JSContext* cx, JS::HandleObject obj, JS::HandleObject parent_proto,
@@ -1570,14 +1562,6 @@ extern JS_PUBLIC_API JSObject* JS_DefineObject(JSContext* cx,
                                                const JSClass* clasp = nullptr,
                                                unsigned attrs = 0);
 
-extern JS_PUBLIC_API bool JS_DefineConstDoubles(JSContext* cx,
-                                                JS::HandleObject obj,
-                                                const JSConstDoubleSpec* cds);
-
-extern JS_PUBLIC_API bool JS_DefineConstIntegers(JSContext* cx,
-                                                 JS::HandleObject obj,
-                                                 const JSConstIntegerSpec* cis);
-
 extern JS_PUBLIC_API bool JS_DefineProperties(JSContext* cx,
                                               JS::HandleObject obj,
                                               const JSPropertySpec* ps);
@@ -1816,20 +1800,6 @@ extern JS_PUBLIC_API void SetScriptPrivateReferenceHooks(
 
 } /* namespace JS */
 
-namespace JS {
-
-// This throws an exception if built without JS_BUILD_BINAST.
-extern JS_PUBLIC_API JSScript* DecodeBinAST(
-    JSContext* cx, const ReadOnlyCompileOptions& options, FILE* file,
-    JS::BinASTFormat format);
-
-// This throws an exception if built without JS_BUILD_BINAST.
-extern JS_PUBLIC_API JSScript* DecodeBinAST(
-    JSContext* cx, const ReadOnlyCompileOptions& options, const uint8_t* buf,
-    size_t length, JS::BinASTFormat format);
-
-} /* namespace JS */
-
 extern JS_PUBLIC_API bool JS_CheckForInterrupt(JSContext* cx);
 
 /*
@@ -1891,7 +1861,7 @@ using UniqueOptimizedEncodingBytes = js::UniquePtr<OptimizedEncodingBytes>;
 
 class OptimizedEncodingListener {
  protected:
-  virtual ~OptimizedEncodingListener() {}
+  virtual ~OptimizedEncodingListener() = default;
 
  public:
   // SpiderMonkey will hold an outstanding reference count as long as it holds
@@ -2682,32 +2652,7 @@ class JS_PUBLIC_API AutoSaveExceptionState {
   void restore();
 };
 
-// Set both the exception and its associated stack on the context. The stack
-// must be a SavedFrame.
-JS_PUBLIC_API void SetPendingExceptionAndStack(JSContext* cx, HandleValue value,
-                                               HandleObject stack);
-
-/**
- * Get the SavedFrame stack object captured when the pending exception was set
- * on the JSContext. This fuzzily correlates with a `throw` statement in JS,
- * although arbitrary JSAPI consumers or VM code may also set pending exceptions
- * via `JS_SetPendingException`.
- *
- * This is not the same stack as `e.stack` when `e` is an `Error` object. (That
- * would be JS::ExceptionStackOrNull).
- */
-MOZ_MUST_USE JS_PUBLIC_API JSObject* GetPendingExceptionStack(JSContext* cx);
-
 } /* namespace JS */
-
-/* Deprecated API. Use AutoSaveExceptionState instead. */
-extern JS_PUBLIC_API JSExceptionState* JS_SaveExceptionState(JSContext* cx);
-
-extern JS_PUBLIC_API void JS_RestoreExceptionState(JSContext* cx,
-                                                   JSExceptionState* state);
-
-extern JS_PUBLIC_API void JS_DropExceptionState(JSContext* cx,
-                                                JSExceptionState* state);
 
 /**
  * If the given object is an exception object, the exception will have (or be
@@ -2987,30 +2932,6 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleValue val, const char* sink);
 namespace JS {
 
 /**
- * The WasmModule interface allows the embedding to hold a reference to the
- * underying C++ implementation of a JS WebAssembly.Module object for purposes
- * of efficient postMessage() and (de)serialization from a random thread.
- *
- * In particular, this allows postMessage() of a WebAssembly.Module:
- * GetWasmModule() is called when making a structured clone of a payload
- * containing a WebAssembly.Module object. The structured clone buffer holds a
- * refcount of the JS::WasmModule until createObject() is called in the target
- * agent's JSContext. The new WebAssembly.Module object continues to hold the
- * JS::WasmModule and thus the final reference of a JS::WasmModule may be
- * dropped from any thread and so the virtual destructor (and all internal
- * methods of the C++ module) must be thread-safe.
- */
-
-struct WasmModule : js::AtomicRefCounted<WasmModule> {
-  virtual ~WasmModule() {}
-  virtual JSObject* createObject(JSContext* cx) = 0;
-};
-
-extern JS_PUBLIC_API bool IsWasmModuleObject(HandleObject obj);
-
-extern JS_PUBLIC_API RefPtr<WasmModule> GetWasmModule(HandleObject obj);
-
-/**
  * Attempt to disable Wasm's usage of reserving a large virtual memory
  * allocation to avoid bounds checking overhead. This must be called before any
  * Wasm module or memory is created in this process, or else this function will
@@ -3047,6 +2968,39 @@ using OutOfMemoryCallback = void (*)(JSContext*, void*);
 extern JS_PUBLIC_API void SetOutOfMemoryCallback(JSContext* cx,
                                                  OutOfMemoryCallback cb,
                                                  void* data);
+
+/**
+ * When the JSRuntime is about to block in an Atomics.wait() JS call or in a
+ * `wait` instruction in WebAssembly, it can notify the host by means of a call
+ * to BeforeWaitCallback.  After the wait, it can notify the host by means of a
+ * call to AfterWaitCallback.  Both callbacks must be null, or neither.
+ *
+ * (If you change the callbacks from null to not-null or vice versa while some
+ * thread on the runtime is in a wait, you will be sorry.)
+ *
+ * The argument to the BeforeWaitCallback is a pointer to uninitialized
+ * stack-allocated working memory of size WAIT_CALLBACK_CLIENT_MAXMEM bytes.
+ * The caller of SetWaitCallback() must pass the amount of memory it will need,
+ * and this amount will be checked against that limit and the process will crash
+ * reliably if the check fails.
+ *
+ * The value returned by the BeforeWaitCallback will be passed to the
+ * AfterWaitCallback.
+ *
+ * The AfterWaitCallback will be called even if the wakeup is spurious and the
+ * thread goes right back to waiting again.  Of course the thread will call the
+ * BeforeWaitCallback once more before it goes to sleep in this situation.
+ */
+
+static constexpr size_t WAIT_CALLBACK_CLIENT_MAXMEM = 32;
+
+using BeforeWaitCallback = void* (*)(uint8_t* memory);
+using AfterWaitCallback = void (*)(void* cookie);
+
+extern JS_PUBLIC_API void SetWaitCallback(JSRuntime* rt,
+                                          BeforeWaitCallback beforeWait,
+                                          AfterWaitCallback afterWait,
+                                          size_t requiredMemory);
 
 /**
  * Capture all frames.
@@ -3133,6 +3087,16 @@ extern JS_PUBLIC_API bool CaptureCurrentStack(
     JSContext* cx, MutableHandleObject stackp,
     StackCapture&& capture = StackCapture(AllFrames()));
 
+/**
+ * Returns true if capturing stack trace data to associate with an asynchronous
+ * operation is currently enabled for the current context realm.
+ *
+ * Users should check this state before capturing a stack that will be passed
+ * back to AutoSetAsyncStackForNewCalls later, in order to avoid capturing a
+ * stack for async use when we don't actually want to capture it.
+ */
+extern JS_PUBLIC_API bool IsAsyncStackCaptureEnabledForRealm(JSContext* cx);
+
 /*
  * This is a utility function for preparing an async stack to be used
  * by some other object.  This may be used when you need to treat a
@@ -3180,13 +3144,6 @@ extern JS_PUBLIC_API bool IsMaybeWrappedSavedFrame(JSObject* obj);
  * SavedFrame.prototype object.
  */
 extern JS_PUBLIC_API bool IsUnwrappedSavedFrame(JSObject* obj);
-
-/**
- * Clean up a finalization group in response to the engine calling the
- * HostCleanupFinalizationGroup callback.
- */
-extern JS_PUBLIC_API bool CleanupQueuedFinalizationGroup(JSContext* cx,
-                                                         HandleObject group);
 
 } /* namespace JS */
 

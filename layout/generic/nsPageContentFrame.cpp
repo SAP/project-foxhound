@@ -31,7 +31,7 @@ void nsPageContentFrame::Reflow(nsPresContext* aPresContext,
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
-  if (GetPrevInFlow() && (GetStateBits() & NS_FRAME_FIRST_REFLOW)) {
+  if (GetPrevInFlow() && HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     nsresult rv =
         aPresContext->PresShell()->FrameConstructor()->ReplicateFixedFrames(
             this);
@@ -123,6 +123,6 @@ void nsPageContentFrame::AppendDirectlyOwnedAnonBoxes(
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsPageContentFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("PageContent"), aResult);
+  return MakeFrameName(u"PageContent"_ns, aResult);
 }
 #endif

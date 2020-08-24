@@ -97,17 +97,15 @@ class nsRange final : public mozilla::dom::AbstractRange,
    */
   bool IsInSelection() const { return !!mSelection; }
 
-  /**
-   * Called when the range is added/removed from a Selection.
-   */
-  // TODO: annotate this with `MOZ_CAN_RUN_SCRIPT` instead.
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void SetSelection(
-      mozilla::dom::Selection* aSelection);
+  MOZ_CAN_RUN_SCRIPT void RegisterSelection(
+      mozilla::dom::Selection& aSelection);
+
+  void UnregisterSelection();
 
   /**
    * Returns pointer to a Selection if the range is associated with a Selection.
    */
-  mozilla::dom::Selection* GetSelection() const { return mSelection; }
+  mozilla::dom::Selection* GetSelection() const;
 
   /**
    * Return true if this range was generated.
@@ -208,13 +206,13 @@ class nsRange final : public mozilla::dom::AbstractRange,
       const mozilla::dom::GlobalObject& global, mozilla::ErrorResult& aRv);
 
   already_AddRefed<mozilla::dom::DocumentFragment> CreateContextualFragment(
-      const nsAString& aString, ErrorResult& aError);
+      const nsAString& aString, ErrorResult& aError) const;
   already_AddRefed<mozilla::dom::DocumentFragment> CloneContents(
       ErrorResult& aErr);
-  int16_t CompareBoundaryPoints(uint16_t aHow, nsRange& aOther,
-                                ErrorResult& aErr);
-  int16_t ComparePoint(nsINode& aContainer, uint32_t aOffset,
-                       ErrorResult& aErr) const;
+  int16_t CompareBoundaryPoints(uint16_t aHow, const nsRange& aOtherRange,
+                                ErrorResult& aRv);
+  int16_t ComparePoint(const nsINode& aContainer, uint32_t aOffset,
+                       ErrorResult& aRv) const;
   void DeleteContents(ErrorResult& aRv);
   already_AddRefed<mozilla::dom::DocumentFragment> ExtractContents(
       ErrorResult& aErr);
@@ -227,8 +225,8 @@ class nsRange final : public mozilla::dom::AbstractRange,
   }
   void InsertNode(nsINode& aNode, ErrorResult& aErr);
   bool IntersectsNode(nsINode& aNode, ErrorResult& aRv);
-  bool IsPointInRange(nsINode& aContainer, uint32_t aOffset,
-                      ErrorResult& aErr) const;
+  bool IsPointInRange(const nsINode& aContainer, uint32_t aOffset,
+                      ErrorResult& aRv) const;
   void ToString(nsAString& aReturn, ErrorResult& aErr);
   void Detach();
 

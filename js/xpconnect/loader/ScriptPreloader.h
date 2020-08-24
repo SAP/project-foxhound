@@ -75,7 +75,7 @@ class ScriptPreloader : public nsIObserver,
   static ScriptPreloader& GetSingleton();
   static ScriptPreloader& GetChildSingleton();
 
-  static ProcessType GetChildProcessType(const nsAString& remoteType);
+  static ProcessType GetChildProcessType(const nsACString& remoteType);
 
   // Retrieves the script with the given cache key from the script cache.
   // Returns null if the script is not cached.
@@ -96,8 +96,7 @@ class ScriptPreloader : public nsIObserver,
                   TimeStamp loadTime);
 
   // Initializes the script cache from the startup script cache file.
-  Result<Ok, nsresult> InitCache(
-      const nsAString& = NS_LITERAL_STRING("scriptCache"));
+  Result<Ok, nsresult> InitCache(const nsAString& = u"scriptCache"_ns);
 
   Result<Ok, nsresult> InitCache(const Maybe<ipc::FileDescriptor>& cacheFile,
                                  ScriptCacheChild* cacheChild);

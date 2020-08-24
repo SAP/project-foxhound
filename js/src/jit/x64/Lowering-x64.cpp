@@ -211,6 +211,13 @@ void LIRGenerator::visitWasmStore(MWasmStore* ins) {
     case Scalar::Float64:
       valueAlloc = useRegisterAtStart(value);
       break;
+    case Scalar::Simd128:
+#ifdef ENABLE_WASM_SIMD
+      valueAlloc = useRegisterAtStart(value);
+      break;
+#else
+      MOZ_CRASH("unexpected array type");
+#endif
     case Scalar::BigInt64:
     case Scalar::BigUint64:
     case Scalar::Uint8Clamped:
@@ -332,11 +339,6 @@ void LIRGenerator::visitSubstr(MSubstr* ins) {
               useRegister(ins->length()), temp(), temp(), tempByteOpRegister());
   define(lir, ins);
   assignSafepoint(lir, ins);
-}
-
-void LIRGenerator::visitRandom(MRandom* ins) {
-  LRandom* lir = new (alloc()) LRandom(temp(), temp(), temp());
-  defineFixed(lir, ins, LFloatReg(ReturnDoubleReg));
 }
 
 void LIRGeneratorX64::lowerDivI64(MDiv* div) {

@@ -31,10 +31,15 @@ py2:
         - xpcom
 
         # These paths are intentionally excluded (Python 3 only)
+        - config/printconfigsetting.py
+        - python/mozbuild/mozbuild/html_build_viewer.py
         - python/mozlint
+        - python/mozperftest
         - tools/crashreporter/system-symbols/win/symsrv-fetch.py
         - tools/github-sync
         - tools/lint
+        - tools/tryselect
+        - testing/performance
     extensions: ['py']
     support-files:
         - 'tools/lint/python/*compat*'

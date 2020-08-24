@@ -16,11 +16,12 @@
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/SystemGroup.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "nsIGfxInfo.h"
+#include "mozilla/Telemetry.h"
+#include "nsGkAtoms.h"
 
 #ifndef MOZ_WIDGET_ANDROID
 #  include "WebMSample.h"
@@ -103,8 +104,7 @@ bool VP9Benchmark::IsVP9DecodeFast(bool aDefault) {
           if (XRE_IsContentProcess()) {
             dom::ContentChild* contentChild = dom::ContentChild::GetSingleton();
             if (contentChild) {
-              contentChild->SendNotifyBenchmarkResult(NS_LITERAL_STRING("VP9"),
-                                                      aDecodeFps);
+              contentChild->SendNotifyBenchmarkResult(u"VP9"_ns, aDecodeFps);
             }
           } else {
             Preferences::SetUint(sBenchmarkFpsPref, aDecodeFps);
@@ -126,7 +126,7 @@ bool VP9Benchmark::IsVP9DecodeFast(bool aDefault) {
 }
 
 Benchmark::Benchmark(MediaDataDemuxer* aDemuxer, const Parameters& aParameters)
-    : QueueObject(new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK),
+    : QueueObject(new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER),
                                 "Benchmark::QueueObject")),
       mParameters(aParameters),
       mKeepAliveUntilComplete(this),
@@ -171,7 +171,7 @@ void Benchmark::Init() {
 
 BenchmarkPlayback::BenchmarkPlayback(Benchmark* aGlobalState,
                                      MediaDataDemuxer* aDemuxer)
-    : QueueObject(new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK),
+    : QueueObject(new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER),
                                 "BenchmarkPlayback::QueueObject")),
       mGlobalState(aGlobalState),
       mDecoderTaskQueue(

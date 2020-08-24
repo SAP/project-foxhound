@@ -184,7 +184,15 @@ void AppleVTDecoder::ProcessDecode(MediaRawData* aSample) {
       kVTDecodeFrame_EnableAsynchronousDecompression;
   rv = VTDecompressionSessionDecodeFrame(
       mSession, sample, decodeFlags, CreateAppleFrameRef(aSample), &infoFlags);
-  if (rv != noErr && !(infoFlags & kVTDecodeInfo_FrameDropped)) {
+  if (infoFlags & kVTDecodeInfo_FrameDropped) {
+    MonitorAutoLock mon(mMonitor);
+    // Smile and nod
+    NS_WARNING("Decoder synchronously dropped frame");
+    MaybeResolveBufferedFrames();
+    return;
+  }
+
+  if (rv != noErr) {
     LOG("AppleVTDecoder: Error %d VTDecompressionSessionDecodeFrame", rv);
     NS_WARNING("Couldn't pass frame to decoder");
     // It appears that even when VTDecompressionSessionDecodeFrame returned a
@@ -279,9 +287,12 @@ static void PlatformCallback(void* decompressionOutputRefCon,
       static_cast<AppleVTDecoder::AppleFrameRef*>(sourceFrameRefCon));
 
   // Validate our arguments.
-  if (status != noErr || !image) {
+  if (status != noErr) {
+    NS_WARNING("VideoToolbox decoder returned an error");
+    decoder->OnDecodeError(status);
+    return;
+  } else if (!image) {
     NS_WARNING("VideoToolbox decoder returned no data");
-    image = nullptr;
   } else if (flags & kVTDecodeInfo_FrameDropped) {
     NS_WARNING("  ...frame tagged as dropped...");
   } else {
@@ -290,6 +301,20 @@ static void PlatformCallback(void* decompressionOutputRefCon,
   }
 
   decoder->OutputFrame(image, *frameRef);
+}
+
+void AppleVTDecoder::MaybeResolveBufferedFrames() {
+  mMonitor.AssertCurrentThreadOwns();
+
+  if (mPromise.IsEmpty()) {
+    return;
+  }
+
+  DecodedData results;
+  while (mReorderQueue.Length() > mMaxRefFrames) {
+    results.AppendElement(mReorderQueue.Pop());
+  }
+  mPromise.Resolve(std::move(results), __func__);
 }
 
 // Copy and return a decoded frame.
@@ -310,7 +335,7 @@ void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
     // Image was dropped by decoder or none return yet.
     // We need more input to continue.
     MonitorAutoLock mon(mMonitor);
-    mPromise.Resolve(DecodedData(), __func__);
+    MaybeResolveBufferedFrames();
     return;
   }
 
@@ -359,7 +384,6 @@ void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
     buffer.mPlanes[0].mStride = CVPixelBufferGetBytesPerRowOfPlane(aImage, 0);
     buffer.mPlanes[0].mWidth = width;
     buffer.mPlanes[0].mHeight = height;
-    buffer.mPlanes[0].mOffset = 0;
     buffer.mPlanes[0].mSkip = 0;
     // Cb plane.
     buffer.mPlanes[1].mData =
@@ -367,7 +391,6 @@ void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
     buffer.mPlanes[1].mStride = CVPixelBufferGetBytesPerRowOfPlane(aImage, 1);
     buffer.mPlanes[1].mWidth = (width + 1) / 2;
     buffer.mPlanes[1].mHeight = (height + 1) / 2;
-    buffer.mPlanes[1].mOffset = 0;
     buffer.mPlanes[1].mSkip = 0;
     // Cr plane.
     buffer.mPlanes[2].mData =
@@ -375,7 +398,6 @@ void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
     buffer.mPlanes[2].mStride = CVPixelBufferGetBytesPerRowOfPlane(aImage, 2);
     buffer.mPlanes[2].mWidth = (width + 1) / 2;
     buffer.mPlanes[2].mHeight = (height + 1) / 2;
-    buffer.mPlanes[2].mOffset = 0;
     buffer.mPlanes[2].mSkip = 0;
 
     buffer.mYUVColorSpace = mColorSpace;
@@ -421,15 +443,19 @@ void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
   // Frames come out in DTS order but we need to output them
   // in composition order.
   MonitorAutoLock mon(mMonitor);
-  mReorderQueue.Push(data);
-  DecodedData results;
-  while (mReorderQueue.Length() > mMaxRefFrames) {
-    results.AppendElement(mReorderQueue.Pop());
-  }
-  mPromise.Resolve(std::move(results), __func__);
+  mReorderQueue.Push(std::move(data));
+  MaybeResolveBufferedFrames();
 
   LOG("%llu decoded frames queued",
       static_cast<unsigned long long>(mReorderQueue.Length()));
+}
+
+void AppleVTDecoder::OnDecodeError(OSStatus aError) {
+  MonitorAutoLock mon(mMonitor);
+  mPromise.RejectIfExists(
+      MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+                  RESULT_DETAIL("OnDecodeError:%x", aError)),
+      __func__);
 }
 
 nsresult AppleVTDecoder::WaitForAsynchronousFrames() {

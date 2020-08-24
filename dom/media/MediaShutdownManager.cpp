@@ -47,7 +47,7 @@ MediaShutdownManager& MediaShutdownManager::Instance() {
 }
 
 static nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier() {
-  nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdown();
+  nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
   MOZ_RELEASE_ASSERT(svc);
 
   nsCOMPtr<nsIAsyncShutdownClient> barrier;
@@ -72,8 +72,8 @@ void MediaShutdownManager::InitStatics() {
   MOZ_DIAGNOSTIC_ASSERT(sInstance);
 
   nsresult rv = GetShutdownBarrier()->AddBlocker(
-      sInstance, NS_LITERAL_STRING(__FILE__), __LINE__,
-      NS_LITERAL_STRING("MediaShutdownManager shutdown"));
+      sInstance, NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__,
+      u"MediaShutdownManager shutdown"_ns);
   if (NS_FAILED(rv)) {
     LOGW("Failed to add shutdown blocker! rv=%x", uint32_t(rv));
     sInitPhase = InitFailed;
@@ -124,7 +124,7 @@ void MediaShutdownManager::Unregister(MediaDecoder* aDecoder) {
 
 NS_IMETHODIMP
 MediaShutdownManager::GetName(nsAString& aName) {
-  aName = NS_LITERAL_STRING("MediaShutdownManager: shutdown");
+  aName = u"MediaShutdownManager: shutdown"_ns;
   return NS_OK;
 }
 

@@ -147,7 +147,8 @@ struct FrameMetrics {
            mIsRelative == aOther.mIsRelative &&
            mDoSmoothScroll == aOther.mDoSmoothScroll &&
            mIsScrollInfoLayer == aOther.mIsScrollInfoLayer &&
-           mFixedLayerMargins == aOther.mFixedLayerMargins;
+           mFixedLayerMargins == aOther.mFixedLayerMargins &&
+           mPureRelativeOffset == aOther.mPureRelativeOffset;
   }
 
   bool operator!=(const FrameMetrics& aOther) const {
@@ -217,7 +218,7 @@ struct FrameMetrics {
    * Calculate the composition bounds of this frame in the CSS pixels of
    * the content surrounding the scroll frame. (This can be thought of as
    * "parent CSS" pixels).
-   * Note that it does not make to ask for the composition bounds in the
+   * Note that it does not make sense to ask for the composition bounds in the
    * CSS pixels of the scrolled content (that is, regular CSS pixels),
    * because the origin of the composition bounds is not meaningful in that
    * coordinate space. (The size is, use CalculateCompositedSizeInCssPixels()
@@ -306,6 +307,16 @@ struct FrameMetrics {
     ClampAndSetSmoothScrollOffset(mScrollOffset + delta);
     mScrollGeneration = aOther.mScrollGeneration;
     mDoSmoothScroll = aOther.mDoSmoothScroll;
+  }
+
+  void ApplyPureRelativeSmoothScrollUpdateFrom(const FrameMetrics& aOther,
+                                               bool aApplyToSmoothScroll) {
+    MOZ_ASSERT(aOther.IsPureRelative() && aOther.mPureRelativeOffset.isSome());
+    ClampAndSetSmoothScrollOffset(
+        (aApplyToSmoothScroll ? mSmoothScrollOffset : mScrollOffset) +
+        *aOther.mPureRelativeOffset);
+    mScrollGeneration = aOther.mScrollGeneration;
+    mDoSmoothScroll = true;
   }
 
   void UpdatePendingScrollInfo(const ScrollUpdateInfo& aInfo) {
@@ -422,6 +433,8 @@ struct FrameMetrics {
 
   bool IsRelative() const { return mIsRelative; }
 
+  bool IsPureRelative() const { return mPureRelativeOffset.isSome(); }
+
   bool GetDoSmoothScroll() const { return mDoSmoothScroll; }
 
   uint32_t GetScrollGeneration() const { return mScrollGeneration; }
@@ -519,6 +532,10 @@ struct FrameMetrics {
     return mFixedLayerMargins;
   }
 
+  void SetPureRelativeOffset(const Maybe<CSSPoint>& aPureRelativeOffset) {
+    mPureRelativeOffset = aPureRelativeOffset;
+  }
+
   // Helper function for RecalculateViewportOffset(). Exposed so that
   // APZC can perform the operation on other copies of the layout
   // and visual viewport rects (e.g. the "effective" ones used to implement
@@ -554,7 +571,9 @@ struct FrameMetrics {
   // change during zooming).
   //
   // The origin of the composition bounds is relative to the layer tree origin.
-  // Unlike the scroll port's origin, it does not change during scrolling.
+  // Unlike the scroll port's origin, it does not change during scrolling of
+  // the scrollable layer to which it is associated. However, it may change due
+  // to scrolling of ancestor layers.
   //
   // This value is provided by Gecko at layout/paint time.
   ParentLayerRect mCompositionBounds;
@@ -692,6 +711,10 @@ struct FrameMetrics {
   // root-content scroll frame.
   ScreenMargin mFixedLayerMargins;
 
+  // When this is Some it means a smooth scroll is requested with the
+  // destination being the current scroll offset plus this relative offset.
+  Maybe<CSSPoint> mPureRelativeOffset;
+
   // Whether or not this is the root scroll frame for the root content document.
   bool mIsRootContent : 1;
 
@@ -752,8 +775,8 @@ struct ScrollSnapInfo {
   StyleScrollSnapStrictness mScrollSnapStrictnessY;
 
   // The scroll positions corresponding to scroll-snap-align values.
-  nsTArray<nscoord> mSnapPositionX;
-  nsTArray<nscoord> mSnapPositionY;
+  CopyableTArray<nscoord> mSnapPositionX;
+  CopyableTArray<nscoord> mSnapPositionY;
 
   struct ScrollSnapRange {
     ScrollSnapRange() = default;
@@ -781,8 +804,8 @@ struct ScrollSnapInfo {
   // See https://drafts.csswg.org/css-scroll-snap-1/#snap-overflow
   //
   // Note: This range contains scroll-margin values.
-  nsTArray<ScrollSnapRange> mXRangeWiderThanSnapport;
-  nsTArray<ScrollSnapRange> mYRangeWiderThanSnapport;
+  CopyableTArray<ScrollSnapRange> mXRangeWiderThanSnapport;
+  CopyableTArray<ScrollSnapRange> mYRangeWiderThanSnapport;
 
   // Note: This snapport size has been already deflated by scroll-padding.
   nsSize mSnapportSize;
@@ -883,6 +906,7 @@ struct ScrollMetadata {
         mIsAutoDirRootContentRTL(false),
         mForceDisableApz(false),
         mResolutionUpdated(false),
+        mIsRDMTouchSimulationActive(false),
         mOverscrollBehavior() {}
 
   bool operator==(const ScrollMetadata& aOther) const {
@@ -898,6 +922,7 @@ struct ScrollMetadata {
            mIsAutoDirRootContentRTL == aOther.mIsAutoDirRootContentRTL &&
            mForceDisableApz == aOther.mForceDisableApz &&
            mResolutionUpdated == aOther.mResolutionUpdated &&
+           mIsRDMTouchSimulationActive == aOther.mIsRDMTouchSimulationActive &&
            mDisregardedDirection == aOther.mDisregardedDirection &&
            mOverscrollBehavior == aOther.mOverscrollBehavior;
   }
@@ -924,10 +949,10 @@ struct ScrollMetadata {
   ViewID GetScrollParentId() const { return mScrollParentId; }
 
   void SetScrollParentId(ViewID aParentId) { mScrollParentId = aParentId; }
-  const gfx::Color& GetBackgroundColor() const { return mBackgroundColor; }
-  void SetBackgroundColor(const gfx::Color& aBackgroundColor) {
-    mBackgroundColor = aBackgroundColor;
+  const gfx::DeviceColor& GetBackgroundColor() const {
+    return mBackgroundColor;
   }
+  void SetBackgroundColor(const gfx::sRGBColor& aBackgroundColor);
   const nsCString& GetContentDescription() const { return mContentDescription; }
   void SetContentDescription(const nsCString& aContentDescription) {
     mContentDescription = aContentDescription;
@@ -977,6 +1002,13 @@ struct ScrollMetadata {
   void SetResolutionUpdated(bool aUpdated) { mResolutionUpdated = aUpdated; }
   bool IsResolutionUpdated() const { return mResolutionUpdated; }
 
+  void SetIsRDMTouchSimulationActive(bool aValue) {
+    mIsRDMTouchSimulationActive = aValue;
+  }
+  bool GetIsRDMTouchSimulationActive() const {
+    return mIsRDMTouchSimulationActive;
+  }
+
   // For more details about the concept of a disregarded direction, refer to the
   // code which defines mDisregardedDirection.
   Maybe<ScrollDirection> GetDisregardedDirection() const {
@@ -1005,7 +1037,7 @@ struct ScrollMetadata {
   ViewID mScrollParentId;
 
   // The background color to use when overscrolling.
-  gfx::Color mBackgroundColor;
+  gfx::DeviceColor mBackgroundColor;
 
   // A description of the content element corresponding to this frame.
   // This is empty unless this is a scrollable layer and the
@@ -1052,6 +1084,12 @@ struct ScrollMetadata {
   // originated by the main thread. Plays a similar role for the resolution as
   // FrameMetrics::mScrollUpdateType) does for the scroll offset.
   bool mResolutionUpdated : 1;
+
+  // Whether or not RDM and touch simulation are active for this document.
+  // It's important to note that if RDM is active then this field will be
+  // true for the content document but NOT the chrome document containing
+  // the browser UI and RDM controls.
+  bool mIsRDMTouchSimulationActive : 1;
 
   // The disregarded direction means the direction which is disregarded anyway,
   // even if the scroll frame overflows in that direction and the direction is

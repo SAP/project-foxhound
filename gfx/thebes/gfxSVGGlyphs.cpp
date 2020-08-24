@@ -10,6 +10,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/SMILAnimationController.h"
 #include "mozilla/SVGContextPaint.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FontTableURIProtocolHandler.h"
@@ -27,22 +28,21 @@
 #include "nsStringStream.h"
 #include "nsStreamUtils.h"
 #include "nsIPrincipal.h"
-#include "nsSVGUtils.h"
 #include "nsContentUtils.h"
 #include "gfxFont.h"
 #include "gfxContext.h"
 #include "harfbuzz/hb.h"
 #include "zlib.h"
 
-#define SVG_CONTENT_TYPE NS_LITERAL_CSTRING("image/svg+xml")
-#define UTF8_CHARSET NS_LITERAL_CSTRING("utf-8")
+#define SVG_CONTENT_TYPE "image/svg+xml"_ns
+#define UTF8_CHARSET "utf-8"_ns
 
 using namespace mozilla;
 using mozilla::dom::Document;
 using mozilla::dom::Element;
 
 /* static */
-const mozilla::gfx::Color SimpleTextContextPaint::sZero;
+const mozilla::gfx::DeviceColor SimpleTextContextPaint::sZero;
 
 gfxSVGGlyphs::gfxSVGGlyphs(hb_blob_t* aSVGTable, gfxFontEntry* aFontEntry)
     : mSVGData(aSVGTable), mFontEntry(aFontEntry) {
@@ -205,7 +205,7 @@ void gfxSVGGlyphs::RenderGlyph(gfxContext* aContext, uint32_t aGlyphId,
   AutoSetRestoreSVGContextPaint autoSetRestore(
       *aContextPaint, *glyph->OwnerDoc()->AsSVGDocument());
 
-  nsSVGUtils::PaintSVGGlyph(glyph, aContext);
+  SVGUtils::PaintSVGGlyph(glyph, aContext);
 }
 
 bool gfxSVGGlyphs::GetGlyphExtents(uint32_t aGlyphId,
@@ -215,7 +215,7 @@ bool gfxSVGGlyphs::GetGlyphExtents(uint32_t aGlyphId,
   NS_ASSERTION(glyph,
                "No glyph element. Should check with HasSVGGlyph() first!");
 
-  return nsSVGUtils::GetSVGGlyphExtents(glyph, aSVGToAppSpace, aResult);
+  return SVGUtils::GetSVGGlyphExtents(glyph, aSVGToAppSpace, aResult);
 }
 
 Element* gfxSVGGlyphs::GetGlyphElement(uint32_t aGlyphId) {
@@ -431,7 +431,7 @@ void gfxSVGGlyphsDocument::InsertGlyphId(Element* aGlyphElement) {
   // The maximum glyph ID is 65535 so the maximum length of the numeric part
   // is 5.
   if (!aGlyphElement->GetAttr(kNameSpaceID_None, nsGkAtoms::id, glyphIdStr) ||
-      !StringBeginsWith(glyphIdStr, NS_LITERAL_STRING("glyph")) ||
+      !StringBeginsWith(glyphIdStr, u"glyph"_ns) ||
       glyphIdStr.Length() > glyphPrefixLength + 5) {
     return;
   }

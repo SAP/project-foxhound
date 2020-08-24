@@ -11,9 +11,8 @@
 namespace mozilla {
 namespace ipc {
 
-void IPDLParamTraits<mozilla::layers::RenderRootDisplayListData>::Write(
+void IPDLParamTraits<mozilla::layers::DisplayListData>::Write(
     IPC::Message* aMsg, IProtocol* aActor, paramType&& aParam) {
-  WriteIPDLParam(aMsg, aActor, aParam.mRenderRoot);
   WriteIPDLParam(aMsg, aActor, aParam.mIdNamespace);
   WriteIPDLParam(aMsg, aActor, aParam.mRect);
   WriteIPDLParam(aMsg, aActor, aParam.mCommands);
@@ -27,11 +26,10 @@ void IPDLParamTraits<mozilla::layers::RenderRootDisplayListData>::Write(
   WriteIPDLParam(aMsg, aActor, aParam.mScrollData);
 }
 
-bool IPDLParamTraits<mozilla::layers::RenderRootDisplayListData>::Read(
+bool IPDLParamTraits<mozilla::layers::DisplayListData>::Read(
     const IPC::Message* aMsg, PickleIterator* aIter, IProtocol* aActor,
     paramType* aResult) {
-  if (ReadIPDLParam(aMsg, aIter, aActor, &aResult->mRenderRoot) &&
-      ReadIPDLParam(aMsg, aIter, aActor, &aResult->mIdNamespace) &&
+  if (ReadIPDLParam(aMsg, aIter, aActor, &aResult->mIdNamespace) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mRect) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mCommands) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mContentSize) &&
@@ -82,9 +80,8 @@ bool ReadScrollUpdates(const IPC::Message* aMsg, PickleIterator* aIter,
   return true;
 }
 
-void IPDLParamTraits<mozilla::layers::RenderRootUpdates>::Write(
+void IPDLParamTraits<mozilla::layers::TransactionData>::Write(
     IPC::Message* aMsg, IProtocol* aActor, paramType&& aParam) {
-  WriteIPDLParam(aMsg, aActor, aParam.mRenderRoot);
   WriteIPDLParam(aMsg, aActor, aParam.mCommands);
   WriteIPDLParam(aMsg, aActor, aParam.mResourceUpdates);
   WriteIPDLParam(aMsg, aActor, aParam.mSmallShmems);
@@ -93,11 +90,10 @@ void IPDLParamTraits<mozilla::layers::RenderRootUpdates>::Write(
   WriteIPDLParam(aMsg, aActor, aParam.mPaintSequenceNumber);
 }
 
-bool IPDLParamTraits<mozilla::layers::RenderRootUpdates>::Read(
+bool IPDLParamTraits<mozilla::layers::TransactionData>::Read(
     const IPC::Message* aMsg, PickleIterator* aIter, IProtocol* aActor,
     paramType* aResult) {
-  if (ReadIPDLParam(aMsg, aIter, aActor, &aResult->mRenderRoot) &&
-      ReadIPDLParam(aMsg, aIter, aActor, &aResult->mCommands) &&
+  if (ReadIPDLParam(aMsg, aIter, aActor, &aResult->mCommands) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mResourceUpdates) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mSmallShmems) &&
       ReadIPDLParam(aMsg, aIter, aActor, &aResult->mLargeShmems) &&

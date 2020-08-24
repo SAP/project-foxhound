@@ -74,6 +74,8 @@ struct ParamTraits<mozilla::WidgetEvent> {
       // Reset cross process dispatching state here because the event has not
       // been dispatched to different process from current process.
       aResult->ResetCrossProcessDispatchingState();
+      // Mark the event comes from another process.
+      aResult->MarkAsComingFromAnotherProcess();
     }
     return ret;
   }
@@ -1176,7 +1178,7 @@ template <>
 struct ParamTraits<mozilla::MouseInput::ButtonType>
     : public ContiguousEnumSerializerInclusive<
           mozilla::MouseInput::ButtonType,
-          mozilla::MouseInput::ButtonType::LEFT_BUTTON,
+          mozilla::MouseInput::ButtonType::PRIMARY_BUTTON,
           mozilla::MouseInput::sHighestButtonType> {};
 
 template <>
@@ -1284,28 +1286,40 @@ struct ParamTraits<mozilla::PinchGestureInput::PinchGestureType>
           mozilla::PinchGestureInput::sHighestPinchGestureType> {};
 
 template <>
+struct ParamTraits<mozilla::PinchGestureInput::PinchGestureSource>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::PinchGestureInput::PinchGestureSource,
+          // Set the min to TOUCH, to ensure UNKNOWN is never sent over IPC
+          mozilla::PinchGestureInput::PinchGestureSource::TOUCH,
+          mozilla::PinchGestureInput::sHighestPinchGestureSource> {};
+
+template <>
 struct ParamTraits<mozilla::PinchGestureInput> {
   typedef mozilla::PinchGestureInput paramType;
 
   static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, static_cast<const mozilla::InputData&>(aParam));
     WriteParam(aMsg, aParam.mType);
+    WriteParam(aMsg, aParam.mSource);
     WriteParam(aMsg, aParam.mScreenOffset);
     WriteParam(aMsg, aParam.mFocusPoint);
     WriteParam(aMsg, aParam.mLocalFocusPoint);
     WriteParam(aMsg, aParam.mCurrentSpan);
     WriteParam(aMsg, aParam.mPreviousSpan);
+    WriteParam(aMsg, aParam.mHandledByAPZ);
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
                    paramType* aResult) {
     return ReadParam(aMsg, aIter, static_cast<mozilla::InputData*>(aResult)) &&
            ReadParam(aMsg, aIter, &aResult->mType) &&
+           ReadParam(aMsg, aIter, &aResult->mSource) &&
            ReadParam(aMsg, aIter, &aResult->mScreenOffset) &&
            ReadParam(aMsg, aIter, &aResult->mFocusPoint) &&
            ReadParam(aMsg, aIter, &aResult->mLocalFocusPoint) &&
            ReadParam(aMsg, aIter, &aResult->mCurrentSpan) &&
-           ReadParam(aMsg, aIter, &aResult->mPreviousSpan);
+           ReadParam(aMsg, aIter, &aResult->mPreviousSpan) &&
+           ReadParam(aMsg, aIter, &aResult->mHandledByAPZ);
   }
 };
 

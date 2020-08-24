@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/cache/FileUtils.h"
+#include "FileUtilsImpl.h"
 
 #include "DBSchema.h"
 #include "mozilla/dom/InternalResponse.h"
@@ -71,7 +71,7 @@ nsresult BodyCreateDir(nsIFile* aBaseDir) {
     return rv;
   }
 
-  rv = aBodyDir->Append(NS_LITERAL_STRING("morgue"));
+  rv = aBodyDir->Append(u"morgue"_ns);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -97,7 +97,7 @@ nsresult BodyDeleteDir(const QuotaInfo& aQuotaInfo, nsIFile* aBaseDir) {
     return rv;
   }
 
-  rv = aBodyDir->Append(NS_LITERAL_STRING("morgue"));
+  rv = aBodyDir->Append(u"morgue"_ns);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -124,7 +124,7 @@ nsresult BodyGetCacheDir(nsIFile* aBaseDir, const nsID& aId,
   }
   MOZ_DIAGNOSTIC_ASSERT(*aCacheDirOut);
 
-  rv = (*aCacheDirOut)->Append(NS_LITERAL_STRING("morgue"));
+  rv = (*aCacheDirOut)->Append(u"morgue"_ns);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -464,9 +464,9 @@ nsresult LockedDirectoryPaddingWrite(nsIFile* aBaseDir,
   }
 
   if (aPaddingFileType == DirPaddingFile::TMP_FILE) {
-    rv = file->Append(NS_LITERAL_STRING(PADDING_TMP_FILE_NAME));
+    rv = file->Append(nsLiteralString(PADDING_TMP_FILE_NAME));
   } else {
-    rv = file->Append(NS_LITERAL_STRING(PADDING_FILE_NAME));
+    rv = file->Append(nsLiteralString(PADDING_FILE_NAME));
   }
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -507,7 +507,7 @@ nsresult BodyDeleteOrphanedFiles(const QuotaInfo& aQuotaInfo, nsIFile* aBaseDir,
   }
 
   // Add the root morgue directory
-  rv = dir->Append(NS_LITERAL_STRING("morgue"));
+  rv = dir->Append(u"morgue"_ns);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -574,100 +574,6 @@ nsresult BodyDeleteOrphanedFiles(const QuotaInfo& aQuotaInfo, nsIFile* aBaseDir,
   return rv;
 }
 
-template <typename Func>
-nsresult BodyTraverseFiles(const QuotaInfo& aQuotaInfo, nsIFile* aBodyDir,
-                           const Func& aHandleFileFunc,
-                           const bool aCanRemoveFiles, const bool aTrackQuota) {
-  MOZ_DIAGNOSTIC_ASSERT(aBodyDir);
-
-  nsresult rv;
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-  nsCOMPtr<nsIFile> parentFile;
-  rv = aBodyDir->GetParent(getter_AddRefs(parentFile));
-  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  MOZ_DIAGNOSTIC_ASSERT(parentFile);
-
-  nsAutoCString nativeLeafName;
-  rv = parentFile->GetNativeLeafName(nativeLeafName);
-  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-
-  MOZ_DIAGNOSTIC_ASSERT(
-      StringEndsWith(nativeLeafName, NS_LITERAL_CSTRING("morgue")));
-#endif
-
-  nsCOMPtr<nsIDirectoryEnumerator> entries;
-  rv = aBodyDir->GetDirectoryEntries(getter_AddRefs(entries));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  bool isEmpty = true;
-  nsCOMPtr<nsIFile> file;
-  while (NS_SUCCEEDED(rv = entries->GetNextFile(getter_AddRefs(file))) &&
-         file) {
-    bool isDir = false;
-    rv = file->IsDirectory(&isDir);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    // If it's a directory somehow, try to remove it and move on
-    if (NS_WARN_IF(isDir)) {
-      DebugOnly<nsresult> result =
-          RemoveNsIFileRecursively(aQuotaInfo, file, /* aTrackQuota */ false);
-      MOZ_ASSERT(NS_SUCCEEDED(result));
-      continue;
-    }
-
-    nsAutoCString leafName;
-    rv = file->GetNativeLeafName(leafName);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    // Delete all tmp files regardless of known bodies. These are all
-    // considered orphans.
-    if (StringEndsWith(leafName, NS_LITERAL_CSTRING(".tmp"))) {
-      if (aCanRemoveFiles) {
-        DebugOnly<nsresult> result =
-            RemoveNsIFile(aQuotaInfo, file, aTrackQuota);
-        MOZ_ASSERT(NS_SUCCEEDED(result));
-        continue;
-      }
-    } else if (NS_WARN_IF(
-                   !StringEndsWith(leafName, NS_LITERAL_CSTRING(".final")))) {
-      // Otherwise, it must be a .final file.  If its not, then try to remove it
-      // and move on
-      DebugOnly<nsresult> result =
-          RemoveNsIFile(aQuotaInfo, file, /* aTrackQuota */ false);
-      MOZ_ASSERT(NS_SUCCEEDED(result));
-      continue;
-    }
-
-    bool fileDeleted;
-    rv = aHandleFileFunc(file, leafName, fileDeleted);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-    if (fileDeleted) {
-      continue;
-    }
-
-    isEmpty = false;
-  }
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  if (isEmpty && aCanRemoveFiles) {
-    DebugOnly<nsresult> result =
-        RemoveNsIFileRecursively(aQuotaInfo, aBodyDir, /* aTrackQuota */ false);
-    MOZ_ASSERT(NS_SUCCEEDED(result));
-  }
-
-  return rv;
-}
-
 namespace {
 
 nsresult GetMarkerFileHandle(const QuotaInfo& aQuotaInfo, nsIFile** aFileOut) {
@@ -679,12 +585,12 @@ nsresult GetMarkerFileHandle(const QuotaInfo& aQuotaInfo, nsIFile** aFileOut) {
     return rv;
   }
 
-  rv = marker->Append(NS_LITERAL_STRING("cache"));
+  rv = marker->Append(u"cache"_ns);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  rv = marker->Append(NS_LITERAL_STRING("context_open.marker"));
+  rv = marker->Append(u"context_open.marker"_ns);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -861,9 +767,9 @@ bool DirectoryPaddingFileExists(nsIFile* aBaseDir,
 
   nsString fileName;
   if (aPaddingFileType == DirPaddingFile::TMP_FILE) {
-    fileName = NS_LITERAL_STRING(PADDING_TMP_FILE_NAME);
+    fileName = nsLiteralString(PADDING_TMP_FILE_NAME);
   } else {
-    fileName = NS_LITERAL_STRING(PADDING_FILE_NAME);
+    fileName = nsLiteralString(PADDING_FILE_NAME);
   }
 
   rv = file->Append(fileName);
@@ -894,7 +800,7 @@ nsresult LockedDirectoryPaddingGet(nsIFile* aBaseDir,
     return rv;
   }
 
-  rv = file->Append(NS_LITERAL_STRING(PADDING_FILE_NAME));
+  rv = file->Append(nsLiteralString(PADDING_FILE_NAME));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -1060,12 +966,12 @@ nsresult LockedDirectoryPaddingFinalizeWrite(nsIFile* aBaseDir) {
     return rv;
   }
 
-  rv = file->Append(NS_LITERAL_STRING(PADDING_TMP_FILE_NAME));
+  rv = file->Append(nsLiteralString(PADDING_TMP_FILE_NAME));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  rv = file->RenameTo(nullptr, NS_LITERAL_STRING(PADDING_FILE_NAME));
+  rv = file->RenameTo(nullptr, nsLiteralString(PADDING_FILE_NAME));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -1124,9 +1030,9 @@ nsresult LockedDirectoryPaddingDeleteFile(nsIFile* aBaseDir,
   }
 
   if (aPaddingFileType == DirPaddingFile::TMP_FILE) {
-    rv = file->Append(NS_LITERAL_STRING(PADDING_TMP_FILE_NAME));
+    rv = file->Append(nsLiteralString(PADDING_TMP_FILE_NAME));
   } else {
-    rv = file->Append(NS_LITERAL_STRING(PADDING_FILE_NAME));
+    rv = file->Append(nsLiteralString(PADDING_FILE_NAME));
   }
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;

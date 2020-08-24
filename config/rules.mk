@@ -28,7 +28,7 @@ USE_AUTOTARGETS_MK = 1
 include $(MOZILLA_DIR)/config/makefiles/makeutils.mk
 
 ifdef REBUILD_CHECK
-REPORT_BUILD = $(info $(shell $(PYTHON) $(MOZILLA_DIR)/config/rebuild_check.py $@ $^))
+REPORT_BUILD = $(info $(shell $(PYTHON3) $(MOZILLA_DIR)/config/rebuild_check.py $@ $^))
 REPORT_BUILD_VERBOSE = $(REPORT_BUILD)
 else
 REPORT_BUILD = $(info $(relativesrcdir)/$(notdir $@))
@@ -66,10 +66,10 @@ INSTALL_TARGETS += CPP_UNIT_TESTS
 endif
 
 run-cppunittests::
-	@$(PYTHON) $(MOZILLA_DIR)/testing/runcppunittests.py --xre-path=$(DIST)/bin --symbols-path=$(DIST)/crashreporter-symbols $(CPP_UNIT_TESTS)
+	@$(PYTHON3) $(MOZILLA_DIR)/testing/runcppunittests.py --xre-path=$(DIST)/bin --symbols-path=$(DIST)/crashreporter-symbols $(CPP_UNIT_TESTS)
 
 cppunittests-remote:
-	$(PYTHON) -u $(MOZILLA_DIR)/testing/remotecppunittests.py \
+	$(PYTHON3) -u $(MOZILLA_DIR)/testing/remotecppunittests.py \
 		--xre-path=$(DEPTH)/dist/bin \
 		--localLib=$(DEPTH)/dist/$(MOZ_APP_NAME) \
 		--deviceIP=${TEST_DEVICE} \
@@ -197,11 +197,11 @@ _OBJS = $(COBJS) $(SOBJS) $(CPPOBJS) $(CMOBJS) $(CMMOBJS) $(ASOBJS) $(CWASMOBJS)
 OBJS = $(strip $(_OBJS))
 endif
 
-HOST_COBJS = $(addprefix host_,$(notdir $(HOST_CSRCS:.c=.$(_OBJ_SUFFIX))))
+HOST_COBJS = $(addprefix host_,$(notdir $(HOST_CSRCS:.c=.$(OBJ_SUFFIX))))
 # HOST_CPPOBJS can have different extensions (eg: .cpp, .cc)
-HOST_CPPOBJS = $(addprefix host_,$(notdir $(addsuffix .$(_OBJ_SUFFIX),$(basename $(HOST_CPPSRCS)))))
-HOST_CMOBJS = $(addprefix host_,$(notdir $(HOST_CMSRCS:.m=.$(_OBJ_SUFFIX))))
-HOST_CMMOBJS = $(addprefix host_,$(notdir $(HOST_CMMSRCS:.mm=.$(_OBJ_SUFFIX))))
+HOST_CPPOBJS = $(addprefix host_,$(notdir $(addsuffix .$(OBJ_SUFFIX),$(basename $(HOST_CPPSRCS)))))
+HOST_CMOBJS = $(addprefix host_,$(notdir $(HOST_CMSRCS:.m=.$(OBJ_SUFFIX))))
+HOST_CMMOBJS = $(addprefix host_,$(notdir $(HOST_CMMSRCS:.mm=.$(OBJ_SUFFIX))))
 ifndef HOST_OBJS
 _HOST_OBJS = $(HOST_COBJS) $(HOST_CPPOBJS) $(HOST_CMOBJS) $(HOST_CMMOBJS)
 HOST_OBJS = $(strip $(_HOST_OBJS))
@@ -224,7 +224,7 @@ WASM_ARCHIVE = $(addsuffix .$(WASM_OBJ_SUFFIX),$(WASM_LIBRARY))
 ALL_TRASH = \
 	$(GARBAGE) $(TARGETS) $(OBJS) $(PROGOBJS) LOGS TAGS a.out \
 	$(filter-out $(ASFILES),$(OBJS:.$(OBJ_SUFFIX)=.s)) $(OBJS:.$(OBJ_SUFFIX)=.ii) \
-	$(OBJS:.$(OBJ_SUFFIX)=.i) $(OBJS:.$(OBJ_SUFFIX)=.i_o) \
+	$(OBJS:.$(OBJ_SUFFIX)=.i) \
 	$(HOST_PROGOBJS) $(HOST_OBJS) $(IMPORT_LIBRARY) \
 	so_locations _gen _stubs $(wildcard *.res) $(wildcard *.RES) \
 	$(wildcard *.pdb) $(CODFILE) $(IMPORT_LIBRARY) \
@@ -245,7 +245,7 @@ GARBAGE			+= $(SIMPLE_PROGRAMS:%=%.$(OBJ_SUFFIX))
 endif
 
 ifdef HOST_SIMPLE_PROGRAMS
-GARBAGE			+= $(HOST_SIMPLE_PROGRAMS:%=%.$(_OBJ_SUFFIX))
+GARBAGE			+= $(HOST_SIMPLE_PROGRAMS:%=%.$(OBJ_SUFFIX))
 endif
 
 ifdef MACH
@@ -307,11 +307,7 @@ endif
 
 ifeq ($(OS_ARCH),Darwin)
 ifdef SHARED_LIBRARY
-ifdef MOZ_IOS
-_LOADER_PATH := @rpath
-else
 _LOADER_PATH := @executable_path
-endif
 EXTRA_DSO_LDOPTS	+= -dynamiclib -install_name $(_LOADER_PATH)/$(SHARED_LIBRARY) -compatibility_version 1 -current_version 1 -single_module
 endif
 endif
@@ -639,7 +635,7 @@ define src_objdep
 $(basename $3$(notdir $1)).$2: $1 $$(call mkdir_deps,$$(MDDEPDIR))
 endef
 $(foreach f,$(CSRCS) $(SSRCS) $(CPPSRCS) $(CMSRCS) $(CMMSRCS) $(ASFILES),$(eval $(call src_objdep,$(f),$(OBJ_SUFFIX))))
-$(foreach f,$(HOST_CSRCS) $(HOST_CPPSRCS) $(HOST_CMSRCS) $(HOST_CMMSRCS),$(eval $(call src_objdep,$(f),$(_OBJ_SUFFIX),host_)))
+$(foreach f,$(HOST_CSRCS) $(HOST_CPPSRCS) $(HOST_CMSRCS) $(HOST_CMMSRCS),$(eval $(call src_objdep,$(f),$(OBJ_SUFFIX),host_)))
 $(foreach f,$(WASM_CSRCS) $(WASM_CPPSRCS),$(eval $(call src_objdep,$(f),wasm)))
 
 # The Rust compiler only outputs library objects, and so we need different
@@ -703,6 +699,11 @@ syms:: $(2)
 $(2): $(1)
 ifdef MOZ_CRASHREPORTER
 	$$(call py_action,dumpsymbols,$$(abspath $$<) $$(abspath $$@) $$(DUMP_SYMBOLS_FLAGS))
+ifeq ($(OS_ARCH),WINNT)
+ifdef WINCHECKSEC
+	$$(PYTHON3) $$(topsrcdir)/build/win32/autowinchecksec.py $$<
+endif # WINCHECKSEC
+endif # WINNT
 endif
 endef
 
@@ -935,12 +936,16 @@ endif
 endif
 endif
 
-libs realchrome:: $(FINAL_TARGET)/chrome
+misc realchrome:: $(FINAL_TARGET)/chrome
 	$(call py_action,jar_maker,\
 	  $(QUIET) -d $(FINAL_TARGET) \
 	  $(MAKE_JARS_FLAGS) $(DEFINES) $(ACDEFINES) \
 	  $(JAR_MANIFEST))
 
+ifdef AB_CD
+.PHONY: l10n
+l10n: misc ;
+endif
 endif
 
 endif
@@ -1230,10 +1235,6 @@ ifndef INCLUDED_DEBUGMAKE_MK #{
     include $(MOZILLA_DIR)/config/makefiles/debugmake.mk
   endif #}
 endif #}
-
-documentation:
-	@cd $(DEPTH)
-	$(DOXYGEN) $(DEPTH)/config/doxygen.cfg
 
 FREEZE_VARIABLES = \
   CSRCS \

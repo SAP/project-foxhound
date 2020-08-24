@@ -8,6 +8,7 @@
 
 interface nsIURI;
 interface nsIInputStream;
+webidl BrowsingContext;
 
 /**
  * Interface indicating what we found/corrected when fixing up a URI
@@ -18,7 +19,7 @@ interface nsIURIFixupInfo : nsISupports
   /**
    * Consumer that asked for fixed up URI.
    */
-  attribute nsISupports consumer;
+  attribute BrowsingContext consumer;
 
   /**
    * Our best guess as to what URI the consumer will want. Might
@@ -26,31 +27,31 @@ interface nsIURIFixupInfo : nsISupports
    * the input was invalid as a URI and FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP
    * was not passed)
    */
-  readonly attribute nsIURI preferredURI;
+  attribute nsIURI preferredURI;
 
   /**
    * The fixed-up original input, *never* using a keyword search.
    * (might be null if the original input was not recoverable as
    * a URL, e.g. "foo bar"!)
    */
-  readonly attribute nsIURI fixedURI;
+  attribute nsIURI fixedURI;
 
   /**
    * The name of the keyword search provider used to provide a keyword search;
    * empty string if no keyword search was done.
    */
-  readonly attribute AString keywordProviderName;
+  attribute AString keywordProviderName;
 
   /**
    * The keyword as used for the search (post trimming etc.)
    * empty string if no keyword search was done.
    */
-  readonly attribute AString keywordAsSent;
+  attribute AString keywordAsSent;
 
   /**
    * Whether we changed the protocol instead of using one from the input as-is.
    */
-  readonly attribute boolean fixupChangedProtocol;
+  attribute boolean fixupChangedProtocol;
 
   /**
    * Whether we created an alternative URI. We might have added a prefix and/or
@@ -58,12 +59,12 @@ interface nsIURIFixupInfo : nsISupports
    * browser.fixup.alternate.prefix and .suffix prefs, with the defaults being
    * "www." and ".com", respectively.
    */
-  readonly attribute boolean fixupCreatedAlternateURI;
+  attribute boolean fixupCreatedAlternateURI;
 
   /**
    * The original input
    */
-  readonly attribute AUTF8String originalInput;
+  attribute AUTF8String originalInput;
 };
 
 
@@ -100,18 +101,6 @@ interface nsIURIFixup : nsISupports
      * Fix common scheme typos.
      */
     const unsigned long FIXUP_FLAG_FIX_SCHEME_TYPOS = 8;
-
-    /**
-     * Converts an internal URI (e.g. one that has a username and password in
-     * it) into one which we can expose to the user, for example on the URL bar.
-     *
-     * @param  aURI       The URI to be converted
-     * @return nsIURI     The converted, exposable URI
-     * @throws NS_ERROR_MALFORMED_URI when the exposable portion of aURI is malformed
-     * @throws NS_ERROR_UNKNOWN_PROTOCOL when we can't get a protocol handler service
-     *         for the URI scheme.
-     */
-    nsIURI createExposableURI(in nsIURI aURI);
 
     /**
      * Converts the specified string into a URI, first attempting
@@ -169,16 +158,13 @@ interface nsIURIFixup : nsISupports
                                  [optional] out nsIInputStream aPostData);
 
     /**
-     * Returns true if the specified domain is whitelisted and false otherwise.
-     * A whitelisted domain is relevant when we have a single word and can't be
+     * Returns true if the specified domain is known and false otherwise.
+     * A known domain is relevant when we have a single word and can't be
      * sure whether to treat the word as a host name or should instead be
      * treated as a search term.
      *
      * @param aDomain A domain name to query.
-     * @param aDotPos The position of the first '.' character in aDomain, or
-     *                -1 if no '.' character exists.
      */
-    bool isDomainWhitelisted(in AUTF8String aDomain,
-                             in uint32_t aDotPos);
+    bool isDomainKnown(in AUTF8String aDomain);
 };
 

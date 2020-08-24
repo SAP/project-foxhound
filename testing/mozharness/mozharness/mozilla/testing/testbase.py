@@ -320,10 +320,10 @@ You can set this by specifying --test-url URL
             'mochitest-webgpu': 'mochitest',
             'geckoview': 'mochitest',
             'geckoview-junit': 'mochitest',
-            'jsreftest': 'reftest',
+            'reftest-qr': 'reftest',
             'crashtest': 'reftest',
+            'crashtest-qr': 'reftest',
             'reftest-debug': 'reftest',
-            'jsreftest-debug': 'reftest',
             'crashtest-debug': 'reftest',
         }
         suite_categories = [aliases.get(name, name) for name in suite_categories]
@@ -334,7 +334,18 @@ You can set this by specifying --test-url URL
         self.mkdir_p(test_install_dir)
         package_requirements = self._read_packages_manifest()
         target_packages = []
+        c = self.config
         for category in suite_categories:
+            specified_suites = c.get("specified_{}_suites".format(category))
+            if specified_suites:
+                found = False
+                for specified_suite in specified_suites:
+                    if specified_suite in package_requirements:
+                        target_packages.extend(package_requirements[specified_suite])
+                        found = True
+                if found:
+                    continue
+
             if category in package_requirements:
                 target_packages.extend(package_requirements[category])
             else:
@@ -365,6 +376,10 @@ You can set this by specifying --test-url URL
                 self.info("Special-casing the jsshell zip file")
                 unpack_dirs = None
                 target_dir = dirs['abs_test_bin_dir']
+
+            if "web-platform" in file_name:
+                self.info("Extracting everything from web-platform archive")
+                unpack_dirs = None
 
             url = self.query_build_dir_url(file_name)
             self.download_unpack(url, target_dir,
@@ -633,3 +648,9 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?""")
         c = self.config
         if c.get('run_cmd_checks_enabled'):
             self._run_cmd_checks(c.get('postflight_run_cmd_suites', []))
+
+    def query_abs_dirs(self):
+        abs_dirs = super(TestingMixin, self).query_abs_dirs()
+        if 'MOZ_FETCHES_DIR' in os.environ:
+            abs_dirs['abs_fetches_dir'] = os.environ['MOZ_FETCHES_DIR']
+        return abs_dirs

@@ -72,6 +72,21 @@ Context.Chrome = "chrome";
 Context.Content = "content";
 this.Context = Context;
 
+// GeckoView shim for Desktop's gBrowser
+class MobileTabBrowser {
+  constructor(window) {
+    this.window = window;
+  }
+
+  get tabs() {
+    return [this.window.tab];
+  }
+
+  get selectedTab() {
+    return this.window.tab;
+  }
+}
+
 /**
  * Get the <code>&lt;xul:browser&gt;</code> for the specified tab.
  *
@@ -82,12 +97,7 @@ this.Context = Context;
  *     The linked browser for the tab or null if no browser can be found.
  */
 browser.getBrowserForTab = function(tab) {
-  // Fennec
-  if (tab && "browser" in tab) {
-    return tab.browser;
-
-    // Firefox
-  } else if (tab && "linkedBrowser" in tab) {
+  if (tab && "linkedBrowser" in tab) {
     return tab.linkedBrowser;
   }
 
@@ -104,13 +114,13 @@ browser.getBrowserForTab = function(tab) {
  *     Tab browser or null if it's not a browser window.
  */
 browser.getTabBrowser = function(window) {
-  // Fennec
-  if ("BrowserApp" in window) {
-    return window.BrowserApp;
-
-    // Firefox
-  } else if ("gBrowser" in window) {
+  // Firefox
+  if ("gBrowser" in window) {
     return window.gBrowser;
+
+    // GeckoView
+  } else if ("browser" in window) {
+    return new MobileTabBrowser(window);
 
     // Thunderbird
   } else if (window.document.getElementById("tabmail")) {
@@ -124,7 +134,7 @@ browser.getTabBrowser = function(window) {
  * Creates a browsing context wrapper.
  *
  * Browsing contexts handle interactions with the browser, according to
- * the current environment (Firefox, Fennec).
+ * the current environment.
  */
 browser.Context = class {
   /**
@@ -138,7 +148,7 @@ browser.Context = class {
     this.driver = driver;
 
     // In Firefox this is <xul:tabbrowser> (not <xul:browser>!)
-    // and BrowserApp in Fennec
+    // and MobileTabBrowser in GeckoView.
     this.tabBrowser = browser.getTabBrowser(this.window);
 
     this.knownFrames = [];
@@ -295,7 +305,7 @@ browser.Context = class {
       "tabmodalprompt"
     );
 
-    return br.tabModalPromptBox.prompts.get(modalElements[0]);
+    return br.tabModalPromptBox.getPrompt(modalElements[0]);
   }
 
   /**
@@ -396,12 +406,6 @@ browser.Context = class {
     let tabClosed;
 
     switch (this.driver.appName) {
-      case "fennec":
-        // Fennec
-        tabClosed = waitForEvent(this.tabBrowser.deck, "TabClose");
-        this.tabBrowser.closeTab(this.tab);
-        break;
-
       case "firefox":
         tabClosed = waitForEvent(this.tab, "TabClose");
         this.tabBrowser.removeTab(this.tab);
@@ -421,17 +425,34 @@ browser.Context = class {
    */
   async openTab(focus = false) {
     let tab = null;
-    let tabOpened = waitForEvent(this.window, "TabOpen");
 
     switch (this.driver.appName) {
-      case "fennec":
-        tab = this.tabBrowser.addTab(null);
-        this.tabBrowser.selectTab(focus ? tab : this.tab);
-        break;
-
       case "firefox":
+        const loaded = [waitForEvent(this.window, "TabOpen")];
+
         this.window.BrowserOpenTab();
         tab = this.tabBrowser.selectedTab;
+
+        // wait until the framescript has been registered
+        loaded.push(
+          new Promise(resolve => {
+            let cb = msg => {
+              if (msg.json.frameId === tab.linkedBrowser.browsingContext.id) {
+                this.driver.mm.removeMessageListener(
+                  "Marionette:ListenersAttached",
+                  cb
+                );
+                resolve();
+              }
+            };
+            this.driver.mm.addMessageListener(
+              "Marionette:ListenersAttached",
+              cb
+            );
+          })
+        );
+
+        await Promise.all(loaded);
 
         // The new tab is always selected by default. If focus is not wanted,
         // the previously tab needs to be selected again.
@@ -446,8 +467,6 @@ browser.Context = class {
           `openTab() not supported in ${this.driver.appName}`
         );
     }
-
-    await tabOpened;
 
     return tab;
   }
@@ -489,11 +508,6 @@ browser.Context = class {
       let tabSelected = waitForEvent(this.window, "TabSelect");
 
       switch (this.driver.appName) {
-        case "fennec":
-          this.tabBrowser.selectTab(this.tab);
-          await tabSelected;
-          break;
-
         case "firefox":
           this.tabBrowser.selectedTab = this.tab;
           await tabSelected;
@@ -573,17 +587,17 @@ browser.Context = class {
 };
 
 /**
- * The window storage is used to save outer window IDs mapped to weak
+ * The window storage is used to save browsing context ids mapped to weak
  * references of Window objects.
  *
  * Usage:
  *
  *     let wins = new browser.Windows();
- *     wins.set(browser.outerWindowID, window);
+ *     wins.set(browser.browsingContext.id, window);
  *
  *     ...
  *
- *     let win = wins.get(browser.outerWindowID);
+ *     let win = wins.get(browser.browsingContext.id);
  *
  */
 browser.Windows = class extends Map {
@@ -591,7 +605,7 @@ browser.Windows = class extends Map {
    * Save a weak reference to the Window object.
    *
    * @param {string} id
-   *     Outer window ID.
+   *     Browsing context id.
    * @param {Window} win
    *     Window object to save.
    *
@@ -608,7 +622,7 @@ browser.Windows = class extends Map {
    * Get the window object stored by provided |id|.
    *
    * @param {string} id
-   *     Outer window ID.
+   *     Browsing context id.
    *
    * @return {Window}
    *     Saved window object.

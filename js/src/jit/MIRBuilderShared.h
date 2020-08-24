@@ -10,6 +10,7 @@
 #include "mozilla/Maybe.h"
 
 #include "ds/InlineTable.h"
+#include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
 #include "js/Vector.h"
 #include "vm/Opcodes.h"
@@ -33,9 +34,6 @@ class PendingEdge {
 
     // MGoto successor.
     Goto,
-
-    // MGotoWithFake second successor.
-    GotoWithFake,
   };
 
  private:
@@ -55,9 +53,6 @@ class PendingEdge {
   }
   static PendingEdge NewGoto(MBasicBlock* block) {
     return PendingEdge(block, Kind::Goto);
-  }
-  static PendingEdge NewGotoWithFake(MBasicBlock* block) {
-    return PendingEdge(block, Kind::GotoWithFake);
   }
 
   MBasicBlock* block() const { return block_; }
@@ -107,6 +102,223 @@ class LoopState {
   MBasicBlock* header() const { return header_; }
 };
 using LoopStateStack = Vector<LoopState, 4, JitAllocPolicy>;
+
+// Helper class to manage call state.
+class MOZ_STACK_CLASS CallInfo {
+  MDefinition* callee_;
+  MDefinition* thisArg_;
+  MDefinition* newTargetArg_;
+  MDefinitionVector args_;
+  // If non-empty, this corresponds to the stack prior any implicit inlining
+  // such as before JSOp::FunApply.
+  MDefinitionVector priorArgs_;
+
+  bool constructing_;
+
+  // True if the caller does not use the return value.
+  bool ignoresReturnValue_;
+
+  bool setter_;
+  bool apply_;
+
+ public:
+  CallInfo(TempAllocator& alloc, jsbytecode* pc, bool constructing,
+           bool ignoresReturnValue)
+      : callee_(nullptr),
+        thisArg_(nullptr),
+        newTargetArg_(nullptr),
+        args_(alloc),
+        priorArgs_(alloc),
+        constructing_(constructing),
+        ignoresReturnValue_(ignoresReturnValue),
+        setter_(false),
+        apply_(JSOp(*pc) == JSOp::FunApply) {}
+
+  MOZ_MUST_USE bool init(CallInfo& callInfo) {
+    MOZ_ASSERT(constructing_ == callInfo.constructing());
+
+    callee_ = callInfo.callee();
+    thisArg_ = callInfo.thisArg();
+    ignoresReturnValue_ = callInfo.ignoresReturnValue();
+
+    if (constructing()) {
+      newTargetArg_ = callInfo.getNewTarget();
+    }
+
+    if (!args_.appendAll(callInfo.argv())) {
+      return false;
+    }
+
+    return true;
+  }
+
+  MOZ_MUST_USE bool init(MBasicBlock* current, uint32_t argc) {
+    MOZ_ASSERT(args_.empty());
+
+    // Get the arguments in the right order
+    if (!args_.reserve(argc)) {
+      return false;
+    }
+
+    if (constructing()) {
+      setNewTarget(current->pop());
+    }
+
+    for (int32_t i = argc; i > 0; i--) {
+      args_.infallibleAppend(current->peek(-i));
+    }
+    current->popn(argc);
+
+    // Get |this| and |callee|
+    setThis(current->pop());
+    setCallee(current->pop());
+
+    return true;
+  }
+
+  // Before doing any pop to the stack, capture whatever flows into the
+  // instruction, such that we can restore it later.
+  MOZ_MUST_USE bool savePriorCallStack(MIRGenerator* mir, MBasicBlock* current,
+                                       size_t peekDepth);
+
+  void popPriorCallStack(MBasicBlock* current) {
+    if (priorArgs_.empty()) {
+      popCallStack(current);
+    } else {
+      current->popn(priorArgs_.length());
+    }
+  }
+
+  MOZ_MUST_USE bool pushPriorCallStack(MIRGenerator* mir,
+                                       MBasicBlock* current) {
+    if (priorArgs_.empty()) {
+      return pushCallStack(mir, current);
+    }
+    for (MDefinition* def : priorArgs_) {
+      current->push(def);
+    }
+    return true;
+  }
+
+  void popCallStack(MBasicBlock* current) { current->popn(numFormals()); }
+
+  MOZ_MUST_USE bool pushCallStack(MIRGenerator* mir, MBasicBlock* current) {
+    // Ensure sufficient space in the slots: needed for inlining from FunApply.
+    if (apply_) {
+      uint32_t depth = current->stackDepth() + numFormals();
+      if (depth > current->nslots()) {
+        if (!current->increaseSlots(depth - current->nslots())) {
+          return false;
+        }
+      }
+    }
+
+    current->push(callee());
+    current->push(thisArg());
+
+    for (uint32_t i = 0; i < argc(); i++) {
+      current->push(getArg(i));
+    }
+
+    if (constructing()) {
+      current->push(getNewTarget());
+    }
+
+    return true;
+  }
+
+  uint32_t argc() const { return args_.length(); }
+  uint32_t numFormals() const { return argc() + 2 + constructing(); }
+
+  MOZ_MUST_USE bool setArgs(const MDefinitionVector& args) {
+    MOZ_ASSERT(args_.empty());
+    return args_.appendAll(args);
+  }
+
+  MDefinitionVector& argv() { return args_; }
+
+  const MDefinitionVector& argv() const { return args_; }
+
+  MDefinition* getArg(uint32_t i) const {
+    MOZ_ASSERT(i < argc());
+    return args_[i];
+  }
+
+  MDefinition* getArgWithDefault(uint32_t i, MDefinition* defaultValue) const {
+    if (i < argc()) {
+      return args_[i];
+    }
+
+    return defaultValue;
+  }
+
+  void setArg(uint32_t i, MDefinition* def) {
+    MOZ_ASSERT(i < argc());
+    args_[i] = def;
+  }
+
+  void removeArg(uint32_t i) { args_.erase(&args_[i]); }
+
+  MDefinition* thisArg() const {
+    MOZ_ASSERT(thisArg_);
+    return thisArg_;
+  }
+
+  void setThis(MDefinition* thisArg) { thisArg_ = thisArg; }
+
+  bool constructing() const { return constructing_; }
+
+  bool ignoresReturnValue() const { return ignoresReturnValue_; }
+
+  void setNewTarget(MDefinition* newTarget) {
+    MOZ_ASSERT(constructing());
+    newTargetArg_ = newTarget;
+  }
+  MDefinition* getNewTarget() const {
+    MOZ_ASSERT(newTargetArg_);
+    return newTargetArg_;
+  }
+
+  bool isSetter() const { return setter_; }
+  void markAsSetter() { setter_ = true; }
+
+  MDefinition* callee() const {
+    MOZ_ASSERT(callee_);
+    return callee_;
+  }
+
+  void setCallee(MDefinition* callee) { callee_ = callee; }
+
+  template <typename Fun>
+  void forEachCallOperand(Fun& f) {
+    f(callee_);
+    f(thisArg_);
+    if (newTargetArg_) {
+      f(newTargetArg_);
+    }
+    for (uint32_t i = 0; i < argc(); i++) {
+      f(getArg(i));
+    }
+  }
+
+  void setImplicitlyUsedUnchecked() {
+    auto setFlag = [](MDefinition* def) { def->setImplicitlyUsedUnchecked(); };
+    forEachCallOperand(setFlag);
+  }
+};
+
+class AutoAccumulateReturns {
+  MIRGraph& graph_;
+  MIRGraphReturns* prev_;
+
+ public:
+  AutoAccumulateReturns(MIRGraph& graph, MIRGraphReturns& returns)
+      : graph_(graph) {
+    prev_ = graph_.returnAccumulator();
+    graph_.setReturnAccumulator(&returns);
+  }
+  ~AutoAccumulateReturns() { graph_.setReturnAccumulator(prev_); }
+};
 
 }  // namespace jit
 }  // namespace js

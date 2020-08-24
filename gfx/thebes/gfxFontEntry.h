@@ -251,9 +251,9 @@ class gfxFontEntry {
 
   bool TryGetColorGlyphs();
   bool GetColorLayersInfo(uint32_t aGlyphId,
-                          const mozilla::gfx::Color& aDefaultColor,
+                          const mozilla::gfx::DeviceColor& aDefaultColor,
                           nsTArray<uint16_t>& layerGlyphs,
-                          nsTArray<mozilla::gfx::Color>& layerColors);
+                          nsTArray<mozilla::gfx::DeviceColor>& layerColors);
 
   // Access to raw font table data (needed for Harfbuzz):
   // returns a pointer to data owned by the fontEntry or the OS,
@@ -570,6 +570,11 @@ class gfxFontEntry {
   // hasn't handled our SetCharacterMap message yet).
   bool TrySetShmemCharacterMap();
 
+  // Helper for gfxPlatformFontList::CreateFontEntry methods: set properties
+  // of the gfxFontEntry based on shared Face and Family records.
+  void InitializeFrom(mozilla::fontlist::Face* aFace,
+                      const mozilla::fontlist::Family* aFamily);
+
   // Shaper-specific face objects, shared by all instantiations of the same
   // physical font, regardless of size.
   // Usually, only one of these will actually be created for any given font
@@ -760,13 +765,35 @@ struct GlobalFontMatch {
   float mMatchDistance = INFINITY;  // metric indicating closest match
 };
 
+// Installation status (base system / langpack / user-installed) may determine
+// whether the font is visible to CSS font-family or src:local() lookups.
+// (Exactly what these mean and how accurate they are may be vary across
+// platforms -- e.g. on Linux there is no clear "base" set of fonts.)
+enum class FontVisibility : uint8_t {
+  Unknown = 0,   // No categorization of families available on this system
+  Base = 1,      // Standard part of the base OS installation
+  LangPack = 2,  // From an optional OS component such as language support
+  User = 3,      // User-installed font (or installed by another app, etc)
+  Hidden = 4,    // Internal system font, should never exposed to users
+  Webfont = 5,   // Webfont defined by @font-face
+  Count = 6,     // Count of values, for IPC serialization
+};
+
+namespace IPC {
+template <>
+struct ParamTraits<FontVisibility>
+    : public ContiguousEnumSerializer<FontVisibility, FontVisibility::Unknown,
+                                      FontVisibility::Count> {};
+}  // namespace IPC
+
 class gfxFontFamily {
  public:
   // Used by stylo
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(gfxFontFamily)
 
-  explicit gfxFontFamily(const nsACString& aName)
+  gfxFontFamily(const nsACString& aName, FontVisibility aVisibility)
       : mName(aName),
+        mVisibility(aVisibility),
         mOtherFamilyNamesInitialized(false),
         mHasOtherFamilyNames(false),
         mFaceNamesInitialized(false),
@@ -812,11 +839,7 @@ class gfxFontFamily {
     // we need to ensure any null entries are removed, as well as clearing
     // the flag (which may be set again later).
     if (mIsSimpleFamily) {
-      for (size_t i = mAvailableFonts.Length() - 1; i-- > 0;) {
-        if (!mAvailableFonts[i]) {
-          mAvailableFonts.RemoveElementAt(i);
-        }
-      }
+      mAvailableFonts.RemoveElementsBy([](const auto& font) { return !font; });
       mIsSimpleFamily = false;
     }
   }
@@ -876,7 +899,7 @@ class gfxFontFamily {
     mFamilyCharacterMapInitialized = false;
   }
 
-  // mark this family as being in the "bad" underline offset blacklist
+  // mark this family as being in the "bad" underline offset blocklist
   void SetBadUnderlineFamily() {
     mIsBadUnderlineFamily = true;
     if (mHasStyles) {
@@ -921,6 +944,12 @@ class gfxFontFamily {
     return true;
   }
 
+  FontVisibility Visibility() const { return mVisibility; }
+  bool IsHidden() const { return Visibility() == FontVisibility::Hidden; }
+  bool IsWebFontFamily() const {
+    return Visibility() == FontVisibility::Webfont;
+  }
+
  protected:
   // Protected destructor, to discourage deletion outside of Release():
   virtual ~gfxFontFamily();
@@ -929,7 +958,7 @@ class gfxFontFamily {
                                    hb_blob_t* aNameTable,
                                    bool useFullName = false);
 
-  // set whether this font family is in "bad" underline offset blacklist.
+  // set whether this font family is in "bad" underline offset blocklist.
   void SetBadUnderlineFonts() {
     uint32_t i, numFonts = mAvailableFonts.Length();
     for (i = 0; i < numFonts; i++) {
@@ -942,6 +971,9 @@ class gfxFontFamily {
   nsCString mName;
   nsTArray<RefPtr<gfxFontEntry>> mAvailableFonts;
   gfxSparseBitSet mFamilyCharacterMap;
+
+  FontVisibility mVisibility;
+
   bool mOtherFamilyNamesInitialized : 1;
   bool mHasOtherFamilyNames : 1;
   bool mFaceNamesInitialized : 1;

@@ -184,7 +184,18 @@ nsPrintDialogServiceX::ShowPageSetup(nsPIDOMWindowOuter* aParent, nsIPrintSettin
   int button = [pageLayout runModalWithPrintInfo:printInfo];
   nsCocoaUtils::CleanUpAfterNativeAppModalDialog();
 
-  return button == NSFileHandlingPanelOKButton ? NS_OK : NS_ERROR_ABORT;
+  if (button == NSFileHandlingPanelOKButton) {
+    nsCOMPtr<nsIPrintSettingsService> printSettingsService =
+        do_GetService("@mozilla.org/gfx/printsettings-service;1");
+    if (printSettingsService && Preferences::GetBool("print.save_print_settings", false)) {
+      uint32_t flags = nsIPrintSettings::kInitSaveNativeData |
+                       nsIPrintSettings::kInitSavePaperSize |
+                       nsIPrintSettings::kInitSaveOrientation | nsIPrintSettings::kInitSaveScaling;
+      printSettingsService->SavePrintSettingsToPrefs(aNSSettings, true, flags);
+    }
+    return NS_OK;
+  }
+  return NS_ERROR_ABORT;
 
   NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
 }
@@ -249,9 +260,9 @@ static const char sHeaderFooterTags[][4] = {"", "&T", "&U", "&D", "&P", "&PT"};
 }
 
 - (void)exportSettings {
-  mSettings->SetPrintRange([mPrintSelectionOnlyCheckbox state] == NSOnState
-                               ? (int16_t)nsIPrintSettings::kRangeSelection
-                               : (int16_t)nsIPrintSettings::kRangeAllPages);
+  if ([mPrintSelectionOnlyCheckbox state] == NSOnState) {
+    mSettings->SetPrintRange(nsIPrintSettings::kRangeSelection);
+  }
   mSettings->SetShrinkToFit([mShrinkToFitCheckbox state] == NSOnState);
   mSettings->SetPrintBGColors([mPrintBGColorsCheckbox state] == NSOnState);
   mSettings->SetPrintBGImages([mPrintBGImagesCheckbox state] == NSOnState);

@@ -25,6 +25,7 @@ namespace layers {
 
 APZEventResult::APZEventResult()
     : mStatus(nsEventStatus_eIgnore),
+      mTargetIsRoot(false),
       mInputBlockId(InputBlockState::NO_BLOCK_ID),
       mHitRegionWithApzAwareListeners(false) {}
 
@@ -59,17 +60,6 @@ APZEventResult APZInputBridge::ReceiveInputEvent(WidgetInputEvent& aEvent) {
       // Note, we call this before having transformed the reference point.
       if (mouseEvent.IsReal()) {
         UpdateWheelTransaction(mouseEvent.mRefPoint, mouseEvent.mMessage);
-      }
-
-      // If zooming is enabled, mark the mouse event as "ignore root
-      // scroll frame". This ensures that the main-thread hit test the
-      // mouse event undergoes (in PositionedEventTargeting.cpp) uses
-      // the IGNORE_ROOT_SCROLL_FRAME flag, which is needed for correct
-      // hit testing in a zoomed-in or zoomed-out state.
-      // FIXME: bug 1525793 -- this may need to handle zooming or not on a
-      // per-document basis.
-      if (StaticPrefs::apz_allow_zooming()) {
-        mouseEvent.mIgnoreRootScrollFrame = true;
       }
 
       if (WillHandleMouseEvent(mouseEvent)) {

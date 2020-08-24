@@ -701,7 +701,14 @@ var BrowserPageActions = {
   },
 
   doCommandForAction(action, event, buttonNode) {
-    if (event && event.type == "click" && event.button != 0) {
+    // On mac, ctrl-click will send a context menu event from the widget, so we
+    // don't want to handle the click event when ctrl key is pressed.
+    if (
+      event &&
+      event.type == "click" &&
+      (event.button != 0 ||
+        (AppConstants.platform == "macosx" && event.ctrlKey))
+    ) {
       return;
     }
     if (event && event.type == "keypress") {
@@ -853,7 +860,11 @@ var BrowserPageActions = {
   mainButtonClicked(event) {
     event.stopPropagation();
     if (
-      (event.type == "mousedown" && event.button != 0) ||
+      // On mac, ctrl-click will send a context menu event from the widget, so
+      // we don't want to bring up the panel when ctrl key is pressed.
+      (event.type == "mousedown" &&
+        (event.button != 0 ||
+          (AppConstants.platform == "macosx" && event.ctrlKey))) ||
       (event.type == "keypress" &&
         event.charCode != KeyEvent.DOM_VK_SPACE &&
         event.keyCode != KeyEvent.DOM_VK_RETURN)
@@ -900,7 +911,7 @@ var BrowserPageActions = {
    * @param  popup (DOM node, required)
    *         The context menu popup DOM node.
    */
-  onContextMenuShowing(event, popup) {
+  async onContextMenuShowing(event, popup) {
     if (event.target != popup) {
       return;
     }
@@ -922,6 +933,16 @@ var BrowserPageActions = {
         : "extensionUnpinned";
     }
     popup.setAttribute("state", state);
+
+    let removeExtension = popup.querySelector(".removeExtensionItem");
+    let { extensionID } = this._contextAction;
+    let addon = extensionID && (await AddonManager.getAddonByID(extensionID));
+    removeExtension.hidden = !addon;
+    if (addon) {
+      removeExtension.disabled = !(
+        addon.permissions & AddonManager.PERM_CAN_UNINSTALL
+      );
+    }
   },
 
   /**
@@ -935,6 +956,11 @@ var BrowserPageActions = {
     this._contextAction = null;
 
     action.pinnedToUrlbar = !action.pinnedToUrlbar;
+    BrowserUsageTelemetry.recordWidgetChange(
+      action.id,
+      action.pinnedToUrlbar ? "page-action-buttons" : null,
+      "pageaction-context"
+    );
   },
 
   /**
@@ -955,6 +981,19 @@ var BrowserPageActions = {
 
     let viewID = "addons://detail/" + encodeURIComponent(action.extensionID);
     window.BrowserOpenAddonsMgr(viewID);
+  },
+
+  /**
+   * Call this from the menu item in the context menu that removes an add-on.
+   */
+  removeExtensionForContextAction() {
+    if (!this._contextAction) {
+      return;
+    }
+    let action = this._contextAction;
+    this._contextAction = null;
+
+    BrowserAddonUI.removeAddon(action.extensionID, "pageAction");
   },
 
   _contextAction: null,
@@ -1283,7 +1322,7 @@ BrowserPageActions.addSearchEngine = {
   },
 
   _installEngine(uri, image) {
-    Services.search.addEngine(uri, image, false).then(
+    Services.search.addOpenSearchEngine(uri, image).then(
       engine => {
         showBrowserPageActionFeedback(this.action);
       },
@@ -1304,14 +1343,12 @@ BrowserPageActions.addSearchEngine = {
           "error_duplicate_engine_msg",
           [brandName, uri]
         );
-        Services.prompt.QueryInterface(Ci.nsIPromptFactory);
-        let prompt = Services.prompt.getPrompt(
-          gBrowser.contentWindow,
-          Ci.nsIPrompt
+        Services.prompt.alertBC(
+          gBrowser.selectedBrowser.browsingContext,
+          Ci.nsIPrompt.MODAL_TYPE_CONTENT,
+          title,
+          text
         );
-        prompt.QueryInterface(Ci.nsIWritablePropertyBag2);
-        prompt.setPropertyAsBool("allowTabModal", true);
-        prompt.alert(title, text);
       }
     );
   },

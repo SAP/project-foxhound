@@ -94,6 +94,7 @@
   REAL_IF_INTL(Intl, CLASP(Intl))                                             \
   REAL_IF_INTL(Collator, OCLASP(Collator))                                    \
   REAL_IF_INTL(DateTimeFormat, OCLASP(DateTimeFormat))                        \
+  REAL_IF_INTL(DisplayNames, OCLASP(DisplayNames))                            \
   REAL_IF_INTL(ListFormat, OCLASP(ListFormat))                                \
   REAL_IF_INTL(Locale, OCLASP(Locale))                                        \
   REAL_IF_INTL(NumberFormat, OCLASP(NumberFormat))                            \
@@ -127,8 +128,10 @@
   REAL(WasmMemory, OCLASP(WasmMemory))                                        \
   REAL(WasmTable, OCLASP(WasmTable))                                          \
   REAL(WasmGlobal, OCLASP(WasmGlobal))                                        \
-  REAL(FinalizationGroup, OCLASP(FinalizationGroup))                          \
-  REAL(WeakRef, OCLASP(WeakRef))
+  REAL(FinalizationRegistry, OCLASP(FinalizationRegistry))                    \
+  REAL(WeakRef, OCLASP(WeakRef))                                              \
+  REAL(Iterator, OCLASP(Iterator))                                            \
+  REAL(AsyncIterator, OCLASP(AsyncIterator))
 
 #define JS_FOR_PROTOTYPES(REAL, IMAGINARY)                      \
   JS_FOR_PROTOTYPES_(REAL, IMAGINARY, IF_INTL(REAL, IMAGINARY), \

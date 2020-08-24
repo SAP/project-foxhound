@@ -69,7 +69,7 @@ impl ExternalImageHandler for ExternalHandler {
 impl App {
     fn init_output_document(
         &mut self,
-        api: &RenderApi,
+        api: &mut RenderApi,
         device_size: DeviceIntSize,
         device_pixel_ratio: f32,
     ) {
@@ -124,6 +124,7 @@ impl App {
 
         builder.push_rect(
             &CommonItemProperties::new(document.content_rect, space_and_clip),
+            document.content_rect,
             ColorF::new(1.0, 1.0, 0.0, 1.0)
         );
         builder.pop_stacking_context();
@@ -145,7 +146,7 @@ impl App {
 impl Example for App {
     fn render(
         &mut self,
-        api: &RenderApi,
+        api: &mut RenderApi,
         builder: &mut DisplayListBuilder,
         _txn: &mut Transaction,
         device_size: DeviceIntSize,

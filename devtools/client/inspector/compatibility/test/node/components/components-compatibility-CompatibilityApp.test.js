@@ -22,9 +22,29 @@ describe("CompatibilityApp component", () => {
     const store = mockStore({
       compatibility: {
         selectedNodeIssues: [],
+        topLevelTargetIssues: [],
       },
     });
-    const wrapper = shallow(CompatibilityApp({ store })).dive();
-    expect(wrapper).toMatchSnapshot();
+
+    const withLocalizationWrapper = shallow(CompatibilityApp({ store }));
+    const connectWrapper = withLocalizationWrapper.dive();
+    const targetComponent = connectWrapper.dive();
+    expect(targetComponent).toMatchSnapshot();
+  });
+
+  it("renders with settings", () => {
+    const mockStore = configureStore([thunk]);
+    const store = mockStore({
+      compatibility: {
+        isSettingsVisibile: true,
+        selectedNodeIssues: [],
+        topLevelTargetIssues: [],
+      },
+    });
+
+    const withLocalizationWrapper = shallow(CompatibilityApp({ store }));
+    const connectWrapper = withLocalizationWrapper.dive();
+    const targetComponent = connectWrapper.dive();
+    expect(targetComponent).toMatchSnapshot();
   });
 });

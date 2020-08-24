@@ -235,6 +235,13 @@ class WinUtils {
   static int GetSystemMetricsForDpi(int nIndex, UINT dpi);
 
   /**
+   * @param aHdc HDC for printer
+   * @return unwritable margins for currently set page on aHdc or empty margins
+   *         if aHdc is null
+   */
+  static gfx::MarginDouble GetUnwriteableMarginsForDeviceInInches(HDC aHdc);
+
+  /**
    * Logging helpers that dump output to prlog module 'Widget', console, and
    * OutputDebugString. Note these output in both debug and release builds.
    */
@@ -569,7 +576,7 @@ class WinUtils {
 
   static const size_t kMaxWhitelistedItems = 3;
   using WhitelistVec =
-      Vector<Pair<nsString, nsDependentString>, kMaxWhitelistedItems>;
+      Vector<std::pair<nsString, nsDependentString>, kMaxWhitelistedItems>;
 
   static const WhitelistVec& GetWhitelistedPaths();
 

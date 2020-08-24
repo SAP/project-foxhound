@@ -538,11 +538,12 @@ struct ObjLiteralReader : private ObjLiteralReaderBase {
 
 typedef Vector<JSAtom*, 4> ObjLiteralAtomVector;
 
-JSObject* InterpretObjLiteral(JSContext* cx, ObjLiteralAtomVector& atoms,
-                              mozilla::Span<const uint8_t> insns,
+JSObject* InterpretObjLiteral(JSContext* cx, const ObjLiteralAtomVector& atoms,
+                              const mozilla::Span<const uint8_t> insns,
                               ObjLiteralFlags flags);
 
-inline JSObject* InterpretObjLiteral(JSContext* cx, ObjLiteralAtomVector& atoms,
+inline JSObject* InterpretObjLiteral(JSContext* cx,
+                                     const ObjLiteralAtomVector& atoms,
                                      const ObjLiteralWriter& writer) {
   return InterpretObjLiteral(cx, atoms, writer.getCode(), writer.getFlags());
 }
@@ -562,19 +563,8 @@ class ObjLiteralCreationData {
     return atoms_.append(atom);
   }
 
-  JSObject* create(JSContext* cx);
+  JSObject* create(JSContext* cx) const;
 };
 
 }  // namespace js
-
-namespace JS {
-// Ignore GC tracing for the ObjLiteralCreationData. It contains JSAtom
-// pointers, but these are already held and rooted by the parser. (We must
-// specify GC policy for the creation data because it is placed in the
-// GC-things vector.)
-template <>
-struct GCPolicy<js::ObjLiteralCreationData>
-    : JS::IgnoreGCPolicy<js::ObjLiteralCreationData> {};
-}  // namespace JS
-
 #endif  // frontend_ObjLiteral_h

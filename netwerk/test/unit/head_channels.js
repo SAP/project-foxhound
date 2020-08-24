@@ -1,6 +1,10 @@
 /**
  * Read count bytes from stream and return as a String object
  */
+
+/* import-globals-from head_cache.js */
+/* import-globals-from head_cookies.js */
+
 function read_stream(stream, count) {
   /* assume stream has non-ASCII data */
   var wrapper = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
@@ -253,12 +257,12 @@ ChannelEventSink.prototype = {
     if (iid.equals(Ci.nsIChannelEventSink)) {
       return this;
     }
-    throw Cr.NS_ERROR_NO_INTERFACE;
+    throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
   },
 
   asyncOnChannelRedirect(oldChannel, newChannel, flags, callback) {
     if (this._flags & ES_ABORT_REDIRECT) {
-      throw Cr.NS_BINDING_ABORTED;
+      throw Components.Exception("", Cr.NS_BINDING_ABORTED);
     }
 
     callback.onRedirectVerifyCallback(Cr.NS_OK);

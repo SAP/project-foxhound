@@ -170,6 +170,12 @@ this bootstrap again.
 
 
 class OSXBootstrapper(BaseBootstrapper):
+
+    INSTALL_PYTHON_GUIDANCE = (
+        'See https://firefox-source-docs.mozilla.org/setup/macos_build.html'
+        '#install-via-homebrew for guidance on how to install Python on your '
+        'system.')
+
     def __init__(self, version, **kwargs):
         BaseBootstrapper.__init__(self, **kwargs)
 
@@ -204,12 +210,13 @@ class OSXBootstrapper(BaseBootstrapper):
         getattr(self, 'ensure_%s_mobile_android_packages' %
                 self.package_manager)(artifact_mode=True)
 
-    def suggest_mobile_android_mozconfig(self):
-        getattr(self, 'suggest_%s_mobile_android_mozconfig' % self.package_manager)()
+    def generate_mobile_android_mozconfig(self):
+        return getattr(self, 'generate_%s_mobile_android_mozconfig' %
+                       self.package_manager)()
 
-    def suggest_mobile_android_artifact_mode_mozconfig(self):
-        getattr(self, 'suggest_%s_mobile_android_mozconfig' %
-                self.package_manager)(artifact_mode=True)
+    def generate_mobile_android_artifact_mode_mozconfig(self):
+        return getattr(self, 'generate_%s_mobile_android_mozconfig' %
+                       self.package_manager)(artifact_mode=True)
 
     def ensure_xcode(self):
         if self.os_version < StrictVersion('10.7'):
@@ -227,8 +234,8 @@ class OSXBootstrapper(BaseBootstrapper):
         elif self.os_version >= StrictVersion('10.7'):
             select = self.which('xcode-select')
             try:
-                output = self.check_output([select, '--print-path'],
-                                           stderr=subprocess.STDOUT)
+                output = subprocess.check_output([select, '--print-path'],
+                                                 stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as e:
                 # This seems to appear on fresh OS X machines before any Xcode
                 # has been installed. It may only occur on OS X 10.9 and later.
@@ -250,14 +257,14 @@ class OSXBootstrapper(BaseBootstrapper):
         # Once Xcode is installed, you need to agree to the license before you can
         # use it.
         try:
-            output = self.check_output(['/usr/bin/xcrun', 'clang'],
-                                       stderr=subprocess.STDOUT)
+            output = subprocess.check_output(['/usr/bin/xcrun', 'clang'],
+                                             stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
             if b'license' in e.output:
                 xcodebuild = self.which('xcodebuild')
                 try:
-                    self.check_output([xcodebuild, '-license'],
-                                      stderr=subprocess.STDOUT)
+                    subprocess.check_output([xcodebuild, '-license'],
+                                            stderr=subprocess.STDOUT)
                 except subprocess.CalledProcessError as e:
                     if b'requires admin privileges' in e.output:
                         self.run_as_root([xcodebuild, '-license'])
@@ -271,8 +278,8 @@ class OSXBootstrapper(BaseBootstrapper):
                 print(INSTALL_XCODE_COMMAND_LINE_TOOLS_STEPS)
                 sys.exit(1)
 
-            output = self.check_output(['/usr/bin/clang', '--version'],
-                                       universal_newlines=True)
+            output = subprocess.check_output(['/usr/bin/clang', '--version'],
+                                             universal_newlines=True)
             match = RE_CLANG_VERSION.search(output)
             if match is None:
                 raise Exception('Could not determine Clang version.')
@@ -298,55 +305,53 @@ class OSXBootstrapper(BaseBootstrapper):
 
     def _ensure_homebrew_packages(self, packages, extra_brew_args=[]):
         self._ensure_homebrew_found()
+        self._ensure_package_manager_updated()
         cmd = [self.brew] + extra_brew_args
 
-        installed = self.check_output(cmd + ['list'],
-                                      universal_newlines=True).split()
+        installed = set(subprocess.check_output(
+            cmd + ['list'], universal_newlines=True).split())
+        to_install = set(
+            package for package in packages if package not in installed)
 
-        printed = False
+        # The "--quiet" tells "brew" to only list the package names, and not the
+        # comparison between current and new version.
+        outdated = set(subprocess.check_output(cmd + ['outdated', '--quiet'],
+                                               universal_newlines=True).split())
+        to_upgrade = set(package for package in packages if package in outdated)
 
-        for package in packages:
-            if package in installed:
-                continue
-
-            if not printed:
-                print(PACKAGE_MANAGER_PACKAGES % ('Homebrew',))
-                printed = True
-
-            subprocess.check_call(cmd + ['install', package])
-
-        return printed
+        if to_install or to_upgrade:
+            print(PACKAGE_MANAGER_PACKAGES % ('Homebrew',))
+        if to_install:
+            subprocess.check_call(cmd + ['install'] + list(to_install))
+        if to_upgrade:
+            subprocess.check_call(cmd + ['upgrade'] + list(to_upgrade))
 
     def _ensure_homebrew_casks(self, casks):
         self._ensure_homebrew_found()
 
-        known_taps = self.check_output([self.brew, 'tap'])
+        known_taps = subprocess.check_output([self.brew, 'tap'])
 
         # Ensure that we can access old versions of packages.
         if b'homebrew/cask-versions' not in known_taps:
-            self.check_output([self.brew, 'tap', 'homebrew/cask-versions'])
+            subprocess.check_output([self.brew, 'tap',
+                                     'homebrew/cask-versions'])
 
         # "caskroom/versions" has been renamed to "homebrew/cask-versions", so
         # it is safe to remove the old tap. Removing the old tap is necessary
         # to avoid the error "Cask [name of cask] exists in multiple taps".
         # See https://bugzilla.mozilla.org/show_bug.cgi?id=1544981
         if b'caskroom/versions' in known_taps:
-            self.check_output([self.brew, 'untap', 'caskroom/versions'])
+            subprocess.check_output([self.brew, 'untap', 'caskroom/versions'])
 
         # Change |brew install cask| into |brew cask install cask|.
-        return self._ensure_homebrew_packages(casks, extra_brew_args=['cask'])
+        self._ensure_homebrew_packages(casks, extra_brew_args=['cask'])
 
     def ensure_homebrew_system_packages(self, install_mercurial):
-        # We need to install Python because Mercurial requires the
-        # Python development headers which are missing from OS X (at
-        # least on 10.8) and because the build system wants a version
-        # newer than what Apple ships.
         packages = [
             'autoconf@2.13',
             'git',
             'gnu-tar',
             'node',
-            'python',
             'terminal-notifier',
             'watchman',
         ]
@@ -393,16 +398,16 @@ class OSXBootstrapper(BaseBootstrapper):
         android.ensure_android('macosx', artifact_mode=artifact_mode,
                                no_interactive=self.no_interactive)
 
-    def suggest_homebrew_mobile_android_mozconfig(self, artifact_mode=False):
+    def generate_homebrew_mobile_android_mozconfig(self, artifact_mode=False):
         from mozboot import android
-        android.suggest_mozconfig('macosx', artifact_mode=artifact_mode)
+        return android.generate_mozconfig('macosx', artifact_mode=artifact_mode)
 
     def _ensure_macports_packages(self, packages):
         self.port = self.which('port')
         assert self.port is not None
 
         installed = set(
-            self.check_output(
+            subprocess.check_output(
                 [self.port, 'installed'],
                 universal_newlines=True).split())
 
@@ -413,9 +418,6 @@ class OSXBootstrapper(BaseBootstrapper):
 
     def ensure_macports_system_packages(self, install_mercurial):
         packages = [
-            'python27',
-            'python36',
-            'py27-gnureadline',
             'autoconf213',
             'gnutar',
             'watchman',
@@ -427,7 +429,7 @@ class OSXBootstrapper(BaseBootstrapper):
         self._ensure_macports_packages(packages)
 
         pythons = set(
-            self.check_output(
+            subprocess.check_output(
                 [self.port, 'select', '--list', 'python'],
                 universal_newlines=True).split('\n'))
         active = ''
@@ -470,9 +472,9 @@ class OSXBootstrapper(BaseBootstrapper):
         android.ensure_android('macosx', artifact_mode=artifact_mode,
                                no_interactive=self.no_interactive)
 
-    def suggest_macports_mobile_android_mozconfig(self, artifact_mode=False):
+    def generate_macports_mobile_android_mozconfig(self, artifact_mode=False):
         from mozboot import android
-        android.suggest_mozconfig('macosx', artifact_mode=artifact_mode)
+        return android.generate_mozconfig('macosx', artifact_mode=artifact_mode)
 
     def ensure_package_manager(self):
         '''
@@ -560,6 +562,18 @@ class OSXBootstrapper(BaseBootstrapper):
         from mozboot import node
         self.install_toolchain_artifact(state_dir, checkout_root, node.OSX)
 
+    def ensure_minidump_stackwalk_packages(self, state_dir, checkout_root):
+        from mozboot import minidump_stackwalk
+
+        self.install_toolchain_artifact(state_dir, checkout_root,
+                                        minidump_stackwalk.MACOS_MINIDUMP_STACKWALK)
+
+    def ensure_dump_syms_packages(self, state_dir, checkout_root):
+        from mozboot import dump_syms
+
+        self.install_toolchain_artifact(state_dir, checkout_root,
+                                        dump_syms.MACOS_DUMP_SYMS)
+
     def install_homebrew(self):
         print(PACKAGE_MANAGER_INSTALL % ('Homebrew', 'Homebrew', 'Homebrew', 'brew'))
         bootstrap = urlopen(url=HOMEBREW_BOOTSTRAP, timeout=20).read()
@@ -607,9 +621,3 @@ class OSXBootstrapper(BaseBootstrapper):
 
     def upgrade_mercurial(self, current):
         self._upgrade_package('mercurial')
-
-    def upgrade_python(self, current):
-        if self.package_manager == 'homebrew':
-            self._upgrade_package('python')
-        else:
-            self._upgrade_package('python27')

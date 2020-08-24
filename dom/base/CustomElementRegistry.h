@@ -103,7 +103,7 @@ struct CustomElementData {
   AutoTArray<UniquePtr<CustomElementReaction>, 3> mReactionQueue;
 
   void SetCustomElementDefinition(CustomElementDefinition* aDefinition);
-  CustomElementDefinition* GetCustomElementDefinition();
+  CustomElementDefinition* GetCustomElementDefinition() const;
   nsAtom* GetCustomElementType() const { return mType; }
   void AttachedInternals();
   bool HasAttachedInternals() const { return mIsAttachedInternals; }
@@ -465,6 +465,8 @@ class CustomElementRegistry final : public nsISupports, public nsWrapperCache {
     nsWeakPtr elem = do_GetWeakReference(aElement);
     elements->PutEntry(elem);
   }
+
+  void TraceDefinitions(JSTracer* aTrc);
 
  private:
   ~CustomElementRegistry();

@@ -9,6 +9,7 @@ const gNonEligibleElementIds = [
   "silent-audio-track",
   "no-audio-track",
   "short-duration",
+  "inaudible-captured-media",
 ];
 
 /**
@@ -37,7 +38,7 @@ add_task(async function testPlayPauseAndStop() {
     await checkIfMediaIsStillPlaying(tab, elementId);
 
     info(`- simulate pressing 'pause' media control key -`);
-    ChromeUtils.generateMediaControlKeysTestEvent("pause");
+    ChromeUtils.generateMediaControlKey("pause");
 
     info(`- non eligible media won't be controlled by media control -`);
     await checkIfMediaIsStillPlaying(tab, elementId);
@@ -47,7 +48,7 @@ add_task(async function testPlayPauseAndStop() {
       await makeElementEligible(tab, elementId);
 
       info(`- simulate pressing 'pause' media control key -`);
-      ChromeUtils.generateMediaControlKeysTestEvent("pause");
+      ChromeUtils.generateMediaControlKey("pause");
 
       info(`- audible media should be controlled by media control -`);
       await waitUntilMediaPaused(tab, elementId);
@@ -69,6 +70,10 @@ function startNonEligibleMedia(tab, elementId) {
     }
     if (Id == "volume-0") {
       video.volume = 0.0;
+    }
+    if (Id == "inaudible-captured-media") {
+      const context = new content.AudioContext();
+      context.createMediaElementSource(video);
     }
     return video.play();
   });

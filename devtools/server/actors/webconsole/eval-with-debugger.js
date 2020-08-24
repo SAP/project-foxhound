@@ -6,6 +6,7 @@
 
 const Debugger = require("Debugger");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
+const Services = require("Services");
 
 loader.lazyRequireGetter(
   this,
@@ -40,13 +41,13 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "eagerEcmaWhitelist",
-  "devtools/server/actors/webconsole/eager-ecma-whitelist"
+  "eagerEcmaAllowlist",
+  "devtools/server/actors/webconsole/eager-ecma-allowlist"
 );
 loader.lazyRequireGetter(
   this,
-  "eagerFunctionWhitelist",
-  "devtools/server/actors/webconsole/eager-function-whitelist"
+  "eagerFunctionAllowlist",
+  "devtools/server/actors/webconsole/eager-function-allowlist"
 );
 
 function isObject(value) {
@@ -101,6 +102,9 @@ function isObject(value) {
  *        in the Inspector (or null, if there is no selection). This is used
  *        for helper functions that make reference to the currently selected
  *        node, like $0.
+ *        - innerWindowID: An optional window id to use instead of webConsole.evalWindow.
+ *        This is used by function that need to evaluate in a different window for which
+ *        we don't have a dedicated target (for example a non-remote iframe).
  *        - eager: Set to true if you want the evaluation to bail if it may have side effects.
  *        - url: the url to evaluate the script as. Defaults to "debugger eval code",
  *        or "debugger eager eval code" if eager is true.
@@ -115,16 +119,14 @@ function isObject(value) {
  *         function.
  */
 exports.evalWithDebugger = function(string, options = {}, webConsole) {
+  if (isCommand(string.trim()) && options.eager) {
+    return {
+      result: null,
+    };
+  }
+
   const evalString = getEvalInput(string);
   const { frame, dbg } = getFrameDbg(options, webConsole);
-
-  // early return for replay
-  if (dbg.replaying) {
-    if (options.eager) {
-      throw new Error("Eager evaluations are not supported while replaying");
-    }
-    return evalReplay(frame, dbg, evalString);
-  }
 
   const { dbgWindow, bindSelf } = getDbgWindow(options, dbg, webConsole);
   const helpers = getHelpers(dbgWindow, options, webConsole);
@@ -156,21 +158,29 @@ exports.evalWithDebugger = function(string, options = {}, webConsole) {
 
   updateConsoleInputEvaluation(dbg, dbgWindow, webConsole);
 
-  let sideEffectData = null;
+  let noSideEffectDebugger = null;
   if (options.eager) {
-    sideEffectData = preventSideEffects(dbg);
+    noSideEffectDebugger = makeSideeffectFreeDebugger();
   }
 
-  const result = getEvalResult(
-    evalString,
-    evalOptions,
-    bindings,
-    frame,
-    dbgWindow
-  );
-
-  if (options.eager) {
-    allowSideEffects(sideEffectData);
+  let result;
+  try {
+    result = getEvalResult(
+      dbg,
+      evalString,
+      evalOptions,
+      bindings,
+      frame,
+      dbgWindow,
+      noSideEffectDebugger
+    );
+  } finally {
+    // We need to be absolutely sure that the sideeffect-free debugger's
+    // debuggees are removed because otherwise we risk them terminating
+    // execution of later code in the case of unexpected exceptions.
+    if (noSideEffectDebugger) {
+      noSideEffectDebugger.removeAllDebuggees();
+    }
   }
 
   // Attempt to initialize any declarations found in the evaluated string
@@ -197,11 +207,55 @@ exports.evalWithDebugger = function(string, options = {}, webConsole) {
   };
 };
 
-function getEvalResult(string, evalOptions, bindings, frame, dbgWindow) {
-  if (frame) {
-    return frame.evalWithBindings(string, bindings, evalOptions);
+function getEvalResult(
+  dbg,
+  string,
+  evalOptions,
+  bindings,
+  frame,
+  dbgWindow,
+  noSideEffectDebugger
+) {
+  if (noSideEffectDebugger) {
+    // Bug 1637883 demonstrated an issue where dbgWindow was somehow in the
+    // same compartment as the Debugger, meaning it could not be debugged
+    // and thus cannot handle eager evaluation. In that case we skip execution.
+    if (!noSideEffectDebugger.hasDebuggee(dbgWindow.unsafeDereference())) {
+      return null;
+    }
+
+    // When a sideeffect-free debugger has been created, we need to eval
+    // in the context of that debugger in order for the side-effect tracking
+    // to apply.
+    frame = frame ? noSideEffectDebugger.adoptFrame(frame) : null;
+    dbgWindow = noSideEffectDebugger.adoptDebuggeeValue(dbgWindow);
+    if (bindings) {
+      bindings = Object.keys(bindings).reduce((acc, key) => {
+        acc[key] = noSideEffectDebugger.adoptDebuggeeValue(bindings[key]);
+        return acc;
+      }, {});
+    }
   }
-  return dbgWindow.executeInGlobalWithBindings(string, bindings, evalOptions);
+
+  let result;
+  if (frame) {
+    result = frame.evalWithBindings(string, bindings, evalOptions);
+  } else {
+    result = dbgWindow.executeInGlobalWithBindings(
+      string,
+      bindings,
+      evalOptions
+    );
+  }
+  if (noSideEffectDebugger && result) {
+    if ("return" in result) {
+      result.return = dbg.adoptDebuggeeValue(result.return);
+    }
+    if ("throw" in result) {
+      result.throw = dbg.adoptDebuggeeValue(result.throw);
+    }
+  }
+  return result;
 }
 
 function parseErrorOutput(dbgWindow, string) {
@@ -271,11 +325,7 @@ function parseErrorOutput(dbgWindow, string) {
   }
 }
 
-function preventSideEffects(dbg) {
-  if (dbg.onEnterFrame || dbg.onNativeCall) {
-    throw new Error("Debugger has hook installed");
-  }
-
+function makeSideeffectFreeDebugger() {
   // We ensure that the metadata for native functions is loaded before we
   // initialize sideeffect-prevention because the data is lazy-loaded, and this
   // logic can run inside of debuggee compartments because the
@@ -290,8 +340,8 @@ function preventSideEffects(dbg) {
   // this debuggee tracking logic with a separate Debugger instance.
   // Bug 1617666 arises otherwise if we set an onEnterFrame hook on the
   // existing debugger object and then later clear it.
-  const newDbg = new Debugger();
-  newDbg.addAllGlobalsAsDebuggees();
+  const dbg = new Debugger();
+  dbg.addAllGlobalsAsDebuggees();
 
   const timeoutDuration = 100;
   const endTime = Date.now() + timeoutDuration;
@@ -307,8 +357,7 @@ function preventSideEffects(dbg) {
   const handler = {
     hit: () => null,
   };
-
-  newDbg.onEnterFrame = frame => {
+  dbg.onEnterFrame = frame => {
     if (shouldCancel()) {
       return null;
     }
@@ -340,7 +389,7 @@ function preventSideEffects(dbg) {
   dbg.onNativeCall = (callee, reason) => {
     try {
       // Getters are never considered effectful, and setters are always effectful.
-      // Natives called normally are handled with a whitelist.
+      // Natives called normally are handled with an allowlist.
       if (
         reason == "get" ||
         (reason == "call" && nativeHasNoSideEffects(callee))
@@ -351,22 +400,14 @@ function preventSideEffects(dbg) {
     } catch (err) {
       DevToolsUtils.reportException(
         "evalWithDebugger onNativeCall",
-        new Error("Unable to validate native function against whitelist")
+        new Error("Unable to validate native function against allowlist")
       );
     }
     // Returning null terminates the current evaluation.
     return null;
   };
 
-  return {
-    dbg,
-    newDbg,
-  };
-}
-
-function allowSideEffects(data) {
-  data.dbg.onNativeCall = undefined;
-  data.newDbg.removeAllDebuggees();
+  return dbg;
 }
 
 // Native functions which are considered to be side effect free.
@@ -378,11 +419,11 @@ function ensureSideEffectFreeNatives() {
   }
 
   const natives = [
-    ...eagerEcmaWhitelist,
+    ...eagerEcmaAllowlist,
 
     // Pull in all of the non-ECMAScript native functions that we want to
-    // whitelist as well.
-    ...eagerFunctionWhitelist,
+    // allow as well.
+    ...eagerFunctionAllowlist,
   ];
 
   const map = new Map();
@@ -472,30 +513,20 @@ function getFrameDbg(options, webConsole) {
   );
 }
 
-function evalReplay(frame, dbg, string) {
-  // If the debugger is replaying then we can't yet introduce new bindings
-  // for the eval, so compute the result now.
-  let result;
-  if (frame) {
-    try {
-      result = frame.eval(string);
-    } catch (e) {
-      result = { throw: e };
-    }
-  } else {
-    result = { throw: "Cannot evaluate while replaying without a frame" };
-  }
-  return {
-    result: result,
-    helperResult: null,
-    dbg: dbg,
-    frame: frame,
-    window: null,
-  };
-}
-
 function getDbgWindow(options, dbg, webConsole) {
-  const dbgWindow = dbg.makeGlobalObjectReference(webConsole.evalWindow);
+  let evalWindow = webConsole.evalWindow;
+
+  if (options.innerWindowID) {
+    const window = Services.wm.getCurrentInnerWindowWithId(
+      options.innerWindowID
+    );
+
+    if (window) {
+      evalWindow = window;
+    }
+  }
+
+  const dbgWindow = dbg.makeGlobalObjectReference(evalWindow);
 
   // If we have an object to bind to |_self|, create a Debugger.Object
   // referring to that object, belonging to dbg.
@@ -503,7 +534,12 @@ function getDbgWindow(options, dbg, webConsole) {
     return { bindSelf: null, dbgWindow };
   }
 
-  const actor = webConsole.getActorByID(options.selectedObjectActor);
+  // For objects related to console messages, they will be registered under the Target Actor
+  // instead of the WebConsoleActor. That's because console messages are resources and all resources
+  // are emitted by the Target Actor.
+  const actor =
+    webConsole.getActorByID(options.selectedObjectActor) ||
+    webConsole.parentActor.getActorByID(options.selectedObjectActor);
 
   if (!actor) {
     return { bindSelf: null, dbgWindow };

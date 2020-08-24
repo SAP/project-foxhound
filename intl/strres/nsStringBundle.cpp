@@ -384,11 +384,10 @@ nsStringBundleBase::CollectReports(nsIHandleReportCallback* aHandleReport,
 
   path.AppendLiteral(")");
 
-  NS_NAMED_LITERAL_CSTRING(
-      desc,
+  constexpr auto desc =
       "A StringBundle instance representing the data in a (probably "
       "localized) .properties file. Data may be shared between "
-      "processes.");
+      "processes."_ns;
 
   aHandleReport->Callback(EmptyCString(), path, KIND_HEAP, UNITS_BYTES,
                           heapSize, desc, aData);
@@ -445,13 +444,13 @@ nsresult nsStringBundleBase::ParseProperties(nsIPersistentProperties** aProps) {
     nsCOMPtr<nsIChannel> channel;
     rv = NS_NewChannel(getter_AddRefs(channel), uri,
                        nsContentUtils::GetSystemPrincipal(),
-                       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                        nsIContentPolicy::TYPE_OTHER);
 
     if (NS_FAILED(rv)) return rv;
 
     // It's a string bundle.  We expect a text/plain type, so set that as hint
-    channel->SetContentType(NS_LITERAL_CSTRING("text/plain"));
+    channel->SetContentType("text/plain"_ns);
 
     rv = channel->Open(getter_AddRefs(in));
     if (NS_FAILED(rv)) return rv;

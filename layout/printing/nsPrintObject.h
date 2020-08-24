@@ -40,8 +40,14 @@ class nsPrintObject {
                               mozilla::dom::Document* aDoc,
                               nsPrintObject* aParent);
 
-  bool IsPrintable() { return !mDontPrint; }
   void DestroyPresentation();
+
+  /**
+   * Recursively sets all the PO items to be printed
+   * from the given item down into the tree
+   */
+  void EnablePrinting(bool aEnable);
+  bool PrintingIsEnabled() const { return mPrintingIsEnabled; }
 
   // Data Members
   nsCOMPtr<nsIDocShell> mDocShell;
@@ -58,8 +64,6 @@ class nsPrintObject {
   nsTArray<mozilla::UniquePtr<nsPrintObject>> mKids;
   nsPrintObject* mParent;  // This is a non-owning pointer.
   bool mHasBeenPrinted;
-  bool mDontPrint;
-  bool mPrintAsIs;
   bool mInvisible;  // Indicates PO is set to not visible by CSS
   bool mDidCreateDocShell;
   float mShrinkRatio;
@@ -67,6 +71,8 @@ class nsPrintObject {
 
  private:
   nsPrintObject& operator=(const nsPrintObject& aOther) = delete;
+
+  bool mPrintingIsEnabled = false;
 };
 
 #endif /* nsPrintObject_h___ */

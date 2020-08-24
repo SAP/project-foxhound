@@ -121,8 +121,6 @@ function PeerConnectionTest(options) {
     this.pcRemote = null;
   }
 
-  options.steeplechase = !options.is_local || !options.is_remote;
-
   // Create command chain instance and assign default commands
   this.chain = new CommandChain(this, options.commands);
 
@@ -432,9 +430,6 @@ PeerConnectionTest.prototype.setLocalDescription = function(
 
   peer.endOfTrickleSdp = peer.endOfTrickleIce
     .then(() => {
-      if (this.testOptions.steeplechase) {
-        send_message({ type: "end_of_trickle_ice" });
-      }
       return peer._pc.localDescription;
     })
     .catch(e => ok(false, "Sending EOC message failed: " + e));
@@ -2065,7 +2060,11 @@ PeerConnectionWrapper.prototype = {
    */
   getStats(selector) {
     return this._pc.getStats(selector).then(stats => {
-      info(this + ": Got stats: " + JSON.stringify(stats));
+      let dict = {};
+      for (const [k, v] of stats.entries()) {
+        dict[k] = v;
+      }
+      info(this + ": Got stats: " + JSON.stringify(dict));
       this._last_stats = stats;
       return stats;
     });
@@ -2077,7 +2076,7 @@ PeerConnectionWrapper.prototype = {
    * @param {object} stats
    *        The stats to check from this PeerConnectionWrapper
    */
-  checkStats(stats, twoMachines) {
+  checkStats(stats) {
     const isRemote = ({ type }) =>
       ["remote-outbound-rtp", "remote-inbound-rtp"].includes(type);
     var counters = {};
@@ -2088,18 +2087,16 @@ PeerConnectionWrapper.prototype = {
       const now = performance.timeOrigin + performance.now();
       const minimum = performance.timeOrigin;
       const type = isRemote(res) ? "rtcp" : "rtp";
-      if (!twoMachines) {
-        ok(
-          res.timestamp >= minimum,
-          `Valid ${type} timestamp ${res.timestamp} >= ${minimum} (
-              ${res.timestamp - minimum} ms)`
-        );
-        ok(
-          res.timestamp <= now,
-          `Valid ${type} timestamp ${res.timestamp} <= ${now} (
-              ${res.timestamp - now} ms)`
-        );
-      }
+      ok(
+        res.timestamp >= minimum,
+        `Valid ${type} timestamp ${res.timestamp} >= ${minimum} (
+            ${res.timestamp - minimum} ms)`
+      );
+      ok(
+        res.timestamp <= now,
+        `Valid ${type} timestamp ${res.timestamp} <= ${now} (
+            ${res.timestamp - now} ms)`
+      );
       if (isRemote(res)) {
         continue;
       }
@@ -2168,8 +2165,7 @@ PeerConnectionWrapper.prototype = {
               } else {
                 ok(rem.type == "remote-outbound-rtp", "Rtcp is outbound");
                 ok(rem.packetsSent !== undefined, "Rtcp packetsSent");
-                // We may have received more than outdated Rtcp packetsSent
-                ok(rem.bytesSent >= rem.packetsSent, "Rtcp bytesSent");
+                ok(rem.bytesSent !== undefined, "Rtcp bytesSent");
               }
               ok(rem.ssrc == res.ssrc, "Remote ssrc match");
             } else {

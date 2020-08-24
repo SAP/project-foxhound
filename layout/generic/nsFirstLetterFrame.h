@@ -32,7 +32,7 @@ class nsFirstLetterFrame final : public nsContainerFrame {
   virtual nsresult GetFrameName(nsAString& aResult) const override;
 #endif
 
-  bool IsFloating() const { return GetStateBits() & NS_FRAME_OUT_OF_FLOW; }
+  bool IsFloating() const { return HasAnyStateBits(NS_FRAME_OUT_OF_FLOW); }
 
   virtual bool IsFrameOfType(uint32_t aFlags) const override {
     if (!IsFloating()) aFlags = aFlags & ~(nsIFrame::eLineParticipant);
@@ -74,8 +74,7 @@ class nsFirstLetterFrame final : public nsContainerFrame {
   // place it in the correct place. aContinuation is an outparam for the
   // continuation that is created. aIsFluid determines if the continuation is
   // fluid or not.
-  void CreateContinuationForFloatingParent(nsPresContext* aPresContext,
-                                           nsIFrame* aChild,
+  void CreateContinuationForFloatingParent(nsIFrame* aChild,
                                            nsIFrame** aContinuation,
                                            bool aIsFluid);
 

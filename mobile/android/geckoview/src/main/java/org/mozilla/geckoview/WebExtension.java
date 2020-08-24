@@ -58,8 +58,11 @@ public class WebExtension {
     // TODO: move to @NonNull when we remove registerWebExtension
     public final @Nullable MetaData metaData;
 
-    // TODO: make public
-    final boolean isBuiltIn;
+    /**
+     * Whether this extension is built-in. Built-in extension can be installed
+     * using {@link WebExtensionController#installBuiltIn}.
+     */
+    public final boolean isBuiltIn;
 
     /** Called whenever a delegate is set or unset on this {@link WebExtension} instance.
     /* package */ interface DelegateController {
@@ -86,6 +89,7 @@ public class WebExtension {
 
     private final static String LOGTAG = "WebExtension";
 
+    // Keep in sync with GeckoViewWebExtension.jsm
     public static class Flags {
         /*
          * Default flags for this WebExtension.
@@ -143,7 +147,11 @@ public class WebExtension {
      *           </ul>
      * @param flags {@link Flags} for this WebExtension.
      * @param controller the current {@link WebExtensionController} instance
+     *
+     * @deprecated Use the return value of {@link WebExtensionController#installBuiltIn} instead.
+     *             This method will be removed in GeckoView 81.
      */
+    @Deprecated
     public WebExtension(final @NonNull String location, final @NonNull String id,
                         final @WebExtensionFlags long flags,
                         final @NonNull WebExtensionController controller) {
@@ -169,7 +177,11 @@ public class WebExtension {
      *                 <code>resource:</code> URI to a folder inside the APK or
      *                 a <code>file:</code> URL to a <code>.xpi</code> file.
      * @param controller the current {@link WebExtensionController} instance
+     *
+     * @deprecated Use the return value of {@link WebExtensionController#installBuiltIn} instead.
+     *             This method will be removed in GeckoView 81.
      */
+    @Deprecated
     public WebExtension(final @NonNull String location,
                         final @NonNull WebExtensionController controller) {
         this(location, "{" + UUID.randomUUID().toString() + "}", Flags.NONE, controller);
@@ -534,6 +546,12 @@ public class WebExtension {
         @Nullable
         public final Boolean active;
         /**
+         * The CookieStoreId used for the tab. This option is only
+         * available if the extension has the "cookies" permission.
+         */
+        @Nullable
+        public final String cookieStoreId;
+        /**
          * Whether the tab is created and made visible in the tab bar
          * without any content loaded into memory, a state known as
          * discarded. The tab’s content should be loaded when the tab is
@@ -569,6 +587,7 @@ public class WebExtension {
         /** For testing. */
         protected CreateTabDetails() {
             active = null;
+            cookieStoreId = null;
             discarded = null;
             index = null;
             openInReaderMode = null;
@@ -578,6 +597,7 @@ public class WebExtension {
 
         /* package */ CreateTabDetails(final GeckoBundle bundle) {
             active = bundle.getBooleanObject("active");
+            cookieStoreId = bundle.getString("cookieStoreId");
             discarded = bundle.getBooleanObject("discarded");
             index = bundle.getInteger("index");
             openInReaderMode = bundle.getBooleanObject("openInReaderMode");
@@ -610,6 +630,18 @@ public class WebExtension {
                                                    @NonNull CreateTabDetails createDetails) {
             return null;
         }
+
+        /**
+         * Called when runtime.openOptionsPage is invoked with
+         * options_ui.open_in_tab = false.
+         * In this case, GeckoView delegates options page handling to the app.
+         * With options_ui.open_in_tab = true, {@link #onNewTab} is called
+         * instead.
+         *
+         * @param source An instance of {@link WebExtension}.
+         */
+        @UiThread
+        default void onOpenOptionsPage(@NonNull WebExtension source) {}
     }
 
     /**
@@ -802,11 +834,7 @@ public class WebExtension {
         final private EventDispatcher mEventDispatcher;
 
         private boolean mActionDelegateRegistered = false;
-        private boolean mMessageDelegateRegistered = false;
         private boolean mTabDelegateRegistered = false;
-
-        // TODO: remove Bug 1618987
-        private WebExtensionController.TabDelegate mLegacyTabDelegate;
 
         public GeckoRuntime runtime;
 
@@ -816,14 +844,15 @@ public class WebExtension {
 
         public Listener(final GeckoSession session) {
             this(session, null);
-            // TODO: Remove Bug 1618987
+
             // Close tab event is forwarded to the main listener so we need to listen
             // to it here.
             mEventDispatcher.registerUiThreadListener(
                     this,
                     "GeckoView:WebExtension:NewTab",
                     "GeckoView:WebExtension:UpdateTab",
-                    "GeckoView:WebExtension:CloseTab"
+                    "GeckoView:WebExtension:CloseTab",
+                    "GeckoView:WebExtension:OpenOptionsPage"
             );
             mTabDelegateRegistered = true;
         }
@@ -837,28 +866,14 @@ public class WebExtension {
                     : EventDispatcher.getInstance();
             mSession = session;
             this.runtime = runtime;
-        }
 
-        // TODO: remove Bug 1618987
-        @Deprecated
-        public void setTabDelegate(final WebExtensionController.TabDelegate delegate) {
-            if (!mTabDelegateRegistered && delegate != null) {
-                mEventDispatcher.registerUiThreadListener(
-                        this,
-                        "GeckoView:WebExtension:NewTab",
-                        "GeckoView:WebExtension:UpdateTab",
-                        "GeckoView:WebExtension:CloseTab"
-                );
-                mTabDelegateRegistered = true;
-            }
-
-            mLegacyTabDelegate = delegate;
-        }
-
-        // TODO: remove Bug 1618987
-        @Deprecated
-        public WebExtensionController.TabDelegate getTabDelegate() {
-            return mLegacyTabDelegate;
+            // We queue these messages if the delegate has not been attached yet,
+            // so we need to start listening immediately.
+            mEventDispatcher.registerUiThreadListener(this,
+                    "GeckoView:WebExtension:Message",
+                    "GeckoView:WebExtension:PortMessage",
+                    "GeckoView:WebExtension:Connect",
+                    "GeckoView:WebExtension:Disconnect");
         }
 
         public void unregisterWebExtension(final WebExtension extension) {
@@ -874,7 +889,8 @@ public class WebExtension {
                         this,
                         "GeckoView:WebExtension:NewTab",
                         "GeckoView:WebExtension:UpdateTab",
-                        "GeckoView:WebExtension:CloseTab"
+                        "GeckoView:WebExtension:CloseTab",
+                        "GeckoView:WebExtension:OpenOptionsPage"
                 );
                 mTabDelegateRegistered = true;
             }
@@ -907,15 +923,6 @@ public class WebExtension {
         public void setMessageDelegate(final WebExtension webExtension,
                                        final WebExtension.MessageDelegate delegate,
                                        final String nativeApp) {
-            if (!mMessageDelegateRegistered && delegate != null) {
-                mEventDispatcher.registerUiThreadListener(this,
-                        "GeckoView:WebExtension:Message",
-                        "GeckoView:WebExtension:PortMessage",
-                        "GeckoView:WebExtension:Connect",
-                        "GeckoView:WebExtension:Disconnect");
-                mMessageDelegateRegistered = true;
-            }
-
             mMessageDelegates.put(new Sender(webExtension.id, nativeApp), delegate);
         }
 
@@ -929,19 +936,6 @@ public class WebExtension {
                                   final EventCallback callback) {
             if (runtime == null) {
                 return;
-            }
-
-            // TODO: remove Bug 1618987
-            final WebExtensionController controller = runtime.getWebExtensionController();
-            WebExtensionController.TabDelegate delegate = controller.getTabDelegate();
-            if (delegate != null) {
-                if ("GeckoView:WebExtension:CloseTab".equals(event)) {
-                    controller.closeTab(message, callback, mSession, delegate);
-                    return;
-                } else if ("GeckoView:WebExtension:NewTab".equals(event)) {
-                    controller.newTab(message, callback, delegate);
-                    return;
-                }
             }
 
             runtime.getWebExtensionController().handleMessage(event, message, callback, mSession);
@@ -1360,6 +1354,9 @@ public class WebExtension {
                     ? source.badgeBackgroundColor : defaultValue.badgeBackgroundColor;
         }
 
+        /**
+         * Notifies the extension that the user has clicked on this Action.
+         */
         @UiThread
         public void click() {
             if (mPopupUri != null && !mPopupUri.isEmpty()) {
@@ -1578,8 +1575,10 @@ public class WebExtension {
         final GeckoBundle bundle = new GeckoBundle(1);
         bundle.putString("extensionId", id);
 
-        EventDispatcher.getInstance().dispatch(
-                "GeckoView:ActionDelegate:Attached", bundle);
+        if (delegate != null) {
+            EventDispatcher.getInstance().dispatch(
+                    "GeckoView:ActionDelegate:Attached", bundle);
+        }
     }
 
     /** Describes the signed status for a {@link WebExtension}.
@@ -1817,7 +1816,8 @@ public class WebExtension {
         }
 
         /* package */ MetaData(final GeckoBundle bundle) {
-            permissions = bundle.getStringArray("permissions");
+            // We only expose permissions that the embedder should prompt for
+            permissions = bundle.getStringArray("promptPermissions");
             origins = bundle.getStringArray("origins");
             description = bundle.getString("description");
             version = bundle.getString("version");
@@ -1862,6 +1862,261 @@ public class WebExtension {
             } else {
                 icon = null;
             }
+        }
+    }
+
+    // TODO: make public bug 1595822
+
+    @IntDef(flag = true,
+            value = {Context.NONE, Context.BOOKMARK, Context.BROWSER_ACTION,
+                    Context.PAGE_ACTION, Context.TAB, Context.TOOLS_MENU})
+
+    /* package */ @interface ContextFlags {}
+
+    /**
+     * Flags to determine which contexts a menu item should be shown in.
+     * See <a href=https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/menus/ContextType>
+     *     menus.ContextType</a>.
+     **/
+    static class Context {
+        /**
+         * Shows the menu item in no contexts.
+         */
+        static final int NONE = 0;
+
+        /**
+         * Shows the menu item when the user context-clicks an item on the bookmarks toolbar, bookmarks menu,
+         * bookmarks sidebar, or Library window.
+         */
+        static final int BOOKMARK = 1 << 1;
+
+        /**
+         * Shows the menu item when the user context-clicks the extension's browser action.
+         */
+        static final int BROWSER_ACTION = 1 << 2;
+
+        /**
+         * Shows the menu item when the user context-clicks on the extension's page action.
+         */
+        static final int PAGE_ACTION = 1 << 3;
+
+        /**
+         * Shows when the user context-clicks on a tab (such as the element on the tab bar.)
+         */
+        static final int TAB = 1 << 4;
+
+        /**
+         * Adds the item to the browser's tools menu.
+         */
+        static final int TOOLS_MENU = 1 << 5;
+
+    }
+
+    // TODO: make public bug 1595822
+
+    /**
+     * Represents an addition to the context menu by an extension.
+     *
+     * In the <a href=https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/menus>menus</a>
+     * API, all elements added by one extension should be collapsed under one header. This class represents
+     * all of one extension's menu items, as well as the icon that should be used with that header.
+     *
+     */
+    static class Menu {
+        /**
+        * List of menu items that belong to this extension.
+        */
+        final @NonNull List<MenuItem> items;
+
+        /**
+         * Icon for this extension.
+         */
+        final @Nullable Icon icon;
+
+        /**
+         * Title for the menu header.
+         */
+        final @Nullable String title;
+
+        /**
+         * The extension adding this Menu to the context menu.
+         */
+        final @NonNull WebExtension extension;
+
+        /* package */ Menu(final @NonNull WebExtension extension, final GeckoBundle bundle) {
+            this.extension = extension;
+            title = bundle.getString("title", "");
+            GeckoBundle[] items = bundle.getBundleArray("items");
+            this.items = new ArrayList<>();
+            if (items != null) {
+                for (GeckoBundle item : items) {
+                    this.items.add(new MenuItem(this.extension, item));
+                }
+            }
+
+            if (bundle.containsKey("icon")) {
+                icon = new Icon(bundle.getBundle("icon"));
+            } else {
+                icon = null;
+            }
+        }
+
+        /**
+         * Notifies the extension that a user has opened the context menu.
+         */
+        void show() {
+            final GeckoBundle bundle = new GeckoBundle(1);
+            bundle.putString("extensionId", extension.id);
+
+            EventDispatcher.getInstance().dispatch(
+                    "GeckoView:WebExtension:MenuShow", bundle);
+        }
+
+        /**
+         * Notifies the extension that a user has hidden the context menu.
+         */
+        void hide() {
+            final GeckoBundle bundle = new GeckoBundle(1);
+            bundle.putString("extensionId", extension.id);
+
+            EventDispatcher.getInstance().dispatch(
+                     "GeckoView:WebExtension:MenuHide", bundle);
+        }
+    }
+
+    // TODO: make public bug 1595822
+    /**
+     * Represents an item in the menu.
+     *
+     *  If there is only one menu item in the list, the embedder should display that item as itself,
+     *  not under a header.
+     */
+    static class MenuItem {
+
+        @IntDef(flag = false,
+                value = {MenuType.NORMAL, MenuType.CHECKBOX, MenuType.RADIO, MenuType.SEPARATOR})
+
+        /* package */ @interface Type {}
+
+        /**
+         * A set of constants that represents the display type of this menu item.
+         */
+        static class MenuType {
+            /**
+             * This represents a menu item that just displays a label.
+             * <p>
+             * See <a href=https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/menus/ItemType>
+             * menus.ItemType.normal</a>
+             */
+            static final int NORMAL = 0;
+
+            /**
+             * This represents a menu item that can be selected and deselected.
+             * <p>
+             * See <a href=https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/menus/ItemType>
+             * menus.ItemType.checkbox</a>
+             */
+            static final int CHECKBOX = 1;
+
+            /**
+             * This represents a menu item that is one of a group of choices. All menu items for an
+             * extension that are of type radio are part of one radio group.
+             * <p>
+             * See <a href=https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/menus/ItemType>
+             * menus.ItemType.radio</a>
+             */
+            static final int RADIO = 2;
+
+            /**
+             * This represents a line separating elements.
+             * <p>
+             * See <a href=https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/menus/ItemType>
+             * menus.ItemType.separator</a>
+             */
+            static final int SEPARATOR = 3;
+        }
+
+
+
+        /**
+         * Direct children for this menu item. These should be displayed as a sub-menu.
+         *
+         * See <a href=https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/menus/create>
+         *     createProperties.parentId</a>
+         */
+        final @Nullable  List<MenuItem> children;
+
+        /**
+         * One of the {@link Type} constants. Determines the type of the action.
+         */
+        final @Type int type;
+
+        /** The id of this menu item. See <a href=https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/menus/create>
+         * createProperties.id</a>
+         */
+        final @Nullable String id;
+
+        /**
+         * Determines if the menu item should be currently displayed.
+         */
+        final boolean visible;
+
+        /**
+         * The title to be displayed for this menu item.
+         */
+        final @Nullable String title;
+
+        /**
+         * Whether or not the menu item is initially checked. Defaults to false.
+         */
+        final boolean checked;
+
+        /**
+         * Contexts that this menu item should be shown in.
+         */
+        final @ContextFlags int contexts;
+
+        /**
+         * Icon for this menu item.
+         */
+        final @Nullable Icon icon;
+
+        final WebExtension mExtension;
+
+        /**
+         * Creates a new menu item using a bundle and a reference to the extension that
+         * this item belongs to.
+         *
+         * @param extension WebExtension object.
+         * @param bundle GeckoBundle containing the item information.
+         */
+        /* package */ MenuItem(final WebExtension extension, final GeckoBundle bundle) {
+            title = bundle.getString("title");
+            mExtension = extension;
+            checked = bundle.getBoolean("checked", false);
+            visible = bundle.getBoolean("visible", true);
+            id = bundle.getString("id");
+            contexts  = bundle.getInt("contexts");
+            type = bundle.getInt("type");
+            children = new ArrayList<>();
+
+            if (bundle.containsKey("icon")) {
+                icon = new Icon(bundle.getBundle("icon"));
+            } else {
+                icon = null;
+            }
+        }
+
+        /**
+         * Notifies the extension that the user has clicked on this menu item.
+         */
+        void click() {
+            final GeckoBundle bundle = new GeckoBundle(2);
+            bundle.putString("menuId", this.id);
+            bundle.putString("extensionId", mExtension.id);
+
+            EventDispatcher.getInstance().dispatch(
+                    "GeckoView:WebExtension:MenuClick", bundle);
         }
     }
 }

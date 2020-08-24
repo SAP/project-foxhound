@@ -9,8 +9,10 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   FileUtils: "resource://gre/modules/FileUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
   PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
+  Region: "resource://gre/modules/Region.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
   RemoteSettingsClient: "resource://services-settings/RemoteSettingsClient.jsm",
+  SearchCache: "resource://gre/modules/SearchCache.jsm",
   SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.jsm",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
   Services: "resource://gre/modules/Services.jsm",
@@ -24,6 +26,9 @@ var { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 var { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 var { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
+);
+const { ExtensionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/ExtensionXPCShellUtils.jsm"
 );
 
 const PREF_SEARCH_URL = "geoSpecificDefaults.url";
@@ -42,6 +47,7 @@ var XULRuntime = Cc["@mozilla.org/xre/runtime;1"].getService(Ci.nsIXULRuntime);
 
 // Expand the amount of information available in error logs
 Services.prefs.setBoolPref("browser.search.log", true);
+Services.prefs.setBoolPref("browser.region.log", true);
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
@@ -63,6 +69,10 @@ Services.prefs.setBoolPref(
   "toolkit.telemetry.testing.overrideProductsCheck",
   true
 );
+
+// For tests, allow the cache to write sooner than it would do normally so that
+// the tests that need to wait for it can run a bit faster.
+SearchCache.CACHE_INVALIDATION_DELAY = 250;
 
 /**
  * Load engines from test data located in particular folders.
@@ -91,19 +101,16 @@ async function useTestEngines(
     .QueryInterface(Ci.nsIResProtocolHandler);
   resProt.setSubstitution("search-extensions", Services.io.newURI(url));
   if (gModernConfig) {
+    const settings = await RemoteSettings(SearchUtils.SETTINGS_KEY);
     if (config) {
-      return sinon
-        .stub(SearchEngineSelector.prototype, "getEngineConfiguration")
-        .returns(config);
+      return sinon.stub(settings, "get").returns(config);
     }
     let chan = NetUtil.newChannel({
       uri: "resource://search-extensions/engines.json",
       loadUsingSystemPrincipal: true,
     });
     let json = parseJsonFromStream(chan.open());
-    return sinon
-      .stub(SearchEngineSelector.prototype, "getEngineConfiguration")
-      .returns(json.data);
+    return sinon.stub(settings, "get").returns(json.data);
   }
   return null;
 }
@@ -225,7 +232,7 @@ function getDefaultEngineName(isUS = false, privateMode = false) {
     isUS = Services.locale.requestedLocale == "en-US" && isUSTimezone();
   }
 
-  if (isUS && ("US" in searchSettings && settingName in searchSettings.US)) {
+  if (isUS && "US" in searchSettings && settingName in searchSettings.US) {
     defaultEngineName = searchSettings.US[settingName];
   }
   return defaultEngineName;
@@ -324,7 +331,7 @@ function isSubObjectOf(expectedObj, actualObj, skipProp) {
     }
     if (expectedObj[prop] instanceof Object) {
       Assert.equal(
-        actualObj[prop].length,
+        actualObj[prop]?.length,
         expectedObj[prop].length,
         `Should have the correct length for property ${prop}`
       );
@@ -348,14 +355,16 @@ var gDataUrl;
 /**
  * Initializes the HTTP server and ensures that it is terminated when tests end.
  *
+ * @param {string} dir
+ *   The test sub-directory to use for the engines.
  * @returns {HttpServer}
  *   The HttpServer object in case further customization is needed.
  */
-function useHttpServer() {
+function useHttpServer(dir = "data") {
   let httpServer = new HttpServer();
   httpServer.start(-1);
   httpServer.registerDirectory("/", do_get_cwd());
-  gDataUrl = "http://localhost:" + httpServer.identity.primaryPort + "/data/";
+  gDataUrl = `http://localhost:${httpServer.identity.primaryPort}/${dir}/`;
   registerCleanupFunction(async function cleanup_httpServer() {
     await new Promise(resolve => {
       httpServer.stop(resolve);
@@ -368,6 +377,7 @@ async function withGeoServer(
   testFn,
   {
     visibleDefaultEngines = null,
+    searchDefault = null,
     geoLookupData = null,
     preGeolookupPromise = Promise.resolve,
     cohort = null,
@@ -382,7 +392,7 @@ async function withGeoServer(
   srv.registerPathHandler("/lookup_defaults", (metadata, response) => {
     let data = {
       interval: intval200,
-      settings: { searchDefault: kTestEngineName },
+      settings: { searchDefault: searchDefault ?? kTestEngineName },
     };
     if (cohort) {
       data.cohort = cohort;
@@ -444,7 +454,7 @@ async function withGeoServer(
   let geoLookupUrl = geoLookupData
     ? `http://localhost:${srv.identity.primaryPort}/lookup_geoip`
     : 'data:application/json,{"country_code": "FR"}';
-  Services.prefs.setCharPref("geo.provider-country.network.url", geoLookupUrl);
+  Services.prefs.setCharPref("browser.region.network.url", geoLookupUrl);
 
   try {
     await testFn(gRequests);
@@ -454,7 +464,7 @@ async function withGeoServer(
     Services.prefs.clearUserPref(
       SearchUtils.BROWSER_SEARCH_PREF + PREF_SEARCH_URL
     );
-    Services.prefs.clearUserPref("geo.provider-country.network.url");
+    Services.prefs.clearUserPref("browser.region.network.url");
   }
 }
 
@@ -510,7 +520,7 @@ var addTestEngines = async function(aItems) {
       }, "browser-search-engine-modified");
 
       if (item.xmlFileName) {
-        Services.search.addEngine(gDataUrl + item.xmlFileName, null, false);
+        Services.search.addOpenSearchEngine(gDataUrl + item.xmlFileName, null);
       } else {
         Services.search.addEngineWithDetails(item.name, item.details);
       }
@@ -531,14 +541,12 @@ function installTestEngine() {
 }
 
 async function asyncReInit({ awaitRegionFetch = false } = {}) {
-  let promises = [SearchTestUtils.promiseSearchNotification("reinit-complete")];
-  if (awaitRegionFetch) {
-    promises.push(
-      SearchTestUtils.promiseSearchNotification("ensure-known-region-done")
-    );
-  }
+  let promises = [
+    SearchTestUtils.promiseSearchNotification("reinit-complete"),
+    SearchTestUtils.promiseSearchNotification("ensure-known-region-done"),
+  ];
 
-  Services.search.reInit(awaitRegionFetch);
+  Services.search.reInit();
 
   return Promise.all(promises);
 }
@@ -547,7 +555,7 @@ async function asyncReInit({ awaitRegionFetch = false } = {}) {
 const TELEMETRY_RESULT_ENUM = {
   SUCCESS: 0,
   SUCCESS_WITHOUT_DATA: 1,
-  XHRTIMEOUT: 2,
+  TIMEOUT: 2,
   ERROR: 3,
 };
 
@@ -588,6 +596,31 @@ async function setupRemoteSettings() {
       _status: "synced",
     },
   ]);
+}
+
+/**
+ * Helper function that sets up a server and respnds to region
+ * fetch requests.
+ * @param {string} region
+ *   The region that the server will respond with.
+ * @param {Promise|null} waitToRespond
+ *   A promise that the server will await on to delay responding
+ *   to the request.
+ */
+function useCustomGeoServer(region, waitToRespond = Promise.resolve()) {
+  let srv = useHttpServer();
+  srv.registerPathHandler("/fetch_region", async (req, res) => {
+    res.processAsync();
+    await waitToRespond;
+    res.setStatusLine("1.1", 200, "OK");
+    res.write(JSON.stringify({ country_code: region }));
+    res.finish();
+  });
+
+  Services.prefs.setCharPref(
+    "browser.region.network.url",
+    `http://localhost:${srv.identity.primaryPort}/fetch_region`
+  );
 }
 
 /**

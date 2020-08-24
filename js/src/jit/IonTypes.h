@@ -57,61 +57,55 @@ static const uint32_t SNAPSHOT_MAX_NARGS = 127;
 static const SnapshotOffset INVALID_RECOVER_OFFSET = uint32_t(-1);
 static const SnapshotOffset INVALID_SNAPSHOT_OFFSET = uint32_t(-1);
 
-// Different kinds of bailouts. When extending this enum, make sure to check
-// the bits reserved for bailout kinds in Bailouts.h
-enum BailoutKind {
+// Different kinds of bailouts.
+enum class BailoutKind : uint8_t {
   // Normal bailouts, that don't need to be handled specially when restarting
   // in baseline.
 
   // An inevitable bailout (MBail instruction or type barrier that always bails)
-  Bailout_Inevitable,
+  Inevitable,
 
   // Bailing out during a VM call. Many possible causes that are hard
   // to distinguish statically at snapshot construction time.
   // We just lump them together.
-  Bailout_DuringVMCall,
+  DuringVMCall,
 
   // Too many arguments for apply calls.
-  Bailout_TooManyArguments,
+  TooManyArguments,
 
   // Dynamic scope chain lookup produced |undefined|
-  Bailout_DynamicNameNotFound,
-
-  // Input string contains 'arguments' or 'eval'
-  Bailout_StringArgumentsEval,
+  DynamicNameNotFound,
 
   // Bailout on overflow, but don't immediately invalidate.
   // Used for abs, sub and LoadUnboxedScalar (when loading a uint32 that
   // doesn't fit in an int32).
-  Bailout_Overflow,
+  Overflow,
 
   // floor, ceiling and round bail if input is NaN, if output would be -0 or
   // doesn't fit in int32 range
-  Bailout_Round,
+  Round,
 
   // Non-primitive value used as input for ToDouble, ToInt32, ToString, etc.
   // For ToInt32, can also mean that input can't be converted without precision
   // loss (e.g. 5.5).
-  Bailout_NonPrimitiveInput,
+  NonPrimitiveInput,
 
   // For ToInt32, would lose precision when converting (e.g. 5.5).
-  Bailout_PrecisionLoss,
+  PrecisionLoss,
 
   // We tripped a type barrier (object was not in the expected TypeSet)
-  Bailout_TypeBarrierO,
+  TypeBarrierO,
   // We tripped a type barrier (value was not in the expected TypeSet)
-  Bailout_TypeBarrierV,
-  // We tripped a type monitor (wrote an unexpected type in a property)
-  Bailout_MonitorTypes,
+  TypeBarrierV,
 
   // We hit a hole in an array.
-  Bailout_Hole,
+  Hole,
+
+  // The object has dense array elements
+  NoDenseElementsGuard,
 
   // Array access with negative index
-  Bailout_NegativeIndex,
-
-  // Array access with non integer index
-  Bailout_NonIntegerIndex,
+  NegativeIndex,
 
   // Pretty specific case:
   //  - need a type barrier on a property write
@@ -119,147 +113,172 @@ enum BailoutKind {
   //    the value
   //  - we need to guard that we're not given an object of that one other type
   //    also used for the unused GuardClass instruction
-  Bailout_ObjectIdentityOrTypeGuard,
+  ObjectIdentityOrTypeGuard,
+
+  // JSString was not equal to the expected JSAtom
+  SpecificAtomGuard,
+
+  // Symbol was not equal the expected JS::Symbol.
+  SpecificSymbolGuard,
 
   // Unbox expects a given type, bails out if it doesn't get it.
-  Bailout_NonInt32Input,
-  Bailout_NonNumericInput,  // unboxing a double works with int32 too
-  Bailout_NonBooleanInput,
-  Bailout_NonObjectInput,
-  Bailout_NonStringInput,
-  Bailout_NonSymbolInput,
-  Bailout_NonBigIntInput,
-
-  // Atomic operations require shared memory, bail out if the typed array
-  // maps unshared memory.
-  Bailout_NonSharedTypedArrayInput,
+  NonInt32Input,
+  NonNumericInput,  // unboxing a double works with int32 too
+  NonBooleanInput,
+  NonObjectInput,
+  NonStringInput,
+  NonSymbolInput,
+  NonBigIntInput,
 
   // We hit a |debugger;| statement.
-  Bailout_Debugger,
+  Debugger,
 
   // We hit this code for the first time.
-  Bailout_FirstExecution,
+  FirstExecution,
+
+  // Array length did not fit in int32.
+  NonInt32ArrayLength,
 
   // END Normal bailouts
 
   // Bailouts caused by invalid assumptions based on Baseline code.
   // Causes immediate invalidation.
 
-  // Like Bailout_Overflow, but causes immediate invalidation.
-  Bailout_OverflowInvalidate,
+  // Like BailoutKind::Overflow, but causes immediate invalidation.
+  OverflowInvalidate,
 
   // Used for integer division, multiplication and modulo.
   // If there's a remainder, bails to return a double.
   // Can also signal overflow or result of -0.
   // Can also signal division by 0 (returns inf, a double).
-  Bailout_DoubleOutput,
+  DoubleOutput,
 
   // END Invalid assumptions bailouts
 
   // A bailout at the very start of a function indicates that there may be
   // a type mismatch in the arguments that necessitates a reflow.
-  Bailout_ArgumentCheck,
+  ArgumentCheck,
 
   // A bailout triggered by a bounds-check failure.
-  Bailout_BoundsCheck,
+  BoundsCheck,
 
   // A shape guard based on TI information failed.
   // (We saw an object whose shape does not match that / any of those observed
   // by the baseline IC.)
-  Bailout_ShapeGuard,
+  ShapeGuard,
+
+  // Bailout triggered by MGuardProto or MGuardNullProto.
+  ProtoGuard,
+
+  // Bailout triggered by MGuardValue.
+  ValueGuard,
+
+  // Bailout triggered by MGuardNullOrUndefined.
+  NullOrUndefinedGuard,
 
   // When we're trying to use an uninitialized lexical.
-  Bailout_UninitializedLexical,
+  UninitializedLexical,
 
   // A bailout to baseline from Ion on exception to handle Debugger hooks.
-  Bailout_IonExceptionDebugMode
+  IonExceptionDebugMode,
+
+  Limit
 };
 
 inline const char* BailoutKindString(BailoutKind kind) {
   switch (kind) {
     // Normal bailouts.
-    case Bailout_Inevitable:
-      return "Bailout_Inevitable";
-    case Bailout_DuringVMCall:
-      return "Bailout_DuringVMCall";
-    case Bailout_TooManyArguments:
-      return "Bailout_TooManyArguments";
-    case Bailout_DynamicNameNotFound:
-      return "Bailout_DynamicNameNotFound";
-    case Bailout_StringArgumentsEval:
-      return "Bailout_StringArgumentsEval";
-    case Bailout_Overflow:
-      return "Bailout_Overflow";
-    case Bailout_Round:
-      return "Bailout_Round";
-    case Bailout_NonPrimitiveInput:
-      return "Bailout_NonPrimitiveInput";
-    case Bailout_PrecisionLoss:
-      return "Bailout_PrecisionLoss";
-    case Bailout_TypeBarrierO:
-      return "Bailout_TypeBarrierO";
-    case Bailout_TypeBarrierV:
-      return "Bailout_TypeBarrierV";
-    case Bailout_MonitorTypes:
-      return "Bailout_MonitorTypes";
-    case Bailout_Hole:
-      return "Bailout_Hole";
-    case Bailout_NegativeIndex:
-      return "Bailout_NegativeIndex";
-    case Bailout_NonIntegerIndex:
-      return "Bailout_NonIntegerIndex";
-    case Bailout_ObjectIdentityOrTypeGuard:
-      return "Bailout_ObjectIdentityOrTypeGuard";
-    case Bailout_NonInt32Input:
-      return "Bailout_NonInt32Input";
-    case Bailout_NonNumericInput:
-      return "Bailout_NonNumericInput";
-    case Bailout_NonBooleanInput:
-      return "Bailout_NonBooleanInput";
-    case Bailout_NonObjectInput:
-      return "Bailout_NonObjectInput";
-    case Bailout_NonStringInput:
-      return "Bailout_NonStringInput";
-    case Bailout_NonSymbolInput:
-      return "Bailout_NonSymbolInput";
-    case Bailout_NonBigIntInput:
-      return "Bailout_NonBigIntInput";
-    case Bailout_NonSharedTypedArrayInput:
-      return "Bailout_NonSharedTypedArrayInput";
-    case Bailout_Debugger:
-      return "Bailout_Debugger";
-    case Bailout_FirstExecution:
-      return "Bailout_FirstExecution";
+    case BailoutKind::Inevitable:
+      return "BailoutKind::Inevitable";
+    case BailoutKind::DuringVMCall:
+      return "BailoutKind::DuringVMCall";
+    case BailoutKind::TooManyArguments:
+      return "BailoutKind::TooManyArguments";
+    case BailoutKind::DynamicNameNotFound:
+      return "BailoutKind::DynamicNameNotFound";
+    case BailoutKind::Overflow:
+      return "BailoutKind::Overflow";
+    case BailoutKind::Round:
+      return "BailoutKind::Round";
+    case BailoutKind::NonPrimitiveInput:
+      return "BailoutKind::NonPrimitiveInput";
+    case BailoutKind::PrecisionLoss:
+      return "BailoutKind::PrecisionLoss";
+    case BailoutKind::TypeBarrierO:
+      return "BailoutKind::TypeBarrierO";
+    case BailoutKind::TypeBarrierV:
+      return "BailoutKind::TypeBarrierV";
+    case BailoutKind::Hole:
+      return "BailoutKind::Hole";
+    case BailoutKind::NoDenseElementsGuard:
+      return "BailoutKind::NoDenseElementsGuard";
+    case BailoutKind::NegativeIndex:
+      return "BailoutKind::NegativeIndex";
+    case BailoutKind::ObjectIdentityOrTypeGuard:
+      return "BailoutKind::ObjectIdentityOrTypeGuard";
+    case BailoutKind::SpecificAtomGuard:
+      return "BailoutKind::SpecifcAtomGuard";
+    case BailoutKind::SpecificSymbolGuard:
+      return "BailoutKind::SpecifcSymbolGuard";
+    case BailoutKind::NonInt32Input:
+      return "BailoutKind::NonInt32Input";
+    case BailoutKind::NonNumericInput:
+      return "BailoutKind::NonNumericInput";
+    case BailoutKind::NonBooleanInput:
+      return "BailoutKind::NonBooleanInput";
+    case BailoutKind::NonObjectInput:
+      return "BailoutKind::NonObjectInput";
+    case BailoutKind::NonStringInput:
+      return "BailoutKind::NonStringInput";
+    case BailoutKind::NonSymbolInput:
+      return "BailoutKind::NonSymbolInput";
+    case BailoutKind::NonBigIntInput:
+      return "BailoutKind::NonBigIntInput";
+    case BailoutKind::Debugger:
+      return "BailoutKind::Debugger";
+    case BailoutKind::FirstExecution:
+      return "BailoutKind::FirstExecution";
+    case BailoutKind::NonInt32ArrayLength:
+      return "BailoutKind::NonInt32ArrayLength";
 
     // Bailouts caused by invalid assumptions.
-    case Bailout_OverflowInvalidate:
-      return "Bailout_OverflowInvalidate";
-    case Bailout_DoubleOutput:
-      return "Bailout_DoubleOutput";
+    case BailoutKind::OverflowInvalidate:
+      return "BailoutKind::OverflowInvalidate";
+    case BailoutKind::DoubleOutput:
+      return "BailoutKind::DoubleOutput";
 
     // Other bailouts.
-    case Bailout_ArgumentCheck:
-      return "Bailout_ArgumentCheck";
-    case Bailout_BoundsCheck:
-      return "Bailout_BoundsCheck";
-    case Bailout_ShapeGuard:
-      return "Bailout_ShapeGuard";
-    case Bailout_UninitializedLexical:
-      return "Bailout_UninitializedLexical";
-    case Bailout_IonExceptionDebugMode:
-      return "Bailout_IonExceptionDebugMode";
-    default:
-      MOZ_CRASH("Invalid BailoutKind");
+    case BailoutKind::ArgumentCheck:
+      return "BailoutKind::ArgumentCheck";
+    case BailoutKind::BoundsCheck:
+      return "BailoutKind::BoundsCheck";
+    case BailoutKind::ShapeGuard:
+      return "BailoutKind::ShapeGuard";
+    case BailoutKind::ProtoGuard:
+      return "BailoutKind::ProtoGuard";
+    case BailoutKind::ValueGuard:
+      return "BailoutKind::ValueGuard";
+    case BailoutKind::NullOrUndefinedGuard:
+      return "BailoutKind::NullOrUndefinedGuard";
+    case BailoutKind::UninitializedLexical:
+      return "BailoutKind::UninitializedLexical";
+    case BailoutKind::IonExceptionDebugMode:
+      return "BailoutKind::IonExceptionDebugMode";
+
+    case BailoutKind::Limit:
+      break;
   }
+
+  MOZ_CRASH("Invalid BailoutKind");
 }
 
 static const uint32_t ELEMENT_TYPE_BITS = 5;
 static const uint32_t ELEMENT_TYPE_SHIFT = 0;
 static const uint32_t ELEMENT_TYPE_MASK = (1 << ELEMENT_TYPE_BITS) - 1;
-static const uint32_t VECTOR_SCALE_BITS = 3;
-static const uint32_t VECTOR_SCALE_SHIFT =
+static const uint32_t VECTOR_TYPE_BITS = 1;
+static const uint32_t VECTOR_TYPE_SHIFT =
     ELEMENT_TYPE_BITS + ELEMENT_TYPE_SHIFT;
-static const uint32_t VECTOR_SCALE_MASK = (1 << VECTOR_SCALE_BITS) - 1;
+static const uint32_t VECTOR_TYPE_MASK = (1 << VECTOR_TYPE_BITS) - 1;
 
 // The integer SIMD types have a lot of operations that do the exact same thing
 // for signed and unsigned integer types. Sometimes it is simpler to treat
@@ -276,12 +295,22 @@ enum class SimdSign {
 
 class SimdConstant {
  public:
-  enum Type { Int8x16, Int16x8, Int32x4, Float32x4, Undefined = -1 };
+  enum Type {
+    Int8x16,
+    Int16x8,
+    Int32x4,
+    Int64x2,
+    Float32x4,
+    Float64x2,
+    Undefined = -1
+  };
 
   typedef int8_t I8x16[16];
   typedef int16_t I16x8[8];
   typedef int32_t I32x4[4];
+  typedef int64_t I64x2[2];
   typedef float F32x4[4];
+  typedef double F64x2[2];
 
  private:
   Type type_;
@@ -289,7 +318,9 @@ class SimdConstant {
     I8x16 i8x16;
     I16x8 i16x8;
     I32x4 i32x4;
+    I64x2 i64x2;
     F32x4 f32x4;
+    F64x2 f64x2;
   } u;
 
   bool defined() const { return type_ != Undefined; }
@@ -334,6 +365,18 @@ class SimdConstant {
     std::fill_n(cst.u.i32x4, 4, v);
     return cst;
   }
+  static SimdConstant CreateX2(const int64_t* array) {
+    SimdConstant cst;
+    cst.type_ = Int64x2;
+    memcpy(cst.u.i64x2, array, sizeof(cst.u));
+    return cst;
+  }
+  static SimdConstant SplatX2(int64_t v) {
+    SimdConstant cst;
+    cst.type_ = Int64x2;
+    std::fill_n(cst.u.i64x2, 2, v);
+    return cst;
+  }
   static SimdConstant CreateX4(const float* array) {
     SimdConstant cst;
     cst.type_ = Float32x4;
@@ -344,6 +387,18 @@ class SimdConstant {
     SimdConstant cst;
     cst.type_ = Float32x4;
     std::fill_n(cst.u.f32x4, 4, v);
+    return cst;
+  }
+  static SimdConstant CreateX2(const double* array) {
+    SimdConstant cst;
+    cst.type_ = Float64x2;
+    memcpy(cst.u.f64x2, array, sizeof(cst.u));
+    return cst;
+  }
+  static SimdConstant SplatX2(double v) {
+    SimdConstant cst;
+    cst.type_ = Float64x2;
+    std::fill_n(cst.u.f64x2, 2, v);
     return cst;
   }
 
@@ -357,8 +412,14 @@ class SimdConstant {
   static SimdConstant CreateSimd128(const int32_t* array) {
     return CreateX4(array);
   }
+  static SimdConstant CreateSimd128(const int64_t* array) {
+    return CreateX2(array);
+  }
   static SimdConstant CreateSimd128(const float* array) {
     return CreateX4(array);
+  }
+  static SimdConstant CreateSimd128(const double* array) {
+    return CreateX2(array);
   }
 
   Type type() const {
@@ -384,9 +445,19 @@ class SimdConstant {
     return u.i32x4;
   }
 
+  const I64x2& asInt64x2() const {
+    MOZ_ASSERT(defined() && type_ == Int64x2);
+    return u.i64x2;
+  }
+
   const F32x4& asFloat32x4() const {
     MOZ_ASSERT(defined() && type_ == Float32x4);
     return u.f32x4;
+  }
+
+  const F64x2& asFloat64x2() const {
+    MOZ_ASSERT(defined() && type_ == Float64x2);
+    return u.f64x2;
   }
 
   bool operator==(const SimdConstant& rhs) const {
@@ -394,10 +465,14 @@ class SimdConstant {
     if (type() != rhs.type()) {
       return false;
     }
-    // Takes negative zero into accuont, as it's a bit comparison.
+    // Takes negative zero into account, as it's a bit comparison.
     return memcmp(&u, &rhs.u, sizeof(u)) == 0;
   }
   bool operator!=(const SimdConstant& rhs) const { return !operator==(rhs); }
+
+  bool isIntegerZero() const {
+    return type_ <= Int64x2 && u.i64x2[0] == 0 && u.i64x2[1] == 0;
+  }
 
   // SimdConstant is a HashPolicy
   using Lookup = SimdConstant;
@@ -438,6 +513,7 @@ enum class MIRType : uint8_t {
   String,
   Symbol,
   BigInt,
+  Simd128,
   // Types above are primitive (including undefined and null).
   Object,
   MagicOptimizedArguments,    // JS_OPTIMIZED_ARGUMENTS magic value.
@@ -456,21 +532,8 @@ enum class MIRType : uint8_t {
   StackResults,  // Wasm multi-value stack result area, which may contain refs
   Shape,         // A Shape pointer.
   ObjectGroup,   // An ObjectGroup pointer.
-  Last = ObjectGroup,
-  // Representing both SIMD.IntBxN and SIMD.UintBxN.
-  Int8x16 = Int32 | (4 << VECTOR_SCALE_SHIFT),
-  Int16x8 = Int32 | (3 << VECTOR_SCALE_SHIFT),
-  Int32x4 = Int32 | (2 << VECTOR_SCALE_SHIFT),
-  Float32x4 = Float32 | (2 << VECTOR_SCALE_SHIFT),
-  Bool8x16 = Boolean | (4 << VECTOR_SCALE_SHIFT),
-  Bool16x8 = Boolean | (3 << VECTOR_SCALE_SHIFT),
-  Bool32x4 = Boolean | (2 << VECTOR_SCALE_SHIFT),
-  Doublex2 = Double | (1 << VECTOR_SCALE_SHIFT)
+  Last = ObjectGroup
 };
-
-static inline bool IsSimdType(MIRType type) {
-  return ((uint8_t(type) >> VECTOR_SCALE_SHIFT) & VECTOR_SCALE_MASK) != 0;
-}
 
 static inline MIRType MIRTypeFromValueType(JSValueType type) {
   // This function does not deal with magic types. Magic constants should be
@@ -546,6 +609,8 @@ static inline size_t MIRTypeToSize(MIRType type) {
       return 4;
     case MIRType::Double:
       return 8;
+    case MIRType::Simd128:
+      return 16;
     case MIRType::Pointer:
     case MIRType::RefOrNull:
       return sizeof(uintptr_t);
@@ -608,22 +673,8 @@ static inline const char* StringFromMIRType(MIRType type) {
       return "Shape";
     case MIRType::ObjectGroup:
       return "ObjectGroup";
-    case MIRType::Int32x4:
-      return "Int32x4";
-    case MIRType::Int16x8:
-      return "Int16x8";
-    case MIRType::Int8x16:
-      return "Int8x16";
-    case MIRType::Float32x4:
-      return "Float32x4";
-    case MIRType::Bool32x4:
-      return "Bool32x4";
-    case MIRType::Bool16x8:
-      return "Bool16x8";
-    case MIRType::Bool8x16:
-      return "Bool8x16";
-    case MIRType::Doublex2:
-      return "Doublex2";
+    case MIRType::Simd128:
+      return "Simd128";
   }
   MOZ_CRASH("Unknown MIRType.");
 }
@@ -684,10 +735,19 @@ static inline MIRType ScalarTypeToMIRType(Scalar::Type type) {
     case Scalar::BigInt64:
     case Scalar::BigUint64:
       MOZ_CRASH("NYI");
+    case Scalar::Simd128:
+      return MIRType::Simd128;
     case Scalar::MaxTypedArrayViewType:
       break;
   }
   MOZ_CRASH("unexpected kind");
+}
+
+static constexpr bool NeedsPostBarrier(MIRType type) {
+  MOZ_ASSERT(type != MIRType::Value);
+  MOZ_ASSERT(type != MIRType::ObjectOrNull);
+  return type == MIRType::Object || type == MIRType::String ||
+         type == MIRType::BigInt;
 }
 
 #ifdef DEBUG

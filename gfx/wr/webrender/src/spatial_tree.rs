@@ -59,6 +59,11 @@ impl SpatialNodeIndex {
 pub const ROOT_SPATIAL_NODE_INDEX: SpatialNodeIndex = SpatialNodeIndex(0);
 const TOPMOST_SCROLL_NODE_INDEX: SpatialNodeIndex = SpatialNodeIndex(1);
 
+// In some cases, the conversion from CSS pixels to device pixels can result in small
+// rounding errors when calculating the scrollable distance of a scroll frame. Apply
+// a small epsilon so that we don't detect these frames as "real" scroll frames.
+const MIN_SCROLLABLE_AMOUNT: f32 = 0.01;
+
 impl SpatialNodeIndex {
     pub fn new(index: usize) -> Self {
         debug_assert!(index < ::std::u32::MAX as usize);
@@ -265,7 +270,6 @@ impl SpatialTree {
         child_index: SpatialNodeIndex,
         parent_index: SpatialNodeIndex,
     ) -> CoordinateSpaceMapping<LayoutPixel, LayoutPixel> {
-        assert!(child_index.0 >= parent_index.0);
         if child_index == parent_index {
             return CoordinateSpaceMapping::Local;
         }
@@ -278,6 +282,26 @@ impl SpatialTree {
                 .inverse()
                 .accumulate(&child.content_transform);
             return CoordinateSpaceMapping::ScaleOffset(scale_offset);
+        }
+
+        if child_index.0 < parent_index.0 {
+            warn!("Unexpected transform queried from {:?} to {:?}, please call the graphics team!", child_index, parent_index);
+            let child_cs = &self.coord_systems[child.coordinate_system_id.0 as usize];
+            let child_transform = child.content_transform
+                .to_transform::<LayoutPixel, LayoutPixel>()
+                .post_transform(&child_cs.world_transform);
+            let parent_cs = &self.coord_systems[parent.coordinate_system_id.0 as usize];
+            let parent_transform = parent.content_transform
+                .to_transform()
+                .post_transform(&parent_cs.world_transform);
+
+            let result = parent_transform
+                .inverse()
+                .unwrap_or_default()
+                .post_transform(&child_transform)
+                .with_source::<LayoutPixel>()
+                .with_destination::<LayoutPixel>();
+            return CoordinateSpaceMapping::Transform(result);
         }
 
         let mut coordinate_system_id = child.coordinate_system_id;
@@ -456,6 +480,7 @@ impl SpatialTree {
             return;
         }
 
+        profile_scope!("update_tree");
         self.coord_systems.clear();
         self.coord_systems.push(CoordinateSystem::root());
 
@@ -494,6 +519,7 @@ impl SpatialTree {
     }
 
     pub fn build_transform_palette(&self) -> TransformPalette {
+        profile_scope!("build_transform_palette");
         let mut palette = TransformPalette::new(self.spatial_nodes.len());
         //Note: getting the world transform of a node is O(1) operation
         for i in 0 .. self.spatial_nodes.len() {
@@ -612,15 +638,48 @@ impl SpatialTree {
         while node_index != ROOT_SPATIAL_NODE_INDEX {
             let node = &self.spatial_nodes[node_index.0 as usize];
             match node.node_type {
-                SpatialNodeType::ReferenceFrame(..) |
-                SpatialNodeType::StickyFrame(..) => {
-                    // TODO(gw): In future, we may need to consider sticky frames.
+                SpatialNodeType::ReferenceFrame(ref info) => {
+                    match info.kind {
+                        ReferenceFrameKind::Zoom => {
+                            // We can handle scroll nodes that pass through a zoom node
+                        }
+                        ReferenceFrameKind::Transform |
+                        ReferenceFrameKind::Perspective { .. } => {
+                            // When a reference frame is encountered, forget any scroll roots
+                            // we have encountered, as they may end up with a non-axis-aligned transform.
+                            scroll_root = ROOT_SPATIAL_NODE_INDEX;
+                        }
+                    }
                 }
+                SpatialNodeType::StickyFrame(..) => {}
                 SpatialNodeType::ScrollFrame(ref info) => {
-                    // If we found an explicit scroll root, store that
-                    // and keep looking up the tree.
-                    if let ScrollFrameKind::Explicit = info.frame_kind {
-                        scroll_root = node_index;
+                    match info.frame_kind {
+                        ScrollFrameKind::PipelineRoot => {
+                            // Once we encounter a pipeline root, there is no need to look further
+                            break;
+                        }
+                        ScrollFrameKind::Explicit => {
+                            // If the scroll root has no scrollable area, we don't want to
+                            // consider it. This helps pages that have a nested scroll root
+                            // within a redundant scroll root to avoid selecting the wrong
+                            // reference spatial node for a picture cache.
+                            if info.scrollable_size.width > MIN_SCROLLABLE_AMOUNT ||
+                               info.scrollable_size.height > MIN_SCROLLABLE_AMOUNT {
+                                // Since we are skipping redundant scroll roots, we may end up
+                                // selecting inner scroll roots that are very small. There is
+                                // no performance benefit to creating a slice for these roots,
+                                // as they are cheap to rasterize. The size comparison is in
+                                // local-space, but makes for a reasonable estimate. The value
+                                // is arbitrary, but is generally small enough to ignore things
+                                // like scroll roots around text input elements.
+                                if info.viewport_rect.size.width > 128.0 &&
+                                   info.viewport_rect.size.height > 128.0 {
+                                    // If we've found a root that is scrollable, and a reasonable
+                                    // size, select that as the current root for this node
+                                    scroll_root = node_index;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -685,8 +744,14 @@ impl SpatialTree {
     #[allow(dead_code)]
     pub fn print(&self) {
         if !self.spatial_nodes.is_empty() {
-            let mut pt = PrintTree::new("spatial tree");
-            self.print_with(&mut pt);
+            let mut buf = Vec::<u8>::new();
+            {
+                let mut pt = PrintTree::new_with_sink("spatial tree", &mut buf);
+                self.print_with(&mut pt);
+            }
+            // If running in Gecko, set RUST_LOG=webrender::spatial_tree=debug
+            // to get this logging to be emitted to stderr/logcat.
+            debug!("{}", std::str::from_utf8(&buf).unwrap_or("(Tree printer emitted non-utf8)"));
         }
     }
 }

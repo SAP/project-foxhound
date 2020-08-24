@@ -15,10 +15,10 @@
 #include "VorbisUtils.h"
 #include "mozilla/Base64.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/SystemGroup.h"
 #include "mozilla/TaskCategory.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/Telemetry.h"
@@ -178,7 +178,7 @@ bool IsDefaultPlaybackDeviceMono() {
 }
 
 bool IsVideoContentType(const nsCString& aContentType) {
-  NS_NAMED_LITERAL_CSTRING(video, "video");
+  constexpr auto video = "video"_ns;
   if (FindInReadable(video, aContentType)) {
     return true;
   }
@@ -216,9 +216,6 @@ already_AddRefed<SharedThreadPool> GetMediaThreadPool(MediaThreadType aType) {
     case MediaThreadType::PLATFORM_DECODER:
       name = "MediaPDecoder";
       break;
-    case MediaThreadType::MTG_CONTROL:
-      name = "MTGControl";
-      break;
     case MediaThreadType::WEBRTC_DECODER:
       name = "WebRTCPD";
       break;
@@ -231,8 +228,8 @@ already_AddRefed<SharedThreadPool> GetMediaThreadPool(MediaThreadType aType) {
       break;
     default:
       MOZ_FALLTHROUGH_ASSERT("Unexpected MediaThreadType");
-    case MediaThreadType::PLAYBACK:
-      name = "MediaPlayback";
+    case MediaThreadType::CONTROLLER:
+      name = "MediaController";
       break;
   }
 
@@ -572,7 +569,7 @@ void LogToBrowserConsole(const nsAString& aMsg) {
     nsString msg(aMsg);
     nsCOMPtr<nsIRunnable> task = NS_NewRunnableFunction(
         "LogToBrowserConsole", [msg]() { LogToBrowserConsole(msg); });
-    SystemGroup::Dispatch(TaskCategory::Other, task.forget());
+    SchedulerGroup::Dispatch(TaskCategory::Other, task.forget());
     return;
   }
   nsCOMPtr<nsIConsoleService> console(

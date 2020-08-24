@@ -371,7 +371,7 @@ void nsHttpConnectionInfo::SerializeHttpConnectionInfo(
 
   nsTArray<ProxyInfoCloneArgs> proxyInfoArray;
   nsProxyInfo::SerializeProxyInfo(aInfo->ProxyInfo(), proxyInfoArray);
-  aArgs.proxyInfo() = proxyInfoArray;
+  aArgs.proxyInfo() = std::move(proxyInfoArray);
 }
 
 // This function needs to be synced with nsHttpConnectionInfo::Clone.
@@ -446,8 +446,8 @@ nsresult nsHttpConnectionInfo::CreateWildCard(nsHttpConnectionInfo** outParam) {
   }
 
   RefPtr<nsHttpConnectionInfo> clone;
-  clone = new nsHttpConnectionInfo(NS_LITERAL_CSTRING("*"), 0, mNPNToken,
-                                   mUsername, mTopWindowOrigin, mProxyInfo,
+  clone = new nsHttpConnectionInfo("*"_ns, 0, mNPNToken, mUsername,
+                                   mTopWindowOrigin, mProxyInfo,
                                    mOriginAttributes, true, mIsHttp3);
   // Make sure the anonymous and private flags are transferred!
   clone->SetAnonymous(GetAnonymous());

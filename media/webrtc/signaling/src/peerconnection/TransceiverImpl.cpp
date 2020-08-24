@@ -12,46 +12,60 @@
 #include "MediaPipeline.h"
 #include "MediaPipelineFilter.h"
 #include "signaling/src/jsep/JsepTrack.h"
+#include "signaling/src/sdp/SdpHelper.h"
 #include "MediaTrackGraphImpl.h"
 #include "logging.h"
 #include "MediaEngine.h"
 #include "nsIPrincipal.h"
 #include "MediaSegment.h"
 #include "RemoteTrackSource.h"
+#include "RtpRtcpConfig.h"
 #include "MediaConduitInterface.h"
 #include "MediaTransportHandler.h"
 #include "mozilla/dom/RTCRtpReceiverBinding.h"
 #include "mozilla/dom/RTCRtpSenderBinding.h"
 #include "mozilla/dom/RTCRtpTransceiverBinding.h"
 #include "mozilla/dom/TransceiverImplBinding.h"
-#include "mozilla/Preferences.h"
+#include "RTCRtpReceiver.h"
+#include "RTCDTMFSender.h"
+#include "WebrtcGmpVideoCodec.h"
 
 namespace mozilla {
+
+using namespace dom;
 
 MOZ_MTLOG_MODULE("transceiverimpl")
 
 using LocalDirection = MediaSessionConduitLocalDirection;
 
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(TransceiverImpl, mWindow, mSendTrack,
+                                      mReceiver, mDtmf)
+NS_IMPL_CYCLE_COLLECTING_ADDREF(TransceiverImpl)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(TransceiverImpl)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TransceiverImpl)
+  NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+NS_INTERFACE_MAP_END
+
 TransceiverImpl::TransceiverImpl(
+    nsPIDOMWindowInner* aWindow, bool aPrivacyNeeded,
     const std::string& aPCHandle, MediaTransportHandler* aTransportHandler,
     JsepTransceiver* aJsepTransceiver, nsISerialEventTarget* aMainThread,
-    nsISerialEventTarget* aStsThread, dom::MediaStreamTrack* aReceiveTrack,
-    dom::MediaStreamTrack* aSendTrack, WebRtcCallWrapper* aCallWrapper,
-    const PrincipalHandle& aPrincipalHandle)
-    : mPCHandle(aPCHandle),
+    nsISerialEventTarget* aStsThread, dom::MediaStreamTrack* aSendTrack,
+    WebRtcCallWrapper* aCallWrapper)
+    : mWindow(aWindow),
+      mPCHandle(aPCHandle),
       mTransportHandler(aTransportHandler),
       mJsepTransceiver(aJsepTransceiver),
-      mHaveStartedReceiving(false),
       mHaveSetupTransport(false),
       mMainThread(aMainThread),
       mStsThread(aStsThread),
-      mReceiveTrack(aReceiveTrack),
       mSendTrack(aSendTrack),
       mCallWrapper(aCallWrapper) {
   if (IsVideo()) {
-    InitVideo(aPrincipalHandle);
+    InitVideo();
   } else {
-    InitAudio(aPrincipalHandle);
+    InitAudio();
   }
 
   if (!IsValid()) {
@@ -60,11 +74,13 @@ TransceiverImpl::TransceiverImpl(
 
   mConduit->SetPCHandle(mPCHandle);
 
-  // Until Bug 1232234 is fixed, we'll get extra RTCP BYES during renegotiation,
-  // so we'll disable muting on RTCP BYE and timeout for now.
-  if (Preferences::GetBool("media.peerconnection.mute_on_bye_or_timeout",
-                           false)) {
-    mConduit->SetRtcpEventObserver(this);
+  mReceiver =
+      new RTCRtpReceiver(aWindow, aPrivacyNeeded, aPCHandle, aTransportHandler,
+                         aJsepTransceiver, aMainThread, aStsThread, mConduit);
+
+  if (!IsVideo()) {
+    mDtmf = new RTCDTMFSender(
+        aWindow, this, static_cast<AudioSessionConduit*>(mConduit.get()));
   }
 
   mTransmitPipeline =
@@ -76,9 +92,7 @@ TransceiverImpl::TransceiverImpl(
 
 TransceiverImpl::~TransceiverImpl() = default;
 
-NS_IMPL_ISUPPORTS0(TransceiverImpl)
-
-void TransceiverImpl::InitAudio(const PrincipalHandle& aPrincipalHandle) {
+void TransceiverImpl::InitAudio() {
   mConduit = AudioSessionConduit::Create(mCallWrapper, mStsThread);
 
   if (!mConduit) {
@@ -86,16 +100,10 @@ void TransceiverImpl::InitAudio(const PrincipalHandle& aPrincipalHandle) {
                                   << ": Failed to create AudioSessionConduit");
     // TODO(bug 1422897): We need a way to record this when it happens in the
     // wild.
-    return;
   }
-
-  mReceivePipeline = new MediaPipelineReceiveAudio(
-      mPCHandle, mTransportHandler, mMainThread.get(), mStsThread.get(),
-      static_cast<AudioSessionConduit*>(mConduit.get()), mReceiveTrack,
-      aPrincipalHandle);
 }
 
-void TransceiverImpl::InitVideo(const PrincipalHandle& aPrincipalHandle) {
+void TransceiverImpl::InitVideo() {
   mConduit = VideoSessionConduit::Create(mCallWrapper, mStsThread);
 
   if (!mConduit) {
@@ -103,13 +111,7 @@ void TransceiverImpl::InitVideo(const PrincipalHandle& aPrincipalHandle) {
                                   << ": Failed to create VideoSessionConduit");
     // TODO(bug 1422897): We need a way to record this when it happens in the
     // wild.
-    return;
   }
-
-  mReceivePipeline = new MediaPipelineReceiveVideo(
-      mPCHandle, mTransportHandler, mMainThread.get(), mStsThread.get(),
-      static_cast<VideoSessionConduit*>(mConduit.get()), mReceiveTrack,
-      aPrincipalHandle);
 }
 
 nsresult TransceiverImpl::UpdateSinkIdentity(
@@ -125,11 +127,8 @@ nsresult TransceiverImpl::UpdateSinkIdentity(
 
 void TransceiverImpl::Shutdown_m() {
   Stop();
-  mReceivePipeline = nullptr;
   mTransmitPipeline = nullptr;
   mTransportHandler = nullptr;
-  mReceiveTrack = nullptr;
-  mSendTrack = nullptr;
 }
 
 nsresult TransceiverImpl::UpdateSendTrack(dom::MediaStreamTrack* aSendTrack) {
@@ -148,37 +147,13 @@ nsresult TransceiverImpl::UpdateTransport() {
     return NS_OK;
   }
 
+  mReceiver->UpdateTransport();
+
   if (!mHaveSetupTransport) {
-    mReceivePipeline->SetLevel(mJsepTransceiver->GetLevel());
     mTransmitPipeline->SetLevel(mJsepTransceiver->GetLevel());
     mHaveSetupTransport = true;
   }
 
-  ASSERT_ON_THREAD(mMainThread);
-  UniquePtr<MediaPipelineFilter> filter;
-
-  if (mJsepTransceiver->HasBundleLevel() &&
-      mJsepTransceiver->mRecvTrack.GetNegotiatedDetails()) {
-    filter = MakeUnique<MediaPipelineFilter>();
-
-    // Add remote SSRCs so we can distinguish which RTP packets actually
-    // belong to this pipeline (also RTCP sender reports).
-    for (unsigned int ssrc : mJsepTransceiver->mRecvTrack.GetSsrcs()) {
-      filter->AddRemoteSSRC(ssrc);
-    }
-
-    // TODO(bug 1105005): Tell the filter about the mid for this track
-
-    // Add unique payload types as a last-ditch fallback
-    auto uniquePts = mJsepTransceiver->mRecvTrack.GetNegotiatedDetails()
-                         ->GetUniquePayloadTypes();
-    for (unsigned char& uniquePt : uniquePts) {
-      filter->AddUniquePT(uniquePt);
-    }
-  }
-
-  mReceivePipeline->UpdateTransport_m(mJsepTransceiver->mTransport.mTransportId,
-                                      std::move(filter));
   mTransmitPipeline->UpdateTransport_m(
       mJsepTransceiver->mTransport.mTransportId, nullptr);
   return NS_OK;
@@ -195,7 +170,8 @@ nsresult TransceiverImpl::UpdateConduit() {
     mMid.clear();
   }
 
-  mReceivePipeline->Stop();
+  mReceiver->Stop();
+
   mTransmitPipeline->Stop();
 
   // NOTE(pkerr) - the Call API requires the both local_ssrc and remote_ssrc be
@@ -209,7 +185,8 @@ nsresult TransceiverImpl::UpdateConduit() {
     return NS_ERROR_FAILURE;
   }
 
-  if (!mConduit->SetLocalSSRCs(mJsepTransceiver->mSendTrack.GetSsrcs())) {
+  if (!mConduit->SetLocalSSRCs(mJsepTransceiver->mSendTrack.GetSsrcs(),
+                               mJsepTransceiver->mSendTrack.GetRtxSsrcs())) {
     MOZ_MTLOG(ML_ERROR, mPCHandle << "[" << mMid << "]: " << __FUNCTION__
                                   << " SetLocalSSRCs failed");
     return NS_ERROR_FAILURE;
@@ -220,6 +197,9 @@ nsresult TransceiverImpl::UpdateConduit() {
 
   nsresult rv;
 
+  mReceiver->UpdateConduit();
+
+  // TODO(bug 1616937): Move this stuff into RTCRtpSender.
   if (IsVideo()) {
     rv = UpdateVideoConduit();
   } else {
@@ -231,9 +211,7 @@ nsresult TransceiverImpl::UpdateConduit() {
   }
 
   if (mJsepTransceiver->mRecvTrack.GetActive()) {
-    MOZ_ASSERT(mReceiveTrack);
-    mReceivePipeline->Start();
-    mHaveStartedReceiving = true;
+    mReceiver->Start();
   }
 
   if (mJsepTransceiver->mSendTrack.GetActive()) {
@@ -246,17 +224,6 @@ nsresult TransceiverImpl::UpdateConduit() {
   }
 
   return NS_OK;
-}
-
-void TransceiverImpl::SetReceiveTrackMuted(bool aMuted) {
-  if (!mReceiveTrack) {
-    return;
-  }
-
-  MOZ_MTLOG(ML_DEBUG, mPCHandle << "[" << mMid << "]: " << __FUNCTION__
-                                << " aMuted=" << aMuted);
-  // This sets the muted state for mReceiveTrack and all its clones.
-  static_cast<RemoteTrackSource&>(mReceiveTrack->GetSource()).SetMuted(aMuted);
 }
 
 void TransceiverImpl::ResetSync() {
@@ -455,7 +422,7 @@ void TransceiverImpl::SyncWithJS(dom::RTCRtpTransceiver& aJsTransceiver,
   // RTP does not unmute the receive track.
   if (!mJsepTransceiver->mRecvTrack.GetRemoteSetSendBit() ||
       !mJsepTransceiver->mRecvTrack.GetActive()) {
-    mReceivePipeline->Stop();
+    mReceiver->Stop();
   }
 
   // mid from JSEP
@@ -473,8 +440,8 @@ void TransceiverImpl::SyncWithJS(dom::RTCRtpTransceiver& aJsTransceiver,
   // currentDirection from JSEP, but not if "this transceiver has never been
   // represented in an offer/answer exchange"
   if (mJsepTransceiver->HasLevel() && mJsepTransceiver->IsNegotiated()) {
-    if (mJsepTransceiver->mRecvTrack.GetActive()) {
-      if (mJsepTransceiver->mSendTrack.GetActive()) {
+    if (IsReceiving()) {
+      if (IsSending()) {
         aJsTransceiver.SetCurrentDirection(
             dom::RTCRtpTransceiverDirection::Sendrecv, aRv);
       } else {
@@ -482,7 +449,7 @@ void TransceiverImpl::SyncWithJS(dom::RTCRtpTransceiver& aJsTransceiver,
             dom::RTCRtpTransceiverDirection::Recvonly, aRv);
       }
     } else {
-      if (mJsepTransceiver->mSendTrack.GetActive()) {
+      if (IsSending()) {
         aJsTransceiver.SetCurrentDirection(
             dom::RTCRtpTransceiverDirection::Sendonly, aRv);
       } else {
@@ -494,26 +461,6 @@ void TransceiverImpl::SyncWithJS(dom::RTCRtpTransceiver& aJsTransceiver,
     if (aRv.Failed()) {
       return;
     }
-  }
-
-  RefPtr<dom::RTCRtpReceiver> receiver = aJsTransceiver.GetReceiver(aRv);
-  if (aRv.Failed()) {
-    return;
-  }
-
-  // receive stream ids from JSEP
-  dom::Sequence<nsString> receiveStreamIds;
-  for (const auto& id : mJsepTransceiver->mRecvTrack.GetStreamIds()) {
-    receiveStreamIds.AppendElement(NS_ConvertUTF8toUTF16(id.c_str()), fallible);
-  }
-  receiver->SetStreamIds(receiveStreamIds, aRv);
-  if (aRv.Failed()) {
-    return;
-  }
-
-  receiver->SetRecvBit(mJsepTransceiver->mRecvTrack.GetRemoteSetSendBit(), aRv);
-  if (aRv.Failed()) {
-    return;
   }
 
   // AddTrack magic from JS
@@ -530,65 +477,50 @@ void TransceiverImpl::SyncWithJS(dom::RTCRtpTransceiver& aJsTransceiver,
   }
 }
 
-void TransceiverImpl::InsertDTMFTone(int tone, uint32_t duration) {
-  if (mJsepTransceiver->IsStopped()) {
-    return;
-  }
-
-  MOZ_ASSERT(mConduit->type() == MediaSessionConduit::AUDIO);
-
-  RefPtr<AudioSessionConduit> conduit(
-      static_cast<AudioSessionConduit*>(mConduit.get()));
-  // Note: We default to channel 0, not inband, and 6dB attenuation.
-  //      here. We might want to revisit these choices in the future.
-  conduit->InsertDTMFTone(0, tone, true, duration, 6);
-}
-
-bool TransceiverImpl::HasReceiveTrack(
-    const dom::MediaStreamTrack* aRecvTrack) const {
-  if (!mHaveStartedReceiving) {
+bool TransceiverImpl::CanSendDTMF() const {
+  // Spec says: "If connection's RTCPeerConnectionState is not "connected"
+  // return false." We don't support that right now. This is supposed to be
+  // true once ICE is complete, and _all_ DTLS handshakes are also complete. We
+  // don't really have access to the state of _all_ of our DTLS states either.
+  // Our pipeline _does_ know whether SRTP/SRTCP is ready, which happens
+  // immediately after our transport finishes DTLS (unless there was an error),
+  // so this is pretty close.
+  // TODO (bug 1265827): Base this on RTCPeerConnectionState instead.
+  // TODO (bug 1623193): Tighten this up
+  if (!IsSending() || !mSendTrack) {
     return false;
   }
 
-  if (!aRecvTrack) {
-    return true;
+  // Ok, it looks like the connection is up and sending. Did we negotiate
+  // telephone-event?
+  JsepTrackNegotiatedDetails* details =
+      mJsepTransceiver->mSendTrack.GetNegotiatedDetails();
+  if (NS_WARN_IF(!details || !details->GetEncodingCount())) {
+    // What?
+    return false;
   }
 
-  return mReceiveTrack == aRecvTrack;
+  for (size_t i = 0; i < details->GetEncodingCount(); ++i) {
+    const auto& encoding = details->GetEncoding(i);
+    for (const auto& codec : encoding.GetCodecs()) {
+      if (codec->mName == "telephone-event") {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
-bool TransceiverImpl::WrapObject(JSContext* aCx,
-                                 JS::Handle<JSObject*> aGivenProto,
-                                 JS::MutableHandle<JSObject*> aReflector) {
-  return dom::TransceiverImpl_Binding::Wrap(aCx, this, aGivenProto, aReflector);
+JSObject* TransceiverImpl::WrapObject(JSContext* aCx,
+                                      JS::Handle<JSObject*> aGivenProto) {
+  return dom::TransceiverImpl_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-already_AddRefed<dom::MediaStreamTrack> TransceiverImpl::GetReceiveTrack() {
-  return do_AddRef(mReceiveTrack);
-}
+nsPIDOMWindowInner* TransceiverImpl::GetParentObject() const { return mWindow; }
 
 RefPtr<MediaPipelineTransmit> TransceiverImpl::GetSendPipeline() {
   return mTransmitPipeline;
-}
-
-RefPtr<MediaPipelineReceive> TransceiverImpl::GetReceivePipeline() {
-  return mReceivePipeline;
-}
-
-void TransceiverImpl::AddRIDExtension(unsigned short aExtensionId) {
-  if (mJsepTransceiver->IsStopped()) {
-    return;
-  }
-
-  mReceivePipeline->AddRIDExtension_m(aExtensionId);
-}
-
-void TransceiverImpl::AddRIDFilter(const nsAString& aRid) {
-  if (mJsepTransceiver->IsStopped()) {
-    return;
-  }
-
-  mReceivePipeline->AddRIDFilter_m(NS_ConvertUTF16toUTF8(aRid).get());
 }
 
 static nsresult JsepCodecDescToAudioCodecConfig(
@@ -611,11 +543,19 @@ static nsresult JsepCodecDescToAudioCodecConfig(
                                       desc.mFECEnabled));
   (*aConfig)->mMaxPlaybackRate = desc.mMaxPlaybackRate;
   (*aConfig)->mDtmfEnabled = desc.mDtmfEnabled;
+  (*aConfig)->mDTXEnabled = desc.mDTXEnabled;
+  (*aConfig)->mMaxAverageBitrate = desc.mMaxAverageBitrate;
+  (*aConfig)->mFrameSizeMs = desc.mFrameSizeMs;
+  (*aConfig)->mMinFrameSizeMs = desc.mMinFrameSizeMs;
+  (*aConfig)->mMaxFrameSizeMs = desc.mMaxFrameSizeMs;
+  (*aConfig)->mCbrEnabled = desc.mCbrEnabled;
 
   return NS_OK;
 }
 
-static nsresult NegotiatedDetailsToAudioCodecConfigs(
+// TODO: Maybe move this someplace else?
+/*static*/
+nsresult TransceiverImpl::NegotiatedDetailsToAudioCodecConfigs(
     const JsepTrackNegotiatedDetails& aDetails,
     std::vector<UniquePtr<AudioCodecConfig>>* aConfigs) {
   UniquePtr<AudioCodecConfig> telephoneEvent;
@@ -654,46 +594,12 @@ nsresult TransceiverImpl::UpdateAudioConduit() {
   RefPtr<AudioSessionConduit> conduit =
       static_cast<AudioSessionConduit*>(mConduit.get());
 
-  if (!mJsepTransceiver->mRecvTrack.GetSsrcs().empty()) {
-    MOZ_MTLOG(ML_DEBUG, mPCHandle
-                            << "[" << mMid << "]: " << __FUNCTION__
-                            << " Setting remote SSRC "
-                            << mJsepTransceiver->mRecvTrack.GetSsrcs().front());
-    conduit->SetRemoteSSRC(mJsepTransceiver->mRecvTrack.GetSsrcs().front());
-  }
-
-  if (mJsepTransceiver->mRecvTrack.GetNegotiatedDetails() &&
-      mJsepTransceiver->mRecvTrack.GetActive()) {
-    const auto& details(*mJsepTransceiver->mRecvTrack.GetNegotiatedDetails());
-    std::vector<UniquePtr<AudioCodecConfig>> configs;
-    nsresult rv = NegotiatedDetailsToAudioCodecConfigs(details, &configs);
-
-    if (NS_FAILED(rv)) {
-      MOZ_MTLOG(ML_ERROR, mPCHandle
-                              << "[" << mMid << "]: " << __FUNCTION__
-                              << " Failed to convert JsepCodecDescriptions to "
-                                 "AudioCodecConfigs (recv).");
-      return rv;
-    }
-
-    // Ensure conduit knows about extensions prior to creating streams
-    UpdateConduitRtpExtmap(details, LocalDirection::kRecv);
-
-    auto error = conduit->ConfigureRecvMediaCodecs(configs);
-
-    if (error) {
-      MOZ_MTLOG(ML_ERROR, mPCHandle
-                              << "[" << mMid << "]: " << __FUNCTION__
-                              << " ConfigureRecvMediaCodecs failed: " << error);
-      return NS_ERROR_FAILURE;
-    }
-  }
-
   if (mJsepTransceiver->mSendTrack.GetNegotiatedDetails() &&
       mJsepTransceiver->mSendTrack.GetActive()) {
     const auto& details(*mJsepTransceiver->mSendTrack.GetNegotiatedDetails());
     std::vector<UniquePtr<AudioCodecConfig>> configs;
-    nsresult rv = NegotiatedDetailsToAudioCodecConfigs(details, &configs);
+    nsresult rv = TransceiverImpl::NegotiatedDetailsToAudioCodecConfigs(
+        details, &configs);
 
     if (NS_FAILED(rv)) {
       MOZ_MTLOG(ML_ERROR, mPCHandle
@@ -719,7 +625,7 @@ nsresult TransceiverImpl::UpdateAudioConduit() {
                               << " ConfigureSendMediaCodec failed: " << error);
       return NS_ERROR_FAILURE;
     }
-    UpdateConduitRtpExtmap(details, LocalDirection::kSend);
+    UpdateConduitRtpExtmap(*conduit, details, LocalDirection::kSend);
   }
 
   return NS_OK;
@@ -764,15 +670,24 @@ static nsresult JsepCodecDescToVideoCodecConfig(
   (*aConfig)->mCcmFbTypes = desc.mCcmFbTypes;
   (*aConfig)->mRembFbSet = desc.RtcpFbRembIsSet();
   (*aConfig)->mFECFbSet = desc.mFECEnabled;
+  (*aConfig)->mTransportCCFbSet = desc.RtcpFbTransportCCIsSet();
   if (desc.mFECEnabled) {
     (*aConfig)->mREDPayloadType = desc.mREDPayloadType;
     (*aConfig)->mULPFECPayloadType = desc.mULPFECPayloadType;
+  }
+  if (desc.mRtxEnabled) {
+    uint16_t pt;
+    if (SdpHelper::GetPtAsInt(desc.mRtxPayloadType, &pt)) {
+      (*aConfig)->mRTXPayloadType = pt;
+    }
   }
 
   return NS_OK;
 }
 
-static nsresult NegotiatedDetailsToVideoCodecConfigs(
+// TODO: Maybe move this someplace else?
+/*static*/
+nsresult TransceiverImpl::NegotiatedDetailsToVideoCodecConfigs(
     const JsepTrackNegotiatedDetails& aDetails,
     std::vector<UniquePtr<VideoCodecConfig>>* aConfigs) {
   if (aDetails.GetEncodingCount()) {
@@ -807,57 +722,6 @@ nsresult TransceiverImpl::UpdateVideoConduit() {
   RefPtr<VideoSessionConduit> conduit =
       static_cast<VideoSessionConduit*>(mConduit.get());
 
-  // NOTE(pkerr) - this is new behavior. Needed because the
-  // CreateVideoReceiveStream method of the Call API will assert (in debug) and
-  // fail if a value is not provided for the remote_ssrc that will be used by
-  // the far-end sender.
-  if (!mJsepTransceiver->mRecvTrack.GetSsrcs().empty()) {
-    MOZ_MTLOG(ML_DEBUG, mPCHandle
-                            << "[" << mMid << "]: " << __FUNCTION__
-                            << " Setting remote SSRC "
-                            << mJsepTransceiver->mRecvTrack.GetSsrcs().front());
-    conduit->SetRemoteSSRC(mJsepTransceiver->mRecvTrack.GetSsrcs().front());
-  }
-
-  // TODO (bug 1423041) once we pay attention to receiving MID's in RTP packets
-  // (see bug 1405495) we could make this depending on the presence of MID in
-  // the RTP packets instead of relying on the signaling.
-  if (mJsepTransceiver->HasBundleLevel() &&
-      (!mJsepTransceiver->mRecvTrack.GetNegotiatedDetails() ||
-       !mJsepTransceiver->mRecvTrack.GetNegotiatedDetails()->GetExt(
-           webrtc::RtpExtension::kMIdUri))) {
-    mStsThread->Dispatch(
-        NewRunnableMethod("VideoSessionConduit::DisableSsrcChanges", conduit,
-                          &VideoSessionConduit::DisableSsrcChanges));
-  }
-
-  if (mJsepTransceiver->mRecvTrack.GetNegotiatedDetails() &&
-      mJsepTransceiver->mRecvTrack.GetActive()) {
-    const auto& details(*mJsepTransceiver->mRecvTrack.GetNegotiatedDetails());
-
-    UpdateConduitRtpExtmap(details, LocalDirection::kRecv);
-
-    std::vector<UniquePtr<VideoCodecConfig>> configs;
-    nsresult rv = NegotiatedDetailsToVideoCodecConfigs(details, &configs);
-
-    if (NS_FAILED(rv)) {
-      MOZ_MTLOG(ML_ERROR, mPCHandle
-                              << "[" << mMid << "]: " << __FUNCTION__
-                              << " Failed to convert JsepCodecDescriptions to "
-                                 "VideoCodecConfigs (recv).");
-      return rv;
-    }
-
-    auto error = conduit->ConfigureRecvMediaCodecs(configs);
-
-    if (error) {
-      MOZ_MTLOG(ML_ERROR, mPCHandle
-                              << "[" << mMid << "]: " << __FUNCTION__
-                              << " ConfigureRecvMediaCodecs failed: " << error);
-      return NS_ERROR_FAILURE;
-    }
-  }
-
   // It is possible for SDP to signal that there is a send track, but there not
   // actually be a send track, according to the specification; all that needs to
   // happen is for the transceiver to be configured to send...
@@ -865,7 +729,7 @@ nsresult TransceiverImpl::UpdateVideoConduit() {
       mJsepTransceiver->mSendTrack.GetActive() && mSendTrack) {
     const auto& details(*mJsepTransceiver->mSendTrack.GetNegotiatedDetails());
 
-    UpdateConduitRtpExtmap(details, LocalDirection::kSend);
+    UpdateConduitRtpExtmap(*conduit, details, LocalDirection::kSend);
 
     nsresult rv = ConfigureVideoCodecMode(*conduit);
     if (NS_FAILED(rv)) {
@@ -873,8 +737,8 @@ nsresult TransceiverImpl::UpdateVideoConduit() {
     }
 
     std::vector<UniquePtr<VideoCodecConfig>> configs;
-    rv = NegotiatedDetailsToVideoCodecConfigs(details, &configs);
-
+    rv = TransceiverImpl::NegotiatedDetailsToVideoCodecConfigs(details,
+                                                               &configs);
     if (NS_FAILED(rv)) {
       MOZ_MTLOG(ML_ERROR, mPCHandle
                               << "[" << mMid << "]: " << __FUNCTION__
@@ -889,7 +753,8 @@ nsresult TransceiverImpl::UpdateVideoConduit() {
       return NS_OK;
     }
 
-    auto error = conduit->ConfigureSendMediaCodec(configs[0].get());
+    auto error = conduit->ConfigureSendMediaCodec(configs[0].get(),
+                                                  details.GetRtpRtcpConfig());
     if (error) {
       MOZ_MTLOG(ML_ERROR, mPCHandle
                               << "[" << mMid << "]: " << __FUNCTION__
@@ -941,74 +806,37 @@ nsresult TransceiverImpl::ConfigureVideoCodecMode(
 }
 
 void TransceiverImpl::UpdateConduitRtpExtmap(
-    const JsepTrackNegotiatedDetails& aDetails,
+    MediaSessionConduit& aConduit, const JsepTrackNegotiatedDetails& aDetails,
     const LocalDirection aDirection) {
-  if (!IsValid()) {
-    return;
-  }
-
   std::vector<webrtc::RtpExtension> extmaps;
   // @@NG read extmap from track
   aDetails.ForEachRTPHeaderExtension(
       [&extmaps](const SdpExtmapAttributeList::Extmap& extmap) {
         extmaps.emplace_back(extmap.extensionname, extmap.entry);
       });
-
   if (!extmaps.empty()) {
-    mConduit->SetLocalRTPExtensions(aDirection, extmaps);
+    aConduit.SetLocalRTPExtensions(aDirection, extmaps);
   }
 }
 
 void TransceiverImpl::Stop() {
   mTransmitPipeline->Shutdown_m();
-  mReceivePipeline->Shutdown_m();
+  mReceiver->Shutdown();
   // Make sure that stats queries stop working on this transceiver.
   UpdateSendTrack(nullptr);
-  mHaveStartedReceiving = false;
 
   if (mConduit) {
     mConduit->DeleteStreams();
-    mConduit->SetRtcpEventObserver(nullptr);
   }
   mConduit = nullptr;
+
+  if (mDtmf) {
+    mDtmf->StopPlayout();
+  }
 }
 
 bool TransceiverImpl::IsVideo() const {
   return mJsepTransceiver->GetMediaType() == SdpMediaSection::MediaType::kVideo;
-}
-
-void TransceiverImpl::GetRtpSources(
-    const int64_t aTimeNow,
-    nsTArray<dom::RTCRtpSourceEntry>& outSources) const {
-  if (!IsValid() || IsVideo()) {
-    return;
-  }
-
-  WebrtcAudioConduit* audio_conduit =
-      static_cast<WebrtcAudioConduit*>(mConduit.get());
-  audio_conduit->GetRtpSources(aTimeNow, outSources);
-}
-
-void TransceiverImpl::OnRtcpBye() {
-  MOZ_MTLOG(ML_DEBUG, mPCHandle << "[" << mMid << "]: " << __FUNCTION__);
-  SetReceiveTrackMuted(true);
-}
-
-void TransceiverImpl::OnRtcpTimeout() {
-  MOZ_MTLOG(ML_DEBUG, mPCHandle << "[" << mMid << "]: " << __FUNCTION__);
-  SetReceiveTrackMuted(true);
-}
-
-void TransceiverImpl::InsertAudioLevelForContributingSource(
-    const uint32_t aSource, const int64_t aTimestamp,
-    const uint32_t aRtpTimestamp, const bool aHasLevel, const uint8_t aLevel) {
-  if (!IsValid() || IsVideo()) {
-    return;
-  }
-  WebrtcAudioConduit* audio_conduit =
-      static_cast<WebrtcAudioConduit*>(mConduit.get());
-  audio_conduit->InsertAudioLevelForContributingSource(
-      aSource, aTimestamp, aRtpTimestamp, aHasLevel, aLevel);
 }
 
 }  // namespace mozilla

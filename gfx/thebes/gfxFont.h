@@ -9,10 +9,7 @@
 
 #include "gfxTypes.h"
 #include "gfxFontEntry.h"
-#include "gfxFontVariations.h"
 #include "nsString.h"
-#include "gfxPoint.h"
-#include "gfxPattern.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
@@ -27,16 +24,13 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/TypedEnumBits.h"
-#include "MainThreadUtils.h"
 #include <algorithm>
 #include "DrawMode.h"
 #include "nsDataHashtable.h"
-#include "harfbuzz/hb.h"
 #include "mozilla/gfx/2D.h"
 #include "nsColor.h"
 #include "nsFontMetrics.h"
 #include "mozilla/ServoUtils.h"
-#include "TextDrawTarget.h"
 #include "ThebesRLBoxTypes.h"
 
 typedef struct _cairo cairo_t;
@@ -46,10 +40,9 @@ typedef struct _cairo_scaled_font cairo_scaled_font_t;
 #  include <stdio.h>
 #endif
 
-class gfxContext;
 class gfxTextRun;
-class gfxFont;
 class gfxGlyphExtents;
+class gfxPattern;
 class gfxShapedText;
 class gfxShapedWord;
 class gfxSkipChars;
@@ -73,6 +66,10 @@ struct gfxTextRunDrawCallbacks;
 
 namespace mozilla {
 class SVGContextPaint;
+
+namespace layout {
+class TextDrawTarget;
+}
 }  // namespace mozilla
 
 struct gfxFontStyle {
@@ -97,7 +94,7 @@ struct gfxFontStyle {
   // (3) are guaranteed to be mutually exclusive
 
   // custom opentype feature settings
-  nsTArray<gfxFontFeature> featureSettings;
+  CopyableTArray<gfxFontFeature> featureSettings;
 
   // Some font-variant property values require font-specific settings
   // defined via @font-feature-values rules.  These are resolved after
@@ -110,7 +107,7 @@ struct gfxFontStyle {
   RefPtr<gfxFontFeatureValueSet> featureValueLookup;
 
   // opentype variation settings
-  nsTArray<gfxFontVariation> variationSettings;
+  CopyableTArray<gfxFontVariation> variationSettings;
 
   // The logical size of the font, in pixels
   gfxFloat size;
@@ -398,8 +395,6 @@ class gfxFontCache final : private gfxFontCacheExpirationTracker {
     // When constructing a new entry in the hashtable, we'll leave this
     // blank. The caller of Put() will fill this in.
     explicit HashEntry(KeyTypePointer aStr) : mFont(nullptr) {}
-    HashEntry(const HashEntry& toCopy) : mFont(toCopy.mFont) {}
-    ~HashEntry() = default;
 
     bool KeyEquals(const KeyTypePointer aKey) const;
     static KeyTypePointer KeyToPointer(KeyType aKey) { return &aKey; }
@@ -2053,10 +2048,10 @@ class gfxFont {
     // When constructing a new entry in the hashtable, the caller of Put()
     // will fill us in.
     explicit CacheHashEntry(KeyTypePointer aKey) {}
-    CacheHashEntry(const CacheHashEntry& toCopy) {
-      NS_ERROR("Should not be called");
-    }
-    ~CacheHashEntry() = default;
+    CacheHashEntry(const CacheHashEntry&) = delete;
+    CacheHashEntry& operator=(const CacheHashEntry&) = delete;
+    CacheHashEntry(CacheHashEntry&&) = default;
+    CacheHashEntry& operator=(CacheHashEntry&&) = default;
 
     bool KeyEquals(const KeyTypePointer aKey) const;
 

@@ -10,13 +10,12 @@ import os
 import re
 import shutil
 import signal
+import six
 import subprocess
 import sys
 import tempfile
 import zipfile
 from collections import namedtuple
-from six import string_types, text_type
-from six.moves.urllib.request import urlopen
 
 import mozfile
 import mozinfo
@@ -91,6 +90,9 @@ def check_for_crashes(dump_directory,
         except Exception:
             test_name = "unknown"
 
+    if not quiet:
+        print("mozcrash checking %s for minidumps..." % dump_directory)
+
     crash_info = CrashInfo(dump_directory, symbols_path, dump_save_path=dump_save_path,
                            stackwalk_binary=stackwalk_binary)
 
@@ -121,7 +123,7 @@ def check_for_crashes(dump_directory,
                 out="\n".join(stackwalk_output),
                 err="\n".join(info.stackwalk_errors))
         if output is not None:
-            if sys.stdout.encoding != 'UTF-8':
+            if six.PY2 and sys.stdout.encoding != 'UTF-8':
                 output = output.encode('utf-8')
             print(output)
 
@@ -159,6 +161,7 @@ ABORT_SIGNATURES = (
     "gkrust_shared::panic_hook",
     "intentional_panic",
     "mozalloc_abort",
+    "mozalloc_abort(char const* const)",
     "static void Abort(const char *)",
 )
 
@@ -220,7 +223,7 @@ class CrashInfo(object):
             self.remove_symbols = True
             self.logger.info("Downloading symbols from: %s" % self.symbols_path)
             # Get the symbols and write them to a temporary zipfile
-            data = urlopen(self.symbols_path)
+            data = six.moves.urllib.request.urlopen(self.symbols_path)
             with tempfile.TemporaryFile() as symbols_file:
                 symbols_file.write(data.read())
                 # extract symbols to a temporary directory (which we'll delete after
@@ -303,6 +306,9 @@ class CrashInfo(object):
             )
             (out, err) = p.communicate()
             retcode = p.returncode
+            if six.PY3:
+                out = six.ensure_str(out)
+                err = six.ensure_str(err)
 
             if len(out) > 3:
                 # minidump_stackwalk is chatty,
@@ -488,6 +494,7 @@ if mozinfo.isWin:
         FILE_ATTRIBUTE_NORMAL = 0x80
         INVALID_HANDLE_VALUE = -1
 
+        log = get_logger()
         file_name = os.path.join(dump_directory,
                                  str(uuid.uuid4()) + ".dmp")
 
@@ -497,7 +504,6 @@ if mozinfo.isWin:
             # python process was compiled for a different architecture than
             # firefox, so we invoke the minidumpwriter utility program.
 
-            log = get_logger()
             minidumpwriter = os.path.normpath(os.path.join(utility_path,
                                                            "minidumpwriter.exe"))
             log.info(u"Using {} to write a dump to {} for [{}]".format(
@@ -506,7 +512,7 @@ if mozinfo.isWin:
                 log.error(u"minidumpwriter not found in {}".format(utility_path))
                 return
 
-            if isinstance(file_name, string_types):
+            if isinstance(file_name, six.string_types):
                 # Convert to a byte string before sending to the shell.
                 file_name = file_name.encode(sys.getfilesystemencoding())
 
@@ -515,15 +521,19 @@ if mozinfo.isWin:
                 log.error("minidumpwriter exited with status: %d" % status)
             return
 
+        log.info(u"Writing a dump to {} for [{}]".format(file_name, pid))
+
         proc_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
                                   0, pid)
         if not proc_handle:
+            err = kernel32.GetLastError()
+            log.warning("unable to get handle for pid %d: %d" % (pid, err))
             return
 
-        if not isinstance(file_name, string_types):
+        if not isinstance(file_name, six.text_type):
             # Convert to unicode explicitly so our path will be valid as input
             # to CreateFileW
-            file_name = text_type(file_name, sys.getfilesystemencoding())
+            file_name = six.text_type(file_name, sys.getfilesystemencoding())
 
         file_handle = kernel32.CreateFileW(file_name,
                                            GENERIC_READ | GENERIC_WRITE,
@@ -533,18 +543,23 @@ if mozinfo.isWin:
                                            FILE_ATTRIBUTE_NORMAL,
                                            None)
         if file_handle != INVALID_HANDLE_VALUE:
-            ctypes.windll.dbghelp.MiniDumpWriteDump(proc_handle,
-                                                    pid,
-                                                    file_handle,
-                                                    # Dump type - MiniDumpNormal
-                                                    0,
-                                                    # Exception parameter
-                                                    None,
-                                                    # User stream parameter
-                                                    None,
-                                                    # Callback parameter
-                                                    None)
+            if not ctypes.windll.dbghelp.MiniDumpWriteDump(proc_handle,
+                                                           pid,
+                                                           file_handle,
+                                                           # Dump type - MiniDumpNormal
+                                                           0,
+                                                           # Exception parameter
+                                                           None,
+                                                           # User stream parameter
+                                                           None,
+                                                           # Callback parameter
+                                                           None):
+                err = kernel32.GetLastError()
+                log.warning("unable to dump minidump file for pid %d: %d" % (pid, err))
             CloseHandle(file_handle)
+        else:
+            err = kernel32.GetLastError()
+            log.warning("unable to create minidump file for pid %d: %d" % (pid, err))
         CloseHandle(proc_handle)
 
     def kill_pid(pid):

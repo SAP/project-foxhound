@@ -13,12 +13,13 @@
 #include <stdint.h>
 
 #include "ds/Nestable.h"
-#include "frontend/AbstractScope.h"
+#include "frontend/AbstractScopePtr.h"
 #include "frontend/NameAnalysisTypes.h"
 #include "frontend/NameCollections.h"
 #include "frontend/ParseContext.h"
 #include "frontend/SharedContext.h"
 #include "js/TypeDecls.h"
+#include "vm/SharedStencil.h"  // GCThingIndex
 
 namespace js {
 
@@ -56,7 +57,7 @@ class EmitterScope : public Nestable<EmitterScope> {
 
   // The index in the BytecodeEmitter's interned scope vector, otherwise
   // ScopeNote::NoScopeIndex.
-  uint32_t scopeIndex_;
+  GCThingIndex scopeIndex_;
 
   // If kind is Lexical, Catch, or With, the index in the BytecodeEmitter's
   // block scope note list. Otherwise ScopeNote::NoScopeNote.
@@ -79,7 +80,7 @@ class EmitterScope : public Nestable<EmitterScope> {
 
   EmitterScope* enclosing(BytecodeEmitter** bce) const;
 
-  AbstractScope enclosingScope(BytecodeEmitter* bce) const;
+  AbstractScopePtr enclosingScope(BytecodeEmitter* bce) const;
 
   static bool nameCanBeFree(BytecodeEmitter* bce, JSAtom* name);
 
@@ -123,7 +124,7 @@ class EmitterScope : public Nestable<EmitterScope> {
 
   MOZ_MUST_USE bool leave(BytecodeEmitter* bce, bool nonLocal = false);
 
-  uint32_t index() const {
+  GCThingIndex index() const {
     MOZ_ASSERT(scopeIndex_ != ScopeNote::NoScopeIndex,
                "Did you forget to intern a Scope?");
     return scopeIndex_;
@@ -131,7 +132,8 @@ class EmitterScope : public Nestable<EmitterScope> {
 
   uint32_t noteIndex() const { return noteIndex_; }
 
-  AbstractScope scope(const BytecodeEmitter* bce) const;
+  AbstractScopePtr scope(const BytecodeEmitter* bce) const;
+  ScopeIndex scopeIndex(const BytecodeEmitter* bce) const;
 
   bool hasEnvironment() const { return hasEnvironment_; }
 

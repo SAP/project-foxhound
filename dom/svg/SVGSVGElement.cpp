@@ -8,14 +8,17 @@
 
 #include "mozilla/ContentEvents.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/DOMMatrix.h"
 #include "mozilla/dom/SVGSVGElementBinding.h"
 #include "mozilla/dom/SVGMatrix.h"
 #include "mozilla/dom/SVGRect.h"
 #include "mozilla/dom/SVGViewElement.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/ISVGDisplayableFrame.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SMILAnimationController.h"
 #include "mozilla/SMILTimeContainer.h"
+#include "mozilla/SVGUtils.h"
 
 #include "DOMSVGAngle.h"
 #include "DOMSVGLength.h"
@@ -23,9 +26,7 @@
 #include "DOMSVGPoint.h"
 #include "nsFrameSelection.h"
 #include "nsIFrame.h"
-#include "nsISVGSVGFrame.h"
-#include "nsSVGDisplayableFrame.h"
-#include "nsSVGUtils.h"
+#include "ISVGSVGFrame.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT_CHECK_PARSER(SVG)
 
@@ -59,7 +60,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGTranslatePoint)
 NS_INTERFACE_MAP_END
 
 DOMSVGPoint* DOMSVGTranslatePoint::Copy() {
-  return new DOMSVGPoint(mPt.GetX(), mPt.GetY());
+  return new DOMSVGPoint(ToPoint(mPt));
 }
 
 nsISupports* DOMSVGTranslatePoint::GetParentObject() {
@@ -75,14 +76,21 @@ void DOMSVGTranslatePoint::SetY(float aValue, ErrorResult& rv) {
 }
 
 already_AddRefed<nsISVGPoint> DOMSVGTranslatePoint::MatrixTransform(
-    SVGMatrix& matrix) {
-  float a = matrix.A(), b = matrix.B(), c = matrix.C();
-  float d = matrix.D(), e = matrix.E(), f = matrix.F();
-  float x = mPt.GetX();
-  float y = mPt.GetY();
+    const DOMMatrix2DInit& aMatrix, ErrorResult& aRv) {
+  RefPtr<DOMMatrixReadOnly> matrix =
+      DOMMatrixReadOnly::FromMatrix(GetParentObject(), aMatrix, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  const auto* matrix2D = matrix->GetInternal2D();
+  if (!matrix2D->IsFinite()) {
+    aRv.ThrowTypeError<MSG_NOT_FINITE>("MatrixTransform matrix");
+    return nullptr;
+  }
 
   nsCOMPtr<nsISVGPoint> point =
-      new DOMSVGPoint(a * x + c * y + e, b * x + d * y + f);
+      new DOMSVGPoint(ToPoint(matrix2D->TransformPoint(mPt)));
   return point.forget();
 }
 
@@ -262,7 +270,7 @@ already_AddRefed<DOMSVGAngle> SVGSVGElement::CreateSVGAngle() {
 }
 
 already_AddRefed<nsISVGPoint> SVGSVGElement::CreateSVGPoint() {
-  return do_AddRef(new DOMSVGPoint(0, 0));
+  return do_AddRef(new DOMSVGPoint(Point(0, 0)));
 }
 
 already_AddRefed<SVGMatrix> SVGSVGElement::CreateSVGMatrix() {
@@ -278,8 +286,8 @@ already_AddRefed<DOMSVGTransform> SVGSVGElement::CreateSVGTransform() {
 }
 
 already_AddRefed<DOMSVGTransform> SVGSVGElement::CreateSVGTransformFromMatrix(
-    SVGMatrix& matrix) {
-  return do_AddRef(new DOMSVGTransform(matrix.GetMatrix()));
+    const DOMMatrix2DInit& matrix, ErrorResult& rv) {
+  return do_AddRef(new DOMSVGTransform(matrix, rv));
 }
 
 //----------------------------------------------------------------------
@@ -372,8 +380,7 @@ SMILTimeContainer* SVGSVGElement::GetTimedDocumentRoot() {
 nsresult SVGSVGElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   SMILAnimationController* smilController = nullptr;
 
-  // FIXME(emilio, bug 1555948): Should probably use composed doc.
-  if (Document* doc = aContext.GetUncomposedDoc()) {
+  if (Document* doc = aContext.GetComposedDoc()) {
     if ((smilController = doc->GetAnimationController())) {
       // SMIL is enabled in this document
       if (WillBeOutermostSVG(aParent)) {
@@ -457,7 +464,7 @@ int32_t SVGSVGElement::GetIntrinsicWidth() {
   // know the length isn't a percentage so the context won't be used (and we
   // need to pass the element to be able to resolve em/ex units).
   float width = mLengthAttributes[ATTR_WIDTH].GetAnimValue(this);
-  return nsSVGUtils::ClampToInt(width);
+  return SVGUtils::ClampToInt(width);
 }
 
 int32_t SVGSVGElement::GetIntrinsicHeight() {
@@ -469,7 +476,7 @@ int32_t SVGSVGElement::GetIntrinsicHeight() {
   // know the length isn't a percentage so the context won't be used (and we
   // need to pass the element to be able to resolve em/ex units).
   float height = mLengthAttributes[ATTR_HEIGHT].GetAnimValue(this);
-  return nsSVGUtils::ClampToInt(height);
+  return SVGUtils::ClampToInt(height);
 }
 
 void SVGSVGElement::FlushImageTransformInvalidation() {
@@ -490,7 +497,7 @@ bool SVGSVGElement::WillBeOutermostSVG(nsINode& aParent) const {
   nsINode* parent = &aParent;
   while (parent && parent->IsSVGElement()) {
     if (parent->IsSVGElement(nsGkAtoms::foreignObject)) {
-      // SVG in a foreignObject must have its own <svg> (nsSVGOuterSVGFrame).
+      // SVG in a foreignObject must have its own <svg> (SVGOuterSVGFrame).
       return false;
     }
     if (parent->IsSVGElement(nsGkAtoms::svg)) {
@@ -503,11 +510,11 @@ bool SVGSVGElement::WillBeOutermostSVG(nsINode& aParent) const {
 }
 
 void SVGSVGElement::InvalidateTransformNotifyFrame() {
-  nsISVGSVGFrame* svgframe = do_QueryFrame(GetPrimaryFrame());
+  ISVGSVGFrame* svgframe = do_QueryFrame(GetPrimaryFrame());
   // might fail this check if we've failed conditional processing
   if (svgframe) {
     svgframe->NotifyViewportOrTransformChanged(
-        nsSVGDisplayableFrame::TRANSFORM_CHANGED);
+        ISVGDisplayableFrame::TRANSFORM_CHANGED);
   }
 }
 

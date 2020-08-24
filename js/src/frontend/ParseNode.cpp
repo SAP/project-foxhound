@@ -6,21 +6,21 @@
 
 #include "frontend/ParseNode.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/FloatingPoint.h"
 
 #include "jsnum.h"
 
-#include "frontend/Parser.h"
+#include "frontend/CompilationInfo.h"
+#include "frontend/FullParseHandler.h"
+#include "frontend/ParseContext.h"
+#include "frontend/SharedContext.h"
 #include "vm/BigIntType.h"
+#include "vm/Printer.h"
 #include "vm/RegExpObject.h"
-
-#include "vm/JSContext-inl.h"
 
 using namespace js;
 using namespace js::frontend;
 
-using mozilla::ArrayLength;
 using mozilla::IsFinite;
 
 #ifdef DEBUG
@@ -377,43 +377,12 @@ void LexicalScopeNode::dumpImpl(GenericPrinter& out, int indent) {
 }
 #endif
 
-TraceListNode::TraceListNode(js::gc::Cell* gcThing, TraceListNode* traceLink,
-                             NodeType type)
-    : gcThing(gcThing), traceLink(traceLink), type_(type) {
-  MOZ_ASSERT_IF(gcThing, gcThing->isTenured());
-}
-
-BigIntBox* TraceListNode::asBigIntBox() {
-  MOZ_ASSERT(isBigIntBox());
-  return static_cast<BigIntBox*>(this);
-}
-
-ObjectBox* TraceListNode::asObjectBox() {
-  MOZ_ASSERT(isObjectBox());
-  return static_cast<ObjectBox*>(this);
-}
-
-BigIntBox::BigIntBox(JS::BigInt* bi, TraceListNode* traceLink)
-    : TraceListNode(bi, traceLink, TraceListNode::NodeType::BigInt) {}
-
-ObjectBox::ObjectBox(JSObject* obj, TraceListNode* traceLink,
-                     TraceListNode::NodeType type)
-    : TraceListNode(obj, traceLink, type), emitLink(nullptr) {}
-
-BigInt* BigIntLiteral::getOrCreate(JSContext* cx) {
+BigInt* BigIntLiteral::create(JSContext* cx) {
   return compilationInfo_.bigIntData[index_].createBigInt(cx);
 }
 
 bool BigIntLiteral::isZero() {
   return compilationInfo_.bigIntData[index_].isZero();
-}
-
-JSAtom* BigIntLiteral::toAtom(JSContext* cx) {
-  RootedBigInt bi(cx, getOrCreate(cx));
-  if (!bi) {
-    return nullptr;
-  }
-  return BigIntToAtom<CanGC>(cx, bi);
 }
 
 JSAtom* NumericLiteral::toAtom(JSContext* cx) const {
@@ -426,41 +395,9 @@ RegExpObject* RegExpCreationData::createRegExp(JSContext* cx) const {
                                            TenuredObject);
 }
 
-RegExpObject* RegExpLiteral::getOrCreate(
-    JSContext* cx, CompilationInfo& compilationInfo) const {
-  if (data_.is<ObjectBox*>()) {
-    return &objbox()->object()->as<RegExpObject>();
-  }
-  return compilationInfo.regExpData[data_.as<RegExpIndex>()].createRegExp(cx);
-}
-
-FunctionBox* ObjectBox::asFunctionBox() {
-  MOZ_ASSERT(isFunctionBox());
-
-  return static_cast<FunctionBox*>(this);
-}
-
-/* static */
-void TraceListNode::TraceList(JSTracer* trc, TraceListNode* listHead) {
-  for (TraceListNode* node = listHead; node; node = node->traceLink) {
-    node->trace(trc);
-  }
-}
-
-void TraceListNode::trace(JSTracer* trc) {
-  if (gcThing) {
-    TraceGenericPointerRoot(trc, &gcThing, "parser.traceListNode");
-  }
-}
-
-void FunctionBox::trace(JSTracer* trc) {
-  ObjectBox::trace(trc);
-  if (enclosingScope_) {
-    enclosingScope_.trace(trc);
-  }
-  if (explicitName_) {
-    TraceRoot(trc, &explicitName_, "funbox-explicitName");
-  }
+RegExpObject* RegExpLiteral::create(JSContext* cx,
+                                    CompilationInfo& compilationInfo) const {
+  return compilationInfo.regExpData[index_].createRegExp(cx);
 }
 
 bool js::frontend::IsAnonymousFunctionDefinition(ParseNode* pn) {

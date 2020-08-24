@@ -38,6 +38,7 @@ fi
 : NEED_XVFB                     ${NEED_XVFB:=true}
 : NEED_WINDOW_MANAGER           ${NEED_WINDOW_MANAGER:=false}
 : NEED_PULSEAUDIO               ${NEED_PULSEAUDIO:=false}
+: NEED_COMPIZ                   ${NEED_COPMPIZ:=false}
 : START_VNC                     ${START_VNC:=false}
 : TASKCLUSTER_INTERACTIVE       ${TASKCLUSTER_INTERACTIVE:=false}
 : mozharness args               "${@}"
@@ -59,7 +60,7 @@ maybe_start_pulse() {
     if $NEED_PULSEAUDIO; then
         # call pulseaudio for Ubuntu only
         if [ $DISTRIBUTION == "Ubuntu" ]; then
-            pulseaudio --fail --daemonize --start
+            pulseaudio --daemonize --log-level=4 --log-time=1 --log-target=stderr --start --fail -vvvvv --exit-idle-time=-1 --cleanup-shm --dump-conf
         fi
     fi
 }
@@ -178,8 +179,15 @@ if $NEED_WINDOW_MANAGER; then
     eval `echo '' | /usr/bin/gnome-keyring-daemon -r -d --unlock --components=secrets`
 fi
 
-if [ $DISTRIBUTION == "Ubuntu" ] && [ $RELEASE == "16.04" ]; then
+if [[ $NEED_COMPIZ == true ]]  && [[ $RELEASE == 16.04 ]]; then
     compiz 2>&1 &
+elif [[ $NEED_COMPIZ == true ]] && [[ $RELEASE == 18.04 ]]; then
+    compiz --replace 2>&1 &
+fi
+
+# Bug 1607713 - set cursor position to 0,0 to avoid odd libx11 interaction
+if [ $NEED_WINDOW_MANAGER ] && [ $DISPLAY == ':0' ]; then
+    xwit -root -warp 0 0
 fi
 
 maybe_start_pulse
@@ -204,7 +212,7 @@ fi
 
 # Use |mach python| if a source checkout exists so in-tree packages are
 # available.
-[[ -x "${GECKO_PATH}/mach" ]] && python="${GECKO_PATH}/mach python" || python="python2.7"
+[[ -x "${GECKO_PATH}/mach" ]] && python="python2.7 ${GECKO_PATH}/mach python" || python="python2.7"
 
 # Save the computed mozharness command to a binary which is useful for
 # interactive mode.
@@ -230,6 +238,6 @@ fi
 # Run a custom mach command (this is typically used by action tasks to run
 # harnesses in a particular way)
 if [ "$CUSTOM_MACH_COMMAND" ]; then
-    eval "'$WORKSPACE/build/tests/mach' ${CUSTOM_MACH_COMMAND}"
+    eval "'$WORKSPACE/build/tests/mach' ${CUSTOM_MACH_COMMAND} ${@}"
     exit $?
 fi

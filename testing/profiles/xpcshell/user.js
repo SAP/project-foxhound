@@ -10,6 +10,8 @@ user_pref("extensions.webextensions.warnings-as-errors", true);
 // Always use network provider for geolocation tests
 // so we bypass the OSX dialog raised by the corelocation provider
 user_pref("geo.provider.testing", true);
+user_pref("browser.region.network.url", "");
+user_pref("geo.provider.network.compare.url", "");
 user_pref("media.gmp-manager.updateEnabled", false);
 user_pref("media.gmp-manager.url.override", "http://%(server)s/dummy-gmp-manager.xml");
 user_pref("toolkit.telemetry.server", "https://%(server)s/telemetry-dummy");
@@ -28,5 +30,8 @@ user_pref("idle.lastDailyNotification", -1);
 // Enable telemetry event ping during tests, even for geckoview, where it
 // is normally disabled.
 user_pref("toolkit.telemetry.eventping.enabled", true);
-// XXX: Bug 1617611 - Fix all the tests broken by "cookies sameSite=lax by default"
+// XXX: Bug 1617611 - Fix all the tests broken by "cookies SameSite=Lax by default"
 user_pref("network.cookie.sameSite.laxByDefault", false);
+// Bug 455077 - Ensure we use sRGB as the output profile for test consistency.
+user_pref("gfx.color_management.force_srgb", true);
+user_pref("gfx.color_management.mode", 1);

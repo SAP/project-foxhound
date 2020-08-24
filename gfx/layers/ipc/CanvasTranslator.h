@@ -98,8 +98,6 @@ class CanvasTranslator final : public gfx::InlineTranslator,
             const CrossProcessSemaphoreHandle& aWriterSem,
             UniquePtr<CanvasEventRingBuffer::ReaderServices> aReaderServices);
 
-  bool IsValid() { return mIsValid; }
-
   /**
    * Translates events until no more are available or the end of a transaction
    * If this returns false the caller of this is responsible for re-calling
@@ -242,6 +240,11 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   UniquePtr<gfx::DataSourceSurface::ScopedMap> GetPreparedMap(
       gfx::ReferencePtr aSurface);
 
+  /**
+   * @return the BackendType being used for translation
+   */
+  gfx::BackendType GetBackendType() { return mBackendType; }
+
  private:
   explicit CanvasTranslator(
       already_AddRefed<CanvasThreadHolder> aCanvasThreadHolder);
@@ -253,6 +256,8 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   void StartTranslation();
 
   void FinishShutdown();
+
+  void Deactivate();
 
   TextureData* CreateTextureData(TextureType aTextureType,
                                  const gfx::IntSize& aSize,
@@ -277,6 +282,9 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   UniquePtr<CanvasEventRingBuffer> mStream;
   TextureType mTextureType = TextureType::Unknown;
   UniquePtr<TextureData> mReferenceTextureData;
+  // Sometimes during device reset our reference DrawTarget can be null, so we
+  // hold the BackendType separately.
+  gfx::BackendType mBackendType = gfx::BackendType::NONE;
   typedef std::unordered_map<void*, UniquePtr<TextureData>> TextureMap;
   TextureMap mTextureDatas;
   nsRefPtrHashtable<nsPtrHashKey<void>, gfx::DataSourceSurface> mDataSurfaces;
@@ -286,7 +294,7 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   DescriptorMap mSurfaceDescriptors;
   Monitor mSurfaceDescriptorsMonitor{
       "CanvasTranslator::mSurfaceDescriptorsMonitor"};
-  bool mIsValid = true;
+  Atomic<bool> mDeactivated{false};
   bool mIsInTransaction = false;
   bool mDeviceResetInProgress = false;
 };

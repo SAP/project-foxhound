@@ -16,7 +16,6 @@ const {
   rawCropString,
   sanitizeString,
   wrapRender,
-  isGrip,
   ELLIPSIS,
   uneatLastUrlCharsRegex,
   urlRegex,
@@ -25,6 +24,7 @@ const {
 /**
  * Renders a string. String value is enclosed within quotes.
  */
+
 StringRep.propTypes = {
   useQuotes: PropTypes.bool,
   escapeWhitespace: PropTypes.bool,
@@ -37,6 +37,7 @@ StringRep.propTypes = {
   className: PropTypes.string,
   title: PropTypes.string,
   isInContentPage: PropTypes.bool,
+  shouldRenderTooltip: PropTypes.bool,
 };
 
 function StringRep(props) {
@@ -53,6 +54,7 @@ function StringRep(props) {
     title,
     isInContentPage,
     transformEmptyString = false,
+    shouldRenderTooltip,
   } = props;
 
   let text = object;
@@ -65,7 +67,11 @@ function StringRep(props) {
 
   if (text == "" && transformEmptyString && !useQuotes) {
     return span(
-      { ...config, className: `${config.className} objectBox-empty-string` },
+      {
+        ...config,
+        title: "<empty string>",
+        className: `${config.className} objectBox-empty-string`,
+      },
       "<empty string>"
     );
   }
@@ -96,6 +102,10 @@ function StringRep(props) {
     },
     text
   );
+
+  if (shouldRenderTooltip) {
+    config.title = text;
+  }
 
   if (!isLong) {
     if (containsURL(text)) {
@@ -264,6 +274,7 @@ function getLinkifiedElements({
             // displayed in content page (e.g. in the JSONViewer).
             href: openLink || isInContentPage ? useUrl : null,
             target: "_blank",
+            rel: "noopener noreferrer",
             onClick: openLink
               ? e => {
                   e.preventDefault();
@@ -345,11 +356,17 @@ function isLongString(object) {
 }
 
 function supportsObject(object, noGrip = false) {
-  if (noGrip === false && isGrip(object)) {
+  // Accept the object if the grip-type (or type for noGrip objects) is "string"
+  if (getGripType(object, noGrip) == "string") {
+    return true;
+  }
+
+  // Also accept longString objects if we're expecting grip
+  if (!noGrip) {
     return isLongString(object);
   }
 
-  return getGripType(object, noGrip) == "string";
+  return false;
 }
 
 // Exports from this module

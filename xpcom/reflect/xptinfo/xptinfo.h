@@ -21,6 +21,7 @@
 #include "js/Value.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "xptdata.h"
 
 // Forward Declarations
 namespace mozilla {
@@ -67,6 +68,10 @@ struct nsXPTInterfaceInfo {
   }
   static const nsXPTInterfaceInfo* ByName(const char* aName) {
     return xpt::detail::InterfaceByName(aName);
+  }
+
+  static const nsXPTInterfaceInfo* Get(nsXPTInterface aID) {
+    return ByIndex(uint16_t(aID));
   }
 
   // These are only needed for Components_interfaces's enumerator.
@@ -558,7 +563,7 @@ namespace detail {
 // The UntypedTArray type allows low-level access from XPConnect to nsTArray
 // internals without static knowledge of the array element type in question.
 class UntypedTArray : public nsTArray_base<nsTArrayFallibleAllocator,
-                                           nsTArray_CopyWithMemutils> {
+                                           nsTArray_RelocateUsingMemutils> {
  public:
   void* Elements() const { return static_cast<void*>(Hdr() + 1); }
 

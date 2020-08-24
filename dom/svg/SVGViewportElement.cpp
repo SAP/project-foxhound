@@ -16,7 +16,6 @@
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/SVGLengthBinding.h"
-#include "mozilla/dom/SVGMatrix.h"
 #include "mozilla/dom/SVGViewElement.h"
 
 #include "DOMSVGLength.h"
@@ -26,7 +25,6 @@
 #include "nsError.h"
 #include "nsGkAtoms.h"
 #include "nsIFrame.h"
-#include "nsISVGSVGFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsStyleUtil.h"
 
@@ -159,7 +157,7 @@ void SVGViewportElement::ChildrenOnlyTransformChanged(uint32_t aFlags) {
 
   // If we're not reconstructing the frame tree, then we only call
   // PostRestyleEvent if we're not being called under reflow to avoid recursing
-  // to death. See bug 767056 comments 10 and 12. Since our nsSVGOuterSVGFrame
+  // to death. See bug 767056 comments 10 and 12. Since our SVGOuterSVGFrame
   // is being reflowed we're going to invalidate and repaint its entire area
   // anyway (which will include our children).
   if ((changeHint & nsChangeHint_ReconstructFrame) ||

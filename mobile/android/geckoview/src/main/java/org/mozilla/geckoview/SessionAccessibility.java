@@ -734,6 +734,7 @@ public class SessionAccessibility {
         private static native void toggleNativeAccessibility(boolean enable);
     }
 
+    @SuppressWarnings("checkstyle:javadocmethod")
     public boolean onMotionEvent(final @NonNull MotionEvent event) {
         ThreadUtils.assertOnUiThread();
 
@@ -970,7 +971,7 @@ public class SessionAccessibility {
 
         @WrapForJNI(calledFrom = "gecko", stubName = "SendEvent")
         private void sendEventNative(final int eventType, final int sourceId, final int className, final GeckoBundle eventData) {
-            ThreadUtils.postToUiThread(new Runnable() {
+            ThreadUtils.runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
                     sendEvent(eventType, sourceId, className, eventData);

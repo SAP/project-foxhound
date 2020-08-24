@@ -565,10 +565,6 @@ static bool AddLazyFunctionsForRealm(JSContext* cx,
   // script. The last condition is so that we don't compile lazy scripts
   // whose enclosing scripts failed to compile, indicating that the lazy
   // script did not escape the script.
-  //
-  // Some LazyScripts have a non-null |JSScript* script| pointer. We still
-  // want to delazify in that case: this pointer is weak so the JSScript
-  // could be destroyed at the next GC.
 
   for (auto i = cx->zone()->cellIter<JSObject>(kind); !i.done(); i.next()) {
     JSFunction* fun = &i->as<JSFunction>();
@@ -589,7 +585,7 @@ static bool AddLazyFunctionsForRealm(JSContext* cx,
     }
 
     BaseScript* lazy = fun->baseScript();
-    if (lazy->enclosingScriptHasEverBeenCompiled()) {
+    if (lazy->isReadyForDelazification()) {
       if (!lazyFunctions.append(fun)) {
         return false;
       }
@@ -626,14 +622,11 @@ static bool CreateLazyScriptsForRealm(JSContext* cx) {
       continue;
     }
 
-    bool lazyScriptHadNoScript = !fun->lazyScript()->maybeScript();
-
     JSScript* script = JSFunction::getOrCreateScript(cx, fun);
     if (!script) {
       return false;
     }
-    if (lazyScriptHadNoScript &&
-        !AddInnerLazyFunctionsFromScript(script, &lazyFunctions)) {
+    if (!AddInnerLazyFunctionsFromScript(script, &lazyFunctions)) {
       return false;
     }
   }
@@ -879,7 +872,7 @@ JS_PUBLIC_API void JS::SetRealmNameCallback(JSContext* cx,
   cx->runtime()->realmNameCallback = callback;
 }
 
-JS_PUBLIC_API JSObject* JS::GetRealmGlobalOrNull(Handle<JS::Realm*> realm) {
+JS_PUBLIC_API JSObject* JS::GetRealmGlobalOrNull(JS::Realm* realm) {
   return realm->maybeGlobal();
 }
 

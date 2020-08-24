@@ -156,8 +156,8 @@ struct HistogramInfo {
 // Structs used to keep information about the histograms for which a
 // snapshot should be created.
 struct HistogramSnapshotData {
-  nsTArray<base::Histogram::Sample> mBucketRanges;
-  nsTArray<base::Histogram::Count> mBucketCounts;
+  CopyableTArray<base::Histogram::Sample> mBucketRanges;
+  CopyableTArray<base::Histogram::Count> mBucketCounts;
   int64_t mSampleSum;  // Same type as base::Histogram::SampleSet::sum_
 };
 
@@ -747,20 +747,19 @@ nsresult internal_GetHistogramAndSamples(const StaticMutexAutoLock& aLock,
   // Convert the ranges of the buckets to a nsTArray.
   const size_t bucketCount = h->bucket_count();
   for (size_t i = 0; i < bucketCount; i++) {
-    if (!aSnapshot.mBucketRanges.AppendElement(h->ranges(i))) {
-      return NS_ERROR_FAILURE;
-    }
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier, or change the return type to void.
+    aSnapshot.mBucketRanges.AppendElement(h->ranges(i));
   }
 
   // Get a snapshot of the samples.
-  base::Histogram::SampleSet ss;
-  h->SnapshotSample(&ss);
+  base::Histogram::SampleSet ss = h->SnapshotSample();
 
   // Get the number of samples in each bucket.
   for (size_t i = 0; i < bucketCount; i++) {
-    if (!aSnapshot.mBucketCounts.AppendElement(ss.counts(i))) {
-      return NS_ERROR_FAILURE;
-    }
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier, or change the return type to void.
+    aSnapshot.mBucketCounts.AppendElement(ss.counts(i));
   }
 
   // Finally, save the |sum|. We don't need to reflect declared_min,
@@ -1230,7 +1229,7 @@ nsresult KeyedHistogram::Add(const nsCString& key, uint32_t sample,
 
   base::Histogram* histogram;
   if (mSingleStore != nullptr) {
-    histogram = GetHistogram(NS_LITERAL_CSTRING("main"), key);
+    histogram = GetHistogram("main"_ns, key);
     if (!histogram) {
       MOZ_ASSERT(false, "Missing histogram in single store.");
       return NS_ERROR_FAILURE;
@@ -1667,8 +1666,8 @@ bool internal_JSHistogram_CoerceValue(JSContext* aCx,
     if (aHistogramType != nsITelemetry::HISTOGRAM_CATEGORICAL) {
       LogToBrowserConsole(
           nsIScriptError::errorFlag,
-          NS_LITERAL_STRING(
-              "String argument only allowed for categorical histogram"));
+          nsLiteralString(
+              u"String argument only allowed for categorical histogram"));
       return false;
     }
 
@@ -1676,7 +1675,7 @@ bool internal_JSHistogram_CoerceValue(JSContext* aCx,
     nsAutoJSString label;
     if (!label.init(aCx, aElement)) {
       LogToBrowserConsole(nsIScriptError::errorFlag,
-                          NS_LITERAL_STRING("Invalid string parameter"));
+                          u"Invalid string parameter"_ns);
       return false;
     }
 
@@ -1684,13 +1683,14 @@ bool internal_JSHistogram_CoerceValue(JSContext* aCx,
     nsresult rv = gHistogramInfos[aId].label_id(
         NS_ConvertUTF16toUTF8(label).get(), &aValue);
     if (NS_FAILED(rv)) {
+      nsPrintfCString msg("'%s' is an invalid string label",
+                          NS_ConvertUTF16toUTF8(label).get());
       LogToBrowserConsole(nsIScriptError::errorFlag,
-                          NS_LITERAL_STRING("Invalid string label"));
+                          NS_ConvertUTF8toUTF16(msg));
       return false;
     }
   } else if (!(aElement.isNumber() || aElement.isBoolean())) {
-    LogToBrowserConsole(nsIScriptError::errorFlag,
-                        NS_LITERAL_STRING("Argument not a number"));
+    LogToBrowserConsole(nsIScriptError::errorFlag, u"Argument not a number"_ns);
     return false;
   } else if (aElement.isNumber() && aElement.toNumber() > UINT32_MAX) {
     // Clamp large numerical arguments to aValue's acceptable values.
@@ -1699,12 +1699,11 @@ bool internal_JSHistogram_CoerceValue(JSContext* aCx,
     aValue = UINT32_MAX;
 #ifdef DEBUG
     LogToBrowserConsole(nsIScriptError::errorFlag,
-                        NS_LITERAL_STRING("Clamped large numeric value"));
+                        u"Clamped large numeric value"_ns);
 #endif
   } else if (!JS::ToUint32(aCx, aElement, &aValue)) {
-    LogToBrowserConsole(
-        nsIScriptError::errorFlag,
-        NS_LITERAL_STRING("Failed to convert element to UInt32"));
+    LogToBrowserConsole(nsIScriptError::errorFlag,
+                        u"Failed to convert element to UInt32"_ns);
     return false;
   }
 
@@ -1732,8 +1731,8 @@ bool internal_JSHistogram_GetValueArray(JSContext* aCx, JS::CallArgs& args,
     if (!(aHistogramType == nsITelemetry::HISTOGRAM_COUNT)) {
       LogToBrowserConsole(
           nsIScriptError::errorFlag,
-          NS_LITERAL_STRING(
-              "Need at least one argument for non count type histogram"));
+          nsLiteralString(
+              u"Need at least one argument for non count type histogram"));
       return false;
     }
 
@@ -1750,16 +1749,15 @@ bool internal_JSHistogram_GetValueArray(JSContext* aCx, JS::CallArgs& args,
     if (!isArray) {
       LogToBrowserConsole(
           nsIScriptError::errorFlag,
-          NS_LITERAL_STRING(
-              "The argument to accumulate can't be a non-array object"));
+          nsLiteralString(
+              u"The argument to accumulate can't be a non-array object"));
       return false;
     }
 
     uint32_t arrayLength = 0;
     if (!JS::GetArrayLength(aCx, arrayObj, &arrayLength)) {
-      LogToBrowserConsole(
-          nsIScriptError::errorFlag,
-          NS_LITERAL_STRING("Failed while trying to get array length"));
+      LogToBrowserConsole(nsIScriptError::errorFlag,
+                          u"Failed while trying to get array length"_ns);
       return false;
     }
 
@@ -2161,15 +2159,13 @@ bool internal_JSKeyedHistogram_Add(JSContext* cx, unsigned argc,
   // rather report failures using the console.
   args.rval().setUndefined();
   if (args.length() < 1) {
-    LogToBrowserConsole(nsIScriptError::errorFlag,
-                        NS_LITERAL_STRING("Expected one argument"));
+    LogToBrowserConsole(nsIScriptError::errorFlag, u"Expected one argument"_ns);
     return true;
   }
 
   nsAutoJSString key;
   if (!args[0].isString() || !key.init(cx, args[0])) {
-    LogToBrowserConsole(nsIScriptError::errorFlag,
-                        NS_LITERAL_STRING("Not a string"));
+    LogToBrowserConsole(nsIScriptError::errorFlag, u"Not a string"_ns);
     return true;
   }
 
@@ -2661,9 +2657,8 @@ nsresult TelemetryHistogram::Accumulate(const char* name, const nsCString& key,
   }
 
   if (keyNotAllowed) {
-    LogToBrowserConsole(
-        nsIScriptError::errorFlag,
-        NS_LITERAL_STRING("Key not allowed for this keyed histogram"));
+    LogToBrowserConsole(nsIScriptError::errorFlag,
+                        u"Key not allowed for this keyed histogram"_ns);
     TelemetryScalar::Add(mozilla::Telemetry::ScalarID::
                              TELEMETRY_ACCUMULATE_UNKNOWN_HISTOGRAM_KEYS,
                          NS_ConvertASCIItoUTF16(name), 1);
@@ -2768,6 +2763,44 @@ nsresult TelemetryHistogram::GetAllStores(StringHashSet& set) {
       return NS_ERROR_FAILURE;
     }
   }
+  return NS_OK;
+}
+
+nsresult TelemetryHistogram::GetCategoricalHistogramLabels(
+    JSContext* aCx, JS::MutableHandle<JS::Value> aResult) {
+  JS::Rooted<JSObject*> root_obj(aCx, JS_NewPlainObject(aCx));
+  if (!root_obj) {
+    return NS_ERROR_FAILURE;
+  }
+  aResult.setObject(*root_obj);
+
+  for (const HistogramInfo& info : gHistogramInfos) {
+    if (info.histogramType != nsITelemetry::HISTOGRAM_CATEGORICAL) {
+      continue;
+    }
+
+    const char* name = info.name();
+    JS::RootedObject labels(aCx, JS::NewArrayObject(aCx, info.label_count));
+    if (!labels) {
+      return NS_ERROR_FAILURE;
+    }
+
+    if (!JS_DefineProperty(aCx, root_obj, name, labels, JSPROP_ENUMERATE)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    for (uint32_t i = 0; i < info.label_count; ++i) {
+      uint32_t string_offset = gHistogramLabelTable[info.label_index + i];
+      const char* const label = &gHistogramStringTable[string_offset];
+      auto clabel = NS_ConvertASCIItoUTF16(label);
+      JS::Rooted<JS::Value> value(aCx);
+      value.setString(ToJSString(aCx, clabel));
+      if (!JS_DefineElement(aCx, labels, i, value, JSPROP_ENUMERATE)) {
+        return NS_ERROR_FAILURE;
+      }
+    }
+  }
+
   return NS_OK;
 }
 
@@ -3159,8 +3192,7 @@ nsresult TelemetryHistogram::SerializeHistograms(mozilla::JSONWriter& aWriter) {
     // record the right subset, so this will only return "prerelease" if
     // it was recorded.
     if (NS_FAILED(internal_GetHistogramsSnapshot(
-            locker, NS_LITERAL_CSTRING("main"),
-            nsITelemetry::DATASET_PRERELEASE_CHANNELS,
+            locker, "main"_ns, nsITelemetry::DATASET_PRERELEASE_CHANNELS,
             false /* aClearSubsession */, includeGPUProcess,
             false /* aFilterTest */, processHistArray))) {
       return NS_ERROR_FAILURE;
@@ -3204,8 +3236,7 @@ nsresult TelemetryHistogram::SerializeKeyedHistograms(
     // record the right subset, so this will only return "prerelease" if
     // it was recorded.
     if (NS_FAILED(internal_GetKeyedHistogramsSnapshot(
-            locker, NS_LITERAL_CSTRING("main"),
-            nsITelemetry::DATASET_PRERELEASE_CHANNELS,
+            locker, "main"_ns, nsITelemetry::DATASET_PRERELEASE_CHANNELS,
             false /* aClearSubsession */, includeGPUProcess,
             false /* aFilterTest */, processHistArray))) {
       return NS_ERROR_FAILURE;
@@ -3384,7 +3415,7 @@ nsresult TelemetryHistogram::DeserializeHistograms(JSContext* aCx,
         }
 
         base::Histogram* h = nullptr;
-        NS_NAMED_LITERAL_CSTRING(store, "main");
+        constexpr auto store = "main"_ns;
         if (!w->GetHistogram(store, &h)) {
           continue;
         }
@@ -3590,9 +3621,8 @@ nsresult TelemetryHistogram::DeserializeKeyedHistograms(JSContext* aCx,
 
         // Get data for the key we're looking for.
         base::Histogram* h = nullptr;
-        if (NS_FAILED(keyed->GetHistogram(NS_LITERAL_CSTRING("main"),
-                                          mozilla::Get<1>(histogramData),
-                                          &h))) {
+        if (NS_FAILED(keyed->GetHistogram(
+                "main"_ns, mozilla::Get<1>(histogramData), &h))) {
           continue;
         }
         MOZ_ASSERT(h);

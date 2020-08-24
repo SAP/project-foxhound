@@ -8,6 +8,10 @@ const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
 const MAC = AppConstants.platform == "macosx";
+const HAS_THREAD_NAMES =
+  AppConstants.platform != "win" ||
+  AppConstants.isPlatformAndVersionAtLeast("win", 10);
+const isFissionEnabled = Services.prefs.getBoolPref("fission.autostart");
 
 add_task(async function test_proc_info() {
   waitForExplicitFinish();
@@ -30,6 +34,14 @@ add_task(async function test_proc_info() {
           cpuThreads += parentProc.threads[x].cpuUser;
         }
 
+        // Under Windows, thread names appeared with Windows 10.
+        if (HAS_THREAD_NAMES) {
+          Assert.ok(
+            parentProc.threads.some(thread => thread.name),
+            "At least one of the threads of the parent process is named"
+          );
+        }
+
         for (var i = 0; i < parentProc.children.length; i++) {
           let childProc = parentProc.children[i];
           Assert.notEqual(
@@ -42,6 +54,13 @@ add_task(async function test_proc_info() {
             "unknown",
             "Child proc type should be known"
           );
+          if (childProc.type == "webIsolated") {
+            Assert.notEqual(
+              childProc.origin || "",
+              "",
+              "Child process should have an origin"
+            );
+          }
 
           for (var y = 0; y < childProc.threads.length; y++) {
             cpuThreads += childProc.threads[y].cpuUser;

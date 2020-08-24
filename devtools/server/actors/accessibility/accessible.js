@@ -48,6 +48,18 @@ loader.lazyRequireGetter(
   "devtools/server/actors/highlighters/utils/accessibility",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "isRemoteFrame",
+  "devtools/shared/layout/utils",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "ContentDOMReference",
+  "resource://gre/modules/ContentDOMReference.jsm",
+  true
+);
 
 const RELATIONS_TO_IGNORE = new Set([
   Ci.nsIAccessibleRelation.RELATION_CONTAINING_APPLICATION,
@@ -131,7 +143,7 @@ function getSnapshot(acc, a11yService) {
   }
 
   const { nodeType, nodeCssSelector } = getNodeDescription(acc.DOMNode);
-  return {
+  const snapshot = {
     name: acc.name,
     role: a11yService.getStringRole(acc.role),
     actions,
@@ -146,6 +158,16 @@ function getSnapshot(acc, a11yService) {
     children,
     attributes,
   };
+  const remoteFrame =
+    acc.role === Ci.nsIAccessibleRole.ROLE_INTERNAL_FRAME &&
+    isRemoteFrame(acc.DOMNode);
+  if (remoteFrame) {
+    snapshot.remoteFrame = remoteFrame;
+    snapshot.childCount = 1;
+    snapshot.contentDOMReference = ContentDOMReference.get(acc.DOMNode);
+  }
+
+  return snapshot;
 }
 
 /**
@@ -240,6 +262,12 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
     if (this.isDefunct) {
       return 0;
     }
+    // In case of a remote frame declare at least one child (the #document
+    // element) so that they can be expanded.
+    if (this.remoteFrame) {
+      return 1;
+    }
+
     return this.rawAccessible.childCount;
   },
 
@@ -384,11 +412,6 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
       const targets = [...relation.getTargets().enumerate(Ci.nsIAccessible)];
       let relationObject;
       for (const target of targets) {
-        // Target of the relation is not part of the current root document.
-        if (target.rootDocument !== doc.rawAccessible) {
-          continue;
-        }
-
         let targetAcc;
         try {
           targetAcc = this.walker.attachAccessible(target, doc.rawAccessible);
@@ -413,11 +436,23 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
     return relationObjects;
   },
 
+  get remoteFrame() {
+    if (this.isDefunct) {
+      return false;
+    }
+
+    return (
+      this.rawAccessible.role === Ci.nsIAccessibleRole.ROLE_INTERNAL_FRAME &&
+      isRemoteFrame(this.rawAccessible.DOMNode)
+    );
+  },
+
   form() {
     return {
       actor: this.actorID,
       role: this.role,
       name: this.name,
+      remoteFrame: this.remoteFrame,
       childCount: this.childCount,
       checks: this._lastAudit,
     };

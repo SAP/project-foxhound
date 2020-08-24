@@ -68,6 +68,7 @@ class nsRefreshDriver;
 class nsIWidget;
 class nsDeviceContext;
 class gfxMissingFontRecorder;
+struct FontMatchingStats;
 
 namespace mozilla {
 class AnimationEventDispatcher;
@@ -117,17 +118,15 @@ enum class nsLayoutPhase : uint8_t {
 #endif
 
 /* Used by nsPresContext::HasAuthorSpecifiedRules */
-#define NS_AUTHOR_SPECIFIED_BACKGROUND (1 << 0)
-#define NS_AUTHOR_SPECIFIED_BORDER (1 << 1)
-#define NS_AUTHOR_SPECIFIED_PADDING (1 << 2)
+#define NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND (1 << 0)
+#define NS_AUTHOR_SPECIFIED_PADDING (1 << 1)
 
 class nsRootPresContext;
 
 // An interface for presentation contexts. Presentation contexts are
 // objects that provide an outer context for a presentation shell.
 
-class nsPresContext : public nsISupports,
-                      public mozilla::SupportsWeakPtr<nsPresContext> {
+class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
  public:
   using Encoding = mozilla::Encoding;
   template <typename T>
@@ -140,7 +139,6 @@ class nsPresContext : public nsISupports,
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(nsPresContext)
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(nsPresContext)
 
   enum nsPresContextType {
     eContext_Galley,        // unpaginated screen presentation
@@ -181,13 +179,13 @@ class nsPresContext : public nsISupports,
    * Returns the parent prescontext for this one. Returns null if this is a
    * root.
    */
-  nsPresContext* GetParentPresContext();
+  nsPresContext* GetParentPresContext() const;
 
   /**
-   * Returns the prescontext of the toplevel content document that contains
-   * this presentation, or null if there isn't one.
+   * Returns the prescontext of the root content document in the same process
+   * that contains this presentation, or null if there isn't one.
    */
-  nsPresContext* GetToplevelContentDocumentPresContext();
+  nsPresContext* GetInProcessRootContentDocumentPresContext();
 
   /**
    * Returns the nearest widget for the root frame or view of this.
@@ -218,7 +216,7 @@ class nsPresContext : public nsISupports,
    * hierarchy that contains this presentation context, or nullptr if it can't
    * be found (e.g. it's detached).
    */
-  nsRootPresContext* GetRootPresContext();
+  nsRootPresContext* GetRootPresContext() const;
 
   virtual bool IsRoot() { return false; }
 
@@ -453,14 +451,19 @@ class nsPresContext : public nsISupports,
   void SetPageScale(float aScale) { mPageScale = aScale; }
 
   /**
-   * Get/set the scaling facor to use when rendering the pages for print
+   * Get/set the scaling factor to use when rendering the pages for print
    * preview. Only safe to get after print preview set up; safe to set anytime.
    * This is a scaling factor for the display of the print preview.  It
    * does not affect layout.  It only affects the size of the onscreen pages
    * in print preview.
+   *
+   * The getter should only be used by the page sequence frame, which is the
+   * frame responsible for applying the scaling. Other callers should use
+   * nsPageSequenceFrame::GetPrintPreviewScale() if needed, instead of this API.
+   *
    * XXX Temporary: see http://wiki.mozilla.org/Gecko:PrintPreview
    */
-  float GetPrintPreviewScale() { return mPPScale; }
+  float GetPrintPreviewScaleForSequenceFrame() { return mPPScale; }
   void SetPrintPreviewScale(float aScale) { mPPScale = aScale; }
 
   nsDeviceContext* DeviceContext() const { return mDeviceContext; }
@@ -491,13 +494,16 @@ class nsPresContext : public nsISupports,
    * font scale into account as well.
    */
   float TextZoom() const { return mTextZoom; }
-  void SetTextZoom(float aZoom) {
-    MOZ_ASSERT(aZoom > 0.0f, "invalid zoom factor");
-    if (aZoom == mTextZoom) return;
 
-    mTextZoom = aZoom;
-    UpdateEffectiveTextZoom();
-  }
+  /**
+   * Corresponds to the product of text zoom and system font scale, limited
+   * by zoom.maxPercent and minPercent.
+   * As the system font scale is automatically set by the PresShell, code that
+   * e.g. wants to transfer zoom levels to a new document should use TextZoom()
+   * instead, which corresponds to the text zoom level that was actually set by
+   * the front-end/user.
+   */
+  float EffectiveTextZoom() const { return mEffectiveTextZoom; }
 
   /**
    * Notify the pres context that the safe area insets have changed.
@@ -513,17 +519,16 @@ class nsPresContext : public nsISupports,
   void ValidatePresShellAndDocumentReleation() const;
 #endif  // #ifdef DEBUG
 
- public:
-  /**
-   * Corresponds to the product of text zoom and system font scale, limited
-   * by zoom.maxPercent and minPercent.
-   * As the system font scale is automatically set by the PresShell, code that
-   * e.g. wants to transfer zoom levels to a new document should use TextZoom()
-   * instead, which corresponds to the text zoom level that was actually set by
-   * the front-end/user.
-   */
-  float EffectiveTextZoom() const { return mEffectiveTextZoom; }
+  void SetTextZoom(float aZoom) {
+    MOZ_ASSERT(aZoom > 0.0f, "invalid zoom factor");
+    if (aZoom == mTextZoom) return;
 
+    mTextZoom = aZoom;
+    UpdateEffectiveTextZoom();
+  }
+  void SetFullZoom(float aZoom);
+
+ public:
   float GetFullZoom() { return mFullZoom; }
   /**
    * Device full zoom differs from full zoom because it gets the zoom from
@@ -531,18 +536,26 @@ class nsPresContext : public nsISupports,
    * of app units to device pixels.
    */
   float GetDeviceFullZoom();
-  void SetFullZoom(float aZoom);
 
   float GetOverrideDPPX() const { return mMediaEmulationData.mDPPX; }
   void SetOverrideDPPX(float);
+
+  /**
+   * Recomputes the data dependent on the browsing context, like zoom and text
+   * zoom.
+   *
+   * TODO(emilio): Eventually stuff like the media emulation data, overrideDPPX
+   * and such should also move here.
+   */
+  void RecomputeBrowsingContextDependentData();
 
   Maybe<StylePrefersColorScheme> GetOverridePrefersColorScheme() const {
     return mMediaEmulationData.mPrefersColorScheme;
   }
   void SetOverridePrefersColorScheme(const Maybe<StylePrefersColorScheme>&);
 
-  nscoord GetAutoQualityMinFontSize() {
-    return DevPixelsToAppUnits(mAutoQualityMinFontSizePixelsPref);
+  mozilla::CSSCoord GetAutoQualityMinFontSize() const {
+    return DevPixelsToFloatCSSPixels(mAutoQualityMinFontSizePixelsPref);
   }
 
   /**
@@ -797,11 +810,6 @@ class nsPresContext : public nsISupports,
    */
   void UIResolutionChangedSync();
 
-  /*
-   * Notify the pres context that a system color has changed
-   */
-  void SysColorChanged();
-
   /** Printing methods below should only be used for Medium() == print **/
   void SetPrintSettings(nsIPrintSettings* aPrintSettings);
 
@@ -835,6 +843,7 @@ class nsPresContext : public nsISupports,
   }
 
   gfxTextPerfMetrics* GetTextPerfMetrics() { return mTextPerf.get(); }
+  FontMatchingStats* GetFontMatchingStats() { return mFontStats.get(); }
 
   bool IsDynamic() {
     return (mType == eContext_PageLayout || mType == eContext_Galley);
@@ -1060,7 +1069,6 @@ class nsPresContext : public nsISupports,
  protected:
   friend class nsRunnableMethod<nsPresContext>;
   void ThemeChangedInternal();
-  void SysColorChangedInternal();
   void RefreshSystemMetrics();
 
   // update device context's resolution from the widget
@@ -1069,12 +1077,6 @@ class nsPresContext : public nsISupports,
   // if aScale > 0.0, use it as resolution scale factor to the device context
   // (otherwise get it from the widget)
   void UIResolutionChangedInternalScale(double aScale);
-
-  // aData here is a pointer to a double that holds the CSS to device-pixel
-  // scale factor from the parent, which will be applied to the subdocument's
-  // device context instead of retrieving a scale from the widget.
-  static mozilla::CallState UIResolutionChangedSubdocumentCallback(
-      mozilla::dom::Document&, void* aData);
 
   void SetImgAnimations(nsIContent* aParent, uint16_t aMode);
   void SetSMILAnimations(mozilla::dom::Document* aDoc, uint16_t aNewMode,
@@ -1089,11 +1091,6 @@ class nsPresContext : public nsISupports,
   void GetUserPreferences();
 
   void UpdateCharSet(NotNull<const Encoding*> aCharSet);
-
-  static mozilla::CallState NotifyDidPaintSubdocumentCallback(
-      mozilla::dom::Document&, void* aData);
-  static mozilla::CallState NotifyRevokingDidPaintSubdocumentCallback(
-      mozilla::dom::Document&, void* aData);
 
  public:
   // Used by the PresShell to force a reflow when some aspect of font info
@@ -1206,6 +1203,8 @@ class nsPresContext : public nsISupports,
   // text performance metrics
   mozilla::UniquePtr<gfxTextPerfMetrics> mTextPerf;
 
+  mozilla::UniquePtr<FontMatchingStats> mFontStats;
+
   mozilla::UniquePtr<gfxMissingFontRecorder> mMissingFonts;
 
   nsRect mVisibleArea;
@@ -1278,7 +1277,6 @@ class nsPresContext : public nsISupports,
   unsigned mIsRootPaginatedDocument : 1;
   unsigned mPrefBidiDirection : 1;
   unsigned mPrefScrollbarSide : 2;
-  unsigned mPendingSysColorChanged : 1;
   unsigned mPendingThemeChanged : 1;
   unsigned mPendingUIResolutionChanged : 1;
   unsigned mPrefChangePendingNeedsReflow : 1;

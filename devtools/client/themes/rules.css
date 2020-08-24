@@ -376,7 +376,7 @@
 /* The SVG checkbox on Windows and Linux */
 :root[platform="win"] .ruleview-enableproperty,
 :root[platform="linux"] .ruleview-enableproperty {
-  -moz-appearance: none;
+  appearance: none;
   float: left;
   left: -27px;
   box-sizing: content-box;
@@ -411,7 +411,8 @@
 }
 
 :root[platform="mac"] .ruleview-enableproperty {
-  -moz-appearance: checkbox;
+  appearance: auto;
+  -moz-default-appearance: checkbox;
 }
 
 .ruleview-warning,
@@ -750,6 +751,7 @@
   align-items: center;
   justify-content: center;
   font-weight: 600;
+  direction: ltr;
 }
 
 #print-simulation-toggle::before {
@@ -772,10 +774,6 @@
 
 #color-scheme-simulation-toggle[state="light"]::before {
   fill: #bbb;
-}
-
-#color-scheme-simulation-toggle[state="no-preference"]::before {
-  fill-opacity: 0.5;
 }
 
 .flash-out {

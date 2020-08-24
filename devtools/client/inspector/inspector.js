@@ -18,12 +18,6 @@ const Promise = require("Promise");
 
 loader.lazyRequireGetter(
   this,
-  "initCssProperties",
-  "devtools/shared/fronts/css-properties",
-  true
-);
-loader.lazyRequireGetter(
-  this,
   "HTMLBreadcrumbs",
   "devtools/client/inspector/breadcrumbs",
   true
@@ -84,6 +78,9 @@ const { LocalizationHelper, localizeMarkup } = require("devtools/shared/l10n");
 const INSPECTOR_L10N = new LocalizationHelper(
   "devtools/client/locales/inspector.properties"
 );
+const {
+  FluentL10n,
+} = require("devtools/client/shared/fluent-l10n/fluent-l10n");
 
 // Sidebar dimensions
 const INITIAL_SIDEBAR_SIZE = 350;
@@ -147,12 +144,12 @@ function Inspector(toolbox) {
   EventEmitter.decorate(this);
 
   this._toolbox = toolbox;
-  this._target = toolbox.target;
   this.panelDoc = window.document;
   this.panelWin = window;
   this.panelWin.inspector = this;
   this.telemetry = toolbox.telemetry;
   this.store = createStore();
+  this.isReady = false;
 
   // Map [panel id => panel instance]
   // Stores all the instances of sidebar panels like rule view, computed view, ...
@@ -172,7 +169,8 @@ function Inspector(toolbox) {
   this.onHostChanged = this.onHostChanged.bind(this);
   this.onMarkupLoaded = this.onMarkupLoaded.bind(this);
   this.onNewSelection = this.onNewSelection.bind(this);
-  this.onNewRoot = this.onNewRoot.bind(this);
+  this.onResourceAvailable = this.onResourceAvailable.bind(this);
+  this.onRootNodeAvailable = this.onRootNodeAvailable.bind(this);
   this.onPanelWindowResize = this.onPanelWindowResize.bind(this);
   this.onShowBoxModelHighlighterForNode = this.onShowBoxModelHighlighterForNode.bind(
     this
@@ -195,25 +193,35 @@ Inspector.prototype = {
     // Localize all the nodes containing a data-localization attribute.
     localizeMarkup(this.panelDoc);
 
+    this._fluentL10n = new FluentL10n();
+    await this._fluentL10n.init(["devtools/client/compatibility.ftl"]);
+
+    // The markup view will be initialized in onRootNodeAvailable, which will be
+    // called through watchTargets and _onTargetAvailable, when a root node is
+    // available for the top-level target.
+    this._onFirstMarkupLoaded = this.once("markuploaded");
+
     await this.toolbox.targetList.watchTargets(
       [this.toolbox.targetList.TYPES.FRAME],
       this._onTargetAvailable,
       this._onTargetDestroyed
     );
 
+    await this.toolbox.resourceWatcher.watchResources(
+      [this.toolbox.resourceWatcher.TYPES.ROOT_NODE],
+      { onAvailable: this.onResourceAvailable }
+    );
     // Store the URL of the target page prior to navigation in order to ensure
     // telemetry counts in the Grid Inspector are not double counted on reload.
     this.previousURL = this.currentTarget.url;
     this.styleChangeTracker = new InspectorStyleChangeTracker(this);
 
-    this._markupBox = this.panelDoc.getElementById("markup-box");
-
     return this._deferredOpen();
   },
 
-  async _onTargetAvailable({ type, targetFront, isTopLevel }) {
+  async _onTargetAvailable({ targetFront }) {
     // Ignore all targets but the top level one
-    if (!isTopLevel) {
+    if (!targetFront.isTopLevel) {
       return;
     }
 
@@ -223,28 +231,13 @@ Inspector.prototype = {
 
     await Promise.all([
       this._getCssProperties(),
-      this._getDefaultSelection(),
       this._getAccessibilityFront(),
     ]);
-
-    // When we navigate to another process and switch to a new
-    // target and the inspector is already ready, we want to
-    // update the markup view accordingly. So force a new-root event.
-    // For the initial panel startup, the initial top level target
-    // update the markup view from _deferredOpen.
-    // We might want to followup here in order to share the same
-    // codepath between the initial top level target and the next
-    // one we switch to. i.e. extract from deferredOpen code
-    // which has to be called only once on inspector startup.
-    // Then move the rest to onNewRoot and always call onNewRoot from here.
-    if (this.isReady) {
-      this.onNewRoot();
-    }
   },
 
-  _onTargetDestroyed({ type, targetFront, isTopLevel }) {
+  _onTargetDestroyed({ targetFront }) {
     // Ignore all targets but the top level one
-    if (!isTopLevel) {
+    if (!targetFront.isTopLevel) {
       return;
     }
     targetFront.off("will-navigate", this._onBeforeNavigate);
@@ -345,6 +338,10 @@ Inspector.prototype = {
     return this._cssProperties.cssProperties;
   },
 
+  get fluentL10n() {
+    return this._fluentL10n;
+  },
+
   /**
    * Handle promise rejections for various asynchronous actions, and only log errors if
    * the inspector panel still exists.
@@ -358,18 +355,6 @@ Inspector.prototype = {
   },
 
   _deferredOpen: async function() {
-    const onMarkupLoaded = this.once("markuploaded");
-    this._initMarkup();
-    this.isReady = false;
-
-    // Set the node front so that the markup and sidebar panels will have the selected
-    // nodeFront ready when they're initialized.
-    if (this._defaultNode) {
-      this.selection.setNodeFront(this._defaultNode, {
-        reason: "inspector-open",
-      });
-    }
-
     // Setup the splitter before the sidebar is displayed so, we don't miss any events.
     this.setupSplitter();
 
@@ -382,7 +367,7 @@ Inspector.prototype = {
     // Setup the sidebar panels.
     this.setupSidebar();
 
-    await onMarkupLoaded;
+    await this._onFirstMarkupLoaded;
     this.isReady = true;
 
     // All the components are initialized. Take care of the remaining initialization
@@ -390,11 +375,9 @@ Inspector.prototype = {
     this.breadcrumbs = new HTMLBreadcrumbs(this);
     this.setupExtensionSidebars();
     this.setupSearchBox();
-    await this.setupToolbar();
 
     this.onNewSelection();
 
-    this.walker.on("new-root", this.onNewRoot);
     this.toolbox.on("host-changed", this.onHostChanged);
     this.selection.on("new-node-front", this.onNewSelection);
     this.selection.on("detached-front", this.onDetached);
@@ -419,10 +402,8 @@ Inspector.prototype = {
     this._pendingSelection = null;
   },
 
-  _getCssProperties: function() {
-    return initCssProperties(this.toolbox).then(cssProperties => {
-      this._cssProperties = cssProperties;
-    }, this._handleRejectionIfNotDestroyed);
+  _getCssProperties: async function() {
+    this._cssProperties = await this.currentTarget.getFront("cssProperties");
   },
 
   _getAccessibilityFront: async function() {
@@ -430,14 +411,6 @@ Inspector.prototype = {
       "accessibility"
     );
     return this.accessibilityFront;
-  },
-
-  _getDefaultSelection: function() {
-    // This may throw if the document is still loading and we are
-    // refering to a dead about:blank document
-    return this._getDefaultNodeForSelection().catch(
-      this._handleRejectionIfNotDestroyed
-    );
   },
 
   /**
@@ -1044,6 +1017,9 @@ Inspector.prototype = {
     const sidebar = this.panelDoc.getElementById("inspector-sidebar");
     const options = {
       showAllTabsMenu: true,
+      allTabsMenuButtonTooltip: INSPECTOR_L10N.getStr(
+        "allTabsMenuButton.tooltip"
+      ),
       sidebarToggleButton: {
         collapsed: !this.is3PaneModeEnabled,
         collapsePaneTitle: INSPECTOR_L10N.getStr("inspector.hideThreePaneMode"),
@@ -1075,39 +1051,21 @@ Inspector.prototype = {
     this.addRuleView({ defaultTab });
 
     // Inspector sidebar panels in order of appearance.
-    const sidebarPanels = [
-      {
-        id: "layoutview",
-        title: INSPECTOR_L10N.getStr("inspector.sidebar.layoutViewTitle2"),
-      },
-      {
-        id: "computedview",
-        title: INSPECTOR_L10N.getStr("inspector.sidebar.computedViewTitle"),
-      },
-      {
-        id: "changesview",
-        title: INSPECTOR_L10N.getStr("inspector.sidebar.changesViewTitle"),
-      },
-      {
-        id: "fontinspector",
-        title: INSPECTOR_L10N.getStr("inspector.sidebar.fontInspectorTitle"),
-      },
-      {
-        id: "animationinspector",
-        title: INSPECTOR_L10N.getStr(
-          "inspector.sidebar.animationInspectorTitle"
-        ),
-      },
-    ];
+    const sidebarPanels = [];
+    sidebarPanels.push({
+      id: "layoutview",
+      title: INSPECTOR_L10N.getStr("inspector.sidebar.layoutViewTitle2"),
+    });
 
-    if (
-      Services.prefs.getBoolPref("devtools.inspector.new-rulesview.enabled")
-    ) {
-      sidebarPanels.push({
-        id: "newruleview",
-        title: INSPECTOR_L10N.getStr("inspector.sidebar.ruleViewTitle"),
-      });
-    }
+    sidebarPanels.push({
+      id: "computedview",
+      title: INSPECTOR_L10N.getStr("inspector.sidebar.computedViewTitle"),
+    });
+
+    sidebarPanels.push({
+      id: "changesview",
+      title: INSPECTOR_L10N.getStr("inspector.sidebar.changesViewTitle"),
+    });
 
     if (
       Services.prefs.getBoolPref("devtools.inspector.compatibility.enabled")
@@ -1117,6 +1075,25 @@ Inspector.prototype = {
         title: INSPECTOR_L10N.getStr(
           "inspector.sidebar.compatibilityViewTitle"
         ),
+      });
+    }
+
+    sidebarPanels.push({
+      id: "fontinspector",
+      title: INSPECTOR_L10N.getStr("inspector.sidebar.fontInspectorTitle"),
+    });
+
+    sidebarPanels.push({
+      id: "animationinspector",
+      title: INSPECTOR_L10N.getStr("inspector.sidebar.animationInspectorTitle"),
+    });
+
+    if (
+      Services.prefs.getBoolPref("devtools.inspector.new-rulesview.enabled")
+    ) {
+      sidebarPanels.push({
+        id: "newruleview",
+        title: INSPECTOR_L10N.getStr("inspector.sidebar.ruleViewTitle"),
       });
     }
 
@@ -1318,10 +1295,24 @@ Inspector.prototype = {
     }
   },
 
+  onResourceAvailable: function({ resourceType, targetFront, resource }) {
+    if (resourceType === this.toolbox.resourceWatcher.TYPES.ROOT_NODE) {
+      if (targetFront.isTopLevel) {
+        // Note: the resource (ie the root node here) will be fetched from the
+        // walker later on in _getDefaultNodeForSelection.
+        // We should update the inspector to directly use the node front
+        // provided here. Bug 1635461.
+        this.onRootNodeAvailable();
+      } else {
+        this.emit("frame-root-available", resource);
+      }
+    }
+  },
+
   /**
    * Reset the inspector on new root mutation.
    */
-  onNewRoot: function() {
+  onRootNodeAvailable: function() {
     // Record new-root timing for telemetry
     this._newRootStart = this.panelWin.performance.now();
 
@@ -1336,9 +1327,10 @@ Inspector.prototype = {
         return;
       }
       this._pendingSelection = null;
-      this.selection.setNodeFront(defaultNode, { reason: "navigateaway" });
+      this.selection.setNodeFront(defaultNode, {
+        reason: "inspector-default-selection",
+      });
 
-      this.once("markuploaded", this.onMarkupLoaded);
       this._initMarkup();
 
       // Setup the toolbar again, since its content may depend on the current document.
@@ -1647,12 +1639,8 @@ Inspector.prototype = {
     }
     this._destroyed = true;
 
-    this._target.threadFront.off("paused", this.handleThreadPaused);
-    this._target.threadFront.off("resumed", this.handleThreadResumed);
-
-    if (this.walker) {
-      this.walker.off("new-root", this.onNewRoot);
-    }
+    this.currentTarget.threadFront.off("paused", this.handleThreadPaused);
+    this.currentTarget.threadFront.off("resumed", this.handleThreadResumed);
 
     this.cancelUpdate();
 
@@ -1712,7 +1700,6 @@ Inspector.prototype = {
     this._is3PaneModeEnabled = null;
     this._markupBox = null;
     this._markupFrame = null;
-    this._target = null;
     this._toolbox = null;
     this.breadcrumbs = null;
     this.panelDoc = null;
@@ -1727,6 +1714,8 @@ Inspector.prototype = {
   },
 
   _initMarkup: function() {
+    this.once("markuploaded", this.onMarkupLoaded);
+
     if (!this._markupFrame) {
       this._markupFrame = this.panelDoc.createElement("iframe");
       this._markupFrame.setAttribute(
@@ -1737,6 +1726,7 @@ Inspector.prototype = {
       // This is needed to enable tooltips inside the iframe document.
       this._markupFrame.setAttribute("tooltip", "aHTMLTooltip");
 
+      this._markupBox = this.panelDoc.getElementById("markup-box");
       this._markupBox.style.visibility = "hidden";
       this._markupBox.appendChild(this._markupFrame);
 
@@ -1769,7 +1759,9 @@ Inspector.prototype = {
       destroyPromise = promise.resolve();
     }
 
-    this._markupBox.style.visibility = "hidden";
+    if (this._markupBox) {
+      this._markupBox.style.visibility = "hidden";
+    }
 
     return destroyPromise;
   },
@@ -1784,14 +1776,14 @@ Inspector.prototype = {
     this.toolbox.tellRDMAboutPickerState(true, PICKER_TYPES.EYEDROPPER);
     this.inspectorFront.once("color-pick-canceled", this.onEyeDropperDone);
     this.inspectorFront.once("color-picked", this.onEyeDropperDone);
-    this.walker.once("new-root", this.onEyeDropperDone);
+    this.once("new-root", this.onEyeDropperDone);
   },
 
   stopEyeDropperListeners: function() {
     this.toolbox.tellRDMAboutPickerState(false, PICKER_TYPES.EYEDROPPER);
     this.inspectorFront.off("color-pick-canceled", this.onEyeDropperDone);
     this.inspectorFront.off("color-picked", this.onEyeDropperDone);
-    this.walker.off("new-root", this.onEyeDropperDone);
+    this.off("new-root", this.onEyeDropperDone);
   },
 
   onEyeDropperDone: function() {

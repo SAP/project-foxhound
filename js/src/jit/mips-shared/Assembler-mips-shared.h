@@ -13,7 +13,7 @@
 #include "mozilla/Sprintf.h"
 
 #include "jit/CompactBuffer.h"
-#include "jit/IonCode.h"
+#include "jit/JitCode.h"
 #include "jit/JitRealm.h"
 #include "jit/JitSpewer.h"
 #include "jit/mips-shared/Architecture-mips-shared.h"
@@ -119,12 +119,6 @@ static constexpr Register RegExpTesterStringReg = CallTempReg1;
 static constexpr Register RegExpTesterLastIndexReg = CallTempReg2;
 
 static constexpr uint32_t CodeAlignment = 8;
-
-// This boolean indicates whether we support SIMD instructions flavoured for
-// this architecture or not. Rather than a method in the LIRGenerator, it is
-// here such that it is accessible from the entire codebase. Once full support
-// for SIMD is reached on all tier-1 platforms, this constant can be deleted.
-static constexpr bool SupportsSimd = false;
 
 /* clang-format off */
 // MIPS instruction types
@@ -425,6 +419,7 @@ enum FunctionField {
   ff_dinsu = 6,
   ff_dins = 7,
   ff_bshfl = 32,
+  ff_dbshfl = 36,
   ff_sc = 38,
   ff_scd = 39,
   ff_ll = 54,
@@ -1072,6 +1067,9 @@ class AssemblerMIPSShared : public AssemblerShared {
   // Bit twiddling.
   BufferOffset as_clz(Register rd, Register rs);
   BufferOffset as_dclz(Register rd, Register rs);
+  BufferOffset as_wsbh(Register rd, Register rt);
+  BufferOffset as_dsbh(Register rd, Register rt);
+  BufferOffset as_dshd(Register rd, Register rt);
   BufferOffset as_ins(Register rt, Register rs, uint16_t pos, uint16_t size);
   BufferOffset as_dins(Register rt, Register rs, uint16_t pos, uint16_t size);
   BufferOffset as_dinsm(Register rt, Register rs, uint16_t pos, uint16_t size);
@@ -1237,7 +1235,6 @@ class AssemblerMIPSShared : public AssemblerShared {
   }
   static bool SupportsUnalignedAccesses() { return true; }
   static bool SupportsFastUnalignedAccesses() { return false; }
-  static bool SupportsSimd() { return js::jit::SupportsSimd; }
 
   static bool HasRoundInstruction(RoundingMode mode) { return false; }
 

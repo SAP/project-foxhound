@@ -41,30 +41,13 @@ using JS::Value;
 
 void InterpreterFrame::initExecuteFrame(JSContext* cx, HandleScript script,
                                         AbstractFramePtr evalInFramePrev,
-                                        const Value& newTargetValue,
+                                        HandleValue newTargetValue,
                                         HandleObject envChain) {
   flags_ = 0;
   script_ = script;
 
-  // newTarget = NullValue is an initial sentinel for "please fill me in from
-  // the stack". It should never be passed from Ion code.
-  RootedValue newTarget(cx, newTargetValue);
-  if (script->isDirectEvalInFunction()) {
-    FrameIter iter(cx);
-    if (newTarget.isNull() && iter.hasScript() &&
-        iter.script()->bodyScope()->hasOnChain(ScopeKind::Function)) {
-      newTarget = iter.newTarget();
-    }
-  } else if (evalInFramePrev) {
-    if (newTarget.isNull() && evalInFramePrev.hasScript() &&
-        evalInFramePrev.script()->bodyScope()->hasOnChain(
-            ScopeKind::Function)) {
-      newTarget = evalInFramePrev.newTarget();
-    }
-  }
-
   Value* dstvp = (Value*)this - 1;
-  dstvp[0] = newTarget;
+  dstvp[0] = newTargetValue;
 
   envChain_ = envChain.get();
   prev_ = nullptr;
@@ -127,6 +110,7 @@ static inline void AssertScopeMatchesEnvironment(Scope* scope,
         case ScopeKind::NamedLambda:
         case ScopeKind::StrictNamedLambda:
         case ScopeKind::FunctionLexical:
+        case ScopeKind::ClassBody:
           MOZ_ASSERT(&env->as<LexicalEnvironmentObject>().scope() ==
                      si.scope());
           env = &env->as<LexicalEnvironmentObject>().enclosingEnvironment();
@@ -203,19 +187,9 @@ bool InterpreterFrame::prologue(JSContext* cx) {
   MOZ_ASSERT(cx->interpreterRegs().pc == script->code());
   MOZ_ASSERT(cx->realm() == script->realm());
 
-  if (isEvalFrame() || isGlobalFrame()) {
-    HandleObject env = environmentChain();
-    if (!CheckGlobalOrEvalDeclarationConflicts(cx, env, script)) {
-      return false;
-    }
+  if (!isFunctionFrame()) {
     return probes::EnterScript(cx, script, nullptr, this);
   }
-
-  if (isModuleFrame()) {
-    return probes::EnterScript(cx, script, nullptr, this);
-  }
-
-  MOZ_ASSERT(isFunctionFrame());
 
   // At this point, we've yet to push any environments. Check that they
   // match the enclosing scope.
@@ -427,7 +401,7 @@ InterpreterFrame* InterpreterStack::pushInvokeFrame(
 }
 
 InterpreterFrame* InterpreterStack::pushExecuteFrame(
-    JSContext* cx, HandleScript script, const Value& newTargetValue,
+    JSContext* cx, HandleScript script, HandleValue newTargetValue,
     HandleObject envChain, AbstractFramePtr evalInFrame) {
   LifoAlloc::Mark mark = allocator_.mark();
 

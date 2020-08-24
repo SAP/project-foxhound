@@ -15,6 +15,7 @@ interface nsIGfxInfo : nsISupports
    */
   readonly attribute boolean D2DEnabled;
   readonly attribute boolean DWriteEnabled;
+  readonly attribute boolean EmbeddedInFirefoxReality;
   readonly attribute boolean usingGPUProcess;
   readonly attribute boolean hasBattery;
   readonly attribute AString DWriteVersion;
@@ -158,8 +159,10 @@ interface nsIGfxInfo : nsISupports
   const long FEATURE_GL_SWIZZLE = 28;
   /* Whether WebRender native compositor is supported, starting in 73 */
   const long FEATURE_WEBRENDER_COMPOSITOR = 29;
+  /* Whether WebRender can use scissored clears for cached surfaces, staring in 79 */
+  const long FEATURE_WEBRENDER_SCISSORED_CACHE_CLEARS = 30;
   /* the maximum feature value. */
-  const long FEATURE_MAX_VALUE = FEATURE_WEBRENDER_COMPOSITOR;
+  const long FEATURE_MAX_VALUE = FEATURE_WEBRENDER_SCISSORED_CACHE_CLEARS;
 
   /*
    * A set of return values from GetFeatureStatus
@@ -203,6 +206,11 @@ interface nsIGfxInfo : nsISupports
 
   // only useful on X11
   [noscript, notxpcom] void GetData();
+
+  /**
+   * Maximum refresh rate among detected monitors. -1 if unknown.
+   */
+  [noscript, notxpcom] long GetMaxRefreshRate();
 
   [implicit_jscontext]
   jsval getInfo();
@@ -259,7 +267,7 @@ interface nsIGfxInfo : nsISupports
   //       //   "unused"      - This feature has not been requested.
   //       //   "unavailable" - OS version or restriction prevents use.
   //       //   "blocked"     - An internal condition (such as safe mode) prevents use.
-  //       //   "blacklisted" - Blocked due to a blacklist restriction.
+  //       //   "blocklisted" - Blocked due to a blocklist restriction.
   //       //   "denied"      - Blocked due to allowlist restrictions.
   //       //   "disabled"    - User explicitly disabled this default feature.
   //       //   "failed"      - Feature failed to initialize.

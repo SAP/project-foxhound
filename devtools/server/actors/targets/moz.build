@@ -10,6 +10,7 @@ DevToolsModules(
     'content-process.js',
     'frame.js',
     'parent-process.js',
+    'target-actor-registry.jsm',
     'webextension.js',
     'worker.js',
 )

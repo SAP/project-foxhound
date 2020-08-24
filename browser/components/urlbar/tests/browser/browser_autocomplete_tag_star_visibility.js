@@ -113,7 +113,6 @@ add_task(async function() {
 
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
-      waitForFocus: SimpleTest.waitForFocus,
       value: testcase.input,
     });
 
@@ -144,9 +143,7 @@ add_task(async function() {
     if (testcase.expected.typeImageVisible) {
       Assert.equal(
         result.displayed.typeIcon,
-        gURLBar.megabar
-          ? 'url("chrome://browser/skin/bookmark-12.svg")'
-          : 'url("chrome://browser/skin/bookmark.svg")',
+        'url("chrome://browser/skin/bookmark-12.svg")',
         "Should have the star image displayed or not as expected"
       );
     } else {

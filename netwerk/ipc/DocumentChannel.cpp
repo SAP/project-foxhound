@@ -10,20 +10,24 @@
 #include "SerializedLoadContext.h"
 #include "mozIThirdPartyUtil.h"
 #include "mozilla/LoadInfo.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/extensions/StreamFilterParent.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
+#include "mozilla/net/DocumentChannelChild.h"
 #include "mozilla/net/HttpChannelChild.h"
 #include "mozilla/net/NeckoChild.h"
+#include "mozilla/net/ParentProcessDocumentChannel.h"
 #include "mozilla/net/UrlClassifierCommon.h"
 #include "nsContentSecurityManager.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
 #include "nsHttpHandler.h"
 #include "nsIInputStreamChannel.h"
+#include "nsNetUtil.h"
 #include "nsQueryObject.h"
 #include "nsSerializationHelper.h"
 #include "nsStreamListenerWrapper.h"
@@ -48,6 +52,7 @@ NS_IMPL_RELEASE(DocumentChannel)
 NS_INTERFACE_MAP_BEGIN(DocumentChannel)
   NS_INTERFACE_MAP_ENTRY(nsIRequest)
   NS_INTERFACE_MAP_ENTRY(nsIChannel)
+  NS_INTERFACE_MAP_ENTRY(nsIIdentChannel)
   NS_INTERFACE_MAP_ENTRY(nsITraceableChannel)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(DocumentChannel)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIRequest)
@@ -55,20 +60,16 @@ NS_INTERFACE_MAP_END
 
 DocumentChannel::DocumentChannel(nsDocShellLoadState* aLoadState,
                                  net::LoadInfo* aLoadInfo,
-                                 nsLoadFlags aLoadFlags, uint32_t aLoadType,
-                                 uint32_t aCacheKey, bool aIsActive,
-                                 bool aIsTopLevelDoc,
-                                 bool aHasNonEmptySandboxingFlags)
+                                 nsLoadFlags aLoadFlags, uint32_t aCacheKey,
+                                 bool aUriModified, bool aIsXFOError)
     : mAsyncOpenTime(TimeStamp::Now()),
       mLoadState(aLoadState),
-      mLoadType(aLoadType),
       mCacheKey(aCacheKey),
-      mIsActive(aIsActive),
-      mIsTopLevelDoc(aIsTopLevelDoc),
-      mHasNonEmptySandboxingFlags(aHasNonEmptySandboxingFlags),
       mLoadFlags(aLoadFlags),
       mURI(aLoadState->URI()),
-      mLoadInfo(aLoadInfo) {
+      mLoadInfo(aLoadInfo),
+      mUriModified(aUriModified),
+      mIsXFOError(aIsXFOError) {
   LOG(("DocumentChannel ctor [this=%p, uri=%s]", this,
        aLoadState->URI()->GetSpecOrDefault().get()));
   RefPtr<nsHttpHandler> handler = nsHttpHandler::GetInstance();
@@ -81,6 +82,54 @@ NS_IMETHODIMP
 DocumentChannel::AsyncOpen(nsIStreamListener* aListener) {
   MOZ_CRASH("If we get here, something is broken");
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+void DocumentChannel::ShutdownListeners(nsresult aStatusCode) {
+  LOG(("DocumentChannel ShutdownListeners [this=%p, status=%" PRIx32 "]", this,
+       static_cast<uint32_t>(aStatusCode)));
+  mStatus = aStatusCode;
+
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  if (listener) {
+    listener->OnStartRequest(this);
+  }
+
+  mIsPending = false;
+
+  listener = mListener;  // it might have changed!
+  nsCOMPtr<nsILoadGroup> loadGroup = mLoadGroup;
+
+  mListener = nullptr;
+  mLoadGroup = nullptr;
+  mCallbacks = nullptr;
+
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "DocumentChannel::ShutdownListeners", [=, self = RefPtr{this}] {
+        if (listener) {
+          listener->OnStopRequest(self, aStatusCode);
+        }
+
+        if (loadGroup) {
+          loadGroup->RemoveRequest(self, nullptr, aStatusCode);
+        }
+      }));
+
+  DeleteIPDL();
+}
+
+void DocumentChannel::DisconnectChildListeners(
+    const nsresult& aStatus, const nsresult& aLoadGroupStatus) {
+  MOZ_ASSERT(NS_FAILED(aStatus));
+  mStatus = aLoadGroupStatus;
+  // Make sure we remove from the load group before
+  // setting mStatus, as existing tests expect the
+  // status to be successful when we disconnect.
+  if (mLoadGroup) {
+    mLoadGroup->RemoveRequest(this, nullptr, aStatus);
+    mLoadGroup = nullptr;
+  }
+
+  ShutdownListeners(aStatus);
 }
 
 nsDocShell* DocumentChannel::GetDocShell() {
@@ -97,6 +146,60 @@ nsDocShell* DocumentChannel::GetDocShell() {
   auto* pDomWindow = nsPIDOMWindowOuter::From(domWindow);
   nsIDocShell* docshell = pDomWindow->GetDocShell();
   return nsDocShell::Cast(docshell);
+}
+
+// Changes here should also be made in
+// E10SUtils.documentChannelPermittedForURI().
+static bool URIUsesDocChannel(nsIURI* aURI) {
+  if (SchemeIsJavascript(aURI) || NS_IsAboutBlank(aURI)) {
+    return false;
+  }
+
+  nsCString spec = aURI->GetSpecOrDefault();
+  return !spec.EqualsLiteral("about:printpreview") &&
+         !spec.EqualsLiteral("about:crashcontent");
+}
+
+bool DocumentChannel::CanUseDocumentChannel(nsIURI* aURI, uint32_t aLoadFlags) {
+  if (XRE_IsParentProcess() &&
+      !StaticPrefs::browser_tabs_documentchannel_ppdc()) {
+    return false;
+  }
+
+  // We want to use DocumentChannel if we're using a supported scheme. Sandboxed
+  // srcdoc loads break due to failing assertions after changing processes, and
+  // non-sandboxed srcdoc loads need to share the same principal object as their
+  // outer document (and must load in the same process), which breaks if we
+  // serialize to the parent process.
+  return StaticPrefs::browser_tabs_documentchannel() &&
+         !(aLoadFlags & nsDocShell::INTERNAL_LOAD_FLAGS_IS_SRCDOC) &&
+         URIUsesDocChannel(aURI);
+}
+
+/* static */
+already_AddRefed<DocumentChannel> DocumentChannel::CreateForDocument(
+    nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
+    nsLoadFlags aLoadFlags, nsIInterfaceRequestor* aNotificationCallbacks,
+    uint32_t aCacheKey, bool aUriModified, bool aIsXFOError) {
+  RefPtr<DocumentChannel> channel;
+  if (XRE_IsContentProcess()) {
+    channel = new DocumentChannelChild(aLoadState, aLoadInfo, aLoadFlags,
+                                       aCacheKey, aUriModified, aIsXFOError);
+  } else {
+    channel =
+        new ParentProcessDocumentChannel(aLoadState, aLoadInfo, aLoadFlags,
+                                         aCacheKey, aUriModified, aIsXFOError);
+  }
+  channel->SetNotificationCallbacks(aNotificationCallbacks);
+  return channel.forget();
+}
+
+/* static */
+already_AddRefed<DocumentChannel> DocumentChannel::CreateForObject(
+    nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
+    nsLoadFlags aLoadFlags, nsIInterfaceRequestor* aNotificationCallbacks) {
+  return CreateForDocument(aLoadState, aLoadInfo, aLoadFlags,
+                           aNotificationCallbacks, 0, false, false);
 }
 
 //-----------------------------------------------------------------------------
@@ -201,7 +304,17 @@ DocumentChannel::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
 }
 
 NS_IMETHODIMP DocumentChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
-  mLoadFlags = aLoadFlags;
+  auto contentPolicy = mLoadInfo->GetExternalContentPolicyType();
+  // Setting load flags for TYPE_OBJECT is permissible before channel to parent
+  // is opened.
+  if (contentPolicy != nsIContentPolicy::TYPE_OBJECT || mWasOpened) {
+    MOZ_CRASH("DocumentChannel::SetLoadFlags: Don't set flags after creation");
+    NS_ERROR(
+        "DocumentChannel::SetLoadFlags: "
+        "Don't set flags after creation");
+  } else {
+    mLoadFlags = aLoadFlags;
+  }
   return NS_OK;
 }
 
@@ -240,7 +353,7 @@ NS_IMETHODIMP DocumentChannel::GetSecurityInfo(nsISupports** aSecurityInfo) {
 }
 
 NS_IMETHODIMP DocumentChannel::GetContentType(nsACString& aContentType) {
-  MOZ_CRASH("If we get here, something is broken");
+  NS_ERROR("If we get here, something is broken");
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -339,6 +452,23 @@ NS_IMETHODIMP
 DocumentChannel::SetChannelId(uint64_t aChannelId) {
   mChannelId = aChannelId;
   return NS_OK;
+}
+
+//-----------------------------------------------------------------------------
+// Helpers
+//-----------------------------------------------------------------------------
+
+uint64_t InnerWindowIDForExtantDoc(nsDocShell* docShell) {
+  if (!docShell) {
+    return 0;
+  }
+
+  Document* doc = docShell->GetExtantDocument();
+  if (!doc) {
+    return 0;
+  }
+
+  return doc->InnerWindowID();
 }
 
 }  // namespace net

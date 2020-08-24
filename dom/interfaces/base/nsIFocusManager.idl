@@ -7,6 +7,7 @@
 
 interface mozIDOMWindowProxy;
 
+webidl BrowsingContext;
 webidl Document;
 webidl Element;
 
@@ -45,9 +46,16 @@ interface nsIFocusManager : nsISupports
 {
   /**
    * The most active (frontmost) window, or null if no window that is part of
-   * the application is active.
+   * the application is active. Do not use outside the parent process.
    */
   readonly attribute mozIDOMWindowProxy activeWindow;
+
+  /**
+   * In the parent process: The BrowsingContext corresponding to activeWindow.
+   * In content processes: The top-level Web content browsing context that
+   * focus is in if the application is active and focus is in Web content.
+   */
+  readonly attribute BrowsingContext activeBrowsingContext;
 
   /**
    * The child window within the activeWindow that is focused. This will
@@ -159,8 +167,7 @@ interface nsIFocusManager : nsISupports
   const unsigned long FLAG_RAISE = 1;
 
   /**
-   * Do not scroll the element to focus into view. If FLAG_BYELEMENTFOCUS is
-   * set too, the latter is ignored.
+   * Do not scroll the element to focus into view.
    */
   const unsigned long FLAG_NOSCROLL = 2;
 
@@ -219,16 +226,6 @@ interface nsIFocusManager : nsISupports
    * Normally used in conjunction with FLAG_BYMOUSE.
    */
   const unsigned long FLAG_BYTOUCH = 0x200000;
-
-  /**
-   * Focus is changing due to a Element.focus() call.
-   * This is used to distinguish the Element.focus() call from other focus
-   * functionalities since we need to factor scroll-margin and scroll-padding
-   * values into the position where we scroll to the element by the
-   * Element.focus() call.
-   * NOTE: This flag is ignored if FLAG_NOSCROLL is set too.
-   */
-  const unsigned long FLAG_BYELEMENTFOCUS = 0x400000;
 
   /*
    * Focus is changing due to a long press operation by touch or mouse.

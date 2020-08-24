@@ -13,7 +13,7 @@ let whitelist = [
   // CodeMirror is imported as-is, see bug 1004423.
   { sourceName: /codemirror\.css$/i, isFromDevTools: true },
   {
-    sourceName: /devtools\/client\/debugger\/src\/components\/([A-z\/]+).css/i,
+    sourceName: /devtools\/content\/debugger\/src\/components\/([A-z\/]+).css/i,
     isFromDevTools: true,
   },
   // Highlighter CSS uses a UA-only pseudo-class, see bug 985597.
@@ -35,7 +35,7 @@ let whitelist = [
     isFromDevTools: false,
   },
   {
-    sourceName: /\b(html|mathml|ua)\.css$/i,
+    sourceName: /\b(html|mathml|ua|forms|svg)\.css$/i,
     errorMessage: /Unknown property.*-moz-/i,
     isFromDevTools: false,
   },
@@ -48,21 +48,6 @@ let whitelist = [
   {
     sourceName: /(?:res|gre-resources)\/forms\.css$/i,
     errorMessage: /Unknown property.*overflow-clip-box/i,
-    isFromDevTools: false,
-  },
-  // System colors reserved to UA / chrome sheets
-  {
-    sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Expected color but found \u2018-moz.*/i,
-    platforms: ["linux"],
-    isFromDevTools: false,
-  },
-  // The '-moz-menulist-arrow-button' value is only supported in chrome and UA sheets
-  // but forms.css is loaded as a document sheet by this test.
-  // Maybe bug 1261237 will fix this?
-  {
-    sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Error in parsing value for \u2018-moz-appearance\u2019/iu,
     isFromDevTools: false,
   },
   // These variables are declared somewhere else, and error when we load the
@@ -89,23 +74,19 @@ if (
   });
 }
 
-if (
-  !Services.prefs.getBoolPref(
-    "layout.css.line-height-moz-block-height.content.enabled"
-  )
-) {
-  // -moz-block-height is used in form controls but not exposed to the web.
+if (Services.prefs.getBoolPref("layout.css.file-chooser-button.enabled")) {
+  // System colors reserved to UA / chrome sheets
   whitelist.push({
     sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Error in parsing value for \u2018line-height\u2019/iu,
+    errorMessage: /Expected color but found \u2018-moz.*/i,
+    platforms: ["linux"],
     isFromDevTools: false,
   });
-}
-
-if (!Services.prefs.getBoolPref("layout.css.scrollbar-width.enabled")) {
+} else {
+  // Reserved to UA sheets, behind a pref for content.
   whitelist.push({
     sourceName: /(?:res|gre-resources)\/forms\.css$/i,
-    errorMessage: /Unknown property .*\bscrollbar-width\b/i,
+    errorMessage: /Unknown pseudo-.*file-chooser-button/i,
     isFromDevTools: false,
   });
 }

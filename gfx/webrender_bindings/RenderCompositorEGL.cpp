@@ -10,6 +10,7 @@
 #include "GLContextEGL.h"
 #include "GLContextProvider.h"
 #include "GLLibraryEGL.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 
@@ -20,8 +21,8 @@
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/java/GeckoSurfaceTextureWrappers.h"
 #  include "mozilla/widget/AndroidCompositorWidget.h"
-#  include "GeneratedJNIWrappers.h"
 #  include <android/native_window.h>
 #  include <android/native_window_jni.h>
 #endif
@@ -61,7 +62,6 @@ RenderCompositorEGL::RenderCompositorEGL(
 RenderCompositorEGL::~RenderCompositorEGL() {
 #ifdef MOZ_WIDGET_ANDROID
   java::GeckoSurfaceTexture::DestroyUnused((int64_t)gl());
-  java::GeckoSurfaceTexture::DetachAllFromGLContext((int64_t)gl());
 #endif
   DestroyEGLSurface();
 }
@@ -87,25 +87,34 @@ bool RenderCompositorEGL::BeginFrame() {
   gl()->MakeCurrent();  // DestroyUnused can change the current context!
 #endif
 
+  // sets 0 if buffer_age is not supported
+  mBufferAge = gl::GLContextEGL::Cast(gl())->GetBufferAge();
+
   return true;
 }
 
 RenderedFrameId RenderCompositorEGL::EndFrame(
     const nsTArray<DeviceIntRect>& aDirtyRects) {
   RenderedFrameId frameId = GetNextRenderFrameId();
-  if (mEGLSurface != EGL_NO_SURFACE) {
-    gl()->SwapBuffers();
+  if (mEGLSurface != EGL_NO_SURFACE && aDirtyRects.Length() > 0) {
+    gfx::IntRegion bufferInvalid;
+    for (const DeviceIntRect& rect : aDirtyRects) {
+      const auto width = std::min(rect.size.width, GetBufferSize().width);
+      const auto height = std::min(rect.size.height, GetBufferSize().height);
+      const auto left =
+          std::max(0, std::min(rect.origin.x, GetBufferSize().width));
+      const auto bottom =
+          std::max(0, std::min(rect.origin.y + height, GetBufferSize().height));
+      bufferInvalid.OrWith(
+          gfx::IntRect(left, (GetBufferSize().height - bottom), width, height));
+    }
+    gl()->SetDamage(bufferInvalid);
   }
+  gl()->SwapBuffers();
   return frameId;
 }
 
-void RenderCompositorEGL::Pause() {
-#ifdef MOZ_WIDGET_ANDROID
-  java::GeckoSurfaceTexture::DestroyUnused((int64_t)gl());
-  java::GeckoSurfaceTexture::DetachAllFromGLContext((int64_t)gl());
-#endif
-  DestroyEGLSurface();
-}
+void RenderCompositorEGL::Pause() { DestroyEGLSurface(); }
 
 bool RenderCompositorEGL::Resume() {
 #ifdef MOZ_WIDGET_ANDROID
@@ -182,6 +191,20 @@ CompositorCapabilities RenderCompositorEGL::GetCompositorCapabilities() {
   caps.virtual_surface_size = 0;
 
   return caps;
+}
+
+bool RenderCompositorEGL::UsePartialPresent() {
+  return gfx::gfxVars::WebRenderMaxPartialPresentRects() > 0;
+}
+
+bool RenderCompositorEGL::RequestFullRender() { return mBufferAge != 2; }
+
+uint32_t RenderCompositorEGL::GetMaxPartialPresentRects() {
+  return gfx::gfxVars::WebRenderMaxPartialPresentRects();
+}
+
+bool RenderCompositorEGL::ShouldDrawPreviousPartialPresentRegions() {
+  return gl::GLContextEGL::Cast(gl())->HasBufferAge();
 }
 
 }  // namespace mozilla::wr

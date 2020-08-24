@@ -17,6 +17,7 @@
 
 // Audio Engine Includes
 #include "webrtc/common_types.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_packet_observer.h"
 #include "webrtc/modules/audio_device/include/fake_audio_device.h"
 #include "webrtc/voice_engine/include/voe_base.h"
 #include "webrtc/voice_engine/channel_proxy.h"
@@ -46,7 +47,7 @@ class WebrtcAudioConduit : public AudioSessionConduit,
    * feed in received RTP Frames to the VoiceEngine for decoding
    */
   MediaConduitErrorCode ReceivedRTPPacket(const void* data, int len,
-                                          uint32_t ssrc) override;
+                                          webrtc::RTPHeader& header) override;
 
   /**
    * APIs used by the registered external transport to this Conduit to
@@ -197,6 +198,7 @@ class WebrtcAudioConduit : public AudioSessionConduit,
         mSendChannel(-1),
         mDtmfEnabled(false),
         mMutex("WebrtcAudioConduit::mMutex"),
+        mRtpSourceObserver(new RtpSourceObserver(mCall->GetTimestampMaker())),
         mStsThread(aStsThread) {}
 
   virtual ~WebrtcAudioConduit();
@@ -212,11 +214,12 @@ class WebrtcAudioConduit : public AudioSessionConduit,
    * Note: Until the refactor of the VoE into the call API is complete
    *   this list should contain only a single ssrc.
    */
-  bool SetLocalSSRCs(const std::vector<unsigned int>& aSSRCs) override;
-  std::vector<unsigned int> GetLocalSSRCs() override;
-  bool SetRemoteSSRC(unsigned int ssrc) override;
+  bool SetLocalSSRCs(const std::vector<uint32_t>& aSSRCs,
+                     const std::vector<uint32_t>& aRtxSSRCs) override;
+  std::vector<uint32_t> GetLocalSSRCs() override;
+  bool SetRemoteSSRC(uint32_t ssrc, uint32_t rtxSsrc) override;
   bool UnsetRemoteSSRC(uint32_t ssrc) override { return true; }
-  bool GetRemoteSSRC(unsigned int* ssrc) override;
+  bool GetRemoteSSRC(uint32_t* ssrc) override;
   bool SetLocalCNAME(const char* cname) override;
   bool SetLocalMID(const std::string& mid) override;
 
@@ -233,16 +236,15 @@ class WebrtcAudioConduit : public AudioSessionConduit,
   bool GetRTCPReceiverReport(uint32_t* jitterMs, uint32_t* packetsReceived,
                              uint64_t* bytesReceived, uint32_t* cumulativeLost,
                              Maybe<double>* aOutRttSec) override;
-  bool GetRTCPSenderReport(unsigned int* packetsSent,
-                           uint64_t* bytesSent) override;
+  bool GetRTCPSenderReport(unsigned int* packetsSent, uint64_t* bytesSent,
+                           DOMHighResTimeStamp* aRemoteTimestamp) override;
 
   bool SetDtmfPayloadType(unsigned char type, int freq) override;
 
   bool InsertDTMFTone(int channel, int eventCode, bool outOfBand, int lengthMs,
                       int attenuationDb) override;
 
-  void GetRtpSources(const int64_t aTimeNow,
-                     nsTArray<dom::RTCRtpSourceEntry>& outSources) override;
+  void GetRtpSources(nsTArray<dom::RTCRtpSourceEntry>& outSources) override;
 
   void OnRtpPacket(const webrtc::RTPHeader& aRtpHeader,
                    const int64_t aTimestamp, const uint32_t aJitter) override;
@@ -358,7 +360,7 @@ class WebrtcAudioConduit : public AudioSessionConduit,
   webrtc::AudioFrame mAudioFrame;  // for output pulls
 
   // Accessed from both main and mStsThread. Uses locks internally.
-  RtpSourceObserver mRtpSourceObserver;
+  RefPtr<RtpSourceObserver> mRtpSourceObserver;
 
   // Socket transport service thread. Any thread.
   const nsCOMPtr<nsISerialEventTarget> mStsThread;

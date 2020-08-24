@@ -12,14 +12,17 @@
 #include "mozilla/EditorDOMPoint.h"
 #include "mozilla/GuardObjects.h"
 #include "mozilla/RangeBoundary.h"
+#include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/StaticRange.h"
+#include "nsAtom.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nscore.h"
 #include "nsDebug.h"
 #include "nsRange.h"
-#include "nscore.h"
+#include "nsString.h"
 
-class nsAtom;
 class nsISimpleEnumerator;
 class nsITransferable;
 
@@ -380,7 +383,7 @@ inline MoveNodeResult MoveNodeHandled(
 
 /***************************************************************************
  * SplitNodeResult is a simple class for
- * EditorBase::SplitNodeDeepWithTransaction().
+ * HTMLEditor::SplitNodeDeepWithTransaction().
  * This makes the callers' code easier to read.
  */
 class MOZ_STACK_CLASS SplitNodeResult final {
@@ -700,7 +703,7 @@ class MOZ_RAII AutoTransactionBatchExternal final {
       EditorBase& aEditorBase MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
       : mEditorBase(aEditorBase) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-    mEditorBase.BeginTransaction();
+    MOZ_KnownLive(mEditorBase).BeginTransaction();
   }
 
   MOZ_CAN_RUN_SCRIPT ~AutoTransactionBatchExternal() {
@@ -779,8 +782,83 @@ class MOZ_RAII DOMSubtreeIterator final : public DOMIterator {
       delete;
 };
 
+/**
+ * ReplaceRangeDataBase() represents range to be replaced and replacing string.
+ */
+template <typename EditorDOMPointType>
+class MOZ_STACK_CLASS ReplaceRangeDataBase final {
+ public:
+  ReplaceRangeDataBase() = default;
+  template <typename OtherEditorDOMRangeType>
+  ReplaceRangeDataBase(const OtherEditorDOMRangeType& aRange,
+                       const nsAString& aReplaceString)
+      : mRange(aRange), mReplaceString(aReplaceString) {}
+  template <typename StartPointType, typename EndPointType>
+  ReplaceRangeDataBase(const StartPointType& aStart, const EndPointType& aEnd,
+                       const nsAString& aReplaceString)
+      : mRange(aStart, aEnd), mReplaceString(aReplaceString) {}
+
+  bool IsSet() const { return mRange.IsPositioned(); }
+  bool IsSetAndValid() const { return mRange.IsPositionedAndValid(); }
+  bool Collapsed() const { return mRange.Collapsed(); }
+  bool HasReplaceString() const { return !mReplaceString.IsEmpty(); }
+  const EditorDOMPointType& StartRef() const { return mRange.StartRef(); }
+  const EditorDOMPointType& EndRef() const { return mRange.EndRef(); }
+  const EditorDOMRangeBase<EditorDOMPointType>& RangeRef() const {
+    return mRange;
+  }
+  const nsString& ReplaceStringRef() const { return mReplaceString; }
+
+  template <typename PointType>
+  MOZ_NEVER_INLINE_DEBUG void SetStart(const PointType& aStart) {
+    mRange.SetStart(aStart);
+  }
+  template <typename PointType>
+  MOZ_NEVER_INLINE_DEBUG void SetEnd(const PointType& aEnd) {
+    mRange.SetEnd(aEnd);
+  }
+  template <typename StartPointType, typename EndPointType>
+  MOZ_NEVER_INLINE_DEBUG void SetStartAndEnd(const StartPointType& aStart,
+                                             const EndPointType& aEnd) {
+    mRange.SetRange(aStart, aEnd);
+  }
+  template <typename OtherEditorDOMRangeType>
+  MOZ_NEVER_INLINE_DEBUG void SetRange(const OtherEditorDOMRangeType& aRange) {
+    mRange = aRange;
+  }
+  void SetReplaceString(const nsAString& aReplaceString) {
+    mReplaceString = aReplaceString;
+  }
+  template <typename StartPointType, typename EndPointType>
+  MOZ_NEVER_INLINE_DEBUG void SetStartAndEnd(const StartPointType& aStart,
+                                             const EndPointType& aEnd,
+                                             const nsAString& aReplaceString) {
+    SetStartAndEnd(aStart, aEnd);
+    SetReplaceString(aReplaceString);
+  }
+  template <typename OtherEditorDOMRangeType>
+  MOZ_NEVER_INLINE_DEBUG void Set(const OtherEditorDOMRangeType& aRange,
+                                  const nsAString& aReplaceString) {
+    SetRange(aRange);
+    SetReplaceString(aReplaceString);
+  }
+
+ private:
+  EditorDOMRangeBase<EditorDOMPointType> mRange;
+  // This string may be used with ReplaceTextTransaction.  Therefore, for
+  // avoiding memory copy, we should store it with nsString rather than
+  // nsAutoString.
+  nsString mReplaceString;
+};
+
+using ReplaceRangeData = ReplaceRangeDataBase<EditorDOMPoint>;
+using ReplaceRangeInTextsData = ReplaceRangeDataBase<EditorDOMPointInText>;
+
 class EditorUtils final {
  public:
+  using EditorType = EditorBase::EditorType;
+  using Selection = dom::Selection;
+
   /**
    * IsDescendantOf() checks if aNode is a child or a descendant of aParent.
    * aOutPoint is set to the child of aParent.
@@ -793,6 +871,69 @@ class EditorUtils final {
                              EditorDOMPoint* aOutPoint);
 
   /**
+   * Returns true if aContent is a <br> element and it's marked as padding for
+   * empty editor.
+   */
+  static bool IsPaddingBRElementForEmptyEditor(const nsIContent& aContent) {
+    const dom::HTMLBRElement* brElement =
+        dom::HTMLBRElement::FromNode(&aContent);
+    return brElement && brElement->IsPaddingForEmptyEditor();
+  }
+
+  /**
+   * Returns true if aContent is a <br> element and it's marked as padding for
+   * empty last line.
+   */
+  static bool IsPaddingBRElementForEmptyLastLine(const nsIContent& aContent) {
+    const dom::HTMLBRElement* brElement =
+        dom::HTMLBRElement::FromNode(&aContent);
+    return brElement && brElement->IsPaddingForEmptyLastLine();
+  }
+
+  /**
+   * IsEditableContent() returns true if aContent's data or children is ediable
+   * for the given editor type.  Be aware, returning true does NOT mean the
+   * node can be removed from its parent node, and returning false does NOT
+   * mean the node cannot be removed from the parent node.
+   * XXX May be the anonymous nodes in TextEditor not editable?  If it's not
+   *     so, we can get rid of aEditorType.
+   */
+  static bool IsEditableContent(const nsIContent& aContent,
+                                EditorType aEditorType) {
+    if ((aEditorType == EditorType::HTML && !aContent.IsEditable()) ||
+        EditorUtils::IsPaddingBRElementForEmptyEditor(aContent)) {
+      return false;
+    }
+
+    // In HTML editors, if we're dealing with an element, then ask it
+    // whether it's editable.
+    if (aContent.IsElement()) {
+      return aEditorType == EditorType::HTML ? aContent.IsEditable() : true;
+    }
+    // Text nodes are considered to be editable by both typed of editors.
+    return aContent.IsText();
+  }
+
+  /**
+   * Returns true if aContent is a usual element node (not padding <br> element
+   * for empty editor) or a text node.  In other words, returns true if
+   * aContent is a usual element node or visible data node.
+   */
+  static bool IsElementOrText(const nsIContent& aContent) {
+    if (aContent.IsText()) {
+      return true;
+    }
+    return aContent.IsElement() &&
+           !EditorUtils::IsPaddingBRElementForEmptyEditor(aContent);
+  }
+
+  /**
+   * IsContentPreformatted() checks the style info for the node for the
+   * preformatted text style.  This does NOT flush layout.
+   */
+  static bool IsContentPreformatted(nsIContent& aContent);
+
+  /**
    * Helper method for `AppendString()` and `AppendSubString()`.  This should
    * be called only when `aText` is in a password field.  This method masks
    * A part of or all of `aText` (`aStartOffsetInText` and later) should've
@@ -802,6 +943,49 @@ class EditorUtils final {
   static void MaskString(nsString& aString, dom::Text* aText,
                          uint32_t aStartOffsetInString,
                          uint32_t aStartOffsetInText);
+
+  static nsStaticAtom* GetTagNameAtom(const nsAString& aTagName) {
+    if (aTagName.IsEmpty()) {
+      return nullptr;
+    }
+    nsAutoString lowerTagName;
+    nsContentUtils::ASCIIToLower(aTagName, lowerTagName);
+    return NS_GetStaticAtom(lowerTagName);
+  }
+
+  static nsStaticAtom* GetAttributeAtom(const nsAString& aAttribute) {
+    if (aAttribute.IsEmpty()) {
+      return nullptr;  // Don't use nsGkAtoms::_empty for attribute.
+    }
+    return NS_GetStaticAtom(aAttribute);
+  }
+
+  /**
+   * Helper method for deletion.  When this returns true, Selection will be
+   * computed with nsFrameSelection that also requires flushed layout
+   * information.
+   */
+  static bool IsFrameSelectionRequiredToExtendSelection(
+      nsIEditor::EDirection aDirectionAndAmount, Selection& aSelection) {
+    switch (aDirectionAndAmount) {
+      case nsIEditor::eNextWord:
+      case nsIEditor::ePreviousWord:
+      case nsIEditor::eToBeginningOfLine:
+      case nsIEditor::eToEndOfLine:
+        return true;
+      case nsIEditor::ePrevious:
+      case nsIEditor::eNext:
+        return aSelection.IsCollapsed();
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Returns true if aSelection includes the point in aParentContent.
+   */
+  static bool IsPointInSelection(const Selection& aSelection,
+                                 const nsINode& aParentNode, int32_t aOffset);
 };
 
 }  // namespace mozilla

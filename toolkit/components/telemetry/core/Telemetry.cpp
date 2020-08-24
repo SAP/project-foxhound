@@ -62,7 +62,7 @@
 #include "nsIMemoryReporter.h"
 #include "nsISeekableStream.h"
 #include "nsITelemetry.h"
-#if defined(XP_WIN) && defined(EARLY_BETA_OR_EARLIER)
+#if defined(XP_WIN)
 #  include "other/UntrustedModules.h"
 #endif
 #include "nsJSUtils.h"
@@ -83,6 +83,8 @@
 #include "nsXPCOMCIDInternal.h"
 #include "nsXPCOMPrivate.h"
 #include "nsXULAppAPI.h"
+#include "nsIPropertyBag2.h"
+#include "nsIXULAppInfo.h"
 #include "other/CombinedStacks.h"
 #include "other/TelemetryIOInterposeObserver.h"
 #include "plstr.h"
@@ -321,8 +323,7 @@ nsresult GetFailedProfileLockFile(nsIFile** aFile, nsIFile* aProfileDir) {
   nsresult rv = aProfileDir->Clone(aFile);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  (*aFile)->AppendNative(
-      NS_LITERAL_CSTRING("Telemetry.FailedProfileLocks.txt"));
+  (*aFile)->AppendNative("Telemetry.FailedProfileLocks.txt"_ns);
   return NS_OK;
 }
 
@@ -412,7 +413,7 @@ static PathCharPtr GetShutdownTimeFileName() {
     NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR, getter_AddRefs(mozFile));
     if (!mozFile) return nullptr;
 
-    mozFile->AppendNative(NS_LITERAL_CSTRING("Telemetry.ShutdownTime.txt"));
+    mozFile->AppendNative("Telemetry.ShutdownTime.txt"_ns);
 
     gRecordedShutdownTimeFileName = NS_xstrdup(mozFile->NativePath().get());
   }
@@ -596,7 +597,7 @@ TelemetryImpl::GetSnapshotForHistograms(const nsACString& aStoreName,
                                         bool aClearStore, bool aFilterTest,
                                         JSContext* aCx,
                                         JS::MutableHandleValue aResult) {
-  NS_NAMED_LITERAL_CSTRING(defaultStore, "main");
+  constexpr auto defaultStore = "main"_ns;
   unsigned int dataset = mCanRecordExtended
                              ? nsITelemetry::DATASET_PRERELEASE_CHANNELS
                              : nsITelemetry::DATASET_ALL_CHANNELS;
@@ -610,7 +611,7 @@ TelemetryImpl::GetSnapshotForKeyedHistograms(const nsACString& aStoreName,
                                              bool aClearStore, bool aFilterTest,
                                              JSContext* aCx,
                                              JS::MutableHandleValue aResult) {
-  NS_NAMED_LITERAL_CSTRING(defaultStore, "main");
+  constexpr auto defaultStore = "main"_ns;
   unsigned int dataset = mCanRecordExtended
                              ? nsITelemetry::DATASET_PRERELEASE_CHANNELS
                              : nsITelemetry::DATASET_ALL_CHANNELS;
@@ -620,11 +621,17 @@ TelemetryImpl::GetSnapshotForKeyedHistograms(const nsACString& aStoreName,
 }
 
 NS_IMETHODIMP
+TelemetryImpl::GetCategoricalLabels(JSContext* aCx,
+                                    JS::MutableHandleValue aResult) {
+  return TelemetryHistogram::GetCategoricalHistogramLabels(aCx, aResult);
+}
+
+NS_IMETHODIMP
 TelemetryImpl::GetSnapshotForScalars(const nsACString& aStoreName,
                                      bool aClearStore, bool aFilterTest,
                                      JSContext* aCx,
                                      JS::MutableHandleValue aResult) {
-  NS_NAMED_LITERAL_CSTRING(defaultStore, "main");
+  constexpr auto defaultStore = "main"_ns;
   unsigned int dataset = mCanRecordExtended
                              ? nsITelemetry::DATASET_PRERELEASE_CHANNELS
                              : nsITelemetry::DATASET_ALL_CHANNELS;
@@ -638,7 +645,7 @@ TelemetryImpl::GetSnapshotForKeyedScalars(const nsACString& aStoreName,
                                           bool aClearStore, bool aFilterTest,
                                           JSContext* aCx,
                                           JS::MutableHandleValue aResult) {
-  NS_NAMED_LITERAL_CSTRING(defaultStore, "main");
+  constexpr auto defaultStore = "main"_ns;
   unsigned int dataset = mCanRecordExtended
                              ? nsITelemetry::DATASET_PRERELEASE_CHANNELS
                              : nsITelemetry::DATASET_ALL_CHANNELS;
@@ -685,7 +692,7 @@ TelemetryImpl::GetMaximalNumberOfConcurrentThreads(uint32_t* ret) {
 
 NS_IMETHODIMP
 TelemetryImpl::GetUntrustedModuleLoadEvents(JSContext* cx, Promise** aPromise) {
-#if defined(XP_WIN) && defined(EARLY_BETA_OR_EARLIER)
+#if defined(XP_WIN)
   return Telemetry::GetUntrustedModuleLoadEvents(cx, aPromise);
 #else
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -1021,7 +1028,7 @@ void TelemetryImpl::ReadLateWritesStacks(nsIFile* aProfileDir) {
     return;
   }
 
-  NS_NAMED_LITERAL_STRING(prefix, "Telemetry.LateWriteFinal-");
+  constexpr auto prefix = u"Telemetry.LateWriteFinal-"_ns;
   nsCOMPtr<nsIFile> file;
   while (NS_SUCCEEDED(files->GetNextFile(getter_AddRefs(file))) && file) {
     nsAutoString leafName;
@@ -1159,6 +1166,73 @@ TelemetryImpl::GetIsOfficialTelemetry(bool* ret) {
   return NS_OK;
 }
 
+#if defined(MOZ_GLEAN)
+// The FOG API is implemented in Rust and exposed to C++ via a set of
+// C functions with the "fog_" prefix.
+// See toolkit/components/glean/*.
+extern "C" {
+nsresult fog_init(const nsACString* dataPath, const nsACString* buildId,
+                  const nsACString* appDisplayVersion, const char* channel,
+                  const nsACString* osVersion, const nsACString* architecture);
+}
+
+static void internal_initGlean() {
+  nsAutoCString dataPath;
+  nsresult rv = Preferences::GetCString(
+      "telemetry.fog.temporary_and_just_for_testing.data_path", dataPath);
+
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  nsCOMPtr<nsIXULAppInfo> appInfo =
+      do_GetService("@mozilla.org/xre/app-info;1");
+  if (!appInfo) {
+    NS_WARNING("Can't fetch app info. FOG will not be initialized.");
+    return;
+  }
+
+  nsAutoCString buildID;
+  rv = appInfo->GetAppBuildID(buildID);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Can't get build ID. FOG will not be initialized.");
+    return;
+  }
+
+  nsAutoCString appVersion;
+  rv = appInfo->GetVersion(appVersion);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Can't get app version. FOG will not be initialized.");
+    return;
+  }
+
+  nsCOMPtr<nsIPropertyBag2> infoService =
+      do_GetService("@mozilla.org/system-info;1");
+  if (!appInfo) {
+    NS_WARNING("Can't fetch info service. FOG will not be initialized.");
+    return;
+  }
+
+  nsAutoCString osVersion;
+  rv = infoService->GetPropertyAsACString(u"version"_ns, osVersion);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Can't get OS version. FOG will not be initialized.");
+    return;
+  }
+
+  nsAutoCString architecture;
+  rv = infoService->GetPropertyAsACString(u"arch"_ns, architecture);
+  if (NS_FAILED(rv)) {
+    NS_WARNING("Can't get architecture. FOG will not be initialized.");
+    return;
+  }
+
+  Unused << NS_WARN_IF(NS_FAILED(fog_init(&dataPath, &buildID, &appVersion,
+                                          MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL),
+                                          &osVersion, &architecture)));
+}
+#endif  // defined(MOZ_GLEAN)
+
 already_AddRefed<nsITelemetry> TelemetryImpl::CreateTelemetryInstance() {
   {
     auto lock = sTelemetry.Lock();
@@ -1202,15 +1276,6 @@ already_AddRefed<nsITelemetry> TelemetryImpl::CreateTelemetryInstance() {
   telemetry->InitMemoryReporter();
   InitHistogramRecordingEnabled();  // requires sTelemetry to exist
 
-#if defined(MOZ_TELEMETRY_GECKOVIEW)
-  // We only want to add persistence for GeckoView, but both
-  // GV and Fennec are on Android. So just init persistence if this
-  // is Android but not Fennec.
-  if (GetCurrentProduct() == SupportedProduct::Geckoview) {
-    TelemetryGeckoViewPersistence::InitPersistence();
-  }
-#endif
-
   return ret.forget();
 }
 
@@ -1230,12 +1295,6 @@ void TelemetryImpl::ShutdownTelemetry() {
   TelemetryEvent::DeInitializeGlobalState();
   TelemetryOrigin::DeInitializeGlobalState();
   TelemetryIPCAccumulator::DeInitializeGlobalState();
-
-#if defined(MOZ_TELEMETRY_GECKOVIEW)
-  if (GetCurrentProduct() == SupportedProduct::Geckoview) {
-    TelemetryGeckoViewPersistence::DeInitPersistence();
-  }
-#endif
 }
 
 void TelemetryImpl::StoreSlowSQL(const nsACString& sql, uint32_t delay,
@@ -1684,24 +1743,6 @@ TelemetryImpl::ClearEvents() {
 }
 
 NS_IMETHODIMP
-TelemetryImpl::ClearProbes() {
-#if defined(MOZ_TELEMETRY_GECKOVIEW)
-  // We only support this in GeckoView.
-  if (GetCurrentProduct() != SupportedProduct::Geckoview) {
-    MOZ_ASSERT(false, "ClearProbes is only supported on GeckoView");
-    return NS_ERROR_FAILURE;
-  }
-
-  // TODO: supporting clear for histograms will come from bug 1457127.
-  TelemetryScalar::ClearScalars();
-  TelemetryGeckoViewPersistence::ClearPersistenceData();
-  return NS_OK;
-#else
-  return NS_ERROR_FAILURE;
-#endif
-}
-
-NS_IMETHODIMP
 TelemetryImpl::SetEventRecordingEnabled(const nsACString& aCategory,
                                         bool aEnabled) {
   TelemetryEvent::SetEventRecordingEnabled(aCategory, aEnabled);
@@ -1759,6 +1800,16 @@ TelemetryImpl::FlushBatchedChildTelemetry() {
 NS_IMETHODIMP
 TelemetryImpl::EarlyInit() {
   Unused << MemoryTelemetry::Get();
+
+#if defined(MOZ_GLEAN)
+  // Initialize FOG during early init, which gets called from
+  // TelemetryController.
+  // At that point we have a working preference store.
+  if (XRE_IsParentProcess()) {
+    internal_initGlean();
+  }
+#endif
+
   return NS_OK;
 }
 
@@ -2082,7 +2133,7 @@ void SetProfileDir(nsIFile* aProfD) {
   if (NS_FAILED(rv)) {
     return;
   }
-  sTelemetryIOObserver->AddPath(profDirPath, NS_LITERAL_STRING("{profile}"));
+  sTelemetryIOObserver->AddPath(profDirPath, u"{profile}"_ns);
 }
 
 // Scalar API C++ Endpoints
@@ -2127,9 +2178,9 @@ void ScalarSetMaximum(mozilla::Telemetry::ScalarID aId, const nsAString& aKey,
   TelemetryScalar::SetMaximum(aId, aKey, aVal);
 }
 
-void RecordEvent(mozilla::Telemetry::EventID aId,
-                 const mozilla::Maybe<nsCString>& aValue,
-                 const mozilla::Maybe<nsTArray<EventExtraEntry>>& aExtra) {
+void RecordEvent(
+    mozilla::Telemetry::EventID aId, const mozilla::Maybe<nsCString>& aValue,
+    const mozilla::Maybe<CopyableTArray<EventExtraEntry>>& aExtra) {
   TelemetryEvent::RecordEventNative(aId, aValue, aExtra);
 }
 

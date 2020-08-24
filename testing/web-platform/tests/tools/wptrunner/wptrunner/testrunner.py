@@ -158,7 +158,7 @@ def start_runner(runner_command_queue, runner_result_queue,
     with capture.CaptureIO(logger, capture_stdio):
         try:
             browser = executor_browser_cls(**executor_browser_kwargs)
-            executor = executor_cls(browser, **executor_kwargs)
+            executor = executor_cls(logger, browser, **executor_kwargs)
             with TestRunner(logger, runner_command_queue, runner_result_queue, executor) as runner:
                 try:
                     runner.run()
@@ -700,8 +700,9 @@ class TestRunnerManager(threading.Thread):
             test, test_group, group_metadata = self.get_next_test()
             if test is None:
                 return RunnerManagerState.stop()
-            if test_group != self.state.test_group:
+            if test_group is not self.state.test_group:
                 # We are starting a new group of tests, so force a restart
+                self.logger.info("Restarting browser for new test group")
                 restart = True
         else:
             test_group = self.state.test_group

@@ -126,12 +126,13 @@ EXPORTS.js += [
     '../public/Array.h',
     '../public/ArrayBuffer.h',
     '../public/ArrayBufferMaybeShared.h',
-    '../public/BinASTFormat.h',
+    '../public/BigInt.h',
     '../public/BuildId.h',
     '../public/CallArgs.h',
     '../public/CallNonGenericMethod.h',
     '../public/CharacterEncoding.h',
     '../public/Class.h',
+    '../public/ComparisonOperators.h',
     '../public/CompilationAndEvaluation.h',
     '../public/CompileOptions.h',
     '../public/ContextOptions.h',
@@ -140,6 +141,7 @@ EXPORTS.js += [
     '../public/Debug.h',
     '../public/Equality.h',
     '../public/ErrorReport.h',
+    '../public/Exception.h',
     '../public/ForOfIterator.h',
     '../public/GCAnnotations.h',
     '../public/GCAPI.h',
@@ -203,8 +205,15 @@ EXPORTS.js += [
     '../public/ValueArray.h',
     '../public/Vector.h',
     '../public/Warnings.h',
+    '../public/WasmModule.h',
     '../public/WeakMapPtr.h',
     '../public/Wrapper.h',
+]
+
+# This lives in mozglue/baseprofiler but we re-publish ourselves to support
+# standalone SpiderMonkey configurations.
+EXPORTS.js += [
+    '../../mozglue/baseprofiler/public/ProfilingCategoryList.h',
 ]
 
 EXPORTS.js.experimental += [
@@ -218,7 +227,7 @@ UNIFIED_SOURCES += [
     'builtin/Boolean.cpp',
     'builtin/DataViewObject.cpp',
     'builtin/Eval.cpp',
-    'builtin/FinalizationGroupObject.cpp',
+    'builtin/FinalizationRegistryObject.cpp',
     'builtin/JSON.cpp',
     'builtin/MapObject.cpp',
     'builtin/ModuleObject.cpp',
@@ -259,14 +268,6 @@ UNIFIED_SOURCES += [
     'ds/Bitmap.cpp',
     'ds/LifoAlloc.cpp',
     'ds/MemoryProtectionExceptionHandler.cpp',
-    'irregexp/NativeRegExpMacroAssembler.cpp',
-    'irregexp/RegExpAST.cpp',
-    'irregexp/RegExpCharacters.cpp',
-    'irregexp/RegExpEngine.cpp',
-    'irregexp/RegExpInterpreter.cpp',
-    'irregexp/RegExpMacroAssembler.cpp',
-    'irregexp/RegExpParser.cpp',
-    'irregexp/RegExpStack.cpp',
     'jsapi.cpp',
     'jsdate.cpp',
     'jsexn.cpp',
@@ -301,6 +302,7 @@ UNIFIED_SOURCES += [
     'vm/AsyncIteration.cpp',
     'vm/BigIntType.cpp',
     'vm/BuildId.cpp',
+    'vm/BytecodeLocation.cpp',
     'vm/BytecodeUtil.cpp',
     'vm/Caches.cpp',
     'vm/CallNonGenericMethod.cpp',
@@ -314,8 +316,10 @@ UNIFIED_SOURCES += [
     'vm/EqualityOperations.cpp',
     'vm/ErrorObject.cpp',
     'vm/ErrorReporting.cpp',
+    'vm/Exception.cpp',
     'vm/ForOfIterator.cpp',
     'vm/FrameIter.cpp',
+    'vm/FunctionFlags.cpp',
     'vm/GeckoProfiler.cpp',
     'vm/GeneratorObject.cpp',
     'vm/GlobalObject.cpp',
@@ -340,6 +344,7 @@ UNIFIED_SOURCES += [
     'vm/OffThreadPromiseRuntimeState.cpp',
     'vm/OffThreadScriptCompilation.cpp',
     'vm/PIC.cpp',
+    'vm/PlainObject.cpp',
     'vm/Printer.cpp',
     'vm/Probes.cpp',
     'vm/PromiseLookup.cpp',
@@ -360,6 +365,7 @@ UNIFIED_SOURCES += [
     'vm/StringType.cpp',
     'vm/SymbolType.cpp',
     'vm/TaggedProto.cpp',
+    'vm/ThrowMsgKind.cpp',
     'vm/Time.cpp',
     'vm/ToSource.cpp',
     'vm/TypedArrayObject.cpp',
@@ -396,6 +402,7 @@ if CONFIG['JS_HAS_INTL_API']:
         'builtin/intl/Collator.cpp',
         'builtin/intl/CommonFunctions.cpp',
         'builtin/intl/DateTimeFormat.cpp',
+        'builtin/intl/DisplayNames.cpp',
         'builtin/intl/IntlObject.cpp',
         'builtin/intl/LanguageTag.cpp',
         'builtin/intl/LanguageTagGenerated.cpp',
@@ -461,9 +468,9 @@ DIRS += [
     'debugger',
     'frontend',
     'gc',
+    'irregexp',
     'jit',
-    'wasm',
-] + (['new-regexp'] if CONFIG['ENABLE_NEW_REGEXP'] else [])
+    'wasm']
 
 if CONFIG['JS_JITSPEW']:
     DIRS += ['zydis']
@@ -502,15 +509,18 @@ selfhosted_inputs = [
     'builtin/WeakMap.js',
     'builtin/WeakSet.js'
 ] + ([
+    'builtin/intl/NumberingSystemsGenerated.h',
     'builtin/intl/Collator.js',
     'builtin/intl/CommonFunctions.js',
     'builtin/intl/CurrencyDataGenerated.js',
     'builtin/intl/DateTimeFormat.js',
+    'builtin/intl/DisplayNames.js',
     'builtin/intl/IntlObject.js',
     'builtin/intl/ListFormat.js',
     'builtin/intl/NumberFormat.js',
     'builtin/intl/PluralRules.js',
     'builtin/intl/RelativeTimeFormat.js',
+    'builtin/intl/SanctionedSimpleUnitIdentifiersGenerated.js',
 ] if CONFIG['JS_HAS_INTL_API'] else [])
 
 # Prepare self-hosted JS code for embedding

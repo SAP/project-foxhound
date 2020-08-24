@@ -7,11 +7,21 @@
 
 """A parser for cross-platform IDL (XPIDL) files."""
 
+# Note that this file is used by the searchfox indexer in ways that are
+# not tested in Firefox's CI. Please try to keep this file py2-compatible
+# if the burden for that is low. If you are making changes you know to be
+# incompatible with py2, please give a searchfox maintainer a heads-up so
+# that any necessary changes can be made on the searchfox side.
+
+from __future__ import absolute_import
+from __future__ import print_function
+
 import sys
 import os.path
 import re
 from ply import lex
 from ply import yacc
+import six
 from collections import namedtuple
 
 """A type conforms to the following pattern:
@@ -30,16 +40,15 @@ Interface members const/method/attribute conform to the following pattern:
 
 
 # XXX(nika): Fix the IDL files which do this so we can remove this list?
-def rustBlacklistedForward(s):
+def rustPreventForward(s):
     """These types are foward declared as interfaces, but never actually defined
     in IDL files. We don't want to generate references to them in rust for that
     reason."""
-    blacklisted = [
+    return s in (
         "nsIFrame",
         "nsIObjectFrame",
         "nsSubDocumentFrame",
-    ]
-    return s in blacklisted
+    )
 
 
 def attlistToIDL(attlist):
@@ -47,7 +56,7 @@ def attlistToIDL(attlist):
         return ''
 
     attlist = list(attlist)
-    attlist.sort(cmp=lambda a, b: cmp(a[0], b[0]))
+    attlist.sort(key=lambda a: a[0])
 
     return '[%s] ' % ','.join(["%s%s" % (name, value is not None and '(%s)' % value or '')
                                for name, value, aloc in attlist])
@@ -130,8 +139,9 @@ class Builtin(object):
             raise IDLError("Use string class types for string Array elements", self.location)
 
         if const:
-            print >>sys.stderr, IDLError(
-                "[const] doesn't make sense on builtin types.", self.location, warning=True)
+            print(IDLError(
+                "[const] doesn't make sense on builtin types.",
+                self.location, warning=True), file=sys.stderr)
             const = 'const '
         elif calltype == 'in' and self.isPointer():
             const = 'const '
@@ -202,7 +212,7 @@ class Location(object):
 
     def pointerline(self):
         def i():
-            for i in xrange(0, self._colno):
+            for i in range(0, self._colno):
                 yield " "
             yield "^"
 
@@ -231,7 +241,7 @@ class NameMap(object):
         return self._d[key]
 
     def __iter__(self):
-        return self._d.itervalues()
+        return six.itervalues(self._d)
 
     def __contains__(self, key):
         return key in builtinMap or key in self._d
@@ -307,7 +317,8 @@ class Include(object):
             if not os.path.exists(file):
                 continue
 
-            self.IDL = parent.parser.parse(open(file).read(), filename=file)
+            self.IDL = parent.parser.parse(open(file, encoding='utf-8').read(),
+                                           filename=file)
             self.IDL.resolve(parent.incdirs, parent.parser, parent.webidlconfig)
             for type in self.IDL.getNames():
                 parent.setName(type)
@@ -437,10 +448,10 @@ class Forward(object):
         # Hack alert: if an identifier is already present, move the doccomments
         # forward.
         if parent.hasName(self.name):
-            for i in xrange(0, len(parent.productions)):
+            for i in range(0, len(parent.productions)):
                 if parent.productions[i] is self:
                     break
-            for i in xrange(i + 1, len(parent.productions)):
+            for i in range(i + 1, len(parent.productions)):
                 if hasattr(parent.productions[i], 'doccomments'):
                     parent.productions[i].doccomments[0:0] = self.doccomments
                     break
@@ -453,7 +464,7 @@ class Forward(object):
         return "%s *%s" % (self.name, '*' if 'out' in calltype else '')
 
     def rustType(self, calltype):
-        if rustBlacklistedForward(self.name):
+        if rustPreventForward(self.name):
             raise RustNoncompat("forward declaration %s is unsupported" % self.name)
         if calltype == 'element':
             return 'RefPtr<%s>' % self.name
@@ -631,12 +642,13 @@ class WebIDL(object):
 
         parent.setName(self)
 
-    def nativeType(self, calltype):
+    def nativeType(self, calltype, const=False):
         if calltype == 'element':
-            return 'RefPtr<%s>' % self.native
-        return "%s *%s" % (self.native, '*' if 'out' in calltype else '')
+            return 'RefPtr<%s%s>' % ('const ' if const else '', self.native)
+        return "%s%s *%s" % ('const ' if const else '', self.native,
+                             '*' if 'out' in calltype else '')
 
-    def rustType(self, calltype):
+    def rustType(self, calltype, const=False):
         # Just expose the type as a void* - we can't do any better.
         return "%s*const libc::c_void" % ('*mut ' if 'out' in calltype else '')
 
@@ -1818,17 +1830,10 @@ class IDLParser(object):
             location = Location(self.lexer, t.lineno, t.lexpos)
             raise IDLError("invalid syntax", location)
 
-    def __init__(self, outputdir=''):
+    def __init__(self):
         self._doccomments = []
-        self.lexer = lex.lex(object=self,
-                             outputdir=outputdir,
-                             lextab='xpidllex',
-                             optimize=1)
-        self.parser = yacc.yacc(module=self,
-                                outputdir=outputdir,
-                                debug=0,
-                                tabmodule='xpidlyacc',
-                                optimize=1)
+        self.lexer = lex.lex(object=self, debug=False)
+        self.parser = yacc.yacc(module=self, write_tables=False, debug=False)
 
     def clearComments(self):
         self._doccomments = []
@@ -1858,4 +1863,4 @@ if __name__ == '__main__':
     p = IDLParser()
     for f in sys.argv[1:]:
         print("Parsing %s" % f)
-        p.parse(open(f).read(), filename=f)
+        p.parse(open(f, encoding='utf-8').read(), filename=f)

@@ -103,7 +103,11 @@ const kModalStyles = {
     ["z-index", 1],
   ],
   maskNodeTransition: [["transition", "background .2s ease-in"]],
-  maskNodeDebug: [["z-index", 2147483646], ["top", 0], ["left", 0]],
+  maskNodeDebug: [
+    ["z-index", 2147483646],
+    ["top", 0],
+    ["left", 0],
+  ],
   maskNodeBrightText: [["background", "rgba(255,255,255,.25)"]],
 };
 const kModalOutlineAnim = {
@@ -705,7 +709,7 @@ FinderHighlighter.prototype = {
 
       // Since the frame is an element inside a parent window, we'd like to
       // learn its position relative to it.
-      let el = this._getDWU(currWin).containerElement;
+      let el = currWin.browsingContext.embedderElement;
       currWin = currWin.parent;
       dwu = this._getDWU(currWin);
       let parentRect = Rect.fromRect(dwu.getBoundsWithoutFlushing(el));
@@ -1372,7 +1376,10 @@ FinderHighlighter.prototype = {
     }
     let maskStyle = this._getStyleString(
       kModalStyles.maskNode,
-      [["width", width + "px"], ["height", height + "px"]],
+      [
+        ["width", width + "px"],
+        ["height", height + "px"],
+      ],
       dict.brightText ? kModalStyles.maskNodeBrightText : [],
       paintContent ? kModalStyles.maskNodeTransition : [],
       kDebug ? kModalStyles.maskNodeDebug : []
@@ -1564,8 +1571,8 @@ FinderHighlighter.prototype = {
         } = (dict.lastWindowDimensions = this._getWindowDimensions(window));
         pageContentChanged =
           dict.detectedGeometryChange ||
-          (Math.abs(previousWidth - width) > kContentChangeThresholdPx ||
-            Math.abs(previousHeight - height) > kContentChangeThresholdPx);
+          Math.abs(previousWidth - width) > kContentChangeThresholdPx ||
+          Math.abs(previousHeight - height) > kContentChangeThresholdPx;
       }
       dict.detectedGeometryChange = false;
       // When the page has changed significantly enough in size, we'll restart

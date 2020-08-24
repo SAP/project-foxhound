@@ -161,7 +161,7 @@ ChromeUtils.defineModuleGetter(
 ChromeUtils.defineModuleGetter(
   this,
   "OSKeyStore",
-  "resource://formautofill/OSKeyStore.jsm"
+  "resource://gre/modules/OSKeyStore.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
@@ -169,12 +169,6 @@ ChromeUtils.defineModuleGetter(
   "resource://formautofill/phonenumberutils/PhoneNumber.jsm"
 );
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "cryptoSDR",
-  "@mozilla.org/login-manager/crypto/SDR;1",
-  Ci.nsILoginManagerCrypto
-);
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "gUUIDGenerator",
@@ -192,7 +186,7 @@ const PROFILE_JSON_FILE_NAME = "autofill-profiles.json";
 
 const STORAGE_SCHEMA_VERSION = 1;
 const ADDRESS_SCHEMA_VERSION = 1;
-const CREDIT_CARD_SCHEMA_VERSION = 2;
+const CREDIT_CARD_SCHEMA_VERSION = 3;
 
 const VALID_ADDRESS_FIELDS = [
   "given-name",
@@ -433,6 +427,8 @@ class AutofillRecords {
 
     this._data.push(recordToSave);
 
+    this.updateUseCountTelemetry();
+
     this._store.saveSoon();
 
     Services.obs.notifyObservers(
@@ -559,6 +555,8 @@ class AutofillRecords {
     recordFound.timesUsed++;
     recordFound.timeLastUsed = Date.now();
 
+    this.updateUseCountTelemetry();
+
     this._store.saveSoon();
     Services.obs.notifyObservers(
       {
@@ -571,6 +569,8 @@ class AutofillRecords {
       "notifyUsed"
     );
   }
+
+  updateUseCountTelemetry() {}
 
   /**
    * Removes the specified record. No error occurs if the record isn't found.
@@ -612,6 +612,8 @@ class AutofillRecords {
         this._data.splice(index, 1);
       }
     }
+
+    this.updateUseCountTelemetry();
 
     this._store.saveSoon();
     Services.obs.notifyObservers(
@@ -1505,10 +1507,9 @@ class Addresses extends AutofillRecords {
     if (!("country-name" in address)) {
       if (address.country) {
         try {
-          address["country-name"] = Services.intl.getRegionDisplayNames(
-            undefined,
-            [address.country]
-          );
+          address[
+            "country-name"
+          ] = Services.intl.getRegionDisplayNames(undefined, [address.country]);
         } catch (e) {
           address["country-name"] = "";
         }
@@ -1766,6 +1767,19 @@ class CreditCards extends AutofillRecords {
       VALID_CREDIT_CARD_COMPUTED_FIELDS,
       CREDIT_CARD_SCHEMA_VERSION
     );
+    Services.obs.addObserver(this, "formautofill-storage-changed");
+  }
+
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "formautofill-storage-changed":
+        let count = this._data.filter(entry => !entry.deleted).length;
+        Services.telemetry.scalarSet(
+          "formautofill.creditCards.autofill_profiles_count",
+          count
+        );
+        break;
+    }
   }
 
   async computeFields(creditCard) {
@@ -1780,6 +1794,13 @@ class CreditCards extends AutofillRecords {
 
     if (creditCard.deleted) {
       return hasNewComputedFields;
+    }
+
+    if ("cc-number" in creditCard && !("cc-type" in creditCard)) {
+      let type = CreditCard.getType(creditCard["cc-number"]);
+      if (type) {
+        creditCard["cc-type"] = type;
+      }
     }
 
     // Compute split names
@@ -1828,43 +1849,34 @@ class CreditCards extends AutofillRecords {
   async _computeMigratedRecord(creditCard) {
     if (creditCard["cc-number-encrypted"]) {
       switch (creditCard.version) {
-        case 1: {
-          if (!cryptoSDR.isLoggedIn) {
-            // We cannot decrypt the data, so silently remove the record for
-            // the user.
-            if (creditCard.deleted) {
-              break;
-            }
-
-            this.log.warn(
-              "Removing version 1 credit card record to migrate to new encryption:",
-              creditCard.guid
-            );
-
-            // Replace the record with a tombstone record here,
-            // regardless of existence of sync metadata.
-            let existingSync = this._getSyncMetaData(creditCard);
-            creditCard = {
-              guid: creditCard.guid,
-              timeLastModified: Date.now(),
-              deleted: true,
-            };
-
-            if (existingSync) {
-              creditCard._sync = existingSync;
-              existingSync.changeCounter++;
-            }
+        case 1:
+        case 2: {
+          // We cannot decrypt the data, so silently remove the record for
+          // the user.
+          if (creditCard.deleted) {
             break;
           }
 
-          creditCard = this._clone(creditCard);
-
-          // Decrypt the cc-number using version 1 encryption.
-          let ccNumber = cryptoSDR.decrypt(creditCard["cc-number-encrypted"]);
-          // Re-encrypt the cc-number with version 2 encryption.
-          creditCard["cc-number-encrypted"] = await OSKeyStore.encrypt(
-            ccNumber
+          this.log.warn(
+            "Removing version",
+            creditCard.version,
+            "credit card record to migrate to new encryption:",
+            creditCard.guid
           );
+
+          // Replace the record with a tombstone record here,
+          // regardless of existence of sync metadata.
+          let existingSync = this._getSyncMetaData(creditCard);
+          creditCard = {
+            guid: creditCard.guid,
+            timeLastModified: Date.now(),
+            deleted: true,
+          };
+
+          if (existingSync) {
+            creditCard._sync = existingSync;
+            existingSync.changeCounter++;
+          }
           break;
         }
 
@@ -1967,14 +1979,22 @@ class CreditCards extends AutofillRecords {
     if (record.version < this.version) {
       switch (record.version) {
         case 1:
+        case 2:
           // The difference between version 1 and 2 is only about the encryption
           // method used for the cc-number-encrypted field.
+          // The difference between version 2 and 3 is the name of the OS
+          // key encryption record.
           // As long as the record is already decrypted, it is safe to bump the
           // version directly.
           if (!record["cc-number-encrypted"]) {
             record.version = this.version;
           } else {
-            throw new Error("Unexpected record migration path.");
+            throw new Error(
+              "Could not migrate record version:",
+              record.version,
+              "->",
+              this.version
+            );
           }
           break;
         default:
@@ -1997,24 +2017,21 @@ class CreditCards extends AutofillRecords {
   async getDuplicateGuid(targetCreditCard) {
     let clonedTargetCreditCard = this._clone(targetCreditCard);
     this._normalizeRecord(clonedTargetCreditCard);
+    if (!clonedTargetCreditCard["cc-number"]) {
+      return null;
+    }
+
     for (let creditCard of this._data) {
-      let isDuplicate = await Promise.all(
-        this.VALID_FIELDS.map(async field => {
-          if (!clonedTargetCreditCard[field]) {
-            return !creditCard[field];
-          }
-          if (field == "cc-number" && creditCard[field]) {
-            // Compare the masked numbers instead when decryption requires a password
-            // because we don't want to leak the credit card number.
-            return (
-              CreditCard.getLongMaskedNumber(clonedTargetCreditCard[field]) ==
-              creditCard[field]
-            );
-          }
-          return clonedTargetCreditCard[field] == creditCard[field];
-        })
-      ).then(fieldResults => fieldResults.every(result => result));
-      if (isDuplicate) {
+      if (creditCard.deleted) {
+        continue;
+      }
+
+      let decrypted = await OSKeyStore.decrypt(
+        creditCard["cc-number-encrypted"],
+        false
+      );
+
+      if (decrypted == clonedTargetCreditCard["cc-number"]) {
         return creditCard.guid;
       }
     }
@@ -2083,6 +2100,17 @@ class CreditCards extends AutofillRecords {
 
     await this.update(guid, creditCardToMerge, true);
     return true;
+  }
+
+  updateUseCountTelemetry() {
+    let histogram = Services.telemetry.getHistogramById("CREDITCARD_NUM_USES");
+    histogram.clear();
+
+    let records = this._data.filter(r => !r.deleted);
+
+    for (let record of records) {
+      histogram.add(record.timesUsed);
+    }
   }
 }
 

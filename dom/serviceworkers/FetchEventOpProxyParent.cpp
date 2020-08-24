@@ -9,15 +9,20 @@
 #include <utility>
 
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsIInputStream.h"
 
 #include "mozilla/Assertions.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/Result.h"
+#include "mozilla/ResultExtensions.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/FetchEventOpParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
+#include "mozilla/RemoteLazyInputStreamUtils.h"
+#include "mozilla/RemoteLazyInputStreamStorage.h"
 
 namespace mozilla {
 
@@ -27,20 +32,30 @@ namespace dom {
 
 namespace {
 
-void MaybeDeserializeAndReserialize(const Maybe<IPCStream>& aDeserialize,
-                                    Maybe<IPCStream>& aReserialize,
-                                    UniquePtr<AutoIPCStream>& aAutoStream,
-                                    PBackgroundParent* aManager) {
-  nsCOMPtr<nsIInputStream> maybeDeserialized =
-      DeserializeIPCStream(aDeserialize);
-
-  if (!maybeDeserialized) {
-    return;
+nsresult MaybeDeserializeAndWrapForMainThread(
+    const Maybe<BodyStreamVariant>& aSource, int64_t aBodyStreamSize,
+    Maybe<BodyStreamVariant>& aSink, PBackgroundParent* aManager) {
+  if (aSource.isNothing()) {
+    return NS_OK;
   }
 
-  aAutoStream.reset(new AutoIPCStream(aReserialize));
-  DebugOnly<bool> ok = aAutoStream->Serialize(maybeDeserialized, aManager);
-  MOZ_ASSERT(ok);
+  nsCOMPtr<nsIInputStream> deserialized =
+      DeserializeIPCStream(aSource->get_ChildToParentStream().stream());
+
+  aSink = Some(ParentToParentStream());
+  auto& uuid = aSink->get_ParentToParentStream().uuid();
+
+  MOZ_TRY(nsContentUtils::GenerateUUIDInPlace(uuid));
+
+  auto storageOrErr = RemoteLazyInputStreamStorage::Get();
+
+  if (NS_WARN_IF(storageOrErr.isErr())) {
+    return storageOrErr.unwrapErr();
+  }
+
+  auto storage = storageOrErr.unwrap();
+  storage->AddStream(deserialized, uuid, aBodyStreamSize, 0);
+  return NS_OK;
 }
 
 }  // anonymous namespace
@@ -64,15 +79,34 @@ void MaybeDeserializeAndReserialize(const Maybe<IPCStream>& aDeserialize,
   ServiceWorkerFetchEventOpArgs copyArgs = aArgs;
   IPCInternalRequest& copyRequest = copyArgs.internalRequest();
 
-  PBackgroundParent* bgParent = aManager->Manager();
-  MOZ_ASSERT(bgParent);
+  if (copyRequest.body().ref().type() ==
+      BodyStreamVariant::TParentToParentStream) {
+    nsCOMPtr<nsIInputStream> stream;
+    auto streamLength = copyRequest.bodySize();
+    const auto& uuid =
+        copyRequest.body().ref().get_ParentToParentStream().uuid();
 
-  UniquePtr<AutoIPCStream> autoBodyStream = MakeUnique<AutoIPCStream>();
-  MaybeDeserializeAndReserialize(aArgs.internalRequest().body(),
-                                 copyRequest.body(), autoBodyStream, bgParent);
+    auto storage = RemoteLazyInputStreamStorage::Get().unwrapOr(nullptr);
+    MOZ_DIAGNOSTIC_ASSERT(storage);
+    storage->GetStream(uuid, 0, streamLength, getter_AddRefs(stream));
+    storage->ForgetStream(uuid);
+
+    MOZ_DIAGNOSTIC_ASSERT(stream);
+
+    PBackgroundParent* bgParent = aManager->Manager();
+    MOZ_ASSERT(bgParent);
+
+    copyRequest.body() = Some(ParentToChildStream());
+
+    RemoteLazyStream ipdlStream;
+    MOZ_ALWAYS_SUCCEEDS(RemoteLazyInputStreamUtils::SerializeInputStream(
+        stream, streamLength, ipdlStream, bgParent));
+
+    copyRequest.body().ref().get_ParentToChildStream().actorParent() =
+        ipdlStream;
+  }
 
   Unused << aManager->SendPFetchEventOpProxyConstructor(actor, copyArgs);
-  autoBodyStream->TakeOptionalValue();
 }
 
 FetchEventOpProxyParent::~FetchEventOpProxyParent() {
@@ -125,20 +159,14 @@ mozilla::ipc::IPCResult FetchEventOpProxyParent::RecvRespondWith(
     PBackgroundParent* bgParent = manager->Manager();
     MOZ_ASSERT(bgParent);
 
-    UniquePtr<AutoIPCStream> autoBodyStream = MakeUnique<AutoIPCStream>();
-    UniquePtr<AutoIPCStream> autoAlternativeBodyStream =
-        MakeUnique<AutoIPCStream>();
-
-    MaybeDeserializeAndReserialize(originalResponse.body(), copyResponse.body(),
-                                   autoBodyStream, bgParent);
-    MaybeDeserializeAndReserialize(originalResponse.alternativeBody(),
-                                   copyResponse.alternativeBody(),
-                                   autoAlternativeBodyStream, bgParent);
+    MOZ_ALWAYS_SUCCEEDS(MaybeDeserializeAndWrapForMainThread(
+        originalResponse.body(), copyResponse.bodySize(), copyResponse.body(),
+        bgParent));
+    MOZ_ALWAYS_SUCCEEDS(MaybeDeserializeAndWrapForMainThread(
+        originalResponse.alternativeBody(), InternalResponse::UNKNOWN_BODY_SIZE,
+        copyResponse.alternativeBody(), bgParent));
 
     Unused << mReal->SendRespondWith(copyArgs);
-
-    autoBodyStream->TakeOptionalValue();
-    autoAlternativeBodyStream->TakeOptionalValue();
   } else {
     Unused << mReal->SendRespondWith(aResult);
   }

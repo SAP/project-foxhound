@@ -12,6 +12,23 @@ const { MigrationUtils } = ChromeUtils.import(
   "resource:///modules/MigrationUtils.jsm"
 );
 
+/**
+ * Map from data types that match Ci.nsIBrowserProfileMigrator's types to
+ * prefixes for strings used to label these data types in the migration
+ * dialog. We use these strings with -checkbox and -label suffixes for the
+ * checkboxes on the "importItems" page, and for the labels on the "migrating"
+ * and "done" pages, respectively.
+ */
+const kDataToStringMap = new Map([
+  ["cookies", "browser-data-cookies"],
+  ["history", "browser-data-history"],
+  ["formdata", "browser-data-formdata"],
+  ["passwords", "browser-data-passwords"],
+  ["bookmarks", "browser-data-bookmarks"],
+  ["otherdata", "browser-data-otherdata"],
+  ["session", "browser-data-session"],
+]);
+
 var MigrationWizard = {
   /* exported MigrationWizard */
   _source: "", // Source Profile Migrator ContractID suffix
@@ -39,7 +56,23 @@ var MigrationWizard = {
     this.isInitialMigration =
       entryPointId == MigrationUtils.MIGRATION_ENTRYPOINT_FIRSTRUN;
 
-    if (args.length > 1) {
+    {
+      // Record that the uninstaller requested a profile refresh
+      let env = Cc["@mozilla.org/process/environment;1"].getService(
+        Ci.nsIEnvironment
+      );
+      if (env.get("MOZ_UNINSTALLER_PROFILE_REFRESH")) {
+        env.set("MOZ_UNINSTALLER_PROFILE_REFRESH", "");
+        Services.telemetry.scalarSet(
+          "migration.uninstaller_profile_refresh",
+          true
+        );
+      }
+    }
+
+    if (args.length == 2) {
+      this._source = args[1];
+    } else if (args.length > 2) {
       this._source = args[1];
       this._migrator = args[2] instanceof kIMig ? args[2] : null;
       this._autoMigrate = args[3].QueryInterface(kIPStartup);
@@ -59,6 +92,7 @@ var MigrationWizard = {
         document.getElementById("nothing").hidden = false;
       }
     }
+    this._setSourceForDataLocalization();
 
     document.addEventListener("wizardcancel", function() {
       MigrationWizard.onWizardCancel();
@@ -132,6 +166,17 @@ var MigrationWizard = {
     this._wiz.canAdvance = canAdvance;
     this._wiz.canRewind = canRewind;
     return result;
+  },
+
+  _setSourceForDataLocalization() {
+    this._sourceForDataLocalization = this._source;
+    // Ensure consistency for various channels, brandings and versions of
+    // Chromium and MS Edge.
+    if (this._sourceForDataLocalization) {
+      this._sourceForDataLocalization = this._sourceForDataLocalization
+        .replace(/^(chromium-edge-beta|chromium-edge)$/, "edge")
+        .replace(/^(canary|chromium|chrome-beta|chrome-dev)$/, "chrome");
+    }
   },
 
   onWizardCancel() {
@@ -236,6 +281,7 @@ var MigrationWizard = {
       this._selectedProfile = null;
     }
     this._source = newSource;
+    this._setSourceForDataLocalization();
 
     // check for more than one source profile
     var sourceProfiles = this.spinResolve(this._migrator.getSourceProfiles());
@@ -319,17 +365,19 @@ var MigrationWizard = {
     var items = this.spinResolve(
       this._migrator.getMigrateData(this._selectedProfile, this._autoMigrate)
     );
-    for (var i = 0; i < 16; ++i) {
-      var itemID = (items >> i) & 0x1 ? Math.pow(2, i) : 0;
-      if (itemID > 0) {
-        var checkbox = document.createXULElement("checkbox");
-        checkbox.id = itemID;
-        checkbox.setAttribute(
-          "label",
-          MigrationUtils.getLocalizedString(itemID + "_" + this._source)
+
+    for (let itemType of kDataToStringMap.keys()) {
+      let itemValue = Ci.nsIBrowserProfileMigrator[itemType.toUpperCase()];
+      if (items & itemValue) {
+        let checkbox = document.createXULElement("checkbox");
+        checkbox.id = itemValue;
+        document.l10n.setAttributes(
+          checkbox,
+          kDataToStringMap.get(itemType) + "-checkbox",
+          { browser: this._sourceForDataLocalization }
         );
         dataSources.appendChild(checkbox);
-        if (!this._itemsFlags || this._itemsFlags & itemID) {
+        if (!this._itemsFlags || this._itemsFlags & itemValue) {
           checkbox.checked = true;
         }
       }
@@ -414,16 +462,16 @@ var MigrationWizard = {
       items.firstChild.remove();
     }
 
-    var itemID;
-    for (var i = 0; i < 16; ++i) {
-      itemID = (this._itemsFlags >> i) & 0x1 ? Math.pow(2, i) : 0;
-      if (itemID > 0) {
+    for (let itemType of kDataToStringMap.keys()) {
+      let itemValue = Ci.nsIBrowserProfileMigrator[itemType.toUpperCase()];
+      if (this._itemsFlags & itemValue) {
         var label = document.createXULElement("label");
-        label.id = itemID + "_migrated";
+        label.id = itemValue + "_migrated";
         try {
-          label.setAttribute(
-            "value",
-            MigrationUtils.getLocalizedString(itemID + "_" + this._source)
+          document.l10n.setAttributes(
+            label,
+            kDataToStringMap.get(itemType) + "-label",
+            { browser: this._sourceForDataLocalization }
           );
           items.appendChild(label);
         } catch (e) {
@@ -477,9 +525,6 @@ var MigrationWizard = {
         let type = "undefined";
         let numericType = parseInt(aData);
         switch (numericType) {
-          case Ci.nsIBrowserProfileMigrator.SETTINGS:
-            type = "settings";
-            break;
           case Ci.nsIBrowserProfileMigrator.COOKIES:
             type = "cookies";
             break;

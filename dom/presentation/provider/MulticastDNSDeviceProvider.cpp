@@ -33,8 +33,8 @@
 #define PREF_PRESENTATION_DEVICE_NAME "dom.presentation.device.name"
 
 #define SERVICE_TYPE "_presentation-ctrl._tcp"
-#define PROTOCOL_VERSION_TAG "version"
-#define CERT_FINGERPRINT_TAG "certFingerprint"
+#define PROTOCOL_VERSION_TAG u"version"
+#define CERT_FINGERPRINT_TAG u"certFingerprint"
 
 static mozilla::LazyLogModule sMulticastDNSProviderLogModule(
     "MulticastDNSDeviceProvider");
@@ -64,8 +64,8 @@ static void GetAndroidDeviceName(nsACString& aRetVal) {
       do_GetService("@mozilla.org/system-info;1");
   MOZ_ASSERT(infoService, "Could not find a system info service");
 
-  Unused << NS_WARN_IF(NS_FAILED(infoService->GetPropertyAsACString(
-      NS_LITERAL_STRING("device"), aRetVal)));
+  Unused << NS_WARN_IF(
+      NS_FAILED(infoService->GetPropertyAsACString(u"device"_ns, aRetVal)));
 }
 #endif  // MOZ_WIDGET_ANDROID
 
@@ -108,7 +108,7 @@ NS_IMPL_ISUPPORTS(MulticastDNSDeviceProvider, nsIPresentationDeviceProvider,
                   nsIDNSServiceResolveListener,
                   nsIPresentationControlServerListener, nsIObserver)
 
-MulticastDNSDeviceProvider::MulticastDNSDeviceProvider() {}
+MulticastDNSDeviceProvider::MulticastDNSDeviceProvider() = default;
 MulticastDNSDeviceProvider::~MulticastDNSDeviceProvider() { Uninit(); }
 
 nsresult MulticastDNSDeviceProvider::Init() {
@@ -291,8 +291,8 @@ nsresult MulticastDNSDeviceProvider::RegisterMDNSService() {
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-  if (NS_WARN_IF(NS_FAILED(rv = serviceInfo->SetServiceType(
-                               NS_LITERAL_CSTRING(SERVICE_TYPE))))) {
+  if (NS_WARN_IF(NS_FAILED(
+          rv = serviceInfo->SetServiceType(nsLiteralCString(SERVICE_TYPE))))) {
     return rv;
   }
   if (NS_WARN_IF(NS_FAILED(rv = serviceInfo->SetServiceName(mServiceName)))) {
@@ -310,7 +310,7 @@ nsresult MulticastDNSDeviceProvider::RegisterMDNSService() {
   rv = mPresentationService->GetVersion(&version);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
-  rv = propBag->SetPropertyAsUint32(NS_LITERAL_STRING(PROTOCOL_VERSION_TAG),
+  rv = propBag->SetPropertyAsUint32(nsLiteralString(PROTOCOL_VERSION_TAG),
                                     version);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
@@ -319,7 +319,7 @@ nsresult MulticastDNSDeviceProvider::RegisterMDNSService() {
     rv = mPresentationService->GetCertFingerprint(certFingerprint);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
-    rv = propBag->SetPropertyAsACString(NS_LITERAL_STRING(CERT_FINGERPRINT_TAG),
+    rv = propBag->SetPropertyAsACString(nsLiteralString(CERT_FINGERPRINT_TAG),
                                         certFingerprint);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
@@ -384,7 +384,7 @@ bool MulticastDNSDeviceProvider::IsCompatibleServer(
 
   uint32_t remoteVersion;
   if (NS_WARN_IF(NS_FAILED(propBag->GetPropertyAsUint32(
-          NS_LITERAL_STRING(PROTOCOL_VERSION_TAG), &remoteVersion)))) {
+          nsLiteralString(PROTOCOL_VERSION_TAG), &remoteVersion)))) {
     return false;
   }
 
@@ -602,10 +602,9 @@ MulticastDNSDeviceProvider::ForceDiscovery() {
 
   StopDiscovery(NS_OK);
 
-  if (NS_WARN_IF(
-          NS_FAILED(rv = mMulticastDNS->StartDiscovery(
-                        NS_LITERAL_CSTRING(SERVICE_TYPE), mWrappedListener,
-                        getter_AddRefs(mDiscoveryRequest))))) {
+  if (NS_WARN_IF(NS_FAILED(rv = mMulticastDNS->StartDiscovery(
+                               nsLiteralCString(SERVICE_TYPE), mWrappedListener,
+                               getter_AddRefs(mDiscoveryRequest))))) {
     return rv;
   }
 
@@ -851,7 +850,7 @@ MulticastDNSDeviceProvider::OnServiceResolved(nsIDNSServiceInfo* aServiceInfo) {
 
   nsAutoCString certFingerprint;
   Unused << propBag->GetPropertyAsACString(
-      NS_LITERAL_STRING(CERT_FINGERPRINT_TAG), certFingerprint);
+      nsLiteralString(CERT_FINGERPRINT_TAG), certFingerprint);
 
   uint32_t index;
   if (FindDeviceById(host, index)) {

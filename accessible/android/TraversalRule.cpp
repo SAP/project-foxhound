@@ -58,6 +58,9 @@ uint16_t TraversalRule::Match(Accessible* aAccessible) {
     case java::SessionAccessibility::HTML_GRANULARITY_HEADING:
       result |= HeadingMatch(aAccessible);
       break;
+    case java::SessionAccessibility::HTML_GRANULARITY_LANDMARK:
+      result |= LandmarkMatch(aAccessible);
+      break;
     default:
       result |= DefaultMatch(aAccessible);
       break;
@@ -150,6 +153,14 @@ uint16_t TraversalRule::SectionMatch(Accessible* aAccessible) {
   return nsIAccessibleTraversalRule::FILTER_IGNORE;
 }
 
+uint16_t TraversalRule::LandmarkMatch(Accessible* aAccessible) {
+  if (aAccessible->LandmarkRole()) {
+    return nsIAccessibleTraversalRule::FILTER_MATCH;
+  }
+
+  return nsIAccessibleTraversalRule::FILTER_IGNORE;
+}
+
 uint16_t TraversalRule::ControlMatch(Accessible* aAccessible) {
   switch (aAccessible->Role()) {
     case roles::PUSHBUTTON:
@@ -235,6 +246,13 @@ uint16_t TraversalRule::DefaultMatch(Accessible* aAccessible) {
       break;
     case roles::LISTITEM:
       if (IsFlatSubtree(aAccessible) || IsSingleLineage(aAccessible)) {
+        return nsIAccessibleTraversalRule::FILTER_MATCH |
+               nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
+      }
+      break;
+    case roles::LABEL:
+      if (IsFlatSubtree(aAccessible)) {
+        // Match if this is a label with text but no nested controls.
         return nsIAccessibleTraversalRule::FILTER_MATCH |
                nsIAccessibleTraversalRule::FILTER_IGNORE_SUBTREE;
       }

@@ -111,6 +111,7 @@ enum class ZealMode {
   _(RareArgumentsData)                     \
   _(RegExpStatics)                         \
   _(RegExpSharedBytecode)                  \
+  _(RegExpSharedNamedCaptureData)          \
   _(TypedArrayElements)                    \
   _(TypeDescrTraceList)                    \
   _(NativeIterator)                        \
@@ -138,9 +139,8 @@ enum class ZealMode {
   _(DebuggerOnPopHandler)                  \
   _(RealmInstrumentation)                  \
   _(ICUObject)                             \
-  _(FinalizationGroupRecordVector)         \
-  _(FinalizationGroupRecordSet)            \
-  _(FinalizationGroupRegistrations)        \
+  _(FinalizationRegistryRecordVector)      \
+  _(FinalizationRegistryRegistrations)     \
   _(FinalizationRecordVector)              \
   _(ZoneAllocPolicy)                       \
   _(SharedArrayRawBuffer)                  \

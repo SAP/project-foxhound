@@ -22,7 +22,7 @@ class SystemFontListEntry;
 };
 };  // namespace mozilla
 
-class gfxPlatformGtk : public gfxPlatform {
+class gfxPlatformGtk final : public gfxPlatform {
  public:
   gfxPlatformGtk();
   virtual ~gfxPlatformGtk();
@@ -46,12 +46,6 @@ class gfxPlatformGtk : public gfxPlatform {
                               nsTArray<const char*>& aFontList) override;
 
   gfxPlatformFontList* CreatePlatformFontList() override;
-
-  gfxFontGroup* CreateFontGroup(const mozilla::FontFamilyList& aFontFamilyList,
-                                const gfxFontStyle* aStyle,
-                                gfxTextPerfMetrics* aTextPerf,
-                                gfxUserFontSet* aUserFontSet,
-                                gfxFloat aDevToCssSize) override;
 
   /**
    * Calls XFlush if xrender is enabled.
@@ -93,13 +87,16 @@ class gfxPlatformGtk : public gfxPlatform {
 #endif  // MOZ_X11
 
 #ifdef MOZ_WAYLAND
-  bool UseWaylandDMABufTextures();
-  bool UseWaylandDMABufWebGL();
-  bool UseWaylandHardwareVideoDecoding();
+  bool UseDMABufTextures();
+  bool UseDMABufVideoTextures();
+  bool UseDMABufWebGL() override { return mUseWebGLDmabufBackend; }
+  void DisableDMABufWebGL() { mUseWebGLDmabufBackend = false; }
+  bool UseHardwareVideoDecoding();
+  bool UseDRMVAAPIDisplay();
 #endif
 
   bool IsX11Display() { return mIsX11Display; }
-  bool IsWaylandDisplay() {
+  bool IsWaylandDisplay() override {
     return !mIsX11Display && !gfxPlatform::IsHeadless();
   }
 
@@ -115,6 +112,9 @@ class gfxPlatformGtk : public gfxPlatform {
   bool mIsX11Display;
 #ifdef MOZ_X11
   Display* mCompositorDisplay;
+#endif
+#ifdef MOZ_WAYLAND
+  bool mUseWebGLDmabufBackend;
 #endif
 };
 

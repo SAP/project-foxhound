@@ -679,7 +679,7 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
    * @return {Boolean} true if the current node has a CSS grid layout, false otherwise.
    */
   isGrid() {
-    return this.currentNode.getGridFragments().length > 0;
+    return this.currentNode.hasGridFragments();
   }
 
   /**
@@ -1945,7 +1945,12 @@ class CssGridHighlighter extends AutoRefreshHighlighter {
     const container = this.getElement("line-infobar-container");
     moveInfobar(
       container,
-      getBoundsFromPoints([{ x, y }, { x, y }, { x, y }, { x, y }]),
+      getBoundsFromPoints([
+        { x, y },
+        { x, y },
+        { x, y },
+        { x, y },
+      ]),
       this.win
     );
   }

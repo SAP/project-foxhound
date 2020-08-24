@@ -20,9 +20,9 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TouchEvents.h"
+#include "mozilla/ViewportUtils.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/MouseEventBinding.h"
-#include "mozilla/dom/TabGroup.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/widget/nsAutoRollup.h"
 #include "nsCOMPtr.h"
@@ -184,12 +184,6 @@ void APZEventState::ProcessSingleTap(const CSSPoint& aPoint,
 
   APZES_LOG("Scheduling timer for click event\n");
   nsCOMPtr<nsITimer> timer = NS_NewTimer();
-  dom::BrowserChild* browserChild = widget->GetOwningBrowserChild();
-
-  if (browserChild && XRE_IsContentProcess()) {
-    timer->SetTarget(
-        browserChild->TabGroup()->EventTargetFor(TaskCategory::Other));
-  }
   RefPtr<DelayedFireSingleTapEvent> callback = new DelayedFireSingleTapEvent(
       mWidget, ldPoint, aModifiers, aClickCount, timer, touchRollup);
   nsresult rv = timer->InitWithCallback(
@@ -225,9 +219,11 @@ bool APZEventState::FireContextmenuEvents(PresShell* aPresShell,
   // is the most useless thing ever because nsDOMWindowUtils::SendMouseEvent
   // just converts them back to widget format, but that API has many callers,
   // including in JS code, so it's not trivial to change.
+  CSSPoint point = CSSPoint::FromAppUnits(
+      ViewportUtils::VisualToLayout(CSSPoint::ToAppUnits(aPoint), aPresShell));
   bool eventHandled = APZCCallbackHelper::DispatchMouseEvent(
-      aPresShell, NS_LITERAL_STRING("contextmenu"), aPoint, 2, 1,
-      WidgetModifiersToDOMModifiers(aModifiers), true,
+      aPresShell, u"contextmenu"_ns, point, 2, 1,
+      WidgetModifiersToDOMModifiers(aModifiers),
       dom::MouseEvent_Binding::MOZ_SOURCE_TOUCH,
       0 /* Use the default value here. */);
 

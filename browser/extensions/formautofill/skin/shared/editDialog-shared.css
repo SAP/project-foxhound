@@ -25,6 +25,10 @@ form select {
   padding-top: calc(var(--in-field-label-size) + .4em);
 }
 
+form input[type="tel"] {
+  text-align: match-parent;
+}
+
 select {
   margin: 0;
   padding-bottom: 5px;
@@ -98,6 +102,11 @@ dialog[subdialog] form {
 
 #controls-container {
   flex: 0 1 100%;
+  display: flex;
   justify-content: end;
   margin: 1em 0 0;
+}
+
+#billingAddressGUID-container {
+  display: none;
 }

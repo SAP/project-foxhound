@@ -16,7 +16,6 @@ Important Concepts
    files-metadata
    Profile Guided Optimization <pgo>
    slow
-   tup
    environment-variables
    build-targets
    python
@@ -54,4 +53,4 @@ Mozilla build system.
    :maxdepth: 1
 
    mozbuild/index
-   mozbuild/dumbmake
+

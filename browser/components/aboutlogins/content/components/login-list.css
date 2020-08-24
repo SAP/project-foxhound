@@ -178,27 +178,16 @@ ol {
   color: var(--in-content-deemphasized-text);
 }
 
-:not(.breached) > .list-item-warning-icon {
-  display: none;
-}
-
-.list-item-warning-icon {
-  -moz-context-properties: fill;
-  fill: var(--red-90);
+.alert-icon {
   min-width: 16px;
+  width: 16px;
   margin-inline-start: 12px;
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0.75;
 }
 
-@media (-moz-windows-default-theme: 0) {
-  .list-item-warning-icon {
-    fill: currentColor;
-  }
-}
-
-@supports -moz-bool-pref("browser.in-content.dark-mode") {
-  @media (prefers-color-scheme: dark) {
-    .breached > .list-item-warning-icon {
-      fill: var(--red-60);
-    }
-  }
+.breached > .alert-icon {
+  fill: var(--red-60);
+  fill-opacity: 1;
 }

@@ -19,6 +19,7 @@
 #include "frontend/SharedContext.h"  // StatementKind, StatementKindIsLoop, StatementKindIsUnlabeledBreakTarget
 #include "frontend/TDZCheckCache.h"  // TDZCheckCache
 #include "gc/Rooting.h"              // RootedAtom, HandleAtom
+#include "vm/StencilEnums.h"         // TryNoteKind
 #include "vm/StringType.h"           // JSAtom
 
 namespace js {
@@ -132,7 +133,7 @@ class LoopControl : public BreakableControl {
                                  const mozilla::Maybe<uint32_t>& nextPos);
 
   MOZ_MUST_USE bool emitLoopEnd(BytecodeEmitter* bce, JSOp op,
-                                JSTryNoteKind tryNoteKind);
+                                TryNoteKind tryNoteKind);
 };
 template <>
 inline bool NestableControl::is<LoopControl>() const {

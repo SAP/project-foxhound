@@ -149,7 +149,7 @@ function getNodeInfo(node, elementStyle) {
     type = VIEW_NODE_VARIABLE_TYPE;
     value = {
       property: getPropertyNameAndValue(node).name,
-      value: node.textContent,
+      value: node.textContent.trim(),
       enabled: declaration.enabled,
       overridden: declaration.overridden,
       pseudoElement: rule.pseudoElement,
@@ -189,7 +189,7 @@ function getNodeInfo(node, elementStyle) {
     classList.contains("ruleview-rule-source-label")
   ) {
     type = VIEW_NODE_LOCATION_TYPE;
-    value = rule.sheet && rule.sheet.href ? rule.sheet.href : rule.title;
+    value = rule.sheet?.href ? rule.sheet.href : rule.title;
   } else {
     return null;
   }
@@ -213,7 +213,7 @@ function getNodeInfo(node, elementStyle) {
  * @return {Object} {name, value}
  */
 function getPropertyNameAndValue(node) {
-  while (node && node.classList) {
+  while (node?.classList) {
     // Check first for ruleview-computed since it's the deepest
     if (
       node.classList.contains("ruleview-computed") ||
@@ -240,7 +240,7 @@ function getPropertyNameAndValue(node) {
  * @returns {DOMNode} The active shape toggle node, if one exists.
  */
 function getShapeToggleActive(node) {
-  while (node && node.classList) {
+  while (node?.classList) {
     // Check first for ruleview-computed since it's the deepest
     if (
       node.classList.contains("ruleview-computed") ||
@@ -280,8 +280,41 @@ function getShapePoint(node) {
 }
 
 /**
- * Returns true if the given property value is a CSS variables and contains the given
- * variable name, and false otherwise.
+ * Returns an array of CSS variables used in a CSS property value.
+ * If no CSS variables are used, returns an empty array.
+ *
+ * @param {String} propertyValue
+ *        CSS property value (e.g. "1px solid var(--color, blue)")
+ * @return {Array}
+ *         List of variable names (e.g. ["--color"])
+ *
+ */
+function getCSSVariables(propertyValue = "") {
+  const variables = [];
+  const parts = propertyValue.split(/var\(\s*--/);
+
+  if (parts.length) {
+    // Skip first part. It is the substring before the first occurence of "var(--"
+    for (let i = 1; i < parts.length; i++) {
+      // Split the part by any of the following characters expected after a variable name:
+      // comma, closing parenthesis or whitespace.
+      // Take just the first match. Anything else is either:
+      // - the fallback value, ex: ", blue" from "var(--color, blue)"
+      // - the closing parenthesis, ex: ")" from "var(--color)"
+      const variable = parts[i].split(/[,)\s+]/).shift();
+
+      if (variable) {
+        // Add back the double-dash. The initial string was split by "var(--"
+        variables.push(`--${variable}`);
+      }
+    }
+  }
+
+  return variables;
+}
+
+/**
+ * Returns true if the given CSS property value contains the given variable name.
  *
  * @param {String} propertyValue
  *        CSS property value (e.g. "var(--color)")
@@ -290,11 +323,11 @@ function getShapePoint(node) {
  * @return {Boolean}
  */
 function hasCSSVariable(propertyValue, variableName) {
-  const regex = new RegExp(`(^|\\W)var\\(${variableName}\\s*[,)]`);
-  return regex.test(propertyValue);
+  return getCSSVariables(propertyValue).includes(variableName);
 }
 
 module.exports = {
+  getCSSVariables,
   getNodeInfo,
   getRuleFromNode,
   hasCSSVariable,

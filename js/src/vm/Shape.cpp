@@ -136,7 +136,7 @@ bool Shape::makeOwnBaseShape(JSContext* cx) {
   new (nbase) BaseShape(StackBaseShape(this));
   nbase->setOwned(base()->toUnowned());
 
-  this->base_ = nbase;
+  setBase(nbase);
 
   return true;
 }
@@ -155,10 +155,10 @@ void Shape::handoffTableTo(Shape* shape) {
   MOZ_ASSERT_IF(!shape->isEmptyShape() && shape->isDataProperty(),
                 nbase->slotSpan() > shape->slot());
 
-  this->base_ = nbase->baseUnowned();
+  setBase(nbase->baseUnowned());
   nbase->adoptUnowned(shape->base()->toUnowned());
 
-  shape->base_ = nbase;
+  shape->setBase(nbase);
 }
 
 /* static */
@@ -1090,7 +1090,7 @@ Shape* NativeObject::putDataProperty(JSContext* cx, HandleNativeObject obj,
     if (updateLast) {
       shape->base()->adoptUnowned(nbase);
     } else {
-      shape->base_ = nbase;
+      shape->setBase(nbase);
     }
 
     shape->setSlot(slot);
@@ -1196,7 +1196,7 @@ Shape* NativeObject::putAccessorProperty(JSContext* cx, HandleNativeObject obj,
     if (updateLast) {
       shape->base()->adoptUnowned(nbase);
     } else {
-      shape->base_ = nbase;
+      shape->setBase(nbase);
     }
 
     shape->setSlot(SHAPE_INVALID_SLOT);
@@ -1324,7 +1324,7 @@ bool NativeObject::removeProperty(JSContext* cx, HandleNativeObject obj,
       if (!nbase) {
         return false;
       }
-      previous->base_ = nbase;
+      previous->setBase(nbase);
     }
   }
 
@@ -1427,11 +1427,10 @@ bool NativeObject::rollbackProperties(JSContext* cx, HandleNativeObject obj,
     if (obj->lastProperty()->isEmptyShape()) {
       MOZ_ASSERT(slotSpan == 0);
       break;
-    } else {
-      uint32_t slot = obj->lastProperty()->slot();
-      if (slot < slotSpan) {
-        break;
-      }
+    }
+    uint32_t slot = obj->lastProperty()->slot();
+    if (slot < slotSpan) {
+      break;
     }
     if (!NativeObject::removeProperty(cx, obj, obj->lastProperty()->propid())) {
       return false;
@@ -1583,11 +1582,14 @@ Shape* Shape::setObjectFlags(JSContext* cx, BaseShape::Flag flags,
 }
 
 inline BaseShape::BaseShape(const StackBaseShape& base)
-    : clasp_(base.clasp), flags(base.flags), slotSpan_(0), unowned_(nullptr) {}
+    : TenuredCellWithNonGCPointer(base.clasp),
+      flags(base.flags),
+      slotSpan_(0),
+      unowned_(nullptr) {}
 
 /* static */
 void BaseShape::copyFromUnowned(BaseShape& dest, UnownedBaseShape& src) {
-  dest.clasp_ = src.clasp_;
+  dest.setHeaderPtr(src.clasp());
   dest.slotSpan_ = src.slotSpan_;
   dest.unowned_ = &src;
   dest.flags = src.flags | OWNED_SHAPE;
@@ -1908,6 +1910,10 @@ void Shape::sweep(JSFreeOp* fop) {
    * reallocated, since allocating a cell in a zone that is being marked will
    * set the mark bit for that cell.
    */
+
+  MOZ_ASSERT(zone()->isGCSweeping());
+  MOZ_ASSERT_IF(parent, parent->zone() == zone());
+
   if (parent && parent->isMarkedAny()) {
     if (inDictionary()) {
       if (parent->dictNext == DictionaryShapeLink(this)) {
@@ -1956,19 +1962,9 @@ void Shape::fixupShapeTreeAfterMovingGC() {
   MOZ_ASSERT(children.isShapeSet());
   ShapeSet* set = children.toShapeSet();
   for (ShapeSet::Enum e(*set); !e.empty(); e.popFront()) {
-    Shape* key = e.front();
-    if (IsForwarded(key)) {
-      key = Forwarded(key);
-    }
-
-    BaseShape* base = key->base();
-    if (IsForwarded(base)) {
-      base = Forwarded(base);
-    }
-    UnownedBaseShape* unowned = base->unowned();
-    if (IsForwarded(unowned)) {
-      unowned = Forwarded(unowned);
-    }
+    Shape* key = MaybeForwarded(e.front());
+    BaseShape* base = MaybeForwarded(key->base());
+    UnownedBaseShape* unowned = MaybeForwarded(base->unowned());
 
     GetterOp getter = key->getter();
     if (key->hasGetterObject()) {
@@ -2083,7 +2079,7 @@ void Shape::dump(js::GenericPrinter& out) const {
   out.printf(" g/s %p/%p slot %d attrs %x ",
              JS_FUNC_TO_DATA_PTR(void*, getter()),
              JS_FUNC_TO_DATA_PTR(void*, setter()),
-             isDataProperty() ? slot() : -1, attrs);
+             isDataProperty() ? int32_t(slot()) : -1, attrs);
 
   if (attrs) {
     int first = 1;

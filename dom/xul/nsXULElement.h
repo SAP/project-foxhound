@@ -340,7 +340,7 @@ class nsXULElement : public nsStyledElement {
   MOZ_CAN_RUN_SCRIPT int32_t ScreenX();
   MOZ_CAN_RUN_SCRIPT int32_t ScreenY();
 
-  bool HasMenu();
+  MOZ_CAN_RUN_SCRIPT bool HasMenu();
   MOZ_CAN_RUN_SCRIPT void OpenMenu(bool aOpenFlag);
 
   virtual bool PerformAccesskey(bool aKeyCausesActivation,
@@ -371,12 +371,11 @@ class nsXULElement : public nsStyledElement {
     SetAttr(aName, aValue, aError);
   }
   bool GetXULBoolAttr(nsAtom* aName) const {
-    return AttrValueIs(kNameSpaceID_None, aName, NS_LITERAL_STRING("true"),
-                       eCaseMatters);
+    return AttrValueIs(kNameSpaceID_None, aName, u"true"_ns, eCaseMatters);
   }
   void SetXULBoolAttr(nsAtom* aName, bool aValue) {
     if (aValue) {
-      SetAttr(kNameSpaceID_None, aName, NS_LITERAL_STRING("true"), true);
+      SetAttr(kNameSpaceID_None, aName, u"true"_ns, true);
     } else {
       UnsetAttr(kNameSpaceID_None, aName, true);
     }
@@ -482,7 +481,7 @@ class nsXULElement : public nsStyledElement {
     return parent ? parent : nsStyledElement::GetScopeChainParent();
   }
 
-  bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override;
+  bool IsInteractiveHTMLContent() const override;
 
   void MaybeUpdatePrivateLifetime();
 

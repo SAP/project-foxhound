@@ -88,6 +88,7 @@ class GfxInfoBase : public nsIGfxInfo,
   virtual nsresult Init();
 
   NS_IMETHOD_(void) GetData() override;
+  NS_IMETHOD_(int32_t) GetMaxRefreshRate() override { return -1; }
 
   static void AddCollector(GfxInfoCollectorBase* collector);
   static void RemoveCollector(GfxInfoCollectorBase* collector);
@@ -141,7 +142,7 @@ class GfxInfoBase : public nsIGfxInfo,
 
   bool InitFeatureObject(JSContext* aCx, JS::Handle<JSObject*> aContainer,
                          const char* aName,
-                         mozilla::gfx::FeatureStatus& aKnownStatus,
+                         mozilla::gfx::FeatureState& aFeatureState,
                          JS::MutableHandle<JSObject*> aOutObj);
 
   NS_IMETHOD ControlGPUProcessForXPCShell(bool aEnable, bool* _retval) override;
@@ -157,7 +158,7 @@ class GfxInfoBase : public nsIGfxInfo,
 
   bool IsFeatureAllowlisted(int32_t aFeature) const;
 
-  void EvaluateDownloadedBlacklist(nsTArray<GfxDriverInfo>& aDriverInfo);
+  void EvaluateDownloadedBlocklist(nsTArray<GfxDriverInfo>& aDriverInfo);
 
   bool BuildFeatureStateLog(JSContext* aCx, const gfx::FeatureState& aFeature,
                             JS::MutableHandle<JS::Value> aOut);

@@ -56,12 +56,12 @@ class MachCommands(MachCommandBase):
 
         # Note: subprocess requires native strings in os.environ on Windows.
         append_env = {
-            b'PYTHONDONTWRITEBYTECODE': str('1'),
+            'PYTHONDONTWRITEBYTECODE': str('1'),
         }
 
         if no_virtualenv:
             python_path = sys.executable
-            append_env[b'PYTHONPATH'] = os.pathsep.join(sys.path)
+            append_env['PYTHONPATH'] = os.pathsep.join(sys.path)
         else:
             self._activate_virtualenv()
             python_path = self.virtualenv_manager.python_path
@@ -87,6 +87,7 @@ class MachCommands(MachCommandBase):
         return self.run_process([python_path] + args,
                                 pass_thru=True,  # Allow user to run Python interactively.
                                 ensure_exit_code=False,  # Don't throw on non-zero exit code.
+                                python_unbuffered=False,  # Leave input buffered.
                                 append_env=append_env)
 
     @Command('python-test', category='testing',

@@ -7,6 +7,7 @@
 #include "jit/CompileWrappers.h"
 
 #include "gc/GC.h"
+#include "gc/Heap.h"
 #include "jit/Ion.h"
 #include "jit/JitRealm.h"
 
@@ -96,8 +97,8 @@ CompileRuntime* CompileZone::runtime() {
 bool CompileZone::isAtomsZone() { return zone()->isAtomsZone(); }
 
 #ifdef DEBUG
-const void* CompileZone::addressOfIonBailAfter() {
-  return zone()->runtimeFromAnyThread()->jitRuntime()->addressOfIonBailAfter();
+const void* CompileRuntime::addressOfIonBailAfterCounter() {
+  return runtime()->jitRuntime()->addressOfIonBailAfterCounter();
 }
 #endif
 
@@ -163,6 +164,10 @@ void CompileZone::setMinorGCShouldCancelIonCompilations() {
   rt->gc.storeBuffer().setShouldCancelIonCompilations();
 }
 
+uintptr_t CompileZone::nurseryCellHeader(JS::TraceKind kind) {
+  return gc::NurseryCellHeader::MakeValue(zone(), kind);
+}
+
 JS::Realm* CompileRealm::realm() { return reinterpret_cast<JS::Realm*>(this); }
 
 /* static */
@@ -220,4 +225,7 @@ JitCompileOptions::JitCompileOptions(JSContext* cx) {
       cx->runtime()->geckoProfiler().enabled() &&
       cx->runtime()->geckoProfiler().slowAssertionsEnabled();
   offThreadCompilationAvailable_ = OffThreadCompilationAvailable(cx);
+#ifdef DEBUG
+  ionBailAfterEnabled_ = cx->runtime()->jitRuntime()->ionBailAfterEnabled();
+#endif
 }

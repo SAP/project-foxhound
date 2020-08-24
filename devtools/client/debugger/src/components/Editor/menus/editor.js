@@ -28,6 +28,7 @@ import type {
   ThreadContext,
 } from "../../../types";
 
+// Menu Items
 export const continueToHereItem = (
   cx: ThreadContext,
   location: SourceLocation,
@@ -41,31 +42,28 @@ export const continueToHereItem = (
   label: L10N.getStr("editor.continueToHere.label"),
 });
 
-// menu items
-
 const copyToClipboardItem = (
-  selectedContent: SourceContent,
+  selectionText: string,
   editorActions: EditorItemActions
 ) => ({
   id: "node-menu-copy-to-clipboard",
   label: L10N.getStr("copyToClipboard.label"),
   accesskey: L10N.getStr("copyToClipboard.accesskey"),
-  disabled: false,
-  click: () =>
-    selectedContent.type === "text" &&
-    copyToTheClipboard(selectedContent.value),
+  disabled: selectionText.length === 0,
+  click: () => copyToTheClipboard(selectionText),
 });
 
 const copySourceItem = (
-  selectedSource: Source,
-  selectionText: string,
+  selectedContent: SourceContent,
   editorActions: EditorItemActions
 ) => ({
   id: "node-menu-copy-source",
   label: L10N.getStr("copySource.label"),
   accesskey: L10N.getStr("copySource.accesskey"),
-  disabled: selectionText.length === 0,
-  click: () => copyToTheClipboard(selectionText),
+  disabled: false,
+  click: () =>
+    selectedContent.type === "text" &&
+    copyToTheClipboard(selectedContent.value),
 });
 
 const copySourceUri2Item = (
@@ -117,11 +115,11 @@ const blackBoxMenuItem = (
 ) => ({
   id: "node-menu-blackbox",
   label: selectedSource.isBlackBoxed
-    ? L10N.getStr("blackboxContextItem.unblackbox")
-    : L10N.getStr("blackboxContextItem.blackbox"),
+    ? L10N.getStr("ignoreContextItem.unignore")
+    : L10N.getStr("ignoreContextItem.ignore"),
   accesskey: selectedSource.isBlackBoxed
-    ? L10N.getStr("blackboxContextItem.unblackbox.accesskey")
-    : L10N.getStr("blackboxContextItem.blackbox.accesskey"),
+    ? L10N.getStr("ignoreContextItem.unignore.accesskey")
+    : L10N.getStr("ignoreContextItem.ignore.accesskey"),
   disabled: !shouldBlackbox(selectedSource),
   click: () => editorActions.toggleBlackBox(cx, selectedSource),
 });
@@ -203,10 +201,10 @@ export function editorMenuItems({
     ),
     continueToHereItem(cx, location, isPaused, editorActions),
     { type: "separator" },
-    ...(content ? [copyToClipboardItem(content, editorActions)] : []),
+    copyToClipboardItem(selectionText, editorActions),
     ...(!selectedSource.isWasm
       ? [
-          copySourceItem(selectedSource, selectionText, editorActions),
+          ...(content ? [copySourceItem(content, editorActions)] : []),
           copySourceUri2Item(selectedSource, editorActions),
         ]
       : []),

@@ -19,6 +19,21 @@
 namespace js {
 namespace jit {
 
+void MacroAssemblerCompat::boxValue(JSValueType type, Register src,
+                                    Register dest) {
+#ifdef DEBUG
+  if (type == JSVAL_TYPE_INT32 || type == JSVAL_TYPE_BOOLEAN) {
+    Label upper32BitsZeroed;
+    movePtr(ImmWord(UINT32_MAX), dest);
+    asMasm().branchPtr(Assembler::BelowOrEqual, src, dest, &upper32BitsZeroed);
+    breakpoint();
+    bind(&upper32BitsZeroed);
+  }
+#endif
+  Orr(ARMRegister(dest, 64), ARMRegister(src, 64),
+      Operand(ImmShiftedTag(type).value));
+}
+
 void MacroAssembler::clampDoubleToUint8(FloatRegister input, Register output) {
   ARMRegister dest(output, 32);
   Fcvtns(dest, ARMFPRegister(input, 64));
@@ -353,6 +368,7 @@ void MacroAssemblerCompat::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
       case Scalar::Uint8Clamped:
       case Scalar::BigInt64:
       case Scalar::BigUint64:
+      case Scalar::Simd128:
       case Scalar::MaxTypedArrayViewType:
         MOZ_CRASH("unexpected array type");
     }
@@ -412,6 +428,7 @@ void MacroAssemblerCompat::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
       case Scalar::Uint8Clamped:
       case Scalar::BigInt64:
       case Scalar::BigUint64:
+      case Scalar::Simd128:
       case Scalar::MaxTypedArrayViewType:
         MOZ_CRASH("unexpected array type");
     }
@@ -446,6 +463,10 @@ void MacroAssembler::flush() { Assembler::flush(); }
 // Stack manipulation functions.
 
 void MacroAssembler::PushRegsInMask(LiveRegisterSet set) {
+#ifdef ENABLE_WASM_SIMD
+#  error "Needs more careful logic if SIMD is enabled"
+#endif
+
   for (GeneralRegisterBackwardIterator iter(set.gprs()); iter.more();) {
     vixl::CPURegister src[4] = {vixl::NoCPUReg, vixl::NoCPUReg, vixl::NoCPUReg,
                                 vixl::NoCPUReg};
@@ -474,6 +495,10 @@ void MacroAssembler::PushRegsInMask(LiveRegisterSet set) {
 
 void MacroAssembler::storeRegsInMask(LiveRegisterSet set, Address dest,
                                      Register scratch) {
+#ifdef ENABLE_WASM_SIMD
+#  error "Needs more careful logic if SIMD is enabled"
+#endif
+
   FloatRegisterSet fpuSet(set.fpus().reduceSetForPush());
   unsigned numFpu = fpuSet.size();
   int32_t diffF = fpuSet.getPushSizeInBytes();
@@ -510,6 +535,10 @@ void MacroAssembler::storeRegsInMask(LiveRegisterSet set, Address dest,
 
 void MacroAssembler::PopRegsInMaskIgnore(LiveRegisterSet set,
                                          LiveRegisterSet ignore) {
+#ifdef ENABLE_WASM_SIMD
+#  error "Needs more careful logic if SIMD is enabled"
+#endif
+
   // The offset of the data from the stack pointer.
   uint32_t offset = 0;
 
@@ -982,42 +1011,11 @@ void MacroAssembler::branchValueIsNurseryCellImpl(Condition cond,
   MOZ_ASSERT(temp != ScratchReg &&
              temp != ScratchReg2);  // Both may be used internally.
 
-  Label done, checkAddress, checkObjectAddress, checkStringAddress;
-  bool testNursery = (cond == Assembler::Equal);
-  branchTestObject(Assembler::Equal, value, &checkObjectAddress);
-  branchTestString(Assembler::Equal, value, &checkStringAddress);
-  branchTestBigInt(Assembler::NotEqual, value, testNursery ? &done : label);
-
-  unboxBigInt(value, temp);
-  jump(&checkAddress);
-
-  bind(&checkStringAddress);
-  unboxString(value, temp);
-  jump(&checkAddress);
-
-  bind(&checkObjectAddress);
-  unboxObject(value, temp);
-
-  bind(&checkAddress);
-  orPtr(Imm32(gc::ChunkMask), temp);
-  branch32(cond, Address(temp, gc::ChunkLocationOffsetFromLastByte),
-           Imm32(int32_t(gc::ChunkLocation::Nursery)), label);
-
-  bind(&done);
-}
-
-void MacroAssembler::branchValueIsNurseryObject(Condition cond,
-                                                ValueOperand value,
-                                                Register temp, Label* label) {
-  MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
-  MOZ_ASSERT(temp != ScratchReg &&
-             temp != ScratchReg2);  // Both may be used internally.
-
   Label done;
-  branchTestObject(Assembler::NotEqual, value,
-                   cond == Assembler::Equal ? &done : label);
+  branchTestGCThing(Assembler::NotEqual, value,
+                    cond == Assembler::Equal ? &done : label);
 
-  unboxObject(value, temp);
+  unboxGCThingForGCBarrier(value, temp);
   orPtr(Imm32(gc::ChunkMask), temp);
   branch32(cond, Address(temp, gc::ChunkLocationOffsetFromLastByte),
            Imm32(int32_t(gc::ChunkLocation::Nursery)), label);
@@ -2058,6 +2056,260 @@ void MacroAssembler::patchNearAddressMove(CodeLocationLabel loc,
 void MacroAssembler::speculationBarrier() {
   // Conditional speculation barrier.
   csdb();
+}
+
+void MacroAssembler::floorFloat32ToInt32(FloatRegister src, Register dest,
+                                         Label* fail) {
+  floorf(src, dest, fail);
+}
+
+void MacroAssembler::floorDoubleToInt32(FloatRegister src, Register dest,
+                                        Label* fail) {
+  floor(src, dest, fail);
+}
+
+void MacroAssembler::ceilFloat32ToInt32(FloatRegister src, Register dest,
+                                        Label* fail) {
+  ceilf(src, dest, fail);
+}
+
+void MacroAssembler::ceilDoubleToInt32(FloatRegister src, Register dest,
+                                       Label* fail) {
+  ceil(src, dest, fail);
+}
+
+void MacroAssembler::truncFloat32ToInt32(FloatRegister src, Register dest,
+                                         Label* fail) {
+  const ARMFPRegister src32(src, 32);
+
+  Label done, zeroCase;
+
+  // Convert scalar to signed 32-bit fixed-point, rounding toward zero.
+  // In the case of overflow, the output is saturated.
+  // In the case of NaN and -0, the output is zero.
+  Fcvtzs(ARMRegister(dest, 32), src32);
+
+  // If the output was zero, worry about special cases.
+  branch32(Assembler::Equal, dest, Imm32(0), &zeroCase);
+
+  // Fail on overflow cases.
+  branch32(Assembler::Equal, dest, Imm32(INT_MAX), fail);
+  branch32(Assembler::Equal, dest, Imm32(INT_MIN), fail);
+
+  // If the output was non-zero and wasn't saturated, just return it.
+  jump(&done);
+
+  // Handle the case of a zero output:
+  // 1. The input may have been NaN, requiring a failure.
+  // 2. The input may have been in (-1,-0], requiring a failure.
+  {
+    bind(&zeroCase);
+
+    // If input is a negative number that truncated to zero, the real
+    // output should be the non-integer -0.
+    // The use of "lt" instead of "lo" also catches unordered NaN input.
+    Fcmp(src32, 0.0f);
+    B(fail, vixl::lt);
+
+    // Check explicitly for -0, bitwise.
+    Fmov(ARMRegister(dest, 32), src32);
+    branchTest32(Assembler::Signed, dest, dest, fail);
+    move32(Imm32(0), dest);
+  }
+
+  bind(&done);
+}
+
+void MacroAssembler::truncDoubleToInt32(FloatRegister src, Register dest,
+                                        Label* fail) {
+  const ARMFPRegister src64(src, 64);
+
+  Label done, zeroCase;
+
+  // Convert scalar to signed 32-bit fixed-point, rounding toward zero.
+  // In the case of overflow, the output is saturated.
+  // In the case of NaN and -0, the output is zero.
+  Fcvtzs(ARMRegister(dest, 32), src64);
+
+  // If the output was zero, worry about special cases.
+  branch32(Assembler::Equal, dest, Imm32(0), &zeroCase);
+
+  // Fail on overflow cases.
+  branch32(Assembler::Equal, dest, Imm32(INT_MAX), fail);
+  branch32(Assembler::Equal, dest, Imm32(INT_MIN), fail);
+
+  // If the output was non-zero and wasn't saturated, just return it.
+  jump(&done);
+
+  // Handle the case of a zero output:
+  // 1. The input may have been NaN, requiring a failure.
+  // 2. The input may have been in (-1,-0], requiring a failure.
+  {
+    bind(&zeroCase);
+
+    // If input is a negative number that truncated to zero, the real
+    // output should be the non-integer -0.
+    // The use of "lt" instead of "lo" also catches unordered NaN input.
+    Fcmp(src64, 0.0);
+    B(fail, vixl::lt);
+
+    // Check explicitly for -0, bitwise.
+    Fmov(ARMRegister(dest, 64), src64);
+    branchTestPtr(Assembler::Signed, dest, dest, fail);
+    movePtr(ImmPtr(0), dest);
+  }
+
+  bind(&done);
+}
+
+void MacroAssembler::roundFloat32ToInt32(FloatRegister src, Register dest,
+                                         FloatRegister temp, Label* fail) {
+  const ARMFPRegister src32(src, 32);
+  ScratchFloat32Scope scratch(*this);
+
+  Label negative, done;
+
+  // Branch to a slow path if input < 0.0 due to complicated rounding rules.
+  // Note that Fcmp with NaN unsets the negative flag.
+  Fcmp(src32, 0.0);
+  B(&negative, Assembler::Condition::lo);
+
+  // Handle the simple case of a positive input, and also -0 and NaN.
+  // Rounding proceeds with consideration of the fractional part of the input:
+  // 1. If > 0.5, round to integer with higher absolute value (so, up).
+  // 2. If < 0.5, round to integer with lower absolute value (so, down).
+  // 3. If = 0.5, round to +Infinity (so, up).
+  {
+    // Convert to signed 32-bit integer, rounding halfway cases away from zero.
+    // In the case of overflow, the output is saturated.
+    // In the case of NaN and -0, the output is zero.
+    Fcvtas(ARMRegister(dest, 32), src32);
+    // If the output potentially saturated, fail.
+    branch32(Assembler::Equal, dest, Imm32(INT_MAX), fail);
+
+    // If the result of the rounding was non-zero, return the output.
+    // In the case of zero, the input may have been NaN or -0, which must bail.
+    branch32(Assembler::NotEqual, dest, Imm32(0), &done);
+    {
+      // If input is NaN, comparisons set the C and V bits of the NZCV flags.
+      Fcmp(src32, 0.0f);
+      B(fail, Assembler::Overflow);
+
+      // Move all 32 bits of the input into a scratch register to check for -0.
+      vixl::UseScratchRegisterScope temps(this);
+      const ARMRegister scratchGPR32 = temps.AcquireW();
+      Fmov(scratchGPR32, src32);
+      Cmp(scratchGPR32, vixl::Operand(uint32_t(0x80000000)));
+      B(fail, Assembler::Equal);
+    }
+
+    jump(&done);
+  }
+
+  // Handle the complicated case of a negative input.
+  // Rounding proceeds with consideration of the fractional part of the input:
+  // 1. If > 0.5, round to integer with higher absolute value (so, down).
+  // 2. If < 0.5, round to integer with lower absolute value (so, up).
+  // 3. If = 0.5, round to +Infinity (so, up).
+  bind(&negative);
+  {
+    // Inputs in [-0.5, 0) need 0.5 added; other negative inputs need
+    // the biggest double less than 0.5.
+    Label join;
+    loadConstantFloat32(GetBiggestNumberLessThan(0.5f), temp);
+    loadConstantFloat32(-0.5f, scratch);
+    branchFloat(Assembler::DoubleLessThan, src, scratch, &join);
+    loadConstantFloat32(0.5f, temp);
+    bind(&join);
+
+    addFloat32(src, temp);
+    // Round all values toward -Infinity.
+    // In the case of overflow, the output is saturated.
+    // NaN and -0 are already handled by the "positive number" path above.
+    Fcvtms(ARMRegister(dest, 32), temp);
+    // If the output potentially saturated, fail.
+    branch32(Assembler::Equal, dest, Imm32(INT_MIN), fail);
+
+    // If output is zero, then the actual result is -0. Fail.
+    branchTest32(Assembler::Zero, dest, dest, fail);
+  }
+
+  bind(&done);
+}
+
+void MacroAssembler::roundDoubleToInt32(FloatRegister src, Register dest,
+                                        FloatRegister temp, Label* fail) {
+  const ARMFPRegister src64(src, 64);
+  ScratchDoubleScope scratch(*this);
+
+  Label negative, done;
+
+  // Branch to a slow path if input < 0.0 due to complicated rounding rules.
+  // Note that Fcmp with NaN unsets the negative flag.
+  Fcmp(src64, 0.0);
+  B(&negative, Assembler::Condition::lo);
+
+  // Handle the simple case of a positive input, and also -0 and NaN.
+  // Rounding proceeds with consideration of the fractional part of the input:
+  // 1. If > 0.5, round to integer with higher absolute value (so, up).
+  // 2. If < 0.5, round to integer with lower absolute value (so, down).
+  // 3. If = 0.5, round to +Infinity (so, up).
+  {
+    // Convert to signed 32-bit integer, rounding halfway cases away from zero.
+    // In the case of overflow, the output is saturated.
+    // In the case of NaN and -0, the output is zero.
+    Fcvtas(ARMRegister(dest, 32), src64);
+    // If the output potentially saturated, fail.
+    branch32(Assembler::Equal, dest, Imm32(INT_MAX), fail);
+
+    // If the result of the rounding was non-zero, return the output.
+    // In the case of zero, the input may have been NaN or -0, which must bail.
+    branch32(Assembler::NotEqual, dest, Imm32(0), &done);
+    {
+      // If input is NaN, comparisons set the C and V bits of the NZCV flags.
+      Fcmp(src64, 0.0);
+      B(fail, Assembler::Overflow);
+
+      // Move all 64 bits of the input into a scratch register to check for -0.
+      vixl::UseScratchRegisterScope temps(this);
+      const ARMRegister scratchGPR64 = temps.AcquireX();
+      Fmov(scratchGPR64, src64);
+      Cmp(scratchGPR64, vixl::Operand(uint64_t(0x8000000000000000)));
+      B(fail, Assembler::Equal);
+    }
+
+    jump(&done);
+  }
+
+  // Handle the complicated case of a negative input.
+  // Rounding proceeds with consideration of the fractional part of the input:
+  // 1. If > 0.5, round to integer with higher absolute value (so, down).
+  // 2. If < 0.5, round to integer with lower absolute value (so, up).
+  // 3. If = 0.5, round to +Infinity (so, up).
+  bind(&negative);
+  {
+    // Inputs in [-0.5, 0) need 0.5 added; other negative inputs need
+    // the biggest double less than 0.5.
+    Label join;
+    loadConstantDouble(GetBiggestNumberLessThan(0.5), temp);
+    loadConstantDouble(-0.5, scratch);
+    branchDouble(Assembler::DoubleLessThan, src, scratch, &join);
+    loadConstantDouble(0.5, temp);
+    bind(&join);
+
+    addDouble(src, temp);
+    // Round all values toward -Infinity.
+    // In the case of overflow, the output is saturated.
+    // NaN and -0 are already handled by the "positive number" path above.
+    Fcvtms(ARMRegister(dest, 32), temp);
+    // If the output potentially saturated, fail.
+    branch32(Assembler::Equal, dest, Imm32(INT_MIN), fail);
+
+    // If output is zero, then the actual result is -0. Fail.
+    branchTest32(Assembler::Zero, dest, dest, fail);
+  }
+
+  bind(&done);
 }
 
 //}}} check_macroassembler_style

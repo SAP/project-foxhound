@@ -93,8 +93,6 @@ def docker_worker_debian_package(config, job, taskdesc):
         image += '-' + arch
     image += '-packages'
     worker['docker-image'] = {'in-tree': image}
-    # Retry on apt-get errors.
-    worker['retry-exit-status'] = [100]
 
     add_artifacts(config, job, taskdesc, path='/tmp/artifacts')
 
@@ -185,8 +183,6 @@ def docker_worker_debian_package(config, job, taskdesc):
         .format(
             root_url=get_root_url(False),
             package=package,
-            snapshot=run['snapshot'],
-            dist=run['dist'],
             src_url=src_url,
             src_file=src_file,
             src_sha256=src_sha256,

@@ -11,7 +11,7 @@
 /* :::::::::: button :::::::::: */
 
 button {
-  -moz-appearance: button;
+  appearance: button;
   margin: 1px 5px 2px;
   min-width: 6.3em;
   color: ButtonText;
@@ -19,15 +19,13 @@ button {
 }
 
 .button-box {
-  -moz-appearance: button-focus;
-}
-
-.button-icon {
-  margin-inline-end: 2px;
+  appearance: auto;
+  -moz-default-appearance: button-focus;
 }
 
 .button-text {
   margin: 0;
+  margin-inline-start: 2px;
   text-align: center;
 }
 
@@ -52,7 +50,8 @@ button[disabled="true"] {
 /* ::::: menu buttons ::::: */
 
 .button-menu-dropmarker {
-  -moz-appearance: toolbarbutton-dropdown;
+  appearance: auto;
+  -moz-default-appearance: toolbarbutton-dropdown;
 }
 
 /* ::::: plain buttons ::::: */
@@ -64,7 +63,7 @@ button.plain {
 
 button[type="disclosure"] {
   margin: 0;
-  -moz-appearance: none;
+  appearance: none;
   list-style-image: url("chrome://global/skin/icons/twisty-collapsed.svg");
   -moz-context-properties: fill;
   fill: currentColor;

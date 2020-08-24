@@ -9,6 +9,8 @@
 #include "ImageContainer.h"
 #include "mozilla/layers/ImageBridgeParent.h"
 #include "mozilla/layers/VideoBridgeParent.h"
+#include "mozilla/webrender/RenderTextureHostWrapper.h"
+#include "mozilla/webrender/RenderThread.h"
 
 namespace mozilla {
 namespace layers {
@@ -33,16 +35,32 @@ TextureHost* GPUVideoTextureHost::EnsureWrappedTextureHost() {
     return mWrappedTextureHost;
   }
 
-  // In the future when the RDD process has a PVideoBridge connection,
-  // then there might be two VideoBridgeParents (one within the GPU process,
-  // one from RDD). We'll need to flag which one to use to lookup our
-  // descriptor, or just try both.
   auto& sd = static_cast<SurfaceDescriptorRemoteDecoder&>(mDescriptor);
   mWrappedTextureHost =
       VideoBridgeParent::GetSingleton(sd.source())->LookupTexture(sd.handle());
 
-  if (mWrappedTextureHost && mExternalImageId.isSome()) {
-    mWrappedTextureHost->CreateRenderTexture(mExternalImageId.ref());
+  if (!mWrappedTextureHost) {
+    return nullptr;
+  }
+
+  if (mWrappedTextureHost->AsBufferTextureHost()) {
+    // TODO(miko): This code path is taken when WebRenderTextureHost wraps
+    // GPUVideoTextureHost, which wraps BufferTextureHost.
+    // Because this creates additional copies of the texture data, we should not
+    // do this.
+    mWrappedTextureHost->AsBufferTextureHost()->DisableExternalTextures();
+  }
+
+  if (mExternalImageId.isSome()) {
+    // External image id is allocated by mWrappedTextureHost.
+    mWrappedTextureHost->EnsureRenderTexture(Nothing());
+    MOZ_ASSERT(mWrappedTextureHost->mExternalImageId.isSome());
+    auto wrappedId = mWrappedTextureHost->mExternalImageId.ref();
+
+    RefPtr<wr::RenderTextureHost> texture =
+        new wr::RenderTextureHostWrapper(wrappedId);
+    wr::RenderThread::Get()->RegisterExternalImage(
+        wr::AsUint64(mExternalImageId.ref()), texture.forget());
   }
 
   return mWrappedTextureHost;
@@ -60,6 +78,14 @@ void GPUVideoTextureHost::Unlock() {
     return;
   }
   EnsureWrappedTextureHost()->Unlock();
+}
+
+void GPUVideoTextureHost::PrepareTextureSource(
+    CompositableTextureSourceRef& aTexture) {
+  if (!EnsureWrappedTextureHost()) {
+    return;
+  }
+  EnsureWrappedTextureHost()->PrepareTextureSource(aTexture);
 }
 
 bool GPUVideoTextureHost::BindTextureSource(
@@ -122,22 +148,44 @@ bool GPUVideoTextureHost::HasIntermediateBuffer() const {
   return mWrappedTextureHost->HasIntermediateBuffer();
 }
 
+void GPUVideoTextureHost::UpdatedInternal(const nsIntRegion* Region) {
+  if (!EnsureWrappedTextureHost()) {
+    return;
+  }
+  EnsureWrappedTextureHost()->UpdatedInternal(Region);
+}
+
 void GPUVideoTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
-  MOZ_ASSERT(mExternalImageId.isNothing());
-
-  mExternalImageId = Some(aExternalImageId);
+  MOZ_ASSERT(mExternalImageId.isSome());
 
   // When mWrappedTextureHost already exist, call CreateRenderTexture() here.
   // In other cases, EnsureWrappedTextureHost() handles CreateRenderTexture().
 
   if (mWrappedTextureHost) {
-    mWrappedTextureHost->CreateRenderTexture(aExternalImageId);
+    // External image id is allocated by mWrappedTextureHost.
+    mWrappedTextureHost->EnsureRenderTexture(Nothing());
+    MOZ_ASSERT(mWrappedTextureHost->mExternalImageId.isSome());
+    auto wrappedId = mWrappedTextureHost->mExternalImageId.ref();
+
+    RefPtr<wr::RenderTextureHost> texture =
+        new wr::RenderTextureHostWrapper(wrappedId);
+    wr::RenderThread::Get()->RegisterExternalImage(
+        wr::AsUint64(mExternalImageId.ref()), texture.forget());
     return;
   }
 
   MOZ_ASSERT(EnsureWrappedTextureHost());
   EnsureWrappedTextureHost();
+}
+
+void GPUVideoTextureHost::MaybeDestroyRenderTexture() {
+  if (mExternalImageId.isNothing() || !mWrappedTextureHost) {
+    // RenderTextureHost was not created
+    return;
+  }
+  // When GPUVideoTextureHost created RenderTextureHost, delete it here.
+  TextureHost::DestroyRenderTexture(mExternalImageId.ref());
 }
 
 uint32_t GPUVideoTextureHost::NumSubTextures() {
@@ -150,28 +198,28 @@ uint32_t GPUVideoTextureHost::NumSubTextures() {
 
 void GPUVideoTextureHost::PushResourceUpdates(
     wr::TransactionBuilder& aResources, ResourceUpdateOp aOp,
-    const Range<wr::ImageKey>& aImageKeys, const wr::ExternalImageId& aExtID,
-    const bool aPreferCompositorSurface) {
+    const Range<wr::ImageKey>& aImageKeys, const wr::ExternalImageId& aExtID) {
   MOZ_ASSERT(EnsureWrappedTextureHost());
   if (!EnsureWrappedTextureHost()) {
     return;
   }
-  EnsureWrappedTextureHost()->PushResourceUpdates(
-      aResources, aOp, aImageKeys, aExtID, aPreferCompositorSurface);
+  EnsureWrappedTextureHost()->PushResourceUpdates(aResources, aOp, aImageKeys,
+                                                  aExtID);
 }
 
 void GPUVideoTextureHost::PushDisplayItems(
     wr::DisplayListBuilder& aBuilder, const wr::LayoutRect& aBounds,
     const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
-    const Range<wr::ImageKey>& aImageKeys) {
+    const Range<wr::ImageKey>& aImageKeys,
+    const bool aPreferCompositorSurface) {
   MOZ_ASSERT(EnsureWrappedTextureHost());
   MOZ_ASSERT(aImageKeys.length() > 0);
   if (!EnsureWrappedTextureHost()) {
     return;
   }
 
-  EnsureWrappedTextureHost()->PushDisplayItems(aBuilder, aBounds, aClip,
-                                               aFilter, aImageKeys);
+  EnsureWrappedTextureHost()->PushDisplayItems(
+      aBuilder, aBounds, aClip, aFilter, aImageKeys, aPreferCompositorSurface);
 }
 
 }  // namespace layers

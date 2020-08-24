@@ -10,7 +10,7 @@
 use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::collections::BTreeMap;
-use std::convert::TryInto;
+use std::convert::TryFrom;
 use std::mem;
 use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
@@ -21,9 +21,12 @@ use crate::events::ConnectionEvents;
 use crate::flow_mgr::FlowMgr;
 use crate::stream_id::StreamId;
 use crate::{AppError, Error, Res};
-use neqo_common::{matches, qtrace};
+use neqo_common::qtrace;
 
-pub const RX_STREAM_DATA_WINDOW: u64 = 0xFFFF; // 64 KiB
+const RX_STREAM_DATA_WINDOW: u64 = 0x10_0000; // 1MiB
+
+// Export as usize for consistency with SEND_BUFFER_SIZE
+pub const RECV_BUFFER_SIZE: usize = RX_STREAM_DATA_WINDOW as usize;
 
 pub(crate) type RecvStreams = BTreeMap<StreamId, RecvStream>;
 
@@ -219,9 +222,9 @@ impl RxStreamOrderer {
     }
 
     /// Copy received data (if any) into the buffer. Returns bytes copied.
-    fn read(&mut self, buf: &mut [u8]) -> Res<u64> {
+    fn read(&mut self, buf: &mut [u8]) -> usize {
         qtrace!("Reading {} bytes, {} available", buf.len(), self.buffered());
-        let mut buf_remaining = buf.len() as usize;
+        let mut buf_remaining = buf.len();
         let mut copied = 0;
 
         for (&range_start, range_data) in &mut self.data_ranges {
@@ -230,7 +233,8 @@ impl RxStreamOrderer {
 
                 // Convert to offset into data vec and move past bytes we
                 // already have
-                let copy_offset = (max(range_start, self.retired) - range_start).try_into()?;
+                let copy_offset =
+                    usize::try_from(max(range_start, self.retired) - range_start).unwrap();
                 let copy_bytes = min(range_data.len() - copy_offset, buf_remaining);
                 let copy_slc = &mut range_data[copy_offset..copy_offset + copy_bytes];
                 buf[copied..copied + copy_bytes].copy_from_slice(copy_slc);
@@ -253,11 +257,11 @@ impl RxStreamOrderer {
             self.data_ranges.remove(&key);
         }
 
-        Ok(copied as u64)
+        copied
     }
 
     /// Extend the given Vector with any available data.
-    pub fn read_to_end(&mut self, buf: &mut Vec<u8>) -> Res<u64> {
+    pub fn read_to_end(&mut self, buf: &mut Vec<u8>) -> usize {
         let orig_len = buf.len();
         buf.resize(orig_len + self.bytes_ready(), 0);
         self.read(&mut buf[orig_len..])
@@ -329,6 +333,15 @@ impl RecvStreamState {
             _ => None,
         }
     }
+
+    fn max_stream_data(&self) -> Option<u64> {
+        match self {
+            Self::Recv {
+                max_stream_data, ..
+            } => Some(*max_stream_data),
+            _ => None,
+        }
+    }
 }
 
 /// Implement a QUIC receive stream.
@@ -371,6 +384,10 @@ impl RecvStream {
             self.flow_mgr
                 .borrow_mut()
                 .clear_max_stream_data(self.stream_id)
+        }
+
+        if let RecvStreamState::DataRead = new_state {
+            self.conn_events.recv_stream_complete(self.stream_id);
         }
 
         self.state = new_state;
@@ -456,27 +473,30 @@ impl RecvStream {
 
     /// If we should tell the sender they have more credit, return an offset
     pub fn maybe_send_flowc_update(&mut self) {
+        // Only ever needed if actively receiving and not in SizeKnown state
         if let RecvStreamState::Recv {
             max_bytes,
             max_stream_data,
             recv_buf,
         } = &mut self.state
         {
-            {
-                // Algo: send an update if app has consumed more than half
-                // the data in the current window
-                // TODO(agrover@mozilla.com): This algo is not great but
-                // should prevent Silly Window Syndrome. Spec refers to using
-                // highest seen offset somehow? RTT maybe?
-                let maybe_new_max = recv_buf.retired() + *max_bytes;
-                if maybe_new_max > (*max_bytes / 2) + *max_stream_data {
-                    *max_stream_data = maybe_new_max;
-                    self.flow_mgr
-                        .borrow_mut()
-                        .max_stream_data(self.stream_id, maybe_new_max)
-                }
+            // Algo: send an update if app has consumed more than half
+            // the data in the current window
+            // TODO(agrover@mozilla.com): This algo is not great but
+            // should prevent Silly Window Syndrome. Spec refers to using
+            // highest seen offset somehow? RTT maybe?
+            let maybe_new_max = recv_buf.retired() + *max_bytes;
+            if maybe_new_max > (*max_bytes / 2) + *max_stream_data {
+                *max_stream_data = maybe_new_max;
+                self.flow_mgr
+                    .borrow_mut()
+                    .max_stream_data(self.stream_id, maybe_new_max)
             }
         }
+    }
+
+    pub fn max_stream_data(&self) -> Option<u64> {
+        self.state.max_stream_data()
     }
 
     pub fn is_terminal(&self) -> bool {
@@ -497,15 +517,17 @@ impl RecvStream {
             .map_or(false, RxStreamOrderer::data_ready)
     }
 
-    pub fn read(&mut self, buf: &mut [u8]) -> Res<(u64, bool)> {
+    /// # Errors
+    /// `NoMoreData` if data and fin bit were previously read by the application.
+    pub fn read(&mut self, buf: &mut [u8]) -> Res<(usize, bool)> {
         let res = match &mut self.state {
             RecvStreamState::Recv { recv_buf, .. }
-            | RecvStreamState::SizeKnown { recv_buf, .. } => Ok((recv_buf.read(buf)?, false)),
+            | RecvStreamState::SizeKnown { recv_buf, .. } => Ok((recv_buf.read(buf), false)),
             RecvStreamState::DataRecvd { recv_buf } => {
-                let bytes_read = recv_buf.read(buf)?;
+                let bytes_read = recv_buf.read(buf);
                 let fin_read = recv_buf.buffered() == 0;
                 if fin_read {
-                    self.set_state(RecvStreamState::DataRead)
+                    self.set_state(RecvStreamState::DataRead);
                 }
                 Ok((bytes_read, fin_read))
             }
@@ -534,7 +556,6 @@ impl RecvStream {
 mod tests {
     use super::*;
     use crate::frame::Frame;
-    use neqo_common::matches;
 
     #[test]
     fn test_stream_rx() {
@@ -699,7 +720,10 @@ mod tests {
         s.inbound_stream_frame(false, 0, frame1).unwrap();
         s.maybe_send_flowc_update();
         assert_eq!(s.flow_mgr.borrow().peek(), None);
-        assert_eq!(s.read(&mut buf).unwrap(), (RX_STREAM_DATA_WINDOW, false));
+        assert_eq!(
+            s.read(&mut buf).unwrap(),
+            (RX_STREAM_DATA_WINDOW as usize, false)
+        );
         assert_eq!(s.data_ready(), false);
         s.maybe_send_flowc_update();
 
@@ -746,7 +770,7 @@ mod tests {
         assert_eq!(rx_ord.buffered(), 6);
         assert_eq!(rx_ord.retired(), 0);
         // read some so there's an offset into the first frame
-        rx_ord.read(&mut buf[..2]).unwrap();
+        rx_ord.read(&mut buf[..2]);
         assert_eq!(rx_ord.bytes_ready(), 4);
         assert_eq!(rx_ord.buffered(), 4);
         assert_eq!(rx_ord.retired(), 2);
@@ -787,5 +811,37 @@ mod tests {
         s.inbound_stream_frame(true, RX_STREAM_DATA_WINDOW, vec![])
             .unwrap();
         assert!(matches!(s.flow_mgr.borrow().peek(), None));
+    }
+
+    #[test]
+    fn resend_flowc_if_lost() {
+        let flow_mgr = Rc::new(RefCell::new(FlowMgr::default()));
+        let conn_events = ConnectionEvents::default();
+
+        let frame1 = vec![0; RX_STREAM_DATA_WINDOW as usize];
+
+        let mut s = RecvStream::new(
+            67.into(),
+            RX_STREAM_DATA_WINDOW,
+            Rc::clone(&flow_mgr),
+            conn_events,
+        );
+
+        // A flow control update is queued
+        s.inbound_stream_frame(false, 0, frame1).unwrap();
+        flow_mgr.borrow_mut().max_stream_data(67.into(), 100);
+        // Generates frame
+        assert!(matches!(
+            s.flow_mgr.borrow_mut().next().unwrap(),
+            Frame::MaxStreamData { .. }
+        ));
+        // Nothing else queued
+        assert!(matches!(s.flow_mgr.borrow().peek(), None));
+        // Asking for another one won't get you one
+        s.maybe_send_flowc_update();
+        assert!(matches!(s.flow_mgr.borrow().peek(), None));
+        // But if lost, another frame is generated
+        flow_mgr.borrow_mut().max_stream_data(67.into(), 100);
+        assert!(matches!(s.flow_mgr.borrow_mut().next().unwrap(), Frame::MaxStreamData{..}));
     }
 }

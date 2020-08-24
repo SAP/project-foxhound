@@ -12,6 +12,9 @@
 
 #include "HLSUtils.h"
 #include "MediaCodec.h"
+#include "mozilla/java/GeckoAudioInfoWrappers.h"
+#include "mozilla/java/GeckoHLSDemuxerWrapperNatives.h"
+#include "mozilla/java/GeckoVideoInfoWrappers.h"
 #include "mozilla/Unused.h"
 #include "nsPrintfCString.h"
 
@@ -124,7 +127,7 @@ class HLSDemuxer::HLSDemuxerCallbacksSupport
 };
 
 HLSDemuxer::HLSDemuxer(int aPlayerId)
-    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK),
+    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER),
                                /* aSupportsTailDispatch = */ false)) {
   MOZ_ASSERT(NS_IsMainThread());
   HLSDemuxerCallbacksSupport::Init();

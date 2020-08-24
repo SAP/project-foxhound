@@ -20,7 +20,7 @@
 #include "mozilla/LoadInfo.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/SystemGroup.h"
+#include "mozilla/SchedulerGroup.h"
 #include "nsClassHashtable.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
@@ -194,11 +194,10 @@ class BlobURLsReporter final : public nsIMemoryReporter {
         BlobImpl* blobImpl = iter.UserData()->mBlobImpl;
         MOZ_ASSERT(blobImpl);
 
-        NS_NAMED_LITERAL_CSTRING(
-            desc,
+        constexpr auto desc =
             "A blob URL allocated with URL.createObjectURL; the referenced "
             "blob cannot be freed until all URLs for it have been explicitly "
-            "invalidated with URL.revokeObjectURL.");
+            "invalidated with URL.revokeObjectURL."_ns;
         nsAutoCString path, url, owner, specialDesc;
         uint64_t size = 0;
         uint32_t refCount = 1;
@@ -264,11 +263,10 @@ class BlobURLsReporter final : public nsIMemoryReporter {
       path = "media-source-urls/";
       BuildPath(path, key, info, aAnonymize);
 
-      NS_NAMED_LITERAL_CSTRING(
-          desc,
+      constexpr auto desc =
           "An object URL allocated with URL.createObjectURL; the referenced "
           "data cannot be freed until all URLs for it have been explicitly "
-          "invalidated with URL.revokeObjectURL.");
+          "invalidated with URL.revokeObjectURL."_ns;
 
       aCallback->Callback(EmptyCString(), path, KIND_OTHER, UNITS_COUNT, 1,
                           desc, aData);
@@ -385,8 +383,14 @@ class ReleasingTimerHolder final : public Runnable,
 
     auto raii = MakeScopeExit([holder] { holder->CancelTimerAndRevokeURI(); });
 
-    nsresult rv = SystemGroup::EventTargetFor(TaskCategory::Other)
-                      ->Dispatch(holder.forget());
+    // ReleasingTimerHolder potentially dispatches after we've
+    // shutdown the main thread, so guard agains that.
+    if (NS_WARN_IF(gXPCOMThreadsShutDown)) {
+      return;
+    }
+
+    nsresult rv =
+        SchedulerGroup::Dispatch(TaskCategory::Other, holder.forget());
     NS_ENSURE_SUCCESS_VOID(rv);
 
     raii.release();
@@ -400,15 +404,14 @@ class ReleasingTimerHolder final : public Runnable,
     auto raii = MakeScopeExit([self] { self->CancelTimerAndRevokeURI(); });
 
     nsresult rv = NS_NewTimerWithCallback(
-        getter_AddRefs(mTimer), this, RELEASING_TIMER, nsITimer::TYPE_ONE_SHOT,
-        SystemGroup::EventTargetFor(TaskCategory::Other));
+        getter_AddRefs(mTimer), this, RELEASING_TIMER, nsITimer::TYPE_ONE_SHOT);
     NS_ENSURE_SUCCESS(rv, NS_OK);
 
     nsCOMPtr<nsIAsyncShutdownClient> phase = GetShutdownPhase();
     NS_ENSURE_TRUE(!!phase, NS_OK);
 
-    rv = phase->AddBlocker(this, NS_LITERAL_STRING(__FILE__), __LINE__,
-                           NS_LITERAL_STRING("ReleasingTimerHolder shutdown"));
+    rv = phase->AddBlocker(this, NS_LITERAL_STRING_FROM_CSTRING(__FILE__),
+                           __LINE__, u"ReleasingTimerHolder shutdown"_ns);
     NS_ENSURE_SUCCESS(rv, NS_OK);
 
     raii.release();
@@ -487,7 +490,7 @@ class ReleasingTimerHolder final : public Runnable,
   }
 
   static nsCOMPtr<nsIAsyncShutdownClient> GetShutdownPhase() {
-    nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdown();
+    nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
     NS_ENSURE_TRUE(!!svc, nullptr);
 
     nsCOMPtr<nsIAsyncShutdownClient> phase;
@@ -669,9 +672,9 @@ nsresult BlobURLProtocolHandler::GenerateURIString(nsIPrincipal* aPrincipal,
 
   if (aPrincipal) {
     nsAutoCString origin;
-    rv = nsContentUtils::GetASCIIOrigin(aPrincipal, origin);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    rv = aPrincipal->GetAsciiOrigin(origin);
+    if (NS_FAILED(rv)) {
+      origin.AssignLiteral("null");
     }
 
     aUri.Append(origin);
@@ -798,7 +801,15 @@ BlobURLProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
   }
 
   if (blobURL->Revoked()) {
+#ifdef MOZ_WIDGET_ANDROID
+    // if the channel was not triggered by the system principal,
+    // then we return here because the URL had been revoked
+    if (aLoadInfo && !aLoadInfo->TriggeringPrincipal()->IsSystemPrincipal()) {
+      return NS_OK;
+    }
+#else
     return NS_OK;
+#endif
   }
 
   // We want to be sure that we stop the creation of the channel if the blob URL
@@ -811,8 +822,8 @@ BlobURLProtocolHandler::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
   // principal and which is never mutated to have a non-zero mPrivateBrowsingId
   // or container.
   if (aLoadInfo &&
-      (!aLoadInfo->LoadingPrincipal() ||
-       !aLoadInfo->LoadingPrincipal()->IsSystemPrincipal()) &&
+      (!aLoadInfo->GetLoadingPrincipal() ||
+       !aLoadInfo->GetLoadingPrincipal()->IsSystemPrincipal()) &&
       !ChromeUtils::IsOriginAttributesEqualIgnoringFPD(
           aLoadInfo->GetOriginAttributes(),
           BasePrincipal::Cast(info->mPrincipal)->OriginAttributesRef())) {

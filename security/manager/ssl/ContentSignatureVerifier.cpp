@@ -150,8 +150,8 @@ nsresult ReadChainIntoCertList(const nsACString& aCertChain,
   bool inBlock = false;
   bool certFound = false;
 
-  const nsCString header = NS_LITERAL_CSTRING("-----BEGIN CERTIFICATE-----");
-  const nsCString footer = NS_LITERAL_CSTRING("-----END CERTIFICATE-----");
+  const nsCString header = "-----BEGIN CERTIFICATE-----"_ns;
+  const nsCString footer = "-----END CERTIFICATE-----"_ns;
 
   nsCWhitespaceTokenizerTemplate<IsNewLine> tokenizer(aCertChain);
 
@@ -393,7 +393,7 @@ static nsresult ParseContentSignatureHeader(
     const nsACString& aContentSignatureHeader,
     /* out */ nsCString& aSignature) {
   // We only support p384 ecdsa.
-  NS_NAMED_LITERAL_CSTRING(signature_var, "p384ecdsa");
+  constexpr auto signature_var = "p384ecdsa"_ns;
 
   aSignature.Truncate();
 

@@ -25,6 +25,7 @@ nsPrintSettings::nsPrintSettings()
       mPrintSilent(false),
       mShrinkToFit(true),
       mShowPrintProgress(true),
+      mShowMarginGuides(false),
       mPrintPageDelay(50),
       mPaperData(0),
       mPaperWidth(8.5),
@@ -58,7 +59,7 @@ nsPrintSettings::nsPrintSettings()
 
 nsPrintSettings::nsPrintSettings(const nsPrintSettings& aPS) { *this = aPS; }
 
-nsPrintSettings::~nsPrintSettings() {}
+nsPrintSettings::~nsPrintSettings() = default;
 
 NS_IMETHODIMP nsPrintSettings::GetPrintSession(
     nsIPrintSession** aPrintSession) {
@@ -561,6 +562,16 @@ NS_IMETHODIMP nsPrintSettings::GetShowPrintProgress(bool* aShowPrintProgress) {
 }
 NS_IMETHODIMP nsPrintSettings::SetShowPrintProgress(bool aShowPrintProgress) {
   mShowPrintProgress = aShowPrintProgress;
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsPrintSettings::GetShowMarginGuides(bool* aShowMarginGuides) {
+  NS_ENSURE_ARG_POINTER(aShowMarginGuides);
+  *aShowMarginGuides = mShowMarginGuides;
+  return NS_OK;
+}
+NS_IMETHODIMP nsPrintSettings::SetShowMarginGuides(bool aShowMarginGuides) {
+  mShowMarginGuides = aShowMarginGuides;
   return NS_OK;
 }
 

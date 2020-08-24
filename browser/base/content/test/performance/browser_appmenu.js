@@ -9,9 +9,9 @@ let gCUITestUtils = new CustomizableUITestUtils(window);
 
 /**
  * WHOA THERE: We should never be adding new things to
- * EXPECTED_APPMENU_OPEN_REFLOWS. This is a whitelist that should slowly go
+ * EXPECTED_APPMENU_OPEN_REFLOWS. This list should slowly go
  * away as we improve the performance of the front-end. Instead of adding more
- * reflows to the whitelist, you should be modifying your code to avoid the reflow.
+ * reflows to the list, you should be modifying your code to avoid the reflow.
  *
  * See https://developer.mozilla.org/en-US/Firefox/Performance_best_practices_for_Firefox_fe_engineers
  * for tips on how to do that.
@@ -44,6 +44,7 @@ const EXPECTED_APPMENU_OPEN_REFLOWS = [
 
 add_task(async function() {
   await ensureNoPreloadedBrowser();
+  await disableFxaBadge();
 
   let textBoxRect = gURLBar
     .querySelector("moz-input-box")
@@ -51,20 +52,19 @@ add_task(async function() {
   let menuButtonRect = document
     .getElementById("PanelUI-menu-button")
     .getBoundingClientRect();
-  let fxaToolbarButtonRect = document
-    .getElementById("fxa-toolbar-menu-button")
-    .getBoundingClientRect();
   let firstTabRect = gBrowser.selectedTab.getBoundingClientRect();
   let frameExpectations = {
     filter: rects =>
       rects.filter(
         r =>
-          !// We expect the menu button to get into the active state.
-          (
-            r.y1 >= menuButtonRect.top &&
-            r.y2 <= menuButtonRect.bottom &&
-            r.x1 >= menuButtonRect.left &&
-            r.x2 <= menuButtonRect.right
+          !(
+            // We expect the menu button to get into the active state.
+            (
+              r.y1 >= menuButtonRect.top &&
+              r.y2 <= menuButtonRect.bottom &&
+              r.x1 >= menuButtonRect.left &&
+              r.x2 <= menuButtonRect.right
+            )
           )
         // XXX For some reason the menu panel isn't in our screenshots,
         // but that's where we actually expect many changes.
@@ -85,14 +85,6 @@ add_task(async function() {
           r.x2 <= firstTabRect.right &&
           r.y1 >= firstTabRect.top &&
           r.y2 <= firstTabRect.bottom,
-      },
-      {
-        name: "the fxa toolbar changes icon when first clicked",
-        condition: r =>
-          r.x1 >= fxaToolbarButtonRect.left &&
-          r.x2 <= fxaToolbarButtonRect.right &&
-          r.y1 >= fxaToolbarButtonRect.top &&
-          r.y2 <= fxaToolbarButtonRect.bottom,
       },
     ],
   };
@@ -134,7 +126,7 @@ add_task(async function() {
           let container = PanelUI.multiView.querySelector(
             ".panel-viewcontainer"
           );
-          await BrowserTestUtils.waitForCondition(() => {
+          await TestUtils.waitForCondition(() => {
             return !container.hasAttribute("width");
           });
 
@@ -148,7 +140,7 @@ add_task(async function() {
           await promiseViewShown;
 
           // Workaround until bug 1363756 is fixed, then this can be removed.
-          await BrowserTestUtils.waitForCondition(() => {
+          await TestUtils.waitForCondition(() => {
             return !container.hasAttribute("width");
           });
         }

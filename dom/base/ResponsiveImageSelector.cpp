@@ -11,6 +11,7 @@
 #include "mozilla/TextUtils.h"
 #include "nsIURI.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "nsContentUtils.h"
 #include "nsPresContext.h"
 
@@ -203,7 +204,7 @@ void ResponsiveImageSelector::SetDefaultSource(const nsAString& aURLString,
   int32_t candidates = mCandidates.Length();
   if (candidates && (mCandidates[candidates - 1].Type() ==
                      ResponsiveImageCandidate::eCandidateType_Default)) {
-    mCandidates.RemoveElementAt(candidates - 1);
+    mCandidates.RemoveLastElement();
   }
 
   mDefaultSourceURL = aURLString;

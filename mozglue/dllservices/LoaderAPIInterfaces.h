@@ -7,6 +7,7 @@
 #ifndef mozilla_LoaderAPIInterfaces_h
 #define mozilla_LoaderAPIInterfaces_h
 
+#include "nscore.h"
 #include "mozilla/ModuleLoadInfo.h"
 
 namespace mozilla {
@@ -93,8 +94,8 @@ class NS_NO_VTABLE LoaderAPI {
    */
   virtual AllocatedUnicodeString GetSectionName(void* aSectionAddr) = 0;
 
-  using InitDllBlocklistOOPFnPtr =
-      LauncherVoidResultWithLineInfo (*)(const wchar_t*, HANDLE);
+  using InitDllBlocklistOOPFnPtr = LauncherVoidResultWithLineInfo (*)(
+      const wchar_t*, HANDLE, const IMAGE_THUNK_DATA*);
 
   /**
    * Return a pointer to the cross-process DLL Blocklist Init function.

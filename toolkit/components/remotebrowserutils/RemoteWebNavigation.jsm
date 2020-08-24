@@ -38,27 +38,30 @@ class RemoteWebNavigation {
     return epoch;
   }
 
-  goBack() {
+  goBack(requireUserInteraction = false) {
     let cancelContentJSEpoch = this.maybeCancelContentJSExecution(
       Ci.nsIRemoteTab.NAVIGATE_BACK
     );
-    this._sendMessage("WebNavigation:GoBack", { cancelContentJSEpoch });
+    this._browser.browsingContext.goBack(
+      cancelContentJSEpoch,
+      requireUserInteraction
+    );
   }
-  goForward() {
+  goForward(requireUserInteraction = false) {
     let cancelContentJSEpoch = this.maybeCancelContentJSExecution(
       Ci.nsIRemoteTab.NAVIGATE_FORWARD
     );
-    this._sendMessage("WebNavigation:GoForward", { cancelContentJSEpoch });
+    this._browser.browsingContext.goForward(
+      cancelContentJSEpoch,
+      requireUserInteraction
+    );
   }
   gotoIndex(aIndex) {
     let cancelContentJSEpoch = this.maybeCancelContentJSExecution(
       Ci.nsIRemoteTab.NAVIGATE_INDEX,
       { index: aIndex }
     );
-    this._sendMessage("WebNavigation:GotoIndex", {
-      index: aIndex,
-      cancelContentJSEpoch,
-    });
+    this._browser.browsingContext.goToIndex(aIndex, cancelContentJSEpoch);
   }
   loadURI(aURI, aLoadURIOptions) {
     let uri;
@@ -106,21 +109,16 @@ class RemoteWebNavigation {
       Ci.nsIRemoteTab.NAVIGATE_URL,
       { uri }
     );
-    this._browser.frameLoader.browsingContext.loadURI(aURI, {
+    this._browser.browsingContext.loadURI(aURI, {
       ...aLoadURIOptions,
       cancelContentJSEpoch,
     });
   }
-  setOriginAttributesBeforeLoading(aOriginAttributes) {
-    this._sendMessage("WebNavigation:SetOriginAttributes", {
-      originAttributes: aOriginAttributes,
-    });
-  }
   reload(aReloadFlags) {
-    this._sendMessage("WebNavigation:Reload", { loadFlags: aReloadFlags });
+    this._browser.browsingContext.reload(aReloadFlags);
   }
   stop(aStopFlags) {
-    this._sendMessage("WebNavigation:Stop", { loadFlags: aStopFlags });
+    this._browser.browsingContext.stop(aStopFlags);
   }
 
   get document() {
@@ -166,7 +164,7 @@ class RemoteWebNavigation {
 }
 
 RemoteWebNavigation.prototype.QueryInterface = ChromeUtils.generateQI([
-  Ci.nsIWebNavigation,
+  "nsIWebNavigation",
 ]);
 
 var EXPORTED_SYMBOLS = ["RemoteWebNavigation"];

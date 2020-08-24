@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsIRunnable.idl"
 #include "nsISupports.idl"
 
 %{C++
@@ -58,6 +59,14 @@ interface nsINSSComponent : nsISupports {
   Array<Array<octet> > getEnterpriseIntermediates();
 
   /**
+   * Test utility for adding an intermediate certificate to the current set of
+   * imported enterprise intermediates, if any. Additions to the set made using
+   * this function will be cleared when the value of the preference
+   * "security.enterprise_roots.enabled" changes.
+   */
+  void addEnterpriseIntermediate(in Array<octet> intermediateBytes);
+
+  /**
    * For performance reasons, the builtin roots module is loaded on a background
    * thread. When any code that depends on the builtin roots module runs, it
    * must first wait for the module to be loaded.
@@ -103,4 +112,10 @@ interface nsINSSComponent : nsISupports {
    * For clearing both SSL internal and external session cache from JS.
    */
   void clearSSLExternalAndInternalSessionCache();
+
+  /**
+   * Dispatches a task to the component's serial background queue, if NSS
+   * hasn't already been shut down.
+   */
+  [noscript] void dispatchTaskToSerialBackgroundQueue(in nsIRunnable task);
 };

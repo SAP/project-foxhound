@@ -20,11 +20,14 @@ RUN apt-get -qqy update \
     libvirt-daemon-system \
     libvirt-clients \
     libunwind8 \
+    libxcb-shape0-dev \
     locales \
     openjdk-8-jre-headless \
     pulseaudio \
     python \
     python-pip \
+    python3 \
+    python3-pip \
     qemu-kvm \
     tzdata \
     sudo \
@@ -49,8 +52,11 @@ RUN apt-get -qqy install \
 
 RUN apt-get -y autoremove
 
-RUN pip install --upgrade pip
-RUN pip install virtualenv
+RUN pip2 install --upgrade pip
+RUN pip2 install virtualenv
+
+RUN pip3 install --upgrade pip
+RUN pip3 install virtualenv
 
 ENV TZ "UTC"
 RUN echo "${TZ}" > /etc/timezone \

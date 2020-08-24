@@ -36,12 +36,12 @@ AutoInitializeImageLib::AutoInitializeImageLib() {
   EXPECT_TRUE(NS_IsMainThread());
   sImageLibInitialized = true;
 
-  // Force sRGB to be consistent with reftests.
-  nsresult rv = Preferences::SetBool("gfx.color_management.force_srgb", true);
+  // Ensure WebP is enabled to run decoder tests.
+  nsresult rv = Preferences::SetBool("image.webp.enabled", true);
   EXPECT_TRUE(rv == NS_OK);
 
-  // Ensure WebP is enabled to run decoder tests.
-  rv = Preferences::SetBool("image.webp.enabled", true);
+  // Ensure AVIF is enabled to run decoder tests.
+  rv = Preferences::SetBool("image.avif.enabled", true);
   EXPECT_TRUE(rv == NS_OK);
 
   // Ensure that ImageLib services are initialized.
@@ -51,6 +51,10 @@ AutoInitializeImageLib::AutoInitializeImageLib() {
 
   // Ensure gfxPlatform is initialized.
   gfxPlatform::GetPlatform();
+
+  // Ensure we always color manage images with gtests.
+  gfxPlatform::GetCMSMode();
+  gfxPlatform::SetCMSModeOverride(eCMSMode_All);
 
   // Depending on initialization order, it is possible that our pref changes
   // have not taken effect yet because there are pending gfx-related events on
@@ -137,7 +141,6 @@ already_AddRefed<nsIInputStream> LoadFile(const char* aRelativePath) {
   rv = dirService->Get(NS_OS_CURRENT_WORKING_DIR, NS_GET_IID(nsIFile),
                        getter_AddRefs(file));
   ASSERT_TRUE_OR_RETURN(NS_SUCCEEDED(rv), nullptr);
-
   // Construct the final path by appending the working path to the current
   // working directory.
   file->AppendNative(nsDependentCString(aRelativePath));
@@ -426,8 +429,28 @@ ImageTestCase GreenWebPTestCase() {
   return ImageTestCase("green.webp", "image/webp", IntSize(100, 100));
 }
 
+// Forcing sRGB is required until nsAVIFDecoder supports ICC profiles
+// See bug 1634741
+ImageTestCase GreenAVIFTestCase() {
+  return ImageTestCase("green.avif", "image/avif", IntSize(100, 100))
+      .WithSurfaceFlags(SurfaceFlags::TO_SRGB_COLORSPACE);
+}
+
+// Forcing sRGB is required until nsAVIFDecoder supports ICC profiles
+// See bug 1634741
+ImageTestCase StackCheckAVIFTestCase() {
+  return ImageTestCase("stackcheck.avif", "image/avif", IntSize(4096, 2924),
+                       TEST_CASE_IGNORE_OUTPUT)
+      .WithSurfaceFlags(SurfaceFlags::TO_SRGB_COLORSPACE);
+}
+
 ImageTestCase LargeWebPTestCase() {
   return ImageTestCase("large.webp", "image/webp", IntSize(1200, 660),
+                       TEST_CASE_IGNORE_OUTPUT);
+}
+
+ImageTestCase LargeAVIFTestCase() {
+  return ImageTestCase("large.avif", "image/avif", IntSize(1200, 660),
                        TEST_CASE_IGNORE_OUTPUT);
 }
 
@@ -598,6 +621,11 @@ ImageTestCase DownscaledIconTestCase() {
 
 ImageTestCase DownscaledWebPTestCase() {
   return ImageTestCase("downscaled.webp", "image/webp", IntSize(100, 100),
+                       IntSize(20, 20));
+}
+
+ImageTestCase DownscaledAVIFTestCase() {
+  return ImageTestCase("downscaled.avif", "image/avif", IntSize(100, 100),
                        IntSize(20, 20));
 }
 

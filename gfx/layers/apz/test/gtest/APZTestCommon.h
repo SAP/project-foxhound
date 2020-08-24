@@ -45,6 +45,15 @@ using ::testing::MockFunction;
 using ::testing::NiceMock;
 typedef mozilla::layers::GeckoContentController::TapType TapType;
 
+static TimeStamp GetStartupTime() {
+  static TimeStamp sStartupTime = TimeStamp::Now();
+  return sStartupTime;
+}
+
+inline uint32_t MillisecondsSinceStartup(TimeStamp aTime) {
+  return (aTime - GetStartupTime()).ToMilliseconds();
+}
+
 // Some helper functions for constructing input event objects suitable to be
 // passed either to an APZC (which expects an transformed point), or to an APZTM
 // (which expects an untransformed point). We handle both cases by setting both
@@ -67,8 +76,9 @@ inline PinchGestureInput CreatePinchGestureInput(
     PinchGestureInput::PinchGestureType aType, const ScreenPoint& aFocus,
     float aCurrentSpan, float aPreviousSpan, TimeStamp timestamp) {
   ParentLayerPoint localFocus(aFocus.x, aFocus.y);
-  PinchGestureInput result(aType, 0, timestamp, ExternalPoint(0, 0), aFocus,
-                           aCurrentSpan, aPreviousSpan, 0);
+  PinchGestureInput result(
+      aType, PinchGestureInput::UNKNOWN, MillisecondsSinceStartup(timestamp),
+      timestamp, ExternalPoint(0, 0), aFocus, aCurrentSpan, aPreviousSpan, 0);
   return result;
 }
 
@@ -115,11 +125,6 @@ class ScopedGfxSetting {
   ScopedGfxSetting<const varType&, varType> var_##varBase( \
       &(gfxVars::varBase), &(gfxVars::Set##varBase), varValue)
 
-static TimeStamp GetStartupTime() {
-  static TimeStamp sStartupTime = TimeStamp::Now();
-  return sStartupTime;
-}
-
 class MockContentController : public GeckoContentController {
  public:
   MOCK_METHOD1(NotifyLayerTransforms, void(const nsTArray<MatrixMessage>&));
@@ -132,9 +137,10 @@ class MockContentController : public GeckoContentController {
                     const uint32_t& aScrollGeneration));
   MOCK_METHOD5(HandleTap, void(TapType, const LayoutDevicePoint&, Modifiers,
                                const ScrollableLayerGuid&, uint64_t));
-  MOCK_METHOD4(NotifyPinchGesture,
+  MOCK_METHOD5(NotifyPinchGesture,
                void(PinchGestureInput::PinchGestureType,
-                    const ScrollableLayerGuid&, LayoutDeviceCoord, Modifiers));
+                    const ScrollableLayerGuid&, const LayoutDevicePoint&,
+                    LayoutDeviceCoord, Modifiers));
   // Can't use the macros with already_AddRefed :(
   void PostDelayedTask(already_AddRefed<Runnable> aTask, int aDelayMs) {
     RefPtr<Runnable> task = aTask;
@@ -239,21 +245,9 @@ class TestAPZCTreeManager : public APZCTreeManager {
    **/
   void CancelAnimation() { EXPECT_TRUE(false); }
 
-  using APZCTreeManager::SetTargetAPZC;  // silence clang warning about overload
-  void SetTargetAPZC(uint64_t aInputBlockId,
-                     const nsTArray<ScrollableLayerGuid>& aTargets) {
-    nsTArray<SLGuidAndRenderRoot> wrapped;
-    for (const ScrollableLayerGuid& target : aTargets) {
-      wrapped.AppendElement(
-          SLGuidAndRenderRoot(target, wr::RenderRoot::Default));
-    }
-    this->SetTargetAPZC(aInputBlockId, wrapped);
-  }
-
  protected:
-  AsyncPanZoomController* NewAPZCInstance(LayersId aLayersId,
-                                          GeckoContentController* aController,
-                                          wr::RenderRoot aRenderRoot) override;
+  AsyncPanZoomController* NewAPZCInstance(
+      LayersId aLayersId, GeckoContentController* aController) override;
 
   TimeStamp GetFrameTime() override { return mcc->Time(); }
 
@@ -266,11 +260,9 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
   TestAsyncPanZoomController(LayersId aLayersId,
                              MockContentControllerDelayed* aMcc,
                              TestAPZCTreeManager* aTreeManager,
-                             wr::RenderRoot aRenderRoot,
                              GestureBehavior aBehavior = DEFAULT_GESTURES)
       : AsyncPanZoomController(aLayersId, aTreeManager,
-                               aTreeManager->GetInputQueue(), aMcc, aRenderRoot,
-                               aBehavior),
+                               aTreeManager->GetInputQueue(), aMcc, aBehavior),
         mWaitForMainThread(false),
         mcc(aMcc) {}
 
@@ -883,10 +875,8 @@ void APZCTesterBase::PinchWithPinchInput(
   mcc->AdvanceBy(TIME_BETWEEN_PINCH_INPUT);
 
   actualStatus = aTarget->ReceiveInputEvent(
-      CreatePinchGestureInput(
-          PinchGestureInput::PINCHGESTURE_END,
-          PinchGestureInput::BothFingersLifted<ScreenPixel>(), 10.0 * aScale,
-          10.0 * aScale, mcc->Time()),
+      CreatePinchGestureInput(PinchGestureInput::PINCHGESTURE_END, aSecondFocus,
+                              10.0 * aScale, 10.0 * aScale, mcc->Time()),
       nullptr);
   if (aOutEventStatuses) {
     (*aOutEventStatuses)[2] = actualStatus;
@@ -901,20 +891,18 @@ void APZCTesterBase::PinchWithPinchInputAndCheckStatus(
   PinchWithPinchInput(aTarget, aFocus, aFocus, aScale, &statuses);
 
   nsEventStatus expectedStatus = aShouldTriggerPinch
-                                     ? nsEventStatus_eConsumeNoDefault
+                                     ? nsEventStatus_eConsumeDoDefault
                                      : nsEventStatus_eIgnore;
   EXPECT_EQ(expectedStatus, statuses[0]);
   EXPECT_EQ(expectedStatus, statuses[1]);
 }
 
 AsyncPanZoomController* TestAPZCTreeManager::NewAPZCInstance(
-    LayersId aLayersId, GeckoContentController* aController,
-    wr::RenderRoot aRenderRoot) {
+    LayersId aLayersId, GeckoContentController* aController) {
   MockContentControllerDelayed* mcc =
       static_cast<MockContentControllerDelayed*>(aController);
   return new TestAsyncPanZoomController(
-      aLayersId, mcc, this, aRenderRoot,
-      AsyncPanZoomController::USE_GESTURE_DETECTOR);
+      aLayersId, mcc, this, AsyncPanZoomController::USE_GESTURE_DETECTOR);
 }
 
 inline FrameMetrics TestFrameMetrics() {
@@ -926,10 +914,6 @@ inline FrameMetrics TestFrameMetrics() {
   fm.SetScrollableRect(CSSRect(0, 0, 100, 100));
 
   return fm;
-}
-
-inline uint32_t MillisecondsSinceStartup(TimeStamp aTime) {
-  return (aTime - GetStartupTime()).ToMilliseconds();
 }
 
 #endif  // mozilla_layers_APZTestCommon_h

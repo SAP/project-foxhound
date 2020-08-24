@@ -27,7 +27,7 @@ var {
   DefaultMap,
   DefaultWeakMap,
   ExtensionError,
-  getWinUtils,
+  parseMatchPatterns,
 } = ExtensionUtils;
 
 var { defineLazyGetter } = ExtensionCommon;
@@ -306,6 +306,15 @@ class TabBase {
    */
   get browser() {
     throw new Error("Not implemented");
+  }
+
+  /**
+   * @property {BrowsingContext} browsingContext
+   *        Returns the BrowsingContext for the given tab.
+   *        @readonly
+   */
+  get browsingContext() {
+    return this.browser?.browsingContext;
   }
 
   /**
@@ -678,6 +687,62 @@ class TabBase {
   }
 
   /**
+   * Query each content process hosting subframes of the tab, return results.
+   * @param {string} message
+   * @param {object} options
+   * @param {number} options.frameID
+   * @param {boolean} options.allFrames
+   * @returns {Promise[]}
+   */
+  async queryContent(message, options) {
+    let { allFrames, frameID } = options;
+
+    /** @type {Map<nsIDOMProcessParent, innerWindowId[]>} */
+    let byProcess = new DefaultMap(() => []);
+
+    // Recursively walk the tab's BC tree, find all frames, group by process.
+    function visit(bc) {
+      let win = bc.currentWindowGlobal;
+      if (win?.domProcess && (!frameID || frameID === bc.id)) {
+        byProcess.get(win.domProcess).push(win.innerWindowId);
+      }
+      if (allFrames || (frameID && !byProcess.size)) {
+        bc.children.forEach(visit);
+      }
+    }
+    visit(this.browsingContext);
+
+    let promises = Array.from(byProcess.entries(), ([proc, windows]) =>
+      proc.getActor("ExtensionContent").sendQuery(message, { windows, options })
+    );
+
+    let results = await Promise.all(promises).catch(err => {
+      if (err.name === "DataCloneError") {
+        let fileName = options.jsPaths.slice(-1)[0] || "<anonymous code>";
+        let message = `Script '${fileName}' result is non-structured-clonable data`;
+        return Promise.reject({ message, fileName });
+      }
+      throw err;
+    });
+    results = results.flat();
+
+    if (!results.length) {
+      if (frameID) {
+        throw new ExtensionError("Frame not found, or missing host permission");
+      }
+
+      let frames = allFrames ? ", and any iframes" : "";
+      throw new ExtensionError(`Missing host permission for the tab${frames}`);
+    }
+
+    if (!allFrames && results.length > 1) {
+      throw new ExtensionError("Internal error: multiple windows matched");
+    }
+
+    return results;
+  }
+
+  /**
    * Inserts a script or stylesheet in the given tab, and returns a promise
    * which resolves when the operation has completed.
    *
@@ -701,6 +766,7 @@ class TabBase {
       jsPaths: [],
       cssPaths: [],
       removeCSS: method == "removeCSS",
+      extensionId: context.extension.id,
     };
 
     // We require a `code` or a `file` property, but we can't accept both.
@@ -717,7 +783,7 @@ class TabBase {
     }
 
     options.hasActiveTabPermission = this.hasActiveTabPermission;
-    options.matches = this.extension.whiteListedHosts.patterns.map(
+    options.matches = this.extension.allowedOrigins.patterns.map(
       host => host.pattern
     );
 
@@ -754,8 +820,7 @@ class TabBase {
     }
 
     options.wantReturnValue = true;
-
-    return this.sendMessage(context, "Extension:Execute", { options });
+    return this.queryContent("Execute", options);
   }
 
   /**
@@ -1390,7 +1455,7 @@ class WindowTrackerBase extends EventEmitter {
     });
 
     this._windowIds = new DefaultWeakMap(window => {
-      return getWinUtils(window).outerWindowID;
+      return window.windowUtils.outerWindowID;
     });
   }
 
@@ -1962,6 +2027,21 @@ class TabManagerBase {
    * @returns {Iterator<TabBase>}
    */
   *query(queryInfo = null, context = null) {
+    if (queryInfo) {
+      if (queryInfo.url !== null) {
+        queryInfo.url = parseMatchPatterns([].concat(queryInfo.url), {
+          restrictSchemes: false,
+        });
+      }
+
+      if (queryInfo.title !== null) {
+        try {
+          queryInfo.title = new MatchGlob(queryInfo.title);
+        } catch (e) {
+          throw new ExtensionError(`Invalid title: ${queryInfo.title}`);
+        }
+      }
+    }
     function* candidates(windowWrapper) {
       if (queryInfo) {
         let { active, highlighted, index } = queryInfo;
@@ -2068,6 +2148,23 @@ class WindowManagerBase {
     if (this.extension.canAccessWindow(window)) {
       return this._windows.get(window);
     }
+  }
+
+  /**
+   * Returns whether this window can be accessed by the extension in the given
+   * context.
+   *
+   * @param {DOMWindow} window
+   *        The browser window that is being tested
+   * @param {BaseContext|null} context
+   *        The extension context for which this test is being performed.
+   * @returns {boolean}
+   */
+  canAccessWindow(window, context) {
+    return (
+      (context && context.canAccessWindow(window)) ||
+      this.extension.canAccessWindow(window)
+    );
   }
 
   // The JSDoc validator does not support @returns tags in abstract functions or

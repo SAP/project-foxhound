@@ -23,17 +23,20 @@
 #include "vm/AsyncIteration.h"
 #include "vm/EqualityOperations.h"  // js::SameValue
 #include "vm/ModuleBuilder.h"       // js::ModuleBuilder
+#include "vm/PlainObject.h"         // js::PlainObject
 #include "vm/PromiseObject.h"       // js::PromiseObject
 #include "vm/SelfHosting.h"
+#include "vm/SharedStencil.h"  // js::GCThingIndex
 
 #include "vm/JSObject-inl.h"
 #include "vm/JSScript-inl.h"
+#include "vm/NativeObject-inl.h"
 
 using namespace js;
 
-static_assert(MODULE_STATUS_UNINSTANTIATED < MODULE_STATUS_INSTANTIATING &&
-                  MODULE_STATUS_INSTANTIATING < MODULE_STATUS_INSTANTIATED &&
-                  MODULE_STATUS_INSTANTIATED < MODULE_STATUS_EVALUATED &&
+static_assert(MODULE_STATUS_UNLINKED < MODULE_STATUS_LINKING &&
+                  MODULE_STATUS_LINKING < MODULE_STATUS_LINKED &&
+                  MODULE_STATUS_LINKED < MODULE_STATUS_EVALUATED &&
                   MODULE_STATUS_EVALUATED < MODULE_STATUS_EVALUATED_ERROR,
               "Module statuses are ordered incorrectly");
 
@@ -385,10 +388,9 @@ ModuleNamespaceObject* ModuleNamespaceObject::create(
   RootedValue priv(cx, ObjectValue(*module));
   ProxyOptions options;
   options.setLazyProto(true);
-  options.setSingleton(true);
   Rooted<UniquePtr<IndirectBindingMap>> rootedBindings(cx, std::move(bindings));
   RootedObject object(
-      cx, NewProxyObject(cx, &proxyHandler, priv, nullptr, options));
+      cx, NewSingletonProxyObject(cx, &proxyHandler, priv, nullptr, options));
   if (!object) {
     return nullptr;
   }
@@ -690,16 +692,6 @@ void ModuleNamespaceObject::ProxyHandler::finalize(JSFreeOp* fop,
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// FunctionDeclaration
-
-FunctionDeclaration::FunctionDeclaration(HandleAtom name, uint32_t funIndex)
-    : name(name), funIndex(funIndex) {}
-
-void FunctionDeclaration::trace(JSTracer* trc) {
-  TraceEdge(trc, &name, "FunctionDeclaration name");
-}
-
-///////////////////////////////////////////////////////////////////////////
 // ModuleObject
 
 /* static */ const JSClassOps ModuleObject::classOps_ = {
@@ -762,7 +754,8 @@ ModuleObject* ModuleObject::create(JSContext* cx) {
   InitReservedSlot(self, ImportBindingsSlot, bindings,
                    MemoryUse::ModuleBindingMap);
 
-  FunctionDeclarationVector* funDecls = cx->new_<FunctionDeclarationVector>();
+  frontend::FunctionDeclarationVector* funDecls =
+      cx->new_<frontend::FunctionDeclarationVector>(cx);
   if (!funDecls) {
     return nullptr;
   }
@@ -778,7 +771,8 @@ void ModuleObject::finalize(JSFreeOp* fop, JSObject* obj) {
   if (self->hasImportBindings()) {
     fop->delete_(obj, &self->importBindings(), MemoryUse::ModuleBindingMap);
   }
-  if (FunctionDeclarationVector* funDecls = self->functionDeclarations()) {
+  if (frontend::FunctionDeclarationVector* funDecls =
+          self->functionDeclarations()) {
     // Not tracked as these may move between zones on merge.
     fop->deleteUntracked(funDecls);
   }
@@ -795,7 +789,7 @@ ModuleEnvironmentObject* ModuleObject::environment() const {
 
   // According to the spec the environment record is created during
   // instantiation, but we create it earlier than that.
-  if (status() < MODULE_STATUS_INSTANTIATED) {
+  if (status() < MODULE_STATUS_LINKED) {
     return nullptr;
   }
 
@@ -826,13 +820,18 @@ ScriptSourceObject* ModuleObject::scriptSourceObject() const {
               .as<ScriptSourceObject>();
 }
 
-FunctionDeclarationVector* ModuleObject::functionDeclarations() {
+frontend::FunctionDeclarationVector* ModuleObject::functionDeclarations() {
   Value value = getReservedSlot(FunctionDeclarationsSlot);
   if (value.isUndefined()) {
     return nullptr;
   }
 
-  return static_cast<FunctionDeclarationVector*>(value.toPrivate());
+  return static_cast<frontend::FunctionDeclarationVector*>(value.toPrivate());
+}
+
+void ModuleObject::initFunctionDeclarations(
+    frontend::FunctionDeclarationVector&& decls) {
+  *functionDeclarations() = std::move(decls);
 }
 
 void ModuleObject::initScriptSlots(HandleScript script) {
@@ -848,7 +847,7 @@ void ModuleObject::setInitialEnvironment(
 }
 
 void ModuleObject::initStatusSlot() {
-  initReservedSlot(StatusSlot, Int32Value(MODULE_STATUS_UNINSTANTIATED));
+  initReservedSlot(StatusSlot, Int32Value(MODULE_STATUS_UNLINKED));
 }
 
 void ModuleObject::initImportExportData(HandleArrayObject requestedModules,
@@ -949,7 +948,7 @@ JSScript* ModuleObject::script() const {
 }
 
 static inline void AssertValidModuleStatus(ModuleStatus status) {
-  MOZ_ASSERT(status >= MODULE_STATUS_UNINSTANTIATED &&
+  MOZ_ASSERT(status >= MODULE_STATUS_UNLINKED &&
              status <= MODULE_STATUS_EVALUATED_ERROR);
 }
 
@@ -995,35 +994,19 @@ void ModuleObject::trace(JSTracer* trc, JSObject* obj) {
   if (module.hasImportBindings()) {
     module.importBindings().trace(trc);
   }
-
-  if (FunctionDeclarationVector* funDecls = module.functionDeclarations()) {
-    funDecls->trace(trc);
-  }
-}
-
-bool ModuleObject::noteFunctionDeclaration(JSContext* cx, HandleAtom name,
-                                           uint32_t funIndex) {
-  FunctionDeclarationVector* funDecls = functionDeclarations();
-  if (!funDecls->emplaceBack(name, funIndex)) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-
-  return true;
 }
 
 /* static */
 bool ModuleObject::instantiateFunctionDeclarations(JSContext* cx,
                                                    HandleModuleObject self) {
 #ifdef DEBUG
-  MOZ_ASSERT(self->status() == MODULE_STATUS_INSTANTIATING);
+  MOZ_ASSERT(self->status() == MODULE_STATUS_LINKING);
   if (!AssertFrozen(cx, self)) {
     return false;
   }
 #endif
-
   // |self| initially manages this vector.
-  FunctionDeclarationVector* funDecls = self->functionDeclarations();
+  frontend::FunctionDeclarationVector* funDecls = self->functionDeclarations();
   if (!funDecls) {
     JS_ReportErrorASCII(
         cx, "Module function declarations have already been instantiated");
@@ -1034,16 +1017,18 @@ bool ModuleObject::instantiateFunctionDeclarations(JSContext* cx,
   RootedObject obj(cx);
   RootedValue value(cx);
   RootedFunction fun(cx);
-  for (const auto& funDecl : *funDecls) {
-    uint32_t funIndex = funDecl.funIndex;
+  RootedPropertyName name(cx);
+
+  for (GCThingIndex funIndex : *funDecls) {
     fun.set(self->script()->getFunction(funIndex));
     obj = Lambda(cx, fun, env);
     if (!obj) {
       return false;
     }
 
+    name = fun->explicitName()->asPropertyName();
     value = ObjectValue(*obj);
-    if (!SetProperty(cx, env, funDecl.name->asPropertyName(), value)) {
+    if (!SetProperty(cx, env, name, value)) {
       return false;
     }
   }
@@ -1073,14 +1058,14 @@ bool ModuleObject::execute(JSContext* cx, HandleModuleObject self,
   auto guardA = mozilla::MakeScopeExit(
       [&] { self->setReservedSlot(ScriptSlot, UndefinedValue()); });
 
-  RootedModuleEnvironmentObject scope(cx, self->environment());
-  if (!scope) {
+  RootedModuleEnvironmentObject env(cx, self->environment());
+  if (!env) {
     JS_ReportErrorASCII(cx,
                         "Module declarations have not yet been instantiated");
     return false;
   }
 
-  return Execute(cx, script, *scope, rval.address());
+  return Execute(cx, script, env, rval);
 }
 
 /* static */
@@ -1218,44 +1203,56 @@ ModuleBuilder::ModuleBuilder(JSContext* cx,
       importEntries_(cx, ImportEntryMap(cx)),
       exportEntries_(cx, ExportEntryVector(cx)),
       exportNames_(cx, AtomSet(cx)),
-      localExportEntries_(cx, ExportEntryVector(cx)),
-      indirectExportEntries_(cx, ExportEntryVector(cx)),
-      starExportEntries_(cx, ExportEntryVector(cx)) {}
+      functionDecls_(cx) {}
 
-bool ModuleBuilder::buildTables() {
-  for (const auto& e : exportEntries_) {
-    RootedExportEntryObject exp(cx_, e);
-    if (!exp->moduleRequest()) {
-      RootedImportEntryObject importEntry(cx_,
-                                          importEntryFor(exp->localName()));
+bool ModuleBuilder::noteFunctionDeclaration(JSContext* cx, uint32_t funIndex) {
+  return functionDecls_.emplaceBack(funIndex);
+}
+
+bool ModuleBuilder::buildTables(frontend::StencilModuleMetadata& metadata) {
+  // https://tc39.es/ecma262/#sec-parsemodule
+  // 15.2.1.17.1 ParseModule, Steps 4-11.
+
+  // Step 4.
+  metadata.requestedModules = std::move(requestedModules_.get());
+
+  // Step 5.
+  if (!metadata.importEntries.reserve(importEntries_.count())) {
+    return false;
+  }
+  for (auto r = importEntries_.all(); !r.empty(); r.popFront()) {
+    frontend::StencilModuleEntry& entry = r.front().value();
+    metadata.importEntries.infallibleAppend(entry);
+  }
+
+  // Steps 6-11.
+  for (const frontend::StencilModuleEntry& exp : exportEntries_) {
+    if (!exp.specifier) {
+      frontend::StencilModuleEntry* importEntry = importEntryFor(exp.localName);
       if (!importEntry) {
-        if (!localExportEntries_.append(exp)) {
+        if (!metadata.localExportEntries.append(exp)) {
           return false;
         }
       } else {
-        if (importEntry->importName() == cx_->names().star) {
-          if (!localExportEntries_.append(exp)) {
+        if (importEntry->importName == cx_->names().star) {
+          if (!metadata.localExportEntries.append(exp)) {
             return false;
           }
         } else {
-          RootedAtom exportName(cx_, exp->exportName());
-          RootedAtom moduleRequest(cx_, importEntry->moduleRequest());
-          RootedAtom importName(cx_, importEntry->importName());
-          RootedExportEntryObject exportEntry(cx_);
-          exportEntry = ExportEntryObject::create(
-              cx_, exportName, moduleRequest, importName, nullptr,
-              exp->lineNumber(), exp->columnNumber());
-          if (!exportEntry || !indirectExportEntries_.append(exportEntry)) {
+          auto entry = frontend::StencilModuleEntry::exportFromEntry(
+              importEntry->specifier, importEntry->importName, exp.exportName,
+              exp.lineno, exp.column);
+          if (!metadata.indirectExportEntries.append(entry)) {
             return false;
           }
         }
       }
-    } else if (exp->importName() == cx_->names().star) {
-      if (!starExportEntries_.append(exp)) {
+    } else if (exp.importName == cx_->names().star && !exp.exportName) {
+      if (!metadata.starExportEntries.append(exp)) {
         return false;
       }
     } else {
-      if (!indirectExportEntries_.append(exp)) {
+      if (!metadata.indirectExportEntries.append(exp)) {
         return false;
       }
     }
@@ -1264,39 +1261,114 @@ bool ModuleBuilder::buildTables() {
   return true;
 }
 
-bool ModuleBuilder::initModule(JS::Handle<ModuleObject*> module) {
-  RootedArrayObject requestedModules(cx_,
-                                     js::CreateArray(cx_, requestedModules_));
-  if (!requestedModules) {
+void ModuleBuilder::finishFunctionDecls(
+    frontend::StencilModuleMetadata& metadata) {
+  metadata.functionDecls = std::move(functionDecls_);
+}
+
+enum class ModuleArrayType {
+  ImportEntryObject,
+  ExportEntryObject,
+  RequestedModuleObject,
+};
+
+static ArrayObject* ModuleBuilderInitArray(
+    JSContext* cx, ModuleArrayType arrayType,
+    const frontend::StencilModuleMetadata::EntryVector& vector) {
+  RootedArrayObject resultArray(
+      cx, NewDenseFullyAllocatedArray(cx, vector.length()));
+  if (!resultArray) {
+    return nullptr;
+  }
+
+  resultArray->ensureDenseInitializedLength(cx, 0, vector.length());
+
+  RootedAtom specifier(cx);
+  RootedAtom localName(cx);
+  RootedAtom importName(cx);
+  RootedAtom exportName(cx);
+  RootedObject req(cx);
+
+  for (uint32_t i = 0; i < vector.length(); ++i) {
+    const frontend::StencilModuleEntry& entry = vector[i];
+    specifier = entry.specifier;
+    localName = entry.localName;
+    importName = entry.importName;
+    exportName = entry.exportName;
+
+    switch (arrayType) {
+      case ModuleArrayType::ImportEntryObject:
+        MOZ_ASSERT(localName && importName);
+        req = ImportEntryObject::create(cx, specifier, importName, localName,
+                                        entry.lineno, entry.column);
+        break;
+      case ModuleArrayType::ExportEntryObject:
+        MOZ_ASSERT(localName || importName || exportName);
+        req = ExportEntryObject::create(cx, exportName, specifier, importName,
+                                        localName, entry.lineno, entry.column);
+        break;
+      case ModuleArrayType::RequestedModuleObject:
+        req = RequestedModuleObject::create(cx, specifier, entry.lineno,
+                                            entry.column);
+        // TODO: Make this consistent with other object types.
+        if (req && !FreezeObject(cx, req)) {
+          return nullptr;
+        }
+        break;
+    }
+    if (!req) {
+      return nullptr;
+    }
+    resultArray->initDenseElement(i, ObjectValue(*req));
+  }
+
+  return resultArray;
+}
+
+// Use StencilModuleMetadata data to fill in ModuleObject
+bool frontend::StencilModuleMetadata::initModule(
+    JSContext* cx, JS::Handle<ModuleObject*> module) {
+  RootedArrayObject requestedModulesObject(
+      cx, ModuleBuilderInitArray(cx, ModuleArrayType::RequestedModuleObject,
+                                 requestedModules));
+  if (!requestedModulesObject) {
     return false;
   }
 
-  RootedArrayObject importEntries(cx_, createArrayFromHashMap(importEntries_));
-  if (!importEntries) {
+  RootedArrayObject importEntriesObject(
+      cx, ModuleBuilderInitArray(cx, ModuleArrayType::ImportEntryObject,
+                                 importEntries));
+  if (!importEntriesObject) {
     return false;
   }
 
-  RootedArrayObject localExportEntries(
-      cx_, js::CreateArray(cx_, localExportEntries_));
-  if (!localExportEntries) {
+  RootedArrayObject localExportEntriesObject(
+      cx, ModuleBuilderInitArray(cx, ModuleArrayType::ExportEntryObject,
+                                 localExportEntries));
+  if (!localExportEntriesObject) {
     return false;
   }
 
-  RootedArrayObject indirectExportEntries(
-      cx_, js::CreateArray(cx_, indirectExportEntries_));
-  if (!indirectExportEntries) {
+  RootedArrayObject indirectExportEntriesObject(
+      cx, ModuleBuilderInitArray(cx, ModuleArrayType::ExportEntryObject,
+                                 indirectExportEntries));
+  if (!indirectExportEntriesObject) {
     return false;
   }
 
-  RootedArrayObject starExportEntries(cx_,
-                                      js::CreateArray(cx_, starExportEntries_));
-  if (!starExportEntries) {
+  RootedArrayObject starExportEntriesObject(
+      cx, ModuleBuilderInitArray(cx, ModuleArrayType::ExportEntryObject,
+                                 starExportEntries));
+  if (!starExportEntriesObject) {
     return false;
   }
 
-  module->initImportExportData(requestedModules, importEntries,
-                               localExportEntries, indirectExportEntries,
-                               starExportEntries);
+  // Transfer the vector of declarations to the ModuleObject.
+  module->initFunctionDeclarations(std::move(functionDecls));
+
+  module->initImportExportData(
+      requestedModulesObject, importEntriesObject, localExportEntriesObject,
+      indirectExportEntriesObject, starExportEntriesObject);
 
   return true;
 }
@@ -1335,21 +1407,14 @@ bool ModuleBuilder::processImport(frontend::BinaryNode* importNode) {
     eitherParser_.computeLineAndColumn(importNameNode->pn_pos.begin, &line,
                                        &column);
 
-    RootedImportEntryObject importEntry(cx_);
-    importEntry = ImportEntryObject::create(cx_, module, importName, localName,
-                                            line, column);
-    if (!importEntry || !appendImportEntryObject(importEntry)) {
+    auto entry = frontend::StencilModuleEntry::importEntry(
+        module, localName, importName, line, column);
+    if (!importEntries_.put(localName, entry)) {
       return false;
     }
   }
 
   return true;
-}
-
-bool ModuleBuilder::appendImportEntryObject(
-    HandleImportEntryObject importEntry) {
-  MOZ_ASSERT(importEntry->localName());
-  return importEntries_.put(importEntry->localName(), importEntry);
 }
 
 bool ModuleBuilder::processExport(frontend::ParseNode* exportNode) {
@@ -1568,14 +1633,15 @@ bool ModuleBuilder::processExportFrom(frontend::BinaryNode* exportNode) {
   return true;
 }
 
-ImportEntryObject* ModuleBuilder::importEntryFor(JSAtom* localName) const {
+frontend::StencilModuleEntry* ModuleBuilder::importEntryFor(
+    JSAtom* localName) const {
   MOZ_ASSERT(localName);
   auto ptr = importEntries_.lookup(localName);
   if (!ptr) {
     return nullptr;
   }
 
-  return ptr->value();
+  return &ptr->value();
 }
 
 bool ModuleBuilder::hasExportedName(JSAtom* name) const {
@@ -1592,10 +1658,19 @@ bool ModuleBuilder::appendExportEntry(HandleAtom exportName,
     eitherParser_.computeLineAndColumn(node->pn_pos.begin, &line, &column);
   }
 
-  Rooted<ExportEntryObject*> exportEntry(cx_);
-  exportEntry = ExportEntryObject::create(cx_, exportName, nullptr, nullptr,
-                                          localName, line, column);
-  return exportEntry && appendExportEntryObject(exportEntry);
+  auto entry = frontend::StencilModuleEntry::exportAsEntry(
+      localName, exportName, line, column);
+  if (!exportEntries_.append(entry)) {
+    return false;
+  }
+
+  if (exportName) {
+    if (!exportNames_.put(exportName)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 bool ModuleBuilder::appendExportFromEntry(HandleAtom exportName,
@@ -1606,19 +1681,12 @@ bool ModuleBuilder::appendExportFromEntry(HandleAtom exportName,
   uint32_t column;
   eitherParser_.computeLineAndColumn(node->pn_pos.begin, &line, &column);
 
-  Rooted<ExportEntryObject*> exportEntry(cx_);
-  exportEntry = ExportEntryObject::create(cx_, exportName, moduleRequest,
-                                          importName, nullptr, line, column);
-  return exportEntry && appendExportEntryObject(exportEntry);
-}
-
-bool ModuleBuilder::appendExportEntryObject(
-    HandleExportEntryObject exportEntry) {
-  if (!exportEntries_.append(exportEntry)) {
+  auto entry = frontend::StencilModuleEntry::exportFromEntry(
+      moduleRequest, importName, exportName, line, column);
+  if (!exportEntries_.append(entry)) {
     return false;
   }
 
-  JSAtom* exportName = exportEntry->exportName();
   return !exportName || exportNames_.put(exportName);
 }
 
@@ -1632,15 +1700,13 @@ bool ModuleBuilder::maybeAppendRequestedModule(HandleAtom specifier,
   uint32_t column;
   eitherParser_.computeLineAndColumn(node->pn_pos.begin, &line, &column);
 
-  JSContext* cx = cx_;
-  RootedRequestedModuleObject req(
-      cx, RequestedModuleObject::create(cx, specifier, line, column));
-  if (!req) {
+  auto entry =
+      frontend::StencilModuleEntry::moduleRequest(specifier, line, column);
+  if (!requestedModules_.append(entry)) {
     return false;
   }
 
-  return FreezeObject(cx, req) && requestedModules_.append(req) &&
-         requestedModuleSpecifiers_.put(specifier);
+  return requestedModuleSpecifiers_.put(specifier);
 }
 
 template <typename T>
@@ -1655,25 +1721,6 @@ ArrayObject* js::CreateArray(JSContext* cx,
   array->setDenseInitializedLength(length);
   for (uint32_t i = 0; i < length; i++) {
     array->initDenseElement(i, ObjectValue(*vector[i]));
-  }
-
-  return array;
-}
-
-template <typename K, typename V>
-ArrayObject* ModuleBuilder::createArrayFromHashMap(
-    const JS::Rooted<GCHashMap<K, V>>& map) {
-  uint32_t length = map.count();
-  RootedArrayObject array(cx_, NewDenseFullyAllocatedArray(cx_, length));
-  if (!array) {
-    return nullptr;
-  }
-
-  array->setDenseInitializedLength(length);
-
-  uint32_t i = 0;
-  for (auto r = map.all(); !r.empty(); r.popFront()) {
-    array->initDenseElement(i++, ObjectValue(*r.front().value()));
   }
 
   return array;
@@ -1963,7 +2010,7 @@ XDRResult js::XDRModuleObject(XDRState<mode>* xdr,
   // funcDecls points to data traced by the ModuleObject,
   // but is itself heap-allocated so we don't need to
   // worry about rooting it again here.
-  FunctionDeclarationVector* funcDecls;
+  frontend::FunctionDeclarationVector* funcDecls;
 
   uint32_t requestedModulesLength = 0;
   uint32_t importEntriesLength = 0;
@@ -2077,22 +2124,17 @@ XDRResult js::XDRModuleObject(XDRState<mode>* xdr,
   MOZ_TRY(XDRExportEntries(xdr, &starExportEntries));
 
   /* FunctionDeclarations slot */
-  RootedAtom funcName(cx);
   uint32_t funIndex = 0;
   MOZ_TRY(xdr->codeUint32(&funcDeclLength));
   for (uint32_t i = 0; i < funcDeclLength; i++) {
     if (mode == XDR_ENCODE) {
-      FunctionDeclaration fd = (*funcDecls)[i];
-      funcName = fd.name;
-      funIndex = fd.funIndex;
+      funIndex = (*funcDecls)[i];
     }
 
-    MOZ_TRY(XDRAtom(xdr, &funcName));
     MOZ_TRY(xdr->codeUint32(&funIndex));
 
     if (mode == XDR_DECODE) {
-      FunctionDeclaration funcDecl(funcName, funIndex);
-      if (!module->functionDeclarations()->append(funcDecl)) {
+      if (!module->functionDeclarations()->append(funIndex)) {
         ReportOutOfMemory(cx);
         return xdr->fail(JS::TranscodeResult_Throw);
       }

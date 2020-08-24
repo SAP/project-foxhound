@@ -282,6 +282,9 @@ const nsStaticAtom* const kPresAttributesHTML[] = {
     // clang-format on
 };
 
+// List of HTML attributes with URLs that the
+// browser will fetch. Should be kept in sync with
+// https://html.spec.whatwg.org/multipage/indices.html#attributes-3
 const nsStaticAtom* const kURLAttributesHTML[] = {
     // clang-format off
   nsGkAtoms::action,
@@ -290,6 +293,10 @@ const nsStaticAtom* const kURLAttributesHTML[] = {
   nsGkAtoms::longdesc,
   nsGkAtoms::cite,
   nsGkAtoms::background,
+  nsGkAtoms::formaction,
+  nsGkAtoms::data,
+  nsGkAtoms::ping,
+  nsGkAtoms::poster,
   nullptr
     // clang-format on
 };
@@ -563,11 +570,12 @@ const nsStaticAtom* const kAttributesSVG[] = {
     nsGkAtoms::text_anchor,        // text-anchor
     nsGkAtoms::text_decoration,    // text-decoration
     // textLength
-    nsGkAtoms::text_rendering,  // text-rendering
-    nsGkAtoms::title,           // title
-    nsGkAtoms::to,              // to
-    nsGkAtoms::transform,       // transform
-    nsGkAtoms::type,            // type
+    nsGkAtoms::text_rendering,    // text-rendering
+    nsGkAtoms::title,             // title
+    nsGkAtoms::to,                // to
+    nsGkAtoms::transform,         // transform
+    nsGkAtoms::transform_origin,  // transform-origin
+    nsGkAtoms::type,              // type
     // u1
     // u2
     // underline-position
@@ -1092,7 +1100,8 @@ void nsTreeSanitizer::SanitizeStyleSheet(const nsAString& aOriginal,
           css::SheetParsingMode::eAuthorSheetFeatures, extraData.get(),
           /* line_number_offset = */ 0, aDocument->GetCompatibilityMode(),
           /* reusable_sheets = */ nullptr,
-          /* use_counters = */ nullptr, sanitizationKind, &aSanitized)
+          /* use_counters = */ nullptr, StyleAllowImportRules::Yes,
+          sanitizationKind, &aSanitized)
           .Consume();
 
   if (mLogRemovals && aSanitized.Length() != aOriginal.Length()) {
@@ -1424,16 +1433,14 @@ void nsTreeSanitizer::LogMessage(const char* aMessage, Document* aDoc,
     nsAutoString msg;
     msg.Assign(NS_ConvertASCIItoUTF16(aMessage));
     if (aElement) {
-      msg.Append(NS_LITERAL_STRING(" Element: ") + aElement->LocalName() +
-                 NS_LITERAL_STRING("."));
+      msg.Append(u" Element: "_ns + aElement->LocalName() + u"."_ns);
     }
     if (aAttr) {
-      msg.Append(NS_LITERAL_STRING(" Attribute: ") +
-                 nsDependentAtomString(aAttr) + NS_LITERAL_STRING("."));
+      msg.Append(u" Attribute: "_ns + nsDependentAtomString(aAttr) + u"."_ns);
     }
 
     nsContentUtils::ReportToConsoleNonLocalized(
-        msg, nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DOM"), aDoc);
+        msg, nsIScriptError::warningFlag, "DOM"_ns, aDoc);
   }
 }
 

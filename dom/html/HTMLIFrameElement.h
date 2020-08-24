@@ -8,7 +8,6 @@
 #define mozilla_dom_HTMLIFrameElement_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/FeaturePolicy.h"
 #include "nsGenericHTMLFrameElement.h"
 #include "nsDOMTokenList.h"
 
@@ -29,9 +28,7 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
                                            nsGenericHTMLFrameElement)
 
   // Element
-  virtual bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override {
-    return true;
-  }
+  virtual bool IsInteractiveHTMLContent() const override { return true; }
 
   // nsIContent
   virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -73,12 +70,19 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
     }
     return mSandbox;
   }
-  bool AllowFullscreen() const {
+
+  bool AllowFullscreenForBindings() const {
     return GetBoolAttr(nsGkAtoms::allowfullscreen);
   }
-  void SetAllowFullscreen(bool aAllow, ErrorResult& aError) {
+
+  void SetAllowFullscreenForBindings(bool aAllow, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::allowfullscreen, aAllow, aError);
   }
+
+  bool AllowFullscreen() const;
+
+  bool HasAllowFullscreenAttribute() const;
+
   bool AllowPaymentRequest() const {
     return GetBoolAttr(nsGkAtoms::allowpaymentrequest);
   }

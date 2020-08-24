@@ -43,7 +43,7 @@ using namespace mozilla::widget;
 
 namespace mozilla {
 
-#define IDEOGRAPHIC_SPACE (NS_LITERAL_STRING(u"\x3000"))
+#define IDEOGRAPHIC_SPACE (u"\x3000"_ns)
 
 /******************************************************************************
  * TextComposition
@@ -680,7 +680,7 @@ RawRangeBoundary TextComposition::GetStartRef() const {
     return RawRangeBoundary();
   }
 
-  nsRange* firstRange = nullptr;
+  const nsRange* firstRange = nullptr;
   static const SelectionType kIMESelectionTypes[] = {
       SelectionType::eIMERawClause, SelectionType::eIMESelectedRawClause,
       SelectionType::eIMEConvertedClause, SelectionType::eIMESelectedClause};
@@ -691,7 +691,7 @@ RawRangeBoundary TextComposition::GetStartRef() const {
       continue;
     }
     for (uint32_t i = 0; i < selection->RangeCount(); i++) {
-      nsRange* range = selection->GetRangeAt(i);
+      const nsRange* range = selection->GetRangeAt(i);
       if (NS_WARN_IF(!range) || NS_WARN_IF(!range->GetStartContainer())) {
         continue;
       }
@@ -737,7 +737,7 @@ RawRangeBoundary TextComposition::GetEndRef() const {
     return RawRangeBoundary();
   }
 
-  nsRange* lastRange = nullptr;
+  const nsRange* lastRange = nullptr;
   static const SelectionType kIMESelectionTypes[] = {
       SelectionType::eIMERawClause, SelectionType::eIMESelectedRawClause,
       SelectionType::eIMEConvertedClause, SelectionType::eIMESelectedClause};
@@ -748,7 +748,7 @@ RawRangeBoundary TextComposition::GetEndRef() const {
       continue;
     }
     for (uint32_t i = 0; i < selection->RangeCount(); i++) {
-      nsRange* range = selection->GetRangeAt(i);
+      const nsRange* range = selection->GetRangeAt(i);
       if (NS_WARN_IF(!range) || NS_WARN_IF(!range->GetEndContainer())) {
         continue;
       }

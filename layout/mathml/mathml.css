@@ -208,14 +208,6 @@ mtable[framespacing] > mtr > mtd {
   padding: 0px;
 }
 
-/**************************************************************************/
-/* This rule is used to give a ComputedStyle suitable for nsMathMLChars.
-   We don't actually style -moz-math-anonymous by default. */
-/*
-::-moz-math-anonymous {
-}
-*/
-
 /**********************************************************************/
 /* This is used when wrapping non-MathML inline elements inside math. */
 *|*::-moz-mathml-anonymous-block {
@@ -255,7 +247,7 @@ mstyle[displaystyle="true" i] {
 /*
    The mfrac element sets displaystyle to "false", or if it was already false
    increments scriptlevel by 1, within numerator and denominator.
-*/   
+*/
 mfrac > * {
     -moz-script-level: auto;
     -moz-math-display: inline;

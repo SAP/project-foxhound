@@ -24,11 +24,11 @@
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/Telemetry.h"  // for Accumulate
 #include "mozilla/ToString.h"
-#include "mozilla/gfx/2D.h"        // for DrawTarget
-#include "mozilla/gfx/BaseSize.h"  // for BaseSize
-#include "mozilla/gfx/Matrix.h"    // for Matrix4x4
-#include "mozilla/gfx/Polygon.h"   // for Polygon
-#include "mozilla/layers/AsyncCanvasRenderer.h"
+#include "mozilla/dom/Animation.h"              // for dom::Animation
+#include "mozilla/gfx/2D.h"                     // for DrawTarget
+#include "mozilla/gfx/BaseSize.h"               // for BaseSize
+#include "mozilla/gfx/Matrix.h"                 // for Matrix4x4
+#include "mozilla/gfx/Polygon.h"                // for Polygon
 #include "mozilla/layers/BSPTree.h"             // for BSPTree
 #include "mozilla/layers/CompositableClient.h"  // for CompositableClient
 #include "mozilla/layers/Compositor.h"          // for Compositor
@@ -168,6 +168,37 @@ void LayerManager::PayloadPresented() {
   RecordCompositionPayloadsPresented(mPayload);
 }
 
+void LayerManager::AddPartialPrerenderedAnimation(
+    uint64_t aCompositorAnimationId, dom::Animation* aAnimation) {
+  mPartialPrerenderedAnimations.Put(aCompositorAnimationId, RefPtr{aAnimation});
+  aAnimation->SetPartialPrerendered(aCompositorAnimationId);
+}
+
+void LayerManager::RemovePartialPrerenderedAnimation(
+    uint64_t aCompositorAnimationId, dom::Animation* aAnimation) {
+  MOZ_ASSERT(aAnimation);
+#ifdef DEBUG
+  RefPtr<dom::Animation> animation;
+  if (mPartialPrerenderedAnimations.Remove(aCompositorAnimationId,
+                                           getter_AddRefs(animation))) {
+    MOZ_ASSERT(aAnimation == animation.get());
+  }
+#else
+  mPartialPrerenderedAnimations.Remove(aCompositorAnimationId);
+#endif
+  aAnimation->ResetPartialPrerendered();
+}
+
+void LayerManager::UpdatePartialPrerenderedAnimations(
+    const nsTArray<uint64_t>& aJankedAnimations) {
+  for (uint64_t id : aJankedAnimations) {
+    RefPtr<dom::Animation> animation;
+    if (mPartialPrerenderedAnimations.Remove(id, getter_AddRefs(animation))) {
+      animation->UpdatePartialPrerendered();
+    }
+  }
+}
+
 //--------------------------------------------------
 // Layer
 
@@ -188,12 +219,13 @@ Layer::Layer(LayerManager* aManager, void* aImplData)
 Layer::~Layer() = default;
 
 void Layer::SetCompositorAnimations(
+    const LayersId& aLayersId,
     const CompositorAnimations& aCompositorAnimations) {
   MOZ_LAYERS_LOG_IF_SHADOWABLE(
       this, ("Layer::Mutated(%p) SetCompositorAnimations with id=%" PRIu64,
              this, mAnimationInfo.GetCompositorAnimationsId()));
 
-  mAnimationInfo.SetCompositorAnimations(aCompositorAnimations);
+  mAnimationInfo.SetCompositorAnimations(aLayersId, aCompositorAnimations);
 
   Mutated();
 }
@@ -1156,6 +1188,7 @@ void ContainerLayer::DefaultComputeEffectiveTransforms(
         checkClipRect = true;
         checkMaskLayers = true;
       } else {
+        contTransform.NudgeToIntegers();
 #ifdef MOZ_GFX_OPTIMIZE_MOBILE
         if (!contTransform.PreservesAxisAlignedRectangles()) {
 #else
@@ -2045,12 +2078,12 @@ void CanvasLayer::DumpPacket(layerscope::LayersPacket* aPacket,
   DumpFilter(layer, mSamplingFilter);
 }
 
-CanvasRenderer* CanvasLayer::CreateOrGetCanvasRenderer() {
+RefPtr<CanvasRenderer> CanvasLayer::CreateOrGetCanvasRenderer() {
   if (!mCanvasRenderer) {
-    mCanvasRenderer.reset(CreateCanvasRendererInternal());
+    mCanvasRenderer = CreateCanvasRendererInternal();
   }
 
-  return mCanvasRenderer.get();
+  return mCanvasRenderer;
 }
 
 void ImageLayer::PrintInfo(std::stringstream& aStream, const char* aPrefix) {
@@ -2218,44 +2251,31 @@ bool LayerManager::IsLogEnabled() {
 }
 
 bool LayerManager::SetPendingScrollUpdateForNextTransaction(
-    ScrollableLayerGuid::ViewID aScrollId, const ScrollUpdateInfo& aUpdateInfo,
-    wr::RenderRoot aRenderRoot) {
+    ScrollableLayerGuid::ViewID aScrollId,
+    const ScrollUpdateInfo& aUpdateInfo) {
   Layer* withPendingTransform = DepthFirstSearch<ForwardIterator>(
       GetRoot(), [](Layer* aLayer) { return aLayer->HasPendingTransform(); });
   if (withPendingTransform) {
     return false;
   }
 
-  // If this is called on a LayerManager that's not a WebRenderLayerManager,
-  // then we don't actually need the aRenderRoot information. We force it to
-  // RenderRoot::Default so that we can make assumptions in
-  // GetPendingScrollInfoUpdate.
-  wr::RenderRoot renderRoot = (GetBackendType() == LayersBackend::LAYERS_WR)
-                                  ? aRenderRoot
-                                  : wr::RenderRoot::Default;
-  mPendingScrollUpdates[renderRoot].Put(aScrollId, aUpdateInfo);
+  mPendingScrollUpdates.Put(aScrollId, aUpdateInfo);
   return true;
 }
 
 Maybe<ScrollUpdateInfo> LayerManager::GetPendingScrollInfoUpdate(
     ScrollableLayerGuid::ViewID aScrollId) {
-  // This never gets called for WebRenderLayerManager, so we assume that all
-  // pending scroll info updates are stored under the default RenderRoot.
-  MOZ_ASSERT(GetBackendType() != LayersBackend::LAYERS_WR);
-  auto p = mPendingScrollUpdates[wr::RenderRoot::Default].Lookup(aScrollId);
+  auto p = mPendingScrollUpdates.Lookup(aScrollId);
   return p ? Some(p.Data()) : Nothing();
 }
 
 std::unordered_set<ScrollableLayerGuid::ViewID>
 LayerManager::ClearPendingScrollInfoUpdate() {
   std::unordered_set<ScrollableLayerGuid::ViewID> scrollIds;
-  for (auto renderRoot : wr::kRenderRoots) {
-    auto& updates = mPendingScrollUpdates[renderRoot];
-    for (auto it = updates.Iter(); !it.Done(); it.Next()) {
-      scrollIds.insert(it.Key());
-    }
-    updates.Clear();
+  for (auto it = mPendingScrollUpdates.Iter(); !it.Done(); it.Next()) {
+    scrollIds.insert(it.Key());
   }
+  mPendingScrollUpdates.Clear();
   return scrollIds;
 }
 
@@ -2312,11 +2332,19 @@ void RecordCompositionPayloadsPresented(
     for (const CompositionPayload& payload : aPayloads) {
 #if MOZ_GECKO_PROFILER
       if (profiler_can_accept_markers()) {
-        nsPrintfCString marker(
-            "Payload Presented, type: %d latency: %dms\n",
-            int32_t(payload.mType),
+        MOZ_RELEASE_ASSERT(payload.mType <= kHighestCompositionPayloadType);
+        nsAutoCString name(
+            kCompositionPayloadTypeNames[uint8_t(payload.mType)]);
+        name.AppendLiteral(" Payload Presented");
+        // This doesn't really need to be a text marker. Once we have a version
+        // of profiler_add_marker that accepts both a start time and an end
+        // time, we could use that here.
+        nsPrintfCString text(
+            "Latency: %dms",
             int32_t((presented - payload.mTimeStamp).ToMilliseconds()));
-        PROFILER_ADD_MARKER(marker.get(), GRAPHICS);
+        profiler_add_text_marker(name.get(), text,
+                                 JS::ProfilingCategoryPair::GRAPHICS,
+                                 payload.mTimeStamp, presented);
       }
 #endif
 

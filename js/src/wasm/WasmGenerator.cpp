@@ -58,6 +58,15 @@ bool CompiledCode::swap(MacroAssembler& masm) {
   return true;
 }
 
+bool CompiledCode::swapCranelift(MacroAssembler& masm,
+                                 CraneliftReusableData& data) {
+  if (!swap(masm)) {
+    return false;
+  }
+  std::swap(data, craneliftReusableData);
+  return true;
+}
+
 // ****************************************************************************
 // ModuleGenerator
 
@@ -379,11 +388,17 @@ bool ModuleGenerator::init(Metadata* maybeAsmJSMetadata) {
         seg->active() && env_->tables[seg->tableIndex].kind == TableKind::AsmJS;
     if (!isAsmJS) {
       for (uint32_t funcIndex : seg->elemFuncIndices) {
-        if (funcIndex == NullFuncIndex) {
-          continue;
+        if (funcIndex != NullFuncIndex) {
+          addOrMerge(ExportedFunc(funcIndex, false));
         }
-        addOrMerge(ExportedFunc(funcIndex, false));
       }
+    }
+  }
+
+  for (const GlobalDesc& global : env_->globals) {
+    if (global.isVariable() &&
+        global.initExpr().kind() == InitExpr::Kind::RefFunc) {
+      addOrMerge(ExportedFunc(global.initExpr().refFuncIndex(), false));
     }
   }
 
@@ -504,7 +519,7 @@ bool ModuleGenerator::linkCallSites() {
       case CallSiteDesc::Func: {
         if (funcIsCompiled(target.funcIndex())) {
           uint32_t calleeOffset =
-              funcCodeRange(target.funcIndex()).funcNormalEntry();
+              funcCodeRange(target.funcIndex()).funcUncheckedCallEntry();
           if (InRange(callerOffset, calleeOffset)) {
             masm_.patchCall(callerOffset, calleeOffset);
             break;
@@ -545,8 +560,7 @@ bool ModuleGenerator::linkCallSites() {
           // reload the TLS register on this path.
           Offsets offsets;
           offsets.begin = masm_.currentOffset();
-          masm_.loadPtr(Address(FramePointer, offsetof(Frame, tls)),
-                        WasmTlsReg);
+          masm_.loadPtr(Address(FramePointer, Frame::tlsOffset()), WasmTlsReg);
           CodeOffset jumpOffset = masm_.farJumpWithPatch();
           offsets.end = masm_.currentOffset();
           if (masm_.oom()) {
@@ -724,19 +738,19 @@ static bool ExecuteCompileTask(CompileTask* task, UniqueChars* error) {
 
   switch (task->env.tier()) {
     case Tier::Optimized:
-#ifdef ENABLE_WASM_CRANELIFT
-      if (task->env.optimizedBackend() == OptimizedBackend::Cranelift) {
-        if (!CraneliftCompileFunctions(task->env, task->lifo, task->inputs,
-                                       &task->output, error)) {
-          return false;
-        }
-        break;
-      }
-#endif
-      MOZ_ASSERT(task->env.optimizedBackend() == OptimizedBackend::Ion);
-      if (!IonCompileFunctions(task->env, task->lifo, task->inputs,
-                               &task->output, error)) {
-        return false;
+      switch (task->env.optimizedBackend()) {
+        case OptimizedBackend::Cranelift:
+          if (!CraneliftCompileFunctions(task->env, task->lifo, task->inputs,
+                                         &task->output, error)) {
+            return false;
+          }
+          break;
+        case OptimizedBackend::Ion:
+          if (!IonCompileFunctions(task->env, task->lifo, task->inputs,
+                                   &task->output, error)) {
+            return false;
+          }
+          break;
       }
       break;
     case Tier::Baseline:
@@ -930,7 +944,7 @@ bool ModuleGenerator::finishCodegen() {
 
   for (CallFarJump far : callFarJumps_) {
     masm_.patchFarJump(far.jump,
-                       funcCodeRange(far.funcIndex).funcNormalEntry());
+                       funcCodeRange(far.funcIndex).funcUncheckedCallEntry());
   }
 
   for (CodeOffset farJump : debugTrapFarJumps_) {
@@ -1086,7 +1100,7 @@ SharedMetadata ModuleGenerator::finishMetadata(const Bytes& bytecode) {
   metadata_->moduleName = env_->moduleName;
   metadata_->funcNames = std::move(env_->funcNames);
   metadata_->omitsBoundsChecks = env_->hugeMemoryEnabled();
-  metadata_->bigIntEnabled = env_->bigIntEnabled();
+  metadata_->v128Enabled = env_->v128Enabled();
 
   // Copy over additional debug information.
 

@@ -135,8 +135,18 @@ scheme host and port.""")
                                       help="URL prefix to exclude")
     test_selection_group.add_argument("--include-manifest", type=abs_path,
                                       help="Path to manifest listing tests to include")
+    test_selection_group.add_argument("--test-groups", dest="test_groups_file", type=abs_path,
+                                      help="Path to json file containing a mapping {group_name: [test_ids]}")
     test_selection_group.add_argument("--skip-timeout", action="store_true",
                                       help="Skip tests that are expected to time out")
+    test_selection_group.add_argument("--skip-implementation-status",
+                                      action="append",
+                                      choices=["not-implementing", "backlog", "implementing"],
+                                      help="Skip tests that have the given implementation status")
+    # TODO: Remove this when QUIC is enabled by default.
+    test_selection_group.add_argument("--enable-quic", action="store_true", default=False,
+                                      help="Enable tests that require QUIC server (default: false)")
+
     test_selection_group.add_argument("--tag", action="append", dest="tags",
                                       help="Labels applied to tests to include in the run. "
                                            "Labels starting dir: are equivalent to top-level directories.")
@@ -259,12 +269,20 @@ scheme host and port.""")
     gecko_group = parser.add_argument_group("Gecko-specific")
     gecko_group.add_argument("--prefs-root", dest="prefs_root", action="store", type=abs_path,
                              help="Path to the folder containing browser prefs")
+    gecko_group.add_argument("--preload-browser", dest="preload_browser", action="store_true",
+                             default=None, help="Preload a gecko instance for faster restarts")
+    gecko_group.add_argument("--no-preload-browser", dest="preload_browser", action="store_false",
+                             default=None, help="Don't preload a gecko instance for faster restarts")
     gecko_group.add_argument("--disable-e10s", dest="gecko_e10s", action="store_false", default=True,
                              help="Run tests without electrolysis preferences")
     gecko_group.add_argument("--enable-webrender", dest="enable_webrender", action="store_true", default=None,
                              help="Enable the WebRender compositor in Gecko (defaults to disabled).")
     gecko_group.add_argument("--no-enable-webrender", dest="enable_webrender", action="store_false",
                              help="Disable the WebRender compositor in Gecko.")
+    gecko_group.add_argument("--enable-fission", dest="enable_fission", action="store_true", default=None,
+                             help="Enable fission in Gecko (defaults to disabled).")
+    gecko_group.add_argument("--no-enable-fission", dest="enable_fission", action="store_false",
+                             help="Disable fission in Gecko.")
     gecko_group.add_argument("--stackfix-dir", dest="stackfix_dir", action="store",
                              help="Path to directory containing assertion stack fixing scripts")
     gecko_group.add_argument("--setpref", dest="extra_prefs", action='append',
@@ -488,6 +506,14 @@ def check_args(kwargs):
         else:
             kwargs["chunk_type"] = "none"
 
+    if kwargs["test_groups_file"] is not None:
+        if kwargs["run_by_dir"] is not False:
+            print("Can't pass --test-groups and --run-by-dir")
+            sys.exit(1)
+        if not os.path.exists(kwargs["test_groups_file"]):
+            print("--test-groups file %s not found" % kwargs["test_groups_file"])
+            sys.exit(1)
+
     if kwargs["processes"] is None:
         kwargs["processes"] = 1
 
@@ -553,6 +579,10 @@ def check_args(kwargs):
 
     if kwargs["enable_webrender"] is None:
         kwargs["enable_webrender"] = False
+
+    if kwargs["preload_browser"] is None:
+        # Default to preloading a gecko instance if we're only running a single process
+        kwargs["preload_browser"] = kwargs["processes"] == 1
 
     return kwargs
 

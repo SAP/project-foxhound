@@ -15,6 +15,7 @@
 #include "nsThreadUtils.h"
 #include "nsIWidget.h"
 #include "nsContentUtils.h"
+#include "nsFrameLoader.h"
 #ifdef XP_MACOSX
 #  include "mozilla/EventDispatcher.h"
 #  include "mozilla/dom/Event.h"
@@ -42,7 +43,7 @@ HTMLEmbedElement::~HTMLEmbedElement() {
   HTMLObjectElement::OnFocusBlurPlugin(this, false);
 #endif
   UnregisterActivityObserver();
-  DestroyImageLoadingContent();
+  nsImageLoadingContent::Destroy();
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLEmbedElement)
@@ -130,6 +131,13 @@ nsresult HTMLEmbedElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
+  if (aNamespaceID == kNameSpaceID_None &&
+      aName == nsGkAtoms::allowfullscreen && mFrameLoader) {
+    if (auto* bc = mFrameLoader->GetExtantBrowsingContext()) {
+      bc->SetFullscreenAllowedByOwner(AllowFullscreen());
+    }
+  }
+
   return nsGenericHTMLElement::AfterSetAttr(
       aNamespaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
 }
@@ -186,8 +194,6 @@ nsIContent::IMEState HTMLEmbedElement::GetDesiredIMEState() {
 
   return nsGenericHTMLElement::GetDesiredIMEState();
 }
-
-int32_t HTMLEmbedElement::TabIndexDefault() { return -1; }
 
 bool HTMLEmbedElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                       const nsAString& aValue,
@@ -266,7 +272,7 @@ uint32_t HTMLEmbedElement::GetCapabilities() const {
 }
 
 void HTMLEmbedElement::DestroyContent() {
-  nsObjectLoadingContent::DestroyContent();
+  nsObjectLoadingContent::Destroy();
   nsGenericHTMLElement::DestroyContent();
 }
 

@@ -16,7 +16,6 @@
 // Local Includes
 // Helper Classes
 #include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
 #include "nsWeakReference.h"
 #include "nsDataHashtable.h"
 #include "nsJSThingHashtable.h"
@@ -82,7 +81,7 @@ class nsHistory;
 class nsGlobalWindowObserver;
 class nsGlobalWindowOuter;
 class nsDOMWindowUtils;
-class nsIIdleService;
+class nsIUserIdleService;
 struct nsRect;
 
 class nsWindowSizes;
@@ -123,7 +122,6 @@ class RequestOrUSVString;
 class SharedWorker;
 class Selection;
 class SpeechSynthesis;
-class TabGroup;
 class Timeout;
 class U2F;
 class VisualViewport;
@@ -268,6 +266,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   virtual nsIPrincipal* GetEffectiveStoragePrincipal() override;
 
+  virtual nsIPrincipal* PartitionedPrincipal() override;
+
   // nsIDOMWindow
   NS_DECL_NSIDOMWINDOW
 
@@ -306,8 +306,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void GetEventTargetParent(mozilla::EventChainPreVisitor& aVisitor) override;
 
   nsresult PostHandleEvent(mozilla::EventChainPostVisitor& aVisitor) override;
-
-  void ClearActiveStoragePrincipal();
 
   void Suspend();
   void Resume();
@@ -388,15 +386,13 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   mozilla::dom::Nullable<mozilla::dom::WindowProxyHolder> IndexedGetter(
       uint32_t aIndex);
 
-  static bool IsPrivilegedChromeWindow(JSContext* /* unused */, JSObject* aObj);
+  static bool IsPrivilegedChromeWindow(JSContext*, JSObject* aObj);
 
-  static bool IsRequestIdleCallbackEnabled(JSContext* aCx,
-                                           JSObject* /* unused */);
+  static bool IsRequestIdleCallbackEnabled(JSContext* aCx, JSObject*);
 
-  static bool RegisterProtocolHandlerAllowedForContext(JSContext* /* unused */,
-                                                       JSObject* aObj);
+  static bool DeviceSensorsEnabled(JSContext*, JSObject*);
 
-  static bool DeviceSensorsEnabled(JSContext* /* unused */, JSObject* aObj);
+  static bool ContentPropertyEnabled(JSContext* aCx, JSObject*);
 
   bool DoResolve(JSContext* aCx, JS::Handle<JSObject*> aObj,
                  JS::Handle<jsid> aId,
@@ -486,7 +482,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
     KillScriptGlobal
   };
   SlowScriptResponse ShowSlowScriptDialog(JSContext* aCx,
-                                          const nsString& aAddonId);
+                                          const nsString& aAddonId,
+                                          const double aDuration);
 
   // Inner windows only.
   void AddGamepad(uint32_t aIndex, mozilla::dom::Gamepad* aGamepad);
@@ -588,6 +585,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   mozilla::dom::Location* Location() override;
   nsHistory* GetHistory(mozilla::ErrorResult& aError);
   mozilla::dom::CustomElementRegistry* CustomElements() override;
+  mozilla::dom::CustomElementRegistry* GetExistingCustomElements();
   mozilla::dom::BarProp* GetLocationbar(mozilla::ErrorResult& aError);
   mozilla::dom::BarProp* GetMenubar(mozilla::ErrorResult& aError);
   mozilla::dom::BarProp* GetPersonalbar(mozilla::ErrorResult& aError);
@@ -876,13 +874,11 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
                   mozilla::ErrorResult& aError);
 
   already_AddRefed<mozilla::dom::Promise> CreateImageBitmap(
-      JSContext* aCx, const mozilla::dom::ImageBitmapSource& aImage,
-      mozilla::ErrorResult& aRv);
+      const mozilla::dom::ImageBitmapSource& aImage, mozilla::ErrorResult& aRv);
 
   already_AddRefed<mozilla::dom::Promise> CreateImageBitmap(
-      JSContext* aCx, const mozilla::dom::ImageBitmapSource& aImage,
-      int32_t aSx, int32_t aSy, int32_t aSw, int32_t aSh,
-      mozilla::ErrorResult& aRv);
+      const mozilla::dom::ImageBitmapSource& aImage, int32_t aSx, int32_t aSy,
+      int32_t aSw, int32_t aSh, mozilla::ErrorResult& aRv);
 
   // ChromeWindow bits.  Do NOT call these unless your window is in
   // fact chrome.
@@ -898,8 +894,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void Maximize();
   void Minimize();
   void Restore();
-  int32_t GetWorkspaceID();
-  void MoveToWorkspace(int32_t workspaceID);
+  void GetWorkspaceID(nsAString& workspaceID);
+  void MoveToWorkspace(const nsAString& workspaceID);
   void NotifyDefaultButtonLoaded(mozilla::dom::Element& aDefaultButton,
                                  mozilla::ErrorResult& aError);
   mozilla::dom::ChromeMessageBroadcaster* MessageManager();
@@ -938,8 +934,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   nsIDOMWindowUtils* GetWindowUtils(mozilla::ErrorResult& aRv);
 
-  bool HasOpenerForInitialContentBrowser();
-
   void UpdateTopInnerWindow();
 
   virtual bool IsInSyncOperation() override {
@@ -949,7 +943,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   bool IsSharedMemoryAllowed() const override;
 
   // https://whatpr.org/html/4734/structured-data.html#cross-origin-isolated
-  bool CrossOriginIsolated() const;
+  bool CrossOriginIsolated() const override;
 
  protected:
   // Web IDL helpers
@@ -1101,8 +1095,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void ScrollTo(const mozilla::CSSIntPoint& aScroll,
                 const mozilla::dom::ScrollOptions& aOptions);
 
-  bool IsFrame();
-
   already_AddRefed<nsIWidget> GetMainWidget();
   nsIWidget* GetNearestWidget() const;
 
@@ -1133,7 +1125,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // This method is called if this window loads a 3rd party tracking resource
   // and the storage is just been granted. The window can reset the partitioned
   // storage objects and switch to the first party cookie jar.
-  void StorageAccessGranted();
+  void StorageAccessPermissionGranted();
 
  protected:
   static void NotifyDOMWindowDestroyed(nsGlobalWindowInner* aWindow);
@@ -1180,12 +1172,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   friend class nsPIDOMWindowInner;
   friend class nsPIDOMWindowOuter;
 
-  mozilla::dom::TabGroup* TabGroupInner();
-
-  // Like TabGroupInner, but it is more tolerant of being called at peculiar
-  // times, and it can return null.
-  mozilla::dom::TabGroup* MaybeTabGroupInner();
-
   bool IsBackgroundInternal() const;
 
   // NOTE: Chrome Only
@@ -1211,7 +1197,9 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void CancelDocumentFlushedResolvers();
 
   // Try to fire the "load" event on our content embedder if we're an iframe.
-  void FireFrameLoadEvent(bool aIsTrusted);
+  void FireFrameLoadEvent();
+
+  void UpdateAutoplayPermission();
 
  public:
   // Dispatch a runnable related to the global.
@@ -1267,10 +1255,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // event.
   bool mNeedsFocus : 1;
   bool mHasFocus : 1;
-
-  // when true, show focus rings for the current focused content only.
-  // This will be reset when another element is focused
-  bool mShowFocusRingForContent : 1;
 
   // true if tab navigation has occurred for this window. Focus rings
   // should be displayed.
@@ -1354,6 +1338,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // FreeInnerObjects has been called.
   nsCOMPtr<nsIPrincipal> mDocumentPrincipal;
   nsCOMPtr<nsIPrincipal> mDocumentStoragePrincipal;
+  nsCOMPtr<nsIPrincipal> mDocumentPartitionedPrincipal;
   nsCOMPtr<nsIContentSecurityPolicy> mDocumentCsp;
 
   RefPtr<mozilla::dom::DebuggerNotificationManager>
@@ -1512,10 +1497,6 @@ inline bool nsGlobalWindowInner::IsPopupSpamWindow() {
   }
 
   return GetOuterWindowInternal()->mIsPopupSpam;
-}
-
-inline bool nsGlobalWindowInner::IsFrame() {
-  return GetInProcessParentInternal() != nullptr;
 }
 
 #endif /* nsGlobalWindowInner_h___ */

@@ -8,6 +8,7 @@
 #include "mozilla/dom/FeaturePolicyBinding.h"
 #include "mozilla/dom/FeaturePolicyParser.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 
@@ -117,6 +118,17 @@ void FeaturePolicy::AppendToDeclaredAllowInAncestorChain(
   }
 
   mDeclaredFeaturesInAncestorChain.AppendElement(aFeature);
+}
+
+bool FeaturePolicy::IsSameOriginAsSrc(nsIPrincipal* aPrincipal) const {
+  MOZ_ASSERT(aPrincipal);
+
+  if (!mSrcOrigin) {
+    return false;
+  }
+
+  return BasePrincipal::Cast(mSrcOrigin)
+      ->Subsumes(aPrincipal, BasePrincipal::ConsiderDocumentDomain);
 }
 
 void FeaturePolicy::SetDeclaredPolicy(Document* aDocument,
@@ -253,7 +265,7 @@ void FeaturePolicy::GetAllowlistForFeature(const nsAString& aFeatureName,
   for (const Feature& feature : mFeatures) {
     if (feature.Name().Equals(aFeatureName)) {
       if (feature.AllowsAll()) {
-        aList.AppendElement(NS_LITERAL_STRING("*"));
+        aList.AppendElement(u"*"_ns);
         return;
       }
 
@@ -275,7 +287,7 @@ void FeaturePolicy::GetAllowlistForFeature(const nsAString& aFeatureName,
 
   switch (FeaturePolicyUtils::DefaultAllowListFeature(aFeatureName)) {
     case FeaturePolicyUtils::FeaturePolicyValue::eAll:
-      aList.AppendElement(NS_LITERAL_STRING("*"));
+      aList.AppendElement(u"*"_ns);
       return;
 
     case FeaturePolicyUtils::FeaturePolicyValue::eSelf: {
@@ -300,7 +312,7 @@ void FeaturePolicy::GetAllowlistForFeature(const nsAString& aFeatureName,
 void FeaturePolicy::MaybeSetAllowedPolicy(const nsAString& aFeatureName) {
   MOZ_ASSERT(FeaturePolicyUtils::IsSupportedFeature(aFeatureName) ||
              FeaturePolicyUtils::IsExperimentalFeature(aFeatureName));
-  // Skip if feature is in experimental pharse
+  // Skip if feature is in experimental phase
   if (!StaticPrefs::dom_security_featurePolicy_experimental_enabled() &&
       FeaturePolicyUtils::IsExperimentalFeature(aFeatureName)) {
     return;

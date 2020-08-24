@@ -21,8 +21,43 @@ const { ExtensionUtils } = ChromeUtils.import(
   "resource://gre/modules/ExtensionUtils.jsm"
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 
 const { DefaultMap } = ExtensionUtils;
+
+/**
+ * Fission-compatible JSProcess implementations.
+ * Each actor options object takes the form of a ProcessActorOptions dictionary.
+ * Detailed documentation of these options is in dom/docs/Fission.rst,
+ * available at https://firefox-source-docs.mozilla.org/dom/Fission.html#jsprocessactor
+ */
+let JSPROCESSACTORS = {
+  AsyncPrefs: {
+    parent: {
+      moduleURI: "resource://gre/modules/AsyncPrefs.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/modules/AsyncPrefs.jsm",
+    },
+  },
+
+  ContentPrefs: {
+    parent: {
+      moduleURI: "resource://gre/modules/ContentPrefServiceParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/modules/ContentPrefServiceChild.jsm",
+    },
+  },
+  ExtensionContent: {
+    child: {
+      moduleURI: "resource://gre/modules/ExtensionContent.jsm",
+    },
+    includeParent: true,
+  },
+};
 
 /**
  * Fission-compatible JSWindowActor implementations.
@@ -30,7 +65,36 @@ const { DefaultMap } = ExtensionUtils;
  * Detailed documentation of these options is in dom/docs/Fission.rst,
  * available at https://firefox-source-docs.mozilla.org/dom/Fission.html#jswindowactor
  */
-let ACTORS = {
+let JSWINDOWACTORS = {
+  AboutCertViewer: {
+    parent: {
+      moduleURI: "resource://gre/modules/AboutCertViewerParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/modules/AboutCertViewerChild.jsm",
+
+      events: {
+        DOMWindowCreated: { capture: true },
+      },
+    },
+
+    matches: ["about:certificate"],
+  },
+
+  AboutHttpsOnlyError: {
+    parent: {
+      moduleURI: "resource://gre/actors/AboutHttpsOnlyErrorParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/AboutHttpsOnlyErrorChild.jsm",
+      events: {
+        DOMWindowCreated: {},
+      },
+    },
+    matches: ["about:httpsonlyerror?*"],
+    allFrames: true,
+  },
+
   AudioPlayback: {
     parent: {
       moduleURI: "resource://gre/actors/AudioPlaybackParent.jsm",
@@ -132,6 +196,17 @@ let ACTORS = {
     allFrames: true,
   },
 
+  Controllers: {
+    parent: {
+      moduleURI: "resource://gre/actors/ControllersParent.jsm",
+    },
+    child: {
+      moduleURI: "resource://gre/actors/ControllersChild.jsm",
+    },
+
+    allFrames: true,
+  },
+
   DateTimePicker: {
     parent: {
       moduleURI: "resource://gre/actors/DateTimePickerParent.jsm",
@@ -169,6 +244,7 @@ let ACTORS = {
     },
 
     allFrames: true,
+    messageManagerGroups: ["browsers", "test"],
   },
 
   // This is the actor that responds to requests from the find toolbar and
@@ -232,7 +308,15 @@ let ACTORS = {
     },
 
     allFrames: true,
+    messageManagerGroups: ["browsers", ""],
   },
+
+  ManifestMessages: {
+    child: {
+      moduleURI: "resource://gre/modules/ManifestMessagesChild.jsm",
+    },
+  },
+
   PictureInPicture: {
     parent: {
       moduleURI: "resource://gre/modules/PictureInPicture.jsm",
@@ -300,14 +384,6 @@ let ACTORS = {
     allFrames: true,
   },
 
-  SidebarSearch: {
-    parent: {
-      moduleURI: "resource://gre/actors/SidebarSearchParent.jsm",
-    },
-
-    allFrames: true,
-  },
-
   // This actor is available for all pages that one can
   // view the source of, however it won't be created until a
   // request to view the source is made via the message
@@ -369,34 +445,15 @@ let ACTORS = {
     allFrames: true,
   },
 
-  WebNavigation: {
-    child: {
-      moduleURI: "resource://gre/actors/WebNavigationChild.jsm",
-    },
-  },
-
-  Zoom: {
+  UnselectedTabHover: {
     parent: {
-      moduleURI: "resource://gre/actors/ZoomParent.jsm",
+      moduleURI: "resource://gre/actors/UnselectedTabHoverParent.jsm",
     },
     child: {
-      moduleURI: "resource://gre/actors/ZoomChild.jsm",
+      moduleURI: "resource://gre/actors/UnselectedTabHoverChild.jsm",
       events: {
-        PreFullZoomChange: {},
-        FullZoomChange: {},
-        TextZoomChange: {},
-        DoZoomEnlargeBy10: {
-          capture: true,
-          mozSystemGroup: true,
-        },
-        DoZoomReduceBy10: {
-          capture: true,
-          mozSystemGroup: true,
-        },
-        mozupdatedremoteframedimensions: {
-          capture: true,
-          mozSystemGroup: true,
-        },
+        "UnselectedTabHover:Enable": {},
+        "UnselectedTabHover:Disable": {},
       },
     },
 
@@ -428,7 +485,7 @@ let ACTORS = {
  * AudioPlaybackChild which lives in AudioPlaybackChild.jsm.
  *
  *
- * Actors are defined by calling ActorManagerParent.addActors, with an object
+ * Actors are defined by calling ActorManagerParent.addJSWindowActors, with an object
  * containing a property for each actor being defined, whose value is an object
  * describing how the actor should be loaded. That object may have the following
  * properties:
@@ -493,25 +550,6 @@ let ACTORS = {
  * sub-frames, it must use "allFrames".
  */
 let LEGACY_ACTORS = {
-  Controllers: {
-    child: {
-      module: "resource://gre/actors/ControllersChild.jsm",
-      messages: ["ControllerCommands:Do", "ControllerCommands:DoWithParams"],
-    },
-  },
-
-  ManifestMessages: {
-    child: {
-      module: "resource://gre/modules/ManifestMessagesChild.jsm",
-      messages: [
-        "DOM:Manifest:FireAppInstalledEvent",
-        "DOM:ManifestObtainer:Obtain",
-        "DOM:WebManifest:fetchIcon",
-        "DOM:WebManifest:hasManifestLink",
-      ],
-    },
-  },
-
   Printing: {
     child: {
       module: "resource://gre/actors/PrintingChild.jsm",
@@ -524,19 +562,7 @@ let LEGACY_ACTORS = {
         "Printing:Preview:Exit",
         "Printing:Preview:Navigate",
         "Printing:Preview:ParseDocument",
-        "Printing:Print",
       ],
-    },
-  },
-
-  UnselectedTabHover: {
-    child: {
-      module: "resource://gre/actors/UnselectedTabHoverChild.jsm",
-      events: {
-        "UnselectedTabHover:Enable": {},
-        "UnselectedTabHover:Disable": {},
-      },
-      messages: ["Browser:UnselectedTabHover"],
     },
   },
 };
@@ -585,10 +611,52 @@ var ActorManagerParent = {
   // filter keys as understood by MozDocumentMatcher.
   singletons: new DefaultMap(() => new ActorSet(null, "Child")),
 
-  addActors(actors) {
-    for (let [actorName, actor] of Object.entries(actors)) {
-      ChromeUtils.registerWindowActor(actorName, actor);
+  _addActors(actors, kind) {
+    let register, unregister;
+    switch (kind) {
+      case "JSProcessActor":
+        register = ChromeUtils.registerProcessActor;
+        unregister = ChromeUtils.unregisterProcessActor;
+        break;
+      case "JSWindowActor":
+        register = ChromeUtils.registerWindowActor;
+        unregister = ChromeUtils.unregisterWindowActor;
+        break;
+      default:
+        throw new Error("Invalid JSActor kind " + kind);
     }
+    for (let [actorName, actor] of Object.entries(actors)) {
+      // If enablePreference is set, only register the actor while the
+      // preference is set to true.
+      if (actor.enablePreference) {
+        let actorNameProp = actorName + "_Preference";
+        XPCOMUtils.defineLazyPreferenceGetter(
+          this,
+          actorNameProp,
+          actor.enablePreference,
+          false,
+          (prefName, prevValue, isEnabled) => {
+            if (isEnabled) {
+              register(actorName, actor);
+            } else {
+              unregister(actorName, actor);
+            }
+          }
+        );
+        if (!this[actorNameProp]) {
+          continue;
+        }
+      }
+
+      register(actorName, actor);
+    }
+  },
+
+  addJSProcessActors(actors) {
+    this._addActors(actors, "JSProcessActor");
+  },
+  addJSWindowActors(actors) {
+    this._addActors(actors, "JSWindowActor");
   },
 
   addLegacyActors(actors) {
@@ -630,5 +698,6 @@ var ActorManagerParent = {
   },
 };
 
-ActorManagerParent.addActors(ACTORS);
+ActorManagerParent.addJSProcessActors(JSPROCESSACTORS);
+ActorManagerParent.addJSWindowActors(JSWINDOWACTORS);
 ActorManagerParent.addLegacyActors(LEGACY_ACTORS);

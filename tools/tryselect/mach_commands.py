@@ -9,6 +9,7 @@ import importlib
 import os
 import sys
 
+import six
 from mach.decorators import (
     CommandProvider,
     Command,
@@ -56,7 +57,7 @@ class TryConfig(object):
         choices = Registrar.command_handlers['try'].subcommand_handlers.keys()
 
         return [
-            ('try.default', 'string', desc, 'syntax', {'choices': choices}),
+            ('try.default', 'string', desc, 'auto', {'choices': choices}),
             ('try.maxhistory', 'int', "Maximum number of pushes to save in history.", 10),
         ]
 
@@ -155,15 +156,22 @@ class TrySelect(MachCommandBase):
 
     def handle_try_config(self, **kwargs):
         from tryselect.util.dicttools import merge
+
+        to_validate = []
         kwargs.setdefault('try_config', {})
-        for cls in self.parser.task_configs.itervalues():
+        for cls in six.itervalues(self.parser.task_configs):
             try_config = cls.try_config(**kwargs)
             if try_config is not None:
+                to_validate.append(cls)
                 kwargs['try_config'] = merge(kwargs['try_config'], try_config)
 
             for name in cls.dests:
                 del kwargs[name]
 
+        # Validate task_configs after they have all been parsed to avoid
+        # depending on the order they were processed.
+        for cls in to_validate:
+            cls.validate(**kwargs)
         return kwargs
 
     def run(self, **kwargs):
@@ -188,9 +196,9 @@ class TrySelect(MachCommandBase):
         that provides its own set of command line arguments and are
         listed below.
 
-        If no subcommand is specified, the `syntax` selector is run by
-        default. Run |mach try syntax --help| for more information on
-        scheduling with the `syntax` selector.
+        If no subcommand is specified, the `auto` selector is run by
+        default. Run |mach try auto --help| for more information on
+        scheduling with the `auto` selector.
         """
         # We do special handling of presets here so that `./mach try --preset foo`
         # works no matter what subcommand 'foo' was saved with.
@@ -323,6 +331,15 @@ class TrySelect(MachCommandBase):
         path = os.path.join('tools', 'tryselect', 'selectors', 'chooser', 'requirements.txt')
         self.virtualenv_manager.install_pip_requirements(path, quiet=True)
 
+        return self.run(**kwargs)
+
+    @SubCommand('try',
+                'auto',
+                description='Automatically determine which tasks to run. This runs the same '
+                            'set of tasks that would be run on autoland. This '
+                            'selector is EXPERIMENTAL.',
+                parser=get_parser('auto'))
+    def try_auto(self, **kwargs):
         return self.run(**kwargs)
 
     @SubCommand('try',

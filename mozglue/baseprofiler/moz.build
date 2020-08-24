@@ -17,6 +17,7 @@ if CONFIG['MOZ_GECKO_PROFILER']:
         'public/BaseProfilerSharedLibraries.h',
         'public/BaseProfilingCategory.h',
         'public/BaseProfilingStack.h',
+        'public/ProfilingCategoryList.h',
     ]
     UNIFIED_SOURCES += [
         'core/PageInformation.cpp',
@@ -32,7 +33,7 @@ if CONFIG['MOZ_GECKO_PROFILER']:
         'core/RegisteredThread.cpp',
     ]
 
-    if CONFIG['OS_TARGET'] in ('Android', 'Linux'):
+    if CONFIG['OS_TARGET'] in ('Android', 'Linux', 'FreeBSD'):
         if CONFIG['CPU_ARCH'] in ('arm', 'aarch64', 'x86', 'x86_64', 'mips64'):
             UNIFIED_SOURCES += [
                 'lul/AutoObjectMapper.cpp',
@@ -47,7 +48,7 @@ if CONFIG['MOZ_GECKO_PROFILER']:
         SOURCES += [
             'core/shared-libraries-linux.cc',
         ]
-        if CONFIG['CPU_ARCH'] == 'arm':
+        if CONFIG['CPU_ARCH'] == 'arm' and CONFIG['OS_TARGET'] != 'FreeBSD':
             SOURCES += [
                 'core/EHABIStackWalk.cpp',
             ]
@@ -68,14 +69,12 @@ if CONFIG['MOZ_GECKO_PROFILER']:
     if CONFIG['OS_TARGET'] == 'Android':
         DEFINES['ANDROID_NDK_MAJOR_VERSION'] = CONFIG['ANDROID_NDK_MAJOR_VERSION']
         DEFINES['ANDROID_NDK_MINOR_VERSION'] = CONFIG['ANDROID_NDK_MINOR_VERSION']
-        LOCAL_INCLUDES += [
-            'lul',
-        ]
 
     FINAL_LIBRARY = 'mozglue'
 
-# BaseProfiler.h and BaseProfilerCounts.h are the only headers that are usable
-# in non-MOZ_GECKO_PROFILER builds, and they only contains no-op macros in that
+# Many of the headers in this directory are usable in non-MOZ_GECKO_PROFILER
+# builds.
+# BaseProfiler.h and BaseProfilerCounts.h only contain no-op macros in that
 # case.
 EXPORTS += [
     'public/BaseProfiler.h',
@@ -88,7 +87,14 @@ EXPORTS.mozilla += [
     'public/leb128iterator.h',
     'public/ModuloBuffer.h',
     'public/PowerOfTwo.h',
+    'public/ProfileBufferChunk.h',
+    'public/ProfileBufferChunkManager.h',
+    'public/ProfileBufferChunkManagerSingle.h',
+    'public/ProfileBufferChunkManagerWithLocalLimit.h',
+    'public/ProfileBufferControlledChunkManager.h',
+    'public/ProfileBufferEntrySerialization.h',
     'public/ProfileBufferIndex.h',
+    'public/ProfileChunkedBuffer.h',
 ]
 
 if CONFIG['MOZ_VTUNE']:

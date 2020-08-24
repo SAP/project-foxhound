@@ -104,7 +104,7 @@ ChromeProfileMigrator.prototype.getResources = async function Chrome_getResource
     if (await OS.File.exists(profileFolder)) {
       let localePropertySuffix = MigrationUtils._getLocalePropertyForBrowser(
         this.getBrowserKey()
-      ).replace(/^sourceName/, "");
+      ).replace(/^source-name-/, "");
       let possibleResourcePromises = [
         GetBookmarksResource(profileFolder, localePropertySuffix),
         GetHistoryResource(profileFolder),
@@ -264,7 +264,10 @@ async function GetBookmarksResource(aProfileFolder, aLocalePropertySuffix) {
         if (gotErrors) {
           throw new Error("The migration included errors.");
         }
-      })().then(() => aCallback(true), () => aCallback(false));
+      })().then(
+        () => aCallback(true),
+        () => aCallback(false)
+      );
     },
   };
 }
@@ -378,17 +381,22 @@ async function GetCookiesResource(aProfileFolder) {
         : "httponly";
       let isSecure = columns.includes("is_secure") ? "is_secure" : "secure";
 
+      let source_scheme = columns.includes("source_scheme")
+        ? "source_scheme"
+        : `"${Ci.nsICookie.SCHEME_UNSET}" as source_scheme`;
+
       // We don't support decrypting cookies yet so only import plaintext ones.
       let rows = await MigrationUtils.getRowsFromDBWithoutLocks(
         cookiesPath,
         "Chrome cookies",
-        `SELECT host_key, name, value, path, expires_utc, ${isSecure}, ${isHttponly}, encrypted_value
+        `SELECT host_key, name, value, path, expires_utc, ${isSecure}, ${isHttponly}, encrypted_value, ${source_scheme}
         FROM cookies
         WHERE length(encrypted_value) = 0`
       ).catch(ex => {
         Cu.reportError(ex);
         aCallback(false);
       });
+
       // If the promise was rejected we will have already called aCallback,
       // so we can just return here.
       if (!rows) {
@@ -403,6 +411,16 @@ async function GetCookiesResource(aProfileFolder) {
           host_key = host_key.substr(1);
         }
 
+        let schemeType = Ci.nsICookie.SCHEME_UNSET;
+        switch (row.getResultByName("source_scheme")) {
+          case 1:
+            schemeType = Ci.nsICookie.SCHEME_HTTP;
+            break;
+          case 2:
+            schemeType = Ci.nsICookie.SCHEME_HTTPS;
+            break;
+        }
+
         try {
           let expiresUtc =
             ChromeMigrationUtils.chromeTimeToDate(
@@ -413,6 +431,7 @@ async function GetCookiesResource(aProfileFolder) {
           if (!expiresUtc) {
             continue;
           }
+
           Services.cookies.add(
             host_key,
             row.getResultByName("path"),
@@ -423,7 +442,8 @@ async function GetCookiesResource(aProfileFolder) {
             false,
             parseInt(expiresUtc),
             {},
-            Ci.nsICookie.SAMESITE_NONE
+            Ci.nsICookie.SAMESITE_NONE,
+            schemeType
           );
         } catch (e) {
           Cu.reportError(e);

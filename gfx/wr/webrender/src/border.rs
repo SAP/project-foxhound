@@ -3,14 +3,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{BorderRadius, BorderSide, BorderStyle, ColorF, ColorU};
-use api::{NormalBorder as ApiNormalBorder, RepeatMode};
+use api::{NormalBorder as ApiNormalBorder, RepeatMode, EdgeAaSegmentMask};
 use api::units::*;
+use crate::clip::ClipChainId;
 use crate::ellipse::Ellipse;
 use euclid::vec2;
 use crate::scene_building::SceneBuilder;
+use crate::spatial_tree::SpatialNodeIndex;
 use crate::gpu_types::{BorderInstance, BorderSegment, BrushFlags};
 use crate::prim_store::{BorderSegmentInfo, BrushSegment, NinePatchDescriptor};
-use crate::prim_store::{EdgeAaSegmentMask, ScrollNodeAndClipChain};
 use crate::prim_store::borders::{NormalBorderPrim, NormalBorderData};
 use crate::util::{lerp, RectHelpers};
 use crate::internal_types::LayoutPrimitiveInfo;
@@ -214,13 +215,15 @@ impl<'a> SceneBuilder<'a> {
         info: &LayoutPrimitiveInfo,
         border: &ApiNormalBorder,
         widths: LayoutSideOffsets,
-        clip_and_scroll: ScrollNodeAndClipChain,
+        spatial_node_index: SpatialNodeIndex,
+        clip_chain_id: ClipChainId,
     ) {
         let mut border = *border;
         ensure_no_corner_overlap(&mut border.radius, info.rect.size);
 
         self.add_primitive(
-            clip_and_scroll,
+            spatial_node_index,
+            clip_chain_id,
             info,
             Vec::new(),
             NormalBorderPrim {
@@ -1352,7 +1355,7 @@ impl NinePatchDescriptor {
             repeat_vertical: RepeatMode,
             extra_flags: BrushFlags,
         ) {
-            if uv_rect.uv1.x < uv_rect.uv0.x || uv_rect.uv1.y < uv_rect.uv0.y {
+            if uv_rect.uv1.x <= uv_rect.uv0.x || uv_rect.uv1.y <= uv_rect.uv0.y {
                 return;
             }
 

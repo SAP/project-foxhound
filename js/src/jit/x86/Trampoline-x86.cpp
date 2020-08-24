@@ -311,23 +311,46 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
   masm.ret();
 }
 
+// Push AllRegs in a way that is compatible with RegisterDump, regardless of
+// what PushRegsInMask might do to reduce the set size.
+static void DumpAllRegs(MacroAssembler& masm) {
+#ifdef ENABLE_WASM_SIMD
+  masm.PushRegsInMask(AllRegs);
+#else
+  // When SIMD isn't supported, PushRegsInMask reduces the set of float
+  // registers to be double-sized, while the RegisterDump expects each of
+  // the float registers to have the maximal possible size
+  // (Simd128DataSize). To work around this, we just spill the double
+  // registers by hand here, using the register dump offset directly.
+  for (GeneralRegisterBackwardIterator iter(AllRegs.gprs()); iter.more();
+       ++iter) {
+    masm.Push(*iter);
+  }
+
+  masm.reserveStack(sizeof(RegisterDump::FPUArray));
+  for (FloatRegisterBackwardIterator iter(AllRegs.fpus()); iter.more();
+       ++iter) {
+    FloatRegister reg = *iter;
+    Address spillAddress(StackPointer, reg.getRegisterDumpOffsetInBytes());
+    masm.storeDouble(reg, spillAddress);
+  }
+#endif
+}
+
 void JitRuntime::generateInvalidator(MacroAssembler& masm, Label* bailoutTail) {
   invalidatorOffset_ = startTrampolineCode(masm);
 
   // We do the minimum amount of work in assembly and shunt the rest
   // off to InvalidationBailout. Assembly does:
   //
-  // - Pop the return address from the invalidation epilogue call.
   // - Push the machine state onto the stack.
   // - Call the InvalidationBailout routine with the stack pointer.
   // - Now that the frame has been bailed out, convert the invalidated
   //   frame into an exit frame.
   // - Do the normal check-return-code-and-thunk-to-the-interpreter dance.
 
-  masm.addl(Imm32(sizeof(uintptr_t)), esp);
-
   // Push registers such that we can access them from [base + code].
-  masm.PushRegsInMask(AllRegs);
+  DumpAllRegs(masm);
 
   masm.movl(esp, eax);  // Argument to jit::InvalidationBailout.
 
@@ -512,27 +535,7 @@ void JitRuntime::generateArgumentsRectifier(MacroAssembler& masm) {
 static void PushBailoutFrame(MacroAssembler& masm, uint32_t frameClass,
                              Register spArg) {
   // Push registers such that we can access them from [base + code].
-  if (JitSupportsSimd()) {
-    masm.PushRegsInMask(AllRegs);
-  } else {
-    // When SIMD isn't supported, PushRegsInMask reduces the set of float
-    // registers to be double-sized, while the RegisterDump expects each of
-    // the float registers to have the maximal possible size
-    // (Simd128DataSize). To work around this, we just spill the double
-    // registers by hand here, using the register dump offset directly.
-    for (GeneralRegisterBackwardIterator iter(AllRegs.gprs()); iter.more();
-         ++iter) {
-      masm.Push(*iter);
-    }
-
-    masm.reserveStack(sizeof(RegisterDump::FPUArray));
-    for (FloatRegisterBackwardIterator iter(AllRegs.fpus()); iter.more();
-         ++iter) {
-      FloatRegister reg = *iter;
-      Address spillAddress(StackPointer, reg.getRegisterDumpOffsetInBytes());
-      masm.storeDouble(reg, spillAddress);
-    }
-  }
+  DumpAllRegs(masm);
 
   // Push the bailout table number.
   masm.push(Imm32(frameClass));

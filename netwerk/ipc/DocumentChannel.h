@@ -8,12 +8,14 @@
 #ifndef mozilla_net_DocumentChannel_h
 #define mozilla_net_DocumentChannel_h
 
-#include "mozilla/net/PDocumentChannelChild.h"
+#include "mozilla/dom/ClientInfo.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsIChannel.h"
 #include "nsIChildChannel.h"
 #include "nsITraceableChannel.h"
-#include "mozilla/dom/ClientInfo.h"
+
+class nsDocShell;
 
 #define DOCUMENT_CHANNEL_IID                         \
   {                                                  \
@@ -24,6 +26,8 @@
 
 namespace mozilla {
 namespace net {
+
+uint64_t InnerWindowIDForExtantDoc(nsDocShell* docShell);
 
 /**
  * DocumentChannel is a protocol agnostic placeholder nsIChannel implementation
@@ -45,25 +49,6 @@ class DocumentChannel : public nsIIdentChannel, public nsITraceableChannel {
 
   NS_DECLARE_STATIC_IID_ACCESSOR(DOCUMENT_CHANNEL_IID)
 
-  DocumentChannel(nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
-                  nsLoadFlags aLoadFlags, uint32_t aLoadType,
-                  uint32_t aCacheKey, bool aIsActive, bool aIsTopLevelDoc,
-                  bool aHasNonEmptySandboxingFlags);
-
-  const nsTArray<DocumentChannelRedirect>& GetRedirectChain() const {
-    return mRedirects;
-  }
-
-  void GetLastVisit(nsIURI** aURI, uint32_t* aChannelRedirectFlags) const {
-    *aURI = do_AddRef(mLastVisitInfo.uri()).take();
-    *aChannelRedirectFlags = mLastVisitInfo.previousFlags();
-  }
-
-  void SetDocumentOpenFlags(uint32_t aFlags, bool aPluginsAllowed) {
-    mDocumentOpenFlags = Some(aFlags);
-    mPluginsAllowed = aPluginsAllowed;
-  }
-
   void SetNavigationTiming(nsDOMNavigationTiming* aTiming) {
     mTiming = aTiming;
   }
@@ -72,25 +57,42 @@ class DocumentChannel : public nsIIdentChannel, public nsITraceableChannel {
     mInitialClientInfo = aInfo;
   }
 
+  /**
+   * Will create the appropriate document channel:
+   * Either a DocumentChannelChild if called from the content process or
+   * a ParentProcessDocumentChannel if called from the parent process.
+   * This operation is infallible.
+   */
+  static already_AddRefed<DocumentChannel> CreateForDocument(
+      nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
+      nsLoadFlags aLoadFlags, nsIInterfaceRequestor* aNotificationCallbacks,
+      uint32_t aCacheKey, bool aUriModified, bool aIsXFOError);
+  static already_AddRefed<DocumentChannel> CreateForObject(
+      nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
+      nsLoadFlags aLoadFlags, nsIInterfaceRequestor* aNotificationCallbacks);
+
+  static bool CanUseDocumentChannel(nsIURI* aURI, uint32_t aLoadFlags);
+
  protected:
+  DocumentChannel(nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
+                  nsLoadFlags aLoadFlags, uint32_t aCacheKey, bool aUriModified,
+                  bool aIsXFOError);
+
+  void ShutdownListeners(nsresult aStatusCode);
+  void DisconnectChildListeners(const nsresult& aStatus,
+                                const nsresult& aLoadGroupStatus);
+  virtual void DeleteIPDL() {}
+
   nsDocShell* GetDocShell();
 
   virtual ~DocumentChannel() = default;
 
-  LastVisitInfo mLastVisitInfo;
-  nsTArray<DocumentChannelRedirect> mRedirects;
-
   const TimeStamp mAsyncOpenTime;
   const RefPtr<nsDocShellLoadState> mLoadState;
-  const uint32_t mLoadType;
   const uint32_t mCacheKey;
-  const bool mIsActive;
-  const bool mIsTopLevelDoc;
-  const bool mHasNonEmptySandboxingFlags;
 
   nsresult mStatus = NS_OK;
   bool mCanceled = false;
-  Maybe<uint32_t> mDocumentOpenFlags;
   bool mIsPending = false;
   bool mWasOpened = false;
   uint64_t mChannelId;
@@ -101,9 +103,14 @@ class DocumentChannel : public nsIIdentChannel, public nsITraceableChannel {
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsIStreamListener> mListener;
   nsCOMPtr<nsISupports> mOwner;
-  bool mPluginsAllowed = false;
   RefPtr<nsDOMNavigationTiming> mTiming;
   Maybe<dom::ClientInfo> mInitialClientInfo;
+  // mUriModified is true if we're doing a history load and the URI of the
+  // session history had been modified by pushState/replaceState.
+  bool mUriModified = false;
+  // mIsXFOError is true if we're handling a load error and the status of the
+  // failed channel is NS_ERROR_XFO_VIOLATION.
+  bool mIsXFOError = false;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(DocumentChannel, DOCUMENT_CHANNEL_IID)

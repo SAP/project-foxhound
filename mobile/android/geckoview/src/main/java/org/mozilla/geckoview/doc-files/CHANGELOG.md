@@ -11,7 +11,106 @@ exclude: true
 
 # GeckoView API Changelog.
 
-⚠️  breaking change
+⚠️  breaking change and deprecation notices
+
+## v80
+- Removed `GeckoSession.hashCode` and `GeckoSession.equals` overrides in favor
+  of the default implementations. ([bug 1647883]({{bugzilla}}1647883))
+- Added `strictSocialTrackingProtection` to [`ContentBlocking.Settings.Builder`][80.1] and `getStrictSocialTrackingProtection`
+  to [`ContentBlocking.Settings`][80.2].
+
+[80.1]: {{javadoc_uri}}/ContentBlocking.Settings.Builder.html
+[80.2]: {{javadoc_uri}}/ContentBlocking.Settings.html
+
+## v79
+- Added `runtime.openOptionsPage` support. For `options_ui.open_in_new_tab` ==
+  `false`, [`TabDelegate.onOpenOptionsPage`][79.1] is called.
+  ([bug 1618058]({{bugzilla}}1619766))
+- Added [`WebNotification.source`][79.2], which is the URL of the page
+  or Service Worker that created the notification.
+- Removed deprecated `WebExtensionController.setTabDelegate` and `WebExtensionController.getTabDelegate`
+  APIs ([bug 1618987]({{bugzilla}}1618987)).
+- ⚠️  [`RuntimeTelemetry#getSnapshots`][68.10] is removed after deprecation.
+  Use Glean to handle Gecko telemetry.
+  ([bug 1644447]({{bugzilla}}1644447))
+- Added [`ensureBuiltIn`][79.3] that ensures that a built-in extension is
+  installed without re-installing.
+  ([bug 1635564]({{bugzilla}}1635564))
+- Added [`ProfilerController`][79.4], accessible via [`GeckoRuntime.getProfilerController`][79.5]
+to allow adding gecko profiler markers.
+([bug 1624993]({{bugzilla}}1624993))
+- ⚠️ Deprecated `Parcelable` support in `GeckoSession` with the intention of removing
+  in GeckoView v82. ([bug 1649529]({{bugzilla}}1649529))
+- ⚠️ Deprecated [`GeckoRuntimeSettings.Builder.useMultiprocess`][79.6] and
+  [`GeckoRuntimeSettings.getUseMultiprocess`][79.7] with the intention of removing
+  them in GeckoView v82. ([bug 1649530]({{bugzilla}}1649530))
+
+[79.1]: {{javadoc_uri}}/WebExtension.TabDelegate.html#onOpenOptionsPage-org.mozilla.geckoview.WebExtension-
+[79.2]: {{javadoc_uri}}/WebNotification.html#source
+[79.3]: {{javadoc_uri}}/WebExtensionController.html#ensureBuiltIn-java.lang.String-java.lang.String-
+[79.4]: {{javadoc_uri}}/ProfilerController.html
+[79.5]: {{javadoc_uri}}/GeckoRuntime.html#getProfilerController--
+[79.6]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#useMultiprocess-boolean-
+[79.7]: {{javadoc_uri}}/GeckoRuntimeSettings.html#getUseMultiprocess--
+
+## v78
+- Added [`WebExtensionController.installBuiltIn`][78.1] that allows installing an
+  extension that is bundled with the APK. This method is meant as a replacement
+  for [`GeckoRuntime.registerWebExtension`][67.15], ⚠️ which is now deprecated
+  and will be removed in GeckoView 81.
+- Added [`CookieBehavior.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS`][78.2] to allow
+  enabling dynamic first party isolation; this will block tracking cookies and
+  isolate all other third party cookies by keying them based on the first party
+  from which they are accessed.
+- Added `cookieStoreId` field to [`WebExtension.CreateTabDetails`][78.3]. This adds the optional
+  ability to create a tab with a given cookie store ID for its [`contextual identity`][78.4].
+  ([bug 1622500]({{bugzilla}}1622500))
+- Added [`NavigationDelegate.onSubframeLoadRequest`][78.5] to allow intercepting
+  non-top-level navigations.
+- Added [`BeforeUnloadPrompt`][78.6] to respond to prompts from onbeforeunload.
+- ⚠️  Refactored `LoginStorage` to the [`Autocomplete`][78.7] API to support
+  login form autocomplete delegation.
+  Refactored 'LoginStorage.Delegate' to ['Autocomplete.LoginStorageDelegate'][78.8].
+  Refactored `GeckoSession.PromptDelegate.onLoginStoragePrompt` to
+  [`GeckoSession.PromptDelegate.onLoginSave`][78.9].
+  Added [`GeckoSession.PromptDelegate.onLoginSelect`][78.10].
+  ([bug 1618058]({{bugzilla}}1618058))
+- Added [`GeckoRuntimeSettings#setLoginAutofillEnabled`][78.11] to control
+  whether login forms should be automatically filled in suitable situations.
+
+[78.1]: {{javadoc_uri}}/WebExtensionController.html#installBuiltIn-java.lang.String-
+[78.2]: {{javadoc_uri}}/ContentBlocking.CookieBehavior.html#ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS
+[78.3]: {{javadoc_uri}}/WebExtension.CreateTabDetails.html
+[78.4]: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/contextualIdentities
+[78.5]: {{javadoc_uri}}/GeckoSession.NavigationDelegate.html#onSubframeLoadRequest-org.mozilla.geckoview.GeckoSession-org.mozilla.geckoview.GeckoSession.NavigationDelegate.LoadRequest-
+[78.6]: {{javadoc_uri}}/GeckoSession.PromptDelegate.BeforeUnloadPrompt.html
+[78.7]: {{javadoc_uri}}/Autocomplete.html
+[78.8]: {{javadoc_uri}}/Autocomplete.LoginStorageDelegate.html
+[78.9]: {{javadoc_uri}}/GeckoSession.PromptDelegate.html#onLoginSave-org.mozilla.geckoview.GeckoSession-org.mozilla.geckoview.GeckoSession.PromptDelegate.AutocompleteRequest-
+[78.10]: {{javadoc_uri}}/GeckoSession.PromptDelegate.html#onLoginSelect-org.mozilla.geckoview.GeckoSession-org.mozilla.geckoview.GeckoSession.PromptDelegate.AutocompleteRequest-
+[78.11]: {{javadoc_uri}}/GeckoRuntimeSettings.html#setLoginAutofillEnabled-boolean-
+
+## v77
+- Added [`GeckoRuntime.appendAppNotesToCrashReport`][77.1] For adding app notes to the crash report.
+  ([bug 1626979]({{bugzilla}}1626979))
+- ⚠️ Remove the `DynamicToolbarAnimator` API along with accesors on `GeckoView` and `GeckoSession`.
+  ([bug 1627716]({{bugzilla}}1627716))
+
+[77.1]: {{javadoc_uri}}/GeckoRuntime.html#appendAppNotesToCrashReport-java.lang.String-
+
+## v76
+- Added [`GeckoSession.PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS`][76.1] to control EME media key access.
+- [`RuntimeTelemetry#getSnapshots`][68.10] is deprecated and will be removed
+  in 79. Use Glean to handle Gecko telemetry.
+  ([bug 1620395]({{bugzilla}}1620395))
+- Added [`LoadRequest.isDirectNavigation`] to know when calls to
+  [`onLoadRequest`][76.3] originate from a direct navigation made by the app
+  itself.
+  ([bug 1624675]({{bugzilla}}1624675))
+
+[76.1]: {{javadoc_uri}}/GeckoSession.PermissionDelegate.html#PERMISSION_MEDIA_KEY_SYSTEM_ACCESS
+[76.2]: {{javadoc_uri}}/GeckoSession.NavigationDelegate.LoadRequest.html#isDirectNavigation
+[76.3]: {{javadoc_uri}}/GeckoSession.NavigationDelegate.html#onLoadRequest-org.mozilla.geckoview.GeckoSession-org.mozilla.geckoview.GeckoSession.NavigationDelegate.LoadRequest-
 
 ## v75
 - ⚠️ Remove `GeckoRuntimeSettings.Builder#useContentProcessHint`. The content
@@ -653,4 +752,4 @@ exclude: true
 [65.24]: {{javadoc_uri}}/CrashReporter.html#sendCrashReport-android.content.Context-android.os.Bundle-java.lang.String-
 [65.25]: {{javadoc_uri}}/GeckoResult.html
 
-[api-version]: 6b0849430f800a3e2226c1a87d26830d1cbe73ee
+[api-version]: c86252550df86d5790603805a43ad5a313c20dc0

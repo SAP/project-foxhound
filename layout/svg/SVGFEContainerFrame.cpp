@@ -13,15 +13,18 @@
 #include "SVGObserverUtils.h"
 #include "SVGFilters.h"
 
-using namespace mozilla;
+nsIFrame* NS_NewSVGFEContainerFrame(mozilla::PresShell* aPresShell,
+                                    mozilla::ComputedStyle* aStyle);
+
+namespace mozilla {
 
 /*
  * This frame is used by filter primitive elements that
  * have special child elements that provide parameters.
  */
 class SVGFEContainerFrame final : public nsContainerFrame {
-  friend nsIFrame* NS_NewSVGFEContainerFrame(mozilla::PresShell* aPresShell,
-                                             ComputedStyle* aStyle);
+  friend nsIFrame* ::NS_NewSVGFEContainerFrame(mozilla::PresShell* aPresShell,
+                                               ComputedStyle* aStyle);
 
  protected:
   explicit SVGFEContainerFrame(ComputedStyle* aStyle,
@@ -44,7 +47,7 @@ class SVGFEContainerFrame final : public nsContainerFrame {
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override {
-    return MakeFrameName(NS_LITERAL_STRING("SVGFEContainer"), aResult);
+    return MakeFrameName(u"SVGFEContainer"_ns, aResult);
   }
 #endif
 
@@ -57,16 +60,20 @@ class SVGFEContainerFrame final : public nsContainerFrame {
                                     int32_t aModType) override;
 
   virtual bool ComputeCustomOverflow(nsOverflowAreas& aOverflowAreas) override {
-    // We don't maintain a visual overflow rect
+    // We don't maintain a ink overflow rect
     return false;
   }
 };
 
-nsIFrame* NS_NewSVGFEContainerFrame(PresShell* aPresShell,
-                                    ComputedStyle* aStyle) {
+}  // namespace mozilla
+
+nsIFrame* NS_NewSVGFEContainerFrame(mozilla::PresShell* aPresShell,
+                                    mozilla::ComputedStyle* aStyle) {
   return new (aPresShell)
-      SVGFEContainerFrame(aStyle, aPresShell->GetPresContext());
+      mozilla::SVGFEContainerFrame(aStyle, aPresShell->GetPresContext());
 }
+
+namespace mozilla {
 
 NS_IMPL_FRAMEARENA_HELPERS(SVGFEContainerFrame)
 
@@ -94,3 +101,5 @@ nsresult SVGFEContainerFrame::AttributeChanged(int32_t aNameSpaceID,
 
   return nsContainerFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 }
+
+}  // namespace mozilla

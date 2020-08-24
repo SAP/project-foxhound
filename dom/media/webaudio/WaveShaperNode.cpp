@@ -212,10 +212,9 @@ class WaveShaperNodeEngine final : public AudioNodeEngine {
           0.0) {
         *aOutput = aInput;
         return;
-      } else {
-        nullInput = true;
-        channelCount = 1;
       }
+      nullInput = true;
+      channelCount = 1;
     }
 
     aOutput->AllocateChannels(channelCount);
@@ -350,7 +349,7 @@ void WaveShaperNode::SetCurveInternal(const nsTArray<float>& aCurve,
     return;
   }
 
-  mCurve = aCurve;
+  mCurve = aCurve.Clone();
   SendCurveToTrack();
 }
 
@@ -363,7 +362,7 @@ void WaveShaperNode::SendCurveToTrack() {
   AudioNodeTrack* ns = mTrack;
   MOZ_ASSERT(ns, "Why don't we have a track here?");
 
-  nsTArray<float> copyCurve(mCurve);
+  nsTArray<float> copyCurve(mCurve.Clone());
   ns->SetRawArrayData(copyCurve);
 }
 

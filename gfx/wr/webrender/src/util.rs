@@ -66,6 +66,9 @@ pub trait VecHelper<T> {
     /// Equivalent to `mem::replace(&mut vec, Vec::new())`
     fn take(&mut self) -> Self;
 
+    /// Call clear and return self (useful for chaining with calls that move the vector).
+    fn cleared(self) -> Self;
+
     /// Functionally equivalent to `mem::replace(&mut vec, Vec::new())` but tries
     /// to keep the allocation in the caller if it is empty or replace it with a
     /// pre-allocated vector.
@@ -97,6 +100,12 @@ impl<T> VecHelper<T> for Vec<T> {
 
     fn take(&mut self) -> Self {
         replace(self, Vec::new())
+    }
+
+    fn cleared(mut self) -> Self {
+        self.clear();
+
+        self
     }
 
     fn take_and_preallocate(&mut self) -> Self {
@@ -248,15 +257,29 @@ impl ScaleOffset {
 
     pub fn map_vector<F, T>(&self, vector: &Vector2D<f32, F>) -> Vector2D<f32, T> {
         Vector2D::new(
-            vector.x * self.scale.x + self.offset.x,
-            vector.y * self.scale.y + self.offset.y,
+            vector.x * self.scale.x,
+            vector.y * self.scale.y,
         )
     }
 
     pub fn unmap_vector<F, T>(&self, vector: &Vector2D<f32, F>) -> Vector2D<f32, T> {
         Vector2D::new(
-            (vector.x - self.offset.x) / self.scale.x,
-            (vector.y - self.offset.y) / self.scale.y,
+            vector.x / self.scale.x,
+            vector.y / self.scale.y,
+        )
+    }
+
+    pub fn map_point<F, T>(&self, point: &Point2D<f32, F>) -> Point2D<f32, T> {
+        Point2D::new(
+            point.x * self.scale.x + self.offset.x,
+            point.y * self.scale.y + self.offset.y,
+        )
+    }
+
+    pub fn unmap_point<F, T>(&self, point: &Point2D<f32, F>) -> Point2D<f32, T> {
+        Point2D::new(
+            (point.x - self.offset.x) / self.scale.x,
+            (point.y - self.offset.y) / self.scale.y,
         )
     }
 
@@ -300,6 +323,7 @@ pub trait MatrixHelpers<Src, Dst> {
     fn transform_kind(&self) -> TransformedRectKind;
     fn is_simple_translation(&self) -> bool;
     fn is_simple_2d_translation(&self) -> bool;
+    fn is_2d_scale_translation(&self) -> bool;
     /// Return the determinant of the 2D part of the matrix.
     fn determinant_2d(&self) -> f32;
     /// This function returns a point in the `Src` space that projects into zero XY.
@@ -410,6 +434,21 @@ impl<Src, Dst> MatrixHelpers<Src, Dst> for Transform3D<f32, Src, Dst> {
         }
 
         self.m43.abs() < NEARLY_ZERO
+    }
+
+    /*  is this...
+     *  X  0  0  0
+     *  0  Y  0  0
+     *  0  0  1  0
+     *  a  b  0  1
+     */
+    fn is_2d_scale_translation(&self) -> bool {
+        (self.m33 - 1.0).abs() < NEARLY_ZERO && 
+            (self.m44 - 1.0).abs() < NEARLY_ZERO &&
+            self.m12.abs() < NEARLY_ZERO && self.m13.abs() < NEARLY_ZERO && self.m14.abs() < NEARLY_ZERO &&
+            self.m21.abs() < NEARLY_ZERO && self.m23.abs() < NEARLY_ZERO && self.m24.abs() < NEARLY_ZERO &&
+            self.m31.abs() < NEARLY_ZERO && self.m32.abs() < NEARLY_ZERO && self.m34.abs() < NEARLY_ZERO &&
+            self.m43.abs() < NEARLY_ZERO
     }
 
     fn determinant_2d(&self) -> f32 {
@@ -1052,6 +1091,56 @@ impl Recycler {
     }
 }
 
+/// Record the size of a data structure to preallocate a similar size
+/// at the next frame and avoid growing it too many time.
+#[derive(Copy, Clone, Debug)]
+pub struct Preallocator {
+    size: usize,
+}
+
+impl Preallocator {
+    pub fn new(initial_size: usize) -> Self {
+        Preallocator {
+            size: initial_size,
+        }
+    }
+
+    /// Record the size of a vector to preallocate it the next frame.
+    pub fn record_vec<T>(&mut self, vec: &Vec<T>) {
+        let len = vec.len();
+        if len > self.size {
+            self.size = len;
+        } else {
+            self.size = (self.size + len) / 2;
+        }
+    }
+
+    /// The size that we'll preallocate the vector with.
+    pub fn preallocation_size(&self) -> usize {
+        // Round up to multiple of 16 to avoid small tiny
+        // variations causing reallocations.
+        (self.size + 15) & !15
+    }
+
+    /// Preallocate vector storage.
+    ///
+    /// The preallocated amount depends on the length recorded in the last
+    /// record_vec call.
+    pub fn preallocate_vec<T>(&self, vec: &mut Vec<T>) {
+        let len = vec.len();
+        let cap = self.preallocation_size();
+        if len < cap {
+            vec.reserve(cap - len);
+        }
+    }
+}
+
+impl Default for Preallocator {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
 /// Arc wrapper to support measurement via MallocSizeOf.
 ///
 /// Memory reporting for Arcs is tricky because of the risk of double-counting.
@@ -1178,3 +1267,13 @@ pub fn round_up_to_multiple(val: usize, mul: NonZeroUsize) -> usize {
     }
 }
 
+
+#[macro_export]
+macro_rules! c_str {
+    ($lit:expr) => {
+        unsafe {
+            std::ffi::CStr::from_ptr(concat!($lit, "\0").as_ptr()
+                                     as *const std::os::raw::c_char)
+        }
+    }
+}

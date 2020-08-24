@@ -238,8 +238,13 @@ class FuncExport {
   }
 
   bool canHaveJitEntry() const {
-    return !funcType_.temporarilyUnsupportedReftypeForEntry() &&
-           JitOptions.enableWasmJitEntry;
+    return
+#ifdef ENABLE_WASM_SIMD
+        !funcType_.hasV128ArgOrRet() &&
+#endif
+        !funcType_.temporarilyUnsupportedReftypeForEntry() &&
+        !funcType_.temporarilyUnsupportedResultCountForJitEntry() &&
+        JitOptions.enableWasmJitEntry;
   }
 
   bool clone(const FuncExport& src) {
@@ -315,19 +320,23 @@ typedef Vector<FuncImport, 0, SystemAllocPolicy> FuncImportVector;
 struct MetadataCacheablePod {
   ModuleKind kind;
   MemoryUsage memoryUsage;
-  uint32_t minMemoryLength;
+  uint64_t minMemoryLength;
   uint32_t globalDataLength;
-  Maybe<uint32_t> maxMemoryLength;
+  Maybe<uint64_t> maxMemoryLength;
   Maybe<uint32_t> startFuncIndex;
   Maybe<uint32_t> nameCustomSectionIndex;
   bool filenameIsURL;
+  bool v128Enabled;
+  bool omitsBoundsChecks;
 
   explicit MetadataCacheablePod(ModuleKind kind)
       : kind(kind),
         memoryUsage(MemoryUsage::None),
         minMemoryLength(0),
         globalDataLength(0),
-        filenameIsURL(false) {}
+        filenameIsURL(false),
+        v128Enabled(false),
+        omitsBoundsChecks(false) {}
 };
 
 typedef uint8_t ModuleHash[8];
@@ -340,7 +349,6 @@ struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
   TableDescVector tables;
   CacheableChars filename;
   CacheableChars sourceMapURL;
-  bool omitsBoundsChecks;
 
   // namePayload points at the name section's CustomSection::payload so that
   // the Names (which are use payload-relative offsets) can be used
@@ -355,18 +363,22 @@ struct Metadata : public ShareableBase<Metadata>, public MetadataCacheablePod {
   FuncReturnTypesVector debugFuncReturnTypes;
   ModuleHash debugHash;
 
-  // Feature flag that gets copied from ModuleEnvironment for BigInt support.
-  bool bigIntEnabled;
-
   explicit Metadata(ModuleKind kind = ModuleKind::Wasm)
       : MetadataCacheablePod(kind), debugEnabled(false), debugHash() {}
-  virtual ~Metadata() {}
+  virtual ~Metadata() = default;
 
   MetadataCacheablePod& pod() { return *this; }
   const MetadataCacheablePod& pod() const { return *this; }
 
   bool usesMemory() const { return memoryUsage != MemoryUsage::None; }
   bool usesSharedMemory() const { return memoryUsage == MemoryUsage::Shared; }
+
+  // Invariant: The result of getFuncResultType can only be used as long as
+  // MetaData is live, because the returned ResultType may encode a pointer to
+  // debugFuncReturnTypes.
+  ResultType getFuncResultType(uint32_t funcIndex) const {
+    return ResultType::Vector(debugFuncReturnTypes[funcIndex]);
+  };
 
   // AsmJSMetadata derives Metadata iff isAsmJS(). Mostly this distinction is
   // encapsulated within AsmJS.cpp, but the additional virtual functions allow

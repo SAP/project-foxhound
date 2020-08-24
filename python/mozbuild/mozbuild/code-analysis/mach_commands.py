@@ -3,9 +3,11 @@
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 from __future__ import absolute_import, print_function, unicode_literals
 
+import concurrent.futures
 import io
 import logging
 import json
+import multiprocessing
 import ntpath
 import os
 import re
@@ -16,6 +18,8 @@ import tarfile
 import tempfile
 import xml.etree.ElementTree as ET
 import yaml
+
+import six
 
 from mach.decorators import (
     CommandArgument,
@@ -88,7 +92,10 @@ class StaticAnalysisMonitor(object):
         self._current = None
         self._srcdir = srcdir
 
-        self._clang_tidy_config = clang_tidy_config['clang_checkers']
+        import copy
+
+        self._clang_tidy_config = copy.deepcopy(clang_tidy_config['clang_checkers'])
+
         # Transform the configuration to support Regex
         for item in self._clang_tidy_config:
             if item['name'] == '-*':
@@ -160,6 +167,11 @@ class StaticAnalysisMonitor(object):
                 warning['reliability'] = check_config.get('reliability', 'low')
                 warning['reason'] = check_config.get('reason')
                 warning['publish'] = check_config.get('publish', True)
+            elif warning["flag"] == "clang-diagnostic-error":
+                # For a "warning" that is flagged as "clang-diagnostic-error"
+                # set it as "publish"
+                warning['publish'] = True
+
         return (warning, True)
 
 
@@ -172,6 +184,9 @@ class StaticAnalysis(MachCommandBase):
     # File contaning all paths to exclude from formatting
     _format_ignore_file = '.clang-format-ignore'
 
+    # List of file extension to consider (should start with dot)
+    _check_syntax_include_extensions = ('.cpp', '.c', '.cc', '.cxx')
+
     _clang_tidy_config = None
     _cov_config = None
 
@@ -179,10 +194,14 @@ class StaticAnalysis(MachCommandBase):
              description='Run C++ static analysis checks')
     def static_analysis(self):
         # If no arguments are provided, just print a help message.
+        """Detailed documentation:
+        https://firefox-source-docs.mozilla.org/code-quality/static-analysis.html
+        """
         mach = Mach(os.getcwd())
 
-        def populate_context(context, key=None):
-            context.topdir = self.topsrcdir
+        def populate_context(key=None):
+            if key == 'topdir':
+                return self.topsrcdir
 
         mach.populate_context_handler = populate_context
         mach.run(['static-analysis', '--help'])
@@ -225,7 +244,8 @@ class StaticAnalysis(MachCommandBase):
         )
 
         self._set_log_level(verbose)
-        self.log_manager.enable_all_structured_loggers()
+        self._activate_virtualenv()
+        self.log_manager.enable_unstructured()
 
         rc = self._get_clang_tools(verbose=verbose)
         if rc != 0:
@@ -246,7 +266,7 @@ class StaticAnalysis(MachCommandBase):
         if outgoing:
             repo = get_repository_object(self.topsrcdir)
             files = repo.get_outgoing_files()
-            source = map(os.path.abspath, files)
+            source = [os.path.abspath(f) for f in files]
 
         # Split in several chunks to avoid hitting Python's limit of 100 groups in re
         compile_db = json.loads(open(self._compile_db, 'r').read())
@@ -254,7 +274,7 @@ class StaticAnalysis(MachCommandBase):
         import re
         chunk_size = 50
         for offset in range(0, len(source), chunk_size):
-            source_chunks = source[offset:offset + chunk_size]
+            source_chunks = [re.escape(f) for f in source[offset:offset + chunk_size].copy()]
             name_re = re.compile('(' + ')|('.join(source_chunks) + ')')
             for f in compile_db:
                 if name_re.search(f['file']):
@@ -269,6 +289,9 @@ class StaticAnalysis(MachCommandBase):
                      "cannot be used for analysis since they do not consist compilation units.")
             return 0
 
+        # Escape the files from source
+        source = [re.escape(f) for f in source]
+
         cwd = self.topobjdir
         self._compilation_commands_path = self.topobjdir
         if self._clang_tidy_config is None:
@@ -281,7 +304,6 @@ class StaticAnalysis(MachCommandBase):
 
         with StaticAnalysisOutputManager(self.log_manager, monitor, footer) as output_manager:
             import math
-            import multiprocessing
             batch_size = int(math.ceil(float(len(source)) / multiprocessing.cpu_count()))
             for i in range(0, len(source), batch_size):
                 args = self._get_clang_tidy_command(
@@ -332,7 +354,8 @@ class StaticAnalysis(MachCommandBase):
     def check_coverity(self, source=[], output=None, coverity_output_path=None,
                        outgoing=False, full_build=False, verbose=False):
         self._set_log_level(verbose)
-        self.log_manager.enable_all_structured_loggers()
+        self._activate_virtualenv()
+        self.log_manager.enable_unstructured()
 
         if 'MOZ_AUTOMATION' not in os.environ:
             self.log(logging.INFO, 'static-analysis', {},
@@ -348,7 +371,7 @@ class StaticAnalysis(MachCommandBase):
         if outgoing:
             repo = get_repository_object(self.topsrcdir)
             files = repo.get_outgoing_files()
-            source = map(os.path.abspath, files)
+            source = [os.path.abspath(f) for f in files]
 
         # Verify that we have source files or we are dealing with a full-build
         if len(source) == 0 and not full_build:
@@ -468,6 +491,10 @@ class StaticAnalysis(MachCommandBase):
                      'There are no files that need to be analyzed.')
             return 0
 
+        if len(self.cov_non_unified_paths):
+            self.cov_non_unified_paths = [mozpath.join(
+                self.topsrcdir, path) for path in self.cov_non_unified_paths]
+
         # For each element in commands_list run `cov-translate`
         for element in commands_list:
 
@@ -476,8 +503,14 @@ class StaticAnalysis(MachCommandBase):
                 # '-DSOME_DEF="ValueOfAString"', please see Bug 1588283.
                 return [re.sub(r'\'-D(.*)="(.*)"\'', r'-D\1="\2"', arg) for arg in cmd]
 
+            build_command = element['command'].split(' ')
+            # For modules that are compatible with the non unified build environment
+            # use the the implicit file for analysis in the detriment of the unified
+            if any(element['file'].startswith(path) for path in self.cov_non_unified_paths):
+                build_command[-1] = element['file']
+
             cmd = [self.cov_translate, '--dir', self.cov_idir_path] + \
-                transform_cmd(element['command'].split(' '))
+                transform_cmd(build_command)
 
             if self.run_cov_command(cmd, element['directory']):
                 return 1
@@ -557,7 +590,6 @@ class StaticAnalysis(MachCommandBase):
                 dict_issue = {
                     'line': issue['mainEventLineNumber'],
                     'flag': issue['checkerName'],
-                    'build_error': issue['checkerName'].startswith('RW.CLANG'),
                     'message': event_path['eventDescription'],
                     'reliability': self.get_reliability_index_for_cov_checker(
                         issue['checkerName']
@@ -583,6 +615,10 @@ class StaticAnalysis(MachCommandBase):
             for issue in result['issues']:
                 path = build_repo_relative_path(issue['strippedMainEventFilePathname'],
                                                 self.topsrcdir)
+                # Skip clang diagnostic messages
+                if issue['checkerName'].startswith('RW.CLANG'):
+                    continue
+
                 if path is None:
                     # Since we skip a result we should log it
                     self.log(logging.INFO, 'static-analysis', {},
@@ -610,9 +646,7 @@ class StaticAnalysis(MachCommandBase):
                  'Using symbol upload token from the secrets service: "{}"'.format(secrets_url))
 
         import requests
-        self.log_manager.enable_unstructured()
         res = requests.get(secrets_url)
-        self.log_manager.disable_unstructured()
         res.raise_for_status()
         secret = res.json()
         cov_config = secret['secret'] if 'secret' in secret else None
@@ -635,6 +669,7 @@ class StaticAnalysis(MachCommandBase):
         self.cov_capture_search = cov_config.get('fs_capture_search', None)
         self.cov_full_stack = cov_config.get('full_stack', False)
         self.cov_stream = cov_config.get('stream', False)
+        self.cov_non_unified_paths = cov_config.get('non_unified', [])
 
         return 0
 
@@ -782,7 +817,9 @@ class StaticAnalysis(MachCommandBase):
                    task='compileWithGeckoBinariesDebugSources',
                    skip_export=False, outgoing=False, output=None):
         self._set_log_level(verbose)
-        self.log_manager.enable_all_structured_loggers()
+        self._activate_virtualenv()
+        self.log_manager.enable_unstructured()
+
         if self.substs['MOZ_BUILD_APP'] != 'mobile/android':
             self.log(logging.WARNING, 'static-analysis', {},
                      'Cannot check java source code unless you are building for android!')
@@ -866,7 +903,7 @@ class StaticAnalysis(MachCommandBase):
             return (None, [])
         # create a temporary file in which we place all sources
         # this is used by the analysis command to only analyze certain files
-        f = tempfile.NamedTemporaryFile()
+        f = tempfile.NamedTemporaryFile(mode="wt")
         for source in sources:
             f.write(source+'\n')
         f.flush()
@@ -1045,6 +1082,7 @@ class StaticAnalysis(MachCommandBase):
         # checker in particulat and thus 'force_download' becomes 'False' since we want to
         # do this on a local trusted clang-tidy package.
         self._set_log_level(verbose)
+        self._activate_virtualenv()
         self._dump_results = dump_results
 
         force_download = not self._dump_results
@@ -1112,9 +1150,6 @@ class StaticAnalysis(MachCommandBase):
                     platform)
                 )
             return self.TOOLS_UNSUPORTED_PLATFORM
-
-        import concurrent.futures
-        import multiprocessing
 
         max_workers = multiprocessing.cpu_count()
 
@@ -1286,7 +1321,7 @@ class StaticAnalysis(MachCommandBase):
 
     def _create_temp_compilation_db(self, config):
         directory = tempfile.mkdtemp(prefix='cc')
-        with open(mozpath.join(directory, "compile_commands.json"), "wb") as file_handler:
+        with open(mozpath.join(directory, "compile_commands.json"), "w") as file_handler:
             compile_commands = []
             director = mozpath.join(self.topsrcdir, 'tools', 'clang-tidy', 'test')
             for item in config['clang_checkers']:
@@ -1319,8 +1354,6 @@ class StaticAnalysis(MachCommandBase):
             self.__infer_tool = mozpath.join(self.topsrcdir, 'tools', 'infer')
             self.__infer_test_folder = mozpath.join(self.__infer_tool, 'test')
 
-            import concurrent.futures
-            import multiprocessing
             max_workers = multiprocessing.cpu_count()
             self.log(logging.INFO, 'static-analysis', {},
                      "RUNNING: infer autotest for platform {0} with {1} workers.".format(
@@ -1458,13 +1491,19 @@ class StaticAnalysis(MachCommandBase):
                               'Delete local helpers and reset static analysis helper tool cache')
     def clear_cache(self, verbose=False):
         self._set_log_level(verbose)
-        rc = self._get_clang_tools(force=True, download_if_needed=True, skip_cache=True,
-                                   verbose=verbose)
-        if rc == 0:
-            self._get_infer(force=True, download_if_needed=True, skip_cache=True,
-                            verbose=verbose)
+        rc = self._get_clang_tools(
+            force=True, download_if_needed=True, skip_cache=True, verbose=verbose)
+
         if rc != 0:
             return rc
+
+        job, _ = self.platform
+        if job == 'linux64':
+            rc = self._get_infer(
+                force=True, download_if_needed=True, skip_cache=True, verbose=verbose)
+            if rc != 0:
+                return rc
+
         return self._artifact_manager.artifact_clear_cache()
 
     @StaticAnalysisSubCommand('static-analysis', 'print-checks',
@@ -1472,14 +1511,27 @@ class StaticAnalysis(MachCommandBase):
     def print_checks(self, verbose=False):
         self._set_log_level(verbose)
         rc = self._get_clang_tools(verbose=verbose)
-        if rc == 0:
-            rc = self._get_infer(verbose=verbose)
+
         if rc != 0:
             return rc
+
+        if self._clang_tidy_config is None:
+            self._clang_tidy_config = self._get_clang_tidy_config()
+
         args = [self._clang_tidy_path, '-list-checks', '-checks=%s' % self._get_checks()]
-        rc = self._run_command_in_objdir(args=args, pass_thru=True)
+
+        rc = self.run_process(args=args, pass_thru=True)
         if rc != 0:
             return rc
+
+        job, _ = self.platform
+        if job != 'linux64':
+            return 0
+
+        rc = self._get_infer(verbose=verbose)
+        if rc != 0:
+            return rc
+
         checkers, _ = self._get_infer_config()
         print('Infer checks:')
         for checker in checkers:
@@ -1518,6 +1570,80 @@ class StaticAnalysis(MachCommandBase):
             process.wait()
             return process.returncode
 
+    @StaticAnalysisSubCommand('static-analysis', 'check-syntax',
+                              'Run the check-syntax for C/C++ files based on '
+                              '`compile_commands.json`')
+    @CommandArgument('source', nargs='*',
+                     help='Source files to be compiled checked (regex on path).')
+    def check_syntax(self, source, verbose=False):
+        self._set_log_level(verbose)
+        self.log_manager.enable_unstructured()
+
+        # Verify that we have a valid `source`
+        if len(source) == 0:
+            self.log(logging.ERROR, 'static-analysis', {},
+                     'ERROR: Specify files that need to be syntax checked.')
+            return
+
+        rc = self._build_compile_db(verbose=verbose)
+        if rc != 0:
+            self.log(logging.ERROR, 'static-analysis', {},
+                     'ERROR: Unable to build the `compile_commands.json`.')
+            return rc
+        rc = self._build_export(jobs=2, verbose=verbose)
+
+        if rc != 0:
+            self.log(logging.ERROR, 'static-analysis', {},
+                     'ERROR: Unable to build export.')
+            return rc
+
+        # Build the list with all files from source
+        path_list = self._generate_path_list(source)
+
+        compile_db = json.load(open(self._compile_db, 'r'))
+
+        if compile_db is None:
+            self.log(logging.ERROR, 'static-analysis', {},
+                     'ERROR: Loading {}'.format(self._compile_db))
+            return 1
+
+        commands = []
+
+        compile_dict = {entry['file']: entry['command']
+                        for entry in compile_db}
+        # Begin the compile check for each file
+        for file in path_list:
+            # It must be a C/C++ file
+            ext = mozpath.splitext(file)[-1]
+
+            if ext.lower() not in self._check_syntax_include_extensions:
+                self.log(logging.INFO, 'static-analysis',
+                         {}, 'Skipping {}'.format(file))
+                continue
+            file_with_abspath = mozpath.join(self.topsrcdir, file)
+            # Found for a file that we are looking
+
+            entry = compile_dict.get(file_with_abspath, None)
+            if entry:
+                command = entry.split(' ')
+                # Verify to see if we are dealing with an unified build
+                if 'Unified_' in command[-1]:
+                    # Translate the unified `TU` to per file basis TU
+                    command[-1] = file_with_abspath
+
+                # We want syntax-only
+                command.append('-fsyntax-only')
+                commands.append(command)
+
+        max_workers = multiprocessing.cpu_count()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
+            for command in commands:
+                futures.append(executor.submit(self.run_process, args=command,
+                                               cwd=self.topsrcdir, pass_thru=True,
+                                               ensure_exit_code=False))
+
     @Command('clang-format',  category='misc', description='Run clang-format on current changes')
     @CommandArgument('--show', '-s', action='store_const', const='stdout', dest='output_path',
                      help='Show diff output on stdout instead of applying changes')
@@ -1534,8 +1660,8 @@ class StaticAnalysis(MachCommandBase):
     @CommandArgument('--path', '-p', nargs='+', default=None,
                      help='Specify the path(s) to reformat')
     @CommandArgument('--commit', '-c', default=None,
-                     help='Specify a commit to reformat from.'
-                          'For git you can also pass a range of commits (foo..bar)'
+                     help='Specify a commit to reformat from. '
+                          'For git you can also pass a range of commits (foo..bar) '
                           'to format all of them at the same time.')
     @CommandArgument('--output', '-o', default=None, dest='output_path',
                      help='Specify a file handle to write clang-format raw output instead of '
@@ -1545,7 +1671,7 @@ class StaticAnalysis(MachCommandBase):
                      help='Specify the output format used: diff is the raw patch provided by '
                      'clang-format, json is a list of atomic changes to process.')
     @CommandArgument('--outgoing', default=False, action='store_true',
-                     help='Run clang-format on outgoing files from mercurial repository')
+                     help='Run clang-format on outgoing files from mercurial repository.')
     def clang_format(self, assume_filename, path, commit, output_path=None, output_format='diff',
                      verbose=False, outgoing=False):
         # Run clang-format or clang-format-diff on the local changes
@@ -1824,9 +1950,14 @@ class StaticAnalysis(MachCommandBase):
 
         # Then build the rest of the build dependencies by running the full
         # export target, because we can't do anything better.
-        return builder._run_make(directory=self.topobjdir, target='export',
-                                 line_handler=None, silent=not verbose,
-                                 num_jobs=jobs)
+        for target in ('export', 'pre-compile'):
+            rc = builder._run_make(directory=self.topobjdir, target=target,
+                                   line_handler=None, silent=not verbose,
+                                   num_jobs=jobs)
+            if rc != 0:
+                return rc
+
+        return 0
 
     def _set_clang_tools_paths(self):
         rc, config, _ = self._get_config_environment()
@@ -1957,7 +2088,7 @@ class StaticAnalysis(MachCommandBase):
             # https://git-scm.com/docs/gitglossary#gitglossary-aiddefpathspecapathspec
             with open(self._format_ignore_file, 'rb') as exclude_pattern_file:
                 for pattern in exclude_pattern_file.readlines():
-                    pattern = pattern.rstrip()
+                    pattern = six.ensure_str(pattern.rstrip())
                     pattern = pattern.replace('.*', '**')
                     if not pattern or pattern.startswith('#'):
                         continue  # empty or comment
@@ -2099,6 +2230,40 @@ class StaticAnalysis(MachCommandBase):
             process.wait()
             return process.returncode
 
+    def _get_clang_format_cfg(self, current_dir):
+        clang_format_cfg_path = mozpath.join(current_dir, '.clang-format')
+
+        if os.path.exists(clang_format_cfg_path):
+            # Return found path for .clang-format
+            return clang_format_cfg_path
+
+        if current_dir != self.topsrcdir:
+            # Go to parent directory
+            return self._get_clang_format_cfg(os.path.split(current_dir)[0])
+        # We have reached self.topsrcdir so return None
+        return None
+
+    def _copy_clang_format_for_show_diff(self, current_dir, cached_clang_format_cfg, tmpdir):
+        # Lookup for .clang-format first in cache
+        clang_format_cfg = cached_clang_format_cfg.get(current_dir, None)
+
+        if clang_format_cfg is None:
+            # Go through top directories
+            clang_format_cfg = self._get_clang_format_cfg(current_dir)
+
+            # This is unlikely to happen since we must have .clang-format from
+            # self.topsrcdir but in any case we should handle a potential error
+            if clang_format_cfg is None:
+                print("Cannot find corresponding .clang-format.")
+                return 1
+
+            # Cache clang_format_cfg for potential later usage
+            cached_clang_format_cfg[current_dir] = clang_format_cfg
+
+        # Copy .clang-format to the tmp dir where the formatted file is copied
+        shutil.copy(clang_format_cfg, tmpdir)
+        return 0
+
     def _run_clang_format_path(self, clang_format, paths, output_file, output_format):
 
         # Run clang-format on files or directories directly
@@ -2125,6 +2290,7 @@ class StaticAnalysis(MachCommandBase):
 
         if output_file:
             patches = {}
+            cached_clang_format_cfg = {}
             for i in range(0, len(path_list)):
                 l = path_list[i: (i + 1)]
 
@@ -2133,12 +2299,19 @@ class StaticAnalysis(MachCommandBase):
                 # and show the diff
                 original_path = l[0]
                 local_path = ntpath.basename(original_path)
+                current_dir = ntpath.dirname(original_path)
                 target_file = os.path.join(tmpdir, local_path)
                 faketmpdir = os.path.dirname(target_file)
                 if not os.path.isdir(faketmpdir):
                     os.makedirs(faketmpdir)
                 shutil.copy(l[0], faketmpdir)
                 l[0] = target_file
+
+                ret = self._copy_clang_format_for_show_diff(current_dir,
+                                                            cached_clang_format_cfg,
+                                                            faketmpdir)
+                if ret != 0:
+                    return ret
 
                 # Run clang-format on the list
                 try:
@@ -2165,8 +2338,15 @@ class StaticAnalysis(MachCommandBase):
                             # Replace the temp path by the path relative to the repository to
                             # display a valid patch
                             relative_path = os.path.relpath(original_path, self.topsrcdir)
-                            patch = e.output.replace(target_file, relative_path)
-                            patch = patch.replace(original_path, relative_path)
+                            # We must modify the paths in order to be compatible with the
+                            # `diff` format.
+                            original_path_diff = os.path.join("a", relative_path)
+                            target_path_diff = os.path.join("b", relative_path)
+                            e.output = e.output.decode('utf-8')
+                            patch = e.output.replace("+++ {}".format(target_file),
+                                                     "+++ {}".format(target_path_diff)).replace(
+                                                         "-- {}".format(original_path),
+                                                         "-- {}".format(original_path_diff))
                             patches[original_path] = patch
 
             if output_format == 'json':
@@ -2182,8 +2362,6 @@ class StaticAnalysis(MachCommandBase):
             return 0
 
         # Run clang-format in parallel trying to saturate all of the available cores.
-        import concurrent.futures
-        import multiprocessing
         import math
 
         max_workers = multiprocessing.cpu_count()
@@ -2228,7 +2406,7 @@ class StaticAnalysis(MachCommandBase):
         list of patches, and calculates line level informations from the
         character level provided changes.
         '''
-        content = open(path, 'r').read().decode('utf-8')
+        content = six.ensure_str(open(path, 'r').read())
 
         def _nb_of_lines(start, end):
             return len(content[start:end].splitlines())

@@ -191,7 +191,6 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/Span.h"
 #include "mozilla/TextUtils.h"
-#include "mozilla/TypeTraits.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"
 
@@ -200,10 +199,12 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <type_traits>
 
 #include "jspubtd.h"
 #include "Taint.h"
 
+#include "frontend/CompilationInfo.h"
 #include "frontend/ErrorReporter.h"
 #include "frontend/Token.h"
 #include "frontend/TokenKind.h"
@@ -234,13 +235,20 @@ extern const char* ReservedWordToCharZ(PropertyName* str);
 extern const char* ReservedWordToCharZ(TokenKind tt);
 
 struct TokenStreamFlags {
-  bool isEOF : 1;           // Hit end of file.
-  bool isDirtyLine : 1;     // Non-whitespace since start of line.
-  bool sawOctalEscape : 1;  // Saw an octal character escape.
-  bool hadError : 1;        // Hit a syntax error, at start or during a
-                            // token.
+  // Hit end of file.
+  bool isEOF : 1;
+  // Non-whitespace since start of line.
+  bool isDirtyLine : 1;
+  // Saw an octal character escape or a 0-prefixed octal literal.
+  bool sawDeprecatedOctal : 1;
+  // Hit a syntax error, at start or during a token.
+  bool hadError : 1;
 
-  TokenStreamFlags() : isEOF(), isDirtyLine(), sawOctalEscape(), hadError() {}
+  TokenStreamFlags()
+      : isEOF(false),
+        isDirtyLine(false),
+        sawDeprecatedOctal(false),
+        hadError(false) {}
 };
 
 template <typename Unit>
@@ -279,7 +287,7 @@ class TokenStreamShared {
   }
 };
 
-static_assert(mozilla::IsEmpty<TokenStreamShared>::value,
+static_assert(std::is_empty_v<TokenStreamShared>,
               "TokenStreamShared shouldn't bloat classes that inherit from it");
 
 template <typename Unit, class AnyCharsAccess>
@@ -753,9 +761,9 @@ class TokenStreamAnyChars : public TokenStreamShared {
 
   // Flag methods.
   bool isEOF() const { return flags.isEOF; }
-  bool sawOctalEscape() const { return flags.sawOctalEscape; }
+  bool sawDeprecatedOctal() const { return flags.sawDeprecatedOctal; }
   bool hadError() const { return flags.hadError; }
-  void clearSawOctalEscape() { flags.sawOctalEscape = false; }
+  void clearSawDeprecatedOctal() { flags.sawDeprecatedOctal = false; }
 
   bool hasInvalidTemplateEscape() const {
     return invalidTemplateEscapeType != InvalidEscapeType::None;
@@ -1508,13 +1516,17 @@ class TokenStreamCharsShared {
    */
   CharBuffer charBuffer;
 
+  /** Information for parsing with a lifetime longer than the parser itself. */
+  CompilationInfo* compilationInfo;
+
   // Taintfox: TODO: link this taint to the charBuffer
   StringTaint _taint;
 
  protected:
-  explicit TokenStreamCharsShared(JSContext* cx, const StringTaint& taint)
-    : charBuffer(cx),
-      _taint(taint) {}
+  explicit TokenStreamCharsShared(JSContext* cx,
+                                  CompilationInfo* compilationInfo,
+                                  const StringTaint& taint)
+    : charBuffer(cx), compilationInfo(compilationInfo), _taint(taint) {}
 
   MOZ_MUST_USE bool appendCodePointToCharBuffer(uint32_t codePoint);
 
@@ -1531,8 +1543,22 @@ class TokenStreamCharsShared {
     return mozilla::IsAscii(static_cast<char32_t>(unit));
   }
 
-  JSAtom* drainCharBufferIntoAtom(JSContext* cx) {
-    JSAtom* atom = AtomizeChars(cx, charBuffer.begin(), charBuffer.length());
+  JSAtom* drainCharBufferIntoAtom() {
+    JSAtom* atom = AtomizeChars(this->compilationInfo->cx, charBuffer.begin(),
+                                charBuffer.length());
+    if (!atom) {
+      return nullptr;
+    }
+
+    // Add to parser atoms table.
+#ifdef JS_PARSER_ATOMS
+    auto maybeId = this->compilationInfo->parserAtoms.internChar16(
+        this->compilationInfo->cx, charBuffer.begin(), charBuffer.length());
+    if (maybeId.isErr()) {
+      return nullptr;
+    }
+#endif  // JS_PARSER_ATOMS
+
     charBuffer.clear();
     return atom;
   }
@@ -1579,7 +1605,8 @@ class TokenStreamCharsBase : public TokenStreamCharsShared {
   // End of fields.
 
  protected:
-  TokenStreamCharsBase(JSContext* cx, const Unit* units, size_t length,
+  TokenStreamCharsBase(JSContext* cx, CompilationInfo* compilationInfo,
+                       const Unit* units, size_t length,
                        const StringTaint& taint, size_t startOffset);
 
   /**
@@ -1596,8 +1623,7 @@ class TokenStreamCharsBase : public TokenStreamCharsShared {
     sourceUnits.ungetCodeUnit();
   }
 
-  static MOZ_ALWAYS_INLINE JSAtom* atomizeSourceChars(
-      JSContext* cx, mozilla::Span<const Unit> units);
+  MOZ_ALWAYS_INLINE JSAtom* atomizeSourceChars(mozilla::Span<const Unit> units);
 
   /**
    * Try to match a non-LineTerminator ASCII code point.  Return true iff it
@@ -1683,18 +1709,45 @@ inline void TokenStreamCharsBase<Unit>::consumeKnownCodeUnit(int32_t unit) {
 }
 
 template <>
-/* static */ MOZ_ALWAYS_INLINE JSAtom*
-TokenStreamCharsBase<char16_t>::atomizeSourceChars(
-    JSContext* cx, mozilla::Span<const char16_t> units) {
-  return AtomizeChars(cx, units.data(), units.size());
+MOZ_ALWAYS_INLINE JSAtom* TokenStreamCharsBase<char16_t>::atomizeSourceChars(
+    mozilla::Span<const char16_t> units) {
+  JSAtom* atom =
+      AtomizeChars(this->compilationInfo->cx, units.data(), units.size());
+  if (!atom) {
+    return nullptr;
+  }
+
+#ifdef JS_PARSER_ATOMS
+  auto maybeId = this->compilationInfo->parserAtoms.internChar16(
+      this->compilationInfo->cx, units.data(), units.size());
+  if (maybeId.isErr()) {
+    return nullptr;
+  }
+#endif  // JS_PARSER_ATOMS
+
+  return atom;
 }
 
 template <>
 /* static */ MOZ_ALWAYS_INLINE JSAtom*
 TokenStreamCharsBase<mozilla::Utf8Unit>::atomizeSourceChars(
-    JSContext* cx, mozilla::Span<const mozilla::Utf8Unit> units) {
+    mozilla::Span<const mozilla::Utf8Unit> units) {
   auto chars = ToCharSpan(units);
-  return AtomizeUTF8Chars(cx, chars.data(), chars.size());
+  JSAtom* atom =
+      AtomizeUTF8Chars(this->compilationInfo->cx, chars.data(), chars.size());
+  if (!atom) {
+    return nullptr;
+  }
+
+#ifdef JS_PARSER_ATOMS
+  auto maybeId = this->compilationInfo->parserAtoms.internUtf8(
+      this->compilationInfo->cx, units.data(), units.size());
+  if (maybeId.isErr()) {
+    return nullptr;
+  }
+#endif  // JS_PARSER_ATOMS
+
+  return atom;
 }
 
 template <typename Unit>
@@ -1930,7 +1983,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
 
   TokenStreamSpecific* asSpecific() {
     static_assert(
-        std::is_base_of<GeneralTokenStreamChars, TokenStreamSpecific>::value,
+        std::is_base_of_v<GeneralTokenStreamChars, TokenStreamSpecific>,
         "static_cast below presumes an inheritance relationship");
 
     return static_cast<TokenStreamSpecific*>(this);
@@ -2136,7 +2189,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
       return nullptr;
     }
 
-    return drainCharBufferIntoAtom(anyChars.cx);
+    return drainCharBufferIntoAtom();
   }
 };
 
@@ -2455,7 +2508,8 @@ class MOZ_STACK_CLASS TokenStreamSpecific
   friend class TokenStreamPosition;
 
  public:
-  TokenStreamSpecific(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+  TokenStreamSpecific(JSContext* cx, CompilationInfo* compilationInfo,
+                      const JS::ReadOnlyCompileOptions& options,
                       const Unit* units, size_t length, const StringTaint& taint);
 
   /**
@@ -2894,18 +2948,24 @@ class TokenStreamAnyCharsAccess {
       const TokenStreamSpecific* tss);
 };
 
-class MOZ_STACK_CLASS TokenStream final
+class MOZ_STACK_CLASS TokenStream
     : public TokenStreamAnyChars,
       public TokenStreamSpecific<char16_t, TokenStreamAnyCharsAccess> {
   using Unit = char16_t;
 
  public:
-  TokenStream(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
-              const Unit* units, size_t length, const StringTaint& taint,
-              StrictModeGetter* smg)
+  TokenStream(JSContext* cx, CompilationInfo* compilationInfo,
+              const JS::ReadOnlyCompileOptions& options, const Unit* units,
+              size_t length, const StringTaint& taint, StrictModeGetter* smg)
       : TokenStreamAnyChars(cx, options, smg),
-        TokenStreamSpecific<Unit, TokenStreamAnyCharsAccess>(cx, options, units,
-                                                             length, taint) {}
+        TokenStreamSpecific<Unit, TokenStreamAnyCharsAccess>(
+          cx, compilationInfo, options, units, length, taint) {}
+};
+
+class MOZ_STACK_CLASS DummyTokenStream final : public TokenStream {
+public:
+  DummyTokenStream(JSContext* cx, const JS::ReadOnlyCompileOptions& options)
+    : TokenStream(cx, nullptr, options, nullptr, 0, EmptyTaint, nullptr) {}
 };
 
 template <class TokenStreamSpecific>

@@ -16,7 +16,6 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 XPCOMUtils.defineLazyModuleGetters(this, {
-  Log: "resource://gre/modules/Log.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   Services: "resource://gre/modules/Services.jsm",
   UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
@@ -31,18 +30,12 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIAutoCompleteSearch"
 );
 
-XPCOMUtils.defineLazyGetter(this, "logger", () =>
-  Log.repository.getLogger("Urlbar.Provider.UnifiedComplete")
-);
-
 /**
  * Class used to create the provider.
  */
 class ProviderUnifiedComplete extends UrlbarProvider {
   constructor() {
     super();
-    // Maps the running queries by queryContext.
-    this.queries = new Map();
   }
 
   /**
@@ -58,7 +51,7 @@ class ProviderUnifiedComplete extends UrlbarProvider {
    * @returns {integer} one of the types from UrlbarUtils.PROVIDER_TYPE.*
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.IMMEDIATE;
+    return UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
   }
 
   /**
@@ -80,11 +73,12 @@ class ProviderUnifiedComplete extends UrlbarProvider {
    * @returns {Promise} resolved when the query stops.
    */
   async startQuery(queryContext, addCallback) {
-    logger.info(`Starting query for ${queryContext.searchString}`);
-    let instance = {};
-    this.queries.set(queryContext, instance);
+    let instance = this.queryInstance;
     let urls = new Set();
     await unifiedComplete.wrappedJSObject.startQuery(queryContext, acResult => {
+      if (instance != this.queryInstance) {
+        return;
+      }
       let results = convertLegacyAutocompleteResult(
         queryContext,
         acResult,
@@ -94,7 +88,6 @@ class ProviderUnifiedComplete extends UrlbarProvider {
         addCallback(this, result);
       }
     });
-    this.queries.delete(queryContext);
   }
 
   /**
@@ -102,9 +95,6 @@ class ProviderUnifiedComplete extends UrlbarProvider {
    * @param {object} queryContext The query context object
    */
   cancelQuery(queryContext) {
-    logger.info(`Canceling query for ${queryContext.searchString}`);
-    // This doesn't properly support being used concurrently by multiple fields.
-    this.queries.delete(queryContext);
     unifiedComplete.stopSearch();
   }
 }
@@ -208,11 +198,16 @@ function makeUrlbarResult(tokens, info) {
               action.params.searchSuggestion,
               UrlbarUtils.HIGHLIGHT.SUGGESTED,
             ],
+            // For test interoperabilty with UrlbarProviderSearchSuggestions.
+            tailPrefix: undefined,
+            tail: undefined,
+            tailOffsetIndex: -1,
             keyword: [action.params.alias, UrlbarUtils.HIGHLIGHT.TYPED],
             query: [
               action.params.searchQuery.trim(),
-              UrlbarUtils.HIGHLIGHT.TYPED,
+              UrlbarUtils.HIGHLIGHT.NONE,
             ],
+            isSearchHistory: !!action.params.isSearchHistory,
             icon: [info.icon],
             keywordOffer,
           })
@@ -223,10 +218,7 @@ function makeUrlbarResult(tokens, info) {
         if (!title) {
           // If the url doesn't have an host (e.g. javascript urls), comment
           // will be empty, and we can't build the usual title. Thus use the url.
-          title = Services.textToSubURI.unEscapeURIForUI(
-            "UTF-8",
-            action.params.url
-          );
+          title = Services.textToSubURI.unEscapeURIForUI(action.params.url);
         } else if (tokens && tokens.length > 1) {
           title = UrlbarUtils.strings.formatStringFromName(
             "bookmarkKeywordSearch",
@@ -252,17 +244,6 @@ function makeUrlbarResult(tokens, info) {
           })
         );
       }
-      case "extension":
-        return new UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.OMNIBOX,
-          UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
-          ...UrlbarResult.payloadAndSimpleHighlights(tokens, {
-            title: [info.comment, UrlbarUtils.HIGHLIGHT.TYPED],
-            content: [action.params.content, UrlbarUtils.HIGHLIGHT.TYPED],
-            keyword: [action.params.keyword, UrlbarUtils.HIGHLIGHT.TYPED],
-            icon: [info.icon],
-          })
-        );
       case "remotetab":
         return new UrlbarResult(
           UrlbarUtils.RESULT_TYPE.REMOTE_TAB,
@@ -281,7 +262,6 @@ function makeUrlbarResult(tokens, info) {
           ...UrlbarResult.payloadAndSimpleHighlights(tokens, {
             url: [action.params.url, UrlbarUtils.HIGHLIGHT.TYPED],
             title: [info.comment, UrlbarUtils.HIGHLIGHT.TYPED],
-            device: [action.params.deviceName, UrlbarUtils.HIGHLIGHT.TYPED],
             icon: [info.icon],
           })
         );

@@ -480,6 +480,11 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
     cmp32(tagOf(address), ImmTag(JSVAL_TAG_STRING));
     return cond;
   }
+  Condition testSymbol(Condition cond, const Address& address) {
+    MOZ_ASSERT(cond == Equal || cond == NotEqual);
+    cmp32(tagOf(address), ImmTag(JSVAL_TAG_SYMBOL));
+    return cond;
+  }
   Condition testSymbol(Condition cond, const BaseIndex& address) {
     MOZ_ASSERT(cond == Equal || cond == NotEqual);
     cmp32(tagOf(address), ImmTag(JSVAL_TAG_SYMBOL));
@@ -601,6 +606,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
     movl(Operand(HighWord(address)), dest.high);
   }
   template <typename T>
+  void load64Unaligned(const T& address, Register64 dest) {
+    load64(address, dest);
+  }
+  template <typename T>
   void storePtr(ImmWord imm, T address) {
     movl(Imm32(imm.value), Operand(address));
   }
@@ -636,6 +645,10 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   void store64(Imm64 imm, Address address) {
     movl(imm.low(), Operand(LowWord(address)));
     movl(imm.hi(), Operand(HighWord(address)));
+  }
+  template <typename S, typename T>
+  void store64Unaligned(const S& src, const T& dest) {
+    store64(src, dest);
   }
 
   void setStackArg(Register reg, uint32_t arg) {
@@ -734,10 +747,16 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   void unboxInt32(const Address& src, Register dest) {
     unboxNonDouble(src, dest, JSVAL_TYPE_INT32);
   }
+  void unboxInt32(const BaseIndex& src, Register dest) {
+    unboxNonDouble(src, dest, JSVAL_TYPE_INT32);
+  }
   void unboxBoolean(const ValueOperand& src, Register dest) {
     unboxNonDouble(src, dest, JSVAL_TYPE_BOOLEAN);
   }
   void unboxBoolean(const Address& src, Register dest) {
+    unboxNonDouble(src, dest, JSVAL_TYPE_BOOLEAN);
+  }
+  void unboxBoolean(const BaseIndex& src, Register dest) {
     unboxNonDouble(src, dest, JSVAL_TYPE_BOOLEAN);
   }
   void unboxString(const ValueOperand& src, Register dest) {
@@ -808,11 +827,15 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
                          JSValueType type);
 
   // See comment in MacroAssembler-x64.h.
-  void unboxGCThingForPreBarrierTrampoline(const Address& src, Register dest) {
+  void unboxGCThingForGCBarrier(const Address& src, Register dest) {
     movl(payloadOf(src), dest);
   }
 
   void notBoolean(const ValueOperand& val) { xorl(Imm32(1), val.payloadReg()); }
+
+  template <typename T>
+  void fallibleUnboxPtrImpl(const T& src, Register dest, JSValueType type,
+                            Label* fail);
 
   // Extended unboxing API. If the payload is already in a register, returns
   // that register. Otherwise, provides a move to the given scratch register,
@@ -866,6 +889,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
 
   void loadConstantSimd128Int(const SimdConstant& v, FloatRegister dest);
   void loadConstantSimd128Float(const SimdConstant& v, FloatRegister dest);
+  void vpandSimd128(const SimdConstant& v, FloatRegister srcDest);
 
   Condition testInt32Truthy(bool truthy, const ValueOperand& operand) {
     test32(operand.payloadReg(), operand.payloadReg());

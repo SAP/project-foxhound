@@ -6,11 +6,12 @@
 
 #include "ImageEncoder.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
+#include "mozilla/dom/GeneratePlaceholderCanvasData.h"
 #include "mozilla/dom/MemoryBlobImpl.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
-#include "mozilla/layers/AsyncCanvasRenderer.h"
+#include "mozilla/layers/CanvasRenderer.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/Unused.h"
@@ -86,7 +87,7 @@ class EncodingCompleteEvent : public CancelableRunnable {
         mEncodeCompleteCallback(aEncodeCompleteCallback),
         mFailed(false) {
     if (!NS_IsMainThread() && IsCurrentThreadRunningWorker()) {
-      mCreationEventTarget = GetCurrentThreadEventTarget();
+      mCreationEventTarget = GetCurrentEventTarget();
     } else {
       mCreationEventTarget = GetMainThreadEventTarget();
     }
@@ -216,7 +217,7 @@ class EncodingRunnable : public Runnable {
 nsresult ImageEncoder::ExtractData(nsAString& aType, const nsAString& aOptions,
                                    const nsIntSize aSize, bool aUsePlaceholder,
                                    nsICanvasRenderingContextInternal* aContext,
-                                   layers::AsyncCanvasRenderer* aRenderer,
+                                   layers::CanvasRenderer* aRenderer,
                                    nsIInputStream** aStream) {
   nsCOMPtr<imgIEncoder> encoder = ImageEncoder::GetImageEncoder(aType);
   if (!encoder) {
@@ -289,7 +290,7 @@ nsresult ImageEncoder::ExtractDataInternal(
     const nsAString& aType, const nsAString& aOptions, uint8_t* aImageBuffer,
     int32_t aFormat, const nsIntSize aSize, bool aUsePlaceholder,
     layers::Image* aImage, nsICanvasRenderingContextInternal* aContext,
-    layers::AsyncCanvasRenderer* aRenderer, nsIInputStream** aStream,
+    layers::CanvasRenderer* aRenderer, nsIInputStream** aStream,
     imgIEncoder* aEncoder) {
   if (aSize.IsEmpty()) {
     return NS_ERROR_INVALID_ARG;
@@ -312,9 +313,32 @@ nsresult ImageEncoder::ExtractDataInternal(
     rv = aContext->GetInputStream(encoderType.get(), aOptions,
                                   getter_AddRefs(imgStream));
   } else if (aRenderer && !aUsePlaceholder) {
-    NS_ConvertUTF16toUTF8 encoderType(aType);
-    rv = aRenderer->GetInputStream(encoderType.get(), aOptions,
-                                   getter_AddRefs(imgStream));
+    MOZ_CRASH("unused?");
+    const NS_ConvertUTF16toUTF8 encoderType(aType);
+    if (BufferSizeFromDimensions(aSize.width, aSize.height, 4) == 0) {
+      return NS_ERROR_INVALID_ARG;
+    }
+
+    const auto snapshot = aRenderer->BorrowSnapshot();
+    if (!snapshot) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+
+    const RefPtr<DataSourceSurface> data = snapshot->mSurf->GetDataSurface();
+    if (!data) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+
+    {
+      DataSourceSurface::MappedSurface map;
+      if (!data->Map(gfx::DataSourceSurface::MapType::READ, &map)) {
+        return NS_ERROR_INVALID_ARG;
+      }
+      rv = aEncoder->InitFromData(map.mData, aSize.width * aSize.height * 4,
+                                  aSize.width, aSize.height, aSize.width * 4,
+                                  imgIEncoder::INPUT_FORMAT_HOSTARGB, aOptions);
+      data->Unmap();
+    }
   } else if (aImage && !aUsePlaceholder) {
     // It is safe to convert PlanarYCbCr format from YUV to RGB off-main-thread.
     // Other image formats could have problem to convert format off-main-thread.
@@ -383,8 +407,9 @@ nsresult ImageEncoder::ExtractDataInternal(
       return NS_ERROR_INVALID_ARG;
     }
     if (aUsePlaceholder) {
-      // If placeholder data was requested, return all-white, opaque image data.
-      memset(map.mData, 0xFF, 4 * aSize.width * aSize.height);
+      auto size = 4 * aSize.width * aSize.height;
+      auto* data = map.mData;
+      GeneratePlaceholderCanvasData(size, data);
     }
     rv = aEncoder->InitFromData(map.mData, aSize.width * aSize.height * 4,
                                 aSize.width, aSize.height, aSize.width * 4,
@@ -408,7 +433,7 @@ already_AddRefed<imgIEncoder> ImageEncoder::GetImageEncoder(nsAString& aType) {
   encoderCID += encoderType;
   nsCOMPtr<imgIEncoder> encoder = do_CreateInstance(encoderCID.get());
 
-  if (!encoder && aType != NS_LITERAL_STRING("image/png")) {
+  if (!encoder && aType != u"image/png"_ns) {
     // Unable to create an encoder instance of the specified type. Falling back
     // to PNG.
     aType.AssignLiteral("image/png");

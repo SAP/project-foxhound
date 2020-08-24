@@ -64,8 +64,10 @@ included_inclnames_to_ignore = set([
     'frontend/smoosh_generated.h',        # generated in $OBJDIR
     'gc/StatsPhasesGenerated.h',         # generated in $OBJDIR
     'gc/StatsPhasesGenerated.inc',       # generated in $OBJDIR
-    'jit/LOpcodes.h',           # generated in $OBJDIR
-    'jit/MOpcodes.h',           # generated in $OBJDIR
+    'jit/CacheIROpsGenerated.h',         # generated in $OBJDIR
+    'jit/LOpcodesGenerated.h',           # generated in $OBJDIR
+    'jit/MOpcodesGenerated.h',           # generated in $OBJDIR
+    'js/ProfilingCategoryList.h',        # comes from mozglue/baseprofiler
     'jscustomallocator.h',      # provided by embedders;  allowed to be missing
     'js-config.h',              # generated in $OBJDIR
     'fdlibm.h',                 # fdlibm
@@ -95,15 +97,20 @@ included_inclnames_to_ignore = set([
     'unicode/uchar.h',          # ICU
     'unicode/uclean.h',         # ICU
     'unicode/ucol.h',           # ICU
+    'unicode/ucurr.h',          # ICU
     'unicode/udat.h',           # ICU
     'unicode/udata.h',          # ICU
+    'unicode/udateintervalformat.h',  # ICU
     'unicode/udatpg.h',         # ICU
     'unicode/udisplaycontext.h',  # ICU
     'unicode/uenum.h',          # ICU
     'unicode/ufieldpositer.h',  # ICU
     'unicode/uformattedvalue.h',  # ICU
     'unicode/ulistformatter.h',  # ICU
+    'unicode/uldnames.h',       # ICU
     'unicode/uloc.h',           # ICU
+    'unicode/umachine.h',       # ICU
+    'unicode/uniset.h',         # ICU
     'unicode/unistr.h',         # ICU
     'unicode/unorm2.h',         # ICU
     'unicode/unum.h',           # ICU

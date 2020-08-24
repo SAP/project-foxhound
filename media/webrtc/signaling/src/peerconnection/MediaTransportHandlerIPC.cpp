@@ -9,6 +9,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
+#include "CSFLog.h"
 
 namespace mozilla {
 
@@ -135,10 +136,12 @@ nsresult MediaTransportHandlerIPC::CreateIceCtx(
 
   mInitPromise->Then(
       mCallbackThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
+      [=, iceServers = aIceServers.Clone(),
+       self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           CSFLogDebug(LOGTAG, "%s starting", __func__);
-          if (!mChild->SendCreateIceCtx(aName, aIceServers, aIcePolicy)) {
+          if (!mChild->SendCreateIceCtx(aName, std::move(iceServers),
+                                        aIcePolicy)) {
             CSFLogError(LOGTAG, "%s failed!", __func__);
           }
         }
@@ -212,10 +215,11 @@ void MediaTransportHandlerIPC::StartIceGathering(
     const nsTArray<NrIceStunAddr>& aStunAddrs) {
   mInitPromise->Then(
       mCallbackThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
+      [=, stunAddrs = aStunAddrs.Clone(),
+       self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           mChild->SendStartIceGathering(aDefaultRouteOnly,
-                                        aObfuscateHostAddresses, aStunAddrs);
+                                        aObfuscateHostAddresses, stunAddrs);
         }
       },
       [](const nsCString& aError) {});
@@ -230,12 +234,13 @@ void MediaTransportHandlerIPC::ActivateTransport(
     bool aPrivacyRequested) {
   mInitPromise->Then(
       mCallbackThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
+      [=, keyDer = aKeyDer.Clone(), certDer = aCertDer.Clone(),
+       self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
-          mChild->SendActivateTransport(
-              aTransportId, aLocalUfrag, aLocalPwd, aComponentCount, aUfrag,
-              aPassword, aKeyDer, aCertDer, aAuthType, aDtlsClient, aDigests,
-              aPrivacyRequested);
+          mChild->SendActivateTransport(aTransportId, aLocalUfrag, aLocalPwd,
+                                        aComponentCount, aUfrag, aPassword,
+                                        keyDer, certDer, aAuthType, aDtlsClient,
+                                        aDigests, aPrivacyRequested);
         }
       },
       [](const nsCString& aError) {});

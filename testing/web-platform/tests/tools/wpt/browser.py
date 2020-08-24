@@ -18,8 +18,7 @@ from .utils import call, get, untar, unzip
 uname = platform.uname()
 
 # the rootUrl for the firefox-ci deployment of Taskcluster
-# (after November 9, https://firefox-ci-tc.services.mozilla.com/)
-FIREFOX_CI_ROOT_URL = 'https://taskcluster.net'
+FIREFOX_CI_ROOT_URL = 'https://firefox-ci-tc.services.mozilla.com'
 
 
 def _get_fileversion(binary, logger=None):
@@ -49,6 +48,15 @@ def get_ext(filename):
     return ext
 
 
+def get_taskcluster_artifact(index, path):
+    TC_INDEX_BASE = FIREFOX_CI_ROOT_URL + "/api/index/v1/"
+
+    resp = get(TC_INDEX_BASE + "task/%s/artifacts/%s" % (index, path))
+    resp.raise_for_status()
+
+    return resp
+
+
 class Browser(object):
     __metaclass__ = ABCMeta
 
@@ -62,17 +70,31 @@ class Browser(object):
         :param channel: Browser channel to download
         :param rename: Optional name for the downloaded package; the original
                        extension is preserved.
+        :return: The path to the downloaded package/installer
         """
         return NotImplemented
 
     @abstractmethod
-    def install(self, dest=None):
-        """Install the browser."""
+    def install(self, dest=None, channel=None):
+        """Download and install the browser.
+
+        This method usually calls download().
+
+        :param dest: Directory in which to install the browser
+        :param channel: Browser channel to install
+        :return: The path to the installed browser
+        """
         return NotImplemented
 
     @abstractmethod
     def install_webdriver(self, dest=None, channel=None, browser_binary=None):
-        """Install the WebDriver implementation for this browser."""
+        """Download and install the WebDriver implementation for this browser.
+
+        :param dest: Directory in which to install the WebDriver
+        :param channel: Browser channel to install
+        :param browser_binary: The path to the browser binary
+        :return: The path to the installed WebDriver
+        """
         return NotImplemented
 
     @abstractmethod
@@ -174,7 +196,7 @@ class Firefox(Browser):
         url = "https://download.mozilla.org/?product=%s&os=%s&lang=en-US" % (product[channel],
                                                                              os_builds[os_key])
         self.logger.info("Downloading Firefox from %s" % url)
-        resp = requests.get(url)
+        resp = get(url)
 
         filename = None
 
@@ -379,14 +401,14 @@ class Firefox(Browser):
         tags = call("git", "ls-remote", "--tags", "--refs",
                     "https://github.com/mozilla/geckodriver.git")
         release_re = re.compile(r".*refs/tags/v(\d+)\.(\d+)\.(\d+)")
-        latest_release = (0,0,0)
+        latest_release = (0, 0, 0)
         for item in tags.split("\n"):
             m = release_re.match(item)
             if m:
                 version = tuple(int(item) for item in m.groups())
                 if version > latest_release:
                     latest_release = version
-        assert latest_release != (0,0,0)
+        assert latest_release != (0, 0, 0)
         return "v%s.%s.%s" % tuple(str(item) for item in latest_release)
 
     def install_webdriver(self, dest=None, channel=None, browser_binary=None):
@@ -394,51 +416,56 @@ class Firefox(Browser):
         if dest is None:
             dest = os.getcwd()
 
+        path = None
         if channel == "nightly":
             path = self.install_geckodriver_nightly(dest)
-            if path is not None:
-                return path
-            else:
+            if path is None:
                 self.logger.warning("Nightly webdriver not found; falling back to release")
 
-        version = self._latest_geckodriver_version()
-        format = "zip" if uname[0] == "Windows" else "tar.gz"
-        self.logger.debug("Latest geckodriver release %s" % version)
-        url = ("https://github.com/mozilla/geckodriver/releases/download/%s/geckodriver-%s-%s.%s" %
-               (version, version, self.platform_string_geckodriver(), format))
-        if format == "zip":
-            unzip(get(url).raw, dest=dest)
-        else:
-            untar(get(url).raw, dest=dest)
-        return find_executable(os.path.join(dest, "geckodriver"))
+        if path is None:
+            version = self._latest_geckodriver_version()
+            format = "zip" if uname[0] == "Windows" else "tar.gz"
+            self.logger.debug("Latest geckodriver release %s" % version)
+            url = ("https://github.com/mozilla/geckodriver/releases/download/%s/geckodriver-%s-%s.%s" %
+                   (version, version, self.platform_string_geckodriver(), format))
+            if format == "zip":
+                unzip(get(url).raw, dest=dest)
+            else:
+                untar(get(url).raw, dest=dest)
+            path = find_executable(os.path.join(dest, "geckodriver"))
+
+        assert path is not None
+        self.logger.info("Installed %s" %
+                         subprocess.check_output([path, "--version"]).splitlines()[0])
+        return path
 
     def install_geckodriver_nightly(self, dest):
-        import tarfile
-        import mozdownload
         self.logger.info("Attempting to install webdriver from nightly")
-        try:
-            s = mozdownload.DailyScraper(branch="mozilla-central",
-                                         extension="common.tests.tar.gz",
-                                         destination=dest)
-            package_path = s.download()
-        except mozdownload.errors.NotFoundError:
-            return
+
+        platform_bits = ("64" if uname[4] == "x86_64" else
+                         ("32" if self.platform == "win" else ""))
+        tc_platform = "%s%s" % (self.platform, platform_bits)
+
+        archive_ext = ".zip" if uname[0] == "Windows" else ".tar.gz"
+        archive_name = "public/build/geckodriver%s" % archive_ext
 
         try:
-            exe_suffix = ".exe" if uname[0] == "Windows" else ""
-            with tarfile.open(package_path, "r") as f:
-                try:
-                    member = f.getmember("bin%sgeckodriver%s" % (os.path.sep,
-                                                                 exe_suffix))
-                except KeyError:
-                    return
-                # Remove bin/ from the path.
-                member.name = os.path.basename(member.name)
-                f.extractall(members=[member], path=dest)
-                path = os.path.join(dest, member.name)
-            self.logger.info("Extracted geckodriver to %s" % path)
-        finally:
-            os.unlink(package_path)
+            resp = get_taskcluster_artifact(
+                "gecko.v2.mozilla-central.latest.geckodriver.%s" % tc_platform,
+                archive_name)
+        except Exception:
+            self.logger.info("Geckodriver download failed")
+            return
+
+        if archive_ext == ".zip":
+            unzip(resp.raw, dest)
+        else:
+            untar(resp.raw, dest)
+
+        exe_ext = ".exe" if uname[0] == "Windows" else ""
+        path = os.path.join(dest, "geckodriver%s" % exe_ext)
+
+        self.logger.info("Extracted geckodriver to %s" % path)
 
         return path
 
@@ -457,38 +484,27 @@ class FirefoxAndroid(Browser):
     product = "firefox_android"
     requirements = "requirements_firefox.txt"
 
+    def __init__(self, logger):
+        super(FirefoxAndroid, self).__init__(logger)
+        self.apk_path = None
+
     def download(self, dest=None, channel=None, rename=None):
         if dest is None:
             dest = os.pwd
 
-        if FIREFOX_CI_ROOT_URL == 'https://taskcluster.net':
-            # NOTE: this condition can be removed after November 9, 2019
-            TC_QUEUE_BASE = "https://queue.taskcluster.net/v1/"
-            TC_INDEX_BASE = "https://index.taskcluster.net/v1/"
-        else:
-            TC_QUEUE_BASE = FIREFOX_CI_ROOT_URL + "/api/queue/v1/"
-            TC_INDEX_BASE = FIREFOX_CI_ROOT_URL + "/api/index/v1/"
-
-
-        resp = requests.get(TC_INDEX_BASE +
-                            "task/gecko.v2.mozilla-central.latest.mobile.android-x86_64-opt")
-        resp.raise_for_status()
-        index = resp.json()
-        task_id = index["taskId"]
-
-        resp = requests.get(TC_QUEUE_BASE + "task/%s/artifacts/%s" %
-                            (task_id, "public/build/geckoview-androidTest.apk"))
-        resp.raise_for_status()
+        resp = get_taskcluster_artifact(
+            "gecko.v2.mozilla-central.latest.mobile.android-x86_64-opt",
+            "public/build/geckoview-androidTest.apk")
 
         filename = "geckoview-androidTest.apk"
         if rename:
             filename = "%s%s" % (rename, get_ext(filename)[1])
-        apk_path = os.path.join(dest, filename)
+        self.apk_path = os.path.join(dest, filename)
 
-        with open(apk_path, "wb") as f:
+        with open(self.apk_path, "wb") as f:
             f.write(resp.content)
 
-        return apk_path
+        return self.apk_path
 
     def install(self, dest=None, channel=None):
         return self.download(dest, channel)
@@ -498,7 +514,7 @@ class FirefoxAndroid(Browser):
         return fx_browser.install_prefs(binary, dest, channel)
 
     def find_binary(self, venv_path=None, channel=None):
-        raise NotImplementedError
+        return self.apk_path
 
     def find_webdriver(self, channel=None):
         raise NotImplementedError
@@ -731,9 +747,9 @@ class ChromeAndroid(ChromeAndroidBase):
         return "com.android.chrome"
 
 
-#TODO(aluo): This is largely copied from the AndroidWebView implementation.
-#            Tests are not running for weblayer yet (crbug/1019521), this
-#            initial implementation will help to reproduce and debug any issues.
+# TODO(aluo): This is largely copied from the AndroidWebView implementation.
+# Tests are not running for weblayer yet (crbug/1019521), this initial
+# implementation will help to reproduce and debug any issues.
 class AndroidWeblayer(ChromeAndroidBase):
     """Weblayer-specific interface for Android."""
 
@@ -913,7 +929,7 @@ class EdgeChromium(Browser):
                             os.path.expandvars("$SYSTEMDRIVE\\Program Files (x86)\\Microsoft\\Edge\\Application"),
                             os.path.expandvars("$SYSTEMDRIVE\\Program Files (x86)\\Microsoft\\Edge Beta\\Application"),
                             os.path.expandvars("$SYSTEMDRIVE\\Program Files (x86)\\Microsoft\\Edge Dev\\Application"),
-                            os.path.expanduser("~\\AppData\Local\\Microsoft\\Edge SxS\\Application")]
+                            os.path.expanduser("~\\AppData\\Local\\Microsoft\\Edge SxS\\Application")]
                 return find_executable(binaryname, os.pathsep.join(winpaths))
         if self.platform == "macos":
             binaryname = "Microsoft Edge Canary"

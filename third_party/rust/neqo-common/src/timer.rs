@@ -206,7 +206,7 @@ impl<T> Timer<T> {
         // First, the whole buckets.
         for i in 0..delta {
             let idx = self.bucket(i);
-            buckets.push(mem::replace(&mut self.items[idx], Vec::default()));
+            buckets.push(mem::take(&mut self.items[idx]));
         }
         self.tick(delta);
 
@@ -235,7 +235,7 @@ impl<T> Timer<T> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use super::{Duration, Instant, Timer};
     use lazy_static::lazy_static;
 
     lazy_static! {

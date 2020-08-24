@@ -11,9 +11,11 @@
 
 #include "nsMargin.h"
 #include "nsStyleConsts.h"
-#include "nsIFrame.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/WritingModes.h"
+#include "LayoutConstants.h"
+#include "ReflowOutput.h"
 #include <algorithm>
 
 class gfxContext;
@@ -23,6 +25,11 @@ class nsIPercentBSizeObserver;
 class nsLineLayout;
 class nsPlaceholderFrame;
 class nsPresContext;
+class nsReflowStatus;
+
+namespace mozilla {
+enum class LayoutFrameType : uint8_t;
+}
 
 /**
  * @return aValue clamped to [aMinValue, aMaxValue].
@@ -121,13 +128,13 @@ struct SizeComputationInput {
   nsMargin& ComputedPhysicalBorderPadding() { return mComputedBorderPadding; }
   nsMargin& ComputedPhysicalPadding() { return mComputedPadding; }
 
-  const LogicalMargin ComputedLogicalMargin() const {
+  LogicalMargin ComputedLogicalMargin() const {
     return LogicalMargin(mWritingMode, mComputedMargin);
   }
-  const LogicalMargin ComputedLogicalBorderPadding() const {
+  LogicalMargin ComputedLogicalBorderPadding() const {
     return LogicalMargin(mWritingMode, mComputedBorderPadding);
   }
-  const LogicalMargin ComputedLogicalPadding() const {
+  LogicalMargin ComputedLogicalPadding() const {
     return LogicalMargin(mWritingMode, mComputedPadding);
   }
 
@@ -175,10 +182,7 @@ struct SizeComputationInput {
 
  public:
   // Callers using this constructor must call InitOffsets on their own.
-  SizeComputationInput(nsIFrame* aFrame, gfxContext* aRenderingContext)
-      : mFrame(aFrame),
-        mRenderingContext(aRenderingContext),
-        mWritingMode(aFrame->GetWritingMode()) {}
+  SizeComputationInput(nsIFrame* aFrame, gfxContext* aRenderingContext);
 
   SizeComputationInput(nsIFrame* aFrame, gfxContext* aRenderingContext,
                        mozilla::WritingMode aContainingBlockWritingMode,
@@ -758,8 +762,9 @@ struct ReflowInput : public SizeComputationInput {
    * @param aPresContext Must be equal to aFrame->PresContext().
    * @param aFrame The frame for whose reflow input is being constructed.
    * @param aRenderingContext The rendering context to be used for measurements.
-   * @param aAvailableSpace See comments for availableHeight and availableWidth
-   *        members.
+   * @param aAvailableSpace The available space to reflow aFrame (in aFrame's
+   *        writing-mode). See comments for mAvailableHeight and mAvailableWidth
+   *        members for more information.
    * @param aFlags A set of flags used for additional boolean parameters (see
    *        below).
    */
@@ -775,8 +780,9 @@ struct ReflowInput : public SizeComputationInput {
    * @param aParentReflowInput A reference to an ReflowInput object that
    *        is to be the parent of this object.
    * @param aFrame The frame for whose reflow input is being constructed.
-   * @param aAvailableSpace See comments for availableHeight and availableWidth
-   *        members.
+   * @param aAvailableSpace The available space to reflow aFrame (in aFrame's
+   *        writing-mode). See comments for mAvailableHeight and mAvailableWidth
+   *        members for more information.
    * @param aContainingBlockSize An optional size, in app units, specifying
    *        the containing block size to use instead of the default which is
    *        computed by ComputeContainingBlockRectangle().
@@ -812,6 +818,8 @@ struct ReflowInput : public SizeComputationInput {
     // the containing block, i.e. at LogicalPoint(0, 0). (Note that this
     // doesn't necessarily mean that (0, 0) is the *correct* static position
     // for the frame in question.)
+    // @note In a Grid container's masonry axis we'll always use
+    // the placeholder's position in that axis regardless of this flag.
     STATIC_POS_IS_CB_ORIGIN = (1 << 4),
 
     // Pass ComputeSizeFlags::eIClampMarginBoxMinSize to ComputeSize().
@@ -933,17 +941,7 @@ struct ReflowInput : public SizeComputationInput {
     return aBSize - aConsumed;
   }
 
-  bool ShouldReflowAllKids() const {
-    // Note that we could make a stronger optimization for IsBResize if
-    // we use it in a ShouldReflowChild test that replaces the current
-    // checks of NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN, if it
-    // were tested there along with NS_FRAME_CONTAINS_RELATIVE_BSIZE.
-    // This would need to be combined with a slight change in which
-    // frames NS_FRAME_CONTAINS_RELATIVE_BSIZE is marked on.
-    return (mFrame->GetStateBits() & NS_FRAME_IS_DIRTY) || IsIResize() ||
-           (IsBResize() &&
-            (mFrame->GetStateBits() & NS_FRAME_CONTAINS_RELATIVE_BSIZE));
-  }
+  bool ShouldReflowAllKids() const;
 
   // This method doesn't apply min/max computed widths to the value passed in.
   void SetComputedWidth(nscoord aComputedWidth);
@@ -999,20 +997,7 @@ struct ReflowInput : public SizeComputationInput {
   static void ApplyRelativePositioning(
       nsIFrame* aFrame, mozilla::WritingMode aWritingMode,
       const mozilla::LogicalMargin& aComputedOffsets,
-      mozilla::LogicalPoint* aPosition, const nsSize& aContainerSize) {
-    // Subtract the size of the frame from the container size that we
-    // use for converting between the logical and physical origins of
-    // the frame. This accounts for the fact that logical origins in RTL
-    // coordinate systems are at the top right of the frame instead of
-    // the top left.
-    nsSize frameSize = aFrame->GetSize();
-    nsPoint pos =
-        aPosition->GetPhysicalPoint(aWritingMode, aContainerSize - frameSize);
-    ApplyRelativePositioning(
-        aFrame, aComputedOffsets.GetPhysicalMargin(aWritingMode), &pos);
-    *aPosition =
-        mozilla::LogicalPoint(aWritingMode, pos, aContainerSize - frameSize);
-  }
+      mozilla::LogicalPoint* aPosition, const nsSize& aContainerSize);
 
   void ApplyRelativePositioning(mozilla::LogicalPoint* aPosition,
                                 const nsSize& aContainerSize) const {

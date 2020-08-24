@@ -9,6 +9,7 @@
 #include "MediaInfo.h"
 #include "MediaResult.h"
 #include "PlatformEncoderModule.h"
+#include "WebrtcGmpVideoCodec.h"
 #include "common_video/include/bitrate_adjuster.h"
 #include "webrtc/modules/video_coding/include/video_codec_interface.h"
 
@@ -55,6 +56,7 @@ class WebrtcMediaDataEncoder : public RefCountedWebrtcVideoEncoder {
   AbstractThread* OwnerThread() const { return mTaskQueue; }
   bool OnTaskQueue() const { return OwnerThread()->IsCurrentThreadIn(); };
 
+  Mutex mCallbackMutex;
   const RefPtr<SharedThreadPool> mThreadPool;
   const RefPtr<TaskQueue> mTaskQueue;
   const RefPtr<PEMFactory> mFactory;

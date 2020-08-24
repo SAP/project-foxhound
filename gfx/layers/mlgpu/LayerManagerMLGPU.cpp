@@ -9,6 +9,7 @@
 #include "PaintedLayerMLGPU.h"
 #include "ImageLayerMLGPU.h"
 #include "CanvasLayerMLGPU.h"
+#include "ContainerLayerMLGPU.h"
 #include "GeckoProfiler.h"  // for profiler_*
 #include "gfxEnv.h"         // for gfxEnv
 #include "MLGDevice.h"
@@ -211,7 +212,6 @@ void LayerManagerMLGPU::BeginTransactionWithDrawTarget(
 
   mTarget = aTarget;
   mTargetRect = aRect;
-  return;
 }
 
 // Helper class for making sure textures are unlocked.
@@ -228,8 +228,6 @@ void LayerManagerMLGPU::EndTransaction(const TimeStamp& aTimeStamp,
                                        EndTransactionFlags aFlags) {
   AUTO_PROFILER_LABEL("LayerManager::EndTransaction", GRAPHICS);
 
-  SetCompositionTime(aTimeStamp);
-
   TextureSourceProvider::AutoReadUnlockTextures unlock(mTextureSourceProvider);
 
   if (!mRoot || (aFlags & END_NO_IMMEDIATE_REDRAW) || !mWidget) {
@@ -240,6 +238,9 @@ void LayerManagerMLGPU::EndTransaction(const TimeStamp& aTimeStamp,
     // Waiting device reset handling.
     return;
   }
+
+  mCompositionOpportunityId = mCompositionOpportunityId.Next();
+  SetCompositionTime(aTimeStamp);
 
   mCompositionStartTime = TimeStamp::Now();
 

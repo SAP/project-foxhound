@@ -20,6 +20,7 @@
 #include "gc/NurseryAwareHashMap.h"
 #include "gc/ZoneAllocator.h"
 #include "js/UniquePtr.h"
+#include "js/Value.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 
@@ -249,7 +250,7 @@ class ObjectWrapperMap {
 
 using StringWrapperMap =
     NurseryAwareHashMap<JSString*, JSString*, DefaultHasher<JSString*>,
-                        ZoneAllocPolicy>;
+                        ZoneAllocPolicy, DuplicatesPossible>;
 
 }  // namespace js
 
@@ -354,6 +355,9 @@ class JS::Compartment {
 
   MOZ_MUST_USE inline bool wrap(JSContext* cx, JS::MutableHandleValue vp);
 
+  MOZ_MUST_USE inline bool wrap(JSContext* cx,
+                                MutableHandle<mozilla::Maybe<Value>> vp);
+
   MOZ_MUST_USE bool wrap(JSContext* cx, js::MutableHandleString strp);
   MOZ_MUST_USE bool wrap(JSContext* cx, js::MutableHandle<JS::BigInt*> bi);
   MOZ_MUST_USE bool wrap(JSContext* cx, JS::MutableHandleObject obj);
@@ -376,9 +380,7 @@ class JS::Compartment {
 
   inline js::StringWrapperMap::Ptr lookupWrapper(JSString* str) const;
 
-  void removeWrapper(js::ObjectWrapperMap::Ptr p) {
-    crossCompartmentObjectWrappers.remove(p);
-  }
+  void removeWrapper(js::ObjectWrapperMap::Ptr p);
 
   bool hasNurseryAllocatedObjectWrapperEntries(const js::CompartmentFilter& f) {
     return crossCompartmentObjectWrappers.hasNurseryAllocatedWrapperEntries(f);
@@ -491,30 +493,31 @@ struct WrapperValue {
 };
 
 class MOZ_RAII AutoWrapperVector : public JS::GCVector<WrapperValue, 8>,
-                                   private JS::AutoGCRooter {
+                                   public JS::AutoGCRooter {
  public:
   explicit AutoWrapperVector(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
       : JS::GCVector<WrapperValue, 8>(cx),
-        JS::AutoGCRooter(cx, JS::AutoGCRooter::Tag::WrapperVector) {
+        JS::AutoGCRooter(cx, JS::AutoGCRooter::Kind::WrapperVector) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
-  friend void AutoGCRooter::trace(JSTracer* trc);
+  void trace(JSTracer* trc);
 
+ private:
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-class MOZ_RAII AutoWrapperRooter : private JS::AutoGCRooter {
+class MOZ_RAII AutoWrapperRooter : public JS::AutoGCRooter {
  public:
   AutoWrapperRooter(JSContext* cx,
                     const WrapperValue& v MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : JS::AutoGCRooter(cx, JS::AutoGCRooter::Tag::Wrapper), value(v) {
+      : JS::AutoGCRooter(cx, JS::AutoGCRooter::Kind::Wrapper), value(v) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
   operator JSObject*() const { return value; }
 
-  friend void JS::AutoGCRooter::trace(JSTracer* trc);
+  void trace(JSTracer* trc);
 
  private:
   WrapperValue value;

@@ -64,9 +64,8 @@ already_AddRefed<ipc::SharedMemoryBasic> GetHyphDictFromParent(
   MOZ_ASSERT(!XRE_IsParentProcess());
   ipc::SharedMemoryBasic::Handle handle = ipc::SharedMemoryBasic::NULLHandle();
   uint32_t size;
-  ipc::URIParams params;
-  SerializeURI(aURI, params);
-  if (!dom::ContentChild::GetSingleton()->SendGetHyphDict(params, &handle,
+  MOZ_ASSERT(aURI);
+  if (!dom::ContentChild::GetSingleton()->SendGetHyphDict(aURI, &handle,
                                                           &size)) {
     return nullptr;
   }
@@ -92,10 +91,10 @@ static already_AddRefed<ipc::SharedMemoryBasic> LoadInShmemFromURI(
     nsIURI* aURI, uint32_t* aLength) {
   MOZ_ASSERT(XRE_IsParentProcess());
   nsCOMPtr<nsIChannel> channel;
-  if (NS_FAILED(NS_NewChannel(getter_AddRefs(channel), aURI,
-                              nsContentUtils::GetSystemPrincipal(),
-                              nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                              nsIContentPolicy::TYPE_OTHER))) {
+  if (NS_FAILED(NS_NewChannel(
+          getter_AddRefs(channel), aURI, nsContentUtils::GetSystemPrincipal(),
+          nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+          nsIContentPolicy::TYPE_OTHER))) {
     return nullptr;
   }
   nsCOMPtr<nsIInputStream> instream;
@@ -180,8 +179,18 @@ nsHyphenator::nsHyphenator(nsIURI* aURI, bool aHyphenateCapitalized)
     // remains zero; mDict is not a pointer to the raw data but an opaque
     // reference to a Rust object, and can only be freed by passing it to
     // mapped_hyph_free_dictionary().
+    // (This case occurs in unpackaged developer builds.)
     nsAutoCString path;
     aURI->GetFilePath(path);
+#if XP_WIN
+    // GetFilePath returns the path with an unexpected leading slash (like
+    // "/c:/path/to/firefox/...") that may prevent it being found if it's an
+    // absolute Windows path starting with a drive letter.
+    // So check for this case and strip the slash.
+    if (path.Length() > 2 && path[0] == '/' && path[2] == ':') {
+      path.Cut(0, 1);
+    }
+#endif
     UniquePtr<const HyphDic> dic(mapped_hyph_load_dictionary(path.get()));
     if (dic) {
       mDict = AsVariant(std::move(dic));
@@ -189,7 +198,10 @@ nsHyphenator::nsHyphenator(nsIURI* aURI, bool aHyphenateCapitalized)
     }
   }
 
-  MOZ_ASSERT_UNREACHABLE("invalid hyphenation resource?");
+  nsAutoCString msg;
+  aURI->GetSpec(msg);
+  msg.Insert("Invalid hyphenation resource: ", 0);
+  NS_ASSERTION(false, msg.get());
 }
 
 bool nsHyphenator::IsValid() {

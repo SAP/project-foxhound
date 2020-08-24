@@ -23,7 +23,7 @@
           src="../name.js"></script>
 
   <script type="application/javascript">
-    function doTest() {
+    async function doTest() {
       // ////////////////////////////////////////////////////////////////////////
       // HTML:a@href
 
@@ -419,7 +419,16 @@
       // ////////////////////////////////////////////////////////////////////////
       // HTML:dialog
 
-      ok(isAccessible("dialog"), "dialog element is not accessible");
+      // XXX: Remove the pushing of the pref and just run the test once the
+      // dialog element is enabled by default.
+      await SpecialPowers.pushPrefEnv({ set: [["dom.dialog_element.enabled", true]] });
+      obj = {
+        role: ROLE_DIALOG,
+        children: [
+          { role: ROLE_TEXT_LEAF },
+        ],
+      };
+      testElm("dialog", obj);
 
       // ////////////////////////////////////////////////////////////////////////
       // HTML:div
@@ -472,12 +481,14 @@
 
       obj = {
         role: ROLE_GROUPING,
+        name: "legend",
         relations: {
           RELATION_LABELLED_BY: "legend",
         },
         children: [
           {
             role: ROLE_LABEL,
+            name: "legend",
             relations: {
               RELATION_LABEL_FOR: "fieldset",
             },
@@ -847,6 +858,8 @@
 
       obj = {
         role: ROLE_GROUPING,
+        name: "time label",
+        attributes: { "text-input-type": "time" },
         children: [
           { role: ROLE_SPINBUTTON },
           { role: ROLE_TEXT_LEAF },
@@ -863,6 +876,8 @@
 
       obj = {
         role: ROLE_DATE_EDITOR,
+        name: "date label",
+        attributes: { "text-input-type": "date" },
         children: [
           { role: ROLE_SPINBUTTON },
           { role: ROLE_TEXT_LEAF },
@@ -1752,8 +1767,12 @@
   <form>
     <input id="input_reset" type="reset">
   </form>
-  <input id="input_time" type="time" value="23:23">
-  <input id="input_date" type="date" value="2017-11-10">
+  <label>time label
+    <input id="input_time" type="time" value="23:23">
+  </label>
+  <label>date label
+    <input id="input_date" type="date" value="2017-11-10">
+  </label>
 
   <p id="ins_container">normal<ins>Inserted</ins></p>
   <p id="kbd_container">normal<kbd>cmd</kbd></p>

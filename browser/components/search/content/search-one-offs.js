@@ -7,6 +7,10 @@
 /* eslint-env mozilla/browser-window */
 /* globals XULCommandEvent */
 
+XPCOMUtils.defineLazyModuleGetters(this, {
+  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.jsm",
+});
+
 /**
  * Defines the search one-off button elements. These are displayed at the bottom
  * of the address bar or the search bar.
@@ -126,8 +130,8 @@ class SearchOneOffs {
 
     // Add weak referenced observers to invalidate our cached list of engines.
     this.QueryInterface = ChromeUtils.generateQI([
-      Ci.nsIObserver,
-      Ci.nsISupportsWeakReference,
+      "nsIObserver",
+      "nsISupportsWeakReference",
     ]);
     Services.prefs.addObserver("browser.search.hiddenOneOffs", this, true);
     Services.obs.addObserver(this, "browser-search-engine-modified", true);
@@ -549,7 +553,17 @@ class SearchOneOffs {
       }
       button.setAttribute("image", uri);
       button.setAttribute("class", "searchbar-engine-one-off-item");
-      button.setAttribute("tooltiptext", engine.name);
+      if (this.compact) {
+        let tooltip = engine.name;
+        let aliases = UrlbarSearchUtils.aliasesForEngine(engine);
+        if (aliases.length) {
+          tooltip = tooltip + ` (${aliases[0]})`;
+        }
+
+        button.setAttribute("tooltiptext", tooltip);
+      } else {
+        button.setAttribute("tooltiptext", engine.name);
+      }
       button.engine = engine;
 
       this.buttons.appendChild(button);
@@ -580,10 +594,10 @@ class SearchOneOffs {
     if (tooManyEngines) {
       // Make the top-level menu button.
       let button = document.createXULElement("toolbarbutton");
-      list.appendChild(button);
       button.classList.add("addengine-menu-button", "addengine-item");
       button.setAttribute("badged", "true");
       button.setAttribute("type", "menu");
+      button.setAttribute("wantdropmarker", "true");
       button.setAttribute(
         "label",
         this.bundle.GetStringFromName("cmd_addFoundEngineMenu")
@@ -598,6 +612,7 @@ class SearchOneOffs {
       if (engine.icon) {
         button.setAttribute("image", engine.icon);
       }
+      list.appendChild(button);
 
       // Now make the button's child menupopup.
       list = document.createXULElement("menupopup");
@@ -700,9 +715,12 @@ class SearchOneOffs {
   }
 
   handleSearchCommand(aEvent, aEngine, aForceNewTab) {
+    if (this._view?.oneOffsCommandHandler(aEvent, aEngine)) {
+      return;
+    }
+
     let where = "current";
     let params;
-
     // Open ctrl/cmd clicks on one-off buttons in a new background tab.
     if (aForceNewTab) {
       where = "tab";
@@ -807,11 +825,11 @@ class SearchOneOffs {
    *        to pass anything for this parameter.  (Pass undefined or null.)
    * @returns {boolean} True if the one-offs handled the key press.
    */
-  handleKeyPress(event, numListItems, allowEmptySelection, textboxUserValue) {
+  handleKeyDown(event, numListItems, allowEmptySelection, textboxUserValue) {
     if (!this.popup && !this._view) {
       return false;
     }
-    let handled = this._handleKeyPress(
+    let handled = this._handleKeyDown(
       event,
       numListItems,
       allowEmptySelection,
@@ -824,7 +842,7 @@ class SearchOneOffs {
     return handled;
   }
 
-  _handleKeyPress(event, numListItems, allowEmptySelection, textboxUserValue) {
+  _handleKeyDown(event, numListItems, allowEmptySelection, textboxUserValue) {
     if (this.compact && this.container.hidden) {
       return false;
     }
@@ -1103,6 +1121,10 @@ class SearchOneOffs {
   }
 
   _on_click(event) {
+    if (this._view?.oneOffsClickHandler(event)) {
+      return;
+    }
+
     if (event.button == 2) {
       return; // ignore right clicks.
     }
@@ -1140,10 +1162,9 @@ class SearchOneOffs {
       // On success, hide the panel and tell event listeners to reshow it to
       // show the new engine.
       Services.search
-        .addEngine(
+        .addOpenSearchEngine(
           target.getAttribute("uri"),
-          target.getAttribute("image"),
-          false
+          target.getAttribute("image")
         )
         .then(engine => {
           this._rebuild();
@@ -1165,14 +1186,12 @@ class SearchOneOffs {
             "error_duplicate_engine_msg",
             [brandName, target.getAttribute("uri")]
           );
-          Services.prompt.QueryInterface(Ci.nsIPromptFactory);
-          let prompt = Services.prompt.getPrompt(
-            gBrowser.contentWindow,
-            Ci.nsIPrompt
+          Services.prompt.alertBC(
+            gBrowser.selectedBrowser.browsingContext,
+            Ci.nsIPrompt.MODAL_TYPE_CONTENT,
+            title,
+            text
           );
-          prompt.QueryInterface(Ci.nsIWritablePropertyBag2);
-          prompt.setPropertyAsBool("allowTabModal", true);
-          prompt.alert(title, text);
         });
     }
 

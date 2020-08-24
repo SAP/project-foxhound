@@ -6,6 +6,7 @@
 #include "Texture.h"
 
 #include "mozilla/webgpu/ffi/wgpu.h"
+#include "mozilla/dom/HTMLCanvasElement.h"
 #include "TextureView.h"
 
 namespace mozilla {
@@ -25,19 +26,24 @@ Texture::~Texture() { Cleanup(); }
 void Texture::Cleanup() {
   if (mValid && mParent) {
     mValid = false;
-    WebGPUChild* bridge = mParent->mBridge;
+    auto bridge = mParent->GetBridge();
     if (bridge && bridge->IsOpen()) {
-      bridge->DestroyTexture(mId);
+      bridge->SendTextureDestroy(mId);
     }
   }
 }
 
 already_AddRefed<TextureView> Texture::CreateView(
     const dom::GPUTextureViewDescriptor& aDesc) {
-  RawId id =
-      mParent->mBridge->TextureCreateView(mId, aDesc, *mDefaultViewDescriptor);
+  RawId id = mParent->GetBridge()->TextureCreateView(mId, aDesc,
+                                                     *mDefaultViewDescriptor);
   RefPtr<TextureView> view = new TextureView(this, id);
   return view.forget();
+}
+
+void Texture::Destroy() {
+  // TODO: we don't have to implement it right now, but it's used by the
+  // examples
 }
 
 }  // namespace webgpu

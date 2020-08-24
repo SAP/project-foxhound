@@ -147,8 +147,8 @@ nsresult LocalStorageManager::GetStorageInternal(
   nsAutoCString originAttrSuffix;
   nsAutoCString originKey;
 
-  nsresult rv =
-      GenerateOriginKey(aStoragePrincipal, originAttrSuffix, originKey);
+  nsresult rv = aStoragePrincipal->GetStorageOriginKey(originKey);
+  aStoragePrincipal->OriginAttributesRef().CreateSuffix(originAttrSuffix);
   if (NS_FAILED(rv)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -284,7 +284,7 @@ LocalStorageManager::GetNextGenLocalStorageEnabled(bool* aResult) {
 
 NS_IMETHODIMP
 LocalStorageManager::Preload(nsIPrincipal* aPrincipal, JSContext* aContext,
-                             nsISupports** _retval) {
+                             Promise** _retval) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(_retval);
@@ -294,7 +294,7 @@ LocalStorageManager::Preload(nsIPrincipal* aPrincipal, JSContext* aContext,
 
 NS_IMETHODIMP
 LocalStorageManager::IsPreloaded(nsIPrincipal* aPrincipal, JSContext* aContext,
-                                 nsISupports** _retval) {
+                                 Promise** _retval) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(_retval);

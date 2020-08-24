@@ -104,6 +104,12 @@ loader.lazyRequireGetter(
   "devtools/server/actors/highlighters",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "CompatibilityActor",
+  "devtools/server/actors/compatibility",
+  true
+);
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
@@ -126,6 +132,7 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
     protocol.Actor.prototype.destroy.call(this);
     this.destroyEyeDropper();
 
+    this._compatibility = null;
     this._highlighterPromise = null;
     this._pageStylePromise = null;
     this._walkerPromise = null;
@@ -181,6 +188,16 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
     return this._pageStylePromise;
   },
 
+  getCompatibility: function() {
+    if (this._compatibility) {
+      return this._compatibility;
+    }
+
+    this._compatibility = CompatibilityActor(this);
+    this.manage(this._compatibility);
+    return this._compatibility;
+  },
+
   /**
    * The most used highlighter actor is the HighlighterActor which can be
    * conveniently retrieved by this method.
@@ -192,21 +209,15 @@ exports.InspectorActor = protocol.ActorClassWithSpec(inspectorSpec, {
    *
    * @param {Boolean} autohide Optionally autohide the highlighter after an
    * element has been picked
-   * @param {Boolean} useNewBoxModelHighlighter Whether to use the new box model
-   * highlighter that has split renderer and observer parts.
    * @return {HighlighterActor}
    */
-  getHighlighter: function(autohide, useNewBoxModelHighlighter) {
+  getHighlighter: function(autohide) {
     if (this._highlighterPromise) {
       return this._highlighterPromise;
     }
 
     this._highlighterPromise = this.getWalker().then(walker => {
-      const highlighter = HighlighterActor(
-        this,
-        autohide,
-        useNewBoxModelHighlighter
-      );
+      const highlighter = HighlighterActor(this, autohide);
       this.manage(highlighter);
       return highlighter;
     });

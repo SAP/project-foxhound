@@ -36,9 +36,9 @@
 
 #include "vm/Compartment-inl.h"        // for Compartment::wrap
 #include "vm/EnvironmentObject-inl.h"  // for JSObject::enclosingEnvironment
-#include "vm/JSObject-inl.h"           // for IsInternalFunctionObject
-#include "vm/ObjectOperations-inl.h"   // for HasProperty, GetProperty
-#include "vm/Realm-inl.h"              // for AutoRealm::AutoRealm
+#include "vm/JSObject-inl.h"  // for IsInternalFunctionObject, NewObjectWithGivenProtoAndKind
+#include "vm/ObjectOperations-inl.h"  // for HasProperty, GetProperty
+#include "vm/Realm-inl.h"             // for AutoRealm::AutoRealm
 
 namespace js {
 class GlobalObject;
@@ -88,7 +88,7 @@ static DebuggerEnvironment* DebuggerEnvironment_checkThis(
   if (!thisobj) {
     return nullptr;
   }
-  if (thisobj->getClass() != &DebuggerEnvironment::class_) {
+  if (!thisobj->is<DebuggerEnvironment>()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_INCOMPATIBLE_PROTO, "Debugger.Environment",
                               "method", thisobj->getClass()->name);
@@ -97,9 +97,8 @@ static DebuggerEnvironment* DebuggerEnvironment_checkThis(
 
   // Forbid Debugger.Environment.prototype, which is of class
   // DebuggerEnvironment::class_ but isn't a real working Debugger.Environment.
-  // The prototype object is distinguished by having no referent.
   DebuggerEnvironment* nthisobj = &thisobj->as<DebuggerEnvironment>();
-  if (!nthisobj->getPrivate()) {
+  if (!nthisobj->isInstance()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_INCOMPATIBLE_PROTO, "Debugger.Environment",
                               "method", "prototype object");
@@ -399,10 +398,10 @@ DebuggerEnvironment* DebuggerEnvironment::create(JSContext* cx,
                                                  HandleObject proto,
                                                  HandleObject referent,
                                                  HandleNativeObject debugger) {
-  NewObjectKind newKind =
-      IsInsideNursery(referent) ? GenericObject : TenuredObject;
   DebuggerEnvironment* obj =
-      NewObjectWithGivenProto<DebuggerEnvironment>(cx, proto, newKind);
+      IsInsideNursery(referent)
+          ? NewObjectWithGivenProto<DebuggerEnvironment>(cx, proto)
+          : NewTenuredObjectWithGivenProto<DebuggerEnvironment>(cx, proto);
   if (!obj) {
     return nullptr;
   }

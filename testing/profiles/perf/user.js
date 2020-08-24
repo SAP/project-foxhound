@@ -44,7 +44,6 @@ user_pref("dom.disable_window_move_resize", true);
 user_pref("dom.push.connection.enabled", false);
 user_pref("extensions.autoDisableScopes", 10);
 user_pref("extensions.blocklist.enabled", false);
-user_pref("extensions.blocklist.url", "http://127.0.0.1/extensions-dummy/blocklistURL");
 user_pref("extensions.checkCompatibility", false);
 user_pref("extensions.getAddons.get.url", "http://127.0.0.1/extensions-dummy/repositoryGetURL");
 user_pref("extensions.getAddons.search.browseURL", "http://127.0.0.1/extensions-dummy/repositoryBrowseURL");
@@ -53,7 +52,6 @@ user_pref("extensions.systemAddon.update.url", "http://127.0.0.1/dummy-system-ad
 user_pref("extensions.update.background.url", "http://127.0.0.1/extensions-dummy/updateBackgroundURL");
 user_pref("extensions.update.notifyUser", false);
 user_pref("extensions.update.url", "http://127.0.0.1/extensions-dummy/updateURL");
-user_pref("extensions.webservice.discoverURL", "http://127.0.0.1/extensions-dummy/discoveryURL");
 user_pref("identity.fxaccounts.auth.uri", "https://127.0.0.1/fxa-dummy/");
 user_pref("identity.fxaccounts.migrateToDevEdition", false);
 // Avoid idle-daily notifications, to avoid expensive operations that may

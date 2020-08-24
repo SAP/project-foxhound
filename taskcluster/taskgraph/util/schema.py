@@ -145,6 +145,8 @@ def check_schema(schema):
         def check_identifier(path, k):
             if k in (text_type, text_type, voluptuous.Extra):
                 pass
+            elif isinstance(k, voluptuous.NotIn):
+                pass
             elif isinstance(k, text_type):
                 if not identifier_re.match(k) and not whitelisted(path):
                     raise RuntimeError(
@@ -152,7 +154,7 @@ def check_schema(schema):
                         'not {!r} @ {}'.format(k, path))
             elif isinstance(k, (voluptuous.Optional, voluptuous.Required)):
                 check_identifier(path, k.schema)
-            elif isinstance(k, voluptuous.Any):
+            elif isinstance(k, (voluptuous.Any, voluptuous.All)):
                 for v in k.validators:
                     check_identifier(path, v)
             elif not whitelisted(path):
@@ -181,7 +183,8 @@ class Schema(voluptuous.Schema):
     """
     def __init__(self, *args, **kwargs):
         super(Schema, self).__init__(*args, **kwargs)
-        check_schema(self)
+        if not taskgraph.fast:
+            check_schema(self)
 
     def extend(self, *args, **kwargs):
         schema = super(Schema, self).extend(*args, **kwargs)
@@ -190,6 +193,11 @@ class Schema(voluptuous.Schema):
         schema.__class__ = Schema
         return schema
 
+    def _compile(self, schema):
+        if taskgraph.fast:
+            return
+        return super(Schema, self)._compile(schema)
+
     def __getitem__(self, item):
         return self.schema[item]
 
@@ -197,9 +205,17 @@ class Schema(voluptuous.Schema):
 OptimizationSchema = voluptuous.Any(
     # always run this task (default)
     None,
+    # always optimize this task
+    {'always': None},
+    # optimize strategy aliases for build kind
+    {'build': list(schedules.ALL_COMPONENTS)},
+    {'build-optimized': list(schedules.ALL_COMPONENTS)},
+    {'build-fuzzing': None},
     # search the index for the given index namespaces, and replace this task if found
     # the search occurs in order, with the first match winning
     {'index-search': [text_type]},
+    {'push-interval-10': None},
+    {'push-interval-25': None},
     # consult SETA and skip this task if it is low-value
     {'seta': None},
     # skip this task if none of the given file patterns match
@@ -210,7 +226,6 @@ OptimizationSchema = voluptuous.Any(
     {'test': list(schedules.ALL_COMPONENTS)},
     {'test-inclusive': list(schedules.ALL_COMPONENTS)},
     {'test-try': list(schedules.ALL_COMPONENTS)},
-    {'fuzzing-builds': list(schedules.ALL_COMPONENTS)},
 )
 
 # shortcut for a string where task references are allowed

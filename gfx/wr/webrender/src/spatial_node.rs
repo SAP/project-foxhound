@@ -340,7 +340,7 @@ impl SpatialNode {
                                 .post_translate(-scroll_offset)
                         }
                         ReferenceFrameKind::Perspective { scrolling_relative_to: None } |
-                        ReferenceFrameKind::Transform => source_transform,
+                        ReferenceFrameKind::Transform | ReferenceFrameKind::Zoom => source_transform,
                     };
 
                     let resolved_transform =
@@ -368,8 +368,20 @@ impl SpatialNode {
                         // incompatible coordinate system.
                         match ScaleOffset::from_transform(&relative_transform) {
                             Some(ref scale_offset) => {
+                                // We generally do not want to snap animated transforms as it causes jitter.
+                                // However, we do want to snap the visual viewport offset when scrolling.
+                                // Therefore only snap the transform for Zoom reference frames. This may still
+                                // cause jitter when zooming, unfortunately.
+                                let mut maybe_snapped = scale_offset.clone();
+                                if info.kind == ReferenceFrameKind::Zoom {
+                                    maybe_snapped.offset = snap_offset(
+                                        scale_offset.offset,
+                                        state.coordinate_system_relative_scale_offset.scale,
+                                        global_device_pixel_scale
+                                    );
+                                }
                                 cs_scale_offset =
-                                    state.coordinate_system_relative_scale_offset.accumulate(scale_offset);
+                                    state.coordinate_system_relative_scale_offset.accumulate(&maybe_snapped);
                             }
                             None => reset_cs_id = true,
                         }
@@ -464,7 +476,7 @@ impl SpatialNode {
         // between the scrolled content and unscrolled viewport we adjust the viewport's
         // position by the scroll offset in order to work with their relative positions on the
         // page.
-        let sticky_rect = info.frame_rect.translate(*viewport_scroll_offset);
+        let mut sticky_rect = info.frame_rect.translate(*viewport_scroll_offset);
 
         let mut sticky_offset = LayoutVector2D::zero();
         if let Some(margin) = info.margins.top {
@@ -485,27 +497,34 @@ impl SpatialNode {
                 sticky_offset.y = top_viewport_edge - sticky_rect.min_y();
                 sticky_offset.y = sticky_offset.y.max(-info.previously_applied_offset.y);
             }
-            debug_assert!(sticky_offset.y + info.previously_applied_offset.y >= 0.0);
         }
 
         // If we don't have a sticky-top offset (sticky_offset.y + info.previously_applied_offset.y
         // == 0), or if we have a previously-applied bottom offset (previously_applied_offset.y < 0)
-        // then we check for handling the bottom margin case.
+        // then we check for handling the bottom margin case. Note that the "don't have a sticky-top
+        // offset" case includes the case where we *had* a sticky-top offset but we reduced it to
+        // zero in the above block.
         if sticky_offset.y + info.previously_applied_offset.y <= 0.0 {
             if let Some(margin) = info.margins.bottom {
+                // If sticky_offset.y is nonzero that means we must have set it
+                // in the sticky-top handling code above, so this item must have
+                // both top and bottom sticky margins. We adjust the item's rect
+                // by the top-sticky offset, and then combine any offset from
+                // the bottom-sticky calculation into sticky_offset below.
+                sticky_rect.origin.y += sticky_offset.y;
+
                 // Same as the above case, but inverted for bottom-sticky items. Here
                 // we adjust items upwards, resulting in a negative sticky_offset.y,
                 // or reduce the already-present upward adjustment, resulting in a positive
                 // sticky_offset.y.
                 let bottom_viewport_edge = viewport_rect.max_y() - margin;
                 if sticky_rect.max_y() > bottom_viewport_edge {
-                    sticky_offset.y = bottom_viewport_edge - sticky_rect.max_y();
+                    sticky_offset.y += bottom_viewport_edge - sticky_rect.max_y();
                 } else if info.previously_applied_offset.y < 0.0 &&
                     sticky_rect.max_y() < bottom_viewport_edge {
-                    sticky_offset.y = bottom_viewport_edge - sticky_rect.max_y();
+                    sticky_offset.y += bottom_viewport_edge - sticky_rect.max_y();
                     sticky_offset.y = sticky_offset.y.min(-info.previously_applied_offset.y);
                 }
-                debug_assert!(sticky_offset.y + info.previously_applied_offset.y <= 0.0);
             }
         }
 
@@ -519,20 +538,19 @@ impl SpatialNode {
                 sticky_offset.x = left_viewport_edge - sticky_rect.min_x();
                 sticky_offset.x = sticky_offset.x.max(-info.previously_applied_offset.x);
             }
-            debug_assert!(sticky_offset.x + info.previously_applied_offset.x >= 0.0);
         }
 
         if sticky_offset.x + info.previously_applied_offset.x <= 0.0 {
             if let Some(margin) = info.margins.right {
+                sticky_rect.origin.x += sticky_offset.x;
                 let right_viewport_edge = viewport_rect.max_x() - margin;
                 if sticky_rect.max_x() > right_viewport_edge {
-                    sticky_offset.x = right_viewport_edge - sticky_rect.max_x();
+                    sticky_offset.x += right_viewport_edge - sticky_rect.max_x();
                 } else if info.previously_applied_offset.x < 0.0 &&
                     sticky_rect.max_x() < right_viewport_edge {
-                    sticky_offset.x = right_viewport_edge - sticky_rect.max_x();
+                    sticky_offset.x += right_viewport_edge - sticky_rect.max_x();
                     sticky_offset.x = sticky_offset.x.min(-info.previously_applied_offset.x);
                 }
-                debug_assert!(sticky_offset.x + info.previously_applied_offset.x <= 0.0);
             }
         }
 

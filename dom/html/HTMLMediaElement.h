@@ -6,7 +6,6 @@
 #ifndef mozilla_dom_HTMLMediaElement_h
 #define mozilla_dom_HTMLMediaElement_h
 
-#include "nsAutoPtr.h"
 #include "nsGenericHTMLElement.h"
 #include "AudioChannelService.h"
 #include "MediaEventSource.h"
@@ -22,7 +21,6 @@
 #include "mozilla/StateWatching.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/dom/HTMLMediaElementBinding.h"
-#include "mozilla/dom/MediaControlKeysEvent.h"
 #include "mozilla/dom/MediaDebugInfoBinding.h"
 #include "mozilla/dom/MediaKeys.h"
 #include "mozilla/dom/TextTrackManager.h"
@@ -30,6 +28,8 @@
 #include "PrincipalChangeObserver.h"
 #include "nsStubMutationObserver.h"
 #include "MediaSegment.h"  // for PrincipalHandle, GraphTime
+
+#include <utility>
 
 // X.h on Linux #defines CurrentTime as 0L, so we have to #undef it here.
 #ifdef CurrentTime
@@ -103,7 +103,7 @@ enum class StreamCaptureBehavior : uint8_t {
 class HTMLMediaElement : public nsGenericHTMLElement,
                          public MediaDecoderOwner,
                          public PrincipalChangeObserver<MediaStreamTrack>,
-                         public SupportsWeakPtr<HTMLMediaElement>,
+                         public SupportsWeakPtr,
                          public nsStubMutationObserver {
  public:
   typedef mozilla::TimeStamp TimeStamp;
@@ -134,7 +134,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
     RefPtr<DOMMediaStream> mFinishWhenEndedAttrStream;
   };
 
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(HTMLMediaElement)
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
 
   CORSMode GetCORSMode() { return mCORSMode; }
@@ -258,6 +257,11 @@ class HTMLMediaElement : public nsGenericHTMLElement,
    * document being active, inactive, visible or hidden.
    */
   void NotifyOwnerDocumentActivityChanged();
+
+  // Called when the media element enters or leaves the fullscreen.
+  void NotifyFullScreenChanged();
+
+  bool IsInFullScreen() const;
 
   // From PrincipalChangeObserver<MediaStreamTrack>.
   void PrincipalChanged(MediaStreamTrack* aTrack) override;
@@ -700,9 +704,14 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   void OnVisibilityChange(Visibility aNewVisibility);
 
-  // These are used for testing only
+  // Begin testing only methods
   float ComputedVolume() const;
   bool ComputedMuted() const;
+
+  // Return true if the media has been suspended media due to an inactive
+  // document or prohibiting by the docshell.
+  bool IsSuspendedByInactiveDocOrDocShell() const;
+  // End testing only methods
 
   void SetMediaInfo(const MediaInfo& aInfo);
 
@@ -735,7 +744,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // empty and the default device is being used.
   void GetSinkId(nsString& aSinkId) {
     MOZ_ASSERT(NS_IsMainThread());
-    aSinkId = mSink.first();
+    aSinkId = mSink.first;
   }
 
   // This is used to notify MediaElementAudioSourceNode that media element is
@@ -759,13 +768,16 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   class MediaStreamTrackListener;
   class FirstFrameListener;
   class ShutdownObserver;
-  class MediaControlEventListener;
+  class MediaControlKeyListener;
 
   MediaDecoderOwner::NextFrameStatus NextFrameStatus();
 
   void SetDecoder(MediaDecoder* aDecoder);
 
   void PlayInternal(bool aHandlingUserInput);
+
+  // See spec, https://html.spec.whatwg.org/#internal-pause-steps
+  void PauseInternal();
 
   /** Use this method to change the mReadyState member, so required
    * events can be fired.
@@ -1338,14 +1350,13 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // process in order to keep its playing state correct.
   void NotifyMediaControlPlaybackStateChanged();
 
-  // After media has been paused, trigger a timer to stop listening to the media
-  // control key events.
-  void CreateStopMediaControlTimerIfNeeded();
-  static void StopMediaControlTimerCallback(nsITimer* aTimer, void* aClosure);
-
   // Clear the timer when we want to continue listening to the media control
   // key events.
   void ClearStopMediaControlTimerIfNeeded();
+
+  // This function is used to update the status of media control when the media
+  // changes its status of being used in the Picture-in-Picture mode.
+  void UpdateMediaControlAfterPictureInPictureModeChanged();
 
   // The current decoder. Load() has been called on this decoder.
   // At most one of mDecoder and mSrcStream can be non-null.
@@ -1565,9 +1576,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // Timer used to simulate video-suspend.
   nsCOMPtr<nsITimer> mVideoDecodeSuspendTimer;
 
-  // Timer used to stop listening media control events.
-  nsCOMPtr<nsITimer> mStopMediaControlTimer;
-
   // Encrypted Media Extension media keys.
   RefPtr<MediaKeys> mMediaKeys;
   RefPtr<MediaKeys> mIncomingMediaKeys;
@@ -1623,10 +1631,11 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // to raise the 'waiting' event as per 4.7.1.8 in HTML 5 specification.
   bool mPlayingBeforeSeek = false;
 
-  // True if this element is suspended because the document is inactive.
-  bool mSuspendedForInactiveDocument = false;
+  // True if this element is suspended because the document is inactive or the
+  // inactive docshell is not allowing media to play.
+  bool mSuspendedByInactiveDocOrDocshell = false;
 
-  // True if event delivery is suspended (mSuspendedForInactiveDocument
+  // True if event delivery is suspended (mSuspendedByInactiveDocOrDocshell
   // must also be true).
   bool mEventDeliveryPaused = false;
 
@@ -1896,6 +1905,10 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // AsyncRejectSeekDOMPromiseIfExists() methods.
   RefPtr<dom::Promise> mSeekDOMPromise;
 
+  // Return true if the docshell is inactive and explicitly wants to stop media
+  // playing in that shell.
+  bool ShouldBeSuspendedByInactiveDocShell() const;
+
   // For debugging bug 1407148.
   void AssertReadyStateIsNothing();
 
@@ -1905,7 +1918,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // unplugged. It can be set to ("", nullptr). It follows the spec attribute:
   // https://w3c.github.io/mediacapture-output/#htmlmediaelement-extensions
   // Read/Write from the main thread only.
-  Pair<nsString, RefPtr<AudioDeviceInfo>> mSink;
+  std::pair<nsString, RefPtr<AudioDeviceInfo>> mSink;
 
   // This flag is used to control when the user agent is to show a poster frame
   // for a video element instead of showing the video contents.
@@ -1922,11 +1935,20 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   MozPromiseRequestHolder<ResumeDelayedPlaybackAgent::ResumePromise>
       mResumePlaybackRequest;
 
-  // We use MediaControlEventListener to listen media control keys event, which
-  // would play or pause media element according to different events.
-  void StartListeningMediaControlEventIfNeeded();
-  void StopListeningMediaControlEventIfNeeded();
-  RefPtr<MediaControlEventListener> mMediaControlEventListener;
+  // Return true if the media qualifies for being controlled by media control
+  // keys.
+  bool ShouldStartMediaControlKeyListener() const;
+
+  // Start the listener if media fits the requirement of being able to be
+  // controlled be media control keys.
+  void StartMediaControlKeyListenerIfNeeded();
+
+  // It's used to listen media control key, by which we would play or pause
+  // media element.
+  RefPtr<MediaControlKeyListener> mMediaControlKeyListener;
+
+  // Return true if the media element is being used in picture in picture mode.
+  bool IsBeingUsedInPictureInPictureMode() const;
 };
 
 // Check if the context is chrome or has the debugger or tabs permission

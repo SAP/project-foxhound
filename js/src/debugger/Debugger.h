@@ -395,13 +395,8 @@ class DebuggerWeakMap : private WeakMap<HeapPtr<Referent*>, HeapPtr<Wrapper*>> {
  public:
   void traceCrossCompartmentEdges(JSTracer* tracer) {
     for (Enum e(*this); !e.empty(); e.popFront()) {
+      TraceEdge(tracer, &e.front().mutableKey(), "Debugger WeakMap key");
       e.front().value()->trace(tracer);
-      Key key = e.front().key();
-      TraceEdge(tracer, &key, "Debugger WeakMap key");
-      if (key != e.front().key()) {
-        e.rekeyFront(key);
-      }
-      key.unsafeSet(nullptr);
     }
   }
 
@@ -440,11 +435,7 @@ using Env = JSObject;
 
 // The referent of a Debugger.Script.
 //
-// - For most scripts, we point at their LazyScript, because that address
-//   doesn't change as the script is lazified/delazified.
-//
-// - For scripts that cannot be lazified, and thus have no LazyScript, we point
-//   directly to their JSScript.
+// - For most scripts, we point at their BaseScript.
 //
 // - For Web Assembly instances for which we are presenting a script-like
 //   interface, we point at their WasmInstanceObject.
@@ -504,15 +495,25 @@ class MOZ_RAII DebuggerList {
                                            FireHookFun fireHook);
 };
 
+class DebuggerInstanceObject : public NativeObject {
+ private:
+  static const JSClassOps classOps_;
+
+ public:
+  static const JSClass class_;
+};
+
 class Debugger : private mozilla::LinkedListElement<Debugger> {
   friend class DebugAPI;
   friend class Breakpoint;
   friend class DebuggerFrame;
   friend class DebuggerMemory;
+  friend class DebuggerInstanceObject;
 
   template <typename>
   friend class DebuggerList;
   friend struct JSRuntime::GlobalObjectWatchersLinkAccess<Debugger>;
+  friend struct JSRuntime::GarbageCollectionWatchersLinkAccess<Debugger>;
   friend class SavedStacks;
   friend class ScriptedOnStepHandler;
   friend class ScriptedOnPopHandler;
@@ -701,6 +702,13 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   mozilla::DoublyLinkedListElement<Debugger> onNewGlobalObjectWatchersLink;
 
   /*
+   * If this Debugger has a onGarbageCollection handler, then
+   * this link is inserted into the list headed by
+   * JSRuntime::onGarbageCollectionWatchers.
+   */
+  mozilla::DoublyLinkedListElement<Debugger> onGarbageCollectionWatchersLink;
+
+  /*
    * Map from stack frames that are currently on the stack to Debugger.Frame
    * instances.
    *
@@ -732,7 +740,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    *
    * An entry is present in this table when:
    *  - both the debuggee generator object and the Debugger.Frame object exists
-   *  - the debuggee generator object belongs to a relam that is a debuggee of
+   *  - the debuggee generator object belongs to a realm that is a debuggee of
    *    the Debugger.Frame's owner.
    *
    * regardless of whether the frame is currently suspended. (This list is
@@ -871,11 +879,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   void traceForMovingGC(JSTracer* trc);
   void traceCrossCompartmentEdges(JSTracer* tracer);
 
-  static const JSClassOps classOps_;
-
- public:
-  static const JSClass class_;
-
  private:
   template <typename F>
   void forEachWeakMap(const F& f);
@@ -884,6 +887,13 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
                                        Debugger& dbg, Hook which);
   static MOZ_MUST_USE bool setHookImpl(JSContext* cx, const CallArgs& args,
                                        Debugger& dbg, Hook which);
+
+  static MOZ_MUST_USE bool getGarbageCollectionHook(JSContext* cx,
+                                                    const CallArgs& args,
+                                                    Debugger& dbg);
+  static MOZ_MUST_USE bool setGarbageCollectionHook(JSContext* cx,
+                                                    const CallArgs& args,
+                                                    Debugger& dbg);
 
   static bool isCompilableUnit(JSContext* cx, unsigned argc, Value* vp);
   static bool recordReplayProcessKind(JSContext* cx, unsigned argc, Value* vp);
@@ -895,9 +905,35 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec static_methods[];
 
-  static void removeFromFrameMapsAndClearBreakpointsIn(JSContext* cx,
-                                                       AbstractFramePtr frame,
-                                                       bool suspending = false);
+  /**
+   * Suspend the DebuggerFrame, clearing on-stack data but leaving it linked
+   * with the AbstractGeneratorObject so it can be re-used later.
+   */
+  static void suspendGeneratorDebuggerFrames(JSContext* cx,
+                                             AbstractFramePtr frame);
+
+  /**
+   * Terminate the DebuggerFrame, clearing all data associated with the frame
+   * so that it cannot be used to introspect stack frame data.
+   */
+  static void terminateDebuggerFrames(JSContext* cx, AbstractFramePtr frame);
+
+  /**
+   * Terminate a given DebuggerFrame, removing all internal state and all
+   * references to the frame from the Debugger itself. If the frame is being
+   * terminated while 'frames' or 'generatorFrames' are being iterated, pass a
+   * pointer to the iteration Enum to remove the entry and ensure that iteration
+   * behaves properly.
+   *
+   * The AbstractFramePtr may be omited in a call so long as it is either
+   * called again later with the correct 'frame', or the frame itself has never
+   * had on-stack data or a 'frames' entry and has never had an onStep handler.
+   */
+  static void terminateDebuggerFrame(
+      JSFreeOp* fop, Debugger* dbg, DebuggerFrame* dbgFrame,
+      AbstractFramePtr frame, FrameMap::Enum* maybeFramesEnum = nullptr,
+      GeneratorWeakMap::Enum* maybeGeneratorFramesEnum = nullptr);
+
   static bool updateExecutionObservabilityOfFrames(
       JSContext* cx, const DebugAPI::ExecutionObservableSet& obs,
       IsObserving observing);
@@ -908,8 +944,12 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
       JSContext* cx, DebugAPI::ExecutionObservableSet& obs,
       IsObserving observing);
 
-  template <typename FrameFn /* void (DebuggerFrame*) */>
-  static void forEachDebuggerFrame(AbstractFramePtr frame, FrameFn fn);
+  template <typename FrameFn /* void (Debugger*, DebuggerFrame*) */>
+  static void forEachOnStackDebuggerFrame(AbstractFramePtr frame, FrameFn fn);
+  template <typename FrameFn /* void (Debugger*, DebuggerFrame*) */>
+  static void forEachOnStackOrSuspendedDebuggerFrame(JSContext* cx,
+                                                     AbstractFramePtr frame,
+                                                     FrameFn fn);
 
   /*
    * Return a vector containing all Debugger.Frame instances referring to
@@ -956,6 +996,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
 
   JSObject* getHook(Hook hook) const;
   bool hasAnyLiveHooks() const;
+  inline bool isHookCallAllowed(JSContext* cx) const;
 
   static void slowPathPromiseHook(JSContext* cx, Hook hook,
                                   Handle<PromiseObject*> promise);
@@ -972,6 +1013,10 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
 
   template <typename RunImpl /* bool () */>
   MOZ_MUST_USE bool enterDebuggerHook(JSContext* cx, RunImpl runImpl) {
+    if (!isHookCallAllowed(cx)) {
+      return true;
+    }
+
     AutoRealm ar(cx, object);
 
     if (!runImpl()) {
@@ -1075,7 +1120,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
 #ifdef DEBUG
   static bool isChildJSObject(JSObject* obj);
 #endif
-  static Debugger* fromChildJSObject(JSObject* obj);
 
   Zone* zone() const { return toJSObject()->zone(); }
 
@@ -1084,7 +1128,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
 
   WeakGlobalObjectSet::Range allDebuggees() const { return debuggees.all(); }
 
-  static void detachAllDebuggersFromGlobal(JSFreeOp* fop, GlobalObject* global);
 #ifdef DEBUG
   static bool isDebuggerCrossCompartmentEdge(JSObject* obj,
                                              const js::gc::Cell* cell);
@@ -1181,6 +1224,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    */
   MOZ_MUST_USE bool getFrame(JSContext* cx, const FrameIter& iter,
                              MutableHandleValue vp);
+  MOZ_MUST_USE bool getFrame(JSContext* cx, MutableHandleDebuggerFrame result);
   MOZ_MUST_USE bool getFrame(JSContext* cx, const FrameIter& iter,
                              MutableHandleDebuggerFrame result);
   MOZ_MUST_USE bool getFrame(JSContext* cx,
@@ -1294,7 +1338,7 @@ class DebuggerDebuggeeLink : public NativeObject {
  * js::gc::MemoryUse categories.
  */
 struct Handler {
-  virtual ~Handler() {}
+  virtual ~Handler() = default;
 
   /*
    * If this Handler is a reference to a callable JSObject, return that
@@ -1378,8 +1422,8 @@ class BreakpointSite {
   BreakpointList breakpoints;
 
  protected:
-  BreakpointSite(){};
-  virtual ~BreakpointSite() {}
+  BreakpointSite() = default;
+  virtual ~BreakpointSite() = default;
   void finalize(JSFreeOp* fop);
   virtual gc::Cell* owningCell() = 0;
 

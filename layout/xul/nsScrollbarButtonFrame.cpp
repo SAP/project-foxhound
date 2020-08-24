@@ -68,8 +68,8 @@ nsresult nsScrollbarButtonFrame::HandleEvent(nsPresContext* aPresContext,
       mCursorOnThis = false;
       break;
     case eMouseMove: {
-      nsPoint cursor =
-          nsLayoutUtils::GetEventCoordinatesRelativeTo(aEvent, this);
+      nsPoint cursor = nsLayoutUtils::GetEventCoordinatesRelativeTo(
+          aEvent, RelativeTo{this});
       nsRect frameRect(nsPoint(0, 0), GetSize());
       mCursorOnThis = frameRect.Contains(cursor);
       break;
@@ -87,12 +87,12 @@ bool nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
   // Get the desired action for the scrollbar button.
   LookAndFeel::IntID tmpAction;
   uint16_t button = aEvent->AsMouseEvent()->mButton;
-  if (button == MouseButton::eLeft) {
-    tmpAction = LookAndFeel::eIntID_ScrollButtonLeftMouseButtonAction;
+  if (button == MouseButton::ePrimary) {
+    tmpAction = LookAndFeel::IntID::ScrollButtonLeftMouseButtonAction;
   } else if (button == MouseButton::eMiddle) {
-    tmpAction = LookAndFeel::eIntID_ScrollButtonMiddleMouseButtonAction;
-  } else if (button == MouseButton::eRight) {
-    tmpAction = LookAndFeel::eIntID_ScrollButtonRightMouseButtonAction;
+    tmpAction = LookAndFeel::IntID::ScrollButtonMiddleMouseButtonAction;
+  } else if (button == MouseButton::eSecondary) {
+    tmpAction = LookAndFeel::IntID::ScrollButtonRightMouseButtonAction;
   } else {
     return false;
   }
@@ -125,7 +125,7 @@ bool nsScrollbarButtonFrame::HandleButtonPress(nsPresContext* aPresContext,
   // set this attribute so we can style it later
   AutoWeakFrame weakFrame(this);
   mContent->AsElement()->SetAttr(kNameSpaceID_None, nsGkAtoms::active,
-                                 NS_LITERAL_STRING("true"), true);
+                                 u"true"_ns, true);
 
   PresShell::SetCapturingContent(mContent, CaptureFlags::IgnoreAllowedState);
 
@@ -200,7 +200,7 @@ nsScrollbarButtonFrame::HandleRelease(nsPresContext* aPresContext,
 
 void nsScrollbarButtonFrame::Notify() {
   if (mCursorOnThis ||
-      LookAndFeel::GetInt(LookAndFeel::eIntID_ScrollbarButtonAutoRepeatBehavior,
+      LookAndFeel::GetInt(LookAndFeel::IntID::ScrollbarButtonAutoRepeatBehavior,
                           0)) {
     // get the scrollbar control
     nsIFrame* scrollbar;

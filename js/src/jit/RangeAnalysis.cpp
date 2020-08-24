@@ -11,6 +11,7 @@
 
 #include <algorithm>
 
+#include "jsmath.h"
 #include "jsnum.h"
 
 #include "jit/Ion.h"
@@ -160,7 +161,7 @@ bool RangeAnalysis::addBetaNodes() {
 
   for (PostorderIterator i(graph_.poBegin()); i != graph_.poEnd(); i++) {
     MBasicBlock* block = *i;
-    JitSpew(JitSpew_Range, "Looking at block %d", block->id());
+    JitSpew(JitSpew_Range, "Looking at block %u", block->id());
 
     BranchDirection branch_dir;
     MTest* test = block->immediateDominatorBranch(&branch_dir);
@@ -226,14 +227,14 @@ bool RangeAnalysis::addBetaNodes() {
             Range::NewInt32Range(alloc(), JSVAL_INT_MIN, JSVAL_INT_MAX - 1));
         block->insertBefore(*block->begin(), beta);
         replaceDominatedUsesWith(smaller, beta, block);
-        JitSpew(JitSpew_Range, "Adding beta node for smaller %d",
+        JitSpew(JitSpew_Range, "Adding beta node for smaller %u",
                 smaller->id());
         beta = MBeta::New(
             alloc(), greater,
             Range::NewInt32Range(alloc(), JSVAL_INT_MIN + 1, JSVAL_INT_MAX));
         block->insertBefore(*block->begin(), beta);
         replaceDominatedUsesWith(greater, beta, block);
-        JitSpew(JitSpew_Range, "Adding beta node for greater %d",
+        JitSpew(JitSpew_Range, "Adding beta node for greater %u",
                 greater->id());
       }
       continue;
@@ -318,7 +319,7 @@ bool RangeAnalysis::addBetaNodes() {
     if (JitSpewEnabled(JitSpew_Range)) {
       JitSpewHeader(JitSpew_Range);
       Fprinter& out = JitSpewPrinter();
-      out.printf("Adding beta node for %d with range ", val->id());
+      out.printf("Adding beta node for %u with range ", val->id());
       comp.dump(out);
     }
 
@@ -343,7 +344,7 @@ bool RangeAnalysis::removeBetaNodes() {
       MDefinition* def = *iter++;
       if (def->isBeta()) {
         MDefinition* op = def->getOperand(0);
-        JitSpew(JitSpew_Range, "Removing beta node %d for %d", def->id(),
+        JitSpew(JitSpew_Range, "Removing beta node %u for %u", def->id(),
                 op->id());
         def->justReplaceAllUsesWith(op);
         block->discardDef(def);
@@ -1263,7 +1264,7 @@ void MPhi::computeRange(TempAllocator& alloc) {
   Range* range = nullptr;
   for (size_t i = 0, e = numOperands(); i < e; i++) {
     if (getOperand(i)->block()->unreachable()) {
-      JitSpew(JitSpew_Range, "Ignoring unreachable input %d",
+      JitSpew(JitSpew_Range, "Ignoring unreachable input %u",
               getOperand(i)->id());
       continue;
     }
@@ -1292,7 +1293,7 @@ void MBeta::computeRange(TempAllocator& alloc) {
   Range opRange(getOperand(0));
   Range* range = Range::intersect(alloc, &opRange, comparison_, &emptyRange);
   if (emptyRange) {
-    JitSpew(JitSpew_Range, "Marking block for inst %d unreachable", id());
+    JitSpew(JitSpew_Range, "Marking block for inst %u unreachable", id());
     block()->setUnreachableUnchecked();
   } else {
     setRange(range);
@@ -1319,7 +1320,7 @@ void MClampToUint8::computeRange(TempAllocator& alloc) {
 }
 
 void MBitAnd::computeRange(TempAllocator& alloc) {
-  if (specialization_ != MIRType::Int32) {
+  if (type() != MIRType::Int32) {
     return;
   }
 
@@ -1332,7 +1333,7 @@ void MBitAnd::computeRange(TempAllocator& alloc) {
 }
 
 void MBitOr::computeRange(TempAllocator& alloc) {
-  if (specialization_ != MIRType::Int32) {
+  if (type() != MIRType::Int32) {
     return;
   }
 
@@ -1345,7 +1346,7 @@ void MBitOr::computeRange(TempAllocator& alloc) {
 }
 
 void MBitXor::computeRange(TempAllocator& alloc) {
-  if (specialization_ != MIRType::Int32) {
+  if (type() != MIRType::Int32) {
     return;
   }
 
@@ -1358,9 +1359,7 @@ void MBitXor::computeRange(TempAllocator& alloc) {
 }
 
 void MBitNot::computeRange(TempAllocator& alloc) {
-  if (specialization_ != MIRType::Int32) {
-    return;
-  }
+  MOZ_ASSERT(type() == MIRType::Int32);
 
   Range op(getOperand(0));
   op.wrapAroundToInt32();
@@ -1369,7 +1368,7 @@ void MBitNot::computeRange(TempAllocator& alloc) {
 }
 
 void MLsh::computeRange(TempAllocator& alloc) {
-  if (specialization_ != MIRType::Int32) {
+  if (type() != MIRType::Int32) {
     return;
   }
 
@@ -1389,7 +1388,7 @@ void MLsh::computeRange(TempAllocator& alloc) {
 }
 
 void MRsh::computeRange(TempAllocator& alloc) {
-  if (specialization_ != MIRType::Int32) {
+  if (type() != MIRType::Int32) {
     return;
   }
 
@@ -1409,7 +1408,7 @@ void MRsh::computeRange(TempAllocator& alloc) {
 }
 
 void MUrsh::computeRange(TempAllocator& alloc) {
-  if (specialization_ != MIRType::Int32) {
+  if (type() != MIRType::Int32) {
     return;
   }
 
@@ -1436,7 +1435,7 @@ void MUrsh::computeRange(TempAllocator& alloc) {
 }
 
 void MAbs::computeRange(TempAllocator& alloc) {
-  if (specialization_ != MIRType::Int32 && specialization_ != MIRType::Double) {
+  if (type() != MIRType::Int32 && type() != MIRType::Double) {
     return;
   }
 
@@ -1480,7 +1479,7 @@ void MPopcnt::computeRange(TempAllocator& alloc) {
 }
 
 void MMinMax::computeRange(TempAllocator& alloc) {
-  if (specialization_ != MIRType::Int32 && specialization_ != MIRType::Double) {
+  if (type() != MIRType::Int32 && type() != MIRType::Double) {
     return;
   }
 
@@ -1491,8 +1490,7 @@ void MMinMax::computeRange(TempAllocator& alloc) {
 }
 
 void MAdd::computeRange(TempAllocator& alloc) {
-  if (specialization() != MIRType::Int32 &&
-      specialization() != MIRType::Double) {
+  if (type() != MIRType::Int32 && type() != MIRType::Double) {
     return;
   }
   Range left(getOperand(0));
@@ -1505,8 +1503,7 @@ void MAdd::computeRange(TempAllocator& alloc) {
 }
 
 void MSub::computeRange(TempAllocator& alloc) {
-  if (specialization() != MIRType::Int32 &&
-      specialization() != MIRType::Double) {
+  if (type() != MIRType::Int32 && type() != MIRType::Double) {
     return;
   }
   Range left(getOperand(0));
@@ -1519,8 +1516,7 @@ void MSub::computeRange(TempAllocator& alloc) {
 }
 
 void MMul::computeRange(TempAllocator& alloc) {
-  if (specialization() != MIRType::Int32 &&
-      specialization() != MIRType::Double) {
+  if (type() != MIRType::Int32 && type() != MIRType::Double) {
     return;
   }
   Range left(getOperand(0));
@@ -1540,8 +1536,7 @@ void MMul::computeRange(TempAllocator& alloc) {
 }
 
 void MMod::computeRange(TempAllocator& alloc) {
-  if (specialization() != MIRType::Int32 &&
-      specialization() != MIRType::Double) {
+  if (type() != MIRType::Int32 && type() != MIRType::Double) {
     return;
   }
   Range lhs(getOperand(0));
@@ -1560,7 +1555,7 @@ void MMod::computeRange(TempAllocator& alloc) {
 
   // If both operands are non-negative integers, we can optimize this to an
   // unsigned mod.
-  if (specialization() == MIRType::Int32 && rhs.lower() > 0) {
+  if (type() == MIRType::Int32 && rhs.lower() > 0) {
     bool hasDoubles = lhs.lower() < 0 || lhs.canHaveFractionalPart() ||
                       rhs.canHaveFractionalPart();
     // It is not possible to check that lhs.lower() >= 0, since the range
@@ -1651,8 +1646,7 @@ void MMod::computeRange(TempAllocator& alloc) {
 }
 
 void MDiv::computeRange(TempAllocator& alloc) {
-  if (specialization() != MIRType::Int32 &&
-      specialization() != MIRType::Double) {
+  if (type() != MIRType::Int32 && type() != MIRType::Double) {
     return;
   }
   Range lhs(getOperand(0));
@@ -1714,10 +1708,6 @@ void MTruncateToInt32::computeRange(TempAllocator& alloc) {
   setRange(output);
 }
 
-void MToNumeric::computeRange(TempAllocator& alloc) {
-  setRange(new (alloc) Range(getOperand(0)));
-}
-
 void MToNumberInt32::computeRange(TempAllocator& alloc) {
   // No clamping since this computes the range *before* bailouts.
   setRange(new (alloc) Range(getOperand(0)));
@@ -1737,7 +1727,7 @@ void MFilterTypeSet::computeRange(TempAllocator& alloc) {
   setRange(new (alloc) Range(getOperand(0)));
 }
 
-static Range* GetTypedArrayRange(TempAllocator& alloc, Scalar::Type type) {
+static Range* GetArrayBufferViewRange(TempAllocator& alloc, Scalar::Type type) {
   switch (type) {
     case Scalar::Uint8Clamped:
     case Scalar::Uint8:
@@ -1757,6 +1747,7 @@ static Range* GetTypedArrayRange(TempAllocator& alloc, Scalar::Type type) {
     case Scalar::BigInt64:
     case Scalar::BigUint64:
     case Scalar::Int64:
+    case Scalar::Simd128:
     case Scalar::Float32:
     case Scalar::Float64:
     case Scalar::MaxTypedArrayViewType:
@@ -1768,14 +1759,22 @@ static Range* GetTypedArrayRange(TempAllocator& alloc, Scalar::Type type) {
 void MLoadUnboxedScalar::computeRange(TempAllocator& alloc) {
   // We have an Int32 type and if this is a UInt32 load it may produce a value
   // outside of our range, but we have a bailout to handle those cases.
-  setRange(GetTypedArrayRange(alloc, readType()));
+  setRange(GetArrayBufferViewRange(alloc, storageType()));
+}
+
+void MLoadDataViewElement::computeRange(TempAllocator& alloc) {
+  // We have an Int32 type and if this is a UInt32 load it may produce a value
+  // outside of our range, but we have a bailout to handle those cases.
+  setRange(GetArrayBufferViewRange(alloc, storageType()));
 }
 
 void MArrayLength::computeRange(TempAllocator& alloc) {
-  // Array lengths can go up to UINT32_MAX, but we only create MArrayLength
+  // Array lengths can go up to UINT32_MAX. IonBuilder only creates MArrayLength
   // nodes when the value is known to be int32 (see the
-  // OBJECT_FLAG_LENGTH_OVERFLOW flag).
-  setRange(Range::NewUInt32Range(alloc, 0, INT32_MAX));
+  // OBJECT_FLAG_LENGTH_OVERFLOW flag). WarpBuilder does a dynamic check and we
+  // have to return the range pre-bailouts, so use UINT32_MAX for Warp.
+  uint32_t max = JitOptions.warpBuilder ? UINT32_MAX : INT32_MAX;
+  setRange(Range::NewUInt32Range(alloc, 0, max));
 }
 
 void MInitializedLength::computeRange(TempAllocator& alloc) {
@@ -1783,11 +1782,11 @@ void MInitializedLength::computeRange(TempAllocator& alloc) {
       Range::NewUInt32Range(alloc, 0, NativeObject::MAX_DENSE_ELEMENTS_COUNT));
 }
 
-void MTypedArrayLength::computeRange(TempAllocator& alloc) {
+void MArrayBufferViewLength::computeRange(TempAllocator& alloc) {
   setRange(Range::NewUInt32Range(alloc, 0, INT32_MAX));
 }
 
-void MTypedArrayByteOffset::computeRange(TempAllocator& alloc) {
+void MArrayBufferViewByteOffset::computeRange(TempAllocator& alloc) {
   setRange(Range::NewUInt32Range(alloc, 0, INT32_MAX));
 }
 
@@ -1839,8 +1838,8 @@ void MArrayPush::computeRange(TempAllocator& alloc) {
 void MMathFunction::computeRange(TempAllocator& alloc) {
   Range opRange(getOperand(0));
   switch (function()) {
-    case Sin:
-    case Cos:
+    case UnaryMathFunction::Sin:
+    case UnaryMathFunction::Cos:
       if (!opRange.canBeInfiniteOrNaN()) {
         setRange(Range::NewDoubleRange(alloc, -1.0, 1.0));
       }
@@ -2225,7 +2224,7 @@ void RangeAnalysis::analyzeLoopPhi(LoopIterationBound* loopBound, MPhi* phi) {
         SymbolicBound::New(alloc(), loopBound, limitSum));
   }
 
-  JitSpew(JitSpew_Range, "added symbolic range on %d", phi->id());
+  JitSpew(JitSpew_Range, "added symbolic range on %u", phi->id());
   SpewRange(phi);
 }
 
@@ -2366,7 +2365,7 @@ bool RangeAnalysis::analyze() {
       }
 
       def->computeRange(alloc());
-      JitSpew(JitSpew_Range, "computing range on %d", def->id());
+      JitSpew(JitSpew_Range, "computing range on %u", def->id());
       SpewRange(def);
     }
 
@@ -2567,8 +2566,7 @@ bool MAdd::needTruncation(TruncateKind kind) {
 
 void MAdd::truncate() {
   MOZ_ASSERT(needTruncation(truncateKind()));
-  specialization_ = MIRType::Int32;
-  setResultType(MIRType::Int32);
+  setSpecialization(MIRType::Int32);
   if (truncateKind() >= IndirectTruncate && range()) {
     range()->wrapAroundToInt32();
   }
@@ -2583,8 +2581,7 @@ bool MSub::needTruncation(TruncateKind kind) {
 
 void MSub::truncate() {
   MOZ_ASSERT(needTruncation(truncateKind()));
-  specialization_ = MIRType::Int32;
-  setResultType(MIRType::Int32);
+  setSpecialization(MIRType::Int32);
   if (truncateKind() >= IndirectTruncate && range()) {
     range()->wrapAroundToInt32();
   }
@@ -2599,8 +2596,7 @@ bool MMul::needTruncation(TruncateKind kind) {
 
 void MMul::truncate() {
   MOZ_ASSERT(needTruncation(truncateKind()));
-  specialization_ = MIRType::Int32;
-  setResultType(MIRType::Int32);
+  setSpecialization(MIRType::Int32);
   if (truncateKind() >= IndirectTruncate) {
     setCanBeNegativeZero(false);
     if (range()) {
@@ -2618,8 +2614,7 @@ bool MDiv::needTruncation(TruncateKind kind) {
 
 void MDiv::truncate() {
   MOZ_ASSERT(needTruncation(truncateKind()));
-  specialization_ = MIRType::Int32;
-  setResultType(MIRType::Int32);
+  setSpecialization(MIRType::Int32);
 
   // Divisions where the lhs and rhs are unsigned and the result is
   // truncated can be lowered more efficiently.
@@ -2639,8 +2634,7 @@ bool MMod::needTruncation(TruncateKind kind) {
 void MMod::truncate() {
   // As for division, handle unsigned modulus with a truncated result.
   MOZ_ASSERT(needTruncation(truncateKind()));
-  specialization_ = MIRType::Int32;
-  setResultType(MIRType::Int32);
+  setSpecialization(MIRType::Int32);
 
   if (unsignedOperands()) {
     replaceWithUnsignedOperands();
@@ -2759,16 +2753,20 @@ MDefinition::TruncateKind MToDouble::operandTruncateKind(size_t index) const {
 
 MDefinition::TruncateKind MStoreUnboxedScalar::operandTruncateKind(
     size_t index) const {
-  // Some receiver objects, such as typed arrays, will truncate out of range
-  // integer inputs.
-  return (truncateInput() && index == 2 && isIntegerWrite()) ? Truncate
-                                                             : NoTruncate;
+  // An integer store truncates the stored value.
+  return (index == 2 && isIntegerWrite()) ? Truncate : NoTruncate;
+}
+
+MDefinition::TruncateKind MStoreDataViewElement::operandTruncateKind(
+    size_t index) const {
+  // An integer store truncates the stored value.
+  return (index == 2 && isIntegerWrite()) ? Truncate : NoTruncate;
 }
 
 MDefinition::TruncateKind MStoreTypedArrayElementHole::operandTruncateKind(
     size_t index) const {
   // An integer store truncates the stored value.
-  return index == 3 && isIntegerWrite() ? Truncate : NoTruncate;
+  return (index == 3 && isIntegerWrite()) ? Truncate : NoTruncate;
 }
 
 MDefinition::TruncateKind MDiv::operandTruncateKind(size_t index) const {
@@ -2995,8 +2993,7 @@ static MDefinition::TruncateKind ComputeTruncateKind(MDefinition* candidate,
   // Special case integer division and modulo: a/b can be infinite, and a%b
   // can be NaN but cannot actually have rounding errors induced by truncation.
   if ((candidate->isDiv() || candidate->isMod()) &&
-      static_cast<const MBinaryArithInstruction*>(candidate)
-              ->specialization() == MIRType::Int32) {
+      candidate->type() == MIRType::Int32) {
     canHaveRoundingErrors = false;
   }
 
@@ -3400,7 +3397,7 @@ void MPowHalf::collectRangeInfoPreTrunc() {
 }
 
 void MUrsh::collectRangeInfoPreTrunc() {
-  if (specialization_ == MIRType::Int64) {
+  if (type() == MIRType::Int64) {
     return;
   }
 
@@ -3509,7 +3506,7 @@ bool RangeAnalysis::prepareForUCE(bool* shouldRemoveDeadCode) {
 
     test->replaceOperand(0, constant);
     JitSpew(JitSpew_Range,
-            "Update condition of %d to reflect unreachable branches.",
+            "Update condition of %u to reflect unreachable branches.",
             test->id());
 
     *shouldRemoveDeadCode = true;

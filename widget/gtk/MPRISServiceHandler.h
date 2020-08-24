@@ -8,20 +8,17 @@
 #define WIDGET_GTK_MPRIS_SERVICE_HANDLER_H_
 
 #include <gio/gio.h>
-#include "mozilla/dom/MediaControlKeysEvent.h"
+#include "mozilla/dom/MediaControlKeySource.h"
 #include "mozilla/Attributes.h"
 #include "nsString.h"
 
 #define DBUS_MRPIS_SERVICE_NAME "org.mpris.MediaPlayer2.firefox"
 #define DBUS_MPRIS_OBJECT_PATH "/org/mpris/MediaPlayer2"
+#define DBUS_MPRIS_PLAYER_INTERFACE "org.mpris.MediaPlayer2.Player"
+#define DBUS_MPRIS_TRACK_PATH "/org/mpris/MediaPlayer2/firefox"
 
 namespace mozilla {
 namespace widget {
-
-struct MPRISMetadata {
-  const char* mKey;
-  GVariant* mValue;
-};
 
 /**
  * This class implements the "MPRIS" D-Bus Service
@@ -50,7 +47,7 @@ struct MPRISMetadata {
  * media available for playback?)
  * and thus aren't a constexpr but merely a const method.
  */
-class MPRISServiceHandler final : public dom::MediaControlKeysEventSource {
+class MPRISServiceHandler final : public dom::MediaControlKeySource {
   NS_INLINE_DECL_REFCOUNTING(MPRISServiceHandler, override)
  public:
   // Note that this constructor does NOT initialize the MPRIS Service but only
@@ -61,7 +58,7 @@ class MPRISServiceHandler final : public dom::MediaControlKeysEventSource {
   bool IsOpened() const override;
 
   // From the EventSource.
-  void SetPlaybackState(dom::PlaybackState aState) override;
+  void SetPlaybackState(dom::MediaSessionPlaybackState aState) override;
 
   // GetPlaybackState returns dom::PlaybackState. GetPlaybackStatus returns this
   // state converted into d-bus variants.
@@ -114,7 +111,6 @@ class MPRISServiceHandler final : public dom::MediaControlKeysEventSource {
   void SetShuffle(bool aShuffle);
 #endif
 
-  std::vector<struct MPRISMetadata> GetDefaultMetadata();
   double GetVolume() const;
   bool SetVolume(double aVolume);
   int64_t GetPosition() const;
@@ -125,6 +121,12 @@ class MPRISServiceHandler final : public dom::MediaControlKeysEventSource {
   bool CanPause() const;
   bool CanSeek() const;
   bool CanControl() const;
+
+  void SetMediaMetadata(const dom::MediaMetadataBase& aMetadata) override;
+  GVariant* GetMetadataAsGVariant() const;
+
+  // TODO : modify the virtual control interface based on the supported keys
+  void SetSupportedMediaKeys(const MediaKeysArray& aSupportedKeys) override {}
 
  private:
   ~MPRISServiceHandler();
@@ -142,6 +144,7 @@ class MPRISServiceHandler final : public dom::MediaControlKeysEventSource {
   GDBusConnection* mConnection = nullptr;
   bool mInitialized = false;
   nsAutoCString mIdentity;
+  Maybe<dom::MediaMetadataBase> mMetadata;
 
   // Queries nsAppInfo to get the branded browser name and vendor
   void InitIdentity();
@@ -158,7 +161,7 @@ class MPRISServiceHandler final : public dom::MediaControlKeysEventSource {
   static void OnBusAcquiredStatic(GDBusConnection* aConnection,
                                   const gchar* aName, gpointer aUserData);
 
-  void EmitEvent(mozilla::dom::MediaControlKeysEvent event);
+  void EmitEvent(dom::MediaControlKey aKey);
 };
 
 }  // namespace widget

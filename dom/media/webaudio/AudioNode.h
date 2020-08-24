@@ -143,6 +143,10 @@ class AudioNode : public DOMEventTargetHelper, public nsSupportsWeakReference {
   }
 
   struct InputNode final {
+    InputNode() = default;
+    InputNode(const InputNode&) = delete;
+    InputNode(InputNode&&) = default;
+
     ~InputNode() {
       if (mTrackPort) {
         mTrackPort->Destroy();
@@ -255,7 +259,7 @@ class AudioNode : public DOMEventTargetHelper, public nsSupportsWeakReference {
   // Use this function to create a AudioParam, which will automatically add the
   // new AudioParam to `mParams`.
   void CreateAudioParam(RefPtr<AudioParam>& aParam, uint32_t aIndex,
-                        const char* aName, float aDefaultValue,
+                        const char16_t* aName, float aDefaultValue,
                         float aMinValue = std::numeric_limits<float>::lowest(),
                         float aMaxValue = std::numeric_limits<float>::max());
 

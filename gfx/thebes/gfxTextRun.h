@@ -651,8 +651,6 @@ class gfxTextRun : public gfxShapedText {
    */
   void FetchGlyphExtents(DrawTarget* aRefDrawTarget);
 
-  uint32_t CountMissingGlyphs() const;
-
   const GlyphRun* GetGlyphRuns(uint32_t* aNumGlyphRuns) const {
     if (mHasGlyphRunArray) {
       *aNumGlyphRuns = mGlyphRunArray.Length();
@@ -879,17 +877,49 @@ class gfxTextRun : public gfxShapedText {
   nsTextFrameUtils::Flags
       mFlags2;  // additional flags (see also gfxShapedText::mFlags)
 
-  bool mSkipDrawing;  // true if the font group we used had a user font
-                      // download that's in progress, so we should hide text
-                      // until the download completes (or timeout fires)
-  bool mReleasedFontGroup;  // we already called NS_RELEASE on
-                            // mFontGroup, so don't do it again
-  bool mHasGlyphRunArray;   // whether we're using an array or
-                            // just storing a single glyphrun
+  bool mDontSkipDrawing;  // true if the text run must not skip drawing, even if
+                          // waiting for a user font download, e.g. because we
+                          // are using it to draw canvas text
+  bool mReleasedFontGroup;                // we already called NS_RELEASE on
+                                          // mFontGroup, so don't do it again
+  bool mReleasedFontGroupSkippedDrawing;  // whether our old mFontGroup value
+                                          // was set to skip drawing
+  bool mHasGlyphRunArray;                 // whether we're using an array or
+                                          // just storing a single glyphrun
 
   // shaping state for handling variant fallback features
   // such as subscript/superscript variant glyphs
   ShapingState mShapingState;
+};
+
+enum class FallbackTypes : uint8_t {
+  // Font fallback used a font configured in Preferences
+  FallbackToPrefsFont = 1 << 0,
+  // Font fallback used a font with FontVisibility::Base
+  FallbackToBaseFont = 1 << 1,
+  // Font fallback used a font with FontVisibility::LangPack
+  FallbackToLangPackFont = 1 << 2,
+  // Font fallback used a font with FontVisibility::User
+  FallbackToUserFont = 1 << 3,
+  // Rendered missing-glyph because no font available for the character
+  MissingFont = 1 << 4,
+  // Rendered missing-glyph but a LangPack font could have been used
+  MissingFontLangPack = 1 << 5,
+  // Rendered missing-glyph but a User font could have been used
+  MissingFontUser = 1 << 6,
+};
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(FallbackTypes)
+
+struct FontMatchingStats {
+  // Set of names that have been looked up (whether successfully or not).
+  nsTHashtable<nsCStringHashKey> mFamilyNames;
+  // Number of font-family names resolved at each level of visibility.
+  uint32_t mBaseFonts = 0;
+  uint32_t mLangPackFonts = 0;
+  uint32_t mUserFonts = 0;
+  uint32_t mWebFonts = 0;
+  FallbackTypes mFallbacks = FallbackTypes(0);
 };
 
 class gfxFontGroup final : public gfxTextRunFactory {
@@ -902,9 +932,12 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   gfxFontGroup(const mozilla::FontFamilyList& aFontFamilyList,
                const gfxFontStyle* aStyle, gfxTextPerfMetrics* aTextPerf,
+               FontMatchingStats* aFontMatchingStats,
                gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize);
 
   virtual ~gfxFontGroup();
+
+  gfxFontGroup(const gfxFontGroup& aOther) = delete;
 
   // Returns first valid font in the fontlist or default font.
   // Initiates userfont loads if userfont not loaded.
@@ -919,8 +952,6 @@ class gfxFontGroup final : public gfxTextRunFactory {
   gfxFont* GetFirstMathFont();
 
   const gfxFontStyle* GetStyle() const { return &mStyle; }
-
-  gfxFontGroup* Copy(const gfxFontStyle* aStyle);
 
   /**
    * The listed characters should be treated as invisible and zero-width
@@ -1351,6 +1382,8 @@ class gfxFontGroup final : public gfxTextRunFactory {
                              // rebuild font list if needed
 
   gfxTextPerfMetrics* mTextPerf;
+
+  FontMatchingStats* mFontMatchingStats;
 
   // Cache a textrun representing an ellipsis (useful for CSS text-overflow)
   // at a specific appUnitsPerDevPixel size and orientation

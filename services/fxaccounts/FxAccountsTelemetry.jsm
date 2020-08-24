@@ -14,12 +14,24 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  log: "resource://gre/modules/FxAccountsCommon.js",
   // We use this observers module because we leverage its support for richer
   // "subject" data.
   Observers: "resource://services-common/observers.js",
   Services: "resource://gre/modules/Services.jsm",
+  CryptoUtils: "resource://services-crypto/utils.js",
 });
+
+const { PREF_ACCOUNT_ROOT, log } = ChromeUtils.import(
+  "resource://gre/modules/FxAccountsCommon.js"
+);
+
+const PREF_SANITIZED_UID = PREF_ACCOUNT_ROOT + "telemetry.sanitized_uid";
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "pref_sanitizedUid",
+  PREF_SANITIZED_UID,
+  ""
+);
 
 class FxAccountsTelemetry {
   constructor(fxai) {
@@ -44,23 +56,91 @@ class FxAccountsTelemetry {
       .slice(1, -1);
   }
 
+  // Account Ecosystem Telemetry identifies the user by a secret id called their "ecosystemUserId".
+  // To maintain user privacy this value must never be shared with Mozilla servers in plaintext
+  // (although there may be some client-side-only features that use it in future).
+  //
+  // Instead, AET-related telemetry pings can identify the user by their "ecosystemAnonId",
+  // an encrypted bundle that can communicate the "ecosystemUserId" through to the telemetry
+  // backend without allowing it to be snooped on in transit.
+
+  // Get the user's ecosystemAnonId, or null if it's not available.
+  //
+  // This method is asynchronous because it may need to load data from storage, but it will not
+  // block on network access and will return null rather than throwing an error on failure. This is
+  // designed to simplify usage from telemetry-sending code, which may want to avoid making expensive
+  // network requests.
+  //
+  // If you want to ensure that a value is present then use `ensureEcosystemAnonId()` instead.
+  async getEcosystemAnonId() {
+    try {
+      // N.B. `getProfile()` may kick off a silent background update but won't await network requests.
+      const profile = await this._internal.profile.getProfile();
+      if (profile.hasOwnProperty("ecosystemAnonId")) {
+        return profile.ecosystemAnonId;
+      }
+    } catch (err) {
+      log.error("Getting ecosystemAnonId from profile failed", err);
+    }
+    // Calling `ensureEcosystemAnonId()` so the calling code doesn't have to do this when a call
+    // to `getProfile()` doesn't produce `ecosystemAnonId`.
+    this.ensureEcosystemAnonId().catch(err => {
+      log.error("Failed ensuring we have an anon-id in the background ", err);
+    });
+    return null;
+  }
+
+  // Get the user's ecosystemAnonId, fetching it from the server if necessary.
+  //
+  // This asynchronous method resolves with the "ecosystemAnonId" value on success, and rejects
+  // with an error if no user is signed in or if the value could not be obtained from the
+  // FxA server.
+  async ensureEcosystemAnonId() {
+    const profile = await this._internal.profile.ensureProfile();
+    if (!profile.hasOwnProperty("ecosystemAnonId")) {
+      // In a future iteration, we can synthesize a placeholder ecosystemAnonId and persist it
+      // back to the FxA server.
+      throw new Error("Profile data does not contain an 'ecosystemAnonId'");
+    }
+    return profile.ecosystemAnonId;
+  }
+
+  // Prior to Account Ecosystem Telemetry, FxA- and Sync-related metrics were submitted in
+  // a special-purpose "sync ping". This ping identified the user by a version of their FxA
+  // uid that was HMAC-ed with a server-side secret key, but this approach provides weaker
+  // privacy than "ecosystemAnonId" above. New metrics should prefer to use AET rather than
+  // the sync ping.
+
+  // Secret back-channel by which tokenserver client code can set the hashed UID.
+  // This value conceptually belongs to FxA, but we currently get it from tokenserver,
+  // so there's some light hackery to put it in the right place.
+  _setHashedUID(hashedUID) {
+    if (!hashedUID) {
+      Services.prefs.clearUserPref(PREF_SANITIZED_UID);
+    } else {
+      Services.prefs.setStringPref(PREF_SANITIZED_UID, hashedUID);
+    }
+  }
+
+  getSanitizedUID() {
+    // Sadly, we can only currently obtain this value if the user has enabled sync.
+    return pref_sanitizedUid || null;
+  }
+
   // Sanitize the ID of a device into something suitable for including in the
   // ping. Returns null if no transformation is possible.
   sanitizeDeviceId(deviceId) {
-    // We only know how to hash it for sync users, which kinda sucks.
-    let xps =
-      this._weaveXPCOM ||
-      Cc["@mozilla.org/weave/service;1"].getService(Ci.nsISupports)
-        .wrappedJSObject;
-    if (!xps.enabled) {
+    const uid = this.getSanitizedUID();
+    if (!uid) {
+      // Sadly, we can only currently get this if the user has enabled sync.
       return null;
     }
-    try {
-      return xps.Weave.Service.identity.hashedDeviceID(deviceId);
-    } catch {
-      // sadly this can happen in various scenarios, so don't complain.
-    }
-    return null;
+    // Combine the raw device id with the sanitized uid to create a stable
+    // unique identifier that can't be mapped back to the user's FxA
+    // identity without knowing the metrics HMAC key.
+    // The result is 64 bytes long, which in retrospect is probably excessive,
+    // but it's already shipping...
+    return CryptoUtils.sha256(deviceId + uid);
   }
 
   // Record the connection of FxA or one of its services.

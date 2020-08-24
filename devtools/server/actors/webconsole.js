@@ -11,7 +11,6 @@ const { webconsoleSpec } = require("devtools/shared/specs/webconsole");
 const Services = require("Services");
 const { Cc, Ci, Cu } = require("chrome");
 const { DevToolsServer } = require("devtools/server/devtools-server");
-const { ActorPool } = require("devtools/server/actors/common");
 const { ThreadActor } = require("devtools/server/actors/thread");
 const { ObjectActor } = require("devtools/server/actors/object");
 const { LongStringActor } = require("devtools/server/actors/string");
@@ -104,6 +103,12 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(this, "EventEmitter", "devtools/shared/event-emitter");
 loader.lazyRequireGetter(
   this,
+  "MESSAGE_CATEGORY",
+  "devtools/shared/constants",
+  true
+);
+loader.lazyRequireGetter(
+  this,
   "stringToCauseType",
   "devtools/server/actors/network-monitor/network-observer",
   true
@@ -184,9 +189,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     this.conn = connection;
     this.parentActor = parentActor;
 
-    this._actorPool = new ActorPool(this.conn);
-    this.conn.addActorPool(this._actorPool);
-
     this._prefs = {};
     this.dbg = this.parentActor.dbg;
 
@@ -200,6 +202,9 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     this._onChangedToplevelDocument = this._onChangedToplevelDocument.bind(
       this
     );
+    this.onConsoleServiceMessage = this.onConsoleServiceMessage.bind(this);
+    this.onConsoleAPICall = this.onConsoleAPICall.bind(this);
+
     EventEmitter.on(
       this.parentActor,
       "changed-toplevel-document",
@@ -213,11 +218,12 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       );
     }
 
-    this.traits = {};
-
-    if (this.dbg.replaying && !isWorker) {
-      this.dbg.onConsoleMessage = this.onReplayingMessage.bind(this);
-    }
+    this.traits = {
+      // Supports new cached messages structure for 77+
+      newCacheStructure: true,
+      // Supports retrieving blocked urls
+      blockedUrls: true,
+    };
   },
   /**
    * Debugger instance.
@@ -232,14 +238,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * @type number
    */
   _gripDepth: null,
-
-  /**
-   * Actor pool for all of the actors we send to the client.
-   * @private
-   * @type object
-   * @see ActorPool
-   */
-  _actorPool: null,
 
   /**
    * Web Console-related preferences.
@@ -447,8 +445,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       this._onChangedToplevelDocument
     );
 
-    this.conn.removeActorPool(this._actorPool);
-
     if (this.parentActor.isRootActor) {
       Services.obs.removeObserver(
         this._onObserverNotification,
@@ -456,11 +452,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       );
     }
 
-    if (this.dbg.replaying && !isWorker) {
-      this.dbg.onConsoleMessage = null;
-    }
-
-    this._actorPool = null;
     this._webConsoleCommandsCache = null;
     this._lastConsoleInputEvaluation = null;
     this._evalWindow = null;
@@ -489,7 +480,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     }
 
     const actor = new EnvironmentActor(environment, this);
-    this._actorPool.addActor(actor);
+    this.manage(actor);
     environment.actor = actor;
 
     return actor;
@@ -502,7 +493,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * @return object
    */
   createValueGrip: function(value) {
-    return createValueGrip(value, this._actorPool, this.objectGrip);
+    return createValueGrip(value, this, this.objectGrip);
   },
 
   /**
@@ -517,11 +508,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    *         Debuggee value for |value|.
    */
   makeDebuggeeValue: function(value, useObjectGlobal) {
-    if (this.dbg.replaying) {
-      // If we are replaying then any values we are operating on should already
-      // be debuggee values.
-      return value;
-    }
     if (useObjectGlobal && isObject(value)) {
       try {
         const global = Cu.getGlobalForObject(value);
@@ -542,7 +528,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * @param object object
    *        The object you want.
    * @param object pool
-   *        An ActorPool where the new actor instance is added.
+   *        A Pool where the new actor instance is added.
    * @param object
    *        The object grip.
    */
@@ -564,7 +550,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       },
       this.conn
     );
-    pool.addActor(actor);
+    pool.manage(actor);
     return actor.form();
   },
 
@@ -574,13 +560,13 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    * @param string string
    *        The string you want to create the grip for.
    * @param object pool
-   *        An ActorPool where the new actor instance is added.
+   *        A Pool where the new actor instance is added.
    * @return object
    *         A LongStringActor object that wraps the given string.
    */
   longStringGrip: function(string, pool) {
     const actor = new LongStringActor(this.conn, string);
-    pool.addActor(actor);
+    pool.manage(actor);
     return actor.form();
   },
 
@@ -596,29 +582,9 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    */
   _createStringGrip: function(string) {
     if (string && stringIsLong(string)) {
-      return this.longStringGrip(string, this._actorPool);
+      return this.longStringGrip(string, this);
     }
     return string;
-  },
-
-  /**
-   * Get an object actor by its ID.
-   *
-   * @param string actorID
-   * @return object
-   */
-  getActorByID: function(actorID) {
-    return this._actorPool.get(actorID);
-  },
-
-  /**
-   * Release an actor.
-   *
-   * @param object actor
-   *        The actor instance you want to release.
-   */
-  releaseActor: function(actor) {
-    this._actorPool.removeActor(actor);
   },
 
   /**
@@ -641,7 +607,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    */
   preprocessDebuggerObject(dbgObj) {
     // Returns the bound target function on a bound function.
-    if (dbgObj && dbgObj.isBoundFunction && dbgObj.boundTargetFunction) {
+    if (dbgObj?.isBoundFunction && dbgObj?.boundTargetFunction) {
       return dbgObj.boundTargetFunction;
     }
 
@@ -664,11 +630,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       inspectFromAnnotation,
     });
   },
-
-  /**
-   * When using a replaying debugger, all messages we have seen so far.
-   */
-  replayingMessages: null,
 
   // Request handlers for known packet types.
 
@@ -695,7 +656,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
           if (!this.consoleServiceListener) {
             this.consoleServiceListener = new ConsoleServiceListener(
               window,
-              this
+              this.onConsoleServiceMessage
             );
             this.consoleServiceListener.init();
           }
@@ -707,7 +668,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
             // (and apply the filtering options defined in the parent actor).
             this.consoleAPIListener = new ConsoleAPIListener(
               window,
-              this,
+              this.onConsoleAPICall,
               this.parentActor.consoleAPIListenerOptions
             );
             this.consoleAPIListener.init();
@@ -751,7 +712,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
                   "devtools/server/actors/network-monitor/network-monitor",
                 constructor: "NetworkMonitorActor",
                 args: [
-                  { outerWindowID: this.parentActor.outerWindowID },
+                  { browsingContextID: this.parentActor.browsingContextID },
                   this.actorID,
                 ],
               });
@@ -825,7 +786,9 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
             break;
           }
           if (!this.contentProcessListener) {
-            this.contentProcessListener = new ContentProcessListener(this);
+            this.contentProcessListener = new ContentProcessListener(
+              this.onConsoleAPICall
+            );
           }
           startedListeners.push(event);
           break;
@@ -964,23 +927,16 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
 
     const messages = [];
 
-    let replayingMessages = [];
-    if (this.dbg.replaying) {
-      replayingMessages = this.dbg.findAllConsoleMessages();
-    }
+    const consoleServiceCachedMessages =
+      messageTypes.includes("PageError") || messageTypes.includes("LogMessage")
+        ? this.consoleServiceListener?.getCachedMessages(
+            !this.parentActor.isRootActor
+          )
+        : null;
 
-    while (messageTypes.length > 0) {
-      const type = messageTypes.shift();
+    for (const type of messageTypes) {
       switch (type) {
         case "ConsoleAPI": {
-          replayingMessages.forEach(msg => {
-            if (msg.messageType == "ConsoleAPI") {
-              const message = this.prepareConsoleMessageForRemote(msg);
-              message._type = type;
-              messages.push(message);
-            }
-          });
-
           if (!this.consoleAPIListener) {
             break;
           }
@@ -1004,41 +960,48 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
               return;
             }
 
-            const message = this.prepareConsoleMessageForRemote(cachedMessage);
-            message._type = type;
-            messages.push(message);
+            messages.push({
+              message: this.prepareConsoleMessageForRemote(cachedMessage),
+              type: "consoleAPICall",
+            });
           });
           break;
         }
-        case "PageError": {
-          replayingMessages.forEach(msg => {
-            if (msg.messageType == "PageError") {
-              const message = this.preparePageErrorForRemote(msg);
-              message._type = type;
-              messages.push(message);
-            }
-          });
 
-          if (!this.consoleServiceListener) {
+        case "PageError": {
+          if (!consoleServiceCachedMessages) {
             break;
           }
-          const cache = this.consoleServiceListener.getCachedMessages(
-            !this.parentActor.isRootActor
-          );
-          cache.forEach(cachedMessage => {
-            let message = null;
-            if (cachedMessage instanceof Ci.nsIScriptError) {
-              message = this.preparePageErrorForRemote(cachedMessage);
-              message._type = type;
-            } else {
-              message = {
-                _type: "LogMessage",
-                message: this._createStringGrip(cachedMessage.message),
-                timeStamp: cachedMessage.timeStamp,
-              };
+
+          for (const cachedMessage of consoleServiceCachedMessages) {
+            if (!(cachedMessage instanceof Ci.nsIScriptError)) {
+              continue;
             }
-            messages.push(message);
-          });
+
+            messages.push({
+              pageError: this.preparePageErrorForRemote(cachedMessage),
+              type: "pageError",
+            });
+          }
+          break;
+        }
+
+        case "LogMessage": {
+          if (!consoleServiceCachedMessages) {
+            break;
+          }
+
+          for (const cachedMessage of consoleServiceCachedMessages) {
+            if (cachedMessage instanceof Ci.nsIScriptError) {
+              continue;
+            }
+
+            messages.push({
+              message: this._createStringGrip(cachedMessage.message),
+              timeStamp: cachedMessage.timeStamp,
+              type: "logMessage",
+            });
+          }
           break;
         }
       }
@@ -1063,11 +1026,12 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    *         `resultID` field.
    */
   evaluateJSAsync: async function(request) {
+    const startTime = Date.now();
     // Use Date instead of UUID as this code is used by workers, which
     // don't have access to the UUID XPCOM component.
     // Also use a counter in order to prevent mixing up response when calling
     // evaluateJSAsync during the same millisecond.
-    const resultID = Date.now() + "-" + this._evalCounter++;
+    const resultID = startTime + "-" + this._evalCounter++;
 
     // Execute the evaluation in the next event loop in order to immediately
     // reply with the resultID.
@@ -1077,10 +1041,14 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
         let response = this.evaluateJS(request);
         // Wait for any potential returned Promise.
         response = await this._maybeWaitForResponseResult(response);
+        // Set the timestamp only now, so any messages logged in the expression will come
+        // before the result.
+        response.timestamp = Date.now();
         // Finally, emit an unsolicited evaluationResult packet with the evaluation result.
         this.emit("evaluationResult", {
           type: "evaluationResult",
           resultID,
+          startTime,
           ...response,
         });
         return;
@@ -1143,10 +1111,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       delete response.awaitResult;
     }
 
-    // We need to compute the timestamp again as the one in the response was set before
-    // doing the evaluation, which is now innacurate since we waited for a bit.
-    response.timestamp = Date.now();
-
     return response;
   },
 
@@ -1162,17 +1126,18 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
   // eslint-disable-next-line complexity
   evaluateJS: function(request) {
     const input = request.text;
-    const timestamp = Date.now();
 
     const evalOptions = {
       frameActor: request.frameActor,
       url: request.url,
+      innerWindowID: request.innerWindowID,
       selectedNodeActor: request.selectedNodeActor,
       selectedObjectActor: request.selectedObjectActor,
       eager: request.eager,
       bindings: request.bindings,
       lineNumber: request.lineNumber,
     };
+
     const { mapped } = request;
 
     // Set a flag on the thread actor which indicates an evaluation is being
@@ -1199,8 +1164,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       if ("return" in evalResult) {
         result = evalResult.return;
         if (
-          mapped &&
-          mapped.await &&
+          mapped?.await &&
           result &&
           result.class === "Promise" &&
           typeof result.unsafeDereference === "function"
@@ -1286,7 +1250,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
 
         try {
           const notes = error.errorNotes;
-          if (notes && notes.length) {
+          if (notes?.length) {
             errorNotes = [];
             for (const note of notes) {
               errorNotes.push({
@@ -1343,11 +1307,11 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       input: input,
       result: resultGrip,
       awaitResult,
-      timestamp: timestamp,
       exception: errorGrip,
       exceptionMessage: this._createStringGrip(errorMessage),
       exceptionDocURL: errorDocURL,
       exceptionStack,
+      hasException: errorGrip !== null,
       errorMessageName,
       frame,
       helperResult: helperResult,
@@ -1441,7 +1405,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       }
 
       matches = result.matches || new Set();
-      matchProp = result.matchProp;
+      matchProp = result.matchProp || "";
       isElementAccess = result.isElementAccess;
 
       // We consider '$' as alphanumeric because it is used in the names of some
@@ -1451,7 +1415,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
 
       // We only return commands and keywords when we are not dealing with a property or
       // element access.
-      if (!lastNonAlphaIsDot && !isElementAccess) {
+      if (matchProp && !lastNonAlphaIsDot && !isElementAccess) {
         this._getWebConsoleCommandsCache().forEach(n => {
           // filter out `screenshot` command as it is inaccessible without the `:` prefix
           if (n !== "screenshot" && n.startsWith(result.matchProp)) {
@@ -1519,7 +1483,9 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     // cached messages for that window (and not the content messages for example).
     if (this.parentActor.isRootActor) {
       Services.console.reset();
-    } else {
+    } else if (this.consoleServiceListener) {
+      // If error and css messages are handled by the ResourceWatcher, the
+      // consoleServiceListener is never instantiated.
       this.consoleServiceListener.clearCachedMessages();
     }
   },
@@ -1648,22 +1614,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
   // Event handlers for various listeners.
 
   /**
-   * Handle console messages sent to us from a replaying process via the
-   * debugger.
-   */
-  onReplayingMessage: function(msg) {
-    if (msg.messageType == "ConsoleAPI") {
-      this.onConsoleAPICall(msg);
-    }
-
-    if (msg.messageType == "PageError") {
-      this.emit("pageError", {
-        pageError: this.preparePageErrorForRemote(msg),
-      });
-    }
-  },
-
-  /**
    * Handler for messages received from the ConsoleServiceListener. This method
    * sends the nsIConsoleMessage to the remote Web Console client.
    *
@@ -1739,7 +1689,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
 
     let notesArray = null;
     const notes = pageError.notes;
-    if (notes && notes.length) {
+    if (notes?.length) {
       notesArray = [];
       for (let i = 0, len = notes.length; i < len; i++) {
         const note = notes.queryElementAt(i, Ci.nsIScriptErrorNote);
@@ -1765,9 +1715,11 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       columnNumber = stack[0].columnNumber;
     }
 
-    return {
+    const isCSSMessage = pageError.category === MESSAGE_CATEGORY.CSS_PARSER;
+
+    const result = {
       errorMessage: this._createStringGrip(pageError.errorMessage),
-      errorMessageName: pageError.errorMessageName,
+      errorMessageName: isCSSMessage ? undefined : pageError.errorMessageName,
       exceptionDocURL: ErrorDocs.GetURL(pageError),
       sourceName,
       sourceId: this.getActorIdForInternalSourceId(sourceId),
@@ -1778,17 +1730,33 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
       innerWindowID: pageError.innerWindowID,
       timeStamp: pageError.timeStamp,
       warning: !!(pageError.flags & pageError.warningFlag),
-      error: !!(pageError.flags & pageError.errorFlag),
-      exception: !!(pageError.flags & pageError.exceptionFlag),
-      strict: !!(pageError.flags & pageError.strictFlag),
+      error: !(pageError.flags & (pageError.warningFlag | pageError.infoFlag)),
       info: !!(pageError.flags & pageError.infoFlag),
       private: pageError.isFromPrivateWindow,
       stacktrace: stack,
       notes: notesArray,
-      executionPoint: pageError.executionPoint,
       chromeContext: pageError.isFromChromeContext,
-      cssSelectors: pageError.cssSelectors,
+      isPromiseRejection: isCSSMessage
+        ? undefined
+        : pageError.isPromiseRejection,
+      isForwardedFromContentProcess: pageError.isForwardedFromContentProcess,
+      cssSelectors: isCSSMessage ? pageError.cssSelectors : undefined,
     };
+
+    // If the pageError does have an exception object, we want to return the grip for it,
+    // but only if we do manage to get the grip, as we're checking the property on the
+    // client to render things differently.
+    if (pageError.hasException) {
+      try {
+        const obj = this.makeDebuggeeValue(pageError.exception, true);
+        if (obj?.class !== "DeadObject") {
+          result.exception = this.createValueGrip(obj);
+          result.hasException = true;
+        }
+      } catch (e) {}
+    }
+
+    return result;
   },
 
   /**
@@ -1802,54 +1770,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
   onConsoleAPICall: function(message) {
     this.emit("consoleAPICall", {
       message: this.prepareConsoleMessageForRemote(message),
-    });
-  },
-
-  /**
-   * Get the NetworkEventActor for a given URL that may have been noticed by the network
-   * listener.  Requests are added when they start, so the actor might not yet have all
-   * data for the request until it has completed.
-   *
-   * @param string url
-   *        The URL of the request to search for.
-   */
-  getRequestContentForURL(url) {
-    if (!this.netmonitors) {
-      return null;
-    }
-    return new Promise(resolve => {
-      let messagesReceived = 0;
-      const onMessage = ({ data }) => {
-        // Resolve early if the console actor is destroyed
-        if (!this.netmonitors) {
-          resolve(null);
-          return;
-        }
-        if (data.url != url) {
-          return;
-        }
-        messagesReceived++;
-        // Either use the first response with a content, or return a null content
-        // if we received the responses from all the message managers.
-        if (data.content || messagesReceived == this.netmonitors.length) {
-          for (const { messageManager } of this.netmonitors) {
-            messageManager.removeMessageListener(
-              "debug:request-content:response",
-              onMessage
-            );
-          }
-          resolve(data.content);
-        }
-      };
-      for (const { messageManager } of this.netmonitors) {
-        messageManager.addMessageListener(
-          "debug:request-content:response",
-          onMessage
-        );
-        messageManager.sendAsyncMessage("debug:request-content:request", {
-          url,
-        });
-      }
     });
   },
 
@@ -1868,7 +1788,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     const channel = NetUtil.newChannel({
       uri: NetUtil.newURI(url),
       loadingNode: doc,
-      securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+      securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
       contentPolicyType:
         stringToCauseType(cause.type) || Ci.nsIContentPolicy.TYPE_OTHER,
     });
@@ -1947,23 +1867,24 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    */
   async _sendMessageToNetmonitors(messageName, responseName, args) {
     if (!this.netmonitors) {
-      return;
+      return null;
     }
-    await Promise.all(
+    const results = await Promise.all(
       this.netmonitors.map(({ messageManager }) => {
         const onResponseReceived = new Promise(resolve => {
-          messageManager.addMessageListener(
-            responseName,
-            function onResponse() {
-              messageManager.removeMessageListener(responseName, onResponse);
-              resolve();
-            }
-          );
+          messageManager.addMessageListener(responseName, function onResponse(
+            response
+          ) {
+            messageManager.removeMessageListener(responseName, onResponse);
+            resolve(response);
+          });
         });
         messageManager.sendAsyncMessage(messageName, args);
         return onResponseReceived;
       })
     );
+
+    return results;
   },
 
   /**
@@ -2004,6 +1925,28 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     );
 
     return {};
+  },
+
+  /*
+   * Gets the list of blocked request urls as per the backend
+   */
+  async getBlockedUrls() {
+    const responses =
+      (await this._sendMessageToNetmonitors(
+        "debug:get-blocked-urls",
+        "debug:get-blocked-urls:response"
+      )) || [];
+    if (!responses || responses.length == 0) {
+      return [];
+    }
+
+    return Array.from(
+      new Set(
+        responses
+          .filter(response => response.data)
+          .map(response => response.data)
+      )
+    );
   },
 
   /**
@@ -2157,7 +2100,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
                   ignoreNonIndexedProperties: isArray(grip),
                 })
                 .all();
-              if (res && res.ownProperties) {
+              if (res?.ownProperties) {
                 desc[key].ownProperties = res.ownProperties;
               }
             }

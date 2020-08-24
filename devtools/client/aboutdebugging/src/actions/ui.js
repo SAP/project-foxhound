@@ -24,12 +24,15 @@ const {
   SELECT_PAGE_SUCCESS,
   SELECTED_RUNTIME_ID_UPDATED,
   SHOW_PROFILER_DIALOG,
+  SWITCH_PROFILER_CONTEXT,
   USB_RUNTIMES_SCAN_START,
   USB_RUNTIMES_SCAN_SUCCESS,
 } = require("devtools/client/aboutdebugging/src/constants");
 
 const NetworkLocationsModule = require("devtools/client/aboutdebugging/src/modules/network-locations");
-const { adbAddon } = require("devtools/shared/adb/adb-addon");
+const {
+  adbAddon,
+} = require("devtools/client/shared/remote-debugging/adb/adb-addon");
 const {
   refreshUSBRuntimes,
 } = require("devtools/client/aboutdebugging/src/modules/usb-runtimes");
@@ -109,6 +112,14 @@ function showProfilerDialog() {
   return { type: SHOW_PROFILER_DIALOG };
 }
 
+/**
+ * The profiler can switch between "devtools-remote" and "aboutprofiling-remote"
+ * page contexts.
+ */
+function switchProfilerContext(profilerContext) {
+  return { type: SWITCH_PROFILER_CONTEXT, profilerContext };
+}
+
 function hideProfilerDialog() {
   return { type: HIDE_PROFILER_DIALOG };
 }
@@ -182,6 +193,7 @@ module.exports = {
   scanUSBRuntimes,
   selectPage,
   showProfilerDialog,
+  switchProfilerContext,
   uninstallAdbAddon,
   updateAdbAddonStatus,
   updateAdbReady,

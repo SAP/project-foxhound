@@ -271,7 +271,7 @@ nsresult ContentEventHandler::InitRootContent(Selection* aNormalSelection) {
     return NS_OK;
   }
 
-  RefPtr<nsRange> range(aNormalSelection->GetRangeAt(0));
+  RefPtr<const nsRange> range(aNormalSelection->GetRangeAt(0));
   if (NS_WARN_IF(!range)) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -317,16 +317,15 @@ nsresult ContentEventHandler::InitCommon(SelectionType aSelectionType,
   nsresult rv = InitBasic(aRequireFlush);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsISelectionController> selectionController;
+  RefPtr<nsFrameSelection> frameSel;
   if (PresShell* presShell = mDocument->GetPresShell()) {
-    selectionController = presShell->GetSelectionControllerForFocusedContent();
+    frameSel = presShell->GetLastFocusedFrameSelection();
   }
-  if (NS_WARN_IF(!selectionController)) {
+  if (NS_WARN_IF(!frameSel)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  mSelection =
-      selectionController->GetSelection(ToRawSelectionType(aSelectionType));
+  mSelection = frameSel->GetSelection(aSelectionType);
   if (NS_WARN_IF(!mSelection)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -335,8 +334,7 @@ nsresult ContentEventHandler::InitCommon(SelectionType aSelectionType,
   if (mSelection->Type() == SelectionType::eNormal) {
     normalSelection = mSelection;
   } else {
-    normalSelection = selectionController->GetSelection(
-        nsISelectionController::SELECTION_NORMAL);
+    normalSelection = frameSel->GetSelection(SelectionType::eNormal);
     if (NS_WARN_IF(!normalSelection)) {
       return NS_ERROR_NOT_AVAILABLE;
     }
@@ -508,7 +506,7 @@ static bool IsPaddingBR(nsIContent* aContent) {
 
 static void ConvertToNativeNewlines(nsString& aString) {
 #if defined(XP_WIN)
-  aString.ReplaceSubstring(NS_LITERAL_STRING("\n"), NS_LITERAL_STRING("\r\n"));
+  aString.ReplaceSubstring(u"\n"_ns, u"\r\n"_ns);
 #endif
 }
 
@@ -936,8 +934,8 @@ nsresult ContentEventHandler::GenerateFlatFontRanges(
           nsAutoCString name;
           fontName.AppendToString(name, false);
           AppendUTF8toUTF16(name, fontRange->mFontName);
-          fontRange->mFontSize =
-              frame->PresContext()->AppUnitsToDevPixels(font.size);
+          fontRange->mFontSize = frame->PresContext()->CSSPixelsToDevPixels(
+              font.size.ToCSSPixels());
         }
       }
       baseOffset += GetBRLength(aLineBreakType);
@@ -2551,10 +2549,11 @@ nsresult ContentEventHandler::OnQueryCharacterAtPoint(
     eventOnRoot.mRefPoint += aEvent->mWidget->WidgetToScreenOffset() -
                              rootWidget->WidgetToScreenOffset();
   }
-  nsPoint ptInRoot =
-      nsLayoutUtils::GetEventCoordinatesRelativeTo(&eventOnRoot, rootFrame);
+  nsPoint ptInRoot = nsLayoutUtils::GetEventCoordinatesRelativeTo(
+      &eventOnRoot, RelativeTo{rootFrame});
 
-  nsIFrame* targetFrame = nsLayoutUtils::GetFrameForPoint(rootFrame, ptInRoot);
+  nsIFrame* targetFrame =
+      nsLayoutUtils::GetFrameForPoint(RelativeTo{rootFrame}, ptInRoot);
   if (!targetFrame || !targetFrame->GetContent() ||
       !targetFrame->GetContent()->IsInclusiveDescendantOf(mRootContent)) {
     // There is no character at the point.
@@ -2650,7 +2649,7 @@ nsresult ContentEventHandler::OnQueryDOMWidgetHittest(
           docFrameRect.y);
 
   Element* contentUnderMouse = mDocument->ElementFromPointHelper(
-      eventLocCSS.x, eventLocCSS.y, false, false);
+      eventLocCSS.x, eventLocCSS.y, false, false, ViewportType::Visual);
   if (contentUnderMouse) {
     nsIWidget* targetWidget = nullptr;
     nsIFrame* targetFrame = contentUnderMouse->GetPrimaryFrame();
@@ -3019,8 +3018,11 @@ nsresult ContentEventHandler::OnSelectionEvent(WidgetSelectionEvent* aEvent) {
     }
   }
 
-  mSelection->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION,
-                             ScrollAxis(), ScrollAxis(), 0);
+  // `ContentEventHandler` is a `MOZ_STACK_CLASS`, so `mSelection` is known to
+  // be alive.
+  MOZ_KnownLive(mSelection)
+      ->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION,
+                       ScrollAxis(), ScrollAxis(), 0);
   aEvent->mSucceeded = true;
   return NS_OK;
 }

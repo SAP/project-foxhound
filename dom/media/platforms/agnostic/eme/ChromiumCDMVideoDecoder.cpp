@@ -57,7 +57,7 @@ RefPtr<MediaDataDecoder::InitPromise> ChromiumCDMVideoDecoder::Init() {
     config.mCodec() = cdm::VideoCodec::kCodecH264;
     config.mProfile() =
         ToCDMH264Profile(mConfig.mExtraData->SafeElementAt(1, 0));
-    config.mExtraData() = *mConfig.mExtraData;
+    config.mExtraData() = mConfig.mExtraData->Clone();
     mConvertToAnnexB = true;
   } else if (VPXDecoder::IsVP8(mConfig.mMimeType)) {
     config.mCodec() = cdm::VideoCodec::kCodecVp8;
@@ -82,7 +82,7 @@ RefPtr<MediaDataDecoder::InitPromise> ChromiumCDMVideoDecoder::Init() {
 }
 
 nsCString ChromiumCDMVideoDecoder::GetDescriptionName() const {
-  return NS_LITERAL_CSTRING("chromium cdm video decoder");
+  return "chromium cdm video decoder"_ns;
 }
 
 MediaDataDecoder::ConversionRequired ChromiumCDMVideoDecoder::NeedsConversion()

@@ -7,24 +7,14 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import distutils.sysconfig
 import os
 import shutil
 import subprocess
 import sys
-import warnings
 
-from distutils.version import LooseVersion
 
 IS_NATIVE_WIN = (sys.platform == 'win32' and os.sep == '\\')
-IS_MSYS2 = (sys.platform == 'win32' and os.sep == '/')
 IS_CYGWIN = (sys.platform == 'cygwin')
-
-# Minimum versions of Python required to build.
-MINIMUM_PYTHON_VERSIONS = {
-    2: LooseVersion('2.7.3'),
-    3: LooseVersion('3.5.0')
-}
 
 PY2 = sys.version_info[0] == 2
 PY3 = sys.version_info[0] == 3
@@ -196,6 +186,11 @@ class VirtualenvManager(object):
         return self.build(python)
 
     def _log_process_output(self, *args, **kwargs):
+        env = kwargs.pop('env', None) or os.environ.copy()
+        # PYTHONEXECUTABLE can mess up the creation of virtualenvs when set.
+        env.pop('PYTHONEXECUTABLE', None)
+        kwargs['env'] = ensure_subprocess_env(env)
+
         if hasattr(self.log_handle, 'fileno'):
             return subprocess.call(*args, stdout=self.log_handle,
                                    stderr=subprocess.STDOUT, **kwargs)
@@ -219,6 +214,27 @@ class VirtualenvManager(object):
         write output to.
         """
 
+        # Corner-case: in some cases, we call this function even though there's
+        # already a virtualenv in place in `self.virtualenv_root`. That is not a
+        # problem in itself, except when not using the same `python`. For example:
+        # - the old virtualenv was created with `/usr/bin/pythonx.y`
+        # - as such, in contains `pythonx.y` as a file, and `python` and `pythonx`
+        #   as symbolic links to `pythonx.y`
+        # - the new virtualenv is being created with `/usr/bin/pythonx`
+        # - the virtualenv script uses shutil.copyfile to copy `/usr/bin/pythonx`
+        #   to `pythonx` in the virtualenv. As that is an existing symbolic link,
+        #   the copy ends up writing the file into `pythonx.y`.
+        # - the virtualenv script then creates `python` and `pythonx.y` symbolic
+        #   links to `pythonx`. `pythonx` is still a symbolic link to `pythonx.y`,
+        #   and now `pythonx.y` is a symbolic link to `pythonx`, so we end with a
+        #   symbolic link loop, and no real python executable around.
+        # So if the file with the same name as the python executable used to create
+        # the new virtualenv is a symbolic link, remove it before invoking
+        # virtualenv.
+        venv_python = os.path.join(self.bin_path, os.path.basename(python))
+        if os.path.islink(venv_python):
+            os.remove(venv_python)
+
         args = [python, self.virtualenv_script_path,
                 # Without this, virtualenv.py may attempt to contact the outside
                 # world and search for or download a newer version of pip,
@@ -227,8 +243,7 @@ class VirtualenvManager(object):
                 '--no-download',
                 self.virtualenv_root]
 
-        result = self._log_process_output(args,
-                                          env=ensure_subprocess_env(os.environ))
+        result = self._log_process_output(args)
 
         if result:
             raise Exception(
@@ -296,6 +311,8 @@ class VirtualenvManager(object):
         environment is not configured properly, packages could be installed
         into the wrong place. This is how virtualenv's work.
         """
+        import distutils.sysconfig
+
         packages = self.packages()
         python_lib = distutils.sysconfig.get_python_lib()
 
@@ -417,33 +434,6 @@ class VirtualenvManager(object):
                 old_env_variables[k] = os.environ[k]
                 del os.environ[k]
 
-            # HACK ALERT.
-            #
-            # The following adjustment to the VSNNCOMNTOOLS environment
-            # variables are wrong. This is done as a hack to facilitate the
-            # building of binary Python packages - notably psutil - on Windows
-            # machines that don't have the Visual Studio 2008 binaries
-            # installed. This hack assumes the Python on that system was built
-            # with Visual Studio 2008. The hack is wrong for the reasons
-            # explained at
-            # http://stackoverflow.com/questions/3047542/building-lxml-for-python-2-7-on-windows/5122521#5122521.
-            if sys.platform in ('win32', 'cygwin') and \
-                    'VS90COMNTOOLS' not in os.environ:
-
-                warnings.warn('Hacking environment to allow binary Python '
-                              'extensions to build. You can make this warning go away '
-                              'by installing Visual Studio 2008. You can download the '
-                              'Express Edition installer from '
-                              'http://go.microsoft.com/?linkid=7729279')
-
-                # We list in order from oldest to newest to prefer the closest
-                # to 2008 so differences are minimized.
-                for ver in ('100', '110', '120'):
-                    var = 'VS%sCOMNTOOLS' % ver
-                    if var in os.environ:
-                        os.environ['VS90COMNTOOLS'] = os.environ[var]
-                        break
-
             for package in packages:
                 handle_package(package)
 
@@ -507,6 +497,9 @@ class VirtualenvManager(object):
         else:
             thismodule = __file__
 
+        # __PYVENV_LAUNCHER__ confuses pip about the python interpreter
+        # See https://bugzilla.mozilla.org/show_bug.cgi?id=1635481
+        os.environ.pop('__PYVENV_LAUNCHER__', None)
         args = [self.python_path, thismodule, 'populate', self.topsrcdir,
                 self.topobjdir, self.virtualenv_root, self.manifest_path]
 
@@ -689,13 +682,19 @@ class VirtualenvManager(object):
 
 def verify_python_version(log_handle):
     """Ensure the current version of Python is sufficient."""
-    major, minor, micro = sys.version_info[:3]
+    from distutils.version import LooseVersion
 
+    major, minor, micro = sys.version_info[:3]
+    minimum_python_versions = {
+        2: LooseVersion('2.7.3'),
+        3: LooseVersion('3.6.0'),
+    }
     our = LooseVersion('%d.%d.%d' % (major, minor, micro))
 
-    if major not in MINIMUM_PYTHON_VERSIONS or our < MINIMUM_PYTHON_VERSIONS[major]:
-        log_handle.write('One of the following Python versions are required to build:\n')
-        for minver in MINIMUM_PYTHON_VERSIONS.values():
+    if (major not in minimum_python_versions or
+        our < minimum_python_versions[major]):
+        log_handle.write('One of the following Python versions are required:\n')
+        for minver in minimum_python_versions.values():
             log_handle.write('* Python %s or greater\n' % minver)
         log_handle.write('You are running Python %s.\n' % our)
 

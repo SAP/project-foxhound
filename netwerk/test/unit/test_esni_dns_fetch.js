@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+"use strict";
+
 ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
 
 let prefs;
@@ -86,11 +88,8 @@ class DNSListener {
       this.resolve = resolve;
     });
   }
-  onLookupByTypeComplete(inRequest, inRecord, inStatus) {
-    this.resolve([inRequest, inRecord, inStatus, "onLookupByTypeComplete"]);
-  }
   onLookupComplete(inRequest, inRecord, inStatus) {
-    this.resolve([inRequest, inRecord, inStatus, "onLookupComplete"]);
+    this.resolve([inRequest, inRecord, inStatus]);
   }
   // So we can await this as a promise.
   then() {
@@ -99,14 +98,14 @@ class DNSListener {
 }
 
 DNSListener.prototype.QueryInterface = ChromeUtils.generateQI([
-  Ci.nsIDNSListener,
+  "nsIDNSListener",
 ]);
 
 add_task(async function testEsniRequest() {
   // use the h2 server as DOH provider
   prefs.setCharPref(
     "network.trr.uri",
-    "https://foo.example.com:" + h2Port + "/esni-dns"
+    "https://foo.example.com:" + h2Port + "/doh"
   );
 
   let listenerEsni = new DNSListener();
@@ -119,11 +118,12 @@ add_task(async function testEsniRequest() {
     defaultOriginAttributes
   );
 
-  let [inRequest, inRecord, inStatus, inType] = await listenerEsni;
-  Assert.equal(inType, "onLookupByTypeComplete", "check correct type");
+  let [inRequest, inRecord, inStatus] = await listenerEsni;
   Assert.equal(inRequest, request, "correct request was used");
   Assert.equal(inStatus, Cr.NS_OK, "status OK");
-  let answer = inRecord.getRecordsAsOneString();
+  let answer = inRecord
+    .QueryInterface(Ci.nsIDNSTXTRecord)
+    .getRecordsAsOneString();
   Assert.equal(answer, test_answer, "got correct answer");
 });
 
@@ -142,8 +142,7 @@ add_task(async function testEsniPushPart1() {
     defaultOriginAttributes
   );
 
-  let [inRequest, inRecord, inStatus, inType] = await listenerAddr;
-  Assert.equal(inType, "onLookupComplete", "check correct type");
+  let [inRequest, inRecord, inStatus] = await listenerAddr;
   Assert.equal(inRequest, request, "correct request was used");
   Assert.equal(inStatus, Cr.NS_OK, "status OK");
   let answer = inRecord.getNextAddrAsString();
@@ -168,10 +167,34 @@ add_task(async function testEsniPushPart2() {
     defaultOriginAttributes
   );
 
-  let [inRequest, inRecord, inStatus, inType] = await listenerEsni;
-  Assert.equal(inType, "onLookupByTypeComplete", "check correct type");
+  let [inRequest, inRecord, inStatus] = await listenerEsni;
   Assert.equal(inRequest, request, "correct request was used");
   Assert.equal(inStatus, Cr.NS_OK, "status OK");
-  let answer = inRecord.getRecordsAsOneString();
+  let answer = inRecord
+    .QueryInterface(Ci.nsIDNSTXTRecord)
+    .getRecordsAsOneString();
   Assert.equal(answer, test_answer, "got correct answer");
+});
+
+add_task(async function testEsniHTTPSSVC() {
+  prefs.setCharPref(
+    "network.trr.uri",
+    "https://foo.example.com:" + h2Port + "/doh"
+  );
+  let listenerEsni = new DNSListener();
+  let request = dns.asyncResolveByType(
+    "httpssvc_esni.example.com",
+    dns.RESOLVE_TYPE_HTTPSSVC,
+    0,
+    listenerEsni,
+    mainThread,
+    defaultOriginAttributes
+  );
+
+  let [inRequest, inRecord, inStatus] = await listenerEsni;
+  Assert.equal(inRequest, request, "correct request was used");
+  Assert.equal(inStatus, Cr.NS_OK, "status OK");
+  let answer = inRecord.QueryInterface(Ci.nsIDNSHTTPSSVCRecord).records;
+  let esni = answer[0].values[0].QueryInterface(Ci.nsISVCParamEsniConfig);
+  Assert.equal(esni.esniConfig, "testytestystringstring", "got correct answer");
 });

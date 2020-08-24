@@ -35,6 +35,8 @@
     'ecl/ecp_jac.c',
     'ecl/ecp_jm.c',
     'ecl/ecp_mont.c',
+    'ecl/ecp_secp384r1.c',
+    'ecl/ecp_secp521r1.c',
     'fipsfreebl.c',
     'blinit.c',
     'freeblver.c',
@@ -55,8 +57,6 @@
     'rijndael.c',
     'rsa.c',
     'rsapkcs.c',
-    'seed.c',
-    'sha512.c',
     'sha_fast.c',
     'shvfy.c',
     'sysrand.c',
@@ -133,8 +133,7 @@
         }],
       ],
     }],
-    ['have_int128_support==1 and \
-      (target_arch=="x64" or target_arch=="arm64" or target_arch=="aarch64")', {
+    ['have_int128_support==1', {
       'sources': [
         # All intel x64 and 64-bit ARM architectures get the 64 bit version.
         'ecl/curve25519_64.c',
@@ -146,6 +145,13 @@
         'ecl/curve25519_32.c',
       ],
     }],
+    ['(target_arch!="ppc64" and target_arch!="ppc64le") or disable_altivec==1', {
+      'sources': [
+        # Gyp does not support per-file cflags, so working around like this.
+        # ppc performance greatly benefits from specific flags.
+        'sha512.c',
+      ],
+    }],
     [ 'disable_chachapoly==0', {
       # The ChaCha20 code is linked in through the static ssse3-crypto lib on
       # all platforms that support SSSE3. There are runtime checks in place to
@@ -154,6 +160,11 @@
         'verified/Hacl_Chacha20.c',
         'verified/Hacl_Chacha20Poly1305_32.c',
         'verified/Hacl_Poly1305_32.c',
+      ],
+    }],
+    [ 'disable_deprecated_seed==0', {
+      'sources': [
+        'deprecated/seed.c',
       ],
     }],
     [ 'fuzz==1', {

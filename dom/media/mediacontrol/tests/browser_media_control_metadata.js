@@ -42,7 +42,7 @@ add_task(async function testDefaultMetadataForPageWithoutMediaSession() {
   const tab = await createTabAndLoad(PAGE_NON_AUTOPLAY);
 
   info(`start media`);
-  await playMedia(tab);
+  await playMedia(tab, testVideoId);
 
   info(`should use default metadata because of lacking of media session`);
   await isUsingDefaultMetadata(tab);
@@ -56,7 +56,7 @@ add_task(async function testDefaultMetadataForPageUsingEmptyMetadata() {
   const tab = await createTabAndLoad(PAGE_NON_AUTOPLAY);
 
   info(`start media`);
-  await playMedia(tab);
+  await playMedia(tab, testVideoId);
 
   info(`create empty media metadata`);
   await setMediaMetadata(tab, {
@@ -78,7 +78,7 @@ add_task(async function testDefaultMetadataForPageUsingNullMetadata() {
   const tab = await createTabAndLoad(PAGE_NON_AUTOPLAY);
 
   info(`start media`);
-  await playMedia(tab);
+  await playMedia(tab, testVideoId);
 
   info(`create empty media metadata`);
   await setNullMediaMetadata(tab);
@@ -90,12 +90,85 @@ add_task(async function testDefaultMetadataForPageUsingNullMetadata() {
   await BrowserTestUtils.removeTab(tab);
 });
 
+add_task(async function testMetadataWithEmptyTitleAndArtwork() {
+  info(`open media page`);
+  const tab = await createTabAndLoad(PAGE_NON_AUTOPLAY);
+
+  info(`start media`);
+  await playMedia(tab, testVideoId);
+
+  info(`create media metadata with empty title and artwork`);
+  await setMediaMetadata(tab, {
+    title: "",
+    artist: "foo",
+    album: "bar",
+    artwork: [],
+  });
+
+  info(`should use default metadata because of empty title and artwork`);
+  await isUsingDefaultMetadata(tab);
+
+  info(`remove tab`);
+  await BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function testMetadataWithoutTitleAndArtwork() {
+  info(`open media page`);
+  const tab = await createTabAndLoad(PAGE_NON_AUTOPLAY);
+
+  info(`start media`);
+  await playMedia(tab, testVideoId);
+
+  info(`create media metadata with empty title and artwork`);
+  await setMediaMetadata(tab, {
+    artist: "foo",
+    album: "bar",
+  });
+
+  info(`should use default metadata because of lacking of title and artwork`);
+  await isUsingDefaultMetadata(tab);
+
+  info(`remove tab`);
+  await BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function testMetadataInPrivateBrowsing() {
+  info(`create a private window`);
+  const privateWindow = await BrowserTestUtils.openNewBrowserWindow({
+    private: true,
+  });
+
+  info(`open media page`);
+  const tab = await createTabAndLoad(PAGE_NON_AUTOPLAY, privateWindow);
+
+  info(`start media`);
+  await playMedia(tab, testVideoId);
+
+  info(`set metadata`);
+  let metadata = {
+    title: "foo",
+    artist: "bar",
+    album: "foo",
+    artwork: [{ src: "bar.jpg", sizes: "128x128", type: "image/jpeg" }],
+  };
+  await setMediaMetadata(tab, metadata);
+
+  info(`should use default metadata because of in private browsing mode`);
+  await isUsingDefaultMetadata(tab, { isPrivateBrowsing: true });
+
+  info(`remove tab`);
+  await BrowserTestUtils.removeTab(tab);
+
+  info(`close private window`);
+  await BrowserTestUtils.closeWindow(privateWindow);
+});
+
 add_task(async function testSetMetadataFromMediaSessionAPI() {
   info(`open media page`);
   const tab = await createTabAndLoad(PAGE_NON_AUTOPLAY);
 
   info(`start media`);
-  await playMedia(tab);
+  await playMedia(tab, testVideoId);
 
   info(`set metadata`);
   let metadata = {
@@ -150,10 +223,10 @@ add_task(async function testSetMetadataAfterMediaPaused() {
   const tab = await createTabAndLoad(PAGE_NON_AUTOPLAY);
 
   info(`start media in order to let this tab be controlled`);
-  await playMedia(tab);
+  await playMedia(tab, testVideoId);
 
   info(`pause media`);
-  await pauseMedia(tab);
+  await pauseMedia(tab, testVideoId);
 
   info(`set metadata after media is paused`);
   let metadata = {
@@ -176,7 +249,7 @@ add_task(async function testSetMetadataAmongMultipleTabs() {
   const tab1 = await createTabAndLoad(PAGE_NON_AUTOPLAY);
 
   info(`start media in tab1`);
-  await playMedia(tab1);
+  await playMedia(tab1, testVideoId);
 
   info(`set metadata for tab1`);
   let metadata = {
@@ -203,7 +276,7 @@ add_task(async function testSetMetadataAmongMultipleTabs() {
   await setMediaMetadata(tab2, metadata);
 
   info(`start media in tab2`);
-  await playMedia(tab2);
+  await playMedia(tab2, testVideoId);
 
   info(`current active metadata should become metadata from tab2`);
   await isCurrentMetadataEqualTo(metadata);
@@ -232,7 +305,7 @@ add_task(async function testMetadataAfterTabNavigation() {
   const tab = await createTabAndLoad(PAGE_NON_AUTOPLAY);
 
   info(`start media`);
-  await playMedia(tab);
+  await playMedia(tab, testVideoId);
 
   info(`set metadata`);
   let metadata = {
@@ -262,54 +335,6 @@ add_task(async function testMetadataAfterTabNavigation() {
 /**
  * The following are helper functions.
  */
-function waitUntilMainMediaControllerChanged() {
-  return BrowserUtils.promiseObserved("main-media-controller-changed");
-}
-
-function waitUntilControllerMetadataChanged() {
-  return BrowserUtils.promiseObserved(
-    "media-session-controller-metadata-changed"
-  );
-}
-
-function playMedia(tab) {
-  const playPromise = SpecialPowers.spawn(
-    tab.linkedBrowser,
-    [testVideoId],
-    Id => {
-      const video = content.document.getElementById(Id);
-      if (!video) {
-        ok(false, `can't get the media element!`);
-      }
-      return video.play();
-    }
-  );
-  return Promise.all([playPromise, waitUntilMainMediaControllerChanged()]);
-}
-
-function pauseMedia(tab) {
-  return SpecialPowers.spawn(tab.linkedBrowser, [testVideoId], Id => {
-    const video = content.document.getElementById(Id);
-    if (!video) {
-      ok(false, `can't get the media element!`);
-    }
-    ok(!video.paused, `video is playing before calling pause`);
-    video.pause();
-  });
-}
-
-async function isUsingDefaultMetadata(tab) {
-  let metadata = ChromeUtils.getCurrentActiveMediaMetadata();
-  await SpecialPowers.spawn(tab.linkedBrowser, [metadata.title], title => {
-    is(title, content.document.title, "Using website title as a default title");
-  });
-  is(metadata.artwork.length, 1, "Default metada contains one artwork");
-  ok(
-    metadata.artwork[0].src.includes(defaultFaviconName),
-    "Using default favicon as a default art work"
-  );
-}
-
 function setMediaMetadata(tab, metadata) {
   const promise = SpecialPowers.spawn(tab.linkedBrowser, [metadata], data => {
     content.navigator.mediaSession.metadata = new content.MediaMetadata(data);
@@ -322,55 +347,4 @@ function setNullMediaMetadata(tab) {
     content.navigator.mediaSession.metadata = null;
   });
   return Promise.all([promise, waitUntilControllerMetadataChanged()]);
-}
-
-function isCurrentMetadataEqualTo(metadata) {
-  const current = ChromeUtils.getCurrentActiveMediaMetadata();
-  is(
-    current.title,
-    metadata.title,
-    `tile '${current.title}' is equal to ${metadata.title}`
-  );
-  is(
-    current.artist,
-    metadata.artist,
-    `artist '${current.artist}' is equal to ${metadata.artist}`
-  );
-  is(
-    current.album,
-    metadata.album,
-    `album '${current.album}' is equal to ${metadata.album}`
-  );
-  is(
-    current.artwork.length,
-    metadata.artwork.length,
-    `artwork length '${current.artwork.length}' is equal to ${metadata.artwork.length}`
-  );
-  for (let idx = 0; idx < metadata.artwork.length; idx++) {
-    // the current src we got would be a completed path of the image, so we do
-    // not check if they are equal, we check if the current src includes the
-    // metadata's file name. Eg. "http://foo/bar.jpg" v.s. "bar.jpg"
-    ok(
-      current.artwork[idx].src.includes(metadata.artwork[idx].src),
-      `artwork src '${current.artwork[idx].src}' includes ${metadata.artwork[idx].src}`
-    );
-    is(
-      current.artwork[idx].sizes,
-      metadata.artwork[idx].sizes,
-      `artwork sizes '${current.artwork[idx].sizes}' is equal to ${metadata.artwork[idx].sizes}`
-    );
-    is(
-      current.artwork[idx].type,
-      metadata.artwork[idx].type,
-      `artwork type '${current.artwork[idx].type}' is equal to ${metadata.artwork[idx].type}`
-    );
-  }
-}
-
-function isCurrentMetadataEmpty() {
-  const current = ChromeUtils.getCurrentActiveMediaMetadata();
-  is(current.title, "", `current title should be empty`);
-  is(current.artist, "", `current title should be empty`);
-  is(current.album, "", `current album should be empty`);
-  is(current.artwork.length, 0, `current artwork should be empty`);
 }

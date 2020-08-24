@@ -12,7 +12,7 @@
 #include "mozilla/dom/Element.h"
 #include "nsCOMPtr.h"
 #include "nsIDOMEventListener.h"
-#include "nsIFrame.h"
+#include "nsIFrame.h"  // for WeakFrame only
 #include "nsISupportsBase.h"
 #include "nsISupportsImpl.h"
 #include "nsLiteralString.h"
@@ -191,7 +191,7 @@ class AccessibleCaret {
     }
 
    private:
-    virtual ~DummyTouchListener(){};
+    virtual ~DummyTouchListener() = default;
   };
 
   // Member variables

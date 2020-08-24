@@ -7,6 +7,7 @@
 //! [images]: https://drafts.csswg.org/css-images/#image-values
 
 use crate::custom_properties;
+use crate::values::generics::position::PositionComponent;
 use crate::values::serialize_atom_identifier;
 use crate::Atom;
 use crate::Zero;
@@ -237,6 +238,8 @@ pub struct PaintWorklet {
     /// The arguments for the worklet.
     /// TODO: store a parsed representation of the arguments.
     #[cfg_attr(feature = "servo", ignore_malloc_size_of = "Arc")]
+    #[compute(no_field_bound)]
+    #[resolve(no_field_bound)]
     pub arguments: Vec<Arc<custom_properties::SpecifiedValue>>,
 }
 
@@ -328,7 +331,7 @@ where
     LP: ToCss,
     NL: ToCss,
     NLP: ToCss,
-    P: ToCss,
+    P: PositionComponent + ToCss,
     A: ToCss,
     AoP: ToCss,
     C: ToCss,
@@ -338,8 +341,16 @@ where
         W: Write,
     {
         let (compat_mode, repeating) = match *self {
-            Gradient::Linear { compat_mode, repeating, .. } => (compat_mode, repeating),
-            Gradient::Radial { compat_mode, repeating, .. } => (compat_mode, repeating),
+            Gradient::Linear {
+                compat_mode,
+                repeating,
+                ..
+            } => (compat_mode, repeating),
+            Gradient::Radial {
+                compat_mode,
+                repeating,
+                ..
+            } => (compat_mode, repeating),
             Gradient::Conic { repeating, .. } => (GradientCompatMode::Modern, repeating),
         };
 
@@ -354,7 +365,12 @@ where
         }
 
         match *self {
-            Gradient::Linear { ref direction, ref items, compat_mode, .. } => {
+            Gradient::Linear {
+                ref direction,
+                ref items,
+                compat_mode,
+                ..
+            } => {
                 dest.write_str("linear-gradient(")?;
                 let mut skip_comma = if !direction.points_downwards(compat_mode) {
                     direction.to_css(dest, compat_mode)?;
@@ -370,43 +386,77 @@ where
                     item.to_css(dest)?;
                 }
             },
-            Gradient::Radial { ref shape, ref position, ref items, compat_mode, .. } => {
+            Gradient::Radial {
+                ref shape,
+                ref position,
+                ref items,
+                compat_mode,
+                ..
+            } => {
                 dest.write_str("radial-gradient(")?;
                 let omit_shape = match *shape {
                     EndingShape::Ellipse(Ellipse::Extent(ShapeExtent::Cover)) |
                     EndingShape::Ellipse(Ellipse::Extent(ShapeExtent::FarthestCorner)) => true,
                     _ => false,
                 };
+                let omit_position = position.is_center();
                 if compat_mode == GradientCompatMode::Modern {
                     if !omit_shape {
                         shape.to_css(dest)?;
-                        dest.write_str(" ")?;
+                        if !omit_position {
+                            dest.write_str(" ")?;
+                        }
                     }
-                    dest.write_str("at ")?;
-                    position.to_css(dest)?;
+                    if !omit_position {
+                        dest.write_str("at ")?;
+                        position.to_css(dest)?;
+                    }
                 } else {
-                    position.to_css(dest)?;
+                    if !omit_position {
+                        position.to_css(dest)?;
+                        if !omit_shape {
+                            dest.write_str(", ")?;
+                        }
+                    }
                     if !omit_shape {
-                        dest.write_str(", ")?;
                         shape.to_css(dest)?;
                     }
                 }
+                let mut skip_comma = omit_shape && omit_position;
                 for item in &**items {
-                    dest.write_str(", ")?;
+                    if !skip_comma {
+                        dest.write_str(", ")?;
+                    }
+                    skip_comma = false;
                     item.to_css(dest)?;
                 }
             },
-            Gradient::Conic { ref angle, ref position, ref items, .. } => {
+            Gradient::Conic {
+                ref angle,
+                ref position,
+                ref items,
+                ..
+            } => {
                 dest.write_str("conic-gradient(")?;
-                if !angle.is_zero() {
+                let omit_angle = angle.is_zero();
+                let omit_position = position.is_center();
+                if !omit_angle {
                     dest.write_str("from ")?;
                     angle.to_css(dest)?;
-                    dest.write_str(" ")?;
+                    if !omit_position {
+                        dest.write_str(" ")?;
+                    }
                 }
-                dest.write_str("at ")?;
-                position.to_css(dest)?;
+                if !omit_position {
+                    dest.write_str("at ")?;
+                    position.to_css(dest)?;
+                }
+                let mut skip_comma = omit_angle && omit_position;
                 for item in &**items {
-                    dest.write_str(", ")?;
+                    if !skip_comma {
+                        dest.write_str(", ")?;
+                    }
+                    skip_comma = false;
                     item.to_css(dest)?;
                 }
             },

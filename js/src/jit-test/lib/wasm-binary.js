@@ -24,7 +24,7 @@ const startId          = 8;
 const elemId           = 9;
 const codeId           = 10;
 const dataId           = 11;
-const gcFeatureOptInId = 42;
+const dataCountId      = 12;
 
 // User-defined section names
 const nameName         = "name";
@@ -41,7 +41,7 @@ const F32Code          = 0x7d;
 const F64Code          = 0x7c;
 const AnyFuncCode      = 0x70;
 const AnyrefCode       = 0x6f;
-const RefCode          = 0x6d;
+const OptRefCode       = 0x6c;
 const FuncCode         = 0x60;
 const VoidCode         = 0x40;
 
@@ -103,7 +103,8 @@ const RefIsNullCode    = 0xd1;
 const RefFuncCode      = 0xd2;
 
 const FirstInvalidOpcode = 0xc5;
-const LastInvalidOpcode = 0xfb;
+const LastInvalidOpcode = 0xfa;
+const GcPrefix = 0xfb;
 const MiscPrefix = 0xfc;
 const SimdPrefix = 0xfd;
 const ThreadPrefix = 0xfe;
@@ -140,7 +141,7 @@ const definedOpcodes =
      0xc0, 0xc1, 0xc2, 0xc3, 0xc4,
      0xd0, 0xd1, 0xd2,
      0xf0,
-     0xfc, 0xfe, 0xff ];
+     0xfc, 0xfd, 0xfe, 0xff ];
 
 const undefinedOpcodes = (function () {
     let a = [];
@@ -166,10 +167,10 @@ const TableInitCode = 0x0c;     // Pending
 const ElemDropCode = 0x0d;      // Pending
 const TableCopyCode = 0x0e;     // Pending
 
-const StructNew = 0x50;         // UNOFFICIAL
-const StructGet = 0x51;         // UNOFFICIAL
-const StructSet = 0x52;         // UNOFFICIAL
-const StructNarrow = 0x53;      // UNOFFICIAL
+const StructNew = 0x00;         // UNOFFICIAL
+const StructGet = 0x03;         // UNOFFICIAL
+const StructSet = 0x06;         // UNOFFICIAL
+const StructNarrow = 0x07;      // UNOFFICIAL
 
 // DefinitionKind
 const FunctionCode     = 0x00;
@@ -241,10 +242,6 @@ function moduleWithSections(sectionArray) {
         bytes.push(...section.body);
     }
     return toU8(bytes);
-}
-
-function gcFeatureOptInSection(version) {
-    return { name: gcFeatureOptInId, body: [ version & 0x7F ] }
 }
 
 function sigSection(sigs) {
@@ -339,6 +336,12 @@ function dataSection(segmentArrays) {
             body.push(...varU32(elem));
     }
     return { name: dataId, body };
+}
+
+function dataCountSection(count) {
+    var body = [];
+    body.push(...varU32(count));
+    return { name: dataCountId, body };
 }
 
 function elemSection(elemArrays) {

@@ -8,6 +8,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/Event.h"
 #include "mozilla/dom/AnonymousContentBinding.h"
 #include "nsComputedDOMStyle.h"
 #include "nsCycleCollectionParticipant.h"
@@ -191,9 +192,8 @@ void AnonymousContent::GetComputedStylePropertyValue(
     return;
   }
 
-  RefPtr<nsComputedDOMStyle> cs =
-      new nsComputedDOMStyle(element, NS_LITERAL_STRING(""),
-                             element->OwnerDoc(), nsComputedDOMStyle::eAll);
+  RefPtr<nsComputedDOMStyle> cs = new nsComputedDOMStyle(
+      element, u""_ns, element->OwnerDoc(), nsComputedDOMStyle::eAll);
   aRv = cs->GetPropertyValue(aPropertyName, aResult);
 }
 

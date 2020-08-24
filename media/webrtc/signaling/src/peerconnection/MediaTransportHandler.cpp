@@ -31,6 +31,7 @@
 
 #include "runnable_utils.h"
 
+#include "mozilla/Algorithm.h"
 #include "mozilla/Telemetry.h"
 
 #include "mozilla/dom/RTCStatsReportBinding.h"
@@ -158,8 +159,8 @@ class MediaTransportHandlerSTS : public MediaTransportHandler,
   RefPtr<NrIceResolver> mDNSResolver;
   std::map<std::string, Transport> mTransports;
   bool mObfuscateHostAddresses = false;
-  uint32_t minDtlsVersion = 0;
-  uint32_t maxDtlsVersion = 0;
+  uint32_t mMinDtlsVersion = 0;
+  uint32_t mMaxDtlsVersion = 0;
 
   std::set<std::string> mSignaledAddresses;
 
@@ -256,7 +257,7 @@ static nsresult addNrIceServer(const nsString& aIceUrl,
     // Tolerate query-string + parse 'transport=[udp|tcp]' by hand.
     int32_t questionmark = path.FindChar('?');
     if (questionmark >= 0) {
-      const nsCString match = NS_LITERAL_CSTRING("transport=");
+      const nsCString match = "transport="_ns;
 
       for (int32_t i = questionmark, endPos; i >= 0; i = endPos) {
         endPos = path.FindCharInSet("&", i + 1);
@@ -339,6 +340,56 @@ nsresult MediaTransportHandler::ConvertIceServers(
   return NS_OK;
 }
 
+static NrIceCtx::GlobalConfig GetGlobalConfig() {
+  NrIceCtx::GlobalConfig config;
+  config.mAllowLinkLocal =
+      Preferences::GetBool("media.peerconnection.ice.link_local", false);
+  config.mAllowLoopback =
+      Preferences::GetBool("media.peerconnection.ice.loopback", false);
+  config.mTcpEnabled =
+      Preferences::GetBool("media.peerconnection.ice.tcp", false);
+  config.mStunClientMaxTransmits = Preferences::GetInt(
+      "media.peerconnection.ice.stun_client_maximum_transmits",
+      config.mStunClientMaxTransmits);
+  config.mTrickleIceGracePeriod =
+      Preferences::GetInt("media.peerconnection.ice.trickle_grace_period",
+                          config.mTrickleIceGracePeriod);
+  config.mIceTcpSoSockCount = Preferences::GetInt(
+      "media.peerconnection.ice.tcp_so_sock_count", config.mIceTcpSoSockCount);
+  config.mIceTcpListenBacklog =
+      Preferences::GetInt("media.peerconnection.ice.tcp_listen_backlog",
+                          config.mIceTcpListenBacklog);
+  (void)Preferences::GetCString("media.peerconnection.ice.force_interface",
+                                config.mForceNetInterface);
+  return config;
+}
+
+static Maybe<NrIceCtx::NatSimulatorConfig> GetNatConfig() {
+  bool block_tcp = Preferences::GetBool(
+      "media.peerconnection.nat_simulator.block_tcp", false);
+  bool block_udp = Preferences::GetBool(
+      "media.peerconnection.nat_simulator.block_udp", false);
+  nsAutoCString mapping_type;
+  (void)Preferences::GetCString(
+      "media.peerconnection.nat_simulator.mapping_type", mapping_type);
+  nsAutoCString filtering_type;
+  (void)Preferences::GetCString(
+      "media.peerconnection.nat_simulator.filtering_type", filtering_type);
+
+  if (block_udp || block_tcp || !mapping_type.IsEmpty() ||
+      !filtering_type.IsEmpty()) {
+    CSFLogDebug(LOGTAG, "NAT filtering type: %s", filtering_type.get());
+    CSFLogDebug(LOGTAG, "NAT mapping type: %s", mapping_type.get());
+    NrIceCtx::NatSimulatorConfig natConfig;
+    natConfig.mBlockUdp = block_udp;
+    natConfig.mBlockTcp = block_tcp;
+    natConfig.mFilteringType = filtering_type;
+    natConfig.mMappingType = mapping_type;
+    return Some(natConfig);
+  }
+  return Nothing();
+}
+
 nsresult MediaTransportHandlerSTS::CreateIceCtx(
     const std::string& aName, const nsTArray<dom::RTCIceServer>& aIceServers,
     dom::RTCIceTransportPolicy aIcePolicy) {
@@ -370,72 +421,80 @@ nsresult MediaTransportHandlerSTS::CreateIceCtx(
           mozilla::psm::DisableMD5();
         }
 
-        // This stuff will probably live on the other side of IPC; errors down
-        // here will either need to be ignored, or plumbed back in some way
-        // other than the return.
-        bool allowLoopback =
-            Preferences::GetBool("media.peerconnection.ice.loopback", false);
-        bool tcpEnabled =
-            Preferences::GetBool("media.peerconnection.ice.tcp", false);
-        bool allowLinkLocal =
-            Preferences::GetBool("media.peerconnection.ice.link_local", false);
-
-        mIceCtx = NrIceCtx::Create(aName, allowLoopback, tcpEnabled,
-                                   allowLinkLocal, toNrIcePolicy(aIcePolicy));
-        if (!mIceCtx) {
-          return InitPromise::CreateAndReject("NrIceCtx::Create failed",
-                                              __func__);
+        static bool globalInitDone = false;
+        if (!globalInitDone) {
+          mStsThread->Dispatch(
+              WrapRunnableNM(&NrIceCtx::InitializeGlobals, GetGlobalConfig()),
+              NS_DISPATCH_NORMAL);
+          globalInitDone = true;
         }
 
-        mIceCtx->SignalGatheringStateChange.connect(
-            this, &MediaTransportHandlerSTS::OnGatheringStateChange);
-        mIceCtx->SignalConnectionStateChange.connect(
-            this, &MediaTransportHandlerSTS::OnConnectionStateChange);
-
-        nsresult rv;
-
-        if (NS_FAILED(rv = mIceCtx->SetStunServers(stunServers))) {
-          CSFLogError(LOGTAG, "%s: Failed to set stun servers", __FUNCTION__);
-          return InitPromise::CreateAndReject("Failed to set stun servers",
-                                              __func__);
-        }
         // Give us a way to globally turn off TURN support
-        bool disabled =
+        bool turnDisabled =
             Preferences::GetBool("media.peerconnection.turn.disable", false);
-        if (!disabled) {
-          if (NS_FAILED(rv = mIceCtx->SetTurnServers(turnServers))) {
-            CSFLogError(LOGTAG, "%s: Failed to set turn servers", __FUNCTION__);
-            return InitPromise::CreateAndReject("Failed to set turn servers",
-                                                __func__);
-          }
-        } else if (!turnServers.empty()) {
-          CSFLogError(LOGTAG, "%s: Setting turn servers disabled",
-                      __FUNCTION__);
-        }
-
-        mDNSResolver = new NrIceResolver;
-        if (NS_FAILED(rv = mDNSResolver->Init())) {
-          CSFLogError(LOGTAG, "%s: Failed to initialize dns resolver",
-                      __FUNCTION__);
-          return InitPromise::CreateAndReject(
-              "Failed to initialize dns resolver", __func__);
-        }
-        if (NS_FAILED(
-                rv = mIceCtx->SetResolver(mDNSResolver->AllocateResolver()))) {
-          CSFLogError(LOGTAG, "%s: Failed to get dns resolver", __FUNCTION__);
-          return InitPromise::CreateAndReject("Failed to get dns resolver",
-                                              __func__);
-        }
-
         // We are reading these here, because when we setup the DTLS transport
         // we are on the wrong thread to read prefs
-        minDtlsVersion =
+        mMinDtlsVersion =
             Preferences::GetUint("media.peerconnection.dtls.version.min");
-        maxDtlsVersion =
+        mMaxDtlsVersion =
             Preferences::GetUint("media.peerconnection.dtls.version.max");
 
-        CSFLogDebug(LOGTAG, "%s done", __func__);
-        return InitPromise::CreateAndResolve(true, __func__);
+        NrIceCtx::Config config;
+        config.mPolicy = toNrIcePolicy(aIcePolicy);
+        config.mNatSimulatorConfig = GetNatConfig();
+
+        return InvokeAsync(
+            mStsThread, __func__,
+            [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+              mIceCtx = NrIceCtx::Create(aName, config);
+              if (!mIceCtx) {
+                return InitPromise::CreateAndReject("NrIceCtx::Create failed",
+                                                    __func__);
+              }
+
+              mIceCtx->SignalGatheringStateChange.connect(
+                  this, &MediaTransportHandlerSTS::OnGatheringStateChange);
+              mIceCtx->SignalConnectionStateChange.connect(
+                  this, &MediaTransportHandlerSTS::OnConnectionStateChange);
+
+              nsresult rv;
+
+              if (NS_FAILED(rv = mIceCtx->SetStunServers(stunServers))) {
+                CSFLogError(LOGTAG, "%s: Failed to set stun servers",
+                            __FUNCTION__);
+                return InitPromise::CreateAndReject(
+                    "Failed to set stun servers", __func__);
+              }
+              if (!turnDisabled) {
+                if (NS_FAILED(rv = mIceCtx->SetTurnServers(turnServers))) {
+                  CSFLogError(LOGTAG, "%s: Failed to set turn servers",
+                              __FUNCTION__);
+                  return InitPromise::CreateAndReject(
+                      "Failed to set turn servers", __func__);
+                }
+              } else if (!turnServers.empty()) {
+                CSFLogError(LOGTAG, "%s: Setting turn servers disabled",
+                            __FUNCTION__);
+              }
+
+              mDNSResolver = new NrIceResolver;
+              if (NS_FAILED(rv = mDNSResolver->Init())) {
+                CSFLogError(LOGTAG, "%s: Failed to initialize dns resolver",
+                            __FUNCTION__);
+                return InitPromise::CreateAndReject(
+                    "Failed to initialize dns resolver", __func__);
+              }
+              if (NS_FAILED(rv = mIceCtx->SetResolver(
+                                mDNSResolver->AllocateResolver()))) {
+                CSFLogError(LOGTAG, "%s: Failed to get dns resolver",
+                            __FUNCTION__);
+                return InitPromise::CreateAndReject(
+                    "Failed to get dns resolver", __func__);
+              }
+
+              CSFLogDebug(LOGTAG, "%s done", __func__);
+              return InitPromise::CreateAndResolve(true, __func__);
+            });
       });
   return NS_OK;
 }
@@ -519,10 +578,11 @@ void MediaTransportHandlerSTS::ActivateTransport(
     bool aPrivacyRequested) {
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [=, keyDer = aKeyDer.Clone(), certDer = aCertDer.Clone(),
+       self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         MOZ_ASSERT(aComponentCount);
         RefPtr<DtlsIdentity> dtlsIdentity(
-            DtlsIdentity::Deserialize(aKeyDer, aCertDer, aAuthType));
+            DtlsIdentity::Deserialize(keyDer, certDer, aAuthType));
         if (!dtlsIdentity) {
           MOZ_ASSERT(false);
           return;
@@ -610,7 +670,8 @@ void MediaTransportHandlerSTS::StartIceGathering(
     const nsTArray<NrIceStunAddr>& aStunAddrs) {
   mInitPromise->Then(
       mStsThread, __func__,
-      [=, self = RefPtr<MediaTransportHandlerSTS>(this)]() {
+      [=, stunAddrs = aStunAddrs.Clone(),
+       self = RefPtr<MediaTransportHandlerSTS>(this)]() {
         mObfuscateHostAddresses = aObfuscateHostAddresses;
 
         // Belt and suspenders - in e10s mode, the call below to SetStunAddrs
@@ -619,8 +680,8 @@ void MediaTransportHandlerSTS::StartIceGathering(
         // just set them here, and only do it here.
         mIceCtx->SetCtxFlags(aDefaultRouteOnly);
 
-        if (aStunAddrs.Length()) {
-          mIceCtx->SetStunAddrs(aStunAddrs);
+        if (stunAddrs.Length()) {
+          mIceCtx->SetStunAddrs(stunAddrs);
         }
 
         // Start gathering, but only if there are streams
@@ -672,8 +733,8 @@ void MediaTransportHandlerSTS::StartIceChecks(
       [](const std::string& aError) {});
 }
 
-static void TokenizeCandidate(const std::string& aCandidate,
-                              std::vector<std::string>& aTokens) {
+void TokenizeCandidate(const std::string& aCandidate,
+                       std::vector<std::string>& aTokens) {
   aTokens.clear();
 
   std::istringstream iss(aCandidate);
@@ -963,9 +1024,15 @@ MediaTransportHandlerSTS::GetIceLog(const nsCString& aPattern) {
         if (logs) {
           logs->Filter(aPattern.get(), 0, &result);
         }
+        /// XXX(Bug 1631386) Check if we should reject the promise instead of
+        /// crashing in an OOM situation.
+        if (!converted.SetCapacity(result.size(), fallible)) {
+          mozalloc_handle_oom(sizeof(nsString) * result.size());
+        }
         for (auto& line : result) {
-          converted.AppendElement(NS_ConvertUTF8toUTF16(line.c_str()),
-                                  fallible);
+          // Cannot fail, SetCapacity was called before.
+          (void)converted.AppendElement(NS_ConvertUTF8toUTF16(line.c_str()),
+                                        fallible);
         }
         return IceLogPromise::CreateAndResolve(std::move(converted), __func__);
       });
@@ -1054,9 +1121,16 @@ static void ToRTCIceCandidateStats(
     }
     cand.mProxied.Construct(NS_ConvertASCIItoUTF16(
         candidate.is_proxied ? "proxied" : "non-proxied"));
-    stats->mIceCandidateStats.AppendElement(cand, fallible);
+    if (!stats->mIceCandidateStats.AppendElement(cand, fallible)) {
+      // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
+      // involve multiple reallocations) and potentially crashing here,
+      // SetCapacity could be called outside the loop once.
+      mozalloc_handle_oom(0);
+    }
     if (candidate.trickled) {
-      stats->mTrickledIceCandidateStats.AppendElement(cand, fallible);
+      if (!stats->mTrickledIceCandidateStats.AppendElement(cand, fallible)) {
+        mozalloc_handle_oom(0);
+      }
     }
   }
 }
@@ -1102,7 +1176,12 @@ void MediaTransportHandlerSTS::GetIceStats(
     s.mLastPacketReceivedTimestamp.Construct(candPair.ms_since_last_recv);
     s.mState.Construct(dom::RTCStatsIceCandidatePairState(candPair.state));
     s.mComponentId.Construct(candPair.component_id);
-    aStats->mIceCandidatePairStats.AppendElement(s, fallible);
+    if (!aStats->mIceCandidatePairStats.AppendElement(s, fallible)) {
+      // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
+      // involve multiple reallocations) and potentially crashing here,
+      // SetCapacity could be called outside the loop once.
+      mozalloc_handle_oom(0);
+    }
   }
 
   std::vector<NrIceCandidate> candidates;
@@ -1112,8 +1191,13 @@ void MediaTransportHandlerSTS::GetIceStats(
                            mSignaledAddresses);
     // add the local candidates unparsed string to a sequence
     for (const auto& candidate : candidates) {
-      aStats->mRawLocalCandidates.AppendElement(
-          NS_ConvertASCIItoUTF16(candidate.label.c_str()), fallible);
+      if (!aStats->mRawLocalCandidates.AppendElement(
+              NS_ConvertASCIItoUTF16(candidate.label.c_str()), fallible)) {
+        // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
+        // involve multiple reallocations) and potentially crashing here,
+        // SetCapacity could be called outside the loop once.
+        mozalloc_handle_oom(0);
+      }
     }
   }
   candidates.clear();
@@ -1124,8 +1208,13 @@ void MediaTransportHandlerSTS::GetIceStats(
                            mSignaledAddresses);
     // add the remote candidates unparsed string to a sequence
     for (const auto& candidate : candidates) {
-      aStats->mRawRemoteCandidates.AppendElement(
-          NS_ConvertASCIItoUTF16(candidate.label.c_str()), fallible);
+      if (!aStats->mRawRemoteCandidates.AppendElement(
+              NS_ConvertASCIItoUTF16(candidate.label.c_str()), fallible)) {
+        // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
+        // involve multiple reallocations) and potentially crashing here,
+        // SetCapacity could be called outside the loop once.
+        mozalloc_handle_oom(0);
+      }
     }
   }
 }
@@ -1162,8 +1251,8 @@ RefPtr<TransportFlow> MediaTransportHandlerSTS::CreateTransportFlow(
   dtls->SetIdentity(aDtlsIdentity);
 
   dtls->SetMinMaxVersion(
-      static_cast<TransportLayerDtls::Version>(minDtlsVersion),
-      static_cast<TransportLayerDtls::Version>(maxDtlsVersion));
+      static_cast<TransportLayerDtls::Version>(mMinDtlsVersion),
+      static_cast<TransportLayerDtls::Version>(mMaxDtlsVersion));
 
   for (const auto& digest : aDigests) {
     rv = dtls->SetVerificationDigest(digest);
@@ -1185,9 +1274,8 @@ RefPtr<TransportFlow> MediaTransportHandlerSTS::CreateTransportFlow(
   // Always permits negotiation of the confidential mode.
   // Only allow non-confidential (which is an allowed default),
   // if we aren't confidential.
-  std::set<std::string> alpn;
-  std::string alpnDefault = "";
-  alpn.insert("c-webrtc");
+  std::set<std::string> alpn = {"c-webrtc"};
+  std::string alpnDefault;
   if (!aPrivacyRequested) {
     alpnDefault = "webrtc";
     alpn.insert(alpnDefault);

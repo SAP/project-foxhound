@@ -55,14 +55,6 @@ CSS_PSEUDO_ELEMENT(selection, ":selection",
 CSS_PSEUDO_ELEMENT(mozFocusInner, ":-moz-focus-inner", 0)
 CSS_PSEUDO_ELEMENT(mozFocusOuter, ":-moz-focus-outer", 0)
 
-// FIXME(emilio): It's unclear why this needs to exist at all, we don't ever
-// style them.
-//
-// This is a pseudo instead of an anon box because of how the
-// AdditionalComputedStyle APIs work.
-CSS_PSEUDO_ELEMENT(mozMathAnonymous, ":-moz-math-anonymous",
-  CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS)
-
 // HTML5 Forms pseudo elements
 CSS_PSEUDO_ELEMENT(mozNumberWrapper, ":-moz-number-wrapper",
                    CSS_PSEUDO_ELEMENT_SUPPORTS_USER_ACTION_STATE |
@@ -90,4 +82,14 @@ CSS_PSEUDO_ELEMENT(placeholder, ":placeholder",
                    CSS_PSEUDO_ELEMENT_SUPPORTS_USER_ACTION_STATE)
 CSS_PSEUDO_ELEMENT(mozColorSwatch, ":-moz-color-swatch",
                    CSS_PSEUDO_ELEMENT_SUPPORTS_STYLE_ATTRIBUTE |
+                   CSS_PSEUDO_ELEMENT_SUPPORTS_USER_ACTION_STATE)
+// The root of the text value anonymous content inside an <input> or <textarea>.
+CSS_PSEUDO_ELEMENT(mozTextControlEditingRoot, ":-moz-text-control-editing-root",
+                   CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS)
+// The element that shows the autofill value.
+CSS_PSEUDO_ELEMENT(mozTextControlPreview, ":-moz-text-control-preview",
+                   CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS)
+
+CSS_PSEUDO_ELEMENT(fileChooserButton, ":file-chooser-button",
+                   CSS_PSEUDO_ELEMENT_ENABLED_IN_UA_SHEETS |
                    CSS_PSEUDO_ELEMENT_SUPPORTS_USER_ACTION_STATE)

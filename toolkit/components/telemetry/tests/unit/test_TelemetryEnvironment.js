@@ -174,7 +174,7 @@ var SysInfo = {
       return this.overrides[name];
     }
 
-    return this._genuine.getProperty(name);
+    return this._genuine.QueryInterface(Ci.nsIPropertyBag).getProperty(name);
   },
 
   getPropertyAsUint32(name) {
@@ -182,7 +182,7 @@ var SysInfo = {
   },
 
   get(name) {
-    return this._genuine.get(name);
+    return this._genuine.QueryInterface(Ci.nsIPropertyBag2).get(name);
   },
 
   get diskInfo() {
@@ -761,12 +761,14 @@ function checkSystemSection(data, assertProcessData) {
   Assert.ok("D2DEnabled" in gfxData);
   Assert.ok("DWriteEnabled" in gfxData);
   Assert.ok("Headless" in gfxData);
+  Assert.ok("EmbeddedInFirefoxReality" in gfxData);
   // DWriteVersion is disabled due to main thread jank and will be enabled
   // again as part of bug 1154500.
   // Assert.ok("DWriteVersion" in gfxData);
   if (gIsWindows) {
     Assert.equal(typeof gfxData.D2DEnabled, "boolean");
     Assert.equal(typeof gfxData.DWriteEnabled, "boolean");
+    Assert.equal(typeof gfxData.EmbeddedInFirefoxReality, "boolean");
     // As above, will be enabled again as part of bug 1154500.
     // Assert.ok(checkString(gfxData.DWriteVersion));
   }
@@ -1922,7 +1924,7 @@ async function checkDefaultSearch(privateOn, reInitSearchService) {
 
   // Initialize the search service.
   if (reInitSearchService) {
-    Services.search.reset();
+    Services.search.wrappedJSObject.reset();
   }
   await Services.search.init();
   await promiseNextTick();
@@ -2041,7 +2043,7 @@ async function checkDefaultSearch(privateOn, reInitSearchService) {
   const EXPECTED_SEARCH_ENGINE = "other-" + SEARCH_ENGINE_ID;
   const EXPECTED_SEARCH_ENGINE_DATA = {
     name: "telemetry_default",
-    loadPath: "[other]addEngineWithDetails",
+    loadPath: "[other]addEngineWithDetails:telemetry_default@test.engine",
     origin: "verified",
   };
   if (privateOn) {
@@ -2100,10 +2102,9 @@ add_task(async function test_defaultSearchEngine() {
         reject(ex);
       }
     }, "browser-search-engine-modified");
-    Services.search.addEngine(
+    Services.search.addOpenSearchEngine(
       "file://" + do_get_cwd().path + "/engine.xml",
-      null,
-      false
+      null
     );
   });
   await Services.search.setDefault(engine);

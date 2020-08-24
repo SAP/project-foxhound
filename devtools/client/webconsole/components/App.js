@@ -110,12 +110,13 @@ class App extends Component {
       editorWidth: PropTypes.number,
       hidePersistLogsCheckbox: PropTypes.bool,
       hideShowContentMessagesCheckbox: PropTypes.bool,
+      inputEnabled: PropTypes.bool,
       sidebarVisible: PropTypes.bool.isRequired,
       eagerEvaluationEnabled: PropTypes.bool.isRequired,
       filterBarDisplayMode: PropTypes.oneOf([
         ...Object.values(FILTERBAR_DISPLAY_MODES),
       ]).isRequired,
-      showEvaluationSelector: PropTypes.bool,
+      showEvaluationContextSelector: PropTypes.bool,
     };
   }
 
@@ -145,7 +146,10 @@ class App extends Component {
     ) {
       const initialValue =
         webConsoleUI.jsterm && webConsoleUI.jsterm.getSelectedText();
-      dispatch(actions.reverseSearchInputToggle({ initialValue }));
+
+      dispatch(
+        actions.reverseSearchInputToggle({ initialValue, access: "keyboard" })
+      );
       event.stopPropagation();
     }
 
@@ -205,7 +209,7 @@ class App extends Component {
       return;
     }
 
-    if (webConsoleUI && webConsoleUI.jsterm) {
+    if (webConsoleUI?.jsterm) {
       webConsoleUI.jsterm.focus();
     }
   }
@@ -256,7 +260,7 @@ class App extends Component {
 
     // Remove notification automatically when the user types "allow pasting".
     const pasteKeyUpHandler = e => {
-      const value = e.target.value;
+      const { value } = e.target;
       if (value.includes(SELF_XSS_OK)) {
         dispatch(actions.removeNotification("selfxss-notification"));
         input.removeEventListener("keyup", pasteKeyUpHandler);
@@ -293,8 +297,13 @@ class App extends Component {
       reverseSearchInputVisible,
       serviceContainer,
       webConsoleUI,
-      showEvaluationSelector,
+      showEvaluationContextSelector,
+      inputEnabled,
     } = this.props;
+
+    if (!inputEnabled) {
+      return null;
+    }
 
     return editorMode
       ? EditorToolbar({
@@ -303,19 +312,20 @@ class App extends Component {
           dispatch,
           reverseSearchInputVisible,
           serviceContainer,
-          showEvaluationSelector,
+          showEvaluationContextSelector,
           webConsoleUI,
         })
       : null;
   }
 
   renderConsoleOutput() {
-    const { onFirstMeaningfulPaint, serviceContainer } = this.props;
+    const { onFirstMeaningfulPaint, serviceContainer, editorMode } = this.props;
 
     return ConsoleOutput({
       key: "console-output",
       serviceContainer,
       onFirstMeaningfulPaint,
+      editorMode,
     });
   }
 
@@ -326,6 +336,7 @@ class App extends Component {
       autocomplete,
       editorMode,
       editorWidth,
+      inputEnabled,
     } = this.props;
 
     return JSTerm({
@@ -336,12 +347,18 @@ class App extends Component {
       autocomplete,
       editorMode,
       editorWidth,
+      inputEnabled,
     });
   }
 
   renderEagerEvaluation() {
-    const { eagerEvaluationEnabled, serviceContainer } = this.props;
-    if (!eagerEvaluationEnabled) {
+    const {
+      eagerEvaluationEnabled,
+      serviceContainer,
+      inputEnabled,
+    } = this.props;
+
+    if (!eagerEvaluationEnabled || !inputEnabled) {
       return null;
     }
 
@@ -396,20 +413,22 @@ class App extends Component {
   }
 
   renderRootElement(children) {
-    const { editorMode, serviceContainer, sidebarVisible } = this.props;
+    const {
+      editorMode,
+      sidebarVisible,
+      inputEnabled,
+      eagerEvaluationEnabled,
+    } = this.props;
 
     const classNames = ["webconsole-app"];
     if (sidebarVisible) {
       classNames.push("sidebar-visible");
     }
-    if (editorMode) {
+    if (editorMode && inputEnabled) {
       classNames.push("jsterm-editor");
     }
-    if (serviceContainer.canRewind()) {
-      classNames.push("can-rewind");
-    }
 
-    if (this.props.eagerEvaluationEnabled) {
+    if (eagerEvaluationEnabled && inputEnabled) {
       classNames.push("eager-evaluation");
     }
 
@@ -427,7 +446,7 @@ class App extends Component {
   }
 
   render() {
-    const { webConsoleUI, editorMode, dispatch } = this.props;
+    const { webConsoleUI, editorMode, dispatch, inputEnabled } = this.props;
 
     const filterBar = this.renderFilterBar();
     const editorToolbar = this.renderEditorToolbar();
@@ -449,7 +468,7 @@ class App extends Component {
         jsterm,
         eager
       ),
-      editorMode
+      editorMode && inputEnabled
         ? GridElementWidthResizer({
             key: "editor-resizer",
             enabled: editorMode,
@@ -476,14 +495,11 @@ const mapStateToProps = state => ({
   filterBarDisplayMode: state.ui.filterBarDisplayMode,
   eagerEvaluationEnabled: state.prefs.eagerEvaluation,
   autocomplete: state.prefs.autocomplete,
-  showEvaluationSelector: state.ui.showEvaluationSelector,
+  showEvaluationContextSelector: state.ui.showEvaluationContextSelector,
 });
 
 const mapDispatchToProps = dispatch => ({
   dispatch,
 });
 
-module.exports = connect(
-  mapStateToProps,
-  mapDispatchToProps
-)(App);
+module.exports = connect(mapStateToProps, mapDispatchToProps)(App);

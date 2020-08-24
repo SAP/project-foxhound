@@ -767,7 +767,7 @@ class SocketListenerProxy final : public nsIUDPSocketListener {
   explicit SocketListenerProxy(nsIUDPSocketListener* aListener)
       : mListener(new nsMainThreadPtrHolder<nsIUDPSocketListener>(
             "SocketListenerProxy::mListener", aListener)),
-        mTarget(GetCurrentThreadEventTarget()) {}
+        mTarget(GetCurrentEventTarget()) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETLISTENER
@@ -859,7 +859,7 @@ class SocketListenerProxyBackground final : public nsIUDPSocketListener {
 
  public:
   explicit SocketListenerProxyBackground(nsIUDPSocketListener* aListener)
-      : mListener(aListener), mTarget(GetCurrentThreadEventTarget()) {}
+      : mListener(aListener), mTarget(GetCurrentEventTarget()) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETLISTENER
@@ -987,13 +987,6 @@ PendingSend::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-PendingSend::OnLookupByTypeComplete(nsICancelable* aRequest,
-                                    nsIDNSByTypeRecord* aRes,
-                                    nsresult aStatus) {
-  return NS_OK;
-}
-
 class PendingSendStream : public nsIDNSListener {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -1030,13 +1023,6 @@ PendingSendStream::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-PendingSendStream::OnLookupByTypeComplete(nsICancelable* aRequest,
-                                          nsIDNSByTypeRecord* aRes,
-                                          nsresult aStatus) {
-  return NS_OK;
-}
-
 class SendRequestRunnable : public Runnable {
  public:
   SendRequestRunnable(nsUDPSocket* aSocket, const NetAddr& aAddr,
@@ -1070,7 +1056,7 @@ nsUDPSocket::AsyncListen(nsIUDPSocketListener* aListener) {
   NS_ENSURE_TRUE(mListener == nullptr, NS_ERROR_IN_PROGRESS);
   {
     MutexAutoLock lock(mLock);
-    mListenerTarget = GetCurrentThreadEventTarget();
+    mListenerTarget = GetCurrentEventTarget();
     if (NS_IsMainThread()) {
       // PNecko usage
       mListener = new SocketListenerProxy(aListener);

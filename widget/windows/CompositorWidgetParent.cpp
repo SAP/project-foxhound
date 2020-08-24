@@ -76,16 +76,20 @@ LayoutDeviceIntSize CompositorWidgetParent::GetClientSize() {
   return LayoutDeviceIntSize(r.right - r.left, r.bottom - r.top);
 }
 
-already_AddRefed<gfx::DrawTarget> CompositorWidgetParent::StartRemoteDrawing() {
+already_AddRefed<gfx::DrawTarget>
+CompositorWidgetParent::StartRemoteDrawingInRegion(
+    LayoutDeviceIntRegion& aInvalidRegion, layers::BufferMode* aBufferMode) {
   MOZ_ASSERT(mRemoteBackbufferClient);
 
   return mRemoteBackbufferClient->BorrowDrawTarget();
 }
 
-void CompositorWidgetParent::EndRemoteDrawing() {
+void CompositorWidgetParent::EndRemoteDrawingInRegion(
+    gfx::DrawTarget* aDrawTarget, const LayoutDeviceIntRegion& aInvalidRegion) {
   MOZ_ASSERT(!mLockedBackBufferData);
 
-  Unused << mRemoteBackbufferClient->PresentDrawTarget();
+  Unused << mRemoteBackbufferClient->PresentDrawTarget(
+      aInvalidRegion.GetBounds().ToUnknownRect());
 }
 
 bool CompositorWidgetParent::NeedsToDeferEndRemoteDrawing() { return false; }
@@ -186,7 +190,8 @@ mozilla::ipc::IPCResult CompositorWidgetParent::RecvClearTransparentWindow() {
 
   drawTarget->ClearRect(Rect(0, 0, size.width, size.height));
 
-  Unused << mRemoteBackbufferClient->PresentDrawTarget();
+  Unused << mRemoteBackbufferClient->PresentDrawTarget(
+      IntRect(0, 0, size.width, size.height));
 
   return IPC_OK();
 }
@@ -216,7 +221,7 @@ void CompositorWidgetParent::UpdateCompositorWnd(const HWND aCompositorWnd,
   SendUpdateCompositorWnd(reinterpret_cast<WindowsHandle>(aCompositorWnd),
                           reinterpret_cast<WindowsHandle>(aParentWnd))
       ->Then(
-          layers::CompositorThreadHolder::Loop()->SerialEventTarget(), __func__,
+          layers::CompositorThread(), __func__,
           [self](const bool& aSuccess) {
             if (aSuccess && self->mRootLayerTreeID.isSome()) {
               self->mSetParentCompleted = true;

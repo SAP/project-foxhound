@@ -9,6 +9,7 @@
 #include "mozilla/dom/SessionStoreUtilsBinding.h"
 #include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/StaticPrefs_fission.h"
 #include "nsGenericHTMLElement.h"
 #include "nsDocShell.h"
 #include "nsIAppWindow.h"
@@ -44,7 +45,10 @@ ContentSessionStore::ContentSessionStore(nsIDocShell* aDocShell)
       mScrollChanged(NO_CHANGE),
       mFormDataChanged(NO_CHANGE),
       mStorageStatus(NO_STORAGE),
-      mDocCapChanged(false) {
+      mDocCapChanged(false),
+      mSHistoryInParent(StaticPrefs::fission_sessionHistoryInParent()),
+      mSHistoryChanged(false),
+      mSHistoryChangedFromParent(false) {
   MOZ_ASSERT(mDocShell);
   // Check that value at startup as it might have
   // been set before the frame script was loaded.
@@ -123,11 +127,19 @@ void ContentSessionStore::OnDocumentStart() {
   }
 
   SetFullStorageNeeded();
+
+  if (mSHistoryInParent) {
+    mSHistoryChanged = true;
+  }
 }
 
 void ContentSessionStore::OnDocumentEnd() {
   mScrollChanged = WITH_CHANGE;
   SetFullStorageNeeded();
+
+  if (mSHistoryInParent) {
+    mSHistoryChanged = true;
+  }
 }
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TabListener)
@@ -156,7 +168,8 @@ TabListener::TabListener(nsIDocShell* aDocShell, Element* aElement)
       mUpdatedTimer(nullptr),
       mTimeoutDisabled(false),
       mUpdateInterval(15000),
-      mEpoch(0) {
+      mEpoch(0),
+      mSHistoryInParent(StaticPrefs::fission_sessionHistoryInParent()) {
   MOZ_ASSERT(mDocShell);
 }
 
@@ -203,12 +216,16 @@ nsresult TabListener::Init() {
   if (!eventTarget) {
     return NS_OK;
   }
-  eventTarget->AddSystemEventListener(NS_LITERAL_STRING("mozvisualscroll"),
-                                      this, false);
-  eventTarget->AddSystemEventListener(NS_LITERAL_STRING("input"), this, false);
+  eventTarget->AddSystemEventListener(u"mozvisualscroll"_ns, this, false);
+  eventTarget->AddSystemEventListener(u"input"_ns, this, false);
+
+  if (mSHistoryInParent) {
+    eventTarget->AddSystemEventListener(u"DOMTitleChanged"_ns, this, false);
+  }
+
   mEventListenerRegistered = true;
-  eventTarget->AddSystemEventListener(
-      NS_LITERAL_STRING("MozSessionStorageChanged"), this, false);
+  eventTarget->AddSystemEventListener(u"MozSessionStorageChanged"_ns, this,
+                                      false);
   mStorageChangeListenerRegistered = true;
   return NS_OK;
 }
@@ -265,14 +282,8 @@ NS_IMETHODIMP TabListener::OnStateChange(nsIWebProgress* aWebProgress,
     return NS_OK;
   }
 
-  // The DOM Window ID getter here may throw if the inner or outer windows
-  // aren't created yet or are destroyed at the time we're making this call
-  // but that isn't fatal so ignore the exceptions here.
-  uint64_t DOMWindowID = 0;
-  Unused << aWebProgress->GetDOMWindowID(&DOMWindowID);
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(mDocShell);
-  NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
-  if (DOMWindowID != window->WindowID()) {
+  nsCOMPtr<nsIWebProgress> webProgress = do_QueryInterface(mDocShell);
+  if (webProgress != aWebProgress) {
     return NS_OK;
   }
 
@@ -347,6 +358,9 @@ TabListener::HandleEvent(Event* aEvent) {
     if (mSessionStore->AppendSessionStorageChange(event)) {
       AddTimerForUpdate();
     }
+  } else if (eventType.EqualsLiteral("DOMTitleChanged")) {
+    mSessionStore->SetSHistoryChanged();
+    AddTimerForUpdate();
   }
 
   return NS_OK;
@@ -465,7 +479,7 @@ int CollectPositions(BrowsingContext* aBrowsingContext,
 
   /* Collect data from all child frame */
   // This is not going to work for fission. Bug 1572084 for tracking it.
-  for (auto& child : aBrowsingContext->GetChildren()) {
+  for (auto& child : aBrowsingContext->Children()) {
     aPositionDescendants[currentIdx] +=
         CollectPositions(child, aPositions, aPositionDescendants);
   }
@@ -554,7 +568,7 @@ int CollectInputs(BrowsingContext* aBrowsingContext,
 
   /* Collect data from all child frame */
   // This is not going to work for fission. Bug 1572084 for tracking it.
-  for (auto& child : aBrowsingContext->GetChildren()) {
+  for (auto& child : aBrowsingContext->Children()) {
     aInputs[currentIdx].descendants +=
         CollectInputs(child, aInputs, aIdVals, aXPathVals);
   }
@@ -590,16 +604,23 @@ bool ContentSessionStore::AppendSessionStorageChange(StorageEvent* aEvent) {
     return false;
   }
 
-  nsAutoString origin;
-  aEvent->GetUrl(origin);
-  nsCOMPtr<nsIURI> newUri;
-  nsresult rv =
-      NS_NewURI(getter_AddRefs(newUri), NS_ConvertUTF16toUTF8(origin));
+  RefPtr<Storage> changingStorage = aEvent->GetStorageArea();
+  if (!changingStorage) {
+    return false;
+  }
+
+  nsCOMPtr<nsIPrincipal> storagePrincipal = changingStorage->StoragePrincipal();
+  if (!storagePrincipal) {
+    return false;
+  }
+
+  nsAutoCString origin;
+  nsresult rv = storagePrincipal->GetOrigin(origin);
   if (NS_FAILED(rv)) {
     return false;
   }
 
-  newUri->GetPrePath(*mOrigins.AppendElement());
+  mOrigins.AppendElement(origin);
   aEvent->GetKey(*mKeys.AppendElement());
   aEvent->GetNewValue(*mValues.AppendElement());
   mStorageStatus = STORAGECHANGE;
@@ -639,6 +660,15 @@ bool TabListener::ForceFlushFromParent(uint32_t aFlushId, bool aIsFinal) {
     return false;
   }
   return UpdateSessionStore(aFlushId, aIsFinal);
+}
+
+void TabListener::UpdateSHistoryChanges(bool aImmediately) {
+  mSessionStore->SetSHistoryFromParentChanged();
+  if (aImmediately) {
+    UpdateSessionStore();
+  } else {
+    AddTimerForUpdate();
+  }
 }
 
 bool TabListener::UpdateSessionStore(uint32_t aFlushId, bool aIsFinal) {
@@ -740,8 +770,9 @@ bool TabListener::UpdateSessionStore(uint32_t aFlushId, bool aIsFinal) {
   bool ok = ToJSValue(jsapi.cx(), data, &dataVal);
   NS_ENSURE_TRUE(ok, false);
 
-  nsresult rv = funcs->UpdateSessionStore(mOwnerContent, aFlushId, aIsFinal,
-                                          mEpoch, dataVal);
+  nsresult rv = funcs->UpdateSessionStore(
+      mOwnerContent, aFlushId, aIsFinal, mEpoch, dataVal,
+      mSessionStore->GetAndClearSHistoryChanged());
   NS_ENSURE_SUCCESS(rv, false);
   StopTimerForUpdate();
   return true;
@@ -756,8 +787,8 @@ void TabListener::ResetStorageChangeListener() {
   if (!eventTarget) {
     return;
   }
-  eventTarget->AddSystemEventListener(
-      NS_LITERAL_STRING("MozSessionStorageChanged"), this, false);
+  eventTarget->AddSystemEventListener(u"MozSessionStorageChanged"_ns, this,
+                                      false);
   mStorageChangeListenerRegistered = true;
 }
 
@@ -768,8 +799,8 @@ void TabListener::RemoveStorageChangeListener() {
 
   nsCOMPtr<EventTarget> eventTarget = GetEventTarget();
   if (eventTarget) {
-    eventTarget->RemoveSystemEventListener(
-        NS_LITERAL_STRING("MozSessionStorageChanged"), this, false);
+    eventTarget->RemoveSystemEventListener(u"MozSessionStorageChanged"_ns, this,
+                                           false);
     mStorageChangeListenerRegistered = false;
   }
 }
@@ -787,15 +818,18 @@ void TabListener::RemoveListeners() {
     nsCOMPtr<EventTarget> eventTarget = GetEventTarget();
     if (eventTarget) {
       if (mEventListenerRegistered) {
-        eventTarget->RemoveSystemEventListener(
-            NS_LITERAL_STRING("mozvisualscroll"), this, false);
-        eventTarget->RemoveSystemEventListener(NS_LITERAL_STRING("input"), this,
+        eventTarget->RemoveSystemEventListener(u"mozvisualscroll"_ns, this,
                                                false);
+        eventTarget->RemoveSystemEventListener(u"input"_ns, this, false);
+        if (mSHistoryInParent) {
+          eventTarget->RemoveSystemEventListener(u"DOMTitleChanged"_ns, this,
+                                                 false);
+        }
         mEventListenerRegistered = false;
       }
       if (mStorageChangeListenerRegistered) {
-        eventTarget->RemoveSystemEventListener(
-            NS_LITERAL_STRING("MozSessionStorageChanged"), this, false);
+        eventTarget->RemoveSystemEventListener(u"MozSessionStorageChanged"_ns,
+                                               this, false);
         mStorageChangeListenerRegistered = false;
       }
     }

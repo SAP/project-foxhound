@@ -17,6 +17,7 @@
 #include "mozilla/a11y/DocManager.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowserParent.h"
 
 namespace mozilla {
@@ -385,15 +386,25 @@ nsINode* FocusManager::FocusedDOMNode() const {
   // residing in chrome process because it means an element in content process
   // keeps the focus.
   if (focusedElm) {
-    if (EventStateManager::IsRemoteTarget(focusedElm)) {
+    // XXXedgar, do we need to return null if focus is in fission OOP iframe?
+    if (EventStateManager::IsTopLevelRemoteTarget(focusedElm)) {
       return nullptr;
     }
     return focusedElm;
   }
 
   // Otherwise the focus can be on DOM document.
-  nsPIDOMWindowOuter* focusedWnd = DOMFocusManager->GetFocusedWindow();
-  return focusedWnd ? focusedWnd->GetExtantDoc() : nullptr;
+  dom::BrowsingContext* context = DOMFocusManager->GetFocusedBrowsingContext();
+  if (context) {
+    // GetDocShell will return null if the document isn't in our process.
+    nsIDocShell* shell = context->GetDocShell();
+    if (shell) {
+      return shell->GetDocument();
+    }
+  }
+
+  // Focus isn't in this process.
+  return nullptr;
 }
 
 dom::Document* FocusManager::FocusedDOMDocument() const {

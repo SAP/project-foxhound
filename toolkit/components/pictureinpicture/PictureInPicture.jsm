@@ -23,6 +23,7 @@ if (!AppConstants.MOZ_WIDGET_GTK) {
   PLAYER_FEATURES += ",dialog";
 }
 const WINDOW_TYPE = "Toolkit:PictureInPicture";
+const PIP_ENABLED_PREF = "media.videocontrols.picture-in-picture.enabled";
 const TOGGLE_ENABLED_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.enabled";
 
@@ -140,9 +141,11 @@ var PictureInPicture = {
         return null;
       }
 
-      if (!playerWin.closed) {
-        return playerWin;
+      if (!playerWin || playerWin.closed) {
+        return null;
       }
+
+      return playerWin;
     }
     return null;
   },
@@ -152,6 +155,10 @@ var PictureInPicture = {
    * the keyboard.
    */
   onCommand(event) {
+    if (!Services.prefs.getBoolPref(PIP_ENABLED_PREF, false)) {
+      return;
+    }
+
     let win = event.target.ownerGlobal;
     let browser = win.gBrowser.selectedBrowser;
     let actor = browser.browsingContext.currentWindowGlobal.getActor(
@@ -234,6 +241,11 @@ var PictureInPicture = {
 
     win.setupPlayer(gNextWindowID.toString(), browser);
     gNextWindowID++;
+
+    Services.prefs.setBoolPref(
+      "media.videocontrols.picture-in-picture.video-toggle.has-used",
+      true
+    );
   },
 
   /**

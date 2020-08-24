@@ -29,6 +29,7 @@ from .protocol import (BaseProtocolPart,
 from ..testrunner import Stop
 
 import webdriver as client
+from webdriver import error
 
 here = os.path.join(os.path.split(__file__)[0])
 
@@ -90,6 +91,8 @@ class WebDriverTestharnessProtocolPart(TestharnessProtocolPart):
         self.runner_handle = None
         with open(os.path.join(here, "runner.js")) as f:
             self.runner_script = f.read()
+        with open(os.path.join(here, "window-loaded.js")) as f:
+            self.window_loaded_script = f.read()
 
     def load_runner(self, url_protocol):
         if self.runner_handle:
@@ -109,7 +112,7 @@ class WebDriverTestharnessProtocolPart(TestharnessProtocolPart):
         for handle in handles:
             try:
                 self.webdriver.window_handle = handle
-                self.webdriver.close()
+                self.webdriver.window.close()
             except client.NoSuchWindowException:
                 pass
         self.webdriver.window_handle = self.runner_handle
@@ -152,6 +155,19 @@ class WebDriverTestharnessProtocolPart(TestharnessProtocolPart):
             time.sleep(0.1)
 
         raise Exception("unable to find test window")
+
+    def test_window_loaded(self):
+        """Wait until the page in the new window has been loaded.
+
+        Hereby ignore Javascript execptions that are thrown when
+        the document has been unloaded due to a process change.
+        """
+        while True:
+            try:
+                self.webdriver.execute_script(self.window_loaded_script, asynchronous=True)
+                break
+            except error.JavascriptErrorException:
+                pass
 
 
 class WebDriverSelectorProtocolPart(SelectorProtocolPart):
@@ -301,19 +317,15 @@ class WebDriverProtocol(Protocol):
         self.webdriver = None
 
     def is_alive(self):
-        socket_previous_timeout = socket.getdefaulttimeout()
         try:
             # Get a simple property over the connection, with 2 seconds of timeout
             # that should be more than enough to check if the WebDriver its
             # still alive, and allows to complete the check within the testrunner
             # 5 seconds of extra_timeout we have as maximum to end the test before
             # the external timeout from testrunner triggers.
-            socket.setdefaulttimeout(2)
-            self.webdriver.window_handle
+            self.webdriver.send_session_command("GET", "window", timeout=2)
         except (socket.timeout, client.UnknownErrorException, client.InvalidSessionIdException):
             return False
-        finally:
-            socket.setdefaulttimeout(socket_previous_timeout)
         return True
 
     def after_connect(self):
@@ -353,17 +365,21 @@ class WebDriverRun(TimedRunner):
 
 class WebDriverTestharnessExecutor(TestharnessExecutor):
     supports_testdriver = True
+    protocol_cls = WebDriverProtocol
 
-    def __init__(self, browser, server_config, timeout_multiplier=1,
+    def __init__(self, logger, browser, server_config, timeout_multiplier=1,
                  close_after_done=True, capabilities=None, debug_info=None,
                  supports_eager_pageload=True, **kwargs):
         """WebDriver-based executor for testharness.js tests"""
-        TestharnessExecutor.__init__(self, browser, server_config,
+        TestharnessExecutor.__init__(self, logger, browser, server_config,
                                      timeout_multiplier=timeout_multiplier,
                                      debug_info=debug_info)
-        self.protocol = WebDriverProtocol(self, browser, capabilities)
+        self.protocol = self.protocol_cls(self, browser, capabilities)
         with open(os.path.join(here, "testharness_webdriver_resume.js")) as f:
             self.script_resume = f.read()
+        with open(os.path.join(here, "window-loaded.js")) as f:
+            self.window_loaded_script = f.read()
+
         self.close_after_done = close_after_done
         self.window_id = str(uuid.uuid4())
         self.supports_eager_pageload = supports_eager_pageload
@@ -400,6 +416,10 @@ class WebDriverTestharnessExecutor(TestharnessExecutor):
                                                            parent_window,
                                                            timeout=5*self.timeout_multiplier)
         self.protocol.base.set_window(test_window)
+
+        # Wait until about:blank has been loaded
+        protocol.base.execute_script(self.window_loaded_script, asynchronous=True)
+
         handler = WebDriverCallbackHandler(self.logger, protocol, test_window)
         protocol.webdriver.url = url
 
@@ -453,17 +473,21 @@ if (location.href === "about:blank") {
 
 
 class WebDriverRefTestExecutor(RefTestExecutor):
-    def __init__(self, browser, server_config, timeout_multiplier=1,
+    protocol_cls = WebDriverProtocol
+
+    def __init__(self, logger, browser, server_config, timeout_multiplier=1,
                  screenshot_cache=None, close_after_done=True,
                  debug_info=None, capabilities=None, **kwargs):
         """WebDriver-based executor for reftests"""
         RefTestExecutor.__init__(self,
+                                 logger,
                                  browser,
                                  server_config,
                                  screenshot_cache=screenshot_cache,
                                  timeout_multiplier=timeout_multiplier,
                                  debug_info=debug_info)
-        self.protocol = WebDriverProtocol(self, browser,
+        self.protocol = self.protocol_cls(self,
+                                          browser,
                                           capabilities=capabilities)
         self.implementation = RefTestImplementation(self)
         self.close_after_done = close_after_done
@@ -494,7 +518,7 @@ class WebDriverRefTestExecutor(RefTestExecutor):
 
         return self.convert_result(test, result)
 
-    def screenshot(self, test, viewport_size, dpi):
+    def screenshot(self, test, viewport_size, dpi, page_ranges):
         # https://github.com/web-platform-tests/wpt/issues/7135
         assert viewport_size is None
         assert dpi is None
@@ -521,17 +545,21 @@ class WebDriverRefTestExecutor(RefTestExecutor):
 
 
 class WebDriverCrashtestExecutor(CrashtestExecutor):
-    def __init__(self, browser, server_config, timeout_multiplier=1,
+    protocol_cls = WebDriverProtocol
+
+    def __init__(self, logger, browser, server_config, timeout_multiplier=1,
                  screenshot_cache=None, close_after_done=True,
                  debug_info=None, capabilities=None, **kwargs):
         """WebDriver-based executor for reftests"""
         CrashtestExecutor.__init__(self,
+                                   logger,
                                    browser,
                                    server_config,
                                    screenshot_cache=screenshot_cache,
                                    timeout_multiplier=timeout_multiplier,
                                    debug_info=debug_info)
-        self.protocol = WebDriverProtocol(self, browser,
+        self.protocol = self.protocol_cls(self,
+                                          browser,
                                           capabilities=capabilities)
 
         with open(os.path.join(here, "test-wait.js")) as f:

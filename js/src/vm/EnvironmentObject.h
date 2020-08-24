@@ -7,6 +7,8 @@
 #ifndef vm_EnvironmentObject_h
 #define vm_EnvironmentObject_h
 
+#include <type_traits>
+
 #include "builtin/ModuleObject.h"
 #include "frontend/NameAnalysisTypes.h"
 #include "gc/Barrier.h"
@@ -494,7 +496,7 @@ class WasmFunctionCallObject : public EnvironmentObject {
 
 class LexicalEnvironmentObject : public EnvironmentObject {
   // Global and non-syntactic lexical environments need to store a 'this'
-  // value and all other lexical environments have a fixed shape and store a
+  // object and all other lexical environments have a fixed shape and store a
   // backpointer to the LexicalScope.
   //
   // Since the two sets are disjoint, we only use one slot to save space.
@@ -509,9 +511,10 @@ class LexicalEnvironmentObject : public EnvironmentObject {
       JSContext* cx, HandleShape shape, HandleObject enclosing,
       gc::InitialHeap heap, IsSingletonEnv isSingleton);
 
-  void initThisValue(JSObject* obj) {
+  void initThisObject(JSObject* obj) {
     MOZ_ASSERT(isGlobal() || !isSyntactic());
-    initReservedSlot(THIS_VALUE_OR_SCOPE_SLOT, GetThisValue(obj));
+    JSObject* thisObj = GetThisObject(obj);
+    initReservedSlot(THIS_VALUE_OR_SCOPE_SLOT, ObjectValue(*thisObj));
   }
 
   void initScopeUnchecked(LexicalScope* scope) {
@@ -565,7 +568,7 @@ class LexicalEnvironmentObject : public EnvironmentObject {
     return enclosingEnvironment().as<GlobalObject>();
   }
 
-  void setWindowProxyThisValue(JSObject* obj);
+  void setWindowProxyThisObject(JSObject* obj);
 
   // Global and non-syntactic lexical scopes are extensible. All other
   // lexical scopes are not.
@@ -575,9 +578,9 @@ class LexicalEnvironmentObject : public EnvironmentObject {
   // environment?
   bool isSyntactic() const { return !isExtensible() || isGlobal(); }
 
-  // For extensible lexical environments, the 'this' value for its
+  // For extensible lexical environments, the 'this' object for its
   // scope. Otherwise asserts.
-  Value thisValue() const;
+  JSObject* thisObject() const;
 
   static constexpr size_t offsetOfThisValueOrScopeSlot() {
     return getFixedSlotOffset(THIS_VALUE_OR_SCOPE_SLOT);
@@ -1118,27 +1121,29 @@ inline bool IsFrameInitialEnvironment(AbstractFramePtr frame,
 
   // A function frame's CallObject, if present, is always the initial
   // environment.
-  if (mozilla::IsSame<SpecificEnvironment, CallObject>::value) {
+  if constexpr (std::is_same_v<SpecificEnvironment, CallObject>) {
     return true;
   }
 
   // For an eval frame, the VarEnvironmentObject, if present, is always the
   // initial environment.
-  if (mozilla::IsSame<SpecificEnvironment, VarEnvironmentObject>::value &&
-      frame.isEvalFrame()) {
-    return true;
+  if constexpr (std::is_same_v<SpecificEnvironment, VarEnvironmentObject>) {
+    if (frame.isEvalFrame()) {
+      return true;
+    }
   }
 
   // For named lambda frames without CallObjects (i.e., no binding in the
   // body of the function was closed over), the LexicalEnvironmentObject
   // corresponding to the named lambda scope is the initial environment.
-  if (mozilla::IsSame<SpecificEnvironment, NamedLambdaObject>::value &&
-      frame.isFunctionFrame() &&
-      frame.callee()->needsNamedLambdaEnvironment() &&
-      !frame.callee()->needsCallObject()) {
-    LexicalScope* namedLambdaScope = frame.script()->maybeNamedLambdaScope();
-    return &env.template as<LexicalEnvironmentObject>().scope() ==
-           namedLambdaScope;
+  if constexpr (std::is_same_v<SpecificEnvironment, NamedLambdaObject>) {
+    if (frame.isFunctionFrame() &&
+        frame.callee()->needsNamedLambdaEnvironment() &&
+        !frame.callee()->needsCallObject()) {
+      LexicalScope* namedLambdaScope = frame.script()->maybeNamedLambdaScope();
+      return &env.template as<LexicalEnvironmentObject>().scope() ==
+             namedLambdaScope;
+    }
   }
 
   return false;
@@ -1202,6 +1207,9 @@ void GetSuspendedGeneratorEnvironmentAndScope(AbstractGeneratorObject& genObj,
 bool AnalyzeEntrainedVariables(JSContext* cx, HandleScript script);
 #endif
 
+extern JSObject* MaybeOptimizeBindGlobalName(JSContext* cx,
+                                             Handle<GlobalObject*> global,
+                                             HandlePropertyName name);
 }  // namespace js
 
 #endif /* vm_EnvironmentObject_h */

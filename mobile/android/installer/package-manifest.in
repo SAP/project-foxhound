@@ -91,8 +91,8 @@
 ; [Base Browser Files]
 @BINPATH@/application.ini
 @BINPATH@/platform.ini
-@BINPATH@/blocklist.xml
 @BINPATH@/defaults/settings/blocklists/addons.json
+; TODO bug 1639050: addons-bloomfilters should be used instead of addons.json
 @BINPATH@/defaults/settings/security-state/onecrl.json
 
 ; [Components]
@@ -216,11 +216,6 @@
 
 #ifdef MOZ_GECKOVIEW_JAR
 @BINPATH@/components/GeckoView.manifest
-@BINPATH@/components/GeckoViewExternalAppService.js
-@BINPATH@/components/GeckoViewPrompt.js
-@BINPATH@/components/GeckoViewPush.js
-@BINPATH@/components/GeckoViewPermission.js
-@BINPATH@/components/GeckoViewStartup.js
 #else
 @BINPATH@/chrome/chrome@JAREXT@
 @BINPATH@/chrome/chrome.manifest

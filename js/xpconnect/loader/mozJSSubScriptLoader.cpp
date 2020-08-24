@@ -18,7 +18,7 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "xpcprivate.h"                   // xpc::OptionsBase
-#include "js/CompilationAndEvaluation.h"  // JS::Compile{,ForNonSyntacticScope}DontInflate
+#include "js/CompilationAndEvaluation.h"  // JS::Compile{,ForNonSyntacticScope}
 #include "js/SourceText.h"                // JS::Source{Ownership,Text}
 #include "js/Wrapper.h"
 
@@ -71,9 +71,9 @@ class MOZ_STACK_CLASS LoadSubScriptOptions : public OptionsBase {
 #define LOAD_ERROR_NOSPEC "Failed to get URI spec.  This is bad."
 #define LOAD_ERROR_CONTENTTOOBIG "ContentLength is too large"
 
-mozJSSubScriptLoader::mozJSSubScriptLoader() {}
+mozJSSubScriptLoader::mozJSSubScriptLoader() = default;
 
-mozJSSubScriptLoader::~mozJSSubScriptLoader() {}
+mozJSSubScriptLoader::~mozJSSubScriptLoader() = default;
 
 NS_IMPL_ISUPPORTS(mozJSSubScriptLoader, mozIJSSubScriptLoader)
 
@@ -142,9 +142,9 @@ static JSScript* PrepareScript(nsIURI* uri, JSContext* cx,
   }
 
   if (wantGlobalScript) {
-    return JS::CompileDontInflate(cx, options, srcBuf);
+    return JS::Compile(cx, options, srcBuf);
   }
-  return JS::CompileForNonSyntacticScopeDontInflate(cx, options, srcBuf);
+  return JS::CompileForNonSyntacticScope(cx, options, srcBuf);
 }
 
 static bool EvalScript(JSContext* cx, HandleObject targetObj,
@@ -255,7 +255,7 @@ bool mozJSSubScriptLoader::ReadScript(JS::MutableHandle<JSScript*> script,
   nsresult rv;
   rv = NS_NewChannel(getter_AddRefs(chan), uri,
                      nsContentUtils::GetSystemPrincipal(),
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                      nsIContentPolicy::TYPE_OTHER,
                      nullptr,  // nsICookieJarSettings
                      nullptr,  // PerformanceStorage
@@ -264,7 +264,7 @@ bool mozJSSubScriptLoader::ReadScript(JS::MutableHandle<JSScript*> script,
                      nsIRequest::LOAD_NORMAL, serv);
 
   if (NS_SUCCEEDED(rv)) {
-    chan->SetContentType(NS_LITERAL_CSTRING("application/javascript"));
+    chan->SetContentType("application/javascript"_ns);
     rv = chan->Open(getter_AddRefs(instream));
   }
 
@@ -394,7 +394,7 @@ nsresult mozJSSubScriptLoader::DoLoadSubScriptWithOptions(
 
   nsCOMPtr<nsIIOService> serv = do_GetService(NS_IOSERVICE_CONTRACTID);
   if (!serv) {
-    ReportError(cx, NS_LITERAL_CSTRING(LOAD_ERROR_NOSERVICE));
+    ReportError(cx, nsLiteralCString(LOAD_ERROR_NOSERVICE));
     return NS_OK;
   }
 
@@ -408,13 +408,13 @@ nsresult mozJSSubScriptLoader::DoLoadSubScriptWithOptions(
   // canonicalized spec.
   rv = NS_NewURI(getter_AddRefs(uri), asciiUrl);
   if (NS_FAILED(rv)) {
-    ReportError(cx, NS_LITERAL_CSTRING(LOAD_ERROR_NOURI));
+    ReportError(cx, nsLiteralCString(LOAD_ERROR_NOURI));
     return NS_OK;
   }
 
   rv = uri->GetSpec(uriStr);
   if (NS_FAILED(rv)) {
-    ReportError(cx, NS_LITERAL_CSTRING(LOAD_ERROR_NOSPEC));
+    ReportError(cx, nsLiteralCString(LOAD_ERROR_NOSPEC));
     return NS_OK;
   }
 

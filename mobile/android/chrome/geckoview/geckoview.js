@@ -73,6 +73,11 @@ var ModuleManager = {
 
     window.document.documentElement.appendChild(aBrowser);
 
+    // TODO: Bug 1635914 remove workaround. In theory this should not be needed
+    // as docShell should be active by default, but this is not currently the
+    // case so we force it here.
+    aBrowser.docShellIsActive = true;
+
     WindowEventDispatcher.registerListener(this, [
       "GeckoView:UpdateModuleState",
       "GeckoView:UpdateInitData",
@@ -165,10 +170,12 @@ var ModuleManager = {
     // to collect it and restore it in the other process when switching.
     // TODO: This should go away when we migrate the history to the main
     // process Bug 1507287.
-    const sessionState = await this.getActor("GeckoViewContent").sendQuery(
+    const { history } = await this.getActor("GeckoViewContent").sendQuery(
       "CollectSessionState"
     );
-    const { history } = sessionState;
+    // Ignore scroll and form data since we're navigating away from this page
+    // anyway
+    const sessionState = { history };
 
     // If the navigation is from history we don't need to load the page again
     // so we ignore loadOptions
@@ -184,7 +191,7 @@ var ModuleManager = {
     }
 
     // Now we're switching the remoteness (value of "remote" attr).
-    let disabledModules = [];
+    const disabledModules = [];
     this.forEach(module => {
       if (module.enabled) {
         module.enabled = false;

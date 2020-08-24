@@ -77,8 +77,8 @@ function createMockedObjects(createHandlerApp) {
     // PRTime is microseconds since epoch, Date.now() returns milliseconds:
     timeDownloadStarted: Date.now() * 1000,
     QueryInterface: ChromeUtils.generateQI([
-      Ci.nsICancelable,
-      Ci.nsIHelperAppLauncher,
+      "nsICancelable",
+      "nsIHelperAppLauncher",
     ]),
   };
 
@@ -101,7 +101,7 @@ async function openHelperAppDialog(launcher) {
     "@mozilla.org/helperapplauncherdialog;1"
   ].createInstance(Ci.nsIHelperAppLauncherDialog);
 
-  let helperAppDialogShownPromise = BrowserTestUtils.domWindowOpened();
+  let helperAppDialogShownPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
   try {
     helperAppDialog.show(launcher, window, "foopy");
   } catch (ex) {
@@ -112,8 +112,6 @@ async function openHelperAppDialog(launcher) {
     Cu.reportError(ex);
   }
   let dlg = await helperAppDialogShownPromise;
-
-  await BrowserTestUtils.waitForEvent(dlg, "load", false);
 
   is(
     dlg.location.href,

@@ -20,7 +20,7 @@
 #include "builtin/streams/ReadableStreamController.h"  // js::ReadableStream{,Default}Controller
 #include "builtin/streams/ReadableStreamDefaultControllerOperations.h"  // js::ReadableStreamDefaultController{Close,Enqueue}, js::ReadableStreamControllerError, js::SourceAlgorithms
 #include "builtin/streams/ReadableStreamInternals.h"  // js::ReadableStreamCancel
-#include "builtin/streams/ReadableStreamReader.h"  // js::CreateReadableStreamDefaultReader, js::ReadableStream{,Default}Reader, js::ReadableStreamDefaultReaderRead
+#include "builtin/streams/ReadableStreamReader.h"  // js::CreateReadableStreamDefaultReader, js::ForAuthorCodeBool, js::ReadableStream{,Default}Reader, js::ReadableStreamDefaultReaderRead
 #include "builtin/streams/TeeState.h"              // js::TeeState
 #include "js/CallArgs.h"                           // JS::CallArgs{,FromVp}
 #include "js/Promise.h"  // JS::CallOriginalPromiseThen, JS::AddPromiseReactions
@@ -29,7 +29,7 @@
 #include "vm/JSContext.h"         // JSContext
 #include "vm/NativeObject.h"      // js::NativeObject
 #include "vm/ObjectOperations.h"  // js::GetProperty
-#include "vm/PromiseObject.h"     // js::PromiseObject
+#include "vm/PromiseObject.h"  // js::PromiseObject, js::PromiseResolvedWithUndefined
 
 #include "builtin/streams/HandlerFunction-inl.h"  // js::NewHandler, js::TargetFromHandler
 #include "builtin/streams/MiscellaneousOperations-inl.h"  // js::ResolveUnwrappedPromiseWithValue
@@ -330,7 +330,7 @@ MOZ_MUST_USE PromiseObject* js::ReadableStreamTee_Pull(
     // Step 12.d: Set readPromise.[[PromiseIsHandled]] to true.
 
     // First, perform |ReadableStreamDefaultReaderRead(reader)|.
-    Rooted<JSObject*> readerReadResultPromise(
+    Rooted<PromiseObject*> readerReadResultPromise(
         cx, js::ReadableStreamDefaultReaderRead(cx, unwrappedReader));
     if (!readerReadResultPromise) {
       return nullptr;
@@ -369,8 +369,7 @@ MOZ_MUST_USE PromiseObject* js::ReadableStreamTee_Pull(
 
   // Step 12.a: (If reading is true,) return a promise resolved with undefined.
   // Step 12.e: Return a promise resolved with undefined.
-  return PromiseObject::unforgeableResolveWithNonPromise(cx,
-                                                         UndefinedHandleValue);
+  return PromiseResolvedWithUndefined(cx);
 }
 
 /**
@@ -524,7 +523,8 @@ MOZ_MUST_USE bool js::ReadableStreamTee(
 
   // Step 3: Let reader be ? AcquireReadableStreamDefaultReader(stream).
   Rooted<ReadableStreamDefaultReader*> reader(
-      cx, CreateReadableStreamDefaultReader(cx, unwrappedStream));
+      cx, CreateReadableStreamDefaultReader(cx, unwrappedStream,
+                                            ForAuthorCodeBool::No));
   if (!reader) {
     return false;
   }

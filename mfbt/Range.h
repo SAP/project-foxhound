@@ -8,16 +8,21 @@
 #define mozilla_Range_h
 
 #include "mozilla/RangedPtr.h"
-#include "mozilla/TypeTraits.h"
 #include "mozilla/Span.h"
 
 #include <stddef.h>
+#include <type_traits>
 
 namespace mozilla {
 
 // Range<T> is a tuple containing a pointer and a length.
 template <typename T>
 class Range {
+  template <typename U>
+  friend class Range;
+
+  // Reassignment of RangedPtrs is so (subtly) restrictive that we just make
+  // Range immutable.
   const RangedPtr<T> mStart;
   const RangedPtr<T> mEnd;
 
@@ -34,15 +39,15 @@ class Range {
     MOZ_ASSERT(aStart <= aEnd);
   }
 
-  template <typename U, class = typename EnableIf<
-                            IsConvertible<U (*)[], T (*)[]>::value, int>::Type>
+  template <typename U, class = std::enable_if_t<
+                            std::is_convertible_v<U (*)[], T (*)[]>, int>>
   MOZ_IMPLICIT Range(const Range<U>& aOther)
       : mStart(aOther.mStart), mEnd(aOther.mEnd) {}
 
   MOZ_IMPLICIT Range(Span<T> aSpan) : Range(aSpan.Elements(), aSpan.Length()) {}
 
-  template <typename U, class = typename EnableIf<
-                            IsConvertible<U (*)[], T (*)[]>::value, int>::Type>
+  template <typename U, class = std::enable_if_t<
+                            std::is_convertible_v<U (*)[], T (*)[]>, int>>
   MOZ_IMPLICIT Range(const Span<U>& aSpan)
       : Range(aSpan.Elements(), aSpan.Length()) {}
 

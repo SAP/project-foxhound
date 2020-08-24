@@ -94,7 +94,6 @@ def handle_actions(actions, context, action_overrides):
         g = context['GENERATED_FILES'][output]
         g.script = action_overrides[name]
         g.inputs = action['inputs']
-        g.py2 = True
 
 
 def handle_copies(copies, context):
@@ -252,6 +251,9 @@ def process_gyp_result(gyp_result, gyp_dir_attrs, path, config, output,
             defines = target_conf.get('defines', [])
             if config.substs['CC_TYPE'] == 'clang-cl' and no_chromium:
                 msvs_settings = gyp.msvs_emulation.MsvsSettings(spec, {})
+                # Hack: MsvsSettings._TargetConfig tries to compare a str to an int,
+                # so convert manually.
+                msvs_settings.vs_version.short_name = int(msvs_settings.vs_version.short_name)
                 defines.extend(msvs_settings.GetComputedDefines(c))
             for define in defines:
                 if '=' in define:

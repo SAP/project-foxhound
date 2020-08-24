@@ -21,38 +21,29 @@ from operator import itemgetter
 # Skip all tests which use features not supported in SpiderMonkey.
 UNSUPPORTED_FEATURES = set([
     "tail-call-optimization",
-    "class-fields-private",
-    "class-static-fields-private",
     "class-methods-private",
     "class-static-methods-private",
-    "regexp-dotall",
-    "regexp-lookbehind",
     "regexp-match-indices",
-    "regexp-named-groups",
-    "regexp-unicode-property-escapes",
-    "export-star-as-namespace-from-module",
     "Intl.DateTimeFormat-quarter",
-    "Intl.DateTimeFormat-datetimestyle",
-    "Intl.DateTimeFormat-dayPeriod",
-    "Intl.DateTimeFormat-formatRange",
-    "Intl.DisplayNames",
     "Intl.Segmenter",
-    "optional-chaining",
     "top-level-await",
+    "Atomics.waitAsync",
 ])
 FEATURE_CHECK_NEEDED = {
     "Atomics": "!this.hasOwnProperty('Atomics')",
-    "FinalizationGroup": "!this.hasOwnProperty('FinalizationGroup')",
+    "FinalizationRegistry": "!this.hasOwnProperty('FinalizationRegistry')",
     "SharedArrayBuffer": "!this.hasOwnProperty('SharedArrayBuffer')",
     "WeakRef": "!this.hasOwnProperty('WeakRef')",
 }
 RELEASE_OR_BETA = set([
-    "Intl.NumberFormat-unified",
     "Intl.DateTimeFormat-fractionalSecondDigits",
-    "Promise.any",
-    "AggregateError",
-    "String.prototype.replaceAll",
+    "Intl.DateTimeFormat-dayPeriod",
+    "Intl.DateTimeFormat-formatRange",
 ])
+SHELL_OPTIONS = {
+    "class-fields-private": "--enable-private-fields",
+    "class-static-fields-private": "--enable-private-fields",
+}
 
 
 @contextlib.contextmanager
@@ -319,8 +310,10 @@ def convertTestFile(test262parser, testSource, testName, includeSet, strictTests
                                       "&&getBuildConfiguration()['arm64-simulator'])",
                                       "ARM64 Simulator cannot emulate atomics"))
 
-            if "WeakRef" in testRec["features"] or "FinalizationGroup" in testRec["features"]:
-                refTestOptions.append("shell-option(--enable-weak-refs)")
+            shellOptions = {SHELL_OPTIONS[f] for f in testRec["features"] if f in SHELL_OPTIONS}
+            if shellOptions:
+                refTestSkipIf.append(("!xulRuntime.shell", "requires shell-options"))
+                refTestOptions.extend("shell-option({})".format(opt) for opt in shellOptions)
 
     # Includes for every test file in a directory is collected in a single
     # shell.js file per directory level. This is done to avoid adding all
@@ -337,7 +330,7 @@ def convertTestFile(test262parser, testSource, testName, includeSet, strictTests
 
     (terms, comments) = createRefTestEntry(refTestOptions, refTestSkip, refTestSkipIf, errorType,
                                            isModule, isAsync)
-    if raw or refTestOptions:
+    if raw:
         refTest = ""
         externRefTest = (terms, comments)
     else:
@@ -429,8 +422,8 @@ def process_test262(test262Dir, test262OutDir, strictTests, externManifests):
                                                                  "detachArrayBuffer.js", "nans.js"]
     explicitIncludes[os.path.join("built-ins", "TypedArrays")] = ["detachArrayBuffer.js"]
 
-    # Intl.ListFormat isn't yet enabled by default.
-    localIncludesMap[os.path.join("intl402")] = ["test262-intl-locale.js"]
+    # Intl.DisplayNames isn't yet enabled by default.
+    localIncludesMap[os.path.join("intl402")] = ["test262-intl-displaynames.js"]
 
     # Process all test directories recursively.
     for (dirPath, dirNames, fileNames) in os.walk(testDir):

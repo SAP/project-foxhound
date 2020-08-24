@@ -18,10 +18,11 @@
 
   SimpleTest.waitForExplicitFinish();
   let socketProcessRunning = 0;
-  if (SpecialPowers.getBoolPref("network.process.enabled")) {
+  let ios = Cc["@mozilla.org/network/io-service;1"].
+            getService(Ci.nsIIOService);
+  if (ios.socketProcessLaunched) {
     socketProcessRunning = 1;
   }
-
   let numToOpen = 3;
   const expectedNumRemotes = numToOpen + socketProcessRunning;
   let numReady = 0;
@@ -31,7 +32,7 @@
   let remotes = [];
   SpecialPowers.pushPrefEnv({"set": [["dom.ipc.processCount", 3]]}, function() {
     for (let i = 0; i < numToOpen; i++) {
-      let w = remotes[i] = docShell.rootTreeItem.domWindow.open("remote.xhtml", "", "chrome");
+      let w = remotes[i] = window.browsingContext.topChromeWindow.open("remote.xhtml", "", "chrome");
 
       w.addEventListener("load", function loadHandler() {
         w.removeEventListener("load", loadHandler);
@@ -90,7 +91,8 @@
           numEmptyProcesses++;
         } else {
           ok(processes[i].startsWith("Browser (") || processes[i].startsWith("Web Content (") ||
-             (processes[i].startsWith("SocketProcess") && socketProcessRunning),
+             (processes[i].startsWith("Socket (") && socketProcessRunning)
+             || processes[i].startsWith("web ("),
              "correct non-empty process name prefix: " + processes[i]);
           numNonEmptyProcesses++;
         }

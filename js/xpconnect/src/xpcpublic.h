@@ -423,7 +423,7 @@ void SetLocationForGlobal(JSObject* global, nsIURI* locationURI);
 // of JS::ZoneStats.
 class ZoneStatsExtras {
  public:
-  ZoneStatsExtras() {}
+  ZoneStatsExtras() = default;
 
   nsCString pathPrefix;
 
@@ -436,7 +436,7 @@ class ZoneStatsExtras {
 // of JS::RealmStats.
 class RealmStatsExtras {
  public:
-  RealmStatsExtras() {}
+  RealmStatsExtras() = default;
 
   nsCString jsPathPrefix;
   nsCString domPathPrefix;
@@ -491,6 +491,10 @@ already_AddRefed<nsISupports> ReflectorToISupportsDynamic(JSObject* reflector,
  * using this compartment. If you don't, bholley will hunt you down.
  */
 JSObject* UnprivilegedJunkScope();
+
+JSObject* UnprivilegedJunkScope(const mozilla::fallible_t&);
+
+bool IsUnprivilegedJunkScope(JSObject*);
 
 /**
  * This will generally be the shared JSM global, but callers should not depend
@@ -551,8 +555,6 @@ bool ShouldDiscardSystemSource();
 
 void SetPrefableRealmOptions(JS::RealmOptions& options);
 
-bool ExtraWarningsForSystemJS();
-
 class ErrorBase {
  public:
   nsString mErrorMsg;
@@ -592,10 +594,15 @@ class ErrorReport : public ErrorBase {
   nsString mSourceLine;
   nsString mErrorMsgName;
   uint64_t mWindowID;
-  uint32_t mFlags;
+  bool mIsWarning;
   bool mIsMuted;
+  bool mIsPromiseRejection;
 
-  ErrorReport() : mWindowID(0), mFlags(0), mIsMuted(false) {}
+  ErrorReport()
+      : mWindowID(0),
+        mIsWarning(false),
+        mIsMuted(false),
+        mIsPromiseRejection(false) {}
 
   void Init(JSErrorReport* aReport, const char* aToStringResult, bool aIsChrome,
             uint64_t aWindowID);
@@ -610,7 +617,9 @@ class ErrorReport : public ErrorBase {
   // null. If aStack is non-null, aStackGlobal must be a non-null global
   // object that's same-compartment with aStack. Note that aStack might be a
   // CCW.
-  void LogToConsoleWithStack(JS::HandleObject aStack,
+  void LogToConsoleWithStack(nsGlobalWindowInner* aWin,
+                             JS::Handle<mozilla::Maybe<JS::Value>> aException,
+                             JS::HandleObject aStack,
                              JS::HandleObject aStackGlobal);
 
   // Produce an error event message string from the given JSErrorReport.  Note
@@ -622,8 +631,10 @@ class ErrorReport : public ErrorBase {
   // Log the error report to the stderr.
   void LogToStderr();
 
+  bool IsWarning() const { return mIsWarning; };
+
  private:
-  ~ErrorReport() {}
+  ~ErrorReport() = default;
 };
 
 void DispatchScriptErrorEvent(nsPIDOMWindowInner* win,

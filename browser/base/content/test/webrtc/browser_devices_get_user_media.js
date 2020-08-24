@@ -743,29 +743,31 @@ var gTests = [
       await indicator;
       await checkSharingUI({ video: true });
 
-      ok(
-        gIdentityHandler._identityPopup.hidden,
-        "control center should be hidden"
-      );
-      if ("nsISystemStatusBar" in Ci) {
+      ok(identityPopupHidden(), "control center should be hidden");
+      if (USING_LEGACY_INDICATOR && IS_MAC) {
         let activeStreams = webrtcUI.getActiveStreams(true, false, false);
         webrtcUI.showSharingDoorhanger(activeStreams[0]);
       } else {
         let win = Services.wm.getMostRecentWindow(
           "Browser:WebRTCGlobalIndicator"
         );
-        let elt = win.document.getElementById("audioVideoButton");
-        EventUtils.synthesizeMouseAtCenter(elt, {}, win);
-        await TestUtils.waitForCondition(
-          () => !gIdentityHandler._identityPopup.hidden
-        );
-      }
-      ok(
-        !gIdentityHandler._identityPopup.hidden,
-        "control center should be open"
-      );
 
-      gIdentityHandler._identityPopup.hidden = true;
+        // The legacy indicator uses a different button ID when sharing
+        // your camera.
+        let buttonID = USING_LEGACY_INDICATOR
+          ? "audioVideoButton"
+          : "camera-button";
+
+        let elt = win.document.getElementById(buttonID);
+        EventUtils.synthesizeMouseAtCenter(elt, {}, win);
+      }
+      await TestUtils.waitForCondition(
+        () => !identityPopupHidden(),
+        "wait for control center to open"
+      );
+      ok(!identityPopupHidden(), "control center should be open");
+
+      gIdentityHandler._identityPopup.hidePopup();
 
       await closeStream();
     },

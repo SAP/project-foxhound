@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MOZILLA_DOMSVGTRANSFORMLIST_H__
-#define MOZILLA_DOMSVGTRANSFORMLIST_H__
+#ifndef DOM_SVG_DOMSVGTRANSFORMLIST_H_
+#define DOM_SVG_DOMSVGTRANSFORMLIST_H_
 
 #include "DOMSVGAnimatedTransformList.h"
 #include "nsCycleCollectionParticipant.h"
@@ -18,9 +18,10 @@
 namespace mozilla {
 
 namespace dom {
+struct DOMMatrix2DInit;
+class DOMSVGTransform;
 class SVGElement;
 class SVGMatrix;
-class DOMSVGTransform;
 
 /**
  * Class DOMSVGTransformList
@@ -113,7 +114,7 @@ class DOMSVGTransformList final : public nsISupports, public nsWrapperCache {
     return InsertItemBefore(newItem, LengthNoFlush(), error);
   }
   already_AddRefed<dom::DOMSVGTransform> CreateSVGTransformFromMatrix(
-      dom::SVGMatrix& matrix);
+      const DOMMatrix2DInit& aMatrix, ErrorResult& aRv);
   already_AddRefed<dom::DOMSVGTransform> Consolidate(ErrorResult& error);
   uint32_t Length() const { return NumberOfItems(); }
 
@@ -153,4 +154,4 @@ class DOMSVGTransformList final : public nsISupports, public nsWrapperCache {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // MOZILLA_DOMSVGTRANSFORMLIST_H__
+#endif  // DOM_SVG_DOMSVGTRANSFORMLIST_H_

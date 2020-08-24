@@ -36,19 +36,20 @@ from .decorators import (
 from .dispatcher import CommandAction
 from .logging import LoggingManager
 from .registrar import Registrar
+from .sentry import register_sentry, NoopErrorReporter
 from .util import setenv
 
-SUGGEST_MACH_BUSTED = r'''
+SUGGEST_MACH_BUSTED_TEMPLATE = r'''
 You can invoke |./mach busted| to check if this issue is already on file. If it
-isn't, please use |./mach busted file| to report it. If |./mach busted| is
+isn't, please use |./mach busted file %s| to report it. If |./mach busted| is
 misbehaving, you can also inspect the dependencies of bug 1543241.
 '''.lstrip()
 
-MACH_ERROR = r'''
+MACH_ERROR_TEMPLATE = r'''
 The error occurred in mach itself. This is likely a bug in mach itself or a
 fundamental problem with a loaded module.
 
-'''.lstrip() + SUGGEST_MACH_BUSTED
+'''.lstrip() + SUGGEST_MACH_BUSTED_TEMPLATE
 
 ERROR_FOOTER = r'''
 If filing a bug, please include the full output of mach, including this error
@@ -57,17 +58,17 @@ message.
 The details of the failure are as follows:
 '''.lstrip()
 
-COMMAND_ERROR = r'''
+COMMAND_ERROR_TEMPLATE = r'''
 The error occurred in the implementation of the invoked mach command.
 
 This should never occur and is likely a bug in the implementation of that
 command.
-'''.lstrip() + SUGGEST_MACH_BUSTED
+'''.lstrip() + SUGGEST_MACH_BUSTED_TEMPLATE
 
-MODULE_ERROR = r'''
+MODULE_ERROR_TEMPLATE = r'''
 The error occurred in code that was called by the mach command. This is either
 a bug in the called code itself or in the way that mach is calling it.
-'''.lstrip() + SUGGEST_MACH_BUSTED
+'''.lstrip() + SUGGEST_MACH_BUSTED_TEMPLATE
 
 NO_COMMAND_ERROR = r'''
 It looks like you tried to run mach without a command.
@@ -150,7 +151,7 @@ class ContextWrapper(object):
             return getattr(object.__getattribute__(self, '_context'), key)
         except AttributeError as e:
             try:
-                ret = object.__getattribute__(self, '_handler')(self, key)
+                ret = object.__getattribute__(self, '_handler')(key)
             except (AttributeError, TypeError):
                 # TypeError is in case the handler comes from old code not
                 # taking a key argument.
@@ -174,14 +175,11 @@ class Mach(object):
 
         populate_context_handler -- If defined, it must be a callable. The
             callable signature is the following:
-                populate_context_handler(context, key=None)
+                populate_context_handler(key=None)
             It acts as a fallback getter for the mach.base.CommandContext
             instance.
             This allows to augment the context instance with arbitrary data
             for use in command handlers.
-            For backwards compatibility, it is also called before command
-            dispatch without a key, allowing the context handler to add
-            attributes to the context instance.
 
         require_conditions -- If True, commands that do not have any condition
             functions applied will be skipped. Defaults to False.
@@ -319,6 +317,7 @@ To see more help for a specific command, run:
         Returns the integer exit code that should be used. 0 means success. All
         other values indicate failure.
         """
+        sentry = NoopErrorReporter()
 
         # If no encoding is defined, we default to UTF-8 because without this
         # Python 2.7 will assume the default encoding of ASCII. This will blow
@@ -340,6 +339,18 @@ To see more help for a specific command, run:
         orig_env = dict(os.environ)
 
         try:
+            # Load settings as early as possible so things in dispatcher.py
+            # can use them.
+            for provider in Registrar.settings_providers:
+                self.settings.register_provider(provider)
+            self.load_settings(self.settings_paths)
+
+            if self.populate_context_handler:
+                topsrcdir = self.populate_context_handler('topdir')
+                sentry = register_sentry(argv, self.settings, topsrcdir)
+            else:
+                sentry = register_sentry(argv, self.settings)
+
             if sys.version_info < (3, 0):
                 if stdin.encoding is None:
                     sys.stdin = codecs.getreader('utf-8')(stdin)
@@ -357,7 +368,7 @@ To see more help for a specific command, run:
             if os.isatty(orig_stdout.fileno()):
                 setenv('MACH_STDOUT_ISATTY', '1')
 
-            return self._run(argv)
+            return self._run(argv, sentry)
         except KeyboardInterrupt:
             print('mach interrupted by signal or user action. Stopping.')
             return 1
@@ -369,12 +380,13 @@ To see more help for a specific command, run:
             # bug in mach (or a loaded command module being silly) and thus
             # should be reported differently.
             self._print_error_header(argv, sys.stdout)
-            print(MACH_ERROR)
+            print(MACH_ERROR_TEMPLATE % 'general')
 
             exc_type, exc_value, exc_tb = sys.exc_info()
             stack = traceback.extract_tb(exc_tb)
 
             self._print_exception(sys.stdout, exc_type, exc_value, stack)
+            sentry.report_exception(exc_value)
 
             return 1
 
@@ -386,19 +398,12 @@ To see more help for a specific command, run:
             sys.stdout = orig_stdout
             sys.stderr = orig_stderr
 
-    def _run(self, argv):
-        # Load settings as early as possible so things in dispatcher.py
-        # can use them.
-        for provider in Registrar.settings_providers:
-            self.settings.register_provider(provider)
-        self.load_settings(self.settings_paths)
-
+    def _run(self, argv, sentry):
         context = CommandContext(cwd=self.cwd,
                                  settings=self.settings, log_manager=self.log_manager,
                                  commands=Registrar)
 
         if self.populate_context_handler:
-            self.populate_context_handler(context)
             context = ContextWrapper(context, self.populate_context_handler)
 
         parser = self.get_argument_parser(context)
@@ -412,7 +417,18 @@ To see more help for a specific command, run:
             return 0
 
         try:
-            args = parser.parse_args(argv)
+            try:
+                args = parser.parse_args(argv)
+            except NoCommandError as e:
+                if e.namespace.print_command:
+                    context.get_command = True
+                    args = parser.parse_args(e.namespace.print_command)
+                    if args.command == 'mach-completion':
+                        args = parser.parse_args(e.namespace.print_command[2:])
+                    print(args.command)
+                    return 0
+                else:
+                    raise
         except NoCommandError:
             print(NO_COMMAND_ERROR)
             return 1
@@ -469,6 +485,7 @@ To see more help for a specific command, run:
             return e.exit_code
         except Exception:
             exc_type, exc_value, exc_tb = sys.exc_info()
+            sentry.report_exception(exc_value)
 
             # The first two frames are us and are never used.
             stack = traceback.extract_tb(exc_tb)[2:]
@@ -480,7 +497,7 @@ To see more help for a specific command, run:
             # argument on the method. We handle that here until the module
             # loader grows the ability to validate better.
             if not len(stack):
-                print(COMMAND_ERROR)
+                print(COMMAND_ERROR_TEMPLATE % handler.name)
                 self._print_exception(sys.stdout, exc_type, exc_value,
                                       traceback.extract_tb(exc_tb))
                 return 1
@@ -505,9 +522,9 @@ To see more help for a specific command, run:
             self._print_error_header(argv, sys.stdout)
 
             if len(other_frames):
-                print(MODULE_ERROR)
+                print(MODULE_ERROR_TEMPLATE % handler.name)
             else:
-                print(COMMAND_ERROR)
+                print(COMMAND_ERROR_TEMPLATE % handler.name)
 
             self._print_exception(sys.stdout, exc_type, exc_value, stack)
 
@@ -577,7 +594,7 @@ To see more help for a specific command, run:
                                   action='store_true', default=False,
                                   help='Print verbose output.')
         global_group.add_argument('-l', '--log-file', dest='logfile',
-                                  metavar='FILENAME', type=argparse.FileType('ab'),
+                                  metavar='FILENAME', type=argparse.FileType('a'),
                                   help='Filename to write log data to.')
         global_group.add_argument('--log-interval', dest='log_interval',
                                   action='store_true', default=False,
@@ -600,7 +617,7 @@ To see more help for a specific command, run:
         global_group.add_argument('--settings', dest='settings_file',
                                   metavar='FILENAME', default=None,
                                   help='Path to settings file.')
-        global_group.add_argument('--print-command', action='store_true',
+        global_group.add_argument('--print-command', nargs=argparse.REMAINDER,
                                   help=argparse.SUPPRESS)
 
         for args, kwargs in self.global_arguments:

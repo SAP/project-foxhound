@@ -26,6 +26,7 @@
 #include "vm/EqualityOperations.h"  // js::SameValue
 #include "vm/ErrorObject.h"
 #include "vm/JSContext.h"
+#include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/RegExpObject.h"
 #include "vm/ToSource.h"  // js::ValueToSource
 
@@ -82,7 +83,8 @@ bool js::obj_propertyIsEnumerable(JSContext* cx, unsigned argc, Value* vp) {
 
   /* Steps 1-2. */
   jsid id;
-  if (args.thisv().isObject() && ValueToId<NoGC>(cx, idValue, &id)) {
+  if (args.thisv().isObject() && idValue.isPrimitive() &&
+      PrimitiveValueToId<NoGC>(cx, idValue, &id)) {
     JSObject* obj = &args.thisv().toObject();
 
     /* Step 3. */
@@ -600,26 +602,77 @@ static MOZ_ALWAYS_INLINE JSString* GetBuiltinTagFast(JSObject* obj,
   return nullptr;
 }
 
+// For primitive values we try to avoid allocating the object if we can
+// determine that the prototype it would use does not define Symbol.toStringTag.
+static JSAtom* MaybeObjectToStringPrimitive(JSContext* cx, const Value& v) {
+  JSProtoKey protoKey = js::PrimitiveToProtoKey(cx, v);
+
+  // If prototype doesn't exist yet, just fall through.
+  JSObject* proto = cx->global()->maybeGetPrototype(protoKey);
+  if (!proto) {
+    return nullptr;
+  }
+
+  // If determining this may have side-effects, we must instead create the
+  // object normally since it is the receiver while looking up
+  // Symbol.toStringTag.
+  if (MaybeHasInterestingSymbolProperty(
+          cx, proto, cx->wellKnownSymbols().toStringTag, nullptr)) {
+    return nullptr;
+  }
+
+  // Return the direct result.
+  switch (protoKey) {
+    case JSProto_String:
+      return cx->names().objectString;
+    case JSProto_Number:
+      return cx->names().objectNumber;
+    case JSProto_Boolean:
+      return cx->names().objectBoolean;
+    case JSProto_Symbol:
+      return cx->names().objectSymbol;
+    case JSProto_BigInt:
+      return cx->names().objectBigInt;
+    default:
+      break;
+  }
+
+  return nullptr;
+}
+
 // ES6 19.1.3.6
 bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
+  RootedObject obj(cx);
 
-  // Step 1.
-  if (args.thisv().isUndefined()) {
-    args.rval().setString(cx->names().objectUndefined);
-    return true;
-  }
+  if (args.thisv().isPrimitive()) {
+    // Step 1.
+    if (args.thisv().isUndefined()) {
+      args.rval().setString(cx->names().objectUndefined);
+      return true;
+    }
 
-  // Step 2.
-  if (args.thisv().isNull()) {
-    args.rval().setString(cx->names().objectNull);
-    return true;
-  }
+    // Step 2.
+    if (args.thisv().isNull()) {
+      args.rval().setString(cx->names().objectNull);
+      return true;
+    }
 
-  // Step 3.
-  RootedObject obj(cx, ToObject(cx, args.thisv()));
-  if (!obj) {
-    return false;
+    // Try fast-path for primitives. This is unusual but we encounter code like
+    // this in the wild.
+    JSAtom* result = MaybeObjectToStringPrimitive(cx, args.thisv());
+    if (result) {
+      args.rval().setString(result);
+      return true;
+    }
+
+    // Step 3.
+    obj = ToObject(cx, args.thisv());
+    if (!obj) {
+      return false;
+    }
+  } else {
+    obj = &args.thisv().toObject();
   }
 
   RootedString builtinTag(cx);
@@ -647,7 +700,9 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 14.
-  // Currently omitted for non-standard fallback.
+  if (!builtinTag) {
+    builtinTag = cx->names().objectObject;
+  }
 
   // Step 15.
   RootedValue tag(cx);
@@ -658,21 +713,6 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
 
   // Step 16.
   if (!tag.isString()) {
-    // Non-standard (bug 1277801): Use ClassName as a fallback in the interim
-    if (!builtinTag) {
-      const char* className = GetObjectClassName(cx, obj);
-      StringBuffer sb(cx);
-      if (!sb.append("[object ") || !sb.append(className, strlen(className)) ||
-          !sb.append(']')) {
-        return false;
-      }
-
-      builtinTag = sb.finishAtom();
-      if (!builtinTag) {
-        return false;
-      }
-    }
-
     args.rval().setString(builtinTag);
     return true;
   }
@@ -998,7 +1038,8 @@ PlainObject* js::ObjectCreateImpl(JSContext* cx, HandleObject proto,
     return NewObjectWithGroup<PlainObject>(cx, ngroup, allocKind, newKind);
   }
 
-  return NewObjectWithGivenProto<PlainObject>(cx, proto, allocKind, newKind);
+  return NewObjectWithGivenProtoAndKinds<PlainObject>(cx, proto, allocKind,
+                                                      newKind);
 }
 
 PlainObject* js::ObjectCreateWithTemplate(JSContext* cx,
@@ -1887,33 +1928,9 @@ static bool obj_isSealed(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static bool ProtoGetter(JSContext* cx, unsigned argc, Value* vp) {
+bool js::obj_setProto(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-
-  RootedValue thisv(cx, args.thisv());
-  if (thisv.isPrimitive()) {
-    if (thisv.isNullOrUndefined()) {
-      ReportIncompatible(cx, args);
-      return false;
-    }
-
-    if (!BoxNonStrictThis(cx, thisv, &thisv)) {
-      return false;
-    }
-  }
-
-  RootedObject obj(cx, &thisv.toObject());
-  RootedObject proto(cx);
-  if (!GetPrototype(cx, obj, &proto)) {
-    return false;
-  }
-
-  args.rval().setObjectOrNull(proto);
-  return true;
-}
-
-static bool ProtoSetter(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
+  MOZ_ASSERT(args.length() == 1);
 
   HandleValue thisv = args.thisv();
   if (thisv.isNullOrUndefined()) {
@@ -1926,14 +1943,13 @@ static bool ProtoSetter(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  Rooted<JSObject*> obj(cx, &args.thisv().toObject());
-
   /* Do nothing if __proto__ isn't being set to an object or null. */
-  if (args.length() == 0 || !args[0].isObjectOrNull()) {
+  if (!args[0].isObjectOrNull()) {
     args.rval().setUndefined();
     return true;
   }
 
+  Rooted<JSObject*> obj(cx, &args.thisv().toObject());
   Rooted<JSObject*> newProto(cx, args[0].toObjectOrNull());
   if (!SetPrototype(cx, obj, newProto)) {
     return false;
@@ -1958,7 +1974,9 @@ static const JSFunctionSpec object_methods[] = {
     JS_FS_END};
 
 static const JSPropertySpec object_properties[] = {
-    JS_PSGS("__proto__", ProtoGetter, ProtoSetter, 0), JS_PS_END};
+    JS_SELF_HOSTED_GETSET("__proto__", "$ObjectProtoGetter",
+                          "$ObjectProtoSetter", 0),
+    JS_PS_END};
 
 static const JSFunctionSpec object_static_methods[] = {
     JS_FN("assign", obj_assign, 2, 0),
@@ -2013,7 +2031,7 @@ static JSObject* CreateObjectPrototype(JSContext* cx, JSProtoKey key) {
    * prototype of the created object.
    */
   RootedPlainObject objectProto(
-      cx, NewObjectWithGivenProto<PlainObject>(cx, nullptr, SingletonObject));
+      cx, NewSingletonObjectWithGivenProto<PlainObject>(cx, nullptr));
   if (!objectProto) {
     return nullptr;
   }

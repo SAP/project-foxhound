@@ -214,8 +214,7 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuth) {
       MakeTlsFilter<TlsCertificateRequestContextRecorder>(
           client_, kTlsHandshakeCertificate);
   client_->SetupClientAuth();
-  EXPECT_EQ(SECSuccess, SSL_OptionSet(client_->ssl_fd(),
-                                      SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE));
+  client_->SetOption(SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE);
   size_t called = 0;
   server_->SetAuthCertificateCallback(
       [&called](TlsAgent*, PRBool, PRBool) -> SECStatus {
@@ -246,6 +245,47 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuth) {
   EXPECT_EQ(0, memcmp(capture_cert_req->buffer().data(),
                       capture_certificate->buffer().data(),
                       capture_cert_req->buffer().len()));
+  ScopedCERTCertificate cert1(SSL_PeerCertificate(server_->ssl_fd()));
+  ASSERT_NE(nullptr, cert1.get());
+  ScopedCERTCertificate cert2(SSL_LocalCertificate(client_->ssl_fd()));
+  ASSERT_NE(nullptr, cert2.get());
+  EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert1->derCert, &cert2->derCert));
+}
+
+TEST_F(TlsConnectStreamTls13, PostHandshakeAuthAfterResumption) {
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  ConfigureVersion(SSL_LIBRARY_VERSION_TLS_1_3);
+  Connect();
+
+  SendReceive();  // Need to read so that we absorb the session tickets.
+  CheckKeys();
+
+  // Resume the connection.
+  Reset();
+
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  ConfigureVersion(SSL_LIBRARY_VERSION_TLS_1_3);
+  ExpectResumption(RESUME_TICKET);
+
+  client_->SetupClientAuth();
+  client_->SetOption(SSL_ENABLE_POST_HANDSHAKE_AUTH, PR_TRUE);
+  Connect();
+  SendReceive();
+
+  size_t called = 0;
+  server_->SetAuthCertificateCallback(
+      [&called](TlsAgent*, PRBool, PRBool) -> SECStatus {
+        called++;
+        return SECSuccess;
+      });
+  EXPECT_EQ(SECSuccess, SSL_SendCertificateRequest(server_->ssl_fd()))
+      << "Unexpected error: " << PORT_ErrorToName(PORT_GetError());
+  server_->SendData(50);
+  client_->ReadBytes(50);
+  client_->SendData(50);
+  server_->ReadBytes(50);
+  EXPECT_EQ(1U, called);
+
   ScopedCERTCertificate cert1(SSL_PeerCertificate(server_->ssl_fd()));
   ASSERT_NE(nullptr, cert1.get());
   ScopedCERTCertificate cert2(SSL_LocalCertificate(client_->ssl_fd()));
@@ -1547,6 +1587,47 @@ TEST_P(TlsConnectTls13, Tls13DsaIsNotAdvertisedServer) {
   // We should only have the one signature algorithm advertised.
   static const uint8_t kExpectedExt[] = {0, 2, ssl_sig_rsa_pss_rsae_sha256 >> 8,
                                          ssl_sig_rsa_pss_rsae_sha256 & 0xff};
+  ASSERT_EQ(DataBuffer(kExpectedExt, sizeof(kExpectedExt)),
+            capture->extension());
+}
+
+TEST_P(TlsConnectTls13, Tls13RsaPkcs1IsAdvertisedClient) {
+  EnsureTlsSetup();
+  static const SSLSignatureScheme kSchemes[] = {ssl_sig_rsa_pkcs1_sha256,
+                                                ssl_sig_rsa_pss_rsae_sha256};
+  client_->SetSignatureSchemes(kSchemes, PR_ARRAY_SIZE(kSchemes));
+  auto capture =
+      MakeTlsFilter<TlsExtensionCapture>(client_, ssl_signature_algorithms_xtn);
+  Connect();
+  // We should only have the one signature algorithm advertised.
+  static const uint8_t kExpectedExt[] = {0,
+                                         4,
+                                         ssl_sig_rsa_pss_rsae_sha256 >> 8,
+                                         ssl_sig_rsa_pss_rsae_sha256 & 0xff,
+                                         ssl_sig_rsa_pkcs1_sha256 >> 8,
+                                         ssl_sig_rsa_pkcs1_sha256 & 0xff};
+  ASSERT_EQ(DataBuffer(kExpectedExt, sizeof(kExpectedExt)),
+            capture->extension());
+}
+
+TEST_P(TlsConnectTls13, Tls13RsaPkcs1IsAdvertisedServer) {
+  EnsureTlsSetup();
+  static const SSLSignatureScheme kSchemes[] = {ssl_sig_rsa_pkcs1_sha256,
+                                                ssl_sig_rsa_pss_rsae_sha256};
+  server_->SetSignatureSchemes(kSchemes, PR_ARRAY_SIZE(kSchemes));
+  auto capture = MakeTlsFilter<TlsExtensionCapture>(
+      server_, ssl_signature_algorithms_xtn, true);
+  capture->SetHandshakeTypes({kTlsHandshakeCertificateRequest});
+  capture->EnableDecryption();
+  server_->RequestClientAuth(false);  // So we get a CertificateRequest.
+  Connect();
+  // We should only have the one signature algorithm advertised.
+  static const uint8_t kExpectedExt[] = {0,
+                                         4,
+                                         ssl_sig_rsa_pss_rsae_sha256 >> 8,
+                                         ssl_sig_rsa_pss_rsae_sha256 & 0xff,
+                                         ssl_sig_rsa_pkcs1_sha256 >> 8,
+                                         ssl_sig_rsa_pkcs1_sha256 & 0xff};
   ASSERT_EQ(DataBuffer(kExpectedExt, sizeof(kExpectedExt)),
             capture->extension());
 }

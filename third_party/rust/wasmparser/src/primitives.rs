@@ -17,10 +17,19 @@ use std::error::Error;
 use std::fmt;
 use std::result;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct BinaryReaderError {
-    pub message: &'static str,
-    pub offset: usize,
+    // Wrap the actual error data in a `Box` so that the error is just one
+    // word. This means that we can continue returning small `Result`s in
+    // registers.
+    pub(crate) inner: Box<BinaryReaderErrorInner>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct BinaryReaderErrorInner {
+    pub(crate) message: String,
+    pub(crate) offset: usize,
+    pub(crate) needed_hint: Option<usize>,
 }
 
 pub type Result<T> = result::Result<T, BinaryReaderError>;
@@ -29,7 +38,44 @@ impl Error for BinaryReaderError {}
 
 impl fmt::Display for BinaryReaderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} (at offset {})", self.message, self.offset)
+        write!(
+            f,
+            "{} (at offset {})",
+            self.inner.message, self.inner.offset
+        )
+    }
+}
+
+impl BinaryReaderError {
+    pub(crate) fn new(message: impl Into<String>, offset: usize) -> Self {
+        let message = message.into();
+        BinaryReaderError {
+            inner: Box::new(BinaryReaderErrorInner {
+                message,
+                offset,
+                needed_hint: None,
+            }),
+        }
+    }
+
+    pub(crate) fn eof(offset: usize, needed_hint: usize) -> Self {
+        BinaryReaderError {
+            inner: Box::new(BinaryReaderErrorInner {
+                message: "Unexpected EOF".to_string(),
+                offset,
+                needed_hint: Some(needed_hint),
+            }),
+        }
+    }
+
+    /// Get this error's message.
+    pub fn message(&self) -> &str {
+        &self.inner.message
+    }
+
+    /// Get the offset within the Wasm binary where the error occured.
+    pub fn offset(&self) -> usize {
+        self.inner.offset
     }
 }
 
@@ -52,44 +98,38 @@ pub enum SectionCode<'a> {
         name: &'a str,
         kind: CustomSectionKind,
     },
-    Type,      // Function signature declarations
-    Import,    // Import declarations
-    Function,  // Function declarations
-    Table,     // Indirect function table and other tables
-    Memory,    // Memory attributes
-    Global,    // Global declarations
-    Export,    // Exports
-    Start,     // Start function declaration
-    Element,   // Elements section
-    Code,      // Function bodies (code)
-    Data,      // Data segments
-    DataCount, // Count of passive data segments
+    Type,       // Function signature declarations
+    Alias,      // Aliased indices from nested/parent modules
+    Import,     // Import declarations
+    Module,     // Module declarations
+    Instance,   // Instance definitions
+    Function,   // Function declarations
+    Table,      // Indirect function table and other tables
+    Memory,     // Memory attributes
+    Global,     // Global declarations
+    Export,     // Exports
+    Start,      // Start function declaration
+    Element,    // Elements section
+    ModuleCode, // Module definitions
+    Code,       // Function bodies (code)
+    Data,       // Data segments
+    DataCount,  // Count of passive data segments
 }
 
 /// Types as defined [here].
 ///
 /// [here]: https://webassembly.github.io/spec/core/syntax/types.html#types
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     I32,
     I64,
     F32,
     F64,
     V128,
-    AnyFunc,
-    AnyRef,
-    NullRef,
+    FuncRef,
+    ExternRef,
     Func,
     EmptyBlockType,
-}
-
-impl Type {
-    pub(crate) fn is_valid_for_old_select(self) -> bool {
-        match self {
-            Type::I32 | Type::I64 | Type::F32 | Type::F64 => true,
-            _ => false,
-        }
-    }
 }
 
 /// Either a value type or a function type.
@@ -114,34 +154,60 @@ pub enum ExternalKind {
     Table,
     Memory,
     Global,
+    Type,
+    Module,
+    Instance,
 }
 
 #[derive(Debug, Clone)]
+pub enum TypeDef<'a> {
+    Func(FuncType),
+    Instance(InstanceType<'a>),
+    Module(ModuleType<'a>),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct FuncType {
-    pub form: Type,
     pub params: Box<[Type]>,
     pub returns: Box<[Type]>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
+pub struct InstanceType<'a> {
+    pub exports: Box<[ExportType<'a>]>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleType<'a> {
+    pub imports: Box<[crate::Import<'a>]>,
+    pub exports: Box<[ExportType<'a>]>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExportType<'a> {
+    pub name: &'a str,
+    pub ty: ImportSectionEntryType,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ResizableLimits {
     pub initial: u32,
     pub maximum: Option<u32>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct TableType {
     pub element_type: Type,
     pub limits: ResizableLimits,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct MemoryType {
     pub limits: ResizableLimits,
     pub shared: bool,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct GlobalType {
     pub content_type: Type,
     pub mutable: bool,
@@ -153,6 +219,8 @@ pub enum ImportSectionEntryType {
     Table(TableType),
     Memory(MemoryType),
     Global(GlobalType),
+    Module(u32),
+    Instance(u32),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -253,6 +321,8 @@ pub enum Operator<'a> {
     Return,
     Call { function_index: u32 },
     CallIndirect { index: u32, table_index: u32 },
+    ReturnCall { function_index: u32 },
+    ReturnCallIndirect { index: u32, table_index: u32 },
     Drop,
     Select,
     TypedSelect { ty: Type },
@@ -290,7 +360,7 @@ pub enum Operator<'a> {
     I64Const { value: i64 },
     F32Const { value: Ieee32 },
     F64Const { value: Ieee64 },
-    RefNull,
+    RefNull { ty: Type },
     RefIsNull,
     RefFunc { function_index: u32 },
     I32Eqz,
@@ -591,9 +661,11 @@ pub enum Operator<'a> {
     V128Or,
     V128Xor,
     V128Bitselect,
+    I8x16Abs,
     I8x16Neg,
     I8x16AnyTrue,
     I8x16AllTrue,
+    I8x16Bitmask,
     I8x16Shl,
     I8x16ShrS,
     I8x16ShrU,
@@ -603,10 +675,15 @@ pub enum Operator<'a> {
     I8x16Sub,
     I8x16SubSaturateS,
     I8x16SubSaturateU,
-    I8x16Mul,
+    I8x16MinS,
+    I8x16MinU,
+    I8x16MaxS,
+    I8x16MaxU,
+    I16x8Abs,
     I16x8Neg,
     I16x8AnyTrue,
     I16x8AllTrue,
+    I16x8Bitmask,
     I16x8Shl,
     I16x8ShrS,
     I16x8ShrU,
@@ -617,18 +694,26 @@ pub enum Operator<'a> {
     I16x8SubSaturateS,
     I16x8SubSaturateU,
     I16x8Mul,
+    I16x8MinS,
+    I16x8MinU,
+    I16x8MaxS,
+    I16x8MaxU,
+    I32x4Abs,
     I32x4Neg,
     I32x4AnyTrue,
     I32x4AllTrue,
+    I32x4Bitmask,
     I32x4Shl,
     I32x4ShrS,
     I32x4ShrU,
     I32x4Add,
     I32x4Sub,
     I32x4Mul,
+    I32x4MinS,
+    I32x4MinU,
+    I32x4MaxS,
+    I32x4MaxU,
     I64x2Neg,
-    I64x2AnyTrue,
-    I64x2AllTrue,
     I64x2Shl,
     I64x2ShrS,
     I64x2ShrU,
@@ -655,12 +740,8 @@ pub enum Operator<'a> {
     F64x2Max,
     I32x4TruncSatF32x4S,
     I32x4TruncSatF32x4U,
-    I64x2TruncSatF64x2S,
-    I64x2TruncSatF64x2U,
     F32x4ConvertI32x4S,
     F32x4ConvertI32x4U,
-    F64x2ConvertI64x2S,
-    F64x2ConvertI64x2U,
     V8x16Swizzle,
     V8x16Shuffle { lanes: [SIMDLaneIndex; 16] },
     V8x16LoadSplat { memarg: MemoryImmediate },

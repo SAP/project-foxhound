@@ -33,7 +33,7 @@ linux64-llvm-dsymutil:
         toolchain-artifact: public/build/llvm-dsymutil.tar.xz
     fetches:
         fetch:
-            - llvm-for-dsymutil
+            - clang-10
         toolchain:
             - linux64-gcc-7
 
@@ -100,24 +100,6 @@ linux64-mar-tools:
             - toolkit/mozapps/update/updater/bspatch/
             - tools/update-packaging/
 
-linux64-tup:
-    description: "tup toolchain build"
-    treeherder:
-        symbol: TL(tup)
-    worker:
-        max-run-time: 3600
-    run:
-        script: build-tup-linux.sh
-        toolchain-artifact: public/build/tup.tar.xz
-    run-on-projects:
-        - trunk
-        - try
-    fetches:
-        fetch:
-            - tup
-        toolchain:
-            - linux64-gcc-7
-
 linux64-upx:
     description: "UPX build"
     treeherder:
@@ -160,8 +142,11 @@ browsertime:
 
 wasi-sysroot:
     description: "wasi sysroot build process"
+    attributes:
+        local-toolchain: true
     treeherder:
         symbol: TL(wasi-sysroot)
+    run-on-projects: [trunk]
     run:
         script: build-wasi-sysroot.sh
         sparse-profile: null
@@ -190,7 +175,7 @@ wrench-deps:
         fetch:
             - android-rs-glue
         toolchain:
-            - linux64-rust-1.41  # whatever m-c is built with
+            - linux64-rust-1.43  # whatever m-c is built with
 
 wgpu-deps:
     description: "Downloads all the crates needed for testing wgpu"
@@ -208,12 +193,15 @@ wgpu-deps:
         fetch:
             - android-rs-glue
         toolchain:
-            - linux64-rust-1.41  # whatever m-c is built with
+            - linux64-rust-1.43  # whatever m-c is built with
 
 linux64-lucetc:
     description: "lucetc build process"
+    attributes:
+        local-toolchain: true
     treeherder:
         symbol: TL(lucetc)
+    run-on-projects: [trunk]
     run:
         script: build-lucetc.sh
         toolchain-artifact: public/build/lucetc.tar.xz
@@ -246,10 +234,74 @@ linux64-wine:
         symbol: TL(wine)
         tier: 1
     worker:
+        docker-image: {in-tree: deb10-toolchain-build}
         max-run-time: 10800
     run:
         script: build-wine.sh
         toolchain-artifact: public/build/wine.tar.xz
     fetches:
         fetch:
-            - wine-3.0.3
+            - wine-5.0
+
+win32-pdbstr:
+    description: "pdbstr for 32-bits Windows"
+    treeherder:
+        symbol: TW32(pdbstr)
+    worker-type: b-win2012
+    worker:
+        artifacts:
+            - name: project/gecko/pdbstr/pdbstr.tar.bz2
+              path: pdbstr.tar.bz2
+              type: file
+    run:
+        script: exfiltrate-pdbstr.sh
+        arguments: ['x86']
+        toolchain-artifact: project/gecko/pdbstr/pdbstr.tar.bz2
+
+win64-pdbstr:
+    description: "pdbstr for 64-bits Windows"
+    treeherder:
+        symbol: TW64(pdbstr)
+    worker-type: b-win2012
+    worker:
+        artifacts:
+            - name: project/gecko/pdbstr/pdbstr.tar.bz2
+              path: pdbstr.tar.bz2
+              type: file
+    run:
+        script: exfiltrate-pdbstr.sh
+        arguments: ['x64']
+        toolchain-artifact: project/gecko/pdbstr/pdbstr.tar.bz2
+
+linux64-winchecksec:
+    description: "winchecksec"
+    treeherder:
+        symbol: TL(winchecksec)
+    worker:
+        docker-image: {in-tree: deb10-toolchain-build}
+    run:
+        script: build-winchecksec.sh
+        toolchain-artifact: public/build/winchecksec.tar.bz2
+        tooltool-downloads: internal
+    fetches:
+        fetch:
+            - winchecksec
+
+win64-winchecksec:
+    description: "winchecksec"
+    treeherder:
+        symbol: TW64(winchecksec)
+    worker:
+        docker-image: {in-tree: deb10-toolchain-build}
+        env:
+            TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/vs2017.manifest"
+    run:
+        script: build-winchecksec.sh
+        toolchain-artifact: public/build/winchecksec.tar.bz2
+        tooltool-downloads: internal
+    fetches:
+        fetch:
+            - winchecksec
+        toolchain:
+            - linux64-clang-win-cross
+            - linux64-liblowercase

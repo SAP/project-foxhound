@@ -200,7 +200,11 @@ this.AboutPreferences = class AboutPreferences {
       if (descString) {
         const label = createAppend("label", detailVbox);
         label.classList.add("indent");
-        document.l10n.setAttributes(label, getString(descString));
+        document.l10n.setAttributes(
+          label,
+          getString(descString),
+          descString.values
+        );
 
         // Add a rows dropdown if we have a pref to control and a maximum
         if (rowsPref && maxRows) {
@@ -241,6 +245,7 @@ this.AboutPreferences = class AboutPreferences {
         linkPref(subcheck, nested.name, "bool");
         subChecks.push(subcheck);
         subcheck.disabled = !pref._value;
+        subcheck.hidden = nested.hidden;
       });
 
       // Disable any nested checkboxes if the parent pref is not enabled.

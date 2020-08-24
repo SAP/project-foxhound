@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{FontInstanceFlags, FontInstancePlatformOptions};
-use api::{FontKey, FontInstanceKey, FontRenderMode, FontTemplate, FontVariation};
+use api::{FontInstanceFlags, FontSize, BaseFontInstance};
+use api::{FontKey, FontRenderMode, FontTemplate};
 use api::{ColorU, GlyphIndex, GlyphDimensions, SyntheticItalics};
 use api::units::*;
 use api::{ImageDescriptor, ImageDescriptorFlags, ImageFormat, DirtyRect};
@@ -167,6 +167,7 @@ impl GlyphRasterizer {
             // spawn an async task to get off of the render backend thread as early as
             // possible and in that task use rayon's fork join dispatch to rasterize the
             // glyphs in the thread pool.
+            profile_scope!("spawning process_glyph jobs");
             self.workers.spawn(move || {
                 let jobs = glyphs
                     .par_iter()
@@ -187,6 +188,7 @@ impl GlyphRasterizer {
         _: &mut RenderTaskGraph,
         _: &mut TextureCacheProfileCounters,
     ) {
+        profile_scope!("resolve_glyphs");
         // Pull rasterized glyphs from the queue and update the caches.
         while self.pending_glyphs > 0 {
             self.pending_glyphs -= 1;
@@ -195,9 +197,13 @@ impl GlyphRasterizer {
             // we could try_recv and steal work from the thread pool to take advantage
             // of the fact that this thread is alive and we avoid the added latency
             // of blocking it.
-            let GlyphRasterJobs { font, mut jobs } = self.glyph_rx
+
+            let GlyphRasterJobs { font, mut jobs } = {
+                profile_scope!("blocking wait on glyph_rx");
+                self.glyph_rx
                 .recv()
-                .expect("BUG: Should be glyphs pending!");
+                .expect("BUG: Should be glyphs pending!")
+            };
 
             // Ensure that the glyphs are always processed in the same
             // order for a given text run (since iterating a hash set doesn't
@@ -334,6 +340,9 @@ impl FontTransform {
     }
 
     #[allow(dead_code)]
+    pub fn scale(&self, scale: f32) -> Self { self.pre_scale(scale, scale) }
+
+    #[allow(dead_code)]
     pub fn invert_scale(&self, x_scale: f64, y_scale: f64) -> Self {
         self.pre_scale(x_scale.recip() as f32, y_scale.recip() as f32)
     }
@@ -417,13 +426,9 @@ pub struct FontInstance {
     pub render_mode: FontRenderMode,
     pub flags: FontInstanceFlags,
     pub color: ColorU,
-    pub transform_glyphs: bool,
-    // The font size is in *device* pixels, not logical pixels.
-    // It is stored as an Au since we need sub-pixel sizes, but
-    // can't store as a f32 due to use of this type as a hash key.
-    // TODO(gw): Perhaps consider having LogicalAu and DeviceAu
-    //           or something similar to that.
-    pub size: Au,
+    // The font size is in *device/raster* pixels, not logical pixels.
+    // It is stored as an f32 since we need sub-pixel sizes.
+    pub size: FontSize,
 }
 
 impl Hash for FontInstance {
@@ -437,26 +442,6 @@ impl Hash for FontInstance {
         self.color.hash(state);
         self.size.hash(state);
     }
-}
-
-/// Immutable description of a font instance requested by the user of the API.
-///
-/// `BaseFontInstance` can be identified by a `FontInstanceKey` so we should
-/// never need to hash it.
-#[derive(Clone, PartialEq, Eq, Debug, Ord, PartialOrd, MallocSizeOf)]
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct BaseFontInstance {
-    pub instance_key: FontInstanceKey,
-    pub font_key: FontKey,
-    pub size: Au,
-    pub bg_color: ColorU,
-    pub render_mode: FontRenderMode,
-    pub flags: FontInstanceFlags,
-    pub synthetic_italics: SyntheticItalics,
-    #[cfg_attr(any(feature = "capture", feature = "replay"), serde(skip))]
-    pub platform_options: Option<FontInstancePlatformOptions>,
-    pub variations: Vec<FontVariation>,
 }
 
 impl Deref for FontInstance {
@@ -479,7 +464,6 @@ impl FontInstance {
     ) -> Self {
         FontInstance {
             transform: FontTransform::identity(),
-            transform_glyphs: false,
             color,
             size: base.size,
             base,
@@ -493,7 +477,6 @@ impl FontInstance {
     ) -> Self {
         FontInstance {
             transform: FontTransform::identity(),
-            transform_glyphs: false,
             color: ColorU::new(0, 0, 0, 255),
             size: base.size,
             render_mode: base.render_mode,
@@ -502,12 +485,20 @@ impl FontInstance {
         }
     }
 
+    pub fn use_texture_padding(&self) -> bool {
+        self.flags.contains(FontInstanceFlags::TEXTURE_PADDING)
+    }
+
+    pub fn use_transform_glyphs(&self) -> bool {
+        self.flags.contains(FontInstanceFlags::TRANSFORM_GLYPHS)
+    }
+
     pub fn get_alpha_glyph_format(&self) -> GlyphFormat {
-        if !self.transform_glyphs { GlyphFormat::Alpha } else { GlyphFormat::TransformedAlpha }
+        if self.use_transform_glyphs() { GlyphFormat::TransformedAlpha } else { GlyphFormat::Alpha }
     }
 
     pub fn get_subpixel_glyph_format(&self) -> GlyphFormat {
-        if !self.transform_glyphs { GlyphFormat::Subpixel } else { GlyphFormat::TransformedSubpixel }
+        if self.use_transform_glyphs() { GlyphFormat::TransformedSubpixel } else { GlyphFormat::Subpixel }
     }
 
     pub fn disable_subpixel_aa(&mut self) {
@@ -568,6 +559,12 @@ impl FontInstance {
 
     pub fn synthesize_italics(&self, transform: FontTransform, size: f64) -> (FontTransform, (f64, f64)) {
         transform.synthesize_italics(self.synthetic_italics, size, self.flags.contains(FontInstanceFlags::VERTICAL))
+    }
+
+    #[allow(dead_code)]
+    pub fn get_transformed_size(&self) -> f64 {
+        let (_, y_scale) = self.transform.compute_scale().unwrap_or((1.0, 1.0));
+        self.size.to_f64_px() * y_scale
     }
 }
 
@@ -996,6 +993,7 @@ impl GlyphRasterizer {
             return
         }
 
+        profile_scope!("remove_dead_fonts");
         let fonts_to_remove = mem::replace(&mut self.fonts_to_remove, Vec::new());
         let font_instances_to_remove = mem::replace(& mut self.font_instances_to_remove, Vec::new());
         self.font_contexts.async_for_each(move |mut context| {
@@ -1075,19 +1073,15 @@ mod test_glyph_rasterizer {
         use crate::render_task_cache::RenderTaskCache;
         use crate::render_task_graph::{RenderTaskGraph, RenderTaskGraphCounters};
         use crate::profiler::TextureCacheProfileCounters;
-        use api::{FontKey, FontInstanceKey, FontTemplate, FontRenderMode,
+        use api::{FontKey, FontInstanceKey, FontSize, FontTemplate, FontRenderMode,
                   IdNamespace, ColorU};
-        use api::units::{Au, DevicePoint};
+        use api::units::DevicePoint;
         use crate::render_backend::FrameId;
-        use thread_profiler::register_thread_with_profiler;
         use std::sync::Arc;
         use crate::glyph_rasterizer::{FORMAT, FontInstance, BaseFontInstance, GlyphKey, GlyphRasterizer};
 
         let worker = ThreadPoolBuilder::new()
             .thread_name(|idx|{ format!("WRWorker#{}", idx) })
-            .start_handler(move |idx| {
-                register_thread_with_profiler(format!("WRWorker#{}", idx));
-            })
             .build();
         let workers = Arc::new(worker.unwrap());
         let mut glyph_rasterizer = GlyphRasterizer::new(workers).unwrap();
@@ -1109,7 +1103,7 @@ mod test_glyph_rasterizer {
         let font = FontInstance::from_base(Arc::new(BaseFontInstance {
             instance_key: FontInstanceKey(IdNamespace(0), 0),
             font_key,
-            size: Au::from_px(32),
+            size: FontSize::from_f32_px(32.0),
             bg_color: ColorU::new(0, 0, 0, 0),
             render_mode: FontRenderMode::Subpixel,
             flags: Default::default(),

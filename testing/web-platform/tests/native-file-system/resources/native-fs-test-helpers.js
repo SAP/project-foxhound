@@ -14,14 +14,14 @@ const directory_promise = (async () => {
 
   // Small delay to give chrome's test automation a chance to actually install
   // itself.
-  await new Promise(resolve => step_timeout(resolve, 100))
+  await new Promise(resolve => step_timeout(resolve, 100));
 
   await window.test_driver.bless(
       'show a file picker.<br />Please select an empty directory');
-  const entries = await self.chooseFileSystemEntries({type: 'open-directory'});
+  const entries = await self.showDirectoryPicker();
   assert_true(entries instanceof FileSystemHandle);
   assert_true(entries instanceof FileSystemDirectoryHandle);
-  for await (const entry of entries.getEntries()) {
+  for await (const entry of entries) {
     assert_unreached('Selected directory is not empty');
   }
   return entries;
@@ -32,8 +32,9 @@ function directory_test(func, description) {
     const directory = await directory_promise;
     // To be resilient against tests not cleaning up properly, cleanup before
     // every test.
-    for await (let entry of directory.getEntries()) {
-      await directory.removeEntry(entry.name, {recursive: entry.isDirectory});
+    for await (let entry of directory.values()) {
+      await directory.removeEntry(
+          entry.name, {recursive: entry.kind === 'directory'});
     }
     await func(t, directory);
   }, description);

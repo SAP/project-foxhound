@@ -230,13 +230,15 @@ Optional. This is one of:
 
     Every new or changed data collection in Firefox needs a `data collection review <https://wiki.mozilla.org/Firefox/Data_Collection>`__ from a Data Steward.
 
+.. _histogram-products:
+
 ``products``
 -------------
 Required. This field is a list of products this histogram can be recorded on. Currently-supported values are:
 
 - ``firefox`` - Collected in Firefox Desktop for submission via Firefox Telemetry.
 - ``fennec`` - Collected in Firefox for Android for submission via Firefox Mobile Telemetry.
-- ``geckoview`` - Collected in GeckoView-based Android products and surfaced via `GeckoViewTelemetryController.jsm <https://hg.mozilla.org/mozilla-central/raw-file/tip/toolkit/components/telemetry/geckoview/GeckoViewTelemetryController.jsm>`__.
+- ``geckoview_streaming`` - See :doc:`this guide <../start/report-gecko-telemetry-in-glean>` for how to stream data through geckoview to the Glean SDK.
 
 ``record_into_store``
 ---------------------

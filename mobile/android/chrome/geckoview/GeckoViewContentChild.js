@@ -52,7 +52,6 @@ class GeckoViewContentChild extends GeckoViewChildModule {
       this
     );
     this.messageManager.addMessageListener("GeckoView:RestoreState", this);
-    this.messageManager.addMessageListener("GeckoView:SetActive", this);
     this.messageManager.addMessageListener("GeckoView:UpdateInitData", this);
     this.messageManager.addMessageListener("GeckoView:ZoomToInput", this);
     this.messageManager.addMessageListener("GeckoView:ScrollBy", this);
@@ -135,7 +134,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
     }
     this.triggerViewportFitChange = content.requestIdleCallback(() => {
       this.triggerViewportFitChange = null;
-      let viewportFit = content.windowUtils.getViewportFitInfo();
+      const viewportFit = content.windowUtils.getViewportFitInfo();
       if (this.lastViewportFit === viewportFit) {
         return;
       }
@@ -163,9 +162,9 @@ class GeckoViewContentChild extends GeckoViewChildModule {
         }
         break;
       case "GeckoView:ZoomToInput": {
-        let dwu = content.windowUtils;
+        const dwu = content.windowUtils;
 
-        let zoomToFocusedInput = function() {
+        const zoomToFocusedInput = function() {
           if (!dwu.flushApzRepaints()) {
             dwu.zoomToFocusedInput();
             return;
@@ -176,8 +175,10 @@ class GeckoViewContentChild extends GeckoViewChildModule {
           }, "apz-repaints-flushed");
         };
 
+        const { force } = aMsg.data;
+
         let gotResize = false;
-        let onResize = function() {
+        const onResize = function() {
           gotResize = true;
           if (dwu.isMozAfterPaintPending) {
             addEventListener(
@@ -203,7 +204,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
         // input if there is no resize event at the end of the interval.
         content.setTimeout(() => {
           removeEventListener("resize", onResize, { capture: true });
-          if (!gotResize) {
+          if (!gotResize && force) {
             onResize();
           }
         }, 500);
@@ -215,7 +216,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
         this._savedState = { history, formdata, scrolldata };
 
         if (history) {
-          let restoredHistory = SessionHistory.restore(docShell, history);
+          const restoredHistory = SessionHistory.restore(docShell, history);
 
           addEventListener(
             "load",
@@ -239,7 +240,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
             { capture: true, mozSystemGroup: true, once: true }
           );
 
-          let scrollRestore = _ => {
+          const scrollRestore = _ => {
             if (content.location != "about:blank") {
               if (scrolldata) {
                 this.Utils.restoreFrameTreeData(
@@ -273,31 +274,12 @@ class GeckoViewContentChild extends GeckoViewChildModule {
           }
 
           this.progressFilter.addProgressListener(this, this.flags);
-          let webProgress = docShell
+          const webProgress = docShell
             .QueryInterface(Ci.nsIInterfaceRequestor)
             .getInterface(Ci.nsIWebProgress);
           webProgress.addProgressListener(this.progressFilter, this.flags);
 
           this.loadEntry(loadOptions, restoredHistory);
-        }
-        break;
-
-      case "GeckoView:SetActive":
-        if (content) {
-          if (!aMsg.data.active) {
-            docShell.contentViewer.pausePainting();
-            content.windowUtils.suspendTimeouts();
-            this.timeoutsSuspended = true;
-          } else if (this.timeoutsSuspended) {
-            docShell.contentViewer.resumePainting();
-            content.windowUtils.resumeTimeouts();
-            this.timeoutsSuspended = false;
-          }
-          if (aMsg.data.active) {
-            // Send current viewport-fit to parent.
-            this.lastViewportFit = "";
-            this.notifyParentOfViewportFit();
-          }
         }
         break;
 
@@ -309,8 +291,8 @@ class GeckoViewContentChild extends GeckoViewChildModule {
         );
         break;
       case "GeckoView:ScrollBy":
-        let x = {};
-        let y = {};
+        const x = {};
+        const y = {};
         content.windowUtils.getVisualViewportOffset(x, y);
         content.windowUtils.scrollToVisual(
           x.value + this.toPixels(aMsg.data.widthValue, aMsg.data.widthType),
@@ -338,7 +320,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
 
     const webNavigation = docShell.QueryInterface(Ci.nsIWebNavigation);
 
-    let {
+    const {
       referrerInfo,
       triggeringPrincipal,
       uri,
@@ -346,15 +328,12 @@ class GeckoViewContentChild extends GeckoViewChildModule {
       csp,
       headers,
     } = loadOptions;
-    referrerInfo = E10SUtils.deserializeReferrerInfo(referrerInfo);
-    triggeringPrincipal = E10SUtils.deserializePrincipal(triggeringPrincipal);
-    csp = E10SUtils.deserializeCSP(csp);
 
     webNavigation.loadURI(uri, {
-      triggeringPrincipal,
-      referrerInfo,
+      triggeringPrincipal: E10SUtils.deserializePrincipal(triggeringPrincipal),
+      referrerInfo: E10SUtils.deserializeReferrerInfo(referrerInfo),
       loadFlags: flags,
-      csp,
+      csp: E10SUtils.deserializeCSP(csp),
       headers,
     });
   }
@@ -497,7 +476,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
     if (this._savedState) {
       const scrolldata = this._savedState.scrolldata;
       if (scrolldata && scrolldata.zoom && scrolldata.zoom.displaySize) {
-        let utils = content.windowUtils;
+        const utils = content.windowUtils;
         // Restore zoom level.
         utils.setRestoreResolution(
           scrolldata.zoom.resolution,
@@ -508,7 +487,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
     }
 
     this.progressFilter.removeProgressListener(this);
-    let webProgress = docShell
+    const webProgress = docShell
       .QueryInterface(Ci.nsIInterfaceRequestor)
       .getInterface(Ci.nsIWebProgress);
     webProgress.removeProgressListener(this.progressFilter);

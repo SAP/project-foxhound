@@ -22,10 +22,11 @@
   _(ShellObjectMailbox, 100)          \
                                       \
   _(AtomsTable, 200)                  \
-                                      \
   _(WasmInitBuiltinThunks, 250)       \
   _(WasmLazyStubsTier1, 250)          \
   _(WasmLazyStubsTier2, 251)          \
+                                      \
+  _(StoreBuffer, 275)                 \
                                       \
   _(GlobalHelperThreadState, 300)     \
                                       \
@@ -60,6 +61,7 @@
   _(WasmHugeMemoryEnabled, 500)       \
   _(MemoryTracker, 500)               \
                                       \
+  _(IrregexpLazyStatic, 600)          \
   _(ThreadId, 600)                    \
   _(WasmCodeSegmentMap, 600)          \
   _(TraceLoggerGraphState, 600)       \

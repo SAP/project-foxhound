@@ -53,6 +53,7 @@ already_AddRefed<Performance> Performance::CreateForMainThread(
     nsDOMNavigationTiming* aDOMTiming, nsITimedChannel* aChannel) {
   MOZ_ASSERT(NS_IsMainThread());
 
+  MOZ_ASSERT(aWindow->AsGlobal());
   RefPtr<Performance> performance = new PerformanceMainThread(
       aWindow, aDOMTiming, aChannel, aPrincipal->IsSystemPrincipal());
   return performance.forget();
@@ -89,12 +90,16 @@ Performance::~Performance() = default;
 
 DOMHighResTimeStamp Performance::Now() {
   DOMHighResTimeStamp rawTime = NowUnclamped();
+
+  // XXX: Remove this would cause functions in pkcs11f.h to fail.
+  // Bug 1628021 will find out the root cause.
   if (mSystemPrincipal) {
     return rawTime;
   }
 
-  return nsRFPService::ReduceTimePrecisionAsMSecs(rawTime,
-                                                  GetRandomTimelineSeed());
+  return nsRFPService::ReduceTimePrecisionAsMSecs(
+      rawTime, GetRandomTimelineSeed(), mSystemPrincipal,
+      CrossOriginIsolated());
 }
 
 DOMHighResTimeStamp Performance::NowUnclamped() const {
@@ -110,12 +115,9 @@ DOMHighResTimeStamp Performance::TimeOrigin() {
   MOZ_ASSERT(mPerformanceService);
   DOMHighResTimeStamp rawTimeOrigin =
       mPerformanceService->TimeOrigin(CreationTimeStamp());
-  if (mSystemPrincipal) {
-    return rawTimeOrigin;
-  }
-
   // Time Origin is an absolute timestamp, so we supply a 0 context mix-in
-  return nsRFPService::ReduceTimePrecisionAsMSecs(rawTimeOrigin, 0);
+  return nsRFPService::ReduceTimePrecisionAsMSecs(
+      rawTimeOrigin, 0, mSystemPrincipal, CrossOriginIsolated());
 }
 
 JSObject* Performance::WrapObject(JSContext* aCx,
@@ -130,7 +132,7 @@ void Performance::GetEntries(nsTArray<RefPtr<PerformanceEntry>>& aRetval) {
     return;
   }
 
-  aRetval = mResourceEntries;
+  aRetval = mResourceEntries.Clone();
   aRetval.AppendElements(mUserEntries);
   aRetval.Sort(PerformanceEntryComparator());
 }
@@ -144,7 +146,7 @@ void Performance::GetEntriesByType(
   }
 
   if (aEntryType.EqualsLiteral("resource")) {
-    aRetval = mResourceEntries;
+    aRetval = mResourceEntries.Clone();
     return;
   }
 
@@ -193,16 +195,11 @@ void Performance::GetEntriesByName(
 
 void Performance::ClearUserEntries(const Optional<nsAString>& aEntryName,
                                    const nsAString& aEntryType) {
-  for (uint32_t i = 0; i < mUserEntries.Length();) {
-    if ((!aEntryName.WasPassed() ||
-         mUserEntries[i]->GetName().Equals(aEntryName.Value())) &&
-        (aEntryType.IsEmpty() ||
-         mUserEntries[i]->GetEntryType().Equals(aEntryType))) {
-      mUserEntries.RemoveElementAt(i);
-    } else {
-      ++i;
-    }
-  }
+  mUserEntries.RemoveElementsBy([&aEntryName, &aEntryType](const auto& entry) {
+    return (!aEntryName.WasPassed() ||
+            entry->GetName().Equals(aEntryName.Value())) &&
+           (aEntryType.IsEmpty() || entry->GetEntryType().Equals(aEntryType));
+  });
 }
 
 void Performance::ClearResourceTimings() { mResourceEntries.Clear(); }
@@ -235,7 +232,7 @@ void Performance::Mark(const nsAString& aName, ErrorResult& aRv) {
 }
 
 void Performance::ClearMarks(const Optional<nsAString>& aName) {
-  ClearUserEntries(aName, NS_LITERAL_STRING("mark"));
+  ClearUserEntries(aName, u"mark"_ns);
 }
 
 DOMHighResTimeStamp Performance::ResolveTimestampFromName(
@@ -331,7 +328,7 @@ void Performance::Measure(const nsAString& aName,
 }
 
 void Performance::ClearMeasures(const Optional<nsAString>& aName) {
-  ClearUserEntries(aName, NS_LITERAL_STRING("measure"));
+  ClearUserEntries(aName, u"measure"_ns);
 }
 
 void Performance::LogEntry(PerformanceEntry* aEntry,
@@ -357,8 +354,7 @@ void Performance::TimingNotification(PerformanceEntry* aEntry,
   init.mOrigin = NS_ConvertUTF8toUTF16(aOwner.BeginReading());
 
   RefPtr<PerformanceEntryEvent> perfEntryEvent =
-      PerformanceEntryEvent::Constructor(
-          this, NS_LITERAL_STRING("performanceentry"), init);
+      PerformanceEntryEvent::Constructor(this, u"performanceentry"_ns, init);
 
   nsCOMPtr<EventTarget> et = do_QueryInterface(GetOwner());
   if (et) {
@@ -536,8 +532,7 @@ void Performance::RemoveObserver(PerformanceObserver* aObserver) {
 
 void Performance::NotifyObservers() {
   mPendingNotificationObserversTask = false;
-  NS_OBSERVER_ARRAY_NOTIFY_XPCOM_OBSERVERS(mObservers, PerformanceObserver,
-                                           Notify, ());
+  NS_OBSERVER_ARRAY_NOTIFY_XPCOM_OBSERVERS(mObservers, Notify, ());
 }
 
 void Performance::CancelNotificationObservers() {
@@ -574,6 +569,12 @@ class NotifyObserversTask final : public CancelableRunnable {
   RefPtr<Performance> mPerformance;
 };
 
+void Performance::QueueNotificationObserversTask() {
+  if (!mPendingNotificationObserversTask) {
+    RunNotificationObserversTask();
+  }
+}
+
 void Performance::RunNotificationObserversTask() {
   mPendingNotificationObserversTask = true;
   nsCOMPtr<nsIRunnable> task = new NotifyObserversTask(this);
@@ -594,25 +595,20 @@ void Performance::QueueEntry(PerformanceEntry* aEntry) {
   }
 
   nsTObserverArray<PerformanceObserver*> interestedObservers;
-  nsTObserverArray<PerformanceObserver*>::ForwardIterator observerIt(
-      mObservers);
-  while (observerIt.HasMore()) {
-    PerformanceObserver* observer = observerIt.GetNext();
-    if (observer->ObservesTypeOfEntry(aEntry)) {
-      interestedObservers.AppendElement(observer);
-    }
-  }
+  const auto [begin, end] = mObservers.NonObservingRange();
+  std::copy_if(begin, end, MakeBackInserter(interestedObservers),
+               [aEntry](PerformanceObserver* observer) {
+                 return observer->ObservesTypeOfEntry(aEntry);
+               });
 
   if (interestedObservers.IsEmpty()) {
     return;
   }
 
-  NS_OBSERVER_ARRAY_NOTIFY_XPCOM_OBSERVERS(
-      interestedObservers, PerformanceObserver, QueueEntry, (aEntry));
+  NS_OBSERVER_ARRAY_NOTIFY_XPCOM_OBSERVERS(interestedObservers, QueueEntry,
+                                           (aEntry));
 
-  if (!mPendingNotificationObserversTask) {
-    RunNotificationObserversTask();
-  }
+  QueueNotificationObserversTask();
 }
 
 void Performance::MemoryPressure() { mUserEntries.Clear(); }

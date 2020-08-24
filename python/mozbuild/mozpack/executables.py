@@ -86,7 +86,7 @@ def may_strip(path):
     Return whether strip() should be called
     '''
     from buildconfig import substs
-    return not substs['PKG_SKIP_STRIP']
+    return not substs.get('PKG_SKIP_STRIP')
 
 
 def strip(path):
@@ -95,7 +95,7 @@ def strip(path):
     '''
     from buildconfig import substs
     strip = substs['STRIP']
-    flags = substs['STRIP_FLAGS'].split() if 'STRIP_FLAGS' in substs else []
+    flags = substs.get('STRIP_FLAGS', [])
     cmd = [strip] + flags + [path]
     if subprocess.call(cmd) != 0:
         errors.fatal('Error executing ' + ' '.join(cmd))
@@ -119,8 +119,6 @@ def elfhack(path):
     '''
     from buildconfig import topobjdir
     cmd = [os.path.join(topobjdir, 'build/unix/elfhack/elfhack'), path]
-    if 'ELF_HACK_FLAGS' in os.environ:
-        cmd[1:0] = os.environ['ELF_HACK_FLAGS'].split()
     if subprocess.call(cmd) != 0:
         errors.fatal('Error executing ' + ' '.join(cmd))
 

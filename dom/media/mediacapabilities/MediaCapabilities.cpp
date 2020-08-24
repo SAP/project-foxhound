@@ -20,6 +20,7 @@
 #include "PDMFactory.h"
 #include "VPXDecoder.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
@@ -81,19 +82,17 @@ static nsCString MediaCapabilitiesInfoToStr(
 static nsCString MediaDecodingConfigurationToStr(
     const MediaDecodingConfiguration& aConfig) {
   nsCString str;
-  str += NS_LITERAL_CSTRING("[");
+  str += "["_ns;
   if (aConfig.mVideo.WasPassed()) {
-    str += NS_LITERAL_CSTRING("video:") +
-           VideoConfigurationToStr(&aConfig.mVideo.Value());
+    str += "video:"_ns + VideoConfigurationToStr(&aConfig.mVideo.Value());
     if (aConfig.mAudio.WasPassed()) {
-      str += NS_LITERAL_CSTRING(" ");
+      str += " "_ns;
     }
   }
   if (aConfig.mAudio.WasPassed()) {
-    str += NS_LITERAL_CSTRING("audio:") +
-           AudioConfigurationToStr(&aConfig.mAudio.Value());
+    str += "audio:"_ns + AudioConfigurationToStr(&aConfig.mAudio.Value());
   }
-  str += NS_LITERAL_CSTRING("]");
+  str += "]"_ns;
   return str;
 }
 
@@ -255,7 +254,7 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
           // once at a time as it can quickly exhaust the system resources
           // otherwise.
           static RefPtr<AllocPolicy> sVideoAllocPolicy = [&taskQueue]() {
-            SystemGroup::Dispatch(
+            SchedulerGroup::Dispatch(
                 TaskCategory::Other,
                 NS_NewRunnableFunction(
                     "MediaCapabilities::AllocPolicy:Video", []() {

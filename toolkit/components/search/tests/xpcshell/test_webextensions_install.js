@@ -3,55 +3,28 @@
 
 "use strict";
 
-const { ExtensionTestUtils } = ChromeUtils.import(
-  "resource://testing-common/ExtensionXPCShellUtils.jsm"
-);
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AddonManager: "resource://gre/modules/AddonManager.jsm",
+  ExtensionTestUtils: "resource://testing-common/ExtensionXPCShellUtils.jsm",
+});
 
 const {
-  createAppInfo,
   promiseRestartManager,
   promiseShutdownManager,
   promiseStartupManager,
 } = AddonTestUtils;
 
-ExtensionTestUtils.init(this);
-AddonTestUtils.usePrivilegedSignatures = false;
-AddonTestUtils.overrideCertDB();
+SearchTestUtils.initXPCShellAddonManager(this);
 
 async function restart() {
-  Services.search.reset();
+  Services.search.wrappedJSObject.reset();
   await promiseRestartManager();
-  await Services.search.init(false);
+  await Services.search.init();
 }
 
 async function getEngineNames() {
   let engines = await Services.search.getEngines();
   return engines.map(engine => engine._name);
-}
-
-async function installSearchExtension(id, name) {
-  let extensionInfo = {
-    useAddonManager: "permanent",
-    manifest: {
-      version: "1.0",
-      applications: {
-        gecko: {
-          id: id + "@tests.mozilla.org",
-        },
-      },
-      chrome_settings_overrides: {
-        search_provider: {
-          name,
-          search_url: "https://example.com/?q={searchTerms}",
-        },
-      },
-    },
-  };
-
-  let extension = ExtensionTestUtils.loadExtension(extensionInfo);
-  await extension.startup();
-
-  return extension;
 }
 
 add_task(async function setup() {
@@ -74,8 +47,12 @@ add_task(async function basic_install_test() {
   Assert.deepEqual(await getEngineNames(), ["Plain", "Special"]);
 
   // User installs a new search engine
-  let extension = await installSearchExtension("example", "Example");
-  Assert.deepEqual(await getEngineNames(), ["Plain", "Special", "Example"]);
+  let extension = await SearchTestUtils.installSearchExtension();
+  Assert.deepEqual((await getEngineNames()).sort(), [
+    "Example",
+    "Plain",
+    "Special",
+  ]);
 
   await forceExpiration();
 
@@ -88,7 +65,7 @@ add_task(async function basic_install_test() {
 
 add_task(async function basic_multilocale_test() {
   await forceExpiration();
-  Services.prefs.setCharPref("browser.search.region", "an");
+  Region._setHomeRegion("an");
 
   await withGeoServer(
     async function cont(requests) {
@@ -105,7 +82,7 @@ add_task(async function basic_multilocale_test() {
 
 add_task(async function complex_multilocale_test() {
   await forceExpiration();
-  Services.prefs.setCharPref("browser.search.region", "af");
+  Region._setHomeRegion("af", false);
 
   await withGeoServer(
     async function cont(requests) {
@@ -118,5 +95,28 @@ add_task(async function complex_multilocale_test() {
       ]);
     },
     { visibleDefaultEngines: ["multilocale-af", "multilocale-an"] }
+  );
+});
+add_task(async function test_manifest_selection() {
+  await forceExpiration();
+  Region._setHomeRegion("an", false);
+  Services.locale.availableLocales = ["af"];
+  Services.locale.requestedLocales = ["af"];
+
+  await withGeoServer(
+    async function cont(requests) {
+      await restart();
+      let engine = await Services.search.getEngineByName("Multilocale AN");
+      Assert.ok(
+        engine.iconURI.spec.endsWith("favicon-an.ico"),
+        "Should have the correct favicon for an extension of one locale using a different locale."
+      );
+      Assert.equal(
+        engine.description,
+        "A enciclopedia Libre",
+        "Should have the correct engine name for an extension of one locale using a different locale."
+      );
+    },
+    { visibleDefaultEngines: ["multilocale-an"] }
   );
 });

@@ -74,12 +74,12 @@ class Instance {
   Instance(JSContext* cx, HandleWasmInstanceObject object, SharedCode code,
            UniqueTlsData tlsData, HandleWasmMemoryObject memory,
            SharedTableVector&& tables, StructTypeDescrVector&& structTypeDescrs,
-           const JSFunctionVector& funcImports,
-           const ValVector& globalImportValues,
-           const WasmGlobalObjectVector& globalObjs,
            UniqueDebugState maybeDebug);
   ~Instance();
-  bool init(JSContext* cx, const DataSegmentVector& dataSegments,
+  bool init(JSContext* cx, const JSFunctionVector& funcImports,
+            const ValVector& globalImportValues,
+            const WasmGlobalObjectVector& globalObjs,
+            const DataSegmentVector& dataSegments,
             const ElemSegmentVector& elemSegments);
   void trace(JSTracer* trc);
 
@@ -187,9 +187,9 @@ class Instance {
   static int32_t callImport_void(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_i32(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_i64(Instance*, int32_t, int32_t, uint64_t*);
+  static int32_t callImport_v128(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_f64(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_anyref(Instance*, int32_t, int32_t, uint64_t*);
-  static int32_t callImport_nullref(Instance*, int32_t, int32_t, uint64_t*);
   static int32_t callImport_funcref(Instance*, int32_t, int32_t, uint64_t*);
   static uint32_t memoryGrow_i32(Instance* instance, uint32_t delta);
   static uint32_t memorySize_i32(Instance* instance);
@@ -227,7 +227,7 @@ class Instance {
   static int32_t tableInit(Instance* instance, uint32_t dstOffset,
                            uint32_t srcOffset, uint32_t len, uint32_t segIndex,
                            uint32_t tableIndex);
-  static void* funcRef(Instance* instance, uint32_t funcIndex);
+  static void* refFunc(Instance* instance, uint32_t funcIndex);
   static void preBarrierFiltering(Instance* instance, gc::Cell** location);
   static void postBarrier(Instance* instance, gc::Cell** location);
   static void postBarrierFiltering(Instance* instance, gc::Cell** location);
@@ -237,6 +237,9 @@ class Instance {
 };
 
 using UniqueInstance = UniquePtr<Instance>;
+
+bool ResultsToJSValue(JSContext* cx, ResultType type, void* registerResultLoc,
+                      Maybe<char*> stackResultsLoc, MutableHandleValue rval);
 
 }  // namespace wasm
 }  // namespace js

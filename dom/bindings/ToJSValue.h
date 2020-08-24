@@ -7,10 +7,10 @@
 #ifndef mozilla_dom_ToJSValue_h
 #define mozilla_dom_ToJSValue_h
 
-#include "mozilla/TypeTraits.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/CallbackObject.h"
 #include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/TypedArray.h"
 #include "jsapi.h"

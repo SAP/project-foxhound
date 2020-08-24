@@ -18,34 +18,29 @@
 //! The code here deals with adapting the `cranelift_wasm` module to the specifics of BaldrMonkey's
 //! internal data structures.
 
-use crate::bindings::GlobalDesc;
-use cranelift_codegen::ir::immediates::Offset32;
 use std::collections::HashMap;
 
 use cranelift_codegen::cursor::{Cursor, FuncCursor};
 use cranelift_codegen::entity::{EntityRef, PrimaryMap, SecondaryMap};
 use cranelift_codegen::ir;
 use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::immediates::Offset32;
 use cranelift_codegen::ir::InstBuilder;
 use cranelift_codegen::isa::{CallConv, TargetFrontendConfig, TargetIsa};
 use cranelift_codegen::packed_option::PackedOption;
 use cranelift_wasm::{
-    FuncEnvironment, FuncIndex, GlobalIndex, GlobalVariable, MemoryIndex, ReturnMode,
-    SignatureIndex, TableIndex, TargetEnvironment, WasmError, WasmResult,
+    FuncEnvironment, FuncIndex, FunctionBuilder, GlobalIndex, GlobalVariable, MemoryIndex,
+    ReturnMode, SignatureIndex, TableIndex, TargetEnvironment, WasmError, WasmResult,
 };
 
-use crate::bindings::{self, SymbolicAddress};
+use crate::bindings::{self, GlobalDesc, SymbolicAddress};
 use crate::compile::{symbolic_function_name, wasm_function_name};
+use crate::isa::{platform::USES_HEAP_REG, POINTER_SIZE};
 
 #[cfg(target_pointer_width = "64")]
-const POINTER_TYPE: ir::Type = ir::types::I64;
+pub const POINTER_TYPE: ir::Type = ir::types::I64;
 #[cfg(target_pointer_width = "32")]
-const POINTER_TYPE: ir::Type = ir::types::I32;
-
-#[cfg(target_pointer_width = "64")]
-pub const POINTER_SIZE: i32 = 8;
-#[cfg(target_pointer_width = "32")]
-pub const POINTER_SIZE: i32 = 4;
+pub const POINTER_TYPE: ir::Type = ir::types::I32;
 
 #[cfg(target_pointer_width = "64")]
 pub const REF_TYPE: ir::Type = ir::types::R64;
@@ -74,7 +69,7 @@ fn init_sig_from_wsig(
         sig.params.push(ir::AbiParam::new(arg));
     }
 
-    if let Some(ret_type) = wsig.ret_type()? {
+    for ret_type in wsig.results()? {
         let ret = match ret_type {
             // Spidermonkey requires i32 returns to have their high 32 bits
             // zero so that it can directly box them.
@@ -100,7 +95,7 @@ pub fn init_sig(
     call_conv: CallConv,
     func_index: FuncIndex,
 ) -> WasmResult<ir::Signature> {
-    let wsig = env.function_signature(func_index);
+    let wsig = env.func_sig(func_index);
     init_sig_from_wsig(call_conv, wsig)
 }
 
@@ -263,11 +258,13 @@ const FN_POST_BARRIER: InstanceCall = InstanceCall {
 
 pub const TRAP_THROW_REPORTED: u16 = 1;
 
-/// A `TargetIsa` and `ModuleEnvironment` joined so we can implement `FuncEnvironment`.
-pub struct TransEnv<'a, 'b, 'c> {
-    isa: &'a dyn TargetIsa,
-    env: &'b bindings::ModuleEnvironment<'b>,
-    static_env: &'c bindings::StaticEnvironment,
+/// A translation context that implements `FuncEnvironment` for the specific Spidermonkey
+/// translation bits.
+pub struct TransEnv<'static_env, 'module_env> {
+    env: bindings::ModuleEnvironment<'module_env>,
+    static_env: &'static_env bindings::StaticEnvironment,
+
+    target_frontend_config: TargetFrontendConfig,
 
     /// Information about the function pointer tables `self.env` knowns about. Indexed by table
     /// index.
@@ -311,16 +308,16 @@ pub struct TransEnv<'a, 'b, 'c> {
     realm_addr: PackedOption<ir::GlobalValue>,
 }
 
-impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
+impl<'static_env, 'module_env> TransEnv<'static_env, 'module_env> {
     pub fn new(
-        isa: &'a dyn TargetIsa,
-        env: &'b bindings::ModuleEnvironment,
-        static_env: &'c bindings::StaticEnvironment,
+        isa: &dyn TargetIsa,
+        env: bindings::ModuleEnvironment<'module_env>,
+        static_env: &'static_env bindings::StaticEnvironment,
     ) -> Self {
         TransEnv {
-            isa,
             env,
             static_env,
+            target_frontend_config: isa.frontend_config(),
             tables: PrimaryMap::new(),
             signatures: HashMap::new(),
             func_gvs: SecondaryMap::new(),
@@ -331,6 +328,20 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
             cx_addr: None.into(),
             realm_addr: None.into(),
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.tables.clear();
+        self.signatures.clear();
+        self.func_gvs.clear();
+        self.vmctx_gv = None.into();
+        self.instance_gv = None.into();
+        self.interrupt_gv = None.into();
+        for entry in self.symbolic.iter_mut() {
+            *entry = None.into();
+        }
+        self.cx_addr = None.into();
+        self.realm_addr = None.into();
     }
 
     /// Get the `vmctx` global value.
@@ -397,7 +408,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
                 let vmctx = self.get_vmctx_gv(pos.func);
                 let gv = pos.func.create_global_value(ir::GlobalValueData::IAddImm {
                     base: vmctx,
-                    offset: imm64(self.static_env.instanceTlsOffset),
+                    offset: imm64(self.static_env.instance_tls_offset),
                     global_type: POINTER_TYPE,
                 });
                 self.instance_gv = gv.into();
@@ -417,7 +428,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
                 let vmctx = self.get_vmctx_gv(pos.func);
                 let gv = pos.func.create_global_value(ir::GlobalValueData::IAddImm {
                     base: vmctx,
-                    offset: imm64(self.static_env.interruptTlsOffset),
+                    offset: imm64(self.static_env.interrupt_tls_offset),
                     global_type: POINTER_TYPE,
                 });
                 self.interrupt_gv = gv.into();
@@ -463,7 +474,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
                 .func
                 .create_global_value(ir::GlobalValueData::IAddImm {
                     base: vmctx,
-                    offset: imm64(self.static_env.cxTlsOffset),
+                    offset: imm64(self.static_env.cx_tls_offset),
                     global_type: POINTER_TYPE,
                 })
                 .into();
@@ -475,7 +486,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
                 .func
                 .create_global_value(ir::GlobalValueData::IAddImm {
                     base: vmctx,
-                    offset: imm64(self.static_env.realmTlsOffset),
+                    offset: imm64(self.static_env.realm_tls_offset),
                     global_type: POINTER_TYPE,
                 })
                 .into();
@@ -488,7 +499,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         let realm_addr_val = pos.ins().global_value(ptr, self.realm_addr.unwrap());
         let realm = pos.ins().load(ptr, flags, realm_addr_val, 0);
         pos.ins()
-            .store(flags, realm, cx, offset32(self.static_env.realmCxOffset));
+            .store(flags, realm, cx, offset32(self.static_env.realm_cx_offset));
     }
 
     /// Update the JSContext's realm value in preparation for making an indirect call through
@@ -498,12 +509,15 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         let flags = ir::MemFlags::trusted();
         let cx = pos
             .ins()
-            .load(ptr, flags, vmctx, offset32(self.static_env.cxTlsOffset));
-        let realm = pos
-            .ins()
-            .load(ptr, flags, vmctx, offset32(self.static_env.realmTlsOffset));
+            .load(ptr, flags, vmctx, offset32(self.static_env.cx_tls_offset));
+        let realm = pos.ins().load(
+            ptr,
+            flags,
+            vmctx,
+            offset32(self.static_env.realm_tls_offset),
+        );
         pos.ins()
-            .store(flags, realm, cx, offset32(self.static_env.realmCxOffset));
+            .store(flags, realm, cx, offset32(self.static_env.realm_cx_offset));
     }
 
     /// Update the JSContext's realm value in preparation for making a call to an imported
@@ -518,24 +532,24 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         let flags = ir::MemFlags::trusted();
         let cx = pos
             .ins()
-            .load(ptr, flags, vmctx, offset32(self.static_env.cxTlsOffset));
+            .load(ptr, flags, vmctx, offset32(self.static_env.cx_tls_offset));
         let realm = pos.ins().load(
             ptr,
             flags,
             gv_addr,
-            offset32(self.static_env.realmFuncImportTlsOffset),
+            offset32(self.static_env.realm_func_import_tls_offset),
         );
         pos.ins()
-            .store(flags, realm, cx, offset32(self.static_env.realmCxOffset));
+            .store(flags, realm, cx, offset32(self.static_env.realm_cx_offset));
     }
 
     fn load_pinned_reg(&self, pos: &mut FuncCursor, vmctx: ir::Value) {
-        if cfg!(feature = "cranelift_x86") && cfg!(target_pointer_width = "64") {
+        if USES_HEAP_REG {
             let heap_base = pos.ins().load(
                 POINTER_TYPE,
                 ir::MemFlags::trusted(),
                 vmctx,
-                self.static_env.memoryBaseTlsOffset as i32,
+                self.static_env.memory_base_tls_offset as i32,
             );
             pos.ins().set_pinned_reg(heap_base);
         }
@@ -646,17 +660,16 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
     }
 }
 
-impl<'a, 'b, 'c> TargetEnvironment for TransEnv<'a, 'b, 'c> {
+impl<'static_env, 'module_env> TargetEnvironment for TransEnv<'static_env, 'module_env> {
     fn target_config(&self) -> TargetFrontendConfig {
-        self.isa.frontend_config()
+        self.target_frontend_config
     }
-
     fn pointer_type(&self) -> ir::Type {
         POINTER_TYPE
     }
 }
 
-impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
+impl<'static_env, 'module_env> FuncEnvironment for TransEnv<'static_env, 'module_env> {
     fn make_global(
         &mut self,
         func: &mut ir::Function,
@@ -699,7 +712,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
 
         let vcmtx = self.get_vmctx_gv(func);
 
-        let bound = self.static_env.staticMemoryBound as u64;
+        let bound = self.static_env.static_memory_bound as u64;
         let is_static = bound > 0;
 
         // Get the `TlsData::memoryBase` field.
@@ -718,7 +731,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
             // Get the `TlsData::boundsCheckLimit` field.
             let bound_gv = func.create_global_value(ir::GlobalValueData::Load {
                 base: vcmtx,
-                offset: POINTER_SIZE.into(),
+                offset: (POINTER_SIZE as i32).into(),
                 global_type: ir::types::I32,
                 readonly: false,
             });
@@ -726,7 +739,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         };
 
         let min_size = (self.env.min_memory_length() as u64).into();
-        let offset_guard_size = (self.static_env.memoryGuardSize as u64).into();
+        let offset_guard_size = (self.static_env.memory_guard_size as u64).into();
 
         Ok(func.create_heap(ir::HeapData {
             base,
@@ -845,7 +858,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         let oob = pos
             .ins()
             .icmp(IntCC::UnsignedGreaterThanOrEqual, callee, tlength);
-        pos.ins().trapnz(oob, ir::TrapCode::OutOfBounds);
+        pos.ins().trapnz(oob, ir::TrapCode::TableOutOfBounds);
 
         // 3. Load the wtable base pointer from a global.
         let tbase = pos.ins().global_value(POINTER_TYPE, base_gv);
@@ -870,9 +883,12 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         // Handle external tables, set up environment.
         // A function table call could redirect execution to another module with a different realm,
         // so switch to this realm just in case.
-        let callee_vmctx =
-            pos.ins()
-                .load(POINTER_TYPE, ir::MemFlags::trusted(), entry, POINTER_SIZE);
+        let callee_vmctx = pos.ins().load(
+            POINTER_TYPE,
+            ir::MemFlags::trusted(),
+            entry,
+            POINTER_SIZE as i32,
+        );
         self.switch_to_indirect_callee_realm(&mut pos, callee_vmctx);
         self.load_pinned_reg(&mut pos, callee_vmctx);
 
@@ -919,9 +935,12 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
             let fit_code = pos
                 .ins()
                 .load(POINTER_TYPE, ir::MemFlags::trusted(), gv_addr, 0);
-            let fit_tls =
-                pos.ins()
-                    .load(POINTER_TYPE, ir::MemFlags::trusted(), gv_addr, POINTER_SIZE);
+            let fit_tls = pos.ins().load(
+                POINTER_TYPE,
+                ir::MemFlags::trusted(),
+                gv_addr,
+                POINTER_SIZE as i32,
+            );
 
             // Switch to the callee's realm.
             self.switch_to_import_realm(&mut pos, fit_tls, gv_addr);
@@ -1065,11 +1084,12 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
     fn translate_table_grow(
         &mut self,
         mut pos: FuncCursor,
-        table_index: u32,
+        table_index: TableIndex,
+        _table: ir::Table,
         delta: ir::Value,
         init_value: ir::Value,
     ) -> WasmResult<ir::Value> {
-        let table_index = pos.ins().iconst(ir::types::I32, table_index as i64);
+        let table_index = pos.ins().iconst(ir::types::I32, table_index.index() as i64);
         Ok(self
             .instance_call(&mut pos, &FN_TABLE_GROW, &[init_value, delta, table_index])
             .unwrap())
@@ -1077,11 +1097,15 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
 
     fn translate_table_get(
         &mut self,
-        mut pos: FuncCursor,
-        table_index: u32,
+        builder: &mut FunctionBuilder,
+        table_index: TableIndex,
+        _table: ir::Table,
         index: ir::Value,
     ) -> WasmResult<ir::Value> {
-        let table_index = pos.ins().iconst(ir::types::I32, table_index as i64);
+        // TODO(bug 1650038): make use of the `FunctionBuilder` here and its
+        // ability to edit the CFG in order to add a fast-path.
+        let mut pos = builder.cursor();
+        let table_index = pos.ins().iconst(ir::types::I32, table_index.index() as i64);
         Ok(self
             .instance_call(&mut pos, &FN_TABLE_GET, &[index, table_index])
             .unwrap())
@@ -1089,12 +1113,16 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
 
     fn translate_table_set(
         &mut self,
-        mut pos: FuncCursor,
-        table_index: u32,
+        builder: &mut FunctionBuilder,
+        table_index: TableIndex,
+        _table: ir::Table,
         value: ir::Value,
         index: ir::Value,
     ) -> WasmResult<()> {
-        let table_index = pos.ins().iconst(ir::types::I32, table_index as i64);
+        // TODO(bug 1650038): make use of the `FunctionBuilder` here and its
+        // ability to edit the CFG in order to add a fast-path.
+        let mut pos = builder.cursor();
+        let table_index = pos.ins().iconst(ir::types::I32, table_index.index() as i64);
         self.instance_call(&mut pos, &FN_TABLE_SET, &[index, value, table_index]);
         Ok(())
     }
@@ -1127,12 +1155,12 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
     fn translate_table_fill(
         &mut self,
         mut pos: FuncCursor,
-        table_index: u32,
+        table_index: TableIndex,
         dst: ir::Value,
         val: ir::Value,
         len: ir::Value,
     ) -> WasmResult<()> {
-        let table_index = pos.ins().iconst(ir::types::I32, table_index as i64);
+        let table_index = pos.ins().iconst(ir::types::I32, table_index.index() as i64);
         self.instance_call(&mut pos, &FN_TABLE_FILL, &[dst, val, len, table_index]);
         Ok(())
     }
@@ -1168,9 +1196,9 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
     fn translate_ref_func(
         &mut self,
         mut pos: FuncCursor,
-        func_index: u32,
+        func_index: FuncIndex,
     ) -> WasmResult<ir::Value> {
-        let func_index = pos.ins().iconst(ir::types::I32, func_index as i64);
+        let func_index = pos.ins().iconst(ir::types::I32, func_index.index() as i64);
         Ok(self
             .instance_call(&mut pos, &FN_REF_FUNC, &[func_index])
             .unwrap())
@@ -1222,7 +1250,8 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
 
     fn translate_loop_header(&mut self, mut pos: FuncCursor) -> WasmResult<()> {
         let interrupt = self.load_interrupt_flag(&mut pos);
-        pos.ins().trapnz(interrupt, ir::TrapCode::Interrupt);
+        pos.ins()
+            .resumable_trapnz(interrupt, ir::TrapCode::Interrupt);
         Ok(())
     }
 
@@ -1267,6 +1296,6 @@ impl TableInfo {
     pub fn entry_size(&self) -> i64 {
         // Each entry is an `wasm::FunctionTableElem` which consists of the code pointer and a new
         // VM context pointer.
-        i64::from(POINTER_SIZE) * 2
+        (POINTER_SIZE * 2) as i64
     }
 }

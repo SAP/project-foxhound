@@ -112,7 +112,11 @@ class js::VerifyPreTracer final : public JS::CallbackTracer {
         curnode(nullptr),
         root(nullptr),
         edgeptr(nullptr),
-        term(nullptr) {}
+        term(nullptr) {
+    // We don't care about weak edges here. Since they are not marked they
+    // cannot cause the problem that the pre-write barrier protects against.
+    setTraceWeakEdges(false);
+  }
 
   ~VerifyPreTracer() { js_free(root); }
 };
@@ -493,13 +497,13 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
   JSRuntime* runtime = gc->rt;
   GCMarker* gcmarker = &gc->marker;
 
-  MOZ_ASSERT(gc->nursery().isEmpty());
   MOZ_ASSERT(!gcmarker->isWeakMarking());
-
-  gc->waitBackgroundSweepEnd();
 
   /* Wait for off-thread parsing which can allocate. */
   HelperThreadState().waitForAllThreads();
+
+  gc->waitBackgroundAllocEnd();
+  gc->waitBackgroundSweepEnd();
 
   /* Save existing mark bits. */
   {
@@ -602,7 +606,7 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
     gcstats::AutoPhase ap1(gc->stats(), gcstats::PhaseKind::SWEEP);
     gcstats::AutoPhase ap2(gc->stats(), gcstats::PhaseKind::SWEEP_MARK);
 
-    gc->markAllWeakReferences(gcstats::PhaseKind::SWEEP_MARK_WEAK);
+    gc->markAllWeakReferences();
 
     /* Update zone state for gray marking. */
     for (GCZonesIter zone(gc); !zone.done(); zone.next()) {
@@ -613,7 +617,7 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
     gcmarker->setMainStackColor(MarkColor::Gray);
 
     gc->markAllGrayReferences(gcstats::PhaseKind::SWEEP_MARK_GRAY);
-    gc->markAllWeakReferences(gcstats::PhaseKind::SWEEP_MARK_GRAY_WEAK);
+    gc->markAllWeakReferences();
     gc->marker.setMainStackColor(MarkColor::Black);
 
     /* Restore zone state. */
@@ -629,7 +633,9 @@ void js::gc::MarkingValidator::nonIncrementalMark(AutoGCSession& session) {
     for (auto chunk = gc->allNonEmptyChunks(lock); !chunk.done();
          chunk.next()) {
       ChunkBitmap* bitmap = &chunk->bitmap;
-      ChunkBitmap* entry = map.lookup(chunk)->value().get();
+      auto ptr = map.lookup(chunk);
+      MOZ_RELEASE_ASSERT(ptr, "Chunk not found in map");
+      ChunkBitmap* entry = ptr->value().get();
       std::swap(*entry, *bitmap);
     }
   }
@@ -666,7 +672,6 @@ void js::gc::MarkingValidator::validate() {
     return;
   }
 
-  MOZ_ASSERT(gc->nursery().isEmpty());
   MOZ_ASSERT(!gc->marker.isWeakMarking());
 
   gc->waitBackgroundSweepEnd();
@@ -818,17 +823,7 @@ bool HeapCheckTracerBase::onChild(const JS::GCCellPtr& thing) {
   }
 
   // Don't trace into GC in zones being used by helper threads.
-  Zone* zone;
-  if (thing.is<JSObject>()) {
-    zone = thing.as<JSObject>().zone();
-  } else if (thing.is<JSString>()) {
-    zone = thing.as<JSString>().zone();
-  } else if (thing.is<JS::BigInt>()) {
-    zone = thing.as<JS::BigInt>().zone();
-  } else {
-    zone = cell->asTenured().zone();
-  }
-
+  Zone* zone = thing.asCell()->zone();
   if (zone->usedByHelperThread()) {
     return true;
   }
@@ -1009,22 +1004,6 @@ JS_FRIEND_API bool js::CheckGrayMarkingState(JSRuntime* rt) {
   return tracer.check(session);
 }
 
-static Zone* GetCellZoneFromAnyThread(Cell* cell) {
-  if (cell->is<JSObject>()) {
-    return cell->as<JSObject>()->zoneFromAnyThread();
-  }
-
-  if (cell->is<JSString>()) {
-    return cell->as<JSString>()->zoneFromAnyThread();
-  }
-
-  if (cell->is<JS::BigInt>()) {
-    return cell->as<JS::BigInt>()->zoneFromAnyThread();
-  }
-
-  return cell->asTenured().zoneFromAnyThread();
-}
-
 static JSObject* MaybeGetDelegate(Cell* cell) {
   if (!cell->is<JSObject>()) {
     return nullptr;
@@ -1046,11 +1025,11 @@ bool js::gc::CheckWeakMapEntryMarking(const WeakMapBase* map, Cell* key,
   MOZ_ASSERT_IF(object, object->zone() == zone);
 
   // Debugger weak maps can have keys in different zones.
-  Zone* keyZone = GetCellZoneFromAnyThread(key);
+  Zone* keyZone = key->zoneFromAnyThread();
   MOZ_ASSERT_IF(!map->allowKeysInOtherZones(),
                 keyZone == zone || keyZone->isAtomsZone());
 
-  Zone* valueZone = GetCellZoneFromAnyThread(value);
+  Zone* valueZone = value->zoneFromAnyThread();
   MOZ_ASSERT(valueZone == zone || valueZone->isAtomsZone());
 
   if (object && object->color() != map->mapColor) {
@@ -1102,3 +1081,24 @@ bool js::gc::CheckWeakMapEntryMarking(const WeakMapBase* map, Cell* key,
 }
 
 #endif  // defined(JS_GC_ZEAL) || defined(DEBUG)
+
+#ifdef DEBUG
+// Return whether an arbitrary pointer is within a cell with the given
+// traceKind. Only for assertions.
+bool GCRuntime::isPointerWithinTenuredCell(void* ptr, JS::TraceKind traceKind) {
+  AutoLockGC lock(this);
+  for (auto chunk = allNonEmptyChunks(lock); !chunk.done(); chunk.next()) {
+    MOZ_ASSERT(!chunk->isNurseryChunk());
+    if (ptr >= &chunk->arenas[0] && ptr < &chunk->arenas[ArenasPerChunk]) {
+      auto* arena = reinterpret_cast<Arena*>(uintptr_t(ptr) & ~ArenaMask);
+      if (!arena->allocated()) {
+        return false;
+      }
+
+      return MapAllocToTraceKind(arena->getAllocKind()) == traceKind;
+    }
+  }
+
+  return false;
+}
+#endif  // DEBUG

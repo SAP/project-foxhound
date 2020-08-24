@@ -415,20 +415,20 @@ MOZ_END_EXTERN_C
  */
 
 #ifdef __cplusplus
-#  include "mozilla/TypeTraits.h"
+#  include <type_traits>
 namespace mozilla {
 namespace detail {
 
 template <typename T>
 struct AssertionConditionType {
-  typedef typename RemoveReference<T>::Type ValueT;
-  static_assert(!IsArray<ValueT>::value,
+  using ValueT = std::remove_reference_t<T>;
+  static_assert(!std::is_array_v<ValueT>,
                 "Expected boolean assertion condition, got an array or a "
                 "string!");
-  static_assert(!IsFunction<ValueT>::value,
+  static_assert(!std::is_function_v<ValueT>,
                 "Expected boolean assertion condition, got a function! Did "
                 "you intend to call that function?");
-  static_assert(!IsFloatingPoint<ValueT>::value,
+  static_assert(!std::is_floating_point_v<ValueT>,
                 "It's often a bad idea to assert that a floating-point number "
                 "is nonzero, because such assertions tend to intermittently "
                 "fail. Shouldn't your code gracefully handle this case instead "
@@ -664,81 +664,23 @@ struct AssertionConditionType {
 #endif
 
 /*
- * MOZ_ALWAYS_TRUE(expr) and MOZ_ALWAYS_FALSE(expr) always evaluate the provided
- * expression, in debug builds and in release builds both.  Then, in debug
- * builds only, the value of the expression is asserted either true or false
- * using MOZ_ASSERT.
+ * MOZ_ALWAYS_TRUE(expr) and friends always evaluate the provided expression,
+ * in debug builds and in release builds both.  Then, in debug builds and
+ * Nightly and DevEdition release builds, the value of the expression is
+ * asserted either true or false using MOZ_DIAGNOSTIC_ASSERT.
  */
-#ifdef DEBUG
-#  define MOZ_ALWAYS_TRUE(expr)   \
-    do {                          \
-      if ((expr)) {               \
-        /* Do nothing. */         \
-      } else {                    \
-        MOZ_ASSERT(false, #expr); \
-      }                           \
-    } while (false)
-#  define MOZ_ALWAYS_FALSE(expr)  \
-    do {                          \
-      if ((expr)) {               \
-        MOZ_ASSERT(false, #expr); \
-      } else {                    \
-        /* Do nothing. */         \
-      }                           \
-    } while (false)
-#  define MOZ_ALWAYS_OK(expr) MOZ_ASSERT((expr).isOk())
-#  define MOZ_ALWAYS_ERR(expr) MOZ_ASSERT((expr).isErr())
-#else
-#  define MOZ_ALWAYS_TRUE(expr)     \
-    do {                            \
-      if ((expr)) {                 \
-        /* Silence MOZ_MUST_USE. */ \
-      }                             \
-    } while (false)
-#  define MOZ_ALWAYS_FALSE(expr)    \
-    do {                            \
-      if ((expr)) {                 \
-        /* Silence MOZ_MUST_USE. */ \
-      }                             \
-    } while (false)
-#  define MOZ_ALWAYS_OK(expr)       \
-    do {                            \
-      if ((expr).isOk()) {          \
-        /* Silence MOZ_MUST_USE. */ \
-      }                             \
-    } while (false)
-#  define MOZ_ALWAYS_ERR(expr)      \
-    do {                            \
-      if ((expr).isErr()) {         \
-        /* Silence MOZ_MUST_USE. */ \
-      }                             \
-    } while (false)
-#endif
+#define MOZ_ALWAYS_TRUE(expr)              \
+  do {                                     \
+    if (MOZ_LIKELY(expr)) {                \
+      /* Silence MOZ_MUST_USE. */          \
+    } else {                               \
+      MOZ_DIAGNOSTIC_ASSERT(false, #expr); \
+    }                                      \
+  } while (false)
 
-/*
- * MOZ_DIAGNOSTIC_ALWAYS_TRUE is like MOZ_ALWAYS_TRUE, but using
- * MOZ_DIAGNOSTIC_ASSERT as the underlying assert.
- *
- * See the block comment for MOZ_DIAGNOSTIC_ASSERT above for more details on how
- * diagnostic assertions work and how to use them.
- */
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-#  define MOZ_DIAGNOSTIC_ALWAYS_TRUE(expr)   \
-    do {                                     \
-      if ((expr)) {                          \
-        /* Do nothing. */                    \
-      } else {                               \
-        MOZ_DIAGNOSTIC_ASSERT(false, #expr); \
-      }                                      \
-    } while (false)
-#else
-#  define MOZ_DIAGNOSTIC_ALWAYS_TRUE(expr) \
-    do {                                   \
-      if ((expr)) {                        \
-        /* Silence MOZ_MUST_USE. */        \
-      }                                    \
-    } while (false)
-#endif
+#define MOZ_ALWAYS_FALSE(expr) MOZ_ALWAYS_TRUE(!(expr))
+#define MOZ_ALWAYS_OK(expr) MOZ_ALWAYS_TRUE((expr).isOk())
+#define MOZ_ALWAYS_ERR(expr) MOZ_ALWAYS_TRUE((expr).isErr())
 
 #undef MOZ_DUMP_ASSERTION_STACK
 #undef MOZ_CRASH_CRASHREPORT

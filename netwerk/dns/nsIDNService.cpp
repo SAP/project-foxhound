@@ -3,15 +3,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "MainThreadUtils.h"
 #include "mozilla/Preferences.h"
 #include "nsIDNService.h"
 #include "nsReadableUtils.h"
 #include "nsCRT.h"
+#include "nsServiceManagerUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsUnicodeProperties.h"
 #include "nsUnicodeScriptCodes.h"
 #include "harfbuzz/hb.h"
 #include "punycode.h"
+#include "mozilla/ArrayUtils.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 
@@ -25,6 +28,7 @@ const bool kIDNA2008_TransitionalProcessing = false;
 #include "ICUUtils.h"
 #include "unicode/uscript.h"
 
+using namespace mozilla;
 using namespace mozilla::unicode;
 using namespace mozilla::net;
 using mozilla::Preferences;
@@ -94,23 +98,23 @@ void nsIDNService::prefsChanged(const char* pref) {
   MOZ_ASSERT(NS_IsMainThread());
   mLock.AssertCurrentThreadOwns();
 
-  if (pref && NS_LITERAL_CSTRING(NS_NET_PREF_EXTRAALLOWED).Equals(pref)) {
+  if (pref && nsLiteralCString(NS_NET_PREF_EXTRAALLOWED).Equals(pref)) {
     InitializeBlocklist(mIDNBlocklist);
   }
-  if (pref && NS_LITERAL_CSTRING(NS_NET_PREF_EXTRABLOCKED).Equals(pref)) {
+  if (pref && nsLiteralCString(NS_NET_PREF_EXTRABLOCKED).Equals(pref)) {
     InitializeBlocklist(mIDNBlocklist);
   }
-  if (!pref || NS_LITERAL_CSTRING(NS_NET_PREF_SHOWPUNYCODE).Equals(pref)) {
+  if (!pref || nsLiteralCString(NS_NET_PREF_SHOWPUNYCODE).Equals(pref)) {
     bool val;
     if (NS_SUCCEEDED(Preferences::GetBool(NS_NET_PREF_SHOWPUNYCODE, &val)))
       mShowPunycode = val;
   }
-  if (!pref || NS_LITERAL_CSTRING(NS_NET_PREF_IDNUSEWHITELIST).Equals(pref)) {
+  if (!pref || nsLiteralCString(NS_NET_PREF_IDNUSEWHITELIST).Equals(pref)) {
     bool val;
     if (NS_SUCCEEDED(Preferences::GetBool(NS_NET_PREF_IDNUSEWHITELIST, &val)))
       mIDNUseWhitelist = val;
   }
-  if (!pref || NS_LITERAL_CSTRING(NS_NET_PREF_IDNRESTRICTION).Equals(pref)) {
+  if (!pref || nsLiteralCString(NS_NET_PREF_IDNRESTRICTION).Equals(pref)) {
     nsAutoCString profile;
     if (NS_FAILED(
             Preferences::GetCString(NS_NET_PREF_IDNRESTRICTION, profile))) {
@@ -655,7 +659,7 @@ nsresult nsIDNService::decodeACE(const nsACString& in, nsACString& out,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (flag == eStringPrepForDNS &&
-      !ace.Equals(in, nsCaseInsensitiveCStringComparator())) {
+      !ace.Equals(in, nsCaseInsensitiveCStringComparator)) {
     return NS_ERROR_MALFORMED_URI;
   }
 

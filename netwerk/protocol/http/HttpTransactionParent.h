@@ -6,6 +6,8 @@
 #ifndef HttpTransactionParent_h__
 #define HttpTransactionParent_h__
 
+#include "mozilla/Atomics.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/net/HttpTransactionShell.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/PHttpTransactionParent.h"
@@ -35,13 +37,13 @@ class HttpTransactionParent final : public PHttpTransactionParent,
                                     public nsIRequest,
                                     public nsIThreadRetargetableRequest {
  public:
-  NS_DECL_ISUPPORTS
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_HTTPTRANSACTIONSHELL
   NS_DECL_NSIREQUEST
   NS_DECL_NSITHREADRETARGETABLEREQUEST
   NS_DECLARE_STATIC_IID_ACCESSOR(HTTP_TRANSACTION_PARENT_IID)
 
-  explicit HttpTransactionParent();
+  explicit HttpTransactionParent(bool aIsDocumentLoad);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -50,22 +52,20 @@ class HttpTransactionParent final : public PHttpTransactionParent,
       const nsCString& aSecurityInfoSerialization,
       const bool& aProxyConnectFailed, const TimingStructArgs& aTimings,
       const int32_t& aProxyConnectResponseCode,
-      nsTArray<uint8_t>&& aDataForSniffer);
-  mozilla::ipc::IPCResult RecvOnTransportStatus(const nsresult& aStatus,
-                                                const int64_t& aProgress,
-                                                const int64_t& aProgressMax);
-  mozilla::ipc::IPCResult RecvOnDataAvailable(const nsCString& aData,
-                                              const uint64_t& aOffset,
-                                              const uint32_t& aCount);
+      nsTArray<uint8_t>&& aDataForSniffer, const Maybe<nsCString>& aAltSvcUsed);
+  mozilla::ipc::IPCResult RecvOnTransportStatus(
+      const nsresult& aStatus, const int64_t& aProgress,
+      const int64_t& aProgressMax,
+      Maybe<NetworkAddressArg>&& aNetworkAddressArg);
+  mozilla::ipc::IPCResult RecvOnDataAvailable(
+      const nsCString& aData, const uint64_t& aOffset, const uint32_t& aCount,
+      const bool& aDataSentToChildProcess);
   mozilla::ipc::IPCResult RecvOnStopRequest(
       const nsresult& aStatus, const bool& aResponseIsComplete,
       const int64_t& aTransferSize, const TimingStructArgs& aTimings,
       const Maybe<nsHttpHeaderArray>& responseTrailers,
       const bool& aHasStickyConn,
       Maybe<TransactionObserverResult>&& aTransactionObserverResult);
-  mozilla::ipc::IPCResult RecvOnNetAddrUpdate(const NetAddr& aSelfAddr,
-                                              const NetAddr& aPeerAddr,
-                                              const bool& aResolvedByTRR);
   mozilla::ipc::IPCResult RecvOnInitFailed(const nsresult& aStatus);
 
   mozilla::ipc::IPCResult RecvOnH2PushStream(const uint32_t& aPushedStreamId,
@@ -89,11 +89,11 @@ class HttpTransactionParent final : public PHttpTransactionParent,
                         const bool& aProxyConnectFailed,
                         const TimingStructArgs& aTimings,
                         const int32_t& aProxyConnectResponseCode,
-                        nsTArray<uint8_t>&& aDataForSniffer);
-  void DoOnTransportStatus(const nsresult& aStatus, const int64_t& aProgress,
-                           const int64_t& aProgressMax);
+                        nsTArray<uint8_t>&& aDataForSniffer,
+                        const Maybe<nsCString>& aAltSvcUsed);
   void DoOnDataAvailable(const nsCString& aData, const uint64_t& aOffset,
-                         const uint32_t& aCount);
+                         const uint32_t& aCount,
+                         const bool& aDataSentToChildProcess);
   void DoOnStopRequest(
       const nsresult& aStatus, const bool& aResponseIsComplete,
       const int64_t& aTransferSize, const TimingStructArgs& aTimings,
@@ -101,10 +101,17 @@ class HttpTransactionParent final : public PHttpTransactionParent,
       const bool& aHasStickyConn,
       Maybe<TransactionObserverResult>&& aTransactionObserverResult);
   void DoNotifyListener();
+  void ContinueDoNotifyListener();
+  // Get event target for ODA.
+  already_AddRefed<nsIEventTarget> GetODATarget();
+  void CancelOnMainThread(nsresult aRv);
+  void HandleAsyncAbort();
 
   nsCOMPtr<nsITransportEventSink> mEventsink;
   nsCOMPtr<nsIStreamListener> mChannel;
   nsCOMPtr<nsIEventTarget> mTargetThread;
+  nsCOMPtr<nsIEventTarget> mODATarget;
+  Mutex mEventTargetMutex;
   nsCOMPtr<nsISupports> mSecurityInfo;
   UniquePtr<nsHttpResponseHead> mResponseHead;
   UniquePtr<nsHttpHeaderArray> mResponseTrailers;
@@ -114,8 +121,8 @@ class HttpTransactionParent final : public PHttpTransactionParent,
   int64_t mTransferSize;
   int64_t mRequestSize;
   bool mProxyConnectFailed;
-  bool mCanceled;
-  nsresult mStatus;
+  Atomic<bool, ReleaseAcquire> mCanceled;
+  Atomic<nsresult, ReleaseAcquire> mStatus;
   int32_t mSuspendCount;
   bool mResponseHeadTaken;
   bool mResponseTrailersTaken;
@@ -125,6 +132,8 @@ class HttpTransactionParent final : public PHttpTransactionParent,
   bool mResolvedByTRR;
   int32_t mProxyConnectResponseCode;
   uint64_t mChannelId;
+  bool mDataAlreadySent;
+  bool mIsDocumentLoad;
 
   NetAddr mSelfAddr;
   NetAddr mPeerAddr;
@@ -134,6 +143,7 @@ class HttpTransactionParent final : public PHttpTransactionParent,
   TransactionObserverFunc mTransactionObserver;
   OnPushCallback mOnPushCallback;
   nsTArray<uint8_t> mDataForSniffer;
+  std::function<void()> mCallOnResume;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(HttpTransactionParent,

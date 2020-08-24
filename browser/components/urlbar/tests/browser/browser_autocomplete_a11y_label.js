@@ -51,10 +51,10 @@ async function initAccessibilityService() {
 
 add_task(async function switchToTab() {
   let tab = BrowserTestUtils.addTab(gBrowser, "about:robots");
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    waitForFocus: SimpleTest.waitForFocus,
     value: "% robots",
   });
   let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
@@ -92,7 +92,6 @@ add_task(async function searchSuggestions() {
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    waitForFocus: SimpleTest.waitForFocus,
     value: "foo",
   });
   let length = await UrlbarTestUtils.getResultCount(window);
@@ -105,13 +104,9 @@ add_task(async function searchSuggestions() {
   );
   // The first expected search is the search term itself since the heuristic
   // result will come before the search suggestions.
-  let searchTerm = "foo";
-  let expectedSearches = [
-    searchTerm,
-    // The extra space is here due to bug 1550644.
-    "foofoo ",
-    "foo bar",
-  ];
+  // The extra spaces are here due to bug 1550644.
+  let searchTerm = "foo ";
+  let expectedSearches = [searchTerm, "foo foo", "foo bar"];
   for (let i = 0; i < length; i++) {
     let result = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
     if (result.type === UrlbarUtils.RESULT_TYPE.SEARCH) {

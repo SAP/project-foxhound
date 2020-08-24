@@ -5,8 +5,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 include('/media/webrtc/webrtc.mozbuild')
 
-FILES_PER_UNIFIED_FILE = 6
-
 with Files('*'):
     BUG_COMPONENT = ('Core', 'Audio/Video')
 
@@ -23,8 +21,6 @@ component_signaling = ('Core', 'WebRTC: Signaling')
 with Files('IdpSandbox.jsm'):
     BUG_COMPONENT = component_signaling
 with Files('PeerConnection*'):
-    BUG_COMPONENT = component_signaling
-with Files('RTC*'):
     BUG_COMPONENT = component_signaling
 
 component_av = ('Core', 'WebRTC: Audio/Video')
@@ -91,8 +87,6 @@ BROWSER_CHROME_MANIFESTS += [
 
 if CONFIG['MOZ_WEBRTC']:
     MOCHITEST_MANIFESTS += ['tests/mochitest/mochitest.ini']
-    WEBRTC_SIGNALLING_TEST_MANIFESTS += ['tests/mochitest/steeplechase.ini']
-    WEBRTC_SIGNALLING_TEST_MANIFESTS += ['tests/mochitest/steeplechase_long/steeplechase_long.ini']
 
 XPIDL_SOURCES += [
     'nsIAudioDeviceInfo.idl',
@@ -114,11 +108,14 @@ EXPORTS += [
     'AudioConfig.h',
     'AudioConverter.h',
     'AudioDeviceInfo.h',
+    'AudioDriftCorrection.h',
     'AudioMixer.h',
     'AudioPacketizer.h',
+    'AudioRingBuffer.h',
     'AudioSampleFormat.h',
     'AudioSegment.h',
     'AudioStream.h',
+    'AudioThreadRegistry.h',
     'AutoplayPolicy.h',
     'BackgroundVideoDecodingPermissionObserver.h',
     'Benchmark.h',
@@ -128,10 +125,12 @@ EXPORTS += [
     'BufferReader.h',
     'ByteWriter.h',
     'ChannelMediaDecoder.h',
+    'CrossGraphTrack.h',
     'CubebUtils.h',
     'DecoderTraits.h',
     'DOMMediaStream.h',
     'DriftCompensation.h',
+    'DynamicResampler.h',
     'FileBlockCache.h',
     'ForwardedInputTrack.h',
     'FrameStatistics.h',
@@ -170,6 +169,7 @@ EXPORTS += [
     'MediaTrackList.h',
     'MediaTrackListener.h',
     'MemoryBlockCache.h',
+    'MPSCQueue.h',
     'nsIDocumentActivity.h',
     'PrincipalChangeObserver.h',
     'PrincipalHandle.h',
@@ -238,6 +238,7 @@ UNIFIED_SOURCES += [
     'AudioConfig.cpp',
     'AudioConverter.cpp',
     'AudioDeviceInfo.cpp',
+    'AudioRingBuffer.cpp',
     'AudioSegment.cpp',
     'AudioStream.cpp',
     'AudioStreamTrack.cpp',
@@ -253,7 +254,9 @@ UNIFIED_SOURCES += [
     'ChannelMediaDecoder.cpp',
     'ChannelMediaResource.cpp',
     'CloneableWithRangeMediaResource.cpp',
+    'CrossGraphTrack.cpp',
     'DOMMediaStream.cpp',
+    'DynamicResampler.cpp',
     'FileBlockCache.cpp',
     'FileMediaResource.cpp',
     'ForwardedInputTrack.cpp',
@@ -378,17 +381,11 @@ if CONFIG['COMPILE_ENVIRONMENT']:
         '!audioipc_server_ffi_generated.h',
     ]
 
-    GeneratedFile('audioipc_client_ffi_generated.h',
-                  script='/build/RunCbindgen.py', entry_point='generate',
-                  inputs=[
-                      '/media/audioipc/client',
-                  ])
+    CbindgenHeader('audioipc_client_ffi_generated.h',
+                   inputs=['/media/audioipc/client'])
 
-    GeneratedFile('audioipc_server_ffi_generated.h',
-                  script='/build/RunCbindgen.py', entry_point='generate',
-                  inputs=[
-                      '/media/audioipc/server',
-                  ])
+    CbindgenHeader('audioipc_server_ffi_generated.h',
+                   inputs=['/media/audioipc/server'])
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

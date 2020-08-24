@@ -9,14 +9,13 @@
 
 #include "BaseProfiler.h"
 
-#ifndef MOZ_BASE_PROFILER
-#  error Do not #include this header when MOZ_BASE_PROFILER is not #defined.
+#ifndef MOZ_GECKO_PROFILER
+#  error Do not #include this header when MOZ_GECKO_PROFILER is not #defined.
 #endif
 
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/BlocksRingBuffer.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/ProfileBufferEntrySerialization.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -50,7 +49,7 @@ class ProfilerMarkerPayload {
 
   // Compute the number of bytes needed to serialize the `DeserializerTag` and
   // payload, including in the no-payload (nullptr) case.
-  static BlocksRingBuffer::Length TagAndSerializationBytes(
+  static ProfileBufferEntryWriter::Length TagAndSerializationBytes(
       const ProfilerMarkerPayload* aPayload) {
     if (!aPayload) {
       return sizeof(DeserializerTag);
@@ -62,7 +61,7 @@ class ProfilerMarkerPayload {
   // (nullptr) case. Must be of the exact size given by
   // `TagAndSerializationBytes(aPayload)`.
   static void TagAndSerialize(const ProfilerMarkerPayload* aPayload,
-                              BlocksRingBuffer::EntryWriter& aEntryWriter) {
+                              ProfileBufferEntryWriter& aEntryWriter) {
     if (!aPayload) {
       aEntryWriter.WriteObject(DeserializerTag(0));
       return;
@@ -73,7 +72,7 @@ class ProfilerMarkerPayload {
   // Deserialize a payload from an EntryReader, including in the no-payload
   // (nullptr) case.
   static UniquePtr<ProfilerMarkerPayload> DeserializeTagAndPayload(
-      mozilla::BlocksRingBuffer::EntryReader& aER) {
+      mozilla::ProfileBufferEntryReader& aER) {
     const auto tag = aER.ReadObject<DeserializerTag>();
     Deserializer deserializer = DeserializerForTag(tag);
     return deserializer(aER);
@@ -90,7 +89,7 @@ class ProfilerMarkerPayload {
   // an `EntryReader` and return a reconstructed `ProfilerMarkerPayload`
   // sub-object (may be null if there was no payload).
   typedef UniquePtr<ProfilerMarkerPayload> (*Deserializer)(
-      BlocksRingBuffer::EntryReader&);
+      ProfileBufferEntryReader&);
 
   // A `DeserializerTag` will be added before the payload, to help select the
   // correct deserializer when reading back the payload.
@@ -133,12 +132,13 @@ class ProfilerMarkerPayload {
       : mCommonProps(std::move(aCommonProps)) {}
 
   // Serialization/deserialization of common props in ProfilerMarkerPayload.
-  MFBT_API BlocksRingBuffer::Length CommonPropsTagAndSerializationBytes() const;
+  MFBT_API ProfileBufferEntryWriter::Length
+  CommonPropsTagAndSerializationBytes() const;
   MFBT_API void SerializeTagAndCommonProps(
       DeserializerTag aDeserializerTag,
-      BlocksRingBuffer::EntryWriter& aEntryWriter) const;
+      ProfileBufferEntryWriter& aEntryWriter) const;
   MFBT_API static CommonProps DeserializeCommonProps(
-      BlocksRingBuffer::EntryReader& aEntryReader);
+      ProfileBufferEntryReader& aEntryReader);
 
   MFBT_API void StreamType(const char* aMarkerType,
                            SpliceableJSONWriter& aWriter) const;
@@ -151,12 +151,12 @@ class ProfilerMarkerPayload {
  private:
   // Compute the number of bytes needed to serialize the `DeserializerTag` and
   // payload in `SerializeTagAndPayload` below.
-  virtual BlocksRingBuffer::Length TagAndSerializationBytes() const = 0;
+  virtual ProfileBufferEntryWriter::Length TagAndSerializationBytes() const = 0;
 
   // Serialize the `DeserializerTag` and payload into an EntryWriter.
   // Must be of the exact size given by `TagAndSerializationBytes()`.
   virtual void SerializeTagAndPayload(
-      BlocksRingBuffer::EntryWriter& aEntryWriter) const = 0;
+      ProfileBufferEntryWriter& aEntryWriter) const = 0;
 
   CommonProps mCommonProps;
 };
@@ -167,10 +167,11 @@ class ProfilerMarkerPayload {
       const ::mozilla::TimeStamp& aProcessStartTime,                           \
       ::mozilla::baseprofiler::UniqueStacks& aUniqueStacks) const override;    \
   static UniquePtr<ProfilerMarkerPayload> Deserialize(                         \
-      BlocksRingBuffer::EntryReader& aEntryReader);                            \
-  MFBT_API BlocksRingBuffer::Length TagAndSerializationBytes() const override; \
-  MFBT_API void SerializeTagAndPayload(                                        \
-      BlocksRingBuffer::EntryWriter& aEntryWriter) const override;
+      ProfileBufferEntryReader& aEntryReader);                                 \
+  MFBT_API ProfileBufferEntryWriter::Length TagAndSerializationBytes()         \
+      const override;                                                          \
+  MFBT_API void SerializeTagAndPayload(ProfileBufferEntryWriter& aEntryWriter) \
+      const override;
 
 // TODO: Increase the coverage of tracing markers that include InnerWindowID
 // information
@@ -317,19 +318,34 @@ class LogMarkerPayload : public ProfilerMarkerPayload {
   std::string mText;
 };
 
+class MediaSampleMarkerPayload : public ProfilerMarkerPayload {
+ public:
+  MFBT_API MediaSampleMarkerPayload(const int64_t aSampleStartTimeUs,
+                                    const int64_t aSampleEndTimeUs);
+  DECL_BASE_STREAM_PAYLOAD
+
+ private:
+  MFBT_API MediaSampleMarkerPayload(CommonProps&& aCommonProps,
+                                    const int64_t aSampleStartTimeUs,
+                                    const int64_t aSampleEndTimeUs);
+
+  int64_t mSampleStartTimeUs;
+  int64_t mSampleEndTimeUs;
+};
+
 }  // namespace baseprofiler
 
 // Serialize a pointed-at ProfilerMarkerPayload, may be null when there are no
 // payloads.
 template <>
-struct BlocksRingBuffer::Serializer<
+struct ProfileBufferEntryWriter::Serializer<
     const baseprofiler::ProfilerMarkerPayload*> {
   static Length Bytes(const baseprofiler::ProfilerMarkerPayload* aPayload) {
     return baseprofiler::ProfilerMarkerPayload::TagAndSerializationBytes(
         aPayload);
   }
 
-  static void Write(EntryWriter& aEW,
+  static void Write(ProfileBufferEntryWriter& aEW,
                     const baseprofiler::ProfilerMarkerPayload* aPayload) {
     baseprofiler::ProfilerMarkerPayload::TagAndSerialize(aPayload, aEW);
   }
@@ -337,7 +353,7 @@ struct BlocksRingBuffer::Serializer<
 
 // Serialize a pointed-at ProfilerMarkerPayload, may be null for no payloads.
 template <>
-struct BlocksRingBuffer::Serializer<
+struct ProfileBufferEntryWriter::Serializer<
     UniquePtr<baseprofiler::ProfilerMarkerPayload>> {
   static Length Bytes(
       const UniquePtr<baseprofiler::ProfilerMarkerPayload>& aPayload) {
@@ -346,7 +362,7 @@ struct BlocksRingBuffer::Serializer<
   }
 
   static void Write(
-      EntryWriter& aEW,
+      ProfileBufferEntryWriter& aEW,
       const UniquePtr<baseprofiler::ProfilerMarkerPayload>& aPayload) {
     baseprofiler::ProfilerMarkerPayload::TagAndSerialize(aPayload.get(), aEW);
   }
@@ -355,15 +371,16 @@ struct BlocksRingBuffer::Serializer<
 // Deserialize a ProfilerMarkerPayload into a UniquePtr, may be null if there
 // are no payloads.
 template <>
-struct BlocksRingBuffer::Deserializer<
+struct ProfileBufferEntryReader::Deserializer<
     UniquePtr<baseprofiler::ProfilerMarkerPayload>> {
   static void ReadInto(
-      EntryReader& aER,
+      ProfileBufferEntryReader& aER,
       UniquePtr<baseprofiler::ProfilerMarkerPayload>& aPayload) {
     aPayload = Read(aER);
   }
 
-  static UniquePtr<baseprofiler::ProfilerMarkerPayload> Read(EntryReader& aER) {
+  static UniquePtr<baseprofiler::ProfilerMarkerPayload> Read(
+      ProfileBufferEntryReader& aER) {
     return baseprofiler::ProfilerMarkerPayload::DeserializeTagAndPayload(aER);
   }
 };

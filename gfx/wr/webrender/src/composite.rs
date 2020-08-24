@@ -9,10 +9,11 @@ use crate::batch::{resolve_image, get_buffer_kind};
 use crate::gpu_cache::GpuCache;
 use crate::gpu_types::{ZBufferId, ZBufferIdGenerator};
 use crate::internal_types::TextureSource;
-use crate::picture::{ImageDependency, ResolvedSurfaceTexture, TileCacheInstance, TileSurface};
+use crate::picture::{ImageDependency, ResolvedSurfaceTexture, TileCacheInstance, TileId, TileSurface};
 use crate::prim_store::DeferredResolve;
 use crate::renderer::ImageBufferKind;
 use crate::resource_cache::{ImageRequest, ResourceCache};
+use crate::util::Preallocator;
 use std::{ops, u64};
 
 /*
@@ -87,6 +88,19 @@ pub struct CompositeTile {
     pub z_id: ZBufferId,
 }
 
+pub enum ExternalSurfaceDependency {
+    Yuv {
+        image_dependencies: [ImageDependency; 3],
+        color_space: YuvColorSpace,
+        format: YuvFormat,
+        rescale: f32,
+    },
+    Rgb {
+        image_dependency: ImageDependency,
+        flip_y: bool,
+    },
+}
+
 /// Describes information about drawing a primitive as a compositor surface.
 /// For now, we support only YUV images as compositor surfaces, but in future
 /// this will also support RGBA images.
@@ -94,13 +108,11 @@ pub struct ExternalSurfaceDescriptor {
     pub local_rect: PictureRect,
     pub world_rect: WorldRect,
     pub device_rect: DeviceRect,
+    pub local_clip_rect: PictureRect,
     pub clip_rect: DeviceRect,
-    pub image_dependencies: [ImageDependency; 3],
     pub image_rendering: ImageRendering,
-    pub yuv_color_space: YuvColorSpace,
-    pub yuv_format: YuvFormat,
-    pub yuv_rescale: f32,
     pub z_id: ZBufferId,
+    pub dependency: ExternalSurfaceDependency,
     /// If native compositing is enabled, the native compositor surface handle.
     /// Otherwise, this will be None
     pub native_surface_id: Option<NativeSurfaceId>,
@@ -109,18 +121,19 @@ pub struct ExternalSurfaceDescriptor {
     pub update_params: Option<DeviceIntSize>,
 }
 
-/// Information about a plane in a YUV surface.
+/// Information about a plane in a YUV or RGB surface.
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-pub struct YuvPlaneDescriptor {
+#[derive(Debug, Copy, Clone)]
+pub struct ExternalPlaneDescriptor {
     pub texture: TextureSource,
     pub texture_layer: i32,
     pub uv_rect: TexelRect,
 }
 
-impl YuvPlaneDescriptor {
+impl ExternalPlaneDescriptor {
     fn invalid() -> Self {
-        YuvPlaneDescriptor {
+        ExternalPlaneDescriptor {
             texture: TextureSource::Invalid,
             texture_layer: 0,
             uv_rect: TexelRect::invalid(),
@@ -133,6 +146,24 @@ impl YuvPlaneDescriptor {
 #[derive(Debug, Copy, Clone)]
 pub struct ResolvedExternalSurfaceIndex(pub usize);
 
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub enum ResolvedExternalSurfaceColorData {
+    Yuv {
+        // YUV specific information
+        image_dependencies: [ImageDependency; 3],
+        planes: [ExternalPlaneDescriptor; 3],
+        color_space: YuvColorSpace,
+        format: YuvFormat,
+        rescale: f32,
+    },
+    Rgb {
+        image_dependency: ImageDependency,
+        plane: ExternalPlaneDescriptor,
+        flip_y: bool,
+    },
+}
+
 /// An ExternalSurfaceDescriptor that has had image keys
 /// resolved to texture handles. This contains all the
 /// information that the compositor step in renderer
@@ -140,14 +171,8 @@ pub struct ResolvedExternalSurfaceIndex(pub usize);
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct ResolvedExternalSurface {
-    // YUV specific information
-    pub image_dependencies: [ImageDependency; 3],
-    pub yuv_planes: [YuvPlaneDescriptor; 3],
-    pub yuv_color_space: YuvColorSpace,
-    pub yuv_format: YuvFormat,
-    pub yuv_rescale: f32,
+    pub color_data: ResolvedExternalSurfaceColorData,
     pub image_buffer_kind: ImageBufferKind,
-
     // Update information for a native surface if it's dirty
     pub update_params: Option<(NativeSurfaceId, DeviceIntSize)>,
 }
@@ -162,6 +187,10 @@ pub enum CompositorConfig {
         /// then the operating system supports a form of 'partial present' where
         /// only dirty regions of the framebuffer need to be updated.
         max_partial_present_rects: usize,
+        /// If this is true, WR would draw the previous frame's dirty region when
+        /// doing a partial present. This is used for EGL which requires the front
+        /// buffer to always be fully consistent.
+        draw_previous_partial_present_regions: bool,
     },
     /// Use a native OS compositor to draw tiles. This requires clients to implement
     /// the Compositor trait, but can be significantly more power efficient on operating
@@ -194,6 +223,7 @@ impl Default for CompositorConfig {
     fn default() -> Self {
         CompositorConfig::Draw {
             max_partial_present_rects: 0,
+            draw_previous_partial_present_regions: false,
         }
     }
 }
@@ -209,6 +239,8 @@ pub enum CompositorKind {
     Draw {
         /// Partial present support.
         max_partial_present_rects: usize,
+        /// Draw previous regions when doing partial present.
+        draw_previous_partial_present_regions: bool,
     },
     /// Native OS compositor.
     Native {
@@ -224,6 +256,7 @@ impl Default for CompositorKind {
     fn default() -> Self {
         CompositorKind::Draw {
             max_partial_present_rects: 0,
+            draw_previous_partial_present_regions: false,
         }
     }
 }
@@ -237,15 +270,40 @@ impl CompositorKind {
     }
 }
 
-/// Information about an opaque surface used to occlude tiles.
+/// The backing surface kind for a tile. Same as `TileSurface`, minus
+/// the texture cache handles, visibility masks etc.
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
-struct Occluder {
-    z_id: ZBufferId,
-    device_rect: DeviceIntRect,
+#[derive(PartialEq, Clone)]
+pub enum TileSurfaceKind {
+    Texture,
+    Color {
+        color: ColorF,
+    },
+    Clear,
 }
 
-/// Describes the properties that identify a tile composition uniquely.
+impl From<&TileSurface> for TileSurfaceKind {
+    fn from(surface: &TileSurface) -> Self {
+        match surface {
+            TileSurface::Texture { .. } => TileSurfaceKind::Texture,
+            TileSurface::Color { color } => TileSurfaceKind::Color { color: *color },
+            TileSurface::Clear => TileSurfaceKind::Clear,
+        }
+    }
+}
+
+/// Describes properties that identify a tile composition uniquely.
+/// The backing surface for this tile.
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(PartialEq, Clone)]
+pub struct CompositeTileDescriptor {
+    pub tile_id: TileId,
+    pub surface_kind: TileSurfaceKind,
+}
+
+/// Describes the properties that identify a surface composition uniquely.
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(PartialEq, Clone)]
@@ -258,6 +316,8 @@ pub struct CompositeSurfaceDescriptor {
     // thing that has changed is the generation of an compositor surface
     // image dependency.
     pub image_dependencies: [ImageDependency; 3],
+    // List of the surface information for each tile added to this virtual surface
+    pub tile_descriptors: Vec<CompositeTileDescriptor>,
 }
 
 /// Describes surface properties used to composite a frame. This
@@ -274,6 +334,56 @@ impl CompositeDescriptor {
     pub fn empty() -> Self {
         CompositeDescriptor {
             surfaces: Vec::new(),
+        }
+    }
+}
+
+pub struct CompositeStatePreallocator {
+    opaque_tiles: Preallocator,
+    alpha_tiles: Preallocator,
+    clear_tiles: Preallocator,
+    external_surfaces: Preallocator,
+    occluders: Preallocator,
+    occluders_events: Preallocator,
+    occluders_active: Preallocator,
+    descriptor_surfaces: Preallocator,
+}
+
+impl CompositeStatePreallocator {
+    pub fn record(&mut self, state: &CompositeState) {
+        self.opaque_tiles.record_vec(&state.opaque_tiles);
+        self.alpha_tiles.record_vec(&state.alpha_tiles);
+        self.clear_tiles.record_vec(&state.clear_tiles);
+        self.external_surfaces.record_vec(&state.external_surfaces);
+        self.occluders.record_vec(&state.occluders.occluders);
+        self.occluders_events.record_vec(&state.occluders.events);
+        self.occluders_active.record_vec(&state.occluders.active);
+        self.descriptor_surfaces.record_vec(&state.descriptor.surfaces);
+    }
+
+    pub fn preallocate(&self, state: &mut CompositeState) {
+        self.opaque_tiles.preallocate_vec(&mut state.opaque_tiles);
+        self.alpha_tiles.preallocate_vec(&mut state.alpha_tiles);
+        self.clear_tiles.preallocate_vec(&mut state.clear_tiles);
+        self.external_surfaces.preallocate_vec(&mut state.external_surfaces);
+        self.occluders.preallocate_vec(&mut state.occluders.occluders);
+        self.occluders_events.preallocate_vec(&mut state.occluders.events);
+        self.occluders_active.preallocate_vec(&mut state.occluders.active);
+        self.descriptor_surfaces.preallocate_vec(&mut state.descriptor.surfaces);
+    }
+}
+
+impl Default for CompositeStatePreallocator {
+    fn default() -> Self {
+        CompositeStatePreallocator {
+            opaque_tiles: Preallocator::new(40),
+            alpha_tiles: Preallocator::new(16),
+            clear_tiles: Preallocator::new(0),
+            external_surfaces: Preallocator::new(0),
+            occluders: Preallocator::new(16),
+            occluders_events: Preallocator::new(32),
+            occluders_active: Preallocator::new(16),
+            descriptor_surfaces: Preallocator::new(8),
         }
     }
 }
@@ -309,7 +419,7 @@ pub struct CompositeState {
     /// The overall device pixel scale, used for tile occlusion conversions.
     global_device_pixel_scale: DevicePixelScale,
     /// List of registered occluders
-    occluders: Vec<Occluder>,
+    pub occluders: Occluders,
     /// Description of the surfaces and properties that are being composited.
     pub descriptor: CompositeDescriptor,
 }
@@ -321,6 +431,8 @@ impl CompositeState {
         compositor_kind: CompositorKind,
         mut picture_caching_is_enabled: bool,
         global_device_pixel_scale: DevicePixelScale,
+        max_depth_ids: i32,
+        dirty_rects_are_valid: bool,
     ) -> Self {
         // The native compositor interface requires picture caching to work, so
         // force it here and warn if it was disabled.
@@ -335,12 +447,12 @@ impl CompositeState {
             opaque_tiles: Vec::new(),
             alpha_tiles: Vec::new(),
             clear_tiles: Vec::new(),
-            z_generator: ZBufferIdGenerator::new(0),
-            dirty_rects_are_valid: true,
+            z_generator: ZBufferIdGenerator::new(0, max_depth_ids),
+            dirty_rects_are_valid,
             compositor_kind,
             picture_caching_is_enabled,
             global_device_pixel_scale,
-            occluders: Vec::new(),
+            occluders: Occluders::new(),
             descriptor: CompositeDescriptor::empty(),
             external_surfaces: Vec::new(),
         }
@@ -355,41 +467,7 @@ impl CompositeState {
     ) {
         let device_rect = (rect * self.global_device_pixel_scale).round().to_i32();
 
-        self.occluders.push(Occluder {
-            device_rect,
-            z_id,
-        });
-    }
-
-    /// Returns true if a tile with the specified rectangle and z_id
-    /// is occluded by an opaque surface in front of it.
-    pub fn is_tile_occluded(
-        &self,
-        z_id: ZBufferId,
-        device_rect: DeviceRect,
-    ) -> bool {
-        // It's often the case that a tile is only occluded by considering multiple
-        // picture caches in front of it (for example, the background tiles are
-        // often occluded by a combination of the content slice + the scrollbar slices).
-
-        // The basic algorithm is:
-        //    For every occluder:
-        //      If this occluder is in front of the tile we are querying:
-        //         Clip the occluder rectangle to the query rectangle.
-        //    Calculate the total non-overlapping area of those clipped occluders.
-        //    If the cumulative area of those occluders is the same as the area of the query tile,
-        //       Then the entire tile must be occluded and can be skipped during rasterization and compositing.
-
-        // Get the reference area we will compare against.
-        let device_rect = device_rect.round().to_i32();
-        let ref_area = device_rect.size.width * device_rect.size.height;
-
-        // Calculate the non-overlapping area of the valid occluders.
-        let cover_area = area_of_occluders(&self.occluders, z_id, &device_rect);
-        debug_assert!(cover_area <= ref_area);
-
-        // Check if the tile area is completely covered
-        ref_area == cover_area
+        self.occluders.push(device_rect, z_id);
     }
 
     /// Add a picture cache to be composited
@@ -404,6 +482,8 @@ impl CompositeState {
     ) {
         let mut visible_opaque_tile_count = 0;
         let mut visible_alpha_tile_count = 0;
+        let mut opaque_tile_descriptors = Vec::new();
+        let mut alpha_tile_descriptors = Vec::new();
 
         for tile in tile_cache.tiles.values() {
             if !tile.is_visible {
@@ -413,6 +493,11 @@ impl CompositeState {
 
             let device_rect = (tile.world_tile_rect * global_device_pixel_scale).round();
             let surface = tile.surface.as_ref().expect("no tile surface set!");
+
+            let descriptor = CompositeTileDescriptor {
+                surface_kind: surface.into(),
+                tile_id: tile.id,
+            };
 
             let (surface, is_opaque) = match surface {
                 TileSurface::Color { color } => {
@@ -425,14 +510,20 @@ impl CompositeState {
                     let surface = descriptor.resolve(resource_cache, tile_cache.current_tile_size);
                     (
                         CompositeTileSurface::Texture { surface },
-                        tile.is_opaque || tile_cache.is_opaque(),
+                        // If a tile has compositor surface intersecting with it, we need to
+                        // respect the tile.is_opaque property even if the overall tile cache
+                        // is opaque. In this case, the tile.is_opaque property is required
+                        // in order to ensure correct draw order with compositor surfaces.
+                        tile.is_opaque || (!tile.has_compositor_surface && tile_cache.is_opaque()),
                     )
                 }
             };
 
             if is_opaque {
+                opaque_tile_descriptors.push(descriptor);
                 visible_opaque_tile_count += 1;
             } else {
+                alpha_tile_descriptors.push(descriptor);
                 visible_alpha_tile_count += 1;
             }
 
@@ -448,6 +539,13 @@ impl CompositeState {
             self.push_tile(tile, is_opaque);
         }
 
+        // Sort the tile descriptor lists, since iterating values in the tile_cache.tiles
+        // hashmap doesn't provide any ordering guarantees, but we want to detect the
+        // composite descriptor as equal if the tiles list is the same, regardless of
+        // ordering.
+        opaque_tile_descriptors.sort_by_key(|desc| desc.tile_id);
+        alpha_tile_descriptors.sort_by_key(|desc| desc.tile_id);
+
         // Add opaque surface before any compositor surfaces
         if visible_opaque_tile_count > 0 {
             self.descriptor.surfaces.push(
@@ -456,6 +554,7 @@ impl CompositeState {
                     offset: tile_cache.device_position,
                     clip_rect: device_clip_rect,
                     image_dependencies: [ImageDependency::INVALID; 3],
+                    tile_descriptors: opaque_tile_descriptors,
                 }
             );
         }
@@ -463,22 +562,40 @@ impl CompositeState {
         // For each compositor surface that was promoted, build the
         // information required for the compositor to draw it
         for external_surface in &tile_cache.external_surfaces {
-            let mut yuv_planes = [
-                YuvPlaneDescriptor::invalid(),
-                YuvPlaneDescriptor::invalid(),
-                YuvPlaneDescriptor::invalid(),
+
+            let mut planes = [
+                ExternalPlaneDescriptor::invalid(),
+                ExternalPlaneDescriptor::invalid(),
+                ExternalPlaneDescriptor::invalid(),
             ];
 
-            // Step through the image keys, and build a yuv plane descriptor for each
-            let required_plane_count = external_surface.yuv_format.get_plane_num();
+            // Step through the image keys, and build a plane descriptor for each
+            let required_plane_count =
+                match external_surface.dependency {
+                    ExternalSurfaceDependency::Yuv { format, .. } => {
+                        format.get_plane_num()
+                    },
+                    ExternalSurfaceDependency::Rgb { .. } => {
+                        1
+                    }
+                };
             let mut valid_plane_count = 0;
 
+            let mut image_dependencies = [ImageDependency::INVALID; 3];
+
             for i in 0 .. required_plane_count {
-                let key = external_surface.image_dependencies[i].key;
-                let plane = &mut yuv_planes[i];
+                let dependency = match external_surface.dependency {
+                    ExternalSurfaceDependency::Yuv { image_dependencies, .. } => {
+                        image_dependencies[i]
+                    },
+                    ExternalSurfaceDependency::Rgb { image_dependency, .. } => {
+                        image_dependency
+                    }
+                };
+                image_dependencies[i] = dependency;
 
                 let request = ImageRequest {
-                    key,
+                    key: dependency.key,
                     rendering: external_surface.image_rendering,
                     tile: None,
                 };
@@ -492,8 +609,8 @@ impl CompositeState {
 
                 if cache_item.texture_id != TextureSource::Invalid {
                     valid_plane_count += 1;
-
-                    *plane = YuvPlaneDescriptor {
+                    let plane = &mut planes[i];
+                    *plane = ExternalPlaneDescriptor {
                         texture: cache_item.texture_id,
                         texture_layer: cache_item.texture_layer,
                         uv_rect: cache_item.uv_rect.into(),
@@ -503,7 +620,7 @@ impl CompositeState {
 
             // Check if there are valid images added for each YUV plane
             if valid_plane_count < required_plane_count {
-                warn!("Warnings: skip a YUV compositor surface, found {}/{} valid images",
+                warn!("Warnings: skip a YUV/RGB compositor surface, found {}/{} valid images",
                     valid_plane_count,
                     required_plane_count,
                 );
@@ -532,15 +649,38 @@ impl CompositeState {
                 )
             });
 
-            self.external_surfaces.push(ResolvedExternalSurface {
-                yuv_color_space: external_surface.yuv_color_space,
-                yuv_format: external_surface.yuv_format,
-                yuv_rescale: external_surface.yuv_rescale,
-                image_buffer_kind: get_buffer_kind(yuv_planes[0].texture),
-                image_dependencies: external_surface.image_dependencies,
-                yuv_planes,
-                update_params,
-            });
+            match external_surface.dependency {
+                ExternalSurfaceDependency::Yuv{ color_space, format, rescale, .. } => {
+
+                    let image_buffer_kind = get_buffer_kind(planes[0].texture);
+
+                    self.external_surfaces.push(ResolvedExternalSurface {
+                        color_data: ResolvedExternalSurfaceColorData::Yuv {
+                            image_dependencies,
+                            planes,
+                            color_space,
+                            format,
+                            rescale,
+                        },
+                        image_buffer_kind,
+                        update_params,
+                    });
+                },
+                ExternalSurfaceDependency::Rgb{ flip_y, .. } => {
+
+                    let image_buffer_kind = get_buffer_kind(planes[0].texture);
+
+                    self.external_surfaces.push(ResolvedExternalSurface {
+                        color_data: ResolvedExternalSurfaceColorData::Rgb {
+                            image_dependency: image_dependencies[0],
+                            plane: planes[0],
+                            flip_y,
+                        },
+                        image_buffer_kind,
+                        update_params,
+                    });
+                },
+            }
 
             let tile = CompositeTile {
                 surface,
@@ -559,7 +699,8 @@ impl CompositeState {
                     surface_id: external_surface.native_surface_id,
                     offset: tile.rect.origin,
                     clip_rect: tile.clip_rect,
-                    image_dependencies: external_surface.image_dependencies,
+                    image_dependencies: image_dependencies,
+                    tile_descriptors: Vec::new(),
                 }
             );
 
@@ -574,6 +715,7 @@ impl CompositeState {
                     offset: tile_cache.device_position,
                     clip_rect: device_clip_rect,
                     image_dependencies: [ImageDependency::INVALID; 3],
+                    tile_descriptors: alpha_tile_descriptors,
                 }
             );
         }
@@ -704,6 +846,15 @@ pub trait Compositor {
         id: NativeTileId,
     );
 
+    /// Mark a tile as invalid before any surfaces are queued for
+    /// composition and before it is updated with bind. This is useful
+    /// for early composition, allowing for dependency tracking of which
+    /// surfaces can be composited early while others are still updating.
+    fn invalidate_tile(
+        &mut self,
+        _id: NativeTileId,
+    ) {}
+
     /// Bind this surface such that WR can issue OpenGL commands
     /// that will target the surface. Returns an (x, y) offset
     /// where WR should draw into the surface. This can be set
@@ -756,117 +907,192 @@ pub trait Compositor {
     /// Enable/disable native compositor usage
     fn enable_native_compositor(&mut self, enable: bool);
 
+    /// Safely deinitialize any remaining resources owned by the compositor.
+    fn deinit(&mut self);
+
     /// Get the capabilities struct for this compositor. This is used to
     /// specify what features a compositor supports, depending on the
     /// underlying platform
     fn get_capabilities(&self) -> CompositorCapabilities;
 }
 
-/// Return the total area covered by a set of occluders, accounting for
-/// overlapping areas between those rectangles.
-fn area_of_occluders(
-    occluders: &[Occluder],
+
+/// Information about an opaque surface used to occlude tiles.
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+struct Occluder {
     z_id: ZBufferId,
-    clip_rect: &DeviceIntRect,
-) -> i32 {
-    // This implementation is based on the article https://leetcode.com/articles/rectangle-area-ii/.
-    // This is not a particularly efficient implementation (it skips building segment trees), however
-    // we typically use this where the length of the rectangles array is < 10, so simplicity is more important.
+    device_rect: DeviceIntRect,
+}
 
-    let mut area = 0;
+// Whether this event is the start or end of a rectangle
+#[derive(Debug)]
+enum OcclusionEventKind {
+    Begin,
+    End,
+}
 
-    // Whether this event is the start or end of a rectangle
-    #[derive(Debug)]
-    enum EventKind {
-        Begin,
-        End,
+// A list of events on the y-axis, with the rectangle range that it affects on the x-axis
+#[derive(Debug)]
+struct OcclusionEvent {
+    y: i32,
+    x_range: ops::Range<i32>,
+    kind: OcclusionEventKind,
+}
+
+impl OcclusionEvent {
+    fn new(y: i32, kind: OcclusionEventKind, x0: i32, x1: i32) -> Self {
+        OcclusionEvent {
+            y,
+            x_range: ops::Range {
+                start: x0,
+                end: x1,
+            },
+            kind,
+        }
     }
+}
 
-    // A list of events on the y-axis, with the rectangle range that it affects on the x-axis
-    #[derive(Debug)]
-    struct Event {
-        y: i32,
-        x_range: ops::Range<i32>,
-        kind: EventKind,
-    }
+/// List of registered occluders.
+///
+/// Also store a couple of vectors for reuse.
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct Occluders {
+    occluders: Vec<Occluder>,
 
-    impl Event {
-        fn new(y: i32, kind: EventKind, x0: i32, x1: i32) -> Self {
-            Event {
-                y,
-                x_range: ops::Range {
-                    start: x0,
-                    end: x1,
-                },
-                kind,
-            }
+    // The two vectors below are kept to avoid unnecessary reallocations in area(). 
+
+    #[cfg_attr(feature = "serde", serde(skip))]
+    events: Vec<OcclusionEvent>,
+
+    #[cfg_attr(feature = "serde", serde(skip))]
+    active: Vec<ops::Range<i32>>,
+}
+
+impl Occluders {
+    fn new() -> Self {
+        Occluders {
+            occluders: Vec::new(),
+            events: Vec::new(),
+            active: Vec::new(),
         }
     }
 
-    // Step through each rectangle and build the y-axis event list
-    let mut events = Vec::with_capacity(occluders.len() * 2);
-    for occluder in occluders {
-        // Only consider occluders in front of this rect
-        if occluder.z_id.0 > z_id.0 {
-            // Clip the source rect to the rectangle we care about, since we only
-            // want to record area for the tile we are comparing to.
-            if let Some(rect) = occluder.device_rect.intersection(clip_rect) {
-                let x0 = rect.origin.x;
-                let x1 = x0 + rect.size.width;
-                events.push(Event::new(rect.origin.y, EventKind::Begin, x0, x1));
-                events.push(Event::new(rect.origin.y + rect.size.height, EventKind::End, x0, x1));
-            }
-        }
+    fn push(&mut self, device_rect: DeviceIntRect, z_id: ZBufferId) {
+        self.occluders.push(Occluder { device_rect, z_id });
     }
 
-    // If we didn't end up with any valid events, the area must be 0
-    if events.is_empty() {
-        return 0;
+    /// Returns true if a tile with the specified rectangle and z_id
+    /// is occluded by an opaque surface in front of it.
+    pub fn is_tile_occluded(
+        &mut self,
+        z_id: ZBufferId,
+        device_rect: DeviceRect,
+    ) -> bool {
+        // It's often the case that a tile is only occluded by considering multiple
+        // picture caches in front of it (for example, the background tiles are
+        // often occluded by a combination of the content slice + the scrollbar slices).
+
+        // The basic algorithm is:
+        //    For every occluder:
+        //      If this occluder is in front of the tile we are querying:
+        //         Clip the occluder rectangle to the query rectangle.
+        //    Calculate the total non-overlapping area of those clipped occluders.
+        //    If the cumulative area of those occluders is the same as the area of the query tile,
+        //       Then the entire tile must be occluded and can be skipped during rasterization and compositing.
+
+        // Get the reference area we will compare against.
+        let device_rect = device_rect.round().to_i32();
+        let ref_area = device_rect.size.width * device_rect.size.height;
+
+        // Calculate the non-overlapping area of the valid occluders.
+        let cover_area = self.area(z_id, &device_rect);
+        debug_assert!(cover_area <= ref_area);
+
+        // Check if the tile area is completely covered
+        ref_area == cover_area
     }
 
-    // Sort the events by y-value
-    events.sort_by_key(|e| e.y);
-    let mut active: Vec<ops::Range<i32>> = Vec::new();
-    let mut cur_y = events[0].y;
+    /// Return the total area covered by a set of occluders, accounting for
+    /// overlapping areas between those rectangles.
+    fn area(
+        &mut self,
+        z_id: ZBufferId,
+        clip_rect: &DeviceIntRect,
+    ) -> i32 {
+        // This implementation is based on the article https://leetcode.com/articles/rectangle-area-ii/.
+        // This is not a particularly efficient implementation (it skips building segment trees), however
+        // we typically use this where the length of the rectangles array is < 10, so simplicity is more important.
 
-    // Step through each y interval
-    for event in &events {
-        // This is the dimension of the y-axis we are accumulating areas for
-        let dy = event.y - cur_y;
+        self.events.clear();
+        self.active.clear();
 
-        // If we have active events covering x-ranges in this y-interval, process them
-        if dy != 0 && !active.is_empty() {
-            assert!(dy > 0);
+        let mut area = 0;
 
-            // Step through the x-ranges, ordered by x0 of each event
-            active.sort_by_key(|i| i.start);
-            let mut query = 0;
-            let mut cur = active[0].start;
-
-            // Accumulate the non-overlapping x-interval that contributes to area for this y-interval.
-            for interval in &active {
-                cur = interval.start.max(cur);
-                query += (interval.end - cur).max(0);
-                cur = cur.max(interval.end);
-            }
-
-            // Accumulate total area for this y-interval
-            area += query * dy;
-        }
-
-        // Update the active events list
-        match event.kind {
-            EventKind::Begin => {
-                active.push(event.x_range.clone());
-            }
-            EventKind::End => {
-                let index = active.iter().position(|i| *i == event.x_range).unwrap();
-                active.remove(index);
+        // Step through each rectangle and build the y-axis event list
+        for occluder in &self.occluders {
+            // Only consider occluders in front of this rect
+            if occluder.z_id.0 > z_id.0 {
+                // Clip the source rect to the rectangle we care about, since we only
+                // want to record area for the tile we are comparing to.
+                if let Some(rect) = occluder.device_rect.intersection(clip_rect) {
+                    let x0 = rect.origin.x;
+                    let x1 = x0 + rect.size.width;
+                    self.events.push(OcclusionEvent::new(rect.origin.y, OcclusionEventKind::Begin, x0, x1));
+                    self.events.push(OcclusionEvent::new(rect.origin.y + rect.size.height, OcclusionEventKind::End, x0, x1));
+                }
             }
         }
 
-        cur_y = event.y;
+        // If we didn't end up with any valid events, the area must be 0
+        if self.events.is_empty() {
+            return 0;
+        }
+
+        // Sort the events by y-value
+        self.events.sort_by_key(|e| e.y);
+        let mut cur_y = self.events[0].y;
+
+        // Step through each y interval
+        for event in &self.events {
+            // This is the dimension of the y-axis we are accumulating areas for
+            let dy = event.y - cur_y;
+
+            // If we have active events covering x-ranges in this y-interval, process them
+            if dy != 0 && !self.active.is_empty() {
+                assert!(dy > 0);
+
+                // Step through the x-ranges, ordered by x0 of each event
+                self.active.sort_by_key(|i| i.start);
+                let mut query = 0;
+                let mut cur = self.active[0].start;
+
+                // Accumulate the non-overlapping x-interval that contributes to area for this y-interval.
+                for interval in &self.active {
+                    cur = interval.start.max(cur);
+                    query += (interval.end - cur).max(0);
+                    cur = cur.max(interval.end);
+                }
+
+                // Accumulate total area for this y-interval
+                area += query * dy;
+            }
+
+            // Update the active events list
+            match event.kind {
+                OcclusionEventKind::Begin => {
+                    self.active.push(event.x_range.clone());
+                }
+                OcclusionEventKind::End => {
+                    let index = self.active.iter().position(|i| *i == event.x_range).unwrap();
+                    self.active.remove(index);
+                }
+            }
+
+            cur_y = event.y;
+        }
+
+        area
     }
-
-    area
 }

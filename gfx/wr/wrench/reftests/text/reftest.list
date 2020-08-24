@@ -6,8 +6,8 @@
 != shadow-cover-1.yaml blank.yaml
 != shadow-cover-2.yaml blank.yaml
 
-skip_on(android,device) == shadow.yaml shadow-ref.yaml  # Fails on Pixel2
-== shadow-huge.yaml shadow-huge-ref.yaml
+skip_on(android,device) fuzzy(1,3) == shadow.yaml shadow-ref.yaml  # Fails on Pixel2
+fuzzy(1,1) == shadow-huge.yaml shadow-huge-ref.yaml
 != shadow-cover-1.yaml shadow-cover-2.yaml
 != shadow-many.yaml shadow.yaml
 != shadow-complex.yaml shadow-many.yaml
@@ -74,8 +74,8 @@ options(disable-aa) == snap-clip.yaml snap-clip-ref.yaml
 platform(linux) == perspective-clip.yaml perspective-clip.png
 fuzzy(1,39) options(disable-subpixel) == raster-space-snap.yaml raster-space-snap-ref.yaml
 # == intermediate-transform.yaml intermediate-transform-ref.yaml # fails because of AA inavailable with an intermediate surface
-platform(linux) allow_sacrificing_subpixel_aa(false) == text-fixed-slice.yaml text-fixed-slice-slow.png
-platform(linux) allow_sacrificing_subpixel_aa(true) == text-fixed-slice.yaml text-fixed-slice-fast.png
+platform(linux) force_subpixel_aa_where_possible(true) == text-fixed-slice.yaml text-fixed-slice-slow.png
+platform(linux) force_subpixel_aa_where_possible(false) == text-fixed-slice.yaml text-fixed-slice-fast.png
 
 # a 8544x8544 raster root vs. 2136x2136
 # most pixels are off by a small amount, but a few pixels on the edge vary by a lot, pushing up the fuzzy max-diff;

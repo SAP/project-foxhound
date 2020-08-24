@@ -10,6 +10,9 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+const { AppConstants } = ChromeUtils.import(
+  "resource://gre/modules/AppConstants.jsm"
+);
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -27,12 +30,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "useSeparateDataUriProcess",
   "browser.tabs.remote.dataUriInDefaultWebProcess",
-  false
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "allowLinkedWebInFileUriProcess",
-  "browser.tabs.remote.allowLinkedWebInFileUriProcess",
   false
 );
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -79,10 +76,6 @@ XPCOMUtils.defineLazyServiceGetter(
   "@mozilla.org/uriloader/external-protocol-service;1",
   "nsIExternalProtocolService"
 );
-
-function debug(msg) {
-  Cu.reportError(new Error("E10SUtils: " + msg));
-}
 
 function getAboutModule(aURL) {
   // Needs to match NS_GetAboutModuleName
@@ -137,7 +130,47 @@ const kSafeSchemes = [
   "xmpp",
 ];
 
-const kDocumentChannelAllowedSchemes = ["http", "https", "ftp", "data"];
+const kDocumentChannelDeniedSchemes = ["javascript"];
+const kDocumentChannelDeniedURIs = [
+  "about:blank",
+  "about:crashcontent",
+  "about:printpreview",
+];
+
+// Changes here should also be made in URIUsesDocChannel in DocumentChannel.cpp.
+function documentChannelPermittedForURI(aURI) {
+  return (
+    !kDocumentChannelDeniedSchemes.includes(aURI.scheme) &&
+    !kDocumentChannelDeniedURIs.includes(aURI.spec)
+  );
+}
+
+function canProcessSwitchWithDocumentChannel(
+  aURI,
+  aRemoteSubframes,
+  aDesiredRemoteType,
+  aBrowsingContext
+) {
+  if (
+    aBrowsingContext &&
+    aBrowsingContext.top &&
+    aBrowsingContext.inRDMPane &&
+    aBrowsingContext.embedderElementType == "iframe" &&
+    aDesiredRemoteType == NOT_REMOTE
+  ) {
+    // If we're in an old-style <iframe mozbrowser> RDM pane,
+    // and we need to switch to the parent process, then we can't
+    // use DocumentChannel process switching (since it doesn't
+    // support tunneling to the outer <browser>.
+    // We can remove this once bug 1648616 removes the tests
+    // depending on it.
+    return false;
+  }
+  return (
+    (aRemoteSubframes || documentChannel) &&
+    documentChannelPermittedForURI(aURI)
+  );
+}
 
 // Note that even if the scheme fits the criteria for a web-handled scheme
 // (ie it is compatible with the checks registerProtocolHandler uses), it may
@@ -254,28 +287,31 @@ function validatedWebRemoteType(
     return aPreferredRemoteType;
   }
 
-  if (
-    allowLinkedWebInFileUriProcess &&
-    // This is not supported with documentchannel
-    !documentChannel &&
-    aPreferredRemoteType == FILE_REMOTE_TYPE
-  ) {
+  if (aPreferredRemoteType == FILE_REMOTE_TYPE && !aRemoteSubframes) {
+    E10SUtils.log().debug("checking allowLinkedWebInFileUriProcess");
+    if (!aCurrentUri) {
+      E10SUtils.log().debug("No aCurrentUri");
+      return FILE_REMOTE_TYPE;
+    }
+
     // If aCurrentUri is passed then we should only allow FILE_REMOTE_TYPE
     // when it is same origin as target or the current URI is already a
     // file:// URI.
-    if (aCurrentUri) {
-      try {
-        // checkSameOriginURI throws when not same origin.
-        // todo: if you intend to update CheckSameOriginURI to log the error to the
-        // console you also need to update the 'aFromPrivateWindow' argument.
-        sm.checkSameOriginURI(aCurrentUri, aTargetUri, false, false);
-        return FILE_REMOTE_TYPE;
-      } catch (e) {
-        return WEB_REMOTE_TYPE;
-      }
+    if (aCurrentUri.scheme == "file" || aCurrentUri.spec == "about:blank") {
+      return FILE_REMOTE_TYPE;
     }
 
-    return FILE_REMOTE_TYPE;
+    try {
+      // checkSameOriginURI throws when not same origin.
+      // todo: if you intend to update CheckSameOriginURI to log the error to the
+      // console you also need to update the 'aFromPrivateWindow' argument.
+      sm.checkSameOriginURI(aCurrentUri, aTargetUri, false, false);
+      E10SUtils.log().debug("Next URL is same origin");
+      return FILE_REMOTE_TYPE;
+    } catch (e) {
+      E10SUtils.log().debug("Leaving same origin");
+      return WEB_REMOTE_TYPE;
+    }
   }
 
   return WEB_REMOTE_TYPE;
@@ -299,6 +335,24 @@ var E10SUtils = {
     return documentChannel;
   },
 
+  _log: null,
+  _uriStr: function uriStr(aUri) {
+    return aUri ? aUri.spec : "undefined";
+  },
+
+  log: function log() {
+    if (!this._log) {
+      this._log = console.createInstance({
+        prefix: "ProcessSwitch",
+        maxLogLevel: "Error", // Change to debug the process switching code
+      });
+
+      this._log.debug("Setup logger");
+    }
+
+    return this._log;
+  },
+
   /**
    * Serialize csp data.
    *
@@ -313,7 +367,7 @@ var E10SUtils = {
         serializedCSP = serializationHelper.serializeToString(csp);
       }
     } catch (e) {
-      debug(`Failed to serialize csp '${csp}' ${e}`);
+      this.log().error(`Failed to serialize csp '${csp}' ${e}`);
     }
     return serializedCSP;
   },
@@ -335,7 +389,7 @@ var E10SUtils = {
       csp.QueryInterface(Ci.nsIContentSecurityPolicy);
       return csp;
     } catch (e) {
-      debug(`Failed to deserialize csp_b64 '${csp_b64}' ${e}`);
+      this.log().error(`Failed to deserialize csp_b64 '${csp_b64}' ${e}`);
     }
     return null;
   },
@@ -523,18 +577,26 @@ var E10SUtils = {
           );
         }
 
-        return validatedWebRemoteType(
+        var log = this.log();
+        log.debug("validatedWebRemoteType()");
+        log.debug(`  aPreferredRemoteType: ${aPreferredRemoteType}`);
+        log.debug(`  aTargetUri: ${this._uriStr(aURI)}`);
+        log.debug(`  aCurrentUri: ${this._uriStr(aCurrentUri)}`);
+        var remoteType = validatedWebRemoteType(
           aPreferredRemoteType,
           aURI,
           aCurrentUri,
           aResultPrincipal,
           aRemoteSubframes
         );
+        log.debug(`  validatedWebRemoteType() returning: ${remoteType}`);
+        return remoteType;
     }
   },
 
   getRemoteTypeForPrincipal(
     aPrincipal,
+    aOriginalURI,
     aMultiProcess,
     aRemoteSubframes,
     aPreferredRemoteType = DEFAULT_REMOTE_TYPE,
@@ -545,25 +607,31 @@ var E10SUtils = {
       return NOT_REMOTE;
     }
 
-    // We can't pick a process based on a system principal or expanded
-    // principal. In fact, we should never end up with one here!
-    if (aPrincipal.isSystemPrincipal || aPrincipal.isExpandedPrincipal) {
-      throw Cr.NS_ERROR_UNEXPECTED;
-    }
+    // We want to use the original URI for "about:" and "chrome://" scheme,
+    // so that we can properly determine the remote type.
+    let useOriginalURI =
+      aOriginalURI.scheme == "about" || aOriginalURI.scheme == "chrome";
 
-    // Null principals can be loaded in any remote process, but when
-    // using fission we add the option to force them into the default
-    // web process for better test coverage.
-    if (aPrincipal.isNullPrincipal) {
-      if (
-        (aRemoteSubframes && useSeparateDataUriProcess) ||
-        aPreferredRemoteType == NOT_REMOTE
-      ) {
-        return WEB_REMOTE_TYPE;
+    if (!useOriginalURI) {
+      // We can't pick a process based on a system principal or expanded
+      // principal.
+      if (aPrincipal.isSystemPrincipal || aPrincipal.isExpandedPrincipal) {
+        throw Components.Exception("", Cr.NS_ERROR_UNEXPECTED);
       }
-      return aPreferredRemoteType;
-    }
 
+      // Null principals can be loaded in any remote process, but when
+      // using fission we add the option to force them into the default
+      // web process for better test coverage.
+      if (aPrincipal.isNullPrincipal) {
+        if (
+          (aRemoteSubframes && useSeparateDataUriProcess) ||
+          aPreferredRemoteType == NOT_REMOTE
+        ) {
+          return WEB_REMOTE_TYPE;
+        }
+        return aPreferredRemoteType;
+      }
+    }
     // We might care about the currently loaded URI. Pull it out of our current
     // principal. We never care about the current URI when working with a
     // non-content principal.
@@ -571,8 +639,9 @@ var E10SUtils = {
       aCurrentPrincipal && aCurrentPrincipal.isContentPrincipal
         ? aCurrentPrincipal.URI
         : null;
+
     return E10SUtils.getRemoteTypeForURIObject(
-      aPrincipal.URI,
+      useOriginalURI ? aOriginalURI : aPrincipal.URI,
       aMultiProcess,
       aRemoteSubframes,
       aPreferredRemoteType,
@@ -627,7 +696,7 @@ var E10SUtils = {
         );
       }
     } catch (e) {
-      debug(`Failed to serialize principal '${principal}' ${e}`);
+      this.log().error(`Failed to serialize principal '${principal}' ${e}`);
     }
 
     return serializedPrincipal;
@@ -643,7 +712,7 @@ var E10SUtils = {
   deserializePrincipal(principal_b64, fallbackPrincipalCallback = null) {
     if (!principal_b64) {
       if (!fallbackPrincipalCallback) {
-        debug(
+        this.log().warn(
           "No principal passed to deserializePrincipal and no fallbackPrincipalCallback"
         );
         return null;
@@ -667,10 +736,12 @@ var E10SUtils = {
       principal.QueryInterface(Ci.nsIPrincipal);
       return principal;
     } catch (e) {
-      debug(`Failed to deserialize principal_b64 '${principal_b64}' ${e}`);
+      this.log().error(
+        `Failed to deserialize principal_b64 '${principal_b64}' ${e}`
+      );
     }
     if (!fallbackPrincipalCallback) {
-      debug(
+      this.log().warn(
         "No principal passed to deserializePrincipal and no fallbackPrincipalCallback"
       );
       return null;
@@ -678,6 +749,52 @@ var E10SUtils = {
     return fallbackPrincipalCallback();
   },
 
+  /**
+   * Returns whether or not a URI is supposed to load in a particular
+   * browser given its current remote type.
+   *
+   * @param browser (<xul:browser>)
+   *   The browser to check.
+   * @param uri (String)
+   *   The URI that will be checked to see if it can load in the
+   *   browser.
+   * @param multiProcess (boolean, optional)
+   *   Whether or not multi-process tabs are enabled. Defaults to true.
+   * @param remoteSubframes (boolean, optional)
+   *   Whether or not multi-process subframes are enabled. Defaults to
+   *   false.
+   * @param flags (Number, optional)
+   *   nsIWebNavigation flags used to clean up the URL in the event that
+   *   it needs fixing ia the URI fixup service. Defaults to
+   *   nsIWebNavigation.LOAD_FLAGS_NONE.
+   *
+   * @return (Object)
+   *   An object with the following properties:
+   *
+   *   uriObject (nsIURI)
+   *     The fixed-up URI that was generated for the check.
+   *
+   *   requiredRemoteType (String)
+   *     The remoteType that was computed for the browser that
+   *     is required to load the URI.
+   *
+   *   mustChangeProcess (boolean)
+   *     Whether or not the front-end will be required to flip
+   *     the process in order to view the URI.
+   *
+   *     NOTE:
+   *       mustChangeProcess might be false even if a process
+   *       flip will occur. In this case, DocumentChannel is taking
+   *       care of the process flip for us rather than the front-end
+   *       code.
+   *
+   *   newFrameloader (boolean)
+   *     Whether or not a new frameloader will need to be created
+   *     in order to browse to this URI. For non-Fission, this is
+   *     important if we're transition from a web content process
+   *     to another web content process, but want to force the
+   *     creation of a _new_ web content process.
+   */
   shouldLoadURIInBrowser(
     browser,
     uri,
@@ -717,17 +834,6 @@ var E10SUtils = {
 
     let mustChangeProcess = requiredRemoteType != currentRemoteType;
 
-    // If we already have a content process, and the load will be
-    // handled using DocumentChannel, then we can skip switching
-    // for now, and let DocumentChannel do it during the response.
-    if (
-      currentRemoteType != NOT_REMOTE &&
-      uriObject &&
-      (remoteSubframes || documentChannel) &&
-      kDocumentChannelAllowedSchemes.includes(uriObject.scheme)
-    ) {
-      mustChangeProcess = false;
-    }
     let newFrameloader = false;
     if (
       browser.getAttribute("preloadedState") === "consumed" &&
@@ -737,6 +843,22 @@ var E10SUtils = {
       // selecting algorithm again.
       mustChangeProcess = true;
       newFrameloader = true;
+    }
+
+    // If we already have a content process, and the load will be
+    // handled using DocumentChannel, then we can skip switching
+    // for now, and let DocumentChannel do it during the response.
+    if (
+      uriObject &&
+      canProcessSwitchWithDocumentChannel(
+        uriObject,
+        remoteSubframes,
+        requiredRemoteType,
+        browser.browsingContext
+      )
+    ) {
+      mustChangeProcess = false;
+      newFrameloader = false;
     }
 
     return {
@@ -749,32 +871,70 @@ var E10SUtils = {
 
   shouldLoadURIInThisProcess(aURI, aRemoteSubframes) {
     let remoteType = Services.appinfo.remoteType;
-    return (
-      remoteType ==
-      this.getRemoteTypeForURIObject(
-        aURI,
-        /* remote */ true,
-        aRemoteSubframes,
-        remoteType
-      )
+    let wantRemoteType = this.getRemoteTypeForURIObject(
+      aURI,
+      /* remote */ true,
+      aRemoteSubframes,
+      remoteType
     );
+    this.log().info(
+      `shouldLoadURIInThisProcess: have ${remoteType} want ${wantRemoteType}`
+    );
+
+    if (
+      canProcessSwitchWithDocumentChannel(
+        aURI,
+        aRemoteSubframes,
+        wantRemoteType
+      )
+    ) {
+      // We can switch later with documentchannel.
+      return true;
+    }
+
+    return remoteType == wantRemoteType;
   },
 
   shouldLoadURI(aDocShell, aURI, aHasPostData) {
     let { useRemoteSubframes } = aDocShell;
+    this.log().debug(`shouldLoadURI(${this._uriStr(aURI)})`);
 
-    // Inner frames should always load in the current process
-    // XXX(nika): Handle shouldLoadURI-triggered process switches for remote
-    // subframes! (bug 1548942)
-    if (aDocShell.sameTypeParent) {
+    let remoteType = Services.appinfo.remoteType;
+
+    if (aDocShell.browsingContext.parent) {
       return true;
     }
 
     let webNav = aDocShell.QueryInterface(Ci.nsIWebNavigation);
     let sessionHistory = webNav.sessionHistory;
+    let wantRemoteType = this.getRemoteTypeForURIObject(
+      aURI,
+      true,
+      useRemoteSubframes,
+      remoteType,
+      webNav.currentURI
+    );
+
+    // If we are using DocumentChannel or remote subframes (fission), we
+    // can start the load in the current process, and then perform the
+    // switch later-on using the DocumentLoadListener mechanism.
+    // This mechanism isn't available on Android/GeckoView at present (see bug
+    // 1640019).
+    if (
+      AppConstants.MOZ_WIDGET_TOOLKIT != "android" &&
+      canProcessSwitchWithDocumentChannel(
+        aURI,
+        useRemoteSubframes,
+        wantRemoteType,
+        aDocShell.browsingContext
+      )
+    ) {
+      return true;
+    }
+
     if (
       !aHasPostData &&
-      Services.appinfo.remoteType == WEB_REMOTE_TYPE &&
+      remoteType == WEB_REMOTE_TYPE &&
       sessionHistory.count == 1 &&
       webNav.currentURI.spec == "about:newtab"
     ) {
@@ -786,63 +946,28 @@ var E10SUtils = {
       return false;
     }
 
-    // If we are performing HTTP response process selection, and are loading an
-    // HTTP URI, we can start the load in the current process, and then perform
-    // the switch later-on using the RedirectProcessChooser mechanism.
-    //
-    // We should never be sending a POST request from the parent process to a
-    // http(s) uri, so make sure we switch if we're currently in that process.
-    if (
-      Services.appinfo.remoteType != NOT_REMOTE &&
-      (useRemoteSubframes || documentChannel) &&
-      kDocumentChannelAllowedSchemes.includes(aURI.scheme)
-    ) {
-      return true;
-    }
-
-    // If we are in a Large-Allocation process, and it wouldn't be content visible
-    // to change processes, we want to load into a new process so that we can throw
-    // this one out. We don't want to move into a new process if we have post data,
-    // because we would accidentally throw out that data.
-    let isOnlyToplevelBrowsingContext =
-      !aDocShell.browsingContext.parent &&
-      aDocShell.browsingContext.group.getToplevels().length == 1;
-    if (
-      !aHasPostData &&
-      Services.appinfo.remoteType == LARGE_ALLOCATION_REMOTE_TYPE &&
-      !aDocShell.awaitingLargeAlloc &&
-      isOnlyToplevelBrowsingContext
-    ) {
-      return false;
-    }
-
     // Allow history load if loaded in this process before.
     let requestedIndex = sessionHistory.legacySHistory.requestedIndex;
     if (requestedIndex >= 0) {
+      this.log().debug("Checking history case\n");
       if (
         sessionHistory.legacySHistory.getEntryAtIndex(requestedIndex)
           .loadedInThisProcess
       ) {
+        this.log().info("History entry loaded in this process");
         return true;
       }
 
       // If not originally loaded in this process allow it if the URI would
       // normally be allowed to load in this process by default.
-      let remoteType = Services.appinfo.remoteType;
-      return (
-        remoteType ==
-        this.getRemoteTypeForURIObject(
-          aURI,
-          true,
-          useRemoteSubframes,
-          remoteType,
-          webNav.currentURI
-        )
+      this.log().debug(
+        `Checking remote type, got: ${remoteType} want: ${wantRemoteType}\n`
       );
+      return remoteType == wantRemoteType;
     }
 
     // If the URI can be loaded in the current process then continue
-    return this.shouldLoadURIInThisProcess(aURI, useRemoteSubframes);
+    return remoteType == wantRemoteType;
   },
 
   redirectLoad(
@@ -850,7 +975,6 @@ var E10SUtils = {
     aURI,
     aReferrerInfo,
     aTriggeringPrincipal,
-    aFreshProcess,
     aFlags,
     aCsp
   ) {
@@ -870,7 +994,6 @@ var E10SUtils = {
             Services.scriptSecurityManager.createNullPrincipal({})
         ),
         csp: aCsp ? this.serializeCSP(aCsp) : null,
-        reloadInFreshProcess: !!aFreshProcess,
       },
       historyIndex: sessionHistory.legacySHistory.requestedIndex,
     });
@@ -899,7 +1022,9 @@ var E10SUtils = {
       try {
         serialized = serializationHelper.serializeToString(referrerInfo);
       } catch (e) {
-        debug(`Failed to serialize referrerInfo '${referrerInfo}' ${e}`);
+        this.log().error(
+          `Failed to serialize referrerInfo '${referrerInfo}' ${e}`
+        );
       }
     }
     return serialized;
@@ -917,7 +1042,7 @@ var E10SUtils = {
         deserialized = serializationHelper.deserializeObject(referrerInfo_b64);
         deserialized.QueryInterface(Ci.nsIReferrerInfo);
       } catch (e) {
-        debug(
+        this.log().error(
           `Failed to deserialize referrerInfo_b64 '${referrerInfo_b64}' ${e}`
         );
       }
@@ -976,10 +1101,4 @@ XPCOMUtils.defineLazyGetter(
       Services.scriptSecurityManager.getSystemPrincipal()
     );
   }
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  E10SUtils,
-  "rebuildFrameloadersOnRemotenessChange",
-  "fission.rebuild_frameloaders_on_remoteness_change",
-  false
 );

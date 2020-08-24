@@ -13,7 +13,7 @@ use crate::gpu_cache::{GpuCache, GpuCacheAddress, GpuCacheHandle};
 use crate::gpu_types::{BorderInstance, ImageSource, UvRectKind};
 use crate::internal_types::{CacheTextureId, FastHashMap, LayerIndex, SavedTargetIndex};
 use crate::picture::ResolvedSurfaceTexture;
-use crate::prim_store::{PictureIndex, PrimitiveVisibilityMask};
+use crate::prim_store::PictureIndex;
 use crate::prim_store::image::ImageCacheKey;
 use crate::prim_store::gradient::{GRADIENT_FP_STOPS, GradientStopKey};
 #[cfg(feature = "debugger")]
@@ -23,6 +23,7 @@ use std::{usize, f32, i32, u32};
 use crate::render_target::{RenderTargetIndex, RenderTargetKind};
 use crate::render_task_graph::{RenderTaskGraph, RenderTaskId};
 use crate::render_task_cache::{RenderTaskCacheKey, RenderTaskCacheKeyKind};
+use crate::visibility::PrimitiveVisibilityMask;
 use smallvec::SmallVec;
 
 const RENDER_TASK_SIZE_SANITY_CHECK: i32 = 16000;
@@ -118,7 +119,7 @@ impl RenderTaskLocation {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct CacheMaskTask {
-    pub actual_rect: DeviceIntRect,
+    pub actual_rect: DeviceRect,
     pub root_spatial_node_index: SpatialNodeIndex,
     pub clip_node_range: ClipNodeRange,
     pub device_pixel_scale: DevicePixelScale,
@@ -138,7 +139,7 @@ pub struct ClipRegionTask {
 pub struct PictureTask {
     pub pic_index: PictureIndex,
     pub can_merge: bool,
-    pub content_origin: DeviceIntPoint,
+    pub content_origin: DevicePoint,
     pub uv_rect_handle: GpuCacheHandle,
     pub surface_spatial_node_index: SpatialNodeIndex,
     uv_rect_kind: UvRectKind,
@@ -396,7 +397,7 @@ impl RenderTask {
         location: RenderTaskLocation,
         unclipped_size: DeviceSize,
         pic_index: PictureIndex,
-        content_origin: DeviceIntPoint,
+        content_origin: DevicePoint,
         uv_rect_kind: UvRectKind,
         surface_spatial_node_index: SpatialNodeIndex,
         device_pixel_scale: DevicePixelScale,
@@ -519,7 +520,7 @@ impl RenderTask {
     }
 
     pub fn new_mask(
-        outer_rect: DeviceIntRect,
+        outer_rect: DeviceRect,
         clip_node_range: ClipNodeRange,
         root_spatial_node_index: SpatialNodeIndex,
         clip_store: &mut ClipStore,
@@ -551,6 +552,7 @@ impl RenderTask {
                         .expect("bug: no cache key set")
                         .clone();
                     let blur_radius_dp = cache_key.blur_radius_dp as f32;
+                    let device_pixel_scale = DevicePixelScale::new(cache_key.device_pixel_scale.to_f32_px());
                     let clip_data_address = gpu_cache.get_address(&source.clip_data_handle);
 
                     // Request a cacheable render task with a blurred, minimal
@@ -613,7 +615,7 @@ impl RenderTask {
 
         render_tasks.add().init(
             RenderTask::with_dynamic_location(
-                outer_rect.size,
+                outer_rect.size.to_i32(),
                 smallvec![],
                 RenderTaskKind::CacheMask(CacheMaskTask {
                     actual_rect: outer_rect,
@@ -654,20 +656,20 @@ impl RenderTask {
     // In order to do the blur down-scaling passes without introducing errors, we need the
     // source of each down-scale pass to be a multuple of two. If need be, this inflates
     // the source size so that each down-scale pass will sample correctly.
-    pub fn adjusted_blur_source_size(original_size: DeviceIntSize, mut std_dev: DeviceSize) -> DeviceIntSize {
+    pub fn adjusted_blur_source_size(original_size: DeviceSize, mut std_dev: DeviceSize) -> DeviceSize {
         let mut adjusted_size = original_size;
         let mut scale_factor = 1.0;
         while std_dev.width > MAX_BLUR_STD_DEVIATION && std_dev.height > MAX_BLUR_STD_DEVIATION {
-            if adjusted_size.width < MIN_DOWNSCALING_RT_SIZE ||
-               adjusted_size.height < MIN_DOWNSCALING_RT_SIZE {
+            if adjusted_size.width < MIN_DOWNSCALING_RT_SIZE as f32 ||
+               adjusted_size.height < MIN_DOWNSCALING_RT_SIZE as f32 {
                 break;
             }
             std_dev = std_dev * 0.5;
             scale_factor *= 2.0;
-            adjusted_size = (original_size.to_f32() / scale_factor).ceil().to_i32();
+            adjusted_size = (original_size.to_f32() / scale_factor).ceil();
         }
 
-        adjusted_size * scale_factor as i32
+        adjusted_size * scale_factor
     }
 
     // Construct a render task to apply a blur to a primitive.
@@ -1213,15 +1215,15 @@ impl RenderTask {
                 // Note: has to match `PICTURE_TYPE_*` in shaders
                 [
                     task.device_pixel_scale.0,
-                    task.content_origin.x as f32,
-                    task.content_origin.y as f32,
+                    task.content_origin.x,
+                    task.content_origin.y,
                 ]
             }
             RenderTaskKind::CacheMask(ref task) => {
                 [
                     task.device_pixel_scale.0,
-                    task.actual_rect.origin.x as f32,
-                    task.actual_rect.origin.y as f32,
+                    task.actual_rect.origin.x,
+                    task.actual_rect.origin.y,
                 ]
             }
             RenderTaskKind::ClipRegion(ref task) => {
@@ -1403,6 +1405,7 @@ impl RenderTask {
         &mut self,
         gpu_cache: &mut GpuCache,
     ) {
+        profile_scope!("write_gpu_blocks");
         let (target_rect, target_index) = self.get_target_rect();
 
         let (cache_handle, uv_rect_kind) = match self.kind {

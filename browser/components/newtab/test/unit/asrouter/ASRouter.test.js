@@ -59,7 +59,6 @@ describe("ASRouter", () => {
   let messageBlockList;
   let providerBlockList;
   let messageImpressions;
-  let providerImpressions;
   let groupImpressions;
   let previousSessionEnd;
   let fetchStub;
@@ -72,6 +71,7 @@ describe("ASRouter", () => {
   let FakeToolbarPanelHub;
   let FakeMomentsPageHub;
   let personalizedCfrScores;
+  let fakeTargetingContext;
 
   function createFakeStorage() {
     const getStub = sandbox.stub();
@@ -86,9 +86,6 @@ describe("ASRouter", () => {
       .withArgs("messageImpressions")
       .returns(Promise.resolve(messageImpressions));
     getStub.withArgs("groupImpressions").resolves(groupImpressions);
-    getStub
-      .withArgs("providerImpressions")
-      .returns(Promise.resolve(providerImpressions));
     getStub
       .withArgs("previousSessionEnd")
       .returns(Promise.resolve(previousSessionEnd));
@@ -116,7 +113,6 @@ describe("ASRouter", () => {
     messageBlockList = [];
     providerBlockList = [];
     messageImpressions = {};
-    providerImpressions = {};
     groupImpressions = {};
     previousSessionEnd = 100;
     sandbox = sinon.createSandbox();
@@ -173,6 +169,10 @@ describe("ASRouter", () => {
       uninit: sandbox.stub(),
       executeAction: sandbox.stub(),
     };
+    fakeTargetingContext = {
+      combineContexts: sandbox.stub(),
+      evalWithDefault: sandbox.stub().resolves(),
+    };
     globals.set({
       // Testing framework doesn't know how to `defineLazyModuleGetter` so we're
       // importing these modules into the global scope ourselves.
@@ -183,6 +183,7 @@ describe("ASRouter", () => {
       ASRouterTriggerListeners,
       QueryCache,
       gURLBar: {},
+      multiStageAboutWelcome: null,
       AttributionCode: fakeAttributionCode,
       SnippetsTestMessageProvider,
       PanelTestProvider,
@@ -204,6 +205,23 @@ describe("ASRouter", () => {
       Downloader: class {
         download() {
           return Promise.resolve("/path/to/download");
+        }
+      },
+      ExperimentAPI: {
+        getExperiment: sandbox.stub().returns({ branch: { value: [] } }),
+        getAllBranches: sandbox.stub().returns([{ branch: { value: [] } }]),
+        ready: sandbox.stub().resolves(),
+      },
+      SpecialMessageActions: {
+        handleAction: sandbox.stub(),
+      },
+      TargetingContext: class {
+        static combineContexts(...args) {
+          return fakeTargetingContext.combineContexts.apply(sandbox, args);
+        }
+
+        evalWithDefault(expr) {
+          return fakeTargetingContext.evalWithDefault(expr);
         }
       },
     });
@@ -239,20 +257,6 @@ describe("ASRouter", () => {
 
       assert.deepEqual(Router.state.messageBlockList, ["foo"]);
     });
-    it("should migrate provider impressions to group impressions", async () => {
-      setMessageProviderPref([
-        { id: "onboarding", type: "local", messages: [] },
-      ]);
-      providerImpressions = { onboarding: [1, 2, 3] };
-      Router = new _ASRouter();
-      await Router.init(channel, createFakeStorage(), dispatchStub);
-
-      assert.property(Router.state.groupImpressions, "onboarding");
-      assert.deepEqual(
-        Router.state.groupImpressions.onboarding,
-        providerImpressions.onboarding
-      );
-    });
     it("should initialize all the hub providers", async () => {
       // ASRouter init called in `beforeEach` block above
 
@@ -279,7 +283,6 @@ describe("ASRouter", () => {
         {
           getMessages: Router.handleMessageRequest,
           dispatch: Router.dispatch,
-          handleUserAction: Router.handleUserAction,
         }
       );
 
@@ -399,6 +402,9 @@ describe("ASRouter", () => {
         ac.BroadcastToContent({
           type: "AS_ROUTER_INITIALIZED",
           data: ASRouterPreferences.specialConditions,
+          meta: {
+            isStartup: true,
+          },
         })
       );
     });
@@ -480,7 +486,7 @@ describe("ASRouter", () => {
         messages: [messageTargeted, messageNotTargeted],
         providers: [{ id: "snippets" }],
       });
-      sandbox.stub(ASRouterTargeting, "isMatch").resolves(false);
+      fakeTargetingContext.evalWithDefault.resolves(false);
 
       await Router.onPrefChange("services.sync.username");
 
@@ -560,7 +566,7 @@ describe("ASRouter", () => {
     beforeEach(async () => {
       stub = sandbox.stub();
       stub.resolves("foo");
-      sandbox.stub(ASRouterTargeting, "isMatch").callsFake(stub);
+      fakeTargetingContext.evalWithDefault.callsFake(stub);
     });
     afterEach(() => {
       sandbox.restore();
@@ -599,7 +605,6 @@ describe("ASRouter", () => {
     beforeEach(() => {
       sandbox.stub(CFRPageActions, "forceRecommendation");
       sandbox.stub(CFRPageActions, "addRecommendation");
-      sandbox.stub(CFRPageActions, "showMilestone");
       target = { sendAsyncMessage: sandbox.stub() };
     });
     it("should route whatsnew_panel_message message to the right hub", () => {
@@ -615,7 +620,6 @@ describe("ASRouter", () => {
       assert.notCalled(FakeBookmarkPanelHub._forceShowMessage);
       assert.notCalled(CFRPageActions.addRecommendation);
       assert.notCalled(CFRPageActions.forceRecommendation);
-      assert.notCalled(CFRPageActions.showMilestone);
       assert.notCalled(target.sendAsyncMessage);
       assert.notCalled(FakeMomentsPageHub.executeAction);
     });
@@ -633,7 +637,6 @@ describe("ASRouter", () => {
       assert.notCalled(FakeBookmarkPanelHub._forceShowMessage);
       assert.notCalled(CFRPageActions.addRecommendation);
       assert.notCalled(CFRPageActions.forceRecommendation);
-      assert.notCalled(CFRPageActions.showMilestone);
       assert.notCalled(target.sendAsyncMessage);
     });
     it("should route toolbar_badge message to the right hub", () => {
@@ -644,15 +647,18 @@ describe("ASRouter", () => {
       assert.notCalled(FakeBookmarkPanelHub._forceShowMessage);
       assert.notCalled(CFRPageActions.addRecommendation);
       assert.notCalled(CFRPageActions.forceRecommendation);
-      assert.notCalled(CFRPageActions.showMilestone);
       assert.notCalled(target.sendAsyncMessage);
       assert.notCalled(FakeMomentsPageHub.executeAction);
     });
     it("should route milestone_message to the right hub", () => {
-      Router.routeMessageToTarget({ template: "milestone_message" }, target);
+      Router.routeMessageToTarget(
+        { template: "milestone_message" },
+        target,
+        "",
+        false
+      );
 
-      assert.calledOnce(CFRPageActions.showMilestone);
-      assert.notCalled(CFRPageActions.addRecommendation);
+      assert.calledOnce(CFRPageActions.addRecommendation);
       assert.notCalled(CFRPageActions.forceRecommendation);
       assert.notCalled(FakeBookmarkPanelHub._forceShowMessage);
       assert.notCalled(FakeToolbarBadgeHub.registerBadgeNotificationListener);
@@ -673,7 +679,6 @@ describe("ASRouter", () => {
       assert.notCalled(FakeToolbarBadgeHub.registerBadgeNotificationListener);
       assert.notCalled(CFRPageActions.addRecommendation);
       assert.notCalled(CFRPageActions.forceRecommendation);
-      assert.notCalled(CFRPageActions.showMilestone);
       assert.notCalled(target.sendAsyncMessage);
       assert.notCalled(FakeMomentsPageHub.executeAction);
     });
@@ -690,7 +695,6 @@ describe("ASRouter", () => {
       assert.notCalled(FakeBookmarkPanelHub._forceShowMessage);
       assert.notCalled(FakeToolbarBadgeHub.registerBadgeNotificationListener);
       assert.notCalled(CFRPageActions.forceRecommendation);
-      assert.notCalled(CFRPageActions.showMilestone);
       assert.notCalled(target.sendAsyncMessage);
       assert.notCalled(FakeMomentsPageHub.executeAction);
     });
@@ -705,7 +709,6 @@ describe("ASRouter", () => {
       assert.calledOnce(CFRPageActions.forceRecommendation);
       assert.notCalled(FakeToolbarPanelHub.forceShowMessage);
       assert.notCalled(CFRPageActions.addRecommendation);
-      assert.notCalled(CFRPageActions.showMilestone);
       assert.notCalled(FakeBookmarkPanelHub._forceShowMessage);
       assert.notCalled(FakeToolbarBadgeHub.registerBadgeNotificationListener);
       assert.notCalled(target.sendAsyncMessage);
@@ -727,7 +730,6 @@ describe("ASRouter", () => {
       assert.notCalled(FakeBookmarkPanelHub._forceShowMessage);
       assert.notCalled(FakeToolbarBadgeHub.registerBadgeNotificationListener);
       assert.notCalled(CFRPageActions.forceRecommendation);
-      assert.notCalled(CFRPageActions.showMilestone);
       assert.notCalled(target.sendAsyncMessage);
       assert.notCalled(FakeMomentsPageHub.executeAction);
     });
@@ -742,7 +744,6 @@ describe("ASRouter", () => {
       assert.calledOnce(CFRPageActions.forceRecommendation);
       assert.notCalled(FakeToolbarPanelHub.forceShowMessage);
       assert.notCalled(CFRPageActions.addRecommendation);
-      assert.notCalled(CFRPageActions.showMilestone);
       assert.notCalled(FakeBookmarkPanelHub._forceShowMessage);
       assert.notCalled(FakeToolbarBadgeHub.registerBadgeNotificationListener);
       assert.notCalled(target.sendAsyncMessage);
@@ -755,7 +756,6 @@ describe("ASRouter", () => {
       assert.notCalled(FakeToolbarPanelHub.forceShowMessage);
       assert.notCalled(CFRPageActions.forceRecommendation);
       assert.notCalled(CFRPageActions.addRecommendation);
-      assert.notCalled(CFRPageActions.showMilestone);
       assert.notCalled(FakeBookmarkPanelHub._forceShowMessage);
       assert.notCalled(FakeToolbarBadgeHub.registerBadgeNotificationListener);
       assert.notCalled(FakeMomentsPageHub.executeAction);
@@ -786,7 +786,7 @@ describe("ASRouter", () => {
       // Since we've previously gotten messages during init and we haven't advanced our fake timer,
       // no updates should be triggered.
       await Router.loadMessagesFromAllProviders();
-      assert.equal(Router.state, previousState);
+      assert.deepEqual(Router.state, previousState);
     });
     it("should not trigger an update if we only have local providers", async () => {
       await createRouterAndInit([
@@ -799,11 +799,14 @@ describe("ASRouter", () => {
       ]);
 
       const previousState = Router.state;
+      const stub = sandbox.stub(MessageLoaderUtils, "loadMessagesForProvider");
 
       clock.tick(300);
 
       await Router.loadMessagesFromAllProviders();
-      assert.equal(Router.state, previousState);
+
+      assert.deepEqual(Router.state, previousState);
+      assert.notCalled(stub);
     });
     it("should apply personalization if defined", async () => {
       personalizedCfrScores = { FOO: 1, BAR: 2 };
@@ -1706,7 +1709,10 @@ describe("ASRouter", () => {
         await Router.onMessage(msg);
 
         assert.calledWith(global.fetch, url);
-        assert.lengthOf(Router.state.providers.filter(p => p.url === url), 0);
+        assert.lengthOf(
+          Router.state.providers.filter(p => p.url === url),
+          0
+        );
       });
       it("should make a request to the provided endpoint on ADMIN_CONNECT_STATE and remove the endpoint", async () => {
         const url = "https://snippets-admin.mozilla.org/foo";
@@ -1717,7 +1723,10 @@ describe("ASRouter", () => {
         await Router.onMessage(msg);
 
         assert.calledWith(global.fetch, url);
-        assert.lengthOf(Router.state.providers.filter(p => p.url === url), 0);
+        assert.lengthOf(
+          Router.state.providers.filter(p => p.url === url),
+          0
+        );
       });
       it("should dispatch SNIPPETS_PREVIEW_MODE when adding a preview endpoint", async () => {
         const url = "https://snippets-admin.mozilla.org/foo";
@@ -1743,7 +1752,10 @@ describe("ASRouter", () => {
         });
         await Router.onMessage(msg);
 
-        assert.lengthOf(Router.state.providers.filter(p => p.url === url), 0);
+        assert.lengthOf(
+          Router.state.providers.filter(p => p.url === url),
+          0
+        );
       });
       it("should reject bad urls", async () => {
         const url = "foo";
@@ -1753,7 +1765,10 @@ describe("ASRouter", () => {
         });
         await Router.onMessage(msg);
 
-        assert.lengthOf(Router.state.providers.filter(p => p.url === url), 0);
+        assert.lengthOf(
+          Router.state.providers.filter(p => p.url === url),
+          0
+        );
       });
       it("should handle onboarding message provider", async () => {
         const handleMessageRequestStub = sandbox.stub(
@@ -1884,6 +1899,21 @@ describe("ASRouter", () => {
       });
     });
 
+    describe("#onMessage: MODIFY_MESSAGE_JSON", () => {
+      it("should call `modifyMessageJson`", async () => {
+        const msg = fakeAsyncMessage({
+          type: "MODIFY_MESSAGE_JSON",
+          data: { content: {} },
+        });
+
+        sandbox.spy(Router, "modifyMessageJson");
+
+        await Router.onMessage(msg);
+
+        assert.calledOnce(Router.modifyMessageJson);
+      });
+    });
+
     describe("#onMessage: DISMISS_MESSAGE_BY_ID", () => {
       it("should reply with CLEAR_MESSAGE with the correct id", async () => {
         const msg = fakeAsyncMessage({
@@ -1990,6 +2020,36 @@ describe("ASRouter", () => {
         );
 
         assert.calledWithExactly(Router._storage.set, "providerBlockList", []);
+      });
+    });
+
+    describe("#onMessage: BLOCK_BUNDLE", () => {
+      it("should add all the ids in the bundle to the messageBlockList", async () => {
+        await Router.onMessage(
+          fakeAsyncMessage({
+            type: "BLOCK_BUNDLE",
+            data: { bundle: FAKE_BUNDLE },
+          })
+        );
+        assert.isTrue(
+          Router.state.messageBlockList.includes(FAKE_BUNDLE[0].id)
+        );
+        assert.isTrue(
+          Router.state.messageBlockList.includes(FAKE_BUNDLE[1].id)
+        );
+      });
+      it("should save the messageBlockList", async () => {
+        await Router.onMessage(
+          fakeAsyncMessage({
+            type: "BLOCK_BUNDLE",
+            data: { bundle: FAKE_BUNDLE },
+          })
+        );
+
+        assert.calledWithExactly(Router._storage.set, "messageBlockList", [
+          FAKE_BUNDLE[0].id,
+          FAKE_BUNDLE[1].id,
+        ]);
       });
     });
 
@@ -2283,6 +2343,72 @@ describe("ASRouter", () => {
           100
         );
       });
+      it("should record the Reach event if found any", async () => {
+        let messages = [
+          {
+            id: "foo1",
+            forReachEvent: { sent: false },
+            experimentSlug: "exp01",
+            branchSlug: "branch01",
+            group: "cfr",
+            template: "simple_template",
+            trigger: { id: "foo" },
+            content: { title: "Foo1", body: "Foo123-1" },
+          },
+          {
+            id: "foo2",
+            group: "cfr",
+            template: "simple_template",
+            trigger: { id: "bar" },
+            content: { title: "Foo2", body: "Foo123-2" },
+            provider: "onboarding",
+          },
+          {
+            id: "foo3",
+            forReachEvent: { sent: false },
+            experimentSlug: "exp02",
+            branchSlug: "branch02",
+            group: "cfr",
+            template: "simple_template",
+            trigger: { id: "foo" },
+            content: { title: "Foo1", body: "Foo123-1" },
+          },
+        ];
+        sandbox.stub(Router, "handleMessageRequest").resolves(messages);
+        sandbox.spy(Services.telemetry, "recordEvent");
+
+        const msg = fakeAsyncMessage({
+          type: "TRIGGER",
+          data: { trigger: { id: "foo" } },
+        });
+
+        await Router.onMessage(msg);
+        assert.calledTwice(Services.telemetry.recordEvent);
+      });
+      it("should not record the Reach event if it's already sent", async () => {
+        let messages = [
+          {
+            id: "foo1",
+            forReachEvent: { sent: true },
+            experimentSlug: "exp01",
+            branchSlug: "branch01",
+            group: "cfr",
+            template: "simple_template",
+            trigger: { id: "foo" },
+            content: { title: "Foo1", body: "Foo123-1" },
+          },
+        ];
+        sandbox.stub(Router, "handleMessageRequest").resolves(messages);
+        sandbox.spy(Services.telemetry, "recordEvent");
+
+        const msg = fakeAsyncMessage({
+          type: "TRIGGER",
+          data: { trigger: { id: "foo" } },
+        });
+
+        await Router.onMessage(msg);
+        assert.notCalled(Services.telemetry.recordEvent);
+      });
     });
 
     describe(".includeBundle", () => {
@@ -2532,217 +2658,6 @@ describe("ASRouter", () => {
           PARENT_TO_CHILD_MESSAGE_NAME,
           { type: "CLEAR_ALL" }
         );
-      });
-    });
-
-    describe("#onMessage: Onboarding actions", () => {
-      it("should call OpenBrowserWindow with a private window on OPEN_PRIVATE_BROWSER_WINDOW", async () => {
-        let [testMessage] = Router.state.messages;
-        const msg = fakeExecuteUserAction({
-          type: "OPEN_PRIVATE_BROWSER_WINDOW",
-          data: testMessage,
-        });
-        await Router.onMessage(msg);
-
-        assert.calledWith(msg.target.browser.ownerGlobal.OpenBrowserWindow, {
-          private: true,
-        });
-      });
-      it("should call openLinkIn with the correct params on OPEN_URL", async () => {
-        let [testMessage] = Router.state.messages;
-        testMessage.button_action = {
-          type: "OPEN_URL",
-          data: { args: "some/url.com", where: "tabshifted" },
-        };
-        const msg = fakeExecuteUserAction(testMessage.button_action);
-        await Router.onMessage(msg);
-
-        assert.calledOnce(msg.target.browser.ownerGlobal.openLinkIn);
-        assert.calledWith(
-          msg.target.browser.ownerGlobal.openLinkIn,
-          "some/url.com",
-          "tabshifted",
-          { private: false, triggeringPrincipal: undefined, csp: null }
-        );
-      });
-      it("should call openLinkIn with the correct params on OPEN_ABOUT_PAGE", async () => {
-        let [testMessage] = Router.state.messages;
-        testMessage.button_action = {
-          type: "OPEN_ABOUT_PAGE",
-          data: { args: "something" },
-        };
-        const msg = fakeExecuteUserAction(testMessage.button_action);
-        await Router.onMessage(msg);
-
-        assert.calledOnce(msg.target.browser.ownerGlobal.openTrustedLinkIn);
-        assert.calledWith(
-          msg.target.browser.ownerGlobal.openTrustedLinkIn,
-          "about:something",
-          "tab"
-        );
-      });
-      it("should call MigrationUtils.showMigrationWizard on SHOW_MIGRATION_WIZARD", async () => {
-        let [testMessage] = Router.state.messages;
-        testMessage.button_action = {
-          type: "SHOW_MIGRATION_WIZARD",
-        };
-        const msg = fakeExecuteUserAction(testMessage.button_action);
-        globals.set("MigrationUtils", {
-          showMigrationWizard: sandbox
-            .stub()
-            .withArgs(msg.target.browser.ownerGlobal, ["test"]),
-          MIGRATION_ENTRYPOINT_NEWTAB: "test",
-        });
-        await Router.onMessage(msg);
-
-        assert.calledOnce(MigrationUtils.showMigrationWizard);
-        assert.calledWith(
-          MigrationUtils.showMigrationWizard,
-          msg.target.browser.ownerGlobal,
-          [MigrationUtils.MIGRATION_ENTRYPOINT_NEWTAB]
-        );
-      });
-    });
-
-    describe("#onMessage: SHOW_FIREFOX_ACCOUNTS", () => {
-      beforeEach(() => {
-        globals.set("FxAccounts", {
-          config: {
-            promiseConnectAccountURI: sandbox.stub().resolves("some/url"),
-          },
-        });
-      });
-      it("should call openLinkIn with the correct params on OPEN_URL", async () => {
-        let [testMessage] = Router.state.messages;
-        testMessage.button_action = { type: "SHOW_FIREFOX_ACCOUNTS" };
-        const msg = fakeExecuteUserAction(testMessage.button_action);
-        await Router.onMessage(msg);
-
-        assert.calledOnce(msg.target.browser.ownerGlobal.openLinkIn);
-        assert.calledWith(
-          msg.target.browser.ownerGlobal.openLinkIn,
-          "some/url",
-          "current",
-          { private: false, triggeringPrincipal: undefined, csp: null }
-        );
-      });
-    });
-
-    describe("#onMessage: OPEN_PREFERENCES_PAGE", () => {
-      it("should call openPreferences with the correct params on OPEN_PREFERENCES_PAGE", async () => {
-        let [testMessage] = Router.state.messages;
-        testMessage.button_action = {
-          type: "OPEN_PREFERENCES_PAGE",
-          data: { category: "something" },
-        };
-        const msg = fakeExecuteUserAction(testMessage.button_action);
-        await Router.onMessage(msg);
-
-        assert.calledOnce(msg.target.browser.ownerGlobal.openPreferences);
-        assert.calledWith(
-          msg.target.browser.ownerGlobal.openPreferences,
-          "something"
-        );
-      });
-    });
-
-    describe("#onMessage: INSTALL_ADDON_FROM_URL", () => {
-      it("should call installAddonFromURL with correct arguments", async () => {
-        sandbox.stub(MessageLoaderUtils, "installAddonFromURL").resolves(null);
-        const msg = fakeExecuteUserAction({
-          type: "INSTALL_ADDON_FROM_URL",
-          data: { url: "foo.com", telemetrySource: "foo" },
-        });
-
-        await Router.onMessage(msg);
-
-        assert.calledOnce(MessageLoaderUtils.installAddonFromURL);
-        assert.calledWithExactly(
-          MessageLoaderUtils.installAddonFromURL,
-          msg.target.browser,
-          "foo.com",
-          "foo"
-        );
-      });
-
-      it("should add/remove observers for `webextension-install-notify`", async () => {
-        sandbox.spy(global.Services.obs, "addObserver");
-        sandbox.spy(global.Services.obs, "removeObserver");
-
-        sandbox.stub(MessageLoaderUtils, "installAddonFromURL").resolves(null);
-        const msg = fakeExecuteUserAction({
-          type: "INSTALL_ADDON_FROM_URL",
-          data: { url: "foo.com" },
-        });
-
-        await Router.onMessage(msg);
-
-        assert.calledOnce(global.Services.obs.addObserver);
-
-        const [cb] = global.Services.obs.addObserver.firstCall.args;
-
-        cb();
-
-        assert.calledOnce(global.Services.obs.removeObserver);
-        assert.calledOnce(channel.sendAsyncMessage);
-      });
-    });
-
-    describe("#onMessage: PIN_CURRENT_TAB", () => {
-      it("should call pin tab with the selectedTab", async () => {
-        const msg = fakeExecuteUserAction({ type: "PIN_CURRENT_TAB" });
-        const { gBrowser, ConfirmationHint } = msg.target.browser.ownerGlobal;
-
-        await Router.onMessage(msg);
-
-        assert.calledOnce(gBrowser.pinTab);
-        assert.calledWithExactly(gBrowser.pinTab, gBrowser.selectedTab);
-        assert.calledOnce(ConfirmationHint.show);
-        assert.calledWithExactly(
-          ConfirmationHint.show,
-          gBrowser.selectedTab,
-          "pinTab",
-          { showDescription: true }
-        );
-      });
-    });
-
-    describe("#onMessage: OPEN_PROTECTION_PANEL", () => {
-      it("should open protection panel", async () => {
-        const msg = fakeExecuteUserAction({ type: "OPEN_PROTECTION_PANEL" });
-        let { gProtectionsHandler } = msg.target.browser.ownerGlobal;
-
-        await Router.onMessage(msg);
-
-        assert.calledOnce(gProtectionsHandler.showProtectionsPopup);
-        assert.calledWithExactly(gProtectionsHandler.showProtectionsPopup, {});
-      });
-    });
-
-    describe("#onMessage: OPEN_PROTECTION_REPORT", () => {
-      it("should open protection report", async () => {
-        const msg = fakeExecuteUserAction({ type: "OPEN_PROTECTION_REPORT" });
-        let { gProtectionsHandler } = msg.target.browser.ownerGlobal;
-
-        await Router.onMessage(msg);
-
-        assert.calledOnce(gProtectionsHandler.openProtections);
-      });
-    });
-
-    describe("#onMessage: DISABLE_STP_DOORHANGERS", () => {
-      it("should block STP related messages", async () => {
-        const msg = fakeExecuteUserAction({ type: "DISABLE_STP_DOORHANGERS" });
-
-        assert.deepEqual(Router.state.messageBlockList, []);
-
-        await Router.onMessage(msg);
-
-        assert.deepEqual(Router.state.messageBlockList, [
-          "SOCIAL_TRACKING_PROTECTION",
-          "FINGERPRINTERS_PROTECTION",
-          "CRYPTOMINERS_PROTECTION",
-        ]);
       });
     });
 
@@ -3047,6 +2962,50 @@ describe("ASRouter", () => {
         assert.calledOnce(Cu.reportError);
       });
     });
+    describe("#onMessage: USER_ACTION", () => {
+      it("should dispatch to SpecialMessageActions", async () => {
+        const msg = fakeExecuteUserAction({
+          type: "OPEN_URL",
+          data: {
+            args: "foo",
+          },
+        });
+
+        await Router.onMessage(msg);
+
+        assert.calledOnce(global.SpecialMessageActions.handleAction);
+        assert.calledWithExactly(
+          global.SpecialMessageActions.handleAction,
+          msg.data.data,
+          msg.target.browser
+        );
+      });
+      it("should call update onboarding state on INSTALL_ADDON_FROM_URL", async () => {
+        const spy = sandbox.spy(global.Services.obs, "addObserver");
+        const msg = fakeExecuteUserAction({
+          type: "INSTALL_ADDON_FROM_URL",
+        });
+
+        await Router.onMessage(msg);
+
+        assert.calledOnce(spy);
+        assert.calledWithExactly(
+          spy,
+          sinon.match.func,
+          "webextension-install-notify"
+        );
+
+        const [eventCb] = spy.firstCall.args;
+        // Call the observer cb
+        eventCb();
+        assert.calledOnce(Router.messageChannel.sendAsyncMessage);
+        assert.calledWithExactly(
+          Router.messageChannel.sendAsyncMessage,
+          OUTGOING_MESSAGE_NAME,
+          { type: "CLEAR_INTERRUPT" }
+        );
+      });
+    });
   });
 
   describe("_triggerHandler", () => {
@@ -3076,51 +3035,6 @@ describe("ASRouter", () => {
       const trigger = { id: "FAKE_TRIGGER", param: "some fake param" };
       Router._triggerHandler(target, trigger);
       assert.notCalled(Router.onMessage);
-    });
-  });
-
-  describe("#UITour", () => {
-    let showMenuStub;
-    const highlightTarget = { target: "target" };
-    beforeEach(() => {
-      showMenuStub = sandbox.stub();
-      globals.set("UITour", {
-        showMenu: showMenuStub,
-        getTarget: sandbox
-          .stub()
-          .withArgs(sinon.match.object, "pageAaction-sendToDevice")
-          .resolves(highlightTarget),
-        showHighlight: sandbox.stub(),
-      });
-    });
-    it("should call UITour.showMenu with the correct params on OPEN_APPLICATIONS_MENU", async () => {
-      const msg = fakeExecuteUserAction({
-        type: "OPEN_APPLICATIONS_MENU",
-        data: { args: "appMenu" },
-      });
-      await Router.onMessage(msg);
-
-      assert.calledOnce(showMenuStub);
-      assert.calledWith(
-        showMenuStub,
-        msg.target.browser.ownerGlobal,
-        "appMenu"
-      );
-    });
-    it("should call UITour.showHighlight with the correct params on HIGHLIGHT_FEATURE", async () => {
-      const msg = fakeExecuteUserAction({
-        type: "HIGHLIGHT_FEATURE",
-        data: { args: "pageAction-sendToDevice" },
-      });
-      await Router.onMessage(msg);
-
-      assert.calledOnce(UITour.getTarget);
-      assert.calledOnce(UITour.showHighlight);
-      assert.calledWith(
-        UITour.showHighlight,
-        msg.target.browser.ownerGlobal,
-        highlightTarget
-      );
     });
   });
 
@@ -3294,7 +3208,7 @@ describe("ASRouter", () => {
             {},
             state.messageImpressions
           );
-          const gImpressions = Object.assign({}, state.providerImpressions);
+          let gImpressions = {};
           gImpressions.bar = barGroupImpressions;
           messageImpressions.foo = fooMessageImpressions;
           return {
@@ -3588,9 +3502,7 @@ describe("ASRouter", () => {
       sandbox.stub(Router, "loadMessagesFromAllProviders");
     });
     it("should dispatch an event when a targeting expression throws an error", async () => {
-      sandbox
-        .stub(global.FilterExpressions, "eval")
-        .returns(Promise.reject(new Error("fake error")));
+      fakeTargetingContext.evalWithDefault.rejects("unit test error");
       await Router.setState({
         messages: [
           {
@@ -4025,7 +3937,10 @@ describe("ASRouter", () => {
   describe("#setGroupState", () => {
     it("should clear group impressions", async () => {
       await Router.setState({
-        groups: [{ id: "foo", enabled: true }, { id: "bar", enabled: true }],
+        groups: [
+          { id: "foo", enabled: true },
+          { id: "bar", enabled: true },
+        ],
         groupImpressions: { foo: [1], bar: [2] },
       });
 
@@ -4099,7 +4014,139 @@ describe("ASRouter", () => {
       });
     });
   });
+  describe("#hideExtendedTripletsOnMultiStageWelcome", () => {
+    it("should return false by default", async () => {
+      global.ExperimentAPI.getExperiment.returns(null);
+      let result = Router.hasMultiStageAboutWelcome();
+      assert.isFalse(result);
+    });
+    it("should return true if experiment has multistage template", async () => {
+      global.ExperimentAPI.getExperiment.returns({
+        branch: {
+          slug: "branch01",
+          value: { id: "id01", template: "multistage" },
+        },
+      });
+      let result = Router.hasMultiStageAboutWelcome();
+      assert.calledOnce(global.ExperimentAPI.getExperiment);
+      assert.calledWithExactly(global.ExperimentAPI.getExperiment, {
+        group: "aboutwelcome",
+      });
+      assert.isTrue(result);
+    });
+    it("should return false by default when fails to get ExperimentData", async () => {
+      global.ExperimentAPI.getExperiment.throws();
+      let result = Router.hasMultiStageAboutWelcome();
+      assert.isFalse(result);
+    });
+  });
   describe("#loadMessagesForProvider", () => {
+    it("should fetch messages from the ExperimentAPI", async () => {
+      const args = {
+        type: "remote-experiments",
+        messageGroups: ["asrouter"],
+      };
+
+      await MessageLoaderUtils.loadMessagesForProvider(args);
+
+      assert.calledOnce(global.ExperimentAPI.getExperiment);
+      assert.calledWithExactly(global.ExperimentAPI.getExperiment, {
+        group: "asrouter",
+      });
+    });
+    it("should handle the case of no experiments in the ExperimentAPI", async () => {
+      const args = {
+        type: "remote-experiments",
+        messageGroups: ["asrouter"],
+      };
+
+      global.ExperimentAPI.getExperiment.throws();
+      const stub = sandbox.stub(MessageLoaderUtils, "reportError");
+
+      await MessageLoaderUtils.loadMessagesForProvider(args);
+
+      assert.calledOnce(stub);
+    });
+    it("should handle the case of no experiments in the ExperimentAPI", async () => {
+      const args = {
+        type: "remote-experiments",
+        messageGroups: ["asrouter"],
+      };
+
+      global.ExperimentAPI.getExperiment.returns(null);
+
+      const result = await MessageLoaderUtils.loadMessagesForProvider(args);
+
+      assert.lengthOf(result.messages, 0);
+    });
+    it("should normally load ExperimentAPI messages", async () => {
+      const args = {
+        type: "remote-experiments",
+        messageGroups: ["asrouter"],
+      };
+
+      global.ExperimentAPI.getExperiment.returns({
+        branch: {
+          slug: "branch01",
+          value: { id: "id01", trigger: { id: "openURL" } },
+        },
+      });
+
+      const result = await MessageLoaderUtils.loadMessagesForProvider(args);
+
+      assert.lengthOf(result.messages, 1);
+    });
+    it("should fetch messages from the ExperimentAPI", async () => {
+      global.ExperimentAPI.ready.throws();
+      const args = {
+        type: "remote-experiments",
+        messageGroups: ["asrouter"],
+      };
+      const stub = sandbox.stub(MessageLoaderUtils, "reportError");
+
+      await MessageLoaderUtils.loadMessagesForProvider(args);
+
+      assert.notCalled(global.ExperimentAPI.getExperiment);
+      assert.calledOnce(stub);
+    });
+    it("should fetch branches with trigger", async () => {
+      const args = {
+        type: "remote-experiments",
+        messageGroups: ["cfr"],
+      };
+      global.ExperimentAPI.getExperiment.returns({
+        slug: "exp01",
+        branch: {
+          slug: "branch01",
+          value: { id: "id01", trigger: { id: "openURL" } },
+        },
+      });
+      global.ExperimentAPI.getAllBranches.returns([
+        {
+          slug: "branch01",
+          value: { id: "id01", trigger: { id: "openURL" } },
+        },
+        {
+          slug: "branch02",
+          value: { id: "id02", trigger: { id: "openURL" } },
+        },
+        {
+          // This branch should not be loaded as it doesn't have the trigger
+          slug: "branch03",
+          value: { id: "id03" },
+        },
+      ]);
+
+      const result = await MessageLoaderUtils.loadMessagesForProvider(args);
+
+      assert.equal(result.messages.length, 2);
+      assert.equal(result.messages[0].id, "id01");
+      assert.equal(result.messages[1].id, "id02");
+      assert.equal(result.messages[1].group, "cfr");
+      assert.equal(result.messages[1].experimentSlug, "exp01");
+      assert.equal(result.messages[1].branchSlug, "branch02");
+      assert.deepEqual(result.messages[1].forReachEvent, { sent: false });
+    });
     it("should fetch json from url", async () => {
       let result = await MessageLoaderUtils.loadMessagesForProvider({
         location: "http://fake.com/endpoint",

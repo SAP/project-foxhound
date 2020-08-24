@@ -10,7 +10,6 @@
 #include "ClientLayerManager.h"
 #include "gfxPlatform.h"
 #include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/TabGroup.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/Hal.h"
 #include "mozilla/IMEStateManager.h"
@@ -19,6 +18,7 @@
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEventDispatcher.h"
@@ -273,7 +273,7 @@ void PuppetWidget::Invalidate(const LayoutDeviceIntRect& aRect) {
   if (mBrowserChild && !mDirtyRegion.IsEmpty() && !mPaintTask.IsPending()) {
     mPaintTask = new PaintTask(this);
     nsCOMPtr<nsIRunnable> event(mPaintTask.get());
-    mBrowserChild->TabGroup()->Dispatch(TaskCategory::Other, event.forget());
+    SchedulerGroup::Dispatch(TaskCategory::Other, event.forget());
     return;
   }
 }
@@ -395,15 +395,6 @@ nsEventStatus PuppetWidget::DispatchInputEvent(WidgetInputEvent* aEvent) {
     return nsEventStatus_eIgnore;
   }
 
-  if (PresShell* presShell = mBrowserChild->GetTopLevelPresShell()) {
-    // Because the root resolution is conceptually at the parent/child process
-    // boundary, we need to apply that resolution here because we're sending
-    // the event from the child to the parent process.
-    LayoutDevicePoint pt(aEvent->mRefPoint);
-    pt = pt * presShell->GetResolution();
-    aEvent->mRefPoint = LayoutDeviceIntPoint::Round(pt);
-  }
-
   switch (aEvent->mClass) {
     case eWheelEventClass:
       Unused << mBrowserChild->SendDispatchWheelEvent(*aEvent->AsWheelEvent());
@@ -510,7 +501,7 @@ nsresult PuppetWidget::ClearNativeTouchSequence(nsIObserver* aObserver) {
 
 void PuppetWidget::SetConfirmedTargetAPZC(
     uint64_t aInputBlockId,
-    const nsTArray<SLGuidAndRenderRoot>& aTargets) const {
+    const nsTArray<ScrollableLayerGuid>& aTargets) const {
   if (mBrowserChild) {
     mBrowserChild->SetTargetAPZC(aInputBlockId, aTargets);
   }
@@ -781,7 +772,7 @@ nsresult PuppetWidget::NotifyIMEOfFocusChange(
   RefPtr<PuppetWidget> self = this;
   mBrowserChild->SendNotifyIMEFocus(mContentCache, aIMENotification)
       ->Then(
-          mBrowserChild->TabGroup()->EventTargetFor(TaskCategory::UI), __func__,
+          GetMainThreadSerialEventTarget(), __func__,
           [self](IMENotificationRequests&& aRequests) {
             self->mIMENotificationRequestsOfParent = aRequests;
             if (TextEventDispatcher* dispatcher =
@@ -1165,15 +1156,6 @@ LayoutDeviceIntRect PuppetWidget::GetScreenBounds() {
   return LayoutDeviceIntRect(WidgetToScreenOffset(), mBounds.Size());
 }
 
-LayoutDeviceIntSize PuppetWidget::GetCompositionSize() {
-  Maybe<LayoutDeviceIntRect> visibleRect =
-      mBrowserChild ? mBrowserChild->GetVisibleRect() : Nothing();
-  if (!visibleRect) {
-    return nsBaseWidget::GetCompositionSize();
-  }
-  return visibleRect->Size();
-}
-
 uint32_t PuppetWidget::GetMaxTouchPoints() const {
   return mBrowserChild ? mBrowserChild->MaxTouchPoints() : 0;
 }
@@ -1185,7 +1167,7 @@ void PuppetWidget::StartAsyncScrollbarDrag(
 
 PuppetScreen::PuppetScreen(void* nativeScreen) {}
 
-PuppetScreen::~PuppetScreen() {}
+PuppetScreen::~PuppetScreen() = default;
 
 static ScreenConfiguration ScreenConfig() {
   ScreenConfiguration config;
@@ -1230,7 +1212,7 @@ PuppetScreenManager::PuppetScreenManager() {
   mOneScreen = new PuppetScreen(nullptr);
 }
 
-PuppetScreenManager::~PuppetScreenManager() {}
+PuppetScreenManager::~PuppetScreenManager() = default;
 
 NS_IMETHODIMP
 PuppetScreenManager::GetPrimaryScreen(nsIScreen** outScreen) {
@@ -1454,24 +1436,6 @@ nsresult PuppetWidget::GetSystemFont(nsCString& aFontName) {
     return NS_ERROR_FAILURE;
   }
   mBrowserChild->SendGetSystemFont(&aFontName);
-  return NS_OK;
-}
-
-nsresult PuppetWidget::SetPrefersReducedMotionOverrideForTest(bool aValue) {
-  if (!mBrowserChild) {
-    return NS_ERROR_FAILURE;
-  }
-
-  mBrowserChild->SendSetPrefersReducedMotionOverrideForTest(aValue);
-  return NS_OK;
-}
-
-nsresult PuppetWidget::ResetPrefersReducedMotionOverrideForTest() {
-  if (!mBrowserChild) {
-    return NS_ERROR_FAILURE;
-  }
-
-  mBrowserChild->SendResetPrefersReducedMotionOverrideForTest();
   return NS_OK;
 }
 

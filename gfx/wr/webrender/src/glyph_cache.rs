@@ -39,15 +39,7 @@ impl GlyphCacheEntry {
             GlyphCacheEntry::Cached(ref glyph) => {
                 texture_cache.get_allocated_size(&glyph.texture_cache_handle)
             }
-            GlyphCacheEntry::Pending => Some(0),
-            // If the cache only has blank glyphs left, just get rid of it.
-            GlyphCacheEntry::Blank => None,
-        }
-    }
-
-    fn mark_unused(&self, texture_cache: &mut TextureCache) {
-        if let GlyphCacheEntry::Cached(ref glyph) = *self {
-            texture_cache.mark_unused(&glyph.texture_cache_handle);
+            GlyphCacheEntry::Pending | GlyphCacheEntry::Blank => Some(0),
         }
     }
 
@@ -91,11 +83,8 @@ impl GlyphKeyCache {
         self.user_data.last_frame_used + 1 >= current_frame
     }
 
-    fn clear_glyphs(&mut self, texture_cache: &mut TextureCache) -> usize {
+    fn clear_glyphs(&mut self) -> usize {
         let pruned = self.user_data.bytes_used;
-        for (_, entry) in self.iter() {
-            entry.mark_unused(texture_cache);
-        }
         self.clear();
         self.user_data.bytes_used = 0;
         pruned
@@ -115,7 +104,6 @@ impl GlyphKeyCache {
                 match entry.get_allocated_size(texture_cache, render_task_cache) {
                     Some(size) => {
                         pruned += size;
-                        entry.mark_unused(texture_cache);
                         false
                     }
                     None => true,
@@ -197,7 +185,7 @@ impl GlyphCache {
         self.glyph_key_caches = FastHashMap::default();
     }
 
-    pub fn clear_fonts<F>(&mut self, texture_cache: &mut TextureCache, key_fun: F)
+    pub fn clear_fonts<F>(&mut self, key_fun: F)
     where
         for<'r> F: Fn(&'r &FontInstance) -> bool,
     {
@@ -207,7 +195,7 @@ impl GlyphCache {
                 return true;
             }
 
-            cache.clear_glyphs(texture_cache);
+            cache.clear_glyphs();
             false
         })
     }
@@ -264,7 +252,7 @@ impl GlyphCache {
             let excess = self.bytes_used - self.max_bytes_used;
             if !recent && excess >= cache.user_data.bytes_used {
                 // If the excess is greater than the cache's size, just clear the whole thing.
-                self.bytes_used -= cache.clear_glyphs(texture_cache);
+                self.bytes_used -= cache.clear_glyphs();
             } else {
                 // Otherwise, just clear as little of the cache as needed to remove the excess
                 // and avoid rematerialization costs.
@@ -285,6 +273,7 @@ impl GlyphCache {
         render_task_cache: &RenderTaskCache,
         glyph_rasterizer: &mut GlyphRasterizer,
     ) {
+        profile_scope!("begin_frame");
         self.current_frame = stamp.frame_id();
         self.clear_evicted(texture_cache, render_task_cache);
         self.prune_excess_usage(texture_cache, render_task_cache);

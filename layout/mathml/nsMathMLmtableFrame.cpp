@@ -127,9 +127,8 @@ static nsresult ReportParseError(nsIFrame* aFrame, const char16_t* aAttribute,
   params.AppendElement(nsDependentAtomString(content->NodeInfo()->NameAtom()));
 
   return nsContentUtils::ReportToConsole(
-      nsIScriptError::errorFlag, NS_LITERAL_CSTRING("Layout: MathML"),
-      content->OwnerDoc(), nsContentUtils::eMATHML_PROPERTIES,
-      "AttributeParsingError", params);
+      nsIScriptError::errorFlag, "Layout: MathML"_ns, content->OwnerDoc(),
+      nsContentUtils::eMATHML_PROPERTIES, "AttributeParsingError", params);
 }
 
 // Each rowalign='top bottom' or columnalign='left right center' (from
@@ -671,7 +670,7 @@ nsContainerFrame* NS_NewMathMLmtableOuterFrame(PresShell* aPresShell,
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmtableWrapperFrame)
 
-nsMathMLmtableWrapperFrame::~nsMathMLmtableWrapperFrame() {}
+nsMathMLmtableWrapperFrame::~nsMathMLmtableWrapperFrame() = default;
 
 nsresult nsMathMLmtableWrapperFrame::AttributeChanged(int32_t aNameSpaceID,
                                                       nsAtom* aAttribute,
@@ -896,7 +895,7 @@ nsContainerFrame* NS_NewMathMLmtableFrame(PresShell* aPresShell,
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmtableFrame)
 
-nsMathMLmtableFrame::~nsMathMLmtableFrame() {}
+nsMathMLmtableFrame::~nsMathMLmtableFrame() = default;
 
 void nsMathMLmtableFrame::SetInitialChildList(ChildListID aListID,
                                               nsFrameList& aChildList) {
@@ -1051,7 +1050,7 @@ nsContainerFrame* NS_NewMathMLmtrFrame(PresShell* aPresShell,
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmtrFrame)
 
-nsMathMLmtrFrame::~nsMathMLmtrFrame() {}
+nsMathMLmtrFrame::~nsMathMLmtrFrame() = default;
 
 nsresult nsMathMLmtrFrame::AttributeChanged(int32_t aNameSpaceID,
                                             nsAtom* aAttribute,
@@ -1093,7 +1092,7 @@ nsContainerFrame* NS_NewMathMLmtdFrame(PresShell* aPresShell,
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmtdFrame)
 
-nsMathMLmtdFrame::~nsMathMLmtdFrame() {}
+nsMathMLmtdFrame::~nsMathMLmtdFrame() = default;
 
 void nsMathMLmtdFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                             nsIFrame* aPrevInFlow) {

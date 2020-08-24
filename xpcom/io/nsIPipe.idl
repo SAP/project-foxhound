@@ -140,7 +140,7 @@ class nsIOutputStream;
  *
  * TaintFox: extended to return a reference to the pipe itself as well. Needed for nsHttpTransaction.
  */
-extern MOZ_MUST_USE nsresult
+[[nodiscard]] extern nsresult
 NS_NewPipe2(nsIAsyncInputStream **pipeIn,
             nsIAsyncOutputStream **pipeOut,
             bool nonBlockingInput = false,
@@ -174,7 +174,7 @@ NS_NewPipe2(nsIAsyncInputStream **pipeIn,
  * @param nonBlockingOutput
  *        true specifies non-blocking output stream behavior
  */
-extern MOZ_MUST_USE nsresult
+[[nodiscard]] extern nsresult
 NS_NewPipe(nsIInputStream **pipeIn,
            nsIOutputStream **pipeOut,
            uint32_t segmentSize = 0,

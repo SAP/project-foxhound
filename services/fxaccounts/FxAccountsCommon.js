@@ -6,7 +6,13 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { Preferences } = ChromeUtils.import(
+  "resource://gre/modules/Preferences.jsm"
+);
 const { Log } = ChromeUtils.import("resource://gre/modules/Log.jsm");
+const { LogManager } = ChromeUtils.import(
+  "resource://services-common/logmanager.js"
+);
 
 // loglevel should be one of "Fatal", "Error", "Warn", "Info", "Config",
 // "Debug", "Trace" or "All". If none is specified, "Debug" will be used by
@@ -24,6 +30,21 @@ XPCOMUtils.defineLazyGetter(exports, "log", function() {
   let log = Log.repository.getLogger("FirefoxAccounts");
   log.manageLevelFromPref(PREF_LOG_LEVEL);
   return log;
+});
+
+XPCOMUtils.defineLazyGetter(exports, "logManager", function() {
+  let logs = [
+    "Sync",
+    "Services.Common",
+    "FirefoxAccounts",
+    "Hawk",
+    "browserwindow.syncui",
+    "BookmarkSyncUtils",
+    "addons.xpi",
+  ];
+
+  // for legacy reasons, the log manager still thinks it's part of sync
+  return new LogManager(new Preferences("services.sync."), logs, "sync");
 });
 
 // A boolean to indicate if personally identifiable information (or anything
@@ -51,6 +72,7 @@ exports.ASSERTION_LIFETIME = 1000 * 3600 * 24 * 365 * 25; // 25 years
 // period).
 exports.ASSERTION_USE_PERIOD = 1000 * 60 * 5; // 5 minutes
 exports.CERT_LIFETIME = 1000 * 3600 * 6; // 6 hours
+exports.OAUTH_TOKEN_FOR_SYNC_LIFETIME_SECONDS = 3600 * 6; // 6 hours
 exports.KEY_LIFETIME = 1000 * 3600 * 12; // 12 hours
 
 // After we start polling for account verification, we stop polling when this
@@ -256,6 +278,7 @@ exports.FXA_PWDMGR_PLAINTEXT_FIELDS = new Set([
   "authAt",
   "sessionToken",
   "uid",
+  "ecosystemUserId",
   "oauthTokens",
   "profile",
   "device",
@@ -268,6 +291,7 @@ exports.FXA_PWDMGR_SECURE_FIELDS = new Set([
   "keyFetchToken",
   "unwrapBKey",
   "assertion",
+  "scopedKeys",
 ]);
 
 // Fields we keep in memory and don't persist anywhere.

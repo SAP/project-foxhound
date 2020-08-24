@@ -574,6 +574,8 @@ void LayerManagerComposite::EndTransaction(const TimeStamp& aTimeStamp,
 }
 
 void LayerManagerComposite::UpdateAndRender() {
+  mCompositionOpportunityId = mCompositionOpportunityId.Next();
+
   if (gfxEnv::SkipComposition()) {
     mInvalidRegion.SetEmpty();
     return;
@@ -708,7 +710,7 @@ static Rect RectWithEdges(int32_t aTop, int32_t aRight, int32_t aBottom,
 
 void LayerManagerComposite::DrawBorder(const IntRect& aOuter,
                                        int32_t aBorderWidth,
-                                       const Color& aColor,
+                                       const DeviceColor& aColor,
                                        const Matrix4x4& aTransform) {
   EffectChain effects;
   effects.mPrimaryEffect = new EffectSolidColor(aColor);
@@ -736,12 +738,13 @@ void LayerManagerComposite::DrawTranslationWarningOverlay(
   // Black blorder
   IntRect blackBorderBounds(aBounds);
   blackBorderBounds.Deflate(4);
-  DrawBorder(blackBorderBounds, 6, Color(0, 0, 0, 1), Matrix4x4());
+  DrawBorder(blackBorderBounds, 6, DeviceColor(0, 0, 0, 1), Matrix4x4());
 
   // Warning border, yellow to red
   IntRect warnBorder(aBounds);
   warnBorder.Deflate(5);
-  DrawBorder(warnBorder, 4, Color(1, 1.f - mWarningLevel, 0, 1), Matrix4x4());
+  DrawBorder(warnBorder, 4, DeviceColor(1, 1.f - mWarningLevel, 0, 1),
+             Matrix4x4());
 }
 
 static uint16_t sFrameCount = 0;
@@ -777,7 +780,8 @@ void LayerManagerComposite::RenderDebugOverlay(const IntRect& aBounds) {
       // If we have an unused APZ transform on this composite, draw a 20x20 red
       // box in the top-right corner
       EffectChain effects;
-      effects.mPrimaryEffect = new EffectSolidColor(gfx::Color(1, 0, 0, 1));
+      effects.mPrimaryEffect =
+          new EffectSolidColor(gfx::DeviceColor(1, 0, 0, 1));
       mCompositor->DrawQuad(gfx::Rect(aBounds.Width() - 20, 0, 20, 20), aBounds,
                             effects, alpha, gfx::Matrix4x4());
 
@@ -789,7 +793,8 @@ void LayerManagerComposite::RenderDebugOverlay(const IntRect& aBounds) {
       // in the top-right corner, to the left of the unused-apz-transform
       // warning box
       EffectChain effects;
-      effects.mPrimaryEffect = new EffectSolidColor(gfx::Color(1, 1, 0, 1));
+      effects.mPrimaryEffect =
+          new EffectSolidColor(gfx::DeviceColor(1, 1, 0, 1));
       mCompositor->DrawQuad(gfx::Rect(aBounds.Width() - 40, 0, 20, 20), aBounds,
                             effects, alpha, gfx::Matrix4x4());
 
@@ -850,13 +855,15 @@ void LayerManagerComposite::UpdateDebugOverlayNativeLayers() {
     }
 
     mGPUStatsLayer->SetPosition(IntPoint(2, 5));
+    IntRect bounds({}, size);
     RefPtr<DrawTarget> dt = mGPUStatsLayer->NextSurfaceAsDrawTarget(
-        IntRect({}, size), BackendType::SKIA);
+        bounds, bounds, BackendType::SKIA);
     mTextRenderer->RenderTextToDrawTarget(dt, text, 600,
                                           TextRenderer::FontType::FixedWidth);
     mGPUStatsLayer->NotifySurfaceReady();
     mNativeLayerRoot->AppendLayer(mGPUStatsLayer);
 
+    IntSize square(20, 20);
     // The two warning layers are created on demand and their content is only
     // drawn once. After that, they only get moved (if the window size changes)
     // and conditionally shown.
@@ -865,12 +872,12 @@ void LayerManagerComposite::UpdateDebugOverlayNativeLayers() {
       // If we have an unused APZ transform on this composite, draw a 20x20 red
       // box in the top-right corner.
       if (!mUnusedTransformWarningLayer) {
-        mUnusedTransformWarningLayer = mNativeLayerRoot->CreateLayer(
-            IntSize(20, 20), true, mSurfacePoolHandle);
+        mUnusedTransformWarningLayer =
+            mNativeLayerRoot->CreateLayer(square, true, mSurfacePoolHandle);
         RefPtr<DrawTarget> dt =
             mUnusedTransformWarningLayer->NextSurfaceAsDrawTarget(
-                IntRect(0, 0, 20, 20), BackendType::SKIA);
-        dt->FillRect(Rect(0, 0, 20, 20), ColorPattern(Color(1, 0, 0, 1)));
+                IntRect({}, square), IntRect({}, square), BackendType::SKIA);
+        dt->FillRect(Rect(0, 0, 20, 20), ColorPattern(DeviceColor(1, 0, 0, 1)));
         mUnusedTransformWarningLayer->NotifySurfaceReady();
       }
       mUnusedTransformWarningLayer->SetPosition(
@@ -886,12 +893,12 @@ void LayerManagerComposite::UpdateDebugOverlayNativeLayers() {
       // in the top-right corner, to the left of the unused-apz-transform
       // warning box.
       if (!mDisabledApzWarningLayer) {
-        mDisabledApzWarningLayer = mNativeLayerRoot->CreateLayer(
-            IntSize(20, 20), true, mSurfacePoolHandle);
+        mDisabledApzWarningLayer =
+            mNativeLayerRoot->CreateLayer(square, true, mSurfacePoolHandle);
         RefPtr<DrawTarget> dt =
             mDisabledApzWarningLayer->NextSurfaceAsDrawTarget(
-                IntRect(0, 0, 20, 20), BackendType::SKIA);
-        dt->FillRect(Rect(0, 0, 20, 20), ColorPattern(Color(1, 1, 0, 1)));
+                IntRect({}, square), IntRect({}, square), BackendType::SKIA);
+        dt->FillRect(Rect(0, 0, 20, 20), ColorPattern(DeviceColor(1, 1, 0, 1)));
         mDisabledApzWarningLayer->NotifySurfaceReady();
       }
       mDisabledApzWarningLayer->SetPosition(
@@ -1039,35 +1046,6 @@ static void ClearLayerFlags(Layer* aLayer) {
   });
 }
 
-#if defined(MOZ_WIDGET_ANDROID)
-class ScopedCompositorRenderOffset {
- public:
-  ScopedCompositorRenderOffset(CompositorOGL* aCompositor,
-                               const ScreenPoint& aOffset)
-      : mCompositor(aCompositor),
-        mOriginalOffset(mCompositor->GetScreenRenderOffset()),
-        mOriginalProjection(mCompositor->GetProjMatrix()) {
-    ScreenPoint offset(mOriginalOffset.x + aOffset.x,
-                       mOriginalOffset.y + aOffset.y);
-    mCompositor->SetScreenRenderOffset(offset);
-    // Calling CompositorOGL::SetScreenRenderOffset does not affect the
-    // projection matrix so adjust that as well.
-    gfx::Matrix4x4 mat = mOriginalProjection;
-    mat.PreTranslate(aOffset.x, aOffset.y, 0.0f);
-    mCompositor->SetProjMatrix(mat);
-  }
-  ~ScopedCompositorRenderOffset() {
-    mCompositor->SetScreenRenderOffset(mOriginalOffset);
-    mCompositor->SetProjMatrix(mOriginalProjection);
-  }
-
- private:
-  CompositorOGL* const mCompositor;
-  const ScreenPoint mOriginalOffset;
-  const gfx::Matrix4x4 mOriginalProjection;
-};
-#endif  // defined(MOZ_WIDGET_ANDROID)
-
 bool LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
                                    const nsIntRegion& aOpaqueRegion) {
   AUTO_PROFILER_LABEL("LayerManagerComposite::Render", GRAPHICS);
@@ -1168,11 +1146,6 @@ bool LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
 
   IntRect bounds = *maybeBounds;
   IntRect clipRect = rootLayerClip.valueOr(bounds);
-#if defined(MOZ_WIDGET_ANDROID)
-  ScreenCoord offset = GetContentShiftForToolbar();
-  ScopedCompositorRenderOffset scopedOffset(mCompositor->AsCompositorOGL(),
-                                            ScreenPoint(0.0f, offset));
-#endif
 
   // Prepare our layers.
   {
@@ -1215,11 +1188,7 @@ bool LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
       // opaque parts of the window are covered by different layers and we can
       // update those parts separately.
       IntRegion opaqueRegion;
-#ifdef XP_MACOSX
-      opaqueRegion =
-          mCompositor->GetWidget()->GetOpaqueWidgetRegion().ToUnknownRegion();
-#endif
-      opaqueRegion.AndWith(mRenderBounds);
+      opaqueRegion.And(aOpaqueRegion, mRenderBounds);
 
       // Limit the complexity of these regions. Usually, opaqueRegion should be
       // only one or two rects, so this SimplifyInward call will not change the
@@ -1284,11 +1253,6 @@ bool LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
     UpdateDebugOverlayNativeLayers();
   } else {
 #if defined(MOZ_WIDGET_ANDROID)
-    if (AndroidDynamicToolbarAnimator::IsEnabled()) {
-      // Depending on the content shift the toolbar may be rendered on top of
-      // some of the content so it must be rendered after the content.
-      RenderToolbar();
-    }
     HandlePixelsTarget();
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
@@ -1464,67 +1428,6 @@ void LayerManagerComposite::RenderToPresentationSurface() {
   RootLayer()->RenderLayer(clipRect, Nothing());
 
   mCompositor->EndFrame();
-}
-
-ScreenCoord LayerManagerComposite::GetContentShiftForToolbar() {
-  ScreenCoord result(0.0f);
-
-  if (!AndroidDynamicToolbarAnimator::IsEnabled()) {
-    return result;
-  }
-
-  // If mTarget not null we are not drawing to the screen so
-  // there will not be any content offset.
-  if (mTarget) {
-    return result;
-  }
-
-  if (CompositorBridgeParent* bridge =
-          mCompositor->GetCompositorBridgeParent()) {
-    AndroidDynamicToolbarAnimator* animator =
-        bridge->GetAndroidDynamicToolbarAnimator();
-    MOZ_RELEASE_ASSERT(animator);
-    result.value = (float)animator->GetCurrentContentOffset().value;
-  }
-  return result;
-}
-
-void LayerManagerComposite::RenderToolbar() {
-  // If mTarget is not null we are not drawing to the screen so
-  // don't draw the toolbar.
-  if (mTarget) {
-    return;
-  }
-
-  if (CompositorBridgeParent* bridge =
-          mCompositor->GetCompositorBridgeParent()) {
-    AndroidDynamicToolbarAnimator* animator =
-        bridge->GetAndroidDynamicToolbarAnimator();
-    MOZ_RELEASE_ASSERT(animator);
-
-    animator->UpdateToolbarSnapshotTexture(mCompositor->AsCompositorOGL());
-
-    int32_t toolbarHeight = animator->GetCurrentToolbarHeight();
-    if (toolbarHeight == 0) {
-      return;
-    }
-
-    EffectChain effects;
-    effects.mPrimaryEffect = animator->GetToolbarEffect();
-
-    // If GetToolbarEffect returns null, nothing is rendered for the static
-    // snapshot of the toolbar. If the real toolbar chrome is not covering this
-    // portion of the surface, the clear color of the surface will be visible.
-    // On Android the clear color is the background color of the page.
-    if (effects.mPrimaryEffect) {
-      ScopedCompositorRenderOffset toolbarOffset(
-          mCompositor->AsCompositorOGL(),
-          ScreenPoint(0.0f, -animator->GetCurrentContentOffset()));
-      mCompositor->DrawQuad(gfx::Rect(0, 0, mRenderBounds.width, toolbarHeight),
-                            IntRect(0, 0, mRenderBounds.width, toolbarHeight),
-                            effects, 1.0, gfx::Matrix4x4());
-    }
-  }
 }
 
 // Used by robocop tests to get a snapshot of the frame buffer.

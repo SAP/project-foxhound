@@ -171,6 +171,9 @@ bool GLXLibrary::EnsureInitialized() {
   const SymLoadStruct symbols_swapcontrol[] = {SYMBOL(SwapIntervalEXT),
                                                END_OF_SYMBOLS};
 
+  const SymLoadStruct symbols_copysubbuffer[] = {SYMBOL(CopySubBufferMESA),
+                                                 END_OF_SYMBOLS};
+
   const auto fnLoadSymbols = [&](const SymLoadStruct* symbols) {
     if (pfnLoader.LoadSymbols(symbols)) return true;
 
@@ -215,6 +218,11 @@ bool GLXLibrary::EnsureInitialized() {
     NS_WARNING(
         "GLX_swap_control unsupported, ASAP mode may still block on buffer "
         "swaps.");
+  }
+
+  if (HasExtension(extensionsStr, "GLX_MESA_copy_sub_buffer") &&
+      fnLoadSymbols(symbols_copysubbuffer)) {
+    mHasCopySubBuffer = true;
   }
 
   mIsATI = serverVendor && DoesStringMatch(serverVendor, "ATI");
@@ -461,9 +469,8 @@ void GLXLibrary::AfterGLXCall() const {
 }
 
 already_AddRefed<GLContextGLX> GLContextGLX::CreateGLContext(
-    CreateContextFlags flags, const SurfaceCaps& caps, bool isOffscreen,
-    Display* display, GLXDrawable drawable, GLXFBConfig cfg,
-    bool deleteDrawable, gfxXlibSurface* pixmap) {
+    const GLContextDesc& desc, Display* display, GLXDrawable drawable,
+    GLXFBConfig cfg, bool deleteDrawable, gfxXlibSurface* pixmap) {
   GLXLibrary& glx = sGLXLibrary;
 
   int db = 0;
@@ -503,7 +510,7 @@ already_AddRefed<GLContextGLX> GLContextGLX::CreateGLContext(
         attrib_list.AppendElements(memory_purge_attribs,
                                    MOZ_ARRAY_LENGTH(memory_purge_attribs));
       }
-      if (!(flags & CreateContextFlags::REQUIRE_COMPAT_PROFILE)) {
+      if (!(desc.flags & CreateContextFlags::REQUIRE_COMPAT_PROFILE)) {
         int core_attribs[] = {
             LOCAL_GLX_CONTEXT_MAJOR_VERSION_ARB,
             3,
@@ -525,8 +532,8 @@ already_AddRefed<GLContextGLX> GLContextGLX::CreateGLContext(
     }
 
     if (context) {
-      glContext = new GLContextGLX(flags, caps, isOffscreen, display, drawable,
-                                   context, deleteDrawable, db, pixmap);
+      glContext = new GLContextGLX(desc, display, drawable, context,
+                                   deleteDrawable, db, pixmap);
       if (!glContext->Init()) error = true;
     } else {
       error = true;
@@ -620,6 +627,16 @@ bool GLContextGLX::SwapBuffers() {
   return true;
 }
 
+bool GLContextGLX::HasCopySubBuffer() const {
+  return mDoubleBuffered && mGLX->HasCopySubBuffer();
+}
+
+void GLContextGLX::CopySubBuffer(int x, int y, int w, int h) {
+  MOZ_ASSERT(HasCopySubBuffer());
+
+  mGLX->fCopySubBufferMESA(mDisplay, mDrawable, x, y, w, h);
+}
+
 void GLContextGLX::GetWSIInfo(nsCString* const out) const {
   Display* display = DefaultXDisplay();
   int screen = DefaultScreen(display);
@@ -648,12 +665,11 @@ bool GLContextGLX::RestoreDrawable() {
   return mGLX->fMakeCurrent(mDisplay, mDrawable, mContext);
 }
 
-GLContextGLX::GLContextGLX(CreateContextFlags flags, const SurfaceCaps& caps,
-                           bool isOffscreen, Display* aDisplay,
+GLContextGLX::GLContextGLX(const GLContextDesc& desc, Display* aDisplay,
                            GLXDrawable aDrawable, GLXContext aContext,
                            bool aDeleteDrawable, bool aDoubleBuffered,
                            gfxXlibSurface* aPixmap)
-    : GLContext(flags, caps, nullptr, isOffscreen),
+    : GLContext(desc, nullptr),
       mContext(aContext),
       mDisplay(aDisplay),
       mDrawable(aDrawable),
@@ -686,10 +702,8 @@ already_AddRefed<GLContext> GLContextProviderGLX::CreateWrappingExisting(
   }
 
   if (aContext && aSurface) {
-    SurfaceCaps caps = SurfaceCaps::Any();
     RefPtr<GLContextGLX> glContext =
-        new GLContextGLX(CreateContextFlags::NONE, caps,
-                         false,                        // Offscreen
+        new GLContextGLX({},
                          (Display*)DefaultXDisplay(),  // Display
                          (GLXDrawable)aSurface, (GLXContext)aContext,
                          false,  // aDeleteDrawable,
@@ -737,9 +751,8 @@ already_AddRefed<GLContext> CreateForWidget(Display* aXDisplay, Window aXWindow,
   } else {
     flags = CreateContextFlags::REQUIRE_COMPAT_PROFILE;
   }
-  return GLContextGLX::CreateGLContext(flags, SurfaceCaps::Any(), false,
-                                       aXDisplay, aXWindow, config, false,
-                                       nullptr);
+  return GLContextGLX::CreateGLContext({{flags}, false}, aXDisplay, aXWindow,
+                                       config, false, nullptr);
 }
 
 already_AddRefed<GLContext> GLContextProviderGLX::CreateForCompositorWidget(
@@ -757,7 +770,6 @@ already_AddRefed<GLContext> GLContextProviderGLX::CreateForCompositorWidget(
 }
 
 static bool ChooseConfig(GLXLibrary* glx, Display* display, int screen,
-                         const SurfaceCaps& minCaps,
                          ScopedXFree<GLXFBConfig>* const out_scopedConfigArr,
                          GLXFBConfig* const out_config, int* const out_visid) {
   ScopedXFree<GLXFBConfig>& scopedConfigArr = *out_scopedConfigArr;
@@ -773,11 +785,11 @@ static bool ChooseConfig(GLXLibrary* glx, Display* display, int screen,
                    LOCAL_GLX_BLUE_SIZE,
                    8,
                    LOCAL_GLX_ALPHA_SIZE,
-                   minCaps.alpha ? 8 : 0,
+                   8,
                    LOCAL_GLX_DEPTH_SIZE,
-                   minCaps.depth ? 16 : 0,
+                   0,
                    LOCAL_GLX_STENCIL_SIZE,
-                   minCaps.stencil ? 8 : 0,
+                   0,
                    0};
 
   int numConfigs = 0;
@@ -967,7 +979,7 @@ bool GLContextGLX::FindFBConfigForWindow(
 }
 
 static already_AddRefed<GLContextGLX> CreateOffscreenPixmapContext(
-    CreateContextFlags flags, const IntSize& size, const SurfaceCaps& minCaps,
+    const GLContextCreateDesc& desc, const IntSize& size,
     nsACString* const out_failureId) {
   GLXLibrary* glx = &sGLXLibrary;
   if (!glx->EnsureInitialized()) return nullptr;
@@ -978,8 +990,7 @@ static already_AddRefed<GLContextGLX> CreateOffscreenPixmapContext(
   ScopedXFree<GLXFBConfig> scopedConfigArr;
   GLXFBConfig config;
   int visid;
-  if (!ChooseConfig(glx, display, screen, minCaps, &scopedConfigArr, &config,
-                    &visid)) {
+  if (!ChooseConfig(glx, display, screen, &scopedConfigArr, &config, &visid)) {
     NS_WARNING("Failed to find a compatible config.");
     return nullptr;
   }
@@ -1011,33 +1022,17 @@ static already_AddRefed<GLContextGLX> CreateOffscreenPixmapContext(
   bool serverError = xErrorHandler.SyncAndGetError(display);
   if (error || serverError) return nullptr;
 
-  return GLContextGLX::CreateGLContext(flags, minCaps, true, display, pixmap,
-                                       config, true, surface);
+  auto fullDesc = GLContextDesc{desc};
+  fullDesc.isOffscreen = true;
+  return GLContextGLX::CreateGLContext(fullDesc, display, pixmap, config, true,
+                                       surface);
 }
 
 /*static*/
 already_AddRefed<GLContext> GLContextProviderGLX::CreateHeadless(
-    CreateContextFlags flags, nsACString* const out_failureId) {
+    const GLContextCreateDesc& desc, nsACString* const out_failureId) {
   IntSize dummySize = IntSize(16, 16);
-  SurfaceCaps dummyCaps = SurfaceCaps::Any();
-  return CreateOffscreenPixmapContext(flags, dummySize, dummyCaps,
-                                      out_failureId);
-}
-
-/*static*/
-already_AddRefed<GLContext> GLContextProviderGLX::CreateOffscreen(
-    const IntSize& size, const SurfaceCaps& minCaps, CreateContextFlags flags,
-    nsACString* const out_failureId) {
-  RefPtr<GLContext> gl;
-  gl = CreateOffscreenPixmapContext(flags, size, minCaps, out_failureId);
-  if (!gl) return nullptr;
-
-  if (!gl->InitOffscreen(size, minCaps)) {
-    *out_failureId = NS_LITERAL_CSTRING("FEATURE_FAILURE_GLX_INIT");
-    return nullptr;
-  }
-
-  return gl.forget();
+  return CreateOffscreenPixmapContext(desc, dummySize, out_failureId);
 }
 
 /*static*/

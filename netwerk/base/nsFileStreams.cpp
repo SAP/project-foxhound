@@ -571,7 +571,7 @@ void nsFileInputStream::SerializeInternal(
     FileHandleType fd = FileHandleType(PR_FileDesc2NativeHandle(mFD));
     NS_ASSERTION(fd, "This should never be null!");
 
-    DebugOnly<FileDescriptor*> dbgFD = aFileDescriptors.AppendElement(fd);
+    DebugOnly dbgFD = aFileDescriptors.AppendElement(fd);
     NS_ASSERTION(dbgFD->IsValid(), "Sending an invalid file descriptor!");
 
     params.fileDescriptorIndex() = aFileDescriptors.Length() - 1;
@@ -703,6 +703,29 @@ nsFileOutputStream::Init(nsIFile* file, int32_t ioFlags, int32_t perm,
                    mBehaviorFlags & nsIFileOutputStream::DEFER_OPEN);
 }
 
+nsresult nsFileOutputStream::InitWithFileDescriptor(
+    const mozilla::ipc::FileDescriptor& aFd) {
+  NS_ENSURE_TRUE(mFD == nullptr, NS_ERROR_ALREADY_INITIALIZED);
+  NS_ENSURE_TRUE(mState == eUnitialized || mState == eClosed,
+                 NS_ERROR_ALREADY_INITIALIZED);
+
+  if (aFd.IsValid()) {
+    auto rawFD = aFd.ClonePlatformHandle();
+    PRFileDesc* fileDesc = PR_ImportFile(PROsfd(rawFD.release()));
+    if (!fileDesc) {
+      NS_WARNING("Failed to import file handle!");
+      return NS_ERROR_FAILURE;
+    }
+    mFD = fileDesc;
+    mState = eOpened;
+  } else {
+    mState = eError;
+    mErrorValue = NS_ERROR_FILE_NOT_FOUND;
+  }
+
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsFileOutputStream::Preallocate(int64_t aLength) {
   if (!mFD) {
@@ -760,13 +783,8 @@ nsresult nsAtomicFileOutputStream::DoOpen() {
   //    filesystems).
   nsCOMPtr<nsIFile> tempResult;
   rv = file->Clone(getter_AddRefs(tempResult));
-  if (NS_SUCCEEDED(rv)) {
-    tempResult->SetFollowLinks(true);
-
-    // XP_UNIX ignores SetFollowLinks(), so we have to normalize.
-    if (mTargetFileExists) {
-      tempResult->Normalize();
-    }
+  if (NS_SUCCEEDED(rv) && mTargetFileExists) {
+    tempResult->Normalize();
   }
 
   if (NS_SUCCEEDED(rv) && mTargetFileExists) {

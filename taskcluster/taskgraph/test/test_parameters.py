@@ -49,6 +49,7 @@ class TestParameters(unittest.TestCase):
         'required_signoffs': [],
         'signoff_urls': {},
         'target_tasks_method': 'target_tasks_method',
+        'test_manifest_loader': 'default',
         'tasks_for': 'tasks_for',
         'try_mode': 'try_mode',
         'try_options': None,
@@ -127,12 +128,12 @@ class TestParameters(unittest.TestCase):
 
 
 class TestCommParameters(unittest.TestCase):
-    vals = dict({
+    vals = dict(list({
         'comm_base_repository': 'comm_base_repository',
         'comm_head_ref': 'comm_head_ref',
         'comm_head_repository': 'comm_head_repository',
         'comm_head_rev': 'comm_head_rev',
-    }.items() + TestParameters.vals.items())
+    }.items()) + list(TestParameters.vals.items()))
 
     def test_Parameters_check(self):
         """

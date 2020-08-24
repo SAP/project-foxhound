@@ -2446,6 +2446,11 @@ Assembler::Condition MacroAssemblerARMCompat::testPrimitive(
   return testPrimitive(cond, value.typeReg());
 }
 
+Assembler::Condition MacroAssemblerARMCompat::testGCThing(
+    Assembler::Condition cond, const ValueOperand& value) {
+  return testGCThing(cond, value.typeReg());
+}
+
 // Register-based tests.
 Assembler::Condition MacroAssemblerARMCompat::testInt32(
     Assembler::Condition cond, Register tag) {
@@ -2515,6 +2520,13 @@ Assembler::Condition MacroAssemblerARMCompat::testPrimitive(
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
   ma_cmp(tag, ImmTag(JS::detail::ValueUpperExclPrimitiveTag));
   return cond == Equal ? Below : AboveOrEqual;
+}
+
+Assembler::Condition MacroAssemblerARMCompat::testGCThing(
+    Assembler::Condition cond, Register tag) {
+  MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  ma_cmp(tag, ImmTag(JS::detail::ValueLowerInclGCThingTag));
+  return cond == Equal ? AboveOrEqual : Below;
 }
 
 Assembler::Condition MacroAssemblerARMCompat::testGCThing(
@@ -4053,6 +4065,13 @@ void MacroAssembler::PushRegsInMask(LiveRegisterSet set) {
   }
   MOZ_ASSERT(diffG == 0);
 
+  // It's possible that the logic is just fine as it is if the reduced set
+  // maps SIMD pairs to plain doubles and transferMultipleByRuns() stores
+  // and loads doubles.
+#ifdef ENABLE_WASM_SIMD
+#  error "Needs more careful logic if SIMD is enabled"
+#endif
+
   adjustFrame(diffF);
   diffF += transferMultipleByRuns(set.fpus(), IsStore, StackPointer, DB);
   MOZ_ASSERT(diffF == 0);
@@ -4086,6 +4105,11 @@ void MacroAssembler::storeRegsInMask(LiveRegisterSet set, Address dest,
   }
   MOZ_ASSERT(diffG == 0);
 
+  // See above.
+#ifdef ENABLE_WASM_SIMD
+#  error "Needs more careful logic if SIMD is enabled"
+#endif
+
   if (diffF > 0) {
     computeEffectiveAddress(dest, scratch);
     diffF += transferMultipleByRuns(set.fpus(), IsStore, scratch, DB);
@@ -4100,6 +4124,11 @@ void MacroAssembler::PopRegsInMaskIgnore(LiveRegisterSet set,
   int32_t diffF = set.fpus().getPushSizeInBytes();
   const int32_t reservedG = diffG;
   const int32_t reservedF = diffF;
+
+  // See above.
+#ifdef ENABLE_WASM_SIMD
+#  error "Needs more careful logic if SIMD is enabled"
+#endif
 
   // ARM can load multiple registers at once, but only if we want back all
   // the registers we previously saved to the stack.
@@ -4563,16 +4592,12 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
                                               const Address& address,
                                               Register temp, Label* label) {
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
-  Label done, checkAddress;
 
-  Register tag = temp;
-  tag = extractTag(address, tag);
-  branchTestObject(Assembler::Equal, tag, &checkAddress);
-  branchTestString(Assembler::Equal, tag, &checkAddress);
-  branchTestBigInt(Assembler::NotEqual, tag,
-                   cond == Assembler::Equal ? &done : label);
+  Label done;
 
-  bind(&checkAddress);
+  branchTestGCThing(Assembler::NotEqual, address,
+                    cond == Assembler::Equal ? &done : label);
+
   loadPtr(ToPayload(address), temp);
   SecondScratchRegisterScope scratch2(*this);
   branchPtrInNurseryChunk(cond, temp, scratch2, label);
@@ -4584,27 +4609,11 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
                                               ValueOperand value, Register temp,
                                               Label* label) {
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
-  Label done, checkAddress;
 
-  branchTestObject(Assembler::Equal, value.typeReg(), &checkAddress);
-  branchTestString(Assembler::Equal, value.typeReg(), &checkAddress);
-  branchTestBigInt(Assembler::NotEqual, value.typeReg(),
-                   cond == Assembler::Equal ? &done : label);
-
-  bind(&checkAddress);
-  branchPtrInNurseryChunk(cond, value.payloadReg(), temp, label);
-
-  bind(&done);
-}
-
-void MacroAssembler::branchValueIsNurseryObject(Condition cond,
-                                                ValueOperand value,
-                                                Register temp, Label* label) {
-  MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
   Label done;
 
-  branchTestObject(Assembler::NotEqual, value,
-                   cond == Assembler::Equal ? &done : label);
+  branchTestGCThing(Assembler::NotEqual, value,
+                    cond == Assembler::Equal ? &done : label);
   branchPtrInNurseryChunk(cond, value.payloadReg(), temp, label);
 
   bind(&done);
@@ -5645,6 +5654,20 @@ void MacroAssembler::convertUInt64ToDouble(Register64 src, FloatRegister dest,
   addDouble(scratchDouble, dest);
 }
 
+void MacroAssembler::convertInt64ToDouble(Register64 src, FloatRegister dest) {
+  ScratchDoubleScope scratchDouble(*this);
+
+  convertInt32ToDouble(src.high, dest);
+  {
+    ScratchRegisterScope scratch(*this);
+    movePtr(ImmPtr(&TO_DOUBLE_HIGH_SCALE), scratch);
+    ma_vldr(Operand(Address(scratch, 0)).toVFPAddr(), scratchDouble);
+  }
+  mulDouble(scratchDouble, dest);
+  convertUInt32ToDouble(src.low, scratchDouble);
+  addDouble(scratchDouble, dest);
+}
+
 extern "C" {
 extern MOZ_EXPORT int64_t __aeabi_idivmod(int, int);
 extern MOZ_EXPORT int64_t __aeabi_uidivmod(int, int);
@@ -5756,6 +5779,45 @@ void MacroAssembler::speculationBarrier() {
   as_csdb();
 }
 
+void MacroAssembler::floorFloat32ToInt32(FloatRegister src, Register dest,
+                                         Label* fail) {
+  floorf(src, dest, fail);
+}
+
+void MacroAssembler::floorDoubleToInt32(FloatRegister src, Register dest,
+                                        Label* fail) {
+  floor(src, dest, fail);
+}
+
+void MacroAssembler::ceilFloat32ToInt32(FloatRegister src, Register dest,
+                                        Label* fail) {
+  ceilf(src, dest, fail);
+}
+
+void MacroAssembler::ceilDoubleToInt32(FloatRegister src, Register dest,
+                                       Label* fail) {
+  ceil(src, dest, fail);
+}
+
+void MacroAssembler::roundFloat32ToInt32(FloatRegister src, Register dest,
+                                         FloatRegister temp, Label* fail) {
+  roundf(src, dest, fail, temp);
+}
+
+void MacroAssembler::roundDoubleToInt32(FloatRegister src, Register dest,
+                                        FloatRegister temp, Label* fail) {
+  round(src, dest, fail, temp);
+}
+
+void MacroAssembler::truncFloat32ToInt32(FloatRegister src, Register dest,
+                                         Label* fail) {
+  truncf(src, dest, fail);
+}
+
+void MacroAssembler::truncDoubleToInt32(FloatRegister src, Register dest,
+                                        Label* fail) {
+  trunc(src, dest, fail);
+}
 //}}} check_macroassembler_style
 
 void MacroAssemblerARM::wasmTruncateToInt32(FloatRegister input,

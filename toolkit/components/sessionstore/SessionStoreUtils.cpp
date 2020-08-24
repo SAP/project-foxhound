@@ -11,6 +11,8 @@
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLSelectElement.h"
 #include "mozilla/dom/HTMLTextAreaElement.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/SessionStorageManager.h"
 #include "mozilla/dom/SessionStoreUtils.h"
 #include "mozilla/dom/txIXPathContext.h"
 #include "mozilla/dom/WindowProxyHolder.h"
@@ -414,7 +416,7 @@ static void AppendValueToCollectedData(
     nsTArray<CollectedInputDataValue>& aXPathVals,
     nsTArray<CollectedInputDataValue>& aIdVals) {
   CollectedInputDataValue entry;
-  entry.type = NS_LITERAL_STRING("bool");
+  entry.type = u"bool"_ns;
   entry.value = AsVariant(aValue);
   AppendEntryToCollectedData(aNode, aId, entry, aNumXPath, aNumId, aXPathVals,
                              aIdVals);
@@ -437,7 +439,7 @@ static void AppendValueToCollectedData(
     nsTArray<CollectedInputDataValue>& aXPathVals,
     nsTArray<CollectedInputDataValue>& aIdVals) {
   CollectedInputDataValue entry;
-  entry.type = NS_LITERAL_STRING("string");
+  entry.type = u"string"_ns;
   entry.value = AsVariant(aValue);
   AppendEntryToCollectedData(aNode, aId, entry, aNumXPath, aNumId, aXPathVals,
                              aIdVals);
@@ -465,7 +467,7 @@ static void AppendValueToCollectedData(
     uint16_t& aNumId, nsTArray<CollectedInputDataValue>& aXPathVals,
     nsTArray<CollectedInputDataValue>& aIdVals) {
   CollectedInputDataValue entry;
-  entry.type = NS_LITERAL_STRING("singleSelect");
+  entry.type = u"singleSelect"_ns;
   entry.value = AsVariant(aValue);
   AppendEntryToCollectedData(aNode, aId, entry, aNumXPath, aNumId, aXPathVals,
                              aIdVals);
@@ -509,7 +511,7 @@ static void AppendValueToCollectedData(
     nsTArray<CollectedInputDataValue>& aXPathVals,
     nsTArray<CollectedInputDataValue>& aIdVals) {
   CollectedInputDataValue entry;
-  entry.type = NS_LITERAL_STRING("string");
+  entry.type = u"string"_ns;
   entry.value = AsVariant(aValue);
   AppendEntryToCollectedData(aNode, aId, entry, aNumXPath, aNumId, aXPathVals,
                              aIdVals);
@@ -550,7 +552,7 @@ static void AppendValueToCollectedData(
     nsTArray<CollectedInputDataValue>& aIdVals) {
   CollectedInputDataValue entry;
   entry.type = aValueType;
-  entry.value = AsVariant(aValue);
+  entry.value = AsVariant(CopyableTArray(aValue.Clone()));
   AppendEntryToCollectedData(aNode, aId, entry, aNumXPath, aNumId, aXPathVals,
                              aIdVals);
 }
@@ -560,8 +562,8 @@ template <typename... ArgsT>
 void SessionStoreUtils::CollectFromTextAreaElement(Document& aDocument,
                                                    uint16_t& aGeneratedCount,
                                                    ArgsT&&... args) {
-  RefPtr<nsContentList> textlist = NS_GetContentList(
-      &aDocument, kNameSpaceID_XHTML, NS_LITERAL_STRING("textarea"));
+  RefPtr<nsContentList> textlist =
+      NS_GetContentList(&aDocument, kNameSpaceID_XHTML, u"textarea"_ns);
   uint32_t length = textlist->Length(true);
   for (uint32_t i = 0; i < length; ++i) {
     MOZ_ASSERT(textlist->Item(i), "null item in node list!");
@@ -599,8 +601,8 @@ template <typename... ArgsT>
 void SessionStoreUtils::CollectFromInputElement(Document& aDocument,
                                                 uint16_t& aGeneratedCount,
                                                 ArgsT&&... args) {
-  RefPtr<nsContentList> inputlist = NS_GetContentList(
-      &aDocument, kNameSpaceID_XHTML, NS_LITERAL_STRING("input"));
+  RefPtr<nsContentList> inputlist =
+      NS_GetContentList(&aDocument, kNameSpaceID_XHTML, u"input"_ns);
   uint32_t length = inputlist->Length(true);
   for (uint32_t i = 0; i < length; ++i) {
     MOZ_ASSERT(inputlist->Item(i), "null item in node list!");
@@ -648,8 +650,8 @@ void SessionStoreUtils::CollectFromInputElement(Document& aDocument,
       if (rv.Failed() || result.Length() == 0) {
         continue;
       }
-      AppendValueToCollectedData(input, id, NS_LITERAL_STRING("file"), result,
-                                 aGeneratedCount, std::forward<ArgsT>(args)...);
+      AppendValueToCollectedData(input, id, u"file"_ns, result, aGeneratedCount,
+                                 std::forward<ArgsT>(args)...);
     } else {
       nsString value;
       input->GetValue(value, CallerType::System);
@@ -673,8 +675,8 @@ template <typename... ArgsT>
 void SessionStoreUtils::CollectFromSelectElement(Document& aDocument,
                                                  uint16_t& aGeneratedCount,
                                                  ArgsT&&... args) {
-  RefPtr<nsContentList> selectlist = NS_GetContentList(
-      &aDocument, kNameSpaceID_XHTML, NS_LITERAL_STRING("select"));
+  RefPtr<nsContentList> selectlist =
+      NS_GetContentList(&aDocument, kNameSpaceID_XHTML, u"select"_ns);
   uint32_t length = selectlist->Length(true);
   for (uint32_t i = 0; i < length; ++i) {
     MOZ_ASSERT(selectlist->Item(i), "null item in node list!");
@@ -730,9 +732,8 @@ void SessionStoreUtils::CollectFromSelectElement(Document& aDocument,
         continue;
       }
 
-      AppendValueToCollectedData(
-          select, id, NS_LITERAL_STRING("multipleSelect"), selectslist,
-          aGeneratedCount, std::forward<ArgsT>(args)...);
+      AppendValueToCollectedData(select, id, u"multipleSelect"_ns, selectslist,
+                                 aGeneratedCount, std::forward<ArgsT>(args)...);
     }
   }
 }
@@ -1103,7 +1104,7 @@ static void ReadAllEntriesFromStorage(nsPIDOMWindowOuter* aWindow,
   }
 
   nsAutoCString origin;
-  nsresult rv = principal->GetOrigin(origin);
+  nsresult rv = storagePrincipal->GetOrigin(origin);
   if (NS_FAILED(rv) || aOrigins.Contains(origin)) {
     // Don't read a host twice.
     return;
@@ -1169,7 +1170,7 @@ void SessionStoreUtils::CollectedSessionStorage(
   }
 
   // This is not going to work for fission. Bug 1572084 for tracking it.
-  for (BrowsingContext* child : aBrowsingContext->GetChildren()) {
+  for (BrowsingContext* child : aBrowsingContext->Children()) {
     window = child->GetDOMWindow();
     if (!window) {
       return;
@@ -1217,6 +1218,11 @@ void SessionStoreUtils::RestoreSessionStorage(
     if (!browsingContext) {
       return;
     }
+
+    nsCOMPtr<nsIPrincipal> storagePrincipal =
+        BasePrincipal::CreateContentPrincipal(
+            NS_ConvertUTF16toUTF8(entry.mKey));
+
     const RefPtr<SessionStorageManager> storageManager =
         browsingContext->GetSessionStorageManager();
     if (!storageManager) {
@@ -1229,8 +1235,9 @@ void SessionStoreUtils::RestoreSessionStorage(
     // followup bug to bug 600307.
     // Null window because the current window doesn't match the principal yet
     // and loads about:blank.
-    storageManager->CreateStorage(nullptr, principal, principal, EmptyString(),
-                                  false, getter_AddRefs(storage));
+    storageManager->CreateStorage(nullptr, principal, storagePrincipal,
+                                  EmptyString(), false,
+                                  getter_AddRefs(storage));
     if (!storage) {
       continue;
     }
@@ -1279,7 +1286,7 @@ static void CollectFrameTreeData(JSContext* aCx,
   uint32_t trailingNullCounter = 0;
 
   // This is not going to work for fission. Bug 1572084 for tracking it.
-  for (auto& child : aBrowsingContext->GetChildren()) {
+  for (auto& child : aBrowsingContext->Children()) {
     NullableRootedDictionary<CollectedData> data(aCx);
     CollectFrameTreeData(aCx, child, data, aFunc);
     if (data.IsNull()) {
@@ -1334,10 +1341,10 @@ static void CollectFrameTreeData(JSContext* aCx,
       selectVal.AppendElement(
           data.value.as<mozilla::dom::CollectedNonMultipleSelectValue>()
               .mValue);
-    } else if (data.value.is<nsTArray<nsString>>()) {
+    } else if (data.value.is<CopyableTArray<nsString>>()) {
       // The first valueIdx is "index of the first string value"
       valueIdx.AppendElement(strVal.Length());
-      strVal.AppendElements(data.value.as<nsTArray<nsString>>());
+      strVal.AppendElements(data.value.as<CopyableTArray<nsString>>());
       // The second valueIdx is "index of the last string value" + 1
       id.AppendElement(data.id);
       type.AppendElement(data.type);

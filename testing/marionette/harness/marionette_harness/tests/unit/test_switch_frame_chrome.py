@@ -26,18 +26,10 @@ class TestSwitchFrameChrome(WindowManagerMixin, MarionetteTestCase):
     def test_switch_simple(self):
         self.assertIn("test.xhtml", self.marionette.get_url(), "Initial navigation has failed")
         self.marionette.switch_to_frame(0)
-        self.assertIn("test2.xhtml", self.marionette.get_url(),"Switching by index failed")
-        self.marionette.switch_to_frame()
-        self.assertEqual(None, self.marionette.get_active_frame(), "Switiching by null failed")
-        self.assertIn("test.xhtml", self.marionette.get_url(), "Switching by null failed")
-        self.marionette.switch_to_frame("iframe")
-        self.assertIn("test2.xhtml", self.marionette.get_url(), "Switching by name failed")
-        self.marionette.switch_to_frame()
-        self.assertIn("test.xhtml", self.marionette.get_url(), "Switching by null failed")
-        self.marionette.switch_to_frame("iframename")
-        self.assertIn("test2.xhtml", self.marionette.get_url(), "Switching by name failed")
+        self.assertIn("test2.xhtml", self.marionette.get_url(), "Switching by index failed")
         iframe_element = self.marionette.get_active_frame()
         self.marionette.switch_to_frame()
+        self.assertEqual(None, self.marionette.get_active_frame(), "Switching by null failed")
         self.assertIn("test.xhtml", self.marionette.get_url(), "Switching by null failed")
         self.marionette.switch_to_frame(iframe_element)
         self.assertIn("test2.xhtml", self.marionette.get_url(), "Switching by element failed")
@@ -49,4 +41,4 @@ class TestSwitchFrameChrome(WindowManagerMixin, MarionetteTestCase):
         try:
             self.marionette.execute_async_script("foo();")
         except JavascriptException as e:
-            self.assertIn("foo", e.message)
+            self.assertIn("foo", str(e))

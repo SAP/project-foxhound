@@ -16,7 +16,6 @@
 
 #include "AssemblyPayloads.h"
 #include "mozilla/DynamicallyLinkedFunctionPtr.h"
-#include "mozilla/TypeTraits.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WindowsVersion.h"
 #include "nsWindowsDllInterceptor.h"
@@ -330,17 +329,8 @@ bool TestHook(const char (&dll)[N], const char* func, PredicateT&& aPred,
     nsModuleHandle mod(::LoadLibrary(dll));
     FARPROC funcAddr = ::GetProcAddress(mod, func);
     if (funcAddr) {
-      // For each CPU arch, we output the maximum number of bytes required to
-      // patch the function.
-#if defined(_M_ARM64)
-      const uint32_t kNumBytesToDump = 16;
-#elif defined(_M_IX86)
-      const uint32_t kNumBytesToDump = 5;
-#elif defined(_M_X64)
-      const uint32_t kNumBytesToDump = 13;
-#else
-#  error "Unsupported CPU architecture"
-#endif
+      const uint32_t kNumBytesToDump =
+          WindowsDllInterceptor::GetWorstCaseRequiredBytesToPatch();
 
       printf("\tFirst %u bytes of function:\n\t", kNumBytesToDump);
 
@@ -734,11 +724,15 @@ bool TestAssemblyFunctions() {
     // original jump destination is returned as a stub.
     TestCase("MovPushRet", JumpDestination),
     TestCase("MovRaxJump", JumpDestination),
+    TestCase("DoubleJump", JumpDestination),
 #    elif defined(_M_IX86)
     // Skip the stub address check as we always generate a trampoline for x86.
     TestCase("PushRet", NoStubAddressCheck),
     TestCase("MovEaxJump", NoStubAddressCheck),
+    TestCase("DoubleJump", NoStubAddressCheck),
     TestCase("Opcode83", NoStubAddressCheck),
+    TestCase("LockPrefix", NoStubAddressCheck),
+    TestCase("LooksLikeLockPrefix", NoStubAddressCheck),
 #    endif
 #  endif  // MOZ_CODE_COVERAGE
 #endif    // defined(__clang__)
@@ -962,6 +956,8 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
                              ApiSetQueryApiSetPresence, Equals, FALSE,
                              &gEmptyUnicodeString, &gIsPresent) &&
       TEST_HOOK("kernelbase.dll", QueryDosDeviceW, Equals, 0) &&
+      TEST_HOOK("kernel32.dll", GetFileAttributesW, Equals,
+                INVALID_FILE_ATTRIBUTES) &&
 #if !defined(_M_ARM64)
 #  ifndef MOZ_ASAN
       // Bug 733892: toolkit/crashreporter/nsExceptionHandler.cpp

@@ -100,6 +100,16 @@ In this document, we try to list these all tools.
      - `bug 1155970 <https://bugzilla.mozilla.org/show_bug.cgi?id=1155970>`_
      - :ref:`Flake8`
      - http://flake8.pycqa.org/
+   * - black
+     - Yes
+     - `bug 1555560 <https://bugzilla.mozilla.org/show_bug.cgi?id=1555560>`_
+     - :ref:`black`
+     - https://black.readthedocs.io/en/stable
+   * - pylint
+     -
+     - `bug 1623024 <https://bugzilla.mozilla.org/show_bug.cgi?id=1623024>`_
+     - :ref:`pylint`
+     - https://www.pylint.org/
    * - Python 2/3 compatibility check
      -
      - `bug 1496527 <https://bugzilla.mozilla.org/show_bug.cgi?id=1496527>`_

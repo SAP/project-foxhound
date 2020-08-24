@@ -107,6 +107,15 @@ inline bool JS::Compartment::wrap(JSContext* cx, JS::MutableHandleValue vp) {
   return true;
 }
 
+inline bool JS::Compartment::wrap(JSContext* cx,
+                                  MutableHandle<mozilla::Maybe<Value>> vp) {
+  if (vp.get().isNothing()) {
+    return true;
+  }
+
+  return wrap(cx, MutableHandle<Value>::fromMarkedLocation(vp.get().ptr()));
+}
+
 namespace js {
 namespace detail {
 
@@ -157,7 +166,7 @@ MOZ_MUST_USE T* UnwrapAndTypeCheckValueSlowPath(JSContext* cx,
 template <class T, class ErrorCallback>
 inline MOZ_MUST_USE T* UnwrapAndTypeCheckValue(JSContext* cx, HandleValue value,
                                                ErrorCallback throwTypeError) {
-  static_assert(!std::is_convertible<T*, Wrapper*>::value,
+  static_assert(!std::is_convertible_v<T*, Wrapper*>,
                 "T can't be a Wrapper type; this function discards wrappers");
   cx->check(value);
   if (value.isObject() && value.toObject().is<T>()) {
@@ -176,7 +185,8 @@ inline MOZ_MUST_USE T* UnwrapAndTypeCheckValue(JSContext* cx, HandleValue value,
  * or isn't an instance of the expected type.
  */
 template <class T>
-inline MOZ_MUST_USE T* UnwrapAndTypeCheckThis(JSContext* cx, CallArgs& args,
+inline MOZ_MUST_USE T* UnwrapAndTypeCheckThis(JSContext* cx,
+                                              const CallArgs& args,
                                               const char* methodName) {
   HandleValue thisv = args.thisv();
   return UnwrapAndTypeCheckValue<T>(cx, thisv, [cx, methodName, thisv] {
@@ -225,7 +235,7 @@ inline MOZ_MUST_USE T* UnwrapAndTypeCheckArgument(JSContext* cx, CallArgs& args,
  */
 template <class T>
 MOZ_MUST_USE T* UnwrapAndDowncastObject(JSContext* cx, JSObject* obj) {
-  static_assert(!std::is_convertible<T*, Wrapper*>::value,
+  static_assert(!std::is_convertible_v<T*, Wrapper*>,
                 "T can't be a Wrapper type; this function discards wrappers");
 
   if (IsProxy(obj)) {
@@ -278,7 +288,7 @@ template <class T>
 inline MOZ_MUST_USE T* UnwrapInternalSlot(JSContext* cx,
                                           Handle<NativeObject*> unwrappedObj,
                                           uint32_t slot) {
-  static_assert(!std::is_convertible<T*, Wrapper*>::value,
+  static_assert(!std::is_convertible_v<T*, Wrapper*>,
                 "T can't be a Wrapper type; this function discards wrappers");
 
   return UnwrapAndDowncastValue<T>(cx, unwrappedObj->getFixedSlot(slot));

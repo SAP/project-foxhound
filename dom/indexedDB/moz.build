@@ -24,6 +24,7 @@ XPCSHELL_TESTS_MANIFESTS += [
 TEST_DIRS += ['test/gtest']
 
 EXPORTS.mozilla.dom += [
+    'FileInfoFwd.h',
     'FlippedOnce.h',
     'IDBCursor.h',
     'IDBCursorType.h',
@@ -40,7 +41,7 @@ EXPORTS.mozilla.dom += [
     'IDBTransaction.h',
     'IndexedDatabase.h',
     'IndexedDatabaseManager.h',
-    'InitializedOnce.h',
+    'SafeRefPtr.h',
 ]
 
 EXPORTS.mozilla.dom.indexedDB += [
@@ -51,6 +52,7 @@ EXPORTS.mozilla.dom.indexedDB += [
     'KeyPath.h',
     'PermissionRequestBase.h',
     'SerializationHelpers.h',
+    'ThreadLocal.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -69,9 +71,12 @@ UNIFIED_SOURCES += [
     'IDBObjectStore.cpp',
     'IDBRequest.cpp',
     'IDBTransaction.cpp',
+    'IndexedDatabase.cpp',
     'IndexedDatabaseManager.cpp',
+    'IndexedDBCommon.cpp',
     'KeyPath.cpp',
     'PermissionRequestBase.cpp',
+    'ProfilerHelpers.cpp',
     'ReportInternalError.cpp',
     'ScriptErrorHelper.cpp',
 ]

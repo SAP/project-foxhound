@@ -28,9 +28,7 @@ UNKNOWN_TEST = '''
 I was unable to find tests from the given argument(s).
 
 You should specify a test directory, filename, test suite name, or
-abbreviation. If no arguments are given, there must be local file
-changes and corresponding IMPACTED_TESTS annotations in moz.build
-files relevant to those files.
+abbreviation.
 
 It's possible my little brain doesn't know about the type of test you are
 trying to execute. If you suspect this, please request support by filing
@@ -305,11 +303,6 @@ class Test(MachCommandBase):
         * A test suite name
         * An alias to a test suite name (codes used on TreeHerder)
 
-        If no input is provided, tests will be run based on files changed in
-        the local tree. Relevant tests, tags, or flavors are determined by
-        IMPACTED_TESTS annotations in moz.build files relevant to the
-        changed files.
-
         When paths or directories are given, they are first resolved to test
         files known to the build system.
 
@@ -359,6 +352,7 @@ class Test(MachCommandBase):
             suite = TEST_SUITES[suite_name]
             kwargs = suite['kwargs']
             kwargs['log'] = log
+            kwargs.setdefault('subsuite', None)
 
             if 'mach_command' in suite:
                 res = self._mach_context.commands.dispatch(
@@ -382,6 +376,7 @@ class Test(MachCommandBase):
 
             kwargs = dict(m['kwargs'])
             kwargs['log'] = log
+            kwargs.setdefault('subsuite', None)
 
             res = self._mach_context.commands.dispatch(
                 m['mach_command'], self._mach_context,
@@ -420,7 +415,7 @@ class MachCommands(MachCommandBase):
 
         # If no tests specified, run all tests in main manifest
         tests = params['test_files']
-        if len(tests) == 0:
+        if not tests:
             tests = [os.path.join(self.distdir, 'cppunittests')]
             manifest_path = os.path.join(
                 self.topsrcdir, 'testing', 'cppunittest.ini')
@@ -551,7 +546,10 @@ class SpiderMonkeyTests(MachCommandBase):
         if test_name:
             jsapi_tests_cmd.append(test_name)
 
-        return subprocess.call(jsapi_tests_cmd)
+        test_env = os.environ.copy()
+        test_env["TOPSRCDIR"] = self.topsrcdir
+
+        return subprocess.call(jsapi_tests_cmd, env=test_env)
 
     def run_check_js_msg(self):
         import subprocess

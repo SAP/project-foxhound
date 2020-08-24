@@ -83,7 +83,7 @@ bool SdpHelper::AreOldTransportParamsValid(const Sdp& oldAnswer,
     return false;
   }
 
-  if (IsBundleSlave(oldAnswer, level)) {
+  if (!HasOwnTransport(oldAnswer, level)) {
     // The transport attributes on this m-section were thrown away, because it
     // was bundled.
     return false;
@@ -91,7 +91,7 @@ bool SdpHelper::AreOldTransportParamsValid(const Sdp& oldAnswer,
 
   if (newOffer.GetMediaSection(level).GetAttributeList().HasAttribute(
           SdpAttribute::kBundleOnlyAttribute) &&
-      IsBundleSlave(newOffer, level)) {
+      !HasOwnTransport(newOffer, level)) {
     // It never makes sense to put transport attributes in a bundle-only
     // m-section
     return false;
@@ -203,10 +203,9 @@ nsresult SdpHelper::GetBundledMids(const Sdp& sdp, BundledMids* bundledMids) {
       continue;
     }
 
-    const SdpMediaSection* masterBundleMsection(
-        FindMsectionByMid(sdp, group.tags[0]));
+    const SdpMediaSection* msection(FindMsectionByMid(sdp, group.tags[0]));
 
-    if (!masterBundleMsection) {
+    if (!msection) {
       SDP_SET_ERROR(
           "mid specified for bundle transport in group attribute"
           " does not exist in the SDP. (mid="
@@ -214,7 +213,7 @@ nsresult SdpHelper::GetBundledMids(const Sdp& sdp, BundledMids* bundledMids) {
       return NS_ERROR_INVALID_ARG;
     }
 
-    if (MsectionIsDisabled(*masterBundleMsection)) {
+    if (MsectionIsDisabled(*msection)) {
       SDP_SET_ERROR(
           "mid specified for bundle transport in group attribute"
           " points at a disabled m-section. (mid="
@@ -230,19 +229,19 @@ nsresult SdpHelper::GetBundledMids(const Sdp& sdp, BundledMids* bundledMids) {
         return NS_ERROR_INVALID_ARG;
       }
 
-      (*bundledMids)[mid] = masterBundleMsection;
+      (*bundledMids)[mid] = msection;
     }
   }
 
   return NS_OK;
 }
 
-bool SdpHelper::IsBundleSlave(const Sdp& sdp, uint16_t level) {
+bool SdpHelper::HasOwnTransport(const Sdp& sdp, uint16_t level) {
   auto& msection = sdp.GetMediaSection(level);
 
   if (!msection.GetAttributeList().HasAttribute(SdpAttribute::kMidAttribute)) {
     // No mid, definitely no bundle for this m-section
-    return false;
+    return true;
   }
   std::string mid(msection.GetAttributeList().GetMid());
 
@@ -251,15 +250,15 @@ bool SdpHelper::IsBundleSlave(const Sdp& sdp, uint16_t level) {
   if (NS_FAILED(rv)) {
     // Should have been caught sooner.
     MOZ_ASSERT(false);
-    return false;
+    return true;
   }
 
   if (bundledMids.count(mid) && level != bundledMids[mid]->GetLevel()) {
     // mid is bundled, and isn't the bundle m-section
-    return true;
+    return false;
   }
 
-  return false;
+  return true;
 }
 
 nsresult SdpHelper::GetMidFromLevel(const Sdp& sdp, uint16_t level,
@@ -536,6 +535,13 @@ nsresult SdpHelper::CopyStickyParams(const SdpMediaSection& source,
                                                   sourceAttrs.GetMid()));
   }
 
+  // Keep RTCP mode setting
+  if (sourceAttrs.HasAttribute(SdpAttribute::kRtcpRsizeAttribute) &&
+      source.GetMediaType() == SdpMediaSection::kVideo) {
+    destAttrs.SetAttribute(
+        new SdpFlagAttribute(SdpAttribute::kRtcpRsizeAttribute));
+  }
+
   return NS_OK;
 }
 
@@ -596,7 +602,7 @@ SdpMediaSection::Protocol SdpHelper::GetProtocolForMediaType(
   return SdpMediaSection::kUdpTlsRtpSavpf;
 }
 
-void SdpHelper::appendSdpParseErrors(
+void SdpHelper::AppendSdpParseErrors(
     const std::vector<std::pair<size_t, std::string> >& aErrors,
     std::string* aErrorString) {
   std::ostringstream os;
@@ -659,28 +665,6 @@ void SdpHelper::AddCommonExtmaps(
   if (!localExtmap->mExtmaps.empty()) {
     localMsection->GetAttributeList().SetAttribute(localExtmap.release());
   }
-}
-
-SdpHelper::MsectionBundleType SdpHelper::GetMsectionBundleType(
-    const Sdp& sdp, uint16_t level, BundledMids& bundledMids,
-    std::string* masterMid) const {
-  const SdpMediaSection& msection = sdp.GetMediaSection(level);
-  if (msection.GetAttributeList().HasAttribute(SdpAttribute::kMidAttribute)) {
-    std::string mid(msection.GetAttributeList().GetMid());
-    if (bundledMids.count(mid)) {
-      const SdpMediaSection* masterBundleMsection(bundledMids[mid]);
-      if (msection.GetLevel() != masterBundleMsection->GetLevel()) {
-        return kSlaveBundle;
-      }
-
-      // allow the caller not to care about the masterMid
-      if (masterMid) {
-        *masterMid = mid;
-      }
-      return kMasterBundle;
-    }
-  }
-  return kNoBundle;
 }
 
 static bool AttributeListMatch(const SdpAttributeList& list1,

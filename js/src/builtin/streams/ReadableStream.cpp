@@ -32,8 +32,8 @@
 #include "js/Value.h"             // JS::Value
 #include "vm/JSContext.h"         // JSContext
 #include "vm/JSObject.h"          // js::GetPrototypeFromBuiltinConstructor
-#include "vm/NativeObject.h"      // js::PlainObject
 #include "vm/ObjectOperations.h"  // js::GetProperty
+#include "vm/PlainObject.h"       // js::PlainObject
 #include "vm/Runtime.h"           // JSAtomState
 #include "vm/StringType.h"        // js::EqualStrings, js::ToString
 
@@ -301,7 +301,7 @@ static MOZ_MUST_USE bool ReadableStream_getReader(JSContext* cx, unsigned argc,
   }
 
   // Step 2: If mode is undefined, return
-  //         ? AcquireReadableStreamDefaultReader(this).
+  //         ? AcquireReadableStreamDefaultReader(this, true).
   Rooted<JSObject*> reader(cx);
   if (modeVal.isUndefined()) {
     reader = CreateReadableStreamDefaultReader(cx, unwrappedStream,
@@ -325,7 +325,7 @@ static MOZ_MUST_USE bool ReadableStream_getReader(JSContext* cx, unsigned argc,
     }
 
     // Step 4: If mode is "byob",
-    //         return ? AcquireReadableStreamBYOBReader(this).
+    //         return ? AcquireReadableStreamBYOBReader(this, true).
     reader = CreateReadableStreamBYOBReader(cx, unwrappedStream,
                                             ForAuthorCodeBool::Yes);
   }
@@ -550,5 +550,6 @@ const JSClass ReadableStream::class_ = {
     JS_NULL_CLASS_OPS, &ReadableStream::classSpec_};
 
 const JSClass ReadableStream::protoClass_ = {
-    "object", JSCLASS_HAS_CACHED_PROTO(JSProto_ReadableStream),
-    JS_NULL_CLASS_OPS, &ReadableStream::classSpec_};
+    "ReadableStream.prototype",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_ReadableStream), JS_NULL_CLASS_OPS,
+    &ReadableStream::classSpec_};

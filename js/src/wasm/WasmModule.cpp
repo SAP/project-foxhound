@@ -25,6 +25,7 @@
 #include "jit/JitOptions.h"
 #include "js/BuildId.h"  // JS::BuildIdCharVector
 #include "threading/LockGuard.h"
+#include "vm/PlainObject.h"  // js::PlainObject
 #include "wasm/WasmBaselineCompile.h"
 #include "wasm/WasmCompile.h"
 #include "wasm/WasmInstance.h"
@@ -62,7 +63,22 @@ class Module::Tier2GeneratorTaskImpl : public Tier2GeneratorTask {
 
   void cancel() override { cancelled_ = true; }
 
-  void runTask() override {
+  void runTaskLocked(AutoLockHelperThreadState& locked) override {
+    {
+      AutoUnlockHelperThreadState unlock(locked);
+      runTask();
+    }
+
+    // During shutdown the main thread will wait for any ongoing (cancelled)
+    // tier-2 generation to shut down normally.  To do so, it waits on the
+    // CONSUMER condition for the count of finished generators to rise.
+    HelperThreadState().incWasmTier2GeneratorsFinished(locked);
+
+    // The task is finished, release it.
+    js_delete(this);
+  }
+
+  void runTask() {
     CompileTier2(*compileArgs_, bytecode_->bytes, *module_, &cancelled_);
   }
   ThreadType threadType() override {
@@ -325,7 +341,7 @@ void Module::serialize(const LinkData& linkData,
 }
 
 /* virtual */
-JSObject* Module::createObject(JSContext* cx) {
+JSObject* Module::createObject(JSContext* cx) const {
   if (!GlobalObject::ensureConstructor(cx, cx->global(), JSProto_WebAssembly)) {
     return nullptr;
   }
@@ -333,6 +349,13 @@ JSObject* Module::createObject(JSContext* cx) {
   RootedObject proto(
       cx, &cx->global()->getPrototype(JSProto_WasmModule).toObject());
   return WasmModuleObject::create(cx, *this, proto);
+}
+
+/* virtual */
+JSObject* Module::createObjectForAsmJS(JSContext* cx) const {
+  // Use nullptr to get the default object prototype. These objects are never
+  // exposed to script for asm.js.
+  return WasmModuleObject::create(cx, *this, nullptr);
 }
 
 bool wasm::GetOptimizedEncodingBuildId(JS::BuildIdCharVector* buildId) {
@@ -460,7 +483,7 @@ bool Module::extractCode(JSContext* cx, Tier tier,
         return false;
       }
 
-      value.setNumber((uint32_t)p.funcNormalEntry());
+      value.setNumber((uint32_t)p.funcUncheckedCallEntry());
       if (!JS_DefineProperty(cx, segment, "funcBodyBegin", value,
                              JSPROP_ENUMERATE)) {
         return false;
@@ -487,13 +510,15 @@ bool Module::extractCode(JSContext* cx, Tier tier,
   return true;
 }
 
-static uint32_t EvaluateInitExpr(const ValVector& globalImportValues,
-                                 InitExpr initExpr) {
+static uint32_t EvaluateOffsetInitExpr(const ValVector& globalImportValues,
+                                       InitExpr initExpr) {
   switch (initExpr.kind()) {
     case InitExpr::Kind::Constant:
       return initExpr.val().i32();
     case InitExpr::Kind::GetGlobal:
       return globalImportValues[initExpr.globalIndex()].i32();
+    case InitExpr::Kind::RefFunc:
+      break;
   }
 
   MOZ_CRASH("bad initializer expression");
@@ -540,7 +565,8 @@ bool Module::initSegments(JSContext* cx, HandleWasmInstanceObject instanceObj,
       }
 
       uint32_t tableLength = tables[seg->tableIndex]->length();
-      uint32_t offset = EvaluateInitExpr(globalImportValues, seg->offset());
+      uint32_t offset =
+          EvaluateOffsetInitExpr(globalImportValues, seg->offset());
 
       if (offset > tableLength || tableLength - offset < seg->length()) {
         JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
@@ -556,7 +582,8 @@ bool Module::initSegments(JSContext* cx, HandleWasmInstanceObject instanceObj,
           continue;
         }
 
-        uint32_t offset = EvaluateInitExpr(globalImportValues, seg->offset());
+        uint32_t offset =
+            EvaluateOffsetInitExpr(globalImportValues, seg->offset());
 
         if (offset > memoryLength ||
             memoryLength - offset < seg->bytes.length()) {
@@ -572,7 +599,8 @@ bool Module::initSegments(JSContext* cx, HandleWasmInstanceObject instanceObj,
 
   for (const ElemSegment* seg : elemSegments_) {
     if (seg->active()) {
-      uint32_t offset = EvaluateInitExpr(globalImportValues, seg->offset());
+      uint32_t offset =
+          EvaluateOffsetInitExpr(globalImportValues, seg->offset());
       uint32_t count = seg->length();
 
       if (!eagerBoundsCheck) {
@@ -600,7 +628,8 @@ bool Module::initSegments(JSContext* cx, HandleWasmInstanceObject instanceObj,
         continue;
       }
 
-      uint32_t offset = EvaluateInitExpr(globalImportValues, seg->offset());
+      uint32_t offset =
+          EvaluateOffsetInitExpr(globalImportValues, seg->offset());
       uint32_t count = seg->bytes.length();
 
       if (!eagerBoundsCheck) {
@@ -670,10 +699,11 @@ bool Module::instantiateFunctions(JSContext* cx,
   return true;
 }
 
-static bool CheckLimits(JSContext* cx, uint32_t declaredMin,
-                        const Maybe<uint32_t>& declaredMax,
-                        uint32_t actualLength, const Maybe<uint32_t>& actualMax,
-                        bool isAsmJS, const char* kind) {
+template <typename T>
+static bool CheckLimits(JSContext* cx, T declaredMin,
+                        const Maybe<T>& declaredMax, T actualLength,
+                        const Maybe<T>& actualMax, bool isAsmJS,
+                        const char* kind) {
   if (isAsmJS) {
     MOZ_ASSERT(actualLength >= declaredMin);
     MOZ_ASSERT(!declaredMax);
@@ -732,17 +762,18 @@ bool Module::instantiateMemory(JSContext* cx,
     return true;
   }
 
-  uint32_t declaredMin = metadata().minMemoryLength;
-  Maybe<uint32_t> declaredMax = metadata().maxMemoryLength;
+  uint64_t declaredMin = metadata().minMemoryLength;
+  Maybe<uint64_t> declaredMax = metadata().maxMemoryLength;
   bool declaredShared = metadata().memoryUsage == MemoryUsage::Shared;
 
   if (memory) {
     MOZ_ASSERT_IF(metadata().isAsmJS(), memory->buffer().isPreparedForAsmJS());
     MOZ_ASSERT_IF(!metadata().isAsmJS(), memory->buffer().isWasm());
 
-    if (!CheckLimits(
-            cx, declaredMin, declaredMax, memory->volatileMemoryLength(),
-            memory->buffer().wasmMaxSize(), metadata().isAsmJS(), "Memory")) {
+    if (!CheckLimits(cx, declaredMin, declaredMax,
+                     uint64_t(memory->volatileMemoryLength()),
+                     memory->buffer().wasmMaxSize(), metadata().isAsmJS(),
+                     "Memory")) {
       return false;
     }
 
@@ -751,6 +782,12 @@ bool Module::instantiateMemory(JSContext* cx,
     }
   } else {
     MOZ_ASSERT(!metadata().isAsmJS());
+
+    if (declaredMin / PageSize > MaxMemoryPages) {
+      JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                               JSMSG_WASM_MEM_IMP_LIMIT);
+      return false;
+    }
 
     RootedArrayBufferObjectMaybeShared buffer(cx);
     Limits l(declaredMin, declaredMax,
@@ -780,7 +817,7 @@ bool Module::instantiateImportedTable(JSContext* cx, const TableDesc& td,
   MOZ_ASSERT(!metadata().isAsmJS());
 
   Table& table = tableObj->table();
-  if (!CheckLimits(cx, td.limits.initial, td.limits.maximum, table.length(),
+  if (!CheckLimits(cx, td.initialLength, td.maximumLength, table.length(),
                    table.maximum(), metadata().isAsmJS(), "Table")) {
     return false;
   }
@@ -801,10 +838,19 @@ bool Module::instantiateImportedTable(JSContext* cx, const TableDesc& td,
 bool Module::instantiateLocalTable(JSContext* cx, const TableDesc& td,
                                    WasmTableObjectVector* tableObjs,
                                    SharedTableVector* tables) const {
+  if (td.initialLength > MaxTableLength) {
+    JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                             JSMSG_WASM_TABLE_IMP_LIMIT);
+    return false;
+  }
+
   SharedTable table;
   Rooted<WasmTableObject*> tableObj(cx);
   if (td.importedOrExported) {
-    tableObj.set(WasmTableObject::create(cx, td.limits, td.kind));
+    RootedObject proto(
+        cx, &cx->global()->getPrototype(JSProto_WasmTable).toObject());
+    tableObj.set(WasmTableObject::create(cx, td.initialLength, td.maximumLength,
+                                         td.kind, proto));
     if (!tableObj) {
       return false;
     }
@@ -812,6 +858,7 @@ bool Module::instantiateLocalTable(JSContext* cx, const TableDesc& td,
   } else {
     table = Table::create(cx, td, /* HandleWasmTableObject = */ nullptr);
     if (!table) {
+      ReportOutOfMemory(cx);
       return false;
     }
   }
@@ -852,46 +899,33 @@ bool Module::instantiateTables(JSContext* cx,
   return true;
 }
 
-static void ExtractGlobalValue(const ValVector& globalImportValues,
-                               uint32_t globalIndex, const GlobalDesc& global,
-                               MutableHandleVal result) {
-  switch (global.kind()) {
-    case GlobalKind::Import: {
-      result.set(Val(globalImportValues[globalIndex]));
-      return;
-    }
-    case GlobalKind::Variable: {
-      const InitExpr& init = global.initExpr();
-      switch (init.kind()) {
-        case InitExpr::Kind::Constant:
-          result.set(Val(init.val()));
-          return;
-        case InitExpr::Kind::GetGlobal:
-          result.set(Val(globalImportValues[init.globalIndex()]));
-          return;
-      }
-      break;
-    }
-    case GlobalKind::Constant: {
-      result.set(Val(global.constantValue()));
-      return;
-    }
-  }
-  MOZ_CRASH("Not a global value");
-}
-
-static bool EnsureGlobalObject(JSContext* cx,
-                               const ValVector& globalImportValues,
-                               size_t globalIndex, const GlobalDesc& global,
-                               WasmGlobalObjectVector& globalObjs) {
+static bool EnsureExportedGlobalObject(JSContext* cx,
+                                       const ValVector& globalImportValues,
+                                       size_t globalIndex,
+                                       const GlobalDesc& global,
+                                       WasmGlobalObjectVector& globalObjs) {
   if (globalIndex < globalObjs.length() && globalObjs[globalIndex]) {
     return true;
   }
 
   RootedVal val(cx);
-  ExtractGlobalValue(globalImportValues, globalIndex, global, &val);
+  if (global.kind() == GlobalKind::Import) {
+    // If this is an import, then this must be a constant global that was
+    // provided without a global object. We must initialize it with the
+    // provided value while we still can differentiate this case.
+    MOZ_ASSERT(!global.isMutable());
+    val.set(Val(globalImportValues[globalIndex]));
+  } else {
+    // If this is not an import, then the initial value will be set by
+    // Instance::init() for indirect globals or else by CreateExportObject().
+    // In either case, we initialize with a default value here.
+    val.set(Val(global.type()));
+  }
+
+  RootedObject proto(
+      cx, &cx->global()->getPrototype(JSProto_WasmGlobal).toObject());
   RootedWasmGlobalObject go(
-      cx, WasmGlobalObject::create(cx, val, global.isMutable()));
+      cx, WasmGlobalObject::create(cx, val, global.isMutable(), proto));
   if (!go) {
     return false;
   }
@@ -923,8 +957,8 @@ bool Module::instantiateGlobals(JSContext* cx,
     }
     unsigned globalIndex = exp.globalIndex();
     const GlobalDesc& global = globals[globalIndex];
-    if (!EnsureGlobalObject(cx, globalImportValues, globalIndex, global,
-                            globalObjs)) {
+    if (!EnsureExportedGlobalObject(cx, globalImportValues, globalIndex, global,
+                                    globalObjs)) {
       return false;
     }
   }
@@ -1011,48 +1045,106 @@ SharedCode Module::getDebugEnabledCode() const {
 static bool GetFunctionExport(JSContext* cx,
                               HandleWasmInstanceObject instanceObj,
                               const JSFunctionVector& funcImports,
-                              const Export& exp, MutableHandleValue val) {
-  if (exp.funcIndex() < funcImports.length() &&
-      IsWasmExportedFunction(funcImports[exp.funcIndex()])) {
-    val.setObject(*funcImports[exp.funcIndex()]);
+                              uint32_t funcIndex, MutableHandleFunction func) {
+  if (funcIndex < funcImports.length() &&
+      IsWasmExportedFunction(funcImports[funcIndex])) {
+    func.set(funcImports[funcIndex]);
     return true;
   }
 
-  RootedFunction fun(cx);
-  if (!instanceObj->getExportedFunction(cx, instanceObj, exp.funcIndex(),
-                                        &fun)) {
-    return false;
+  return instanceObj->getExportedFunction(cx, instanceObj, funcIndex, func);
+}
+
+static bool GetGlobalExport(JSContext* cx, HandleWasmInstanceObject instanceObj,
+                            const JSFunctionVector& funcImports,
+                            const GlobalDesc& global, uint32_t globalIndex,
+                            const ValVector& globalImportValues,
+                            const WasmGlobalObjectVector& globalObjs,
+                            MutableHandleValue val) {
+  // A global object for this index is guaranteed to exist by
+  // instantiateGlobals.
+  RootedWasmGlobalObject globalObj(cx, globalObjs[globalIndex]);
+  val.setObject(*globalObj);
+
+  // We are responsible to set the initial value of the global object here if
+  // it's not imported or indirect. Imported global objects have their initial
+  // value set by their defining module, or are set by
+  // EnsureExportedGlobalObject when a constant value is provided as an import.
+  // Indirect exported globals that are not imported, are initialized in
+  // Instance::init.
+  if (global.isIndirect() || global.isImport()) {
+    return true;
   }
 
-  val.setObject(*fun);
+  // This must be an exported immutable global defined in this module. The
+  // instance either has compiled the value into the code or has its own copy
+  // in its global data area. Either way, we must initialize the global object
+  // with the same initial value.
+  MOZ_ASSERT(!global.isMutable());
+  MOZ_ASSERT(!global.isImport());
+  RootedVal globalVal(cx);
+  switch (global.kind()) {
+    case GlobalKind::Variable: {
+      const InitExpr& init = global.initExpr();
+      switch (init.kind()) {
+        case InitExpr::Kind::Constant:
+          globalVal.set(Val(init.val()));
+          break;
+        case InitExpr::Kind::GetGlobal:
+          globalVal.set(Val(globalImportValues[init.globalIndex()]));
+          break;
+        case InitExpr::Kind::RefFunc:
+          RootedFunction func(cx);
+          if (!GetFunctionExport(cx, instanceObj, funcImports,
+                                 init.refFuncIndex(), &func)) {
+            return false;
+          }
+          globalVal.set(
+              Val(ValType(RefType::func()), FuncRef::fromJSFunction(func)));
+      }
+      break;
+    }
+    case GlobalKind::Constant: {
+      globalVal.set(Val(global.constantValue()));
+      break;
+    }
+    case GlobalKind::Import: {
+      MOZ_CRASH();
+    }
+  }
+
+  globalObj->setVal(cx, globalVal);
   return true;
 }
 
-static bool CreateExportObject(JSContext* cx,
-                               HandleWasmInstanceObject instanceObj,
-                               const JSFunctionVector& funcImports,
-                               const WasmTableObjectVector& tableObjs,
-                               HandleWasmMemoryObject memoryObj,
-                               const WasmGlobalObjectVector& globalObjs,
-                               const ExportVector& exports) {
+static bool CreateExportObject(
+    JSContext* cx, HandleWasmInstanceObject instanceObj,
+    const JSFunctionVector& funcImports, const WasmTableObjectVector& tableObjs,
+    HandleWasmMemoryObject memoryObj, const ValVector& globalImportValues,
+    const WasmGlobalObjectVector& globalObjs, const ExportVector& exports) {
   const Instance& instance = instanceObj->instance();
   const Metadata& metadata = instance.metadata();
+  const GlobalDescVector& globals = metadata.globals;
 
   if (metadata.isAsmJS() && exports.length() == 1 &&
       strlen(exports[0].fieldName()) == 0) {
-    RootedValue val(cx);
-    if (!GetFunctionExport(cx, instanceObj, funcImports, exports[0], &val)) {
+    RootedFunction func(cx);
+    if (!GetFunctionExport(cx, instanceObj, funcImports, exports[0].funcIndex(),
+                           &func)) {
       return false;
     }
-    instanceObj->initExportsObj(val.toObject());
+    instanceObj->initExportsObj(*func.get());
     return true;
   }
 
   RootedObject exportObj(cx);
+  uint8_t propertyAttr = JSPROP_ENUMERATE;
+
   if (metadata.isAsmJS()) {
     exportObj = NewBuiltinClassInstance<PlainObject>(cx);
   } else {
     exportObj = NewObjectWithGivenProto<PlainObject>(cx, nullptr);
+    propertyAttr |= JSPROP_READONLY | JSPROP_PERMANENT;
   }
   if (!exportObj) {
     return false;
@@ -1068,29 +1160,41 @@ static bool CreateExportObject(JSContext* cx,
     RootedId id(cx, AtomToId(atom));
     RootedValue val(cx);
     switch (exp.kind()) {
-      case DefinitionKind::Function:
-        if (!GetFunctionExport(cx, instanceObj, funcImports, exp, &val)) {
+      case DefinitionKind::Function: {
+        RootedFunction func(cx);
+        if (!GetFunctionExport(cx, instanceObj, funcImports, exp.funcIndex(),
+                               &func)) {
+          return false;
+        }
+        val = ObjectValue(*func);
+        break;
+      }
+      case DefinitionKind::Table: {
+        val = ObjectValue(*tableObjs[exp.tableIndex()]);
+        break;
+      }
+      case DefinitionKind::Memory: {
+        val = ObjectValue(*memoryObj);
+        break;
+      }
+      case DefinitionKind::Global: {
+        const GlobalDesc& global = globals[exp.globalIndex()];
+        if (!GetGlobalExport(cx, instanceObj, funcImports, global,
+                             exp.globalIndex(), globalImportValues, globalObjs,
+                             &val)) {
           return false;
         }
         break;
-      case DefinitionKind::Table:
-        val = ObjectValue(*tableObjs[exp.tableIndex()]);
-        break;
-      case DefinitionKind::Memory:
-        val = ObjectValue(*memoryObj);
-        break;
-      case DefinitionKind::Global:
-        val.setObject(*globalObjs[exp.globalIndex()]);
-        break;
+      }
     }
 
-    if (!JS_DefinePropertyById(cx, exportObj, id, val, JSPROP_ENUMERATE)) {
+    if (!JS_DefinePropertyById(cx, exportObj, id, val, propertyAttr)) {
       return false;
     }
   }
 
   if (!metadata.isAsmJS()) {
-    if (!JS_FreezeObject(cx, exportObj)) {
+    if (!PreventExtensions(cx, exportObj)) {
       return false;
     }
   }
@@ -1131,6 +1235,14 @@ static bool MakeStructField(JSContext* cx, const ValType& v, bool isMutable,
       t = GlobalObject::getOrCreateScalarTypeDescr(cx, cx->global(),
                                                    Scalar::Int32);
       break;
+    case ValType::V128:
+      // Align for v128 but allocate only an int32, three more int32 allocations
+      // will follow immediately.  JS will see four immutable int32 values but
+      // wasm knows it's a single v128.  See makeStructTypeDescrs(), below.
+      props.alignAsV128 = true;
+      t = GlobalObject::getOrCreateScalarTypeDescr(cx, cx->global(),
+                                                   Scalar::Int32);
+      break;
     case ValType::F32:
       t = GlobalObject::getOrCreateScalarTypeDescr(cx, cx->global(),
                                                    Scalar::Float32);
@@ -1147,7 +1259,6 @@ static bool MakeStructField(JSContext* cx, const ValType& v, bool isMutable,
           break;
         case RefType::Func:
         case RefType::Any:
-        case RefType::Null:
           t = GlobalObject::getOrCreateReferenceTypeDescr(
               cx, cx->global(), ReferenceType::TYPE_WASM_ANYREF);
           break;
@@ -1229,12 +1340,34 @@ bool Module::makeStructTypeDescrs(
                              &ids, &fieldTypeObjs, &fieldProps)) {
           return false;
         }
+      } else if (v.kind() == ValType::V128) {
+        // Ditto v128 fields.  These turn into four adjacent i32 fields, using
+        // the standard xyzw convention.
+        sf.isMutable = false;
+        allowConstruct = false;
+
+        if (!MakeStructField(cx, ValType::V128, sf.isMutable, "_%d_x", k, &ids,
+                             &fieldTypeObjs, &fieldProps)) {
+          return false;
+        }
+        if (!MakeStructField(cx, ValType::I32, sf.isMutable, "_%d_y", k, &ids,
+                             &fieldTypeObjs, &fieldProps)) {
+          return false;
+        }
+        if (!MakeStructField(cx, ValType::I32, sf.isMutable, "_%d_z", k, &ids,
+                             &fieldTypeObjs, &fieldProps)) {
+          return false;
+        }
+        if (!MakeStructField(cx, ValType::I32, sf.isMutable, "_%d_w", k++, &ids,
+                             &fieldTypeObjs, &fieldProps)) {
+          return false;
+        }
       } else {
         // TypedObjects don't yet have a sufficient notion of type
         // constraints on TypedObject properties.  Thus we handle fields
-        // of type (ref T) by marking them as immutable for JS and by
+        // of type (optref T) by marking them as immutable for JS and by
         // rendering the objects non-constructible from JS.  Wasm
-        // however sees properly-typed (ref T) fields with appropriate
+        // however sees properly-typed (optref T) fields with appropriate
         // mutability.
         if (v.isTypeIndex()) {
           // Validation ensures that v references a struct type here.
@@ -1335,7 +1468,7 @@ bool Module::instantiate(JSContext* cx, ImportValues& imports,
   }
 
   if (!CreateExportObject(cx, instance, imports.funcs, tableObjs.get(), memory,
-                          imports.globalObjs, exports_)) {
+                          imports.globalValues, imports.globalObjs, exports_)) {
     return false;
   }
 

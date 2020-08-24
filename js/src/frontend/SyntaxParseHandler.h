@@ -12,6 +12,7 @@
 
 #include <string.h>
 
+#include "frontend/FunctionSyntaxKind.h"  // FunctionSyntaxKind
 #include "frontend/ParseNode.h"
 #include "frontend/TokenStream.h"
 #include "js/GCAnnotations.h"
@@ -90,10 +91,16 @@ class SyntaxParseHandler
     // contextual keyword.
     NodePotentialAsyncKeyword,
 
+    // Node representing private names.
+    NodePrivateName,
+
     NodeDottedProperty,
     NodeOptionalDottedProperty,
     NodeElement,
     NodeOptionalElement,
+    // A distinct node for [PrivateName], to make detecting delete this.#x
+    // detectable in syntax parse
+    NodePrivateElement,
 
     // Destructuring target patterns can't be parenthesized: |([a]) = [3];|
     // must be a syntax error.  (We can't use NodeGeneric instead of these
@@ -119,15 +126,9 @@ class SyntaxParseHandler
     // |("use strict");| as a useless statement.
     NodeUnparenthesizedString,
 
-    // Assignment expressions in condition contexts could be typos for
-    // equality checks.  (Think |if (x = y)| versus |if (x == y)|.)  Thus
-    // we need this to treat |if (x = y)| as a possible typo and
-    // |if ((x = y))| as a deliberate assignment within a condition.
-    //
-    // (Technically this isn't needed, as these are *only* extraWarnings
-    // warnings, and parsing with that option disables syntax parsing.  But
-    // it seems best to be consistent, and perhaps the syntax parser will
-    // eventually enforce extraWarnings and will require this then.)
+    // For destructuring patterns an assignment element with
+    // an initializer expression is not allowed be parenthesized.
+    // i.e. |{x = 1} = obj|
     NodeUnparenthesizedAssignment,
 
     // This node is necessary to determine if the base operand in an
@@ -152,7 +153,8 @@ class SyntaxParseHandler
   }
 
   bool isPropertyAccess(Node node) {
-    return node == NodeDottedProperty || node == NodeElement;
+    return node == NodeDottedProperty || node == NodeElement ||
+           node == NodePrivateElement;
   }
 
   bool isOptionalPropertyAccess(Node node) {
@@ -191,13 +193,14 @@ class SyntaxParseHandler
 
   NameNodeType newName(PropertyName* name, const TokenPos& pos, JSContext* cx) {
     lastAtom = name;
-    if (name == cx->names().arguments) {
+    if (name == cx->parserNames().arguments) {
       return NodeArgumentsName;
     }
-    if (pos.begin + strlen("async") == pos.end && name == cx->names().async) {
+    if (pos.begin + strlen("async") == pos.end &&
+        name == cx->parserNames().async) {
       return NodePotentialAsyncKeyword;
     }
-    if (name == cx->names().eval) {
+    if (name == cx->parserNames().eval) {
       return NodeEvalName;
     }
     return NodeName;
@@ -209,6 +212,10 @@ class SyntaxParseHandler
 
   NameNodeType newObjectLiteralPropertyName(JSAtom* atom, const TokenPos& pos) {
     return NodeName;
+  }
+
+  NameNodeType newPrivateName(JSAtom* atom, const TokenPos& pos) {
+    return NodePrivateName;
   }
 
   NumericLiteralType newNumber(double value, DecimalPoint decimalPoint,
@@ -245,8 +252,7 @@ class SyntaxParseHandler
     return NodeGeneric;
   }
 
-  template <class Boxer>
-  RegExpLiteralType newRegExp(Node reobj, const TokenPos& pos, Boxer& boxer) {
+  RegExpLiteralType newRegExp(Node reobj, const TokenPos& pos) {
     return NodeGeneric;
   }
 
@@ -498,6 +504,9 @@ class SyntaxParseHandler
   }
 
   PropertyByValueType newPropertyByValue(Node lhs, Node index, uint32_t end) {
+    if (isPrivateName(index)) {
+      return NodePrivateElement;
+    }
     return NodeElement;
   }
 
@@ -671,7 +680,6 @@ class SyntaxParseHandler
   MOZ_MUST_USE NodeType setLikelyIIFE(NodeType node) {
     return node;  // Remain in syntax-parse mode.
   }
-  void setInDirectivePrologue(UnaryNodeType exprStmt) {}
 
   bool isName(Node node) {
     return node == NodeName || node == NodeArgumentsName ||
@@ -687,6 +695,9 @@ class SyntaxParseHandler
   bool isAsyncKeyword(Node node, JSContext* cx) {
     return node == NodePotentialAsyncKeyword;
   }
+
+  bool isPrivateName(Node node) { return node == NodePrivateName; }
+  bool isPrivateField(Node node) { return node == NodePrivateElement; }
 
   PropertyName* maybeDottedProperty(Node node) {
     // Note: |super.apply(...)| is a special form that calls an "apply"

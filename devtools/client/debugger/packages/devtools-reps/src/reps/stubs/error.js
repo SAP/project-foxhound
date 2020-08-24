@@ -200,7 +200,7 @@ stubs.set("base-loader Error", {
     name: "Error",
     message: "Error message",
     stack:
-      "onPacket@resource://devtools/shared/base-loader.js -> resource://devtools/shared/client/debugger-client.js:856:9\n" +
+      "onPacket@resource://devtools/shared/base-loader.js -> resource://devtools/client/debugger-client.js:856:9\n" +
       "send/<@resource://devtools/shared/base-loader.js -> resource://devtools/shared/transport/transport.js:569:13\n" +
       "exports.makeInfallible/<@resource://devtools/shared/base-loader.js -> resource://devtools/shared/ThreadSafeDevToolsUtils.js:109:14\n" +
       "exports.makeInfallible/<@resource://devtools/shared/base-loader.js -> resource://devtools/shared/ThreadSafeDevToolsUtils.js:109:14\n",
@@ -350,6 +350,25 @@ stubs.set("Error with undefined-grip message", {
     fileName: "debugger eval code",
     lineNumber: 13,
     columnNumber: 13,
+  },
+});
+
+stubs.set("Error with stack having frames with multiple @", {
+  type: "object",
+  actor: "server1.conn1.child1/obj1021",
+  class: "Error",
+  ownPropertyLength: 4,
+  preview: {
+    kind: "Error",
+    name: "Error",
+    message: "bar",
+    stack:
+      "errorBar@https://example.com/turbo/from-npm.js@0.8.26/dist/from-npm.js:814:31\n" +
+      "errorFoo@https://example.com/turbo/from-npm.js@0.8.26/dist/from-npm.js:815:31\n" +
+      "@https://example.com/turbo/from-npm.js@0.8.26/dist/from-npm.js:816:31\n",
+    fileName: "from-npm.js",
+    lineNumber: 6,
+    columnNumber: 15,
   },
 });
 

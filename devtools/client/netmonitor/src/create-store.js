@@ -22,7 +22,9 @@ const {
 // Middleware
 const batching = require("devtools/client/netmonitor/src/middleware/batching");
 const prefs = require("devtools/client/netmonitor/src/middleware/prefs");
-const thunk = require("devtools/client/netmonitor/src/middleware/thunk");
+const {
+  thunkWithOptions,
+} = require("devtools/client/shared/redux/middleware/thunk-with-options");
 const recording = require("devtools/client/netmonitor/src/middleware/recording");
 const throttling = require("devtools/client/netmonitor/src/middleware/throttling");
 const eventTelemetry = require("devtools/client/netmonitor/src/middleware/event-telemetry");
@@ -47,9 +49,9 @@ const {
   ColumnsData,
 } = require("devtools/client/netmonitor/src/reducers/ui");
 const {
-  WebSockets,
-  getWebSocketsDefaultColumnsState,
-} = require("devtools/client/netmonitor/src/reducers/web-sockets");
+  Messages,
+  getMessageDefaultColumnsState,
+} = require("devtools/client/netmonitor/src/reducers/messages");
 const { Search } = require("devtools/client/netmonitor/src/reducers/search");
 
 /**
@@ -68,8 +70,8 @@ function configureStore(connector, telemetry) {
       columns: getColumnState(),
       columnsData: getColumnsData(),
     }),
-    webSockets: WebSockets({
-      columns: getWebSocketsColumnState(),
+    messages: Messages({
+      columns: getMessageColumnState(),
     }),
     search: new Search(),
   };
@@ -77,7 +79,7 @@ function configureStore(connector, telemetry) {
   // Prepare middleware.
   const middleware = applyMiddleware(
     requestBlocking(connector),
-    thunk,
+    thunkWithOptions.bind(null, { connector }),
     prefs,
     batching,
     recording(connector),
@@ -107,11 +109,11 @@ function getColumnState() {
 }
 
 /**
- * Get column state of WebSockets from preferences.
+ * Get column state of Messages from preferences.
  */
-function getWebSocketsColumnState() {
-  const columns = getWebSocketsDefaultColumnsState();
-  const visibleColumns = getPref("devtools.netmonitor.ws.visibleColumns");
+function getMessageColumnState() {
+  const columns = getMessageDefaultColumnsState();
+  const visibleColumns = getPref("devtools.netmonitor.msg.visibleColumns");
 
   const state = {};
   for (const col in columns) {
@@ -153,6 +155,10 @@ function getFilterState() {
   });
   return new FilterTypes(activeFilters);
 }
+
+/**
+ * Get json data from preferences
+ */
 
 function getPref(pref) {
   try {

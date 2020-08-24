@@ -279,6 +279,7 @@ class Expressions extends Component<Props, State> {
             onInspectIconClick={grip => openElementInInspector(grip)}
             onDOMNodeMouseOver={grip => highlightDomElement(grip)}
             onDOMNodeMouseOut={grip => unHighlightDomElement(grip)}
+            shouldRenderTooltip={true}
           />
           <div className="expression-container__close-btn">
             <CloseButton
@@ -397,18 +398,15 @@ const mapStateToProps = state => ({
   expressionError: getExpressionError(state),
 });
 
-export default connect<Props, OwnProps, _, _, _, _>(
-  mapStateToProps,
-  {
-    autocomplete: actions.autocomplete,
-    clearAutocomplete: actions.clearAutocomplete,
-    addExpression: actions.addExpression,
-    clearExpressionError: actions.clearExpressionError,
-    updateExpression: actions.updateExpression,
-    deleteExpression: actions.deleteExpression,
-    openLink: actions.openLink,
-    openElementInInspector: actions.openElementInInspectorCommand,
-    highlightDomElement: actions.highlightDomElement,
-    unHighlightDomElement: actions.unHighlightDomElement,
-  }
-)(Expressions);
+export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
+  autocomplete: actions.autocomplete,
+  clearAutocomplete: actions.clearAutocomplete,
+  addExpression: actions.addExpression,
+  clearExpressionError: actions.clearExpressionError,
+  updateExpression: actions.updateExpression,
+  deleteExpression: actions.deleteExpression,
+  openLink: actions.openLink,
+  openElementInInspector: actions.openElementInInspectorCommand,
+  highlightDomElement: actions.highlightDomElement,
+  unHighlightDomElement: actions.unHighlightDomElement,
+})(Expressions);

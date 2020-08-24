@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGFEConvolveMatrixElement_h
-#define mozilla_dom_SVGFEConvolveMatrixElement_h
+#ifndef DOM_SVG_SVGFECONVOLVEMATRIXELEMENT_H_
+#define DOM_SVG_SVGFECONVOLVEMATRIXELEMENT_H_
 
 #include "DOMSVGAnimatedNumberList.h"
 #include "SVGAnimatedBoolean.h"
@@ -26,7 +26,7 @@ namespace dom {
 class DOMSVGAnimatedNumberList;
 class DOMSVGAnimatedBoolean;
 
-typedef SVGFE SVGFEConvolveMatrixElementBase;
+using SVGFEConvolveMatrixElementBase = SVGFE;
 
 class SVGFEConvolveMatrixElement : public SVGFEConvolveMatrixElementBase {
   friend nsresult(::NS_NewSVGFEConvolveMatrixElement(
@@ -42,7 +42,7 @@ class SVGFEConvolveMatrixElement : public SVGFEConvolveMatrixElementBase {
 
  public:
   virtual FilterPrimitiveDescription GetPrimitiveDescription(
-      nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+      SVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
       const nsTArray<bool>& aInputsAreTainted,
       nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
   virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
@@ -115,4 +115,4 @@ class SVGFEConvolveMatrixElement : public SVGFEConvolveMatrixElementBase {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGFEConvolveMatrixElement_h
+#endif  // DOM_SVG_SVGFECONVOLVEMATRIXELEMENT_H_

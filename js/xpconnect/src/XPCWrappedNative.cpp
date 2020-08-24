@@ -7,7 +7,6 @@
 /* Wrapper object for reflecting native xpcom objects into JavaScript. */
 
 #include "xpcprivate.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "nsWrapperCacheInlines.h"
 #include "XPCLog.h"
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
@@ -1421,11 +1420,9 @@ bool CallMethodHelper::InitializeDispatchParams() {
   mJSContextIndex = mMethodInfo->IndexOfJSContext();
 
   // Allocate enough space in mDispatchParams up-front.
-  if (!mDispatchParams.AppendElements(paramCount + wantsJSContext +
-                                      wantsOptArgc)) {
-    Throw(NS_ERROR_OUT_OF_MEMORY, mCallContext);
-    return false;
-  }
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier.
+  mDispatchParams.AppendElements(paramCount + wantsJSContext + wantsOptArgc);
 
   // Initialize each parameter to a valid state (for safe cleanup later).
   for (uint8_t i = 0, paramIdx = 0; i < mDispatchParams.Length(); i++) {
@@ -1537,19 +1534,6 @@ bool CallMethodHelper::ConvertIndependentParam(uint8_t i) {
                            mCallContext);
     }
     param_iid = inner.GetInterface()->IID();
-  }
-
-  // Don't allow CPOWs to be passed to native code (in case they try to cast
-  // to a concrete type).
-  if (src.isObject() && jsipc::IsWrappedCPOW(&src.toObject()) &&
-      type.Tag() == nsXPTType::T_INTERFACE &&
-      !param_iid.Equals(NS_GET_IID(nsISupports))) {
-    // Allow passing CPOWs to XPCWrappedJS.
-    nsCOMPtr<nsIXPConnectWrappedJS> wrappedJS(do_QueryInterface(mCallee));
-    if (!wrappedJS) {
-      ThrowBadParam(NS_ERROR_XPC_CANT_PASS_CPOW_TO_NATIVE, i, mCallContext);
-      return false;
-    }
   }
 
   nsresult err;

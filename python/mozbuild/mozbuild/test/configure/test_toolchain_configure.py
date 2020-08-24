@@ -1201,12 +1201,19 @@ class LinuxCrossCompileToolchainTest(BaseToolchainTest):
                 '__arch64__': 1,
             },
         },
+        'm68k-unknown-linux-gnu': big_endian + {
+            '__m68k__': 1,
+        },
         'mips64-unknown-linux-gnuabi64': big_endian + {
             '__mips64': 1,
             '__mips__': 1,
         },
         'mips-unknown-linux-gnu': big_endian + {
             '__mips__': 1,
+        },
+        'riscv64-unknown-linux-gnu': little_endian + {
+            '__riscv': 1,
+            '__riscv_xlen': 64,
         },
         'sh4-unknown-linux-gnu': little_endian + {
             '__sh__': 1,
@@ -1744,10 +1751,6 @@ class RustTest(BaseConfigureTest):
             'i686-unknown-linux-gnu',
             'i686-apple-darwin',
             'x86_64-apple-darwin',
-            'aarch64-apple-ios',
-            'armv7s-apple-ios',
-            'i386-apple-ios',
-            'x86_64-apple-ios',
             'mips-unknown-linux-gnu',
             'mipsel-unknown-linux-gnu',
             'mips64-unknown-linux-gnuabi64',
@@ -1795,13 +1798,6 @@ class RustTest(BaseConfigureTest):
 
         self.assertEqual(
             self.get_rust_target('arm-unknown-linux-androideabi',
-                                 version='1.32.0',
-                                 arm_target=ReadOnlyNamespace(
-                                     arm_arch=7, fpu='neon', thumb2=True, float_abi='softfp')),
-            'armv7-linux-androideabi')
-
-        self.assertEqual(
-            self.get_rust_target('arm-unknown-linux-androideabi',
                                  arm_target=ReadOnlyNamespace(
                                      arm_arch=7, fpu='neon', thumb2=False, float_abi='softfp')),
             'armv7-linux-androideabi')
@@ -1817,13 +1813,6 @@ class RustTest(BaseConfigureTest):
                                  arm_target=ReadOnlyNamespace(
                                      arm_arch=7, fpu='neon', thumb2=True, float_abi='hard')),
             'thumbv7neon-unknown-linux-gnueabihf')
-
-        self.assertEqual(
-            self.get_rust_target('armv7-unknown-linux-gnueabihf',
-                                 version='1.32.0',
-                                 arm_target=ReadOnlyNamespace(
-                                     arm_arch=7, fpu='neon', thumb2=True, float_abi='hard')),
-            'armv7-unknown-linux-gnueabihf')
 
         self.assertEqual(
             self.get_rust_target('armv7-unknown-linux-gnueabihf',

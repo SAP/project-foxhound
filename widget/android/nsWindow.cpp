@@ -9,6 +9,7 @@
 #include <android/native_window_jni.h>
 #include <math.h>
 #include <queue>
+#include <type_traits>
 #include <unistd.h>
 
 #include "mozilla/MiscEvents.h"
@@ -18,7 +19,6 @@
 #include "mozilla/StaticPrefs_android.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TouchEvents.h"
-#include "mozilla/TypeTraits.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
@@ -49,7 +49,7 @@ using mozilla::dom::ContentParent;
 
 #include "nsAppShell.h"
 #include "nsFocusManager.h"
-#include "nsIdleService.h"
+#include "nsUserIdleService.h"
 #include "nsLayoutUtils.h"
 #include "nsViewManager.h"
 
@@ -81,9 +81,16 @@ using mozilla::dom::ContentParent;
 #include "AndroidBridgeUtilities.h"
 #include "AndroidUiThread.h"
 #include "GeckoEditableSupport.h"
-#include "GeneratedJNINatives.h"
 #include "KeyEvent.h"
 #include "MotionEvent.h"
+#include "mozilla/java/EventDispatcherWrappers.h"
+#include "mozilla/java/GeckoAppShellWrappers.h"
+#include "mozilla/java/GeckoEditableChildWrappers.h"
+#include "mozilla/java/GeckoResultWrappers.h"
+#include "mozilla/java/GeckoSessionNatives.h"
+#include "mozilla/java/GeckoSystemStateListenerWrappers.h"
+#include "mozilla/java/PanZoomControllerNatives.h"
+#include "mozilla/java/SessionAccessibilityWrappers.h"
 #include "ScreenHelperAndroid.h"
 
 #include "GeckoProfiler.h"  // For AUTO_PROFILER_LABEL
@@ -172,17 +179,15 @@ class nsWindow::WindowEvent : public Runnable {
 
 namespace {
 template <class Instance, class Impl>
-typename EnableIf<jni::detail::NativePtrPicker<Impl>::value ==
-                      jni::detail::REFPTR,
-                  void>::Type
+std::enable_if_t<
+    jni::detail::NativePtrPicker<Impl>::value == jni::detail::REFPTR, void>
 CallAttachNative(Instance aInstance, Impl* aImpl) {
   Impl::AttachNative(aInstance, RefPtr<Impl>(aImpl).get());
 }
 
 template <class Instance, class Impl>
-typename EnableIf<jni::detail::NativePtrPicker<Impl>::value ==
-                      jni::detail::OWNING,
-                  void>::Type
+std::enable_if_t<
+    jni::detail::NativePtrPicker<Impl>::value == jni::detail::OWNING, void>
 CallAttachNative(Instance aInstance, Impl* aImpl) {
   Impl::AttachNative(aInstance, UniquePtr<Impl>(aImpl));
 }
@@ -291,7 +296,7 @@ class nsWindow::NativePtr<Impl>::Locked final : private MutexAutoLock {
 
 class nsWindow::GeckoViewSupport final
     : public GeckoSession::Window::Natives<GeckoViewSupport>,
-      public SupportsWeakPtr<GeckoViewSupport> {
+      public SupportsWeakPtr {
   nsWindow& window;
 
   // We hold a WeakRef because we want to allow the
@@ -302,9 +307,6 @@ class nsWindow::GeckoViewSupport final
 
  public:
   typedef GeckoSession::Window::Natives<GeckoViewSupport> Base;
-  typedef SupportsWeakPtr<GeckoViewSupport> SupportsWeakPtr;
-
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(GeckoViewSupport);
 
   template <typename Functor>
   static void OnNativeCall(Functor&& aCall) {
@@ -356,6 +358,11 @@ class nsWindow::GeckoViewSupport final
                            jni::Object::Param aSessionAccessibility);
 
   void OnReady(jni::Object::Param aQueue = nullptr);
+
+  auto OnLoadRequest(mozilla::jni::String::Param aUri, int32_t aWindowType,
+                     int32_t aFlags, mozilla::jni::String::Param aTriggeringUri,
+                     bool aHasUserGesture, bool aIsTopLevel) const
+      -> java::GeckoResult::LocalRef;
 };
 
 /**
@@ -519,9 +526,13 @@ class nsWindow::NPZCSupport final
         WheelDeltaAdjustmentStrategy::eNone);
 
     APZEventResult result = controller->InputBridge()->ReceiveInputEvent(input);
+    int32_t ret =
+        !result.mTargetIsRoot || result.mHitRegionWithApzAwareListeners
+            ? INPUT_RESULT_HANDLED_CONTENT
+            : INPUT_RESULT_HANDLED;
 
     if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
-      return INPUT_RESULT_HANDLED;
+      return ret;
     }
 
     PostInputEvent([input, result](nsWindow* window) {
@@ -529,15 +540,11 @@ class nsWindow::NPZCSupport final
       window->ProcessUntransformedAPZEvent(&wheelEvent, result);
     });
 
-    if (result.mHitRegionWithApzAwareListeners) {
-      return INPUT_RESULT_HANDLED_CONTENT;
-    }
-
     switch (result.mStatus) {
       case nsEventStatus_eIgnore:
         return INPUT_RESULT_UNHANDLED;
       case nsEventStatus_eConsumeDoDefault:
-        return INPUT_RESULT_HANDLED;
+        return ret;
       default:
         MOZ_ASSERT_UNREACHABLE("Unexpected nsEventStatus");
         return INPUT_RESULT_UNHANDLED;
@@ -550,10 +557,10 @@ class nsWindow::NPZCSupport final
 
     switch (button) {
       case java::sdk::MotionEvent::BUTTON_PRIMARY:
-        result = MouseInput::LEFT_BUTTON;
+        result = MouseInput::PRIMARY_BUTTON;
         break;
       case java::sdk::MotionEvent::BUTTON_SECONDARY:
-        result = MouseInput::RIGHT_BUTTON;
+        result = MouseInput::SECONDARY_BUTTON;
         break;
       case java::sdk::MotionEvent::BUTTON_TERTIARY:
         result = MouseInput::MIDDLE_BUTTON;
@@ -569,10 +576,10 @@ class nsWindow::NPZCSupport final
     int16_t result = 0;
 
     if (buttons & java::sdk::MotionEvent::BUTTON_PRIMARY) {
-      result |= MouseButtonsFlag::eLeftFlag;
+      result |= MouseButtonsFlag::ePrimaryFlag;
     }
     if (buttons & java::sdk::MotionEvent::BUTTON_SECONDARY) {
-      result |= MouseButtonsFlag::eRightFlag;
+      result |= MouseButtonsFlag::eSecondaryFlag;
     }
     if (buttons & java::sdk::MotionEvent::BUTTON_TERTIARY) {
       result |= MouseButtonsFlag::eMiddleFlag;
@@ -643,9 +650,13 @@ class nsWindow::NPZCSupport final
                      GetEventTimeStamp(aTime), GetModifiers(aMetaState));
 
     APZEventResult result = controller->InputBridge()->ReceiveInputEvent(input);
+    int32_t ret =
+        !result.mTargetIsRoot || result.mHitRegionWithApzAwareListeners
+            ? INPUT_RESULT_HANDLED_CONTENT
+            : INPUT_RESULT_HANDLED;
 
     if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
-      return INPUT_RESULT_HANDLED;
+      return ret;
     }
 
     PostInputEvent([input, result](nsWindow* window) {
@@ -653,15 +664,11 @@ class nsWindow::NPZCSupport final
       window->ProcessUntransformedAPZEvent(&mouseEvent, result);
     });
 
-    if (result.mHitRegionWithApzAwareListeners) {
-      return INPUT_RESULT_HANDLED_CONTENT;
-    }
-
     switch (result.mStatus) {
       case nsEventStatus_eIgnore:
         return INPUT_RESULT_UNHANDLED;
       case nsEventStatus_eConsumeDoDefault:
-        return INPUT_RESULT_HANDLED;
+        return ret;
       default:
         MOZ_ASSERT_UNREACHABLE("Unexpected nsEventStatus");
         return INPUT_RESULT_UNHANDLED;
@@ -770,9 +777,13 @@ class nsWindow::NPZCSupport final
     }
 
     APZEventResult result = controller->InputBridge()->ReceiveInputEvent(input);
+    int32_t ret =
+        !result.mTargetIsRoot || result.mHitRegionWithApzAwareListeners
+            ? INPUT_RESULT_HANDLED_CONTENT
+            : INPUT_RESULT_HANDLED;
 
     if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
-      return INPUT_RESULT_HANDLED;
+      return ret;
     }
 
     // Dispatch APZ input event on Gecko thread.
@@ -782,15 +793,11 @@ class nsWindow::NPZCSupport final
       window->DispatchHitTest(touchEvent);
     });
 
-    if (result.mHitRegionWithApzAwareListeners) {
-      return INPUT_RESULT_HANDLED_CONTENT;
-    }
-
     switch (result.mStatus) {
       case nsEventStatus_eIgnore:
         return INPUT_RESULT_UNHANDLED;
       case nsEventStatus_eConsumeDoDefault:
-        return INPUT_RESULT_HANDLED;
+        return ret;
       default:
         MOZ_ASSERT_UNREACHABLE("Unexpected nsEventStatus");
         return INPUT_RESULT_UNHANDLED;
@@ -830,12 +837,19 @@ class nsWindow::LayerViewSupport final
   struct CaptureRequest {
     explicit CaptureRequest() : mResult(nullptr) {}
     explicit CaptureRequest(java::GeckoResult::GlobalRef aResult,
+                            java::sdk::Bitmap::GlobalRef aBitmap,
                             const ScreenRect& aSource,
                             const IntSize& aOutputSize)
-        : mResult(aResult), mSource(aSource), mOutputSize(aOutputSize) {}
+        : mResult(aResult),
+          mBitmap(aBitmap),
+          mSource(aSource),
+          mOutputSize(aOutputSize) {}
 
     // where to send the pixels
     java::GeckoResult::GlobalRef mResult;
+
+    // where to store the pixels
+    java::sdk::Bitmap::GlobalRef mBitmap;
 
     ScreenRect mSource;
 
@@ -914,8 +928,8 @@ class nsWindow::LayerViewSupport final
                       java::sdk::IllegalStateException::New(
                           "The compositor has detached from the session")
                           .Cast<jni::Throwable>());
-                  results->pop();
                 }
+                results->pop();
               }
               compositor->OnCompositorDetached();
               disposer->Run();
@@ -942,16 +956,21 @@ class nsWindow::LayerViewSupport final
     return child.forget();
   }
 
-  int8_t* FlipScreenPixels(Shmem& aMem, const ScreenIntSize& aInSize,
-                           const ScreenRect& aInRegion,
-                           const IntSize& aOutSize) {
-    RefPtr<DataSourceSurface> image = gfx::CreateDataSourceSurfaceFromData(
-        IntSize(aInSize.width, aInSize.height), SurfaceFormat::B8G8R8A8,
-        aMem.get<uint8_t>(),
-        StrideForFormatAndWidth(SurfaceFormat::B8G8R8A8, aInSize.width));
+  already_AddRefed<DataSourceSurface> FlipScreenPixels(
+      Shmem& aMem, const ScreenIntSize& aInSize, const ScreenRect& aInRegion,
+      const IntSize& aOutSize) {
+    RefPtr<DataSourceSurface> image =
+        gfx::Factory::CreateWrappingDataSourceSurface(
+            aMem.get<uint8_t>(),
+            StrideForFormatAndWidth(SurfaceFormat::B8G8R8A8, aInSize.width),
+            IntSize(aInSize.width, aInSize.height), SurfaceFormat::B8G8R8A8);
     RefPtr<DrawTarget> drawTarget =
         gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(
             aOutSize, SurfaceFormat::B8G8R8A8);
+    if (!drawTarget) {
+      return nullptr;
+    }
+
     drawTarget->SetTransform(Matrix::Scaling(1.0, -1.0) *
                              Matrix::Translation(0, aOutSize.height));
 
@@ -963,9 +982,7 @@ class nsWindow::LayerViewSupport final
 
     RefPtr<SourceSurface> snapshot = drawTarget->Snapshot();
     RefPtr<DataSourceSurface> data = snapshot->GetDataSurface();
-    DataSourceSurface::ScopedMap* smap =
-        new DataSourceSurface::ScopedMap(data, DataSourceSurface::READ);
-    return reinterpret_cast<int8_t*>(smap->GetData());
+    return data.forget();
   }
 
   /**
@@ -1026,6 +1043,20 @@ class nsWindow::LayerViewSupport final
             GetUiCompositorControllerChild()) {
       mCompositorPaused = true;
       child->Pause();
+    }
+
+    if (LockedWindowPtr lock{mWindow}) {
+      while (!mCapturePixelsResults.empty()) {
+        auto result =
+            java::GeckoResult::LocalRef(mCapturePixelsResults.front().mResult);
+        if (result) {
+          result->CompleteExceptionally(
+              java::sdk::IllegalStateException::New(
+                  "The compositor has detached from the session")
+                  .Cast<jni::Throwable>());
+        }
+        mCapturePixelsResults.pop();
+      }
     }
   }
 
@@ -1133,27 +1164,6 @@ class nsWindow::LayerViewSupport final
     }
   }
 
-  void SetPinned(bool aPinned, int32_t aReason) {
-    RefPtr<UiCompositorControllerChild> child =
-        GetUiCompositorControllerChild();
-    if (!child) {
-      return;
-    }
-
-    if (AndroidBridge::IsJavaUiThread()) {
-      child->SetPinned(aPinned, aReason);
-      return;
-    }
-
-    if (RefPtr<nsThread> uiThread = GetAndroidUiThread()) {
-      uiThread->Dispatch(
-          NewRunnableMethod<bool, int32_t>(
-              "LayerViewSupport::SetPinned", child,
-              &UiCompositorControllerChild::SetPinned, aPinned, aReason),
-          nsIThread::DISPATCH_NORMAL);
-    }
-  }
-
   void SendToolbarAnimatorMessage(int32_t aMessage) {
     RefPtr<UiCompositorControllerChild> child =
         GetUiCompositorControllerChild();
@@ -1191,7 +1201,8 @@ class nsWindow::LayerViewSupport final
     }
   }
 
-  void RequestScreenPixels(jni::Object::Param aResult, int32_t aXOffset,
+  void RequestScreenPixels(jni::Object::Param aResult,
+                           jni::Object::Param aTarget, int32_t aXOffset,
                            int32_t aYOffset, int32_t aSrcWidth,
                            int32_t aSrcHeight, int32_t aOutWidth,
                            int32_t aOutHeight) {
@@ -1201,6 +1212,7 @@ class nsWindow::LayerViewSupport final
     if (LockedWindowPtr window{mWindow}) {
       mCapturePixelsResults.push(CaptureRequest(
           java::GeckoResult::GlobalRef(java::GeckoResult::LocalRef(aResult)),
+          java::sdk::Bitmap::GlobalRef(java::sdk::Bitmap::LocalRef(aTarget)),
           ScreenRect(aXOffset, aYOffset, aSrcWidth, aSrcHeight),
           IntSize(aOutWidth, aOutHeight)));
       size = mCapturePixelsResults.size();
@@ -1216,22 +1228,43 @@ class nsWindow::LayerViewSupport final
 
   void RecvScreenPixels(Shmem&& aMem, const ScreenIntSize& aSize) {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
-    CaptureRequest aCaptureRequest;
-    java::GeckoResult::LocalRef aResult = nullptr;
+    CaptureRequest request;
+    java::GeckoResult::LocalRef result = nullptr;
+    java::sdk::Bitmap::LocalRef bitmap = nullptr;
     if (LockedWindowPtr window{mWindow}) {
-      aCaptureRequest = mCapturePixelsResults.front();
-      aResult = java::GeckoResult::LocalRef(aCaptureRequest.mResult);
-      if (aResult) {
+      // The result might have been already rejected if the compositor was
+      // detached from the session
+      if (!mCapturePixelsResults.empty()) {
+        request = mCapturePixelsResults.front();
+        result = java::GeckoResult::LocalRef(request.mResult);
+        bitmap = java::sdk::Bitmap::LocalRef(request.mBitmap);
         mCapturePixelsResults.pop();
       }
     }
 
-    if (aResult) {
-      auto pixels = mozilla::jni::ByteBuffer::New(
-          FlipScreenPixels(aMem, aSize, aCaptureRequest.mSource,
-                           aCaptureRequest.mOutputSize),
-          aMem.Size<int8_t>());
-      aResult->Complete(pixels);
+    if (result) {
+      if (bitmap) {
+        RefPtr<DataSourceSurface> surf =
+            FlipScreenPixels(aMem, aSize, request.mSource, request.mOutputSize);
+        if (surf) {
+          DataSourceSurface::ScopedMap smap(surf, DataSourceSurface::READ);
+          auto pixels = mozilla::jni::ByteBuffer::New(
+              reinterpret_cast<int8_t*>(smap.GetData()),
+              smap.GetStride() * request.mOutputSize.height);
+          bitmap->CopyPixelsFromBuffer(pixels);
+          result->Complete(bitmap);
+        } else {
+          result->CompleteExceptionally(
+              java::sdk::IllegalStateException::New(
+                  "Failed to create flipped snapshot surface (probably out of "
+                  "memory)")
+                  .Cast<jni::Throwable>());
+        }
+      } else {
+        result->CompleteExceptionally(java::sdk::IllegalArgumentException::New(
+                                          "No target bitmap argument provided")
+                                          .Cast<jni::Throwable>());
+      }
     }
 
     // Pixels have been copied, so Dealloc Shmem
@@ -1252,22 +1285,6 @@ class nsWindow::LayerViewSupport final
     if (RefPtr<UiCompositorControllerChild> child =
             GetUiCompositorControllerChild()) {
       child->EnableLayerUpdateNotifications(aEnable);
-    }
-  }
-
-  void SendToolbarPixelsToCompositor(int32_t aWidth, int32_t aHeight,
-                                     jni::IntArray::Param aPixels) {
-    MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
-
-    if (RefPtr<UiCompositorControllerChild> child =
-            GetUiCompositorControllerChild()) {
-      Shmem mem;
-      child->AllocPixelBuffer(aPixels->Length() * sizeof(int32_t), &mem);
-      aPixels->CopyTo(mem.get<int32_t>(), mem.Size<int32_t>());
-      if (!child->ToolbarPixelsToCompositor(mem,
-                                            ScreenIntSize(aWidth, aHeight))) {
-        child->DeallocPixelBuffer(mem);
-      }
     }
   }
 
@@ -1329,7 +1346,7 @@ void nsWindow::GeckoViewSupport::Open(
   } else {
     nsresult rv = Preferences::GetCString("toolkit.defaultChromeURI", url);
     if (NS_FAILED(rv)) {
-      url = NS_LITERAL_CSTRING("chrome://geckoview/content/geckoview.xhtml");
+      url = "chrome://geckoview/content/geckoview.xhtml"_ns;
     }
   }
 
@@ -1691,6 +1708,41 @@ void nsWindow::SetParent(nsIWidget* aNewParent) {
 
 nsIWidget* nsWindow::GetParent() { return mParent; }
 
+RefPtr<MozPromise<bool, bool, false>> nsWindow::OnLoadRequest(
+    nsIURI* aUri, int32_t aWindowType, int32_t aFlags,
+    nsIPrincipal* aTriggeringPrincipal, bool aHasUserGesture,
+    bool aIsTopLevel) {
+  if (!mGeckoViewSupport) {
+    return MozPromise<bool, bool, false>::CreateAndResolve(false, __func__);
+  }
+  nsAutoCString spec, triggeringSpec;
+  if (aUri) {
+    aUri->GetDisplaySpec(spec);
+  }
+
+  bool isNullPrincipal = false;
+  if (aTriggeringPrincipal) {
+    aTriggeringPrincipal->GetIsNullPrincipal(&isNullPrincipal);
+
+    if (!isNullPrincipal) {
+      nsCOMPtr<nsIURI> triggeringUri;
+      BasePrincipal::Cast(aTriggeringPrincipal)
+          ->GetURI(getter_AddRefs(triggeringUri));
+      if (triggeringUri) {
+        triggeringUri->GetDisplaySpec(triggeringSpec);
+      }
+    }
+  }
+
+  auto geckoResult = mGeckoViewSupport->OnLoadRequest(
+      spec.get(), aWindowType, aFlags,
+      isNullPrincipal ? nullptr : triggeringSpec.get(), aHasUserGesture,
+      aIsTopLevel);
+  return geckoResult
+             ? MozPromise<bool, bool, false>::FromGeckoResult(geckoResult)
+             : nullptr;
+}
+
 float nsWindow::GetDPI() {
   float dpi = 160.0f;
 
@@ -1934,11 +1986,15 @@ nsresult nsWindow::MakeFullScreen(bool aFullScreen, nsIScreen*) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
+  nsIWidgetListener* listener = GetWidgetListener();
+  if (listener) {
+    listener->FullscreenWillChange(aFullScreen);
+  }
+
   mIsFullScreen = aFullScreen;
   mAndroidView->mEventDispatcher->Dispatch(
       aFullScreen ? u"GeckoView:FullScreenEnter" : u"GeckoView:FullScreenExit");
 
-  nsIWidgetListener* listener = GetWidgetListener();
   if (listener) {
     mSizeMode = mIsFullScreen ? nsSizeMode_Fullscreen : nsSizeMode_Normal;
     listener->SizeModeChanged(mSizeMode);
@@ -2097,7 +2153,6 @@ void nsWindow::DispatchHitTest(const WidgetTouchEvent& aEvent) {
     WidgetMouseEvent hittest(true, eMouseHitTest, this,
                              WidgetMouseEvent::eReal);
     hittest.mRefPoint = aEvent.mTouches[0]->mRefPoint;
-    hittest.mIgnoreRootScrollFrame = true;
     hittest.mInputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
     nsEventStatus status;
     DispatchEvent(&hittest, status);
@@ -2139,7 +2194,7 @@ void nsWindow::GeckoViewSupport::OnReady(jni::Object::Param aQueue) {
 
 void nsWindow::UserActivity() {
   if (!mIdleService) {
-    mIdleService = do_GetService("@mozilla.org/widget/idleservice;1");
+    mIdleService = do_GetService("@mozilla.org/widget/useridleservice;1");
   }
 
   if (mIdleService) {
@@ -2292,7 +2347,8 @@ bool nsWindow::NeedsPaint() {
 }
 
 void nsWindow::ConfigureAPZControllerThread() {
-  APZThreadUtils::SetControllerThread(mozilla::GetAndroidUiThreadMessageLoop());
+  nsCOMPtr<nsISerialEventTarget> thread = mozilla::GetAndroidUiThread();
+  APZThreadUtils::SetControllerThread(thread);
 }
 
 already_AddRefed<GeckoContentController>
@@ -2382,19 +2438,6 @@ void nsWindow::UpdateDynamicToolbarOffset(ScreenIntCoord aOffset) {
   }
 }
 
-nsresult nsWindow::SetPrefersReducedMotionOverrideForTest(bool aValue) {
-  LookAndFeel::SetPrefersReducedMotionOverrideForTest(aValue);
-
-  // Notify as if the corresponding setting changed.
-  java::GeckoSystemStateListener::NotifyPrefersReducedMotionChangedForTest();
-  return NS_OK;
-}
-
-nsresult nsWindow::ResetPrefersReducedMotionOverrideForTest() {
-  LookAndFeel::ResetPrefersReducedMotionOverrideForTest();
-  return NS_OK;
-}
-
 ScreenIntMargin nsWindow::GetSafeAreaInsets() const { return mSafeAreaInsets; }
 
 void nsWindow::UpdateSafeAreaInsets(const ScreenIntMargin& aSafeAreaInsets) {
@@ -2409,6 +2452,17 @@ void nsWindow::UpdateSafeAreaInsets(const ScreenIntMargin& aSafeAreaInsets) {
   }
 }
 
+auto nsWindow::GeckoViewSupport::OnLoadRequest(
+    mozilla::jni::String::Param aUri, int32_t aWindowType, int32_t aFlags,
+    mozilla::jni::String::Param aTriggeringUri, bool aHasUserGesture,
+    bool aIsTopLevel) const -> java::GeckoResult::LocalRef {
+  GeckoSession::Window::LocalRef window(mGeckoViewWindow);
+  if (!window) {
+    return nullptr;
+  }
+  return window->OnLoadRequest(aUri, aWindowType, aFlags, aTriggeringUri,
+                               aHasUserGesture, aIsTopLevel);
+}
 already_AddRefed<nsIWidget> nsIWidget::CreateTopLevelWindow() {
   nsCOMPtr<nsIWidget> window = new nsWindow();
   return window.forget();

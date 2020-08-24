@@ -35,7 +35,7 @@ class LoggingInfo;
 class PBackgroundIDBFactoryParent;
 class PBackgroundIndexedDBUtilsParent;
 
-PBackgroundIDBFactoryParent* AllocPBackgroundIDBFactoryParent(
+already_AddRefed<PBackgroundIDBFactoryParent> AllocPBackgroundIDBFactoryParent(
     const LoggingInfo& aLoggingInfo);
 
 bool RecvPBackgroundIDBFactoryConstructor(PBackgroundIDBFactoryParent* aActor,
@@ -70,8 +70,6 @@ class PermissionRequestHelper final : public PermissionRequestBase {
 
   void OnPromptComplete(PermissionValue aPermissionValue) override;
 };
-
-nsresult AsyncDeleteFile(FileManager* aFileManager, int64_t aFileId);
 
 }  // namespace indexedDB
 }  // namespace dom

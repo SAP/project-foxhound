@@ -12,7 +12,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/ReentrantMonitor.h"
-#include "nsIClientAuthRemember.h"
+#include "nsIClientAuthRememberService.h"
 #include "nsIObserver.h"
 #include "nsNSSCertificate.h"
 #include "nsString.h"
@@ -25,24 +25,27 @@ class OriginAttributes;
 
 using mozilla::OriginAttributes;
 
-class nsClientAuthRemember {
+class nsClientAuthRemember final : public nsIClientAuthRememberRecord {
  public:
-  nsClientAuthRemember() {}
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSICLIENTAUTHREMEMBERRECORD
 
-  nsClientAuthRemember(const nsClientAuthRemember& aOther) {
-    this->operator=(aOther);
-  }
-
-  nsClientAuthRemember& operator=(const nsClientAuthRemember& aOther) {
-    mAsciiHost = aOther.mAsciiHost;
-    mFingerprint = aOther.mFingerprint;
-    mDBKey = aOther.mDBKey;
-    return *this;
+  nsClientAuthRemember(const nsACString& aAsciiHost,
+                       const nsACString& aFingerprint, const nsACString& aDBKey,
+                       const nsACString& aEntryKey) {
+    mAsciiHost = aAsciiHost;
+    mFingerprint = aFingerprint;
+    mDBKey = aDBKey;
+    mEntryKey = aEntryKey;
   }
 
   nsCString mAsciiHost;
   nsCString mFingerprint;
   nsCString mDBKey;
+  nsCString mEntryKey;
+
+ protected:
+  ~nsClientAuthRemember() = default;
 };
 
 // hash entry class
@@ -60,7 +63,7 @@ class nsClientAuthRememberEntry final : public PLDHashEntryHdr {
         mSettings(std::move(aToMove.mSettings)),
         mEntryKey(std::move(aToMove.mEntryKey)) {}
 
-  ~nsClientAuthRememberEntry() {}
+  ~nsClientAuthRememberEntry() = default;
 
   KeyType GetKey() const { return EntryKeyPtr(); }
 
@@ -83,16 +86,16 @@ class nsClientAuthRememberEntry final : public PLDHashEntryHdr {
 
   inline KeyTypePointer EntryKeyPtr() const { return mEntryKey.get(); }
 
-  nsClientAuthRemember mSettings;
+  nsCOMPtr<nsIClientAuthRememberRecord> mSettings;
   nsCString mEntryKey;
 };
 
 class nsClientAuthRememberService final : public nsIObserver,
-                                          public nsIClientAuthRemember {
+                                          public nsIClientAuthRememberService {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOBSERVER
-  NS_DECL_NSICLIENTAUTHREMEMBER
+  NS_DECL_NSICLIENTAUTHREMEMBERSERVICE
 
   nsClientAuthRememberService();
 
@@ -102,6 +105,8 @@ class nsClientAuthRememberService final : public nsIObserver,
                           const OriginAttributes& aOriginAttributes,
                           const nsACString& aFingerprint,
                           /*out*/ nsACString& aEntryKey);
+
+  static bool IsPrivateBrowsingKey(const nsCString& entryKey);
 
  protected:
   ~nsClientAuthRememberService();
@@ -118,12 +123,5 @@ class nsClientAuthRememberService final : public nsIObserver,
                           const nsACString& aServerFingerprint,
                           const nsACString& aDBKey);
 };
-
-#define NS_CLIENTAUTHREMEMBER_CID                    \
-  { /* 1dbc6eb6-0972-4bdb-9dc4-acd0abf72369 */       \
-    0x1dbc6eb6, 0x0972, 0x4bdb, {                    \
-      0x9d, 0xc4, 0xac, 0xd0, 0xab, 0xf7, 0x23, 0x69 \
-    }                                                \
-  }
 
 #endif

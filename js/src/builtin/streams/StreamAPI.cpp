@@ -31,7 +31,8 @@
 #include "vm/ArrayBufferViewObject.h"  // js::ArrayBufferViewObject
 #include "vm/JSContext.h"              // JSContext, CHECK_THREAD
 #include "vm/JSObject.h"               // JSObject
-#include "vm/NativeObject.h"           // js::PlainObject
+#include "vm/PlainObject.h"            // js::PlainObject
+#include "vm/PromiseObject.h"          // js::PromiseObject
 
 #include "builtin/streams/ReadableStreamReader-inl.h"  // js::UnwrapStreamFromReader
 #include "vm/Compartment-inl.h"  // JS::Compartment::wrap, js::UnwrapAndDowncastObject
@@ -220,7 +221,8 @@ JS_PUBLIC_API JSObject* JS::ReadableStreamGetReader(
     return nullptr;
   }
 
-  JSObject* result = CreateReadableStreamDefaultReader(cx, unwrappedStream);
+  JSObject* result = CreateReadableStreamDefaultReader(cx, unwrappedStream,
+                                                       ForAuthorCodeBool::No);
   MOZ_ASSERT_IF(result, IsObjectInContextCompartment(result, cx));
   return result;
 }

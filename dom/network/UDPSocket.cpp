@@ -479,7 +479,7 @@ nsresult UDPSocket::InitRemote(const nsAString& aLocalAddress,
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMPtr<nsIEventTarget> target;
+  nsCOMPtr<nsISerialEventTarget> target;
   if (nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal()) {
     target = global->EventTargetFor(TaskCategory::Other);
   }
@@ -604,7 +604,7 @@ nsresult UDPSocket::DispatchReceivedData(const nsACString& aRemoteAddress,
   init.mData = jsData;
 
   RefPtr<UDPMessageEvent> udpEvent =
-      UDPMessageEvent::Constructor(this, NS_LITERAL_STRING("message"), init);
+      UDPMessageEvent::Constructor(this, u"message"_ns, init);
 
   if (NS_WARN_IF(!udpEvent)) {
     return NS_ERROR_FAILURE;

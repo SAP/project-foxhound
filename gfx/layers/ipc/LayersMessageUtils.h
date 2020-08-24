@@ -13,30 +13,28 @@
 
 #include "FrameMetrics.h"
 #include "VsyncSource.h"
-#include "base/process_util.h"
 #include "chrome/common/ipc_message_utils.h"
-#include "gfxTelemetry.h"
 #include "ipc/IPCMessageUtils.h"
-#include "ipc/nsGUIEventIPC.h"
-#include "mozilla/GfxMessageUtils.h"
 #include "mozilla/MotionPathUtils.h"
 #include "mozilla/ServoBindings.h"
-#include "mozilla/ipc/ByteBufUtils.h"
+#include "mozilla/ipc/ByteBuf.h"
 #include "mozilla/layers/APZInputBridge.h"
-#include "mozilla/layers/APZTypes.h"
 #include "mozilla/layers/AsyncDragMetrics.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/FocusTarget.h"
-#include "mozilla/layers/GeckoContentController.h"
+#include "mozilla/layers/GeckoContentControllerTypes.h"
 #include "mozilla/layers/KeyboardMap.h"
 #include "mozilla/layers/LayerAttributes.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/MatrixMessage.h"
-#include "mozilla/layers/RefCountedShmem.h"
 #include "mozilla/layers/RepaintRequest.h"
-#include "mozilla/layers/WebRenderMessageUtils.h"
 #include "nsSize.h"
+
+// For ParamTraits, could be moved to cpp file
+#include "ipc/nsGUIEventIPC.h"
+#include "mozilla/GfxMessageUtils.h"
+#include "mozilla/ipc/ByteBufUtils.h"
 
 #ifdef _MSC_VER
 #  pragma warning(disable : 4800)
@@ -63,11 +61,13 @@ struct ParamTraits<mozilla::VsyncEvent> {
   static void Write(Message* msg, const paramType& param) {
     WriteParam(msg, param.mId);
     WriteParam(msg, param.mTime);
+    WriteParam(msg, param.mOutputTime);
   }
   static bool Read(const Message* msg, PickleIterator* iter,
                    paramType* result) {
     return ReadParam(msg, iter, &result->mId) &&
-           ReadParam(msg, iter, &result->mTime);
+           ReadParam(msg, iter, &result->mTime) &&
+           ReadParam(msg, iter, &result->mOutputTime);
   }
 };
 
@@ -213,6 +213,7 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
     WriteParam(aMsg, aParam.mVisualViewportOffset);
     WriteParam(aMsg, aParam.mVisualScrollUpdateType);
     WriteParam(aMsg, aParam.mFixedLayerMargins);
+    WriteParam(aMsg, aParam.mPureRelativeOffset);
     WriteParam(aMsg, aParam.mIsRootContent);
     WriteParam(aMsg, aParam.mIsRelative);
     WriteParam(aMsg, aParam.mDoSmoothScroll);
@@ -245,6 +246,7 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
         ReadParam(aMsg, aIter, &aResult->mVisualViewportOffset) &&
         ReadParam(aMsg, aIter, &aResult->mVisualScrollUpdateType) &&
         ReadParam(aMsg, aIter, &aResult->mFixedLayerMargins) &&
+        ReadParam(aMsg, aIter, &aResult->mPureRelativeOffset) &&
         ReadBoolForBitfield(aMsg, aIter, aResult,
                             &paramType::SetIsRootContent) &&
         ReadBoolForBitfield(aMsg, aIter, aResult, &paramType::SetIsRelative) &&
@@ -414,6 +416,7 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
     WriteParam(aMsg, aParam.mIsAutoDirRootContentRTL);
     WriteParam(aMsg, aParam.mForceDisableApz);
     WriteParam(aMsg, aParam.mResolutionUpdated);
+    WriteParam(aMsg, aParam.mIsRDMTouchSimulationActive);
     WriteParam(aMsg, aParam.mDisregardedDirection);
     WriteParam(aMsg, aParam.mOverscrollBehavior);
   }
@@ -448,8 +451,10 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
                                 &paramType::SetForceDisableApz) &&
             ReadBoolForBitfield(aMsg, aIter, aResult,
                                 &paramType::SetResolutionUpdated) &&
-            ReadParam(aMsg, aIter, &aResult->mDisregardedDirection) &&
-            ReadParam(aMsg, aIter, &aResult->mOverscrollBehavior));
+            ReadBoolForBitfield(aMsg, aIter, aResult,
+                                &paramType::SetIsRDMTouchSimulationActive)) &&
+           ReadParam(aMsg, aIter, &aResult->mDisregardedDirection) &&
+           ReadParam(aMsg, aIter, &aResult->mOverscrollBehavior);
   }
 };
 
@@ -546,6 +551,7 @@ struct ParamTraits<mozilla::layers::APZEventResult> {
     WriteParam(aMsg, aParam.mTargetGuid);
     WriteParam(aMsg, aParam.mInputBlockId);
     WriteParam(aMsg, aParam.mHitRegionWithApzAwareListeners);
+    WriteParam(aMsg, aParam.mTargetIsRoot);
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
@@ -553,23 +559,8 @@ struct ParamTraits<mozilla::layers::APZEventResult> {
     return (ReadParam(aMsg, aIter, &aResult->mStatus) &&
             ReadParam(aMsg, aIter, &aResult->mTargetGuid) &&
             ReadParam(aMsg, aIter, &aResult->mInputBlockId) &&
-            ReadParam(aMsg, aIter, &aResult->mHitRegionWithApzAwareListeners));
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::layers::SLGuidAndRenderRoot> {
-  typedef mozilla::layers::SLGuidAndRenderRoot paramType;
-
-  static void Write(Message* aMsg, const paramType& aParam) {
-    WriteParam(aMsg, aParam.mScrollableLayerGuid);
-    WriteParam(aMsg, aParam.mRenderRoot);
-  }
-
-  static bool Read(const Message* aMsg, PickleIterator* aIter,
-                   paramType* aResult) {
-    return (ReadParam(aMsg, aIter, &aResult->mScrollableLayerGuid) &&
-            ReadParam(aMsg, aIter, &aResult->mRenderRoot));
+            ReadParam(aMsg, aIter, &aResult->mHitRegionWithApzAwareListeners) &&
+            ReadParam(aMsg, aIter, &aResult->mTargetIsRoot));
   }
 };
 
@@ -623,17 +614,13 @@ struct ParamTraits<mozilla::layers::FocusTarget::ScrollTargets> {
 
   static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mHorizontal);
-    WriteParam(aMsg, aParam.mHorizontalRenderRoot);
     WriteParam(aMsg, aParam.mVertical);
-    WriteParam(aMsg, aParam.mVerticalRenderRoot);
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
                    paramType* aResult) {
     return ReadParam(aMsg, aIter, &aResult->mHorizontal) &&
-           ReadParam(aMsg, aIter, &aResult->mHorizontalRenderRoot) &&
-           ReadParam(aMsg, aIter, &aResult->mVertical) &&
-           ReadParam(aMsg, aIter, &aResult->mVerticalRenderRoot);
+           ReadParam(aMsg, aIter, &aResult->mVertical);
   }
 };
 
@@ -734,21 +721,20 @@ struct ParamTraits<mozilla::layers::KeyboardMap> {
   }
 };
 
-typedef mozilla::layers::GeckoContentController GeckoContentController;
-typedef GeckoContentController::TapType TapType;
-
 template <>
-struct ParamTraits<TapType> : public ContiguousEnumSerializerInclusive<
-                                  TapType, TapType::eSingleTap,
-                                  GeckoContentController::sHighestTapType> {};
-
-typedef GeckoContentController::APZStateChange APZStateChange;
-
-template <>
-struct ParamTraits<APZStateChange>
+struct ParamTraits<mozilla::layers::GeckoContentController_TapType>
     : public ContiguousEnumSerializerInclusive<
-          APZStateChange, APZStateChange::eTransformBegin,
-          GeckoContentController::sHighestAPZStateChange> {};
+          mozilla::layers::GeckoContentController_TapType,
+          mozilla::layers::GeckoContentController_TapType::eSingleTap,
+          mozilla::layers::kHighestGeckoContentController_TapType> {};
+
+template <>
+struct ParamTraits<mozilla::layers::GeckoContentController_APZStateChange>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::layers::GeckoContentController_APZStateChange,
+          mozilla::layers::GeckoContentController_APZStateChange::
+              eTransformBegin,
+          mozilla::layers::kHighestGeckoContentController_APZStateChange> {};
 
 template <>
 struct ParamTraits<mozilla::layers::EventRegionsOverride>

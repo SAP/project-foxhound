@@ -39,8 +39,10 @@ namespace baseprofiler {
   MACRO(ColumnNumber, int, sizeof(int))                              \
   MACRO(NativeLeafAddr, void*, sizeof(void*))                        \
   MACRO(Pause, double, sizeof(double))                               \
-  MACRO(Responsiveness, double, sizeof(double))                      \
   MACRO(Resume, double, sizeof(double))                              \
+  MACRO(PauseSampling, double, sizeof(double))                       \
+  MACRO(ResumeSampling, double, sizeof(double))                      \
+  MACRO(Responsiveness, double, sizeof(double))                      \
   MACRO(ThreadId, int, sizeof(int))                                  \
   MACRO(Time, double, sizeof(double))                                \
   MACRO(CounterId, void*, sizeof(void*))                             \
@@ -56,9 +58,9 @@ class ProfileBufferEntry {
   // stored in a `ProfileBufferEntry`, as per the list in
   // `FOR_EACH_PROFILE_BUFFER_ENTRY_KIND`.
   //
-  // This byte is also used to identify entries in BlocksRingBuffer blocks, for
-  // both "legacy" entries that do contain a `ProfileBufferEntry`, and for new
-  // types of entries that may carry more data of different types.
+  // This byte is also used to identify entries in ProfileChunkedBuffer blocks,
+  // for both "legacy" entries that do contain a `ProfileBufferEntry`, and for
+  // new types of entries that may carry more data of different types.
   // TODO: Eventually each type of "legacy" entry should be replaced with newer,
   // more efficient kinds of entries (e.g., stack frames could be stored in one
   // bigger entry, instead of multiple `ProfileBufferEntry`s); then we could
@@ -270,14 +272,14 @@ class UniqueStacks {
   UniqueStacks();
 
   // Return a StackKey for aFrame as the stack's root frame (no prefix).
-  MOZ_MUST_USE StackKey BeginStack(const FrameKey& aFrame);
+  [[nodiscard]] StackKey BeginStack(const FrameKey& aFrame);
 
   // Return a new StackKey that is obtained by appending aFrame to aStack.
-  MOZ_MUST_USE StackKey AppendFrame(const StackKey& aStack,
-                                    const FrameKey& aFrame);
+  [[nodiscard]] StackKey AppendFrame(const StackKey& aStack,
+                                     const FrameKey& aFrame);
 
-  MOZ_MUST_USE uint32_t GetOrAddFrameIndex(const FrameKey& aFrame);
-  MOZ_MUST_USE uint32_t GetOrAddStackIndex(const StackKey& aStack);
+  [[nodiscard]] uint32_t GetOrAddFrameIndex(const FrameKey& aFrame);
+  [[nodiscard]] uint32_t GetOrAddStackIndex(const StackKey& aStack);
 
   void SpliceFrameTableElements(SpliceableJSONWriter& aWriter);
   void SpliceStackTableElements(SpliceableJSONWriter& aWriter);

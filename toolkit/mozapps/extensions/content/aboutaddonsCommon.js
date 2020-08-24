@@ -7,8 +7,9 @@
 
 /* exported attachUpdateHandler, gBrowser, getBrowserElement,
  *          installAddonsFromFilePicker, isCorrectlySigned, isDisabledUnsigned,
- *          isPending, loadReleaseNotes, openOptionsInTab, promiseEvent,
- *          shouldShowPermissionsPrompt, showPermissionsPrompt */
+ *          isDiscoverEnabled, isPending, loadReleaseNotes, openOptionsInTab,
+ *          promiseEvent, shouldShowPermissionsPrompt, showPermissionsPrompt,
+ *          PREF_UI_LASTCATEGORY */
 
 const { AddonSettings } = ChromeUtils.import(
   "resource://gre/modules/addons/AddonSettings.jsm"
@@ -32,6 +33,30 @@ ChromeUtils.defineModuleGetter(
   "Extension",
   "resource://gre/modules/Extension.jsm"
 );
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "XPINSTALL_ENABLED",
+  "xpinstall.enabled",
+  true
+);
+
+const PREF_DISCOVER_ENABLED = "extensions.getAddons.showPane";
+const PREF_UI_LASTCATEGORY = "extensions.ui.lastCategory";
+
+function isDiscoverEnabled() {
+  try {
+    if (!Services.prefs.getBoolPref(PREF_DISCOVER_ENABLED)) {
+      return false;
+    }
+  } catch (e) {}
+
+  if (!XPINSTALL_ENABLED) {
+    return false;
+  }
+
+  return true;
+}
 
 function getBrowserElement() {
   return window.docShell.chromeEventHandler;
@@ -71,7 +96,7 @@ function attachUpdateHandler(install) {
           info: {
             type: "update",
             addon: info.addon,
-            icon: info.addon.icon,
+            icon: info.addon.iconURL,
             // Reference to the related AddonInstall object (used in
             // AMTelemetry to link the recorded event to the other events from
             // the same install flow).

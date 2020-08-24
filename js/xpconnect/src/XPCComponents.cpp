@@ -8,6 +8,7 @@
 
 #include "xpcprivate.h"
 #include "xpc_make_class.h"
+#include "JSServices.h"
 #include "XPCJSWeakReference.h"
 #include "WrapperFactory.h"
 #include "nsJSUtils.h"
@@ -20,8 +21,8 @@
 #include "js/ContextOptions.h"
 #include "js/SavedFrameAPI.h"
 #include "js/StructuredClone.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/Preferences.h"
 #include "nsJSEnvironment.h"
@@ -161,7 +162,7 @@ nsXPCComponents_Interfaces::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-nsXPCComponents_Interfaces::nsXPCComponents_Interfaces() {}
+nsXPCComponents_Interfaces::nsXPCComponents_Interfaces() = default;
 
 nsXPCComponents_Interfaces::~nsXPCComponents_Interfaces() {
   // empty
@@ -314,7 +315,7 @@ nsXPCComponents_Classes::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-nsXPCComponents_Classes::nsXPCComponents_Classes() {}
+nsXPCComponents_Classes::nsXPCComponents_Classes() = default;
 
 nsXPCComponents_Classes::~nsXPCComponents_Classes() {
   // empty
@@ -456,7 +457,7 @@ nsXPCComponents_Results::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-nsXPCComponents_Results::nsXPCComponents_Results() {}
+nsXPCComponents_Results::nsXPCComponents_Results() = default;
 
 nsXPCComponents_Results::~nsXPCComponents_Results() {
   // empty
@@ -597,7 +598,7 @@ nsXPCComponents_ID::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-nsXPCComponents_ID::nsXPCComponents_ID() {}
+nsXPCComponents_ID::nsXPCComponents_ID() = default;
 
 nsXPCComponents_ID::~nsXPCComponents_ID() {
   // empty
@@ -748,7 +749,7 @@ nsXPCComponents_Exception::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-nsXPCComponents_Exception::nsXPCComponents_Exception() {}
+nsXPCComponents_Exception::nsXPCComponents_Exception() = default;
 
 nsXPCComponents_Exception::~nsXPCComponents_Exception() {
   // empty
@@ -1042,7 +1043,7 @@ nsXPCComponents_Constructor::GetClassIDNoAlloc(nsCID* aClassIDNoAlloc) {
   return NS_ERROR_NOT_AVAILABLE;
 }
 
-nsXPCComponents_Constructor::nsXPCComponents_Constructor() {}
+nsXPCComponents_Constructor::nsXPCComponents_Constructor() = default;
 
 nsXPCComponents_Constructor::~nsXPCComponents_Constructor() {
   // empty
@@ -1290,10 +1291,10 @@ class nsXPCComponents_Utils final : public nsIXPCComponents_Utils,
   NS_DECL_NSIXPCCOMPONENTS_UTILS
 
  public:
-  nsXPCComponents_Utils() {}
+  nsXPCComponents_Utils() = default;
 
  private:
-  virtual ~nsXPCComponents_Utils() {}
+  virtual ~nsXPCComponents_Utils() = default;
   nsCOMPtr<nsIXPCComponents_utils_Sandbox> mSandbox;
 };
 
@@ -1319,6 +1320,16 @@ nsXPCComponents_Utils::GetSandbox(nsIXPCComponents_utils_Sandbox** aSandbox) {
 }
 
 NS_IMETHODIMP
+nsXPCComponents_Utils::CreateServicesCache(JSContext* aCx,
+                                           MutableHandleValue aServices) {
+  if (JSObject* services = NewJSServices(aCx)) {
+    aServices.setObject(*services);
+    return NS_OK;
+  }
+  return NS_ERROR_FAILURE;
+}
+
+NS_IMETHODIMP
 nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
                                    JSContext* cx) {
   // This function shall never fail! Silently eat any failure conditions.
@@ -1332,18 +1343,23 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
   nsGlobalWindowInner* win = CurrentWindowOrNull(cx);
   const uint64_t innerWindowID = win ? win->WindowID() : 0;
 
-  RootedObject errorObj(cx, error.isObject() ? &error.toObject() : nullptr);
-  JSErrorReport* err = errorObj ? JS_ErrorFromException(cx, errorObj) : nullptr;
+  Rooted<Maybe<Value>> exception(cx, Some(error));
+  if (!innerWindowID) {
+    // Leak mitigation: nsConsoleService::ClearMessagesForWindowID needs
+    // a WindowID for cleanup and exception values could hold arbitrary
+    // objects alive.
+    exception = Nothing();
+  }
 
   nsCOMPtr<nsIScriptError> scripterr;
-
+  RootedObject errorObj(cx, error.isObject() ? &error.toObject() : nullptr);
   if (errorObj) {
     JS::RootedObject stackVal(cx);
     JS::RootedObject stackGlobal(cx);
     FindExceptionStackForConsoleReport(win, error, nullptr, &stackVal,
                                        &stackGlobal);
     if (stackVal) {
-      scripterr = new nsScriptErrorWithStack(stackVal, stackGlobal);
+      scripterr = CreateScriptError(win, exception, stackVal, stackGlobal);
     }
   }
 
@@ -1397,14 +1413,15 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
     }
 
     if (stackObj) {
-      scripterr = new nsScriptErrorWithStack(stackObj, stackGlobal);
+      scripterr = CreateScriptError(win, exception, stackObj, stackGlobal);
     }
   }
 
   if (!scripterr) {
-    scripterr = new nsScriptError();
+    scripterr = CreateScriptError(win, exception, nullptr, nullptr);
   }
 
+  JSErrorReport* err = errorObj ? JS_ErrorFromException(cx, errorObj) : nullptr;
   if (err) {
     // It's a proper JS Error
     nsAutoString fileUni;
@@ -1413,6 +1430,8 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
     uint32_t column = err->tokenOffset();
 
     const char16_t* linebuf = err->linebuf();
+    uint32_t flags = err->isWarning() ? nsIScriptError::warningFlag
+                                      : nsIScriptError::errorFlag;
 
     nsresult rv = scripterr->InitWithWindowID(
         err->message() ? NS_ConvertUTF8toUTF16(err->message().c_str())
@@ -1420,7 +1439,8 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
         fileUni,
         linebuf ? nsDependentString(linebuf, err->linebufLength())
                 : EmptyString(),
-        err->lineno, column, err->flags, "XPConnect JavaScript", innerWindowID);
+        err->lineno, column, flags, "XPConnect JavaScript", innerWindowID,
+        innerWindowID == 0 ? true : false);
     NS_ENSURE_SUCCESS(rv, NS_OK);
 
     console->LogMessage(scripterr);
@@ -1438,9 +1458,9 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
     return NS_OK;
   }
 
-  nsresult rv =
-      scripterr->InitWithWindowID(msg, fileName, EmptyString(), lineNo, 0, 0,
-                                  "XPConnect JavaScript", innerWindowID, true);
+  nsresult rv = scripterr->InitWithWindowID(
+      msg, fileName, EmptyString(), lineNo, 0, 0, "XPConnect JavaScript",
+      innerWindowID, innerWindowID == 0 ? true : false);
   NS_ENSURE_SUCCESS(rv, NS_OK);
 
   console->LogMessage(scripterr);
@@ -1609,10 +1629,9 @@ nsXPCComponents_Utils::GetWeakReference(HandleValue object, JSContext* cx,
 }
 
 NS_IMETHODIMP
-nsXPCComponents_Utils::ForceGC() {
-  JSContext* cx = XPCJSContext::Get()->Context();
-  PrepareForFullGC(cx);
-  NonIncrementalGC(cx, GC_NORMAL, GCReason::COMPONENT_UTILS);
+nsXPCComponents_Utils::ForceGC(JSContext* aCx) {
+  PrepareForFullGC(aCx);
+  NonIncrementalGC(aCx, GC_NORMAL, GCReason::COMPONENT_UTILS);
   return NS_OK;
 }
 
@@ -1655,10 +1674,9 @@ nsXPCComponents_Utils::ClearMaxCCTime() {
 }
 
 NS_IMETHODIMP
-nsXPCComponents_Utils::ForceShrinkingGC() {
-  JSContext* cx = dom::danger::GetJSContext();
-  PrepareForFullGC(cx);
-  NonIncrementalGC(cx, GC_SHRINK, GCReason::COMPONENT_UTILS);
+nsXPCComponents_Utils::ForceShrinkingGC(JSContext* aCx) {
+  PrepareForFullGC(aCx);
+  NonIncrementalGC(aCx, GC_SHRINK, GCReason::COMPONENT_UTILS);
   return NS_OK;
 }
 
@@ -1962,45 +1980,6 @@ nsXPCComponents_Utils::IsRemoteProxy(HandleValue val, bool* out) {
 }
 
 NS_IMETHODIMP
-nsXPCComponents_Utils::IsCrossProcessWrapper(HandleValue obj, bool* out) {
-  *out = false;
-  if (obj.isPrimitive()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  *out = jsipc::IsWrappedCPOW(&obj.toObject());
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPCComponents_Utils::GetCrossProcessWrapperTag(HandleValue obj,
-                                                 nsACString& out) {
-  if (obj.isPrimitive() || !jsipc::IsWrappedCPOW(&obj.toObject())) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  jsipc::GetWrappedCPOWTag(&obj.toObject(), out);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPCComponents_Utils::PermitCPOWsInScope(HandleValue obj) {
-  if (!obj.isObject()) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  JSObject* scopeObj = js::UncheckedUnwrap(&obj.toObject());
-  JS::Compartment* scopeComp = js::GetObjectCompartment(scopeObj);
-  JS::Compartment* systemComp =
-      js::GetObjectCompartment(xpc::PrivilegedJunkScope());
-  MOZ_RELEASE_ASSERT(scopeComp != systemComp,
-                     "Don't call Cu.PermitCPOWsInScope() on scopes in the "
-                     "shared system compartment");
-  CompartmentPrivate::Get(scopeComp)->allowCPOWs = true;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsXPCComponents_Utils::RecomputeWrappers(HandleValue vobj, JSContext* cx) {
   // Determine the compartment of the given object, if any.
   JS::Compartment* c =
@@ -2035,18 +2014,6 @@ nsXPCComponents_Utils::SetWantXrays(HandleValue vscope, JSContext* cx) {
   bool ok = js::RecomputeWrappers(cx, js::SingleCompartment(compartment),
                                   js::AllCompartments());
   NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPCComponents_Utils::ForcePermissiveCOWs(JSContext* cx) {
-  xpc::CrashIfNotInAutomation();
-  RootedObject global(cx, GetScriptedCallerGlobal(cx));
-  MOZ_ASSERT(global);
-  MOZ_DIAGNOSTIC_ASSERT(
-      !mozJSComponentLoader::Get()->IsLoaderGlobal(global),
-      "Don't call Cu.forcePermissiveCOWs() in a JSM that shares its global");
-  RealmPrivate::Get(global)->forcePermissiveCOWs = true;
   return NS_OK;
 }
 
@@ -2095,8 +2062,6 @@ nsXPCComponents_Utils::Dispatch(HandleValue runnableArg, HandleValue scope,
     return NS_OK;                                                       \
   }
 
-GENERATE_JSCONTEXTOPTION_GETTER_SETTER(Strict, extraWarnings, setExtraWarnings)
-GENERATE_JSCONTEXTOPTION_GETTER_SETTER(Werror, werror, setWerror)
 GENERATE_JSCONTEXTOPTION_GETTER_SETTER(Strict_mode, strictMode, setStrictMode)
 
 #undef GENERATE_JSCONTEXTOPTION_GETTER_SETTER
@@ -2114,6 +2079,18 @@ nsXPCComponents_Utils::GetIsInAutomation(bool* aResult) {
   NS_ENSURE_ARG_POINTER(aResult);
 
   *aResult = xpc::IsInAutomation();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXPCComponents_Utils::ExitIfInAutomation() {
+  NS_ENSURE_TRUE(xpc::IsInAutomation(), NS_ERROR_FAILURE);
+
+#ifdef MOZ_GECKO_PROFILER
+  profiler_shutdown(IsFastShutdown::Yes);
+#endif
+
+  mozilla::AppShutdown::DoImmediateExit();
   return NS_OK;
 }
 
@@ -2164,6 +2141,13 @@ nsXPCComponents_Utils::UnblockScriptForGlobal(HandleValue globalArg,
     return NS_ERROR_FAILURE;
   }
   Scriptability::Get(global).Unblock();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXPCComponents_Utils::IsOpaqueWrapper(HandleValue obj, bool* aRetval) {
+  *aRetval =
+      obj.isObject() && xpc::WrapperFactory::IsOpaqueWrapper(&obj.toObject());
   return NS_OK;
 }
 
@@ -2263,12 +2247,12 @@ nsXPCComponents_Utils::GetIncumbentGlobal(HandleValue aCallback, JSContext* aCx,
 
 class WrappedJSHolder : public nsISupports {
   NS_DECL_ISUPPORTS
-  WrappedJSHolder() {}
+  WrappedJSHolder() = default;
 
   RefPtr<nsXPCWrappedJS> mWrappedJS;
 
  private:
-  virtual ~WrappedJSHolder() {}
+  virtual ~WrappedJSHolder() = default;
 };
 
 NS_IMPL_ADDREF(WrappedJSHolder)
@@ -2558,7 +2542,7 @@ nsXPCComponents::nsXPCComponents(XPCWrappedNativeScope* aScope)
   MOZ_ASSERT(aScope, "aScope must not be null");
 }
 
-nsXPCComponents::~nsXPCComponents() {}
+nsXPCComponents::~nsXPCComponents() = default;
 
 void nsXPCComponents::ClearMembers() {
   mInterfaces = nullptr;

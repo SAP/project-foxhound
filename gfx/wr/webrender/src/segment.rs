@@ -49,9 +49,8 @@
 //! [clip.rs]: ../clip/index.html
 //!
 
-use api::{BorderRadius, ClipMode};
+use api::{BorderRadius, ClipMode, EdgeAaSegmentMask};
 use api::units::*;
-use crate::prim_store::EdgeAaSegmentMask;
 use std::{cmp, usize};
 use crate::util::{extract_inner_rect_safe, RectHelpers};
 use smallvec::SmallVec;
@@ -332,6 +331,8 @@ impl SegmentBuilder {
             ),
         ];
 
+        self.items.reserve(segments.len() + 1);
+
         for segment in segments {
             self.items.push(Item::new(
                 *segment,
@@ -378,6 +379,8 @@ impl SegmentBuilder {
                         let p1 = inner.origin;
                         let p2 = inner.bottom_right();
                         let p3 = rect.bottom_right();
+
+                        self.items.reserve(9);
 
                         let corner_segments = &[
                             LayoutRect::new(
@@ -680,9 +683,8 @@ fn emit_segment_if_needed(
 
 #[cfg(test)]
 mod test {
-    use api::{BorderRadius, ClipMode};
+    use api::{BorderRadius, ClipMode, EdgeAaSegmentMask};
     use api::units::{LayoutPoint, LayoutRect, LayoutSize};
-    use crate::prim_store::EdgeAaSegmentMask;
     use super::{Segment, SegmentBuilder};
     use std::cmp;
 

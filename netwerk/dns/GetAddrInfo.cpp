@@ -5,8 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GetAddrInfo.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/net/DNS.h"
+#include "NativeDNSResolverOverrideParent.h"
 #include "prnetdb.h"
+#include "nsIOService.h"
 #include "nsHostResolver.h"
 #include "nsError.h"
 #include "mozilla/net/DNS.h"
@@ -14,6 +17,7 @@
 #include "prerror.h"
 
 #include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_network.h"
 
 #ifdef DNSQUERY_AVAILABLE
 // There is a bug in windns.h where the type of parameter ppQueryResultsSet for
@@ -229,6 +233,10 @@ nsresult GetAddrInfo(const nsACString& aHost, uint16_t aAddressFamily,
     return NS_ERROR_NULL_POINTER;
   }
 
+  if (StaticPrefs::network_dns_disabled()) {
+    return NS_ERROR_UNKNOWN_HOST;
+  }
+
 #ifdef DNSQUERY_AVAILABLE
   // The GetTTLData needs the canonical name to function properly
   if (aGetTtl) {
@@ -245,7 +253,7 @@ nsresult GetAddrInfo(const nsACString& aHost, uint16_t aAddressFamily,
   nsAutoCString host(aHost);
   if (gNativeIsLocalhost) {
     // pretend we use the given host but use IPv4 localhost instead!
-    host = NS_LITERAL_CSTRING("localhost");
+    host = "localhost"_ns;
     aAddressFamily = PR_AF_INET;
   }
 
@@ -282,6 +290,10 @@ nsresult GetAddrInfo(const nsACString& aHost, uint16_t aAddressFamily,
 // static
 already_AddRefed<nsINativeDNSResolverOverride>
 NativeDNSResolverOverride::GetSingleton() {
+  if (nsIOService::UseSocketProcess() && XRE_IsParentProcess()) {
+    return NativeDNSResolverOverrideParent::GetSingleton();
+  }
+
   if (gOverrideService) {
     return do_AddRef(gOverrideService);
   }

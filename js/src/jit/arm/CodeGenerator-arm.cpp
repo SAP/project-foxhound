@@ -236,30 +236,6 @@ void CodeGenerator::visitMinMaxF(LMinMaxF* ins) {
   }
 }
 
-void CodeGenerator::visitAbsD(LAbsD* ins) {
-  FloatRegister input = ToFloatRegister(ins->input());
-  MOZ_ASSERT(input == ToFloatRegister(ins->output()));
-  masm.ma_vabs(input, input);
-}
-
-void CodeGenerator::visitAbsF(LAbsF* ins) {
-  FloatRegister input = ToFloatRegister(ins->input());
-  MOZ_ASSERT(input == ToFloatRegister(ins->output()));
-  masm.ma_vabs_f32(input, input);
-}
-
-void CodeGenerator::visitSqrtD(LSqrtD* ins) {
-  FloatRegister input = ToFloatRegister(ins->input());
-  FloatRegister output = ToFloatRegister(ins->output());
-  masm.ma_vsqrt(input, output);
-}
-
-void CodeGenerator::visitSqrtF(LSqrtF* ins) {
-  FloatRegister input = ToFloatRegister(ins->input());
-  FloatRegister output = ToFloatRegister(ins->output());
-  masm.ma_vsqrt_f32(input, output);
-}
-
 void CodeGenerator::visitAddI(LAddI* ins) {
   const LAllocation* lhs = ins->getOperand(0);
   const LAllocation* rhs = ins->getOperand(1);
@@ -1065,11 +1041,11 @@ MoveOperand CodeGeneratorARM::toMoveOperand(LAllocation a) const {
   if (a.isFloatReg()) {
     return MoveOperand(ToFloatRegister(a));
   }
-  int32_t offset = ToStackOffset(a);
-  MOZ_ASSERT((offset & 3) == 0);
   MoveOperand::Kind kind =
       a.isStackArea() ? MoveOperand::EFFECTIVE_ADDRESS : MoveOperand::MEMORY;
-  return MoveOperand(StackPointer, offset, kind);
+  Address addr = ToAddress(a);
+  MOZ_ASSERT((addr.offset & 3) == 0);
+  return MoveOperand(addr, kind);
 }
 
 class js::jit::OutOfLineTableSwitch
@@ -1211,76 +1187,6 @@ void CodeGenerator::visitMathF(LMathF* math) {
     default:
       MOZ_CRASH("unexpected opcode");
   }
-}
-
-void CodeGenerator::visitFloor(LFloor* lir) {
-  FloatRegister input = ToFloatRegister(lir->input());
-  Register output = ToRegister(lir->output());
-  Label bail;
-  masm.floor(input, output, &bail);
-  bailoutFrom(&bail, lir->snapshot());
-}
-
-void CodeGenerator::visitFloorF(LFloorF* lir) {
-  FloatRegister input = ToFloatRegister(lir->input());
-  Register output = ToRegister(lir->output());
-  Label bail;
-  masm.floorf(input, output, &bail);
-  bailoutFrom(&bail, lir->snapshot());
-}
-
-void CodeGenerator::visitCeil(LCeil* lir) {
-  FloatRegister input = ToFloatRegister(lir->input());
-  Register output = ToRegister(lir->output());
-  Label bail;
-  masm.ceil(input, output, &bail);
-  bailoutFrom(&bail, lir->snapshot());
-}
-
-void CodeGenerator::visitCeilF(LCeilF* lir) {
-  FloatRegister input = ToFloatRegister(lir->input());
-  Register output = ToRegister(lir->output());
-  Label bail;
-  masm.ceilf(input, output, &bail);
-  bailoutFrom(&bail, lir->snapshot());
-}
-
-void CodeGenerator::visitRound(LRound* lir) {
-  FloatRegister input = ToFloatRegister(lir->input());
-  Register output = ToRegister(lir->output());
-  FloatRegister tmp = ToFloatRegister(lir->temp());
-  Label bail;
-  // Output is either correct, or clamped. All -0 cases have been translated
-  // to a clamped case.
-  masm.round(input, output, &bail, tmp);
-  bailoutFrom(&bail, lir->snapshot());
-}
-
-void CodeGenerator::visitRoundF(LRoundF* lir) {
-  FloatRegister input = ToFloatRegister(lir->input());
-  Register output = ToRegister(lir->output());
-  FloatRegister tmp = ToFloatRegister(lir->temp());
-  Label bail;
-  // Output is either correct, or clamped. All -0 cases have been translated
-  // to a clamped case.
-  masm.roundf(input, output, &bail, tmp);
-  bailoutFrom(&bail, lir->snapshot());
-}
-
-void CodeGenerator::visitTrunc(LTrunc* lir) {
-  FloatRegister input = ToFloatRegister(lir->input());
-  Register output = ToRegister(lir->output());
-  Label bail;
-  masm.trunc(input, output, &bail);
-  bailoutFrom(&bail, lir->snapshot());
-}
-
-void CodeGenerator::visitTruncF(LTruncF* lir) {
-  FloatRegister input = ToFloatRegister(lir->input());
-  Register output = ToRegister(lir->output());
-  Label bail;
-  masm.truncf(input, output, &bail);
-  bailoutFrom(&bail, lir->snapshot());
 }
 
 void CodeGenerator::visitTruncateDToInt32(LTruncateDToInt32* ins) {
@@ -1573,6 +1479,9 @@ void CodeGenerator::visitBitAndAndBranch(LBitAndAndBranch* baab) {
   emitBranch(baab->cond(), baab->ifTrue(), baab->ifFalse());
 }
 
+// See ../CodeGenerator.cpp for more information.
+void CodeGenerator::visitWasmRegisterResult(LWasmRegisterResult* lir) {}
+
 void CodeGenerator::visitWasmUint32ToDouble(LWasmUint32ToDouble* lir) {
   masm.convertUInt32ToDouble(ToRegister(lir->input()),
                              ToFloatRegister(lir->output()));
@@ -1666,13 +1575,9 @@ void CodeGeneratorARM::generateInvalidateEpilogue() {
   // is).
   invalidateEpilogueData_ = masm.pushWithPatch(ImmWord(uintptr_t(-1)));
 
+  // Jump to the invalidator which will replace the current frame.
   TrampolinePtr thunk = gen->jitRuntime()->getInvalidationThunk();
   masm.jump(thunk);
-
-  // We should never reach this point in JIT code -- the invalidation thunk
-  // should pop the invalidated JS frame and return directly to its caller.
-  masm.assumeUnreachable(
-      "Should have returned directly to its caller instead of here.");
 }
 
 void CodeGenerator::visitCompareExchangeTypedArrayElement(

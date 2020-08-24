@@ -50,6 +50,7 @@ class ContentProcessController final : public GeckoContentController {
 
   void NotifyPinchGesture(PinchGestureInput::PinchGestureType aType,
                           const ScrollableLayerGuid& aGuid,
+                          const LayoutDevicePoint& aFocusPoint,
                           LayoutDeviceCoord aSpanChange,
                           Modifiers aModifiers) override;
 
@@ -71,9 +72,6 @@ class ContentProcessController final : public GeckoContentController {
       const ScrollableLayerGuid::ViewID& aScrollId) override;
 
   void CancelAutoscroll(const ScrollableLayerGuid& aGuid) override;
-
-  void PostDelayedTask(already_AddRefed<Runnable> aRunnable,
-                       int aDelayMs) override;
 
   bool IsRepaintThread() override;
 

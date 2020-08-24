@@ -3,22 +3,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/EditorUtils.h"
+#include "EditorUtils.h"
 
+#include "mozilla/ComputedStyle.h"
 #include "mozilla/ContentIterator.h"
 #include "mozilla/EditorDOMPoint.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/TextEditor.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
 #include "nsContentUtils.h"
 #include "nsComponentManagerUtils.h"
+#include "nsComputedDOMStyle.h"
 #include "nsError.h"
 #include "nsIContent.h"
-#include "mozilla/dom/Document.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsINode.h"
+#include "nsStyleStruct.h"
 
 class nsISupports;
 class nsRange;
@@ -228,6 +231,58 @@ void EditorUtils::MaskString(nsString& aString, Text* aText,
       ++i;
     }
   }
+}
+
+// static
+bool EditorUtils::IsContentPreformatted(nsIContent& aContent) {
+  // Look at the node (and its parent if it's not an element), and grab its
+  // ComputedStyle.
+  Element* element = aContent.GetAsElementOrParentElement();
+  if (!element) {
+    return false;
+  }
+
+  RefPtr<ComputedStyle> elementStyle =
+      nsComputedDOMStyle::GetComputedStyleNoFlush(element, nullptr);
+  if (!elementStyle) {
+    // Consider nodes without a ComputedStyle to be NOT preformatted:
+    // For instance, this is true of JS tags inside the body (which show
+    // up as #text nodes but have no ComputedStyle).
+    return false;
+  }
+
+  return elementStyle->StyleText()->WhiteSpaceIsSignificant();
+}
+
+bool EditorUtils::IsPointInSelection(const Selection& aSelection,
+                                     const nsINode& aParentNode,
+                                     int32_t aOffset) {
+  if (aSelection.IsCollapsed()) {
+    return false;
+  }
+
+  uint32_t rangeCount = aSelection.RangeCount();
+  for (uint32_t i = 0; i < rangeCount; i++) {
+    RefPtr<const nsRange> range = aSelection.GetRangeAt(i);
+    if (!range) {
+      // Don't bail yet, iterate through them all
+      continue;
+    }
+
+    IgnoredErrorResult ignoredError;
+    bool nodeIsInSelection =
+        range->IsPointInRange(aParentNode, aOffset, ignoredError) &&
+        !ignoredError.Failed();
+    NS_WARNING_ASSERTION(!ignoredError.Failed(),
+                         "nsRange::IsPointInRange() failed");
+
+    // Done when we find a range that we are in
+    if (nodeIsInSelection) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 }  // namespace mozilla

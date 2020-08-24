@@ -77,9 +77,11 @@ assert.acyclic = function(obj, msg = "", error = JavaScriptError) {
  *     If <var>driver</var> does not have a session ID.
  */
 assert.session = function(driver, msg = "") {
-  assert.that(sessionID => sessionID, msg, InvalidSessionIDError)(
-    driver.sessionID
-  );
+  assert.that(
+    sessionID => sessionID,
+    msg,
+    InvalidSessionIDError
+  )(driver.sessionID);
   return driver.sessionID;
 };
 
@@ -145,9 +147,11 @@ assert.fennec = function(msg = "") {
  */
 assert.content = function(context, msg = "") {
   msg = msg || "Only supported in content context";
-  assert.that(c => c.toString() == "content", msg, UnsupportedOperationError)(
-    context
-  );
+  assert.that(
+    c => c.toString() == "content",
+    msg,
+    UnsupportedOperationError
+  )(context);
 };
 
 /**
@@ -180,9 +184,11 @@ assert.open = function(context, msg = "") {
   }
 
   msg = msg || "Browsing context has been discarded";
-  return assert.that(ctx => ctx && !ctx.closed, msg, NoSuchWindowError)(
-    context
-  );
+  return assert.that(
+    ctx => ctx && !ctx.closed,
+    msg,
+    NoSuchWindowError
+  )(context);
 };
 
 /**
@@ -279,6 +285,25 @@ assert.positiveNumber = function(obj, msg = "") {
 assert.callable = function(obj, msg = "") {
   msg = msg || pprint`${obj} is not callable`;
   return assert.that(o => typeof o == "function", msg)(obj);
+};
+
+/**
+ * Asserts that <var>obj</var> is an unsigned short number.
+ *
+ * @param {?} obj
+ *     Value to test.
+ * @param {string=} msg
+ *     Custom error message.
+ *
+ * @return {number}
+ *     <var>obj</var> is returned unaltered.
+ *
+ * @throws {InvalidArgumentError}
+ *     If <var>obj</var> is not an unsigned short.
+ */
+assert.unsignedShort = function(obj, msg = "") {
+  msg = msg || pprint`Expected ${obj} to be >= 0 and < 65536`;
+  return assert.that(n => n >= 0 && n < 65536, msg)(obj);
 };
 
 /**
@@ -386,20 +411,26 @@ assert.object = function(obj, msg = "") {
  * Asserts that <var>prop</var> is in <var>obj</var>.
  *
  * @param {?} prop
- *     Own property to test if is in <var>obj</var>.
+ *     An array element or own property to test if is in <var>obj</var>.
  * @param {?} obj
- *     Object.
+ *     An array or an Object that is being tested.
  * @param {string=} msg
  *     Custom error message.
  *
  * @return {?}
- *     Value of <var>obj</var>'s own property <var>prop</var>.
+ *     The array element, or the value of <var>obj</var>'s own property
+ *     <var>prop</var>.
  *
  * @throws {InvalidArgumentError}
- *     If <var>prop</var> is not in <var>obj</var>, or <var>obj</var>
+ *     If the <var>obj</var> was an array and did not contain <var>prop</var>.
+ *     Otherwise if <var>prop</var> is not in <var>obj</var>, or <var>obj</var>
  *     is not an object.
  */
 assert.in = function(prop, obj, msg = "") {
+  if (Array.isArray(obj)) {
+    assert.that(p => obj.includes(p), msg)(prop);
+    return prop;
+  }
   assert.object(obj, msg);
   msg = msg || pprint`Expected ${prop} in ${obj}`;
   assert.that(p => obj.hasOwnProperty(p), msg)(prop);

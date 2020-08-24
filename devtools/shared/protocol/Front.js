@@ -52,6 +52,15 @@ class Front extends Pool {
     this._beforeListeners = new Map();
   }
 
+  /**
+   * Return the parent front.
+   */
+  getParent() {
+    return this.parentFront && this.parentFront.actorID
+      ? this.parentFront
+      : null;
+  }
+
   destroy() {
     // Reject all outstanding requests, they won't make sense after
     // the front is destroyed.
@@ -86,6 +95,21 @@ class Front extends Pool {
           "."
       );
     }
+
+    if (front.parentFront && front.parentFront !== this) {
+      throw new Error(
+        `${this.actorID} (${this.typeName}) can't manage ${front.actorID}
+        (${front.typeName}) since it has a different parentFront ${
+          front.parentFront
+            ? front.parentFront.actordID +
+              "(" +
+              front.parentFront.typeName +
+              ")"
+            : "<no parentFront>"
+        }`
+      );
+    }
+
     super.manage(front);
 
     if (typeof front.initialize == "function") {
@@ -212,7 +236,7 @@ class Front extends Pool {
     } else {
       packet.to = this.actorID;
       // The connection might be closed during the promise resolution
-      if (this.conn._transport) {
+      if (this.conn && this.conn._transport) {
         this.conn._transport.send(packet);
       }
     }
@@ -290,6 +314,11 @@ class Front extends Pool {
               "Protocol error (" + packet.error + "): " + packet.message;
           } else {
             message = packet.error;
+          }
+          message += " from: " + this.actorID;
+          if (packet.fileName) {
+            const { fileName, columnNumber, lineNumber } = packet;
+            message += ` (${fileName}:${lineNumber}:${columnNumber})`;
           }
           const packetError = new Error(message);
           deferred.reject(packetError);

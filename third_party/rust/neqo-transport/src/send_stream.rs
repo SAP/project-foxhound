@@ -15,15 +15,17 @@ use std::rc::Rc;
 
 use smallvec::SmallVec;
 
-use neqo_common::{matches, qdebug, qerror, qinfo, qtrace};
+use neqo_common::{qdebug, qerror, qinfo, qtrace};
 
 use crate::events::ConnectionEvents;
 use crate::flow_mgr::FlowMgr;
-use crate::frame::{Frame, TxMode};
+use crate::frame::Frame;
 use crate::recovery::RecoveryToken;
 use crate::stream_id::StreamId;
 use crate::tracking::PNSpace;
 use crate::{AppError, Error, Res};
+
+pub const SEND_BUFFER_SIZE: usize = 0x10_0000; // 1 MiB
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum RangeState {
@@ -280,55 +282,53 @@ pub struct TxBuffer {
 }
 
 impl TxBuffer {
-    const BUFFER_SIZE: usize = 0xFFFF; // 64 KiB
-
     pub fn new() -> Self {
         Self {
-            send_buf: VecDeque::with_capacity(Self::BUFFER_SIZE),
+            send_buf: VecDeque::with_capacity(SEND_BUFFER_SIZE),
             ..Self::default()
         }
     }
 
     /// Attempt to add some or all of the passed-in buffer to the TxBuffer.
     pub fn send(&mut self, buf: &[u8]) -> usize {
-        let can_buffer = min(Self::BUFFER_SIZE - self.buffered(), buf.len());
+        let can_buffer = min(SEND_BUFFER_SIZE - self.buffered(), buf.len());
         if can_buffer > 0 {
             self.send_buf.extend(&buf[..can_buffer]);
-            assert!(self.send_buf.len() <= Self::BUFFER_SIZE);
+            assert!(self.send_buf.len() <= SEND_BUFFER_SIZE);
         }
         can_buffer
     }
 
-    pub fn next_bytes(&self, mode: TxMode) -> Option<(u64, &[u8])> {
-        match mode {
-            TxMode::Normal => {
-                let (start, maybe_len) = self.ranges.first_unmarked_range();
+    pub fn next_bytes(&self) -> Option<(u64, &[u8])> {
+        let (start, maybe_len) = self.ranges.first_unmarked_range();
 
-                if start == self.retired + u64::try_from(self.buffered()).unwrap() {
-                    return None;
-                }
-
-                let buff_off = usize::try_from(start - self.retired).unwrap();
-                match maybe_len {
-                    Some(len) => {
-                        let len = min(len, self.send_buf.as_slices().0.len().try_into().unwrap());
-                        Some((
-                            start,
-                            &self.send_buf.as_slices().0
-                                [buff_off..buff_off + usize::try_from(len).unwrap()],
-                        ))
-                    }
-                    None => Some((start, &self.send_buf.as_slices().0[buff_off..])),
-                }
-            }
-            TxMode::Pto => {
-                if self.buffered() == 0 {
-                    None
-                } else {
-                    Some((self.retired, &self.send_buf.as_slices().0))
-                }
-            }
+        if start == self.retired + u64::try_from(self.buffered()).unwrap() {
+            return None;
         }
+
+        // Convert from ranges-relative-to-zero to
+        // ranges-relative-to-buffer-start
+        let buff_off = usize::try_from(start - self.retired).unwrap();
+
+        // Deque returns two slices. Create a subslice from whichever
+        // one contains the first unmarked data.
+        let slc = if buff_off < self.send_buf.as_slices().0.len() {
+            &self.send_buf.as_slices().0[buff_off..]
+        } else {
+            &self.send_buf.as_slices().1[buff_off - self.send_buf.as_slices().0.len()..]
+        };
+
+        let len = if let Some(range_len) = maybe_len {
+            // Truncate if range crosses deque slices
+            min(usize::try_from(range_len).unwrap(), slc.len())
+        } else {
+            slc.len()
+        };
+
+        debug_assert!(len > 0);
+        debug_assert!(len <= slc.len());
+
+        Some((start, &slc[..len]))
     }
 
     pub fn mark_as_sent(&mut self, offset: u64, len: usize) {
@@ -340,6 +340,7 @@ impl TxBuffer {
 
         // We can drop contig acked range from the buffer
         let new_retirable = self.ranges.acked_from_zero() - self.retired;
+        debug_assert!(new_retirable <= self.buffered() as u64);
         let keep_len =
             self.buffered() - usize::try_from(new_retirable).expect("should fit in usize");
 
@@ -363,7 +364,7 @@ impl TxBuffer {
     }
 
     fn avail(&self) -> usize {
-        Self::BUFFER_SIZE - self.buffered()
+        SEND_BUFFER_SIZE - self.buffered()
     }
 
     pub fn highest_sent(&self) -> u64 {
@@ -408,7 +409,7 @@ impl SendStreamState {
     fn tx_avail(&self) -> u64 {
         match self {
             // In Ready, TxBuffer not yet allocated but size is known
-            Self::Ready => TxBuffer::BUFFER_SIZE.try_into().unwrap(),
+            Self::Ready => SEND_BUFFER_SIZE.try_into().unwrap(),
             Self::Send { send_buf } | Self::DataSent { send_buf, .. } => {
                 send_buf.avail().try_into().unwrap()
             }
@@ -471,15 +472,15 @@ impl SendStream {
     }
 
     /// Return the next range to be sent, if any.
-    pub fn next_bytes(&mut self, mode: TxMode) -> Option<(u64, &[u8])> {
+    pub fn next_bytes(&mut self) -> Option<(u64, &[u8])> {
         match self.state {
-            SendStreamState::Send { ref send_buf } => send_buf.next_bytes(mode),
+            SendStreamState::Send { ref send_buf } => send_buf.next_bytes(),
             SendStreamState::DataSent {
                 ref send_buf,
                 fin_sent,
                 final_size,
             } => {
-                let bytes = send_buf.next_bytes(mode);
+                let bytes = send_buf.next_bytes();
                 if bytes.is_some() {
                     // Must be a resend
                     bytes
@@ -570,11 +571,13 @@ impl SendStream {
 
     /// Bytes sendable on stream. Constrained by stream credit available,
     /// connection credit available, and space in the tx buffer.
-    pub fn avail(&self) -> u64 {
+    pub fn avail(&self) -> usize {
         min(
             min(self.state.tx_avail(), self.credit_avail()),
             self.flow_mgr.borrow().conn_credit_avail(),
         )
+        .try_into()
+        .unwrap()
     }
 
     pub fn max_stream_data(&self) -> u64 {
@@ -607,6 +610,26 @@ impl SendStream {
     }
 
     pub fn send(&mut self, buf: &[u8]) -> Res<usize> {
+        self.send_internal(buf, false)
+    }
+
+    pub fn send_atomic(&mut self, buf: &[u8]) -> Res<usize> {
+        self.send_internal(buf, true)
+    }
+
+    fn send_blocked(&mut self, len: u64) {
+        if self.credit_avail() < len {
+            self.flow_mgr
+                .borrow_mut()
+                .stream_data_blocked(self.stream_id, self.max_stream_data);
+        }
+
+        if self.flow_mgr.borrow().conn_credit_avail() < len {
+            self.flow_mgr.borrow_mut().data_blocked();
+        }
+    }
+
+    fn send_internal(&mut self, buf: &[u8], atomic: bool) -> Res<usize> {
         if buf.is_empty() {
             qerror!("zero-length send on stream {}", self.stream_id.as_u64());
             return Err(Error::InvalidInput);
@@ -622,13 +645,18 @@ impl SendStream {
             return Err(Error::FinalSizeError);
         }
 
-        let can_send_bytes = min(self.avail(), buf.len() as u64);
-
-        if can_send_bytes == 0 {
+        let buf = if buf.is_empty() || (self.avail() == 0) {
             return Ok(0);
-        }
-
-        let buf = &buf[..can_send_bytes.try_into()?];
+        } else if self.avail() < buf.len() {
+            self.send_blocked(buf.len() as u64);
+            if atomic {
+                return Ok(0);
+            } else {
+                &buf[..self.avail()]
+            }
+        } else {
+            buf
+        };
 
         let sent = match &mut self.state {
             SendStreamState::Ready => unreachable!(),
@@ -745,7 +773,6 @@ impl SendStreams {
     pub(crate) fn get_frame(
         &mut self,
         space: PNSpace,
-        mode: TxMode,
         remaining: usize,
     ) -> Option<(Frame, Option<RecoveryToken>)> {
         if space != PNSpace::ApplicationData {
@@ -753,20 +780,23 @@ impl SendStreams {
         }
 
         for (stream_id, stream) in self {
-            let complete = stream.final_size().is_some();
-            if let Some((offset, data)) = stream.next_bytes(mode) {
+            let final_size = stream.final_size();
+            if let Some((offset, data)) = stream.next_bytes() {
+                let data_len = u64::try_from(data.len()).unwrap();
+                let range_has_fin = final_size
+                    .map(|fs| fs == offset + data_len)
+                    .unwrap_or(false);
                 if let Some((frame, length)) =
-                    Frame::new_stream(stream_id.as_u64(), offset, data, complete, remaining)
+                    Frame::new_stream(stream_id.as_u64(), offset, data, range_has_fin, remaining)
                 {
                     qdebug!(
-                        "Stream {} sending bytes {}-{}, space {:?}, mode {:?}",
+                        "Stream {} sending bytes {}-{}, space {:?}",
                         stream_id.as_u64(),
                         offset,
                         offset + length as u64,
                         space,
-                        mode,
                     );
-                    let fin = complete && length == data.len();
+                    let fin = range_has_fin && length == data.len();
                     debug_assert!(!fin || matches!(frame, Frame::Stream{fin: true, .. }));
                     stream.mark_as_sent(offset, length, fin);
 
@@ -806,8 +836,6 @@ pub struct StreamRecoveryToken {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use neqo_common::matches;
 
     use crate::events::ConnectionEvent;
 
@@ -873,7 +901,7 @@ mod tests {
         let res = rt.first_unmarked_range();
         assert_eq!(res, (0, Some(5)));
         assert_eq!(
-            rt.used.iter().nth(0).unwrap(),
+            rt.used.iter().next().unwrap(),
             (&5, &(5, RangeState::Acked))
         );
         assert_eq!(
@@ -892,6 +920,133 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cognitive_complexity)]
+    fn tx_buffer_next_bytes_1() {
+        let mut txb = TxBuffer::new();
+
+        assert_eq!(txb.avail(), SEND_BUFFER_SIZE);
+
+        // Fill the buffer
+        assert_eq!(txb.send(&[1; SEND_BUFFER_SIZE * 2]), SEND_BUFFER_SIZE);
+        assert!(matches!(txb.next_bytes(),
+			 Some((0, x)) if x.len()==SEND_BUFFER_SIZE
+			 && x.iter().all(|ch| *ch == 1)));
+
+        // Mark almost all as sent. Get what's left
+        let one_byte_from_end = SEND_BUFFER_SIZE as u64 - 1;
+        txb.mark_as_sent(0, one_byte_from_end as usize);
+        assert!(matches!(txb.next_bytes(),
+			 Some((start, x)) if x.len() == 1
+			 && start == one_byte_from_end
+			 && x.iter().all(|ch| *ch == 1)));
+
+        // Mark all as sent. Get nothing
+        txb.mark_as_sent(0, SEND_BUFFER_SIZE);
+        assert!(matches!(txb.next_bytes(), None));
+
+        // Mark as lost. Get it again
+        txb.mark_as_lost(one_byte_from_end, 1);
+        assert!(matches!(txb.next_bytes(),
+			 Some((start, x)) if x.len() == 1
+			 && start == one_byte_from_end
+			 && x.iter().all(|ch| *ch == 1)));
+
+        // Mark a larger range lost, including beyond what's in the buffer even.
+        // Get a little more
+        let five_bytes_from_end = SEND_BUFFER_SIZE as u64 - 5;
+        txb.mark_as_lost(five_bytes_from_end, 100);
+        assert!(matches!(txb.next_bytes(),
+			 Some((start, x)) if x.len() == 5
+			 && start == five_bytes_from_end
+			 && x.iter().all(|ch| *ch == 1)));
+
+        // Contig acked range at start means it can be removed from buffer
+        // Impl of vecdeque should now result in a split buffer when more data
+        // is sent
+        txb.mark_as_acked(0, five_bytes_from_end as usize);
+        assert_eq!(txb.send(&[2; 30]), 30);
+        // Just get 5 even though there is more
+        assert!(matches!(txb.next_bytes(),
+			 Some((start, x)) if x.len() == 5
+			 && start == five_bytes_from_end
+			 && x.iter().all(|ch| *ch == 1)));
+        assert_eq!(txb.retired, five_bytes_from_end);
+        assert_eq!(txb.buffered(), 35);
+
+        // Marking that bit as sent should let the last contig bit be returned
+        // when called again
+        txb.mark_as_sent(five_bytes_from_end, 5);
+        assert!(matches!(txb.next_bytes(),
+			 Some((start, x)) if x.len() == 30
+			 && start == SEND_BUFFER_SIZE as u64
+			 && x.iter().all(|ch| *ch == 2)));
+    }
+
+    #[test]
+    fn tx_buffer_next_bytes_2() {
+        let mut txb = TxBuffer::new();
+
+        assert_eq!(txb.avail(), SEND_BUFFER_SIZE);
+
+        // Fill the buffer
+        assert_eq!(txb.send(&[1; SEND_BUFFER_SIZE * 2]), SEND_BUFFER_SIZE);
+        assert!(matches!(txb.next_bytes(),
+			 Some((0, x)) if x.len()==SEND_BUFFER_SIZE
+			 && x.iter().all(|ch| *ch == 1)));
+
+        // As above
+        let forty_bytes_from_end = SEND_BUFFER_SIZE as u64 - 40;
+
+        txb.mark_as_acked(0, forty_bytes_from_end as usize);
+        assert!(matches!(txb.next_bytes(),
+                 Some((start, x)) if x.len() == 40
+                 && start == forty_bytes_from_end
+        ));
+
+        // Valid new data placed in split locations
+        assert_eq!(txb.send(&[2; 100]), 100);
+
+        // Mark a little more as sent
+        txb.mark_as_sent(forty_bytes_from_end, 10);
+        let thirty_bytes_from_end = forty_bytes_from_end + 10;
+        assert!(matches!(txb.next_bytes(),
+			 Some((start, x)) if x.len() == 30
+			 && start == thirty_bytes_from_end
+			 && x.iter().all(|ch| *ch == 1)));
+
+        // Mark a range 'A' in second slice as sent. Should still return the same
+        let range_a_start = SEND_BUFFER_SIZE as u64 + 30;
+        let range_a_end = range_a_start + 10;
+        txb.mark_as_sent(range_a_start, 10);
+        assert!(matches!(txb.next_bytes(),
+			 Some((start, x)) if x.len() == 30
+			 && start == thirty_bytes_from_end
+			 && x.iter().all(|ch| *ch == 1)));
+
+        // Ack entire first slice and into second slice
+        let ten_bytes_past_end = SEND_BUFFER_SIZE as u64 + 10;
+        txb.mark_as_acked(0, ten_bytes_past_end as usize);
+
+        // Get up to marked range A
+        assert!(matches!(txb.next_bytes(),
+			 Some((start, x)) if x.len() == 20
+			 && start == ten_bytes_past_end
+			 && x.iter().all(|ch| *ch == 2)));
+
+        txb.mark_as_sent(ten_bytes_past_end, 20);
+
+        // Get bit after earlier marked range A
+        assert!(matches!(txb.next_bytes(),
+			 Some((start, x)) if x.len() == 60
+			 && start == range_a_end
+			 && x.iter().all(|ch| *ch == 2)));
+
+        // No more bytes.
+        txb.mark_as_sent(range_a_end, 60);
+        assert!(matches!(txb.next_bytes(), None));
+    }
+
+    #[test]
     fn test_stream_tx() {
         let flow_mgr = Rc::new(RefCell::new(FlowMgr::default()));
         flow_mgr.borrow_mut().conn_increase_max_credit(4096);
@@ -905,25 +1060,25 @@ mod tests {
         assert_eq!(s.state.tx_buf().unwrap().data_limit(), 100);
 
         // Should hit stream flow control limit before filling up send buffer
-        let res = s.send(&[4; TxBuffer::BUFFER_SIZE]).unwrap();
+        let res = s.send(&[4; SEND_BUFFER_SIZE]).unwrap();
         assert_eq!(res, 1024 - 100);
 
         // should do nothing, max stream data already 1024
         s.set_max_stream_data(1024);
-        let res = s.send(&[4; TxBuffer::BUFFER_SIZE]).unwrap();
+        let res = s.send(&[4; SEND_BUFFER_SIZE]).unwrap();
         assert_eq!(res, 0);
 
         // should now hit the conn flow control (4096)
         s.set_max_stream_data(1_048_576);
-        let res = s.send(&[4; TxBuffer::BUFFER_SIZE]).unwrap();
+        let res = s.send(&[4; SEND_BUFFER_SIZE]).unwrap();
         assert_eq!(res, 3072);
 
         // should now hit the tx buffer size
         flow_mgr
             .borrow_mut()
-            .conn_increase_max_credit(TxBuffer::BUFFER_SIZE as u64);
-        let res = s.send(&[4; TxBuffer::BUFFER_SIZE + 100]).unwrap();
-        assert_eq!(res, TxBuffer::BUFFER_SIZE - 4096);
+            .conn_increase_max_credit(SEND_BUFFER_SIZE as u64);
+        let res = s.send(&[4; SEND_BUFFER_SIZE + 100]).unwrap();
+        assert_eq!(res, SEND_BUFFER_SIZE - 4096);
 
         // TODO(agrover@mozilla.com): test ooo acks somehow
         s.mark_as_acked(0, 40, false);
@@ -933,15 +1088,15 @@ mod tests {
     fn test_tx_buffer_acks() {
         let mut tx = TxBuffer::new();
         assert_eq!(tx.send(&[4; 100]), 100);
-        let res = tx.next_bytes(TxMode::Normal).unwrap();
+        let res = tx.next_bytes().unwrap();
         assert_eq!(res.0, 0);
         assert_eq!(res.1.len(), 100);
         tx.mark_as_sent(0, 100);
-        let res = tx.next_bytes(TxMode::Normal);
+        let res = tx.next_bytes();
         assert_eq!(res, None);
 
         tx.mark_as_acked(0, 100);
-        let res = tx.next_bytes(TxMode::Normal);
+        let res = tx.next_bytes();
         assert_eq!(res, None);
     }
 
@@ -995,11 +1150,11 @@ mod tests {
 
         // Unblocking both by a large amount will cause avail() to be limited by
         // tx buffer size.
-        assert_eq!(s.avail(), u64::try_from(TxBuffer::BUFFER_SIZE - 4).unwrap());
+        assert_eq!(s.avail(), SEND_BUFFER_SIZE - 4);
 
         assert_eq!(
-            s.send(&[b'a'; TxBuffer::BUFFER_SIZE]).unwrap(),
-            TxBuffer::BUFFER_SIZE - 4
+            s.send(&[b'a'; SEND_BUFFER_SIZE]).unwrap(),
+            SEND_BUFFER_SIZE - 4
         );
 
         // No event because still blocked by tx buffer full
@@ -1022,5 +1177,169 @@ mod tests {
         let evts = conn_events.events().collect::<Vec<_>>();
         assert_eq!(evts.len(), 1);
         assert!(matches!(evts[0], ConnectionEvent::SendStreamWritable{..}));
+    }
+
+    #[test]
+    // Verify lost frames handle fin properly
+    fn send_stream_get_frame_data() {
+        let flow_mgr = Rc::new(RefCell::new(FlowMgr::default()));
+        flow_mgr.borrow_mut().conn_increase_max_credit(100);
+        let conn_events = ConnectionEvents::default();
+
+        let mut s = SendStream::new(0.into(), 100, flow_mgr, conn_events);
+        s.send(&[0; 10]).unwrap();
+        s.close();
+
+        let mut ss = SendStreams::default();
+        ss.insert(0.into(), s);
+
+        let (_f1, f1_token) = ss.get_frame(PNSpace::ApplicationData, 6).unwrap();
+        assert!(matches!(&f1_token, Some(RecoveryToken::Stream(x)) if !x.fin));
+        let (_f2, f2_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
+        assert!(matches!(&f2_token, Some(RecoveryToken::Stream(x)) if x.fin));
+
+        // Should be no more data to frame
+        let f3 = ss.get_frame(PNSpace::ApplicationData, 100);
+        assert!(matches!(f3, None));
+
+        // Mark frame 1 as lost
+        let f1_token = match f1_token {
+            Some(RecoveryToken::Stream(rt)) => rt,
+            _ => panic!(),
+        };
+        ss.lost(&f1_token);
+
+        // Next frame should not set fin even though stream has fin but frame
+        // does not include end of stream
+        let (_f4, f4_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
+        assert!(matches!(f4_token, Some(RecoveryToken::Stream(x)) if !x.fin));
+
+        // Mark frame 2 as lost
+        let f2_token = match f2_token {
+            Some(RecoveryToken::Stream(rt)) => rt,
+            _ => panic!(),
+        };
+        ss.lost(&f2_token);
+
+        // Next frame should set fin because it includes end of stream
+        let (_f5, f5_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
+        assert!(matches!(f5_token, Some(RecoveryToken::Stream(x)) if x.fin));
+    }
+
+    #[test]
+    #[allow(clippy::cognitive_complexity)]
+    // Verify lost frames handle fin properly with zero length fin
+    fn send_stream_get_frame_zerolength_fin() {
+        let flow_mgr = Rc::new(RefCell::new(FlowMgr::default()));
+        flow_mgr.borrow_mut().conn_increase_max_credit(100);
+        let conn_events = ConnectionEvents::default();
+
+        let mut s = SendStream::new(0.into(), 100, flow_mgr, conn_events);
+        s.send(&[0; 10]).unwrap();
+
+        let mut ss = SendStreams::default();
+        ss.insert(0.into(), s);
+
+        let (_f1, f1_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
+        assert!(matches!(&f1_token, Some(RecoveryToken::Stream(x)) if x.offset == 0));
+        assert!(matches!(&f1_token, Some(RecoveryToken::Stream(x)) if x.length == 10));
+        assert!(matches!(&f1_token, Some(RecoveryToken::Stream(x)) if !x.fin));
+
+        // Should be no more data to frame
+        let f2 = ss.get_frame(PNSpace::ApplicationData, 100);
+        assert!(matches!(f2, None));
+
+        ss.get_mut(0.into()).unwrap().close();
+
+        let (_f2, f2_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
+        assert!(matches!(&f2_token, Some(RecoveryToken::Stream(x)) if x.offset == 10));
+        assert!(matches!(&f2_token, Some(RecoveryToken::Stream(x)) if x.length == 0));
+        assert!(matches!(&f2_token, Some(RecoveryToken::Stream(x)) if x.fin));
+
+        // Mark frame 2 as lost
+        let f2_token = match f2_token {
+            Some(RecoveryToken::Stream(rt)) => rt,
+            _ => panic!(),
+        };
+        ss.lost(&f2_token);
+
+        // Next frame should set fin
+        let (_f3, f3_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
+        assert!(matches!(&f3_token, Some(RecoveryToken::Stream(x)) if x.offset == 10));
+        assert!(matches!(&f3_token, Some(RecoveryToken::Stream(x)) if x.length == 0));
+        assert!(matches!(&f3_token, Some(RecoveryToken::Stream(x)) if x.fin));
+
+        // Mark frame 1 as lost
+        let f1_token = match f1_token {
+            Some(RecoveryToken::Stream(rt)) => rt,
+            _ => panic!(),
+        };
+        ss.lost(&f1_token);
+
+        // Next frame should set fin and include all data
+        let (_f4, f4_token) = ss.get_frame(PNSpace::ApplicationData, 100).unwrap();
+        assert!(matches!(&f4_token, Some(RecoveryToken::Stream(x)) if x.offset == 0));
+        assert!(matches!(&f4_token, Some(RecoveryToken::Stream(x)) if x.length == 10));
+        assert!(matches!(&f4_token, Some(RecoveryToken::Stream(x)) if x.fin));
+    }
+
+    #[test]
+    fn send_atomic() {
+        let flow_mgr = Rc::new(RefCell::new(FlowMgr::default()));
+        flow_mgr.borrow_mut().conn_increase_max_credit(5);
+        let conn_events = ConnectionEvents::default();
+
+        let mut s = SendStream::new(4.into(), 0, Rc::clone(&flow_mgr), conn_events);
+        s.set_max_stream_data(2);
+
+        // Stream is initially blocked (conn:5, stream:2)
+        // and will not accept atomic write of 3 bytes.
+        assert_eq!(s.send_atomic(b"abc").unwrap(), 0);
+
+        // assert that STREAM_DATA_BLOCKED is sent.
+        assert_eq!(
+            flow_mgr.borrow_mut().next().unwrap(),
+            Frame::StreamDataBlocked {
+                stream_id: 4.into(),
+                stream_data_limit: 0x2
+            }
+        );
+
+        // assert non-atomic write works
+        assert_eq!(s.send(b"abc").unwrap(), 2);
+        // assert that STREAM_DATA_BLOCKED is sent.
+        assert_eq!(
+            flow_mgr.borrow_mut().next().unwrap(),
+            Frame::StreamDataBlocked {
+                stream_id: 4.into(),
+                stream_data_limit: 0x2
+            }
+        );
+
+        // increasing to (conn:5, stream:10)
+        s.set_max_stream_data(10);
+        // will not accept atomic write of 4 bytes.
+        assert_eq!(s.send_atomic(b"abcd").unwrap(), 0);
+
+        // assert that STREAM_DATA_BLOCKED is sent.
+        assert_eq!(
+            flow_mgr.borrow_mut().next().unwrap(),
+            Frame::DataBlocked { data_limit: 0x5 }
+        );
+
+        // assert non-atomic write works
+        assert_eq!(s.send(b"abcd").unwrap(), 3);
+        // assert that STREAM_DATA_BLOCKED is sent.
+        assert_eq!(
+            flow_mgr.borrow_mut().next().unwrap(),
+            Frame::DataBlocked { data_limit: 0x5 }
+        );
+
+        // increasing to (conn:15, stream:15)
+        s.set_max_stream_data(15);
+        flow_mgr.borrow_mut().conn_increase_max_credit(15);
+
+        // assert that atomic writing 10 byte works
+        assert_eq!(s.send_atomic(b"abcdefghij").unwrap(), 10);
     }
 }

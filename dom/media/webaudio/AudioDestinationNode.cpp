@@ -46,8 +46,8 @@ class OnCompleteTask final : public Runnable {
     param.mRenderedBuffer = mRenderedBuffer;
 
     RefPtr<OfflineAudioCompletionEvent> event =
-        OfflineAudioCompletionEvent::Constructor(
-            mAudioContext, NS_LITERAL_STRING("complete"), param);
+        OfflineAudioCompletionEvent::Constructor(mAudioContext, u"complete"_ns,
+                                                 param);
     mAudioContext->DispatchTrustedEvent(event);
 
     return NS_OK;
@@ -328,7 +328,7 @@ AudioDestinationNode::AudioDestinationNode(AudioContext* aContext,
   // MediaTrackGraph
   MediaTrackGraph* graph = MediaTrackGraph::GetInstance(
       MediaTrackGraph::AUDIO_THREAD_DRIVER, aContext->GetParentObject(),
-      aContext->SampleRate());
+      aContext->SampleRate(), MediaTrackGraph::DEFAULT_OUTPUT_DEVICE);
   AudioNodeEngine* engine = new DestinationNodeEngine(this);
 
   mTrack = AudioNodeTrack::Create(aContext, engine, kTrackFlags, graph);
@@ -337,16 +337,6 @@ AudioDestinationNode::AudioDestinationNode(AudioContext* aContext,
   mTrack->AddAudioOutput(nullptr);
 
   if (aAllowedToStart) {
-    graph->NotifyWhenGraphStarted(mTrack)->Then(
-        aContext->GetMainThread(), "AudioDestinationNode OnRunning",
-        [context = RefPtr<AudioContext>(aContext)] {
-          context->OnStateChanged(nullptr, AudioContextState::Running);
-        },
-        [] {
-          NS_WARNING(
-              "AudioDestinationNode's graph never started processing audio");
-        });
-
     CreateAudioWakeLockIfNeeded();
   }
 }
@@ -414,10 +404,6 @@ void AudioDestinationNode::DestroyMediaTrack() {
   Context()->ShutdownWorklet();
 
   mTrack->RemoveMainThreadListener(this);
-  MediaTrackGraph* graph = mTrack->Graph();
-  if (graph->IsNonRealtime()) {
-    MediaTrackGraph::DestroyNonRealtimeInstance(graph);
-  }
   AudioNode::DestroyMediaTrack();
 }
 
@@ -502,10 +488,7 @@ void AudioDestinationNode::OfflineShutdown() {
   MOZ_ASSERT(Context() && Context()->IsOffline(),
              "Should only be called on a valid OfflineAudioContext");
 
-  if (mTrack) {
-    MediaTrackGraph::DestroyNonRealtimeInstance(mTrack->Graph());
-    mOfflineRenderingRef.Drop(this);
-  }
+  mOfflineRenderingRef.Drop(this);
 }
 
 JSObject* AudioDestinationNode::WrapObject(JSContext* aCx,
@@ -629,8 +612,7 @@ void AudioDestinationNode::CreateAudioWakeLockIfNeeded() {
     NS_ENSURE_TRUE_VOID(pmService);
 
     ErrorResult rv;
-    mWakeLock = pmService->NewWakeLock(NS_LITERAL_STRING("audio-playing"),
-                                       GetOwner(), rv);
+    mWakeLock = pmService->NewWakeLock(u"audio-playing"_ns, GetOwner(), rv);
   }
 }
 

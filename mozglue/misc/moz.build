@@ -9,6 +9,8 @@ FINAL_LIBRARY = 'mozglue'
 EXPORTS.mozilla += [
     'AutoProfilerLabel.h',
     'decimal/Decimal.h',
+    'decimal/DoubleConversion.h',
+    'MmapFaultHandler.h',
     'PlatformConditionVariable.h',
     'PlatformMutex.h',
     'Printf.h',
@@ -29,6 +31,7 @@ if CONFIG['OS_ARCH'] == 'WINNT':
 
 SOURCES += [
     'AutoProfilerLabel.cpp',
+    'MmapFaultHandler.cpp',
     'Printf.cpp',
     'StackWalk.cpp',
     'TimeStamp.cpp',
@@ -82,7 +85,7 @@ else:
         'Mutex_posix.cpp',
     ]
 
-if CONFIG['MOZ_LINKER'] or CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+if CONFIG['MOZ_LINKER'] and CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     LOCAL_INCLUDES += [
         '/mozglue/linker',
     ]

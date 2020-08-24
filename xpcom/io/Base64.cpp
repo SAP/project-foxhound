@@ -104,44 +104,62 @@ template <typename T>
 nsresult EncodeInputStream_Encoder(nsIInputStream* aStream, void* aClosure,
                                    const char* aFromSegment, uint32_t aToOffset,
                                    uint32_t aCount, uint32_t* aWriteCount) {
-  NS_ASSERTION(aCount > 0, "Er, what?");
+  MOZ_ASSERT(aCount > 0, "Er, what?");
 
   EncodeInputStream_State<T>* state =
       static_cast<EncodeInputStream_State<T>*>(aClosure);
+
+  // We consume the whole data always.
+  *aWriteCount = aCount;
 
   // If we have any data left from last time, encode it now.
   uint32_t countRemaining = aCount;
   const unsigned char* src = (const unsigned char*)aFromSegment;
   if (state->charsOnStack) {
+    MOZ_ASSERT(state->charsOnStack == 1 || state->charsOnStack == 2);
+
+    // Not enough data to compose a triple.
+    if (state->charsOnStack == 1 && countRemaining == 1) {
+      state->charsOnStack = 2;
+      state->c[1] = src[0];
+      return NS_OK;
+    }
+
+    uint32_t consumed = 0;
     unsigned char firstSet[4];
     if (state->charsOnStack == 1) {
       firstSet[0] = state->c[0];
       firstSet[1] = src[0];
-      firstSet[2] = (countRemaining > 1) ? src[1] : '\0';
+      firstSet[2] = src[1];
       firstSet[3] = '\0';
+      consumed = 2;
     } else /* state->charsOnStack == 2 */ {
       firstSet[0] = state->c[0];
       firstSet[1] = state->c[1];
       firstSet[2] = src[0];
       firstSet[3] = '\0';
+      consumed = 1;
     }
+
     Encode(firstSet, 3, state->buffer);
     state->buffer += 4;
-    countRemaining -= (3 - state->charsOnStack);
-    src += (3 - state->charsOnStack);
+    countRemaining -= consumed;
+    src += consumed;
     state->charsOnStack = 0;
+
+    // Nothing is left.
+    if (!countRemaining) {
+      return NS_OK;
+    }
   }
 
-  // Encode the bulk of the
+  // Encode as many full triplets as possible.
   uint32_t encodeLength = countRemaining - countRemaining % 3;
   MOZ_ASSERT(encodeLength % 3 == 0, "Should have an exact number of triplets!");
   Encode(src, encodeLength, state->buffer);
   state->buffer += (encodeLength / 3) * 4;
   src += encodeLength;
   countRemaining -= encodeLength;
-
-  // We must consume all data, so if there's some data left stash it
-  *aWriteCount = aCount;
 
   if (countRemaining) {
     // We should never have a full triplet left at this point.
@@ -186,7 +204,7 @@ nsresult EncodeInputStream(nsIInputStream* aInputStream, T& aDest,
   state.c[2] = '\0';
   state.buffer = aOffset + aDest.BeginWriting();
 
-  while (1) {
+  while (true) {
     uint32_t read = 0;
 
     rv = aInputStream->ReadSegments(&EncodeInputStream_Encoder<T>,
@@ -250,7 +268,7 @@ static const uint8_t kBase64DecodeTable[] = {
 // clang-format on
 
 template <typename T>
-MOZ_MUST_USE bool Base64CharToValue(T aChar, uint8_t* aValue) {
+[[nodiscard]] bool Base64CharToValue(T aChar, uint8_t* aValue) {
   static const size_t mask = 0x7f;
   static_assert(
       (mask + 1) == sizeof(kBase64DecodeTable) / sizeof(kBase64DecodeTable[0]),

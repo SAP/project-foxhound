@@ -24,8 +24,6 @@ if CONFIG['MOZ_GL_PROVIDER']:
     gl_provider = CONFIG['MOZ_GL_PROVIDER']
 
 EXPORTS += [
-    'AndroidNativeWindow.h',
-    'AndroidSurfaceTexture.h',
     'DecomposeIntoNoRepeatTriangles.h',
     'ForceDiscreteGPUHelperCGL.h',
     'GfxTexturesReporter.h',
@@ -54,12 +52,6 @@ EXPORTS += [
     'SurfaceTypes.h',
 ]
 
-if CONFIG['MOZ_X11']:
-    EXPORTS += [
-        'GLContextGLX.h',
-        'GLXLibrary.h',
-    ]
-
 # Win32 is a special snowflake, for ANGLE
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
     EXPORTS += [
@@ -73,6 +65,15 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         'GLContextProviderWGL.cpp',
         'SharedSurfaceANGLE.cpp',
         'SharedSurfaceD3D11Interop.cpp',
+    ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+    EXPORTS += [
+        'AndroidNativeWindow.h',
+        'AndroidSurfaceTexture.h',
+    ]
+    UNIFIED_SOURCES += [
+        'AndroidSurfaceTexture.cpp',
     ]
 
 if gl_provider == 'CGL':
@@ -109,9 +110,12 @@ elif gl_provider == 'GLX':
     # as it includes X11 headers which cause conflicts.
     SOURCES += [
         'GLContextProviderGLX.cpp',
+        'GLContextProviderX11.cpp',
         'SharedSurfaceGLX.cpp'
     ]
     EXPORTS += [
+        'GLContextGLX.h',
+        'GLXLibrary.h',
         'SharedSurfaceGLX.h'
     ]
 
@@ -122,7 +126,6 @@ if CONFIG['MOZ_WAYLAND']:
     ]
 
 UNIFIED_SOURCES += [
-    'AndroidSurfaceTexture.cpp',
     'DecomposeIntoNoRepeatTriangles.cpp',
     'GfxTexturesReporter.cpp',
     'GLBlitHelper.cpp',

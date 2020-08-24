@@ -65,10 +65,6 @@ using JS::ReadOnlyCompileOptions;
 using JS::RegExpFlag;
 using JS::RegExpFlags;
 
-// There's some very preliminary support for private fields in this file. It's
-// disabled in all builds, for now.
-//#define JS_PRIVATE_FIELDS 1
-
 struct ReservedWordInfo {
   const char* chars;  // C string with reserved word text
   js::frontend::TokenKind tokentype;
@@ -136,28 +132,20 @@ static const ReservedWordInfo* FindReservedWord(
   if (str->hasLatin1Chars()) {
     const JS::Latin1Char* chars = str->latin1Chars(nogc);
     size_t length = str->length();
-#ifdef JS_PRIVATE_FIELDS
     if (length > 0 && chars[0] == '#') {
       *visibility = js::frontend::NameVisibility::Private;
       return nullptr;
     }
-#else
-    MOZ_ASSERT_IF(length > 0, chars[0] != '#');
-#endif
     *visibility = js::frontend::NameVisibility::Public;
     return FindReservedWord(chars, length);
   }
 
   const char16_t* chars = str->twoByteChars(nogc);
   size_t length = str->length();
-#ifdef JS_PRIVATE_FIELDS
   if (length > 0 && chars[0] == '#') {
     *visibility = js::frontend::NameVisibility::Private;
     return nullptr;
   }
-#else
-  MOZ_ASSERT_IF(length > 0, chars[0] != '#');
-#endif
   *visibility = js::frontend::NameVisibility::Public;
   return FindReservedWord(chars, length);
 }
@@ -247,13 +235,10 @@ bool IsIdentifierNameOrPrivateName(const Latin1Char* chars, size_t length) {
     return false;
   }
 
-  if (char16_t(*chars) == '#') {
-#ifdef JS_PRIVATE_FIELDS
+  // Skip over any private name marker.
+  if (*chars == '#') {
     ++chars;
     --length;
-#else
-    return false;
-#endif
   }
 
   return IsIdentifier(chars, length);
@@ -293,16 +278,15 @@ bool IsIdentifierNameOrPrivateName(const char16_t* chars, size_t length) {
   uint32_t codePoint;
 
   codePoint = GetSingleCodePoint(&p, end);
+
+  // Skip over any private name marker.
   if (codePoint == '#') {
-#ifdef JS_PRIVATE_FIELDS
+    // The identifier part of a private name mustn't be empty.
     if (length == 1) {
       return false;
     }
 
     codePoint = GetSingleCodePoint(&p, end);
-#else
-    return false;
-#endif
   }
 
   if (!unicode::IsIdentifierStart(codePoint)) {
@@ -367,7 +351,7 @@ PropertyName* TokenStreamAnyChars::reservedWordToPropertyName(
   switch (tt) {
 #define EMIT_CASE(word, name, type) \
   case type:                        \
-    return cx->names().name;
+    return cx->parserNames().name;
     FOR_EACH_JAVASCRIPT_RESERVED_WORD(EMIT_CASE)
 #undef EMIT_CASE
     default:
@@ -411,8 +395,8 @@ MOZ_ALWAYS_INLINE bool SourceCoords::add(uint32_t lineNum,
     // Otherwise return false to tell TokenStream about OOM.
     uint32_t maxPtr = MAX_PTR;
     if (!lineStartOffsets_.append(maxPtr)) {
-      static_assert(mozilla::IsSame<decltype(lineStartOffsets_.allocPolicy()),
-                                    TempAllocPolicy&>::value,
+      static_assert(std::is_same_v<decltype(lineStartOffsets_.allocPolicy()),
+                                   TempAllocPolicy&>,
                     "this function's caller depends on it reporting an "
                     "error on failure, as TempAllocPolicy ensures");
       return false;
@@ -533,12 +517,11 @@ TokenStreamAnyChars::TokenStreamAnyChars(JSContext* cx,
 
 // Taintfox: add taint information to TokenStream?
 template <typename Unit>
-TokenStreamCharsBase<Unit>::TokenStreamCharsBase(JSContext* cx,
-                                                 const Unit* units,
-                                                 size_t length,
-                                                 const StringTaint& taint,
-                                                 size_t startOffset)
-  : TokenStreamCharsShared(cx, taint), sourceUnits(units, length, startOffset) {}
+TokenStreamCharsBase<Unit>::TokenStreamCharsBase(
+  JSContext* cx, CompilationInfo* compilationInfo, const Unit* units,
+  size_t length, const StringTaint& taint, size_t startOffset)
+  : TokenStreamCharsShared(cx, compilationInfo, taint),
+    sourceUnits(units, length, startOffset) {}
 
 template <>
 MOZ_MUST_USE bool TokenStreamCharsBase<char16_t>::
@@ -603,10 +586,10 @@ MOZ_MUST_USE bool TokenStreamCharsBase<Utf8Unit>::
 
 template <typename Unit, class AnyCharsAccess>
 TokenStreamSpecific<Unit, AnyCharsAccess>::TokenStreamSpecific(
-    JSContext* cx, const ReadOnlyCompileOptions& options, const Unit* units,
-    size_t length, const StringTaint& taint)
-   : TokenStreamChars<Unit, AnyCharsAccess>(cx, units, length, taint,
-                                             options.scriptSourceOffset) {}
+  JSContext* cx, CompilationInfo* compilationInfo,
+  const ReadOnlyCompileOptions& options, const Unit* units, size_t length, const StringTaint& taint)
+  : TokenStreamChars<Unit, AnyCharsAccess>(cx, compilationInfo, units, length, taint,
+                                           options.scriptSourceOffset) {}
 
 bool TokenStreamAnyChars::checkOptions() {
   // Constrain starting columns to half of the range of a signed 32-bit value,
@@ -633,8 +616,7 @@ void TokenStreamAnyChars::reportErrorNoOffsetVA(unsigned errorNumber,
   ErrorMetadata metadata;
   computeErrorMetadataNoOffset(&metadata);
 
-  ReportCompileErrorLatin1(cx, std::move(metadata), nullptr, JSREPORT_ERROR,
-                           errorNumber, args);
+  ReportCompileErrorLatin1(cx, std::move(metadata), nullptr, errorNumber, args);
 }
 
 // Use the fastest available getc.
@@ -1051,7 +1033,7 @@ MOZ_COLD void TokenStreamChars<Utf8Unit, AnyCharsAccess>::internalEncodingError(
     }
 
     ReportCompileErrorLatin1(anyChars.cx, std::move(err), std::move(notes),
-                             JSREPORT_ERROR, errorNumber, &args);
+                             errorNumber, &args);
   } while (false);
 
   va_end(args);
@@ -1742,14 +1724,13 @@ bool TokenStreamCharsBase<Unit>::addLineOfContext(ErrorMetadata* err,
   // always the case for Unit=char16_t), the UTF-16 offsets are exactly the
   // encoded offsets.  Otherwise we must convert offset/length from UTF-8 to
   // UTF-16.
-  if (std::is_same<Unit, char16_t>::value) {
+  if constexpr (std::is_same_v<Unit, char16_t>) {
     MOZ_ASSERT(utf16WindowLength == encodedWindowLength,
                "UTF-16 to UTF-16 shouldn't change window length");
     err->tokenOffset = encodedTokenOffset;
     err->lineLength = encodedWindowLength;
   } else {
-    MOZ_ASSERT((std::is_same<Unit, Utf8Unit>::value),
-               "should only see UTF-8 here");
+    static_assert(std::is_same_v<Unit, Utf8Unit>, "should only see UTF-8 here");
 
     bool simple = utf16WindowLength == encodedWindowLength;
 #ifdef DEBUG
@@ -1912,6 +1893,7 @@ TokenStreamSpecific<Unit, AnyCharsAccess>::matchIdentifierStart(
     IdentifierEscapes* sawEscape) {
   int32_t unit = getCodeUnit();
   if (unicode::IsIdentifierStart(char16_t(unit))) {
+    ungetCodeUnit(unit);
     *sawEscape = IdentifierEscapes::None;
     return true;
   }
@@ -2162,11 +2144,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::putIdentInCharBuffer(
 
     uint32_t codePoint;
     if (MOZ_LIKELY(isAsciiCodePoint(unit))) {
-      if (unicode::IsIdentifierPart(char16_t(unit))
-#ifdef JS_PRIVATE_FIELDS
-          || char16_t(unit) == '#'
-#endif
-      ) {
+      if (unicode::IsIdentifierPart(char16_t(unit)) || unit == '#') {
         if (!this->charBuffer.append(unit)) {
           return false;
         }
@@ -2256,7 +2234,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::identifierName(
       return false;
     }
 
-    atom = drainCharBufferIntoAtom(anyCharsAccess().cx);
+    atom = drainCharBufferIntoAtom();
   } else {
     // Escape-free identifiers can be created directly from sourceUnits.
     const Unit* chars = identStart;
@@ -2272,7 +2250,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::identifierName(
       }
     }
 
-    atom = atomizeSourceChars(anyCharsAccess().cx, MakeSpan(chars, length));
+    atom = atomizeSourceChars(MakeSpan(chars, length));
   }
   if (!atom) {
     return false;
@@ -2280,8 +2258,8 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::identifierName(
 
   noteBadToken.release();
   if (visibility == NameVisibility::Private) {
-    errorAt(start.offset(), JSMSG_PRIVATE_FIELDS_NOT_SUPPORTED);
-    return false;
+    newPrivateNameToken(atom->asPropertyName(), start, modifier, out);
+    return true;
   }
   newNameToken(atom->asPropertyName(), start, modifier, out);
   return true;
@@ -2654,6 +2632,8 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::regexpLiteral(
       flag = RegExpFlag::IgnoreCase;
     } else if (unit == 'm') {
       flag = RegExpFlag::Multiline;
+    } else if (unit == 's') {
+      flag = RegExpFlag::DotAll;
     } else if (unit == 'u') {
       flag = RegExpFlag::Unicode;
     } else if (unit == 'y') {
@@ -2948,6 +2928,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         if (!strictModeError(JSMSG_DEPRECATED_OCTAL)) {
           return badToken();
         }
+        anyCharsAccess().flags.sawDeprecatedOctal = true;
 
         radix = 8;
         // one past the '0'
@@ -3067,20 +3048,20 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         break;
 
       case '#': {
-#ifdef JS_PRIVATE_FIELDS
-        TokenStart start(this->sourceUnits, -1);
-        const Unit* identStart = this->sourceUnits.addressOfNextCodeUnit() - 1;
-        IdentifierEscapes sawEscape;
-        if (!matchIdentifierStart(&sawEscape)) {
-          return badToken();
+        if (options().privateClassFields) {
+          TokenStart start(this->sourceUnits, -1);
+          const Unit* identStart =
+              this->sourceUnits.addressOfNextCodeUnit() - 1;
+          IdentifierEscapes sawEscape;
+          if (!matchIdentifierStart(&sawEscape)) {
+            return badToken();
+          }
+          return identifierName(start, identStart, sawEscape, modifier,
+                                NameVisibility::Private, ttp);
         }
-        return identifierName(start, identStart, sawEscape, modifier,
-                              NameVisibility::Private, ttp);
-#else
         ungetCodeUnit(unit);
         error(JSMSG_PRIVATE_FIELDS_NOT_SUPPORTED);
         return badToken();
-#endif
       }
 
       case '=':
@@ -3123,7 +3104,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
 
       case '|':
         if (matchCodeUnit('|')) {
-          simpleKind = TokenKind::Or;
+          simpleKind = matchCodeUnit('=') ? TokenKind::OrAssign : TokenKind::Or;
 #ifdef ENABLE_PIPELINE_OPERATOR
         } else if (matchCodeUnit('>')) {
           simpleKind = TokenKind::Pipeline;
@@ -3141,7 +3122,8 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
 
       case '&':
         if (matchCodeUnit('&')) {
-          simpleKind = TokenKind::And;
+          simpleKind =
+              matchCodeUnit('=') ? TokenKind::AndAssign : TokenKind::And;
         } else {
           simpleKind =
               matchCodeUnit('=') ? TokenKind::BitAndAssign : TokenKind::BitAnd;
@@ -3162,9 +3144,11 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
             ungetCodeUnit(unit);
             simpleKind = TokenKind::OptionalChain;
           }
+        } else if (matchCodeUnit('?')) {
+          simpleKind = matchCodeUnit('=') ? TokenKind::CoalesceAssign
+                                          : TokenKind::Coalesce;
         } else {
-          simpleKind =
-              matchCodeUnit('?') ? TokenKind::Coalesce : TokenKind::Hook;
+          simpleKind = TokenKind::Hook;
         }
         break;
 
@@ -3623,7 +3607,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
             if (!strictModeError(JSMSG_DEPRECATED_OCTAL)) {
               return false;
             }
-            anyChars.flags.sawOctalEscape = true;
+            anyChars.flags.sawDeprecatedOctal = true;
           }
 
           if (IsAsciiOctal(unit)) {
@@ -3687,7 +3671,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
     }
   }
 
-  JSAtom* atom = drainCharBufferIntoAtom(anyCharsAccess().cx);
+  JSAtom* atom = drainCharBufferIntoAtom();
   if (!atom) {
     return false;
   }

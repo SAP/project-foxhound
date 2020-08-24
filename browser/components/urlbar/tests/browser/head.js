@@ -19,9 +19,11 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ResetProfile: "resource://gre/modules/ResetProfile.jsm",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.jsm",
   UrlbarController: "resource:///modules/UrlbarController.jsm",
-  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
   UrlbarQueryContext: "resource:///modules/UrlbarUtils.jsm",
+  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
+  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
+  UrlbarView: "resource:///modules/UrlbarView.jsm",
 });
 
 /* import-globals-from head-common.js */
@@ -59,8 +61,8 @@ async function updateTopSites(condition, searchShortcuts = false) {
   // Toggle the pref to clear the feed cache and force an update.
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.newtabpage.activity-stream.feeds.topsites", false],
-      ["browser.newtabpage.activity-stream.feeds.topsites", true],
+      ["browser.newtabpage.activity-stream.feeds.system.topsites", false],
+      ["browser.newtabpage.activity-stream.feeds.system.topsites", true],
       [
         "browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts",
         searchShortcuts,

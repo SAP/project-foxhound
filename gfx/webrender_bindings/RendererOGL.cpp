@@ -5,6 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RendererOGL.h"
+
+#include "base/task.h"
 #include "GLContext.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
@@ -68,9 +70,9 @@ RendererOGL::~RendererOGL() {
     gfxCriticalNote
         << "Failed to make render context current during destroying.";
     // Leak resources!
-    return;
+  } else {
+    wr_renderer_delete(mRenderer);
   }
-  wr_renderer_delete(mRenderer);
 }
 
 wr::WrExternalImageHandler RendererOGL::GetExternalImageHandler() {
@@ -99,8 +101,7 @@ static void DoWebRenderDisableNativeCompositor(
 RenderedFrameId RendererOGL::UpdateAndRender(
     const Maybe<gfx::IntSize>& aReadbackSize,
     const Maybe<wr::ImageFormat>& aReadbackFormat,
-    const Maybe<Range<uint8_t>>& aReadbackBuffer, bool aHadSlowFrame,
-    RendererStats* aOutStats) {
+    const Maybe<Range<uint8_t>>& aReadbackBuffer, RendererStats* aOutStats) {
   mozilla::widget::WidgetRenderingContext widgetContext;
 
 #if defined(XP_MACOSX)
@@ -123,6 +124,8 @@ RenderedFrameId RendererOGL::UpdateAndRender(
     return RenderedFrameId();
   }
 
+  auto size = mCompositor->GetBufferSize();
+
   wr_renderer_update(mRenderer);
 
   bool fullRender = mCompositor->RequestFullRender();
@@ -135,11 +138,10 @@ RenderedFrameId RendererOGL::UpdateAndRender(
     wr_renderer_force_redraw(mRenderer);
   }
 
-  auto size = mCompositor->GetBufferSize();
-
   nsTArray<DeviceIntRect> dirtyRects;
-  if (!wr_renderer_render(mRenderer, size.width, size.height, aHadSlowFrame,
-                          aOutStats, &dirtyRects)) {
+  if (!wr_renderer_render(mRenderer, size.width, size.height, aOutStats,
+                          &dirtyRects)) {
+    mCompositor->CancelFrame();
     RenderThread::Get()->HandleWebRenderError(WebRenderError::RENDER);
     mCompositor->GetWidget()->PostRender(&widgetContext);
     return RenderedFrameId();
@@ -186,7 +188,7 @@ bool RendererOGL::EnsureAsyncScreenshot() {
     return true;
   }
   if (!mDisableNativeCompositor) {
-    layers::CompositorThreadHolder::Loop()->PostTask(
+    layers::CompositorThread()->Dispatch(
         NewRunnableFunction("DoWebRenderDisableNativeCompositorRunnable",
                             &DoWebRenderDisableNativeCompositor, mBridge));
 
@@ -205,7 +207,7 @@ void RendererOGL::CheckGraphicsResetStatus() {
   if (gl->IsSupported(gl::GLFeature::robustness)) {
     GLenum resetStatus = gl->fGetGraphicsResetStatus();
     if (resetStatus == LOCAL_GL_PURGED_CONTEXT_RESET_NV) {
-      layers::CompositorThreadHolder::Loop()->PostTask(
+      layers::CompositorThread()->Dispatch(
           NewRunnableFunction("DoNotifyWebRenderContextPurgeRunnable",
                               &DoNotifyWebRenderContextPurge, mBridge));
     }
@@ -266,7 +268,7 @@ void RendererOGL::AccumulateMemoryReport(MemoryReport* aReport) {
   // Assume BGRA8 for the format since it's not exposed anywhere,
   // and all compositor backends should be using that.
   uintptr_t swapChainSize = size.width * size.height *
-                            BytesPerPixel(SurfaceFormat::B8G8R8A8) *
+                            BytesPerPixel(gfx::SurfaceFormat::B8G8R8A8) *
                             (mCompositor->UseTripleBuffering() ? 3 : 2);
   aReport->swap_chain += swapChainSize;
 }

@@ -57,3 +57,9 @@ fuzzy(0-128,0-4) == number-reframe-anon-text-field.html number-reframe-anon-text
 
 # l10n
 != number-localized.html number-localized-notref.html
+
+== padding-001.html padding-001-ref.html
+!= padding-001.html padding-001-notref.html
+== padding-002.html padding-002-ref.html
+
+== clipped-text.html clipped-text-ref.html

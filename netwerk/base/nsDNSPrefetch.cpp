@@ -71,7 +71,7 @@ nsresult nsDNSPrefetch::Prefetch(uint32_t flags) {
   // then our timing will be useless. However, in such a case,
   // mEndTimestamp will be a null timestamp and callers should check
   // TimingsValid() before using the timing.
-  nsCOMPtr<nsIEventTarget> target = mozilla::GetCurrentThreadEventTarget();
+  nsCOMPtr<nsIEventTarget> target = mozilla::GetCurrentEventTarget();
 
   flags |= nsIDNSService::GetFlagsFromTRRMode(mTRRMode);
 
@@ -122,24 +122,6 @@ nsDNSPrefetch::OnLookupComplete(nsICancelable* request, nsIDNSRecord* rec,
     listener->OnLookupComplete(request, rec, status);
   }
   // OnLookupComplete should be called on the target thread, so we release
-  // mListener here to make sure mListener is also released on the target
-  // thread.
-  mListener = nullptr;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDNSPrefetch::OnLookupByTypeComplete(nsICancelable* request,
-                                      nsIDNSByTypeRecord* res,
-                                      nsresult status) {
-  if (mStoreTiming) {
-    mEndTimestamp = mozilla::TimeStamp::Now();
-  }
-  nsCOMPtr<nsIDNSListener> listener = do_QueryReferent(mListener);
-  if (listener) {
-    listener->OnLookupByTypeComplete(request, res, status);
-  }
-  // OnLookupByTypeComplete should be called on the target thread, so we release
   // mListener here to make sure mListener is also released on the target
   // thread.
   mListener = nullptr;

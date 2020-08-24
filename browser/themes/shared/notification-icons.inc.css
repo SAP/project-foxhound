@@ -12,8 +12,8 @@
 }
 
 #notification-popup-box {
-  padding: 5px 0px;
-  margin: -5px 0px;
+  padding: 5px 0;
+  margin: -5px 0;
   margin-inline-end: -5px;
   padding-inline-end: 5px;
 }
@@ -38,10 +38,13 @@
   list-style-image: url(chrome://browser/skin/notification-icons/focus-tab-by-prompt.svg);
 }
 
-.popup-notification-icon[popupid="persistent-storage"],
 .popup-notification-icon[popupid="storage-access"],
-.persistent-storage-icon,
 .storage-access-icon {
+  list-style-image: url(chrome://browser/skin/controlcenter/3rdpartycookies.svg);
+}
+
+.popup-notification-icon[popupid="persistent-storage"],
+.persistent-storage-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/persistent-storage.svg);
 }
 
@@ -174,6 +177,10 @@
   list-style-image: url(chrome://browser/skin/notification-icons/midi.svg);
 }
 
+.https-only-load-insecure-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/https-only-load-insecure-blocked.svg);
+}
+
 #canvas-notification-icon,
 .popup-notification-icon[popupid="canvas-permissions-prompt"],
 .canvas-icon {
@@ -247,7 +254,8 @@ html|*#webRTC-previewVideo {
   transform: scaleX(-1);
 }
 
-.identity-popup-popup-menulist {
+#identity-popup-popup-menulist,
+#identity-popup-popup-menulist > menupopup {
   min-width: 6.5em;
 }
 
@@ -273,7 +281,7 @@ html|*#webRTC-previewVideo {
 /* INSTALL ADDONS */
 
 .install-icon {
-  list-style-image: url(chrome://mozapps/skin/extensions/extensionGeneric-16.svg);
+  list-style-image: url(chrome://mozapps/skin/extensions/extension.svg);
 }
 
 .install-icon.blocked-permission-icon,
@@ -292,7 +300,7 @@ html|*#webRTC-previewVideo {
 }
 
 .popup-notification-icon[popupid="addon-install-confirmation"] {
-  list-style-image: url(chrome://browser/skin/addons/addon-install-confirm.svg);
+  list-style-image: url(chrome://browser/content/extension.svg);
 }
 
 #addon-install-confirmation-notification[warning] .popup-notification-icon[popupid="addon-install-confirmation"] {
@@ -400,6 +408,7 @@ html|*#webRTC-previewVideo {
 
 /* UPDATE */
 .popup-notification-icon[popupid="update-available"],
+.popup-notification-icon[popupid="update-downloading"],
 .popup-notification-icon[popupid="update-manual"],
 .popup-notification-icon[popupid="update-restart"] {
   background: #74BF43 url(chrome://browser/skin/notification-icons/update.svg) no-repeat center;

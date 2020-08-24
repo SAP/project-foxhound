@@ -7,7 +7,7 @@
 
 const { TargetList } = require("devtools/shared/resources/target-list");
 
-const FISSION_TEST_URL = URL_ROOT + "/fission_document.html";
+const FISSION_TEST_URL = URL_ROOT_SSL + "/fission_document.html";
 
 add_task(async function() {
   // Disable the preloaded process as it gets created lazily and may interfere
@@ -45,13 +45,13 @@ async function testPreffedOffMainProcess(mainRoot, mainProcess) {
   // The API should only report the top level target,
   // i.e. the Main process target, which is considered as frame
   // and not as process.
-  const processes = await targetList.getAllTargets(TargetList.TYPES.PROCESS);
+  const processes = await targetList.getAllTargets([TargetList.TYPES.PROCESS]);
   is(
     processes.length,
     0,
     "We only get a frame target for the top level target"
   );
-  const frames = await targetList.getAllTargets(TargetList.TYPES.FRAME);
+  const frames = await targetList.getAllTargets([TargetList.TYPES.FRAME]);
   is(frames.length, 1, "We get only one frame when preffed-off");
   is(
     frames[0],
@@ -60,7 +60,7 @@ async function testPreffedOffMainProcess(mainRoot, mainProcess) {
   );
 
   const processTargets = [];
-  const onProcessAvailable = ({ type, targetFront, isTopLevel }) => {
+  const onProcessAvailable = ({ targetFront }) => {
     processTargets.push(targetFront);
   };
   await targetList.watchTargets([TargetList.TYPES.PROCESS], onProcessAvailable);
@@ -68,13 +68,16 @@ async function testPreffedOffMainProcess(mainRoot, mainProcess) {
   targetList.unwatchTargets([TargetList.TYPES.PROCESS], onProcessAvailable);
 
   const frameTargets = [];
-  const onFrameAvailable = ({ type, targetFront, isTopLevel }) => {
+  const onFrameAvailable = ({ targetFront }) => {
     is(
-      type,
+      targetFront.targetType,
       TargetList.TYPES.FRAME,
       "We are only notified about frame targets"
     );
-    ok(isTopLevel, "We are only notified about the top level target");
+    ok(
+      targetFront.isTopLevel,
+      "We are only notified about the top level target"
+    );
     frameTargets.push(targetFront);
   };
   await targetList.watchTargets([TargetList.TYPES.FRAME], onFrameAvailable);
@@ -99,17 +102,17 @@ async function testPreffedOffTab(mainRoot) {
   );
 
   // Create a TargetList for a given test tab
-  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   const tab = await addTab(FISSION_TEST_URL);
-  const target = await mainRoot.getTab({ tab });
+  const descriptor = await mainRoot.getTab({ tab });
+  const target = await descriptor.getTarget();
   const targetList = new TargetList(mainRoot, target);
 
   await targetList.startListening();
 
-  const processes = await targetList.getAllTargets(TargetList.TYPES.PROCESS);
+  const processes = await targetList.getAllTargets([TargetList.TYPES.PROCESS]);
   is(processes.length, 0, "Tabs don't expose any process");
   // This only reports the top level target when devtools fission preference is off
-  const frames = await targetList.getAllTargets(TargetList.TYPES.FRAME);
+  const frames = await targetList.getAllTargets([TargetList.TYPES.FRAME]);
   is(frames.length, 1, "We get only one frame when preffed-off");
   is(frames[0], target, "The target is the top level one via getAllTargets");
 
@@ -122,13 +125,16 @@ async function testPreffedOffTab(mainRoot) {
   targetList.unwatchTargets([TargetList.TYPES.PROCESS], onProcessAvailable);
 
   const frameTargets = [];
-  const onFrameAvailable = ({ type, targetFront, isTopLevel }) => {
+  const onFrameAvailable = ({ targetFront }) => {
     is(
-      type,
+      targetFront.targetType,
       TargetList.TYPES.FRAME,
       "We are only notified about frame targets"
     );
-    ok(isTopLevel, "We are only notified about the top level target");
+    ok(
+      targetFront.isTopLevel,
+      "We are only notified about the top level target"
+    );
     frameTargets.push(targetFront);
   };
   await targetList.watchTargets([TargetList.TYPES.FRAME], onFrameAvailable);

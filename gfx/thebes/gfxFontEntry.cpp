@@ -18,6 +18,7 @@
 #include "gfxTypes.h"
 #include "gfxContext.h"
 #include "gfxFontConstants.h"
+#include "gfxGraphiteShaper.h"
 #include "gfxHarfBuzzShaper.h"
 #include "gfxUserFontSet.h"
 #include "gfxPlatformFontList.h"
@@ -149,6 +150,19 @@ gfxFontEntry::~gfxFontEntry() {
   // face objects should have been released.
   MOZ_ASSERT(!mHBFace);
   MOZ_ASSERT(!mGrFaceInitialized);
+}
+
+void gfxFontEntry::InitializeFrom(fontlist::Face* aFace,
+                                  const fontlist::Family* aFamily) {
+  mStyleRange = aFace->mStyle;
+  mWeightRange = aFace->mWeight;
+  mStretchRange = aFace->mStretch;
+  mFixedPitch = aFace->mFixedPitch;
+  mIsBadUnderlineFont = aFamily->IsBadUnderlineFamily();
+  mShmemFace = aFace;
+  auto* list = gfxPlatformFontList::PlatformFontList()->SharedFontList();
+  mFamilyName = aFamily->DisplayName().AsString(list);
+  mHasCmapTable = TrySetShmemCharacterMap();
 }
 
 bool gfxFontEntry::TrySetShmemCharacterMap() {
@@ -1046,9 +1060,9 @@ void gfxFontEntry::GetFeatureInfo(nsTArray<gfxFontFeatureInfo>& aFeatureInfo) {
 }
 
 bool gfxFontEntry::GetColorLayersInfo(
-    uint32_t aGlyphId, const mozilla::gfx::Color& aDefaultColor,
+    uint32_t aGlyphId, const mozilla::gfx::DeviceColor& aDefaultColor,
     nsTArray<uint16_t>& aLayerGlyphs,
-    nsTArray<mozilla::gfx::Color>& aLayerColors) {
+    nsTArray<mozilla::gfx::DeviceColor>& aLayerColors) {
   return gfxFontUtils::GetColorGlyphLayers(
       mCOLR, mCPAL, aGlyphId, aDefaultColor, aLayerGlyphs, aLayerColors);
 }
@@ -1947,8 +1961,8 @@ bool gfxFontFamily::CheckForLegacyFamilyNames(gfxPlatformFontList* aFontList) {
   const uint32_t kNAME = TRUETYPE_TAG('n', 'a', 'm', 'e');
   // Make a local copy of the array of font faces, in case of changes
   // during the iteration.
-  AutoTArray<RefPtr<gfxFontEntry>, 8> faces(mAvailableFonts);
-  for (auto& fe : faces) {
+  for (auto& fe :
+       CopyableAutoTArray<RefPtr<gfxFontEntry>, 8>(mAvailableFonts)) {
     if (!fe) {
       continue;
     }
@@ -1960,7 +1974,7 @@ bool gfxFontFamily::CheckForLegacyFamilyNames(gfxPlatformFontList* aFontList) {
     uint32_t dataLength;
     const char* nameData = hb_blob_get_data(nameTable, &dataLength);
     if (LookForLegacyFamilyName(Name(), nameData, dataLength, legacyName)) {
-      if (aFontList->AddWithLegacyFamilyName(legacyName, fe)) {
+      if (aFontList->AddWithLegacyFamilyName(legacyName, fe, mVisibility)) {
         added = true;
       }
     }
@@ -1981,13 +1995,11 @@ void gfxFontFamily::ReadFaceNames(gfxPlatformFontList* aPlatformFontList,
 
   if (!mOtherFamilyNamesInitialized && aFontInfoData &&
       aFontInfoData->mLoadOtherNames && !asyncFontLoaderDisabled) {
-    AutoTArray<nsCString, 4> otherFamilyNames;
-    bool foundOtherNames =
-        aFontInfoData->GetOtherFamilyNames(mName, otherFamilyNames);
-    if (foundOtherNames) {
-      uint32_t i, n = otherFamilyNames.Length();
+    const auto* otherFamilyNames = aFontInfoData->GetOtherFamilyNames(mName);
+    if (otherFamilyNames) {
+      uint32_t i, n = otherFamilyNames->Length();
       for (i = 0; i < n; i++) {
-        aPlatformFontList->AddOtherFamilyName(this, otherFamilyNames[i]);
+        aPlatformFontList->AddOtherFamilyName(this, (*otherFamilyNames)[i]);
       }
     }
     mOtherFamilyNamesInitialized = true;

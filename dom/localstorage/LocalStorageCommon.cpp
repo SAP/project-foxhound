@@ -8,6 +8,7 @@
 
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/net/MozURL.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 namespace mozilla {
 namespace dom {
@@ -29,7 +30,10 @@ bool NextGenLocalStorageEnabled() {
     StaticMutexAutoLock lock(gNextGenLocalStorageMutex);
 
     if (gNextGenLocalStorageEnabled == -1) {
-      bool enabled = GetCurrentNextGenPrefValue();
+      // Ideally all this Mutex stuff would be replaced with just using
+      // an AtStartup StaticPref, but there are concerns about this causing
+      // deadlocks if this access needs to init the AtStartup cache.
+      bool enabled = StaticPrefs::dom_storage_next_gen_DoNotUseDirectly();
       gNextGenLocalStorageEnabled = enabled ? 1 : 0;
     }
 
@@ -135,6 +139,21 @@ nsresult GenerateOriginKey2(const PrincipalInfo& aPrincipalInfo,
 }
 
 LogModule* GetLocalStorageLogger() { return gLogger; }
+
+namespace localstorage {
+
+void HandleError(const nsLiteralCString& aExpr,
+                 const nsLiteralCString& aSourceFile, int32_t aSourceLine) {
+#ifdef DEBUG
+  NS_DebugBreak(NS_DEBUG_WARNING, "Error", aExpr.get(), aSourceFile.get(),
+                aSourceLine);
+
+#endif
+
+  // TODO: Report to browser console
+}
+
+}  // namespace localstorage
 
 }  // namespace dom
 }  // namespace mozilla

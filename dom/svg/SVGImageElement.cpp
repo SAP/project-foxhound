@@ -64,7 +64,7 @@ SVGImageElement::SVGImageElement(
   AddStatesSilently(NS_EVENT_STATE_BROKEN);
 }
 
-SVGImageElement::~SVGImageElement() { DestroyImageLoadingContent(); }
+SVGImageElement::~SVGImageElement() { nsImageLoadingContent::Destroy(); }
 
 nsCSSPropertyID SVGImageElement::GetCSSPropertyIdForAttrEnum(
     uint8_t aAttrEnum) {
@@ -229,6 +229,11 @@ EventStates SVGImageElement::IntrinsicState() const {
          nsImageLoadingContent::ImageState();
 }
 
+void SVGImageElement::DestroyContent() {
+  nsImageLoadingContent::Destroy();
+  SVGImageElementBase::DestroyContent();
+}
+
 NS_IMETHODIMP_(bool)
 SVGImageElement::IsAttributeMapped(const nsAtom* name) const {
   static const MappedAttributeEntry* const map[] = {
@@ -265,7 +270,7 @@ bool SVGImageElement::GetGeometryBounds(
 
 already_AddRefed<Path> SVGImageElement::BuildPath(PathBuilder* aBuilder) {
   // To get bound, the faster method GetGeometryBounds() should already return
-  // success. For render and hittest, nsSVGImageFrame should have its own
+  // success. For render and hittest, SVGImageFrame should have its own
   // implementation that doesn't need to build path for an image.
   MOZ_ASSERT_UNREACHABLE(
       "There is no reason to call BuildPath for SVGImageElement");
@@ -299,13 +304,6 @@ SVGImageElement::GetAnimatedPreserveAspectRatio() {
 SVGElement::StringAttributesInfo SVGImageElement::GetStringInfo() {
   return StringAttributesInfo(mStringAttributes, sStringInfo,
                               ArrayLength(sStringInfo));
-}
-
-nsresult SVGImageElement::CopyInnerTo(Element* aDest) {
-  if (aDest->OwnerDoc()->IsStaticDocument()) {
-    CreateStaticImageClone(static_cast<SVGImageElement*>(aDest));
-  }
-  return SVGImageElementBase::CopyInnerTo(aDest);
 }
 
 }  // namespace dom

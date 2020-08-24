@@ -31,8 +31,9 @@ using namespace dom;
 
 NS_IMPL_ISUPPORTS(AccessibleCaret::DummyTouchListener, nsIDOMEventListener)
 
-NS_NAMED_LITERAL_STRING(AccessibleCaret::sTextOverlayElementId, "text-overlay");
-NS_NAMED_LITERAL_STRING(AccessibleCaret::sCaretImageElementId, "image");
+const nsLiteralString AccessibleCaret::sTextOverlayElementId =
+    u"text-overlay"_ns;
+const nsLiteralString AccessibleCaret::sCaretImageElementId = u"image"_ns;
 
 #define AC_PROCESS_ENUM_TO_STREAM(e) \
   case (e):                          \
@@ -113,16 +114,16 @@ nsAutoString AccessibleCaret::AppearanceString(Appearance aAppearance) {
   switch (aAppearance) {
     case Appearance::None:
     case Appearance::NormalNotShown:
-      string = NS_LITERAL_STRING("none");
+      string = u"none"_ns;
       break;
     case Appearance::Normal:
-      string = NS_LITERAL_STRING("normal");
+      string = u"normal"_ns;
       break;
     case Appearance::Right:
-      string = NS_LITERAL_STRING("right");
+      string = u"right"_ns;
       break;
     case Appearance::Left:
-      string = NS_LITERAL_STRING("left");
+      string = u"left"_ns;
       break;
   }
   return string;
@@ -167,20 +168,14 @@ void AccessibleCaret::EnsureApzAware() {
   // the element already.
   if (!CaretElement().IsApzAware()) {
     // FIXME(emilio): Is this needed anymore?
-    CaretElement().AddEventListener(NS_LITERAL_STRING("touchstart"),
-                                    mDummyTouchListener, false);
+    CaretElement().AddEventListener(u"touchstart"_ns, mDummyTouchListener,
+                                    false);
   }
 }
 
 bool AccessibleCaret::IsInPositionFixedSubtree() const {
-  for (nsIFrame* f = mImaginaryCaretReferenceFrame.GetFrame(); f;
-       f = f->GetParent()) {
-    if (f->StyleDisplay()->mPosition == StylePositionProperty::Fixed &&
-        nsLayoutUtils::IsReallyFixedPos(f)) {
-      return true;
-    }
-  }
-  return false;
+  return nsLayoutUtils::IsInPositionFixedSubtree(
+      mImaginaryCaretReferenceFrame.GetFrame());
 }
 
 void AccessibleCaret::InjectCaretElement(Document* aDocument) {
@@ -206,8 +201,8 @@ already_AddRefed<Element> AccessibleCaret::CreateCaretElement(
 
   ErrorResult rv;
   RefPtr<Element> parent = aDocument->CreateHTMLElement(nsGkAtoms::div);
-  parent->ClassList()->Add(NS_LITERAL_STRING("moz-accessiblecaret"), rv);
-  parent->ClassList()->Add(NS_LITERAL_STRING("none"), rv);
+  parent->ClassList()->Add(u"moz-accessiblecaret"_ns, rv);
+  parent->ClassList()->Add(u"none"_ns, rv);
 
   auto CreateAndAppendChildElement =
       [aDocument, &parent](const nsLiteralString& aElementId) {
@@ -223,8 +218,8 @@ already_AddRefed<Element> AccessibleCaret::CreateCaretElement(
 }
 
 void AccessibleCaret::RemoveCaretElement(Document* aDocument) {
-  CaretElement().RemoveEventListener(NS_LITERAL_STRING("touchstart"),
-                                     mDummyTouchListener, false);
+  CaretElement().RemoveEventListener(u"touchstart"_ns, mDummyTouchListener,
+                                     false);
 
   aDocument->RemoveAnonymousContent(*mCaretElementHolder, IgnoreErrors());
 }

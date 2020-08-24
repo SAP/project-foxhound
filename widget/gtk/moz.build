@@ -20,7 +20,7 @@ if CONFIG['MOZ_WAYLAND']:
     DIRS += ['wayland', 'mozwayland']
 
 EXPORTS += [
-    'mozcontainer.h',
+    'MozContainer.h',
     'nsGTKToolkit.h',
     'nsIImageToPixbuf.h',
 ]
@@ -31,7 +31,7 @@ EXPORTS.mozilla += [
 
 UNIFIED_SOURCES += [
     'IMContextWrapper.cpp',
-    'mozcontainer.cpp',
+    'MozContainer.cpp',
     'MPRISServiceHandler.cpp',
     'NativeKeyBindings.cpp',
     'nsAppShell.cpp',
@@ -65,7 +65,7 @@ if CONFIG['MOZ_X11']:
         'CompositorWidgetParent.cpp',
         'GtkCompositorWidget.cpp',
         'InProcessGtkCompositorWidget.cpp',
-        'nsIdleServiceGTK.cpp',
+        'nsUserIdleServiceGTK.cpp',
     ]
     EXPORTS.mozilla.widget += [
         'CompositorWidgetChild.h',
@@ -76,7 +76,6 @@ if CONFIG['MOZ_X11']:
 
 if CONFIG['NS_PRINTING']:
     UNIFIED_SOURCES += [
-        'nsCUPSShim.cpp',
         'nsDeviceContextSpecG.cpp',
         'nsPrintDialogGTK.cpp',
         'nsPrintSettingsGTK.cpp',
@@ -100,14 +99,18 @@ if CONFIG['MOZ_X11']:
 
 if CONFIG['MOZ_WAYLAND']:
     UNIFIED_SOURCES += [
+        'DMABufLibWrapper.cpp',
+        'DMABufSurface.cpp',
+        'MozContainerWayland.cpp',
         'nsClipboardWayland.cpp',
         'nsWaylandDisplay.cpp',
-        'WaylandDMABufSurface.cpp',
         'WindowSurfaceWayland.cpp',
     ]
     EXPORTS.mozilla.widget += [
+        'DMABufLibWrapper.h',
+        'DMABufSurface.h',
+        'MozContainerWayland.h',
         'nsWaylandDisplay.h',
-        'WaylandDMABufSurface.h',
     ]
 
 if CONFIG['ACCESSIBILITY']:
@@ -134,6 +137,7 @@ LOCAL_INCLUDES += [
     '/layout/generic',
     '/layout/xul',
     '/other-licenses/atk-1.0',
+    '/third_party/cups/include',
     '/widget',
     '/widget/headless',
 ]

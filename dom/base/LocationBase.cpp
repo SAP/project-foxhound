@@ -103,6 +103,8 @@ already_AddRefed<nsDocShellLoadState> LocationBase::CheckURL(
   if (referrerInfo) {
     loadState->SetReferrerInfo(referrerInfo);
   }
+  loadState->SetHasValidUserGestureActivation(
+      doc->HasValidTransientUserGestureActivation());
 
   return loadState.forget();
 }
@@ -110,35 +112,38 @@ already_AddRefed<nsDocShellLoadState> LocationBase::CheckURL(
 void LocationBase::SetURI(nsIURI* aURI, nsIPrincipal& aSubjectPrincipal,
                           ErrorResult& aRv, bool aReplace) {
   RefPtr<BrowsingContext> bc = GetBrowsingContext();
-  if (bc && !bc->IsDiscarded()) {
-    RefPtr<nsDocShellLoadState> loadState =
-        CheckURL(aURI, aSubjectPrincipal, aRv);
-    if (aRv.Failed()) {
-      return;
-    }
+  if (!bc || bc->IsDiscarded()) {
+    return;
+  }
 
-    if (aReplace) {
-      loadState->SetLoadType(LOAD_STOP_CONTENT_AND_REPLACE);
-    } else {
-      loadState->SetLoadType(LOAD_STOP_CONTENT);
-    }
+  RefPtr<nsDocShellLoadState> loadState =
+      CheckURL(aURI, aSubjectPrincipal, aRv);
+  if (aRv.Failed()) {
+    return;
+  }
 
-    // Get the incumbent script's browsing context to set as source.
-    nsCOMPtr<nsPIDOMWindowInner> sourceWindow =
-        nsContentUtils::CallerInnerWindow();
-    RefPtr<BrowsingContext> accessingBC;
-    if (sourceWindow) {
-      accessingBC = sourceWindow->GetBrowsingContext();
-      loadState->SetSourceDocShell(sourceWindow->GetDocShell());
-    }
+  if (aReplace) {
+    loadState->SetLoadType(LOAD_STOP_CONTENT_AND_REPLACE);
+  } else {
+    loadState->SetLoadType(LOAD_STOP_CONTENT);
+  }
 
-    loadState->SetLoadFlags(nsIWebNavigation::LOAD_FLAGS_NONE);
-    loadState->SetFirstParty(true);
+  // Get the incumbent script's browsing context to set as source.
+  nsCOMPtr<nsPIDOMWindowInner> sourceWindow =
+      nsContentUtils::CallerInnerWindow();
+  if (sourceWindow) {
+    RefPtr<BrowsingContext> sourceBC = sourceWindow->GetBrowsingContext();
+    loadState->SetSourceBrowsingContext(sourceBC);
+    loadState->SetHasValidUserGestureActivation(
+        sourceBC && sourceBC->HasValidTransientUserGestureActivation());
+  }
 
-    nsresult rv = bc->LoadURI(accessingBC, loadState);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      aRv.Throw(rv);
-    }
+  loadState->SetLoadFlags(nsIWebNavigation::LOAD_FLAGS_NONE);
+  loadState->SetFirstParty(true);
+
+  nsresult rv = bc->LoadURI(loadState);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRv.Throw(rv);
   }
 }
 

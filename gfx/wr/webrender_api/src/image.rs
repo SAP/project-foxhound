@@ -14,6 +14,10 @@ use crate::display_item::ImageRendering;
 use crate::font::{FontInstanceKey, FontInstanceData, FontKey, FontTemplate};
 use crate::units::*;
 
+/// The default tile size for blob images and regular images larger than
+/// the maximum texture size.
+pub const DEFAULT_TILE_SIZE: TileSize = 512;
+
 /// An opaque identifier describing an image registered with WebRender.
 /// This is used as a handle to reference images, and is used as the
 /// hash map key for the actual image storage in the `ResourceCache`.
@@ -379,6 +383,11 @@ pub trait BlobImageHandler: Send {
     /// Creates a snapshot of the current state of blob images in the handler.
     fn create_blob_rasterizer(&mut self) -> Box<dyn AsyncBlobImageRasterizer>;
 
+    /// Creates an empty blob handler of the same type.
+    ///
+    /// This is used to allow creating new API endpoints with blob handlers installed on them.
+    fn create_similar(&self) -> Box<dyn BlobImageHandler>;
+
     /// A hook to let the blob image handler update any state related to resources that
     /// are not bundled in the blob recording itself.
     fn prepare_resources(
@@ -389,7 +398,7 @@ pub trait BlobImageHandler: Send {
 
     /// Register a blob image.
     fn add(&mut self, key: BlobImageKey, data: Arc<BlobImageData>, visible_rect: &DeviceIntRect,
-           tiling: Option<TileSize>);
+           tile_size: TileSize);
 
     /// Update an already registered blob image.
     fn update(&mut self, key: BlobImageKey, data: Arc<BlobImageData>, visible_rect: &DeviceIntRect,
@@ -579,8 +588,6 @@ pub enum BlobImageError {
 pub struct BlobImageRequest {
     /// Unique handle to the image.
     pub key: BlobImageKey,
-    /// Tiling offset in number of tiles, if applicable.
-    ///
-    /// `None` if the image will not be tiled.
-    pub tile: Option<TileOffset>,
+    /// Tiling offset in number of tiles.
+    pub tile: TileOffset,
 }

@@ -14,6 +14,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/HTMLIFrameElementBinding.h"
 #include "nsContentUtils.h"
 #include "nsFrameLoader.h"
@@ -122,7 +123,7 @@ class TCPPresentationChannelDescription final
       : mAddress(aAddress), mPort(aPort) {}
 
  private:
-  ~TCPPresentationChannelDescription() {}
+  ~TCPPresentationChannelDescription() = default;
 
   nsCString mAddress;
   uint16_t mPort;

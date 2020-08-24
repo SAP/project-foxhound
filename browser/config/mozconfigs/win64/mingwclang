@@ -43,6 +43,8 @@ ac_add_options --enable-proxy-bypass-protection
 # These aren't supported on mingw at this time
 ac_add_options --disable-webrtc # Bug 1393901
 ac_add_options --disable-geckodriver # Bug 1489320
+ac_add_options --disable-update-agent # Bug 1561797
+ac_add_options --disable-default-browser-agent # WinToast does not build on mingw
 
 # Find our toolchain
 HOST_CC="$MOZ_FETCHES_DIR/clang/bin/clang"
@@ -54,6 +56,8 @@ ac_add_options --with-libclang-path="$MOZ_FETCHES_DIR/clang/lib"
 CXXFLAGS="-fms-extensions"
 AR=llvm-ar
 RANLIB=llvm-ranlib
+CFLAGS="$CFLAGS -fcrash-diagnostics-dir=${UPLOAD_PATH}"
+CXXFLAGS="$CXXFLAGS -fcrash-diagnostics-dir=${UPLOAD_PATH}"
 
 # For Stylo
 BINDGEN_CFLAGS="-I$MOZ_FETCHES_DIR/clang/x86_64-w64-mingw32/include/c++/v1 -I$MOZ_FETCHES_DIR/clang/x86_64-w64-mingw32/include"
@@ -70,4 +74,3 @@ mk_add_options "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 ac_add_options --with-branding=browser/branding/nightly
 
 . "$topsrcdir/build/mozconfig.common.override"
-. "$topsrcdir/build/mozconfig.cache"

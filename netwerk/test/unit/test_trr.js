@@ -1,8 +1,6 @@
 "use strict";
 
-const { NodeServer, HttpServer } = ChromeUtils.import(
-  "resource://testing-common/httpd.js"
-);
+const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
   Ci.nsIDNSService
 );
@@ -11,13 +9,15 @@ const { MockRegistrar } = ChromeUtils.import(
 );
 const mainThread = Services.tm.currentThread;
 
+const gDefaultPref = Services.prefs.getDefaultBranch("");
+
 const defaultOriginAttributes = {};
 let h2Port = null;
 
 async function SetParentalControlEnabled(aEnabled) {
   let parentalControlsService = {
     parentalControlsEnabled: aEnabled,
-    QueryInterface: ChromeUtils.generateQI([Ci.nsIParentalControlsService]),
+    QueryInterface: ChromeUtils.generateQI(["nsIParentalControlsService"]),
   };
   let cid = MockRegistrar.register(
     "@mozilla.org/parental-controls-service;1",
@@ -100,6 +100,9 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("network.http.spdy.enabled.http2");
   Services.prefs.clearUserPref("network.dns.localDomains");
   Services.prefs.clearUserPref("network.dns.native-is-localhost");
+  Services.prefs.clearUserPref(
+    "network.trr.send_empty_accept-encoding_headers"
+  );
 });
 
 // This is an IP that is local, so we don't crash when connecting to it,
@@ -118,7 +121,8 @@ class DNSListener {
     expectedSuccess = true,
     delay,
     trrServer = "",
-    expectEarlyFail = false
+    expectEarlyFail = false,
+    flags = 0
   ) {
     this.name = name;
     this.expectedAnswer = expectedAnswer;
@@ -130,7 +134,7 @@ class DNSListener {
     if (trrServer == "") {
       this.request = dns.asyncResolve(
         name,
-        0,
+        flags,
         this,
         mainThread,
         defaultOriginAttributes
@@ -140,7 +144,7 @@ class DNSListener {
         this.request = dns.asyncResolveWithTrrServer(
           name,
           trrServer,
-          0,
+          flags,
           this,
           mainThread,
           defaultOriginAttributes
@@ -149,7 +153,6 @@ class DNSListener {
       } catch (e) {
         Assert.ok(expectEarlyFail);
         this.resolve([e]);
-        return;
       }
     }
   }
@@ -211,7 +214,7 @@ class DNSListener {
     if (aIID.equals(Ci.nsIDNSListener) || aIID.equals(Ci.nsISupports)) {
       return this;
     }
-    throw Cr.NS_ERROR_NO_INTERFACE;
+    throw Components.Exception("", Cr.NS_ERROR_NO_INTERFACE);
   }
 
   // Implement then so we can await this as a promise.
@@ -640,48 +643,7 @@ add_task(async function test10() {
     "confirm.example.com"
   );
 
-  try {
-    let [, , inStatus] = await new DNSListener(
-      "wrong.example.com",
-      undefined,
-      false
-    );
-    Assert.ok(
-      !Components.isSuccessCode(inStatus),
-      `${inStatus} should be an error code`
-    );
-  } catch (e) {
-    await new Promise(resolve => do_timeout(200, resolve));
-  }
-
-  // confirmationNS, retry until the confirmed NS works
-  let test_loops = 100;
-  print("test confirmationNS, retry until the confirmed NS works");
-
-  // this test needs to resolve new names in every attempt since the DNS
-  // will keep the negative resolved info
-  while (test_loops > 0) {
-    print(`loops remaining: ${test_loops}\n`);
-    try {
-      let [, inRecord, inStatus] = await new DNSListener(
-        `10b-${test_loops}.example.com`,
-        undefined,
-        false
-      );
-      if (inRecord) {
-        Assert.equal(inStatus, Cr.NS_OK);
-        let answer = inRecord.getNextAddrAsString();
-        Assert.equal(answer, "1::ffff");
-        break;
-      }
-    } catch (e) {
-      dump(e);
-    }
-
-    test_loops--;
-    await new Promise(resolve => do_timeout(0, resolve));
-  }
-  Assert.notEqual(test_loops, 0);
+  await new DNSListener("skipConfirmationForMode3.example.com", "1::ffff");
 });
 
 // use a slow server and short timeout!
@@ -941,7 +903,7 @@ add_task(async function test24e() {
 function observerPromise(topic) {
   return new Promise(resolve => {
     let observer = {
-      QueryInterface: ChromeUtils.generateQI([Ci.nsIObserver]),
+      QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
       observe(aSubject, aTopic, aData) {
         dump(`observe: ${aSubject}, ${aTopic}, ${aData} \n`);
         if (aTopic == topic) {
@@ -1364,7 +1326,7 @@ add_task(async function test_dnsSuffix() {
 
     let networkLinkService = {
       dnsSuffixList: ["example.org"],
-      QueryInterface: ChromeUtils.generateQI([Ci.nsINetworkLinkService]),
+      QueryInterface: ChromeUtils.generateQI(["nsINetworkLinkService"]),
     };
     Services.obs.notifyObservers(
       networkLinkService,
@@ -1401,7 +1363,7 @@ add_task(async function test_vpnDetection() {
 
   let networkLinkService = {
     platformDNSIndications: Ci.nsINetworkLinkService.VPN_DETECTED,
-    QueryInterface: ChromeUtils.generateQI([Ci.nsINetworkLinkService]),
+    QueryInterface: ChromeUtils.generateQI(["nsINetworkLinkService"]),
   };
 
   Services.obs.notifyObservers(
@@ -1499,13 +1461,15 @@ add_task(async function test_async_resolve_with_trr_server_5() {
   dns.clearCache(true);
   Services.prefs.setIntPref("network.trr.mode", 5); // TRR-user-disabled
 
+  // When dns is resolved in socket process, we can't set |expectEarlyFail| to true.
+  let inSocketProcess = mozinfo.socketprocess_networking;
   let [_] = await new DNSListener(
     "bar_with_trr3.example.com",
     undefined,
     false,
     undefined,
     `https://foo.example.com:${h2Port}/doh?responseIP=3.3.3.3`,
-    true
+    !inSocketProcess
   );
 
   // Call normal AsyncOpen, it will return result from the native resolver.
@@ -1632,7 +1596,7 @@ add_task(async function test_async_resolve_with_trr_server_no_push_part_2() {
 // Verify that AsyncResoleWithTrrServer is not block on confirmationNS of the defaut serveer.
 add_task(async function test_async_resolve_with_trr_server_confirmation_ns() {
   dns.clearCache(true);
-  Services.prefs.setIntPref("network.trr.mode", 3); // TRR-only
+  Services.prefs.setIntPref("network.trr.mode", 2); // TRR-only
   Services.prefs.clearUserPref("network.trr.useGET");
   Services.prefs.clearUserPref("network.trr.disable-ECS");
   Services.prefs.setCharPref(
@@ -1653,20 +1617,7 @@ add_task(async function test_async_resolve_with_trr_server_confirmation_ns() {
     `https://foo.example.com:${h2Port}/doh?responseIP=3.3.3.3`
   );
 
-  // Verify that normal dns fetch will fail
-  try {
-    let [, , inStatus] = await new DNSListener(
-      "wrong.example.com",
-      undefined,
-      false
-    );
-    Assert.ok(
-      !Components.isSuccessCode(inStatus),
-      `${inStatus} should be an error code`
-    );
-  } catch (e) {
-    await new Promise(resolve => do_timeout(200, resolve));
-  }
+  Services.prefs.setCharPref("network.trr.confirmationNS", "skip");
 });
 
 // verify TRR timings
@@ -1722,25 +1673,437 @@ add_task(async function test_no_fetch_time_for_rfc1918_not_allowed() {
   await new DNSListener("rfc1918_time.example.com", "127.0.0.1", true, 0);
 });
 
+add_task(async function test_content_encoding_gzip() {
+  dns.clearCache(true);
+  Services.prefs.setBoolPref(
+    "network.trr.send_empty_accept-encoding_headers",
+    false
+  );
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=2.2.2.2`
+  );
+
+  await new DNSListener("bar.example.com", "2.2.2.2");
+});
+
+add_task(async function test_redirect_get() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3); // TRR-only
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?redirect=4.4.4.4{&dns}`
+  );
+  Services.prefs.clearUserPref("network.trr.allow-rfc1918");
+  Services.prefs.setBoolPref("network.trr.useGET", true);
+  Services.prefs.setBoolPref("network.trr.disable-ECS", true);
+  await new DNSListener("ecs.example.com", "4.4.4.4");
+});
+
+// test redirect
+add_task(async function test_redirect_post() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.setBoolPref("network.trr.useGET", false);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?redirect=4.4.4.4`
+  );
+
+  await new DNSListener("bar.example.com", "4.4.4.4");
+});
+
 // confirmationNS set without confirmed NS yet
 // checks that we properly fall back to DNS is confirmation is not ready yet
 add_task(async function test_resolve_not_confirmed() {
   dns.clearCache(true);
   Services.prefs.setIntPref("network.trr.mode", 2); // TRR-first
-  Services.prefs.clearUserPref("network.trr.useGET");
-  Services.prefs.clearUserPref("network.trr.disable-ECS");
   Services.prefs.setCharPref(
     "network.trr.uri",
-    `https://foo.example.com:${h2Port}/doh?responseIP=1::ffff`
+    `https://foo.example.com:${h2Port}/doh?responseIP=7.7.7.7`
   );
   Services.prefs.setCharPref(
     "network.trr.confirmationNS",
     "confirm.example.com"
   );
 
-  let [, , inStatus] = await new DNSListener("example.org", undefined, false);
-  Assert.ok(
-    Components.isSuccessCode(inStatus),
-    `${inStatus} should be a success code`
+  await new DNSListener("example.org", "127.0.0.1");
+
+  // Check that the confirmation eventually completes.
+  let count = 100;
+  while (count > 0) {
+    if (count == 50 || count == 10) {
+      // At these two points we do a longer timeout to account for a slow
+      // response on the server side. This is usually a problem on the Android
+      // because of the increased delay between the emulator and host.
+      await new Promise(resolve => do_timeout(100 * (100 / count), resolve));
+    }
+    let [inRequest, inRecord, inStatus] = await new DNSListener(
+      `ip${count}.example.org`,
+      undefined,
+      false
+    );
+    let responseIP = inRecord.getNextAddrAsString();
+    if (responseIP == "7.7.7.7") {
+      break;
+    }
+    count--;
+  }
+
+  Assert.greater(count, 0, "Finished confirmation before 100 iterations");
+
+  Services.prefs.setCharPref("network.trr.confirmationNS", "skip");
+});
+
+// Tests that we handle FQDN encoding and decoding properly
+add_task(async function test_fqdn() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=9.8.7.6`
   );
+  await new DNSListener("fqdn.example.org.", "9.8.7.6");
+});
+
+add_task(async function test_fqdn_get() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.setBoolPref("network.trr.useGET", true);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=9.8.7.6`
+  );
+  await new DNSListener("fqdn_get.example.org.", "9.8.7.6");
+
+  Services.prefs.setBoolPref("network.trr.useGET", false);
+});
+
+add_task(async function test_detected_uri() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.clearUserPref("network.trr.uri");
+  let defaultURI = gDefaultPref.getCharPref("network.trr.uri");
+  gDefaultPref.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=3.4.5.6`
+  );
+  await new DNSListener("domainA.example.org.", "3.4.5.6");
+  dns.setDetectedTrrURI(
+    `https://foo.example.com:${h2Port}/doh?responseIP=1.2.3.4`
+  );
+  await new DNSListener("domainB.example.org.", "1.2.3.4");
+  gDefaultPref.setCharPref("network.trr.uri", defaultURI);
+});
+
+add_task(async function test_detected_uri_userSet() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=4.5.6.7`
+  );
+  await new DNSListener("domainA.example.org.", "4.5.6.7");
+  // This should be a no-op, since we have a user-set URI
+  dns.setDetectedTrrURI(
+    `https://foo.example.com:${h2Port}/doh?responseIP=1.2.3.4`
+  );
+  await new DNSListener("domainB.example.org.", "4.5.6.7");
+});
+
+add_task(async function test_detected_uri_link_change() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.clearUserPref("network.trr.uri");
+  let defaultURI = gDefaultPref.getCharPref("network.trr.uri");
+  gDefaultPref.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=3.4.5.6`
+  );
+  await new DNSListener("domainA.example.org.", "3.4.5.6");
+  dns.setDetectedTrrURI(
+    `https://foo.example.com:${h2Port}/doh?responseIP=1.2.3.4`
+  );
+  await new DNSListener("domainB.example.org.", "1.2.3.4");
+
+  let networkLinkService = {
+    platformDNSIndications: 0,
+    QueryInterface: ChromeUtils.generateQI(["nsINetworkLinkService"]),
+  };
+
+  Services.obs.notifyObservers(
+    networkLinkService,
+    "network:link-status-changed",
+    "changed"
+  );
+
+  await new DNSListener("domainC.example.org.", "3.4.5.6");
+
+  gDefaultPref.setCharPref("network.trr.uri", defaultURI);
+});
+
+add_task(async function test_pref_changes() {
+  Services.prefs.clearUserPref("network.trr.uri");
+  let defaultURI = gDefaultPref.getCharPref("network.trr.uri");
+
+  async function doThenCheckURI(closure, expectedURI, expectChange = false) {
+    let uriChanged;
+    if (expectChange) {
+      uriChanged = observerPromise("network:trr-uri-changed");
+    }
+    closure();
+    if (expectChange) {
+      await uriChanged;
+    }
+    equal(dns.currentTrrURI, expectedURI);
+  }
+
+  // setting the default value of the pref should be reflected in the URI
+  await doThenCheckURI(() => {
+    gDefaultPref.setCharPref(
+      "network.trr.uri",
+      `https://foo.example.com:${h2Port}/doh?default`
+    );
+  }, `https://foo.example.com:${h2Port}/doh?default`);
+
+  // the user set value should be reflected in the URI
+  await doThenCheckURI(() => {
+    Services.prefs.setCharPref(
+      "network.trr.uri",
+      `https://foo.example.com:${h2Port}/doh?user`
+    );
+  }, `https://foo.example.com:${h2Port}/doh?user`);
+
+  // A user set pref is selected, so it should be chosen instead of the rollout
+  await doThenCheckURI(
+    () => {
+      Services.prefs.setCharPref(
+        "doh-rollout.uri",
+        `https://foo.example.com:${h2Port}/doh?rollout`
+      );
+    },
+    `https://foo.example.com:${h2Port}/doh?user`,
+    false
+  );
+
+  // There is no user set pref, so we go to the rollout pref
+  await doThenCheckURI(() => {
+    Services.prefs.clearUserPref("network.trr.uri");
+  }, `https://foo.example.com:${h2Port}/doh?rollout`);
+
+  // When the URI is set by the rollout addon, detection is allowed
+  await doThenCheckURI(() => {
+    dns.setDetectedTrrURI(`https://foo.example.com:${h2Port}/doh?detected`);
+  }, `https://foo.example.com:${h2Port}/doh?detected`);
+
+  // Should switch back to the default provided by the rollout addon
+  await doThenCheckURI(() => {
+    let networkLinkService = {
+      platformDNSIndications: 0,
+      QueryInterface: ChromeUtils.generateQI(["nsINetworkLinkService"]),
+    };
+    Services.obs.notifyObservers(
+      networkLinkService,
+      "network:link-status-changed",
+      "changed"
+    );
+  }, `https://foo.example.com:${h2Port}/doh?rollout`);
+
+  // Again the user set pref should be chosen
+  await doThenCheckURI(() => {
+    Services.prefs.setCharPref(
+      "network.trr.uri",
+      `https://foo.example.com:${h2Port}/doh?user`
+    );
+  }, `https://foo.example.com:${h2Port}/doh?user`);
+
+  // Detection should not work with a user set pref
+  await doThenCheckURI(
+    () => {
+      dns.setDetectedTrrURI(`https://foo.example.com:${h2Port}/doh?detected`);
+    },
+    `https://foo.example.com:${h2Port}/doh?user`,
+    false
+  );
+
+  // Should stay the same on network changes
+  await doThenCheckURI(
+    () => {
+      let networkLinkService = {
+        platformDNSIndications: 0,
+        QueryInterface: ChromeUtils.generateQI(["nsINetworkLinkService"]),
+      };
+      Services.obs.notifyObservers(
+        networkLinkService,
+        "network:link-status-changed",
+        "changed"
+      );
+    },
+    `https://foo.example.com:${h2Port}/doh?user`,
+    false
+  );
+
+  // Restore the pref
+  gDefaultPref.setCharPref("network.trr.uri", defaultURI);
+});
+
+add_task(async function test_async_resolve_with_trr_server_bad_port() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 2); // TRR-first
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=2.2.2.2`
+  );
+
+  let [, , inStatus] = await new DNSListener(
+    "only_once.example.com",
+    undefined,
+    false,
+    undefined,
+    `https://target.example.com:666/404`
+  );
+  Assert.ok(
+    !Components.isSuccessCode(inStatus),
+    `${inStatus} should be an error code`
+  );
+
+  // // MOZ_LOG=sync,timestamp,nsHostResolver:5 We should not keep resolving only_once.example.com
+  // // TODO: find a way of automating this
+  // await new Promise(resolve => {});
+});
+
+add_task(async function test_dohrollout_mode() {
+  Services.prefs.clearUserPref("network.trr.mode");
+  Services.prefs.clearUserPref("doh-rollout.mode");
+
+  equal(dns.currentTrrMode, 0);
+
+  async function doThenCheckMode(trrMode, rolloutMode, expectedMode, message) {
+    let modeChanged;
+    if (dns.currentTrrMode != expectedMode) {
+      modeChanged = observerPromise("network:trr-mode-changed");
+    }
+
+    if (trrMode != undefined) {
+      Services.prefs.setIntPref("network.trr.mode", trrMode);
+    }
+
+    if (rolloutMode != undefined) {
+      Services.prefs.setIntPref("doh-rollout.mode", rolloutMode);
+    }
+
+    if (modeChanged) {
+      await modeChanged;
+    }
+    equal(dns.currentTrrMode, expectedMode, message);
+  }
+
+  await doThenCheckMode(2, undefined, 2);
+  await doThenCheckMode(3, undefined, 3);
+  await doThenCheckMode(5, undefined, 5);
+  await doThenCheckMode(2, undefined, 2);
+  await doThenCheckMode(0, undefined, 0);
+  await doThenCheckMode(1, undefined, 5);
+  await doThenCheckMode(6, undefined, 5);
+
+  await doThenCheckMode(2, 0, 2);
+  await doThenCheckMode(2, 1, 2);
+  await doThenCheckMode(2, 2, 2);
+  await doThenCheckMode(2, 3, 2);
+  await doThenCheckMode(2, 5, 2);
+  await doThenCheckMode(3, 2, 3);
+  await doThenCheckMode(5, 2, 5);
+
+  Services.prefs.clearUserPref("network.trr.mode");
+  Services.prefs.clearUserPref("doh-rollout.mode");
+
+  await doThenCheckMode(undefined, 2, 2);
+  await doThenCheckMode(undefined, 3, 3);
+
+  // All modes that are not 0,2,3 are treated as 5
+  await doThenCheckMode(undefined, 5, 5);
+  await doThenCheckMode(undefined, 4, 5);
+  await doThenCheckMode(undefined, 6, 5);
+
+  await doThenCheckMode(undefined, 2, 2);
+  await doThenCheckMode(3, undefined, 3);
+
+  Services.prefs.clearUserPref("network.trr.mode");
+  equal(dns.currentTrrMode, 2);
+  Services.prefs.clearUserPref("doh-rollout.mode");
+  equal(dns.currentTrrMode, 0);
+});
+
+add_task(async function test_ipv6_trr_fallback() {
+  dns.clearCache(true);
+  let httpserver = new HttpServer();
+  httpserver.registerPathHandler("/content", (metadata, response) => {
+    response.setHeader("Content-Type", "text/plain");
+    response.setHeader("Cache-Control", "no-cache");
+
+    const responseBody = "anybody";
+    response.bodyOutputStream.write(responseBody, responseBody.length);
+  });
+  httpserver.start(-1);
+
+  Services.prefs.setBoolPref("network.captive-portal-service.testMode", true);
+  let url = `http://127.0.0.1:666/doom_port_should_not_be_open`;
+  Services.prefs.setCharPref("network.connectivity-service.IPv6.url", url);
+  let ncs = Cc[
+    "@mozilla.org/network/network-connectivity-service;1"
+  ].getService(Ci.nsINetworkConnectivityService);
+
+  function promiseObserverNotification(topic, matchFunc) {
+    return new Promise((resolve, reject) => {
+      Services.obs.addObserver(function observe(subject, topic, data) {
+        let matches =
+          typeof matchFunc != "function" || matchFunc(subject, data);
+        if (!matches) {
+          return;
+        }
+        Services.obs.removeObserver(observe, topic);
+        resolve({ subject, data });
+      }, topic);
+    });
+  }
+
+  let checks = promiseObserverNotification(
+    "network:connectivity-service:ip-checks-complete"
+  );
+
+  ncs.recheckIPConnectivity();
+
+  await checks;
+  equal(
+    ncs.IPv6,
+    Ci.nsINetworkConnectivityService.NOT_AVAILABLE,
+    "Check IPv6 support (expect NOT_AVAILABLE)"
+  );
+
+  Services.prefs.setIntPref("network.trr.mode", 2);
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=4.4.4.4`
+  );
+  const override = Cc["@mozilla.org/network/native-dns-override;1"].getService(
+    Ci.nsINativeDNSResolverOverride
+  );
+  override.addIPOverride("ipv6.host.com", "1:1::2");
+
+  await new DNSListener(
+    "ipv6.host.com",
+    "1:1::2",
+    true,
+    0,
+    "",
+    false,
+    Ci.nsIDNSService.RESOLVE_DISABLE_IPV4
+  );
+
+  Services.prefs.clearUserPref("network.captive-portal-service.testMode");
+  Services.prefs.clearUserPref("network.connectivity-service.IPv6.url");
+
+  override.clearOverrides();
+  await httpserver.stop();
 });

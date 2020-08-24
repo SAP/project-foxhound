@@ -402,20 +402,9 @@ CssRuleView.prototype = {
     // supported, we have to call the content-viewer front so that the actor is lazily loaded.
     // This allows us to use `actorHasMethod`. Please see `getActorDescription` for more
     // information.
-    try {
-      this.contentViewerFront = await this.currentTarget.getFront(
-        "contentViewer"
-      );
-    } catch (e) {
-      console.error(e);
-    }
-
-    // Bug 1606852: For backwards compatibility, we need to get the emulation actor. The ContentViewer
-    // actor is only available in Firefox 73 or newer. We can remove this call when Firefox 73
-    // is on release.
-    if (!this.contentViewerFront) {
-      this.contentViewerFront = await this.currentTarget.getFront("emulation");
-    }
+    this.contentViewerFront = await this.currentTarget.getFront(
+      "contentViewer"
+    );
 
     if (!this.currentTarget.chrome) {
       this.printSimulationButton.removeAttribute("hidden");
@@ -428,16 +417,10 @@ CssRuleView.prototype = {
     // Show the color scheme simulation toggle button if:
     // - The feature pref is enabled.
     // - Color scheme simulation is supported for the current target.
-    const isEmulateColorSchemeSupported =
-      (await this.currentTarget.actorHasMethod(
-        "contentViewer",
-        "getEmulatedColorScheme"
-      )) ||
-      // Bug 1606852: We can removed this check when Firefox 73 is on release.
-      (await this.currentTarget.actorHasMethod(
-        "emulation",
-        "getEmulatedColorScheme"
-      ));
+    const isEmulateColorSchemeSupported = await this.currentTarget.actorHasMethod(
+      "contentViewer",
+      "getEmulatedColorScheme"
+    );
 
     if (
       Services.prefs.getBoolPref(
@@ -497,6 +480,7 @@ CssRuleView.prototype = {
     if (event) {
       this.copySelection(event.target);
       event.preventDefault();
+      event.stopPropagation();
     }
   },
 
@@ -511,7 +495,7 @@ CssRuleView.prototype = {
     try {
       let text = "";
 
-      const nodeName = target && target.nodeName;
+      const nodeName = target?.nodeName;
       if (nodeName === "input" || nodeName == "textarea") {
         const start = Math.min(target.selectionStart, target.selectionEnd);
         const end = Math.max(target.selectionStart, target.selectionEnd);
@@ -1094,11 +1078,14 @@ CssRuleView.prototype = {
   createExpandableContainer: function(label, isPseudo = false) {
     const header = this.styleDocument.createElementNS(HTML_NS, "div");
     header.className = this._getRuleViewHeaderClassName(true);
+    header.setAttribute("role", "heading");
     header.textContent = label;
 
     const twisty = this.styleDocument.createElementNS(HTML_NS, "span");
     twisty.className = "ruleview-expander theme-twisty";
     twisty.setAttribute("open", "true");
+    twisty.setAttribute("role", "button");
+    twisty.setAttribute("aria-label", l10n("rule.twistyCollapse.label"));
 
     header.insertBefore(twisty, header.firstChild);
     this.element.appendChild(header);
@@ -1167,8 +1154,10 @@ CssRuleView.prototype = {
 
     if (isOpen) {
       twisty.removeAttribute("open");
+      twisty.setAttribute("aria-label", l10n("rule.twistyExpand.label"));
     } else {
       twisty.setAttribute("open", "true");
+      twisty.setAttribute("aria-label", l10n("rule.twistyCollapse.label"));
     }
   },
 
@@ -1223,6 +1212,7 @@ CssRuleView.prototype = {
         seenNormalElement = true;
         const div = this.styleDocument.createElementNS(HTML_NS, "div");
         div.className = this._getRuleViewHeaderClassName();
+        div.setAttribute("role", "heading");
         div.textContent = this.selectedElementLabel;
         this.element.appendChild(div);
       }
@@ -1231,6 +1221,8 @@ CssRuleView.prototype = {
       if (inheritedSource && inheritedSource !== lastInheritedSource) {
         const div = this.styleDocument.createElementNS(HTML_NS, "div");
         div.className = this._getRuleViewHeaderClassName();
+        div.setAttribute("role", "heading");
+        div.setAttribute("aria-level", "3");
         div.textContent = rule.inheritedSource;
         lastInheritedSource = inheritedSource;
         this.element.appendChild(div);
@@ -1250,6 +1242,7 @@ CssRuleView.prototype = {
         container = this.createExpandableContainer(rule.keyframesName);
       }
 
+      rule.editor.element.setAttribute("role", "article");
       if (container && (rule.pseudoElement || keyframes)) {
         container.appendChild(rule.editor.element);
       } else {

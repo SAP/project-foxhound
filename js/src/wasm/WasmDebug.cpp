@@ -367,11 +367,6 @@ bool DebugState::debugGetLocalTypes(uint32_t funcIndex, ValTypeVector* locals,
   return DecodeValidatedLocalEntries(d, locals);
 }
 
-bool DebugState::debugGetResultTypes(uint32_t funcIndex,
-                                     ValTypeVector* results) {
-  return results->appendAll(metadata().debugFuncReturnTypes[funcIndex]);
-}
-
 bool DebugState::getGlobal(Instance& instance, uint32_t globalIndex,
                            MutableHandleValue vp) {
   const GlobalDesc& global = metadata().globals[globalIndex];
@@ -397,6 +392,13 @@ bool DebugState::getGlobal(Instance& instance, uint32_t globalIndex,
         // scheme, to make the pointer recognizable without revealing it.
         vp.set(MagicValue(JS_OPTIMIZED_OUT));
         break;
+      case ValType::V128:
+        // Debugger must be updated to handle this, and should be updated to
+        // handle i64 in any case.
+        vp.set(MagicValue(JS_OPTIMIZED_OUT));
+        break;
+      default:
+        MOZ_CRASH("Global constant type");
     }
     return true;
   }
@@ -427,6 +429,15 @@ bool DebugState::getGlobal(Instance& instance, uint32_t globalIndex,
     case ValType::Ref: {
       // Just hide it.  See above.
       vp.set(MagicValue(JS_OPTIMIZED_OUT));
+      break;
+    }
+    case ValType::V128: {
+      // Just hide it.  See above.
+      vp.set(MagicValue(JS_OPTIMIZED_OUT));
+      break;
+    }
+    default: {
+      MOZ_CRASH("Global variable type");
       break;
     }
   }

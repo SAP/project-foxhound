@@ -73,7 +73,7 @@ following parameters:
    are used by default.
 -  ``--fix, -f`` - Try to autofix errors detected by the checkers.
    Depending on the checker, this option might not do anything.
-   The list of checkers with autofix can be found on the `clang-tidy website https://clang.llvm.org/extra/clang-tidy/checks/list.html>`__.
+   The list of checkers with autofix can be found on the `clang-tidy website <https://clang.llvm.org/extra/clang-tidy/checks/list.html>`__.
 -  ``--header-filter, -h-f`` - Regular expression matching the names of
    the headers to output diagnostic from.Diagnostic from the main file
    of each translation unit are always displayed.
@@ -146,6 +146,8 @@ If you want to build with the Firefox Clang plug-in
 (located in ``/build/clang-plugin`` and associated with
 ``MOZ_CLANG_PLUGIN`` and the attributes in ``/mfbt/Attributes.h``)
 just add ``--enable-clang-plugin`` to your mozconfig!
+If you want to also have our experimental checkers that will produce ``warnings`` as
+diagnostic messages also add ``--enable-clang-plugin-alpha``.
 This requires to build Firefox using Clang.
 
 Configuring the build environment

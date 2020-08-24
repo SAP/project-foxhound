@@ -32,6 +32,19 @@ function IsCSSPropertyPrefEnabled(prefName) {
   return false;
 }
 
+// Returns true if WebRender is enabled. Otherwise, returns false
+function IsWebRenderEnabled() {
+  try {
+    return SpecialPowers.Cc["@mozilla.org/gfx/info;1"].getService(
+      SpecialPowers.Ci.nsIGfxInfo
+    ).WebRenderEnabled;
+  } catch (ex) {
+    ok(false, "Failed to check WebRender's enabled state");
+  }
+
+  return false;
+}
+
 // True longhand properties.
 const CSS_TYPE_LONGHAND = 0;
 
@@ -1325,6 +1338,7 @@ var gCSSProperties = {
     domProp: "animation",
     inherited: false,
     type: CSS_TYPE_TRUE_SHORTHAND,
+    applies_to_marker: true,
     subproperties: [
       "animation-name",
       "animation-duration",
@@ -1419,6 +1433,7 @@ var gCSSProperties = {
     domProp: "animationDelay",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["0s", "0ms"],
     other_values: [
       "1s",
@@ -1434,6 +1449,7 @@ var gCSSProperties = {
     domProp: "animationDirection",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["normal"],
     other_values: [
       "alternate",
@@ -1458,6 +1474,7 @@ var gCSSProperties = {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["0s", "0ms"],
+    applies_to_marker: true,
     other_values: ["1s", "250ms", "1s, 250ms, 2.3s", "calc(1s + 2ms)"],
     invalid_values: ["0", "0px", "-1ms", "-2s"],
   },
@@ -1465,6 +1482,7 @@ var gCSSProperties = {
     domProp: "animationFillMode",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["none"],
     other_values: [
       "forwards",
@@ -1481,6 +1499,7 @@ var gCSSProperties = {
     domProp: "animationIterationCount",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["1"],
     other_values: [
       "infinite",
@@ -1501,6 +1520,7 @@ var gCSSProperties = {
     domProp: "animationName",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["none"],
     other_values: [
       "all",
@@ -1531,6 +1551,7 @@ var gCSSProperties = {
     domProp: "animationPlayState",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["running"],
     other_values: [
       "paused",
@@ -1546,6 +1567,7 @@ var gCSSProperties = {
     domProp: "animationTimingFunction",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["ease"],
     other_values: [
       "cubic-bezier(0.25, 0.1, 0.25, 1.0)",
@@ -1579,20 +1601,27 @@ var gCSSProperties = {
       "steps(0, step-end, 1)",
     ],
   },
-  "-moz-appearance": {
-    domProp: "MozAppearance",
+  appearance: {
+    domProp: "appearance",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["none"],
-    other_values: ["radio", "menulist"],
+    other_values: ["auto", "radio", "menulist"],
     invalid_values: [],
+  },
+  "-moz-appearance": {
+    domProp: "MozAppearance",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "appearance",
+    subproperties: ["appearance"],
   },
   "-webkit-appearance": {
     domProp: "webkitAppearance",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
-    alias_for: "-moz-appearance",
-    subproperties: ["-moz-appearance"],
+    alias_for: "appearance",
+    subproperties: ["appearance"],
   },
   "border-inline": {
     domProp: "borderInline",
@@ -5269,6 +5298,10 @@ var gCSSProperties = {
       "hsl(0rad, 0%, 0%)",
       "hsl(0turn, 0%, 0%)",
       "hsl(1turn, 0%, 0%)",
+      /* CSS4 System Colors */
+      "canvastext",
+      /* Preserve previously available specially prefixed colors */
+      "-moz-default-color",
     ],
     other_values: [
       "green",
@@ -5292,6 +5325,21 @@ var gCSSProperties = {
       "hsl(33rad 100% 90% / 4)",
       "hsl(0.33turn, 40%, 40%, 10%)",
       "hsl(63e292, 41%, 34%)",
+      /* CSS4 System Colors */
+      "canvas",
+      "linktext",
+      "visitedtext",
+      "activetext",
+      "buttonface",
+      "field",
+      "highlight",
+      "highlighttext",
+      "graytext",
+      /* Preserve previously available specially prefixed colors */
+      "-moz-activehyperlinktext",
+      "-moz-default-background-color",
+      "-moz-hyperlinktext",
+      "-moz-visitedhyperlinktext",
     ],
     invalid_values: [
       "#f",
@@ -6722,6 +6770,8 @@ var gCSSProperties = {
     domProp: "opacity",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     applies_to_placeholder: true,
     applies_to_cue: true,
     initial_values: [
@@ -8133,6 +8183,7 @@ var gCSSProperties = {
     domProp: "transition",
     inherited: false,
     type: CSS_TYPE_TRUE_SHORTHAND,
+    applies_to_marker: true,
     subproperties: [
       "transition-property",
       "transition-duration",
@@ -8218,6 +8269,7 @@ var gCSSProperties = {
     domProp: "transitionDelay",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["0s", "0ms"],
     other_values: ["1s", "250ms", "-100ms", "-1s", "1s, 250ms, 2.3s"],
     invalid_values: ["0", "0px"],
@@ -8226,6 +8278,7 @@ var gCSSProperties = {
     domProp: "transitionDuration",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["0s", "0ms"],
     other_values: ["1s", "250ms", "1s, 250ms, 2.3s"],
     invalid_values: ["0", "0px", "-1ms", "-2s"],
@@ -8234,6 +8287,7 @@ var gCSSProperties = {
     domProp: "transitionProperty",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["all"],
     other_values: [
       "none",
@@ -8273,6 +8327,7 @@ var gCSSProperties = {
     domProp: "transitionTimingFunction",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_marker: true,
     initial_values: ["ease"],
     other_values: [
       "cubic-bezier(0.25, 0.1, 0.25, 1.0)",
@@ -8950,8 +9005,8 @@ var gCSSProperties = {
     domProp: "imageOrientation",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: ["from-image"],
+    initial_values: ["from-image"],
+    other_values: ["none"],
     invalid_values: ["0", "0deg"],
   },
   "image-rendering": {
@@ -9902,6 +9957,7 @@ var gCSSProperties = {
     domProp: "MozTransition",
     inherited: false,
     type: CSS_TYPE_TRUE_SHORTHAND,
+    applies_to_marker: true,
     alias_for: "transition",
     subproperties: [
       "transition-property",
@@ -9914,6 +9970,7 @@ var gCSSProperties = {
     domProp: "MozTransitionDelay",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "transition-delay",
     subproperties: ["transition-delay"],
   },
@@ -9921,6 +9978,7 @@ var gCSSProperties = {
     domProp: "MozTransitionDuration",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "transition-duration",
     subproperties: ["transition-duration"],
   },
@@ -9928,6 +9986,7 @@ var gCSSProperties = {
     domProp: "MozTransitionProperty",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "transition-property",
     subproperties: ["transition-property"],
   },
@@ -9935,6 +9994,7 @@ var gCSSProperties = {
     domProp: "MozTransitionTimingFunction",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "transition-timing-function",
     subproperties: ["transition-timing-function"],
   },
@@ -9942,6 +10002,7 @@ var gCSSProperties = {
     domProp: "MozAnimation",
     inherited: false,
     type: CSS_TYPE_TRUE_SHORTHAND,
+    applies_to_marker: true,
     alias_for: "animation",
     subproperties: [
       "animation-name",
@@ -9958,6 +10019,7 @@ var gCSSProperties = {
     domProp: "MozAnimationDelay",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-delay",
     subproperties: ["animation-delay"],
   },
@@ -9965,6 +10027,7 @@ var gCSSProperties = {
     domProp: "MozAnimationDirection",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-direction",
     subproperties: ["animation-direction"],
   },
@@ -9972,6 +10035,7 @@ var gCSSProperties = {
     domProp: "MozAnimationDuration",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-duration",
     subproperties: ["animation-duration"],
   },
@@ -9979,6 +10043,7 @@ var gCSSProperties = {
     domProp: "MozAnimationFillMode",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-fill-mode",
     subproperties: ["animation-fill-mode"],
   },
@@ -9986,6 +10051,7 @@ var gCSSProperties = {
     domProp: "MozAnimationIterationCount",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-iteration-count",
     subproperties: ["animation-iteration-count"],
   },
@@ -9993,6 +10059,7 @@ var gCSSProperties = {
     domProp: "MozAnimationName",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-name",
     subproperties: ["animation-name"],
   },
@@ -10000,6 +10067,7 @@ var gCSSProperties = {
     domProp: "MozAnimationPlayState",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-play-state",
     subproperties: ["animation-play-state"],
   },
@@ -10007,6 +10075,7 @@ var gCSSProperties = {
     domProp: "MozAnimationTimingFunction",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-timing-function",
     subproperties: ["animation-timing-function"],
   },
@@ -10924,6 +10993,7 @@ var gCSSProperties = {
     domProp: "webkitAnimation",
     inherited: false,
     type: CSS_TYPE_TRUE_SHORTHAND,
+    applies_to_marker: true,
     alias_for: "animation",
     subproperties: [
       "animation-name",
@@ -10940,6 +11010,7 @@ var gCSSProperties = {
     domProp: "webkitAnimationDelay",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-delay",
     subproperties: ["animation-delay"],
   },
@@ -10947,6 +11018,7 @@ var gCSSProperties = {
     domProp: "webkitAnimationDirection",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-direction",
     subproperties: ["animation-direction"],
   },
@@ -10954,6 +11026,7 @@ var gCSSProperties = {
     domProp: "webkitAnimationDuration",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-duration",
     subproperties: ["animation-duration"],
   },
@@ -10961,6 +11034,7 @@ var gCSSProperties = {
     domProp: "webkitAnimationFillMode",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-fill-mode",
     subproperties: ["animation-fill-mode"],
   },
@@ -10968,6 +11042,7 @@ var gCSSProperties = {
     domProp: "webkitAnimationIterationCount",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-iteration-count",
     subproperties: ["animation-iteration-count"],
   },
@@ -10975,6 +11050,7 @@ var gCSSProperties = {
     domProp: "webkitAnimationName",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-name",
     subproperties: ["animation-name"],
   },
@@ -10982,6 +11058,7 @@ var gCSSProperties = {
     domProp: "webkitAnimationPlayState",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-play-state",
     subproperties: ["animation-play-state"],
   },
@@ -10989,6 +11066,7 @@ var gCSSProperties = {
     domProp: "webkitAnimationTimingFunction",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "animation-timing-function",
     subproperties: ["animation-timing-function"],
   },
@@ -11145,6 +11223,7 @@ var gCSSProperties = {
     domProp: "webkitTransition",
     inherited: false,
     type: CSS_TYPE_TRUE_SHORTHAND,
+    applies_to_marker: true,
     alias_for: "transition",
     subproperties: [
       "transition-property",
@@ -11157,6 +11236,7 @@ var gCSSProperties = {
     domProp: "webkitTransitionDelay",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "transition-delay",
     subproperties: ["transition-delay"],
   },
@@ -11164,6 +11244,7 @@ var gCSSProperties = {
     domProp: "webkitTransitionDuration",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "transition-duration",
     subproperties: ["transition-duration"],
   },
@@ -11171,6 +11252,7 @@ var gCSSProperties = {
     domProp: "webkitTransitionProperty",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "transition-property",
     subproperties: ["transition-property"],
   },
@@ -11178,6 +11260,7 @@ var gCSSProperties = {
     domProp: "webkitTransitionTimingFunction",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_marker: true,
     alias_for: "transition-timing-function",
     subproperties: ["transition-timing-function"],
   },
@@ -11799,6 +11882,29 @@ var isGridTemplateSubgridValueEnabled = IsCSSPropertyPrefEnabled(
   "layout.css.grid-template-subgrid-value.enabled"
 );
 
+var isGridTemplateMasonryValueEnabled = IsCSSPropertyPrefEnabled(
+  "layout.css.grid-template-masonry-value.enabled"
+);
+
+if (isGridTemplateMasonryValueEnabled) {
+  gCSSProperties["masonry-auto-flow"] = {
+    domProp: "masonryAutoFlow",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["pack"],
+    other_values: ["pack ordered", "ordered next", "next definite-first"],
+    invalid_values: ["auto", "none", "10px", "row", "dense"],
+  };
+
+  let alignTracks = { ...gCSSProperties["align-content"] };
+  alignTracks.domProp = "alignTracks";
+  gCSSProperties["align-tracks"] = alignTracks;
+
+  let justifyTracks = { ...gCSSProperties["justify-content"] };
+  justifyTracks.domProp = "justifyTracks";
+  gCSSProperties["justify-tracks"] = justifyTracks;
+}
+
 gCSSProperties["display"].other_values.push("grid", "inline-grid");
 gCSSProperties["grid-auto-flow"] = {
   domProp: "gridAutoFlow",
@@ -11903,6 +12009,8 @@ gCSSProperties["grid-template-columns"] = {
     "[a] repeat( auto-fit,[a b] minmax(0,0) )",
     "[a] 40px repeat(auto-fit,[a b] minmax(1px, 0) [])",
     "[a] calc(1px - 99%) [b] repeat(auto-fit,[a b] minmax(1mm, 1%) [c]) [c]",
+    "repeat(auto-fill, 0 0)",
+    "repeat(auto-fill, 0 [] 0)",
     "repeat(auto-fill,minmax(1%,auto))",
     "repeat(auto-fill,minmax(1em,min-content)) minmax(min-content,0)",
     "repeat(auto-fill,minmax(max-content,1mm))",
@@ -11958,8 +12066,6 @@ gCSSProperties["grid-template-columns"] = {
     "repeat(auto-fit, 0) repeat(auto-fill, 0) ",
     "[a] repeat(auto-fit, 0) repeat(auto-fit, 0) ",
     "[a] repeat(auto-fill, 0) [a] repeat(auto-fill, 0) ",
-    "repeat(auto-fill, 0 0)",
-    "repeat(auto-fill, 0 [] 0)",
     "repeat(auto-fill, min-content)",
     "repeat(auto-fit,max-content)",
     "repeat(auto-fit,1fr)",
@@ -11989,8 +12095,15 @@ if (isGridTemplateSubgridValueEnabled) {
     "subgrid repeat(1, [])",
     "subgrid Repeat(4, [a] [b c] [] [d])",
     "subgrid repeat(auto-fill, [])",
+    "subgrid repeat(Auto-fill, [a b c]) [a] []",
     "subgrid [x] repeat( Auto-fill, [a b c]) []",
-    "subgrid [x] repeat(auto-fill, []) [y z]"
+    "subgrid [x] repeat( auto-fill , [a b] [c]) [y]",
+    "subgrid repeat(auto-fill, [a] [b] [c]) [d]",
+    "subgrid repeat(Auto-fill, [a] [b c] [] [d])",
+    "subgrid [x y] [x] repeat(auto-fill, [a b] [c] [d] [d]) [x] [x]",
+    "subgrid [x] repeat(auto-fill, []) [y z]",
+    "subgrid [x] repeat(auto-fill, [y]) [z] [] repeat(2, [a] [b]) [y] []",
+    "subgrid [x] repeat(auto-fill, []) [x y] [z] [] []"
   );
   gCSSProperties["grid-template-columns"].invalid_values.push(
     "subgrid [inherit]",
@@ -12012,13 +12125,35 @@ if (isGridTemplateSubgridValueEnabled) {
     "subgrid repeat(2, [40px])",
     "subgrid repeat(2, foo)",
     "subgrid repeat(1, repeat(1, []))",
+    "subgrid repeat(auto-fill)",
+    "subgrid repeat(auto-fill) [a]",
+    "subgrid repeat(auto-fill) []",
+    "subgrid [a] repeat(auto-fill)",
+    "subgrid repeat(auto-fill,)",
+    "subgrid repeat(auto-fill,)",
+    "subgrid repeat(auto-fill,) [a]",
+    "subgrid repeat(auto-fill,) []",
+    "subgrid [a] repeat(auto-fill,)",
     "subgrid repeat(auto-fit,[])",
     "subgrid [] repeat(auto-fit,[])",
     "subgrid [a] repeat(auto-fit,[])",
     "subgrid repeat(auto-fill, 1px)",
     "subgrid repeat(auto-fill, 1px [])",
-    "subgrid repeat(Auto-fill, [a] [b c] [] [d])",
     "subgrid repeat(auto-fill, []) repeat(auto-fill, [])"
+  );
+}
+if (isGridTemplateMasonryValueEnabled) {
+  gCSSProperties["grid-template-columns"].other_values.push("masonry");
+  gCSSProperties["grid-template-columns"].invalid_values.push(
+    "masonry []",
+    "masonry [foo] 40px",
+    "masonry 40px",
+    "[foo] masonry",
+    "0px masonry",
+    "masonry masonry",
+    "subgrid masonry",
+    "masonry subgrid",
+    "masonry repeat(1, [])"
   );
 }
 gCSSProperties["grid-template-rows"] = {
@@ -12035,8 +12170,6 @@ gCSSProperties["grid-template-areas"] = {
   type: CSS_TYPE_LONGHAND,
   initial_values: ["none"],
   other_values: [
-    "''",
-    "'' ''",
     "'1a-é_ .' \"b .\"",
     "' Z\t\\aZ' 'Z Z'",
     " '. . a b'  '. .a b' ",
@@ -12047,6 +12180,9 @@ gCSSProperties["grid-template-areas"] = {
     "'.. ..' '.. ...'",
   ],
   invalid_values: [
+    "''",
+    "' '",
+    "'' ''",
     "'a b' 'a/b'",
     "'a . a'",
     "'. a a' 'a a a'",
@@ -12106,6 +12242,22 @@ if (isGridTemplateSubgridValueEnabled) {
     "subgrid []",
     "subgrid [] / 'fizz'",
     "subgrid / 'fizz'"
+  );
+}
+if (isGridTemplateMasonryValueEnabled) {
+  gCSSProperties["grid-template"].other_values.push(
+    "masonry / subgrid",
+    "subgrid / masonry",
+    "masonry / masonry" /* valid but behaves as 'masonry / none' */,
+    "masonry/40px 20px",
+    "subgrid [foo] [] [bar baz] / masonry",
+    "40px 20px/masonry",
+    "masonry/subgrid  [foo] [] repeat(3, [a] [b]) [bar baz]",
+    "subgrid [foo] [] [bar baz]/masonry"
+  );
+  gCSSProperties["grid-template"].invalid_values.push(
+    "masonry",
+    "masonry / 'fizz'"
   );
 }
 
@@ -12382,53 +12534,51 @@ gCSSProperties["grid-gap"] = {
   subproperties: ["column-gap", "row-gap"],
 };
 
-if (IsCSSPropertyPrefEnabled("layout.css.contain.enabled")) {
-  gCSSProperties["contain"] = {
-    domProp: "contain",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: [
-      "strict",
-      "layout",
-      "size",
-      "content",
-      "paint",
-      "layout paint",
-      "paint layout",
-      "size layout",
-      "paint size",
-      "layout size paint",
-      "layout paint size",
-      "size paint layout",
-      "paint size layout",
-    ],
-    invalid_values: [
-      "none strict",
-      "none size",
-      "strict layout",
-      "strict layout size",
-      "layout strict",
-      "layout content",
-      "strict content",
-      "layout size strict",
-      "layout size paint strict",
-      "paint strict",
-      "size strict",
-      "paint paint",
-      "content content",
-      "size content",
-      "content strict size",
-      "paint layout content",
-      "layout size content",
-      "size size",
-      "strict strict",
-      "auto",
-      "10px",
-      "0",
-    ],
-  };
-}
+gCSSProperties["contain"] = {
+  domProp: "contain",
+  inherited: false,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["none"],
+  other_values: [
+    "strict",
+    "layout",
+    "size",
+    "content",
+    "paint",
+    "layout paint",
+    "paint layout",
+    "size layout",
+    "paint size",
+    "layout size paint",
+    "layout paint size",
+    "size paint layout",
+    "paint size layout",
+  ],
+  invalid_values: [
+    "none strict",
+    "none size",
+    "strict layout",
+    "strict layout size",
+    "layout strict",
+    "layout content",
+    "strict content",
+    "layout size strict",
+    "layout size paint strict",
+    "paint strict",
+    "size strict",
+    "paint paint",
+    "content content",
+    "size content",
+    "content strict size",
+    "paint layout content",
+    "layout size content",
+    "size size",
+    "strict strict",
+    "auto",
+    "10px",
+    "0",
+  ],
+};
 
 if (IsCSSPropertyPrefEnabled("layout.css.initial-letter.enabled")) {
   gCSSProperties["initial-letter"] = {
@@ -12897,27 +13047,23 @@ if (false) {
   };
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.scrollbar-color.enabled")) {
-  gCSSProperties["scrollbar-color"] = {
-    domProp: "scrollbarColor",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["auto"],
-    other_values: ["red green", "blue yellow", "#ffff00 white"],
-    invalid_values: ["ffff00 red", "auto red", "red auto", "green"],
-  };
-}
+gCSSProperties["scrollbar-color"] = {
+  domProp: "scrollbarColor",
+  inherited: true,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["auto"],
+  other_values: ["red green", "blue yellow", "#ffff00 white"],
+  invalid_values: ["ffff00 red", "auto red", "red auto", "green"],
+};
 
-if (IsCSSPropertyPrefEnabled("layout.css.scrollbar-width.enabled")) {
-  gCSSProperties["scrollbar-width"] = {
-    domProp: "scrollbarWidth",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["auto"],
-    other_values: ["none", "thin"],
-    invalid_values: ["1px"],
-  };
-}
+gCSSProperties["scrollbar-width"] = {
+  domProp: "scrollbarWidth",
+  inherited: false,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["auto"],
+  other_values: ["none", "thin"],
+  invalid_values: ["1px"],
+};
 
 if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
   gCSSProperties["offset"] = {
@@ -13080,7 +13226,10 @@ if (IsCSSPropertyPrefEnabled("layout.css.step-position-jump.enabled")) {
   );
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.backdrop-filter.enabled")) {
+if (
+  IsCSSPropertyPrefEnabled("layout.css.backdrop-filter.enabled") &&
+  IsWebRenderEnabled()
+) {
   gCSSProperties["backdrop-filter"] = {
     domProp: "backdropFilter",
     inherited: false,
@@ -13186,6 +13335,35 @@ if (IsCSSPropertyPrefEnabled("layout.css.prefixes.columns")) {
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
     alias_for: "column-width",
     subproperties: ["column-width"],
+  };
+}
+
+if (
+  !IsCSSPropertyPrefEnabled("layout.css.image-orientation.initial-from-image")
+) {
+  gCSSProperties["image-orientation"].initial_values = ["none"];
+  gCSSProperties["image-orientation"].other_values = ["from-image"];
+}
+
+if (IsCSSPropertyPrefEnabled("layout.css.aspect-ratio.enabled")) {
+  gCSSProperties["aspect-ratio"] = {
+    domProp: "aspectRatio",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: [
+      "1",
+      "1.0",
+      "1 / 2",
+      "1/2",
+      "16.2 / 9.5",
+      "1/0",
+      "0/1",
+      "0 / 0",
+      "auto 1",
+      "0 auto",
+    ],
+    invalid_values: ["none", "1 test", "1 / auto", "auto / 1"],
   };
 }
 

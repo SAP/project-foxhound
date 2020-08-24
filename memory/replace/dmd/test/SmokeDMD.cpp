@@ -27,7 +27,6 @@
 #include "mozilla/UniquePtr.h"
 #include "DMD.h"
 
-using mozilla::JSONWriter;
 using mozilla::MakeUnique;
 using namespace mozilla::dmd;
 
@@ -47,6 +46,8 @@ class FpWriteFunc : public mozilla::JSONWriteFunc {
   ~FpWriteFunc() { fclose(mFp); }
 
   void Write(const char* aStr) override { fputs(aStr, mFp); }
+
+  void Write(const char* aStr, size_t aLen) override { fputs(aStr, mFp); }
 
  private:
   FILE* mFp;

@@ -17,11 +17,14 @@ using mozilla::ipc::IPCResult;
 namespace mozilla {
 namespace net {
 
+class BackgroundDataBridgeChild;
 class HttpChannelChild;
 
 class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
   friend class BackgroundChannelCreateCallback;
   friend class PHttpBackgroundChannelChild;
+  friend class HttpChannelChild;
+  friend class BackgroundDataBridgeChild;
 
  public:
   explicit HttpBackgroundChannelChild();
@@ -36,16 +39,29 @@ class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
   // handle any incoming messages over background channel.
   void OnChannelClosed();
 
+  // Return true if OnChannelClosed has been called.
+  bool ChannelClosed();
+
   // Callback when OnStartRequest is received and handled by HttpChannelChild.
   // Enqueued messages in background channel will be flushed.
-  void OnStartRequestReceived();
+  void OnStartRequestReceived(Maybe<uint32_t> aMultiPartID);
+
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  bool IsQueueEmpty() const { return mQueuedRunnables.IsEmpty(); }
+#endif
 
  protected:
+  IPCResult RecvOnStartRequest(const nsHttpResponseHead& aResponseHead,
+                               const bool& aUseResponseHead,
+                               const nsHttpHeaderArray& aRequestHeaders,
+                               const HttpChannelOnStartRequestArgs& aArgs);
+
   IPCResult RecvOnTransportAndData(const nsresult& aChannelStatus,
                                    const nsresult& aTransportStatus,
                                    const uint64_t& aOffset,
                                    const uint32_t& aCount,
-                                   const nsCString& aData);
+                                   const nsCString& aData,
+                                   const bool& aDataFromSocketProcess);
 
   IPCResult RecvOnStopRequest(
       const nsresult& aChannelStatus, const ResourceTimingStructArgs& aTiming,
@@ -53,13 +69,33 @@ class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
       const nsHttpHeaderArray& aResponseTrailers,
       const nsTArray<ConsoleReportCollected>& aConsoleReports);
 
+  IPCResult RecvOnAfterLastPart(const nsresult& aStatus);
+
+  IPCResult RecvOnProgress(const int64_t& aProgress,
+                           const int64_t& aProgressMax);
+
+  IPCResult RecvOnStatus(const nsresult& aStatus);
+
   IPCResult RecvFlushedForDiversion();
 
   IPCResult RecvDivertMessages();
 
-  IPCResult RecvOnStartRequestSent();
+  IPCResult RecvNotifyClassificationFlags(const uint32_t& aClassificationFlags,
+                                          const bool& aIsThirdParty);
+
+  IPCResult RecvNotifyFlashPluginStateChanged(
+      const nsIHttpChannel::FlashPluginState& aState);
+
+  IPCResult RecvSetClassifierMatchedInfo(const ClassifierInfo& info);
+
+  IPCResult RecvSetClassifierMatchedTrackingInfo(const ClassifierInfo& info);
+
+  IPCResult RecvAttachStreamFilter(
+      Endpoint<extensions::PStreamFilterParent>&& aEndpoint);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
+
+  void CreateDataBridge();
 
  private:
   virtual ~HttpBackgroundChannelChild();
@@ -86,10 +122,6 @@ class HttpBackgroundChannelChild final : public PHttpBackgroundChannelChild {
   // True if OnStartRequest is received by HttpChannelChild.
   // Should only access on STS thread.
   bool mStartReceived = false;
-
-  // True if OnStartRequest is sent by HttpChannelParent.
-  // Should only access on STS thread.
-  bool mStartSent = false;
 
   // Store pending messages that require to be handled after OnStartRequest.
   // Should be flushed after OnStartRequest is received and handled.

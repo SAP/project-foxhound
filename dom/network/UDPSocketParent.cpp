@@ -32,7 +32,7 @@ UDPSocketParent::UDPSocketParent(PBackgroundParent* aManager)
 UDPSocketParent::UDPSocketParent(PNeckoParent* aManager)
     : mBackgroundManager(nullptr), mIPCOpen(true) {}
 
-UDPSocketParent::~UDPSocketParent() {}
+UDPSocketParent::~UDPSocketParent() = default;
 
 bool UDPSocketParent::Init(nsIPrincipal* aPrincipal,
                            const nsACString& aFilter) {
@@ -42,21 +42,6 @@ bool UDPSocketParent::Init(nsIPrincipal* aPrincipal,
   Unused << mBackgroundManager;
 
   mPrincipal = aPrincipal;
-  if (net::UsingNeckoIPCSecurity() && mPrincipal &&
-      !ContentParent::IgnoreIPCPrincipal()) {
-    nsCOMPtr<nsIPermissionManager> permMgr = services::GetPermissionManager();
-    if (!permMgr) {
-      NS_WARNING("No PermissionManager available!");
-      return false;
-    }
-
-    uint32_t permission = nsIPermissionManager::DENY_ACTION;
-    permMgr->TestExactPermissionFromPrincipal(
-        mPrincipal, NS_LITERAL_CSTRING("udp-socket"), &permission);
-    if (permission != nsIPermissionManager::ALLOW_ACTION) {
-      return false;
-    }
-  }
 
   if (!aFilter.IsEmpty()) {
     nsAutoCString contractId(NS_NETWORK_UDP_SOCKET_FILTER_HANDLER_PREFIX);
@@ -80,12 +65,7 @@ bool UDPSocketParent::Init(nsIPrincipal* aPrincipal,
       return false;
     }
   }
-  // We don't have browser actors in xpcshell, and hence can't run automated
-  // tests without this loophole.
-  if (net::UsingNeckoIPCSecurity() && !mFilter &&
-      (!mPrincipal || ContentParent::IgnoreIPCPrincipal())) {
-    return false;
-  }
+
   return true;
 }
 
@@ -235,7 +215,7 @@ static void CheckSTSThread() {
 // should be done there.
 mozilla::ipc::IPCResult UDPSocketParent::RecvConnect(
     const UDPAddressInfo& aAddressInfo) {
-  nsCOMPtr<nsIEventTarget> target = GetCurrentThreadEventTarget();
+  nsCOMPtr<nsIEventTarget> target = GetCurrentEventTarget();
   Unused << NS_WARN_IF(NS_FAILED(GetSTSThread()->Dispatch(
       WrapRunnable(RefPtr<UDPSocketParent>(this), &UDPSocketParent::DoConnect,
                    mSocket, target, aAddressInfo),
@@ -550,8 +530,8 @@ void UDPSocketParent::FireInternalError(uint32_t aLineNo) {
     return;
   }
 
-  mozilla::Unused << SendCallbackError(NS_LITERAL_CSTRING("Internal error"),
-                                       NS_LITERAL_CSTRING(__FILE__), aLineNo);
+  mozilla::Unused << SendCallbackError("Internal error"_ns,
+                                       nsLiteralCString(__FILE__), aLineNo);
 }
 
 void UDPSocketParent::SendInternalError(const nsCOMPtr<nsIEventTarget>& aThread,

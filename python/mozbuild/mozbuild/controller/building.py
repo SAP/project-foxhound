@@ -225,6 +225,10 @@ class BuildMonitor(MozbuildObject):
         self.instance_warnings = WarningsDatabase()
 
         def on_warning(warning):
+            # Skip `errors`
+            if warning['type'] == 'error':
+                return
+
             filename = warning['filename']
 
             if not os.path.exists(filename):
@@ -549,7 +553,8 @@ class BuildMonitor(MozbuildObject):
         ccache = mozfile.which('ccache')
         if ccache:
             try:
-                output = subprocess.check_output([ccache, '-s'])
+                output = subprocess.check_output(
+                    [ccache, '-s'], universal_newlines=True)
                 ccache_stats = CCacheStats(output)
             except ValueError as e:
                 self.log(logging.WARNING, 'ccache', {'msg': str(e)}, '{msg}')
@@ -861,6 +866,7 @@ class CCacheStats(object):
                 self._parse_line(line)
 
     def _parse_line(self, line):
+        line = six.ensure_text(line)
         if line.startswith(self.DIRECTORY_DESCRIPTION):
             self.cache_dir = self._strip_prefix(line, self.DIRECTORY_DESCRIPTION)
         elif line.startswith(self.PRIMARY_CONFIG_DESCRIPTION):
@@ -1002,9 +1008,8 @@ class BuildDriver(MozbuildObject):
         MozbuildObject.__init__(self, *args, **kwargs)
         self.mach_context = None
 
-    def build(self, what=None, disable_extra_make_dependencies=None, jobs=0,
-              directory=None, verbose=False, keep_going=False, mach_context=None,
-              append_env=None):
+    def build(self, what=None, jobs=0, directory=None, verbose=False,
+              keep_going=False, mach_context=None, append_env=None):
         """Invoke the build backend.
 
         ``what`` defines the thing to build. If not defined, the default
@@ -1030,7 +1035,6 @@ class BuildDriver(MozbuildObject):
                 return 1
 
             if directory is not None:
-                disable_extra_make_dependencies = True
                 directory = mozpath.normsep(directory)
                 if directory.startswith('/'):
                     directory = directory[1:]
@@ -1092,7 +1096,7 @@ class BuildDriver(MozbuildObject):
                                                            backend))
                      for backend in all_backends])):
                 print('Build configuration changed. Regenerating backend.')
-                args = [config.substs['PYTHON'],
+                args = [config.substs['PYTHON3'],
                         mozpath.join(self.topobjdir, 'config.status')]
                 self.run_process(args, cwd=self.topobjdir, pass_thru=True)
 
@@ -1145,22 +1149,6 @@ class BuildDriver(MozbuildObject):
                         return 1
 
                     target_pairs.append((make_dir, make_target))
-
-                # Possibly add extra make depencies using dumbmake.
-                if not disable_extra_make_dependencies:
-                    from dumbmake.dumbmake import (dependency_map,
-                                                   add_extra_dependencies)
-                    depfile = os.path.join(self.topsrcdir, 'build',
-                                           'dumbmake-dependencies')
-                    with io.open(depfile, encoding='utf-8', newline='\n') as f:
-                        dm = dependency_map(f.readlines())
-                    new_pairs = list(add_extra_dependencies(target_pairs, dm))
-                    self.log(logging.DEBUG, 'dumbmake',
-                             {'target_pairs': target_pairs,
-                              'new_pairs': new_pairs},
-                             'Added extra dependencies: will build {new_pairs} ' +
-                             'instead of {target_pairs}.')
-                    target_pairs = new_pairs
 
                 # Build target pairs.
                 for make_dir, make_target in target_pairs:
@@ -1312,6 +1300,11 @@ class BuildDriver(MozbuildObject):
             self.notify('Build complete' if not status else 'Build failed')
 
         if status:
+            if what and what not in ('faster', 'binaries'):
+                print('Hey! Builds initiated with `mach build '
+                      '$A_SPECIFIC_TARGET` may not always work, even if the '
+                      'code being built is correct. Consider doing a bare '
+                      '`mach build` instead.')
             return status
 
         if monitor.have_resource_usage:
@@ -1381,7 +1374,7 @@ class BuildDriver(MozbuildObject):
 
         return status
 
-    def install_tests(self, test_objs):
+    def install_tests(self):
         """Install test files."""
 
         if self.is_clobber_needed():
@@ -1390,7 +1383,7 @@ class BuildDriver(MozbuildObject):
             sys.exit(1)
 
         install_test_files(mozpath.normpath(self.topsrcdir), self.topobjdir,
-                           '_tests', test_objs)
+                           '_tests')
 
     def _clobber_configure(self):
         # This is an optimistic treatment of the CLOBBER file for when we have
@@ -1400,7 +1393,7 @@ class BuildDriver(MozbuildObject):
         # and subsections of the objdir related to python and testing before
         # proceeding.
         clobberer = Clobberer(self.topsrcdir, self.topobjdir)
-        clobber_output = io.BytesIO()
+        clobber_output = io.StringIO()
         res = clobberer.maybe_do_clobber(os.getcwd(), False,
                                          clobber_output)
         required, performed, message = res
@@ -1444,6 +1437,11 @@ class BuildDriver(MozbuildObject):
                 'topobjdir': self.topobjdir,
                 'mozconfig': self.mozconfig,
             }, sort_keys=True, indent=2))
+            # json.dumps in python2 inserts some trailing whitespace while
+            # json.dumps in python3 does not, which defeats the FileAvoidWrite
+            # mechanism. Strip the trailing whitespace to avoid rewriting this
+            # file unnecessarily.
+            to_write = '\n'.join([line.rstrip() for line in to_write.splitlines()])
             fh.write(to_write)
 
     def _run_client_mk(self, target=None, line_handler=None, jobs=0,

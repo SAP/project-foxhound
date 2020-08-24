@@ -18,10 +18,11 @@ const IGNORED_SOURCE_URLS = ["debugger eval code"];
 /**
  * This component represents a template for Function objects.
  */
+
 FunctionRep.propTypes = {
   object: PropTypes.object.isRequired,
   onViewSourceInDebugger: PropTypes.func,
-  sourceMapService: PropTypes.object,
+  shouldRenderTooltip: PropTypes.bool,
 };
 
 function FunctionRep(props) {
@@ -29,10 +30,12 @@ function FunctionRep(props) {
     object: grip,
     onViewSourceInDebugger,
     recordTelemetryEvent,
-    sourceMapService,
+    shouldRenderTooltip,
   } = props;
 
   let jumpToDefinitionButton;
+
+  // Test to see if we should display the link back to the original function definition
   if (
     onViewSourceInDebugger &&
     grip.location &&
@@ -51,11 +54,7 @@ function FunctionRep(props) {
           recordTelemetryEvent("jump_to_definition");
         }
 
-        const sourceLocation = await getSourceLocation(
-          grip.location,
-          sourceMapService
-        );
-        onViewSourceInDebugger(sourceLocation);
+        onViewSourceInDebugger(grip.location);
       },
     });
   }
@@ -68,27 +67,45 @@ function FunctionRep(props) {
     dir: "ltr",
   };
 
-  const parameterNames = (grip.parameterNames || []).filter(param => param);
+  const parameterNames = (grip.parameterNames || []).filter(Boolean);
+  const fnTitle = getFunctionTitle(grip, props);
+  const fnName = getFunctionName(grip, props);
 
   if (grip.isClassConstructor) {
+    const classTitle = getClassTitle(grip, props);
+    const classBodyTooltip = getClassBody(parameterNames, true, props);
+    const classTooltip = `${classTitle ? classTitle.props.children : ""}${
+      fnName ? fnName : ""
+    }${classBodyTooltip.join("")}`;
+
+    elProps.title = shouldRenderTooltip ? classTooltip : null;
+
     return span(
       elProps,
-      getClassTitle(grip, props),
-      getFunctionName(grip, props),
-      ...getClassBody(parameterNames, props),
+      classTitle,
+      fnName,
+      ...getClassBody(parameterNames, false, props),
       jumpToDefinitionButton
     );
   }
 
-  return span(
+  const fnTooltip = `${fnTitle ? fnTitle.props.children : ""}${
+    fnName ? fnName : ""
+  }(${parameterNames.join(", ")})`;
+
+  elProps.title = shouldRenderTooltip ? fnTooltip : null;
+
+  const returnSpan = span(
     elProps,
-    getFunctionTitle(grip, props),
-    getFunctionName(grip, props),
+    fnTitle,
+    fnName,
     "(",
     ...getParams(parameterNames),
     ")",
     jumpToDefinitionButton
   );
+
+  return returnSpan;
 }
 
 function getClassTitle(grip) {
@@ -191,21 +208,24 @@ function cleanFunctionName(name) {
   return name;
 }
 
-function getClassBody(constructorParams, props) {
+function getClassBody(constructorParams, textOnly = false, props) {
   const { mode } = props;
 
   if (mode === MODE.TINY) {
     return [];
   }
 
-  return [" {", ...getClassConstructor(constructorParams), "}"];
+  return [" {", ...getClassConstructor(textOnly, constructorParams), "}"];
 }
 
-function getClassConstructor(parameterNames) {
+function getClassConstructor(textOnly = false, parameterNames) {
   if (parameterNames.length === 0) {
     return [];
   }
 
+  if (textOnly) {
+    return [` constructor(${parameterNames.join(", ")}) `];
+  }
   return [" constructor(", ...getParams(parameterNames), ") "];
 }
 
@@ -228,26 +248,7 @@ function supportsObject(grip, noGrip = false) {
   return type == "Function";
 }
 
-async function getSourceLocation(location, sourceMapService) {
-  if (!sourceMapService) {
-    return location;
-  }
-  try {
-    const originalLocation = await sourceMapService.originalPositionFor(
-      location.url,
-      location.line,
-      location.column
-    );
-    if (originalLocation) {
-      const { sourceUrl, line, column } = originalLocation;
-      return { url: sourceUrl, line, column };
-    }
-  } catch (e) {}
-  return location;
-}
-
 // Exports from this module
-
 module.exports = {
   rep: wrapRender(FunctionRep),
   supportsObject,

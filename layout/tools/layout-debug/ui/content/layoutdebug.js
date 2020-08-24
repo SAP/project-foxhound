@@ -38,6 +38,7 @@ const COMMANDS = [
   "dumpWebShells",
   "dumpContent",
   "dumpFrames",
+  "dumpFramesInCSSPixels",
   "dumpViews",
   "dumpStyleSheets",
   "dumpMatchedRules",
@@ -156,15 +157,13 @@ for (let name of COMMANDS) {
   };
 }
 
-const XUL_NS = "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul";
-
 function autoCloseIfNeeded(aCrash) {
   if (!gArgs.autoclose) {
     return;
   }
   setTimeout(function() {
     if (aCrash) {
-      let browser = document.createElementNS(XUL_NS, "browser");
+      let browser = document.createXULElement("browser");
       // FIXME(emilio): we could use gBrowser if we bothered get the process switches right.
       //
       // Doesn't seem worth for this particular case.
@@ -195,8 +194,8 @@ nsLDBBrowserContentListener.prototype = {
   },
 
   QueryInterface: ChromeUtils.generateQI([
-    Ci.nsIWebProgressListener,
-    Ci.nsISupportsWeakReference,
+    "nsIWebProgressListener",
+    "nsISupportsWeakReference",
   ]),
 
   // nsIWebProgressListener implementation
@@ -474,17 +473,8 @@ function updateBrowserRemotenessByURL(aURL) {
       gBrowser.setAttribute("remote", "true");
       gBrowser.setAttribute("remoteType", remoteType);
     }
-    if (
-      !Services.prefs.getBoolPref(
-        "fission.rebuild_frameloaders_on_remoteness_change",
-        false
-      )
-    ) {
-      gBrowser.replaceWith(gBrowser);
-    } else {
-      gBrowser.changeRemoteness({ remoteType });
-      gBrowser.construct();
-    }
+    gBrowser.changeRemoteness({ remoteType });
+    gBrowser.construct();
     gDebugger.attachBrowser();
   }
 }

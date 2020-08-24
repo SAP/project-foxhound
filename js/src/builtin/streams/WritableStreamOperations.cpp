@@ -25,13 +25,14 @@
 #include "js/Promise.h"     // JS::{Reject,Resolve}Promise
 #include "js/RootingAPI.h"  // JS::Handle, JS::Rooted
 #include "js/Value.h"  // JS::Value, JS::ObjecValue, JS::UndefinedHandleValue
-#include "vm/Compartment.h"    // JS::Compartment
-#include "vm/JSContext.h"      // JSContext
-#include "vm/List.h"           // js::ListObject
-#include "vm/PromiseObject.h"  // js::PromiseObject
+#include "vm/Compartment.h"  // JS::Compartment
+#include "vm/JSContext.h"    // JSContext
+#include "vm/List.h"         // js::ListObject
+#include "vm/PromiseObject.h"  // js::PromiseObject, js::PromiseResolvedWithUndefined
 
+#include "builtin/Promise-inl.h"  // js::SetSettledPromiseIsHandled
 #include "builtin/streams/HandlerFunction-inl.h"  // js::NewHandler, js::TargetFromHandler
-#include "builtin/streams/MiscellaneousOperations-inl.h"  // js::ResolveUnwrappedPromiseWithUndefined, js::RejectUnwrappedPromiseWithError, js::SetSettledPromiseIsHandled
+#include "builtin/streams/MiscellaneousOperations-inl.h"  // js::ResolveUnwrappedPromiseWithUndefined, js::RejectUnwrappedPromiseWithError
 #include "builtin/streams/WritableStream-inl.h"  // js::UnwrapWriterFromStream
 #include "builtin/streams/WritableStreamDefaultWriter-inl.h"  // js::WritableStreamDefaultWriter::closedPromise
 #include "vm/Compartment-inl.h"  // JS::Compartment::wrap, js::UnwrapAndDowncastObject
@@ -137,7 +138,7 @@ JSObject* js::WritableStreamAbort(JSContext* cx,
   // Step 2: If state is "closed" or "errored", return a promise resolved with
   //         undefined.
   if (unwrappedStream->closed() || unwrappedStream->errored()) {
-    return PromiseObject::unforgeableResolve(cx, UndefinedHandleValue);
+    return PromiseResolvedWithUndefined(cx);
   }
 
   // Step 3: If stream.[[pendingAbortRequest]] is not undefined, return
@@ -862,7 +863,7 @@ MOZ_MUST_USE bool js::WritableStreamRejectCloseAndClosedPromiseIfNeeded(
       return false;
     }
 
-    SetSettledPromiseIsHandled(cx, unwrappedClosedPromise);
+    js::SetSettledPromiseIsHandled(cx, unwrappedClosedPromise);
   }
 
   return true;

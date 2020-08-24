@@ -89,13 +89,19 @@ GdkAtom* DataOffer::GetTargets(int* aTargetNum) {
 bool DataOffer::HasTarget(const char* aMimeType) {
   int length = mTargetMIMETypes.Length();
   for (int32_t j = 0; j < length; j++) {
-    if (mTargetMIMETypes[j] == gdk_atom_intern(aMimeType, FALSE)) return true;
+    if (mTargetMIMETypes[j] == gdk_atom_intern(aMimeType, FALSE)) {
+      LOGCLIP(("DataOffer::HasTarget() we have mime %s\n", aMimeType));
+      return true;
+    }
   }
+  LOGCLIP(("DataOffer::HasTarget() missing mime %s\n", aMimeType));
   return false;
 }
 
 char* DataOffer::GetData(wl_display* aDisplay, const char* aMimeType,
                          uint32_t* aContentLength) {
+  LOGCLIP(("DataOffer::GetData() mime %s\n", aMimeType));
+
   int pipe_fd[2];
   if (pipe(pipe_fd) == -1) return nullptr;
 
@@ -131,6 +137,7 @@ char* DataOffer::GetData(wl_display* aDisplay, const char* aMimeType,
   }
   // Quit for poll error() and timeout
   if (pollReturn <= 0) {
+    NS_WARNING("DataOffer::RequestDataTransfer() poll timeout!");
     close(pipe_fd[0]);
     return nullptr;
   }
@@ -165,6 +172,7 @@ char* DataOffer::GetData(wl_display* aDisplay, const char* aMimeType,
   g_io_channel_unref(channel);
   close(pipe_fd[0]);
 
+  LOGCLIP(("  Got clipboard data length %d\n", *aContentLength));
   return clipboardData;
 }
 
@@ -446,7 +454,7 @@ void nsRetrievalContextWayland::SetClipboardDataOffer(
     NS_ASSERTION(dataOffer, "We're missing stored clipboard data offer!");
     if (dataOffer) {
       g_hash_table_remove(mActiveOffers, aWaylandDataOffer);
-      mClipboardOffer = dataOffer;
+      mClipboardOffer = WrapUnique(dataOffer);
     }
   }
 }
@@ -464,7 +472,7 @@ void nsRetrievalContextWayland::SetPrimaryDataOffer(
     NS_ASSERTION(dataOffer, "We're missing primary data offer!");
     if (dataOffer) {
       g_hash_table_remove(mActiveOffers, aPrimaryDataOffer);
-      mPrimaryOffer = dataOffer;
+      mPrimaryOffer = WrapUnique(dataOffer);
     }
   }
 }
@@ -530,7 +538,6 @@ static void data_device_enter(void* data, struct wl_data_device* data_device,
   }
 
   LOGDRAG(("nsWindow data_device_enter for GtkWidget %p\n", (void*)gtkWidget));
-
   dragContext->DropDataEnter(gtkWidget, time, wl_fixed_to_int(x_fixed),
                              wl_fixed_to_int(y_fixed));
 }
@@ -542,6 +549,8 @@ static void data_device_leave(void* data, struct wl_data_device* data_device) {
   nsWaylandDragContext* dropContext = context->GetDragContext();
   WindowDragLeaveHandler(dropContext->GetWidget());
 
+  LOGDRAG(("nsWindow data_device_leave for GtkWidget %p\n",
+           (void*)dropContext->GetWidget()));
   context->ClearDragAndDropDataOffer();
 }
 
@@ -557,6 +566,8 @@ static void data_device_motion(void* data, struct wl_data_device* data_device,
   nscoord y = wl_fixed_to_int(y_fixed);
   dropContext->DropMotion(time, x, y);
 
+  LOGDRAG(("nsWindow data_device_motion for GtkWidget %p\n",
+           (void*)dropContext->GetWidget()));
   WindowDragMotionHandler(dropContext->GetWidget(), nullptr, dropContext, x, y,
                           time);
 }
@@ -570,6 +581,8 @@ static void data_device_drop(void* data, struct wl_data_device* data_device) {
   nscoord x, y;
   dropContext->GetLastDropInfo(&time, &x, &y);
 
+  LOGDRAG(("nsWindow data_device_drop GtkWidget %p\n",
+           (void*)dropContext->GetWidget()));
   WindowDragDropHandler(dropContext->GetWidget(), nullptr, dropContext, x, y,
                         time);
 }
@@ -645,7 +658,7 @@ bool nsRetrievalContextWayland::HasSelectionSupport(void) {
 
 nsRetrievalContextWayland::nsRetrievalContextWayland(void)
     : mInitialized(false),
-      mDisplay(WaylandDisplayGet()),
+      mDisplay(mozilla::widget::WaylandDisplayGet()),
       mActiveOffers(g_hash_table_new(NULL, NULL)),
       mClipboardOffer(nullptr),
       mPrimaryOffer(nullptr),
@@ -743,7 +756,8 @@ const char* nsRetrievalContextWayland::GetClipboardData(
   NS_ASSERTION(mClipboardData == nullptr && mClipboardDataLength == 0,
                "Looks like we're leaking clipboard data here!");
 
-  LOGCLIP(("nsRetrievalContextWayland::GetClipboardData\n"));
+  LOGCLIP(("nsRetrievalContextWayland::GetClipboardData [%p] mime %s\n", this,
+           aMimeType));
 
   /* If actual clipboard data is owned by us we don't need to go
    * through Wayland but we ask Gtk+ to directly call data
@@ -752,13 +766,15 @@ const char* nsRetrievalContextWayland::GetClipboardData(
    */
   GdkAtom selection = GetSelectionAtom(aWhichClipboard);
   if (gdk_selection_owner_get(selection)) {
+    LOGCLIP(("  Internal clipboard content\n"));
     mClipboardRequestNumber++;
     gtk_clipboard_request_contents(
         gtk_clipboard_get(selection), gdk_atom_intern(aMimeType, FALSE),
         wayland_clipboard_contents_received,
         new FastTrackClipboard(mClipboardRequestNumber, this));
   } else {
-    DataOffer* dataOffer =
+    LOGCLIP(("  Remote clipboard content\n"));
+    const auto& dataOffer =
         (selection == GDK_SELECTION_PRIMARY) ? mPrimaryOffer : mClipboardOffer;
     if (!dataOffer) {
       // Something went wrong. We're requested to provide clipboard data
@@ -778,10 +794,10 @@ const char* nsRetrievalContextWayland::GetClipboardData(
 
 const char* nsRetrievalContextWayland::GetClipboardText(
     int32_t aWhichClipboard) {
-  LOGCLIP(("nsRetrievalContextWayland::GetClipboardText\n"));
+  LOGCLIP(("nsRetrievalContextWayland::GetClipboardText [%p]\n", this));
 
   GdkAtom selection = GetSelectionAtom(aWhichClipboard);
-  DataOffer* dataOffer =
+  const auto& dataOffer =
       (selection == GDK_SELECTION_PRIMARY) ? mPrimaryOffer : mClipboardOffer;
   if (!dataOffer) return nullptr;
 
@@ -796,7 +812,7 @@ const char* nsRetrievalContextWayland::GetClipboardText(
 
 void nsRetrievalContextWayland::ReleaseClipboardData(
     const char* aClipboardData) {
-  LOGCLIP(("nsRetrievalContextWayland::ReleaseClipboardData\n"));
+  LOGCLIP(("nsRetrievalContextWayland::ReleaseClipboardData [%p]\n", this));
 
   NS_ASSERTION(aClipboardData == mClipboardData,
                "Releasing unknown clipboard data!");

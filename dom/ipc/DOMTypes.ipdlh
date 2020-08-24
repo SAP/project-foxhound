@@ -11,8 +11,8 @@ include "mozilla/layers/LayersMessageUtils.h";
 
 include IPCBlob;
 include IPCStream;
+include protocol PRemoteLazyInputStream;
 include ProtocolTypes;
-include protocol PSHEntry;
 
 using struct mozilla::void_t
   from "ipc/IPCMessageUtils.h";
@@ -40,8 +40,7 @@ using refcounted class nsIInputStream from "mozilla/ipc/IPCStreamUtils.h";
 using refcounted class nsIReferrerInfo from "mozilla/dom/ReferrerInfoUtils.h";
 using refcounted class nsIVariant from "mozilla/dom/PropertyBagUtils.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
-using refcounted class nsISHEntry from "nsISHEntry.h";
-using refcounted class mozilla::dom::CrossProcessSHEntry from "mozilla/dom/MaybeNewPSHEntry.h";
+using refcounted class mozilla::dom::BrowsingContext from "mozilla/dom/BrowsingContext.h";
 
 namespace mozilla {
 namespace dom {
@@ -66,6 +65,14 @@ struct ClonedMessageData
   IPCBlob[] blobs;
   IPCStream[] inputStreams;
   MessagePortIdentifier[] identifiers;
+};
+
+struct ErrorMessageData {
+};
+
+union ClonedOrErrorMessageData {
+  ClonedMessageData;
+  ErrorMessageData;
 };
 
 struct RefMessageData {
@@ -221,17 +228,6 @@ struct PerformanceInfo
   CategoryDispatch[] items;
 };
 
-
-struct WindowGlobalInit
-{
-  nsIPrincipal principal;
-  nsIPrincipal contentBlockingAllowListPrincipal;
-  nsIURI documentURI;
-  MaybeDiscardedBrowsingContext browsingContext;
-  uint64_t innerWindowId;
-  uint64_t outerWindowId;
-};
-
 struct DocShellLoadStateInit
 {
   nsIURI URI;
@@ -245,7 +241,7 @@ struct DocShellLoadStateInit
   bool InheritPrincipal;
   bool PrincipalIsExplicit;
   nsIPrincipal PrincipalToInherit;
-  nsIPrincipal StoragePrincipalToInherit;
+  nsIPrincipal PartitionedPrincipalToInherit;
   bool ForceAllowDataURI;
   bool OriginalFrameSrc;
   bool IsFormSubmission;
@@ -254,6 +250,7 @@ struct DocShellLoadStateInit
   nsIURI BaseURI;
   uint32_t LoadFlags;
   bool FirstParty;
+  bool HasValidUserGestureActivation;
   nsCString TypeHint;
   nsString FileName;
   bool IsFromProcessingFrameAttributes;
@@ -265,6 +262,9 @@ struct DocShellLoadStateInit
   // encounters a server side redirect.
   nsIContentSecurityPolicy Csp;
 
+  MaybeDiscardedBrowsingContext SourceBrowsingContext;
+  MaybeDiscardedBrowsingContext TargetBrowsingContext;
+
   nsCString? OriginalURIString;
   int32_t? CancelContentJSEpoch;
 
@@ -272,15 +272,15 @@ struct DocShellLoadStateInit
   nsIInputStream HeadersStream;
 
   nsString SrcdocData; // useless without sourcedocshell
-  // This might be missing if serialization of session history entries is
-  // not supported. This is the case when 'fission.sessionHistoryInParent'
-  // pref is off.
-  CrossProcessSHEntry SHEntry;
 
   // Fields missing due to lack of need or serialization
   // nsCOMPtr<nsIDocShell> mSourceDocShell;
   // bool mIsSrcDocLoad; // useless without sourcedocshell
   // nsIChannel pendingRedirectedChannel; // sent through other mechanism
+
+  uint64_t LoadIdentifier;
+
+  bool ChannelInitialized;
 };
 
 struct TimedChannelInfo
@@ -308,14 +308,13 @@ struct TimedChannelInfo
 
 struct ReplacementChannelConfigInit
 {
-  uint32_t loadFlags;
   uint32_t redirectFlags;
   uint32_t classOfService;
   bool? privateBrowsing;
   nsCString? method;
   nsIReferrerInfo referrerInfo;
   TimedChannelInfo? timedChannel;
-  nsIInputStream uploadStream;
+  nullable PRemoteLazyInputStream uploadStream;
   bool uploadStreamHasHeaders;
   nsCString? contentType;
   nsCString? contentLength;
@@ -355,8 +354,6 @@ struct IPDLProperty
 struct ParentShowInfo
 {
   nsString name;
-  bool fullscreenAllowed;
-  bool isPrivate;
   bool fakeShowInfo;
   bool isTransparent;
   float dpi;

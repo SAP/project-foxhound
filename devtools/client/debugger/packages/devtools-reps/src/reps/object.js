@@ -16,21 +16,23 @@ const DEFAULT_TITLE = "Object";
  * Renders an object. An object is represented by a list of its
  * properties enclosed in curly brackets.
  */
+
 ObjectRep.propTypes = {
   object: PropTypes.object.isRequired,
   // @TODO Change this to Object.values when supported in Node's version of V8
   mode: PropTypes.oneOf(Object.keys(MODE).map(key => MODE[key])),
   title: PropTypes.string,
+  shouldRenderTooltip: PropTypes.bool,
 };
 
 function ObjectRep(props) {
   const object = props.object;
-  const propsArray = safePropIterator(props, object);
+  const { shouldRenderTooltip = true } = props;
 
   if (props.mode === MODE.TINY) {
     const tinyModeItems = [];
-    if (getTitle(props, object) !== DEFAULT_TITLE) {
-      tinyModeItems.push(getTitleElement(props, object));
+    if (getTitle(props) !== DEFAULT_TITLE) {
+      tinyModeItems.push(getTitleElement(props));
     } else {
       tinyModeItems.push(
         span(
@@ -39,7 +41,7 @@ function ObjectRep(props) {
           },
           "{"
         ),
-        propsArray.length > 0 ? ellipsisElement : null,
+        Object.keys(object).length > 0 ? ellipsisElement : null,
         span(
           {
             className: "objectRightBrace",
@@ -49,12 +51,23 @@ function ObjectRep(props) {
       );
     }
 
-    return span({ className: "objectBox objectBox-object" }, ...tinyModeItems);
+    return span(
+      {
+        className: "objectBox objectBox-object",
+        title: shouldRenderTooltip ? getTitle(props) : null,
+      },
+      ...tinyModeItems
+    );
   }
 
+  const propsArray = safePropIterator(props, object);
+
   return span(
-    { className: "objectBox objectBox-object" },
-    getTitleElement(props, object),
+    {
+      className: "objectBox objectBox-object",
+      title: shouldRenderTooltip ? getTitle(props) : null,
+    },
+    getTitleElement(props),
     span(
       {
         className: "objectLeftBrace",
@@ -71,11 +84,11 @@ function ObjectRep(props) {
   );
 }
 
-function getTitleElement(props, object) {
-  return span({ className: "objectTitle" }, getTitle(props, object));
+function getTitleElement(props) {
+  return span({ className: "objectTitle" }, getTitle(props));
 }
 
-function getTitle(props, object) {
+function getTitle(props) {
   return props.title || DEFAULT_TITLE;
 }
 

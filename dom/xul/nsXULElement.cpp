@@ -107,9 +107,9 @@ nsXULElement::~nsXULElement() = default;
 
 void nsXULElement::MaybeUpdatePrivateLifetime() {
   if (AttrValueIs(kNameSpaceID_None, nsGkAtoms::windowtype,
-                  NS_LITERAL_STRING("navigator:browser"), eCaseMatters) ||
+                  u"navigator:browser"_ns, eCaseMatters) ||
       AttrValueIs(kNameSpaceID_None, nsGkAtoms::windowtype,
-                  NS_LITERAL_STRING("navigator:geckoview"), eCaseMatters)) {
+                  u"navigator:geckoview"_ns, eCaseMatters)) {
     return;
   }
 
@@ -123,7 +123,9 @@ void nsXULElement::MaybeUpdatePrivateLifetime() {
 /* static */
 nsXULElement* NS_NewBasicXULElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo) {
-  return new nsXULElement(std::move(aNodeInfo));
+  RefPtr<mozilla::dom::NodeInfo> nodeInfo(std::move(aNodeInfo));
+  auto* nim = nodeInfo->NodeInfoManager();
+  return new (nim) nsXULElement(nodeInfo.forget());
 }
 
 /* static */
@@ -132,7 +134,8 @@ nsXULElement* nsXULElement::Construct(
   RefPtr<mozilla::dom::NodeInfo> nodeInfo = aNodeInfo;
   if (nodeInfo->Equals(nsGkAtoms::label) ||
       nodeInfo->Equals(nsGkAtoms::description)) {
-    return new XULTextElement(nodeInfo.forget());
+    auto* nim = nodeInfo->NodeInfoManager();
+    return new (nim) XULTextElement(nodeInfo.forget());
   }
 
   if (nodeInfo->Equals(nsGkAtoms::menupopup) ||
@@ -148,16 +151,19 @@ nsXULElement* nsXULElement::Construct(
   if (nodeInfo->Equals(nsGkAtoms::iframe) ||
       nodeInfo->Equals(nsGkAtoms::browser) ||
       nodeInfo->Equals(nsGkAtoms::editor)) {
-    return new XULFrameElement(nodeInfo.forget());
+    auto* nim = nodeInfo->NodeInfoManager();
+    return new (nim) XULFrameElement(nodeInfo.forget());
   }
 
   if (nodeInfo->Equals(nsGkAtoms::menu) ||
       nodeInfo->Equals(nsGkAtoms::menulist)) {
-    return new XULMenuElement(nodeInfo.forget());
+    auto* nim = nodeInfo->NodeInfoManager();
+    return new (nim) XULMenuElement(nodeInfo.forget());
   }
 
   if (nodeInfo->Equals(nsGkAtoms::tree)) {
-    return new XULTreeElement(nodeInfo.forget());
+    auto* nim = nodeInfo->NodeInfoManager();
+    return new (nim) XULTreeElement(nodeInfo.forget());
   }
 
   return NS_NewBasicXULElement(nodeInfo.forget());
@@ -361,7 +367,7 @@ bool nsXULElement::IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) {
   // or if it's a remote target, since the remote target must handle
   // the focus.
   if (aWithMouse && IsNonList(mNodeInfo) &&
-      !EventStateManager::IsRemoteTarget(this)) {
+      !EventStateManager::IsTopLevelRemoteTarget(this)) {
     return false;
   }
 #endif
@@ -379,11 +385,12 @@ bool nsXULElement::IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) {
   }
 
   if (aTabIndex) {
-    if (HasAttr(kNameSpaceID_None, nsGkAtoms::tabindex)) {
+    Maybe<int32_t> attrVal = GetTabIndexAttrValue();
+    if (attrVal.isSome()) {
       // The tabindex attribute was specified, so the element becomes
       // focusable.
       shouldFocus = true;
-      *aTabIndex = TabIndex();
+      *aTabIndex = attrVal.value();
     } else {
       // otherwise, if there is no tabindex attribute, just use the value of
       // *aTabIndex to indicate focusability. Reset any supplied tabindex to 0.
@@ -422,8 +429,8 @@ int32_t nsXULElement::ScreenY() {
 }
 
 bool nsXULElement::HasMenu() {
-  nsMenuFrame* menu = do_QueryFrame(GetPrimaryFrame());
-  return menu != nullptr;
+  nsMenuFrame* menu = do_QueryFrame(GetPrimaryFrame(FlushType::Frames));
+  return !!menu;
 }
 
 void nsXULElement::OpenMenu(bool aOpenFlag) {
@@ -586,8 +593,7 @@ nsresult nsXULElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   }
 
   Document& doc = aContext.OwnerDoc();
-  if (!IsInNativeAnonymousSubtree() && !doc.IsLoadedAsInteractiveData() &&
-      !doc.AllowXULXBL() &&
+  if (!IsInNativeAnonymousSubtree() && !doc.AllowXULXBL() &&
       !doc.HasWarnedAbout(Document::eImportXULIntoContent)) {
     nsContentUtils::AddScriptRunner(new XULInContentErrorReporter(doc));
   }
@@ -1074,10 +1080,10 @@ nsresult nsXULElement::AddPopupListener(nsAtom* aName) {
   SetFlags(listenerFlag);
 
   if (isContext) {
-    manager->AddEventListenerByType(listener, NS_LITERAL_STRING("contextmenu"),
+    manager->AddEventListenerByType(listener, u"contextmenu"_ns,
                                     TrustedEventsAtSystemGroupBubble());
   } else {
-    manager->AddEventListenerByType(listener, NS_LITERAL_STRING("mousedown"),
+    manager->AddEventListenerByType(listener, u"mousedown"_ns,
                                     TrustedEventsAtSystemGroupBubble());
   }
   return NS_OK;
@@ -1160,9 +1166,9 @@ JSObject* nsXULElement::WrapNode(JSContext* aCx,
   return dom::XULElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-bool nsXULElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const {
+bool nsXULElement::IsInteractiveHTMLContent() const {
   return IsXULElement(nsGkAtoms::menupopup) ||
-         Element::IsInteractiveHTMLContent(aIgnoreTabindex);
+         Element::IsInteractiveHTMLContent();
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULPrototypeNode)
@@ -1825,8 +1831,8 @@ nsresult nsXULPrototypeScript::Compile(
 
   // Ok, compile it to create a prototype script object!
   JS::CompileOptions options(cx);
-  options.setIntroductionType("scriptElement")
-      .setFileAndLine(urlspec.get(), aLineNo);
+  options.setIntroductionType(mOutOfLine ? "srcScript" : "inlineScript")
+      .setFileAndLine(urlspec.get(), mOutOfLine ? 1 : aLineNo);
   // If the script was inline, tell the JS parser to save source for
   // Function.prototype.toSource(). If it's out of line, we retrieve the
   // source from the files on demand.

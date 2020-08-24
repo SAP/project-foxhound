@@ -26,7 +26,7 @@
 #include "nsIMemoryReporter.h"
 
 namespace mozilla {
-enum class MediaFeatureChangeReason : uint8_t;
+enum class MediaFeatureChangeReason : uint16_t;
 namespace css {
 class Rule;
 }  // namespace css
@@ -337,7 +337,7 @@ class ServoStyleSet {
 
   nsTArray<ComputedKeyframeValues> GetComputedKeyframeValuesFor(
       const nsTArray<Keyframe>& aKeyframes, dom::Element* aElement,
-      const ComputedStyle* aStyle);
+      PseudoStyleType aPseudoType, const ComputedStyle* aStyle);
 
   void GetAnimationValues(
       RawServoDeclarationBlock* aDeclarations, dom::Element* aElement,
@@ -603,7 +603,7 @@ class UACacheReporter final : public nsIMemoryReporter {
   NS_DECL_NSIMEMORYREPORTER
 
  private:
-  ~UACacheReporter() {}
+  ~UACacheReporter() = default;
 };
 
 }  // namespace mozilla

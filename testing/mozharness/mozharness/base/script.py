@@ -36,6 +36,7 @@ import zlib
 from contextlib import contextmanager
 from io import BytesIO
 
+import six
 from six import binary_type
 
 from mozprocess import ProcessHandler
@@ -1274,11 +1275,10 @@ class ScriptMixin(PlatformMixin):
                 del env[k]
         if os.name == 'nt':
             pref_encoding = locale.getpreferredencoding()
-            for k, v in env.iteritems():
+            for k, v in six.iteritems(env):
                 # When run locally on Windows machines, some environment
                 # variables may be unicode.
-                if isinstance(v, unicode):
-                    env[k] = v.encode(pref_encoding)
+                env[k] = six.ensure_str(v, pref_encoding)
         if set_self_env:
             self.env = env
         return env
@@ -1867,38 +1867,6 @@ class BaseScript(ScriptMixin, LogMixin, object):
         self._return_code = 0
         super(BaseScript, self).__init__()
 
-        # Collect decorated methods. We simply iterate over the attributes of
-        # the current class instance and look for signatures deposited by
-        # the decorators.
-        self._listeners = dict(
-            pre_run=[],
-            pre_action=[],
-            post_action=[],
-            post_run=[],
-        )
-        for k in dir(self):
-            item = getattr(self, k)
-
-            # We only decorate methods, so ignore other types.
-            if not inspect.ismethod(item):
-                continue
-
-            if hasattr(item, '_pre_run_listener'):
-                self._listeners['pre_run'].append(k)
-
-            if hasattr(item, '_pre_action_listener'):
-                self._listeners['pre_action'].append((
-                    k,
-                    item._pre_action_listener))
-
-            if hasattr(item, '_post_action_listener'):
-                self._listeners['post_action'].append((
-                    k,
-                    item._post_action_listener))
-
-            if hasattr(item, '_post_run_listener'):
-                self._listeners['post_run'].append(k)
-
         self.log_obj = None
         self.abs_dirs = None
         if config_options is None:
@@ -1950,6 +1918,43 @@ class BaseScript(ScriptMixin, LogMixin, object):
             self._dump_config_hierarchy(rw_config.all_cfg_files_and_dicts)
         if self.config.get("dump_config"):
             self.dump_config(exit_on_finish=True)
+
+        # Collect decorated methods. We simply iterate over the attributes of
+        # the current class instance and look for signatures deposited by
+        # the decorators.
+        self._listeners = dict(
+            pre_run=[],
+            pre_action=[],
+            post_action=[],
+            post_run=[],
+        )
+        for k in dir(self):
+            try:
+                item = getattr(self, k)
+            except Exception as e:
+                self.warning("BaseScript collecting decorated methods: "
+                             "failure to get attribute {}: {}".format(k, str(e)))
+                continue
+
+            # We only decorate methods, so ignore other types.
+            if not inspect.ismethod(item):
+                continue
+
+            if hasattr(item, '_pre_run_listener'):
+                self._listeners['pre_run'].append(k)
+
+            if hasattr(item, '_pre_action_listener'):
+                self._listeners['pre_action'].append((
+                    k,
+                    item._pre_action_listener))
+
+            if hasattr(item, '_post_action_listener'):
+                self._listeners['post_action'].append((
+                    k,
+                    item._post_action_listener))
+
+            if hasattr(item, '_post_run_listener'):
+                self._listeners['post_run'].append(k)
 
     def _dump_config_hierarchy(self, cfg_files):
         """ interpret each config file used.
@@ -2181,6 +2186,8 @@ class BaseScript(ScriptMixin, LogMixin, object):
         dirs['base_work_dir'] = c['base_work_dir']
         dirs['abs_work_dir'] = os.path.join(c['base_work_dir'], c['work_dir'])
         dirs['abs_log_dir'] = os.path.join(c['base_work_dir'], c.get('log_dir', 'logs'))
+        if 'GECKO_PATH' in os.environ:
+            dirs['abs_src_dir'] = os.environ['GECKO_PATH']
         self.abs_dirs = dirs
         return self.abs_dirs
 

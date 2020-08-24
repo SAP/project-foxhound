@@ -173,7 +173,7 @@ class AsyncCompositionManager final {
    */
   void AlignFixedAndStickyLayers(
       Layer* aTransformedSubtreeRoot, Layer* aStartTraversalAt,
-      ScrollableLayerGuid::ViewID aTransformScrollId,
+      SideBits aStuckSides, ScrollableLayerGuid::ViewID aTransformScrollId,
       const LayerToParentLayerMatrix4x4& aPreviousTransformForRoot,
       const LayerToParentLayerMatrix4x4& aCurrentTransformForRoot,
       const ScreenMargin& aCompositorFixedLayerMargins,
@@ -187,7 +187,7 @@ class AsyncCompositionManager final {
    */
   void AdjustFixedOrStickyLayer(
       Layer* aTransformedSubtreeRoot, Layer* aFixedOrSticky,
-      ScrollableLayerGuid::ViewID aTransformScrollId,
+      SideBits aStuckSides, ScrollableLayerGuid::ViewID aTransformScrollId,
       const LayerToParentLayerMatrix4x4& aPreviousTransformForRoot,
       const LayerToParentLayerMatrix4x4& aCurrentTransformForRoot,
       const ScreenMargin& aCompositorFixedLayerMargins,
@@ -219,6 +219,8 @@ class AsyncCompositionManager final {
   // Records the shadow transforms for the tree of layers rooted at the given
   // layer
   void RecordShadowTransforms(Layer* aLayer);
+
+  bool SampleAnimations(Layer* aLayer, TimeStamp aCurrentFrameTime);
 
   TargetConfig mTargetConfig;
   CSSRect mContentRect;

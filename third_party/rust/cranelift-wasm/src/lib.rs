@@ -59,17 +59,18 @@ mod translation_utils;
 
 pub use crate::environ::{
     DummyEnvironment, FuncEnvironment, GlobalVariable, ModuleEnvironment, ReturnMode,
-    TargetEnvironment, WasmError, WasmResult,
+    TargetEnvironment, WasmError, WasmFuncType, WasmResult, WasmType,
 };
 pub use crate::func_translator::FuncTranslator;
 pub use crate::module_translator::translate_module;
 pub use crate::state::func_state::FuncTranslationState;
 pub use crate::state::module_state::ModuleTranslationState;
 pub use crate::translation_utils::{
-    get_vmctx_value_label, DefinedFuncIndex, DefinedGlobalIndex, DefinedMemoryIndex,
-    DefinedTableIndex, FuncIndex, Global, GlobalIndex, GlobalInit, Memory, MemoryIndex,
+    get_vmctx_value_label, DataIndex, DefinedFuncIndex, DefinedGlobalIndex, DefinedMemoryIndex,
+    DefinedTableIndex, ElemIndex, FuncIndex, Global, GlobalIndex, GlobalInit, Memory, MemoryIndex,
     SignatureIndex, Table, TableElementType, TableIndex,
 };
+pub use cranelift_frontend::FunctionBuilder;
 
 /// Version number of this crate.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

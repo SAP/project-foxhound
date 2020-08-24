@@ -92,7 +92,7 @@ class SearchBar extends Component<Props, State> {
   }
 
   componentWillUnmount() {
-    const shortcuts = this.context.shortcuts;
+    const { shortcuts } = this.context;
     const {
       searchShortcut,
       searchAgainShortcut,
@@ -109,7 +109,7 @@ class SearchBar extends Component<Props, State> {
     // overwrite this.doSearch with debounced version to
     // reduce frequency of queries
     this.doSearch = debounce(this.doSearch, 100);
-    const shortcuts = this.context.shortcuts;
+    const { shortcuts } = this.context;
     const {
       searchShortcut,
       searchAgainShortcut,
@@ -191,7 +191,7 @@ class SearchBar extends Component<Props, State> {
   traverseResults = (e: SyntheticEvent<HTMLElement>, rev: boolean) => {
     e.stopPropagation();
     e.preventDefault();
-    const editor = this.props.editor;
+    const { editor } = this.props;
 
     if (!editor) {
       return;
@@ -262,7 +262,7 @@ class SearchBar extends Component<Props, State> {
 
     function SearchModBtn({ modVal, className, svgName, tooltip }) {
       const preppedClass = classnames(className, {
-        active: modifiers && modifiers[modVal],
+        active: modifiers?.[modVal],
       });
       return (
         <button
@@ -385,14 +385,11 @@ const mapStateToProps = (state, p: OwnProps) => {
   };
 };
 
-export default connect<Props, OwnProps, _, _, _, _>(
-  mapStateToProps,
-  {
-    toggleFileSearchModifier: actions.toggleFileSearchModifier,
-    setFileSearchQuery: actions.setFileSearchQuery,
-    setActiveSearch: actions.setActiveSearch,
-    closeFileSearch: actions.closeFileSearch,
-    doSearch: actions.doSearch,
-    traverseResults: actions.traverseResults,
-  }
-)(SearchBar);
+export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
+  toggleFileSearchModifier: actions.toggleFileSearchModifier,
+  setFileSearchQuery: actions.setFileSearchQuery,
+  setActiveSearch: actions.setActiveSearch,
+  closeFileSearch: actions.closeFileSearch,
+  doSearch: actions.doSearch,
+  traverseResults: actions.traverseResults,
+})(SearchBar);

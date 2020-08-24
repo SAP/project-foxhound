@@ -4,6 +4,9 @@
 
 "use strict";
 
+const { ComponentUtils } = ChromeUtils.import(
+  "resource://gre/modules/ComponentUtils.jsm"
+);
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -219,7 +222,7 @@ const RECOMMENDED_PREFS = new Map([
   ["extensions.update.notifyUser", false],
 
   // Make sure opening about:addons will not hit the network
-  ["extensions.webservice.discoverURL", "http://%(server)s/dummy/discoveryURL"],
+  ["extensions.getAddons.discovery.api_url", "data:, "],
 
   // Allow the application to have focus even it runs in the background
   ["focusmanager.testmode", true],
@@ -242,10 +245,6 @@ const RECOMMENDED_PREFS = new Map([
 
   // Do not prompt for temporary redirects
   ["network.http.prompt-temp-redirect", false],
-
-  // Disable speculative connections so they are not reported as leaking
-  // when they are hanging around
-  ["network.http.speculative-parallel-limit", 0],
 
   // Do not automatically switch between offline and online
   ["network.manage-offline-status", false],
@@ -281,9 +280,6 @@ const RECOMMENDED_PREFS = new Map([
   ["startup.homepage_welcome_url", "about:blank"],
   ["startup.homepage_welcome_url.additional", ""],
 
-  // Disable browser animations (tabs, fullscreen, sliding alerts)
-  ["toolkit.cosmeticAnimations.enabled", false],
-
   // Prevent starting into safe mode after application crashes
   ["toolkit.startup.max_resumed_crashes", -1],
 ]);
@@ -308,6 +304,7 @@ class MarionetteParentProcess {
     if (env.exists(ENV_ENABLED)) {
       this.enabled = true;
     } else {
+      // TODO: Don't read the preference anymore (bug 1632821)
       this.enabled = MarionettePrefs.enabled;
     }
 
@@ -316,6 +313,19 @@ class MarionetteParentProcess {
     }
 
     Services.ppmm.addMessageListener("Marionette:IsRunning", this);
+  }
+
+  get enabled() {
+    return !!this._enabled;
+  }
+
+  set enabled(value) {
+    if (value) {
+      // Only update the preference when Marionette is going to be enabled
+      MarionettePrefs.enabled = value;
+    }
+
+    this._enabled = value;
   }
 
   get running() {
@@ -529,9 +539,9 @@ class MarionetteParentProcess {
 
   get QueryInterface() {
     return ChromeUtils.generateQI([
-      Ci.nsICommandLineHandler,
-      Ci.nsIMarionette,
-      Ci.nsIObserver,
+      "nsICommandLineHandler",
+      "nsIMarionette",
+      "nsIObserver",
     ]);
   }
 }
@@ -547,7 +557,7 @@ class MarionetteContentProcess {
   }
 
   get QueryInterface() {
-    return ChromeUtils.generateQI([Ci.nsIMarionette]);
+    return ChromeUtils.generateQI(["nsIMarionette"]);
   }
 }
 
@@ -556,7 +566,7 @@ const MarionetteFactory = {
 
   createInstance(outer, iid) {
     if (outer) {
-      throw Cr.NS_ERROR_NO_AGGREGATION;
+      throw Components.Exception("", Cr.NS_ERROR_NO_AGGREGATION);
     }
 
     if (!this.instance_) {
@@ -584,4 +594,4 @@ Marionette.prototype = {
   helpInfo: "  --marionette       Enable remote control server.\n",
 };
 
-this.NSGetFactory = XPCOMUtils.generateNSGetFactory([Marionette]);
+this.NSGetFactory = ComponentUtils.generateNSGetFactory([Marionette]);

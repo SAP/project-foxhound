@@ -18,6 +18,7 @@
 #include "mozilla/dom/MathMLElement.h"
 #include <algorithm>
 #include "gfxMathTable.h"
+#include "gfxTextRun.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -42,7 +43,7 @@ nsIFrame* NS_NewMathMLmfracFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmfracFrame)
 
-nsMathMLmfracFrame::~nsMathMLmfracFrame() {}
+nsMathMLmfracFrame::~nsMathMLmfracFrame() = default;
 
 eMathMLFrameType nsMathMLmfracFrame::GetMathMLFrameType() {
   // frac is "inner" in TeXBook, Appendix G, rule 15e. See also page 170.

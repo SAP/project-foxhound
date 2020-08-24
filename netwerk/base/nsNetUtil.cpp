@@ -9,7 +9,6 @@
 
 #include "nsNetUtil.h"
 
-#include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/LoadContext.h"
@@ -70,6 +69,7 @@
 #include "plstr.h"
 #include "nsINestedURI.h"
 #include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/net/HttpBaseChannel.h"
@@ -101,6 +101,7 @@
 #include "nsAboutProtocolHandler.h"
 #include "nsResProtocolHandler.h"
 #include "mozilla/net/ExtensionProtocolHandler.h"
+#include "mozilla/net/PageThumbProtocolHandler.h"
 #include <limits>
 
 #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
@@ -150,6 +151,22 @@ nsresult NS_NewLocalFileOutputStream(nsIOutputStream** result, nsIFile* file,
   return rv;
 }
 
+nsresult NS_NewLocalFileOutputStream(nsIOutputStream** result,
+                                     const mozilla::ipc::FileDescriptor& fd) {
+  nsCOMPtr<nsIFileOutputStream> out;
+  nsFileOutputStream::Create(nullptr, NS_GET_IID(nsIFileOutputStream),
+                             getter_AddRefs(out));
+
+  nsresult rv =
+      static_cast<nsFileOutputStream*>(out.get())->InitWithFileDescriptor(fd);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  out.forget(result);
+  return NS_OK;
+}
+
 nsresult net_EnsureIOService(nsIIOService** ios, nsCOMPtr<nsIIOService>& grip) {
   nsresult rv = NS_OK;
   if (!*ios) {
@@ -173,6 +190,8 @@ nsresult NS_NewFileURI(
 
 nsresult NS_GetURIWithNewRef(nsIURI* aInput, const nsACString& aRef,
                              nsIURI** aOutput) {
+  MOZ_DIAGNOSTIC_ASSERT(aRef.IsEmpty() || aRef[0] == '#');
+
   if (NS_WARN_IF(!aInput || !aOutput)) {
     return NS_ERROR_INVALID_ARG;
   }
@@ -189,8 +208,12 @@ nsresult NS_GetURIWithNewRef(nsIURI* aInput, const nsACString& aRef,
   // Also, if the GetRef failed (it could return NS_ERROR_NOT_IMPLEMENTED)
   // we can assume SetRef would fail as well, so returning the original
   // URI is OK.
+  //
+  // Note that aRef contains the hash, but ref doesn't, so need to account for
+  // that in the equality check.
   if (NS_FAILED(rv) || (!hasRef && aRef.IsEmpty()) ||
-      (!aRef.IsEmpty() && aRef == ref)) {
+      (!aRef.IsEmpty() && hasRef &&
+       Substring(aRef.Data() + 1, aRef.Length() - 1) == ref)) {
     nsCOMPtr<nsIURI> uri = aInput;
     uri.forget(aOutput);
     return NS_OK;
@@ -287,19 +310,21 @@ void AssertLoadingPrincipalAndClientInfoMatch(
   }
 
   // Perform a fast comparison for most principal checks.
-  nsCOMPtr<nsIPrincipal> clientPrincipal(aLoadingClientInfo.GetPrincipal());
-  if (aLoadingPrincipal->Equals(clientPrincipal)) {
-    return;
+  auto clientPrincipalOrErr(aLoadingClientInfo.GetPrincipal());
+  if (clientPrincipalOrErr.isOk()) {
+    nsCOMPtr<nsIPrincipal> clientPrincipal = clientPrincipalOrErr.unwrap();
+    if (aLoadingPrincipal->Equals(clientPrincipal)) {
+      return;
+    }
+    // Fall back to a slower origin equality test to support null principals.
+    nsAutoCString loadingOrigin;
+    MOZ_ALWAYS_SUCCEEDS(aLoadingPrincipal->GetOrigin(loadingOrigin));
+
+    nsAutoCString clientOrigin;
+    MOZ_ALWAYS_SUCCEEDS(clientPrincipal->GetOrigin(clientOrigin));
+
+    MOZ_DIAGNOSTIC_ASSERT(loadingOrigin == clientOrigin);
   }
-
-  // Fall back to a slower origin equality test to support null principals.
-  nsAutoCString loadingOrigin;
-  MOZ_ALWAYS_SUCCEEDS(aLoadingPrincipal->GetOrigin(loadingOrigin));
-
-  nsAutoCString clientOrigin;
-  MOZ_ALWAYS_SUCCEEDS(clientPrincipal->GetOrigin(clientOrigin));
-
-  MOZ_DIAGNOSTIC_ASSERT(loadingOrigin == clientOrigin);
 #endif
 }
 
@@ -567,7 +592,7 @@ nsresult NS_MakeAbsoluteURI(char** result, const char* spec, nsIURI* baseURI) {
   nsAutoCString resultBuf;
   rv = NS_MakeAbsoluteURI(resultBuf, nsDependentCString(spec), baseURI);
   if (NS_SUCCEEDED(rv)) {
-    *result = ToNewCString(resultBuf);
+    *result = ToNewCString(resultBuf, mozilla::fallible);
     if (!*result) rv = NS_ERROR_OUT_OF_MEMORY;
   }
   return rv;
@@ -742,7 +767,7 @@ nsresult NS_NewInputStreamChannelInternal(nsIChannel** outChannel, nsIURI* aUri,
   nsCOMPtr<nsIChannel> channel;
   rv = NS_NewInputStreamChannelInternal(getter_AddRefs(channel), aUri,
                                         stream.forget(), aContentType,
-                                        NS_LITERAL_CSTRING("UTF-8"), aLoadInfo);
+                                        "UTF-8"_ns, aLoadInfo);
 
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1125,7 +1150,7 @@ void NS_GetReferrerFromChannel(nsIChannel* channel, nsIURI** referrer) {
     // referrer may be empty for security reasons (for example, when loading
     // an http page with an https referrer).
     nsresult rv = props->GetPropertyAsInterface(
-        NS_LITERAL_STRING("docshell.internalReferrer"), NS_GET_IID(nsIURI),
+        u"docshell.internalReferrer"_ns, NS_GET_IID(nsIURI),
         reinterpret_cast<void**>(referrer));
     if (NS_SUCCEEDED(rv)) {
       return;
@@ -1258,7 +1283,7 @@ nsresult NS_NewBufferedOutputStream(
   return rv;
 }
 
-MOZ_MUST_USE nsresult NS_NewBufferedInputStream(
+[[nodiscard]] nsresult NS_NewBufferedInputStream(
     nsIInputStream** aResult, already_AddRefed<nsIInputStream> aInputStream,
     uint32_t aBufferSize) {
   nsCOMPtr<nsIInputStream> inputStream = std::move(aInputStream);
@@ -1757,7 +1782,6 @@ nsresult NS_NewURI(nsIURI** aURI, const nsACString& aSpec,
   if (scheme.EqualsLiteral("moz-safe-about") ||
       scheme.EqualsLiteral("page-icon") || scheme.EqualsLiteral("moz") ||
       scheme.EqualsLiteral("moz-anno") ||
-      scheme.EqualsLiteral("moz-page-thumb") ||
       scheme.EqualsLiteral("moz-fonttable")) {
     return NS_MutateURI(new nsSimpleURI::Mutator())
         .SetSpec(aSpec)
@@ -1802,6 +1826,22 @@ nsresult NS_NewURI(nsIURI** aURI, const nsACString& aSpec,
   if (scheme.EqualsLiteral("moz-extension")) {
     RefPtr<mozilla::net::ExtensionProtocolHandler> handler =
         mozilla::net::ExtensionProtocolHandler::GetSingleton();
+    if (!handler) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+    return handler->NewURI(aSpec, aCharset, aBaseURI, aURI);
+  }
+
+  if (scheme.EqualsLiteral("moz-page-thumb")) {
+    // The moz-page-thumb service runs JS to resolve a URI to a
+    // storage location, so this should only ever run on the main
+    // thread.
+    if (!NS_IsMainThread()) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
+    RefPtr<mozilla::net::PageThumbProtocolHandler> handler =
+        mozilla::net::PageThumbProtocolHandler::GetSingleton();
     if (!handler) {
       return NS_ERROR_NOT_AVAILABLE;
     }
@@ -1927,7 +1967,7 @@ nsresult NS_LoadPersistentPropertiesFromURISpec(
   nsCOMPtr<nsIChannel> channel;
   rv = NS_NewChannel(getter_AddRefs(channel), uri,
                      nsContentUtils::GetSystemPrincipal(),
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                      nsIContentPolicy::TYPE_OTHER);
   NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIInputStream> in;
@@ -1944,41 +1984,17 @@ nsresult NS_LoadPersistentPropertiesFromURISpec(
 
 bool NS_UsePrivateBrowsing(nsIChannel* channel) {
   OriginAttributes attrs;
-  bool result = NS_GetOriginAttributes(channel, attrs, false);
+  bool result = StoragePrincipalHelper::GetOriginAttributes(
+      channel, attrs, StoragePrincipalHelper::eRegularPrincipal);
   NS_ENSURE_TRUE(result, result);
   return attrs.mPrivateBrowsingId > 0;
-}
-
-bool NS_GetOriginAttributes(nsIChannel* aChannel,
-                            mozilla::OriginAttributes& aAttributes,
-                            bool aUsingStoragePrincipal) {
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  loadInfo->GetOriginAttributes(&aAttributes);
-
-  bool isPrivate = false;
-  nsCOMPtr<nsIPrivateBrowsingChannel> pbChannel = do_QueryInterface(aChannel);
-  if (pbChannel) {
-    nsresult rv = pbChannel->GetIsChannelPrivate(&isPrivate);
-    NS_ENSURE_SUCCESS(rv, false);
-  } else {
-    // Some channels may not implement nsIPrivateBrowsingChannel
-    nsCOMPtr<nsILoadContext> loadContext;
-    NS_QueryNotificationCallbacks(aChannel, loadContext);
-    isPrivate = loadContext && loadContext->UsePrivateBrowsing();
-  }
-  aAttributes.SyncAttributesWithPrivateBrowsing(isPrivate);
-
-  if (aUsingStoragePrincipal) {
-    StoragePrincipalHelper::PrepareOriginAttributes(aChannel, aAttributes);
-  }
-  return true;
 }
 
 bool NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport) {
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   // TYPE_DOCUMENT loads have a null LoadingPrincipal and can not be cross
   // origin.
-  if (!loadInfo->LoadingPrincipal()) {
+  if (!loadInfo->GetLoadingPrincipal()) {
     return false;
   }
 
@@ -1987,12 +2003,12 @@ bool NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport) {
     return true;
   }
 
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->LoadingPrincipal();
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->GetLoadingPrincipal();
   uint32_t mode = loadInfo->GetSecurityMode();
   bool dataInherits =
-      mode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_INHERITS ||
-      mode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS ||
-      mode == nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
+      mode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT ||
+      mode == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT ||
+      mode == nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT;
 
   bool aboutBlankInherits = dataInherits && loadInfo->GetAboutBlankInherits();
 
@@ -2007,7 +2023,8 @@ bool NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport) {
     }
 
     nsCOMPtr<nsIURI> uri;
-    principal->GetURI(getter_AddRefs(uri));
+    auto* basePrin = BasePrincipal::Cast(principal);
+    basePrin->GetURI(getter_AddRefs(uri));
     if (!uri) {
       return true;
     }
@@ -2049,18 +2066,6 @@ bool NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport) {
   return NS_FAILED(res);
 }
 
-bool NS_IsSafeTopLevelNav(nsIChannel* aChannel) {
-  if (!aChannel) {
-    return false;
-  }
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  if (loadInfo->GetExternalContentPolicyType() !=
-      nsIContentPolicy::TYPE_DOCUMENT) {
-    return false;
-  }
-  return NS_IsSafeMethodNav(aChannel);
-}
-
 bool NS_IsSafeMethodNav(nsIChannel* aChannel) {
   RefPtr<HttpBaseChannel> baseChan = do_QueryObject(aChannel);
   if (!baseChan) {
@@ -2071,82 +2076,6 @@ bool NS_IsSafeMethodNav(nsIChannel* aChannel) {
     return false;
   }
   return requestHead->IsSafeMethod();
-}
-
-bool NS_IsSameSiteForeign(nsIChannel* aChannel, nsIURI* aHostURI) {
-  if (!aChannel) {
-    return false;
-  }
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  // Do not treat loads triggered by web extensions as foreign
-  nsCOMPtr<nsIURI> channelURI;
-  NS_GetFinalChannelURI(aChannel, getter_AddRefs(channelURI));
-  if (BasePrincipal::Cast(loadInfo->TriggeringPrincipal())
-          ->AddonAllowsLoad(channelURI)) {
-    return false;
-  }
-
-  nsCOMPtr<nsIURI> uri;
-  if (loadInfo->GetExternalContentPolicyType() ==
-      nsIContentPolicy::TYPE_DOCUMENT) {
-    // for loads of TYPE_DOCUMENT we query the hostURI from the
-    // triggeringPrincipal which returns the URI of the document that caused the
-    // navigation.
-    loadInfo->TriggeringPrincipal()->GetURI(getter_AddRefs(uri));
-  } else {
-    uri = aHostURI;
-  }
-
-  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
-      do_GetService(THIRDPARTYUTIL_CONTRACTID);
-  if (!thirdPartyUtil) {
-    return false;
-  }
-
-  bool isForeign = true;
-  nsresult rv = thirdPartyUtil->IsThirdPartyChannel(aChannel, uri, &isForeign);
-  // if we are dealing with a cross origin request, we can return here
-  // because we already know the request is 'foreign'.
-  if (NS_FAILED(rv) || isForeign) {
-    return true;
-  }
-
-  // for loads of TYPE_SUBDOCUMENT we have to perform an additional test,
-  // because a cross-origin iframe might perform a navigation to a same-origin
-  // iframe which would send same-site cookies. Hence, if the iframe navigation
-  // was triggered by a cross-origin triggeringPrincipal, we treat the load as
-  // foreign.
-  if (loadInfo->GetExternalContentPolicyType() ==
-      nsIContentPolicy::TYPE_SUBDOCUMENT) {
-    nsCOMPtr<nsIURI> triggeringPrincipalURI;
-    loadInfo->TriggeringPrincipal()->GetURI(
-        getter_AddRefs(triggeringPrincipalURI));
-    rv = thirdPartyUtil->IsThirdPartyChannel(aChannel, triggeringPrincipalURI,
-                                             &isForeign);
-    if (NS_FAILED(rv) || isForeign) {
-      return true;
-    }
-  }
-
-  // for the purpose of same-site cookies we have to treat any cross-origin
-  // redirects as foreign. E.g. cross-site to same-site redirect is a problem
-  // with regards to CSRF.
-
-  nsCOMPtr<nsIPrincipal> redirectPrincipal;
-  nsCOMPtr<nsIURI> redirectURI;
-  for (nsIRedirectHistoryEntry* entry : loadInfo->RedirectChain()) {
-    entry->GetPrincipal(getter_AddRefs(redirectPrincipal));
-    if (redirectPrincipal) {
-      redirectPrincipal->GetURI(getter_AddRefs(redirectURI));
-      rv = thirdPartyUtil->IsThirdPartyChannel(aChannel, redirectURI,
-                                               &isForeign);
-      // if at any point we encounter a cross-origin redirect we can return.
-      if (NS_FAILED(rv) || isForeign) {
-        return true;
-      }
-    }
-  }
-  return isForeign;
 }
 
 bool NS_ShouldCheckAppCache(nsIPrincipal* aPrincipal) {
@@ -2381,7 +2310,8 @@ bool NS_SecurityCompareURIs(nsIURI* aSourceURI, nsIURI* aTargetURI,
   if (BlobURLProtocolHandler::GetBlobURLPrincipal(
           sourceBaseURI, getter_AddRefs(sourceBlobPrincipal))) {
     nsCOMPtr<nsIURI> sourceBlobOwnerURI;
-    rv = sourceBlobPrincipal->GetURI(getter_AddRefs(sourceBlobOwnerURI));
+    auto* basePrin = BasePrincipal::Cast(sourceBlobPrincipal);
+    rv = basePrin->GetURI(getter_AddRefs(sourceBlobOwnerURI));
     if (NS_SUCCEEDED(rv)) {
       sourceBaseURI = sourceBlobOwnerURI;
     }
@@ -2391,7 +2321,8 @@ bool NS_SecurityCompareURIs(nsIURI* aSourceURI, nsIURI* aTargetURI,
   if (BlobURLProtocolHandler::GetBlobURLPrincipal(
           targetBaseURI, getter_AddRefs(targetBlobPrincipal))) {
     nsCOMPtr<nsIURI> targetBlobOwnerURI;
-    rv = targetBlobPrincipal->GetURI(getter_AddRefs(targetBlobOwnerURI));
+    auto* basePrin = BasePrincipal::Cast(targetBlobPrincipal);
+    rv = basePrin->GetURI(getter_AddRefs(targetBlobOwnerURI));
     if (NS_SUCCEEDED(rv)) {
       targetBaseURI = targetBlobOwnerURI;
     }
@@ -2462,7 +2393,7 @@ bool NS_SecurityCompareURIs(nsIURI* aSourceURI, nsIURI* aTargetURI,
     return false;
   }
 
-  if (!targetHost.Equals(sourceHost, nsCaseInsensitiveCStringComparator())) {
+  if (!targetHost.Equals(sourceHost, nsCaseInsensitiveCStringComparator)) {
     return false;
   }
 
@@ -2600,7 +2531,7 @@ bool NS_IsHSTSUpgradeRedirect(nsIChannel* aOldChannel, nsIChannel* aNewChannel,
   return NS_SUCCEEDED(upgradedURI->Equals(newURI, &res)) && res;
 }
 
-nsresult NS_LinkRedirectChannels(uint32_t channelId,
+nsresult NS_LinkRedirectChannels(uint64_t channelId,
                                  nsIParentChannel* parentChannel,
                                  nsIChannel** _result) {
   nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
@@ -2663,8 +2594,7 @@ uint32_t NS_GetContentDispositionFromHeader(const nsACString& aHeader,
 }
 
 nsresult NS_GetFilenameFromDisposition(nsAString& aFilename,
-                                       const nsACString& aDisposition,
-                                       nsIURI* aURI /* = nullptr */) {
+                                       const nsACString& aDisposition) {
   aFilename.Truncate();
 
   nsresult rv;
@@ -2689,8 +2619,7 @@ nsresult NS_GetFilenameFromDisposition(nsAString& aFilename,
         do_GetService(NS_ITEXTTOSUBURI_CONTRACTID, &rv);
     if (NS_SUCCEEDED(rv)) {
       nsAutoString unescaped;
-      textToSubURI->UnEscapeURIForUI(NS_LITERAL_CSTRING("UTF-8"),
-                                     NS_ConvertUTF16toUTF8(aFilename),
+      textToSubURI->UnEscapeURIForUI(NS_ConvertUTF16toUTF8(aFilename),
                                      unescaped);
       aFilename.Assign(unescaped);
     }
@@ -2700,6 +2629,14 @@ nsresult NS_GetFilenameFromDisposition(nsAString& aFilename,
 }
 
 void net_EnsurePSMInit() {
+  if (XRE_IsSocketProcess()) {
+    EnsureNSSInitializedChromeOrContent();
+    return;
+  }
+
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsresult rv;
   nsCOMPtr<nsISupports> psm = do_GetService(PSM_COMPONENT_CONTRACTID, &rv);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -2781,11 +2718,7 @@ void NS_SniffContent(const char* aSnifferType, nsIRequest* aRequest,
        */
       nsAutoCString currentContentType;
       channel->GetContentType(currentContentType);
-      if (!StringBeginsWith(currentContentType,
-                            NS_LITERAL_CSTRING("application/"))) {
-        Telemetry::AccumulateCategorical(
-            mozilla::Telemetry::LABELS_XCTO_NOSNIFF_TOPLEVEL_NAV_EXCEPTIONS::
-                NoException);
+      if (!StringBeginsWith(currentContentType, "application/"_ns)) {
         return;
       }
     }
@@ -2837,6 +2770,12 @@ nsresult NS_ShouldSecureUpgrade(
   if (!isHttps &&
       !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackURL(aURI)) {
     if (aLoadInfo) {
+      // Check if the request can get upgraded with the HTTPS-Only mode
+      if (nsHTTPSOnlyUtils::ShouldUpgradeRequest(aURI, aLoadInfo)) {
+        aShouldUpgrade = true;
+        return NS_OK;
+      }
+
       // If any of the documents up the chain to the root document makes use of
       // the CSP directive 'upgrade-insecure-requests', then it's time to
       // fulfill the promise to CSP and mixed content blocking to upgrade the
@@ -2860,8 +2799,8 @@ nsresult NS_ShouldSecureUpgrade(
               EmptyString(),  // aScriptSample
               0,              // aLineNumber
               0,              // aColumnNumber
-              nsIScriptError::warningFlag,
-              NS_LITERAL_CSTRING("upgradeInsecureRequest"), innerWindowId,
+              nsIScriptError::warningFlag, "upgradeInsecureRequest"_ns,
+              innerWindowId,
               !!aLoadInfo->GetOriginAttributes().mPrivateBrowsingId);
           Telemetry::AccumulateCategorical(
               Telemetry::LABELS_HTTP_SCHEME_UPGRADE_TYPE::CSP);
@@ -2879,8 +2818,7 @@ nsresult NS_ShouldSecureUpgrade(
             AutoTArray<nsString, 3> params = {brandName, reportSpec,
                                               reportScheme};
             nsContentUtils::ReportToConsole(
-                nsIScriptError::warningFlag,
-                NS_LITERAL_CSTRING("DATA_URI_BLOCKED"), doc,
+                nsIScriptError::warningFlag, "DATA_URI_BLOCKED"_ns, doc,
                 nsContentUtils::eSECURITY_PROPERTIES,
                 "BrowserUpgradeInsecureDisplayRequest", params);
           }
@@ -2990,8 +2928,7 @@ nsresult NS_ShouldSecureUpgrade(
 
 nsresult NS_GetSecureUpgradedURI(nsIURI* aURI, nsIURI** aUpgradedURI) {
   NS_MutateURI mutator(aURI);
-  mutator.SetScheme(
-      NS_LITERAL_CSTRING("https"));  // Change the scheme to HTTPS:
+  mutator.SetScheme("https"_ns);  // Change the scheme to HTTPS:
 
   // Change the default port to 443:
   nsCOMPtr<nsIStandardURL> stdURL = do_QueryInterface(aURI);
@@ -3051,8 +2988,8 @@ nsresult NS_CompareLoadInfoAndLoadContext(nsIChannel* aChannel) {
   // the loadInfo will use originAttributes from the content. Thus, the
   // originAttributes between loadInfo and loadContext will be different.
   // That's why we have to skip the comparison for the favicon loading.
-  if (loadInfo->LoadingPrincipal() &&
-      loadInfo->LoadingPrincipal()->IsSystemPrincipal() &&
+  if (loadInfo->GetLoadingPrincipal() &&
+      loadInfo->GetLoadingPrincipal()->IsSystemPrincipal() &&
       loadInfo->InternalContentPolicyType() ==
           nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON) {
     return NS_OK;

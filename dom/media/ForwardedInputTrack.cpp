@@ -14,7 +14,6 @@
 #include "GeckoProfiler.h"
 #include "ImageContainer.h"
 #include "MediaTrackGraphImpl.h"
-#include "MediaTrackListener.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MathAlgorithms.h"
@@ -149,7 +148,7 @@ void ForwardedInputTrack::ProcessInputImpl(MediaTrack* aSource,
 
 void ForwardedInputTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
                                        uint32_t aFlags) {
-  TRACE_AUDIO_CALLBACK_COMMENT("ForwardedInputTrack %p", this);
+  TRACE_COMMENT("ForwardedInputTrack %p", this);
   if (mEnded) {
     return;
   }
@@ -236,8 +235,7 @@ void ForwardedInputTrack::RemoveDirectListenerImpl(
 }
 
 void ForwardedInputTrack::RemoveAllDirectListenersImpl() {
-  nsTArray<RefPtr<DirectMediaTrackListener>> listeners(mOwnedDirectListeners);
-  for (const auto& listener : listeners) {
+  for (const auto& listener : mOwnedDirectListeners.Clone()) {
     RemoveDirectListenerImpl(listener);
   }
   MOZ_DIAGNOSTIC_ASSERT(mOwnedDirectListeners.IsEmpty());

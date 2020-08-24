@@ -132,6 +132,7 @@ const AVAILABLE_INJECTIONS = [
           "https://help.doordash.com/*",
           "https://community.snowflake.com/*",
           "https://tivoidp.tivo.com/*",
+          "https://cloudreadykb.neverware.com/*",
         ],
         InterventionHelpers.matchPatternsForTLDs(
           "*://support.ancestry.",
@@ -143,20 +144,6 @@ const AVAILABLE_INJECTIONS = [
         {
           file:
             "injections/js/bug1623375-salesforce-communities-hide-unsupported.js",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1526977",
-    platform: "desktop",
-    domain: "sreedharscce.in",
-    bug: "1526977",
-    contentScripts: {
-      matches: ["*://*.sreedharscce.in/authenticate"],
-      css: [
-        {
-          file: "injections/css/bug1526977-sreedharscce.in-login-fix.css",
         },
       ],
     },
@@ -219,20 +206,6 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1568256",
-    platform: "android",
-    domain: "zertifikate.commerzbank.de",
-    bug: "1568256",
-    contentScripts: {
-      matches: ["*://*.zertifikate.commerzbank.de/webforms/mobile/*"],
-      css: [
-        {
-          file: "injections/css/bug1568256-zertifikate.commerzbank.de-flex.css",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1568908",
     platform: "desktop",
     domain: "console.cloud.google.com",
@@ -277,20 +250,6 @@ const AVAILABLE_INJECTIONS = [
     },
   },
   {
-    id: "bug1574973",
-    platform: "android",
-    domain: "patch.com",
-    bug: "1574973",
-    contentScripts: {
-      matches: ["*://patch.com/*"],
-      css: [
-        {
-          file: "injections/css/bug1574973-patch.com-dropdown-menu-fix.css",
-        },
-      ],
-    },
-  },
-  {
     id: "bug1575000",
     platform: "all",
     domain: "apply.lloydsbank.co.uk",
@@ -301,35 +260,6 @@ const AVAILABLE_INJECTIONS = [
         {
           file:
             "injections/css/bug1575000-apply.lloydsbank.co.uk-radio-buttons-fix.css",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1575011",
-    platform: "android",
-    domain: "holiday-weather.com",
-    bug: "1575011",
-    contentScripts: {
-      matches: ["*://*.holiday-weather.com/*"],
-      css: [
-        {
-          file:
-            "injections/css/bug1575011-holiday-weather.com-scrolling-fix.css",
-        },
-      ],
-    },
-  },
-  {
-    id: "bug1577270",
-    platform: "android",
-    domain: "binance.com",
-    bug: "1577270",
-    contentScripts: {
-      matches: ["*://*.binance.com/*"],
-      css: [
-        {
-          file: "injections/css/bug1577270-binance.com-calc-height-fix.css",
         },
       ],
     },
@@ -414,7 +344,7 @@ const AVAILABLE_INJECTIONS = [
   },
   {
     id: "bug1610344",
-    platform: "android",
+    platform: "all",
     domain: "directv.com.co",
     bug: "1610344",
     contentScripts: {
@@ -437,6 +367,80 @@ const AVAILABLE_INJECTIONS = [
       types: ["script"],
     },
     customFunc: "detectSwipeFix",
+  },
+  {
+    id: "bug1632019",
+    platform: "all",
+    domain: "everyman.co",
+    bug: "1632019",
+    contentScripts: {
+      matches: ["https://everyman.co/*"],
+      css: [
+        {
+          file: "injections/css/bug1632019-everyman.co-gallery-width-fix.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1644830",
+    platform: "desktop",
+    domain: "usps.com",
+    bug: "1644830",
+    contentScripts: {
+      matches: ["https://*.usps.com/*"],
+      css: [
+        {
+          file:
+            "injections/css/bug1644830-missingmail.usps.com-checkboxes-not-visible.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1645064",
+    platform: "desktop",
+    domain: "s-kanava.fi",
+    bug: "1645064",
+    contentScripts: {
+      matches: ["https://www.s-kanava.fi/*"],
+      css: [
+        {
+          file: "injections/css/bug1645064-s-kanava.fi-invisible-charts.css",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1641998",
+    platform: "desktop",
+    domain: "twitter.com",
+    bug: "1641998",
+    contentScripts: {
+      matches: ["https://twitter.com/i/videos/tweet/*"],
+      allFrames: true,
+      js: [
+        {
+          file:
+            "injections/js/bug1641998-embedded-twitter-videos-etp-indexeddb.js",
+        },
+      ],
+    },
+  },
+  {
+    id: "bug1651917",
+    platform: "android",
+    domain: "teletrader.com",
+    bug: "1651917",
+    contentScripts: {
+      matches: ["*://*.teletrader.com/*"],
+      css: [
+        {
+          file:
+            "injections/css/bug1651917-teletrader.com.body-transform-origin.css",
+        },
+      ],
+    },
   },
 ];
 

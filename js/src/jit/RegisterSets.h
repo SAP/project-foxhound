@@ -123,6 +123,9 @@ class ValueOperand {
 
   constexpr Register typeReg() const { return type_; }
   constexpr Register payloadReg() const { return payload_; }
+  constexpr Register64 toRegister64() const {
+    return Register64(typeReg(), payloadReg());
+  }
   constexpr bool aliases(Register reg) const {
     return type_ == reg || payload_ == reg;
   }
@@ -141,6 +144,7 @@ class ValueOperand {
   explicit constexpr ValueOperand(Register value) : value_(value) {}
 
   constexpr Register valueReg() const { return value_; }
+  constexpr Register64 toRegister64() const { return Register64(valueReg()); }
   constexpr bool aliases(Register reg) const { return value_ == reg; }
   constexpr Register payloadOrValueReg() const { return valueReg(); }
   constexpr bool operator==(const ValueOperand& o) const {
@@ -351,7 +355,7 @@ class RegisterSet {
   friend class AnyRegisterIterator;
 
  public:
-  RegisterSet() {}
+  RegisterSet() = default;
   constexpr RegisterSet(const GeneralRegisterSet& gpr,
                         const FloatRegisterSet& fpu)
       : gpr_(gpr), fpu_(fpu) {}
@@ -855,8 +859,8 @@ class SpecializedRegSet<Accessors, RegisterSet> : public Accessors {
 };
 
 // Interface which is common to all register set implementations. It overloads
-// |add|, |take| and |takeUnchecked| methods for types such as |ValueOperand|
-// and |TypedOrValueRegister|.
+// |add|, |take| and |takeUnchecked| methods for types such as |ValueOperand|,
+// |TypedOrValueRegister|, and |Register64|.
 template <class Accessors, typename Set>
 class CommonRegSet : public SpecializedRegSet<Accessors, Set> {
   typedef SpecializedRegSet<Accessors, Set> Parent;
@@ -881,6 +885,14 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set> {
 #  error "Bad architecture"
 #endif
   }
+  void add(Register64 reg) {
+#if JS_BITS_PER_WORD == 32
+    add(reg.high);
+    add(reg.low);
+#else
+    add(reg.reg);
+#endif
+  }
 
   using Parent::addUnchecked;
   void addUnchecked(ValueOperand value) {
@@ -891,6 +903,14 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set> {
     addUnchecked(value.valueReg());
 #else
 #  error "Bad architecture"
+#endif
+  }
+  void addUnchecked(Register64 reg) {
+#if JS_BITS_PER_WORD == 32
+    take(reg.high);
+    take(reg.low);
+#else
+    take(reg.reg);
 #endif
   }
 
@@ -920,6 +940,14 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set> {
       take(reg.typedReg());
     }
   }
+  void take(Register64 reg) {
+#if JS_BITS_PER_WORD == 32
+    take(reg.high);
+    take(reg.low);
+#else
+    take(reg.reg);
+#endif
+  }
 
   using Parent::takeUnchecked;
   void takeUnchecked(ValueOperand value) {
@@ -938,6 +966,14 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set> {
     } else if (reg.hasTyped()) {
       takeUnchecked(reg.typedReg());
     }
+  }
+  void takeUnchecked(Register64 reg) {
+#if JS_BITS_PER_WORD == 32
+    takeUnchecked(reg.high);
+    takeUnchecked(reg.low);
+#else
+    takeUnchecked(reg.reg);
+#endif
   }
 };
 
@@ -1103,8 +1139,7 @@ class AnyRegisterIterator {
       : geniter_(set.gpr_), floatiter_(set.fpu_) {}
   explicit AnyRegisterIterator(const LiveSet<RegisterSet>& set)
       : geniter_(set.gprs()), floatiter_(set.fpus()) {}
-  AnyRegisterIterator(const AnyRegisterIterator& other)
-      : geniter_(other.geniter_), floatiter_(other.floatiter_) {}
+  AnyRegisterIterator(const AnyRegisterIterator& other) = default;
   bool more() const { return geniter_.more() || floatiter_.more(); }
   AnyRegisterIterator& operator++() {
     if (geniter_.more()) {

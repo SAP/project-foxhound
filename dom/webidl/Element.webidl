@@ -97,6 +97,13 @@ interface Element : Node {
   [ChromeOnly]
   readonly attribute float fontSizeInflation;
 
+  /**
+   * Returns the pseudo-element string if this element represents a
+   * pseudo-element, or null otherwise.
+   */
+  [ChromeOnly]
+  readonly attribute DOMString? implementedPseudoElement;
+
   // Selectors API
   /**
    * Returns whether this element would be selected by the given selector
@@ -279,6 +286,8 @@ Element includes NonDocumentTypeChildNode;
 Element includes ParentNode;
 Element includes Animatable;
 Element includes GeometryUtils;
+Element includes AccessibilityRole;
+Element includes AriaAttributes;
 
 // https://fullscreen.spec.whatwg.org/#api
 partial interface Element {
@@ -318,6 +327,12 @@ partial interface Element {
    */
   [ChromeOnly, Pure]
   sequence<Grid> getGridFragments();
+
+  /**
+   * Returns whether there are any grid fragments on this element.
+   */
+  [ChromeOnly, Pure]
+  boolean hasGridFragments();
 
   /**
    * Returns a sequence of all the descendent elements of this element

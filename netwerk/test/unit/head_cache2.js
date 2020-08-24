@@ -1,4 +1,9 @@
-var callbacks = new Array();
+/* import-globals-from head_cache.js */
+/* import-globals-from head_channels.js */
+
+"use strict";
+
+var callbacks = [];
 
 // Expect an existing entry
 const NORMAL = 0;
@@ -274,7 +279,7 @@ OpenCallback.prototype = {
       LOG_C2(self, "Notifying");
       self.goon(entry);
     });
-    throw Cr.NS_ERROR_FAILURE;
+    throw Components.Exception("", Cr.NS_ERROR_FAILURE);
   },
 };
 

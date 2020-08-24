@@ -73,6 +73,8 @@ class nsDNSService final : public nsPIDNSService,
                            const mozilla::OriginAttributes& aOriginAttributes,
                            nsIDNSRecord** result);
 
+  bool DNSForbiddenByActiveProxy(const nsACString& aHostname, uint32_t flags);
+
   RefPtr<nsHostResolver> mResolver;
   nsCOMPtr<nsIIDNService> mIDN;
 
@@ -90,9 +92,9 @@ class nsDNSService final : public nsPIDNSService,
   bool mNotifyResolution;
   bool mOfflineLocalhost;
   bool mForceResolveOn;
-  uint32_t mProxyType;
   nsTHashtable<nsCStringHashKey> mLocalDomains;
   RefPtr<mozilla::net::TRRService> mTrrService;
+  mozilla::Atomic<bool, mozilla::Relaxed> mHasSocksProxy;
 
   uint32_t mResCacheEntries;
   uint32_t mResCacheExpiration;

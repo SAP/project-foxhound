@@ -10,7 +10,6 @@
 #include "mozilla/dom/DocumentFragment.h"
 #include "ChildIterator.h"
 #include "nsContentUtils.h"
-#include "nsIStyleSheetLinkingElement.h"
 #include "nsWindowSizes.h"
 #include "mozilla/dom/DirectionalityUtils.h"
 #include "mozilla/dom/Element.h"
@@ -107,6 +106,7 @@ void ShadowRoot::CloneInternalDataFrom(ShadowRoot* aOther) {
       }
     }
   }
+  CloneAdoptedSheetsFrom(*aOther);
 }
 
 nsresult ShadowRoot::Bind() {
@@ -476,14 +476,6 @@ void ShadowRoot::RemoveSheetFromStyles(StyleSheet& aSheet) {
   ApplicableRulesChanged();
 }
 
-void ShadowRoot::RemoveSheet(StyleSheet& aSheet) {
-  RefPtr<StyleSheet> sheet = DocumentOrShadowRoot::RemoveSheet(aSheet);
-  MOZ_ASSERT(sheet);
-  if (sheet->IsApplicable()) {
-    RemoveSheetFromStyles(*sheet);
-  }
-}
-
 void ShadowRoot::AddToIdTable(Element* aElement, nsAtom* aId) {
   IdentifierMapEntry* entry = mIdentifierMap.PutEntry(aId);
   if (entry) {
@@ -614,18 +606,6 @@ Element* ShadowRoot::GetActiveElement() {
   return GetRetargetedFocusedElement();
 }
 
-void ShadowRoot::GetInnerHTML(nsAString& aInnerHTML) {
-  GetMarkup(false, aInnerHTML);
-}
-
-void ShadowRoot::SetInnerHTML(const nsAString& aInnerHTML,
-                              ErrorResult& aError) {
-  // TaintFox: innerHTML sink.
-  ReportTaintSink(aInnerHTML, "innerHTML");
-
-  SetInnerHTMLInternal(aInnerHTML, aError);
-}
-
 nsINode* ShadowRoot::ImportNodeAndAppendChildAt(nsINode& aParentNode,
                                                 nsINode& aNode, bool aDeep,
                                                 mozilla::ErrorResult& rv) {
@@ -674,7 +654,7 @@ void ShadowRoot::MaybeUnslotHostChild(nsIContent& aChild) {
     return;
   }
 
-  MOZ_DIAGNOSTIC_ASSERT(!aChild.IsRootOfAnonymousSubtree(),
+  MOZ_DIAGNOSTIC_ASSERT(!aChild.IsRootOfNativeAnonymousSubtree(),
                         "How did aChild end up assigned to a slot?");
   // If the slot is going to start showing fallback content, we need to tell
   // layout about it.
@@ -690,7 +670,7 @@ void ShadowRoot::MaybeSlotHostChild(nsIContent& aChild) {
   MOZ_ASSERT(aChild.GetParent() == GetHost());
   // Check to ensure that the child not an anonymous subtree root because even
   // though its parent could be the host it may not be in the host's child list.
-  if (aChild.IsRootOfAnonymousSubtree()) {
+  if (aChild.IsRootOfNativeAnonymousSubtree()) {
     return;
   }
 

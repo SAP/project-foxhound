@@ -23,7 +23,7 @@
 #include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions
 #include "js/RootingAPI.h"      // JS::{,Mutable}Handle, JS::Rooted
 #include "js/SourceText.h"      // JS::SourceText
-#include "vm/JSScript.h"  // js::{FunctionAsync,Generator}Kind, js::LazyScript, JSScript, js::ScriptSource, js::ScriptSourceObject
+#include "vm/JSScript.h"  // js::{FunctionAsync,Generator}Kind, js::BaseScript, JSScript, js::ScriptSource, js::ScriptSourceObject
 #include "vm/Scope.h"     // js::ScopeKind
 
 class JS_PUBLIC_API JSFunction;
@@ -55,7 +55,6 @@ extern JSScript* CompileGlobalScript(CompilationInfo& compilationInfo,
 
 extern JSScript* CompileEvalScript(CompilationInfo& compilationInfo,
                                    EvalSharedContext& evalsc,
-                                   JS::Handle<JSObject*> environment,
                                    JS::SourceText<char16_t>& srcBuf);
 
 extern MOZ_MUST_USE bool CompileLazyFunction(JSContext* cx,

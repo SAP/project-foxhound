@@ -29,14 +29,15 @@ describe("ActivityStreamMessageChannel", () => {
       this.isFromAboutNewTab = isFromAboutNewTab;
     }
     globals = new GlobalOverrider();
-    const override = globals.sandbox.stub();
-    override.withArgs(true).returns(new RP("about:newtab", true));
-    override.withArgs(false).returns(null);
+    const overridePageListener = globals.sandbox.stub();
+    overridePageListener.withArgs(true).returns(new RP("about:newtab", true));
+    overridePageListener.withArgs(false).returns(null);
     globals.set("AboutNewTab", {
-      override,
+      overridePageListener,
       reset: globals.sandbox.spy(),
     });
     globals.set("RemotePages", RP);
+    globals.set("AboutHomeStartupCache", { onPreloadedNewTabMessage() {} });
     dispatch = globals.sandbox.spy();
     mm = new ActivityStreamMessageChannel({ dispatch });
   });
@@ -103,7 +104,7 @@ describe("ActivityStreamMessageChannel", () => {
       });
       it("should override AboutNewTab", () => {
         mm.createChannel();
-        assert.calledOnce(global.AboutNewTab.override);
+        assert.calledOnce(global.AboutNewTab.overridePageListener);
       });
       it("should use the channel passed by AboutNewTab on override", () => {
         mm.createChannel();
@@ -112,7 +113,7 @@ describe("ActivityStreamMessageChannel", () => {
       it("should not override AboutNewTab if the pageURL is not about:newtab", () => {
         mm = new ActivityStreamMessageChannel({ pageURL: "foo.html" });
         mm.createChannel();
-        assert.notCalled(global.AboutNewTab.override);
+        assert.notCalled(global.AboutNewTab.overridePageListener);
       });
     });
     describe("#simulateMessagesForExistingTabs", () => {

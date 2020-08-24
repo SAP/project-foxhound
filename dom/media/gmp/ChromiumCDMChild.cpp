@@ -17,6 +17,8 @@
 #include "mozilla/ScopeExit.h"
 #include "CDMStorageIdProvider.h"
 
+#include <type_traits>
+
 namespace mozilla {
 namespace gmp {
 
@@ -183,10 +185,10 @@ void ChromiumCDMChild::CallOnMessageLoopThread(const char* const aName,
     CallMethod(aMethod, std::forward<ParamType>(aParams)...);
   } else {
     auto m = &ChromiumCDMChild::CallMethod<
-        decltype(aMethod), const typename RemoveReference<ParamType>::Type&...>;
+        decltype(aMethod), const std::remove_reference_t<ParamType>&...>;
     RefPtr<mozilla::Runnable> t =
         NewRunnableMethod<decltype(aMethod),
-                          const typename RemoveReference<ParamType>::Type...>(
+                          const std::remove_reference_t<ParamType>...>(
             aName, this, m, aMethod, std::forward<ParamType>(aParams)...);
     mPlugin->GMPMessageLoop()->PostTask(t.forget());
   }
@@ -263,7 +265,7 @@ void ChromiumCDMChild::OnSessionMessage(const char* aSessionId,
   GMP_LOG_DEBUG("ChromiumCDMChild::OnSessionMessage(sid=%s, type=%" PRIu32
                 " size=%" PRIu32 ")",
                 aSessionId, aMessageType, aMessageSize);
-  nsTArray<uint8_t> message;
+  CopyableTArray<uint8_t> message;
   message.AppendElements(aMessage, aMessageSize);
   CallOnMessageLoopThread("gmp::ChromiumCDMChild::OnSessionMessage",
                           &ChromiumCDMChild::SendOnSessionMessage,
@@ -294,7 +296,7 @@ void ChromiumCDMChild::OnSessionKeysChange(const char* aSessionId,
   GMP_LOG_DEBUG("ChromiumCDMChild::OnSessionKeysChange(sid=%s) keys={%s}",
                 aSessionId, ToString(aKeysInfo, aKeysInfoCount).get());
 
-  nsTArray<CDMKeyInformation> keys;
+  CopyableTArray<CDMKeyInformation> keys;
   keys.SetCapacity(aKeysInfoCount);
   for (uint32_t i = 0; i < aKeysInfoCount; i++) {
     const cdm::KeyInformation& key = aKeysInfo[i];
@@ -443,7 +445,7 @@ mozilla::ipc::IPCResult ChromiumCDMChild::RecvCreateSessionAndGenerateRequest(
       "pid=%" PRIu32 ", sessionType=%" PRIu32 ", initDataType=%" PRIu32
       ") initDataLen=%zu",
       aPromiseId, aSessionType, aInitDataType, aInitData.Length());
-  MOZ_ASSERT(aSessionType <= cdm::SessionType::kPersistentKeyRelease);
+  MOZ_ASSERT(aSessionType <= cdm::SessionType::kPersistentUsageRecord);
   MOZ_ASSERT(aInitDataType <= cdm::InitDataType::kWebM);
   if (mCDM) {
     mCDM->CreateSessionAndGenerateRequest(
@@ -661,7 +663,7 @@ mozilla::ipc::IPCResult ChromiumCDMChild::RecvInitializeVideoDecoder(
   config.format = static_cast<cdm::VideoFormat>(aConfig.mFormat());
   config.coded_size =
       mCodedSize = {aConfig.mImageWidth(), aConfig.mImageHeight()};
-  nsTArray<uint8_t> extraData(aConfig.mExtraData());
+  nsTArray<uint8_t> extraData(aConfig.mExtraData().Clone());
   config.extra_data = extraData.Elements();
   config.extra_data_size = extraData.Length();
   config.encryption_scheme =
@@ -771,12 +773,12 @@ void ChromiumCDMChild::ReturnOutput(WidevineVideoFrame& aFrame) {
   output.mFormat() = static_cast<cdm::VideoFormat>(aFrame.Format());
   output.mImageWidth() = aFrame.Size().width;
   output.mImageHeight() = aFrame.Size().height;
-  output.mYPlane() = {aFrame.PlaneOffset(cdm::VideoFrame::kYPlane),
-                      aFrame.Stride(cdm::VideoFrame::kYPlane)};
-  output.mUPlane() = {aFrame.PlaneOffset(cdm::VideoFrame::kUPlane),
-                      aFrame.Stride(cdm::VideoFrame::kUPlane)};
-  output.mVPlane() = {aFrame.PlaneOffset(cdm::VideoFrame::kVPlane),
-                      aFrame.Stride(cdm::VideoFrame::kVPlane)};
+  output.mYPlane() = {aFrame.PlaneOffset(cdm::VideoPlane::kYPlane),
+                      aFrame.Stride(cdm::VideoPlane::kYPlane)};
+  output.mUPlane() = {aFrame.PlaneOffset(cdm::VideoPlane::kUPlane),
+                      aFrame.Stride(cdm::VideoPlane::kUPlane)};
+  output.mVPlane() = {aFrame.PlaneOffset(cdm::VideoPlane::kVPlane),
+                      aFrame.Stride(cdm::VideoPlane::kVPlane)};
   output.mTimestamp() = aFrame.Timestamp();
 
   uint64_t duration = 0;

@@ -5,7 +5,7 @@
 %endif
 
 /* Hide all conditional elements by default. */
-:-moz-any([when-connection],[when-customroot],[when-mixedcontent],[when-ciphers],[when-loginforms]) {
+:-moz-any([when-connection],[when-customroot],[when-mixedcontent],[when-ciphers]) {
   display: none;
 }
 
@@ -22,6 +22,20 @@
   --horizontal-padding: 1.78em;
   --vertical-section-padding: 0.9em;
   --height-offset: 0px;
+}
+
+#protections-popup {
+  --protections-popup-description-color: #737373;
+  --protections-popup-switch-off-background: #f9f9fa;
+  --protections-popup-switch-off-hover-background: #c9c9ca;
+  --protections-popup-switch-off-active-background: #b1b1b2;
+}
+
+:root[lwt-popup-brighttext] #protections-popup {
+  --protections-popup-description-color: #f9f9fa;
+  --protections-popup-switch-off-background: #5c5c61;
+  --protections-popup-switch-off-hover-background: #6d6d71;
+  --protections-popup-switch-off-active-background: #737379;
 }
 
 #protections-popup[toast] {
@@ -48,8 +62,7 @@
 #identity-popup[connection=file] [when-connection~=file],
 #identity-popup[connection=extension] [when-connection~=extension],
 #identity-popup[connection=cert-error-page] [when-connection~=cert-error-page],
-/* Show insecure login forms messages when needed. */
-#identity-popup[loginforms=insecure] [when-loginforms=insecure],
+#identity-popup[connection=https-only-error-page] [when-connection~=https-only-error-page],
 /* Show weak cipher messages when needed. */
 #identity-popup[ciphers=weak] [when-ciphers~=weak],
 /* Show mixed content warnings when needed */
@@ -61,14 +74,6 @@
 /* Show 'disable MCB' button always when there is mixed active content blocked. */
 #identity-popup-securityView-body[mixedcontent~=active-blocked] > button[when-mixedcontent=active-blocked] {
   display: inherit;
-}
-
-/* Hide redundant messages based on insecure login forms presence. */
-#identity-popup[loginforms=secure] [and-when-loginforms=insecure] {
-  display: none;
-}
-#identity-popup[loginforms=insecure] [and-when-loginforms=secure] {
-  display: none;
 }
 
 /* Hide 'not secure' message in subview when weak cipher or mixed content messages are shown. */
@@ -122,8 +127,7 @@
 }
 
 .identity-popup-security-connection > description {
-  margin-top: 0;
-  margin-bottom: 0;
+  margin-block: 0;
 }
 
 #identity-popup-permissions-header,
@@ -131,8 +135,7 @@
 #identity-popup-security-description {
   /* icon indent + 16px icon width + 6px description margin
      (total of 12px margin with the native 6px description margin) */
-  padding-inline-start: calc(2em + 22px);
-  padding-inline-end: 1em;
+  padding-inline: calc(2em + 22px) 1em;
 }
 
 #identity-popup-security-description > description {
@@ -140,14 +143,12 @@
 }
 
 #identity-popup-permissions-content {
-  padding-inline-start: 2em;
-  padding-inline-end: 1em;
+  padding-inline: 2em 1em;
 }
 
 .identity-popup-security-content,
 #identity-popup-permissions-content {
-  padding-top: 1em;
-  padding-bottom: 1em;
+  padding-block: 1em;
 }
 
 #identity-popup-permissions-header {
@@ -173,8 +174,7 @@
   background-size: 24px auto;
   -moz-context-properties: fill;
   padding: 0.5em 0 1em;
-  padding-inline-start: calc(2em + 24px);
-  padding-inline-end: 1em;
+  padding-inline: calc(2em + 24px) 1em;
 }
 
 #protections-popup-content:-moz-locale-dir(rtl) {
@@ -189,7 +189,7 @@
   min-width: auto;
   width: 38px;
   border-style: none;
-  -moz-appearance: none;
+  appearance: none;
   background: url("chrome://global/skin/icons/arrow-left.svg") center no-repeat;
   background-size: 16px, auto;
   -moz-context-properties: fill, fill-opacity;
@@ -221,7 +221,6 @@
 #identity-popup-permissions-headline,
 .protections-popup-empty-label,
 .tracking-protection-button,
-#protections-popup-trackersView-strict-info > label,
 .protections-popup-cookiesView-list-header,
 .protections-popup-list-item > label,
 #protections-popup-mainView-panel-header > label,
@@ -305,7 +304,7 @@
   border-radius: 0;
   outline: 3px solid transparent;
   -moz-outline-radius: var(--toolbarbutton-border-radius);
-  -moz-appearance: none;
+  appearance: none;
 }
 
 #protections-popup-info-button > image {
@@ -371,6 +370,10 @@
   background-image: url(chrome://branding/content/icon48.png);
 }
 
+#identity-popup[connection=file] .identity-popup-security-connection {
+  background-image: url(chrome://global/skin/icons/document.svg);
+}
+
 #identity-popup[connection^=secure] .identity-popup-security-connection {
   background-image: url(chrome://browser/skin/connection-secure.svg);
   -moz-context-properties: fill;
@@ -399,14 +402,13 @@
   -moz-context-properties: fill;
 }
 
-#identity-popup[loginforms=insecure] .identity-popup-security-connection,
 #identity-popup[mixedcontent~=active-loaded][isbroken] .identity-popup-security-connection {
   background-image: url(chrome://browser/skin/controlcenter/mcb-disabled.svg);
   -moz-context-properties: fill;
 }
 
 #identity-popup[connection=extension] .identity-popup-security-connection {
-  background-image: url(chrome://browser/skin/controlcenter/extension.svg);
+  background-image: url(chrome://mozapps/skin/extensions/extension.svg);
   -moz-context-properties: fill;
   fill: #60bf4c;
 }
@@ -414,8 +416,7 @@
 #identity-popup-securityView-body {
   /* icon indent + 16px icon width + 6px description margin
     (total of 12px margin with the native 6px description margin) */
-  margin-inline-start: calc(2em + 22px);
-  margin-inline-end: 1em;
+  margin-inline: calc(2em + 22px) 1em;
   padding-inline-end: 1em;
   padding-top: 0.5em;
 }
@@ -432,46 +433,38 @@
 description#identity-popup-content-owner-label,
 description#identity-popup-content-owner,
 description#identity-popup-content-verifier,
-#identity-popup-securityView-body > button  {
+#identity-popup-securityView-body > button {
   margin-top: 0.5em;
 }
 
 /* CONTENT BLOCKING / TRACKING PROTECTION */
 
-#identity-popup-breakageReportView-footer,
 #protections-popup-sendReportView-footer {
   display: flex;
 }
 
-#identity-popup-breakageReportView-footer > button,
 #protections-popup-sendReportView-footer > button {
   flex: 1;
 }
 
-#identity-popup-breakageReportView-heading,
-#identity-popup-breakageReportView-body,
 #protections-popup-sendReportView-heading,
 #protections-popup-sendReportView-body {
   padding: var(--vertical-section-padding) var(--horizontal-padding);
 }
 
-.identity-popup-breakageReportView-collection-section,
 .protections-popup-sendReportView-collection-section {
   margin-bottom: 16px;
 }
 
-#identity-popup-breakageReportView-body,
 #protections-popup-sendReportView-body {
   border-top: 1px solid var(--panel-separator-color);
 }
 
-#identity-popup-breakageReportView-collection-url,
 #protections-popup-sendReportView-collection-url {
-  -moz-appearance: none;
+  appearance: none;
   border: none;
 }
 
-#identity-popup-breakageReportView-collection-comments,
 #protections-popup-sendReportView-collection-comments {
   height: 120px;
 }
@@ -487,7 +480,7 @@ description#identity-popup-content-verifier,
 
 .protections-popup-category {
   /* Overwrite toolbarbutton styles */
-  -moz-appearance: none;
+  appearance: none;
   margin: 0;
   padding-inline-start: 0;
 }
@@ -547,21 +540,16 @@ description#identity-popup-content-verifier,
 
 #protections-popup-cookiesView .protections-popup-empty-label {
   margin-inline-start: 24px;
-  margin-top: 2px;
-  margin-bottom: 4px;
+  margin-block: 2px 4px;
 }
 
 .protections-popup-cookiesView-list-header {
-  color: #737373;
+  color: var(--protections-popup-description-color);
   margin: 5px 0;
 }
 
 #protections-popup-cookiesView-list > .protections-popup-cookiesView-list-section:only-of-type > .protections-popup-cookiesView-list-header {
   display: none;
-}
-
-:root[lwt-popup-brighttext] .protections-popup-cookiesView-list-header {
-  color: #f9f9fa;
 }
 
 .protections-popup-list {
@@ -579,17 +567,13 @@ description#identity-popup-content-verifier,
 .protections-popup-list-host-label {
   -moz-box-flex: 1;
   direction: ltr;
-}
-
-.protections-popup-list-host-label:-moz-locale-dir(rtl) {
-  text-align: right;
+  text-align: match-parent;
 }
 
 .protections-popup-list-state-label {
   -moz-box-flex: 1;
   text-align: end;
-  margin-inline-start: 5px;
-  margin-inline-end: 2px;
+  margin-inline: 5px 2px;
 }
 
 .protections-popup-socialblockView-icon,
@@ -643,45 +627,18 @@ description#identity-popup-content-verifier,
   list-style-image: url(chrome://browser/skin/controlcenter/cryptominers.svg);
 }
 
-#protections-popup-trackersView-strict-info {
-  min-height: 40px;
-  /* Limit to full width - margin */
-  max-width: calc(var(--popup-width) - 12px);
-  min-width: calc(var(--popup-width) - 12px);
-  background-color: #45a1ff80;
-  margin: 6px;
-  text-align: center;
-  -moz-box-align: center;
-  -moz-box-pack: center;
-  padding: 5px 15px;
-  border-radius: 3px;
-}
-
-#protections-popup-trackersView-strict-info > image {
-  list-style-image: url(chrome://browser/skin/controlcenter/info.svg);
-  -moz-context-properties: fill;
-  fill: currentColor;
-  margin-inline-end: 10px;
-}
-
-#protections-popup-trackersView-strict-info > label {
-  overflow-wrap: break-word;
-  /* Limit to full width - container margin - container padding - icon width - icon margin */
-  max-width: calc(var(--popup-width) - 12px - 20px - 16px - 10px);
-}
-
 /* Content Blocking categories */
 
 #protections-popup-no-trackers-found-description {
   margin: 4.85em 7.25em;
   font-size: 1.1em;
   text-align: center;
-  color: #737373;
+  color: var(--protections-popup-description-color);
 }
 
 #protections-popup-content {
   padding: 0;
-  margin: 0 0 var(--vertical-section-padding) 0;
+  margin: 0 0 var(--vertical-section-padding);
 }
 
 #protections-popup-blocking-section-header,
@@ -689,14 +646,7 @@ description#identity-popup-content-verifier,
 #protections-popup-not-found-section-header {
   margin: 0;
   padding: var(--vertical-section-padding) var(--horizontal-padding);
-  color: #737373;
-}
-
-:root[lwt-popup-brighttext] #protections-popup-no-trackers-found-description,
-:root[lwt-popup-brighttext] #protections-popup-blocking-section-header,
-:root[lwt-popup-brighttext] #protections-popup-not-blocking-section-header,
-:root[lwt-popup-brighttext] #protections-popup-not-found-section-header {
-  color: #f9f9fa;
+  color: var(--protections-popup-description-color);
 }
 
 #tracking-protection-container > tooltip {
@@ -773,15 +723,15 @@ description#identity-popup-content-verifier,
 
 .tracking-protection-button {
   list-style-image: url(chrome://browser/skin/tracking-protection.svg);
-  -moz-appearance: none;
-  margin: 1em 0 0;
+  appearance: none;
+  margin-block: 1em 0;
+  margin-inline: 0 8px;
   display: none;
   height: 32px;
   background-color: var(--arrowpanel-dimmed);
   /* !important to override -moz-mac-buttonactivetext from applying on :active on mac
    and -moz-buttonhovertext from applying on :hover on linux. */
   color: inherit !important;
-  margin-inline-end: 8px;
 }
 
 .tracking-protection-button:hover {
@@ -843,10 +793,10 @@ description#identity-popup-content-verifier,
 .identity-popup-permission-icon.in-use {
   -moz-context-properties: fill;
   fill: rgb(224, 41, 29);
-  animation: 1.5s ease in-use-blink infinite;
+  animation: 1.5s ease identity-popup-permission-icon-in-use-blink infinite;
 }
 
-@keyframes in-use-blink {
+@keyframes identity-popup-permission-icon-in-use-blink {
   50% { opacity: 0; }
 }
 
@@ -875,8 +825,9 @@ description#identity-popup-content-verifier,
 }
 
 .identity-popup-permission-remove-button {
-  -moz-appearance: none;
+  appearance: none;
   margin: 0;
+  margin-inline-start: 2px;
   border-width: 0;
   border-radius: 50%;
   min-width: 0;
@@ -885,7 +836,6 @@ description#identity-popup-content-verifier,
   /* !important overrides :hover and :active colors from button.css */
   color: inherit !important;
   opacity: 0.6;
-  margin-inline-start: 2px;
 }
 
 .identity-popup-permission-remove-button > .button-box {
@@ -973,7 +923,7 @@ description#identity-popup-content-verifier,
 }
 
 #protections-popup-siteNotWorkingView-body {
-    padding: var(--vertical-section-padding) var(--horizontal-padding);
+  padding: var(--vertical-section-padding) var(--horizontal-padding);
 }
 
 #protections-popup-siteNotWorkingView-body,
@@ -999,14 +949,13 @@ description#identity-popup-content-verifier,
 }
 
 .protections-popup-tp-switch {
-  -moz-appearance: none;
+  appearance: none;
   box-sizing: border-box;
   min-width: 26px;
   border-radius: 10px;
-  background-color: #F9F9FA;
+  background-color: var(--protections-popup-switch-off-background);
   border: 1px solid hsla(210,4%,10%,.14);
-  margin-top: 4px;
-  margin-bottom: 4px;
+  margin-block: 4px;
   margin-inline-start: 1px;
   padding: 2px;
   padding-inline-end: 0;
@@ -1040,23 +989,11 @@ description#identity-popup-content-verifier,
 }
 
 .protections-popup-tp-switch:not([enabled]):hover {
-  background-color: #C9C9CA;
+  background-color: var(--protections-popup-switch-off-hover-background);
 }
 
 .protections-popup-tp-switch:not([enabled]):hover:active {
-  background-color: #B1B1B2;
-}
-
-:root[lwt-popup-brighttext] .protections-popup-tp-switch:not([enabled]) {
-  background-color: #5C5C61;
-}
-
-:root[lwt-popup-brighttext] .protections-popup-tp-switch:not([enabled]):hover {
-  background-color: #6D6D71;
-}
-
-:root[lwt-popup-brighttext] .protections-popup-tp-switch:not([enabled]):hover:active {
-  background-color: #737379;
+  background-color: var(--protections-popup-switch-off-active-background);
 }
 
 #protections-popup-siteNotWorkingView-body-issue-list {
@@ -1067,7 +1004,7 @@ description#identity-popup-content-verifier,
 
 .protections-popup-footer-button {
   /* Overwrite toolbarbutton styles */
-  -moz-appearance: none;
+  appearance: none;
   min-height: 24px;
   padding-inline-start: var(--horizontal-padding);
   margin: 0;
@@ -1080,7 +1017,7 @@ description#identity-popup-content-verifier,
 }
 
 .protections-popup-settings-icon {
-  list-style-image: url(chrome://browser/skin/settings.svg);
+  list-style-image: url(chrome://global/skin/icons/settings.svg);
 }
 
 .protections-popup-show-report-icon {
@@ -1105,11 +1042,12 @@ description#identity-popup-content-verifier,
 }
 
 #protections-popup-trackers-blocked-counter-description {
-  color: #737373;
+  color: var(--protections-popup-description-color);
 }
 
-:root[lwt-popup-brighttext] #protections-popup-trackers-blocked-counter-description {
-  color: #f9f9fa;
+#protections-popup-footer-protection-type-label {
+    margin-inline-end: var(--horizontal-padding);
+    color: var(--protections-popup-description-color);
 }
 
 .protections-popup-description {
@@ -1132,7 +1070,7 @@ description#identity-popup-content-verifier,
 }
 
 #protections-popup-milestones-content {
-  -moz-appearance: none;
+  appearance: none;
   padding: var(--vertical-section-padding) calc(var(--horizontal-padding) * 0.5);
   margin: 0;
 }

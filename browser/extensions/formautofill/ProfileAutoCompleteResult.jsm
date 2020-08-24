@@ -43,7 +43,7 @@ class ProfileAutoCompleteResult {
     log.debug("Constructing new ProfileAutoCompleteResult:", [...arguments]);
 
     // nsISupports
-    this.QueryInterface = ChromeUtils.generateQI([Ci.nsIAutoCompleteResult]);
+    this.QueryInterface = ChromeUtils.generateQI(["nsIAutoCompleteResult"]);
 
     // The user's query string
     this.searchString = searchString;
@@ -196,10 +196,8 @@ class ProfileAutoCompleteResult {
   /**
    * Removes a result from the resultset
    * @param {number} index The index of the result to remove
-   * @param {boolean} removeFromDatabase TRUE for removing data from DataBase
-   *                                     as well.
    */
-  removeValueAt(index, removeFromDatabase) {
+  removeValueAt(index) {
     // There is no plan to support removing profiles via autocomplete.
   }
 }
@@ -329,6 +327,11 @@ class AddressResult extends ProfileAutoCompleteResult {
 class CreditCardResult extends ProfileAutoCompleteResult {
   constructor(...args) {
     super(...args);
+    this._cardTypes = this._generateCardTypes(
+      this._focusedFieldName,
+      this._allFieldNames,
+      this._matchingProfiles
+    );
   }
 
   _getSecondaryLabel(focusedFieldName, allFieldNames, profile) {
@@ -434,6 +437,29 @@ class CreditCardResult extends ProfileAutoCompleteResult {
     return labels;
   }
 
+  // This method needs to return an array that parallels the
+  // array returned by _generateLabels, above. As a consequence,
+  // its logic follows very closely.
+  _generateCardTypes(focusedFieldName, allFieldNames, profiles) {
+    if (this._isInputAutofilled) {
+      return [
+        "", // Clear button
+        "", // Footer
+      ];
+    }
+
+    // Skip results without a primary label.
+    let cardTypes = profiles
+      .filter(profile => {
+        return !!profile[focusedFieldName];
+      })
+      .map(profile => profile["cc-type"]);
+
+    // Add an empty result entry for footer.
+    cardTypes.push("");
+    return cardTypes;
+  }
+
   getStyleAt(index) {
     this._checkIndexBounds(index);
     if (!this._isSecure && insecureWarningEnabled) {
@@ -444,7 +470,31 @@ class CreditCardResult extends ProfileAutoCompleteResult {
   }
 
   getImageAt(index) {
+    const PATH = "chrome://formautofill/content/";
+    const THIRD_PARTY_PATH = PATH + "third-party/";
+
     this._checkIndexBounds(index);
-    return "chrome://formautofill/content/icon-credit-card-generic.svg";
+    switch (this._cardTypes[index]) {
+      case "amex":
+        return THIRD_PARTY_PATH + "cc-logo-amex.png";
+      case "cartebancaire":
+        return THIRD_PARTY_PATH + "cc-logo-cartebancaire.png";
+      case "diners":
+        return THIRD_PARTY_PATH + "cc-logo-diners.svg";
+      case "discover":
+        return THIRD_PARTY_PATH + "cc-logo-discover.png";
+      case "jcb":
+        return THIRD_PARTY_PATH + "cc-logo-jcb.svg";
+      case "mastercard":
+        return THIRD_PARTY_PATH + "cc-logo-mastercard.svg";
+      case "mir":
+        return THIRD_PARTY_PATH + "cc-logo-mir.svg";
+      case "unionpay":
+        return THIRD_PARTY_PATH + "cc-logo-unionpay.svg";
+      case "visa":
+        return THIRD_PARTY_PATH + "cc-logo-visa.svg";
+      default:
+        return PATH + "icon-credit-card-generic.svg";
+    }
   }
 }

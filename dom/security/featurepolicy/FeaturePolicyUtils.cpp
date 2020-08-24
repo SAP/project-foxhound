@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FeaturePolicyUtils.h"
-#include "nsIURIFixup.h"
+#include "nsIOService.h"
 
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/ipc/IPDLParamTraits.h"
@@ -13,6 +13,7 @@
 #include "mozilla/dom/ReportingUtils.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/Document.h"
+#include "nsJSUtils.h"
 
 namespace mozilla {
 namespace dom {
@@ -45,12 +46,15 @@ static FeatureMap sExperimentalFeatures[] = {
     // policy.
     {"autoplay", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     {"encrypted-media", FeaturePolicyUtils::FeaturePolicyValue::eAll},
+    {"gamepad", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"midi", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"payment", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     {"document-domain", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     // TODO: not supported yet!!!
     {"speaker", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"vr", FeaturePolicyUtils::FeaturePolicyValue::eAll},
+    // https://immersive-web.github.io/webxr/#feature-policy
+    {"xr-spatial-tracking", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
 };
 
 /* static */
@@ -163,6 +167,7 @@ bool FeaturePolicyUtils::IsFeatureUnsafeAllowedAll(
   MOZ_ASSERT(policy);
 
   return policy->HasFeatureUnsafeAllowsAll(aFeatureName) &&
+         !policy->IsSameOriginAsSrc(aDocument->NodePrincipal()) &&
          !policy->AllowsFeatureExplicitlyInAncestorChain(
              aFeatureName, policy->DefaultOrigin()) &&
          !IsSameOriginAsTop(aDocument);
@@ -177,13 +182,9 @@ bool FeaturePolicyUtils::IsFeatureAllowed(Document* aDocument,
     return true;
   }
 
-  // Skip apply features in experimental pharse
+  // Skip apply features in experimental phase
   if (!StaticPrefs::dom_security_featurePolicy_experimental_enabled() &&
       IsExperimentalFeature(aFeatureName)) {
-    return true;
-  }
-
-  if (!aDocument->IsHTMLDocument()) {
     return true;
   }
 
@@ -210,19 +211,9 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
 
   // Strip the URL of any possible username/password and make it ready to be
   // presented in the UI.
-  nsCOMPtr<nsIURIFixup> urifixup = services::GetURIFixup();
-  if (NS_WARN_IF(!urifixup)) {
-    return;
-  }
-
-  nsCOMPtr<nsIURI> exposableURI;
-  nsresult rv = urifixup->CreateExposableURI(uri, getter_AddRefs(exposableURI));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-
+  nsCOMPtr<nsIURI> exposableURI = net::nsIOService::CreateExposableURI(uri);
   nsAutoCString spec;
-  rv = exposableURI->GetSpec(spec);
+  nsresult rv = exposableURI->GetSpec(spec);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -247,13 +238,12 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
   }
 
   RefPtr<FeaturePolicyViolationReportBody> body =
-      new FeaturePolicyViolationReportBody(window, aFeatureName, fileName,
-                                           lineNumber, columnNumber,
-                                           NS_LITERAL_STRING("enforce"));
+      new FeaturePolicyViolationReportBody(window->AsGlobal(), aFeatureName,
+                                           fileName, lineNumber, columnNumber,
+                                           u"enforce"_ns);
 
-  ReportingUtils::Report(window, nsGkAtoms::featurePolicyViolation,
-                         NS_LITERAL_STRING("default"),
-                         NS_ConvertUTF8toUTF16(spec), body);
+  ReportingUtils::Report(window->AsGlobal(), nsGkAtoms::featurePolicyViolation,
+                         u"default"_ns, NS_ConvertUTF8toUTF16(spec), body);
 }
 
 }  // namespace dom

@@ -4,8 +4,9 @@
 
 import React from "react";
 import ReactDOM from "react-dom";
-import { HeroText } from "./components/HeroText";
-import { FxCards } from "./components/FxCards";
+import { MultiStageAboutWelcome } from "./components/MultiStageAboutWelcome";
+import { SimpleAboutWelcome } from "./components/SimpleAboutWelcome";
+
 import {
   AboutWelcomeUtils,
   DEFAULT_WELCOME_CONTENT,
@@ -25,20 +26,43 @@ class AboutWelcome extends React.PureComponent {
 
   componentDidMount() {
     this.fetchFxAFlowUri();
-    window.AWSendEventTelemetry({
-      event: "IMPRESSION",
-      message_id: "SIMPLIFIED_ABOUT_WELCOME",
-    });
+
+    // Record impression with performance data after allowing the page to load
+    window.addEventListener(
+      "load",
+      () => {
+        const { domComplete, domInteractive } = performance
+          .getEntriesByType("navigation")
+          .pop();
+        window.AWSendEventTelemetry({
+          event: "IMPRESSION",
+          event_context: {
+            domComplete,
+            domInteractive,
+            mountStart: performance.getEntriesByName("mount").pop().startTime,
+            source: this.props.UTMTerm,
+            page: "about:welcome",
+          },
+          message_id: this.props.messageId,
+        });
+      },
+      { once: true }
+    );
+
     // Captures user has seen about:welcome by setting
-    // firstrun.didSeeAboutWelcome pref to true
-    window.AWSendToParent("SET_WELCOME_MESSAGE_SEEN");
+    // firstrun.didSeeAboutWelcome pref to true and capturing welcome UI unique messageId
+    window.AWSendToParent("SET_WELCOME_MESSAGE_SEEN", this.props.messageId);
   }
 
   handleStartBtnClick() {
     AboutWelcomeUtils.handleUserAction(this.props.startButton.action);
     const ping = {
       event: "CLICK_BUTTON",
-      message_id: this.props.startButton.message_id,
+      event_context: {
+        source: this.props.startButton.message_id,
+        page: "about:welcome",
+      },
+      message_id: this.props.messageId,
       id: "ABOUT_WELCOME",
     };
     window.AWSendEventTelemetry(ping);
@@ -46,37 +70,71 @@ class AboutWelcome extends React.PureComponent {
 
   render() {
     const { props } = this;
+    if (props.template === "multistage") {
+      return (
+        <MultiStageAboutWelcome
+          screens={props.screens}
+          metricsFlowUri={this.state.metricsFlowUri}
+          message_id={props.messageId}
+          utm_term={props.UTMTerm}
+        />
+      );
+    }
+
     return (
-      <div className="trailheadCards">
-        <div className="trailheadCardsInner">
-          <main>
-            <HeroText title={props.title} subtitle={props.subtitle} />
-            <FxCards
-              cards={props.cards}
-              metricsFlowUri={this.state.metricsFlowUri}
-              sendTelemetry={window.AWSendEventTelemetry}
-            />
-            {props.startButton && props.startButton.string_id && (
-              <button
-                className="start-button"
-                data-l10n-id={props.startButton.string_id}
-                onClick={this.handleStartBtnClick}
-              />
-            )}
-          </main>
-        </div>
-      </div>
+      <SimpleAboutWelcome
+        metricsFlowUri={this.state.metricsFlowUri}
+        message_id={props.messageId}
+        utm_term={props.UTMTerm}
+        title={props.title}
+        subtitle={props.subtitle}
+        cards={props.cards}
+        startButton={props.startButton}
+        handleStartBtnClick={this.handleStartBtnClick}
+      />
     );
   }
 }
 
 AboutWelcome.defaultProps = DEFAULT_WELCOME_CONTENT;
 
-function mount(settings) {
+function ComputeMessageId(experimentId, branchId, settings) {
+  let messageId = "ABOUT_WELCOME";
+  let UTMTerm = "default";
+
+  if (settings.id && settings.screens) {
+    messageId = settings.id.toUpperCase();
+  }
+
+  if (experimentId && branchId) {
+    UTMTerm = `${experimentId}-${branchId}`.toLowerCase();
+  }
+  return {
+    messageId,
+    UTMTerm,
+  };
+}
+
+async function mount() {
+  const { slug, branch } = await window.AWGetStartupData();
+  let settings = branch && branch.value ? branch.value : {};
+
+  if (!(branch && branch.value)) {
+    // Check for override content in pref browser.aboutwelcome.overrideContent
+    settings = await window.AWGetMultiStageScreens();
+  }
+
+  let { messageId, UTMTerm } = ComputeMessageId(
+    slug,
+    branch && branch.slug,
+    settings
+  );
+
   ReactDOM.render(
-    <AboutWelcome title={settings.title} subtitle={settings.subtitle} />,
+    <AboutWelcome messageId={messageId} UTMTerm={UTMTerm} {...settings} />,
     document.getElementById("root")
   );
 }
 
-mount(window.AWGetStartupData());
+performance.mark("mount");
+mount();

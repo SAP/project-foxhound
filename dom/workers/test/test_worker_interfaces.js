@@ -28,10 +28,10 @@
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
 var ecmaGlobals = [
-  { name: "AggregateError", insecureContext: true, nightly: true },
+  { name: "AggregateError", insecureContext: true },
   { name: "Array", insecureContext: true },
   { name: "ArrayBuffer", insecureContext: true },
-  { name: "Atomics", insecureContext: true, earlyBetaOrEarlier: true },
+  { name: "Atomics", insecureContext: true },
   { name: "BigInt", insecureContext: true },
   { name: "BigInt64Array", insecureContext: true },
   { name: "BigUint64Array", insecureContext: true },
@@ -42,6 +42,7 @@ var ecmaGlobals = [
   { name: "Date", insecureContext: true },
   { name: "Error", insecureContext: true },
   { name: "EvalError", insecureContext: true },
+  { name: "FinalizationRegistry", insecureContext: true },
   { name: "Float32Array", insecureContext: true },
   { name: "Float64Array", insecureContext: true },
   { name: "Function", insecureContext: true },
@@ -70,7 +71,7 @@ var ecmaGlobals = [
   {
     name: "SharedArrayBuffer",
     insecureContext: true,
-    earlyBetaOrEarlier: true,
+    crossOringinIsolated: true,
   },
   { name: "String", insecureContext: true },
   { name: "Symbol", insecureContext: true },
@@ -83,6 +84,7 @@ var ecmaGlobals = [
   { name: "Uint8ClampedArray", insecureContext: true },
   { name: "URIError", insecureContext: true },
   { name: "WeakMap", insecureContext: true },
+  { name: "WeakRef", insecureContext: true },
   { name: "WeakSet", insecureContext: true },
   {
     name: "WebAssembly",
@@ -227,6 +229,12 @@ var interfaceNamesInGlobalScope = [
     insecureContext: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "Report", nightly: true, insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ReportBody", nightly: true, insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ReportingObserver", nightly: true, insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Request", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Response", insecureContext: true },
@@ -294,6 +302,7 @@ function createInterfaceMap({
   isAndroid,
   isInsecureContext,
   isFennec,
+  isCrossOringinIsolated,
 }) {
   var interfaceMap = {};
 
@@ -318,6 +327,7 @@ function createInterfaceMap({
           // only in secure contexts.
           (isInsecureContext && !entry.insecureContext) ||
           entry.earlyBetaOrEarlier === !isEarlyBetaOrEarlier ||
+          entry.crossOringinIsolated === !isCrossOringinIsolated ||
           entry.disabled
         ) {
           interfaceMap[entry.name] = false;

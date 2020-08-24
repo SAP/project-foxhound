@@ -39,11 +39,11 @@ add_task(async function() {
       /* tab may have already been closed in case of failure */
     }
     await PlacesUtils.history.clear();
+    await UrlbarTestUtils.formHistory.clear();
   });
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    waitForFocus: SimpleTest.waitForFocus,
     value: "moz",
   });
   Assert.equal(
@@ -54,7 +54,6 @@ add_task(async function() {
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    waitForFocus: SimpleTest.waitForFocus,
     value: "moz open a search",
   });
   let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);

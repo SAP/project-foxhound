@@ -3348,21 +3348,21 @@ void nsHtml5TreeBuilder::documentModeInternal(
 
 bool nsHtml5TreeBuilder::isAlmostStandards(nsHtml5String publicIdentifier,
                                            nsHtml5String systemIdentifier) {
-  if (nsHtml5Portability::lowerCaseLiteralEqualsIgnoreAsciiCaseString(
-          "-//w3c//dtd xhtml 1.0 transitional//en", publicIdentifier)) {
+  if (nsHtml5Portability::lowerCaseLiteralIsPrefixOfIgnoreAsciiCaseString(
+          "-//w3c//dtd xhtml 1.0 transitional//", publicIdentifier)) {
     return true;
   }
-  if (nsHtml5Portability::lowerCaseLiteralEqualsIgnoreAsciiCaseString(
-          "-//w3c//dtd xhtml 1.0 frameset//en", publicIdentifier)) {
+  if (nsHtml5Portability::lowerCaseLiteralIsPrefixOfIgnoreAsciiCaseString(
+          "-//w3c//dtd xhtml 1.0 frameset//", publicIdentifier)) {
     return true;
   }
   if (systemIdentifier) {
-    if (nsHtml5Portability::lowerCaseLiteralEqualsIgnoreAsciiCaseString(
-            "-//w3c//dtd html 4.01 transitional//en", publicIdentifier)) {
+    if (nsHtml5Portability::lowerCaseLiteralIsPrefixOfIgnoreAsciiCaseString(
+            "-//w3c//dtd html 4.01 transitional//", publicIdentifier)) {
       return true;
     }
-    if (nsHtml5Portability::lowerCaseLiteralEqualsIgnoreAsciiCaseString(
-            "-//w3c//dtd html 4.01 frameset//en", publicIdentifier)) {
+    if (nsHtml5Portability::lowerCaseLiteralIsPrefixOfIgnoreAsciiCaseString(
+            "-//w3c//dtd html 4.01 frameset//", publicIdentifier)) {
       return true;
     }
   }
@@ -3395,11 +3395,12 @@ bool nsHtml5TreeBuilder::isQuirky(nsAtom* name, nsHtml5String publicIdentifier,
     }
   }
   if (!systemIdentifier) {
-    if (nsHtml5Portability::lowerCaseLiteralEqualsIgnoreAsciiCaseString(
-            "-//w3c//dtd html 4.01 transitional//en", publicIdentifier)) {
+    if (nsHtml5Portability::lowerCaseLiteralIsPrefixOfIgnoreAsciiCaseString(
+            "-//w3c//dtd html 4.01 transitional//", publicIdentifier)) {
       return true;
-    } else if (nsHtml5Portability::lowerCaseLiteralEqualsIgnoreAsciiCaseString(
-                   "-//w3c//dtd html 4.01 frameset//en", publicIdentifier)) {
+    } else if (nsHtml5Portability::
+                   lowerCaseLiteralIsPrefixOfIgnoreAsciiCaseString(
+                       "-//w3c//dtd html 4.01 frameset//", publicIdentifier)) {
       return true;
     }
   } else if (nsHtml5Portability::lowerCaseLiteralEqualsIgnoreAsciiCaseString(

@@ -21,8 +21,6 @@ pref("dom.ipc.keepProcessesAlive.web", 1);
 pref("dom.ipc.processCount", 1);
 pref("dom.ipc.processPrelaunch.enabled", false);
 
-// Tell Telemetry that we're in GeckoView mode.
-pref("toolkit.telemetry.isGeckoViewMode", true);
 // Disable the Telemetry Event Ping
 pref("toolkit.telemetry.eventping.enabled", false);
 // Don't create the hidden window during startup.
@@ -72,6 +70,22 @@ pref("ui.android.mouse_as_touch", 2);
 
 // Fenix is currently not whitelisted for Web Authentication
 pref("security.webauth.webauthn_enable_android_fido2", false);
+pref("security.webauth.webauthn", false);
 
 // Enable autoplay permission prompts
 pref("media.geckoview.autoplay.request", true);
+
+// Enable EME permission prompts
+pref("media.eme.require-app-approval", true);
+
+// Enable the Process Priority Manager
+pref("dom.ipc.processPriorityManager.enabled", true);
+
+pref("signon.debug", false);
+pref("signon.showAutoCompleteFooter", true);
+pref("security.insecure_field_warning.contextual.enabled", true);
+pref("toolkit.autocomplete.delegate", true);
+
+// Android doesn't support the new sync storage yet, we will have our own in
+// Bug 1625257.
+pref("webextensions.storage.sync.kinto", true);

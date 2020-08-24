@@ -28,9 +28,10 @@
              oncommand="MailIntegration.sendLinkForBrowser(gBrowser.selectedBrowser);"/>
 
     <command id="cmd_pageSetup" oncommand="PrintUtils.showPageSetup();"/>
-    <command id="cmd_print" oncommand="PrintUtils.printWindow(window.gBrowser.selectedBrowser.browsingContext);"/>
+    <command id="cmd_print" oncommand="PrintUtils.startPrintWindow(window.gBrowser.selectedBrowser.browsingContext);"/>
     <command id="cmd_printPreview" oncommand="PrintUtils.printPreview(PrintPreviewListener);"/>
-    <command id="cmd_importFromAnotherBrowser" oncommand="MigrationUtils.showMigrationWizard(window, [MigrationUtils.MIGRATION_ENTRYPOINT_FILE_MENU]);"/>
+    <command id="cmd_file_importFromAnotherBrowser" oncommand="MigrationUtils.showMigrationWizard(window, [MigrationUtils.MIGRATION_ENTRYPOINT_FILE_MENU]);"/>
+    <command id="cmd_help_importFromAnotherBrowser" oncommand="MigrationUtils.showMigrationWizard(window, [MigrationUtils.MIGRATION_ENTRYPOINT_HELP_MENU]);"/>
     <command id="cmd_close" oncommand="BrowserCloseTabOrWindow(event);"/>
     <command id="cmd_closeWindow" oncommand="BrowserTryToCloseWindow()"/>
     <command id="cmd_toggleMute" oncommand="gBrowser.toggleMuteAudioOnMultiSelectedTabs(gBrowser.selectedTab)"/>
@@ -41,7 +42,7 @@
     <command id="View:PageSource" oncommand="BrowserViewSource(window.gBrowser.selectedBrowser);"/>
     <command id="View:PageInfo" oncommand="BrowserPageInfo();"/>
     <command id="View:FullScreen" oncommand="BrowserFullScreen();"/>
-    <command id="View:ReaderView" oncommand="ReaderParent.toggleReaderMode(event);"/>
+    <command id="View:ReaderView" oncommand="AboutReaderParent.toggleReaderMode(event);"/>
     <command id="View:PictureInPicture" oncommand="PictureInPicture.onCommand(event);"/>
     <command id="cmd_find" oncommand="gLazyFindCommand('onFindCommand')"/>
     <command id="cmd_findAgain" oncommand="gLazyFindCommand('onFindAgainCommand', false)"/>
@@ -53,7 +54,7 @@
     <command id="Browser:AddBookmarkAs"
              oncommand="PlacesCommandHook.bookmarkPage();"/>
     <command id="Browser:BookmarkAllTabs"
-             oncommand="PlacesCommandHook.bookmarkPages(PlacesCommandHook.uniqueCurrentPages);"/>
+             oncommand="PlacesUIUtils.showBookmarkPagesDialog(PlacesCommandHook.uniqueCurrentPages);"/>
     <command id="Browser:Back"    oncommand="BrowserBack();" disabled="true"/>
     <command id="Browser:BackOrBackDuplicate" oncommand="BrowserBack(event);" disabled="true">
       <observes element="Browser:Back" attribute="disabled"/>
@@ -92,19 +93,19 @@
       oncommand="OpenBrowserWindow({private: true});"/>
 #ifdef NIGHTLY_BUILD
     <command id="Tools:FissionWindow"
-      oncommand="OpenBrowserWindow({fission: true});"
+      oncommand="OpenBrowserWindow({fission: true, private: !!window?.browsingContext?.usePrivateBrowsing});"
       hidden="true"/>
     <command id="Tools:NonFissionWindow"
-      oncommand="OpenBrowserWindow({fission: false});"
+      oncommand="OpenBrowserWindow({fission: false, private: !!window?.browsingContext?.usePrivateBrowsing});"
       hidden="true"/>
 #endif
-    <command id="History:UndoCloseTab" oncommand="undoCloseTab();"/>
+    <command id="History:UndoCloseTab" oncommand="undoCloseTab();" data-l10n-args='{"tabCount": 1}'/>
     <command id="History:UndoCloseWindow" oncommand="undoCloseWindow();"/>
 
     <command id="wrCaptureCmd" oncommand="gGfxUtils.webrenderCapture();" disabled="true"/>
+    <command id="wrToggleCaptureSequenceCmd" oncommand="gGfxUtils.toggleWebrenderCaptureSequence();" disabled="true"/>
 #ifdef NIGHTLY_BUILD
     <command id="windowRecordingCmd" oncommand="gGfxUtils.toggleWindowRecording();"/>
-    <command id="wrTransactionLoggingCmd" oncommand="gGfxUtils.toggleTransactionLogging();"/>
 #endif
 #ifdef XP_MACOSX
     <command id="minimizeWindow"
@@ -254,7 +255,10 @@
     <key data-l10n-id="search-find-again-shortcut-alt" command="cmd_findPrevious" modifiers="shift"/>
 
     <key id="addBookmarkAsKb" data-l10n-id="bookmark-this-page-shortcut" command="Browser:AddBookmarkAs" modifiers="accel"/>
-    <key id="bookmarkAllTabsKb" data-l10n-id="bookmark-this-page-shortcut" oncommand="PlacesCommandHook.bookmarkPages(PlacesCommandHook.uniqueCurrentPages);" modifiers="accel,shift"/>
+    <key id="bookmarkAllTabsKb"
+         data-l10n-id="bookmark-this-page-shortcut"
+         oncommand="PlacesUIUtils.showBookmarkPagesDialog(PlacesCommandHook.uniqueCurrentPages);"
+         modifiers="accel,shift"/>
     <key id="manBookmarkKb" data-l10n-id="bookmark-show-all-shortcut" command="Browser:ShowAllBookmarks" modifiers="accel,shift"/>
     <key id="viewBookmarksSidebarKb"
          data-l10n-id="bookmark-show-sidebar-shortcut"
@@ -277,7 +281,8 @@
          oncommand="SidebarUI.toggle('viewHistorySidebar');"/>
 
     <key id="key_fullZoomReduce" data-l10n-id="full-zoom-reduce-shortcut" command="cmd_fullZoomReduce"  modifiers="accel"/>
-    <key                         data-l10n-id="full-zoom-reduce-shortcut-alt" command="cmd_fullZoomReduce"  modifiers="accel"/>
+    <key                         data-l10n-id="full-zoom-reduce-shortcut-alt-a" command="cmd_fullZoomReduce"  modifiers="accel"/>
+    <key                         data-l10n-id="full-zoom-reduce-shortcut-alt-b" command="cmd_fullZoomReduce"  modifiers="accel"/>
     <key id="key_fullZoomEnlarge" data-l10n-id="full-zoom-enlarge-shortcut" command="cmd_fullZoomEnlarge" modifiers="accel"/>
     <key                          data-l10n-id="full-zoom-enlarge-shortcut-alt" command="cmd_fullZoomEnlarge" modifiers="accel"/>
     <key                          data-l10n-id="full-zoom-enlarge-shortcut-alt2" command="cmd_fullZoomEnlarge" modifiers="accel"/>
@@ -334,6 +339,13 @@
     key="#" modifiers="control"
 #endif
     command="wrCaptureCmd"/>
+    <key id="key_wrToggleCaptureSequenceCmd"
+#ifdef XP_MACOSX
+    key="6" modifiers="control,shift"
+#else
+    key="^" modifiers="control"
+#endif
+    command="wrToggleCaptureSequenceCmd"/>
 #ifdef NIGHTLY_BUILD
     <key id="key_windowRecordingCmd"
 #ifdef XP_MACOSX
@@ -342,13 +354,6 @@
     key="$" modifiers="control"
 #endif
     command="windowRecordingCmd"/>
-    <key id="key_transactionLoggingCmd"
-#ifdef XP_MACOSX
-    key="5" modifiers="control,shift"
-#else
-    key="%" modifiers="control"
-#endif
-    command="wrTransactionLoggingCmd"/>
 #endif
 #ifdef XP_MACOSX
     <key id="key_minimizeWindow"
@@ -362,7 +367,6 @@
     <!-- These are used to build the Application menu -->
     <key id="key_preferencesCmdMac"
          data-l10n-id="preferences-shortcut"
-         reserved="true"
          modifiers="accel"/>
     <key id="key_hideThisAppCmdMac"
          data-l10n-id="hide-app-shortcut"

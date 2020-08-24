@@ -19,8 +19,8 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/SystemGroup.h"
 #include "mozilla/Telemetry.h"
 #include "nsContentUtils.h"
 #include "nsINetworkLinkService.h"
@@ -736,10 +736,7 @@ void MediaCache::Flush() {
         AutoLock lock(self->mMonitor);
         self->FlushInternal(lock);
         // Ensure MediaCache is deleted on the main thread.
-        NS_ProxyRelease(
-            "MediaCache::Flush",
-            SystemGroup::EventTargetFor(mozilla::TaskCategory::Other),
-            self.forget());
+        NS_ReleaseOnMainThread("MediaCache::Flush", self.forget());
       });
   sThread->Dispatch(r.forget());
 }
@@ -751,17 +748,14 @@ void MediaCache::CloseStreamsForPrivateBrowsing() {
       [self = RefPtr<MediaCache>(this)]() mutable {
         AutoLock lock(self->mMonitor);
         // Copy mStreams since CloseInternal() will change the array.
-        nsTArray<MediaCacheStream*> streams(self->mStreams);
-        for (MediaCacheStream* s : streams) {
+        for (MediaCacheStream* s : self->mStreams.Clone()) {
           if (s->mIsPrivateBrowsing) {
             s->CloseInternal(lock);
           }
         }
         // Ensure MediaCache is deleted on the main thread.
-        NS_ProxyRelease(
-            "MediaCache::CloseStreamsForPrivateBrowsing",
-            SystemGroup::EventTargetFor(mozilla::TaskCategory::Other),
-            self.forget());
+        NS_ReleaseOnMainThread("MediaCache::CloseStreamsForPrivateBrowsing",
+                               self.forget());
       }));
 }
 
@@ -925,7 +919,9 @@ int32_t MediaCache::FindBlockForIncomingData(AutoLock& aLock, TimeStamp aNow,
          PredictNextUseForIncomingData(aLock, aStream) >=
              PredictNextUse(aLock, aNow, blockIndex))) {
       blockIndex = mIndex.Length();
-      if (!mIndex.AppendElement()) return -1;
+      // XXX(Bug 1631371) Check if this should use a fallible operation as it
+      // pretended earlier.
+      mIndex.AppendElement();
       mIndexWatermark = std::max(mIndexWatermark, blockIndex + 1);
       mFreeBlocks.AddFirstBlock(blockIndex);
       return blockIndex;
@@ -1596,9 +1592,7 @@ class UpdateEvent : public Runnable {
   NS_IMETHOD Run() override {
     mMediaCache->Update();
     // Ensure MediaCache is deleted on the main thread.
-    NS_ProxyRelease("UpdateEvent::mMediaCache",
-                    SystemGroup::EventTargetFor(mozilla::TaskCategory::Other),
-                    mMediaCache.forget());
+    NS_ReleaseOnMainThread("UpdateEvent::mMediaCache", mMediaCache.forget());
     return NS_OK;
   }
 

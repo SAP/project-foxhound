@@ -10,6 +10,10 @@ const {
   PureComponent,
 } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+
+const FluentReact = require("devtools/client/shared/vendor/fluent-react");
+const Localized = createFactory(FluentReact.Localized);
 
 loader.lazyRequireGetter(
   this,
@@ -24,6 +28,10 @@ const UnsupportedBrowserList = createFactory(
 
 const Types = require("devtools/client/inspector/compatibility/types");
 
+const NodePane = createFactory(
+  require("devtools/client/inspector/compatibility/components/NodePane")
+);
+
 // For test
 loader.lazyRequireGetter(
   this,
@@ -36,6 +44,9 @@ class IssueItem extends PureComponent {
   static get propTypes() {
     return {
       ...Types.issue,
+      hideBoxModelHighlighter: PropTypes.func.isRequired,
+      setSelectedNode: PropTypes.func.isRequired,
+      showBoxModelHighlighterForNode: PropTypes.func.isRequired,
     };
   }
 
@@ -49,7 +60,11 @@ class IssueItem extends PureComponent {
 
     e.preventDefault();
     e.stopPropagation();
-    openDocLink(url);
+
+    openDocLink(
+      url +
+        "?utm_source=devtools&utm_medium=inspector-compatibility&utm_campaign=default"
+    );
   }
 
   _getTestDataAttributes() {
@@ -57,6 +72,9 @@ class IssueItem extends PureComponent {
 
     if (Services.prefs.getBoolPref("devtools.testing", false)) {
       for (const [key, value] of Object.entries(this.props)) {
+        if (key === "nodes") {
+          continue;
+        }
         const datasetKey = `data-qa-${toSnakeCase(key)}`;
         testDataSet[datasetKey] = JSON.stringify(value);
       }
@@ -68,22 +86,69 @@ class IssueItem extends PureComponent {
   _renderCauses() {
     const { deprecated, experimental } = this.props;
 
-    const causes = [];
-
-    if (deprecated) {
-      causes.push("deprecated");
+    if (!deprecated && !experimental) {
+      return null;
     }
 
-    if (experimental) {
-      causes.push("experimental");
+    let localizationId = "compatibility-issue-deprecated-experimental";
+
+    if (!deprecated) {
+      localizationId = "compatibility-issue-experimental";
+    } else if (!experimental) {
+      localizationId = "compatibility-issue-deprecated";
     }
 
-    return causes.length
-      ? dom.span(
-          { className: "compatibility-issue-item__causes" },
-          `(${causes.join(",")})`
-        )
-      : null;
+    return Localized(
+      {
+        id: localizationId,
+      },
+      dom.span(
+        { className: "compatibility-issue-item__causes" },
+        localizationId
+      )
+    );
+  }
+
+  _renderDescription() {
+    const { property, url } = this.props;
+
+    return dom.div(
+      {
+        className: "compatibility-issue-item__description",
+      },
+      dom.a(
+        {
+          className: "compatibility-issue-item__mdn-link devtools-monospace",
+          href: url,
+          title: url,
+          onClick: e => this._onLinkClicked(e),
+        },
+        property
+      ),
+      this._renderCauses(),
+      this._renderUnsupportedBrowserList()
+    );
+  }
+
+  _renderNodeList() {
+    const { nodes } = this.props;
+
+    if (!nodes) {
+      return null;
+    }
+
+    const {
+      hideBoxModelHighlighter,
+      setSelectedNode,
+      showBoxModelHighlighterForNode,
+    } = this.props;
+
+    return NodePane({
+      nodes,
+      hideBoxModelHighlighter,
+      setSelectedNode,
+      showBoxModelHighlighterForNode,
+    });
   }
 
   _renderUnsupportedBrowserList() {
@@ -100,7 +165,6 @@ class IssueItem extends PureComponent {
       experimental,
       property,
       unsupportedBrowsers,
-      url,
     } = this.props;
 
     const classes = ["compatibility-issue-item"];
@@ -123,17 +187,8 @@ class IssueItem extends PureComponent {
         key: property,
         ...this._getTestDataAttributes(),
       },
-      dom.a(
-        {
-          className: "compatibility-issue-item__mdn-link devtools-monospace",
-          href: url,
-          title: url,
-          onClick: e => this._onLinkClicked(e),
-        },
-        property
-      ),
-      this._renderCauses(),
-      this._renderUnsupportedBrowserList()
+      this._renderDescription(),
+      this._renderNodeList()
     );
   }
 }

@@ -25,7 +25,7 @@ interface HTMLIFrameElement : HTMLElement {
            attribute DOMString name;
   [PutForwards=value] readonly attribute DOMTokenList sandbox;
            // attribute boolean seamless;
-  [CEReactions, SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure, BinaryName="allowFullscreenForBindings"]
            attribute boolean allowFullscreen;
   [CEReactions, SetterThrows, Pure]
            attribute boolean allowPaymentRequest;
@@ -63,14 +63,7 @@ partial interface HTMLIFrameElement {
   Document? getSVGDocument();
 };
 
-partial interface HTMLIFrameElement {
-  // nsIDOMMozBrowserFrame
-  [ChromeOnly,SetterThrows]
-           attribute boolean mozbrowser;
-};
-
 HTMLIFrameElement includes MozFrameLoaderOwner;
-HTMLIFrameElement includes BrowserElement;
 
 // https://w3c.github.io/webappsec-feature-policy/#idl-index
 partial interface HTMLIFrameElement {

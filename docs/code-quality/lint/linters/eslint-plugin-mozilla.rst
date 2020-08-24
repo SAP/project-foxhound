@@ -183,6 +183,28 @@ This disallows statements such as:
 These used to be necessary but have now been defined globally for all chrome
 contexts.
 
+no-throw-cr-literal
+-------------------
+
+This is similar to the ESLint built-in rule no-throw-literal.
+It disallows statements such as:
+
+.. code-block:: js
+
+   throw Cr.NS_ERROR_UNEXPECTED;
+   throw Components.results.NS_ERROR_ABORT;
+   throw new Error(Cr.NS_ERROR_NO_INTERFACE);
+
+Throwing bare literals is inferior to throwing Exception objects, which provide
+stack information.  Cr.ERRORs should be be passed as the second argument to
+``Components.Exception()`` to create an Exception object with stack info, and
+the correct result property corresponding to the NS_ERROR that other code
+expects.
+Using a regular ``new Error()`` to wrap just turns it into a string and doesn't
+set the result property, so the errors can't be recognised.
+
+This option can be autofixed (``--fix``).
+
 no-useless-parameters
 ---------------------
 

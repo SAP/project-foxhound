@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 const xpcshellTestConfig = require("eslint-plugin-mozilla/lib/configs/xpcshell-test.js");
@@ -19,13 +23,14 @@ function removeOverrides(config) {
 
 const xpcshellTestPaths = ["**/test*/unit*/", "**/test*/xpcshell/"];
 
-const browserTestPaths = ["**/test*/**/browser/"];
+const browserTestPaths = ["**/test*/**/browser*/"];
 
 const mochitestTestPaths = [
   // Note: we do not want to match testing/mochitest as that would apply
   // too many globals for that directory.
   "**/test/mochitest/",
   "**/tests/mochitest/",
+  "**/test/mochitests/",
   "testing/mochitest/tests/SimpleTest/",
   "testing/mochitest/tests/Harness_sanity/",
 ];
@@ -50,6 +55,13 @@ const ignorePatterns = [
 ];
 
 module.exports = {
+  parser: "babel-eslint",
+  parserOptions: {
+    sourceType: "script",
+    babelOptions: {
+      configFile: path.join(__dirname, ".babel-eslint.rc.js"),
+    },
+  },
   ignorePatterns,
   // Ignore eslint configurations in parent directories.
   root: true,
@@ -150,27 +162,17 @@ module.exports = {
         "netwerk/test/unit*/**",
       ],
       rules: {
-        "mozilla/consistent-if-bracing": "off",
-        "mozilla/reject-importGlobalProperties": "off",
         "mozilla/no-arbitrary-setTimeout": "off",
         "mozilla/no-define-cc-etc": "off",
-        "mozilla/use-default-preference-values": "off",
         "mozilla/use-services": "off",
         "consistent-return": "off",
-        "no-array-constructor": "off",
         "no-eval": "off",
         "no-global-assign": "off",
         "no-nested-ternary": "off",
-        "no-new-wrappers": "off",
         "no-redeclare": "off",
-        "no-return-await": "off",
-        "no-sequences": "off",
         "no-shadow": "off",
         "no-throw-literal": "off",
-        "no-undef": "off",
-        "no-unreachable": "off",
         "no-unused-vars": "off",
-        "no-useless-return": "off",
       },
     },
     {
@@ -182,8 +184,6 @@ module.exports = {
         "mozilla/reject-importGlobalProperties": "off",
         "mozilla/no-arbitrary-setTimeout": "off",
         "mozilla/no-define-cc-etc": "off",
-        "mozilla/no-useless-parameters": "off",
-        "mozilla/no-useless-removeEventListener": "off",
         "mozilla/use-chromeutils-generateqi": "off",
         "mozilla/use-default-preference-values": "off",
         "mozilla/use-includes-instead-of-indexOf": "off",
@@ -206,7 +206,6 @@ module.exports = {
         "no-restricted-globals": "off",
         "no-return-await": "off",
         "no-sequences": "off",
-        "no-shadow": "off",
         "no-throw-literal": "off",
         "no-useless-concat": "off",
         "no-undef": "off",
@@ -246,6 +245,7 @@ module.exports = {
         "dom/security/test/cors/**",
         "dom/security/test/csp/**",
         "dom/security/test/general/**",
+        "dom/security/test/https-only/**",
         "dom/security/test/mixedcontentblocker/**",
         "dom/security/test/sri/**",
         "dom/security/test/referrer-policy/**",
@@ -538,7 +538,6 @@ module.exports = {
     },
     {
       files: [
-        "dom/base/test/chrome/cpows_parent.xhtml",
         "dom/base/test/chrome/file_bug1139964.xhtml",
         "dom/base/test/chrome/file_bug549682.xhtml",
         "dom/base/test/chrome/file_bug616841.xhtml",
@@ -715,6 +714,7 @@ module.exports = {
         "toolkit/content/tests/chrome/window_preferences3.xhtml",
         "toolkit/content/tests/chrome/window_preferences_beforeaccept.xhtml",
         "toolkit/content/tests/chrome/window_preferences_commandretarget.xhtml",
+        "toolkit/content/tests/chrome/window_preferences_disabled.xhtml",
         "toolkit/content/tests/chrome/window_preferences_onsyncfrompreference.xhtml",
         "toolkit/content/tests/chrome/window_subframe_origin.xhtml",
         "toolkit/content/tests/chrome/window_titlebar.xhtml",
@@ -831,13 +831,9 @@ module.exports = {
         "browser/components/extensions/test/browser/head_webNavigation.js",
         "browser/components/extensions/test/xpcshell/test_ext_url_overrides_newtab.js",
         "browser/components/migration/tests/unit/test_Edge_db_migration.js",
-        "browser/components/preferences/in-content/tests/browser_contentblocking.js",
+        "browser/components/preferences/tests/browser_contentblocking.js",
         "browser/components/translation/test/unit/test_cld2.js",
         "browser/components/urlbar/tests/ext/browser/update/browser_getBrowserUpdateStatus_updateDisabledByPolicy.js",
-        "browser/extensions/doh-rollout/experiments/doorhanger/api.js",
-        "browser/extensions/doh-rollout/experiments/doorhanger/api.js",
-        "browser/extensions/doh-rollout/test/browser/browser_policyOverride.js",
-        "browser/extensions/doh-rollout/test/unit/test_localStorageMigration.js",
         "browser/extensions/formautofill/test/unit/head.js",
         "browser/extensions/formautofill/test/unit/test_creditCardRecords.js",
         "browser/extensions/formautofill/test/unit/test_migrateRecords.js",
@@ -853,6 +849,7 @@ module.exports = {
         "dom/push/test/xpcshell/head.js",
         "dom/push/test/xpcshell/test_broadcast_success.js",
         "dom/push/test/xpcshell/test_crypto.js",
+        "gfx/layers/apz/test/mochitest/browser_test_select_zoom.js",
         "security/manager/ssl/RemoteSecuritySettings.jsm",
         "security/manager/ssl/tests/unit/test_der.js",
         "security/manager/ssl/X509.jsm",
@@ -898,9 +895,8 @@ module.exports = {
         "toolkit/components/extensions/test/xpcshell/test_ext_privacy_disable.js",
         "toolkit/components/extensions/test/xpcshell/test_ext_schemas_interactive.js",
         "toolkit/components/extensions/test/xpcshell/test_ext_shutdown_cleanup.js",
-        "toolkit/components/extensions/test/xpcshell/test_ext_storage.js",
-        "toolkit/components/extensions/test/xpcshell/test_ext_storage_sync.js",
-        "toolkit/components/extensions/test/xpcshell/test_ext_storage_sync_crypto.js",
+        "toolkit/components/extensions/test/xpcshell/test_ext_storage_sync_kinto.js",
+        "toolkit/components/extensions/test/xpcshell/test_ext_storage_sync_kinto_crypto.js",
         "toolkit/components/extensions/test/xpcshell/test_ext_tab_teardown.js",
         "toolkit/components/extensions/test/xpcshell/test_native_manifests.js",
         "toolkit/components/featuregates/test/unit/test_FeatureGate.js",
@@ -941,14 +937,71 @@ module.exports = {
         "toolkit/mozapps/extensions/test/xpcshell/test_webextension.js",
         "toolkit/mozapps/extensions/test/xpcshell/test_webextension_events.js",
         "toolkit/mozapps/extensions/test/xpcshell/test_XPIStates.js",
-        "toolkit/mozapps/extensions/test/xpcshell/xml-blocklist/test_blocklist_gfx.js",
-        "toolkit/mozapps/extensions/test/xpcshell/xml-blocklist/test_blocklist_telemetry.js",
-        "toolkit/mozapps/extensions/test/xpcshell/xml-blocklist/test_blocklistchange.js",
-        "toolkit/mozapps/extensions/test/xpcshell/xml-blocklist/test_overrideblocklist.js",
         "toolkit/mozapps/installer/precompile_cache.js",
       ],
       rules: {
         "mozilla/reject-chromeutils-import-null": "off",
+      },
+    },
+    {
+      files: [
+        "browser/base/content/browser-gestureSupport.js",
+        "browser/base/content/tabbrowser-tab.js",
+        "browser/base/content/tabbrowser-tabs.js",
+        "browser/base/content/tabbrowser.js",
+        "browser/components/downloads/DownloadsCommon.jsm",
+        "browser/components/downloads/content/allDownloadsView.js",
+        "browser/components/downloads/content/downloads.js",
+        "browser/components/downloads/content/indicator.js",
+        "browser/components/payments/res/components/csc-input.js",
+        "browser/components/payments/res/components/labelled-checkbox.js",
+        "browser/components/places/content/browserPlacesViews.js",
+        "browser/components/places/content/controller.js",
+        "browser/components/places/content/places-menupopup.js",
+        "browser/components/places/content/places-tree.js",
+        "browser/components/places/content/places.js",
+        "browser/components/places/content/treeView.js",
+        "browser/components/pocket/content/Pocket.jsm",
+        "browser/components/preferences/search.js",
+        "browser/components/search/content/search-one-offs.js",
+        "browser/components/search/content/searchbar.js",
+        "browser/components/sessionstore/ContentSessionStore.jsm",
+        "browser/components/urlbar/UrlbarInput.jsm",
+        "browser/components/urlbar/UrlbarView.jsm",
+        "browser/extensions/formautofill/content/customElements.js",
+        "browser/modules/PageActions.jsm",
+        "devtools/client/shared/async-store-helper.js",
+        "devtools/client/shared/prefs.js",
+        "devtools/shared/task.js",
+        "dom/base/SlowScriptDebug.jsm",
+        "dom/media/PeerConnection.jsm",
+        "mobile/android/chrome/geckoview/SessionStateAggregator.js",
+        "mobile/android/modules/geckoview/DelayedInit.jsm",
+        "services/sync/modules/record.js",
+        "toolkit/actors/AutoCompleteChild.jsm",
+        "toolkit/components/autocomplete/tests/unit/test_stopSearch.js",
+        "toolkit/components/enterprisepolicies/EnterprisePoliciesParent.jsm",
+        "toolkit/components/extensions/ExtensionParent.jsm",
+        "toolkit/components/osfile/modules/osfile_async_front.jsm",
+        "toolkit/components/osfile/modules/osfile_shared_allthreads.jsm",
+        "toolkit/components/places/PlacesExpiration.jsm",
+        "toolkit/content/aboutSupport.js",
+        "toolkit/content/customElements.js",
+        "toolkit/content/preferencesBindings.js",
+        "toolkit/content/tests/chrome/test_custom_element_base.xhtml",
+        "toolkit/content/viewZoomOverlay.js",
+        "toolkit/content/widgets/*.js",
+        "toolkit/modules/NewTabUtils.jsm",
+        "toolkit/modules/tests/modules/Task.jsm",
+        "toolkit/mozapps/extensions/AddonManager.jsm",
+        "toolkit/mozapps/extensions/internal/PluginProvider.jsm",
+        "toolkit/mozapps/extensions/internal/XPIDatabase.jsm",
+        "toolkit/mozapps/extensions/test/browser/head.js",
+        "toolkit/mozapps/extensions/test/xpcshell/head_addons.js",
+        "toolkit/mozapps/handling/content/dialog.js",
+      ],
+      rules: {
+        "no-setter-return": "off",
       },
     },
   ],

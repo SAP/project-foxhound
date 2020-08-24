@@ -19,30 +19,69 @@ describe("Function - Named", () => {
   const object = stubs.get("Named");
 
   it("renders named function as expected", () => {
-    expect(renderRep(object, { mode: undefined }).text()).toBe(
-      "function testName()"
-    );
-    expect(renderRep({ ...object, parameterNames: [] }).text()).toBe(
-      "function testName()"
-    );
-    expect(renderRep({ ...object, parameterNames: ["a"] }).text()).toBe(
-      "function testName(a)"
-    );
     expect(
-      renderRep({ ...object, parameterNames: ["a", "b", "c"] }).text()
+      renderRep(object, { mode: undefined, shouldRenderTooltip: true }).text()
+    ).toBe("function testName()");
+    expect(
+      renderRep(object, { mode: undefined, shouldRenderTooltip: true }).prop(
+        "title"
+      )
+    ).toBe("function testName()");
+    expect(
+      renderRep(
+        { ...object, parameterNames: [] },
+        { shouldRenderTooltip: true }
+      ).text()
+    ).toBe("function testName()");
+    expect(
+      renderRep(
+        { ...object, parameterNames: [] },
+        { shouldRenderTooltip: true }
+      ).prop("title")
+    ).toBe("function testName()");
+    expect(
+      renderRep(
+        { ...object, parameterNames: ["a"] },
+        { shouldRenderTooltip: true }
+      ).text()
+    ).toBe("function testName(a)");
+    expect(
+      renderRep(
+        { ...object, parameterNames: ["a"] },
+        { shouldRenderTooltip: true }
+      ).prop("title")
+    ).toBe("function testName(a)");
+    expect(
+      renderRep(
+        { ...object, parameterNames: ["a", "b", "c"] },
+        { shouldRenderTooltip: true }
+      ).text()
     ).toBe("function testName(a, b, c)");
     expect(
-      renderRep(object, {
-        mode: MODE.TINY,
-      }).text()
+      renderRep(
+        { ...object, parameterNames: ["a", "b", "c"] },
+        { shouldRenderTooltip: true }
+      ).prop("title")
+    ).toBe("function testName(a, b, c)");
+    expect(
+      renderRep(object, { mode: MODE.TINY, shouldRenderTooltip: true }).text()
+    ).toBe("testName()");
+    expect(
+      renderRep(object, { mode: MODE.TINY, shouldRenderTooltip: true }).prop(
+        "title"
+      )
     ).toBe("testName()");
     expect(
       renderRep(
         { ...object, parameterNames: ["a", "b", "c"] },
-        {
-          mode: MODE.TINY,
-        }
+        { mode: MODE.TINY, shouldRenderTooltip: true }
       ).text()
+    ).toBe("testName(a, b, c)");
+    expect(
+      renderRep(
+        { ...object, parameterNames: ["a", "b", "c"] },
+        { mode: MODE.TINY, shouldRenderTooltip: true }
+      ).prop("title")
     ).toBe("testName(a, b, c)");
 
     expectActorAttribute(renderRep(object), object.actor);
@@ -402,37 +441,6 @@ describe("Function - Jump to definition", () => {
     const node = renderedComponent.find(".jump-definition");
     expect(node.exists()).toBeFalsy();
   });
-
-  it("applies source mapping to the object's location", async () => {
-    let onViewSourceInDebugger;
-    const onViewSourceCalled = new Promise(resolve => {
-      onViewSourceInDebugger = jest.fn(resolve);
-    });
-
-    const object = stubs.get("getRandom");
-    const { url, line, column } = object.location;
-    const sourceId = "test source id";
-    const originalPositionFor = jest.fn(() =>
-      Promise.resolve({ sourceUrl: url, line, column, sourceId })
-    );
-
-    const renderedComponent = renderRep(object, {
-      onViewSourceInDebugger,
-      sourceMapService: { originalPositionFor },
-    });
-
-    const node = renderedComponent.find(".jump-definition");
-    node.simulate("click", {
-      type: "click",
-      stopPropagation: () => {},
-    });
-    await onViewSourceCalled;
-
-    expect(originalPositionFor.mock.calls).toHaveLength(1);
-    expect(originalPositionFor.mock.calls[0]).toEqual([url, line, column]);
-    expect(onViewSourceInDebugger.mock.calls).toHaveLength(1);
-    expect(onViewSourceInDebugger.mock.calls[0][0]).toEqual(object.location);
-  });
 });
 
 describe("Function - Simplify name", () => {
@@ -515,20 +523,39 @@ describe("Function - Class constructor", () => {
   const object = stubs.get("EmptyClass");
 
   it("renders empty class as expected", () => {
-    expect(renderRep(object, { mode: undefined }).text()).toBe(
-      "class EmptyClass {}"
-    );
+    expect(
+      renderRep(object, { mode: undefined, shouldRenderTooltip: true }).text()
+    ).toBe("class EmptyClass {}");
+    expect(
+      renderRep(object, { mode: undefined, shouldRenderTooltip: true }).prop(
+        "title"
+      )
+    ).toBe("class EmptyClass {}");
   });
 
   it("renders empty class in MODE.TINY as expected", () => {
-    expect(renderRep(object, { mode: MODE.TINY }).text()).toBe(
-      "class EmptyClass"
-    );
+    expect(
+      renderRep(object, { mode: MODE.TINY, shouldRenderTooltip: true }).text()
+    ).toBe("class EmptyClass");
+    expect(
+      renderRep(object, { mode: MODE.TINY, shouldRenderTooltip: true }).prop(
+        "title"
+      )
+    ).toBe("class EmptyClass");
   });
 
   it("renders class with constructor as expected", () => {
     expect(
-      renderRep({ ...object, parameterNames: ["a", "b", "c"] }).text()
+      renderRep(
+        { ...object, parameterNames: ["a", "b", "c"] },
+        { shouldRenderTooltip: true }
+      ).text()
+    ).toBe("class EmptyClass { constructor(a, b, c) }");
+    expect(
+      renderRep(
+        { ...object, parameterNames: ["a", "b", "c"] },
+        { shouldRenderTooltip: true }
+      ).prop("title")
     ).toBe("class EmptyClass { constructor(a, b, c) }");
   });
 
@@ -536,8 +563,14 @@ describe("Function - Class constructor", () => {
     expect(
       renderRep(
         { ...object, parameterNames: ["a", "b", "c"] },
-        { mode: MODE.TINY }
+        { mode: MODE.TINY, shouldRenderTooltip: true }
       ).text()
+    ).toBe("class EmptyClass");
+    expect(
+      renderRep(
+        { ...object, parameterNames: ["a", "b", "c"] },
+        { mode: MODE.TINY, shouldRenderTooltip: true }
+      ).prop("title")
     ).toBe("class EmptyClass");
   });
 });

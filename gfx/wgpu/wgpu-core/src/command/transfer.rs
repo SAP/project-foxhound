@@ -2,34 +2,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#[cfg(feature = "trace")]
+use crate::device::trace::Command as TraceCommand;
 use crate::{
     conv,
     device::{all_buffer_stages, all_image_stages},
-    hub::{GfxBackend, Global, Token},
+    hub::{GfxBackend, Global, GlobalIdentityHandlerFactory, Token},
     id::{BufferId, CommandEncoderId, TextureId},
-    resource::{BufferUsage, TextureUsage},
-    BufferAddress,
-    Extent3d,
-    Origin3d,
+    resource::{BufferUse, TextureUse},
 };
 
 use hal::command::CommandBuffer as _;
+use wgt::{BufferAddress, BufferUsage, Extent3d, Origin3d, TextureUsage};
 
 use std::iter;
 
 const BITS_PER_BYTE: u32 = 8;
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "trace", derive(serde::Serialize))]
+#[cfg_attr(feature = "replay", derive(serde::Deserialize))]
 pub struct BufferCopyView {
     pub buffer: BufferId,
     pub offset: BufferAddress,
-    pub row_pitch: u32,
-    pub image_height: u32,
+    pub bytes_per_row: u32,
+    pub rows_per_image: u32,
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "trace", derive(serde::Serialize))]
+#[cfg_attr(feature = "replay", derive(serde::Deserialize))]
 pub struct TextureCopyView {
     pub texture: TextureId,
     pub mip_level: u32,
@@ -50,8 +54,8 @@ impl TextureCopyView {
         {
             hal::image::SubresourceRange {
                 aspects,
-                levels: level .. level + 1,
-                layers: layer .. layer + 1,
+                levels: level..level + 1,
+                layers: layer..layer + 1,
             }
         }
     }
@@ -66,13 +70,13 @@ impl TextureCopyView {
             hal::image::SubresourceLayers {
                 aspects,
                 level: self.mip_level as hal::image::Level,
-                layers: layer .. layer + 1,
+                layers: layer..layer + 1,
             }
         }
     }
 }
 
-impl<F> Global<F> {
+impl<G: GlobalIdentityHandlerFactory> Global<G> {
     pub fn command_encoder_copy_buffer_to_buffer<B: GfxBackend>(
         &self,
         command_encoder_id: CommandEncoderId,
@@ -92,20 +96,38 @@ impl<F> Global<F> {
         // borrow the buffer tracker mutably...
         let mut barriers = Vec::new();
 
+        #[cfg(feature = "trace")]
+        match cmb.commands {
+            Some(ref mut list) => list.push(TraceCommand::CopyBufferToBuffer {
+                src: source,
+                src_offset: source_offset,
+                dst: destination,
+                dst_offset: destination_offset,
+                size,
+            }),
+            None => (),
+        }
+
         let (src_buffer, src_pending) =
             cmb.trackers
                 .buffers
-                .use_replace(&*buffer_guard, source, (), BufferUsage::COPY_SRC);
-        assert!(src_buffer.usage.contains(BufferUsage::COPY_SRC));
+                .use_replace(&*buffer_guard, source, (), BufferUse::COPY_SRC);
+        assert!(
+            src_buffer.usage.contains(BufferUsage::COPY_SRC),
+            "Source buffer usage {:?} must contain usage flag COPY_SRC",
+            src_buffer.usage
+        );
         barriers.extend(src_pending.map(|pending| pending.into_hal(src_buffer)));
 
-        let (dst_buffer, dst_pending) = cmb.trackers.buffers.use_replace(
-            &*buffer_guard,
-            destination,
-            (),
-            BufferUsage::COPY_DST,
+        let (dst_buffer, dst_pending) =
+            cmb.trackers
+                .buffers
+                .use_replace(&*buffer_guard, destination, (), BufferUse::COPY_DST);
+        assert!(
+            dst_buffer.usage.contains(BufferUsage::COPY_DST),
+            "Destination buffer usage {:?} must contain usage flag COPY_DST",
+            dst_buffer.usage
         );
-        assert!(dst_buffer.usage.contains(BufferUsage::COPY_DST));
         barriers.extend(dst_pending.map(|pending| pending.into_hal(dst_buffer)));
 
         let region = hal::command::BufferCopy {
@@ -116,7 +138,7 @@ impl<F> Global<F> {
         let cmb_raw = cmb.raw.last_mut().unwrap();
         unsafe {
             cmb_raw.pipeline_barrier(
-                all_buffer_stages() .. all_buffer_stages(),
+                all_buffer_stages()..all_buffer_stages(),
                 hal::memory::Dependencies::empty(),
                 barriers,
             );
@@ -139,11 +161,21 @@ impl<F> Global<F> {
         let (texture_guard, _) = hub.textures.read(&mut token);
         let aspects = texture_guard[destination.texture].full_range.aspects;
 
+        #[cfg(feature = "trace")]
+        match cmb.commands {
+            Some(ref mut list) => list.push(TraceCommand::CopyBufferToTexture {
+                src: source.clone(),
+                dst: destination.clone(),
+                size: copy_size,
+            }),
+            None => (),
+        }
+
         let (src_buffer, src_pending) = cmb.trackers.buffers.use_replace(
             &*buffer_guard,
             source.buffer,
             (),
-            BufferUsage::COPY_SRC,
+            BufferUse::COPY_SRC,
         );
         assert!(src_buffer.usage.contains(BufferUsage::COPY_SRC));
         let src_barriers = src_pending.map(|pending| pending.into_hal(src_buffer));
@@ -152,21 +184,27 @@ impl<F> Global<F> {
             &*texture_guard,
             destination.texture,
             destination.to_selector(aspects),
-            TextureUsage::COPY_DST,
+            TextureUse::COPY_DST,
         );
         assert!(dst_texture.usage.contains(TextureUsage::COPY_DST));
         let dst_barriers = dst_pending.map(|pending| pending.into_hal(dst_texture));
 
-        let bytes_per_texel = conv::map_texture_format(dst_texture.format, cmb.features)
+        let bytes_per_texel = conv::map_texture_format(dst_texture.format, cmb.private_features)
             .surface_desc()
             .bits as u32
             / BITS_PER_BYTE;
-        let buffer_width = source.row_pitch / bytes_per_texel;
-        assert_eq!(source.row_pitch % bytes_per_texel, 0);
+        let buffer_width = source.bytes_per_row / bytes_per_texel;
+        assert_eq!(
+            source.bytes_per_row % bytes_per_texel,
+            0,
+            "Source bytes per row ({}) must be a multiple of bytes per texel ({})",
+            source.bytes_per_row,
+            bytes_per_texel
+        );
         let region = hal::command::BufferImageCopy {
             buffer_offset: source.offset,
             buffer_width,
-            buffer_height: source.image_height,
+            buffer_height: source.rows_per_image,
             image_layers: destination.to_sub_layers(aspects),
             image_offset: conv::map_origin(destination.origin),
             image_extent: conv::map_extent(copy_size),
@@ -175,7 +213,7 @@ impl<F> Global<F> {
         let stages = all_buffer_stages() | all_image_stages();
         unsafe {
             cmb_raw.pipeline_barrier(
-                stages .. stages,
+                stages..stages,
                 hal::memory::Dependencies::empty(),
                 src_barriers.chain(dst_barriers),
             );
@@ -203,34 +241,58 @@ impl<F> Global<F> {
         let (texture_guard, _) = hub.textures.read(&mut token);
         let aspects = texture_guard[source.texture].full_range.aspects;
 
+        #[cfg(feature = "trace")]
+        match cmb.commands {
+            Some(ref mut list) => list.push(TraceCommand::CopyTextureToBuffer {
+                src: source.clone(),
+                dst: destination.clone(),
+                size: copy_size,
+            }),
+            None => (),
+        }
+
         let (src_texture, src_pending) = cmb.trackers.textures.use_replace(
             &*texture_guard,
             source.texture,
             source.to_selector(aspects),
-            TextureUsage::COPY_SRC,
+            TextureUse::COPY_SRC,
         );
-        assert!(src_texture.usage.contains(TextureUsage::COPY_SRC));
+        assert!(
+            src_texture.usage.contains(TextureUsage::COPY_SRC),
+            "Source texture usage ({:?}) must contain usage flag COPY_SRC",
+            src_texture.usage
+        );
         let src_barriers = src_pending.map(|pending| pending.into_hal(src_texture));
 
         let (dst_buffer, dst_barriers) = cmb.trackers.buffers.use_replace(
             &*buffer_guard,
             destination.buffer,
             (),
-            BufferUsage::COPY_DST,
+            BufferUse::COPY_DST,
         );
-        assert!(dst_buffer.usage.contains(BufferUsage::COPY_DST));
+        assert!(
+            dst_buffer.usage.contains(BufferUsage::COPY_DST),
+            "Destination buffer usage {:?} must contain usage flag COPY_DST",
+            dst_buffer.usage
+        );
         let dst_barrier = dst_barriers.map(|pending| pending.into_hal(dst_buffer));
 
-        let bytes_per_texel = conv::map_texture_format(src_texture.format, cmb.features)
+        let bytes_per_texel = conv::map_texture_format(src_texture.format, cmb.private_features)
             .surface_desc()
             .bits as u32
             / BITS_PER_BYTE;
-        let buffer_width = destination.row_pitch / bytes_per_texel;
-        assert_eq!(destination.row_pitch % bytes_per_texel, 0);
+        let buffer_width = destination.bytes_per_row / bytes_per_texel;
+        assert_eq!(
+            destination.bytes_per_row % bytes_per_texel,
+            0,
+            "Destination bytes per row ({}) must be a multiple of bytes per texel ({})",
+            destination.bytes_per_row,
+            bytes_per_texel
+        );
         let region = hal::command::BufferImageCopy {
             buffer_offset: destination.offset,
             buffer_width,
-            buffer_height: destination.image_height,
+            buffer_height: destination.rows_per_image,
             image_layers: source.to_sub_layers(aspects),
             image_offset: conv::map_origin(source.origin),
             image_extent: conv::map_extent(copy_size),
@@ -239,7 +301,7 @@ impl<F> Global<F> {
         let stages = all_buffer_stages() | all_image_stages();
         unsafe {
             cmb_raw.pipeline_barrier(
-                stages .. stages,
+                stages..stages,
                 hal::memory::Dependencies::empty(),
                 src_barriers.chain(dst_barrier),
             );
@@ -272,22 +334,40 @@ impl<F> Global<F> {
         let aspects = texture_guard[source.texture].full_range.aspects
             & texture_guard[destination.texture].full_range.aspects;
 
+        #[cfg(feature = "trace")]
+        match cmb.commands {
+            Some(ref mut list) => list.push(TraceCommand::CopyTextureToTexture {
+                src: source.clone(),
+                dst: destination.clone(),
+                size: copy_size,
+            }),
+            None => (),
+        }
+
         let (src_texture, src_pending) = cmb.trackers.textures.use_replace(
             &*texture_guard,
             source.texture,
             source.to_selector(aspects),
-            TextureUsage::COPY_SRC,
+            TextureUse::COPY_SRC,
         );
-        assert!(src_texture.usage.contains(TextureUsage::COPY_SRC));
+        assert!(
+            src_texture.usage.contains(TextureUsage::COPY_SRC),
+            "Source texture usage {:?} must contain usage flag COPY_SRC",
+            src_texture.usage
+        );
         barriers.extend(src_pending.map(|pending| pending.into_hal(src_texture)));
 
         let (dst_texture, dst_pending) = cmb.trackers.textures.use_replace(
             &*texture_guard,
             destination.texture,
             destination.to_selector(aspects),
-            TextureUsage::COPY_DST,
+            TextureUse::COPY_DST,
         );
-        assert!(dst_texture.usage.contains(TextureUsage::COPY_DST));
+        assert!(
+            dst_texture.usage.contains(TextureUsage::COPY_DST),
+            "Destination texture usage {:?} must contain usage flag COPY_DST",
+            dst_texture.usage
+        );
         barriers.extend(dst_pending.map(|pending| pending.into_hal(dst_texture)));
 
         let region = hal::command::ImageCopy {
@@ -300,7 +380,7 @@ impl<F> Global<F> {
         let cmb_raw = cmb.raw.last_mut().unwrap();
         unsafe {
             cmb_raw.pipeline_barrier(
-                all_image_stages() .. all_image_stages(),
+                all_image_stages()..all_image_stages(),
                 hal::memory::Dependencies::empty(),
                 barriers,
             );

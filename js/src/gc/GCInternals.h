@@ -109,7 +109,7 @@ class MOZ_RAII AutoHeapSession {
 
   GCRuntime* gc;
   JS::HeapState prevState;
-  AutoGeckoProfilerEntry profilingStackFrame;
+  mozilla::Maybe<AutoGeckoProfilerEntry> profilingStackFrame;
 };
 
 class MOZ_RAII AutoGCSession : public AutoHeapSession {
@@ -312,6 +312,13 @@ extern void DelayCrossCompartmentGrayMarking(JSObject* src);
 inline bool IsOOMReason(JS::GCReason reason) {
   return reason == JS::GCReason::LAST_DITCH ||
          reason == JS::GCReason::MEM_PRESSURE;
+}
+
+inline bool IsShutdownReason(JS::GCReason reason) {
+  return reason == JS::GCReason::WORKER_SHUTDOWN ||
+         reason == JS::GCReason::SHUTDOWN_CC ||
+         reason == JS::GCReason::DESTROY_RUNTIME ||
+         reason == JS::GCReason::XPCONNECT_SHUTDOWN;
 }
 
 TenuredCell* AllocateCellInGC(JS::Zone* zone, AllocKind thingKind);

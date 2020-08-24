@@ -21,7 +21,7 @@ use storage_variant::VariantType;
 use xpcom::{
     interfaces::{
         nsIKeyValueDatabaseCallback, nsIKeyValueEnumeratorCallback, nsIKeyValueVariantCallback,
-        nsIKeyValueVoidCallback, nsIThread, nsIVariant,
+        nsIKeyValueVoidCallback, nsIVariant,
     },
     RefPtr, ThreadBoundRefPtr,
 };
@@ -54,7 +54,8 @@ macro_rules! task_done {
                 Some(Ok(value)) => unsafe { callback.Resolve(self.convert(value)?.coerce()) },
                 Some(Err(err)) => unsafe { callback.Reject(&*nsCString::from(err.to_string())) },
                 None => unsafe { callback.Reject(&*nsCString::from("unexpected")) },
-            }.to_result()
+            }
+            .to_result()
         }
     };
 
@@ -74,7 +75,8 @@ macro_rules! task_done {
                 Some(Ok(())) => unsafe { callback.Resolve() },
                 Some(Err(err)) => unsafe { callback.Reject(&*nsCString::from(err.to_string())) },
                 None => unsafe { callback.Reject(&*nsCString::from("unexpected")) },
-            }.to_result()
+            }
+            .to_result()
         }
     };
 }
@@ -157,7 +159,6 @@ fn passive_resize(env: &Rkv, wanted: usize) -> Result<(), StoreError> {
 
 pub struct GetOrCreateTask {
     callback: AtomicCell<Option<ThreadBoundRefPtr<nsIKeyValueDatabaseCallback>>>,
-    thread: AtomicCell<Option<ThreadBoundRefPtr<nsIThread>>>,
     path: nsCString,
     name: nsCString,
     result: AtomicCell<Option<Result<RkvStoreTuple, KeyValueError>>>,
@@ -166,13 +167,11 @@ pub struct GetOrCreateTask {
 impl GetOrCreateTask {
     pub fn new(
         callback: RefPtr<nsIKeyValueDatabaseCallback>,
-        thread: RefPtr<nsIThread>,
         path: nsCString,
         name: nsCString,
     ) -> GetOrCreateTask {
         GetOrCreateTask {
             callback: AtomicCell::new(Some(ThreadBoundRefPtr::new(callback))),
-            thread: AtomicCell::new(Some(ThreadBoundRefPtr::new(thread))),
             path,
             name,
             result: AtomicCell::default(),
@@ -180,8 +179,7 @@ impl GetOrCreateTask {
     }
 
     fn convert(&self, result: RkvStoreTuple) -> Result<RefPtr<KeyValueDatabase>, KeyValueError> {
-        let thread = self.thread.swap(None).ok_or(NS_ERROR_FAILURE)?;
-        Ok(KeyValueDatabase::new(result.0, result.1, thread))
+        Ok(KeyValueDatabase::new(result.0, result.1)?)
     }
 }
 

@@ -4,6 +4,8 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import argparse
+import logging
 import sys
 
 from mach.decorators import (
@@ -17,7 +19,7 @@ from mozbuild.base import MachCommandBase, MozbuildObject
 
 
 @CommandProvider
-class BustedProvider(object):
+class BustedProvider(MachCommandBase):
     @Command('busted', category='misc',
              description='Query known bugs in our tooling, and file new ones.')
     def busted_default(self):
@@ -40,60 +42,48 @@ class BustedProvider(object):
     @SubCommand('busted',
                 'file',
                 description='File a bug for busted tooling.')
-    def busted_file(self):
+    @CommandArgument(
+        'against', help=(
+            'The specific mach command that is busted (i.e. if you encountered '
+            'an error with `mach build`, run `mach busted file build`). If '
+            'the issue is not connected to any particular mach command, you '
+            'can also run `mach busted file general`.'))
+    def busted_file(self, against):
         import webbrowser
+
+        if (against != 'general' and
+            against not in self._mach_context.commands.command_handlers):
+            print('%s is not a valid value for `against`. `against` must be '
+                  'the name of a `mach` command, or else the string '
+                  '"general".' % against)
+            return 1
+
+        if against == 'general':
+            product = 'Firefox Build System'
+            component = 'General'
+        else:
+            import inspect
+            import mozpack.path as mozpath
+
+            # Look up the file implementing that command, then cross-refernce
+            # moz.build files to get the product/component.
+            handler = self._mach_context.commands.command_handlers[against]
+            method = getattr(handler.cls, handler.method)
+            sourcefile = mozpath.relpath(inspect.getsourcefile(method),
+                                         self.topsrcdir)
+            reader = self.mozbuild_reader(config_mode='empty')
+            try:
+                res = reader.files_info(
+                    [sourcefile])[sourcefile]['BUG_COMPONENT']
+                product, component = res.product, res.component
+            except TypeError:
+                # The file might not have a bug set.
+                product = 'Firefox Build System'
+                component = 'General'
+
         uri = ('https://bugzilla.mozilla.org/enter_bug.cgi?'
-               'product=Firefox%20Build%20System&component=General&blocked=1543241')
+               'product=%s&component=%s&blocked=1543241' % (product, component))
         webbrowser.open_new_tab(uri)
-
-
-@CommandProvider
-class SearchProvider(object):
-    @Command('searchfox', category='misc',
-             description='Search for something in Searchfox.')
-    @CommandArgument('term', nargs='+', help='Term(s) to search for.')
-    def searchfox(self, term):
-        import webbrowser
-        term = ' '.join(term)
-        uri = 'https://searchfox.org/mozilla-central/search?q=%s' % term
-        webbrowser.open_new_tab(uri)
-    @Command('dxr', category='misc',
-             description='Search for something in DXR.')
-    @CommandArgument('term', nargs='+', help='Term(s) to search for.')
-    def dxr(self, term):
-        import webbrowser
-        term = ' '.join(term)
-        uri = 'http://dxr.mozilla.org/mozilla-central/search?q=%s&redirect=true' % term
-        webbrowser.open_new_tab(uri)
-
-    @Command('mdn', category='misc',
-             description='Search for something on MDN.')
-    @CommandArgument('term', nargs='+', help='Term(s) to search for.')
-    def mdn(self, term):
-        import webbrowser
-        term = ' '.join(term)
-        uri = 'https://developer.mozilla.org/search?q=%s' % term
-        webbrowser.open_new_tab(uri)
-
-    @Command('google', category='misc',
-             description='Search for something on Google.')
-    @CommandArgument('term', nargs='+', help='Term(s) to search for.')
-    def google(self, term):
-        import webbrowser
-        term = ' '.join(term)
-        uri = 'https://www.google.com/search?q=%s' % term
-        webbrowser.open_new_tab(uri)
-
-    @Command('search', category='misc',
-             description='Search for something on the Internets. '
-             'This will open 4 new browser tabs and search for the term on Google, '
-             'MDN, DXR, and Searchfox.')
-    @CommandArgument('term', nargs='+', help='Term(s) to search for.')
-    def search(self, term):
-        self.google(term)
-        self.mdn(term)
-        self.dxr(term)
-        self.searchfox(term)
 
 
 @CommandProvider
@@ -396,3 +386,46 @@ class MozregressionCommand(MachCommandBase):
         self._activate_virtualenv()
         mozregression = mozregression_import()
         mozregression.run(options)
+
+
+@CommandProvider
+class NodeCommands(MachCommandBase):
+    @Command(
+        "node",
+        category="devenv",
+        description="Run the NodeJS interpreter used for building.",
+    )
+    @CommandArgument("args", nargs=argparse.REMAINDER)
+    def node(self, args):
+        from mozbuild.nodeutil import find_node_executable
+
+        # Avoid logging the command
+        self.log_manager.terminal_handler.setLevel(logging.CRITICAL)
+
+        node_path, _ = find_node_executable()
+
+        return self.run_process(
+            [node_path] + args,
+            pass_thru=True,  # Allow user to run Node interactively.
+            ensure_exit_code=False,  # Don't throw on non-zero exit code.
+        )
+
+    @Command(
+        "npm",
+        category="devenv",
+        description="Run the npm executable from the NodeJS used for building.",
+    )
+    @CommandArgument("args", nargs=argparse.REMAINDER)
+    def npm(self, args):
+        from mozbuild.nodeutil import find_npm_executable
+
+        # Avoid logging the command
+        self.log_manager.terminal_handler.setLevel(logging.CRITICAL)
+
+        npm_path, _ = find_npm_executable()
+
+        return self.run_process(
+            [npm_path, "--scripts-prepend-node-path=auto"] + args,
+            pass_thru=True,  # Avoid eating npm output/error messages
+            ensure_exit_code=False,  # Don't throw on non-zero exit code.
+        )

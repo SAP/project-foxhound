@@ -4,14 +4,17 @@
 
 use api::{BuiltDisplayList, DisplayListWithCache, ColorF, DynamicProperties, Epoch, FontRenderMode};
 use api::{PipelineId, PropertyBinding, PropertyBindingId, PropertyValue, MixBlendMode, StackingContext};
+use api::MemoryReport;
 use api::units::*;
+use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use crate::composite::CompositorKind;
 use crate::clip::{ClipStore, ClipDataStore};
-use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
+use crate::spatial_tree::SpatialTree;
 use crate::frame_builder::{ChasePrimitive, FrameBuilderConfig};
 use crate::hit_test::{HitTester, HitTestingScene, HitTestingSceneStats};
-use crate::internal_types::{FastHashMap, FastHashSet};
+use crate::internal_types::FastHashMap;
 use crate::prim_store::{PrimitiveStore, PrimitiveStoreStats, PictureIndex};
+use crate::tile_cache::TileCacheConfig;
 use std::sync::Arc;
 
 /// Stores a map of the animated property bindings for the current display list. These
@@ -69,6 +72,7 @@ impl SceneProperties {
             if *pending_properties != self.current_properties {
                 self.transform_properties.clear();
                 self.float_properties.clear();
+                self.color_properties.clear();
 
                 for property in &pending_properties.transforms {
                     self.transform_properties
@@ -236,6 +240,16 @@ impl Scene {
 
         false
     }
+
+    pub fn report_memory(
+        &self,
+        ops: &mut MallocSizeOfOps,
+        report: &mut MemoryReport
+    ) {
+        for (_, pipeline) in &self.pipelines {
+            report.display_list += pipeline.display_list.size_of(ops)
+        }
+    }
 }
 
 pub trait StackingContextHelpers {
@@ -264,8 +278,7 @@ pub struct BuiltScene {
     pub config: FrameBuilderConfig,
     pub spatial_tree: SpatialTree,
     pub hit_testing_scene: Arc<HitTestingScene>,
-    pub content_slice_count: usize,
-    pub picture_cache_spatial_nodes: FastHashSet<SpatialNodeIndex>,
+    pub tile_cache_config: TileCacheConfig,
 }
 
 impl BuiltScene {
@@ -280,8 +293,7 @@ impl BuiltScene {
             clip_store: ClipStore::new(),
             spatial_tree: SpatialTree::new(),
             hit_testing_scene: Arc::new(HitTestingScene::new(&HitTestingSceneStats::empty())),
-            content_slice_count: 0,
-            picture_cache_spatial_nodes: FastHashSet::default(),
+            tile_cache_config: TileCacheConfig::new(0),
             config: FrameBuilderConfig {
                 default_font_render_mode: FontRenderMode::Mono,
                 dual_source_blending_is_enabled: true,
@@ -296,6 +308,8 @@ impl BuiltScene {
                 background_color: None,
                 compositor_kind: CompositorKind::default(),
                 tile_size_override: None,
+                max_depth_ids: 0,
+                max_target_size: 0,
             },
         }
     }

@@ -36,9 +36,9 @@ function makeBookmark({ breakpoint }, { onClick, onContextMenu }) {
   const bp = breakpointButton.cloneNode(true);
 
   const isActive = breakpoint && !breakpoint.disabled;
-  const isDisabled = breakpoint && breakpoint.disabled;
-  const condition = breakpoint && breakpoint.options.condition;
-  const logValue = breakpoint && breakpoint.options.logValue;
+  const isDisabled = breakpoint?.disabled;
+  const condition = breakpoint?.options.condition;
+  const logValue = breakpoint?.options.logValue;
 
   bp.className = classnames("column-breakpoint", {
     "has-condition": condition,
@@ -49,9 +49,7 @@ function makeBookmark({ breakpoint }, { onClick, onContextMenu }) {
 
   bp.setAttribute("title", logValue || condition || "");
   bp.onclick = onClick;
-
-  // NOTE: flow does not know about oncontextmenu
-  (bp: any).oncontextmenu = onContextMenu;
+  bp.oncontextmenu = onContextMenu;
 
   return bp;
 }

@@ -48,6 +48,7 @@
 #include "vm/PromiseObject.h"  // js::PromiseObject
 #include "vm/TraceLogging.h"
 #include "vm/TraceLoggingGraph.h"
+#include "vm/Warnings.h"  // js::WarnNumberUC
 #include "wasm/WasmSignalHandlers.h"
 
 #include "debugger/DebugAPI-inl.h"
@@ -60,7 +61,6 @@ using namespace js;
 using mozilla::Atomic;
 using mozilla::DebugOnly;
 using mozilla::NegativeInfinity;
-using mozilla::PodZero;
 using mozilla::PositiveInfinity;
 
 /* static */ MOZ_THREAD_LOCAL(JSContext*) js::TlsContext;
@@ -71,7 +71,7 @@ Atomic<JS::LargeAllocationFailureCallback> js::OnLargeAllocationFailure;
 JS::FilenameValidationCallback js::gFilenameValidationCallback = nullptr;
 
 namespace js {
-void (*HelperThreadTaskCallback)(js::RunnableTask*);
+bool (*HelperThreadTaskCallback)(js::UniquePtr<RunnableTask>);
 
 bool gCanUseExtraThreads = true;
 }  // namespace js
@@ -148,6 +148,8 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       commonNames(nullptr),
       wellKnownSymbols(nullptr),
       liveSABs(0),
+      beforeWaitCallback(nullptr),
+      afterWaitCallback(nullptr),
       offthreadIonCompilationEnabled_(true),
       parallelParsingEnabled_(true),
 #ifdef DEBUG
@@ -321,6 +323,11 @@ void JSRuntime::setTelemetryCallback(
   rt->telemetryCallback = callback;
 }
 
+void JSRuntime::setElementCallback(JSRuntime* rt,
+                                   JSGetElementCallback callback) {
+  rt->getElementCallback = callback;
+}
+
 void JSRuntime::setUseCounter(JSObject* obj, JSUseCounter counter) {
   if (useCounterCallback) {
     (*useCounterCallback)(obj, counter);
@@ -346,8 +353,7 @@ void JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
   }
 
   JSContext* cx = mainContextFromAnyThread();
-  rtSizes->contexts += mallocSizeOf(cx);
-  rtSizes->contexts += cx->sizeOfExcludingThis(mallocSizeOf);
+  rtSizes->contexts += cx->sizeOfIncludingThis(mallocSizeOf);
   rtSizes->temporary += cx->tempLifoAlloc().sizeOfExcludingThis(mallocSizeOf);
   rtSizes->interpreterStack +=
       cx->interpreterStack().sizeOfExcludingThis(mallocSizeOf);
@@ -458,9 +464,7 @@ static bool HandleInterrupt(JSContext* cx, bool invokeCallback) {
   } else {
     chars = u"(stack not available)";
   }
-  JS_ReportErrorFlagsAndNumberUC(cx, JSREPORT_WARNING, GetErrorMessage, nullptr,
-                                 JSMSG_TERMINATED, chars);
-
+  WarnNumberUC(cx, JSMSG_TERMINATED, chars);
   return false;
 }
 

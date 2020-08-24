@@ -9,8 +9,6 @@
 
 #include "vm/Shape.h"
 
-#include "mozilla/TypeTraits.h"
-
 #include "gc/Allocator.h"
 #include "vm/Interpreter.h"
 #include "vm/JSObject.h"
@@ -127,9 +125,9 @@ inline Shape* Shape::new_(JSContext* cx, Handle<StackShape> other,
 }
 
 inline void Shape::updateBaseShapeAfterMovingGC() {
-  BaseShape* base = base_;
+  BaseShape* base = this->base();
   if (IsForwarded(base)) {
-    base_.unsafeSet(Forwarded(base));
+    unsafeSetHeaderPtr(Forwarded(base));
   }
 }
 
@@ -230,7 +228,7 @@ inline GCPtrShape* DictionaryShapeLink::prevPtr() {
 template <class ObjectSubclass>
 /* static */ inline bool EmptyShape::ensureInitialCustomShape(
     JSContext* cx, Handle<ObjectSubclass*> obj) {
-  static_assert(std::is_base_of<JSObject, ObjectSubclass>::value,
+  static_assert(std::is_base_of_v<JSObject, ObjectSubclass>,
                 "ObjectSubclass must be a subclass of JSObject");
 
   // If the provided object has a non-empty shape, it was given the cached
@@ -421,7 +419,8 @@ MOZ_ALWAYS_INLINE Shape* Shape::searchNoHashify(Shape* start, jsid id) {
     JSContext* cx, HandleNativeObject obj, HandleId id, uint32_t slot,
     unsigned attrs) {
   MOZ_ASSERT(!JSID_IS_VOID(id));
-  MOZ_ASSERT(obj->uninlinedNonProxyIsExtensible());
+  MOZ_ASSERT_IF(!(JSID_IS_SYMBOL(id) && JSID_TO_SYMBOL(id)->isPrivateName()),
+                obj->uninlinedNonProxyIsExtensible());
   MOZ_ASSERT(!obj->containsPure(id));
 
   AutoKeepShapeCaches keep(cx);

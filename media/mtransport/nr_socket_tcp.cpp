@@ -52,7 +52,8 @@ using std::shared_ptr;
 
 class NrTcpSocketData {
  public:
-  explicit NrTcpSocketData(nsTArray<uint8_t>&& aData) : mData(aData) {
+  explicit NrTcpSocketData(nsTArray<uint8_t>&& aData)
+      : mData(std::move(aData)) {
     MOZ_COUNT_CTOR(NrTcpSocketData);
   }
 
@@ -152,6 +153,10 @@ int NrTcpSocket::write(const void* aBuffer, size_t aCount, size_t* aWrote) {
   }
 
   if (!aWrote) {
+    return R_FAILED;
+  }
+
+  if (NS_WARN_IF(!mWebrtcTCPSocket)) {
     return R_FAILED;
   }
 

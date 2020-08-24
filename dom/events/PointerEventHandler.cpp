@@ -15,8 +15,6 @@ namespace mozilla {
 
 using namespace dom;
 
-static bool sPointerEventImplicitCapture = false;
-
 Maybe<int32_t> PointerEventHandler::sSpoofedPointerId;
 
 class PointerInfo final {
@@ -44,17 +42,6 @@ static nsClassHashtable<nsUint32HashKey, PointerCaptureInfo>*
 static nsClassHashtable<nsUint32HashKey, PointerInfo>* sActivePointersIds;
 
 /* static */
-void PointerEventHandler::Initialize() {
-  static bool initialized = false;
-  if (initialized) {
-    return;
-  }
-  initialized = true;
-  Preferences::AddBoolVarCache(&sPointerEventImplicitCapture,
-                               "dom.w3c_pointer_events.implicit_capture", true);
-}
-
-/* static */
 void PointerEventHandler::InitializeStatics() {
   MOZ_ASSERT(!sPointerCaptureList, "InitializeStatics called multiple times!");
   sPointerCaptureList =
@@ -74,7 +61,7 @@ void PointerEventHandler::ReleaseStatics() {
 /* static */
 bool PointerEventHandler::IsPointerEventImplicitCaptureForTouchEnabled() {
   return StaticPrefs::dom_w3c_pointer_events_enabled() &&
-         sPointerEventImplicitCapture;
+         StaticPrefs::dom_w3c_pointer_events_implicit_capture();
 }
 
 /* static */
@@ -460,11 +447,11 @@ void PointerEventHandler::InitPointerEventFromTouch(
 
   int16_t button = aTouchEvent->mMessage == eTouchMove
                        ? MouseButton::eNotPressed
-                       : MouseButton::eLeft;
+                       : MouseButton::ePrimary;
 
   int16_t buttons = aTouchEvent->mMessage == eTouchEnd
                         ? MouseButtonsFlag::eNoButtons
-                        : MouseButtonsFlag::eLeftFlag;
+                        : MouseButtonsFlag::ePrimaryFlag;
 
   aPointerEvent->mIsPrimary = aIsPrimary;
   aPointerEvent->pointerId = aTouch->Identifier();
@@ -494,6 +481,25 @@ void PointerEventHandler::DispatchPointerFromMouseOrTouch(
   EventMessage pointerMessage = eVoidEvent;
   if (aEvent->mClass == eMouseEventClass) {
     WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent();
+    // Don't dispatch pointer events caused by a mouse when simulating touch
+    // devices in RDM.
+    Document* doc = aShell->GetDocument();
+    if (!doc) {
+      return;
+    }
+
+    nsCOMPtr<nsIDocShell> docShell = doc->GetDocShell();
+    if (!docShell) {
+      return;
+    }
+
+    BrowsingContext* bc = doc->GetBrowsingContext();
+    if (docShell->GetTouchEventsOverride() ==
+            nsIDocShell::TOUCHEVENTS_OVERRIDE_ENABLED &&
+        bc && bc->InRDMPane()) {
+      return;
+    }
+
     // 1. If it is not mouse then it is likely will come as touch event
     // 2. We don't synthesize pointer events for those events that are not
     //    dispatched to DOM.
@@ -639,8 +645,8 @@ void PointerEventHandler::DispatchGotOrLostPointerCaptureEvent(
     ConvertPointerTypeToString(aPointerEvent->mInputSource, init.mPointerType);
     init.mIsPrimary = aPointerEvent->mIsPrimary;
     RefPtr<PointerEvent> event;
-    event = PointerEvent::Constructor(
-        aCaptureTarget, NS_LITERAL_STRING("lostpointercapture"), init);
+    event = PointerEvent::Constructor(aCaptureTarget, u"lostpointercapture"_ns,
+                                      init);
     targetDoc->DispatchEvent(*event);
     return;
   }

@@ -7,7 +7,7 @@
 
 const { TargetList } = require("devtools/shared/resources/target-list");
 
-const FISSION_TEST_URL = URL_ROOT + "/fission_document.html";
+const FISSION_TEST_URL = URL_ROOT_SSL + "/fission_document.html";
 
 add_task(async function() {
   // Enabled fission's prefs as the TargetList is almost disabled without it
@@ -39,15 +39,15 @@ async function testBrowserFrames(mainRoot) {
   const targetList = new TargetList(mainRoot, target);
   await targetList.startListening();
 
-  // Very naive sanity check against getAllTargets(frame)
-  const frames = await targetList.getAllTargets(TargetList.TYPES.FRAME);
+  // Very naive sanity check against getAllTargets([frame])
+  const frames = await targetList.getAllTargets([TargetList.TYPES.FRAME]);
   const hasBrowserDocument = frames.find(
     frameTarget => frameTarget.url == window.location.href
   );
   ok(hasBrowserDocument, "retrieve the target for the browser document");
 
-  // Check that calling getAllTargets(frame) return the same target instances
-  const frames2 = await targetList.getAllTargets(TargetList.TYPES.FRAME);
+  // Check that calling getAllTargets([frame]) return the same target instances
+  const frames2 = await targetList.getAllTargets([TargetList.TYPES.FRAME]);
   is(frames2.length, frames.length, "retrieved the same number of frames");
 
   function sortFronts(f1, f2) {
@@ -61,15 +61,15 @@ async function testBrowserFrames(mainRoot) {
 
   // Assert that watchTargets will call the create callback for all existing frames
   const targets = [];
-  const onAvailable = ({ type, targetFront, isTopLevel }) => {
+  const onAvailable = ({ targetFront }) => {
     is(
-      type,
+      targetFront.targetType,
       TargetList.TYPES.FRAME,
       "We are only notified about frame targets"
     );
     ok(
-      targetFront == target ? isTopLevel : !isTopLevel,
-      "isTopLevel argument is correct"
+      targetFront == target ? targetFront.isTopLevel : !targetFront.isTopLevel,
+      "isTopLevel property is correct"
     );
     targets.push(targetFront);
   };
@@ -93,13 +93,12 @@ async function testBrowserFrames(mainRoot) {
 
   /* NOT READY YET, need to implement frame listening
   // Open a new tab and see if the frame target is reported by watchTargets and getAllTargets
-  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   const tab = await addTab(TEST_URL);
 
   is(targets.length, frames.length + 1, "Opening a tab reported a new frame");
   is(targets[targets.length - 1].url, TEST_URL, "This frame target is about the new tab");
 
-  const frames3 = await targetList.getAllTargets(TargetList.TYPES.FRAME);
+  const frames3 = await targetList.getAllTargets([TargetList.TYPES.FRAME]);
   const hasTabDocument = frames3.find(target => target.url == TEST_URL);
   ok(hasTabDocument, "retrieve the target for tab via getAllTargets");
   */
@@ -111,28 +110,28 @@ async function testTabFrames(mainRoot) {
   info("Test TargetList against frames via a tab target");
 
   // Create a TargetList for a given test tab
-  gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser);
   const tab = await addTab(FISSION_TEST_URL);
-  const target = await mainRoot.getTab({ tab });
+  const descriptor = await mainRoot.getTab({ tab });
+  const target = await descriptor.getTarget();
   const targetList = new TargetList(mainRoot, target);
 
   await targetList.startListening();
 
-  // Check that calling getAllTargets(frame) return the same target instances
-  const frames = await targetList.getAllTargets(TargetList.TYPES.FRAME);
+  // Check that calling getAllTargets([frame]) return the same target instances
+  const frames = await targetList.getAllTargets([TargetList.TYPES.FRAME]);
   is(frames.length, 1, "retrieved only the top level document");
 
   // Assert that watchTargets will call the create callback for all existing frames
   const targets = [];
-  const onAvailable = ({ type, targetFront, isTopLevel }) => {
+  const onAvailable = ({ targetFront }) => {
     is(
-      type,
+      targetFront.targetType,
       TargetList.TYPES.FRAME,
       "We are only notified about frame targets"
     );
     ok(
-      targetFront == target ? isTopLevel : !isTopLevel,
-      "isTopLevel argument is correct"
+      targetFront == target ? targetFront.isTopLevel : !targetFront.isTopLevel,
+      "isTopLevel property is correct"
     );
     targets.push(targetFront);
   };

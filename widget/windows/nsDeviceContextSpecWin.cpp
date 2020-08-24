@@ -11,7 +11,10 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/Telemetry.h"
 
+#include <wchar.h>
+#include <windef.h>
 #include <winspool.h>
 
 #include "nsIWidget.h"
@@ -19,9 +22,9 @@
 #include "nsTArray.h"
 #include "nsIPrintSettingsWin.h"
 
-#include "nsString.h"
+#include "nsPrinterWin.h"
 #include "nsReadableUtils.h"
-#include "nsStringEnumerator.h"
+#include "nsString.h"
 
 #include "gfxWindowsSurface.h"
 
@@ -52,8 +55,8 @@ using namespace mozilla::widget;
 static const wchar_t kDriverName[] = L"WINSPOOL";
 
 //----------------------------------------------------------------------------------
-// The printer data is shared between the PrinterEnumerator and the
-// nsDeviceContextSpecWin The PrinterEnumerator creates the printer info but the
+// The printer data is shared between the PrinterList and the
+// nsDeviceContextSpecWin The PrinterList creates the printer info but the
 // nsDeviceContextSpecWin cleans it up If it gets created (via the Page Setup
 // Dialog) but the user never prints anything then it will never be delete, so
 // this class takes care of that.
@@ -125,6 +128,66 @@ NS_IMETHODIMP nsDeviceContextSpecWin::Init(nsIWidget* aWidget,
                                            bool aIsPrintPreview) {
   mPrintSettings = aPrintSettings;
 
+  // Get the Printer Name to be used and output format.
+  nsAutoString printerName;
+  if (mPrintSettings) {
+    mPrintSettings->GetOutputFormat(&mOutputFormat);
+    mPrintSettings->GetPrinterName(printerName);
+  }
+
+  // If there is no name then use the default printer
+  if (printerName.IsEmpty()) {
+    GlobalPrinters::GetInstance()->GetDefaultPrinterName(printerName);
+  }
+
+  // Gather telemetry on the print target type.
+  //
+  // Unfortunately, if we're not using our own internal save-to-pdf codepaths,
+  // there isn't a good way to determine whether a print is going to be to a
+  // physical printer or to a file or some other non-physical output. We do our
+  // best by checking for what seems to be the most common save-to-PDF virtual
+  // printers.
+  //
+  // We use StringBeginsWith below, since printer names are often followed by a
+  // version number or other product differentiating string.  (True for doPDF,
+  // novaPDF, PDF-XChange and Soda PDF, for example.)
+  if (mOutputFormat == nsIPrintSettings::kOutputFormatPDF) {
+    Telemetry::ScalarAdd(Telemetry::ScalarID::PRINTING_TARGET_TYPE,
+                         u"pdf_file"_ns, 1);
+  } else if (StringBeginsWith(printerName, u"Microsoft Print to PDF"_ns) ||
+             StringBeginsWith(printerName, u"Adobe PDF"_ns) ||
+             StringBeginsWith(printerName, u"Bullzip PDF Printer"_ns) ||
+             StringBeginsWith(printerName, u"CutePDF Writer"_ns) ||
+             StringBeginsWith(printerName, u"doPDF"_ns) ||
+             StringBeginsWith(printerName, u"Foxit Reader PDF Printer"_ns) ||
+             StringBeginsWith(printerName, u"Nitro PDF Creator"_ns) ||
+             StringBeginsWith(printerName, u"novaPDF"_ns) ||
+             StringBeginsWith(printerName, u"PDF-XChange"_ns) ||
+             StringBeginsWith(printerName, u"PDF24 PDF"_ns) ||
+             StringBeginsWith(printerName, u"PDFCreator"_ns) ||
+             StringBeginsWith(printerName, u"PrimoPDF"_ns) ||
+             StringBeginsWith(printerName, u"Soda PDF"_ns) ||
+             StringBeginsWith(printerName, u"Solid PDF Creator"_ns) ||
+             StringBeginsWith(printerName,
+                              u"Universal Document Converter"_ns)) {
+    Telemetry::ScalarAdd(Telemetry::ScalarID::PRINTING_TARGET_TYPE,
+                         u"pdf_file"_ns, 1);
+  } else if (printerName.EqualsLiteral("Microsoft XPS Document Writer")) {
+    Telemetry::ScalarAdd(Telemetry::ScalarID::PRINTING_TARGET_TYPE,
+                         u"xps_file"_ns, 1);
+  } else {
+    nsAString::const_iterator start, end;
+    printerName.BeginReading(start);
+    printerName.EndReading(end);
+    if (CaseInsensitiveFindInReadable(u"pdf"_ns, start, end)) {
+      Telemetry::ScalarAdd(Telemetry::ScalarID::PRINTING_TARGET_TYPE,
+                           u"pdf_unknown"_ns, 1);
+    } else {
+      Telemetry::ScalarAdd(Telemetry::ScalarID::PRINTING_TARGET_TYPE,
+                           u"unknown"_ns, 1);
+    }
+  }
+
   nsresult rv = NS_ERROR_GFX_PRINTER_NO_PRINTER_AVAILABLE;
   if (aPrintSettings) {
 #ifdef MOZ_ENABLE_SKIA_PDF
@@ -137,7 +200,6 @@ NS_IMETHODIMP nsDeviceContextSpecWin::Init(nsIWidget* aWidget,
 
     // If we're in the child and printing via the parent or we're printing to
     // PDF we only need information from the print settings.
-    mPrintSettings->GetOutputFormat(&mOutputFormat);
     if ((XRE_IsContentProcess() &&
          Preferences::GetBool("print.print_via_parent")) ||
         mOutputFormat == nsIPrintSettings::kOutputFormatPDF) {
@@ -181,17 +243,6 @@ NS_IMETHODIMP nsDeviceContextSpecWin::Init(nsIWidget* aWidget,
     PR_PL(("***** nsDeviceContextSpecWin::Init - aPrintSettingswas NULL!\n"));
   }
 
-  // Get the Printer Name to be used and output format.
-  nsAutoString printerName;
-  if (mPrintSettings) {
-    mPrintSettings->GetPrinterName(printerName);
-  }
-
-  // If there is no name then use the default printer
-  if (printerName.IsEmpty()) {
-    GlobalPrinters::GetInstance()->GetDefaultPrinterName(printerName);
-  }
-
   if (printerName.IsEmpty()) {
     return rv;
   }
@@ -202,7 +253,8 @@ NS_IMETHODIMP nsDeviceContextSpecWin::Init(nsIWidget* aWidget,
 //----------------------------------------------------------
 
 already_AddRefed<PrintTarget> nsDeviceContextSpecWin::MakePrintTarget() {
-  NS_ASSERTION(mDevMode, "DevMode can't be NULL here");
+  NS_ASSERTION(mDevMode || mOutputFormat == nsIPrintSettings::kOutputFormatPDF,
+               "DevMode can't be NULL here unless we're printing to PDF.");
 
 #ifdef MOZ_ENABLE_SKIA_PDF
   if (mPrintViaSkPDF) {
@@ -368,7 +420,7 @@ nsresult nsDeviceContextSpecWin::GetDataFromPrinter(const nsAString& aName,
     if (NS_FAILED(rv)) {
       PR_PL(
           ("***** nsDeviceContextSpecWin::GetDataFromPrinter - Couldn't "
-           "enumerate printers!\n"));
+           "retrieve printers!\n"));
       DISPLAY_LAST_ERROR
     }
     NS_ENSURE_SUCCESS(rv, rv);
@@ -457,27 +509,23 @@ nsresult nsDeviceContextSpecWin::GetDataFromPrinter(const nsAString& aName,
 }
 
 //***********************************************************
-//  Printer Enumerator
+//  Printer List
 //***********************************************************
-nsPrinterEnumeratorWin::nsPrinterEnumeratorWin() {}
 
-nsPrinterEnumeratorWin::~nsPrinterEnumeratorWin() {
-  // Do not free printers here
-  // GlobalPrinters::GetInstance()->FreeGlobalPrinters();
+nsPrinterListWin::~nsPrinterListWin() {
+  GlobalPrinters::GetInstance()->FreeGlobalPrinters();
 }
 
-NS_IMPL_ISUPPORTS(nsPrinterEnumeratorWin, nsIPrinterEnumerator)
+NS_IMPL_ISUPPORTS(nsPrinterListWin, nsIPrinterList)
 
-//----------------------------------------------------------------------------------
-// Return the Default Printer name
 NS_IMETHODIMP
-nsPrinterEnumeratorWin::GetDefaultPrinterName(nsAString& aDefaultPrinterName) {
-  GlobalPrinters::GetInstance()->GetDefaultPrinterName(aDefaultPrinterName);
+nsPrinterListWin::GetSystemDefaultPrinterName(nsAString& aName) {
+  GlobalPrinters::GetInstance()->GetDefaultPrinterName(aName);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsPrinterEnumeratorWin::InitPrintSettingsFromPrinter(
+nsPrinterListWin::InitPrintSettingsFromPrinter(
     const nsAString& aPrinterName, nsIPrintSettings* aPrintSettings) {
   NS_ENSURE_ARG_POINTER(aPrintSettings);
 
@@ -541,34 +589,27 @@ nsPrinterEnumeratorWin::InitPrintSettingsFromPrinter(
   return NS_OK;
 }
 
-//----------------------------------------------------------------------------------
-// Enumerate all the Printers from the global array and pass their
-// names back (usually to script)
 NS_IMETHODIMP
-nsPrinterEnumeratorWin::GetPrinterNameList(
-    nsIStringEnumerator** aPrinterNameList) {
-  NS_ENSURE_ARG_POINTER(aPrinterNameList);
-  *aPrinterNameList = nullptr;
-
+nsPrinterListWin::GetPrinters(nsTArray<RefPtr<nsIPrinter>>& aPrinters) {
   nsresult rv = GlobalPrinters::GetInstance()->EnumeratePrinterList();
   if (NS_FAILED(rv)) {
     PR_PL(
-        ("***** nsDeviceContextSpecWin::GetPrinterNameList - Couldn't "
-         "enumerate printers!\n"));
+        ("***** nsDeviceContextSpecWin::GetPrinters - Couldn't "
+         "retrieve printers!\n"));
     return rv;
   }
 
   uint32_t numPrinters = GlobalPrinters::GetInstance()->GetNumPrinters();
-  nsTArray<nsString>* printers = new nsTArray<nsString>(numPrinters);
-  if (!printers) return NS_ERROR_OUT_OF_MEMORY;
-
-  nsString* names = printers->AppendElements(numPrinters);
   for (uint32_t printerInx = 0; printerInx < numPrinters; ++printerInx) {
+    // wchar_t (used in LPWSTR) is 16 bits on Windows.
+    // https://docs.microsoft.com/en-us/cpp/cpp/char-wchar-t-char16-t-char32-t?view=vs-2019
     LPWSTR name = GlobalPrinters::GetInstance()->GetItemFromList(printerInx);
-    names[printerInx].Assign(name);
+
+    nsAutoString printerName(name);
+    aPrinters.AppendElement(new nsPrinterWin(printerName));
   }
 
-  return NS_NewAdoptingStringEnumerator(aPrinterNameList, printers);
+  return NS_OK;
 }
 
 //----------------------------------------------------------------------------------

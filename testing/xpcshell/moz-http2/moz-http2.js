@@ -19,6 +19,7 @@ const dnsPacket = require(`${node_http2_root}/../dns-packet`);
 const ip = require(`${node_http2_root}/../node-ip`);
 const { fork } = require("child_process");
 const path = require("path");
+const zlib = require("zlib");
 
 // Hook into the decompression code to log the decompressed name-value pairs
 var compression_module = node_http2_root + "/lib/protocol/compressor";
@@ -547,6 +548,11 @@ function handleRequest(req, res) {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Alt-Svc", "h2=" + req.headers["x-altsvc"]);
   }
+  // for use with test_http3.js
+  else if (u.pathname === "/http3-test") {
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Alt-Svc", "h3-27=" + req.headers["x-altsvc"]);
+  }
   // for use with test_trr.js
   else if (u.pathname === "/dns-cname") {
     // asking for cname.example.com
@@ -577,6 +583,30 @@ function handleRequest(req, res) {
     let responseIP = u.query.responseIP;
     if (!responseIP) {
       responseIP = "5.5.5.5";
+    }
+
+    let redirect = u.query.redirect;
+    if (redirect) {
+      responseIP = redirect;
+      if (u.query.dns) {
+        res.setHeader(
+          "Location",
+          "https://localhost:" +
+            serverPort +
+            "/doh?responseIP=" +
+            responseIP +
+            "&dns=" +
+            u.query.dns
+        );
+      } else {
+        res.setHeader(
+          "Location",
+          "https://localhost:" + serverPort + "/doh?responseIP=" + responseIP
+        );
+      }
+      res.writeHead(307);
+      res.end("");
+      return;
     }
 
     if (u.query.auth) {
@@ -682,6 +712,34 @@ function handleRequest(req, res) {
         });
       }
 
+      // for use with test_esni_dns_fetch.js
+      if (packet.questions[0].type == "TXT") {
+        answers.push({
+          name: packet.questions[0].name,
+          type: packet.questions[0].type,
+          ttl: 55,
+          class: "IN",
+          flush: false,
+          data: Buffer.from(
+            "62586B67646D39705932556761584D6762586B676347467A63336476636D513D",
+            "hex"
+          ),
+        });
+      } else if (packet.questions[0].type == "HTTPSSVC") {
+        answers.push({
+          name: packet.questions[0].name,
+          type: packet.questions[0].type,
+          ttl: 55,
+          class: "IN",
+          flush: false,
+          data: {
+            priority: 1,
+            name: "some.domain.stuff.",
+            values: [{ key: "esniconfig", value: "testytestystringstring" }],
+          },
+        });
+      }
+
       if (u.query.cnameloop) {
         answers.push({
           name: "cname.example.com",
@@ -709,12 +767,21 @@ function handleRequest(req, res) {
       });
 
       function writeResponse(resp, buffer) {
-        resp.setHeader("Content-Length", buffer.length);
         resp.setHeader("Set-Cookie", "trackyou=yes; path=/; max-age=100000;");
         resp.setHeader("Content-Type", "application/dns-message");
-        resp.writeHead(200);
-        resp.write(buffer);
-        resp.end("");
+        if (req.headers["accept-encoding"].includes("gzip")) {
+          zlib.gzip(buffer, function(err, result) {
+            resp.setHeader("Content-Encoding", "gzip");
+            resp.setHeader("Content-Length", result.length);
+            resp.writeHead(200);
+            res.end(result);
+          });
+        } else {
+          resp.setHeader("Content-Length", buffer.length);
+          resp.writeHead(200);
+          resp.write(buffer);
+          resp.end("");
+        }
       }
 
       let delay = undefined;
@@ -748,7 +815,82 @@ function handleRequest(req, res) {
       payload = Buffer.concat([payload, chunk]);
     });
     req.on("end", function finishedData() {
-      emitResponse(res, payload);
+      // parload is empty when we send redirect response.
+      if (payload.length) {
+        emitResponse(res, payload);
+      }
+    });
+    return;
+  } else if (u.pathname === "/httpssvc") {
+    let payload = Buffer.from("");
+    req.on("data", function receiveData(chunk) {
+      payload = Buffer.concat([payload, chunk]);
+    });
+    req.on("end", function finishedData() {
+      let packet = dnsPacket.decode(payload);
+      let answers = [];
+      answers.push({
+        name: packet.questions[0].name,
+        type: packet.questions[0].type,
+        ttl: 55,
+        class: "IN",
+        flush: false,
+        data: {
+          priority: 1,
+          name: "h3pool",
+          values: [
+            { key: "alpn", value: "h2,h3" },
+            { key: "no-default-alpn" },
+            { key: "port", value: 8888 },
+            { key: "ipv4hint", value: "1.2.3.4" },
+            { key: "esniconfig", value: "123..." },
+            { key: "ipv6hint", value: "::1" },
+            { key: 30, value: "somelargestring" },
+          ],
+        },
+      });
+      answers.push({
+        name: packet.questions[0].name,
+        type: packet.questions[0].type,
+        ttl: 55,
+        class: "IN",
+        flush: false,
+        data: {
+          priority: 2,
+          name: ".",
+          values: [
+            { key: "alpn", value: "h2" },
+            { key: "ipv4hint", value: ["1.2.3.4", "5.6.7.8"] },
+            { key: "esniconfig", value: "abc..." },
+            { key: "ipv6hint", value: ["::1", "fe80::794f:6d2c:3d5e:7836"] },
+          ],
+        },
+      });
+      answers.push({
+        name: packet.questions[0].name,
+        type: packet.questions[0].type,
+        ttl: 55,
+        class: "IN",
+        flush: false,
+        data: {
+          priority: 3,
+          name: "hello",
+          values: [],
+        },
+      });
+      let buf = dnsPacket.encode({
+        type: "response",
+        id: packet.id,
+        flags: dnsPacket.RECURSION_DESIRED,
+        questions: packet.questions,
+        answers,
+      });
+
+      res.setHeader("Content-Type", "application/dns-message");
+      res.setHeader("Content-Length", buf.length);
+      res.writeHead(200);
+      res.write(buf);
+      res.end("");
     });
     return;
   } else if (u.pathname === "/dns-cname-a") {
@@ -794,33 +936,6 @@ function handleRequest(req, res) {
     // it's just meant to be this slow - the test doesn't care about the actual response
     return;
   }
-  // for use with test_esni_dns_fetch.js
-  else if (u.pathname === "/esni-dns") {
-    content = Buffer.from(
-      "0000" +
-      "8180" +
-      "0001" + // QDCOUNT
-      "0001" + // ANCOUNT
-      "00000000" + // NSCOUNT + ARCOUNT
-      "055F65736E69076578616D706C6503636F6D00" + // _esni.example.com
-      "00100001" + // question type (TXT) + question class (IN)
-      "C00C" + // name pointer to .example.com
-      "0010" + // type (TXT)
-      "0001" + // class
-      "00000037" + // TTL
-      "0021" + // RDLENGTH
-        "2062586B67646D39705932556761584D6762586B676347467A63336476636D513D", // esni keys.
-      "hex"
-    );
-
-    res.setHeader("Content-Type", "application/dns-message");
-    res.setHeader("Content-Length", content.length);
-    res.writeHead(200);
-    res.write(content);
-    res.end("");
-    return;
-  }
-
   // for use with test_esni_dns_fetch.js
   else if (u.pathname === "/esni-dns-push") {
     // _esni_push.example.com has A entry 127.0.0.1

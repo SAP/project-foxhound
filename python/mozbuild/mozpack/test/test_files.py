@@ -59,6 +59,7 @@ import unittest
 import mozfile
 import mozunit
 import os
+import platform
 import random
 import six
 import sys
@@ -75,7 +76,8 @@ class TestWithTmpDir(unittest.TestCase):
         self.symlink_supported = False
         self.hardlink_supported = False
 
-        if hasattr(os, 'symlink'):
+        # See comment in mozpack.files.AbsoluteSymlinkFile
+        if hasattr(os, 'symlink') and platform.system() != 'Windows':
             dummy_path = self.tmppath('dummy_file')
             with open(dummy_path, 'a'):
                 pass
@@ -812,7 +814,7 @@ class TestManifestFile(TestWithTmpDir):
         )
 
         f.copy(self.tmppath('chrome.manifest'))
-        content = open(self.tmppath('chrome.manifest'), 'rt').read()
+        content = open(self.tmppath('chrome.manifest'), 'rb').read()
         self.assertEqual(content[:42], f.open().read(42))
         self.assertEqual(content, f.open().read())
 
@@ -877,7 +879,7 @@ class TestMinifiedProperties(TestWithTmpDir):
         ]
         prop = GeneratedFile('\n'.join(propLines))
         self.assertEqual(MinifiedProperties(prop).open().readlines(),
-                         ['foo = bar\n', '\n'])
+                         [b'foo = bar\n', b'\n'])
         open(self.tmppath('prop'), 'w').write('\n'.join(propLines))
         MinifiedProperties(File(self.tmppath('prop'))) \
             .copy(self.tmppath('prop2'))
@@ -915,7 +917,7 @@ class TestMinifiedJavaScript(TestWithTmpDir):
         min_f = MinifiedJavaScript(orig_f,
                                    verify_command=self._verify_command('0'))
 
-        mini_lines = min_f.open().readlines()
+        mini_lines = [six.ensure_text(s) for s in min_f.open().readlines()]
         self.assertTrue(mini_lines)
         self.assertTrue(len(mini_lines) < len(self.orig_lines))
 

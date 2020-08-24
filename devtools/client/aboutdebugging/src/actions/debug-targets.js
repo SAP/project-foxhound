@@ -143,24 +143,11 @@ function installTemporaryExtension() {
 function pushServiceWorker(id, registrationFront) {
   return async (_, getState) => {
     try {
-      /**
-       * Older servers will not define `ServiceWorkerRegistrationFront.push`,
-       * and `ServiceWorkerRegistrationFront.push` will only work if the
-       * underlying ServiceWorkerRegistration is "connected" to the
-       * corresponding running Service Worker - this is only guaranteed with
-       * parent-intercept mode. The `else` statement is for backward
-       * compatibility and can be removed when the release channel is >= FF69
-       * _and_ parent-intercept is stable (which definitely won't happen when
-       * the release channel is < FF69).
-       */
-      const { isParentInterceptEnabled } = registrationFront.traits;
-      if (registrationFront.push && isParentInterceptEnabled) {
-        await registrationFront.push();
-      } else {
-        const clientWrapper = getCurrentClient(getState().runtimes);
-        const workerActor = await clientWrapper.getServiceWorkerFront({ id });
-        await workerActor.push();
-      }
+      // The push button is only available if canDebugServiceWorkers is true,
+      // which is only true if dom.serviceWorkers.parent_intercept is true.
+      // With this configuration, `push` should always be called on the
+      // registration front, and not on the (service) WorkerTargetActor.
+      await registrationFront.push();
     } catch (e) {
       console.error(e);
     }
@@ -206,8 +193,17 @@ function requestTabs() {
         DEBUG_TARGET_PANE.TAB
       );
       const tabs = isSupported
-        ? await clientWrapper.listTabs({ favicons: true })
+        ? await clientWrapper.listTabs({
+            // Backward compatibility: this is only used for FF75 or older.
+            // The argument can be dropped when FF76 hits the release channel.
+            favicons: true,
+          })
         : [];
+
+      // Fetch the missing information for all tabs.
+      await Promise.all(
+        tabs.map(descriptorFront => descriptorFront.retrieveAsyncFormData())
+      );
 
       dispatch({ type: REQUEST_TABS_SUCCESS, tabs });
     } catch (e) {
@@ -236,14 +232,6 @@ function requestExtensions() {
         // side, `hidden` is not available on FF67 servers or older. Check both flags for
         // backward compatibility.
         extensions = extensions.filter(e => !e.isSystem && !e.hidden);
-      }
-
-      if (runtime.type !== RUNTIMES.THIS_FIREFOX) {
-        // manifestURL can only be used when debugging local addons, remove this
-        // information for the extension data.
-        extensions.forEach(extension => {
-          extension.manifestURL = null;
-        });
       }
 
       const installedExtensions = extensions.filter(
@@ -305,8 +293,16 @@ function requestWorkers() {
           continue;
         }
 
-        const subscription = await registrationFront.getPushSubscription();
-        serviceWorker.subscription = subscription;
+        try {
+          const subscription = await registrationFront.getPushSubscription();
+          serviceWorker.subscription = subscription;
+        } catch (e) {
+          // See Bug 1637687. On GeckoView, some PushSubscription methods are
+          // not implemented. PushSubscriptionActor was patched in FF78 to avoid
+          // throwing, but old servers might still throw.
+          // Backward-compatibility: remove when FF78 hits release.
+          console.error("Failed to retrieve service worker subscription", e);
+        }
       }
 
       dispatch({

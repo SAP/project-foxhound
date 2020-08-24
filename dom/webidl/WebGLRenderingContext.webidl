@@ -108,8 +108,8 @@ interface WebGLShaderPrecisionFormat {
     readonly attribute GLint precision;
 };
 
-typedef (Float32Array or sequence<GLfloat>) Float32List;
-typedef (Int32Array or sequence<GLint>) Int32List;
+typedef ([AllowShared] Float32Array or sequence<GLfloat>) Float32List;
+typedef ([AllowShared] Int32Array or sequence<GLint>) Int32List;
 
 // Shared mixin for the things that WebGLRenderingContext and
 // WebGL2RenderingContext have in common.  This doesn't have all the things they
@@ -226,7 +226,6 @@ interface mixin WebGLRenderingContextBase {
     const GLenum SAMPLE_COVERAGE                = 0x80A0;
 
     /* ErrorCode */
-    [NeedsWindowsUndef]
     const GLenum NO_ERROR                       = 0;
     const GLenum INVALID_ENUM                   = 0x0500;
     const GLenum INVALID_VALUE                  = 0x0501;

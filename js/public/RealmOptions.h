@@ -51,6 +51,16 @@ enum class CompartmentSpecifier {
 };
 
 /**
+ * Specification for whether weak refs should be enabled and if so whether the
+ * FinalizationRegistry.cleanupSome method should be present.
+ */
+enum class WeakRefSpecifier {
+  Disabled,
+  EnabledWithCleanupSome,
+  EnabledWithoutCleanupSome
+};
+
+/**
  * RealmCreationOptions specifies options relevant to creating a new realm, that
  * are either immutable characteristics of that realm or that are discarded
  * after the realm has been created.
@@ -125,15 +135,56 @@ class JS_PUBLIC_API RealmCreationOptions {
     return *this;
   }
 
+  // Determines whether 1) the global Atomic property is defined and atomic
+  // operations are supported, and 2) whether shared-memory operations are
+  // supported.
   bool getSharedMemoryAndAtomicsEnabled() const;
   RealmCreationOptions& setSharedMemoryAndAtomicsEnabled(bool flag);
 
-  // When these prefs (COOP and COEP) are not enabled, shared memory objects
-  // (e.g. SAB) are not allowed to be postMessage()'ed. And we want to provide
-  // a clear warning message to users/developer so that they would have an idea
-  // if the implementations of the COOP and COEP headers are finished or not. So
-  // that they would know if they can fix the SAB by deploying the COOP and
-  // COEP headers or not.
+  // Determines (if getSharedMemoryAndAtomicsEnabled() is true) whether the
+  // global SharedArrayBuffer property is defined.  If the property is not
+  // defined, shared array buffer functionality can only be invoked if the
+  // host/embedding specifically acts to expose it.
+  //
+  // This option defaults to true: embeddings unable to tolerate a global
+  // SharedAraryBuffer property must opt out of it.
+  bool defineSharedArrayBufferConstructor() const {
+    return defineSharedArrayBufferConstructor_;
+  }
+  RealmCreationOptions& setDefineSharedArrayBufferConstructor(bool flag) {
+    defineSharedArrayBufferConstructor_ = flag;
+    return *this;
+  }
+
+  // Structured clone operations support the cloning of shared memory objects
+  // (SharedArrayBuffer or or a shared WASM Memory object) *optionally* -- at
+  // the discretion of the embedder code that performs the cloning.  When a
+  // structured clone operation encounters a shared memory object and cloning
+  // shared memory objects has not been enabled, the clone fails and an
+  // error is thrown.
+  //
+  // In the web embedding context, shared memory object cloning is disabled
+  // either because
+  //
+  //   1) *no* way of supporting it is available (because the
+  //      Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy HTTP
+  //      headers are not respected to force the page into its own process), or
+  //   2) the aforementioned HTTP headers don't specify that the page should be
+  //      opened in its own process.
+  //
+  // These two scenarios demand different error messages, and this option can be
+  // used to specify which scenario is in play.
+  //
+  // In the former case, if COOP/COEP support is not enabled, set this option to
+  // false.  (This is the default.)
+  //
+  // In the latter case, if COOP/COEP weren't used to force this page into its
+  // own process, set this option to true.
+  //
+  // (Embeddings that are not the web and do not wish to support structured
+  // cloning of shared memory objects will get a "bad" web-centric error message
+  // no matter what.  At present, SpiderMonkey does not offer a way for such
+  // embeddings to use an embedding-specific error message.)
   bool getCoopAndCoepEnabled() const;
   RealmCreationOptions& setCoopAndCoepEnabled(bool flag);
 
@@ -167,21 +218,9 @@ class JS_PUBLIC_API RealmCreationOptions {
     return *this;
   }
 
-  bool getFieldsEnabled() const { return fields_; }
-  RealmCreationOptions& setFieldsEnabled(bool flag) {
-    fields_ = flag;
-    return *this;
-  }
-
-  bool getAwaitFixEnabled() const { return awaitFix_; }
-  RealmCreationOptions& setAwaitFixEnabled(bool flag) {
-    awaitFix_ = flag;
-    return *this;
-  }
-
-  bool getWeakRefsEnabled() const { return weakRefs_; }
-  RealmCreationOptions& setWeakRefsEnabled(bool flag) {
-    weakRefs_ = flag;
+  WeakRefSpecifier getWeakRefsEnabled() const { return weakRefs_; }
+  RealmCreationOptions& setWeakRefsEnabled(WeakRefSpecifier spec) {
+    weakRefs_ = spec;
     return *this;
   }
 
@@ -196,6 +235,18 @@ class JS_PUBLIC_API RealmCreationOptions {
   }
   RealmCreationOptions& setPropertyErrorMessageFixEnabled(bool flag) {
     propertyErrorMessageFix_ = flag;
+    return *this;
+  }
+
+  bool getIteratorHelpersEnabled() const { return iteratorHelpers_; }
+  RealmCreationOptions& setIteratorHelpersEnabled(bool flag) {
+    iteratorHelpers_ = flag;
+    return *this;
+  }
+
+  bool getPrivateClassFieldsEnabled() const { return privateClassFields_; }
+  RealmCreationOptions& setPrivateClassFieldsEnabled(bool flag) {
+    privateClassFields_ = flag;
     return *this;
   }
 
@@ -223,22 +274,23 @@ class JS_PUBLIC_API RealmCreationOptions {
     Zone* zone_;
   };
   uint64_t profilerRealmID_ = 0;
+  WeakRefSpecifier weakRefs_ = WeakRefSpecifier::Disabled;
   bool invisibleToDebugger_ = false;
   bool mergeable_ = false;
   bool preserveJitCode_ = false;
   bool cloneSingletons_ = false;
   bool sharedMemoryAndAtomics_ = false;
+  bool defineSharedArrayBufferConstructor_ = true;
   bool coopAndCoep_ = false;
   bool streams_ = false;
   bool readableByteStreams_ = false;
   bool byobStreamReaders_ = false;
   bool writableStreams_ = false;
   bool readableStreamPipeTo_ = false;
-  bool fields_ = false;
-  bool awaitFix_ = false;
-  bool weakRefs_ = false;
   bool toSource_ = false;
   bool propertyErrorMessageFix_ = false;
+  bool iteratorHelpers_ = false;
+  bool privateClassFields_ = false;
   bool secureContext_ = false;
 };
 
@@ -293,9 +345,6 @@ class JS_PUBLIC_API RealmBehaviors {
     Mode mode_;
   };
 
-  bool extraWarnings(JSContext* cx) const;
-  Override& extraWarningsOverride() { return extraWarningsOverride_; }
-
   bool getSingletonsAsTemplates() const { return singletonsAsTemplates_; }
   RealmBehaviors& setSingletonsAsValues() {
     singletonsAsTemplates_ = false;
@@ -315,7 +364,6 @@ class JS_PUBLIC_API RealmBehaviors {
   bool discardSource_ = false;
   bool disableLazyParsing_ = false;
   bool clampAndJitterTime_ = true;
-  Override extraWarningsOverride_ = {};
 
   // To XDR singletons, we need to ensure that all singletons are all used as
   // templates, by making JSOP_OBJECT return a clone of the JSScript

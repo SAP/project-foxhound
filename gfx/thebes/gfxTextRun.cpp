@@ -25,7 +25,10 @@
 #include "mozilla/gfx/Logging.h"  // for gfxCriticalError
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
+#include "SharedFontList-impl.h"
 #include "TextDrawTarget.h"
+
+#include <unicode/unorm2.h>
 
 #ifdef XP_WIN
 #  include "gfxWindowsPlatform.h"
@@ -161,6 +164,7 @@ gfxTextRun::gfxTextRun(const gfxTextRunFactory::Parameters* aParams,
       mFontGroup(aFontGroup),
       mFlags2(aFlags2),
       mReleasedFontGroup(false),
+      mReleasedFontGroupSkippedDrawing(false),
       mHasGlyphRunArray(false),
       mShapingState(eShapingState_Normal) {
   NS_ASSERTION(mAppUnitsPerDevUnit > 0, "Invalid app unit scale");
@@ -183,9 +187,8 @@ gfxTextRun::gfxTextRun(const gfxTextRunFactory::Parameters* aParams,
   AccountStorageForTextRun(this, 1);
 #endif
 
-  mSkipDrawing =
-      mFontGroup->ShouldSkipDrawing() &&
-      !(aFlags2 & nsTextFrameUtils::Flags::DontSkipDrawingForPendingUserFonts);
+  mDontSkipDrawing =
+      !!(aFlags2 & nsTextFrameUtils::Flags::DontSkipDrawingForPendingUserFonts);
 }
 
 gfxTextRun::~gfxTextRun() {
@@ -220,6 +223,19 @@ gfxTextRun::~gfxTextRun() {
 
 void gfxTextRun::ReleaseFontGroup() {
   NS_ASSERTION(!mReleasedFontGroup, "doubly released!");
+
+  // After dropping our reference to the font group, we'll no longer be able
+  // to get up-to-date results for ShouldSkipDrawing().  Store the current
+  // value in mReleasedFontGroupSkippedDrawing.
+  //
+  // (It doesn't actually matter that we can't get up-to-date results for
+  // ShouldSkipDrawing(), since the only text runs that we call
+  // ReleaseFontGroup() for are ellipsis text runs, and we ask the font
+  // group for a new ellipsis text run each time we want to draw one,
+  // and ensure that the cached one is cleared in ClearCachedData() when
+  // font loading status changes.)
+  mReleasedFontGroupSkippedDrawing = mFontGroup->ShouldSkipDrawing();
+
   NS_RELEASE(mFontGroup);
   mReleasedFontGroup = true;
 }
@@ -519,13 +535,14 @@ struct MOZ_STACK_CLASS BufferAlphaColor {
 
   ~BufferAlphaColor() = default;
 
-  void PushSolidColor(const gfxRect& aBounds, const Color& aAlphaColor,
+  void PushSolidColor(const gfxRect& aBounds, const DeviceColor& aAlphaColor,
                       uint32_t appsPerDevUnit) {
     mContext->Save();
     mContext->SnappedClip(gfxRect(
         aBounds.X() / appsPerDevUnit, aBounds.Y() / appsPerDevUnit,
         aBounds.Width() / appsPerDevUnit, aBounds.Height() / appsPerDevUnit));
-    mContext->SetColor(Color(aAlphaColor.r, aAlphaColor.g, aAlphaColor.b));
+    mContext->SetDeviceColor(
+        DeviceColor(aAlphaColor.r, aAlphaColor.g, aAlphaColor.b));
     mContext->PushGroupForBlendBack(gfxContentType::COLOR_ALPHA, aAlphaColor.a);
   }
 
@@ -548,9 +565,11 @@ void gfxTextRun::Draw(const Range aRange, const gfx::Point aPt,
   NS_ASSERTION(aParams.drawMode == DrawMode::GLYPH_PATH || !aParams.callbacks,
                "callback must not be specified unless using GLYPH_PATH");
 
-  bool skipDrawing = mSkipDrawing;
+  bool skipDrawing =
+      !mDontSkipDrawing && (mFontGroup ? mFontGroup->ShouldSkipDrawing()
+                                       : mReleasedFontGroupSkippedDrawing);
   if (aParams.drawMode & DrawMode::GLYPH_FILL) {
-    Color currentColor;
+    DeviceColor currentColor;
     if (aParams.context->GetDeviceColor(currentColor) && currentColor.a == 0 &&
         !aParams.context->GetTextDrawer()) {
       skipDrawing = true;
@@ -576,7 +595,7 @@ void gfxTextRun::Draw(const Range aRange, const gfx::Point aPt,
   // synthetic bolding draws glyphs twice ==> colors with opacity won't draw
   // correctly unless first drawn without alpha
   BufferAlphaColor syntheticBoldBuffer(aParams.context);
-  Color currentColor;
+  DeviceColor currentColor;
   bool mayNeedBuffering =
       aParams.drawMode & DrawMode::GLYPH_FILL &&
       aParams.context->HasNonOpaqueNonTransparentColor(currentColor) &&
@@ -1404,17 +1423,6 @@ void gfxTextRun::SanitizeGlyphRuns() {
   }
 }
 
-uint32_t gfxTextRun::CountMissingGlyphs() const {
-  uint32_t i;
-  uint32_t count = 0;
-  for (i = 0; i < GetLength(); ++i) {
-    if (mCharacterGlyphs[i].IsMissing()) {
-      ++count;
-    }
-  }
-  return count;
-}
-
 void gfxTextRun::CopyGlyphDataFrom(gfxShapedWord* aShapedWord,
                                    uint32_t aOffset) {
   uint32_t wordLen = aShapedWord->GetLength();
@@ -1446,8 +1454,8 @@ void gfxTextRun::CopyGlyphDataFrom(gfxTextRun* aSource, Range aRange,
   NS_ASSERTION(aDest + aRange.Length() <= GetLength(),
                "Destination substring out of range");
 
-  if (aSource->mSkipDrawing) {
-    mSkipDrawing = true;
+  if (aSource->mDontSkipDrawing) {
+    mDontSkipDrawing = true;
   }
 
   // Copy base glyph data, and DetailedGlyph data where present
@@ -1695,6 +1703,7 @@ void gfxTextRun::Dump(FILE* aOutput) {
 gfxFontGroup::gfxFontGroup(const FontFamilyList& aFontFamilyList,
                            const gfxFontStyle* aStyle,
                            gfxTextPerfMetrics* aTextPerf,
+                           FontMatchingStats* aFontMatchingStats,
                            gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize)
     : mFamilyList(aFontFamilyList),
       mStyle(*aStyle),
@@ -1703,6 +1712,7 @@ gfxFontGroup::gfxFontGroup(const FontFamilyList& aFontFamilyList,
       mDevToCssSize(aDevToCssSize),
       mUserFontSet(aUserFontSet),
       mTextPerf(aTextPerf),
+      mFontMatchingStats(aFontMatchingStats),
       mLastPrefLang(eFontPrefLang_Western),
       mPageLang(gfxPlatformFontList::GetFontPrefLangFor(aStyle->language)),
       mLastPrefFirstFont(false),
@@ -1735,6 +1745,40 @@ void gfxFontGroup::BuildFontList() {
       pfl->AddGenericFonts(name.mGeneric, mStyle.language, fonts);
       if (mTextPerf) {
         mTextPerf->current.genericLookups++;
+      }
+    }
+  }
+
+  if (mFontMatchingStats) {
+    for (const auto& f : fonts) {
+      nsCString key;  // not nsAutoCString, as the assignment to it won't copy
+                      // characters, it'll just share the string buffer
+      FontVisibility visibility;
+      if (f.mFamily.mIsShared) {
+        key = f.mFamily.mShared->Key().AsString(pfl->SharedFontList());
+        visibility = f.mFamily.mShared->Visibility();
+      } else {
+        key = f.mFamily.mUnshared->Name();
+        ToLowerCase(key);
+        visibility = f.mFamily.mUnshared->Visibility();
+      }
+      if (mFontMatchingStats->mFamilyNames.EnsureInserted(key)) {
+        switch (visibility) {
+          case FontVisibility::Base:
+            mFontMatchingStats->mBaseFonts++;
+            break;
+          case FontVisibility::LangPack:
+            mFontMatchingStats->mLangPackFonts++;
+            break;
+          case FontVisibility::User:
+            mFontMatchingStats->mUserFonts++;
+            break;
+          case FontVisibility::Webfont:
+            mFontMatchingStats->mWebFonts++;
+            break;
+          default:
+            break;
+        }
       }
     }
   }
@@ -2119,12 +2163,6 @@ gfxFont* gfxFontGroup::GetFirstMathFont() {
     }
   }
   return nullptr;
-}
-
-gfxFontGroup* gfxFontGroup::Copy(const gfxFontStyle* aStyle) {
-  gfxFontGroup* fg = new gfxFontGroup(mFamilyList, aStyle, mTextPerf,
-                                      mUserFontSet, mDevToCssSize);
-  return fg;
 }
 
 bool gfxFontGroup::IsInvalidChar(uint8_t ch) {
@@ -2652,6 +2690,9 @@ void gfxFontGroup::InitScriptRun(DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
             index++;
             if (!mSkipDrawing && !IsPUA(usv)) {
               missingChars = true;
+              if (mFontMatchingStats) {
+                mFontMatchingStats->mFallbacks |= FallbackTypes::MissingFont;
+              }
             }
             continue;
           }
@@ -2685,6 +2726,9 @@ void gfxFontGroup::InitScriptRun(DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
         aTextRun->SetMissingGlyph(aOffset + index, ch, mainFont);
         if (!mSkipDrawing && !IsPUA(ch)) {
           missingChars = true;
+          if (mFontMatchingStats) {
+            mFontMatchingStats->mFallbacks |= FallbackTypes::MissingFont;
+          }
         }
       }
     }
@@ -2809,9 +2853,19 @@ gfxFont* gfxFontGroup::FindFontForChar(uint32_t aCh, uint32_t aPrevCh,
   // If the char is a cluster extender, we want to use the same font as the
   // preceding character if possible. This is preferable to using the font
   // group because it avoids breaks in shaping within a cluster.
-  if (aPrevMatchedFont && IsClusterExtender(aCh) &&
-      aPrevMatchedFont->HasCharacter(aCh)) {
-    return aPrevMatchedFont;
+  if (aPrevMatchedFont && IsClusterExtender(aCh)) {
+    if (aPrevMatchedFont->HasCharacter(aCh)) {
+      return aPrevMatchedFont;
+    }
+    // Get the singleton NFC normalizer; this does not need to be deleted.
+    static UErrorCode err = U_ZERO_ERROR;
+    static const UNormalizer2* nfc = unorm2_getNFCInstance(&err);
+    // Check if this char and preceding char can compose; if so, is the
+    // combination supported by the current font.
+    int32_t composed = unorm2_composePair(nfc, aPrevCh, aCh);
+    if (composed > 0 && aPrevMatchedFont->HasCharacter(composed)) {
+      return aPrevMatchedFont;
+    }
   }
 
   // Special cases for NNBSP (as used in Mongolian):
@@ -3375,28 +3429,29 @@ gfxFont* gfxFontGroup::WhichPrefFontSupportsChar(uint32_t aCh,
       }
 
       // if ch in cmap, create and return a gfxFont
+      gfxFont* prefFont = nullptr;
       if (fe->HasCharacter(aCh)) {
-        gfxFont* prefFont = fe->FindOrMakeFont(&mStyle);
+        prefFont = fe->FindOrMakeFont(&mStyle);
         if (!prefFont) {
           continue;
         }
-        mLastPrefFamily = family;
-        mLastPrefFont = prefFont;
-        mLastPrefLang = charLang;
-        mLastPrefFirstFont = (i == 0 && j == 0);
-        return prefFont;
       }
 
       // If the char was not available, see if we can fall back to an
       // alternative face in the same family.
-      gfxFont* prefFont = family.mIsShared
-                              ? FindFallbackFaceForChar(family.mShared, aCh)
-                              : FindFallbackFaceForChar(family.mUnshared, aCh);
+      if (!prefFont) {
+        prefFont = family.mIsShared
+                       ? FindFallbackFaceForChar(family.mShared, aCh)
+                       : FindFallbackFaceForChar(family.mUnshared, aCh);
+      }
       if (prefFont) {
         mLastPrefFamily = family;
         mLastPrefFont = prefFont;
         mLastPrefLang = charLang;
         mLastPrefFirstFont = (i == 0 && j == 0);
+        if (mFontMatchingStats) {
+          mFontMatchingStats->mFallbacks |= FallbackTypes::FallbackToPrefsFont;
+        }
         return prefFont;
       }
     }
@@ -3408,10 +3463,38 @@ gfxFont* gfxFontGroup::WhichPrefFontSupportsChar(uint32_t aCh,
 gfxFont* gfxFontGroup::WhichSystemFontSupportsChar(uint32_t aCh,
                                                    uint32_t aNextCh,
                                                    Script aRunScript) {
+  FontVisibility visibility;
   gfxFontEntry* fe =
       gfxPlatformFontList::PlatformFontList()->SystemFindFontForChar(
-          aCh, aNextCh, aRunScript, &mStyle);
+          aCh, aNextCh, aRunScript, &mStyle, &visibility, mFontMatchingStats);
   if (fe) {
+    if (mFontMatchingStats) {
+      switch (visibility) {
+        case FontVisibility::Unknown:
+          // We don't currently track stats for systems lacking font visibility
+          // categories, so just ignore this.
+          break;
+        case FontVisibility::Base:
+          mFontMatchingStats->mFallbacks |= FallbackTypes::FallbackToBaseFont;
+          break;
+        case FontVisibility::LangPack:
+          mFontMatchingStats->mFallbacks |=
+              FallbackTypes::FallbackToLangPackFont;
+          break;
+        case FontVisibility::User:
+          mFontMatchingStats->mFallbacks |= FallbackTypes::FallbackToUserFont;
+          break;
+        case FontVisibility::Hidden:
+          // If macOS font fallback uses the system font, we consider this a
+          // base OS font even though it wouldn't be exposed via font-family.
+          mFontMatchingStats->mFallbacks |= FallbackTypes::FallbackToBaseFont;
+          break;
+        case FontVisibility::Webfont:
+        default:
+          MOZ_ASSERT_UNREACHABLE("this can't happen!");
+          break;
+      }
+    }
     return fe->FindOrMakeFont(&mStyle);
   }
 

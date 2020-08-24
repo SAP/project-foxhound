@@ -42,7 +42,7 @@ class WptrunnerHelpAction(argparse.Action):
 def create_parser():
     from wptrunner import wptcommandline
 
-    parser = argparse.ArgumentParser(add_help=False)
+    parser = argparse.ArgumentParser(add_help=False, parents=[install.channel_args])
     parser.add_argument("product", action="store",
                         help="Browser to run tests in")
     parser.add_argument("--affected", action="store", default=None,
@@ -52,15 +52,6 @@ def create_parser():
     parser.add_argument("--install-browser", action="store_true",
                         help="Install the browser from the release channel specified by --channel "
                         "(or the nightly channel by default).")
-    parser.add_argument("--channel", action="store",
-                        choices=install.channel_by_name.keys(),
-                        default=None, help='Name of browser release channel. '
-                        '"stable" and "release" are synonyms for the latest browser stable '
-                        'release, "nightly", "dev", "experimental", and "preview" are all '
-                        'synonyms for the latest available development release. (For WebDriver '
-                        'installs, we attempt to select an appropriate, compatible version for '
-                        'the latest browser release on the selected channel.) '
-                        'This flag overrides --browser-channel.')
     parser._add_container_actions(wptcommandline.create_parser())
     return parser
 
@@ -156,11 +147,10 @@ class BrowserSetup(object):
     name = None
     browser_cls = None
 
-    def __init__(self, venv, prompt=True, sub_product=None):
+    def __init__(self, venv, prompt=True):
         self.browser = self.browser_cls(logger)
         self.venv = venv
         self.prompt = prompt
-        self.sub_product = sub_product
 
     def prompt_install(self, component):
         if not self.prompt:
@@ -183,6 +173,7 @@ class BrowserSetup(object):
     def setup(self, kwargs):
         self.setup_kwargs(kwargs)
 
+
 def safe_unsetenv(env_var):
     """Safely remove an environment variable.
 
@@ -193,6 +184,7 @@ def safe_unsetenv(env_var):
         del os.environ[env_var]
     except KeyError:
         pass
+
 
 class Firefox(BrowserSetup):
     name = "firefox"
@@ -265,11 +257,6 @@ class FirefoxAndroid(BrowserSetup):
     name = "firefox_android"
     browser_cls = browser.FirefoxAndroid
 
-    def install(self, channel):
-        # The install needs to happen in setup so that we have access to all the kwargs
-        self._install_browser = True
-        return None
-
     def setup_kwargs(self, kwargs):
         from . import android
         import mozdevice
@@ -296,13 +283,6 @@ class FirefoxAndroid(BrowserSetup):
             emulator = android.install(logger, reinstall=False, no_prompt=not self.prompt)
             android.start(logger, emulator=emulator, reinstall=False)
 
-        install = False
-        if hasattr(self, "_install_browser"):
-            if self.prompt_install("geckoview-test"):
-                install = True
-                apk_path = self.browser.install(self.venv.path,
-                                                channel=kwargs["browser_channel"])
-
         if "ADB_PATH" not in os.environ:
             adb_path = os.path.join(android.get_sdk_path(None),
                                     "platform-tools",
@@ -310,12 +290,12 @@ class FirefoxAndroid(BrowserSetup):
             os.environ["ADB_PATH"] = adb_path
         adb_path = os.environ["ADB_PATH"]
 
-        device = mozdevice.ADBDevice(adb=adb_path,
-                                     device=kwargs["device_serial"])
+        device = mozdevice.ADBDeviceFactory(adb=adb_path,
+                                            device=kwargs["device_serial"])
 
-        if install:
+        if self.browser.apk_path:
             device.uninstall_app(app)
-            device.install_app(apk_path)
+            device.install_app(self.browser.apk_path)
         elif not device.is_app_installed(app):
             raise WptrunError("app %s not installed on device %s" %
                               (app, kwargs["device_serial"]))
@@ -588,8 +568,10 @@ class Sauce(BrowserSetup):
         raise NotImplementedError
 
     def setup_kwargs(self, kwargs):
-        kwargs.set_if_none("sauce_browser", self.sub_product[0])
-        kwargs.set_if_none("sauce_version", self.sub_product[1])
+        if kwargs["sauce_browser"] is None:
+            raise WptrunError("Missing required argument --sauce-browser")
+        if kwargs["sauce_version"] is None:
+            raise WptrunError("Missing required argument --sauce-version")
         kwargs["test_types"] = ["testharness", "reftest"]
 
 
@@ -719,9 +701,7 @@ def setup_wptrunner(venv, prompt=True, install_browser=False, **kwargs):
 
     kwargs = utils.Kwargs(iteritems(kwargs))
 
-    product_parts = kwargs["product"].split(":")
-    kwargs["product"] = product_parts[0].replace("-", "_")
-    sub_product = product_parts[1:]
+    kwargs["product"] = kwargs["product"].replace("-", "_")
 
     check_environ(kwargs["product"])
     args_general(kwargs)
@@ -729,7 +709,7 @@ def setup_wptrunner(venv, prompt=True, install_browser=False, **kwargs):
     if kwargs["product"] not in product_setup:
         raise WptrunError("Unsupported product %s" % kwargs["product"])
 
-    setup_cls = product_setup[kwargs["product"]](venv, prompt, sub_product)
+    setup_cls = product_setup[kwargs["product"]](venv, prompt)
     setup_cls.install_requirements()
 
     affected_revish = kwargs.pop("affected", None)

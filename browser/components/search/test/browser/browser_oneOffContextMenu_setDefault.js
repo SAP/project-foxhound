@@ -8,7 +8,6 @@ const TEST_ENGINE_NAME = "Foo";
 const TEST_ENGINE_BASENAME = "testEngine.xml";
 const SEARCHBAR_BASE_ID = "searchbar-engine-one-off-item-";
 const URLBAR_BASE_ID = "urlbar-engine-one-off-item-";
-const ONEOFF_URLBAR_PREF = "browser.urlbar.oneOffSearches";
 
 let originalEngine;
 let originalPrivateEngine;
@@ -114,10 +113,6 @@ async function testUrlBarChangeEngine(win, testPrivate, isPrivateWindow) {
   info(
     `Testing urlbar with testPrivate: ${testPrivate} isPrivateWindow: ${isPrivateWindow}`
   );
-  Services.prefs.setBoolPref(ONEOFF_URLBAR_PREF, true);
-  registerCleanupFunction(function() {
-    Services.prefs.clearUserPref(ONEOFF_URLBAR_PREF);
-  });
 
   // Ensure the engine is reset.
   await resetEngines();
@@ -320,11 +315,20 @@ async function openPopupAndGetEngineButton(
     undefined,
     "One-off for test engine should exist"
   );
-  Assert.equal(
-    oneOffButton.getAttribute("tooltiptext"),
-    engineName,
-    "One-off should have the tooltip set to the engine name"
-  );
+  if (isSearch) {
+    Assert.equal(
+      oneOffButton.getAttribute("tooltiptext"),
+      engineName,
+      "One-off should have the tooltip set to the engine name"
+    );
+  } else {
+    let aliases = UrlbarSearchUtils.aliasesForEngine(oneOffButton.engine);
+    Assert.equal(
+      oneOffButton.getAttribute("tooltiptext"),
+      engineName + (aliases.length ? ` (${aliases[0]})` : ""),
+      "One-off should have the tooltip set to the engine name"
+    );
+  }
   Assert.equal(
     oneOffButton.id,
     baseId + engineName,

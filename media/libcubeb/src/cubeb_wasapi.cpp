@@ -89,6 +89,9 @@ DEFINE_PROPERTYKEY(PKEY_Device_InstanceId,      0x78c34fc8, 0x104a, 0x4aca, 0x9e
 #endif
 
 namespace {
+
+const int64_t LATENCY_NOT_AVAILABLE_YET = -1;
+
 struct com_heap_ptr_deleter {
   void operator()(void * ptr) const noexcept {
     CoTaskMemFree(ptr);
@@ -211,6 +214,7 @@ struct cubeb {
   /* Collection changed for output (render) devices. */
   cubeb_device_collection_changed_callback output_collection_changed_callback = nullptr;
   void * output_collection_changed_user_ptr = nullptr;
+  UINT64 performance_counter_frequency;
 };
 
 class wasapi_endpoint_notification_client;
@@ -334,6 +338,9 @@ struct cubeb_stream {
   std::atomic<std::atomic<bool>*> emergency_bailout { nullptr };
   /* Synchronizes render thread start to ensure safe access to emergency_bailout. */
   HANDLE thread_ready_event = 0;
+  /* This needs an active audio input stream to be known, and is updated in the
+   * first audio input callback. */
+  std::atomic<int64_t> input_latency_hns { LATENCY_NOT_AVAILABLE_YET };
 };
 
 class monitor_device_notifications {
@@ -346,13 +353,14 @@ public:
 
   ~monitor_device_notifications()
   {
-    SetEvent(shutdown);
-    WaitForSingleObject(thread, INFINITE);
+    SetEvent(begin_shutdown);
+    WaitForSingleObject(shutdown_complete, INFINITE);
     CloseHandle(thread);
 
     CloseHandle(input_changed);
     CloseHandle(output_changed);
-    CloseHandle(shutdown);
+    CloseHandle(begin_shutdown);
+    CloseHandle(shutdown_complete);
   }
 
   void notify(EDataFlow flow)
@@ -377,8 +385,9 @@ private:
   thread_proc(LPVOID args)
   {
     XASSERT(args);
-    static_cast<monitor_device_notifications*>(args)
-      ->notification_thread_loop();
+    auto mdn = static_cast<monitor_device_notifications*>(args);
+    mdn->notification_thread_loop();
+    SetEvent(mdn->shutdown_complete);
     return 0;
   }
 
@@ -397,7 +406,7 @@ private:
     HANDLE wait_array[3] = {
       input_changed,
       output_changed,
-      shutdown,
+      begin_shutdown,
     };
 
     while (true) {
@@ -435,9 +444,15 @@ private:
       return;
     }
 
-    shutdown = CreateEvent(nullptr, 0, 0, nullptr);
-    if (!shutdown) {
-      LOG("Failed to create shutdown event.");
+    begin_shutdown = CreateEvent(nullptr, 0, 0, nullptr);
+    if (!begin_shutdown) {
+      LOG("Failed to create begin_shutdown event.");
+      return;
+    }
+
+    shutdown_complete = CreateEvent(nullptr, 0, 0, nullptr);
+    if (!shutdown_complete) {
+      LOG("Failed to create shutdown_complete event.");
       return;
     }
 
@@ -456,7 +471,8 @@ private:
   HANDLE thread = INVALID_HANDLE_VALUE;
   HANDLE output_changed = INVALID_HANDLE_VALUE;
   HANDLE input_changed = INVALID_HANDLE_VALUE;
-  HANDLE shutdown = INVALID_HANDLE_VALUE;
+  HANDLE begin_shutdown = INVALID_HANDLE_VALUE;
+  HANDLE shutdown_complete = INVALID_HANDLE_VALUE;
 
   cubeb * cubeb_context = nullptr;
 };
@@ -847,6 +863,7 @@ bool get_input_buffer(cubeb_stream * stm)
   BYTE * input_packet = NULL;
   DWORD flags;
   UINT64 dev_pos;
+  UINT64 pc_position;
   UINT32 next;
   /* Get input packets until we have captured enough frames, and put them in a
    * contiguous buffer. */
@@ -876,12 +893,24 @@ bool get_input_buffer(cubeb_stream * stm)
                                         &frames,
                                         &flags,
                                         &dev_pos,
-                                        NULL);
+                                        &pc_position);
+
     if (FAILED(hr)) {
       LOG("GetBuffer failed for capture: %lx", hr);
       return false;
     }
     XASSERT(frames == next);
+
+    if (stm->context->performance_counter_frequency) {
+      LARGE_INTEGER now;
+      UINT64 now_hns;
+      // See https://docs.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudiocaptureclient-getbuffer, section "Remarks".
+      QueryPerformanceCounter(&now);
+      now_hns = 10000000 * now.QuadPart / stm->context->performance_counter_frequency;
+      if (now_hns >= pc_position) {
+        stm->input_latency_hns = now_hns - pc_position;
+      }
+    }
 
     UINT32 input_stream_samples = frames * stm->input_stream_params.channels;
     // We do not explicitly handle the AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY
@@ -1450,8 +1479,7 @@ current_stream_delay(cubeb_stream * stm)
 
   double cur_pos = static_cast<double>(pos) / freq;
   double max_pos = static_cast<double>(stm->frames_written)  / stm->output_mix_params.rate;
-  double delay = max_pos - cur_pos;
-  XASSERT(delay >= 0);
+  double delay = std::max(max_pos - cur_pos, 0.0);
 
   return delay;
 }
@@ -1516,6 +1544,14 @@ int wasapi_init(cubeb ** context, char const * context_name)
   if (cubeb_strings_init(&ctx->device_ids) != CUBEB_OK) {
     delete ctx;
     return CUBEB_ERROR;
+  }
+
+  LARGE_INTEGER frequency;
+  if (QueryPerformanceFrequency(&frequency)) {
+    ctx->performance_counter_frequency = frequency.QuadPart;
+  } else {
+    LOG("Failed getting performance counter frequency, latency reporting will be inacurate");
+    ctx->performance_counter_frequency = 0;
   }
 
   *context = ctx;
@@ -1741,17 +1777,18 @@ handle_channel_layout(cubeb_stream * stm,  EDataFlow direction, com_heap_ptr<WAV
   waveformatex_update_derived_properties(mix_format.get());
 
   /* Check if wasapi will accept our channel layout request. */
-  WAVEFORMATEX * closest;
+  WAVEFORMATEX * tmp = nullptr;
   HRESULT hr = audio_client->IsFormatSupported(AUDCLNT_SHAREMODE_SHARED,
                                                mix_format.get(),
-                                               &closest);
+                                               &tmp);
+  com_heap_ptr<WAVEFORMATEX> closest(tmp);
   if (hr == S_FALSE) {
     /* Channel layout not supported, but WASAPI gives us a suggestion. Use it,
        and handle the eventual upmix/downmix ourselves. Ignore the subformat of
        the suggestion, since it seems to always be IEEE_FLOAT. */
     LOG("Using WASAPI suggested format: channels: %d", closest->nChannels);
     XASSERT(closest->wFormatTag == WAVE_FORMAT_EXTENSIBLE);
-    WAVEFORMATEXTENSIBLE * closest_pcm = reinterpret_cast<WAVEFORMATEXTENSIBLE *>(closest);
+    WAVEFORMATEXTENSIBLE * closest_pcm = reinterpret_cast<WAVEFORMATEXTENSIBLE *>(closest.get());
     format_pcm->dwChannelMask = closest_pcm->dwChannelMask;
     mix_format->nChannels = closest->nChannels;
     waveformatex_update_derived_properties(mix_format.get());
@@ -1921,14 +1958,18 @@ int setup_wasapi_stream_one_side(cubeb_stream * stm,
 
     /* Get a client. We will get all other interfaces we need from
      * this pointer. */
-    // hr = device->Activate(__uuidof(IAudioClient3),
-    //                       CLSCTX_INPROC_SERVER,
-    //                       NULL, audio_client.receive_vpp());
-    // if (hr == E_NOINTERFACE) {
+#if 0 // See https://bugzilla.mozilla.org/show_bug.cgi?id=1590902
+    hr = device->Activate(__uuidof(IAudioClient3),
+                          CLSCTX_INPROC_SERVER,
+                          NULL, audio_client.receive_vpp());
+    if (hr == E_NOINTERFACE) {
+#endif
       hr = device->Activate(__uuidof(IAudioClient),
                             CLSCTX_INPROC_SERVER,
                             NULL, audio_client.receive_vpp());
-    //}
+#if 0
+    }
+#endif
 
     if (FAILED(hr)) {
       LOG("Could not activate the device to get an audio"
@@ -1994,16 +2035,20 @@ int setup_wasapi_stream_one_side(cubeb_stream * stm,
     flags |= AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
   }
 
-  // if (initialize_iaudioclient3(audio_client, stm, mix_format, flags, direction)) {
-  //   LOG("Initialized with IAudioClient3");
-  // } else {
+#if 0 // See https://bugzilla.mozilla.org/show_bug.cgi?id=1590902
+  if (initialize_iaudioclient3(audio_client, stm, mix_format, flags, direction)) {
+    LOG("Initialized with IAudioClient3");
+  } else {
+#endif
     hr = audio_client->Initialize(AUDCLNT_SHAREMODE_SHARED,
                                   flags,
                                   frames_to_hns(stm, stm->latency),
                                   0,
                                   mix_format.get(),
                                   NULL);
-  // }
+#if 0
+  }
+#endif
   if (FAILED(hr)) {
     LOG("Unable to initialize audio client for %s: %lx.", DIRECTION_NAME, hr);
     return CUBEB_ERROR;
@@ -2592,7 +2637,34 @@ int wasapi_stream_get_latency(cubeb_stream * stm, uint32_t * latency)
   if (FAILED(hr)) {
     return CUBEB_ERROR;
   }
-  *latency = hns_to_frames(stm, latency_hns);
+  // This happens on windows 10: no error, but always 0 for latency.
+  if (latency_hns == 0) {
+     double delay_s = current_stream_delay(stm);
+     // convert to sample-frames
+     *latency = delay_s * stm->output_stream_params.rate;
+  } else {
+     *latency = hns_to_frames(stm, latency_hns);
+  }
+
+  return CUBEB_OK;
+}
+
+
+int wasapi_stream_get_input_latency(cubeb_stream * stm, uint32_t * latency)
+{
+  XASSERT(stm && latency);
+
+  if (!has_input(stm)) {
+    return CUBEB_ERROR;
+  }
+
+  auto_lock lock(stm->stream_reset_lock);
+
+  if (stm->input_latency_hns == LATENCY_NOT_AVAILABLE_YET) {
+    return CUBEB_ERROR;
+  }
+
+  *latency = hns_to_frames(stm, stm->input_latency_hns);
 
   return CUBEB_OK;
 }
@@ -2956,6 +3028,7 @@ cubeb_ops const wasapi_ops = {
   /*.stream_reset_default_device =*/ wasapi_stream_reset_default_device,
   /*.stream_get_position =*/ wasapi_stream_get_position,
   /*.stream_get_latency =*/ wasapi_stream_get_latency,
+  /*.stream_get_input_latency =*/ wasapi_stream_get_input_latency,
   /*.stream_set_volume =*/ wasapi_stream_set_volume,
   /*.stream_get_current_device =*/ NULL,
   /*.stream_device_destroy =*/ NULL,

@@ -10,7 +10,7 @@
 
 .panel-info-button {
   border-radius: var(--toolbarbutton-border-radius);
-  margin-right: 4px;
+  margin-inline-end: 4px;
 }
 
 .panel-info-button[disabled=true] {
@@ -31,7 +31,7 @@
 }
 
 .panel-info-button > image {
-  list-style-image: url(chrome://browser/skin/identity-icon.svg);
+  list-style-image: url(chrome://global/skin/icons/identity-icon.svg);
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
   fill-opacity: var(--toolbarbutton-icon-fill-opacity);
@@ -41,7 +41,7 @@
 #editBookmarkPanelInfoArea {
   overflow: hidden;
   position: relative;
-  margin: 6px 8px 0 8px;
+  margin: 6px 8px 0;
 }
 
 #editBookmarkPanelRecommendation {
@@ -87,7 +87,7 @@
 }
 
 #editBookmarkPanelRecommendationCta {
-  -moz-appearance: none;
+  appearance: none;
   background: transparent;
   border: none;
   color: inherit;
@@ -107,8 +107,7 @@
   display: flex;
   justify-content: space-between;
   align-items: start;
-  margin-bottom: 6px;
-  margin-top: 10px;
+  margin-block: 10px 6px;
   padding-top: 2px;
 }
 

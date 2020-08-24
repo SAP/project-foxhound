@@ -368,6 +368,9 @@ restart:
     case ParseNodeKind::AssignExpr:
     case ParseNodeKind::AddAssignExpr:
     case ParseNodeKind::SubAssignExpr:
+    case ParseNodeKind::CoalesceAssignExpr:
+    case ParseNodeKind::OrAssignExpr:
+    case ParseNodeKind::AndAssignExpr:
     case ParseNodeKind::BitOrAssignExpr:
     case ParseNodeKind::BitXorAssignExpr:
     case ParseNodeKind::BitAndAssignExpr:
@@ -546,8 +549,7 @@ static bool SimplifyCondition(JSContext* cx, FullParseHandler* handler,
   // constant-folded.
 
   ParseNode* node = *nodePtr;
-  Truthiness t = Boolish(node);
-  if (t != Unknown) {
+  if (Truthiness t = Boolish(node); t != Unknown) {
     // We can turn function nodes into constant nodes here, but mutating
     // function nodes is tricky --- in particular, mutating a function node
     // that appears on a method list corrupts the method list. However,
@@ -767,7 +769,10 @@ static bool FoldAndOrCoalesce(JSContext* cx, ParseNode** nodePtr) {
   // its element.
   if (node->count() == 1) {
     ParseNode* first = node->head();
-    ReplaceNode(nodePtr, first);
+    if (!TryReplaceNode(nodePtr, first)) {
+      ;
+      return false;
+    }
   }
 
   return true;

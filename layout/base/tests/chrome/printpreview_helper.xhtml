@@ -16,6 +16,7 @@ var is = window.arguments[0].is;
 var isnot = window.arguments[0].isnot;
 var ok = window.arguments[0].ok;
 var todo = window.arguments[0].todo;
+var info = window.arguments[0].info;
 var SimpleTest = window.arguments[0].SimpleTest;
 var gWbp;
 var ctx1;
@@ -27,45 +28,64 @@ var file = Cc["@mozilla.org/file/directory_service;1"]
              .get("TmpD", Ci.nsIFile);
 filePath = file.path;
 
-function printpreview(hasMozPrintCallback) {
+function printpreview(options = {}) {
   gWbp = frameElts[1].docShell.initOrReusePrintPreviewViewer();
+  let resolve;
+  let promise = new Promise(r => { resolve = r });
   var listener = {
     onLocationChange: function(webProgress, request, location, flags) { },
-    onProgressChange: function(webProgress, request, curSelfProgress, 
+    onProgressChange: function(webProgress, request, curSelfProgress,
                                maxSelfProgress, curTotalProgress,
-                               maxTotalProgress) { },
+                               maxTotalProgress) {
+      info("onProgressChange", [...arguments].join(", "));
+    },
     onSecurityChange: function(webProgress, request, state) { },
-    onStateChange: function(webProgress, request, stateFlags, status) { },
-    onStatusChange: function(webProgress, request, status, message) { },
-    onContentBlockingEvent: function(webProgress, request, event) { },
+    onStateChange: function(webProgress, request, stateFlags, status) {
+      info("onStateChange", [...arguments].join(", "));
+      if (stateFlags & Ci.nsIWebProgressListener.STATE_STOP) {
+        setTimeout(resolve, 0);
+      }
+    },
+    onStatusChange: function(webProgress, request, status, message) {
+      info("onStatusChange", [...arguments].join(", "));
+    },
+    onContentBlockingEvent: function(webProgress, request, event) {
+      info("onContentBlockingEvent", [...arguments].join(", "));
+    },
     QueryInterface: function(iid) {
       if (iid.equals(Ci.nsIWebProgressListener) ||
           iid.equals(Ci.nsISupportsWeakReference))
             return this;
-      throw Cr.NS_NOINTERFACE;
+      throw Components.Exception("", Cr.NS_NOINTERFACE);
     }
   }
-  var prefs = Cc["@mozilla.org/preferences-service;1"]
-                .getService(Ci.nsIPrefBranch);
-  prefs.setBoolPref('print.show_print_progress', false);
-  //XXX I would have thought this would work, instead I'm forced to use prefs service
-  gWbp.globalPrintSettings.showPrintProgress = false;
+  var settings = Cc["@mozilla.org/gfx/printsettings-service;1"]
+                       .getService(Ci.nsIPrintSettingsService).globalPrintSettings;
+  settings.showPrintProgress = false;
+  settings.printBGColors = true;
+  settings.headerStrLeft = "";
+  settings.headerStrRight = "";
+  if (options.settings) {
+    for (let key in options.settings) {
+      settings[key] = options.settings[key];
+    }
+  }
   var before = 0;
   var after = 0;
   function beforeprint() { ++before; }
   function afterprint() { ++after; }
   frameElts[0].contentWindow.addEventListener("beforeprint", beforeprint, true);
   frameElts[0].contentWindow.addEventListener("afterprint", afterprint, true);
-  gWbp.printPreview(gWbp.globalPrintSettings, frameElts[0].contentWindow, listener);
+  gWbp.printPreview(settings, frameElts[0].contentWindow, listener);
   is(before, 1, "Should have called beforeprint listener!");
-  if (!hasMozPrintCallback) {
+  if (!options.hasMozPrintCallback) {
     // If there's a mozPrintCallback the after print event won't fire until
     // later.
     is(after, 1, "Should have called afterprint listener!");
   }
   frameElts[0].contentWindow.removeEventListener("beforeprint", beforeprint, true);
   frameElts[0].contentWindow.removeEventListener("afterprint", afterprint, true);
-  prefs.clearUserPref('print.show_print_progress');
+  return promise;
 }
 
 function exitprintpreview() {
@@ -82,16 +102,7 @@ function runTests()
   var printService = Cc["@mozilla.org/gfx/printsettings-service;1"]
                        .getService(Ci.nsIPrintSettingsService);
 
-  try {
-    Cc["@mozilla.org/gfx/printerenumerator;1"]
-      .getService(Ci.nsIPrinterEnumerator);
-  } catch(e) {
-    todo(false, "Test skipped on MacOSX, as the print preview code doesn't work there");
-    finish();
-    return;
-  }
-
-  if (printService.defaultPrinterName != '') {
+  if (printService.lastUsedPrinterName != '') {
     startTest1();
   } else {
     todo(false, "No printer seems installed on this machine, that is necessary for this test");
@@ -99,11 +110,20 @@ function runTests()
   }
 }
 
-function compareCanvases() {
-  return window.windowUtils
-               .compareCanvases(document.getElementsByTagName("canvas")[0],
-                                document.getElementsByTagName("canvas")[1],
-                                {}) == 0;
+function compareCanvases(options = {}) {
+  const canvas1 = document.getElementsByTagName("canvas")[0];
+  const canvas2 = document.getElementsByTagName("canvas")[1];
+  let maxDifference = {};
+  const differingPixels = window.windowUtils.compareCanvases(canvas1, canvas2, maxDifference);
+  if (differingPixels) {
+    todo(false, "different: " + differingPixels + ", maxDifference: " + maxDifference.value);
+    todo(false, "TEST CASE: " + canvas1.toDataURL());
+    todo(false, "REFERENCE: " + canvas2.toDataURL());
+  }
+
+  let maxAllowedDifferent = options.maxDifferent || 0;
+  let maxAllowedDifference = options.maxDifference || 0;
+  return differingPixels <= maxAllowedDifferent && maxDifference.value <= maxAllowedDifference;
 }
 
 function addHTMLContent(parent) {
@@ -131,7 +151,7 @@ function startTest1() {
   frameElts[0].contentWindow.setTimeout(frameElts[0].contentWindow.counterTimeout, 0);
   frameElts[0].contentDocument.body.firstChild.innerHTML = "Print preview";
 
-  printpreview();
+  let ppfinished = printpreview();
   ctx1.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(256,256,256)");
   frameElts[0].contentDocument.body.firstChild.innerHTML = "Galley presentation";
 
@@ -142,10 +162,13 @@ function startTest1() {
   // And readd.
   addHTMLContent(frameElts[0].contentDocument.body.lastChild);
 
-  setTimeout(finalizeTest1, 1000);
+  setTimeout(function() {
+    finalizeTest1(ppfinished)
+  }, 1000);
 }
 
-function finalizeTest1() {
+async function finalizeTest1(ppfinished) {
+  await ppfinished;
   ctx2.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(256,256,256)");
   exitprintpreview();
   ok(compareCanvases(), "Canvas should be the same!");
@@ -211,17 +234,17 @@ function runTest3() {
   setTimeout(runTest4, 0)
 }
 
-function compareFormElementPrint(el1, el2, equals) {
+async function compareFormElementPrint(el1, el2, equals) {
   frameElts[0].contentDocument.body.innerHTML = el1;
   frameElts[0].contentDocument.body.firstChild.value =
     frameElts[0].contentDocument.body.firstChild.getAttribute('value');
-  printpreview();
+  await printpreview();
   ctx1.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(256,256,256)");
   exitprintpreview();
   frameElts[0].contentDocument.body.innerHTML = el2;
   frameElts[0].contentDocument.body.firstChild.value =
     frameElts[0].contentDocument.body.firstChild.getAttribute('value');
-  printpreview();
+  await printpreview();
   ctx2.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(256,256,256)");
   exitprintpreview();
   is(compareCanvases(), equals,
@@ -236,19 +259,19 @@ function runTest4() {
   setTimeout(runTest4end, 500);
 }
 
-function runTest4end() {
-  printpreview();
+async function runTest4end() {
+  await printpreview();
   exitprintpreview();
 
   runTest5();
 }
 
 // This is a crash test for bug 595337
-function runTest5() {
+async function runTest5() {
   frameElts[0].contentDocument.body.innerHTML =
     '<iframe style="position: fixed; visibility: hidden; bottom: 10em;"></iframe>' +
     '<input contenteditable="true" style="display: table; page-break-before: left; width: 10000px;">';
-  printpreview();
+  await printpreview();
   exitprintpreview();
 
   setTimeout(runTest6, 0);
@@ -263,28 +286,28 @@ function runTest6() {
   setTimeout(runTest6end, 500);
 }
 
-function runTest6end() {
-  printpreview();
+async function runTest6end() {
+  await printpreview();
   exitprintpreview();
 
   requestAnimationFrame(function() { setTimeout(runTest7); } );
 }
 
-function runTest7() {
+async function runTest7() {
   var contentText = "<a href='#'>mozilla</a><input>test<select><option>option1</option></select>";
   // Create normal content
   frameElts[0].contentDocument.body.innerHTML =
     "<div>" + contentText + "</div>";
   frameElts[0].contentDocument.body.firstChild.value =
     frameElts[0].contentDocument.body.firstChild.getAttribute('value');
-  printpreview();
+  await printpreview();
   ctx1.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(255,255,255)");
   exitprintpreview();
 
   frameElts[0].contentDocument.body.innerHTML = "<div></div>";
   var sr = frameElts[0].contentDocument.body.firstChild.attachShadow({mode: "open"});
   sr.innerHTML = contentText;
-  printpreview();
+  await printpreview();
   ctx2.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(255,255,255)");
   exitprintpreview();
   ok(compareCanvases(), "Printing light DOM and shadow DOM should create same output");
@@ -301,7 +324,7 @@ async function runTest8() {
     iframeElement.addEventListener("load", resolve, { capture: true, once: true });
     iframeElement.setAttribute("src", "printpreview_font_api_ref.html");
   });
-  printpreview();
+  await printpreview();
   ctx1.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(255,255,255)");
   exitprintpreview();
 
@@ -310,7 +333,7 @@ async function runTest8() {
     iframeElement.addEventListener("message", resolve, { capture: true, once: true });
     iframeElement.setAttribute("src", "printpreview_font_api.html");
   });
-  printpreview();
+  await printpreview();
   ctx2.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(255,255,255)");
   exitprintpreview();
   ok(compareCanvases(), "Printing pages with fonts loaded from CSS and JS should be the same.");
@@ -326,7 +349,7 @@ async function runTest9() {
     </svg>
   `;
 
-  printpreview();
+  await printpreview();
   ctx1.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(255,255,255)");
   exitprintpreview();
 
@@ -348,7 +371,7 @@ async function runTest9() {
   // Ensure the <use> shadow tree is created so we test what we want to test.
   frameElts[0].contentDocument.body.offsetTop;
 
-  printpreview();
+  await printpreview();
   ctx2.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(255,255,255)");
   exitprintpreview();
   ok(compareCanvases(), "Printing <use> subtrees should create same output");
@@ -370,7 +393,7 @@ async function runTest10() {
   let mozPrintCallbackDone = new Promise((resolve) => {
     iframeElement.addEventListener("message", resolve, { capture: true, once: true });
   });
-  printpreview(true);
+  await printpreview({ hasMozPrintCallback: true });
   await mozPrintCallbackDone;
   ctx1.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(255,255,255)");
   exitprintpreview();
@@ -383,7 +406,7 @@ async function runTest10() {
   mozPrintCallbackDone = new Promise((resolve) => {
     iframeElement.addEventListener("message", resolve, { capture: true, once: true });
   });
-  printpreview(true);
+  await printpreview({ hasMozPrintCallback: true });
   // Wait for the mozprintcallback to finish.
   await mozPrintCallbackDone;
   ctx2.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(255,255,255)");
@@ -394,26 +417,43 @@ async function runTest10() {
   requestAnimationFrame(function() { setTimeout(runTest11); } );
 }
 
-async function compareFiles(src1, src2) {
+async function compareFiles(src1, src2, options = {}) {
+  const BASE = "https://example.org/chrome/layout/base/tests/chrome/";
+
+  info(`Comparing ${src1} with ${src2}`);
   const iframeElement = document.getElementsByTagName("iframe")[0];
+
+  let messagePromise = null;
+  if (options.waitForMessage) {
+    messagePromise = new Promise(resolve => {
+      iframeElement.addEventListener("message", resolve, { capture: true, once: true });
+    });
+  }
+
   await new Promise((resolve) => {
     iframeElement.addEventListener("load", resolve, { capture: true, once: true });
-    iframeElement.setAttribute("src", src1);
+    iframeElement.setAttribute("src", BASE + src1);
   });
-  printpreview();
+
+  if (messagePromise) {
+    info("awaiting for message to arrive");
+    await messagePromise;
+  }
+
+  await printpreview(options);
   ctx1.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(255,255,255)");
   exitprintpreview();
 
   await new Promise((resolve) => {
     iframeElement.addEventListener("load", resolve, { capture: true, once: true });
-    iframeElement.setAttribute("src", src2);
+    iframeElement.setAttribute("src", BASE + src2);
   });
 
-  printpreview();
+  await printpreview(options);
   ctx2.drawWindow(frameElts[1].contentWindow, 0, 0, 400, 400, "rgb(255,255,255)");
   exitprintpreview();
 
-  ok(compareCanvases(), `Printing ${src1} and ${src2} should produce the same results`);
+  ok(compareCanvases(options), `Printing ${src1} and ${src2} should produce the same results`);
 }
 
 // bug 1567105
@@ -422,17 +462,62 @@ async function runTest11() {
   requestAnimationFrame(function() { setTimeout(runTest12); } );
 }
 
-// Crash test for bug 1615261
+// bug 1621415
 async function runTest12() {
+  await compareFiles("test_document_adopted_styles.html", "test_document_adopted_styles_ref.html");
+  requestAnimationFrame(function() { setTimeout(runTest13); } );
+}
+
+// bug 1621415
+async function runTest13() {
+  await compareFiles("test_shadow_root_adopted_styles.html", "test_shadow_root_adopted_styles_ref.html");
+  requestAnimationFrame(function() { setTimeout(runTest14); } );
+}
+
+// bug 1622322
+async function runTest14() {
+  await compareFiles("test_shared_adopted_styles.html", "test_shared_adopted_styles_ref.html");
+  requestAnimationFrame(function() { setTimeout(runTest15); } );
+}
+
+// Crash test for bug 1615261
+async function runTest15() {
   frameElts[0].contentDocument.body.innerHTML =
-    '<style> div { width: 100px; height: 100px; background-image: url("animated.gif"); } </style>' +
+    '<style>div { width: 100px; height: 100px; background-image: url("animated.gif"); } </style>' +
     '<div>Firefox will crash if you try and print this page</div>';
 
   // XXX Is there a more reliable way to wait for the background-image to load?
   await new Promise(resolve => setTimeout(resolve, 500));
 
-  printpreview();
-  exitprintpreview();
+  await printpreview();
+  await exitprintpreview();
+
+  requestAnimationFrame(function() { setTimeout(runTest16); } );
+}
+
+// Various image tests.
+async function runTest16() {
+  // fuzzy: SVG image in the test pixel-snaps different than <div> in the ref.
+  await compareFiles("printpreview_images.html", "printpreview_images_ref.html", { maxDifferent: 118, maxDifference: 177 });
+  requestAnimationFrame(function() { setTimeout(runTest17); } );
+}
+
+async function runTest17() {
+  // fuzzy: SVG image in the test pixel-snaps different than <div> in the ref.
+  await compareFiles("printpreview_images_sw.html", "printpreview_images_sw_ref.html", { waitForMessage: true, maxDifferent: 118, maxDifference: 177 });
+  requestAnimationFrame(() => setTimeout(runTest18));
+}
+
+async function runTest18() {
+  await compareFiles("printpreview_quirks.html", "printpreview_quirks_ref.html", {
+    settings: {
+      marginTop: 22,
+      marginBottom: 22,
+      marginLeft: 22,
+      marginRight: 22,
+    },
+  });
+
   finish();
 }
 

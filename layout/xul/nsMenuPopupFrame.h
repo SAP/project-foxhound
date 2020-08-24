@@ -13,6 +13,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/gfx/Types.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "nsAtom.h"
 #include "nsGkAtoms.h"
 #include "nsCOMPtr.h"
@@ -157,7 +158,7 @@ class nsXULPopupShownEvent final : public mozilla::Runnable,
   void CancelListener();
 
  protected:
-  virtual ~nsXULPopupShownEvent() {}
+  virtual ~nsXULPopupShownEvent() = default;
 
  private:
   nsCOMPtr<nsIContent> mPopup;
@@ -334,13 +335,13 @@ class nsMenuPopupFrame final : public nsBoxFrame,
 
   void ClearIncrementalString() { mIncrementalString.Truncate(); }
   static bool IsWithinIncrementalTime(DOMTimeStamp time) {
-    return !sTimeoutOfIncrementalSearch ||
-           time - sLastKeyTime <= sTimeoutOfIncrementalSearch;
+    return time - sLastKeyTime <=
+           mozilla::StaticPrefs::ui_menu_incremental_search_timeout();
   }
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override {
-    return MakeFrameName(NS_LITERAL_STRING("MenuPopup"), aResult);
+    return MakeFrameName(u"MenuPopup"_ns, aResult);
   }
 #endif
 
@@ -547,6 +548,14 @@ class nsMenuPopupFrame final : public nsBoxFrame,
   // frame hierarchy, it's needed for Linux/Wayland which demands
   // strict popup windows hierarchy.
   nsIWidget* GetParentMenuWidget();
+#ifdef MOZ_WAYLAND
+  // We need following getters for Wayland for calling gdk_window_move_to_rect
+  nsRect GetAnchorRect() { return mAnchorRect; }
+  int GetPopupAlignment() { return mPopupAlignment; }
+  int GetPopupAnchor() { return mPopupAnchor; }
+  int GetPopupPosition() { return mPosition; }
+  FlipType GetFlipType() { return mFlip; }
+#endif
 
  protected:
   nsString mIncrementalString;  // for incremental typing navigation
@@ -579,7 +588,11 @@ class nsMenuPopupFrame final : public nsBoxFrame,
   int32_t mXPos;
   int32_t mYPos;
   nsIntRect mScreenRect;
-
+  // Used for store rectangle which the popup is going to be anchored to,
+  // we need that for Wayland
+#ifdef MOZ_WAYLAND
+  nsRect mAnchorRect;
+#endif
   // If the panel prefers to "slide" rather than resize, then the arrow gets
   // positioned at this offset (along either the x or y axis, depending on
   // mPosition)
@@ -664,8 +677,6 @@ class nsMenuPopupFrame final : public nsBoxFrame,
 
   static DOMTimeStamp sLastKeyTime;
 
-  // If 0, never timed out.  Otherwise, the value is in milliseconds.
-  static uint32_t sTimeoutOfIncrementalSearch;
 };  // class nsMenuPopupFrame
 
 #endif

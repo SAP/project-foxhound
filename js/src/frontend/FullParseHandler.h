@@ -13,6 +13,7 @@
 #include <cstddef>  // std::nullptr_t
 #include <string.h>
 
+#include "frontend/FunctionSyntaxKind.h"  // FunctionSyntaxKind
 #include "frontend/ParseNode.h"
 #include "frontend/SharedContext.h"
 #include "frontend/Stencil.h"
@@ -29,8 +30,6 @@ class TokenStreamAnyChars;
 enum class SourceKind {
   // We are parsing from a text source (Parser.h)
   Text,
-  // We are parsing from a binary source (BinASTParser.h)
-  Binary,
 };
 
 // Parse handler used when generating a full parse tree for all code which the
@@ -109,11 +108,11 @@ class FullParseHandler {
         lazyInnerFunctionIndex(0),
         lazyClosedOverBindingIndex(0),
         sourceKind_(kind) {
-    // The LazyScript::gcthings() array contains the inner function list
+    // The BaseScript::gcthings() array contains the inner function list
     // followed by the closed-over bindings data. Advance the index for
     // closed-over bindings to the end of the inner functions. The
     // nextLazyInnerFunction / nextLazyClosedOverBinding accessors confirm we
-    // have the expected types. See also: LazyScript::Create.
+    // have the expected types. See also: BaseScript::CreateLazy.
     if (lazyOuterFunction) {
       for (JS::GCCellPtr gcThing : lazyOuterFunction->gcthings()) {
         if (gcThing.is<JSObject>()) {
@@ -132,11 +131,11 @@ class FullParseHandler {
   FOR_EACH_PARSENODE_SUBCLASS(DECLARE_AS)
 #undef DECLARE_AS
 
-  // The FullParseHandler may be used to create nodes for text sources
-  // (from Parser.h) or for binary sources (from BinASTParser.h). In the latter
-  // case, some common assumptions on offsets are incorrect, e.g. in `a + b`,
-  // `a`, `b` and `+` may be stored in any order. We use `sourceKind()`
-  // to determine whether we need to check these assumptions.
+  // The FullParseHandler may be used to create nodes for text sources (from
+  // Parser.h). With previous binary source formats, some common assumptions on
+  // offsets are incorrect, e.g. in `a + b`, `a`, `b` and `+` may be stored in
+  // any order. We use `sourceKind()` to determine whether we need to check
+  // these assumptions.
   SourceKind sourceKind() const { return sourceKind_; }
 
   NameNodeType newName(PropertyName* name, const TokenPos& pos, JSContext* cx) {
@@ -150,6 +149,10 @@ class FullParseHandler {
 
   NameNodeType newObjectLiteralPropertyName(JSAtom* atom, const TokenPos& pos) {
     return new_<NameNode>(ParseNodeKind::ObjectPropertyName, atom, pos);
+  }
+
+  NameNodeType newPrivateName(JSAtom* atom, const TokenPos& pos) {
+    return new_<NameNode>(ParseNodeKind::PrivateName, atom, pos);
   }
 
   NumericLiteralType newNumber(double value, DecimalPoint decimalPoint,
@@ -218,21 +221,6 @@ class FullParseHandler {
 
   RawUndefinedLiteralType newRawUndefinedLiteral(const TokenPos& pos) {
     return new_<RawUndefinedLiteral>(pos);
-  }
-
-  // The Boxer object here is any object that can allocate ObjectBoxes.
-  // Specifically, a Boxer has a .newObjectBox(T) method that accepts a
-  // Rooted<RegExpObject*> argument and returns an ObjectBox*.
-  //
-  // Used only by BinAST now.
-  template <class Boxer>
-  RegExpLiteralType newRegExp(RegExpObject* reobj, const TokenPos& pos,
-                              Boxer& boxer) {
-    ObjectBox* objbox = boxer.newObjectBox(reobj);
-    if (!objbox) {
-      return null();
-    }
-    return new_<RegExpLiteral>(objbox, pos);
   }
 
   RegExpLiteralType newRegExp(RegExpIndex index, const TokenPos& pos) {
@@ -886,6 +874,9 @@ class FullParseHandler {
 
   AssignmentNodeType newAssignment(ParseNodeKind kind, Node lhs, Node rhs) {
     if ((kind == ParseNodeKind::AssignExpr ||
+         kind == ParseNodeKind::CoalesceAssignExpr ||
+         kind == ParseNodeKind::OrAssignExpr ||
+         kind == ParseNodeKind::AndAssignExpr ||
          kind == ParseNodeKind::InitExpr) &&
         lhs->isKind(ParseNodeKind::Name) && !lhs->isInParens()) {
       checkAndSetIsDirectRHSAnonFunction(rhs);
@@ -932,7 +923,8 @@ class FullParseHandler {
            node->isKind(ParseNodeKind::BigIntExpr) ||
            node->isKind(ParseNodeKind::ObjectPropertyName) ||
            node->isKind(ParseNodeKind::StringExpr) ||
-           node->isKind(ParseNodeKind::ComputedName);
+           node->isKind(ParseNodeKind::ComputedName) ||
+           node->isKind(ParseNodeKind::PrivateName);
   }
 
   AssignmentNodeType finishInitializerAssignment(NameNodeType nameNode,
@@ -1022,26 +1014,41 @@ class FullParseHandler {
   MOZ_MUST_USE NodeType setLikelyIIFE(NodeType node) {
     return parenthesize(node);
   }
-  void setInDirectivePrologue(UnaryNodeType exprStmt) {
-    exprStmt->setIsDirectivePrologueMember();
-  }
 
   bool isName(Node node) { return node->isKind(ParseNodeKind::Name); }
 
   bool isArgumentsName(Node node, JSContext* cx) {
     return node->isKind(ParseNodeKind::Name) &&
-           node->as<NameNode>().atom() == cx->names().arguments;
+           node->as<NameNode>().atom() == cx->parserNames().arguments;
   }
 
   bool isEvalName(Node node, JSContext* cx) {
     return node->isKind(ParseNodeKind::Name) &&
-           node->as<NameNode>().atom() == cx->names().eval;
+           node->as<NameNode>().atom() == cx->parserNames().eval;
   }
 
   bool isAsyncKeyword(Node node, JSContext* cx) {
     return node->isKind(ParseNodeKind::Name) &&
            node->pn_pos.begin + strlen("async") == node->pn_pos.end &&
-           node->as<NameNode>().atom() == cx->names().async;
+           node->as<NameNode>().atom() == cx->parserNames().async;
+  }
+
+  bool isPrivateName(Node node) {
+    return node->isKind(ParseNodeKind::PrivateName);
+  }
+
+  bool isPrivateField(Node node) {
+    if (node->isKind(ParseNodeKind::ElemExpr) ||
+        node->isKind(ParseNodeKind::OptionalElemExpr)) {
+      PropertyByValueBase& pbv = node->as<PropertyByValueBase>();
+      if (isPrivateName(&pbv.key())) {
+        return true;
+      }
+    }
+    if (node->isKind(ParseNodeKind::OptionalChain)) {
+      return isPrivateField(node->as<UnaryNode>().kid());
+    }
+    return false;
   }
 
   PropertyName* maybeDottedProperty(Node pn) {
@@ -1078,7 +1085,7 @@ class FullParseHandler {
     // These entries are either JSAtom* or nullptr, so use the 'asCell()'
     // accessor which is faster.
     gc::Cell* cell = gcthings[lazyClosedOverBindingIndex++].asCell();
-    MOZ_ASSERT_IF(cell, cell->is<JSAtom>());
+    MOZ_ASSERT_IF(cell, cell->as<JSString>()->isAtom());
     return static_cast<JSAtom*>(cell);
   }
 };

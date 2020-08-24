@@ -5,25 +5,71 @@
 
 #include "HTMLEditUtils.h"
 
+#include "CSSEditUtils.h"         // for CSSEditUtils
 #include "mozilla/ArrayUtils.h"   // for ArrayLength
 #include "mozilla/Assertions.h"   // for MOZ_ASSERT, etc.
 #include "mozilla/EditAction.h"   // for EditAction
-#include "mozilla/EditorBase.h"   // for EditorBase
+#include "mozilla/EditorBase.h"   // for EditorBase, EditorType
+#include "mozilla/EditorUtils.h"  // for EditorUtils
+#include "mozilla/dom/HTMLAnchorElement.h"
 #include "mozilla/dom/Element.h"  // for Element, nsINode
 #include "nsAString.h"            // for nsAString::IsEmpty
-#include "nsCOMPtr.h"             // for nsCOMPtr, operator==, etc.
+#include "nsAtom.h"               // for nsAtom
 #include "nsCaseTreatment.h"
-#include "nsDebug.h"    // for NS_ASSERTION, etc.
-#include "nsError.h"    // for NS_SUCCEEDED
-#include "nsGkAtoms.h"  // for nsGkAtoms, nsGkAtoms::a, etc.
+#include "nsCOMPtr.h"        // for nsCOMPtr, operator==, etc.
+#include "nsDebug.h"         // for NS_ASSERTION, etc.
+#include "nsElementTable.h"  // for nsHTMLElement
+#include "nsError.h"         // for NS_SUCCEEDED
+#include "nsGkAtoms.h"       // for nsGkAtoms, nsGkAtoms::a, etc.
 #include "nsHTMLTags.h"
-#include "nsAtom.h"              // for nsAtom
-#include "nsNameSpaceManager.h"  // for kNameSpaceID_None
 #include "nsLiteralString.h"     // for NS_LITERAL_STRING
+#include "nsNameSpaceManager.h"  // for kNameSpaceID_None
 #include "nsString.h"            // for nsAutoString
-#include "mozilla/dom/HTMLAnchorElement.h"
 
 namespace mozilla {
+
+using EditorType = EditorBase::EditorType;
+
+bool HTMLEditUtils::CanContentsBeJoined(const nsIContent& aLeftContent,
+                                        const nsIContent& aRightContent,
+                                        StyleDifference aStyleDifference) {
+  if (aLeftContent.NodeInfo()->NameAtom() !=
+      aRightContent.NodeInfo()->NameAtom()) {
+    return false;
+  }
+  if (aStyleDifference == StyleDifference::Ignore ||
+      !aLeftContent.IsElement()) {
+    return true;
+  }
+  if (aStyleDifference == StyleDifference::CompareIfSpanElements &&
+      !aLeftContent.IsHTMLElement(nsGkAtoms::span)) {
+    return true;
+  }
+  MOZ_DIAGNOSTIC_ASSERT(aRightContent.IsElement());
+  return CSSEditUtils::DoElementsHaveSameStyle(*aLeftContent.AsElement(),
+                                               *aRightContent.AsElement());
+}
+
+bool HTMLEditUtils::IsBlockElement(const nsIContent& aContent) {
+  if (!aContent.IsElement()) {
+    return false;
+  }
+  if (aContent.IsHTMLElement(nsGkAtoms::br)) {  // shortcut for TextEditor
+    MOZ_ASSERT(!nsHTMLElement::IsBlock(nsHTMLTags::AtomTagToId(nsGkAtoms::br)));
+    return false;
+  }
+  // We want to treat these as block nodes even though nsHTMLElement says
+  // they're not.
+  if (aContent.IsAnyOfHTMLElements(
+          nsGkAtoms::body, nsGkAtoms::head, nsGkAtoms::tbody, nsGkAtoms::thead,
+          nsGkAtoms::tfoot, nsGkAtoms::tr, nsGkAtoms::th, nsGkAtoms::td,
+          nsGkAtoms::dt, nsGkAtoms::dd)) {
+    return true;
+  }
+
+  return nsHTMLElement::IsBlock(
+      nsHTMLTags::AtomTagToId(aContent.NodeInfo()->NameAtom()));
+}
 
 /**
  * IsInlineStyle() returns true if aNode is an inline style.
@@ -103,9 +149,9 @@ bool HTMLEditUtils::IsListItem(nsINode* aNode) {
 }
 
 /**
- * IsTableElement() returns true if aNode is an html table, td, tr, ...
+ * IsAnyTableElement() returns true if aNode is an html table, td, tr, ...
  */
-bool HTMLEditUtils::IsTableElement(nsINode* aNode) {
+bool HTMLEditUtils::IsAnyTableElement(nsINode* aNode) {
   MOZ_ASSERT(aNode);
   return aNode->IsAnyOfHTMLElements(
       nsGkAtoms::table, nsGkAtoms::tr, nsGkAtoms::td, nsGkAtoms::th,
@@ -113,10 +159,10 @@ bool HTMLEditUtils::IsTableElement(nsINode* aNode) {
 }
 
 /**
- * IsTableElementButNotTable() returns true if aNode is an html td, tr, ...
+ * IsAnyTableElementButNotTable() returns true if aNode is an html td, tr, ...
  * (doesn't include table)
  */
-bool HTMLEditUtils::IsTableElementButNotTable(nsINode* aNode) {
+bool HTMLEditUtils::IsAnyTableElementButNotTable(nsINode* aNode) {
   MOZ_ASSERT(aNode);
   return aNode->IsAnyOfHTMLElements(nsGkAtoms::tr, nsGkAtoms::td, nsGkAtoms::th,
                                     nsGkAtoms::thead, nsGkAtoms::tfoot,
@@ -154,9 +200,9 @@ bool HTMLEditUtils::IsTableCellOrCaption(nsINode& aNode) {
 }
 
 /**
- * IsList() returns true if aNode is an html list.
+ * IsAnyListElement() returns true if aNode is an html list.
  */
-bool HTMLEditUtils::IsList(nsINode* aNode) {
+bool HTMLEditUtils::IsAnyListElement(nsINode* aNode) {
   MOZ_ASSERT(aNode);
   return aNode->IsAnyOfHTMLElements(nsGkAtoms::ul, nsGkAtoms::ol,
                                     nsGkAtoms::dl);
@@ -183,8 +229,8 @@ bool HTMLEditUtils::IsLink(nsINode* aNode) {
     return false;
   }
 
-  RefPtr<HTMLAnchorElement> anchor =
-      HTMLAnchorElement::FromNodeOrNull(aNode->AsContent());
+  RefPtr<dom::HTMLAnchorElement> anchor =
+      dom::HTMLAnchorElement::FromNodeOrNull(aNode->AsContent());
   if (!anchor) {
     return false;
   }
@@ -213,8 +259,7 @@ bool HTMLEditUtils::IsMozDiv(nsINode* aNode) {
   MOZ_ASSERT(aNode);
   return aNode->IsHTMLElement(nsGkAtoms::div) &&
          aNode->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
-                                         NS_LITERAL_STRING("_moz"),
-                                         eIgnoreCase);
+                                         u"_moz"_ns, eIgnoreCase);
 }
 
 /**
@@ -226,14 +271,14 @@ bool HTMLEditUtils::IsMailCite(nsINode* aNode) {
   // don't ask me why, but our html mailcites are id'd by "type=cite"...
   if (aNode->IsElement() &&
       aNode->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
-                                      NS_LITERAL_STRING("cite"), eIgnoreCase)) {
+                                      u"cite"_ns, eIgnoreCase)) {
     return true;
   }
 
   // ... but our plaintext mailcites by "_moz_quote=true".  go figure.
   if (aNode->IsElement() &&
       aNode->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::mozquote,
-                                      NS_LITERAL_STRING("true"), eIgnoreCase)) {
+                                      u"true"_ns, eIgnoreCase)) {
     return true;
   }
 
@@ -333,7 +378,7 @@ bool HTMLEditUtils::SupportsAlignAttr(nsINode& aNode) {
 // p
 #define GROUP_P (1 << 19)
 
-// text, whitespace, newline, comment
+// text, white-space, newline, comment
 #define GROUP_LEAF (1 << 20)
 
 // XXX This is because the editor does sublists illegally.
@@ -539,11 +584,14 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
 
     ELEM(userdefined, true, false, GROUP_NONE, GROUP_FLOW_ELEMENT)};
 
-bool HTMLEditUtils::CanContain(int32_t aParent, int32_t aChild) {
-  NS_ASSERTION(aParent > eHTMLTag_unknown && aParent <= eHTMLTag_userdefined,
-               "aParent out of range!");
-  NS_ASSERTION(aChild > eHTMLTag_unknown && aChild <= eHTMLTag_userdefined,
-               "aChild out of range!");
+bool HTMLEditUtils::CanNodeContain(nsHTMLTag aParentTagId,
+                                   nsHTMLTag aChildTagId) {
+  NS_ASSERTION(
+      aParentTagId > eHTMLTag_unknown && aParentTagId <= eHTMLTag_userdefined,
+      "aParentTagId out of range!");
+  NS_ASSERTION(
+      aChildTagId > eHTMLTag_unknown && aChildTagId <= eHTMLTag_userdefined,
+      "aChildTagId out of range!");
 
 #ifdef DEBUG
   static bool checked = false;
@@ -558,43 +606,43 @@ bool HTMLEditUtils::CanContain(int32_t aParent, int32_t aChild) {
 #endif
 
   // Special-case button.
-  if (aParent == eHTMLTag_button) {
+  if (aParentTagId == eHTMLTag_button) {
     static const nsHTMLTag kButtonExcludeKids[] = {
         eHTMLTag_a,     eHTMLTag_fieldset, eHTMLTag_form,    eHTMLTag_iframe,
         eHTMLTag_input, eHTMLTag_select,   eHTMLTag_textarea};
 
     uint32_t j;
     for (j = 0; j < ArrayLength(kButtonExcludeKids); ++j) {
-      if (kButtonExcludeKids[j] == aChild) {
+      if (kButtonExcludeKids[j] == aChildTagId) {
         return false;
       }
     }
   }
 
   // Deprecated elements.
-  if (aChild == eHTMLTag_bgsound) {
+  if (aChildTagId == eHTMLTag_bgsound) {
     return false;
   }
 
   // Bug #67007, dont strip userdefined tags.
-  if (aChild == eHTMLTag_userdefined) {
+  if (aChildTagId == eHTMLTag_userdefined) {
     return true;
   }
 
-  const ElementInfo& parent = kElements[aParent - 1];
-  if (aParent == aChild) {
+  const ElementInfo& parent = kElements[aParentTagId - 1];
+  if (aParentTagId == aChildTagId) {
     return parent.mCanContainSelf;
   }
 
-  const ElementInfo& child = kElements[aChild - 1];
-  return (parent.mCanContainGroups & child.mGroup) != 0;
+  const ElementInfo& child = kElements[aChildTagId - 1];
+  return !!(parent.mCanContainGroups & child.mGroup);
 }
 
-bool HTMLEditUtils::IsContainer(int32_t aTag) {
-  NS_ASSERTION(aTag > eHTMLTag_unknown && aTag <= eHTMLTag_userdefined,
-               "aTag out of range!");
+bool HTMLEditUtils::IsContainerNode(nsHTMLTag aTagId) {
+  NS_ASSERTION(aTagId > eHTMLTag_unknown && aTagId <= eHTMLTag_userdefined,
+               "aTagId out of range!");
 
-  return kElements[aTag - 1].mIsContainer;
+  return kElements[aTagId - 1].mIsContainer;
 }
 
 bool HTMLEditUtils::IsNonListSingleLineContainer(nsINode& aNode) {
@@ -607,6 +655,36 @@ bool HTMLEditUtils::IsNonListSingleLineContainer(nsINode& aNode) {
 bool HTMLEditUtils::IsSingleLineContainer(nsINode& aNode) {
   return IsNonListSingleLineContainer(aNode) ||
          aNode.IsAnyOfHTMLElements(nsGkAtoms::li, nsGkAtoms::dt, nsGkAtoms::dd);
+}
+
+// static
+Element*
+HTMLEditUtils::GetInclusiveAncestorEditableBlockElementOrInlineEditingHost(
+    nsIContent& aContent) {
+  MOZ_ASSERT(EditorUtils::IsEditableContent(aContent, EditorType::HTML));
+  Element* maybeInlineEditingHost = nullptr;
+  for (Element* element : aContent.InclusiveAncestorsOfType<Element>()) {
+    if (!EditorUtils::IsEditableContent(*element, EditorType::HTML)) {
+      return maybeInlineEditingHost;
+    }
+    if (HTMLEditUtils::IsBlockElement(*element)) {
+      return element;
+    }
+    maybeInlineEditingHost = element;
+  }
+  return maybeInlineEditingHost;
+}
+
+// static
+Element* HTMLEditUtils::GetClosestAncestorAnyListElement(
+    const nsIContent& aContent) {
+  for (Element* element : aContent.AncestorsOfType<Element>()) {
+    if (HTMLEditUtils::IsAnyListElement(element)) {
+      return element;
+    }
+  }
+
+  return nullptr;
 }
 
 EditAction HTMLEditUtils::GetEditActionForInsert(const nsAtom& aTagName) {

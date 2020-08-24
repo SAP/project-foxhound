@@ -340,3 +340,14 @@ def verify_statedir(statedir):
         os.mkdir(submitted)
 
     return outgoing, submitted, telemetry_log
+
+
+def is_telemetry_enabled(settings):
+    # Don't write telemetry data for 'mach' when 'DISABLE_TELEMETRY' is set.
+    if os.environ.get('DISABLE_TELEMETRY') == '1':
+        return False
+
+    try:
+        return settings.build.telemetry
+    except (AttributeError, KeyError):
+        return False

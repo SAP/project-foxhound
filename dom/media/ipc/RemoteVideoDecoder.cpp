@@ -251,9 +251,9 @@ RemoteVideoDecoderParent::RemoteVideoDecoderParent(
     RemoteDecoderManagerParent* aParent, const VideoInfo& aVideoInfo,
     float aFramerate, const CreateDecoderParams::OptionSet& aOptions,
     const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
-    TaskQueue* aManagerTaskQueue, TaskQueue* aDecodeTaskQueue, bool* aSuccess,
-    nsCString* aErrorDescription)
-    : RemoteDecoderParent(aParent, aManagerTaskQueue, aDecodeTaskQueue),
+    nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue,
+    bool* aSuccess, nsCString* aErrorDescription)
+    : RemoteDecoderParent(aParent, aManagerThread, aDecodeTaskQueue),
       mVideoInfo(aVideoInfo) {
   if (aIdentifier) {
     // Check to see if we have a direct PVideoBridge connection to the
@@ -264,10 +264,16 @@ RemoteVideoDecoderParent::RemoteVideoDecoderParent(
         KnowsCompositorVideo::TryCreateForIdentifier(*aIdentifier);
   }
 
+  RefPtr<layers::ImageContainer> container = new layers::ImageContainer();
+  if (mKnowsCompositor && XRE_IsRDDProcess()) {
+    // Ensure to allocate recycle allocator
+    container->EnsureRecycleAllocatorForRDD(mKnowsCompositor);
+  }
+
   CreateDecoderParams params(mVideoInfo);
   params.mTaskQueue = mDecodeTaskQueue;
   params.mKnowsCompositor = mKnowsCompositor;
-  params.mImageContainer = new layers::ImageContainer();
+  params.mImageContainer = container;
   params.mRate = CreateDecoderParams::VideoFrameRate(aFramerate);
   params.mOptions = aOptions;
   MediaResult error(NS_OK);

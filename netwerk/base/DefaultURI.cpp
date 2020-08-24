@@ -16,11 +16,11 @@ namespace net {
     }                                                \
   }
 
-#define ASSIGN_AND_ADDREF_THIS(ptrToMutator) \
-  do {                                       \
-    if (ptrToMutator) {                      \
-      NS_ADDREF(*ptrToMutator = this);       \
-    }                                        \
+#define ASSIGN_AND_ADDREF_THIS(ptrToMutator)    \
+  do {                                          \
+    if (ptrToMutator) {                         \
+      *(ptrToMutator) = do_AddRef(this).take(); \
+    }                                           \
   } while (0)
 
 static NS_DEFINE_CID(kDefaultURICID, NS_DEFAULTURI_CID);
@@ -30,9 +30,9 @@ NS_IMPL_RELEASE(DefaultURI)
 NS_INTERFACE_TABLE_HEAD(DefaultURI)
   NS_INTERFACE_TABLE(DefaultURI, nsIURI, nsISerializable, nsIClassInfo)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE
-  if (aIID.Equals(kDefaultURICID))
+  if (aIID.Equals(kDefaultURICID)) {
     foundInterface = static_cast<nsIURI*>(this);
-  else
+  } else
     NS_INTERFACE_MAP_ENTRY(nsISizeOf)
 NS_INTERFACE_MAP_END
 
@@ -153,8 +153,7 @@ NS_IMETHODIMP DefaultURI::GetHost(nsACString& aHost) {
   // enclosed in brackets. Ideally we want to change that, but for the sake of
   // consitency we'll leave it like that for the moment.
   // Bug 1603199 should fix this.
-  if (StringBeginsWith(aHost, NS_LITERAL_CSTRING("[")) &&
-      StringEndsWith(aHost, NS_LITERAL_CSTRING("]")) &&
+  if (StringBeginsWith(aHost, "["_ns) && StringEndsWith(aHost, "]"_ns) &&
       aHost.FindChar(':') != kNotFound) {
     aHost = Substring(aHost, 1, aHost.Length() - 2);
   }
@@ -495,7 +494,7 @@ DefaultURI::Mutator::SetPathQueryRef(const nsACString& aPathQueryRef,
   }
 
   nsAutoCString pathQueryRef(aPathQueryRef);
-  if (!StringBeginsWith(pathQueryRef, NS_LITERAL_CSTRING("/"))) {
+  if (!StringBeginsWith(pathQueryRef, "/"_ns)) {
     pathQueryRef.Insert('/', 0);
   }
 

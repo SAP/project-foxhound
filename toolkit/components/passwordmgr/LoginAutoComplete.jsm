@@ -46,6 +46,12 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/LoginManagerChild.jsm"
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "NewPasswordModel",
+  "resource://gre/modules/NewPasswordModel.jsm"
+);
+
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "formFillController",
@@ -59,7 +65,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
-  return LoginHelper.createLogger("LoginAutoCompleteResult");
+  return LoginHelper.createLogger("LoginAutoComplete");
 });
 XPCOMUtils.defineLazyGetter(this, "passwordMgrBundle", () => {
   return Services.strings.createBundle(
@@ -153,7 +159,7 @@ class InsecureLoginFormAutocompleteItem extends AutocompleteItem {
 class LoginAutocompleteItem extends AutocompleteItem {
   constructor(
     login,
-    isPasswordField,
+    hasBeenTypePassword,
     duplicateUsernames,
     actor,
     isOriginMatched
@@ -162,10 +168,13 @@ class LoginAutocompleteItem extends AutocompleteItem {
     this._login = login.QueryInterface(Ci.nsILoginMetaInfo);
     this._actor = actor;
 
+    this._isDuplicateUsername =
+      login.username && duplicateUsernames.has(login.username);
+
     XPCOMUtils.defineLazyGetter(this, "label", () => {
       let username = login.username;
       // If login is empty or duplicated we want to append a modification date to it.
-      if (!username || duplicateUsernames.has(username)) {
+      if (!username || this._isDuplicateUsername) {
         if (!username) {
           username = getLocalizedString("noUsername");
         }
@@ -178,12 +187,15 @@ class LoginAutocompleteItem extends AutocompleteItem {
     });
 
     XPCOMUtils.defineLazyGetter(this, "value", () => {
-      return isPasswordField ? login.password : login.username;
+      return hasBeenTypePassword ? login.password : login.username;
     });
 
     XPCOMUtils.defineLazyGetter(this, "comment", () => {
       return JSON.stringify({
         guid: login.guid,
+        login,
+        isDuplicateUsername: this._isDuplicateUsername,
+        isOriginMatched,
         comment:
           isOriginMatched && login.httpRealm === null
             ? getLocalizedString("displaySameOrigin")
@@ -221,6 +233,18 @@ class GeneratedPasswordAutocompleteItem extends AutocompleteItem {
   }
 }
 
+class ImportableLoginsAutocompleteItem extends AutocompleteItem {
+  constructor(browserId, hostname) {
+    super("importableLogins");
+    this.label = browserId;
+    this.comment = hostname;
+  }
+
+  removeFromStorage() {
+    Services.telemetry.recordEvent("exp_import", "event", "delete", this.label);
+  }
+}
+
 class LoginsFooterAutocompleteItem extends AutocompleteItem {
   constructor(formHostname, telemetryEventData) {
     super("loginsFooter");
@@ -249,14 +273,17 @@ function LoginAutoCompleteResult(
   {
     generatedPassword,
     willAutoSaveGeneratedPassword,
+    importable,
     isSecure,
     actor,
-    isPasswordField,
+    hasBeenTypePassword,
     hostname,
     telemetryEventData,
   }
 ) {
   let hidingFooterOnPWFieldAutoOpened = false;
+  const importableBrowsers =
+    importable?.state === "import" && importable?.browsers;
   function isFooterEnabled() {
     // We need to check LoginHelper.enabled here since the insecure warning should
     // appear even if pwmgr is disabled but the footer should never appear in that case.
@@ -266,15 +293,16 @@ function LoginAutoCompleteResult(
 
     // Don't show the footer on non-empty password fields as it's not providing
     // value and only adding noise since a password was already filled.
-    if (isPasswordField && aSearchString && !generatedPassword) {
+    if (hasBeenTypePassword && aSearchString && !generatedPassword) {
       log.debug("Hiding footer: non-empty password field");
       return false;
     }
 
     if (
+      !importableBrowsers &&
       !matchingLogins.length &&
       !generatedPassword &&
-      isPasswordField &&
+      hasBeenTypePassword &&
       formFillController.passwordPopupAutomaticallyOpened
     ) {
       hidingFooterOnPWFieldAutoOpened = true;
@@ -305,7 +333,7 @@ function LoginAutoCompleteResult(
   for (let login of logins) {
     let item = new LoginAutocompleteItem(
       login,
-      isPasswordField,
+      hasBeenTypePassword,
       duplicateUsernames,
       actor,
       LoginHelper.isOriginMatching(login.origin, formOrigin, {
@@ -325,6 +353,16 @@ function LoginAutoCompleteResult(
         )
       );
     }
+
+    // Suggest importing logins if there are none found.
+    if (!logins.length && importableBrowsers) {
+      this._rows.push(
+        ...importableBrowsers.map(
+          browserId => new ImportableLoginsAutocompleteItem(browserId, hostname)
+        )
+      );
+    }
+
     this._rows.push(
       new LoginsFooterAutocompleteItem(hostname, telemetryEventData)
     );
@@ -334,6 +372,18 @@ function LoginAutoCompleteResult(
   if (this.matchCount > 0) {
     this.searchResult = Ci.nsIAutoCompleteResult.RESULT_SUCCESS;
     this.defaultIndex = 0;
+    // For experiment telemetry, record how many importable logins were
+    // available when showing the popup and some extra data.
+    Services.telemetry.recordEvent(
+      "exp_import",
+      "impression",
+      "popup",
+      (importable?.browsers?.length ?? 0) + "",
+      {
+        loginsCount: logins.length + "",
+        searchLength: aSearchString.length + "",
+      }
+    );
   } else if (hidingFooterOnPWFieldAutoOpened) {
     // We use a failure result so that the empty results aren't re-used for when
     // the user tries to manually open the popup (we want the footer in that case).
@@ -344,8 +394,8 @@ function LoginAutoCompleteResult(
 
 LoginAutoCompleteResult.prototype = {
   QueryInterface: ChromeUtils.generateQI([
-    Ci.nsIAutoCompleteResult,
-    Ci.nsISupportsWeakReference,
+    "nsIAutoCompleteResult",
+    "nsISupportsWeakReference",
   ]),
 
   /**
@@ -408,7 +458,7 @@ LoginAutoCompleteResult.prototype = {
     return this.getValueAt(index);
   },
 
-  removeValueAt(index, removeFromDB) {
+  removeValueAt(index) {
     if (index < 0 || index >= this.matchCount) {
       throw new Error("Index out of range.");
     }
@@ -419,18 +469,20 @@ LoginAutoCompleteResult.prototype = {
       this.defaultIndex--;
     }
 
-    if (removeFromDB) {
-      removedItem.removeFromStorage();
-    }
+    removedItem.removeFromStorage();
   },
 };
 
-function LoginAutoComplete() {}
+function LoginAutoComplete() {
+  // HTMLInputElement to number, the element's new-password heuristic confidence score
+  this._cachedNewPasswordScore = new WeakMap();
+}
 LoginAutoComplete.prototype = {
   classID: Components.ID("{2bdac17c-53f1-4896-a521-682ccdeef3a8}"),
-  QueryInterface: ChromeUtils.generateQI([Ci.nsILoginAutoCompleteSearch]),
+  QueryInterface: ChromeUtils.generateQI(["nsILoginAutoCompleteSearch"]),
 
   _autoCompleteLookupPromise: null,
+  _cachedNewPasswordScore: null,
 
   /**
    * Yuck. This is called directly by satchel:
@@ -473,7 +525,7 @@ LoginAutoComplete.prototype = {
     if (isSecure) {
       isSecure = InsecurePasswordUtils.isFormSecure(form);
     }
-    let isPasswordField = aElement.type == "password";
+    let { hasBeenTypePassword } = aElement;
     let hostname = aElement.ownerDocument.documentURIObject.host;
     let formOrigin = LoginHelper.getLoginOrigin(
       aElement.ownerDocument.documentURI
@@ -487,6 +539,7 @@ LoginAutoComplete.prototype = {
 
       let {
         generatedPassword,
+        importable,
         logins,
         willAutoSaveGeneratedPassword,
       } = await autoCompleteLookupPromise;
@@ -517,9 +570,10 @@ LoginAutoComplete.prototype = {
         {
           generatedPassword,
           willAutoSaveGeneratedPassword,
+          importable,
           actor: loginManagerActor,
           isSecure,
-          isPasswordField,
+          hasBeenTypePassword,
           hostname,
           telemetryEventData,
         }
@@ -535,7 +589,7 @@ LoginAutoComplete.prototype = {
     }
 
     if (
-      isPasswordField &&
+      hasBeenTypePassword &&
       aSearchString &&
       !loginManagerActor.isPasswordGenerationForcedOn(aElement)
     ) {
@@ -549,8 +603,6 @@ LoginAutoComplete.prototype = {
       completeSearch(Promise.resolve({ logins: [] }));
       return;
     }
-
-    log.debug("AutoCompleteSearch invoked. Search is:", aSearchString);
 
     let previousResult;
     if (aPreviousResult) {
@@ -569,8 +621,7 @@ LoginAutoComplete.prototype = {
       previousResult,
       inputElement: aElement,
       form,
-      formOrigin,
-      isPasswordField,
+      hasBeenTypePassword,
     });
     completeSearch(acLookupPromise).catch(log.error.bind(log));
   },
@@ -584,8 +635,7 @@ LoginAutoComplete.prototype = {
     previousResult,
     inputElement,
     form,
-    formOrigin,
-    isPasswordField,
+    hasBeenTypePassword,
   }) {
     let actionOrigin = LoginHelper.getFormActionOrigin(form);
     let autocompleteInfo = inputElement.getAutocompleteInfo();
@@ -594,26 +644,41 @@ LoginAutoComplete.prototype = {
       inputElement.ownerGlobal
     );
     let forcePasswordGeneration = false;
-    if (isPasswordField) {
+    let isProbablyANewPasswordField = false;
+    if (hasBeenTypePassword) {
       forcePasswordGeneration = loginManagerActor.isPasswordGenerationForcedOn(
         inputElement
       );
+      // Run the Fathom model only if the password field does not have the
+      // autocomplete="new-password" attribute.
+      isProbablyANewPasswordField =
+        autocompleteInfo.fieldName == "new-password" ||
+        this._isProbablyANewPasswordField(inputElement);
     }
 
     let messageData = {
-      autocompleteInfo,
-      formOrigin,
       actionOrigin,
       searchString,
       previousResult,
       forcePasswordGeneration,
+      hasBeenTypePassword,
       isSecure: InsecurePasswordUtils.isFormSecure(form),
-      isPasswordField,
+      isProbablyANewPasswordField,
     };
 
     if (LoginHelper.showAutoCompleteFooter) {
       gAutoCompleteListener.init();
     }
+
+    log.debug("LoginAutoComplete search:", {
+      forcePasswordGeneration,
+      isSecure: messageData.isSecure,
+      hasBeenTypePassword,
+      isProbablyANewPasswordField,
+      searchString: hasBeenTypePassword
+        ? "*".repeat(searchString.length)
+        : searchString,
+    });
 
     let result = await loginManagerActor.sendQuery(
       "PasswordManager:autoCompleteLogins",
@@ -622,9 +687,29 @@ LoginAutoComplete.prototype = {
 
     return {
       generatedPassword: result.generatedPassword,
+      importable: result.importable,
       logins: LoginHelper.vanillaObjectsToLogins(result.logins),
       willAutoSaveGeneratedPassword: result.willAutoSaveGeneratedPassword,
     };
+  },
+
+  _isProbablyANewPasswordField(inputElement) {
+    const threshold = LoginHelper.generationConfidenceThreshold;
+    if (threshold == -1) {
+      // Fathom is disabled
+      return false;
+    }
+
+    let score = this._cachedNewPasswordScore.get(inputElement);
+    if (score) {
+      return score >= threshold;
+    }
+
+    const { rules, type } = NewPasswordModel;
+    const results = rules.against(inputElement);
+    score = results.get(inputElement).scoreFor(type);
+    this._cachedNewPasswordScore.set(inputElement, score);
+    return score >= threshold;
   },
 };
 
@@ -650,7 +735,7 @@ let gAutoCompleteListener = {
       }
 
       case "FormAutoComplete:PopupClosed": {
-        this.onPopupClosed(data.selectedRowStyle, target);
+        this.onPopupClosed(data, target);
         let { chromeEventHandler } = target.docShell;
         chromeEventHandler.removeEventListener("keydown", this, true);
         break;
@@ -674,23 +759,39 @@ let gAutoCompleteListener = {
     this.keyDownEnterForInput = focusedElement;
   },
 
-  onPopupClosed(selectedRowStyle, window) {
+  onPopupClosed({ selectedRowComment, selectedRowStyle }, window) {
     let focusedElement = formFillController.focusedInput;
     let eventTarget = this.keyDownEnterForInput;
-    if (
-      !eventTarget ||
-      eventTarget !== focusedElement ||
-      selectedRowStyle != "loginsFooter"
-    ) {
-      this.keyDownEnterForInput = null;
+    this.keyDownEnterForInput = null;
+    if (!eventTarget || eventTarget !== focusedElement) {
       return;
     }
 
     let loginManager = window.windowGlobalChild.getActor("LoginManager");
-    let hostname = eventTarget.ownerDocument.documentURIObject.host;
-    loginManager.sendAsyncMessage("PasswordManager:OpenPreferences", {
-      hostname,
-      entryPoint: "autocomplete",
-    });
+    switch (selectedRowStyle) {
+      case "importableLogins":
+        loginManager.sendAsyncMessage(
+          "PasswordManager:OpenMigrationWizard",
+          selectedRowComment
+        );
+        Services.telemetry.recordEvent(
+          "exp_import",
+          "event",
+          "enter",
+          selectedRowComment
+        );
+        break;
+      case "loginsFooter":
+        loginManager.sendAsyncMessage("PasswordManager:OpenPreferences", {
+          entryPoint: "autocomplete",
+        });
+        Services.telemetry.recordEvent(
+          "exp_import",
+          "event",
+          "enter",
+          "loginsFooter"
+        );
+        break;
+    }
   },
 };

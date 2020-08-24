@@ -76,13 +76,24 @@ already_AddRefed<AudioNodeTrack> AudioNodeTrack::Create(
 
   RefPtr<AudioNodeTrack> track =
       new AudioNodeTrack(aEngine, aFlags, aGraph->GraphRate());
-  track->mSuspendedCount += aCtx->ShouldSuspendNewTrack();
   if (node) {
     track->SetChannelMixingParametersImpl(node->ChannelCount(),
                                           node->ChannelCountModeValue(),
                                           node->ChannelInterpretationValue());
   }
+  // All realtime tracks are initially suspended.
+  // ApplyAudioContextOperation() is used to start tracks so that a new track
+  // will not be started before the existing tracks, which may be awaiting an
+  // AudioCallbackDriver to resume.
+  bool isRealtime = !aCtx->IsOffline();
+  track->mSuspendedCount += isRealtime;
   aGraph->AddTrack(track);
+  if (isRealtime && !aCtx->ShouldSuspendNewTrack()) {
+    nsTArray<RefPtr<mozilla::MediaTrack>> tracks;
+    tracks.AppendElement(track);
+    aGraph->ApplyAudioContextOperation(aCtx->DestinationTrack(), move(tracks),
+                                       AudioContextOperation::Resume);
+  }
   return track.forget();
 }
 
@@ -348,7 +359,7 @@ class AudioNodeTrack::AdvanceAndResumeMessage final : public ControlMessage {
     auto ns = static_cast<AudioNodeTrack*>(mTrack);
     ns->mStartTime -= mAdvance;
     ns->mSegment->AppendNullData(mAdvance);
-    ns->GraphImpl()->DecrementSuspendCount(mTrack);
+    ns->DecrementSuspendCount();
   }
 
  private:
@@ -480,8 +491,8 @@ void AudioNodeTrack::UpMixDownMixChunk(const AudioBlock* aChunk,
       }
     } else {
       // Drop the remaining aOutputChannels
-      aOutputChannels.RemoveElementsAt(
-          aOutputChannelCount, aOutputChannels.Length() - aOutputChannelCount);
+      aOutputChannels.RemoveLastElements(aOutputChannels.Length() -
+                                         aOutputChannelCount);
     }
   }
 }
@@ -523,7 +534,8 @@ void AudioNodeTrack::ProcessInput(GraphTime aFrom, GraphTime aTo,
                               &finished);
       } else {
         mEngine->ProcessBlocksOnPorts(
-            this, MakeSpan(mInputChunks.Elements(), mEngine->InputCount()),
+            this, aFrom,
+            MakeSpan(mInputChunks.Elements(), mEngine->InputCount()),
             MakeSpan(mLastChunks.Elements(), mEngine->OutputCount()),
             &finished);
       }
@@ -622,7 +634,7 @@ void AudioNodeTrack::SetActive() {
 
   mIsActive = true;
   if (!(mFlags & EXTERNAL_OUTPUT)) {
-    GraphImpl()->DecrementSuspendCount(this);
+    DecrementSuspendCount();
   }
   if (IsAudioParamTrack()) {
     // Consumers merely influence track order.
@@ -670,7 +682,7 @@ void AudioNodeTrack::CheckForInactive() {
     chunk.SetNull(WEBAUDIO_BLOCK_SIZE);
   }
   if (!(mFlags & EXTERNAL_OUTPUT)) {
-    GraphImpl()->IncrementSuspendCount(this);
+    IncrementSuspendCount();
   }
   if (IsAudioParamTrack()) {
     return;

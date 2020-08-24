@@ -81,7 +81,7 @@ void RDDProcessManager::OnXPCOMShutdown() {
 }
 
 void RDDProcessManager::OnPreferenceChange(const char16_t* aData) {
-  // A pref changed. If it's not on the blacklist, inform child processes.
+  // A pref changed. If it is useful to do so, inform child processes.
   if (!dom::ContentParent::ShouldSyncPreference(aData)) {
     return;
   }
@@ -168,8 +168,7 @@ void RDDProcessManager::OnProcessLaunchComplete(RDDProcessHost* aHost) {
   mQueuedPrefs.Clear();
 
   CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::RDDProcessStatus,
-      NS_LITERAL_CSTRING("Running"));
+      CrashReporter::Annotation::RDDProcessStatus, "Running"_ns);
 }
 
 void RDDProcessManager::OnProcessUnexpectedShutdown(RDDProcessHost* aHost) {
@@ -221,8 +220,7 @@ void RDDProcessManager::DestroyProcess() {
   mQueuedPrefs.Clear();
 
   CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::RDDProcessStatus,
-      NS_LITERAL_CSTRING("Destroyed"));
+      CrashReporter::Annotation::RDDProcessStatus, "Destroyed"_ns);
 }
 
 bool RDDProcessManager::CreateContentBridge(

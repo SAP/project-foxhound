@@ -10,7 +10,7 @@ Services.scriptloader.loadSubScript(CHROME_URL_ROOT + "helper-addons.js", this);
 const { PromiseTestUtils } = ChromeUtils.import(
   "resource://testing-common/PromiseTestUtils.jsm"
 );
-PromiseTestUtils.whitelistRejectionsGlobally(/File closed/);
+PromiseTestUtils.allowMatchingRejectionsGlobally(/File closed/);
 
 // Avoid test timeouts that can occur while waiting for the "addon-console-works" message.
 requestLongerTimeout(2);
@@ -62,40 +62,24 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
 });
 
 async function toolboxTestScript(toolbox, devtoolsTab) {
-  toolbox
-    .selectTool("inspector")
-    .then(inspector => {
-      return inspector.walker.querySelector(inspector.walker.rootNode, "body");
-    })
-    .then(nodeActor => {
-      if (!nodeActor) {
-        throw new Error("nodeActor not found");
-      }
+  const inspector = await toolbox.selectTool("inspector");
+  const nodeActor = await inspector.walker.querySelector(
+    inspector.walker.rootNode,
+    "body"
+  );
+  ok(nodeActor, "Got a nodeActor");
+  ok(nodeActor.inlineTextChild, "Got a nodeActor with an inline text child");
 
-      dump("Got a nodeActor\n");
+  const actualValue = nodeActor.inlineTextChild._form.nodeValue;
 
-      if (!nodeActor.inlineTextChild) {
-        throw new Error("inlineTextChild not found");
-      }
+  is(
+    String(actualValue).trim(),
+    "Background Page Body Test Content",
+    "nodeActor has the expected inlineTextChild value"
+  );
 
-      dump("Got a nodeActor with an inline text child\n");
+  info("Wait for all pending requests to settle on the DevToolsClient");
+  await toolbox.target.client.waitForRequestsToSettle();
 
-      const expectedValue = "Background Page Body Test Content";
-      const actualValue = nodeActor.inlineTextChild._form.nodeValue;
-
-      if (String(actualValue).trim() !== String(expectedValue).trim()) {
-        throw new Error(
-          `mismatched inlineTextchild value: "${actualValue}" !== "${expectedValue}"`
-        );
-      }
-
-      dump("Got the expected inline text content in the selected node\n");
-      return Promise.resolve();
-    })
-    .then(() => removeTab(devtoolsTab))
-    .catch(error => {
-      dump("Error while running code in the browser toolbox process:\n");
-      dump(error + "\n");
-      dump("stack:\n" + error.stack + "\n");
-    });
+  await removeTab(devtoolsTab);
 }

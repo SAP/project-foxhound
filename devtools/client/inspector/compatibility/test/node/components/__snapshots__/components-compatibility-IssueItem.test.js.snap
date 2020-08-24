@@ -5,19 +5,27 @@ exports[`IssueItem component renders a deprecated issue of CSS property 1`] = `
   className="compatibility-issue-item compatibility-issue-item--deprecated"
   key="test-property"
 >
-  <a
-    className="compatibility-issue-item__mdn-link devtools-monospace"
-    href="test-url"
-    onClick={[Function]}
-    title="test-url"
+  <div
+    className="compatibility-issue-item__description"
   >
-    test-property
-  </a>
-  <span
-    className="compatibility-issue-item__causes"
-  >
-    (deprecated)
-  </span>
+    <a
+      className="compatibility-issue-item__mdn-link devtools-monospace"
+      href="test-url"
+      onClick={[Function]}
+      title="test-url"
+    >
+      test-property
+    </a>
+    <Localized
+      id="compatibility-issue-deprecated"
+    >
+      <span
+        className="compatibility-issue-item__causes"
+      >
+        compatibility-issue-deprecated
+      </span>
+    </Localized>
+  </div>
 </li>
 `;
 
@@ -26,19 +34,27 @@ exports[`IssueItem component renders an experimental issue of CSS property 1`] =
   className="compatibility-issue-item compatibility-issue-item--experimental"
   key="test-property"
 >
-  <a
-    className="compatibility-issue-item__mdn-link devtools-monospace"
-    href="test-url"
-    onClick={[Function]}
-    title="test-url"
+  <div
+    className="compatibility-issue-item__description"
   >
-    test-property
-  </a>
-  <span
-    className="compatibility-issue-item__causes"
-  >
-    (experimental)
-  </span>
+    <a
+      className="compatibility-issue-item__mdn-link devtools-monospace"
+      href="test-url"
+      onClick={[Function]}
+      title="test-url"
+    >
+      test-property
+    </a>
+    <Localized
+      id="compatibility-issue-experimental"
+    >
+      <span
+        className="compatibility-issue-item__causes"
+      >
+        compatibility-issue-experimental
+      </span>
+    </Localized>
+  </div>
 </li>
 `;
 
@@ -47,19 +63,59 @@ exports[`IssueItem component renders an issue which has both deprecated and expe
   className="compatibility-issue-item compatibility-issue-item--deprecated compatibility-issue-item--experimental"
   key="test-property"
 >
-  <a
-    className="compatibility-issue-item__mdn-link devtools-monospace"
-    href="test-url"
-    onClick={[Function]}
-    title="test-url"
+  <div
+    className="compatibility-issue-item__description"
   >
-    test-property
-  </a>
-  <span
-    className="compatibility-issue-item__causes"
+    <a
+      className="compatibility-issue-item__mdn-link devtools-monospace"
+      href="test-url"
+      onClick={[Function]}
+      title="test-url"
+    >
+      test-property
+    </a>
+    <Localized
+      id="compatibility-issue-deprecated-experimental"
+    >
+      <span
+        className="compatibility-issue-item__causes"
+      >
+        compatibility-issue-deprecated-experimental
+      </span>
+    </Localized>
+  </div>
+</li>
+`;
+
+exports[`IssueItem component renders an issue which has nodes that caused this issue 1`] = `
+<li
+  className="compatibility-issue-item"
+  key="test-property"
+>
+  <div
+    className="compatibility-issue-item__description"
   >
-    (deprecated,experimental)
-  </span>
+    <a
+      className="compatibility-issue-item__mdn-link devtools-monospace"
+      href="test-url"
+      onClick={[Function]}
+      title="test-url"
+    >
+      test-property
+    </a>
+  </div>
+  <NodePane
+    nodes={
+      Array [
+        Object {
+          "actorID": "test-actor",
+          "attributes": Array [],
+          "nodeName": "test-element",
+          "nodeType": 1,
+        },
+      ]
+    }
+  />
 </li>
 `;
 
@@ -68,25 +124,29 @@ exports[`IssueItem component renders an unsupported issue of CSS property 1`] = 
   className="compatibility-issue-item compatibility-issue-item--unsupported"
   key="test-property"
 >
-  <a
-    className="compatibility-issue-item__mdn-link devtools-monospace"
-    href="test-url"
-    onClick={[Function]}
-    title="test-url"
+  <div
+    className="compatibility-issue-item__description"
   >
-    test-property
-  </a>
-  <UnsupportedBrowserList
-    browsers={
-      Array [
-        Object {
-          "id": "firefox",
-          "name": "Firefox",
-          "status": "nightly",
-          "version": "70",
-        },
-      ]
-    }
-  />
+    <a
+      className="compatibility-issue-item__mdn-link devtools-monospace"
+      href="test-url"
+      onClick={[Function]}
+      title="test-url"
+    >
+      test-property
+    </a>
+    <UnsupportedBrowserList
+      browsers={
+        Array [
+          Object {
+            "id": "firefox",
+            "name": "Firefox",
+            "status": "nightly",
+            "version": "70",
+          },
+        ]
+      }
+    />
+  </div>
 </li>
 `;

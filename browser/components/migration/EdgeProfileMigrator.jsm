@@ -336,17 +336,17 @@ EdgeReadingListMigrator.prototype = {
 
   async _ensureReadingListFolder(parentGuid) {
     if (!this.__readingListFolderGuid) {
-      let folderTitle = MigrationUtils.getLocalizedString(
-        "importedEdgeReadingList"
+      let folderTitle = await MigrationUtils.getLocalizedString(
+        "imported-edge-reading-list"
       );
       let folderSpec = {
         type: PlacesUtils.bookmarks.TYPE_FOLDER,
         parentGuid,
         title: folderTitle,
       };
-      this.__readingListFolderGuid = (await MigrationUtils.insertBookmarkWrapper(
-        folderSpec
-      )).guid;
+      this.__readingListFolderGuid = (
+        await MigrationUtils.insertBookmarkWrapper(folderSpec)
+      ).guid;
     }
     return this.__readingListFolderGuid;
   },

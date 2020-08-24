@@ -1,6 +1,7 @@
 "use strict";
 
 XPCOMUtils.defineLazyModuleGetters(this, {
+  AboutNewTab: "resource:///modules/AboutNewTab.jsm",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
@@ -54,8 +55,8 @@ async function recordReflows(testPromise, win = window) {
     },
 
     QueryInterface: ChromeUtils.generateQI([
-      Ci.nsIReflowObserver,
-      Ci.nsISupportsWeakReference,
+      "nsIReflowObserver",
+      "nsISupportsWeakReference",
     ]),
   };
 
@@ -193,7 +194,7 @@ function reportUnexpectedReflows(reflows, expectedReflows = []) {
         `Unused expected reflow at ${firstFrame}:\nStack:\n` +
           reflow.stack.map(frame => "  " + frame).join("\n") +
           "\n" +
-          "This is probably a good thing - just remove it from the whitelist."
+          "This is probably a good thing - just remove it from the list of reflows."
       );
     } else {
       if (reflow.count > reflow.maxCount) {
@@ -246,13 +247,25 @@ async function ensureNoPreloadedBrowser(win = window) {
     set: [["browser.newtab.preload", false]],
   });
 
-  let aboutNewTabService = Cc[
-    "@mozilla.org/browser/aboutnewtab-service;1"
-  ].getService(Ci.nsIAboutNewTabService);
-  aboutNewTabService.newTabURL = "about:blank";
+  AboutNewTab.newTabURL = "about:blank";
 
   registerCleanupFunction(() => {
-    aboutNewTabService.resetNewTabURL();
+    AboutNewTab.resetNewTabURL();
+  });
+}
+
+// Onboarding puts a badge on the fxa toolbar button a while after startup
+// which confuses tests that look at repaints in the toolbar.  Use this
+// function to cancel the badge update.
+function disableFxaBadge() {
+  let { ToolbarBadgeHub } = ChromeUtils.import(
+    "resource://activity-stream/lib/ToolbarBadgeHub.jsm"
+  );
+  ToolbarBadgeHub.removeAllNotifications();
+
+  // Also prevent a new timer from being set
+  return SpecialPowers.pushPrefEnv({
+    set: [["identity.fxaccounts.toolbar.accessed", true]],
   });
 }
 
@@ -260,31 +273,6 @@ async function prepareSettledWindow() {
   let win = await BrowserTestUtils.openNewBrowserWindow();
   await ensureNoPreloadedBrowser(win);
   return win;
-}
-
-// Use this function to avoid catching a reflow related to calling focus on the
-// urlbar and changed rects for its dropmarker when opening new tabs.
-async function ensureFocusedUrlbar() {
-  let opacityPromise;
-  if (!gURLBar.dropmarker.hidden) {
-    // The switchingtabs attribute prevents the historydropmarker opacity
-    // transition, so if we expect a transitionend event when this attribute
-    // is set, we wait forever. (it's removed off a MozAfterPaint event listener)
-    await BrowserTestUtils.waitForCondition(
-      () => !gURLBar.hasAttribute("switchingtabs")
-    );
-
-    opacityPromise = BrowserTestUtils.waitForEvent(
-      gURLBar.dropmarker,
-      "transitionend",
-      false,
-      e => e.propertyName === "opacity"
-    );
-  }
-  gURLBar.focus();
-  if (opacityPromise) {
-    await opacityPromise;
-  }
 }
 
 /**
@@ -335,7 +323,7 @@ async function createTabs(howMany) {
     triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
   });
 
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     return Array.from(gBrowser.tabs).every(tab => tab._fullyOpen);
   });
 }
@@ -350,7 +338,7 @@ async function removeAllButFirstTab() {
     set: [["browser.tabs.warnOnCloseOtherTabs", false]],
   });
   gBrowser.removeAllTabsBut(gBrowser.tabs[0]);
-  await BrowserTestUtils.waitForCondition(() => gBrowser.tabs.length == 1);
+  await TestUtils.waitForCondition(() => gBrowser.tabs.length == 1);
   await SpecialPowers.popPrefEnv();
 }
 
@@ -763,59 +751,27 @@ async function runUrlbarTest(
     await UrlbarTestUtils.promisePopupClose(win);
   };
 
-  let expectedRects;
-  if (URLBar.megabar) {
-    let urlbarRect = URLBar.textbox.getBoundingClientRect();
-    const SHADOW_SIZE = 4;
-    expectedRects = {
-      filter: rects => {
-        // We put text into the urlbar so expect its textbox to change.
-        // The dropmarker is displayed as active during some of the test.
-        // We expect many changes in the results view.
-        // So we just whitelist the whole urlbar. We don't check the bottom of
-        // the rect because the result view height varies depending on the
-        // results.
-        // We use floor/ceil because the Urlbar dimensions aren't always
-        // integers.
-        return rects.filter(
-          r =>
-            !(
-              r.x1 >= Math.floor(urlbarRect.left) - SHADOW_SIZE &&
-              r.x2 <= Math.ceil(urlbarRect.right) + SHADOW_SIZE &&
-              r.y1 >= Math.floor(urlbarRect.top) - SHADOW_SIZE
-            )
-        );
-      },
-    };
-  } else {
-    // Hide the results as we expect many changes there that we don't want to
-    // detect here.
-    URLBar.view.panel.style.visibility = "hidden";
-
-    let dropmarkerRect = URLBar.dropmarker.getBoundingClientRect();
-    let textBoxRect = URLBar.querySelector(
-      "moz-input-box"
-    ).getBoundingClientRect();
-    expectedRects = {
-      filter: rects =>
-        rects.filter(
-          r =>
-            !// We put text into the urlbar so expect its textbox to change.
-            (
-              (r.x1 >= Math.floor(textBoxRect.left) &&
-                r.x2 <= Math.ceil(textBoxRect.right) &&
-                r.y1 >= Math.floor(textBoxRect.top) &&
-                r.y2 <= Math.ceil(textBoxRect.bottom)) ||
-              // The dropmarker is displayed as active during some of the test.
-              // dropmarkerRect.left isn't always an integer.
-              (r.x1 >= Math.floor(dropmarkerRect.left) &&
-                r.x2 <= Math.ceil(dropmarkerRect.right) &&
-                r.y1 >= Math.floor(dropmarkerRect.top) &&
-                r.y2 <= Math.ceil(dropmarkerRect.bottom))
-            )
-        ),
-    };
-  }
+  let urlbarRect = URLBar.textbox.getBoundingClientRect();
+  const SHADOW_SIZE = 4;
+  let expectedRects = {
+    filter: rects => {
+      // We put text into the urlbar so expect its textbox to change.
+      // We expect many changes in the results view.
+      // So we just allow changes anywhere in the urlbar. We don't check the
+      // bottom of the rect because the result view height varies depending on
+      // the results.
+      // We use floor/ceil because the Urlbar dimensions aren't always
+      // integers.
+      return rects.filter(
+        r =>
+          !(
+            r.x1 >= Math.floor(urlbarRect.left) - SHADOW_SIZE &&
+            r.x2 <= Math.ceil(urlbarRect.right) + SHADOW_SIZE &&
+            r.y1 >= Math.floor(urlbarRect.top) - SHADOW_SIZE
+          )
+      );
+    },
+  };
 
   info("First opening");
   await withPerfObserver(

@@ -821,7 +821,6 @@ with modules["XPCONNECT"]:
     errors["NS_ERROR_XPC_HAS_BEEN_SHUTDOWN"] = FAILURE(51)
     errors["NS_ERROR_XPC_CANT_MODIFY_PROP_ON_WN"] = FAILURE(52)
     errors["NS_ERROR_XPC_BAD_CONVERT_JS_ZERO_ISNOT_NULL"] = FAILURE(53)
-    errors["NS_ERROR_XPC_CANT_PASS_CPOW_TO_NATIVE"] = FAILURE(54)
     # any new errors here should have an associated entry added in xpc.msg
 
 
@@ -888,7 +887,7 @@ with modules["DOM_XPATH"]:
 with modules["URILOADER"]:
     errors["NS_ERROR_WONT_HANDLE_CONTENT"] = FAILURE(1)
     # The load has been cancelled because it was found on a malware or phishing
-    # blacklist.
+    # list.
     errors["NS_ERROR_MALWARE_URI"] = FAILURE(30)
     errors["NS_ERROR_PHISHING_URI"] = FAILURE(31)
     errors["NS_ERROR_TRACKING_URI"] = FAILURE(34)

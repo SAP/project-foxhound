@@ -186,7 +186,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
             nsHtml5String sizes =
                 aAttributes->getValue(nsHtml5AttributeName::ATTR_SIZES);
             mSpeculativeLoadQueue.AppendElement()->InitImage(
-                url, crossOrigin, referrerPolicy, srcset, sizes);
+                url, crossOrigin, referrerPolicy, srcset, sizes, false);
           }
         } else if (nsGkAtoms::source == aName) {
           nsHtml5String srcset =
@@ -272,7 +272,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 mSpeculativeLoadQueue.AppendElement()->InitPreconnect(
                     url, crossOrigin);
               }
-            } else if (StaticPrefs::network_preload_experimental() &&
+            } else if (StaticPrefs::network_preload() &&
                        rel.LowerCaseEqualsASCII("preload")) {
               nsHtml5String url =
                   aAttributes->getValue(nsHtml5AttributeName::ATTR_HREF);
@@ -306,6 +306,19 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                   mSpeculativeLoadQueue.AppendElement()->InitStyle(
                       url, charset, crossOrigin, referrerPolicy, integrity,
                       true);
+                } else if (as.LowerCaseEqualsASCII("image")) {
+                  nsHtml5String srcset = aAttributes->getValue(
+                      nsHtml5AttributeName::ATTR_IMAGESRCSET);
+                  nsHtml5String sizes = aAttributes->getValue(
+                      nsHtml5AttributeName::ATTR_IMAGESIZES);
+                  mSpeculativeLoadQueue.AppendElement()->InitImage(
+                      url, crossOrigin, referrerPolicy, srcset, sizes, true);
+                } else if (as.LowerCaseEqualsASCII("font")) {
+                  mSpeculativeLoadQueue.AppendElement()->InitFont(
+                      url, crossOrigin, referrerPolicy);
+                } else if (as.LowerCaseEqualsASCII("fetch")) {
+                  mSpeculativeLoadQueue.AppendElement()->InitFetch(
+                      url, crossOrigin, referrerPolicy);
                 }
                 // Other "as" values will be supported later.
               }
@@ -316,7 +329,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
               aAttributes->getValue(nsHtml5AttributeName::ATTR_POSTER);
           if (url) {
             mSpeculativeLoadQueue.AppendElement()->InitImage(
-                url, nullptr, nullptr, nullptr, nullptr);
+                url, nullptr, nullptr, nullptr, nullptr, false);
           }
         } else if (nsGkAtoms::style == aName) {
           mImportScanner.Start();
@@ -369,7 +382,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
               aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
           if (url) {
             mSpeculativeLoadQueue.AppendElement()->InitImage(
-                url, nullptr, nullptr, nullptr, nullptr);
+                url, nullptr, nullptr, nullptr, nullptr, false);
           }
         } else if (nsGkAtoms::script == aName) {
           nsHtml5TreeOperation* treeOp =

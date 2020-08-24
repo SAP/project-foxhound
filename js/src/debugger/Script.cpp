@@ -36,8 +36,8 @@
 #include "vm/JSContext.h"      // for JSContext, ReportValueError
 #include "vm/JSFunction.h"     // for JSFunction
 #include "vm/JSObject.h"       // for RequireObject, JSObject
-#include "vm/ObjectGroup.h"    // for TenuredObject
 #include "vm/ObjectOperations.h"  // for DefineDataProperty, HasOwnProperty
+#include "vm/PlainObject.h"       // for js::PlainObject
 #include "vm/Realm.h"             // for AutoRealm
 #include "vm/Runtime.h"           // for JSAtomState, JSRuntime
 #include "vm/StringType.h"        // for NameToId, PropertyName, JSAtom
@@ -45,10 +45,9 @@
 #include "wasm/WasmInstance.h"    // for Instance
 #include "wasm/WasmTypes.h"       // for Bytes
 
-#include "vm/BytecodeUtil-inl.h"      // for BytecodeRangeWithPosition
-#include "vm/JSAtom-inl.h"            // for ValueToId
-#include "vm/JSObject-inl.h"          // for NewBuiltinClassInstance
-#include "vm/JSScript-inl.h"          // for LazyScript::functionDelazifying
+#include "vm/BytecodeUtil-inl.h"  // for BytecodeRangeWithPosition
+#include "vm/JSAtom-inl.h"        // for ValueToId
+#include "vm/JSObject-inl.h"  // for NewBuiltinClassInstance, NewObjectWithGivenProto, NewTenuredObjectWithGivenProto
 #include "vm/ObjectOperations-inl.h"  // for GetProperty
 #include "vm/Realm-inl.h"             // for AutoRealm::AutoRealm
 
@@ -108,7 +107,7 @@ DebuggerScript* DebuggerScript::create(JSContext* cx, HandleObject proto,
                                        Handle<DebuggerScriptReferent> referent,
                                        HandleNativeObject debugger) {
   DebuggerScript* scriptobj =
-      NewObjectWithGivenProto<DebuggerScript>(cx, proto, TenuredObject);
+      NewTenuredObjectWithGivenProto<DebuggerScript>(cx, proto);
   if (!scriptobj) {
     return nullptr;
   }
@@ -135,7 +134,7 @@ static JSScript* DelazifyScript(JSContext* cx, Handle<BaseScript*> script) {
       return nullptr;
     }
 
-    if (!script->enclosingScriptHasEverBeenCompiled()) {
+    if (!script->isReadyForDelazification()) {
       // It didn't work! Delazifying the enclosing script still didn't
       // delazify this script. This happens when the function
       // corresponding to this script was removed by constant folding.
@@ -168,8 +167,8 @@ DebuggerScript* DebuggerScript::check(JSContext* cx, HandleValue v) {
   DebuggerScript& scriptObj = thisobj->as<DebuggerScript>();
 
   // Check for Debugger.Script.prototype, which is of class
-  // DebuggerScript::class but whose script is null.
-  if (!scriptObj.getReferentCell()) {
+  // DebuggerScript::class.
+  if (!scriptObj.isInstance()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_INCOMPATIBLE_PROTO, "Debugger.Script",
                               "method", "prototype object");
@@ -234,8 +233,6 @@ struct MOZ_STACK_CLASS DebuggerScript::CallData {
   bool getPossibleBreakpointOffsets();
   bool getOffsetMetadata();
   bool getOffsetLocation();
-  template <bool Successor>
-  bool getSuccessorOrPredecessorOffsets();
   bool getEffectfulOffsets();
   bool getAllOffsets();
   bool getAllColumnOffsets();
@@ -309,7 +306,7 @@ bool DebuggerScript::CallData::getDisplayName() {
     return false;
   }
   JSFunction* func = obj->getReferentScript()->function();
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   JSString* name = func ? func->displayAtom() : nullptr;
   if (!name) {
@@ -418,7 +415,7 @@ class DebuggerScript::GetSourceMatcher {
 };
 
 bool DebuggerScript::CallData::getSource() {
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   GetSourceMatcher matcher(cx, dbg);
   RootedDebuggerSource sourceObject(cx, referent.match(matcher));
@@ -458,7 +455,7 @@ bool DebuggerScript::CallData::getGlobal() {
   if (!ensureScript()) {
     return false;
   }
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   RootedValue v(cx, ObjectValue(script->global()));
   if (!dbg->wrapDebuggeeValue(cx, &v)) {
@@ -517,7 +514,7 @@ bool DebuggerScript::CallData::getChildScripts() {
   if (!ensureScriptMaybeLazy()) {
     return false;
   }
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   RootedObject result(cx, NewDenseEmptyArray(cx));
   if (!result) {
@@ -1147,10 +1144,11 @@ class FlowGraphSummary {
         // was an incoming edge of the catch block. This is needed
         // because we only report offsets of entry points which have
         // valid incoming edges.
-        for (const JSTryNote& tn : script->trynotes()) {
+        for (const TryNote& tn : script->trynotes()) {
           if (tn.start == r.frontOffset() + JSOpLength_Try) {
             uint32_t catchOffset = tn.start + tn.length;
-            if (tn.kind == JSTRY_CATCH || tn.kind == JSTRY_FINALLY) {
+            if (tn.kind() == TryNoteKind::Catch ||
+                tn.kind() == TryNoteKind::Finally) {
               addEdge(lineno, column, catchOffset);
             }
           }
@@ -1325,84 +1323,6 @@ bool DebuggerScript::CallData::getOffsetLocation() {
   return true;
 }
 
-class DebuggerScript::GetSuccessorOrPredecessorOffsetsMatcher {
-  JSContext* cx_;
-  size_t offset_;
-  bool successor_;
-  MutableHandleObject result_;
-
- public:
-  GetSuccessorOrPredecessorOffsetsMatcher(JSContext* cx, size_t offset,
-                                          bool successor,
-                                          MutableHandleObject result)
-      : cx_(cx), offset_(offset), successor_(successor), result_(result) {}
-
-  using ReturnType = bool;
-
-  ReturnType match(Handle<BaseScript*> base) {
-    RootedScript script(cx_, DelazifyScript(cx_, base));
-    if (!script) {
-      return false;
-    }
-
-    if (!EnsureScriptOffsetIsValid(cx_, script, offset_)) {
-      return false;
-    }
-
-    PcVector adjacent;
-    if (successor_) {
-      if (!GetSuccessorBytecodes(script, script->code() + offset_, adjacent)) {
-        ReportOutOfMemory(cx_);
-        return false;
-      }
-    } else {
-      if (!GetPredecessorBytecodes(script, script->code() + offset_,
-                                   adjacent)) {
-        ReportOutOfMemory(cx_);
-        return false;
-      }
-    }
-
-    result_.set(NewDenseEmptyArray(cx_));
-    if (!result_) {
-      return false;
-    }
-
-    for (jsbytecode* pc : adjacent) {
-      if (!NewbornArrayPush(cx_, result_, NumberValue(pc - script->code()))) {
-        return false;
-      }
-    }
-    return true;
-  }
-  ReturnType match(Handle<WasmInstanceObject*> instance) {
-    JS_ReportErrorASCII(
-        cx_, "getSuccessorOrPredecessorOffsets NYI on wasm instances");
-    return false;
-  }
-};
-
-template <bool Successor>
-bool DebuggerScript::CallData::getSuccessorOrPredecessorOffsets() {
-  if (!args.requireAtLeast(cx, "successorOrPredecessorOffsets", 1)) {
-    return false;
-  }
-  size_t offset;
-  if (!ScriptOffset(cx, args[0], &offset)) {
-    return false;
-  }
-
-  RootedObject result(cx);
-  GetSuccessorOrPredecessorOffsetsMatcher matcher(cx, offset, Successor,
-                                                  &result);
-  if (!referent.match(matcher)) {
-    return false;
-  }
-
-  args.rval().setObject(*result);
-  return true;
-}
-
 // Return whether an opcode is considered effectful: it can have direct side
 // effects that can be observed outside of the current frame. Opcodes are not
 // effectful if they only modify the current frame's state, modify objects
@@ -1416,6 +1336,7 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::StrictSetPropSuper:
     case JSOp::SetElem:
     case JSOp::StrictSetElem:
+    case JSOp::SetPrivateElem:
     case JSOp::SetElemSuper:
     case JSOp::StrictSetElemSuper:
     case JSOp::SetName:
@@ -1430,6 +1351,7 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::SetAliasedVar:
     case JSOp::InitHomeObject:
     case JSOp::InitAliasedLexical:
+    case JSOp::InitPrivateElem:
     case JSOp::SetIntrinsic:
     case JSOp::InitGLexical:
     case JSOp::DefVar:
@@ -1509,11 +1431,9 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::GetLocal:
     case JSOp::SetLocal:
     case JSOp::ThrowSetConst:
-    case JSOp::ThrowSetAliasedConst:
-    case JSOp::ThrowSetCallee:
     case JSOp::CheckLexical:
-    case JSOp::InitLexical:
     case JSOp::CheckAliasedLexical:
+    case JSOp::InitLexical:
     case JSOp::Uninitialized:
     case JSOp::Pop:
     case JSOp::PopN:
@@ -1568,6 +1488,7 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::Int32:
     case JSOp::LoopHead:
     case JSOp::GetElem:
+    case JSOp::GetPrivateElem:
     case JSOp::CallElem:
     case JSOp::Length:
     case JSOp::Not:
@@ -1587,7 +1508,7 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::Typeof:
     case JSOp::TypeofExpr:
     case JSOp::ToAsyncIter:
-    case JSOp::ToId:
+    case JSOp::ToPropertyKey:
     case JSOp::IterNext:
     case JSOp::Lambda:
     case JSOp::LambdaArrow:
@@ -1609,7 +1530,6 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::ImplicitThis:
     case JSOp::NewTarget:
     case JSOp::CheckIsObj:
-    case JSOp::CheckIsCallable:
     case JSOp::CheckObjCoercible:
     case JSOp::DebugCheckSelfHosted:
     case JSOp::IsConstructing:
@@ -1626,11 +1546,12 @@ static bool BytecodeIsEffectful(JSOp op) {
     case JSOp::CheckClassHeritage:
     case JSOp::FunWithProto:
     case JSOp::ObjWithProto:
-    case JSOp::BuiltinProto:
+    case JSOp::FunctionProto:
     case JSOp::DerivedConstructor:
     case JSOp::CheckThis:
     case JSOp::CheckReturn:
     case JSOp::CheckThisReinit:
+    case JSOp::CheckGlobalOrEvalDecl:
     case JSOp::SuperFun:
     case JSOp::SpreadSuperCall:
     case JSOp::SuperCall:
@@ -1733,7 +1654,7 @@ bool DebuggerScript::CallData::getAllOffsets() {
         RootedId id(cx);
         RootedValue v(cx, NumberValue(lineno));
         offsets = NewDenseEmptyArray(cx);
-        if (!offsets || !ValueToId<CanGC>(cx, v, &id)) {
+        if (!offsets || !PrimitiveValueToId<CanGC>(cx, v, &id)) {
           return false;
         }
 
@@ -2075,7 +1996,7 @@ bool DebuggerScript::CallData::setBreakpoint() {
   if (!args.requireAtLeast(cx, "Debugger.Script.setBreakpoint", 2)) {
     return false;
   }
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   size_t offset;
   if (!ScriptOffset(cx, args[0], &offset)) {
@@ -2099,7 +2020,7 @@ bool DebuggerScript::CallData::getBreakpoints() {
   if (!ensureScript()) {
     return false;
   }
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   jsbytecode* pc;
   if (args.length() > 0) {
@@ -2196,7 +2117,7 @@ bool DebuggerScript::CallData::clearBreakpoint() {
   if (!args.requireAtLeast(cx, "Debugger.Script.clearBreakpoint", 1)) {
     return false;
   }
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
 
   JSObject* handler = RequireObject(cx, args[0]);
   if (!handler) {
@@ -2213,7 +2134,7 @@ bool DebuggerScript::CallData::clearBreakpoint() {
 }
 
 bool DebuggerScript::CallData::clearAllBreakpoints() {
-  Debugger* dbg = Debugger::fromChildJSObject(obj);
+  Debugger* dbg = obj->owner();
   ClearBreakpointMatcher matcher(cx, dbg, nullptr);
   if (!referent.match(matcher)) {
     return false;
@@ -2244,9 +2165,9 @@ class DebuggerScript::IsInCatchScopeMatcher {
       return false;
     }
 
-    for (const JSTryNote& tn : script->trynotes()) {
+    for (const TryNote& tn : script->trynotes()) {
       if (tn.start <= offset_ && offset_ < tn.start + tn.length &&
-          tn.kind == JSTRY_CATCH) {
+          tn.kind() == TryNoteKind::Catch) {
         isInCatch_ = true;
         return true;
       }
@@ -2421,10 +2342,6 @@ const JSFunctionSpec DebuggerScript::methods_[] = {
     JS_DEBUG_FN("isInCatchScope", isInCatchScope, 1),
     JS_DEBUG_FN("getOffsetMetadata", getOffsetMetadata, 1),
     JS_DEBUG_FN("getOffsetsCoverage", getOffsetsCoverage, 0),
-    JS_DEBUG_FN("getSuccessorOffsets", getSuccessorOrPredecessorOffsets<true>,
-                1),
-    JS_DEBUG_FN("getPredecessorOffsets",
-                getSuccessorOrPredecessorOffsets<false>, 1),
     JS_DEBUG_FN("getEffectfulOffsets", getEffectfulOffsets, 1),
     JS_DEBUG_FN("setInstrumentationId", setInstrumentationId, 1),
 

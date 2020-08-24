@@ -17,6 +17,11 @@ const { E10SUtils } = ChromeUtils.import(
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
+
+const { FeatureGate } = ChromeUtils.import(
+  "resource://featuregates/FeatureGate.jsm"
+);
+
 XPCOMUtils.defineLazyGlobalGetters(this, ["DOMParser"]);
 
 // We use a preferences whitelist to make sure we only show preferences that
@@ -46,6 +51,7 @@ const PREFS_WHITELIST = [
   "browser.search.log",
   "browser.search.openintab",
   "browser.search.param",
+  "browser.search.region",
   "browser.search.searchEnginesURL",
   "browser.search.suggest.enabled",
   "browser.search.update",
@@ -195,9 +201,14 @@ var dataProviders = {
       osVersion:
         Services.sysinfo.getProperty("name") +
         " " +
-        Services.sysinfo.getProperty("version"),
+        Services.sysinfo.getProperty("version") +
+        " " +
+        Services.sysinfo.getProperty("build"),
       version: AppConstants.MOZ_APP_VERSION_DISPLAY,
       buildID: Services.appinfo.appBuildID,
+      distributionID: Services.prefs
+        .getDefaultBranch("")
+        .getCharPref("distribution.id", ""),
       userAgent: Cc["@mozilla.org/network/protocol;1?name=http"].getService(
         Ci.nsIHttpProtocolHandler
       ).userAgent,
@@ -275,15 +286,23 @@ var dataProviders = {
     done(data);
   },
 
-  extensions: async function extensions(done) {
-    let extensions = await AddonManager.getAddonsByTypes(["extension"]);
-    extensions = extensions.filter(e => !e.isSystem);
-    extensions.sort(function(a, b) {
+  addons: async function addons(done) {
+    let addons = await AddonManager.getAddonsByTypes([
+      "extension",
+      "locale",
+      "dictionary",
+    ]);
+    addons = addons.filter(e => !e.isSystem);
+    addons.sort(function(a, b) {
       if (a.isActive != b.isActive) {
         return b.isActive ? 1 : -1;
       }
 
-      // In some unfortunate cases addon names can be null.
+      if (a.type != b.type) {
+        return a.type.localeCompare(b.type);
+      }
+
+      // In some unfortunate cases add-on names can be null.
       let aname = a.name || "";
       let bname = b.name || "";
       let lc = aname.localeCompare(bname);
@@ -295,9 +314,9 @@ var dataProviders = {
       }
       return 0;
     });
-    let props = ["name", "version", "isActive", "id"];
+    let props = ["name", "type", "version", "isActive", "id"];
     done(
-      extensions.map(function(ext) {
+      addons.map(function(ext) {
         return props.reduce(function(extData, prop) {
           extData[prop] = ext[prop];
           return extData;
@@ -388,12 +407,33 @@ var dataProviders = {
       }
     } catch (e) {}
 
+    if (Services.io.socketProcessLaunched) {
+      remoteTypes.socket = 1;
+    }
+
     let data = {
       remoteTypes,
       maxWebContentProcesses: Services.appinfo.maxWebProcessCount,
     };
 
     done(data);
+  },
+
+  async experimentalFeatures(done) {
+    if (AppConstants.platform == "android") {
+      done();
+      return;
+    }
+    let gates = await FeatureGate.all();
+    done(
+      gates.map(gate => {
+        return [
+          gate.title,
+          gate.preference,
+          Services.prefs.getBoolPref(gate.preference),
+        ];
+      })
+    );
   },
 
   modifiedPreferences: function modifiedPreferences(done) {
@@ -689,17 +729,6 @@ var dataProviders = {
     done(data);
   },
 
-  javaScript: function javaScript(done) {
-    let data = {};
-    let winEnumer = Services.ww.getWindowEnumerator();
-    if (winEnumer.hasMoreElements()) {
-      data.incrementalGCEnabled = winEnumer
-        .getNext()
-        .windowUtils.isIncrementalGCEnabled();
-    }
-    done(data);
-  },
-
   accessibility: function accessibility(done) {
     let data = {};
     data.isActive = Services.appinfo.accessibilityEnabled;
@@ -712,6 +741,18 @@ var dataProviders = {
     data.handlerUsed = Services.appinfo.accessibleHandlerUsed;
     data.instantiator = Services.appinfo.accessibilityInstantiator;
     done(data);
+  },
+
+  startupCache: function startupCache(done) {
+    const startupInfo = Cc["@mozilla.org/startupcacheinfo;1"].getService(
+      Ci.nsIStartupCacheInfo
+    );
+    done({
+      DiskCachePath: startupInfo.DiskCachePath,
+      IgnoreDiskCache: startupInfo.IgnoreDiskCache,
+      FoundDiskCacheOnInit: startupInfo.FoundDiskCacheOnInit,
+      WroteToDiskCache: startupInfo.WroteToDiskCache,
+    });
   },
 
   libraryVersions: function libraryVersions(done) {

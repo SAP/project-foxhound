@@ -43,7 +43,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ice_reg.h"
 
 static void nr_ice_peer_ctx_destroy_cb(NR_SOCKET s, int how, void *cb_arg);
-static int nr_ice_peer_ctx_parse_stream_attributes_int(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, nr_ice_media_stream *pstream, char **attrs, int attr_ct);
+static void nr_ice_peer_ctx_parse_stream_attributes_int(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, nr_ice_media_stream *pstream, char **attrs, int attr_ct);
 static int nr_ice_ctx_parse_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream *pstream, char *candidate, int trickled, const char *mdns_addr);
 static void nr_ice_peer_ctx_start_trickle_timer(nr_ice_peer_ctx *pctx);
 
@@ -115,8 +115,7 @@ int nr_ice_peer_ctx_parse_stream_attributes(nr_ice_peer_ctx *pctx, nr_ice_media_
     pstream->local_stream=stream;
     pstream->pctx=pctx;
 
-    if (r=nr_ice_peer_ctx_parse_stream_attributes_int(pctx,stream,pstream,attrs,attr_ct))
-      ABORT(r);
+    nr_ice_peer_ctx_parse_stream_attributes_int(pctx,stream,pstream,attrs,attr_ct);
 
     /* Now that we have the ufrag and password, compute all the username/password
        pairs */
@@ -139,13 +138,17 @@ int nr_ice_peer_ctx_parse_stream_attributes(nr_ice_peer_ctx *pctx, nr_ice_media_
       ABORT(r);
 
     STAILQ_INSERT_TAIL(&pctx->peer_streams,pstream,entry);
+    pstream=0;
 
     _status=0;
   abort:
+    if (_status) {
+      nr_ice_media_stream_destroy(&pstream);
+    }
     return(_status);
   }
 
-static int nr_ice_peer_ctx_parse_stream_attributes_int(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, nr_ice_media_stream *pstream, char **attrs, int attr_ct)
+static void nr_ice_peer_ctx_parse_stream_attributes_int(nr_ice_peer_ctx *pctx, nr_ice_media_stream *stream, nr_ice_media_stream *pstream, char **attrs, int attr_ct)
   {
     int r;
     int i;
@@ -169,7 +172,6 @@ static int nr_ice_peer_ctx_parse_stream_attributes_int(nr_ice_peer_ctx *pctx, nr
     }
 
     /* Doesn't fail because we just skip errors */
-    return(0);
   }
 
 static int nr_ice_ctx_parse_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_stream *pstream, char *candidate, int trickled, const char *mdns_addr)
@@ -277,6 +279,10 @@ int nr_ice_peer_ctx_parse_trickle_candidate(nr_ice_peer_ctx *pctx, nr_ice_media_
     nr_ice_media_stream *pstream;
     int r,_status;
     int needs_pairing = 0;
+
+    if (stream->obsolete) {
+      return 0;
+    }
 
     r_log(LOG_ICE,LOG_DEBUG,"ICE(%s): peer (%s) parsing trickle ICE candidate %s",pctx->ctx->label,pctx->label,candidate);
     r = nr_ice_peer_ctx_find_pstream(pctx, stream, &pstream);

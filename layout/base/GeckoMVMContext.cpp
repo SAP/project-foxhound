@@ -131,7 +131,7 @@ bool GeckoMVMContext::IsInReaderMode() const {
   if (NS_FAILED(mDocument->GetDocumentURI(uri))) {
     return false;
   }
-  static auto readerModeUriPrefix = NS_LITERAL_STRING("about:reader");
+  static auto readerModeUriPrefix = u"about:reader"_ns;
   return StringBeginsWith(uri, readerModeUriPrefix);
 }
 
@@ -148,7 +148,9 @@ void GeckoMVMContext::SetResolutionAndScaleTo(float aResolution,
 
 void GeckoMVMContext::SetVisualViewportSize(const CSSSize& aSize) {
   MOZ_ASSERT(mPresShell);
-  nsLayoutUtils::SetVisualViewportSize(mPresShell, aSize);
+  mPresShell->SetVisualViewportSize(
+      nsPresContext::CSSPixelsToAppUnits(aSize.width),
+      nsPresContext::CSSPixelsToAppUnits(aSize.height));
 }
 
 void GeckoMVMContext::PostVisualViewportResizeEventByDynamicToolbar() {

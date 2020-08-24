@@ -118,6 +118,8 @@ class Accessible extends Component {
       parents: PropTypes.object,
       relations: PropTypes.object,
       toolbox: PropTypes.object.isRequired,
+      highlightAccessible: PropTypes.func.isRequired,
+      unhighlightAccessible: PropTypes.func.isRequired,
     };
   }
 
@@ -161,6 +163,15 @@ class Accessible extends Component {
       ACCESSIBLE_EVENTS.forEach(event =>
         accessibleFront.on(event, this.update)
       );
+    }
+  }
+
+  componentDidUpdate(prevProps) {
+    if (
+      this.props?.accessibleFront?.actorID &&
+      this.props.accessibleFront !== prevProps.accessibleFront
+    ) {
+      window.emit(EVENTS.PROPERTIES_UPDATED);
     }
   }
 
@@ -226,42 +237,12 @@ class Accessible extends Component {
 
   showAccessibleHighlighter(accessibleFront) {
     this.props.dispatch(unhighlight());
-    if (!accessibleFront) {
-      return;
-    }
-
-    const accessibleWalkerFront = accessibleFront.parent();
-    if (!accessibleWalkerFront) {
-      return;
-    }
-
-    accessibleWalkerFront.highlightAccessible(accessibleFront).catch(error => {
-      // Only report an error where there's still a toolbox. Ignore cases
-      // where toolbox is already destroyed.
-      if (this.props.toolbox) {
-        console.error(error);
-      }
-    });
+    this.props.highlightAccessible(accessibleFront);
   }
 
   hideAccessibleHighlighter(accessibleFront) {
     this.props.dispatch(unhighlight());
-    if (!accessibleFront) {
-      return;
-    }
-
-    const accessibleWalkerFront = accessibleFront.parent();
-    if (!accessibleWalkerFront) {
-      return;
-    }
-
-    accessibleWalkerFront.unhighlight().catch(error => {
-      // Only report an error where there's still a toolbox. Ignore cases where
-      // toolbox is already destroyed.
-      if (this.props.toolbox) {
-        console.error(error);
-      }
-    });
+    this.props.unhighlightAccessible(accessibleFront);
   }
 
   async selectNode(nodeFront, reason = "accessibility") {

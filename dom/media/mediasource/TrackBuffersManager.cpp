@@ -72,7 +72,7 @@ class DispatchKeyNeededEvent : public Runnable {
                          const nsString& aInitDataType)
       : Runnable("DispatchKeyNeededEvent"),
         mDecoder(aDecoder),
-        mInitData(aInitData),
+        mInitData(aInitData.Clone()),
         mInitDataType(aInitDataType) {}
   NS_IMETHOD Run() override {
     // Note: Null check the owner, as the decoder could have been shutdown
@@ -826,14 +826,27 @@ void TrackBuffersManager::SegmentParserLoop() {
       return;
     }
 
-    int64_t start, end;
-    MediaResult newData =
-        mParser->ParseStartAndEndTimestamps(*mInputBuffer, start, end);
-    if (!NS_SUCCEEDED(newData) && newData.Code() != NS_ERROR_NOT_AVAILABLE) {
-      RejectAppend(newData, __func__);
-      return;
+    MOZ_ASSERT(mSourceBufferAttributes->GetAppendState() ==
+                   AppendState::PARSING_INIT_SEGMENT ||
+               mSourceBufferAttributes->GetAppendState() ==
+                   AppendState::PARSING_MEDIA_SEGMENT);
+
+    int64_t start = 0;
+    int64_t end = 0;
+    MediaResult newData = NS_ERROR_NOT_AVAILABLE;
+
+    if (mSourceBufferAttributes->GetAppendState() ==
+            AppendState::PARSING_INIT_SEGMENT ||
+        (mSourceBufferAttributes->GetAppendState() ==
+             AppendState::PARSING_MEDIA_SEGMENT &&
+         mFirstInitializationSegmentReceived && !mChangeTypeReceived)) {
+      newData = mParser->ParseStartAndEndTimestamps(*mInputBuffer, start, end);
+      if (NS_FAILED(newData) && newData.Code() != NS_ERROR_NOT_AVAILABLE) {
+        RejectAppend(newData, __func__);
+        return;
+      }
+      mProcessedInput += mInputBuffer->Length();
     }
-    mProcessedInput += mInputBuffer->Length();
 
     // 5. If the append state equals PARSING_INIT_SEGMENT, then run the
     // following steps:
@@ -2869,7 +2882,7 @@ void TrackBuffersManager::GetDebugInfo(
       range->mStart = ranges.Start(i).ToSeconds();
       range->mEnd = ranges.End(i).ToSeconds();
     }
-    aInfo.mRanges = items;
+    aInfo.mRanges = std::move(items);
   } else if (HasVideo()) {
     aInfo.mNextSampleTime = mVideoTracks.mNextSampleTime.ToSeconds();
     aInfo.mNumSamples = mVideoTracks.mBuffers[0].Length();
@@ -2888,7 +2901,7 @@ void TrackBuffersManager::GetDebugInfo(
       range->mStart = ranges.Start(i).ToSeconds();
       range->mEnd = ranges.End(i).ToSeconds();
     }
-    aInfo.mRanges = items;
+    aInfo.mRanges = std::move(items);
   }
 }
 

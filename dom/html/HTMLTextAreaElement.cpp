@@ -107,8 +107,8 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLTextAreaElement,
 nsresult HTMLTextAreaElement::Clone(dom::NodeInfo* aNodeInfo,
                                     nsINode** aResult) const {
   *aResult = nullptr;
-  RefPtr<HTMLTextAreaElement> it =
-      new HTMLTextAreaElement(do_AddRef(aNodeInfo));
+  RefPtr<HTMLTextAreaElement> it = new (aNodeInfo->NodeInfoManager())
+      HTMLTextAreaElement(do_AddRef(aNodeInfo));
 
   nsresult rv = const_cast<HTMLTextAreaElement*>(this)->CopyInnerTo(it);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -212,6 +212,13 @@ void HTMLTextAreaElement::GetValueInternal(nsAString& aValue,
 bool HTMLTextAreaElement::ValueEquals(const nsAString& aValue) const {
   MOZ_ASSERT(mState);
   return mState->ValueEquals(aValue);
+}
+
+nsIEditor* HTMLTextAreaElement::GetEditorForBindings() {
+  if (!GetPrimaryFrame()) {
+    GetPrimaryFrame(FlushType::Frames);
+  }
+  return GetTextEditor();
 }
 
 TextEditor* HTMLTextAreaElement::GetTextEditor() {
@@ -503,8 +510,8 @@ void HTMLTextAreaElement::FireChangeEventIfNeeded() {
   // Dispatch the change event.
   mFocusedValue = value;
   nsContentUtils::DispatchTrustedEvent(
-      OwnerDoc(), static_cast<nsIContent*>(this), NS_LITERAL_STRING("change"),
-      CanBubble::eYes, Cancelable::eNo);
+      OwnerDoc(), static_cast<nsIContent*>(this), u"change"_ns, CanBubble::eYes,
+      Cancelable::eNo);
 }
 
 nsresult HTMLTextAreaElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
@@ -735,7 +742,8 @@ HTMLTextAreaElement::SaveState() {
         return rv;
       }
 
-      state->contentData() = std::move(value);
+      state->contentData() =
+          TextContentData(value, mLastValueChangeWasInteractive);
     }
   }
 
@@ -757,12 +765,15 @@ HTMLTextAreaElement::SaveState() {
 bool HTMLTextAreaElement::RestoreState(PresState* aState) {
   const PresContentData& state = aState->contentData();
 
-  if (state.type() == PresContentData::TnsString) {
+  if (state.type() == PresContentData::TTextContentData) {
     ErrorResult rv;
-    SetValue(state.get_nsString(), rv);
+    SetValue(state.get_TextContentData().value(), rv);
     ENSURE_SUCCESS(rv, false);
+    if (state.get_TextContentData().lastValueChangeWasInteractive()) {
+      mLastValueChangeWasInteractive = true;
+      UpdateState(true);
+    }
   }
-
   if (aState->disabledSet() && !aState->disabled()) {
     SetDisabled(false, IgnoreErrors());
   }
@@ -1112,7 +1123,7 @@ void HTMLTextAreaElement::InitializeKeyboardEventListeners() {
   mState->InitializeKeyboardEventListeners();
 }
 
-void HTMLTextAreaElement::OnValueChanged(bool aNotify, ValueChangeKind aKind) {
+void HTMLTextAreaElement::OnValueChanged(ValueChangeKind aKind) {
   if (aKind != ValueChangeKind::Internal) {
     mLastValueChangeWasInteractive = aKind == ValueChangeKind::UserInteraction;
   }
@@ -1123,9 +1134,8 @@ void HTMLTextAreaElement::OnValueChanged(bool aNotify, ValueChangeKind aKind) {
   UpdateTooShortValidityState();
   UpdateValueMissingValidityState();
 
-  if (validBefore != IsValid() ||
-      HasAttr(kNameSpaceID_None, nsGkAtoms::placeholder)) {
-    UpdateState(aNotify);
+  if (validBefore != IsValid() || HasAttr(nsGkAtoms::placeholder)) {
+    UpdateState(true);
   }
 }
 

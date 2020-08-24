@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGImageElement_h
-#define mozilla_dom_SVGImageElement_h
+#ifndef DOM_SVG_SVGIMAGEELEMENT_H_
+#define DOM_SVG_SVGIMAGEELEMENT_H_
 
 #include "nsImageLoadingContent.h"
 #include "SVGAnimatedLength.h"
@@ -16,17 +16,17 @@
 nsresult NS_NewSVGImageElement(
     nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
 
-class nsSVGImageFrame;
-
 namespace mozilla {
+class SVGImageFrame;
+
 namespace dom {
 class DOMSVGAnimatedPreserveAspectRatio;
 
-typedef SVGGeometryElement SVGImageElementBase;
+using SVGImageElementBase = SVGGeometryElement;
 
 class SVGImageElement : public SVGImageElementBase,
                         public nsImageLoadingContent {
-  friend class ::nsSVGImageFrame;
+  friend class mozilla::SVGImageFrame;
 
  protected:
   explicit SVGImageElement(
@@ -67,6 +67,8 @@ class SVGImageElement : public SVGImageElementBase,
 
   virtual EventStates IntrinsicState() const override;
 
+  virtual void DestroyContent() override;
+
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* name) const override;
 
   // SVGGeometryElement methods:
@@ -76,12 +78,10 @@ class SVGImageElement : public SVGImageElementBase,
       const Matrix* aToNonScalingStrokeSpace = nullptr) override;
   virtual already_AddRefed<Path> BuildPath(PathBuilder* aBuilder) override;
 
-  // nsSVGSVGElement methods:
+  // SVGSVGElement methods:
   virtual bool HasValidDimensions() const override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
-
-  nsresult CopyInnerTo(mozilla::dom::Element* aDest);
 
   void MaybeLoadSVGImage();
 
@@ -127,4 +127,4 @@ class SVGImageElement : public SVGImageElementBase,
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // mozilla_dom_SVGImageElement_h
+#endif  // DOM_SVG_SVGIMAGEELEMENT_H_

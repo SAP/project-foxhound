@@ -39,19 +39,13 @@
         <vbox part="drop-indicator-bar" hidden="true">
           <image part="drop-indicator"/>
         </vbox>
-        <arrowscrollbox class="popup-internal-box" flex="1" orient="vertical"
-                        smoothscroll="false" part="popupbox">
+        <arrowscrollbox class="menupopup-arrowscrollbox" flex="1" orient="vertical"
+                        exportparts="scrollbox: arrowscrollbox-scrollbox"
+                        smoothscroll="false" part="arrowscrollbox">
           <html:slot></html:slot>
         </arrowscrollbox>
       </hbox>
     `;
-    }
-
-    initShadowDOM() {
-      super.initShadowDOM();
-      if (this.closest("#BMB_bookmarksPopup")) {
-        this.scrollBox.classList.add("in-bookmarks-menu");
-      }
     }
 
     connectedCallback() {
@@ -606,9 +600,9 @@
           <vbox part="drop-indicator-bar" hidden="true">
             <image part="drop-indicator"/>
           </vbox>
-          <arrowscrollbox class="popup-internal-box" flex="1"
+          <arrowscrollbox class="menupopup-arrowscrollbox" flex="1"
                           orient="vertical" smoothscroll="false"
-                          part="popupbox">
+                          part="arrowscrollbox">
             <html:slot/>
           </arrowscrollbox>
         </box>

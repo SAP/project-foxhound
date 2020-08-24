@@ -10,6 +10,10 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsITrackingDBService"
 );
 
+const { AboutProtectionsParent } = ChromeUtils.import(
+  "resource:///actors/AboutProtectionsParent.jsm"
+);
+
 const LOG = {
   "https://1.example.com": [
     [Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT, true, 1],
@@ -58,6 +62,8 @@ add_task(async function setup() {
       ["browser.contentblocking.report.lockwise.mobile-ios.url", ""],
       ["browser.contentblocking.report.mobile-ios.url", ""],
       ["browser.contentblocking.report.mobile-android.url", ""],
+      ["browser.contentblocking.report.monitor.home_page_url", ""],
+      ["browser.contentblocking.report.monitor.preferences_url", ""],
     ],
   });
 
@@ -177,6 +183,79 @@ add_task(async function checkTelemetryClickEvents() {
     gBrowser,
   });
 
+  // Add user logins.
+  Services.logins.addLogin(TEST_LOGIN1);
+  await reloadTab(tab);
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const managePasswordsButton = await ContentTaskUtils.waitForCondition(
+      () => {
+        return content.document.getElementById("manage-passwords-button");
+      },
+      "Manage passwords button exists"
+    );
+    await ContentTaskUtils.waitForCondition(
+      () => ContentTaskUtils.is_visible(managePasswordsButton),
+      "manage passwords button is visible"
+    );
+    managePasswordsButton.click();
+  });
+
+  let events = await waitForTelemetryEventCount(4);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "lw_open_button" &&
+      e[4] == "manage_passwords"
+  );
+  is(
+    events.length,
+    1,
+    `recorded telemetry for lw_open_button when there are no breached passwords`
+  );
+  await BrowserTestUtils.removeTab(gBrowser.selectedTab);
+
+  // Add breached logins.
+  AboutProtectionsParent.setTestOverride(
+    mockGetMonitorData({
+      potentiallyBreachedLogins: 4,
+      numBreaches: 5,
+      numBreachesResolved: 0,
+    })
+  );
+  await reloadTab(tab);
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const managePasswordsButton = await ContentTaskUtils.waitForCondition(
+      () => {
+        return content.document.getElementById("manage-passwords-button");
+      },
+      "Manage passwords button exists"
+    );
+    await ContentTaskUtils.waitForCondition(
+      () => ContentTaskUtils.is_visible(managePasswordsButton),
+      "manage passwords button is visible"
+    );
+    managePasswordsButton.click();
+  });
+
+  events = await waitForTelemetryEventCount(7);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "lw_open_button" &&
+      e[4] == "manage_breached_passwords"
+  );
+  is(
+    events.length,
+    1,
+    `recorded telemetry for lw_open_button when there are breached passwords`
+  );
+  AboutProtectionsParent.setTestOverride(null);
+  Services.logins.removeLogin(TEST_LOGIN1);
+  await BrowserTestUtils.removeTab(gBrowser.selectedTab);
+  await reloadTab(tab);
+
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     // Show all elements, so we can click on them, even though our user is not logged in.
     let hidden_elements = content.document.querySelectorAll(".hidden");
@@ -184,41 +263,28 @@ add_task(async function checkTelemetryClickEvents() {
       el.style.display = "block ";
     }
 
-    const syncLink = await ContentTaskUtils.waitForCondition(() => {
+    const savePasswordsButton = await ContentTaskUtils.waitForCondition(() => {
       // Opens an extra tab
-      return content.document.getElementById("turn-on-sync");
-    }, "syncLink exists");
+      return content.document.getElementById("save-passwords-button");
+    }, "Save Passwords button exists");
 
-    syncLink.click();
+    savePasswordsButton.click();
   });
 
-  let events = await waitForTelemetryEventCount(2);
+  events = await waitForTelemetryEventCount(10);
   events = events.filter(
     e =>
       e[1] == "security.ui.protections" &&
       e[2] == "click" &&
-      e[3] == "lw_app_link"
+      e[3] == "lw_open_button" &&
+      e[4] == "save_passwords"
   );
-  is(events.length, 1, `recorded telemetry for lw_app_link`);
-
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
-    const openAboutLogins = await ContentTaskUtils.waitForCondition(() => {
-      // Opens an extra tab
-      return content.document.getElementById("open-about-logins-button");
-    }, "openAboutLogins exists");
-
-    openAboutLogins.click();
-  });
-
-  events = await waitForTelemetryEventCount(3);
-
-  events = events.filter(
-    e =>
-      e[1] == "security.ui.protections" &&
-      e[2] == "click" &&
-      e[3] == "lw_open_button"
+  is(
+    events.length,
+    1,
+    `recorded telemetry for lw_open_button when there are no stored passwords`
   );
-  is(events.length, 1, `recorded telemetry for lw_open_button`);
+  await BrowserTestUtils.removeTab(gBrowser.selectedTab);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     const lockwiseAndroidAppLink = await ContentTaskUtils.waitForCondition(
@@ -231,7 +297,7 @@ add_task(async function checkTelemetryClickEvents() {
     lockwiseAndroidAppLink.click();
   });
 
-  events = await waitForTelemetryEventCount(4);
+  events = await waitForTelemetryEventCount(11);
 
   events = events.filter(
     e =>
@@ -243,14 +309,14 @@ add_task(async function checkTelemetryClickEvents() {
   is(events.length, 1, `recorded telemetry for lw_sync_link, android`);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
-    const lockwiseReportLink = await ContentTaskUtils.waitForCondition(() => {
+    const lockwiseAboutLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("lockwise-how-it-works");
     }, "lockwiseReportLink exists");
 
-    lockwiseReportLink.click();
+    lockwiseAboutLink.click();
   });
 
-  events = await waitForTelemetryEventCount(5);
+  events = await waitForTelemetryEventCount(12);
 
   events = events.filter(
     e =>
@@ -261,43 +327,6 @@ add_task(async function checkTelemetryClickEvents() {
   is(events.length, 1, `recorded telemetry for lw_about_link`);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
-    let openLockwise = await ContentTaskUtils.waitForCondition(() => {
-      // Opens an extra tab
-      return content.document.getElementById("lockwise-link");
-    }, "openLockwise exists");
-
-    openLockwise.click();
-  });
-
-  events = await waitForTelemetryEventCount(6);
-
-  events = events.filter(
-    e =>
-      e[1] == "security.ui.protections" &&
-      e[2] == "click" &&
-      e[3] == "lw_open_breach_link"
-  );
-  is(events.length, 1, `recorded telemetry for lw_open_breach_link`);
-
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
-    let monitorReportLink = await ContentTaskUtils.waitForCondition(() => {
-      return content.document.getElementById("monitor-inline-link");
-    }, "monitorReportLink exists");
-
-    monitorReportLink.click();
-  });
-
-  events = await waitForTelemetryEventCount(7);
-
-  events = events.filter(
-    e =>
-      e[1] == "security.ui.protections" &&
-      e[2] == "click" &&
-      e[3] == "mtr_report_link"
-  );
-  is(events.length, 1, `recorded telemetry for mtr_report_link`);
-
-  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
     let monitorAboutLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("monitor-link");
     }, "monitorAboutLink exists");
@@ -305,7 +334,7 @@ add_task(async function checkTelemetryClickEvents() {
     monitorAboutLink.click();
   });
 
-  events = await waitForTelemetryEventCount(8);
+  events = await waitForTelemetryEventCount(13);
 
   events = events.filter(
     e =>
@@ -323,7 +352,7 @@ add_task(async function checkTelemetryClickEvents() {
     signUpForMonitorLink.click();
   });
 
-  events = await waitForTelemetryEventCount(9);
+  events = await waitForTelemetryEventCount(14);
 
   events = events.filter(
     e =>
@@ -341,7 +370,7 @@ add_task(async function checkTelemetryClickEvents() {
     socialLearnMoreLink.click();
   });
 
-  events = await waitForTelemetryEventCount(10);
+  events = await waitForTelemetryEventCount(15);
 
   events = events.filter(
     e =>
@@ -360,7 +389,7 @@ add_task(async function checkTelemetryClickEvents() {
     cookieLearnMoreLink.click();
   });
 
-  events = await waitForTelemetryEventCount(11);
+  events = await waitForTelemetryEventCount(16);
 
   events = events.filter(
     e =>
@@ -379,7 +408,7 @@ add_task(async function checkTelemetryClickEvents() {
     trackerLearnMoreLink.click();
   });
 
-  events = await waitForTelemetryEventCount(12);
+  events = await waitForTelemetryEventCount(17);
 
   events = events.filter(
     e =>
@@ -405,7 +434,7 @@ add_task(async function checkTelemetryClickEvents() {
     fingerprinterLearnMoreLink.click();
   });
 
-  events = await waitForTelemetryEventCount(13);
+  events = await waitForTelemetryEventCount(18);
 
   events = events.filter(
     e =>
@@ -431,7 +460,7 @@ add_task(async function checkTelemetryClickEvents() {
     cryptominerLearnMoreLink.click();
   });
 
-  events = await waitForTelemetryEventCount(14);
+  events = await waitForTelemetryEventCount(19);
 
   events = events.filter(
     e =>
@@ -454,7 +483,7 @@ add_task(async function checkTelemetryClickEvents() {
     lockwiseIOSAppLink.click();
   });
 
-  events = await waitForTelemetryEventCount(15);
+  events = await waitForTelemetryEventCount(20);
 
   events = events.filter(
     e =>
@@ -466,12 +495,6 @@ add_task(async function checkTelemetryClickEvents() {
   is(events.length, 1, `recorded telemetry for lw_sync_link`);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
-    // Show all elements, so we can click on them, even though our user is not logged in.
-    let hidden_elements = content.document.querySelectorAll(".hidden");
-    for (let el of hidden_elements) {
-      el.style.display = "block ";
-    }
-
     const mobileAppLink = await ContentTaskUtils.waitForCondition(() => {
       return content.document.getElementById("android-mobile-inline-link");
     }, "android-mobile-inline-link exists");
@@ -479,7 +502,7 @@ add_task(async function checkTelemetryClickEvents() {
     mobileAppLink.click();
   });
 
-  events = await waitForTelemetryEventCount(16);
+  events = await waitForTelemetryEventCount(21);
   events = events.filter(
     e =>
       e[1] == "security.ui.protections" &&
@@ -488,14 +511,299 @@ add_task(async function checkTelemetryClickEvents() {
   );
   is(events.length, 1, `recorded telemetry for mobile_app_link`);
 
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const protectionSettings = await ContentTaskUtils.waitForCondition(() => {
+      return content.document.getElementById("protection-settings");
+    }, "protection-settings link exists");
+
+    protectionSettings.click();
+  });
+
+  events = await waitForTelemetryEventCount(22);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "settings_link" &&
+      e[4] == "header-settings"
+  );
+  is(events.length, 1, `recorded telemetry for settings_link header-settings`);
+  await BrowserTestUtils.removeTab(gBrowser.selectedTab);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const customProtectionSettings = await ContentTaskUtils.waitForCondition(
+      () => {
+        return content.document.getElementById("manage-protections");
+      },
+      "manage-protections link exists"
+    );
+    // Show element so we can click on it
+    customProtectionSettings.style.display = "block";
+
+    customProtectionSettings.click();
+  });
+
+  events = await waitForTelemetryEventCount(23);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "settings_link" &&
+      e[4] == "custom-card-settings"
+  );
+  is(
+    events.length,
+    1,
+    `recorded telemetry for settings_link custom-card-settings`
+  );
+  await BrowserTestUtils.removeTab(gBrowser.selectedTab);
+
+  // Add breached logins and some resolved breaches.
+  AboutProtectionsParent.setTestOverride(
+    mockGetMonitorData({
+      potentiallyBreachedLogins: 4,
+      numBreaches: 3,
+      numBreachesResolved: 1,
+    })
+  );
+  await reloadTab(tab);
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const resolveBreachesButton = await ContentTaskUtils.waitForCondition(
+      () => {
+        return content.document.getElementById("monitor-partial-breaches-link");
+      },
+      "Monitor resolve breaches button exists"
+    );
+
+    await ContentTaskUtils.waitForCondition(
+      () => ContentTaskUtils.is_visible(resolveBreachesButton),
+      "Resolve breaches button is visible"
+    );
+
+    resolveBreachesButton.click();
+  });
+
+  events = await waitForTelemetryEventCount(26);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "mtr_report_link" &&
+      e[4] == "resolve_breaches"
+  );
+  is(events.length, 1, `recorded telemetry for resolve breaches button`);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const monitorKnownBreachesBlock = await ContentTaskUtils.waitForCondition(
+      () => {
+        return content.document.getElementById("monitor-known-breaches-link");
+      },
+      "Monitor card known breaches block exists"
+    );
+
+    monitorKnownBreachesBlock.click();
+  });
+
+  events = await waitForTelemetryEventCount(27);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "mtr_report_link" &&
+      e[4] == "known_resolved_breaches"
+  );
+  is(events.length, 1, `recorded telemetry for monitor known breaches block`);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const monitorExposedPasswordsBlock = await ContentTaskUtils.waitForCondition(
+      () => {
+        return content.document.getElementById(
+          "monitor-exposed-passwords-link"
+        );
+      },
+      "Monitor card exposed passwords block exists"
+    );
+
+    monitorExposedPasswordsBlock.click();
+  });
+
+  events = await waitForTelemetryEventCount(28);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "mtr_report_link" &&
+      e[4] == "exposed_passwords_unresolved_breaches"
+  );
+  is(
+    events.length,
+    1,
+    `recorded telemetry for monitor exposed passwords block`
+  );
+
+  // Add breached logins and no resolved breaches.
+  AboutProtectionsParent.setTestOverride(
+    mockGetMonitorData({
+      potentiallyBreachedLogins: 4,
+      numBreaches: 3,
+      numBreachesResolved: 0,
+    })
+  );
+  await reloadTab(tab);
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const manageBreachesButton = await ContentTaskUtils.waitForCondition(() => {
+      return content.document.getElementById("monitor-breaches-link");
+    }, "Monitor manage breaches button exists");
+
+    await ContentTaskUtils.waitForCondition(
+      () => ContentTaskUtils.is_visible(manageBreachesButton),
+      "Manage breaches button is visible"
+    );
+
+    manageBreachesButton.click();
+  });
+
+  events = await waitForTelemetryEventCount(31);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "mtr_report_link" &&
+      e[4] == "manage_breaches"
+  );
+  is(events.length, 1, `recorded telemetry for manage breaches button`);
+
+  // All breaches are resolved.
+  AboutProtectionsParent.setTestOverride(
+    mockGetMonitorData({
+      potentiallyBreachedLogins: 4,
+      numBreaches: 3,
+      numBreachesResolved: 3,
+    })
+  );
+  await reloadTab(tab);
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const viewReportButton = await ContentTaskUtils.waitForCondition(() => {
+      return content.document.getElementById("monitor-breaches-link");
+    }, "Monitor view report button exists");
+    await ContentTaskUtils.waitForCondition(
+      () => ContentTaskUtils.is_visible(viewReportButton),
+      "View report button is visible"
+    );
+
+    viewReportButton.click();
+  });
+
+  events = await waitForTelemetryEventCount(34);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "mtr_report_link" &&
+      e[4] == "view_report"
+  );
+  is(events.length, 1, `recorded telemetry for view report button`);
+
+  // No breaches are present.
+  AboutProtectionsParent.setTestOverride(
+    mockGetMonitorData({
+      potentiallyBreachedLogins: 4,
+      numBreaches: 0,
+      numBreachesResolved: 0,
+    })
+  );
+  await reloadTab(tab);
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const viewReportButton = await ContentTaskUtils.waitForCondition(() => {
+      return content.document.getElementById("monitor-breaches-link");
+    }, "Monitor view report button exists");
+    await ContentTaskUtils.waitForCondition(
+      () => ContentTaskUtils.is_visible(viewReportButton),
+      "View report button is visible"
+    );
+
+    viewReportButton.click();
+  });
+
+  events = await waitForTelemetryEventCount(37);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "mtr_report_link" &&
+      e[4] == "view_report"
+  );
+  is(events.length, 2, `recorded telemetry for view report button`);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const monitorEmailBlock = await ContentTaskUtils.waitForCondition(() => {
+      return content.document.getElementById("monitor-stored-emails-link");
+    }, "Monitor card email block exists");
+
+    monitorEmailBlock.click();
+  });
+
+  events = await waitForTelemetryEventCount(38);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "mtr_report_link" &&
+      e[4] == "stored_emails"
+  );
+  is(events.length, 1, `recorded telemetry for monitor email block`);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const monitorKnownBreachesBlock = await ContentTaskUtils.waitForCondition(
+      () => {
+        return content.document.getElementById("monitor-known-breaches-link");
+      },
+      "Monitor card known breaches block exists"
+    );
+
+    monitorKnownBreachesBlock.click();
+  });
+
+  events = await waitForTelemetryEventCount(39);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "mtr_report_link" &&
+      e[4] == "known_unresolved_breaches"
+  );
+  is(events.length, 1, `recorded telemetry for monitor known breaches block`);
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], async function() {
+    const monitorExposedPasswordsBlock = await ContentTaskUtils.waitForCondition(
+      () => {
+        return content.document.getElementById(
+          "monitor-exposed-passwords-link"
+        );
+      },
+      "Monitor card exposed passwords block exists"
+    );
+
+    monitorExposedPasswordsBlock.click();
+  });
+
+  events = await waitForTelemetryEventCount(40);
+  events = events.filter(
+    e =>
+      e[1] == "security.ui.protections" &&
+      e[2] == "click" &&
+      e[3] == "mtr_report_link" &&
+      e[4] == "exposed_passwords_all_breaches"
+  );
+  is(
+    events.length,
+    1,
+    `recorded telemetry for monitor exposed passwords block`
+  );
+
+  // Clean up.
+  AboutProtectionsParent.setTestOverride(null);
   await BrowserTestUtils.removeTab(tab);
-  // We open three extra tabs with the click events.
-  // 1. Monitor's "Viewed Saved Logins" link (goes to about:logins)
-  // 2. Lockwise's "Turn on sync..." link (goes to about:preferences#sync)
-  // 3. Lockwise's "Open Nightly" button (goes to about:logins)
-  await BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  await BrowserTestUtils.removeTab(gBrowser.selectedTab);
-  await BrowserTestUtils.removeTab(gBrowser.selectedTab);
 });
 
 // This tests that telemetry is sent when saveEvents is called.

@@ -6,7 +6,8 @@ from __future__ import absolute_import, print_function
 
 import contextlib
 import os
-import urllib
+
+from six.moves.urllib.parse import quote
 
 from marionette_driver import By, errors, expected, Wait
 from marionette_driver.keys import Keys
@@ -14,7 +15,6 @@ from marionette_driver.marionette import Alert
 from marionette_harness import (
     MarionetteTestCase,
     run_if_manage_instance,
-    skip,
     WindowManagerMixin,
 )
 
@@ -26,7 +26,7 @@ RED_PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEX/TQBcNTh/AAA
 
 
 def inline(doc):
-    return "data:text/html;charset=utf-8,%s" % urllib.quote(doc)
+    return "data:text/html;charset=utf-8,%s" % quote(doc)
 
 
 def inline_image(data):
@@ -189,9 +189,6 @@ class TestNavigate(BaseNavigationTestCase):
         self.marionette.timeout.page_load = 0.5
         with self.assertRaises(errors.TimeoutException):
             self.marionette.navigate(self.marionette.absolute_url("slow"))
-
-        # Even with the page not finished loading the browser is remote
-        self.assertTrue(self.is_remote_tab)
 
     def test_navigate_to_same_image_document_twice(self):
         self.marionette.navigate(self.fixtures.where_is("black.png"))
@@ -406,7 +403,6 @@ class TestBackForwardNavigation(BaseNavigationTestCase):
 
         self.run_bfcache_test(test_pages)
 
-    @skip("Bug 1484927: Maybe causes crash in [@ mozilla::ShutdownXPCOM(nsIServiceManager*)]")
     def test_data_urls(self):
         test_pages = [
             {"url": inline("<p>foobar</p>")},

@@ -30,7 +30,7 @@
 #include "nsTreeSanitizer.h"
 #include "nsXPCOM.h"
 
-#define XHTML_DIV_TAG "div xmlns=\"http://www.w3.org/1999/xhtml\""
+#define XHTML_DIV_TAG u"div xmlns=\"http://www.w3.org/1999/xhtml\""
 
 using namespace mozilla::dom;
 
@@ -63,7 +63,7 @@ nsParserUtils::Sanitize(const nsAString& aFromStr, uint32_t aFlags,
 
   nsCOMPtr<nsIDocumentEncoder> encoder = do_createDocumentEncoder("text/html");
 
-  encoder->NativeInit(document, NS_LITERAL_STRING("text/html"),
+  encoder->NativeInit(document, u"text/html"_ns,
                       nsIDocumentEncoder::OutputDontRewriteEncodingDeclaration |
                           nsIDocumentEncoder::OutputNoScriptContent |
                           nsIDocumentEncoder::OutputEncodeBasicEntities |
@@ -99,11 +99,12 @@ nsParserUtils::ParseFragment(const nsAString& aFragment, uint32_t aFlags,
   RefPtr<DocumentFragment> fragment;
   if (aIsXML) {
     // XHTML
-    tagStack.AppendElement(NS_LITERAL_STRING(XHTML_DIV_TAG));
+    tagStack.AppendElement(nsLiteralString(XHTML_DIV_TAG));
     rv = nsContentUtils::ParseFragmentXML(aFragment, document, tagStack, true,
                                           aFlags, getter_AddRefs(fragment));
   } else {
-    fragment = new DocumentFragment(document->NodeInfoManager());
+    fragment = new (document->NodeInfoManager())
+        DocumentFragment(document->NodeInfoManager());
     rv = nsContentUtils::ParseFragmentHTML(aFragment, fragment, nsGkAtoms::body,
                                            kNameSpaceID_XHTML, false, true,
                                            aFlags);

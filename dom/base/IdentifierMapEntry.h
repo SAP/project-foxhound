@@ -15,18 +15,17 @@
 
 #include "PLDHashTable.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/TreeOrderedArray.h"
 #include "nsAtom.h"
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
+#include "nsContentList.h"
 #include "nsHashKeys.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
 
 class nsIContent;
 class nsINode;
-class nsContentList;
-class nsBaseContentList;
 
 namespace mozilla {
 namespace dom {
@@ -222,7 +221,7 @@ class IdentifierMapEntry : public PLDHashEntryHdr {
   OwningAtomOrString mKey;
   dom::TreeOrderedArray<Element> mIdContentList;
   RefPtr<nsBaseContentList> mNameContentList;
-  nsAutoPtr<nsTHashtable<ChangeCallbackEntry> > mChangeCallbacks;
+  UniquePtr<nsTHashtable<ChangeCallbackEntry> > mChangeCallbacks;
   RefPtr<Element> mImageElement;
 };
 

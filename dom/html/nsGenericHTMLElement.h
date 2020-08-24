@@ -18,6 +18,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/ValidityState.h"
+#include "mozilla/dom/Element.h"
 
 class nsDOMTokenList;
 class nsIFormControlFrame;
@@ -98,10 +99,8 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
                        nsGkAtoms::_true, eIgnoreCase);
   }
   void SetDraggable(bool aDraggable, mozilla::ErrorResult& aError) {
-    SetHTMLAttr(
-        nsGkAtoms::draggable,
-        aDraggable ? NS_LITERAL_STRING("true") : NS_LITERAL_STRING("false"),
-        aError);
+    SetHTMLAttr(nsGkAtoms::draggable, aDraggable ? u"true"_ns : u"false"_ns,
+                aError);
   }
   void GetContentEditable(nsString& aContentEditable) {
     ContentEditableTristate value = GetContentEditableValue();
@@ -118,11 +117,9 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     if (aContentEditable.LowerCaseEqualsLiteral("inherit")) {
       UnsetHTMLAttr(nsGkAtoms::contenteditable, aError);
     } else if (aContentEditable.LowerCaseEqualsLiteral("true")) {
-      SetHTMLAttr(nsGkAtoms::contenteditable, NS_LITERAL_STRING("true"),
-                  aError);
+      SetHTMLAttr(nsGkAtoms::contenteditable, u"true"_ns, aError);
     } else if (aContentEditable.LowerCaseEqualsLiteral("false")) {
-      SetHTMLAttr(nsGkAtoms::contenteditable, NS_LITERAL_STRING("false"),
-                  aError);
+      SetHTMLAttr(nsGkAtoms::contenteditable, u"false"_ns, aError);
     } else {
       aError.Throw(NS_ERROR_DOM_SYNTAX_ERR);
     }
@@ -161,16 +158,28 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   mozilla::dom::HTMLMenuElement* GetContextMenu() const;
   bool Spellcheck();
   void SetSpellcheck(bool aSpellcheck, mozilla::ErrorResult& aError) {
-    SetHTMLAttr(
-        nsGkAtoms::spellcheck,
-        aSpellcheck ? NS_LITERAL_STRING("true") : NS_LITERAL_STRING("false"),
-        aError);
+    SetHTMLAttr(nsGkAtoms::spellcheck, aSpellcheck ? u"true"_ns : u"false"_ns,
+                aError);
   }
 
   MOZ_CAN_RUN_SCRIPT
   void GetInnerText(mozilla::dom::DOMString& aValue,
                     mozilla::ErrorResult& aError);
   void SetInnerText(const nsAString& aValue);
+
+  void GetInputMode(nsAString& aValue) {
+    GetEnumAttr(nsGkAtoms::inputmode, nullptr, aValue);
+  }
+  void SetInputMode(const nsAString& aValue, ErrorResult& aRv) {
+    SetHTMLAttr(nsGkAtoms::inputmode, aValue, aRv);
+  }
+
+  void GetEnterKeyHint(nsAString& aValue) {
+    GetEnumAttr(nsGkAtoms::enterkeyhint, nullptr, aValue);
+  }
+  void SetEnterKeyHint(const nsAString& aValue, ErrorResult& aRv) {
+    SetHTMLAttr(nsGkAtoms::enterkeyhint, aValue, aRv);
+  }
 
   /**
    * Determine whether an attribute is an event (onclick, etc.)
@@ -634,8 +643,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
 
   already_AddRefed<nsINodeList> Labels();
 
-  virtual bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override;
-
   static bool LegacyTouchAPIEnabled(JSContext* aCx, JSObject* aObj);
 
   static inline bool CanHaveName(nsAtom* aTag) {
@@ -655,6 +662,10 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     // name (which doesn't have to match the id or anything).
     // HasName() is true precisely when name is nonempty.
     return aElement->IsHTMLElement(nsGkAtoms::img) && aElement->HasName();
+  }
+
+  virtual inline void ResultForDialogSubmit(nsAString& aResult) {
+    GetAttr(kNameSpaceID_None, nsGkAtoms::value, aResult);
   }
 
  protected:
@@ -1199,20 +1210,26 @@ typedef nsGenericHTMLElement* (*HTMLContentCreatorFunction)(
 /**
  * A macro to implement the NS_NewHTMLXXXElement() functions.
  */
-#define NS_IMPL_NS_NEW_HTML_ELEMENT(_elementName)           \
-  nsGenericHTMLElement* NS_NewHTML##_elementName##Element(  \
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo, \
-      mozilla::dom::FromParser aFromParser) {               \
-    return new mozilla::dom::HTML##_elementName##Element(   \
-        std::move(aNodeInfo));                              \
+#define NS_IMPL_NS_NEW_HTML_ELEMENT(_elementName)                     \
+  nsGenericHTMLElement* NS_NewHTML##_elementName##Element(            \
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,           \
+      mozilla::dom::FromParser aFromParser) {                         \
+    RefPtr<mozilla::dom::NodeInfo> nodeInfo(aNodeInfo);               \
+    auto* nim = nodeInfo->NodeInfoManager();                          \
+    MOZ_ASSERT(nim);                                                  \
+    return new (nim)                                                  \
+        mozilla::dom::HTML##_elementName##Element(nodeInfo.forget()); \
   }
 
-#define NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(_elementName)                 \
-  nsGenericHTMLElement* NS_NewHTML##_elementName##Element(                     \
-      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,                    \
-      mozilla::dom::FromParser aFromParser) {                                  \
-    return new mozilla::dom::HTML##_elementName##Element(std::move(aNodeInfo), \
-                                                         aFromParser);         \
+#define NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(_elementName)  \
+  nsGenericHTMLElement* NS_NewHTML##_elementName##Element(      \
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,     \
+      mozilla::dom::FromParser aFromParser) {                   \
+    RefPtr<mozilla::dom::NodeInfo> nodeInfo(aNodeInfo);         \
+    auto* nim = nodeInfo->NodeInfoManager();                    \
+    MOZ_ASSERT(nim);                                            \
+    return new (nim) mozilla::dom::HTML##_elementName##Element( \
+        nodeInfo.forget(), aFromParser);                        \
   }
 
 // Here, we expand 'NS_DECLARE_NS_NEW_HTML_ELEMENT()' by hand.

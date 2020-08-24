@@ -18,6 +18,7 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/UniquePtr.h"
 #include "prtime.h"  // PR_Now
+#include "mozilla/MozPromise.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"  // RTCStatsCollection
 
@@ -34,6 +35,7 @@ class RTCStatsTimestampMaker {
   uint64_t mRandomTimelineSeed = 0;
   DOMHighResTimeStamp mStartWallClockRaw = (double)PR_Now() / PR_USEC_PER_MSEC;
   TimeStamp mStartMonotonic = TimeStamp::NowUnfuzzed();
+  bool mCrossOriginIsolated = false;
 };
 
 typedef MozPromise<UniquePtr<RTCStatsCollection>, nsresult, true>

@@ -29,7 +29,10 @@
 #include "XPCOMModule.h"
 
 using namespace mozilla::ipc;
+using mozilla::fallible;
+using mozilla::MallocSizeOf;
 using mozilla::Maybe;
+using mozilla::ReentrantMonitorAutoEnter;
 using mozilla::Some;
 
 //-----------------------------------------------------------------------------
@@ -330,6 +333,13 @@ nsStringInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTain
     aCount = maxCount;
   }
 
+  nsDependentCSubstring tempData;
+  tempData.SetIsVoid(true);
+  if (mData.GetDataFlags() & nsACString::DataFlags::OWNED) {
+    tempData.Assign(std::move(mData));
+    mData.Rebind(tempData.BeginReading(), tempData.EndReading());
+  }
+
   nsresult rv = NS_OK;
 
   if (aWriter) {
@@ -337,6 +347,12 @@ nsStringInputStream::ReadSegmentsInternal(nsWriteSegmentFun aWriter, nsWriteTain
   } else {
     rv = aTaintedWriter(this, aClosure, mData.BeginReading() + mOffset, 0, aCount,
                         Taint(), aResult);
+  }
+
+  if (!mData.IsVoid() && !tempData.IsVoid()) {
+    MOZ_DIAGNOSTIC_ASSERT(mData == tempData, "String was replaced!");
+    mData.SetIsVoid(true);
+    mData.Assign(std::move(tempData));
   }
 
   if (NS_SUCCEEDED(rv)) {
@@ -524,9 +540,14 @@ nsStringInputStream::Clone(nsIInputStream** aCloneOut) {
 }
 
 nsresult NS_NewByteInputStream(nsIInputStream** aStreamResult,
+<<<<<<< HEAD
                                Span<const char> aStringToRead,
                                nsAssignmentType aAssignment,
                                const StringTaint& aTaint) {
+=======
+                               mozilla::Span<const char> aStringToRead,
+                               nsAssignmentType aAssignment) {
+>>>>>>> firefox-release
   MOZ_ASSERT(aStreamResult, "null out ptr");
 
   RefPtr<nsStringInputStream> stream = new nsStringInputStream();

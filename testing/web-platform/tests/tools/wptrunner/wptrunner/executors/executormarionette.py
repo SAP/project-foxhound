@@ -5,7 +5,7 @@ import time
 import traceback
 import uuid
 
-from six import iteritems
+from six import iteritems, iterkeys
 from six.moves.urllib.parse import urljoin
 
 errors = None
@@ -21,7 +21,8 @@ from .base import (CallbackHandler,
                    TestharnessExecutor,
                    TimedRunner,
                    WdspecExecutor,
-                   WebDriverProtocol,
+                   WdspecProtocol,
+                   get_pages,
                    strip_server)
 from .protocol import (ActionSequenceProtocolPart,
                        AssertsProtocolPart,
@@ -37,7 +38,8 @@ from .protocol import (ActionSequenceProtocolPart,
                        CoverageProtocolPart,
                        GenerateTestReportProtocolPart,
                        VirtualAuthenticatorProtocolPart,
-                       SetPermissionProtocolPart)
+                       SetPermissionProtocolPart,
+                       PrintProtocolPart)
 from ..testrunner import Stop
 from ..webdriver_server import GeckoDriverServer
 
@@ -126,6 +128,8 @@ class MarionetteTestharnessProtocolPart(TestharnessProtocolPart):
         self.runner_handle = None
         with open(os.path.join(here, "runner.js")) as f:
             self.runner_script = f.read()
+        with open(os.path.join(here, "window-loaded.js")) as f:
+            self.window_loaded_script = f.read()
 
     def setup(self):
         self.marionette = self.parent.marionette
@@ -143,7 +147,7 @@ class MarionetteTestharnessProtocolPart(TestharnessProtocolPart):
                 "Loading initial page %s failed. Ensure that the "
                 "there are no other programs bound to this port and "
                 "that your firewall rules or network setup does not "
-                r"prevent access.\e%s" % (url, traceback.format_exc()))
+                "prevent access.\n%s" % (url, traceback.format_exc()))
             raise
         self.runner_handle = self.marionette.current_window_handle
         format_map = {"title": threading.current_thread().name.replace("'", '"')}
@@ -232,6 +236,19 @@ class MarionetteTestharnessProtocolPart(TestharnessProtocolPart):
             time.sleep(0.1)
 
         raise Exception("unable to find test window")
+
+    def test_window_loaded(self):
+        """Wait until the page in the new window has been loaded.
+
+        Hereby ignore Javascript execptions that are thrown when
+        the document has been unloaded due to a process change.
+        """
+        while True:
+            try:
+                self.parent.base.execute_script(self.window_loaded_script, asynchronous=True)
+                break
+            except errors.JavascriptException:
+                pass
 
 
 class MarionettePrefsProtocolPart(PrefsProtocolPart):
@@ -528,6 +545,57 @@ class MarionetteSetPermissionProtocolPart(SetPermissionProtocolPart):
     def set_permission(self, name, state, one_realm):
         raise NotImplementedError("set_permission not yet implemented")
 
+
+class MarionettePrintProtocolPart(PrintProtocolPart):
+    def setup(self):
+        self.marionette = self.parent.marionette
+        self.runner_handle = None
+
+    def load_runner(self):
+        url = urljoin(self.parent.executor.server_url("http"), "/print_reftest_runner.html")
+        self.logger.debug("Loading %s" % url)
+        try:
+            self.marionette.navigate(url)
+        except Exception as e:
+            self.logger.critical(
+                "Loading initial page %s failed. Ensure that the "
+                "there are no other programs bound to this port and "
+                "that your firewall rules or network setup does not "
+                "prevent access.\n%s" % (url, traceback.format_exc(e)))
+            raise
+        self.runner_handle = self.marionette.current_window_handle
+
+    def render_as_pdf(self, width, height):
+        margin = 0.5 * 2.54
+        body = {
+            "page": {
+                "width": width,
+                "height": height
+            },
+            "margin": {
+                "left": margin,
+                "right": margin,
+                "top": margin,
+                "bottom": margin,
+            },
+            "shrinkToFit": False,
+            "printBackground": True,
+        }
+        return self.marionette._send_message("WebDriver:Print", body, key="value")
+
+    def pdf_to_png(self, pdf_base64, page_ranges):
+        handle = self.marionette.current_window_handle
+        self.marionette.switch_to_window(self.runner_handle)
+        try:
+            rv = self.marionette.execute_async_script("""
+let callback = arguments[arguments.length - 1];
+render('%s').then(result => callback(result))""" % pdf_base64, new_sandbox=False, sandbox=None)
+            page_numbers = get_pages(page_ranges, len(rv))
+            rv = [item for i, item in enumerate(rv) if i + 1 in page_numbers]
+            return rv
+        finally:
+            self.marionette.switch_to_window(handle)
+
 class MarionetteProtocol(Protocol):
     implements = [MarionetteBaseProtocolPart,
                   MarionetteTestharnessProtocolPart,
@@ -542,7 +610,8 @@ class MarionetteProtocol(Protocol):
                   MarionetteCoverageProtocolPart,
                   MarionetteGenerateTestReportProtocolPart,
                   MarionetteVirtualAuthenticatorProtocolPart,
-                  MarionetteSetPermissionProtocolPart]
+                  MarionetteSetPermissionProtocolPart,
+                  MarionettePrintProtocolPart]
 
     def __init__(self, executor, browser, capabilities=None, timeout_multiplier=1, e10s=True, ccov=False):
         do_delayed_imports()
@@ -602,7 +671,7 @@ class MarionetteProtocol(Protocol):
 
     def on_environment_change(self, old_environment, new_environment):
         #Unset all the old prefs
-        for name in old_environment.get("prefs", {}).iterkeys():
+        for name in iterkeys(old_environment.get("prefs", {})):
             value = self.executor.original_pref_values[name]
             if value is None:
                 self.prefs.clear(name)
@@ -669,11 +738,11 @@ class ExecuteAsyncScriptRun(TimedRunner):
 class MarionetteTestharnessExecutor(TestharnessExecutor):
     supports_testdriver = True
 
-    def __init__(self, browser, server_config, timeout_multiplier=1,
+    def __init__(self, logger, browser, server_config, timeout_multiplier=1,
                  close_after_done=True, debug_info=None, capabilities=None,
                  debug=False, ccov=False, **kwargs):
         """Marionette-based executor for testharness.js tests"""
-        TestharnessExecutor.__init__(self, browser, server_config,
+        TestharnessExecutor.__init__(self, logger, browser, server_config,
                                      timeout_multiplier=timeout_multiplier,
                                      debug_info=debug_info)
         self.protocol = MarionetteProtocol(self,
@@ -742,10 +811,12 @@ class MarionetteTestharnessExecutor(TestharnessExecutor):
 
         format_map = {"url": strip_server(url)}
 
-        protocol.base.execute_script("window.open(undefined, '%s', 'noopener')" % self.window_id)
+        protocol.base.execute_script("window.open('about:blank', '%s', 'noopener')" % self.window_id)
         test_window = protocol.testharness.get_test_window(self.window_id, parent_window,
-                                                           timeout=10*self.timeout_multiplier)
+                                                           timeout=10 * self.timeout_multiplier)
         self.protocol.base.set_window(test_window)
+        protocol.testharness.test_window_loaded()
+
         handler = CallbackHandler(self.logger, protocol, test_window)
         protocol.marionette.navigate(url)
         while True:
@@ -765,13 +836,16 @@ class MarionetteTestharnessExecutor(TestharnessExecutor):
 
 
 class MarionetteRefTestExecutor(RefTestExecutor):
-    def __init__(self, browser, server_config, timeout_multiplier=1,
+    is_print = False
+
+    def __init__(self, logger, browser, server_config, timeout_multiplier=1,
                  screenshot_cache=None, close_after_done=True,
                  debug_info=None, reftest_internal=False,
                  reftest_screenshot="unexpected", ccov=False,
                  group_metadata=None, capabilities=None, debug=False, **kwargs):
         """Marionette-based executor for reftests"""
         RefTestExecutor.__init__(self,
+                                 logger,
                                  browser,
                                  server_config,
                                  screenshot_cache=screenshot_cache,
@@ -780,9 +854,7 @@ class MarionetteRefTestExecutor(RefTestExecutor):
         self.protocol = MarionetteProtocol(self, browser, capabilities,
                                            timeout_multiplier, kwargs["e10s"],
                                            ccov)
-        self.implementation = (InternalRefTestImplementation
-                               if reftest_internal
-                               else RefTestImplementation)(self)
+        self.implementation = self.get_implementation(reftest_internal)
         self.implementation_kwargs = ({"screenshot": reftest_screenshot} if
                                       reftest_internal else {})
 
@@ -797,8 +869,12 @@ class MarionetteRefTestExecutor(RefTestExecutor):
         with open(os.path.join(here, "test-wait.js")) as f:
             self.wait_script = f.read() % {"classname": "reftest-wait"}
 
+    def get_implementation(self, reftest_internal):
+        return (InternalRefTestImplementation if reftest_internal
+                else RefTestImplementation)(self)
+
     def setup(self, runner):
-        super(self.__class__, self).setup(runner)
+        super(MarionetteRefTestExecutor, self).setup(runner)
         self.implementation.setup(**self.implementation_kwargs)
 
     def teardown(self):
@@ -808,7 +884,7 @@ class MarionetteRefTestExecutor(RefTestExecutor):
                 handles = self.protocol.marionette.window_handles
                 if handles:
                     self.protocol.marionette.switch_to_window(handles[0])
-            super(self.__class__, self).teardown()
+            super(MarionetteRefTestExecutor, self).teardown()
         except Exception:
             # Ignore errors during teardown
             self.logger.warning("Exception during reftest teardown:\n%s" %
@@ -835,6 +911,7 @@ class MarionetteRefTestExecutor(RefTestExecutor):
                 self.protocol.base.execute_script(self.script)
                 self.protocol.base.set_window(self.protocol.marionette.window_handles[-1])
                 self.has_window = True
+                self.protocol.testharness.test_window_loaded()
 
         if self.protocol.coverage.is_enabled:
             self.protocol.coverage.reset()
@@ -852,7 +929,7 @@ class MarionetteRefTestExecutor(RefTestExecutor):
 
         return self.convert_result(test, result)
 
-    def screenshot(self, test, viewport_size, dpi):
+    def screenshot(self, test, viewport_size, dpi, page_ranges):
         # https://github.com/web-platform-tests/wpt/issues/7135
         assert viewport_size is None
         assert dpi is None
@@ -891,7 +968,7 @@ class InternalRefTestImplementation(RefTestImplementation):
         return self.executor.logger
 
     def setup(self, screenshot="unexpected"):
-        data = {"screenshot": screenshot}
+        data = {"screenshot": screenshot, "isPrint": self.executor.is_print}
         if self.executor.group_metadata is not None:
             data["urlCount"] = {urljoin(self.executor.server_url(key[0]), key[1]):value
                                 for key, value in iteritems(
@@ -914,7 +991,8 @@ class InternalRefTestImplementation(RefTestImplementation):
                                                               "expected": test.expected(),
                                                               "timeout": timeout,
                                                               "width": 800,
-                                                              "height": 600})["value"]
+                                                              "height": 600,
+                                                              "pageRanges": test.page_ranges})["value"]
         return rv
 
     def get_references(self, root_test, node):
@@ -940,7 +1018,7 @@ class InternalRefTestImplementation(RefTestImplementation):
             self.logger.warning(traceback.format_exc())
 
 
-class GeckoDriverProtocol(WebDriverProtocol):
+class GeckoDriverProtocol(WdspecProtocol):
     server_cls = GeckoDriverServer
 
 
@@ -949,11 +1027,11 @@ class MarionetteWdspecExecutor(WdspecExecutor):
 
 
 class MarionetteCrashtestExecutor(CrashtestExecutor):
-    def __init__(self, browser, server_config, timeout_multiplier=1,
+    def __init__(self, logger, browser, server_config, timeout_multiplier=1,
                  debug_info=None, capabilities=None, debug=False,
                  ccov=False, **kwargs):
         """Marionette-based executor for testharness.js tests"""
-        CrashtestExecutor.__init__(self, browser, server_config,
+        CrashtestExecutor.__init__(self, logger, browser, server_config,
                                    timeout_multiplier=timeout_multiplier,
                                    debug_info=debug_info)
         self.protocol = MarionetteProtocol(self,
@@ -1015,3 +1093,69 @@ class MarionetteCrashtestExecutor(CrashtestExecutor):
 
         return {"status": "PASS",
                 "message": None}
+
+
+class MarionettePrintRefTestExecutor(MarionetteRefTestExecutor):
+    is_print = True
+
+    def __init__(self, logger, browser, server_config, timeout_multiplier=1,
+                 screenshot_cache=None, close_after_done=True,
+                 debug_info=None, reftest_screenshot="unexpected", ccov=False,
+                 group_metadata=None, capabilities=None, debug=False,
+                 reftest_internal=False, **kwargs):
+        """Marionette-based executor for reftests"""
+        MarionetteRefTestExecutor.__init__(self,
+                                           logger,
+                                           browser,
+                                           server_config,
+                                           timeout_multiplier=timeout_multiplier,
+                                           screenshot_cache=screenshot_cache,
+                                           close_after_done=close_after_done,
+                                           debug_info=debug_info,
+                                           reftest_screenshot=reftest_screenshot,
+                                           reftest_internal=reftest_internal,
+                                           ccov=ccov,
+                                           group_metadata=group_metadata,
+                                           capabilities=capabilities,
+                                           debug=debug,
+                                           **kwargs)
+
+    def setup(self, runner):
+        super(MarionettePrintRefTestExecutor, self).setup(runner)
+        if not isinstance(self.implementation, InternalRefTestImplementation):
+            self.protocol.pdf_print.load_runner()
+
+    def get_implementation(self, reftest_internal):
+        return (InternalRefTestImplementation if reftest_internal
+                else RefTestImplementation)(self)
+
+    def screenshot(self, test, viewport_size, dpi, page_ranges):
+        # https://github.com/web-platform-tests/wpt/issues/7140
+        assert dpi is None
+
+        self.viewport_size = viewport_size
+        timeout = self.timeout_multiplier * test.timeout if self.debug_info is None else None
+
+        test_url = self.test_url(test)
+        self.page_ranges = page_ranges.get(test.url)
+
+        return ExecuteAsyncScriptRun(self.logger,
+                                     self._render,
+                                     self.protocol,
+                                     test_url,
+                                     timeout,
+                                     self.extra_timeout).run()
+
+    def _render(self, protocol, url, timeout):
+        protocol.marionette.navigate(url)
+
+        protocol.base.execute_script(self.wait_script, asynchronous=True)
+
+        pdf = protocol.pdf_print.render_as_pdf(*self.viewport_size)
+        screenshots = protocol.pdf_print.pdf_to_png(pdf, self.page_ranges)
+        for i, screenshot in enumerate(screenshots):
+            # strip off the data:img/png, part of the url
+            if screenshot.startswith("data:image/png;base64,"):
+                screenshots[i] = screenshot.split(",", 1)[1]
+
+        return screenshots

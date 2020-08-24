@@ -5,7 +5,8 @@
  * scripts, and JS modules are loaded when creating a new content process.
  *
  * If you made changes that cause this test to fail, it's likely because you
- * are loading more JS code during content process startup.
+ * are loading more JS code during content process startup. Please try to
+ * avoid this.
  *
  * If your code isn't strictly required to show a page, consider loading it
  * lazily. If you can't, consider delaying its load until after we have started
@@ -17,17 +18,13 @@
 /* Set this to true only for debugging purpose; it makes the output noisy. */
 const kDumpAllStacks = false;
 
-const whitelist = {
+const known_scripts = {
   modules: new Set([
     "chrome://mochikit/content/ShutdownLeaksCollector.jsm",
 
-    "resource://gre/modules/ContentProcessSingleton.jsm",
-
     // General utilities
     "resource://gre/modules/AppConstants.jsm",
-    "resource://gre/modules/AsyncShutdown.jsm",
     "resource://gre/modules/DeferredTask.jsm",
-    "resource://gre/modules/PromiseUtils.jsm",
     "resource://gre/modules/Services.jsm", // bug 1464542
     "resource://gre/modules/Timer.jsm",
     "resource://gre/modules/XPCOMUtils.jsm",
@@ -37,7 +34,6 @@ const whitelist = {
 
     // Session store
     "resource:///modules/sessionstore/ContentSessionStore.jsm",
-    "resource://gre/modules/sessionstore/SessionHistory.jsm",
 
     // Browser front-end
     "resource:///actors/AboutReaderChild.jsm",
@@ -45,14 +41,13 @@ const whitelist = {
     "resource:///actors/LinkHandlerChild.jsm",
     "resource:///actors/SearchTelemetryChild.jsm",
     "resource://gre/actors/AutoCompleteChild.jsm",
-    "resource://gre/modules/ActorChild.jsm",
     "resource://gre/modules/ActorManagerChild.jsm",
     "resource://gre/modules/E10SUtils.jsm",
     "resource://gre/modules/Readerable.jsm",
 
     // Telemetry
-    "resource://gre/modules/TelemetryController.jsm", // bug 1470339
-    "resource://gre/modules/TelemetryUtils.jsm", // bug 1470339
+    "resource://gre/modules/TelemetryControllerBase.jsm", // bug 1470339
+    "resource://gre/modules/TelemetryControllerContent.jsm", // bug 1470339
 
     // Extensions
     "resource://gre/modules/ExtensionProcessScript.jsm",
@@ -73,29 +68,28 @@ const whitelist = {
     "chrome://global/content/process-content.js",
     "resource:///modules/ContentObservers.js",
     "resource://gre/modules/extensionProcessScriptLoader.js",
-    "resource://devtools/client/jsonview/converter-observer.js",
-    "resource://gre/modules/WebRequestContent.js",
   ]),
 };
 
-// Items on this list are allowed to be loaded but not
-// required, as opposed to items in the main whitelist,
-// which are all required.
-const intermittently_loaded_whitelist = {
+// Items on this list *might* load when creating the process, as opposed to
+// items in the main list, which we expect will always load.
+const intermittently_loaded_scripts = {
   modules: new Set([
     "resource://gre/modules/nsAsyncShutdown.jsm",
     "resource://gre/modules/sessionstore/Utils.jsm",
 
-    "resource://specialpowers/SpecialPowersChild.jsm",
-    "resource://specialpowers/WrapPrivileged.jsm",
+    // Session store.
+    "resource://gre/modules/sessionstore/SessionHistory.jsm",
 
-    // Webcompat about:config front-end. This is presently nightly-only and
-    // part of a system add-on which may not load early enough for the test.
+    // Webcompat about:config front-end. This is part of a system add-on which
+    // may not load early enough for the test.
     "resource://webcompat/AboutCompat.jsm",
 
     // Test related
     "resource://testing-common/BrowserTestUtilsChild.jsm",
     "resource://testing-common/ContentEventListenerChild.jsm",
+    "resource://specialpowers/SpecialPowersChild.jsm",
+    "resource://specialpowers/WrapPrivileged.jsm",
   ]),
   frameScripts: new Set([]),
   processScripts: new Set([
@@ -105,7 +99,7 @@ const intermittently_loaded_whitelist = {
   ]),
 };
 
-const blacklist = {
+const forbiddenScripts = {
   services: new Set([
     "@mozilla.org/base/telemetry-startup;1",
     "@mozilla.org/embedcomp/default-tooltiptextprovider;1",
@@ -185,17 +179,17 @@ add_task(async function() {
 
   let loadedList = {};
 
-  for (let scriptType in whitelist) {
+  for (let scriptType in known_scripts) {
     loadedList[scriptType] = Object.keys(loadedInfo[scriptType]).filter(c => {
-      if (!whitelist[scriptType].has(c)) {
+      if (!known_scripts[scriptType].has(c)) {
         return true;
       }
-      whitelist[scriptType].delete(c);
+      known_scripts[scriptType].delete(c);
       return false;
     });
 
     loadedList[scriptType] = loadedList[scriptType].filter(c => {
-      return !intermittently_loaded_whitelist[scriptType].has(c);
+      return !intermittently_loaded_scripts[scriptType].has(c);
     });
 
     is(
@@ -214,15 +208,15 @@ add_task(async function() {
     }
 
     is(
-      whitelist[scriptType].size,
+      known_scripts[scriptType].size,
       0,
-      `all ${scriptType} whitelist entries should have been used`
+      `all known ${scriptType} scripts should have been loaded`
     );
 
-    for (let script of whitelist[scriptType]) {
+    for (let script of known_scripts[scriptType]) {
       ok(
         false,
-        `${scriptType} is whitelisted for content process startup but wasn't used: ${script}`
+        `${scriptType} is expected to load for content process startup but wasn't: ${script}`
       );
     }
 
@@ -240,13 +234,13 @@ add_task(async function() {
     }
   }
 
-  for (let scriptType in blacklist) {
-    for (let script of blacklist[scriptType]) {
+  for (let scriptType in forbiddenScripts) {
+    for (let script of forbiddenScripts[scriptType]) {
       let loaded = script in loadedInfo[scriptType];
       if (loaded) {
         record(
           false,
-          `Unexpected ${scriptType} loaded during content process startup: ${script}`,
+          `Forbidden ${scriptType} loaded during content process startup: ${script}`,
           undefined,
           loadedInfo[scriptType][script]
         );

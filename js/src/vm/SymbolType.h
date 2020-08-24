@@ -31,11 +31,13 @@ class AutoAccessAtomsZone;
 
 namespace JS {
 
-class Symbol : public js::gc::TenuredCell {
- private:
-  // User description of symbol. Also meets gc::Cell requirements.
-  js::GCPtrAtom description_;
+class Symbol
+    : public js::gc::CellWithTenuredGCPointer<js::gc::TenuredCell, JSAtom> {
+ public:
+  // User description of symbol, stored in the cell header.
+  JSAtom* description() const { return headerPtr(); }
 
+ private:
   SymbolCode code_;
 
   // Each Symbol gets its own hash code so that we don't have to use
@@ -43,7 +45,7 @@ class Symbol : public js::gc::TenuredCell {
   js::HashNumber hash_;
 
   Symbol(SymbolCode code, js::HashNumber hash, JSAtom* desc)
-      : description_(desc), code_(code), hash_(hash) {}
+      : CellWithTenuredGCPointer(desc), code_(code), hash_(hash) {}
 
   Symbol(const Symbol&) = delete;
   void operator=(const Symbol&) = delete;
@@ -66,7 +68,6 @@ class Symbol : public js::gc::TenuredCell {
                       js::HandleString description);
   static Symbol* for_(JSContext* cx, js::HandleString description);
 
-  JSAtom* description() const { return description_; }
   SymbolCode code() const { return code_; }
   js::HashNumber hash() const { return hash_; }
 
@@ -83,9 +84,13 @@ class Symbol : public js::gc::TenuredCell {
     return code_ == SymbolCode::toStringTag || code_ == SymbolCode::toPrimitive;
   }
 
+  // Symbol created for the #PrivateName syntax.
+  bool isPrivateName() const { return code_ == SymbolCode::PrivateNameSymbol; }
+
   static const JS::TraceKind TraceKind = JS::TraceKind::Symbol;
+
   inline void traceChildren(JSTracer* trc) {
-    TraceNullableEdge(trc, &description_, "symbol description");
+    js::TraceNullableCellHeaderEdge(trc, this, "symbol description");
   }
   inline void finalize(JSFreeOp*) {}
 
@@ -139,7 +144,7 @@ class SymbolRegistry
     : public GCHashSet<WeakHeapPtrSymbol, HashSymbolsByDescription,
                        SystemAllocPolicy> {
  public:
-  SymbolRegistry() {}
+  SymbolRegistry() = default;
 };
 
 // ES6 rev 27 (2014 Aug 24) 19.4.3.3

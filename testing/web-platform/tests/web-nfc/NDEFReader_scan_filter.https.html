@@ -162,35 +162,4 @@ for (let multiMessagesTest of multiMessagesTests) {
   );
 }
 
-nfc_test(async (t, mockNFC) => {
-  const reader = new NDEFReader();
-  const controller = new AbortController();
-  const signal = controller.signal;
-  const textMsg = createMessage([createTextRecord(test_text_data)]);
-  const urlMsg = createMessage([createUrlRecord(test_url_data)]);
-  const mimeMsg = createMessage([createMimeRecord(test_buffer_data)]);
-
-  const readerWatcher = new EventWatcher(t, reader, ["reading", "error"]);
-  const promise = readerWatcher.wait_for("reading").then(event => {
-    controller.abort();
-    assertWebNDEFMessagesEqual(event.message, new NDEFMessage(mimeMsg));
-  });
-
-  const scanOptions1 = { recordType: "text", signal: signal };
-  const scanOptions2 = {recordType: "url", signal: signal };
-  const scanOptions3 = {recordType: "mime", signal: signal };
-
-  await reader.scan(scanOptions1);
-  await reader.scan(scanOptions2);
-  // There is maximum one filter for an NDEFReader object,
-  // last filter will replace all previous ones.
-  await reader.scan(scanOptions3);
-
-  mockNFC.setReadingMessage(textMsg);
-  mockNFC.setReadingMessage(urlMsg);
-  mockNFC.setReadingMessage(mimeMsg);
-  await promise;
-}, "Multiple scan() from the same NDEFReader object with new options should \
-replace existing filters.");
-
 </script>

@@ -23,6 +23,8 @@ using class mozilla::net::nsHttpResponseHead from "nsHttpResponseHead.h";
 using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 using refcounted class nsIPropertyBag2 from "mozilla/dom/PropertyBagUtils.h";
 using refcounted class nsDOMNavigationTiming from "nsDOMNavigationTiming.h";
+using nsILoadInfo::CrossOriginEmbedderPolicy from "nsILoadInfo.h";
+using moveonly mozilla::dom::SessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
 
 namespace mozilla {
 namespace net {
@@ -39,10 +41,13 @@ struct CookiePermissionData
 
 struct CookieJarSettingsArgs
 {
-  // Copy of the cookie behavior and permissions for the top-level document.
+  // Copy of the cookie jar settings for the top-level document.
   uint32_t cookieBehavior;
+  bool isFirstPartyIsolated;
+  bool isOnContentBlockingAllowList;
   CookiePermissionData[] cookiePermissions;
   bool isFixed;
+  nsString partitionKey;
 };
 
 //-----------------------------------------------------------------------------
@@ -90,26 +95,16 @@ struct LoadInfoArgs
   bool                        skipContentPolicyCheckForWebRequest;
   bool                        forceInheritPrincipalDropped;
   uint64_t                    innerWindowID;
-  uint64_t                    outerWindowID;
-  uint64_t                    parentOuterWindowID;
-  uint64_t                    topOuterWindowID;
-  uint64_t                    frameOuterWindowID;
   uint64_t                    browsingContextID;
   uint64_t                    frameBrowsingContextID;
   bool                        initialSecurityCheckDone;
   bool                        isInThirdPartyContext;
+  bool                        isThirdPartyContextToTopWindow;
   bool                        isFormSubmission;
   bool                        sendCSPViolationEvents;
   OriginAttributes            originAttributes;
   RedirectHistoryEntryInfo[]  redirectChainIncludingInternalRedirects;
   RedirectHistoryEntryInfo[]  redirectChain;
-
-  /**
-   * Ancestor data for use with the WebRequest API.
-   * See nsILoadInfo.idl for details.
-   */
-  PrincipalInfo[]             ancestorPrincipals;
-  uint64_t[]                  ancestorOuterWindowIDs;
 
   /**
    * ClientInfo structure representing the window or worker that triggered
@@ -144,10 +139,17 @@ struct LoadInfoArgs
   bool allowListFutureDocumentsCreatedFromThisRedirectChain;
   nsString                    cspNonce;
   bool                        skipContentSniffing;
+  uint32_t                    httpsOnlyStatus;
+  bool                        hasValidUserGestureActivation;
+  bool                        allowDeprecatedSystemRequests;
+  bool                        isInDevToolsContext;
+  bool                        parserCreatedScript;
   bool                        isFromProcessingFrameAttributes;
   CookieJarSettingsArgs       cookieJarSettings;
   uint32_t                    requestBlockingReason;
   CSPInfo?                    cspToInheritInfo;
+  bool                        hasStoragePermission;
+  CrossOriginEmbedderPolicy   loadingEmbedderPolicy;
 };
 
 /**
@@ -177,11 +179,29 @@ struct ParentLoadInfoForwarderArgs
   // tainting value.
   uint32_t tainting;
 
-
   // This flag is used for any browsing context where we should not sniff
   // the content type. E.g if an iframe has the XCTO nosniff header, then
   // that flag is set to true so we skip content sniffing for that browsing
   bool skipContentSniffing;
+
+  uint32_t httpsOnlyStatus;
+
+  // Returns true if at the time of the loadinfo construction the document
+  // that triggered this load has the bit hasValidTransientUserGestureActivation
+  // set or the load was triggered from External. (Mostly this bool is used
+  // in the context of Sec-Fetch-User.)
+  bool hasValidUserGestureActivation;
+
+  // The SystemPrincipal is disallowed to make requests to the public web
+  // and all requests will be cancelled. Setting this flag to true prevents
+  // the request from being cancelled.
+  bool allowDeprecatedSystemRequests;
+
+  bool isInDevToolsContext;
+
+  // Only ever returns true if the loadinfo is of TYPE_SCRIPT and
+  // the script was created by the HTML parser.
+  bool parserCreatedScript;
 
   // We must also note that the tainting value was explicitly set
   // by the service worker.
@@ -194,6 +214,12 @@ struct ParentLoadInfoForwarderArgs
   CookieJarSettingsArgs? cookieJarSettings;
 
   uint32_t requestBlockingReason;
+
+  bool hasStoragePermission;
+
+  bool isThirdPartyContextToTopWindow;
+
+  bool isInThirdPartyContext;
 
   // IMPORTANT: when you add new properites here you must also update
   // LoadInfoToParentLoadInfoForwarder and MergeParentLoadInfoForwarder
@@ -241,7 +267,6 @@ struct HttpChannelOpenArgs
   nsIReferrerInfo             referrerInfo;
   URIParams?                  apiRedirectTo;
   URIParams?                  topWindowURI;
-  nsIPrincipal?               contentBlockingAllowListPrincipal;
   uint32_t                    loadFlags;
   RequestHeaderTuples         requestHeaders;
   nsCString                   requestMethod;
@@ -405,36 +430,35 @@ struct CookieStruct
   bool      isSecure;
   int32_t   sameSite;
   int32_t   rawSameSite;
+  uint8_t   schemeMap;
+};
+
+struct DocumentCreationArgs {
+  bool uriModified;
+  bool isXFOError;
+};
+
+struct ObjectCreationArgs {
+  uint64_t embedderInnerWindowId;
+  uint32_t loadFlags;
+  uint8_t contentPolicyType;
+  bool isUrgentStart;
+};
+
+union DocumentChannelElementCreationArgs {
+  DocumentCreationArgs;
+  ObjectCreationArgs;
 };
 
 struct DocumentChannelCreationArgs {
   DocShellLoadStateInit loadState;
-  LoadInfoArgs loadInfo;
   TimeStamp asyncOpenTime;
   uint64_t channelId;
-  uint32_t loadFlags;
-  uint32_t loadType;
   uint32_t cacheKey;
-  uint32_t? documentOpenFlags;
-  bool isActive;
-  bool isTopLevelDoc;
-  bool hasNonEmptySandboxingFlags;
-  bool pluginsAllowed;
   nsDOMNavigationTiming? timing;
   IPCClientInfo? initialClientInfo;
-  uint64_t outerWindowId;
-};
-
-struct DocumentChannelRedirect {
-  nsIURI uri;
-  uint32_t redirectFlags;
-  uint32_t responseStatus;
-  bool isPost;
-};
-
-struct LastVisitInfo {
-  nsIURI uri;
-  uint32_t previousFlags;
+  bool hasValidTransientUserAction;
+  DocumentChannelElementCreationArgs elementCreationArgs;
 };
 
 struct RedirectToRealChannelArgs {
@@ -443,21 +467,21 @@ struct RedirectToRealChannelArgs {
   uint32_t newLoadFlags;
   ReplacementChannelConfigInit? init;
   LoadInfoArgs? loadInfo;
-  DocumentChannelRedirect[] redirects;
   uint64_t channelId;
   nsIURI originalURI;
   uint32_t redirectMode;
   uint32_t redirectFlags;
   uint32_t? contentDisposition;
   nsString? contentDispositionFilename;
-  uint64_t redirectIdentifier;
   nsIPropertyBag2 properties;
-  LastVisitInfo lastVisitInfo;
   uint32_t loadStateLoadFlags;
   uint32_t loadStateLoadType;
   nsDOMNavigationTiming? timing;
   nsString srcdocData;
   nsIURI baseUri;
+  SessionHistoryInfo? sessionHistoryInfo;
+  uint64_t loadIdentifier;
+  nsCString? originalUriString;
 };
 
 struct TimingStructArgs {
@@ -514,6 +538,13 @@ struct TransactionObserverResult
   bool versionOk;
   bool authOk;
   nsresult closeReason;
+};
+
+struct SpeculativeConnectionOverriderArgs {
+  uint32_t parallelSpeculativeConnectLimit;
+  bool ignoreIdle;
+  bool isFromPredictor;
+  bool allow1918;
 };
 
 } // namespace net

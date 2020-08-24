@@ -39,14 +39,15 @@ DIRS += [
     'enterprisepolicies',
     'extensions',
     'fxmonitor',
-    'library',
     'migration',
     'newtab',
     'originattributes',
+    'pioneer',
     'places',
     'pocket',
     'preferences',
     'privatebrowsing',
+    'prompts',
     'protections',
     'protocolhandler',
     'resistfingerprinting',
@@ -58,7 +59,6 @@ DIRS += [
     'uitour',
     'urlbar',
     'translation',
-    'webshare',
 ]
 
 DIRS += ['build']

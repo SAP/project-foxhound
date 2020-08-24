@@ -15,6 +15,7 @@ import logging
 import taskcluster_urls as liburls
 from mozbuild.util import memoize
 from requests.packages.urllib3.util.retry import Retry
+from taskcluster import Hooks
 from taskgraph.task import Task
 from taskgraph.util import yaml
 
@@ -61,24 +62,39 @@ def get_root_url(use_proxy):
     return six.ensure_text(os.environ['TASKCLUSTER_ROOT_URL'])
 
 
-@memoize
-def get_session():
-    session = requests.Session()
-
-    retry = Retry(total=5, backoff_factor=0.1,
-                  status_forcelist=[500, 502, 503, 504])
+def requests_retry_session(
+    retries,
+    backoff_factor=0.1,
+    status_forcelist=(500, 502, 504),
+    concurrency=CONCURRENCY,
+    session=None,
+):
+    session = session or requests.Session()
+    retry = Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=status_forcelist,
+    )
 
     # Default HTTPAdapter uses 10 connections. Mount custom adapter to increase
     # that limit. Connections are established as needed, so using a large value
     # should not negatively impact performance.
     http_adapter = requests.adapters.HTTPAdapter(
-        pool_connections=CONCURRENCY,
-        pool_maxsize=CONCURRENCY,
-        max_retries=retry)
-    session.mount('https://', http_adapter)
+        pool_connections=concurrency,
+        pool_maxsize=concurrency,
+        max_retries=retry,
+    )
     session.mount('http://', http_adapter)
+    session.mount('https://', http_adapter)
 
     return session
+
+
+@memoize
+def get_session():
+    return requests_retry_session(retries=5)
 
 
 def _do_request(url, force_get=False, **kwargs):
@@ -161,9 +177,9 @@ def get_index_url(index_path, use_proxy=False, multiple=False):
     return index_tmpl.format('s' if multiple else '', index_path)
 
 
-def find_task_id(index_path, use_proxy=False):
+def find_task_id(index_path):
     try:
-        response = _do_request(get_index_url(index_path, use_proxy))
+        response = _do_request(get_index_url(index_path))
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 404:
             raise KeyError("index path {} not found".format(index_path))
@@ -243,6 +259,16 @@ def rerun_task(task_id):
         logger.info('Would have rerun {}.'.format(task_id))
     else:
         _do_request(get_task_url(task_id, use_proxy=True) + '/rerun', json={})
+
+
+def trigger_hook(hook_group_id, hook_id, hook_payload):
+    hooks = Hooks({'rootUrl': get_root_url(True)})
+    response = hooks.triggerHook(hook_group_id, hook_id, hook_payload)
+
+    logger.info('Task seen here: {}/tasks/{}'.format(
+        get_root_url(os.environ.get('TASKCLUSTER_PROXY_URL')),
+        response['status']['taskId'])
+    )
 
 
 def get_current_scopes():

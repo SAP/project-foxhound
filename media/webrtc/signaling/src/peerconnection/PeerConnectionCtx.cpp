@@ -304,8 +304,7 @@ nsresult PeerConnectionCtx::Initialize() {
   nsresult rv = NS_NewTimerWithFuncCallback(
       getter_AddRefs(mTelemetryTimer), EverySecondTelemetryCallback_m, this,
       1000, nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP,
-      "EverySecondTelemetryCallback_m",
-      SystemGroup::EventTargetFor(TaskCategory::Other));
+      "EverySecondTelemetryCallback_m");
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (XRE_IsContentProcess()) {
@@ -387,17 +386,17 @@ bool PeerConnectionCtx::gmpHasH264() {
   // XXX I'd prefer if this was all known ahead of time...
 
   nsTArray<nsCString> tags;
-  tags.AppendElement(NS_LITERAL_CSTRING("h264"));
+  tags.AppendElement("h264"_ns);
 
   bool has_gmp;
   nsresult rv;
-  rv = mGMPService->HasPluginForAPI(NS_LITERAL_CSTRING(GMP_API_VIDEO_ENCODER),
+  rv = mGMPService->HasPluginForAPI(nsLiteralCString(GMP_API_VIDEO_ENCODER),
                                     &tags, &has_gmp);
   if (NS_FAILED(rv) || !has_gmp) {
     return false;
   }
 
-  rv = mGMPService->HasPluginForAPI(NS_LITERAL_CSTRING(GMP_API_VIDEO_DECODER),
+  rv = mGMPService->HasPluginForAPI(nsLiteralCString(GMP_API_VIDEO_DECODER),
                                     &tags, &has_gmp);
   if (NS_FAILED(rv) || !has_gmp) {
     return false;

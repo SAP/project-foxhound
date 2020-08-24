@@ -10,6 +10,7 @@
 #include "nsBaseChannel.h"
 #include "mozilla/ArrayUtils.h"
 #include "nsIProtocolHandler.h"
+#include "nsXULAppAPI.h"
 #include "mozilla/Preferences.h"
 
 #define ABOUT_CONFIG_ENABLED_PREF "general.aboutConfig.enable"
@@ -64,17 +65,22 @@ static const RedirEntry kRedirMap[] = {
      nsIAboutModule::ALLOW_SCRIPT},
     {"buildconfig", "chrome://global/content/buildconfig.html",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT},
-    {"checkerboard", "chrome://global/content/aboutCheckerboard.xhtml",
+    {"checkerboard", "chrome://global/content/aboutCheckerboard.html",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::ALLOW_SCRIPT},
 #ifndef MOZ_BUILD_APP_IS_BROWSER
     {"config", "chrome://global/content/config.xhtml", 0},
 #endif
 #ifdef MOZ_CRASHREPORTER
-    {"crashes", "chrome://global/content/crashes.xhtml", 0},
+    {"crashes", "chrome://global/content/crashes.html", 0},
 #endif
     {"credits", "https://www.mozilla.org/credits/",
-     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT},
+     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+         nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
+    {"httpsonlyerror", "chrome://global/content/httpsonlyerror/errorpage.html",
+     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+         nsIAboutModule::URI_CAN_LOAD_IN_CHILD | nsIAboutModule::ALLOW_SCRIPT |
+         nsIAboutModule::HIDE_FROM_ABOUTABOUT},
     {"license", "chrome://global/content/license.html",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT},
     {"logo", "chrome://branding/content/about.png",
@@ -88,7 +94,7 @@ static const RedirEntry kRedirMap[] = {
          nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
          nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS},
-    {"mozilla", "chrome://global/content/mozilla.xhtml",
+    {"mozilla", "chrome://global/content/mozilla.html",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT},
     {"neterror", "chrome://global/content/netError.xhtml",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
@@ -96,13 +102,23 @@ static const RedirEntry kRedirMap[] = {
          nsIAboutModule::HIDE_FROM_ABOUTABOUT},
     {"networking", "chrome://global/content/aboutNetworking.html",
      nsIAboutModule::ALLOW_SCRIPT},
-    {"performance", "chrome://global/content/aboutPerformance.xhtml",
+    {"performance", "chrome://global/content/aboutPerformance.html",
      nsIAboutModule::ALLOW_SCRIPT},
     {"plugins", "chrome://global/content/plugins.html",
      nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
+    {"processes", "chrome://global/content/aboutProcesses.html",
+     nsIAboutModule::ALLOW_SCRIPT},
+    // about:serviceworkers always wants to load in the parent process because
+    // when dom.serviceWorkers.parent_intercept is set to true (the new default)
+    // then the only place nsIServiceWorkerManager has any data is in the
+    // parent process.
+    //
+    // There is overlap without about:debugging, but about:debugging is not
+    // available on mobile at this time, and it's useful to be able to know if
+    // a ServiceWorker is registered directly from the mobile browser without
+    // having to connect the device to a desktop machine and all that entails.
     {"serviceworkers", "chrome://global/content/aboutServiceWorkers.xhtml",
-     nsIAboutModule::URI_CAN_LOAD_IN_CHILD |
-         nsIAboutModule::URI_MUST_LOAD_IN_CHILD | nsIAboutModule::ALLOW_SCRIPT},
+     nsIAboutModule::ALLOW_SCRIPT},
 #ifndef ANDROID
     {"profiles", "chrome://global/content/aboutProfiles.xhtml",
      nsIAboutModule::ALLOW_SCRIPT},

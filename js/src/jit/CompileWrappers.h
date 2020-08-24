@@ -49,6 +49,10 @@ class CompileRuntime {
   const void* addressOfInterruptBits();
   const void* addressOfZone();
 
+#ifdef DEBUG
+  const void* addressOfIonBailAfterCounter();
+#endif
+
   // DOM callbacks must be threadsafe (and will hopefully be removed soon).
   const DOMCallbacks* DOMcallbacks();
 
@@ -64,10 +68,6 @@ class CompileZone {
   CompileRuntime* runtime();
   bool isAtomsZone();
 
-#ifdef DEBUG
-  const void* addressOfIonBailAfter();
-#endif
-
   const uint32_t* addressOfNeedsIncrementalBarrier();
   gc::FreeSpan** addressOfFreeList(gc::AllocKind allocKind);
   void* addressOfNurseryPosition();
@@ -82,6 +82,8 @@ class CompileZone {
   bool canNurseryAllocateStrings();
   bool canNurseryAllocateBigInts();
   void setMinorGCShouldCancelIonCompilations();
+
+  uintptr_t nurseryCellHeader(JS::TraceKind kind);
 };
 
 class JitRealm;
@@ -126,10 +128,17 @@ class JitCompileOptions {
     return offThreadCompilationAvailable_;
   }
 
+#ifdef DEBUG
+  bool ionBailAfterEnabled() const { return ionBailAfterEnabled_; }
+#endif
+
  private:
   bool cloneSingletons_;
   bool profilerSlowAssertionsEnabled_;
   bool offThreadCompilationAvailable_;
+#ifdef DEBUG
+  bool ionBailAfterEnabled_ = false;
+#endif
 };
 
 }  // namespace jit

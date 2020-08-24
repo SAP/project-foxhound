@@ -48,7 +48,8 @@ function assert_frames_equal(actual, expected, name) {
     `properties on ${name} should match`
   );
 
-  for (const prop in actual) {
+  // Iterates sorted keys to ensure stable failures.
+  for (const prop of Object.keys(actual).sort()) {
     if (
       // 'offset' can be null
       (prop === 'offset' && typeof actual[prop] === 'number') ||
@@ -190,6 +191,15 @@ function waitForAnimationFrames(frameCount, onFrame) {
     window.requestAnimationFrame(handleFrame);
   });
 }
+
+/**
+ * Timeout function used for tests with EventWatchers when all animation events
+ * should be received on the next animation frame. If two frames pass before
+ * receiving the expected events, then we can immediate fail the test.
+ */
+function fastEventsTimeout() {
+  return waitForAnimationFrames(2);
+};
 
 /**
  * Wrapper that takes a sequence of N animations and returns:

@@ -7,6 +7,7 @@
 #ifndef __SANDBOXPRIVATE_H__
 #define __SANDBOXPRIVATE_H__
 
+#include "mozilla/WeakPtr.h"
 #include "nsIGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIPrincipal.h"
@@ -18,6 +19,7 @@
 class SandboxPrivate : public nsIGlobalObject,
                        public nsIScriptObjectPrincipal,
                        public nsSupportsWeakReference,
+                       public mozilla::SupportsWeakPtr,
                        public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -46,6 +48,8 @@ class SandboxPrivate : public nsIGlobalObject,
 
   nsIPrincipal* GetEffectiveStoragePrincipal() override { return mPrincipal; }
 
+  nsIPrincipal* PartitionedPrincipal() override { return mPrincipal; }
+
   JSObject* GetGlobalJSObject() override { return GetWrapper(); }
   JSObject* GetGlobalJSObjectPreserveColor() const override {
     return GetWrapperPreserveColor();
@@ -66,7 +70,7 @@ class SandboxPrivate : public nsIGlobalObject,
  private:
   explicit SandboxPrivate(nsIPrincipal* principal) : mPrincipal(principal) {}
 
-  virtual ~SandboxPrivate() {}
+  virtual ~SandboxPrivate() = default;
 
   nsCOMPtr<nsIPrincipal> mPrincipal;
 };

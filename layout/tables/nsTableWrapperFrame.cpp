@@ -51,7 +51,7 @@ nsTableWrapperFrame::nsTableWrapperFrame(ComputedStyle* aStyle,
                                          ClassID aID)
     : nsContainerFrame(aStyle, aPresContext, aID) {}
 
-nsTableWrapperFrame::~nsTableWrapperFrame() {}
+nsTableWrapperFrame::~nsTableWrapperFrame() = default;
 
 NS_QUERYFRAME_HEAD(nsTableWrapperFrame)
   NS_QUERYFRAME_ENTRY(nsTableWrapperFrame)
@@ -88,7 +88,7 @@ void nsTableWrapperFrame::SetInitialChildList(ChildListID aListID,
                                               nsFrameList& aChildList) {
   if (kCaptionList == aListID) {
 #ifdef DEBUG
-    nsFrame::VerifyDirtyBitSet(aChildList);
+    nsIFrame::VerifyDirtyBitSet(aChildList);
     for (nsIFrame* f : aChildList) {
       MOZ_ASSERT(f->GetParent() == this, "Unexpected parent");
     }
@@ -382,10 +382,8 @@ nscoord nsTableWrapperFrame::ChildShrinkWrapISize(
 
   // Shrink-wrap aChildFrame by default, except if we're a stretched grid item.
   auto flags = ComputeSizeFlags::eShrinkWrap;
-  auto parent = GetParent();
-  bool isGridItem = parent && parent->IsGridContainerFrame() &&
-                    !HasAnyStateBits(NS_FRAME_OUT_OF_FLOW);
-  if (MOZ_UNLIKELY(isGridItem) && !StyleMargin()->HasInlineAxisAuto(aWM)) {
+  if (MOZ_UNLIKELY(IsGridItem()) && !StyleMargin()->HasInlineAxisAuto(aWM)) {
+    const auto* parent = GetParent();
     auto inlineAxisAlignment =
         aWM.IsOrthogonalTo(parent->GetWritingMode())
             ? StylePosition()->UsedAlignSelf(parent->Style())._0
@@ -815,12 +813,11 @@ void nsTableWrapperFrame::Reflow(nsPresContext* aPresContext,
   Maybe<ReflowInput> innerRI;
 
   nsRect origCaptionRect;
-  nsRect origCaptionVisualOverflow;
+  nsRect origCaptionInkOverflow;
   bool captionFirstReflow = false;
   if (mCaptionFrames.NotEmpty()) {
     origCaptionRect = mCaptionFrames.FirstChild()->GetRect();
-    origCaptionVisualOverflow =
-        mCaptionFrames.FirstChild()->GetVisualOverflowRect();
+    origCaptionInkOverflow = mCaptionFrames.FirstChild()->InkOverflowRect();
     captionFirstReflow =
         mCaptionFrames.FirstChild()->HasAnyStateBits(NS_FRAME_FIRST_REFLOW);
   }
@@ -979,9 +976,9 @@ void nsTableWrapperFrame::Reflow(nsPresContext* aPresContext,
   innerRI.reset();
 
   if (mCaptionFrames.NotEmpty()) {
-    nsTableFrame::InvalidateTableFrame(
-        mCaptionFrames.FirstChild(), origCaptionRect, origCaptionVisualOverflow,
-        captionFirstReflow);
+    nsTableFrame::InvalidateTableFrame(mCaptionFrames.FirstChild(),
+                                       origCaptionRect, origCaptionInkOverflow,
+                                       captionFirstReflow);
   }
 
   UpdateOverflowAreas(aDesiredSize);
@@ -1026,6 +1023,6 @@ NS_IMPL_FRAMEARENA_HELPERS(nsTableWrapperFrame)
 
 #ifdef DEBUG_FRAME_DUMP
 nsresult nsTableWrapperFrame::GetFrameName(nsAString& aResult) const {
-  return MakeFrameName(NS_LITERAL_STRING("TableWrapper"), aResult);
+  return MakeFrameName(u"TableWrapper"_ns, aResult);
 }
 #endif

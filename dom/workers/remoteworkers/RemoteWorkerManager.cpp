@@ -8,8 +8,9 @@
 
 #include <utility>
 
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/SystemGroup.h"
+#include "mozilla/dom/ContentChild.h"  // ContentChild::GetSingleton
 #include "mozilla/dom/RemoteWorkerParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
@@ -37,24 +38,18 @@ bool IsServiceWorker(const RemoteWorkerData& aData) {
          OptionalServiceWorkerData::TServiceWorkerData;
 }
 
-// Respecting COOP and COEP requires processing headers in the parent
-// process in order to choose an appropriate content process, but the
-// workers' ScriptLoader processes headers in content processes. An
-// intermediary step that provides security guarantees is to simply never
-// allow SharedWorkers and ServiceWorkers to exist in a COOP+COEP process.
-// The ultimate goal is to allow these worker types to be put in such
-// processes based on their script response headers.
-// https://bugzilla.mozilla.org/show_bug.cgi?id=1595206
-bool IsServiceWorkerRemoteType(const nsAString& aRemoteType) {
-  return IsWebRemoteType(aRemoteType) && !IsWebCoopCoepRemoteType(aRemoteType);
-}
-
 void TransmitPermissionsAndBlobURLsForPrincipalInfo(
     ContentParent* aContentParent, const PrincipalInfo& aPrincipalInfo) {
   AssertIsOnMainThread();
   MOZ_ASSERT(aContentParent);
 
-  nsCOMPtr<nsIPrincipal> principal = PrincipalInfoToPrincipal(aPrincipalInfo);
+  auto principalOrErr = PrincipalInfoToPrincipal(aPrincipalInfo);
+
+  if (NS_WARN_IF(principalOrErr.isErr())) {
+    return;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
 
   aContentParent->TransmitBlobURLsForPrincipal(principal);
 
@@ -63,6 +58,139 @@ void TransmitPermissionsAndBlobURLsForPrincipalInfo(
 }
 
 }  // namespace
+
+// static
+bool RemoteWorkerManager::MatchRemoteType(const nsACString& processRemoteType,
+                                          const nsACString& workerRemoteType) {
+  if (processRemoteType.Equals(workerRemoteType)) {
+    return true;
+  }
+
+  // Respecting COOP and COEP requires processing headers in the parent
+  // process in order to choose an appropriate content process, but the
+  // workers' ScriptLoader processes headers in content processes. An
+  // intermediary step that provides security guarantees is to simply never
+  // allow SharedWorkers and ServiceWorkers to exist in a COOP+COEP process.
+  // The ultimate goal is to allow these worker types to be put in such
+  // processes based on their script response headers.
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=1595206
+  if (IsWebCoopCoepRemoteType(processRemoteType)) {
+    return false;
+  }
+
+  // A worker for a non privileged child process can be launched in
+  // any web child process that is not COOP and COEP.
+  if ((workerRemoteType.IsEmpty() || IsWebRemoteType(workerRemoteType)) &&
+      IsWebRemoteType(processRemoteType)) {
+    return true;
+  }
+
+  return false;
+}
+
+// static
+Result<nsCString, nsresult> RemoteWorkerManager::GetRemoteType(
+    const nsCOMPtr<nsIPrincipal>& aPrincipal, WorkerType aWorkerType) {
+  AssertIsOnMainThread();
+
+  if (aWorkerType != WorkerType::WorkerTypeService &&
+      aWorkerType != WorkerType::WorkerTypeShared) {
+    // This methods isn't expected to be called for worker type that
+    // aren't remote workers (currently Service and Shared workers).
+    return Err(NS_ERROR_UNEXPECTED);
+  }
+
+  nsCString remoteType = NOT_REMOTE_TYPE;
+
+  // If Gecko is running in single process mode, there is no child process
+  // to select, return without assigning any remoteType.
+  if (!BrowserTabsRemoteAutostart()) {
+    return remoteType;
+  }
+
+  auto* contentChild = ContentChild::GetSingleton();
+
+  bool isSystem = !!BasePrincipal::Cast(aPrincipal)->IsSystemPrincipal();
+  bool isMozExtension =
+      !isSystem && !!BasePrincipal::Cast(aPrincipal)->AddonPolicy();
+
+  if (aWorkerType == WorkerType::WorkerTypeShared && !contentChild &&
+      !isSystem) {
+    // Prevent content principals SharedWorkers to be launched in the main
+    // process while running in multiprocess mode.
+    //
+    // NOTE this also prevents moz-extension SharedWorker to be created
+    // while the extension process is disabled by prefs, allowing it would
+    // also trigger an assertion failure in
+    // RemoteWorkerManager::SelectorTargetActor, due to an unexpected
+    // content-principal parent-process workers while e10s is on).
+    return Err(NS_ERROR_ABORT);
+  }
+
+  bool separatePrivilegedMozilla = Preferences::GetBool(
+      "browser.tabs.remote.separatePrivilegedMozillaWebContentProcess", false);
+
+  if (isMozExtension) {
+    remoteType = EXTENSION_REMOTE_TYPE;
+  } else if (separatePrivilegedMozilla) {
+    bool isPrivilegedMozilla = false;
+    aPrincipal->IsURIInPrefList("browser.tabs.remote.separatedMozillaDomains",
+                                &isPrivilegedMozilla);
+
+    if (isPrivilegedMozilla) {
+      remoteType = PRIVILEGEDMOZILLA_REMOTE_TYPE;
+    } else if (aWorkerType == WorkerType::WorkerTypeShared && contentChild) {
+      remoteType = contentChild->GetRemoteType();
+    } else {
+      remoteType = DEFAULT_REMOTE_TYPE;
+    }
+  } else {
+    remoteType = DEFAULT_REMOTE_TYPE;
+  }
+
+  return remoteType;
+}
+
+// static
+bool RemoteWorkerManager::IsRemoteTypeAllowed(const RemoteWorkerData& aData) {
+  AssertIsOnMainThread();
+
+  // If Gecko is running in single process mode, there is no child process
+  // to select and we have to just consider it valid (if it should haven't
+  // been launched it should have been already prevented before reaching
+  // a RemoteWorkerChild instance).
+  if (!BrowserTabsRemoteAutostart()) {
+    return true;
+  }
+
+  const auto& principalInfo = aData.principalInfo();
+
+  auto* contentChild = ContentChild::GetSingleton();
+  if (!contentChild) {
+    // If e10s isn't disabled, only workers related to the system principal
+    // should be allowed to run in the parent process.
+    return principalInfo.type() == PrincipalInfo::TSystemPrincipalInfo;
+  }
+
+  auto principalOrErr = PrincipalInfoToPrincipal(principalInfo);
+  if (NS_WARN_IF(principalOrErr.isErr())) {
+    return false;
+  }
+  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
+
+  // Recompute the remoteType based on the principal, to double-check that it
+  // has not been tempered to select a different child process than the one
+  // expected.
+  bool isServiceWorker = aData.serviceWorkerData().type() ==
+                         OptionalServiceWorkerData::TServiceWorkerData;
+  auto remoteType = GetRemoteType(
+      principal, isServiceWorker ? WorkerTypeService : WorkerTypeShared);
+  if (NS_WARN_IF(remoteType.isErr())) {
+    return false;
+  }
+
+  return MatchRemoteType(remoteType.unwrap(), contentChild->GetRemoteType());
+}
 
 /* static */
 already_AddRefed<RemoteWorkerManager> RemoteWorkerManager::GetOrCreate() {
@@ -105,27 +233,24 @@ void RemoteWorkerManager::RegisterActor(RemoteWorkerServiceParent* aActor) {
   MOZ_ASSERT(!mChildActors.Contains(aActor));
   mChildActors.AppendElement(aActor);
 
-  nsTArray<Pending> unlaunched;
-
-  RefPtr<ContentParent> contentParent =
-      BackgroundParent::GetContentParent(aActor->Manager());
-  auto scopeExit = MakeScopeExit(
-      [&] { NS_ReleaseOnMainThreadSystemGroup(contentParent.forget()); });
-  const auto& remoteType = contentParent->GetRemoteType();
-
   if (!mPendings.IsEmpty()) {
+    const auto& remoteType = GetRemoteTypeForActor(aActor);
+    nsTArray<Pending> unlaunched;
+
     // Flush pending launching.
     for (Pending& p : mPendings) {
       if (p.mController->IsTerminated()) {
         continue;
       }
 
-      if (IsServiceWorker(p.mData) && !IsServiceWorkerRemoteType(remoteType)) {
+      const auto& workerRemoteType = p.mData.remoteType();
+
+      if (MatchRemoteType(remoteType, workerRemoteType)) {
+        LaunchInternal(p.mController, aActor, p.mData);
+      } else {
         unlaunched.AppendElement(std::move(p));
         continue;
       }
-
-      LaunchInternal(p.mController, aActor, p.mData);
     }
 
     std::swap(mPendings, unlaunched);
@@ -221,6 +346,28 @@ void RemoteWorkerManager::AsyncCreationFailed(
   NS_DispatchToCurrentThread(r.forget());
 }
 
+/* static */
+nsCString RemoteWorkerManager::GetRemoteTypeForActor(
+    const RemoteWorkerServiceParent* aActor) {
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  MOZ_ASSERT(aActor);
+
+  RefPtr<ContentParent> contentParent =
+      BackgroundParent::GetContentParent(aActor->Manager());
+  auto scopeExit =
+      MakeScopeExit([&] { NS_ReleaseOnMainThread(contentParent.forget()); });
+
+  if (NS_WARN_IF(!contentParent)) {
+    return EmptyCString();
+  }
+
+  nsCString aRemoteType(contentParent->GetRemoteType());
+
+  return aRemoteType;
+}
+
 template <typename Callback>
 void RemoteWorkerManager::ForEachActor(Callback&& aCallback) const {
   AssertIsOnBackgroundThread();
@@ -251,7 +398,8 @@ void RemoteWorkerManager::ForEachActor(Callback&& aCallback) const {
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
       __func__, [proxyReleaseArray = std::move(proxyReleaseArray)] {});
 
-  MOZ_ALWAYS_SUCCEEDS(SystemGroup::Dispatch(TaskCategory::Other, r.forget()));
+  MOZ_ALWAYS_SUCCEEDS(
+      SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
 }
 
 /**
@@ -283,11 +431,13 @@ RemoteWorkerManager::SelectTargetActorForServiceWorker(
 
   RemoteWorkerServiceParent* actor = nullptr;
 
+  const auto& workerRemoteType = aData.remoteType();
+
   ForEachActor([&](RemoteWorkerServiceParent* aActor,
                    RefPtr<ContentParent>&& aContentParent) {
     const auto& remoteType = aContentParent->GetRemoteType();
 
-    if (IsServiceWorkerRemoteType(remoteType)) {
+    if (MatchRemoteType(remoteType, workerRemoteType)) {
       auto lock = aContentParent->mRemoteWorkerActorData.Lock();
 
       if (lock->mCount || !lock->mShutdownStarted) {
@@ -304,7 +454,7 @@ RemoteWorkerManager::SelectTargetActorForServiceWorker(
             });
 
         MOZ_ALWAYS_SUCCEEDS(
-            SystemGroup::Dispatch(TaskCategory::Other, r.forget()));
+            SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
 
         actor = aActor;
         return false;
@@ -320,7 +470,7 @@ RemoteWorkerManager::SelectTargetActorForServiceWorker(
 
 RemoteWorkerServiceParent*
 RemoteWorkerManager::SelectTargetActorForSharedWorker(
-    base::ProcessId aProcessId) const {
+    base::ProcessId aProcessId, const RemoteWorkerData& aData) const {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(!mChildActors.IsEmpty());
 
@@ -328,7 +478,10 @@ RemoteWorkerManager::SelectTargetActorForSharedWorker(
 
   ForEachActor([&](RemoteWorkerServiceParent* aActor,
                    RefPtr<ContentParent>&& aContentParent) {
-    if (IsWebCoopCoepRemoteType(aContentParent->GetRemoteType())) {
+    bool matchRemoteType =
+        MatchRemoteType(aContentParent->GetRemoteType(), aData.remoteType());
+
+    if (!matchRemoteType) {
       return true;
     }
 
@@ -371,8 +524,9 @@ RemoteWorkerServiceParent* RemoteWorkerManager::SelectTargetActor(
     return nullptr;
   }
 
-  return IsServiceWorker(aData) ? SelectTargetActorForServiceWorker(aData)
-                                : SelectTargetActorForSharedWorker(aProcessId);
+  return IsServiceWorker(aData)
+             ? SelectTargetActorForServiceWorker(aData)
+             : SelectTargetActorForSharedWorker(aProcessId, aData);
 }
 
 void RemoteWorkerManager::LaunchNewContentProcess(
@@ -380,8 +534,7 @@ void RemoteWorkerManager::LaunchNewContentProcess(
   AssertIsInMainProcess();
   AssertIsOnBackgroundThread();
 
-  nsCOMPtr<nsISerialEventTarget> bgEventTarget =
-      GetCurrentThreadSerialEventTarget();
+  nsCOMPtr<nsISerialEventTarget> bgEventTarget = GetCurrentSerialEventTarget();
 
   using CallbackParamType = ContentParent::LaunchPromise::ResolveOrRejectValue;
 
@@ -395,7 +548,8 @@ void RemoteWorkerManager::LaunchNewContentProcess(
                                 principalInfo = aData.principalInfo(),
                                 bgEventTarget = std::move(bgEventTarget),
                                 self = RefPtr<RemoteWorkerManager>(this)](
-                                   const CallbackParamType& aValue) mutable {
+                                   const CallbackParamType& aValue,
+                                   const nsCString& remoteType) mutable {
     if (aValue.IsResolve()) {
       if (isServiceWorker) {
         TransmitPermissionsAndBlobURLsForPrincipalInfo(aValue.ResolveValue(),
@@ -407,12 +561,21 @@ void RemoteWorkerManager::LaunchNewContentProcess(
       NS_ProxyRelease(__func__, bgEventTarget, self.forget());
     } else {
       // The "real" failure callback.
-      nsCOMPtr<nsIRunnable> r =
-          NS_NewRunnableFunction(__func__, [self = std::move(self)] {
+      nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
+          __func__, [self = std::move(self), remoteType] {
+            nsTArray<Pending> uncancelled;
             auto pendings = std::move(self->mPendings);
+
             for (const auto& pending : pendings) {
-              pending.mController->CreationFailed();
+              const auto& workerRemoteType = pending.mData.remoteType();
+              if (self->MatchRemoteType(remoteType, workerRemoteType)) {
+                pending.mController->CreationFailed();
+              } else {
+                uncancelled.AppendElement(pending);
+              }
             }
+
+            std::swap(self->mPendings, uncancelled);
           });
 
       bgEventTarget->Dispatch(r.forget(), NS_DISPATCH_NORMAL);
@@ -420,20 +583,22 @@ void RemoteWorkerManager::LaunchNewContentProcess(
   };
 
   nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
-      __func__, [callback = std::move(processLaunchCallback)]() mutable {
+      __func__, [callback = std::move(processLaunchCallback),
+                 workerRemoteType = aData.remoteType()]() mutable {
+        auto remoteType =
+            workerRemoteType.IsEmpty() ? DEFAULT_REMOTE_TYPE : workerRemoteType;
+
         ContentParent::GetNewOrUsedBrowserProcessAsync(
             /* aFrameElement = */ nullptr,
-            /* aRemoteType = */ NS_LITERAL_STRING(DEFAULT_REMOTE_TYPE))
-            ->Then(GetCurrentThreadSerialEventTarget(), __func__,
-                   [callback = std::move(callback)](
-                       const CallbackParamType& aValue) mutable {
-                     callback(aValue);
+            /* aRemoteType = */ remoteType)
+            ->Then(GetCurrentSerialEventTarget(), __func__,
+                   [callback = std::move(callback),
+                    remoteType](const CallbackParamType& aValue) mutable {
+                     callback(aValue, remoteType);
                    });
       });
 
-  nsCOMPtr<nsIEventTarget> target =
-      SystemGroup::EventTargetFor(TaskCategory::Other);
-  target->Dispatch(r.forget(), NS_DISPATCH_NORMAL);
+  SchedulerGroup::Dispatch(TaskCategory::Other, r.forget());
 }
 
 }  // namespace dom

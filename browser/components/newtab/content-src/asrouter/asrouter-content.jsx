@@ -2,11 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import {
-  actionCreators as ac,
-  actionTypes as at,
-  ASRouterActions as ra,
-} from "common/Actions.jsm";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
 import { OUTGOING_MESSAGE_NAME as AS_GENERAL_OUTGOING_MESSAGE_NAME } from "content-src/lib/init-store";
 import { generateBundles } from "./rich-text-strings";
 import { ImpressionsWrapper } from "./components/ImpressionsWrapper/ImpressionsWrapper";
@@ -50,6 +46,12 @@ export const ASRouterUtils = {
       data: { id, ...options },
     });
   },
+  modifyMessageJson(content) {
+    ASRouterUtils.sendMessage({
+      type: "MODIFY_MESSAGE_JSON",
+      data: { content },
+    });
+  },
   dismissById(id) {
     ASRouterUtils.sendMessage({ type: "DISMISS_MESSAGE_BY_ID", data: { id } });
   },
@@ -61,6 +63,9 @@ export const ASRouterUtils = {
   },
   unblockById(id) {
     ASRouterUtils.sendMessage({ type: "UNBLOCK_MESSAGE_BY_ID", data: { id } });
+  },
+  blockBundle(bundle) {
+    ASRouterUtils.sendMessage({ type: "BLOCK_BUNDLE", data: { bundle } });
   },
   unblockBundle(bundle) {
     ASRouterUtils.sendMessage({ type: "UNBLOCK_BUNDLE", data: { bundle } });
@@ -200,22 +205,31 @@ export class ASRouterUISurface extends React.PureComponent {
   // telemetry field which can have arbitrary values.
   // Used for router messages with links as part of the content.
   sendClick(event) {
+    const { dataset } = event.target;
     const metric = {
-      event_context: event.target.dataset.metric,
+      event_context: dataset.metric,
       // Used for the `source` of the event. Needed to differentiate
       // from other snippet or onboarding events that may occur.
       id: "NEWTAB_FOOTER_BAR_CONTENT",
     };
+    const { entrypoint_name, entrypoint_value } = dataset;
+    // Assign the snippet referral for the action
+    const entrypoint = entrypoint_name
+      ? new URLSearchParams([[entrypoint_name, entrypoint_value]]).toString()
+      : entrypoint_value;
     const action = {
-      type: event.target.dataset.action,
-      data: { args: event.target.dataset.args },
+      type: dataset.action,
+      data: {
+        args: dataset.args,
+        ...(entrypoint && { entrypoint }),
+      },
     };
     if (action.type) {
       ASRouterUtils.executeAction(action);
     }
     if (
       !this.state.message.content.do_not_autoblock &&
-      !event.target.dataset.do_not_autoblock
+      !dataset.do_not_autoblock
     ) {
       ASRouterUtils.blockById(this.state.message.id);
     }
@@ -331,9 +345,9 @@ export class ASRouterUISurface extends React.PureComponent {
   async onUserAction(action) {
     switch (action.type) {
       // This needs to be handled locally because its
-      case ra.ENABLE_FIREFOX_MONITOR:
+      case "ENABLE_FIREFOX_MONITOR":
         const url = await this.getMonitorUrl(action.data.args);
-        ASRouterUtils.executeAction({ type: ra.OPEN_URL, data: { args: url } });
+        ASRouterUtils.executeAction({ type: "OPEN_URL", data: { args: url } });
         break;
       default:
         ASRouterUtils.executeAction(action);

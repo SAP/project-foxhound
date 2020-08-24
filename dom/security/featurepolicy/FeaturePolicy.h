@@ -7,11 +7,9 @@
 #ifndef mozilla_dom_FeaturePolicy_h
 #define mozilla_dom_FeaturePolicy_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/Feature.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsString.h"
+#include "nsIPrincipal.h"
+#include "nsStringFwd.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
 
@@ -55,12 +53,12 @@
  * HTTP header support.
  **/
 
-class nsIHttpChannel;
 class nsINode;
 
 namespace mozilla {
 namespace dom {
 class Document;
+class Feature;
 
 class FeaturePolicyUtils;
 
@@ -79,6 +77,8 @@ class FeaturePolicy final : public nsISupports, public nsWrapperCache {
   void SetDefaultOrigin(nsIPrincipal* aPrincipal) {
     mDefaultOrigin = aPrincipal;
   }
+
+  void SetSrcOrigin(nsIPrincipal* aPrincipal) { mSrcOrigin = aPrincipal; }
 
   nsIPrincipal* DefaultOrigin() const { return mDefaultOrigin; }
 
@@ -115,6 +115,8 @@ class FeaturePolicy final : public nsISupports, public nsWrapperCache {
   bool AllowsFeatureExplicitlyInAncestorChain(const nsAString& aFeatureName,
                                               nsIPrincipal* aOrigin) const;
 
+  bool IsSameOriginAsSrc(nsIPrincipal* aPrincipal) const;
+
   // WebIDL internal methods.
 
   JSObject* WrapObject(JSContext* aCx,
@@ -136,12 +138,12 @@ class FeaturePolicy final : public nsISupports, public nsWrapperCache {
 
   void GetInheritedDeniedFeatureNames(
       nsTArray<nsString>& aInheritedDeniedFeatureNames) {
-    aInheritedDeniedFeatureNames = mInheritedDeniedFeatureNames;
+    aInheritedDeniedFeatureNames = mInheritedDeniedFeatureNames.Clone();
   }
 
   void SetInheritedDeniedFeatureNames(
       const nsTArray<nsString>& aInheritedDeniedFeatureNames) {
-    mInheritedDeniedFeatureNames = aInheritedDeniedFeatureNames;
+    mInheritedDeniedFeatureNames = aInheritedDeniedFeatureNames.Clone();
   }
 
   void GetDeclaredString(nsAString& aDeclaredString) {

@@ -85,12 +85,13 @@ WebrtcAudioConduit::~WebrtcAudioConduit() {
   mPtrVoEBase = nullptr;
 }
 
-bool WebrtcAudioConduit::SetLocalSSRCs(
-    const std::vector<unsigned int>& aSSRCs) {
+bool WebrtcAudioConduit::SetLocalSSRCs(const std::vector<uint32_t>& aSSRCs,
+                                       const std::vector<uint32_t>& aRtxSSRCs) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aSSRCs.size() == 1,
              "WebrtcAudioConduit::SetLocalSSRCs accepts exactly 1 ssrc.");
 
+  // We ignore aRtxSSRCs, it is only used in the VideoConduit.
   if (aSSRCs.empty()) {
     return false;
   }
@@ -108,14 +109,15 @@ bool WebrtcAudioConduit::SetLocalSSRCs(
   return RecreateSendStreamIfExists();
 }
 
-std::vector<unsigned int> WebrtcAudioConduit::GetLocalSSRCs() {
+std::vector<uint32_t> WebrtcAudioConduit::GetLocalSSRCs() {
   MutexAutoLock lock(mMutex);
-  return std::vector<unsigned int>(1, mRecvStreamConfig.rtp.local_ssrc);
+  return std::vector<uint32_t>(1, mRecvStreamConfig.rtp.local_ssrc);
 }
 
-bool WebrtcAudioConduit::SetRemoteSSRC(unsigned int ssrc) {
+bool WebrtcAudioConduit::SetRemoteSSRC(uint32_t ssrc, uint32_t rtxSsrc) {
   MOZ_ASSERT(NS_IsMainThread());
 
+  // We ignore aRtxSsrc, it is only used in the VideoConduit.
   if (mRecvStreamConfig.rtp.remote_ssrc == ssrc) {
     return true;
   }
@@ -124,7 +126,7 @@ bool WebrtcAudioConduit::SetRemoteSSRC(unsigned int ssrc) {
   return RecreateRecvStreamIfExists();
 }
 
-bool WebrtcAudioConduit::GetRemoteSSRC(unsigned int* ssrc) {
+bool WebrtcAudioConduit::GetRemoteSSRC(uint32_t* ssrc) {
   {
     MutexAutoLock lock(mMutex);
     if (!mRecvStream) {
@@ -233,8 +235,9 @@ bool WebrtcAudioConduit::GetRTCPReceiverReport(uint32_t* jitterMs,
   return res;
 }
 
-bool WebrtcAudioConduit::GetRTCPSenderReport(unsigned int* packetsSent,
-                                             uint64_t* bytesSent) {
+bool WebrtcAudioConduit::GetRTCPSenderReport(
+    unsigned int* packetsSent, uint64_t* bytesSent,
+    DOMHighResTimeStamp* aRemoteTimestamp) {
   ASSERT_ON_THREAD(mStsThread);
   MutexAutoLock lock(mMutex);
   if (!mRecvChannelProxy) {
@@ -244,6 +247,7 @@ bool WebrtcAudioConduit::GetRTCPSenderReport(unsigned int* packetsSent,
   webrtc::CallStatistics stats = mRecvChannelProxy->GetRTCPStatistics();
   *packetsSent = stats.rtcp_sender_packets_sent;
   *bytesSent = stats.rtcp_sender_octets_sent;
+  *aRemoteTimestamp = stats.rtcp_sender_ntp_timestamp.ToMs();
   return *packetsSent > 0 && *bytesSent > 0;
 }
 
@@ -251,35 +255,31 @@ bool WebrtcAudioConduit::SetDtmfPayloadType(unsigned char type, int freq) {
   CSFLogInfo(LOGTAG, "%s : setting dtmf payload %d", __FUNCTION__, (int)type);
   MOZ_ASSERT(NS_IsMainThread());
 
-  int result = mSendChannelProxy->SetSendTelephoneEventPayloadType(type, freq);
-  if (result == -1) {
+  bool result = mSendChannelProxy->SetSendTelephoneEventPayloadType(type, freq);
+  if (!result) {
     CSFLogError(LOGTAG,
                 "%s Failed call to SetSendTelephoneEventPayloadType(%u, %d)",
                 __FUNCTION__, type, freq);
   }
-  return result != -1;
+  return result;
 }
 
 bool WebrtcAudioConduit::InsertDTMFTone(int channel, int eventCode,
                                         bool outOfBand, int lengthMs,
                                         int attenuationDb) {
   MOZ_ASSERT(NS_IsMainThread());
-  if (!mSendChannelProxy || !mDtmfEnabled) {
+  if (!mSendChannelProxy || !mDtmfEnabled || !outOfBand) {
     return false;
   }
 
-  int result = 0;
-  if (outOfBand) {
-    result = mSendChannelProxy->SendTelephoneEventOutband(eventCode, lengthMs);
-  }
-  return result != -1;
+  return mSendChannelProxy->SendTelephoneEventOutband(eventCode, lengthMs);
 }
 
 void WebrtcAudioConduit::OnRtpPacket(const webrtc::RTPHeader& aHeader,
                                      const int64_t aTimestamp,
                                      const uint32_t aJitter) {
   ASSERT_ON_THREAD(mStsThread);
-  mRtpSourceObserver.OnRtpPacket(aHeader, aTimestamp, aJitter);
+  mRtpSourceObserver->OnRtpPacket(aHeader, aJitter);
 }
 
 void WebrtcAudioConduit::OnRtcpBye() {
@@ -311,9 +311,9 @@ void WebrtcAudioConduit::SetRtcpEventObserver(
 }
 
 void WebrtcAudioConduit::GetRtpSources(
-    const int64_t aTimeNow, nsTArray<dom::RTCRtpSourceEntry>& outSources) {
+    nsTArray<dom::RTCRtpSourceEntry>& outSources) {
   MOZ_ASSERT(NS_IsMainThread());
-  return mRtpSourceObserver.GetRtpSources(aTimeNow, outSources);
+  return mRtpSourceObserver->GetRtpSources(outSources);
 }
 
 // test-only: inserts a CSRC entry in a RtpSourceObserver's history for
@@ -337,7 +337,7 @@ void WebrtcAudioConduit::InsertAudioLevelForContributingSource(
     const uint8_t aAudioLevel) {
   MOZ_ASSERT(NS_IsMainThread());
   mozilla::InsertAudioLevelForContributingSource(
-      mRtpSourceObserver, aCsrcSource, aTimestamp, aRtpTimestamp,
+      *mRtpSourceObserver, aCsrcSource, aTimestamp, aRtpTimestamp,
       aHasAudioLevel, aAudioLevel);
 }
 
@@ -446,15 +446,32 @@ MediaConduitErrorCode WebrtcAudioConduit::ConfigureRecvMediaCodecs(
     webrtc::SdpAudioFormat::Parameters parameters;
     if (codec->mName == "opus") {
       if (codec->mChannels == 2) {
-        parameters = {{"stereo", "1"}};
+        parameters["stereo"] = "1";
       }
       if (codec->mFECEnabled) {
         parameters["useinbandfec"] = "1";
       }
+      if (codec->mDTXEnabled) {
+        parameters["usedtx"] = "1";
+      }
       if (codec->mMaxPlaybackRate) {
-        std::ostringstream o;
-        o << codec->mMaxPlaybackRate;
-        parameters["maxplaybackrate"] = o.str();
+        parameters["maxplaybackrate"] = std::to_string(codec->mMaxPlaybackRate);
+      }
+      if (codec->mMaxAverageBitrate) {
+        parameters["maxaveragebitrate"] =
+            std::to_string(codec->mMaxAverageBitrate);
+      }
+      if (codec->mFrameSizeMs) {
+        parameters["ptime"] = std::to_string(codec->mFrameSizeMs);
+      }
+      if (codec->mMinFrameSizeMs) {
+        parameters["minptime"] = std::to_string(codec->mMinFrameSizeMs);
+      }
+      if (codec->mMaxFrameSizeMs) {
+        parameters["maxptime"] = std::to_string(codec->mMaxFrameSizeMs);
+      }
+      if (codec->mCbrEnabled) {
+        parameters["cbr"] = "1";
       }
     }
 
@@ -664,9 +681,8 @@ MediaConduitErrorCode WebrtcAudioConduit::GetAudioFrame(int16_t speechData[],
 }
 
 // Transport Layer Callbacks
-MediaConduitErrorCode WebrtcAudioConduit::ReceivedRTPPacket(const void* data,
-                                                            int len,
-                                                            uint32_t ssrc) {
+MediaConduitErrorCode WebrtcAudioConduit::ReceivedRTPPacket(
+    const void* data, int len, webrtc::RTPHeader& header) {
   ASSERT_ON_THREAD(mStsThread);
 
   // Handle the unknown ssrc (and ssrc-not-signaled case).
@@ -683,7 +699,7 @@ MediaConduitErrorCode WebrtcAudioConduit::ReceivedRTPPacket(const void* data,
     return kMediaConduitNoError;
   }
 
-  if (mRecvSSRC != ssrc) {
+  if (mRecvSSRC != header.ssrc) {
     // a new switch needs to be done
     // any queued packets are from a previous switch that hasn't completed
     // yet; drop them and only process the latest SSRC
@@ -691,10 +707,10 @@ MediaConduitErrorCode WebrtcAudioConduit::ReceivedRTPPacket(const void* data,
     mRtpPacketQueue.Enqueue(data, len);
 
     CSFLogDebug(LOGTAG, "%s: switching from SSRC %u to %u", __FUNCTION__,
-                static_cast<uint32_t>(mRecvSSRC), ssrc);
+                static_cast<uint32_t>(mRecvSSRC), header.ssrc);
 
     // we "switch" here immediately, but buffer until the queue is released
-    mRecvSSRC = ssrc;
+    mRecvSSRC = header.ssrc;
 
     // Ensure lamba captures refs
     RefPtr<WebrtcAudioConduit> self = this;
@@ -703,8 +719,8 @@ MediaConduitErrorCode WebrtcAudioConduit::ReceivedRTPPacket(const void* data,
       return kMediaConduitRTPProcessingFailed;
     }
     NS_DispatchToMainThread(
-        media::NewRunnableFrom([self, thread, ssrc]() mutable {
-          self->SetRemoteSSRC(ssrc);
+        media::NewRunnableFrom([self, thread, ssrc = header.ssrc]() mutable {
+          self->SetRemoteSSRC(ssrc, 0);
           // We want to unblock the queued packets on the original thread
           thread->Dispatch(media::NewRunnableFrom([self, ssrc]() mutable {
                              if (ssrc == self->mRecvSSRC) {
@@ -860,14 +876,13 @@ bool WebrtcAudioConduit::SendRtp(const uint8_t* data, size_t len,
   CSFLogDebug(LOGTAG, "%s: len %lu", __FUNCTION__, (unsigned long)len);
 
   ReentrantMonitorAutoEnter enter(mTransportMonitor);
-  // XXX(pkerr) - the PacketOptions are being ignored. This parameter was added
-  // along with the Call API update in the webrtc.org codebase. The only field
-  // in it is the packet_id, which is used when the header extension for
-  // TransportSequenceNumber is being used, which we don't.
-  (void)options;
   if (mTransmitterTransport &&
       (mTransmitterTransport->SendRtpPacket(data, len) == NS_OK)) {
     CSFLogDebug(LOGTAG, "%s Sent RTP Packet ", __FUNCTION__);
+    if (options.packet_id >= 0) {
+      int64_t now_ms = PR_Now() / 1000;
+      mCall->Call()->OnSentPacket({options.packet_id, now_ms});
+    }
     return true;
   }
   CSFLogError(LOGTAG, "%s RTP Packet Send Failed ", __FUNCTION__);
@@ -915,10 +930,28 @@ bool WebrtcAudioConduit::CodecConfigToWebRTCCodec(
     if (codecInfo->mFECEnabled) {
       parameters["useinbandfec"] = "1";
     }
+    if (codecInfo->mDTXEnabled) {
+      parameters["usedtx"] = "1";
+    }
     if (codecInfo->mMaxPlaybackRate) {
-      std::ostringstream o;
-      o << codecInfo->mMaxPlaybackRate;
-      parameters["maxplaybackrate"] = o.str();
+      parameters["maxplaybackrate"] =
+          std::to_string(codecInfo->mMaxPlaybackRate);
+    }
+    if (codecInfo->mMaxAverageBitrate) {
+      parameters["maxaveragebitrate"] =
+          std::to_string(codecInfo->mMaxAverageBitrate);
+    }
+    if (codecInfo->mFrameSizeMs) {
+      parameters["ptime"] = std::to_string(codecInfo->mFrameSizeMs);
+    }
+    if (codecInfo->mMinFrameSizeMs) {
+      parameters["minptime"] = std::to_string(codecInfo->mMinFrameSizeMs);
+    }
+    if (codecInfo->mMaxFrameSizeMs) {
+      parameters["maxptime"] = std::to_string(codecInfo->mMaxFrameSizeMs);
+    }
+    if (codecInfo->mCbrEnabled) {
+      parameters["cbr"] = "1";
     }
   }
 

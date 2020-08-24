@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef NS_AUTOREFERENCELIMITER_H
-#define NS_AUTOREFERENCELIMITER_H
+#ifndef LAYOUT_SVG_AUTOREFERENCECHAINGUARD_H_
+#define LAYOUT_SVG_AUTOREFERENCECHAINGUARD_H_
 
 #include "Element.h"
 #include "mozilla/Assertions.h"
@@ -118,7 +118,7 @@ class MOZ_RAII AutoReferenceChainGuard {
    * If it returns false then an error message will be reported to the DevTools
    * console (only once).
    */
-  MOZ_MUST_USE bool Reference() {
+  [[nodiscard]] bool Reference() {
     if (MOZ_UNLIKELY(*mFrameInUse)) {
       mBrokeReference = true;
       ReportErrorToConsole();
@@ -169,4 +169,4 @@ class MOZ_RAII AutoReferenceChainGuard {
 
 }  // namespace mozilla
 
-#endif  // NS_AUTOREFERENCELIMITER_H
+#endif  // LAYOUT_SVG_AUTOREFERENCECHAINGUARD_H_

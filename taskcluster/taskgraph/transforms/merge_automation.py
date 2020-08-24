@@ -37,18 +37,31 @@ def handle_keyed_by(config, tasks):
 
 
 @transforms.add
+def update_labels(config, tasks):
+    for task in tasks:
+        if "merge_config" not in config.params:
+            break
+        merge_config = config.params["merge_config"]
+        task["label"] = "merge-{}".format(merge_config["behavior"])
+        treeherder = task.get("treeherder", {})
+        treeherder["symbol"] = "Rel({})".format(merge_config["behavior"])
+        task["treeherder"] = treeherder
+        yield task
+
+
+@transforms.add
 def add_payload_config(config, tasks):
     for task in tasks:
         if "merge_config" not in config.params:
             break
         merge_config = config.params["merge_config"]
         worker = task["worker"]
-        worker["merge-info"] = config.graph_config["merge-automation"]["flavors"][
-            merge_config["merge_flavor"]
+        worker["merge-info"] = config.graph_config["merge-automation"]["behaviors"][
+            merge_config["behavior"]
         ]
 
         # Override defaults, useful for testing.
-        for field in ["from-repo", "from-branch", "to-repo", "to-branch"]:
+        for field in ["from-repo", "from-branch", "to-repo", "to-branch", "fetch-version-from"]:
             if merge_config.get(field):
                 worker["merge-info"][field] = merge_config[field]
 

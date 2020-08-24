@@ -12,7 +12,9 @@ const { TelemetryTestUtils } = ChromeUtils.import(
 
 add_task(async function() {
   await pushPref("devtools.netmonitor.features.webSockets", true);
-  const { tab, monitor } = await initNetMonitor(WS_PAGE_URL);
+  const { tab, monitor } = await initNetMonitor(WS_PAGE_URL, {
+    requestCount: 1,
+  });
   info("Starting test... ");
 
   const { document, store, windowRequire } = monitor.panelWin;
@@ -40,20 +42,20 @@ add_task(async function() {
   // Wait for all sent/received messages to be displayed in DevTools.
   const wait = waitForDOM(
     document,
-    "#messages-panel .ws-frames-list-table .ws-frame-list-item",
+    "#messages-view .message-list-table .message-list-item",
     2
   );
 
-  // Click on the "Messages" panel.
+  // Click on the "Response" panel.
   EventUtils.sendMouseEvent(
     { type: "click" },
-    document.querySelector("#messages-tab")
+    document.querySelector("#response-tab")
   );
   await wait;
 
-  // Get all messages present in the "Messages" panel.
+  // Get all messages present in the "Response" panel.
   const frames = document.querySelectorAll(
-    "#messages-panel .ws-frames-list-table .ws-frame-list-item"
+    "#messages-view .message-list-table .message-list-item"
   );
 
   // Check expected results.
@@ -65,7 +67,7 @@ add_task(async function() {
   // Wait for the payload to be resolved (LongString)
   const payloadResolved = waitFor(
     monitor.panelWin.api,
-    EVENTS.LONGSTRING_RESOLVED
+    TEST_EVENTS.LONGSTRING_RESOLVED
   );
 
   // Select frame

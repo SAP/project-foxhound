@@ -219,6 +219,13 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
+  MOZ_UPDATE_AGENT:
+#ifdef MOZ_UPDATE_AGENT
+  true,
+#else
+  false,
+#endif
+
   MOZ_BITS_DOWNLOAD:
 #ifdef MOZ_BITS_DOWNLOAD
   true,
@@ -242,6 +249,13 @@ this.AppConstants = Object.freeze({
 
   ASAN_REPORTER:
 #ifdef MOZ_ASAN_REPORTER
+  true,
+#else
+  false,
+#endif
+
+  TSAN:
+#ifdef MOZ_TSAN
   true,
 #else
   false,
@@ -318,6 +332,7 @@ this.AppConstants = Object.freeze({
   DLL_SUFFIX: "@DLL_SUFFIX@",
 
   MOZ_APP_NAME: "@MOZ_APP_NAME@",
+  MOZ_APP_BASENAME: "@MOZ_APP_BASENAME@",
   MOZ_APP_VERSION: "@MOZ_APP_VERSION@",
   MOZ_APP_VERSION_DISPLAY: "@MOZ_APP_VERSION_DISPLAY@",
   MOZ_BUILDID: "@MOZ_BUILDID@",
@@ -393,6 +408,13 @@ this.AppConstants = Object.freeze({
 
   ENABLE_REMOTE_AGENT:
 #ifdef ENABLE_REMOTE_AGENT
+    true,
+#else
+    false,
+#endif
+
+  MOZ_RUST_FXA_CLIENT:
+#ifdef MOZ_RUST_FXA_CLIENT
     true,
 #else
     false,

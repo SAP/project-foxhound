@@ -38,12 +38,19 @@ EXPORTS += [
 EXPORTS.mozilla.net += [
     'ChildDNSService.h',
     'DNS.h',
+    'DNSByTypeRecord.h',
     'DNSListenerProxy.h',
+    'DNSRequestBase.h',
     'DNSRequestChild.h',
     'DNSRequestParent.h',
+    'HTTPSSVC.h',
     'IDNBlocklistUtils.h',
-    'PDNSParams.h',
+    'NativeDNSResolverOverrideChild.h',
+    'NativeDNSResolverOverrideParent.h',
     'TRRService.h',
+    'TRRServiceBase.h',
+    'TRRServiceChild.h',
+    'TRRServiceParent.h',
 ]
 
 SOURCES += [
@@ -58,17 +65,25 @@ UNIFIED_SOURCES += [
     'DNSRequestChild.cpp',
     'DNSRequestParent.cpp',
     'GetAddrInfo.cpp',
+    'HTTPSSVC.cpp',
     'IDNBlocklistUtils.cpp',
+    'NativeDNSResolverOverrideChild.cpp',
+    'NativeDNSResolverOverrideParent.cpp',
     'nsDNSService2.cpp',
     'nsIDNService.cpp',
     'punycode.c',
     'TRR.cpp',
     'TRRService.cpp',
+    'TRRServiceBase.cpp',
+    'TRRServiceChild.cpp',
+    'TRRServiceParent.cpp',
 ]
 
 IPDL_SOURCES = [
     'PDNSRequest.ipdl',
     'PDNSRequestParams.ipdlh',
+    'PNativeDNSResolverOverride.ipdl',
+    'PTRRService.ipdl',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')

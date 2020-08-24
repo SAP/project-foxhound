@@ -34,7 +34,7 @@ class ReportFetchHandler final : public PromiseNativeHandler {
 
   explicit ReportFetchHandler(
       const nsTArray<ReportDeliver::ReportData>& aReportData)
-      : mReports(aReportData) {}
+      : mReports(aReportData.Clone()) {}
 
   void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
     if (!gReportDeliver) {
@@ -96,6 +96,9 @@ struct StringWriteFunc final : public JSONWriteFunc {
   explicit StringWriteFunc(nsACString& aBuffer) : mBuffer(aBuffer) {}
 
   void Write(const char* aStr) override { mBuffer.Append(aStr); }
+  void Write(const char* aStr, size_t aLen) override {
+    mBuffer.Append(aStr, aLen);
+  }
 };
 
 class ReportJSONWriter final : public JSONWriter {
@@ -170,8 +173,7 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
   IgnoredErrorResult error;
   RefPtr<InternalHeaders> internalHeaders =
       new InternalHeaders(HeadersGuardEnum::Request);
-  internalHeaders->Set(NS_LITERAL_CSTRING("Content-Type"),
-                       NS_LITERAL_CSTRING("application/reports+json"), error);
+  internalHeaders->Set("Content-Type"_ns, "application/reports+json"_ns, error);
   if (NS_WARN_IF(error.Failed())) {
     return;
   }
@@ -201,10 +203,9 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
     return;
   }
 
-  RefPtr<InternalRequest> internalRequest =
-      new InternalRequest(uriSpec, uriFragment);
+  auto internalRequest = MakeSafeRefPtr<InternalRequest>(uriSpec, uriFragment);
 
-  internalRequest->SetMethod(NS_LITERAL_CSTRING("POST"));
+  internalRequest->SetMethod("POST"_ns);
   internalRequest->SetBody(streamBody, body.Length());
   internalRequest->SetHeaders(internalHeaders);
   internalRequest->SetSkipServiceWorker();
@@ -212,7 +213,8 @@ void SendReports(nsTArray<ReportDeliver::ReportData>& aReports,
   internalRequest->SetMode(RequestMode::Cors);
   internalRequest->SetCredentialsMode(RequestCredentials::Include);
 
-  RefPtr<Request> request = new Request(globalObject, internalRequest, nullptr);
+  RefPtr<Request> request =
+      new Request(globalObject, std::move(internalRequest), nullptr);
 
   RequestOrUSVString fetchInput;
   fetchInput.SetAsRequest() = request;
@@ -327,9 +329,8 @@ void ReportDeliver::AppendReportData(const ReportData& aReportData) {
 
   if (!mTimer) {
     uint32_t timeout = StaticPrefs::dom_reporting_delivering_timeout() * 1000;
-    nsresult rv = NS_NewTimerWithCallback(
-        getter_AddRefs(mTimer), this, timeout, nsITimer::TYPE_ONE_SHOT,
-        SystemGroup::EventTargetFor(TaskCategory::Other));
+    nsresult rv = NS_NewTimerWithCallback(getter_AddRefs(mTimer), this, timeout,
+                                          nsITimer::TYPE_ONE_SHOT);
     Unused << NS_WARN_IF(NS_FAILED(rv));
   }
 }

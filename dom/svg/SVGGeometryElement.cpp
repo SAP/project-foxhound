@@ -9,7 +9,6 @@
 #include "DOMSVGPoint.h"
 #include "gfxPlatform.h"
 #include "nsCOMPtr.h"
-#include "nsSVGUtils.h"
 #include "SVGAnimatedLength.h"
 #include "SVGCircleElement.h"
 #include "SVGEllipseElement.h"
@@ -92,9 +91,13 @@ void SVGGeometryElement::GetMarkPoints(nsTArray<SVGMark>* aMarks) {}
 
 already_AddRefed<Path> SVGGeometryElement::GetOrBuildPath(
     const DrawTarget* aDrawTarget, FillRule aFillRule) {
-  // We only cache the path if it matches the backend used for screen painting:
-  bool cacheable = aDrawTarget->GetBackendType() ==
-                   gfxPlatform::GetPlatform()->GetDefaultContentBackend();
+  // We only cache the path if it matches the backend used for screen painting,
+  // and it's not a capturing drawtarget. A capturing DT might start using the
+  // the Path object on a different thread (OMTP), and we might have a data race
+  // if we keep a handle to it.
+  bool cacheable = (aDrawTarget->GetBackendType() ==
+                    gfxPlatform::GetPlatform()->GetDefaultContentBackend()) &&
+                   !aDrawTarget->IsCaptureDT();
 
   if (cacheable && mCachedPath && mCachedPath->GetFillRule() == aFillRule &&
       aDrawTarget->GetBackendType() == mCachedPath->GetBackendType()) {
@@ -188,6 +191,9 @@ bool SVGGeometryElement::IsPointInStroke(const DOMPointInit& aPoint) {
   RefPtr<Path> path = GetOrBuildPathForHitTest();
   if (!path) {
     return false;
+  }
+  if (nsCOMPtr<Document> doc = GetComposedDoc()) {
+    doc->FlushPendingNotifications(FlushType::Layout);
   }
 
   bool res = false;

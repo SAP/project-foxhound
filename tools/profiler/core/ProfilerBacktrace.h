@@ -9,6 +9,7 @@
 
 #include "ProfileBuffer.h"
 
+#include "mozilla/ProfileBufferEntrySerialization.h"
 #include "mozilla/UniquePtrExtensions.h"
 
 class ProfileBuffer;
@@ -18,16 +19,17 @@ class ThreadInfo;
 class UniqueStacks;
 
 namespace mozilla {
-class BlocksRingBuffer;
+class ProfileChunkedBuffer;
 class TimeStamp;
 }  // namespace mozilla
 
 // ProfilerBacktrace encapsulates a synchronous sample.
 class ProfilerBacktrace {
  public:
-  ProfilerBacktrace(const char* aName, int aThreadId,
-                    UniquePtr<mozilla::BlocksRingBuffer> aBlocksRingBuffer,
-                    mozilla::UniquePtr<ProfileBuffer> aProfileBuffer);
+  ProfilerBacktrace(
+      const char* aName, int aThreadId,
+      mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> aProfileChunkedBuffer,
+      mozilla::UniquePtr<ProfileBuffer> aProfileBuffer);
   ~ProfilerBacktrace();
 
   // ProfilerBacktraces' stacks are deduplicated in the context of the
@@ -42,14 +44,16 @@ class ProfilerBacktrace {
 
  private:
   // Used to serialize a ProfilerBacktrace.
-  friend struct BlocksRingBuffer::Serializer<ProfilerBacktrace>;
-  friend struct BlocksRingBuffer::Deserializer<ProfilerBacktrace>;
+  friend struct mozilla::ProfileBufferEntryWriter::Serializer<
+      ProfilerBacktrace>;
+  friend struct mozilla::ProfileBufferEntryReader::Deserializer<
+      ProfilerBacktrace>;
 
   mozilla::UniqueFreePtr<char> mName;
   int mThreadId;
-  // `BlocksRingBuffer` in which `mProfileBuffer` stores its data; must be
+  // `ProfileChunkedBuffer` in which `mProfileBuffer` stores its data; must be
   // located before `mProfileBuffer` so that it's destroyed after.
-  UniquePtr<mozilla::BlocksRingBuffer> mBlocksRingBuffer;
+  mozilla::UniquePtr<mozilla::ProfileChunkedBuffer> mProfileChunkedBuffer;
   mozilla::UniquePtr<ProfileBuffer> mProfileBuffer;
 };
 
@@ -58,43 +62,45 @@ namespace mozilla {
 // Format: [ UniquePtr<BlockRingsBuffer> | threadId | name ]
 // Initial len==0 marks a nullptr or empty backtrace.
 template <>
-struct BlocksRingBuffer::Serializer<ProfilerBacktrace> {
+struct mozilla::ProfileBufferEntryWriter::Serializer<ProfilerBacktrace> {
   static Length Bytes(const ProfilerBacktrace& aBacktrace) {
     if (!aBacktrace.mProfileBuffer) {
       return ULEB128Size<Length>(0);
     }
-    auto bufferBytes = SumBytes(*aBacktrace.mBlocksRingBuffer);
+    auto bufferBytes = SumBytes(*aBacktrace.mProfileChunkedBuffer);
     if (bufferBytes == 0) {
       return ULEB128Size<Length>(0);
     }
     return bufferBytes +
            SumBytes(aBacktrace.mThreadId,
-                    WrapBlocksRingBufferUnownedCString(aBacktrace.mName.get()));
+                    WrapProfileBufferUnownedCString(aBacktrace.mName.get()));
   }
-  static void Write(EntryWriter& aEW, const ProfilerBacktrace& aBacktrace) {
+  static void Write(mozilla::ProfileBufferEntryWriter& aEW,
+                    const ProfilerBacktrace& aBacktrace) {
     if (!aBacktrace.mProfileBuffer ||
-        SumBytes(*aBacktrace.mBlocksRingBuffer) == 0) {
+        SumBytes(*aBacktrace.mProfileChunkedBuffer) == 0) {
       aEW.WriteULEB128(0u);
       return;
     }
-    aEW.WriteObject(*aBacktrace.mBlocksRingBuffer);
+    aEW.WriteObject(*aBacktrace.mProfileChunkedBuffer);
     aEW.WriteObject(aBacktrace.mThreadId);
-    aEW.WriteObject(WrapBlocksRingBufferUnownedCString(aBacktrace.mName.get()));
+    aEW.WriteObject(WrapProfileBufferUnownedCString(aBacktrace.mName.get()));
   }
 };
 
 template <typename Destructor>
-struct BlocksRingBuffer::Serializer<UniquePtr<ProfilerBacktrace, Destructor>> {
+struct mozilla::ProfileBufferEntryWriter::Serializer<
+    mozilla::UniquePtr<ProfilerBacktrace, Destructor>> {
   static Length Bytes(
-      const UniquePtr<ProfilerBacktrace, Destructor>& aBacktrace) {
+      const mozilla::UniquePtr<ProfilerBacktrace, Destructor>& aBacktrace) {
     if (!aBacktrace) {
       return ULEB128Size<Length>(0);
     }
     return SumBytes(*aBacktrace);
   }
   static void Write(
-      EntryWriter& aEW,
-      const UniquePtr<ProfilerBacktrace, Destructor>& aBacktrace) {
+      mozilla::ProfileBufferEntryWriter& aEW,
+      const mozilla::UniquePtr<ProfilerBacktrace, Destructor>& aBacktrace) {
     if (!aBacktrace) {
       aEW.WriteULEB128(0u);
       return;
@@ -103,26 +109,30 @@ struct BlocksRingBuffer::Serializer<UniquePtr<ProfilerBacktrace, Destructor>> {
   }
 };
 template <typename Destructor>
-struct BlocksRingBuffer::Deserializer<
-    UniquePtr<ProfilerBacktrace, Destructor>> {
-  static void ReadInto(EntryReader& aER,
-                       UniquePtr<ProfilerBacktrace, Destructor>& aBacktrace) {
+struct mozilla::ProfileBufferEntryReader::Deserializer<
+    mozilla::UniquePtr<ProfilerBacktrace, Destructor>> {
+  static void ReadInto(
+      mozilla::ProfileBufferEntryReader& aER,
+      mozilla::UniquePtr<ProfilerBacktrace, Destructor>& aBacktrace) {
     aBacktrace = Read(aER);
   }
-  static UniquePtr<ProfilerBacktrace, Destructor> Read(EntryReader& aER) {
-    auto blocksRingBuffer = aER.ReadObject<UniquePtr<BlocksRingBuffer>>();
-    if (!blocksRingBuffer) {
+  static mozilla::UniquePtr<ProfilerBacktrace, Destructor> Read(
+      mozilla::ProfileBufferEntryReader& aER) {
+    auto profileChunkedBuffer =
+        aER.ReadObject<mozilla::UniquePtr<ProfileChunkedBuffer>>();
+    if (!profileChunkedBuffer) {
       return nullptr;
     }
     MOZ_ASSERT(
-        !blocksRingBuffer->IsThreadSafe(),
-        "ProfilerBacktrace only stores non-thread-safe BlocksRingBuffers");
+        !profileChunkedBuffer->IsThreadSafe(),
+        "ProfilerBacktrace only stores non-thread-safe ProfileChunkedBuffers");
     int threadId = aER.ReadObject<int>();
     std::string name = aER.ReadObject<std::string>();
-    auto profileBuffer = MakeUnique<ProfileBuffer>(*blocksRingBuffer);
-    return UniquePtr<ProfilerBacktrace, Destructor>{new ProfilerBacktrace(
-        name.c_str(), threadId, std::move(blocksRingBuffer),
-        std::move(profileBuffer))};
+    auto profileBuffer = MakeUnique<ProfileBuffer>(*profileChunkedBuffer);
+    return mozilla::UniquePtr<ProfilerBacktrace, Destructor>{
+        new ProfilerBacktrace(name.c_str(), threadId,
+                              std::move(profileChunkedBuffer),
+                              std::move(profileBuffer))};
   }
 };
 

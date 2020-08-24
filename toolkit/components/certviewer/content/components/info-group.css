@@ -1,7 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
- 
+
 :host {
   display: grid;
   grid-template-columns: minmax(11em, 25%) minmax(50%, 75%);
@@ -24,4 +24,13 @@
   position: relative;
   margin: auto 0;
   inset: 0;
+}
+
+#critical-info {
+  height: 13px;
+  width: 13px;
+}
+
+.extension {
+  text-align: end;
 }

@@ -4,8 +4,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AndroidAlerts.h"
-#include "GeneratedJNIWrappers.h"
-#include "nsAlertsUtils.h"
+#include "mozilla/java/GeckoRuntimeWrappers.h"
+#include "mozilla/java/WebNotificationWrappers.h"
+#include "nsIPrincipal.h"
+#include "nsIURI.h"
 
 namespace mozilla {
 namespace widget {
@@ -75,12 +77,14 @@ AndroidAlerts::ShowPersistentNotification(const nsAString& aPersistentData,
   rv = aAlert->GetRequireInteraction(&requireInteraction);
   NS_ENSURE_SUCCESS(rv, NS_OK);
 
-  nsCOMPtr<nsIPrincipal> principal;
-  rv = aAlert->GetPrincipal(getter_AddRefs(principal));
+  nsCOMPtr<nsIURI> uri;
+  rv = aAlert->GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, NS_OK);
+  MOZ_ASSERT(uri);
 
-  nsAutoString host;
-  nsAlertsUtils::GetSourceHostPort(principal, host);
+  nsCString spec;
+  rv = uri->GetDisplaySpec(spec);
+  NS_ENSURE_SUCCESS(rv, NS_OK);
 
   if (aPersistentData.IsEmpty() && aAlertListener) {
     if (!sListenerMap) {
@@ -91,7 +95,7 @@ AndroidAlerts::ShowPersistentNotification(const nsAString& aPersistentData,
   }
 
   java::WebNotification::LocalRef notification = notification->New(
-      title, name, cookie, text, imageUrl, dir, lang, requireInteraction);
+      title, name, cookie, text, imageUrl, dir, lang, requireInteraction, spec);
   java::GeckoRuntime::LocalRef runtime = java::GeckoRuntime::GetInstance();
   if (runtime != NULL) {
     runtime->NotifyOnShow(notification);
@@ -132,7 +136,7 @@ void AndroidAlerts::NotifyListener(const nsAString& aName, const char* aTopic,
 
   listener->Observe(nullptr, aTopic, aCookie);
 
-  if (NS_LITERAL_CSTRING("alertfinished").Equals(aTopic)) {
+  if ("alertfinished"_ns.Equals(aTopic)) {
     sListenerMap->Remove(aName);
     mNotificationsMap.Remove(aName);
   }

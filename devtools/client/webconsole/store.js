@@ -26,6 +26,7 @@ const { reducers } = require("devtools/client/webconsole/reducers/index");
 const { ignore } = require("devtools/client/shared/redux/middleware/ignore");
 const eventTelemetry = require("devtools/client/webconsole/middleware/event-telemetry");
 const historyPersistence = require("devtools/client/webconsole/middleware/history-persistence");
+const performanceMarker = require("devtools/client/webconsole/middleware/performance-marker");
 const {
   thunkWithOptions,
 } = require("devtools/client/shared/redux/middleware/thunk-with-options");
@@ -83,13 +84,18 @@ function configureStore(webConsoleUI, options = {}) {
       editorWidth: getIntPref(PREFS.UI.EDITOR_WIDTH),
       showEditorOnboarding: getBoolPref(PREFS.UI.EDITOR_ONBOARDING),
       timestampsVisible: getBoolPref(PREFS.UI.MESSAGE_TIMESTAMP),
-      showEvaluationSelector: getBoolPref(PREFS.UI.CONTEXT_SELECTOR),
+      showEvaluationContextSelector: getBoolPref(
+        webConsoleUI.isBrowserToolboxConsole
+          ? PREFS.UI.CONTEXT_SELECTOR_BROWSER_TOOLBOX
+          : PREFS.UI.CONTEXT_SELECTOR_CONTENT_TOOLBOX
+      ),
     }),
   };
 
-  const toolbox = options.thunkArgs.toolbox;
+  const { toolbox } = options.thunkArgs;
   const sessionId = (toolbox && toolbox.sessionId) || -1;
   const middleware = applyMiddleware(
+    performanceMarker(sessionId),
     ignore,
     thunkWithOptions.bind(null, {
       prefsService,

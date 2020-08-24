@@ -36,7 +36,7 @@ class AsyncImagePipelineManager final {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AsyncImagePipelineManager)
 
-  explicit AsyncImagePipelineManager(nsTArray<RefPtr<wr::WebRenderAPI>>&& aApis,
+  explicit AsyncImagePipelineManager(RefPtr<wr::WebRenderAPI>&& aApi,
                                      bool aUseCompositorWnd);
 
  protected:
@@ -74,8 +74,14 @@ class AsyncImagePipelineManager final {
   void ProcessPipelineUpdates();
 
   TimeStamp GetCompositionTime() const { return mCompositionTime; }
-  void SetCompositionTime(TimeStamp aTimeStamp) {
+  CompositionOpportunityId GetCompositionOpportunityId() const {
+    return mCompositionOpportunityId;
+  }
+
+  void SetCompositionInfo(TimeStamp aTimeStamp,
+                          CompositionOpportunityId aCompositionOpportunityId) {
     mCompositionTime = aTimeStamp;
+    mCompositionOpportunityId = aCompositionOpportunityId;
     if (!mCompositionTime.IsNull() && !mCompositeUntilTime.IsNull() &&
         mCompositionTime >= mCompositeUntilTime) {
       mCompositeUntilTime = TimeStamp();
@@ -89,8 +95,7 @@ class AsyncImagePipelineManager final {
   TimeStamp GetCompositeUntilTime() const { return mCompositeUntilTime; }
 
   void AddAsyncImagePipeline(const wr::PipelineId& aPipelineId,
-                             WebRenderImageHost* aImageHost,
-                             wr::RenderRoot aRenderRoot);
+                             WebRenderImageHost* aImageHost);
   void RemoveAsyncImagePipeline(const wr::PipelineId& aPipelineId,
                                 wr::TransactionBuilder& aTxn);
 
@@ -99,14 +104,13 @@ class AsyncImagePipelineManager final {
                                 const gfx::Matrix4x4& aScTransform,
                                 const gfx::MaybeIntSize& aScaleToSize,
                                 const wr::ImageRendering& aFilter,
-                                const wr::MixBlendMode& aMixBlendMode);
-  void ApplyAsyncImagesOfImageBridge(
-      wr::RenderRootArray<Maybe<wr::TransactionBuilder>>& aSceneBuilderTxns,
-      wr::RenderRootArray<Maybe<wr::TransactionBuilder>>& aFastTxns);
+                                const wr::MixBlendMode& aMixBlendMode,
+                                const LayoutDeviceSize& aScaleFromSize);
+  void ApplyAsyncImagesOfImageBridge(wr::TransactionBuilder& aSceneBuilderTxn,
+                                     wr::TransactionBuilder& aFastTxn);
   void ApplyAsyncImageForPipeline(const wr::PipelineId& aPipelineId,
                                   wr::TransactionBuilder& aTxn,
-                                  wr::TransactionBuilder& aTxnForImageBridge,
-                                  wr::RenderRoot aRenderRoot);
+                                  wr::TransactionBuilder& aTxnForImageBridge);
 
   void SetEmptyDisplayList(const wr::PipelineId& aPipelineId,
                            wr::TransactionBuilder& aTxn,
@@ -122,9 +126,10 @@ class AsyncImagePipelineManager final {
     aNotifications->AppendElements(std::move(mImageCompositeNotifications));
   }
 
-  void SetWillGenerateFrameAllRenderRoots();
-  void SetWillGenerateFrame(wr::RenderRoot aRenderRoot);
-  bool GetAndResetWillGenerateFrame(wr::RenderRoot aRenderRoot);
+  void SetWillGenerateFrame();
+  bool GetAndResetWillGenerateFrame();
+
+  static wr::ExternalImageId GetNextExternalImageId();
 
  private:
   void ProcessPipelineRendered(const wr::PipelineId& aPipelineId,
@@ -178,23 +183,25 @@ class AsyncImagePipelineManager final {
                 const gfx::Matrix4x4& aScTransform,
                 const gfx::MaybeIntSize& aScaleToSize,
                 const wr::ImageRendering& aFilter,
-                const wr::MixBlendMode& aMixBlendMode) {
-      mIsChanged |= !mScBounds.IsEqualEdges(aScBounds) ||
-                    mScTransform != aScTransform ||
-                    mScaleToSize != aScaleToSize || mFilter != aFilter ||
-                    mMixBlendMode != aMixBlendMode;
+                const wr::MixBlendMode& aMixBlendMode,
+                const LayoutDeviceSize& aScaleFromSize) {
+      mIsChanged |=
+          !mScBounds.IsEqualEdges(aScBounds) || mScTransform != aScTransform ||
+          mScaleToSize != aScaleToSize || mFilter != aFilter ||
+          mMixBlendMode != aMixBlendMode || mScaleFromSize != aScaleFromSize;
       mScBounds = aScBounds;
       mScTransform = aScTransform;
       mScaleToSize = aScaleToSize;
       mFilter = aFilter;
       mMixBlendMode = aMixBlendMode;
+      mScaleFromSize = aScaleFromSize;
     }
 
     bool mInitialised;
-    wr::RenderRoot mRenderRoot;
     bool mIsChanged;
     bool mUseExternalImage;
     LayoutDeviceRect mScBounds;
+    LayoutDeviceSize mScaleFromSize;
     gfx::Matrix4x4 mScTransform;
     gfx::MaybeIntSize mScaleToSize;
     wr::ImageRendering mFilter;
@@ -220,7 +227,7 @@ class AsyncImagePipelineManager final {
 
   void CheckForTextureHostsNotUsedByGPU();
 
-  nsTArray<RefPtr<wr::WebRenderAPI>> mApis;
+  RefPtr<wr::WebRenderAPI> mApi;
   bool mUseCompositorWnd;
 
   const wr::IdNamespace mIdNamespace;
@@ -231,11 +238,14 @@ class AsyncImagePipelineManager final {
       mPipelineTexturesHolders;
   nsClassHashtable<nsUint64HashKey, AsyncImagePipeline> mAsyncImagePipelines;
   wr::Epoch mAsyncImageEpoch;
-  wr::RenderRootArray<bool> mWillGenerateFrame;
+  bool mWillGenerateFrame;
   bool mDestroyed;
 
   // Render time for the current composition.
   TimeStamp mCompositionTime;
+
+  // CompositionOpportunityId of the current composition.
+  CompositionOpportunityId mCompositionOpportunityId;
 
   // When nonnull, during rendering, some compositable indicated that it will
   // change its rendering at this time. In order not to miss it, we composite

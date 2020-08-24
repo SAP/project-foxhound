@@ -55,12 +55,14 @@ void* Pointer::ToPtr(FontList* aFontList) const {
     // about to receive a notification of the new font list anyhow, at which
     // point it will flush its caches and reflow everything, so the temporary
     // failure of this font will be forgotten.
-    if (!aFontList->UpdateShmBlocks()) {
+    // We also return null if we're not on the main thread, as we cannot safely
+    // do the IPC messaging needed here.
+    if (!NS_IsMainThread() || !aFontList->UpdateShmBlocks()) {
       return nullptr;
     }
     MOZ_ASSERT(block < aFontList->mBlocks.Length());
   }
-  return static_cast<char*>(aFontList->mBlocks[block]->mAddr) + Offset();
+  return static_cast<char*>(aFontList->mBlocks[block]->Memory()) + Offset();
 }
 
 void String::Assign(const nsACString& aString, FontList* aList) {
@@ -81,7 +83,7 @@ Family::Family(FontList* aList, const InitData& aData)
       mCharacterMap(Pointer::Null()),
       mFaces(Pointer::Null()),
       mIndex(aData.mIndex),
-      mIsHidden(aData.mHidden),
+      mVisibility(aData.mVisibility),
       mIsBadUnderlineFamily(aData.mBadUnderline),
       mIsForceClassic(aData.mForceClassic),
       mIsSimple(false) {
@@ -281,8 +283,11 @@ void Family::FindAllFacesForStyle(FontList* aList, const gfxFontStyle& aStyle,
       }
     }
 
-    // this can't happen unless we have totally broken the font-list manager!
-    MOZ_ASSERT_UNREACHABLE("no face found in simple font family!");
+    // We can only reach here if we failed to resolve the face pointer, which
+    // can happen if we're on a stylo thread and caught the font list being
+    // updated; in that case we just fail quietly and let font fallback do
+    // something for the time being.
+    return;
   }
 
   // Pick the font(s) that are closest to the desired weight, style, and
@@ -300,19 +305,21 @@ void Family::FindAllFacesForStyle(FontList* aList, const gfxFontStyle& aStyle,
   Face* matched = nullptr;
   for (uint32_t i = 0; i < NumFaces(); i++) {
     Face* face = static_cast<Face*>(facePtrs[i].ToPtr(aList));
-    // weight/style/stretch priority: stretch >> style >> weight
-    double distance = WSSDistance(face, aStyle);
-    if (distance < minDistance) {
-      matched = face;
-      if (!aFaceList.IsEmpty()) {
-        aFaceList.Clear();
+    if (face) {
+      // weight/style/stretch priority: stretch >> style >> weight
+      double distance = WSSDistance(face, aStyle);
+      if (distance < minDistance) {
+        matched = face;
+        if (!aFaceList.IsEmpty()) {
+          aFaceList.Clear();
+        }
+        minDistance = distance;
+      } else if (distance == minDistance) {
+        if (matched) {
+          aFaceList.AppendElement(matched);
+        }
+        matched = face;
       }
-      minDistance = distance;
-    } else if (distance == minDistance) {
-      if (matched) {
-        aFaceList.AppendElement(matched);
-      }
-      matched = face;
     }
   }
 
@@ -499,6 +506,25 @@ FontList::FontList(uint32_t aGeneration) {
       MOZ_CRASH("parent: failed to initialize FontList");
     }
   } else {
+    // Initialize using the list of shmem blocks passed by the parent via
+    // SetXPCOMProcessAttributes.
+    auto& blocks = dom::ContentChild::GetSingleton()->SharedFontListBlocks();
+    for (auto handle : blocks) {
+      auto newShm = MakeUnique<base::SharedMemory>();
+      if (!newShm->IsHandleValid(handle)) {
+        // Bail out and let UpdateShmBlocks try to do its thing below.
+        break;
+      }
+      if (!newShm->SetHandle(handle, true)) {
+        MOZ_CRASH("failed to set shm handle");
+      }
+      if (!newShm->Map(SHM_BLOCK_SIZE) || !newShm->memory()) {
+        MOZ_CRASH("failed to map shared memory");
+      }
+      mBlocks.AppendElement(new ShmBlock(std::move(newShm)));
+    }
+    blocks.Clear();
+    // Update in case of any changes since the initial message was sent.
     for (unsigned retryCount = 0; retryCount < 3; ++retryCount) {
       if (UpdateShmBlocks()) {
         return;
@@ -519,27 +545,29 @@ FontList::~FontList() { DetachShmBlocks(); }
 
 bool FontList::AppendShmBlock() {
   MOZ_ASSERT(XRE_IsParentProcess());
-  ipc::SharedMemoryBasic* newShm = new ipc::SharedMemoryBasic();
-  if (!newShm->Create(SHM_BLOCK_SIZE)) {
+  auto newShm = MakeUnique<base::SharedMemory>();
+  if (!newShm->CreateFreezeable(SHM_BLOCK_SIZE)) {
     MOZ_CRASH("failed to create shared memory");
     return false;
   }
-  if (!newShm->Map(SHM_BLOCK_SIZE)) {
+  if (!newShm->Map(SHM_BLOCK_SIZE) || !newShm->memory()) {
     MOZ_CRASH("failed to map shared memory");
+    return false;
   }
-
-  char* addr = static_cast<char*>(newShm->memory());
-  if (!addr) {
-    MOZ_CRASH("null shared memory?");
+  auto readOnly = MakeUnique<base::SharedMemory>();
+  if (!newShm->ReadOnlyCopy(readOnly.get())) {
+    MOZ_CRASH("failed to create read-only copy");
     return false;
   }
 
-  ShmBlock* block = new ShmBlock(newShm, addr);
+  ShmBlock* block = new ShmBlock(std::move(newShm));
   // Allocate space for the Allocated() header field present in all blocks
   block->Allocated().store(4);
 
   mBlocks.AppendElement(block);
   GetHeader().mBlockCount.store(mBlocks.Length());
+
+  mReadOnlyShmems.AppendElement(std::move(readOnly));
 
   return true;
 }
@@ -548,7 +576,8 @@ void FontList::DetachShmBlocks() {
   for (auto& i : mBlocks) {
     i->mShmem = nullptr;
   }
-  mBlocks.SetLength(0);
+  mBlocks.Clear();
+  mReadOnlyShmems.Clear();
 }
 
 FontList::ShmBlock* FontList::GetBlockFromParent(uint32_t aIndex) {
@@ -556,27 +585,22 @@ FontList::ShmBlock* FontList::GetBlockFromParent(uint32_t aIndex) {
   // If we have no existing blocks, we don't want a generation check yet;
   // the header in the first block will define the generation of this list
   uint32_t generation = aIndex == 0 ? 0 : GetGeneration();
-  ipc::SharedMemoryBasic::Handle handle = ipc::SharedMemoryBasic::NULLHandle();
+  base::SharedMemoryHandle handle = base::SharedMemory::NULLHandle();
   if (!dom::ContentChild::GetSingleton()->SendGetFontListShmBlock(
           generation, aIndex, &handle)) {
     return nullptr;
   }
-  RefPtr<ipc::SharedMemoryBasic> newShm = new ipc::SharedMemoryBasic();
+  auto newShm = MakeUnique<base::SharedMemory>();
   if (!newShm->IsHandleValid(handle)) {
     return nullptr;
   }
-  if (!newShm->SetHandle(handle,
-                         mozilla::ipc::SharedMemoryBasic::RightsReadOnly)) {
+  if (!newShm->SetHandle(handle, true)) {
     MOZ_CRASH("failed to set shm handle");
   }
-  if (!newShm->Map(SHM_BLOCK_SIZE)) {
+  if (!newShm->Map(SHM_BLOCK_SIZE) || !newShm->memory()) {
     MOZ_CRASH("failed to map shared memory");
   }
-  char* addr = static_cast<char*>(newShm->memory());
-  if (!addr) {
-    MOZ_CRASH("null shared memory?");
-  }
-  return new ShmBlock(newShm, addr);
+  return new ShmBlock(std::move(newShm));
 }
 
 bool FontList::UpdateShmBlocks() {
@@ -589,6 +613,23 @@ bool FontList::UpdateShmBlocks() {
     mBlocks.AppendElement(newBlock);
   }
   return true;
+}
+
+void FontList::ShareBlocksToProcess(nsTArray<base::SharedMemoryHandle>* aBlocks,
+                                    base::ProcessId aPid) {
+  MOZ_RELEASE_ASSERT(mReadOnlyShmems.Length() == mBlocks.Length());
+  for (auto& shmem : mReadOnlyShmems) {
+    base::SharedMemoryHandle* handle =
+        aBlocks->AppendElement(base::SharedMemory::NULLHandle());
+    if (!shmem->ShareToProcess(aPid, handle)) {
+      // If something went wrong here, we just bail out; the child will need to
+      // request the blocks as needed, at some performance cost. (Although in
+      // practice this may mean resources are so constrained the child process
+      // isn't really going to work at all. But that's not our problem here.)
+      aBlocks->Clear();
+      return;
+    }
+  }
 }
 
 // The block size MUST be sufficient to allocate the largest possible
@@ -676,7 +717,7 @@ void FontList::SetAliases(
   aliasArray.SetCapacity(aAliasTable.Count());
   for (auto i = aAliasTable.Iter(); !i.Done(); i.Next()) {
     aliasArray.AppendElement(Family::InitData(
-        i.Key(), i.Key(), i.Data()->mIndex, i.Data()->mHidden,
+        i.Key(), i.Data()->mBaseFamily, i.Data()->mIndex, i.Data()->mVisibility,
         i.Data()->mBundled, i.Data()->mBadUnderline, i.Data()->mForceClassic));
   }
   aliasArray.Sort();
@@ -693,9 +734,9 @@ void FontList::SetAliases(
     (void)new (&aliases[i]) Family(this, aliasArray[i]);
     LOG_FONTLIST(("(shared-fontlist) alias family %u (%s)", (unsigned)i,
                   aliasArray[i].mName.get()));
-    aliases[i].SetFacePtrs(this, aAliasTable.Get(aliasArray[i].mName)->mFaces);
+    aliases[i].SetFacePtrs(this, aAliasTable.Get(aliasArray[i].mKey)->mFaces);
     if (LOG_FONTLIST_ENABLED()) {
-      const auto& faces = aAliasTable.Get(aliasArray[i].mName)->mFaces;
+      const auto& faces = aAliasTable.Get(aliasArray[i].mKey)->mFaces;
       for (unsigned j = 0; j < faces.Length(); j++) {
         auto face = static_cast<const fontlist::Face*>(faces[j].ToPtr(this));
         const nsCString& desc = face->mDescriptor.AsString(this);
@@ -740,14 +781,36 @@ void FontList::SetLocalNames(
     (void)new (&faces[i]) LocalFaceRec();
     const auto& rec = aLocalNameTable.Get(faceArray[i]);
     faces[i].mKey.Assign(faceArray[i], this);
-    faces[i].mFamilyIndex = FindFamily(rec.mFamilyName) - families;
-    faces[i].mFaceIndex = rec.mFaceIndex;
+    const auto* family = FindFamily(rec.mFamilyName);
+    if (!family) {
+      // Skip this record if the family was excluded by the font whitelist pref.
+      continue;
+    }
+    faces[i].mFamilyIndex = family - families;
+    if (rec.mFaceIndex == uint32_t(-1)) {
+      // The InitData record contains an mFaceDescriptor rather than an index,
+      // so now we need to look for the appropriate index in the family.
+      faces[i].mFaceIndex = 0;
+      const Pointer* faceList =
+          static_cast<const Pointer*>(family->Faces(this));
+      for (uint32_t j = 0; j < family->NumFaces(); j++) {
+        if (!faceList[j].IsNull()) {
+          const Face* f = static_cast<const Face*>(faceList[j].ToPtr(this));
+          if (f && rec.mFaceDescriptor == f->mDescriptor.AsString(this)) {
+            faces[i].mFaceIndex = j;
+            break;
+          }
+        }
+      }
+    } else {
+      faces[i].mFaceIndex = rec.mFaceIndex;
+    }
   }
   header.mLocalFaces = ptr;
   header.mLocalFaceCount.store(count);
 }
 
-Family* FontList::FindFamily(const nsCString& aName, bool aAllowHidden) {
+Family* FontList::FindFamily(const nsCString& aName) {
   struct FamilyNameComparator {
     FamilyNameComparator(FontList* aList, const nsCString& aTarget)
         : mList(aList), mTarget(aTarget) {}
@@ -765,19 +828,17 @@ Family* FontList::FindFamily(const nsCString& aName, bool aAllowHidden) {
 
   Family* families = Families();
   size_t match;
-  if (BinarySearchIf(families, 0, header.mFamilyCount,
-                     FamilyNameComparator(this, aName), &match)) {
-    return !aAllowHidden && families[match].IsHidden() ? nullptr
-                                                       : &families[match];
+  if (families && BinarySearchIf(families, 0, header.mFamilyCount,
+                                 FamilyNameComparator(this, aName), &match)) {
+    return &families[match];
   }
 
   if (header.mAliasCount) {
     families = AliasFamilies();
     size_t match;
-    if (BinarySearchIf(families, 0, header.mAliasCount,
-                       FamilyNameComparator(this, aName), &match)) {
-      return !aAllowHidden && families[match].IsHidden() ? nullptr
-                                                         : &families[match];
+    if (families && BinarySearchIf(families, 0, header.mAliasCount,
+                                   FamilyNameComparator(this, aName), &match)) {
+      return &families[match];
     }
   }
 
@@ -799,10 +860,9 @@ Family* FontList::FindFamily(const nsCString& aName, bool aAllowHidden) {
       pfl->mLocalNameTable.Clear();
       return nullptr;
     }
-    const nsLiteralCString kStyleSuffixes[] = {
-        nsLiteralCString(" book"),   nsLiteralCString(" medium"),
-        nsLiteralCString(" normal"), nsLiteralCString(" regular"),
-        nsLiteralCString(" roman"),  nsLiteralCString(" upright")};
+    const nsLiteralCString kStyleSuffixes[] = {" book"_ns,   " medium"_ns,
+                                               " normal"_ns, " regular"_ns,
+                                               " roman"_ns,  " upright"_ns};
     for (const auto& styleName : kStyleSuffixes) {
       if (StringEndsWith(aName, styleName)) {
         // See if we have a known family that matches the "base" family name
@@ -810,7 +870,8 @@ Family* FontList::FindFamily(const nsCString& aName, bool aAllowHidden) {
         nsAutoCString strippedName(aName.BeginReading(),
                                    aName.Length() - styleName.Length());
         families = Families();
-        if (BinarySearchIf(families, 0, header.mFamilyCount,
+        if (families &&
+            BinarySearchIf(families, 0, header.mFamilyCount,
                            FamilyNameComparator(this, strippedName), &match)) {
           // If so, this may be a possible family to satisfy the search; check
           // if the extended family name was actually found as an alternate
@@ -857,8 +918,8 @@ LocalFaceRec* FontList::FindLocalFace(const nsCString& aName) {
 
   LocalFaceRec* faces = LocalFaces();
   size_t match;
-  if (BinarySearchIf(faces, 0, header.mLocalFaceCount,
-                     FaceNameComparator(this, aName), &match)) {
+  if (faces && BinarySearchIf(faces, 0, header.mLocalFaceCount,
+                              FaceNameComparator(this, aName), &match)) {
     return &faces[match];
   }
 
@@ -874,9 +935,12 @@ void FontList::SearchForLocalFace(const nsACString& aName, Family** aFamily,
       ("(shared-fontlist) local face search for (%s)", aName.BeginReading()));
   char initial = aName[0];
   Family* families = Families();
+  if (!families) {
+    return;
+  }
   for (uint32_t i = 0; i < header.mFamilyCount; i++) {
     Family* family = &families[i];
-    if (family->Key().AsString(this)[0] != initial) {
+    if (family->Key().BeginReading(this)[0] != initial) {
       continue;
     }
     LOG_FONTLIST(("(shared-fontlist) checking family (%s)",
@@ -913,12 +977,12 @@ Pointer FontList::ToSharedPointer(const void* aPtr) {
   const char* p = (const char*)aPtr;
   const uint32_t blockCount = mBlocks.Length();
   for (uint32_t i = 0; i < blockCount; ++i) {
-    const char* blockAddr = (const char*)mBlocks[i]->mAddr;
+    const char* blockAddr = (const char*)mBlocks[i]->Memory();
     if (p >= blockAddr && p < blockAddr + SHM_BLOCK_SIZE) {
       return Pointer(i, p - blockAddr);
     }
   }
-  MOZ_ASSERT_UNREACHABLE("invalid shared-memory pointer");
+  MOZ_DIAGNOSTIC_ASSERT(false, "invalid shared-memory pointer");
   return Pointer::Null();
 }
 

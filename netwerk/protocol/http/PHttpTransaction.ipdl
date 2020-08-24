@@ -26,6 +26,12 @@ struct H2PushedStreamArg {
   uint32_t pushedStreamId;
 };
 
+struct NetworkAddressArg {
+  NetAddr selfAddr;
+  NetAddr peerAddr;
+  bool resolvedByTRR;
+};
+
 refcounted protocol PHttpTransaction
 {
   manager PSocketProcess;
@@ -37,13 +43,16 @@ parent:
                        bool                       proxyConnectFailed,
                        TimingStructArgs           timings,
                        int32_t                    proxyConnectResponseCode,
-                       uint8_t[]                  dataForSniffer);
+                       uint8_t[]                  dataForSniffer,
+                       nsCString?                 altSvcUsed);
   async OnTransportStatus(nsresult status,
                           int64_t progress,
-                          int64_t progressMax);
+                          int64_t progressMax,
+                          NetworkAddressArg? networkAddressArg);
   async OnDataAvailable(nsCString data,
                         uint64_t  offset,
-                        uint32_t  count);
+                        uint32_t  count,
+                        bool      dataSentToChildProcess);
   async OnStopRequest(nsresult status,
                       bool responseIsComplete,
                       int64_t transferSize,
@@ -51,7 +60,6 @@ parent:
                       nsHttpHeaderArray? responseTrailers,
                       bool hasStickyConn,
                       TransactionObserverResult? transactionObserverResult);
-  async OnNetAddrUpdate(NetAddr selfAddr, NetAddr peerAddr, bool resolvedByTRR);
   async OnInitFailed(nsresult status);
   async OnH2PushStream(uint32_t pushedStreamId,
                        nsCString resourceUrl,
@@ -74,7 +82,8 @@ child:
              uint64_t channelId,
              bool hasTransactionObserver,
              H2PushedStreamArg? pushedStreamArg,
-             PInputChannelThrottleQueue? throttleQueue);
+             PInputChannelThrottleQueue? throttleQueue,
+             bool aIsDocumentLoad);
 
   async UpdateClassOfService(uint32_t classOfService);
   async CancelPump(nsresult status);

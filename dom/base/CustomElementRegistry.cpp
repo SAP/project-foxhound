@@ -9,6 +9,7 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/dom/CustomElementRegistryBinding.h"
+#include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/HTMLElementBinding.h"
 #include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "mozilla/dom/XULElementBinding.h"
@@ -182,7 +183,7 @@ void CustomElementData::AttachedInternals() {
   mIsAttachedInternals = true;
 }
 
-CustomElementDefinition* CustomElementData::GetCustomElementDefinition() {
+CustomElementDefinition* CustomElementData::GetCustomElementDefinition() const {
   // Per spec, if there is a definition, the custom element state should be
   // either "failed" (during upgrade) or "customized".
   MOZ_ASSERT_IF(mCustomElementDefinition, mState != State::eUndefined);
@@ -241,19 +242,23 @@ class MOZ_RAII AutoConstructionStackEntry final {
       : mStack(aStack) {
     MOZ_ASSERT(aElement->IsHTMLElement() || aElement->IsXULElement());
 
+#ifdef DEBUG
     mIndex = mStack.Length();
+#endif
     mStack.AppendElement(aElement);
   }
 
   ~AutoConstructionStackEntry() {
     MOZ_ASSERT(mIndex == mStack.Length() - 1,
                "Removed element should be the last element");
-    mStack.RemoveElementAt(mIndex);
+    mStack.RemoveLastElement();
   }
 
  private:
   nsTArray<RefPtr<Element>>& mStack;
+#ifdef DEBUG
   uint32_t mIndex;
+#endif
 };
 
 }  // namespace
@@ -492,6 +497,7 @@ CustomElementRegistry::CreateCustomElementCallback(
   return callback;
 }
 
+// https://html.spec.whatwg.org/commit-snapshots/65f39c6fc0efa92b0b2b23b93197016af6ac0de6/#enqueue-a-custom-element-callback-reaction
 /* static */
 void CustomElementRegistry::EnqueueLifecycleCallback(
     Document::ElementCallbackType aType, Element* aCustomElement,
@@ -691,10 +697,9 @@ bool CustomElementRegistry::JSObjectToAtomArray(
         return false;
       }
 
-      if (!aArray.AppendElement(NS_Atomize(attrStr))) {
-        aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-        return false;
-      }
+      // XXX(Bug 1631371) Check if this should use a fallible operation as it
+      // pretended earlier.
+      aArray.AppendElement(NS_Atomize(attrStr));
     }
   }
 
@@ -901,8 +906,7 @@ void CustomElementRegistry::Define(
      *          any exceptions from the conversion.
      */
     if (callbacksHolder->mAttributeChangedCallback.WasPassed()) {
-      if (!JSObjectToAtomArray(aCx, constructor,
-                               NS_LITERAL_STRING("observedAttributes"),
+      if (!JSObjectToAtomArray(aCx, constructor, u"observedAttributes"_ns,
                                observedAttributes, aRv)) {
         return;
       }
@@ -918,8 +922,7 @@ void CustomElementRegistry::Define(
      *       Rethrow any exceptions from the conversion.
      */
     if (StaticPrefs::dom_webcomponents_elementInternals_enabled()) {
-      if (!JSObjectToAtomArray(aCx, constructor,
-                               NS_LITERAL_STRING("disabledFeatures"),
+      if (!JSObjectToAtomArray(aCx, constructor, u"disabledFeatures"_ns,
                                disabledFeatures, aRv)) {
         return;
       }
@@ -990,7 +993,7 @@ void CustomElementRegistry::Define(
 
     JS::Rooted<JS::Value> detail(aCx, JS::StringValue(nameJsStr));
     RefPtr<CustomEvent> event = NS_NewDOMCustomEvent(doc, nullptr, nullptr);
-    event->InitCustomEvent(aCx, NS_LITERAL_STRING("customelementdefined"),
+    event->InitCustomEvent(aCx, u"customelementdefined"_ns,
                            /* CanBubble */ true,
                            /* Cancelable */ true, detail);
     event->SetTrusted(true);
@@ -1244,6 +1247,15 @@ already_AddRefed<nsISupports> CustomElementRegistry::CallGetCustomInterface(
   return wrapper.forget();
 }
 
+void CustomElementRegistry::TraceDefinitions(JSTracer* aTrc) {
+  for (auto iter = mCustomDefinitions.Iter(); !iter.Done(); iter.Next()) {
+    RefPtr<CustomElementDefinition>& definition = iter.Data();
+    if (definition && definition->mConstructor) {
+      mozilla::TraceScriptHolder(definition->mConstructor, aTrc);
+    }
+  }
+}
+
 //-----------------------------------------------------
 // CustomElementReactionsStack
 
@@ -1286,7 +1298,7 @@ void CustomElementReactionsStack::PopAndInvokeElementQueue() {
       lastIndex == mReactionsStack.Length() - 1,
       "reactions created by InvokeReactions() should be consumed and removed");
 
-  mReactionsStack.RemoveElementAt(lastIndex);
+  mReactionsStack.RemoveLastElement();
   mIsElementQueuePushedForCurrentRecursionDepth = false;
 }
 

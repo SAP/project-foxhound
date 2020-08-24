@@ -15,6 +15,7 @@
 
 #include "ds/TraceableFifo.h"
 #include "gc/Memory.h"
+#include "irregexp/RegExpTypes.h"
 #include "js/CharacterEncoding.h"
 #include "js/ContextOptions.h"  // JS::ContextOptions
 #include "js/GCVector.h"
@@ -39,7 +40,12 @@ class AutoAllocInAtomsZone;
 class AutoMaybeLeaveAtomsZone;
 class AutoRealm;
 
+namespace frontend {
+class WellKnownParserAtoms;
+}  // namespace frontend
+
 namespace jit {
+class ICScript;
 class JitActivation;
 class JitContext;
 class DebugModeOSRVolatileJitFrameIter;
@@ -248,29 +254,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   /* Clear the pending exception (if any) due to OOM. */
   void recoverFromOutOfMemory();
 
-  /*
-   * This variation of calloc will call the large-allocation-failure callback
-   * on OOM and retry the allocation.
-   */
-  template <typename T>
-  T* pod_arena_callocCanGC(arena_id_t arena, size_t numElems) {
-    T* p = maybe_pod_arena_calloc<T>(arena, numElems);
-    if (MOZ_LIKELY(!!p)) {
-      return p;
-    }
-    size_t bytes;
-    if (MOZ_UNLIKELY(!js::CalculateAllocSize<T>(numElems, &bytes))) {
-      reportAllocationOverflow();
-      return nullptr;
-    }
-    p = static_cast<T*>(
-        runtime()->onOutOfMemoryCanGC(js::AllocFunction::Calloc, arena, bytes));
-    if (!p) {
-      return nullptr;
-    }
-    return p;
-  }
-
   void reportAllocationOverflow() { js::ReportAllocationOverflow(this); }
 
   void noteTenuredAlloc() { allocsThisZoneSinceMinorGC_++; }
@@ -287,6 +270,13 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   // Accessors for immutable runtime data.
   JSAtomState& names() { return *runtime_->commonNames; }
+#ifdef JS_PARSER_ATOMS
+  js::frontend::WellKnownParserAtoms& parserNames() {
+    return *runtime_->commonParserNames;
+  }
+#else
+  JSAtomState& parserNames() { return *runtime_->commonNames; }
+#endif  // JS_PARSER_ATOMS
   js::StaticStrings& staticStrings() { return *runtime_->staticStrings; }
   js::SharedImmutableStringsCache& sharedImmutableStrings() {
     return runtime_->sharedImmutableStrings();
@@ -445,9 +435,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
    */
   js::ContextData<js::jit::JitActivation*> jitActivation;
 
-  // Information about the heap allocated backtrack stack used by RegExp JIT
-  // code.
-  js::ContextData<js::irregexp::RegExpStack> regexpStack;
+  // Shim for V8 interfaces used by irregexp code
+  js::ContextData<js::irregexp::Isolate*> isolate;
 
   /*
    * Points to the most recent activation running on the thread.
@@ -481,6 +470,10 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return offsetof(JSContext, inUnsafeCallWithABI);
   }
 #endif
+
+  static size_t offsetOfInlinedICScript() {
+    return offsetof(JSContext, inlinedICScript_);
+  }
 
  public:
   js::InterpreterStack& interpreterStack() {
@@ -827,6 +820,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   inline bool runningWithTrustedPrincipals();
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+  size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
   void trace(JSTracer* trc);
 
@@ -880,6 +874,12 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return interruptBits_ & uint32_t(reason);
   }
 
+  // For JIT use. Points to the inlined ICScript for a baseline script
+  // being invoked as part of a trial inlining.  Contains nullptr at
+  // all times except for the brief moment between being set in the
+  // caller and read in the callee's prologue.
+  js::ContextData<js::jit::ICScript*> inlinedICScript_;
+
  public:
   void* addressOfInterruptBits() { return &interruptBits_; }
   void* addressOfJitStackLimit() { return &jitStackLimit; }
@@ -889,6 +889,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   void* addressOfZone() { return &zone_; }
 
   const void* addressOfRealm() const { return &realm_; }
+
+  void* addressOfInlinedICScript() { return &inlinedICScript_; }
 
   // Futex state, used by Atomics.wait() and Atomics.wake() on the Atomics
   // object.
@@ -957,11 +959,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   void removeUnhandledRejectedPromise(JSContext* cx, js::HandleObject promise);
 
  private:
-  // Base case for the recursive function below.
-  inline void checkImpl(int argIndex) {}
-
-  template <class Head, class... Tail>
-  inline void checkImpl(int argIndex, const Head& head, const Tail&... tail);
+  template <class... Args>
+  inline void checkImpl(const Args&... args);
 
   bool contextChecksEnabled() const {
     // Don't perform these checks when called from a finalizer. The checking
@@ -1050,75 +1049,9 @@ extern JSContext* NewContext(uint32_t maxBytes, JSRuntime* parentRuntime);
 
 extern void DestroyContext(JSContext* cx);
 
-enum ErrorArgumentsType {
-  ArgumentsAreUnicode,
-  ArgumentsAreASCII,
-  ArgumentsAreLatin1,
-  ArgumentsAreUTF8
-};
-
-/**
- * Report an exception, using printf-style APIs to generate the error
- * message.
- */
-extern bool ReportErrorVA(JSContext* cx, unsigned flags, const char* format,
-                          ErrorArgumentsType argumentsType, va_list ap)
-    MOZ_FORMAT_PRINTF(3, 0);
-
-extern bool ReportErrorNumberVA(JSContext* cx, unsigned flags,
-                                JSErrorCallback callback, void* userRef,
-                                const unsigned errorNumber,
-                                ErrorArgumentsType argumentsType, va_list ap);
-
-extern bool ReportErrorNumberUCArray(JSContext* cx, unsigned flags,
-                                     JSErrorCallback callback, void* userRef,
-                                     const unsigned errorNumber,
-                                     const char16_t** args);
-
-extern bool ReportErrorNumberUTF8Array(JSContext* cx, unsigned flags,
-                                       JSErrorCallback callback, void* userRef,
-                                       const unsigned errorNumber,
-                                       const char** args);
-
-extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
-                                   void* userRef, const unsigned errorNumber,
-                                   const char16_t** messageArgs,
-                                   ErrorArgumentsType argumentsType,
-                                   JSErrorReport* reportp, va_list ap);
-
-extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
-                                   void* userRef, const unsigned errorNumber,
-                                   const char** messageArgs,
-                                   ErrorArgumentsType argumentsType,
-                                   JSErrorReport* reportp, va_list ap);
-
-/*
- * For cases when we do not have an arguments array.
- */
-extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
-                                   void* userRef, const unsigned errorNumber,
-                                   ErrorArgumentsType argumentsType,
-                                   JSErrorReport* reportp, va_list ap);
-
-extern bool ExpandErrorArgumentsVA(JSContext* cx, JSErrorCallback callback,
-                                   void* userRef, const unsigned errorNumber,
-                                   const char16_t** messageArgs,
-                                   ErrorArgumentsType argumentsType,
-                                   JSErrorNotes::Note* notep, va_list ap);
-
 /* |callee| requires a usage string provided by JS_DefineFunctionsWithHelp. */
 extern void ReportUsageErrorASCII(JSContext* cx, HandleObject callee,
                                   const char* msg);
-
-/*
- * Prints a full report and returns true if the given report is non-nullptr
- * and the report doesn't have the JSREPORT_WARNING flag set or reportWarnings
- * is true.
- * Returns false otherwise.
- */
-extern bool PrintError(JSContext* cx, FILE* file,
-                       JS::ConstUTF8CharsZ toStringResult,
-                       JSErrorReport* report, bool reportWarnings);
 
 extern void ReportIsNotDefined(JSContext* cx, HandlePropertyName name);
 
@@ -1134,22 +1067,13 @@ extern void ReportIsNullOrUndefinedForPropertyAccess(JSContext* cx,
                                                      HandleId key);
 
 /*
- * Report error using js_DecompileValueGenerator(cx, spindex, v, fallback) as
- * the first argument for the error message. If the error message has less
- * then 3 arguments, use null for arg1 or arg2.
+ * Report error using js::DecompileValueGenerator(cx, spindex, v, fallback) as
+ * the first argument for the error message.
  */
-extern bool ReportValueErrorFlags(JSContext* cx, unsigned flags,
-                                  const unsigned errorNumber, int spindex,
-                                  HandleValue v, HandleString fallback,
-                                  const char* arg1, const char* arg2);
-
-inline void ReportValueError(JSContext* cx, const unsigned errorNumber,
+extern bool ReportValueError(JSContext* cx, const unsigned errorNumber,
                              int spindex, HandleValue v, HandleString fallback,
                              const char* arg1 = nullptr,
-                             const char* arg2 = nullptr) {
-  ReportValueErrorFlags(cx, JSREPORT_ERROR, errorNumber, spindex, v, fallback,
-                        arg1, arg2);
-}
+                             const char* arg2 = nullptr);
 
 JSObject* CreateErrorNotesArray(JSContext* cx, JSErrorReport* report);
 
@@ -1161,26 +1085,35 @@ namespace js {
 
 /************************************************************************/
 
-/* AutoArrayRooter roots an external array of Values. */
-class MOZ_RAII AutoArrayRooter : private JS::AutoGCRooter {
+/*
+ * Encapsulates an external array of values and adds a trace method, for use in
+ * Rooted.
+ */
+class MOZ_STACK_CLASS ExternalValueArray {
  public:
-  AutoArrayRooter(JSContext* cx, size_t len,
-                  Value* vec MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : JS::AutoGCRooter(cx, JS::AutoGCRooter::Tag::Array),
-        array_(vec),
-        length_(len) {
-    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
-  }
+  ExternalValueArray(size_t len, Value* vec) : array_(vec), length_(len) {}
 
   Value* begin() { return array_; }
-
   size_t length() { return length_; }
 
-  friend void JS::AutoGCRooter::trace(JSTracer* trc);
+  void trace(JSTracer* trc);
 
  private:
   Value* array_;
   size_t length_;
+};
+
+/* RootedExternalValueArray roots an external array of Values. */
+class MOZ_RAII RootedExternalValueArray
+    : public JS::Rooted<ExternalValueArray> {
+ public:
+  RootedExternalValueArray(JSContext* cx, size_t len,
+                           Value* vec MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : JS::Rooted<ExternalValueArray>(cx, ExternalValueArray(len, vec)) {
+    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  }
+
+ private:
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 

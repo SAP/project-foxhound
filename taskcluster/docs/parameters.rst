@@ -86,11 +86,13 @@ Try Configuration
 -----------------
 
 ``try_mode``
-    The mode in which a try push is operating.  This can be one of
-    ``"try_task_config"``, ``"try_option_syntax"``, ``"try_select"`` or ``None`` meaning no try
-    input was provided.
+   The mode in which a try push is operating.  This can be one of:
 
-    ``"try_select"`` is used by ``mach try fuzzy`` to build a list of tasks to select from.
+    * ``"try_task_config"`` - Used to configure the taskgraph.
+    * ``"try_option_syntax"`` - Used when pushing to try with legacy try syntax.
+    * ``"try_auto"`` - Used to make try pushes behave more like a push on ``autoland``.
+    * ``"try_select"`` - Used by ``mach try`` to build a list of tasks locally.
+    * ``None`` - Not a try push or ``mach try release``.
 
 ``try_options``
     The arguments given as try syntax (as a dictionary), or ``None`` if
@@ -99,6 +101,12 @@ Try Configuration
 ``try_task_config``
     The contents of the ``try_task_config.json`` file, or ``{}`` if
     ``try_mode`` is not ``try_task_config``.
+
+Test Configuration
+------------------
+
+``test_manifest_loader``
+   The test manifest loader to use as defined in ``taskgraph.util.chunking.manifest_loaders``.
 
 Target Set
 ----------
@@ -156,7 +164,7 @@ Release Promotion
    Specify the next version for version bump tasks.
 
 ``release_type``
-   The type of release being promoted. One of "nightly", "beta", "esr68", "release-rc", or "release".
+   The type of release being promoted. One of "nightly", "beta", "esr68", "esr78", "release-rc", or "release".
 
 ``release_eta``
    The time and date when a release is scheduled to live. This value is passed to Balrog.
@@ -194,19 +202,19 @@ Repository Merge Day
 
 ``source_repo``
    The clone/push URI of the source repository, such as https://hg.mozilla.org/mozilla-central
- 
+
 ``target_repo``
    The clone/push URI of the target repository, such as https://hg.mozilla.org/releases/mozilla-beta
- 
+
 ``source_branch``
    The firefoxtree alias of the source branch, such as 'central', 'beta'
- 
+
 ``target_branch``
    The firefoxtree alias of the target branch, such as 'beta', 'release'
 
 ``force-dry-run``
    Don't push any results to target repositories.
- 
+
 
 Comm Push Information
 ---------------------
@@ -227,3 +235,10 @@ Code Review
 ``phabricator_diff``
    The code review process needs to know the Phabricator Differential diff that
    started the analysis. This parameter must start with `PHID-DIFF-`
+
+Local configuration
+-------------------
+
+``target-kind``
+  Generate only the given kind and its kind-dependencies. This is used for local inspection of the graph
+  and is not supported at run-time.

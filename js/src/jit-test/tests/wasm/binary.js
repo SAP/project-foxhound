@@ -245,6 +245,24 @@ function checkIllegalPrefixed(prefix, opcode) {
     assertEq(WebAssembly.validate(binary), false);
 }
 
+// Illegal GcPrefix opcodes
+
+let reservedGc = {};
+if (wasmGcEnabled()) {
+    reservedGc = {
+        0x0: true,
+        0x3: true,
+        0x6: true,
+        0x7: true
+    };
+}
+for (let i = 0; i < 256; i++) {
+    if (reservedGc.hasOwnProperty(i)) {
+        continue;
+    }
+    checkIllegalPrefixed(GcPrefix, i);
+}
+
 // Illegal ThreadPrefix opcodes
 //
 // June 2017 threads draft:
@@ -276,9 +294,26 @@ for (let i = 0; i < 256; i++) {
     checkIllegalPrefixed(MiscPrefix, i);
 }
 
-// Illegal SIMD opcodes (all of them, for now)
-for (let i = 0; i < 256; i++)
-    checkIllegalPrefixed(SimdPrefix, i);
+// Illegal SIMD opcodes - the upper bound is actually very large, not much to be
+// done about that.
+
+if (!wasmSimdSupported()) {
+    for (let i = 0; i < 256; i++) {
+        checkIllegalPrefixed(SimdPrefix, i);
+    }
+} else {
+    let reservedSimd = [
+        0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e,
+        0x5f, 0x67, 0x68, 0x69, 0x6a, 0x74, 0x75, 0x7a, 0x7c, 0x7d, 0x7e,
+        0x7f, 0x94, 0x9a, 0x9c, 0x9d, 0x9e, 0x9f, 0xa5, 0xa6, 0xaf,
+        0xb0, 0xb2, 0xb3, 0xb4, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf, 0xc0, 0xc2,
+        0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcf, 0xd0, 0xd2, 0xd3,
+        0xd4, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xdb, 0xdc, 0xdd, 0xde, 0xdf, 0xea,
+        0xeb, 0xee, 0xf6, 0xf7, 0xfc, 0xfd, 0xfe, 0xff ];
+    for (let i of reservedSimd) {
+        checkIllegalPrefixed(SimdPrefix, i);
+    }
+}
 
 // Illegal MozPrefix opcodes (all of them)
 for (let i = 0; i < 256; i++)

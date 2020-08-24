@@ -45,10 +45,6 @@
   MACRO(await, await, "await")                                                 \
   MACRO(bigint64, bigint64, "bigint64")                                        \
   MACRO(biguint64, biguint64, "biguint64")                                     \
-  MACRO(Bool8x16, Bool8x16, "Bool8x16")                                        \
-  MACRO(Bool16x8, Bool16x8, "Bool16x8")                                        \
-  MACRO(Bool32x4, Bool32x4, "Bool32x4")                                        \
-  MACRO(Bool64x2, Bool64x2, "Bool64x2")                                        \
   MACRO(boundWithSpace, boundWithSpace, "bound ")                              \
   MACRO(break, break_, "break")                                                \
   MACRO(breakdown, breakdown, "breakdown")                                     \
@@ -120,6 +116,7 @@
   MACRO(do, do_, "do")                                                         \
   MACRO(domNode, domNode, "domNode")                                           \
   MACRO(done, done, "done")                                                    \
+  MACRO(dotAll, dotAll, "dotAll")                                              \
   MACRO(dotGenerator, dotGenerator, ".generator")                              \
   MACRO(dotThis, dotThis, ".this")                                             \
   MACRO(dotInitializers, dotInitializers, ".initializers")                     \
@@ -134,6 +131,7 @@
   MACRO(emptyRegExp, emptyRegExp, "(?:)")                                      \
   MACRO(encodeURI, encodeURI, "encodeURI")                                     \
   MACRO(encodeURIComponent, encodeURIComponent, "encodeURIComponent")          \
+  MACRO(endRange, endRange, "endRange")                                        \
   MACRO(endTimestamp, endTimestamp, "endTimestamp")                            \
   MACRO(entries, entries, "entries")                                           \
   MACRO(enum, enum_, "enum")                                                   \
@@ -142,6 +140,7 @@
   MACRO(era, era, "era")                                                       \
   MACRO(ErrorToStringWithTrailingNewline, ErrorToStringWithTrailingNewline,    \
         "ErrorToStringWithTrailingNewline")                                    \
+  MACRO(errors, errors, "errors")                                              \
   MACRO(escape, escape, "escape")                                              \
   MACRO(eval, eval, "eval")                                                    \
   MACRO(exec, exec, "exec")                                                    \
@@ -164,9 +163,7 @@
   MACRO(flat, flat, "flat")                                                    \
   MACRO(flatMap, flatMap, "flatMap")                                           \
   MACRO(float32, float32, "float32")                                           \
-  MACRO(Float32x4, Float32x4, "Float32x4")                                     \
   MACRO(float64, float64, "float64")                                           \
-  MACRO(Float64x2, Float64x2, "Float64x2")                                     \
     MACRO(for, for_, "for")                                                    \
   MACRO(forceInterpreter, forceInterpreter, "forceInterpreter")                \
   MACRO(forEach, forEach, "forEach")                                           \
@@ -201,8 +198,14 @@
   MACRO(global, global, "global")                                              \
   MACRO(globalThis, globalThis, "globalThis")                                  \
   MACRO(group, group, "group")                                                 \
+  MACRO(groups, groups, "groups")                                              \
+  MACRO(h11, h11, "h11")                                                       \
+  MACRO(h12, h12, "h12")                                                       \
+  MACRO(h23, h23, "h23")                                                       \
+  MACRO(h24, h24, "h24")                                                       \
   MACRO(Handle, Handle, "Handle")                                              \
   MACRO(has, has, "has")                                                       \
+  MACRO(hashConstructor, hashConstructor, "#constructor")                      \
   MACRO(hasOwn, hasOwn, "hasOwn")                                              \
   MACRO(hasOwnProperty, hasOwnProperty, "hasOwnProperty")                      \
   MACRO(highWaterMark, highWaterMark, "highWaterMark")                         \
@@ -223,6 +226,8 @@
   MACRO(InitializeCollator, InitializeCollator, "InitializeCollator")          \
   MACRO(InitializeDateTimeFormat, InitializeDateTimeFormat,                    \
         "InitializeDateTimeFormat")                                            \
+  MACRO(InitializeDisplayNames, InitializeDisplayNames,                        \
+        "InitializeDisplayNames")                                              \
   MACRO(InitializeListFormat, InitializeListFormat, "InitializeListFormat")    \
   MACRO(InitializeLocale, InitializeLocale, "InitializeLocale")                \
   MACRO(InitializeNumberFormat, InitializeNumberFormat,                        \
@@ -237,9 +242,6 @@
   MACRO(int8, int8, "int8")                                                    \
   MACRO(int16, int16, "int16")                                                 \
   MACRO(int32, int32, "int32")                                                 \
-  MACRO(Int8x16, Int8x16, "Int8x16")                                           \
-  MACRO(Int16x8, Int16x8, "Int16x8")                                           \
-  MACRO(Int32x4, Int32x4, "Int32x4")                                           \
   MACRO(integer, integer, "integer")                                           \
   MACRO(interface, interface, "interface")                                     \
   MACRO(InterpretGeneratorResume, InterpretGeneratorResume,                    \
@@ -303,6 +305,7 @@
   MACRO(NaN, NaN, "NaN")                                                       \
   MACRO(NegativeInfinity, NegativeInfinity, "-Infinity")                       \
   MACRO(new, new_, "new")                                                      \
+  MACRO(NewPrivateName, NewPrivateName, "NewPrivateName")                      \
   MACRO(next, next, "next")                                                    \
   MACRO(NFC, NFC, "NFC")                                                       \
   MACRO(NFD, NFD, "NFD")                                                       \
@@ -328,6 +331,7 @@
   MACRO(objectRegExp, objectRegExp, "[object RegExp]")                         \
   MACRO(objects, objects, "objects")                                           \
   MACRO(objectString, objectString, "[object String]")                         \
+  MACRO(objectSymbol, objectSymbol, "[object Symbol]")                         \
   MACRO(objectUndefined, objectUndefined, "[object Undefined]")                \
   MACRO(of, of, "of")                                                          \
   MACRO(offset, offset, "offset")                                              \
@@ -392,14 +396,18 @@
   MACRO(setPrefix, setPrefix, "set ")                                          \
   MACRO(setPrototypeOf, setPrototypeOf, "setPrototypeOf")                      \
   MACRO(shape, shape, "shape")                                                 \
+  MACRO(shared, shared, "shared")                                              \
   MACRO(signal, signal, "signal")                                              \
   MACRO(signDisplay, signDisplay, "signDisplay")                               \
   MACRO(size, size, "size")                                                    \
+  MACRO(skeleton, skeleton, "skeleton")                                        \
   MACRO(source, source, "source")                                              \
   MACRO(SpeciesConstructor, SpeciesConstructor, "SpeciesConstructor")          \
   MACRO(stack, stack, "stack")                                                 \
   MACRO(star, star, "*")                                                       \
+  MACRO(starNamespaceStar, starNamespaceStar, "*namespace*")                   \
   MACRO(start, start, "start")                                                 \
+  MACRO(startRange, startRange, "startRange")                                  \
   MACRO(startTimestamp, startTimestamp, "startTimestamp")                      \
   MACRO(state, state, "state")                                                 \
   MACRO(static, static_, "static")                                             \
@@ -430,8 +438,10 @@
   MACRO(toISOString, toISOString, "toISOString")                               \
   MACRO(toJSON, toJSON, "toJSON")                                              \
   MACRO(toLocaleString, toLocaleString, "toLocaleString")                      \
+  MACRO(ToNumeric, ToNumeric, "ToNumeric")                                     \
   MACRO(toSource, toSource, "toSource")                                        \
   MACRO(toString, toString, "toString")                                        \
+  MACRO(ToString, ToString, "ToString")                                        \
   MACRO(toUTCString, toUTCString, "toUTCString")                               \
   MACRO(true, true_, "true")                                                   \
   MACRO(try, try_, "try")                                                      \
@@ -452,6 +462,15 @@
   MACRO(uninitialized, uninitialized, "uninitialized")                         \
   MACRO(unknown, unknown, "unknown")                                           \
   MACRO(unregister, unregister, "unregister")                                  \
+  MACRO(UnsafeGetReservedSlot, UnsafeGetReservedSlot, "UnsafeGetReservedSlot") \
+  MACRO(UnsafeGetObjectFromReservedSlot, UnsafeGetObjectFromReservedSlot,      \
+        "UnsafeGetObjectFromReservedSlot")                                     \
+  MACRO(UnsafeGetInt32FromReservedSlot, UnsafeGetInt32FromReservedSlot,        \
+        "UnsafeGetInt32FromReservedSlot")                                      \
+  MACRO(UnsafeGetStringFromReservedSlot, UnsafeGetStringFromReservedSlot,      \
+        "UnsafeGetStringFromReservedSlot")                                     \
+  MACRO(UnsafeGetBooleanFromReservedSlot, UnsafeGetBooleanFromReservedSlot,    \
+        "UnsafeGetBooleanFromReservedSlot")                                    \
   MACRO(unsized, unsized, "unsized")                                           \
   MACRO(unwatch, unwatch, "unwatch")                                           \
   MACRO(url, url, "url")                                                       \

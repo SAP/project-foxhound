@@ -8,7 +8,7 @@
  */
 
 var { DevToolsServer } = require("devtools/server/devtools-server");
-var { DevToolsClient } = require("devtools/shared/client/devtools-client");
+var { DevToolsClient } = require("devtools/client/devtools-client");
 
 const TAB1_URL = EXAMPLE_URL + "doc_empty-tab-01.html";
 const TAB2_URL = EXAMPLE_URL + "doc_empty-tab-02.html";
@@ -104,7 +104,7 @@ registerCleanupFunction(function() {
 });
 
 async function getTargetActorForUrl(client, url) {
-  const tabs = await client.mainRoot.listTabs();
-  const targetFront = tabs.find(front => front.url == url);
-  return targetFront;
+  const tabDescriptors = await client.mainRoot.listTabs();
+  const tabDescriptor = tabDescriptors.find(front => front.url == url);
+  return tabDescriptor?.getTarget();
 }

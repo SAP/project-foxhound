@@ -13,6 +13,7 @@
 #include "mozilla/Unused.h"
 
 #include <algorithm>
+#include <type_traits>
 
 #include "gc/Zone.h"
 #include "js/TraceKind.h"
@@ -82,11 +83,27 @@ inline JSObject* GetDelegate(gc::Cell* const&) = delete;
 } /* namespace detail */
 } /* namespace gc */
 
+// Weakmap entry -> value edges are only visible if the map is traced, which
+// only happens if the map zone is being collected. If the map and the value
+// were in different zones, then we could have a case where the map zone is not
+// collecting but the value zone is, and incorrectly free a value that is
+// reachable solely through weakmaps.
+template <class K, class V>
+void WeakMap<K, V>::assertMapIsSameZoneWithValue(const V& v) {
+#ifdef DEBUG
+  gc::Cell* cell = gc::ToMarkable(v);
+  if (cell) {
+    Zone* cellZone = cell->zoneFromAnyThread();
+    MOZ_ASSERT(zone() == cellZone || cellZone->isAtomsZone());
+  }
+#endif
+}
+
 template <class K, class V>
 WeakMap<K, V>::WeakMap(JSContext* cx, JSObject* memOf)
     : Base(cx->zone()), WeakMapBase(memOf, cx->zone()) {
   using ElemType = typename K::ElementType;
-  using NonPtrType = typename mozilla::RemovePointer<ElemType>::Type;
+  using NonPtrType = std::remove_pointer_t<ElemType>;
 
   // The object's TraceKind needs to be added to CC graph if this object is
   // used as a WeakMap key, otherwise the key is considered to be pointed from
@@ -129,6 +146,11 @@ void WeakMap<K, V>::markKey(GCMarker* marker, gc::Cell* markedCell,
   MOZ_ASSERT(mapColor);
 
   Ptr p = Base::lookup(static_cast<Lookup>(origKey));
+  // We should only be processing <weakmap,key> pairs where the key exists in
+  // the weakmap. Such pairs are inserted when a weakmap is marked, and are
+  // removed by barriers if the key is removed from the weakmap. Failure here
+  // probably means gcWeakKeys is not being properly traced during a minor GC,
+  // or the weakmap keys are not being updated when tenured.
   MOZ_ASSERT(p.found());
 
   mozilla::DebugOnly<gc::Cell*> oldKey = gc::ToMarkable(p->key());
@@ -219,11 +241,32 @@ void WeakMap<K, V>::trace(JSTracer* trc) {
 }
 
 template <class K, class V>
-/* static */ void WeakMap<K, V>::addWeakEntry(
+/* static */ void WeakMap<K, V>::forgetKey(UnbarrieredKey key) {
+  // Remove the key or its delegate from weakKeys.
+  if (zone()->needsIncrementalBarrier()) {
+    JSRuntime* rt = zone()->runtimeFromMainThread();
+    if (JSObject* delegate = js::gc::detail::GetDelegate(key)) {
+      js::gc::WeakKeyTable& weakKeys = delegate->zone()->gcWeakKeys(delegate);
+      rt->gc.marker.forgetWeakKey(weakKeys, this, delegate, key);
+    } else {
+      js::gc::WeakKeyTable& weakKeys = key->zone()->gcWeakKeys(key);
+      rt->gc.marker.forgetWeakKey(weakKeys, this, key, key);
+    }
+  }
+}
+
+template <class K, class V>
+/* static */ void WeakMap<K, V>::clear() {
+  Base::clear();
+  JSRuntime* rt = zone()->runtimeFromMainThread();
+  if (zone()->needsIncrementalBarrier()) {
+    rt->gc.marker.forgetWeakMap(this, zone());
+  }
+}
+
+/* static */ inline void WeakMapBase::addWeakEntry(
     GCMarker* marker, gc::Cell* key, const gc::WeakMarkable& markable) {
-  Zone* zone = key->asTenured().zone();
-  auto& weakKeys =
-      gc::IsInsideNursery(key) ? zone->gcNurseryWeakKeys() : zone->gcWeakKeys();
+  auto& weakKeys = key->zone()->gcWeakKeys(key);
   auto p = weakKeys.get(key);
   if (p) {
     gc::WeakEntryVector& weakEntries = p->value;
@@ -248,9 +291,8 @@ bool WeakMap<K, V>::markEntries(GCMarker* marker) {
     if (markEntry(marker, e.front().mutableKey(), e.front().value())) {
       markedAny = true;
     }
-    if (!marker->isWeakMarking()) {
-      // No need to populate the weak key table yet; it will be built from
-      // scratch during enterWeakMarkingMode.
+    if (!marker->incrementalWeakMapMarkingEnabled && !marker->isWeakMarking()) {
+      // Populate weak keys table when we enter weak marking mode.
       continue;
     }
 
@@ -270,14 +312,35 @@ bool WeakMap<K, V>::markEntries(GCMarker* marker) {
       // up marking the delegate and thereby mark the entry.)
       gc::Cell* weakKey = gc::detail::ExtractUnbarriered(e.front().key());
       gc::WeakMarkable markable(this, weakKey);
-      addWeakEntry(marker, weakKey, markable);
       if (JSObject* delegate = gc::detail::GetDelegate(e.front().key())) {
         addWeakEntry(marker, delegate, markable);
+      } else {
+        addWeakEntry(marker, weakKey, markable);
       }
     }
   }
 
   return markedAny;
+}
+
+template <class K, class V>
+void WeakMap<K, V>::postSeverDelegate(GCMarker* marker, JSObject* key) {
+  if (mapColor) {
+    // We only stored the delegate, not the key, and we're severing the
+    // delegate from the key. So store the key.
+    gc::WeakMarkable markable(this, key);
+    addWeakEntry(marker, key, markable);
+  }
+}
+
+template <class K, class V>
+void WeakMap<K, V>::postRestoreDelegate(GCMarker* marker, JSObject* key,
+                                        JSObject* delegate) {
+  if (mapColor) {
+    // We had the key stored, but are removing it. Store the delegate instead.
+    gc::WeakMarkable markable(this, key);
+    addWeakEntry(marker, delegate, markable);
+  }
 }
 
 template <class K, class V>
@@ -309,12 +372,41 @@ void WeakMap<K, V>::traceMappings(WeakMapTracer* tracer) {
   }
 }
 
+template <class K, class V>
+bool WeakMap<K, V>::findSweepGroupEdges() {
+  // For weakmap keys with delegates in a different zone, add a zone edge to
+  // ensure that the delegate zone finishes marking before the key zone.
+  JS::AutoSuppressGCAnalysis nogc;
+  for (Range r = all(); !r.empty(); r.popFront()) {
+    const K& key = r.front().key();
+
+    // If the key type doesn't have delegates, then this will always return
+    // nullptr and the optimizer can remove the entire body of this function.
+    JSObject* delegate = gc::detail::GetDelegate(key);
+    if (!delegate) {
+      continue;
+    }
+
+    // Marking a WeakMap key's delegate will mark the key, so process the
+    // delegate zone no later than the key zone.
+    Zone* delegateZone = delegate->zone();
+    Zone* keyZone = key->zone();
+    if (delegateZone != keyZone && delegateZone->isGCMarking() &&
+        keyZone->isGCMarking()) {
+      if (!delegateZone->addSweepGroupEdgeTo(keyZone)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 #if DEBUG
 template <class K, class V>
 void WeakMap<K, V>::assertEntriesNotAboutToBeFinalized() {
   for (Range r = Base::all(); !r.empty(); r.popFront()) {
-    K k(r.front().key());
-    MOZ_ASSERT(!gc::IsAboutToBeFinalized(&k));
+    auto k = gc::detail::ExtractUnbarriered(r.front().key());
+    MOZ_ASSERT(!gc::IsAboutToBeFinalizedUnbarriered(&k));
     JSObject* delegate = gc::detail::GetDelegate(k);
     if (delegate) {
       MOZ_ASSERT(!gc::IsAboutToBeFinalizedUnbarriered(&delegate),

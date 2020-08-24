@@ -6,9 +6,9 @@
 #define RemoteDataDecoder_h_
 
 #include "AndroidDecoderModule.h"
-#include "GeneratedJNIWrappers.h"
 #include "SurfaceTexture.h"
 #include "TimeUnits.h"
+#include "mozilla/java/CodecProxyWrappers.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"
 
@@ -32,7 +32,7 @@ class RemoteDataDecoder : public MediaDataDecoder,
   RefPtr<FlushPromise> Flush() override;
   RefPtr<ShutdownPromise> Shutdown() override;
   nsCString GetDescriptionName() const override {
-    return NS_LITERAL_CSTRING("android decoder (remote)");
+    return "android decoder (remote)"_ns;
   }
 
  protected:

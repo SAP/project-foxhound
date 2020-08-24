@@ -23,6 +23,10 @@
 #define LOG_MAINCONTROLLER(msg, ...) \
   MOZ_LOG(gMediaControlLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
 
+#undef LOG_MAINCONTROLLER_INFO
+#define LOG_MAINCONTROLLER_INFO(msg, ...) \
+  MOZ_LOG(gMediaControlLog, LogLevel::Info, (msg, ##__VA_ARGS__))
+
 namespace mozilla {
 namespace dom {
 
@@ -61,11 +65,11 @@ MediaControlService::MediaControlService() {
 }
 
 void MediaControlService::Init() {
-  mMediaKeysHandler = new MediaControlKeysHandler();
-  mMediaControlKeysManager = new MediaControlKeysManager();
-  mMediaControlKeysManager->Open();
-  MOZ_ASSERT(mMediaControlKeysManager->IsOpened());
-  mMediaControlKeysManager->AddListener(mMediaKeysHandler.get());
+  mMediaKeysHandler = new MediaControlKeyHandler();
+  mMediaControlKeyManager = new MediaControlKeyManager();
+  mMediaControlKeyManager->Open();
+  MOZ_ASSERT(mMediaControlKeyManager->IsOpened());
+  mMediaControlKeyManager->AddListener(mMediaKeysHandler.get());
   mControllerManager = MakeUnique<ControllerManager>(this);
 }
 
@@ -93,7 +97,7 @@ MediaControlService::Observe(nsISupports* aSubject, const char* aTopic,
 
 void MediaControlService::Shutdown() {
   mControllerManager->Shutdown();
-  mMediaControlKeysManager->RemoveListener(mMediaKeysHandler.get());
+  mMediaControlKeyManager->RemoveListener(mMediaKeysHandler.get());
 }
 
 bool MediaControlService::RegisterActiveMediaController(
@@ -107,6 +111,11 @@ bool MediaControlService::RegisterActiveMediaController(
   LOG("Register media controller %" PRId64 ", currentNum=%" PRId64,
       aController->Id(), GetActiveControllersNum());
   mMediaControllerAmountChangedEvent.Notify(GetActiveControllersNum());
+  if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
+    if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
+      obs->NotifyObservers(nullptr, "media-controller-amount-changed", nullptr);
+    }
+  }
   return true;
 }
 
@@ -121,7 +130,55 @@ bool MediaControlService::UnregisterActiveMediaController(
   LOG("Unregister media controller %" PRId64 ", currentNum=%" PRId64,
       aController->Id(), GetActiveControllersNum());
   mMediaControllerAmountChangedEvent.Notify(GetActiveControllersNum());
+  if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
+    if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
+      obs->NotifyObservers(nullptr, "media-controller-amount-changed", nullptr);
+    }
+  }
   return true;
+}
+
+void MediaControlService::NotifyControllerPlaybackStateChanged(
+    MediaController* aController) {
+  MOZ_DIAGNOSTIC_ASSERT(
+      mControllerManager,
+      "controller state change happens before initializing service");
+  MOZ_DIAGNOSTIC_ASSERT(aController);
+  // The controller is not an active controller.
+  if (!mControllerManager->Contains(aController)) {
+    return;
+  }
+
+  // The controller is the main controller, propagate its playback state.
+  if (GetMainController() == aController) {
+    mControllerManager->MainControllerPlaybackStateChanged(
+        aController->GetState());
+    return;
+  }
+
+  // The controller is not the main controller, but will become a new main
+  // controller. As the service can contains multiple controllers and only one
+  // controller can be controlled by media control keys. Therefore, when
+  // controller's state becomes `playing`, then we would like to let that
+  // controller being controlled, rather than other controller which might not
+  // be playing at the time.
+  if (GetMainController() != aController &&
+      aController->GetState() == MediaSessionPlaybackState::Playing) {
+    mControllerManager->UpdateMainControllerIfNeeded(aController);
+  }
+}
+
+void MediaControlService::NotifyControllerBeingUsedInPictureInPictureMode(
+    MediaController* aController) {
+  MOZ_DIAGNOSTIC_ASSERT(aController);
+  MOZ_DIAGNOSTIC_ASSERT(
+      mControllerManager,
+      "using controller in PIP mode before initializing service");
+  // The controller is not an active controller.
+  if (!mControllerManager->Contains(aController)) {
+    return;
+  }
+  mControllerManager->UpdateMainControllerIfNeeded(aController);
 }
 
 uint64_t MediaControlService::GetActiveControllersNum() const {
@@ -134,12 +191,17 @@ MediaController* MediaControlService::GetMainController() const {
   return mControllerManager->GetMainController();
 }
 
-void MediaControlService::GenerateMediaControlKeysTestEvent(
-    MediaControlKeysEvent aEvent) {
+void MediaControlService::GenerateTestMediaControlKey(MediaControlKey aKey) {
   if (!StaticPrefs::media_mediacontrol_testingevents_enabled()) {
     return;
   }
-  mMediaKeysHandler->OnKeyPressed(aEvent);
+  // Generate a seek details for `seekto`
+  if (aKey == MediaControlKey::Seekto) {
+    mMediaKeysHandler->OnActionPerformed(
+        MediaControlAction(aKey, SeekDetails()));
+  } else {
+    mMediaKeysHandler->OnActionPerformed(MediaControlAction(aKey));
+  }
 }
 
 MediaMetadataBase MediaControlService::GetMainControllerMediaMetadata() const {
@@ -151,76 +213,146 @@ MediaMetadataBase MediaControlService::GetMainControllerMediaMetadata() const {
                              : metadata;
 }
 
+MediaSessionPlaybackState MediaControlService::GetMainControllerPlaybackState()
+    const {
+  if (!StaticPrefs::media_mediacontrol_testingevents_enabled()) {
+    return MediaSessionPlaybackState::None;
+  }
+  return GetMainController() ? GetMainController()->GetState()
+                             : MediaSessionPlaybackState::None;
+}
+
 // Following functions belong to ControllerManager
 MediaControlService::ControllerManager::ControllerManager(
     MediaControlService* aService)
-    : mSource(aService->GetMediaControlKeysEventSource()) {
+    : mSource(aService->GetMediaControlKeySource()) {
   MOZ_ASSERT(mSource);
 }
 
 bool MediaControlService::ControllerManager::AddController(
     MediaController* aController) {
   MOZ_DIAGNOSTIC_ASSERT(aController);
-  if (mControllers.Contains(aController)) {
+  if (mControllers.contains(aController)) {
     return false;
   }
-  mControllers.AppendElement(aController);
-  UpdateMainController(aController);
+  mControllers.insertBack(aController);
+  UpdateMainControllerIfNeeded(aController);
   return true;
 }
 
 bool MediaControlService::ControllerManager::RemoveController(
     MediaController* aController) {
   MOZ_DIAGNOSTIC_ASSERT(aController);
-  if (!mControllers.Contains(aController)) {
+  if (!mControllers.contains(aController)) {
     return false;
   }
-  mControllers.RemoveElement(aController);
-  UpdateMainController(
-      mControllers.IsEmpty() ? nullptr : mControllers.LastElement().get());
+  // This is LinkedListElement's method which will remove controller from
+  // `mController`.
+  static_cast<LinkedListControllerPtr>(aController)->remove();
+  // If main controller is removed from the list, the last controller in the
+  // list would become the main controller. Or reset the main controller when
+  // the list is already empty.
+  if (GetMainController() == aController) {
+    UpdateMainControllerInternal(
+        mControllers.isEmpty() ? nullptr : mControllers.getLast());
+  }
   return true;
 }
 
-void MediaControlService::ControllerManager::Shutdown() {
-  mControllers.Clear();
-  DisconnectMainControllerEvents();
+void MediaControlService::ControllerManager::UpdateMainControllerIfNeeded(
+    MediaController* aController) {
+  MOZ_DIAGNOSTIC_ASSERT(aController);
+
+  if (GetMainController() == aController) {
+    LOG_MAINCONTROLLER("This controller is alreay the main controller");
+    return;
+  }
+
+  if (GetMainController() && GetMainController()->IsInPictureInPictureMode() &&
+      !aController->IsInPictureInPictureMode()) {
+    LOG_MAINCONTROLLER(
+        "Main controller is being used in PIP mode, so we won't replace it "
+        "with non-PIP controller");
+    return ReorderGivenController(aController,
+                                  InsertOptions::eInsertBeforeTail);
+  }
+  ReorderGivenController(aController, InsertOptions::eInsertToTail);
+  UpdateMainControllerInternal(aController);
 }
 
-void MediaControlService::ControllerManager::ControllerPlaybackStateChanged(
-    PlaybackState aState) {
-  MOZ_ASSERT(NS_IsMainThread());
-  mSource->SetPlaybackState(aState);
-  if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
-    if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
-      obs->NotifyObservers(nullptr, "main-media-controller-playback-changed",
-                           nullptr);
-    }
+void MediaControlService::ControllerManager::ReorderGivenController(
+    MediaController* aController, InsertOptions aOption) {
+  MOZ_DIAGNOSTIC_ASSERT(aController);
+  MOZ_DIAGNOSTIC_ASSERT(mControllers.contains(aController));
+
+  if (aOption == InsertOptions::eInsertToTail) {
+    // Make the main controller as the last element in the list to maintain the
+    // order of controllers because we always use the last controller in the
+    // list as the next main controller when removing current main controller
+    // from the list. Eg. If the list contains [A, B, C], and now the last
+    // element C is the main controller. When B becomes main controller later,
+    // the list would become [A, C, B]. And if A becomes main controller, list
+    // would become [C, B, A]. Then, if we remove A from the list, the next main
+    // controller would be B. But if we don't maintain the controller order when
+    // main controller changes, we would pick C as the main controller because
+    // the list is still [A, B, C].
+    static_cast<LinkedListControllerPtr>(aController)->remove();
+    return mControllers.insertBack(aController);
+  }
+
+  if (aOption == InsertOptions::eInsertBeforeTail) {
+    // This happens when the latest playing controller can't become the main
+    // controller because we have already had other controller being used in
+    // PIP mode, which would always be regarded as the main controller.
+    // However, we would still like to adjust its order in the list. Eg, we have
+    // a list [A, B, C, D, E] and E is the main controller. If we want to
+    // reorder B to the front of E, then the list would become [A, C, D, B, E].
+    MOZ_ASSERT(GetMainController() != aController);
+    static_cast<LinkedListControllerPtr>(aController)->remove();
+    return static_cast<LinkedListControllerPtr>(GetMainController())
+        ->setPrevious(aController);
   }
 }
 
-void MediaControlService::ControllerManager::ControllerMetadataChanged(
+void MediaControlService::ControllerManager::Shutdown() {
+  mControllers.clear();
+  DisconnectMainControllerEvents();
+}
+
+void MediaControlService::ControllerManager::MainControllerPlaybackStateChanged(
+    MediaSessionPlaybackState aState) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mSource->SetPlaybackState(aState);
+}
+
+void MediaControlService::ControllerManager::MainControllerMetadataChanged(
     const MediaMetadataBase& aMetadata) {
   MOZ_ASSERT(NS_IsMainThread());
   mSource->SetMediaMetadata(aMetadata);
 }
 
-void MediaControlService::ControllerManager::UpdateMainController(
+void MediaControlService::ControllerManager::UpdateMainControllerInternal(
     MediaController* aController) {
   MOZ_ASSERT(NS_IsMainThread());
   mMainController = aController;
 
-  // As main controller has been changed, we should disconnect the listener from
-  // the previous controller and reconnect it to the new controller.
-  DisconnectMainControllerEvents();
-
   if (!mMainController) {
-    LOG_MAINCONTROLLER("Clear main controller");
-    mSource->SetPlaybackState(PlaybackState::eStopped);
+    LOG_MAINCONTROLLER_INFO("Clear main controller");
+    mSource->SetControlledTabBrowsingContextId(Nothing());
+    mSource->SetPlaybackState(MediaSessionPlaybackState::None);
+    mSource->SetMediaMetadata(MediaMetadataBase::EmptyData());
+    mSource->SetSupportedMediaKeys(MediaKeysArray());
+    DisconnectMainControllerEvents();
   } else {
-    LOG_MAINCONTROLLER("Set controller %" PRId64 " as main controller",
-                       mMainController->Id());
-    ConnectToMainControllerEvents();
+    LOG_MAINCONTROLLER_INFO("Set controller %" PRId64 " as main controller",
+                            mMainController->Id());
+    mSource->SetControlledTabBrowsingContextId(Some(mMainController->Id()));
+    mSource->SetPlaybackState(mMainController->GetState());
+    mSource->SetMediaMetadata(mMainController->GetCurrentMediaMetadata());
+    mSource->SetSupportedMediaKeys(mMainController->GetSupportedMediaKeys());
+    ConnectMainControllerEvents();
   }
+
   if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
     if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
       obs->NotifyObservers(nullptr, "main-media-controller-changed", nullptr);
@@ -228,26 +360,43 @@ void MediaControlService::ControllerManager::UpdateMainController(
   }
 }
 
-void MediaControlService::ControllerManager::ConnectToMainControllerEvents() {
-  MOZ_ASSERT(mMainController);
-  // Listen to main controller's event in order to get its playback state and
-  // metadata update.
-  mPlayStateChangedListener =
-      mMainController->PlaybackStateChangedEvent().Connect(
-          AbstractThread::MainThread(), this,
-          &ControllerManager::ControllerPlaybackStateChanged);
+void MediaControlService::ControllerManager::ConnectMainControllerEvents() {
+  // As main controller has been changed, we should disconnect listeners from
+  // the previous controller and reconnect them to the new controller.
+  DisconnectMainControllerEvents();
+  // Listen to main controller's event in order to propagate the content that
+  // might be displayed on the virtual control interface created by the source.
   mMetadataChangedListener = mMainController->MetadataChangedEvent().Connect(
       AbstractThread::MainThread(), this,
-      &ControllerManager::ControllerMetadataChanged);
-
-  // Update controller's current status to the event source.
-  mSource->SetPlaybackState(mMainController->GetState());
-  mSource->SetMediaMetadata(mMainController->GetCurrentMediaMetadata());
+      &ControllerManager::MainControllerMetadataChanged);
+  mSupportedKeysChangedListener =
+      mMainController->SupportedKeysChangedEvent().Connect(
+          AbstractThread::MainThread(),
+          [this](const MediaKeysArray& aSupportedKeys) {
+            mSource->SetSupportedMediaKeys(aSupportedKeys);
+          });
+  mFullScreenChangedListener =
+      mMainController->FullScreenChangedEvent().Connect(
+          AbstractThread::MainThread(), [this](bool aIsEnabled) {
+            mSource->SetEnableFullScreen(aIsEnabled);
+          });
+  mPictureInPictureModeChangedListener =
+      mMainController->PictureInPictureModeChangedEvent().Connect(
+          AbstractThread::MainThread(), [this](bool aIsEnabled) {
+            mSource->SetEnablePictureInPictureMode(aIsEnabled);
+          });
+  mPositionChangedListener = mMainController->PositionChangedEvent().Connect(
+      AbstractThread::MainThread(), [this](const PositionState& aState) {
+        mSource->SetPositionState(aState);
+      });
 }
 
 void MediaControlService::ControllerManager::DisconnectMainControllerEvents() {
-  mPlayStateChangedListener.DisconnectIfExists();
   mMetadataChangedListener.DisconnectIfExists();
+  mSupportedKeysChangedListener.DisconnectIfExists();
+  mFullScreenChangedListener.DisconnectIfExists();
+  mPictureInPictureModeChangedListener.DisconnectIfExists();
+  mPositionChangedListener.DisconnectIfExists();
 }
 
 MediaController* MediaControlService::ControllerManager::GetMainController()
@@ -256,7 +405,19 @@ MediaController* MediaControlService::ControllerManager::GetMainController()
 }
 
 uint64_t MediaControlService::ControllerManager::GetControllersNum() const {
-  return mControllers.Length();
+  size_t length = 0;
+  const auto* element =
+      static_cast<ConstLinkedListControllerPtr>(mControllers.getFirst());
+  while (element) {
+    length++;
+    element = element->getNext();
+  }
+  return length;
+}
+
+bool MediaControlService::ControllerManager::Contains(
+    MediaController* aController) const {
+  return mControllers.contains(aController);
 }
 
 }  // namespace dom

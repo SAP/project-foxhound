@@ -22,10 +22,10 @@
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
 var ecmaGlobals = [
-  { name: "AggregateError", nightly: true },
+  "AggregateError",
   "Array",
   "ArrayBuffer",
-  { name: "Atomics", earlyBetaOrEarlier: true },
+  "Atomics",
   "Boolean",
   "BigInt",
   "BigInt64Array",
@@ -36,6 +36,7 @@ var ecmaGlobals = [
   "Date",
   "Error",
   "EvalError",
+  "FinalizationRegistry",
   "Float32Array",
   "Float64Array",
   "Function",
@@ -59,7 +60,10 @@ var ecmaGlobals = [
   "Reflect",
   "RegExp",
   "Set",
-  { name: "SharedArrayBuffer", earlyBetaOrEarlier: true },
+  {
+    name: "SharedArrayBuffer",
+    crossOriginIsolated: true,
+  },
   "String",
   "Symbol",
   "SyntaxError",
@@ -71,6 +75,7 @@ var ecmaGlobals = [
   "Uint8ClampedArray",
   "URIError",
   "WeakMap",
+  "WeakRef",
   "WeakSet",
   { name: "WebAssembly", optional: true },
 ];
@@ -220,6 +225,12 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PushSubscriptionOptions" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "Report", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ReportBody", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ReportingObserver", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   "Request",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Response",
@@ -263,6 +274,7 @@ function createInterfaceMap({
   isAndroid,
   isInsecureContext,
   isFennec,
+  isCrossOriginIsolated,
 }) {
   var interfaceMap = {};
 
@@ -285,6 +297,7 @@ function createInterfaceMap({
           entry.fennec === !isFennec ||
           entry.release === !isRelease ||
           entry.earlyBetaOrEarlier === !isEarlyBetaOrEarlier ||
+          entry.crossOriginIsolated === !isCrossOriginIsolated ||
           entry.disabled
         ) {
           interfaceMap[entry.name] = false;

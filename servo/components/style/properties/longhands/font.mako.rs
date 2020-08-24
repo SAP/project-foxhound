@@ -230,7 +230,7 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "-moz-script-level",
     "MozScriptLevel",
-    0,
+    "0",
     engines="gecko",
     animation_value_type="none",
     enabled_in="ua",
@@ -307,7 +307,6 @@ ${helpers.predefined_type(
         //! variable reference. We may want to improve this behavior at some
         //! point. See also https://github.com/w3c/csswg-drafts/issues/1586.
 
-        use app_units::Au;
         use cssparser::{Parser, ToCss};
         use crate::values::computed::font::GenericFontFamily;
         use crate::properties::longhands;
@@ -362,13 +361,14 @@ ${helpers.predefined_type(
                 use crate::gecko_bindings::structs::{LookAndFeel_FontID, nsFont};
                 use std::mem;
                 use crate::values::computed::Percentage;
+                use crate::values::specified::font::KeywordInfo;
                 use crate::values::computed::font::{FontFamily, FontSize, FontStretch, FontStyle, FontFamilyList};
                 use crate::values::generics::NonNegative;
 
                 let id = match *self {
                     % for font in system_fonts:
                         SystemFont::${to_camel_case(font)} => {
-                            LookAndFeel_FontID::eFont_${to_camel_case(font.replace("-moz-", ""))}
+                            LookAndFeel_FontID::${to_camel_case(font.replace("-moz-", ""))}
                         }
                     % endfor
                 };
@@ -396,8 +396,8 @@ ${helpers.predefined_type(
                         is_system_font: true,
                     },
                     font_size: FontSize {
-                        size: NonNegative(cx.maybe_zoom_text(Au(system.size).into())),
-                        keyword_info: None
+                        size: NonNegative(cx.maybe_zoom_text(system.size.0)),
+                        keyword_info: KeywordInfo::none()
                     },
                     font_weight,
                     font_stretch,

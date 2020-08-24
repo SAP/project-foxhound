@@ -9,11 +9,12 @@
 #include "AccessibleWrap.h"
 #include "nsIAccessibleText.h"
 #include "nsIAccessibleTypes.h"
+#include "nsIFrame.h"  // only for nsSelectionAmount
 #include "nsDirection.h"
 #include "WordMovementType.h"
-#include "nsIFrame.h"
 
 class nsFrameSelection;
+class nsIFrame;
 class nsRange;
 class nsIWidget;
 
@@ -143,7 +144,7 @@ class HyperTextAccessible : public AccessibleWrap {
    * @return true   if conversion was successful
    */
   bool OffsetsToDOMRange(int32_t aStartOffset, int32_t aEndOffset,
-                         nsRange* aRange);
+                         nsRange* aRange) const;
 
   /**
    * Convert the given offset into DOM point.
@@ -152,7 +153,7 @@ class HyperTextAccessible : public AccessibleWrap {
    * if before embedded object then (parent node, indexInParent), if after then
    * (parent node, indexInParent + 1).
    */
-  DOMPoint OffsetToDOMPoint(int32_t aOffset);
+  DOMPoint OffsetToDOMPoint(int32_t aOffset) const;
 
   /**
    * Return true if the used ARIA role (if any) allows the hypertext accessible
@@ -530,7 +531,7 @@ class HyperTextAccessible : public AccessibleWrap {
    *                        contents.
    */
   DOMPoint ClosestNotGeneratedDOMPoint(const DOMPoint& aDOMPoint,
-                                       nsIContent* aElementContent);
+                                       nsIContent* aElementContent) const;
 
   // Helpers
   nsresult GetDOMPointByFrameOffset(nsIFrame* aFrame, int32_t aOffset,

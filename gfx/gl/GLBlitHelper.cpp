@@ -19,10 +19,10 @@
 #include "GPUVideoImage.h"
 
 #ifdef MOZ_WIDGET_ANDROID
-#  include "GeneratedJNIWrappers.h"
 #  include "AndroidSurfaceTexture.h"
 #  include "GLImages.h"
 #  include "GLLibraryEGL.h"
+#  include "mozilla/java/GeckoSurfaceTextureWrappers.h"
 #endif
 
 #ifdef XP_MACOSX
@@ -726,7 +726,7 @@ bool GLBlitHelper::BlitImageToFramebuffer(layers::Image* const srcImage,
     case ImageFormat::OVERLAY_IMAGE:
     case ImageFormat::SHARED_RGB:
     case ImageFormat::TEXTURE_WRAPPER:
-    case ImageFormat::WAYLAND_DMABUF:
+    case ImageFormat::DMABUF:
       return false;  // todo
   }
   return false;

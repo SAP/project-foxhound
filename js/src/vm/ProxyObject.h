@@ -37,16 +37,17 @@ class ProxyObject : public JSObject {
                   "Proxy reservedSlots must overlay native object slots field");
   }
 
-  static JS::Result<ProxyObject*, JS::OOM&> create(JSContext* cx,
-                                                   const JSClass* clasp,
-                                                   Handle<TaggedProto> proto,
-                                                   js::gc::AllocKind allocKind,
-                                                   js::NewObjectKind newKind);
-
  public:
   static ProxyObject* New(JSContext* cx, const BaseProxyHandler* handler,
                           HandleValue priv, TaggedProto proto_,
-                          const ProxyOptions& options);
+                          const JSClass* clasp);
+
+  static ProxyObject* NewSingleton(JSContext* cx,
+                                   const BaseProxyHandler* handler,
+                                   HandleValue priv, TaggedProto proto_,
+                                   const JSClass* clasp);
+
+  void init(const BaseProxyHandler* handler, HandleValue priv, JSContext* cx);
 
   // Proxies usually store their ProxyValueArray inline in the object.
   // There's one unfortunate exception: when a proxy is swapped with another
@@ -62,10 +63,14 @@ class ProxyObject : public JSObject {
         &reinterpret_cast<detail::ProxyValueArray*>(inlineDataStart())
              ->reservedSlots;
   }
+
   MOZ_MUST_USE bool initExternalValueArrayAfterSwap(JSContext* cx,
                                                     HandleValueVector values);
 
   const Value& private_() const { return GetProxyPrivate(this); }
+  const Value& expando() const { return GetProxyExpando(this); }
+
+  void setExpando(JSObject* expando);
 
   void setCrossCompartmentPrivate(const Value& priv);
   void setSameCompartmentPrivate(const Value& priv);
@@ -105,6 +110,11 @@ class ProxyObject : public JSObject {
   GCPtrValue* slotOfPrivate() {
     return reinterpret_cast<GCPtrValue*>(
         &detail::GetProxyDataLayout(this)->values()->privateSlot);
+  }
+
+  GCPtrValue* slotOfExpando() {
+    return reinterpret_cast<GCPtrValue*>(
+        &detail::GetProxyDataLayout(this)->values()->expandoSlot);
   }
 
   void setPrivate(const Value& priv);

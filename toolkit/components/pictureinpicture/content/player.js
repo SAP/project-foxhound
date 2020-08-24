@@ -65,8 +65,11 @@ let Player = {
   WINDOW_EVENTS: [
     "click",
     "contextmenu",
+    "dblclick",
     "keydown",
     "mouseout",
+    "MozDOMFullscreen:Entered",
+    "MozDOMFullscreen:Exited",
     "resize",
     "unload",
   ],
@@ -151,6 +154,13 @@ let Player = {
     });
 
     this.computeAndSetMinimumSize(window.outerWidth, window.outerHeight);
+
+    // alwaysontop windows are not focused by default, so we have to do it
+    // ourselves. We use requestAnimationFrame since we have to wait until the
+    // window is visible before it can focus.
+    window.requestAnimationFrame(() => {
+      window.focus();
+    });
   },
 
   uninit() {
@@ -171,6 +181,11 @@ let Player = {
         break;
       }
 
+      case "dblclick": {
+        this.onDblClick(event);
+        break;
+      }
+
       case "keydown": {
         if (event.keyCode == KeyEvent.DOM_VK_TAB) {
           this.controls.setAttribute("keying", true);
@@ -179,6 +194,10 @@ let Player = {
           this.controls.hasAttribute("keying")
         ) {
           this.controls.removeAttribute("keying");
+
+          // We preventDefault to avoid exiting fullscreen if we happen
+          // to be in it.
+          event.preventDefault();
         } else if (
           Services.prefs.getBoolPref(KEYBOARD_CONTROLS_ENABLED_PREF, false) &&
           !this.controls.hasAttribute("keying") &&
@@ -198,6 +217,28 @@ let Player = {
         break;
       }
 
+      // Normally, the DOMFullscreenParent / DOMFullscreenChild actors
+      // would take care of firing the `fullscreen-painted` notification,
+      // however, those actors are only ever instantiated when a <browser>
+      // is fullscreened, and not a <body> element in a parent-process
+      // chrome privileged DOM window.
+      //
+      // Rather than trying to re-engineer JSWindowActors to be re-usable for
+      // this edge-case, we do the work of firing fullscreen-painted when
+      // transitioning in and out of fullscreen ourselves here.
+      case "MozDOMFullscreen:Entered":
+      // Intentional fall-through
+      case "MozDOMFullscreen:Exited": {
+        let { lastTransactionId } = window.windowUtils;
+        window.addEventListener("MozAfterPaint", function onPainted(event) {
+          if (event.transactionId > lastTransactionId) {
+            window.removeEventListener("MozAfterPaint", onPainted);
+            Services.obs.notifyObservers(window, "fullscreen-painted");
+          }
+        });
+        break;
+      }
+
       case "oop-browser-crashed": {
         PictureInPicture.closePipWindow({ reason: "browser-crash" });
         break;
@@ -212,6 +253,17 @@ let Player = {
         this.uninit();
         break;
       }
+    }
+  },
+
+  onDblClick(event) {
+    if (event.target.id == "controls") {
+      if (document.fullscreenElement == document.body) {
+        document.exitFullscreen();
+      } else {
+        document.body.requestFullscreen();
+      }
+      event.preventDefault();
     }
   },
 

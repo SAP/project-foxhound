@@ -42,33 +42,11 @@ ChromeUtils.defineModuleGetter(
   "AppConstants",
   "resource://gre/modules/AppConstants.jsm"
 );
-
-// ASRouterTargeting.isMatch
-add_task(async function should_do_correct_targeting() {
-  is(
-    await ASRouterTargeting.isMatch("FOO", { FOO: true }),
-    true,
-    "should return true for a matching value"
-  );
-  is(
-    await ASRouterTargeting.isMatch("!FOO", { FOO: true }),
-    false,
-    "should return false for a non-matching value"
-  );
-});
-
-add_task(async function should_handle_async_getters() {
-  const context = {
-    get FOO() {
-      return Promise.resolve(true);
-    },
-  };
-  is(
-    await ASRouterTargeting.isMatch("FOO", context),
-    true,
-    "should return true for a matching async value"
-  );
-});
+ChromeUtils.defineModuleGetter(
+  this,
+  "Region",
+  "resource://gre/modules/Region.jsm"
+);
 
 // ASRouterTargeting.findMatchingMessage
 add_task(async function find_matching_message() {
@@ -102,38 +80,10 @@ add_task(async function return_nothing_for_no_matching_message() {
   );
 });
 
-add_task(async function check_syntax_error_handling() {
-  let result;
-  function onError(...args) {
-    result = args;
-  }
-
-  const messages = [{ id: "foo", targeting: "foo === 0" }];
-  const match = await ASRouterTargeting.findMatchingMessage({
-    messages,
-    onError,
-  });
-
-  is(
-    match,
-    undefined,
-    "should return nothing since no valid matching message exists"
-  );
-  // Note that in order for the following test to pass, we are expecting a particular filepath for mozjexl.
-  // If the location of this file has changed, the MOZ_JEXL_FILEPATH constant should be updated om ASRouterTargeting.jsm
-  is(
-    result[0],
-    ASRouterTargeting.ERROR_TYPES.MALFORMED_EXPRESSION,
-    "should recognize the error as coming from mozjexl and call onError with the MALFORMED_EXPRESSION error type"
-  );
-  ok(result[1].message, "should call onError with the error from mozjexl");
-  is(result[2], messages[0], "should call onError with the invalid message");
-});
-
 add_task(async function check_other_error_handling() {
-  let result;
+  let called = false;
   function onError(...args) {
-    result = args;
+    called = true;
   }
 
   const messages = [{ id: "foo", targeting: "foo" }];
@@ -153,19 +103,8 @@ add_task(async function check_other_error_handling() {
     undefined,
     "should return nothing since no valid matching message exists"
   );
-  // Note that in order for the following test to pass, we are expecting a particular filepath for mozjexl.
-  // If the location of this file has changed, the MOZ_JEXL_FILEPATH constant should be updated om ASRouterTargeting.jsm
-  is(
-    result[0],
-    ASRouterTargeting.ERROR_TYPES.ATTRIBUTE_ERROR,
-    "should not recognize the error as being an attribute error."
-  );
-  is(
-    result[1].message,
-    "test error",
-    "should call onError with the error thrown in the context"
-  );
-  is(result[2], "foo", "should call onError with the invalid attribute");
+
+  Assert.ok(called, "Attribute error caught");
 });
 
 // ASRouterTargeting.Environment
@@ -367,7 +306,7 @@ add_task(async function check_needsUpdate() {
 
 add_task(async function checksearchEngines() {
   const result = await ASRouterTargeting.Environment.searchEngines;
-  const expectedInstalled = (await Services.search.getVisibleEngines())
+  const expectedInstalled = (await Services.search.getDefaultEngines())
     .map(engine => engine.identifier)
     .sort()
     .join(",");
@@ -405,7 +344,7 @@ add_task(async function checksearchEngines() {
   const message2 = {
     id: "foo",
     targeting: `searchEngines[${
-      (await Services.search.getVisibleEngines())[0].identifier
+      (await Services.search.getDefaultEngines())[0].identifier
     } in .installed]`,
   };
   is(
@@ -735,8 +674,7 @@ add_task(async function check_firefox_version() {
 });
 
 add_task(async function check_region() {
-  await SpecialPowers.pushPrefEnv({ set: [["browser.search.region", "DE"]] });
-
+  Region._setHomeRegion("DE", false);
   const message = { id: "foo", targeting: "region in ['DE']" };
   is(
     await ASRouterTargeting.findMatchingMessage({ messages: [message] }),

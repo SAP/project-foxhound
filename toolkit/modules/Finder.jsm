@@ -55,7 +55,7 @@ function Finder(docShell) {
     .QueryInterface(Ci.nsIInterfaceRequestor)
     .getInterface(Ci.nsIWebProgress)
     .addProgressListener(this, Ci.nsIWebProgress.NOTIFY_LOCATION);
-  BrowserUtils.getRootWindow(this._docShell).addEventListener(
+  docShell.domWindow.addEventListener(
     "unload",
     this.onLocationChange.bind(this, { isTopLevel: true })
   );
@@ -113,16 +113,7 @@ Finder.prototype = {
     let foundLink = this._fastFind.foundLink;
     let linkURL = null;
     if (foundLink) {
-      let docCharset = null;
-      let ownerDoc = foundLink.ownerDocument;
-      if (ownerDoc) {
-        docCharset = ownerDoc.characterSet;
-      }
-
-      linkURL = Services.textToSubURI.unEscapeURIForUI(
-        docCharset,
-        foundLink.href
-      );
+      linkURL = Services.textToSubURI.unEscapeURIForUI(foundLink.href);
     }
 
     options.linkURL = linkURL;
@@ -805,8 +796,8 @@ Finder.prototype = {
   },
 
   QueryInterface: ChromeUtils.generateQI([
-    Ci.nsIWebProgressListener,
-    Ci.nsISupportsWeakReference,
+    "nsIWebProgressListener",
+    "nsISupportsWeakReference",
   ]),
 };
 

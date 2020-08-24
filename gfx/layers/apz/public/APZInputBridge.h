@@ -7,9 +7,9 @@
 #ifndef mozilla_layers_APZInputBridge_h
 #define mozilla_layers_APZInputBridge_h
 
-#include "APZUtils.h"               // for APZWheelAction
-#include "mozilla/EventForwards.h"  // for WidgetInputEvent, nsEventStatus
-#include "Units.h"                  // for LayoutDeviceIntPoint
+#include "mozilla/EventForwards.h"    // for WidgetInputEvent, nsEventStatus
+#include "mozilla/layers/APZUtils.h"  // for APZWheelAction
+#include "Units.h"                    // for LayoutDeviceIntPoint
 
 namespace mozilla {
 
@@ -56,6 +56,11 @@ struct APZEventResult {
    * The guid of the APZC this event was delivered to.
    */
   ScrollableLayerGuid mTargetGuid;
+  /**
+   * Whether or not mTargetGuid refers to the root content APZC. This gets set
+   * to false in cases where APZ is unsure due to imprecision in hit-testing.
+   */
+  bool mTargetIsRoot;
   /**
    * If this event started or was added to an input block, the id of that
    * input block, otherwise InputBlockState::NO_BLOCK_ID.

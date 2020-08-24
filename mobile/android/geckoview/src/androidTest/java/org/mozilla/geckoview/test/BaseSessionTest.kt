@@ -26,12 +26,14 @@ import kotlin.reflect.KClass
  */
 open class BaseSessionTest(noErrorCollector: Boolean = false) {
     companion object {
+        const val BEFORE_UNLOAD = "/assets/www/beforeunload.html"
         const val CLICK_TO_RELOAD_HTML_PATH = "/assets/www/clickToReload.html"
         const val CONTENT_CRASH_URL = "about:crashcontent"
         const val DOWNLOAD_HTML_PATH = "/assets/www/download.html"
         const val FORMS_HTML_PATH = "/assets/www/forms.html"
         const val FORMS2_HTML_PATH = "/assets/www/forms2.html"
         const val FORMS3_HTML_PATH = "/assets/www/forms3.html"
+        const val FORMS4_HTML_PATH = "/assets/www/forms4.html"
         const val FORMS_AUTOCOMPLETE_HTML_PATH = "/assets/www/forms_autocomplete.html"
         const val HELLO_HTML_PATH = "/assets/www/hello.html"
         const val HELLO2_HTML_PATH = "/assets/www/hello2.html"
@@ -68,6 +70,8 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val PUSH_HTML_PATH = "/assets/www/push/push.html"
         const val OPEN_WINDOW_PATH = "/assets/www/worker/open_window.html"
         const val OPEN_WINDOW_TARGET_PATH = "/assets/www/worker/open_window_target.html"
+        const val DATA_URI_PATH = "/assets/www/data_uri.html"
+        const val IFRAME_UNKNOWN_PROTOCOL = "/assets/www/iframe_unknown_protocol.html"
 
         const val TEST_ENDPOINT = GeckoSessionTestRule.TEST_ENDPOINT
     }
@@ -103,6 +107,8 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
     inline fun GeckoSession.toParcel(lambda: (Parcel) -> Unit) {
         val parcel = Parcel.obtain()
         try {
+            // Bug 1650108: Remove this
+            @Suppress("DEPRECATION")
             this.writeToParcel(parcel, 0)
 
             val pos = parcel.dataPosition()

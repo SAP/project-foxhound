@@ -22,46 +22,36 @@ const utmParams = new URLSearchParams({
 });
 
 const aside = {
-  header: "Instantly Send Tabs to Mobile",
-  content: `Test your site on mobile and other devices without having to copy, paste, or leave the browser.`,
-  cta: "Learn More About Send Tabs",
-  href: `https://play.google.com/store/apps/details?id=org.mozilla.fennec_aurora&referrer=utm_source%3Dmozilla%26utm_medium%3DReferral%26utm_campaign%3Dmozilla-org${utmParams}`,
+  header: "A Fast and Secure VPN",
+  content: `A VPN from the trusted pioneer in internet privacy. Available for users in the US, Canada, UK, Singapore, Malaysia, and New Zealand.`,
+  cta: "Try Mozilla VPN",
+  href: `https://vpn.mozilla.org/?${utmParams}`,
 };
 
 const release = {
-  title: "What’s New in DevTools (Firefox 75)",
+  title: "What’s New in DevTools (Firefox 80)",
   linkText: "Read more",
-  linkUrl: `https://developer.mozilla.org/docs/Mozilla/Firefox/Releases/75?${utmParams}`,
+  linkUrl: `https://developer.mozilla.org/docs/Mozilla/Firefox/Releases/80?${utmParams}`,
   features: [
     {
-      header: `Instant evaluation for Console expressions`,
-      description: `Identify and fix errors more rapidly than before. As long as expressions typed into the Web Console are side-effect free, their results will be previewed while you type.`,
-      href: `https://developer.mozilla.org/en-US/docs/Tools/Web_Console/The_command_line_interpreter?${utmParams}`,
+      header: `New commands for HTTP request blocking`,
+      description: `You can now block and unblock network requests using the :block and :unblock helper commands in the Console.`,
+      href: `https://developer.mozilla.org/en-US/docs/Tools/Web_Console/Helpers?${utmParams}`,
     },
     {
-      header: `Measurement area is now resizable`,
-      description: `Quickly drag the area on the fly to measure the height, width and diagonal in your page. Enable the feature in Setting, under "Available Toolbox Buttons".`,
-      href: `https://developer.mozilla.org/docs/Tools/Measure_a_portion_of_the_page?${utmParams}`,
+      header: `Class autocomplete in HTML editing`,
+      description: `When adding a class to an element in the Page Inspector's Rules pane, existing classes are suggested with autocomplete.`,
+      href: `https://developer.mozilla.org/en-US/docs/Tools/Page_Inspector/How_to/Examine_and_edit_CSS#Viewing_and_changing_classes_on_an_element?${utmParams}`,
     },
     {
-      header: `Event breakpoints for WebSockets`,
-      description: `Newly added event breakpoint types in the Debugger let you pause or log when WebSocket event handlers get executed.`,
-      href: `https://developer.mozilla.org/en-US/docs/Tools/Debugger/Set_event_listener_breakpoints?${utmParams}`,
+      header: `Stack traces for exceptions`,
+      description: `When the Debugger breaks on an exception, the tooltip in the source pane now shows disclosure triangle that reveals a stack trace.`,
+      href: `https://developer.mozilla.org/en-US/docs/Tools/Debugger/How_to/Breaking_on_exceptions?${utmParams}`,
     },
     {
-      header: `Use XPath to find DOM elements`,
-      description: `XPath queries, common in automation tools, can now be used in Inspector’s HTML search to test expressions and find matching elements.`,
-      href: `https://developer.mozilla.org/en-US/docs/Tools/Page_Inspector/How_to/Examine_and_edit_HTML?${utmParams}#XPath_search`,
-    },
-    {
-      header: `Polished Network analysis`,
-      description: `Optimized table rendering renders many simultaneous requests much faster. Borders between columns and higher contrast state for filter buttons makes reading easier.`,
-      href: `https://wiki.developer.mozilla.org/en-US/docs/Tools/Network_Monitor/request_list?${utmParams}`,
-    },
-    {
-      header: `Request blocking with “*” wildcards`,
-      description: `Use URL patterns with * wildcards in Network’s Request Blocking panel to test how resilient your site is when matches requests fail.`,
-      href: `https://wiki.developer.mozilla.org/en-US/docs/Tools/Network_Monitor/request_list?${utmParams}#Blocking_specific_URLs`,
+      header: `Warning for slow server responses`,
+      description: `In the Network Monitor request list, a turtle icon is shown for "slow" requests that exceed a configurable threshhold for the waiting time.`,
+      href: `https://developer.mozilla.org/en-US/docs/Tools/Network_Monitor/request_list#Network_request_columns?${utmParams}`,
     },
   ],
 };
@@ -72,14 +62,9 @@ const dev = {
   linkText: "Get DevEdition",
   features: [
     {
-      header: `Full Asynchronous Stacks in Debugger`,
-      description: `Step through event, timeout and promise-based function calls over time with the full-featured async stacks in Debugger.`,
-      href: `https://developer.mozilla.org/en-US/docs/Tools/Debugger/UI_Tour?${utmParams}`,
-    },
-    {
-      header: `Inspect & Debug Service Workers`,
-      description: `Start, pause and debug your Service Workers and inspect your Web App Manifests within the long-awaited Application panel.`,
-      href: `https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers?${utmParams}`,
+      header: `Inspect Server-Sent Events`,
+      description: `Monitor your received event stream data, in addition to the existing WebSocket inspection. Flip "devtools.netmonitor.features.serverSentEvents" pref to try this feature.`,
+      href: `https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events?${utmParams}`,
     },
   ],
 };

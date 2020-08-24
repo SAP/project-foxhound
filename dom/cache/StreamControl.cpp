@@ -10,22 +10,24 @@ namespace mozilla {
 namespace dom {
 namespace cache {
 
-void StreamControl::AddReadStream(ReadStream::Controllable* aReadStream) {
+void StreamControl::AddReadStream(
+    SafeRefPtr<ReadStream::Controllable> aReadStream) {
   AssertOwningThread();
   MOZ_DIAGNOSTIC_ASSERT(aReadStream);
   MOZ_ASSERT(!mReadStreamList.Contains(aReadStream));
-  mReadStreamList.AppendElement(aReadStream);
+  mReadStreamList.AppendElement(std::move(aReadStream));
 }
 
-void StreamControl::ForgetReadStream(ReadStream::Controllable* aReadStream) {
+void StreamControl::ForgetReadStream(
+    SafeRefPtr<ReadStream::Controllable> aReadStream) {
   AssertOwningThread();
   MOZ_ALWAYS_TRUE(mReadStreamList.RemoveElement(aReadStream));
 }
 
-void StreamControl::NoteClosed(ReadStream::Controllable* aReadStream,
+void StreamControl::NoteClosed(SafeRefPtr<ReadStream::Controllable> aReadStream,
                                const nsID& aId) {
   AssertOwningThread();
-  ForgetReadStream(aReadStream);
+  ForgetReadStream(std::move(aReadStream));
   NoteClosedAfterForget(aId);
 }
 
@@ -40,9 +42,7 @@ void StreamControl::CloseReadStreams(const nsID& aId) {
   uint32_t closedCount = 0;
 #endif
 
-  ReadStreamList::ForwardIterator iter(mReadStreamList);
-  while (iter.HasMore()) {
-    RefPtr<ReadStream::Controllable> stream = iter.GetNext();
+  for (const auto& stream : mReadStreamList.ForwardRange()) {
     if (stream->MatchId(aId)) {
       stream->CloseStream();
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
@@ -62,19 +62,16 @@ void StreamControl::CloseAllReadStreams() {
   //    transitively)
   // 2. the this pointer is deleted by CacheStreamControlParent::Shutdown
   //    (called transitively)
-  auto readStreamList = mReadStreamList;
-  ReadStreamList::ForwardIterator iter(readStreamList);
-  while (iter.HasMore()) {
-    iter.GetNext()->CloseStream();
+  auto readStreamList = mReadStreamList.Clone();
+  for (const auto& stream : readStreamList.ForwardRange()) {
+    stream->CloseStream();
   }
 }
 
 void StreamControl::CloseAllReadStreamsWithoutReporting() {
   AssertOwningThread();
 
-  ReadStreamList::ForwardIterator iter(mReadStreamList);
-  while (iter.HasMore()) {
-    RefPtr<ReadStream::Controllable> stream = iter.GetNext();
+  for (const auto& stream : mReadStreamList.ForwardRange()) {
     // Note, we cannot trigger IPC traffic here.  So use
     // CloseStreamWithoutReporting().
     stream->CloseStreamWithoutReporting();
@@ -82,13 +79,10 @@ void StreamControl::CloseAllReadStreamsWithoutReporting() {
 }
 
 bool StreamControl::HasEverBeenRead() const {
-  ReadStreamList::ForwardIterator iter(mReadStreamList);
-  while (iter.HasMore()) {
-    if (iter.GetNext()->HasEverBeenRead()) {
-      return true;
-    }
-  }
-  return false;
+  const auto range = mReadStreamList.NonObservingRange();
+  return std::any_of(range.begin(), range.end(), [](const auto& stream) {
+    return stream->HasEverBeenRead();
+  });
 }
 
 }  // namespace cache

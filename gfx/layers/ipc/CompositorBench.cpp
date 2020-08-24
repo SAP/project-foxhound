@@ -98,7 +98,7 @@ class EffectSolidColorBench : public BenchTest {
     float red = modff(aStep * 0.03f, &tmp);
     EffectChain effects;
     effects.mPrimaryEffect =
-        new EffectSolidColor(gfx::Color(red, 0.4f, 0.4f, 1.0f));
+        new EffectSolidColor(gfx::DeviceColor(red, 0.4f, 0.4f, 1.0f));
 
     const gfx::Rect& rect = aScreenRect;
     const gfx::Rect& clipRect = aScreenRect;
@@ -127,7 +127,8 @@ class EffectSolidColorTrivialBench : public BenchTest {
     float tmp;
     float red = modff(i * 0.03f, &tmp);
     EffectChain effects;
-    return MakeAndAddRef<EffectSolidColor>(gfx::Color(red, 0.4f, 0.4f, 1.0f));
+    return MakeAndAddRef<EffectSolidColor>(
+        gfx::DeviceColor(red, 0.4f, 0.4f, 1.0f));
   }
 };
 
@@ -149,7 +150,8 @@ class EffectSolidColorStressBench : public BenchTest {
     float tmp;
     float red = modff(i * 0.03f, &tmp);
     EffectChain effects;
-    return MakeAndAddRef<EffectSolidColor>(gfx::Color(red, 0.4f, 0.4f, 1.0f));
+    return MakeAndAddRef<EffectSolidColor>(
+        gfx::DeviceColor(red, 0.4f, 0.4f, 1.0f));
   }
 };
 

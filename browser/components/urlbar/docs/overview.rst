@@ -52,6 +52,12 @@ It is augmented as it progresses through the system, with various information:
                 // with the search service.
     currentPage: // {string} url of the page that was loaded when the search
                  // began.
+    allowSearchSuggestions: // {boolean} Whether to allow search suggestions.
+                            // This is a veto, meaning that when false,
+                            // suggestions will not be fetched, but when true,
+                            // some other condition may still prohibit
+                            // suggestions, like private browsing mode. Defaults
+                            // to true.
 
     // Properties added by the Model.
     results; // {array} list of UrlbarResult objects.
@@ -402,3 +408,6 @@ The following RESULT_TYPEs are supported:
     // If a tip is untranslated it's possible to provide text and buttonText.
     // Payload: { icon, textData, buttonTextData, [buttonUrl], [helpUrl] }
     TIP: 7,
+    // A type of result created at runtime, for example by an extension.
+    // Payload: { dynamicType }
+    DYNAMIC: 8,

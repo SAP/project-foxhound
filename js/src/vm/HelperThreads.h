@@ -17,7 +17,6 @@
 #include "mozilla/GuardObjects.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/TypeTraits.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "mozilla/Variant.h"
 
@@ -25,7 +24,6 @@
 
 #include "ds/Fifo.h"
 #include "jit/JitContext.h"
-#include "js/BinASTFormat.h"  // JS::BinASTFormat
 #include "js/CompileOptions.h"
 #include "js/SourceText.h"
 #include "js/TypeDecls.h"
@@ -47,6 +45,13 @@ class CompileError;
 struct HelperThread;
 struct ParseTask;
 struct PromiseHelperTask;
+
+struct HelperThreadTask {
+  virtual void runTaskLocked(AutoLockHelperThreadState& locked) = 0;
+  virtual ThreadType threadType() = 0;
+  virtual ~HelperThreadTask() = default;
+};
+
 namespace jit {
 class IonCompileTask;
 }  // namespace jit
@@ -54,20 +59,14 @@ namespace wasm {
 struct Tier2GeneratorTask;
 }  // namespace wasm
 
-enum class ParseTaskKind {
-  Script,
-  Module,
-  ScriptDecode,
-  BinAST,
-  MultiScriptsDecode
-};
+enum class ParseTaskKind { Script, Module, ScriptDecode, MultiScriptsDecode };
 
 namespace wasm {
 
 struct CompileTask;
 typedef Fifo<CompileTask*, 0, SystemAllocPolicy> CompileTaskPtrFifo;
 
-struct Tier2GeneratorTask : public RunnableTask {
+struct Tier2GeneratorTask : public HelperThreadTask {
   virtual ~Tier2GeneratorTask() = default;
   virtual void cancel() = 0;
 };
@@ -97,7 +96,7 @@ class GlobalHelperThreadState {
 
   typedef Vector<jit::IonCompileTask*, 0, SystemAllocPolicy>
       IonCompileTaskVector;
-  typedef Vector<ParseTask*, 0, SystemAllocPolicy> ParseTaskVector;
+  typedef Vector<UniquePtr<ParseTask>, 0, SystemAllocPolicy> ParseTaskVector;
   using ParseTaskList = mozilla::LinkedList<ParseTask>;
   typedef Vector<UniquePtr<SourceCompressionTask>, 0, SystemAllocPolicy>
       SourceCompressionTaskVector;
@@ -295,14 +294,18 @@ class GlobalHelperThreadState {
   bool canStartCompressionTask(const AutoLockHelperThreadState& lock);
   bool canStartGCParallelTask(const AutoLockHelperThreadState& lock);
 
+  enum class ScheduleCompressionTask { GC, API };
+
   // Used by a major GC to signal processing enqueued compression tasks.
-  void startHandlingCompressionTasks(const AutoLockHelperThreadState&);
+  void startHandlingCompressionTasks(const AutoLockHelperThreadState&,
+                                     ScheduleCompressionTask schedule);
 
   jit::IonCompileTask* highestPriorityPendingIonCompile(
       const AutoLockHelperThreadState& lock);
 
  private:
-  void scheduleCompressionTasks(const AutoLockHelperThreadState&);
+  void scheduleCompressionTasks(const AutoLockHelperThreadState&,
+                                ScheduleCompressionTask schedule);
 
   UniquePtr<ParseTask> finishParseTaskCommon(JSContext* cx, ParseTaskKind kind,
                                              JS::OffThreadToken* token);
@@ -328,10 +331,6 @@ class GlobalHelperThreadState {
   bool finishMultiScriptsDecodeTask(JSContext* cx, JS::OffThreadToken* token,
                                     MutableHandle<ScriptVector> scripts);
   JSObject* finishModuleParseTask(JSContext* cx, JS::OffThreadToken* token);
-
-#if defined(JS_BUILD_BINAST)
-  JSScript* finishBinASTDecodeTask(JSContext* cx, JS::OffThreadToken* token);
-#endif
 
   bool hasActiveThreads(const AutoLockHelperThreadState&);
   void waitForAllThreads();
@@ -551,6 +550,9 @@ bool StartOffThreadIonCompile(jit::IonCompileTask* task,
 bool StartOffThreadIonFree(jit::IonCompileTask* task,
                            const AutoLockHelperThreadState& lock);
 
+void FinishOffThreadIonCompile(jit::IonCompileTask* task,
+                               const AutoLockHelperThreadState& lock);
+
 struct ZonesInState {
   JSRuntime* runtime;
   JS::shadow::Zone::GCState state;
@@ -632,17 +634,6 @@ bool StartOffThreadDecodeScript(JSContext* cx,
                                 const JS::TranscodeRange& range,
                                 JS::OffThreadCompileCallback callback,
                                 void* callbackData);
-
-#if defined(JS_BUILD_BINAST)
-
-bool StartOffThreadDecodeBinAST(JSContext* cx,
-                                const JS::ReadOnlyCompileOptions& options,
-                                const uint8_t* buf, size_t length,
-                                JS::BinASTFormat format,
-                                JS::OffThreadCompileCallback callback,
-                                void* callbackData);
-
-#endif /* JS_BUILD_BINAST */
 
 bool StartOffThreadDecodeMultiScripts(JSContext* cx,
                                       const JS::ReadOnlyCompileOptions& options,
@@ -726,7 +717,7 @@ struct MOZ_RAII AutoSetContextRuntime {
 
 struct ParseTask : public mozilla::LinkedListElement<ParseTask>,
                    public JS::OffThreadToken,
-                   public RunnableTask {
+                   public HelperThreadTask {
   ParseTaskKind kind;
   JS::OwningCompileOptions options;
 
@@ -772,7 +763,8 @@ struct ParseTask : public mozilla::LinkedListElement<ParseTask>,
     return mallocSizeOf(this) + sizeOfExcludingThis(mallocSizeOf);
   }
 
-  void runTask() override;
+  void runTaskLocked(AutoLockHelperThreadState& locked) override;
+  void runTask();
   ThreadType threadType() override { return ThreadType::THREAD_TYPE_PARSE; }
 };
 
@@ -783,20 +775,6 @@ struct ScriptDecodeTask : public ParseTask {
                    JS::OffThreadCompileCallback callback, void* callbackData);
   void parse(JSContext* cx) override;
 };
-
-#if defined(JS_BUILD_BINAST)
-
-struct BinASTDecodeTask : public ParseTask {
-  mozilla::Range<const uint8_t> data;
-  JS::BinASTFormat format;
-
-  BinASTDecodeTask(JSContext* cx, const uint8_t* buf, size_t length,
-                   JS::BinASTFormat format,
-                   JS::OffThreadCompileCallback callback, void* callbackData);
-  void parse(JSContext* cx) override;
-};
-
-#endif /* JS_BUILD_BINAST */
 
 struct MultiScriptsDecodeTask : public ParseTask {
   JS::TranscodeSources* sources;
@@ -848,7 +826,7 @@ class SourceCompressionTask : public RunnableTask {
       : runtime_(rt),
         majorGCNumber_(rt->gc.majorGCCount()),
         sourceHolder_(source) {}
-  virtual ~SourceCompressionTask() {}
+  virtual ~SourceCompressionTask() = default;
 
   bool runtimeMatches(JSRuntime* runtime) const { return runtime == runtime_; }
   bool shouldStart() const {
@@ -864,6 +842,7 @@ class SourceCompressionTask : public RunnableTask {
   }
 
   void runTask() override;
+  void runTaskLocked(AutoLockHelperThreadState& locked);
   void complete();
 
   ThreadType threadType() override { return ThreadType::THREAD_TYPE_COMPRESS; }

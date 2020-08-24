@@ -7,6 +7,7 @@
 #include "InterceptedHttpChannel.h"
 #include "nsContentSecurityManager.h"
 #include "nsEscape.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/dom/ChannelInfo.h"
 #include "mozilla/dom/PerformanceStorage.h"
 #include "nsHttpChannel.h"
@@ -251,8 +252,7 @@ nsresult InterceptedHttpChannel::RedirectForResponseURL(
       CloneLoadInfoForRedirect(aResponseURI, flags);
 
   nsContentPolicyType contentPolicyType =
-      redirectLoadInfo ? redirectLoadInfo->GetExternalContentPolicyType()
-                       : nsIContentPolicy::TYPE_OTHER;
+      redirectLoadInfo->GetExternalContentPolicyType();
 
   rv = newChannel->Init(
       aResponseURI, mCaps, static_cast<nsProxyInfo*>(mProxyInfo.get()),
@@ -379,7 +379,8 @@ void InterceptedHttpChannel::MaybeCallStatusAndProgress() {
     nsCOMPtr<nsIRunnable> r = NewRunnableMethod(
         "InterceptedHttpChannel::MaybeCallStatusAndProgress", this,
         &InterceptedHttpChannel::MaybeCallStatusAndProgress);
-    MOZ_ALWAYS_SUCCEEDS(SystemGroup::Dispatch(TaskCategory::Other, r.forget()));
+    MOZ_ALWAYS_SUCCEEDS(
+        SchedulerGroup::Dispatch(TaskCategory::Other, r.forget()));
 
     return;
   }
@@ -414,10 +415,9 @@ void InterceptedHttpChannel::MaybeCallStatusAndProgress() {
     CopyUTF8toUTF16(host, mStatusHost);
   }
 
-  mProgressSink->OnStatus(this, nullptr, NS_NET_STATUS_READING,
-                          mStatusHost.get());
+  mProgressSink->OnStatus(this, NS_NET_STATUS_READING, mStatusHost.get());
 
-  mProgressSink->OnProgress(this, nullptr, progress, mSynthesizedStreamLength);
+  mProgressSink->OnProgress(this, progress, mSynthesizedStreamLength);
 
   mProgressReported = progress;
 }
@@ -699,7 +699,7 @@ InterceptedHttpChannel::SynthesizeHeader(const nsACString& aName,
     mSynthesizedResponseHead.reset(new nsHttpResponseHead());
   }
 
-  nsAutoCString header = aName + NS_LITERAL_CSTRING(": ") + aValue;
+  nsAutoCString header = aName + ": "_ns + aValue;
   // Overwrite any existing header.
   nsresult rv = mSynthesizedResponseHead->ParseHeaderLine(header);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -925,9 +925,8 @@ InterceptedHttpChannel::SaveTimeStamps(void) {
   }
 
   bool isNonSubresourceRequest = nsContentUtils::IsNonSubresourceRequest(this);
-  nsCString navigationOrSubresource = isNonSubresourceRequest
-                                          ? NS_LITERAL_CSTRING("navigation")
-                                          : NS_LITERAL_CSTRING("subresource");
+  nsCString navigationOrSubresource =
+      isNonSubresourceRequest ? "navigation"_ns : "subresource"_ns;
 
   nsAutoCString subresourceKey(EmptyCString());
   GetSubresourceTimeStampKey(this, subresourceKey);
@@ -1028,6 +1027,25 @@ InterceptedHttpChannel::OnStartRequest(nsIRequest* aRequest) {
     mPump->PeekStream(CallTypeSniffers, static_cast<nsIChannel*>(this));
   }
 
+  nsresult rv = ProcessCrossOriginEmbedderPolicyHeader();
+  if (NS_FAILED(rv)) {
+    mStatus = NS_ERROR_BLOCKED_BY_POLICY;
+    Cancel(mStatus);
+  }
+
+  rv = ProcessCrossOriginResourcePolicyHeader();
+  if (NS_FAILED(rv)) {
+    mStatus = NS_ERROR_DOM_CORP_FAILED;
+    Cancel(mStatus);
+  }
+
+  rv = ComputeCrossOriginOpenerPolicyMismatch();
+  if (rv == NS_ERROR_BLOCKED_BY_POLICY) {
+    mStatus = NS_ERROR_BLOCKED_BY_POLICY;
+    Cancel(mStatus);
+  }
+
+  mOnStartRequestCalled = true;
   if (mListener) {
     return mListener->OnStartRequest(this);
   }

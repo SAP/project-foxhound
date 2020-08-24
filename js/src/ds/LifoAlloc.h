@@ -13,11 +13,11 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/TemplateLib.h"
-#include "mozilla/TypeTraits.h"
 
 #include <algorithm>
 #include <new>
 #include <stddef.h>  // size_t
+#include <type_traits>
 #include <utility>
 
 // This data structure supports stacky LIFO allocation (mark/release and
@@ -743,9 +743,12 @@ class LifoAlloc {
 
   template <typename T>
   T* newArray(size_t count) {
-    static_assert(mozilla::IsPod<T>::value,
-                  "T must be POD so that constructors (and destructors, "
-                  "when the LifoAlloc is freed) need not be called");
+    static_assert(std::is_trivial_v<T>,
+                  "T must be trivially constructible so that constructors need "
+                  "not be called");
+    static_assert(std::is_trivially_destructible_v<T>,
+                  "T must be trivially destructible so destructors don't need "
+                  "to be called when the LifoAlloc is freed");
     return newArrayUninitialized<T>(count);
   }
 
@@ -847,25 +850,14 @@ class LifoAlloc {
     return n;
   }
 
-  // Get the total size of the arena chunks (including unused space).
-  size_t computedSizeOfExcludingThis() const {
-    size_t n = 0;
-    for (const detail::BumpChunk& chunk : chunks_) {
-      n += chunk.computedSizeOfIncludingThis();
-    }
-    for (const detail::BumpChunk& chunk : oversize_) {
-      n += chunk.computedSizeOfIncludingThis();
-    }
-    for (const detail::BumpChunk& chunk : unused_) {
-      n += chunk.computedSizeOfIncludingThis();
-    }
-    return n;
-  }
-
   // Like sizeOfExcludingThis(), but includes the size of the LifoAlloc itself.
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     return mallocSizeOf(this) + sizeOfExcludingThis(mallocSizeOf);
   }
+
+  // Get the current size of the arena chunks (including unused space and
+  // bookkeeping space).
+  size_t computedSizeOfExcludingThis() const { return curSize_; }
 
   // Get the peak size of the arena chunks (including unused space and
   // bookkeeping space).
@@ -959,38 +951,28 @@ class MOZ_NON_TEMPORARY_CLASS LifoAllocScope {
   LifoAlloc* lifoAlloc;
   LifoAlloc::Mark mark;
   LifoAlloc::AutoFallibleScope fallibleScope;
-  bool shouldRelease;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
  public:
   explicit LifoAllocScope(LifoAlloc* lifoAlloc MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
       : lifoAlloc(lifoAlloc),
         mark(lifoAlloc->mark()),
-        fallibleScope(lifoAlloc),
-        shouldRelease(true) {
+        fallibleScope(lifoAlloc) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
   ~LifoAllocScope() {
-    if (shouldRelease) {
-      lifoAlloc->release(mark);
+    lifoAlloc->release(mark);
 
-      /*
-       * The parser can allocate enormous amounts of memory for large functions.
-       * Eagerly free the memory now (which otherwise won't be freed until the
-       * next GC) to avoid unnecessary OOMs.
-       */
-      lifoAlloc->freeAllIfHugeAndUnused();
-    }
+    /*
+     * The parser can allocate enormous amounts of memory for large functions.
+     * Eagerly free the memory now (which otherwise won't be freed until the
+     * next GC) to avoid unnecessary OOMs.
+     */
+    lifoAlloc->freeAllIfHugeAndUnused();
   }
 
   LifoAlloc& alloc() { return *lifoAlloc; }
-
-  void releaseEarly() {
-    MOZ_ASSERT(shouldRelease);
-    lifoAlloc->release(mark);
-    shouldRelease = false;
-  }
 };
 
 enum Fallibility { Fallible, Infallible };

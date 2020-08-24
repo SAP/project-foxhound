@@ -16,7 +16,6 @@
 #include "XPCMaps.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "jsfriendapi.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/Likely.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/MaybeCrossOriginObject.h"
@@ -43,6 +42,11 @@ const Wrapper XrayWaiver(WrapperFactory::WAIVE_XRAY_WRAPPER_FLAG);
 // that transitively extends the waiver to all properties we get
 // off it.
 const WaiveXrayWrapper WaiveXrayWrapper::singleton(0);
+
+bool WrapperFactory::IsOpaqueWrapper(JSObject* obj) {
+  return IsWrapper(obj) &&
+         Wrapper::wrapperHandler(obj) == &PermissiveXrayOpaque::singleton;
+}
 
 bool WrapperFactory::IsCOW(JSObject* obj) {
   return IsWrapper(obj) &&
@@ -178,12 +182,12 @@ static bool MaybeWrapWindowProxy(JSContext* cx, HandleObject origObj,
     MOZ_ASSERT(bc);
   }
 
-  if (bc->IsInProcess()) {
-    // Any remote window proxies for bc should have been cleaned up by a call to
-    // CleanUpDanglingRemoteOuterWindowProxies() before now, so obj must be a
-    // local outer window proxy.
-    MOZ_RELEASE_ASSERT(isWindowProxy);
+  // We should only have a remote window proxy if bc is in a state where we
+  // expect remote window proxies. Otherwise, they should have been cleaned up
+  // by a call to CleanUpDanglingRemoteOuterWindowProxies().
+  MOZ_RELEASE_ASSERT(isWindowProxy || bc->CanHaveRemoteOuterProxies());
 
+  if (bc->IsInProcess()) {
     retObj.set(obj);
   } else {
     // If bc is not in process, then use a remote window proxy, whether or not
@@ -392,12 +396,6 @@ static void DEBUG_CheckUnwrapSafety(HandleObject obj,
     // it dynamically.
     MOZ_ASSERT(!handler->hasSecurityPolicy() ||
                handler == &CrossOriginObjectWrapper::singleton);
-  } else if (RealmPrivate::Get(origin)->forcePermissiveCOWs) {
-    // Similarly, if this is a privileged scope that has opted to make itself
-    // accessible to the world (allowed only during automation), unwrap should
-    // be allowed.  Again, it might be allowed dynamically.
-    MOZ_ASSERT(!handler->hasSecurityPolicy() ||
-               handler == &CrossOriginObjectWrapper::singleton);
   } else {
     // Otherwise, it should depend on whether the target subsumes the origin.
     bool subsumes =
@@ -519,8 +517,6 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
   CompartmentPrivate* targetCompartmentPrivate =
       CompartmentPrivate::Get(target);
 
-  RealmPrivate* originRealmPrivate = RealmPrivate::Get(origin);
-
   // Track whether we decided to use a transparent wrapper because of
   // document.domain usage, so we don't override that decision.
   bool isTransparentWrapperDueToDocumentDomain = false;
@@ -529,20 +525,11 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
   // First, handle the special cases.
   //
 
-  // Let the SpecialPowers scope make its stuff easily accessible to content.
-  if (originRealmPrivate->forcePermissiveCOWs) {
-    CrashIfNotInAutomation();
-    wrapper = &CrossCompartmentWrapper::singleton;
-  }
-
   // Special handling for chrome objects being exposed to content.
-  else if (originIsChrome && !targetIsChrome) {
+  if (originIsChrome && !targetIsChrome) {
     // If this is a chrome function being exposed to content, we need to allow
-    // call (but nothing else). We allow CPOWs that purport to be function's
-    // here, but only in the content process.
-    if ((IdentifyStandardInstance(obj) == JSProto_Function ||
-         (jsipc::IsCPOW(obj) && JS::IsCallable(obj) &&
-          XRE_IsContentProcess()))) {
+    // call (but nothing else).
+    if ((IdentifyStandardInstance(obj) == JSProto_Function)) {
       wrapper = &FilteringWrapper<CrossCompartmentSecurityWrapper,
                                   OpaqueWithCall>::singleton;
     }
@@ -618,11 +605,9 @@ JSObject* WrapperFactory::Rewrap(JSContext* cx, HandleObject existing,
     wrapper = SelectWrapper(securityWrapper, xrayType, waiveXrays, obj);
   }
 
-  if (!targetSubsumesOrigin && !originRealmPrivate->forcePermissiveCOWs &&
-      !isTransparentWrapperDueToDocumentDomain) {
+  if (!targetSubsumesOrigin && !isTransparentWrapperDueToDocumentDomain) {
     // Do a belt-and-suspenders check against exposing eval()/Function() to
-    // non-subsuming content.  But don't worry about doing it in the
-    // SpecialPowers case.
+    // non-subsuming content.
     if (JSFunction* fun = JS_GetObjectFunction(obj)) {
       if (JS_IsBuiltinEvalFunction(fun) ||
           JS_IsBuiltinFunctionConstructor(fun)) {
@@ -826,6 +811,11 @@ static void NukeXrayWaiver(JSContext* cx, JS::HandleObject obj) {
   scope->mWaiverWrapperMap->Remove(key);
 
   js::NukeNonCCWProxy(cx, waiver);
+
+  // Get rid of any CCWs the waiver may have had.
+  if (!JS_RefreshCrossCompartmentWrappers(cx, waiver)) {
+    MOZ_CRASH();
+  }
 }
 
 JSObject* TransplantObjectNukingXrayWaiver(JSContext* cx,

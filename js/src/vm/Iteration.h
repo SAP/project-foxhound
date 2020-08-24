@@ -14,12 +14,14 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/MemoryReporting.h"
 
+#include "builtin/SelfHostingDefines.h"
 #include "gc/Barrier.h"
 #include "vm/ReceiverGuard.h"
 #include "vm/Stack.h"
 
 namespace js {
 
+class PlainObject;
 class PropertyIteratorObject;
 
 struct NativeIterator {
@@ -375,24 +377,24 @@ class ArrayIteratorObject : public NativeObject {
   static const JSClass class_;
 };
 
-ArrayIteratorObject* NewArrayIteratorObject(
-    JSContext* cx, NewObjectKind newKind = GenericObject);
+ArrayIteratorObject* NewArrayIteratorTemplate(JSContext* cx);
+ArrayIteratorObject* NewArrayIterator(JSContext* cx);
 
 class StringIteratorObject : public NativeObject {
  public:
   static const JSClass class_;
 };
 
-StringIteratorObject* NewStringIteratorObject(
-    JSContext* cx, NewObjectKind newKind = GenericObject);
+StringIteratorObject* NewStringIteratorTemplate(JSContext* cx);
+StringIteratorObject* NewStringIterator(JSContext* cx);
 
 class RegExpStringIteratorObject : public NativeObject {
  public:
   static const JSClass class_;
 };
 
-RegExpStringIteratorObject* NewRegExpStringIteratorObject(
-    JSContext* cx, NewObjectKind newKind = GenericObject);
+RegExpStringIteratorObject* NewRegExpStringIteratorTemplate(JSContext* cx);
+RegExpStringIteratorObject* NewRegExpStringIterator(JSContext* cx);
 
 MOZ_MUST_USE bool EnumerateProperties(JSContext* cx, HandleObject obj,
                                       MutableHandleIdVector props);
@@ -426,10 +428,60 @@ inline Value IteratorMore(JSObject* iterobj) {
  * Create an object of the form { value: VALUE, done: DONE }.
  * ES 2017 draft 7.4.7.
  */
-extern JSObject* CreateIterResultObject(JSContext* cx, HandleValue value,
-                                        bool done);
+extern PlainObject* CreateIterResultObject(JSContext* cx, HandleValue value,
+                                           bool done);
 
 enum class IteratorKind { Sync, Async };
+
+/*
+ * Global Iterator constructor.
+ * Iterator Helpers proposal 2.1.3.
+ */
+class IteratorObject : public NativeObject {
+ public:
+  static const JSClass class_;
+  static const JSClass protoClass_;
+};
+
+/*
+ * Wrapper for iterators created via Iterator.from.
+ * Iterator Helpers proposal 2.1.3.3.1.1.
+ */
+class WrapForValidIteratorObject : public NativeObject {
+ public:
+  static const JSClass class_;
+
+  enum { IteratedSlot, SlotCount };
+
+  static_assert(
+      IteratedSlot == ITERATED_SLOT,
+      "IteratedSlot must match self-hosting define for iterated object slot.");
+};
+
+WrapForValidIteratorObject* NewWrapForValidIterator(JSContext* cx);
+
+/*
+ * Generator-esque object returned by Iterator Helper methods.
+ */
+class IteratorHelperObject : public NativeObject {
+ public:
+  static const JSClass class_;
+
+  enum {
+    // The implementation (an instance of one of the generators in
+    // builtin/Iterator.js).
+    // Never null.
+    GeneratorSlot,
+
+    SlotCount,
+  };
+
+  static_assert(GeneratorSlot == ITERATOR_HELPER_GENERATOR_SLOT,
+                "GeneratorSlot must match self-hosting define for generator "
+                "object slot.");
+};
+
+IteratorHelperObject* NewIteratorHelper(JSContext* cx);
 
 } /* namespace js */
 

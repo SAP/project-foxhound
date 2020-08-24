@@ -9,6 +9,7 @@
 
 #include <jni.h>
 
+#include <type_traits>
 #include <utility>
 
 #include "mozilla/RefPtr.h"
@@ -52,19 +53,18 @@ namespace jni {
  *   a single thread. To attach a Java instance to a C++ instance, pass in a
  *   mozilla::SupportsWeakPtr pointer to the C++ class (i.e. MyClass*).
  *
- *   class MyClass : public SupportsWeakPtr<MyClass>
+ *   class MyClass : public SupportsWeakPtr
  *                 , public MyJavaClass::Natives<MyClass>
  *   {
  *       // ...
  *
  *   public:
- *       MOZ_DECLARE_WEAKREFERENCE_TYPENAME(MyClass)
  *       using MyJavaClass::Natives<MyClass>::DisposeNative;
  *
  *       void AttachTo(const MyJavaClass::LocalRef& instance)
  *       {
  *           MyJavaClass::Natives<MyClass>::AttachNative(
- *                   instance, static_cast<SupportsWeakPtr<MyClass>*>(this));
+ *                   instance, static_cast<SupportsWeakPtr*>(this));
  *
  *           // "instance" does NOT own "this", so the C++ object
  *           // lifetime is separate from the Java object lifetime.
@@ -127,8 +127,8 @@ enum NativePtrType { OWNING, WEAK, REFPTR };
 template <class Impl>
 class NativePtrPicker {
   template <class I>
-  static typename EnableIf<std::is_base_of<SupportsWeakPtr<I>, I>::value,
-                           char (&)[NativePtrType::WEAK]>::Type
+  static std::enable_if_t<std::is_base_of<SupportsWeakPtr, I>::value,
+                          char (&)[NativePtrType::WEAK]>
   Test(char);
 
   template <class I, typename = decltype(&I::AddRef, &I::Release)>
@@ -361,21 +361,18 @@ class ProxyNativeCall {
   // "this arg" refers to the Class::LocalRef (for static methods) or
   // Owner::LocalRef (for instance methods) that we optionally (as indicated
   // by HasThisArg) pass into the destination C++ function.
-  typedef
-      typename mozilla::Conditional<IsStatic, Class, Owner>::Type ThisArgClass;
-  typedef typename mozilla::Conditional<IsStatic, jclass, jobject>::Type
-      ThisArgJNIType;
+  using ThisArgClass = std::conditional_t<IsStatic, Class, Owner>;
+  using ThisArgJNIType = std::conditional_t<IsStatic, jclass, jobject>;
 
   // Type signature of the destination C++ function, which matches the
   // Method template parameter in NativeStubImpl::Wrap.
-  typedef typename mozilla::Conditional<
+  using NativeCallType = std::conditional_t<
       IsStatic,
-      typename mozilla::Conditional<HasThisArg,
-                                    void (*)(const Class::LocalRef&, Args...),
-                                    void (*)(Args...)>::Type,
-      typename mozilla::Conditional<
+      std::conditional_t<HasThisArg, void (*)(const Class::LocalRef&, Args...),
+                         void (*)(Args...)>,
+      std::conditional_t<
           HasThisArg, void (Impl::*)(const typename Owner::LocalRef&, Args...),
-          void (Impl::*)(Args...)>::Type>::Type NativeCallType;
+          void (Impl::*)(Args...)>>;
 
   // Destination C++ function.
   NativeCallType mNativeCall;
@@ -389,19 +386,19 @@ class ProxyNativeCall {
   // another pair of template parameters, Static and ThisArg.
 
   template <bool Static, bool ThisArg, size_t... Indices>
-  typename mozilla::EnableIf<Static && ThisArg, void>::Type Call(
+  std::enable_if_t<Static && ThisArg, void> Call(
       const Class::LocalRef& cls, std::index_sequence<Indices...>) const {
     (*mNativeCall)(cls, mozilla::Get<Indices>(mArgs)...);
   }
 
   template <bool Static, bool ThisArg, size_t... Indices>
-  typename mozilla::EnableIf<Static && !ThisArg, void>::Type Call(
+  std::enable_if_t<Static && !ThisArg, void> Call(
       const Class::LocalRef& cls, std::index_sequence<Indices...>) const {
     (*mNativeCall)(mozilla::Get<Indices>(mArgs)...);
   }
 
   template <bool Static, bool ThisArg, size_t... Indices>
-  typename mozilla::EnableIf<!Static && ThisArg, void>::Type Call(
+  std::enable_if_t<!Static && ThisArg, void> Call(
       const typename Owner::LocalRef& inst,
       std::index_sequence<Indices...>) const {
     Impl* const impl = NativePtr<Impl>::Get(inst);
@@ -410,7 +407,7 @@ class ProxyNativeCall {
   }
 
   template <bool Static, bool ThisArg, size_t... Indices>
-  typename mozilla::EnableIf<!Static && !ThisArg, void>::Type Call(
+  std::enable_if_t<!Static && !ThisArg, void> Call(
       const typename Owner::LocalRef& inst,
       std::index_sequence<Indices...>) const {
     Impl* const impl = NativePtr<Impl>::Get(inst);
@@ -489,8 +486,7 @@ template <class Impl, bool HasThisArg, typename... Args>
 struct Dispatcher {
   template <class Traits, bool IsStatic = Traits::isStatic,
             typename... ProxyArgs>
-  static typename EnableIf<Traits::dispatchTarget == DispatchTarget::PROXY,
-                           void>::Type
+  static std::enable_if_t<Traits::dispatchTarget == DispatchTarget::PROXY, void>
   Run(ProxyArgs&&... args) {
     Impl::OnNativeCall(
         ProxyNativeCall<Impl, typename Traits::Owner, IsStatic, HasThisArg,
@@ -499,8 +495,8 @@ struct Dispatcher {
 
   template <class Traits, bool IsStatic = Traits::isStatic, typename ThisArg,
             typename... ProxyArgs>
-  static typename EnableIf<
-      Traits::dispatchTarget == DispatchTarget::GECKO_PRIORITY, void>::Type
+  static std::enable_if_t<
+      Traits::dispatchTarget == DispatchTarget::GECKO_PRIORITY, void>
   Run(ThisArg thisArg, ProxyArgs&&... args) {
     // For a static method, do not forward the "this arg" (i.e. the class
     // local ref) if the implementation does not request it. This saves us
@@ -515,8 +511,7 @@ struct Dispatcher {
 
   template <class Traits, bool IsStatic = Traits::isStatic, typename ThisArg,
             typename... ProxyArgs>
-  static typename EnableIf<Traits::dispatchTarget == DispatchTarget::GECKO,
-                           void>::Type
+  static std::enable_if_t<Traits::dispatchTarget == DispatchTarget::GECKO, void>
   Run(ThisArg thisArg, ProxyArgs&&... args) {
     // For a static method, do not forward the "this arg" (i.e. the class
     // local ref) if the implementation does not request it. This saves us
@@ -530,8 +525,8 @@ struct Dispatcher {
   }
 
   template <class Traits, bool IsStatic = false, typename... ProxyArgs>
-  static typename EnableIf<Traits::dispatchTarget == DispatchTarget::CURRENT,
-                           void>::Type
+  static std::enable_if_t<Traits::dispatchTarget == DispatchTarget::CURRENT,
+                          void>
   Run(ProxyArgs&&... args) {
     MOZ_CRASH("Unreachable code");
   }
@@ -564,23 +559,23 @@ class NativeStub<Traits, Impl, jni::Args<Args...>> {
   using ReturnType = typename Traits::ReturnType;
 
   static constexpr bool isStatic = Traits::isStatic;
-  static constexpr bool isVoid = mozilla::IsVoid<ReturnType>::value;
+  static constexpr bool isVoid = std::is_void_v<ReturnType>;
 
   struct VoidType {
     using JNIType = void;
   };
   using ReturnJNIType =
-      typename Conditional<isVoid, VoidType,
-                           TypeAdapter<ReturnType>>::Type::JNIType;
+      typename std::conditional_t<isVoid, VoidType,
+                                  TypeAdapter<ReturnType>>::JNIType;
 
   using ReturnTypeForNonVoidInstance =
-      typename Conditional<!isStatic && !isVoid, ReturnType, VoidType>::Type;
+      std::conditional_t<!isStatic && !isVoid, ReturnType, VoidType>;
   using ReturnTypeForVoidInstance =
-      typename Conditional<!isStatic && isVoid, ReturnType, VoidType&>::Type;
+      std::conditional_t<!isStatic && isVoid, ReturnType, VoidType&>;
   using ReturnTypeForNonVoidStatic =
-      typename Conditional<isStatic && !isVoid, ReturnType, VoidType>::Type;
+      std::conditional_t<isStatic && !isVoid, ReturnType, VoidType>;
   using ReturnTypeForVoidStatic =
-      typename Conditional<isStatic && isVoid, ReturnType, VoidType&>::Type;
+      std::conditional_t<isStatic && isVoid, ReturnType, VoidType&>;
 
   static_assert(Traits::dispatchTarget == DispatchTarget::CURRENT || isVoid,
                 "Dispatched calls must have void return type");
@@ -772,7 +767,7 @@ class NativeImpl {
  protected:
   // Associate a C++ instance with a Java instance.
   static void AttachNative(const typename Cls::LocalRef& instance,
-                           SupportsWeakPtr<Impl>* ptr) {
+                           SupportsWeakPtr* ptr) {
     static_assert(NativePtrPicker<Impl>::value == NativePtrType::WEAK,
                   "Use another AttachNative for non-WeakPtr usage");
     return NativePtr<Impl>::Set(instance, static_cast<Impl*>(ptr));

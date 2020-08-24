@@ -7,6 +7,8 @@
 #ifndef frontend_NameAnalysisTypes_h
 #define frontend_NameAnalysisTypes_h
 
+#include <type_traits>
+
 #include "vm/BytecodeUtil.h"
 #include "vm/Scope.h"
 
@@ -82,7 +84,8 @@ enum class DeclarationKind : uint8_t {
   SloppyLexicalFunction,
   VarForAnnexBLexicalFunction,
   SimpleCatchParameter,
-  CatchParameter
+  CatchParameter,
+  PrivateName,
 };
 
 static inline BindingKind DeclarationKindToBindingKind(DeclarationKind kind) {
@@ -107,6 +110,7 @@ static inline BindingKind DeclarationKindToBindingKind(DeclarationKind kind) {
       return BindingKind::Let;
 
     case DeclarationKind::Const:
+    case DeclarationKind::PrivateName:
       return BindingKind::Const;
 
     case DeclarationKind::Import:
@@ -327,7 +331,7 @@ class NameLocation {
   }
 };
 
-// These types are declared here for LazyScript::Create.
+// These types are declared here for BaseScript::CreateLazy.
 using AtomVector = Vector<JSAtom*, 24, SystemAllocPolicy>;
 
 class FunctionBox;
@@ -337,15 +341,5 @@ using FunctionBoxVector = Vector<const FunctionBox*, 8>;
 
 }  // namespace frontend
 }  // namespace js
-
-namespace mozilla {
-
-template <>
-struct IsPod<js::frontend::DeclaredNameInfo> : TrueType {};
-
-template <>
-struct IsPod<js::frontend::NameLocation> : TrueType {};
-
-}  // namespace mozilla
 
 #endif  // frontend_NameAnalysisTypes_h

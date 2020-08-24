@@ -7,7 +7,6 @@
 #include <stdio.h>
 
 #include "nsError.h"
-#include "nsAutoPtr.h"
 #include "nsThreadUtils.h"
 #include "nsIFile.h"
 #include "nsIFileURL.h"
@@ -20,8 +19,8 @@
 #include "mozilla/Unused.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_storage.h"
 
-#include "mozIStorageAggregateFunction.h"
 #include "mozIStorageCompletionCallback.h"
 #include "mozIStorageFunction.h"
 
@@ -74,7 +73,7 @@ namespace mozilla::storage {
 
 using mozilla::dom::quota::QuotaObject;
 
-const char* GetVFSName();
+const char* GetVFSName(bool);
 
 namespace {
 
@@ -234,39 +233,6 @@ void basicFunctionHelper(sqlite3_context* aCtx, int aArgc,
   }
 }
 
-void aggregateFunctionStepHelper(sqlite3_context* aCtx, int aArgc,
-                                 sqlite3_value** aArgv) {
-  void* userData = ::sqlite3_user_data(aCtx);
-  mozIStorageAggregateFunction* func =
-      static_cast<mozIStorageAggregateFunction*>(userData);
-
-  RefPtr<ArgValueArray> arguments(new ArgValueArray(aArgc, aArgv));
-  if (!arguments) return;
-
-  if (NS_FAILED(func->OnStep(arguments)))
-    NS_WARNING("User aggregate step function returned error code!");
-}
-
-void aggregateFunctionFinalHelper(sqlite3_context* aCtx) {
-  void* userData = ::sqlite3_user_data(aCtx);
-  mozIStorageAggregateFunction* func =
-      static_cast<mozIStorageAggregateFunction*>(userData);
-
-  RefPtr<nsIVariant> result;
-  if (NS_FAILED(func->OnFinal(getter_AddRefs(result)))) {
-    NS_WARNING("User aggregate final function returned error code!");
-    ::sqlite3_result_error(
-        aCtx, "User aggregate final function returned error code", -1);
-    return;
-  }
-
-  if (variantToSQLiteT(aCtx, result) != SQLITE_OK) {
-    NS_WARNING("User aggregate final function returned invalid data type!");
-    ::sqlite3_result_error(
-        aCtx, "User aggregate final function returned invalid data type", -1);
-  }
-}
-
 /**
  * This code is heavily based on the sample at:
  *   http://www.sqlite.org/unlock_notify.html
@@ -352,10 +318,10 @@ class AsyncCloseConnection final : public Runnable {
   }
 
   ~AsyncCloseConnection() override {
-    NS_ReleaseOnMainThreadSystemGroup("AsyncCloseConnection::mConnection",
-                                      mConnection.forget());
-    NS_ReleaseOnMainThreadSystemGroup("AsyncCloseConnection::mCallbackEvent",
-                                      mCallbackEvent.forget());
+    NS_ReleaseOnMainThread("AsyncCloseConnection::mConnection",
+                           mConnection.forget());
+    NS_ReleaseOnMainThread("AsyncCloseConnection::mCallbackEvent",
+                           mCallbackEvent.forget());
   }
 
  private:
@@ -587,8 +553,7 @@ nsIEventTarget* Connection::getAsyncExecutionTarget() {
       NS_WARNING("Failed to create async thread.");
       return nullptr;
     }
-    mAsyncExecutionThread->SetNameForWakeupTelemetry(
-        NS_LITERAL_CSTRING("mozStorage (all)"));
+    mAsyncExecutionThread->SetNameForWakeupTelemetry("mozStorage (all)"_ns);
   }
 
   return mAsyncExecutionThread;
@@ -601,7 +566,7 @@ nsresult Connection::initialize() {
   AUTO_PROFILER_LABEL("Connection::initialize", OTHER);
 
   // in memory database requested, sqlite uses a magic file name
-  int srv = ::sqlite3_open_v2(":memory:", &mDBConn, mFlags, GetVFSName());
+  int srv = ::sqlite3_open_v2(":memory:", &mDBConn, mFlags, GetVFSName(true));
   if (srv != SQLITE_OK) {
     mDBConn = nullptr;
     return convertResultCode(srv);
@@ -629,6 +594,8 @@ nsresult Connection::initialize(nsIFile* aDatabaseFile) {
                "Initialize called on already opened database!");
   AUTO_PROFILER_LABEL("Connection::initialize", OTHER);
 
+  // Do not set mFileURL here since this is database does not have an associated
+  // URL.
   mDatabaseFile = aDatabaseFile;
 
   nsAutoString path;
@@ -640,27 +607,41 @@ nsresult Connection::initialize(nsIFile* aDatabaseFile) {
 #else
   static const char* sIgnoreLockingVFS = "unix-none";
 #endif
-  const char* vfs = mIgnoreLockingMode ? sIgnoreLockingVFS : GetVFSName();
 
-  int srv = ::sqlite3_open_v2(NS_ConvertUTF16toUTF8(path).get(), &mDBConn,
-                              mFlags, vfs);
+  bool exclusive = StaticPrefs::storage_sqlite_exclusiveLock_enabled();
+  int srv;
+  if (mIgnoreLockingMode) {
+    exclusive = false;
+    srv = ::sqlite3_open_v2(NS_ConvertUTF16toUTF8(path).get(), &mDBConn, mFlags,
+                            sIgnoreLockingVFS);
+  } else {
+    srv = ::sqlite3_open_v2(NS_ConvertUTF16toUTF8(path).get(), &mDBConn, mFlags,
+                            GetVFSName(exclusive));
+    if (exclusive && (srv == SQLITE_LOCKED || srv == SQLITE_BUSY)) {
+      // Retry without trying to get an exclusive lock.
+      exclusive = false;
+      srv = ::sqlite3_open_v2(NS_ConvertUTF16toUTF8(path).get(), &mDBConn,
+                              mFlags, GetVFSName(false));
+    }
+  }
   if (srv != SQLITE_OK) {
     mDBConn = nullptr;
     return convertResultCode(srv);
   }
 
-#ifdef MOZ_SQLITE_FTS3_TOKENIZER
-  srv =
-      ::sqlite3_db_config(mDBConn, SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER, 1, 0);
-  MOZ_ASSERT(srv == SQLITE_OK,
-             "SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER should be enabled");
-#endif
-
-  // Do not set mFileURL here since this is database does not have an associated
-  // URL.
-  mDatabaseFile = aDatabaseFile;
-
   rv = initializeInternal();
+  if (exclusive &&
+      (rv == NS_ERROR_STORAGE_BUSY || rv == NS_ERROR_FILE_IS_LOCKED)) {
+    // Usually SQLite will fail to acquire an exclusive lock on opening, but in
+    // some cases it may successfully open the database and then lock on the
+    // first query execution. When initializeInternal fails it closes the
+    // connection, so we can try to restart it in non-exclusive mode.
+    srv = ::sqlite3_open_v2(NS_ConvertUTF16toUTF8(path).get(), &mDBConn, mFlags,
+                            GetVFSName(false));
+    if (srv == SQLITE_OK) {
+      rv = initializeInternal();
+    }
+  }
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -676,26 +657,21 @@ nsresult Connection::initialize(nsIFileURL* aFileURL) {
   nsresult rv = aFileURL->GetFile(getter_AddRefs(databaseFile));
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // Set both mDatabaseFile and mFileURL here.
+  mFileURL = aFileURL;
+  mDatabaseFile = databaseFile;
+
   nsAutoCString spec;
   rv = aFileURL->GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  int srv = ::sqlite3_open_v2(spec.get(), &mDBConn, mFlags, GetVFSName());
+  bool exclusive = StaticPrefs::storage_sqlite_exclusiveLock_enabled();
+  int srv =
+      ::sqlite3_open_v2(spec.get(), &mDBConn, mFlags, GetVFSName(exclusive));
   if (srv != SQLITE_OK) {
     mDBConn = nullptr;
     return convertResultCode(srv);
   }
-
-#ifdef MOZ_SQLITE_FTS3_TOKENIZER
-  srv =
-      ::sqlite3_db_config(mDBConn, SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER, 1, 0);
-  MOZ_ASSERT(srv == SQLITE_OK,
-             "SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER should be enabled");
-#endif
-
-  // Set both mDatabaseFile and mFileURL here.
-  mFileURL = aFileURL;
-  mDatabaseFile = databaseFile;
 
   rv = initializeInternal();
   NS_ENSURE_SUCCESS(rv, rv);
@@ -705,8 +681,16 @@ nsresult Connection::initialize(nsIFileURL* aFileURL) {
 
 nsresult Connection::initializeInternal() {
   MOZ_ASSERT(mDBConn);
-
   auto guard = MakeScopeExit([&]() { initializeFailed(); });
+
+  mConnectionClosed = false;
+
+#ifdef MOZ_SQLITE_FTS3_TOKENIZER
+  DebugOnly<int> srv2 =
+      ::sqlite3_db_config(mDBConn, SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER, 1, 0);
+  MOZ_ASSERT(srv2 == SQLITE_OK,
+             "SQLITE_DBCONFIG_ENABLE_FTS3_TOKENIZER should be enabled");
+#endif
 
   if (mFileURL) {
     const char* dbPath = ::sqlite3_db_filename(mDBConn, "main");
@@ -741,7 +725,7 @@ nsresult Connection::initializeInternal() {
         ("Opening connection to '%s' (%p)", mTelemetryFilename.get(), this));
   }
 
-  int64_t pageSize = Service::getDefaultPageSize();
+  int64_t pageSize = Service::kDefaultPageSize;
 
   // Set page_size to the preferred default value.  This is effective only if
   // the database has just been created, otherwise, if the database does not
@@ -777,20 +761,15 @@ nsresult Connection::initializeInternal() {
     return convertResultCode(srv);
   }
 
-  // Set the synchronous PRAGMA, according to the preference.
-  switch (Service::getSynchronousPref()) {
-    case 2:
-      (void)ExecuteSimpleSQL(NS_LITERAL_CSTRING("PRAGMA synchronous = FULL;"));
-      break;
-    case 0:
-      (void)ExecuteSimpleSQL(NS_LITERAL_CSTRING("PRAGMA synchronous = OFF;"));
-      break;
-    case 1:
-    default:
-      (void)ExecuteSimpleSQL(
-          NS_LITERAL_CSTRING("PRAGMA synchronous = NORMAL;"));
-      break;
-  }
+  // Set the default synchronous value. Each consumer can switch this
+  // accordingly to their needs.
+#if defined(ANDROID)
+  // Android prefers synchronous = OFF for performance reasons.
+  Unused << ExecuteSimpleSQL("PRAGMA synchronous = OFF;"_ns);
+#else
+  // Normal is the suggested value for WAL journals.
+  Unused << ExecuteSimpleSQL("PRAGMA synchronous = NORMAL;"_ns);
+#endif
 
   // Initialization succeeded, we can stop guarding for failures.
   guard.release();
@@ -882,7 +861,7 @@ nsresult Connection::databaseElementExists(
   return convertResultCode(srv);
 }
 
-bool Connection::findFunctionByInstance(nsISupports* aInstance) {
+bool Connection::findFunctionByInstance(mozIStorageFunction* aInstance) {
   sharedDBMutex.assertCurrentThreadOwns();
 
   for (auto iter = mFunctions.Iter(); !iter.Done(); iter.Next()) {
@@ -1478,8 +1457,7 @@ nsresult Connection::initializeClone(Connection* aClone, bool aReadOnly) {
   // Re-attach on-disk databases that were attached to the original connection.
   {
     nsCOMPtr<mozIStorageStatement> stmt;
-    rv = CreateStatement(NS_LITERAL_CSTRING("PRAGMA database_list"),
-                         getter_AddRefs(stmt));
+    rv = CreateStatement("PRAGMA database_list"_ns, getter_AddRefs(stmt));
     MOZ_ASSERT(NS_SUCCEEDED(rv));
     bool hasResult = false;
     while (stmt && NS_SUCCEEDED(stmt->ExecuteStep(&hasResult)) && hasResult) {
@@ -1491,12 +1469,10 @@ nsresult Connection::initializeClone(Connection* aClone, bool aReadOnly) {
         rv = stmt->GetUTF8String(2, path);
         if (NS_SUCCEEDED(rv) && !path.IsEmpty()) {
           nsCOMPtr<mozIStorageStatement> attachStmt;
-          rv = aClone->CreateStatement(
-              NS_LITERAL_CSTRING("ATTACH DATABASE :path AS ") + name,
-              getter_AddRefs(attachStmt));
+          rv = aClone->CreateStatement("ATTACH DATABASE :path AS "_ns + name,
+                                       getter_AddRefs(attachStmt));
           MOZ_ASSERT(NS_SUCCEEDED(rv));
-          rv = attachStmt->BindUTF8StringByName(NS_LITERAL_CSTRING("path"),
-                                                path);
+          rv = attachStmt->BindUTF8StringByName("path"_ns, path);
           MOZ_ASSERT(NS_SUCCEEDED(rv));
           rv = attachStmt->Execute();
           MOZ_ASSERT(NS_SUCCEEDED(rv),
@@ -1538,15 +1514,14 @@ nsresult Connection::initializeClone(Connection* aClone, bool aReadOnly) {
   // connections. Entities in `sqlite_temp_master` are only visible to the
   // connection that created them.
   if (!aReadOnly) {
-    rv = aClone->ExecuteSimpleSQL(NS_LITERAL_CSTRING("BEGIN TRANSACTION"));
+    rv = aClone->ExecuteSimpleSQL("BEGIN TRANSACTION"_ns);
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsCOMPtr<mozIStorageStatement> stmt;
-    rv =
-        CreateStatement(NS_LITERAL_CSTRING("SELECT sql FROM sqlite_temp_master "
-                                           "WHERE type IN ('table', 'view', "
-                                           "'index', 'trigger')"),
-                        getter_AddRefs(stmt));
+    rv = CreateStatement(nsLiteralCString("SELECT sql FROM sqlite_temp_master "
+                                          "WHERE type IN ('table', 'view', "
+                                          "'index', 'trigger')"),
+                         getter_AddRefs(stmt));
     // Propagate errors, because failing to copy triggers might cause schema
     // coherency issues when writing to the database from the cloned connection.
     NS_ENSURE_SUCCESS(rv, rv);
@@ -1560,9 +1535,9 @@ nsresult Connection::initializeClone(Connection* aClone, bool aReadOnly) {
       // keyword. We need to add it back, or we'll recreate temporary entities
       // as persistent ones. `sqlite_temp_master` also holds `CREATE INDEX`
       // statements, but those don't need `TEMP` keywords.
-      if (StringBeginsWith(query, NS_LITERAL_CSTRING("CREATE TABLE ")) ||
-          StringBeginsWith(query, NS_LITERAL_CSTRING("CREATE TRIGGER ")) ||
-          StringBeginsWith(query, NS_LITERAL_CSTRING("CREATE VIEW "))) {
+      if (StringBeginsWith(query, "CREATE TABLE "_ns) ||
+          StringBeginsWith(query, "CREATE TRIGGER "_ns) ||
+          StringBeginsWith(query, "CREATE VIEW "_ns)) {
         query.Replace(0, 6, "CREATE TEMP");
       }
 
@@ -1570,7 +1545,7 @@ nsresult Connection::initializeClone(Connection* aClone, bool aReadOnly) {
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
-    rv = aClone->ExecuteSimpleSQL(NS_LITERAL_CSTRING("COMMIT"));
+    rv = aClone->ExecuteSimpleSQL("COMMIT"_ns);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -1580,25 +1555,9 @@ nsresult Connection::initializeClone(Connection* aClone, bool aReadOnly) {
     const nsACString& key = iter.Key();
     Connection::FunctionInfo data = iter.UserData();
 
-    MOZ_ASSERT(data.type == Connection::FunctionInfo::SIMPLE ||
-                   data.type == Connection::FunctionInfo::AGGREGATE,
-               "Invalid function type!");
-
-    if (data.type == Connection::FunctionInfo::SIMPLE) {
-      mozIStorageFunction* function =
-          static_cast<mozIStorageFunction*>(data.function.get());
-      rv = aClone->CreateFunction(key, data.numArgs, function);
-      if (NS_FAILED(rv)) {
-        NS_WARNING("Failed to copy function to cloned connection");
-      }
-
-    } else {
-      mozIStorageAggregateFunction* function =
-          static_cast<mozIStorageAggregateFunction*>(data.function.get());
-      rv = aClone->CreateAggregateFunction(key, data.numArgs, function);
-      if (NS_FAILED(rv)) {
-        NS_WARNING("Failed to copy aggregate function to cloned connection");
-      }
+    rv = aClone->CreateFunction(key, data.numArgs, data.function);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("Failed to copy function to cloned connection");
     }
   }
 
@@ -1658,7 +1617,7 @@ Connection::Interrupt() {
 
 NS_IMETHODIMP
 Connection::GetDefaultPageSize(int32_t* _defaultPageSize) {
-  *_defaultPageSize = Service::getDefaultPageSize();
+  *_defaultPageSize = Service::kDefaultPageSize;
   return NS_OK;
 }
 
@@ -1757,8 +1716,7 @@ Connection::GetSchemaVersion(int32_t* _version) {
   }
 
   nsCOMPtr<mozIStorageStatement> stmt;
-  (void)CreateStatement(NS_LITERAL_CSTRING("PRAGMA user_version"),
-                        getter_AddRefs(stmt));
+  (void)CreateStatement("PRAGMA user_version"_ns, getter_AddRefs(stmt));
   NS_ENSURE_TRUE(stmt, NS_ERROR_OUT_OF_MEMORY);
 
   *_version = 0;
@@ -1779,7 +1737,7 @@ Connection::SetSchemaVersion(int32_t aVersion) {
     return rv;
   }
 
-  nsAutoCString stmt(NS_LITERAL_CSTRING("PRAGMA user_version = "));
+  nsAutoCString stmt("PRAGMA user_version = "_ns);
   stmt.AppendInt(aVersion);
 
   return ExecuteSimpleSQL(stmt);
@@ -1857,6 +1815,7 @@ Connection::ExecuteAsync(
   for (uint32_t i = 0; i < aStatements.Length(); i++) {
     nsCOMPtr<StorageBaseStatementInternal> stmt =
         do_QueryInterface(aStatements[i]);
+    NS_ENSURE_STATE(stmt);
 
     // Obtain our StatementData.
     StatementData data;
@@ -1867,7 +1826,7 @@ Connection::ExecuteAsync(
                  "Statement must be from this database connection!");
 
     // Now append it to our array.
-    NS_ENSURE_TRUE(stmts.AppendElement(data), NS_ERROR_OUT_OF_MEMORY);
+    stmts.AppendElement(data);
   }
 
   // Dispatch to the background
@@ -2076,42 +2035,7 @@ Connection::CreateFunction(const nsACString& aFunctionName,
       SQLITE_ANY, aFunction, basicFunctionHelper, nullptr, nullptr);
   if (srv != SQLITE_OK) return convertResultCode(srv);
 
-  FunctionInfo info = {aFunction, Connection::FunctionInfo::SIMPLE,
-                       aNumArguments};
-  mFunctions.Put(aFunctionName, info);
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-Connection::CreateAggregateFunction(const nsACString& aFunctionName,
-                                    int32_t aNumArguments,
-                                    mozIStorageAggregateFunction* aFunction) {
-  if (!connectionReady()) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-  nsresult rv = ensureOperationSupported(ASYNCHRONOUS);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  // Check to see if this function name is already defined.
-  SQLiteMutexAutoLock lockedScope(sharedDBMutex);
-  NS_ENSURE_FALSE(mFunctions.Get(aFunctionName, nullptr), NS_ERROR_FAILURE);
-
-  // Because aggregate functions depend on state across calls, you cannot have
-  // the same instance use the same name.  We want to enumerate all functions
-  // and make sure this instance is not already registered.
-  NS_ENSURE_FALSE(findFunctionByInstance(aFunction), NS_ERROR_FAILURE);
-
-  int srv = ::sqlite3_create_function(
-      mDBConn, nsPromiseFlatCString(aFunctionName).get(), aNumArguments,
-      SQLITE_ANY, aFunction, nullptr, aggregateFunctionStepHelper,
-      aggregateFunctionFinalHelper);
-  if (srv != SQLITE_OK) return convertResultCode(srv);
-
-  FunctionInfo info = {aFunction, Connection::FunctionInfo::AGGREGATE,
-                       aNumArguments};
+  FunctionInfo info = {aFunction, aNumArguments};
   mFunctions.Put(aFunctionName, info);
 
   return NS_OK;

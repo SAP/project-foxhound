@@ -11,18 +11,16 @@ use std::ops::{Index, IndexMut, Range};
 use std::rc::Rc;
 use std::time::Instant;
 
-use neqo_common::{hex, matches, qdebug, qerror, qinfo, qtrace};
-use neqo_crypto::aead::Aead;
-use neqo_crypto::hp::HpKey;
+use neqo_common::{hex, qdebug, qerror, qinfo, qtrace, Role};
 use neqo_crypto::{
-    hkdf, Agent, AntiReplay, Cipher, Epoch, RecordList, SymKey, TLS_AES_128_GCM_SHA256,
-    TLS_AES_256_GCM_SHA384, TLS_EPOCH_APPLICATION_DATA, TLS_EPOCH_HANDSHAKE, TLS_EPOCH_INITIAL,
-    TLS_EPOCH_ZERO_RTT, TLS_VERSION_1_3,
+    aead::Aead, hkdf, hp::HpKey, Agent, AntiReplay, Cipher, Epoch, HandshakeState, Record,
+    RecordList, SymKey, ZeroRttChecker, TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384,
+    TLS_CHACHA20_POLY1305_SHA256, TLS_CT_HANDSHAKE, TLS_EPOCH_APPLICATION_DATA,
+    TLS_EPOCH_HANDSHAKE, TLS_EPOCH_INITIAL, TLS_EPOCH_ZERO_RTT, TLS_VERSION_1_3,
 };
 
-use crate::connection::Role;
-use crate::frame::{Frame, TxMode};
-use crate::packet::PacketNumber;
+use crate::frame::Frame;
+use crate::packet::{PacketNumber, QuicVersion};
 use crate::recovery::RecoveryToken;
 use crate::recv_stream::RxStreamOrderer;
 use crate::send_stream::TxBuffer;
@@ -39,24 +37,22 @@ pub struct Crypto {
     pub(crate) states: CryptoStates,
 }
 
+type TpHandler = Rc<RefCell<TransportParametersHandler>>;
+
 impl Crypto {
-    pub fn new(
-        mut agent: Agent,
-        protocols: &[impl AsRef<str>],
-        tphandler: Rc<RefCell<TransportParametersHandler>>,
-        anti_replay: Option<&AntiReplay>,
-    ) -> Res<Self> {
+    pub fn new(mut agent: Agent, protocols: &[impl AsRef<str>], tphandler: TpHandler) -> Res<Self> {
         agent.set_version_range(TLS_VERSION_1_3, TLS_VERSION_1_3)?;
-        agent.enable_ciphers(&[TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384])?;
+        agent.set_ciphers(&[
+            TLS_AES_128_GCM_SHA256,
+            TLS_AES_256_GCM_SHA384,
+            TLS_CHACHA20_POLY1305_SHA256,
+        ])?;
         agent.set_alpn(protocols)?;
-        agent.disable_end_of_early_data();
-        match &mut agent {
-            Agent::Client(c) => c.enable_0rtt()?,
-            Agent::Server(s) => s.enable_0rtt(
-                anti_replay.unwrap(),
-                0xffff_ffff,
-                TpZeroRttChecker::wrap(tphandler.clone()),
-            )?,
+        agent.disable_end_of_early_data()?;
+        // Always enable 0-RTT on the client, but the server needs
+        // more configuration passed to server_enable_0rtt.
+        if let Agent::Client(c) = &mut agent {
+            c.enable_0rtt()?;
         }
         agent.extension_handler(0xffa5, tphandler)?;
         Ok(Self {
@@ -64,6 +60,59 @@ impl Crypto {
             streams: Default::default(),
             states: Default::default(),
         })
+    }
+
+    pub fn server_enable_0rtt(
+        &mut self,
+        tphandler: TpHandler,
+        anti_replay: &AntiReplay,
+        zero_rtt_checker: impl ZeroRttChecker + 'static,
+    ) -> Res<()> {
+        if let Agent::Server(s) = &mut self.tls {
+            Ok(s.enable_0rtt(
+                anti_replay,
+                0xffff_ffff,
+                TpZeroRttChecker::wrap(tphandler, zero_rtt_checker),
+            )?)
+        } else {
+            panic!("not a server");
+        }
+    }
+
+    pub fn handshake(
+        &mut self,
+        now: Instant,
+        space: PNSpace,
+        data: Option<&[u8]>,
+    ) -> Res<&HandshakeState> {
+        let input = data.map(|d| {
+            qtrace!("Handshake record received {:0x?} ", d);
+            let epoch = match space {
+                PNSpace::Initial => TLS_EPOCH_INITIAL,
+                PNSpace::Handshake => TLS_EPOCH_HANDSHAKE,
+                // Our epoch progresses forward, but the TLS epoch is fixed to 3.
+                PNSpace::ApplicationData => TLS_EPOCH_APPLICATION_DATA,
+            };
+            Record {
+                ct: TLS_CT_HANDSHAKE,
+                epoch,
+                data: d.to_vec(),
+            }
+        });
+
+        match self.tls.handshake_raw(now, input) {
+            Ok(output) => {
+                self.buffer_records(output)?;
+                Ok(self.tls.state())
+            }
+            Err(e) => {
+                qinfo!("Handshake failed");
+                Err(match self.tls.alert() {
+                    Some(a) => Error::CryptoAlert(*a),
+                    _ => Error::CryptoError(e),
+                })
+            }
+        }
     }
 
     /// Enable 0-RTT and return `true` if it is enabled successfully.
@@ -155,15 +204,18 @@ impl Crypto {
     }
 
     /// Buffer crypto records for sending.
-    pub fn buffer_records(&mut self, records: RecordList) {
+    pub fn buffer_records(&mut self, records: RecordList) -> Res<()> {
         for r in records {
-            assert_eq!(r.ct, 22);
+            if r.ct != TLS_CT_HANDSHAKE {
+                return Err(Error::ProtocolViolation);
+            }
             qtrace!([self], "Adding CRYPTO data {:?}", r);
             self.streams.send(PNSpace::from(r.epoch), &r.data);
         }
+        Ok(())
     }
 
-    pub fn acked(&mut self, token: CryptoRecoveryToken) {
+    pub fn acked(&mut self, token: &CryptoRecoveryToken) {
         qinfo!(
             "Acked crypto frame space={} offset={} length={}",
             token.space,
@@ -183,9 +235,11 @@ impl Crypto {
         self.streams.lost(token);
     }
 
-    pub fn discard(&mut self, space: PNSpace) {
-        self.states.discard(space);
+    /// Discard state for a packet number space and return true
+    /// if something was discarded.
+    pub fn discard(&mut self, space: PNSpace) -> bool {
         self.streams.discard(space);
+        self.states.discard(space)
     }
 }
 
@@ -242,17 +296,31 @@ impl CryptoDxState {
         }
     }
 
-    pub fn new_initial(direction: CryptoDxDirection, label: &str, dcid: &[u8]) -> Self {
-        const INITIAL_SALT: &[u8] = &[
+    pub fn new_initial(
+        quic_version: QuicVersion,
+        direction: CryptoDxDirection,
+        label: &str,
+        dcid: &[u8],
+    ) -> Self {
+        qtrace!("new_initial for {:?}", quic_version);
+        const INITIAL_SALT_27: &[u8] = &[
             0xc3, 0xee, 0xf7, 0x12, 0xc7, 0x2e, 0xbb, 0x5a, 0x11, 0xa7, 0xd2, 0x43, 0x2b, 0xb4,
             0x63, 0x65, 0xbe, 0xf9, 0xf5, 0x02,
         ];
+        const INITIAL_SALT_29: &[u8] = &[
+            0xaf, 0xbf, 0xec, 0x28, 0x99, 0x93, 0xd2, 0x4c, 0x9e, 0x97, 0x86, 0xf1, 0x9c, 0x61,
+            0x11, 0xe0, 0x43, 0x90, 0xa8, 0x99,
+        ];
+        let salt = match quic_version {
+            QuicVersion::Draft27 | QuicVersion::Draft28 => INITIAL_SALT_27,
+            QuicVersion::Draft29 => INITIAL_SALT_29,
+        };
         let cipher = TLS_AES_128_GCM_SHA256;
         let initial_secret = hkdf::extract(
             TLS_VERSION_1_3,
             cipher,
             Some(
-                hkdf::import_key(TLS_VERSION_1_3, cipher, INITIAL_SALT)
+                hkdf::import_key(TLS_VERSION_1_3, cipher, salt)
                     .as_ref()
                     .unwrap(),
             ),
@@ -410,7 +478,12 @@ impl CryptoDxState {
     pub(crate) fn test_default() -> Self {
         // This matches the value in packet.rs
         const CLIENT_CID: &[u8] = &[0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08];
-        Self::new_initial(CryptoDxDirection::Write, "server in", CLIENT_CID)
+        Self::new_initial(
+            QuicVersion::default(),
+            CryptoDxDirection::Write,
+            "server in",
+            CLIENT_CID,
+        )
     }
 }
 
@@ -473,7 +546,7 @@ impl CryptoDxAppData {
     pub fn next(&self) -> Res<Self> {
         if self.dx.epoch == usize::max_value() {
             // Guard against too many key updates.
-            return Err(Error::KeysNotFound);
+            return Err(Error::KeysExhausted);
         }
         let next_secret = Self::update_secret(self.cipher, &self.next_secret)?;
         Ok(Self {
@@ -553,7 +626,7 @@ impl CryptoStates {
     }
 
     /// Create the initial crypto state.
-    pub fn init(&mut self, role: Role, dcid: &[u8]) {
+    pub fn init(&mut self, quic_version: QuicVersion, role: Role, dcid: &[u8]) {
         const CLIENT_INITIAL_LABEL: &str = "client in";
         const SERVER_INITIAL_LABEL: &str = "server in";
 
@@ -564,14 +637,14 @@ impl CryptoStates {
             hex(dcid)
         );
 
-        let (write_label, read_label) = match role {
+        let (write, read) = match role {
             Role::Client => (CLIENT_INITIAL_LABEL, SERVER_INITIAL_LABEL),
             Role::Server => (SERVER_INITIAL_LABEL, CLIENT_INITIAL_LABEL),
         };
 
         let mut initial = CryptoState {
-            tx: CryptoDxState::new_initial(CryptoDxDirection::Write, write_label, dcid),
-            rx: CryptoDxState::new_initial(CryptoDxDirection::Read, read_label, dcid),
+            tx: CryptoDxState::new_initial(quic_version, CryptoDxDirection::Write, write, dcid),
+            rx: CryptoDxState::new_initial(quic_version, CryptoDxDirection::Read, read, dcid),
         };
         if let Some(prev) = &self.initial {
             qinfo!(
@@ -588,10 +661,11 @@ impl CryptoStates {
         self.zero_rtt = Some(CryptoDxState::new(dir, TLS_EPOCH_ZERO_RTT, secret, cipher));
     }
 
-    pub fn discard(&mut self, space: PNSpace) {
+    /// Discard keys and return true if that happened.
+    pub fn discard(&mut self, space: PNSpace) -> bool {
         match space {
-            PNSpace::Initial => self.initial = None,
-            PNSpace::Handshake => self.handshake = None,
+            PNSpace::Initial => self.initial.take().is_some(),
+            PNSpace::Handshake => self.handshake.take().is_some(),
             PNSpace::ApplicationData => panic!("Can't drop application data keys"),
         }
     }
@@ -797,6 +871,51 @@ impl CryptoStates {
             read_update_time: None,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn test_chacha() -> Self {
+        const SECRET: &[u8] = &[
+            0x9a, 0xc3, 0x12, 0xa7, 0xf8, 0x77, 0x46, 0x8e, 0xbe, 0x69, 0x42, 0x27, 0x48, 0xad,
+            0x00, 0xa1, 0x54, 0x43, 0xf1, 0x82, 0x03, 0xa0, 0x7d, 0x60, 0x60, 0xf6, 0x88, 0xf3,
+            0x0f, 0x21, 0x63, 0x2b,
+        ];
+        let secret =
+            hkdf::import_key(TLS_VERSION_1_3, TLS_CHACHA20_POLY1305_SHA256, SECRET).unwrap();
+        let app_read = || CryptoDxAppData {
+            dx: CryptoDxState {
+                direction: CryptoDxDirection::Read,
+                epoch: 0,
+                aead: Aead::new(
+                    TLS_VERSION_1_3,
+                    TLS_CHACHA20_POLY1305_SHA256,
+                    &secret,
+                    "quic ",
+                )
+                .unwrap(),
+                hpkey: HpKey::extract(
+                    TLS_VERSION_1_3,
+                    TLS_CHACHA20_POLY1305_SHA256,
+                    &secret,
+                    "quic hp",
+                )
+                .unwrap(),
+                used_pn: 0..645_971_972,
+                min_pn: 0,
+            },
+            cipher: TLS_CHACHA20_POLY1305_SHA256,
+            next_secret: secret.clone(),
+        };
+        Self {
+            initial: None,
+            handshake: None,
+            zero_rtt: None,
+            cipher: TLS_CHACHA20_POLY1305_SHA256,
+            app_write: None,
+            app_read: Some(app_read()),
+            app_read_next: Some(app_read()),
+            read_update_time: None,
+        }
+    }
 }
 
 impl std::fmt::Display for CryptoStates {
@@ -838,21 +957,17 @@ impl CryptoStreams {
                     ..
                 } = self
                 {
-                    // TODO: Use mem::take instead of mem::replace once 1.40+ is
-                    // usable in Firefox builds.
-                    let tmp_h = mem::replace(handshake, CryptoStream::default());
-                    let tmp_a = mem::replace(application, CryptoStream::default());
                     *self = Self::Handshake {
-                        handshake: tmp_h,
-                        application: tmp_a,
+                        handshake: mem::take(handshake),
+                        application: mem::take(application),
                     };
                 }
             }
             PNSpace::Handshake => {
                 if let Self::Handshake { application, .. } = self {
-                    // TODO: Same as above
-                    let tmp_a = mem::replace(application, CryptoStream::default());
-                    *self = Self::ApplicationData { application: tmp_a };
+                    *self = Self::ApplicationData {
+                        application: mem::take(application),
+                    };
                 } else if matches!(self, Self::Initial {..}) {
                     panic!("Discarding handshake before initial discarded");
                 }
@@ -862,50 +977,84 @@ impl CryptoStreams {
     }
 
     pub fn send(&mut self, space: PNSpace, data: &[u8]) {
-        self[space].tx.send(data);
+        self.get_mut(space).unwrap().tx.send(data);
     }
 
     pub fn inbound_frame(&mut self, space: PNSpace, offset: u64, data: Vec<u8>) -> Res<()> {
-        self[space].rx.inbound_frame(offset, data)
+        self.get_mut(space).unwrap().rx.inbound_frame(offset, data)
     }
 
     pub fn data_ready(&self, space: PNSpace) -> bool {
-        self[space].rx.data_ready()
+        self.get(space).map_or(false, |cs| cs.rx.data_ready())
     }
 
-    pub fn read_to_end(&mut self, space: PNSpace, buf: &mut Vec<u8>) -> Res<u64> {
-        self[space].rx.read_to_end(buf)
+    pub fn read_to_end(&mut self, space: PNSpace, buf: &mut Vec<u8>) -> usize {
+        self.get_mut(space).unwrap().rx.read_to_end(buf)
     }
 
-    pub fn acked(&mut self, token: CryptoRecoveryToken) {
-        self[token.space]
+    pub fn acked(&mut self, token: &CryptoRecoveryToken) {
+        self.get_mut(token.space)
+            .unwrap()
             .tx
             .mark_as_acked(token.offset, token.length)
     }
 
     pub fn lost(&mut self, token: &CryptoRecoveryToken) {
-        self[token.space]
-            .tx
-            .mark_as_lost(token.offset, token.length)
+        // See BZ 1624800, ignore lost packets in spaces we've dropped keys
+        if let Some(cs) = self.get_mut(token.space) {
+            cs.tx.mark_as_lost(token.offset, token.length)
+        }
     }
 
-    pub fn sent(&mut self, space: PNSpace, offset: u64, length: usize) {
-        self[space].tx.mark_as_sent(offset, length)
+    fn get(&self, space: PNSpace) -> Option<&CryptoStream> {
+        let (initial, hs, app) = match self {
+            Self::Initial {
+                initial,
+                handshake,
+                application,
+            } => (Some(initial), Some(handshake), Some(application)),
+            Self::Handshake {
+                handshake,
+                application,
+            } => (None, Some(handshake), Some(application)),
+            Self::ApplicationData { application } => (None, None, Some(application)),
+        };
+        match space {
+            PNSpace::Initial => initial,
+            PNSpace::Handshake => hs,
+            PNSpace::ApplicationData => app,
+        }
     }
 
-    pub fn next_bytes(&self, space: PNSpace, mode: TxMode) -> Option<(u64, &[u8])> {
-        self[space].tx.next_bytes(mode)
+    fn get_mut(&mut self, space: PNSpace) -> Option<&mut CryptoStream> {
+        let (initial, hs, app) = match self {
+            Self::Initial {
+                initial,
+                handshake,
+                application,
+            } => (Some(initial), Some(handshake), Some(application)),
+            Self::Handshake {
+                handshake,
+                application,
+            } => (None, Some(handshake), Some(application)),
+            Self::ApplicationData { application } => (None, None, Some(application)),
+        };
+        match space {
+            PNSpace::Initial => initial,
+            PNSpace::Handshake => hs,
+            PNSpace::ApplicationData => app,
+        }
     }
 
     pub fn get_frame(
         &mut self,
         space: PNSpace,
-        mode: TxMode,
         remaining: usize,
     ) -> Option<(Frame, Option<RecoveryToken>)> {
-        if let Some((offset, data)) = self.next_bytes(space, mode) {
+        let cs = self.get_mut(space).unwrap();
+        if let Some((offset, data)) = cs.tx.next_bytes() {
             let (frame, length) = Frame::new_crypto(offset, data, remaining);
-            self.sent(space, offset, length);
+            cs.tx.mark_as_sent(offset, length);
 
             qdebug!(
                 "Emitting crypto frame space={}, offset={}, len={}",
@@ -933,51 +1082,6 @@ impl Default for CryptoStreams {
             initial: CryptoStream::default(),
             handshake: CryptoStream::default(),
             application: CryptoStream::default(),
-        }
-    }
-}
-
-impl Index<PNSpace> for CryptoStreams {
-    type Output = CryptoStream;
-    fn index(&self, space: PNSpace) -> &Self::Output {
-        let (initial, hs, app) = match self {
-            Self::Initial {
-                initial,
-                handshake,
-                application,
-            } => (Some(initial), Some(handshake), application),
-            Self::Handshake {
-                handshake,
-                application,
-            } => (None, Some(handshake), application),
-            Self::ApplicationData { application } => (None, None, application),
-        };
-        match space {
-            PNSpace::Initial => initial.expect("Initial state dropped!"),
-            PNSpace::Handshake => hs.expect("Handshake state dropped!"),
-            PNSpace::ApplicationData => app,
-        }
-    }
-}
-
-impl IndexMut<PNSpace> for CryptoStreams {
-    fn index_mut(&mut self, space: PNSpace) -> &mut Self::Output {
-        let (initial, hs, app) = match self {
-            Self::Initial {
-                initial,
-                handshake,
-                application,
-            } => (Some(initial), Some(handshake), application),
-            Self::Handshake {
-                handshake,
-                application,
-            } => (None, Some(handshake), application),
-            Self::ApplicationData { application } => (None, None, application),
-        };
-        match space {
-            PNSpace::Initial => initial.expect("Initial state dropped!"),
-            PNSpace::Handshake => hs.expect("Handshake state dropped!"),
-            PNSpace::ApplicationData => app,
         }
     }
 }

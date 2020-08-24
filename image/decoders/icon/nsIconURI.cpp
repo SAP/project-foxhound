@@ -59,13 +59,13 @@ NS_IMPL_ADDREF(nsMozIconURI)
 NS_IMPL_RELEASE(nsMozIconURI)
 
 NS_INTERFACE_MAP_BEGIN(nsMozIconURI)
-  if (aIID.Equals(kThisIconURIImplementationCID))
+  if (aIID.Equals(kThisIconURIImplementationCID)) {
     foundInterface = static_cast<nsIURI*>(this);
-  NS_INTERFACE_MAP_ENTRY(nsIMozIconURI)
+  } else
+    NS_INTERFACE_MAP_ENTRY(nsIMozIconURI)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIURI)
   NS_INTERFACE_MAP_ENTRY(nsIURI)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsINestedURI, mIconURL)
-  NS_INTERFACE_MAP_ENTRY(nsIMozIconURI)
   NS_INTERFACE_MAP_ENTRY(nsISerializable)
   NS_INTERFACE_MAP_ENTRY(nsIClassInfo)
 NS_INTERFACE_MAP_END
@@ -267,7 +267,7 @@ nsresult nsMozIconURI::SetSpecInternal(const nsACString& aSpec) {
     return NS_OK;
   }
 
-  if (StringBeginsWith(iconPath, NS_LITERAL_CSTRING("//"))) {
+  if (StringBeginsWith(iconPath, "//"_ns)) {
     // Sanity check this supposed dummy file name.
     if (iconPath.Length() > SANE_FILE_NAME_LEN) {
       return NS_ERROR_MALFORMED_URI;

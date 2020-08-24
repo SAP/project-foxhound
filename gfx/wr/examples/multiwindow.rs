@@ -105,7 +105,7 @@ impl Window {
         };
         let notifier = Box::new(Notifier::new(events_loop.create_proxy()));
         let (renderer, sender) = webrender::Renderer::new(gl.clone(), notifier, opts, None, device_size).unwrap();
-        let api = sender.create_api();
+        let mut api = sender.create_api();
         let document_id = api.add_document(device_size, 0);
 
         let epoch = Epoch(0);
@@ -117,7 +117,7 @@ impl Window {
         txn.add_raw_font(font_key, font_bytes, 0);
 
         let font_instance_key = api.generate_font_instance_key();
-        txn.add_font_instance(font_instance_key, font_key, Au::from_px(32), None, None, Vec::new());
+        txn.add_font_instance(font_instance_key, font_key, 32.0, None, None, Vec::new());
 
         api.send_transaction(document_id, txn);
 
@@ -200,6 +200,10 @@ impl Window {
                     LayoutSize::new(100.0, 200.0),
                 ),
                 space_and_clip,
+            ),
+            LayoutRect::new(
+                LayoutPoint::new(100.0, 200.0),
+                LayoutSize::new(100.0, 200.0),
             ),
             ColorF::new(0.0, 1.0, 0.0, 1.0));
 

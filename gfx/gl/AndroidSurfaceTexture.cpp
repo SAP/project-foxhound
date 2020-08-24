@@ -4,16 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifdef MOZ_WIDGET_ANDROID
+#include "AndroidSurfaceTexture.h"
 
-#  include "AndroidSurfaceTexture.h"
+#include "mozilla/java/GeckoSurfaceTextureNatives.h"
 
-#  include "GeneratedJNINatives.h"
-
-#  include "AndroidNativeWindow.h"
-#  include "GLContextEGL.h"
-#  include "GLBlitHelper.h"
-#  include "GLImages.h"
+#include "AndroidNativeWindow.h"
+#include "GLContextEGL.h"
+#include "GLBlitHelper.h"
+#include "GLImages.h"
 
 using namespace mozilla;
 
@@ -86,7 +84,7 @@ class SharedGL final {
     }
   }
 
-  static already_AddRefed<GLContextEGL> CreateContext() {
+  static already_AddRefed<GLContextEGL> CreateContextImpl(bool aUseGles) {
     sMutex.AssertCurrentThreadOwns();
     MOZ_ASSERT(!sContext);
 
@@ -94,13 +92,16 @@ class SharedGL final {
     EGLDisplay eglDisplay = egl->fGetDisplay(EGL_DEFAULT_DISPLAY);
     MOZ_ASSERT(eglDisplay == egl->Display());
     EGLConfig eglConfig;
-    CreateConfig(egl, &eglConfig, /* bpp */ 24, /* depth buffer? */ false);
+    CreateConfig(egl, &eglConfig, /* bpp */ 24, /* depth buffer? */ false,
+                 aUseGles);
     EGLint attributes[] = {LOCAL_EGL_CONTEXT_CLIENT_VERSION, 2, LOCAL_EGL_NONE};
     EGLContext eglContext =
         egl->fCreateContext(eglDisplay, eglConfig, EGL_NO_CONTEXT, attributes);
-    RefPtr<GLContextEGL> gl = new GLContextEGL(
-        egl, CreateContextFlags::NONE, SurfaceCaps::Any(),
-        /* offscreen? */ false, eglConfig, EGL_NO_SURFACE, eglContext);
+    if (!eglContext) {
+      return nullptr;
+    }
+    RefPtr<GLContextEGL> gl =
+        new GLContextEGL(egl, {}, eglConfig, EGL_NO_SURFACE, eglContext);
     if (!gl->Init()) {
       NS_WARNING("Fail to create GL context for native blitter.");
       return nullptr;
@@ -108,6 +109,18 @@ class SharedGL final {
 
     // Yield the current state made in constructor.
     UnmakeCurrent(gl);
+    return gl.forget();
+  }
+
+  static already_AddRefed<GLContextEGL> CreateContext() {
+    RefPtr<GLContextEGL> gl;
+#if !defined(MOZ_WIDGET_ANDROID)
+    gl = CreateContextImpl(/* aUseGles */ false);
+#endif  // !defined(MOZ_WIDGET_ANDROID)
+
+    if (!gl) {
+      gl = CreateContextImpl(/* aUseGles */ true);
+    }
     return gl.forget();
   }
 
@@ -183,4 +196,3 @@ void AndroidSurfaceTexture::Init() { GLBlitterSupport::Init(); }
 
 }  // namespace gl
 }  // namespace mozilla
-#endif  // MOZ_WIDGET_ANDROID

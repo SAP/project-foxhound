@@ -44,7 +44,6 @@ class gfxSparseBitSet {
   enum { NO_BLOCK = 0xffff };  // index value indicating missing (empty) block
 
   struct Block {
-    Block(const Block& aBlock) { memcpy(mBits, aBlock.mBits, sizeof(mBits)); }
     explicit Block(unsigned char memsetValue = 0) {
       memset(mBits, memsetValue, BLOCK_SIZE);
     }
@@ -53,10 +52,6 @@ class gfxSparseBitSet {
 
  public:
   gfxSparseBitSet() = default;
-  gfxSparseBitSet(const gfxSparseBitSet& aBitset) {
-    mBlockIndex.AppendElements(aBitset.mBlockIndex);
-    mBlocks.AppendElements(aBitset.mBlocks);
-  }
 
   bool Equals(const gfxSparseBitSet* aOther) const {
     if (mBlockIndex.Length() != aOther->mBlockIndex.Length()) {
@@ -322,8 +317,8 @@ class gfxSparseBitSet {
  private:
   friend struct IPC::ParamTraits<gfxSparseBitSet>;
   friend struct IPC::ParamTraits<gfxSparseBitSet::Block>;
-  nsTArray<uint16_t> mBlockIndex;
-  nsTArray<Block> mBlocks;
+  CopyableTArray<uint16_t> mBlockIndex;
+  CopyableTArray<Block> mBlocks;
 };
 
 namespace IPC {
@@ -1159,11 +1154,11 @@ class gfxFontUtils {
 
   // for color layer from glyph using COLR and CPAL tables
   static bool ValidateColorGlyphs(hb_blob_t* aCOLR, hb_blob_t* aCPAL);
-  static bool GetColorGlyphLayers(hb_blob_t* aCOLR, hb_blob_t* aCPAL,
-                                  uint32_t aGlyphId,
-                                  const mozilla::gfx::Color& aDefaultColor,
-                                  nsTArray<uint16_t>& aGlyphs,
-                                  nsTArray<mozilla::gfx::Color>& aColors);
+  static bool GetColorGlyphLayers(
+      hb_blob_t* aCOLR, hb_blob_t* aCPAL, uint32_t aGlyphId,
+      const mozilla::gfx::DeviceColor& aDefaultColor,
+      nsTArray<uint16_t>& aGlyphs,
+      nsTArray<mozilla::gfx::DeviceColor>& aColors);
 
   // Helper used to implement gfxFontEntry::GetVariation{Axes,Instances} for
   // platforms where the native font APIs don't provide the info we want

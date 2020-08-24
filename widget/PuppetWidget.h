@@ -148,7 +148,7 @@ class PuppetWidget : public nsBaseWidget,
   nsEventStatus DispatchInputEvent(WidgetInputEvent* aEvent) override;
   void SetConfirmedTargetAPZC(
       uint64_t aInputBlockId,
-      const nsTArray<SLGuidAndRenderRoot>& aTargets) const override;
+      const nsTArray<ScrollableLayerGuid>& aTargets) const override;
   void UpdateZoomConstraints(
       const uint32_t& aPresShellId, const ScrollableLayerGuid::ViewID& aViewId,
       const mozilla::Maybe<ZoomConstraints>& aConstraints) override;
@@ -248,9 +248,7 @@ class PuppetWidget : public nsBaseWidget,
 
   virtual LayoutDeviceIntRect GetScreenBounds() override;
 
-  virtual LayoutDeviceIntSize GetCompositionSize() override;
-
-  virtual MOZ_MUST_USE nsresult StartPluginIME(
+  [[nodiscard]] virtual nsresult StartPluginIME(
       const mozilla::WidgetKeyboardEvent& aKeyboardEvent, int32_t aPanelX,
       int32_t aPanelY, nsString& aCommitted) override;
 
@@ -312,9 +310,6 @@ class PuppetWidget : public nsBaseWidget,
 
   nsresult SetSystemFont(const nsCString& aFontName) override;
   nsresult GetSystemFont(nsCString& aFontName) override;
-
-  nsresult SetPrefersReducedMotionOverrideForTest(bool aValue) override;
-  nsresult ResetPrefersReducedMotionOverrideForTest() override;
 
   // TextEventDispatcherListener
   using nsBaseWidget::NotifyIME;

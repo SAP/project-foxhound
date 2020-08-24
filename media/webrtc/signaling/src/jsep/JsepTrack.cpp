@@ -7,7 +7,6 @@
 #include "signaling/src/jsep/JsepTrackEncoding.h"
 
 #include <algorithm>
-#include <iostream>
 
 namespace mozilla {
 void JsepTrack::GetNegotiatedPayloadTypes(
@@ -83,13 +82,16 @@ void JsepTrack::EnsureNoDuplicatePayloadTypes(
   }
 }
 
-void JsepTrack::EnsureSsrcs(SsrcGenerator& ssrcGenerator) {
-  if (mSsrcs.empty()) {
-    uint32_t ssrc;
-    if (!ssrcGenerator.GenerateSsrc(&ssrc)) {
+void JsepTrack::EnsureSsrcs(SsrcGenerator& ssrcGenerator, size_t aNumber) {
+  while (mSsrcs.size() < aNumber) {
+    uint32_t ssrc, rtxSsrc;
+    if (!ssrcGenerator.GenerateSsrc(&ssrc) ||
+        !ssrcGenerator.GenerateSsrc(&rtxSsrc)) {
       return;
     }
     mSsrcs.push_back(ssrc);
+    mSsrcToRtxSsrc[ssrc] = rtxSsrc;
+    MOZ_ASSERT(mSsrcs.size() == mSsrcToRtxSsrc.size());
   }
 }
 
@@ -115,7 +117,9 @@ void JsepTrack::AddToOffer(SsrcGenerator& ssrcGenerator,
     if (offer->IsSending()) {
       constraints = mJsEncodeConstraints;
     }
-    AddToMsection(constraints, sdp::kSend, ssrcGenerator, offer);
+
+    AddToMsection(constraints, sdp::kSend, ssrcGenerator,
+                  IsRtxEnabled(mPrototypeCodecs), offer);
   }
 }
 
@@ -140,7 +144,9 @@ void JsepTrack::AddToAnswer(const SdpMediaSection& offer,
       GetRids(offer, sdp::kRecv, &rids);
       NegotiateRids(rids, &constraints);
     }
-    AddToMsection(constraints, sdp::kSend, ssrcGenerator, answer);
+
+    AddToMsection(constraints, sdp::kSend, ssrcGenerator, IsRtxEnabled(codecs),
+                  answer);
   }
 }
 
@@ -214,21 +220,43 @@ void JsepTrack::UpdateSsrcs(SsrcGenerator& ssrcGenerator, size_t encodings) {
   // Right now, the spec does not permit changing the number of encodings after
   // the initial creation of the sender, so we don't need to worry about things
   // like a new encoding inserted in between two pre-existing encodings.
-  while (mSsrcs.size() < numSsrcs) {
-    uint32_t ssrc;
-    if (!ssrcGenerator.GenerateSsrc(&ssrc)) {
-      return;
+  EnsureSsrcs(ssrcGenerator, numSsrcs);
+  PruneSsrcs(numSsrcs);
+
+  MOZ_ASSERT(!mSsrcs.empty());
+}
+
+void JsepTrack::PruneSsrcs(size_t aNumSsrcs) {
+  mSsrcs.resize(aNumSsrcs);
+
+  // We might have duplicate entries in mSsrcs, so we need to resize first and
+  // then remove ummatched rtx ssrcs.
+  auto itor = mSsrcToRtxSsrc.begin();
+  while (itor != mSsrcToRtxSsrc.end()) {
+    if (std::find(mSsrcs.begin(), mSsrcs.end(), itor->first) == mSsrcs.end()) {
+      itor = mSsrcToRtxSsrc.erase(itor);
+    } else {
+      ++itor;
     }
-    mSsrcs.push_back(ssrc);
+  }
+}
+
+bool JsepTrack::IsRtxEnabled(
+    const std::vector<UniquePtr<JsepCodecDescription>>& codecs) const {
+  for (const auto& codec : codecs) {
+    if (codec->mType == SdpMediaSection::kVideo &&
+        static_cast<const JsepVideoCodecDescription*>(codec.get())
+            ->mRtxEnabled) {
+      return true;
+    }
   }
 
-  mSsrcs.resize(numSsrcs);
-  MOZ_ASSERT(!mSsrcs.empty());
+  return false;
 }
 
 void JsepTrack::AddToMsection(const std::vector<JsConstraints>& constraintsList,
                               sdp::Direction direction,
-                              SsrcGenerator& ssrcGenerator,
+                              SsrcGenerator& ssrcGenerator, bool rtxEnabled,
                               SdpMediaSection* msection) {
   UniquePtr<SdpSimulcastAttribute> simulcast(new SdpSimulcastAttribute);
   UniquePtr<SdpRidAttributeList> rids(new SdpRidAttributeList);
@@ -255,9 +283,26 @@ void JsepTrack::AddToMsection(const std::vector<JsConstraints>& constraintsList,
     msection->GetAttributeList().SetAttribute(rids.release());
   }
 
+  bool requireRtxSsrcs =
+      rtxEnabled && msection->IsSending() && !mStreamIds.empty();
+
   if (mType != SdpMediaSection::kApplication && mDirection == sdp::kSend) {
     UpdateSsrcs(ssrcGenerator, constraintsList.size());
-    msection->SetSsrcs(mSsrcs, mCNAME);
+
+    if (requireRtxSsrcs) {
+      MOZ_ASSERT(mSsrcs.size() == mSsrcToRtxSsrc.size());
+      std::vector<uint32_t> allSsrcs;
+      UniquePtr<SdpSsrcGroupAttributeList> group(new SdpSsrcGroupAttributeList);
+      for (const auto& [ssrc, rtxSsrc] : mSsrcToRtxSsrc) {
+        allSsrcs.push_back(ssrc);
+        allSsrcs.push_back(rtxSsrc);
+        group->PushEntry(SdpSsrcGroupAttributeList::kFid, {ssrc, rtxSsrc});
+      }
+      msection->SetSsrcs(allSsrcs, mCNAME);
+      msection->GetAttributeList().SetAttribute(group.release());
+    } else {
+      msection->SetSsrcs(mSsrcs, mCNAME);
+    }
   }
 }
 
@@ -311,6 +356,16 @@ void JsepTrack::CreateEncodings(
     const std::vector<UniquePtr<JsepCodecDescription>>& negotiatedCodecs,
     JsepTrackNegotiatedDetails* negotiatedDetails) {
   negotiatedDetails->mTias = remote.GetBandwidth("TIAS");
+
+  webrtc::RtcpMode rtcpMode = webrtc::RtcpMode::kCompound;
+  // rtcp-rsize (video only)
+  if (remote.GetMediaType() == SdpMediaSection::kVideo &&
+      remote.GetAttributeList().HasAttribute(
+          SdpAttribute::kRtcpRsizeAttribute)) {
+    rtcpMode = webrtc::RtcpMode::kReducedSize;
+  }
+  negotiatedDetails->mRtpRtcpConf = RtpRtcpConfig(rtcpMode);
+
   // TODO add support for b=AS if TIAS is not set (bug 976521)
 
   std::vector<std::pair<SdpRidAttributeList::Rid, bool>> rids;
@@ -330,7 +385,7 @@ void JsepTrack::CreateEncodings(
   // Drop SSRCs if less RIDs were offered than we have encoding constraints
   // Just in case.
   if (mSsrcs.size() > max_streams) {
-    mSsrcs.resize(max_streams);
+    PruneSsrcs(max_streams);
   }
 
   // For each stream make sure we have an encoding, and configure
@@ -391,6 +446,20 @@ std::vector<UniquePtr<JsepCodecDescription>> JsepTrack::NegotiateCodecs(
       if (clone->Negotiate(fmt, remote, isOffer)) {
         // If negotiation changed the payload type, remember that for later
         codec->mDefaultPt = clone->mDefaultPt;
+
+        // Remember whether we negotiated rtx and the associated pt for later.
+        if (codec->mType == SdpMediaSection::kVideo) {
+          JsepVideoCodecDescription* videoCodec =
+              static_cast<JsepVideoCodecDescription*>(codec.get());
+          JsepVideoCodecDescription* cloneVideoCodec =
+              static_cast<JsepVideoCodecDescription*>(clone.get());
+          bool useRtx =
+              mRtxIsAllowed &&
+              Preferences::GetBool("media.peerconnection.video.use_rtx", false);
+          videoCodec->mRtxEnabled = useRtx && cloneVideoCodec->mRtxEnabled;
+          videoCodec->mRtxPayloadType = cloneVideoCodec->mRtxPayloadType;
+        }
+
         // Moves the codec out of mPrototypeCodecs, leaving an empty
         // UniquePtr, so we don't use it again. Also causes successfully
         // negotiated codecs to be placed up front in the future.

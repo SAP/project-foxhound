@@ -7,7 +7,11 @@ from __future__ import absolute_import, print_function, unicode_literals
 import hashlib
 import os
 
+
 here = os.path.join(os.path.dirname(__file__))
+
+
+MINIMUM_RUST_VERSION = '1.43.0'
 
 
 def get_state_dir(srcdir=False):
@@ -32,7 +36,7 @@ def get_state_dir(srcdir=False):
     srcdir = os.path.abspath(MozbuildObject.from_environment(cwd=here).topsrcdir)
     # Shortening to 12 characters makes these directories a bit more manageable
     # in a terminal and is more than good enough for this purpose.
-    srcdir_hash = hashlib.sha256(srcdir).hexdigest()[:12]
+    srcdir_hash = hashlib.sha256(srcdir.encode("utf-8")).hexdigest()[:12]
 
     state_dir = os.path.join(state_dir, 'srcdirs', '{}-{}'.format(
         os.path.basename(srcdir), srcdir_hash))

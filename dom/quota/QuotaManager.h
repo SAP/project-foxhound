@@ -297,7 +297,7 @@ class QuotaManager final : public BackgroundThreadObject {
   already_AddRefed<DirectoryLock> OpenDirectory(
       PersistenceType aPersistenceType, const nsACString& aGroup,
       const nsACString& aOrigin, Client::Type aClientType, bool aExclusive,
-      OpenDirectoryListener* aOpenListener);
+      RefPtr<OpenDirectoryListener> aOpenListener);
 
   // XXX RemoveMe once bug 1170279 gets fixed.
   already_AddRefed<DirectoryLock> OpenDirectoryInternal(
@@ -410,6 +410,8 @@ class QuotaManager final : public BackgroundThreadObject {
 
   const nsString& GetBasePath() const { return mBasePath; }
 
+  const nsString& GetStorageName() const { return mStorageName; }
+
   const nsString& GetStoragePath() const { return mStoragePath; }
 
   const nsString& GetStoragePath(PersistenceType aPersistenceType) const {
@@ -467,11 +469,11 @@ class QuotaManager final : public BackgroundThreadObject {
   static void InvalidateQuotaCache();
 
  private:
-  QuotaManager();
+  QuotaManager(const nsAString& aBasePath, const nsAString& aStorageName);
 
   virtual ~QuotaManager();
 
-  nsresult Init(const nsAString& aBaseDirPath);
+  nsresult Init();
 
   void Shutdown();
 
@@ -479,17 +481,18 @@ class QuotaManager final : public BackgroundThreadObject {
       const Nullable<PersistenceType>& aPersistenceType,
       const nsACString& aGroup, const OriginScope& aOriginScope,
       const Nullable<Client::Type>& aClientType, bool aExclusive,
-      bool aInternal, OpenDirectoryListener* aOpenListener, bool& aBlockedOut);
+      bool aInternal, RefPtr<OpenDirectoryListener> aOpenListener,
+      bool& aBlockedOut);
 
   already_AddRefed<DirectoryLockImpl> CreateDirectoryLockForEviction(
       PersistenceType aPersistenceType, const nsACString& aGroup,
       const nsACString& aOrigin);
 
-  void RegisterDirectoryLock(DirectoryLockImpl* aLock);
+  void RegisterDirectoryLock(DirectoryLockImpl& aLock);
 
-  void UnregisterDirectoryLock(DirectoryLockImpl* aLock);
+  void UnregisterDirectoryLock(DirectoryLockImpl& aLock);
 
-  void RemovePendingDirectoryLock(DirectoryLockImpl* aLock);
+  void RemovePendingDirectoryLock(DirectoryLockImpl& aLock);
 
   uint64_t LockedCollectOriginsForEviction(
       uint64_t aMinSizeToBeFreed, nsTArray<RefPtr<DirectoryLockImpl>>& aLocks);
@@ -505,10 +508,11 @@ class QuotaManager final : public BackgroundThreadObject {
       PersistenceType aPersistenceType, const nsACString& aGroup,
       const nsACString& aOrigin);
 
-  nsresult MaybeUpgradeFromIndexedDBDirectoryToPersistentStorageDirectory();
+  nsresult UpgradeFromIndexedDBDirectoryToPersistentStorageDirectory(
+      nsIFile* aIndexedDBDir);
 
-  nsresult
-  MaybeUpgradeFromPersistentStorageDirectoryToDefaultStorageDirectory();
+  nsresult UpgradeFromPersistentStorageDirectoryToDefaultStorageDirectory(
+      nsIFile* aPersistentStorageDir);
 
   template <typename Helper>
   nsresult UpgradeStorage(const int32_t aOldVersion, const int32_t aNewVersion,
@@ -636,6 +640,7 @@ class QuotaManager final : public BackgroundThreadObject {
   InitializationInfo mInitializationInfo;
 
   nsString mBasePath;
+  nsString mStorageName;
   nsString mIndexedDBPath;
   nsString mStoragePath;
   nsString mPermanentStoragePath;

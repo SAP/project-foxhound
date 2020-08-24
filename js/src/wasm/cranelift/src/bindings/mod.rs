@@ -24,7 +24,7 @@ use cranelift_codegen::entity::EntityRef;
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
 use cranelift_codegen::ir::{self, InstBuilder, SourceLoc};
 use cranelift_codegen::isa;
-use cranelift_wasm::{FuncIndex, GlobalIndex, SignatureIndex, TableIndex, WasmError, WasmResult};
+use cranelift_wasm::{FuncIndex, GlobalIndex, SignatureIndex, TableIndex, WasmResult};
 
 use smallvec::SmallVec;
 
@@ -54,7 +54,6 @@ fn typecode_to_type(type_code: TypeCode) -> WasmResult<Option<ir::Type>> {
         TypeCode::I64 => Ok(Some(ir::types::I64)),
         TypeCode::F32 => Ok(Some(ir::types::F32)),
         TypeCode::F64 => Ok(Some(ir::types::F64)),
-        TypeCode::NullRef => Ok(Some(REF_TYPE)),
         TypeCode::FuncRef => Ok(Some(REF_TYPE)),
         TypeCode::AnyRef => Ok(Some(REF_TYPE)),
         TypeCode::BlockVoid => Ok(None),
@@ -109,7 +108,7 @@ impl GlobalDesc {
                 TypeCode::I64 => Ok(pos.ins().iconst(ir::types::I64, v.u.i64)),
                 TypeCode::F32 => Ok(pos.ins().f32const(Ieee32::with_bits(v.u.i32 as u32))),
                 TypeCode::F64 => Ok(pos.ins().f64const(Ieee64::with_bits(v.u.i64 as u64))),
-                TypeCode::Ref | TypeCode::AnyRef | TypeCode::FuncRef | TypeCode::NullRef => {
+                TypeCode::OptRef | TypeCode::AnyRef | TypeCode::FuncRef => {
                     assert!(v.u.r as usize == 0);
                     Ok(pos.ins().null(REF_TYPE))
                 }
@@ -172,17 +171,6 @@ impl FuncTypeWithId {
         }
     }
 
-    pub fn ret_type(self) -> WasmResult<Option<ir::Type>> {
-        match self.results() {
-            Ok(v) => match v.as_slice() {
-                [] => Ok(None),
-                [t] => Ok(Some(*t)),
-                _ => Err(WasmError::Unsupported("multiple values".to_string())),
-            },
-            Err(e) => Err(e),
-        }
-    }
-
     pub fn id_kind(self) -> FuncTypeIdDescKind {
         unsafe { low_level::funcType_idKind(self.0) }
     }
@@ -198,6 +186,7 @@ impl FuncTypeWithId {
 
 /// Thin wrapper for the CraneliftModuleEnvironment structure.
 
+#[derive(Clone, Copy)]
 pub struct ModuleEnvironment<'a> {
     env: &'a CraneliftModuleEnvironment,
 }
@@ -209,8 +198,14 @@ impl<'a> ModuleEnvironment<'a> {
     pub fn uses_shared_memory(&self) -> bool {
         unsafe { low_level::env_uses_shared_memory(self.env) }
     }
-    pub fn function_signature(&self, func_index: FuncIndex) -> FuncTypeWithId {
-        FuncTypeWithId(unsafe { low_level::env_function_signature(self.env, func_index.index()) })
+    pub fn num_types(&self) -> usize {
+        unsafe { low_level::env_num_types(self.env) }
+    }
+    pub fn type_(&self, index: usize) -> FuncTypeWithId {
+        FuncTypeWithId(unsafe { low_level::env_type(self.env, index) })
+    }
+    pub fn func_sig(&self, func_index: FuncIndex) -> FuncTypeWithId {
+        FuncTypeWithId(unsafe { low_level::env_func_sig(self.env, func_index.index()) })
     }
     pub fn func_import_tls_offset(&self, func_index: FuncIndex) -> usize {
         unsafe { low_level::env_func_import_tls_offset(self.env, func_index.index()) }
@@ -236,7 +231,7 @@ impl<'a> ModuleEnvironment<'a> {
 
 impl FuncCompileInput {
     pub fn bytecode(&self) -> &[u8] {
-        unsafe { slice::from_raw_parts(self.bytecode, self.bytecodeSize) }
+        unsafe { slice::from_raw_parts(self.bytecode, self.bytecode_size) }
     }
 
     pub fn stackmaps(&self) -> Stackmaps {
@@ -246,65 +241,57 @@ impl FuncCompileInput {
 
 impl CompiledFunc {
     pub fn reset(&mut self, compiled_func: &compile::CompiledFunc) {
-        self.numMetadata = compiled_func.metadata.len();
+        self.num_metadata = compiled_func.metadata.len();
         self.metadatas = compiled_func.metadata.as_ptr();
 
-        self.framePushed = compiled_func.frame_pushed as usize;
-        self.containsCalls = compiled_func.contains_calls;
+        self.frame_pushed = compiled_func.frame_pushed as usize;
+        self.contains_calls = compiled_func.contains_calls;
 
         self.code = compiled_func.code_buffer.as_ptr();
-        self.codeSize = compiled_func.code_size as usize;
-        self.jumptablesSize = compiled_func.jumptables_size as usize;
-        self.rodataSize = compiled_func.rodata_size as usize;
-        self.totalSize = compiled_func.code_buffer.len();
+        self.code_size = compiled_func.code_size as usize;
+        self.jumptables_size = compiled_func.jumptables_size as usize;
+        self.rodata_size = compiled_func.rodata_size as usize;
+        self.total_size = compiled_func.code_buffer.len();
 
-        self.numRodataRelocs = compiled_func.rodata_relocs.len();
-        self.rodataRelocs = compiled_func.rodata_relocs.as_ptr();
+        self.num_rodata_relocs = compiled_func.rodata_relocs.len();
+        self.rodata_relocs = compiled_func.rodata_relocs.as_ptr();
     }
 }
 
 impl MetadataEntry {
-    pub fn direct_call(code_offset: CodeOffset, func_index: FuncIndex, srcloc: SourceLoc) -> Self {
+    pub fn direct_call(code_offset: CodeOffset, srcloc: SourceLoc, func_index: FuncIndex) -> Self {
         Self {
             which: CraneliftMetadataEntry_Which_DirectCall,
-            codeOffset: code_offset,
-            moduleBytecodeOffset: srcloc.bits(),
+            code_offset,
+            module_bytecode_offset: srcloc.bits(),
             extra: func_index.index(),
         }
     }
-
-    pub fn indirect_call(code_offset: CodeOffset, srcloc: SourceLoc) -> Self {
+    pub fn indirect_call(ret_addr: CodeOffset, srcloc: SourceLoc) -> Self {
         Self {
             which: CraneliftMetadataEntry_Which_IndirectCall,
-            codeOffset: code_offset,
-            moduleBytecodeOffset: srcloc.bits(),
+            code_offset: ret_addr,
+            module_bytecode_offset: srcloc.bits(),
             extra: 0,
         }
     }
-
     pub fn trap(code_offset: CodeOffset, srcloc: SourceLoc, which: Trap) -> Self {
         Self {
             which: CraneliftMetadataEntry_Which_Trap,
-            codeOffset: code_offset,
-            moduleBytecodeOffset: srcloc.bits(),
+            code_offset,
+            module_bytecode_offset: srcloc.bits(),
             extra: which as usize,
         }
     }
-
-    pub fn memory_access(code_offset: CodeOffset, srcloc: SourceLoc) -> Self {
-        Self {
-            which: CraneliftMetadataEntry_Which_MemoryAccess,
-            codeOffset: code_offset,
-            moduleBytecodeOffset: srcloc.bits(),
-            extra: 0,
-        }
-    }
-
-    pub fn symbolic_access(code_offset: CodeOffset, sym: SymbolicAddress) -> Self {
+    pub fn symbolic_access(
+        code_offset: CodeOffset,
+        srcloc: SourceLoc,
+        sym: SymbolicAddress,
+    ) -> Self {
         Self {
             which: CraneliftMetadataEntry_Which_SymbolicAccess,
-            codeOffset: code_offset,
-            moduleBytecodeOffset: 0,
+            code_offset,
+            module_bytecode_offset: srcloc.bits(),
             extra: sym as usize,
         }
     }
@@ -313,7 +300,7 @@ impl MetadataEntry {
 impl StaticEnvironment {
     /// Returns the default calling convention on this machine.
     pub fn call_conv(&self) -> isa::CallConv {
-        if self.platformIsWindows {
+        if self.platform_is_windows {
             isa::CallConv::BaldrdashWindows
         } else {
             isa::CallConv::BaldrdashSystemV
@@ -326,9 +313,9 @@ pub struct Stackmaps(*mut self::low_level::BD_Stackmaps);
 impl Stackmaps {
     pub fn add_stackmap(
         &mut self,
-        stack_slots: &ir::StackSlots,
+        inbound_args_size: u32,
         offset: CodeOffset,
-        map: cranelift_codegen::binemit::Stackmap,
+        map: &cranelift_codegen::binemit::Stackmap,
     ) {
         unsafe {
             let bitslice = map.as_slice();
@@ -336,7 +323,7 @@ impl Stackmaps {
                 self.0,
                 std::mem::transmute(bitslice.as_ptr()),
                 map.mapped_words() as usize,
-                stack_slots.layout_info.unwrap().inbound_args_size as usize,
+                inbound_args_size as usize,
                 offset as usize,
             );
         }

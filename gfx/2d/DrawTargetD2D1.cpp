@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <optional>
+
 #include <initguid.h>
 #include "DrawTargetD2D1.h"
 #include "FilterNodeSoftware.h"
@@ -90,6 +92,9 @@ DrawTargetD2D1::~DrawTargetD2D1() {
 }
 
 bool DrawTargetD2D1::IsValid() const {
+  if (mInitState != InitState::Uninitialized && !IsDeviceContextValid()) {
+    return false;
+  }
   if (NS_IsMainThread()) {
     // Uninitialized DTs are considered valid.
     return mInitState != InitState::Failure;
@@ -190,7 +195,10 @@ void DrawTargetD2D1::DrawSurface(SourceSurface* aSurface, const Rect& aDest,
                                  const Rect& aSource,
                                  const DrawSurfaceOptions& aSurfOptions,
                                  const DrawOptions& aOptions) {
-  PrepareForDrawing(aOptions.mCompositionOp, ColorPattern(Color()));
+  if (!PrepareForDrawing(aOptions.mCompositionOp,
+                         ColorPattern(DeviceColor()))) {
+    return;
+  }
 
   D2D1_RECT_F samplingBounds;
 
@@ -251,7 +259,7 @@ void DrawTargetD2D1::DrawSurface(SourceSurface* aSurface, const Rect& aDest,
     mDC->FillRectangle(D2DRect(aDest), brush);
   }
 
-  FinalizeDrawing(aOptions.mCompositionOp, ColorPattern(Color()));
+  FinalizeDrawing(aOptions.mCompositionOp, ColorPattern(DeviceColor()));
 }
 
 void DrawTargetD2D1::DrawFilter(FilterNode* aNode, const Rect& aSourceRect,
@@ -262,7 +270,10 @@ void DrawTargetD2D1::DrawFilter(FilterNode* aNode, const Rect& aSourceRect,
     return;
   }
 
-  PrepareForDrawing(aOptions.mCompositionOp, ColorPattern(Color()));
+  if (!PrepareForDrawing(aOptions.mCompositionOp,
+                         ColorPattern(DeviceColor()))) {
+    return;
+  }
 
   mDC->SetAntialiasMode(D2DAAMode(aOptions.mAntialiasMode));
 
@@ -289,12 +300,12 @@ void DrawTargetD2D1::DrawFilter(FilterNode* aNode, const Rect& aSourceRect,
                        imageBrush);
   }
 
-  FinalizeDrawing(aOptions.mCompositionOp, ColorPattern(Color()));
+  FinalizeDrawing(aOptions.mCompositionOp, ColorPattern(DeviceColor()));
 }
 
 void DrawTargetD2D1::DrawSurfaceWithShadow(SourceSurface* aSurface,
                                            const Point& aDest,
-                                           const Color& aColor,
+                                           const DeviceColor& aColor,
                                            const Point& aOffset, Float aSigma,
                                            CompositionOp aOperator) {
   if (!EnsureInitialized()) {
@@ -437,7 +448,9 @@ void DrawTargetD2D1::MaskSurface(const Pattern& aSource, SourceSurface* aMask,
     return;
   }
 
-  PrepareForDrawing(aOptions.mCompositionOp, aSource);
+  if (!PrepareForDrawing(aOptions.mCompositionOp, aSource)) {
+    return;
+  }
 
   IntSize size =
       IntSize::Truncate(aMask->GetSize().width, aMask->GetSize().height);
@@ -574,7 +587,9 @@ void DrawTargetD2D1::CopySurface(SourceSurface* aSurface,
 
 void DrawTargetD2D1::FillRect(const Rect& aRect, const Pattern& aPattern,
                               const DrawOptions& aOptions) {
-  PrepareForDrawing(aOptions.mCompositionOp, aPattern);
+  if (!PrepareForDrawing(aOptions.mCompositionOp, aPattern)) {
+    return;
+  }
 
   mDC->SetAntialiasMode(D2DAAMode(aOptions.mAntialiasMode));
 
@@ -590,7 +605,10 @@ void DrawTargetD2D1::FillRoundedRect(const RoundedRect& aRect,
   if (!aRect.corners.AreRadiiSame()) {
     return DrawTarget::FillRoundedRect(aRect, aPattern, aOptions);
   }
-  PrepareForDrawing(aOptions.mCompositionOp, aPattern);
+
+  if (!PrepareForDrawing(aOptions.mCompositionOp, aPattern)) {
+    return;
+  }
 
   mDC->SetAntialiasMode(D2DAAMode(aOptions.mAntialiasMode));
 
@@ -603,7 +621,9 @@ void DrawTargetD2D1::FillRoundedRect(const RoundedRect& aRect,
 void DrawTargetD2D1::StrokeRect(const Rect& aRect, const Pattern& aPattern,
                                 const StrokeOptions& aStrokeOptions,
                                 const DrawOptions& aOptions) {
-  PrepareForDrawing(aOptions.mCompositionOp, aPattern);
+  if (!PrepareForDrawing(aOptions.mCompositionOp, aPattern)) {
+    return;
+  }
 
   mDC->SetAntialiasMode(D2DAAMode(aOptions.mAntialiasMode));
 
@@ -621,7 +641,9 @@ void DrawTargetD2D1::StrokeLine(const Point& aStart, const Point& aEnd,
                                 const Pattern& aPattern,
                                 const StrokeOptions& aStrokeOptions,
                                 const DrawOptions& aOptions) {
-  PrepareForDrawing(aOptions.mCompositionOp, aPattern);
+  if (!PrepareForDrawing(aOptions.mCompositionOp, aPattern)) {
+    return;
+  }
 
   mDC->SetAntialiasMode(D2DAAMode(aOptions.mAntialiasMode));
 
@@ -649,7 +671,9 @@ void DrawTargetD2D1::Stroke(const Path* aPath, const Pattern& aPattern,
   }
   const PathD2D* d2dPath = static_cast<const PathD2D*>(path);
 
-  PrepareForDrawing(aOptions.mCompositionOp, aPattern);
+  if (!PrepareForDrawing(aOptions.mCompositionOp, aPattern)) {
+    return;
+  }
 
   mDC->SetAntialiasMode(D2DAAMode(aOptions.mAntialiasMode));
 
@@ -676,7 +700,9 @@ void DrawTargetD2D1::Fill(const Path* aPath, const Pattern& aPattern,
   }
   const PathD2D* d2dPath = static_cast<const PathD2D*>(path);
 
-  PrepareForDrawing(aOptions.mCompositionOp, aPattern);
+  if (!PrepareForDrawing(aOptions.mCompositionOp, aPattern)) {
+    return;
+  }
 
   mDC->SetAntialiasMode(D2DAAMode(aOptions.mAntialiasMode));
 
@@ -705,7 +731,9 @@ void DrawTargetD2D1::FillGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
     aaMode = aOptions.mAntialiasMode;
   }
 
-  PrepareForDrawing(aOptions.mCompositionOp, aPattern);
+  if (!PrepareForDrawing(aOptions.mCompositionOp, aPattern)) {
+    return;
+  }
 
   bool forceClearType = false;
   if (!CurrentLayer().mIsOpaque && mPermitSubpixelAA &&
@@ -819,7 +847,9 @@ void DrawTargetD2D1::FillGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
 
 void DrawTargetD2D1::Mask(const Pattern& aSource, const Pattern& aMask,
                           const DrawOptions& aOptions) {
-  PrepareForDrawing(aOptions.mCompositionOp, aSource);
+  if (!PrepareForDrawing(aOptions.mCompositionOp, aSource)) {
+    return;
+  }
 
   RefPtr<ID2D1Brush> source = CreateBrushForPattern(aSource, aOptions.mAlpha);
   RefPtr<ID2D1Brush> mask = CreateBrushForPattern(aMask, 1.0f);
@@ -1488,11 +1518,12 @@ bool DrawTargetD2D1::ShouldClipTemporarySurfaceDrawing(CompositionOp aOp,
          aClipIsComplex;
 }
 
-void DrawTargetD2D1::PrepareForDrawing(CompositionOp aOp,
+bool DrawTargetD2D1::PrepareForDrawing(CompositionOp aOp,
                                        const Pattern& aPattern) {
   if (!EnsureInitialized()) {
-    return;
+    return false;
   }
+
   MarkChanged();
 
   bool patternSupported = IsPatternSupportedByD2D(aPattern);
@@ -1504,10 +1535,11 @@ void DrawTargetD2D1::PrepareForDrawing(CompositionOp aOp,
 
     FlushTransformToDC();
 
-    if (aOp != CompositionOp::OP_OVER)
+    if (aOp != CompositionOp::OP_OVER) {
       mDC->SetPrimitiveBlend(D2DPrimitiveBlendMode(aOp));
+    }
 
-    return;
+    return true;
   }
 
   HRESULT result = mDC->CreateCommandList(getter_AddRefs(mCommandList));
@@ -1532,6 +1564,8 @@ void DrawTargetD2D1::PrepareForDrawing(CompositionOp aOp,
   }
 
   FlushTransformToDC();
+
+  return true;
 }
 
 void DrawTargetD2D1::FinalizeDrawing(CompositionOp aOp,
@@ -1954,7 +1988,7 @@ already_AddRefed<ID2D1Brush> DrawTargetD2D1::CreateBrushForPattern(
   }
 
   if (aPattern.GetType() == PatternType::COLOR) {
-    Color color = static_cast<const ColorPattern*>(&aPattern)->mColor;
+    DeviceColor color = static_cast<const ColorPattern*>(&aPattern)->mColor;
     return GetSolidColorBrush(
         D2D1::ColorF(color.r, color.g, color.b, color.a * aAlpha));
   }
@@ -2224,6 +2258,31 @@ already_AddRefed<SourceSurface> DrawTargetD2D1::OptimizeSourceSurface(
 
   RefPtr<DataSourceSurface> data = aSurface->GetDataSurface();
 
+  std::optional<SurfaceFormat> convertTo;
+  switch (data->GetFormat()) {
+    case gfx::SurfaceFormat::R8G8B8X8:
+      convertTo = SurfaceFormat::B8G8R8X8;
+      break;
+    case gfx::SurfaceFormat::R8G8B8A8:
+      convertTo = SurfaceFormat::B8G8R8X8;
+      break;
+    default:
+      break;
+  }
+
+  if (convertTo) {
+    const auto size = data->GetSize();
+    const RefPtr<DrawTarget> dt =
+        Factory::CreateDrawTarget(BackendType::SKIA, size, *convertTo);
+    if (!dt) {
+      return nullptr;
+    }
+    dt->CopySurface(data, {{}, size}, {});
+
+    const RefPtr<SourceSurface> snapshot = dt->Snapshot();
+    data = snapshot->GetDataSurface();
+  }
+
   RefPtr<ID2D1Bitmap1> bitmap;
   {
     DataSourceSurface::ScopedMap map(data, DataSourceSurface::READ);
@@ -2274,7 +2333,7 @@ void DrawTargetD2D1::PushD2DLayer(ID2D1DeviceContext* aDC,
                  nullptr);
 }
 
-bool DrawTargetD2D1::IsDeviceContextValid() {
+bool DrawTargetD2D1::IsDeviceContextValid() const {
   uint32_t seqNo;
   return mDC && Factory::GetD2D1Device(&seqNo) && seqNo == mDeviceSeq;
 }

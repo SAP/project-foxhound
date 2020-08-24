@@ -10,6 +10,7 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/SyncObject.h"
 #include "mozilla/webrender/RenderCompositorOGL.h"
+#include "mozilla/webrender/RenderCompositorSWGL.h"
 #include "mozilla/widget/CompositorWidget.h"
 
 #ifdef XP_WIN
@@ -18,6 +19,10 @@
 
 #if defined(MOZ_WAYLAND) || defined(MOZ_WIDGET_ANDROID)
 #  include "mozilla/webrender/RenderCompositorEGL.h"
+#endif
+
+#ifdef XP_MACOSX
+#  include "mozilla/webrender/RenderCompositorNative.h"
 #endif
 
 namespace mozilla {
@@ -87,9 +92,36 @@ void wr_compositor_unbind(void* aCompositor) {
   compositor->Unbind();
 }
 
+void wr_compositor_deinit(void* aCompositor) {
+  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
+  compositor->DeInit();
+}
+
+void wr_compositor_map_tile(void* aCompositor, wr::NativeTileId aId,
+                            wr::DeviceIntRect aDirtyRect,
+                            wr::DeviceIntRect aValidRect, void** aData,
+                            int32_t* aStride) {
+  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
+  compositor->MapTile(aId, aDirtyRect, aValidRect, aData, aStride);
+}
+
+void wr_compositor_unmap_tile(void* aCompositor) {
+  RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
+  compositor->UnmapTile();
+}
+
 /* static */
 UniquePtr<RenderCompositor> RenderCompositor::Create(
     RefPtr<widget::CompositorWidget>&& aWidget) {
+  if (gfx::gfxVars::UseSoftwareWebRender()) {
+#ifdef XP_MACOSX
+    // Mac uses NativeLayerCA
+    return RenderCompositorNativeSWGL::Create(std::move(aWidget));
+#else
+    return RenderCompositorSWGL::Create(std::move(aWidget));
+#endif
+  }
+
 #ifdef XP_WIN
   if (gfx::gfxVars::UseWebRenderANGLE()) {
     return RenderCompositorANGLE::Create(std::move(aWidget));
@@ -107,6 +139,9 @@ UniquePtr<RenderCompositor> RenderCompositor::Create(
 #if defined(MOZ_WIDGET_ANDROID)
   // RenderCompositorOGL is not used on android
   return nullptr;
+#elif defined(XP_MACOSX)
+  // Mac uses NativeLayerCA
+  return RenderCompositorNativeOGL::Create(std::move(aWidget));
 #else
   return RenderCompositorOGL::Create(std::move(aWidget));
 #endif
@@ -120,9 +155,25 @@ RenderCompositor::~RenderCompositor() = default;
 bool RenderCompositor::MakeCurrent() { return gl()->MakeCurrent(); }
 
 bool RenderCompositor::IsContextLost() {
-  // XXX Add glGetGraphicsResetStatus handling for checking rendering context
-  // has not been lost
-  return false;
+  auto resetStatus = gl()->fGetGraphicsResetStatus();
+  switch (resetStatus) {
+    case LOCAL_GL_NO_ERROR:
+      return false;
+    case LOCAL_GL_INNOCENT_CONTEXT_RESET_ARB:
+    case LOCAL_GL_PURGED_CONTEXT_RESET_NV:
+      break;
+    case LOCAL_GL_GUILTY_CONTEXT_RESET_ARB:
+      gfxCriticalError() << "Device reset due to WR context";
+      break;
+    case LOCAL_GL_UNKNOWN_CONTEXT_RESET_ARB:
+      gfxCriticalNote << "Device reset may be due to WR context";
+      break;
+    default:
+      gfxCriticalError() << "Device reset with WR context unexpected status: "
+                         << gfx::hexa(resetStatus);
+      break;
+  }
+  return true;
 }
 
 }  // namespace wr

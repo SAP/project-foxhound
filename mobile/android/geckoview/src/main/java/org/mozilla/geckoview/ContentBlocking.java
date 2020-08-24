@@ -90,12 +90,28 @@ public class ContentBlocking {
              * Set the ETP behavior level.
              *
              * @param level The level of ETP blocking to use. Only takes effect if
-             *              cookie behavior is set to {@link ContentBlocking.CookieBehavior#ACCEPT_NON_TRACKERS}.
+             *              cookie behavior is set to {@link ContentBlocking.CookieBehavior#ACCEPT_NON_TRACKERS}
+             *              or {@link ContentBlocking.CookieBehavior#ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS}.
              *
              * @return The Builder instance.
              */
             public @NonNull Builder enhancedTrackingProtectionLevel(final @CBEtpLevel int level) {
                 getSettings().setEnhancedTrackingProtectionLevel(level);
+                return this;
+            }
+
+            /**
+             * Set whether or not strict social tracking protection is enabled. This will block
+             * resources from loading if they are on the social tracking protection list, rather
+             * than just blocking cookies as with normal social tracking protection.
+             *
+             * @param enabled A boolean indicating whether or not strict social tracking protection
+             *                should be enabled.
+             *
+             * @return The builder instance.
+             */
+            public @NonNull Builder strictSocialTrackingProtection(final boolean enabled) {
+                getSettings().setStrictSocialTrackingProtection(enabled);
                 return this;
             }
         }
@@ -198,7 +214,8 @@ public class ContentBlocking {
          *
          * @param level The level of ETP blocking to use; must be one of {@link ContentBlocking.EtpLevel}
          *              flags. Only takes effect if the cookie behavior is
-         *              {@link ContentBlocking.CookieBehavior#ACCEPT_NON_TRACKERS}.
+         *              {@link ContentBlocking.CookieBehavior#ACCEPT_NON_TRACKERS} or
+         *              {@link ContentBlocking.CookieBehavior#ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS}.
          *
          * @return This Settings instance.
          */
@@ -212,7 +229,7 @@ public class ContentBlocking {
          * Set whether or not strict social tracking protection is enabled
          * (ie, whether to block content or just cookies). Will only block
          * if social tracking protection lists are supplied to
-         * {@link setAntiTracking}.
+         * {@link #setAntiTracking}.
          *
          * @param enabled A boolean indicating whether or not to enable strict
          *                social tracking protection.
@@ -261,6 +278,16 @@ public class ContentBlocking {
                 return ContentBlocking.EtpLevel.DEFAULT;
             }
             return ContentBlocking.EtpLevel.NONE;
+        }
+
+        /**
+         * Get whether or not strict social tracking protection is enabled.
+         *
+         * @return A boolean indicating whether or not strict social tracking protection
+         *         is enabled.
+         */
+        public boolean getStrictSocialTrackingProtection() {
+            return mStStrict.get();
         }
 
         /**
@@ -348,7 +375,7 @@ public class ContentBlocking {
 
         /**
          * Block social trackers. Note: This is not the same as "Social Tracking Protection",
-         * which is controlled by {@link STP}.
+         * which is controlled by {@link #STP}.
          */
         public static final int SOCIAL = 1 << 3;
 
@@ -473,6 +500,13 @@ public class ContentBlocking {
          */
         public static final int ACCEPT_NON_TRACKERS = 4;
 
+        /**
+         * Enable dynamic first party isolation (dFPI); this will block third-party tracking
+         * cookies in accordance with the ETP level and isolate non-tracking third-party
+         * cookies.
+         */
+        public static final int ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS = 5;
+
         protected CookieBehavior() {}
     }
 
@@ -547,6 +581,7 @@ public class ContentBlocking {
         private final @CBCookieBehavior int mCookieBehaviorCat;
         private final boolean mIsBlocking;
 
+        @SuppressWarnings("checkstyle:javadocmethod")
         public BlockEvent(@NonNull final String uri,
                           final @CBAntiTracking int atCat,
                           final @CBSafeBrowsing int sbCat,
@@ -602,8 +637,9 @@ public class ContentBlocking {
             final String matchedList =
                 blockedList != null ? blockedList : loadedList;
 
+            // Note: Even if loadedList is non-empty it does not necessarily
+            // mean that the event is not a blocking event.
             final boolean blocking =
-                loadedList.isEmpty() &&
                 (blockedList != null ||
                  error != 0L ||
                  ContentBlocking.isBlockingGeckoCbCat(category));
@@ -620,6 +656,7 @@ public class ContentBlocking {
         }
 
         @UiThread
+        @SuppressWarnings("checkstyle:javadocmethod")
         public boolean isBlocking() {
             return mIsBlocking;
         }

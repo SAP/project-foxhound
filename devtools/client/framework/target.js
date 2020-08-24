@@ -13,7 +13,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "DevToolsClient",
-  "devtools/shared/client/devtools-client",
+  "devtools/client/devtools-client",
   true
 );
 
@@ -97,7 +97,8 @@ exports.TargetFactory = {
     }
 
     // Fetch the FrameTargetActor's Front which is a BrowsingContextTargetFront
-    return client.mainRoot.getTab({ tab });
+    const descriptor = await client.mainRoot.getTab({ tab });
+    return descriptor.getTarget();
   },
 
   /**

@@ -42,8 +42,8 @@ addMessageListener("Extension:DisableWebNavigation", () => {
 
 var CreatedNavigationTargetListener = {
   QueryInterface: ChromeUtils.generateQI([
-    Ci.nsIObserver,
-    Ci.nsISupportsWeakReference,
+    "nsIObserver",
+    "nsISupportsWeakReference",
   ]),
 
   init() {
@@ -92,8 +92,8 @@ var CreatedNavigationTargetListener = {
 
     const isSourceTab = docShell === sourceDocShell || isSourceTabDescendant;
 
-    const sourceFrameId = WebNavigationFrames.getDocShellFrameId(
-      sourceDocShell
+    const sourceFrameId = WebNavigationFrames.getFrameId(
+      sourceDocShell.browsingContext
     );
     const createdOuterWindowId = getDocShellOuterWindowId(sourceDocShell);
 
@@ -377,9 +377,9 @@ var WebProgressListener = {
   },
 
   QueryInterface: ChromeUtils.generateQI([
-    Ci.nsIWebProgressListener,
-    Ci.nsIWebProgressListener2,
-    Ci.nsISupportsWeakReference,
+    "nsIWebProgressListener",
+    "nsIWebProgressListener2",
+    "nsISupportsWeakReference",
   ]),
 };
 

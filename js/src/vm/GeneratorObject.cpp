@@ -9,8 +9,10 @@
 #include "js/PropertySpec.h"
 #include "vm/AsyncFunction.h"
 #include "vm/AsyncIteration.h"
+#include "vm/FunctionFlags.h"  // js::FunctionFlags
 #include "vm/GlobalObject.h"
 #include "vm/JSObject.h"
+#include "vm/PlainObject.h"  // js::PlainObject
 
 #include "debugger/DebugAPI-inl.h"
 #include "vm/ArrayObject-inl.h"
@@ -251,8 +253,8 @@ JSObject* js::NewSingletonObjectWithFunctionPrototype(
   if (!proto) {
     return nullptr;
   }
-  RootedObject obj(
-      cx, NewObjectWithGivenProto<PlainObject>(cx, proto, SingletonObject));
+  RootedObject obj(cx,
+                   NewSingletonObjectWithGivenProto<PlainObject>(cx, proto));
   if (!obj) {
     return nullptr;
   }

@@ -49,16 +49,6 @@ const PREF_LOAD_BOOKMARKS_IN_TABS = "browser.tabs.loadBookmarksInTabs";
 
 let InternalFaviconLoader = {
   /**
-   * This gets called for every inner window that is destroyed.
-   * In the parent process, we process the destruction ourselves. In the child process,
-   * we notify the parent which will then process it based on that message.
-   */
-  observe(subject, topic, data) {
-    let innerWindowID = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
-    this.removeRequestsForInner(innerWindowID);
-  },
-
-  /**
    * Actually cancel the request, and clear the timeout for cancelling it.
    */
   _cancelRequest({ uri, innerWindowID, timerID, callback }, reason) {
@@ -176,10 +166,9 @@ let InternalFaviconLoader = {
     }
     this._initialized = true;
 
-    Services.obs.addObserver(this, "inner-window-destroyed");
-    Services.ppmm.addMessageListener("Toolkit:inner-window-destroyed", msg => {
-      this.removeRequestsForInner(msg.data);
-    });
+    Services.obs.addObserver(windowGlobal => {
+      this.removeRequestsForInner(windowGlobal.innerWindowId);
+    }, "window-global-destroyed");
   },
 
   loadFavicon(browser, principal, pageURI, uri, expiration, iconURI) {
@@ -293,16 +282,16 @@ var PlacesUIUtils = {
   /**
    * Shows the bookmark dialog corresponding to the specified info.
    *
-   * @param aInfo
+   * @param {object} aInfo
    *        Describes the item to be edited/added in the dialog.
    *        See documentation at the top of bookmarkProperties.js
-   * @param aWindow
+   * @param {DOMWindow} [aParentWindow]
    *        Owner window for the new dialog.
    *
    * @see documentation at the top of bookmarkProperties.js
    * @return The guid of the item that was created or edited, undefined otherwise.
    */
-  showBookmarkDialog(aInfo, aParentWindow) {
+  showBookmarkDialog(aInfo, aParentWindow = null) {
     // Preserve size attributes differently based on the fact the dialog has
     // a folder picker or not, since it needs more horizontal space than the
     // other controls.
@@ -325,6 +314,10 @@ var PlacesUIUtils = {
       await batchBlockingDeferred.promise;
     });
 
+    if (!aParentWindow) {
+      aParentWindow = Services.wm.getMostRecentWindow(null);
+    }
+
     aParentWindow.openDialog(dialogURL, "", features, aInfo);
 
     let bookmarkGuid =
@@ -337,6 +330,35 @@ var PlacesUIUtils = {
     }
 
     return bookmarkGuid;
+  },
+
+  /**
+   * Bookmarks one or more pages. If there is more than one, this will create
+   * the bookmarks in a new folder.
+   *
+   * @param {array.<nsIURI>} URIList
+   *   The list of URIs to bookmark.
+   * @param {array.<string>} [hiddenRows]
+   *   An array of rows to be hidden.
+   * @param {DOMWindow} [window]
+   *   The window to use as the parent to display the bookmark dialog.
+   */
+  showBookmarkPagesDialog(URIList, hiddenRows = [], win = null) {
+    if (!URIList.length) {
+      return;
+    }
+
+    const bookmarkDialogInfo = { action: "add", hiddenRows };
+    if (URIList.length > 1) {
+      bookmarkDialogInfo.type = "folder";
+      bookmarkDialogInfo.URIList = URIList;
+    } else {
+      bookmarkDialogInfo.type = "bookmark";
+      bookmarkDialogInfo.title = URIList[0].title;
+      bookmarkDialogInfo.uri = URIList[0].uri;
+    }
+
+    PlacesUIUtils.showBookmarkDialog(bookmarkDialogInfo, win);
   },
 
   /**
@@ -679,9 +701,15 @@ var PlacesUIUtils = {
       : "window";
     if (where == "window") {
       // There is no browser window open, thus open a new one.
-      var uriList = PlacesUtils.toISupportsString(urls.join("|"));
-      var args = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
-      args.appendElement(uriList);
+      let args = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
+      let stringsToLoad = Cc["@mozilla.org/array;1"].createInstance(
+        Ci.nsIMutableArray
+      );
+      urls.forEach(url =>
+        stringsToLoad.appendElement(PlacesUtils.toISupportsString(url))
+      );
+      args.appendElement(stringsToLoad);
+
       browserWindow = Services.ww.openWindow(
         aWindow,
         AppConstants.BROWSER_CHROME_URL,

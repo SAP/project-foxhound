@@ -379,10 +379,6 @@ BaseBookmarksEngine.prototype = {
         { newSyncID }
       );
       await this._ensureCurrentSyncID(newSyncID);
-      // Update the sync ID in prefs to allow downgrading to older Firefox
-      // releases that don't store Sync metadata in Places. This can be removed
-      // in bug 1443021.
-      await super.ensureCurrentSyncID(newSyncID);
       return newSyncID;
     }
     // We didn't take the new sync ID because we need to wipe the server
@@ -411,7 +407,6 @@ BaseBookmarksEngine.prototype = {
   async resetLocalSyncID() {
     let newSyncID = await PlacesSyncUtils.bookmarks.resetSyncId();
     this._log.debug("Assigned new sync ID ${newSyncID}", { newSyncID });
-    await super.ensureCurrentSyncID(newSyncID); // Remove in bug 1443021.
     return newSyncID;
   },
 
@@ -563,7 +558,6 @@ BookmarksEngine.prototype = {
 
   async setLastSync(lastSync) {
     await PlacesSyncUtils.bookmarks.setLastSync(lastSync);
-    await super.setLastSync(lastSync); // Remove in bug 1443021.
   },
 
   emptyChangeset() {
@@ -873,7 +867,6 @@ BufferedBookmarksEngine.prototype = {
     // Update the last sync time in Places so that reverting to the original
     // bookmarks engine doesn't download records we've already applied.
     await PlacesSyncUtils.bookmarks.setLastSync(lastSync);
-    await super.setLastSync(lastSync); // Remove in bug 1443021.
   },
 
   emptyChangeset() {
@@ -1015,11 +1008,6 @@ BufferedBookmarksEngine.prototype = {
   async finalize() {
     await super.finalize();
     await this._store.finalize();
-  },
-
-  // Returns a new watchdog. Exposed for tests.
-  _newWatchdog() {
-    return Async.watchdog();
   },
 };
 
@@ -1393,20 +1381,6 @@ function BookmarksTracker(name, engine) {
 BookmarksTracker.prototype = {
   __proto__: Tracker.prototype,
 
-  // `_ignore` checks the change source for each observer notification, so we
-  // don't want to let the engine ignore all changes during a sync.
-  get ignoreAll() {
-    return false;
-  },
-
-  // Define an empty setter so that the engine doesn't throw a `TypeError`
-  // setting a read-only property.
-  set ignoreAll(value) {},
-
-  // We never want to persist changed IDs, as the changes are already stored
-  // in Places.
-  persistChangedIDs: false,
-
   onStart() {
     PlacesUtils.bookmarks.addObserver(this, true);
     this._placesListener = new PlacesWeakCallbackWrapper(
@@ -1432,25 +1406,8 @@ BookmarksTracker.prototype = {
     Svc.Obs.remove("bookmarks-restore-failed", this);
   },
 
-  // Ensure we aren't accidentally using the base persistence.
-  addChangedID(id, when) {
-    throw new Error("Don't add IDs to the bookmarks tracker");
-  },
-
-  removeChangedID(id) {
-    throw new Error("Don't remove IDs from the bookmarks tracker");
-  },
-
-  // This method is called at various times, so we override with a no-op
-  // instead of throwing.
-  clearChangedIDs() {},
-
   async getChangedIDs() {
     return PlacesSyncUtils.bookmarks.pullChanges();
-  },
-
-  set changedIDs(obj) {
-    throw new Error("Don't set initial changed bookmark IDs");
   },
 
   observe(subject, topic, data) {
@@ -1481,9 +1438,8 @@ BookmarksTracker.prototype = {
   },
 
   QueryInterface: ChromeUtils.generateQI([
-    Ci.nsINavBookmarkObserver,
-    Ci.nsINavBookmarkObserver_MOZILLA_1_9_1_ADDITIONS,
-    Ci.nsISupportsWeakReference,
+    "nsINavBookmarkObserver",
+    "nsISupportsWeakReference",
   ]),
 
   /* Every add/remove/change will trigger a sync for MULTI_DEVICE (except in

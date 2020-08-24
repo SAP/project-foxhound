@@ -19,7 +19,6 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/LocationBinding.h"
 #include "mozilla/dom/WindowBinding.h"
-#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "nsJSUtils.h"
 #include "xpcprivate.h"
 
@@ -100,16 +99,6 @@ bool AccessCheck::checkPassToPrivilegedCode(JSContext* cx, HandleObject wrapper,
     return true;
   }
 
-  // CPOWs use COWs (in the unprivileged junk scope) for all child->parent
-  // references. Without this test, the child process wouldn't be able to
-  // pass any objects at all to CPOWs.
-  if (mozilla::jsipc::IsWrappedCPOW(obj) &&
-      js::GetObjectCompartment(wrapper) ==
-          js::GetObjectCompartment(xpc::UnprivilegedJunkScope()) &&
-      XRE_IsParentProcess()) {
-    return true;
-  }
-
   // Same-origin wrappers are fine.
   if (AccessCheck::wrapperSubsumes(obj)) {
     return true;
@@ -146,7 +135,7 @@ void AccessCheck::reportCrossOriginDenial(JSContext* cx, JS::HandleId id,
 
   nsAutoCString message;
   if (JSID_IS_VOID(id)) {
-    message = NS_LITERAL_CSTRING("Permission denied to access object");
+    message = "Permission denied to access object"_ns;
   } else {
     // We want to use JS_ValueToSource here, because that most closely
     // matches what AutoEnterPolicy::reportErrorIfExceptionIsNotPending
@@ -157,10 +146,8 @@ void AccessCheck::reportCrossOriginDenial(JSContext* cx, JS::HandleId id,
     if (!idStr || !propName.init(cx, idStr)) {
       return;
     }
-    message = NS_LITERAL_CSTRING("Permission denied to ") + accessType +
-              NS_LITERAL_CSTRING(" property ") +
-              NS_ConvertUTF16toUTF8(propName) +
-              NS_LITERAL_CSTRING(" on cross-origin object");
+    message = "Permission denied to "_ns + accessType + " property "_ns +
+              NS_ConvertUTF16toUTF8(propName) + " on cross-origin object"_ns;
   }
   ErrorResult rv;
   rv.ThrowSecurityError(message);

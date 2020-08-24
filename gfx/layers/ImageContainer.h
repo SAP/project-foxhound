@@ -116,7 +116,7 @@ class nsAutoRefTraits<nsOwningThreadSourceSurfaceRef> {
   }
   void AddRef(RawRef aRawRef) {
     MOZ_ASSERT(!mOwningEventTarget);
-    mOwningEventTarget = mozilla::GetCurrentThreadSerialEventTarget();
+    mOwningEventTarget = mozilla::GetCurrentSerialEventTarget();
     aRawRef->AddRef();
   }
 
@@ -146,6 +146,7 @@ class SharedPlanarYCbCrImage;
 class SharedSurfacesAnimation;
 class PlanarYCbCrImage;
 class TextureClient;
+class TextureClientRecycleAllocator;
 class KnowsCompositor;
 class NVImage;
 #ifdef XP_WIN
@@ -168,7 +169,7 @@ class SurfaceTextureImage;
 #elif defined(XP_MACOSX)
 class MacIOSurfaceImage;
 #elif MOZ_WAYLAND
-class WaylandDMABUFSurfaceImage;
+class DMABUFSurfaceImage;
 #endif
 
 /**
@@ -230,9 +231,7 @@ class Image {
 #endif
   virtual PlanarYCbCrImage* AsPlanarYCbCrImage() { return nullptr; }
 #ifdef MOZ_WAYLAND
-  virtual WaylandDMABUFSurfaceImage* AsWaylandDMABUFSurfaceImage() {
-    return nullptr;
-  }
+  virtual DMABUFSurfaceImage* AsDMABUFSurfaceImage() { return nullptr; }
 #endif
 
   virtual NVImage* AsNVImage() { return nullptr; }
@@ -364,14 +363,12 @@ class ImageContainerListener final {
  * synchronously updates the shared state to point to the new image and the old
  * image is immediately released (not true in Normal or Asynchronous modes).
  */
-class ImageContainer final : public SupportsWeakPtr<ImageContainer> {
+class ImageContainer final : public SupportsWeakPtr {
   friend class ImageContainerChild;
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ImageContainer)
 
  public:
-  MOZ_DECLARE_WEAKREFERENCE_TYPENAME(ImageContainer)
-
   enum Mode { SYNCHRONOUS = 0x0, ASYNCHRONOUS = 0x01 };
 
   static const uint64_t sInvalidAsyncContainerId = 0;
@@ -546,6 +543,8 @@ class ImageContainer final : public SupportsWeakPtr<ImageContainer> {
 
   ImageFactory* GetImageFactory() const { return mImageFactory; }
 
+  void EnsureRecycleAllocatorForRDD(KnowsCompositor* aKnowsCompositor);
+
 #ifdef XP_WIN
   D3D11YCbCrRecycleAllocator* GetD3D11YCbCrRecycleAllocator(
       KnowsCompositor* aKnowsCompositor);
@@ -629,6 +628,8 @@ class ImageContainer final : public SupportsWeakPtr<ImageContainer> {
   // RecursiveMutex to protect thread safe access to the "current
   // image", and any other state which is shared between threads.
   RecursiveMutex mRecursiveMutex;
+
+  RefPtr<TextureClientRecycleAllocator> mRecycleAllocator;
 
 #ifdef XP_WIN
   RefPtr<D3D11YCbCrRecycleAllocator> mD3D11YCbCrRecycleAllocator;
@@ -764,16 +765,16 @@ struct PlanarYCbCrData {
  * formats from hardware decoder. They are per-pixel skips in the
  * source image.
  *
- * For example when image width is 640, mYStride is 670, mYSkip is 3,
+ * For example when image width is 640, mYStride is 670, mYSkip is 2,
  * the mYChannel buffer looks like:
  *
  * |<----------------------- mYStride ----------------------------->|
  * |<----------------- mYSize.width --------------->|
- *  0   3   6   9   12  15  18  21                659             669
+ *  0   3   6   9   12  15  18  21                639             669
  * |----------------------------------------------------------------|
- * |Y___Y___Y___Y___Y___Y___Y___Y...                      |%%%%%%%%%|
- * |Y___Y___Y___Y___Y___Y___Y___Y...                      |%%%%%%%%%|
- * |Y___Y___Y___Y___Y___Y___Y___Y...                      |%%%%%%%%%|
+ * |Y___Y___Y___Y___Y___Y___Y___Y...                |%%%%%%%%%%%%%%%|
+ * |Y___Y___Y___Y___Y___Y___Y___Y...                |%%%%%%%%%%%%%%%|
+ * |Y___Y___Y___Y___Y___Y___Y___Y...                |%%%%%%%%%%%%%%%|
  * |            |<->|
  *                mYSkip
  */

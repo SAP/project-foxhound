@@ -6,9 +6,13 @@
 
 with Files("**"):
     BUG_COMPONENT = ("Core", "Widget: Win32")
+    SCHEDULES.exclusive = ['windows']
 
 with Files("*CompositorWidget*"):
     BUG_COMPONENT = ("Core", "Graphics")
+
+with Files("OSK*"):
+    BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
 
 TEST_DIRS += ['tests']
 
@@ -32,6 +36,7 @@ EXPORTS.mozilla.widget += [
     'InProcessWinCompositorWidget.h',
     'WinCompositorWidget.h',
     'WinCompositorWindowThread.h',
+    'WinContentSystemParameters.h',
     'WindowsEMF.h',
     'WindowsSMTCProvider.h',
     'WinMessages.h',
@@ -55,13 +60,13 @@ UNIFIED_SOURCES += [
     'nsDataObj.cpp',
     'nsDataObjCollection.cpp',
     'nsDragService.cpp',
-    'nsIdleServiceWin.cpp',
     'nsLookAndFeel.cpp',
     'nsNativeDragSource.cpp',
     'nsNativeDragTarget.cpp',
     'nsNativeThemeWin.cpp',
     'nsSound.cpp',
     'nsToolkit.cpp',
+    'nsUserIdleServiceWin.cpp',
     'nsUXThemeData.cpp',
     'nsWindow.cpp',
     'nsWindowBase.cpp',
@@ -96,10 +101,17 @@ SOURCES += [
     'nsFilePicker.cpp',
     'nsSharePicker.cpp',
     'nsWidgetFactory.cpp',
+    'OSKInputPaneManager.cpp',
     'WinCompositorWidget.cpp',
+    'WinContentSystemParameters.cpp',
     'WindowsSMTCProvider.cpp',
     'WindowsUIUtils.cpp',
     'WinMouseScrollHandler.cpp',
+]
+
+# These files redefine the winsdk api version macro and we don't want it to leak to other files.
+SOURCES += [
+    'DirectManipulationOwner.cpp',
 ]
 
 # Needs INITGUID and we don't allow INITGUID in unified sources since bug 970429.
@@ -110,8 +122,10 @@ SOURCES += [
 if CONFIG['NS_PRINTING']:
     UNIFIED_SOURCES += [
         'nsDeviceContextSpecWin.cpp',
+        'nsPaperWin.cpp',
         'nsPrintDialogUtil.cpp',
         'nsPrintDialogWin.cpp',
+        'nsPrinterWin.cpp',
         'nsPrintSettingsServiceWin.cpp',
         'nsPrintSettingsWin.cpp',
     ]

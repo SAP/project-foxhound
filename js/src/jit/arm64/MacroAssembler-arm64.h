@@ -393,10 +393,8 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     return CodeOffset(off.getOffset());
   }
 
-  void boxValue(JSValueType type, Register src, Register dest) {
-    Orr(ARMRegister(dest, 64), ARMRegister(src, 64),
-        Operand(ImmShiftedTag(type).value));
-  }
+  void boxValue(JSValueType type, Register src, Register dest);
+
   void splitSignExtTag(Register src, Register dest) {
     sbfx(ARMRegister(dest, 64), ARMRegister(src, 64), JSVAL_TAG_SHIFT,
          (64 - JSVAL_TAG_SHIFT));
@@ -847,6 +845,10 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     Mov(scratch32, Operand(imm.value));
     doBaseIndex(scratch32, address, vixl::STRH_w);
   }
+  template <typename S, typename T>
+  void store16Unaligned(const S& src, const T& dest) {
+    store16(src, dest);
+  }
 
   void storePtr(ImmWord imm, const Address& address) {
     vixl::UseScratchRegisterScope temps(this);
@@ -938,6 +940,11 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     Str(scratch32, toMemOperand(address));
   }
 
+  template <typename S, typename T>
+  void store32Unaligned(const S& src, const T& dest) {
+    store32(src, dest);
+  }
+
   void store64(Register64 src, Address address) { storePtr(src.reg, address); }
 
   void store64(Register64 src, const BaseIndex& address) {
@@ -946,6 +953,11 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 
   void store64(Imm64 imm, const BaseIndex& address) {
     storePtr(ImmWord(imm.value), address);
+  }
+
+  template <typename S, typename T>
+  void store64Unaligned(const S& src, const T& dest) {
+    store64(src, dest);
   }
 
   // StackPointer manipulation.
@@ -1200,11 +1212,19 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     movePtr(ImmWord((uintptr_t)address.addr), scratch64.asUnsized());
     ldr(ARMRegister(dest, 32), MemOperand(scratch64));
   }
+  template <typename S>
+  void load32Unaligned(const S& src, Register dest) {
+    load32(src, dest);
+  }
   void load64(const Address& address, Register64 dest) {
     loadPtr(address, dest.reg);
   }
   void load64(const BaseIndex& address, Register64 dest) {
     loadPtr(address, dest.reg);
+  }
+  template <typename S>
+  void load64Unaligned(const S& src, Register64 dest) {
+    load64(src, dest);
   }
 
   void load8SignExtend(const Address& address, Register dest) {
@@ -1227,12 +1247,20 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   void load16SignExtend(const BaseIndex& src, Register dest) {
     doBaseIndex(ARMRegister(dest, 32), src, vixl::LDRSH_w);
   }
+  template <typename S>
+  void load16UnalignedSignExtend(const S& src, Register dest) {
+    load16SignExtend(src, dest);
+  }
 
   void load16ZeroExtend(const Address& address, Register dest) {
     Ldrh(ARMRegister(dest, 32), toMemOperand(address));
   }
   void load16ZeroExtend(const BaseIndex& src, Register dest) {
     doBaseIndex(ARMRegister(dest, 32), src, vixl::LDRH_w);
+  }
+  template <typename S>
+  void load16UnalignedZeroExtend(const S& src, Register dest) {
+    load16ZeroExtend(src, dest);
   }
 
   void adds32(Register src, Register dest) {
@@ -1315,6 +1343,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     move32(src.valueReg(), dest);
   }
   void unboxInt32(const Address& src, Register dest) { load32(src, dest); }
+  void unboxInt32(const BaseIndex& src, Register dest) { load32(src, dest); }
 
   template <typename T>
   void unboxDouble(const T& src, FloatRegister dest) {
@@ -1335,6 +1364,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     move32(src.valueReg(), dest);
   }
   void unboxBoolean(const Address& src, Register dest) { load32(src, dest); }
+  void unboxBoolean(const BaseIndex& src, Register dest) { load32(src, dest); }
 
   void unboxMagic(const ValueOperand& src, Register dest) {
     move32(src.valueReg(), dest);
@@ -1392,9 +1422,13 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   }
 
   // See comment in MacroAssembler-x64.h.
-  void unboxGCThingForPreBarrierTrampoline(const Address& src, Register dest) {
+  void unboxGCThingForGCBarrier(const Address& src, Register dest) {
     loadPtr(src, dest);
     And(ARMRegister(dest, 64), ARMRegister(dest, 64),
+        Operand(JS::detail::ValueGCThingPayloadMask));
+  }
+  void unboxGCThingForGCBarrier(const ValueOperand& src, Register dest) {
+    And(ARMRegister(dest, 64), ARMRegister(src.valueReg(), 64),
         Operand(JS::detail::ValueGCThingPayloadMask));
   }
 
@@ -1633,6 +1667,13 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     MOZ_ASSERT(value.valueReg() != scratch);
     splitSignExtTag(value, scratch);
     return testMagic(cond, scratch);
+  }
+  Condition testGCThing(Condition cond, const ValueOperand& value) {
+    vixl::UseScratchRegisterScope temps(this);
+    const Register scratch = temps.AcquireX().asUnsized();
+    MOZ_ASSERT(value.valueReg() != scratch);
+    splitSignExtTag(value, scratch);
+    return testGCThing(cond, scratch);
   }
   Condition testError(Condition cond, const ValueOperand& value) {
     return testMagic(cond, value);

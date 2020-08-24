@@ -58,6 +58,8 @@ class ContentIteratorBase {
  protected:
   explicit ContentIteratorBase(bool aPre);
 
+  class Initializer;
+
   /**
    * Callers must guarantee that:
    * - Neither aStartContainer nor aEndContainer is nullptr.
@@ -83,7 +85,7 @@ class ContentIteratorBase {
   nsINode* NextNode(nsINode* aNode);
   nsINode* PrevNode(nsINode* aNode);
 
-  void MakeEmpty();
+  void SetEmpty();
 
   nsCOMPtr<nsINode> mCurNode;
   nsCOMPtr<nsINode> mFirst;

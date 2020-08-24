@@ -7,6 +7,9 @@
 #include "gc/AtomMarking.h"
 
 #include "mozilla/Assertions.h"
+
+#include <type_traits>
+
 #include "vm/Realm.h"
 
 #include "gc/Heap-inl.h"
@@ -22,7 +25,11 @@ inline size_t GetAtomBit(TenuredCell* thing) {
   return arena->atomBitmapStart() * JS_BITS_PER_WORD + arenaBit;
 }
 
-inline bool ThingIsPermanent(JSAtom* atom) { return atom->isPinned(); }
+inline bool ThingIsPermanent(JSAtom* atom) {
+  // This doesn't check for pinned atoms since that might require taking a
+  // lock. This is not required for correctness.
+  return atom->isPermanentAtom();
+}
 
 inline bool ThingIsPermanent(JS::Symbol* symbol) {
   return symbol->isWellKnownSymbol();
@@ -31,8 +38,7 @@ inline bool ThingIsPermanent(JS::Symbol* symbol) {
 template <typename T, bool Fallible>
 MOZ_ALWAYS_INLINE bool AtomMarkingRuntime::inlinedMarkAtomInternal(
     JSContext* cx, T* thing) {
-  static_assert(mozilla::IsSame<T, JSAtom>::value ||
-                    mozilla::IsSame<T, JS::Symbol>::value,
+  static_assert(std::is_same_v<T, JSAtom> || std::is_same_v<T, JS::Symbol>,
                 "Should only be called with JSAtom* or JS::Symbol* argument");
 
   MOZ_ASSERT(thing);

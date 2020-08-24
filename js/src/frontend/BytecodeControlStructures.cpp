@@ -8,7 +8,6 @@
 
 #include "frontend/BytecodeEmitter.h"  // BytecodeEmitter
 #include "frontend/EmitterScope.h"     // EmitterScope
-#include "frontend/SourceNotes.h"      // SRC_*
 #include "vm/Opcodes.h"                // JSOp
 
 using namespace js;
@@ -83,7 +82,7 @@ bool LoopControl::emitLoopHead(BytecodeEmitter* bce,
 }
 
 bool LoopControl::emitLoopEnd(BytecodeEmitter* bce, JSOp op,
-                              JSTryNoteKind tryNoteKind) {
+                              TryNoteKind tryNoteKind) {
   JumpList jump;
   if (!bce->emitJumpNoFallthrough(op, &jump)) {
     return false;

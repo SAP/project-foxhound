@@ -128,10 +128,17 @@ function formDataURI(mimeType, encoding, text) {
  * Write out a list of headers into a chunk of text
  *
  * @param {array} headers - array of headers info { name, value }
+ * @param {string} preHeaderText - first line of the headers request/response
  * @return {string} list of headers in text format
  */
-function writeHeaderText(headers) {
-  return headers.map(({ name, value }) => name + ": " + value).join("\n");
+function writeHeaderText(headers, preHeaderText) {
+  let result = "";
+  if (preHeaderText) {
+    result += preHeaderText + "\r\n";
+  }
+  result += headers.map(({ name, value }) => name + ": " + value).join("\r\n");
+  result += "\r\n\r\n";
+  return result;
 }
 
 /**
@@ -197,7 +204,7 @@ function getUrl(url) {
  */
 function getUrlProperty(input, property) {
   const url = getUrl(input);
-  return url && url[property] ? url[property] : "";
+  return url?.[property] ? url[property] : "";
 }
 
 /**
@@ -325,16 +332,20 @@ function parseQueryString(query) {
   if (!query) {
     return null;
   }
-
   return query
     .replace(/^[?&]/, "")
     .split("&")
     .map(e => {
       const param = e.split("=");
       return {
-        name: param[0] ? getUnicodeUrlPath(param[0]) : "",
+        name: param[0] ? getUnicodeUrlPath(param[0].replace(/\+/g, " ")) : "",
         value: param[1]
-          ? getUnicodeUrlPath(param.slice(1).join("=")).replace(/\+/g, " ")
+          ? getUnicodeUrlPath(
+              param
+                .slice(1)
+                .join("=")
+                .replace(/\+/g, " ")
+            )
           : "",
       };
     });
@@ -564,10 +575,10 @@ async function updateFormDataSections(props) {
 }
 
 /**
- * This helper function helps to resolve the full payload of a WebSocket frame
+ * This helper function helps to resolve the full payload of a message
  * that is wrapped in a LongStringActor object.
  */
-async function getFramePayload(payload, getLongString) {
+async function getMessagePayload(payload, getLongString) {
   const result = await getLongString(payload);
   return result;
 }
@@ -664,7 +675,7 @@ module.exports = {
   getFileName,
   getEndTime,
   getFormattedProtocol,
-  getFramePayload,
+  getMessagePayload,
   getRequestHeader,
   getResponseHeader,
   getResponseTime,

@@ -12,7 +12,7 @@
 #include "nsMemory.h"
 #include "prinrval.h"
 #include "mozilla/Logging.h"
-#include "mozilla/SystemGroup.h"
+#include "mozilla/SchedulerGroup.h"
 #include "nsThreadSyncDispatch.h"
 
 #include <mutex>
@@ -37,13 +37,12 @@ static MOZ_THREAD_LOCAL(nsThreadPool*) gCurrentThreadPool;
 #define DEFAULT_IDLE_THREAD_LIMIT 1
 #define DEFAULT_IDLE_THREAD_TIMEOUT PR_SecondsToInterval(60)
 
-NS_IMPL_ADDREF(nsThreadPool)
-NS_IMPL_RELEASE(nsThreadPool)
-NS_IMPL_QUERY_INTERFACE(nsThreadPool, nsIThreadPool, nsIEventTarget,
-                        nsIRunnable)
+NS_IMPL_ISUPPORTS_INHERITED(nsThreadPool, Runnable, nsIThreadPool,
+                            nsIEventTarget)
 
 nsThreadPool::nsThreadPool()
-    : mMutex("[nsThreadPool.mMutex]"),
+    : Runnable("nsThreadPool"),
+      mMutex("[nsThreadPool.mMutex]"),
       mEventsAvailable(mMutex, "[nsThreadPool.mEventsAvailable]"),
       mThreadLimit(DEFAULT_THREAD_LIMIT),
       mIdleThreadLimit(DEFAULT_IDLE_THREAD_LIMIT),
@@ -95,7 +94,9 @@ nsresult nsThreadPool::PutEvent(already_AddRefed<nsIRunnable> aEvent,
       spawnThread = true;
     }
 
-    mEvents.PutEvent(std::move(aEvent), EventQueuePriority::Normal, lock);
+    nsCOMPtr<nsIRunnable> event(aEvent);
+    LogRunnable::LogDispatch(event);
+    mEvents.PutEvent(event.forget(), EventQueuePriority::Normal, lock);
     mEventsAvailable.Notify();
     stackSize = mStackSize;
   }
@@ -157,9 +158,10 @@ void nsThreadPool::ShutdownThread(nsIThread* aThread) {
   // shutdown requires this thread have an event loop (and it may not, see bug
   // 10204784).  The simplest way to cover all cases is to asynchronously
   // shutdown aThread from the main thread.
-  SystemGroup::Dispatch(TaskCategory::Other,
-                        NewRunnableMethod("nsIThread::AsyncShutdown", aThread,
-                                          &nsIThread::AsyncShutdown));
+  SchedulerGroup::Dispatch(
+      TaskCategory::Other,
+      NewRunnableMethod("nsIThread::AsyncShutdown", aThread,
+                        &nsIThread::AsyncShutdown));
 }
 
 // This event 'runs' for the lifetime of the worker thread.  The actual
@@ -273,10 +275,7 @@ nsThreadPool::Run() {
           TimeDuration delta = timeout - (now - idleSince);
           LOG(("THRD-P(%p) %s waiting [%f]\n", this, mName.BeginReading(),
                delta.ToMilliseconds()));
-          {
-            AUTO_PROFILER_THREAD_SLEEP;
-            mEventsAvailable.Wait(delta);
-          }
+          mEventsAvailable.Wait(delta);
           LOG(("THRD-P(%p) done waiting\n", this));
         }
       } else if (wasIdle) {
@@ -296,7 +295,10 @@ nsThreadPool::Run() {
       // when we sample.
       current->SetRunningEventDelay(delay, TimeStamp::Now());
 
+      LogRunnable::Run log(event);
       event->Run();
+      // To cover the event's destructor code in the LogRunnable span
+      event = nullptr;
     }
   } while (!exitThread);
 
@@ -485,7 +487,7 @@ nsThreadPool::ShutdownWithTimeout(int32_t aTimeoutMs) {
         // We must leak the shutdown context just in case the leaked thread
         // does get unstuck and completes before the main thread is done.
         Unused << currentThread->mRequestedShutdownContexts[index].release();
-        currentThread->mRequestedShutdownContexts.RemoveElementsAt(index, 1);
+        currentThread->mRequestedShutdownContexts.RemoveElementAt(index);
       }
     }
   }

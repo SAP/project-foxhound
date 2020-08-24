@@ -7,7 +7,7 @@ add_task(async function setup() {
   await useTestEngines("simple-engines");
   // Geo specific defaults won't be fetched if there's no country code.
   Services.prefs.setCharPref(
-    "geo.provider-country.network.url",
+    "browser.region.network.url",
     'data:application/json,{"country_code": "US"}'
   );
 
@@ -33,7 +33,11 @@ add_task(async function setup() {
 
 add_task(async function async_init() {
   let commitPromise = promiseAfterCache();
+  let enginesReloaded = SearchTestUtils.promiseSearchNotification(
+    "engines-reloaded"
+  );
   await Services.search.init(true);
+  await enginesReloaded;
 
   let engines = await Services.search.getEngines();
   Assert.equal(engines.length, 1);
@@ -74,7 +78,11 @@ add_task(async function invalid_engine() {
     .getDefaultBranch(SearchUtils.BROWSER_SEARCH_PREF)
     .setCharPref(kUrlPref, url);
 
+  let enginesReloaded = SearchTestUtils.promiseSearchNotification(
+    "engines-reloaded"
+  );
   await asyncReInit({ awaitRegionFetch: true });
+  await enginesReloaded;
 
   let engines = await Services.search.getEngines();
   Assert.equal(engines.length, 2);

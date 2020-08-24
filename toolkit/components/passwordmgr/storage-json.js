@@ -8,6 +8,9 @@
 
 "use strict";
 
+const { ComponentUtils } = ChromeUtils.import(
+  "resource://gre/modules/ComponentUtils.jsm"
+);
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -17,11 +20,6 @@ ChromeUtils.defineModuleGetter(
   this,
   "LoginHelper",
   "resource://gre/modules/LoginHelper.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "LoginImport",
-  "resource://gre/modules/LoginImport.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
@@ -48,11 +46,13 @@ class LoginManagerStorage_json {
   }
 
   get QueryInterface() {
-    return ChromeUtils.generateQI([Ci.nsILoginManagerStorage]);
+    return ChromeUtils.generateQI(["nsILoginManagerStorage"]);
   }
 
   get _xpcom_factory() {
-    return XPCOMUtils.generateSingletonFactory(this.LoginManagerStorage_json);
+    return ComponentUtils.generateSingletonFactory(
+      this.LoginManagerStorage_json
+    );
   }
 
   get _crypto() {
@@ -89,42 +89,22 @@ class LoginManagerStorage_json {
 
       // Set the reference to LoginStore synchronously.
       let jsonPath = OS.Path.join(OS.Constants.Path.profileDir, "logins.json");
-      this._store = new LoginStore(jsonPath);
+      let backupPath = "";
+      let loginsBackupEnabled = Services.prefs.getBoolPref(
+        "signon.backup.enabled"
+      );
+      if (loginsBackupEnabled) {
+        backupPath = OS.Path.join(
+          OS.Constants.Path.profileDir,
+          "logins-backup.json"
+        );
+      }
+      this._store = new LoginStore(jsonPath, backupPath);
 
       return (async () => {
         // Load the data asynchronously.
         this.log("Opening database at", this._store.path);
         await this._store.load();
-
-        // The import from previous versions operates the first time
-        // that this built-in storage back-end is used.  This may be
-        // later than expected, in case add-ons have registered an
-        // alternate storage that disabled the default one.
-        try {
-          if (Services.prefs.getBoolPref("signon.importedFromSqlite")) {
-            return;
-          }
-        } catch (ex) {
-          // If the preference does not exist, we need to import.
-        }
-
-        // Import only happens asynchronously.
-        let sqlitePath = OS.Path.join(
-          OS.Constants.Path.profileDir,
-          "signons.sqlite"
-        );
-        if (await OS.File.exists(sqlitePath)) {
-          let loginImport = new LoginImport(this._store, sqlitePath);
-          // Failures during import, for example due to a corrupt
-          // file or a schema version that is too old, will not
-          // prevent us from marking the operation as completed.
-          // At the next startup, we will not try the import again.
-          await loginImport.import().catch(Cu.reportError);
-          this._store.saveSoon();
-        }
-
-        // We won't attempt import again on next startup.
-        Services.prefs.setBoolPref("signon.importedFromSqlite", true);
       })().catch(Cu.reportError);
     } catch (e) {
       this.log("Initialization failed:", e);

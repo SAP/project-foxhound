@@ -37,6 +37,7 @@ UNIFIED_SOURCES += [
     'BytecodeAnalysis.cpp',
     'CacheIR.cpp',
     'CacheIRCompiler.cpp',
+    'CacheIRHealth.cpp',
     'CacheIRSpewer.cpp',
     'CodeGenerator.cpp',
     'CompileWrappers.cpp',
@@ -45,6 +46,7 @@ UNIFIED_SOURCES += [
     'EffectiveAddressAnalysis.cpp',
     'ExecutableAllocator.cpp',
     'FoldLinearArithConstants.cpp',
+    'InlinableNatives.cpp',
     'InstructionReordering.cpp',
     'Ion.cpp',
     'IonAnalysis.cpp',
@@ -85,15 +87,19 @@ UNIFIED_SOURCES += [
     'Sink.cpp',
     'Snapshots.cpp',
     'TIOracle.cpp',
+    'TrialInlining.cpp',
     'TypePolicy.cpp',
     'ValueNumbering.cpp',
     'VMFunctions.cpp',
     'WarpBuilder.cpp',
+    'WarpBuilderShared.cpp',
+    'WarpCacheIRTranspiler.cpp',
     'WarpOracle.cpp',
+    'WarpSnapshot.cpp',
     'WasmBCE.cpp',
 ]
 
-if not CONFIG['ENABLE_ION']:
+if CONFIG['JS_CODEGEN_NONE']:
     lir_inputs += ['none/LIR-none.h']
     UNIFIED_SOURCES += [
         'none/Trampoline-none.cpp'
@@ -238,15 +244,21 @@ elif CONFIG['JS_CODEGEN_MIPS32'] or CONFIG['JS_CODEGEN_MIPS64']:
             ]
 
 
-# Generate jit/MOpcodes.h from jit/MIR.h
-GeneratedFile('MOpcodes.h',
+# Generate jit/MOpcodesGenerated.h from jit/MIR.h
+GeneratedFile('MOpcodesGenerated.h',
               script='GenerateOpcodeFiles.py',
               entry_point='generate_mir_header',
               inputs=['MIR.h'])
 
-# Generate jit/LOpcodes.h from jit/LIR.h, jit/shared/LIR-shared.h, and
+# Generate jit/LOpcodesGenerated.h from jit/LIR.h, jit/shared/LIR-shared.h, and
 # platform-specific LIR files.
-GeneratedFile('LOpcodes.h',
+GeneratedFile('LOpcodesGenerated.h',
               script='GenerateOpcodeFiles.py',
               entry_point='generate_lir_header',
               inputs=lir_inputs)
+
+# Generate jit/CacheIROpsGenerated.h from jit/CacheIROps.yaml
+GeneratedFile('CacheIROpsGenerated.h',
+              script='GenerateCacheIRFiles.py',
+              entry_point='generate_cacheirops_header',
+              inputs=['CacheIROps.yaml'])

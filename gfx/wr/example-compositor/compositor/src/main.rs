@@ -210,6 +210,7 @@ fn push_rotated_rect(
                 clip_id: ClipId::root(root_pipeline_id),
             },
         ),
+        rect,
         color,
     );
 }
@@ -237,8 +238,6 @@ fn build_display_list(
         Some(scroll_id),
         LayoutRect::new(LayoutPoint::zero(), layout_size),
         LayoutRect::new(LayoutPoint::zero(), layout_size),
-        Vec::new(),
-        None,
         ScrollSensitivity::Script,
         LayoutVector2D::zero(),
     );
@@ -248,6 +247,7 @@ fn build_display_list(
             LayoutRect::new(LayoutPoint::zero(), layout_size).inflate(-10.0, -10.0),
             fixed_space_info,
         ),
+        LayoutRect::new(LayoutPoint::zero(), layout_size).inflate(-10.0, -10.0),
         ColorF::new(0.8, 0.8, 0.8, 1.0),
     );
 

@@ -22,6 +22,7 @@
 #include "mozilla/layers/SharedSurfacesChild.h"  // for SharedSurfacesAnimation
 #include "mozilla/layers/SharedRGBImage.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "nsISupportsUtils.h"  // for NS_IF_ADDREF
 #include "YCbCrUtils.h"        // for YCbCr conversions
@@ -84,10 +85,7 @@ UniquePtr<uint8_t[]> BufferRecycleBin::GetBuffer(uint32_t aSize) {
     return UniquePtr<uint8_t[]>(new (fallible) uint8_t[aSize]);
   }
 
-  uint32_t last = mRecycledBuffers.Length() - 1;
-  UniquePtr<uint8_t[]> result = std::move(mRecycledBuffers[last]);
-  mRecycledBuffers.RemoveElementAt(last);
-  return result;
+  return mRecycledBuffers.PopLastElement();
 }
 
 void BufferRecycleBin::ClearRecycledBuffers() {
@@ -228,6 +226,9 @@ RefPtr<PlanarYCbCrImage> ImageContainer::CreatePlanarYCbCrImage() {
   if (mImageClient && mImageClient->AsImageClientSingle()) {
     return new SharedPlanarYCbCrImage(mImageClient);
   }
+  if (mRecycleAllocator) {
+    return new SharedPlanarYCbCrImage(mRecycleAllocator);
+  }
   return mImageFactory->CreatePlanarYCbCrImage(mScaleHint, mRecycleBin);
 }
 
@@ -293,6 +294,7 @@ void ImageContainer::ClearImagesFromImageBridge() {
 }
 
 void ImageContainer::SetCurrentImages(const nsTArray<NonOwningImage>& aImages) {
+  AUTO_PROFILER_LABEL("ImageContainer::SetCurrentImages", GRAPHICS);
   MOZ_ASSERT(!aImages.IsEmpty());
   RecursiveMutexAutoLock lock(mRecursiveMutex);
   if (mIsAsync) {
@@ -367,7 +369,7 @@ void ImageContainer::GetCurrentImages(nsTArray<OwningImage>* aImages,
                                       uint32_t* aGenerationCounter) {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
 
-  *aImages = mCurrentImages;
+  *aImages = mCurrentImages.Clone();
   if (aGenerationCounter) {
     *aGenerationCounter = mGenerationCounter;
   }
@@ -408,6 +410,37 @@ void ImageContainer::NotifyComposite(
 
 void ImageContainer::NotifyDropped(uint32_t aDropped) {
   mDroppedImageCount += aDropped;
+}
+
+void ImageContainer::EnsureRecycleAllocatorForRDD(
+    KnowsCompositor* aKnowsCompositor) {
+  MOZ_ASSERT(!mIsAsync);
+  MOZ_ASSERT(!mImageClient);
+  MOZ_ASSERT(XRE_IsRDDProcess());
+
+  if (mRecycleAllocator &&
+      aKnowsCompositor == mRecycleAllocator->GetKnowsCompositor()) {
+    return;
+  }
+
+  bool useRecycleAllocator =
+      StaticPrefs::layers_recycle_allocator_rdd_AtStartup();
+#ifdef XP_MACOSX
+  // Disable RecycleAllocator for RDD on MacOS without WebRender.
+  // Recycling caused rendering artifact on a MacOS PC with OpenGL compositor.
+  if (!gfxVars::UseWebRender()) {
+    useRecycleAllocator = false;
+  }
+#endif
+  if (!useRecycleAllocator) {
+    return;
+  }
+
+  static const uint32_t MAX_POOLED_VIDEO_COUNT = 5;
+
+  mRecycleAllocator =
+      new layers::TextureClientRecycleAllocator(aKnowsCompositor);
+  mRecycleAllocator->SetMaxPoolSize(MAX_POOLED_VIDEO_COUNT);
 }
 
 #ifdef XP_WIN

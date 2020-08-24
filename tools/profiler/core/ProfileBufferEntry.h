@@ -39,6 +39,8 @@ class ProfilerCodeAddressService;
   MACRO(NativeLeafAddr, void*, sizeof(void*))                        \
   MACRO(Pause, double, sizeof(double))                               \
   MACRO(Resume, double, sizeof(double))                              \
+  MACRO(PauseSampling, double, sizeof(double))                       \
+  MACRO(ResumeSampling, double, sizeof(double))                      \
   MACRO(ThreadId, int, sizeof(int))                                  \
   MACRO(Time, double, sizeof(double))                                \
   MACRO(TimeBeforeCompactStack, double, sizeof(double))              \
@@ -55,9 +57,9 @@ class ProfileBufferEntry {
   // stored in a `ProfileBufferEntry`, as per the list in
   // `FOR_EACH_PROFILE_BUFFER_ENTRY_KIND`.
   //
-  // This byte is also used to identify entries in BlocksRingBuffer blocks, for
-  // both "legacy" entries that do contain a `ProfileBufferEntry`, and for new
-  // types of entries that may carry more data of different types.
+  // This byte is also used to identify entries in ProfileChunkedBuffer blocks,
+  // for both "legacy" entries that do contain a `ProfileBufferEntry`, and for
+  // new types of entries that may carry more data of different types.
   // TODO: Eventually each type of "legacy" entry should be replaced with newer,
   // more efficient kinds of entries (e.g., stack frames could be stored in one
   // bigger entry, instead of multiple `ProfileBufferEntry`s); then we could
@@ -267,15 +269,16 @@ class UniqueStacks {
  public:
   struct FrameKey {
     explicit FrameKey(const char* aLocation)
-        : mData(NormalFrameData{nsCString(aLocation), false, 0,
+        : mData(NormalFrameData{nsCString(aLocation), false, false, 0,
                                 mozilla::Nothing(), mozilla::Nothing()}) {}
 
-    FrameKey(nsCString&& aLocation, bool aRelevantForJS,
+    FrameKey(nsCString&& aLocation, bool aRelevantForJS, bool aBaselineInterp,
              uint64_t aInnerWindowID, const mozilla::Maybe<unsigned>& aLine,
              const mozilla::Maybe<unsigned>& aColumn,
              const mozilla::Maybe<JS::ProfilingCategoryPair>& aCategoryPair)
-        : mData(NormalFrameData{aLocation, aRelevantForJS, aInnerWindowID,
-                                aLine, aColumn, aCategoryPair}) {}
+        : mData(NormalFrameData{aLocation, aRelevantForJS, aBaselineInterp,
+                                aInnerWindowID, aLine, aColumn,
+                                aCategoryPair}) {}
 
     FrameKey(void* aJITAddress, uint32_t aJITDepth, uint32_t aRangeIndex)
         : mData(JITFrameData{aJITAddress, aJITDepth, aRangeIndex}) {}
@@ -292,6 +295,7 @@ class UniqueStacks {
 
       nsCString mLocation;
       bool mRelevantForJS;
+      bool mBaselineInterp;
       uint64_t mInnerWindowID;
       mozilla::Maybe<unsigned> mLine;
       mozilla::Maybe<unsigned> mColumn;
@@ -320,6 +324,7 @@ class UniqueStacks {
                                     mozilla::HashString(data.mLocation.get()));
         }
         hash = mozilla::AddToHash(hash, data.mRelevantForJS);
+        hash = mozilla::AddToHash(hash, data.mBaselineInterp);
         hash = mozilla::AddToHash(hash, data.mInnerWindowID);
         if (data.mLine.isSome()) {
           hash = mozilla::AddToHash(hash, *data.mLine);
@@ -393,23 +398,23 @@ class UniqueStacks {
   explicit UniqueStacks(JITFrameInfo&& aJITFrameInfo);
 
   // Return a StackKey for aFrame as the stack's root frame (no prefix).
-  MOZ_MUST_USE StackKey BeginStack(const FrameKey& aFrame);
+  [[nodiscard]] StackKey BeginStack(const FrameKey& aFrame);
 
   // Return a new StackKey that is obtained by appending aFrame to aStack.
-  MOZ_MUST_USE StackKey AppendFrame(const StackKey& aStack,
-                                    const FrameKey& aFrame);
+  [[nodiscard]] StackKey AppendFrame(const StackKey& aStack,
+                                     const FrameKey& aFrame);
 
   // Look up frame keys for the given JIT address, and ensure that our frame
   // table has entries for the returned frame keys. The JSON for these frames
   // is taken from mJITInfoRanges.
   // aBufferPosition is needed in order to look up the correct JIT frame info
   // object in mJITInfoRanges.
-  MOZ_MUST_USE mozilla::Maybe<mozilla::Vector<UniqueStacks::FrameKey>>
+  [[nodiscard]] mozilla::Maybe<mozilla::Vector<UniqueStacks::FrameKey>>
   LookupFramesForJITAddressFromBufferPos(void* aJITAddress,
                                          uint64_t aBufferPosition);
 
-  MOZ_MUST_USE uint32_t GetOrAddFrameIndex(const FrameKey& aFrame);
-  MOZ_MUST_USE uint32_t GetOrAddStackIndex(const StackKey& aStack);
+  [[nodiscard]] uint32_t GetOrAddFrameIndex(const FrameKey& aFrame);
+  [[nodiscard]] uint32_t GetOrAddStackIndex(const StackKey& aStack);
 
   void SpliceFrameTableElements(SpliceableJSONWriter& aWriter);
   void SpliceStackTableElements(SpliceableJSONWriter& aWriter);
@@ -513,7 +518,7 @@ class UniqueStacks {
 //     "data":
 //     [
 //       [ 0 ],               /* { location: '(root)' } */
-//       [ 1, 2 ]             /* { location: 'foo.js',
+//       [ 1, null, null, 2 ] /* { location: 'foo.js',
 //                                 implementation: 'baseline' } */
 //     ]
 //   },

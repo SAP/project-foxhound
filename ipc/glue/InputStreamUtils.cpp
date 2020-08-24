@@ -10,11 +10,14 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/File.h"
-#include "mozilla/dom/IPCBlobInputStream.h"
-#include "mozilla/dom/IPCBlobInputStreamStorage.h"
+#include "mozilla/dom/quota/DecryptingInputStream_impl.h"
+#include "mozilla/dom/quota/IPCStreamCipherStrategy.h"
 #include "mozilla/ipc/IPCStreamDestination.h"
 #include "mozilla/ipc/IPCStreamSource.h"
 #include "mozilla/InputStreamLengthHelper.h"
+#include "mozilla/RemoteLazyInputStream.h"
+#include "mozilla/RemoteLazyInputStreamChild.h"
+#include "mozilla/RemoteLazyInputStreamStorage.h"
 #include "mozilla/SlicedInputStream.h"
 #include "mozilla/InputStreamLengthWrapper.h"
 #include "nsBufferedStreams.h"
@@ -245,7 +248,10 @@ void InputStreamHelper::PostSerializationActivation(InputStreamParams& aParams,
     case InputStreamParams::TFileInputStreamParams:
       break;
 
-    case InputStreamParams::TIPCBlobInputStreamParams:
+    case InputStreamParams::TRemoteLazyInputStreamParams:
+      break;
+
+    case InputStreamParams::TEncryptedFileInputStreamParams:
       break;
 
     default:
@@ -267,16 +273,34 @@ void InputStreamHelper::PostSerializationActivation(
 already_AddRefed<nsIInputStream> InputStreamHelper::DeserializeInputStream(
     const InputStreamParams& aParams,
     const nsTArray<FileDescriptor>& aFileDescriptors) {
-  // IPCBlobInputStreams are not deserializable on the parent side.
-  if (aParams.type() == InputStreamParams::TIPCBlobInputStreamParams) {
-    MOZ_ASSERT(XRE_IsParentProcess());
+  if (aParams.type() == InputStreamParams::TRemoteLazyInputStreamParams) {
+    const RemoteLazyInputStreamParams& params =
+        aParams.get_RemoteLazyInputStreamParams();
 
-    nsCOMPtr<nsIInputStream> stream;
-    IPCBlobInputStreamStorage::Get()->GetStream(
-        aParams.get_IPCBlobInputStreamParams().id(),
-        aParams.get_IPCBlobInputStreamParams().start(),
-        aParams.get_IPCBlobInputStreamParams().length(),
-        getter_AddRefs(stream));
+    // RemoteLazyInputStreamRefs are not deserializable on the parent side,
+    // because the parent is the only one that has a copy of the original stream
+    // in the RemoteLazyInputStreamStorage.
+    if (params.type() ==
+        RemoteLazyInputStreamParams::TRemoteLazyInputStreamRef) {
+      MOZ_ASSERT(XRE_IsParentProcess());
+      const RemoteLazyInputStreamRef& ref =
+          params.get_RemoteLazyInputStreamRef();
+
+      auto storage = RemoteLazyInputStreamStorage::Get().unwrapOr(nullptr);
+      MOZ_ASSERT(storage);
+      nsCOMPtr<nsIInputStream> stream;
+      storage->GetStream(ref.id(), ref.start(), ref.length(),
+                         getter_AddRefs(stream));
+      return stream.forget();
+    }
+
+    // parent -> child serializations receive an RemoteLazyInputStream actor.
+    MOZ_ASSERT(params.type() ==
+               RemoteLazyInputStreamParams::TPRemoteLazyInputStreamChild);
+    RemoteLazyInputStreamChild* actor =
+        static_cast<RemoteLazyInputStreamChild*>(
+            params.get_PRemoteLazyInputStreamChild());
+    nsCOMPtr<nsIInputStream> stream = actor->CreateStream();
     return stream.forget();
   }
 
@@ -345,6 +369,12 @@ already_AddRefed<nsIInputStream> InputStreamHelper::DeserializeInputStream(
 
     case InputStreamParams::TInputStreamLengthWrapperParams:
       serializable = new InputStreamLengthWrapper();
+      break;
+
+    case InputStreamParams::TEncryptedFileInputStreamParams:
+      serializable = new dom::quota::DecryptingInputStream<
+          dom::quota::IPCStreamCipherStrategy>(
+          dom::quota::IPCStreamCipherStrategy{});
       break;
 
     default:

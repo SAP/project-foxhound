@@ -5,6 +5,7 @@
 const { shallow } = require("enzyme");
 const { REPS, getRep } = require("../rep");
 const { Rep, RegExp } = REPS;
+const { ELLIPSIS } = require("../rep-utils");
 const stubs = require("../stubs/regexp");
 const { expectActorAttribute } = require("./test-helpers");
 
@@ -19,10 +20,31 @@ describe("test RegExp", () => {
     const renderedComponent = shallow(
       Rep({
         object: stub,
+        shouldRenderTooltip: true,
       })
     );
 
     expect(renderedComponent.text()).toEqual("/ab+c/i");
+    expect(renderedComponent.prop("title")).toEqual("/ab+c/i");
     expectActorAttribute(renderedComponent, stub.actor);
+  });
+
+  it("renders regexp with longString displayString with expected text content", () => {
+    const longStringDisplayStringRegexpStub = stubs.get(
+      "longString displayString RegExp"
+    );
+    const renderedComponent = shallow(
+      Rep({
+        object: longStringDisplayStringRegexpStub,
+      })
+    );
+
+    expect(renderedComponent.text()).toEqual(
+      `/${"ab ".repeat(333)}${ELLIPSIS}`
+    );
+    expectActorAttribute(
+      renderedComponent,
+      longStringDisplayStringRegexpStub.actor
+    );
   });
 });

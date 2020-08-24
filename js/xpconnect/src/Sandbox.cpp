@@ -44,6 +44,7 @@
 #include "mozilla/dom/DOMTokenListBinding.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/EventBinding.h"
+#include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/FileBinding.h"
@@ -93,11 +94,12 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(SandboxPrivate)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(SandboxPrivate)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
   NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
-  tmp->UnlinkHostObjectURIs();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
+  tmp->UnlinkObjectsInGlobal();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(SandboxPrivate)
-  tmp->TraverseHostObjectURIs(cb);
+  tmp->TraverseObjectsInGlobal(cb);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(SandboxPrivate)
@@ -491,9 +493,9 @@ bool xpc::IsSandbox(JSObject* obj) {
 }
 
 /***************************************************************************/
-nsXPCComponents_utils_Sandbox::nsXPCComponents_utils_Sandbox() {}
+nsXPCComponents_utils_Sandbox::nsXPCComponents_utils_Sandbox() = default;
 
-nsXPCComponents_utils_Sandbox::~nsXPCComponents_utils_Sandbox() {}
+nsXPCComponents_utils_Sandbox::~nsXPCComponents_utils_Sandbox() = default;
 
 NS_IMPL_QUERY_INTERFACE(nsXPCComponents_utils_Sandbox,
                         nsIXPCComponents_utils_Sandbox, nsIXPCScriptable)
@@ -1110,7 +1112,7 @@ nsresult ApplyAddonContentScriptCSP(nsISupports* prinOrSop) {
   }
 
   nsString url;
-  MOZ_TRY_VAR(url, addonPolicy->GetURL(NS_LITERAL_STRING("")));
+  MOZ_TRY_VAR(url, addonPolicy->GetURL(u""_ns));
 
   nsCOMPtr<nsIURI> selfURI;
   MOZ_TRY(NS_NewURI(getter_AddRefs(selfURI), url));
@@ -1351,7 +1353,7 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
   }
 
   // We handle the case where the context isn't in a compartment for the
-  // benefit of InitSingletonScopes.
+  // benefit of UnprivilegedJunkScope().
   vp.setObject(*sandbox);
   if (js::GetContextCompartment(cx) && !JS_WrapValue(cx, vp)) {
     return NS_ERROR_UNEXPECTED;
@@ -1832,7 +1834,7 @@ static nsresult AssembleSandboxMemoryReporterName(JSContext* cx,
                                                   nsCString& sandboxName) {
   // Use a default name when the caller did not provide a sandboxName.
   if (sandboxName.IsEmpty()) {
-    sandboxName = NS_LITERAL_CSTRING("[anonymous sandbox]");
+    sandboxName = "[anonymous sandbox]"_ns;
   } else {
 #ifndef DEBUG
     // Adding the caller location is fairly expensive, so in non-debug

@@ -225,11 +225,13 @@ public class GeckoView extends FrameLayout {
         }
     }
 
+    @SuppressWarnings("checkstyle:javadocmethod")
     public GeckoView(final Context context) {
         super(context);
         init();
     }
 
+    @SuppressWarnings("checkstyle:javadocmethod")
     public GeckoView(final Context context, final AttributeSet attrs) {
         super(context, attrs);
         init();
@@ -490,6 +492,7 @@ public class GeckoView extends FrameLayout {
     }
 
     @AnyThread
+    @SuppressWarnings("checkstyle:javadocmethod")
     public @Nullable GeckoSession getSession() {
         return mSession;
     }
@@ -499,14 +502,10 @@ public class GeckoView extends FrameLayout {
         return mSession.getEventDispatcher();
     }
 
+    @SuppressWarnings("checkstyle:javadocmethod")
     public @NonNull PanZoomController getPanZoomController() {
         ThreadUtils.assertOnUiThread();
         return mSession.getPanZoomController();
-    }
-
-    public @NonNull DynamicToolbarAnimator getDynamicToolbarAnimator() {
-        ThreadUtils.assertOnUiThread();
-        return mSession.getDynamicToolbarAnimator();
     }
 
     @Override
@@ -586,7 +585,7 @@ public class GeckoView extends FrameLayout {
     }
 
     private void restoreSession(final @Nullable GeckoSession savedSession) {
-        if (savedSession == null || savedSession.equals(mSession)) {
+        if (savedSession == null || savedSession.equalsId(mSession)) {
             return;
         }
 

@@ -107,7 +107,7 @@ class nsStandardURL : public nsIFileURL,
     explicit nsSegmentEncoder(const Encoding* encoding = nullptr);
 
     // Encode the given segment if necessary, and return the length of
-    // the encoded segment.  The encoded segment is appended to |buf|
+    // the encoded segment.  The encoded segment is appended to |aOut|
     // if and only if encoding is required.
     int32_t EncodeSegmentCount(const char* str, const StringTaint& taint,
                                const URLSegment& segment,
@@ -115,10 +115,10 @@ class nsStandardURL : public nsIFileURL,
                                uint32_t extraLen = 0);
 
     // Encode the given string if necessary, and return a reference to
-    // the encoded string.  Returns a reference to |buf| if encoding
+    // the encoded string.  Returns a reference to |result| if encoding
     // is required.  Otherwise, a reference to |str| is returned.
     const nsACString& EncodeSegment(const nsACString& str, int16_t mask,
-                                    nsCString& buf);
+                                    nsCString& result);
 
    private:
     const Encoding* mEncoding;
@@ -140,7 +140,7 @@ class nsStandardURL : public nsIFileURL,
 
   // Helper to share code between Clone methods.
   nsresult CloneInternal(RefHandlingEnum aRefHandlingMode,
-                         const nsACString& newRef, nsIURI** aClone);
+                         const nsACString& aNewRef, nsIURI** aClone);
   // Helper method that copies member variables from the source StandardURL
   // if copyCached = true, it will also copy mFile and mDisplayHost
   nsresult CopyMembers(nsStandardURL* source, RefHandlingEnum mode,
@@ -186,7 +186,7 @@ class nsStandardURL : public nsIFileURL,
   void Clear();
   void InvalidateCache(bool invalidateCachedFile = true);
 
-  bool ValidIPv6orHostname(const char* host, uint32_t aLen);
+  bool ValidIPv6orHostname(const char* host, uint32_t length);
   static bool IsValidOfBase(unsigned char c, const uint32_t base);
   nsresult NormalizeIDN(const nsACString& host, nsCString& result);
   nsresult CheckIfHostIsAscii();
@@ -204,12 +204,12 @@ class nsStandardURL : public nsIFileURL,
   nsresult SetSpecWithEncoding(const nsACString& input,
                                const Encoding* encoding);
 
-  bool SegmentIs(const URLSegment& s1, const char* val,
+  bool SegmentIs(const URLSegment& seg, const char* val,
                  bool ignoreCase = false);
-  bool SegmentIs(const char* spec, const URLSegment& s1, const char* val,
+  bool SegmentIs(const char* spec, const URLSegment& seg, const char* val,
                  bool ignoreCase = false);
-  bool SegmentIs(const URLSegment& s1, const char* val, const URLSegment& s2,
-                 bool ignoreCase = false);
+  bool SegmentIs(const URLSegment& seg1, const char* val,
+                 const URLSegment& seg2, bool ignoreCase = false);
 
   int32_t ReplaceSegment(uint32_t pos, uint32_t len, const char* val,
                          uint32_t valLen, const StringTaint& taint);
@@ -263,6 +263,9 @@ class nsStandardURL : public nsIFileURL,
   void FindHostLimit(nsACString::const_iterator& aStart,
                      nsACString::const_iterator& aEnd);
 
+  // Asserts that the URLSegment has sane values
+  static void SanityCheck(const URLSegment&, const nsCString&);
+
   // mSpec contains the normalized version of the URL spec (UTF-8 encoded).
   nsCString mSpec;
   int32_t mDefaultPort;
@@ -304,7 +307,6 @@ class nsStandardURL : public nsIFileURL,
   static StaticRefPtr<nsIIDNService> gIDN;
   static const char gHostLimitDigits[];
   static bool gInitialized;
-  static bool gPunycodeHost;
 
  public:
 #ifdef DEBUG_DUMP_URLS_AT_SHUTDOWN
@@ -323,8 +325,8 @@ class nsStandardURL : public nsIFileURL,
                            public nsISerializable {
     NS_FORWARD_SAFE_NSIURISETTERS_RET(BaseURIMutator<T>::mURI)
 
-    MOZ_MUST_USE NS_IMETHOD
-    Deserialize(const mozilla::ipc::URIParams& aParams) override {
+    [[nodiscard]] NS_IMETHOD
+        Deserialize(const mozilla::ipc::URIParams& aParams) override {
       return BaseURIMutator<T>::InitFromIPCParams(aParams);
     }
 
@@ -334,17 +336,17 @@ class nsStandardURL : public nsIFileURL,
       return NS_ERROR_NOT_IMPLEMENTED;
     }
 
-    MOZ_MUST_USE NS_IMETHOD Read(nsIObjectInputStream* aStream) override {
+    [[nodiscard]] NS_IMETHOD Read(nsIObjectInputStream* aStream) override {
       return BaseURIMutator<T>::InitFromInputStream(aStream);
     }
 
-    MOZ_MUST_USE NS_IMETHOD Finalize(nsIURI** aURI) override {
+    [[nodiscard]] NS_IMETHOD Finalize(nsIURI** aURI) override {
       BaseURIMutator<T>::mURI.forget(aURI);
       return NS_OK;
     }
 
-    MOZ_MUST_USE NS_IMETHOD SetSpec(const nsACString& aSpec,
-                                    nsIURIMutator** aMutator) override {
+    [[nodiscard]] NS_IMETHOD SetSpec(const nsACString& aSpec,
+                                     nsIURIMutator** aMutator) override {
       if (aMutator) {
         nsCOMPtr<nsIURIMutator> mutator = this;
         mutator.forget(aMutator);
@@ -352,10 +354,10 @@ class nsStandardURL : public nsIFileURL,
       return BaseURIMutator<T>::InitFromSpec(aSpec);
     }
 
-    MOZ_MUST_USE NS_IMETHOD Init(uint32_t aURLType, int32_t aDefaultPort,
-                                 const nsACString& aSpec, const char* aCharset,
-                                 nsIURI* aBaseURI,
-                                 nsIURIMutator** aMutator) override {
+    [[nodiscard]] NS_IMETHOD Init(uint32_t aURLType, int32_t aDefaultPort,
+                                  const nsACString& aSpec, const char* aCharset,
+                                  nsIURI* aBaseURI,
+                                  nsIURIMutator** aMutator) override {
       if (aMutator) {
         nsCOMPtr<nsIURIMutator> mutator = this;
         mutator.forget(aMutator);
@@ -376,8 +378,8 @@ class nsStandardURL : public nsIFileURL,
       return NS_OK;
     }
 
-    MOZ_MUST_USE NS_IMETHODIMP
-    SetDefaultPort(int32_t aNewDefaultPort, nsIURIMutator** aMutator) override {
+    [[nodiscard]] NS_IMETHODIMP SetDefaultPort(
+        int32_t aNewDefaultPort, nsIURIMutator** aMutator) override {
       if (!BaseURIMutator<T>::mURI) {
         return NS_ERROR_NULL_POINTER;
       }
@@ -388,8 +390,8 @@ class nsStandardURL : public nsIFileURL,
       return BaseURIMutator<T>::mURI->SetDefaultPort(aNewDefaultPort);
     }
 
-    MOZ_MUST_USE NS_IMETHOD SetFileName(const nsACString& aFileName,
-                                        nsIURIMutator** aMutator) override {
+    [[nodiscard]] NS_IMETHOD SetFileName(const nsACString& aFileName,
+                                         nsIURIMutator** aMutator) override {
       if (!BaseURIMutator<T>::mURI) {
         return NS_ERROR_NULL_POINTER;
       }
@@ -400,8 +402,8 @@ class nsStandardURL : public nsIFileURL,
       return BaseURIMutator<T>::mURI->SetFileNameInternal(aFileName);
     }
 
-    MOZ_MUST_USE NS_IMETHOD SetFileBaseName(const nsACString& aFileBaseName,
-                                            nsIURIMutator** aMutator) override {
+    [[nodiscard]] NS_IMETHOD SetFileBaseName(
+        const nsACString& aFileBaseName, nsIURIMutator** aMutator) override {
       if (!BaseURIMutator<T>::mURI) {
         return NS_ERROR_NULL_POINTER;
       }
@@ -412,7 +414,7 @@ class nsStandardURL : public nsIFileURL,
       return BaseURIMutator<T>::mURI->SetFileBaseNameInternal(aFileBaseName);
     }
 
-    MOZ_MUST_USE NS_IMETHOD SetFileExtension(
+    [[nodiscard]] NS_IMETHOD SetFileExtension(
         const nsACString& aFileExtension, nsIURIMutator** aMutator) override {
       if (!BaseURIMutator<T>::mURI) {
         return NS_ERROR_NULL_POINTER;
@@ -426,12 +428,12 @@ class nsStandardURL : public nsIFileURL,
 
     T* Create() override { return new T(mMarkedFileURL); }
 
-    MOZ_MUST_USE NS_IMETHOD MarkFileURL() override {
+    [[nodiscard]] NS_IMETHOD MarkFileURL() override {
       mMarkedFileURL = true;
       return NS_OK;
     }
 
-    MOZ_MUST_USE NS_IMETHOD SetFile(nsIFile* aFile) override {
+    [[nodiscard]] NS_IMETHOD SetFile(nsIFile* aFile) override {
       RefPtr<T> uri;
       if (BaseURIMutator<T>::mURI) {
         // We don't need a new URI object if we already have one

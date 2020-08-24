@@ -14,8 +14,8 @@ use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
 use crate::values::serialize_atom_identifier;
 use cssparser::{BasicParseError, BasicParseErrorKind, Parser};
 use cssparser::{CowRcStr, SourceLocation, ToCss, Token};
+use selectors::parser::SelectorParseErrorKind;
 use selectors::parser::{self as selector_parser, Selector};
-use selectors::parser::{SelectorParseErrorKind, Visit};
 use selectors::visitor::SelectorVisitor;
 use selectors::SelectorList;
 use std::fmt;
@@ -109,25 +109,6 @@ impl ToCss for NonTSPseudoClass {
     }
 }
 
-impl Visit for NonTSPseudoClass {
-    type Impl = SelectorImpl;
-
-    fn visit<V>(&self, visitor: &mut V) -> bool
-    where
-        V: SelectorVisitor<Impl = Self::Impl>,
-    {
-        if let NonTSPseudoClass::MozAny(ref selectors) = *self {
-            for selector in selectors.iter() {
-                if !selector.visit(visitor) {
-                    return false;
-                }
-            }
-        }
-
-        true
-    }
-}
-
 impl NonTSPseudoClass {
     /// Parses the name and returns a non-ts-pseudo-class if succeeds.
     /// None otherwise. It doesn't check whether the pseudo-class is enabled
@@ -138,6 +119,8 @@ impl NonTSPseudoClass {
                 match_ignore_ascii_case! { &name,
                     $($css => Some(NonTSPseudoClass::$name),)*
                     "-moz-full-screen" => Some(NonTSPseudoClass::Fullscreen),
+                    "-moz-read-only" => Some(NonTSPseudoClass::ReadOnly),
+                    "-moz-read-write" => Some(NonTSPseudoClass::ReadWrite),
                     _ => None,
                 }
             }
@@ -173,7 +156,7 @@ impl NonTSPseudoClass {
     #[inline]
     fn is_enabled_in_content(&self) -> bool {
         if matches!(*self, NonTSPseudoClass::FocusVisible) {
-            return static_prefs::pref!("layout.css.focus-visible.enabled")
+            return static_prefs::pref!("layout.css.focus-visible.enabled");
         }
         !self.has_any_flag(NonTSPseudoClassFlag::PSEUDO_CLASS_ENABLED_IN_UA_SHEETS_AND_CHROME)
     }
@@ -246,17 +229,6 @@ impl NonTSPseudoClass {
                       NonTSPseudoClass::MozLWThemeDarkText
             )
     }
-
-    /// Returns true if the evaluation of the pseudo-class depends on the
-    /// element's attributes.
-    pub fn is_attr_based(&self) -> bool {
-        matches!(
-            *self,
-            NonTSPseudoClass::MozTableBorderNonzero |
-                NonTSPseudoClass::MozBrowserFrame |
-                NonTSPseudoClass::Lang(..)
-        )
-    }
 }
 
 impl ::selectors::parser::NonTSPseudoClass for NonTSPseudoClass {
@@ -279,6 +251,21 @@ impl ::selectors::parser::NonTSPseudoClass for NonTSPseudoClass {
     #[inline]
     fn has_zero_specificity(&self) -> bool {
         matches!(*self, NonTSPseudoClass::MozNativeAnonymousNoSpecificity)
+    }
+
+    fn visit<V>(&self, visitor: &mut V) -> bool
+    where
+        V: SelectorVisitor<Impl = Self::Impl>,
+    {
+        if let NonTSPseudoClass::MozAny(ref selectors) = *self {
+            for selector in selectors.iter() {
+                if !selector.visit(visitor) {
+                    return false;
+                }
+            }
+        }
+
+        true
     }
 }
 
@@ -352,6 +339,12 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
     #[inline]
     fn parse_host(&self) -> bool {
         true
+    }
+
+    #[inline]
+    fn parse_is_and_where(&self) -> bool {
+        self.in_user_agent_stylesheet() ||
+            static_prefs::pref!("layout.css.is-where-selectors.enabled")
     }
 
     #[inline]

@@ -56,7 +56,7 @@ bool jit::Bailout(BailoutStack* sp, BaselineBailoutInfo** bailoutInfo) {
   TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
   TraceLogTimestamp(logger, TraceLogger_Bailout);
 
-  JitSpew(JitSpew_IonBailouts, "Took bailout! Snapshot offset: %d",
+  JitSpew(JitSpew_IonBailouts, "Took bailout! Snapshot offset: %u",
           frame.snapshotOffset());
 
   MOZ_ASSERT(IsBaselineJitEnabled(cx));
@@ -130,7 +130,7 @@ bool jit::InvalidationBailout(InvalidationBailoutStack* sp,
   TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
   TraceLogTimestamp(logger, TraceLogger_Invalidation);
 
-  JitSpew(JitSpew_IonBailouts, "Took invalidation bailout! Snapshot offset: %d",
+  JitSpew(JitSpew_IonBailouts, "Took invalidation bailout! Snapshot offset: %u",
           frame.snapshotOffset());
 
   // Note: the frame size must be computed before we return from this function.
@@ -228,7 +228,8 @@ bool jit::ExceptionHandlerBailout(JSContext* cx,
     // Overwrite the kind so HandleException after the bailout returns
     // false, jumping directly to the exception tail.
     if (excInfo.propagatingIonExceptionForDebugMode()) {
-      bailoutInfo->bailoutKind = mozilla::Some(Bailout_IonExceptionDebugMode);
+      bailoutInfo->bailoutKind =
+          mozilla::Some(BailoutKind::IonExceptionDebugMode);
     }
 
     rfe->kind = ResumeFromException::RESUME_BAILOUT;
@@ -283,7 +284,7 @@ void jit::CheckFrequentBailouts(JSContext* cx, JSScript* script,
       // which should prevent this from happening again.  Also note that
       // the first execution bailout can be related to an inlined script,
       // so there is no need to penalize the caller.
-      if (bailoutKind != Bailout_FirstExecution &&
+      if (bailoutKind != BailoutKind::FirstExecution &&
           !script->hadFrequentBailouts()) {
         script->setHadFrequentBailouts();
       }

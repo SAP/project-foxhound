@@ -88,9 +88,9 @@ HiddenFrame.prototype = {
     this._webProgress = this._browser.getInterface(Ci.nsIWebProgress);
     this._listener = {
       QueryInterface: ChromeUtils.generateQI([
-        Ci.nsIWebProgressListener,
-        Ci.nsIWebProgressListener2,
-        Ci.nsISupportsWeakReference,
+        "nsIWebProgressListener",
+        "nsIWebProgressListener2",
+        "nsISupportsWeakReference",
       ]),
     };
     this._listener.onStateChange = (wbp, request, stateFlags, status) => {
@@ -113,7 +113,8 @@ HiddenFrame.prototype = {
     let docShell = this._browser.docShell;
     let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
     docShell.createAboutBlankContentViewer(systemPrincipal, systemPrincipal);
-    docShell.useGlobalHistory = false;
+    let browsingContext = this._browser.browsingContext;
+    browsingContext.useGlobalHistory = false;
     let loadURIOptions = {
       triggeringPrincipal: systemPrincipal,
     };

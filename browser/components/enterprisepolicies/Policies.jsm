@@ -14,6 +14,15 @@ const { AppConstants } = ChromeUtils.import(
 
 XPCOMUtils.defineLazyServiceGetters(this, {
   gCertDB: ["@mozilla.org/security/x509certdb;1", "nsIX509CertDB"],
+  gExternalProtocolService: [
+    "@mozilla.org/uriloader/external-protocol-service;1",
+    "nsIExternalProtocolService",
+  ],
+  gHandlerService: [
+    "@mozilla.org/uriloader/handler-service;1",
+    "nsIHandlerService",
+  ],
+  gMIMEService: ["@mozilla.org/mime;1", "nsIMIMEService"],
   gXulStore: ["@mozilla.org/xul/xulstore;1", "nsIXULStore"],
 });
 
@@ -90,9 +99,8 @@ var Policies = {
   },
 
   AppUpdateURL: {
-    onBeforeAddons(manager, param) {
-      setDefaultPref("app.update.url", param.href);
-    },
+    // No implementation needed here. UpdateService.jsm will check for this
+    // policy directly when determining the update URL.
   },
 
   Authentication: {
@@ -154,6 +162,13 @@ var Policies = {
             locked
           );
         }
+      }
+      if ("PrivateBrowsing" in param) {
+        setDefaultPref(
+          "network.auth.private-browsing-sso",
+          param.PrivateBrowsing,
+          locked
+        );
       }
     },
   },
@@ -271,11 +286,14 @@ var Policies = {
               try {
                 cert = gCertDB.constructX509(certFileArray);
               } catch (e) {
+                log.debug(
+                  `constructX509 failed with error '${e}' - trying constructX509FromBase64.`
+                );
                 try {
                   // It might be PEM instead of DER.
                   cert = gCertDB.constructX509FromBase64(pemToBase64(certFile));
                 } catch (ex) {
-                  log.error(`Unable to add certificate - ${certfile.path}`);
+                  log.error(`Unable to add certificate - ${certfile.path}`, ex);
                 }
               }
               if (cert) {
@@ -307,6 +325,25 @@ var Policies = {
   Cookies: {
     onBeforeUIStartup(manager, param) {
       addAllowDenyPermissions("cookie", param.Allow, param.Block);
+
+      if (param.AllowSession) {
+        for (let origin of param.AllowSession) {
+          try {
+            Services.perms.addFromPrincipal(
+              Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+                origin
+              ),
+              "cookie",
+              Ci.nsICookiePermission.ACCESS_SESSION,
+              Ci.nsIPermissionManager.EXPIRE_POLICY
+            );
+          } catch (ex) {
+            log.error(
+              `Unable to add cookie session permission - ${origin.href}`
+            );
+          }
+        }
+      }
 
       if (param.Block) {
         const hosts = param.Block.map(url => url.hostname)
@@ -396,6 +433,77 @@ var Policies = {
     },
   },
 
+  DisabledCiphers: {
+    onBeforeAddons(manager, param) {
+      if ("TLS_DHE_RSA_WITH_AES_128_CBC_SHA" in param) {
+        setAndLockPref(
+          "security.ssl3.dhe_rsa_aes_128_sha",
+          !param.TLS_DHE_RSA_WITH_AES_128_CBC_SHA
+        );
+      }
+      if ("TLS_DHE_RSA_WITH_AES_256_CBC_SHA" in param) {
+        setAndLockPref(
+          "security.ssl3.dhe_rsa_aes_256_sha",
+          !param.TLS_DHE_RSA_WITH_AES_256_CBC_SHA
+        );
+      }
+      if ("TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA" in param) {
+        setAndLockPref(
+          "security.ssl3.ecdhe_rsa_aes_128_sha",
+          !param.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+        );
+      }
+      if ("TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA" in param) {
+        setAndLockPref(
+          "security.ssl3.ecdhe_rsa_aes_256_sha",
+          !param.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+        );
+      }
+      if ("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" in param) {
+        setAndLockPref(
+          "security.ssl3.ecdhe_rsa_aes_128_gcm_sha256",
+          !param.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        );
+      }
+      if ("TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256" in param) {
+        setAndLockPref(
+          "security.ssl3.ecdhe_ecdsa_aes_128_gcm_sha256",
+          !param.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        );
+      }
+      if ("TLS_RSA_WITH_AES_128_CBC_SHA" in param) {
+        setAndLockPref(
+          "security.ssl3.rsa_aes_128_sha",
+          !param.TLS_RSA_WITH_AES_128_CBC_SHA
+        );
+      }
+      if ("TLS_RSA_WITH_AES_256_CBC_SHA" in param) {
+        setAndLockPref(
+          "security.ssl3.rsa_aes_256_sha",
+          !param.TLS_RSA_WITH_AES_256_CBC_SHA
+        );
+      }
+      if ("TLS_RSA_WITH_3DES_EDE_CBC_SHA" in param) {
+        setAndLockPref(
+          "security.ssl3.rsa_des_ede3_sha",
+          !param.TLS_RSA_WITH_3DES_EDE_CBC_SHA
+        );
+      }
+      if ("TLS_RSA_WITH_AES_128_GCM_SHA256" in param) {
+        setAndLockPref(
+          "security.ssl3.rsa_aes_128_gcm_sha256",
+          !param.TLS_RSA_WITH_AES_128_GCM_SHA256
+        );
+      }
+      if ("TLS_RSA_WITH_AES_256_GCM_SHA384" in param) {
+        setAndLockPref(
+          "security.ssl3.rsa_aes_256_gcm_sha384",
+          !param.TLS_RSA_WITH_AES_256_GCM_SHA384
+        );
+      }
+    },
+  },
+
   DisableDefaultBrowserAgent: {
     // The implementation of this policy is in the default browser agent itself
     // (/toolkit/mozapps/defaultagent); we need an entry for it here so that it
@@ -429,7 +537,8 @@ var Policies = {
     onBeforeAddons(manager, param) {
       if (param) {
         setAndLockPref("identity.fxaccounts.enabled", false);
-        setAndLockPref("trailhead.firstrun.branches", "nofirstrun");
+        setAndLockPref("trailhead.firstrun.branches", "nofirstrun-empty");
+        setAndLockPref("browser.aboutwelcome.enabled", false);
       }
     },
   },
@@ -727,6 +836,18 @@ var Policies = {
     },
   },
 
+  EncryptedMediaExtensions: {
+    onBeforeAddons(manager, param) {
+      let locked = false;
+      if ("Locked" in param) {
+        locked = param.Locked;
+      }
+      if ("Enabled" in param) {
+        setDefaultPref("media.eme.enabled", param.Enabled, locked);
+      }
+    },
+  },
+
   Extensions: {
     onBeforeUIStartup(manager, param) {
       let uninstallingPromise = Promise.resolve();
@@ -812,6 +933,17 @@ var Policies = {
           // Block about:debugging
           blockAboutPage(manager, "about:debugging");
         }
+        if ("restricted_domains" in extensionSettings["*"]) {
+          let restrictedDomains = Services.prefs
+            .getCharPref("extensions.webextensions.restrictedDomains")
+            .split(",");
+          setAndLockPref(
+            "extensions.webextensions.restrictedDomains",
+            restrictedDomains
+              .concat(extensionSettings["*"].restricted_domains)
+              .join(",")
+          );
+        }
       }
       let addons = await AddonManager.getAllAddons();
       let allowedExtensions = [];
@@ -830,12 +962,11 @@ var Policies = {
             if (!extensionSettings[extensionID].install_url) {
               throw new Error(`Missing install_url for ${extensionID}`);
             }
-            if (!addons.find(addon => addon.id == extensionID)) {
-              installAddonFromURL(
-                extensionSettings[extensionID].install_url,
-                extensionID
-              );
-            }
+            installAddonFromURL(
+              extensionSettings[extensionID].install_url,
+              extensionID,
+              addons.find(addon => addon.id == extensionID)
+            );
             manager.disallowFeature(`uninstall-extension:${extensionID}`);
             if (
               extensionSettings[extensionID].installation_mode ==
@@ -922,7 +1053,7 @@ var Policies = {
       }
       if ("Pocket" in param) {
         setDefaultPref(
-          "browser.newtabpage.activity-stream.feeds.section.topstories",
+          "browser.newtabpage.activity-stream.feeds.system.topstories",
           param.Pocket,
           locked
         );
@@ -958,6 +1089,41 @@ var Policies = {
     },
   },
 
+  Handlers: {
+    onBeforeAddons(manager, param) {
+      if ("mimeTypes" in param) {
+        for (let mimeType in param.mimeTypes) {
+          let mimeInfo = param.mimeTypes[mimeType];
+          let realMIMEInfo = gMIMEService.getFromTypeAndExtension(mimeType, "");
+          processMIMEInfo(mimeInfo, realMIMEInfo);
+        }
+      }
+      if ("extensions" in param) {
+        for (let extension in param.extensions) {
+          let mimeInfo = param.extensions[extension];
+          try {
+            let realMIMEInfo = gMIMEService.getFromTypeAndExtension(
+              "",
+              extension
+            );
+            processMIMEInfo(mimeInfo, realMIMEInfo);
+          } catch (e) {
+            log.error(`Invalid file extension (${extension})`);
+          }
+        }
+      }
+      if ("schemes" in param) {
+        for (let scheme in param.schemes) {
+          let handlerInfo = param.schemes[scheme];
+          let realHandlerInfo = gExternalProtocolService.getProtocolHandlerInfo(
+            scheme
+          );
+          processMIMEInfo(handlerInfo, realHandlerInfo);
+        }
+      }
+    },
+  },
+
   HardwareAcceleration: {
     onBeforeAddons(manager, param) {
       if (!param) {
@@ -968,10 +1134,15 @@ var Policies = {
 
   Homepage: {
     onBeforeUIStartup(manager, param) {
+      if ("StartPage" in param && param.StartPage == "none") {
+        // For blank startpage, we use about:blank rather
+        // than messing with browser.startup.page
+        param.URL = new URL("about:blank");
+      }
       // |homepages| will be a string containing a pipe-separated ('|') list of
       // URLs because that is what the "Home page" section of about:preferences
       // (and therefore what the pref |browser.startup.homepage|) accepts.
-      if (param.URL) {
+      if ("URL" in param) {
         let homepages = param.URL.href;
         if (param.Additional && param.Additional.length) {
           homepages += "|" + param.Additional.map(url => url.href).join("|");
@@ -998,17 +1169,20 @@ var Policies = {
       if (param.StartPage) {
         let prefValue;
         switch (param.StartPage) {
-          case "none":
-            prefValue = 0;
-            break;
           case "homepage":
+          case "homepage-locked":
+          case "none":
             prefValue = 1;
             break;
           case "previous-session":
             prefValue = 3;
             break;
         }
-        setDefaultPref("browser.startup.page", prefValue, param.Locked);
+        setDefaultPref(
+          "browser.startup.page",
+          prefValue,
+          param.StartPage == "homepage-locked"
+        );
       }
     },
   },
@@ -1038,6 +1212,21 @@ var Policies = {
 
   LegacyProfiles: {
     // Handled in nsToolkitProfileService.cpp (Windows only)
+  },
+
+  LegacySameSiteCookieBehaviorEnabled: {
+    onBeforeAddons(manager, param) {
+      setDefaultPref("network.cookie.sameSite.laxByDefault", !param);
+    },
+  },
+
+  LegacySameSiteCookieBehaviorEnabledForDomainList: {
+    onBeforeAddons(manager, param) {
+      setDefaultPref(
+        "network.cookie.sameSite.laxByDefault.disabledHosts",
+        param.join(",")
+      );
+    },
   },
 
   LocalFileLinks: {
@@ -1096,7 +1285,8 @@ var Policies = {
     onProfileAfterChange(manager, param) {
       let url = param ? param.href : "";
       setAndLockPref("startup.homepage_welcome_url", url);
-      setAndLockPref("trailhead.firstrun.branches", "nofirstrun");
+      setAndLockPref("trailhead.firstrun.branches", "nofirstrun-empty");
+      setAndLockPref("browser.aboutwelcome.enabled", false);
     },
   },
 
@@ -1115,10 +1305,20 @@ var Policies = {
     onBeforeUIStartup(manager, param) {
       if (!param) {
         blockAboutPage(manager, "about:logins", true);
-        gBlockedChromePages.push("passwordManager.xhtml");
         setAndLockPref("pref.privacy.disable_button.view_passwords", true);
       }
       setAndLockPref("signon.rememberSignons", param);
+    },
+  },
+
+  PDFjs: {
+    onBeforeAddons(manager, param) {
+      if ("Enabled" in param) {
+        setAndLockPref("pdfjs.disabled", !param.Enabled);
+      }
+      if ("EnablePermissions" in param) {
+        setAndLockPref("pdfjs.enablePermissions", !param.Enabled);
+      }
     },
   },
 
@@ -1148,7 +1348,25 @@ var Policies = {
           param.Autoplay.Allow,
           param.Autoplay.Block
         );
-        setDefaultPermission("autoplay-media", param.Autoplay);
+        if ("Default" in param.Autoplay) {
+          let prefValue;
+          switch (param.Autoplay.Default) {
+            case "allow-audio-video":
+              prefValue = 0;
+              break;
+            case "block-audio":
+              prefValue = 1;
+              break;
+            case "block-audio-video":
+              prefValue = 5;
+              break;
+          }
+          setDefaultPref(
+            "media.autoplay.default",
+            prefValue,
+            param.Autoplay.Locked
+          );
+        }
       }
 
       if (param.Location) {
@@ -1167,6 +1385,31 @@ var Policies = {
           param.Notifications.Block
         );
         setDefaultPermission("desktop-notification", param.Notifications);
+      }
+
+      if ("VirtualReality" in param) {
+        addAllowDenyPermissions(
+          "xr",
+          param.VirtualReality.Allow,
+          param.VirtualReality.Block
+        );
+        setDefaultPermission("xr", param.VirtualReality);
+      }
+    },
+  },
+
+  PictureInPicture: {
+    onBeforeAddons(manager, param) {
+      if ("Enabled" in param) {
+        setDefaultPref(
+          "media.videocontrols.picture-in-picture.video-toggle.enabled",
+          param.Enabled
+        );
+      }
+      if (param.Locked) {
+        Services.prefs.lockPref(
+          "media.videocontrols.picture-in-picture.video-toggle.enabled"
+        );
       }
     },
   },
@@ -1195,6 +1438,16 @@ var Policies = {
     },
   },
 
+  PrimaryPassword: {
+    onAllWindowsRestored(manager, param) {
+      if (param) {
+        manager.disallowFeature("removeMasterPassword");
+      } else {
+        manager.disallowFeature("createMasterPassword");
+      }
+    },
+  },
+
   PromptForDownloadLocation: {
     onBeforeAddons(manager, param) {
       setAndLockPref("browser.download.useDownloadDir", !param);
@@ -1214,13 +1467,21 @@ var Policies = {
 
   RequestedLocales: {
     onBeforeAddons(manager, param) {
+      let requestedLocales;
       if (Array.isArray(param)) {
-        Services.locale.requestedLocales = param;
+        requestedLocales = param;
       } else if (param) {
-        Services.locale.requestedLocales = param.split(",");
+        requestedLocales = param.split(",");
       } else {
-        Services.locale.requestedLocales = [];
+        requestedLocales = [];
       }
+      runOncePerModification(
+        "requestedLocales",
+        JSON.stringify(requestedLocales),
+        () => {
+          Services.locale.requestedLocales = requestedLocales;
+        }
+      );
     },
   },
 
@@ -1393,22 +1654,26 @@ var Policies = {
             JSON.stringify(engineNameList),
             async function() {
               for (let newEngine of param.Add) {
-                let newEngineParameters = {
-                  template: newEngine.URLTemplate,
-                  iconURL: newEngine.IconURL ? newEngine.IconURL.href : null,
-                  alias: newEngine.Alias,
+                let manifest = {
                   description: newEngine.Description,
-                  method: newEngine.Method,
-                  postData: newEngine.PostData,
-                  suggestURL: newEngine.SuggestURLTemplate,
-                  extensionID: "set-via-policy",
-                  queryCharset: "UTF-8",
+                  iconURL: newEngine.IconURL ? newEngine.IconURL.href : null,
+                  chrome_settings_overrides: {
+                    search_provider: {
+                      name: newEngine.Name,
+                      // Policies currently only use this encoding, see bug 1649164.
+                      encoding: "windows-1252",
+                      search_url: encodeURI(newEngine.URLTemplate),
+                      keyword: newEngine.Alias,
+                      search_url_post_params:
+                        newEngine.Method == "POST"
+                          ? newEngine.PostData
+                          : undefined,
+                      suggestUrlGetParams: newEngine.SuggestURLTemplate,
+                    },
+                  },
                 };
                 try {
-                  await Services.search.addEngineWithDetails(
-                    newEngine.Name,
-                    newEngineParameters
-                  );
+                  await Services.search.addPolicyEngine(manifest);
                 } catch (ex) {
                   log.error("Unable to add search engine", ex);
                 }
@@ -1595,6 +1860,10 @@ var Policies = {
       }
       if ("UrlbarInterventions" in param && !param.UrlbarInterventions) {
         manager.disallowFeature("urlbarinterventions");
+      }
+      if ("SkipOnboarding") {
+        setAndLockPref("trailhead.firstrun.branches", "nofirstrun-empty");
+        setAndLockPref("browser.aboutwelcome.enabled", false);
       }
     },
   },
@@ -1823,7 +2092,15 @@ function replacePathVariables(path) {
  * Helper function that installs an addon from a URL
  * and verifies that the addon ID matches.
  */
-function installAddonFromURL(url, extensionID) {
+function installAddonFromURL(url, extensionID, addon) {
+  if (
+    addon &&
+    addon.sourceURI.spec == url &&
+    !addon.sourceURI.schemeIs("file")
+  ) {
+    // It's the same addon, don't reinstall.
+    return;
+  }
   AddonManager.getInstallForURL(url, {
     telemetryInfo: { source: "enterprise-policy" },
   }).then(install => {
@@ -1844,6 +2121,14 @@ function installAddonFromURL(url, extensionID) {
         }
         if (install.addon && install.addon.appDisabled) {
           log.error(`Incompatible add-on - ${url}`);
+          install.removeListener(listener);
+          install.cancel();
+        }
+        if (
+          addon &&
+          Services.vc.compare(addon.version, install.addon.version) == 0
+        ) {
+          log.debug("Installation cancelled because versions are the same");
           install.removeListener(listener);
           install.cancel();
         }
@@ -1925,7 +2210,7 @@ let ChromeURLBlockPolicy = {
   classDescription: "Policy Engine Content Policy",
   contractID: "@mozilla-org/policy-engine-content-policy-service;1",
   classID: Components.ID("{ba7b9118-cabc-4845-8b26-4215d2a59ed7}"),
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIContentPolicy]),
+  QueryInterface: ChromeUtils.generateQI(["nsIContentPolicy"]),
   createInstance(outer, iid) {
     return this.QueryInterface(iid);
   },
@@ -1951,7 +2236,75 @@ function addChromeURLBlocker() {
 
 function pemToBase64(pem) {
   return pem
-    .replace(/-----BEGIN CERTIFICATE-----/, "")
-    .replace(/-----END CERTIFICATE-----/, "")
+    .replace(/(.*)-----BEGIN CERTIFICATE-----/, "")
+    .replace(/-----END CERTIFICATE-----(.*)/, "")
     .replace(/[\r\n]/g, "");
+}
+
+function processMIMEInfo(mimeInfo, realMIMEInfo) {
+  if ("handlers" in mimeInfo) {
+    let firstHandler = true;
+    for (let handler of mimeInfo.handlers) {
+      // handler can be null which means they don't
+      // want a preferred handler.
+      if (handler) {
+        let handlerApp;
+        if ("path" in handler) {
+          try {
+            let file = new FileUtils.File(handler.path);
+            handlerApp = Cc[
+              "@mozilla.org/uriloader/local-handler-app;1"
+            ].createInstance(Ci.nsILocalHandlerApp);
+            handlerApp.executable = file;
+          } catch (ex) {
+            log.error(`Unable to create handler executable (${handler.path})`);
+            continue;
+          }
+        } else if ("uriTemplate" in handler) {
+          let templateURL = new URL(handler.uriTemplate);
+          if (templateURL.protocol != "https:") {
+            log.error(`Web handler must be https (${handler.uriTemplate})`);
+            continue;
+          }
+          if (
+            !templateURL.pathname.includes("%s") &&
+            !templateURL.search.includes("%s")
+          ) {
+            log.error(`Web handler must contain %s (${handler.uriTemplate})`);
+            continue;
+          }
+          handlerApp = Cc[
+            "@mozilla.org/uriloader/web-handler-app;1"
+          ].createInstance(Ci.nsIWebHandlerApp);
+          handlerApp.uriTemplate = handler.uriTemplate;
+        } else {
+          log.error("Invalid handler");
+          continue;
+        }
+        if ("name" in handler) {
+          handlerApp.name = handler.name;
+        }
+        realMIMEInfo.possibleApplicationHandlers.appendElement(handlerApp);
+        if (firstHandler) {
+          realMIMEInfo.preferredApplicationHandler = handlerApp;
+        }
+      }
+      firstHandler = false;
+    }
+  }
+  if ("action" in mimeInfo) {
+    let action = realMIMEInfo[mimeInfo.action];
+    if (
+      action == realMIMEInfo.useHelperApp &&
+      !realMIMEInfo.possibleApplicationHandlers.length
+    ) {
+      log.error("useHelperApp requires a handler");
+      return;
+    }
+    realMIMEInfo.preferredAction = action;
+  }
+  if ("ask" in mimeInfo) {
+    realMIMEInfo.alwaysAskBeforeHandling = mimeInfo.ask;
+  }
+  gHandlerService.store(realMIMEInfo);
 }

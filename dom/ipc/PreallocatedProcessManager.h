@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "nsStringFwd.h"
 
 namespace mozilla {
 namespace dom {
@@ -28,32 +29,43 @@ class ContentParent;
  * We don't expect this pref to flip between true and false in production, but
  * flipping the pref is important for tests.
  */
+class PreallocatedProcessManagerImpl;
+
 class PreallocatedProcessManager final {
   typedef mozilla::dom::ContentParent ContentParent;
 
  public:
+  static PreallocatedProcessManagerImpl* GetPPMImpl();
+
   /**
    * Before first paint we don't want to allocate any processes in the
    * background. To avoid that, the PreallocatedProcessManager won't start up
    * any processes while there is a blocker active.
    */
-  static void AddBlocker(ContentParent* aParent);
-  static void RemoveBlocker(ContentParent* aParent);
+  static void AddBlocker(const nsACString& aRemoteType, ContentParent* aParent);
+  static void RemoveBlocker(const nsACString& aRemoteType,
+                            ContentParent* aParent);
 
   /**
-   * Take the preallocated process, if we have one.  If we don't have one, this
-   * returns null.
+   * Take the preallocated process, if we have one, or a recycled
+   * process cached via Provide().  Currently we only cache
+   * DEFAULT_REMOTE_TYPE ('web') processes and only reuse them for that
+   * type.  If we don't have a process to return (cached or preallocated),
+   * this returns null.
    *
-   * If you call Take() twice in a row, the second call is guaranteed to return
-   * null.
-   *
-   * After you Take() the preallocated process, you need to call one of the
-   * Allocate* functions (or change the dom.ipc.processPrelaunch pref from
-   * false to true) before we'll create a new process.
+   * If we use a preallocated process, it will schedule the start of
+   * another on Idle (AllocateOnIdle()).
    */
-  static already_AddRefed<ContentParent> Take();
+  static already_AddRefed<ContentParent> Take(const nsACString& aRemoteType);
 
+  /**
+   * Cache a process (currently only DEFAULT_REMOTE_TYPE) for reuse later
+   * via Take().  Returns true if we cached the process, and false if
+   * another process is already cached (so the caller knows to destroy it).
+   * This takes a reference to the ContentParent if it is cached.
+   */
   static bool Provide(ContentParent* aParent);
+  static void Erase(ContentParent* aParent);
 
  private:
   PreallocatedProcessManager();

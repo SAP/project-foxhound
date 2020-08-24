@@ -223,9 +223,9 @@ const BackgroundPageThumbs = {
     let webProgress = wlBrowser.getInterface(Ci.nsIWebProgress);
     this._listener = {
       QueryInterface: ChromeUtils.generateQI([
-        Ci.nsIWebProgressListener,
-        Ci.nsIWebProgressListener2,
-        Ci.nsISupportsWeakReference,
+        "nsIWebProgressListener",
+        "nsIWebProgressListener2",
+        "nsISupportsWeakReference",
       ]),
     };
     this._listener.onStateChange = (wbp, request, stateFlags, status) => {
@@ -309,6 +309,7 @@ const BackgroundPageThumbs = {
     browser.setAttribute("type", "content");
     browser.setAttribute("remote", "true");
     browser.setAttribute("disableglobalhistory", "true");
+    browser.setAttribute("messagemanagergroup", "thumbnails");
 
     if (Services.prefs.getBoolPref(ABOUT_NEWTAB_SEGREGATION_PREF)) {
       // Use the private container for thumbnails.

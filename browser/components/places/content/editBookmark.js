@@ -308,7 +308,9 @@ var gEditItemOverlay = {
 
     // Selection count.
     if (showOrCollapse("selectionCount", bulkTagging)) {
-      this._element("itemsCountText").value = PlacesUIUtils.getPluralString(
+      this._element(
+        "itemsCountText"
+      ).value = PlacesUIUtils.getPluralString(
         "detailsPane.itemsCountLabel",
         uris.length,
         [uris.length]
@@ -509,7 +511,7 @@ var gEditItemOverlay = {
     }
   },
 
-  QueryInterface: ChromeUtils.generateQI([Ci.nsINavBookmarkObserver]),
+  QueryInterface: ChromeUtils.generateQI(["nsINavBookmarkObserver"]),
 
   _element(aID) {
     return document.getElementById("editBMPanel_" + aID);

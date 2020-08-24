@@ -6,6 +6,8 @@
 
 #include "jit/VMFunctions.h"
 
+#include "mozilla/FloatingPoint.h"
+
 #include "builtin/String.h"
 #include "builtin/TypedObject.h"
 #include "frontend/BytecodeCompiler.h"
@@ -18,6 +20,7 @@
 #include "vm/ArrayObject.h"
 #include "vm/EqualityOperations.h"  // js::StrictlyEqual
 #include "vm/Interpreter.h"
+#include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/SelfHosting.h"
 #include "vm/TraceLogging.h"
 #include "vm/TypedArrayObject.h"
@@ -29,6 +32,7 @@
 #include "vm/Interpreter-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
+#include "vm/PlainObject-inl.h"  // js::CreateThis
 #include "vm/StringObject-inl.h"
 #include "vm/TypeInference-inl.h"
 
@@ -199,7 +203,7 @@ bool InvokeFunction(JSContext* cx, HandleObject obj, bool constructing,
   TraceLoggerThread* logger = TraceLoggerForCurrentThread(cx);
   TraceLogStartEvent(logger, TraceLogger_Call);
 
-  AutoArrayRooter argvRoot(cx, argc + 1 + constructing, argv);
+  RootedExternalValueArray argvRoot(cx, argc + 1 + constructing, argv);
 
   // Data in the argument vector is arranged for a JIT -> JIT call.
   RootedValue thisv(cx, argv[0]);
@@ -376,26 +380,6 @@ template bool StrictlyEqual<EqualityKind::NotEqual>(JSContext* cx,
                                                     MutableHandleValue rhs,
                                                     bool* res);
 
-bool LessThan(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs,
-              bool* res) {
-  return LessThanOperation(cx, lhs, rhs, res);
-}
-
-bool LessThanOrEqual(JSContext* cx, MutableHandleValue lhs,
-                     MutableHandleValue rhs, bool* res) {
-  return LessThanOrEqualOperation(cx, lhs, rhs, res);
-}
-
-bool GreaterThan(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs,
-                 bool* res) {
-  return GreaterThanOperation(cx, lhs, rhs, res);
-}
-
-bool GreaterThanOrEqual(JSContext* cx, MutableHandleValue lhs,
-                        MutableHandleValue rhs, bool* res) {
-  return GreaterThanOrEqualOperation(cx, lhs, rhs, res);
-}
-
 template <EqualityKind Kind>
 bool StringsEqual(JSContext* cx, HandleString lhs, HandleString rhs,
                   bool* res) {
@@ -441,7 +425,7 @@ bool ArrayPopDense(JSContext* cx, HandleObject obj, MutableHandleValue rval) {
 
   AutoDetectInvalidation adi(cx, rval);
 
-  JS::AutoValueArray<2> argv(cx);
+  JS::RootedValueArray<2> argv(cx);
   argv[0].setUndefined();
   argv[1].setObject(*obj);
   if (!js::array_pop(cx, 0, argv.begin())) {
@@ -478,7 +462,7 @@ bool ArrayPushDense(JSContext* cx, HandleArrayObject arr, HandleValue v,
   ++frame;
   IonScript* ionScript = frame.ionScript();
 
-  JS::AutoValueArray<3> argv(cx);
+  JS::RootedValueArray<3> argv(cx);
   AutoDetectInvalidation adi(cx, argv[0], ionScript);
   argv[0].setUndefined();
   argv[1].setObject(*arr);
@@ -491,6 +475,10 @@ bool ArrayPushDense(JSContext* cx, HandleArrayObject arr, HandleValue v,
     *length = argv[0].toInt32();
     return true;
   }
+
+  // Without TI this should not happen, we should have bailed out before
+  // calling the VM function if we are about to overflow.
+  MOZ_ASSERT(IsTypeInferenceEnabled());
 
   // array_push changed the length to be larger than INT32_MAX. In this case
   // OBJECT_FLAG_LENGTH_OVERFLOW was set, TI invalidated the script, and the
@@ -507,7 +495,7 @@ bool ArrayShiftDense(JSContext* cx, HandleObject obj, MutableHandleValue rval) {
 
   AutoDetectInvalidation adi(cx, rval);
 
-  JS::AutoValueArray<2> argv(cx);
+  JS::RootedValueArray<2> argv(cx);
   argv[0].setUndefined();
   argv[1].setObject(*obj);
   if (!js::array_shift(cx, 0, argv.begin())) {
@@ -526,7 +514,7 @@ bool ArrayShiftDense(JSContext* cx, HandleObject obj, MutableHandleValue rval) {
 }
 
 JSString* ArrayJoin(JSContext* cx, HandleObject array, HandleString sep) {
-  JS::AutoValueArray<3> argv(cx);
+  JS::RootedValueArray<3> argv(cx);
   argv[0].setUndefined();
   argv[1].setObject(*array);
   argv[2].setString(sep);
@@ -561,7 +549,7 @@ bool SetArrayLength(JSContext* cx, HandleObject obj, HandleValue value,
     MOZ_ALWAYS_TRUE(result.fail(JSMSG_READ_ONLY));
   }
 
-  return result.checkStrictErrorOrWarning(cx, obj, id, strict);
+  return result.checkStrictModeError(cx, obj, id, strict);
 }
 
 bool CharCodeAt(JSContext* cx, HandleString str, int32_t index,
@@ -628,7 +616,7 @@ bool SetProperty(JSContext* cx, HandleObject obj, HandlePropertyName name,
       return false;
     }
   }
-  return result.checkStrictErrorOrWarning(cx, obj, id, strict);
+  return result.checkStrictModeError(cx, obj, id, strict);
 }
 
 bool InterruptCheck(JSContext* cx) {
@@ -679,9 +667,11 @@ bool GetIntrinsicValue(JSContext* cx, HandlePropertyName name,
   // purposes, as its side effect is not observable from JS. We are
   // guaranteed to bail out after this function, but because of its AliasSet,
   // type info will not be reflowed. Manually monitor here.
-  jsbytecode* pc;
-  JSScript* script = cx->currentScript(&pc);
-  JitScript::MonitorBytecodeType(cx, script, pc, rval);
+  if (!JitOptions.warpBuilder) {
+    jsbytecode* pc;
+    JSScript* script = cx->currentScript(&pc);
+    JitScript::MonitorBytecodeType(cx, script, pc, rval);
+  }
 
   return true;
 }
@@ -835,6 +825,18 @@ void PostGlobalWriteBarrier(JSRuntime* rt, GlobalObject* obj) {
     PostWriteBarrier(rt, obj);
     obj->realm()->globalWriteBarriered = 1;
   }
+}
+
+bool GetInt32FromStringPure(JSContext* cx, JSString* str, int32_t* result) {
+  // We shouldn't GC here as this is called directly from IC code.
+  AutoUnsafeCallWithABI unsafe;
+
+  double d;
+  if (!StringToNumberPure(cx, str, &d)) {
+    return false;
+  }
+
+  return mozilla::NumberIsInt32(d, result);
 }
 
 int32_t GetIndexFromString(JSString* str) {
@@ -1469,7 +1471,7 @@ bool CallNativeGetter(JSContext* cx, HandleFunction callee, HandleObject obj,
   MOZ_ASSERT(callee->isNative());
   JSNative natfun = callee->native();
 
-  JS::AutoValueArray<2> vp(cx);
+  JS::RootedValueArray<2> vp(cx);
   vp[0].setObject(*callee.get());
   vp[1].setObject(*obj.get());
 
@@ -1488,7 +1490,7 @@ bool CallNativeGetterByValue(JSContext* cx, HandleFunction callee,
   MOZ_ASSERT(callee->isNative());
   JSNative natfun = callee->native();
 
-  JS::AutoValueArray<2> vp(cx);
+  JS::RootedValueArray<2> vp(cx);
   vp[0].setObject(*callee.get());
   vp[1].set(receiver);
 
@@ -1507,7 +1509,7 @@ bool CallNativeSetter(JSContext* cx, HandleFunction callee, HandleObject obj,
   MOZ_ASSERT(callee->isNative());
   JSNative natfun = callee->native();
 
-  JS::AutoValueArray<3> vp(cx);
+  JS::RootedValueArray<3> vp(cx);
   vp[0].setObject(*callee.get());
   vp[1].setObject(*obj.get());
   vp[2].set(rhs);
@@ -1531,14 +1533,6 @@ bool EqualStringsHelperPure(JSString* str1, JSString* str2) {
   }
 
   return EqualChars(&str1->asLinear(), str2Linear);
-}
-
-bool CheckIsCallable(JSContext* cx, HandleValue v, CheckIsCallableKind kind) {
-  if (!IsCallable(v)) {
-    return ThrowCheckIsCallable(cx, kind);
-  }
-
-  return true;
 }
 
 static bool MaybeTypedArrayIndexString(jsid id) {
@@ -1991,16 +1985,6 @@ bool IsPossiblyWrappedTypedArray(JSContext* cx, JSObject* obj, bool* result) {
   return true;
 }
 
-bool DoToNumber(JSContext* cx, HandleValue arg, MutableHandleValue ret) {
-  ret.set(arg);
-  return ToNumber(cx, ret);
-}
-
-bool DoToNumeric(JSContext* cx, HandleValue arg, MutableHandleValue ret) {
-  ret.set(arg);
-  return ToNumeric(cx, ret);
-}
-
 void* AllocateBigIntNoGC(JSContext* cx, bool requestMinorGC) {
   AutoUnsafeCallWithABI unsafe;
 
@@ -2009,6 +1993,40 @@ void* AllocateBigIntNoGC(JSContext* cx, bool requestMinorGC) {
   }
 
   return js::AllocateBigInt<NoGC>(cx, gc::TenuredHeap);
+}
+
+#if JS_BITS_PER_WORD == 32
+BigInt* CreateBigIntFromInt64(JSContext* cx, uint32_t low, uint32_t high) {
+  uint64_t n = (static_cast<uint64_t>(high) << 32) + low;
+  return js::BigInt::createFromInt64(cx, n);
+}
+
+BigInt* CreateBigIntFromUint64(JSContext* cx, uint32_t low, uint32_t high) {
+  uint64_t n = (static_cast<uint64_t>(high) << 32) + low;
+  return js::BigInt::createFromUint64(cx, n);
+}
+#else
+BigInt* CreateBigIntFromInt64(JSContext* cx, uint64_t i64) {
+  return js::BigInt::createFromInt64(cx, i64);
+}
+
+BigInt* CreateBigIntFromUint64(JSContext* cx, uint64_t i64) {
+  return js::BigInt::createFromUint64(cx, i64);
+}
+#endif
+
+bool DoStringToInt64(JSContext* cx, HandleString str, uint64_t* res) {
+  BigInt* bi;
+  JS_TRY_VAR_OR_RETURN_FALSE(cx, bi, js::StringToBigInt(cx, str));
+
+  if (!bi) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_BIGINT_INVALID_SYNTAX);
+    return false;
+  }
+
+  *res = js::BigInt::toUint64(bi);
+  return true;
 }
 
 template <EqualityKind Kind>

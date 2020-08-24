@@ -4,25 +4,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/Attributes.h"
+#include "mozilla/TsanOptions.h"
 
 #ifndef _MSC_VER  // Not supported by clang-cl yet
-
-//
-// When running with ThreadSanitizer, we need to explicitly set some
-// options specific to our codebase to prevent errors during runtime.
-// To override these, set the TSAN_OPTIONS environment variable.
-//
-// Currently, these are:
-//
-//   abort_on_error=1 - Causes TSan to abort instead of using exit().
-//   halt_on_error=1 - Causes TSan to stop on the first race detected.
-//
-//   report_signal_unsafe=0 - Required to avoid TSan deadlocks when
-//   receiving external signals (e.g. SIGINT manually on console).
-//
-extern "C" const char* __tsan_default_options() {
-  return "halt_on_error=1:abort_on_error=1:report_signal_unsafe=0";
-}
 
 //
 // When running with ThreadSanitizer, we sometimes need to suppress existing
@@ -46,50 +30,12 @@ extern "C" const char* __tsan_default_options() {
 // symbolize one of the two traces and this can cause suppressed races to
 // show up intermittently.
 //
+// clang-format off
 extern "C" const char* __tsan_default_suppressions() {
   return "# Add your suppressions below\n"
 
          // External uninstrumented libraries
-         "called_from_lib:libatk-1\n"
-         "called_from_lib:libcairo.so\n"
-         "called_from_lib:libcairo-gobject\n"
-         "called_from_lib:libgdk-3\n"
-         "called_from_lib:libgdk_pixbuf\n"
-         "called_from_lib:libgdk-x11\n"
-         "called_from_lib:libgio-2\n"
-         "called_from_lib:libglib-1\n"
-         "called_from_lib:libglib-2\n"
-         "called_from_lib:libgobject\n"
-         "called_from_lib:libgtk-3\n"
-         "called_from_lib:libgtk-x11\n"
-         "called_from_lib:libgvfscommon\n"
-         "called_from_lib:libgvfsdbus\n"
-         "called_from_lib:libibus-1\n"
-         "called_from_lib:libogg.so\n"
-         "called_from_lib:libpangocairo\n"
-         "called_from_lib:libpangoft2\n"
-         "called_from_lib:pango-basic-fc\n"
-         "called_from_lib:libpixman-1\n"
-         "called_from_lib:libpulse.so\n"
-         "called_from_lib:libpulsecommon\n"
-         "called_from_lib:libsecret-1\n"
-         "called_from_lib:libunity-gtk3-parser\n"
-         "called_from_lib:libvorbis.so\n"
-         "called_from_lib:libvorbisfile\n"
-         "called_from_lib:libX11.so\n"
-         "called_from_lib:libX11-xcb\n"
-         "called_from_lib:libXau\n"
-         "called_from_lib:libxcb.so\n"
-         "called_from_lib:libXcomposite\n"
-         "called_from_lib:libXcursor\n"
-         "called_from_lib:libXdamage\n"
-         "called_from_lib:libXdmcp\n"
-         "called_from_lib:libXext\n"
-         "called_from_lib:libXfixes\n"
-         "called_from_lib:libXi.so\n"
-         "called_from_lib:libXrandr\n"
-         "called_from_lib:libXrender\n"
-         "called_from_lib:libXss\n"
+         MOZ_TSAN_DEFAULT_EXTLIB_SUPPRESSIONS
 
          // These libraries are uninstrumented and cause mutex false positives.
          // However, they can be unloaded by GTK early which we cannot avoid.
@@ -109,6 +55,10 @@ extern "C" const char* __tsan_default_suppressions() {
          // This is a callback from libglib-2 that is apparently
          // not fully suppressed through `called_from_lib`.
          "race:g_main_context_dispatch\n"
+
+         // This is likely a false positive involving a mutex from GTK.
+         // See also bug 1642653 - permanent.
+         "mutex:GetMaiAtkType\n"
 
          // TSan internals
          "race:__tsan::ProcessPendingSignals\n"
@@ -139,6 +89,8 @@ extern "C" const char* __tsan_default_suppressions() {
          // Bug 1614605 - permanent
          "deadlock:SanctionsTestServer\n"
          "deadlock:OCSPStaplingServer\n"
+         // Bug 1643087 - permanent
+         "deadlock:BadCertAndPinningServer\n"
 
          // Bug 1153409
          "race:third_party/sqlite3/*\n"
@@ -169,16 +121,14 @@ extern "C" const char* __tsan_default_suppressions() {
          "race:SystemGroup::EventTargetFor\n"
          "race:SchedulerEventTarget::AddRef\n"
          "race:SchedulerEventTarget::Dispatch\n"
-         "race:ContentChild::GetSpecificMessageEventTarget\n"
          "race:MessageChannel::MessageTask::Post\n"
 
          // Bug 1600594
          "race:nsThread::SizeOfEventQueues\n"
 
-         // Bug 1600895
-         "race:js::gc::MovingTracer::onBaseShapeEdge\n"
-         "race:js::gc::MovingTracer::onScopeEdge\n"
-         "race:js::gc::MovingTracer::onShapeEdge\n"
+         // Bug 1600895, bug 1647702
+         "race:UpdateArenaPointersTyped<js::ObjectGroup>\n"
+         "race:UpdateArenaPointersTyped<js::Shape>\n"
 
          // Bug 1601286
          "race:setFlagBit\n"
@@ -188,6 +138,9 @@ extern "C" const char* __tsan_default_suppressions() {
          "race:XDRInnerObject<js::XDR_DECODE>\n"
          "race:ScriptStencil::finishGCThings\n"
          "race:XDRScriptGCThing<js::XDR_DECODE>\n"
+
+         // Bug 1619162
+         "race:currentNameHasEscapes\n"
 
          // Bug 1601600
          "race:SkARGB32_Blitter\n"
@@ -200,20 +153,9 @@ extern "C" const char* __tsan_default_suppressions() {
          "race:ScriptPreloader::MaybeFinishOffThreadDecode\n"
          "race:ScriptPreloader::DoFinishOffThreadDecode\n"
 
-         // Bug 1601940
-         "race:ApplyAsyncTestAttributes\n"
-         "race:UnapplyAsyncTestAttributes\n"
-         "race:MarkAsyncTransformAppliedToContent\n"
-
          // Bug 1601980
          "race:image::RasterImage::StartDecoding\n"
          "race:image::RasterImage::OnImageDataAvailable\n"
-
-         // Bug 1603504
-         "race:HttpChannelParent::OnDataAvailable\n"
-
-         // Bug 1606647
-         "race:nsSocketTransport::OnSocketReady\n"
 
          // Bug 1606651
          "race:nsPluginTag::nsPluginTag\n"
@@ -239,26 +181,12 @@ extern "C" const char* __tsan_default_suppressions() {
          // Bug 1607212
          "race:CacheEntry::InvokeCallback\n"
 
-         // Bug 1607218
-         "race:nsProxyInfo::SetResolveFlags\n"
-         "race:nsProxyInfo::GetResolveFlags\n"
-
-         // Bug 1615014
-         "race:EnsurePerformanceCounter\n"
-         "race:GetPerformanceCounter\n"
-
-         // Bug 1607134
-         "race:net::sRunningIndex\n"
-
          // Bug 1607138
          "race:gXPCOMThreadsShutDown\n"
 
          // Bug 1607426
          "race:PACLoadComplete::Run\n"
          "race:nsPACMan::ProcessPending\n"
-
-         // Bug 1607221
-         "race:nsSocketTransport::SetTimeout\n"
 
          // Bug 1607446
          "race:nsJARChannel::Suspend\n"
@@ -286,6 +214,10 @@ extern "C" const char* __tsan_default_suppressions() {
          // Bug 1607762
          "race:nsHtml5OwningUTF16Buffer::Release\n"
 
+         // Bug 1608068
+         "race:makeOwnBaseShape\n"
+         "race:numDynamicSlots\n"
+
          // Bug 1608357
          "race:nsHtml5ExecutorFlusher::Run\n"
          "race:geckoservo::glue::traverse_subtree\n"
@@ -296,18 +228,6 @@ extern "C" const char* __tsan_default_suppressions() {
          // Bug 1612054
          "race:nsContentSecurityUtils::IsEvalAllowed\n"
          "race:nsContentSecurityUtils::ValidateScriptFilename\n"
-
-         // Bug 1613384
-         "race:GCRuntime::setPerformanceHint\n"
-         "race:GCHeapThreshold::updateAfterGC\n"
-
-         // Bug 1614646
-         "race:nsCookieService::CountCookiesFromHostInternal\n"
-         "race:nsCookieService::InitDBStates\n"
-
-         // Bug 1614706
-         "race:CacheFileInputStream::Release\n"
-         "race:CacheFileInputStream::CloseWithStatus\n"
 
          // Bug 1615017
          "race:CacheFileMetadata::SetHash\n"
@@ -324,9 +244,16 @@ extern "C" const char* __tsan_default_suppressions() {
          // Bug 1615265
          "race:ScriptPreloader::OffThreadDecodeCallback\n"
 
+         // Bug 1615569
+         "race:mp_exptmod.max_window_bits\n"
+
          // ~GLContextGLX unlocks a libGL mutex that cannot be seen
          // by TSan because libGL is not instrumented.
          "mutex:GLContextGLX::~GLContextGLX\n"
+
+         // Bug 1637707 - permanent.
+         // Cannot suppress library because it is unloaded later
+         "mutex:libEGL_mesa.so\n"
 
          // Probably false positives in Rust code
          "race:third_party/rust/parking_lot_core/*\n"
@@ -362,7 +289,35 @@ extern "C" const char* __tsan_default_suppressions() {
          // See also bug 1615228 for discussion.
          "race:base::Thread::Stop\n"
 
+         // Likely benign race in webrtc.org code
+         // May be fixed upstream at some point
+         // See bug 1652499
+         "race:Loggable\n"
+         "race:UpdateMinLogSeverity\n"
+
+         // See bug 1652174
+         "race:event_debug_mode_too_late\n"
+
+         // See bug 1651446
+         "race:libavcodec.so*\n"
+         "race:libavutil.so*\n"
+
+         // See bug 1648604
+         "race:system_base_info\n"
+
+         // See bug 1648606
+         "race:sctp_close\n"
+         "race:sctp_iterator_work\n"
+
+         // See bug 1651770
+         "deadlock:mozilla::camera::LockAndDispatch\n"
+
+         // See bug 1653618
+         "race:sctp_handle_tick\n"
+         "race:sctp_handle_sack\n"
+
       // End of suppressions.
       ;  // Please keep this semicolon.
 }
+// clang-format on
 #endif  // _MSC_VER

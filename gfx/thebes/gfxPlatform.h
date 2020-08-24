@@ -40,6 +40,7 @@ class nsAtom;
 class nsIObserver;
 class SRGBOverrideObserver;
 class gfxTextPerfMetrics;
+struct FontMatchingStats;
 typedef struct FT_LibraryRec_* FT_Library;
 
 namespace mozilla {
@@ -156,7 +157,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   typedef mozilla::StretchRange StretchRange;
   typedef mozilla::SlantStyleRange SlantStyleRange;
   typedef mozilla::WeightRange WeightRange;
-  typedef mozilla::gfx::Color Color;
+  typedef mozilla::gfx::sRGBColor sRGBColor;
+  typedef mozilla::gfx::DeviceColor DeviceColor;
   typedef mozilla::gfx::DataSourceSurface DataSourceSurface;
   typedef mozilla::gfx::DrawTarget DrawTarget;
   typedef mozilla::gfx::IntSize IntSize;
@@ -367,12 +369,14 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
                                    const nsACString& aGenericFamily);
 
   /**
-   * Create the appropriate platform font group
+   * Create a gfxFontGroup based on the given family list and style.
    */
-  virtual gfxFontGroup* CreateFontGroup(
-      const mozilla::FontFamilyList& aFontFamilyList,
-      const gfxFontStyle* aStyle, gfxTextPerfMetrics* aTextPerf,
-      gfxUserFontSet* aUserFontSet, gfxFloat aDevToCssSize) = 0;
+  gfxFontGroup* CreateFontGroup(const mozilla::FontFamilyList& aFontFamilyList,
+                                const gfxFontStyle* aStyle,
+                                gfxTextPerfMetrics* aTextPerf,
+                                FontMatchingStats* aFontMatchingStats,
+                                gfxUserFontSet* aUserFontSet,
+                                gfxFloat aDevToCssSize) const;
 
   /**
    * Look up a local platform font using the full font face name.
@@ -503,6 +507,11 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static eCMSMode GetCMSMode();
 
   /**
+   * Used only for testing. Override the pref setting.
+   */
+  static void SetCMSModeOverride(eCMSMode aMode);
+
+  /**
    * Determines the rendering intent for color management.
    *
    * If the value in the pref gfx.color_management.rendering_intent is a
@@ -516,11 +525,9 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   /**
    * Convert a pixel using a cms transform in an endian-aware manner.
-   *
-   * Sets 'out' to 'in' if transform is nullptr.
    */
-  static void TransformPixel(const Color& in, Color& out,
-                             qcms_transform* transform);
+  static DeviceColor TransformPixel(const sRGBColor& in,
+                                    qcms_transform* transform);
 
   /**
    * Return the output device ICC profile.
@@ -664,10 +671,10 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static void ReInitFrameRate();
 
   /**
-   * Update allow sacrificing subpixel AA quality setting (called after pref
+   * Update force subpixel AA quality setting (called after pref
    * changes).
    */
-  void UpdateAllowSacrificingSubpixelAA();
+  void UpdateForceSubpixelAAWherePossible();
 
   /**
    * Used to test which input types are handled via APZ.
@@ -677,6 +684,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   bool SupportsApzDragInput() const;
   bool SupportsApzKeyboardInput() const;
   bool SupportsApzAutoscrolling() const;
+  bool SupportsApzZooming() const;
 
   virtual void FlushContentDrawing() {}
 
@@ -727,6 +735,12 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   const gfxSkipChars& EmptySkipChars() const { return kEmptySkipChars; }
 
   /**
+   * Returns a buffer containing the CMS output profile data. The way this
+   * is obtained is platform-specific.
+   */
+  virtual nsTArray<uint8_t> GetPlatformCMSOutputProfileData();
+
+  /**
    * Return information on how child processes should initialize graphics
    * devices.
    */
@@ -746,6 +760,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static bool WebRenderPrefEnabled();
   // you probably want to use gfxVars::UseWebRender() instead of this
   static bool WebRenderEnvvarEnabled();
+  // you probably want to use gfxVars::UseWebRender() instead of this
+  static bool WebRenderEnvvarDisabled();
 
   void NotifyFrameStats(nsTArray<mozilla::layers::FrameStats>&& aFrameStats);
 
@@ -755,7 +771,12 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   virtual void EnsureDevicesInitialized(){};
   virtual bool DevicesInitialized() { return true; };
 
+  virtual bool UseDMABufWebGL() { return false; }
+  virtual bool IsWaylandDisplay() { return false; }
+
   static uint32_t TargetFrameRate();
+
+  static bool UseDesktopZoomingScrollbars();
 
  protected:
   gfxPlatform();
@@ -803,6 +824,23 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   void FetchAndImportContentDeviceData();
   virtual void ImportContentDeviceData(
       const mozilla::gfx::ContentDeviceData& aData);
+
+  /**
+   * Returns the contents of the file pointed to by the
+   * gfx.color_management.display_profile pref, if set.
+   * Returns an empty array if not set, or if an error occurs
+   */
+  nsTArray<uint8_t> GetPrefCMSOutputProfileData();
+
+  /**
+   * If inside a child process and currently being initialized by the
+   * SetXPCOMProcessAttributes message, this can be used by subclasses to
+   * retrieve the ContentDeviceData passed by the message
+   *
+   * If not currently being initialized, will return nullptr. In this case,
+   * child should send a sync message to ask parent for color profile
+   */
+  const mozilla::gfx::ContentDeviceData* GetInitContentDeviceData();
 
   /**
    * Increase the global device counter after a device has been removed/reset.
@@ -879,11 +917,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static void InitOpenGLConfig();
   static void CreateCMSOutputProfile();
 
-  static nsTArray<uint8_t> GetCMSOutputProfileData();
-
   friend void RecordingPrefChanged(const char* aPrefName, void* aClosure);
-
-  virtual nsTArray<uint8_t> GetPlatformCMSOutputProfileData();
 
   /**
    * Calling this function will compute and set the ideal tile size for the

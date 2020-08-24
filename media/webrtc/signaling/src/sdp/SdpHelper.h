@@ -24,8 +24,6 @@ class Sdp;
 
 class SdpHelper {
  public:
-  enum MsectionBundleType { kNoBundle, kSlaveBundle, kMasterBundle };
-
   // Takes a std::string* into which error strings will be written for the
   // lifetime of the SdpHelper.
   explicit SdpHelper(std::string* errorDest) : mLastError(*errorDest) {}
@@ -44,13 +42,13 @@ class SdpHelper {
   bool MsectionIsDisabled(const SdpMediaSection& msection) const;
   static void DisableMsection(Sdp* sdp, SdpMediaSection* msection);
 
-  // Maps each mid to the m-section that is the master of its bundle.
+  // Maps each mid to the m-section that owns its bundle transport.
   // Mids that do not appear in an a=group:BUNDLE do not appear here.
   typedef std::map<std::string, const SdpMediaSection*> BundledMids;
 
   nsresult GetBundledMids(const Sdp& sdp, BundledMids* bundledMids);
 
-  bool IsBundleSlave(const Sdp& localSdp, uint16_t level);
+  bool HasOwnTransport(const Sdp& localSdp, uint16_t level);
   void GetBundleGroups(const Sdp& sdp,
                        std::vector<SdpGroupAttributeList::Group>* groups) const;
 
@@ -72,9 +70,6 @@ class SdpHelper {
                            uint16_t defaultRtcpCandidatePort,
                            SdpMediaSection* msection);
   void SetupMsidSemantic(const std::vector<std::string>& msids, Sdp* sdp) const;
-  MsectionBundleType GetMsectionBundleType(const Sdp& sdp, uint16_t level,
-                                           BundledMids& bundledMids,
-                                           std::string* masterMid) const;
 
   std::string GetCNAME(const SdpMediaSection& msection) const;
 
@@ -88,7 +83,7 @@ class SdpHelper {
   bool HasRtcp(SdpMediaSection::Protocol proto) const;
   static SdpMediaSection::Protocol GetProtocolForMediaType(
       SdpMediaSection::MediaType type);
-  void appendSdpParseErrors(
+  void AppendSdpParseErrors(
       const std::vector<std::pair<size_t, std::string> >& aErrors,
       std::string* aErrorString);
 

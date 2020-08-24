@@ -17,6 +17,7 @@
 #include "mozilla/StaticPrefs_test.h"
 #include "mozilla/Telemetry.h"                // for Telemetry
 #include "mozilla/layers/IAPZCTreeManager.h"  // for AllowedTouchBehavior
+#include "LayersLogging.h"                    // for Stringify
 #include "OverscrollHandoffState.h"
 #include "QueuedInput.h"
 
@@ -434,8 +435,7 @@ bool WheelBlockState::MaybeTimeout(const TimeStamp& aTimeStamp) {
 
   if (StaticPrefs::test_mousescroll()) {
     RefPtr<AsyncPanZoomController> apzc = GetTargetApzc();
-    apzc->NotifyMozMouseScrollEvent(
-        NS_LITERAL_STRING("MozMouseScrollTransactionTimeout"));
+    apzc->NotifyMozMouseScrollEvent(u"MozMouseScrollTransactionTimeout"_ns);
   }
 
   EndTransaction();
@@ -574,6 +574,47 @@ bool PanGestureBlockState::IsReadyForHandling() const {
 bool PanGestureBlockState::AllowScrollHandoff() const { return false; }
 
 void PanGestureBlockState::SetNeedsToWaitForContentResponse(
+    bool aWaitForContentResponse) {
+  mWaitingForContentResponse = aWaitForContentResponse;
+}
+
+PinchGestureBlockState::PinchGestureBlockState(
+    const RefPtr<AsyncPanZoomController>& aTargetApzc,
+    TargetConfirmationFlags aFlags)
+    : CancelableBlockState(aTargetApzc, aFlags),
+      mInterrupted(false),
+      mWaitingForContentResponse(false) {}
+
+bool PinchGestureBlockState::MustStayActive() { return true; }
+
+const char* PinchGestureBlockState::Type() { return "pinch gesture"; }
+
+bool PinchGestureBlockState::SetContentResponse(bool aPreventDefault) {
+  if (aPreventDefault) {
+    TBS_LOG("%p setting interrupted flag\n", this);
+    mInterrupted = true;
+  }
+  bool stateChanged = CancelableBlockState::SetContentResponse(aPreventDefault);
+  if (mWaitingForContentResponse) {
+    mWaitingForContentResponse = false;
+    stateChanged = true;
+  }
+  return stateChanged;
+}
+
+bool PinchGestureBlockState::HasReceivedAllContentNotifications() const {
+  return CancelableBlockState::HasReceivedAllContentNotifications() &&
+         !mWaitingForContentResponse;
+}
+
+bool PinchGestureBlockState::IsReadyForHandling() const {
+  if (!CancelableBlockState::IsReadyForHandling()) {
+    return false;
+  }
+  return !mWaitingForContentResponse || IsContentResponseTimerExpired();
+}
+
+void PinchGestureBlockState::SetNeedsToWaitForContentResponse(
     bool aWaitForContentResponse) {
   mWaitingForContentResponse = aWaitForContentResponse;
 }

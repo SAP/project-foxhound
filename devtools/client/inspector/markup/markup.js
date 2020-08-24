@@ -300,6 +300,7 @@ function MarkupView(inspector, frame, controllerWindow) {
   );
   this._onWalkerNodeStatesChanged = this._onWalkerNodeStatesChanged.bind(this);
   this._onFocus = this._onFocus.bind(this);
+  this._onFrameRootAvailable = this._onFrameRootAvailable.bind(this);
   this._onMouseClick = this._onMouseClick.bind(this);
   this._onMouseMove = this._onMouseMove.bind(this);
   this._onMouseOut = this._onMouseOut.bind(this);
@@ -316,6 +317,7 @@ function MarkupView(inspector, frame, controllerWindow) {
   this._elt.addEventListener("mouseout", this._onMouseOut);
   this._frame.addEventListener("focus", this._onFocus);
   this.inspector.selection.on("new-node-front", this._onNewSelection);
+  this.inspector.on("frame-root-available", this._onFrameRootAvailable);
   this.win.addEventListener("copy", this._onCopy);
   this.win.addEventListener("mouseup", this._onMouseUp);
   this.inspector.toolbox.nodePicker.on(
@@ -889,9 +891,8 @@ MarkupView.prototype = {
    * Given the known reason, should the current selection be briefly highlighted
    * In a few cases, we don't want to highlight the node:
    * - If the reason is null (used to reset the selection),
-   * - if it's "inspector-open" (when the inspector opens up, let's not
-   * highlight the default node)
-   * - if it's "navigateaway" (since the page is being navigated away from)
+   * - if it's "inspector-default-selection" (initial node selected, either when
+   *   opening the inspector or after a navigation/reload)
    * - if it's "test" (this is a special case for mochitest. In tests, we often
    * need to select elements but don't necessarily want the highlighter to come
    * and go after a delay as this might break test scenarios)
@@ -902,8 +903,7 @@ MarkupView.prototype = {
   _shouldNewSelectionBeHighlighted: function() {
     const reason = this.inspector.selection.reason;
     const unwantedReasons = [
-      "inspector-open",
-      "navigateaway",
+      "inspector-default-selection",
       "nodeselected",
       "test",
     ];
@@ -1101,9 +1101,9 @@ MarkupView.prototype = {
           if (type === "uri") {
             openContentLink(url);
           } else if (type === "cssresource") {
-            return this.toolbox.viewSourceInStyleEditor(url);
+            return this.toolbox.viewGeneratedSourceInStyleEditor(url);
           } else if (type === "jsresource") {
-            return this.toolbox.viewSourceInDebugger(url);
+            return this.toolbox.viewGeneratedSourceInDebugger(url);
           }
           return null;
         })
@@ -1134,6 +1134,10 @@ MarkupView.prototype = {
     const shortcuts = new KeyShortcuts({
       window: this.win,
     });
+
+    // Keep a pointer on shortcuts to destroy them when destroying the markup
+    // view.
+    this._shortcuts = shortcuts;
 
     this._onShortcut = this._onShortcut.bind(this);
 
@@ -1222,6 +1226,7 @@ MarkupView.prototype = {
   isDeletable(nodeFront) {
     return !(
       nodeFront.isDocumentElement ||
+      nodeFront.nodeType == nodeConstants.DOCUMENT_NODE ||
       nodeFront.nodeType == nodeConstants.DOCUMENT_TYPE_NODE ||
       nodeFront.nodeType == nodeConstants.DOCUMENT_FRAGMENT_NODE ||
       nodeFront.isAnonymous
@@ -1395,13 +1400,26 @@ MarkupView.prototype = {
     }
 
     this.setContainer(node, container, slotted);
-    container.childrenDirty = true;
-
-    this._updateChildren(container);
+    this._forceUpdateChildren(container);
 
     this.inspector.emit("container-created", container);
 
     return container;
+  },
+
+  /**
+   * Called when receiving the "frame-root-available" event from the inspector.
+   * "frame-root-available" will be emitted by the inspector when a root-node
+   * resource becomes available for a non-top-level target.
+   */
+  _onFrameRootAvailable: async function(nodeFront) {
+    const parentNodeFront = nodeFront.parentNode();
+    const container = this.getContainer(parentNodeFront);
+    if (container) {
+      // If there is no container for the parentNodeFront, the markup view is
+      // currently not watching this part of the tree.
+      this._forceUpdateChildren(container, { flash: true, updateLevel: true });
+    }
   },
 
   /**
@@ -1444,16 +1462,12 @@ MarkupView.prototype = {
         type === "slotchange" ||
         type === "shadowRootAttached"
       ) {
-        container.childrenDirty = true;
-        // Update the children to take care of changes in the markup view DOM
-        // and update container (and its subtree) DOM tree depth level for
-        // accessibility where necessary.
-        this._updateChildren(container, { flash: true }).then(() =>
-          container.updateLevel()
-        );
+        this._forceUpdateChildren(container, {
+          flash: true,
+          updateLevel: true,
+        });
       } else if (type === "inlineTextChild") {
-        container.childrenDirty = true;
-        this._updateChildren(container, { flash: true });
+        this._forceUpdateChildren(container, { flash: true });
         container.update();
       }
     }
@@ -1753,7 +1767,7 @@ MarkupView.prototype = {
         (this.inspector.selection.nodeFront === removedNode && isHTMLTag)
       ) {
         const childContainers = parentContainer.getChildContainers();
-        if (childContainers && childContainers[childIndex]) {
+        if (childContainers?.[childIndex]) {
           const childContainer = childContainers[childIndex];
           this._markContainerAsSelected(childContainer, reason);
           if (childContainer.hasChildren) {
@@ -2005,8 +2019,7 @@ MarkupView.prototype = {
       if (!container.elt.parentNode) {
         const parentContainer = this.getContainer(parent);
         if (parentContainer) {
-          parentContainer.childrenDirty = true;
-          this._updateChildren(parentContainer, { expand: true });
+          this._forceUpdateChildren(parentContainer, { expand: true });
         }
       }
 
@@ -2046,6 +2059,22 @@ MarkupView.prototype = {
     return centered;
   },
 
+  _forceUpdateChildren: async function(container, options = {}) {
+    const { flash, updateLevel, expand } = options;
+
+    // Set childrenDirty to true to force fetching new children.
+    container.childrenDirty = true;
+
+    // Update the children to take care of changes in the markup view DOM
+    await this._updateChildren(container, { expand, flash });
+
+    if (updateLevel) {
+      // Update container (and its subtree) DOM tree depth level for
+      // accessibility where necessary.
+      container.updateLevel();
+    }
+  },
+
   /**
    * Make sure all children of the given container's node are
    * imported and attached to the container in the right order.
@@ -2073,8 +2102,8 @@ MarkupView.prototype = {
       return promise.resolve(container);
     }
 
-    const expand = options && options.expand;
-    const flash = options && options.flash;
+    const expand = options?.expand;
+    const flash = options?.flash;
 
     container.hasChildren = container.node.hasChildren;
     // Accessibility should either ignore empty children or semantically
@@ -2214,8 +2243,7 @@ MarkupView.prototype = {
 
     button.addEventListener("click", () => {
       container.maxChildren = -1;
-      container.childrenDirty = true;
-      this._updateChildren(container);
+      this._forceUpdateChildren(container);
     });
 
     return elt;
@@ -2301,6 +2329,11 @@ MarkupView.prototype = {
       this._undo = null;
     }
 
+    if (this._shortcuts) {
+      this._shortcuts.destroy();
+      this._shortcuts = null;
+    }
+
     this.popup.destroy();
     this.popup = null;
 
@@ -2311,6 +2344,7 @@ MarkupView.prototype = {
     this._elt.removeEventListener("mouseout", this._onMouseOut);
     this._frame.removeEventListener("focus", this._onFocus);
     this.inspector.selection.off("new-node-front", this._onNewSelection);
+    this.inspector.off("frame-root-available", this._onFrameRootAvailable);
     this.inspector.toolbox.nodePicker.off(
       "picker-node-hovered",
       this._onToolboxPickerHover

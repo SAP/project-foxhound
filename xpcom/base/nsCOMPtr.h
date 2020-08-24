@@ -20,13 +20,13 @@
  *                      -- scc
  */
 
+#include <type_traits>
 #include <utility>
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/TypeTraits.h"
 #include "nsCycleCollectionNoteChild.h"
 #include "nsDebug.h"  // for |NS_ASSERTION|
 #include "nsISupportsUtils.h"  // for |nsresult|, |NS_ADDREF|, |NS_GET_TEMPLATE_IID| et al
@@ -203,8 +203,7 @@ namespace mozilla {
 // variety of smart pointer types in addition to raw pointers. These types
 // include RefPtr<>, nsCOMPtr<>, and OwningNonNull<>.
 template <class T>
-using PointedToType =
-    typename mozilla::RemovePointer<decltype(&*mozilla::DeclVal<T>())>::Type;
+using PointedToType = std::remove_pointer_t<decltype(&*std::declval<T>())>;
 }  // namespace mozilla
 
 #ifdef NSCAP_FEATURE_USE_BASE
@@ -1173,7 +1172,7 @@ template <typename U>
 void nsCOMPtr<T>::assign_from_qi(const nsQueryInterface<U> aQI,
                                  const nsIID& aIID) {
   static_assert(
-      !(mozilla::IsSame<T, U>::value || std::is_base_of<T, U>::value),
+      !(std::is_same_v<T, U> || std::is_base_of<T, U>::value),
       "don't use do_QueryInterface for compile-time-determinable casts");
   void* newRawPtr;
   if (NS_FAILED(aQI(aIID, &newRawPtr))) {
@@ -1187,7 +1186,7 @@ template <typename U>
 void nsCOMPtr<T>::assign_from_qi_with_error(
     const nsQueryInterfaceWithError<U>& aQI, const nsIID& aIID) {
   static_assert(
-      !(mozilla::IsSame<T, U>::value || std::is_base_of<T, U>::value),
+      !(std::is_same_v<T, U> || std::is_base_of<T, U>::value),
       "don't use do_QueryInterface for compile-time-determinable casts");
   void* newRawPtr;
   if (NS_FAILED(aQI(aIID, &newRawPtr))) {
@@ -1507,5 +1506,21 @@ template <class T>
 RefPtr<T> ToRefPtr(nsCOMPtr<T>&& aObj) {
   return aObj.forget();
 }
+
+// Integration with ResultExtensions.h
+template <typename R>
+auto ResultRefAsParam(nsCOMPtr<R>& aResult) {
+  return getter_AddRefs(aResult);
+}
+
+namespace mozilla::detail {
+template <typename T>
+struct outparam_as_pointer;
+
+template <typename T>
+struct outparam_as_pointer<nsGetterAddRefs<T>> {
+  using type = T**;
+};
+}  // namespace mozilla::detail
 
 #endif  // !defined(nsCOMPtr_h___)

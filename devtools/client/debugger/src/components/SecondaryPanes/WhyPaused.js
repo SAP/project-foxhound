@@ -147,12 +147,12 @@ class WhyPaused extends PureComponent<Props, State> {
     return (
       <div className="pane why-paused">
         <div>
+          <div className="info icon">
+            <AccessibleImage className="info" />
+          </div>
           <div className="pause reason">
             {L10N.getStr(reason)}
             {this.renderMessage(why)}
-          </div>
-          <div className="info icon">
-            <AccessibleImage className="info" />
           </div>
         </div>
       </div>
@@ -165,11 +165,8 @@ const mapStateToProps = state => ({
   why: getWhy(state, getCurrentThread(state)),
 });
 
-export default connect<Props, OwnProps, _, _, _, _>(
-  mapStateToProps,
-  {
-    openElementInInspector: actions.openElementInInspectorCommand,
-    highlightDomElement: actions.highlightDomElement,
-    unHighlightDomElement: actions.unHighlightDomElement,
-  }
-)(WhyPaused);
+export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps, {
+  openElementInInspector: actions.openElementInInspectorCommand,
+  highlightDomElement: actions.highlightDomElement,
+  unHighlightDomElement: actions.unHighlightDomElement,
+})(WhyPaused);

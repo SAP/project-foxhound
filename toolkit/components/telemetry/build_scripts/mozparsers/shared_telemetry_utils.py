@@ -7,9 +7,10 @@
 
 from __future__ import print_function
 
+import os
 import re
-import yaml
 import sys
+import yaml
 
 # This is a list of flags that determine which process a measurement is allowed
 # to record from.
@@ -29,9 +30,10 @@ GECKOVIEW_STREAMING_PRODUCT = 'geckoview_streaming'
 SUPPORTED_PRODUCTS = {
     'firefox': 'Firefox',
     'fennec': 'Fennec',
-    'geckoview': 'Geckoview',
     GECKOVIEW_STREAMING_PRODUCT: 'GeckoviewStreaming',
     'thunderbird': 'Thunderbird',
+    # Historical, deprecated values:
+    # 'geckoview': 'Geckoview',
 }
 
 SUPPORTED_OPERATING_SYSTEMS = [
@@ -85,7 +87,8 @@ class ParserError(Exception):
     def handle_now(self):
         ParserError.print_eventuals()
         print(str(self), file=sys.stderr)
-        sys.exit(1)
+        sys.stderr.flush()
+        os._exit(1)
 
     @classmethod
     def print_eventuals(cls):

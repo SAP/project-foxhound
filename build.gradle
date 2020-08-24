@@ -15,7 +15,8 @@ allprojects {
         topsrcdir = gradle.mozconfig.topsrcdir
         topobjdir = gradle.mozconfig.topobjdir
 
-        compileSdkVersion = 28
+        buildToolsVersion = mozconfig.substs.ANDROID_BUILD_TOOLS_VERSION
+        compileSdkVersion = tryInt(mozconfig.substs.ANDROID_TARGET_SDK)
         targetSdkVersion = tryInt(mozconfig.substs.ANDROID_TARGET_SDK)
         minSdkVersion = tryInt(mozconfig.substs.MOZ_ANDROID_MIN_SDK_VERSION)
         manifestPlaceholders = [
@@ -82,7 +83,7 @@ buildscript {
     }
 
     dependencies {
-        classpath 'org.mozilla.apilint:apilint:0.2.6'
+        classpath 'org.mozilla.apilint:apilint:0.3.0'
         classpath 'com.android.tools.build:gradle:3.4.2'
         classpath 'com.getkeepsafe.dexcount:dexcount-gradle-plugin:0.8.2'
         classpath 'org.apache.commons:commons-exec:1.3'
@@ -167,7 +168,7 @@ task machBuildFaster(type: MachExec) {
 
     workingDir "${topsrcdir}"
 
-    commandLine mozconfig.substs.PYTHON
+    commandLine mozconfig.substs.PYTHON3
     args "${topsrcdir}/mach"
     args 'build'
     args 'faster'

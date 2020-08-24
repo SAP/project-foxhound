@@ -23,12 +23,28 @@ ErrorRep.propTypes = {
   mode: PropTypes.oneOf(Object.keys(MODE).map(key => MODE[key])),
   // An optional function that will be used to render the Error stacktrace.
   renderStacktrace: PropTypes.func,
+  shouldRenderTooltip: PropTypes.bool,
 };
 
+/**
+ * Render an Error object.
+ * The customFormat prop allows to print a simplified view of the object, with only the
+ * message and the stacktrace, e.g.:
+ *      Error: "blah"
+ *          <anonymous> debugger eval code:1
+ *
+ * The customFormat prop will only be taken into account if the mode isn't tiny and the
+ * depth is 0. This is because we don't want error in previews or in object to be
+ * displayed unlike other objects:
+ *      - Object { err: Error }
+ *      - â–¼ {
+ *            err: Error: "blah"
+ *        }
+ */
 function ErrorRep(props) {
-  const object = props.object;
+  const { object, mode, shouldRenderTooltip, depth } = props;
   const preview = object.preview;
-  const mode = props.mode;
+  const customFormat = props.customFormat && mode !== MODE.TINY && !depth;
 
   let name;
   if (
@@ -51,15 +67,29 @@ function ErrorRep(props) {
     name = "Error";
   }
 
+  const errorTitle = mode === MODE.TINY ? name : `${name}: `;
   const content = [];
 
-  if (mode === MODE.TINY || typeof preview.message !== "string") {
-    content.push(name);
+  if (customFormat) {
+    content.push(errorTitle);
   } else {
-    content.push(`${name}: "${preview.message}"`);
+    content.push(span({ className: "objectTitle", key: "title" }, errorTitle));
   }
 
-  if (preview.stack && (mode !== MODE.TINY && mode !== MODE.SHORT)) {
+  if (mode !== MODE.TINY) {
+    const { Rep } = require("./rep");
+    content.push(
+      Rep({
+        ...props,
+        key: "message",
+        object: preview.message,
+        mode: props.mode || MODE.TINY,
+        useQuotes: false,
+      })
+    );
+  }
+  const renderStack = preview.stack && customFormat;
+  if (renderStack) {
     const stacktrace = props.renderStacktrace
       ? props.renderStacktrace(parseStackString(preview.stack))
       : getStacktraceElements(props, preview);
@@ -69,9 +99,12 @@ function ErrorRep(props) {
   return span(
     {
       "data-link-actor-id": object.actor,
-      className: "objectBox-stackTrace",
+      className: `objectBox-stackTrace ${
+        customFormat ? "reps-custom-format" : ""
+      }`,
+      title: shouldRenderTooltip ? `${name}: "${preview.message}"` : null,
     },
-    content
+    ...content
   );
 }
 
@@ -198,20 +231,18 @@ function parseStackString(stack) {
     let functionName;
     let location;
 
-    // Given the input: "functionName@scriptLocation:2:100"
-    // Result: [
-    //   "functionName@scriptLocation:2:100",
-    //   "functionName",
-    //   "scriptLocation:2:100"
-    // ]
-    const result = frame.match(/^(.*)@(.*)$/);
-    if (result && result.length === 3) {
-      functionName = result[1];
+    // Retrieve the index of the first @ to split the frame string.
+    const atCharIndex = frame.indexOf("@");
+    if (atCharIndex > -1) {
+      functionName = frame.slice(0, atCharIndex);
+      location = frame.slice(atCharIndex + 1);
+    }
 
+    if (location && location.includes(" -> ")) {
       // If the resource was loaded by base-loader.js, the location looks like:
       // resource://devtools/shared/base-loader.js -> resource://path/to/file.js .
       // What's needed is only the last part after " -> ".
-      location = result[2].split(" -> ").pop();
+      location = location.split(" -> ").pop();
     }
 
     if (!functionName) {

@@ -22,6 +22,8 @@ add_task(async function test_ui_state_notification_calls_updateAllUI() {
 });
 
 add_task(async function test_ui_state_signedin() {
+  await openTabAndPanel();
+
   const relativeDateAnchor = new Date();
   let state = {
     status: UIState.STATUS_SIGNED_IN,
@@ -62,14 +64,13 @@ add_task(async function test_ui_state_signedin() {
       "PanelUI-fxa-menu-logins-button",
       "PanelUI-fxa-menu-monitor-button",
       "PanelUI-fxa-menu-send-button",
-      "PanelUI-fxa-menu-account-settings-button",
-      "PanelUI-fxa-menu-account-signout-button",
     ],
     disabledItems: [],
     hiddenItems: ["PanelUI-fxa-menu-setup-sync-button"],
   });
   checkFxAAvatar("signedin");
   gSync.relativeTimeFormat = origRelativeTimeFormat;
+  await closeTabAndPanel();
 });
 
 add_task(async function test_ui_state_syncing() {
@@ -100,6 +101,8 @@ add_task(async function test_ui_state_syncing() {
 });
 
 add_task(async function test_ui_state_unconfigured() {
+  await openTabAndPanel();
+
   let state = {
     status: UIState.STATUS_NOT_CONFIGURED,
   };
@@ -130,9 +133,12 @@ add_task(async function test_ui_state_unconfigured() {
     ],
   });
   checkFxAAvatar("not_configured");
+  await closeTabAndPanel();
 });
 
 add_task(async function test_ui_state_syncdisabled() {
+  await openTabAndPanel();
+
   let state = {
     status: UIState.STATUS_SIGNED_IN,
     syncEnabled: false,
@@ -160,8 +166,6 @@ add_task(async function test_ui_state_syncdisabled() {
       "PanelUI-fxa-menu-logins-button",
       "PanelUI-fxa-menu-monitor-button",
       "PanelUI-fxa-menu-send-button",
-      "PanelUI-fxa-menu-account-settings-button",
-      "PanelUI-fxa-menu-account-signout-button",
     ],
     disabledItems: [],
     hiddenItems: [
@@ -170,9 +174,12 @@ add_task(async function test_ui_state_syncdisabled() {
     ],
   });
   checkFxAAvatar("signedin");
+  await closeTabAndPanel();
 });
 
 add_task(async function test_ui_state_unverified() {
+  await openTabAndPanel();
+
   let state = {
     status: UIState.STATUS_NOT_VERIFIED,
     email: "foo@bar.com",
@@ -210,9 +217,12 @@ add_task(async function test_ui_state_unverified() {
     ],
   });
   checkFxAAvatar("unverified");
+  await closeTabAndPanel();
 });
 
 add_task(async function test_ui_state_loginFailed() {
+  await openTabAndPanel();
+
   let state = {
     status: UIState.STATUS_LOGIN_FAILED,
     email: "foo@bar.com",
@@ -249,6 +259,7 @@ add_task(async function test_ui_state_loginFailed() {
     ],
   });
   checkFxAAvatar("login-failed");
+  await closeTabAndPanel();
 });
 
 function checkPanelUIStatusBar({ label, fxastatus, syncing }) {
@@ -353,7 +364,8 @@ async function checkFxaToolbarButtonPanel({
 
   for (const id of hiddenItems) {
     const el = document.getElementById(id);
-    is(el.getAttribute("hidden"), "true", id + " is hidden");
+    let elShown = window.getComputedStyle(el).display == "none";
+    is(elShown, true, id + " is hidden");
   }
 }
 
@@ -388,6 +400,65 @@ function checkFxAAvatar(fxaStatus) {
       avatarURL == expected[fxaStatus],
       `expected avatar URL to be ${expected[fxaStatus]}, got ${avatarURL}`
     );
+  }
+}
+
+add_task(async function test_account_settings_state_signedin() {
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com/");
+  const relativeDateAnchor = new Date();
+  let state = {
+    status: UIState.STATUS_SIGNED_IN,
+    syncEnabled: true,
+    email: "foo@bar.com",
+    displayName: "Foo Bar",
+    avatarURL: "https://foo.bar",
+    lastSync: new Date(),
+    syncing: false,
+  };
+
+  const origRelativeTimeFormat = gSync.relativeTimeFormat;
+  gSync.relativeTimeFormat = {
+    formatBestUnit(date) {
+      return origRelativeTimeFormat.formatBestUnit(date, {
+        now: relativeDateAnchor,
+      });
+    },
+  };
+
+  gSync.updateAllUI(state);
+  checkPanelUIStatusBar({
+    label: "foo@bar.com",
+    fxastatus: "signedin",
+    syncing: false,
+  });
+
+  await checkAccountPanel([
+    "PanelUI-fxa-menu-account-settings-button",
+    "PanelUI-fxa-menu-account-signout-button",
+  ]);
+  await closeTabAndPanel();
+});
+
+async function checkAccountPanel(enabledItems) {
+  let fxaButton = document.getElementById("fxa-toolbar-menu-button");
+  fxaButton.click();
+
+  let fxaView = document.getElementById("PanelUI-fxa");
+  await BrowserTestUtils.waitForEvent(fxaView, "ViewShown");
+
+  let manageAccountButton = document.getElementById(
+    "fxa-manage-account-button"
+  );
+  PanelUI.showSubView("PanelUI-fxa-menu-account-panel", manageAccountButton);
+
+  let manageAccountPanel = document.getElementById(
+    "PanelUI-fxa-menu-account-panel"
+  );
+  await BrowserTestUtils.waitForEvent(manageAccountPanel, "ViewShown");
+
+  for (const id of enabledItems) {
+    const el = document.getElementById(id);
+    is(el.hasAttribute("disabled"), false, id + " is enabled");
   }
 }
 
@@ -433,4 +504,31 @@ function promiseObserver(topic) {
     };
     Services.obs.addObserver(obs, topic);
   });
+}
+
+async function openTabAndPanel() {
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com/");
+
+  let fxaButton = document.getElementById("fxa-toolbar-menu-button");
+  fxaButton.click();
+
+  let fxaView = document.getElementById("PanelUI-fxa");
+  await BrowserTestUtils.waitForEvent(fxaView, "ViewShown");
+
+  let remoteTabsButton = document.getElementById(
+    "PanelUI-fxa-menu-remotetabs-button"
+  );
+  remoteTabsButton.click();
+
+  let remoteTabsView = document.getElementById("PanelUI-remotetabs");
+  await BrowserTestUtils.waitForEvent(remoteTabsView, "ViewShown");
+}
+
+async function closeTabAndPanel() {
+  let fxaView = document.getElementById("PanelUI-fxa");
+  let hidden = BrowserTestUtils.waitForEvent(document, "popuphidden", true);
+  fxaView.closest("panel").hidePopup();
+  await hidden;
+
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
 }

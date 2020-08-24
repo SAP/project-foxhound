@@ -181,9 +181,12 @@ class AutoFile {
 };
 
 struct MARChannelStringTable {
-  MARChannelStringTable() { MARChannelID[0] = '\0'; }
+  MARChannelStringTable() {
+    MARChannelID = mozilla::MakeUnique<char[]>(1);
+    MARChannelID[0] = '\0';
+  }
 
-  char MARChannelID[MAX_TEXT_LEN];
+  mozilla::UniquePtr<char[]> MARChannelID;
 };
 
 //-----------------------------------------------------------------------------
@@ -1948,7 +1951,9 @@ void PatchIfFile::Finish(int status) {
 #  include "nsWindowsRestart.cpp"
 #  include "nsWindowsHelpers.h"
 #  include "uachelper.h"
-#  include "pathhash.h"
+#  ifdef MOZ_MAINTENANCE_SERVICE
+#    include "pathhash.h"
+#  endif
 
 /**
  * Launch the post update application (helper.exe). It takes in the path of the
@@ -2239,7 +2244,7 @@ static bool IsUpdateStatusPendingService() {
 }
 #endif
 
-#ifdef XP_WIN
+#if defined(XP_WIN) && defined(MOZ_MAINTENANCE_SERVICE)
 /*
  * Reads the secure update status file and sets isSucceeded to true if the
  * status is set to succeeded.
@@ -2448,7 +2453,7 @@ static int ProcessReplaceRequest() {
   return 0;
 }
 
-#ifdef XP_WIN
+#if defined(XP_WIN) && defined(MOZ_MAINTENANCE_SERVICE)
 static void WaitForServiceFinishThread(void* param) {
   // We wait at most 10 minutes, we already waited 5 seconds previously
   // before deciding to show this UI.
@@ -2469,13 +2474,8 @@ static int ReadMARChannelIDs(const NS_tchar* path,
                              MARChannelStringTable* results) {
   const unsigned int kNumStrings = 1;
   const char* kUpdaterKeys = "ACCEPTED_MAR_CHANNEL_IDS\0";
-  char updater_strings[kNumStrings][MAX_TEXT_LEN];
-
-  int result =
-      ReadStrings(path, kUpdaterKeys, kNumStrings, updater_strings, "Settings");
-
-  strncpy(results->MARChannelID, updater_strings[0], MAX_TEXT_LEN - 1);
-  results->MARChannelID[MAX_TEXT_LEN - 1] = 0;
+  int result = ReadStrings(path, kUpdaterKeys, kNumStrings,
+                           &results->MARChannelID, "Settings");
 
   return result;
 }
@@ -2505,7 +2505,7 @@ static void UpdateThreadFunc(void* param) {
 
     if (rv == OK) {
       if (rv == OK) {
-        NS_tchar updateSettingsPath[MAX_TEXT_LEN];
+        NS_tchar updateSettingsPath[MAXPATHLEN];
         NS_tsnprintf(updateSettingsPath,
                      sizeof(updateSettingsPath) / sizeof(updateSettingsPath[0]),
 #  ifdef XP_MACOSX
@@ -2518,8 +2518,8 @@ static void UpdateThreadFunc(void* param) {
         if (ReadMARChannelIDs(updateSettingsPath, &MARStrings) != OK) {
           rv = UPDATE_SETTINGS_FILE_CHANNEL;
         } else {
-          rv = gArchiveReader.VerifyProductInformation(MARStrings.MARChannelID,
-                                                       MOZ_APP_VERSION);
+          rv = gArchiveReader.VerifyProductInformation(
+              MARStrings.MARChannelID.get(), MOZ_APP_VERSION);
         }
       }
     }
@@ -2652,6 +2652,7 @@ int LaunchCallbackAndPostProcessApps(int argc, NS_tchar** argv,
         fprintf(stderr, "The post update process was not launched");
       }
 
+#  ifdef MOZ_MAINTENANCE_SERVICE
       // The service update will only be executed if it is already installed.
       // For first time installs of the service, the install will happen from
       // the PostUpdate process. We do the service update process here
@@ -2662,6 +2663,7 @@ int LaunchCallbackAndPostProcessApps(int argc, NS_tchar** argv,
       if (!sUsingService) {
         StartServiceUpdate(gInstallDirPath);
       }
+#  endif
     }
     EXIT_WHEN_ELEVATED(elevatedLockFilePath, updateLockFileHandle, 0);
 #elif XP_MACOSX
@@ -2839,7 +2841,7 @@ int NS_main(int argc, NS_tchar** argv) {
   noServiceFallback = EnvHasValue("MOZ_NO_SERVICE_FALLBACK");
   putenv(const_cast<char*>("MOZ_NO_SERVICE_FALLBACK="));
   // Our tests run with a different apply directory for each test.
-  // We use this registry key on our test slaves to store the
+  // We use this registry key on our test machines to store the
   // allowed name/issuers.
   testOnlyFallbackKeyExists = DoesFallbackKeyExist();
 #    endif
@@ -3175,6 +3177,16 @@ int NS_main(int argc, NS_tchar** argv) {
         return 1;
       }
 
+#  ifdef MOZ_MAINTENANCE_SERVICE
+// Only invoke the service for installations in Program Files.
+// This check is duplicated in workmonitor.cpp because the service can
+// be invoked directly without going through the updater.
+#    ifndef TEST_UPDATER
+      if (useService) {
+        useService = IsProgramFilesPath(gInstallDirPath);
+      }
+#    endif
+
       // Make sure the path to the updater to use for the update is on local.
       // We do this check to make sure that file locking is available for
       // race condition security checks.
@@ -3208,9 +3220,9 @@ int NS_main(int argc, NS_tchar** argv) {
                             &baseKey) == ERROR_SUCCESS) {
             RegCloseKey(baseKey);
           } else {
-#  ifdef TEST_UPDATER
+#    ifdef TEST_UPDATER
             useService = testOnlyFallbackKeyExists;
-#  endif
+#    endif
             if (!useService) {
               lastFallbackError = FALLBACKKEY_NOKEY_ERROR;
             }
@@ -3289,6 +3301,7 @@ int NS_main(int argc, NS_tchar** argv) {
           lastFallbackError = FALLBACKKEY_LAUNCH_ERROR;
         }
       }
+#  endif
 
       // If the service can't be used when staging an update, make sure that
       // the UAC prompt is not shown! In this case, just set the status to
@@ -3305,6 +3318,7 @@ int NS_main(int argc, NS_tchar** argv) {
         return 0;
       }
 
+#  ifdef MOZ_MAINTENANCE_SERVICE
       // If we started the service command, and it finished, check the secure
       // update status file to make sure that it succeeded, and if it did we
       // need to launch the PostUpdate process in the unelevated updater which
@@ -3322,6 +3336,7 @@ int NS_main(int argc, NS_tchar** argv) {
           }
         }
       }
+#  endif
 
       // If we didn't want to use the service at all, or if an update was
       // already happening, or launching the service command failed, then

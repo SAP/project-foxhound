@@ -18,7 +18,6 @@
 #include "Layers.h"
 #include "LayersLogging.h"
 #include "MediaEngine.h"
-#include "MediaPipelineFilter.h"
 #include "MediaSegment.h"
 #include "MediaTrackGraphImpl.h"
 #include "MediaTrackListener.h"
@@ -49,6 +48,7 @@
 #include "Tracing.h"
 #include "WebrtcImageBuffer.h"
 #include "webrtc/common_video/include/video_frame_buffer.h"
+#include "webrtc/modules/rtp_rtcp/include/rtp_rtcp.h"
 
 // Max size given stereo is 480*2*2 = 1920 (10ms of 16-bits stereo audio at
 // 48KHz)
@@ -223,8 +223,7 @@ class AudioProxyThread {
     // Conduits must be released on MainThread, and we might have the last
     // reference We don't need to worry about runnables still trying to access
     // the conduit, since the runnables hold a ref to AudioProxyThread.
-    NS_ReleaseOnMainThreadSystemGroup("AudioProxyThread::mConduit",
-                                      mConduit.forget());
+    NS_ReleaseOnMainThread("AudioProxyThread::mConduit", mConduit.forget());
     MOZ_COUNT_DTOR(AudioProxyThread);
   }
 
@@ -259,6 +258,7 @@ MediaPipeline::MediaPipeline(const std::string& aPc,
       mRtpBytesSent(0),
       mRtpBytesReceived(0),
       mPc(aPc),
+      mFilter(),
       mRtpParser(webrtc::RtpHeaderParser::Create()),
       mPacketDumper(new PacketDumper(mPc)) {
   if (mDirection == DirectionType::RECEIVE) {
@@ -271,8 +271,7 @@ MediaPipeline::MediaPipeline(const std::string& aPc,
 MediaPipeline::~MediaPipeline() {
   MOZ_LOG(gMediaPipelineLog, LogLevel::Info,
           ("Destroying MediaPipeline: %s", mDescription.c_str()));
-  NS_ReleaseOnMainThreadSystemGroup("MediaPipeline::mConduit",
-                                    mConduit.forget());
+  NS_ReleaseOnMainThread("MediaPipeline::mConduit", mConduit.forget());
 }
 
 void MediaPipeline::Shutdown_m() {
@@ -334,12 +333,24 @@ void MediaPipeline::UpdateTransport_s(
     CheckTransportStates();
   }
 
+  if (mFilter) {
+    for (const auto& extension : mFilter->GetExtmap()) {
+      mRtpParser->DeregisterRtpHeaderExtension(
+          webrtc::StringToRtpExtensionType(extension.uri));
+    }
+  }
   if (mFilter && aFilter) {
     // Use the new filter, but don't forget any remote SSRCs that we've learned
     // by receiving traffic.
     mFilter->Update(*aFilter);
   } else {
     mFilter = std::move(aFilter);
+  }
+  if (mFilter) {
+    for (const auto& extension : mFilter->GetExtmap()) {
+      mRtpParser->RegisterRtpHeaderExtension(
+          webrtc::StringToRtpExtensionType(extension.uri), extension.id);
+    }
   }
 }
 
@@ -363,6 +374,7 @@ void MediaPipeline::AddRIDFilter_m(const std::string& aRid) {
 }
 
 void MediaPipeline::AddRIDFilter_s(const std::string& aRid) {
+  // Running a simulcast test, ignore other filtering
   mFilter = MakeUnique<MediaPipelineFilter>();
   mFilter->AddRemoteRtpStreamId(aRid);
 }
@@ -376,7 +388,9 @@ void MediaPipeline::GetContributingSourceStats(
     if (!info.second.Expired(expiry)) {
       RTCRTPContributingSourceStats stats;
       info.second.GetWebidlInstance(stats, aInboundRtpStreamId);
-      aArr.AppendElement(stats, fallible);
+      if (!aArr.AppendElement(stats, fallible)) {
+        mozalloc_handle_oom(0);
+      }
     }
   }
 }
@@ -569,7 +583,7 @@ void MediaPipeline::RtpPacketReceived(const MediaPacket& packet) {
                       packet.len());
 
   (void)mConduit->ReceivedRTPPacket(packet.data(), packet.len(),
-                                    header.ssrc);  // Ignore error codes
+                                    header);  // Ignore error codes
 }
 
 void MediaPipeline::RtcpPacketReceived(const MediaPacket& packet) {
@@ -680,8 +694,7 @@ class MediaPipelineTransmit::PipelineListener
         mDirectConnect(false) {}
 
   ~PipelineListener() {
-    NS_ReleaseOnMainThreadSystemGroup("MediaPipeline::mConduit",
-                                      mConduit.forget());
+    NS_ReleaseOnMainThread("MediaPipeline::mConduit", mConduit.forget());
     if (mConverter) {
       mConverter->Shutdown();
     }
@@ -1180,7 +1193,7 @@ void MediaPipelineTransmit::PipelineListener::NotifyQueuedChanges(
     return;
   }
 
-  TRACE_AUDIO_CALLBACK_COMMENT("Audio");
+  TRACE_COMMENT("Audio");
 
   if (mDirectConnect) {
     // ignore non-direct data if we're also getting direct data
@@ -1436,12 +1449,11 @@ class MediaPipelineReceiveAudio::PipelineListener
 
  private:
   ~PipelineListener() {
-    NS_ReleaseOnMainThreadSystemGroup("MediaPipeline::mConduit",
-                                      mConduit.forget());
+    NS_ReleaseOnMainThread("MediaPipeline::mConduit", mConduit.forget());
   }
 
   void NotifyPullImpl(TrackTime aDesiredTime) {
-    TRACE_AUDIO_CALLBACK_COMMENT("Listener %p", this);
+    TRACE_COMMENT("Listener %p", this);
     uint32_t samplesPer10ms = mRate / 100;
 
     // mSource's rate is not necessarily the same as the graph rate, since there
@@ -1785,7 +1797,7 @@ MediaPipeline::RtpCSRCStats::RtpCSRCStats(const uint32_t aCsrc,
 void MediaPipeline::RtpCSRCStats::GetWebidlInstance(
     dom::RTCRTPContributingSourceStats& aWebidlObj,
     const nsString& aInboundRtpStreamId) const {
-  nsString statId = NS_LITERAL_STRING("csrc_") + aInboundRtpStreamId;
+  nsString statId = u"csrc_"_ns + aInboundRtpStreamId;
   statId.AppendLiteral("_");
   statId.AppendInt(mCsrc);
   aWebidlObj.mId.Construct(statId);

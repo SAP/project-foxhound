@@ -74,6 +74,7 @@ class nsWebBrowserPersist final : public nsIInterfaceRequestor,
   struct WalkData;
 
   class OnWalk;
+  class OnRemoteWalk;
   class OnWrite;
   class FlatURIMap;
   friend class OnWalk;
@@ -104,7 +105,7 @@ class nsWebBrowserPersist final : public nsIInterfaceRequestor,
                                      nsCOMPtr<nsIURI>& aOutURI);
   nsresult CalculateUniqueFilename(nsIURI* aURI, nsCOMPtr<nsIURI>& aOutURI);
   nsresult MakeFilenameFromURI(nsIURI* aURI, nsString& aFilename);
-  nsresult StoreURI(const char* aURI, nsIWebBrowserPersistDocument* aDoc,
+  nsresult StoreURI(const nsACString& aURI, nsIWebBrowserPersistDocument* aDoc,
                     nsContentPolicyType aContentPolicyType,
                     bool aNeedsPersisting = true, URIData** aData = nullptr);
   nsresult StoreURI(nsIURI* aURI, nsIWebBrowserPersistDocument* aDoc,

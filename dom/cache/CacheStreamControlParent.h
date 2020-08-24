@@ -29,9 +29,8 @@ class CacheStreamControlParent final : public PCacheStreamControlParent,
 
  public:
   CacheStreamControlParent();
-  ~CacheStreamControlParent();
 
-  void SetStreamList(StreamList* aStreamList);
+  void SetStreamList(SafeRefPtr<StreamList> aStreamList);
   void Close(const nsID& aId);
   void CloseAll();
   void Shutdown();
@@ -48,6 +47,7 @@ class CacheStreamControlParent final : public PCacheStreamControlParent,
                           InputStreamResolver&& aResolver) override;
 
  private:
+  ~CacheStreamControlParent();
   virtual void NoteClosedAfterForget(const nsID& aId) override;
 
 #ifdef DEBUG
@@ -68,9 +68,10 @@ class CacheStreamControlParent final : public PCacheStreamControlParent,
   // Cycle with StreamList via a weak-ref to us.  Cleanup occurs when the actor
   // is deleted by the PBackground manager.  ActorDestroy() then calls
   // StreamList::RemoveStreamControl() to clear the weak ref.
-  RefPtr<StreamList> mStreamList;
+  SafeRefPtr<StreamList> mStreamList;
 
   NS_DECL_OWNINGTHREAD
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CacheStreamControlParent, override)
 };
 
 }  // namespace cache

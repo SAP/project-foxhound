@@ -10,6 +10,7 @@ const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
 const { parseItemValue } = require("devtools/shared/storage/utils");
 const { KeyCodes } = require("devtools/client/shared/keycodes");
 const { getUnicodeHostname } = require("devtools/client/shared/unicode-url");
+const getStorageTypeURL = require("devtools/client/storage/utils/mdn-utils");
 
 // GUID to be used as a separator in compound keys. This must match the same
 // constant in devtools/server/actors/storage.js,
@@ -131,9 +132,10 @@ class StorageUI {
 
     const tableNode = this._panelDoc.getElementById("storage-table");
     this.table = new TableWidget(tableNode, {
-      emptyText: L10N.getStr("table.emptyText"),
+      emptyText: "storage-table-empty-text",
       highlightUpdated: true,
       cellContextMenuId: "storage-table-popup",
+      l10n: this._panelDoc.l10n,
     });
 
     this.updateObjectSidebar = this.updateObjectSidebar.bind(this);
@@ -279,10 +281,10 @@ class StorageUI {
     );
   }
 
-  async _onTargetAvailable({ type, targetFront, isTopLevel }) {
+  async _onTargetAvailable({ targetFront }) {
     // Only support top level target and navigation to new processes.
     // i.e. ignore additional targets created for remote <iframes>
-    if (!isTopLevel) {
+    if (!targetFront.isTopLevel) {
       return;
     }
 
@@ -311,7 +313,7 @@ class StorageUI {
         storageTypes.indexedDB.hosts = newHosts;
       }
 
-      this.populateStorageTree(storageTypes);
+      await this.populateStorageTree(storageTypes);
     } catch (e) {
       if (!this._toolbox || this._toolbox._destroyer) {
         // The toolbox is in the process of being destroyed... in this case throwing here
@@ -324,10 +326,10 @@ class StorageUI {
     }
   }
 
-  _onTargetDestroyed({ type, targetFront, isTopLevel }) {
+  _onTargetDestroyed({ targetFront }) {
     // Only support top level target and navigation to new processes.
     // i.e. ignore additional targets created for remote <iframes>
-    if (!isTopLevel) {
+    if (!targetFront.isTopLevel) {
       return;
     }
 
@@ -777,23 +779,7 @@ class StorageUI {
           }
         }
 
-        const target = this.currentTarget;
-        this.actorSupportsAddItem = await target.actorHasMethod(
-          type,
-          "addItem"
-        );
-        this.actorSupportsRemoveItem = await target.actorHasMethod(
-          type,
-          "removeItem"
-        );
-        this.actorSupportsRemoveAll = await target.actorHasMethod(
-          type,
-          "removeAll"
-        );
-        this.actorSupportsRemoveAllSessionCookies = await target.actorHasMethod(
-          type,
-          "removeAllSessionCookies"
-        );
+        await this._readSupportsTraits(type);
 
         await this.resetColumns(type, host, subType);
       }
@@ -812,6 +798,41 @@ class StorageUI {
       this.emit("store-objects-updated");
     } catch (ex) {
       console.error(ex);
+    }
+  }
+
+  /**
+   * Read the current supports traits for the provided storage type and update
+   * the actorSupports flags on the UI instance.
+   *
+   * Note: setting actorSupportsXYZ properties on the UI instance is incorrect
+   * because the value depends on each storage type. See Bug 1654998.
+   */
+  async _readSupportsTraits(type) {
+    const { traits } = this.storageTypes[type];
+    if (traits.hasSupportsTraits) {
+      this.actorSupportsAddItem = traits.supportsAddItem;
+      this.actorSupportsRemoveItem = traits.supportsRemoveItem;
+      this.actorSupportsRemoveAll = traits.supportsRemoveAll;
+      this.actorSupportsRemoveAllSessionCookies =
+        traits.supportsRemoveAllSessionCookies;
+    } else {
+      // Backward compatibility. This branch can be removed when Firefox 80 is
+      // on the release channel.
+      const target = this.currentTarget;
+      this.actorSupportsAddItem = await target.actorHasMethod(type, "addItem");
+      this.actorSupportsRemoveItem = await target.actorHasMethod(
+        type,
+        "removeItem"
+      );
+      this.actorSupportsRemoveAll = await target.actorHasMethod(
+        type,
+        "removeAll"
+      );
+      this.actorSupportsRemoveAllSessionCookies = await target.actorHasMethod(
+        type,
+        "removeAllSessionCookies"
+      );
     }
   }
 
@@ -843,8 +864,22 @@ class StorageUI {
    *        List of storages and their corresponding hosts returned by the
    *        StorageFront.listStores call.
    */
-  populateStorageTree(storageTypes) {
+  async populateStorageTree(storageTypes) {
     this.storageTypes = {};
+
+    // When can we expect the "store-objects-updated" event?
+    //   -> TreeWidget setter `selectedItem` emits a "select" event
+    //   -> on tree "select" event, this module calls `onHostSelect`
+    //   -> finally `onHostSelect` calls `fetchStorageObjects`, which will emit
+    //      "store-objects-updated" at the end of the method.
+    // So if the selection changed, we can wait for "store-objects-updated",
+    // which is emitted at the end of `fetchStorageObjects`.
+    const onStoresObjectsUpdated = this.once("store-objects-updated");
+
+    // Save the initially selected item to check if tree.selected was updated,
+    // see comment above.
+    const initialSelectedItem = this.tree.selectedItem;
+
     for (const type in storageTypes) {
       // Ignore `from` field, which is just a protocol.js implementation
       // artifact.
@@ -881,6 +916,10 @@ class StorageUI {
         }
       }
     }
+
+    if (initialSelectedItem !== this.tree.selectedItem) {
+      await onStoresObjectsUpdated;
+    }
   }
 
   /**
@@ -893,7 +932,7 @@ class StorageUI {
     let value;
 
     // Get the string value (async action) and the update the UI synchronously.
-    if (item && item.name && item.valueActor) {
+    if (item?.name && item?.valueActor) {
       value = await item.valueActor.string();
     }
 
@@ -943,7 +982,7 @@ class StorageUI {
         );
         for (const prop of otherProps) {
           const column = this.table.columns.get(prop);
-          if (column && column.private) {
+          if (column?.private) {
             continue;
           }
 
@@ -958,7 +997,7 @@ class StorageUI {
       // Case when displaying IndexedDB db/object store properties.
       for (const key in item) {
         const column = this.table.columns.get(key);
-        if (column && column.private) {
+        if (column?.private) {
           continue;
         }
 
@@ -1049,6 +1088,33 @@ class StorageUI {
 
     let names = null;
     if (!host) {
+      let storageTypeHintL10nId = "";
+      switch (type) {
+        case "Cache":
+          storageTypeHintL10nId = "storage-table-type-cache-hint";
+          break;
+        case "cookies":
+          storageTypeHintL10nId = "storage-table-type-cookies-hint";
+          break;
+        case "extensionStorage":
+          storageTypeHintL10nId = "storage-table-type-extensionstorage-hint";
+          break;
+        case "localStorage":
+          storageTypeHintL10nId = "storage-table-type-localstorage-hint";
+          break;
+        case "indexedDB":
+          storageTypeHintL10nId = "storage-table-type-indexeddb-hint";
+          break;
+        case "sessionStorage":
+          storageTypeHintL10nId = "storage-table-type-sessionstorage-hint";
+          break;
+      }
+      this.table.setPlaceholder(
+        storageTypeHintL10nId,
+        getStorageTypeURL(this.table.datatype) +
+          "?utm_source=devtools&utm_medium=storage-inspector"
+      );
+
       // If selected item has no host then reset table headers
       await this.clearHeaders();
       return;

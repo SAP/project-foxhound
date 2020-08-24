@@ -5,57 +5,61 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/layers/TextureClient.h"
+
 #include <stdint.h>  // for uint8_t, uint32_t, etc
-#include "Layers.h"  // for Layer, etc
+
+#include "BufferTexture.h"
+#include "IPDLActor.h"
+#include "ImageContainer.h"  // for PlanarYCbCrData, etc
+#include "Layers.h"          // for Layer, etc
+#include "LayersLogging.h"   // for AppendToString
+#include "MainThreadUtils.h"
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"  // for gfxPlatform
-#include "MainThreadUtils.h"
+#include "gfxUtils.h"     // for gfxUtils::GetAsLZ4Base64Str
 #include "mozilla/Atomics.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layers.h"
-#include "mozilla/SystemGroup.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/DataSurfaceHelpers.h"  // for CreateDataSourceSurfaceByCloning
+#include "mozilla/gfx/Logging.h"             // for gfxDebug
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/ipc/CrossProcessSemaphore.h"
 #include "mozilla/ipc/SharedMemory.h"  // for SharedMemory, etc
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/ISurfaceAllocator.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/ImageDataSerializer.h"
+#include "mozilla/layers/PTextureChild.h"
 #include "mozilla/layers/PaintThread.h"
+#include "mozilla/layers/ShadowLayers.h"
+#include "mozilla/layers/TextureClientOGL.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
 #include "mozilla/layers/TextureRecorded.h"
-#include "mozilla/Mutex.h"
-#include "nsDebug.h"          // for NS_ASSERTION, NS_WARNING, etc
+#include "nsDebug.h"  // for NS_ASSERTION, NS_WARNING, etc
+#include "nsISerialEventTarget.h"
 #include "nsISupportsImpl.h"  // for MOZ_COUNT_CTOR, etc
-#include "ImageContainer.h"   // for PlanarYCbCrData, etc
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/Logging.h"  // for gfxDebug
-#include "mozilla/layers/TextureClientOGL.h"
-#include "mozilla/layers/PTextureChild.h"
-#include "mozilla/gfx/DataSurfaceHelpers.h"  // for CreateDataSourceSurfaceByCloning
-#include "nsPrintfCString.h"                 // for nsPrintfCString
-#include "LayersLogging.h"                   // for AppendToString
-#include "gfxUtils.h"                        // for gfxUtils::GetAsLZ4Base64Str
-#include "IPDLActor.h"
-#include "BufferTexture.h"
-#include "mozilla/layers/ShadowLayers.h"
-#include "mozilla/ipc/CrossProcessSemaphore.h"
+#include "nsPrintfCString.h"  // for nsPrintfCString
 
 #ifdef XP_WIN
+#  include "gfx2DGlue.h"
+#  include "gfxWindowsPlatform.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #  include "mozilla/layers/TextureD3D11.h"
 #  include "mozilla/layers/TextureDIB.h"
-#  include "gfxWindowsPlatform.h"
-#  include "gfx2DGlue.h"
 #endif
 #ifdef MOZ_X11
-#  include "mozilla/layers/TextureClientX11.h"
 #  include "GLXLibrary.h"
+#  include "mozilla/layers/TextureClientX11.h"
 #endif
 #ifdef MOZ_WAYLAND
 #  include <gtk/gtkx.h>
-#  include "mozilla/widget/nsWaylandDisplay.h"
-#  include "mozilla/layers/WaylandDMABUFTextureClientOGL.h"
+
 #  include "gfxPlatformGtk.h"
+#  include "mozilla/layers/DMABUFTextureClientOGL.h"
+#  include "mozilla/widget/nsWaylandDisplay.h"
 #endif
 
 #ifdef XP_MACOSX
@@ -261,6 +265,7 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
                                   gfx::IntSize aSize,
                                   LayersBackend aLayersBackend,
                                   gfx::BackendType aBackendType,
+                                  BackendSelector aSelector,
                                   int32_t aMaxTextureSize,
                                   TextureAllocationFlags aAllocFlags) {
 #ifdef XP_WIN
@@ -284,9 +289,9 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
 #ifdef MOZ_WAYLAND
   if ((aLayersBackend == LayersBackend::LAYERS_OPENGL ||
        aLayersBackend == LayersBackend::LAYERS_WR) &&
-      gfxPlatformGtk::GetPlatform()->UseWaylandDMABufTextures() &&
+      gfxPlatformGtk::GetPlatform()->UseDMABufTextures() &&
       aFormat != SurfaceFormat::A8) {
-    return TextureType::WaylandDMABUF;
+    return TextureType::DMABUF;
   }
 #endif
 
@@ -312,12 +317,26 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
+  if (gfxVars::UseAHardwareBufferContent() &&
+      aSelector == BackendSelector::Content) {
+    return TextureType::AndroidHardwareBuffer;
+  }
   if (StaticPrefs::gfx_use_surfacetexture_textures_AtStartup()) {
     return TextureType::AndroidNativeWindow;
   }
 #endif
 
   return TextureType::Unknown;
+}
+
+TextureType PreferredCanvasTextureType(
+    const KnowsCompositor& aKnowsCompositor) {
+  const auto layersBackend = aKnowsCompositor.GetCompositorBackendType();
+  const auto moz2DBackend =
+      BackendTypeForBackendSelector(layersBackend, BackendSelector::Canvas);
+  return GetTextureType(gfx::SurfaceFormat::R8G8B8A8, {1, 1}, layersBackend,
+                        moz2DBackend, BackendSelector::Canvas, 2,
+                        TextureAllocationFlags::ALLOC_DEFAULT);
 }
 
 static bool ShouldRemoteTextureType(TextureType aTextureType,
@@ -350,7 +369,7 @@ TextureData* TextureData::Create(TextureForwarder* aAllocator,
       BackendTypeForBackendSelector(aLayersBackend, aSelector);
 
   TextureType textureType =
-      GetTextureType(aFormat, aSize, aLayersBackend, moz2DBackend,
+      GetTextureType(aFormat, aSize, aLayersBackend, moz2DBackend, aSelector,
                      aMaxTextureSize, aAllocFlags);
 
   if (ShouldRemoteTextureType(textureType, aSelector)) {
@@ -359,6 +378,10 @@ TextureData* TextureData::Create(TextureForwarder* aAllocator,
       return new RecordedTextureData(canvasChild.forget(), aSize, aFormat,
                                      textureType);
     }
+
+    // We don't have a CanvasChild, but are supposed to be remote.
+    // Fall back to software.
+    textureType = TextureType::Unknown;
   }
 
   switch (textureType) {
@@ -370,8 +393,8 @@ TextureData* TextureData::Create(TextureForwarder* aAllocator,
 #endif
 
 #ifdef MOZ_WAYLAND
-    case TextureType::WaylandDMABUF:
-      return WaylandDMABUFTextureData::Create(aSize, aFormat, moz2DBackend);
+    case TextureType::DMABUF:
+      return DMABUFTextureData::Create(aSize, aFormat, moz2DBackend);
 #endif
 
 #ifdef MOZ_X11
@@ -383,6 +406,8 @@ TextureData* TextureData::Create(TextureForwarder* aAllocator,
       return MacIOSurfaceTextureData::Create(aSize, aFormat, moz2DBackend);
 #endif
 #ifdef MOZ_WIDGET_ANDROID
+    case TextureType::AndroidHardwareBuffer:
+      return AndroidHardwareBufferTextureData::Create(aSize, aFormat);
     case TextureType::AndroidNativeWindow:
       return AndroidNativeWindowTextureData::Create(aSize, aFormat);
 #endif
@@ -397,9 +422,10 @@ bool TextureData::IsRemote(LayersBackend aLayersBackend,
   gfx::BackendType moz2DBackend =
       BackendTypeForBackendSelector(aLayersBackend, aSelector);
 
-  TextureType textureType = GetTextureType(
-      gfx::SurfaceFormat::UNKNOWN, gfx::IntSize(1, 1), aLayersBackend,
-      moz2DBackend, INT32_MAX, TextureAllocationFlags::ALLOC_DEFAULT);
+  TextureType textureType =
+      GetTextureType(gfx::SurfaceFormat::UNKNOWN, gfx::IntSize(1, 1),
+                     aLayersBackend, moz2DBackend, aSelector, INT32_MAX,
+                     TextureAllocationFlags::ALLOC_DEFAULT);
 
   return ShouldRemoteTextureType(textureType, aSelector);
 }
@@ -413,7 +439,7 @@ static void DestroyTextureData(TextureData* aTextureData,
 
   if (aMainThreadOnly && !NS_IsMainThread()) {
     RefPtr<LayersIPCChannel> allocatorRef = aAllocator;
-    SystemGroup::Dispatch(
+    SchedulerGroup::Dispatch(
         TaskCategory::Other,
         NS_NewRunnableFunction(
             "layers::DestroyTextureData",
@@ -490,12 +516,12 @@ void DeallocateTextureClient(TextureDeallocParams params) {
   }
 
   TextureChild* actor = params.actor;
-  MessageLoop* ipdlMsgLoop = nullptr;
+  nsCOMPtr<nsISerialEventTarget> ipdlThread;
 
   if (params.allocator) {
-    ipdlMsgLoop = params.allocator->GetMessageLoop();
-    if (!ipdlMsgLoop) {
-      // An allocator with no message loop means we are too late in the shutdown
+    ipdlThread = params.allocator->GetThread();
+    if (!ipdlThread) {
+      // An allocator with no thread means we are too late in the shutdown
       // sequence.
       gfxCriticalError() << "Texture deallocated too late during shutdown";
       return;
@@ -503,19 +529,19 @@ void DeallocateTextureClient(TextureDeallocParams params) {
   }
 
   // First make sure that the work is happening on the IPDL thread.
-  if (ipdlMsgLoop && MessageLoop::current() != ipdlMsgLoop) {
+  if (ipdlThread && !ipdlThread->IsOnCurrentThread()) {
     if (params.syncDeallocation) {
       bool done = false;
       ReentrantMonitor barrier("DeallocateTextureClient");
       ReentrantMonitorAutoEnter autoMon(barrier);
-      ipdlMsgLoop->PostTask(NewRunnableFunction(
+      ipdlThread->Dispatch(NewRunnableFunction(
           "DeallocateTextureClientSyncProxyRunnable",
           DeallocateTextureClientSyncProxy, params, &barrier, &done));
       while (!done) {
         barrier.Wait();
       }
     } else {
-      ipdlMsgLoop->PostTask(NewRunnableFunction(
+      ipdlThread->Dispatch(NewRunnableFunction(
           "DeallocateTextureClientRunnable", DeallocateTextureClient, params));
     }
     // The work has been forwarded to the IPDL thread, we are done.
@@ -525,8 +551,8 @@ void DeallocateTextureClient(TextureDeallocParams params) {
   // Below this line, we are either in the IPDL thread or ther is no IPDL
   // thread anymore.
 
-  if (!ipdlMsgLoop) {
-    // If we don't have a message loop we can't know for sure that we are in
+  if (!ipdlThread) {
+    // If we don't have a thread we can't know for sure that we are in
     // the IPDL thread and use the LayersIPCChannel.
     // This should ideally not happen outside of gtest, but some shutdown
     // raciness could put us in this situation.
@@ -978,15 +1004,14 @@ static void CancelTextureClientNotifyNotUsed(uint64_t aTextureId,
   if (!aAllocator) {
     return;
   }
-  MessageLoop* msgLoop = nullptr;
-  msgLoop = aAllocator->GetMessageLoop();
-  if (!msgLoop) {
+  nsCOMPtr<nsISerialEventTarget> thread = aAllocator->GetThread();
+  if (!thread) {
     return;
   }
-  if (MessageLoop::current() == msgLoop) {
+  if (thread->IsOnCurrentThread()) {
     aAllocator->CancelWaitForNotifyNotUsed(aTextureId);
   } else {
-    msgLoop->PostTask(NewRunnableFunction(
+    thread->Dispatch(NewRunnableFunction(
         "CancelTextureClientNotifyNotUsedRunnable",
         CancelTextureClientNotifyNotUsed, aTextureId, aAllocator));
   }
@@ -1017,9 +1042,8 @@ void TextureClient::SetRecycleAllocator(
 }
 
 bool TextureClient::InitIPDLActor(CompositableForwarder* aForwarder) {
-  MOZ_ASSERT(aForwarder &&
-             aForwarder->GetTextureForwarder()->GetMessageLoop() ==
-                 mAllocator->GetMessageLoop());
+  MOZ_ASSERT(aForwarder && aForwarder->GetTextureForwarder()->GetThread() ==
+                               mAllocator->GetThread());
 
   if (mActor && !mActor->IPCOpen()) {
     return false;
@@ -1048,7 +1072,7 @@ bool TextureClient::InitIPDLActor(CompositableForwarder* aForwarder) {
       }
       if (ShadowLayerForwarder* forwarder = aForwarder->AsLayerForwarder()) {
         // Do the DOM labeling.
-        if (nsIEventTarget* target = forwarder->GetEventTarget()) {
+        if (nsISerialEventTarget* target = forwarder->GetEventTarget()) {
           forwarder->GetCompositorBridgeChild()->ReplaceEventTargetForActor(
               mActor, target);
         }
@@ -1071,7 +1095,7 @@ bool TextureClient::InitIPDLActor(CompositableForwarder* aForwarder) {
   mExternalImageId =
       aForwarder->GetTextureForwarder()->GetNextExternalImageId();
 
-  nsIEventTarget* target = nullptr;
+  nsISerialEventTarget* target = nullptr;
   // Get the layers id if the forwarder is a ShadowLayerForwarder.
   if (ShadowLayerForwarder* forwarder = aForwarder->AsLayerForwarder()) {
     target = forwarder->GetEventTarget();
@@ -1112,8 +1136,8 @@ bool TextureClient::InitIPDLActor(CompositableForwarder* aForwarder) {
 
 bool TextureClient::InitIPDLActor(KnowsCompositor* aKnowsCompositor) {
   MOZ_ASSERT(aKnowsCompositor &&
-             aKnowsCompositor->GetTextureForwarder()->GetMessageLoop() ==
-                 mAllocator->GetMessageLoop());
+             aKnowsCompositor->GetTextureForwarder()->GetThread() ==
+                 mAllocator->GetThread());
   TextureForwarder* fwd = aKnowsCompositor->GetTextureForwarder();
   if (mActor && !mActor->mDestroyed) {
     CompositableForwarder* currentFwd = mActor->mCompositableForwarder;

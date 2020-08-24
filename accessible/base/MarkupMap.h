@@ -52,18 +52,23 @@ MARKUPMAP(
     },
     0)
 
+// XXX: Uncomment this once HTML-aam agrees to map to same as ARIA.
+// MARKUPMAP(code, New_HyperText, roles::CODE)
+
 MARKUPMAP(dd, New_HTMLDtOrDd<HyperTextAccessibleWrap>, roles::DEFINITION)
 
 MARKUPMAP(del, New_HyperText, roles::CONTENT_DELETION)
 
 MARKUPMAP(details, New_HyperText, roles::DETAILS)
 
+MARKUPMAP(dialog, New_HyperText, roles::DIALOG)
+
 MARKUPMAP(
     div,
     [](Element* aElement, Accessible* aContext) -> Accessible* {
       // Never create an accessible if we're part of an anonymous
       // subtree.
-      if (aElement->IsInAnonymousSubtree()) {
+      if (aElement->IsInNativeAnonymousSubtree()) {
         return nullptr;
       }
       // Always create an accessible if the div has an id.
@@ -75,8 +80,7 @@ MARKUPMAP(
       nsAutoString displayValue;
       StyleInfo styleInfo(aElement);
       styleInfo.Display(displayValue);
-      if (displayValue != NS_LITERAL_STRING("block") &&
-          displayValue != NS_LITERAL_STRING("inline-block")) {
+      if (displayValue != u"block"_ns && displayValue != u"inline-block"_ns) {
         return nullptr;
       }
       // Check for various conditions to determine if this is a block
@@ -210,13 +214,13 @@ MARKUPMAP(
       }
       if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                 nsGkAtoms::time, eIgnoreCase)) {
-        return new EnumRoleAccessible<roles::GROUPING>(aElement,
-                                                       aContext->Document());
+        return new HTMLDateTimeAccessible<roles::GROUPING>(
+            aElement, aContext->Document());
       }
       if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                 nsGkAtoms::date, eIgnoreCase)) {
-        return new EnumRoleAccessible<roles::DATE_EDITOR>(aElement,
-                                                          aContext->Document());
+        return new HTMLDateTimeAccessible<roles::DATE_EDITOR>(
+            aElement, aContext->Document());
       }
       return nullptr;
     },

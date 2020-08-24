@@ -63,7 +63,7 @@ static nsresult MacErrorMapper(OSErr inErr);
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-#  include "GeneratedJNIWrappers.h"
+#  include "mozilla/java/GeckoAppShellWrappers.h"
 #  include "nsIMIMEService.h"
 #  include <linux/magic.h>
 #endif
@@ -656,7 +656,7 @@ nsresult nsLocalFile::GetNativeTargetPathName(nsIFile* aNewParent,
     return rv;
   }
 
-  aResult = dirName + NS_LITERAL_CSTRING("/") + Substring(nameBegin, nameEnd);
+  aResult = dirName + "/"_ns + Substring(nameBegin, nameEnd);
   return NS_OK;
 }
 
@@ -1792,15 +1792,6 @@ nsLocalFile::GetNativeTarget(nsACString& aResult) {
 }
 
 NS_IMETHODIMP
-nsLocalFile::GetFollowLinks(bool* aFollowLinks) {
-  *aFollowLinks = true;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsLocalFile::SetFollowLinks(bool aFollowLinks) { return NS_OK; }
-
-NS_IMETHODIMP
 nsLocalFile::GetDirectoryEntriesImpl(nsIDirectoryEnumerator** aEntries) {
   RefPtr<nsDirEnumeratorUnix> dir = new nsDirEnumeratorUnix();
 
@@ -1974,7 +1965,7 @@ nsLocalFile::Launch() {
     rv = mimeService->GetTypeFromFile(this, type);
   }
 
-  nsAutoCString fileUri = NS_LITERAL_CSTRING("file://") + mPath;
+  nsAutoCString fileUri = "file://"_ns + mPath;
   return java::GeckoAppShell::OpenUriExternal(
              NS_ConvertUTF8toUTF16(fileUri), NS_ConvertUTF8toUTF16(type),
              EmptyString(), EmptyString(), EmptyString(), EmptyString())
@@ -1996,8 +1987,6 @@ nsLocalFile::Launch() {
 nsresult NS_NewNativeLocalFile(const nsACString& aPath, bool aFollowSymlinks,
                                nsIFile** aResult) {
   RefPtr<nsLocalFile> file = new nsLocalFile();
-
-  file->SetFollowLinks(aFollowSymlinks);
 
   if (!aPath.IsEmpty()) {
     nsresult rv = file->InitWithNativePath(aPath);
@@ -2561,8 +2550,6 @@ nsresult NS_NewLocalFileWithFSRef(const FSRef* aFSRef, bool aFollowLinks,
                                   nsILocalFileMac** aResult) {
   RefPtr<nsLocalFile> file = new nsLocalFile();
 
-  file->SetFollowLinks(aFollowLinks);
-
   nsresult rv = file->InitWithFSRef(aFSRef);
   if (NS_FAILED(rv)) {
     return rv;
@@ -2574,8 +2561,6 @@ nsresult NS_NewLocalFileWithFSRef(const FSRef* aFSRef, bool aFollowLinks,
 nsresult NS_NewLocalFileWithCFURL(const CFURLRef aURL, bool aFollowLinks,
                                   nsILocalFileMac** aResult) {
   RefPtr<nsLocalFile> file = new nsLocalFile();
-
-  file->SetFollowLinks(aFollowLinks);
 
   nsresult rv = file->InitWithCFURL(aURL);
   if (NS_FAILED(rv)) {

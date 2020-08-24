@@ -23,6 +23,8 @@ import logging
 import os
 import re
 
+import six
+
 from slugid import nice as slugid
 from .task import Task
 from .graph import Graph
@@ -42,7 +44,7 @@ def amend_taskgraph(taskgraph, label_to_taskid, to_add):
         new_tasks[task.task_id] = task
         assert task.label not in label_to_taskid
         label_to_taskid[task.label] = task.task_id
-        for depname, dep in task.dependencies.iteritems():
+        for depname, dep in six.iteritems(task.dependencies):
             new_edges.add((task.task_id, dep, depname))
 
     taskgraph = TaskGraph(new_tasks, Graph(set(new_tasks), new_edges))
@@ -63,8 +65,8 @@ def derive_misc_task(task, purpose, image, taskgraph, label_to_taskid, parameter
     )
 
     task_def = {
-        'provisionerId': 'gecko-t',
-        'workerType': 'misc',
+        'provisionerId': provisioner_id,
+        'workerType': worker_type,
         'dependencies': [task.task_id, image_taskid],
         'created': {'relative-datestamp': '0 seconds'},
         'deadline': task.task['deadline'],
@@ -72,7 +74,7 @@ def derive_misc_task(task, purpose, image, taskgraph, label_to_taskid, parameter
         'expires': task.task['deadline'],
         'metadata': {
             'name': label,
-            'description': '{} for {}'.format(purpose, task.task['metadata']['description']),
+            'description': '{} for {}'.format(purpose, task.description),
             'owner': task.task['metadata']['owner'],
             'source': task.task['metadata']['source'],
         },
@@ -99,7 +101,7 @@ def derive_misc_task(task, purpose, image, taskgraph, label_to_taskid, parameter
 
     task = Task(kind='misc', label=label, attributes={}, task=task_def,
                 dependencies=dependencies)
-    task.task_id = slugid()
+    task.task_id = slugid().decode('ascii')
     return task
 
 
@@ -154,7 +156,7 @@ def add_index_tasks(taskgraph, label_to_taskid, parameters, graph_config):
     logger.debug('Morphing: adding index tasks')
 
     added = []
-    for label, task in taskgraph.tasks.iteritems():
+    for label, task in six.iteritems(taskgraph.tasks):
         if len(task.task.get('routes', [])) <= MAX_ROUTES:
             continue
         added.append(make_index_task(task, taskgraph, label_to_taskid, parameters, graph_config))
@@ -171,7 +173,7 @@ def add_try_task_duplicates(taskgraph, label_to_taskid, parameters, graph_config
     try_config = parameters['try_task_config']
     rebuild = try_config.get('rebuild')
     if rebuild:
-        for task in taskgraph.tasks.itervalues():
+        for task in six.itervalues(taskgraph.tasks):
             if task.label in try_config.get('tasks', []):
                 task.attributes['task_duplicates'] = rebuild
     return taskgraph, label_to_taskid

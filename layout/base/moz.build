@@ -82,11 +82,13 @@ EXPORTS.mozilla += [
     'PresShell.h',
     'PresShellForwards.h',
     'PresShellInlines.h',
+    'RelativeTo.h',
     'RestyleManager.h',
     'ScrollStyles.h',
     'ScrollTypes.h',
     'ShapeUtils.h',
     'StaticPresData.h',
+    'ViewportUtils.h',
 ]
 
 EXPORTS.mozilla.layout += [
@@ -129,6 +131,7 @@ UNIFIED_SOURCES += [
     'StackArena.cpp',
     'StaticPresData.cpp',
     'TouchManager.cpp',
+    'ViewportUtils.cpp',
     'ZoomConstraintsClient.cpp',
 ]
 
@@ -149,7 +152,6 @@ LOCAL_INCLUDES += [
     '../painting',
     '../printing',
     '../style',
-    '../svg',
     '../tables',
     '../xul',
     '../xul/tree/',

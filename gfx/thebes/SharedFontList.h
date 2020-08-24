@@ -5,15 +5,11 @@
 #ifndef SharedFontList_h
 #define SharedFontList_h
 
-#include "nsString.h"
-#include "nsTArray.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/FontPropertyTypes.h"
+#include "gfxFontEntry.h"
 #include <atomic>
 
 class gfxCharacterMap;
 struct gfxFontStyle;
-class gfxFontEntry;
 struct GlobalFontMatch;
 
 namespace mozilla {
@@ -51,6 +47,16 @@ struct Pointer {
     mBlockAndOffset.store(aOther.mBlockAndOffset);
   }
 
+  Pointer(Pointer&& aOther) { mBlockAndOffset.store(aOther.mBlockAndOffset); }
+
+  /**
+   * Check if a Pointer has the null value.
+   *
+   * NOTE!
+   * In a child process, it is possible that conversion to a "real" pointer
+   * using ToPtr() will fail even when IsNull() is false, so calling code
+   * that may run in child processes must be prepared to handle this.
+   */
   bool IsNull() const { return mBlockAndOffset == kNullValue; }
 
   uint32_t Block() const { return mBlockAndOffset >> kBlockShift; }
@@ -61,10 +67,19 @@ struct Pointer {
    * Convert a fontlist::Pointer to a standard C++ pointer. This requires the
    * FontList, which will know where the shared memory block is mapped in
    * the current process's address space.
+   *
+   * NOTE!
+   * In child processes this may fail and return nullptr, even if IsNull() is
+   * false, in cases where the font list is in the process of being rebuilt.
    */
   void* ToPtr(FontList* aFontList) const;
 
   Pointer& operator=(const Pointer& aOther) {
+    mBlockAndOffset.store(aOther.mBlockAndOffset);
+    return *this;
+  }
+
+  Pointer& operator=(Pointer&& aOther) {
     mBlockAndOffset.store(aOther.mBlockAndOffset);
     return *this;
   }
@@ -89,20 +104,33 @@ struct String {
 
   const nsCString AsString(FontList* aList) const {
     MOZ_ASSERT(!mPointer.IsNull());
-    nsCString res;
-    res.AssignLiteral(static_cast<const char*>(mPointer.ToPtr(aList)), mLength);
-    return res;
+    // It's tempting to use AssignLiteral here so that we get an nsCString that
+    // simply wraps the character data in the shmem block without needing to
+    // allocate or copy. But that's unsafe because in the event of font-list
+    // reinitalization, that shared memory will be unmapped; then any copy of
+    // the nsCString that may still be around will crash if accessed.
+    return nsCString(static_cast<const char*>(mPointer.ToPtr(aList)), mLength);
   }
 
   void Assign(const nsACString& aString, FontList* aList);
 
   const char* BeginReading(FontList* aList) const {
     MOZ_ASSERT(!mPointer.IsNull());
-    return static_cast<const char*>(mPointer.ToPtr(aList));
+    auto str = static_cast<const char*>(mPointer.ToPtr(aList));
+    return str ? str : "";
   }
 
   uint32_t Length() const { return mLength; }
 
+  /**
+   * Return whether the String has been set to a value.
+   *
+   * NOTE!
+   * In a child process, accessing the value could fail even if IsNull()
+   * returned false. In this case, the nsCString constructor used by AsString()
+   * will be passed a null pointer, and return an empty string despite the
+   * non-zero Length() recorded here.
+   */
   bool IsNull() const { return mPointer.IsNull(); }
 
  private:
@@ -169,8 +197,8 @@ struct Family {
   struct InitData {
     InitData(const nsACString& aKey,   // lookup key (lowercased)
              const nsACString& aName,  // display name
-             uint32_t aIndex = 0,   // [win] index in the system font collection
-             bool aHidden = false,  // [mac] hidden font (e.g. .SFNSText)?
+             uint32_t aIndex = 0,  // [win] index in the system font collection
+             FontVisibility aVisibility = FontVisibility::Unknown,
              bool aBundled = false,       // [win] font was bundled with the app
                                           // rather than system-installed
              bool aBadUnderline = false,  // underline-position in font is bad
@@ -179,20 +207,20 @@ struct Family {
         : mKey(aKey),
           mName(aName),
           mIndex(aIndex),
-          mHidden(aHidden),
+          mVisibility(aVisibility),
           mBundled(aBundled),
           mBadUnderline(aBadUnderline),
           mForceClassic(aForceClassic) {}
     bool operator<(const InitData& aRHS) const { return mKey < aRHS.mKey; }
     bool operator==(const InitData& aRHS) const {
       return mKey == aRHS.mKey && mName == aRHS.mName &&
-             mHidden == aRHS.mHidden && mBundled == aRHS.mBundled &&
+             mVisibility == aRHS.mVisibility && mBundled == aRHS.mBundled &&
              mBadUnderline == aRHS.mBadUnderline;
     }
     const nsCString mKey;
     const nsCString mName;
     uint32_t mIndex;
-    bool mHidden;
+    FontVisibility mVisibility;
     bool mBundled;
     bool mBadUnderline;
     bool mForceClassic;
@@ -239,10 +267,12 @@ struct Family {
     return static_cast<Pointer*>(mFaces.ToPtr(aList));
   }
 
-  bool IsHidden() const { return mIsHidden; }
+  FontVisibility Visibility() const { return mVisibility; }
+  bool IsHidden() const { return Visibility() == FontVisibility::Hidden; }
 
   bool IsBadUnderlineFamily() const { return mIsBadUnderlineFamily; }
   bool IsForceClassic() const { return mIsForceClassic; }
+  bool IsSimple() const { return mIsSimple; }
 
   bool IsInitialized() const { return !mFaces.IsNull(); }
 
@@ -265,7 +295,7 @@ struct Family {
                           // faces in the family
   Pointer mFaces;         // Pointer to array of |mFaceCount| face pointers
   uint32_t mIndex;        // [win] Top bit set indicates app-bundled font family
-  bool mIsHidden;
+  FontVisibility mVisibility;
   bool mIsBadUnderlineFamily;
   bool mIsForceClassic;
   bool mIsSimple;  // family allows simplified style matching: mFaces contains
@@ -283,14 +313,23 @@ struct LocalFaceRec {
    * The InitData struct needs to record the family name rather than index,
    * as we may be collecting these records at the same time as building the
    * family list, so we don't yet know the final family index.
+   * Likewise, in some cases we don't know the final face index because the
+   * faces may be re-sorted to fit into predefined positions in a "simple"
+   * family (if we're reading names before the family has been fully set up).
+   * In that case, we'll store uint32_t(-1) as mFaceIndex, and record the
+   * string descriptor instead.
    * When actually recorded in the FontList's mLocalFaces array, the family
-   * will be stored as a simple index into the mFamilies array.
+   * will be stored as a simple index into the mFamilies array, and the face
+   * as an index into the family's mFaces.
    */
   struct InitData {
     nsCString mFamilyName;
-    uint32_t mFaceIndex;
-    InitData(const nsACString& aFamily, uint32_t aFace)
-        : mFamilyName(aFamily), mFaceIndex(aFace) {}
+    nsCString mFaceDescriptor;
+    uint32_t mFaceIndex = uint32_t(-1);
+    InitData(const nsACString& aFamily, const nsACString& aFace)
+        : mFamilyName(aFamily), mFaceDescriptor(aFace) {}
+    InitData(const nsACString& aFamily, uint32_t aFaceIndex)
+        : mFamilyName(aFamily), mFaceIndex(aFaceIndex) {}
     InitData() = default;
   };
   String mKey;

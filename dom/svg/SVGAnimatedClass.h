@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __NS_SVGCLASS_H__
-#define __NS_SVGCLASS_H__
+#ifndef DOM_SVG_SVGANIMATEDCLASS_H_
+#define DOM_SVG_SVGANIMATEDCLASS_H_
 
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
@@ -24,7 +24,7 @@ class SVGElement;
 
 class SVGAnimatedClass {
  public:
-  typedef mozilla::dom::SVGElement SVGElement;
+  using SVGElement = dom::SVGElement;
 
   void Init() { mAnimVal = nullptr; }
 
@@ -36,10 +36,10 @@ class SVGAnimatedClass {
   void GetAnimValue(nsAString& aResult, const SVGElement* aSVGElement) const;
   bool IsAnimated() const { return !!mAnimVal; }
 
-  already_AddRefed<mozilla::dom::DOMSVGAnimatedString> ToDOMAnimatedString(
+  already_AddRefed<dom::DOMSVGAnimatedString> ToDOMAnimatedString(
       SVGElement* aSVGElement);
 
-  mozilla::UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
+  UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
  private:
   UniquePtr<nsString> mAnimVal;
@@ -58,9 +58,8 @@ class SVGAnimatedClass {
 
     // SMILAttr methods
     virtual nsresult ValueFromString(
-        const nsAString& aStr,
-        const mozilla::dom::SVGAnimationElement* aSrcElement, SMILValue& aValue,
-        bool& aPreventCachingOfSandwich) const override;
+        const nsAString& aStr, const dom::SVGAnimationElement* aSrcElement,
+        SMILValue& aValue, bool& aPreventCachingOfSandwich) const override;
     virtual SMILValue GetBaseValue() const override;
     virtual void ClearAnimValue() override;
     virtual nsresult SetAnimValue(const SMILValue& aValue) override;
@@ -70,4 +69,4 @@ class SVGAnimatedClass {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  //__NS_SVGCLASS_H__
+#endif  // DOM_SVG_SVGANIMATEDCLASS_H_

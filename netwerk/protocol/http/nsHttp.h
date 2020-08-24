@@ -37,8 +37,8 @@ enum class HttpVersion {
 
 enum class SpdyVersion { NONE = 0, HTTP_2 = 5 };
 
-extern const nsCString kHttp3Version;
-const char kHttp3VersionHEX[] = "ff0000001b";  // this is draft 27.
+extern const uint32_t kHttp3VersionCount;
+extern const nsCString kHttp3Versions[];
 
 //-----------------------------------------------------------------------------
 // http connection capabilities
@@ -116,6 +116,10 @@ const char kHttp3VersionHEX[] = "ff0000001b";  // this is draft 27.
 // The connection could bring the peeked data for sniffing
 #define NS_HTTP_CALL_CONTENT_SNIFFER (1 << 21)
 
+// Disallow the use of the HTTP3 protocol. This is meant for the contexts
+// such as HTTP upgrade which are not supported by HTTP3.
+#define NS_HTTP_DISALLOW_HTTP3 (1 << 22)
+
 #define NS_HTTP_TRR_FLAGS_FROM_MODE(x) ((static_cast<uint32_t>(x) & 3) << 19)
 
 #define NS_HTTP_TRR_MODE_FROM_FLAGS(x) \
@@ -150,7 +154,7 @@ struct nsHttpAtom {
 };
 
 namespace nsHttp {
-MOZ_MUST_USE nsresult CreateAtomTable();
+[[nodiscard]] nsresult CreateAtomTable();
 void DestroyAtomTable();
 
 // The mutex is valid any time the Atom Table is valid
@@ -196,12 +200,12 @@ const char* FindToken(const char* input, const char* token,
 //
 // TODO(darin): Replace this with something generic.
 //
-MOZ_MUST_USE bool ParseInt64(const char* input, const char** next,
-                             int64_t* result);
+[[nodiscard]] bool ParseInt64(const char* input, const char** next,
+                              int64_t* result);
 
 // Variant on ParseInt64 that expects the input string to contain nothing
 // more than the value being parsed.
-inline MOZ_MUST_USE bool ParseInt64(const char* input, int64_t* result) {
+[[nodiscard]] inline bool ParseInt64(const char* input, int64_t* result) {
   const char* next;
   return ParseInt64(input, &next, result) && *next == '\0';
 }
@@ -250,6 +254,12 @@ bool IsBeforeLastActiveTabLoadOptimization(TimeStamp const& when);
 #define HTTP_ATOM(_name, _value) extern nsHttpAtom _name;
 #include "nsHttpAtomList.h"
 #undef HTTP_ATOM
+
+nsCString ConvertRequestHeadToString(nsHttpRequestHead& aRequestHead,
+                                     bool aHasRequestBody,
+                                     bool aRequestBodyHasHeaders,
+                                     bool aUsingConnect);
+
 }  // namespace nsHttp
 
 //-----------------------------------------------------------------------------

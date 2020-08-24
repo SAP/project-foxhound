@@ -74,11 +74,29 @@ module.exports = function(config) {
               functions: 100,
               branches: 83,
             },
+            "lib/PlacesFeed.jsm": {
+              statements: 98,
+              lines: 98,
+              functions: 100,
+              branches: 84,
+            },
             "lib/UTEventReporting.jsm": {
               statements: 100,
               lines: 100,
               functions: 100,
               branches: 75,
+            },
+            "lib/TopSitesFeed.jsm": {
+              statements: 94,
+              lines: 94,
+              functions: 97,
+              branches: 84,
+            },
+            "lib/Screenshots.jsm": {
+              statements: 94,
+              lines: 94,
+              functions: 100,
+              branches: 84,
             },
             "lib/*.jsm": {
               statements: 100,
@@ -155,6 +173,8 @@ module.exports = function(config) {
                         replace: true,
                       },
                     ], // require("babel-plugin-jsm-to-commonjs")
+                    "@babel/plugin-proposal-nullish-coalescing-operator",
+                    "@babel/plugin-proposal-optional-chaining",
                   ],
                 },
               },

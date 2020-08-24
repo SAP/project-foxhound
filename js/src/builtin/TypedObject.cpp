@@ -19,6 +19,7 @@
 #include "vm/GlobalObject.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
+#include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/Realm.h"
 #include "vm/SelfHosting.h"
 #include "vm/StringType.h"
@@ -247,6 +248,7 @@ uint32_t ScalarTypeDescr::alignment(Type t) {
     JS_FOR_EACH_SCALAR_TYPE_REPR(NUMERIC_TYPE_TO_STRING)
 #undef NUMERIC_TYPE_TO_STRING
     case Scalar::Int64:
+    case Scalar::Simd128:
     case Scalar::MaxTypedArrayViewType:
       break;
   }
@@ -295,6 +297,7 @@ bool ScalarTypeDescr::call(JSContext* cx, unsigned argc, Value* vp) {
     JS_FOR_EACH_SCALAR_BIGINT_TYPE_REPR(BIGINT_CALL)
 #undef BIGINT_CALL
     case Scalar::Int64:
+    case Scalar::Simd128:
     case Scalar::MaxTypedArrayViewType:
       MOZ_CRASH();
   }
@@ -506,8 +509,8 @@ static TypedProto* CreatePrototypeObjectForComplexTypeInstance(
     return nullptr;
   }
 
-  return NewObjectWithGivenProto<TypedProto>(cx, ctorPrototypePrototype,
-                                             SingletonObject);
+  return NewSingletonObjectWithGivenProto<TypedProto>(cx,
+                                                      ctorPrototypePrototype);
 }
 
 static const JSClassOps ArrayTypeDescrClassOps = {
@@ -604,8 +607,8 @@ ArrayTypeDescr* ArrayMetaTypeDescr::create(JSContext* cx,
                                            int32_t length) {
   MOZ_ASSERT(arrayTypePrototype);
   Rooted<ArrayTypeDescr*> obj(cx);
-  obj = NewObjectWithGivenProto<ArrayTypeDescr>(cx, arrayTypePrototype,
-                                                SingletonObject);
+  obj =
+      NewSingletonObjectWithGivenProto<ArrayTypeDescr>(cx, arrayTypePrototype);
   if (!obj) {
     return nullptr;
   }
@@ -910,12 +913,12 @@ StructTypeDescr* StructMetaTypeDescr::createFromArrays(
   RootedObject userFieldTypes(cx);     // User-exposed {f:descr} object.
   Layout layout;                       // Field offsetter
 
-  userFieldOffsets = NewBuiltinClassInstance<PlainObject>(cx, TenuredObject);
+  userFieldOffsets = NewTenuredBuiltinClassInstance<PlainObject>(cx);
   if (!userFieldOffsets) {
     return nullptr;
   }
 
-  userFieldTypes = NewBuiltinClassInstance<PlainObject>(cx, TenuredObject);
+  userFieldTypes = NewTenuredBuiltinClassInstance<PlainObject>(cx);
   if (!userFieldTypes) {
     return nullptr;
   }
@@ -958,10 +961,16 @@ StructTypeDescr* StructMetaTypeDescr::createFromArrays(
       return nullptr;
     }
 
-    CheckedInt32 offset = layout.addField(
-        fieldProps[i].alignAsInt64 ? ScalarTypeDescr::alignment(Scalar::Int64)
-                                   : fieldType->alignment(),
-        fieldType->size());
+    CheckedInt32 offset;
+    if (fieldProps[i].alignAsInt64) {
+      offset = layout.addField(ScalarTypeDescr::alignment(Scalar::Int64),
+                               fieldType->size());
+    } else if (fieldProps[i].alignAsV128) {
+      offset = layout.addField(ScalarTypeDescr::alignment(Scalar::Simd128),
+                               fieldType->size());
+    } else {
+      offset = layout.addField(fieldType->alignment(), fieldType->size());
+    }
     if (!offset.isValid()) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_TYPEDOBJECT_TOO_BIG);
@@ -1004,8 +1013,8 @@ StructTypeDescr* StructMetaTypeDescr::createFromArrays(
   // Now create the resulting type descriptor.
 
   Rooted<StructTypeDescr*> descr(cx);
-  descr = NewObjectWithGivenProto<StructTypeDescr>(cx, structTypePrototype,
-                                                   SingletonObject);
+  descr = NewSingletonObjectWithGivenProto<StructTypeDescr>(
+      cx, structTypePrototype);
   if (!descr) {
     return nullptr;
   }
@@ -1258,8 +1267,7 @@ static bool DefineSimpleTypeDescr(JSContext* cx, Handle<GlobalObject*> global,
     return false;
   }
 
-  Rooted<T*> descr(cx);
-  descr = NewObjectWithGivenProto<T>(cx, funcProto, SingletonObject);
+  Rooted<T*> descr(cx, NewSingletonObjectWithGivenProto<T>(cx, funcProto));
   if (!descr) {
     return false;
   }
@@ -1285,7 +1293,7 @@ static bool DefineSimpleTypeDescr(JSContext* cx, Handle<GlobalObject*> global,
   // Create the typed prototype for the scalar type. This winds up
   // not being user accessible, but we still create one for consistency.
   Rooted<TypedProto*> proto(cx);
-  proto = NewObjectWithGivenProto<TypedProto>(cx, objProto, TenuredObject);
+  proto = NewTenuredObjectWithGivenProto<TypedProto>(cx, objProto);
   if (!proto) {
     return false;
   }
@@ -1328,7 +1336,7 @@ static JSObject* DefineMetaTypeDescr(JSContext* cx, const char* name,
   // Create ctor.prototype, which inherits from Function.__proto__
 
   RootedObject proto(
-      cx, NewObjectWithGivenProto<PlainObject>(cx, funcProto, SingletonObject));
+      cx, NewSingletonObjectWithGivenProto<PlainObject>(cx, funcProto));
   if (!proto) {
     return nullptr;
   }
@@ -1341,8 +1349,7 @@ static JSObject* DefineMetaTypeDescr(JSContext* cx, const char* name,
     return nullptr;
   }
   RootedObject protoProto(cx);
-  protoProto =
-      NewObjectWithGivenProto<PlainObject>(cx, objProto, SingletonObject);
+  protoProto = NewSingletonObjectWithGivenProto<PlainObject>(cx, objProto);
   if (!protoProto) {
     return nullptr;
   }
@@ -1380,8 +1387,8 @@ static JSObject* CreateTypedObjectModuleObject(JSContext* cx, JSProtoKey key) {
     return nullptr;
   }
 
-  return NewObjectWithGivenProto<TypedObjectModuleObject>(cx, objProto,
-                                                          SingletonObject);
+  return NewSingletonObjectWithGivenProto<TypedObjectModuleObject>(cx,
+                                                                   objProto);
 }
 
 /*  The initialization strategy for TypedObjects is mildly unusual
@@ -2346,7 +2353,7 @@ bool TypedObject::construct(JSContext* cx, unsigned int argc, Value* vp) {
   MOZ_ASSERT(clasp->shouldDelayMetadataBuilder());
   cx->realm()->setObjectPendingMetadata(cx, tobj);
 
-  js::gc::gcTracer.traceCreateObject(tobj);
+  js::gc::gcprobes::CreateObject(tobj);
 
   return tobj;
 }
@@ -2697,7 +2704,8 @@ JS_FOR_EACH_REFERENCE_TYPE_REPR(JS_LOAD_REFERENCE_CLASS_IMPL)
 // Walking memory
 
 template <typename V>
-static void visitReferences(TypeDescr& descr, uint8_t* mem, V& visitor) {
+static void VisitReferences(TypeDescr& descr, uint8_t* base, V& visitor,
+                            size_t offset) {
   if (descr.transparent()) {
     return;
   }
@@ -2707,15 +2715,15 @@ static void visitReferences(TypeDescr& descr, uint8_t* mem, V& visitor) {
       return;
 
     case type::Reference:
-      visitor.visitReference(descr.as<ReferenceTypeDescr>(), mem);
+      visitor.visitReference(descr.as<ReferenceTypeDescr>(), base, offset);
       return;
 
     case type::Array: {
       ArrayTypeDescr& arrayDescr = descr.as<ArrayTypeDescr>();
       TypeDescr& elementDescr = arrayDescr.elementType();
       for (uint32_t i = 0; i < arrayDescr.length(); i++) {
-        visitReferences(elementDescr, mem, visitor);
-        mem += elementDescr.size();
+        VisitReferences(elementDescr, base, visitor, offset);
+        offset += elementDescr.size();
       }
       return;
     }
@@ -2724,8 +2732,8 @@ static void visitReferences(TypeDescr& descr, uint8_t* mem, V& visitor) {
       StructTypeDescr& structDescr = descr.as<StructTypeDescr>();
       for (size_t i = 0; i < structDescr.fieldCount(); i++) {
         TypeDescr& descr = structDescr.fieldDescr(i);
-        size_t offset = structDescr.fieldOffset(i);
-        visitReferences(descr, mem + offset, visitor);
+        VisitReferences(descr, base, visitor,
+                        offset + structDescr.fieldOffset(i));
       }
       return;
     }
@@ -2745,29 +2753,32 @@ class MemoryInitVisitor {
  public:
   explicit MemoryInitVisitor(const JSRuntime* rt) : rt_(rt) {}
 
-  void visitReference(ReferenceTypeDescr& descr, uint8_t* mem);
+  void visitReference(ReferenceTypeDescr& descr, uint8_t* base, size_t offset);
 };
 
 }  // namespace
 
-void MemoryInitVisitor::visitReference(ReferenceTypeDescr& descr,
-                                       uint8_t* mem) {
+void MemoryInitVisitor::visitReference(ReferenceTypeDescr& descr, uint8_t* base,
+                                       size_t offset) {
   switch (descr.type()) {
     case ReferenceType::TYPE_ANY: {
-      js::GCPtrValue* heapValue = reinterpret_cast<js::GCPtrValue*>(mem);
+      js::GCPtrValue* heapValue =
+          reinterpret_cast<js::GCPtrValue*>(base + offset);
       heapValue->init(UndefinedValue());
       return;
     }
 
     case ReferenceType::TYPE_WASM_ANYREF:
     case ReferenceType::TYPE_OBJECT: {
-      js::GCPtrObject* objectPtr = reinterpret_cast<js::GCPtrObject*>(mem);
+      js::GCPtrObject* objectPtr =
+          reinterpret_cast<js::GCPtrObject*>(base + offset);
       objectPtr->init(nullptr);
       return;
     }
 
     case ReferenceType::TYPE_STRING: {
-      js::GCPtrString* stringPtr = reinterpret_cast<js::GCPtrString*>(mem);
+      js::GCPtrString* stringPtr =
+          reinterpret_cast<js::GCPtrString*>(base + offset);
       stringPtr->init(rt_->emptyString);
       return;
     }
@@ -2782,7 +2793,7 @@ void TypeDescr::initInstance(const JSRuntime* rt, uint8_t* mem) {
   // Initialize the instance
   memset(mem, 0, size());
   if (opaque()) {
-    visitReferences(*this, mem, visitor);
+    VisitReferences(*this, mem, visitor, 0);
   }
 }
 
@@ -2797,16 +2808,16 @@ class MemoryTracingVisitor {
  public:
   explicit MemoryTracingVisitor(JSTracer* trace) : trace_(trace) {}
 
-  void visitReference(ReferenceTypeDescr& descr, uint8_t* mem);
+  void visitReference(ReferenceTypeDescr& descr, uint8_t* base, size_t offset);
 };
 
 }  // namespace
 
 void MemoryTracingVisitor::visitReference(ReferenceTypeDescr& descr,
-                                          uint8_t* mem) {
+                                          uint8_t* base, size_t offset) {
   switch (descr.type()) {
     case ReferenceType::TYPE_ANY: {
-      GCPtrValue* heapValue = reinterpret_cast<js::GCPtrValue*>(mem);
+      GCPtrValue* heapValue = reinterpret_cast<js::GCPtrValue*>(base + offset);
       TraceEdge(trace_, heapValue, "reference-val");
       return;
     }
@@ -2815,13 +2826,15 @@ void MemoryTracingVisitor::visitReference(ReferenceTypeDescr& descr,
       // TODO/AnyRef-boxing: With boxed immediates and strings the tracing code
       // will be more complicated.  For now, tracing as an object is fine.
     case ReferenceType::TYPE_OBJECT: {
-      GCPtrObject* objectPtr = reinterpret_cast<js::GCPtrObject*>(mem);
+      GCPtrObject* objectPtr =
+          reinterpret_cast<js::GCPtrObject*>(base + offset);
       TraceNullableEdge(trace_, objectPtr, "reference-obj");
       return;
     }
 
     case ReferenceType::TYPE_STRING: {
-      GCPtrString* stringPtr = reinterpret_cast<js::GCPtrString*>(mem);
+      GCPtrString* stringPtr =
+          reinterpret_cast<js::GCPtrString*>(base + offset);
       TraceNullableEdge(trace_, stringPtr, "reference-str");
       return;
     }
@@ -2833,24 +2846,29 @@ void MemoryTracingVisitor::visitReference(ReferenceTypeDescr& descr,
 void TypeDescr::traceInstance(JSTracer* trace, uint8_t* mem) {
   MemoryTracingVisitor visitor(trace);
 
-  visitReferences(*this, mem, visitor);
+  VisitReferences(*this, mem, visitor, 0);
 }
 
 namespace {
 
 struct TraceListVisitor {
-  typedef Vector<int32_t, 0, SystemAllocPolicy> VectorType;
-  VectorType stringOffsets, objectOffsets, valueOffsets;
+  using OffsetVector = Vector<uint32_t, 0, SystemAllocPolicy>;
+  OffsetVector stringOffsets;
+  OffsetVector objectOffsets;
+  OffsetVector valueOffsets;
 
-  void visitReference(ReferenceTypeDescr& descr, uint8_t* mem);
+  void visitReference(ReferenceTypeDescr& descr, uint8_t* base, size_t offset);
 
   bool fillList(Vector<uint32_t>& entries);
 };
 
 }  // namespace
 
-void TraceListVisitor::visitReference(ReferenceTypeDescr& descr, uint8_t* mem) {
-  VectorType* offsets;
+void TraceListVisitor::visitReference(ReferenceTypeDescr& descr, uint8_t* base,
+                                      size_t offset) {
+  MOZ_ASSERT(!base);
+
+  OffsetVector* offsets;
   // TODO/AnyRef-boxing: Once a WasmAnyRef is no longer just a JSObject*
   // we must revisit this structure.
   switch (descr.type()) {
@@ -2871,7 +2889,9 @@ void TraceListVisitor::visitReference(ReferenceTypeDescr& descr, uint8_t* mem) {
   }
 
   AutoEnterOOMUnsafeRegion oomUnsafe;
-  if (!offsets->append((uintptr_t)mem)) {
+
+  MOZ_ASSERT(offset <= UINT32_MAX);
+  if (!offsets->append(offset)) {
     oomUnsafe.crash("TraceListVisitor::visitReference");
   }
 }
@@ -2894,7 +2914,7 @@ static bool CreateTraceList(JSContext* cx, HandleTypeDescr descr) {
   }
 
   TraceListVisitor visitor;
-  visitReferences(*descr, nullptr, visitor);
+  VisitReferences(*descr, nullptr, visitor, 0);
 
   Vector<uint32_t> entries(cx);
   if (!visitor.fillList(entries)) {

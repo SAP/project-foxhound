@@ -10,9 +10,11 @@ use std::cmp::max;
 use std::fmt::{self, Display};
 use std::time::{Duration, Instant};
 
+use crate::pace::Pacer;
 use crate::path::PATH_MTU_V6;
+use crate::qlog::{self, CongestionState, QlogMetric};
 use crate::tracking::SentPacket;
-use neqo_common::{const_max, const_min, qdebug, qinfo, qtrace};
+use neqo_common::{const_max, const_min, qdebug, qinfo, qlog::NeqoQlog, qtrace};
 
 pub const MAX_DATAGRAM_SIZE: usize = PATH_MTU_V6;
 pub const INITIAL_CWND_PKTS: usize = 10;
@@ -21,6 +23,8 @@ const INITIAL_WINDOW: usize = const_min(
     const_max(2 * MAX_DATAGRAM_SIZE, 14720),
 );
 pub const MIN_CONG_WINDOW: usize = MAX_DATAGRAM_SIZE * 2;
+/// The number of packets we allow to burst from the pacer.
+pub(crate) const PACING_BURST_SIZE: usize = 2;
 const PERSISTENT_CONG_THRESH: u32 = 3;
 
 #[derive(Debug)]
@@ -29,6 +33,10 @@ pub struct CongestionControl {
     bytes_in_flight: usize,
     congestion_recovery_start_time: Option<Instant>,
     ssthresh: usize,
+    pacer: Option<Pacer>,
+
+    qlog: NeqoQlog,
+    qlog_curr_cong_state: CongestionState,
 }
 
 impl Default for CongestionControl {
@@ -38,6 +46,9 @@ impl Default for CongestionControl {
             bytes_in_flight: 0,
             congestion_recovery_start_time: None,
             ssthresh: std::usize::MAX,
+            pacer: None,
+            qlog: NeqoQlog::disabled(),
+            qlog_curr_cong_state: CongestionState::SlowStart,
         }
     }
 }
@@ -47,12 +58,26 @@ impl Display for CongestionControl {
         write!(
             f,
             "CongCtrl {}/{} ssthresh {}",
-            self.bytes_in_flight, self.congestion_window, self.ssthresh
-        )
+            self.bytes_in_flight, self.congestion_window, self.ssthresh,
+        )?;
+        if let Some(p) = &self.pacer {
+            write!(f, " {}", p)?;
+        }
+        Ok(())
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum PacketState {
+    Acked,
+    Lost,
+}
+
 impl CongestionControl {
+    pub fn set_qlog(&mut self, qlog: NeqoQlog) {
+        self.qlog = qlog;
+    }
+
     #[cfg(test)]
     #[must_use]
     pub fn cwnd(&self) -> usize {
@@ -74,37 +99,55 @@ impl CongestionControl {
 
     // Multi-packet version of OnPacketAckedCC
     pub fn on_packets_acked(&mut self, acked_pkts: &[SentPacket]) {
-        for pkt in acked_pkts
-            .iter()
-            .filter(|pkt| pkt.in_flight)
-            .filter(|pkt| pkt.time_declared_lost.is_none())
-        {
+        for pkt in acked_pkts.iter().filter(|pkt| pkt.cc_outstanding()) {
             assert!(self.bytes_in_flight >= pkt.size);
             self.bytes_in_flight -= pkt.size;
 
-            if self.in_congestion_recovery(pkt.time_sent) {
+            if self.in_congestion_recovery(pkt.time_sent, PacketState::Acked) {
                 // Do not increase congestion window in recovery period.
                 continue;
             }
             if self.app_limited() {
                 // Do not increase congestion_window if application limited.
+                qlog::congestion_state_updated(
+                    &mut self.qlog,
+                    &mut self.qlog_curr_cong_state,
+                    CongestionState::ApplicationLimited,
+                );
                 continue;
             }
 
             if self.congestion_window < self.ssthresh {
                 self.congestion_window += pkt.size;
                 qinfo!([self], "slow start");
+                qlog::congestion_state_updated(
+                    &mut self.qlog,
+                    &mut self.qlog_curr_cong_state,
+                    CongestionState::SlowStart,
+                );
             } else {
                 self.congestion_window += (MAX_DATAGRAM_SIZE * pkt.size) / self.congestion_window;
                 qinfo!([self], "congestion avoidance");
+                qlog::congestion_state_updated(
+                    &mut self.qlog,
+                    &mut self.qlog_curr_cong_state,
+                    CongestionState::CongestionAvoidance,
+                );
             }
+            qlog::metrics_updated(
+                &mut self.qlog,
+                &[
+                    QlogMetric::CongestionWindow(self.congestion_window),
+                    QlogMetric::BytesInFlight(self.bytes_in_flight),
+                ],
+            );
         }
     }
 
     pub fn on_packets_lost(
         &mut self,
         now: Instant,
-        largest_acked_sent: Option<Instant>,
+        prev_largest_acked_sent: Option<Instant>,
         pto: Duration,
         lost_packets: &[SentPacket],
     ) {
@@ -112,44 +155,53 @@ impl CongestionControl {
             return;
         }
 
-        for pkt in lost_packets.iter().filter(|pkt| pkt.in_flight) {
+        for pkt in lost_packets.iter().filter(|pkt| pkt.cc_in_flight()) {
             assert!(self.bytes_in_flight >= pkt.size);
             self.bytes_in_flight -= pkt.size;
         }
+        qlog::metrics_updated(
+            &mut self.qlog,
+            &[QlogMetric::BytesInFlight(self.bytes_in_flight)],
+        );
 
         qdebug!([self], "Pkts lost {}", lost_packets.len());
 
         let last_lost_pkt = lost_packets.last().unwrap();
         self.on_congestion_event(now, last_lost_pkt.time_sent);
 
-        let in_persistent_congestion = {
-            let congestion_period = pto * PERSISTENT_CONG_THRESH;
+        let congestion_period = pto * PERSISTENT_CONG_THRESH;
 
-            match largest_acked_sent {
-                Some(las) => las < last_lost_pkt.time_sent - congestion_period,
-                None => {
-                    // Nothing has ever been acked. Could still be PC.
-                    let first_lost_pkt_sent = lost_packets.first().unwrap().time_sent;
-                    last_lost_pkt.time_sent - first_lost_pkt_sent > congestion_period
-                }
+        // Simpler to ignore any acked pkts in between first and last lost pkts
+        if let Some(first) = lost_packets
+            .iter()
+            .find(|p| Some(p.time_sent) > prev_largest_acked_sent)
+        {
+            if last_lost_pkt.time_sent.duration_since(first.time_sent) > congestion_period {
+                self.congestion_window = MIN_CONG_WINDOW;
+                qinfo!([self], "persistent congestion");
             }
-        };
-        if in_persistent_congestion {
-            qinfo!([self], "persistent congestion");
-            self.congestion_window = MIN_CONG_WINDOW;
         }
     }
 
     pub fn discard(&mut self, pkt: &SentPacket) {
-        if pkt.in_flight && pkt.time_declared_lost.is_none() {
+        if pkt.cc_outstanding() {
             assert!(self.bytes_in_flight >= pkt.size);
             self.bytes_in_flight -= pkt.size;
+            qlog::metrics_updated(
+                &mut self.qlog,
+                &[QlogMetric::BytesInFlight(self.bytes_in_flight)],
+            );
             qtrace!([self], "Ignore pkt with size {}", pkt.size);
         }
     }
 
-    pub fn on_packet_sent(&mut self, pkt: &SentPacket) {
-        if !pkt.in_flight {
+    pub fn on_packet_sent(&mut self, pkt: &SentPacket, rtt: Duration) {
+        self.pacer
+            .as_mut()
+            .unwrap()
+            .spend(pkt.time_sent, rtt, self.congestion_window, pkt.size);
+
+        if !pkt.cc_in_flight() {
             return;
         }
 
@@ -161,20 +213,36 @@ impl CongestionControl {
             self.bytes_in_flight,
             self.congestion_window
         );
+        qlog::metrics_updated(
+            &mut self.qlog,
+            &[QlogMetric::BytesInFlight(self.bytes_in_flight)],
+        );
+
         debug_assert!(self.bytes_in_flight <= self.congestion_window);
     }
 
     #[must_use]
-    pub fn in_congestion_recovery(&self, sent_time: Instant) -> bool {
-        self.congestion_recovery_start_time
-            .map(|start| sent_time <= start)
-            .unwrap_or(false)
+    fn in_congestion_recovery(&mut self, sent_time: Instant, packet_state: PacketState) -> bool {
+        match self.congestion_recovery_start_time {
+            Some(crst) => {
+                if sent_time <= crst {
+                    true
+                } else {
+                    if let PacketState::Acked = packet_state {
+                        qlog::metrics_updated(&mut self.qlog, &[QlogMetric::InRecovery(false)]);
+                        self.congestion_recovery_start_time = None;
+                    }
+                    false
+                }
+            }
+            None => false,
+        }
     }
 
     fn on_congestion_event(&mut self, now: Instant, sent_time: Instant) {
         // Start a new congestion event if packet was sent after the
         // start of the previous congestion recovery period.
-        if !self.in_congestion_recovery(sent_time) {
+        if !self.in_congestion_recovery(sent_time, PacketState::Lost) {
             self.congestion_recovery_start_time = Some(now);
             self.congestion_window /= 2; // kLossReductionFactor = 0.5
             self.congestion_window = max(self.congestion_window, MIN_CONG_WINDOW);
@@ -185,6 +253,18 @@ impl CongestionControl {
                 self.congestion_window,
                 self.ssthresh
             );
+            qlog::metrics_updated(
+                &mut self.qlog,
+                &[
+                    QlogMetric::SsThresh(self.ssthresh),
+                    QlogMetric::InRecovery(true),
+                ],
+            );
+            qlog::congestion_state_updated(
+                &mut self.qlog,
+                &mut self.qlog_curr_cong_state,
+                CongestionState::Recovery,
+            );
         } else {
             qdebug!([self], "Cong event but already in recovery");
         }
@@ -193,5 +273,28 @@ impl CongestionControl {
     fn app_limited(&self) -> bool {
         //TODO(agrover): how do we get this info??
         false
+    }
+
+    pub fn start_pacer(&mut self, now: Instant) {
+        // Start the pacer with a small burst size.
+        self.pacer = Some(Pacer::new(
+            now,
+            MAX_DATAGRAM_SIZE * PACING_BURST_SIZE,
+            MAX_DATAGRAM_SIZE,
+        ));
+    }
+
+    pub fn next_paced(&self, rtt: Duration) -> Option<Instant> {
+        // Only pace if there are bytes in flight.
+        if self.bytes_in_flight > 0 {
+            Some(
+                self.pacer
+                    .as_ref()
+                    .unwrap()
+                    .next(rtt, self.congestion_window),
+            )
+        } else {
+            None
+        }
     }
 }

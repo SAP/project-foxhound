@@ -176,6 +176,11 @@ template <typename CharT>
 extern MOZ_MUST_USE bool GetDecimalNonInteger(JSContext* cx, const CharT* start,
                                               const CharT* end, double* dp);
 
+bool CharsToNumber(JSContext* cx, const Latin1Char* chars, size_t length,
+                   double* result);
+bool CharsToNumber(JSContext* cx, const char16_t* chars, size_t length,
+                   double* result);
+
 extern MOZ_MUST_USE bool StringToNumber(JSContext* cx, JSString* str,
                                         double* result);
 
@@ -258,7 +263,9 @@ extern MOZ_MUST_USE bool FullStringToDouble(JSContext* cx, const CharT* begin,
   return false;
 }
 
-extern MOZ_MUST_USE bool num_toString(JSContext* cx, unsigned argc, Value* vp);
+extern MOZ_MUST_USE bool ThisNumberValueForToLocaleString(JSContext* cx,
+                                                          unsigned argc,
+                                                          Value* vp);
 
 extern MOZ_MUST_USE bool num_valueOf(JSContext* cx, unsigned argc, Value* vp);
 

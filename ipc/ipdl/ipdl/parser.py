@@ -61,12 +61,8 @@ class Parser:
         if filename in Parser.parsed:
             return Parser.parsed[filename].tu
 
-        self.lexer = lex.lex(debug=self.debug,
-                             optimize=not self.debug,
-                             lextab="ipdl_lextab")
-        self.parser = yacc.yacc(debug=self.debug,
-                                optimize=not self.debug,
-                                tabmodule="ipdl_yacctab")
+        self.lexer = lex.lex(debug=self.debug)
+        self.parser = yacc.yacc(debug=self.debug, write_tables=False)
         self.filename = filename
         self.includedirs = includedirs
         self.tu.filename = filename
@@ -117,6 +113,7 @@ reserved = set((
     'both',
     'child',
     'class',
+    'comparable',
     'compress',
     'compressall',
     'from',
@@ -285,6 +282,12 @@ def p_UsingKind(p):
     p[0] = p[1] if 2 == len(p) else None
 
 
+def p_MaybeComparable(p):
+    """MaybeComparable : COMPARABLE
+                        |"""
+    p[0] = 2 == len(p)
+
+
 def p_MaybeRefcounted(p):
     """MaybeRefcounted : REFCOUNTED
                        |"""
@@ -334,12 +337,12 @@ def p_NamespaceThing(p):
 
 
 def p_StructDecl(p):
-    """StructDecl : STRUCT ID '{' StructFields '}' ';'
-                  | STRUCT ID '{' '}' ';'"""
-    if 7 == len(p):
-        p[0] = StructDecl(locFromTok(p, 1), p[2], p[4])
+    """StructDecl : MaybeComparable STRUCT ID '{' StructFields '}' ';'
+                  | MaybeComparable STRUCT ID '{' '}' ';'"""
+    if 8 == len(p):
+        p[0] = StructDecl(locFromTok(p, 2), p[3], p[5], p[1])
     else:
-        p[0] = StructDecl(locFromTok(p, 1), p[2], [])
+        p[0] = StructDecl(locFromTok(p, 2), p[3], [], p[1])
 
 
 def p_StructFields(p):
@@ -358,8 +361,8 @@ def p_StructField(p):
 
 
 def p_UnionDecl(p):
-    """UnionDecl : UNION ID '{' ComponentTypes  '}' ';'"""
-    p[0] = UnionDecl(locFromTok(p, 1), p[2], p[4])
+    """UnionDecl : MaybeComparable UNION ID '{' ComponentTypes  '}' ';'"""
+    p[0] = UnionDecl(locFromTok(p, 2), p[3], p[5], p[1])
 
 
 def p_ComponentTypes(p):

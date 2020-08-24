@@ -272,7 +272,7 @@ nsresult nsHttpTransaction::Init(
 
   mTrafficCategory = trafficCategory;
 
-  mActivityDistributor = services::GetActivityDistributor();
+  mActivityDistributor = services::GetHttpActivityDistributor();
   if (!mActivityDistributor) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -316,34 +316,12 @@ nsresult nsHttpTransaction::Init(
     mNoContent = true;
   }
 
-  // Make sure that there is "Content-Length: 0" header in the requestHead
-  // in case of POST and PUT methods when there is no requestBody and
-  // requestHead doesn't contain "Transfer-Encoding" header.
-  //
-  // RFC1945 section 7.2.2:
-  //   HTTP/1.0 requests containing an entity body must include a valid
-  //   Content-Length header field.
-  //
-  // RFC2616 section 4.4:
-  //   For compatibility with HTTP/1.0 applications, HTTP/1.1 requests
-  //   containing a message-body MUST include a valid Content-Length header
-  //   field unless the server is known to be HTTP/1.1 compliant.
-  if ((requestHead->IsPost() || requestHead->IsPut()) && !requestBody &&
-      !requestHead->HasHeader(nsHttp::Transfer_Encoding)) {
-    rv =
-        requestHead->SetHeader(nsHttp::Content_Length, NS_LITERAL_CSTRING("0"));
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-  }
-
   // grab a weak reference to the request head
   mRequestHead = requestHead;
 
-  // make sure we eliminate any proxy specific headers from
-  // the request if we are using CONNECT
-  bool pruneProxyHeaders = cinfo->UsingConnect();
-
-  mReqHeaderBuf.Truncate();
-  requestHead->Flatten(mReqHeaderBuf, pruneProxyHeaders);
+  mReqHeaderBuf = nsHttp::ConvertRequestHeadToString(
+      *requestHead, !!requestBody, requestBodyHasHeaders,
+      cinfo->UsingConnect());
 
   if (LOG1_ENABLED()) {
     LOG1(("http request [\n"));
@@ -351,19 +329,20 @@ nsresult nsHttpTransaction::Init(
     LOG1(("]\n"));
   }
 
-  // If the request body does not include headers or if there is no request
-  // body, then we must add the header/body separator manually.
-  if (!requestBodyHasHeaders || !requestBody)
-    mReqHeaderBuf.AppendLiteral("\r\n");
-
   // report the request header
   if (mActivityDistributor) {
-    rv = mActivityDistributor->ObserveActivityWithArgs(
-        HttpActivityArgs(mChannelId), NS_HTTP_ACTIVITY_TYPE_HTTP_TRANSACTION,
-        NS_HTTP_ACTIVITY_SUBTYPE_REQUEST_HEADER, PR_Now(), 0, mReqHeaderBuf);
-    if (NS_FAILED(rv)) {
-      LOG3(("ObserveActivity failed (%08x)", static_cast<uint32_t>(rv)));
-    }
+    RefPtr<nsHttpTransaction> self = this;
+    nsCString requestBuf(mReqHeaderBuf);
+    NS_DispatchToMainThread(
+        NS_NewRunnableFunction("ObserveActivityWithArgs", [self, requestBuf]() {
+          nsresult rv = self->mActivityDistributor->ObserveActivityWithArgs(
+              HttpActivityArgs(self->mChannelId),
+              NS_HTTP_ACTIVITY_TYPE_HTTP_TRANSACTION,
+              NS_HTTP_ACTIVITY_SUBTYPE_REQUEST_HEADER, PR_Now(), 0, requestBuf);
+          if (NS_FAILED(rv)) {
+            LOG3(("ObserveActivity failed (%08x)", static_cast<uint32_t>(rv)));
+          }
+        }));
   }
 
   // Create a string stream for the request header buf (the stream holds
@@ -562,8 +541,7 @@ void nsHttpTransaction::OnActivated() {
     // of the header happens in the h2 compression code. We still have to
     // add the header to the request head here, though, so that devtools can
     // show that we sent the header. FUN!
-    Unused << mRequestHead->SetHeader(nsHttp::TE,
-                                      NS_LITERAL_CSTRING("Trailers"));
+    Unused << mRequestHead->SetHeader(nsHttp::TE, "Trailers"_ns);
   }
 
   mActivated = true;
@@ -1003,6 +981,8 @@ nsresult nsHttpTransaction::WriteSegments(nsAHttpSegmentWriter* writer,
 
 bool nsHttpTransaction::ProxyConnectFailed() { return mProxyConnectFailed; }
 
+bool nsHttpTransaction::DataAlreadySent() { return false; }
+
 nsISupports* nsHttpTransaction::SecurityInfo() { return mSecurityInfo; }
 
 bool nsHttpTransaction::HasStickyConnection() const {
@@ -1085,6 +1065,27 @@ void nsHttpTransaction::Close(nsresult reason) {
   if (mClosed) {
     LOG(("  already closed\n"));
     return;
+  }
+
+  // When we capture 407 from H2 proxy via CONNECT, prepare the response headers
+  // for authentication in http channel.
+  if (mTunnelProvider && reason == NS_ERROR_PROXY_AUTHENTICATION_FAILED) {
+    MOZ_ASSERT(mProxyConnectResponseCode == 407, "non-407 proxy auth failed");
+    MOZ_ASSERT(!mFlat407Headers.IsEmpty(), "Contain status line at least");
+    uint32_t unused = 0;
+
+    // Reset the reason to avoid nsHttpChannel::ProcessFallback
+    reason = ProcessData(mFlat407Headers.BeginWriting(),
+                         mFlat407Headers.Length(), &unused);
+
+    if (NS_SUCCEEDED(reason)) {
+      // prevent restarting the transaction
+      mReceivedData = true;
+    }
+
+    LOG(("nsHttpTransaction::Close [this=%p] overwrite reason to %" PRIx32
+         " for 407 proxy via CONNECT\n",
+         this, static_cast<uint32_t>(reason)));
   }
 
   NotifyTransactionObserver(reason);
@@ -1250,7 +1251,7 @@ void nsHttpTransaction::Close(nsresult reason) {
     // response will be usable (see bug 88792).
     if (!mHaveAllHeaders) {
       char data = '\n';
-      uint32_t unused;
+      uint32_t unused = 0;
       Unused << ParseHead(&data, 1, &unused);
 
       if (mResponseHead->Version() == HttpVersion::v0_9) {
@@ -1382,8 +1383,8 @@ nsresult nsHttpTransaction::Restart() {
     mConnInfo->CloneAsDirectRoute(getter_AddRefs(ci));
     mConnInfo = ci;
     if (mRequestHead) {
-      DebugOnly<nsresult> rv = mRequestHead->SetHeader(
-          nsHttp::Alternate_Service_Used, NS_LITERAL_CSTRING("0"));
+      DebugOnly<nsresult> rv =
+          mRequestHead->SetHeader(nsHttp::Alternate_Service_Used, "0"_ns);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
   }
@@ -1400,9 +1401,9 @@ char* nsHttpTransaction::LocateHttpStart(char* buf, uint32_t len,
 
   static const char HTTPHeader[] = "HTTP/1.";
   static const uint32_t HTTPHeaderLen = sizeof(HTTPHeader) - 1;
-  static const char HTTP2Header[] = "HTTP/2.0";
+  static const char HTTP2Header[] = "HTTP/2";
   static const uint32_t HTTP2HeaderLen = sizeof(HTTP2Header) - 1;
-  static const char HTTP3Header[] = "HTTP/3.0";
+  static const char HTTP3Header[] = "HTTP/3";
   static const uint32_t HTTP3HeaderLen = sizeof(HTTP3Header) - 1;
   // ShoutCast ICY is treated as HTTP/1.0
   static const char ICYHeader[] = "ICY ";
@@ -1665,27 +1666,26 @@ nsresult nsHttpTransaction::HandleContentStart() {
         mEarlyDataDisposition = EARLY_425;
       } else {
         Unused << mResponseHead->SetHeader(nsHttp::X_Firefox_Early_Data,
-                                           NS_LITERAL_CSTRING("accepted"));
+                                           "accepted"_ns);
       }
     } else if (mEarlyDataDisposition == EARLY_SENT) {
       Unused << mResponseHead->SetHeader(nsHttp::X_Firefox_Early_Data,
-                                         NS_LITERAL_CSTRING("sent"));
+                                         "sent"_ns);
     } else if (mEarlyDataDisposition == EARLY_425) {
       Unused << mResponseHead->SetHeader(nsHttp::X_Firefox_Early_Data,
-                                         NS_LITERAL_CSTRING("received 425"));
+                                         "received 425"_ns);
       mEarlyDataDisposition = EARLY_NONE;
     }  // no header on NONE case
 
     if (mFastOpenStatus == TFO_DATA_SENT) {
       Unused << mResponseHead->SetHeader(nsHttp::X_Firefox_TCP_Fast_Open,
-                                         NS_LITERAL_CSTRING("data sent"));
+                                         "data sent"_ns);
     } else if (mFastOpenStatus == TFO_TRIED) {
-      Unused << mResponseHead->SetHeader(
-          nsHttp::X_Firefox_TCP_Fast_Open,
-          NS_LITERAL_CSTRING("tried negotiating"));
+      Unused << mResponseHead->SetHeader(nsHttp::X_Firefox_TCP_Fast_Open,
+                                         "tried negotiating"_ns);
     } else if (mFastOpenStatus == TFO_FAILED) {
       Unused << mResponseHead->SetHeader(nsHttp::X_Firefox_TCP_Fast_Open,
-                                         NS_LITERAL_CSTRING("failed"));
+                                         "failed"_ns);
     }  // no header on TFO_NOT_TRIED case
 
     if (LOG3_ENABLED()) {
@@ -1738,8 +1738,12 @@ nsresult nsHttpTransaction::HandleContentStart() {
         break;
       case 421:
         LOG(("Misdirected Request.\n"));
-        gHttpHandler->AltServiceCache()->ClearHostMapping(mConnInfo);
-        mCaps |= NS_HTTP_REFRESH_DNS;
+        gHttpHandler->ClearHostMapping(mConnInfo);
+
+        // Unsticky the connection to allow restart.  This can get set when an
+        // NTLM proxy is successfully authenticated.
+        mCaps |= (NS_HTTP_REFRESH_DNS | NS_HTTP_CONNECTION_RESTARTABLE);
+        mCaps &= ~NS_HTTP_STICKY_CONNECTION;
 
         // retry on a new connection - just in case
         if (!mRestartCount) {
@@ -1918,14 +1922,6 @@ nsresult nsHttpTransaction::HandleContent(char* buf, uint32_t count,
     }
   }
 
-  if (mConnInfo->GetIsTrrServiceChannel()) {
-    // For the TRR channel we want to increase priority so a DoH response
-    // isn't blocked by other main thread events.
-    nsCOMPtr<nsIInputStreamPriority> pri = do_QueryInterface(mPipeIn);
-    if (pri) {
-      pri->SetPriority(nsIRunnablePriority::PRIORITY_MEDIUMHIGH);
-    }
-  }
   return NS_OK;
 }
 
@@ -2560,6 +2556,14 @@ void nsHttpTransaction::OnProxyConnectComplete(int32_t aResponseCode) {
 int32_t nsHttpTransaction::GetProxyConnectResponseCode() {
   MutexAutoLock lock(mLock);
   return mProxyConnectResponseCode;
+}
+
+void nsHttpTransaction::SetFlat407Headers(const nsACString& aHeaders) {
+  MOZ_ASSERT(mProxyConnectResponseCode == 407);
+  MOZ_ASSERT(!mResponseHead);
+
+  LOG(("nsHttpTransaction::SetFlat407Headers %p", this));
+  mFlat407Headers = aHeaders;
 }
 
 void nsHttpTransaction::NotifyTransactionObserver(nsresult reason) {

@@ -394,6 +394,7 @@ class XPCJSContext final : public mozilla::CycleCollectedJSContext,
     IDX_COLUMNNUMBER,
     IDX_STACK,
     IDX_MESSAGE,
+    IDX_ERRORS,
     IDX_LASTINDEX,
     IDX_THEN,
     IDX_ISINSTANCE,
@@ -566,10 +567,27 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
-  JSObject* UnprivilegedJunkScope() { return mUnprivilegedJunkScope; }
+  /**
+   * The unprivileged junk scope is an unprivileged sandbox global used for
+   * convenience by certain operations which need an unprivileged global but
+   * don't have one immediately handy. It should generally be avoided when
+   * possible.
+   *
+   * The scope is created lazily when it is needed, and held weakly so that it
+   * is destroyed when there are no longer any remaining external references to
+   * it. This means that under low memory conditions, when the scope does not
+   * already exist, we may not be able to create one. In these circumstances,
+   * the infallible version of this API will abort, and the fallible version
+   * will return null. Callers should therefore prefer the fallible version when
+   * on a codepath which can already return failure, but may use the infallible
+   * one otherwise.
+   */
+  JSObject* UnprivilegedJunkScope();
+  JSObject* UnprivilegedJunkScope(const mozilla::fallible_t&);
+
+  bool IsUnprivilegedJunkScope(JSObject*);
   JSObject* LoaderGlobal();
 
-  void InitSingletonScopes();
   void DeleteSingletonScopes();
 
   void SystemIsBeingShutDown();
@@ -620,7 +638,7 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   nsTArray<xpcGCCallback> extraGCCallbacks;
   JS::GCSliceCallback mPrevGCSliceCallback;
   JS::DoCycleCollectionCallback mPrevDoCycleCollectionCallback;
-  JS::PersistentRootedObject mUnprivilegedJunkScope;
+  mozilla::WeakPtr<SandboxPrivate> mUnprivilegedJunkScope;
   JS::PersistentRootedObject mLoaderGlobal;
   RefPtr<AsyncFreeSnowWhite> mAsyncSnowWhiteFreer;
 
@@ -1091,7 +1109,7 @@ class MOZ_STACK_CLASS XPCNativeSetKey final {
   // |addition| inserted after existing interfaces. |addition| must
   // not already be present in |baseSet|.
   explicit XPCNativeSetKey(XPCNativeSet* baseSet, XPCNativeInterface* addition);
-  ~XPCNativeSetKey() {}
+  ~XPCNativeSetKey() = default;
 
   XPCNativeSet* GetBaseSet() const { return mBaseSet; }
   XPCNativeInterface* GetAddition() const { return mAddition; }
@@ -1179,8 +1197,13 @@ class XPCNativeSet final {
 };
 
 /***********************************************/
-// XPCWrappedNativeProto hold the additional shared wrapper data
-// for XPCWrappedNative whose native objects expose nsIClassInfo.
+// XPCWrappedNativeProtos hold the additional shared wrapper data for
+// XPCWrappedNative whose native objects expose nsIClassInfo.
+// The XPCWrappedNativeProto is owned by its mJSProtoObject, until that object
+// is finalized. After that, it is owned by XPCJSRuntime's
+// mDyingWrappedNativeProtoMap. See
+// XPCWrappedNativeProto::JSProtoObjectFinalized and
+// XPCJSRuntime::FinalizeCallback.
 
 class XPCWrappedNativeProto final {
  public:
@@ -2153,7 +2176,7 @@ class XPCVariant : public nsIVariant {
   void RemovePurple() { mRefCnt.RemovePurple(); }
 
  protected:
-  virtual ~XPCVariant() {}
+  virtual ~XPCVariant() = default;
 
   bool InitializeData(JSContext* cx);
 
@@ -2619,13 +2642,6 @@ class CompartmentPrivate {
   // receives various bits of special compatibility behavior.
   bool isWebExtensionContentScript;
 
-  // If CPOWs are disabled for browser code via the
-  // dom.ipc.cpows.forbid-unsafe-from-browser preferences, then only
-  // add-ons can use CPOWs. This flag allows a non-addon scope
-  // to opt into CPOWs. It's necessary for the implementation of
-  // RemoteAddonsParent.jsm.
-  bool allowCPOWs;
-
   // True if this compartment is a UA widget compartment.
   bool isUAWidgetCompartment;
 
@@ -2708,14 +2724,6 @@ class RealmPrivate {
   // The scriptability of this realm.
   Scriptability scriptability;
 
-  // This is only ever set during mochitest runs when enablePrivilege is called.
-  // It allows the SpecialPowers scope to waive the normal chrome security
-  // wrappers and expose properties directly to content. This lets us avoid a
-  // bunch of overhead and complexity in our SpecialPowers automation glue.
-  //
-  // Using it in production is inherently unsafe.
-  bool forcePermissiveCOWs = false;
-
   // Whether we've emitted a warning about a property that was filtered out
   // by a security wrapper. See XrayWrapper.cpp.
   bool wrapperDenialWarnings[WrapperDenialTypeCount];
@@ -2727,9 +2735,9 @@ class RealmPrivate {
       if (jsLocationURI) {
         // We cannot call into JS-implemented nsIURI objects, because
         // we are iterating over the JS heap at this point.
-        location = NS_LITERAL_CSTRING("<JS-implemented nsIURI location>");
+        location = "<JS-implemented nsIURI location>"_ns;
       } else if (NS_FAILED(locationURI->GetSpec(location))) {
-        location = NS_LITERAL_CSTRING("<unknown location>");
+        location = "<unknown location>"_ns;
       }
     }
     return location;

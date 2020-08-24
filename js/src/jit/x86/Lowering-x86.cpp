@@ -375,6 +375,13 @@ void LIRGenerator::visitWasmStore(MWasmStore* ins) {
       // instruction layout which affects patching.
       valueAlloc = useRegisterAtStart(ins->value());
       break;
+    case Scalar::Simd128:
+#ifdef ENABLE_WASM_SIMD
+      valueAlloc = useRegisterAtStart(ins->value());
+      break;
+#else
+      MOZ_CRASH("unexpected array type");
+#endif
     case Scalar::Int64: {
       LInt64Allocation valueAlloc = useInt64RegisterAtStart(ins->value());
       auto* lir = new (alloc())
@@ -626,11 +633,6 @@ void LIRGenerator::visitSubstr(MSubstr* ins) {
               tempByteOpRegister());
   define(lir, ins);
   assignSafepoint(lir, ins);
-}
-
-void LIRGenerator::visitRandom(MRandom* ins) {
-  LRandom* lir = new (alloc()) LRandom(temp(), temp(), temp(), temp(), temp());
-  defineFixed(lir, ins, LFloatReg(ReturnDoubleReg));
 }
 
 void LIRGenerator::visitWasmTruncateToInt64(MWasmTruncateToInt64* ins) {

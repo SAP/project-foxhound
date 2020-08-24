@@ -89,6 +89,8 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   nscolor mTextSelectedBackground = kWhite;
   nscolor mMozScrollbar = kWhite;
   nscolor mInfoBarText = kBlack;
+  nscolor mMozColHeaderText = kBlack;
+  nscolor mMozColHeaderHoverText = kBlack;
   char16_t mInvisibleCharacter = 0;
   float mCaretRatio = 0.0f;
   int32_t mCaretBlinkTime = 0;
@@ -100,8 +102,12 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   bool mCSDCloseButton = false;
   bool mCSDReversedPlacement = false;
   bool mSystemUsesDarkTheme = false;
+  bool mPrefersReducedMotion = false;
   bool mHighContrast = false;
   bool mInitialized = false;
+  int32_t mCSDMaximizeButtonPosition = 0;
+  int32_t mCSDMinimizeButtonPosition = 0;
+  int32_t mCSDCloseButtonPosition = 0;
 
   void EnsureInit();
   void ConfigureContentGtkTheme();

@@ -82,12 +82,6 @@ loader.lazyGetter(
 // Other dependencies
 loader.lazyRequireGetter(
   this,
-  "AccessibilityStartup",
-  "devtools/client/accessibility/accessibility-startup",
-  true
-);
-loader.lazyRequireGetter(
-  this,
   "ResponsiveUIManager",
   "devtools/client/responsive/manager"
 );
@@ -303,9 +297,21 @@ function switchPerformancePanel() {
 }
 switchPerformancePanel();
 
-Services.prefs.addObserver("devtools.performance.new-panel-enabled", {
-  observe: switchPerformancePanel,
-});
+const prefObserver = { observe: switchPerformancePanel };
+Services.prefs.addObserver(
+  "devtools.performance.new-panel-enabled",
+  prefObserver
+);
+const unloadObserver = function(subject) {
+  if (subject.wrappedJSObject == require("@loader/unload")) {
+    Services.prefs.removeObserver(
+      "devtools.performance.new-panel-enabled",
+      prefObserver
+    );
+    Services.obs.removeObserver(unloadObserver, "devtools:loader:destroy");
+  }
+};
+Services.obs.addObserver(unloadObserver, "devtools:loader:destroy");
 
 Tools.memory = {
   id: "memory",
@@ -406,7 +412,7 @@ Tools.dom = {
   inMenu: true,
 
   isTargetSupported: function(target) {
-    return target.getTrait("webConsoleCommands");
+    return true;
   },
 
   build: function(iframeWindow, toolbox) {
@@ -437,12 +443,7 @@ Tools.accessibility = {
   },
 
   build(iframeWindow, toolbox) {
-    const startup = toolbox.getToolStartup("accessibility");
-    return new AccessibilityPanel(iframeWindow, toolbox, startup);
-  },
-
-  buildToolStartup(toolbox) {
-    return new AccessibilityStartup(toolbox);
+    return new AccessibilityPanel(iframeWindow, toolbox);
   },
 };
 
@@ -455,8 +456,7 @@ Tools.application = {
   label: l10n("application.label"),
   panelLabel: l10n("application.panellabel"),
   tooltip: l10n("application.tooltip"),
-  inMenu: AppConstants.NIGHTLY_BUILD,
-  hiddenInOptions: !AppConstants.NIGHTLY_BUILD,
+  inMenu: true,
 
   isTargetSupported: function(target) {
     return target.hasActor("manifest");
@@ -541,7 +541,7 @@ Tools.lightTheme = {
 
 exports.defaultThemes = [Tools.darkTheme, Tools.lightTheme];
 
-// White-list buttons that can be toggled to prevent adding prefs for
+// List buttons that can be toggled to prevent adding prefs for
 // addons that have manually inserted toolbarbuttons into DOM.
 // (By default, supported target is only local tab)
 exports.ToolboxButtons = [

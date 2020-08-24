@@ -41,11 +41,7 @@ add_task(async () => {
       );
 
       info("Waiting for toggle to become visible");
-      await toggleOpacityReachesThreshold(
-        browser,
-        videoID,
-        HOVER_VIDEO_OPACITY
-      );
+      await toggleOpacityReachesThreshold(browser, videoID, "hoverVideo");
 
       let toggleClientRect = await getToggleClientRect(browser, videoID);
 
@@ -58,7 +54,10 @@ add_task(async () => {
       info(
         "Clicking on toggle, and expecting a Picture-in-Picture window to open"
       );
-      let domWindowOpened = BrowserTestUtils.domWindowOpened(null);
+      // We need to wait for the window to have completed loading before we
+      // can close it as the document's type required by closeWindow may not
+      // be available.
+      let domWindowOpened = BrowserTestUtils.domWindowOpenedAndLoaded(null);
 
       await BrowserTestUtils.synthesizeMouseAtPoint(
         toggleLeft,

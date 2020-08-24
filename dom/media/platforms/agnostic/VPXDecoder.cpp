@@ -148,15 +148,15 @@ RefPtr<MediaDataDecoder::DecodePromise> VPXDecoder::ProcessDecode(
     b.mPlanes[0].mStride = img->stride[0];
     b.mPlanes[0].mHeight = img->d_h;
     b.mPlanes[0].mWidth = img->d_w;
-    b.mPlanes[0].mOffset = b.mPlanes[0].mSkip = 0;
+    b.mPlanes[0].mSkip = 0;
 
     b.mPlanes[1].mData = img->planes[1];
     b.mPlanes[1].mStride = img->stride[1];
-    b.mPlanes[1].mOffset = b.mPlanes[1].mSkip = 0;
+    b.mPlanes[1].mSkip = 0;
 
     b.mPlanes[2].mData = img->planes[2];
     b.mPlanes[2].mStride = img->stride[2];
-    b.mPlanes[2].mOffset = b.mPlanes[2].mSkip = 0;
+    b.mPlanes[2].mSkip = 0;
 
     if (img->fmt == VPX_IMG_FMT_I420) {
       b.mPlanes[1].mHeight = (img->d_h + 1) >> img->y_chroma_shift;
@@ -206,7 +206,7 @@ RefPtr<MediaDataDecoder::DecodePromise> VPXDecoder::ProcessDecode(
       alpha_plane.mStride = img_alpha->stride[0];
       alpha_plane.mHeight = img_alpha->d_h;
       alpha_plane.mWidth = img_alpha->d_w;
-      alpha_plane.mOffset = alpha_plane.mSkip = 0;
+      alpha_plane.mSkip = 0;
       v = VideoData::CreateAndCopyData(
           mInfo, mImageContainer, aSample->mOffset, aSample->mTime,
           aSample->mDuration, b, alpha_plane, aSample->mKeyframe,
@@ -470,8 +470,8 @@ bool VPXDecoder::GetStreamInfo(Span<const uint8_t> aBuffer,
         }
       } else {
         aInfo.mColorSpace = 1;  // CS_BT_601
-        aInfo.mSubSampling_x = 1;
-        aInfo.mSubSampling_y = 1;
+        aInfo.mSubSampling_x = true;
+        aInfo.mSubSampling_y = true;
         aInfo.mBitDepth = 8;
       }
       Unused << br.ReadBits(8);  // refresh_frame_flags

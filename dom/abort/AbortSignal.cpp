@@ -26,10 +26,13 @@ void AbortSignalImpl::Abort() {
 
   mAborted = true;
 
+  // We might be deleted as a result of aborting a follower, so ensure we live
+  // until all followers have been aborted.
+  RefPtr<AbortSignalImpl> pinThis = this;
+
   // Let's inform the followers.
-  nsTObserverArray<AbortFollower*>::ForwardIterator iter(mFollowers);
-  while (iter.HasMore()) {
-    iter.GetNext()->Abort();
+  for (AbortFollower* follower : mFollowers.ForwardRange()) {
+    follower->Abort();
   }
 }
 
@@ -81,8 +84,7 @@ void AbortSignal::Abort() {
   init.mBubbles = false;
   init.mCancelable = false;
 
-  RefPtr<Event> event =
-      Event::Constructor(this, NS_LITERAL_STRING("abort"), init);
+  RefPtr<Event> event = Event::Constructor(this, u"abort"_ns, init);
   event->SetTrusted(true);
 
   DispatchEvent(*event);

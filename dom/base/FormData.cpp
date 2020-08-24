@@ -25,7 +25,7 @@ FormData::FormData(const FormData& aFormData)
     : HTMLFormSubmission(aFormData.mActionURL, aFormData.mTarget,
                          aFormData.mEncoding, aFormData.mSubmitter) {
   mOwner = aFormData.mOwner;
-  mFormData = aFormData.mFormData;
+  mFormData = aFormData.mFormData.Clone();
 }
 
 namespace {
@@ -39,7 +39,7 @@ already_AddRefed<File> GetOrCreateFileCalledBlob(Blob& aBlob,
   }
 
   // Forcing 'blob' as filename
-  file = aBlob.ToFile(NS_LITERAL_STRING("blob"), aRv);
+  file = aBlob.ToFile(u"blob"_ns, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -128,13 +128,9 @@ void FormData::Append(const nsAString& aName, Directory* aDirectory) {
 }
 
 void FormData::Delete(const nsAString& aName) {
-  // We have to use this slightly awkward for loop since uint32_t >= 0 is an
-  // error for being always true.
-  for (uint32_t i = mFormData.Length(); i-- > 0;) {
-    if (aName.Equals(mFormData[i].name)) {
-      mFormData.RemoveElementAt(i);
-    }
-  }
+  mFormData.RemoveElementsBy([&aName](const auto& formDataItem) {
+    return aName.Equals(formDataItem.name);
+  });
 }
 
 void FormData::Get(const nsAString& aName,

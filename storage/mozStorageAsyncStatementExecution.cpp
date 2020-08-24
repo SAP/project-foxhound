@@ -4,8 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsAutoPtr.h"
-
 #include "sqlite3.h"
 
 #include "mozIStorageStatementCallback.h"
@@ -76,7 +74,8 @@ nsresult AsyncExecuteStatements::execute(
 AsyncExecuteStatements::AsyncExecuteStatements(
     StatementDataArray& aStatements, Connection* aConnection,
     sqlite3* aNativeConnection, mozIStorageStatementCallback* aCallback)
-    : mConnection(aConnection),
+    : Runnable("AsyncExecuteStatements"),
+      mConnection(aConnection),
       mNativeConnection(aNativeConnection),
       mHasTransaction(false),
       mCallback(aCallback),
@@ -213,7 +212,25 @@ bool AsyncExecuteStatements::executeStatement(sqlite3_stmt* aStatement) {
   mMutex.AssertNotCurrentThreadOwns();
   Telemetry::AutoTimer<Telemetry::MOZ_STORAGE_ASYNC_REQUESTS_MS>
       finallySendExecutionDuration(mRequestStartDate);
+
+  bool busyRetry = false;
   while (true) {
+    if (busyRetry) {
+      busyRetry = false;
+
+      // Yield, and try again
+      Unused << PR_Sleep(PR_INTERVAL_NO_WAIT);
+
+      // Check for cancellation before retrying
+      {
+        MutexAutoLock lockedScope(mMutex);
+        if (mCancelRequested) {
+          mState = CANCELED;
+          return false;
+        }
+      }
+    }
+
     // lock the sqlite mutex so sqlite3_errmsg cannot change
     SQLiteMutexAutoLock lockedScope(mDBMutex);
 
@@ -234,13 +251,8 @@ bool AsyncExecuteStatements::executeStatement(sqlite3_stmt* aStatement) {
 
     // Some errors are not fatal, and we can handle them and continue.
     if (rc == SQLITE_BUSY) {
-      {
-        // Don't hold the lock while we call outside our module.
-        SQLiteMutexAutoUnlock unlockedScope(mDBMutex);
-        // Yield, and try again
-        (void)::PR_Sleep(PR_INTERVAL_NO_WAIT);
-      }
       ::sqlite3_reset(aStatement);
+      busyRetry = true;
       continue;
     }
 
@@ -435,8 +447,8 @@ nsresult AsyncExecuteStatements::notifyResultsOnCallingThread(
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS(AsyncExecuteStatements, nsIRunnable,
-                  mozIStoragePendingStatement)
+NS_IMPL_ISUPPORTS_INHERITED(AsyncExecuteStatements, Runnable,
+                            mozIStoragePendingStatement)
 
 bool AsyncExecuteStatements::statementsNeedTransaction() {
   // If there is more than one write statement, run in a transaction.

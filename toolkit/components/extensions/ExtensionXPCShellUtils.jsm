@@ -94,6 +94,11 @@ var REMOTE_CONTENT_SCRIPTS = Services.prefs.getBoolPref(
   false
 );
 
+const REMOTE_CONTENT_SUBFRAMES = Services.prefs.getBoolPref(
+  "fission.autostart",
+  false
+);
+
 let BASE_MANIFEST = Object.freeze({
   applications: Object.freeze({
     gecko: Object.freeze({
@@ -139,22 +144,25 @@ function frameScript() {
 
 let kungFuDeathGrip = new Set();
 function promiseBrowserLoaded(browser, url, redirectUrl) {
+  url = url && Services.io.newURI(url);
+  redirectUrl = redirectUrl && Services.io.newURI(redirectUrl);
+
   return new Promise(resolve => {
     const listener = {
       QueryInterface: ChromeUtils.generateQI([
-        Ci.nsISupportsWeakReference,
-        Ci.nsIWebProgressListener,
+        "nsISupportsWeakReference",
+        "nsIWebProgressListener",
       ]),
 
       onStateChange(webProgress, request, stateFlags, statusCode) {
         request.QueryInterface(Ci.nsIChannel);
 
-        let requestUrl = request.originalURI
-          ? request.originalURI.spec
-          : webProgress.DOMWindow.location.href;
+        let requestURI =
+          request.originalURI ||
+          webProgress.DOMWindow.document.documentURIObject;
         if (
           webProgress.isTopLevel &&
-          (requestUrl === url || requestUrl === redirectUrl) &&
+          (url?.equals(requestURI) || redirectUrl?.equals(requestURI)) &&
           stateFlags & Ci.nsIWebProgressListener.STATE_STOP
         ) {
           resolve();
@@ -178,11 +186,21 @@ function promiseBrowserLoaded(browser, url, redirectUrl) {
 class ContentPage {
   constructor(
     remote = REMOTE_CONTENT_SCRIPTS,
+    remoteSubframes = REMOTE_CONTENT_SUBFRAMES,
     extension = null,
     privateBrowsing = false,
     userContextId = undefined
   ) {
     this.remote = remote;
+
+    // If an extension has been passed, overwrite remote
+    // with extension.remote to be sure that the ContentPage
+    // will have the same remoteness of the extension.
+    if (extension) {
+      this.remote = extension.remote;
+    }
+
+    this.remoteSubframes = this.remote && remoteSubframes;
     this.extension = extension;
     this.privateBrowsing = privateBrowsing;
     this.userContextId = userContextId;
@@ -191,14 +209,20 @@ class ContentPage {
   }
 
   async _initBrowser() {
-    this.windowlessBrowser = Services.appShell.createWindowlessBrowser(true);
-
-    if (this.privateBrowsing) {
-      let loadContext = this.windowlessBrowser.docShell.QueryInterface(
-        Ci.nsILoadContext
-      );
-      loadContext.usePrivateBrowsing = true;
+    let chromeFlags = 0;
+    if (this.remote) {
+      chromeFlags |= Ci.nsIWebBrowserChrome.CHROME_REMOTE_WINDOW;
     }
+    if (this.remoteSubframes) {
+      chromeFlags |= Ci.nsIWebBrowserChrome.CHROME_FISSION_WINDOW;
+    }
+    if (this.privateBrowsing) {
+      chromeFlags |= Ci.nsIWebBrowserChrome.CHROME_PRIVATE_WINDOW;
+    }
+    this.windowlessBrowser = Services.appShell.createWindowlessBrowser(
+      true,
+      chromeFlags
+    );
 
     let system = Services.scriptSecurityManager.getSystemPrincipal();
 
@@ -207,7 +231,7 @@ class ContentPage {
     );
 
     chromeShell.createAboutBlankContentViewer(system, system);
-    chromeShell.useGlobalHistory = false;
+    this.windowlessBrowser.browsingContext.useGlobalHistory = false;
     let loadURIOptions = {
       triggeringPrincipal: system,
     };
@@ -226,12 +250,12 @@ class ContentPage {
     let browser = chromeDoc.createXULElement("browser");
     browser.setAttribute("type", "content");
     browser.setAttribute("disableglobalhistory", "true");
+    browser.setAttribute("messagemanagergroup", "webext-browsers");
     if (this.userContextId) {
       browser.setAttribute("usercontextid", this.userContextId);
     }
 
-    if (this.extension && this.extension.remote) {
-      this.remote = true;
+    if (this.extension?.remote) {
       browser.setAttribute("remote", "true");
       browser.setAttribute("remoteType", "extension");
       browser.sameProcessAsFrameLoader = this.extension.groupFrameLoader;
@@ -241,11 +265,22 @@ class ContentPage {
     if (this.remote) {
       awaitFrameLoader = promiseEvent(browser, "XULFrameLoaderCreated");
       browser.setAttribute("remote", "true");
+
+      browser.setAttribute("maychangeremoteness", "true");
+      browser.addEventListener(
+        "DidChangeBrowserRemoteness",
+        this.didChangeBrowserRemoteness.bind(this)
+      );
     }
 
     chromeDoc.documentElement.appendChild(browser);
 
+    // Forcibly flush layout so that we get a pres shell soon enough, see
+    // bug 1274775.
+    browser.getBoundingClientRect();
+
     await awaitFrameLoader;
+
     this.browser = browser;
 
     this.loadFrameScript(frameScript);
@@ -265,6 +300,12 @@ class ContentPage {
   addFrameScriptHelper(func) {
     let frameScript = `data:text/javascript,${encodeURI(func)}`;
     this.browser.messageManager.loadFrameScript(frameScript, false, true);
+  }
+
+  didChangeBrowserRemoteness(event) {
+    // XXX: Tests can load their own additional frame scripts, so we may need to
+    // track all scripts that have been loaded, and reload them here?
+    this.loadFrameScript(frameScript);
   }
 
   async loadURL(url, redirectUrl = undefined) {
@@ -289,6 +330,10 @@ class ContentPage {
 
     let { messageManager } = this.browser;
 
+    this.browser.removeEventListener(
+      "DidChangeBrowserRemoteness",
+      this.didChangeBrowserRemoteness.bind(this)
+    );
     this.browser = null;
 
     this.windowlessBrowser.close();
@@ -776,8 +821,6 @@ class InstallableWrapper extends AOMExtensionWrapper {
   }
 
   async _install(xpiFile) {
-    // Timing here is different than in MockExtension so we need to handle
-    // incognitoOverride early.
     await this._setIncognitoOverride();
 
     if (this.installType === "temporary") {
@@ -907,7 +950,7 @@ var ExtensionTestUtils = {
         return null;
       },
 
-      QueryInterface: ChromeUtils.generateQI([Ci.nsIDirectoryServiceProvider]),
+      QueryInterface: ChromeUtils.generateQI(["nsIDirectoryServiceProvider"]),
     };
     Services.dirsvc.registerProvider(dirProvider);
 
@@ -1018,6 +1061,9 @@ var ExtensionTestUtils = {
    * @param {boolean} [options.remote]
    *        If true, load the URL in a content process. If false, load
    *        it in the parent process.
+   * @param {boolean} [options.remoteSubframes]
+   *        If true, load cross-origin frames in separate content processes.
+   *        This is ignored if |options.remote| is false.
    * @param {string} [options.redirectUrl]
    *        An optional URL that the initial page is expected to
    *        redirect to.
@@ -1029,6 +1075,7 @@ var ExtensionTestUtils = {
     {
       extension = undefined,
       remote = undefined,
+      remoteSubframes = undefined,
       redirectUrl = undefined,
       privateBrowsing = false,
       userContextId = undefined,
@@ -1038,6 +1085,7 @@ var ExtensionTestUtils = {
 
     let contentPage = new ContentPage(
       remote,
+      remoteSubframes,
       extension && extension.extension,
       privateBrowsing,
       userContextId

@@ -11,6 +11,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/IntegerRange.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
 
 #include "jspubtd.h"
@@ -97,6 +98,11 @@ struct ZoneGCStats {
   }
 
   ZoneGCStats() = default;
+};
+
+struct Trigger {
+  size_t amount = 0;
+  size_t threshold = 0;
 };
 
 #define FOR_EACH_GC_PROFILE_TIME(_)                                 \
@@ -212,11 +218,10 @@ struct Statistics {
 
   uint32_t getStat(Stat s) const { return stats[s]; }
 
-  void recordTrigger(double amount, double threshold) {
-    triggerAmount = amount;
-    triggerThreshold = threshold;
-    thresholdTriggered = true;
+  void recordTrigger(size_t amount, size_t threshold) {
+    recordedTrigger = mozilla::Some(Trigger{amount, threshold});
   }
+  bool hasTrigger() const { return recordedTrigger.isSome(); }
 
   void noteNurseryAlloc() { allocsSinceMinorGC.nursery++; }
 
@@ -255,25 +260,22 @@ struct Statistics {
   static const size_t MAX_SUSPENDED_PHASES = MAX_PHASE_NESTING * 3;
 
   struct SliceData {
-    SliceData(SliceBudget budget, JS::GCReason reason, TimeStamp start,
-              size_t startFaults, gc::State initialState)
-        : budget(budget),
-          reason(reason),
-          initialState(initialState),
-          finalState(gc::State::NotActive),
-          resetReason(gc::AbortReason::None),
-          start(start),
-          startFaults(startFaults),
-          endFaults(0) {}
+    SliceData(SliceBudget budget, mozilla::Maybe<Trigger> trigger,
+              JS::GCReason reason, TimeStamp start, size_t startFaults,
+              gc::State initialState);
 
     SliceBudget budget;
-    JS::GCReason reason;
-    gc::State initialState, finalState;
-    gc::AbortReason resetReason;
-    TimeStamp start, end;
-    size_t startFaults, endFaults;
+    JS::GCReason reason = JS::GCReason::NO_REASON;
+    mozilla::Maybe<Trigger> trigger;
+    gc::State initialState = gc::State::NotActive;
+    gc::State finalState = gc::State::NotActive;
+    gc::AbortReason resetReason = gc::AbortReason::None;
+    TimeStamp start;
+    TimeStamp end;
+    size_t startFaults = 0;
+    size_t endFaults = 0;
     PhaseTimeTable phaseTimes;
-    PhaseTimeTable parallelTimes;
+    PhaseTimeTable maxParallelTimes;
 
     TimeDuration duration() const { return end - start; }
     bool wasReset() const { return resetReason != gc::AbortReason::None; }
@@ -287,6 +289,8 @@ struct Statistics {
 
   TimeStamp end() const { return slices_.back().end; }
 
+  TimeStamp creationTime() const { return creationTime_; }
+
   // Occasionally print header lines for profiling information.
   void maybePrintProfileHeaders();
 
@@ -296,11 +300,11 @@ struct Statistics {
   // Print total profile times on shutdown.
   void printTotalProfileTimes();
 
-  enum JSONUse { TELEMETRY, PROFILER };
+  // These JSON strings are used by the firefox profiler to display the GC
+  // markers.
 
-  // Return JSON for a whole major GC.  If use == PROFILER then
-  // detailed per-slice data and some other fields will be included.
-  UniqueChars renderJsonMessage(uint64_t timestamp, JSONUse use) const;
+  // Return JSON for a whole major GC
+  UniqueChars renderJsonMessage() const;
 
   // Return JSON for the timings of just the given slice.
   UniqueChars renderJsonSlice(size_t sliceNum) const;
@@ -340,13 +344,14 @@ struct Statistics {
   EnumeratedArray<Phase, Phase::LIMIT, TimeStamp> phaseEndTimes;
 #endif
 
+  TimeStamp creationTime_;
+
   /* Bookkeeping for GC timings when timingMutator is true */
   TimeStamp timedGCStart;
   TimeDuration timedGCTime;
 
   /* Total time in a given phase for this GC. */
   PhaseTimeTable phaseTimes;
-  PhaseTimeTable parallelTimes;
 
   /* Number of events of this type for this GC. */
   EnumeratedArray<Count, COUNT_LIMIT,
@@ -372,11 +377,12 @@ struct Statistics {
   /* GC heap size for collected zones before GC ran. */
   size_t preCollectedHeapBytes;
 
-  /* If the GC was triggered by exceeding some threshold, record the
-   * threshold and the value that exceeded it. */
-  bool thresholdTriggered;
-  double triggerAmount;
-  double triggerThreshold;
+  /*
+   * If a GC slice was triggered by exceeding some threshold, record the
+   * threshold and the value that exceeded it. This happens before the slice
+   * starts so this is recorded here first and then transferred to SliceData.
+   */
+  mozilla::Maybe<Trigger> recordedTrigger;
 
   /* GC numbers as of the beginning of the collection. */
   uint64_t startingMinorGCNumber;
@@ -459,7 +465,7 @@ struct Statistics {
   UniqueChars formatDetailedPhaseTimes(const PhaseTimeTable& phaseTimes) const;
   UniqueChars formatDetailedTotals() const;
 
-  void formatJsonDescription(uint64_t timestamp, JSONPrinter&, JSONUse) const;
+  void formatJsonDescription(JSONPrinter&) const;
   void formatJsonSliceDescription(unsigned i, const SliceData& slice,
                                   JSONPrinter&) const;
   void formatJsonPhaseTimes(const PhaseTimeTable& phaseTimes,

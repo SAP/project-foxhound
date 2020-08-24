@@ -11,16 +11,17 @@
 #include "frontend/BytecodeEmitter.h"  // BytecodeEmitter
 #include "frontend/IfEmitter.h"        // IfEmitter
 #include "frontend/SharedContext.h"    // SharedContext
-#include "frontend/SourceNotes.h"      // SRC_*
 #include "gc/AllocKind.h"              // AllocKind
 #include "js/Id.h"                     // jsid
 #include "js/Value.h"                  // UndefinedHandleValue
 #include "vm/BytecodeUtil.h"           // IsHiddenInitOp
+#include "vm/FunctionPrefixKind.h"     // FunctionPrefixKind
 #include "vm/JSContext.h"              // JSContext
 #include "vm/NativeObject.h"           // NativeDefineDataProperty
 #include "vm/ObjectGroup.h"            // TenuredObject
 #include "vm/Opcodes.h"                // JSOp
-#include "vm/Runtime.h"                // JSAtomState (cx->names())
+#include "vm/Runtime.h"                // JSAtomState (cx->parserNames())
+#include "vm/SharedStencil.h"          // GCThingIndex
 
 #include "gc/ObjectKind-inl.h"  // GetGCObjectKind
 #include "vm/JSAtom-inl.h"      // AtomToId
@@ -209,7 +210,7 @@ bool PropertyEmitter::prepareForComputedPropValue() {
 
   //                [stack] CTOR? OBJ CTOR? KEY
 
-  if (!bce_->emit1(JSOp::ToId)) {
+  if (!bce_->emit1(JSOp::ToPropertyKey)) {
     //              [stack] CTOR? OBJ CTOR? KEY
     return false;
   }
@@ -456,12 +457,33 @@ bool ClassEmitter::emitScope(JS::Handle<LexicalScope::Data*> scopeBindings) {
   return true;
 }
 
+bool ClassEmitter::emitBodyScope(
+    JS::Handle<LexicalScope::Data*> scopeBindings) {
+  MOZ_ASSERT(propertyState_ == PropertyState::Start);
+  MOZ_ASSERT(classState_ == ClassState::Start ||
+             classState_ == ClassState::Scope);
+
+  bodyTdzCache_.emplace(bce_);
+
+  bodyScope_.emplace(bce_);
+  if (!bodyScope_->enterLexical(bce_, ScopeKind::ClassBody, scopeBindings)) {
+    return false;
+  }
+
+#ifdef DEBUG
+  classState_ = ClassState::BodyScope;
+#endif
+
+  return true;
+}
+
 bool ClassEmitter::emitClass(JS::Handle<JSAtom*> name,
                              JS::Handle<JSAtom*> nameForAnonymousClass,
                              bool hasNameOnStack) {
   MOZ_ASSERT(propertyState_ == PropertyState::Start);
   MOZ_ASSERT(classState_ == ClassState::Start ||
-             classState_ == ClassState::Scope);
+             classState_ == ClassState::Scope ||
+             classState_ == ClassState::BodyScope);
   MOZ_ASSERT_IF(nameForAnonymousClass || hasNameOnStack, !name);
   MOZ_ASSERT(!(nameForAnonymousClass && hasNameOnStack));
 
@@ -488,11 +510,12 @@ bool ClassEmitter::emitDerivedClass(JS::Handle<JSAtom*> name,
                                     bool hasNameOnStack) {
   MOZ_ASSERT(propertyState_ == PropertyState::Start);
   MOZ_ASSERT(classState_ == ClassState::Start ||
-             classState_ == ClassState::Scope);
+             classState_ == ClassState::Scope ||
+             classState_ == ClassState::BodyScope);
   MOZ_ASSERT_IF(nameForAnonymousClass || hasNameOnStack, !name);
   MOZ_ASSERT(!nameForAnonymousClass || !hasNameOnStack);
 
-  //                [stack]
+  //                [stack] HERITAGE
 
   name_ = name;
   nameForAnonymousClass_ = nameForAnonymousClass;
@@ -529,7 +552,7 @@ bool ClassEmitter::emitDerivedClass(JS::Handle<JSAtom*> name,
     //              [stack] HERITAGE HERITAGE
     return false;
   }
-  if (!bce_->emitAtomOp(JSOp::GetProp, bce_->cx->names().prototype)) {
+  if (!bce_->emitAtomOp(JSOp::GetProp, bce_->cx->parserNames().prototype)) {
     //              [stack] HERITAGE PROTO
     return false;
   }
@@ -542,7 +565,7 @@ bool ClassEmitter::emitDerivedClass(JS::Handle<JSAtom*> name,
     //              [stack]
     return false;
   }
-  if (!bce_->emit2(JSOp::BuiltinProto, JSProto_Function)) {
+  if (!bce_->emit1(JSOp::FunctionProto)) {
     //              [stack] PROTO
     return false;
   }
@@ -610,11 +633,11 @@ bool ClassEmitter::emitInitDefaultConstructor(uint32_t classStart,
     if (nameForAnonymousClass_) {
       className = nameForAnonymousClass_;
     } else {
-      className = bce_->cx->names().empty;
+      className = bce_->cx->parserNames().empty;
     }
   }
 
-  uint32_t atomIndex;
+  GCThingIndex atomIndex;
   if (!bce_->makeAtomIndex(className, &atomIndex)) {
     return false;
   }
@@ -673,11 +696,13 @@ bool ClassEmitter::initProtoAndCtor() {
     //              [stack] NAME? CTOR HOMEOBJ CTOR HOMEOBJ
     return false;
   }
-  if (!bce_->emitAtomOp(JSOp::InitLockedProp, bce_->cx->names().prototype)) {
+  if (!bce_->emitAtomOp(JSOp::InitLockedProp,
+                        bce_->cx->parserNames().prototype)) {
     //              [stack] NAME? CTOR HOMEOBJ CTOR
     return false;
   }
-  if (!bce_->emitAtomOp(JSOp::InitHiddenProp, bce_->cx->names().constructor)) {
+  if (!bce_->emitAtomOp(JSOp::InitHiddenProp,
+                        bce_->cx->parserNames().constructor)) {
     //              [stack] NAME? CTOR HOMEOBJ
     return false;
   }
@@ -696,7 +721,7 @@ bool ClassEmitter::prepareForFieldInitializers(size_t numFields,
   // these lambdas will be called, defining the values.
   auto initializersName = isStatic ? &JSAtomState::dotStaticInitializers
                                    : &JSAtomState::dotInitializers;
-  HandlePropertyName initializers = bce_->cx->names().*initializersName;
+  HandlePropertyName initializers = bce_->cx->parserNames().*initializersName;
   initializersAssignment_.emplace(bce_, initializers,
                                   NameOpEmitter::Kind::Initialize);
   if (!initializersAssignment_->prepareForRhs()) {
@@ -841,6 +866,16 @@ bool ClassEmitter::emitBinding() {
 bool ClassEmitter::emitEnd(Kind kind) {
   MOZ_ASSERT(classState_ == ClassState::BoundName);
   //                [stack] CTOR
+
+  if (bodyScope_.isSome()) {
+    MOZ_ASSERT(bodyTdzCache_.isSome());
+
+    if (!bodyScope_->leave(bce_)) {
+      return false;
+    }
+    bodyScope_.reset();
+    bodyTdzCache_.reset();
+  }
 
   if (innerScope_.isSome()) {
     MOZ_ASSERT(tdzCache_.isSome());

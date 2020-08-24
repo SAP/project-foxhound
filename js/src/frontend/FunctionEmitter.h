@@ -11,15 +11,17 @@
 
 #include <stdint.h>  // uint16_t, uint32_t
 
-#include "frontend/DefaultEmitter.h"  // DefaultEmitter
-#include "frontend/EmitterScope.h"    // EmitterScope
-#include "frontend/SharedContext.h"   // FunctionBox
-#include "frontend/TDZCheckCache.h"   // TDZCheckCache
-#include "frontend/TryEmitter.h"      // TryEmitter
-#include "gc/Rooting.h"               // JS::Rooted, JS::Handle
-#include "vm/BytecodeUtil.h"          // JSOp
-#include "vm/JSAtom.h"                // JSAtom
-#include "vm/JSFunction.h"            // JSFunction
+#include "frontend/DefaultEmitter.h"      // DefaultEmitter
+#include "frontend/EmitterScope.h"        // EmitterScope
+#include "frontend/FunctionSyntaxKind.h"  // FunctionSyntaxKind
+#include "frontend/SharedContext.h"       // FunctionBox, TopLevelFunction
+#include "frontend/TDZCheckCache.h"       // TDZCheckCache
+#include "frontend/TryEmitter.h"          // TryEmitter
+#include "gc/Rooting.h"                   // JS::Rooted, JS::Handle
+#include "vm/BytecodeUtil.h"              // JSOp
+#include "vm/JSAtom.h"                    // JSAtom
+#include "vm/JSFunction.h"                // JSFunction
+#include "vm/SharedStencil.h"             // GCThingIndex
 
 namespace js {
 namespace frontend {
@@ -68,9 +70,6 @@ class MOZ_STACK_CLASS FunctionEmitter {
   BytecodeEmitter* bce_;
 
   FunctionBox* funbox_;
-
-  // Function linked from funbox_.
-  JS::Rooted<JSFunction*> fun_;
 
   // Function's explicit name.
   JS::Rooted<JSAtom*> name_;
@@ -131,9 +130,6 @@ class MOZ_STACK_CLASS FunctionEmitter {
   MOZ_MUST_USE bool emitAsmJSModule();
 
  private:
-  // Common code for non-lazy and lazy functions.
-  MOZ_MUST_USE bool interpretedCommon();
-
   // Emit the function declaration, expression, method etc.
   // This leaves function object on the stack for expression etc,
   // and doesn't for declaration.
@@ -141,9 +137,9 @@ class MOZ_STACK_CLASS FunctionEmitter {
 
   // Helper methods used by emitFunction for each case.
   // `index` is the object index of the function.
-  MOZ_MUST_USE bool emitNonHoisted(unsigned index);
-  MOZ_MUST_USE bool emitHoisted(unsigned index);
-  MOZ_MUST_USE bool emitTopLevelFunction(unsigned index);
+  MOZ_MUST_USE bool emitNonHoisted(GCThingIndex index);
+  MOZ_MUST_USE bool emitHoisted(GCThingIndex index);
+  MOZ_MUST_USE bool emitTopLevelFunction(GCThingIndex index);
   MOZ_MUST_USE bool emitNewTargetForArrow();
 };
 
@@ -167,7 +163,7 @@ class MOZ_STACK_CLASS FunctionEmitter {
 //
 //     // Do NameFunctions operation here if needed.
 //
-//     fse.initScript();
+//     fse.intoStencil();
 //
 class MOZ_STACK_CLASS FunctionScriptEmitter {
  private:
@@ -210,7 +206,7 @@ class MOZ_STACK_CLASS FunctionScriptEmitter {
   //                                                       |
   //     +-------------------------------------------------+
   //     |
-  //     | initScript  +-----+
+  //     | intoStencil +-----+
   //     +------------>| End |
   //                   +-----+
   enum class State {
@@ -226,7 +222,7 @@ class MOZ_STACK_CLASS FunctionScriptEmitter {
     // After calling emitEndBody.
     EndBody,
 
-    // After calling initScript.
+    // After calling intoStencil.
     End
   };
   State state_ = State::Start;
@@ -253,12 +249,8 @@ class MOZ_STACK_CLASS FunctionScriptEmitter {
   MOZ_MUST_USE bool prepareForBody();
   MOZ_MUST_USE bool emitEndBody();
 
-  // Initialize JSScript for this function.
-  // WARNING: There shouldn't be any fallible operation for the function
-  //          compilation after `initScript` call.
-  //          See the comment inside JSScript::fullyInitFromEmitter for
-  //          more details.
-  MOZ_MUST_USE bool initScript(const FieldInitializers& fieldInitializers);
+  // Generate the ScriptStencil using the bytecode emitter data.
+  MOZ_MUST_USE bool intoStencil();
 
  private:
   MOZ_MUST_USE bool emitExtraBodyVarScope();

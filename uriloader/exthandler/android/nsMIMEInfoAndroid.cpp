@@ -88,7 +88,7 @@ bool nsMIMEInfoAndroid::GetMimeInfoForFileExt(const nsACString& aFileExt,
 
   // "*/*" means that the bridge didn't know.
   if (mimeType.Equals(nsDependentCString("*/*"),
-                      nsCaseInsensitiveCStringComparator()))
+                      nsCaseInsensitiveCStringComparator))
     return false;
 
   bool found = GetMimeInfoForMimeType(mimeType, aMimeInfo);
@@ -202,8 +202,9 @@ nsMIMEInfoAndroid::GetDefaultDescription(nsAString& aDesc) {
 }
 
 NS_IMETHODIMP
-nsMIMEInfoAndroid::LaunchWithURI(nsIURI* aURI, nsIInterfaceRequestor* req) {
-  return mPrefApp->LaunchWithURI(aURI, req);
+nsMIMEInfoAndroid::LaunchWithURI(
+    nsIURI* aURI, mozilla::dom::BrowsingContext* aBrowsingContext) {
+  return mPrefApp->LaunchWithURI(aURI, aBrowsingContext);
 }
 
 NS_IMETHODIMP
@@ -265,7 +266,7 @@ nsMIMEInfoAndroid::ExtensionExists(const nsACString& aExtension,
   // "*/*" means the bridge didn't find anything (i.e., extension doesn't
   // exist).
   *aRetVal = !mimeType.Equals(nsDependentCString("*/*"),
-                              nsCaseInsensitiveCStringComparator());
+                              nsCaseInsensitiveCStringComparator);
   return NS_OK;
 }
 
@@ -340,6 +341,20 @@ nsMIMEInfoAndroid::LaunchWithFile(nsIFile* aFile) {
   return LoadUriInternal(uri);
 }
 
+NS_IMETHODIMP
+nsMIMEInfoAndroid::IsCurrentAppOSDefault(bool* aRetVal) {
+  // FIXME: this should in theory be meaningfully implemented. However, android
+  // implements its own version of nsIHandlerApp instances which internally
+  // have package and class names - but do not expose those. So to meaningfully
+  // compare the handler app would require access to those and knowing what
+  // our own package/class names are, and it's not clear how to do that.
+  // It also seems less important to do this right on Android, given that
+  // Android UI normally limits what apps you can associate with what files, so
+  // it shouldn't be possible to get into the same kind of loop as on desktop.
+  *aRetVal = false;
+  return NS_OK;
+}
+
 nsMIMEInfoAndroid::nsMIMEInfoAndroid(const nsACString& aMIMEType)
     : mType(aMIMEType),
       mAlwaysAsk(true),
@@ -394,6 +409,6 @@ nsresult nsMIMEInfoAndroid::SystemChooser::Equals(nsIHandlerApp* aHandlerApp,
 }
 
 nsresult nsMIMEInfoAndroid::SystemChooser::LaunchWithURI(
-    nsIURI* aURI, nsIInterfaceRequestor*) {
+    nsIURI* aURI, mozilla::dom::BrowsingContext*) {
   return mOuter->LoadUriInternal(aURI);
 }

@@ -20,12 +20,12 @@ bool nsIFrame::IsSVGGeometryFrameOrSubclass() const {
 
 bool nsIFrame::IsFlexItem() const {
   return GetParent() && GetParent()->IsFlexContainerFrame() &&
-         !(GetStateBits() & NS_FRAME_OUT_OF_FLOW);
+         !HasAnyStateBits(NS_FRAME_OUT_OF_FLOW);
 }
 
 bool nsIFrame::IsGridItem() const {
   return GetParent() && GetParent()->IsGridContainerFrame() &&
-         !(GetStateBits() & NS_FRAME_OUT_OF_FLOW);
+         !HasAnyStateBits(NS_FRAME_OUT_OF_FLOW);
 }
 
 bool nsIFrame::IsFlexOrGridContainer() const {
@@ -33,8 +33,15 @@ bool nsIFrame::IsFlexOrGridContainer() const {
 }
 
 bool nsIFrame::IsFlexOrGridItem() const {
-  return !(GetStateBits() & NS_FRAME_OUT_OF_FLOW) && GetParent() &&
+  return !HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) && GetParent() &&
          GetParent()->IsFlexOrGridContainer();
+}
+
+bool nsIFrame::IsMasonry(mozilla::LogicalAxis aAxis) const {
+  MOZ_DIAGNOSTIC_ASSERT(IsGridContainerFrame());
+  return HasAnyStateBits(aAxis == mozilla::eLogicalAxisBlock
+                             ? NS_STATE_GRID_IS_ROW_MASONRY
+                             : NS_STATE_GRID_IS_COL_MASONRY);
 }
 
 bool nsIFrame::IsTableCaption() const {
@@ -121,8 +128,9 @@ nscoord nsIFrame::SynthesizeBaselineBOffsetFromMarginBox(
 
 nscoord nsIFrame::SynthesizeBaselineBOffsetFromBorderBox(
     mozilla::WritingMode aWM, BaselineSharingGroup aGroup) const {
-  MOZ_ASSERT(!aWM.IsOrthogonalTo(GetWritingMode()));
-  nscoord borderBoxSize = BSize(aWM);
+  nscoord borderBoxSize = MOZ_UNLIKELY(aWM.IsOrthogonalTo(GetWritingMode()))
+                              ? ISize(aWM)
+                              : BSize(aWM);
   if (aGroup == BaselineSharingGroup::First) {
     return MOZ_LIKELY(aWM.IsAlphabeticalBaseline()) ? borderBoxSize
                                                     : borderBoxSize / 2;
@@ -135,9 +143,11 @@ nscoord nsIFrame::SynthesizeBaselineBOffsetFromBorderBox(
 
 nscoord nsIFrame::SynthesizeBaselineBOffsetFromContentBox(
     mozilla::WritingMode aWM, BaselineSharingGroup aGroup) const {
-  MOZ_ASSERT(!aWM.IsOrthogonalTo(GetWritingMode()));
-  auto bp = GetLogicalUsedBorderAndPadding(aWM);
-  bp.ApplySkipSides(GetLogicalSkipSides());
+  mozilla::WritingMode wm = GetWritingMode();
+  MOZ_ASSERT(!aWM.IsOrthogonalTo(wm));
+  const auto bp = GetLogicalUsedBorderAndPadding(wm)
+                      .ApplySkipSides(GetLogicalSkipSides())
+                      .ConvertTo(aWM, wm);
 
   if (MOZ_UNLIKELY(aWM.IsCentralBaseline())) {
     nscoord contentBoxBSize = BSize(aWM) - bp.BStartEnd(aWM);
@@ -186,7 +196,7 @@ void nsIFrame::PropagateWritingModeToSelfAndAncestors(
 }
 
 nsContainerFrame* nsIFrame::GetInFlowParent() const {
-  if (GetStateBits() & NS_FRAME_OUT_OF_FLOW) {
+  if (HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
     nsIFrame* ph =
         FirstContinuation()->GetProperty(nsIFrame::PlaceholderFrameProperty());
     return ph->GetParent();

@@ -141,7 +141,7 @@ with only_when(host_is_osx | target_is_osx):
     @imports(_from='biplist', _import='readPlist')
     def macos_sdk(sdk, host):
         sdk_min_version = Version('10.11')
-        sdk_max_version = Version('10.15')
+        sdk_max_version = Version('10.15.6')
 
         if sdk:
             sdk = sdk[0]
@@ -370,8 +370,8 @@ add_old_configure_assignment('TOOLCHAIN_PREFIX', first_toolchain_prefix)
 include('compilers-util.configure')
 
 
-def try_preprocess(compiler, language, source):
-    return try_invoke_compiler(compiler, language, source, ['-E'])
+def try_preprocess(compiler, language, source, onerror=None):
+    return try_invoke_compiler(compiler, language, source, ['-E'], onerror)
 
 
 @imports(_from='mozbuild.configure.constants', _import='CompilerType')
@@ -594,7 +594,7 @@ def get_vc_paths(topsrcdir):
     for install in vswhere(['-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64']):
         path = install['installationPath']
         tools_version = open(os.path.join(
-            path, r'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt'), 'rb').read().strip()
+            path, r'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt'), 'r').read().strip()
         tools_path = os.path.join(
             path, r'VC\Tools\MSVC', tools_version)
         yield (Version(install['installationVersion']), tools_path)
@@ -1635,12 +1635,15 @@ def security_hardening_cflags(hardening_flag, asan, debug, optimize, c_compiler,
             js_ldflags.append("-Wl,--dynamicbase")
 
         # Control Flow Guard (CFG) ----------------------------
-        # On aarch64, this is enabled only with explicit --enable-hardening
-        # (roughly: automation) due to a dependency on a patched clang-cl.
         if c_compiler.type == 'clang-cl' and c_compiler.version >= '8' and \
-           (target.cpu != 'aarch64' or hardening_flag):
-            flags.append("-guard:cf")
-            js_flags.append("-guard:cf")
+           (target.cpu != 'aarch64' or c_compiler.version >= '8.0.1'):
+            if target.cpu == 'aarch64' and c_compiler.version >= '10.0.0':
+                # The added checks in clang 10 make arm64 builds crash. (Bug 1639318)
+                flags.append("-guard:cf,nochecks")
+                js_flags.append("-guard:cf,nochecks")
+            else:
+                flags.append("-guard:cf")
+                js_flags.append("-guard:cf")
             # nolongjmp is needed because clang doesn't emit the CFG tables of
             # setjmp return addresses https://bugs.llvm.org/show_bug.cgi?id=40057
             ldflags.append("-guard:cf,nolongjmp")
@@ -1781,19 +1784,6 @@ set_config('HAVE_YASM', have_yasm)
 add_old_configure_assignment('YASM', have_yasm)
 
 
-# clang-cl integrated assembler support
-# ==============================================================
-@depends(target)
-def clangcl_asflags(target):
-    asflags = None
-    if target.os == 'WINNT' and target.cpu == 'aarch64':
-        asflags = ['--target=aarch64-windows-msvc']
-    return asflags
-
-
-set_config('CLANGCL_ASFLAGS', clangcl_asflags)
-
-
 # Code Coverage
 # ==============================================================
 
@@ -1811,13 +1801,14 @@ set_config('MOZ_CODE_COVERAGE', code_coverage)
 set_define('MOZ_CODE_COVERAGE', code_coverage)
 
 @depends(target, c_compiler, vc_path, check_build_environment, when=code_coverage)
+@imports('os')
 @imports('re')
-@imports('mozpack.path')
 @imports(_from='__builtin__', _import='open')
 def coverage_cflags(target, c_compiler, vc_path, build_env):
     cflags = ['--coverage']
 
-    if c_compiler.type in ('clang', 'clang-cl'):
+    # clang 11 no longer accepts this flag (its behavior became the default)
+    if c_compiler.type in ('clang', 'clang-cl') and c_compiler.version < '11.0.0':
         cflags += [
             '-Xclang', '-coverage-no-function-names-in-data',
         ]
@@ -1828,10 +1819,7 @@ def coverage_cflags(target, c_compiler, vc_path, build_env):
 
         # We need to get the real path of Visual Studio, which can be in a
         # symlinked directory (for example, on automation).
-        vs_path = mozpack.path.readlink(vs_path)
-        # Since the -fprofile-exclude-files option in LLVM is a regex, we need to
-        # have the same path separators.
-        vs_path = vs_path.replace('/', '\\')
+        vs_path = os.path.realpath(vs_path)
 
         cflags += [
             '-fprofile-exclude-files=^{}.*$'.format(re.escape(vs_path)),
@@ -1975,8 +1963,22 @@ set_config('CARGO_INCREMENTAL', cargo_incremental)
 
 # Linker detection
 # ==============================================================
-
-
+# The policy is as follows:
+# For Windows:
+# - the linker is picked via the LINKER environment variable per windows.configure,
+#   but ought to be llvm-lld in any case.
+# For macOS:
+# - the linker is ld64, either from XCode on macOS, or from cctools-ports when
+#   cross-compiling. lld can be enabled manually, but as of writing, mach-o support
+#   for lld is incomplete.
+# For other OSes:
+# - on local developer builds: lld is used if present. Otherwise gold is used if present
+#   otherwise, BFD ld is used.
+# - on release/official builds: whatever "ld" resolves to is used, except on Android x86/x86_64
+#   where BFD ld is used. Usually, "ld" resolves to BFD ld, except with the Android NDK,
+#   where it resolves to gold. lld is not used by default on Linux and Android because
+#   it introduces layout changes that prevent elfhack from working. See e.g.
+#   https://bugzilla.mozilla.org/show_bug.cgi?id=1563654#c2.
 @depends(target)
 def is_linker_option_enabled(target):
     if target.kernel not in ('WINNT', 'SunOS'):
@@ -1993,8 +1995,9 @@ imply_option('--enable-linker', 'gold', when='--enable-gold')
 @depends(target, developer_options)
 def enable_linker_default(target, developer_options):
     # x86-64 gold has bugs in how it lays out .note.* sections. See bug 1573820.
+    # x86-32 gold has a bug when assembly files are built. See bug 1651699.
     # lld is faster, so prefer that for developer builds.
-    if target.os == 'Android' and target.cpu == 'x86_64':
+    if target.os == 'Android' and target.cpu in ('x86', 'x86_64'):
         return 'lld' if developer_options else 'bfd'
 
 
@@ -2056,6 +2059,9 @@ def select_linker(linker, c_compiler, developer_options, enable_gold,
         # specific to it on stderr when it fails to process --version.
         env = dict(os.environ)
         env['LD_PRINT_OPTIONS'] = '1'
+        # Some locales might not print out the strings we are looking for, so
+        # ensure consistent output.
+        env['LC_ALL'] = 'C'
         retcode, stdout, stderr = get_cmd_output(*cmd, env=env)
         if retcode == 1 and 'Logging ld64 options' in stderr:
             kind = 'ld64'
@@ -2110,9 +2116,9 @@ set_config('LINKER_KIND', select_linker.KIND)
 
 @depends_if(select_linker, macos_sdk)
 def linker_ldflags(linker, macos_sdk):
-    flags = list(linker.LINKER_FLAG or [])
+    flags = list((linker and linker.LINKER_FLAG) or [])
     if macos_sdk:
-        if linker.KIND == 'ld64':
+        if linker and linker.KIND == 'ld64':
             flags.append('-Wl,-syslibroot,%s' % macos_sdk)
         else:
             flags.append('-Wl,--sysroot=%s' % macos_sdk)
@@ -2248,6 +2254,19 @@ js_option('--enable-clang-plugin', env='ENABLE_CLANG_PLUGIN',
 
 add_old_configure_assignment('ENABLE_CLANG_PLUGIN',
                              depends_if('--enable-clang-plugin')(lambda _: True))
+
+js_option('--enable-clang-plugin-alpha', env='ENABLE_CLANG_PLUGIN_ALPHA',
+            help='Enable static analysis with clang-plugin alpha checks.')
+
+@depends('--enable-clang-plugin', '--enable-clang-plugin-alpha')
+def check_clang_plugin_alpha(enable_clang_plugin, enable_clang_plugin_alpha):
+    if enable_clang_plugin_alpha:
+        if enable_clang_plugin:
+            return True
+        die("Cannot enable clang-plugin alpha checkers without --enable-clang-plugin.")
+
+add_old_configure_assignment('ENABLE_CLANG_PLUGIN_ALPHA', check_clang_plugin_alpha)
+set_define('MOZ_CLANG_PLUGIN_ALPHA', check_clang_plugin_alpha)
 
 js_option('--enable-mozsearch-plugin', env='ENABLE_MOZSEARCH_PLUGIN',
           help="Enable building with the mozsearch indexer plugin")
@@ -2458,3 +2477,8 @@ ar = check_prog('AR', ar_config.names, paths=toolchain_search_path)
 add_old_configure_assignment('AR', ar)
 
 set_config('AR_FLAGS', ar_config.flags)
+
+
+js_option('--enable-cpp-rtti', help='Enable C++ RTTI')
+
+add_old_configure_assignment('_MOZ_USE_RTTI', '1', when='--enable-cpp-rtti')

@@ -2,9 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ColorU, FontKey, FontRenderMode, GlyphDimensions};
+use api::{ColorU, FontKey, FontRenderMode, FontSize, GlyphDimensions};
 use api::{FontInstanceFlags, FontVariation, NativeFontHandle};
-use api::units::Au;
 use core_foundation::array::{CFArray, CFArrayRef};
 use core_foundation::base::TCFType;
 use core_foundation::dictionary::CFDictionary;
@@ -34,7 +33,7 @@ const INITIAL_CG_CONTEXT_SIDE_LENGTH: u32 = 32;
 
 pub struct FontContext {
     cg_fonts: FastHashMap<FontKey, CGFont>,
-    ct_fonts: FastHashMap<(FontKey, Au, Vec<FontVariation>), CTFont>,
+    ct_fonts: FastHashMap<(FontKey, FontSize, Vec<FontVariation>), CTFont>,
     #[allow(dead_code)]
     graphics_context: GraphicsContext,
     #[allow(dead_code)]
@@ -55,29 +54,70 @@ struct GlyphMetrics {
     advance: f32,
 }
 
-// According to the Skia source code, there's no public API to
-// determine if subpixel AA is supported. So jrmuizel ported
-// this function from Skia which is used to check if a glyph
-// can be rendered with subpixel AA.
-fn supports_subpixel_aa() -> bool {
-    let mut cg_context = CGContext::create_bitmap_context(
+// There are a number of different OS prefs that control whether or not
+// requesting font smoothing actually results in subpixel AA. This gets even
+// murkier in newer macOS versions that deprecate subpixel AA, with the prefs
+// potentially interacting and overriding each other. In an attempt to future-
+// proof things against any new prefs or interpretation of those prefs in
+// future macOS versions, we do a check here to request font smoothing and see
+// what result it actually gives us much like Skia does. We need to check for
+// each of three potential results and process them in the font backend in
+// distinct ways:
+// 1) subpixel AA (differing RGB channels) with dilation
+// 2) grayscale AA (matching RGB channels) with dilation, a compatibility mode
+// 3) grayscale AA without dilation as if font smoothing was not requested
+// We can discern between case 1 and the rest by checking if the subpixels differ.
+// We can discern between cases 2 and 3 by rendering with and without smoothing
+// and comparing the two to determine if there was some dilation.
+// This returns the actual FontRenderMode needed to support each case, if any.
+fn determine_font_smoothing_mode() -> Option<FontRenderMode> {
+    let mut smooth_context = CGContext::create_bitmap_context(
         None,
-        1,
-        1,
+        12,
+        12,
         8,
-        4,
+        12 * 4,
         &CGColorSpace::create_device_rgb(),
         kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little,
     );
-    let ct_font = core_text::font::new_from_name("Helvetica", 16.).unwrap();
-    cg_context.set_should_smooth_fonts(true);
-    cg_context.set_should_antialias(true);
-    cg_context.set_rgb_fill_color(1.0, 1.0, 1.0, 1.0);
-    let point = CGPoint { x: -1., y: 0. };
-    let glyph = '|' as CGGlyph;
-    ct_font.draw_glyphs(&[glyph], &[point], cg_context.clone());
-    let data = cg_context.data();
-    data[0] != data[1] || data[1] != data[2]
+    smooth_context.set_should_smooth_fonts(true);
+    smooth_context.set_should_antialias(true);
+    smooth_context.set_rgb_fill_color(1.0, 1.0, 1.0, 1.0);
+    let mut gray_context = CGContext::create_bitmap_context(
+        None,
+        12,
+        12,
+        8,
+        12 * 4,
+        &CGColorSpace::create_device_rgb(),
+        kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little,
+    );
+    gray_context.set_should_smooth_fonts(false);
+    gray_context.set_should_antialias(true);
+    gray_context.set_rgb_fill_color(1.0, 1.0, 1.0, 1.0);
+    // Lucida Grande 12 is the default fallback font in Firefox
+    let ct_font = core_text::font::new_from_name("Lucida Grande", 12.).unwrap();
+    let point = CGPoint { x: 0., y: 0. };
+    let glyph = 'X' as CGGlyph;
+    ct_font.draw_glyphs(&[glyph], &[point], smooth_context.clone());
+    ct_font.draw_glyphs(&[glyph], &[point], gray_context.clone());
+    let mut mode = None;
+    for (smooth, gray) in smooth_context.data().chunks(4).zip(gray_context.data().chunks(4)) {
+        if smooth[0] != smooth[1] || smooth[1] != smooth[2] {
+            return Some(FontRenderMode::Subpixel);
+        }
+        if smooth[0] != gray[0] || smooth[1] != gray[1] || smooth[2] != gray[2] {
+            mode = Some(FontRenderMode::Alpha);
+        }
+    }
+    return mode;
+}
+
+// We cache the font smoothing mode globally, rather than storing it in each FontContext,
+// to avoid having to determine this redundantly in each context and to avoid needing to
+// lock them to access this setting in prepare_font.
+lazy_static! {
+    static ref FONT_SMOOTHING_MODE: Option<FontRenderMode> = determine_font_smoothing_mode();
 }
 
 fn should_use_white_on_black(color: ColorU) -> bool {
@@ -273,7 +313,7 @@ fn is_bitmap_font(ct_font: &CTFont) -> bool {
 
 impl FontContext {
     pub fn new() -> Result<FontContext, ResourceCacheError> {
-        debug!("Test for subpixel AA support: {}", supports_subpixel_aa());
+        debug!("Test for subpixel AA support: {:?}", *FONT_SMOOTHING_MODE);
 
         // Force CG to use sRGB color space to gamma correct.
         let contrast = 0.0;
@@ -322,20 +362,21 @@ impl FontContext {
 
     pub fn delete_font_instance(&mut self, instance: &FontInstance) {
         // Remove the CoreText font corresponding to this instance.
-        self.ct_fonts.remove(&(instance.font_key, instance.size, instance.variations.clone()));
+        let size = FontSize::from_f64_px(instance.get_transformed_size());
+        self.ct_fonts.remove(&(instance.font_key, size, instance.variations.clone()));
     }
 
     fn get_ct_font(
         &mut self,
         font_key: FontKey,
-        size: Au,
+        size: f64,
         variations: &[FontVariation],
     ) -> Option<CTFont> {
-        match self.ct_fonts.entry((font_key, size, variations.to_vec())) {
+        match self.ct_fonts.entry((font_key, FontSize::from_f64_px(size), variations.to_vec())) {
             Entry::Occupied(entry) => Some((*entry.get()).clone()),
             Entry::Vacant(entry) => {
                 let cg_font = self.cg_fonts.get(&font_key)?;
-                let ct_font = new_ct_font_with_variations(cg_font, size.to_f64_px(), variations);
+                let ct_font = new_ct_font_with_variations(cg_font, size, variations);
                 entry.insert(ct_font.clone());
                 Some(ct_font)
             }
@@ -346,7 +387,7 @@ impl FontContext {
         let character = ch as u16;
         let mut glyph = 0;
 
-        self.get_ct_font(font_key, Au::from_px(16), &[])
+        self.get_ct_font(font_key, 16.0, &[])
             .and_then(|ref ct_font| {
                 unsafe {
                     let result = ct_font.get_glyphs_for_characters(&character, &mut glyph, 1);
@@ -366,7 +407,7 @@ impl FontContext {
         key: &GlyphKey,
     ) -> Option<GlyphDimensions> {
         let (x_scale, y_scale) = font.transform.compute_scale().unwrap_or((1.0, 1.0));
-        let size = font.size.scale_by(y_scale as f32);
+        let size = font.size.to_f64_px() * y_scale;
         self.get_ct_font(font.font_key, size, &font.variations)
             .and_then(|ref ct_font| {
                 let glyph = key.index() as CGGlyph;
@@ -387,7 +428,7 @@ impl FontContext {
                 }
                 let (mut tx, mut ty) = (0.0, 0.0);
                 if font.synthetic_italics.is_enabled() {
-                    let (shape_, (tx_, ty_)) = font.synthesize_italics(shape, size.to_f64_px());
+                    let (shape_, (tx_, ty_)) = font.synthesize_italics(shape, size);
                     shape = shape_;
                     tx = tx_;
                     ty = ty_;
@@ -470,6 +511,22 @@ impl FontContext {
     }
 
     pub fn prepare_font(font: &mut FontInstance) {
+        // Sanitize the render mode for font smoothing. If font smoothing is supported,
+        // then we just need to ensure the render mode is limited to what is supported.
+        // If font smoothing is actually disabled, then we need to fall back to grayscale.
+        if font.flags.contains(FontInstanceFlags::FONT_SMOOTHING) ||
+            font.render_mode == FontRenderMode::Subpixel {
+            match *FONT_SMOOTHING_MODE {
+                Some(mode) => {
+                    font.render_mode = font.render_mode.limit_by(mode);
+                    font.flags.insert(FontInstanceFlags::FONT_SMOOTHING);
+                }
+                None => {
+                    font.render_mode = font.render_mode.limit_by(FontRenderMode::Alpha);
+                    font.flags.remove(FontInstanceFlags::FONT_SMOOTHING);
+                }
+            }
+        }
         match font.render_mode {
             FontRenderMode::Mono => {
                 // In mono mode the color of the font is irrelevant.
@@ -502,7 +559,7 @@ impl FontContext {
 
     pub fn rasterize_glyph(&mut self, font: &FontInstance, key: &GlyphKey) -> GlyphRasterResult {
         let (x_scale, y_scale) = font.transform.compute_scale().unwrap_or((1.0, 1.0));
-        let size = font.size.scale_by(y_scale as f32);
+        let size = font.size.to_f64_px() * y_scale;
         let ct_font = self.get_ct_font(font.font_key, size, &font.variations).ok_or(GlyphRasterError::LoadFailed)?;
         let glyph_type = if is_bitmap_font(&ct_font) {
             GlyphType::Bitmap
@@ -527,7 +584,7 @@ impl FontContext {
         }
         let (mut tx, mut ty) = (0.0, 0.0);
         if font.synthetic_italics.is_enabled() {
-            let (shape_, (tx_, ty_)) = font.synthesize_italics(shape, size.to_f64_px());
+            let (shape_, (tx_, ty_)) = font.synthesize_italics(shape, size);
             shape = shape_;
             tx = tx_;
             ty = ty_;
@@ -662,18 +719,20 @@ impl FontContext {
                 cg_context.set_text_matrix(&CG_AFFINE_TRANSFORM_IDENTITY);
             }
 
-            if extra_strikes > 0 {
-                let strikes = 1 + extra_strikes;
-                let glyphs = vec![glyph; strikes];
-                let origins = (0..strikes).map(|i| {
-                    CGPoint {
-                        x: draw_origin.x + i as f64 * pixel_step,
-                        y: draw_origin.y,
-                    }
-                }).collect::<Vec<_>>();
-                ct_font.draw_glyphs(&glyphs, &origins, cg_context.clone());
-            } else {
-                ct_font.draw_glyphs(&[glyph], &[draw_origin], cg_context.clone());
+            ct_font.draw_glyphs(&[glyph], &[draw_origin], cg_context.clone());
+
+            // We'd like to render all the strikes in a single ct_font.draw_glyphs call,
+            // passing an array of glyph IDs and an array of origins, but unfortunately
+            // with some fonts, Core Text may inappropriately pixel-snap the rasterization,
+            // such that the strikes overprint instead of being offset. Rendering the
+            // strikes with individual draw_glyphs calls avoids this.
+            // (See https://bugzilla.mozilla.org/show_bug.cgi?id=1633397 for details.)
+            for i in 1 ..= extra_strikes {
+                let origin = CGPoint {
+                    x: draw_origin.x + i as f64 * pixel_step,
+                    y: draw_origin.y,
+                };
+                ct_font.draw_glyphs(&[glyph], &[origin], cg_context.clone());
             }
         }
 

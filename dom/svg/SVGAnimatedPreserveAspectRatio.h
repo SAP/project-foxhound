@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef MOZILLA_SVGANIMATEDPRESERVEASPECTRATIO_H__
-#define MOZILLA_SVGANIMATEDPRESERVEASPECTRATIO_H__
+#ifndef DOM_SVG_SVGANIMATEDPRESERVEASPECTRATIO_H_
+#define DOM_SVG_SVGANIMATEDPRESERVEASPECTRATIO_H_
 
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
@@ -69,7 +69,7 @@ class SVGAnimatedPreserveAspectRatio final {
   bool IsAnimated() const { return mIsAnimated; }
   bool IsExplicitlySet() const { return mIsAnimated || mIsBaseSet; }
 
-  already_AddRefed<mozilla::dom::DOMSVGAnimatedPreserveAspectRatio>
+  already_AddRefed<dom::DOMSVGAnimatedPreserveAspectRatio>
   ToDOMAnimatedPreserveAspectRatio(dom::SVGElement* aSVGElement);
   UniquePtr<SMILAttr> ToSMILAttr(dom::SVGElement* aSVGElement);
 
@@ -133,4 +133,4 @@ class DOMSVGAnimatedPreserveAspectRatio final : public nsISupports,
 }  // namespace dom
 }  // namespace mozilla
 
-#endif  // MOZILLA_SVGANIMATEDPRESERVEASPECTRATIO_H__
+#endif  // DOM_SVG_SVGANIMATEDPRESERVEASPECTRATIO_H_

@@ -526,8 +526,6 @@ void js::RemapWrapper(JSContext* cx, JSObject* wobjArg,
   MOZ_ASSERT(!newTarget->is<CrossCompartmentWrapperObject>());
   JSObject* origTarget = Wrapper::wrappedObject(wobj);
   MOZ_ASSERT(origTarget);
-  MOZ_ASSERT(!JS_IsDeadWrapper(origTarget),
-             "We don't want a dead proxy in the wrapper map");
   JS::Compartment* wcompartment = wobj->compartment();
   MOZ_ASSERT(wcompartment != newTarget->compartment());
 
@@ -548,6 +546,14 @@ void js::RemapWrapper(JSContext* cx, JSObject* wobjArg,
   // When we remove origv from the wrapper map, its wrapper, wobj, must
   // immediately cease to be a cross-compartment wrapper. Nuke it.
   NukeCrossCompartmentWrapper(cx, wobj);
+
+  // If the target is a dead wrapper, and we're just fixing wrappers for
+  // it, then we're done now that the CCW is a dead wrapper.
+  if (JS_IsDeadWrapper(origTarget)) {
+    MOZ_RELEASE_ASSERT(origTarget == newTarget);
+    return;
+  }
+
   js::RemapDeadWrapper(cx, wobj, newTarget);
 }
 
@@ -595,6 +601,9 @@ void js::RemapDeadWrapper(JSContext* cx, HandleObject wobj,
   // Before swapping, this wrapper came out of rewrap(), which enforces the
   // invariant that the wrapper in the map points directly to the key.
   MOZ_ASSERT(Wrapper::wrappedObject(wobj) == newTarget);
+
+  // Update the incremental weakmap marking state.
+  wobj->zone()->afterAddDelegate(wobj);
 
   // Update the entry in the compartment's wrapper map to point to the old
   // wrapper, which has now been updated (via reuse or swap).

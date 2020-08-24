@@ -95,10 +95,18 @@ class Actor extends Pool {
     if (error.stack) {
       console.error(error.stack);
     }
+
     this.conn.send({
       from: this.actorID,
-      error: error.error || "unknownError",
+      // error.error -> errors created using the throwError() helper
+      // error.name -> errors created using `new Error` or Components.exception
+      error: error.error || error.name || "unknownError",
       message: error.message,
+      // error.fileName -> regular Error instances
+      // error.filename -> errors created using Components.exception
+      fileName: error.fileName || error.filename,
+      lineNumber: error.lineNumber,
+      columnNumber: error.columnNumber,
     });
   }
 

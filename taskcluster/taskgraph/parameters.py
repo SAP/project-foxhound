@@ -7,6 +7,7 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 import io
+import logging
 import os.path
 import json
 from datetime import datetime
@@ -27,6 +28,8 @@ from six import text_type
 
 from . import GECKO
 from .util.attributes import release_level
+
+logger = logging.getLogger(__name__)
 
 
 class ParameterMismatch(Exception):
@@ -93,8 +96,11 @@ base_schema = Schema({
     Required('release_product'): Any(None, text_type),
     Required('required_signoffs'): [text_type],
     Required('signoff_urls'): dict,
+    # target-kind is not included, since it should never be
+    # used at run-time
     Required('target_tasks_method'): text_type,
     Required('tasks_for'): text_type,
+    Required('test_manifest_loader'): text_type,
     Required('try_mode'): Any(None, text_type),
     Required('try_options'): Any(None, dict),
     Required('try_task_config'): dict,
@@ -174,6 +180,7 @@ class Parameters(ReadOnlyDict):
             'signoff_urls': {},
             'target_tasks_method': 'default',
             'tasks_for': 'hg-push',
+            'test_manifest_loader': 'default',
             'try_mode': None,
             'try_options': None,
             'try_task_config': {},
@@ -247,7 +254,7 @@ def load_parameters_file(filename, strict=True, overrides=None, trust_domain=Non
         task-id=fdtgsD5DQUmAQZEaGMvQ4Q
         project=mozilla-central
     """
-    import urllib
+    import requests
     from taskgraph.util.taskcluster import get_artifact_url, find_task_id
     from taskgraph.util import yaml
 
@@ -279,7 +286,10 @@ def load_parameters_file(filename, strict=True, overrides=None, trust_domain=Non
 
         if task_id:
             filename = get_artifact_url(task_id, 'public/parameters.yml')
-        f = urllib.urlopen(filename)
+        logger.info("Loading parameters from {}".format(filename))
+        resp = requests.get(filename, stream=True)
+        resp.raise_for_status()
+        f = resp.raw
 
     if filename.endswith('.yml'):
         kwargs = yaml.load_stream(f)

@@ -10,14 +10,27 @@ const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 XPCOMUtils.defineLazyModuleGetters(this, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
+  Services: "resource://gre/modules/Services.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
+  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
   UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "styleSheetService",
+  "@mozilla.org/content/style-sheet-service;1",
+  "nsIStyleSheetService"
+);
+
 // Stale rows are removed on a timer with this timeout.  Tests can override this
 // by setting UrlbarView.removeStaleRowsTimeout.
 const DEFAULT_REMOVE_STALE_ROWS_TIMEOUT = 400;
+
+// Query selector for selectable elements in tip and dynamic results.
+const SELECTABLE_ELEMENT_SELECTOR = "[role=button], [selectable=true]";
 
 const getBoundsWithoutFlushing = element =>
   element.ownerGlobal.windowUtils.getBoundsWithoutFlushing(element);
@@ -44,10 +57,6 @@ class UrlbarView {
     this.document = this.panel.ownerDocument;
     this.window = this.document.defaultView;
 
-    if (this.input.megabar) {
-      this.panel.classList.add("megabar");
-    }
-
     this._mainContainer = this.panel.querySelector(".urlbarView-body-inner");
     this._rows = this.panel.querySelector(".urlbarView-results");
 
@@ -64,6 +73,12 @@ class UrlbarView {
     // This is used by autoOpen to avoid flickering results when reopening
     // previously abandoned searches.
     this._queryContextCache = new QueryContextCache(5);
+
+    for (let viewTemplate of UrlbarView.dynamicViewTemplatesByName.values()) {
+      if (viewTemplate.stylesheet) {
+        this._addDynamicStylesheet(viewTemplate.stylesheet);
+      }
+    }
   }
 
   get oneOffSearchButtons() {
@@ -77,6 +92,16 @@ class UrlbarView {
       );
     }
     return this._oneOffSearchButtons;
+  }
+
+  /**
+   * @returns {boolean}
+   *   Whether the update2 one-offs are used.
+   */
+  get oneOffsRefresh() {
+    return (
+      UrlbarPrefs.get("update2") && UrlbarPrefs.get("update2.oneOffsRefresh")
+    );
   }
 
   /**
@@ -259,17 +284,18 @@ class UrlbarView {
    *   null if there is no such element.
    */
   getClosestSelectableElement(element) {
-    let result = this.getResultFromElement(element);
-    if (result && result.type == UrlbarUtils.RESULT_TYPE.TIP) {
-      if (
-        element.classList.contains("urlbarView-tip-button") ||
-        element.classList.contains("urlbarView-tip-help")
-      ) {
-        return element;
-      }
+    let row = element.closest(".urlbarView-row");
+    if (!row) {
       return null;
     }
-    return element.closest(".urlbarView-row");
+    let closest = row;
+    if (
+      row.result.type == UrlbarUtils.RESULT_TYPE.TIP ||
+      row.result.type == UrlbarUtils.RESULT_TYPE.DYNAMIC
+    ) {
+      closest = element.closest(SELECTABLE_ELEMENT_SELECTOR);
+    }
+    return this._isElementVisible(closest) ? closest : null;
   }
 
   /**
@@ -358,14 +384,9 @@ class UrlbarView {
 
     this.removeAccessibleFocus();
     this.input.inputField.setAttribute("aria-expanded", "false");
-    this.input.dropmarker.removeAttribute("open");
 
     this.input.removeAttribute("open");
     this.input.endLayoutExtend();
-
-    if (!this.input.megabar && this.input._toolbar) {
-      this.input._toolbar.removeAttribute("urlbar-exceeds-toolbar-bounds");
-    }
 
     // Search Tips can open the view without the Urlbar being focused. If the
     // tip is ignored (e.g. the page content is clicked or the window loses
@@ -398,7 +419,7 @@ class UrlbarView {
       return false;
     }
 
-    if (!this.input.openViewOnFocus || !queryOptions.event) {
+    if (!queryOptions.event) {
       return false;
     }
 
@@ -448,7 +469,13 @@ class UrlbarView {
     queryOptions.autofillIgnoresSelection = true;
     queryOptions.event.interactionType = "returned";
 
-    this._openPanel();
+    if (
+      this._queryContext &&
+      this._queryContext.results &&
+      this._queryContext.results.length
+    ) {
+      this._openPanel();
+    }
 
     // If we had cached results, this will just refresh them, avoiding results
     // flicker, otherwise there may be some noise.
@@ -459,6 +486,7 @@ class UrlbarView {
   // UrlbarController listener methods.
   onQueryStarted(queryContext) {
     this._queryWasCancelled = false;
+    this._queryUpdatedResults = false;
     this._startRemoveStaleRowsTimer();
   }
 
@@ -469,9 +497,16 @@ class UrlbarView {
 
   onQueryFinished(queryContext) {
     this._cancelRemoveStaleRowsTimer();
-    // If the query has not been canceled, remove stale rows immediately.
     if (!this._queryWasCancelled) {
-      this._removeStaleRows();
+      // If the query has not been canceled and returned some results, remove
+      // stale rows immediately. If no results were returned, just clear and
+      // close the view.
+      if (this._queryUpdatedResults) {
+        this._removeStaleRows();
+      } else {
+        this.clear();
+        this.close();
+      }
     }
   }
 
@@ -482,6 +517,7 @@ class UrlbarView {
     if (!this.isOpen) {
       this.clear();
     }
+    this._queryUpdatedResults = true;
     this._updateResults(queryContext);
 
     let firstResult = queryContext.results[0];
@@ -497,15 +533,16 @@ class UrlbarView {
       // character.
       let trimmedValue = queryContext.searchString.trim();
       this._enableOrDisableOneOffSearches(
-        trimmedValue &&
+        ((UrlbarPrefs.get("update2") &&
+          UrlbarPrefs.get("update2.oneOffsRefresh")) ||
+          trimmedValue) &&
           trimmedValue[0] != "@" &&
           (trimmedValue[0] != UrlbarTokenizer.RESTRICT.SEARCH ||
             trimmedValue.length != 1)
       );
 
-      // The input field applies autofill on input, without waiting for results.
-      // Once we get results, we can ask it to correct wrong predictions.
-      this.input.maybeClearAutofillPlaceholder(firstResult);
+      // Notify the input, so it can make adjustments based on the first result.
+      this.input.onFirstResult(firstResult);
     }
 
     if (
@@ -520,6 +557,15 @@ class UrlbarView {
         updateInput: false,
         setAccessibleFocus: this.controller._userSelectionBehavior == "arrow",
       });
+    }
+
+    // If we update the selected element, a new unique ID is generated for it.
+    // We need to ensure that aria-activedescendant reflects this new ID.
+    if (this.selectedElement && !this.oneOffSearchButtons.selectedButton) {
+      let aadID = this.input.inputField.getAttribute("aria-activedescendant");
+      if (aadID && !this.document.getElementById(aadID)) {
+        this._setAccessibleFocus(this.selectedElement);
+      }
     }
 
     this._openPanel();
@@ -576,7 +622,8 @@ class UrlbarView {
 
   /**
    * This is called when a one-off is clicked and when "search in new tab"
-   * is selected from a one-off context menu.
+   * is selected from a one-off context menu. Can be removed when update2 is
+   * on by default.
    * @param {Event} event
    * @param {nsISearchEngine} engine
    * @param {string} where
@@ -584,6 +631,139 @@ class UrlbarView {
    */
   handleOneOffSearch(event, engine, where, params) {
     this.input.handleCommand(event, where, params);
+  }
+
+  /**
+   * Handles a command from a one-off button.
+   *
+   * @param {Event} event The one-off selection event.
+   * @param {nsISearchEngine} engine The engine associated with the one-off.
+   * @returns {boolean} True if this handler managed the event.
+   */
+  oneOffsCommandHandler(event, engine) {
+    if (!this.oneOffsRefresh) {
+      return false;
+    }
+
+    this.input.setSearchMode(engine);
+    this.input.startQuery({
+      allowAutofill: false,
+      event,
+    });
+    return true;
+  }
+
+  /**
+   * Handles a click on a one-off button.
+   *
+   * @param {Event} event The one-off click event.
+   * @returns {boolean} True if this handler managed the event.
+   */
+  oneOffsClickHandler(event) {
+    if (!this.oneOffsRefresh) {
+      return false;
+    }
+
+    if (event.button == 2) {
+      return false; // ignore right clicks.
+    }
+
+    let button = event.originalTarget;
+    let engine = button.engine;
+
+    if (!engine) {
+      return false;
+    }
+
+    return this.oneOffsCommandHandler(event, engine);
+  }
+
+  static dynamicViewTemplatesByName = new Map();
+
+  /**
+   * Registers the view template for a dynamic result type.  A view template is
+   * a plain object that describes the DOM subtree for a dynamic result type.
+   * When a dynamic result is shown in the urlbar view, its type's view template
+   * is used to construct the part of the view that represents the result.
+   *
+   * The specified view template will be available to the urlbars in all current
+   * and future browser windows until it is unregistered.  A given dynamic
+   * result type has at most one view template.  If this method is called for a
+   * dynamic result type more than once, the view template in the last call
+   * overrides those in previous calls.
+   *
+   * @param {string} name
+   *   The view template will be registered for the dynamic result type with
+   *   this name.
+   * @param {object} viewTemplate
+   *   This object describes the DOM subtree for the given dynamic result type.
+   *   It should be a tree-like nested structure with each object in the nesting
+   *   representing a DOM element to be created.  This tree-like structure is
+   *   achieved using the `children` property described below.  Each object in
+   *   the structure may include the following properties:
+   *
+   *   {string} name
+   *     The name of the object.  It is required for all objects in the
+   *     structure except the root object and serves two important functions:
+   *     (1) The element created for the object will automatically have a class
+   *         named `urlbarView-dynamic-${dynamicType}-${name}`, where
+   *         `dynamicType` is the name of the dynamic result type.  The element
+   *         will also automatically have an attribute "name" whose value is
+   *         this name.  The class and attribute allow the element to be styled
+   *         in CSS.
+   *     (2) The name is used when updating the view.  See
+   *         UrlbarProvider.getViewUpdate().
+   *     Names must be unique within a view template, but they don't need to be
+   *     globally unique.  i.e., two different view templates can use the same
+   *     names, and other DOM elements can use the same names in their IDs and
+   *     classes.
+   *   {string} tag
+   *     The tag name of the object.  It is required for all objects in the
+   *     structure except the root object and declares the kind of element that
+   *     will be created for the object: span, div, img, etc.
+   *   {object} [attributes]
+   *     An optional mapping from attribute names to values.  For each
+   *     name-value pair, an attribute is added to the element created for the
+   *     object.
+   *   {array} [children]
+   *     An optional list of children.  Each item in the array must be an object
+   *     as described here.  For each item, a child element as described by the
+   *     item is created and added to the element created for the parent object.
+   *   {array} [classList]
+   *     An optional list of classes.  Each class will be added to the element
+   *     created for the object by calling element.classList.add().
+   *   {string} [stylesheet]
+   *     An optional stylesheet URL.  This property is valid only on the root
+   *     object in the structure.  The stylesheet will be loaded in all browser
+   *     windows so that the dynamic result type view may be styled.
+   */
+  static addDynamicViewTemplate(name, viewTemplate) {
+    this.dynamicViewTemplatesByName.set(name, viewTemplate);
+    if (viewTemplate.stylesheet) {
+      for (let window of BrowserWindowTracker.orderedWindows) {
+        window.gURLBar.view._addDynamicStylesheet(viewTemplate.stylesheet);
+      }
+    }
+  }
+
+  /**
+   * Unregisters the view template for a dynamic result type.
+   *
+   * @param {string} name
+   *   The view template will be unregistered for the dynamic result type with
+   *   this name.
+   */
+  static removeDynamicViewTemplate(name) {
+    let viewTemplate = this.dynamicViewTemplatesByName.get(name);
+    if (!viewTemplate) {
+      return;
+    }
+    this.dynamicViewTemplatesByName.delete(name);
+    if (viewTemplate.stylesheet) {
+      for (let window of BrowserWindowTracker.orderedWindows) {
+        window.gURLBar.view._removeDynamicStylesheet(viewTemplate.stylesheet);
+      }
+    }
   }
 
   // Private methods below.
@@ -600,87 +780,15 @@ class UrlbarView {
 
     this.panel.removeAttribute("actionoverride");
 
-    if (!this.input.megabar) {
-      let px = number => number.toFixed(2) + "px";
-      let inputRect = getBoundsWithoutFlushing(this.input.textbox);
-
-      // Make the panel span the width of the window.
-      let documentRect = getBoundsWithoutFlushing(
-        this.document.documentElement
-      );
-      let width = documentRect.right - documentRect.left;
-
-      // Keep the popup items' site icons aligned with the input's identity
-      // icon if it's not too far from the edge of the window.  We define
-      // "too far" as "more than 30% of the window's width AND more than
-      // 250px".
-      let boundToCheck = this.window.RTL_UI ? "right" : "left";
-      let startOffset = Math.abs(
-        inputRect[boundToCheck] - documentRect[boundToCheck]
-      );
-      let alignSiteIcons = startOffset / width <= 0.3 || startOffset <= 250;
-
-      if (alignSiteIcons) {
-        // Calculate the end margin if we have a start margin.
-        let boundToCheckEnd = this.window.RTL_UI ? "left" : "right";
-        let endOffset = Math.abs(
-          inputRect[boundToCheckEnd] - documentRect[boundToCheckEnd]
-        );
-        if (endOffset > startOffset * 2) {
-          // Provide more space when aligning would result in an unbalanced
-          // margin. This allows the location bar to be moved to the start
-          // of the navigation toolbar to reclaim space for results.
-          endOffset = startOffset;
-        }
-
-        // Align the view's icons with the tracking protection or identity icon,
-        // whichever is visible.
-        let alignRect;
-        for (let id of ["tracking-protection-icon-box", "identity-icon"]) {
-          alignRect = getBoundsWithoutFlushing(
-            this.document.getElementById(id)
-          );
-          if (alignRect.width > 0) {
-            break;
-          }
-        }
-        let start = this.window.RTL_UI
-          ? documentRect.right - alignRect.right
-          : alignRect.left;
-
-        this.panel.style.setProperty("--item-padding-start", px(start));
-        this.panel.style.setProperty("--item-padding-end", px(endOffset));
-      } else {
-        this.panel.style.removeProperty("--item-padding-start");
-        this.panel.style.removeProperty("--item-padding-end");
-      }
-
-      // Align the panel with the parent toolbar.
-      this.panel.style.top = px(
-        getBoundsWithoutFlushing(this.input._toolbar).bottom
-      );
-
-      this._mainContainer.style.maxWidth = px(width);
-
-      if (this.input._toolbar) {
-        this.input._toolbar.setAttribute(
-          "urlbar-exceeds-toolbar-bounds",
-          "true"
-        );
-      }
-    }
-
     this._enableOrDisableRowWrap();
 
     this.input.inputField.setAttribute("aria-expanded", "true");
-    this.input.dropmarker.setAttribute("open", "true");
 
     this.input.setAttribute("open", "true");
     this.input.startLayoutExtend();
 
     this.window.addEventListener("resize", this);
     this.window.addEventListener("blur", this);
-    this._windowOuterWidth = this.window.outerWidth;
 
     this.controller.notify(this.controller.NOTIFICATIONS.VIEW_OPEN);
   }
@@ -815,21 +923,32 @@ class UrlbarView {
     noWrap.className = "urlbarView-no-wrap";
     item._content.appendChild(noWrap);
 
-    let typeIcon = this._createElement("span");
-    typeIcon.className = "urlbarView-type-icon";
-
-    if (!this.input.megabar) {
-      noWrap.appendChild(typeIcon);
-    }
-
     let favicon = this._createElement("img");
     favicon.className = "urlbarView-favicon";
     noWrap.appendChild(favicon);
     item._elements.set("favicon", favicon);
 
-    if (this.input.megabar) {
-      noWrap.appendChild(typeIcon);
-    }
+    let typeIcon = this._createElement("span");
+    typeIcon.className = "urlbarView-type-icon";
+    noWrap.appendChild(typeIcon);
+
+    let tailPrefix = this._createElement("span");
+    tailPrefix.className = "urlbarView-tail-prefix";
+    noWrap.appendChild(tailPrefix);
+    item._elements.set("tailPrefix", tailPrefix);
+    // tailPrefix holds text only for alignment purposes so it should never be
+    // read to screen readers.
+    tailPrefix.toggleAttribute("aria-hidden", true);
+
+    let tailPrefixStr = this._createElement("span");
+    tailPrefixStr.className = "urlbarView-tail-prefix-string";
+    tailPrefix.appendChild(tailPrefixStr);
+    item._elements.set("tailPrefixStr", tailPrefixStr);
+
+    let tailPrefixChar = this._createElement("span");
+    tailPrefixChar.className = "urlbarView-tail-prefix-char";
+    tailPrefix.appendChild(tailPrefixChar);
+    item._elements.set("tailPrefixChar", tailPrefixChar);
 
     let title = this._createElement("span");
     title.className = "urlbarView-title";
@@ -900,7 +1019,35 @@ class UrlbarView {
     item.addEventListener("focus", () => this.input.focus(), true);
   }
 
+  _createRowContentForDynamicType(item, result) {
+    let { dynamicType } = result.payload;
+    let viewTemplate = UrlbarView.dynamicViewTemplatesByName.get(dynamicType);
+    this._buildViewForDynamicType(dynamicType, item._content, viewTemplate);
+  }
+
+  _buildViewForDynamicType(type, parentNode, template) {
+    // Add classes to parentNode's classList.
+    for (let className of template.classList || []) {
+      parentNode.classList.add(className);
+    }
+    // Set attributes on parentNode.
+    for (let [name, value] of Object.entries(template.attributes || {})) {
+      parentNode.setAttribute(name, value);
+    }
+    if (template.name) {
+      parentNode.setAttribute("name", template.name);
+    }
+    // Recurse into children.
+    for (let childTemplate of template.children || []) {
+      let child = this._createElement(childTemplate.tag);
+      child.classList.add(`urlbarView-dynamic-${type}-${childTemplate.name}`);
+      parentNode.appendChild(child);
+      this._buildViewForDynamicType(type, child, childTemplate);
+    }
+  }
+
   _updateRow(item, result) {
+    let oldResult = item.result;
     let oldResultType = item.result && item.result.type;
     item.result = result;
     item.removeAttribute("stale");
@@ -909,7 +1056,12 @@ class UrlbarView {
     let needsNewContent =
       oldResultType === undefined ||
       (oldResultType == UrlbarUtils.RESULT_TYPE.TIP) !=
-        (result.type == UrlbarUtils.RESULT_TYPE.TIP);
+        (result.type == UrlbarUtils.RESULT_TYPE.TIP) ||
+      (oldResultType == UrlbarUtils.RESULT_TYPE.DYNAMIC) !=
+        (result.type == UrlbarUtils.RESULT_TYPE.DYNAMIC) ||
+      (oldResultType == UrlbarUtils.RESULT_TYPE.DYNAMIC &&
+        result.type == UrlbarUtils.RESULT_TYPE.DYNAMIC &&
+        oldResult.dynamicType != result.dynamicType);
 
     if (needsNewContent) {
       if (item._content) {
@@ -919,8 +1071,11 @@ class UrlbarView {
       item._content = this._createElement("span");
       item._content.className = "urlbarView-row-inner";
       item.appendChild(item._content);
+      item.removeAttribute("dynamicType");
       if (item.result.type == UrlbarUtils.RESULT_TYPE.TIP) {
         this._createRowContentForTip(item);
+      } else if (item.result.type == UrlbarUtils.RESULT_TYPE.DYNAMIC) {
+        this._createRowContentForDynamicType(item, result);
       } else {
         this._createRowContent(item);
       }
@@ -942,6 +1097,10 @@ class UrlbarView {
       return;
     } else if (result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS) {
       item.setAttribute("type", "bookmark");
+    } else if (result.type == UrlbarUtils.RESULT_TYPE.DYNAMIC) {
+      item.setAttribute("type", "dynamic");
+      this._updateRowForDynamicType(item, result);
+      return;
     } else {
       item.removeAttribute("type");
     }
@@ -951,9 +1110,15 @@ class UrlbarView {
       result.type == UrlbarUtils.RESULT_TYPE.SEARCH ||
       result.type == UrlbarUtils.RESULT_TYPE.KEYWORD
     ) {
-      favicon.src = result.payload.icon || UrlbarUtils.ICON.SEARCH_GLASS;
+      favicon.src = this._iconForSearchResult(result);
     } else {
       favicon.src = result.payload.icon || UrlbarUtils.ICON.DEFAULT;
+    }
+
+    if (result.payload.isPinned) {
+      item.toggleAttribute("pinned", true);
+    } else {
+      item.removeAttribute("pinned");
     }
 
     let title = item._elements.get("title");
@@ -962,6 +1127,16 @@ class UrlbarView {
       result.title,
       result.titleHighlights
     );
+
+    if (result.payload.tail && result.payload.tailOffsetIndex > 0) {
+      this._fillTailSuggestionPrefix(item, result);
+      title.setAttribute("aria-label", result.payload.suggestion);
+      item.toggleAttribute("tail-suggestion", true);
+    } else {
+      item.removeAttribute("tail-suggestion");
+      title.removeAttribute("aria-label");
+    }
+
     title._tooltip = result.title;
     if (title.hasAttribute("overflow")) {
       title.setAttribute("title", title._tooltip);
@@ -1065,6 +1240,18 @@ class UrlbarView {
     item._elements.get("titleSeparator").hidden = !action && !setURL;
   }
 
+  _iconForSearchResult(result, engineOverride = null) {
+    return (
+      (result.source == UrlbarUtils.RESULT_SOURCE.HISTORY &&
+        UrlbarUtils.ICON.HISTORY) ||
+      (engineOverride &&
+        engineOverride.iconURI &&
+        engineOverride.iconURI.spec) ||
+      result.payload.icon ||
+      UrlbarUtils.ICON.SEARCH_GLASS
+    );
+  }
+
   _updateRowForTip(item, result) {
     let favicon = item._elements.get("favicon");
     favicon.src = result.payload.icon || UrlbarUtils.ICON.TIP;
@@ -1112,6 +1299,36 @@ class UrlbarView {
     }
   }
 
+  async _updateRowForDynamicType(item, result) {
+    item.setAttribute("dynamicType", result.payload.dynamicType);
+
+    // Get the view update from the result's provider.
+    let provider = UrlbarProvidersManager.getProvider(result.providerName);
+    let viewUpdate = await provider.getViewUpdate(result);
+
+    // Update each node in the view by name.
+    for (let [nodeName, update] of Object.entries(viewUpdate)) {
+      let node = item.querySelector(
+        `.urlbarView-dynamic-${result.payload.dynamicType}-${nodeName}`
+      );
+      for (let [attrName, value] of Object.entries(update.attributes || {})) {
+        node.setAttribute(attrName, value);
+      }
+      for (let [styleName, value] of Object.entries(update.style || {})) {
+        node.style[styleName] = value;
+      }
+      if (update.l10n) {
+        this.document.l10n.setAttributes(
+          node,
+          update.l10n.id,
+          update.l10n.args || undefined
+        );
+      } else if (update.textContent) {
+        node.textContent = update.textContent;
+      }
+    }
+  }
+
   _updateIndices() {
     for (let i = 0; i < this._rows.children.length; i++) {
       let item = this._rows.children[i];
@@ -1127,7 +1344,11 @@ class UrlbarView {
 
   _setRowVisibility(row, visible) {
     row.style.display = visible ? "" : "none";
-    if (!visible && row.result.type != UrlbarUtils.RESULT_TYPE.TIP) {
+    if (
+      !visible &&
+      row.result.type != UrlbarUtils.RESULT_TYPE.TIP &&
+      row.result.type != UrlbarUtils.RESULT_TYPE.DYNAMIC
+    ) {
       // Reset the overflow state of elements that can overflow in case their
       // content changes while they're hidden. When making the row visible
       // again, we'll get new overflow events if needed.
@@ -1137,23 +1358,19 @@ class UrlbarView {
   }
 
   /**
-   * Returns true if a row or a descendant in the view is visible.
+   * Returns true if the given element and its row are both visible.
    *
    * @param {Element} element
-   *   A row in the view or a descendant of the row.
+   *   An element in the view.
    * @returns {boolean}
-   *   True if `element` or `element`'s ancestor row is visible in the view.
+   *   True if the given element and its row are both visible.
    */
   _isElementVisible(element) {
-    if (!element.classList.contains("urlbarView-row")) {
-      element = element.closest(".urlbarView-row");
-    }
-
-    if (!element) {
+    if (!element || element.style.display == "none") {
       return false;
     }
-
-    return element.style.display != "none";
+    let row = element.closest(".urlbarView-row");
+    return row && row.style.display != "none";
   }
 
   _removeStaleRows() {
@@ -1197,121 +1414,137 @@ class UrlbarView {
     this._selectedElement = item;
 
     if (updateInput) {
-      this.input.setValueFromResult(item && item.result);
+      this.input.setValueFromResult(item?.result);
     }
+  }
+
+  /**
+   * Returns true if the given element is selectable.
+   *
+   * @param {Element} element
+   *   The element to test.
+   * @returns {boolean}
+   *   True if the element is selectable and false if not.
+   */
+  _isSelectableElement(element) {
+    return this.getClosestSelectableElement(element) == element;
   }
 
   /**
    * Returns the first selectable element in the view.
    *
-   * @returns {Element} The first selectable element in the view.
+   * @returns {Element}
+   *   The first selectable element in the view.
    */
   _getFirstSelectableElement() {
-    let firstElementChild = this._rows.firstElementChild;
-    if (
-      firstElementChild &&
-      firstElementChild.result &&
-      firstElementChild.result.type == UrlbarUtils.RESULT_TYPE.TIP
-    ) {
-      firstElementChild = firstElementChild._elements.get("tipButton");
+    let element = this._rows.firstElementChild;
+    if (element && !this._isSelectableElement(element)) {
+      element = this._getNextSelectableElement(element);
     }
-    return firstElementChild;
+    return element;
   }
 
   /**
    * Returns the last selectable element in the view.
    *
-   * @returns {Element} The last selectable element in the view.
+   * @returns {Element}
+   *   The last selectable element in the view.
    */
   _getLastSelectableElement() {
-    let lastElementChild = this._rows.lastElementChild;
-
-    // We are only interested in visible elements.
-    while (lastElementChild && !this._isElementVisible(lastElementChild)) {
-      lastElementChild = this._getPreviousSelectableElement(lastElementChild);
+    let element = this._rows.lastElementChild;
+    if (element && !this._isSelectableElement(element)) {
+      element = this._getPreviousSelectableElement(element);
     }
-
-    if (
-      lastElementChild.result &&
-      lastElementChild.result.type == UrlbarUtils.RESULT_TYPE.TIP
-    ) {
-      lastElementChild = lastElementChild._elements.get("helpButton");
-      if (lastElementChild.style.display == "none") {
-        lastElementChild = this._getPreviousSelectableElement(lastElementChild);
-      }
-    }
-
-    return lastElementChild;
+    return element;
   }
 
   /**
-   * Returns the next selectable element after the parameter `element`.
-   * @param {Element} element A selectable element in the view.
-   * @returns {Element} The next selectable element after the parameter `element`.
+   * Returns the next selectable element after the given element.  If the
+   * element is the last selectable element, returns null.
+   *
+   * @param {Element} element
+   *   An element in the view.
+   * @returns {Element}
+   *   The next selectable element after `element` or null if `element` is the
+   *   last selectable element.
    */
   _getNextSelectableElement(element) {
-    let next;
-    if (element.classList.contains("urlbarView-tip-button")) {
-      next = element.closest(".urlbarView-row")._elements.get("helpButton");
-      if (next.style.display == "none") {
-        next = this._getNextSelectableElement(next);
-      }
-    } else if (element.classList.contains("urlbarView-tip-help")) {
-      next = element.closest(".urlbarView-row").nextElementSibling;
-    } else {
-      next = element.nextElementSibling;
-    }
-
-    if (!next) {
+    let row = element.closest(".urlbarView-row");
+    if (!row) {
       return null;
     }
 
-    if (next.result && next.result.type == UrlbarUtils.RESULT_TYPE.TIP) {
-      next = next._elements.get("tipButton");
+    let next;
+    if (
+      row.result.type == UrlbarUtils.RESULT_TYPE.TIP ||
+      row.result.type == UrlbarUtils.RESULT_TYPE.DYNAMIC
+    ) {
+      let selectables = [...row.querySelectorAll(SELECTABLE_ELEMENT_SELECTOR)];
+      let index = selectables.indexOf(element);
+      if (index == selectables.length - 1) {
+        next = row.nextElementSibling;
+      } else {
+        next = selectables[index + 1];
+      }
+    } else {
+      next = row.nextElementSibling;
+    }
+
+    if (next && !this._isSelectableElement(next)) {
+      next = this._getNextSelectableElement(next);
     }
 
     return next;
   }
 
   /**
-   * Returns the previous selectable element before the parameter `element`.
-   * @param {Element} element A selectable element in the view.
-   * @returns {Element} The previous selectable element before the parameter `element`.
+   * Returns the previous selectable element before the given element.  If the
+   * element is the first selectable element, returns null.
+   *
+   * @param {Element} element
+   *   An element in the view.
+   * @returns {Element}
+   *   The previous selectable element before `element` or null if `element` is
+   *   the first selectable element.
    */
   _getPreviousSelectableElement(element) {
-    let previous;
-    if (element.classList.contains("urlbarView-tip-button")) {
-      previous = element.closest(".urlbarView-row").previousElementSibling;
-    } else if (element.classList.contains("urlbarView-tip-help")) {
-      previous = element.closest(".urlbarView-row")._elements.get("tipButton");
-    } else {
-      previous = element.previousElementSibling;
-    }
-
-    if (!previous) {
+    let row = element.closest(".urlbarView-row");
+    if (!row) {
       return null;
     }
 
+    let previous;
     if (
-      previous.result &&
-      previous.result.type == UrlbarUtils.RESULT_TYPE.TIP
+      row.result.type == UrlbarUtils.RESULT_TYPE.TIP ||
+      row.result.type == UrlbarUtils.RESULT_TYPE.DYNAMIC
     ) {
-      previous = previous._elements.get("helpButton");
-      if (previous.style.display == "none") {
-        previous = this._getPreviousSelectableElement(previous);
+      let selectables = [...row.querySelectorAll(SELECTABLE_ELEMENT_SELECTOR)];
+      let index = selectables.indexOf(element);
+      if (index == 0 || !selectables.length) {
+        previous = row.previousElementSibling;
+      } else if (index < 0) {
+        previous = selectables[selectables.length - 1];
+      } else {
+        previous = selectables[index - 1];
       }
+    } else {
+      previous = row.previousElementSibling;
+    }
+
+    if (previous && !this._isSelectableElement(previous)) {
+      previous = this._getPreviousSelectableElement(previous);
     }
 
     return previous;
   }
 
   /**
-   * Returns the currently selected row. Useful when this._selectedElement may be a
-   * non-row element, such as a descendant element of RESULT_TYPE.TIP.
+   * Returns the currently selected row. Useful when this._selectedElement may
+   * be a non-row element, such as a descendant element of RESULT_TYPE.TIP.
    *
    * @returns {Element}
-   *   The currently selected row, or ancestor row of the currently selected item.
-   *
+   *   The currently selected row, or ancestor row of the currently selected
+   *   item.
    */
   _getSelectedRow() {
     if (!this.isOpen || !this._selectedElement) {
@@ -1391,8 +1624,27 @@ class UrlbarView {
     }
   }
 
+  /**
+   * Adds markup for a tail suggestion prefix to a row.
+   * @param {Node} item
+   *   The node for the result row.
+   * @param {UrlbarResult} result
+   *   A UrlbarResult representing a tail suggestion.
+   */
+  _fillTailSuggestionPrefix(item, result) {
+    let tailPrefixStrNode = item._elements.get("tailPrefixStr");
+    let tailPrefixStr = result.payload.suggestion.substring(
+      0,
+      result.payload.tailOffsetIndex
+    );
+    tailPrefixStrNode.textContent = tailPrefixStr;
+
+    let tailPrefixCharNode = item._elements.get("tailPrefixChar");
+    tailPrefixCharNode.textContent = result.payload.tailPrefix;
+  }
+
   _enableOrDisableOneOffSearches(enable = true) {
-    if (enable && UrlbarPrefs.get("oneOffSearches")) {
+    if (enable) {
       this.oneOffSearchButtons.telemetryOrigin = "urlbar";
       this.oneOffSearchButtons.style.display = "";
       this.oneOffSearchButtons.textbox = this.input.inputField;
@@ -1406,7 +1658,7 @@ class UrlbarView {
   }
 
   _enableOrDisableRowWrap() {
-    if (getBoundsWithoutFlushing(this.input.textbox).width <= 500) {
+    if (getBoundsWithoutFlushing(this.input.textbox).width < 650) {
       this._rows.setAttribute("wrap", "true");
     } else {
       this._rows.removeAttribute("wrap");
@@ -1454,6 +1706,47 @@ class UrlbarView {
     return true;
   }
 
+  /**
+   * Adds a dynamic result type stylesheet to the view's window.
+   *
+   * @param {string} stylesheetURL
+   *   The stylesheet's URL.
+   */
+  async _addDynamicStylesheet(stylesheetURL) {
+    // Try-catch all of these so that failing to load a stylesheet doesn't break
+    // callers and possibly the urlbar.  If a stylesheet does fail to load, the
+    // dynamic results that depend on it will appear broken, but at least we
+    // won't break the whole urlbar.
+    try {
+      let uri = Services.io.newURI(stylesheetURL);
+      let sheet = await styleSheetService.preloadSheetAsync(
+        uri,
+        Ci.nsIStyleSheetService.AGENT_SHEET
+      );
+      this.window.windowUtils.addSheet(sheet, Ci.nsIDOMWindowUtils.AGENT_SHEET);
+    } catch (ex) {
+      Cu.reportError(`Error adding dynamic stylesheet: ${ex}`);
+    }
+  }
+
+  /**
+   * Removes a dynamic result type stylesheet from the view's window.
+   *
+   * @param {string} stylesheetURL
+   *   The stylesheet's URL.
+   */
+  _removeDynamicStylesheet(stylesheetURL) {
+    // Try-catch for the same reason as desribed in _addDynamicStylesheet.
+    try {
+      this.window.windowUtils.removeSheetUsingURIString(
+        stylesheetURL,
+        Ci.nsIDOMWindowUtils.AGENT_SHEET
+      );
+    } catch (ex) {
+      Cu.reportError(`Error removing dynamic stylesheet: ${ex}`);
+    }
+  }
+
   // Event handlers below.
 
   _on_SelectedOneOffButtonChanged() {
@@ -1466,13 +1759,22 @@ class UrlbarView {
     let engine =
       this.oneOffSearchButtons.selectedButton &&
       this.oneOffSearchButtons.selectedButton.engine;
-    for (let i = 0; i < this._queryContext.results.length; i++) {
-      let result = this._queryContext.results[i];
+
+    for (let item of this._rows.children) {
+      let result = item.result;
       if (
         result.type != UrlbarUtils.RESULT_TYPE.SEARCH ||
         (!result.heuristic &&
-          !result.payload.suggestion &&
+          (!result.payload.suggestion || result.payload.isSearchHistory) &&
           (!result.payload.inPrivateWindow || result.payload.isPrivateEngine))
+      ) {
+        continue;
+      }
+
+      if (
+        this.oneOffsRefresh &&
+        !result.heuristic &&
+        (!result.payload.inPrivateWindow || result.payload.isPrivateEngine)
       ) {
         continue;
       }
@@ -1485,7 +1787,6 @@ class UrlbarView {
         result.payload.engine = result.payload.originalEngine;
         delete result.payload.originalEngine;
       }
-      let item = this._rows.children[i];
       // If a one-off button is the only selection, force the heuristic result
       // to show its action text, so the engine name is visible.
       if (result.heuristic && engine && !this.selectedElement) {
@@ -1512,6 +1813,7 @@ class UrlbarView {
       } else if (!engine) {
         favicon.src = result.payload.icon || UrlbarUtils.ICON.SEARCH_GLASS;
       }
+      favicon.src = this._iconForSearchResult(result, engine);
     }
   }
 
@@ -1519,7 +1821,9 @@ class UrlbarView {
     // If the view is open without the input being focused, it will not close
     // automatically when the window loses focus. We might be in this state
     // after a Search Tip is shown on an engine homepage.
-    this.close();
+    if (!UrlbarPrefs.get("ui.popup.disable_autohide")) {
+      this.close();
+    }
   }
 
   _on_mousedown(event) {
@@ -1574,22 +1878,7 @@ class UrlbarView {
   }
 
   _on_resize() {
-    if (this.input.megabar) {
-      this._enableOrDisableRowWrap();
-      return;
-    }
-
-    if (this._windowOuterWidth == this.window.outerWidth) {
-      // Sometimes a resize event is fired when the window's size doesn't
-      // actually change; at least, browser_tabMatchesInAwesomebar.js triggers
-      // it intermittently, which causes that test to hang or fail.  Ignore
-      // those events.
-      return;
-    }
-
-    // Close the popup as it would be wrongly sized. This can
-    // happen when using special OS resize functions like Win+Arrow.
-    this.close();
+    this._enableOrDisableRowWrap();
   }
 }
 

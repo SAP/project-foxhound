@@ -37,7 +37,7 @@ Var BrandFullName
 !insertmacro GetParameters
 !insertmacro GetSize
 
-; The test slaves use this fallback key to run tests.
+; The test machines use this fallback key to run tests.
 ; And anyone that wants to run tests themselves should already have 
 ; this installed.
 !define FallbackKey \
@@ -317,6 +317,7 @@ Section "Uninstall"
   RMDir /REBOOTOK "$APPDATA\Mozilla"
   RMDir /REBOOTOK "$INSTDIR\logs"
   RMDir /REBOOTOK "$INSTDIR\update"
+  RMDir /REBOOTOK "$INSTDIR\UpdateLogs"
   RMDir /REBOOTOK "$INSTDIR"
 
   ${If} ${RunningX64}

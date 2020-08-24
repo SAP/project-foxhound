@@ -22,7 +22,7 @@ RedirectHttpsOnly.prototype = {
   getInterface(iid) {
     return this.QueryInterface(iid);
   },
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIChannelEventSink]),
+  QueryInterface: ChromeUtils.generateQI(["nsIChannelEventSink"]),
 };
 
 /** This class loads a resource into a single string. ResourceLoader.load() is
@@ -40,7 +40,7 @@ ResourceLoader.load = function(uri, doc) {
     let ioChannel = NetUtil.newChannel({
       uri,
       loadingNode: doc,
-      securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
+      securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
       contentPolicyType: Ci.nsIContentPolicy.TYPE_INTERNAL_SCRIPT,
     });
 
@@ -77,7 +77,7 @@ ResourceLoader.prototype = {
   getInterface(iid) {
     return this.QueryInterface(iid);
   },
-  QueryInterface: ChromeUtils.generateQI([Ci.nsIStreamListener]),
+  QueryInterface: ChromeUtils.generateQI(["nsIStreamListener"]),
 };
 
 /**
@@ -178,9 +178,10 @@ IdpSandbox.prototype = {
 
   start() {
     if (!this.active) {
-      this.active = ResourceLoader.load(this.source, this.window.document).then(
-        result => this._createSandbox(result)
-      );
+      this.active = ResourceLoader.load(
+        this.source,
+        this.window.document
+      ).then(result => this._createSandbox(result));
     }
     return this.active;
   },

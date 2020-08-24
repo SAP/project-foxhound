@@ -22,7 +22,7 @@ const CLASSES_TO_PRESERVE = [
   "caption",
   "emoji",
   "hidden",
-  "invisble",
+  "invisible",
   "sr-only",
   "visually-hidden",
   "visuallyhidden",
@@ -193,7 +193,7 @@ var ReaderMode = {
         return null;
       }
       try {
-        return Services.uriFixup.createExposableURI(uriObj);
+        return Services.io.createExposableURI(uriObj);
       } catch (ex) {
         return null;
       }
@@ -459,6 +459,9 @@ var ReaderMode = {
 
     let serializer = new XMLSerializer();
     let serializedDoc = serializer.serializeToString(doc);
+    // Explicitly null out doc to make it clear it might not be available from this
+    // point on.
+    doc = null;
 
     let options = {
       classesToPreserve: CLASSES_TO_PRESERVE,
@@ -475,10 +478,6 @@ var ReaderMode = {
       Cu.reportError("Error in ReaderWorker: " + e);
       histogram.add(PARSE_ERROR_WORKER);
     }
-
-    // Explicitly null out doc to make it clear it might not be available from this
-    // point on.
-    doc = null;
 
     if (!article) {
       this.log("Worker did not return an article");
@@ -660,8 +659,11 @@ var ReaderMode = {
       }
       docFrag.append(pElem);
     }
-    preTag.parentNode.replaceChild(docFrag, preTag);
-    return doc;
+    // Clone the document to avoid the original document being affected
+    // (which shows up when exiting reader mode again).
+    let clone = doc.documentElement.cloneNode(true);
+    clone.querySelector("pre").replaceWith(docFrag);
+    return clone;
   },
 };
 

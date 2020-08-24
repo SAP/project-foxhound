@@ -1163,3 +1163,27 @@ PK11_GetCertsMatchingPrivateKey;
 ;+    local:
 ;+       *;
 ;+};
+;+NSS_3.52 { 	# NSS 3.52 release
+;+    global:
+_PK11_ContextGetAEADSimulation;
+_PK11_ContextSetAEADSimulation;
+PK11_AEADOp;
+PK11_AEADRawOp;
+PK11_GetObjectHandle;
+PK11_ReadRawAttributes;
+PK11_SymKeysToSameSlot;
+;+    local:
+;+       *;
+;+};
+;+NSS_3.53 { 	# NSS 3.53 release
+;+    global:
+SECMOD_GetSystemFIPSEnabled;
+;+    local:
+;+       *;
+;+};
+;+NSS_3.55 { 	# NSS 3.55 release
+;+    global:
+PK11_FindEncodedCertInSlot;
+;+    local:
+;+       *;
+;+};

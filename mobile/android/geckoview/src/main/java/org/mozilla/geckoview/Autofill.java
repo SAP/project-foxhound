@@ -34,7 +34,7 @@ import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
 
 public class Autofill {
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
 
     public static final class Notify {
         private Notify() {}
@@ -83,6 +83,7 @@ public class Autofill {
         public static final int NODE_BLURRED = 7;
 
         @AnyThread
+        @SuppressWarnings("checkstyle:javadocmethod")
         public static @Nullable String toString(
                 final @AutofillNotify int notification) {
             final String[] map = new String[] {
@@ -137,6 +138,7 @@ public class Autofill {
         public static final int USERNAME = 3;
 
         @AnyThread
+        @SuppressWarnings("checkstyle:javadocmethod")
         public static @Nullable String toString(final @AutofillHint int hint) {
             final int idx = hint + 1;
             final String[] map = new String[] {
@@ -181,6 +183,7 @@ public class Autofill {
         public static final int PHONE = 2;
 
         @AnyThread
+        @SuppressWarnings("checkstyle:javadocmethod")
         public static @Nullable String toString(
                 final @AutofillInputType int type) {
             final int idx = type + 1;
@@ -220,6 +223,7 @@ public class Autofill {
         }
 
         @AnyThread
+        @SuppressWarnings("checkstyle:javadocmethod")
         public @NonNull Rect getDefaultDimensions() {
             return Support.getDummyAutofillRect(mGeckoSession, false, null);
         }
@@ -295,6 +299,7 @@ public class Autofill {
 
         @TargetApi(23)
         @UiThread
+        @SuppressWarnings("checkstyle:javadocmethod")
         public void fillViewStructure(
                 @NonNull final View view,
                 @NonNull final ViewStructure structure,
@@ -444,6 +449,7 @@ public class Autofill {
         }
 
         @AnyThread
+        @SuppressWarnings("checkstyle:javadocmethod")
         public @Nullable String getAttribute(@NonNull final String key) {
             return mAttributes.get(key);
         }
@@ -636,6 +642,7 @@ public class Autofill {
 
         @TargetApi(23)
         @UiThread
+        @SuppressWarnings("checkstyle:javadocmethod")
         public void fillViewStructure(
                 @NonNull final View view,
                 @NonNull final ViewStructure structure,
@@ -643,8 +650,6 @@ public class Autofill {
             ThreadUtils.assertOnUiThread();
 
             Log.d(LOGTAG, "fillViewStructure");
-
-            final Node root = getRoot();
 
             if (Build.VERSION.SDK_INT >= 26) {
                 structure.setAutofillId(view.getAutofillId(), getId());
@@ -1019,11 +1024,13 @@ public class Autofill {
                 final CharSequence value = values.valueAt(i);
 
                 if (DEBUG) {
-                    Log.d(LOGTAG, "autofill(" + id + ')');
+                    Log.d(LOGTAG, "Process autofill for id=" + id + ", value=" + value);
                 }
+
                 int rootId = id;
                 for (int currentId = id; currentId != View.NO_ID; ) {
                     final Node elem = getAutofillSession().getNode(currentId);
+
                     if (elem == null) {
                         return;
                     }

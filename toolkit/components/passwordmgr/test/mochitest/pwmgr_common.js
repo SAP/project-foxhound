@@ -162,7 +162,27 @@ function getSubmitMessage(aFilterFn = undefined) {
           "formSubmissionProcessed",
           processed
         );
-        resolve(...args);
+        resolve(args[0]);
+      }
+    );
+  });
+}
+
+/**
+ * @return {Promise} resolves when a onPasswordEditedOrGenerated message is received at the parent
+ */
+function getPasswordEditedMessage() {
+  info("getPasswordEditedMessage");
+  return new Promise((resolve, reject) => {
+    PWMGR_COMMON_PARENT.addMessageListener(
+      "passwordEditedOrGenerated",
+      function listener(...args) {
+        info("got passwordEditedOrGenerated");
+        PWMGR_COMMON_PARENT.removeMessageListener(
+          "passwordEditedOrGenerated",
+          listener
+        );
+        resolve(args[0]);
       }
     );
   });
@@ -348,7 +368,6 @@ function registerRunTests() {
     // with the rest of the tests.
     if (
       document.readyState == "complete" ||
-      document.readyState == "loaded" ||
       document.readyState == "interactive"
     ) {
       onDOMContentLoaded();

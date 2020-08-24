@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { Ci } = require("chrome");
+const { Ci, Cu } = require("chrome");
 const defer = require("devtools/shared/defer");
 const protocol = require("devtools/shared/protocol");
 const { LongStringActor } = require("devtools/server/actors/string");
@@ -15,6 +15,9 @@ const {
   styleSheetsSpec,
 } = require("devtools/shared/specs/stylesheets");
 const InspectorUtils = require("InspectorUtils");
+const {
+  getSourcemapBaseURL,
+} = require("devtools/server/actors/utils/source-map-utils");
 
 loader.lazyRequireGetter(
   this,
@@ -90,7 +93,7 @@ var MediaRuleActor = protocol.ActorClassWithSpec(mediaRuleSpec, {
   },
 
   initialize: function(mediaRule, parentActor) {
-    protocol.Actor.prototype.initialize.call(this, null);
+    protocol.Actor.prototype.initialize.call(this, parentActor.conn);
 
     this.rawRule = mediaRule;
     this.parentActor = parentActor;
@@ -114,7 +117,11 @@ var MediaRuleActor = protocol.ActorClassWithSpec(mediaRuleSpec, {
 
   destroy: function() {
     if (this.mql) {
-      this.mql.removeListener(this._matchesChange);
+      // The content page may already be destroyed and mql be the dead wrapper.
+      if (!Cu.isDeadWrapper(this.mql)) {
+        this.mql.removeListener(this._matchesChange);
+      }
+      this.mql = null;
     }
 
     protocol.Actor.prototype.destroy.call(this);
@@ -139,7 +146,7 @@ var MediaRuleActor = protocol.ActorClassWithSpec(mediaRuleSpec, {
   },
 });
 
-function getSheetText(sheet, consoleActor) {
+function getSheetText(sheet) {
   const cssText = modifiedStyleSheets.get(sheet);
   if (cssText !== undefined) {
     return Promise.resolve(cssText);
@@ -151,7 +158,7 @@ function getSheetText(sheet, consoleActor) {
     return Promise.resolve(content);
   }
 
-  return fetchStylesheet(sheet, consoleActor).then(({ content }) => content);
+  return fetchStylesheet(sheet).then(({ content }) => content);
 }
 
 exports.getSheetText = getSheetText;
@@ -162,7 +169,7 @@ exports.getSheetText = getSheetText;
 function getCSSCharset(sheet) {
   if (sheet) {
     // charset attribute of <link> or <style> element, if it exists
-    if (sheet.ownerNode && sheet.ownerNode.getAttribute) {
+    if (sheet.ownerNode?.getAttribute) {
       const linkCharset = sheet.ownerNode.getAttribute("charset");
       if (linkCharset != null) {
         return linkCharset;
@@ -170,7 +177,7 @@ function getCSSCharset(sheet) {
     }
 
     // charset of referring document.
-    if (sheet.ownerNode && sheet.ownerNode.ownerDocument.characterSet) {
+    if (sheet.ownerNode?.ownerDocument.characterSet) {
       return sheet.ownerNode.ownerDocument.characterSet;
     }
   }
@@ -188,16 +195,8 @@ function getCSSCharset(sheet) {
  *           - contentType: the content type of the document
  *         If an error occurs, the promise is rejected with that error.
  */
-async function fetchStylesheet(sheet, consoleActor) {
+async function fetchStylesheet(sheet) {
   const href = sheet.href;
-
-  let result;
-  if (consoleActor) {
-    result = await consoleActor.getRequestContentForURL(href);
-    if (result) {
-      return result;
-    }
-  }
 
   const options = {
     loadFromCache: true,
@@ -220,6 +219,8 @@ async function fetchStylesheet(sheet, consoleActor) {
       options.principal = sheet.ownerNode.ownerDocument.nodePrincipal;
     }
   }
+
+  let result;
 
   try {
     result = await fetch(href, options);
@@ -323,10 +324,11 @@ var StyleSheetActor = protocol.ActorClassWithSpec(styleSheetSpec, {
         TRANSITION_PSEUDO_CLASS
       );
     }
+    protocol.Actor.prototype.destroy.call(this);
   },
 
   initialize: function(styleSheet, parentActor) {
-    protocol.Actor.prototype.initialize.call(this, null);
+    protocol.Actor.prototype.initialize.call(this, parentActor.conn);
 
     this.rawSheet = styleSheet;
     this.parentActor = parentActor;
@@ -430,6 +432,13 @@ var StyleSheetActor = protocol.ActorClassWithSpec(styleSheetSpec, {
       title: this.rawSheet.title,
       system: !CssLogic.isAuthorStylesheet(this.rawSheet),
       styleSheetIndex: this.styleSheetIndex,
+      sourceMapBaseURL: getSourcemapBaseURL(
+        // Technically resolveSourceURL should be used here alongside
+        // "this.rawSheet.sourceURL", but the style inspector does not support
+        // /*# sourceURL=*/ in CSS, so we're omitting it here (bug 880831).
+        this.href || docHref,
+        this.ownerWindow
+      ),
       sourceMapURL: this.rawSheet.sourceMapURL,
     };
 
@@ -489,23 +498,10 @@ var StyleSheetActor = protocol.ActorClassWithSpec(styleSheetSpec, {
       return Promise.resolve(this.text);
     }
 
-    return getSheetText(this.rawSheet, this._consoleActor).then(text => {
+    return getSheetText(this.rawSheet).then(text => {
       this.text = text;
       return text;
     });
-  },
-
-  /**
-   * Try to locate the console actor if it exists via our parent actor (the tab).
-   *
-   * Keep this in sync with the BrowsingContextTargetActor version.
-   */
-  get _consoleActor() {
-    if (this.parentActor.exited) {
-      return null;
-    }
-    const form = this.parentActor.form();
-    return this.conn._getOrCreateActor(form.consoleActor);
   },
 
   /**
@@ -632,26 +628,21 @@ var StyleSheetsActor = protocol.ActorClassWithSpec(styleSheetsSpec, {
   },
 
   initialize: function(conn, targetActor) {
-    protocol.Actor.prototype.initialize.call(this, null);
+    protocol.Actor.prototype.initialize.call(this, targetActor.conn);
 
     this.parentActor = targetActor;
 
+    this._onApplicableStateChanged = this._onApplicableStateChanged.bind(this);
     this._onNewStyleSheetActor = this._onNewStyleSheetActor.bind(this);
-    this._onSheetAdded = this._onSheetAdded.bind(this);
     this._onWindowReady = this._onWindowReady.bind(this);
     this._transitionSheetLoaded = false;
 
     this.parentActor.on("stylesheet-added", this._onNewStyleSheetActor);
     this.parentActor.on("window-ready", this._onWindowReady);
 
-    // We listen for StyleSheetApplicableStateChanged rather than
-    // StyleSheetAdded, because the latter will be sent before the
-    // rules are ready.  Using the former (with a check to ensure that
-    // the sheet is enabled) ensures that the sheet is ready before we
-    // try to make an actor for it.
     this.parentActor.chromeEventHandler.addEventListener(
       "StyleSheetApplicableStateChanged",
-      this._onSheetAdded,
+      this._onApplicableStateChanged,
       true
     );
 
@@ -673,7 +664,7 @@ var StyleSheetsActor = protocol.ActorClassWithSpec(styleSheetsSpec, {
 
     this.parentActor.chromeEventHandler.removeEventListener(
       "StyleSheetApplicableStateChanged",
-      this._onSheetAdded,
+      this._onApplicableStateChanged,
       true
     );
 
@@ -730,10 +721,7 @@ var StyleSheetsActor = protocol.ActorClassWithSpec(styleSheetsSpec, {
     // Special case about:PreferenceStyleSheet, as it is generated on the
     // fly and the URI is not registered with the about: handler.
     // https://bugzilla.mozilla.org/show_bug.cgi?id=935803#c37
-    if (
-      sheet.href &&
-      sheet.href.toLowerCase() == "about:preferencestylesheet"
-    ) {
+    if (sheet.href?.toLowerCase() === "about:preferencestylesheet") {
       return false;
     }
 
@@ -741,18 +729,32 @@ var StyleSheetsActor = protocol.ActorClassWithSpec(styleSheetsSpec, {
   },
 
   /**
-   * Event handler that is called when a new style sheet is added to
-   * a document.  In particular,  StyleSheetApplicableStateChanged is
-   * listened for, because StyleSheetAdded is sent too early, before
-   * the rules are ready.
+   * Event handler that is called when the state of applicable of style sheet is changed.
    *
-   * @param {Event} evt
+   * For now, StyleSheetApplicableStateChanged event will be called at following timings.
+   * - Append <link> of stylesheet to document
+   * - Append <style> to document
+   * - Change disable attribute of stylesheet object
+   * - Change disable attribute of <link> to false
+   * When appending <link>, <style> or changing `disable` attribute to false, `applicable`
+   * is passed as true. The other hand, when changing `disable` to true, this will be
+   * false.
+   * NOTE: For now, StyleSheetApplicableStateChanged will not be called when removing the
+   *       link and style element.
+   *
+   * @param {StyleSheetApplicableStateChanged}
    *        The triggering event.
    */
-  _onSheetAdded: function(evt) {
-    const sheet = evt.stylesheet;
-    if (this._shouldListSheet(sheet) && !this._haveAncestorWithSameURL(sheet)) {
-      this.parentActor.createStyleSheetActor(sheet);
+  _onApplicableStateChanged: function({ applicable, stylesheet }) {
+    if (
+      // Have interest in applicable stylesheet only.
+      applicable &&
+      // No ownerNode means that this stylesheet is *not* associated to a DOM Element.
+      stylesheet.ownerNode &&
+      this._shouldListSheet(stylesheet) &&
+      !this._haveAncestorWithSameURL(stylesheet)
+    ) {
+      this.parentActor.createStyleSheetActor(stylesheet);
     }
   },
 

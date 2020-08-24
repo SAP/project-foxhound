@@ -26,10 +26,10 @@ function snapshotHistograms() {
       "FX_URLBAR_SELECTED_RESULT_INDEX"
     ),
     resultTypeHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_TYPE"
+      "FX_URLBAR_SELECTED_RESULT_TYPE_2"
     ),
     resultIndexByTypeHist: TelemetryTestUtils.getAndClearKeyedHistogram(
-      "FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE"
+      "FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE_2"
     ),
     resultMethodHist: TelemetryTestUtils.getAndClearHistogram(
       "FX_URLBAR_SELECTED_RESULT_METHOD"
@@ -81,6 +81,7 @@ add_task(async function test() {
           icon: "",
           text: "This is a test tip.",
           buttonText: "OK",
+          type: "test",
         }
       ),
       { heuristic: true }
@@ -121,7 +122,7 @@ class TipProvider extends UrlbarProvider {
     this._results = results;
   }
   get name() {
-    return "TestTipProvider";
+    return "TestProviderTip";
   }
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
@@ -138,6 +139,4 @@ class TipProvider extends UrlbarProvider {
       addCallback(this, result);
     }
   }
-  cancelQuery(context) {}
-  pickResult(result) {}
 }

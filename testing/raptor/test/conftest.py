@@ -39,6 +39,7 @@ def browsertime_options(options):
     options["browsertime_geckodriver"] = "browsertime_geckodriver"
     options["browsertime_chromedriver"] = "browsertime_chromedriver"
     options["browsertime_video"] = "browsertime_video"
+    options["browsertime_no_ffwindowrecorder"] = "browsertime_no_ffwindowrecorder"
     return options
 
 
@@ -98,6 +99,7 @@ def create_args():
         run_local=True,
         browsertime=True,
         cold=False,
+        live_sites=False,
     )
 
     def inner(**kwargs):

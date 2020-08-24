@@ -132,7 +132,7 @@ bool GPUParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
 #endif
 
   CompositorThreadHolder::Start();
-  APZThreadUtils::SetControllerThread(MessageLoop::current());
+  APZThreadUtils::SetControllerThread(NS_GetCurrentThread());
   apz::InitializeGlobalState();
   LayerTreeOwnerTracker::Initialize();
   CompositorBridgeParent::InitializeStatics();
@@ -187,6 +187,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   gfxConfig::Inherit(Feature::ADVANCED_LAYERS, devicePrefs.advancedLayers());
   gfxConfig::Inherit(Feature::DIRECT2D, devicePrefs.useD2D1());
   gfxConfig::Inherit(Feature::WEBGPU, devicePrefs.webGPU());
+  gfxConfig::Inherit(Feature::D3D11_HW_ANGLE, devicePrefs.d3d11HwAngle());
 
   {  // Let the crash reporter know if we've got WR enabled or not. For other
     // processes this happens in gfxPlatform::InitWebRenderConfig.
@@ -209,8 +210,11 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     if (DeviceManagerDx::Get()->CreateCompositorDevices() &&
         gfxVars::RemoteCanvasEnabled()) {
-      MOZ_ALWAYS_TRUE(DeviceManagerDx::Get()->CreateCanvasDevice());
-      MOZ_ALWAYS_TRUE(Factory::EnsureDWriteFactory());
+      if (DeviceManagerDx::Get()->CreateCanvasDevice()) {
+        MOZ_ALWAYS_TRUE(Factory::EnsureDWriteFactory());
+      } else {
+        gfxWarning() << "Failed to create canvas device.";
+      }
     }
   }
   if (gfxVars::UseWebRender()) {
@@ -402,10 +406,10 @@ mozilla::ipc::IPCResult GPUParent::RecvSimulateDeviceReset(
   DeviceManagerDx::Get()->ForceDeviceReset(
       ForcedDeviceResetReason::COMPOSITOR_UPDATED);
   DeviceManagerDx::Get()->MaybeResetAndReacquireDevices();
+#endif
   if (gfxVars::UseWebRender()) {
     wr::RenderThread::Get()->SimulateDeviceReset();
   }
-#endif
   RecvGetDeviceStatus(aOut);
   return IPC_OK();
 }

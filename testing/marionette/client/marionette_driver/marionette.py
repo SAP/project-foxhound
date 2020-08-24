@@ -15,6 +15,7 @@ import traceback
 
 from contextlib import contextmanager
 
+import six
 from six import reraise
 
 from . import errors
@@ -429,6 +430,8 @@ class Marionette(object):
 
         """
         self.host = "127.0.0.1"  # host
+        if int(port) == 0:
+            port = Marionette.check_port_available(port)
         self.port = self.local_port = int(port)
         self.bin = bin
         self.client = None
@@ -475,7 +478,7 @@ class Marionette(object):
         except socket.error:
             _, value, tb = sys.exc_info()
             msg = "Port {}:{} is unavailable ({})".format(self.host, self.port, value)
-            reraise(IOError, msg, tb)
+            reraise(IOError, IOError(msg), tb)
 
         try:
             self.instance.start()
@@ -487,8 +490,7 @@ class Marionette(object):
 
             msg = "Process killed after {}s because no connection to Marionette "\
                   "server could be established. Check gecko.log for errors"
-            _, _, tb = sys.exc_info()
-            reraise(IOError, msg.format(timeout), tb)
+            reraise(IOError, IOError(msg.format(timeout)), sys.exc_info()[2])
 
     def cleanup(self):
         if self.session is not None:
@@ -520,8 +522,10 @@ class Marionette(object):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind((host, port))
+            port = s.getsockname()[1]
         finally:
             s.close()
+            return port
 
     def raise_for_port(self, timeout=None, check_process_status=True):
         """Raise socket.timeout if no connection can be established.
@@ -642,12 +646,12 @@ class Marionette(object):
         frame, and is only called via the `@do_process_check` decorator.
 
         """
-        exc, val, tb = sys.exc_info()
+        exc_cls, exc, tb = sys.exc_info()
 
         # If the application hasn't been launched by Marionette no further action can be done.
         # In such cases we simply re-throw the exception.
         if not self.instance:
-            reraise(exc, val, tb)
+            reraise(exc_cls, exc, tb)
 
         else:
             # Somehow the socket disconnected. Give the application some time to shutdown
@@ -675,7 +679,7 @@ class Marionette(object):
 
             message += ' (Reason: {reason})'
 
-            reraise(IOError, message.format(returncode=returncode, reason=val), tb)
+            reraise(IOError, IOError(message.format(returncode=returncode, reason=exc)), tb)
 
     @staticmethod
     def convert_keys(*string):
@@ -821,7 +825,7 @@ class Marionette(object):
                                              "on Gecko instances launched by Marionette")
         pref_exists = True
         with self.using_context(self.CONTEXT_CHROME):
-            for pref, value in prefs.iteritems():
+            for pref, value in six.iteritems(prefs):
                 if type(value) is not str:
                     value = json.dumps(value)
                 pref_exists = self.execute_script("""
@@ -1024,7 +1028,7 @@ class Marionette(object):
                 self.raise_for_port(timeout=self.shutdown_timeout,
                                     check_process_status=False)
             except socket.timeout:
-                exc, val, tb = sys.exc_info()
+                exc_cls, _, tb = sys.exc_info()
 
                 if self.instance.runner.returncode is None:
                     # The process is still running, which means the shutdown
@@ -1033,13 +1037,13 @@ class Marionette(object):
                     self._send_message("Marionette:AcceptConnections", {"value": True})
 
                     message = "Process still running {}s after restart request"
-                    reraise(exc, message.format(self.shutdown_timeout), tb)
+                    reraise(exc_cls, exc_cls(message.format(self.shutdown_timeout)), tb)
 
                 else:
                     # The process shutdown but didn't start again.
                     self.cleanup()
                     msg = "Process unexpectedly quit without restarting (exit code: {})"
-                    reraise(exc, msg.format(self.instance.runner.returncode), tb)
+                    reraise(exc_cls, exc_cls(msg.format(self.instance.runner.returncode)), tb)
 
             finally:
                 self.is_shutting_down = False
@@ -1348,13 +1352,12 @@ class Marionette(object):
         """Switch to the specified window; subsequent commands will be
         directed at the new window.
 
-        :param handle: The id or name of the window to switch to.
+        :param handle: The id of the window to switch to.
 
         :param focus: A boolean value which determins whether to focus
             the window that we just switched to.
         """
-        self._send_message("WebDriver:SwitchToWindow",
-                           {"focus": focus, "name": handle, "handle": handle})
+        self._send_message("WebDriver:SwitchToWindow", {"handle": handle, "focus": focus})
         self.window = handle
 
     def get_active_frame(self):
@@ -1380,10 +1383,8 @@ class Marionette(object):
 
         :param frame: A reference to the frame to switch to.  This can
             be an :class:`~marionette_driver.marionette.HTMLElement`,
-            an integer index, string name, or an
-            ID attribute.  If you call ``switch_to_frame`` without an
+            or an integer index. If you call ``switch_to_frame`` without an
             argument, it will switch to the top-level frame.
-
         :param focus: A boolean value which determins whether to focus
             the frame that we just switched to.
         """
@@ -1491,7 +1492,7 @@ class Marionette(object):
         elif type(args) == HTMLElement:
             wrapped = {WEB_ELEMENT_KEY: args.id,
                        CHROME_ELEMENT_KEY: args.id}
-        elif (isinstance(args, bool) or isinstance(args, basestring) or
+        elif (isinstance(args, bool) or isinstance(args, six.string_types) or
               isinstance(args, int) or isinstance(args, float) or args is None):
             wrapped = args
         return wrapped

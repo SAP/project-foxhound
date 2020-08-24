@@ -23,9 +23,10 @@
 #include "nsDeviceContext.h"
 #include "nsIFrame.h"
 #include "nsStyleStructInlines.h"
-#include "nsSVGDisplayableFrame.h"
-#include "SVGObserverUtils.h"
-#include "nsSVGIntegrationUtils.h"
+#include "mozilla/ISVGDisplayableFrame.h"
+#include "mozilla/SVGIntegrationUtils.h"
+#include "mozilla/SVGPaintServerFrame.h"
+#include "mozilla/SVGObserverUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -134,6 +135,11 @@ bool nsImageRenderer::PrepareImage() {
                "If GetImage() is failing, mImage->IsComplete() "
                "should have returned false");
 
+    if (srcImage) {
+      srcImage = nsLayoutUtils::OrientImage(
+          srcImage, mForFrame->StyleVisibility()->mImageOrientation);
+    }
+
     if (!mImage->IsRect()) {
       mImageContainer.swap(srcImage);
     } else {
@@ -171,8 +177,9 @@ bool nsImageRenderer::PrepareImage() {
       // non-displayable SVG, then we have nothing valid to paint.
       if (!paintServerFrame ||
           (paintServerFrame->IsFrameOfType(nsIFrame::eSVG) &&
-           !paintServerFrame->IsFrameOfType(nsIFrame::eSVGPaintServer) &&
-           !static_cast<nsSVGDisplayableFrame*>(
+           !static_cast<SVGPaintServerFrame*>(
+               do_QueryFrame(paintServerFrame)) &&
+           !static_cast<ISVGDisplayableFrame*>(
                do_QueryFrame(paintServerFrame)))) {
         mPrepareResult = ImgDrawResult::BAD_IMAGE;
         return false;
@@ -238,7 +245,7 @@ CSSSizeOrRatio nsImageRenderer::ComputeIntrinsicSize() {
           int32_t appUnitsPerDevPixel =
               mForFrame->PresContext()->AppUnitsPerDevPixel();
           result.SetSize(IntSizeToAppUnits(
-              nsSVGIntegrationUtils::GetContinuationUnionSize(mPaintServerFrame)
+              SVGIntegrationUtils::GetContinuationUnionSize(mPaintServerFrame)
                   .ToNearestPixels(appUnitsPerDevPixel),
               appUnitsPerDevPixel));
         }
@@ -416,7 +423,8 @@ static uint32_t ConvertImageRendererToDrawFlags(uint32_t aImageRendererFlags) {
   if (aImageRendererFlags & nsImageRenderer::FLAG_SYNC_DECODE_IMAGES) {
     drawFlags |= imgIContainer::FLAG_SYNC_DECODE;
   }
-  if (aImageRendererFlags & nsImageRenderer::FLAG_PAINTING_TO_WINDOW) {
+  if (aImageRendererFlags & (nsImageRenderer::FLAG_PAINTING_TO_WINDOW |
+                             nsImageRenderer::FLAG_HIGH_QUALITY_SCALING)) {
     drawFlags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
   }
   return drawFlags;
@@ -514,7 +522,7 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
     if (mMaskOp == StyleMaskMode::Luminance) {
       RefPtr<SourceSurface> surf = ctx->GetDrawTarget()->IntoLuminanceSource(
           LuminanceType::LUMINANCE, 1.0f);
-      dt->MaskSurface(ColorPattern(Color(0, 0, 0, 1.0f)), surf,
+      dt->MaskSurface(ColorPattern(DeviceColor(0, 0, 0, 1.0f)), surf,
                       tmpDTRect.TopLeft(),
                       DrawOptions(1.0f, aRenderingContext.CurrentOp()));
     } else {
@@ -571,7 +579,8 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
     case StyleImage::Tag::Rect:
     case StyleImage::Tag::Url: {
       uint32_t containerFlags = imgIContainer::FLAG_ASYNC_NOTIFY;
-      if (mFlags & nsImageRenderer::FLAG_PAINTING_TO_WINDOW) {
+      if (mFlags & (nsImageRenderer::FLAG_PAINTING_TO_WINDOW |
+                    nsImageRenderer::FLAG_HIGH_QUALITY_SCALING)) {
         containerFlags |= imgIContainer::FLAG_HIGH_QUALITY_SCALING;
       }
       if (mFlags & nsImageRenderer::FLAG_SYNC_DECODE_IMAGES) {
@@ -692,10 +701,10 @@ already_AddRefed<gfxDrawable> nsImageRenderer::DrawableForElement(
     // Don't allow creating images that are too big
     if (aContext.GetDrawTarget()->CanCreateSimilarDrawTarget(imageSize,
                                                              format)) {
-      drawable = nsSVGIntegrationUtils::DrawableFromPaintServer(
+      drawable = SVGIntegrationUtils::DrawableFromPaintServer(
           mPaintServerFrame, mForFrame, mSize, imageSize,
           aContext.GetDrawTarget(), aContext.CurrentMatrixDouble(),
-          nsSVGIntegrationUtils::FLAG_SYNC_DECODE_IMAGES);
+          SVGIntegrationUtils::FLAG_SYNC_DECODE_IMAGES);
     }
 
     return drawable.forget();

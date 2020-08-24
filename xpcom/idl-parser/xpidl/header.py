@@ -7,12 +7,12 @@
 
 """Print a C++ header file for the IDL files specified on the command line"""
 
-import sys
+from __future__ import absolute_import
+
 import os.path
 import re
-import xpidl
+from xpidl import xpidl
 import itertools
-import glob
 
 printdoccomments = False
 
@@ -148,12 +148,9 @@ def paramlistAsNative(m, empty='void'):
         l.append('uint8_t _argc')
 
     if not m.notxpcom and m.realtype.name != 'void':
-        l.append(paramAsNative(xpidl.Param(paramtype='out',
-                                           type=None,
-                                           name='_retval',
-                                           attlist=[],
-                                           location=None,
-                                           realtype=m.realtype)))
+        l.append(paramAsNative(xpidl.Param(
+            paramtype='out', type=None, name='_retval', attlist=[],
+            location=None, realtype=m.realtype)))
 
     # Set any optional out params to default to nullptr. Skip if we just added
     # extra non-optional args to l.
@@ -210,7 +207,7 @@ def paramlistNames(m):
 
 
 header = """/*
- * DO NOT EDIT.  THIS FILE IS GENERATED FROM %(filename)s
+ * DO NOT EDIT.  THIS FILE IS GENERATED FROM $SRCDIR/%(relpath)s
  */
 
 #ifndef __gen_%(basename)s_h__
@@ -257,8 +254,8 @@ def idl_basename(f):
     return os.path.basename(f).rpartition('.')[0]
 
 
-def print_header(idl, fd, filename):
-    fd.write(header % {'filename': filename,
+def print_header(idl, fd, filename, relpath):
+    fd.write(header % {'relpath': relpath,
                        'basename': idl_basename(filename)})
 
     foundinc = False
@@ -475,7 +472,7 @@ def write_interface(iface, fd):
 
     names = uuid_decoder.match(iface.attributes.uuid).groupdict()
     m3str = names['m3'] + names['m4']
-    names['m3joined'] = ", ".join(["0x%s" % m3str[i:i+2] for i in xrange(0, 16, 2)])
+    names['m3joined'] = ", ".join(["0x%s" % m3str[i:i+2] for i in range(0, 16, 2)])
 
     if iface.name[2] == 'I':
         implclass = iface.name[:2] + iface.name[3:]
@@ -593,19 +590,7 @@ def write_interface(iface, fd):
 
 
 def main(outputfile):
-    cachedir = os.path.dirname(outputfile.name if outputfile else '') or '.'
-    if not os.path.isdir(cachedir):
-        os.mkdir(cachedir)
-    sys.path.append(cachedir)
-
-    # Delete the lex/yacc files.  Ply is too stupid to regenerate them
-    # properly
-    for fileglobs in [os.path.join(cachedir, f) for f in ["xpidllex.py*", "xpidlyacc.py*"]]:
-        for filename in glob.glob(fileglobs):
-            os.remove(filename)
-
-    # Instantiate the parser.
-    xpidl.IDLParser(outputdir=cachedir)
+    xpidl.IDLParser()
 
 
 if __name__ == '__main__':

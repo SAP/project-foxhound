@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+use crate::{FuncType, TypeDef};
+
 /// Types that qualify as Wasm types for validation purposes.
 ///
 /// Must be comparable with `wasmparser` given Wasm types and
@@ -24,6 +26,12 @@ pub trait WasmType: PartialEq<crate::Type> + PartialEq + Eq {
     ///
     /// This interface is required as bridge until transitioning is complete.
     fn to_parser_type(&self) -> crate::Type;
+}
+
+pub trait WasmTypeDef {
+    type FuncType: WasmFuncType;
+
+    fn as_func(&self) -> Option<&Self::FuncType>;
 }
 
 /// Types that qualify as Wasm function types for validation purposes.
@@ -277,7 +285,7 @@ pub trait WasmGlobalType {
 /// the need of an additional parsing or validation step or copying data around.
 pub trait WasmModuleResources {
     /// The function type used for validation.
-    type FuncType: WasmFuncType;
+    type TypeDef: WasmTypeDef;
     /// The table type used for validation.
     type TableType: WasmTableType;
     /// The memory type used for validation.
@@ -286,7 +294,7 @@ pub trait WasmModuleResources {
     type GlobalType: WasmGlobalType;
 
     /// Returns the type at given index.
-    fn type_at(&self, at: u32) -> Option<&Self::FuncType>;
+    fn type_at(&self, at: u32) -> Option<&Self::TypeDef>;
     /// Returns the table at given index if any.
     fn table_at(&self, at: u32) -> Option<&Self::TableType>;
     /// Returns the linear memory at given index.
@@ -294,17 +302,72 @@ pub trait WasmModuleResources {
     /// Returns the global variable at given index.
     fn global_at(&self, at: u32) -> Option<&Self::GlobalType>;
     /// Returns the function signature ID at given index.
-    fn func_type_id_at(&self, at: u32) -> Option<u32>;
+    fn func_type_at(&self, at: u32) -> Option<&<Self::TypeDef as WasmTypeDef>::FuncType>;
+    /// Returns the element type at the given index.
+    fn element_type_at(&self, at: u32) -> Option<crate::Type>;
 
     /// Returns the number of elements.
     fn element_count(&self) -> u32;
     /// Returns the number of bytes in the Wasm data section.
     fn data_count(&self) -> u32;
+    /// Returns whether the function index is referenced in the module anywhere
+    /// outside of the start/function sections.
+    fn is_function_referenced(&self, idx: u32) -> bool;
+}
+
+impl<T> WasmModuleResources for &'_ T
+where
+    T: ?Sized + WasmModuleResources,
+{
+    type TypeDef = T::TypeDef;
+    type TableType = T::TableType;
+    type MemoryType = T::MemoryType;
+    type GlobalType = T::GlobalType;
+
+    fn type_at(&self, at: u32) -> Option<&Self::TypeDef> {
+        T::type_at(self, at)
+    }
+    fn table_at(&self, at: u32) -> Option<&Self::TableType> {
+        T::table_at(self, at)
+    }
+    fn memory_at(&self, at: u32) -> Option<&Self::MemoryType> {
+        T::memory_at(self, at)
+    }
+    fn global_at(&self, at: u32) -> Option<&Self::GlobalType> {
+        T::global_at(self, at)
+    }
+    fn func_type_at(&self, at: u32) -> Option<&<T::TypeDef as WasmTypeDef>::FuncType> {
+        T::func_type_at(self, at)
+    }
+    fn element_type_at(&self, at: u32) -> Option<crate::Type> {
+        T::element_type_at(self, at)
+    }
+
+    fn element_count(&self) -> u32 {
+        T::element_count(self)
+    }
+    fn data_count(&self) -> u32 {
+        T::data_count(self)
+    }
+    fn is_function_referenced(&self, idx: u32) -> bool {
+        T::is_function_referenced(self, idx)
+    }
 }
 
 impl WasmType for crate::Type {
     fn to_parser_type(&self) -> crate::Type {
         *self
+    }
+}
+
+impl<'a> WasmTypeDef for TypeDef<'a> {
+    type FuncType = FuncType;
+
+    fn as_func(&self) -> Option<&Self::FuncType> {
+        match self {
+            TypeDef::Func(f) => Some(f),
+            _ => None,
+        }
     }
 }
 

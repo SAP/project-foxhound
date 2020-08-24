@@ -13,6 +13,7 @@
 #include <vector>
 #include <map>
 #include <queue>
+#include <type_traits>
 
 #include "CSFLog.h"
 #include "WebRtcLog.h"
@@ -53,8 +54,7 @@ class RequestManager {
     mozilla::StaticMutexAutoLock lock(sMutex);
 
     int id = ++sLastRequestId;
-    auto result =
-        sRequests.insert(std::make_pair(id, Request(id, aCallback, aParam)));
+    auto result = sRequests.try_emplace(id, id, aCallback, aParam);
 
     if (!result.second) {
       return nullptr;
@@ -98,8 +98,7 @@ class RequestManager {
   MOZ_CAN_RUN_SCRIPT
   void Complete() {
     IgnoredErrorResult rv;
-    using RealCallbackType =
-        typename RemovePointer<decltype(mCallback.get())>::Type;
+    using RealCallbackType = std::remove_pointer_t<decltype(mCallback.get())>;
     RefPtr<RealCallbackType> callback(mCallback.get());
     callback->Call(mResult, rv);
 
@@ -254,7 +253,9 @@ static void OnStatsReport_m(
 
   for (auto& report : aReports) {
     if (report) {
-      request->mResult.mReports.AppendElement(*report, fallible);
+      if (!request->mResult.mReports.AppendElement(*report, fallible)) {
+        mozalloc_handle_oom(0);
+      }
     }
   }
 
@@ -262,7 +263,12 @@ static void OnStatsReport_m(
   auto ctx = PeerConnectionCtx::GetInstance();
   if (ctx) {
     for (auto&& pc : ctx->mStatsForClosedPeerConnections) {
-      request->mResult.mReports.AppendElement(pc, fallible);
+      if (!request->mResult.mReports.AppendElement(pc, fallible)) {
+        // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
+        // involve multiple reallocations) and potentially crashing here,
+        // SetCapacity could be called outside the loop once.
+        mozalloc_handle_oom(0);
+      }
     }
   }
 
@@ -276,7 +282,9 @@ static void OnGetLogging_m(WebrtcGlobalChild* aThisChild, const int aRequestId,
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!aLogList.IsEmpty()) {
-    aLogList.AppendElement(NS_LITERAL_STRING("+++++++ END ++++++++"), fallible);
+    if (!aLogList.AppendElement(u"+++++++ END ++++++++"_ns, fallible)) {
+      mozalloc_handle_oom(0);
+    }
   }
 
   if (aThisChild) {
@@ -296,7 +304,9 @@ static void OnGetLogging_m(WebrtcGlobalChild* aThisChild, const int aRequestId,
     return;
   }
 
-  request->mResult.AppendElements(std::move(aLogList), fallible);
+  if (!request->mResult.AppendElements(std::move(aLogList), fallible)) {
+    mozalloc_handle_oom(0);
+  }
   request->Complete();
   LogRequest::Delete(aRequestId);
 }
@@ -627,7 +637,10 @@ mozilla::ipc::IPCResult WebrtcGlobalParent::RecvGetStatsResult(
   }
 
   for (auto& s : Stats) {
-    request->mResult.mReports.AppendElement(s, fallible);
+    if (!request->mResult.mReports.AppendElement(s, fallible)) {
+      CSFLogError(LOGTAG, "Out of memory");
+      return IPC_FAIL_NO_REASON(this);
+    }
   }
 
   auto next = request->GetNextParent();
@@ -664,7 +677,10 @@ mozilla::ipc::IPCResult WebrtcGlobalParent::RecvGetLogResult(
     CSFLogError(LOGTAG, "Bad RequestId");
     return IPC_FAIL_NO_REASON(this);
   }
-  request->mResult.AppendElements(aLog, fallible);
+  if (!request->mResult.AppendElements(aLog, fallible)) {
+    CSFLogError(LOGTAG, "Out of memory");
+    return IPC_FAIL_NO_REASON(this);
+  }
 
   auto next = request->GetNextParent();
   if (next) {
@@ -880,7 +896,9 @@ static void StoreLongTermICEStatisticsImpl_m(RTCStatsReportInternal* report) {
 
   PeerConnectionCtx* ctx = GetPeerConnectionCtx();
   if (ctx) {
-    ctx->mStatsForClosedPeerConnections.AppendElement(*report, fallible);
+    if (!ctx->mStatsForClosedPeerConnections.AppendElement(*report, fallible)) {
+      mozalloc_handle_oom(0);
+    }
   }
 }
 

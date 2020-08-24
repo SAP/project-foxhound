@@ -36,7 +36,7 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
                               public nsISerializable,
                               public nsIClassInfo {
  protected:
-  virtual ~TransportSecurityInfo() {}
+  virtual ~TransportSecurityInfo() = default;
 
  public:
   TransportSecurityInfo();
@@ -130,6 +130,7 @@ class TransportSecurityInfo : public nsITransportSecurityInfo,
   bool mNPNCompleted;
   nsCString mNegotiatedNPN;
   bool mResumed;
+  bool mIsBuiltCertChainRootBuiltInRoot;
 
  private:
   uint32_t mSecurityState;

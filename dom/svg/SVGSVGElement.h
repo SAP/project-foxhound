@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_SVGSVGElement_h
-#define mozilla_dom_SVGSVGElement_h
+#ifndef DOM_SVG_SVGSVGELEMENT_H_
+#define DOM_SVG_SVGSVGELEMENT_H_
 
 #include "SVGAnimatedEnumeration.h"
 #include "SVGViewportElement.h"
@@ -21,6 +21,7 @@ class SVGFragmentIdentifier;
 class EventChainPreVisitor;
 
 namespace dom {
+struct DOMMatrix2DInit;
 class DOMSVGAngle;
 class DOMSVGLength;
 class DOMSVGNumber;
@@ -58,7 +59,7 @@ class DOMSVGTranslatePoint final : public nsISVGPoint {
   virtual void SetX(float aValue, ErrorResult& rv) override;
   virtual void SetY(float aValue, ErrorResult& rv) override;
   virtual already_AddRefed<nsISVGPoint> MatrixTransform(
-      SVGMatrix& matrix) override;
+      const DOMMatrix2DInit& aMatrix, ErrorResult& aRv) override;
 
   virtual nsISupports* GetParentObject() override;
 
@@ -68,11 +69,11 @@ class DOMSVGTranslatePoint final : public nsISVGPoint {
   ~DOMSVGTranslatePoint() = default;
 };
 
-typedef SVGViewportElement SVGSVGElementBase;
+using SVGSVGElementBase = SVGViewportElement;
 
 class SVGSVGElement final : public SVGSVGElementBase {
-  friend class ::nsSVGOuterSVGFrame;
   friend class mozilla::SVGFragmentIdentifier;
+  friend class mozilla::SVGOuterSVGFrame;
   friend class mozilla::AutoSVGViewHandler;
   friend class mozilla::AutoPreserveAspectRatioOverride;
   friend class mozilla::dom::SVGView;
@@ -140,7 +141,7 @@ class SVGSVGElement final : public SVGSVGElementBase {
   already_AddRefed<SVGRect> CreateSVGRect();
   already_AddRefed<DOMSVGTransform> CreateSVGTransform();
   already_AddRefed<DOMSVGTransform> CreateSVGTransformFromMatrix(
-      SVGMatrix& matrix);
+      const DOMMatrix2DInit& matrix, ErrorResult& rv);
   using nsINode::GetElementById;  // This does what we want
   uint16_t ZoomAndPan();
   void SetZoomAndPan(uint16_t aZoomAndPan, ErrorResult& rv);
@@ -312,4 +313,4 @@ class MOZ_RAII AutoPreserveAspectRatioOverride {
 
 }  // namespace mozilla
 
-#endif  // SVGSVGElement_h
+#endif  // DOM_SVG_SVGSVGELEMENT_H_

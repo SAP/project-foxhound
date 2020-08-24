@@ -5,15 +5,13 @@
 job-defaults:
     # Run only on try and code-review tasks
     # to avoid running clang tools on the whole codebase
-    run-on-projects:
-        - try
-
+    run-on-projects: []
     platform: linux64/opt
     attributes:
         code-review: true
     worker-type:
         by-platform:
-            linux64.*: t-linux-xlarge
+            linux64.*: t-linux-xlarge-source
     worker:
         docker-image: {in-tree: static-analysis-build}
         max-run-time: 5400
@@ -32,7 +30,7 @@ job-defaults:
             - linux64-nasm
             - linux64-node
     when:
-        # Extension list from https://hg.mozilla.org/mozilla-central/file/tip/python/mozbuild/mozbuild/mach_commands.py#l1664
+        # Extension list from https://hg.mozilla.org/mozilla-central/file/default/python/mozbuild/mozbuild/mach_commands.py#l1664
         files-changed:
             - '**/*.c'
             - '**/*.cpp'

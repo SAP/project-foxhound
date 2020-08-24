@@ -16,20 +16,6 @@
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "WebRTCChild",
-  "resource:///actors/WebRTCChild.jsm"
-);
-
-var gEMEUIObserver = function(subject, topic, data) {
-  let win = subject.top;
-  let mm = getMessageManagerForWindow(win);
-  if (mm) {
-    mm.sendAsyncMessage("EMEVideo:ContentMediaKeysRequest", data);
-  }
-};
-
 var gDecoderDoctorObserver = function(subject, topic, data) {
   let win = subject.top;
   let mm = getMessageManagerForWindow(win);
@@ -42,34 +28,4 @@ function getMessageManagerForWindow(aContentWindow) {
   return aContentWindow.docShell.messageManager;
 }
 
-Services.obs.addObserver(gEMEUIObserver, "mediakeys-request");
 Services.obs.addObserver(gDecoderDoctorObserver, "decoder-doctor-notification");
-
-// WebRTCChild observer registration. Actor observers require the subject
-// to be a window, so they are registered here instead.
-const kWebRTCObserverTopics = [
-  "getUserMedia:request",
-  "recording-device-stopped",
-  "PeerConnection:request",
-  "recording-device-events",
-  "recording-window-ended",
-];
-
-function webRTCObserve(aSubject, aTopic, aData) {
-  WebRTCChild.observe(aSubject, aTopic, aData);
-}
-
-for (let topic of kWebRTCObserverTopics) {
-  Services.obs.addObserver(webRTCObserve, topic);
-}
-
-if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
-  Services.obs.addObserver(processShutdown, "content-child-shutdown");
-}
-
-function processShutdown() {
-  for (let topic of kWebRTCObserverTopics) {
-    Services.obs.removeObserver(webRTCObserve, topic);
-  }
-  Services.obs.removeObserver(processShutdown, "content-child-shutdown");
-}

@@ -9,7 +9,7 @@ use crate::bloom::BLOOM_HASH_MASK;
 use crate::builder::{SelectorBuilder, SelectorFlags, SpecificityAndFlags};
 use crate::context::QuirksMode;
 use crate::sink::Push;
-pub use crate::visitor::{SelectorVisitor, Visit};
+pub use crate::visitor::SelectorVisitor;
 use cssparser::{parse_nth, serialize_identifier};
 use cssparser::{BasicParseError, BasicParseErrorKind, ParseError, ParseErrorKind};
 use cssparser::{CowRcStr, Delimiter, SourceLocation};
@@ -55,6 +55,13 @@ pub trait NonTSPseudoClass: Sized + ToCss {
 
     /// Whether this pseudo-class has zero specificity.
     fn has_zero_specificity(&self) -> bool;
+
+    fn visit<V>(&self, _visitor: &mut V) -> bool
+    where
+        V: SelectorVisitor<Impl = Self::Impl>,
+    {
+        true
+    }
 }
 
 /// Returns a Cow::Borrowed if `s` is already ASCII lowercase, and a
@@ -97,41 +104,57 @@ bitflags! {
         /// disallowed. If this flag is set, `AFTER_PSEUDO_ELEMENT` must be set
         /// as well.
         const AFTER_NON_STATEFUL_PSEUDO_ELEMENT = 1 << 4;
+
         /// Whether we are after any of the pseudo-like things.
         const AFTER_PSEUDO = Self::AFTER_PART.bits | Self::AFTER_SLOTTED.bits | Self::AFTER_PSEUDO_ELEMENT.bits;
+
+        /// Whether we explicitly disallow combinators.
+        const DISALLOW_COMBINATORS = 1 << 5;
+
+        /// Whether we explicitly disallow pseudo-element-like things.
+        const DISALLOW_PSEUDOS = 1 << 6;
     }
 }
 
 impl SelectorParsingState {
     #[inline]
-    fn allows_functional_pseudo_classes(self) -> bool {
-        !self.intersects(SelectorParsingState::AFTER_PSEUDO)
+    fn allows_pseudos(self) -> bool {
+        // NOTE(emilio): We allow pseudos after ::part and such.
+        !self.intersects(Self::AFTER_PSEUDO_ELEMENT | Self::DISALLOW_PSEUDOS)
     }
 
     #[inline]
     fn allows_slotted(self) -> bool {
-        !self.intersects(SelectorParsingState::AFTER_PSEUDO)
+        !self.intersects(Self::AFTER_PSEUDO | Self::DISALLOW_PSEUDOS)
     }
 
-    // TODO(emilio): Should we allow other ::part()s after ::part()?
-    //
-    // See https://github.com/w3c/csswg-drafts/issues/3841
     #[inline]
     fn allows_part(self) -> bool {
-        !self.intersects(SelectorParsingState::AFTER_PSEUDO)
+        !self.intersects(Self::AFTER_PSEUDO | Self::DISALLOW_PSEUDOS)
+    }
+
+    // TODO(emilio): Maybe some of these should be allowed, but this gets us on
+    // the safe side for now, matching previous behavior. Gotta be careful with
+    // the ones like :-moz-any, which allow nested selectors but don't carry the
+    // state, and so on.
+    #[inline]
+    fn allows_custom_functional_pseudo_classes(self) -> bool {
+        !self.intersects(Self::AFTER_PSEUDO)
     }
 
     #[inline]
     fn allows_non_functional_pseudo_classes(self) -> bool {
-        !self.intersects(
-            SelectorParsingState::AFTER_SLOTTED |
-                SelectorParsingState::AFTER_NON_STATEFUL_PSEUDO_ELEMENT,
-        )
+        !self.intersects(Self::AFTER_SLOTTED | Self::AFTER_NON_STATEFUL_PSEUDO_ELEMENT)
     }
 
     #[inline]
     fn allows_tree_structural_pseudo_classes(self) -> bool {
-        !self.intersects(SelectorParsingState::AFTER_PSEUDO)
+        !self.intersects(Self::AFTER_PSEUDO)
+    }
+
+    #[inline]
+    fn allows_combinators(self) -> bool {
+        !self.intersects(Self::DISALLOW_COMBINATORS)
     }
 }
 
@@ -139,7 +162,6 @@ pub type SelectorParseError<'i> = ParseError<'i, SelectorParseErrorKind<'i>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SelectorParseErrorKind<'i> {
-    PseudoElementInComplexSelector,
     NoQualifiedNameInAttributeSelector(Token<'i>),
     EmptySelector,
     DanglingCombinator,
@@ -147,6 +169,7 @@ pub enum SelectorParseErrorKind<'i> {
     NonCompoundSelector,
     NonPseudoElementAfterSlotted,
     InvalidPseudoElementAfterSlotted,
+    InvalidPseudoElementInsideWhere,
     InvalidState,
     UnexpectedTokenInAttributeSelector(Token<'i>),
     PseudoElementExpectedColon(Token<'i>),
@@ -223,6 +246,11 @@ pub trait Parser<'i> {
 
     /// Whether to parse the `::part()` pseudo-element.
     fn parse_part(&self) -> bool {
+        false
+    }
+
+    /// Whether to parse the `:where` pseudo-class.
+    fn parse_is_and_where(&self) -> bool {
         false
     }
 
@@ -311,12 +339,22 @@ impl<Impl: SelectorImpl> SelectorList<Impl> {
     where
         P: Parser<'i, Impl = Impl>,
     {
+        Self::parse_with_state(parser, input, SelectorParsingState::empty())
+    }
+
+    fn parse_with_state<'i, 't, P>(
+        parser: &P,
+        input: &mut CssParser<'i, 't>,
+        state: SelectorParsingState,
+    ) -> Result<Self, ParseError<'i, P::Error>>
+    where
+        P: Parser<'i, Impl = Impl>,
+    {
         let mut values = SmallVec::new();
         loop {
-            values.push(
-                input
-                    .parse_until_before(Delimiter::Comma, |input| parse_selector(parser, input))?,
-            );
+            values.push(input.parse_until_before(Delimiter::Comma, |input| {
+                parse_selector(parser, input, state)
+            })?);
             match input.next() {
                 Err(_) => return Ok(SelectorList(values)),
                 Ok(&Token::Comma) => continue,
@@ -331,30 +369,21 @@ impl<Impl: SelectorImpl> SelectorList<Impl> {
     }
 }
 
-/// Parses one compound selector suitable for nested stuff like ::-moz-any, etc.
+/// Parses one compound selector suitable for nested stuff like :-moz-any, etc.
 fn parse_inner_compound_selector<'i, 't, P, Impl>(
     parser: &P,
     input: &mut CssParser<'i, 't>,
+    state: SelectorParsingState,
 ) -> Result<Selector<Impl>, ParseError<'i, P::Error>>
 where
     P: Parser<'i, Impl = Impl>,
     Impl: SelectorImpl,
 {
-    let location = input.current_source_location();
-    let selector = parse_selector(parser, input)?;
-
-    // Ensure they're actually all compound selectors without pseudo-elements.
-    if selector.has_pseudo_element() {
-        return Err(
-            location.new_custom_error(SelectorParseErrorKind::PseudoElementInComplexSelector)
-        );
-    }
-
-    if selector.iter_raw_match_order().any(|s| s.is_combinator()) {
-        return Err(location.new_custom_error(SelectorParseErrorKind::NonCompoundSelector));
-    }
-
-    Ok(selector)
+    parse_selector(
+        parser,
+        input,
+        state | SelectorParsingState::DISALLOW_PSEUDOS | SelectorParsingState::DISALLOW_COMBINATORS,
+    )
 }
 
 /// Parse a comma separated list of compound selectors.
@@ -367,7 +396,9 @@ where
     Impl: SelectorImpl,
 {
     input
-        .parse_comma_separated(|input| parse_inner_compound_selector(parser, input))
+        .parse_comma_separated(|input| {
+            parse_inner_compound_selector(parser, input, SelectorParsingState::empty())
+        })
         .map(|selectors| selectors.into_boxed_slice())
 }
 
@@ -391,6 +422,64 @@ pub struct AncestorHashes {
     pub packed_hashes: [u32; 3],
 }
 
+fn collect_ancestor_hashes<Impl: SelectorImpl>(
+    iter: SelectorIter<Impl>,
+    quirks_mode: QuirksMode,
+    hashes: &mut [u32; 4],
+    len: &mut usize,
+) -> bool
+where
+    Impl::Identifier: PrecomputedHash,
+    Impl::ClassName: PrecomputedHash,
+    Impl::LocalName: PrecomputedHash,
+    Impl::NamespaceUrl: PrecomputedHash,
+{
+    for component in AncestorIter::new(iter) {
+        let hash = match *component {
+            Component::LocalName(LocalName {
+                ref name,
+                ref lower_name,
+            }) => {
+                // Only insert the local-name into the filter if it's all
+                // lowercase.  Otherwise we would need to test both hashes, and
+                // our data structures aren't really set up for that.
+                if name != lower_name {
+                    continue;
+                }
+                name.precomputed_hash()
+            },
+            Component::DefaultNamespace(ref url) | Component::Namespace(_, ref url) => {
+                url.precomputed_hash()
+            },
+            // In quirks mode, class and id selectors should match
+            // case-insensitively, so just avoid inserting them into the filter.
+            Component::ID(ref id) if quirks_mode != QuirksMode::Quirks => id.precomputed_hash(),
+            Component::Class(ref class) if quirks_mode != QuirksMode::Quirks => {
+                class.precomputed_hash()
+            },
+            Component::Is(ref list) | Component::Where(ref list) => {
+                // :where and :is OR their selectors, so we can't put any hash
+                // in the filter if there's more than one selector, as that'd
+                // exclude elements that may match one of the other selectors.
+                if list.len() == 1 {
+                    if !collect_ancestor_hashes(list[0].iter(), quirks_mode, hashes, len) {
+                        return false;
+                    }
+                }
+                continue;
+            },
+            _ => continue,
+        };
+
+        hashes[*len] = hash & BLOOM_HASH_MASK;
+        *len += 1;
+        if *len == hashes.len() {
+            return false;
+        }
+    }
+    true
+}
+
 impl AncestorHashes {
     pub fn new<Impl: SelectorImpl>(selector: &Selector<Impl>, quirks_mode: QuirksMode) -> Self
     where
@@ -399,30 +488,16 @@ impl AncestorHashes {
         Impl::LocalName: PrecomputedHash,
         Impl::NamespaceUrl: PrecomputedHash,
     {
-        Self::from_iter(selector.iter(), quirks_mode)
-    }
-
-    fn from_iter<Impl: SelectorImpl>(iter: SelectorIter<Impl>, quirks_mode: QuirksMode) -> Self
-    where
-        Impl::Identifier: PrecomputedHash,
-        Impl::ClassName: PrecomputedHash,
-        Impl::LocalName: PrecomputedHash,
-        Impl::NamespaceUrl: PrecomputedHash,
-    {
         // Compute ancestor hashes for the bloom filter.
         let mut hashes = [0u32; 4];
-        let mut hash_iter = AncestorIter::new(iter).filter_map(|x| x.ancestor_hash(quirks_mode));
-        for i in 0..4 {
-            hashes[i] = match hash_iter.next() {
-                Some(x) => x & BLOOM_HASH_MASK,
-                None => break,
-            }
-        }
+        let mut len = 0;
+        collect_ancestor_hashes(selector.iter(), quirks_mode, &mut hashes, &mut len);
+        debug_assert!(len <= 4);
 
         // Now, pack the fourth hash (if it exists) into the upper byte of each of
         // the other three hashes.
-        let fourth = hashes[3];
-        if fourth != 0 {
+        if len == 4 {
+            let fourth = hashes[3];
             hashes[0] |= (fourth & 0x000000ff) << 24;
             hashes[1] |= (fourth & 0x0000ff00) << 16;
             hashes[2] |= (fourth & 0x00ff0000) << 8;
@@ -438,128 +513,6 @@ impl AncestorHashes {
         ((self.packed_hashes[0] & 0xff000000) >> 24) |
             ((self.packed_hashes[1] & 0xff000000) >> 16) |
             ((self.packed_hashes[2] & 0xff000000) >> 8)
-    }
-}
-
-impl<Impl: SelectorImpl> Visit for Selector<Impl>
-where
-    Impl::NonTSPseudoClass: Visit<Impl = Impl>,
-{
-    type Impl = Impl;
-
-    fn visit<V>(&self, visitor: &mut V) -> bool
-    where
-        V: SelectorVisitor<Impl = Impl>,
-    {
-        let mut current = self.iter();
-        let mut combinator = None;
-        loop {
-            if !visitor.visit_complex_selector(combinator) {
-                return false;
-            }
-
-            for selector in &mut current {
-                if !selector.visit(visitor) {
-                    return false;
-                }
-            }
-
-            combinator = current.next_sequence();
-            if combinator.is_none() {
-                break;
-            }
-        }
-
-        true
-    }
-}
-
-impl<Impl: SelectorImpl> Visit for Component<Impl>
-where
-    Impl::NonTSPseudoClass: Visit<Impl = Impl>,
-{
-    type Impl = Impl;
-
-    fn visit<V>(&self, visitor: &mut V) -> bool
-    where
-        V: SelectorVisitor<Impl = Impl>,
-    {
-        use self::Component::*;
-        if !visitor.visit_simple_selector(self) {
-            return false;
-        }
-
-        match *self {
-            Slotted(ref selector) => {
-                if !selector.visit(visitor) {
-                    return false;
-                }
-            },
-            Host(Some(ref selector)) => {
-                if !selector.visit(visitor) {
-                    return false;
-                }
-            },
-            Negation(ref negated) => {
-                for component in negated.iter() {
-                    if !component.visit(visitor) {
-                        return false;
-                    }
-                }
-            },
-
-            AttributeInNoNamespaceExists {
-                ref local_name,
-                ref local_name_lower,
-            } => {
-                if !visitor.visit_attribute_selector(
-                    &NamespaceConstraint::Specific(&namespace_empty_string::<Impl>()),
-                    local_name,
-                    local_name_lower,
-                ) {
-                    return false;
-                }
-            },
-            AttributeInNoNamespace {
-                ref local_name,
-                never_matches,
-                ..
-            } if !never_matches => {
-                if !visitor.visit_attribute_selector(
-                    &NamespaceConstraint::Specific(&namespace_empty_string::<Impl>()),
-                    local_name,
-                    local_name,
-                ) {
-                    return false;
-                }
-            },
-            AttributeOther(ref attr_selector) if !attr_selector.never_matches => {
-                let empty_string;
-                let namespace = match attr_selector.namespace() {
-                    Some(ns) => ns,
-                    None => {
-                        empty_string = crate::parser::namespace_empty_string::<Impl>();
-                        NamespaceConstraint::Specific(&empty_string)
-                    },
-                };
-                if !visitor.visit_attribute_selector(
-                    &namespace,
-                    &attr_selector.local_name,
-                    &attr_selector.local_name_lower,
-                ) {
-                    return false;
-                }
-            },
-
-            NonTSPseudoClass(ref pseudo_class) => {
-                if !pseudo_class.visit(visitor) {
-                    return false;
-                }
-            },
-            _ => {},
-        }
-
-        true
     }
 }
 
@@ -781,6 +734,50 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     pub fn thin_arc_heap_ptr(&self) -> *const ::std::os::raw::c_void {
         self.0.heap_ptr()
     }
+
+    /// Traverse selector components inside `self`.
+    ///
+    /// Implementations of this method should call `SelectorVisitor` methods
+    /// or other impls of `Visit` as appropriate based on the fields of `Self`.
+    ///
+    /// A return value of `false` indicates terminating the traversal.
+    /// It should be propagated with an early return.
+    /// On the contrary, `true` indicates that all fields of `self` have been traversed:
+    ///
+    /// ```rust,ignore
+    /// if !visitor.visit_simple_selector(&self.some_simple_selector) {
+    ///     return false;
+    /// }
+    /// if !self.some_component.visit(visitor) {
+    ///     return false;
+    /// }
+    /// true
+    /// ```
+    pub fn visit<V>(&self, visitor: &mut V) -> bool
+    where
+        V: SelectorVisitor<Impl = Impl>,
+    {
+        let mut current = self.iter();
+        let mut combinator = None;
+        loop {
+            if !visitor.visit_complex_selector(combinator) {
+                return false;
+            }
+
+            for selector in &mut current {
+                if !selector.visit(visitor) {
+                    return false;
+                }
+            }
+
+            combinator = current.next_sequence();
+            if combinator.is_none() {
+                break;
+            }
+        }
+
+        true
+    }
 }
 
 #[derive(Clone)]
@@ -804,6 +801,33 @@ impl<'a, Impl: 'a + SelectorImpl> SelectorIter<'a, Impl> {
         self.selector_length() > 0 &&
             self.all(|component| matches!(*component, Component::Host(..))) &&
             self.next_sequence().is_none()
+    }
+
+    #[inline]
+    pub(crate) fn matches_for_stateless_pseudo_element(&mut self) -> bool {
+        let first = match self.next() {
+            Some(c) => c,
+            // Note that this is the common path that we keep inline: the
+            // pseudo-element not having anything to its right.
+            None => return true,
+        };
+        self.matches_for_stateless_pseudo_element_internal(first)
+    }
+
+    #[inline(never)]
+    fn matches_for_stateless_pseudo_element_internal(&mut self, first: &Component<Impl>) -> bool {
+        if !first.matches_for_stateless_pseudo_element() {
+            return false;
+        }
+        for component in self {
+            // The only other parser-allowed Components in this sequence are
+            // state pseudo-classes, or one of the other things that can contain
+            // them.
+            if !component.matches_for_stateless_pseudo_element() {
+                return false;
+            }
+        }
+        true
     }
 
     /// Returns remaining count of the simple selectors and combinators in the Selector.
@@ -1027,47 +1051,24 @@ pub enum Component<Impl: SelectorImpl> {
     ///
     /// See https://github.com/w3c/csswg-drafts/issues/2158
     Host(Option<Selector<Impl>>),
+    /// The `:where` pseudo-class.
+    ///
+    /// https://drafts.csswg.org/selectors/#zero-matches
+    ///
+    /// The inner argument is conceptually a SelectorList, but we move the
+    /// selectors to the heap to keep Component small.
+    Where(Box<[Selector<Impl>]>),
+    /// The `:is` pseudo-class.
+    ///
+    /// https://drafts.csswg.org/selectors/#matches-pseudo
+    ///
+    /// Same comment as above re. the argument.
+    Is(Box<[Selector<Impl>]>),
+    /// An implementation-dependent pseudo-element selector.
     PseudoElement(#[shmem(field_bound)] Impl::PseudoElement),
 }
 
 impl<Impl: SelectorImpl> Component<Impl> {
-    /// Compute the ancestor hash to check against the bloom filter.
-    fn ancestor_hash(&self, quirks_mode: QuirksMode) -> Option<u32>
-    where
-        Impl::Identifier: PrecomputedHash,
-        Impl::ClassName: PrecomputedHash,
-        Impl::LocalName: PrecomputedHash,
-        Impl::NamespaceUrl: PrecomputedHash,
-    {
-        match *self {
-            Component::LocalName(LocalName {
-                ref name,
-                ref lower_name,
-            }) => {
-                // Only insert the local-name into the filter if it's all
-                // lowercase.  Otherwise we would need to test both hashes, and
-                // our data structures aren't really set up for that.
-                if name == lower_name {
-                    Some(name.precomputed_hash())
-                } else {
-                    None
-                }
-            },
-            Component::DefaultNamespace(ref url) | Component::Namespace(_, ref url) => {
-                Some(url.precomputed_hash())
-            },
-            // In quirks mode, class and id selectors should match
-            // case-insensitively, so just avoid inserting them into the filter.
-            Component::ID(ref id) if quirks_mode != QuirksMode::Quirks => {
-                Some(id.precomputed_hash())
-            },
-            Component::Class(ref class) if quirks_mode != QuirksMode::Quirks => {
-                Some(class.precomputed_hash())
-            },
-            _ => None,
-        }
-    }
-
     /// Returns true if this is a combinator.
     pub fn is_combinator(&self) -> bool {
         matches!(*self, Component::Combinator(_))
@@ -1079,6 +1080,140 @@ impl<Impl: SelectorImpl> Component<Impl> {
             Component::Combinator(c) => Some(c),
             _ => None,
         }
+    }
+
+    /// Whether this component is valid after a pseudo-element. Only intended
+    /// for sanity-checking.
+    pub fn maybe_allowed_after_pseudo_element(&self) -> bool {
+        match *self {
+            Component::NonTSPseudoClass(..) => true,
+            Component::Negation(ref components) => components
+                .iter()
+                .all(|c| c.maybe_allowed_after_pseudo_element()),
+            Component::Is(ref selectors) | Component::Where(ref selectors) => {
+                selectors.iter().all(|selector| {
+                    selector
+                        .iter_raw_match_order()
+                        .all(|c| c.maybe_allowed_after_pseudo_element())
+                })
+            },
+            _ => false,
+        }
+    }
+
+    /// Whether a given selector should match for stateless pseudo-elements.
+    ///
+    /// This is a bit subtle: Only selectors that return true in
+    /// `maybe_allowed_after_pseudo_element` should end up here, and
+    /// `NonTSPseudoClass` never matches (as it is a stateless pseudo after
+    /// all).
+    fn matches_for_stateless_pseudo_element(&self) -> bool {
+        debug_assert!(
+            self.maybe_allowed_after_pseudo_element(),
+            "Someone messed up pseudo-element parsing: {:?}",
+            *self
+        );
+        match *self {
+            Component::Negation(ref components) => !components
+                .iter()
+                .all(|c| c.matches_for_stateless_pseudo_element()),
+            Component::Is(ref selectors) | Component::Where(ref selectors) => {
+                selectors.iter().any(|selector| {
+                    selector
+                        .iter_raw_match_order()
+                        .all(|c| c.matches_for_stateless_pseudo_element())
+                })
+            },
+            _ => false,
+        }
+    }
+
+    pub fn visit<V>(&self, visitor: &mut V) -> bool
+    where
+        V: SelectorVisitor<Impl = Impl>,
+    {
+        use self::Component::*;
+        if !visitor.visit_simple_selector(self) {
+            return false;
+        }
+
+        match *self {
+            Slotted(ref selector) => {
+                if !selector.visit(visitor) {
+                    return false;
+                }
+            },
+            Host(Some(ref selector)) => {
+                if !selector.visit(visitor) {
+                    return false;
+                }
+            },
+            Negation(ref negated) => {
+                for component in negated.iter() {
+                    if !component.visit(visitor) {
+                        return false;
+                    }
+                }
+            },
+
+            AttributeInNoNamespaceExists {
+                ref local_name,
+                ref local_name_lower,
+            } => {
+                if !visitor.visit_attribute_selector(
+                    &NamespaceConstraint::Specific(&namespace_empty_string::<Impl>()),
+                    local_name,
+                    local_name_lower,
+                ) {
+                    return false;
+                }
+            },
+            AttributeInNoNamespace {
+                ref local_name,
+                never_matches,
+                ..
+            } if !never_matches => {
+                if !visitor.visit_attribute_selector(
+                    &NamespaceConstraint::Specific(&namespace_empty_string::<Impl>()),
+                    local_name,
+                    local_name,
+                ) {
+                    return false;
+                }
+            },
+            AttributeOther(ref attr_selector) if !attr_selector.never_matches => {
+                let empty_string;
+                let namespace = match attr_selector.namespace() {
+                    Some(ns) => ns,
+                    None => {
+                        empty_string = crate::parser::namespace_empty_string::<Impl>();
+                        NamespaceConstraint::Specific(&empty_string)
+                    },
+                };
+                if !visitor.visit_attribute_selector(
+                    &namespace,
+                    &attr_selector.local_name,
+                    &attr_selector.local_name_lower,
+                ) {
+                    return false;
+                }
+            },
+
+            NonTSPseudoClass(ref pseudo_class) => {
+                if !pseudo_class.visit(visitor) {
+                    return false;
+                }
+            },
+
+            Is(ref list) | Where(ref list) => {
+                if !visitor.visit_selector_list(&list) {
+                    return false;
+                }
+            },
+            _ => {},
+        }
+
+        true
     }
 }
 
@@ -1114,21 +1249,29 @@ impl<Impl: SelectorImpl> Debug for LocalName<Impl> {
     }
 }
 
+fn serialize_selector_list<'a, Impl, I, W>(mut iter: I, dest: &mut W) -> fmt::Result
+where
+    Impl: SelectorImpl,
+    I: Iterator<Item = &'a Selector<Impl>>,
+    W: fmt::Write,
+{
+    let first = iter
+        .next()
+        .expect("Empty SelectorList, should contain at least one selector");
+    first.to_css(dest)?;
+    for selector in iter {
+        dest.write_str(", ")?;
+        selector.to_css(dest)?;
+    }
+    Ok(())
+}
+
 impl<Impl: SelectorImpl> ToCss for SelectorList<Impl> {
     fn to_css<W>(&self, dest: &mut W) -> fmt::Result
     where
         W: fmt::Write,
     {
-        let mut iter = self.0.iter();
-        let first = iter
-            .next()
-            .expect("Empty SelectorList, should contain at least one selector");
-        first.to_css(dest)?;
-        for selector in iter {
-            dest.write_str(", ")?;
-            selector.to_css(dest)?;
-        }
-        Ok(())
+        serialize_selector_list(self.0.iter(), dest)
     }
 }
 
@@ -1401,6 +1544,15 @@ impl<Impl: SelectorImpl> ToCss for Component<Impl> {
                 write_affine(dest, a, b)?;
                 dest.write_char(')')
             },
+            Is(ref list) | Where(ref list) => {
+                match *self {
+                    Where(..) => dest.write_str(":where(")?,
+                    Is(..) => dest.write_str(":is(")?,
+                    _ => unreachable!(),
+                }
+                serialize_selector_list(list.iter(), dest)?;
+                dest.write_str(")")
+            },
             NonTSPseudoClass(ref pseudo) => pseudo.to_css(dest),
         }
     }
@@ -1479,6 +1631,7 @@ fn display_to_css_identifier<T: Display, W: fmt::Write>(x: &T, dest: &mut W) -> 
 fn parse_selector<'i, 't, P, Impl>(
     parser: &P,
     input: &mut CssParser<'i, 't>,
+    mut state: SelectorParsingState,
 ) -> Result<Selector<Impl>, ParseError<'i, P::Error>>
 where
     P: Parser<'i, Impl = Impl>,
@@ -1491,16 +1644,14 @@ where
     let mut part = false;
     'outer_loop: loop {
         // Parse a sequence of simple selectors.
-        let state = match parse_compound_selector(parser, input, &mut builder)? {
-            Some(state) => state,
-            None => {
-                return Err(input.new_custom_error(if builder.has_combinators() {
-                    SelectorParseErrorKind::DanglingCombinator
-                } else {
-                    SelectorParseErrorKind::EmptySelector
-                }));
-            },
-        };
+        let empty = parse_compound_selector(parser, &mut state, input, &mut builder)?;
+        if empty {
+            return Err(input.new_custom_error(if builder.has_combinators() {
+                SelectorParseErrorKind::DanglingCombinator
+            } else {
+                SelectorParseErrorKind::EmptySelector
+            }));
+        }
 
         if state.intersects(SelectorParsingState::AFTER_PSEUDO) {
             has_pseudo_element = state.intersects(SelectorParsingState::AFTER_PSEUDO_ELEMENT);
@@ -1541,6 +1692,11 @@ where
                 },
             }
         }
+
+        if !state.allows_combinators() {
+            return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
+        }
+
         builder.push_combinator(combinator);
     }
 
@@ -1557,7 +1713,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     where
         P: Parser<'i, Impl = Impl>,
     {
-        parse_selector(parser, input)
+        parse_selector(parser, input, SelectorParsingState::empty())
     }
 }
 
@@ -1567,6 +1723,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
 fn parse_type_selector<'i, 't, P, Impl, S>(
     parser: &P,
     input: &mut CssParser<'i, 't>,
+    state: SelectorParsingState,
     sink: &mut S,
 ) -> Result<bool, ParseError<'i, P::Error>>
 where
@@ -1581,6 +1738,9 @@ where
         }) |
         Ok(OptionalQName::None(_)) => Ok(false),
         Ok(OptionalQName::Some(namespace, local_name)) => {
+            if state.intersects(SelectorParsingState::AFTER_PSEUDO) {
+                return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
+            }
             match namespace {
                 QNamePrefix::ImplicitAnyNamespace => {},
                 QNamePrefix::ImplicitDefaultNamespace(url) => {
@@ -1952,11 +2112,14 @@ fn parse_attribute_flags<'i, 't>(
 fn parse_negation<'i, 't, P, Impl>(
     parser: &P,
     input: &mut CssParser<'i, 't>,
+    state: SelectorParsingState,
 ) -> Result<Component<Impl>, ParseError<'i, P::Error>>
 where
     P: Parser<'i, Impl = Impl>,
     Impl: SelectorImpl,
 {
+    let state = state | SelectorParsingState::INSIDE_NEGATION;
+
     // We use a sequence because a type selector may be represented as two Components.
     let mut sequence = SmallVec::<[Component<Impl>; 2]>::new();
 
@@ -1964,7 +2127,7 @@ where
 
     // Get exactly one simple selector. The parse logic in the caller will verify
     // that there are no trailing tokens after we're done.
-    let is_type_sel = match parse_type_selector(parser, input, &mut sequence) {
+    let is_type_sel = match parse_type_selector(parser, input, state, &mut sequence) {
         Ok(result) => result,
         Err(ParseError {
             kind: ParseErrorKind::Basic(BasicParseErrorKind::EndOfInput),
@@ -1973,7 +2136,7 @@ where
         Err(e) => return Err(e.into()),
     };
     if !is_type_sel {
-        match parse_one_simple_selector(parser, input, SelectorParsingState::INSIDE_NEGATION)? {
+        match parse_one_simple_selector(parser, input, state)? {
             Some(SimpleSelectorParseResult::SimpleSelector(s)) => {
                 sequence.push(s);
             },
@@ -2000,12 +2163,13 @@ where
 /// | [ HASH | class | attrib | pseudo | negation ]+
 ///
 /// `Err(())` means invalid selector.
-/// `Ok(None)` is an empty selector
+/// `Ok(true)` is an empty selector
 fn parse_compound_selector<'i, 't, P, Impl>(
     parser: &P,
+    state: &mut SelectorParsingState,
     input: &mut CssParser<'i, 't>,
     builder: &mut SelectorBuilder<Impl>,
-) -> Result<Option<SelectorParsingState>, ParseError<'i, P::Error>>
+) -> Result<bool, ParseError<'i, P::Error>>
 where
     P: Parser<'i, Impl = Impl>,
     Impl: SelectorImpl,
@@ -2013,27 +2177,47 @@ where
     input.skip_whitespace();
 
     let mut empty = true;
-    if !parse_type_selector(parser, input, builder)? {
-        if let Some(url) = parser.default_namespace() {
-            // If there was no explicit type selector, but there is a
-            // default namespace, there is an implicit "<defaultns>|*" type
-            // selector.
-            builder.push_simple_selector(Component::DefaultNamespace(url))
-        }
-    } else {
+    if parse_type_selector(parser, input, *state, builder)? {
         empty = false;
     }
 
-    let mut state = SelectorParsingState::empty();
     loop {
-        let parse_result = match parse_one_simple_selector(parser, input, state)? {
+        let result = match parse_one_simple_selector(parser, input, *state)? {
             None => break,
             Some(result) => result,
         };
 
+        if empty {
+            if let Some(url) = parser.default_namespace() {
+                // If there was no explicit type selector, but there is a
+                // default namespace, there is an implicit "<defaultns>|*" type
+                // selector. Except for :host, where we ignore it.
+                //
+                // https://drafts.csswg.org/css-scoping/#host-element-in-tree:
+                //
+                //     When considered within its own shadow trees, the shadow
+                //     host is featureless. Only the :host, :host(), and
+                //     :host-context() pseudo-classes are allowed to match it.
+                //
+                // https://drafts.csswg.org/selectors-4/#featureless:
+                //
+                //     A featureless element does not match any selector at all,
+                //     except those it is explicitly defined to match. If a
+                //     given selector is allowed to match a featureless element,
+                //     it must do so while ignoring the default namespace.
+                //
+                if !matches!(
+                    result,
+                    SimpleSelectorParseResult::SimpleSelector(Component::Host(..))
+                ) {
+                    builder.push_simple_selector(Component::DefaultNamespace(url));
+                }
+            }
+        }
+
         empty = false;
 
-        match parse_result {
+        match result {
             SimpleSelectorParseResult::SimpleSelector(s) => {
                 builder.push_simple_selector(s);
             },
@@ -2057,12 +2241,31 @@ where
             },
         }
     }
-    if empty {
-        // An empty selector is invalid.
-        Ok(None)
-    } else {
-        Ok(Some(state))
-    }
+    Ok(empty)
+}
+
+fn parse_is_or_where<'i, 't, P, Impl>(
+    parser: &P,
+    input: &mut CssParser<'i, 't>,
+    state: SelectorParsingState,
+    component: impl FnOnce(Box<[Selector<Impl>]>) -> Component<Impl>,
+) -> Result<Component<Impl>, ParseError<'i, P::Error>>
+where
+    P: Parser<'i, Impl = Impl>,
+    Impl: SelectorImpl,
+{
+    debug_assert!(parser.parse_is_and_where());
+    // https://drafts.csswg.org/selectors/#matches-pseudo:
+    //
+    //     Pseudo-elements cannot be represented by the matches-any
+    //     pseudo-class; they are not valid within :is().
+    //
+    let inner = SelectorList::parse_with_state(
+        parser,
+        input,
+        state | SelectorParsingState::DISALLOW_PSEUDOS,
+    )?;
+    Ok(component(inner.0.into_vec().into_boxed_slice()))
 }
 
 fn parse_functional_pseudo_class<'i, 't, P, Impl>(
@@ -2075,38 +2278,51 @@ where
     P: Parser<'i, Impl = Impl>,
     Impl: SelectorImpl,
 {
-    if !state.allows_functional_pseudo_classes() {
-        return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
-    }
-    debug_assert!(state.allows_tree_structural_pseudo_classes());
     match_ignore_ascii_case! { &name,
-        "nth-child" => return Ok(parse_nth_pseudo_class(input, Component::NthChild)?),
-        "nth-of-type" => return Ok(parse_nth_pseudo_class(input, Component::NthOfType)?),
-        "nth-last-child" => return Ok(parse_nth_pseudo_class(input, Component::NthLastChild)?),
-        "nth-last-of-type" => return Ok(parse_nth_pseudo_class(input, Component::NthLastOfType)?),
-        "host" => return Ok(Component::Host(Some(parse_inner_compound_selector(parser, input)?))),
+        "nth-child" => return parse_nth_pseudo_class(parser, input, state, Component::NthChild),
+        "nth-of-type" => return parse_nth_pseudo_class(parser, input, state, Component::NthOfType),
+        "nth-last-child" => return parse_nth_pseudo_class(parser, input, state, Component::NthLastChild),
+        "nth-last-of-type" => return parse_nth_pseudo_class(parser, input, state, Component::NthLastOfType),
+        "is" if parser.parse_is_and_where() => return parse_is_or_where(parser, input, state, Component::Is),
+        "where" if parser.parse_is_and_where() => return parse_is_or_where(parser, input, state, Component::Where),
+        "host" => {
+            if !state.allows_tree_structural_pseudo_classes() {
+                return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
+            }
+            return Ok(Component::Host(Some(parse_inner_compound_selector(parser, input, state)?)));
+        },
         "not" => {
             if state.intersects(SelectorParsingState::INSIDE_NEGATION) {
                 return Err(input.new_custom_error(
                     SelectorParseErrorKind::UnexpectedIdent("not".into())
                 ));
             }
-            debug_assert!(state.is_empty());
-            return parse_negation(parser, input)
+            return parse_negation(parser, input, state)
         },
         _ => {}
     }
+
+    if !state.allows_custom_functional_pseudo_classes() {
+        return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
+    }
+
     P::parse_non_ts_functional_pseudo_class(parser, name, input).map(Component::NonTSPseudoClass)
 }
 
-fn parse_nth_pseudo_class<'i, 't, Impl, F>(
+fn parse_nth_pseudo_class<'i, 't, P, Impl, F>(
+    _: &P,
     input: &mut CssParser<'i, 't>,
+    state: SelectorParsingState,
     selector: F,
-) -> Result<Component<Impl>, BasicParseError<'i>>
+) -> Result<Component<Impl>, ParseError<'i, P::Error>>
 where
+    P: Parser<'i, Impl = Impl>,
     Impl: SelectorImpl,
     F: FnOnce(i32, i32) -> Component<Impl>,
 {
+    if !state.allows_tree_structural_pseudo_classes() {
+        return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
+    }
     let (a, b) = parse_nth(input)?;
     Ok(selector(a, b))
 }
@@ -2191,7 +2407,7 @@ where
             };
             let is_pseudo_element = !is_single_colon || is_css2_pseudo_element(&name);
             if is_pseudo_element {
-                if state.intersects(SelectorParsingState::AFTER_PSEUDO_ELEMENT) {
+                if !state.allows_pseudos() {
                     return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
                 }
                 let pseudo_element = if is_functional {
@@ -2218,7 +2434,7 @@ where
                             );
                         }
                         let selector = input.parse_nested_block(|input| {
-                            parse_inner_compound_selector(parser, input)
+                            parse_inner_compound_selector(parser, input, state)
                         })?;
                         return Ok(Some(SimpleSelectorParseResult::SlottedPseudo(selector)));
                     }
@@ -2375,17 +2591,6 @@ pub mod tests {
         }
     }
 
-    impl Visit for PseudoClass {
-        type Impl = DummySelectorImpl;
-
-        fn visit<V>(&self, _visitor: &mut V) -> bool
-        where
-            V: SelectorVisitor<Impl = Self::Impl>,
-        {
-            true
-        }
-    }
-
     #[derive(Clone, Debug, PartialEq)]
     pub struct DummySelectorImpl;
 
@@ -2445,6 +2650,10 @@ pub mod tests {
         type Error = SelectorParseErrorKind<'i>;
 
         fn parse_slotted(&self) -> bool {
+            true
+        }
+
+        fn parse_is_and_where(&self) -> bool {
             true
         }
 
@@ -3079,6 +3288,10 @@ pub mod tests {
         assert!(parse("slot::slotted(div,foo)::first-line").is_err());
         assert!(parse("::slotted(div)::before").is_ok());
         assert!(parse("slot::slotted(div,foo)").is_err());
+
+        assert!(parse("foo:where()").is_err());
+        assert!(parse("foo:where(div, foo, .bar baz)").is_ok());
+        assert!(parse("foo:where(::before)").is_err());
     }
 
     #[test]
