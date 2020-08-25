@@ -26,6 +26,7 @@
 #include "prprf.h"
 #include "nsReadableUtils.h"
 #include "mozilla/net/MozURL_ffi.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 
@@ -150,7 +151,13 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
 
         totalRead += read;
         auto bufferWritten = buffer.To(written);
-        if (!NS_EscapeURLSpan(bufferWritten, subsubTaint, aMask, aOut)) {
+        bool escaped = false;
+        if (Preferences::GetBool("taintfox.escapeURL", false)) {
+          if (!NS_EscapeURLSpan(bufferWritten, subsubTaint, aMask, aOut)) {
+            escaped = true;
+          }
+        }
+        if (!escaped) {
           // Taintfox: append the taint
           aOut.Taint().concat(subsubTaint, aOut.Length());
           aOut.Append(bufferWritten);
@@ -174,11 +181,13 @@ int32_t nsStandardURL::nsSegmentEncoder::EncodeSegmentCount(
     }
   }
 
-  if (NS_EscapeURLSpan(span, subtaint, aMask, aOut)) {
-    aAppended = true;
-    // Difference between original and current output
-    // string lengths plus extra length
-    return aOut.Length() - origLen + aExtraLen;
+  if (Preferences::GetBool("taintfox.escapeURL", false)) {
+    if (NS_EscapeURLSpan(span, subtaint, aMask, aOut)) {
+      aAppended = true;
+      // Difference between original and current output
+      // string lengths plus extra length
+      return aOut.Length() - origLen + aExtraLen;
+    }
   }
   aAppended = false;
   // Original segment length plus extra length
