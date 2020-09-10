@@ -14,6 +14,7 @@
 #include "nsContentUtils.h"
 #include "mozilla/dom/Document.h"
 #include "nsIURIMutator.h"
+#include "nsJSUtils.h"
 #include "nsNetUtil.h"
 
 namespace mozilla {
@@ -56,6 +57,8 @@ already_AddRefed<URL> URL::Constructor(nsISupports* aParent,
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
+  // Taintfox: propagate taint
+  base.AssignTaint(aBase.Taint());
 
   nsCOMPtr<nsIURI> baseUri;
   nsresult rv = NS_NewURI(getter_AddRefs(baseUri), base);
@@ -77,6 +80,9 @@ already_AddRefed<URL> URL::Constructor(nsISupports* aParent,
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
+  // Taintfox: propagate taint
+  urlStr.AssignTaint(aURL.Taint());
+  MarkTaintOperation(urlStr, "URL");
 
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_NewURI(getter_AddRefs(uri), urlStr, nullptr, aBase);
@@ -177,6 +183,8 @@ void URL::SetHref(const nsAString& aHref, ErrorResult& aRv) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
+  // Taintfox: propagate taint
+  href.AssignTaint(aHref.Taint());
 
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_NewURI(getter_AddRefs(uri), href);
@@ -330,6 +338,8 @@ void URL::GetPathname(nsAString& aPathname) const {
   nsresult rv = mURI->GetFilePath(file);
   if (NS_SUCCEEDED(rv)) {
     CopyUTF8toUTF16(file, aPathname);
+    aPathname.AssignTaint(file.Taint());
+    MarkTaintOperation(aPathname, "URL.pathname");
   }
 }
 
@@ -358,6 +368,8 @@ void URL::GetSearch(nsAString& aSearch) const {
   if (NS_SUCCEEDED(rv) && !search.IsEmpty()) {
     aSearch.Assign(u'?');
     AppendUTF8toUTF16(search, aSearch);
+    aSearch.AssignTaint(search.Taint());
+    MarkTaintOperation(aSearch, "URL.search");
   }
 }
 
@@ -371,6 +383,8 @@ void URL::GetHash(nsAString& aHash) const {
   if (NS_SUCCEEDED(rv) && !ref.IsEmpty()) {
     aHash.Assign(char16_t('#'));
     AppendUTF8toUTF16(ref, aHash);
+    aHash.AssignTaint(ref.Taint());
+    MarkTaintOperation(aHash, "URL.hash");
   }
 }
 

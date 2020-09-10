@@ -402,6 +402,7 @@ using nsAutoJSCString = nsTAutoJSString<char>;
 
 // Extend the taintflow
 nsresult MarkTaintOperation(nsAString &str, const char* name);
+nsresult MarkTaintOperation(nsACString &str, const char* name);
 nsresult MarkTaintOperation(nsAString &str, const char* name, const nsTArray<nsString> &arg);
 
 // TaintFox: Add taint source information to a string
