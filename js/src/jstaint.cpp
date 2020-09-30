@@ -28,6 +28,11 @@ static std::u16string ascii2utf16(const std::string& str) {
   return res;
 }
 
+std::u16string JS::char_taintarg(JSContext* cx, const char16_t ch)
+{
+  return std::u16string(1, ch);
+}
+
 std::u16string JS::taintarg(JSContext* cx, const char16_t* str)
 {
   return std::u16string(str);

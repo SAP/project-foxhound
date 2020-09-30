@@ -3924,7 +3924,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
       splits->initDenseElement(splitsIndex++, StringValue(sub));
 
       // TaintFox: extend taint flow
-      sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg(cx, u""), taintarg(cx, count++) }));
+      sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { char_taintarg(cx, patCh), taintarg(cx, count++) }));
 
       lastEndIndex = index + 1;
     }
@@ -3937,7 +3937,7 @@ static MOZ_ALWAYS_INLINE ArrayObject* SplitSingleCharHelper(
     return nullptr;
   }
   // TaintFox: extend taint flow
-  sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { taintarg(cx, u""), taintarg(cx, count++) }));
+  sub->taint().extend(TaintOperation("split", true, TaintLocationFromContext(cx), { char_taintarg(cx, patCh), taintarg(cx, count++) }));
 
   splits->initDenseElement(splitsIndex++, StringValue(sub));
 
