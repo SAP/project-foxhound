@@ -20,6 +20,7 @@
 using namespace JS;
 
 const size_t max_length = 128;
+const size_t copy_length = (max_length/2)-2;
 
 static std::u16string ascii2utf16(const std::string& str) {
   std::u16string res;
@@ -49,8 +50,13 @@ std::u16string JS::taintarg(JSContext* cx, HandleString str)
 
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
   js::CopyChars(buf.get(), *linear);
-  std::u16string result(buf.get(), std::min(linear->length(), max_length));
-  return result;
+  if(linear->length() > max_length) {
+    std::u16string result(buf.get(), copy_length);
+    result.append(u"....");
+    result.append(std::u16string(buf.get(), linear->length()-copy_length, copy_length));
+    return result;
+  }
+  return std::u16string(buf.get(), linear->length());
 }
 
 std::u16string JS::taintarg_jsstring(JSContext* cx, JSString* const& str)
@@ -64,9 +70,13 @@ std::u16string JS::taintarg_jsstring(JSContext* cx, JSString* const& str)
 
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
   js::CopyChars(buf.get(), *linear);
-  std::u16string result(buf.get(), std::min(linear->length(), max_length));
-
-  return result;
+  if(linear->length() > max_length) {
+    std::u16string result(buf.get(), copy_length);
+    result.append(u"....");
+    result.append(std::u16string(buf.get(), linear->length()-copy_length, copy_length));
+    return result;
+  }
+  return std::u16string(buf.get(), linear->length());
 }
 
 std::u16string JS::taintarg(JSContext* cx, HandleObject obj)
