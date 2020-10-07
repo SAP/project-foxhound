@@ -8178,6 +8178,16 @@ class BulkAppender {
     mPosition += len;
   }
 
+  template <int N>
+  void AppendLiteralTainted(const char16_t (&aStr)[N], const StringTaint& aTaint) {
+    size_t len = N - 1;
+    MOZ_ASSERT(mPosition + len <= mHandle.Length());
+    memcpy(mHandle.Elements() + mPosition, aStr, len * sizeof(char16_t));
+    // Taintfox: propagate taint
+    mTaint.concat(aTaint, mPosition);
+    mPosition += len;
+  }
+
   void Append(Span<const char16_t> aStr, const StringTaint& aTaint) {
     size_t len = aStr.Length();
     MOZ_ASSERT(mPosition + len <= mHandle.Length());
@@ -8392,23 +8402,36 @@ class StringBuilder {
     size_t flushedUntil = 0;
     size_t currentPosition = 0;
     for (char16_t c : aStr) {
+      const TaintFlow* flow = aTaint.at(currentPosition);
       switch (c) {
         case '"':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
                            aTaint.subtaint(flushedUntil, currentPosition));
-          aAppender.AppendLiteral(u"&quot;");
+          if (flow) {
+            aAppender.AppendLiteralTainted(u"&quot;", StringTaint(*flow, 6));
+          } else {
+            aAppender.AppendLiteral(u"&quot;");
+          }
           flushedUntil = currentPosition + 1;
           break;
         case '&':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
                            aTaint.subtaint(flushedUntil, currentPosition));
-          aAppender.AppendLiteral(u"&amp;");
+          if (flow) {
+            aAppender.AppendLiteralTainted(u"&amp;", StringTaint(*flow, 5));
+          } else {
+            aAppender.AppendLiteral(u"&amp;");
+          }
           flushedUntil = currentPosition + 1;
           break;
         case 0x00A0:
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
                            aTaint.subtaint(flushedUntil, currentPosition));
-          aAppender.AppendLiteral(u"&nbsp;");
+          if (flow) {
+            aAppender.AppendLiteralTainted(u"&nbsp;", StringTaint(*flow, 6));
+          } else {
+            aAppender.AppendLiteral(u"&nbsp;");
+          }
           flushedUntil = currentPosition + 1;
           break;
         default:
@@ -8427,29 +8450,46 @@ class StringBuilder {
     size_t flushedUntil = 0;
     size_t currentPosition = 0;
     for (T c : aStr) {
+      const TaintFlow* flow = aTaint.at(currentPosition);
       switch (c) {
         case '<':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
                            aTaint.subtaint(flushedUntil, currentPosition));
-          aAppender.AppendLiteral(u"&lt;");
+          if (flow) {
+            aAppender.AppendLiteralTainted(u"&lt;", StringTaint(*flow, 4));
+          } else {
+            aAppender.AppendLiteral(u"&lt;");
+          }
           flushedUntil = currentPosition + 1;
           break;
         case '>':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
                            aTaint.subtaint(flushedUntil, currentPosition));
-          aAppender.AppendLiteral(u"&gt;");
+          if (flow) {
+            aAppender.AppendLiteralTainted(u"&gt;", StringTaint(*flow, 4));
+          } else {
+            aAppender.AppendLiteral(u"&gt;");
+          }
           flushedUntil = currentPosition + 1;
           break;
         case '&':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
                            aTaint.subtaint(flushedUntil, currentPosition));
-          aAppender.AppendLiteral(u"&amp;");
+          if (flow) {
+            aAppender.AppendLiteralTainted(u"&amp;", StringTaint(*flow, 5));
+          } else {
+            aAppender.AppendLiteral(u"&amp;");
+          }
           flushedUntil = currentPosition + 1;
           break;
         case T(0xA0):
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
                            aTaint.subtaint(flushedUntil, currentPosition));
-          aAppender.AppendLiteral(u"&nbsp;");
+          if (flow) {
+            aAppender.AppendLiteralTainted(u"&nbsp;", StringTaint(*flow, 6));
+          } else {
+            aAppender.AppendLiteral(u"&nbsp;");
+          }
           flushedUntil = currentPosition + 1;
           break;
         default:

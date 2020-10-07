@@ -408,6 +408,7 @@ static const char* const kEntityStrings[] = {
 
 bool nsHTMLContentSerializer::AppendAndTranslateEntities(
     const nsAString& aStr, nsAString& aOutputStr) {
+
   if (mBodyOnly && !mInBody) {
     return true;
   }

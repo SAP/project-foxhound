@@ -35,6 +35,8 @@
 #include "nsParserConstants.h"
 #include "mozilla/Encoding.h"
 
+#include <iostream>
+
 using namespace mozilla;
 using namespace mozilla::dom;
 
@@ -160,14 +162,13 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
                          Substring(strStart, strStart + length), aStr),
                      NS_ERROR_OUT_OF_MEMORY);
     } else {
+      // Taintfox: propagate taint
+      aStr.Taint().concat(frag->Taint().subtaint(aStartOffset, endoffset), aStr.Length());
       NS_ENSURE_TRUE(aStr.Append(Substring(strStart, strStart + length),
                                  mozilla::fallible),
                      NS_ERROR_OUT_OF_MEMORY);
     }
   } else {
-    // Taintfox: propagate taint
-    aStr.Taint().concat(frag->Taint().subtaint(aStartOffset, endoffset), aStr.Length());
-
     nsAutoString utf16;
     if (!CopyASCIItoUTF16(MakeSpan(frag->Get1b() + aStartOffset, length), utf16,
                           mozilla::fallible_t())) {
@@ -175,9 +176,12 @@ nsresult nsXMLContentSerializer::AppendTextData(nsIContent* aNode,
     }
 
     if (aTranslateEntities) {
+      // Taintfox: AppendAndTranslateEntities handles taint
       NS_ENSURE_TRUE(AppendAndTranslateEntities(utf16, aStr),
                      NS_ERROR_OUT_OF_MEMORY);
     } else {
+      // Taintfox: propagate taint
+      aStr.Taint().concat(frag->Taint().subtaint(aStartOffset, endoffset), aStr.Length());
       NS_ENSURE_TRUE(aStr.Append(utf16, mozilla::fallible),
                      NS_ERROR_OUT_OF_MEMORY);
     }
