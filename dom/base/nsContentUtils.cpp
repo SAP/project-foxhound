@@ -8213,7 +8213,7 @@ class BulkAppender {
 
   void Finish() { mHandle.Finish(mPosition, false); }
 
-  const StringTaint& Taint() { return mTaint; }
+  StringTaint& Taint() { return mTaint; }
 
  private:
   mozilla::BulkWriteHandle<char16_t> mHandle;
@@ -8443,6 +8443,8 @@ class StringBuilder {
       aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
                        aTaint.subtaint(flushedUntil, currentPosition));
     }
+    // Taintfox: Extend taint flow
+    MarkTaintOperation(aAppender.Taint(), "nsContentUtils::EncodeAttrString");
   }
 
   template <class T>
@@ -8501,6 +8503,8 @@ class StringBuilder {
       aAppender.Append(aStr.FromTo(flushedUntil, currentPosition),
                        aTaint.subtaint(flushedUntil, currentPosition));
     }
+    // Taintfox: Extend taint flow
+    MarkTaintOperation(aAppender.Taint(), "nsContentUtils::EncodeTextFragment");
   }
 
   AutoTArray<Unit, STRING_BUFFER_UNITS> mUnits;

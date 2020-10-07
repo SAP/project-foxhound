@@ -3455,7 +3455,7 @@ void Element::CloneAnimationsFrom(const Element& aOther) {
 
 void Element::GetInnerHTML(nsAString& aInnerHTML, OOMReporter& aError) {
   GetMarkup(false, aInnerHTML);
-  // MarkTaintSourceElement(aInnerHTML, "element.innerHTML", this);
+  MarkTaintOperation(aInnerHTML, "element.innerHTML");
 }
 
 void Element::SetInnerHTML(const nsAString& aInnerHTML,
@@ -3472,7 +3472,7 @@ void Element::SetInnerHTML(const nsAString& aInnerHTML,
 
 void Element::GetOuterHTML(nsAString& aOuterHTML) {
   GetMarkup(true, aOuterHTML);
-  // MarkTaintSourceElement(aOuterHTML, "element.outerHTML", this);
+    MarkTaintOperation(aOuterHTML, "element.outerHTML");
 }
 
 void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {

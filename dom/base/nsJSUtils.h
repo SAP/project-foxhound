@@ -404,6 +404,7 @@ using nsAutoJSCString = nsTAutoJSString<char>;
 nsresult MarkTaintOperation(nsAString &str, const char* name);
 nsresult MarkTaintOperation(nsACString &str, const char* name);
 nsresult MarkTaintOperation(nsAString &str, const char* name, const nsTArray<nsString> &arg);
+nsresult MarkTaintOperation(StringTaint& aTaint, const char* name);
 
 // TaintFox: Add taint source information to a string
 nsresult MarkTaintSource(nsAString &str, const char* name);
