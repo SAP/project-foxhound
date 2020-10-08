@@ -1,3 +1,4 @@
+
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
@@ -56,10 +57,10 @@ TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool i
 
 TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native, JSString* const& str);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native,
+TaintOperation TaintOperationConcat(JSContext* cx, const char* name, bool is_native,
                                          JS::HandleString str1, JS::HandleString str2);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native,
+TaintOperation TaintOperationConcat(JSContext* cx, const char* name, bool is_native,
                                          JSString* const& str1, JSString* const& str2);
 
 TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native);

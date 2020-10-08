@@ -622,6 +622,7 @@ nsresult MarkTaintOperation(StringTaint& aTaint, const char* name) {
   auto op = GetTaintOperation(cx, name);
   op.set_native();
   aTaint.extend(op);
+  return NS_OK;
 }
 
 static nsresult MarkTaintOperation(JSContext *cx, nsACString &str, const char* name)

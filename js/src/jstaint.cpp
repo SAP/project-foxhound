@@ -211,14 +211,34 @@ TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx, const char* 
   return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg));
 }
 
-TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native,
+
+
+TaintOperation JS::TaintOperationConcat(JSContext* cx, const char* name, bool is_native,
                                              JS::HandleString arg1, JS::HandleString arg2) {
-  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs(cx, arg1, arg2));
+  std::vector<std::u16string> args = taintargs(cx, arg1, arg2);
+  std::u16string whichStringsAreTainted = u"tainted:";
+  if (arg1->isTainted()) {
+    whichStringsAreTainted.append(u"L");
+  }
+  if (arg2->isTainted()) {
+    whichStringsAreTainted.append(u"R");
+  }
+  args.push_back(whichStringsAreTainted);
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), args);
 }
 
-TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native,
+TaintOperation JS::TaintOperationConcat(JSContext* cx, const char* name, bool is_native,
                                              JSString* const& arg1, JSString* const & arg2) {
-  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg1, arg2));
+  std::vector<std::u16string> args = taintargs_jsstring(cx, arg1, arg2);
+  std::u16string whichStringsAreTainted = u"tainted:";
+  if (arg1->isTainted()) {
+    whichStringsAreTainted.append(u"L");
+  }
+  if (arg2->isTainted()) {
+    whichStringsAreTainted.append(u"R");
+  }
+  args.push_back(whichStringsAreTainted);
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), args);
 }
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native) {
