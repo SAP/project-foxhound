@@ -1146,7 +1146,7 @@ bool json_stringify(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     // TaintFox: Add stringify operation to taint flows.
-    str->taint().extend(TaintOperation("JSON.stringify", true));
+    str->taint().extend(TaintOperationFromContext(cx, "JSON.stringify", true));
 
     args.rval().setString(str);
   } else {
