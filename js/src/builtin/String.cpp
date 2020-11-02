@@ -3162,7 +3162,8 @@ template <typename CharT>
 static bool AppendDollarReplacement(StringBuffer& newReplaceChars,
                                     size_t firstDollarIndex, size_t matchStart,
                                     size_t matchLimit, JSLinearString* text,
-                                    const CharT* repChars, size_t repLength) {
+                                    const CharT* repChars, size_t repLength,
+                                    const StringTaint& repTaint) {
   MOZ_ASSERT(firstDollarIndex < repLength);
   MOZ_ASSERT(matchStart <= matchLimit);
   MOZ_ASSERT(matchLimit <= text->length());
@@ -3174,8 +3175,16 @@ static bool AppendDollarReplacement(StringBuffer& newReplaceChars,
 
   // Move the rest char-by-char, interpreting dollars as we encounter them.
   const CharT* repLimit = repChars + repLength;
-  for (const CharT* it = repChars + firstDollarIndex; it < repLimit; ++it) {
+  // Taintfox: index to keep track of taint information
+  size_t index = firstDollarIndex;
+  for (const CharT* it = repChars + firstDollarIndex; it < repLimit; ++it, ++index) {
+    // Taintfox: propagate the taint information
+    const TaintFlow *flow = repTaint.at(index);
+
     if (*it != '$' || it == repLimit - 1) {
+      if (flow) {
+        newReplaceChars.taint().set(newReplaceChars.length(), *flow);
+      }
       if (!newReplaceChars.append(*it)) {
         return false;
       }
@@ -3184,6 +3193,9 @@ static bool AppendDollarReplacement(StringBuffer& newReplaceChars,
 
     switch (*(it + 1)) {
       case '$':
+        if (flow) {
+          newReplaceChars.taint().set(newReplaceChars.length(), *flow);
+        }
         // Eat one of the dollars.
         if (!newReplaceChars.append(*it)) {
           return false;
@@ -3207,6 +3219,9 @@ static bool AppendDollarReplacement(StringBuffer& newReplaceChars,
         }
         break;
       default:
+        if (flow) {
+          newReplaceChars.taint().set(newReplaceChars.length(), *flow);
+        }
         // The dollar we saw was not special (no matter what its mother told
         // it).
         if (!newReplaceChars.append(*it)) {
@@ -3215,6 +3230,7 @@ static bool AppendDollarReplacement(StringBuffer& newReplaceChars,
         continue;
     }
     ++it;  // We always eat an extra char in the above switch.
+    ++index;
   }
 
   return true;
@@ -3255,12 +3271,14 @@ static JSLinearString* InterpretDollarReplacement(
     AutoCheckCannotGC nogc;
     res = AppendDollarReplacement(newReplaceChars, firstDollarIndex, matchStart,
                                   matchLimit, textstr,
-                                  repstr->latin1Chars(nogc), repstr->length());
+                                  repstr->latin1Chars(nogc), repstr->length(),
+                                  repstr->taint());
   } else {
     AutoCheckCannotGC nogc;
     res = AppendDollarReplacement(newReplaceChars, firstDollarIndex, matchStart,
                                   matchLimit, textstr,
-                                  repstr->twoByteChars(nogc), repstr->length());
+                                  repstr->twoByteChars(nogc), repstr->length(),
+                                  repstr->taint());
   }
   if (!res) {
     return nullptr;
@@ -3478,7 +3496,8 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
 
   // Nothing to replace, so return early.
   if (position < 0) {
-    return string;
+    // TaintFox: copy string to add taint operation later on
+    return NewDependentString(cx, string, 0, string->length());
   }
 
   // Step 11 (moved below).
@@ -3513,6 +3532,10 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
     do {
       // Step 14.c.
       // Append the substring before the current match.
+
+      // Taintfox - first append taint for the substring before the current match
+      result.taint().concat(string->taint().subtaint(endOfLastMatch, position), result.length());
+
       if (!result.append(strChars + endOfLastMatch,
                          position - endOfLastMatch)) {
         return nullptr;
@@ -3523,10 +3546,12 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
       if (dollarIndex != UINT32_MAX) {
         size_t matchLimit = position + searchLength;
         if (!AppendDollarReplacement(result, dollarIndex, position, matchLimit,
-                                     string, repChars, replaceLength)) {
+                                     string, repChars, replaceLength,
+                                     replaceString->taint())) {
           return nullptr;
         }
       } else {
+        result.taint().concat(replaceString->taint(), result.length());
         if (!result.append(repChars, replaceLength)) {
           return nullptr;
         }
@@ -3540,6 +3565,10 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
       position = StringMatch(string, searchString, endOfLastMatch);
     } while (position >= 0);
 
+    // Taintfox: append the final taint
+    // Taintfox - first append taint for the substring before the current match
+    result.taint().concat(string->taint().subtaint(endOfLastMatch, stringLength), result.length());
+
     // Step 15.
     // Append the substring after the last match.
     if (!result.append(strChars + endOfLastMatch,
@@ -3547,6 +3576,10 @@ static JSString* ReplaceAll(JSContext* cx, JSLinearString* string,
       return nullptr;
     }
   }
+
+  // Taintfox: extend the taint flow
+  result.taint().extend(
+    TaintOperationFromContextJSString(cx, "replaceAll", true, searchString, replaceString));
 
   // Step 16.
   return result.finishString();
@@ -3607,8 +3640,11 @@ static JSString* ReplaceAllInterleave(JSContext* cx, JSLinearString* string,
     auto appendReplacement = [&](size_t match) {
       if (dollarIndex != UINT32_MAX) {
         return AppendDollarReplacement(result, dollarIndex, match, match,
-                                       string, repChars, replaceLength);
+                                       string, repChars, replaceLength,
+                                       replaceString->taint());
       }
+      // Taintfox: propagate taint
+      result.taint().concat(replaceString->taint(), result.length());
       return result.append(repChars, replaceLength);
     };
 
@@ -3619,6 +3655,11 @@ static JSString* ReplaceAllInterleave(JSContext* cx, JSLinearString* string,
         return nullptr;
       }
 
+      // Taintfox: append taint for each character
+      const TaintFlow *flow = string->taint().at(index);
+      if (flow) {
+        result.taint().set(result.length(), *flow);
+      }
       // Step 14.c.
       if (!result.append(strChars[index])) {
         return nullptr;

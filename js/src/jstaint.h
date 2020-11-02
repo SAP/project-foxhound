@@ -57,6 +57,9 @@ TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool i
 
 TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native, JSString* const& str);
 
+TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native,
+                                                 JSString* const& str1, JSString* const& str2);
+
 TaintOperation TaintOperationConcat(JSContext* cx, const char* name, bool is_native,
                                          JS::HandleString str1, JS::HandleString str2);
 

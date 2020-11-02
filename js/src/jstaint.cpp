@@ -211,6 +211,9 @@ TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx, const char* 
   return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg));
 }
 
+TaintOperation JS::TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native, JSString* const& arg1, JSString* const& arg2) { 
+  return TaintOperation(name, is_native, TaintLocationFromContext(cx), taintargs_jsstring(cx, arg1, arg2));
+}
 
 
 TaintOperation JS::TaintOperationConcat(JSContext* cx, const char* name, bool is_native,
