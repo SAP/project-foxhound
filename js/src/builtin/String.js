@@ -28,7 +28,7 @@ function addTaintToArray(array, name, arg) {
         if (typeof(array[i]) !== "string") {
             continue;
         }
-        AddTaintOperationNative(array[i], name, arg);
+        AddTaintOperationNative(array[i], name, arg, array[i], i);
     }
 }
 
