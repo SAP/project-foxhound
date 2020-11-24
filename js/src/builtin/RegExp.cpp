@@ -10,6 +10,8 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/TextUtils.h"
 
+#include "jsapi.h"
+
 #include "frontend/TokenStream.h"
 #include "irregexp/RegExpAPI.h"
 #include "jit/InlinableNatives.h"
@@ -111,7 +113,9 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
       if (str->taint().hasTaint()) {
         RootedAtom src(cx, re->getSource());
         JSString* srcStr = EscapeRegExpPattern(cx, src);
-        str->taint().extend(TaintOperationFromContextJSString(cx, "RegExp.prototype.exec", true, srcStr));
+        str->taint().extend(
+          TaintOperation("RegExp.prototype.exec", true, TaintLocationFromContext(cx),
+                         { taintarg_jsstring(cx, srcStr), taintarg_jsstring(cx, str), taintarg(cx, i) }));
       }
       arr->setDenseInitializedLength(i + 1);
       arr->initDenseElement(i, StringValue(str));
