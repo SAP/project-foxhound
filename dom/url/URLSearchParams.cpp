@@ -51,8 +51,13 @@ void URLParams::Append(const nsAString& aName, const nsAString& aValue) {
   Param* param = mParams.AppendElement();
   param->mKey = aName;
   param->mValue = aValue;
-  MarkTaintOperation(param->mKey, "URLParams(key)");
-  MarkTaintOperation(param->mValue, "URLParams(value)");
+
+  nsTArray<nsString> args;
+  args.AppendElement(param->mKey);
+  args.AppendElement(param->mValue);
+
+  MarkTaintOperation(param->mKey, "URLParams(key)", args);
+  MarkTaintOperation(param->mValue, "URLParams(value)", args);
 }
 
 void URLParams::Set(const nsAString& aName, const nsAString& aValue) {
