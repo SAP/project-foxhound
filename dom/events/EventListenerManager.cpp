@@ -1332,7 +1332,7 @@ void EventListenerManager::HandleEventInternal(nsPresContext* aPresContext,
     if (IsDeviceType(aEvent->mMessage)) {
       // This is a device-type event, we need to check whether we can
       // disable device after removing the once listeners.
-      const auto [begin, end] = mListeners.NonObservingRange();
+      auto [begin, end] = mListeners.NonObservingRange();
       const bool hasAnyListener =
           std::any_of(begin, end, [aEvent](const Listener& listenerRef) {
             const Listener* listener = &listenerRef;

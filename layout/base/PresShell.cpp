@@ -5929,7 +5929,7 @@ void PresShell::MarkFramesInSubtreeApproximatelyVisible(
   // We assume all frames in popups are visible, so we skip them here.
   const nsIFrame::ChildListIDs skip = {nsIFrame::kPopupList,
                                        nsIFrame::kSelectPopupList};
-  for (const auto& [list, listID] : aFrame->ChildLists()) {
+  for (auto& [list, listID] : aFrame->ChildLists()) {
     if (skip.contains(listID)) {
       continue;
     }

@@ -595,7 +595,7 @@ void Performance::QueueEntry(PerformanceEntry* aEntry) {
   }
 
   nsTObserverArray<PerformanceObserver*> interestedObservers;
-  const auto [begin, end] = mObservers.NonObservingRange();
+  auto [begin, end] = mObservers.NonObservingRange();
   std::copy_if(begin, end, MakeBackInserter(interestedObservers),
                [aEntry](PerformanceObserver* observer) {
                  return observer->ObservesTypeOfEntry(aEntry);

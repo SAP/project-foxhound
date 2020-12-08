@@ -1144,7 +1144,7 @@ void nsContainerFrame::PositionChildViews(nsIFrame* aFrame) {
   // view for popups is managed by the parent. Currently only nsMenuFrame
   // and nsPopupSetFrame have a popupList and during layout will adjust the
   // view manually to position the popup.
-  for (const auto& [list, listID] : aFrame->ChildLists()) {
+  for (auto& [list, listID] : aFrame->ChildLists()) {
     if (listID == kPopupList) {
       continue;
     }

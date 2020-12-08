@@ -285,7 +285,7 @@ void ReportingHeader::ReportingFromChannel(nsIHttpChannel* aChannel) {
       continue;
     }
 
-    const auto [begin, end] = client->mGroups.NonObservingRange();
+    auto [begin, end] = client->mGroups.NonObservingRange();
     if (std::any_of(begin, end, [&groupName](const Group& group) {
           return group.mName == groupName;
         })) {
@@ -502,7 +502,7 @@ void ReportingHeader::GetEndpointForReport(const nsAString& aGroupName,
     return;
   }
 
-  const auto [begin, end] = client->mGroups.NonObservingRange();
+  auto [begin, end] = client->mGroups.NonObservingRange();
   const auto foundIt = std::find_if(
       begin, end,
       [&aGroupName](const Group& group) { return group.mName == aGroupName; });
@@ -558,7 +558,7 @@ void ReportingHeader::GetEndpointForReportInternal(
 
   totalWeight = randomNumber % totalWeight;
 
-  const auto [begin, end] = aGroup.mEndpoints.NonObservingRange();
+  auto [begin, end] = aGroup.mEndpoints.NonObservingRange();
   const auto foundIt = std::find_if(
       begin, end, [minPriority, totalWeight](const Endpoint& endpoint) {
         return minPriority == endpoint.mPriority &&

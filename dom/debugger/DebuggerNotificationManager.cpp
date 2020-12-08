@@ -44,7 +44,7 @@ bool DebuggerNotificationManager::Detach(
 }
 
 bool DebuggerNotificationManager::HasListeners() {
-  const auto [begin, end] = mNotificationObservers.NonObservingRange();
+  auto [begin, end] = mNotificationObservers.NonObservingRange();
   return std::any_of(begin, end, [](const auto& observer) {
     return observer->HasListeners();
   });

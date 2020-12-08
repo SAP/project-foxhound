@@ -1104,7 +1104,7 @@ static void SyncViewsAndInvalidateDescendants(nsIFrame* aFrame,
 
   aFrame->SyncFrameViewProperties();
 
-  for (const auto& [list, listID] : aFrame->ChildLists()) {
+  for (auto& [list, listID] : aFrame->ChildLists()) {
     for (nsIFrame* child : list) {
       if (!child->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)) {
         // only do frames that don't have placeholders

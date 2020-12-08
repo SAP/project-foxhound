@@ -1387,7 +1387,7 @@ class ProfileChunkedBuffer {
         if (blockBytes <= current->RemainingBytes()) {
           // Block fits in current chunk with only one span.
           currentChunkFilled = blockBytes == current->RemainingBytes();
-          const auto [mem0, blockIndex] = current->ReserveBlock(blockBytes);
+          auto [mem0, blockIndex] = current->ReserveBlock(blockBytes);
           MOZ_ASSERT(mem0.LengthBytes() == blockBytes);
           maybeEntryWriter.emplace(
               mem0, blockIndex,
@@ -1405,7 +1405,7 @@ class ProfileChunkedBuffer {
               MOZ_LIKELY(next)) {
             // Here, we know we have a current and a next chunk.
             // Reserve head of block at the end of the current chunk.
-            const auto [mem0, blockIndex] =
+            auto [mem0, blockIndex] =
                 current->ReserveBlock(current->RemainingBytes());
             MOZ_ASSERT(mem0.LengthBytes() < blockBytes);
             MOZ_ASSERT(current->RemainingBytes() == 0);

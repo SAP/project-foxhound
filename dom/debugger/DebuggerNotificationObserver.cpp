@@ -96,7 +96,7 @@ bool DebuggerNotificationObserver::Disconnect(
 
 bool DebuggerNotificationObserver::AddListener(
     DebuggerNotificationCallback& aHandlerFn) {
-  const auto [begin, end] = mEventListenerCallbacks.NonObservingRange();
+  auto [begin, end] = mEventListenerCallbacks.NonObservingRange();
   if (std::any_of(begin, end,
                   [&](const RefPtr<DebuggerNotificationCallback>& callback) {
                     return *callback == aHandlerFn;

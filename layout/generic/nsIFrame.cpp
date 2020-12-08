@@ -9023,7 +9023,7 @@ static nsRect UnionBorderBoxes(
       nsIFrame::kPopupList,    nsIFrame::kSelectPopupList,
       nsIFrame::kAbsoluteList, nsIFrame::kFixedList,
       nsIFrame::kFloatList,    nsIFrame::kOverflowList};
-  for (const auto& [list, listID] : aFrame->ChildLists()) {
+  for (auto& [list, listID] : aFrame->ChildLists()) {
     if (skip.contains(listID)) {
       continue;
     }

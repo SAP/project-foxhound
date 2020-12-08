@@ -995,7 +995,7 @@ static void GetScrollableOverflowForPerspective(
     nsPoint aOffset, nsRect& aScrolledFrameOverflowArea) {
   // Iterate over all children except pop-ups.
   FrameChildListIDs skip = {nsIFrame::kSelectPopupList, nsIFrame::kPopupList};
-  for (const auto& [list, listID] : aCurrentFrame->ChildLists()) {
+  for (auto& [list, listID] : aCurrentFrame->ChildLists()) {
     if (skip.contains(listID)) {
       continue;
     }
@@ -2493,7 +2493,7 @@ static void AdjustViews(nsIFrame* aFrame) {
 
   // Call AdjustViews recursively for all child frames except the popup list as
   // the views for popups are not scrolled.
-  for (const auto& [list, listID] : aFrame->ChildLists()) {
+  for (auto& [list, listID] : aFrame->ChildLists()) {
     if (listID == nsIFrame::kPopupList) {
       continue;
     }

@@ -553,7 +553,7 @@ void nsLayoutUtils::UnionChildOverflow(nsIFrame* aFrame,
   FrameChildListIDs skip(aSkipChildLists);
   skip += {nsIFrame::kSelectPopupList, nsIFrame::kPopupList};
 
-  for (const auto& [list, listID] : aFrame->ChildLists()) {
+  for (auto& [list, listID] : aFrame->ChildLists()) {
     if (skip.contains(listID)) {
       continue;
     }
@@ -6693,7 +6693,7 @@ nscoord nsLayoutUtils::CalculateContentBEnd(WritingMode aWM, nsIFrame* aFrame) {
           std::max(contentBEnd, CalculateBlockContentBEnd(aWM, blockFrame));
       skip += nsIFrame::kPrincipalList;
     }
-    for (const auto& [list, listID] : aFrame->ChildLists()) {
+    for (auto& [list, listID] : aFrame->ChildLists()) {
       if (!skip.contains(listID)) {
         for (nsIFrame* child : list) {
           nscoord offset =
