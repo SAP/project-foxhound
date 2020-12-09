@@ -1,19 +1,25 @@
-mk_add_options MOZ_MAKE_FLAGS="-s "
+mk_add_options MOZ_MAKE_FLAGS="-s"
 
 # Official is the new taint branding
 ac_add_options --with-branding=browser/branding/taintfox
 
 # Export path to Windows C runtime libraries.
 # This will cause those DLLs to be packaged with the application, which is required to run taintfox on non-developer machines
-WIN32_REDIST_DIR="C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Redist\MSVC\14.20.27508\x86\Microsoft.VC141.CRT"
 
 # Force Visual Studio compiler (default is clang)
 #export CC=cl
 #export LINKER=link 
 
 # Set 32-bit build
-ac_add_options --target=i686-pc-mingw32
+#ac_add_options --target=i686-pc-mingw32
+#ac_add_options --host=x86_64-pc-mingw32
+#WIN32_REDIST_DIR="C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Redist\MSVC\14.20.27508\x86\Microsoft.VC141.CRT"
+
+
+# Set 64-bit build
+ac_add_options --target=x86_64-pc-mingw32
 ac_add_options --host=x86_64-pc-mingw32
+WIN32_REDIST_DIR="C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Redist\MSVC\14.20.27508\x64\Microsoft.VC141.CRT"
 
 # diasble updater
 ac_add_options --disable-updater
@@ -29,6 +35,6 @@ ac_add_options --disable-updater
 #
 # RELEASE BUILD
 #
-mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release-64
 ac_add_options --disable-tests
 ac_add_options --enable-cdp
