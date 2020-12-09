@@ -51,10 +51,17 @@ std::u16string JS::taintarg(JSContext* cx, HandleString str)
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
   js::CopyChars(buf.get(), *linear);
   if(linear->length() > max_length) {
+    // Taintfox was crashing after startup after copying start and end
+    // of the long strings, so disable copying here
+    // TODO: work out why windows doesn't like this...
+#  if defined(_WIN32)
+    return std::u16string(buf.get(), max_length);
+#  else
     std::u16string result(buf.get(), copy_length);
     result.append(u"....");
     result.append(std::u16string(buf.get(), linear->length()-copy_length, copy_length));
     return result;
+#  endif
   }
   return std::u16string(buf.get(), linear->length());
 }
@@ -71,10 +78,17 @@ std::u16string JS::taintarg_jsstring(JSContext* cx, JSString* const& str)
   js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
   js::CopyChars(buf.get(), *linear);
   if(linear->length() > max_length) {
+    // Taintfox was crashing after startup after copying start and end
+    // of the long strings, so disable copying here
+    // TODO: work out why windows doesn't like this...
+#  if defined(_WIN32)
+    return std::u16string(buf.get(), max_length);
+#  else
     std::u16string result(buf.get(), copy_length);
     result.append(u"....");
     result.append(std::u16string(buf.get(), linear->length()-copy_length, copy_length));
     return result;
+#  endif
   }
   return std::u16string(buf.get(), linear->length());
 }
