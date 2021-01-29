@@ -231,7 +231,7 @@ function String_replace(searchValue, replaceValue) {
             var ret = callContentFunction(replacer, searchValue, this, replaceValue);
             // Taintfox: ret could be a function, only taint strings.
             if(typeof(ret) === "string") {
-                AddTaintOperationNative(ret, "replace", searchValue, replaceValue);
+                AddTaintOperationNativeFull(ret, "replace", searchValue, replaceValue);
             }
             return ret;
         }
@@ -246,7 +246,7 @@ function String_replace(searchValue, replaceValue) {
     if (typeof replaceValue === "string") {
         // Steps 6-12: Optimized for string case.
         var ret = StringReplaceString(string, searchString, replaceValue);
-        AddTaintOperationNative(ret, "replace", searchValue, replaceValue);
+        AddTaintOperationNativeFull(ret, "replace", searchValue, replaceValue);
         return ret;
     }
 
@@ -254,7 +254,7 @@ function String_replace(searchValue, replaceValue) {
     if (!IsCallable(replaceValue)) {
         // Steps 6-12.
         var ret = StringReplaceString(string, searchString, ToString(replaceValue));
-        AddTaintOperationNative(ret, "replace", searchValue, replaceValue);
+        AddTaintOperationNativeFull(ret, "replace", searchValue, replaceValue);
         return ret;
     }
 

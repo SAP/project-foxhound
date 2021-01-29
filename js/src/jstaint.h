@@ -26,6 +26,9 @@ std::u16string taintarg(JSContext* cx, const char16_t* str);
 // Converts a JS string into the argument type for a taint operation.
 std::u16string taintarg(JSContext* cx, JS::HandleString str);
 
+// Converts a JS string into the argument type for a taint operation.
+std::u16string taintarg_full(JSContext* cx, JS::HandleString str);
+
 std::u16string taintarg_jsstring(JSContext* cx, JSString* const& str);
 
 // Stringifies a JS object for use as a taint argument.

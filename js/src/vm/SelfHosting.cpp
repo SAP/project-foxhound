@@ -2075,7 +2075,51 @@ taint_addTaintOperation(JSContext* cx, unsigned argc, Value* vp)
 
     return true;
 }
-// Taintfox: Add native Taint Operation to JSSTring.
+
+static bool
+taint_addTaintOperation_native_full(JSContext* cx, unsigned argc, Value* vp)
+{
+    // String, operation, args...
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    // check String and operations
+    MOZ_ASSERT(args.length() >= 2 && args[0].isString() && args[1].isString());
+
+    RootedString str(cx, args[0].toString());
+    if (!str)
+        return false;
+
+    RootedString opName(cx, args[1].toString());
+    if (!opName)
+        return false;
+
+    UniqueChars op_chars = JS_EncodeStringToUTF8(cx, opName);
+    if (!op_chars)
+        return false;
+
+    // add arguments
+    std::vector<std::u16string> taint_args;
+
+    for(size_t i = 2; i < args.length(); i++) {
+        JSString* argStr = ToString<NoGC>(cx, args[i]);
+        if (!argStr) {
+            argStr = ToString<CanGC>(cx, args[i]);
+            if (!argStr) {
+                taint_args.push_back(taintarg(cx, u""));
+            } else {
+                taint_args.push_back(taintarg_full(cx, RootedString(cx, argStr)));
+            }
+        } else {
+            taint_args.push_back(taintarg_full(cx, RootedString(cx, argStr)));
+        }
+    }
+
+    if(str->isTainted()) {
+      str->taint().extend(TaintOperation(op_chars.get(), true, TaintLocationFromContext(cx), taint_args));
+    }
+
+    return true;
+}
 static bool
 taint_addTaintOperation_native(JSContext* cx, unsigned argc, Value* vp)
 {
@@ -2739,6 +2783,7 @@ static const JSFunctionSpec intrinsic_functions[] = {
 
     JS_FN("AddTaintOperation", taint_addTaintOperation, 2, 0),
     JS_FN("AddTaintOperationNative", taint_addTaintOperation_native, 2, 0),
+    JS_FN("AddTaintOperationNativeFull", taint_addTaintOperation_native_full, 2, 0),
     JS_FN("CopyString", taint_copyString, 1, 0),
 
     JS_FS_END};
