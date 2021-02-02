@@ -263,7 +263,7 @@ function String_replace(searchValue, replaceValue) {
     if (pos === -1) {
         // Taintfox: TODO new string
         var ret = CopyString(string);
-        AddTaintOperationNative(ret, "replace", searchValue, replaceValue);
+        AddTaintOperationNativeFull(ret, "replace", searchValue, replaceValue);
         return ret;
     }
 
@@ -285,7 +285,7 @@ function String_replace(searchValue, replaceValue) {
     if (tailPos < stringLength)
         newString += Substring(string, tailPos, stringLength - tailPos);
 
-    AddTaintOperationNative(newString, "replace", searchValue, replaceValue);
+    AddTaintOperationNativeFull(newString, "replace", searchValue, replaceValue);
 
     // Step 12.
     return newString;
