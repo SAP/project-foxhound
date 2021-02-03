@@ -3034,6 +3034,11 @@ class RopeBuilder {
     return !!res;
   }
 
+  inline bool appendQuiet(HandleString str) {
+    res = ConcatStringsQuiet<CanGC>(cx, res, str);
+    return !!res;
+  }
+
   inline JSString* result() { return res; }
 };
 
@@ -3066,7 +3071,7 @@ static JSString* BuildFlatReplacement(JSContext* cx, HandleString textstr,
     return nullptr;
   }
 
-  resultStr = ConcatStrings<CanGC>(cx, resultStr, repstr);
+  resultStr = ConcatStringsQuiet<CanGC>(cx, resultStr, repstr);
   if (!resultStr) {
     return nullptr;
   }
@@ -3078,7 +3083,7 @@ static JSString* BuildFlatReplacement(JSContext* cx, HandleString textstr,
     return nullptr;
   }
 
-  return ConcatStrings<CanGC>(cx, resultStr, rest);
+  return ConcatStringsQuiet<CanGC>(cx, resultStr, rest);
 }
 
 static JSString* BuildFlatRopeReplacement(JSContext* cx, HandleString textstr,
@@ -3105,7 +3110,7 @@ static JSString* BuildFlatRopeReplacement(JSContext* cx, HandleString textstr,
    */
   if (patternLength == 0) {
     MOZ_ASSERT(match == 0);
-    if (!builder.append(repstr)) {
+    if (!builder.appendQuiet(repstr)) {
       return nullptr;
     }
   }
@@ -3128,7 +3133,7 @@ static JSString* BuildFlatRopeReplacement(JSContext* cx, HandleString textstr,
          * replacement string here.
          */
         RootedString leftSide(cx, NewDependentString(cx, str, 0, match - pos));
-        if (!leftSide || !builder.append(leftSide) || !builder.append(repstr)) {
+        if (!leftSide || !builder.appendQuiet(leftSide) || !builder.appendQuiet(repstr)) {
           return nullptr;
         }
       }
@@ -3140,12 +3145,12 @@ static JSString* BuildFlatRopeReplacement(JSContext* cx, HandleString textstr,
       if (strEnd > matchEnd) {
         RootedString rightSide(
             cx, NewDependentString(cx, str, matchEnd - pos, strEnd - matchEnd));
-        if (!rightSide || !builder.append(rightSide)) {
+        if (!rightSide || !builder.appendQuiet(rightSide)) {
           return nullptr;
         }
       }
     } else {
-      if (!builder.append(str)) {
+      if (!builder.appendQuiet(str)) {
         return nullptr;
       }
     }

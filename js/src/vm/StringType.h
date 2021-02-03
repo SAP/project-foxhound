@@ -1599,6 +1599,12 @@ extern JSString* ConcatStrings(
     typename MaybeRooted<JSString*, allowGC>::HandleType right,
     js::gc::InitialHeap heap = js::gc::DefaultHeap);
 
+// Taintfox: Internal concat which does not add new Taint Operations
+template <AllowGC allowGC>
+extern JSString* ConcatStringsQuiet(
+    JSContext* cx, typename MaybeRooted<JSString*, allowGC>::HandleType left,
+    typename MaybeRooted<JSString*, allowGC>::HandleType right,
+    js::gc::InitialHeap heap = js::gc::DefaultHeap);
 /*
  * Test if strings are equal. The caller can call the function even if str1
  * or str2 are not GC-allocated things.

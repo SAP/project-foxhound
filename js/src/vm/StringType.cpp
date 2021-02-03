@@ -940,6 +940,90 @@ template JSString* js::ConcatStrings<CanGC>(JSContext* cx, HandleString left,
 template JSString* js::ConcatStrings<NoGC>(JSContext* cx, JSString* const& left,
                                            JSString* const& right,
                                            gc::InitialHeap heap);
+//Taintfox: Concat without adding operations to taint flow
+template <AllowGC allowGC>
+JSString* js::ConcatStringsQuiet(
+    JSContext* cx, typename MaybeRooted<JSString*, allowGC>::HandleType left,
+    typename MaybeRooted<JSString*, allowGC>::HandleType right,
+    gc::InitialHeap heap) {
+  MOZ_ASSERT_IF(!left->isAtom(), cx->isInsideCurrentZone(left));
+  MOZ_ASSERT_IF(!right->isAtom(), cx->isInsideCurrentZone(right));
+
+  size_t leftLen = left->length();
+  if (leftLen == 0) {
+    return right;
+  }
+
+  size_t rightLen = right->length();
+  if (rightLen == 0) {
+    return left;
+  }
+
+  size_t wholeLength = leftLen + rightLen;
+  if (MOZ_UNLIKELY(wholeLength > JSString::MAX_LENGTH)) {
+    // Don't report an exception if GC is not allowed, just return nullptr.
+    if (allowGC) {
+      js::ReportAllocationOverflow(cx);
+    }
+    return nullptr;
+  }
+
+  bool isLatin1 = left->hasLatin1Chars() && right->hasLatin1Chars();
+  bool canUseInline = isLatin1
+                          ? JSInlineString::lengthFits<Latin1Char>(wholeLength)
+                          : JSInlineString::lengthFits<char16_t>(wholeLength);
+  if (canUseInline) {
+
+    Latin1Char* latin1Buf = nullptr;  // initialize to silence GCC warning
+    char16_t* twoByteBuf = nullptr;   // initialize to silence GCC warning
+    JSInlineString* str =
+        isLatin1
+            ? AllocateInlineString<allowGC>(cx, wholeLength, &latin1Buf, heap)
+            : AllocateInlineString<allowGC>(cx, wholeLength, &twoByteBuf, heap);
+    if (!str) {
+      return nullptr;
+    }
+
+    AutoCheckCannotGC nogc;
+    JSLinearString* leftLinear = EnsureLinear<allowGC>(cx, left);
+    if (!leftLinear) {
+      return nullptr;
+    }
+    JSLinearString* rightLinear = EnsureLinear<allowGC>(cx, right);
+    if (!rightLinear) {
+      return nullptr;
+    }
+
+    if (isLatin1) {
+      PodCopy(latin1Buf, leftLinear->latin1Chars(nogc), leftLen);
+      PodCopy(latin1Buf + leftLen, rightLinear->latin1Chars(nogc), rightLen);
+    } else {
+      if (leftLinear->hasTwoByteChars()) {
+        PodCopy(twoByteBuf, leftLinear->twoByteChars(nogc), leftLen);
+      } else {
+        CopyAndInflateChars(twoByteBuf, leftLinear->latin1Chars(nogc), leftLen);
+      }
+      if (rightLinear->hasTwoByteChars()) {
+        PodCopy(twoByteBuf + leftLen, rightLinear->twoByteChars(nogc),
+                rightLen);
+      } else {
+        CopyAndInflateChars(twoByteBuf + leftLen,
+                            rightLinear->latin1Chars(nogc), rightLen);
+      }
+    }
+    return str;
+  }
+
+  return JSRope::new_<allowGC>(cx, left, right, wholeLength, heap);
+}
+
+template JSString* js::ConcatStringsQuiet<CanGC>(JSContext* cx, HandleString left,
+                                            HandleString right,
+                                            gc::InitialHeap heap);
+
+template JSString* js::ConcatStringsQuiet<NoGC>(JSContext* cx, JSString* const& left,
+                                           JSString* const& right,
+                                           gc::InitialHeap heap);
 
 /**
  * Copy |src[0..length]| to |dest[0..length]| when copying doesn't narrow and
