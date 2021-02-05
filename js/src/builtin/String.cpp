@@ -16,6 +16,7 @@
 #include "mozilla/Unused.h"
 
 #include <algorithm>
+//#include <iostream>
 #include <limits>
 #include <string.h>
 #include <type_traits>
@@ -3090,8 +3091,14 @@ static JSString* BuildFlatRopeReplacement(JSContext* cx, HandleString textstr,
                                           HandleLinearString repstr,
                                           size_t match, size_t patternLength) {
   MOZ_ASSERT(textstr->isRope());
+  //TODO: reconstruct taint from rope in here
 
   size_t matchEnd = match + patternLength;
+  size_t repLength = repstr->length();
+  if(textstr->isTainted()) {
+    auto& taint = textstr->taint();
+    DumpTaint(taint);
+  }
 
   /*
    * If we are replacing over a rope, avoid flattening it by iterating
@@ -3160,7 +3167,11 @@ static JSString* BuildFlatRopeReplacement(JSContext* cx, HandleString textstr,
     }
   }
 
-  return builder.result();
+  JSString* result = builder.result();
+  result->setTaint(cx, textstr->taint());
+  //std::cout << "Shifting from " << match << " by " << repLength << "\n";
+  result->taint().shift(match, repLength);
+  return result;
 }
 
 template <typename CharT>

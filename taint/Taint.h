@@ -713,4 +713,7 @@ StringTaint ParseTaint(const std::string& str);
  */
 void PrintTaint(const StringTaint& taint);
 
+void DumpTaint(const StringTaint& taint);
+void DumpTaintOperation(const TaintOperation& operation);
+
 #endif

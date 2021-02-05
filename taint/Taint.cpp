@@ -1003,3 +1003,27 @@ void PrintTaint(const StringTaint& taint)
     for (auto& range : taint)
         std::cout << "    " << range.begin() << " - " << range.end() << " : " << range.flow().source().name() << std::endl;
 }
+
+void DumpTaint(const StringTaint& taint)
+{
+    for (auto& range : taint) {
+        std::cout << "    " << range.begin() << " - " << range.end() << " : " << range.flow().source().name() << ":\n";
+        auto& flow = range.flow();
+
+        for(auto& node : flow) {
+            auto& op = node.operation();
+            DumpTaintOperation(op);
+
+        }
+    }
+}
+
+void DumpTaintOperation(const TaintOperation& operation) {
+    std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> convert;
+    std::cout << "\t\t" << operation.name() << "[";
+    for(auto& arg : operation.arguments()) {
+        std::cout << convert.to_bytes(arg) << ", ";
+    }
+    std::cout << "]\n";
+
+}
