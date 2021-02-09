@@ -1,3 +1,0 @@
----
-Checks:          'clang-diagnostic-*,clang-analyzer-*,*,clang-analyzer-alpha*,-llvm-*,google-*,-google-readability-namespace-comments,-clang-analyzer-osx.*,-clang-analyzer-alpha.osx.*,-clang-analyzer-optin.osx.*,-clang-analyzer-alpha.core.CastToStruct,-llvm-namespace-comment,-fuchsia-*,-modernize-use-trailing-return-type,-google-readability-todo,-google-explicit-constructor,-cppcoreguidelines-pro-type-vararg'
-AnalyzeTemporaryDtors: true
