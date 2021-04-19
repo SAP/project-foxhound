@@ -52,6 +52,7 @@ std::u16string JS::taintarg_full(JSContext* cx, HandleString str)
   js::CopyChars(buf.get(), *linear);
   return std::u16string(buf.get(), linear->length());
 }
+
 std::u16string JS::taintarg(JSContext* cx, HandleString str)
 {
   if (!str) {
@@ -103,6 +104,20 @@ std::u16string JS::taintarg_jsstring(JSContext* cx, JSString* const& str)
     return result;
 #  endif
   }
+  return std::u16string(buf.get(), linear->length());
+}
+
+std::u16string JS::taintarg_jsstring_full(JSContext* cx, JSString* const& str)
+{
+  if (!str) {
+    return std::u16string();
+  }
+  JSLinearString* linear = str->ensureLinear(cx);
+  if (!linear)
+    return std::u16string();
+
+  js::UniquePtr<char16_t, JS::FreePolicy> buf(cx->pod_malloc<char16_t>(linear->length()));
+  js::CopyChars(buf.get(), *linear);
   return std::u16string(buf.get(), linear->length());
 }
 

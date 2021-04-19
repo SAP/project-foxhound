@@ -115,7 +115,7 @@ bool js::CreateRegExpMatchResult(JSContext* cx, HandleRegExpShared re,
         JSString* srcStr = EscapeRegExpPattern(cx, src);
         str->taint().extend(
           TaintOperation("RegExp.prototype.exec", true, TaintLocationFromContext(cx),
-                         { taintarg_jsstring(cx, srcStr), taintarg_jsstring(cx, str), taintarg(cx, i) }));
+                         { taintarg_jsstring_full(cx, srcStr), taintarg_jsstring(cx, str), taintarg(cx, i) }));
       }
       arr->setDenseInitializedLength(i + 1);
       arr->initDenseElement(i, StringValue(str));
