@@ -617,6 +617,11 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const m
   return TaintOperation(name);
 }
 
+TaintOperation GetTaintOperation(const char* name)
+{
+  return GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name);
+}
+
 nsresult MarkTaintOperation(StringTaint& aTaint, const char* name) {
   JSContext *cx = nsContentUtils::GetCurrentJSContext();
   auto op = GetTaintOperation(cx, name);

@@ -400,6 +400,9 @@ using nsAutoJSString = nsTAutoJSString<char16_t>;
 // Note that this is guaranteed to be UTF-8.
 using nsAutoJSCString = nsTAutoJSString<char>;
 
+// Get a taint operation
+TaintOperation GetTaintOperation(const char* name);
+
 // Extend the taintflow
 nsresult MarkTaintOperation(nsAString &str, const char* name);
 nsresult MarkTaintOperation(nsACString &str, const char* name);

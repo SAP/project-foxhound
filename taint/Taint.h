@@ -313,6 +313,10 @@ class TaintFlow
     // the newly constructed node as head of this taint flow.
     TaintFlow& extend(const TaintOperation& operation);
 
+    // Constructs a new taint node as child of the current head node
+    // does NOT set the newly constructed node as head of this taint flow.
+    TaintFlow& extend(const TaintOperation& operation) const;
+
     // Constructs a new taint node as child of the current head node and sets
     // the newly constructed node as head of this taint flow.
     TaintFlow& extend(TaintOperation&& operation);
