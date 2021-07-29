@@ -8379,7 +8379,8 @@ class StringBuilder {
         }
       }
     }
-    appender.Finish();
+    // Taintfox: Add the taint operation to all flows
+    MarkTaintOperation(appender.Taint(), "element.textContent");
     aOut.AssignTaint(appender.Taint());
     return true;
   }
@@ -8402,36 +8403,22 @@ class StringBuilder {
     size_t flushedUntil = 0;
     size_t currentPosition = 0;
     for (char16_t c : aStr) {
-      const TaintFlow* flow = aTaint.at(currentPosition);
-      TaintOperation op = GetTaintOperation("nsContentUtils::EncodeAttrString");
+      TaintFlow flow(aTaint.atRef(currentPosition));
       StringTaint taint = aTaint.subtaint(flushedUntil, currentPosition);
-      MarkTaintOperation(taint, "nsContentUtils::EncodeAttrString");
       switch (c) {
         case '"':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
-          if (flow) {
-            aAppender.AppendLiteralTainted(u"&quot;", StringTaint(flow->extend(op), 6));
-          } else {
-            aAppender.AppendLiteral(u"&quot;");
-          }
+          aAppender.AppendLiteralTainted(u"&quot;", StringTaint(flow, 6));
           flushedUntil = currentPosition + 1;
           break;
         case '&':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
-          if (flow) {
-            aAppender.AppendLiteralTainted(u"&amp;", StringTaint(flow->extend(op), 5));
-          } else {
-            aAppender.AppendLiteral(u"&amp;");
-          }
+          aAppender.AppendLiteralTainted(u"&amp;", StringTaint(flow, 5));
           flushedUntil = currentPosition + 1;
           break;
         case 0x00A0:
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
-          if (flow) {
-            aAppender.AppendLiteralTainted(u"&nbsp;", StringTaint(flow->extend(op), 6));
-          } else {
-            aAppender.AppendLiteral(u"&nbsp;");
-          }
+          aAppender.AppendLiteralTainted(u"&nbsp;", StringTaint(flow, 6));
           flushedUntil = currentPosition + 1;
           break;
         default:
@@ -8441,9 +8428,10 @@ class StringBuilder {
     }
     if (currentPosition > flushedUntil) {
           StringTaint taint = aTaint.subtaint(flushedUntil, currentPosition);
-          MarkTaintOperation(taint, "nsContentUtils::EncodeAttrString");
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
     }
+    // Taintfox: Add the taint operation to all flows
+    MarkTaintOperation(aAppender.Taint(), "nsContentUtils::EncodeAttrString");
   }
 
   template <class T>
@@ -8451,45 +8439,27 @@ class StringBuilder {
     size_t flushedUntil = 0;
     size_t currentPosition = 0;
     for (T c : aStr) {
-      const TaintFlow* flow = aTaint.at(currentPosition);
-      TaintOperation op = GetTaintOperation("nsContentUtils::EncodeTextFragment");
+      TaintFlow flow(aTaint.atRef(currentPosition));
       StringTaint taint = aTaint.subtaint(flushedUntil, currentPosition);
-      MarkTaintOperation(taint, "nsContentUtils::EncodeTextFragment");
       switch (c) {
         case '<':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
-          if (flow) {
-            aAppender.AppendLiteralTainted(u"&lt;", StringTaint(flow->extend(op), 4));
-          } else {
-            aAppender.AppendLiteral(u"&lt;");
-          }
+          aAppender.AppendLiteralTainted(u"&lt;", StringTaint(flow, 4));
           flushedUntil = currentPosition + 1;
           break;
         case '>':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
-          if (flow) {
-            aAppender.AppendLiteralTainted(u"&gt;", StringTaint(flow->extend(op), 4));
-          } else {
-            aAppender.AppendLiteral(u"&gt;");
-          }
+          aAppender.AppendLiteralTainted(u"&gt;", StringTaint(flow, 4));
           flushedUntil = currentPosition + 1;
           break;
         case '&':
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
-          if (flow) {
-            aAppender.AppendLiteralTainted(u"&amp;", StringTaint(flow->extend(op), 5));
-          } else {
-            aAppender.AppendLiteral(u"&amp;");
-          }
+          aAppender.AppendLiteralTainted(u"&amp;", StringTaint(flow, 5));
           flushedUntil = currentPosition + 1;
           break;
         case T(0xA0):
           aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
-          if (flow) {
-            aAppender.AppendLiteralTainted(u"&nbsp;", StringTaint(flow->extend(op), 6));
-          } else {
-            aAppender.AppendLiteral(u"&nbsp;");
-          }
+          aAppender.AppendLiteralTainted(u"&nbsp;", StringTaint(flow, 6));
           flushedUntil = currentPosition + 1;
           break;
         default:
@@ -8499,9 +8469,10 @@ class StringBuilder {
     }
     if (currentPosition > flushedUntil) {
       StringTaint taint = aTaint.subtaint(flushedUntil, currentPosition);
-      MarkTaintOperation(taint, "nsContentUtils::EncodeTextFragment");
       aAppender.Append(aStr.FromTo(flushedUntil, currentPosition), taint);
     }
+    // Taintfox: Add the taint operation to all flows
+    MarkTaintOperation(aAppender.Taint(), "nsContentUtils::EncodeTextFragment");
   }
 
   AutoTArray<Unit, STRING_BUFFER_UNITS> mUnits;

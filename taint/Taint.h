@@ -298,6 +298,8 @@ class TaintFlow
     // Moving is even faster..
     TaintFlow(TaintFlow&& other);
 
+    TaintFlow(const TaintFlow* other);
+ 
     ~TaintFlow();
 
     // Similar to copying, this is an O(1) operation.
@@ -341,9 +343,13 @@ class TaintFlow
     // Boolean operator, indicates whether this taint flow is empty or now.
     operator bool() const { return !!head_; }
 
+    static const TaintFlow& getEmptyTaintFlow();
+
   private:
     // Last (newest) node of this flow.
     TaintNode* head_;
+
+    static TaintFlow empty_flow_;
 };
 
 
@@ -436,7 +442,7 @@ class StringTaint
     StringTaint(uint32_t begin, uint32_t end, const TaintOperation& operation);
 
     // Construct taint information for a uniformly tainted string.
-    explicit StringTaint(TaintFlow taint, uint32_t length);
+    explicit StringTaint(TaintFlow flow, uint32_t length);
 
     // Default destructor needed to allow the StringTaint class to
     // act as a literal and appear in constexpr's, e.g. EmptyTaint
@@ -509,6 +515,7 @@ class StringTaint
     const TaintFlow* operator[](uint32_t index) const {
         return at(index);
     }
+    const TaintFlow& atRef(uint32_t index) const;
 
     // Sets the taint flow for the character at the given index.
     // This will override any previous taint information for that character.

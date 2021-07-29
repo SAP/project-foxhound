@@ -197,6 +197,15 @@ TaintFlow::TaintFlow(const TaintFlow& other) : head_(other.head_)
         head_->addref();
 }
 
+TaintFlow::TaintFlow(const TaintFlow* other) : head_(nullptr)
+{
+    if (other) {
+        head_ = other->head_;
+        if (head_)
+            head_->addref();
+    }
+}
+
 TaintFlow::TaintFlow(TaintFlow&& other) : head_(other.head_)
 {
     other.head_ = nullptr;
@@ -219,6 +228,12 @@ TaintFlow& TaintFlow::operator=(const TaintFlow& other)
         head_->addref();
 
     return *this;
+}
+
+TaintFlow TaintFlow::empty_flow_ = TaintFlow();
+
+const TaintFlow& TaintFlow::getEmptyTaintFlow() {
+    return TaintFlow::empty_flow_;
 }
 
 const TaintOperation& TaintFlow::source() const
@@ -384,11 +399,14 @@ StringTaint::StringTaint(uint32_t begin, uint32_t end, const TaintOperation& ope
     CHECK_RANGES(ranges_);
 }
 
-StringTaint::StringTaint(TaintFlow taint, uint32_t length)
+StringTaint::StringTaint(TaintFlow flow, uint32_t length) : ranges_(nullptr)
 {
-    ranges_ = new std::vector<TaintRange>;
-    ranges_->emplace_back(0, length, taint);
-    CHECK_RANGES(ranges_);
+    // Only create the taint if there are entries in the flow
+    if (flow) {
+        ranges_ = new std::vector<TaintRange>;
+        ranges_->emplace_back(0, length, flow);
+        CHECK_RANGES(ranges_);
+    }
 }
 
 StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
@@ -528,6 +546,16 @@ const TaintFlow* StringTaint::at(uint32_t index) const
             return &range.flow();
     }
     return nullptr;
+}
+
+const TaintFlow& StringTaint::atRef(uint32_t index) const
+{
+    // TODO make this a binary search
+    for (auto& range : *this) {
+        if (range.begin() <= index && range.end() > index)
+            return range.flow();
+    }
+    return TaintFlow::getEmptyTaintFlow();
 }
 
 void StringTaint::set(uint32_t index, const TaintFlow& flow)
