@@ -456,6 +456,8 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     return nullptr;
   }
 
+  // Taintfox: TODO: Add fetch sink here...
+
   SafeRefPtr<InternalRequest> r = request->GetInternalRequest();
   RefPtr<AbortSignalImpl> signalImpl = request->GetSignalImpl();
 
