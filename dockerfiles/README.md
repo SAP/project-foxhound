@@ -1,7 +1,7 @@
-# Taintfox Docker Files
+# Project "Foxhound" Docker Files
 
 The Dockerfile in this directory provides a number of containers for developing, building and
-deploying taintfox for Ubuntu.
+deploying project "Foxhound" for Ubuntu.
 
 The file uses the multi-stage build pattern detailed here: https://docs.docker.com/develop/develop-images/multistage-build/.
 

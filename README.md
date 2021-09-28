@@ -48,6 +48,9 @@ To run the browser, use:
 ./mach run
 ```
 
+### Docker Containers
+Instructions for building and running project "Foxhound" inside a docker container (useful for getting dependencies right) can be found in the [dockerfiles](dockerfiles) folder.
+
 ## Internals
 
 The main classes used to represent taint information are located in [taint](taint). These are used by both Spidermonkey (the JavaScript engine)

@@ -14,7 +14,7 @@ RUN apt-get update &&    \
 
 WORKDIR /usr/local/src/taintfox-build
 
-RUN GIT_SSL_NO_VERIFY=true git clone --depth=1 https://github.wdf.sap.corp/WebSecResearch/taintfox -b master . && \
+RUN GIT_SSL_NO_VERIFY=true git clone --depth=1 https://github.com/SAP/project-foxhound -b main . && \
     ./mach bootstrap --application-choice=browser --no-interactive && \
 
 RUN apt-get remove -y nasm
