@@ -1,4 +1,4 @@
-# TaintFox Internals
+# Internal Taint Implementation
 
 See Taint.h for a detailed description of the internal taint classes and their usage.
 
@@ -207,6 +207,8 @@ Gecko
 * nsTextFragment (dom/base/nsTextFragment.h)
     - Inherits from TaintableString
 
+## More Information
+More specific internal documentation can be found in the [docs](docs) folder.
 
 ## References
 

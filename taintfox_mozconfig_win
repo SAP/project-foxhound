@@ -1,8 +1,5 @@
 mk_add_options MOZ_MAKE_FLAGS="-s"
 
-# Official is the new taint branding
-ac_add_options --with-branding=browser/branding/taintfox
-
 # Export path to Windows C runtime libraries.
 # This will cause those DLLs to be packaged with the application, which is required to run taintfox on non-developer machines
 
