@@ -3,6 +3,9 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+/*
+ * Modifications Copyright SAP SE. 2019-2021.  All rights reserved.
+ */
 
 /*	First checked in on 98/12/03 by John R. McMullen, derived from
  * net.h/mkparse.c. */
