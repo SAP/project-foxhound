@@ -255,7 +255,7 @@ class URLParams final {
       nsAutoString decodedName;
       nsAutoString decodedValue;
 
-      if (!ParseNextInternal(start, end, &decodedName, &decodedValue)) {
+      if (!ParseNextInternal(aInput, start, end, &decodedName, &decodedValue)) {
         continue;
       }
 
@@ -339,7 +339,7 @@ class URLParams final {
  private:
   static void DecodeString(const nsACString& aInput, nsAString& aOutput);
   static void ConvertString(const nsACString& aInput, nsAString& aOutput);
-  static bool ParseNextInternal(const char*& aStart, const char* aEnd,
+  static bool ParseNextInternal(const nsACString& aInput, const char*& aStart, const char* aEnd,
                                 nsAString* aOutDecodedName,
                                 nsAString* aOutDecodedValue);
 

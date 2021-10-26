@@ -1045,18 +1045,21 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
 }
 
 /* static */
-bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
+bool URLParams::ParseNextInternal(const nsACString& aInput, const char*& aStart, const char* const aEnd,
                                   nsAString* aOutDecodedName,
                                   nsAString* aOutDecodedValue) {
   nsDependentCSubstring string;
+
+  // Taintfox: Restore start iterator
+  const char* const stringstart = aInput.BeginReading();
 
   const char* const iter = std::find(aStart, aEnd, '&');
   if (iter != aEnd) {
     string.Rebind(aStart, iter);
     // Taintfox: propagate taint
-    // Taintfox: TODO
-    //string.AssignTaint(aInput.Taint().subtaint(Distance(stringstart, aStart),
-                                                 //Distance(stringstart, iter)));
+    // Taintfox: TODO fix Distance
+    string.AssignTaint(aInput.Taint().subtaint(static_cast<size_t>(aStart - stringstart),
+          static_cast<size_t>(iter-stringstart)));
     aStart = iter + 1;
   } else {
     string.Rebind(aStart, aEnd);
@@ -1071,13 +1074,23 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
   const auto* const eqEnd = string.EndReading();
   const auto* const eqIter = std::find(eqStart, eqEnd, '=');
 
+
   nsDependentCSubstring name;
   nsDependentCSubstring value;
 
   if (eqIter != eqEnd) {
     name.Rebind(eqStart, eqIter);
+    // Taintfox: propagate taint
+    // Taintfox: TODO fix Distance
+    name.AssignTaint(string.Taint().subtaint(static_cast<size_t>(eqStart - eqStart),
+          static_cast<size_t>(eqIter-eqStart)));
     value.Rebind(eqIter + 1, eqEnd);
+    // Taintfox: propagate taint
+    // Taintfox: TODO fix Distance
+    value.AssignTaint(string.Taint().subtaint(static_cast<size_t>(eqIter+1 - eqStart),
+          static_cast<size_t>(eqEnd-eqStart)));
   } else {
+    // Taintfox: Taint should ne propagated here
     name.Rebind(string, 0);
   }
 
